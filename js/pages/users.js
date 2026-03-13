@@ -10,8 +10,9 @@ import {
 import { db }                                    from '../firebase.js';
 import { store }                                 from '../store.js';
 import { createUser, updateUserProfile, deactivateUser, reactivateUser } from '../auth/auth.js';
-import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js';
 import { auth } from '../firebase.js';
+import { doc, setDoc, onSnapshot, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { db as firestoreDb } from '../firebase.js';
 import { toast }                                 from '../components/toast.js';
 import { modal }                                 from '../components/modal.js';
 import { APP_CONFIG }                            from '../config.js';
@@ -509,7 +510,7 @@ async function handleUserSave(userId, isEdit, closeModal) {
   }
 }
 
-// ─── Modal: Redefinir senha (admin via Cloud Function) ────
+// ─── Modal: Redefinir senha (admin via GitHub Action) ─────
 async function openResetPasswordModal(uid, user) {
   modal.open({
     title:   `Redefinir senha — ${escHtml(user.name)}`,
@@ -517,7 +518,7 @@ async function openResetPasswordModal(uid, user) {
     content: `
       <p style="color:var(--text-secondary); font-size:0.875rem; margin-bottom:16px;">
         Defina uma nova senha para <strong>${escHtml(user.name)}</strong>.
-        O usuário poderá acessar com a nova senha imediatamente.
+        A senha será aplicada em até 30 segundos.
       </p>
       <div class="form-group">
         <label class="form-label">Nova senha *</label>
@@ -534,6 +535,7 @@ async function openResetPasswordModal(uid, user) {
           placeholder="Repita a senha" autocomplete="new-password" />
         <span class="form-error-msg" id="admin-confirm-error"></span>
       </div>
+      <div id="reset-status" style="display:none;"></div>
     `,
     footer: [
       { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
@@ -559,14 +561,92 @@ async function openResetPasswordModal(uid, user) {
           const btn = document.querySelector('.modal-footer .btn-primary');
           if (btn) { btn.classList.add('loading'); btn.disabled = true; }
 
+          const statusEl = document.getElementById('reset-status');
+          if (statusEl) {
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = `<div class="integration-test-result test-info">
+              <span>⟳</span><span>Enviando solicitação...</span></div>`;
+          }
+
           try {
-            const functions     = getFunctions(undefined, 'us-central1');
-            const setPassword   = httpsCallable(functions, 'setUserPassword');
-            await setPassword({ uid, newPassword: pw });
-            toast.success(`Senha de ${user.name} redefinida com sucesso!`);
-            close();
+            const currentUser = store.get('currentUser');
+            const GITHUB_TOKEN = window.PRIMETOUR_GH_TOKEN || '';
+            const REPO = 'primetour/tarefas';
+
+            // 1. Salvar solicitação no Firestore (validação server-side)
+            await setDoc(
+              doc(firestoreDb, 'password_reset_requests', uid),
+              {
+                uid,
+                newPassword:  pw,
+                requestedBy:  currentUser?.uid || 'admin',
+                createdAt:    serverTimestamp(),
+              }
+            );
+
+            // 2. Disparar GitHub Action via repository_dispatch
+            const res = await fetch(
+              \`https://api.github.com/repos/\${REPO}/dispatches\`,
+              {
+                method:  'POST',
+                headers: {
+                  'Authorization': \`Bearer \${GITHUB_TOKEN}\`,
+                  'Accept':        'application/vnd.github.v3+json',
+                  'Content-Type':  'application/json',
+                },
+                body: JSON.stringify({
+                  event_type:     'reset-password',
+                  client_payload: {
+                    uid,
+                    newPassword: pw,
+                    requestedBy: currentUser?.uid || 'admin',
+                  },
+                }),
+              }
+            );
+
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              throw new Error(err.message || \`GitHub API: HTTP \${res.status}\`);
+            }
+
+            if (statusEl) {
+              statusEl.innerHTML = `<div class="integration-test-result test-ok">
+                <span>✓</span><span>Solicitação enviada! A senha será aplicada em até 30 segundos.</span></div>`;
+            }
+
+            // 3. Aguardar confirmação do Firestore (resultado da Action)
+            const resultRef = doc(firestoreDb, 'password_reset_results', uid);
+            let unsubscribe;
+            const waitResult = new Promise((resolve) => {
+              let timeout = setTimeout(() => { unsubscribe?.(); resolve('timeout'); }, 35000);
+              unsubscribe = onSnapshot(resultRef, (snap) => {
+                if (snap.exists()) {
+                  clearTimeout(timeout);
+                  unsubscribe();
+                  deleteDoc(resultRef).catch(() => {});
+                  resolve(snap.data().success ? 'ok' : 'error');
+                }
+              });
+            });
+
+            const result = await waitResult;
+            if (result === 'ok') {
+              toast.success(\`Senha de \${user.name} redefinida com sucesso!\`);
+              close();
+            } else if (result === 'timeout') {
+              toast.warning('A ação foi disparada mas demorou mais que o esperado. Verifique em GitHub → Actions.');
+              close();
+            } else {
+              toast.error('A ação falhou. Verifique em GitHub → Actions → reset-password.');
+            }
+
           } catch (err) {
-            toast.error('Erro: ' + (err.message || 'Falha ao redefinir senha.'));
+            if (statusEl) {
+              statusEl.innerHTML = `<div class="integration-test-result test-error">
+                <span>✕</span><span>${escHtml(err.message)}</span></div>`;
+            }
+            toast.error('Erro: ' + err.message);
           } finally {
             if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
           }
