@@ -147,9 +147,18 @@ function setupRouter() {
     return true;
   });
 
-  // Scroll to top ao navegar
+  // Limpar conteúdo e scroll antes de cada navegação
   router.beforeNavigation(() => {
-    if (content) content.scrollTop = 0;
+    if (content) {
+      content.scrollTop = 0;
+      // Destruir instâncias ativas antes de limpar o DOM
+      destroyDashboards();
+      destroyKanban();
+      destroyTasksPage();
+      destroyCsat();
+      // Limpar o container garante que não há resíduos visuais
+      content.innerHTML = '';
+    }
   });
 
   // Atualiza header ao navegar
