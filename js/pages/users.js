@@ -4,18 +4,15 @@
  */
 
 import {
-  collection, getDocs, query, orderBy, where
+  collection, getDocs, query, orderBy,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
-import { db }                                    from '../firebase.js';
-import { store }                                 from '../store.js';
+import { db }          from '../firebase.js';
+import { store }       from '../store.js';
 import { createUser, updateUserProfile, deactivateUser, reactivateUser } from '../auth/auth.js';
-import { auth } from '../firebase.js';
-import { doc, setDoc, onSnapshot, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { db as firestoreDb } from '../firebase.js';
-import { toast }                                 from '../components/toast.js';
-import { modal }                                 from '../components/modal.js';
-import { APP_CONFIG }                            from '../config.js';
+import { toast }       from '../components/toast.js';
+import { modal }       from '../components/modal.js';
+import { APP_CONFIG }  from '../config.js';
 
 // ─── Setores disponíveis ─────────────────────────────────
 const DEPARTMENTS = [
@@ -77,6 +74,32 @@ export async function renderUsers(container) {
         <button class="btn btn-primary" id="new-user-btn">
           + Novo Usuário
         </button>
+      </div>
+    </div>
+
+    <!-- Banner: redefinição de senha -->
+    <div style="
+      display:flex; align-items:flex-start; gap:12px;
+      background:rgba(212,168,67,0.08);
+      border:1px solid rgba(212,168,67,0.3);
+      border-radius:var(--radius-md);
+      padding:12px 16px;
+      margin-bottom:24px;
+      font-size:0.8125rem;
+      line-height:1.6;
+      color:var(--text-secondary);
+    ">
+      <span style="font-size:1.1rem; flex-shrink:0; margin-top:1px;">🔑</span>
+      <div>
+        <strong style="color:var(--text-primary);">Redefinição de senha</strong>
+        — Para trocar a senha de um usuário, acesse o
+        <a href="https://console.firebase.google.com/project/gestor-de-tarefas-primetour/authentication/users"
+          target="_blank" rel="noopener"
+          style="color:var(--brand-gold); text-decoration:underline;">
+          Firebase Console → Authentication → Users
+        </a>,
+        localize o usuário, clique em <strong>⋮ → Edit user</strong>
+        e defina a nova senha diretamente. O botão 🔑 na tabela abre este guia rápido.
       </div>
     </div>
 
@@ -510,160 +533,62 @@ async function handleUserSave(userId, isEdit, closeModal) {
   }
 }
 
-// ─── Modal: Redefinir senha (admin via GitHub Action) ─────
-async function openResetPasswordModal(uid, user) {
+// ─── Modal: Guia de redefinição de senha ──────────────────
+function openResetPasswordModal(uid, user) {
+  const projectId = 'gestor-de-tarefas-primetour';
+  const authUrl   = `https://console.firebase.google.com/project/${projectId}/authentication/users`;
+
   modal.open({
     title:   `Redefinir senha — ${escHtml(user.name)}`,
     size:    'sm',
     content: `
-      <p style="color:var(--text-secondary); font-size:0.875rem; margin-bottom:16px;">
-        Defina uma nova senha para <strong>${escHtml(user.name)}</strong>.
-        A senha será aplicada em até 30 segundos.
-      </p>
-      <div class="form-group">
-        <label class="form-label">Nova senha *</label>
-        <div class="form-input-wrapper">
-          <input type="password" class="form-input has-icon-right" id="admin-new-pw"
-            placeholder="Mínimo 6 caracteres" minlength="6" autocomplete="new-password" />
-          <button type="button" class="form-input-icon-right" id="toggle-admin-pw">👁</button>
-        </div>
-        <span class="form-error-msg" id="admin-pw-error"></span>
+      <div style="text-align:center; padding:8px 0 20px;">
+        <div style="font-size:2.5rem; margin-bottom:12px;">🔑</div>
+        <p style="color:var(--text-secondary); font-size:0.875rem; line-height:1.7; margin-bottom:20px;">
+          A redefinição de senha é feita diretamente no <strong>Firebase Console</strong>.
+          Siga os passos abaixo:
+        </p>
       </div>
-      <div class="form-group">
-        <label class="form-label">Confirmar senha *</label>
-        <input type="password" class="form-input" id="admin-confirm-pw"
-          placeholder="Repita a senha" autocomplete="new-password" />
-        <span class="form-error-msg" id="admin-confirm-error"></span>
+
+      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px;">
+        ${[
+          ['1', 'Clique no botão abaixo para abrir o Firebase Console'],
+          ['2', 'Localize <strong>' + escHtml(user.name) + '</strong> na lista de usuários'],
+          ['3', 'Clique no ícone <strong>⋮</strong> à direita do usuário'],
+          ['4', 'Selecione <strong>Edit user</strong>'],
+          ['5', 'Digite a nova senha no campo <strong>Password</strong>'],
+          ['6', 'Clique em <strong>Save</strong>'],
+        ].map(([n, text]) => `
+          <div style="display:flex; align-items:flex-start; gap:10px;">
+            <div style="
+              width:24px; height:24px; border-radius:50%;
+              background:var(--brand-gold); color:var(--text-inverse);
+              font-size:0.75rem; font-weight:700;
+              display:flex; align-items:center; justify-content:center;
+              flex-shrink:0; margin-top:1px;
+            ">${n}</div>
+            <div style="font-size:0.875rem; color:var(--text-secondary); line-height:1.5; padding-top:3px;">
+              ${text}
+            </div>
+          </div>
+        `).join('')}
       </div>
-      <div id="reset-status" style="display:none;"></div>
+
+      <a href="${authUrl}" target="_blank" rel="noopener"
+        style="
+          display:block; text-align:center;
+          background:var(--brand-gold); color:var(--text-inverse);
+          padding:10px 16px; border-radius:var(--radius-md);
+          font-size:0.875rem; font-weight:600;
+          text-decoration:none;
+        ">
+        Abrir Firebase Console →
+      </a>
     `,
     footer: [
-      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
-      {
-        label: 'Redefinir senha', class: 'btn-primary', closeOnClick: false,
-        onClick: async (e, { close }) => {
-          const pw      = document.getElementById('admin-new-pw')?.value || '';
-          const confirm = document.getElementById('admin-confirm-pw')?.value || '';
-          const errPw   = document.getElementById('admin-pw-error');
-          const errConf = document.getElementById('admin-confirm-error');
-          if (errPw)   errPw.textContent   = '';
-          if (errConf) errConf.textContent = '';
-
-          if (pw.length < 6) {
-            if (errPw) errPw.textContent = 'Senha deve ter ao menos 6 caracteres.';
-            return;
-          }
-          if (pw !== confirm) {
-            if (errConf) errConf.textContent = 'As senhas não coincidem.';
-            return;
-          }
-
-          const btn = document.querySelector('.modal-footer .btn-primary');
-          if (btn) { btn.classList.add('loading'); btn.disabled = true; }
-
-          const statusEl = document.getElementById('reset-status');
-          if (statusEl) {
-            statusEl.style.display = 'block';
-            statusEl.innerHTML = `<div class="integration-test-result test-info">
-              <span>⟳</span><span>Enviando solicitação...</span></div>`;
-          }
-
-          try {
-            const currentUser = store.get('currentUser');
-            const GITHUB_TOKEN = window.PRIMETOUR_GH_TOKEN || '';
-            const REPO = 'primetour/tarefas';
-
-            // 1. Salvar solicitação no Firestore (validação server-side)
-            await setDoc(
-              doc(firestoreDb, 'password_reset_requests', uid),
-              {
-                uid,
-                newPassword:  pw,
-                requestedBy:  currentUser?.uid || 'admin',
-                createdAt:    serverTimestamp(),
-              }
-            );
-
-            // 2. Disparar GitHub Action via repository_dispatch
-            const res = await fetch(
-              `https://api.github.com/repos/${REPO}/dispatches`,
-              {
-                method:  'POST',
-                headers: {
-                  'Authorization': `Bearer ${GITHUB_TOKEN}`,
-                  'Accept':        'application/vnd.github.v3+json',
-                  'Content-Type':  'application/json',
-                },
-                body: JSON.stringify({
-                  event_type:     'reset-password',
-                  client_payload: {
-                    uid,
-                    newPassword: pw,
-                    requestedBy: currentUser?.uid || 'admin',
-                  },
-                }),
-              }
-            );
-
-            if (!res.ok) {
-              const err = await res.json().catch(() => ({}));
-              throw new Error(err.message || `GitHub API: HTTP ${res.status}`);
-            }
-
-            if (statusEl) {
-              statusEl.innerHTML = `<div class="integration-test-result test-ok">
-                <span>✓</span><span>Solicitação enviada! A senha será aplicada em até 30 segundos.</span></div>`;
-            }
-
-            // 3. Aguardar confirmação do Firestore (resultado da Action)
-            const resultRef = doc(firestoreDb, 'password_reset_results', uid);
-            let unsubscribe;
-            const waitResult = new Promise((resolve) => {
-              let timeout = setTimeout(() => { unsubscribe?.(); resolve('timeout'); }, 35000);
-              unsubscribe = onSnapshot(resultRef, (snap) => {
-                if (snap.exists()) {
-                  clearTimeout(timeout);
-                  unsubscribe();
-                  deleteDoc(resultRef).catch(() => {});
-                  resolve(snap.data().success ? 'ok' : 'error');
-                }
-              });
-            });
-
-            const result = await waitResult;
-            if (result === 'ok') {
-              toast.success(`Senha de ${user.name} redefinida com sucesso!`);
-              close();
-            } else if (result === 'timeout') {
-              toast.warning('A ação foi disparada mas demorou mais que o esperado. Verifique em GitHub → Actions.');
-              close();
-            } else {
-              toast.error('A ação falhou. Verifique em GitHub → Actions → reset-password.');
-            }
-
-          } catch (err) {
-            if (statusEl) {
-              statusEl.innerHTML = `<div class="integration-test-result test-error">
-                <span>✕</span><span>${escHtml(err.message)}</span></div>`;
-            }
-            toast.error('Erro: ' + err.message);
-          } finally {
-            if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
-          }
-        }
-      }
-    ]
+      { label: 'Fechar', class: 'btn-secondary', closeOnClick: true },
+    ],
   });
-
-  setTimeout(() => {
-    document.getElementById('toggle-admin-pw')?.addEventListener('click', () => {
-      const inp = document.getElementById('admin-new-pw');
-      if (inp) {
-        inp.type = inp.type === 'password' ? 'text' : 'password';
-        document.getElementById('toggle-admin-pw').textContent = inp.type === 'text' ? '🙈' : '👁';
-      }
-    });
-  }, 50);
 }
 
 // ─── Attach events ────────────────────────────────────────
