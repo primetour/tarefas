@@ -110,25 +110,28 @@ export async function fetchTasks({
   assigneeId = null,
   status     = null,
   priority   = null,
-  limitN     = 200,
+  limitN     = 500,
 } = {}) {
-  let q = query(collection(db, 'tasks'), orderBy('order', 'asc'), limit(limitN));
-  if (projectId)  q = query(q, where('projectId', '==', projectId));
-  if (assigneeId) q = query(q, where('assignees', 'array-contains', assigneeId));
-  if (status)     q = query(q, where('status', '==', status));
-  if (priority)   q = query(q, where('priority', '==', priority));
-
+  // Busca tudo e filtra no cliente — evita indices compostos no Firestore
+  const q    = query(collection(db, 'tasks'), orderBy('order', 'asc'), limit(limitN));
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  let tasks  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  if (projectId)  tasks = tasks.filter(t => t.projectId === projectId);
+  if (assigneeId) tasks = tasks.filter(t => (t.assignees||[]).includes(assigneeId));
+  if (status)     tasks = tasks.filter(t => t.status === status);
+  if (priority)   tasks = tasks.filter(t => t.priority === priority);
+
+  return tasks;
 }
 
 /* ─── Real-time listener ─────────────────────────────────── */
 export function subscribeToTasks(callback, filters = {}) {
-  let q = query(collection(db, 'tasks'), orderBy('order', 'asc'), limit(300));
-  if (filters.projectId) q = query(q, where('projectId', '==', filters.projectId));
+  const q = query(collection(db, 'tasks'), orderBy('order', 'asc'), limit(500));
 
   return onSnapshot(q, (snap) => {
-    const tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    let tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (filters.projectId) tasks = tasks.filter(t => t.projectId === filters.projectId);
     callback(tasks);
   });
 }

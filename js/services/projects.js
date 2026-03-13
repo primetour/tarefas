@@ -86,21 +86,18 @@ export async function getProject(projectId) {
 
 /* ─── Listar projetos ────────────────────────────────────── */
 export async function fetchProjects({ includeArchived = false } = {}) {
-  let q = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
-  if (!includeArchived) q = query(q, where('archived', '==', false));
+  const q = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return includeArchived ? all : all.filter(p => !p.archived);
 }
 
 /* ─── Real-time listener ─────────────────────────────────── */
 export function subscribeToProjects(callback) {
-  const q = query(
-    collection(db, 'projects'),
-    where('archived', '==', false),
-    orderBy('createdAt', 'desc')
-  );
+  const q = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
   return onSnapshot(q, (snap) => {
-    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(all.filter(p => !p.archived));
   });
 }
 
