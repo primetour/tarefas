@@ -329,9 +329,8 @@
   margin-left: var(--sidebar-width);
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  overflow-y: auto;
-  overflow-x: hidden;
+  min-height: 0;
+  overflow: hidden;
   transition: margin-left var(--transition-normal);
 }
 
@@ -453,7 +452,11 @@
 .page-content {
   flex: 1;
   padding: var(--space-6);
+  padding-bottom: 48px;
   animation: fadeIn 0.25s ease;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
 }
 
 .page-header {

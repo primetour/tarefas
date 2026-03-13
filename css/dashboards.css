@@ -336,6 +336,8 @@
   text-align: center;
   position: sticky;
   top: 80px;
+  max-height: calc(100vh - 112px);
+  overflow-y: auto;
 }
 .profile-avatar-wrapper {
   position: relative;
