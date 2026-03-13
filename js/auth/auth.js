@@ -31,39 +31,56 @@ import { auditLog } from './audit.js';
 
 // ─── Observer de estado de autenticação ───────────────────
 export function initAuthObserver(onReady) {
+  let readyCalled = false;
+  const callReady = () => {
+    if (!readyCalled) { readyCalled = true; onReady && onReady(); }
+  };
+
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       try {
         const profile = await fetchUserProfile(firebaseUser.uid);
-        
+
         if (!profile) {
-          // Usuário existe no Auth mas não no Firestore — criar perfil básico
-          await signOut();
+          await signOut().catch(() => {});
           toast.error('Perfil não encontrado. Contate o administrador.');
           store.set('authLoading', false);
-          onReady && onReady();
+          callReady();
           return;
         }
 
         if (!profile.active) {
-          await signOut();
+          await signOut().catch(() => {});
           toast.error('Conta desativada. Contate o administrador.');
           store.set('authLoading', false);
-          onReady && onReady();
+          callReady();
           return;
         }
 
-        // Atualizar último login
-        await updateDoc(doc(db, 'users', firebaseUser.uid), {
+        // Atualizar último login (silencioso)
+        updateDoc(doc(db, 'users', firebaseUser.uid), {
           lastLogin: serverTimestamp()
-        }).catch(() => {}); // Silencioso
+        }).catch(() => {});
 
         store.set('currentUser',     firebaseUser);
         store.set('userProfile',     profile);
         store.set('isAuthenticated', true);
         store.set('authLoading',     false);
+
+        // Audit login (silencioso — não bloqueia)
+        auditLog('auth.login', 'session', null, {
+          userName: profile.name,
+          email:    profile.email,
+        }).catch(() => {});
+
       } catch (err) {
         console.error('Auth state error:', err);
+        // Se for erro de permissão do Firestore, ainda assim redirecionar
+        if (err.code === 'permission-denied' || err.code === 'unavailable') {
+          store.set('currentUser',     firebaseUser);
+          store.set('isAuthenticated', true);
+          toast.warning('Aviso: problema ao carregar perfil. Verifique as regras do Firestore.');
+        }
         store.set('authLoading', false);
       }
     } else {
@@ -73,7 +90,7 @@ export function initAuthObserver(onReady) {
       store.set('authLoading',     false);
     }
 
-    onReady && onReady();
+    callReady();
   });
 }
 
@@ -161,13 +178,16 @@ export async function updateUserProfile(uid, data) {
     throw new Error('Permissão negada.');
   }
 
-  // Campos permitidos para update
-  const allowedFields = ['name', 'department', 'phone'];
-  const adminFields   = ['role', 'active'];
+  // Campos permitidos para update (owner ou admin)
+  const allowedFields = [
+    'name', 'department', 'phone', 'jobTitle', 'bio',
+    'avatarColor', 'prefs', 'firstLogin',
+  ];
+  const adminFields = ['role', 'active'];
 
   const updateData = {};
   allowedFields.forEach(f => { if (data[f] !== undefined) updateData[f] = data[f]; });
-  
+
   if (store.isAdmin()) {
     adminFields.forEach(f => { if (data[f] !== undefined) updateData[f] = data[f]; });
   }
