@@ -9,7 +9,7 @@ import {
   createTask, updateTask, deleteTask,
   addSubtask, toggleSubtask, addComment,
   STATUSES, PRIORITIES,
-  NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
+  NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS, NUCLEOS,
 } from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
 
@@ -57,6 +57,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     projectId: projectId||null, assignees:[], tags:[],
     startDate:null, dueDate:null, subtasks:[], comments:[],
     type:'', newsletterStatus:'', requestingArea:'', clientEmail:'',
+    nucleos:[], outOfCalendar:false,
   };
 
   let currentTags      = [...(task.tags||[])];
@@ -181,6 +182,32 @@ function buildHTML(task, users, projects, tags, assignees, isEdit) {
           ${opt(NEWSLETTER_STATUSES,'value','label',task.newsletterStatus||'')}
         </select>
       </div>
+      <div class="task-detail-field" id="out-of-calendar-field" style="display:${showNL?'flex':'none'};align-items:center;gap:10px;">
+        <input type="checkbox" id="tm-out-of-calendar" ${task.outOfCalendar?'checked':''}
+          style="width:16px;height:16px;accent-color:var(--brand-gold);cursor:pointer;flex-shrink:0;" />
+        <label for="tm-out-of-calendar"
+          style="font-size:0.875rem;color:var(--text-secondary);cursor:pointer;line-height:1.4;">
+          Newsletter fora do calendário
+        </label>
+      </div>
+      <div class="task-detail-field">
+        <div class="task-detail-label">Núcleos</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0;">
+          ${NUCLEOS.map(n => {
+            const checked = (task.nucleos||[]).includes(n.value);
+            return `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;
+              padding:4px 10px;border-radius:var(--radius-full);font-size:0.8125rem;
+              border:1px solid ${checked?'var(--brand-gold)':'var(--border-subtle)'};
+              background:${checked?'rgba(212,168,67,0.12)':'var(--bg-surface)'};
+              color:${checked?'var(--brand-gold)':'var(--text-secondary)'};
+              transition:all 0.15s;" class="nucleo-chip">
+              <input type="checkbox" value="${n.value}" class="tm-nucleo-check" ${checked?'checked':''}
+                style="display:none;" />
+              ${esc(n.label)}
+            </label>`;
+          }).join('')}
+        </div>
+      </div>
       <div class="task-detail-field">
         <div class="task-detail-label">Área solicitante</div>
         <select class="form-select" id="tm-area" style="padding:8px 32px 8px 12px;">
@@ -260,10 +287,26 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
     if (btn) { const chip=btn.closest('.tag-chip'); const tag=chip?.dataset.tag; if(tag){currentTags.splice(currentTags.indexOf(tag),1);chip.remove();} }
   });
 
-  // Type → newsletter
+  // Type → newsletter fields
   document.getElementById('tm-type')?.addEventListener('change', (e) => {
-    const f = document.getElementById('newsletter-status-field');
-    if (f) f.style.display = e.target.value==='newsletter' ? 'block' : 'none';
+    const isNL = e.target.value === 'newsletter';
+    const f1 = document.getElementById('newsletter-status-field');
+    const f2 = document.getElementById('out-of-calendar-field');
+    if (f1) f1.style.display = isNL ? 'block' : 'none';
+    if (f2) f2.style.display = isNL ? 'flex' : 'none';
+  });
+
+  // Nucleo chip toggle (styled checkboxes)
+  document.querySelectorAll('.nucleo-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const cb = chip.querySelector('.tm-nucleo-check');
+      if (!cb) return;
+      cb.checked = !cb.checked;
+      const checked = cb.checked;
+      chip.style.borderColor     = checked ? 'var(--brand-gold)' : 'var(--border-subtle)';
+      chip.style.background      = checked ? 'rgba(212,168,67,0.12)' : 'var(--bg-surface)';
+      chip.style.color           = checked ? 'var(--brand-gold)' : 'var(--text-secondary)';
+    });
   });
 
   // Assignees
@@ -358,6 +401,10 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave) {
     startDate: startVal ? new Date(startVal+'T00:00:00') : null,
     dueDate:   dueVal   ? new Date(dueVal  +'T23:59:59') : null,
   };
+  // Collect nucleos from checked chips
+  data.nucleos = Array.from(document.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);
+  data.outOfCalendar = document.getElementById('tm-out-of-calendar')?.checked || false;
+
   if(isEdit) data._prevStatus=task.status;
 
   const btn=document.querySelector('.modal-footer .btn-primary');
