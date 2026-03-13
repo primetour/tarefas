@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Avaliação de Satisfação — PRIMETOUR</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-base:      #0A1628;
+      --bg-card:      #0F1E35;
+      --bg-surface:   #162035;
+      --bg-elevated:  #1C2A42;
+      --bg-hover:     rgba(255,255,255,0.04);
+      --border-subtle:#1E2D47;
+      --border-default:#253550;
+      --border-accent: rgba(212,168,67,0.4);
+      --text-primary:  #F1F5F9;
+      --text-secondary:#94A3B8;
+      --text-muted:    #64748B;
+      --brand-gold:    #D4A843;
+      --color-success: #22C55E;
+      --color-danger:  #EF4444;
+      --radius-md:  10px;
+      --radius-lg:  14px;
+      --radius-xl:  20px;
+      --font-display:'Cormorant Garamond', Georgia, serif;
+      --font-ui:    'Outfit', system-ui, sans-serif;
+      --transition: 0.2s ease;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-ui);
+      background: var(--bg-base);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-xl);
+      padding: 40px 36px;
+      max-width: 520px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 24px 48px rgba(0,0,0,0.5);
+    }
+    .brand {
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--brand-gold);
+      letter-spacing: 0.15em;
+      margin-bottom: 28px;
+    }
+    .task-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-default);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: 1.375rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+    .subtitle {
+      font-size: 0.9375rem;
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+      line-height: 1.6;
+    }
+    .score-picker {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 28px;
+    }
+    .score-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 14px 10px;
+      border-radius: var(--radius-md);
+      border: 2px solid var(--border-default);
+      background: var(--bg-surface);
+      cursor: pointer;
+      transition: all var(--transition);
+      min-width: 76px;
+      user-select: none;
+      text-decoration: none;
+    }
+    .score-btn:hover {
+      border-color: var(--brand-gold);
+      background: rgba(212,168,67,0.08);
+      transform: translateY(-3px);
+    }
+    .score-btn.selected {
+      border-color: var(--brand-gold);
+      background: rgba(212,168,67,0.12);
+      box-shadow: 0 0 0 3px rgba(212,168,67,0.15);
+      transform: translateY(-3px);
+    }
+    .score-btn-emoji { font-size: 1.875rem; line-height: 1; }
+    .score-btn-num   { font-size: 1.125rem; font-weight: 700; color: var(--text-primary); }
+    .score-btn-lbl   { font-size: 0.625rem; color: var(--text-secondary); text-align: center; max-width: 72px; line-height: 1.3; }
+    textarea {
+      width: 100%;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 0.9375rem;
+      padding: 14px 16px;
+      resize: none;
+      outline: none;
+      transition: border-color var(--transition);
+      margin-bottom: 20px;
+    }
+    textarea:focus { border-color: var(--brand-gold); }
+    textarea::placeholder { color: var(--text-muted); }
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--brand-gold), #C49636);
+      color: #0A1628;
+      font-family: var(--font-ui);
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      border: none;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .btn-submit:hover   { filter: brightness(1.08); transform: translateY(-1px); }
+    .btn-submit:active  { transform: translateY(0); }
+    .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+    .error-msg {
+      color: #EF4444;
+      font-size: 0.875rem;
+      margin-bottom: 12px;
+    }
+    /* Success state */
+    .success-icon { font-size: 4rem; margin-bottom: 16px; display: block; }
+    .success-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--color-success);
+      margin-bottom: 8px;
+    }
+    .success-msg {
+      font-size: 0.9375rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+    /* Loading */
+    .loading-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--bg-elevated);
+      border-top-color: var(--brand-gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .dimmed { opacity: 0.45; pointer-events: none; }
+    @media (max-width: 480px) {
+      .card { padding: 28px 20px; }
+      .score-picker { gap: 6px; }
+      .score-btn { min-width: 56px; padding: 10px 6px; }
+      .score-btn-emoji { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="main-card">
+    <div class="brand">PRIMETOUR</div>
+    <div class="loading-spinner"></div>
+    <p style="color:var(--text-muted);">Carregando pesquisa...</p>
+  </div>
+
+  <!-- Firebase (read-only para resposta pública) -->
+  <script type="module">
+    import { initializeApp }       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import { getFirestore, doc, getDoc, updateDoc, serverTimestamp, collection, query, where, limit, getDocs }
+      from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+    // ─── Ler config do parent frame ou URL params ──────────
+    const params    = new URLSearchParams(window.location.search);
+    const hashQuery = new URLSearchParams(window.location.hash.replace(/^#csat-response\?/, ''));
+    const token     = params.get('token') || hashQuery.get('token');
+    const surveyId  = params.get('id')    || hashQuery.get('id');
+    const preScore  = parseInt(params.get('score') || hashQuery.get('score') || '0');
+
+    const SCORE_DATA = {
+      1: { emoji:'😞', label:'Muito insatisfeito', color:'#EF4444' },
+      2: { emoji:'😕', label:'Insatisfeito',       color:'#F97316' },
+      3: { emoji:'😐', label:'Neutro',             color:'#F59E0B' },
+      4: { emoji:'🙂', label:'Satisfeito',         color:'#22C55E' },
+      5: { emoji:'😄', label:'Muito satisfeito',   color:'#16A34A' },
+    };
+
+    const card = document.getElementById('main-card');
+
+    // ─── Load Firebase config from parent app (same origin) ──
+    let db;
+    try {
+      // Try to read firebaseConfig from sibling config.js
+      const cfgModule = await import('./js/config.js');
+      const app = initializeApp(cfgModule.firebaseConfig, 'csat-public');
+      db = getFirestore(app);
+    } catch(e) {
+      showError('Configuração do Firebase não encontrada. Verifique o arquivo js/config.js.');
+      throw e;
+    }
+
+    // ─── Load survey ──────────────────────────────────────
+    let survey = null;
+    try {
+      if (surveyId) {
+        const snap = await getDoc(doc(db, 'csat_surveys', surveyId));
+        if (snap.exists()) survey = { id: snap.id, ...snap.data() };
+      } else if (token) {
+        const q   = query(collection(db, 'csat_surveys'), where('token','==',token), limit(1));
+        const snp = await getDocs(q);
+        if (!snp.empty) survey = { id: snp.docs[0].id, ...snp.docs[0].data() };
+      }
+    } catch(e) {
+      showError('Erro ao carregar pesquisa: ' + e.message);
+      throw e;
+    }
+
+    if (!survey) {
+      return showError('Pesquisa não encontrada ou link inválido.');
+    }
+
+    // Expirado?
+    const expiresAt = survey.expiresAt?.toDate ? survey.expiresAt.toDate() : new Date(survey.expiresAt || 0);
+    if (expiresAt < new Date()) {
+      return showExpired(survey);
+    }
+
+    // Já respondido?
+    if (survey.status === 'responded') {
+      return showAlreadyDone(survey);
+    }
+
+    // ─── Render form ──────────────────────────────────────
+    let selectedScore = preScore || 0;
+    renderForm(survey, selectedScore);
+
+    function renderForm(s, initScore) {
+      card.innerHTML = `
+        <div class="brand">PRIMETOUR</div>
+        <div class="task-chip">✓ ${escHtml(s.taskTitle)}</div>
+        <h1>Como foi sua experiência?</h1>
+        <p class="subtitle">${s.customMessage || 'Sua opinião é muito importante para nós. Leva menos de 1 minuto!'}</p>
+
+        <div class="score-picker" id="score-picker">
+          ${[1,2,3,4,5].map(n => {
+            const sd = SCORE_DATA[n];
+            return `<button class="score-btn ${n===initScore?'selected':''}" data-score="${n}" type="button">
+              <span class="score-btn-emoji">${sd.emoji}</span>
+              <span class="score-btn-num">${n}</span>
+              <span class="score-btn-lbl">${sd.label}</span>
+            </button>`;
+          }).join('')}
+        </div>
+
+        <p id="score-error" class="error-msg" style="display:none;">Selecione uma nota para continuar.</p>
+
+        <textarea id="comment-input" rows="4" maxlength="500"
+          placeholder="Comentário opcional — conte-nos mais sobre sua experiência..."></textarea>
+
+        <button class="btn-submit" id="submit-btn" type="button">Enviar avaliação</button>
+      `;
+
+      // Score selection
+      card.querySelectorAll('.score-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          selectedScore = parseInt(btn.dataset.score);
+          card.querySelectorAll('.score-btn').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          document.getElementById('score-error').style.display = 'none';
+        });
+      });
+
+      // Submit
+      document.getElementById('submit-btn').addEventListener('click', async () => {
+        if (!selectedScore) {
+          document.getElementById('score-error').style.display = 'block';
+          return;
+        }
+        const btn     = document.getElementById('submit-btn');
+        const comment = document.getElementById('comment-input').value.trim();
+        btn.disabled  = true;
+        btn.textContent = 'Enviando...';
+
+        try {
+          await updateDoc(doc(db, 'csat_surveys', s.id), {
+            score:       selectedScore,
+            comment,
+            status:      'responded',
+            respondedAt: serverTimestamp(),
+          });
+
+          showSuccess(selectedScore, comment);
+        } catch(err) {
+          btn.disabled    = false;
+          btn.textContent = 'Enviar avaliação';
+          showError('Erro ao enviar: ' + err.message);
+        }
+      });
+    }
+
+    function showSuccess(score, comment) {
+      const sd = SCORE_DATA[score];
+      card.innerHTML = `
+        <div class="brand">PRIMETOUR</div>
+        <span class="success-icon">${sd.emoji}</span>
+        <div class="success-title" style="color:${sd.color};">Obrigado pelo feedback!</div>
+        <p class="success-msg">
+          Você nos deu nota <strong style="color:${sd.color};">${score}/5 — ${sd.label}</strong>.<br>
+          ${comment ? `<em style="display:block;margin-top:8px;color:var(--text-muted);">"${escHtml(comment)}"</em>` : ''}
+          <br>Sua avaliação é muito importante para continuarmos melhorando nossos serviços.
+        </p>
+        <div style="margin-top:24px;font-size:0.875rem;color:var(--text-muted);">
+          PRIMETOUR — Gestão de Tarefas
+        </div>
+      `;
+    }
+
+    function showExpired(s) {
+      card.innerHTML = `
+        <div class="brand">PRIMETOUR</div>
+        <span class="success-icon">⏰</span>
+        <h1 style="color:var(--text-secondary);">Link expirado</h1>
+        <p class="subtitle">Esta pesquisa expirou. Entre em contato com nossa equipe caso precise registrar seu feedback.</p>
+      `;
+    }
+
+    function showAlreadyDone(s) {
+      const sd = s.score ? SCORE_DATA[s.score] : null;
+      card.innerHTML = `
+        <div class="brand">PRIMETOUR</div>
+        <span class="success-icon">${sd?.emoji||'✓'}</span>
+        <div class="success-title">Você já respondeu!</div>
+        <p class="success-msg">
+          Você já enviou sua avaliação ${sd ? `com nota <strong style="color:${sd.color};">${s.score}/5</strong>` : ''} para esta tarefa.<br>
+          Obrigado pela participação!
+        </p>
+      `;
+    }
+
+    function showError(msg) {
+      card.innerHTML = `
+        <div class="brand">PRIMETOUR</div>
+        <span class="success-icon">⚠</span>
+        <h1 style="color:var(--color-danger);">Ops!</h1>
+        <p class="subtitle">${escHtml(msg)}</p>
+      `;
+    }
+
+    function escHtml(s) {
+      return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+  </script>
+</body>
+</html>
