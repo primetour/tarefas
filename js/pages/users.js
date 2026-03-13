@@ -586,11 +586,11 @@ async function openResetPasswordModal(uid, user) {
 
             // 2. Disparar GitHub Action via repository_dispatch
             const res = await fetch(
-              \`https://api.github.com/repos/\${REPO}/dispatches\`,
+              `https://api.github.com/repos/${REPO}/dispatches`,
               {
                 method:  'POST',
                 headers: {
-                  'Authorization': \`Bearer \${GITHUB_TOKEN}\`,
+                  'Authorization': `Bearer ${GITHUB_TOKEN}`,
                   'Accept':        'application/vnd.github.v3+json',
                   'Content-Type':  'application/json',
                 },
@@ -607,7 +607,7 @@ async function openResetPasswordModal(uid, user) {
 
             if (!res.ok) {
               const err = await res.json().catch(() => ({}));
-              throw new Error(err.message || \`GitHub API: HTTP \${res.status}\`);
+              throw new Error(err.message || `GitHub API: HTTP ${res.status}`);
             }
 
             if (statusEl) {
@@ -632,7 +632,7 @@ async function openResetPasswordModal(uid, user) {
 
             const result = await waitResult;
             if (result === 'ok') {
-              toast.success(\`Senha de \${user.name} redefinida com sucesso!\`);
+              toast.success(`Senha de ${user.name} redefinida com sucesso!`);
               close();
             } else if (result === 'timeout') {
               toast.warning('A ação foi disparada mas demorou mais que o esperado. Verifique em GitHub → Actions.');
