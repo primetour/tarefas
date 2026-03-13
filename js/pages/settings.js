@@ -315,7 +315,7 @@ function settingToggle(id, label, desc, checked) {
         <div style="font-size:0.875rem; font-weight:500; color:var(--text-primary);">${label}</div>
         ${desc ? `<div style="font-size:0.8125rem; color:var(--text-muted); margin-top:2px;">${desc}</div>` : ''}
       </div>
-      <label class="toggle">
+      <label class="toggle-switch">
         <input type="checkbox" id="${id}" ${checked?'checked':''} />
         <span class="toggle-slider"></span>
       </label>

@@ -174,7 +174,7 @@ function renderGrid() {
             </div>
           </div>
           ${connected ? `
-            <label class="toggle" style="flex-shrink:0;" title="${connected?'Desabilitar':'Habilitar'}">
+            <label class="toggle-switch" style="flex-shrink:0;" title="${connected?'Desabilitar':'Habilitar'}">
               <input type="checkbox" class="int-toggle" data-id="${def.id}" ${connected?'checked':''} />
               <span class="toggle-slider"></span>
             </label>

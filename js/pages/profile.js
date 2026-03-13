@@ -187,7 +187,7 @@ export async function renderProfile(container) {
                     <div style="font-size:0.875rem; font-weight:500; color:var(--text-primary);">${p.label}</div>
                     <div style="font-size:0.8125rem; color:var(--text-muted); margin-top:2px;">${p.desc}</div>
                   </div>
-                  <label class="toggle">
+                  <label class="toggle-switch">
                     <input type="checkbox" id="${p.id}" ${p.checked ? 'checked' : ''} />
                     <span class="toggle-slider"></span>
                   </label>
