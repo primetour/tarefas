@@ -10,7 +10,7 @@ import {
 import { db }                                    from '../firebase.js';
 import { store }                                 from '../store.js';
 import { createUser, updateUserProfile, deactivateUser, reactivateUser } from '../auth/auth.js';
-import { sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js';
 import { auth } from '../firebase.js';
 import { toast }                                 from '../components/toast.js';
 import { modal }                                 from '../components/modal.js';
@@ -509,77 +509,64 @@ async function handleUserSave(userId, isEdit, closeModal) {
   }
 }
 
-// ─── Modal: Redefinir senha (admin) ───────────────────────
+// ─── Modal: Redefinir senha (admin via Cloud Function) ────
 async function openResetPasswordModal(uid, user) {
-  // Admin triggers password reset email via Firebase Auth
-  const confirmed = await modal.confirm({
-    title:       'Redefinir senha',
-    message:     `Enviar e-mail de redefinição de senha para <strong>${escHtml(user.name)}</strong>?<br><br>
-                  <span style="color:var(--text-muted); font-size:0.875rem;">
-                  Um link de redefinição será enviado para <strong>${escHtml(user.email)}</strong>.
-                  O link expira em 1 hora.
-                  </span>`,
-    confirmText: 'Enviar e-mail',
-    icon:        '🔑',
-  });
-
-  if (!confirmed) return;
-
-  try {
-    await sendPasswordResetEmail(auth, user.email);
-    toast.success(`E-mail de redefinição enviado para ${user.email}!`);
-  } catch (err) {
-    // If email sending fails (not configured), offer manual password set
-    if (err.code === 'auth/missing-android-pkg-name' || err.code === 'auth/unauthorized-continue-uri' || err.code) {
-      openManualPasswordModal(uid, user);
-    } else {
-      toast.error('Erro ao enviar e-mail: ' + err.message);
-    }
-  }
-}
-
-// ─── Modal: Definir senha manualmente (admin) ─────────────
-function openManualPasswordModal(uid, user) {
   modal.open({
-    title:   `Definir nova senha — ${escHtml(user.name)}`,
+    title:   `Redefinir senha — ${escHtml(user.name)}`,
+    size:    'sm',
     content: `
       <p style="color:var(--text-secondary); font-size:0.875rem; margin-bottom:16px;">
-        Como administrador, você pode definir uma senha temporária para o usuário.
-        O usuário deverá trocá-la no próximo acesso.
+        Defina uma nova senha para <strong>${escHtml(user.name)}</strong>.
+        O usuário poderá acessar com a nova senha imediatamente.
       </p>
       <div class="form-group">
         <label class="form-label">Nova senha *</label>
         <div class="form-input-wrapper">
           <input type="password" class="form-input has-icon-right" id="admin-new-pw"
-            placeholder="Mínimo 6 caracteres" minlength="6" />
+            placeholder="Mínimo 6 caracteres" minlength="6" autocomplete="new-password" />
           <button type="button" class="form-input-icon-right" id="toggle-admin-pw">👁</button>
         </div>
-        <span class="form-hint">
-          ⚠ A senha será definida imediatamente. Comunique ao usuário.
-        </span>
+        <span class="form-error-msg" id="admin-pw-error"></span>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirmar senha *</label>
+        <input type="password" class="form-input" id="admin-confirm-pw"
+          placeholder="Repita a senha" autocomplete="new-password" />
+        <span class="form-error-msg" id="admin-confirm-error"></span>
       </div>
     `,
     footer: [
       { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
       {
-        label: 'Definir senha', class: 'btn-primary', closeOnClick: false,
+        label: 'Redefinir senha', class: 'btn-primary', closeOnClick: false,
         onClick: async (e, { close }) => {
-          const pw = document.getElementById('admin-new-pw')?.value;
-          if (!pw || pw.length < 6) {
-            toast.warning('Senha deve ter ao menos 6 caracteres.');
+          const pw      = document.getElementById('admin-new-pw')?.value || '';
+          const confirm = document.getElementById('admin-confirm-pw')?.value || '';
+          const errPw   = document.getElementById('admin-pw-error');
+          const errConf = document.getElementById('admin-confirm-error');
+          if (errPw)   errPw.textContent   = '';
+          if (errConf) errConf.textContent = '';
+
+          if (pw.length < 6) {
+            if (errPw) errPw.textContent = 'Senha deve ter ao menos 6 caracteres.';
             return;
           }
+          if (pw !== confirm) {
+            if (errConf) errConf.textContent = 'As senhas não coincidem.';
+            return;
+          }
+
           const btn = document.querySelector('.modal-footer .btn-primary');
           if (btn) { btn.classList.add('loading'); btn.disabled = true; }
+
           try {
-            // Client SDK cannot set other users' passwords directly.
-            // Store a reset request in Firestore for a Cloud Function to process,
-            // OR send reset email as fallback.
-            await sendPasswordResetEmail(auth, user.email);
-            toast.success(`E-mail de redefinição enviado para ${user.email}.`);
+            const functions     = getFunctions(undefined, 'us-central1');
+            const setPassword   = httpsCallable(functions, 'setUserPassword');
+            await setPassword({ uid, newPassword: pw });
+            toast.success(`Senha de ${user.name} redefinida com sucesso!`);
             close();
-          } catch(err) {
-            toast.error('Erro: ' + err.message);
+          } catch (err) {
+            toast.error('Erro: ' + (err.message || 'Falha ao redefinir senha.'));
           } finally {
             if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
           }
