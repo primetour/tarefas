@@ -1,0 +1,278 @@
+/* ============================================================
+   PRIMETOUR — CSAT CSS (Etapa 4)
+   ============================================================ */
+
+/* ─── CSAT Stats Row ──────────────────────────────────────── */
+.csat-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+/* ─── Score Display ───────────────────────────────────────── */
+.score-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.score-star {
+  font-size: 1.125rem;
+  line-height: 1;
+  transition: transform var(--transition-fast);
+}
+.score-star.filled  { color: #F59E0B; }
+.score-star.empty   { color: var(--border-default); }
+.score-value {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-left: 4px;
+}
+
+/* ─── NPS Gauge ───────────────────────────────────────────── */
+.nps-gauge {
+  position: relative;
+  width: 140px;
+  height: 70px;
+  margin: 0 auto 8px;
+}
+.nps-value {
+  font-size: 1.875rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1;
+}
+.nps-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ─── Survey Card ─────────────────────────────────────────── */
+.survey-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+.survey-card:hover {
+  border-color: var(--border-accent);
+  box-shadow: var(--shadow-sm);
+}
+.survey-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+.survey-card-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.survey-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.survey-card-comment {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border-left: 3px solid var(--border-accent);
+  padding: 8px 12px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-style: italic;
+  margin-top: 10px;
+  line-height: 1.5;
+}
+.survey-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ─── Score Picker (big buttons) ─────────────────────────── */
+.score-picker {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.score-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 10px;
+  border-radius: var(--radius-lg);
+  border: 2px solid var(--border-subtle);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-width: 72px;
+  user-select: none;
+}
+.score-btn:hover {
+  border-color: var(--brand-gold);
+  background: rgba(212,168,67,0.08);
+  transform: translateY(-2px);
+}
+.score-btn.selected {
+  border-color: var(--brand-gold);
+  background: rgba(212,168,67,0.12);
+  box-shadow: 0 0 0 3px rgba(212,168,67,0.15);
+}
+.score-btn-emoji  { font-size: 1.75rem; line-height: 1; }
+.score-btn-num    { font-size: 1.125rem; font-weight: 700; color: var(--text-primary); }
+.score-btn-label  { font-size: 0.625rem; color: var(--text-muted); text-align: center; max-width: 70px; }
+
+/* ─── Distribution Bar ────────────────────────────────────── */
+.dist-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.dist-bar-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 20px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.dist-bar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.dist-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+}
+.dist-bar-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ─── Response Page (standalone) ─────────────────────────── */
+.csat-response-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+  padding: 24px 16px;
+}
+.csat-response-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 40px;
+  max-width: 520px;
+  width: 100%;
+  text-align: center;
+  box-shadow: var(--shadow-xl);
+}
+.csat-brand-logo {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--brand-gold);
+  letter-spacing: 0.1em;
+  margin-bottom: 24px;
+}
+.csat-response-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.csat-response-subtitle {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  margin-bottom: 28px;
+  line-height: 1.6;
+}
+.csat-success-icon {
+  font-size: 3.5rem;
+  margin-bottom: 16px;
+  display: block;
+}
+
+/* ─── Survey Modal ────────────────────────────────────────── */
+.csat-email-preview {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.csat-email-header {
+  background: var(--bg-elevated);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.csat-email-body {
+  padding: 16px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+/* ─── Filters ─────────────────────────────────────────────── */
+.csat-status-filter {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.csat-status-pill {
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+}
+.csat-status-pill.active {
+  background: rgba(212,168,67,0.15);
+  color: var(--brand-gold);
+  border-color: rgba(212,168,67,0.4);
+}
+
+/* ─── Responsive ──────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .score-picker      { gap: 6px; }
+  .score-btn         { min-width: 56px; padding: 10px 6px; }
+  .score-btn-emoji   { font-size: 1.5rem; }
+  .csat-response-card { padding: 24px 16px; }
+}
