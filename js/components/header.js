@@ -118,7 +118,15 @@ export class Header {
     avatarBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
       const isVisible = dropdown.style.display !== 'none';
-      dropdown.style.display = isVisible ? 'none' : 'block';
+      if (isVisible) {
+        dropdown.style.display = 'none';
+      } else {
+        // Position dropdown using fixed coords from button rect
+        const rect = avatarBtn.getBoundingClientRect();
+        dropdown.style.top    = (rect.bottom + 6) + 'px';
+        dropdown.style.right  = (window.innerWidth - rect.right) + 'px';
+        dropdown.style.display = 'block';
+      }
     });
 
     document.addEventListener('click', () => {
