@@ -4,7 +4,7 @@
  */
 
 import { store }         from '../store.js';
-import { fetchTasks, PRIORITY_MAP, STATUS_MAP, NEWSLETTER_STATUSES, TASK_TYPES } from '../services/tasks.js';
+import { fetchTasks, PRIORITY_MAP, STATUS_MAP, NEWSLETTER_STATUSES, TASK_TYPES, NUCLEOS } from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { toast }         from '../components/toast.js';
@@ -105,6 +105,7 @@ export async function renderDashboard(container) {
                       ${t.requestingArea ? `<span style="font-size:0.6875rem;color:var(--text-muted);">📍 ${esc(t.requestingArea)}</span>` : ''}
                       ${typeLabel ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${esc(typeLabel)}</span>` : ''}
                       ${nlLabel ? `<span style="font-size:0.6875rem;color:var(--brand-gold);">↳ ${esc(nlLabel)}</span>` : ''}
+                      ${(t.nucleos||[]).length ? `<span style="font-size:0.6875rem;color:var(--text-muted);">◈ ${(t.nucleos||[]).map(n=>NUCLEOS.find(x=>x.value===n)?.label||n).join(', ')}</span>` : ''}
                       ${t.dueDate ? `<span class="text-xs" style="color:${dueColor(t.dueDate,isDone)};">📅 ${fmtShort(t.dueDate)}</span>` : ''}
                     </div>
                   </div>

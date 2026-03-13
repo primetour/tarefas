@@ -9,7 +9,7 @@ import { modal }  from '../components/modal.js';
 import {
   fetchTasks, subscribeToTasks, toggleTaskComplete,
   STATUSES, PRIORITIES, STATUS_MAP, PRIORITY_MAP,
-  NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
+  NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS, NUCLEOS,
 } from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
 import { openTaskModal } from '../components/taskModal.js';
@@ -30,6 +30,7 @@ let filterProject  = '';
 let filterAssignee = '';
 let filterArea     = '';
 let filterType     = '';
+let filterNucleo   = '';
 
 /* ─── Render principal ───────────────────────────────────── */
 export async function renderTasks(container) {
@@ -78,6 +79,10 @@ export async function renderTasks(container) {
         <option value="">Todas as áreas</option>
         ${REQUESTING_AREAS.map(a=>`<option value="${a}">${esc(a)}</option>`).join('')}
       </select>
+      <select class="filter-select" id="filter-nucleo">
+        <option value="">Todos os núcleos</option>
+        ${NUCLEOS.map(n=>`<option value="${n.value}">${esc(n.label)}</option>`).join('')}
+      </select>
       <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
         <label style="font-size:0.8125rem; color:var(--text-muted);">Agrupar:</label>
         <select class="filter-select" id="group-by">
@@ -86,6 +91,7 @@ export async function renderTasks(container) {
           <option value="project">Por projeto</option>
           <option value="area">Por área</option>
           <option value="type">Por tipo</option>
+          <option value="nucleo">Por núcleo</option>
           <option value="none">Sem agrupamento</option>
         </select>
       </div>
@@ -145,6 +151,7 @@ function applyFilters() {
   if (filterAssignee) result = result.filter(t => t.assignees?.includes(filterAssignee));
   if (filterArea)     result = result.filter(t => t.requestingArea === filterArea);
   if (filterType)     result = result.filter(t => t.type === filterType);
+  if (filterNucleo)   result = result.filter(t => (t.nucleos||[]).includes(filterNucleo));
 
   filteredTasks = result;
 
@@ -269,8 +276,9 @@ function renderTaskRow(task) {
       </div>
       <div>
         <div class="task-row-title">${esc(task.title)}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;align-items:center;">
           <span class="badge badge-priority-${task.priority}" style="font-size:0.6rem;">${prio.label}</span>
+          ${(task.nucleos||[]).length ? `<span style="font-size:0.6875rem;color:var(--text-muted);">◈ ${(task.nucleos||[]).map(n=>NUCLEOS.find(x=>x.value===n)?.label||n).join(', ')}</span>` : ''}
           ${task.tags?.length ? task.tags.slice(0,2).map(t=>`<span style="font-size:0.6875rem;color:var(--text-muted);">#${esc(t)}</span>`).join('') : ''}
           ${project ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${project.icon} ${esc(project.name)}</span>` : ''}
         </div>
@@ -347,6 +355,15 @@ function buildGroups() {
       tasks: filteredTasks.filter(task => (task.type||'') === (t.value||'')),
     })).filter(g => g.tasks.length > 0);
   }
+  if (groupBy === 'nucleo') {
+    const groups = NUCLEOS.map(n => ({
+      key: n.value, label: n.label, color: '#2EC4B6',
+      tasks: filteredTasks.filter(t => (t.nucleos||[]).includes(n.value)),
+    })).filter(g => g.tasks.length > 0);
+    const noNucleo = filteredTasks.filter(t => !(t.nucleos||[]).length);
+    if (noNucleo.length) groups.push({ key:'none', label:'Sem núcleo', color:'#6B7280', tasks: noNucleo });
+    return groups;
+  }
   return [];
 }
 
@@ -369,6 +386,7 @@ function _attachPageEvents() {
   document.getElementById('filter-assignee')?.addEventListener('change', e => { filterAssignee = e.target.value; applyFilters(); });
   document.getElementById('filter-type')?.addEventListener('change', e => { filterType = e.target.value; applyFilters(); });
   document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
+  document.getElementById('filter-nucleo')?.addEventListener('change', e => { filterNucleo = e.target.value; applyFilters(); });
   document.getElementById('group-by')?.addEventListener('change', e => { groupBy = e.target.value; renderTaskList(); });
 }
 
@@ -455,7 +473,7 @@ function getDueClass(ts, done) {
 }
 
 function exportCSV() {
-  const headers = ['Título','Status','Prioridade','Tipo','Etapa Newsletter','Área Solicitante','Prazo','Projeto','Responsáveis','Tags'];
+  const headers = ['Título','Status','Prioridade','Tipo','Etapa Newsletter','Área Solicitante','Núcleos','Fora do Calendário','Prazo','Projeto','Responsáveis','Tags'];
   const users   = store.get('users') || [];
   const rows = filteredTasks.map(t => {
     const project = allProjects.find(p=>p.id===t.projectId);
@@ -466,10 +484,12 @@ function exportCSV() {
     const typeLabel = TASK_TYPES?.find(x=>x.value===t.type)?.label||'';
     const nlLabel   = t.type==='newsletter'
       ? (NEWSLETTER_STATUSES?.find(s=>s.value===t.newsletterStatus)?.label||'') : '';
+    const nucleosLabel = (t.nucleos||[]).map(n=>NUCLEOS.find(x=>x.value===n)?.label||n).join('; ');
     return [
       t.title, STATUS_MAP[t.status]?.label||t.status,
       PRIORITY_MAP[t.priority]?.label||t.priority,
       typeLabel, nlLabel, t.requestingArea||'',
+      nucleosLabel, t.outOfCalendar?'Sim':'Não',
       due, project?.name||'', assigneeNames, (t.tags||[]).join('; ')
     ];
   });
