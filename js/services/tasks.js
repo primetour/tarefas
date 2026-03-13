@@ -15,12 +15,40 @@ import { auditLog } from '../auth/audit.js';
 
 /* ─── Constantes ─────────────────────────────────────────── */
 export const STATUSES = [
-  { value: 'backlog',     label: 'Backlog',       color: '#6B7280' },
-  { value: 'todo',        label: 'A Fazer',        color: '#38BDF8' },
+  { value: 'not_started', label: 'Não iniciado',   color: '#38BDF8' },
   { value: 'in_progress', label: 'Em Andamento',   color: '#F59E0B' },
   { value: 'review',      label: 'Em Revisão',     color: '#A78BFA' },
+  { value: 'rework',      label: 'Retrabalho',     color: '#F97316' },
   { value: 'done',        label: 'Concluída',      color: '#22C55E' },
   { value: 'cancelled',   label: 'Cancelada',      color: '#EF4444' },
+];
+
+// Sub-status para tarefas do tipo Newsletter
+export const NEWSLETTER_STATUSES = [
+  { value: 'pauta',           label: 'Pauta'            },
+  { value: 'conteudo_tecnico',label: 'Conteúdo técnico' },
+  { value: 'redacao',         label: 'Redação'          },
+  { value: 'design',          label: 'Design'           },
+  { value: 'revisao',         label: 'Revisão'          },
+  { value: 'tarifa_dispo',    label: 'Tarifa e dispo'   },
+  { value: 'agendado',        label: 'Agendado'         },
+  { value: 'disparado',       label: 'Disparado'        },
+  { value: 'analise_dados',   label: 'Análise de Dados' },
+];
+
+// Tipos de tarefa
+export const TASK_TYPES = [
+  { value: '',            label: '— Padrão —'    },
+  { value: 'newsletter',  label: '📧 Newsletter' },
+];
+
+// Áreas solicitantes
+export const REQUESTING_AREAS = [
+  'BTG', 'C&P', 'Célula ICs', 'Centurion', 'CEP',
+  'Concierge Bradesco', 'Contabilidade', 'Diretoria',
+  'Eventos', 'Financeiro', 'Lazer', 'Marketing',
+  'Operadora', 'Programa ICs', 'Projetos',
+  'PTS Bradesco', 'Qualidade', 'Suppliers', 'TI',
 ];
 
 export const PRIORITIES = [
@@ -39,7 +67,7 @@ export async function createTask(data) {
   const taskDoc = {
     title:       data.title?.trim() || 'Nova Tarefa',
     description: data.description?.trim() || '',
-    status:      data.status      || 'todo',
+    status:      data.status      || 'not_started',
     priority:    data.priority    || 'medium',
     projectId:   data.projectId   || null,
     assignees:   data.assignees   || [],
@@ -67,6 +95,14 @@ export async function updateTask(taskId, data) {
   const user = store.get('currentUser');
   const updates = { ...data, updatedAt: serverTimestamp(), updatedBy: user.uid };
 
+  // Se status mudou para rework, registrar no audit log
+  if (data.status === 'rework' && data._prevStatus && data.status !== data._prevStatus) {
+    await auditLog('tasks.rework', 'task', taskId, {
+      prevStatus: data._prevStatus,
+      taskTitle:  updates.title,
+    }).catch(() => {});
+  }
+
   // Se status mudou para done, salvar data de conclusão
   if (data.status === 'done' && data.status !== data._prevStatus) {
     updates.completedAt = serverTimestamp();
@@ -83,7 +119,7 @@ export async function updateTask(taskId, data) {
 export async function toggleTaskComplete(taskId, isDone) {
   const user = store.get('currentUser');
   await updateDoc(doc(db, 'tasks', taskId), {
-    status:      isDone ? 'done' : 'todo',
+    status:      isDone ? 'done' : 'not_started',
     completedAt: isDone ? serverTimestamp() : null,
     updatedAt:   serverTimestamp(),
     updatedBy:   user.uid,
