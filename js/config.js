@@ -131,7 +131,7 @@ export const APP_CONFIG = {
   // 2. Marque APENAS a permissão: repo (ou somente "repo:public_repo" para repo público)
   // 3. Cole o token abaixo
   github: {
-    token: 'S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',   // ghp_xxxxxxxxxxxxxxxxxxxx
+    token: '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',   // ghp_xxxxxxxxxxxxxxxxxxxx
     repo:  'primetour/tarefas',
   },
 };
