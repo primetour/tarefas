@@ -5,9 +5,7 @@
 
 /* ─── APP SHELL ───────────────────────────────────────────── */
 .app-shell {
-  display: flex;
-  height: 100vh;
-  overflow: hidden;
+  display: block;
   background: var(--bg-dark);
   animation: fadeIn 0.3s ease;
 }
@@ -325,17 +323,18 @@
 
 /* ─── MAIN CONTENT AREA ───────────────────────────────────── */
 .main-content {
-  flex: 1;
-  margin-left: var(--sidebar-width);
+  position: fixed;
+  top: 0;
+  left: var(--sidebar-width);
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  transition: margin-left var(--transition-normal);
+  transition: left var(--transition-normal);
 }
 
 .sidebar.collapsed ~ .main-content {
-  margin-left: var(--sidebar-collapsed-width);
+  left: var(--sidebar-collapsed-width);
 }
 
 /* ─── TOP HEADER ──────────────────────────────────────────── */
@@ -451,12 +450,11 @@
 /* ─── PAGE CONTENT ────────────────────────────────────────── */
 .page-content {
   flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--space-6);
   padding-bottom: 48px;
   animation: fadeIn 0.25s ease;
-  overflow-y: auto;
-  overflow-x: hidden;
-  min-height: 0;
 }
 
 .page-header {
