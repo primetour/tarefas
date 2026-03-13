@@ -79,11 +79,19 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
       }] : []),
       { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
       { label: isEdit ? 'Salvar alterações' : 'Criar tarefa', class:'btn-primary', closeOnClick:false,
-        onClick: async (_,{close}) => { await handleSave(task, currentTags, currentAssignees, isEdit, close, onSave); } },
+        onClick: async (_,{close}) => {
+          const modalEl = document.querySelector('.modal-body');
+          await handleSave(task, currentTags, currentAssignees, isEdit, close, onSave, modalEl);
+        } },
     ],
   });
 
-  setTimeout(() => bindEvents(task, users, currentTags, currentAssignees, isEdit), 60);
+  // Bind events after next paint — use requestAnimationFrame for reliability
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      bindEvents(task, users, currentTags, currentAssignees, isEdit);
+    });
+  });
 }
 
 function buildHTML(task, users, projects, tags, assignees, isEdit) {
@@ -377,33 +385,34 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
   document.getElementById('comment-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)send();});
 }
 
-async function handleSave(task, tags, assignees, isEdit, close, onSave) {
-  const title=document.getElementById('tm-title')?.value?.trim();
-  const errEl=document.getElementById('tm-title-error');
+async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=document) {
+  const title=ctx.querySelector('#tm-title')?.value?.trim();
+  const errEl=ctx.querySelector('#tm-title-error');
   if(!title){if(errEl)errEl.textContent='Título é obrigatório.';return;}
   if(errEl)errEl.textContent='';
 
-  const startVal=document.getElementById('tm-start')?.value;
-  const dueVal=document.getElementById('tm-due')?.value;
-  const typeVal=document.getElementById('tm-type')?.value||'';
+  const startVal=ctx.querySelector('#tm-start')?.value;
+  const dueVal=ctx.querySelector('#tm-due')?.value;
+  const typeVal=ctx.querySelector('#tm-type')?.value||'';
 
   const data={
     title,
-    description: document.getElementById('tm-desc')?.value?.trim()||'',
-    status:      document.getElementById('tm-status')?.value||'not_started',
-    priority:    document.getElementById('tm-priority')?.value||'medium',
-    projectId:   document.getElementById('tm-project')?.value||null,
+    description: ctx.querySelector('#tm-desc')?.value?.trim()||'',
+    status:      ctx.querySelector('#tm-status')?.value||'not_started',
+    priority:    ctx.querySelector('#tm-priority')?.value||'medium',
+    projectId:   ctx.querySelector('#tm-project')?.value||null,
     type:        typeVal,
-    newsletterStatus: typeVal==='newsletter' ? (document.getElementById('tm-newsletter-status')?.value||'') : '',
-    requestingArea:   document.getElementById('tm-area')?.value||'',
-    clientEmail:      document.getElementById('tm-client-email')?.value?.trim()||'',
-    assignees, tags,
+    newsletterStatus: typeVal==='newsletter' ? (ctx.querySelector('#tm-newsletter-status')?.value||'') : '',
+    requestingArea:   ctx.querySelector('#tm-area')?.value||'',
+    clientEmail:      ctx.querySelector('#tm-client-email')?.value?.trim()||'',
+    assignees,
+    tags: Array.from(document.querySelectorAll('#tag-chips .tag-chip[data-tag]')).map(el => el.dataset.tag),
     startDate: startVal ? new Date(startVal+'T00:00:00') : null,
     dueDate:   dueVal   ? new Date(dueVal  +'T23:59:59') : null,
   };
   // Collect nucleos from checked chips
-  data.nucleos = Array.from(document.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);
-  data.outOfCalendar = document.getElementById('tm-out-of-calendar')?.checked || false;
+  data.nucleos = Array.from(ctx.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);
+  data.outOfCalendar = ctx.querySelector('#tm-out-of-calendar')?.checked || false;
 
   if(isEdit) data._prevStatus=task.status;
 
