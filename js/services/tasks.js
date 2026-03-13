@@ -1,0 +1,197 @@
+/**
+ * PRIMETOUR — Tasks Service
+ * CRUD completo de tarefas no Firestore
+ */
+
+import {
+  collection, doc, addDoc, updateDoc, deleteDoc,
+  getDoc, getDocs, query, where, orderBy, limit,
+  onSnapshot, serverTimestamp, arrayUnion, arrayRemove,
+  writeBatch, increment,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { db }       from '../firebase.js';
+import { store }    from '../store.js';
+import { auditLog } from '../auth/audit.js';
+
+/* ─── Constantes ─────────────────────────────────────────── */
+export const STATUSES = [
+  { value: 'backlog',     label: 'Backlog',       color: '#6B7280' },
+  { value: 'todo',        label: 'A Fazer',        color: '#38BDF8' },
+  { value: 'in_progress', label: 'Em Andamento',   color: '#F59E0B' },
+  { value: 'review',      label: 'Em Revisão',     color: '#A78BFA' },
+  { value: 'done',        label: 'Concluída',      color: '#22C55E' },
+  { value: 'cancelled',   label: 'Cancelada',      color: '#EF4444' },
+];
+
+export const PRIORITIES = [
+  { value: 'urgent', label: 'Urgente', color: '#EF4444', icon: '🔴' },
+  { value: 'high',   label: 'Alta',    color: '#F97316', icon: '🟠' },
+  { value: 'medium', label: 'Média',   color: '#F59E0B', icon: '🟡' },
+  { value: 'low',    label: 'Baixa',   color: '#6B7280', icon: '⚪' },
+];
+
+export const STATUS_MAP    = Object.fromEntries(STATUSES.map(s => [s.value, s]));
+export const PRIORITY_MAP  = Object.fromEntries(PRIORITIES.map(p => [p.value, p]));
+
+/* ─── Criar tarefa ───────────────────────────────────────── */
+export async function createTask(data) {
+  const user = store.get('currentUser');
+  const taskDoc = {
+    title:       data.title?.trim() || 'Nova Tarefa',
+    description: data.description?.trim() || '',
+    status:      data.status      || 'todo',
+    priority:    data.priority    || 'medium',
+    projectId:   data.projectId   || null,
+    assignees:   data.assignees   || [],
+    tags:        data.tags        || [],
+    startDate:   data.startDate   || null,
+    dueDate:     data.dueDate     || null,
+    subtasks:    [],
+    comments:    [],
+    attachments: [],
+    order:       data.order       ?? Date.now(),
+    completedAt: null,
+    createdAt:   serverTimestamp(),
+    createdBy:   user.uid,
+    updatedAt:   serverTimestamp(),
+    updatedBy:   user.uid,
+  };
+
+  const ref = await addDoc(collection(db, 'tasks'), taskDoc);
+  await auditLog('tasks.create', 'task', ref.id, { title: taskDoc.title });
+  return { id: ref.id, ...taskDoc };
+}
+
+/* ─── Atualizar tarefa ───────────────────────────────────── */
+export async function updateTask(taskId, data) {
+  const user = store.get('currentUser');
+  const updates = { ...data, updatedAt: serverTimestamp(), updatedBy: user.uid };
+
+  // Se status mudou para done, salvar data de conclusão
+  if (data.status === 'done' && data.status !== data._prevStatus) {
+    updates.completedAt = serverTimestamp();
+  } else if (data.status && data.status !== 'done') {
+    updates.completedAt = null;
+  }
+  delete updates._prevStatus;
+
+  await updateDoc(doc(db, 'tasks', taskId), updates);
+  await auditLog('tasks.update', 'task', taskId, { fields: Object.keys(data) });
+}
+
+/* ─── Completar tarefa (toggle) ──────────────────────────── */
+export async function toggleTaskComplete(taskId, isDone) {
+  const user = store.get('currentUser');
+  await updateDoc(doc(db, 'tasks', taskId), {
+    status:      isDone ? 'done' : 'todo',
+    completedAt: isDone ? serverTimestamp() : null,
+    updatedAt:   serverTimestamp(),
+    updatedBy:   user.uid,
+  });
+  await auditLog('tasks.complete', 'task', taskId, { done: isDone });
+}
+
+/* ─── Excluir tarefa ─────────────────────────────────────── */
+export async function deleteTask(taskId) {
+  if (!store.isManager()) throw new Error('Permissão negada.');
+  await deleteDoc(doc(db, 'tasks', taskId));
+  await auditLog('tasks.delete', 'task', taskId, {});
+}
+
+/* ─── Buscar tarefa ──────────────────────────────────────── */
+export async function getTask(taskId) {
+  const snap = await getDoc(doc(db, 'tasks', taskId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+/* ─── Listar tarefas (filtros) ───────────────────────────── */
+export async function fetchTasks({
+  projectId  = null,
+  assigneeId = null,
+  status     = null,
+  priority   = null,
+  limitN     = 200,
+} = {}) {
+  let q = query(collection(db, 'tasks'), orderBy('order', 'asc'), limit(limitN));
+  if (projectId)  q = query(q, where('projectId', '==', projectId));
+  if (assigneeId) q = query(q, where('assignees', 'array-contains', assigneeId));
+  if (status)     q = query(q, where('status', '==', status));
+  if (priority)   q = query(q, where('priority', '==', priority));
+
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/* ─── Real-time listener ─────────────────────────────────── */
+export function subscribeToTasks(callback, filters = {}) {
+  let q = query(collection(db, 'tasks'), orderBy('order', 'asc'), limit(300));
+  if (filters.projectId) q = query(q, where('projectId', '==', filters.projectId));
+
+  return onSnapshot(q, (snap) => {
+    const tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(tasks);
+  });
+}
+
+/* ─── Mover task no kanban (atualiza order + status) ────── */
+export async function moveTaskKanban(taskId, newStatus, newOrder) {
+  const user = store.get('currentUser');
+  const updates = {
+    status:    newStatus,
+    order:     newOrder,
+    updatedAt: serverTimestamp(),
+    updatedBy: user.uid,
+  };
+  if (newStatus === 'done') updates.completedAt = serverTimestamp();
+  else updates.completedAt = null;
+
+  await updateDoc(doc(db, 'tasks', taskId), updates);
+}
+
+/* ─── Adicionar subtarefa ────────────────────────────────── */
+export async function addSubtask(taskId, title) {
+  const user = store.get('currentUser');
+  const subtask = {
+    id:        `sub_${Date.now()}`,
+    title:     title.trim(),
+    done:      false,
+    createdAt: new Date().toISOString(),
+    createdBy: user.uid,
+  };
+  await updateDoc(doc(db, 'tasks', taskId), {
+    subtasks:  arrayUnion(subtask),
+    updatedAt: serverTimestamp(),
+  });
+  return subtask;
+}
+
+/* ─── Toggle subtarefa ───────────────────────────────────── */
+export async function toggleSubtask(taskId, subtaskId, currentSubtasks) {
+  const updated = currentSubtasks.map(s =>
+    s.id === subtaskId ? { ...s, done: !s.done } : s
+  );
+  await updateDoc(doc(db, 'tasks', taskId), {
+    subtasks:  updated,
+    updatedAt: serverTimestamp(),
+  });
+  return updated;
+}
+
+/* ─── Adicionar comentário ───────────────────────────────── */
+export async function addComment(taskId, text) {
+  const user    = store.get('currentUser');
+  const profile = store.get('userProfile');
+  const comment = {
+    id:          `cmt_${Date.now()}`,
+    text:        text.trim(),
+    authorId:    user.uid,
+    authorName:  profile?.name  || user.email,
+    authorColor: profile?.avatarColor || '#3B82F6',
+    createdAt:   new Date().toISOString(),
+  };
+  await updateDoc(doc(db, 'tasks', taskId), {
+    comments:  arrayUnion(comment),
+    updatedAt: serverTimestamp(),
+  });
+  return comment;
+}
