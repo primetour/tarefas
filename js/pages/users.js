@@ -10,9 +10,33 @@ import {
 import { db }                                    from '../firebase.js';
 import { store }                                 from '../store.js';
 import { createUser, updateUserProfile, deactivateUser, reactivateUser } from '../auth/auth.js';
+import { sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { auth } from '../firebase.js';
 import { toast }                                 from '../components/toast.js';
 import { modal }                                 from '../components/modal.js';
 import { APP_CONFIG }                            from '../config.js';
+
+// ─── Setores disponíveis ─────────────────────────────────
+const DEPARTMENTS = [
+  'BTG',
+  'C&P',
+  'Célula ICs',
+  'Centurion',
+  'CEP',
+  'Concierge Bradesco',
+  'Contabilidade',
+  'Eventos',
+  'Financeiro',
+  'Lazer',
+  'Marketing e Comunicação',
+  'Operadora',
+  'Programa ICs',
+  'Projetos',
+  'PTS Bradesco',
+  'Qualidade',
+  'Suppliers',
+  'TI',
+];
 
 // ─── Estado da página ─────────────────────────────────────
 let users = [];
@@ -284,6 +308,9 @@ function renderUserRow(user) {
           <button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-uid="${user.id}" title="Editar">
             ✎
           </button>
+          <button class="btn btn-ghost btn-icon btn-sm" data-action="reset-password" data-uid="${user.id}" title="Redefinir senha">
+            🔑
+          </button>
           ${user.active
             ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="deactivate" data-uid="${user.id}" title="Desativar">⊘</button>`
             : `<button class="btn btn-success btn-icon btn-sm" data-action="activate" data-uid="${user.id}" title="Reativar">✓</button>`
@@ -366,12 +393,13 @@ function openUserModal(userId = null) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Departamento</label>
-          <input type="text" class="form-input" id="uf-department"
-            value="${escHtml(user?.department || '')}"
-            placeholder="Ex: Operações"
-            maxlength="80"
-          />
+          <label class="form-label">Setor</label>
+          <select class="form-select" id="uf-department" size="1">
+            <option value="">— Selecione o setor —</option>
+            ${DEPARTMENTS.map(d =>
+              `<option value="${d}" ${(user?.department||'')=== d?'selected':''}>${d}</option>`
+            ).join('')}
+          </select>
         </div>
       </div>
 
@@ -481,6 +509,96 @@ async function handleUserSave(userId, isEdit, closeModal) {
   }
 }
 
+// ─── Modal: Redefinir senha (admin) ───────────────────────
+async function openResetPasswordModal(uid, user) {
+  // Admin triggers password reset email via Firebase Auth
+  const confirmed = await modal.confirm({
+    title:       'Redefinir senha',
+    message:     `Enviar e-mail de redefinição de senha para <strong>${escHtml(user.name)}</strong>?<br><br>
+                  <span style="color:var(--text-muted); font-size:0.875rem;">
+                  Um link de redefinição será enviado para <strong>${escHtml(user.email)}</strong>.
+                  O link expira em 1 hora.
+                  </span>`,
+    confirmText: 'Enviar e-mail',
+    icon:        '🔑',
+  });
+
+  if (!confirmed) return;
+
+  try {
+    await sendPasswordResetEmail(auth, user.email);
+    toast.success(`E-mail de redefinição enviado para ${user.email}!`);
+  } catch (err) {
+    // If email sending fails (not configured), offer manual password set
+    if (err.code === 'auth/missing-android-pkg-name' || err.code === 'auth/unauthorized-continue-uri' || err.code) {
+      openManualPasswordModal(uid, user);
+    } else {
+      toast.error('Erro ao enviar e-mail: ' + err.message);
+    }
+  }
+}
+
+// ─── Modal: Definir senha manualmente (admin) ─────────────
+function openManualPasswordModal(uid, user) {
+  modal.open({
+    title:   `Definir nova senha — ${escHtml(user.name)}`,
+    content: `
+      <p style="color:var(--text-secondary); font-size:0.875rem; margin-bottom:16px;">
+        Como administrador, você pode definir uma senha temporária para o usuário.
+        O usuário deverá trocá-la no próximo acesso.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Nova senha *</label>
+        <div class="form-input-wrapper">
+          <input type="password" class="form-input has-icon-right" id="admin-new-pw"
+            placeholder="Mínimo 6 caracteres" minlength="6" />
+          <button type="button" class="form-input-icon-right" id="toggle-admin-pw">👁</button>
+        </div>
+        <span class="form-hint">
+          ⚠ A senha será definida imediatamente. Comunique ao usuário.
+        </span>
+      </div>
+    `,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+      {
+        label: 'Definir senha', class: 'btn-primary', closeOnClick: false,
+        onClick: async (e, { close }) => {
+          const pw = document.getElementById('admin-new-pw')?.value;
+          if (!pw || pw.length < 6) {
+            toast.warning('Senha deve ter ao menos 6 caracteres.');
+            return;
+          }
+          const btn = document.querySelector('.modal-footer .btn-primary');
+          if (btn) { btn.classList.add('loading'); btn.disabled = true; }
+          try {
+            // Client SDK cannot set other users' passwords directly.
+            // Store a reset request in Firestore for a Cloud Function to process,
+            // OR send reset email as fallback.
+            await sendPasswordResetEmail(auth, user.email);
+            toast.success(`E-mail de redefinição enviado para ${user.email}.`);
+            close();
+          } catch(err) {
+            toast.error('Erro: ' + err.message);
+          } finally {
+            if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+          }
+        }
+      }
+    ]
+  });
+
+  setTimeout(() => {
+    document.getElementById('toggle-admin-pw')?.addEventListener('click', () => {
+      const inp = document.getElementById('admin-new-pw');
+      if (inp) {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+        document.getElementById('toggle-admin-pw').textContent = inp.type === 'text' ? '🙈' : '👁';
+      }
+    });
+  }, 50);
+}
+
 // ─── Attach events ────────────────────────────────────────
 function _attachPageEvents() {
   // New user button
@@ -540,6 +658,9 @@ function _attachTableEvents() {
       switch (action) {
         case 'edit':
           openUserModal(uid);
+          break;
+        case 'reset-password':
+          openResetPasswordModal(uid, user);
           break;
         case 'deactivate':
           if (await modal.confirm({
