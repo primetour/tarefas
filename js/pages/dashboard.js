@@ -4,7 +4,7 @@
  */
 
 import { store }         from '../store.js';
-import { fetchTasks, PRIORITY_MAP, STATUS_MAP } from '../services/tasks.js';
+import { fetchTasks, PRIORITY_MAP, STATUS_MAP, NEWSLETTER_STATUSES, TASK_TYPES } from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { toast }         from '../components/toast.js';
@@ -93,15 +93,22 @@ export async function renderDashboard(container) {
             : myTasks.slice(0, 7).map(t => {
                 const isDone = t.status === 'done';
                 const status = STATUS_MAP[t.status];
+                const typeLabel = TASK_TYPES?.find(x=>x.value===t.type)?.label||'';
+                const nlLabel   = t.type==='newsletter' && t.newsletterStatus
+                  ? (NEWSLETTER_STATUSES?.find(s=>s.value===t.newsletterStatus)?.label||'') : '';
                 return `<div class="task-row ${isDone?'done':''} dash-task-row" data-tid="${t.id}"
-                  style="grid-template-columns:10px 1fr auto auto; padding:9px 0;">
+                  style="grid-template-columns:10px 1fr auto; padding:9px 0; gap:10px;">
                   <div class="priority-dot priority-${t.priority||'medium'}"></div>
-                  <div style="overflow:hidden;">
+                  <div style="overflow:hidden; min-width:0;">
                     <div class="task-row-title">${esc(t.title)}</div>
-                    ${t.dueDate ? `<div class="text-xs" style="color:${dueColor(t.dueDate,isDone)};">
-                      📅 ${fmtShort(t.dueDate)}</div>` : ''}
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px; align-items:center;">
+                      ${t.requestingArea ? `<span style="font-size:0.6875rem;color:var(--text-muted);">📍 ${esc(t.requestingArea)}</span>` : ''}
+                      ${typeLabel ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${esc(typeLabel)}</span>` : ''}
+                      ${nlLabel ? `<span style="font-size:0.6875rem;color:var(--brand-gold);">↳ ${esc(nlLabel)}</span>` : ''}
+                      ${t.dueDate ? `<span class="text-xs" style="color:${dueColor(t.dueDate,isDone)};">📅 ${fmtShort(t.dueDate)}</span>` : ''}
+                    </div>
                   </div>
-                  <span class="badge badge-status-${t.status}" style="font-size:0.625rem;">${status?.label||t.status}</span>
+                  <span class="badge badge-status-${t.status}" style="font-size:0.625rem;white-space:nowrap;">${status?.label||t.status}</span>
                 </div>`;
               }).join('')
           }

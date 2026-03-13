@@ -9,6 +9,7 @@ import { modal }  from '../components/modal.js';
 import {
   fetchTasks, subscribeToTasks, toggleTaskComplete,
   STATUSES, PRIORITIES, STATUS_MAP, PRIORITY_MAP,
+  NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
 } from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
 import { openTaskModal } from '../components/taskModal.js';
@@ -27,6 +28,8 @@ let filterStatus = '';
 let filterPriority = '';
 let filterProject  = '';
 let filterAssignee = '';
+let filterArea     = '';
+let filterType     = '';
 
 /* ─── Render principal ───────────────────────────────────── */
 export async function renderTasks(container) {
@@ -67,12 +70,22 @@ export async function renderTasks(container) {
           <option value="${u.id}">${esc(u.name)}</option>
         `).join('')}
       </select>
+      <select class="filter-select" id="filter-type">
+        <option value="">Todos os tipos</option>
+        ${TASK_TYPES.filter(t=>t.value).map(t=>`<option value="${t.value}">${esc(t.label)}</option>`).join('')}
+      </select>
+      <select class="filter-select" id="filter-area">
+        <option value="">Todas as áreas</option>
+        ${REQUESTING_AREAS.map(a=>`<option value="${a}">${esc(a)}</option>`).join('')}
+      </select>
       <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
         <label style="font-size:0.8125rem; color:var(--text-muted);">Agrupar:</label>
         <select class="filter-select" id="group-by">
           <option value="status">Por status</option>
           <option value="priority">Por prioridade</option>
           <option value="project">Por projeto</option>
+          <option value="area">Por área</option>
+          <option value="type">Por tipo</option>
           <option value="none">Sem agrupamento</option>
         </select>
       </div>
@@ -130,6 +143,8 @@ function applyFilters() {
   if (filterPriority) result = result.filter(t => t.priority === filterPriority);
   if (filterProject)  result = result.filter(t => t.projectId === filterProject);
   if (filterAssignee) result = result.filter(t => t.assignees?.includes(filterAssignee));
+  if (filterArea)     result = result.filter(t => t.requestingArea === filterArea);
+  if (filterType)     result = result.filter(t => t.type === filterType);
 
   filteredTasks = result;
 
@@ -213,10 +228,10 @@ function renderListHeader() {
     <div></div>
     <div>Título</div>
     <div>Status</div>
-    <div>Prioridade</div>
+    <div>Tipo / Etapa</div>
+    <div>Área</div>
     <div>Prazo</div>
     <div>Responsáveis</div>
-    <div>Projeto</div>
   </div>`;
 }
 
@@ -242,6 +257,11 @@ function renderTaskRow(task) {
   const dueText = task.dueDate ? formatDue(task.dueDate) : '';
   const dueClass = task.dueDate ? getDueClass(task.dueDate, isDone) : '';
 
+  const nlStatus = task.type === 'newsletter' && task.newsletterStatus
+    ? NEWSLETTER_STATUSES?.find(s=>s.value===task.newsletterStatus)?.label || task.newsletterStatus
+    : null;
+  const typeLabel = TASK_TYPES?.find(t=>t.value===task.type)?.label || '';
+
   return `
     <div class="task-row ${isDone?'done':''}" data-task-id="${task.id}">
       <div class="task-check ${isDone?'checked':''}" data-check-id="${task.id}">
@@ -249,23 +269,26 @@ function renderTaskRow(task) {
       </div>
       <div>
         <div class="task-row-title">${esc(task.title)}</div>
-        ${task.tags?.length ? `<div class="task-row-subtitle">${task.tags.map(t=>`#${esc(t)}`).join(' ')}</div>` : ''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;">
+          <span class="badge badge-priority-${task.priority}" style="font-size:0.6rem;">${prio.label}</span>
+          ${task.tags?.length ? task.tags.slice(0,2).map(t=>`<span style="font-size:0.6875rem;color:var(--text-muted);">#${esc(t)}</span>`).join('') : ''}
+          ${project ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${project.icon} ${esc(project.name)}</span>` : ''}
+        </div>
       </div>
       <div>
         <span class="badge badge-status-${task.status}" style="font-size:0.6875rem;">
           ${status.label}
         </span>
       </div>
-      <div>
-        <span class="badge badge-priority-${task.priority}" style="font-size:0.6875rem;">
-          ${prio.label}
-        </span>
+      <div style="font-size:0.8125rem;">
+        ${typeLabel ? `<div style="color:var(--text-secondary);">${esc(typeLabel)}</div>` : '—'}
+        ${nlStatus ? `<div style="font-size:0.75rem;color:var(--brand-gold);margin-top:2px;">↳ ${esc(nlStatus)}</div>` : ''}
+      </div>
+      <div style="font-size:0.8125rem; color:var(--text-muted);">
+        ${task.requestingArea ? esc(task.requestingArea) : '—'}
       </div>
       <div class="kanban-card-due ${dueClass}" style="font-size:0.8125rem;">${dueText}</div>
       <div style="display:flex; align-items:center;">${assignees}${extraAssignees}</div>
-      <div style="font-size:0.8125rem; color:var(--text-muted);">
-        ${project ? `<span>${project.icon} ${esc(project.name)}</span>` : '—'}
-      </div>
     </div>
   `;
 }
@@ -309,6 +332,21 @@ function buildGroups() {
     if (noProject.length) groups.push({ key: 'none', label: 'Sem projeto', color: '#6B7280', tasks: noProject });
     return groups;
   }
+  if (groupBy === 'area') {
+    const groups = REQUESTING_AREAS.map(a => ({
+      key: a, label: a, color: '#38BDF8',
+      tasks: filteredTasks.filter(t => t.requestingArea === a),
+    })).filter(g => g.tasks.length > 0);
+    const noArea = filteredTasks.filter(t => !t.requestingArea);
+    if (noArea.length) groups.push({ key: 'none', label: 'Sem área', color: '#6B7280', tasks: noArea });
+    return groups;
+  }
+  if (groupBy === 'type') {
+    return TASK_TYPES.map(t => ({
+      key: t.value||'standard', label: t.label, color: '#A78BFA',
+      tasks: filteredTasks.filter(task => (task.type||'') === (t.value||'')),
+    })).filter(g => g.tasks.length > 0);
+  }
   return [];
 }
 
@@ -329,6 +367,8 @@ function _attachPageEvents() {
   document.getElementById('filter-priority')?.addEventListener('change', e => { filterPriority = e.target.value; applyFilters(); });
   document.getElementById('filter-project')?.addEventListener('change', e => { filterProject = e.target.value; applyFilters(); });
   document.getElementById('filter-assignee')?.addEventListener('change', e => { filterAssignee = e.target.value; applyFilters(); });
+  document.getElementById('filter-type')?.addEventListener('change', e => { filterType = e.target.value; applyFilters(); });
+  document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
   document.getElementById('group-by')?.addEventListener('change', e => { groupBy = e.target.value; renderTaskList(); });
 }
 
@@ -415,7 +455,7 @@ function getDueClass(ts, done) {
 }
 
 function exportCSV() {
-  const headers = ['Título','Status','Prioridade','Prazo','Projeto','Responsáveis','Tags'];
+  const headers = ['Título','Status','Prioridade','Tipo','Etapa Newsletter','Área Solicitante','Prazo','Projeto','Responsáveis','Tags'];
   const users   = store.get('users') || [];
   const rows = filteredTasks.map(t => {
     const project = allProjects.find(p=>p.id===t.projectId);
@@ -423,9 +463,13 @@ function exportCSV() {
       .map(uid => users.find(u=>u.id===uid)?.name||uid).join('; ');
     const due = t.dueDate ? (t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate))
       .toLocaleDateString('pt-BR') : '';
+    const typeLabel = TASK_TYPES?.find(x=>x.value===t.type)?.label||'';
+    const nlLabel   = t.type==='newsletter'
+      ? (NEWSLETTER_STATUSES?.find(s=>s.value===t.newsletterStatus)?.label||'') : '';
     return [
       t.title, STATUS_MAP[t.status]?.label||t.status,
       PRIORITY_MAP[t.priority]?.label||t.priority,
+      typeLabel, nlLabel, t.requestingArea||'',
       due, project?.name||'', assigneeNames, (t.tags||[]).join('; ')
     ];
   });
