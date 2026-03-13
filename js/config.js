@@ -122,5 +122,21 @@ export const APP_CONFIG = {
     // Remetente padrão (sobrescrito por emailjs)
     fromName:           'PRIMETOUR',
     fromEmail:          'noreply@primetour.com',
-  }
+  },
+
+  // GitHub Actions — redefinição de senha pelo admin
+  // ─────────────────────────────────────────────────────────
+  // 1. Acesse github.com → Settings → Developer settings
+  //    → Personal access tokens → Tokens (classic) → Generate new token
+  // 2. Marque APENAS a permissão: repo (ou somente "repo:public_repo" para repo público)
+  // 3. Cole o token abaixo
+  github: {
+    token: 'S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',   // ghp_xxxxxxxxxxxxxxxxxxxx
+    repo:  'primetour/tarefas',
+  },
 };
+
+// Expõe o token para o modal de reset de senha
+if (typeof window !== 'undefined') {
+  window.PRIMETOUR_GH_TOKEN = APP_CONFIG.github?.token || '';
+}
