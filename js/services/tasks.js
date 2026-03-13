@@ -51,6 +51,17 @@ export const REQUESTING_AREAS = [
   'PTS Bradesco', 'Qualidade', 'Suppliers', 'TI',
 ];
 
+// Núcleos de execução (multi-select)
+export const NUCLEOS = [
+  { value: 'design',         label: 'Design'         },
+  { value: 'comunicacao',    label: 'Comunicação'    },
+  { value: 'redes_sociais',  label: 'Redes Sociais'  },
+  { value: 'dados',          label: 'Dados'          },
+  { value: 'web',            label: 'Web'            },
+  { value: 'sistemas',       label: 'Sistemas'       },
+  { value: 'ia',             label: 'IA'             },
+];
+
 export const PRIORITIES = [
   { value: 'urgent', label: 'Urgente', color: '#EF4444', icon: '🔴' },
   { value: 'high',   label: 'Alta',    color: '#F97316', icon: '🟠' },
@@ -68,6 +79,8 @@ export async function createTask(data) {
     title:       data.title?.trim() || 'Nova Tarefa',
     description: data.description?.trim() || '',
     status:      data.status      || 'not_started',
+    nucleos:     data.nucleos     || [],
+    outOfCalendar: data.outOfCalendar || false,
     priority:    data.priority    || 'medium',
     projectId:   data.projectId   || null,
     assignees:   data.assignees   || [],
