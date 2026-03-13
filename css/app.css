@@ -6,7 +6,8 @@
 /* ─── APP SHELL ───────────────────────────────────────────── */
 .app-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: var(--bg-dark);
   animation: fadeIn 0.3s ease;
 }
@@ -328,7 +329,9 @@
   margin-left: var(--sidebar-width);
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
   transition: margin-left var(--transition-normal);
 }
 
