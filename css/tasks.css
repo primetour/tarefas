@@ -54,7 +54,7 @@
 
 .task-row {
   display: grid;
-  grid-template-columns: 28px 1fr 120px 120px 110px 120px 80px;
+  grid-template-columns: 28px 1fr 110px 130px 110px 90px 100px;
   align-items: center;
   gap: 12px;
   padding: 10px 16px;
@@ -107,7 +107,7 @@
 
 .task-list-header {
   display: grid;
-  grid-template-columns: 28px 1fr 120px 120px 110px 120px 80px;
+  grid-template-columns: 28px 1fr 110px 130px 110px 90px 100px;
   gap: 12px;
   padding: 8px 16px;
   font-size: 0.6875rem;
@@ -904,7 +904,7 @@
 
 /* ─── RESPONSIVE ──────────────────────────────────────────── */
 @media (max-width: 1024px) {
-  .task-row { grid-template-columns: 28px 1fr 100px 100px; }
+  .task-row { grid-template-columns: 28px 1fr 110px 110px; }
   .task-row > *:nth-child(n+6) { display: none; }
   .task-list-header > *:nth-child(n+6) { display: none; }
   .task-modal-grid { grid-template-columns: 1fr; }
