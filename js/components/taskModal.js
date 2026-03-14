@@ -406,7 +406,7 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     requestingArea:   ctx.querySelector('#tm-area')?.value||'',
     clientEmail:      ctx.querySelector('#tm-client-email')?.value?.trim()||'',
     assignees,
-    tags: Array.from(document.querySelectorAll('#tag-chips .tag-chip[data-tag]')).map(el => el.dataset.tag),
+    tags: Array.from(document.querySelectorAll('.tag-chip[data-tag]')).map(el => el.dataset.tag),
     startDate: startVal ? new Date(startVal+'T00:00:00') : null,
     dueDate:   dueVal   ? new Date(dueVal  +'T23:59:59') : null,
   };
