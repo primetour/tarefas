@@ -230,6 +230,12 @@ function emptyWidget(gridId, id, colClass, title, height = 200) {
 function renderAllCharts(Chart, m) {
   const { tasks, projects } = m;
 
+  // Clear skeleton placeholders from all grids
+  ['charts-grid', 'bottom-grid'].forEach(id => {
+    const grid = document.getElementById(id);
+    if (grid) grid.innerHTML = '';
+  });
+
   // Chart defaults
   Chart.defaults.color = '#94A3B8';
   Chart.defaults.font.family = 'Outfit, sans-serif';
@@ -342,11 +348,11 @@ function renderAllCharts(Chart, m) {
 
   /* R3 — New widgets */
   const surveys = m.surveys || [];
-  renderCsatGeneral(tasks, surveys);
-  renderReworkWidget(tasks);
-  renderNewslettersWidget(tasks);
-  renderCsatByAreaWidget(tasks, surveys, Chart);
-  renderNucleoWidget(tasks, Chart);
+  try { renderCsatGeneral(tasks, surveys); }       catch(e){ console.warn('R3 CSAT general:', e); }
+  try { renderReworkWidget(tasks); }               catch(e){ console.warn('R3 rework:', e); }
+  try { renderNewslettersWidget(tasks); }          catch(e){ console.warn('R3 newsletters:', e); }
+  try { renderCsatByAreaWidget(tasks, surveys); }  catch(e){ console.warn('R3 CSAT area:', e); }
+  try { renderNucleoWidget(tasks); }               catch(e){ console.warn('R3 nucleo:', e); }
 }
 
 /* ─── Line chart ─────────────────────────────────────────── */
@@ -782,7 +788,7 @@ function renderNewslettersWidget(tasks) {
 }
 
 /* ─── R3: CSAT por área ───────────────────────────────────── */
-function renderCsatByAreaWidget(tasks, surveys, Chart) {
+function renderCsatByAreaWidget(tasks, surveys) {
   const el = document.getElementById('r3-csat-area');
   if (!el) return;
   const data = getCsatByArea(surveys, tasks).filter(d => d.total > 0);
@@ -818,7 +824,7 @@ function renderCsatByAreaWidget(tasks, surveys, Chart) {
 }
 
 /* ─── R3: Performance por núcleo ──────────────────────────── */
-function renderNucleoWidget(tasks, Chart) {
+function renderNucleoWidget(tasks) {
   const el = document.getElementById('r3-nucleo');
   if (!el) return;
   const data = getPerformanceByNucleo(tasks);
