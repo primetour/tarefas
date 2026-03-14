@@ -280,3 +280,115 @@ export function getUpcomingDeadlines(tasks, days = 7) {
       return da - db;
     });
 }
+
+/* ─── CSAT geral ──────────────────────────────────────────── */
+export function getCsatGeneral(surveys) {
+  const responded = surveys.filter(s => s.status === 'responded' && s.score);
+  const total     = surveys.length;
+  const sent      = surveys.filter(s => ['sent','responded'].includes(s.status)).length;
+  if (!responded.length) return { avg: 0, total, sent, responded: 0, responseRate: 0 };
+  const avg = responded.reduce((a,s) => a + s.score, 0) / responded.length;
+  return {
+    avg:          Math.round(avg * 10) / 10,
+    total, sent,
+    responded:    responded.length,
+    responseRate: sent ? Math.round((responded.length / sent) * 100) : 0,
+  };
+}
+
+/* ─── CSAT por área ───────────────────────────────────────── */
+export function getCsatByArea(surveys, tasks) {
+  // Map taskId → requestingArea from tasks
+  const taskAreaMap = {};
+  tasks.forEach(t => { if (t.requestingArea) taskAreaMap[t.id] = t.requestingArea; });
+
+  const groups = {};
+  surveys.forEach(s => {
+    const area = taskAreaMap[s.taskId] || s.requestingArea || null;
+    if (!area) return;
+    if (!groups[area]) groups[area] = { area, scores: [], total: 0 };
+    groups[area].total++;
+    if (s.status === 'responded' && s.score) groups[area].scores.push(s.score);
+  });
+
+  return Object.values(groups)
+    .map(g => ({
+      area:         g.area,
+      total:        g.total,
+      responded:    g.scores.length,
+      responseRate: g.total ? Math.round((g.scores.length / g.total) * 100) : 0,
+      avg:          g.scores.length
+        ? Math.round(g.scores.reduce((a,b)=>a+b,0) / g.scores.length * 10) / 10
+        : null,
+    }))
+    .sort((a,b) => (b.avg||0) - (a.avg||0));
+}
+
+/* ─── Performance por núcleo ──────────────────────────────── */
+export function getPerformanceByNucleo(tasks) {
+  const NUCLEOS_LIST = [
+    { value:'design',        label:'Design'        },
+    { value:'comunicacao',   label:'Comunicação'   },
+    { value:'redes_sociais', label:'Redes Sociais' },
+    { value:'dados',         label:'Dados'         },
+    { value:'web',           label:'Web'           },
+    { value:'sistemas',      label:'Sistemas'      },
+    { value:'ia',            label:'IA'            },
+  ];
+  const COLORS = ['#D4A843','#38BDF8','#22C55E','#A78BFA','#F97316','#EC4899','#06B6D4'];
+
+  return NUCLEOS_LIST.map((n, i) => {
+    const related = tasks.filter(t => (t.nucleos||[]).includes(n.value));
+    const done    = related.filter(t => t.status === 'done').length;
+    const total   = related.length;
+    return {
+      nucleo:  n.value,
+      label:   n.label,
+      color:   COLORS[i],
+      total,
+      done,
+      rate:    total ? Math.round((done / total) * 100) : 0,
+    };
+  }).filter(n => n.total > 0);
+}
+
+/* ─── % sem retrabalho ────────────────────────────────────── */
+export function getReworkRate(tasks) {
+  const done        = tasks.filter(t => t.status === 'done');
+  const withRework  = done.filter(t => t.hadRework === true);
+  // Also count tasks that passed through 'rework' status via audit (approximate via status history)
+  const reworkTasks = tasks.filter(t => t.status === 'rework').length;
+  const total       = done.length;
+  if (!total) return { total: 0, withRework: 0, withoutRework: 0, noReworkRate: 0, reworkRate: 0 };
+  const noRework    = total - withRework.length;
+  return {
+    total,
+    withRework:   withRework.length,
+    withoutRework: noRework,
+    noReworkRate:  Math.round((noRework / total) * 100),
+    reworkRate:    Math.round((withRework.length / total) * 100),
+    inRework:      reworkTasks,
+  };
+}
+
+/* ─── Newsletters fora do calendário ─────────────────────── */
+export function getNewslettersOutOfCalendar(tasks, period = null) {
+  let newsletters = tasks.filter(t => t.type === 'newsletter');
+  if (period) {
+    const { start } = getPeriodDates(period);
+    newsletters = newsletters.filter(t => {
+      if (!t.createdAt) return false;
+      const d = t.createdAt?.toDate ? t.createdAt.toDate() : new Date(t.createdAt);
+      return d >= start;
+    });
+  }
+  const outOfCalendar = newsletters.filter(t => t.outOfCalendar === true);
+  const total         = newsletters.length;
+  return {
+    total,
+    outOfCalendar:    outOfCalendar.length,
+    inCalendar:       total - outOfCalendar.length,
+    outOfCalendarPct: total ? Math.round((outOfCalendar.length / total) * 100) : 0,
+    items:            outOfCalendar,
+  };
+}
