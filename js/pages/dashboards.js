@@ -10,7 +10,7 @@ import {
   getOverviewMetrics, getTasksByDay, getStatusDistribution,
   getPriorityDistribution, getTasksByMember, getTasksByProject,
   getWeeklyVelocity, getActivityHeatmap, getUpcomingDeadlines,
-  getPeriodDates,
+  getTimePerTaskByType, getPeriodDates,
 } from '../services/analytics.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -143,11 +143,12 @@ async function loadData(container) {
 /* ─── KPIs ────────────────────────────────────────────────── */
 function renderKPIs(m) {
   document.getElementById('kpi-row').innerHTML = `
-    ${kpiCard('Total de Tarefas',    m.total,              '📋', 'rgba(212,168,67,0.12)',  'var(--brand-gold)')}
-    ${kpiCard('Em Andamento',        m.inProgress,         '▶',  'rgba(56,189,248,0.12)',  '#38BDF8')}
-    ${kpiCard('Concluídas (período)',m.doneInPeriod,        '✓',  'rgba(34,197,94,0.12)',   '#22C55E')}
-    ${kpiCard('Em Atraso',           m.overdue,             '⚠',  'rgba(239,68,68,0.12)',   '#EF4444')}
-    ${kpiCard('Taxa de Conclusão',   m.completionRate + '%','◎',  'rgba(167,139,250,0.12)', '#A78BFA')}
+    ${kpiCard('Total de Tarefas',    m.total,                   '📋', 'rgba(212,168,67,0.12)',  'var(--brand-gold)')}
+    ${kpiCard('Em Andamento',        m.inProgress,              '▶',  'rgba(56,189,248,0.12)',  '#38BDF8')}
+    ${kpiCard('Concluídas (período)',m.doneInPeriod,             '✓',  'rgba(34,197,94,0.12)',   '#22C55E')}
+    ${kpiCard('Em Atraso',           m.overdue,                 '⚠',  'rgba(239,68,68,0.12)',   '#EF4444')}
+    ${kpiCard('Entregues no Prazo',  m.onTimeRate + '%',        '🎯', 'rgba(167,139,250,0.12)', '#A78BFA',
+      `${m.doneOnTime} de ${m.done} concluídas`)}
   `;
   // Animate bars
   setTimeout(() => {
@@ -157,7 +158,7 @@ function renderKPIs(m) {
   }, 80);
 }
 
-function kpiCard(label, value, icon, ibg, ic) {
+function kpiCard(label, value, icon, ibg, ic, sub = '') {
   const pct = typeof value === 'string' ? parseInt(value) : Math.min(100, Math.round(value / 20 * 100));
   return `
     <div class="dash-widget col-span-3" style="min-height:unset;">
@@ -167,6 +168,7 @@ function kpiCard(label, value, icon, ibg, ic) {
           <span class="kpi-label" style="margin:0;">${label}</span>
         </div>
         <div class="kpi-value">${value}</div>
+        ${sub ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${sub}</div>` : ''}
         <div class="kpi-bar" style="margin-top:auto;">
           <div class="kpi-bar-fill" data-pct="${pct}"
             style="width:0%; background:${ic}; transition: width 1s ease;"></div>
@@ -187,10 +189,10 @@ function renderAllCharts(Chart, m) {
 
   const gridColor = 'rgba(255,255,255,0.05)';
 
-  /* 1 — Velocity line chart (8-col) */
+  /* 1a — Criadas vs Concluídas por semana (line, 8-col) */
   const velocity = getWeeklyVelocity(tasks, 12);
   renderLineChart(Chart, 'charts-grid', 'velocity-chart', 'col-span-8', {
-    title: '📈 Velocidade Semanal',
+    title: '📈 Criadas vs Concluídas',
     subtitle: 'Tarefas criadas vs concluídas por semana',
     labels:   velocity.map(v => v.label),
     datasets: [
@@ -200,24 +202,32 @@ function renderAllCharts(Chart, m) {
     gridColor, height: 260,
   });
 
-  /* 2 — Status donut (4-col) */
+  /* 1b — Tempo médio por tarefa por tipo (horizontal bar, 4-col) */
+  const timeByType = getTimePerTaskByType(tasks);
+  renderTimeByTypeChart(Chart, 'charts-grid', 'time-type-chart', 'col-span-4', timeByType);
+
+  /* 2 — Status donut (4-col) with % */
   const statusDist = getStatusDistribution(tasks);
+  const statusTotal = statusDist.reduce((a,s)=>a+s.count,0) || 1;
   renderDonutChart(Chart, 'charts-grid', 'status-donut', 'col-span-4', {
     title:  '◎ Status das Tarefas',
-    labels: statusDist.map(s => s.label),
+    labels: statusDist.map(s => `${s.label} (${Math.round(s.count/statusTotal*100)}%)`),
     data:   statusDist.map(s => s.count),
     colors: statusDist.map(s => s.color),
     height: 260,
+    showPct: true, total: statusTotal,
   });
 
-  /* 3 — Priority donut (4-col) */
+  /* 3 — Priority donut (4-col) with % */
   const prioDist = getPriorityDistribution(tasks);
+  const prioTotal = prioDist.reduce((a,p)=>a+p.count,0) || 1;
   renderDonutChart(Chart, 'charts-grid', 'priority-donut', 'col-span-4', {
     title:  '▲ Prioridade das Tarefas',
-    labels: prioDist.map(p => p.label),
+    labels: prioDist.map(p => `${p.label} (${Math.round(p.count/prioTotal*100)}%)`),
     data:   prioDist.map(p => p.count),
     colors: prioDist.map(p => p.color),
     height: 200,
+    showPct: true, total: prioTotal,
   });
 
   /* 4 — Daily created/done (4-col) */
@@ -348,7 +358,16 @@ function renderDonutChart(Chart, gridId, id, colClass, opts) {
       responsive: true, maintainAspectRatio: false, cutout: '68%',
       plugins: {
         legend: { position: 'right', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } },
-        tooltip: tooltipStyle(),
+        tooltip: {
+          ...tooltipStyle(),
+          callbacks: {
+            label: (ctx) => {
+              const total = ctx.dataset.data.reduce((a,b)=>a+b,0) || 1;
+              const pct   = Math.round(ctx.parsed / total * 100);
+              return ` ${ctx.label.split(' (')[0]}: ${ctx.parsed} (${pct}%)`;
+            }
+          }
+        },
       },
     },
   });
@@ -568,6 +587,50 @@ function tooltipStyle() {
     padding: 10,
     cornerRadius: 8,
   };
+}
+
+/* ─── Tempo por tarefa por tipo ──────────────────────────── */
+function renderTimeByTypeChart(Chart, gridId, id, colClass, data) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+  const wrap = document.createElement('div');
+  wrap.className = `dash-widget ${colClass}`;
+  wrap.id = id;
+  grid.appendChild(wrap);
+
+  if (!data.length) {
+    wrap.innerHTML = `
+      <div class="widget-header"><div class="widget-title">⏱ Tempo por Tarefa / Tipo</div></div>
+      <div class="widget-body"><div class="empty-state" style="padding:24px;">
+        <div class="empty-state-icon">⏱</div>
+        <div class="empty-state-title" style="font-size:0.875rem;">Nenhuma tarefa concluída com datas registradas</div>
+      </div></div>`;
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="widget-header">
+      <div class="widget-title">⏱ Tempo por Tarefa / Tipo</div>
+      <span style="font-size:0.75rem;color:var(--text-muted);">Média de dias até conclusão</span>
+    </div>
+    <div class="widget-body" style="padding:0 18px 12px;">
+      ${data.map(d => `
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+            <span style="font-size:0.875rem;color:var(--text-secondary);">${esc(d.label)}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:0.75rem;color:var(--text-muted);">${d.count} tarefa${d.count!==1?'s':''}</span>
+              <span style="font-size:0.9375rem;font-weight:700;color:var(--text-primary);">${d.avgDays}d</span>
+            </div>
+          </div>
+          <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
+            <div style="height:100%;width:${Math.min(100,d.avgDays/30*100)}%;background:${d.color};
+              border-radius:3px;transition:width 0.8s ease;"></div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 function destroyCharts() {
