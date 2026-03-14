@@ -72,11 +72,24 @@ export async function getOverviewMetrics(period = '30d') {
     return acc + (completed - created) / (1000*60*60*24);
   }, 0) / (doneInPeriod.filter(t => t.createdAt && t.completedAt).length || 1);
 
+  // Taxa de conclusão no prazo: tarefas done com completedAt <= dueDate
+  const doneOnTime = done.filter(t => {
+    if (!t.dueDate || !t.completedAt) return false;
+    const due       = t.dueDate?.toDate       ? t.dueDate.toDate()       : new Date(t.dueDate);
+    const completed = t.completedAt?.toDate   ? t.completedAt.toDate()   : new Date(t.completedAt);
+    return completed <= due;
+  });
+  const onTimeRate = done.length
+    ? Math.round((doneOnTime.length / done.length) * 100)
+    : 0;
+
   return {
     total, done: done.length, inProgress: inProgress.length,
     overdue: overdue.length, newTasks: newTasks.length,
     doneInPeriod: doneInPeriod.length,
     completionRate: total ? Math.round((done.length / total) * 100) : 0,
+    onTimeRate,
+    doneOnTime: doneOnTime.length,
     avgCompletionDays: Math.round(avgTime * 10) / 10,
     activeProjects: projects.filter(p => p.status === 'active').length,
     tasks, projects,
@@ -200,6 +213,37 @@ export function getWeeklyVelocity(tasks, weeks = 12) {
     });
   }
   return result;
+}
+
+/* ─── Tempo médio por tarefa por tipo ────────────────────── */
+export function getTimePerTaskByType(tasks) {
+  // Group done tasks by type, compute avg days from createdAt to completedAt
+  const groups = {};
+
+  tasks.forEach(t => {
+    if (t.status !== 'done' || !t.createdAt || !t.completedAt) return;
+    const type = t.type || 'standard';
+    const created   = t.createdAt?.toDate   ? t.createdAt.toDate()   : new Date(t.createdAt);
+    const completed = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
+    const days = (completed - created) / (1000 * 60 * 60 * 24);
+    if (!groups[type]) groups[type] = { total: 0, count: 0 };
+    groups[type].total += days;
+    groups[type].count += 1;
+  });
+
+  const LABELS = { standard: 'Padrão', newsletter: 'Newsletter' };
+  const COLORS = { standard: '#38BDF8', newsletter: '#D4A843' };
+
+  return Object.entries(groups)
+    .filter(([, g]) => g.count > 0)
+    .map(([type, g]) => ({
+      type,
+      label:   LABELS[type] || type,
+      color:   COLORS[type] || '#A78BFA',
+      avgDays: Math.round((g.total / g.count) * 10) / 10,
+      count:   g.count,
+    }))
+    .sort((a, b) => b.count - a.count);
 }
 
 /* ─── Heatmap de atividade (365 dias) ────────────────────── */
