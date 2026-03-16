@@ -24,6 +24,9 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 import { auth, secondaryAuth, db } from '../firebase.js';
+import { getRole, initSystemRoles, SYSTEM_ROLES } from '../services/rbac.js';
+import { loadUserWorkspaces }          from '../services/workspaces.js';
+import { initSystemTaskTypes, loadTaskTypes } from '../services/taskTypes.js';
 import { store }   from '../store.js';
 import { toast }   from '../components/toast.js';
 import { APP_CONFIG } from '../config.js';
@@ -57,6 +60,9 @@ export function initAuthObserver(onReady) {
           return;
         }
 
+        // Inicializar roles padrão se necessário (silencioso)
+        initSystemRoles().catch(() => {});
+
         // Atualizar último login (silencioso)
         updateDoc(doc(db, 'users', firebaseUser.uid), {
           lastLogin: serverTimestamp()
@@ -66,6 +72,20 @@ export function initAuthObserver(onReady) {
         store.set('userProfile',     profile);
         store.set('isAuthenticated', true);
         store.set('authLoading',     false);
+
+        // Carregar role e permissões do usuário
+        const roleId = profile.roleId || profile.role || 'member';
+        const roleDoc = await getRole(roleId).catch(() => null)
+          || SYSTEM_ROLES.find(r => r.id === roleId)
+          || SYSTEM_ROLES.find(r => r.id === 'member');
+        store.loadPermissions(roleDoc);
+
+        // Carregar workspaces do usuário (silencioso)
+        loadUserWorkspaces().catch(() => {});
+
+        // Inicializar e carregar tipos de tarefa (silencioso)
+        initSystemTaskTypes().catch(() => {});
+        loadTaskTypes().catch(() => {});
 
         // Audit login (silencioso — não bloqueia)
         auditLog('auth.login', 'session', null, {
@@ -125,7 +145,7 @@ export async function fetchUserProfile(uid) {
 
 // ─── Criar usuário (somente admins) ───────────────────────
 export async function createUser({ name, email, password, role, department = '' }) {
-  if (!store.isAdmin()) throw new Error('Permissão negada.');
+  if (!store.can('system_manage_users')) throw new Error('Permissão negada.');
 
   // Cria no Firebase Auth via instância secundária
   const credential = await createUserWithEmailAndPassword(
@@ -149,7 +169,8 @@ export async function createUser({ name, email, password, role, department = '' 
     id:           uid,
     name:         name.trim(),
     email:        email.trim().toLowerCase(),
-    role:         role,
+    role:         role,         // mantido para compatibilidade
+    roleId:       role,         // novo campo RBAC
     department:   department.trim(),
     avatarColor:  avatarColor,
     active:       true,
@@ -174,7 +195,7 @@ export async function updateUserProfile(uid, data) {
   const currentUser = store.get('currentUser');
   const isOwner = currentUser?.uid === uid;
 
-  if (!store.isAdmin() && !isOwner) {
+  if (!store.can('system_manage_users') && !isOwner) {
     throw new Error('Permissão negada.');
   }
 
@@ -188,7 +209,7 @@ export async function updateUserProfile(uid, data) {
   const updateData = {};
   allowedFields.forEach(f => { if (data[f] !== undefined) updateData[f] = data[f]; });
 
-  if (store.isAdmin()) {
+  if (store.can('system_manage_users')) {
     adminFields.forEach(f => { if (data[f] !== undefined) updateData[f] = data[f]; });
   }
 
@@ -220,7 +241,7 @@ export async function changePassword(currentPassword, newPassword) {
 
 // ─── Desativar usuário ────────────────────────────────────
 export async function deactivateUser(uid) {
-  if (!store.isAdmin()) throw new Error('Permissão negada.');
+  if (!store.can('system_manage_users')) throw new Error('Permissão negada.');
   
   const currentUser = store.get('currentUser');
   if (uid === currentUser.uid) throw new Error('Não é possível desativar sua própria conta.');
@@ -236,7 +257,7 @@ export async function deactivateUser(uid) {
 
 // ─── Reativar usuário ─────────────────────────────────────
 export async function reactivateUser(uid) {
-  if (!store.isAdmin()) throw new Error('Permissão negada.');
+  if (!store.can('system_manage_users')) throw new Error('Permissão negada.');
 
   await updateDoc(doc(db, 'users', uid), {
     active: true,
