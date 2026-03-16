@@ -26,9 +26,14 @@ class Store {
       sidebarCollapsed: false,
 
       // Cache
-      users:     [],
-      roles:     [],
-      taskTypes: [],
+      users:          [],
+      roles:          [],
+      taskTypes:      [],
+      nucleos:        [],
+
+      // Setor e visibilidade
+      userSector:     null,   // setor do usuário logado
+      visibleSectors: [],     // setores visíveis (Head pode ter múltiplos)
 
       // UI
       globalLoading: false,

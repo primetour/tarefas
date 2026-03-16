@@ -29,6 +29,7 @@ import { renderTaskTypes }    from './pages/taskTypes.js';
 import { renderCapacity }     from './pages/capacity.js';
 import { renderTeam }         from './pages/team.js';
 import { renderGoals }        from './pages/goals.js';
+import { renderSectors }      from './pages/sectors.js';
 import { renderRequests, destroyRequests } from './pages/requests.js';
 import { renderCsat, destroyCsat }      from './pages/csat.js';
 import { renderIntegrations }             from './pages/integrations.js';
@@ -194,6 +195,7 @@ function setupRouter() {
     'task-types':   async () => { await renderTaskTypes(content); },
     'capacity':     async () => { await renderTeam(content); }, // capacity merged into team
     'goals':        async () => { await renderGoals(content); },
+    'sectors':      async () => { await renderSectors(content); },
     'requests':     async () => { await renderRequests(content); },
     'roles':        async () => { await renderRoles(content); },
     'settings':     async () => { await renderSettings(content); },

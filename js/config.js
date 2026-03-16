@@ -14,12 +14,12 @@
  */
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyB9DUjqmEIcMIcb5RumidSVXSxF4CO_Ii8",
-  authDomain: "gestor-de-tarefas-primetour.firebaseapp.com",
-  projectId: "gestor-de-tarefas-primetour",
-  storageBucket: "gestor-de-tarefas-primetour.firebasestorage.app",
-  messagingSenderId: "1083421353313",
-  appId: "1:1083421353313:web:f9656ce6ae0fc4ca24d120",
+  apiKey:            "SEU_API_KEY_AQUI",
+  authDomain:        "SEU_PROJETO.firebaseapp.com",
+  projectId:         "SEU_PROJETO_ID",
+  storageBucket:     "SEU_PROJETO.appspot.com",
+  messagingSenderId: "SEU_SENDER_ID",
+  appId:             "SEU_APP_ID"
 };
 
 /**
@@ -80,9 +80,11 @@ export const APP_CONFIG = {
   
   // Configurações de usuário
   roles: {
-    admin:   { label: 'Administrador', badge: 'badge-admin',   color: '#A78BFA' },
-    manager: { label: 'Gerente',       badge: 'badge-manager', color: '#38BDF8' },
-    member:  { label: 'Membro',        badge: 'badge-member',  color: '#34D399' }
+    master:      { label: 'Diretoria',   badge: 'badge-admin',   color: '#EF4444' },
+    admin:       { label: 'Head',        badge: 'badge-admin',   color: '#A78BFA' },
+    manager:     { label: 'Gerente',     badge: 'badge-manager', color: '#38BDF8' },
+    coordinator: { label: 'Coordenador', badge: 'badge-manager', color: '#F97316' },
+    member:      { label: 'Analista',    badge: 'badge-member',  color: '#22C55E' },
   },
 
   // Cores de avatar (geradas ciclicamente)
@@ -131,7 +133,7 @@ export const APP_CONFIG = {
   // 2. Marque APENAS a permissão: repo (ou somente "repo:public_repo" para repo público)
   // 3. Cole o token abaixo
   github: {
-    token: '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',   // ghp_xxxxxxxxxxxxxxxxxxxx
+    token: 'SEU_GITHUB_PAT_AQUI',   // ghp_xxxxxxxxxxxxxxxxxxxx
     repo:  'primetour/tarefas',
   },
 };
