@@ -312,7 +312,7 @@
 .btn-auth-submit {
   width: 100%;
   padding: 14px;
-  background: transparent;
+  background: linear-gradient(135deg, var(--brand-gold-dark), var(--brand-gold));
   border: none;
   border-radius: var(--radius-md);
   color: var(--text-inverse);

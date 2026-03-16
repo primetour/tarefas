@@ -360,7 +360,7 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 .portal-submit {
   width: 100%;
   padding: 14px 24px;
-  background: transparent;
+  background: var(--brand-gold);
   color: #000;
   font-family: var(--font-ui);
   font-size: 1rem;
