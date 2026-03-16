@@ -26,7 +26,7 @@ function toISO(ts) {
 }
 
 let allAbsences = [];
-let activeTab   = 'members'; // 'members' | 'capacity'
+let activeTab   = 'capacity'; // 'capacity' | 'mine' | 'members'
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderTeam(container) {
@@ -41,6 +41,7 @@ export async function renderTeam(container) {
         <p class="page-subtitle">Membros, disponibilidade e gestão de ausências</p>
       </div>
       <div class="page-header-actions">
+        <button class="btn btn-secondary btn-sm" id="export-absences-btn">↓ Exportar</button>
         <button class="btn btn-primary" id="new-absence-btn">+ Registrar ausência</button>
       </div>
     </div>
@@ -48,9 +49,9 @@ export async function renderTeam(container) {
     <!-- Tabs -->
     <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border-subtle);">
       ${[
-        { id:'members',  label:'Membros',           icon:'◉' },
         { id:'capacity', label:'Disponibilidade',   icon:'◐' },
         { id:'mine',     label:'Minhas ausências',  icon:'◌' },
+        { id:'members',  label:'Membros',           icon:'◉' },
       ].map(t => `
         <button class="team-tab-btn" data-tab="${t.id}"
           style="padding:8px 18px;border:none;background:none;cursor:pointer;font-size:0.875rem;
@@ -68,6 +69,7 @@ export async function renderTeam(container) {
   `;
 
   document.getElementById('new-absence-btn')?.addEventListener('click', () => openAbsenceModal());
+  document.getElementById('export-absences-btn')?.addEventListener('click', () => openExportModal());
   container.querySelectorAll('.team-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       activeTab = btn.dataset.tab;
@@ -422,4 +424,153 @@ async function confirmDeleteAbsence(id) {
     toast.success('Ausência removida.');
     await loadTab();
   } catch(e) { toast.error(e.message); }
+}
+
+/* ─── Export ──────────────────────────────────────────────── */
+function openExportModal() {
+  modal.open({
+    title:   'Exportar ausências',
+    size:    'sm',
+    content: `
+      <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">
+        Escolha o formato de exportação. Serão exportadas as ausências visíveis na aba atual.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="btn btn-secondary" id="export-csv-btn"
+          style="display:flex;align-items:center;gap:10px;justify-content:flex-start;padding:12px 16px;">
+          <span style="font-size:1.25rem;">📄</span>
+          <div style="text-align:left;">
+            <div style="font-weight:600;">CSV</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">Compatível com Excel e Google Sheets</div>
+          </div>
+        </button>
+        <button class="btn btn-secondary" id="export-pdf-btn"
+          style="display:flex;align-items:center;gap:10px;justify-content:flex-start;padding:12px 16px;">
+          <span style="font-size:1.25rem;">📋</span>
+          <div style="text-align:left;">
+            <div style="font-weight:600;">PDF</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">Relatório formatado para impressão</div>
+          </div>
+        </button>
+      </div>
+    `,
+    footer: [{ label:'Fechar', class:'btn-secondary', closeOnClick:true }],
+  });
+
+  setTimeout(() => {
+    document.getElementById('export-csv-btn')?.addEventListener('click', () => {
+      exportCSV();
+      document.querySelector('.modal-overlay')?.click();
+    });
+    document.getElementById('export-pdf-btn')?.addEventListener('click', () => {
+      exportPDF();
+      document.querySelector('.modal-overlay')?.click();
+    });
+  }, 50);
+}
+
+function getExportData() {
+  const users = store.get('users') || [];
+  return allAbsences.map(a => {
+    const typeDef = ABSENCE_TYPES.find(t => t.value === a.type) || ABSENCE_TYPES[5];
+    const user    = users.find(u => u.id === a.userId);
+    const start   = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
+    const end     = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
+    const days    = Math.ceil((end - start) / (1000*60*60*24)) + 1;
+    return {
+      nome:      user?.name || a.userId,
+      tipo:      typeDef.label,
+      inicio:    fmtDate(a.startDate),
+      fim:       fmtDate(a.endDate),
+      dias:      days,
+      observacao: a.note || '',
+    };
+  });
+}
+
+function exportCSV() {
+  const rows   = getExportData();
+  if (!rows.length) { toast.warning('Nenhuma ausência para exportar.'); return; }
+
+  const headers = ['Nome','Tipo','Início','Fim','Duração (dias)','Observação'];
+  const lines   = [
+    headers.join(';'),
+    ...rows.map(r => [
+      `"${r.nome}"`, `"${r.tipo}"`, r.inicio, r.fim, r.dias, `"${r.observacao}"`,
+    ].join(';')),
+  ];
+
+  const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), {
+    href: url,
+    download: `ausencias-${new Date().toISOString().slice(0,10)}.csv`,
+  });
+  a.click();
+  URL.revokeObjectURL(url);
+  toast.success('CSV exportado!');
+}
+
+function exportPDF() {
+  const rows = getExportData();
+  if (!rows.length) { toast.warning('Nenhuma ausência para exportar.'); return; }
+
+  const dateStr = new Intl.DateTimeFormat('pt-BR', {
+    day:'2-digit', month:'2-digit', year:'numeric',
+    hour:'2-digit', minute:'2-digit',
+  }).format(new Date());
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Relatório de Ausências — PRIMETOUR</title>
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family: Arial, sans-serif; color:#1a1a1a; padding:32px; font-size:13px; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:28px; padding-bottom:16px; border-bottom:2px solid #D4A843; }
+    .brand  { font-size:20px; font-weight:700; color:#D4A843; letter-spacing:0.05em; }
+    .report-title { font-size:16px; font-weight:600; color:#1a1a1a; margin-top:4px; }
+    .meta   { font-size:11px; color:#666; text-align:right; }
+    table   { width:100%; border-collapse:collapse; margin-top:8px; }
+    th      { background:#f5f5f5; padding:8px 10px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:#555; border-bottom:2px solid #ddd; }
+    td      { padding:8px 10px; border-bottom:1px solid #eee; vertical-align:top; }
+    tr:nth-child(even) td { background:#fafafa; }
+    .badge  { display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px; background:#f0e6c8; color:#8a6a00; }
+    .footer { margin-top:28px; padding-top:12px; border-top:1px solid #ddd; font-size:11px; color:#999; text-align:center; }
+    @media print { body { padding:16px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="brand">PRIMETOUR</div>
+      <div class="report-title">Relatório de Ausências</div>
+    </div>
+    <div class="meta">Gerado em: ${dateStr}<br>Total: ${rows.length} registro${rows.length!==1?'s':''}</div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Nome</th><th>Tipo</th><th>Início</th><th>Fim</th><th>Dias</th><th>Observação</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map(r => `<tr>
+        <td><strong>${esc(r.nome)}</strong></td>
+        <td><span class="badge">${esc(r.tipo)}</span></td>
+        <td>${r.inicio}</td>
+        <td>${r.fim}</td>
+        <td style="text-align:center;">${r.dias}</td>
+        <td style="color:#555;">${esc(r.observacao||'—')}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  <div class="footer">PRIMETOUR — Sistema de Gestão de Tarefas</div>
+  <script>window.onload = () => { window.print(); }</script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) { toast.error('Permita pop-ups para exportar PDF.'); return; }
+  win.document.write(html);
+  win.document.close();
 }
