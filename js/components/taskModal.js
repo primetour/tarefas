@@ -11,7 +11,12 @@ import {
   STATUSES, PRIORITIES,
   NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS, NUCLEOS,
 } from '../services/tasks.js';
-import { fetchProjects } from '../services/projects.js';
+import { fetchProjects }  from '../services/projects.js';
+import { getTaskType }    from '../services/taskTypes.js';
+import {
+  renderTypeFields, collectFieldValues,
+  bindDynamicFieldEvents, validateRequiredFields,
+} from './dynamicFields.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -35,7 +40,7 @@ function getInitials(name) {
   return (name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
 }
 
-export async function openTaskModal({ taskData=null, projectId=null, status='not_started', onSave=null } = {}) {
+export async function openTaskModal({ taskData=null, projectId=null, status='not_started', onSave=null, typeId=null } = {}) {
   const isEdit = !!taskData;
 
   let users = store.get('users') || [];
@@ -58,7 +63,17 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     startDate:null, dueDate:null, subtasks:[], comments:[],
     type:'', newsletterStatus:'', requestingArea:'', clientEmail:'',
     nucleos:[], outOfCalendar:false,
+    workspaceId: store.get('currentWorkspace')?.id || null,
+    typeId:      typeId || null,
+    customFields: {},
   };
+
+  // Load current task type for dynamic fields
+  const currentTypeId = task.typeId || (task.type && task.type !== '' ? task.type : null);
+  let currentTaskType = null;
+  if (currentTypeId) {
+    currentTaskType = await getTaskType(currentTypeId).catch(() => null);
+  }
 
   let currentTags      = [...(task.tags||[])];
   let currentAssignees = [...(task.assignees||[])];
@@ -66,9 +81,9 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   const m = modal.open({
     title: isEdit ? 'Detalhes da Tarefa' : 'Nova Tarefa',
     size: 'xl',
-    content: buildHTML(task, users, projects, currentTags, currentAssignees, isEdit),
+    content: buildHTML(task, users, projects, currentTags, currentAssignees, isEdit, currentTaskType),
     footer: [
-      ...(isEdit && store.isManager() ? [{
+      ...(isEdit && store.can('task_delete') ? [{
         label:'🗑 Excluir', class:'btn-danger btn-sm', closeOnClick:false,
         onClick: async (_,{close}) => {
           if (await modal.confirm({ title:'Excluir tarefa', message:`Excluir "<strong>${esc(task.title)}</strong>"?`, confirmText:'Excluir', danger:true, icon:'🗑️' })) {
@@ -94,7 +109,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   });
 }
 
-function buildHTML(task, users, projects, tags, assignees, isEdit) {
+function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = null) {
   const opt = (arr, valKey, labelKey, cur) => arr.map(x =>
     `<option value="${x[valKey]}" ${cur===x[valKey]?'selected':''}>${esc(x[labelKey])}</option>`
   ).join('');
@@ -129,8 +144,6 @@ function buildHTML(task, users, projects, tags, assignees, isEdit) {
           </div>
         </div>`).join('')
     : `<div style="padding:12px;color:var(--text-muted);font-size:0.875rem;">Nenhum usuário ativo.</div>`;
-
-  const showNL = task.type === 'newsletter';
 
   return `<div class="task-modal-grid">
     <div class="task-modal-main">
@@ -177,27 +190,38 @@ function buildHTML(task, users, projects, tags, assignees, isEdit) {
           ${PRIORITIES.map(p=>`<option value="${p.value}" ${task.priority===p.value?'selected':''}>${p.icon} ${p.label}</option>`).join('')}
         </select>
       </div>
+      <!-- Tipo de tarefa -->
       <div class="task-detail-field">
-        <div class="task-detail-label">Tipo</div>
-        <select class="form-select" id="tm-type" style="padding:8px 32px 8px 12px;">
-          ${opt(TASK_TYPES,'value','label',task.type||'')}
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+          <span class="task-detail-label" style="margin:0;">Tipo de tarefa</span>
+        </div>
+        <select class="form-select" id="tm-type-id" style="padding:8px 32px 8px 12px;">
+          <option value="">— Padrão (sem tipo) —</option>
+          ${(store.get('taskTypes')||[]).map(t =>
+            `<option value="${t.id}" ${(task.typeId||task.type)===t.id?'selected':''}
+              style="color:${t.color||'inherit'};">${esc(t.icon||'')} ${esc(t.name)}</option>`
+          ).join('')}
         </select>
       </div>
-      <div class="task-detail-field" id="newsletter-status-field" style="display:${showNL?'block':'none'};">
-        <div class="task-detail-label">Etapa da Newsletter</div>
-        <select class="form-select" id="tm-newsletter-status" style="padding:8px 32px 8px 12px;">
-          <option value="">— Selecione —</option>
-          ${opt(NEWSLETTER_STATUSES,'value','label',task.newsletterStatus||'')}
-        </select>
+
+      <!-- SLA badge (quando há tipo) -->
+      <div id="tm-sla-badge" style="display:${taskType?.sla?'block':'none'};">
+        ${taskType?.sla ? `
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
+            background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);
+            border-radius:var(--radius-md);font-size:0.8125rem;color:var(--text-secondary);">
+            <span style="color:var(--brand-gold);">⏱</span>
+            SLA: <strong style="color:var(--text-primary);">${esc(taskType.sla.label)}</strong>
+          </div>
+        ` : ''}
       </div>
-      <div class="task-detail-field" id="out-of-calendar-field" style="display:${showNL?'flex':'none'};align-items:center;gap:10px;">
-        <input type="checkbox" id="tm-out-of-calendar" ${task.outOfCalendar?'checked':''}
-          style="width:16px;height:16px;accent-color:var(--brand-gold);cursor:pointer;flex-shrink:0;" />
-        <label for="tm-out-of-calendar"
-          style="font-size:0.875rem;color:var(--text-secondary);cursor:pointer;line-height:1.4;">
-          Newsletter fora do calendário
-        </label>
+
+      <!-- Campos dinâmicos do tipo selecionado -->
+      <div id="tm-dynamic-fields">
+        ${renderTypeFields(taskType, task.customFields || {})}
       </div>
+
+      <!-- Campos legados (núcleos — mantidos até Fase 3) -->
       <div class="task-detail-field">
         <div class="task-detail-label">Núcleos</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0;">
@@ -216,6 +240,25 @@ function buildHTML(task, users, projects, tags, assignees, isEdit) {
           }).join('')}
         </div>
       </div>
+      ${(() => {
+        const workspaces  = store.get('userWorkspaces') || [];
+        const currentWsId = task.workspaceId || store.get('currentWorkspace')?.id;
+        const wsName      = workspaces.find(w => w.id === currentWsId)?.name || '';
+        if (isEdit && wsName) {
+          return `<div class="task-detail-field">
+            <div class="task-detail-label">Workspace</div>
+            <div class="task-detail-value" style="font-size:0.875rem;color:var(--text-secondary);">${esc(wsName)}</div>
+          </div>`;
+        } else if (!isEdit && workspaces.length > 1) {
+          return `<div class="task-detail-field">
+            <div class="task-detail-label">Workspace</div>
+            <select class="form-select" id="tm-workspace" style="padding:8px 32px 8px 12px;">
+              ${workspaces.map(w => `<option value="${w.id}" ${currentWsId===w.id?'selected':''}>${esc(w.name)}</option>`).join('')}
+            </select>
+          </div>`;
+        }
+        return '';
+      })()}
       <div class="task-detail-field">
         <div class="task-detail-label">Área solicitante</div>
         <select class="form-select" id="tm-area" style="padding:8px 32px 8px 12px;">
@@ -295,26 +338,43 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
     if (btn) { const chip=btn.closest('.tag-chip'); const tag=chip?.dataset.tag; if(tag){currentTags.splice(currentTags.indexOf(tag),1);chip.remove();} }
   });
 
-  // Type → newsletter fields
-  document.getElementById('tm-type')?.addEventListener('change', (e) => {
-    const isNL = e.target.value === 'newsletter';
-    const f1 = document.getElementById('newsletter-status-field');
-    const f2 = document.getElementById('out-of-calendar-field');
-    if (f1) f1.style.display = isNL ? 'block' : 'none';
-    if (f2) f2.style.display = isNL ? 'flex' : 'none';
-  });
-
-  // Nucleo chip toggle (styled checkboxes)
+  // Nucleo chip toggle (legacy)
   document.querySelectorAll('.nucleo-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       const cb = chip.querySelector('.tm-nucleo-check');
       if (!cb) return;
-      cb.checked = !cb.checked;
-      const checked = cb.checked;
-      chip.style.borderColor     = checked ? 'var(--brand-gold)' : 'var(--border-subtle)';
-      chip.style.background      = checked ? 'rgba(212,168,67,0.12)' : 'var(--bg-surface)';
-      chip.style.color           = checked ? 'var(--brand-gold)' : 'var(--text-secondary)';
+      cb.checked             = !cb.checked;
+      chip.style.borderColor = cb.checked ? 'var(--brand-gold)' : 'var(--border-subtle)';
+      chip.style.background  = cb.checked ? 'rgba(212,168,67,0.12)' : 'var(--bg-surface)';
+      chip.style.color       = cb.checked ? 'var(--brand-gold)' : 'var(--text-secondary)';
     });
+  });
+
+  // Bind dynamic field chips
+  bindDynamicFieldEvents(document);
+
+  // Type change → reload dynamic fields
+  document.getElementById('tm-type-id')?.addEventListener('change', async (e) => {
+    const typeId   = e.target.value;
+    const typeDoc  = typeId ? await getTaskType(typeId).catch(()=>null) : null;
+    const dynEl    = document.getElementById('tm-dynamic-fields');
+    const slaEl    = document.getElementById('tm-sla-badge');
+
+    if (dynEl) {
+      dynEl.innerHTML = renderTypeFields(typeDoc, {});
+      bindDynamicFieldEvents(dynEl);
+    }
+    if (slaEl) {
+      slaEl.style.display = typeDoc?.sla ? 'block' : 'none';
+      if (typeDoc?.sla) {
+        slaEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
+          background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);
+          border-radius:var(--radius-md);font-size:0.8125rem;color:var(--text-secondary);">
+          <span style="color:var(--brand-gold);">⏱</span>
+          SLA: <strong style="color:var(--text-primary);">${typeDoc.sla.label}</strong>
+        </div>`;
+      }
+    }
   });
 
   // Assignees
@@ -391,28 +451,45 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   if(!title){if(errEl)errEl.textContent='Título é obrigatório.';return;}
   if(errEl)errEl.textContent='';
 
-  const startVal=ctx.querySelector('#tm-start')?.value;
-  const dueVal=ctx.querySelector('#tm-due')?.value;
-  const typeVal=ctx.querySelector('#tm-type')?.value||'';
+  const startVal   = ctx.querySelector('#tm-start')?.value;
+  const dueVal     = ctx.querySelector('#tm-due')?.value;
+  const typeIdVal  = ctx.querySelector('#tm-type-id')?.value || '';
+  const typeDoc    = typeIdVal ? (store.get('taskTypes')||[]).find(t=>t.id===typeIdVal) : null;
+
+  // Validate required custom fields
+  if (typeDoc) {
+    const fieldErrors = validateRequiredFields(typeDoc, ctx);
+    if (fieldErrors.length) { toast.warning(fieldErrors[0].message); return; }
+  }
+
+  // Collect dynamic field values
+  const customFields = collectFieldValues(ctx);
 
   const data={
     title,
-    description: ctx.querySelector('#tm-desc')?.value?.trim()||'',
-    status:      ctx.querySelector('#tm-status')?.value||'not_started',
-    priority:    ctx.querySelector('#tm-priority')?.value||'medium',
-    projectId:   ctx.querySelector('#tm-project')?.value||null,
-    type:        typeVal,
-    newsletterStatus: typeVal==='newsletter' ? (ctx.querySelector('#tm-newsletter-status')?.value||'') : '',
+    description:  ctx.querySelector('#tm-desc')?.value?.trim()||'',
+    status:       ctx.querySelector('#tm-status')?.value||'not_started',
+    priority:     ctx.querySelector('#tm-priority')?.value||'medium',
+    projectId:    ctx.querySelector('#tm-project')?.value||null,
+    typeId:       typeIdVal || null,
+    customFields,
+    // Legacy fields — kept for backward compat
+    type:             typeDoc?.name?.toLowerCase() || '',
+    newsletterStatus: customFields.newsletterStatus || '',
+    outOfCalendar:    customFields.outOfCalendar    || false,
     requestingArea:   ctx.querySelector('#tm-area')?.value||'',
     clientEmail:      ctx.querySelector('#tm-client-email')?.value?.trim()||'',
+    workspaceId: ctx.querySelector('#tm-workspace')?.value
+      || task.workspaceId
+      || store.get('currentWorkspace')?.id
+      || null,
     assignees,
     tags: Array.from(document.querySelectorAll('.tag-chip[data-tag]')).map(el => el.dataset.tag),
     startDate: startVal ? new Date(startVal+'T00:00:00') : null,
     dueDate:   dueVal   ? new Date(dueVal  +'T23:59:59') : null,
   };
-  // Collect nucleos from checked chips
+  // Collect nucleos from legacy chips
   data.nucleos = Array.from(ctx.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);
-  data.outOfCalendar = ctx.querySelector('#tm-out-of-calendar')?.checked || false;
 
   if(isEdit) data._prevStatus=task.status;
 

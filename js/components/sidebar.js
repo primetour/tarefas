@@ -6,6 +6,7 @@
 import { store }  from '../store.js';
 import { router } from '../router.js';
 import { APP_CONFIG } from '../config.js';
+import { saveWorkspaceSelection } from '../services/workspaces.js';
 
 // ─── Definição de navegação ───────────────────────────────
 const NAV_GROUPS = [
@@ -23,7 +24,10 @@ const NAV_GROUPS = [
   {
     label: 'Gestão',
     items: [
+      { route: 'workspaces', icon: '◈',  label: 'Workspaces',  perm: 'workspace_create', altPerm: 'system_view_all' },
+      { route: 'requests',   icon: '◌',  label: 'Solicitações', perm: 'task_create', badge: true },
       { route: 'team',       icon: '◎',  label: 'Equipe',      roles: ['admin','manager'] },
+      { route: 'capacity',   icon: '🏖',  label: 'Capacidade',  roles: ['admin','manager','member'] },
       { route: 'csat',       icon: '★',  label: 'CSAT',        roles: ['admin','manager'] },
       { route: 'dashboards', icon: '◫',  label: 'Dashboards',  roles: ['admin','manager'] },
     ]
@@ -31,13 +35,56 @@ const NAV_GROUPS = [
   {
     label: 'Administração',
     items: [
-      { route: 'users',      icon: '◉',  label: 'Usuários',    roles: ['admin'] },
-      { route: 'audit',      icon: '◌',  label: 'Auditoria',   roles: ['admin'] },
-      { route: 'settings',   icon: '⚙',  label: 'Configurações', roles: ['admin'] },
-      { route: 'integrations', icon: '⟳', label: 'Integrações', roles: ['admin'] },
+      { route: 'users',        icon: '◉',  label: 'Usuários',       perm: 'system_manage_users' },
+      { route: 'task-types',   icon: '◎',  label: 'Tipos de Tarefa', perm: 'task_type_create', altPerm: 'task_type_edit' },
+      { route: 'roles',        icon: '◈',  label: 'Roles e Acesso', perm: 'system_manage_roles', altPerm: 'system_manage_users' },
+      { route: 'audit',        icon: '◌',  label: 'Auditoria',      perm: 'system_manage_settings' },
+      { route: 'settings',     icon: '⚙',  label: 'Configurações',  perm: 'system_manage_settings' },
+      { route: 'integrations', icon: '⟳',  label: 'Integrações',    perm: 'system_manage_settings' },
     ]
   }
 ];
+
+/* ─── Workspace selector HTML ────────────────────────────── */
+function buildWsSelector() {
+  const workspaces   = store.get('userWorkspaces') || [];
+  const activeIds    = store.get('activeWorkspaces') || [];
+  const current      = store.get('currentWorkspace');
+
+  if (!workspaces.length) return '';
+
+  return `
+    <div style="padding:8px 12px 4px; border-bottom:1px solid var(--border-subtle);">
+      <div style="font-size:0.625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;
+        color:var(--text-muted);margin-bottom:6px;">Workspaces</div>
+      <div style="display:flex;flex-direction:column;gap:3px;">
+        ${workspaces.map(ws => {
+          const isActive = activeIds.includes(ws.id);
+          return `
+            <div class="ws-toggle-chip ${isActive?'active':''}" data-wsid="${ws.id}"
+              style="display:flex;align-items:center;gap:8px;padding:5px 8px;
+              border-radius:var(--radius-md);cursor:pointer;transition:all 0.15s;
+              background:${isActive?ws.color+'18':'transparent'};
+              border:1px solid ${isActive?ws.color+'44':'transparent'};">
+              <div style="width:8px;height:8px;border-radius:50%;flex-shrink:0;
+                background:${ws.color||'#D4A843'};opacity:${isActive?1:0.4};"></div>
+              <span class="nav-label" style="font-size:0.8125rem;
+                color:${isActive?'var(--text-primary)':'var(--text-muted)'};
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
+                ${ws.name}
+              </span>
+              <div class="ws-current-dot" data-wsid="${ws.id}"
+                title="Definir como workspace padrão"
+                style="width:6px;height:6px;border-radius:50%;flex-shrink:0;
+                  background:${current?.id===ws.id?'var(--brand-gold)':'var(--border-subtle)'};
+                  transition:background 0.15s;">
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
 
 export class Sidebar {
   constructor() {
@@ -54,7 +101,11 @@ export class Sidebar {
     const avatarColor = profile?.avatarColor || '#3B82F6';
 
     const navGroupsHTML = NAV_GROUPS.map(group => {
-      const items = group.items.filter(item => item.roles.includes(role));
+      const items = group.items.filter(item => {
+        if (item.perm) return store.can(item.perm) || (item.altPerm && store.can(item.altPerm));
+        if (!item.roles) return true;
+        return item.roles.includes(role);
+      });
       if (!items.length) return '';
 
       return `
@@ -68,13 +119,20 @@ export class Sidebar {
             >
               <span class="nav-icon">${item.icon}</span>
               <span class="nav-label">${item.label}</span>
+              ${item.badge ? `<span class="sidebar-badge" style="
+                display:none;min-width:18px;height:18px;padding:0 4px;
+                border-radius:var(--radius-full);background:var(--color-danger);
+                color:#fff;font-size:0.625rem;font-weight:700;
+                align-items:center;justify-content:center;margin-left:auto;"></span>` : ''}
             </div>
           `).join('')}
         </div>
       `;
     }).join('');
 
-    const roleConfig = APP_CONFIG.roles[role] || APP_CONFIG.roles.member;
+    const allRoles  = store.get('roles') || [];
+    const roleDoc   = allRoles.find(r => r.id === (profile?.roleId||role));
+    const roleLabel = roleDoc?.name || APP_CONFIG.roles[role]?.label || role;
 
     const html = `
       <div class="sidebar-brand">
@@ -88,6 +146,11 @@ export class Sidebar {
         </button>
       </div>
 
+      <!-- Workspace selector -->
+      <div class="sidebar-ws-selector" id="sidebar-ws-selector">
+        ${buildWsSelector()}
+      </div>
+
       <nav class="sidebar-nav">
         ${navGroupsHTML}
       </nav>
@@ -99,7 +162,7 @@ export class Sidebar {
           >${initials}</div>
           <div class="sidebar-user-info">
             <div class="sidebar-user-name">${profile?.name || 'Usuário'}</div>
-            <div class="sidebar-user-role">${roleConfig.label}</div>
+            <div class="sidebar-user-role">${roleLabel}</div>
           </div>
           <button class="sidebar-user-menu-btn">⋯</button>
         </div>
@@ -143,6 +206,54 @@ export class Sidebar {
     // Subscribe to route changes
     this._unsubRoute = store.subscribe('currentRoute', (route) => {
       this.setActive(route);
+    });
+
+    // Subscribe to workspace changes — re-render selector
+    this._unsubWs = store.subscribe('userWorkspaces', () => {
+      const sel = this.el?.querySelector('#sidebar-ws-selector');
+      if (sel) sel.innerHTML = buildWsSelector();
+      this._attachWsEvents();
+    });
+
+    this._attachWsEvents();
+  }
+
+  _attachWsEvents() {
+    // Toggle workspace active
+    this.el?.querySelectorAll('.ws-toggle-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const wsId   = chip.dataset.wsid;
+        let active   = [...(store.get('activeWorkspaces') || [])];
+        if (active.includes(wsId)) {
+          // Não permite desativar o último
+          if (active.length === 1) return;
+          active = active.filter(id => id !== wsId);
+        } else {
+          active.push(wsId);
+        }
+        store.set('activeWorkspaces', active);
+        saveWorkspaceSelection(active, store.get('currentWorkspace')?.id);
+        // Re-render selector
+        const sel = this.el?.querySelector('#sidebar-ws-selector');
+        if (sel) sel.innerHTML = buildWsSelector();
+        this._attachWsEvents();
+      });
+    });
+
+    // Set current workspace (dot)
+    this.el?.querySelectorAll('.ws-current-dot').forEach(dot => {
+      dot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const wsId = dot.dataset.wsid;
+        const ws   = (store.get('userWorkspaces')||[]).find(w => w.id === wsId);
+        if (!ws) return;
+        store.set('currentWorkspace', ws);
+        saveWorkspaceSelection(store.get('activeWorkspaces')||[], wsId);
+        const sel = this.el?.querySelector('#sidebar-ws-selector');
+        if (sel) sel.innerHTML = buildWsSelector();
+        this._attachWsEvents();
+      });
     });
   }
 
@@ -196,6 +307,7 @@ export class Sidebar {
 
   destroy() {
     this._unsubRoute?.();
+    this._unsubWs?.();
     this.el?.remove();
     this.overlay?.remove();
   }
