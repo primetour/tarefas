@@ -126,9 +126,50 @@ function renderMembers(container) {
 
   // Group by sector
   const sectors = [...new Set(users.map(u => u.sector || u.department || 'Sem setor'))].sort();
+  const allRoles = store.get('roles') || [];
 
   container.innerHTML = sectors.map(sector => {
     const sectorUsers = users.filter(u => (u.sector || u.department || 'Sem setor') === sector);
+
+    const cards = sectorUsers.map(u => {
+      const initials  = u.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+      const roleDoc   = allRoles.find(r => r.id === (u.roleId||u.role));
+      const roleName  = roleDoc?.name || u.role || '—';
+      const roleColor = roleDoc?.color || '#6B7280';
+      const userWs    = workspaces.filter(ws => ws.members?.includes(u.id));
+
+      const wsChips = userWs.slice(0,2).map(ws =>
+        `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:var(--radius-full);
+          background:${ws.color||'#D4A843'}15;color:${ws.color||'#D4A843'};
+          border:1px solid ${ws.color||'#D4A843'}33;">
+          ${esc(ws.icon||'◈')} ${esc(ws.name)}
+        </span>`
+      ).join('');
+
+      return `
+        <div class="card" style="padding:16px;">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+            <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};
+              width:40px;height:40px;font-size:0.875rem;flex-shrink:0;">
+              ${initials}
+            </div>
+            <div style="min-width:0;flex:1;">
+              <div style="font-weight:600;color:var(--text-primary);
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.name)}</div>
+              <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u.nucleo||u.department||u.email||'')}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:0.6875rem;padding:2px 8px;border-radius:var(--radius-full);
+              background:${roleColor}22;color:${roleColor};border:1px solid ${roleColor}44;">
+              ${esc(roleName)}
+            </span>
+            ${wsChips}
+          </div>
+        </div>
+      `;
+    }).join('');
+
     return `
       <div style="margin-bottom:28px;">
         <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
@@ -137,45 +178,11 @@ function renderMembers(container) {
           ${esc(sector)} <span style="font-weight:400;opacity:0.6;">(${sectorUsers.length})</span>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;">
-          ${sectorUsers.map(u => {
-        const initials   = u.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
-        const allRoles   = store.get('roles') || [];
-        const roleDoc    = allRoles.find(r => r.id === (u.roleId||u.role));
-        const roleName   = roleDoc?.name || u.role || '—';
-        const roleColor  = roleDoc?.color || '#6B7280';
-        const userWs     = workspaces.filter(ws => ws.members?.includes(u.id));
-
-        return `
-          <div class="card" style="padding:16px;">
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-              <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};
-                width:40px;height:40px;font-size:0.875rem;flex-shrink:0;">
-                ${initials}
-              </div>
-              <div style="min-width:0;flex:1;">
-                <div style="font-weight:600;color:var(--text-primary);
-                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.name)}</div>
-                <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u.department||u.email||'')}</div>
-              </div>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <span style="font-size:0.6875rem;padding:2px 8px;border-radius:var(--radius-full);
-                background:${roleColor}22;color:${roleColor};border:1px solid ${roleColor}44;">
-                ${esc(roleName)}
-              </span>
-              ${userWs.slice(0,2).map(ws => `
-                <span style="font-size:0.6875rem;padding:2px 8px;border-radius:var(--radius-full);
-                  background:${ws.color||'#D4A843'}15;color:${ws.color||'#D4A843'};
-                  border:1px solid ${ws.color||'#D4A843'}33;">
-                  ${esc(ws.icon||'◈')} ${esc(ws.name)}
-                </span>
-              `).join('')}
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
+          ${cards}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 /* ─── Tab: Minhas ausências ──────────────────────────────── */
