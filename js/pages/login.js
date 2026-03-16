@@ -16,7 +16,8 @@ export function renderLogin(container) {
         
         <div class="auth-brand">
           <div class="auth-brand-logo">
-            <div class="auth-brand-icon">✦</div>
+            <img src="assets/mandala-branca.png" alt="PRIMETOUR"
+            style="width:36px;height:36px;border-radius:var(--radius-sm);object-fit:contain;" />
             <span class="auth-brand-name">PRIMETOUR</span>
           </div>
           <p class="auth-brand-tagline">Plataforma de Gestão de Tarefas</p>
