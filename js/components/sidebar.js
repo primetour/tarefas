@@ -102,9 +102,13 @@ export class Sidebar {
 
     const navGroupsHTML = NAV_GROUPS.map(group => {
       const items = group.items.filter(item => {
+        // Master always sees everything
+        if (store.isMaster()) return true;
         if (item.perm) return store.can(item.perm) || (item.altPerm && store.can(item.altPerm));
         if (!item.roles) return true;
-        return item.roles.includes(role);
+        // 'master' role maps to 'admin' for nav purposes
+        const effectiveRole = (role === 'master') ? 'admin' : role;
+        return item.roles.includes(effectiveRole);
       });
       if (!items.length) return '';
 
