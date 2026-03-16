@@ -157,6 +157,13 @@ export async function initSystemRoles() {
         createdBy:  'system',
         updatedAt:  serverTimestamp(),
       });
+    } else {
+      // Always sync permissions from code — Firestore may have stale data
+      await setDoc(ref, {
+        ...snap.data(),
+        permissions: role.permissions,
+        updatedAt:   serverTimestamp(),
+      }, { merge: true });
     }
   }
 }

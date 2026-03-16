@@ -216,6 +216,13 @@ export function subscribeToTasks(callback, filters = {}) {
 
     if (filters.projectId) tasks = tasks.filter(t => t.projectId === filters.projectId);
     callback(tasks);
+  }, (error) => {
+    // Handle permission errors gracefully — fallback to empty array
+    console.warn('subscribeToTasks error:', error.code, error.message);
+    if (error.code === 'permission-denied') {
+      // Try a one-time fetch instead
+      fetchTasks(filters).then(callback).catch(() => callback([]));
+    }
   });
 }
 
