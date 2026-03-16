@@ -35,27 +35,34 @@ async function boot() {
 
 async function loadTaskTypes(db) {
   try {
+    // No orderBy to avoid composite index requirement
+    const snap = await getDocs(collection(db, 'task_types'));
+    const types = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Sort client-side
+    return types.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+  } catch(e) {
+    console.warn('loadTaskTypes error:', e.message);
+    // Fallback: return newsletter as minimum
+    return [{ id: 'newsletter', name: 'Newsletter', icon: '📧', color: '#D4A843',
+      sla: { days: 2, label: '2 dias úteis' } }];
+  }
+}
+
+/* ─── Load nucleos from Firestore by sector ─────────────── */
+async function loadNucleosBySector(db, sector) {
+  try {
     const snap = await getDocs(query(
-      collection(db, 'task_types'),
-      orderBy('createdAt', 'asc'),
-      limit(50),
+      collection(db, 'nucleos'),
+      where('sector', '==', sector)
     ));
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => a.name.localeCompare(b.name,'pt-BR'));
   } catch(e) {
     return [];
   }
 }
 
-/* ─── Núcleos fixos (espelha NUCLEOS do tasks.js) ────────── */
-const NUCLEOS = [
-  { value: 'design',        label: 'Design'        },
-  { value: 'comunicacao',   label: 'Comunicação'   },
-  { value: 'redes_sociais', label: 'Redes Sociais' },
-  { value: 'dados',         label: 'Dados'         },
-  { value: 'web',           label: 'Web'           },
-  { value: 'sistemas',      label: 'Sistemas'      },
-  { value: 'ia',            label: 'IA'            },
-];
+/* ─── Setores (espelha REQUESTING_AREAS) ────────────────── */
+// NUCLEOS agora são carregados do Firestore por setor
 
 const REQUESTING_AREAS = [
   'BTG','C&P','Célula ICs','Centurion','CEP','Concierge Bradesco',
@@ -141,16 +148,26 @@ function renderForm(db, taskTypes) {
                 </div>
               </div>
 
-              <div class="form-group" id="fg-nucleo">
+              <div class="form-group" id="fg-setor">
                 <label class="form-label">
-                  Núcleo responsável <span class="required">*</span>
+                  Setor responsável <span class="required">*</span>
+                  <span class="info-tip" title="Selecione o setor que receberá esta demanda.">ℹ</span>
+                </label>
+                <select class="form-select" id="p-setor">
+                  <option value="">— Selecione o setor —</option>
+                  ${REQUESTING_AREAS.map(a => `<option value="${a}">${a}</option>`).join('')}
+                </select>
+                <div class="form-error" id="err-setor">Selecione um setor.</div>
+              </div>
+
+              <div class="form-group" id="fg-nucleo" style="display:none;">
+                <label class="form-label">
+                  Núcleo responsável
                   <span class="info-tip" title="Selecione o núcleo de produção que receberá esta demanda.">ℹ</span>
                 </label>
                 <select class="form-select" id="p-nucleo">
                   <option value="">— Selecione o núcleo —</option>
-                  ${NUCLEOS.map(n => `<option value="${n.value}">${n.label}</option>`).join('')}
                 </select>
-                <div class="form-error" id="err-nucleo">Selecione um núcleo.</div>
               </div>
 
               <div class="form-group" id="fg-desc">
@@ -416,6 +433,28 @@ function renderNewsletterMiniCalendar(newsletterDates) {
 
 /* ─── Bind events ─────────────────────────────────────────── */
 function bindFormEvents(db, taskTypes) {
+  // Sector → nucleo cascade
+  // Sector → nucleo cascade
+  document.getElementById('p-setor')?.addEventListener('change', async (e) => {
+    const sector   = e.target.value;
+    const nucleoFG = document.getElementById('fg-nucleo');
+    const nucleoSel= document.getElementById('p-nucleo');
+    if (!sector) {
+      if (nucleoFG) nucleoFG.style.display = 'none';
+      return;
+    }
+    // Load nucleos for this sector
+    const nucleos = await loadNucleosBySector(db, sector);
+    if (!nucleoSel) return;
+    if (!nucleos.length) {
+      nucleoFG && (nucleoFG.style.display = 'none');
+      return;
+    }
+    nucleoSel.innerHTML = '<option value="">— Selecione o núcleo —</option>' +
+      nucleos.map(n => `<option value="${n.name}">${n.name}</option>`).join('');
+    nucleoFG && (nucleoFG.style.display = 'block');
+  });
+
   // Show slots when a type is selected
   document.getElementById('p-type')?.addEventListener('change', (e) => {
     const typeId   = e.target.value;
@@ -494,7 +533,7 @@ function validate() {
     { id: 'p-email',  errId: 'err-email',  fgId: 'fg-email',  check: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) },
     { id: 'p-area',   errId: 'err-area',   fgId: 'fg-area',   check: v => v !== '' },
     { id: 'p-type',   errId: 'err-type',   fgId: 'fg-type',   check: v => v !== '' },
-    { id: 'p-nucleo', errId: 'err-nucleo', fgId: 'fg-nucleo', check: v => v !== '' },
+    { id: 'p-setor',  errId: 'err-setor',  fgId: 'fg-setor',  check: v => v !== '' },
     { id: 'p-desc',   errId: 'err-desc',   fgId: 'fg-desc',   check: v => v.trim().length >= 10 },
   ];
 
@@ -529,9 +568,11 @@ async function handleSubmit(db, taskTypes) {
       requesterName:  document.getElementById('p-name')?.value?.trim() || '',
       requesterEmail: document.getElementById('p-email')?.value?.trim().toLowerCase() || '',
       requestingArea: document.getElementById('p-area')?.value || '',
+      sector:         document.getElementById('p-setor')?.value  || '',
       typeId,
       typeName:       typeData?.name || typeId,
       nucleo:         document.getElementById('p-nucleo')?.value || '',
+      requestingSetor: document.getElementById('p-setor')?.value   || '',
       description:    document.getElementById('p-desc')?.value?.trim() || '',
       urgency,
       desiredDate:    document.getElementById('p-date')?.value
