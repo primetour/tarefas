@@ -18,7 +18,7 @@ const FIREBASE_CONFIG = {
 /* ─── Bootstrap ───────────────────────────────────────────── */
 async function boot() {
   // Importar config do app principal
-  const configModule = await import('./config.js').catch(() => null);
+  const configModule = await import('../config.js').catch(() => null);
   const firebaseConfig = configModule?.firebaseConfig;
   if (!firebaseConfig) {
     showError('Configuração do sistema não encontrada.');
@@ -468,7 +468,7 @@ async function handleSubmit(db, taskTypes) {
 /* ─── Email notification ──────────────────────────────────── */
 async function notifyTeam({ requesterName, requesterEmail, typeName, nucleo, urgency, requestId }) {
   try {
-    const configModule = await import('./config.js').catch(() => null);
+    const configModule = await import('../config.js').catch(() => null);
     const cfg = configModule?.APP_CONFIG?.emailjs;
     if (!cfg?.publicKey || cfg.publicKey === 'SUA_EMAILJS_PUBLIC_KEY') return;
 
