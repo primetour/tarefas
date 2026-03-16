@@ -129,10 +129,10 @@ export async function renderUsers(container) {
       </div>
       <div class="toolbar-filter">
         <select class="filter-select" id="filter-role">
-          <option value="">Todos os papéis</option>
-          <option value="admin">Administrador</option>
-          <option value="manager">Gerente</option>
-          <option value="member">Membro</option>
+          <option value="">Todos os cargos</option>
+          ${availableRoles.map(r =>
+            `<option value="${r.id}">${r.name}</option>`
+          ).join('')}
         </select>
         <select class="filter-select" id="filter-status">
           <option value="">Todos os status</option>
@@ -163,12 +163,23 @@ async function loadUsers() {
       getDocs(query(collection(db, 'users'), orderBy('name', 'asc'))),
       fetchRoles().catch(() => []),
     ]);
-    users          = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    availableRoles = roles;
+    users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Merge SYSTEM_ROLES as fallback so new roles appear even before Firestore sync
+    const { SYSTEM_ROLES } = await import('../services/rbac.js');
+    const roleIds = new Set(roles.map(r => r.id));
+    const merged  = [...roles, ...SYSTEM_ROLES.filter(r => !roleIds.has(r.id))];
+    availableRoles = merged;
     store.set('users', users);
-    store.set('roles', roles);
+    store.set('roles', merged);
     renderStats();
     applyFilters();
+    // Rebuild role filter with dynamic roles after load
+    const filterRoleEl = document.getElementById('filter-role');
+    if (filterRoleEl) {
+      filterRoleEl.innerHTML = '<option value="">Todos os cargos</option>' +
+        availableRoles.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+    }
   } catch (err) {
     console.error('Load users error:', err);
     toast.error('Erro ao carregar usuários: ' + err.message);
@@ -179,10 +190,13 @@ function renderStats() {
   const statsEl = document.getElementById('users-stats');
   if (!statsEl) return;
 
-  const total    = users.length;
-  const active   = users.filter(u => u.active).length;
-  const admins   = users.filter(u => u.role === 'admin').length;
-  const managers = users.filter(u => u.role === 'manager').length;
+  const total       = users.length;
+  const active      = users.filter(u => u.active).length;
+
+  // Count by roleId (new) falling back to role (legacy)
+  const countRole   = id => users.filter(u => (u.roleId||u.role) === id).length;
+  const heads       = countRole('admin');
+  const managers    = countRole('manager') + countRole('coordinator');
 
   statsEl.innerHTML = `
     <div class="stat-card">
@@ -199,13 +213,13 @@ function renderStats() {
     </div>
     <div class="stat-card">
       <div class="stat-card-icon" style="background:rgba(167,139,250,0.12); color:var(--role-admin);">★</div>
-      <div class="stat-card-label">Administradores</div>
-      <div class="stat-card-value">${admins}</div>
-      <div class="stat-card-trend trend-flat">com acesso total</div>
+      <div class="stat-card-label">Heads</div>
+      <div class="stat-card-value">${heads}</div>
+      <div class="stat-card-trend trend-flat">acesso ampliado</div>
     </div>
     <div class="stat-card">
       <div class="stat-card-icon" style="background:rgba(56,189,248,0.12); color:var(--role-manager);">◈</div>
-      <div class="stat-card-label">Gerentes</div>
+      <div class="stat-card-label">Gerentes / Coord.</div>
       <div class="stat-card-value">${managers}</div>
       <div class="stat-card-trend trend-flat">de projetos</div>
     </div>
@@ -224,7 +238,7 @@ function applyFilters() {
     );
   }
 
-  if (filterRole)   result = result.filter(u => u.role === filterRole);
+  if (filterRole)   result = result.filter(u => (u.roleId||u.role) === filterRole);
   if (filterStatus === 'active')   result = result.filter(u => u.active);
   if (filterStatus === 'inactive') result = result.filter(u => !u.active);
 
@@ -323,7 +337,7 @@ function renderUserRow(user) {
           </div>
           <div>
             <div style="font-weight:500; color:var(--text-primary);">${escHtml(user.name)}</div>
-            ${user.firstLogin ? '<div class="text-xs" style="color:var(--color-warning);">⚠ Primeiro login pendente</div>' : ''}
+            
           </div>
         </div>
       </td>
