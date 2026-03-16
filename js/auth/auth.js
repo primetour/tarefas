@@ -219,7 +219,10 @@ export async function updateUserProfile(uid, data) {
     'name', 'department', 'phone', 'jobTitle', 'bio',
     'avatarColor', 'prefs', 'firstLogin',
   ];
-  const adminFields = ['role', 'active'];
+  const adminFields = [
+    'role', 'roleId', 'active',
+    'nucleo', 'sector', 'visibleSectors',
+  ];
 
   const updateData = {};
   allowedFields.forEach(f => { if (data[f] !== undefined) updateData[f] = data[f]; });
