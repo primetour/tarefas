@@ -41,7 +41,8 @@ function getInitials(name) {
 }
 
 export async function openTaskModal({ taskData=null, projectId=null, status='not_started', onSave=null, typeId=null } = {}) {
-  const isEdit = !!taskData;
+  // isEdit only when taskData has a real Firestore id (not a prefill from requests portal)
+  const isEdit = !!(taskData?.id);
 
   let users = store.get('users') || [];
   if (!users.length) {
@@ -57,7 +58,22 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
   const projects = await fetchProjects().catch(() => []);
 
-  let task = isEdit ? { ...taskData } : {
+  // Sanitize taskData — ensure arrays are always arrays (protects against undefined from external callers)
+  let task = isEdit ? {
+    tags:        [],
+    assignees:   [],
+    subtasks:    [],
+    comments:    [],
+    nucleos:     [],
+    customFields:{},
+    ...taskData,
+    tags:        Array.isArray(taskData?.tags)      ? taskData.tags      : [],
+    assignees:   Array.isArray(taskData?.assignees) ? taskData.assignees : [],
+    subtasks:    Array.isArray(taskData?.subtasks)  ? taskData.subtasks  : [],
+    comments:    Array.isArray(taskData?.comments)  ? taskData.comments  : [],
+    nucleos:     Array.isArray(taskData?.nucleos)   ? taskData.nucleos   : [],
+    customFields: taskData?.customFields || {},
+  } : {
     title:'', description:'', status, priority:'medium',
     projectId: projectId||null, assignees:[], tags:[],
     startDate:null, dueDate:null, subtasks:[], comments:[],
@@ -335,7 +351,7 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
   });
   document.getElementById('tag-input-area')?.addEventListener('click', (e) => {
     const btn = e.target.closest('.tag-chip-remove');
-    if (btn) { const chip=btn.closest('.tag-chip'); const tag=chip?.dataset.tag; if(tag){currentTags.splice(currentTags.indexOf(tag),1);chip.remove();} }
+    if (btn) { const chip=btn.closest('.tag-chip'); const tag=chip?.dataset.tag; if(tag){const idx=currentTags.indexOf(tag);if(idx>-1)currentTags.splice(idx,1);chip.remove();} }
   });
 
   // Nucleo chip toggle (legacy)
@@ -496,9 +512,17 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   const btn=document.querySelector('.modal-footer .btn-primary');
   if(btn){btn.classList.add('loading');btn.disabled=true;}
   try {
-    if(isEdit){await updateTask(task.id,data);toast.success('Tarefa atualizada!');}
-    else{await createTask(data);toast.success('Tarefa criada!');}
-    close(); onSave?.();
+    let savedTask;
+    if(isEdit){
+      await updateTask(task.id,data);
+      toast.success('Tarefa atualizada!');
+      savedTask = { id: task.id, ...data };
+    } else {
+      savedTask = await createTask(data);
+      toast.success('Tarefa criada!');
+    }
+    close();
+    onSave?.(savedTask?.id, savedTask);
   } catch(err){toast.error(err.message);}
   finally{if(btn){btn.classList.remove('loading');btn.disabled=false;}}
 }
