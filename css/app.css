@@ -129,6 +129,23 @@
   padding: var(--space-4) var(--space-2);
   overflow-y: auto;
   overflow-x: hidden;
+  /* Allow scroll when all accordions are open — footer stays fixed */
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 2px;
 }
 
 .sidebar-section {
