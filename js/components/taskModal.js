@@ -141,7 +141,14 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
     return `<div class="tag-chip" data-tag="${esc(t)}" style="background:hsl(${hue},40%,25%);color:hsl(${hue},70%,75%);border:1px solid hsl(${hue},40%,35%);">${esc(t)}<button class="tag-chip-remove">✕</button></div>`;
   }).join('');
 
-  const activeUsers = users.filter(u => u.active !== false);
+  // Filter users by visible sectors
+  const visibleSectors = store.get('visibleSectors') || [];
+  const activeUsers = users.filter(u => {
+    if (u.active === false) return false;
+    if (store.isMaster() || !visibleSectors.length) return true;
+    const uSector = u.sector || u.department;
+    return !uSector || visibleSectors.includes(uSector);
+  });
   const assigneeChips = assignees.map(uid => {
     const u = activeUsers.find(u=>u.id===uid);
     if (!u) return '';

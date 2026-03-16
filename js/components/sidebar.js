@@ -36,6 +36,7 @@ const NAV_GROUPS = [
     label: 'Administração',
     items: [
       { route: 'users',        icon: '◉',  label: 'Usuários',       perm: 'system_manage_users' },
+      { route: 'sectors',      icon: '◈',  label: 'Setores e Núcleos', perm: 'system_manage_users' },
       { route: 'task-types',   icon: '▣',  label: 'Tipos de Tarefa', perm: 'task_type_create', altPerm: 'system_manage_users' },
       { route: 'roles',        icon: '◈',  label: 'Roles e Acesso', perm: 'system_manage_roles', altPerm: 'system_manage_users' },
       { route: 'audit',        icon: '◌',  label: 'Auditoria',      perm: 'system_manage_settings' },
