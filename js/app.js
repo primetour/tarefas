@@ -27,6 +27,8 @@ import { renderRoles }       from './pages/roles.js';
 import { renderWorkspaces }   from './pages/workspaces.js';
 import { renderTaskTypes }    from './pages/taskTypes.js';
 import { renderCapacity }     from './pages/capacity.js';
+import { renderTeam }         from './pages/team.js';
+import { renderGoals }        from './pages/goals.js';
 import { renderRequests, destroyRequests } from './pages/requests.js';
 import { renderCsat, destroyCsat }      from './pages/csat.js';
 import { renderIntegrations }             from './pages/integrations.js';
@@ -184,13 +186,14 @@ function setupRouter() {
     'kanban':       async () => { destroyTasksPage(); await renderKanban(content); },
     'calendar':     async () => { destroyKanban(); await renderCalendar(content); },
     'timeline':     async () => { destroyKanban(); await renderTimeline(content); },
-    'team':         async () => renderPlaceholder(content, 'team'),
+    'team':         async () => { await renderTeam(content); },
     'csat':         async () => { destroyCsat(); await renderCsat(content); },
     'dashboards':   async () => { destroyDashboards(); await renderDashboards(content); },
     'audit':        async () => { await renderAudit(content); },
     'workspaces':   async () => { await renderWorkspaces(content); },
     'task-types':   async () => { await renderTaskTypes(content); },
-    'capacity':     async () => { await renderCapacity(content); },
+    'capacity':     async () => { await renderTeam(content); }, // capacity merged into team
+    'goals':        async () => { await renderGoals(content); },
     'requests':     async () => { await renderRequests(content); },
     'roles':        async () => { await renderRoles(content); },
     'settings':     async () => { await renderSettings(content); },
