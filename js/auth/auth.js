@@ -71,17 +71,19 @@ export function initAuthObserver(onReady) {
         store.set('currentUser',     firebaseUser);
         store.set('userProfile',     profile);
         store.set('isAuthenticated', true);
-        store.set('authLoading',     false);
 
-        // Carregar role e permissões do usuário
-        const roleId = profile.roleId || profile.role || 'member';
+        // Carregar role e permissões ANTES de liberar o app
+        const roleId  = profile.roleId || profile.role || 'member';
         const roleDoc = await getRole(roleId).catch(() => null)
           || SYSTEM_ROLES.find(r => r.id === roleId)
           || SYSTEM_ROLES.find(r => r.id === 'member');
         store.loadPermissions(roleDoc);
 
-        // Carregar workspaces do usuário (silencioso)
-        loadUserWorkspaces().catch(() => {});
+        // Carregar workspaces ANTES de liberar o app
+        await loadUserWorkspaces().catch(() => {});
+
+        // Só agora libera o app — permissões e workspaces já estão no store
+        store.set('authLoading', false);
 
         // Inicializar e carregar tipos de tarefa (silencioso)
         initSystemTaskTypes().catch(() => {});
