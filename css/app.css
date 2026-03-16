@@ -486,6 +486,20 @@
   flex-shrink: 0;
 }
 
+/* ─── WORKSPACE SELECTOR ─────────────────────────────────── */
+.sidebar-ws-selector {
+  flex-shrink: 0;
+}
+
+.ws-toggle-chip:hover {
+  background: var(--bg-hover) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+.sidebar.collapsed .sidebar-ws-selector {
+  display: none;
+}
+
 /* ─── MOBILE SIDEBAR OVERLAY ──────────────────────────────── */
 .sidebar-overlay {
   display: none;
