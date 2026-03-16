@@ -26,6 +26,7 @@ import {
 import { auth, secondaryAuth, db } from '../firebase.js';
 import { getRole, initSystemRoles, SYSTEM_ROLES } from '../services/rbac.js';
 import { loadUserWorkspaces }          from '../services/workspaces.js';
+import { loadNucleos }                  from '../services/sectors.js';
 import { initSystemTaskTypes, loadTaskTypes } from '../services/taskTypes.js';
 import { store }   from '../store.js';
 import { toast }   from '../components/toast.js';
@@ -81,6 +82,16 @@ export function initAuthObserver(onReady) {
 
         // Carregar workspaces ANTES de liberar o app
         await loadUserWorkspaces().catch(() => {});
+
+        // Definir setor do usuário no store
+        const userSector = profile.sector || profile.department || null;
+        store.set('userSector', userSector);
+        // visibleSectors: Head pode ter array de setores definido pela Diretoria
+        const visibleSectors = profile.visibleSectors || (userSector ? [userSector] : []);
+        store.set('visibleSectors', visibleSectors);
+
+        // Carregar núcleos do setor
+        loadNucleos().catch(() => {});
 
         // Só agora libera o app — permissões e workspaces já estão no store
         store.set('authLoading', false);
@@ -173,7 +184,9 @@ export async function createUser({ name, email, password, role, department = '' 
     email:        email.trim().toLowerCase(),
     role:         role,         // mantido para compatibilidade
     roleId:       role,         // novo campo RBAC
-    department:   department.trim(),
+    nucleo:       department.trim(),     // núcleo do usuário (ex: Design)
+    department:   department.trim(),     // mantido por compatibilidade
+    sector:       '',                    // setor preenchido separadamente
     avatarColor:  avatarColor,
     active:       true,
     firstLogin:   true,
