@@ -10,9 +10,13 @@ import {
 import { db }          from '../firebase.js';
 import { store }       from '../store.js';
 import { createUser, updateUserProfile, deactivateUser, reactivateUser } from '../auth/auth.js';
+import { fetchRoles } from '../services/rbac.js';
 import { toast }       from '../components/toast.js';
 import { modal }       from '../components/modal.js';
 import { APP_CONFIG }  from '../config.js';
+
+// ─── Roles (carregado dinamicamente) ────────────────────────
+let availableRoles = [];
 
 // ─── Setores disponíveis ─────────────────────────────────
 const DEPARTMENTS = [
@@ -50,7 +54,7 @@ let sortDir      = 'asc';
 // ─── Render principal ─────────────────────────────────────
 export async function renderUsers(container) {
   // Verificar permissão
-  if (!store.isAdmin()) {
+  if (!store.can('system_manage_users')) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">🔒</div>
@@ -154,11 +158,14 @@ export async function renderUsers(container) {
 
 async function loadUsers() {
   try {
-    const snap = await getDocs(
-      query(collection(db, 'users'), orderBy('name', 'asc'))
-    );
-    users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const [snap, roles] = await Promise.all([
+      getDocs(query(collection(db, 'users'), orderBy('name', 'asc'))),
+      fetchRoles().catch(() => []),
+    ]);
+    users          = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    availableRoles = roles;
     store.set('users', users);
+    store.set('roles', roles);
     renderStats();
     applyFilters();
   } catch (err) {
@@ -299,7 +306,8 @@ function renderTable() {
 }
 
 function renderUserRow(user) {
-  const roleConfig  = APP_CONFIG.roles[user.role] || APP_CONFIG.roles.member;
+  const roleConfig  = availableRoles.find(r => r.id === (user.roleId||user.role))
+    || { name: user.role, color: '#6B7280' };
   const initials    = user.name?.split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase() || '?';
   const lastLogin   = user.lastLogin?.toDate?.()
     ? formatDate(user.lastLogin.toDate())
@@ -319,7 +327,9 @@ function renderUserRow(user) {
         </div>
       </td>
       <td style="color:var(--text-secondary);">${escHtml(user.email)}</td>
-      <td><span class="badge ${roleConfig.badge}">${roleConfig.label}</span></td>
+      <td><span class="badge" style="background:${roleConfig?.color||'#6B7280'}22;color:${roleConfig?.color||'#6B7280'};border:1px solid ${roleConfig?.color||'#6B7280'}44;">
+        ${escHtml(roleConfig?.name || roleConfig?.label || user.role || '—')}
+      </span></td>
       <td style="color:var(--text-secondary);">${escHtml(user.department || '—')}</td>
       <td>
         <span class="badge ${user.active ? 'badge-success' : 'badge-danger'}">
@@ -411,9 +421,12 @@ function openUserModal(userId = null) {
         <div class="form-group">
           <label class="form-label">Papel *</label>
           <select class="form-select" id="uf-role" required>
-            <option value="member"  ${user?.role === 'member'  ? 'selected' : ''}>Membro</option>
-            <option value="manager" ${user?.role === 'manager' ? 'selected' : ''}>Gerente</option>
-            <option value="admin"   ${user?.role === 'admin'   ? 'selected' : ''}>Administrador</option>
+            ${availableRoles.map(r =>
+              `<option value="${r.id}" ${(user?.roleId||user?.role)===r.id?'selected':''}
+                style="color:${r.color||'inherit'};">
+                ${escHtml(r.name)}
+              </option>`
+            ).join('')}
           </select>
         </div>
         <div class="form-group">
@@ -514,10 +527,10 @@ async function handleUserSave(userId, isEdit, closeModal) {
 
   try {
     if (isEdit) {
-      await updateUserProfile(userId, { name, role, department, active });
+      await updateUserProfile(userId, { name, role, roleId: role, department, active });
       toast.success(`Usuário "${name}" atualizado com sucesso!`);
     } else {
-      await createUser({ name, email, password, role, department });
+      await createUser({ name, email, password, role, roleId: role, department });
       toast.success(`Usuário "${name}" criado com sucesso!`);
     }
     closeModal();

@@ -15,7 +15,7 @@ import { auditLog }    from '../auth/audit.js';
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 export async function renderSettings(container) {
-  if (!store.isAdmin()) {
+  if (!store.can('system_manage_settings')) {
     container.innerHTML = `
       <div class="empty-state" style="min-height:60vh;">
         <div class="empty-state-icon">🔒</div>

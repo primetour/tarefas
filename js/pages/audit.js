@@ -51,7 +51,7 @@ function getActionIcon(action) {
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderAudit(container) {
-  if (!store.isAdmin()) {
+  if (!store.can('system_manage_settings')) {
     container.innerHTML = `
       <div class="empty-state" style="min-height:60vh;">
         <div class="empty-state-icon">🔒</div>

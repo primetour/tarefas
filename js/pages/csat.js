@@ -33,7 +33,7 @@ export async function renderCsat(container) {
       </div>
       <div class="page-header-actions">
         <button class="btn btn-secondary btn-sm" id="csat-export-btn">↓ Exportar CSV</button>
-        ${store.isManager() ? `<button class="btn btn-primary" id="csat-new-btn">+ Nova Pesquisa</button>` : ''}
+        ${store.can('csat_send') ? `<button class="btn btn-primary" id="csat-new-btn">+ Nova Pesquisa</button>` : ''}
       </div>
     </div>
 
@@ -194,7 +194,7 @@ function renderList(view = 'cards') {
       <div class="task-empty">
         <div class="task-empty-icon">📧</div>
         <div class="task-empty-title">${allSurveys.length === 0 ? 'Nenhuma pesquisa criada ainda' : 'Nenhuma pesquisa encontrada'}</div>
-        ${allSurveys.length === 0 && store.isManager() ? `
+        ${allSurveys.length === 0 && store.can('csat_send') ? `
           <p class="text-sm text-muted mt-2">Crie pesquisas de satisfação para coletar feedback dos seus clientes.</p>
           <button class="btn btn-primary mt-4" id="empty-csat-btn">+ Criar primeira pesquisa</button>
         ` : ''}
@@ -320,13 +320,13 @@ function renderActionBtns(s, size = '') {
   const cls = `btn btn-secondary btn-${size||'sm'}`;
   const actions = [];
 
-  if (s.status === 'pending' && store.isManager()) {
+  if (s.status === 'pending' && store.can('csat_send')) {
     actions.push(`<button class="${cls}" data-action="send" data-sid="${s.id}">✉ Enviar</button>`);
   }
-  if (['sent','expired'].includes(s.status) && store.isManager()) {
+  if (['sent','expired'].includes(s.status) && store.can('csat_send')) {
     actions.push(`<button class="${cls}" data-action="resend" data-sid="${s.id}">↺ Reenviar</button>`);
   }
-  if (['pending','sent'].includes(s.status) && store.isManager()) {
+  if (['pending','sent'].includes(s.status) && store.can('csat_send')) {
     actions.push(`<button class="${cls} btn-ghost" data-action="cancel" data-sid="${s.id}" style="color:var(--color-danger);">✕</button>`);
   }
   if (s.status === 'responded') {

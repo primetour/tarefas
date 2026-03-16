@@ -11,6 +11,7 @@ import {
   STATUSES, PRIORITIES, STATUS_MAP, PRIORITY_MAP,
   NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS, NUCLEOS,
 } from '../services/tasks.js';
+import { fetchTaskTypes } from '../services/taskTypes.js';
 import { fetchProjects } from '../services/projects.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { APP_CONFIG }    from '../config.js';
@@ -28,9 +29,12 @@ let filterStatus = '';
 let filterPriority = '';
 let filterProject  = '';
 let filterAssignee = '';
-let filterArea     = '';
-let filterType     = '';
-let filterNucleo   = '';
+let filterArea        = '';
+let filterType        = '';
+let filterNucleo      = '';
+let filterTypeId      = '';          // filtro por tipo dinâmico
+let filterCustomField = {};          // { fieldKey: value }
+let pageTaskTypes     = [];          // tipos carregados para a página
 
 /* ─── Render principal ───────────────────────────────────── */
 export async function renderTasks(container) {
@@ -71,10 +75,11 @@ export async function renderTasks(container) {
           <option value="${u.id}">${esc(u.name)}</option>
         `).join('')}
       </select>
-      <select class="filter-select" id="filter-type">
+      <select class="filter-select" id="filter-type-id">
         <option value="">Todos os tipos</option>
-        ${TASK_TYPES.filter(t=>t.value).map(t=>`<option value="${t.value}">${esc(t.label)}</option>`).join('')}
+        ${pageTaskTypes.map(t=>`<option value="${t.id}" ${filterTypeId===t.id?'selected':''}>${esc(t.icon||'')} ${esc(t.name)}</option>`).join('')}
       </select>
+      <div id="dynamic-type-filters"></div>
       <select class="filter-select" id="filter-area">
         <option value="">Todas as áreas</option>
         ${REQUESTING_AREAS.map(a=>`<option value="${a}">${esc(a)}</option>`).join('')}
@@ -105,6 +110,11 @@ export async function renderTasks(container) {
       </div>
     </div>
   `;
+
+  // Load task types for dynamic filters
+  try {
+    pageTaskTypes = store.get('taskTypes') || await fetchTaskTypes();
+  } catch(e) { pageTaskTypes = []; }
 
   // Load projects for filter
   try {
@@ -152,6 +162,16 @@ function applyFilters() {
   if (filterArea)     result = result.filter(t => t.requestingArea === filterArea);
   if (filterType)     result = result.filter(t => t.type === filterType);
   if (filterNucleo)   result = result.filter(t => (t.nucleos||[]).includes(filterNucleo));
+  if (filterTypeId)   result = result.filter(t => t.typeId === filterTypeId || t.type === filterTypeId);
+  // Dynamic custom field filters
+  Object.entries(filterCustomField).forEach(([key, val]) => {
+    if (!val) return;
+    result = result.filter(t => {
+      const cfVal = t.customFields?.[key];
+      if (Array.isArray(cfVal)) return cfVal.includes(val);
+      return cfVal === val || String(cfVal||'') === val;
+    });
+  });
 
   filteredTasks = result;
 
@@ -291,6 +311,20 @@ function renderTaskRow(task) {
       <div style="font-size:0.8125rem;">
         ${typeLabel ? `<div style="color:var(--text-secondary);">${esc(typeLabel)}</div>` : '—'}
         ${nlStatus ? `<div style="font-size:0.75rem;color:var(--brand-gold);margin-top:2px;">↳ ${esc(nlStatus)}</div>` : ''}
+        ${(() => {
+          // Show showInList custom fields for this task's type
+          if (!task.typeId && !task.type) return '';
+          const tt = pageTaskTypes.find(t => t.id === task.typeId || t.name?.toLowerCase() === task.type);
+          if (!tt) return '';
+          return (tt.fields||[])
+            .filter(f => f.showInList && f.key !== 'newsletterStatus' && f.key !== 'outOfCalendar')
+            .map(f => {
+              const val = task.customFields?.[f.key];
+              if (val === null || val === undefined || val === '') return '';
+              const display = Array.isArray(val) ? val.join(', ') : String(val);
+              return `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:1px;">${esc(f.label)}: ${esc(display)}</div>`;
+            }).join('');
+        })()}
       </div>
       <div style="font-size:0.8125rem; color:var(--text-muted);">
         ${task.requestingArea ? esc(task.requestingArea) : '—'}
@@ -367,6 +401,46 @@ function buildGroups() {
   return [];
 }
 
+/* ─── Dynamic type filters ───────────────────────────────── */
+function renderDynamicTypeFilters() {
+  const container = document.getElementById('dynamic-type-filters');
+  if (!container) return;
+
+  if (!filterTypeId) { container.innerHTML = ''; return; }
+
+  const taskType = pageTaskTypes.find(t => t.id === filterTypeId);
+  if (!taskType) { container.innerHTML = ''; return; }
+
+  // Only fields with showInList and type select/multiselect/checkbox
+  const filterableFields = (taskType.fields || []).filter(f =>
+    f.showInList && ['select','multiselect','checkbox'].includes(f.type)
+  );
+
+  container.innerHTML = filterableFields.map(f => {
+    const curVal = filterCustomField[f.key] || '';
+    if (f.type === 'checkbox') {
+      return `<select class="filter-select dynamic-type-filter" data-field-key="${f.key}">
+        <option value="">Todos (${f.label})</option>
+        <option value="true"  ${curVal==='true'?'selected':''}>✓ ${esc(f.label)}</option>
+        <option value="false" ${curVal==='false'?'selected':''}>✗ Não ${esc(f.label)}</option>
+      </select>`;
+    }
+    return `<select class="filter-select dynamic-type-filter" data-field-key="${f.key}">
+      <option value="">Todos (${esc(f.label)})</option>
+      ${(f.options||[]).map(opt =>
+        `<option value="${esc(opt)}" ${curVal===opt?'selected':''}>${esc(opt)}</option>`
+      ).join('')}
+    </select>`;
+  }).join('');
+
+  container.querySelectorAll('.dynamic-type-filter').forEach(sel => {
+    sel.addEventListener('change', e => {
+      filterCustomField[sel.dataset.fieldKey] = e.target.value || '';
+      applyFilters();
+    });
+  });
+}
+
 /* ─── Event Handlers ──────────────────────────────────────── */
 function _attachPageEvents() {
   document.getElementById('new-task-btn')?.addEventListener('click', () => openNewTask());
@@ -387,6 +461,12 @@ function _attachPageEvents() {
   document.getElementById('filter-type')?.addEventListener('change', e => { filterType = e.target.value; applyFilters(); });
   document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
   document.getElementById('filter-nucleo')?.addEventListener('change', e => { filterNucleo = e.target.value; applyFilters(); });
+  document.getElementById('filter-type-id')?.addEventListener('change', e => {
+    filterTypeId      = e.target.value;
+    filterCustomField = {};
+    applyFilters();
+    renderDynamicTypeFilters();
+  });
   document.getElementById('group-by')?.addEventListener('change', e => { groupBy = e.target.value; renderTaskList(); });
 }
 

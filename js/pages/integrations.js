@@ -47,7 +47,7 @@ let activeCategory    = 'all';
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderIntegrations(container) {
-  if (!store.isAdmin()) {
+  if (!store.can('system_manage_settings')) {
     container.innerHTML = `
       <div class="empty-state" style="min-height:60vh;">
         <div class="empty-state-icon">🔒</div>

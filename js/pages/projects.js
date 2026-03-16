@@ -27,7 +27,7 @@ export async function renderProjects(container) {
         <p class="page-subtitle" id="proj-count">Carregando...</p>
       </div>
       <div class="page-header-actions">
-        ${store.isManager() ? `<button class="btn btn-primary" id="new-project-btn">+ Novo Projeto</button>` : ''}
+        ${store.can('project_create') ? `<button class="btn btn-primary" id="new-project-btn">+ Novo Projeto</button>` : ''}
       </div>
     </div>
 
@@ -91,7 +91,7 @@ function renderList() {
       <div class="task-empty">
         <div class="task-empty-icon">📦</div>
         <div class="task-empty-title">${allProjects.length === 0 ? 'Nenhum projeto criado ainda' : 'Nenhum projeto encontrado'}</div>
-        ${allProjects.length === 0 && store.isManager() ? `
+        ${allProjects.length === 0 && store.can('project_create') ? `
           <button class="btn btn-primary mt-4" id="empty-new-proj-btn">+ Criar primeiro projeto</button>
         ` : ''}
       </div>
@@ -153,9 +153,9 @@ function renderProjectCard(p) {
             <span class="badge" style="background:${status.color}18; color:${status.color}; border:1px solid ${status.color}30; font-size:0.6875rem;">
               ${status.label}
             </span>
-            ${store.isManager() ? `
+            ${store.can('project_edit') ? `
               <button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-project-id="${p.id}" title="Editar">✎</button>
-              ${store.isAdmin() ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-project-id="${p.id}" title="Excluir" style="color:var(--color-danger);">🗑</button>` : ''}
+              ${store.can('project_delete') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-project-id="${p.id}" title="Excluir" style="color:var(--color-danger);">🗑</button>` : ''}
             ` : ''}
           </div>
         </div>
