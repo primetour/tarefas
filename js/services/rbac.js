@@ -176,9 +176,13 @@ export async function initSystemRoles() {
         updatedAt:  serverTimestamp(),
       });
     } else {
-      // Always sync permissions from code — Firestore may have stale data
+      // Always sync ALL system fields from code — name, description, color, permissions
       await setDoc(ref, {
         ...snap.data(),
+        name:        role.name,
+        description: role.description,
+        color:       role.color,
+        isSystem:    true,
         permissions: role.permissions,
         updatedAt:   serverTimestamp(),
       }, { merge: true });
