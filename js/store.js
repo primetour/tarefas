@@ -1,24 +1,35 @@
 /**
  * PRIMETOUR — Store (Estado Global)
- * Gerenciamento de estado reativo simples sem dependências externas
+ * Gerenciamento de estado reativo com suporte a RBAC dinâmico
  */
 
 class Store {
   constructor() {
     this._state = {
       // Autenticação
-      currentUser:     null,   // Firebase Auth user
-      userProfile:     null,   // Dados do Firestore
-      isAuthenticated: false,
-      authLoading:     true,
+      currentUser:      null,
+      userProfile:      null,
+      isAuthenticated:  false,
+      authLoading:      true,
+
+      // RBAC
+      userRole:         null,   // documento completo do role do usuário
+      userPermissions:  {},     // { permission_key: true/false }
+
+      // Workspaces (Fase 0 Round B)
+      userWorkspaces:    [],    // workspaces que o usuário pertence
+      activeWorkspaces:  [],    // IDs ativos na view (multi-select)
+      currentWorkspace:  null,  // workspace padrão para criar itens
 
       // Navegação
-      currentRoute:    'dashboard',
+      currentRoute:     'dashboard',
       sidebarCollapsed: false,
 
-      // Dados em cache
-      users: [],
-      
+      // Cache
+      users:     [],
+      roles:     [],
+      taskTypes: [],
+
       // UI
       globalLoading: false,
     };
@@ -35,14 +46,13 @@ class Store {
   set(key, value) {
     const prev = this._state[key];
     this._state[key] = value;
-    
     if (prev !== value) {
       this._notify(key, value, prev);
-      this._notify('*', this._state, null); // wildcard
+      this._notify('*', this._state, null);
     }
   }
 
-  // ─── Atualização parcial de objeto ───────────────────────
+  // ─── Atualização parcial ──────────────────────────────────
   merge(key, partial) {
     const current = this._state[key];
     if (typeof current === 'object' && current !== null) {
@@ -54,38 +64,72 @@ class Store {
   subscribe(key, callback) {
     if (!this._listeners[key]) this._listeners[key] = [];
     this._listeners[key].push(callback);
-    
-    // Retorna função de unsubscribe
     return () => {
       this._listeners[key] = this._listeners[key].filter(cb => cb !== callback);
     };
   }
 
-  // ─── Notify ──────────────────────────────────────────────
   _notify(key, value, prev) {
-    const callbacks = this._listeners[key] || [];
-    callbacks.forEach(cb => {
+    (this._listeners[key] || []).forEach(cb => {
       try { cb(value, prev); }
-      catch (e) { console.error(`Store listener error [${key}]:`, e); }
+      catch(e) { console.error(`Store listener error [${key}]:`, e); }
     });
   }
 
-  // ─── Computed ────────────────────────────────────────────
-  isAdmin() {
-    return this._state.userProfile?.role === 'admin';
+  // ─── RBAC: carregar permissões do usuário ─────────────────
+  loadPermissions(roleDoc) {
+    if (!roleDoc) {
+      this.set('userRole', null);
+      this.set('userPermissions', {});
+      return;
+    }
+    this.set('userRole', roleDoc);
+    // Master tem tudo independente do documento
+    if (roleDoc.id === 'master' || this._state.userProfile?.isMaster) {
+      const allTrue = {};
+      Object.keys(roleDoc.permissions || {}).forEach(k => { allTrue[k] = true; });
+      this.set('userPermissions', allTrue);
+    } else {
+      this.set('userPermissions', roleDoc.permissions || {});
+    }
   }
 
-  isManager() {
-    const role = this._state.userProfile?.role;
-    return role === 'admin' || role === 'manager';
+  // ─── RBAC: verificar permissão ────────────────────────────
+  can(permission) {
+    // Master sempre pode tudo
+    if (this._state.userProfile?.isMaster) return true;
+    if (this._state.userRole?.id === 'master') return true;
+    return this._state.userPermissions[permission] === true;
   }
 
+  // ─── Atalhos de compatibilidade (Round D: todos migrados para can()) ──
+  // Mantidos como aliases — safe para remover em versão futura
+  isAdmin()   { return this.can('system_manage_users'); }
+  isManager() { return this.can('workspace_create') || this.can('system_manage_users'); }
+
+  isMaster() {
+    return this._state.userProfile?.isMaster === true
+        || this._state.userRole?.id === 'master';
+  }
+
+  // ─── Helpers de usuário ───────────────────────────────────
   getUserInitials() {
     const name = this._state.userProfile?.name || '';
-    return name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+    return name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase() || '?';
+  }
+
+  // ─── Workspace helpers ────────────────────────────────────
+  getActiveWorkspaceIds() {
+    const active = this._state.activeWorkspaces;
+    if (this.isMaster() || this.can('system_view_all')) return null; // null = sem filtro
+    return active.length ? active : (this._state.userWorkspaces.map(w => w.id) || []);
+  }
+
+  hasWorkspaceAccess() {
+    if (this.isMaster() || this.can('system_view_all')) return true;
+    return this._state.userWorkspaces.length > 0;
   }
 }
 
-// Singleton
 export const store = new Store();
 export default store;
