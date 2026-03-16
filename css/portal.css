@@ -180,6 +180,19 @@ body {
 
 .form-textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
 
+/* Date input — make calendar icon white on dark background */
+input[type="date"].form-input {
+  color-scheme: dark;
+}
+input[type="date"].form-input::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(2);
+  cursor: pointer;
+  opacity: 0.7;
+}
+input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
 .form-error {
   font-size: 0.8125rem;
   color: var(--color-danger);
