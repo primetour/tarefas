@@ -77,23 +77,22 @@ export const PERMISSION_CATALOG = [
 export const SYSTEM_ROLES = [
   {
     id:          'master',
-    name:        'Master',
-    description: 'Acesso total ao sistema. Não pode ser editado ou excluído.',
+    name:        'Diretoria',
+    description: 'Acesso total ao sistema. Vê todos os setores. Não pode ser editado ou excluído.',
     isSystem:    true,
     color:       '#EF4444',
-    // Master ignora permissions — store.isMaster() retorna true para tudo
     permissions: Object.fromEntries(
       PERMISSION_CATALOG.flatMap(g => g.permissions).map(p => [p.key, true])
     ),
   },
   {
     id:          'admin',
-    name:        'Administrador',
-    description: 'Gerencia usuários, roles e configurações do sistema.',
+    name:        'Head',
+    description: 'Gerencia usuários e configurações. Visibilidade de setor definida pela Diretoria.',
     isSystem:    true,
     color:       '#A78BFA',
     permissions: {
-      system_view_all: true,  system_manage_users: true,
+      system_view_all: false, system_manage_users: true,
       system_manage_roles: false, system_manage_settings: true,
       workspace_create: true, workspace_edit: true,
       workspace_delete: true, workspace_invite: true,
@@ -108,7 +107,7 @@ export const SYSTEM_ROLES = [
   {
     id:          'manager',
     name:        'Gerente',
-    description: 'Cria e administra workspaces e tipos de tarefa.',
+    description: 'Cria e administra workspaces e tipos de tarefa dentro do seu setor.',
     isSystem:    true,
     color:       '#38BDF8',
     permissions: {
@@ -125,9 +124,28 @@ export const SYSTEM_ROLES = [
     },
   },
   {
+    id:          'coordinator',
+    name:        'Coordenador',
+    description: 'Coordena tarefas e projetos dentro do seu núcleo e setor.',
+    isSystem:    true,
+    color:       '#F97316',
+    permissions: {
+      system_view_all: false, system_manage_users: false,
+      system_manage_roles: false, system_manage_settings: false,
+      workspace_create: true, workspace_edit: true,
+      workspace_delete: false, workspace_invite: true,
+      task_type_create: true, task_type_edit: true, task_type_delete: false,
+      task_create: true,      task_edit_any: true,
+      task_delete: true,      task_view_all: true,
+      project_create: true,   project_edit: true,   project_delete: false,
+      dashboard_view: true,   dashboard_customize: true, report_export: true,
+      csat_send: true,        csat_view_all: true,
+    },
+  },
+  {
     id:          'member',
-    name:        'Membro',
-    description: 'Opera dentro dos workspaces que pertence.',
+    name:        'Analista',
+    description: 'Opera dentro dos workspaces e núcleos que pertence.',
     isSystem:    true,
     color:       '#22C55E',
     permissions: {

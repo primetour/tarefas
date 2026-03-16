@@ -90,6 +90,7 @@ export async function createTask(data) {
   const workspace = store.get('currentWorkspace');
   const taskDoc = {
     workspaceId:      data.workspaceId || workspace?.id || null,
+    sector:           data.sector || store.get('userSector') || null,
     title:            data.title?.trim()        || 'Nova Tarefa',
     description:      data.description?.trim()  || '',
     status:           data.status               || 'not_started',
@@ -193,6 +194,12 @@ export async function fetchTasks({
     tasks = tasks.filter(t => !t.workspaceId || activeIds.includes(t.workspaceId));
   }
 
+  // Filtro por setor — documentos sem sector são visíveis para todos
+  const visibleSectors = store.get('visibleSectors') || [];
+  if (!store.isMaster() && visibleSectors.length > 0) {
+    tasks = tasks.filter(t => !t.sector || visibleSectors.includes(t.sector));
+  }
+
   if (projectId)  tasks = tasks.filter(t => t.projectId === projectId);
   if (assigneeId) tasks = tasks.filter(t => (t.assignees||[]).includes(assigneeId));
   if (status)     tasks = tasks.filter(t => t.status === status);
@@ -212,6 +219,12 @@ export function subscribeToTasks(callback, filters = {}) {
     const activeIds = store.getActiveWorkspaceIds();
     if (activeIds) {
       tasks = tasks.filter(t => !t.workspaceId || activeIds.includes(t.workspaceId));
+    }
+
+    // Filtro por setor
+    const visibleSectors = store.get('visibleSectors') || [];
+    if (!store.isMaster() && visibleSectors.length > 0) {
+      tasks = tasks.filter(t => !t.sector || visibleSectors.includes(t.sector));
     }
 
     if (filters.projectId) tasks = tasks.filter(t => t.projectId === filters.projectId);

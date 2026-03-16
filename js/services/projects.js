@@ -41,6 +41,7 @@ export async function createProject(data) {
 
   const projectDoc = {
     workspaceId: data.workspaceId || workspace?.id || null,
+    sector:      data.sector || store.get('userSector') || null,
     name:        data.name?.trim() || 'Novo Projeto',
     description: data.description?.trim() || '',
     color:       data.color || PROJECT_COLORS[0],
@@ -98,6 +99,12 @@ export async function fetchProjects({ includeArchived = false, workspaceIds = nu
     all = all.filter(p => !p.workspaceId || activeIds.includes(p.workspaceId));
   }
 
+  // Filtro por setor
+  const visibleSectors = store.get('visibleSectors') || [];
+  if (!store.isMaster() && visibleSectors.length > 0) {
+    all = all.filter(p => !p.sector || visibleSectors.includes(p.sector));
+  }
+
   return includeArchived ? all : all.filter(p => !p.archived);
 }
 
@@ -111,6 +118,12 @@ export function subscribeToProjects(callback) {
     const activeIds = store.getActiveWorkspaceIds();
     if (activeIds) {
       all = all.filter(p => !p.workspaceId || activeIds.includes(p.workspaceId));
+    }
+
+    // Filtro por setor
+    const visibleSectors = store.get('visibleSectors') || [];
+    if (!store.isMaster() && visibleSectors.length > 0) {
+      all = all.filter(p => !p.sector || visibleSectors.includes(p.sector));
     }
 
     callback(all.filter(p => !p.archived));

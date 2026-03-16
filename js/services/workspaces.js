@@ -29,12 +29,14 @@ export async function createWorkspace({ name, description = '', sector = '', col
   if (!store.can('workspace_create')) throw new Error('Permissão negada.');
   const user = store.get('currentUser');
 
+  const userSector = store.get('userSector');
   const wsDoc = {
     name:        name.trim(),
     description: description.trim(),
-    sector:      sector.trim(),
+    sector:      sector.trim() || userSector || '',
     color:       color  || WORKSPACE_COLORS[0],
     icon:        icon   || WORKSPACE_ICONS[0],
+    multiSector: false,    // true = aceita usuários de outros setores
     ownerId:     user.uid,
     adminIds:    [user.uid],
     members:     [user.uid],
