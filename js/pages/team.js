@@ -106,8 +106,17 @@ async function loadTab() {
 
 /* ─── Tab: Membros ───────────────────────────────────────── */
 function renderMembers(container) {
-  const users      = (store.get('users') || []).filter(u => u.active !== false);
+  const allUsers   = (store.get('users') || []).filter(u => u.active !== false);
   const workspaces = store.get('userWorkspaces') || [];
+
+  // Filter by visible sectors
+  const visibleSectors = store.get('visibleSectors') || [];
+  const users = store.isMaster() || !visibleSectors.length
+    ? allUsers
+    : allUsers.filter(u => {
+        const uSector = u.sector || u.department;
+        return !uSector || visibleSectors.includes(uSector);
+      });
 
   if (!users.length) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">◉</div>
@@ -115,9 +124,20 @@ function renderMembers(container) {
     return;
   }
 
-  container.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
-      ${users.map(u => {
+  // Group by sector
+  const sectors = [...new Set(users.map(u => u.sector || u.department || 'Sem setor'))].sort();
+
+  container.innerHTML = sectors.map(sector => {
+    const sectorUsers = users.filter(u => (u.sector || u.department || 'Sem setor') === sector);
+    return `
+      <div style="margin-bottom:28px;">
+        <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
+          color:var(--text-muted);margin-bottom:12px;padding-bottom:6px;
+          border-bottom:1px solid var(--border-subtle);">
+          ${esc(sector)} <span style="font-weight:400;opacity:0.6;">(${sectorUsers.length})</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;">
+          ${sectorUsers.map(u => {
         const initials   = u.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
         const allRoles   = store.get('roles') || [];
         const roleDoc    = allRoles.find(r => r.id === (u.roleId||u.role));

@@ -10,6 +10,7 @@ import {
 import { db }          from '../firebase.js';
 import { store }       from '../store.js';
 import { createUser, updateUserProfile, deactivateUser, reactivateUser } from '../auth/auth.js';
+import { REQUESTING_AREAS } from '../services/tasks.js';
 import { fetchRoles } from '../services/rbac.js';
 import { toast }       from '../components/toast.js';
 import { modal }       from '../components/modal.js';
@@ -38,7 +39,7 @@ const DEPARTMENTS = [
   'Qualidade',
   'Suppliers',
   'TI',
-];
+]; // mantido por compatibilidade — usar REQUESTING_AREAS como setores
 
 // ─── Estado da página ─────────────────────────────────────
 let users = [];
@@ -430,15 +431,49 @@ function openUserModal(userId = null) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Setor</label>
+          <label class="form-label">Setor *</label>
           <select class="form-select" id="uf-department" size="1">
             <option value="">— Selecione o setor —</option>
-            ${DEPARTMENTS.map(d =>
-              `<option value="${d}" ${(user?.department||'')=== d?'selected':''}>${d}</option>`
+            ${REQUESTING_AREAS.map(d =>
+              `<option value="${d}" ${(user?.sector||user?.department||'')=== d?'selected':''}>${d}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Núcleo</label>
+          <select class="form-select" id="uf-nucleo" size="1">
+            <option value="">— Selecione o núcleo —</option>
+            ${(store.get('nucleos')||[]).map(n =>
+              `<option value="${n.name}" ${(user?.nucleo||user?.department||'')=== n.name?'selected':''}>${escHtml(n.name)}${n.sector ? ` (${n.sector})` : ''}</option>`
             ).join('')}
           </select>
         </div>
       </div>
+
+      ${(store.isMaster() && role === 'admin') || (store.isMaster() && document.getElementById && document.getElementById('uf-role')?.value === 'admin') ? `
+        <div class="form-group" style="grid-column:span 2;">
+          <label class="form-label">
+            Setores visíveis (Head)
+            <span title="Defina quais setores este Head pode visualizar. Deixe vazio para ver apenas o próprio setor." 
+              style="cursor:help;color:var(--text-muted);font-size:0.75rem;">ℹ</span>
+          </label>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${REQUESTING_AREAS.map(s => {
+              const sel = (user?.visibleSectors||[]).includes(s);
+              return \`<label style="display:flex;align-items:center;gap:5px;cursor:pointer;padding:4px 10px;
+                border-radius:var(--radius-full);font-size:0.8125rem;
+                border:1px solid \${sel?'var(--brand-gold)':'var(--border-subtle)'};
+                background:\${sel?'rgba(212,168,67,0.12)':'var(--bg-surface)'};
+                color:\${sel?'var(--brand-gold)':'var(--text-secondary)'};
+                transition:all 0.15s;" class="sector-vis-chip">
+                <input type="checkbox" value="\${s}" class="sector-vis-cb" \${sel?'checked':''}
+                  style="display:none;" />
+                \${s}
+              </label>\`;
+            }).join('')}
+          </div>
+        </div>
+      ` : ''}
 
       ${isEdit ? `
         <div class="form-group">
@@ -471,6 +506,20 @@ function openUserModal(userId = null) {
     ]
   });
 
+  // Sector visibility chips
+  setTimeout(() => {
+    document.querySelectorAll('.sector-vis-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const cb = chip.querySelector('.sector-vis-cb');
+        if (!cb) return;
+        cb.checked = !cb.checked;
+        chip.style.borderColor = cb.checked ? 'var(--brand-gold)' : 'var(--border-subtle)';
+        chip.style.background  = cb.checked ? 'rgba(212,168,67,0.12)' : 'var(--bg-surface)';
+        chip.style.color       = cb.checked ? 'var(--brand-gold)' : 'var(--text-secondary)';
+      });
+    });
+  }, 60);
+
   // Toggle password visibility
   setTimeout(() => {
     const toggleBtn = document.getElementById('uf-toggle-pw');
@@ -490,6 +539,7 @@ async function handleUserSave(userId, isEdit, closeModal) {
   const password   = document.getElementById('uf-password')?.value;
   const role       = document.getElementById('uf-role')?.value;
   const department = document.getElementById('uf-department')?.value?.trim();
+  const nucleo     = document.getElementById('uf-nucleo')?.value?.trim() || department;
   const active     = document.getElementById('uf-active')?.checked ?? true;
 
   // Validation
@@ -527,10 +577,11 @@ async function handleUserSave(userId, isEdit, closeModal) {
 
   try {
     if (isEdit) {
-      await updateUserProfile(userId, { name, role, roleId: role, department, active });
+      const visibleSectors = Array.from(document.querySelectorAll('.sector-vis-cb:checked')).map(cb => cb.value);
+      await updateUserProfile(userId, { name, role, roleId: role, department: nucleo, nucleo, sector: department, active, visibleSectors });
       toast.success(`Usuário "${name}" atualizado com sucesso!`);
     } else {
-      await createUser({ name, email, password, role, roleId: role, department });
+      await createUser({ name, email, password, role, roleId: role, department: nucleo, nucleo, sector: department });
       toast.success(`Usuário "${name}" criado com sucesso!`);
     }
     closeModal();
@@ -718,7 +769,7 @@ function _attachTableEvents() {
 
 // ─── Export CSV ───────────────────────────────────────────
 function exportUsers() {
-  const headers = ['Nome', 'E-mail', 'Papel', 'Departamento', 'Status', 'Criado em'];
+  const headers = ['Nome', 'E-mail', 'Papel', 'Núcleo', 'Status', 'Criado em'];
   const rows = filteredUsers.map(u => [
     u.name,
     u.email,

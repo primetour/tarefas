@@ -1,0 +1,281 @@
+/**
+ * PRIMETOUR — Sectors Page
+ * Gestão de setores e núcleos (dinâmico)
+ */
+
+import { store }  from '../store.js';
+import { toast }  from '../components/toast.js';
+import { modal }  from '../components/modal.js';
+import {
+  fetchNucleos, createNucleo, updateNucleo, deleteNucleo,
+  SECTORS,
+} from '../services/sectors.js';
+
+const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const NUCLEO_COLORS = [
+  '#D4A843','#38BDF8','#22C55E','#A78BFA',
+  '#F97316','#EC4899','#06B6D4','#EF4444',
+  '#6366F1','#14B8A6','#84CC16','#6B7280',
+];
+
+let allNucleos = [];
+
+/* ─── Render ─────────────────────────────────────────────── */
+export async function renderSectors(container) {
+  if (!store.can('system_manage_users') && !store.isMaster()) {
+    container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
+      <div class="empty-state-icon">🔒</div>
+      <div class="empty-state-title">Acesso restrito</div></div>`;
+    return;
+  }
+
+  // Visible sectors
+  const visibleSectors = store.isMaster()
+    ? SECTORS
+    : (store.get('visibleSectors') || []);
+
+  container.innerHTML = `
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1 class="page-title">Setores e Núcleos</h1>
+        <p class="page-subtitle">Gerencie a estrutura organizacional da empresa</p>
+      </div>
+      <div class="page-header-actions">
+        <button class="btn btn-primary" id="new-nucleo-btn">+ Novo Núcleo</button>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:flex-start;gap:12px;
+      background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);
+      border-radius:var(--radius-md);padding:12px 16px;margin-bottom:24px;
+      font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;">
+      <span>ℹ</span>
+      <span>
+        <strong>Setores</strong> são as áreas da empresa (ex: Marketing e Comunicação, C&amp;P, TI).
+        <strong>Núcleos</strong> são subgrupos dentro de um setor (ex: Design, Jornalismo, Redes Sociais).
+        Usuários cadastrados em um setor só enxergam dados daquele setor.
+        Apenas a Diretoria tem visibilidade completa.
+      </span>
+    </div>
+
+    <div id="sectors-grid">
+      ${[0,1].map(()=>'<div class="card skeleton" style="height:180px;margin-bottom:16px;"></div>').join('')}
+    </div>
+  `;
+
+  document.getElementById('new-nucleo-btn')?.addEventListener('click', () => openNucleoModal());
+  await load(visibleSectors);
+}
+
+async function load(visibleSectors) {
+  try {
+    allNucleos = await fetchNucleos();
+    render(visibleSectors);
+  } catch(e) {
+    toast.error('Erro ao carregar núcleos: ' + e.message);
+  }
+}
+
+function render(visibleSectors) {
+  const grid = document.getElementById('sectors-grid');
+  if (!grid) return;
+
+  if (!visibleSectors.length && !store.isMaster()) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-state-icon">◈</div>
+      <div class="empty-state-title">Nenhum setor atribuído ao seu perfil.</div></div>`;
+    return;
+  }
+
+  const sectors = store.isMaster() ? SECTORS : visibleSectors;
+
+  grid.innerHTML = sectors.map(sector => {
+    const nucleos = allNucleos.filter(n => n.sector === sector);
+    const users   = (store.get('users') || []).filter(u =>
+      (u.sector || u.department) === sector && u.active !== false
+    );
+
+    return `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">${esc(sector)}</div>
+            <div class="card-subtitle">${users.length} membro${users.length!==1?'s':''} · ${nucleos.length} núcleo${nucleos.length!==1?'s':''}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm add-nucleo-btn" data-sector="${esc(sector)}">
+            + Núcleo
+          </button>
+        </div>
+        <div class="card-body" style="padding:8px 16px 16px;">
+          ${!nucleos.length ? `
+            <div style="font-size:0.8125rem;color:var(--text-muted);padding:8px 0;">
+              Nenhum núcleo cadastrado neste setor.
+            </div>
+          ` : `
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              ${nucleos.map(n => `
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;
+                  border-radius:var(--radius-full);background:${n.color||'#6B7280'}18;
+                  border:1px solid ${n.color||'#6B7280'}44;">
+                  <div style="width:8px;height:8px;border-radius:50%;background:${n.color||'#6B7280'};flex-shrink:0;"></div>
+                  <span style="font-size:0.875rem;color:var(--text-primary);">${esc(n.name)}</span>
+                  <div style="display:flex;gap:2px;">
+                    <button class="btn btn-ghost btn-icon" style="width:20px;height:20px;font-size:0.75rem;"
+                      data-nucleo-edit="${n.id}" title="Editar">✎</button>
+                    <button class="btn btn-ghost btn-icon" style="width:20px;height:20px;font-size:0.75rem;color:var(--color-danger);"
+                      data-nucleo-del="${n.id}" title="Excluir">✕</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+          ${users.length ? `
+            <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-subtle);
+              display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+              <span style="font-size:0.75rem;color:var(--text-muted);">Membros:</span>
+              ${users.slice(0,8).map(u => {
+                const initials = u.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+                return `<div class="avatar" style="width:28px;height:28px;font-size:0.625rem;
+                  background:${u.avatarColor||'#3B82F6'};" title="${esc(u.name)}">${initials}</div>`;
+              }).join('')}
+              ${users.length > 8 ? `<span style="font-size:0.75rem;color:var(--text-muted);">+${users.length-8}</span>` : ''}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Events
+  grid.querySelectorAll('.add-nucleo-btn').forEach(btn =>
+    btn.addEventListener('click', () => openNucleoModal(null, btn.dataset.sector))
+  );
+  grid.querySelectorAll('[data-nucleo-edit]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const n = allNucleos.find(x => x.id === btn.dataset.nucleoEdit);
+      if (n) openNucleoModal(n);
+    })
+  );
+  grid.querySelectorAll('[data-nucleo-del]').forEach(btn =>
+    btn.addEventListener('click', () => confirmDelete(btn.dataset.nucleoDel))
+  );
+}
+
+/* ─── Modal criar / editar núcleo ────────────────────────── */
+function openNucleoModal(nucleo = null, presetSector = '') {
+  const isEdit = !!nucleo;
+  const visibleSectors = store.isMaster() ? SECTORS : (store.get('visibleSectors') || []);
+
+  modal.open({
+    title:   isEdit ? `Editar — ${nucleo.name}` : 'Novo Núcleo',
+    size:    'sm',
+    content: `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div class="form-group">
+          <label class="form-label">Setor *</label>
+          <select class="form-select" id="nc-sector">
+            <option value="">— Selecione o setor —</option>
+            ${visibleSectors.map(s =>
+              `<option value="${esc(s)}" ${(nucleo?.sector||presetSector)===s?'selected':''}>${esc(s)}</option>`
+            ).join('')}
+          </select>
+          <span class="form-error-msg" id="nc-sector-error"></span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nome do núcleo *</label>
+          <input type="text" class="form-input" id="nc-name"
+            value="${esc(nucleo?.name||'')}" maxlength="60"
+            placeholder="Ex: Design, Jornalismo, Redes Sociais..." />
+          <span class="form-error-msg" id="nc-name-error"></span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Descrição</label>
+          <input type="text" class="form-input" id="nc-desc"
+            value="${esc(nucleo?.description||'')}" maxlength="120"
+            placeholder="Descreva o papel deste núcleo..." />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cor de identificação</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${NUCLEO_COLORS.map(c => `
+              <div class="nc-color-btn" data-color="${c}" style="
+                width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;
+                border:3px solid ${(nucleo?.color||NUCLEO_COLORS[0])===c?'white':'transparent'};
+                box-shadow:${(nucleo?.color||NUCLEO_COLORS[0])===c?'0 0 0 2px '+c:'none'};
+                transition:all 0.15s;"></div>
+            `).join('')}
+          </div>
+          <input type="hidden" id="nc-color" value="${esc(nucleo?.color||NUCLEO_COLORS[0])}" />
+        </div>
+      </div>
+    `,
+    footer: [
+      { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
+      {
+        label: isEdit ? 'Salvar' : 'Criar núcleo',
+        class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const name   = document.getElementById('nc-name')?.value?.trim();
+          const sector = document.getElementById('nc-sector')?.value;
+          const errN   = document.getElementById('nc-name-error');
+          const errS   = document.getElementById('nc-sector-error');
+          if (!name)   { if(errN) errN.textContent='Nome obrigatório.';  return; }
+          if (!sector) { if(errS) errS.textContent='Setor obrigatório.'; return; }
+          if(errN) errN.textContent=''; if(errS) errS.textContent='';
+
+          const data = {
+            name, sector,
+            description: document.getElementById('nc-desc')?.value?.trim() || '',
+            color:       document.getElementById('nc-color')?.value || NUCLEO_COLORS[0],
+          };
+
+          const btn = document.querySelector('.modal-footer .btn-primary');
+          if(btn){ btn.classList.add('loading'); btn.disabled=true; }
+          try {
+            if (isEdit) { await updateNucleo(nucleo.id, data); toast.success('Núcleo atualizado!'); }
+            else        { await createNucleo(data);             toast.success('Núcleo criado!'); }
+            close();
+            // Reload nucleos in store
+            const { loadNucleos } = await import('../services/sectors.js');
+            await loadNucleos();
+            const visibleSectors = store.isMaster() ? SECTORS : (store.get('visibleSectors') || []);
+            await load(visibleSectors);
+          } catch(e) { toast.error(e.message); }
+          finally { if(btn){ btn.classList.remove('loading'); btn.disabled=false; } }
+        },
+      },
+    ],
+  });
+
+  setTimeout(() => {
+    document.querySelectorAll('.nc-color-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('nc-color').value = btn.dataset.color;
+        document.querySelectorAll('.nc-color-btn').forEach(b => {
+          b.style.borderColor = 'transparent'; b.style.boxShadow='none';
+        });
+        btn.style.borderColor = 'white';
+        btn.style.boxShadow   = `0 0 0 2px ${btn.dataset.color}`;
+      });
+    });
+  }, 50);
+}
+
+async function confirmDelete(nucleoId) {
+  const n = allNucleos.find(x => x.id === nucleoId);
+  if (!n) return;
+  const ok = await modal.confirm({
+    title:`Excluir núcleo "${n.name}"`,
+    message:`Usuários vinculados a este núcleo não serão afetados, mas perderão o vínculo com este núcleo.`,
+    confirmText:'Excluir', danger:true, icon:'✕',
+  });
+  if (!ok) return;
+  try {
+    await deleteNucleo(nucleoId);
+    toast.success('Núcleo excluído.');
+    const { loadNucleos } = await import('../services/sectors.js');
+    await loadNucleos();
+    const visibleSectors = store.isMaster() ? SECTORS : (store.get('visibleSectors') || []);
+    await load(visibleSectors);
+  } catch(e) { toast.error(e.message); }
+}

@@ -204,6 +204,24 @@ function openWorkspaceModal(ws = null) {
           <textarea class="form-textarea" id="ws-description" rows="2" maxlength="200"
             placeholder="Descreva o propósito deste workspace...">${esc(ws?.description||'')}</textarea>
         </div>
+        <div class="form-group">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;
+            border-radius:var(--radius-md);background:var(--bg-surface);border:1px solid var(--border-subtle);">
+            <input type="checkbox" id="ws-multisector" ${ws?.multiSector?'checked':''}
+              style="margin-top:2px;accent-color:var(--brand-gold);" />
+            <div>
+              <div style="font-size:0.875rem;font-weight:500;color:var(--text-secondary);">
+                Workspace multissetor
+                <span title="Permite convidar usuários de setores diferentes do seu." 
+                  style="cursor:help;color:var(--text-muted);font-size:0.75rem;">ℹ</span>
+              </div>
+              <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+                Por padrão, apenas usuários do mesmo setor podem ser convidados.
+                Ative para permitir colaboração entre setores.
+              </div>
+            </div>
+          </label>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
           <div class="form-group">
             <label class="form-label">Ícone</label>
@@ -428,8 +446,23 @@ async function openInviteModal(wsId) {
   }
 
   // Usuários ainda não no workspace — members pode ser undefined em workspace recém-criado
-  const wsMembers  = Array.isArray(ws?.members) ? ws.members : [];
-  const nonMembers = allUsers.filter(u => u.active !== false && !wsMembers.includes(u.id));
+  const wsMembers    = Array.isArray(ws?.members) ? ws.members : [];
+  const userSector   = store.get('userSector');
+  const wsSector     = ws?.sector || '';
+  const isMultiSector = ws?.multiSector === true;
+
+  const nonMembers = allUsers.filter(u => {
+    if (u.active === false) return false;
+    if (wsMembers.includes(u.id)) return false;
+    // Se workspace é multissetor: aceita qualquer usuário
+    if (isMultiSector) return true;
+    // Se workspace tem setor: apenas usuários do mesmo setor
+    if (wsSector) {
+      const uSector = u.sector || u.department;
+      return !uSector || uSector === wsSector;
+    }
+    return true;
+  });
 
   modal.open({
     title:   `Convidar para — ${ws?.name}`,
