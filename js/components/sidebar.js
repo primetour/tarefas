@@ -26,8 +26,8 @@ const NAV_GROUPS = [
     items: [
       { route: 'workspaces', icon: '◈',  label: 'Workspaces',  perm: 'workspace_create', altPerm: 'system_view_all' },
       { route: 'requests',   icon: '◌',  label: 'Solicitações', perm: 'task_create', badge: true },
-      { route: 'team',       icon: '◎',  label: 'Equipe',      roles: ['admin','manager'] },
-      { route: 'capacity',   icon: '🏖',  label: 'Capacidade',  roles: ['admin','manager','member'] },
+      { route: 'team',       icon: '◎',  label: 'Equipe',      roles: ['admin','manager','member'] },
+      { route: 'goals',      icon: '◎',  label: 'Metas',       roles: ['admin','manager','member'] },
       { route: 'csat',       icon: '★',  label: 'CSAT',        roles: ['admin','manager'] },
       { route: 'dashboards', icon: '◫',  label: 'Dashboards',  roles: ['admin','manager'] },
     ]
@@ -36,7 +36,7 @@ const NAV_GROUPS = [
     label: 'Administração',
     items: [
       { route: 'users',        icon: '◉',  label: 'Usuários',       perm: 'system_manage_users' },
-      { route: 'task-types',   icon: '◎',  label: 'Tipos de Tarefa', perm: 'task_type_create', altPerm: 'task_type_edit' },
+      { route: 'task-types',   icon: '▣',  label: 'Tipos de Tarefa', perm: 'task_type_create', altPerm: 'system_manage_users' },
       { route: 'roles',        icon: '◈',  label: 'Roles e Acesso', perm: 'system_manage_roles', altPerm: 'system_manage_users' },
       { route: 'audit',        icon: '◌',  label: 'Auditoria',      perm: 'system_manage_settings' },
       { route: 'settings',     icon: '⚙',  label: 'Configurações',  perm: 'system_manage_settings' },
@@ -108,24 +108,32 @@ export class Sidebar {
       });
       if (!items.length) return '';
 
+      const isCollapsed = store.get(`sidebar_section_${group.label}`) === true;
       return `
-        <div class="sidebar-section">
-          <div class="sidebar-section-label">${group.label}</div>
-          ${items.map(item => `
-            <div
-              class="nav-item ${router.isActive(item.route) ? 'active' : ''}"
-              data-route="${item.route}"
-              data-tooltip="${item.label}"
-            >
-              <span class="nav-icon">${item.icon}</span>
-              <span class="nav-label">${item.label}</span>
-              ${item.badge ? `<span class="sidebar-badge" style="
-                display:none;min-width:18px;height:18px;padding:0 4px;
-                border-radius:var(--radius-full);background:var(--color-danger);
-                color:#fff;font-size:0.625rem;font-weight:700;
-                align-items:center;justify-content:center;margin-left:auto;"></span>` : ''}
-            </div>
-          `).join('')}
+        <div class="sidebar-section" data-section="${group.label}">
+          <div class="sidebar-section-label sidebar-section-toggle" data-section="${group.label}"
+            style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;">
+            <span>${group.label}</span>
+            <span class="section-chevron nav-label" style="font-size:0.6rem;opacity:0.5;transition:transform 0.2s;
+              transform:${isCollapsed?'rotate(-90deg)':'rotate(0deg)'};">▼</span>
+          </div>
+          <div class="sidebar-section-items" style="display:${isCollapsed?'none':'block'}">
+            ${items.map(item => `
+              <div
+                class="nav-item ${router.isActive(item.route) ? 'active' : ''}"
+                data-route="${item.route}"
+                data-tooltip="${item.label}"
+              >
+                <span class="nav-icon">${item.icon}</span>
+                <span class="nav-label">${item.label}</span>
+                ${item.badge ? `<span class="sidebar-badge" style="
+                  display:none;min-width:18px;height:18px;padding:0 4px;
+                  border-radius:var(--radius-full);background:var(--color-danger);
+                  color:#fff;font-size:0.625rem;font-weight:700;
+                  align-items:center;justify-content:center;margin-left:auto;"></span>` : ''}
+              </div>
+            `).join('')}
+          </div>
         </div>
       `;
     }).join('');
@@ -206,6 +214,20 @@ export class Sidebar {
     // Subscribe to route changes
     this._unsubRoute = store.subscribe('currentRoute', (route) => {
       this.setActive(route);
+    });
+
+    // Accordion section toggles
+    this.el?.querySelectorAll('.sidebar-section-toggle').forEach(toggle => {
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const section   = toggle.dataset.section;
+        const items     = toggle.closest('.sidebar-section')?.querySelector('.sidebar-section-items');
+        const chevron   = toggle.querySelector('.section-chevron');
+        const collapsed = items?.style.display === 'none';
+        if (items)   items.style.display   = collapsed ? 'block' : 'none';
+        if (chevron) chevron.style.transform = collapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
+        store.set(`sidebar_section_${section}`, !collapsed);
+      });
     });
 
     // Subscribe to workspace changes — re-render selector
