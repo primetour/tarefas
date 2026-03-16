@@ -35,10 +35,12 @@ export const PROJECT_STATUS_MAP = Object.fromEntries(
 
 /* ─── Criar projeto ──────────────────────────────────────── */
 export async function createProject(data) {
-  if (!store.isManager()) throw new Error('Permissão negada.');
-  const user = store.get('currentUser');
+  if (!store.can('project_create')) throw new Error('Permissão negada.');
+  const user      = store.get('currentUser');
+  const workspace = store.get('currentWorkspace');
 
   const projectDoc = {
+    workspaceId: data.workspaceId || workspace?.id || null,
     name:        data.name?.trim() || 'Novo Projeto',
     description: data.description?.trim() || '',
     color:       data.color || PROJECT_COLORS[0],
@@ -63,7 +65,7 @@ export async function createProject(data) {
 
 /* ─── Atualizar projeto ──────────────────────────────────── */
 export async function updateProject(projectId, data) {
-  if (!store.isManager()) throw new Error('Permissão negada.');
+  if (!store.can('project_edit')) throw new Error('Permissão negada.');
   const user = store.get('currentUser');
   await updateDoc(doc(db, 'projects', projectId), {
     ...data, updatedAt: serverTimestamp(), updatedBy: user.uid,
@@ -73,7 +75,7 @@ export async function updateProject(projectId, data) {
 
 /* ─── Excluir projeto ────────────────────────────────────── */
 export async function deleteProject(projectId) {
-  if (!store.isAdmin()) throw new Error('Permissão negada.');
+  if (!store.can('project_delete')) throw new Error('Permissão negada.');
   await deleteDoc(doc(db, 'projects', projectId));
   await auditLog('projects.delete', 'project', projectId, {});
 }
@@ -85,10 +87,17 @@ export async function getProject(projectId) {
 }
 
 /* ─── Listar projetos ────────────────────────────────────── */
-export async function fetchProjects({ includeArchived = false } = {}) {
-  const q = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
+export async function fetchProjects({ includeArchived = false, workspaceIds = null } = {}) {
+  const q    = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
   const snap = await getDocs(q);
-  const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  let all    = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Filtro por workspace — documentos sem workspaceId visíveis para todos
+  const activeIds = workspaceIds ?? store.getActiveWorkspaceIds();
+  if (activeIds) {
+    all = all.filter(p => !p.workspaceId || activeIds.includes(p.workspaceId));
+  }
+
   return includeArchived ? all : all.filter(p => !p.archived);
 }
 
@@ -96,7 +105,14 @@ export async function fetchProjects({ includeArchived = false } = {}) {
 export function subscribeToProjects(callback) {
   const q = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
   return onSnapshot(q, (snap) => {
-    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    let all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Filtro por workspace
+    const activeIds = store.getActiveWorkspaceIds();
+    if (activeIds) {
+      all = all.filter(p => !p.workspaceId || activeIds.includes(p.workspaceId));
+    }
+
     callback(all.filter(p => !p.archived));
   });
 }

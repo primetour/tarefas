@@ -61,7 +61,9 @@ export async function createCsatSurvey({
   const user = store.get('currentUser');
   if (!clientEmail) throw new Error('E-mail do cliente é obrigatório.');
 
+  const workspace = store.get('currentWorkspace');
   const surveyDoc = {
+    workspaceId:  workspace?.id || null,
     taskId,
     taskTitle:    taskTitle || 'Tarefa',
     projectId,
@@ -158,17 +160,25 @@ export async function getSurveyByToken(token) {
 }
 
 /* ─── Listar surveys ─────────────────────────────────────── */
-export async function fetchSurveys({ limitN = 100, status = null, taskId = null } = {}) {
+export async function fetchSurveys({ limitN = 100, status = null, taskId = null, workspaceIds = null } = {}) {
   let q = query(
     collection(db, 'csat_surveys'),
     orderBy('createdAt', 'desc'),
     limit(limitN)
   );
-  if (status) q = query(q, where('status', '==', status));
   if (taskId) q = query(q, where('taskId', '==', taskId));
 
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  let surveys = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Filtro por workspace — documentos sem workspaceId visíveis para todos
+  const activeIds = workspaceIds ?? store.getActiveWorkspaceIds();
+  if (activeIds) {
+    surveys = surveys.filter(s => !s.workspaceId || activeIds.includes(s.workspaceId));
+  }
+
+  if (status) surveys = surveys.filter(s => s.status === status);
+  return surveys;
 }
 
 /* ─── Real-time listener ─────────────────────────────────── */

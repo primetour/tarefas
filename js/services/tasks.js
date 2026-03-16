@@ -74,8 +74,22 @@ export const PRIORITY_MAP  = Object.fromEntries(PRIORITIES.map(p => [p.value, p]
 
 /* ─── Criar tarefa ───────────────────────────────────────── */
 export async function createTask(data) {
+  // Validar regras de negócio do tipo de tarefa
+  if (data.typeId) {
+    const { validateTaskTypeRules, calcSla } = await import('./taskTypes.js');
+    const validation = await validateTaskTypeRules(data.typeId, data).catch(() => ({ valid: true }));
+    if (!validation.valid) throw new Error(validation.error || 'Regra de negócio violada.');
+    // Auto-calcular dueDate via SLA se não fornecido
+    if (!data.dueDate && data.startDate) {
+      const sla = calcSla(data.typeId, data.startDate);
+      if (sla) data.dueDate = sla.dueDate;
+    }
+  }
+
   const user = store.get('currentUser');
+  const workspace = store.get('currentWorkspace');
   const taskDoc = {
+    workspaceId:      data.workspaceId || workspace?.id || null,
     title:            data.title?.trim()        || 'Nova Tarefa',
     description:      data.description?.trim()  || '',
     status:           data.status               || 'not_started',
@@ -85,6 +99,9 @@ export async function createTask(data) {
     tags:             data.tags                 || [],
     startDate:        data.startDate            || null,
     dueDate:          data.dueDate              || null,
+    typeId:           data.typeId             || null,
+    customFields:     data.customFields        || {},
+    // Legacy fields kept for backward compat and existing queries
     type:             data.type                 || '',
     newsletterStatus: data.newsletterStatus     || '',
     requestingArea:   data.requestingArea       || '',
@@ -146,7 +163,7 @@ export async function toggleTaskComplete(taskId, isDone) {
 
 /* ─── Excluir tarefa ─────────────────────────────────────── */
 export async function deleteTask(taskId) {
-  if (!store.isManager()) throw new Error('Permissão negada.');
+  if (!store.can('task_delete')) throw new Error('Permissão negada.');
   await deleteDoc(doc(db, 'tasks', taskId));
   await auditLog('tasks.delete', 'task', taskId, {});
 }
@@ -159,16 +176,22 @@ export async function getTask(taskId) {
 
 /* ─── Listar tarefas (filtros) ───────────────────────────── */
 export async function fetchTasks({
-  projectId  = null,
-  assigneeId = null,
-  status     = null,
-  priority   = null,
-  limitN     = 500,
+  projectId    = null,
+  assigneeId   = null,
+  status       = null,
+  priority     = null,
+  workspaceIds = null,   // null = usa activeWorkspaces do store
+  limitN       = 500,
 } = {}) {
-  // Busca tudo e filtra no cliente — evita indices compostos no Firestore
   const q    = query(collection(db, 'tasks'), orderBy('order', 'asc'), limit(limitN));
   const snap = await getDocs(q);
   let tasks  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Filtro por workspace — documentos sem workspaceId são visíveis para todos
+  const activeIds = workspaceIds ?? store.getActiveWorkspaceIds();
+  if (activeIds) {
+    tasks = tasks.filter(t => !t.workspaceId || activeIds.includes(t.workspaceId));
+  }
 
   if (projectId)  tasks = tasks.filter(t => t.projectId === projectId);
   if (assigneeId) tasks = tasks.filter(t => (t.assignees||[]).includes(assigneeId));
@@ -184,6 +207,13 @@ export function subscribeToTasks(callback, filters = {}) {
 
   return onSnapshot(q, (snap) => {
     let tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Filtro por workspace
+    const activeIds = store.getActiveWorkspaceIds();
+    if (activeIds) {
+      tasks = tasks.filter(t => !t.workspaceId || activeIds.includes(t.workspaceId));
+    }
+
     if (filters.projectId) tasks = tasks.filter(t => t.projectId === filters.projectId);
     callback(tasks);
   });
