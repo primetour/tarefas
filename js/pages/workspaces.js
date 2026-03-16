@@ -6,6 +6,7 @@
 import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
+import { REQUESTING_AREAS } from '../services/tasks.js';
 import {
   createWorkspace, updateWorkspace, archiveWorkspace,
   addMember, removeMember, toggleWorkspaceAdmin,
@@ -191,8 +192,12 @@ function openWorkspaceModal(ws = null) {
         </div>
         <div class="form-group">
           <label class="form-label">Setor / Área</label>
-          <input type="text" class="form-input" id="ws-sector"
-            value="${esc(ws?.sector||'')}" placeholder="Ex: Marketing, TI, Operações..." maxlength="60" />
+          <select class="form-select" id="ws-sector">
+            <option value="">— Selecione a área —</option>
+            ${REQUESTING_AREAS.map(a =>
+              `<option value="${a}" ${(ws?.sector||'')=== a?'selected':''}>${a}</option>`
+            ).join('')}
+          </select>
         </div>
         <div class="form-group">
           <label class="form-label">Descrição</label>

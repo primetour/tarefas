@@ -46,9 +46,11 @@ export async function renderDashboard(container) {
   );
 
   try {
-    const [tasks, projects] = await Promise.all([
+    const [tasks, projects, pendingReqs, myGoals] = await Promise.all([
       fetchTasks().catch(() => []),
       fetchProjects().catch(() => []),
+      countPendingRequests().catch(() => 0),
+      fetchGoals({ type: 'personal' }).catch(() => []),
     ]);
 
     const myTasks    = tasks.filter(t => t.assignees?.includes(uid));
@@ -120,6 +122,79 @@ export async function renderDashboard(container) {
 
       <!-- Right column -->
       <div style="display:flex;flex-direction:column;gap:16px;">
+        <!-- Workspaces -->
+        ${(() => {
+          const workspaces = store.get('userWorkspaces') || [];
+          if (!workspaces.length) return '';
+          return `<div class="card">
+            <div class="card-header">
+              <div class="card-title">◈ Meus Workspaces</div>
+              <a href="#workspaces" class="btn btn-ghost btn-sm">Ver →</a>
+            </div>
+            <div class="card-body" style="padding:8px 16px;display:flex;flex-direction:column;gap:8px;">
+              ${workspaces.slice(0,4).map(ws => {
+                const wsTasks = tasks.filter(t => t.workspaceId === ws.id);
+                const wsDone  = wsTasks.filter(t => t.status==='done').length;
+                return `<div style="display:flex;align-items:center;gap:10px;padding:4px 0;">
+                  <div style="width:28px;height:28px;border-radius:var(--radius-sm);flex-shrink:0;
+                    background:${ws.color||'#D4A843'}22;color:${ws.color||'#D4A843'};
+                    display:flex;align-items:center;justify-content:center;font-size:0.875rem;">
+                    ${esc(ws.icon||'◈')}
+                  </div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(ws.name)}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);">${wsTasks.length} tarefa${wsTasks.length!==1?'s':''} · ${wsDone} concluídas</div>
+                  </div>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>`;
+        })()}
+
+        <!-- Pending requests (manager+) -->
+        ${pendingReqs > 0 && (store.can('workspace_create') || store.can('system_manage_users')) ? `
+          <div class="card" style="border:1px solid rgba(239,68,68,0.3);">
+            <div class="card-header">
+              <div class="card-title" style="color:#EF4444;">◌ Solicitações pendentes</div>
+              <a href="#requests" class="btn btn-ghost btn-sm">Ver →</a>
+            </div>
+            <div class="card-body" style="padding:12px 16px;">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <div style="font-size:2rem;font-weight:700;color:#EF4444;">${pendingReqs}</div>
+                <div style="font-size:0.875rem;color:var(--text-secondary);line-height:1.5;">
+                  solicitação${pendingReqs!==1?'s':''} aguardando triagem
+                </div>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- My Goals -->
+        ${myGoals.length ? `
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">◎ Minhas Metas</div>
+              <a href="#goals" class="btn btn-ghost btn-sm">Ver →</a>
+            </div>
+            <div class="card-body" style="padding:8px 16px;display:flex;flex-direction:column;gap:10px;">
+              ${myGoals.slice(0,3).map(g => {
+                const pct = g.target > 0 ? Math.min(100, Math.round((g.current||0)/g.target*100)) : g.progress||0;
+                const color = pct>=100?'#22C55E':pct>=60?'#F59E0B':'#38BDF8';
+                return `<div>
+                  <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+                    <span style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+                      white-space:nowrap;max-width:70%;">${esc(g.title)}</span>
+                    <span style="font-size:0.8125rem;font-weight:700;color:${color};">${pct}%</span>
+                  </div>
+                  <div class="progress" style="height:4px;">
+                    <div class="progress-bar" style="width:${pct}%;background:${color};"></div>
+                  </div>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
         <!-- Projects -->
         <div class="card">
           <div class="card-header">

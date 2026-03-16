@@ -55,6 +55,18 @@ export function renderLogin(container) {
           </div>
         </div>
 
+        <div style="margin-top:24px;">
+          <a href="solicitar.html"
+            style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;
+            border-radius:var(--radius-md);border:1px solid rgba(212,168,67,0.4);
+            color:var(--brand-gold);font-size:0.875rem;font-weight:500;text-decoration:none;
+            background:rgba(212,168,67,0.08);transition:all 0.15s;"
+            onmouseover="this.style.background='rgba(212,168,67,0.15)'"
+            onmouseout="this.style.background='rgba(212,168,67,0.08)'">
+            ✦ Faça seu pedido aqui →
+          </a>
+        </div>
+
         <div class="auth-visual-footer">
           © ${new Date().getFullYear()} PRIMETOUR · Todos os direitos reservados
         </div>
