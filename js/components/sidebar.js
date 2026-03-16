@@ -153,7 +153,8 @@ export class Sidebar {
 
     const html = `
       <div class="sidebar-brand">
-        <div class="sidebar-brand-icon">✦</div>
+        <img src="assets/mandala-branca.png" alt="PRIMETOUR"
+        style="width:36px;height:36px;border-radius:var(--radius-sm);object-fit:contain;flex-shrink:0;" />
         <div class="sidebar-brand-text">
           <span class="sidebar-brand-name">PRIMETOUR</span>
           <span class="sidebar-brand-sub">Gestão de Tarefas</span>
