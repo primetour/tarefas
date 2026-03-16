@@ -450,26 +450,25 @@ function openUserModal(userId = null) {
         </div>
       </div>
 
-      ${(store.isMaster() && role === 'admin') || (store.isMaster() && document.getElementById && document.getElementById('uf-role')?.value === 'admin') ? `
+      ${store.isMaster() ? `
         <div class="form-group" style="grid-column:span 2;">
           <label class="form-label">
             Setores visíveis (Head)
-            <span title="Defina quais setores este Head pode visualizar. Deixe vazio para ver apenas o próprio setor." 
+            <span title="Defina quais setores este Head pode visualizar. Deixe vazio para ver apenas o próprio setor."
               style="cursor:help;color:var(--text-muted);font-size:0.75rem;">ℹ</span>
           </label>
           <div style="display:flex;flex-wrap:wrap;gap:6px;">
             ${REQUESTING_AREAS.map(s => {
               const sel = (user?.visibleSectors||[]).includes(s);
-              return \`<label style="display:flex;align-items:center;gap:5px;cursor:pointer;padding:4px 10px;
-                border-radius:var(--radius-full);font-size:0.8125rem;
-                border:1px solid \${sel?'var(--brand-gold)':'var(--border-subtle)'};
-                background:\${sel?'rgba(212,168,67,0.12)':'var(--bg-surface)'};
-                color:\${sel?'var(--brand-gold)':'var(--text-secondary)'};
-                transition:all 0.15s;" class="sector-vis-chip">
-                <input type="checkbox" value="\${s}" class="sector-vis-cb" \${sel?'checked':''}
-                  style="display:none;" />
-                \${s}
-              </label>\`;
+              return '<label style="display:flex;align-items:center;gap:5px;cursor:pointer;padding:4px 10px;' +
+                'border-radius:var(--radius-full);font-size:0.8125rem;' +
+                'border:1px solid ' + (sel?'var(--brand-gold)':'var(--border-subtle)') + ';' +
+                'background:' + (sel?'rgba(212,168,67,0.12)':'var(--bg-surface)') + ';' +
+                'color:' + (sel?'var(--brand-gold)':'var(--text-secondary)') + ';' +
+                'transition:all 0.15s;" class="sector-vis-chip">' +
+                '<input type="checkbox" value="' + s + '" class="sector-vis-cb" ' + (sel?'checked':'') + ' style="display:none;" />' +
+                escHtml(s) +
+                '</label>';
             }).join('')}
           </div>
         </div>
