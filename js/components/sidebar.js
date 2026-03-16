@@ -145,7 +145,11 @@ export class Sidebar {
 
     const allRoles  = store.get('roles') || [];
     const roleDoc   = allRoles.find(r => r.id === (profile?.roleId||role));
-    const roleLabel = roleDoc?.name || APP_CONFIG.roles[role]?.label || role;
+    const ROLE_FALLBACKS = {
+      master: 'Diretoria', admin: 'Head', manager: 'Gerente',
+      coordinator: 'Coordenador', member: 'Analista',
+    };
+    const roleLabel = roleDoc?.name || APP_CONFIG.roles[role]?.label || ROLE_FALLBACKS[role] || role;
 
     const html = `
       <div class="sidebar-brand">
