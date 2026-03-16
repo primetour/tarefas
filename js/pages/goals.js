@@ -210,7 +210,7 @@ function renderGoalCard(goal) {
             </div>
 
             <div style="font-size:0.75rem;color:var(--text-muted);">
-              ${end ? `📅 ${isComplete?'Concluída':daysLeft!==null&&daysLeft<0?'Encerrada'}${daysLeft!==null&&daysLeft>=0&&!isComplete?`${daysLeft}d restante${daysLeft!==1?'s':''}`:''} · até ${fmtDate(goal.endDate)}` : ''}
+              ${end ? `📅 ${isComplete ? 'Concluída em' : (daysLeft !== null && daysLeft < 0 ? 'Encerrada em' : (daysLeft !== null ? daysLeft + 'd restante' + (daysLeft !== 1 ? 's' : '') + ' —' : ''))} ${fmtDate(goal.endDate)}` : ''}
             </div>
           </div>
 
