@@ -62,7 +62,7 @@ body {
 .portal-brand-icon {
   width: 36px;
   height: 36px;
-  background: var(--brand-gold);
+  background: transparent;
   color: #000;
   border-radius: var(--radius-md);
   display: flex;
@@ -360,7 +360,7 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 .portal-submit {
   width: 100%;
   padding: 14px 24px;
-  background: var(--brand-gold);
+  background: transparent;
   color: #000;
   font-family: var(--font-ui);
   font-size: 1rem;

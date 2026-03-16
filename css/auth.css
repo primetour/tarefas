@@ -58,7 +58,7 @@
 .auth-brand-icon {
   width: 44px;
   height: 44px;
-  background: linear-gradient(135deg, var(--brand-gold-dark), var(--brand-gold));
+  background: transparent;
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
@@ -124,7 +124,7 @@
 .auth-feature-dot {
   width: 6px;
   height: 6px;
-  background: var(--brand-gold);
+  background: transparent;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -312,7 +312,7 @@
 .btn-auth-submit {
   width: 100%;
   padding: 14px;
-  background: linear-gradient(135deg, var(--brand-gold-dark), var(--brand-gold));
+  background: transparent;
   border: none;
   border-radius: var(--radius-md);
   color: var(--text-inverse);

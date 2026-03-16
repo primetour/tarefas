@@ -55,14 +55,14 @@
 .sidebar-brand-icon {
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, var(--brand-gold-dark), var(--brand-gold));
+  background: transparent;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.1rem;
   flex-shrink: 0;
-  box-shadow: 0 2px 12px rgba(212,168,67,0.3);
+  
 }
 
 .sidebar-brand-text {
@@ -116,7 +116,7 @@
 }
 
 .sidebar-toggle:hover {
-  background: var(--brand-gold);
+  background: transparent;
   color: var(--text-inverse);
   border-color: var(--brand-gold);
 }
@@ -227,7 +227,7 @@
 
 .nav-badge {
   margin-left: auto;
-  background: var(--brand-gold);
+  background: transparent;
   color: var(--text-inverse);
   font-size: 0.625rem;
   font-weight: 700;
@@ -459,7 +459,7 @@
   right: 4px;
   width: 8px;
   height: 8px;
-  background: var(--brand-gold);
+  background: transparent;
   border-radius: 50%;
   border: 2px solid var(--bg-dark);
 }
