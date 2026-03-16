@@ -14,12 +14,12 @@
  */
 
 export const firebaseConfig = {
-  apiKey:            "SEU_API_KEY_AQUI",
-  authDomain:        "SEU_PROJETO.firebaseapp.com",
-  projectId:         "SEU_PROJETO_ID",
-  storageBucket:     "SEU_PROJETO.appspot.com",
-  messagingSenderId: "SEU_SENDER_ID",
-  appId:             "SEU_APP_ID"
+  apiKey: "AIzaSyB9DUjqmEIcMIcb5RumidSVXSxF4CO_Ii8",
+  authDomain: "gestor-de-tarefas-primetour.firebaseapp.com",
+  projectId: "gestor-de-tarefas-primetour",
+  storageBucket: "gestor-de-tarefas-primetour.firebasestorage.app",
+  messagingSenderId: "1083421353313",
+  appId: "1:1083421353313:web:f9656ce6ae0fc4ca24d120",
 };
 
 /**
