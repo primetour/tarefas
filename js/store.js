@@ -126,7 +126,12 @@ class Store {
   }
 
   hasWorkspaceAccess() {
-    if (this.isMaster() || this.can('system_view_all')) return true;
+    if (this.isMaster()) return true;
+    if (this.can('system_view_all')) return true;
+    if (this.can('system_manage_users')) return true; // admin sempre entra
+    if (this._state.userRole?.id === 'admin') return true;
+    const profile = this._state.userProfile;
+    if (profile?.role === 'admin' || profile?.roleId === 'admin') return true;
     return this._state.userWorkspaces.length > 0;
   }
 }
