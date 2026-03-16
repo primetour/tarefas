@@ -8,6 +8,8 @@ import { fetchTasks, PRIORITY_MAP, STATUS_MAP, NEWSLETTER_STATUSES, TASK_TYPES, 
 import { fetchProjects } from '../services/projects.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { toast }         from '../components/toast.js';
+import { countPendingRequests } from '../services/requests.js';
+import { fetchGoals }    from '../services/goals.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
