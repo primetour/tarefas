@@ -10,7 +10,7 @@ import { REQUESTING_AREAS } from '../services/tasks.js';
 import {
   createWorkspace, updateWorkspace, archiveWorkspace,
   addMember, removeMember, toggleWorkspaceAdmin,
-  createInvite, fetchInvites,
+  createInvite, fetchInvites, getWorkspace,
   fetchUserWorkspaces, fetchAllWorkspaces,
   WORKSPACE_ICONS, WORKSPACE_COLORS,
 } from '../services/workspaces.js';
@@ -411,11 +411,25 @@ async function openMembersModal(ws) {
 
 /* ─── Modal: convidar membro ─────────────────────────────── */
 async function openInviteModal(wsId) {
-  const ws       = allWorkspaces.find(w => w.id === wsId);
-  const allUsers = store.get('users') || [];
+  // Buscar workspace fresco do Firestore para ter members atualizado
+  let ws = await getWorkspace(wsId).catch(() => allWorkspaces.find(w => w.id === wsId));
 
-  // Usuários ainda não no workspace
-  const nonMembers = allUsers.filter(u => u.active && !ws?.members?.includes(u.id));
+  // Garantir usuários carregados
+  let allUsers = store.get('users') || [];
+  if (!allUsers.length) {
+    try {
+      const { collection, getDocs, query, orderBy } =
+        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('../firebase.js');
+      const snap = await getDocs(query(collection(db,'users'), orderBy('name','asc')));
+      allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      store.set('users', allUsers);
+    } catch(e) { console.warn('users load error:', e.message); }
+  }
+
+  // Usuários ainda não no workspace — members pode ser undefined em workspace recém-criado
+  const wsMembers  = Array.isArray(ws?.members) ? ws.members : [];
+  const nonMembers = allUsers.filter(u => u.active !== false && !wsMembers.includes(u.id));
 
   modal.open({
     title:   `Convidar para — ${ws?.name}`,
