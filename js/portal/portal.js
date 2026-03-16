@@ -255,27 +255,27 @@ function renderForm(db, taskTypes) {
   bindFormEvents(db, taskTypes);
 }
 
-/* ─── Calendar slots ──────────────────────────────────────── */
+/* ─── Calendar slots + Newsletter mini-calendar ────────────── */
 async function loadCalendarSlots(db) {
   const today    = new Date(); today.setHours(0,0,0,0);
   const twoWeeks = new Date(today); twoWeeks.setDate(twoWeeks.getDate() + 14);
 
-  // Buscar tarefas no período para mostrar ocupação
-  let existingDates = {};
+  // Buscar newsletters do mês para mostrar ocupação
+  let newsletterDates = {}; // { 'YYYY-MM-DD': [{title, requestingArea}] }
   try {
     const snap = await getDocs(query(
       collection(db, 'tasks'),
-      where('startDate', '>=', today),
-      where('startDate', '<=', twoWeeks),
+      where('type', '==', 'newsletter'),
       limit(200),
     ));
     snap.docs.forEach(d => {
       const t = d.data();
-      if (t.startDate) {
-        const dt  = t.startDate.toDate ? t.startDate.toDate() : new Date(t.startDate);
-        const key = dt.toISOString().slice(0,10);
-        existingDates[key] = (existingDates[key] || 0) + 1;
-      }
+      const dateField = t.dueDate || t.startDate;
+      if (!dateField) return;
+      const dt  = dateField.toDate ? dateField.toDate() : new Date(dateField);
+      const key = dt.toISOString().slice(0,10);
+      if (!newsletterDates[key]) newsletterDates[key] = [];
+      newsletterDates[key].push({ title: t.title, requestingArea: t.requestingArea || '', status: t.status });
     });
   } catch(e) {}
 
@@ -285,24 +285,34 @@ async function loadCalendarSlots(db) {
   const days = [];
   for (let d = new Date(today); d <= twoWeeks; d.setDate(d.getDate()+1)) {
     const dow = d.getDay();
-    if (dow === 0 || dow === 6) continue; // skip weekends
+    if (dow === 0 || dow === 6) continue;
     days.push(new Date(d));
   }
 
-  const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const DAYS_PT   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 
   slotsWrap.innerHTML = days.slice(0, 10).map(d => {
-    const key     = d.toISOString().slice(0,10);
-    const count   = existingDates[key] || 0;
-    const taken   = count >= 3; // 3+ tarefas = "ocupado"
-    const dow     = d.getDay();
+    const key      = d.toISOString().slice(0,10);
+    const entries  = newsletterDates[key] || [];
+    const taken    = entries.length > 0;
+    const dow      = d.getDay();
+    const tooltip  = taken
+      ? entries.map(e => e.title + (e.requestingArea?' ('+e.requestingArea+')':'')).join(', ')
+      : 'Disponível';
+
     return `
       <div class="slot-day ${taken?'slot-taken':''}"
-        data-date="${key}" title="${taken?'Data com muitas tarefas':'Disponível'}">
+        data-date="${key}" title="${tooltip}">
         <div class="slot-day-name">${DAYS_PT[dow]}</div>
         <div class="slot-day-num">${d.getDate()}</div>
         <div class="slot-day-info">${MONTHS_PT[d.getMonth()]}${taken?' · ocupado':''}</div>
+        ${taken && entries[0] ? `
+          <div style="font-size:0.5rem;color:#F59E0B;margin-top:2px;overflow:hidden;
+            text-overflow:ellipsis;white-space:nowrap;max-width:100%;">
+            ${entries[0].title.slice(0,14)}${entries[0].title.length>14?'…':''}
+          </div>
+        ` : ''}
       </div>
     `;
   }).join('');
@@ -318,6 +328,90 @@ async function loadCalendarSlots(db) {
       }
     });
   });
+
+  // Show full month mini-calendar for newsletter type
+  renderNewsletterMiniCalendar(newsletterDates);
+}
+
+/* ─── Mini-calendário de newsletters no portal ──────────── */
+function renderNewsletterMiniCalendar(newsletterDates) {
+  // Only show when Newsletter type is selected or by default
+  const typeSelect = document.getElementById('p-type');
+  // Insert mini-calendar after slots container
+  const slotsContainer = document.getElementById('slots-container');
+  if (!slotsContainer) return;
+
+  // Remove existing mini-calendar if any
+  document.getElementById('newsletter-mini-cal')?.remove();
+
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay    = new Date(year, month, 1).getDay();
+
+  const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const DAYS_PT = ['D','S','T','Q','Q','S','S'];
+
+  const wrap = document.createElement('div');
+  wrap.id = 'newsletter-mini-cal';
+  wrap.style.cssText = 'margin-top:16px;';
+
+  // Check if there are any newsletters this month
+  const thisMonthPrefix = `${year}-${String(month+1).padStart(2,'0')}-`;
+  const hasThisMonth    = Object.keys(newsletterDates).some(k => k.startsWith(thisMonthPrefix));
+
+  if (!hasThisMonth) {
+    wrap.innerHTML = `<p style="font-size:0.8125rem;color:var(--text-muted);text-align:center;padding:8px;">
+      Nenhuma newsletter agendada para este mês.</p>`;
+    slotsContainer.after(wrap);
+    return;
+  }
+
+  let cells = '';
+  // Padding
+  for (let i = 0; i < firstDay; i++) cells += '<div></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key      = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const entries  = newsletterDates[key] || [];
+    const isToday  = d === now.getDate();
+    const hasTasks = entries.length > 0;
+    cells += `
+      <div style="
+        aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+        padding:4px 2px;border-radius:4px;font-size:0.6875rem;position:relative;
+        background:${hasTasks?'rgba(212,168,67,0.12)':'transparent'};
+        border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':'transparent'};"
+        ${hasTasks?`title="${entries.map(e=>e.title).join(', ')}"`:''}>
+        <span style="font-weight:${isToday?700:400};color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</span>
+        ${hasTasks ? `<div style="width:5px;height:5px;border-radius:50%;background:var(--brand-gold);margin-top:2px;"></div>` : ''}
+      </div>`;
+  }
+
+  wrap.innerHTML = `
+    <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+      border-radius:8px;padding:12px;font-family:var(--font-ui);">
+      <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin-bottom:8px;
+        display:flex;align-items:center;gap:6px;">
+        📅 Calendário de Newsletters — ${MONTHS_PT[month]}
+        <span style="font-size:0.6875rem;font-weight:400;color:var(--text-muted);">
+          (${Object.keys(newsletterDates).filter(k=>k.startsWith(thisMonthPrefix)).length} agendada${Object.keys(newsletterDates).filter(k=>k.startsWith(thisMonthPrefix)).length!==1?'s':''})
+        </span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
+        ${DAYS_PT.map(d=>`<div style="text-align:center;font-size:0.625rem;color:var(--text-muted);padding:2px;">${d}</div>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">
+        ${cells}
+      </div>
+      <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:8px;text-align:center;">
+        Dias marcados com <span style="color:var(--brand-gold);">●</span> já têm newsletters agendadas
+      </div>
+    </div>
+  `;
+
+  slotsContainer.after(wrap);
 }
 
 /* ─── Bind events ─────────────────────────────────────────── */
@@ -338,6 +432,12 @@ function bindFormEvents(db, taskTypes) {
     }
 
     if (slotsEl) slotsEl.classList.add('visible');
+
+    // Show newsletter mini-calendar when newsletter type selected
+    const isNewsletter = typeData?.name?.toLowerCase().includes('newsletter') ||
+                         typeId === 'newsletter';
+    const miniCal = document.getElementById('newsletter-mini-cal');
+    if (miniCal) miniCal.style.display = isNewsletter ? 'block' : 'none';
   });
 
   // Date change → out-of-calendar check
