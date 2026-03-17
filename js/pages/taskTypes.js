@@ -134,6 +134,7 @@ function renderTypeCard(t, canEdit) {
           </div>
         ` : ''}
         <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:0.75rem;color:var(--text-muted);">
+          ${t.sector?`<span style="color:var(--text-secondary);">🏢 ${esc(t.sector)}</span>`:''}
           ${nucleoNames?`<span>◈ ${esc(nucleoNames)}</span>`:''}
           ${(t.steps||[]).length?`<span>▶ ${t.steps.length} etapa${t.steps.length!==1?'s':''}</span>`:''}
           ${t.deliveryStandard?`<span title="${esc(t.deliveryStandard)}" style="cursor:help;">📄 Padrão definido</span>`:''}
@@ -370,6 +371,19 @@ function openTypeModal(type = null) {
         <label class="form-label">Descrição</label>
         <input type="text" class="form-input" id="tt-desc" value="${esc(type?.description||'')}"
           maxlength="120" placeholder="Descreva brevemente este tipo..." />
+      </div>
+
+      <!-- Setor -->
+      <div class="form-group">
+        <label class="form-label">Setor <span class="required">*</span>
+          <span title="Define em qual setor este tipo de tarefa está disponível no portal de solicitações." style="cursor:help;color:var(--text-muted);font-size:0.75rem;">ℹ</span>
+        </label>
+        <select class="form-select" id="tt-sector">
+          <option value="">— Sem setor (global) —</option>
+          ${REQUESTING_AREAS.map(a =>
+            `<option value="${a}" ${(type?.sector||'')===a?'selected':''}>${a}</option>`
+          ).join('')}
+        </select>
       </div>
 
       <!-- Categoria -->
