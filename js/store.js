@@ -29,6 +29,7 @@ class Store {
       users:          [],
       roles:          [],
       taskTypes:      [],
+      taskCategories: [],
       nucleos:        [],
 
       // Setor e visibilidade
