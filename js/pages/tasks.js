@@ -99,7 +99,7 @@ export async function renderTasks(container) {
       </select>
       <select class="filter-select" id="filter-nucleo">
         <option value="">Todos os núcleos</option>
-        ${NUCLEOS.map(n=>`<option value="${n.value}">${esc(n.label)}</option>`).join('')}
+        ${(store.get('nucleos')||[]).map(n=>`<option value="${n.id||n.name}">${esc(n.name)}</option>`).join('')}
       </select>
       <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
         <label style="font-size:0.8125rem; color:var(--text-muted);">Agrupar:</label>
@@ -319,7 +319,7 @@ function renderTaskRow(task) {
         <div class="task-row-title">${esc(task.title)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;align-items:center;">
           <span class="badge badge-priority-${task.priority}" style="font-size:0.6rem;">${prio.label}</span>
-          ${(task.nucleos||[]).length ? `<span style="font-size:0.6875rem;color:var(--text-muted);">◈ ${(task.nucleos||[]).map(n=>NUCLEOS.find(x=>x.value===n)?.label||n).join(', ')}</span>` : ''}
+          ${(task.nucleos||[]).length ? `<span style="font-size:0.6875rem;color:var(--text-muted);">◈ ${(task.nucleos||[]).map(nid=>{const stored=store.get('nucleos')||[];const found=stored.find(x=>x.id===nid||x.name===nid);return found?.name||nid;}).join(', ')}</span>` : ''}
           ${task.tags?.length ? task.tags.slice(0,2).map(t=>`<span style="font-size:0.6875rem;color:var(--text-muted);">#${esc(t)}</span>`).join('') : ''}
           ${project ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${project.icon} ${esc(project.name)}</span>` : ''}
         </div>
@@ -416,8 +416,8 @@ function buildGroups() {
   }
   if (groupBy === 'nucleo') {
     const groups = NUCLEOS.map(n => ({
-      key: n.value, label: n.label, color: '#2EC4B6',
-      tasks: filteredTasks.filter(t => (t.nucleos||[]).includes(n.value)),
+      key: n.id||n.name, label: n.name, color: n.color||'#2EC4B6',
+      tasks: filteredTasks.filter(t => (t.nucleos||[]).includes(n.id||n.name)||(t.nucleos||[]).includes(n.name)),
     })).filter(g => g.tasks.length > 0);
     const noNucleo = filteredTasks.filter(t => !(t.nucleos||[]).length);
     if (noNucleo.length) groups.push({ key:'none', label:'Sem núcleo', color:'#6B7280', tasks: noNucleo });
@@ -590,7 +590,7 @@ function exportCSV() {
     const typeLabel = TASK_TYPES?.find(x=>x.value===t.type)?.label||'';
     const nlLabel   = t.type==='newsletter'
       ? (NEWSLETTER_STATUSES?.find(s=>s.value===t.newsletterStatus)?.label||'') : '';
-    const nucleosLabel = (t.nucleos||[]).map(n=>NUCLEOS.find(x=>x.value===n)?.label||n).join('; ');
+    const nucleosLabel = (t.nucleos||[]).map(nid=>{const stored=store.get('nucleos')||[];return stored.find(x=>x.id===nid||x.name===nid)?.name||nid;}).join('; ');
     return [
       t.title, STATUS_MAP[t.status]?.label||t.status,
       PRIORITY_MAP[t.priority]?.label||t.priority,

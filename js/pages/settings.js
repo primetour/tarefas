@@ -57,7 +57,7 @@ export async function renderSettings(container) {
                 <div id="mig-bar" style="height:100%;background:var(--brand-gold);width:0%;transition:width .3s;border-radius:3px;"></div>
               </div>
             </div>
-            <button class="btn btn-secondary" id="run-migration-btn">▶ Executar migração de setor</button>
+            <button class="btn btn-secondary" id="run-migration-btn">▶ Executar migração de setor e núcleos</button>
           </div>
         </div>
       ` : ''}
@@ -540,22 +540,60 @@ export async function runSectorMigration(onProgress) {
   const types    = await fetchTaskTypes().catch(() => []);
   const typeMap  = Object.fromEntries(types.map(t => [t.id, t.sector || null]));
 
-  // Fetch tasks without sector (client-side filter — no composite index needed)
+  // Load nucleos to build name→id map
+  const nucleosSnap = await getDocs(collection(db, 'nucleos')).catch(()=>({docs:[]}));
+  const nucleosByName = {};
+  nucleosSnap.docs.forEach(d => {
+    const n = d.data();
+    nucleosByName[n.name?.toLowerCase()] = d.id;
+  });
+
+  // Static name→id fallback for legacy values
+  const LEGACY_NUCLEOS = {
+    design:'design', comunicacao:'comunicacao', redes_sociais:'redes_sociais',
+    dados:'dados', web:'web', sistemas:'sistemas', ia:'ia',
+  };
+
   const snap = await getDocs(query(collection(db, 'tasks'), limit(2000)));
   const toMigrate = snap.docs.filter(d => {
     const data = d.data();
-    return !data.sector && data.typeId && typeMap[data.typeId];
+    const needsSector = !data.sector && data.typeId && typeMap[data.typeId];
+    const needsNucleos = (data.nucleos||[]).some(n => typeof n === 'string' && !n.match(/^[A-Za-z0-9]{20}$/));
+    return needsSector || needsNucleos;
   });
 
   let done = 0;
   const total = toMigrate.length;
   onProgress?.(0, total);
 
-  // Batch-update in groups of 20
   for (const d of toMigrate) {
-    const sector = typeMap[d.data().typeId];
-    if (sector) {
-      await updateDoc(doc(db, 'tasks', d.id), { sector }).catch(() => {});
+    const data   = d.data();
+    const update = {};
+
+    // Migrate sector
+    if (!data.sector && data.typeId && typeMap[data.typeId]) {
+      update.sector = typeMap[data.typeId];
+    }
+
+    // Migrate nucleos: names → Firestore IDs
+    if ((data.nucleos||[]).length) {
+      const migratedNucleos = data.nucleos.map(n => {
+        if (typeof n !== 'string') return n;
+        // Already an ID (20-char Firestore ID) — keep it
+        if (n.match(/^[A-Za-z0-9]{20}$/)) return n;
+        // Try to find by name in Firestore nucleos
+        const byName = nucleosByName[n.toLowerCase()];
+        if (byName) return byName;
+        // Keep as-is if no match (legacy slug like 'design')
+        return n;
+      });
+      if (JSON.stringify(migratedNucleos) !== JSON.stringify(data.nucleos)) {
+        update.nucleos = migratedNucleos;
+      }
+    }
+
+    if (Object.keys(update).length) {
+      await updateDoc(doc(db, 'tasks', d.id), update).catch(() => {});
     }
     done++;
     onProgress?.(done, total);
