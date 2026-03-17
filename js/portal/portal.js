@@ -705,14 +705,11 @@ function bindFormEvents(db, taskTypes) {
     const nucleos = await loadNucleosBySector(db, sector);
     const nucleoNames = nucleos.map(n => n.name);
 
-    // Filter types: show type if it has nucleos that match this sector,
-    // OR if the type has no nucleos (universal types)
-    const sectorTypes = taskTypes.filter(t => {
-      if (!t.nucleos?.length) return true; // no restriction → show for all
-      return t.nucleos.some(nid =>
-        nucleoNames.some(nn => nn === nid || nn.toLowerCase() === nid.toLowerCase())
-      );
-    });
+    // Filter types by sector field (primary) — show types whose sector matches
+    // OR types with no sector (global/universal types)
+    const sectorTypes = taskTypes.filter(t =>
+      !t.sector || t.sector === sector
+    );
 
     if (typeSel) {
       typeSel.innerHTML = '<option value="">— Selecione o tipo —</option>' +
