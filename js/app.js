@@ -34,6 +34,7 @@ import { renderRequests, destroyRequests } from './pages/requests.js';
 import { renderCsat, destroyCsat }      from './pages/csat.js';
 import { renderIntegrations }             from './pages/integrations.js';
 import { renderSettings }                 from './pages/settings.js';
+import { renderAbout }                    from './pages/about.js';
 
 // ─── Instâncias globais ───────────────────────────────────
 let sidebar = null;
@@ -200,6 +201,7 @@ function setupRouter() {
     'roles':        async () => { await renderRoles(content); },
     'settings':     async () => { await renderSettings(content); },
     'integrations': async () => { await renderIntegrations(content); },
+    'about':        async () => { await renderAbout(content); },
     'profile':      async () => { await renderProfile(content); },
     '404':          async () => render404(content),
   });
