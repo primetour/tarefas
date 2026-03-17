@@ -100,7 +100,8 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   const m = modal.open({
     title: modalTitle,
     size: 'xl',
-    content: buildHTML(task, users, projects, currentTags, currentAssignees, isEdit, currentTaskType),
+    content: buildHTML(task, users, projects, currentTags, currentAssignees, isEdit, currentTaskType,
+      task.sector || currentTaskType?.sector || store.get('userSector') || null),
     footer: [
       ...(isEdit && store.can('task_delete') ? [{
         label:'🗑 Excluir', class:'btn-danger btn-sm', closeOnClick:false,
@@ -128,7 +129,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   });
 }
 
-function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = null) {
+function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = null, taskSector = null) {
   const opt = (arr, valKey, labelKey, cur) => arr.map(x =>
     `<option value="${x[valKey]}" ${cur===x[valKey]?'selected':''}>${esc(x[labelKey])}</option>`
   ).join('');
