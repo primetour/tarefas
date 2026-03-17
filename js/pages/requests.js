@@ -29,6 +29,10 @@ let filterStatus = '';
 let filterSector = '';
 
 /* ─── Render ─────────────────────────────────────────────── */
+export function destroyRequests() {
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+}
+
 export async function renderRequests(container) {
   container.innerHTML = `
     <div class="page-header">
