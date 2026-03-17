@@ -18,8 +18,16 @@ const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 
 const PT_MONTHS_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
-let allTasks    = [];
-let allProjects = [];
+let allTasks      = [];
+let allProjects   = [];
+let tlFilterState = { sector: null, type: null, project: null, area: null };
+
+function initTlFilterState() {
+  if (!tlFilterState.sector) {
+    const sectors = store.getVisibleSectors();
+    if (sectors && sectors.length === 1) tlFilterState.sector = sectors[0];
+  }
+}
 
 export async function renderTimeline(container) {
   container.innerHTML = `

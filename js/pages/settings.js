@@ -41,28 +41,27 @@ export async function renderSettings(container) {
       </div>
       <div class="page-header-actions">
         <button class="btn btn-primary" id="settings-save-btn">Salvar todas</button>
-
-      ${store.isMaster() ? `
-        <div class="card" style="margin-top:24px;border:1px solid rgba(245,158,11,.3);">
-          <div class="card-header"><div class="card-title">🔧 Migração de dados</div></div>
-          <div class="card-body">
-            <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.6;">
-              Preenche o campo <strong>setor</strong> nas tarefas que ainda não o têm,
-              usando o setor do tipo de tarefa correspondente.
-              Execute uma vez após definir o setor em cada tipo de tarefa.
-            </p>
-            <div id="mig-progress" style="display:none;margin-bottom:12px;">
-              <div id="mig-label" style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:6px;">Aguardando...</div>
-              <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
-                <div id="mig-bar" style="height:100%;background:var(--brand-gold);width:0%;transition:width .3s;border-radius:3px;"></div>
-              </div>
-            </div>
-            <button class="btn btn-secondary" id="run-migration-btn">▶ Executar migração de setor e núcleos</button>
-          </div>
-        </div>
-      ` : ''}
       </div>
     </div>
+
+    ${store.isMaster() ? `
+      <div class="card" style="margin-bottom:24px;border:1px solid rgba(245,158,11,.3);">
+        <div class="card-header"><div class="card-title">🔧 Migração de dados</div></div>
+        <div class="card-body">
+          <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.6;">
+            Preenche o campo <strong>setor</strong> e migra <strong>núcleos</strong> de nomes para IDs nas tarefas existentes.
+            Execute uma vez após definir os setores nos tipos de tarefa.
+          </p>
+          <div id="mig-progress" style="display:none;margin-bottom:12px;">
+            <div id="mig-label" style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:6px;">Aguardando...</div>
+            <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
+              <div id="mig-bar" style="height:100%;background:var(--brand-gold);width:0%;transition:width .3s;border-radius:3px;"></div>
+            </div>
+          </div>
+          <button class="btn btn-secondary" id="run-migration-btn">▶ Executar migração de setor e núcleos</button>
+        </div>
+      </div>
+    ` : ''}
 
     <div style="display:grid; grid-template-columns:220px 1fr; gap:24px; align-items:flex-start;">
       <!-- Sidebar nav -->
@@ -548,10 +547,15 @@ export async function runSectorMigration(onProgress) {
     nucleosByName[n.name?.toLowerCase()] = d.id;
   });
 
-  // Static name→id fallback for legacy values
-  const LEGACY_NUCLEOS = {
-    design:'design', comunicacao:'comunicacao', redes_sociais:'redes_sociais',
-    dados:'dados', web:'web', sistemas:'sistemas', ia:'ia',
+  // Map legacy slugs to canonical names for lookup
+  const SLUG_TO_NAME = {
+    'design':        'Design',
+    'comunicacao':   'Comunicação',
+    'redes_sociais': 'Redes Sociais',
+    'dados':         'Dados',
+    'web':           'Web',
+    'sistemas':      'Sistemas',
+    'ia':            'IA',
   };
 
   const snap = await getDocs(query(collection(db, 'tasks'), limit(2000)));
@@ -581,10 +585,16 @@ export async function runSectorMigration(onProgress) {
         if (typeof n !== 'string') return n;
         // Already an ID (20-char Firestore ID) — keep it
         if (n.match(/^[A-Za-z0-9]{20}$/)) return n;
-        // Try to find by name in Firestore nucleos
+        // Try slug→canonical name→Firestore ID
+        const canonicalName = SLUG_TO_NAME[n.toLowerCase()];
+        if (canonicalName) {
+          const byCanonical = nucleosByName[canonicalName.toLowerCase()];
+          if (byCanonical) return byCanonical;
+        }
+        // Try direct name match
         const byName = nucleosByName[n.toLowerCase()];
         if (byName) return byName;
-        // Keep as-is if no match (legacy slug like 'design')
+        // Keep as-is (unknown slug — not in Firestore)
         return n;
       });
       if (JSON.stringify(migratedNucleos) !== JSON.stringify(data.nucleos)) {
