@@ -81,7 +81,7 @@ export async function createTask(data) {
     if (!validation.valid) throw new Error(validation.error || 'Regra de negócio violada.');
     // Auto-calcular dueDate via SLA se não fornecido
     if (!data.dueDate && data.startDate) {
-      const sla = calcSla(data.typeId, data.startDate);
+      const sla = calcSla(data.typeId, data.startDate, data.variationId || null);
       if (sla) data.dueDate = sla.dueDate;
     }
   }
@@ -101,6 +101,9 @@ export async function createTask(data) {
     startDate:        data.startDate            || null,
     dueDate:          data.dueDate              || null,
     typeId:           data.typeId             || null,
+    variationId:      data.variationId        || null,
+    variationName:    data.variationName      || '',
+    variationSLADays: data.variationSLADays != null ? data.variationSLADays : null,
     customFields:     data.customFields        || {},
     // Legacy fields kept for backward compat and existing queries
     type:             data.type                 || '',

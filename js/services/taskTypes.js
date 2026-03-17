@@ -349,27 +349,36 @@ export async function validateTaskTypeRules(typeId, taskData) {
 }
 
 /* ─── Calcular SLA de uma tarefa ─────────────────────────── */
-export function calcSla(typeId, startDate) {
-  const types   = store.get('taskTypes') || [];
-  const type    = types.find(t => t.id === typeId);
-  if (!type?.sla || !startDate) return null;
+export function calcSla(typeId, startDate, variationId = null) {
+  const types = store.get('taskTypes') || [];
+  const type  = types.find(t => t.id === typeId);
+  if (!type || !startDate) return null;
 
-  const start   = startDate instanceof Date ? startDate : new Date(startDate);
-  const due     = new Date(start);
-  let   daysAdded = 0;
-  let   days    = type.sla.days || 1;
-
-  // Contar apenas dias úteis (seg-sex)
-  while (daysAdded < days) {
-    due.setDate(due.getDate() + 1);
-    const dow = due.getDay();
-    if (dow !== 0 && dow !== 6) daysAdded++;
+  // New schema: SLA from variation. Fallback to legacy sla.days.
+  let days = 1;
+  if (variationId && type.variations?.length) {
+    const v = type.variations.find(v => v.id === variationId);
+    if (v) days = Number(v.slaDays) ?? 1;
+  } else if (type.variations?.length) {
+    days = Number(type.variations[0].slaDays) ?? 1;
+  } else if (type.sla?.days != null) {
+    days = type.sla.days;
   }
 
+  const start = startDate instanceof Date ? startDate : new Date(startDate);
+  if (days === 0) return { dueDate: new Date(start), label: 'Mesmo dia', warningDate: new Date(start) };
+
+  const due = new Date(start);
+  let added = 0;
+  while (added < days) {
+    due.setDate(due.getDate() + 1);
+    const dow = due.getDay();
+    if (dow !== 0 && dow !== 6) added++;
+  }
   return {
     dueDate:     due,
-    label:       type.sla.label,
-    warningDate: new Date(due.getTime() - (type.sla.warningDays || 0) * 24 * 60 * 60 * 1000),
+    label:       `${days} dia${days !== 1 ? 's' : ''} útil${days !== 1 ? 'eis' : ''}`,
+    warningDate: new Date(due.getTime() - 24*60*60*1000),
   };
 }
 
