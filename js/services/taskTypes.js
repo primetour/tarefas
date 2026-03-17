@@ -85,13 +85,40 @@ export const NEWSLETTER_SYSTEM_TYPE = {
 export async function initSystemTaskTypes() {
   const ref  = doc(db, 'task_types', NEWSLETTER_SYSTEM_TYPE.id);
   const snap = await getDoc(ref);
+
   if (!snap.exists()) {
+    // Create fresh with new schema
     await setDoc(ref, {
       ...NEWSLETTER_SYSTEM_TYPE,
       createdAt: serverTimestamp(),
       createdBy: 'system',
       updatedAt: serverTimestamp(),
     });
+  } else {
+    // Migrate: always sync system fields from code
+    // This ensures old documents (with sla/rules) get updated to new schema
+    const existing = snap.data();
+    const needsMigration = existing.rules !== undefined || !existing.variations?.length;
+    if (needsMigration) {
+      const { rules, sla, ...rest } = existing; // strip deprecated fields
+      await setDoc(ref, {
+        ...rest,
+        // Always overwrite these system fields
+        name:             NEWSLETTER_SYSTEM_TYPE.name,
+        description:      NEWSLETTER_SYSTEM_TYPE.description,
+        icon:             NEWSLETTER_SYSTEM_TYPE.icon,
+        color:            NEWSLETTER_SYSTEM_TYPE.color,
+        isSystem:         true,
+        fields:           NEWSLETTER_SYSTEM_TYPE.fields,
+        steps:            NEWSLETTER_SYSTEM_TYPE.steps,
+        variations:       NEWSLETTER_SYSTEM_TYPE.variations,
+        deliveryStandard: NEWSLETTER_SYSTEM_TYPE.deliveryStandard,
+        nucleos:          NEWSLETTER_SYSTEM_TYPE.nucleos,
+        scheduleSlots:    existing.scheduleSlots || [], // preserve user-configured slots
+        updatedAt:        serverTimestamp(),
+        updatedBy:        'system',
+      }, { merge: false }); // full overwrite to remove deprecated fields
+    }
   }
 }
 
