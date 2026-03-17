@@ -194,10 +194,16 @@ export async function fetchTasks({
     tasks = tasks.filter(t => !t.workspaceId || activeIds.includes(t.workspaceId));
   }
 
-  // Filtro por setor — documentos sem sector são visíveis para todos
-  const visibleSectors = store.get('visibleSectors') || [];
-  if (!store.isMaster() && visibleSectors.length > 0) {
-    tasks = tasks.filter(t => !t.sector || visibleSectors.includes(t.sector));
+  // Filtro por setor via getVisibleSectors()
+  // null = master (sem filtro), [] = sem setor definido, [...] = setores visíveis
+  const visibleSectors = store.getVisibleSectors();
+  if (visibleSectors !== null) {
+    if (visibleSectors.length === 0) {
+      // Usuário sem setor definido — não filtra (mostra tudo para não quebrar a UX)
+      // Idealmente o admin configura o setor do usuário
+    } else {
+      tasks = tasks.filter(t => !t.sector || visibleSectors.includes(t.sector));
+    }
   }
 
   if (projectId)  tasks = tasks.filter(t => t.projectId === projectId);
