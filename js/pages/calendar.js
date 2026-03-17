@@ -1,469 +1,537 @@
 /**
  * PRIMETOUR — Calendar Page
- * View padrão + View esteira (por tipo de tarefa)
+ * Views: Mês | Semana | Dia  ×  Padrão | Esteira
+ * Suporte a schedule slots (agenda prévia dos tipos de tarefa)
  */
 
-import { fetchTasks, PRIORITY_MAP, STATUS_MAP, REQUESTING_AREAS } from '../services/tasks.js';
-import { openTaskModal } from '../components/taskModal.js';
-import { store }               from '../store.js';
-import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
-import { renderCardFields }    from '../services/cardPrefs.js';
-import { toast }         from '../components/toast.js';
+import { fetchTasks, PRIORITY_MAP }  from '../services/tasks.js';
+import { openTaskModal }             from '../components/taskModal.js';
+import { store }                     from '../store.js';
+import { openCardPrefsModal }        from '../components/cardPrefsModal.js';
+import { renderCardFields }          from '../services/cardPrefs.js';
+import { toast }                     from '../components/toast.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 const PT_MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const PT_DAYS   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const PT_DAYS_L = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+const PT_DAYS_S = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const HOURS     = Array.from({length:24},(_,i)=>i); // 0-23
 
-let allTasks    = [];
-let currentDate = new Date();
-let activeView  = 'standard'; // 'standard' | 'pipeline'
+let allTasks       = [];
+let currentDate    = new Date();
+let activeView     = 'standard';  // 'standard' | 'pipeline'
+let activeGran     = 'month';     // 'month' | 'week' | 'day'
 let pipelineTypeId = '';
 
+/* ─── Main render ────────────────────────────────────────── */
 export async function renderCalendar(container) {
-  const taskTypes = store.get('taskTypes') || [];
-  const pipelineTypes = taskTypes.filter(t => t.fields?.length > 0 || t.steps?.length > 0);
-  if (!pipelineTypeId && pipelineTypes.length) pipelineTypeId = pipelineTypes[0].id;
+  const taskTypes    = store.get('taskTypes') || [];
+  const pipeTypes    = taskTypes.filter(t => (t.fields?.length||0)+(t.steps?.length||0)+(t.scheduleSlots?.length||0) > 0);
+  if (!pipelineTypeId && pipeTypes.length) pipelineTypeId = pipeTypes[0].id;
 
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title">Calendário</h1>
-        <p class="page-subtitle">Tarefas e prazos por data</p>
+        <p class="page-subtitle">Tarefas e agenda por data</p>
       </div>
-      <div class="page-header-actions">
-        <!-- View switcher -->
+      <div class="page-header-actions" style="gap:8px;flex-wrap:wrap;">
+
+        <!-- Granularity switcher: Mês | Semana | Dia -->
         <div style="display:flex;border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
-          <button class="view-switch-btn ${activeView==='standard'?'active':''}" data-view="standard"
-            style="padding:6px 14px;border:none;cursor:pointer;font-size:0.8125rem;
-            background:${activeView==='standard'?'var(--brand-gold)':'var(--bg-surface)'};
-            color:${activeView==='standard'?'#000':'var(--text-secondary)'};transition:all 0.15s;">
-            ◷ Padrão
-          </button>
-          <button class="view-switch-btn ${activeView==='pipeline'?'active':''}" data-view="pipeline"
-            style="padding:6px 14px;border:none;cursor:pointer;font-size:0.8125rem;
-            background:${activeView==='pipeline'?'var(--brand-gold)':'var(--bg-surface)'};
-            color:${activeView==='pipeline'?'#000':'var(--text-secondary)'};transition:all 0.15s;">
-            ▶ Esteira
-          </button>
+          ${[['month','Mês'],['week','Semana'],['day','Dia']].map(([g,l])=>`
+            <button class="gran-btn" data-gran="${g}" style="padding:6px 12px;border:none;cursor:pointer;font-size:0.8125rem;
+              background:${activeGran===g?'var(--brand-gold)':'var(--bg-surface)'};
+              color:${activeGran===g?'#000':'var(--text-secondary)'};transition:all 0.15s;">${l}</button>
+          `).join('')}
         </div>
 
-        ${activeView === 'pipeline' && pipelineTypes.length > 1 ? `
-          <select class="filter-select" id="cal-type-filter" style="min-width:160px;">
-            ${pipelineTypes.map(t =>
-              `<option value="${t.id}" ${pipelineTypeId===t.id?'selected':''}>${esc(t.icon||'')} ${esc(t.name)}</option>`
-            ).join('')}
+        <!-- Mode: Padrão | Esteira -->
+        <div style="display:flex;border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
+          ${[['standard','◷ Padrão'],['pipeline','▶ Esteira']].map(([v,l])=>`
+            <button class="view-switch-btn" data-view="${v}" style="padding:6px 12px;border:none;cursor:pointer;font-size:0.8125rem;
+              background:${activeView===v?'var(--brand-gold)':'var(--bg-surface)'};
+              color:${activeView===v?'#000':'var(--text-secondary)'};transition:all 0.15s;">${l}</button>
+          `).join('')}
+        </div>
+
+        ${activeView==='pipeline' && pipeTypes.length>1?`
+          <select class="filter-select" id="cal-type-filter" style="min-width:150px;">
+            ${pipeTypes.map(t=>`<option value="${t.id}" ${pipelineTypeId===t.id?'selected':''}>${esc(t.icon||'')} ${esc(t.name)}</option>`).join('')}
           </select>
-        ` : ''}
+        `:''}
 
         <button class="btn btn-primary" id="cal-new-task-btn">+ Nova Tarefa</button>
         <button class="btn btn-ghost btn-icon" id="cal-prefs-btn" title="Personalizar cards" style="font-size:1rem;">⚙</button>
       </div>
     </div>
     <div id="calendar-content">
-      <div class="task-empty"><div class="task-empty-icon">⟳</div><div class="task-empty-title">Carregando...</div></div>
+      <div class="task-empty"><div class="task-empty-icon">⟳</div></div>
     </div>
   `;
 
-  // View switch
-  container.querySelectorAll('.view-switch-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      activeView = btn.dataset.view;
-      renderCalendar(container);
-    });
-  });
-
+  // Bindings
+  container.querySelectorAll('.gran-btn').forEach(btn =>
+    btn.addEventListener('click', () => { activeGran = btn.dataset.gran; renderCalendar(container); })
+  );
+  container.querySelectorAll('.view-switch-btn').forEach(btn =>
+    btn.addEventListener('click', () => { activeView = btn.dataset.view; renderCalendar(container); })
+  );
   document.getElementById('cal-type-filter')?.addEventListener('change', e => {
-    pipelineTypeId = e.target.value;
-    renderCalendar(container);
+    pipelineTypeId = e.target.value; renderCalendar(container);
   });
-
   document.getElementById('cal-new-task-btn')?.addEventListener('click', () => {
-    const typeId = activeView === 'pipeline' ? pipelineTypeId : null;
+    const typeId = activeView==='pipeline' ? pipelineTypeId : null;
     openTaskModal({ typeId, onSave: () => load() });
   });
   document.getElementById('cal-prefs-btn')?.addEventListener('click', () =>
-    openCardPrefsModal(() => { if (activeView==='pipeline') renderPipeline(); else renderMonth(); })
+    openCardPrefsModal(() => render())
   );
 
   await load();
 }
 
 async function load() {
-  try {
-    allTasks = await fetchTasks();
-    if (activeView === 'pipeline') renderPipeline();
-    else renderMonth();
-  } catch(e) {
-    toast.error('Erro ao carregar tarefas.');
-  }
+  try { allTasks = await fetchTasks(); } catch(e) { toast.error('Erro ao carregar.'); }
+  render();
 }
 
-/* ─── View Padrão ────────────────────────────────────────── */
-function renderMonth() {
-  const content = document.getElementById('calendar-content');
-  if (!content) return;
-
-  const year  = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-
-  const firstDay    = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const prevDays    = new Date(year, month, 0).getDate();
-  const today       = new Date();
-
-  const taskMap = {};
-  allTasks.forEach(task => {
-    if (!task.dueDate) return;
-    const d = task.dueDate?.toDate ? task.dueDate.toDate() : new Date(task.dueDate);
-    if (d.getFullYear() !== year || d.getMonth() !== month) return;
-    const key = d.getDate();
-    if (!taskMap[key]) taskMap[key] = [];
-    taskMap[key].push(task);
-  });
-
-  const cells = [];
-  for (let i = firstDay - 1; i >= 0; i--) cells.push({ day: prevDays - i, current: false });
-  for (let d = 1; d <= daysInMonth; d++)  cells.push({ day: d, current: true });
-  const remaining = 42 - cells.length;
-  for (let d = 1; d <= remaining; d++)    cells.push({ day: d, current: false });
-
-  content.innerHTML = `
-    <div class="calendar-wrapper">
-      <div class="calendar-header">
-        <div class="calendar-nav">
-          <button class="calendar-nav-btn" id="cal-prev">◀</button>
-          <button class="btn btn-ghost btn-sm" id="cal-today">Hoje</button>
-          <button class="calendar-nav-btn" id="cal-next">▶</button>
-        </div>
-        <div class="calendar-month-title">${PT_MONTHS[month]} ${year}</div>
-        <div style="font-size:0.8125rem;color:var(--text-muted);">
-          ${Object.values(taskMap).flat().length} tarefas este mês
-        </div>
-      </div>
-
-      <div class="calendar-grid">
-        ${PT_DAYS.map(d=>`<div class="calendar-day-label">${d}</div>`).join('')}
-        ${cells.map(cell => {
-          const tasks   = cell.current ? (taskMap[cell.day] || []) : [];
-          const isToday = cell.current && today.getDate()===cell.day &&
-            today.getMonth()===month && today.getFullYear()===year;
-          const MAX_SHOW = 3;
-          const shown = tasks.slice(0, MAX_SHOW);
-          const extra = tasks.length - MAX_SHOW;
-
-          return `<div class="calendar-cell ${!cell.current?'other-month':''} ${isToday?'today':''}"
-            data-date="${cell.current?`${year}-${String(month+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}`:'' }">
-            <div class="calendar-date-num">${cell.day}</div>
-            ${shown.map(t => {
-              const prio  = PRIORITY_MAP[t.priority];
-              const color = prio?.color || '#6B7280';
-              return `<div class="calendar-task-pill" data-task-id="${t.id}"
-                style="background:${color}20;color:${color};border-left:2px solid ${color};padding:2px 4px;">
-                <div style="font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                  ${esc(t.title.slice(0,22))}${t.title.length>22?'…':''}
-                </div>
-                ${renderCardFields(t, { compact:true })}
-              </div>`;
-            }).join('')}
-            ${extra>0 ? `<div class="calendar-more" data-date="${year}-${String(month+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}">+${extra} mais</div>` : ''}
-          </div>`;
-        }).join('')}
-      </div>
-    </div>
-    <div id="cal-side-panel" style="display:none;margin-top:16px;"></div>
-  `;
-
-  _bindMonthEvents(taskMap, year, month);
+function render() {
+  if (activeGran==='month') renderMonth();
+  else if (activeGran==='week') renderWeek();
+  else renderDay();
 }
 
-function _bindMonthEvents(taskMap, year, month) {
-  const content = document.getElementById('calendar-content');
-  document.getElementById('cal-prev')?.addEventListener('click', () => {
-    currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
-    renderMonth();
-  });
-  document.getElementById('cal-next')?.addEventListener('click', () => {
-    currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
-    renderMonth();
-  });
-  document.getElementById('cal-today')?.addEventListener('click', () => {
-    currentDate = new Date(); renderMonth();
-  });
+/* ─── Slot helpers ───────────────────────────────────────── */
+function getSlotsForDate(date) {
+  const taskTypes = store.get('taskTypes') || [];
+  const all = [];
+  const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
+  const dow = date.getDay();
+  const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 
-  content?.querySelectorAll('.calendar-task-pill[data-task-id]').forEach(el => {
-    el.addEventListener('click', e => {
+  taskTypes.forEach(t => {
+    (t.scheduleSlots||[]).filter(s=>s.active!==false).forEach(slot => {
+      let matches = false;
+      if (slot.recurrence==='weekly')       matches = slot.weekDay === dow;
+      else if (slot.recurrence==='monthly_days') matches = (slot.monthDays||[]).includes(d);
+      else if (slot.recurrence==='custom')  matches = (slot.customDates||[]).includes(iso);
+      if (matches) all.push({ ...slot, taskType: t });
+    });
+  });
+  return all;
+}
+
+function slotPill(slot, compact=false) {
+  const color = slot.color || slot.taskType?.color || '#6B7280';
+  const label = compact
+    ? `${esc(slot.title.slice(0,20))}${slot.title.length>20?'…':''}`
+    : esc(slot.title);
+  return `<div class="cal-slot-pill" data-slot-id="${slot.id}"
+    data-type-id="${slot.taskType?.id||''}"
+    data-slot='${JSON.stringify({ title:slot.title, requestingArea:slot.requestingArea||'', variationId:slot.variationId||'' })}'
+    style="background:transparent;border:1.5px dashed ${color};color:${color};
+      border-radius:3px;padding:2px 5px;font-size:0.6875rem;cursor:pointer;
+      margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+      opacity:0.85;"
+    title="Agenda: ${esc(slot.title)}${slot.requestingArea?' · '+slot.requestingArea:''}">
+    ◌ ${label}
+  </div>`;
+}
+
+function bindSlotClicks(container) {
+  container.querySelectorAll('.cal-slot-pill').forEach(pill => {
+    pill.addEventListener('click', e => {
       e.stopPropagation();
-      const task = allTasks.find(t=>t.id===el.dataset.taskId);
-      if (task) openTaskModal({ taskData: task, onSave: () => load() });
-    });
-  });
-
-  content?.querySelectorAll('.calendar-cell[data-date]').forEach(cell => {
-    cell.addEventListener('click', e => {
-      if (e.target.closest('.calendar-task-pill') || e.target.closest('.calendar-more')) return;
-      if (!cell.dataset.date) return;
-      showDayPanel(cell.dataset.date, taskMap);
-    });
-  });
-
-  content?.querySelectorAll('.calendar-more').forEach(el => {
-    el.addEventListener('click', e => {
-      e.stopPropagation();
-      showDayPanel(el.dataset.date, taskMap);
+      try {
+        const data   = JSON.parse(pill.dataset.slot);
+        const typeId = pill.dataset.typeId || null;
+        openTaskModal({ typeId, taskData: {
+          title:          data.title || '',
+          requestingArea: data.requestingArea || '',
+          variationId:    data.variationId || null,
+          status:         'not_started',
+          assignees:[], tags:[], subtasks:[], comments:[], customFields:{},
+        }, onSave: () => load() });
+      } catch(e) {}
     });
   });
 }
 
-/* ─── View Esteira ───────────────────────────────────────── */
-function renderPipeline() {
-  const content = document.getElementById('calendar-content');
-  if (!content) return;
-
-  const taskTypes  = store.get('taskTypes') || [];
-  const taskType   = taskTypes.find(t => t.id === pipelineTypeId);
-  const year       = currentDate.getFullYear();
-  const month      = currentDate.getMonth();
-
-  // Filter tasks of this type
-  const typeTasks = allTasks.filter(t =>
-    (t.typeId === pipelineTypeId || t.type === taskType?.name?.toLowerCase()) &&
-    t.status !== 'cancelled'
-  );
-
-  // Map by due date
-  const taskMap = {};
-  typeTasks.forEach(task => {
-    const dateField = task.dueDate || task.startDate;
-    if (!dateField) return;
-    const d = dateField?.toDate ? dateField.toDate() : new Date(dateField);
-    if (d.getFullYear() !== year || d.getMonth() !== month) return;
-    const key = d.getDate();
-    if (!taskMap[key]) taskMap[key] = [];
-    taskMap[key].push(task);
-  });
-
-  const firstDay    = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const prevDays    = new Date(year, month, 0).getDate();
-  const today       = new Date();
-
-  const cells = [];
-  for (let i = firstDay - 1; i >= 0; i--) cells.push({ day: prevDays - i, current: false });
-  for (let d = 1; d <= daysInMonth; d++)  cells.push({ day: d, current: true });
-  const remaining = 42 - cells.length;
-  for (let d = 1; d <= remaining; d++)    cells.push({ day: d, current: false });
-
-  content.innerHTML = `
-    <!-- Navigation -->
-    <div class="calendar-wrapper">
-      <div class="calendar-header">
-        <div class="calendar-nav">
-          <button class="calendar-nav-btn" id="cal-prev">◀</button>
-          <button class="btn btn-ghost btn-sm" id="cal-today">Hoje</button>
-          <button class="calendar-nav-btn" id="cal-next">▶</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;">
-          <div class="calendar-month-title">${PT_MONTHS[month]} ${year}</div>
-          ${taskType ? `
-            <div style="display:flex;align-items:center;gap:6px;padding:3px 10px;
-              border-radius:var(--radius-full);background:${taskType.color||'#D4A843'}18;
-              border:1px solid ${taskType.color||'#D4A843'}44;font-size:0.8125rem;
-              color:${taskType.color||'#D4A843'};">
-              ${taskType.icon||'📋'} ${esc(taskType.name)}
-            </div>
-          ` : ''}
-        </div>
-        <div style="font-size:0.8125rem;color:var(--text-muted);">
-          ${typeTasks.length} tarefa${typeTasks.length!==1?'s':''} · ${Object.values(taskMap).flat().length} este mês
-        </div>
-      </div>
-
-      <!-- Calendar grid — pipeline style -->
-      <div class="calendar-grid">
-        ${PT_DAYS.map(d=>`<div class="calendar-day-label">${d}</div>`).join('')}
-        ${cells.map(cell => {
-          const tasks   = cell.current ? (taskMap[cell.day] || []) : [];
-          const isToday = cell.current && today.getDate()===cell.day &&
-            today.getMonth()===month && today.getFullYear()===year;
-
-          return `<div class="calendar-cell ${!cell.current?'other-month':''} ${isToday?'today':''}"
-            style="${tasks.length>0?'background:var(--bg-surface);':''}"
-            data-date="${cell.current?`${year}-${String(month+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}`:'' }">
-            <div class="calendar-date-num">${cell.day}</div>
-            ${tasks.map(t => {
-              const status    = t.status || 'not_started';
-              const isDone    = status === 'done';
-              const isOverdue = !isDone && t.dueDate && (() => {
-                const dd = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
-                return dd < today;
-              })();
-              const typeColor = taskType?.color || '#D4A843';
-              const dotColor  = isDone ? '#22C55E' : isOverdue ? '#EF4444' : typeColor;
-
-              // Step label (from customFields if available)
-              const stepId   = t.customFields?.currentStep;
-              const stepDef  = (taskType?.steps||[]).find(s => s.id === stepId);
-
-              return `<div class="calendar-task-pill pipeline-pill" data-task-id="${t.id}"
-                style="background:${dotColor}15;border-left:3px solid ${dotColor};
-                  padding:4px 6px;margin-bottom:3px;border-radius:3px;cursor:pointer;">
-                <!-- Title -->
-                <div style="font-size:0.75rem;font-weight:600;color:var(--text-primary);
-                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:2px;"
-                  title="${esc(t.title)}">
-                  ${esc(t.title.slice(0,24))}${t.title.length>24?'…':''}
-                </div>
-                ${renderCardFields(t, { compact:true })}
-              </div>`;
-            }).join('')}
-          </div>`;
-        }).join('')}
-      </div>
-    </div>
-
-    <!-- Legend -->
-    <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;font-size:0.75rem;color:var(--text-muted);">
-      <span style="display:flex;align-items:center;gap:5px;">
-        <span style="width:10px;height:10px;border-radius:2px;background:#22C55E;display:inline-block;"></span> Concluída
-      </span>
-      <span style="display:flex;align-items:center;gap:5px;">
-        <span style="width:10px;height:10px;border-radius:2px;background:#EF4444;display:inline-block;"></span> Atrasada
-      </span>
-      <span style="display:flex;align-items:center;gap:5px;">
-        <span style="width:10px;height:10px;border-radius:2px;background:${taskType?.color||'#D4A843'};display:inline-block;"></span> Em andamento
-      </span>
-    </div>
-
-    <!-- Side panel -->
-    <div id="cal-side-panel" style="display:none;margin-top:16px;"></div>
-  `;
-
-  // Bind events
-  document.getElementById('cal-prev')?.addEventListener('click', () => {
-    currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
-    renderPipeline();
-  });
-  document.getElementById('cal-next')?.addEventListener('click', () => {
-    currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
-    renderPipeline();
-  });
-  document.getElementById('cal-today')?.addEventListener('click', () => {
-    currentDate = new Date(); renderPipeline();
-  });
-
-  content.querySelectorAll('.pipeline-pill[data-task-id]').forEach(el => {
-    el.addEventListener('click', e => {
-      e.stopPropagation();
-      const task = allTasks.find(t=>t.id===el.dataset.taskId);
-      if (task) openTaskModal({ taskData: task, onSave: () => load() });
-    });
-  });
-
-  content.querySelectorAll('.calendar-cell[data-date]').forEach(cell => {
-    cell.addEventListener('click', e => {
-      if (e.target.closest('.pipeline-pill')) return;
-      if (!cell.dataset.date) return;
-      showDayPanel(cell.dataset.date, taskMap);
-    });
-  });
-}
-
-/* ─── Day panel ──────────────────────────────────────────── */
-function showDayPanel(dateStr, taskMap) {
-  const panel = document.getElementById('cal-side-panel');
-  if (!panel) return;
-  const [y,m,d] = dateStr.split('-').map(Number);
-  const tasks   = taskMap[d] || [];
-
-  if (!tasks.length) {
-    panel.style.display = 'none';
-    return;
-  }
-
-  panel.style.display = 'block';
-  panel.innerHTML = `
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">
-          ${d} de ${PT_MONTHS[m-1]} · ${tasks.length} tarefa${tasks.length!==1?'s':''}
-        </div>
-        <button class="btn btn-ghost btn-sm" id="close-panel">✕</button>
-      </div>
-      <div class="card-body" style="padding:0 16px 12px;display:flex;flex-direction:column;gap:10px;">
-        ${tasks.map(t => {
-          const prio    = PRIORITY_MAP[t.priority];
-          const color   = prio?.color || '#6B7280';
-          const isDone  = t.status === 'done';
-          const taskTypes = store.get('taskTypes') || [];
-          const tt      = taskTypes.find(x => x.id === t.typeId);
-          return `
-            <div class="cal-day-task" data-tid="${t.id}"
-              style="display:flex;align-items:flex-start;gap:10px;padding:10px;
-              border-radius:var(--radius-md);background:var(--bg-surface);
-              border:1px solid var(--border-subtle);cursor:pointer;
-              opacity:${isDone?0.6:1};">
-              <div style="width:3px;align-self:stretch;border-radius:2px;background:${color};flex-shrink:0;"></div>
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);
-                  ${isDone?'text-decoration:line-through;':''}">
-                  ${esc(t.title)}
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;font-size:0.75rem;color:var(--text-muted);">
-                  ${t.requestingArea ? `<span>📍 ${esc(t.requestingArea)}</span>` : ''}
-                  ${t.dueDate ? `<span>📅 ${fmtShort(t.dueDate)}</span>` : ''}
-                  ${tt ? `<span>${tt.icon||'📋'} ${esc(tt.name)}</span>` : ''}
-                  ${t.status ? `<span style="color:${color};">${prio?.label||t.status}</span>` : ''}
-                </div>
-              </div>
-            </div>`;
-        }).join('')}
-      </div>
-    </div>
-  `;
-
-  document.getElementById('close-panel')?.addEventListener('click', () => {
-    panel.style.display = 'none';
-  });
-  panel.querySelectorAll('.cal-day-task[data-tid]').forEach(el => {
-    el.addEventListener('click', () => {
-      const task = allTasks.find(t=>t.id===el.dataset.tid);
-      if (task) openTaskModal({ taskData: task, onSave: () => load() });
-    });
-  });
-}
-
-/* ─── Helpers ────────────────────────────────────────────── */
 function fmtShort(ts) {
   if (!ts) return '';
   const d = ts?.toDate ? ts.toDate() : new Date(ts);
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
-/* ─── Public calendar data for portal ───────────────────── */
-export async function getNewsletterCalendarData(year, month) {
-  const tasks = await fetchTasks();
-  const newsletters = tasks.filter(t =>
-    (t.typeId === 'newsletter' || t.type === 'newsletter') &&
-    t.status !== 'cancelled'
-  );
+/* ─── Shared nav bar ─────────────────────────────────────── */
+function navBar(titleHTML, statsHTML='') {
+  return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+    <div style="display:flex;gap:4px;">
+      <button class="btn btn-ghost btn-sm" id="cal-prev">◀</button>
+      <button class="btn btn-ghost btn-sm" id="cal-today">Hoje</button>
+      <button class="btn btn-ghost btn-sm" id="cal-next">▶</button>
+    </div>
+    <div style="font-size:1rem;font-weight:600;color:var(--text-primary);">${titleHTML}</div>
+    ${statsHTML?`<div style="font-size:0.8125rem;color:var(--text-muted);margin-left:auto;">${statsHTML}</div>`:''}
+  </div>`;
+}
 
-  const map = {};
-  newsletters.forEach(t => {
-    const dateField = t.dueDate || t.startDate;
-    if (!dateField) return;
-    const d = dateField?.toDate ? dateField.toDate() : new Date(dateField);
-    if (d.getFullYear() !== year || d.getMonth() !== month) return;
-    const key = d.getDate();
-    if (!map[key]) map[key] = [];
-    map[key].push({
-      title:          t.title,
-      dueDate:        fmtShort(t.dueDate || t.startDate),
-      requestingArea: t.requestingArea || '',
-      status:         t.status,
-      outOfCalendar:  t.outOfCalendar || t.customFields?.outOfCalendar || false,
+function taskPill(task, compact=false) {
+  const prio  = PRIORITY_MAP[task.priority]||{};
+  const color = prio.color||'#6B7280';
+  const done  = task.status==='done';
+  return `<div class="cal-task-pill" data-task-id="${task.id}"
+    style="background:${color}20;border-left:3px solid ${color};border-radius:3px;
+      padding:3px 6px;margin-bottom:2px;cursor:pointer;opacity:${done?0.5:1};">
+    <div style="font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+      color:var(--text-primary);${done?'text-decoration:line-through;':''}">
+      ${esc(task.title.slice(0,compact?20:28))}${task.title.length>(compact?20:28)?'…':''}
+    </div>
+    ${renderCardFields(task,{compact:true})}
+  </div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MONTH VIEW
+═══════════════════════════════════════════════════════════ */
+function renderMonth() {
+  const el = document.getElementById('calendar-content');
+  if (!el) return;
+
+  const y = currentDate.getFullYear(), m = currentDate.getMonth();
+  const firstDay = new Date(y,m,1).getDay();
+  const daysInM  = new Date(y,m+1,0).getDate();
+  const prevDays = new Date(y,m,0).getDate();
+  const today    = new Date();
+
+  const activeType = activeView==='pipeline'
+    ? (store.get('taskTypes')||[]).find(t=>t.id===pipelineTypeId)
+    : null;
+
+  // Map tasks
+  const taskMap = {};
+  allTasks.filter(t => {
+    if (activeType && t.typeId!==pipelineTypeId) return false;
+    const df = t.dueDate||t.startDate;
+    if (!df) return false;
+    const d = df?.toDate?df.toDate():new Date(df);
+    return d.getFullYear()===y && d.getMonth()===m;
+  }).forEach(t => {
+    const df = t.dueDate||t.startDate;
+    const d  = df?.toDate?df.toDate():new Date(df);
+    const k  = d.getDate();
+    if (!taskMap[k]) taskMap[k]=[];
+    taskMap[k].push(t);
+  });
+
+  const cells = [];
+  for (let i=firstDay-1;i>=0;i--) cells.push({day:prevDays-i,cur:false});
+  for (let d=1;d<=daysInM;d++)    cells.push({day:d,cur:true});
+  while (cells.length%7!==0)       cells.push({day:cells.length-firstDay-daysInM+1,cur:false});
+
+  el.innerHTML = navBar(
+    `${PT_MONTHS[m]} ${y}`,
+    `${Object.values(taskMap).flat().length} tarefa${Object.values(taskMap).flat().length!==1?'s':''} este mês`
+  ) + `
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border-subtle);border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
+    ${PT_DAYS_S.map(d=>`<div style="padding:6px;text-align:center;font-size:0.75rem;font-weight:600;
+      color:var(--text-muted);background:var(--bg-deepest);">${d}</div>`).join('')}
+    ${cells.map(cell=>{
+      const tasks = cell.cur?(taskMap[cell.day]||[]):[];
+      const slots = cell.cur?getSlotsForDate(new Date(y,m,cell.day)):[];
+      const isToday=cell.cur&&today.getDate()===cell.day&&today.getMonth()===m&&today.getFullYear()===y;
+      const MAX=3, shown=tasks.slice(0,MAX), extra=tasks.length-MAX;
+      const dateStr=cell.cur?`${y}-${String(m+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}`:'' ;
+      return `<div style="min-height:90px;padding:4px;background:${cell.cur?'var(--bg-card)':'var(--bg-deepest)'};
+        cursor:${cell.cur?'pointer':'default'};" data-date="${dateStr}">
+        <div style="font-size:0.8125rem;font-weight:${isToday?700:400};
+          color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
+          ${isToday?'background:var(--brand-gold);color:#000;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;':''};
+          margin-bottom:3px;">${cell.day}</div>
+        ${slots.map(s=>slotPill(s,true)).join('')}
+        ${shown.map(t=>taskPill(t,true)).join('')}
+        ${extra>0?`<div style="font-size:0.6875rem;color:var(--text-muted);cursor:pointer;"
+          data-date="${dateStr}">+${extra} mais</div>`:''}
+      </div>`;
+    }).join('')}
+  </div>`;
+
+  _bindNavMonth(m,y);
+  el.querySelectorAll('[data-task-id]').forEach(pill=>{
+    pill.addEventListener('click',e=>{
+      e.stopPropagation();
+      const t=allTasks.find(x=>x.id===pill.dataset.taskId);
+      if(t) openTaskModal({taskData:t,onSave:()=>load()});
     });
+  });
+  bindSlotClicks(el);
+}
+
+function _bindNavMonth(m,y) {
+  document.getElementById('cal-prev')?.addEventListener('click',()=>{currentDate=new Date(y,m-1,1);render();});
+  document.getElementById('cal-next')?.addEventListener('click',()=>{currentDate=new Date(y,m+1,1);render();});
+  document.getElementById('cal-today')?.addEventListener('click',()=>{currentDate=new Date();render();});
+}
+
+/* ═══════════════════════════════════════════════════════════
+   WEEK VIEW
+═══════════════════════════════════════════════════════════ */
+function renderWeek() {
+  const el = document.getElementById('calendar-content');
+  if (!el) return;
+
+  // Get Monday of current week
+  const base   = new Date(currentDate);
+  const dow    = base.getDay();
+  const monday = new Date(base); monday.setDate(base.getDate()-(dow===0?6:dow-1));
+  const days   = Array.from({length:7},(_,i)=>{ const d=new Date(monday); d.setDate(monday.getDate()+i); return d; });
+  const today  = new Date(); today.setHours(0,0,0,0);
+
+  const activeType = activeView==='pipeline'
+    ? (store.get('taskTypes')||[]).find(t=>t.id===pipelineTypeId) : null;
+
+  const tasksByDay = days.map(d=>{
+    return allTasks.filter(t=>{
+      if (activeType && t.typeId!==pipelineTypeId) return false;
+      const df = t.dueDate||t.startDate;
+      if (!df) return false;
+      const td=df?.toDate?df.toDate():new Date(df); td.setHours(0,0,0,0);
+      return td.getTime()===d.getTime();
+    });
+  });
+
+  const rangeLabel = `${days[0].getDate()} ${PT_MONTHS[days[0].getMonth()].slice(0,3)} — ${days[6].getDate()} ${PT_MONTHS[days[6].getMonth()].slice(0,3)} ${days[6].getFullYear()}`;
+
+  el.innerHTML = navBar(rangeLabel) + `
+  <div style="display:grid;grid-template-columns:60px repeat(7,1fr);gap:1px;
+    background:var(--border-subtle);border:1px solid var(--border-subtle);
+    border-radius:var(--radius-md);overflow:hidden;max-height:72vh;overflow-y:auto;">
+
+    <!-- Header row -->
+    <div style="background:var(--bg-deepest);padding:8px 4px;"></div>
+    ${days.map((d,i)=>{
+      const isToday = d.getTime()===today.getTime();
+      const slots   = getSlotsForDate(d);
+      return `<div style="padding:6px 4px;text-align:center;background:${isToday?'rgba(212,168,67,0.12)':'var(--bg-deepest)'};
+        border-bottom:2px solid ${isToday?'var(--brand-gold)':'transparent'};">
+        <div style="font-size:0.75rem;color:var(--text-muted);">${PT_DAYS_S[d.getDay()]}</div>
+        <div style="font-size:1rem;font-weight:${isToday?700:400};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};">${d.getDate()}</div>
+        ${slots.map(s=>slotPill(s,true)).join('')}
+      </div>`;
+    }).join('')}
+
+    <!-- Task rows: all-day section -->
+    <div style="padding:4px;font-size:0.625rem;color:var(--text-muted);background:var(--bg-card);
+      display:flex;align-items:center;justify-content:center;">tarefas</div>
+    ${tasksByDay.map((tasks,i)=>`
+      <div style="padding:4px;background:var(--bg-card);min-height:80px;vertical-align:top;">
+        ${tasks.map(t=>taskPill(t,true)).join('')}
+        ${!tasks.length?`<div style="font-size:0.6875rem;color:var(--border-subtle);text-align:center;padding-top:8px;">—</div>`:''}
+      </div>
+    `).join('')}
+  </div>`;
+
+  _bindNavWeek(monday);
+  el.querySelectorAll('[data-task-id]').forEach(pill=>{
+    pill.addEventListener('click',e=>{
+      e.stopPropagation();
+      const t=allTasks.find(x=>x.id===pill.dataset.taskId);
+      if(t) openTaskModal({taskData:t,onSave:()=>load()});
+    });
+  });
+  bindSlotClicks(el);
+}
+
+function _bindNavWeek(monday) {
+  document.getElementById('cal-prev')?.addEventListener('click',()=>{
+    currentDate=new Date(monday); currentDate.setDate(monday.getDate()-7); render();
+  });
+  document.getElementById('cal-next')?.addEventListener('click',()=>{
+    currentDate=new Date(monday); currentDate.setDate(monday.getDate()+7); render();
+  });
+  document.getElementById('cal-today')?.addEventListener('click',()=>{currentDate=new Date();render();});
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DAY VIEW
+═══════════════════════════════════════════════════════════ */
+function renderDay() {
+  const el = document.getElementById('calendar-content');
+  if (!el) return;
+
+  const d     = new Date(currentDate);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dMid  = new Date(d); dMid.setHours(0,0,0,0);
+  const isToday = dMid.getTime()===today.getTime();
+
+  const activeType = activeView==='pipeline'
+    ? (store.get('taskTypes')||[]).find(t=>t.id===pipelineTypeId) : null;
+
+  const dayTasks = allTasks.filter(t=>{
+    if (activeType && t.typeId!==pipelineTypeId) return false;
+    const df=t.dueDate||t.startDate;
+    if(!df) return false;
+    const td=df?.toDate?df.toDate():new Date(df); td.setHours(0,0,0,0);
+    return td.getTime()===dMid.getTime();
+  });
+
+  const daySlots = getSlotsForDate(dMid);
+  const dateLabel = `${PT_DAYS_L[d.getDay()]}, ${d.getDate()} de ${PT_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+
+  el.innerHTML = navBar(dateLabel,
+    `${dayTasks.length} tarefa${dayTasks.length!==1?'s':''}${daySlots.length?` · ${daySlots.length} slot${daySlots.length!==1?'s':''} de agenda`:''}`) + `
+  <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;align-items:start;">
+
+    <!-- Tasks list -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title" style="color:${isToday?'var(--brand-gold)':'var(--text-primary)'};">
+          ${isToday?'◎ Hoje':'📅 '+d.getDate()+' de '+PT_MONTHS[d.getMonth()]}
+        </div>
+        <button class="btn btn-ghost btn-sm" id="day-new-task-btn">+ Tarefa</button>
+      </div>
+      <div class="card-body" style="padding:0 16px 16px;display:flex;flex-direction:column;gap:8px;">
+        ${dayTasks.length
+          ? dayTasks.map(t=>{
+              const prio=PRIORITY_MAP[t.priority]||{}; const color=prio.color||'#6B7280';
+              const done=t.status==='done';
+              return `<div class="cal-task-pill" data-task-id="${t.id}" style="
+                display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
+                border-radius:var(--radius-md);background:var(--bg-surface);
+                border:1px solid var(--border-subtle);border-left:3px solid ${color};
+                cursor:pointer;opacity:${done?0.6:1};">
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);
+                    ${done?'text-decoration:line-through;':''}margin-bottom:4px;">
+                    ${esc(t.title)}
+                  </div>
+                  ${renderCardFields(t,{compact:false})}
+                </div>
+              </div>`;
+            }).join('')
+          : `<div style="font-size:0.875rem;color:var(--text-muted);padding:20px 0;text-align:center;">
+              Nenhuma tarefa para este dia.
+            </div>`
+        }
+      </div>
+    </div>
+
+    <!-- Agenda slots sidebar -->
+    <div>
+      ${daySlots.length?`
+        <div class="card" style="margin-bottom:12px;">
+          <div class="card-header">
+            <div class="card-title">◌ Agenda do dia</div>
+          </div>
+          <div class="card-body" style="padding:8px 16px 16px;display:flex;flex-direction:column;gap:6px;">
+            ${daySlots.map(slot=>{
+              const color=slot.color||slot.taskType?.color||'#6B7280';
+              return `<div class="cal-slot-pill" data-slot-id="${slot.id}"
+                data-type-id="${slot.taskType?.id||''}"
+                data-slot='${JSON.stringify({title:slot.title,requestingArea:slot.requestingArea||'',variationId:slot.variationId||''})}'
+                style="padding:10px 12px;border-radius:var(--radius-md);cursor:pointer;
+                  border:1.5px dashed ${color};background:${color}08;">
+                <div style="font-size:0.875rem;font-weight:500;color:${color};margin-bottom:2px;">
+                  ◌ ${esc(slot.title)}
+                </div>
+                ${slot.requestingArea?`<div style="font-size:0.75rem;color:var(--text-muted);">📍 ${esc(slot.requestingArea)}</div>`:''}
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+                  ${esc(slot.taskType?.name||'')} · Clique para criar tarefa
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+      `:''}
+      <!-- Mini month navigator -->
+      ${renderMiniMonth()}
+    </div>
+  </div>`;
+
+  document.getElementById('day-new-task-btn')?.addEventListener('click',()=>{
+    const typeId=activeView==='pipeline'?pipelineTypeId:null;
+    openTaskModal({typeId,onSave:()=>load()});
+  });
+  _bindNavDay(d);
+  el.querySelectorAll('[data-task-id]').forEach(pill=>{
+    pill.addEventListener('click',e=>{
+      e.stopPropagation();
+      const t=allTasks.find(x=>x.id===pill.dataset.taskId);
+      if(t) openTaskModal({taskData:t,onSave:()=>load()});
+    });
+  });
+  bindSlotClicks(el);
+  el.querySelectorAll('.mini-month-day[data-iso]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      currentDate=new Date(btn.dataset.iso+'T12:00:00');
+      render();
+    });
+  });
+}
+
+function renderMiniMonth() {
+  const y=currentDate.getFullYear(), m=currentDate.getMonth();
+  const fd=new Date(y,m,1).getDay();
+  const dim=new Date(y,m+1,0).getDate();
+  const today=new Date();
+  let html='';
+  for(let i=fd-1;i>=0;i--) html+=`<div></div>`;
+  for(let d=1;d<=dim;d++){
+    const iso=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isCur=d===currentDate.getDate();
+    const isToday=d===today.getDate()&&m===today.getMonth()&&y===today.getFullYear();
+    const slots=getSlotsForDate(new Date(y,m,d));
+    html+=`<div class="mini-month-day" data-iso="${iso}" style="
+      aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      font-size:0.6875rem;cursor:pointer;position:relative;
+      background:${isCur?'var(--brand-gold)':isToday?'rgba(212,168,67,0.2)':'transparent'};
+      color:${isCur?'#000':isToday?'var(--brand-gold)':'var(--text-secondary)'};
+      font-weight:${isCur||isToday?700:400};">
+      ${d}
+      ${slots.length?`<div style="position:absolute;bottom:1px;right:1px;width:4px;height:4px;
+        border-radius:50%;background:${isCur?'#000':'var(--brand-gold)'}"></div>`:''}
+    </div>`;
+  }
+  return `<div class="card">
+    <div class="card-header" style="padding:10px 12px;">
+      <div style="font-size:0.8125rem;font-weight:600;">${PT_MONTHS[m]} ${y}</div>
+    </div>
+    <div style="padding:4px 10px 10px;">
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
+        ${PT_DAYS_S.map(d=>`<div style="text-align:center;font-size:0.5625rem;color:var(--text-muted);">${d[0]}</div>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">${html}</div>
+    </div>
+  </div>`;
+}
+
+function _bindNavDay(d) {
+  document.getElementById('cal-prev')?.addEventListener('click',()=>{
+    currentDate=new Date(d); currentDate.setDate(d.getDate()-1); render();
+  });
+  document.getElementById('cal-next')?.addEventListener('click',()=>{
+    currentDate=new Date(d); currentDate.setDate(d.getDate()+1); render();
+  });
+  document.getElementById('cal-today')?.addEventListener('click',()=>{currentDate=new Date();render();});
+}
+
+/* ─── Export for portal ──────────────────────────────────── */
+export async function getNewsletterCalendarData(year, month) {
+  const tasks = await fetchTasks().catch(()=>[]);
+  const map   = {};
+  tasks.filter(t=>(t.typeId==='newsletter'||t.type==='newsletter')&&t.status!=='cancelled').forEach(t=>{
+    const df=t.dueDate||t.startDate;
+    if(!df)return;
+    const d=df?.toDate?df.toDate():new Date(df);
+    if(d.getFullYear()!==year||d.getMonth()!==month)return;
+    const k=d.getDate();
+    if(!map[k])map[k]=[];
+    map[k].push({title:t.title,requestingArea:t.requestingArea||'',status:t.status});
   });
   return map;
 }
+
+export { getSlotsForDate };

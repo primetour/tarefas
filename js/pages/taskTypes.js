@@ -149,6 +149,66 @@ function openTypeModal(type = null) {
   const nucleos  = allNucleos;
   let variations = type?.variations?.length ? [...type.variations] : [{ id:'_v1', name:'', slaDays:1 }];
   let steps      = [...(type?.steps || [])];
+  let slots      = [...(type?.scheduleSlots || [])];
+
+  function renderSlotRow(s, i) {
+    const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    const rec = s.recurrence||'weekly';
+    return `<div class="tt-slot-row" data-idx="${i}"
+      style="padding:10px 12px;border-radius:var(--radius-md);border:1px solid var(--border-subtle);
+        background:var(--bg-surface);display:flex;flex-direction:column;gap:8px;">
+      <!-- Title + active toggle -->
+      <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;">
+        <input type="text" class="form-input tt-slot-title" value="${esc(s.title||'')}"
+          placeholder="Ex: Newsletter de Viagens" style="font-size:0.875rem;" />
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;font-size:0.8125rem;color:var(--text-muted);">
+          <input type="checkbox" class="tt-slot-active" ${s.active!==false?'checked':''}
+            style="accent-color:var(--brand-gold);" /> Ativo
+        </label>
+      </div>
+      <!-- Recurrence -->
+      <div style="display:grid;grid-template-columns:140px 1fr 32px;gap:8px;align-items:start;">
+        <select class="form-select tt-slot-rec" style="font-size:0.875rem;">
+          <option value="weekly" ${rec==='weekly'?'selected':''}>Semanal</option>
+          <option value="monthly_days" ${rec==='monthly_days'?'selected':''}>Dias do mês</option>
+          <option value="custom" ${rec==='custom'?'selected':''}>Datas avulsas</option>
+        </select>
+        <!-- Semanal: day of week -->
+        <div class="slot-rec-weekly" style="display:${rec==='weekly'?'flex':'none'};flex-wrap:wrap;gap:4px;">
+          ${DAYS_PT.map((d,di)=>`<label style="cursor:pointer;padding:3px 8px;border-radius:var(--radius-full);
+            font-size:0.75rem;border:1px solid ${(s.weekDay||0)===di?'var(--brand-gold)':'var(--border-subtle)'};
+            background:${(s.weekDay||0)===di?'rgba(212,168,67,0.12)':'var(--bg-surface)'};
+            color:${(s.weekDay||0)===di?'var(--brand-gold)':'var(--text-secondary)'};
+            transition:all 0.15s;" class="slot-dow-chip">
+            <input type="radio" name="slot-dow-${i}" value="${di}" class="tt-slot-dow"
+              ${(s.weekDay||0)===di?'checked':''} style="display:none;" />${d}
+          </label>`).join('')}
+        </div>
+        <!-- Dias do mês -->
+        <div class="slot-rec-monthly" style="display:${rec==='monthly_days'?'block':'none'};">
+          <input type="text" class="form-input tt-slot-mdays" value="${(s.monthDays||[]).join(',')}"
+            placeholder="Ex: 5,10,20" style="font-size:0.875rem;" />
+        </div>
+        <!-- Datas avulsas -->
+        <div class="slot-rec-custom" style="display:${rec==='custom'?'block':'none'};">
+          <input type="text" class="form-input tt-slot-custom" value="${(s.customDates||[]).join(',')||''}"
+            placeholder="Ex: 2026-04-10,2026-05-15" style="font-size:0.875rem;" />
+        </div>
+        <button class="btn btn-ghost btn-icon btn-sm tt-slot-del" style="color:var(--color-danger);">✕</button>
+      </div>
+      <!-- Area + color -->
+      <div style="display:grid;grid-template-columns:1fr 110px;gap:8px;align-items:center;">
+        <input type="text" class="form-input tt-slot-area" value="${esc(s.requestingArea||'')}"
+          placeholder="Área solicitante (opcional)" style="font-size:0.875rem;" />
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input type="color" class="tt-slot-color" value="${s.color||'#D4A843'}"
+            style="height:34px;width:40px;padding:2px;border:1px solid var(--border-subtle);
+            border-radius:var(--radius-sm);background:var(--bg-surface);cursor:pointer;" />
+          <span style="font-size:0.75rem;color:var(--text-muted);">cor</span>
+        </div>
+      </div>
+    </div>`;
+  }
 
   function renderVarRow(v, i) {
     return `<div class="tt-var-row" data-idx="${i}"
@@ -174,6 +234,58 @@ function openTypeModal(type = null) {
         border-radius:var(--radius-sm);background:var(--bg-surface);cursor:pointer;" />
       <button class="btn btn-ghost btn-icon btn-sm tt-step-del" style="color:var(--color-danger);">✕</button>
     </div>`;
+  }
+
+  function collectSlots() {
+    document.querySelectorAll('.tt-slot-row').forEach((row, i) => {
+      if (!slots[i]) return;
+      slots[i].title         = row.querySelector('.tt-slot-title')?.value?.trim()||'';
+      slots[i].active        = row.querySelector('.tt-slot-active')?.checked!==false;
+      slots[i].recurrence    = row.querySelector('.tt-slot-rec')?.value||'weekly';
+      slots[i].requestingArea= row.querySelector('.tt-slot-area')?.value?.trim()||'';
+      slots[i].color         = row.querySelector('.tt-slot-color')?.value||'#D4A843';
+      if (slots[i].recurrence==='weekly') {
+        const checked = row.querySelector('.tt-slot-dow:checked');
+        slots[i].weekDay = checked ? parseInt(checked.value) : 0;
+      } else if (slots[i].recurrence==='monthly_days') {
+        slots[i].monthDays = (row.querySelector('.tt-slot-mdays')?.value||'').split(',').map(v=>parseInt(v.trim())).filter(n=>!isNaN(n)&&n>=1&&n<=31);
+      } else {
+        slots[i].customDates = (row.querySelector('.tt-slot-custom')?.value||'').split(',').map(v=>v.trim()).filter(v=>v.match(/^\d{4}-\d{2}-\d{2}$/));
+      }
+    });
+  }
+
+  function rebuildSlots() {
+    const list = document.getElementById('tt-slot-list');
+    if (!list) return;
+    list.innerHTML = slots.map((s,i) => renderSlotRow(s, i)).join('');
+    list.querySelectorAll('.tt-slot-del').forEach((btn, i) => {
+      btn.addEventListener('click', () => { collectSlots(); slots.splice(i,1); rebuildSlots(); });
+    });
+    // Recurrence toggle
+    list.querySelectorAll('.tt-slot-rec').forEach((sel, i) => {
+      sel.addEventListener('change', () => {
+        const row = sel.closest('.tt-slot-row');
+        row.querySelector('.slot-rec-weekly').style.display  = sel.value==='weekly'?'flex':'none';
+        row.querySelector('.slot-rec-monthly').style.display = sel.value==='monthly_days'?'block':'none';
+        row.querySelector('.slot-rec-custom').style.display  = sel.value==='custom'?'block':'none';
+      });
+    });
+    // DOW chip click
+    list.querySelectorAll('.slot-dow-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const rb = chip.querySelector('.tt-slot-dow');
+        if (!rb) return;
+        rb.checked = true;
+        const row = chip.closest('.tt-slot-row');
+        row.querySelectorAll('.slot-dow-chip').forEach(c => {
+          const active = c.querySelector('.tt-slot-dow')?.checked;
+          c.style.borderColor = active?'var(--brand-gold)':'var(--border-subtle)';
+          c.style.background  = active?'rgba(212,168,67,0.12)':'var(--bg-surface)';
+          c.style.color       = active?'var(--brand-gold)':'var(--text-secondary)';
+        });
+      });
+    });
   }
 
   function collectVars() {
@@ -331,6 +443,23 @@ function openTypeModal(type = null) {
           <button class="btn btn-ghost btn-sm" id="tt-add-step-btn" type="button">+ Etapa</button>
         </div>
       </details>
+
+      <!-- Agenda prévia (schedule slots) -->
+      <details style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);">
+        <summary style="padding:10px 14px;cursor:pointer;font-size:0.875rem;font-weight:500;
+          color:var(--text-secondary);user-select:none;">
+          ◌ Agenda prévia (${slots.length} slot${slots.length!==1?'s':''})
+          <span style="font-size:0.75rem;font-weight:400;color:var(--text-muted);margin-left:8px;">
+            Datas recorrentes de referência — aparecem no calendário como guia visual
+          </span>
+        </summary>
+        <div style="padding:12px 14px;border-top:1px solid var(--border-subtle);">
+          <div id="tt-slot-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:10px;">
+            ${slots.map((s,i) => renderSlotRow(s, i)).join('')}
+          </div>
+          <button class="btn btn-ghost btn-sm" id="tt-add-slot-btn" type="button">+ Slot de agenda</button>
+        </div>
+      </details>
     </div>`,
     footer: [
       { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
@@ -342,7 +471,7 @@ function openTypeModal(type = null) {
           const errEl = document.getElementById('tt-name-err');
           if (!name) { if(errEl) errEl.textContent='Nome obrigatório.'; return; }
           if(errEl) errEl.textContent = '';
-          collectVars(); collectSteps();
+          collectVars(); collectSteps(); collectSlots();
           const catRaw = document.getElementById('tt-cat')?.value || '';
           const [catId, catName] = catRaw.includes('|') ? catRaw.split('|') : [null,''];
           const nucleosSelected  = Array.from(document.querySelectorAll('.tt-nucleo-cb:checked')).map(cb => cb.value);
@@ -357,6 +486,7 @@ function openTypeModal(type = null) {
             deliveryStandard: document.getElementById('tt-delivery')?.value?.trim()  || '',
             variations:       variations.filter(v => v.name?.trim()),
             steps,
+            scheduleSlots:    slots.filter(s => s.title?.trim()),
             fields:           type?.fields?.filter(f=>!f.system) || [],
           };
           const btn = document.querySelector('.modal-footer .btn-primary');
@@ -407,6 +537,14 @@ function openTypeModal(type = null) {
       rebuildSteps();
     });
     rebuildSteps();
+
+    // Add slot
+    document.getElementById('tt-add-slot-btn')?.addEventListener('click', () => {
+      collectSlots();
+      slots.push({ id:'sl'+Date.now(), title:'', recurrence:'weekly', weekDay:1, active:true, color:'#D4A843' });
+      rebuildSlots();
+    });
+    rebuildSlots();
     // Inline new category
     document.getElementById('tt-new-cat-btn')?.addEventListener('click', async () => {
       const name = prompt('Nome da nova categoria:');
