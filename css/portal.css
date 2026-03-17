@@ -7,10 +7,10 @@
 
 :root {
   --brand-gold:    #D4A843;
-  --brand-dark:    #0A0B0D;
-  --bg-card:       #13151A;
-  --bg-surface:    #1A1D24;
-  --bg-elevated:   #22262F;
+  --brand-dark:    #0A1628;
+  --bg-card:       #0F1E35;
+  --bg-surface:    #152540;
+  --bg-elevated:   #1C2E4A;
   --border-subtle: rgba(255,255,255,0.08);
   --text-primary:  #F1F3F7;
   --text-secondary:#94A3B8;
