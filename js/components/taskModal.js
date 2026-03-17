@@ -9,7 +9,7 @@ import {
   createTask, updateTask, deleteTask,
   addSubtask, toggleSubtask, addComment,
   STATUSES, PRIORITIES,
-  NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS, NUCLEOS,
+  NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
 } from '../services/tasks.js';
 import { fetchProjects }  from '../services/projects.js';
 import { getTaskType }    from '../services/taskTypes.js';
@@ -268,25 +268,35 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         ${renderTypeFields(taskType, task.customFields || {})}
       </div>
 
-      <!-- Campos legados (núcleos — mantidos até Fase 3) -->
-      <div class="task-detail-field">
-        <div class="task-detail-label">Núcleos</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0;">
-          ${NUCLEOS.map(n => {
-            const checked = (task.nucleos||[]).includes(n.value);
-            return `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;
-              padding:4px 10px;border-radius:var(--radius-full);font-size:0.8125rem;
-              border:1px solid ${checked?'var(--brand-gold)':'var(--border-subtle)'};
-              background:${checked?'rgba(212,168,67,0.12)':'var(--bg-surface)'};
-              color:${checked?'var(--brand-gold)':'var(--text-secondary)'};
-              transition:all 0.15s;" class="nucleo-chip">
-              <input type="checkbox" value="${n.value}" class="tm-nucleo-check" ${checked?'checked':''}
-                style="display:none;" />
-              ${esc(n.label)}
-            </label>`;
-          }).join('')}
-        </div>
-      </div>
+      <!-- Núcleos — usa coleção do Firestore, filtrada pelo setor da tarefa -->
+      ${(() => {
+        const allNucleos = store.get('nucleos') || [];
+        // Filter by task sector if available
+        const filtered = taskSector
+          ? allNucleos.filter(n => !n.sector || n.sector === taskSector)
+          : allNucleos;
+        if (!filtered.length) return '';
+        return `<div class="task-detail-field">
+          <div class="task-detail-label">Núcleos</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0;">
+            ${filtered.map(n => {
+              const nid     = n.id || n.name;
+              // Support both old (name-based) and new (id-based) storage
+              const checked = (task.nucleos||[]).includes(nid) || (task.nucleos||[]).includes(n.name);
+              return \`<label style="display:flex;align-items:center;gap:5px;cursor:pointer;
+                padding:4px 10px;border-radius:var(--radius-full);font-size:0.8125rem;
+                border:1px solid \${checked?'var(--brand-gold)':'var(--border-subtle)'};
+                background:\${checked?'rgba(212,168,67,0.12)':'var(--bg-surface)'};
+                color:\${checked?'var(--brand-gold)':'var(--text-secondary)'};
+                transition:all 0.15s;" class="nucleo-chip">
+                <input type="checkbox" value="\${nid}" class="tm-nucleo-check" \${checked?'checked':''}
+                  style="display:none;" />
+                \${esc(n.name)}
+              </label>\`;
+            }).join('')}
+          </div>
+        </div>`;
+      })()}
       ${(() => {
         const workspaces  = store.get('userWorkspaces') || [];
         const currentWsId = task.workspaceId || store.get('currentWorkspace')?.id;
