@@ -15,6 +15,13 @@ import {
 } from '../services/taskCategories.js';
 import { loadNucleos } from '../services/sectors.js';
 
+// Local copy to avoid cross-service dependency issues
+const REQUESTING_AREAS = [
+  'BTG','C&P','Célula ICs','Centurion','CEP','Concierge Bradesco',
+  'Contabilidade','Diretoria','Eventos','Financeiro','Lazer','Marketing',
+  'Operadora','Programa ICs','Projetos','PTS Bradesco','Qualidade','Suppliers','TI',
+];
+
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 const TYPE_COLORS = ['#D4A843','#38BDF8','#22C55E','#A78BFA','#F97316','#EC4899','#EF4444','#14B8A6','#6366F1','#6B7280'];
