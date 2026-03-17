@@ -227,17 +227,23 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         </select>
       </div>
 
-      <!-- SLA badge (quando há tipo) -->
-      <div id="tm-sla-badge" style="display:${taskType?.sla?'block':'none'};">
-        ${taskType?.sla ? `
-          <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
-            background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);
-            border-radius:var(--radius-md);font-size:0.8125rem;color:var(--text-secondary);">
-            <span style="color:var(--brand-gold);">⏱</span>
-            SLA: <strong style="color:var(--text-primary);">${esc(taskType.sla.label)}</strong>
-          </div>
-        ` : ''}
+      <!-- Variação do material -->
+      <div class="task-detail-field" id="tm-variation-group"
+        style="display:${taskType?.variations?.length?'block':'none'};">
+        <div style="margin-bottom:5px;">
+          <span class="task-detail-label">Variação do material</span>
+        </div>
+        <select class="form-select" id="tm-variation" style="padding:8px 32px 8px 12px;">
+          <option value="">— Selecione a variação —</option>
+          ${(taskType?.variations||[]).map(v =>
+            `<option value="${v.id}" data-sla="${v.slaDays}"
+              ${task.variationId===v.id?'selected':''}>${esc(v.name)} · ${v.slaDays===0?'mesmo dia':v.slaDays+'d'}</option>`
+          ).join('')}
+        </select>
       </div>
+
+      <!-- SLA badge -->
+      <div id="tm-sla-badge" style="display:none;"></div>
 
       <!-- Campos dinâmicos do tipo selecionado -->
       <div id="tm-dynamic-fields">
@@ -376,26 +382,60 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
   // Bind dynamic field chips
   bindDynamicFieldEvents(document);
 
-  // Type change → reload dynamic fields
+  // Type change → reload dynamic fields + variation dropdown
   document.getElementById('tm-type-id')?.addEventListener('change', async (e) => {
     const typeId   = e.target.value;
     const typeDoc  = typeId ? await getTaskType(typeId).catch(()=>null) : null;
     const dynEl    = document.getElementById('tm-dynamic-fields');
     const slaEl    = document.getElementById('tm-sla-badge');
+    const varGroup = document.getElementById('tm-variation-group');
+    const varSel   = document.getElementById('tm-variation');
 
-    if (dynEl) {
-      dynEl.innerHTML = renderTypeFields(typeDoc, {});
-      bindDynamicFieldEvents(dynEl);
+    // Dynamic fields
+    if (dynEl) { dynEl.innerHTML = renderTypeFields(typeDoc, {}); bindDynamicFieldEvents(dynEl); }
+
+    // Variation dropdown
+    const variations = typeDoc?.variations || [];
+    if (varGroup) varGroup.style.display = variations.length ? 'block' : 'none';
+    if (varSel && variations.length) {
+      varSel.innerHTML = '<option value="">— Selecione a variação —</option>' +
+        variations.map(v =>
+          `<option value="${v.id}" data-sla="${v.slaDays}">${esc(v.name)} · ${v.slaDays===0?'mesmo dia':v.slaDays+'d'}</option>`
+        ).join('');
     }
-    if (slaEl) {
-      slaEl.style.display = typeDoc?.sla ? 'block' : 'none';
-      if (typeDoc?.sla) {
-        slaEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
-          background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);
-          border-radius:var(--radius-md);font-size:0.8125rem;color:var(--text-secondary);">
-          <span style="color:var(--brand-gold);">⏱</span>
-          SLA: <strong style="color:var(--text-primary);">${typeDoc.sla.label}</strong>
-        </div>`;
+
+    // Clear SLA badge when type changes
+    if (slaEl) { slaEl.style.display = 'none'; slaEl.innerHTML = ''; }
+  });
+
+  // Variation change → show SLA badge + auto-fill due date
+  document.getElementById('tm-variation')?.addEventListener('change', (e) => {
+    const opt    = e.target.selectedOptions[0];
+    const days   = parseInt(opt?.dataset?.sla);
+    const slaEl  = document.getElementById('tm-sla-badge');
+    const dueEl  = document.getElementById('tm-due');
+
+    if (!isNaN(days) && slaEl) {
+      const label = days === 0 ? 'Mesmo dia' : `${days} dia${days!==1?'s':''}`;
+      slaEl.style.display = 'block';
+      slaEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
+        background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);
+        border-radius:var(--radius-md);font-size:0.8125rem;color:var(--text-secondary);">
+        <span style="color:var(--brand-gold);">⏱</span>
+        SLA da variação: <strong style="color:var(--text-primary);">${label}</strong>
+      </div>`;
+
+      // Auto-fill due date if empty
+      if (dueEl && !dueEl.value && days >= 0) {
+        const due = new Date();
+        let biz = days;
+        while (biz > 0) {
+          due.setDate(due.getDate() + 1);
+          const dow = due.getDay();
+          if (dow !== 0 && dow !== 6) biz--;
+        }
+        if (days === 0) due.setTime(Date.now()); // same day
+        dueEl.value = due.toISOString().slice(0, 10);
       }
     }
   });
@@ -488,6 +528,10 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   // Collect dynamic field values
   const customFields = collectFieldValues(ctx);
 
+  const variationId  = ctx.querySelector('#tm-variation')?.value || null;
+  const variationOpt = ctx.querySelector('#tm-variation option:checked');
+  const variationSLA = variationOpt ? parseInt(variationOpt.dataset?.sla) : null;
+
   const data={
     title,
     description:  ctx.querySelector('#tm-desc')?.value?.trim()||'',
@@ -495,6 +539,9 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     priority:     ctx.querySelector('#tm-priority')?.value||'medium',
     projectId:    ctx.querySelector('#tm-project')?.value||null,
     typeId:       typeIdVal || null,
+    variationId:  variationId || null,
+    variationName: variationOpt?.textContent?.split('·')[0]?.trim() || '',
+    variationSLADays: isNaN(variationSLA) ? null : variationSLA,
     customFields,
     // Legacy fields — kept for backward compat
     type:             typeDoc?.name?.toLowerCase() || '',
