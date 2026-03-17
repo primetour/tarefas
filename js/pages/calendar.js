@@ -50,7 +50,18 @@ export async function renderCalendar(container) {
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title">Calendário</h1>
-        <p class="page-subtitle">Tarefas e agenda por data</p>
+        <p class="page-subtitle">
+          ${(() => {
+            if (activeView === 'standard') return 'Tarefas e agenda por data';
+            const activeType = (store.get('taskTypes')||[]).find(t => t.id === pipelineTypeId);
+            const sectorLabel = activeType?.sector || calFilterState.sector || '';
+            const typeLabel   = activeType?.name   || '';
+            if (sectorLabel && typeLabel) return `🏢 ${esc(sectorLabel)} › ${esc(typeLabel)}`;
+            if (typeLabel)   return `▶ ${esc(typeLabel)}`;
+            if (activeView === 'agenda') return '◌ Agenda prévia';
+            return 'Esteira de produção';
+          })()}
+        </p>
       </div>
       <div class="page-header-actions" style="gap:8px;flex-wrap:wrap;">
 
@@ -152,10 +163,16 @@ function getSlotsForDate(date, typeId = null) {
   const dow = date.getDay();
   const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 
-  // Filter by typeId if specified (pipeline/agenda mode)
-  const typesToCheck = typeId
-    ? taskTypes.filter(t => t.id === typeId)
-    : taskTypes;
+  // Filter by typeId if specified, otherwise by user's visible sectors
+  let typesToCheck;
+  if (typeId) {
+    typesToCheck = taskTypes.filter(t => t.id === typeId);
+  } else {
+    const visibleSectors = store.getVisibleSectors();
+    typesToCheck = visibleSectors === null
+      ? taskTypes
+      : taskTypes.filter(t => !t.sector || visibleSectors.includes(t.sector));
+  }
 
   typesToCheck.forEach(t => {
     (t.scheduleSlots||[]).filter(s=>s.active!==false).forEach(slot => {

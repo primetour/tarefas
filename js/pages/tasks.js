@@ -26,6 +26,7 @@ let unsubscribe  = null;
 let groupBy      = 'status';    // 'status' | 'priority' | 'project' | 'none'
 let searchTerm   = '';
 let filterStatus = '';
+let filterSector = '';
 let filterPriority = '';
 let filterProject  = '';
 let filterAssignee = '';
@@ -58,6 +59,18 @@ export async function renderTasks(container) {
         <input type="text" class="toolbar-search-input" id="tasks-search"
           placeholder="Buscar tarefas..." />
       </div>
+      ${(() => {
+        const sectors = store.getVisibleSectors();
+        if (sectors === null || sectors.length > 1) {
+          const allSectors = ['BTG','C&P','Célula ICs','Centurion','CEP','Concierge Bradesco','Contabilidade','Diretoria','Eventos','Financeiro','Lazer','Marketing','Operadora','Programa ICs','Projetos','PTS Bradesco','Qualidade','Suppliers','TI'];
+          const list = sectors || allSectors;
+          return `<select class="filter-select" id="filter-sector">
+            <option value="">Todos os setores</option>
+            ${list.map(s=>`<option value="${s}">${s}</option>`).join('')}
+          </select>`;
+        }
+        return '';
+      })()}
       <select class="filter-select" id="filter-status">
         <option value="">Todos os status</option>
         ${STATUSES.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
@@ -139,7 +152,14 @@ function _subscribeToTasks() {
   if (unsubscribe) unsubscribe();
   unsubscribe = subscribeToTasks((tasks) => {
     allTasks = tasks;
-    applyFilters();
+    // Pre-select sector for single-sector users
+  const autoSectors = store.getVisibleSectors();
+  if (autoSectors?.length === 1 && !filterSector) {
+    filterSector = autoSectors[0];
+    const sel = document.getElementById('filter-sector');
+    if (sel) sel.value = filterSector;
+  }
+  applyFilters();
   });
 }
 
@@ -155,6 +175,7 @@ function applyFilters() {
       t.tags?.some(tag=>tag.toLowerCase().includes(q))
     );
   }
+  if (filterSector)   result = result.filter(t => !t.sector || t.sector === filterSector);
   if (filterStatus)   result = result.filter(t => t.status === filterStatus);
   if (filterPriority) result = result.filter(t => t.priority === filterPriority);
   if (filterProject)  result = result.filter(t => t.projectId === filterProject);
@@ -458,6 +479,7 @@ function _attachPageEvents() {
   });
 
   // Filters
+  document.getElementById('filter-sector')?.addEventListener('change', e => { filterSector = e.target.value; applyFilters(); });
   document.getElementById('filter-status')?.addEventListener('change', e => { filterStatus = e.target.value; applyFilters(); });
   document.getElementById('filter-priority')?.addEventListener('change', e => { filterPriority = e.target.value; applyFilters(); });
   document.getElementById('filter-project')?.addEventListener('change', e => { filterProject = e.target.value; applyFilters(); });
