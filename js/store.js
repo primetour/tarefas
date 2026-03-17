@@ -114,6 +114,21 @@ class Store {
   isAdmin()   { return this.can('system_manage_users'); }
   isManager() { return this.can('workspace_create') || this.can('system_manage_users'); }
 
+  /**
+   * getVisibleSectors()
+   * Returns:
+   *   null          → master/Diretoria (sees all)
+   *   string[]      → head gets visibleSectors[], others get [userSector]
+   *   []            → no sector assigned (sees nothing sector-filtered)
+   */
+  getVisibleSectors() {
+    if (this.isMaster() || this.can('system_view_all')) return null;
+    const visible = this._state.visibleSectors || [];
+    if (visible.length > 0) return visible; // Head
+    const single = this._state.userSector;
+    return single ? [single] : [];
+  }
+
   isMaster() {
     return this._state.userProfile?.isMaster === true
         || this._state.userRole?.id === 'master';
