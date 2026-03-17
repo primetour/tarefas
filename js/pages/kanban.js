@@ -209,6 +209,7 @@ function _renderKbFilters(container) {
 }
 
 function renderCards(tasks, _ignored = '') {
+  const filterFn = buildFilterFn(kbFilterState);
   STATUSES.forEach(s => {
     const body  = document.getElementById(`col-body-${s.value}`);
     const count = document.getElementById(`col-count-${s.value}`);
