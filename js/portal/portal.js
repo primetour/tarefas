@@ -985,35 +985,6 @@ async function notifyTeam(reqDoc) {
   } catch(e) {
     console.warn('notifyTeam error:', e.message);
   }
-}) {
-  try {
-    const configModule = await import('../config.js').catch(() => null);
-    const cfg = configModule?.APP_CONFIG?.emailjs;
-    if (!cfg?.publicKey || cfg.publicKey === 'SUA_EMAILJS_PUBLIC_KEY') return;
-
-    if (!window.emailjs) {
-      await new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
-        s.onload = () => { window.emailjs.init(cfg.publicKey); res(); };
-        s.onerror = rej;
-        document.head.appendChild(s);
-      });
-    }
-
-    await window.emailjs.send(cfg.serviceId, cfg.templateInternal, {
-      to_email:        cfg.fromEmail,
-      subject:         `${urgency ? '🔴 URGENTE — ' : ''}Nova solicitação: ${typeName}`,
-      requester_name:  requesterName,
-      requester_email: requesterEmail,
-      type_name:       typeName,
-      nucleo,
-      urgency:         urgency ? 'Sim — urgente' : 'Não',
-      request_url:     `${window.location.origin}/tarefas/#requests?id=${requestId}`,
-    });
-  } catch(e) {
-    console.warn('Email notification skipped:', e.message);
-  }
 }
 
 /* ─── Helpers ─────────────────────────────────────────────── */
