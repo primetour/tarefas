@@ -71,7 +71,7 @@ const REQUESTING_AREAS = [
 ];
 
 /* ─── Render form ─────────────────────────────────────────── */
-function renderForm(db, taskTypes) {
+async function renderForm(db, taskTypes) {
   const root = document.getElementById('portal-root');
   if (!root) return;
 
