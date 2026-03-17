@@ -539,6 +539,32 @@ export async function runSectorMigration(onProgress) {
   const types    = await fetchTaskTypes().catch(() => []);
   const typeMap  = Object.fromEntries(types.map(t => [t.id, t.sector || null]));
 
+  // Also clean variation names in task_types (strip legacy '· Nd' suffix)
+  const typesSnap = await getDocs(collection(db, 'task_types'));
+  for (const td of typesSnap.docs) {
+    const data = td.data();
+    if (!data.variations?.length) continue;
+    const cleaned = data.variations.map(v => ({
+      ...v,
+      name: v.name?.replace(/\s*·\s*\d+d\s*$|\s*·\s*mesmo dia\s*$/i, '').trim() || v.name,
+    }));
+    const changed = cleaned.some((v,i) => v.name !== data.variations[i].name);
+    if (changed) {
+      await updateDoc(doc(db, 'task_types', td.id), { variations: cleaned }).catch(()=>{});
+    }
+  }
+
+  // Also clean variationName on existing tasks
+  const tasksWithDotSla = await getDocs(query(collection(db, 'tasks'), limit(2000)));
+  for (const td of tasksWithDotSla.docs) {
+    const data = td.data();
+    if (!data.variationName) continue;
+    const cleaned = data.variationName.replace(/\s*·\s*\d+d\s*$|\s*·\s*mesmo dia\s*$/i, '').trim();
+    if (cleaned !== data.variationName) {
+      await updateDoc(doc(db, 'tasks', td.id), { variationName: cleaned }).catch(()=>{});
+    }
+  }
+
   // Load nucleos to build name→id map
   const nucleosSnap = await getDocs(collection(db, 'nucleos')).catch(()=>({docs:[]}));
   const nucleosByName = {};
