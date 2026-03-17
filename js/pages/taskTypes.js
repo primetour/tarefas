@@ -10,7 +10,8 @@ import {
   fetchTaskTypes, createTaskType, updateTaskType, deleteTaskType, getTaskType,
 } from '../services/taskTypes.js';
 import {
-  fetchCategories, createCategory, updateCategory, deleteCategory,
+  fetchCategories, fetchCategoriesBySector,
+  createCategory, updateCategory, deleteCategory,
   CATEGORY_COLORS,
 } from '../services/taskCategories.js';
 import { loadNucleos } from '../services/sectors.js';
@@ -393,13 +394,15 @@ function openTypeModal(type = null) {
         </select>
       </div>
 
-      <!-- Categoria -->
-      <div class="form-group">
+      <!-- Categoria (aparece após setor ser selecionado) -->
+      <div class="form-group" id="tt-cat-group" style="display:${type?.sector?'block':'none'};">
         <label class="form-label">Categoria</label>
         <div style="display:flex;gap:8px;">
           <select class="form-select" id="tt-cat" style="flex:1;">
             <option value="">— Sem categoria —</option>
-            ${allCategories.map(c=>`<option value="${c.id}|${c.name}" ${type?.categoryId===c.id?'selected':''}>${esc(c.icon||'')} ${esc(c.name)}</option>`).join('')}
+            ${allCategories.filter(c => !c.sector || c.sector === (type?.sector||'')).map(c=>
+              `<option value="${c.id}|${c.name}" ${type?.categoryId===c.id?'selected':''}>${esc(c.icon||'')} ${esc(c.name)}</option>`
+            ).join('')}
           </select>
           <button class="btn btn-ghost btn-sm" id="tt-new-cat-btn" type="button">+ Nova</button>
         </div>
@@ -528,16 +531,33 @@ function openTypeModal(type = null) {
   });
 
   setTimeout(() => {
-    // Sector change → filter and show nucleos
+    // Sector change → filter and show nucleos + category
     document.getElementById('tt-sector')?.addEventListener('change', async (e) => {
       const sector   = e.target.value;
       const group    = document.getElementById('tt-nucleos-group');
       const chipsEl  = document.getElementById('tt-nucleos-chips');
+      const catGroup = document.getElementById('tt-cat-group');
+      const catSel   = document.getElementById('tt-cat');
       if (!group || !chipsEl) return;
 
       if (!sector) {
-        group.style.display = 'none';
+        group.style.display    = 'none';
+        if (catGroup) catGroup.style.display = 'none';
         return;
+      }
+
+      // Show category filtered by sector
+      if (catGroup && catSel) {
+        catGroup.style.display = 'block';
+        try {
+          const sectorCats = await fetchCategoriesBySector(sector);
+          catSel.innerHTML = '<option value="">— Sem categoria —</option>' +
+            sectorCats.map(c =>
+              `<option value="${c.id}|${c.name}">${esc(c.icon||'')} ${esc(c.name)}</option>`
+            ).join('');
+        } catch(e) {
+          catSel.innerHTML = '<option value="">— Sem categoria —</option>';
+        }
       }
 
       group.style.display = 'block';
@@ -560,7 +580,7 @@ function openTypeModal(type = null) {
             ${esc(n.name)}
           </label>`;
         }).join('');
-        // Rebind chip clicks for new chips
+        // Rebind chip clicks
         chipsEl.querySelectorAll('.nucleo-chip-lbl').forEach(chip => {
           chip.addEventListener('click', () => {
             const cb = chip.querySelector('.tt-nucleo-cb');
@@ -623,7 +643,8 @@ function openTypeModal(type = null) {
       const name = prompt('Nome da nova categoria:');
       if (!name?.trim()) return;
       try {
-        const cat = await createCategory({ name:name.trim(), color:CATEGORY_COLORS[0], icon:'📋' });
+        const sector = document.getElementById('tt-sector')?.value || null;
+        const cat = await createCategory({ name:name.trim(), sector, color:CATEGORY_COLORS[0], icon:'📋' });
         allCategories.push(cat);
         const sel = document.getElementById('tt-cat');
         if (sel) {
