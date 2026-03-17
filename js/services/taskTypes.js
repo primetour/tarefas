@@ -150,6 +150,7 @@ export async function createTaskType({
   deliveryStandard,
   variations,
   fields, steps,
+  scheduleSlots,
   workspaceId,
 }) {
   if (!store.can('task_type_create')) throw new Error('Permissão negada.');
@@ -182,9 +183,10 @@ export async function createTaskType({
       name:    v.name?.trim() || '',
       slaDays: Number(v.slaDays) || 1,
     })).filter(v => v.name),
-    // Campos customizados e esteira
+    // Campos customizados, esteira e agenda prévia
     fields:           (fields || []).map(f => ({ ...f, id: f.id || crypto.randomUUID() })),
     steps:            (steps  || []).map((s, i) => ({ ...s, id: s.id || crypto.randomUUID(), order: i })),
+    scheduleSlots:    (scheduleSlots || []).filter(s => s.title?.trim()).map(s => ({ ...s, id: s.id || crypto.randomUUID().slice(0,8) })),
     createdAt:        serverTimestamp(),
     createdBy:        user.uid,
     updatedAt:        serverTimestamp(),
