@@ -115,7 +115,10 @@ export function renderField(field, currentValue = null) {
 /* ─── Renderizar todos os campos de um tipo ──────────────── */
 export function renderTypeFields(taskType, customFields = {}) {
   if (!taskType?.fields?.length) return '';
-  return taskType.fields.map(f => renderField(f, customFields[f.key] ?? null)).join('');
+  return taskType.fields
+    .filter(f => !f.system) // exclude system-injected fields (currentStep etc)
+    .map(f => renderField(f, customFields[f.key] ?? null))
+    .join('');
 }
 
 /* ─── Coletar valores do DOM ─────────────────────────────── */

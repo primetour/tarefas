@@ -385,7 +385,10 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
   // Type change → reload dynamic fields + variation dropdown
   document.getElementById('tm-type-id')?.addEventListener('change', async (e) => {
     const typeId   = e.target.value;
-    const typeDoc  = typeId ? await getTaskType(typeId).catch(()=>null) : null;
+    // Try store first (fast), then Firestore
+    const typeDoc  = typeId
+      ? ((store.get('taskTypes')||[]).find(t=>t.id===typeId) || await getTaskType(typeId).catch(()=>null))
+      : null;
     const dynEl    = document.getElementById('tm-dynamic-fields');
     const slaEl    = document.getElementById('tm-sla-badge');
     const varGroup = document.getElementById('tm-variation-group');
@@ -397,7 +400,7 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
     // Variation dropdown
     const variations = typeDoc?.variations || [];
     if (varGroup) varGroup.style.display = variations.length ? 'block' : 'none';
-    if (varSel && variations.length) {
+    if (varSel) {
       varSel.innerHTML = '<option value="">— Selecione a variação —</option>' +
         variations.map(v =>
           `<option value="${v.id}" data-sla="${v.slaDays}">${esc(v.name)} · ${v.slaDays===0?'mesmo dia':v.slaDays+'d'}</option>`
@@ -410,12 +413,13 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
 
   // Variation change → show SLA badge + auto-fill due date
   document.getElementById('tm-variation')?.addEventListener('change', (e) => {
-    const opt    = e.target.selectedOptions[0];
+    const sel    = e.target;
+    const opt    = sel.selectedOptions[0];
     const days   = parseInt(opt?.dataset?.sla);
     const slaEl  = document.getElementById('tm-sla-badge');
     const dueEl  = document.getElementById('tm-due');
 
-    if (!isNaN(days) && slaEl) {
+    if (opt?.value && !isNaN(days) && slaEl) {
       const label = days === 0 ? 'Mesmo dia' : `${days} dia${days!==1?'s':''}`;
       slaEl.style.display = 'block';
       slaEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
@@ -424,19 +428,24 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
         <span style="color:var(--brand-gold);">⏱</span>
         SLA da variação: <strong style="color:var(--text-primary);">${label}</strong>
       </div>`;
-
       // Auto-fill due date if empty
-      if (dueEl && !dueEl.value && days >= 0) {
+      if (dueEl && !dueEl.value) {
         const due = new Date();
-        let biz = days;
-        while (biz > 0) {
-          due.setDate(due.getDate() + 1);
-          const dow = due.getDay();
-          if (dow !== 0 && dow !== 6) biz--;
+        if (days === 0) {
+          dueEl.value = due.toISOString().slice(0, 10);
+        } else {
+          let biz = days;
+          while (biz > 0) {
+            due.setDate(due.getDate() + 1);
+            const dow = due.getDay();
+            if (dow !== 0 && dow !== 6) biz--;
+          }
+          dueEl.value = due.toISOString().slice(0, 10);
         }
-        if (days === 0) due.setTime(Date.now()); // same day
-        dueEl.value = due.toISOString().slice(0, 10);
       }
+    } else if (slaEl) {
+      slaEl.style.display = 'none';
+      slaEl.innerHTML = '';
     }
   });
 
