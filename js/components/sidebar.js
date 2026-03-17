@@ -107,8 +107,9 @@ export class Sidebar {
         if (store.isMaster()) return true;
         if (item.perm) return store.can(item.perm) || (item.altPerm && store.can(item.altPerm));
         if (!item.roles) return true;
-        // 'master' role maps to 'admin' for nav purposes
-        const effectiveRole = (role === 'master') ? 'admin' : role;
+        // Role name mapping for nav purposes
+        const ROLE_NAV_MAP = { master: 'admin', coordinator: 'manager' };
+        const effectiveRole = ROLE_NAV_MAP[role] || role;
         return item.roles.includes(effectiveRole);
       });
       if (!items.length) return '';
