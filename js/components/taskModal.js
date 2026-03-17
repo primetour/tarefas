@@ -544,6 +544,12 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   const variationOpt = ctx.querySelector('#tm-variation option:checked');
   const variationSLA = variationOpt ? parseInt(variationOpt.dataset?.sla) : null;
 
+  // Sector: from task prefill → from typeDoc → from user's sector
+  const taskSector = task.sector
+    || typeDoc?.sector
+    || store.get('userSector')
+    || null;
+
   const data={
     title,
     description:  ctx.querySelector('#tm-desc')?.value?.trim()||'',
@@ -551,6 +557,7 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     priority:     ctx.querySelector('#tm-priority')?.value||'medium',
     projectId:    ctx.querySelector('#tm-project')?.value||null,
     typeId:       typeIdVal || null,
+    sector:       taskSector,
     variationId:  variationId || null,
     variationName: variationOpt?.textContent?.split('·')[0]?.trim() || '',
     variationSLADays: isNaN(variationSLA) ? null : variationSLA,
