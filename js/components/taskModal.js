@@ -271,31 +271,27 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
       <!-- Núcleos — usa coleção do Firestore, filtrada pelo setor da tarefa -->
       ${(() => {
         const allNucleos = store.get('nucleos') || [];
-        // Filter by task sector if available
-        const filtered = taskSector
+        const filtered   = taskSector
           ? allNucleos.filter(n => !n.sector || n.sector === taskSector)
           : allNucleos;
         if (!filtered.length) return '';
-        return `<div class="task-detail-field">
-          <div class="task-detail-label">Núcleos</div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0;">
-            ${filtered.map(n => {
-              const nid     = n.id || n.name;
-              // Support both old (name-based) and new (id-based) storage
-              const checked = (task.nucleos||[]).includes(nid) || (task.nucleos||[]).includes(n.name);
-              return \`<label style="display:flex;align-items:center;gap:5px;cursor:pointer;
-                padding:4px 10px;border-radius:var(--radius-full);font-size:0.8125rem;
-                border:1px solid \${checked?'var(--brand-gold)':'var(--border-subtle)'};
-                background:\${checked?'rgba(212,168,67,0.12)':'var(--bg-surface)'};
-                color:\${checked?'var(--brand-gold)':'var(--text-secondary)'};
-                transition:all 0.15s;" class="nucleo-chip">
-                <input type="checkbox" value="\${nid}" class="tm-nucleo-check" \${checked?'checked':''}
-                  style="display:none;" />
-                \${esc(n.name)}
-              </label>\`;
-            }).join('')}
-          </div>
-        </div>`;
+        const chips = filtered.map(n => {
+          const nid     = n.id || n.name;
+          const checked = (task.nucleos||[]).includes(nid) || (task.nucleos||[]).includes(n.name);
+          const border  = checked ? 'var(--brand-gold)' : 'var(--border-subtle)';
+          const bg      = checked ? 'rgba(212,168,67,0.12)' : 'var(--bg-surface)';
+          const color   = checked ? 'var(--brand-gold)'     : 'var(--text-secondary)';
+          return '<label style="display:flex;align-items:center;gap:5px;cursor:pointer;' +
+            'padding:4px 10px;border-radius:var(--radius-full);font-size:0.8125rem;' +
+            'border:1px solid ' + border + ';background:' + bg + ';color:' + color + ';' +
+            'transition:all 0.15s;" class="nucleo-chip">' +
+            '<input type="checkbox" value="' + nid + '" class="tm-nucleo-check" ' + (checked ? 'checked' : '') +
+            ' style="display:none;" />' +
+            esc(n.name) + '</label>';
+        }).join('');
+        return '<div class="task-detail-field">' +
+          '<div class="task-detail-label">Núcleos</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0;">' + chips + '</div></div>';
       })()}
       ${(() => {
         const workspaces  = store.get('userWorkspaces') || [];
