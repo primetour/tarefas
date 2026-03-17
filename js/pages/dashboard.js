@@ -26,6 +26,17 @@ export async function renderDashboard(container) {
         <p class="page-subtitle">${formatDate(new Date())}</p>
       </div>
       <div class="page-header-actions">
+        ${(() => {
+          const sectors = store.getVisibleSectors();
+          if (sectors === null || sectors.length > 1) {
+            const allSectors = ['BTG','C&P','Célula ICs','Centurion','CEP','Concierge Bradesco','Contabilidade','Diretoria','Eventos','Financeiro','Lazer','Marketing','Operadora','Programa ICs','Projetos','PTS Bradesco','Qualidade','Suppliers','TI'];
+            const opts = (sectors || allSectors).map(s=>`<option value="${s}">${s}</option>`).join('');
+            return `<select class="filter-select" id="dash-sector-filter" style="min-width:150px;">
+              <option value="">Todos os setores</option>${opts}</select>`;
+          }
+          if (sectors?.length === 1) return `<span style="font-size:0.8125rem;padding:5px 10px;border-radius:var(--radius-full);background:rgba(212,168,67,.1);color:var(--brand-gold);border:1px solid rgba(212,168,67,.3);">🏢 ${sectors[0]}</span>`;
+          return '';
+        })()}
         <button class="btn btn-primary" id="dash-new-task">+ Nova Tarefa</button>
       </div>
     </div>
@@ -47,6 +58,15 @@ export async function renderDashboard(container) {
     openTaskModal({ onSave: () => renderDashboard(container) })
   );
 
+  // Sector filter for multi-sector users
+  document.getElementById('dash-sector-filter')?.addEventListener('change', (e) => {
+    renderDashboard(container);
+    // Store chosen sector temporarily so fetchTasks picks it up via getVisibleSectors
+    // For now just re-render — fetchTasks already filters by user's visible sectors
+  });
+
+  const dashSectorFilter = document.getElementById('dash-sector-filter')?.value || null;
+
   try {
     const [tasks, projects, pendingReqs, myGoals] = await Promise.all([
       fetchTasks().catch(() => []),
@@ -55,9 +75,13 @@ export async function renderDashboard(container) {
       fetchGoals({ type: 'personal' }).catch(() => []),
     ]);
 
-    const myTasks    = tasks.filter(t => t.assignees?.includes(uid));
-    const openTasks  = tasks.filter(t => !['done','cancelled'].includes(t.status));
-    const inProgress = tasks.filter(t => t.status === 'in_progress');
+    // If master selected a specific sector in the filter, apply it
+    const sectorSel = document.getElementById('dash-sector-filter')?.value || null;
+    const visibleTasks = sectorSel ? tasks.filter(t => !t.sector || t.sector === sectorSel) : tasks;
+
+    const myTasks    = visibleTasks.filter(t => t.assignees?.includes(uid));
+    const openTasks  = visibleTasks.filter(t => !['done','cancelled'].includes(t.status));
+    const inProgress = visibleTasks.filter(t => t.status === 'in_progress');
     const now        = new Date();
     const doneToday  = tasks.filter(t => {
       if (!t.completedAt) return false;

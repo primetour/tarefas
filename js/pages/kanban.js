@@ -48,11 +48,14 @@ export async function renderKanban(container) {
   } catch(e) {}
 
   // Types with steps only
-  const userSectors = store.getVisibleSectors();
-  const pipelineTypes = allTaskTypes.filter(t =>
-    t.steps?.length > 0 &&
-    (!t.sector || userSectors === null || userSectors.includes(t.sector))
-  );
+  const userSectors   = store.getVisibleSectors();
+  const activeSector  = kbFilterState.sector || null;
+  const pipelineTypes = allTaskTypes.filter(t => {
+    if (!t.steps?.length) return false;
+    // Filter by explicitly selected sector OR by user's visible sectors
+    if (activeSector) return !t.sector || t.sector === activeSector;
+    return !t.sector || userSectors === null || userSectors.includes(t.sector);
+  });
   if (!activePipelineTypeId && pipelineTypes.length) {
     activePipelineTypeId = pipelineTypes[0].id;
   }
@@ -192,7 +195,11 @@ function _renderKbFilters(container) {
     projects:  allProjects,
     users:     store.get('users') || [],
   });
-  bindFilterBar(wrap, kbFilterState, () => {
+  bindFilterBar(wrap, kbFilterState, (newState) => {
+    // When sector changes, reset pipeline type so it picks the first valid one
+    if (newState.sector !== undefined) {
+      activePipelineTypeId = '';
+    }
     if (activeView === 'kanban') {
       renderCards(allTasks);
     } else {

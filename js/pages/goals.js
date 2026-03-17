@@ -44,6 +44,11 @@ export async function renderGoals(container) {
         <p class="page-subtitle">Acompanhe metas individuais e do núcleo</p>
       </div>
       <div class="page-header-actions">
+        ${(() => {
+          const sectors = store.getVisibleSectors();
+          if (sectors?.length === 1) return `<span style="font-size:0.8125rem;padding:5px 10px;border-radius:var(--radius-full);background:rgba(212,168,67,.1);color:var(--brand-gold);border:1px solid rgba(212,168,67,.3);">🏢 ${sectors[0]}</span>`;
+          return '';
+        })()}
         <button class="btn btn-primary" id="new-goal-btn">+ Nova Meta</button>
       </div>
     </div>
@@ -97,9 +102,16 @@ export async function renderGoals(container) {
 async function loadAndRender() {
   try {
     [allGoals, allTasks] = await Promise.all([
-      fetchGoals({ type: activeTab }),
+      fetchGoals({ type: activeTab }).catch(() => []),
       fetchTasks().catch(() => []),
     ]);
+    // Filter goals by visible sectors
+    const visibleSectors = store.getVisibleSectors();
+    if (visibleSectors !== null && visibleSectors.length > 0) {
+      allGoals = allGoals.filter(g =>
+        !g.sector || visibleSectors.includes(g.sector)
+      );
+    }
     // Calcular progresso local (sem salvar) para exibição
     allGoals = allGoals.map(g => {
       const { current, progress } = calcGoalProgress(g, allTasks);

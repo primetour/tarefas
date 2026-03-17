@@ -255,7 +255,7 @@ function renderListHeader() {
     <div></div>
     <div>Título</div>
     <div>Status</div>
-    <div>Tipo / Etapa</div>
+    <div>Tipo / Variação</div>
     <div>Área</div>
     <div>Prazo</div>
     <div>Responsáveis</div>
@@ -309,10 +309,14 @@ function renderTaskRow(task) {
         </span>
       </div>
       <div style="font-size:0.8125rem;">
-        ${typeLabel ? `<div style="color:var(--text-secondary);">${esc(typeLabel)}</div>` : '—'}
+        ${(() => {
+          const tt = pageTaskTypes.find(t => t.id === task.typeId || t.name?.toLowerCase() === task.type);
+          const name = tt?.name || typeLabel;
+          return name ? `<div style="color:var(--text-secondary);">${esc(name)}</div>` : '—';
+        })()}
+        ${task.variationName ? `<div style="font-size:0.75rem;color:var(--brand-gold);margin-top:2px;">↳ ${esc(task.variationName)}</div>` : ''}
         ${nlStatus ? `<div style="font-size:0.75rem;color:var(--brand-gold);margin-top:2px;">↳ ${esc(nlStatus)}</div>` : ''}
         ${(() => {
-          // Show showInList custom fields for this task's type
           if (!task.typeId && !task.type) return '';
           const tt = pageTaskTypes.find(t => t.id === task.typeId || t.name?.toLowerCase() === task.type);
           if (!tt) return '';
