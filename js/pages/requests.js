@@ -239,6 +239,22 @@ function openRequestModal(req) {
           `).join('')}
         </div>
 
+        <!-- Variation + OutOfCalendar badges -->
+        ${(req.variationName||req.outOfCalendar) ? `
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${req.variationName ? `<span style="padding:3px 10px;border-radius:var(--radius-full);
+              background:rgba(212,168,67,0.1);border:1px solid rgba(212,168,67,0.3);
+              font-size:0.8125rem;color:var(--brand-gold);">
+              🔀 ${esc(req.variationName)}
+            </span>` : ''}
+            ${req.outOfCalendar ? `<span style="padding:3px 10px;border-radius:var(--radius-full);
+              background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);
+              font-size:0.8125rem;color:#EF4444;">
+              ⚠ Fora do calendário
+            </span>` : ''}
+          </div>
+        ` : ''}
+
         <!-- Description -->
         <div>
           <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;">Descrição da demanda</div>
@@ -256,7 +272,7 @@ function openRequestModal(req) {
         </div>
 
         <!-- Workspace assignment (for conversion) -->
-        ${req.status === 'pending' || req.status === 'in_review' ? `
+        ${req.status === 'pending' ? `
           <div class="form-group">
             <label class="form-label">Workspace para conversão</label>
             <select class="form-select" id="req-workspace">
@@ -278,28 +294,11 @@ function openRequestModal(req) {
     footer: [
       { label:'Fechar', class:'btn-secondary', closeOnClick:true },
 
-      ...(req.status === 'pending' ? [{
-        label: 'Marcar em análise', class: 'btn-secondary btn-sm', closeOnClick: false,
-        onClick: async (_, { close }) => {
-          const note = document.getElementById('req-internal-note')?.value || '';
-          await updateRequestStatus(req.id, 'in_review', { internalNote: note });
-          toast.success('Status atualizado.');
-          close();
-        },
-      }] : []),
-
       ...(req.status !== 'rejected' && req.status !== 'converted' ? [{
         label: 'Recusar', class: 'btn-secondary btn-sm', closeOnClick: false,
         onClick: async (_, { close }) => {
-          const ok = await modal.confirm({
-            title:'Recusar solicitação', message:'Confirma a recusa desta solicitação?',
-            confirmText:'Recusar', danger:true, icon:'✕',
-          });
-          if (!ok) return;
-          const note = document.getElementById('req-internal-note')?.value || '';
-          await updateRequestStatus(req.id, 'rejected', { internalNote: note });
-          toast.success('Solicitação recusada.');
           close();
+          openRejectModal(req);
         },
       }] : []),
 
@@ -325,17 +324,23 @@ function openRequestModal(req) {
               title:          `[Solicitação] ${req.typeName || 'Demanda'} — ${req.requesterName}`,
               description:    req.description,
               requestingArea: req.requestingArea,
-              typeId:         req.typeId,
+              sector:         req.sector        || '',
+              typeId:         req.typeId        || null,
               type:           req.typeName?.toLowerCase() || '',
+              variationId:    req.variationId   || null,
+              variationName:  req.variationName || '',
               nucleos:        req.nucleo ? [req.nucleo] : [],
               clientEmail:    req.requesterEmail,
-              dueDate:        req.desiredDate || null,
+              dueDate:        req.desiredDate   || null,
+              outOfCalendar:  req.outOfCalendar === true,
               workspaceId:    wsId || store.get('currentWorkspace')?.id || null,
               status:         'not_started',
               priority:       req.urgency ? 'urgent' : 'medium',
               assignees:      [],
               tags:           ['solicitação'],
-              customFields:   {},
+              customFields:   {
+                outOfCalendar: req.outOfCalendar === true,
+              },
               subtasks:       [],
               comments:       [],
             },
@@ -343,6 +348,82 @@ function openRequestModal(req) {
         },
       }] : []),
     ],
+  });
+}
+
+/* ─── Reject modal with reason + email ──────────────────── */
+async function openRejectModal(req) {
+  modal.open({
+    title:   'Recusar solicitação',
+    size:    'sm',
+    content: `
+      <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:14px;line-height:1.6;">
+        Informe o motivo da recusa. Um e-mail será enviado para
+        <strong>${esc(req.requesterEmail)}</strong> com a justificativa.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Motivo da recusa <span class="required">*</span></label>
+        <textarea class="form-textarea" id="reject-reason" rows="4"
+          placeholder="Ex: A demanda não se encaixa no escopo atual do time. Sugerimos..."></textarea>
+        <span class="form-error-msg" id="reject-reason-err"></span>
+      </div>
+    `,
+    footer: [
+      { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
+      {
+        label:'Recusar e notificar', class:'btn-danger', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const reason = document.getElementById('reject-reason')?.value?.trim();
+          if (!reason) {
+            const err = document.getElementById('reject-reason-err');
+            if (err) err.textContent = 'Informe o motivo da recusa.';
+            return;
+          }
+          const btn = document.querySelector('.modal-footer .btn-danger');
+          if (btn) { btn.classList.add('loading'); btn.disabled = true; }
+          try {
+            await updateRequestStatus(req.id, 'rejected', {
+              internalNote:  reason,
+              rejectionNote: reason,
+            });
+            await sendRejectionEmail(req, reason).catch(e =>
+              console.warn('Rejection email failed:', e.message)
+            );
+            toast.success('Solicitação recusada e solicitante notificado.');
+            close();
+          } catch(e) {
+            toast.error(e.message);
+          } finally {
+            if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+          }
+        },
+      },
+    ],
+  });
+}
+
+async function sendRejectionEmail(req, reason) {
+  const { APP_CONFIG } = await import('../config.js').catch(() => ({ APP_CONFIG: null }));
+  const cfg = APP_CONFIG?.emailjs;
+  if (!cfg?.serviceId || !cfg?.publicKey) return;
+
+  if (!window.emailjs) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
+      s.onload = () => { window.emailjs.init(cfg.publicKey); res(); };
+      s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+
+  const templateId = cfg.templateRejection || cfg.templateId || cfg.template;
+  await window.emailjs.send(cfg.serviceId, templateId, {
+    to_email:       req.requesterEmail,
+    to_name:        req.requesterName,
+    type_name:      req.typeName || 'Demanda',
+    rejection_note: reason,
+    team_name:      'PRIMETOUR',
   });
 }
 
