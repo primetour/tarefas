@@ -388,34 +388,31 @@ function renderArchitectureDoc(root) {
     </div>
 
   </div>
-
-  <script>
-    (function(){
-      const doc = document.querySelector('.ab-doc');
-      if (!doc) return;
-
-      // Tab switching
-      doc.querySelectorAll('.ab-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-          doc.querySelectorAll('.ab-tab').forEach(t => t.classList.remove('active'));
-          doc.querySelectorAll('.ab-pane').forEach(p => p.classList.remove('active'));
-          tab.classList.add('active');
-          const pane = doc.getElementById('ab-' + tab.dataset.pane);
-          if (pane) pane.classList.add('active');
-        });
-      });
-
-      // Pillar switching
-      doc.querySelectorAll('.ab-pillar').forEach(pillar => {
-        pillar.addEventListener('click', () => {
-          doc.querySelectorAll('.ab-pillar').forEach(p => p.classList.remove('active'));
-          doc.querySelectorAll('.ab-detail').forEach(d => d.classList.remove('active'));
-          pillar.classList.add('active');
-          const det = doc.getElementById('ab-' + pillar.dataset.pillar);
-          if (det) det.classList.add('active');
-        });
-      });
-    })();
-  </script>
   `;
+
+  // Bind events after innerHTML — scripts inside innerHTML are never executed
+  const doc = root.querySelector('.ab-doc');
+  if (!doc) return;
+
+  // Tab switching
+  doc.querySelectorAll('.ab-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      doc.querySelectorAll('.ab-tab').forEach(t => t.classList.remove('active'));
+      doc.querySelectorAll('.ab-pane').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      const pane = doc.getElementById('ab-' + tab.dataset.pane);
+      if (pane) pane.classList.add('active');
+    });
+  });
+
+  // Pillar switching
+  doc.querySelectorAll('.ab-pillar').forEach(pillar => {
+    pillar.addEventListener('click', () => {
+      doc.querySelectorAll('.ab-pillar').forEach(p => p.classList.remove('active'));
+      doc.querySelectorAll('.ab-detail').forEach(d => d.classList.remove('active'));
+      pillar.classList.add('active');
+      const det = doc.getElementById('ab-' + pillar.dataset.pillar);
+      if (det) det.classList.add('active');
+    });
+  });
 }
