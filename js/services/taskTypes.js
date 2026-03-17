@@ -73,11 +73,12 @@ export const NEWSLETTER_SYSTEM_TYPE = {
     label:       '2 dias úteis',
     warningDays: 1,
   },
-  rules: {
-    maxPerDay:          1,
-    maxPerDayPerNucleo: 0,
-    blockDuplicate:     true,
-  },
+  // rules removed — use variations with individual SLA instead
+  variations: [
+    { id: 'v_newsletter_std', name: 'Edição padrão', slaDays: 2 },
+  ],
+  deliveryStandard: 'Newsletter completa com pauta, redação, design e disparo.',
+  nucleos: ['comunicacao'],
 };
 
 /* ─── Inicializar tipos padrão do sistema ─────────────────── */
@@ -142,7 +143,15 @@ function injectStepField(type) {
 }
 
 /* ─── Criar tipo customizado ──────────────────────────────── */
-export async function createTaskType({ name, description, icon, color, fields, steps, sla, rules, workspaceId }) {
+export async function createTaskType({
+  name, description, icon, color,
+  categoryId, categoryName,
+  nucleos,
+  deliveryStandard,
+  variations,
+  fields, steps,
+  workspaceId,
+}) {
   if (!store.can('task_type_create')) throw new Error('Permissão negada.');
   const user = store.get('currentUser');
   const ws   = workspaceId || store.get('currentWorkspace')?.id || null;
@@ -154,20 +163,32 @@ export async function createTaskType({ name, description, icon, color, fields, s
   }
 
   const typeDoc = {
-    name:        name.trim(),
-    description: description?.trim() || '',
-    icon:        icon  || '📋',
-    color:       color || '#6B7280',
-    isSystem:    false,
-    workspaceId: ws,
-    fields:      (fields  || []).map(f => ({ ...f, id: f.id || crypto.randomUUID() })),
-    steps:       (steps   || []).map((s, i) => ({ ...s, id: s.id || crypto.randomUUID(), order: i })),
-    sla:         sla   || { days: 1, label: '1 dia', warningDays: 0 },
-    rules:       rules || { maxPerDay: 0, maxPerDayPerNucleo: 0, blockDuplicate: false },
-    createdAt:   serverTimestamp(),
-    createdBy:   user.uid,
-    updatedAt:   serverTimestamp(),
-    updatedBy:   user.uid,
+    name:             name.trim(),
+    description:      description?.trim() || '',
+    icon:             icon  || '📋',
+    color:            color || '#6B7280',
+    isSystem:         false,
+    workspaceId:      ws,
+    // Categoria
+    categoryId:       categoryId   || null,
+    categoryName:     categoryName || '',
+    // Núcleos de produção
+    nucleos:          Array.isArray(nucleos) ? nucleos : [],
+    // Padrão de entrega
+    deliveryStandard: deliveryStandard?.trim() || '',
+    // Variações (cada uma com nome e SLA próprio)
+    variations:       (variations || []).map(v => ({
+      id:      v.id || crypto.randomUUID().slice(0,8),
+      name:    v.name?.trim() || '',
+      slaDays: Number(v.slaDays) || 1,
+    })).filter(v => v.name),
+    // Campos customizados e esteira
+    fields:           (fields || []).map(f => ({ ...f, id: f.id || crypto.randomUUID() })),
+    steps:            (steps  || []).map((s, i) => ({ ...s, id: s.id || crypto.randomUUID(), order: i })),
+    createdAt:        serverTimestamp(),
+    createdBy:        user.uid,
+    updatedAt:        serverTimestamp(),
+    updatedBy:        user.uid,
   };
 
   const ref = await addDoc(collection(db, 'task_types'), typeDoc);
