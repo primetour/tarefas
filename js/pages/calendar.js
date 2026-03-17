@@ -113,19 +113,24 @@ function renderAgendaView() {
 }
 
 /* ─── Slot helpers ───────────────────────────────────────── */
-function getSlotsForDate(date) {
+function getSlotsForDate(date, typeId = null) {
   const taskTypes = store.get('taskTypes') || [];
   const all = [];
   const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
   const dow = date.getDay();
   const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 
-  taskTypes.forEach(t => {
+  // Filter by typeId if specified (pipeline/agenda mode)
+  const typesToCheck = typeId
+    ? taskTypes.filter(t => t.id === typeId)
+    : taskTypes;
+
+  typesToCheck.forEach(t => {
     (t.scheduleSlots||[]).filter(s=>s.active!==false).forEach(slot => {
       let matches = false;
-      if (slot.recurrence==='weekly')       matches = slot.weekDay === dow;
+      if (slot.recurrence==='weekly')            matches = slot.weekDay === dow;
       else if (slot.recurrence==='monthly_days') matches = (slot.monthDays||[]).includes(d);
-      else if (slot.recurrence==='custom')  matches = (slot.customDates||[]).includes(iso);
+      else if (slot.recurrence==='custom')       matches = (slot.customDates||[]).includes(iso);
       if (matches) all.push({ ...slot, taskType: t });
     });
   });
@@ -249,7 +254,7 @@ function renderMonth() {
       color:var(--text-muted);background:var(--bg-deepest);">${d}</div>`).join('')}
     ${cells.map(cell=>{
       const tasks = cell.cur?(taskMap[cell.day]||[]):[];
-      const slots = cell.cur?getSlotsForDate(new Date(y,m,cell.day)):[];
+      const slots = cell.cur?getSlotsForDate(new Date(y,m,cell.day), activeView==='pipeline'?pipelineTypeId:null):[];
       const isToday=cell.cur&&today.getDate()===cell.day&&today.getMonth()===m&&today.getFullYear()===y;
       const MAX=3, shown=tasks.slice(0,MAX), extra=tasks.length-MAX;
       const dateStr=cell.cur?`${y}-${String(m+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}`:'' ;
@@ -325,7 +330,7 @@ function renderWeek() {
     <div style="background:var(--bg-deepest);padding:8px 4px;"></div>
     ${days.map((d,i)=>{
       const isToday = d.getTime()===today.getTime();
-      const slots   = getSlotsForDate(d);
+      const slots   = getSlotsForDate(d, activeView==='pipeline'?pipelineTypeId:null);
       return `<div style="padding:6px 4px;text-align:center;background:${isToday?'rgba(212,168,67,0.12)':'var(--bg-deepest)'};
         border-bottom:2px solid ${isToday?'var(--brand-gold)':'transparent'};">
         <div style="font-size:0.75rem;color:var(--text-muted);">${PT_DAYS_S[d.getDay()]}</div>
@@ -389,7 +394,7 @@ function renderDay() {
     return td.getTime()===dMid.getTime();
   });
 
-  const daySlots = getSlotsForDate(dMid);
+  const daySlots = getSlotsForDate(dMid, activeView==='pipeline'?pipelineTypeId:null);
   const dateLabel = `${PT_DAYS_L[d.getDay()]}, ${d.getDate()} de ${PT_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 
   el.innerHTML = navBar(dateLabel,
@@ -570,7 +575,7 @@ function renderAgendaMonth() {
     ${PT_DAYS_S.map(d=>`<div style="padding:6px;text-align:center;font-size:0.75rem;font-weight:600;
       color:var(--text-muted);background:var(--bg-deepest);">${d}</div>`).join('')}
     ${cells.map(({day:d, cur})=>{
-      const slots=cur?getSlotsForDate(d):[];
+      const slots=cur?getSlotsForDate(d,pipelineTypeId):[];
       const isToday=cur&&d.getDate()===today.getDate()&&d.getMonth()===today.getMonth()&&d.getFullYear()===today.getFullYear();
       return `<div style="min-height:80px;padding:4px;background:${cur?(slots.length?'rgba(212,168,67,0.04)':'var(--bg-card)'):'var(--bg-deepest)'};">
         <div style="font-size:0.8125rem;font-weight:${isToday?700:400};
@@ -599,7 +604,7 @@ function renderAgendaWeek() {
   el.innerHTML = agendaHeader() + navBar(rangeLabel) + `
   <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;">
     ${days.map(d=>{
-      const slots=getSlotsForDate(d);
+      const slots=getSlotsForDate(d,pipelineTypeId);
       const isToday=d.getTime()===today.getTime();
       return `<div style="padding:8px;border-radius:var(--radius-md);min-height:120px;
         background:${slots.length?'rgba(212,168,67,0.04)':'var(--bg-card)'};
@@ -624,7 +629,7 @@ function renderAgendaDay() {
   if (!el) return;
   const d=new Date(currentDate); d.setHours(0,0,0,0);
   const today=new Date(); today.setHours(0,0,0,0);
-  const slots=getSlotsForDate(d);
+  const slots=getSlotsForDate(d,pipelineTypeId);
   const dateLabel=`${PT_DAYS_L[d.getDay()]}, ${d.getDate()} de ${PT_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 
   el.innerHTML = agendaHeader() + navBar(dateLabel, `${slots.length} slot${slots.length!==1?'s':''}`)+`
