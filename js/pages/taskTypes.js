@@ -405,11 +405,14 @@ function openTypeModal(type = null) {
         </div>
       </div>
 
-      <!-- Núcleos -->
-      <div class="form-group">
+      <!-- Núcleos — appears after sector is selected -->
+      <div class="form-group" id="tt-nucleos-group" style="display:${type?.sector?'block':'none'};">
         <label class="form-label">Núcleo(s) de produção</label>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          ${nucleos.length ? nucleos.map(n => {
+        <div id="tt-nucleos-chips" style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${(type?.sector
+            ? nucleos.filter(n => !n.sector || n.sector === type.sector)
+            : []
+          ).map(n => {
             const nid = n.id || n.name;
             const sel = (type?.nucleos||[]).includes(nid) || (type?.nucleos||[]).includes(n.name);
             return `<label class="nucleo-chip-lbl" style="display:flex;align-items:center;gap:5px;
@@ -420,7 +423,7 @@ function openTypeModal(type = null) {
               <input type="checkbox" value="${nid}" class="tt-nucleo-cb" ${sel?'checked':''}
                 style="display:none;" />${esc(n.name)}
             </label>`;
-          }).join('') : `<span style="font-size:0.8125rem;color:var(--text-muted);">Nenhum núcleo disponível. Cadastre em Setores e Núcleos.</span>`}
+          }).join('') || `<span style="font-size:0.8125rem;color:var(--text-muted);">Selecione um setor primeiro.</span>`}
         </div>
       </div>
 
@@ -498,6 +501,7 @@ function openTypeModal(type = null) {
           const nucleosSelected  = Array.from(document.querySelectorAll('.tt-nucleo-cb:checked')).map(cb => cb.value);
           const data = {
             name,
+            sector:           document.getElementById('tt-sector')?.value             || null,
             description:      document.getElementById('tt-desc')?.value?.trim()     || '',
             icon:             document.getElementById('tt-icon')?.value              || '📋',
             color:            document.getElementById('tt-color')?.value             || TYPE_COLORS[0],
@@ -524,6 +528,54 @@ function openTypeModal(type = null) {
   });
 
   setTimeout(() => {
+    // Sector change → filter and show nucleos
+    document.getElementById('tt-sector')?.addEventListener('change', async (e) => {
+      const sector   = e.target.value;
+      const group    = document.getElementById('tt-nucleos-group');
+      const chipsEl  = document.getElementById('tt-nucleos-chips');
+      if (!group || !chipsEl) return;
+
+      if (!sector) {
+        group.style.display = 'none';
+        return;
+      }
+
+      group.style.display = 'block';
+      chipsEl.innerHTML = '<span style="font-size:0.8125rem;color:var(--text-muted);">Carregando...</span>';
+
+      try {
+        const { fetchNucleos } = await import('../services/sectors.js');
+        const sectorNucleos = await fetchNucleos({ sector });
+        if (!sectorNucleos.length) {
+          chipsEl.innerHTML = `<span style="font-size:0.8125rem;color:var(--text-muted);">Nenhum núcleo cadastrado para "${sector}". Adicione em Setores e Núcleos.</span>`;
+          return;
+        }
+        chipsEl.innerHTML = sectorNucleos.map(n => {
+          const nid = n.id || n.name;
+          return `<label class="nucleo-chip-lbl" style="display:flex;align-items:center;gap:5px;
+            cursor:pointer;padding:4px 10px;border-radius:var(--radius-full);font-size:0.8125rem;
+            border:1px solid var(--border-subtle);background:var(--bg-surface);
+            color:var(--text-secondary);transition:all 0.15s;">
+            <input type="checkbox" value="${nid}" class="tt-nucleo-cb" style="display:none;" />
+            ${esc(n.name)}
+          </label>`;
+        }).join('');
+        // Rebind chip clicks for new chips
+        chipsEl.querySelectorAll('.nucleo-chip-lbl').forEach(chip => {
+          chip.addEventListener('click', () => {
+            const cb = chip.querySelector('.tt-nucleo-cb');
+            if (!cb) return;
+            cb.checked             = !cb.checked;
+            chip.style.borderColor = cb.checked ? 'var(--brand-gold)'     : 'var(--border-subtle)';
+            chip.style.background  = cb.checked ? 'rgba(212,168,67,0.12)' : 'var(--bg-surface)';
+            chip.style.color       = cb.checked ? 'var(--brand-gold)'     : 'var(--text-secondary)';
+          });
+        });
+      } catch(e) {
+        chipsEl.innerHTML = `<span style="font-size:0.8125rem;color:var(--color-danger);">Erro ao carregar núcleos.</span>`;
+      }
+    });
+
     // Color swatches
     document.querySelectorAll('.tt-color-btn').forEach(btn => {
       btn.addEventListener('click', () => {
