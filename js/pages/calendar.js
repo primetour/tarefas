@@ -27,12 +27,23 @@ let currentDate    = new Date();
 let activeView     = 'standard';  // 'standard' | 'pipeline'
 let activeGran     = 'month';     // 'month' | 'week' | 'day'
 let pipelineTypeId = '';
-let calFilterState = { type: null, project: null, area: null, assignee: null };
+let calFilterState = { sector: null, type: null, project: null, area: null, assignee: null };
+
+function initCalFilterState() {
+  if (!calFilterState.sector) {
+    const sectors = store.getVisibleSectors();
+    if (sectors && sectors.length === 1) calFilterState.sector = sectors[0];
+  }
+}
 
 /* ─── Main render ────────────────────────────────────────── */
 export async function renderCalendar(container) {
   const taskTypes    = store.get('taskTypes') || [];
-  const pipeTypes    = taskTypes.filter(t => (t.fields?.length||0)+(t.steps?.length||0)+(t.scheduleSlots?.length||0) > 0);
+  const userSectors  = store.getVisibleSectors();
+  const pipeTypes    = taskTypes.filter(t =>
+    ((t.fields?.length||0)+(t.steps?.length||0)+(t.scheduleSlots?.length||0) > 0) &&
+    (!t.sector || userSectors === null || userSectors.includes(t.sector))
+  );
   if (!pipelineTypeId && pipeTypes.length) pipelineTypeId = pipeTypes[0].id;
 
   container.innerHTML = `
@@ -95,6 +106,7 @@ export async function renderCalendar(container) {
     openCardPrefsModal(() => activeView==='agenda' ? renderAgendaView() : render())
   );
 
+  initCalFilterState();
   renderFilters();
   await load();
 }
@@ -111,7 +123,7 @@ function renderFilters() {
   const projects  = store.get('projects') || [];
   const taskTypes = store.get('taskTypes') || [];
   wrap.innerHTML = renderFilterBar({
-    show: ['type','project','area','assignee'],
+    show: ['sector','type','project','area','assignee'],
     state: calFilterState,
     taskTypes, projects,
     users: store.get('users') || [],
@@ -244,10 +256,13 @@ function renderMonth() {
     ? (store.get('taskTypes')||[]).find(t=>t.id===pipelineTypeId)
     : null;
 
+  const monthFilterFn = buildFilterFn(activeView==='standard' ? calFilterState : {});
+
   // Map tasks
   const taskMap = {};
   allTasks.filter(t => {
     if (activeType && t.typeId!==pipelineTypeId) return false;
+    if (!monthFilterFn(t)) return false;
     const df = t.dueDate||t.startDate;
     if (!df) return false;
     const d = df?.toDate?df.toDate():new Date(df);
@@ -273,8 +288,7 @@ function renderMonth() {
     ${PT_DAYS_S.map(d=>`<div style="padding:6px;text-align:center;font-size:0.75rem;font-weight:600;
       color:var(--text-muted);background:var(--bg-deepest);">${d}</div>`).join('')}
     ${cells.map(cell=>{
-      const filterFn = buildFilterFn(activeView==='standard' ? calFilterState : {});
-      const tasks = cell.cur?(taskMap[cell.day]||[]).filter(t=>filterFn(t)):[];
+      const tasks = cell.cur?(taskMap[cell.day]||[]):[];
       const slots = cell.cur?getSlotsForDate(new Date(y,m,cell.day), activeView==='pipeline'?pipelineTypeId:null):[];
       const isToday=cell.cur&&today.getDate()===cell.day&&today.getMonth()===m&&today.getFullYear()===y;
       const dateStr=cell.cur?`${y}-${String(m+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}`:'' ;

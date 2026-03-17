@@ -41,6 +41,26 @@ export async function renderSettings(container) {
       </div>
       <div class="page-header-actions">
         <button class="btn btn-primary" id="settings-save-btn">Salvar todas</button>
+
+      ${store.isMaster() ? `
+        <div class="card" style="margin-top:24px;border:1px solid rgba(245,158,11,.3);">
+          <div class="card-header"><div class="card-title">🔧 Migração de dados</div></div>
+          <div class="card-body">
+            <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.6;">
+              Preenche o campo <strong>setor</strong> nas tarefas que ainda não o têm,
+              usando o setor do tipo de tarefa correspondente.
+              Execute uma vez após definir o setor em cada tipo de tarefa.
+            </p>
+            <div id="mig-progress" style="display:none;margin-bottom:12px;">
+              <div id="mig-label" style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:6px;">Aguardando...</div>
+              <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
+                <div id="mig-bar" style="height:100%;background:var(--brand-gold);width:0%;transition:width .3s;border-radius:3px;"></div>
+              </div>
+            </div>
+            <button class="btn btn-secondary" id="run-migration-btn">▶ Executar migração de setor</button>
+          </div>
+        </div>
+      ` : ''}
       </div>
     </div>
 
@@ -98,6 +118,29 @@ export async function renderSettings(container) {
   bindSectionEvents(settings);
 
   // Save all
+  // Sector migration
+  document.getElementById('run-migration-btn')?.addEventListener('click', async () => {
+    const btn   = document.getElementById('run-migration-btn');
+    const prog  = document.getElementById('mig-progress');
+    const label = document.getElementById('mig-label');
+    const bar   = document.getElementById('mig-bar');
+    if (btn)  { btn.disabled = true; btn.classList.add('loading'); }
+    if (prog) prog.style.display = 'block';
+    try {
+      const result = await runSectorMigration((done, total) => {
+        if (label) label.textContent = `Migrando… ${done} / ${total} tarefas`;
+        if (bar && total) bar.style.width = `${Math.round(done/total*100)}%`;
+      });
+      toast.success(`Migração concluída: ${result.migrated} tarefa${result.migrated!==1?'s':''} atualizadas.`);
+      if (label) label.textContent = `✓ ${result.migrated} de ${result.total} tarefas atualizadas.`;
+      if (bar)   bar.style.width = '100%';
+    } catch(e) {
+      toast.error('Erro: ' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+    }
+  });
+
   document.getElementById('settings-save-btn')?.addEventListener('click', async () => {
     await saveAllSettings();
   });
@@ -483,4 +526,40 @@ function fmtDate(ts) {
   if (!ts) return '';
   const d = ts?.toDate ? ts.toDate() : new Date(ts);
   return new Intl.DateTimeFormat('pt-BR').format(d);
+}
+
+/* ─── Migration: add sector to tasks without it ─────────── */
+export async function runSectorMigration(onProgress) {
+  const {
+    collection, getDocs, doc, updateDoc, query, where, limit,
+  } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const { db }         = await import('../firebase.js');
+  const { fetchTaskTypes } = await import('../services/taskTypes.js');
+
+  // Load task types to map typeId → sector
+  const types    = await fetchTaskTypes().catch(() => []);
+  const typeMap  = Object.fromEntries(types.map(t => [t.id, t.sector || null]));
+
+  // Fetch tasks without sector (client-side filter — no composite index needed)
+  const snap = await getDocs(query(collection(db, 'tasks'), limit(2000)));
+  const toMigrate = snap.docs.filter(d => {
+    const data = d.data();
+    return !data.sector && data.typeId && typeMap[data.typeId];
+  });
+
+  let done = 0;
+  const total = toMigrate.length;
+  onProgress?.(0, total);
+
+  // Batch-update in groups of 20
+  for (const d of toMigrate) {
+    const sector = typeMap[d.data().typeId];
+    if (sector) {
+      await updateDoc(doc(db, 'tasks', d.id), { sector }).catch(() => {});
+    }
+    done++;
+    onProgress?.(done, total);
+  }
+
+  return { migrated: done, total };
 }

@@ -27,7 +27,15 @@ let unsubscribe  = null;
 let dragTask     = null;
 let dragOriginCol = null;
 let activeView   = 'kanban';   // 'kanban' | 'pipeline'
-let kbFilterState = { type: null, project: null, area: null, assignee: null };
+let kbFilterState = { sector: null, type: null, project: null, area: null, assignee: null };
+
+function initKbFilterState() {
+  // Pre-select user's sector on first load (only if single-sector user)
+  if (!kbFilterState.sector) {
+    const sectors = store.getVisibleSectors();
+    if (sectors && sectors.length === 1) kbFilterState.sector = sectors[0];
+  }
+}
 let activePipelineTypeId = ''; // tipo selecionado na esteira
 
 /* ─── Render ─────────────────────────────────────────────── */
@@ -40,7 +48,11 @@ export async function renderKanban(container) {
   } catch(e) {}
 
   // Types with steps only
-  const pipelineTypes = allTaskTypes.filter(t => t.steps?.length > 0);
+  const userSectors = store.getVisibleSectors();
+  const pipelineTypes = allTaskTypes.filter(t =>
+    t.steps?.length > 0 &&
+    (!t.sector || userSectors === null || userSectors.includes(t.sector))
+  );
   if (!activePipelineTypeId && pipelineTypes.length) {
     activePipelineTypeId = pipelineTypes[0].id;
   }
@@ -115,6 +127,8 @@ export async function renderKanban(container) {
     openCardPrefsModal(() => renderKanban(container))
   );
 
+  // Pre-select sector for single-sector users
+  initKbFilterState();
   // Render filter bar
   _renderKbFilters(container);
 
@@ -170,8 +184,8 @@ function _renderKbFilters(container) {
   if (!wrap) return;
   // Pipeline view already has type selector in header
   const show = activeView === 'kanban'
-    ? ['type','project','area','assignee']
-    : ['area','assignee'];
+    ? ['sector','type','project','area','assignee']
+    : ['sector','area','assignee'];
   wrap.innerHTML = renderFilterBar({
     show, state: kbFilterState,
     taskTypes: allTaskTypes,

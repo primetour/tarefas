@@ -67,6 +67,8 @@ export async function renderTimeline(container) {
       openCardPrefsModal(() => renderGantt())
     );
 
+    // Pre-select sector for single-sector users
+    initTlFilterState();
     // Filter bar
     _renderTlFilters();
   } catch(e) {
@@ -79,10 +81,14 @@ function _renderTlFilters() {
   const wrap = document.getElementById('tl-filter-bar');
   if (!wrap) return;
   // Remove project filter from filterBar since it's already in the header select
+  const userSectors = store.getVisibleSectors();
+  const tlTaskTypes = (store.get('taskTypes') || []).filter(t =>
+    !t.sector || userSectors === null || userSectors.includes(t.sector)
+  );
   wrap.innerHTML = renderFilterBar({
-    show: ['type','area'],
+    show: ['sector','type','area'],
     state: tlFilterState,
-    taskTypes: store.get('taskTypes') || [],
+    taskTypes: tlTaskTypes,
     projects:  allProjects,
   });
   bindFilterBar(wrap, tlFilterState, () => renderGantt());
