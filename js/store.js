@@ -30,6 +30,7 @@ class Store {
       roles:          [],
       taskTypes:      [],
       taskCategories: [],
+      cardPrefs:      null,  // null = use defaults
       nucleos:        [],
 
       // Setor e visibilidade
