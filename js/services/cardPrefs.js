@@ -15,6 +15,7 @@ export const CARD_FIELDS = [
   { key: 'requestingArea', label: 'Área solicitante',      icon: '📍', default: true  },
   { key: 'variationName',  label: 'Variação do material',  icon: '🔀', default: true  },
   { key: 'dueDate',        label: 'Prazo de entrega',      icon: '📅', default: true  },
+  { key: 'taskType',       label: 'Tipo de tarefa',        icon: '📋', default: false },
   { key: 'priority',       label: 'Prioridade',            icon: '⚑',  default: false },
   { key: 'assignees',      label: 'Responsáveis',          icon: '👤', default: false },
   { key: 'nucleos',        label: 'Núcleo',                icon: '◈',  default: false },
@@ -140,6 +141,14 @@ export function renderCardFields(task, opts = {}) {
           if (p) bits.push(`<span title="Projeto: ${p.name}">${fieldDef.icon} ${p.name}</span>`);
         }
         break;
+
+      case 'taskType': {
+        const tt = taskTypes.find(t => t.id === task.typeId);
+        if (tt) bits.push(
+          `<span title="Tipo: ${tt.name}">${fieldDef.icon} ${tt.icon||''} ${tt.name}</span>`
+        );
+        break;
+      }
 
       case 'currentStep': {
         const stepId  = task.customFields?.currentStep || task.customFields?.newsletterStatus;
