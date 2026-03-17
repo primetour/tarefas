@@ -28,9 +28,9 @@ async function boot() {
   const app = initializeApp(firebaseConfig, 'portal');
   const db  = getFirestore(app);
 
-  // Carregar tipos de tarefa disponíveis
+  // Carregar tipos de tarefa disponíveis (sempre fresh)
   const taskTypes = await loadTaskTypes(db);
-  renderForm(db, taskTypes);
+  await renderForm(db, taskTypes);
 }
 
 async function loadTaskTypes(db) {
@@ -226,6 +226,22 @@ async function renderForm(db, taskTypes) {
                     um prazo real e inegociável. Sua solicitação será avaliada pela equipe.
                   </span>
                 </div>
+              </div>
+
+              <!-- Fora do calendário -->
+              <div class="form-group">
+                <label class="urgency-toggle" id="out-of-calendar-toggle" style="border-color:rgba(56,189,248,0.3);">
+                  <input type="checkbox" id="p-out-of-calendar" style="display:none;" />
+                  <div class="urgency-dot" id="out-calendar-dot" style="border-color:rgba(56,189,248,0.5);">✓</div>
+                  <div>
+                    <div style="font-size:0.9375rem;color:var(--text-primary);font-weight:500;">
+                      Fora do calendário
+                    </div>
+                    <div style="font-size:0.8125rem;color:var(--text-muted);">
+                      Marque quando esta demanda não estava prevista no calendário editorial.
+                    </div>
+                  </div>
+                </label>
               </div>
 
               <!-- Alerta fora do calendário -->
@@ -660,6 +676,21 @@ function bindFormEvents(db, taskTypes) {
     if (miniCal) miniCal.style.display = isNewsletter ? 'block' : 'none';
   });
 
+  // Out-of-calendar toggle
+  document.getElementById('out-of-calendar-toggle')?.addEventListener('click', () => {
+    const cb  = document.getElementById('p-out-of-calendar');
+    const tog = document.getElementById('out-of-calendar-toggle');
+    const dot = document.getElementById('out-calendar-dot');
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    tog?.classList.toggle('active', cb.checked);
+    if (dot) {
+      dot.style.borderColor  = cb.checked ? '#38BDF8' : 'rgba(56,189,248,0.5)';
+      dot.style.background   = cb.checked ? '#38BDF8' : 'transparent';
+      dot.style.color        = cb.checked ? '#fff'    : 'transparent';
+    }
+  });
+
   // Date change → out-of-calendar check
   document.getElementById('p-date')?.addEventListener('change', (e) => {
     const val = e.target.value;
@@ -750,6 +781,8 @@ async function handleSubmit(db, taskTypes) {
       requesterEmail: document.getElementById('p-email')?.value?.trim().toLowerCase() || '',
       requestingArea: document.getElementById('p-area')?.value || '',
       sector:         document.getElementById('p-setor')?.value  || '',
+      outOfCalendar:  document.getElementById('p-out-of-calendar')?.checked || false,
+      customFields:   { outOfCalendar: document.getElementById('p-out-of-calendar')?.checked || false },
       typeId,
       typeName:       typeData?.name || typeId,
       nucleo:         document.getElementById('p-nucleo')?.value || '',
