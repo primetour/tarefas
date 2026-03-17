@@ -86,11 +86,16 @@ export function initAuthObserver(onReady) {
         await loadUserWorkspaces().catch(() => {});
 
         // Definir setor do usuário no store
-        const userSector = profile.sector || profile.department || null;
+        const userSector = profile.sector || profile.department
+          || (profile.visibleSectors?.length === 1 ? profile.visibleSectors[0] : null)
+          || null;
         store.set('userSector', userSector);
-        // visibleSectors: Head pode ter array de setores definido pela Diretoria
-        const visibleSectors = profile.visibleSectors || (userSector ? [userSector] : []);
-        store.set('visibleSectors', visibleSectors);
+        // visibleSectors: Head pode ter array definido pela Diretoria
+        // Fallback: usa userSector se não houver array explícito
+        const rawVisibleSectors = Array.isArray(profile.visibleSectors) && profile.visibleSectors.length > 0
+          ? profile.visibleSectors
+          : (userSector ? [userSector] : []);
+        store.set('visibleSectors', rawVisibleSectors);
 
         // Carregar núcleos, categorias e preferências de card
         loadNucleos().catch(() => {});
