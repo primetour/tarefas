@@ -268,12 +268,12 @@ function renderForm(db, taskTypes) {
   `;
 
   // Load calendar slots for next 2 weeks
-  loadCalendarSlots(db);
+  await loadCalendarSlots(db, taskTypes);
   bindFormEvents(db, taskTypes);
 }
 
 /* ─── Calendar slots + Newsletter mini-calendar ────────────── */
-async function loadCalendarSlots(db) {
+async function loadCalendarSlots(db, taskTypes=[]) {
   const today    = new Date(); today.setHours(0,0,0,0);
   const twoWeeks = new Date(today); twoWeeks.setDate(twoWeeks.getDate() + 14);
 
@@ -346,90 +346,271 @@ async function loadCalendarSlots(db) {
     });
   });
 
-  // Show full month mini-calendar for newsletter type
-  renderNewsletterMiniCalendar(newsletterDates);
+  // Show mini calendar widget
+  renderPortalCalendar(db, taskTypes, newsletterDates);
 }
 
-/* ─── Mini-calendário de newsletters no portal ──────────── */
-function renderNewsletterMiniCalendar(newsletterDates) {
-  // Only show when Newsletter type is selected or by default
-  const typeSelect = document.getElementById('p-type');
-  // Insert mini-calendar after slots container
+/* ─── Portal calendar widget ────────────────────────────── */
+let portalCalGran   = 'month'; // 'month'|'week'|'day'
+let portalCalDate   = new Date();
+let portalCalTypeId = 'newsletter';
+
+async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
   const slotsContainer = document.getElementById('slots-container');
   if (!slotsContainer) return;
+  document.getElementById('portal-calendar-widget')?.remove();
 
-  // Remove existing mini-calendar if any
-  document.getElementById('newsletter-mini-cal')?.remove();
+  // Load all task types if not passed
+  let types = taskTypes;
+  if (!types) {
+    try {
+      const snap = await getDocs(collection(db, 'task_types'));
+      types = snap.docs.map(d=>({id:d.id,...d.data()}));
+    } catch(e) { types = []; }
+  }
 
-  const now   = new Date();
-  const year  = now.getFullYear();
-  const month = now.getMonth();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDay    = new Date(year, month, 1).getDay();
+  // Build calendar data
+  const buildCalData = async () => {
+    const y = portalCalDate.getFullYear();
+    const m = portalCalDate.getMonth();
+    // Tasks from Firestore
+    let taskMap = {};
+    try {
+      const snap = await getDocs(query(
+        collection(db,'tasks'),
+        where('typeId','==',portalCalTypeId),
+        limit(300)
+      ));
+      snap.docs.forEach(d=>{
+        const t = d.data();
+        const df = t.dueDate||t.startDate;
+        if (!df) return;
+        const dt = df.toDate?df.toDate():new Date(df);
+        if (dt.getFullYear()!==y||dt.getMonth()!==m) return;
+        const k = dt.getDate();
+        if (!taskMap[k]) taskMap[k]=[];
+        taskMap[k].push({title:t.title||'',requestingArea:t.requestingArea||'',status:t.status||''});
+      });
+    } catch(e) {}
+    return taskMap;
+  };
 
-  const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const DAYS_PT = ['D','S','T','Q','Q','S','S'];
+  const PT_MONTHS  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const PT_DAYS_S  = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const activeType = types.find(t=>t.id===portalCalTypeId);
+
+  // Get schedule slots for a date
+  const getSlotsForDate = (date) => {
+    if (!activeType?.scheduleSlots) return [];
+    const y=date.getFullYear(), m=date.getMonth(), d=date.getDate();
+    const dow=date.getDay();
+    const iso=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    return (activeType.scheduleSlots||[]).filter(s=>{
+      if (s.active===false) return false;
+      if (s.recurrence==='weekly')       return s.weekDay===dow;
+      if (s.recurrence==='monthly_days') return (s.monthDays||[]).includes(d);
+      if (s.recurrence==='custom')       return (s.customDates||[]).includes(iso);
+      return false;
+    });
+  };
+
+  const taskMap = await buildCalData();
+  const y = portalCalDate.getFullYear();
+  const m = portalCalDate.getMonth();
+
+  // Build month grid
+  const buildMonth = () => {
+    const firstDay = new Date(y,m,1).getDay();
+    const dim = new Date(y,m+1,0).getDate();
+    const today = new Date();
+    let cells = '';
+    for(let i=firstDay-1;i>=0;i--) cells+=`<div></div>`;
+    for(let d=1;d<=dim;d++){
+      const tasks  = taskMap[d]||[];
+      const slots  = getSlotsForDate(new Date(y,m,d));
+      const isToday= d===today.getDate()&&m===today.getMonth()&&y===today.getFullYear();
+      const hasTasks= tasks.length>0;
+      const hasSlots= slots.length>0;
+      cells+=`<div style="min-height:60px;padding:3px;border-radius:4px;
+        background:${hasTasks?'rgba(212,168,67,0.08)':hasSlots?'rgba(212,168,67,0.04)':'transparent'};
+        border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':hasSlots?'rgba(212,168,67,0.15)':'transparent'};">
+        <div style="font-size:0.6875rem;font-weight:${isToday?700:400};
+          color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</div>
+        ${slots.map(s=>`<div style="font-size:0.5625rem;color:${s.color||'var(--brand-gold)'};
+          border-bottom:1px dashed ${s.color||'var(--brand-gold)'};margin-bottom:1px;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          title="Agenda: ${s.title}">◌ ${s.title.slice(0,12)}${s.title.length>12?'…':''}</div>`).join('')}
+        ${tasks.map(t=>`<div style="font-size:0.5625rem;color:var(--brand-gold);
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          title="${t.title}${t.requestingArea?' · '+t.requestingArea:''}">● ${t.title.slice(0,12)}${t.title.length>12?'…':''}</div>`).join('')}
+      </div>`;
+    }
+    return cells;
+  };
+
+  // Build week grid
+  const buildWeek = () => {
+    const base  = new Date(portalCalDate);
+    const dow   = base.getDay();
+    const mon   = new Date(base); mon.setDate(base.getDate()-(dow===0?6:dow-1));
+    const days  = Array.from({length:7},(_,i)=>{ const d=new Date(mon); d.setDate(mon.getDate()+i); return d; });
+    const today = new Date(); today.setHours(0,0,0,0);
+    return days.map(d=>{
+      const dm = new Date(d); dm.setHours(0,0,0,0);
+      const isToday = dm.getTime()===today.getTime();
+      const dayTasks = (taskMap[d.getDate()]||[]).filter(()=>d.getFullYear()===y&&d.getMonth()===m);
+      const slots    = getSlotsForDate(d);
+      return `<div style="padding:4px;min-height:80px;border-radius:4px;
+        border:1px solid ${isToday?'var(--brand-gold)':'var(--border-subtle)'};">
+        <div style="font-size:0.6875rem;color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
+          font-weight:${isToday?700:400};margin-bottom:3px;">${PT_DAYS_S[d.getDay()]} ${d.getDate()}</div>
+        ${slots.map(s=>`<div style="font-size:0.5625rem;border:1px dashed ${s.color||'var(--brand-gold)'};
+          color:${s.color||'var(--brand-gold)'};border-radius:2px;padding:1px 3px;margin-bottom:2px;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Agenda: ${s.title}">
+          ◌ ${s.title.slice(0,14)}${s.title.length>14?'…':''}</div>`).join('')}
+        ${dayTasks.map(t=>`<div style="font-size:0.5625rem;background:rgba(212,168,67,0.12);
+          color:var(--brand-gold);border-radius:2px;padding:1px 3px;margin-bottom:2px;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.title}">
+          ● ${t.title.slice(0,14)}${t.title.length>14?'…':''}</div>`).join('')}
+      </div>`;
+    }).join('');
+  };
+
+  // Build day view
+  const buildDay = () => {
+    const d     = portalCalDate;
+    const slots = getSlotsForDate(d);
+    const today = new Date(); today.setHours(0,0,0,0);
+    const dm    = new Date(d); dm.setHours(0,0,0,0);
+    const dTasks= (taskMap[d.getDate()]||[]);
+    return `<div style="padding:12px;">
+      ${slots.length?`
+        <div style="margin-bottom:10px;">
+          <div style="font-size:0.75rem;font-weight:600;color:var(--brand-gold);margin-bottom:6px;">◌ Agenda do dia</div>
+          ${slots.map(s=>`<div style="padding:8px 10px;border-radius:4px;margin-bottom:4px;
+            border:1.5px dashed ${s.color||'var(--brand-gold)'};background:${s.color||'var(--brand-gold)'}08;">
+            <div style="font-size:0.8125rem;font-weight:500;color:${s.color||'var(--brand-gold)'};">◌ ${s.title}</div>
+            ${s.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${s.requestingArea}</div>`:''}
+          </div>`).join('')}
+        </div>
+      `:''}
+      ${dTasks.length?`
+        <div>
+          <div style="font-size:0.75rem;font-weight:600;color:var(--text-primary);margin-bottom:6px;">● Tarefas agendadas</div>
+          ${dTasks.map(t=>`<div style="padding:8px 10px;border-radius:4px;margin-bottom:4px;
+            background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.2);">
+            <div style="font-size:0.8125rem;color:var(--text-primary);">${t.title}</div>
+            ${t.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${t.requestingArea}</div>`:''}
+          </div>`).join('')}
+        </div>
+      `:''}
+      ${!slots.length&&!dTasks.length?`<div style="font-size:0.875rem;color:var(--text-muted);text-align:center;padding:16px 0;">Nenhuma agenda ou tarefa para este dia.</div>`:''}
+    </div>`;
+  };
+
+  // Nav label
+  const navLabel = () => {
+    if (portalCalGran==='month') return `${PT_MONTHS[m]} ${y}`;
+    if (portalCalGran==='day') {
+      const d = portalCalDate;
+      return `${d.getDate()} de ${PT_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    }
+    // week
+    const base  = new Date(portalCalDate);
+    const dow   = base.getDay();
+    const mon   = new Date(base); mon.setDate(base.getDate()-(dow===0?6:dow-1));
+    const sun   = new Date(mon); sun.setDate(mon.getDate()+6);
+    return `${mon.getDate()} ${PT_MONTHS[mon.getMonth()].slice(0,3)} — ${sun.getDate()} ${PT_MONTHS[sun.getMonth()].slice(0,3)} ${sun.getFullYear()}`;
+  };
 
   const wrap = document.createElement('div');
-  wrap.id = 'newsletter-mini-cal';
+  wrap.id = 'portal-calendar-widget';
   wrap.style.cssText = 'margin-top:16px;';
-
-  // Check if there are any newsletters this month
-  const thisMonthPrefix = `${year}-${String(month+1).padStart(2,'0')}-`;
-  const hasThisMonth    = Object.keys(newsletterDates).some(k => k.startsWith(thisMonthPrefix));
-
-  if (!hasThisMonth) {
-    wrap.innerHTML = `<p style="font-size:0.8125rem;color:var(--text-muted);text-align:center;padding:8px;">
-      Nenhuma newsletter agendada para este mês.</p>`;
-    slotsContainer.after(wrap);
-    return;
-  }
-
-  let cells = '';
-  // Padding
-  for (let i = 0; i < firstDay; i++) cells += '<div></div>';
-  for (let d = 1; d <= daysInMonth; d++) {
-    const key      = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const entries  = newsletterDates[key] || [];
-    const isToday  = d === now.getDate();
-    const hasTasks = entries.length > 0;
-    cells += `
-      <div style="
-        aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
-        padding:4px 2px;border-radius:4px;font-size:0.6875rem;position:relative;
-        background:${hasTasks?'rgba(212,168,67,0.12)':'transparent'};
-        border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':'transparent'};"
-        ${hasTasks?`title="${entries.map(e=>e.title).join(', ')}"`:''}>
-        <span style="font-weight:${isToday?700:400};color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</span>
-        ${hasTasks ? `<div style="width:5px;height:5px;border-radius:50%;background:var(--brand-gold);margin-top:2px;"></div>` : ''}
-      </div>`;
-  }
-
   wrap.innerHTML = `
     <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
       border-radius:8px;padding:12px;font-family:var(--font-ui);">
-      <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin-bottom:8px;
-        display:flex;align-items:center;gap:6px;">
-        📅 Calendário de Newsletters — ${MONTHS_PT[month]}
-        <span style="font-size:0.6875rem;font-weight:400;color:var(--text-muted);">
-          (${Object.keys(newsletterDates).filter(k=>k.startsWith(thisMonthPrefix)).length} agendada${Object.keys(newsletterDates).filter(k=>k.startsWith(thisMonthPrefix)).length!==1?'s':''})
-        </span>
+
+      <!-- Header: type selector + gran switcher + nav -->
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">
+        ${types.length>1?`
+          <select id="pcal-type-sel" style="font-size:0.75rem;padding:4px 8px;border-radius:4px;
+            border:1px solid var(--border-subtle);background:var(--bg-card);color:var(--text-primary);">
+            ${types.map(t=>`<option value="${t.id}" ${portalCalTypeId===t.id?'selected':''}>${t.icon||''} ${t.name}</option>`).join('')}
+          </select>
+        `:`<span style="font-size:0.8125rem;font-weight:600;color:var(--brand-gold);">📅 ${activeType?.name||'Calendário'}</span>`}
+
+        <!-- Granularity -->
+        <div style="display:flex;border:1px solid var(--border-subtle);border-radius:4px;overflow:hidden;margin-left:auto;">
+          ${[['month','Mês'],['week','Sem'],['day','Dia']].map(([g,l])=>`
+            <button class="pcal-gran" data-gran="${g}" style="padding:3px 10px;border:none;cursor:pointer;
+              font-size:0.6875rem;background:${portalCalGran===g?'var(--brand-gold)':'var(--bg-card)'};
+              color:${portalCalGran===g?'#000':'var(--text-muted)'};transition:all 0.15s;">${l}</button>
+          `).join('')}
+        </div>
+
+        <!-- Nav -->
+        <div style="display:flex;gap:4px;">
+          <button id="pcal-prev" style="padding:3px 8px;border:1px solid var(--border-subtle);
+            border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;">◀</button>
+          <button id="pcal-today" style="padding:3px 8px;border:1px solid var(--border-subtle);
+            border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:0.6875rem;">Hoje</button>
+          <button id="pcal-next" style="padding:3px 8px;border:1px solid var(--border-subtle);
+            border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;">▶</button>
+        </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
-        ${DAYS_PT.map(d=>`<div style="text-align:center;font-size:0.625rem;color:var(--text-muted);padding:2px;">${d}</div>`).join('')}
+
+      <!-- Nav title -->
+      <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin-bottom:8px;">${navLabel()}</div>
+
+      <!-- Legend -->
+      <div style="display:flex;gap:10px;margin-bottom:8px;font-size:0.6875rem;color:var(--text-muted);">
+        <span>◌ Agenda (referência)</span>
+        <span>● Tarefa agendada</span>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">
-        ${cells}
-      </div>
-      <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:8px;text-align:center;">
-        Dias marcados com <span style="color:var(--brand-gold);">●</span> já têm newsletters agendadas
-      </div>
+
+      <!-- Grid -->
+      ${portalCalGran==='month'?`
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
+          ${PT_DAYS_S.map(d=>`<div style="text-align:center;font-size:0.5625rem;color:var(--text-muted);">${d[0]}</div>`).join('')}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">${buildMonth()}</div>
+      `:portalCalGran==='week'?`
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">${buildWeek()}</div>
+      `:buildDay()}
     </div>
   `;
 
   slotsContainer.after(wrap);
+
+  // Bind events
+  wrap.querySelectorAll('.pcal-gran').forEach(btn => {
+    btn.addEventListener('click', () => {
+      portalCalGran = btn.dataset.gran;
+      renderPortalCalendar(db, types, null);
+    });
+  });
+  wrap.querySelector('#pcal-type-sel')?.addEventListener('change', e => {
+    portalCalTypeId = e.target.value;
+    renderPortalCalendar(db, types, null);
+  });
+  wrap.querySelector('#pcal-prev')?.addEventListener('click', () => {
+    if (portalCalGran==='month') portalCalDate = new Date(portalCalDate.getFullYear(), portalCalDate.getMonth()-1, 1);
+    else if (portalCalGran==='week') { portalCalDate = new Date(portalCalDate); portalCalDate.setDate(portalCalDate.getDate()-7); }
+    else { portalCalDate = new Date(portalCalDate); portalCalDate.setDate(portalCalDate.getDate()-1); }
+    renderPortalCalendar(db, types, null);
+  });
+  wrap.querySelector('#pcal-next')?.addEventListener('click', () => {
+    if (portalCalGran==='month') portalCalDate = new Date(portalCalDate.getFullYear(), portalCalDate.getMonth()+1, 1);
+    else if (portalCalGran==='week') { portalCalDate = new Date(portalCalDate); portalCalDate.setDate(portalCalDate.getDate()+7); }
+    else { portalCalDate = new Date(portalCalDate); portalCalDate.setDate(portalCalDate.getDate()+1); }
+    renderPortalCalendar(db, types, null);
+  });
+  wrap.querySelector('#pcal-today')?.addEventListener('click', () => {
+    portalCalDate = new Date();
+    renderPortalCalendar(db, types, null);
+  });
 }
+
 
 /* ─── Bind events ─────────────────────────────────────────── */
 function bindFormEvents(db, taskTypes) {
