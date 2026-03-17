@@ -32,7 +32,7 @@ export const NEWSLETTER_SYSTEM_TYPE = {
   color:       '#D4A843',
   isSystem:    true,
   workspaceId: null,
-  sector:      'Marketing e Comunicação',
+  sector:      'Marketing',
   fields: [
     {
       id:             'f_newsletter_status',

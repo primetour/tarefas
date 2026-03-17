@@ -28,17 +28,18 @@ export async function fetchCategories() {
 }
 
 /* ─── Create ──────────────────────────────────────────────── */
-export async function createCategory({ name, color, icon }) {
+export async function createCategory({ name, sector = null, color, icon }) {
   const user = store.get('currentUser');
   const ref  = await addDoc(collection(db, 'task_categories'), {
     name:      name.trim(),
+    sector:    sector || null,
     color:     color || CATEGORY_COLORS[0],
     icon:      icon  || CATEGORY_ICONS[0],
     createdAt: serverTimestamp(),
     createdBy: user.uid,
     updatedAt: serverTimestamp(),
   });
-  return { id: ref.id, name, color, icon };
+  return { id: ref.id, name, sector, color, icon };
 }
 
 /* ─── Update ──────────────────────────────────────────────── */
@@ -51,6 +52,13 @@ export async function updateCategory(id, data) {
 /* ─── Delete ──────────────────────────────────────────────── */
 export async function deleteCategory(id) {
   await deleteDoc(doc(db, 'task_categories', id));
+}
+
+/* ─── Fetch categories by sector ─────────────────────────── */
+export async function fetchCategoriesBySector(sector) {
+  const all = await fetchCategories();
+  // Show categories with matching sector OR global categories (no sector)
+  return all.filter(c => !c.sector || c.sector === sector);
 }
 
 /* ─── Load into store ─────────────────────────────────────── */

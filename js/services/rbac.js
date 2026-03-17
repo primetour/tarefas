@@ -176,9 +176,11 @@ export async function initSystemRoles() {
         updatedAt:  serverTimestamp(),
       });
     } else {
-      // Always sync ALL system fields from code — name, description, color, permissions
+      // Always force-sync ALL system role fields — name, desc, color, permissions
+      // This guarantees Firestore stays in sync with code regardless of when it was last updated
       await setDoc(ref, {
         ...snap.data(),
+        id:          role.id,
         name:        role.name,
         description: role.description,
         color:       role.color,
