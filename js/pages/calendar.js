@@ -5,7 +5,9 @@
 
 import { fetchTasks, PRIORITY_MAP, STATUS_MAP, REQUESTING_AREAS } from '../services/tasks.js';
 import { openTaskModal } from '../components/taskModal.js';
-import { store }         from '../store.js';
+import { store }               from '../store.js';
+import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
+import { renderCardFields }    from '../services/cardPrefs.js';
 import { toast }         from '../components/toast.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -56,6 +58,7 @@ export async function renderCalendar(container) {
         ` : ''}
 
         <button class="btn btn-primary" id="cal-new-task-btn">+ Nova Tarefa</button>
+        <button class="btn btn-ghost btn-icon" id="cal-prefs-btn" title="Personalizar cards" style="font-size:1rem;">⚙</button>
       </div>
     </div>
     <div id="calendar-content">
@@ -80,6 +83,9 @@ export async function renderCalendar(container) {
     const typeId = activeView === 'pipeline' ? pipelineTypeId : null;
     openTaskModal({ typeId, onSave: () => load() });
   });
+  document.getElementById('cal-prefs-btn')?.addEventListener('click', () =>
+    openCardPrefsModal(() => { if (activeView==='pipeline') renderPipeline(); else renderMonth(); })
+  );
 
   await load();
 }
@@ -154,9 +160,11 @@ function renderMonth() {
               const prio  = PRIORITY_MAP[t.priority];
               const color = prio?.color || '#6B7280';
               return `<div class="calendar-task-pill" data-task-id="${t.id}"
-                style="background:${color}20;color:${color};border-left:2px solid ${color};"
-                title="${esc(t.title)}${t.requestingArea?' · '+t.requestingArea:''}">
-                ${esc(t.title.slice(0,22))}${t.title.length>22?'…':''}
+                style="background:${color}20;color:${color};border-left:2px solid ${color};padding:2px 4px;">
+                <div style="font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${esc(t.title.slice(0,22))}${t.title.length>22?'…':''}
+                </div>
+                ${renderCardFields(t, { compact:true })}
               </div>`;
             }).join('')}
             ${extra>0 ? `<div class="calendar-more" data-date="${year}-${String(month+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}">+${extra} mais</div>` : ''}
@@ -307,27 +315,7 @@ function renderPipeline() {
                   title="${esc(t.title)}">
                   ${esc(t.title.slice(0,24))}${t.title.length>24?'…':''}
                 </div>
-                <!-- Area + Due -->
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;">
-                  ${t.requestingArea ? `
-                    <span style="font-size:0.625rem;color:var(--text-muted);
-                      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                      ${esc(t.requestingArea)}
-                    </span>
-                  ` : '<span></span>'}
-                  ${t.dueDate ? `
-                    <span style="font-size:0.625rem;font-weight:600;color:${isOverdue?'#EF4444':isDone?'#22C55E':'var(--text-muted)'};white-space:nowrap;">
-                      📅 ${fmtShort(t.dueDate)}
-                    </span>
-                  ` : ''}
-                </div>
-                ${stepDef ? `
-                  <div style="font-size:0.5625rem;margin-top:2px;padding:1px 5px;border-radius:2px;
-                    background:${stepDef.color||'#6B7280'}22;color:${stepDef.color||'#6B7280'};
-                    display:inline-block;">
-                    ${esc(stepDef.label)}
-                  </div>
-                ` : ''}
+                ${renderCardFields(t, { compact:true })}
               </div>`;
             }).join('')}
           </div>`;

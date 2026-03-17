@@ -7,6 +7,8 @@ import { fetchTasks, PRIORITY_MAP }  from '../services/tasks.js';
 import { fetchProjects }             from '../services/projects.js';
 import { openTaskModal }             from '../components/taskModal.js';
 import { toast }                     from '../components/toast.js';
+import { openCardPrefsModal }         from '../components/cardPrefsModal.js';
+import { renderCardFields }           from '../services/cardPrefs.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -31,6 +33,7 @@ export async function renderTimeline(container) {
           <option value="60" selected>60 dias</option>
           <option value="90">90 dias</option>
         </select>
+        <button class="btn btn-ghost btn-icon" id="tl-prefs-btn" title="Personalizar cards" style="font-size:1rem;">⚙</button>
       </div>
     </div>
     <div id="timeline-content">
@@ -53,6 +56,9 @@ export async function renderTimeline(container) {
 
     document.getElementById('tl-proj-filter')?.addEventListener('change', renderGantt);
     document.getElementById('tl-window')?.addEventListener('change', renderGantt);
+    document.getElementById('tl-prefs-btn')?.addEventListener('click', () =>
+      openCardPrefsModal(() => renderGantt())
+    );
   } catch(e) {
     toast.error('Erro ao carregar timeline.');
     console.error(e);
@@ -171,9 +177,14 @@ function renderGantt() {
 
               return `
                 <div class="timeline-row-wrapper" style="display:grid; grid-template-columns:240px 1fr; border-bottom:1px solid var(--border-subtle);" data-task-id="${task.id}">
-                  <div style="padding:8px 16px; border-right:1px solid var(--border-default); display:flex; align-items:center; gap:8px; background:var(--bg-card); cursor:pointer;" class="tl-task-label">
-                    <div class="priority-dot priority-${task.priority||'medium'}"></div>
-                    <span style="font-size:0.8125rem; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(task.title)}</span>
+                  <div style="padding:6px 16px; border-right:1px solid var(--border-default);
+                    display:flex; flex-direction:column; justify-content:center; gap:2px;
+                    background:var(--bg-card); cursor:pointer; min-height:42px;" class="tl-task-label">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <div class="priority-dot priority-${task.priority||'medium'}"></div>
+                      <span style="font-size:0.8125rem; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(task.title)}</span>
+                    </div>
+                    ${renderCardFields(task, { compact:true })}
                   </div>
                   <div style="position:relative; height:42px; background:${task.status==='done'?'rgba(34,197,94,0.03)':'transparent'};">
                     ${renderTodayLine(today, startWindow, DAY_W)}

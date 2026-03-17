@@ -11,7 +11,9 @@ import {
 } from '../services/tasks.js';
 import { fetchProjects }  from '../services/projects.js';
 import { openTaskModal }  from '../components/taskModal.js';
-import { fetchTaskTypes } from '../services/taskTypes.js';
+import { fetchTaskTypes }         from '../services/taskTypes.js';
+import { openCardPrefsModal }     from '../components/cardPrefsModal.js';
+import { renderCardFields }       from '../services/cardPrefs.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -88,6 +90,7 @@ export async function renderKanban(container) {
         ${store.can('task_create') ? `
           <button class="btn btn-primary" id="kanban-new-task-btn">+ Nova Tarefa</button>
         ` : ''}
+        <button class="btn btn-ghost btn-icon" id="kanban-prefs-btn" title="Personalizar cards" style="font-size:1rem;">⚙</button>
       </div>
     </div>
 
@@ -107,6 +110,11 @@ export async function renderKanban(container) {
       renderKanban(container);
     });
   });
+
+  // Card prefs gear
+  document.getElementById('kanban-prefs-btn')?.addEventListener('click', () =>
+    openCardPrefsModal(() => renderKanban(container))
+  );
 
   document.getElementById('kanban-new-task-btn')?.addEventListener('click', () => {
     const typeId = activeView === 'pipeline' ? activePipelineTypeId : null;
@@ -240,6 +248,7 @@ function renderKanbanCard(task, type = null) {
           background:${step.color||'#6B7280'}22;color:${step.color||'#6B7280'};
           border:1px solid ${step.color||'#6B7280'}44;">${esc(step.label)}</div>` : '';
       })() : ''}
+      ${renderCardFields(task, { compact: true })}
       <div class="kanban-card-meta">
         <div class="kanban-card-due ${dueClass}">
           ${dueText ? `📅 ${dueText}` : ''}
