@@ -13,7 +13,7 @@ const NAV_GROUPS = [
   {
     label: 'Principal',
     items: [
-      { route: 'dashboard',  icon: '⊞',  label: 'Dashboard',   roles: ['admin','manager','member'] },
+      { route: 'dashboard',  icon: '⊞',  label: 'Painel',   roles: ['admin','manager','member'] },
       { route: 'tasks',      icon: '✓',  label: 'Tarefas',     roles: ['admin','manager','member'] },
       { route: 'projects',   icon: '◈',  label: 'Projetos',    roles: ['admin','manager','member'] },
       { route: 'kanban',     icon: '▤',  label: 'Steps',       roles: ['admin','manager','member'] },
@@ -29,7 +29,7 @@ const NAV_GROUPS = [
       { route: 'team',       icon: '◎',  label: 'Equipe',      roles: ['admin','manager','member'] },
       { route: 'goals',      icon: '◎',  label: 'Metas',       roles: ['admin','manager','member'] },
       { route: 'csat',       icon: '★',  label: 'CSAT',        roles: ['admin','manager'] },
-      { route: 'dashboards', icon: '◫',  label: 'Dashboards',  roles: ['admin','manager'] },
+      { route: 'dashboards', icon: '◫',  label: 'Análise de dados',  roles: ['admin','manager'] },
     ]
   },
   {
