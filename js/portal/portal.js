@@ -71,6 +71,8 @@ async function loadNucleosBySector(db, sector) {
 /* ─── Setores (espelha REQUESTING_AREAS) ────────────────── */
 // NUCLEOS agora são carregados do Firestore por setor
 
+const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 const REQUESTING_AREAS = [
   'BTG','C&P','Célula ICs','Centurion','CEP','Concierge Bradesco',
   'Contabilidade','Diretoria','Eventos','Financeiro','Lazer','Marketing',
