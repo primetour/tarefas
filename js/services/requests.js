@@ -14,7 +14,6 @@ import { auditLog } from '../auth/audit.js';
 /* ─── Status de solicitação ──────────────────────────────── */
 export const REQUEST_STATUSES = [
   { value: 'pending',   label: 'Aguardando triagem', color: '#F59E0B', icon: '◌' },
-  { value: 'in_review', label: 'Em análise',         color: '#38BDF8', icon: '◷' },
   { value: 'converted', label: 'Convertida',         color: '#22C55E', icon: '✓' },
   { value: 'rejected',  label: 'Recusada',           color: '#EF4444', icon: '✕' },
 ];
@@ -28,16 +27,23 @@ export async function createRequest({
   requesterName, requesterEmail,
   typeId, typeName,
   nucleo, requestingArea,
+  sector,
+  variationId, variationName,
+  outOfCalendar,
   description, urgency,
   desiredDate,
 }) {
   const reqDoc = {
     requesterName:  requesterName.trim(),
     requesterEmail: requesterEmail.trim().toLowerCase(),
-    typeId:         typeId  || null,
-    typeName:       typeName || '',
-    nucleo:         nucleo  || '',
-    requestingArea: requestingArea || '',
+    typeId:         typeId        || null,
+    typeName:       typeName      || '',
+    nucleo:         nucleo        || '',
+    requestingArea: requestingArea|| '',
+    sector:         sector        || '',
+    variationId:    variationId   || null,
+    variationName:  variationName || '',
+    outOfCalendar:  outOfCalendar === true,
     description:    description.trim(),
     urgency:        urgency === true,
     desiredDate:    desiredDate ? new Date(desiredDate) : null,
@@ -46,6 +52,7 @@ export async function createRequest({
     workspaceId:    null,
     assignedTo:     null,
     internalNote:   '',
+    rejectionNote:  '',
     createdAt:      serverTimestamp(),
     updatedAt:      serverTimestamp(),
   };
@@ -99,6 +106,37 @@ export async function countPendingRequests() {
     limit(99),
   ));
   return snap.size;
+}
+
+/* ─── Notificar solicitante sobre recusa ─────────────────── */
+export async function notifyRequesterRejected({ requesterName, requesterEmail, typeName, rejectionReason, requestId }) {
+  const { APP_CONFIG } = await import('../config.js');
+  const cfg = APP_CONFIG.emailjs;
+  if (!cfg?.publicKey || cfg.publicKey === 'SUA_EMAILJS_PUBLIC_KEY') return;
+
+  if (!window.emailjs) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
+      s.onload = () => { window.emailjs.init(cfg.publicKey); res(); };
+      s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+
+  // Use templateInternal as fallback if no requester template configured
+  const templateId = cfg.templateRequester || cfg.templateInternal;
+  if (!templateId) return;
+
+  await window.emailjs.send(cfg.serviceId, templateId, {
+    to_email:        requesterEmail,
+    to_name:         requesterName,
+    subject:         `Solicitação recusada: ${typeName}`,
+    requester_name:  requesterName,
+    type_name:       typeName,
+    rejection_reason: rejectionReason || 'Não informado.',
+    message:         `Olá ${requesterName}, sua solicitação do tipo "${typeName}" foi analisada pela equipe e não pôde ser aceita neste momento. Motivo: ${rejectionReason || 'Não informado.'}. Em caso de dúvidas, entre em contato com a equipe.`,
+  }).catch(e => console.warn('EmailJS rejection notify error:', e));
 }
 
 /* ─── Notificar equipe via EmailJS ───────────────────────── */
