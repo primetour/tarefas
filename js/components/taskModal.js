@@ -245,8 +245,21 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         </select>
       </div>
 
-      <!-- SLA badge -->
-      <div id="tm-sla-badge" style="display:none;"></div>
+      <!-- SLA badge — shown immediately if editing with a saved variation -->
+      ${(() => {
+        if (!task.variationId || !taskType?.variations?.length) return '<div id="tm-sla-badge" style="display:none;"></div>';
+        const v = taskType.variations.find(x => x.id === task.variationId);
+        if (!v) return '<div id="tm-sla-badge" style="display:none;"></div>';
+        const label = v.slaDays === 0 ? 'Mesmo dia' : `${v.slaDays} dia${v.slaDays !== 1 ? 's' : ''}`;
+        return `<div id="tm-sla-badge" style="display:block;">
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
+            background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);
+            border-radius:var(--radius-md);font-size:0.8125rem;color:var(--text-secondary);">
+            <span style="color:var(--brand-gold);">⏱</span>
+            SLA da variação: <strong style="color:var(--text-primary);">${label}</strong>
+          </div>
+        </div>`;
+      })()}
 
       <!-- Campos dinâmicos do tipo selecionado -->
       <div id="tm-dynamic-fields">
