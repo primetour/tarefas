@@ -19,6 +19,7 @@ import {
 } from './dynamicFields.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const cleanVarName = s => String(s||'').replace(/\s*[·•]\s*\d+d\s*$|\s*[·•]\s*mesmo dia\s*$/i, '').trim();
 
 function fmtDate(ts) {
   if (!ts) return '';
@@ -57,6 +58,14 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   }
 
   const projects = await fetchProjects().catch(() => []);
+
+  // Ensure task types are loaded — critical for variation cascade
+  if (!(store.get('taskTypes') || []).length) {
+    try {
+      const { loadTaskTypes } = await import('../services/taskTypes.js');
+      await loadTaskTypes();
+    } catch(e) {}
+  }
 
   // Sanitize taskData — ensure arrays are always arrays
   const sanitize = (td) => ({
@@ -243,7 +252,7 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
           <option value="">— Selecione a variação —</option>
           ${(taskType?.variations||[]).map(v =>
             `<option value="${v.id}" data-sla="${v.slaDays}"
-              ${task.variationId===v.id?'selected':''}>${esc(v.name)} · ${v.slaDays===0?'mesmo dia':v.slaDays+'d'}</option>`
+              ${task.variationId===v.id?'selected':''}>${esc(cleanVarName(v.name))}</option>`
           ).join('')}
         </select>
       </div>
@@ -428,7 +437,7 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
     if (varSel) {
       varSel.innerHTML = '<option value="">— Selecione a variação —</option>' +
         variations.map(v =>
-          `<option value="${v.id}" data-sla="${v.slaDays}">${esc(v.name)} · ${v.slaDays===0?'mesmo dia':v.slaDays+'d'}</option>`
+          `<option value="${v.id}" data-sla="${v.slaDays}">${esc(cleanVarName(v.name))}</option>`
         ).join('');
     }
 
