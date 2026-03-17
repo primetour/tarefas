@@ -27,6 +27,7 @@ import { auth, secondaryAuth, db } from '../firebase.js';
 import { getRole, initSystemRoles, SYSTEM_ROLES } from '../services/rbac.js';
 import { loadUserWorkspaces }          from '../services/workspaces.js';
 import { loadNucleos }                  from '../services/sectors.js';
+import { loadCategories }              from '../services/taskCategories.js';
 import { initSystemTaskTypes, loadTaskTypes } from '../services/taskTypes.js';
 import { store }   from '../store.js';
 import { toast }   from '../components/toast.js';
@@ -90,8 +91,9 @@ export function initAuthObserver(onReady) {
         const visibleSectors = profile.visibleSectors || (userSector ? [userSector] : []);
         store.set('visibleSectors', visibleSectors);
 
-        // Carregar núcleos do setor
+        // Carregar núcleos e categorias
         loadNucleos().catch(() => {});
+        loadCategories().catch(() => {});
 
         // Só agora libera o app — permissões e workspaces já estão no store
         store.set('authLoading', false);
