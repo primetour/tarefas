@@ -132,33 +132,15 @@ async function renderForm(db, taskTypes) {
               </div>
             </div>
 
-            <!-- Seção 2: Demanda -->
+            <!-- Seção 2: Demanda em cascata -->
             <div class="portal-card">
               <div class="portal-card-title">Detalhes da demanda</div>
 
-              <div class="form-group" id="fg-type">
-                <label class="form-label">
-                  Tipo de demanda <span class="required">*</span>
-                  <span class="info-tip" title="Selecione a categoria que melhor descreve o que você precisa.">ℹ</span>
-                </label>
-                <select class="form-select" id="p-type">
-                  <option value="">— Selecione o tipo —</option>
-                  ${taskTypes.length
-                    ? taskTypes.map(t => `<option value="${t.id}" data-sla='${JSON.stringify(t.sla||null)}'>${t.icon||''} ${t.name}</option>`).join('')
-                    : '<option value="geral">Demanda geral</option>'}
-                </select>
-                <div class="form-error" id="err-type">Selecione um tipo.</div>
-                <!-- SLA badge -->
-                <div class="sla-badge" id="sla-badge">
-                  <span style="color:var(--brand-gold);">⏱</span>
-                  <span>SLA de produção: <strong id="sla-label"></strong></span>
-                </div>
-              </div>
-
+              <!-- Passo 1: Setor responsável -->
               <div class="form-group" id="fg-setor">
                 <label class="form-label">
                   Setor responsável <span class="required">*</span>
-                  <span class="info-tip" title="Selecione o setor que receberá esta demanda.">ℹ</span>
+                  <span class="info-tip" title="Selecione o setor que receberá esta demanda. Os tipos de demanda disponíveis serão filtrados por setor.">ℹ</span>
                 </label>
                 <select class="form-select" id="p-setor">
                   <option value="">— Selecione o setor —</option>
@@ -167,10 +149,39 @@ async function renderForm(db, taskTypes) {
                 <div class="form-error" id="err-setor">Selecione um setor.</div>
               </div>
 
+              <!-- Passo 2: Tipo de demanda (filtrado pelo setor) -->
+              <div class="form-group" id="fg-type" style="display:none;">
+                <label class="form-label">
+                  Tipo de demanda <span class="required">*</span>
+                  <span class="info-tip" title="Tipos disponíveis para o setor selecionado.">ℹ</span>
+                </label>
+                <select class="form-select" id="p-type">
+                  <option value="">— Selecione o tipo —</option>
+                </select>
+                <div class="form-error" id="err-type">Selecione um tipo.</div>
+              </div>
+
+              <!-- Passo 3: Variação do material (filtrada pelo tipo) -->
+              <div class="form-group" id="fg-variation" style="display:none;">
+                <label class="form-label">
+                  Variação do material <span class="required">*</span>
+                  <span class="info-tip" title="A variação define o SLA de produção.">ℹ</span>
+                </label>
+                <select class="form-select" id="p-variation">
+                  <option value="">— Selecione a variação —</option>
+                </select>
+                <!-- SLA badge aparece após selecionar variação -->
+                <div class="sla-badge" id="sla-badge" style="margin-top:8px;">
+                  <span style="color:var(--brand-gold);">⏱</span>
+                  <span>SLA de produção: <strong id="sla-label"></strong></span>
+                </div>
+              </div>
+
+              <!-- Passo 4: Núcleo (filtrado pelo setor, opcional) -->
               <div class="form-group" id="fg-nucleo" style="display:none;">
                 <label class="form-label">
                   Núcleo responsável
-                  <span class="info-tip" title="Selecione o núcleo de produção que receberá esta demanda.">ℹ</span>
+                  <span class="info-tip" title="Núcleo específico dentro do setor (opcional).">ℹ</span>
                 </label>
                 <select class="form-select" id="p-nucleo">
                   <option value="">— Selecione o núcleo —</option>
@@ -406,20 +417,36 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     } catch(e) { types = []; }
   }
 
-  // Build calendar data
+  // Build calendar data — search by both typeId and legacy type field
   const buildCalData = async () => {
     const y = portalCalDate.getFullYear();
     const m = portalCalDate.getMonth();
-    // Tasks from Firestore
     let taskMap = {};
+
     try {
-      const snap = await getDocs(query(
+      // Query by typeId (new schema)
+      const snap1 = await getDocs(query(
         collection(db,'tasks'),
         where('typeId','==',portalCalTypeId),
         limit(300)
       ));
-      snap.docs.forEach(d=>{
+
+      // Query by legacy type name (old schema — newsletter stored as type:'newsletter')
+      const activeType = (types||[]).find(t=>t.id===portalCalTypeId);
+      const typeName   = activeType?.name?.toLowerCase() || portalCalTypeId;
+      const snap2 = await getDocs(query(
+        collection(db,'tasks'),
+        where('type','==',typeName),
+        limit(300)
+      )).catch(()=>({docs:[]}));
+
+      // Merge, deduplicate by id
+      const seen = new Set();
+      [...snap1.docs, ...snap2.docs].forEach(d=>{
+        if (seen.has(d.id)) return;
+        seen.add(d.id);
         const t = d.data();
+        if (t.status === 'cancelled') return;
         const df = t.dueDate||t.startDate;
         if (!df) return;
         const dt = df.toDate?df.toDate():new Date(df);
@@ -428,7 +455,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         if (!taskMap[k]) taskMap[k]=[];
         taskMap[k].push({title:t.title||'',requestingArea:t.requestingArea||'',status:t.status||''});
       });
-    } catch(e) {}
+    } catch(e) { console.warn('portal calendar data error:', e.message); }
     return taskMap;
   };
 
@@ -651,59 +678,131 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
 
 /* ─── Bind events ─────────────────────────────────────────── */
 function bindFormEvents(db, taskTypes) {
-  // Sector → nucleo cascade
-  // Sector → nucleo cascade
+
+  // ── Setor → filter types + nucleos ──────────────────────
   document.getElementById('p-setor')?.addEventListener('change', async (e) => {
-    const sector   = e.target.value;
-    const nucleoFG = document.getElementById('fg-nucleo');
-    const nucleoSel= document.getElementById('p-nucleo');
+    const sector    = e.target.value;
+    const typeFG    = document.getElementById('fg-type');
+    const typeSel   = document.getElementById('p-type');
+    const varFG     = document.getElementById('fg-variation');
+    const nucleoFG  = document.getElementById('fg-nucleo');
+    const nucleoSel = document.getElementById('p-nucleo');
+    const slaBadge  = document.getElementById('sla-badge');
+
+    // Reset all downstream
+    if (varFG)    varFG.style.display   = 'none';
+    if (slaBadge) slaBadge.classList.remove('visible');
+    document.getElementById('portal-calendar-widget')?.remove();
+    if (typeSel)  typeSel.innerHTML = '<option value="">— Selecione o tipo —</option>';
+
     if (!sector) {
+      if (typeFG)   typeFG.style.display   = 'none';
       if (nucleoFG) nucleoFG.style.display = 'none';
       return;
     }
-    // Load nucleos for this sector
+
+    // Load nucleos for this sector to know which types to show
     const nucleos = await loadNucleosBySector(db, sector);
-    if (!nucleoSel) return;
-    if (!nucleos.length) {
-      nucleoFG && (nucleoFG.style.display = 'none');
-      return;
+    const nucleoNames = nucleos.map(n => n.name);
+
+    // Filter types: show type if it has nucleos that match this sector,
+    // OR if the type has no nucleos (universal types)
+    const sectorTypes = taskTypes.filter(t => {
+      if (!t.nucleos?.length) return true; // no restriction → show for all
+      return t.nucleos.some(nid =>
+        nucleoNames.some(nn => nn === nid || nn.toLowerCase() === nid.toLowerCase())
+      );
+    });
+
+    if (typeSel) {
+      typeSel.innerHTML = '<option value="">— Selecione o tipo —</option>' +
+        sectorTypes.map(t => `<option value="${t.id}">${t.icon||''} ${esc(t.name)}</option>`).join('');
     }
-    nucleoSel.innerHTML = '<option value="">— Selecione o núcleo —</option>' +
-      nucleos.map(n => `<option value="${n.name}">${n.name}</option>`).join('');
-    nucleoFG && (nucleoFG.style.display = 'block');
+    if (typeFG) typeFG.style.display = 'block';
+
+    // Show nucleos for this sector
+    if (nucleoSel && nucleos.length) {
+      nucleoSel.innerHTML = '<option value="">— Selecione o núcleo —</option>' +
+        nucleos.map(n => `<option value="${n.name}">${n.name}</option>`).join('');
+      if (nucleoFG) nucleoFG.style.display = 'block';
+    } else {
+      if (nucleoFG) nucleoFG.style.display = 'none';
+    }
   });
 
-  // Show slots and calendar when a type is selected
+  // ── Type → show variations + calendar (NO SLA here) ────
   document.getElementById('p-type')?.addEventListener('change', async (e) => {
-    const typeId   = e.target.value;
-    const typeData = taskTypes.find(t => t.id === typeId);
-    const slaBadge = document.getElementById('sla-badge');
-    const slaLabel = document.getElementById('sla-label');
-    const slotsEl  = document.getElementById('slots-container');
+    const typeId    = e.target.value;
+    const typeData  = taskTypes.find(t => t.id === typeId);
+    const varFG     = document.getElementById('fg-variation');
+    const varSel    = document.getElementById('p-variation');
+    const slaBadge  = document.getElementById('sla-badge');
+    const slotsEl   = document.getElementById('slots-container');
 
-    // SLA: show only if type has NO variations (old schema fallback)
-    if (typeData?.variations?.length) {
-      // New schema: SLA is per-variation, don't show global SLA
-      if (slaBadge) slaBadge.classList.remove('visible');
-    } else if (typeData?.sla && slaBadge && slaLabel) {
-      slaLabel.textContent = typeData.sla.label;
-      slaBadge.classList.add('visible');
-    } else if (slaBadge) {
-      slaBadge.classList.remove('visible');
+    // Always hide SLA on type change — only variation drives it
+    if (slaBadge) slaBadge.classList.remove('visible');
+
+    if (!typeId || !typeData) {
+      if (varFG) varFG.style.display = 'none';
+      document.getElementById('portal-calendar-widget')?.remove();
+      return;
+    }
+
+    // Show variation dropdown if type has variations
+    if (varSel && varFG) {
+      if (typeData.variations?.length) {
+        varSel.innerHTML = '<option value="">— Selecione a variação —</option>' +
+          typeData.variations.map(v =>
+            `<option value="${v.id}" data-sla="${v.slaDays}">${esc(v.name)} · ${v.slaDays===0?'mesmo dia':v.slaDays+'d'}</option>`
+          ).join('');
+        varFG.style.display = 'block';
+      } else {
+        // Type has no variations — hide the field
+        varFG.style.display = 'none';
+      }
     }
 
     if (slotsEl) slotsEl.classList.add('visible');
 
-    // Show calendar widget for this type (only when type selected)
-    const db    = window._portalDb;
-    const types = window._portalTaskTypes || taskTypes;
-    if (db && typeId) {
-      // Set the calendar to show this type
-      window._portalCalTypeId = typeId;
-      await renderPortalCalendar(db, types, null);
+    // Show calendar widget for this type
+    const dbRef  = window._portalDb;
+    const types  = window._portalTaskTypes || taskTypes;
+    if (dbRef && typeId) {
+      portalCalTypeId = typeId;
+      await renderPortalCalendar(dbRef, types, null);
     } else {
-      // Hide calendar widget if no type selected
       document.getElementById('portal-calendar-widget')?.remove();
+    }
+  });
+
+  // ── Variation → show SLA + auto-fill date ───────────────
+  document.getElementById('p-variation')?.addEventListener('change', (e) => {
+    const opt      = e.target.selectedOptions[0];
+    const days     = parseInt(opt?.dataset?.sla);
+    const slaBadge = document.getElementById('sla-badge');
+    const slaLabel = document.getElementById('sla-label');
+    const dueEl    = document.getElementById('p-date');
+
+    if (opt?.value && !isNaN(days) && slaBadge && slaLabel) {
+      slaLabel.textContent = days === 0 ? 'Mesmo dia' : `${days} dia${days!==1?'s':''}`;
+      slaBadge.classList.add('visible');
+      // Auto-fill due date
+      if (dueEl && !dueEl.value) {
+        const due = new Date();
+        if (days === 0) {
+          dueEl.value = due.toISOString().slice(0,10);
+        } else {
+          let biz = days;
+          while (biz > 0) {
+            due.setDate(due.getDate() + 1);
+            const dow = due.getDay();
+            if (dow !== 0 && dow !== 6) biz--;
+          }
+          dueEl.value = due.toISOString().slice(0,10);
+        }
+      }
+    } else if (slaBadge) {
+      slaBadge.classList.remove('visible');
     }
   });
 
@@ -771,8 +870,11 @@ function validate() {
     { id: 'p-name',   errId: 'err-name',   fgId: 'fg-name',   check: v => v.trim().length >= 2 },
     { id: 'p-email',  errId: 'err-email',  fgId: 'fg-email',  check: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) },
     { id: 'p-area',   errId: 'err-area',   fgId: 'fg-area',   check: v => v !== '' },
-    { id: 'p-type',   errId: 'err-type',   fgId: 'fg-type',   check: v => v !== '' },
     { id: 'p-setor',  errId: 'err-setor',  fgId: 'fg-setor',  check: v => v !== '' },
+    // type only required if visible
+    ...(document.getElementById('fg-type')?.style.display !== 'none'
+      ? [{ id: 'p-type', errId: 'err-type', fgId: 'fg-type', check: v => v !== '' }]
+      : []),
     { id: 'p-desc',   errId: 'err-desc',   fgId: 'fg-desc',   check: v => v.trim().length >= 10 },
   ];
 
@@ -799,9 +901,12 @@ async function handleSubmit(db, taskTypes) {
   if (btn) { btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Enviando...'; }
 
   try {
-    const typeId   = document.getElementById('p-type')?.value || '';
-    const typeData = taskTypes.find(t => t.id === typeId);
-    const urgency  = document.getElementById('p-urgency')?.checked || false;
+    const typeId      = document.getElementById('p-type')?.value || '';
+    const typeData    = taskTypes.find(t => t.id === typeId);
+    const urgency     = document.getElementById('p-urgency')?.checked || false;
+    const variationId = document.getElementById('p-variation')?.value || null;
+    const varOpt      = document.querySelector('#p-variation option:checked');
+    const variationName = varOpt?.textContent?.split('·')[0]?.trim() || '';
 
     const reqDoc = {
       requesterName:  document.getElementById('p-name')?.value?.trim() || '',
@@ -813,6 +918,8 @@ async function handleSubmit(db, taskTypes) {
       typeId,
       typeName:       typeData?.name || typeId,
       nucleo:         document.getElementById('p-nucleo')?.value || '',
+      variationId:    variationId,
+      variationName:  variationName,
       requestingSetor: document.getElementById('p-setor')?.value   || '',
       description:    document.getElementById('p-desc')?.value?.trim() || '',
       urgency,
