@@ -320,11 +320,16 @@ async function renderForm(db, taskTypes) {
 
 /* ─── Calendar slots + Newsletter mini-calendar ────────────── */
 async function loadCalendarSlots(db, taskTypes=[]) {
+  // Store references for later use by type-change handler
+  // MUST be set before any early returns
+  window._portalDb         = db;
+  window._portalTaskTypes  = taskTypes;
+
   const today    = new Date(); today.setHours(0,0,0,0);
   const twoWeeks = new Date(today); twoWeeks.setDate(twoWeeks.getDate() + 14);
 
   // Buscar newsletters do mês para mostrar ocupação
-  let newsletterDates = {}; // { 'YYYY-MM-DD': [{title, requestingArea}] }
+  let newsletterDates = {};
   try {
     const snap = await getDocs(query(
       collection(db, 'tasks'),
@@ -340,10 +345,10 @@ async function loadCalendarSlots(db, taskTypes=[]) {
       if (!newsletterDates[key]) newsletterDates[key] = [];
       newsletterDates[key].push({ title: t.title, requestingArea: t.requestingArea || '', status: t.status });
     });
-  } catch(e) {}
+  } catch(e) {} // silently ignore — portal is unauthenticated
 
   const slotsWrap = document.getElementById('slots-week');
-  if (!slotsWrap) return;
+  if (!slotsWrap) return; // slots-week hidden until type selected — that's OK, db refs are already stored
 
   const days = [];
   for (let d = new Date(today); d <= twoWeeks; d.setDate(d.getDate()+1)) {
@@ -393,9 +398,6 @@ async function loadCalendarSlots(db, taskTypes=[]) {
   });
 
   // Calendar widget is shown only after type selection (see bindFormEvents)
-  // Store db and taskTypes for later use
-  window._portalDb = db;
-  window._portalTaskTypes = taskTypes;
 }
 
 /* ─── Portal calendar widget ────────────────────────────── */
