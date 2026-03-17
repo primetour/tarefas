@@ -25,7 +25,14 @@ async function boot() {
     return;
   }
 
-  const app = initializeApp(firebaseConfig, 'portal');
+  // Avoid duplicate app error on hot reload
+  let app;
+  try {
+    const { getApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+    app = getApp('portal');
+  } catch(e) {
+    app = initializeApp(firebaseConfig, 'portal');
+  }
   const db  = getFirestore(app);
 
   // Carregar tipos de tarefa disponíveis (sempre fresh)
@@ -230,9 +237,9 @@ async function renderForm(db, taskTypes) {
 
               <!-- Fora do calendário -->
               <div class="form-group">
-                <label class="urgency-toggle" id="out-of-calendar-toggle" style="border-color:rgba(56,189,248,0.3);">
-                  <input type="checkbox" id="p-out-of-calendar" style="display:none;" />
-                  <div class="urgency-dot" id="out-calendar-dot" style="border-color:rgba(56,189,248,0.5);">✓</div>
+                <label class="urgency-toggle" id="out-of-calendar-toggle">
+                  <input type="checkbox" id="p-out-of-calendar" />
+                  <div class="urgency-dot" id="out-calendar-dot">✓</div>
                   <div>
                     <div style="font-size:0.9375rem;color:var(--text-primary);font-weight:500;">
                       Fora do calendário
@@ -242,6 +249,18 @@ async function renderForm(db, taskTypes) {
                     </div>
                   </div>
                 </label>
+                <!-- Alerta: impacto de sair do calendário -->
+                <div class="alert-banner warning" id="out-calendar-alert" style="display:none;">
+                  <span style="font-size:1.125rem;flex-shrink:0;">⚠</span>
+                  <span>
+                    <strong>Atenção: impacto de operar fora do calendário editorial</strong><br/>
+                    Demandas fora do calendário prejudicam o planejamento da equipe e podem comprometer 
+                    a <strong>performance de entrega</strong>, <strong>taxa de cliques</strong> e 
+                    <strong>saúde do servidor de disparo</strong> da PRIMETOUR — especialmente para newsletters. 
+                    Envios não planejados aumentam o risco de marcação como spam e reduzem o engajamento da base.
+                    Use este campo apenas quando estritamente necessário.
+                  </span>
+                </div>
               </div>
 
               <!-- Alerta fora do calendário -->
@@ -362,8 +381,10 @@ async function loadCalendarSlots(db, taskTypes=[]) {
     });
   });
 
-  // Show mini calendar widget
-  renderPortalCalendar(db, taskTypes, newsletterDates);
+  // Calendar widget is shown only after type selection (see bindFormEvents)
+  // Store db and taskTypes for later use
+  window._portalDb = db;
+  window._portalTaskTypes = taskTypes;
 }
 
 /* ─── Portal calendar widget ────────────────────────────── */
@@ -652,15 +673,19 @@ function bindFormEvents(db, taskTypes) {
     nucleoFG && (nucleoFG.style.display = 'block');
   });
 
-  // Show slots when a type is selected
-  document.getElementById('p-type')?.addEventListener('change', (e) => {
+  // Show slots and calendar when a type is selected
+  document.getElementById('p-type')?.addEventListener('change', async (e) => {
     const typeId   = e.target.value;
     const typeData = taskTypes.find(t => t.id === typeId);
     const slaBadge = document.getElementById('sla-badge');
     const slaLabel = document.getElementById('sla-label');
     const slotsEl  = document.getElementById('slots-container');
 
-    if (typeData?.sla && slaBadge && slaLabel) {
+    // SLA: show only if type has NO variations (old schema fallback)
+    if (typeData?.variations?.length) {
+      // New schema: SLA is per-variation, don't show global SLA
+      if (slaBadge) slaBadge.classList.remove('visible');
+    } else if (typeData?.sla && slaBadge && slaLabel) {
       slaLabel.textContent = typeData.sla.label;
       slaBadge.classList.add('visible');
     } else if (slaBadge) {
@@ -669,26 +694,28 @@ function bindFormEvents(db, taskTypes) {
 
     if (slotsEl) slotsEl.classList.add('visible');
 
-    // Show newsletter mini-calendar when newsletter type selected
-    const isNewsletter = typeData?.name?.toLowerCase().includes('newsletter') ||
-                         typeId === 'newsletter';
-    const miniCal = document.getElementById('newsletter-mini-cal');
-    if (miniCal) miniCal.style.display = isNewsletter ? 'block' : 'none';
+    // Show calendar widget for this type (only when type selected)
+    const db    = window._portalDb;
+    const types = window._portalTaskTypes || taskTypes;
+    if (db && typeId) {
+      // Set the calendar to show this type
+      window._portalCalTypeId = typeId;
+      await renderPortalCalendar(db, types, null);
+    } else {
+      // Hide calendar widget if no type selected
+      document.getElementById('portal-calendar-widget')?.remove();
+    }
   });
 
-  // Out-of-calendar toggle
+  // Out-of-calendar toggle — same pattern as urgency
   document.getElementById('out-of-calendar-toggle')?.addEventListener('click', () => {
-    const cb  = document.getElementById('p-out-of-calendar');
-    const tog = document.getElementById('out-of-calendar-toggle');
-    const dot = document.getElementById('out-calendar-dot');
+    const cb    = document.getElementById('p-out-of-calendar');
+    const toggle= document.getElementById('out-of-calendar-toggle');
+    const alert = document.getElementById('out-calendar-alert');
     if (!cb) return;
     cb.checked = !cb.checked;
-    tog?.classList.toggle('active', cb.checked);
-    if (dot) {
-      dot.style.borderColor  = cb.checked ? '#38BDF8' : 'rgba(56,189,248,0.5)';
-      dot.style.background   = cb.checked ? '#38BDF8' : 'transparent';
-      dot.style.color        = cb.checked ? '#fff'    : 'transparent';
-    }
+    toggle?.classList.toggle('active', cb.checked);
+    if (alert) alert.style.display = cb.checked ? 'flex' : 'none';
   });
 
   // Date change → out-of-calendar check
