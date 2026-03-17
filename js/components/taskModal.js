@@ -58,31 +58,27 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
   const projects = await fetchProjects().catch(() => []);
 
-  // Sanitize taskData — ensure arrays are always arrays (protects against undefined from external callers)
-  let task = isEdit ? {
-    tags:        [],
-    assignees:   [],
-    subtasks:    [],
-    comments:    [],
-    nucleos:     [],
-    customFields:{},
-    ...taskData,
-    tags:        Array.isArray(taskData?.tags)      ? taskData.tags      : [],
-    assignees:   Array.isArray(taskData?.assignees) ? taskData.assignees : [],
-    subtasks:    Array.isArray(taskData?.subtasks)  ? taskData.subtasks  : [],
-    comments:    Array.isArray(taskData?.comments)  ? taskData.comments  : [],
-    nucleos:     Array.isArray(taskData?.nucleos)   ? taskData.nucleos   : [],
-    customFields: taskData?.customFields || {},
-  } : {
+  // Sanitize taskData — ensure arrays are always arrays
+  const sanitize = (td) => ({
     title:'', description:'', status, priority:'medium',
     projectId: projectId||null, assignees:[], tags:[],
     startDate:null, dueDate:null, subtasks:[], comments:[],
     type:'', newsletterStatus:'', requestingArea:'', clientEmail:'',
     nucleos:[], outOfCalendar:false,
     workspaceId: store.get('currentWorkspace')?.id || null,
-    typeId:      typeId || null,
+    typeId: typeId || null,
     customFields: {},
-  };
+    ...(td || {}),
+    // Always sanitize arrays regardless of source
+    tags:         Array.isArray(td?.tags)        ? td.tags        : [],
+    assignees:    Array.isArray(td?.assignees)    ? td.assignees   : [],
+    subtasks:     Array.isArray(td?.subtasks)     ? td.subtasks    : [],
+    comments:     Array.isArray(td?.comments)     ? td.comments    : [],
+    nucleos:      Array.isArray(td?.nucleos)      ? td.nucleos     : [],
+    customFields: td?.customFields || {},
+  });
+
+  let task = sanitize(taskData);
 
   // Load current task type for dynamic fields
   const currentTypeId = task.typeId || (task.type && task.type !== '' ? task.type : null);
@@ -94,8 +90,15 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   let currentTags      = [...(task.tags||[])];
   let currentAssignees = [...(task.assignees||[])];
 
+  const isPrefill = !!(taskData && !taskData.id); // has data but no Firestore id
+  const modalTitle = isEdit
+    ? 'Detalhes da Tarefa'
+    : isPrefill
+      ? 'Nova Tarefa — a partir de solicitação'
+      : 'Nova Tarefa';
+
   const m = modal.open({
-    title: isEdit ? 'Detalhes da Tarefa' : 'Nova Tarefa',
+    title: modalTitle,
     size: 'xl',
     content: buildHTML(task, users, projects, currentTags, currentAssignees, isEdit, currentTaskType),
     footer: [
