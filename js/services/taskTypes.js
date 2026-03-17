@@ -32,6 +32,7 @@ export const NEWSLETTER_SYSTEM_TYPE = {
   color:       '#D4A843',
   isSystem:    true,
   workspaceId: null,
+  sector:      'Marketing e Comunicação',
   fields: [
     {
       id:             'f_newsletter_status',
@@ -109,6 +110,7 @@ export async function initSystemTaskTypes() {
         icon:             NEWSLETTER_SYSTEM_TYPE.icon,
         color:            NEWSLETTER_SYSTEM_TYPE.color,
         isSystem:         true,
+        sector:           NEWSLETTER_SYSTEM_TYPE.sector,
         fields:           NEWSLETTER_SYSTEM_TYPE.fields,
         steps:            NEWSLETTER_SYSTEM_TYPE.steps,
         variations:       NEWSLETTER_SYSTEM_TYPE.variations,
@@ -172,6 +174,7 @@ function injectStepField(type) {
 /* ─── Criar tipo customizado ──────────────────────────────── */
 export async function createTaskType({
   name, description, icon, color,
+  sector,
   categoryId, categoryName,
   nucleos,
   deliveryStandard,
@@ -197,6 +200,7 @@ export async function createTaskType({
     color:            color || '#6B7280',
     isSystem:         false,
     workspaceId:      ws,
+    sector:           sector || null,
     // Categoria
     categoryId:       categoryId   || null,
     categoryName:     categoryName || '',
