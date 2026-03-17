@@ -29,6 +29,8 @@ export async function renderTimeline(container) {
           <option value="">Todos os projetos</option>
         </select>
         <select class="filter-select" id="tl-window">
+          <option value="7">7 dias</option>
+          <option value="14">14 dias</option>
           <option value="30">30 dias</option>
           <option value="60" selected>60 dias</option>
           <option value="90">90 dias</option>

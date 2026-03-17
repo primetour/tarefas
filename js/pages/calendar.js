@@ -48,16 +48,16 @@ export async function renderCalendar(container) {
           `).join('')}
         </div>
 
-        <!-- Mode: Padrão | Esteira -->
+        <!-- Mode: Padrão | Esteira | Agenda prévia -->
         <div style="display:flex;border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
-          ${[['standard','◷ Padrão'],['pipeline','▶ Esteira']].map(([v,l])=>`
+          ${[['standard','◷ Padrão'],['pipeline','▶ Esteira'],['agenda','◌ Agenda']].map(([v,l])=>`
             <button class="view-switch-btn" data-view="${v}" style="padding:6px 12px;border:none;cursor:pointer;font-size:0.8125rem;
               background:${activeView===v?'var(--brand-gold)':'var(--bg-surface)'};
               color:${activeView===v?'#000':'var(--text-secondary)'};transition:all 0.15s;">${l}</button>
           `).join('')}
         </div>
 
-        ${activeView==='pipeline' && pipeTypes.length>1?`
+        ${(activeView==='pipeline'||activeView==='agenda') && pipeTypes.length>1?`
           <select class="filter-select" id="cal-type-filter" style="min-width:150px;">
             ${pipeTypes.map(t=>`<option value="${t.id}" ${pipelineTypeId===t.id?'selected':''}>${esc(t.icon||'')} ${esc(t.name)}</option>`).join('')}
           </select>
@@ -87,7 +87,7 @@ export async function renderCalendar(container) {
     openTaskModal({ typeId, onSave: () => load() });
   });
   document.getElementById('cal-prefs-btn')?.addEventListener('click', () =>
-    openCardPrefsModal(() => render())
+    openCardPrefsModal(() => activeView==='agenda' ? renderAgendaView() : render())
   );
 
   await load();
@@ -95,13 +95,21 @@ export async function renderCalendar(container) {
 
 async function load() {
   try { allTasks = await fetchTasks(); } catch(e) { toast.error('Erro ao carregar.'); }
-  render();
+  if (activeView==='agenda') renderAgendaView();
+  else render();
 }
 
 function render() {
   if (activeGran==='month') renderMonth();
   else if (activeGran==='week') renderWeek();
   else renderDay();
+}
+
+function renderAgendaView() {
+  // Agenda prévia: shows only slots (no real tasks), all granularities
+  if (activeGran==='month') renderAgendaMonth();
+  else if (activeGran==='week') renderAgendaWeek();
+  else renderAgendaDay();
 }
 
 /* ─── Slot helpers ───────────────────────────────────────── */
@@ -287,7 +295,10 @@ function renderWeek() {
   const base   = new Date(currentDate);
   const dow    = base.getDay();
   const monday = new Date(base); monday.setDate(base.getDate()-(dow===0?6:dow-1));
-  const days   = Array.from({length:7},(_,i)=>{ const d=new Date(monday); d.setDate(monday.getDate()+i); return d; });
+  // Zero hours on all days for reliable comparison
+  const days   = Array.from({length:7},(_,i)=>{
+    const d=new Date(monday); d.setDate(monday.getDate()+i); d.setHours(0,0,0,0); return d;
+  });
   const today  = new Date(); today.setHours(0,0,0,0);
 
   const activeType = activeView==='pipeline'
@@ -516,6 +527,153 @@ function _bindNavDay(d) {
     currentDate=new Date(d); currentDate.setDate(d.getDate()+1); render();
   });
   document.getElementById('cal-today')?.addEventListener('click',()=>{currentDate=new Date();render();});
+}
+
+/* ═══════════════════════════════════════════════════════════
+   AGENDA PRÉVIA VIEWS — only schedule slots, no real tasks
+═══════════════════════════════════════════════════════════ */
+function agendaHeader() {
+  const taskTypes = store.get('taskTypes') || [];
+  const allTypes  = taskTypes.filter(t => (t.scheduleSlots||[]).length > 0);
+  const typeInfo  = allTypes.find(t=>t.id===pipelineTypeId) || allTypes[0];
+  return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+    background:rgba(212,168,67,0.06);border:1px solid rgba(212,168,67,0.2);
+    border-radius:var(--radius-md);margin-bottom:16px;font-size:0.875rem;color:var(--text-secondary);">
+    <span style="font-size:1rem;">◌</span>
+    <span><strong style="color:var(--brand-gold);">Agenda prévia</strong> — visualização dos slots de referência configurados no tipo de tarefa.
+    Clique num slot para criar uma tarefa com os dados pré-preenchidos.</span>
+    ${typeInfo?`<span style="margin-left:auto;padding:2px 10px;border-radius:var(--radius-full);
+      background:${typeInfo.color||'#D4A843'}18;color:${typeInfo.color||'#D4A843'};font-size:0.8125rem;">
+      ${typeInfo.icon||''} ${esc(typeInfo.name)}</span>`:''}
+  </div>`;
+}
+
+function renderAgendaMonth() {
+  const el = document.getElementById('calendar-content');
+  if (!el) return;
+  const y=currentDate.getFullYear(), m=currentDate.getMonth();
+  const firstDay=new Date(y,m,1).getDay();
+  const daysInM=new Date(y,m+1,0).getDate();
+  const today=new Date();
+  const cells=[];
+  for(let i=firstDay-1;i>=0;i--) cells.push({day:new Date(y,m-1,new Date(y,m,0).getDate()-i+1),cur:false});
+  for(let d=1;d<=daysInM;d++) cells.push({day:new Date(y,m,d),cur:true});
+  while(cells.length%7!==0) cells.push({day:new Date(y,m+1,cells.length-firstDay-daysInM+1),cur:false});
+
+  // Count total slots this month
+  let totalSlots=0;
+  for(let d=1;d<=daysInM;d++) totalSlots+=getSlotsForDate(new Date(y,m,d)).length;
+
+  el.innerHTML = agendaHeader() + navBar(`${PT_MONTHS[m]} ${y}`, `${totalSlots} slot${totalSlots!==1?'s':''} este mês`) + `
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border-subtle);
+    border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
+    ${PT_DAYS_S.map(d=>`<div style="padding:6px;text-align:center;font-size:0.75rem;font-weight:600;
+      color:var(--text-muted);background:var(--bg-deepest);">${d}</div>`).join('')}
+    ${cells.map(({day:d, cur})=>{
+      const slots=cur?getSlotsForDate(d):[];
+      const isToday=cur&&d.getDate()===today.getDate()&&d.getMonth()===today.getMonth()&&d.getFullYear()===today.getFullYear();
+      return `<div style="min-height:80px;padding:4px;background:${cur?(slots.length?'rgba(212,168,67,0.04)':'var(--bg-card)'):'var(--bg-deepest)'};">
+        <div style="font-size:0.8125rem;font-weight:${isToday?700:400};
+          color:${isToday?'var(--brand-gold)':slots.length?'var(--text-primary)':'var(--text-muted)'};
+          margin-bottom:3px;">${d.getDate()}</div>
+        ${slots.map(s=>slotPill(s,true)).join('')}
+      </div>`;
+    }).join('')}
+  </div>`;
+
+  document.getElementById('cal-prev')?.addEventListener('click',()=>{currentDate=new Date(y,m-1,1);renderAgendaView();});
+  document.getElementById('cal-next')?.addEventListener('click',()=>{currentDate=new Date(y,m+1,1);renderAgendaView();});
+  document.getElementById('cal-today')?.addEventListener('click',()=>{currentDate=new Date();renderAgendaView();});
+  bindSlotClicks(el);
+}
+
+function renderAgendaWeek() {
+  const el = document.getElementById('calendar-content');
+  if (!el) return;
+  const base=new Date(currentDate); const dow=base.getDay();
+  const monday=new Date(base); monday.setDate(base.getDate()-(dow===0?6:dow-1));
+  const days=Array.from({length:7},(_,i)=>{ const d=new Date(monday); d.setDate(monday.getDate()+i); d.setHours(0,0,0,0); return d; });
+  const today=new Date(); today.setHours(0,0,0,0);
+  const rangeLabel=`${days[0].getDate()} ${PT_MONTHS[days[0].getMonth()].slice(0,3)} — ${days[6].getDate()} ${PT_MONTHS[days[6].getMonth()].slice(0,3)} ${days[6].getFullYear()}`;
+
+  el.innerHTML = agendaHeader() + navBar(rangeLabel) + `
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px;">
+    ${days.map(d=>{
+      const slots=getSlotsForDate(d);
+      const isToday=d.getTime()===today.getTime();
+      return `<div style="padding:8px;border-radius:var(--radius-md);min-height:120px;
+        background:${slots.length?'rgba(212,168,67,0.04)':'var(--bg-card)'};
+        border:1px solid ${isToday?'var(--brand-gold)':slots.length?'rgba(212,168,67,0.2)':'var(--border-subtle)'};">
+        <div style="font-size:0.75rem;color:var(--text-muted);">${PT_DAYS_S[d.getDay()]}</div>
+        <div style="font-size:1rem;font-weight:${isToday?700:400};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};margin-bottom:6px;">${d.getDate()}</div>
+        ${slots.length
+          ? slots.map(s=>slotPill(s,false)).join('')
+          : `<div style="font-size:0.6875rem;color:var(--border-default);text-align:center;padding-top:16px;">—</div>`}
+      </div>`;
+    }).join('')}
+  </div>`;
+
+  document.getElementById('cal-prev')?.addEventListener('click',()=>{ currentDate=new Date(monday); currentDate.setDate(monday.getDate()-7); renderAgendaView(); });
+  document.getElementById('cal-next')?.addEventListener('click',()=>{ currentDate=new Date(monday); currentDate.setDate(monday.getDate()+7); renderAgendaView(); });
+  document.getElementById('cal-today')?.addEventListener('click',()=>{currentDate=new Date();renderAgendaView();});
+  bindSlotClicks(el);
+}
+
+function renderAgendaDay() {
+  const el = document.getElementById('calendar-content');
+  if (!el) return;
+  const d=new Date(currentDate); d.setHours(0,0,0,0);
+  const today=new Date(); today.setHours(0,0,0,0);
+  const slots=getSlotsForDate(d);
+  const dateLabel=`${PT_DAYS_L[d.getDay()]}, ${d.getDate()} de ${PT_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+
+  el.innerHTML = agendaHeader() + navBar(dateLabel, `${slots.length} slot${slots.length!==1?'s':''}`)+`
+  <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;align-items:start;">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">◌ Slots do dia</div>
+        <button class="btn btn-primary btn-sm" id="agenda-new-btn">+ Criar todas</button>
+      </div>
+      <div class="card-body" style="padding:8px 16px 16px;display:flex;flex-direction:column;gap:8px;">
+        ${slots.length
+          ? slots.map(s=>{
+              const color=s.color||s.taskType?.color||'#D4A843';
+              return `<div class="cal-slot-pill" data-slot-id="${s.id}"
+                data-type-id="${s.taskType?.id||''}"
+                data-slot='${JSON.stringify({title:s.title,requestingArea:s.requestingArea||'',variationId:s.variationId||''})}'
+                style="padding:12px 14px;border-radius:var(--radius-md);cursor:pointer;
+                  border:1.5px dashed ${color};background:${color}08;transition:all 0.15s;">
+                <div style="font-size:0.9375rem;font-weight:500;color:${color};">◌ ${esc(s.title)}</div>
+                ${s.requestingArea?`<div style="font-size:0.8125rem;color:var(--text-muted);margin-top:3px;">📍 ${esc(s.requestingArea)}</div>`:''}
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+                  ${esc(s.taskType?.name||'')} · Clique para criar tarefa
+                </div>
+              </div>`;
+            }).join('')
+          : `<div style="font-size:0.875rem;color:var(--text-muted);padding:24px 0;text-align:center;">
+              Nenhum slot de agenda para este dia.
+            </div>`}
+      </div>
+    </div>
+    ${renderMiniMonth()}
+  </div>`;
+
+  document.getElementById('agenda-new-btn')?.addEventListener('click', () => {
+    // Open first slot as example
+    if (slots[0]) {
+      openTaskModal({ typeId: slots[0].taskType?.id, taskData: {
+        title: slots[0].title, requestingArea: slots[0].requestingArea||'',
+        status:'not_started', assignees:[], tags:[], subtasks:[], comments:[], customFields:{},
+      }, onSave: ()=>load() });
+    }
+  });
+  document.getElementById('cal-prev')?.addEventListener('click',()=>{currentDate=new Date(d);currentDate.setDate(d.getDate()-1);renderAgendaView();});
+  document.getElementById('cal-next')?.addEventListener('click',()=>{currentDate=new Date(d);currentDate.setDate(d.getDate()+1);renderAgendaView();});
+  document.getElementById('cal-today')?.addEventListener('click',()=>{currentDate=new Date();renderAgendaView();});
+  el.querySelectorAll('.mini-month-day[data-iso]').forEach(btn=>{
+    btn.addEventListener('click',()=>{ currentDate=new Date(btn.dataset.iso+'T12:00:00'); renderAgendaView(); });
+  });
+  bindSlotClicks(el);
 }
 
 /* ─── Export for portal ──────────────────────────────────── */
