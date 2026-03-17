@@ -134,7 +134,9 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
   ).join('');
 
   const projectOpts = `<option value="">— Sem projeto —</option>` +
-    projects.map(p => `<option value="${p.id}" ${task.projectId===p.id?'selected':''}>${esc(p.icon||'')} ${esc(p.name)}</option>`).join('');
+    projects
+      .filter(p => !p.sector || !taskSector || p.sector === taskSector)
+      .map(p => `<option value="${p.id}" ${task.projectId===p.id?'selected':''}>${esc(p.icon||'')} ${esc(p.name)}</option>`).join('');
 
   const areaOpts = `<option value="">— Selecione —</option>` +
     REQUESTING_AREAS.map(a => `<option value="${a}" ${task.requestingArea===a?'selected':''}>${esc(a)}</option>`).join('');
