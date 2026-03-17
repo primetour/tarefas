@@ -12,6 +12,9 @@ import {
 import { fetchProjects }  from '../services/projects.js';
 import { openTaskModal }  from '../components/taskModal.js';
 import { fetchTaskTypes }         from '../services/taskTypes.js';
+import {
+  renderFilterBar, bindFilterBar, buildFilterFn,
+} from '../components/filterBar.js';
 import { openCardPrefsModal }     from '../components/cardPrefsModal.js';
 import { renderCardFields }       from '../services/cardPrefs.js';
 
@@ -24,6 +27,7 @@ let unsubscribe  = null;
 let dragTask     = null;
 let dragOriginCol = null;
 let activeView   = 'kanban';   // 'kanban' | 'pipeline'
+let kbFilterState = { type: null, project: null, area: null, assignee: null };
 let activePipelineTypeId = ''; // tipo selecionado na esteira
 
 /* ─── Render ─────────────────────────────────────────────── */
@@ -79,13 +83,7 @@ export async function renderKanban(container) {
           </select>
         ` : ''}
 
-        <!-- Project filter (kanban view) -->
-        ${activeView === 'kanban' ? `
-          <select class="filter-select" id="kanban-proj-filter" style="min-width:160px;">
-            <option value="">Todos os projetos</option>
-            ${allProjects.map(p=>`<option value="${p.id}">${p.icon} ${esc(p.name)}</option>`).join('')}
-          </select>
-        ` : ''}
+        <!-- Filters rendered below header -->
 
         ${store.can('task_create') ? `
           <button class="btn btn-primary" id="kanban-new-task-btn">+ Nova Tarefa</button>
@@ -94,6 +92,7 @@ export async function renderKanban(container) {
       </div>
     </div>
 
+    <div id="kb-filter-bar" style="padding:0 2px;"></div>
     <div id="kanban-board-wrap">
       ${activeView === 'pipeline'
         ? renderPipelineBoard(pipelineTypes)
@@ -116,13 +115,12 @@ export async function renderKanban(container) {
     openCardPrefsModal(() => renderKanban(container))
   );
 
+  // Render filter bar
+  _renderKbFilters(container);
+
   document.getElementById('kanban-new-task-btn')?.addEventListener('click', () => {
     const typeId = activeView === 'pipeline' ? activePipelineTypeId : null;
     openTaskModal({ typeId, onSave: () => {} });
-  });
-
-  document.getElementById('kanban-proj-filter')?.addEventListener('change', (e) => {
-    renderCards(allTasks, e.target.value);
   });
 
   document.getElementById('pipeline-type-filter')?.addEventListener('change', (e) => {
@@ -167,14 +165,35 @@ function renderColumn(status, tasks) {
   `;
 }
 
-function renderCards(tasks, projectFilter = '') {
+function _renderKbFilters(container) {
+  const wrap = document.getElementById('kb-filter-bar');
+  if (!wrap) return;
+  // Pipeline view already has type selector in header
+  const show = activeView === 'kanban'
+    ? ['type','project','area','assignee']
+    : ['area','assignee'];
+  wrap.innerHTML = renderFilterBar({
+    show, state: kbFilterState,
+    taskTypes: allTaskTypes,
+    projects:  allProjects,
+    users:     store.get('users') || [],
+  });
+  bindFilterBar(wrap, kbFilterState, () => {
+    if (activeView === 'kanban') {
+      renderCards(allTasks);
+    } else {
+      renderKanban(container);
+    }
+  });
+}
+
+function renderCards(tasks, _ignored = '') {
   STATUSES.forEach(s => {
     const body  = document.getElementById(`col-body-${s.value}`);
     const count = document.getElementById(`col-count-${s.value}`);
     if (!body) return;
 
-    let colTasks = tasks.filter(t => t.status === s.value);
-    if (projectFilter) colTasks = colTasks.filter(t => t.projectId === projectFilter);
+    let colTasks = tasks.filter(t => t.status === s.value && filterFn(t));
 
     body.innerHTML = colTasks.map(t => renderKanbanCard(t)).join('');
     if (count) count.textContent = colTasks.length;

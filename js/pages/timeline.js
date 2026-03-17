@@ -4,9 +4,13 @@
  */
 
 import { fetchTasks, PRIORITY_MAP }  from '../services/tasks.js';
+import {
+  renderFilterBar, bindFilterBar, buildFilterFn,
+} from '../components/filterBar.js';
 import { fetchProjects }             from '../services/projects.js';
 import { openTaskModal }             from '../components/taskModal.js';
 import { toast }                     from '../components/toast.js';
+import { store }                     from '../store.js';
 import { openCardPrefsModal }         from '../components/cardPrefsModal.js';
 import { renderCardFields }           from '../services/cardPrefs.js';
 
@@ -38,6 +42,7 @@ export async function renderTimeline(container) {
         <button class="btn btn-ghost btn-icon" id="tl-prefs-btn" title="Personalizar cards" style="font-size:1rem;">⚙</button>
       </div>
     </div>
+    <div id="tl-filter-bar" style="padding:0 2px;"></div>
     <div id="timeline-content">
       <div class="task-empty"><div class="task-empty-icon">⟳</div><div class="task-empty-title">Carregando timeline...</div></div>
     </div>
@@ -61,10 +66,26 @@ export async function renderTimeline(container) {
     document.getElementById('tl-prefs-btn')?.addEventListener('click', () =>
       openCardPrefsModal(() => renderGantt())
     );
+
+    // Filter bar
+    _renderTlFilters();
   } catch(e) {
     toast.error('Erro ao carregar timeline.');
     console.error(e);
   }
+}
+
+function _renderTlFilters() {
+  const wrap = document.getElementById('tl-filter-bar');
+  if (!wrap) return;
+  // Remove project filter from filterBar since it's already in the header select
+  wrap.innerHTML = renderFilterBar({
+    show: ['type','area'],
+    state: tlFilterState,
+    taskTypes: store.get('taskTypes') || [],
+    projects:  allProjects,
+  });
+  bindFilterBar(wrap, tlFilterState, () => renderGantt());
 }
 
 function renderGantt() {
@@ -75,7 +96,8 @@ function renderGantt() {
   const windowDays = parseInt(document.getElementById('tl-window')?.value || '60');
 
   // Filter tasks with dates
-  let tasks = allTasks.filter(t => t.startDate || t.dueDate);
+  const tlFn  = buildFilterFn(tlFilterState);
+  let tasks = allTasks.filter(t => (t.startDate || t.dueDate) && tlFn(t));
   if (projFilter) tasks = tasks.filter(t => t.projectId === projFilter);
 
   if (!tasks.length) {

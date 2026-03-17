@@ -7,6 +7,9 @@
 import { fetchTasks, PRIORITY_MAP }  from '../services/tasks.js';
 import { openTaskModal }             from '../components/taskModal.js';
 import { store }                     from '../store.js';
+import {
+  renderFilterBar, bindFilterBar, buildFilterFn,
+} from '../components/filterBar.js';
 import { openCardPrefsModal }        from '../components/cardPrefsModal.js';
 import { renderCardFields }          from '../services/cardPrefs.js';
 import { toast }                     from '../components/toast.js';
@@ -24,6 +27,7 @@ let currentDate    = new Date();
 let activeView     = 'standard';  // 'standard' | 'pipeline'
 let activeGran     = 'month';     // 'month' | 'week' | 'day'
 let pipelineTypeId = '';
+let calFilterState = { type: null, project: null, area: null, assignee: null };
 
 /* ─── Main render ────────────────────────────────────────── */
 export async function renderCalendar(container) {
@@ -67,6 +71,7 @@ export async function renderCalendar(container) {
         <button class="btn btn-ghost btn-icon" id="cal-prefs-btn" title="Personalizar cards" style="font-size:1rem;">⚙</button>
       </div>
     </div>
+    <div id="cal-filter-bar" style="padding:0 2px;"></div>
     <div id="calendar-content">
       <div class="task-empty"><div class="task-empty-icon">⟳</div></div>
     </div>
@@ -90,6 +95,7 @@ export async function renderCalendar(container) {
     openCardPrefsModal(() => activeView==='agenda' ? renderAgendaView() : render())
   );
 
+  renderFilters();
   await load();
 }
 
@@ -97,6 +103,20 @@ async function load() {
   try { allTasks = await fetchTasks(); } catch(e) { toast.error('Erro ao carregar.'); }
   if (activeView==='agenda') renderAgendaView();
   else render();
+}
+
+function renderFilters() {
+  const wrap = document.getElementById('cal-filter-bar');
+  if (!wrap) return;
+  const projects  = store.get('projects') || [];
+  const taskTypes = store.get('taskTypes') || [];
+  wrap.innerHTML = renderFilterBar({
+    show: ['type','project','area','assignee'],
+    state: calFilterState,
+    taskTypes, projects,
+    users: store.get('users') || [],
+  });
+  bindFilterBar(wrap, calFilterState, () => render());
 }
 
 function render() {
@@ -199,9 +219,9 @@ function taskPill(task, compact=false) {
   return `<div class="cal-task-pill" data-task-id="${task.id}"
     style="background:${color}20;border-left:3px solid ${color};border-radius:3px;
       padding:3px 6px;margin-bottom:2px;cursor:pointer;opacity:${done?0.5:1};">
-    <div style="font-size:0.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-      color:var(--text-primary);${done?'text-decoration:line-through;':''}">
-      ${esc(task.title.slice(0,compact?20:28))}${task.title.length>(compact?20:28)?'…':''}
+    <div style="font-size:0.75rem;color:var(--text-primary);line-height:1.3;
+      ${done?'text-decoration:line-through;':''}">
+      ${esc(task.title.slice(0,compact?24:32))}${task.title.length>(compact?24:32)?'…':''}
     </div>
     ${renderCardFields(task,{compact:true})}
   </div>`;
@@ -249,25 +269,23 @@ function renderMonth() {
     `${PT_MONTHS[m]} ${y}`,
     `${Object.values(taskMap).flat().length} tarefa${Object.values(taskMap).flat().length!==1?'s':''} este mês`
   ) + `
-  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border-subtle);border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border-subtle);border:1px solid var(--border-subtle);border-radius:var(--radius-md);">
     ${PT_DAYS_S.map(d=>`<div style="padding:6px;text-align:center;font-size:0.75rem;font-weight:600;
       color:var(--text-muted);background:var(--bg-deepest);">${d}</div>`).join('')}
     ${cells.map(cell=>{
-      const tasks = cell.cur?(taskMap[cell.day]||[]):[];
+      const filterFn = buildFilterFn(activeView==='standard' ? calFilterState : {});
+      const tasks = cell.cur?(taskMap[cell.day]||[]).filter(t=>filterFn(t)):[];
       const slots = cell.cur?getSlotsForDate(new Date(y,m,cell.day), activeView==='pipeline'?pipelineTypeId:null):[];
       const isToday=cell.cur&&today.getDate()===cell.day&&today.getMonth()===m&&today.getFullYear()===y;
-      const MAX=3, shown=tasks.slice(0,MAX), extra=tasks.length-MAX;
       const dateStr=cell.cur?`${y}-${String(m+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}`:'' ;
-      return `<div style="min-height:90px;padding:4px;background:${cell.cur?'var(--bg-card)':'var(--bg-deepest)'};
+      return `<div style="min-height:100px;padding:4px;background:${cell.cur?'var(--bg-card)':'var(--bg-deepest)'};
         cursor:${cell.cur?'pointer':'default'};" data-date="${dateStr}">
         <div style="font-size:0.8125rem;font-weight:${isToday?700:400};
           color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
           ${isToday?'background:var(--brand-gold);color:#000;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;':''};
           margin-bottom:3px;">${cell.day}</div>
         ${slots.map(s=>slotPill(s,true)).join('')}
-        ${shown.map(t=>taskPill(t,true)).join('')}
-        ${extra>0?`<div style="font-size:0.6875rem;color:var(--text-muted);cursor:pointer;"
-          data-date="${dateStr}">+${extra} mais</div>`:''}
+        ${tasks.map(t=>taskPill(t,true)).join('')}
       </div>`;
     }).join('')}
   </div>`;
@@ -309,9 +327,11 @@ function renderWeek() {
   const activeType = activeView==='pipeline'
     ? (store.get('taskTypes')||[]).find(t=>t.id===pipelineTypeId) : null;
 
+  const weekFilterFn = buildFilterFn(activeView==='standard' ? calFilterState : {});
   const tasksByDay = days.map(d=>{
     return allTasks.filter(t=>{
       if (activeType && t.typeId!==pipelineTypeId) return false;
+      if (!weekFilterFn(t)) return false;
       const df = t.dueDate||t.startDate;
       if (!df) return false;
       const td=df?.toDate?df.toDate():new Date(df); td.setHours(0,0,0,0);
@@ -324,7 +344,7 @@ function renderWeek() {
   el.innerHTML = navBar(rangeLabel) + `
   <div style="display:grid;grid-template-columns:60px repeat(7,1fr);gap:1px;
     background:var(--border-subtle);border:1px solid var(--border-subtle);
-    border-radius:var(--radius-md);overflow:hidden;max-height:72vh;overflow-y:auto;">
+    border-radius:var(--radius-md);max-height:72vh;overflow-y:auto;">
 
     <!-- Header row -->
     <div style="background:var(--bg-deepest);padding:8px 4px;"></div>
