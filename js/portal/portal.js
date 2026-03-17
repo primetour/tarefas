@@ -905,31 +905,34 @@ async function handleSubmit(db, taskTypes) {
     const typeId      = document.getElementById('p-type')?.value || '';
     const typeData    = taskTypes.find(t => t.id === typeId);
     const urgency     = document.getElementById('p-urgency')?.checked || false;
+    const outOfCal    = document.getElementById('p-out-of-calendar')?.checked || false;
     const variationId = document.getElementById('p-variation')?.value || null;
     const varOpt      = document.querySelector('#p-variation option:checked');
     const variationName = varOpt?.textContent?.split('·')[0]?.trim() || '';
+    const sector      = document.getElementById('p-setor')?.value || '';
 
+    // Build request document matching createRequest service schema exactly
     const reqDoc = {
-      requesterName:  document.getElementById('p-name')?.value?.trim() || '',
+      requesterName:  document.getElementById('p-name')?.value?.trim()             || '',
       requesterEmail: document.getElementById('p-email')?.value?.trim().toLowerCase() || '',
-      requestingArea: document.getElementById('p-area')?.value || '',
-      sector:         document.getElementById('p-setor')?.value  || '',
-      outOfCalendar:  document.getElementById('p-out-of-calendar')?.checked || false,
-      customFields:   { outOfCalendar: document.getElementById('p-out-of-calendar')?.checked || false },
-      typeId,
-      typeName:       typeData?.name || typeId,
-      nucleo:         document.getElementById('p-nucleo')?.value || '',
-      variationId:    variationId,
-      variationName:  variationName,
-      requestingSetor: document.getElementById('p-setor')?.value   || '',
-      description:    document.getElementById('p-desc')?.value?.trim() || '',
-      urgency,
+      requestingArea: document.getElementById('p-area')?.value                     || '',
+      sector:         sector                                                        || '',
+      outOfCalendar:  outOfCal === true,
+      variationId:    variationId    || null,
+      variationName:  variationName  || '',
+      typeId:         typeId         || null,
+      typeName:       typeData?.name || typeId || '',
+      nucleo:         document.getElementById('p-nucleo')?.value                   || '',
+      description:    document.getElementById('p-desc')?.value?.trim()             || '',
+      urgency:        urgency === true,
       desiredDate:    document.getElementById('p-date')?.value
         ? new Date(document.getElementById('p-date').value + 'T12:00:00')
         : null,
       status:         'pending',
       taskId:         null,
       workspaceId:    null,
+      internalNote:   '',
+      rejectionNote:  '',
       createdAt:      serverTimestamp(),
       updatedAt:      serverTimestamp(),
     };
@@ -955,8 +958,34 @@ async function handleSubmit(db, taskTypes) {
   }
 }
 
-/* ─── Email notification ──────────────────────────────────── */
-async function notifyTeam({ requesterName, requesterEmail, typeName, nucleo, urgency, requestId }) {
+/* ─── Email notification via Firebase Function ───────────── */
+async function notifyTeam(reqDoc) {
+  try {
+    const res = await fetch(
+      (await import('../config.js')).APP_CONFIG?.functions?.sendEmailUrl || '',
+      {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ type: 'new_request', to: null, data: {
+          requesterName:  reqDoc.requesterName,
+          requesterEmail: reqDoc.requesterEmail,
+          requestingArea: reqDoc.requestingArea || '',
+          sector:         reqDoc.sector         || '',
+          typeName:       reqDoc.typeName        || '',
+          variationName:  reqDoc.variationName   || '',
+          description:    reqDoc.description     || '',
+          urgency:        reqDoc.urgency         || false,
+          outOfCalendar:  reqDoc.outOfCalendar   || false,
+          desiredDate:    reqDoc.desiredDate
+            ? new Date(reqDoc.desiredDate).toLocaleDateString('pt-BR') : '',
+        }}),
+      }
+    );
+    if (!res.ok) console.warn('notifyTeam failed:', await res.text());
+  } catch(e) {
+    console.warn('notifyTeam error:', e.message);
+  }
+}) {
   try {
     const configModule = await import('../config.js').catch(() => null);
     const cfg = configModule?.APP_CONFIG?.emailjs;
