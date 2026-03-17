@@ -16,7 +16,7 @@ const NAV_GROUPS = [
       { route: 'dashboard',  icon: '⊞',  label: 'Dashboard',   roles: ['admin','manager','member'] },
       { route: 'tasks',      icon: '✓',  label: 'Tarefas',     roles: ['admin','manager','member'] },
       { route: 'projects',   icon: '◈',  label: 'Projetos',    roles: ['admin','manager','member'] },
-      { route: 'kanban',     icon: '▤',  label: 'Kanban',      roles: ['admin','manager','member'] },
+      { route: 'kanban',     icon: '▤',  label: 'Steps',       roles: ['admin','manager','member'] },
       { route: 'calendar',   icon: '◷',  label: 'Calendário',  roles: ['admin','manager','member'] },
       { route: 'timeline',   icon: '━━', label: 'Timeline',    roles: ['admin','manager'] },
     ]
