@@ -1,8 +1,9 @@
 /**
  * PRIMETOUR — Marketing Cloud → Firestore Sync
  * Roda via GitHub Actions (gratuito), sem Firebase Functions.
+ * Deploy: commit para primetour/tarefas, roda diariamente às 6h UTC.
  *
- * Variáveis de ambiente necessárias (GitHub Secrets):
+ * Secrets necessários no GitHub:
  *   MC_CLIENT_ID, MC_CLIENT_SECRET, MC_AUTH_URL, MC_REST_URL
  *   FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
  */
@@ -10,19 +11,17 @@
 const { default: fetch } = require('node-fetch');
 const admin = require('firebase-admin');
 
-/* ─── Init Firebase Admin ─────────────────────────────────── */
+/* ─── Init Firebase ───────────────────────────────────────── */
 admin.initializeApp({
   credential: admin.credential.cert({
     projectId:   process.env.FIREBASE_PROJECT_ID,
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    // GitHub Secrets escapam \n como string literal — precisamos restaurar
     privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
   }),
 });
-
 const db = admin.firestore();
 
-/* ─── Configuração Marketing Cloud ───────────────────────── */
+/* ─── Configuração ────────────────────────────────────────── */
 const MC_AUTH_URL      = process.env.MC_AUTH_URL      || 'https://mcdr998fk605k8c51p7t-gc781ly.auth.marketingcloudapis.com';
 const MC_REST_URL      = process.env.MC_REST_URL      || 'https://mcdr998fk605k8c51p7t-gc781ly.rest.marketingcloudapis.com';
 const MC_CLIENT_ID     = process.env.MC_CLIENT_ID     || '';
@@ -37,85 +36,41 @@ const BUSINESS_UNITS = [
   { id: 'pts',           name: 'PTS',           mid: '546015817' },
 ];
 
-/* ─── OAuth ──────────────────────────────────────────────── */
+/* ─── OAuth: token por BU ─────────────────────────────────── */
 async function getToken(mid) {
-  const body = {
-    grant_type:    'client_credentials',
-    client_id:     MC_CLIENT_ID,
-    client_secret: MC_CLIENT_SECRET,
-  };
-  if (mid) body.account_id = Number(mid);
-
   const res = await fetch(`${MC_AUTH_URL}/v2/token`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+    body:    JSON.stringify({
+      grant_type:    'client_credentials',
+      client_id:     MC_CLIENT_ID,
+      client_secret: MC_CLIENT_SECRET,
+      account_id:    Number(mid),
+    }),
   });
-
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`Auth falhou (MID ${mid}): ${res.status} — ${txt.slice(0, 300)}`);
+    throw new Error(`Auth falhou (MID ${mid}): ${res.status} — ${txt.slice(0, 200)}`);
   }
-
   const data = await res.json();
-  console.log(`  Token obtido para MID ${mid} (expira em ${data.expires_in}s)`);
   return data.access_token;
 }
 
-/* ─── Buscar sends via REST e SOAP ───────────────────────── */
+/* ─── Buscar sends via SOAP (única abordagem que funciona) ─── */
 async function fetchSends(token, days) {
-  const from = new Date();
+  const from    = new Date();
   from.setDate(from.getDate() - days);
   const fromStr = from.toISOString().slice(0, 10);
-  console.log(`  Buscando sends desde: ${fromStr}`);
 
-  // Tenta REST endpoints conhecidos do MC
-  const restEndpoints = [
-    `${MC_REST_URL}/data/v1/emailanalytics/v1/sends?startDate=${fromStr}&$pageSize=200`,
-    `${MC_REST_URL}/data/v1/sends?$pageSize=200`,
-    `${MC_REST_URL}/email/v1/messageDefinitionSends?$pageSize=200`,
-    `${MC_REST_URL}/messaging/v1/email/definitions/?$pageSize=200`,
-  ];
-
-  for (const url of restEndpoints) {
-    console.log(`  Tentando REST: ${url}`);
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    console.log(`  Status: ${res.status}`);
-
-    if (res.ok) {
-      const data = await res.json();
-      console.log(`  Chaves: ${JSON.stringify(Object.keys(data))}`);
-      const items = data.items || data.Results || data.sends || (Array.isArray(data) ? data : []);
-      console.log(`  Items: ${items.length}`);
-      if (items.length > 0) {
-        console.log(`  item[0]: ${JSON.stringify(items[0]).slice(0, 400)}`);
-        return filterByDate(items, fromStr);
-      }
-    }
-  }
-
-  // Fallback SOAP — sempre disponível, busca Send objects
-  console.log(`  Tentando SOAP...`);
-  return fetchSendsSoap(token, fromStr);
-}
-
-/* ─── SOAP fallback ───────────────────────────────────────── */
-async function fetchSendsSoap(token, fromStr) {
-  // MC SOAP endpoint é na auth URL trocando /v2/token por /Service.asmx
-  // MC SOAP URL usa subdomínio .soap. em vez de .auth.
-  // auth: https://XXXX.auth.marketingcloudapis.com
-  // soap: https://XXXX.soap.marketingcloudapis.com/Service.asmx
   const soapBase = MC_AUTH_URL
     .replace(/\/v2\/token\/?$/, '')
     .replace(/\/$/, '')
     .replace('.auth.marketingcloudapis.com', '.soap.marketingcloudapis.com');
   const soapUrl = `${soapBase}/Service.asmx`;
-  console.log(`  SOAP URL: ${soapUrl}`);
 
   const soapBody = `<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
-            xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
-            xmlns:u="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+            xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing">
   <s:Header>
     <fueloauth xmlns="http://exacttarget.com">${token}</fueloauth>
   </s:Header>
@@ -148,39 +103,34 @@ async function fetchSendsSoap(token, fromStr) {
 
   const res = await fetch(soapUrl, {
     method:  'POST',
-    headers: {
-      'Content-Type': 'text/xml',
-      'SOAPAction':   'Retrieve',
-    },
-    body: soapBody,
+    headers: { 'Content-Type': 'text/xml', 'SOAPAction': 'Retrieve' },
+    body:    soapBody,
   });
 
-  console.log(`  SOAP status: ${res.status}`);
-
   if (!res.ok) {
-    const txt = await res.text();
-    console.warn(`  SOAP falhou: ${txt.slice(0, 300)}`);
+    console.warn(`  SOAP falhou: ${res.status}`);
     return [];
   }
 
-  const xml = await res.text();
-  // Log XML completo para diagnóstico
-  console.log(`  SOAP XML completo:\n${xml}`);
+  const xml    = await res.text();
+  const status = xml.match(/<OverallStatus>(.*?)<\/OverallStatus>/)?.[1] || '';
 
-  // Parse XML — Results pode ter namespace prefix (PartnerAPI:Results, etc)
-  // e atributos xsi:type
-  const results = [];
-  const blocks = xml.match(/<(?:\w+:)?Results[^>]*>([\s\S]*?)<\/(?:\w+:)?Results>/g) || [];
-  console.log(`  SOAP blocos Results: ${blocks.length}`);
+  if (!status.startsWith('OK')) {
+    console.warn(`  SOAP status: ${status}`);
+    return [];
+  }
+
+  const blocks = xml.match(/<Results[^>]*>([\s\S]*?)<\/Results>/g) || [];
+  const sends  = [];
 
   for (const block of blocks) {
-    // Handles both <Tag> and <ns:Tag> formats
     const get = tag => {
       const m = block.match(new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)<\\/(?:\\w+:)?${tag}>`, 'i'));
       return m ? m[1].trim() : null;
     };
-    const send = {
-      ID:              get('ID'),
+    const id = get('ID');
+    if (id) sends.push({
+      ID:              id,
       EmailName:       get('EmailName'),
       Subject:         get('Subject'),
       SentDate:        get('SentDate'),
@@ -192,86 +142,54 @@ async function fetchSendsSoap(token, fromStr) {
       UniqueOpens:     get('UniqueOpens'),
       UniqueClicks:    get('UniqueClicks'),
       Unsubscribes:    get('Unsubscribes'),
-    };
-    if (send.ID) results.push(send);
+    });
   }
 
-  console.log(`  SOAP sends parseados: ${results.length}`);
-  if (results.length > 0) console.log(`  Exemplo: ${JSON.stringify(results[0])}`);
-  return results;
+  return sends;
 }
 
-/* ─── Filtra por data ─────────────────────────────────────── */
-function filterByDate(items, fromStr) {
-  const cutoff = new Date(fromStr);
-  return items.filter(s => {
-    const raw = s.SendDate || s.SentDate || s.sentDate || s.CreatedDate || s.createTime || null;
-    if (!raw) return true;
-    return new Date(raw) >= cutoff;
-  });
-}
+/* ─── Normalizar send → doc Firestore ────────────────────── */
+function buildDoc(send, bu) {
+  const n   = v => Number(v) || 0;
+  const pct = (a, b) => b > 0 ? Math.round((a / b) * 10000) / 100 : 0;
 
-/* ─── Buscar métricas de um send ──────────────────────────── */
-async function fetchMetrics(token, jobId) {
-  const res = await fetch(`${MC_REST_URL}/data/v1/sends/${jobId}/metrics`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
+  const totalSent   = n(send.NumberSent);
+  const delivered   = n(send.NumberDelivered);
+  const openUnique  = n(send.UniqueOpens);
+  const clickUnique = n(send.UniqueClicks);
 
-/* ─── Normalizar → doc Firestore ──────────────────────────── */
-function buildDoc(send, metrics, bu) {
-  const m   = metrics || {};
-  const get = (...keys) => {
-    for (const k of keys) {
-      const v = m[k] ?? send[k];
-      if (v !== undefined && v !== null) return Number(v) || 0;
-    }
-    return 0;
-  };
+  const sentDateRaw = send.SentDate;
+  const sentDate    = sentDateRaw
+    ? admin.firestore.Timestamp.fromDate(new Date(sentDateRaw))
+    : null;
 
-  const totalSent   = get('TotalSent',    'NumberSent',    'Sent',         'totalSent');
-  const delivered   = get('TotalDelivered','NumberDelivered','Delivered',  'totalDelivered');
-  const hardBounce  = get('HardBounces',  'hardBounces',   'HardBounce');
-  const softBounce  = get('SoftBounces',  'softBounces',   'SoftBounce');
-  const blockBounce = get('BlockBounces', 'OtherBounces',  'blockBounces', 'BlockBounce');
-  const openUnique  = get('UniqueOpens',  'uniqueOpens',   'UniqueOpen');
-  const openTotal   = get('Opens',        'TotalOpens',    'opens')        || openUnique;
-  const clickUnique = get('UniqueClicks', 'uniqueClicks',  'UniqueClick');
-  const clickTotal  = get('Clicks',       'TotalClicks',   'clicks')       || clickUnique;
-  const convTotal   = 0;
-  const convUnique  = 0;
-  const optOut      = get('Unsubscribes', 'unsubscribes',  'OptOut',       'optOut');
-
-  const pct = (n, d) => d > 0 ? Math.round((n / d) * 10000) / 100 : 0;
-
-  const sentDateRaw = send.SentDate || send.SendDate || send.sentDate || send.CreatedDate || send.createTime;
-  const sentDate    = sentDateRaw ? admin.firestore.Timestamp.fromDate(new Date(sentDateRaw)) : null;
+  // Clean trailing whitespace from EmailName and Subject (MC pads to fixed width)
+  const name    = (send.EmailName || '').trim();
+  const subject = (send.Subject   || '').trim();
 
   return {
     buId:             bu.id,
     buName:           bu.name,
     buMid:            bu.mid,
-    jobId:            String(send.ID || send.JobID || send.jobId || send.id || ''),
-    name:             send.EmailName || send.emailName || send.Name || send.name || '',
-    subject:          send.Subject   || send.subject   || '',
+    jobId:            String(send.ID),
+    name,
+    subject,
     sentDate,
     totalSent,
     delivered,
     deliveryRate:     pct(delivered, totalSent),
-    hardBounce,
-    softBounce,
-    blockBounce,
-    openTotal,
+    hardBounce:       n(send.HardBounces),
+    softBounce:       n(send.SoftBounces),
+    blockBounce:      n(send.OtherBounces),
+    openTotal:        openUnique,   // MC só retorna únicos no objeto Send
     openUnique,
     openRate:         pct(openUnique, delivered),
-    clickTotal,
+    clickTotal:       clickUnique,  // MC só retorna únicos no objeto Send
     clickUnique,
     clickRate:        pct(clickUnique, delivered),
-    conversionTotal:  convTotal,
-    conversionUnique: convUnique,
-    optOut,
+    conversionTotal:  0,            // não disponível no objeto Send
+    conversionUnique: 0,
+    optOut:           n(send.Unsubscribes),
     syncedAt:         admin.firestore.FieldValue.serverTimestamp(),
   };
 }
@@ -279,76 +197,53 @@ function buildDoc(send, metrics, bu) {
 /* ─── Main ────────────────────────────────────────────────── */
 async function main() {
   console.log(`\n🔄 PRIMETOUR — Marketing Cloud Sync`);
-  console.log(`   Período: últimos ${SYNC_DAYS} dias`);
-  console.log(`   BUs: ${BUSINESS_UNITS.length}\n`);
+  console.log(`   Período: últimos ${SYNC_DAYS} dias\n`);
 
   const summary = { success: [], failed: [], total: 0 };
 
   for (const bu of BUSINESS_UNITS) {
-    console.log(`\n📧 ${bu.name} (MID: ${bu.mid})`);
-
+    console.log(`📧 ${bu.name}`);
     try {
       const token = await getToken(bu.mid);
       const sends = await fetchSends(token, SYNC_DAYS);
-      console.log(`  ${sends.length} sends encontrados`);
+      console.log(`   ${sends.length} sends encontrados`);
 
       if (!sends.length) {
-        summary.success.push(`${bu.name} (0 sends)`);
+        summary.success.push(`${bu.name} (0)`);
         continue;
       }
 
-      // Firestore batch (máx 500 ops por batch)
-      let batch     = db.batch();
-      let batchSize = 0;
-      let written   = 0;
+      let batch = db.batch(), batchSize = 0, written = 0;
 
       for (const send of sends) {
-        const jobId = String(send.ID || send.JobID || send.jobId || send.id || '');
-        if (!jobId) continue;
-
-        const metrics = await fetchMetrics(token, jobId).catch(() => null);
-        const doc     = buildDoc(send, metrics, bu);
-        const docId   = `${bu.id}_${jobId}`;
-
+        const doc   = buildDoc(send, bu);
+        const docId = `${bu.id}_${send.ID}`;
         batch.set(db.collection('mc_performance').doc(docId), doc, { merge: true });
         batchSize++;
         written++;
-
         if (batchSize >= 499) {
           await batch.commit();
-          batch     = db.batch();
-          batchSize = 0;
-          console.log(`  Batch commitado (${written} docs)`);
+          batch = db.batch(); batchSize = 0;
         }
       }
-
       if (batchSize > 0) await batch.commit();
 
-      console.log(`  ✓ ${written} documentos salvos`);
+      console.log(`   ✓ ${written} docs salvos`);
       summary.success.push(`${bu.name} (${written})`);
       summary.total += written;
-
-    } catch (e) {
-      console.error(`  ✗ ERRO: ${e.message}`);
+    } catch(e) {
+      console.error(`   ✗ ERRO: ${e.message}`);
       summary.failed.push({ bu: bu.name, error: e.message });
     }
   }
 
   console.log('\n─────────────────────────────────────────');
-  console.log(`✅ Sucesso: ${summary.success.join(', ')}`);
+  console.log(`✅ ${summary.success.join(' · ')}`);
   if (summary.failed.length) {
-    console.log(`❌ Falhou:  ${summary.failed.map(f => `${f.bu} (${f.error})`).join(', ')}`);
+    console.log(`❌ ${summary.failed.map(f => `${f.bu}: ${f.error}`).join(', ')}`);
+    if (summary.failed.length === BUSINESS_UNITS.length) process.exit(1);
   }
-  console.log(`📊 Total docs escritos: ${summary.total}`);
-  console.log('─────────────────────────────────────────\n');
-
-  if (summary.failed.length === BUSINESS_UNITS.length) {
-    // Todas falharam — sair com erro para o GitHub Actions reportar
-    process.exit(1);
-  }
+  console.log(`📊 Total: ${summary.total} documentos`);
 }
 
-main().catch(e => {
-  console.error('Erro fatal:', e);
-  process.exit(1);
-});
+main().catch(e => { console.error('Erro fatal:', e); process.exit(1); });
