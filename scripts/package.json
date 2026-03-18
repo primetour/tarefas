@@ -1,0 +1,10 @@
+{
+  "name": "primetour-scripts",
+  "version": "1.0.0",
+  "description": "Scripts de sincronização PRIMETOUR",
+  "private": true,
+  "dependencies": {
+    "firebase-admin": "^11.0.0",
+    "node-fetch": "^2.7.0"
+  }
+}
