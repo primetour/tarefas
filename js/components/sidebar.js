@@ -29,7 +29,8 @@ const NAV_GROUPS = [
       { route: 'team',       icon: '◎',  label: 'Equipe',      roles: ['admin','manager','member'] },
       { route: 'goals',      icon: '◎',  label: 'Metas',       roles: ['admin','manager','member'] },
       { route: 'csat',       icon: '★',  label: 'CSAT',        roles: ['admin','manager'] },
-      { route: 'dashboards', icon: '◫',  label: 'Análise de dados',  roles: ['admin','manager'] },
+      { route: 'dashboards',    icon: '◫',  label: 'Análise de dados',         roles: ['admin','manager'] },
+      { route: 'nl-performance',icon: '◈',  label: 'Performance de Newsletters', roles: ['admin','manager'] },
     ]
   },
   {
