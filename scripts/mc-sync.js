@@ -62,61 +62,147 @@ async function getToken(mid) {
   return data.access_token;
 }
 
-/* ─── Buscar sends via SOAP REST ─────────────────────────── */
+/* ─── Buscar sends via REST e SOAP ───────────────────────── */
 async function fetchSends(token, days) {
   const from = new Date();
   from.setDate(from.getDate() - days);
   const fromStr = from.toISOString().slice(0, 10);
   console.log(`  Buscando sends desde: ${fromStr}`);
 
-  // Endpoint 1: Send Summary (v2 analytics)
-  const endpoints = [
+  // Tenta REST endpoints conhecidos do MC
+  const restEndpoints = [
     `${MC_REST_URL}/data/v1/emailanalytics/v1/sends?startDate=${fromStr}&$pageSize=200`,
     `${MC_REST_URL}/data/v1/sends?$pageSize=200`,
     `${MC_REST_URL}/email/v1/messageDefinitionSends?$pageSize=200`,
+    `${MC_REST_URL}/messaging/v1/email/definitions/?$pageSize=200`,
   ];
 
-  for (const url of endpoints) {
-    console.log(`  Tentando: ${url}`);
+  for (const url of restEndpoints) {
+    console.log(`  Tentando REST: ${url}`);
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     console.log(`  Status: ${res.status}`);
 
     if (res.ok) {
       const data = await res.json();
-      console.log(`  Chaves da resposta: ${JSON.stringify(Object.keys(data))}`);
+      console.log(`  Chaves: ${JSON.stringify(Object.keys(data))}`);
       const items = data.items || data.Results || data.sends || (Array.isArray(data) ? data : []);
-      console.log(`  Items encontrados: ${items.length}`);
+      console.log(`  Items: ${items.length}`);
       if (items.length > 0) {
-        console.log(`  Exemplo item[0]: ${JSON.stringify(items[0]).slice(0, 400)}`);
-        // Filtrar por data
-        const cutoff = new Date(fromStr);
-        const filtered = items.filter(s => {
-          const raw = s.SendDate || s.sentDate || s.CreatedDate || s.createTime
-            || s.SentDate || s.scheduledTime || null;
-          if (!raw) return true; // sem data — inclui
-          return new Date(raw) >= cutoff;
-        });
-        console.log(`  Após filtro de data: ${filtered.length}`);
-        return filtered;
+        console.log(`  item[0]: ${JSON.stringify(items[0]).slice(0, 400)}`);
+        return filterByDate(items, fromStr);
       }
-      // Endpoint respondeu 200 mas vazio — tenta o próximo
-      console.log(`  Resposta vazia, tentando próximo endpoint...`);
-      continue;
     }
+  }
 
-    if (res.status === 404 || res.status === 400) {
-      console.log(`  Endpoint não disponível, tentando próximo...`);
-      continue;
-    }
+  // Fallback SOAP — sempre disponível, busca Send objects
+  console.log(`  Tentando SOAP...`);
+  return fetchSendsSoap(token, fromStr);
+}
 
-    // 401/403 — problema de permissão, não adianta tentar outros
+/* ─── SOAP fallback ───────────────────────────────────────── */
+async function fetchSendsSoap(token, fromStr) {
+  // MC SOAP endpoint é na auth URL trocando /v2/token por /Service.asmx
+  const soapUrl = MC_AUTH_URL.replace('/v2/token', '').replace(/\/$/, '') + '/Service.asmx';
+  console.log(`  SOAP URL: ${soapUrl}`);
+
+  const soapBody = `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+            xmlns:u="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+  <s:Header>
+    <fueloauth xmlns="http://exacttarget.com">${token}</fueloauth>
+  </s:Header>
+  <s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <RetrieveRequestMsg xmlns="http://exacttarget.com/wsdl/partnerAPI">
+      <RetrieveRequest>
+        <ObjectType>Send</ObjectType>
+        <Properties>ID</Properties>
+        <Properties>EmailName</Properties>
+        <Properties>Subject</Properties>
+        <Properties>SentDate</Properties>
+        <Properties>NumberSent</Properties>
+        <Properties>NumberDelivered</Properties>
+        <Properties>HardBounces</Properties>
+        <Properties>SoftBounces</Properties>
+        <Properties>OtherBounces</Properties>
+        <Properties>UniqueOpens</Properties>
+        <Properties>UniqueClicks</Properties>
+        <Properties>NumberUnsubscribed</Properties>
+        <Properties>Conversions</Properties>
+        <Properties>UniqueConversions</Properties>
+        <Filter xsi:type="SimpleFilterPart">
+          <Property>SentDate</Property>
+          <SimpleOperator>greaterThan</SimpleOperator>
+          <DateValue>${fromStr}T00:00:00</DateValue>
+        </Filter>
+      </RetrieveRequest>
+    </RetrieveRequestMsg>
+  </s:Body>
+</s:Envelope>`;
+
+  const res = await fetch(soapUrl, {
+    method:  'POST',
+    headers: {
+      'Content-Type': 'text/xml',
+      'SOAPAction':   'Retrieve',
+    },
+    body: soapBody,
+  });
+
+  console.log(`  SOAP status: ${res.status}`);
+
+  if (!res.ok) {
     const txt = await res.text();
-    console.warn(`  Erro de permissão: ${txt.slice(0, 200)}`);
+    console.warn(`  SOAP falhou: ${txt.slice(0, 300)}`);
     return [];
   }
 
-  console.warn(`  Nenhum endpoint retornou dados.`);
-  return [];
+  const xml = await res.text();
+  console.log(`  SOAP response (primeiros 500 chars): ${xml.slice(0, 500)}`);
+
+  // Parse XML simples — extrai blocos <Results>
+  const results = [];
+  const blocks = xml.match(/<Results>([\s\S]*?)<\/Results>/g) || [];
+  console.log(`  SOAP blocos Results: ${blocks.length}`);
+
+  for (const block of blocks) {
+    const get = tag => {
+      const m = block.match(new RegExp(`<${tag}>(.*?)<\/${tag}>`));
+      return m ? m[1] : null;
+    };
+    const send = {
+      ID:                  get('ID'),
+      EmailName:           get('EmailName'),
+      Subject:             get('Subject'),
+      SentDate:            get('SentDate'),
+      NumberSent:          get('NumberSent'),
+      NumberDelivered:     get('NumberDelivered'),
+      HardBounces:         get('HardBounces'),
+      SoftBounces:         get('SoftBounces'),
+      OtherBounces:        get('OtherBounces'),
+      UniqueOpens:         get('UniqueOpens'),
+      UniqueClicks:        get('UniqueClicks'),
+      NumberUnsubscribed:  get('NumberUnsubscribed'),
+      Conversions:         get('Conversions'),
+      UniqueConversions:   get('UniqueConversions'),
+    };
+    if (send.ID) results.push(send);
+  }
+
+  console.log(`  SOAP sends parseados: ${results.length}`);
+  if (results.length > 0) console.log(`  Exemplo: ${JSON.stringify(results[0])}`);
+  return results;
+}
+
+/* ─── Filtra por data ─────────────────────────────────────── */
+function filterByDate(items, fromStr) {
+  const cutoff = new Date(fromStr);
+  return items.filter(s => {
+    const raw = s.SendDate || s.SentDate || s.sentDate || s.CreatedDate || s.createTime || null;
+    if (!raw) return true;
+    return new Date(raw) >= cutoff;
+  });
 }
 
 /* ─── Buscar métricas de um send ──────────────────────────── */
@@ -139,22 +225,22 @@ function buildDoc(send, metrics, bu) {
     return 0;
   };
 
-  const totalSent   = get('TotalSent',    'Sent',          'totalSent');
-  const delivered   = get('TotalDelivered','Delivered',    'totalDelivered');
-  const hardBounce  = get('HardBounces',  'hardBounces',   'HardBounce');
-  const softBounce  = get('SoftBounces',  'softBounces',   'SoftBounce');
-  const blockBounce = get('BlockBounces', 'blockBounces',  'BlockBounce');
-  const openTotal   = get('Opens',        'opens',         'TotalOpens');
-  const openUnique  = get('UniqueOpens',  'uniqueOpens',   'UniqueOpen');
-  const clickTotal  = get('Clicks',       'clicks',        'TotalClicks');
-  const clickUnique = get('UniqueClicks', 'uniqueClicks',  'UniqueClick');
-  const convTotal   = get('Conversions',  'conversions',   'TotalConversions');
-  const convUnique  = get('UniqueConversions', 'uniqueConversions');
-  const optOut      = get('Unsubscribes', 'unsubscribes',  'OptOut', 'optOut');
+  const totalSent   = get('TotalSent',    'Sent',       'NumberSent',   'totalSent');
+  const delivered   = get('TotalDelivered','Delivered', 'NumberDelivered','totalDelivered');
+  const hardBounce  = get('HardBounces',  'hardBounces','HardBounce');
+  const softBounce  = get('SoftBounces',  'softBounces','SoftBounce');
+  const blockBounce = get('BlockBounces', 'blockBounces','BlockBounce',  'OtherBounces');
+  const openTotal   = get('Opens',        'opens',      'TotalOpens',    'NumberOpens');
+  const openUnique  = get('UniqueOpens',  'uniqueOpens','UniqueOpen');
+  const clickTotal  = get('Clicks',       'clicks',     'TotalClicks',   'NumberClicks');
+  const clickUnique = get('UniqueClicks', 'uniqueClicks','UniqueClick');
+  const convTotal   = get('Conversions',  'conversions','TotalConversions');
+  const convUnique  = get('UniqueConversions','uniqueConversions');
+  const optOut      = get('Unsubscribes', 'unsubscribes','OptOut','optOut','NumberUnsubscribed');
 
   const pct = (n, d) => d > 0 ? Math.round((n / d) * 10000) / 100 : 0;
 
-  const sentDateRaw = send.SendDate || send.sentDate || send.CreatedDate || send.createTime;
+  const sentDateRaw = send.SentDate || send.SendDate || send.sentDate || send.CreatedDate || send.createTime;
   const sentDate    = sentDateRaw ? admin.firestore.Timestamp.fromDate(new Date(sentDateRaw)) : null;
 
   return {
