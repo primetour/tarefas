@@ -21,13 +21,39 @@ const fmt  = ts => {
   return new Intl.DateTimeFormat('pt-BR').format(d);
 };
 
-const BUS = (APP_CONFIG?.marketingCloud?.businessUnits) || [
+// Base BUs from Marketing Cloud
+const BUS_BASE = (APP_CONFIG?.marketingCloud?.businessUnits) || [
   { id: 'primetour',     name: 'Primetour'     },
   { id: 'btg-partners',  name: 'BTG Partners'  },
   { id: 'btg-ultrablue', name: 'BTG Ultrablue' },
   { id: 'centurion',     name: 'Centurion'     },
   { id: 'pts',           name: 'PTS'           },
 ];
+
+// All BUs including virtual sub-BUs derived client-side
+const BUS = [
+  { id: 'btg-partners',       name: 'BTG Partners'        },
+  { id: 'btg-ultrablue',      name: 'BTG Ultrablue'       },
+  { id: 'centurion',          name: 'Centurion'           },
+  { id: 'pts',                name: 'PTS'                 },
+  { id: 'primetour-lazer',    name: 'Primetour Lazer'     },
+  { id: 'primetour-agencias', name: 'Primetour Agências'  },
+  { id: 'qualidade',          name: 'Qualidade (CSAT)'    },
+];
+
+// Derives virtual buId from a raw Firestore doc (buId='primetour' only)
+function getVirtualBuId(r) {
+  if (r.buId !== 'primetour') return r.buId;
+  const name = (r.name || '').trim();
+  if (/^CSAT_/i.test(name)) return 'qualidade';
+  if (/^AG\d+/i.test(name)) return 'primetour-agencias';
+  if (/^\d{3,5}/.test(name)) return 'primetour-lazer';
+  return 'primetour-lazer'; // fallback for other Primetour sends
+}
+
+function getVirtualBuName(buId) {
+  return BUS.find(b => b.id === buId)?.name || buId;
+}
 
 const PERIODS = [
   { value: '7',   label: 'Últimos 7 dias'  },
@@ -44,10 +70,10 @@ const COLS_EXTRA = [
   { key: 'hardBounce',      label: 'Hard Bounce'  },
   { key: 'softBounce',      label: 'Soft Bounce'  },
   { key: 'blockBounce',     label: 'Block Bounce' },
-  { key: 'openUnique',      label: 'Ab. Único'    },
-  { key: 'openRate',        label: 'Taxa Ab.'     },
-  { key: 'clickUnique',     label: 'Cliques Únicos'},
-  { key: 'clickRate',       label: 'Taxa Clique'  },
+  { key: 'openUnique',      label: 'Abertura'    },
+  { key: 'openRate',        label: '% Abertura'  },
+  { key: 'clickUnique',     label: 'Cliques'     },
+  { key: 'clickRate',       label: '% Cliques'   },
   { key: 'optOut',          label: 'Opt-out'      },
 ];
 
@@ -182,8 +208,14 @@ async function loadData(editMode = false) {
     allData = [];
     snap.forEach(d => {
       const data     = { id: d.id, ...d.data() };
+      // Skip [Teste] emails
+      if (/^\s*\[Teste\]/i.test(data.subject || '')) return;
       const sentDate = data.sentDate?.toDate?.() || (data.sentDate ? new Date(data.sentDate) : null);
-      if (!sentDate || sentDate >= cutoff) allData.push({ ...data, _sentDate: sentDate });
+      if (!sentDate || sentDate >= cutoff) {
+        const virtualBuId   = getVirtualBuId(data);
+        const virtualBuName = getVirtualBuName(virtualBuId);
+        allData.push({ ...data, _sentDate: sentDate, virtualBuId, virtualBuName });
+      }
     });
 
     // Sync status
@@ -210,7 +242,7 @@ async function loadData(editMode = false) {
 /* ─── Render table ────────────────────────────────────────── */
 function renderTable(editMode = false) {
   let rows = allData;
-  if (filterBu) rows = rows.filter(r => r.buId === filterBu);
+  if (filterBu) rows = rows.filter(r => r.virtualBuId === filterBu);
 
   // Sort
   rows = [...rows].sort((a, b) => {
@@ -274,9 +306,9 @@ function renderTable(editMode = false) {
     thead.innerHTML = `<tr style="background:var(--bg-surface);">
       ${editMode ? `<th style="${stickyHead}left:0;min-width:36px;padding:10px 8px;
         border-bottom:1px solid var(--border-subtle);z-index:3;"></th>` : ''}
-      ${hasBu ? `<th style="${stickyHead}left:${editMode?36:0}px;min-width:${col0w}px;
+      ${hasBu ? `<th style="${stickyHead}left:${editMode?36:0}px;min-width:${col0w}px;max-width:${col0w}px;
         padding:10px 12px;font-size:0.6875rem;font-weight:600;text-transform:uppercase;
-        letter-spacing:.05em;color:var(--text-muted);white-space:nowrap;
+        letter-spacing:.05em;color:var(--text-muted);white-space:nowrap;overflow:hidden;
         border-bottom:1px solid var(--border-subtle);">Unidade</th>` : ''}
       ${thFixed(hasBu ? col0w + (editMode?36:0) : (editMode?36:0), 112, 'Data', 'sentDate')}
       ${thFixed(hasBu ? col2left + (editMode?36:0) : 112 + (editMode?36:0), 190, 'Nome', 'name')}
@@ -325,8 +357,8 @@ function renderTable(editMode = false) {
             ${hidden ? '👁' : '✕'}
           </button>
         </td>` : ''}
-      ${hasBu ? `<td style="${stickyBase}left:${editOffset}px;min-width:${col0w}px;
-        padding:9px 12px;vertical-align:middle;">${buBadge(r.buId, r.buName)}</td>` : ''}
+      ${hasBu ? `<td style="${stickyBase}left:${editOffset}px;min-width:${col0w}px;max-width:${col0w}px;
+        padding:9px 12px;vertical-align:middle;overflow:hidden;">${buBadge(r.virtualBuId, r.virtualBuName)}</td>` : ''}
       ${tdFixed(buOffset + editOffset, 112, fmt(r.sentDate), 'color:var(--text-muted);font-size:0.75rem;')}
       ${tdFixed(buOffset + editOffset + 112, 190,
         `<span title="${esc(r.name)}" style="display:block;overflow:hidden;text-overflow:ellipsis;
@@ -375,7 +407,7 @@ function updateHiddenCount() {
 /* ─── Visible rows for export (excludes hidden) ───────────── */
 function getExportRows() {
   let rows = allData;
-  if (filterBu) rows = rows.filter(r => r.buId === filterBu);
+  if (filterBu) rows = rows.filter(r => r.virtualBuId === filterBu);
   rows = rows
     .filter(r => !hiddenRows.has(r.jobId))
     .sort((a, b) => {
@@ -411,13 +443,13 @@ async function exportXLSX() {
       'Data de Envio', 'Nome', 'Assunto',
       'Enviados', 'Taxa Entrega (%)',
       'Hard Bounce', 'Soft Bounce', 'Block Bounce',
-      'Ab. Únicos', 'Taxa Ab. (%)',
-      'Cliques Únicos', 'Taxa Clique (%)',
+      'Abertura Única', '% Abertura',
+      'Cliques Únicos', '% Cliques',
       'Opt-out',
     ];
 
     const data = rows.map(r => [
-      ...(hasBu ? [r.buName] : []),
+      ...(hasBu ? [r.virtualBuName] : []),
       fmt(r.sentDate), r.name, r.subject,
       r.totalSent, r.deliveryRate,
       r.hardBounce, r.softBounce, r.blockBounce,
@@ -478,7 +510,7 @@ async function exportPDF() {
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(120);
-    const bu    = filterBu ? BUS.find(b => b.id === filterBu)?.name : 'Todas as unidades';
+    const bu    = filterBu ? (BUS.find(b => b.id === filterBu)?.name || filterBu) : 'Todas as unidades';
     const date  = new Date().toLocaleDateString('pt-BR');
     doc.text(`${bu}  ·  Exportado em ${date}  ·  ${rows.length} disparos`, 14, 22);
     doc.setTextColor(0);
@@ -488,13 +520,13 @@ async function exportPDF() {
       'Data', 'Nome', 'Assunto',
       'Enviados', 'Entrega',
       'Hard', 'Soft', 'Block',
-      'Ab.', 'Taxa Ab.',
-      'Cliques', 'Taxa Cl.',
+      'Abertura', '% Abertura',
+      'Cliques', '% Cliques',
       'Opt-out',
     ]];
 
     const body = rows.map(r => [
-      ...(hasBu ? [r.buName] : []),
+      ...(hasBu ? [r.virtualBuName] : []),
       fmt(r.sentDate),
       (r.name || '').slice(0, 32),
       (r.subject || '').slice(0, 40),
@@ -508,7 +540,7 @@ async function exportPDF() {
     doc.autoTable({
       head, body,
       startY:   28,
-      styles:   { fontSize: 7, cellPadding: 2 },
+      styles:   { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
       headStyles: { fillColor: [30, 30, 30], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [245, 245, 245] },
       columnStyles: hasBu ? {
@@ -608,8 +640,13 @@ function badColor(val) {
 }
 function buBadge(id, name) {
   const colors = {
-    'primetour':    '#D4A843','btg-partners':'#38BDF8',
-    'btg-ultrablue':'#818CF8','centurion':   '#34D399','pts':'#F472B6',
+    'btg-partners':       '#38BDF8',
+    'btg-ultrablue':      '#818CF8',
+    'centurion':          '#34D399',
+    'pts':                '#F472B6',
+    'primetour-lazer':    '#D4A843',
+    'primetour-agencias': '#E88C30',
+    'qualidade':          '#A78BFA',
   };
   const c = colors[id] || '#6B7280';
   return `<span style="display:inline-flex;align-items:center;font-size:0.75rem;
