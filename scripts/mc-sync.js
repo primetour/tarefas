@@ -102,7 +102,14 @@ async function fetchSends(token, days) {
 /* ─── SOAP fallback ───────────────────────────────────────── */
 async function fetchSendsSoap(token, fromStr) {
   // MC SOAP endpoint é na auth URL trocando /v2/token por /Service.asmx
-  const soapUrl = MC_AUTH_URL.replace('/v2/token', '').replace(/\/$/, '') + '/Service.asmx';
+  // MC SOAP URL usa subdomínio .soap. em vez de .auth.
+  // auth: https://XXXX.auth.marketingcloudapis.com
+  // soap: https://XXXX.soap.marketingcloudapis.com/Service.asmx
+  const soapBase = MC_AUTH_URL
+    .replace(/\/v2\/token\/?$/, '')
+    .replace(/\/$/, '')
+    .replace('.auth.marketingcloudapis.com', '.soap.marketingcloudapis.com');
+  const soapUrl = `${soapBase}/Service.asmx`;
   console.log(`  SOAP URL: ${soapUrl}`);
 
   const soapBody = `<?xml version="1.0" encoding="UTF-8"?>
