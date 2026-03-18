@@ -134,9 +134,7 @@ async function fetchSendsSoap(token, fromStr) {
         <Properties>SoftBounces</Properties>
         <Properties>OtherBounces</Properties>
         <Properties>UniqueOpens</Properties>
-        <Properties>NumberOpens</Properties>
         <Properties>UniqueClicks</Properties>
-        <Properties>NumberClicks</Properties>
         <Properties>Unsubscribes</Properties>
         <Filter xsi:type="SimpleFilterPart">
           <Property>SentDate</Property>
@@ -182,20 +180,18 @@ async function fetchSendsSoap(token, fromStr) {
       return m ? m[1].trim() : null;
     };
     const send = {
-      ID:               get('ID'),
-      EmailName:        get('EmailName'),
-      Subject:          get('Subject'),
-      SentDate:         get('SentDate'),
-      NumberSent:       get('NumberSent'),
-      NumberDelivered:  get('NumberDelivered'),
-      HardBounces:      get('HardBounces'),
-      SoftBounces:      get('SoftBounces'),
-      OtherBounces:     get('OtherBounces'),
-      NumberOpens:      get('NumberOpens'),
-      UniqueOpens:      get('UniqueOpens'),
-      NumberClicks:     get('NumberClicks'),
-      UniqueClicks:     get('UniqueClicks'),
-      Unsubscribes:     get('Unsubscribes'),
+      ID:              get('ID'),
+      EmailName:       get('EmailName'),
+      Subject:         get('Subject'),
+      SentDate:        get('SentDate'),
+      NumberSent:      get('NumberSent'),
+      NumberDelivered: get('NumberDelivered'),
+      HardBounces:     get('HardBounces'),
+      SoftBounces:     get('SoftBounces'),
+      OtherBounces:    get('OtherBounces'),
+      UniqueOpens:     get('UniqueOpens'),
+      UniqueClicks:    get('UniqueClicks'),
+      Unsubscribes:    get('Unsubscribes'),
     };
     if (send.ID) results.push(send);
   }
@@ -235,19 +231,18 @@ function buildDoc(send, metrics, bu) {
     return 0;
   };
 
-  const totalSent   = get('TotalSent',    'NumberSent',    'Sent',            'totalSent');
-  const delivered   = get('TotalDelivered','NumberDelivered','Delivered',     'totalDelivered');
+  const totalSent   = get('TotalSent',    'NumberSent',    'Sent',         'totalSent');
+  const delivered   = get('TotalDelivered','NumberDelivered','Delivered',  'totalDelivered');
   const hardBounce  = get('HardBounces',  'hardBounces',   'HardBounce');
   const softBounce  = get('SoftBounces',  'softBounces',   'SoftBounce');
-  const blockBounce = get('BlockBounces', 'OtherBounces',  'blockBounces',    'BlockBounce');
-  const openTotal   = get('NumberOpens',  'Opens',         'opens',           'TotalOpens');
+  const blockBounce = get('BlockBounces', 'OtherBounces',  'blockBounces', 'BlockBounce');
   const openUnique  = get('UniqueOpens',  'uniqueOpens',   'UniqueOpen');
-  const clickTotal  = get('NumberClicks', 'Clicks',        'clicks',          'TotalClicks');
+  const openTotal   = get('Opens',        'TotalOpens',    'opens')        || openUnique;
   const clickUnique = get('UniqueClicks', 'uniqueClicks',  'UniqueClick');
-  // Conversions não disponíveis no objeto Send — zerado (disponível em outros endpoints)
-  const convTotal   = get('Conversions',  'conversions',   'TotalConversions') || 0;
-  const convUnique  = get('UniqueConversions', 'uniqueConversions')             || 0;
-  const optOut      = get('Unsubscribes', 'NumberUnsubscribed', 'unsubscribes', 'OptOut', 'optOut');
+  const clickTotal  = get('Clicks',       'TotalClicks',   'clicks')       || clickUnique;
+  const convTotal   = 0;
+  const convUnique  = 0;
+  const optOut      = get('Unsubscribes', 'unsubscribes',  'OptOut',       'optOut');
 
   const pct = (n, d) => d > 0 ? Math.round((n / d) * 10000) / 100 : 0;
 
