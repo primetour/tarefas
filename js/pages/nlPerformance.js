@@ -80,9 +80,12 @@ export async function renderNlPerformance(container) {
       </div>
       <div class="page-header-actions" style="gap:8px;">
         <span id="nl-sync-status" style="font-size:0.75rem;color:var(--text-muted);padding:0 4px;"></span>
-        ${store.can('system_manage_settings') || store.isMaster() ? `
-          <button class="btn btn-secondary btn-sm" id="nl-sync-btn">⟳ Sincronizar agora</button>
-        ` : ''}
+        <a href="https://github.com/primetour/tarefas/actions/workflows/mc-sync.yml"
+          target="_blank" rel="noopener"
+          class="btn btn-secondary btn-sm"
+          style="display:flex;align-items:center;gap:6px;text-decoration:none;">
+          ↗ Sincronizar via GitHub Actions
+        </a>
       </div>
     </div>
 
@@ -126,9 +129,6 @@ export async function renderNlPerformance(container) {
   document.getElementById('nl-period-filter')?.addEventListener('change', e => {
     filterDays = e.target.value; loadData();
   });
-
-  // Sync button
-  document.getElementById('nl-sync-btn')?.addEventListener('click', triggerSync);
 
   await loadData();
 }
