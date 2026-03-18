@@ -62,36 +62,61 @@ async function getToken(mid) {
   return data.access_token;
 }
 
-/* ─── Buscar sends ───────────────────────────────────────── */
+/* ─── Buscar sends via SOAP REST ─────────────────────────── */
 async function fetchSends(token, days) {
   const from = new Date();
   from.setDate(from.getDate() - days);
   const fromStr = from.toISOString().slice(0, 10);
+  console.log(`  Buscando sends desde: ${fromStr}`);
 
-  // Tenta endpoint primário
-  let url = `${MC_REST_URL}/messaging/v1/email/messages/?$pageSize=200&$page=1`;
-  let res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // Endpoint 1: Send Summary (v2 analytics)
+  const endpoints = [
+    `${MC_REST_URL}/data/v1/emailanalytics/v1/sends?startDate=${fromStr}&$pageSize=200`,
+    `${MC_REST_URL}/data/v1/sends?$pageSize=200`,
+    `${MC_REST_URL}/email/v1/messageDefinitionSends?$pageSize=200`,
+  ];
 
-  if (!res.ok) {
-    // Fallback: endpoint analítico
-    url = `${MC_REST_URL}/data/v1/sends?$pageSize=200`;
-    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  }
+  for (const url of endpoints) {
+    console.log(`  Tentando: ${url}`);
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    console.log(`  Status: ${res.status}`);
 
-  if (!res.ok) {
-    console.warn(`  fetchSends falhou: ${res.status}`);
+    if (res.ok) {
+      const data = await res.json();
+      console.log(`  Chaves da resposta: ${JSON.stringify(Object.keys(data))}`);
+      const items = data.items || data.Results || data.sends || (Array.isArray(data) ? data : []);
+      console.log(`  Items encontrados: ${items.length}`);
+      if (items.length > 0) {
+        console.log(`  Exemplo item[0]: ${JSON.stringify(items[0]).slice(0, 400)}`);
+        // Filtrar por data
+        const cutoff = new Date(fromStr);
+        const filtered = items.filter(s => {
+          const raw = s.SendDate || s.sentDate || s.CreatedDate || s.createTime
+            || s.SentDate || s.scheduledTime || null;
+          if (!raw) return true; // sem data — inclui
+          return new Date(raw) >= cutoff;
+        });
+        console.log(`  Após filtro de data: ${filtered.length}`);
+        return filtered;
+      }
+      // Endpoint respondeu 200 mas vazio — tenta o próximo
+      console.log(`  Resposta vazia, tentando próximo endpoint...`);
+      continue;
+    }
+
+    if (res.status === 404 || res.status === 400) {
+      console.log(`  Endpoint não disponível, tentando próximo...`);
+      continue;
+    }
+
+    // 401/403 — problema de permissão, não adianta tentar outros
+    const txt = await res.text();
+    console.warn(`  Erro de permissão: ${txt.slice(0, 200)}`);
     return [];
   }
 
-  const data = await res.json();
-  const items = data.items || data.Results || data || [];
-
-  // Filtrar por data
-  const cutoff = new Date(fromStr);
-  return items.filter(s => {
-    const d = new Date(s.SendDate || s.sentDate || s.CreatedDate || s.createTime || 0);
-    return d >= cutoff;
-  });
+  console.warn(`  Nenhum endpoint retornou dados.`);
+  return [];
 }
 
 /* ─── Buscar métricas de um send ──────────────────────────── */
