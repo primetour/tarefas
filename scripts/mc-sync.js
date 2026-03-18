@@ -166,17 +166,20 @@ async function fetchSendsSoap(token, fromStr) {
   }
 
   const xml = await res.text();
-  console.log(`  SOAP response (primeiros 500 chars): ${xml.slice(0, 500)}`);
+  // Log XML completo para diagnóstico
+  console.log(`  SOAP XML completo:\n${xml}`);
 
-  // Parse XML simples — extrai blocos <Results>
+  // Parse XML — Results pode ter namespace prefix (PartnerAPI:Results, etc)
+  // e atributos xsi:type
   const results = [];
-  const blocks = xml.match(/<Results>([\s\S]*?)<\/Results>/g) || [];
+  const blocks = xml.match(/<(?:\w+:)?Results[^>]*>([\s\S]*?)<\/(?:\w+:)?Results>/g) || [];
   console.log(`  SOAP blocos Results: ${blocks.length}`);
 
   for (const block of blocks) {
+    // Handles both <Tag> and <ns:Tag> formats
     const get = tag => {
-      const m = block.match(new RegExp(`<${tag}>(.*?)<\/${tag}>`));
-      return m ? m[1] : null;
+      const m = block.match(new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)<\\/(?:\\w+:)?${tag}>`, 'i'));
+      return m ? m[1].trim() : null;
     };
     const send = {
       ID:                  get('ID'),
