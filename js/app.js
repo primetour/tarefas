@@ -35,6 +35,7 @@ import { renderCsat, destroyCsat }      from './pages/csat.js';
 import { renderIntegrations }             from './pages/integrations.js';
 import { renderSettings }                 from './pages/settings.js';
 import { renderAbout }                    from './pages/about.js';
+import { renderNlPerformance }            from './pages/nlPerformance.js';
 
 // ─── Instâncias globais ───────────────────────────────────
 let sidebar = null;
@@ -202,6 +203,7 @@ function setupRouter() {
     'settings':     async () => { await renderSettings(content); },
     'integrations': async () => { await renderIntegrations(content); },
     'about':        async () => { await renderAbout(content); },
+    'nl-performance': async () => { await renderNlPerformance(content); },
     'profile':      async () => { await renderProfile(content); },
     '404':          async () => render404(content),
   });

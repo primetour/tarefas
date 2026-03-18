@@ -14,12 +14,12 @@
  */
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyB9DUjqmEIcMIcb5RumidSVXSxF4CO_Ii8",
-  authDomain: "gestor-de-tarefas-primetour.firebaseapp.com",
-  projectId: "gestor-de-tarefas-primetour",
-  storageBucket: "gestor-de-tarefas-primetour.firebasestorage.app",
-  messagingSenderId: "1083421353313",
-  appId: "1:1083421353313:web:f9656ce6ae0fc4ca24d120",
+  apiKey:            "SEU_API_KEY_AQUI",
+  authDomain:        "SEU_PROJETO.firebaseapp.com",
+  projectId:         "SEU_PROJETO_ID",
+  storageBucket:     "SEU_PROJETO.appspot.com",
+  messagingSenderId: "SEU_SENDER_ID",
+  appId:             "SEU_APP_ID"
 };
 
 /**
@@ -108,6 +108,27 @@ export const APP_CONFIG = {
     serviceId:           'SEU_EMAILJS_SERVICE_ID',     // Email Services > Service ID
     templateCsat:        'SEU_TEMPLATE_CSAT_ID',       // Template de envio ao cliente
     templateInternal:    'SEU_TEMPLATE_INTERNO_ID',    // Template de notificação interna (opcional)
+  },
+
+  // Firebase Cloud Functions — envio de e-mail via Gmail
+  // ─────────────────────────────────────────────────────────
+  functions: {
+    sendEmailUrl: 'https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net/sendEmail',
+  },
+
+  // Salesforce Marketing Cloud — Performance de Newsletters
+  // ─────────────────────────────────────────────────────────
+  // Credenciais ficam APENAS na Cloud Function (nunca no frontend)
+  // Este bloco só configura as Business Units para o frontend exibir
+  marketingCloud: {
+    syncFunctionUrl: 'https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net/syncMarketingCloud',
+    businessUnits: [
+      { id: 'primetour',    name: 'Primetour',              mid: '546014130' },
+      { id: 'btg-partners', name: 'BTG Partners',           mid: '546015816' },
+      { id: 'btg-ultrablue',name: 'BTG Ultrablue',          mid: '546015815' },
+      { id: 'centurion',    name: 'Centurion',              mid: '546015818' },
+      { id: 'pts',          name: 'PTS',                    mid: '546015817' },
+    ],
   },
 
   // CSAT — configurações gerais
