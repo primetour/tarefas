@@ -228,6 +228,7 @@ function renderTable(editMode = false) {
   const count = document.getElementById('nl-count');
   if (count) count.textContent = `${rows.length} disparos`;
   updateHiddenCount();
+  renderKpis(rows);
 
   // ── Styles for sticky columns ──────────────────────────────
   const stickyBase  = `position:sticky;z-index:2;background:var(--bg-card);`;
@@ -237,8 +238,8 @@ function renderTable(editMode = false) {
   const hasBu     = !filterBu;
   const col0w     = hasBu ? 90  : 0;
   const col1left  = hasBu ? col0w : 0;   // Date left position
-  const col2left  = col1left + 90;        // Name left position (after Date=90px)
-  const afterFixed= col2left + 180;       // shadow starts here
+  const col2left  = col1left + 112;       // Name left position (after Date=112px)
+  const afterFixed= col2left + 190;       // shadow starts here
 
   const thFixed = (left, w, label, sortK) => {
     const active = sortK === sortKey;
@@ -277,8 +278,8 @@ function renderTable(editMode = false) {
         padding:10px 12px;font-size:0.6875rem;font-weight:600;text-transform:uppercase;
         letter-spacing:.05em;color:var(--text-muted);white-space:nowrap;
         border-bottom:1px solid var(--border-subtle);">Unidade</th>` : ''}
-      ${thFixed(hasBu ? col0w + (editMode?36:0) : (editMode?36:0), 90,  'Data de Envio', 'sentDate')}
-      ${thFixed(hasBu ? col2left + (editMode?36:0) : 90 + (editMode?36:0), 180, 'Nome', 'name')}
+      ${thFixed(hasBu ? col0w + (editMode?36:0) : (editMode?36:0), 112, 'Data', 'sentDate')}
+      ${thFixed(hasBu ? col2left + (editMode?36:0) : 112 + (editMode?36:0), 190, 'Nome', 'name')}
       ${COLS_EXTRA.map(thScroll).join('')}
     </tr>`;
 
@@ -326,8 +327,8 @@ function renderTable(editMode = false) {
         </td>` : ''}
       ${hasBu ? `<td style="${stickyBase}left:${editOffset}px;min-width:${col0w}px;
         padding:9px 12px;vertical-align:middle;">${buBadge(r.buId, r.buName)}</td>` : ''}
-      ${tdFixed(buOffset + editOffset, 90, fmt(r.sentDate), 'color:var(--text-muted);font-size:0.75rem;')}
-      ${tdFixed(buOffset + editOffset + 90, 180,
+      ${tdFixed(buOffset + editOffset, 112, fmt(r.sentDate), 'color:var(--text-muted);font-size:0.75rem;')}
+      ${tdFixed(buOffset + editOffset + 112, 190,
         `<span title="${esc(r.name)}" style="display:block;overflow:hidden;text-overflow:ellipsis;
           white-space:nowrap;font-size:0.8125rem;">${esc(r.name?.slice(0,40))}${(r.name||'').length>40?'…':''}</span>`,
         `box-shadow:4px 0 8px -4px rgba(0,0,0,.2);`)}
@@ -510,11 +511,35 @@ async function exportPDF() {
       styles:   { fontSize: 7, cellPadding: 2 },
       headStyles: { fillColor: [30, 30, 30], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [245, 245, 245] },
-      columnStyles: {
-        0: { cellWidth: hasBu ? 22 : 18 }, // BU ou Data
-        1: { cellWidth: hasBu ? 18 : 40 }, // Data ou Nome
-        2: { cellWidth: hasBu ? 40 : 48 }, // Nome ou Assunto
-        3: { cellWidth: hasBu ? 48 : 14 }, // Assunto ou Enviados
+      columnStyles: hasBu ? {
+        0: { cellWidth: 20 },   // Unidade
+        1: { cellWidth: 18 },   // Data
+        2: { cellWidth: 38 },   // Nome
+        3: { cellWidth: 44 },   // Assunto
+        4: { cellWidth: 16 },   // Enviados
+        5: { cellWidth: 14 },   // Entrega
+        6: { cellWidth: 12 },   // Hard
+        7: { cellWidth: 12 },   // Soft
+        8: { cellWidth: 12 },   // Block
+        9: { cellWidth: 14 },   // Ab.
+        10:{ cellWidth: 13 },   // Taxa Ab.
+        11:{ cellWidth: 14 },   // Cliques
+        12:{ cellWidth: 13 },   // Taxa Cl.
+        13:{ cellWidth: 12 },   // Opt-out
+      } : {
+        0: { cellWidth: 18 },   // Data
+        1: { cellWidth: 42 },   // Nome
+        2: { cellWidth: 52 },   // Assunto
+        3: { cellWidth: 16 },   // Enviados
+        4: { cellWidth: 14 },   // Entrega
+        5: { cellWidth: 12 },   // Hard
+        6: { cellWidth: 12 },   // Soft
+        7: { cellWidth: 12 },   // Block
+        8: { cellWidth: 14 },   // Ab.
+        9: { cellWidth: 13 },   // Taxa Ab.
+        10:{ cellWidth: 14 },   // Cliques
+        11:{ cellWidth: 13 },   // Taxa Cl.
+        12:{ cellWidth: 12 },   // Opt-out
       },
     });
 
