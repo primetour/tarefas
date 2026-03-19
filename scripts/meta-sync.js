@@ -97,75 +97,67 @@ async function fetchMedia(igId, token, days) {
 
 async function fetchInsights(mediaId, productType, token) {
   /**
-   * v25 insight metrics by type:
+   * v25 — Feed posts (IMAGE/CAROUSEL/REELS) requerem period=lifetime
+   * Stories requerem period=lifetime também
    *
-   * IMAGE / CAROUSEL_ALBUM:
-   *   reach, impressions, saved, shares
-   *   (likes + comments come from media object fields, not insights)
-   *   (follows + profile_visits removed from media-level in v20+)
-   *
-   * REELS / VIDEO:
-   *   reach, impressions, saved, shares, plays (or video_views as fallback)
-   *
-   * STORY:
-   *   reach, impressions, exits, replies, taps_forward, taps_back
+   * Métricas válidas v25:
+   *   Feed/Carrossel: reach, impressions, saved, shares  (+ period=lifetime)
+   *   Reels:          reach, impressions, saved, shares, plays, ig_reels_avg_watch_time
+   *   Story:          reach, impressions, exits, replies, taps_forward, taps_back
    */
 
   const isReel  = productType === 'REELS' || productType === 'VIDEO';
   const isStory = productType === 'STORY';
 
-  // Define metric groups — split to avoid "invalid metric combo" errors
-  let groups;
-  if (isStory) {
-    groups = [
-      'reach,impressions',
-      'exits,replies,taps_forward,taps_back',
-    ];
-  } else if (isReel) {
-    groups = [
-      'reach,impressions',
-      'saved,shares',
-      'plays',
-    ];
-  } else {
-    groups = [
-      'reach,impressions',
-      'saved,shares',
-    ];
-  }
-
   const out = {};
 
-  for (const metrics of groups) {
+  async function tryFetch(metrics, extraParams) {
     try {
-      const url = GRAPH + '/' + mediaId + '/insights?metric=' + metrics + '&access_token=' + token;
-      const res = await fetch(url);
+      const params = new URLSearchParams({
+        metric:       metrics,
+        access_token: token,
+        ...(extraParams || {}),
+      }).toString();
+      const res = await fetch(GRAPH + '/' + mediaId + '/insights?' + params);
       const d   = await res.json();
       if (!d.error) {
         for (const item of (d.data || [])) {
-          out[item.name] = item.values?.[0]?.value ?? item.value ?? 0;
+          const val = item.values?.[0]?.value ?? item.value ?? 0;
+          out[item.name] = val;
         }
-      } else if (d.error.code !== 100) {
-        // Code 100 = metric not available for this type — silent skip
-        // Other errors worth logging
-        console.log('    insight [' + metrics + ']: ' + d.error.message.slice(0, 80));
+        return true;
+      } else {
+        if (d.error.code !== 100 && d.error.code !== 10) {
+          console.log('    insight [' + metrics + ']: ' + d.error.message.slice(0, 100));
+        }
+        return false;
       }
-    } catch(e) {}
-    await new Promise(r => setTimeout(r, 80));
+    } catch(e) { return false; }
   }
 
-  // Fallback: if plays still 0 for Reel, try video_views
-  if (isReel && !out.plays) {
-    try {
-      const url = GRAPH + '/' + mediaId + '/insights?metric=video_views&access_token=' + token;
-      const res = await fetch(url);
-      const d   = await res.json();
-      if (!d.error && d.data?.[0]) {
-        out.plays = d.data[0].values?.[0]?.value ?? d.data[0].value ?? 0;
-      }
-    } catch(e) {}
+  if (isStory) {
+    await tryFetch('reach,impressions', { period: 'lifetime' });
+    await tryFetch('exits,replies,taps_forward,taps_back', { period: 'lifetime' });
+  } else if (isReel) {
+    // Reels: try with period=lifetime first, then without
+    const ok = await tryFetch('reach,impressions', { period: 'lifetime' });
+    if (!ok) await tryFetch('reach,impressions', {});
+    await tryFetch('saved,shares', { period: 'lifetime' });
+    // plays — try multiple metric names
+    const playsOk = await tryFetch('plays', { period: 'lifetime' });
+    if (!playsOk) {
+      const vvOk = await tryFetch('video_views', { period: 'lifetime' });
+      if (!vvOk) await tryFetch('ig_reels_video_view_total_time', { period: 'lifetime' });
+    }
+    if (out.video_views && !out.plays) out.plays = out.video_views;
+  } else {
+    // Feed posts (IMAGE, CAROUSEL_ALBUM, FEED)
+    const ok = await tryFetch('reach,impressions', { period: 'lifetime' });
+    if (!ok) await tryFetch('reach,impressions', {});
+    await tryFetch('saved,shares', { period: 'lifetime' });
   }
 
+  await new Promise(r => setTimeout(r, 80));
   return out;
 }
 
@@ -182,7 +174,7 @@ function buildDoc(media, insights, account) {
   const engRate     = reach > 0 ? Math.round((engagement / reach) * 10000) / 100 : 0;
   const caption     = (media.caption || '').replace(/#\S+/g, '').trim().slice(0, 120);
 
-  if (reach === 0 && impressions === 0 && saved === 0) {
+  if (Object.keys(insights).length === 0 || (reach === 0 && impressions === 0 && Object.keys(insights).length < 2)) {
     console.log('    ⚠ ' + media.id + ' (' + productType + '): sem insights — raw=' + JSON.stringify(insights));
   }
 
