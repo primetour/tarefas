@@ -21,9 +21,8 @@ const fmt  = ts => {
 
 const ACCOUNTS = [
   { id: '',                   label: 'Todas as contas'    },
-  { id: 'primetourviagens',   label: '@primetourviagens'  },
-  { id: 'icsbyprimetour',     label: '@icsbyprimetour'    },
-  { id: 'heyprimers',         label: '@heyprimers'        },
+  { id: 'primetourviagens', label: '@primetourviagens' },
+  { id: 'icsbyprimetour',   label: '@icsbyprimetour'   },
 ];
 
 const TYPES = [
@@ -448,7 +447,7 @@ function typeBadge(type) {
 }
 
 function acctBadge(handle) {
-  const colors = { 'primetourviagens':'#D4A843','icsbyprimetour':'#38BDF8','heyprimers':'#F472B6' };
+  const colors = { 'primetourviagens':'#D4A843','icsbyprimetour':'#38BDF8' };
   const c = colors[handle]||'#6B7280';
   return `<span style="font-size:0.6875rem;padding:2px 7px;border-radius:var(--radius-full);
     background:${c}18;color:${c};border:1px solid ${c}30;white-space:nowrap;">@${esc(handle||'—')}</span>`;
