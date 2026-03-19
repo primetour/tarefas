@@ -284,14 +284,15 @@ async function main() {
       console.log('   ' + mediaList.length + ' posts encontrados (' + storiesList.length + ' stories ativos)');
       if (!mediaList.length) { summary.push('@' + account.username + ' (0)'); continue; }
 
-      let batch = db.batch(), batchSize = 0, written = 0, withReach = 0;
+      let batch = db.batch(), batchSize = 0, written = 0, withReach = 0, firstStoryLogged = false;
 
       for (const media of mediaList) {
         const productType = media.media_product_type || media.media_type || 'IMAGE';
         const insights    = await fetchInsights(media.id, productType, ACCESS_TOKEN);
         if ((insights.reach ?? 0) > 0) withReach++;
-        // Log first story of each account for verification
-        if (productType === 'STORY' && written === 0) {
+        // Log first story for verification
+        if (productType === 'STORY' && !firstStoryLogged) {
+          firstStoryLogged = true;
           console.log('   first story insights: reach=' + (insights.reach||0) +
             ' replies=' + (insights.replies||0) +
             ' tapsForward=' + (insights.taps_forward||0) +
@@ -301,7 +302,10 @@ async function main() {
         }
         const doc   = buildDoc(media, insights, account);
         const docId = account.igId + '_' + media.id;
-        batch.set(db.collection('meta_performance').doc(docId), doc, { merge: true });
+        // Stories: force full overwrite so navigation metrics replace old zeros
+        // Posts/Reels: merge to preserve any extra fields
+        const batchOpts = productType === 'STORY' ? {} : { merge: true };
+        batch.set(db.collection('meta_performance').doc(docId), doc, batchOpts);
         batchSize++; written++;
         if (batchSize >= 499) { await batch.commit(); batch = db.batch(); batchSize = 0; }
         await new Promise(r => setTimeout(r, 150));
