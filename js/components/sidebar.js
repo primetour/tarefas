@@ -13,7 +13,7 @@ const NAV_GROUPS = [
   {
     label: 'Principal',
     items: [
-      { route: 'dashboard',  icon: '⊞',  label: 'Painel',   roles: ['admin','manager','member'] },
+      { route: 'dashboard',  icon: '⊞',  label: 'Painel',      roles: ['admin','manager','member'] },
       { route: 'tasks',      icon: '✓',  label: 'Tarefas',     roles: ['admin','manager','member'] },
       { route: 'projects',   icon: '◈',  label: 'Projetos',    roles: ['admin','manager','member'] },
       { route: 'kanban',     icon: '▤',  label: 'Steps',       roles: ['admin','manager','member'] },
@@ -24,27 +24,31 @@ const NAV_GROUPS = [
   {
     label: 'Gestão',
     items: [
-      { route: 'workspaces', icon: '◈',  label: 'Workspaces',  perm: 'workspace_create', altPerm: 'system_view_all' },
+      { route: 'workspaces', icon: '◈',  label: 'Workspaces',   perm: 'workspace_create', altPerm: 'system_view_all' },
       { route: 'requests',   icon: '◌',  label: 'Solicitações', perm: 'task_create', badge: true },
-      { route: 'team',       icon: '◎',  label: 'Equipe',      roles: ['admin','manager','member'] },
-      { route: 'goals',      icon: '◎',  label: 'Metas',       roles: ['admin','manager','member'] },
-      { route: 'csat',       icon: '★',  label: 'CSAT',        roles: ['admin','manager'] },
-      { route: 'dashboards',    icon: '◫',  label: 'Análise de dados',         roles: ['admin','manager'] },
-      { route: 'nl-performance',   icon: '◈', label: 'Performance de Newsletters', roles: ['admin','manager'] },
-      { route: 'meta-performance', icon: '◈', label: 'Performance Redes Sociais',  roles: ['admin','manager'] },
+      { route: 'team',       icon: '◎',  label: 'Equipe',       roles: ['admin','manager','member'] },
+      { route: 'goals',      icon: '◎',  label: 'Metas',        roles: ['admin','manager','member'] },
+      { route: 'csat',       icon: '★',  label: 'CSAT',         roles: ['admin','manager'] },
+    ]
+  },
+  {
+    label: 'Análise de Dados',
+    items: [
+      { route: 'dashboards',       icon: '◫', label: 'Produtividade',  roles: ['admin','manager'] },
+      { route: 'nl-performance',   icon: '◈', label: 'Newsletters',    roles: ['admin','manager'] },
+      { route: 'meta-performance', icon: '◈', label: 'Redes Sociais',  roles: ['admin','manager'] },
     ]
   },
   {
     label: 'Administração',
     items: [
-      { route: 'users',        icon: '◉',  label: 'Usuários',       perm: 'system_manage_users' },
-      { route: 'sectors',      icon: '◈',  label: 'Setores e Núcleos', perm: 'system_manage_users' },
-      { route: 'task-types',   icon: '▣',  label: 'Tipos de Tarefa', perm: 'task_type_create', altPerm: 'system_manage_users' },
-      { route: 'roles',        icon: '◈',  label: 'Roles e Acesso', perm: 'system_manage_roles', altPerm: 'system_manage_users' },
-      { route: 'audit',        icon: '◌',  label: 'Auditoria',      perm: 'system_manage_settings' },
-      { route: 'settings',     icon: '⚙',  label: 'Configurações',  perm: 'system_manage_settings' },
-      { route: 'integrations', icon: '⟳',  label: 'Integrações',    perm: 'system_manage_settings' },
-      { route: 'about',        icon: '◎',  label: 'Sobre o sistema', perm: 'system_manage_users' },
+      { route: 'users',      icon: '◉',  label: 'Usuários',          perm: 'system_manage_users' },
+      { route: 'sectors',    icon: '◈',  label: 'Setores e Núcleos', perm: 'system_manage_users' },
+      { route: 'task-types', icon: '▣',  label: 'Tipos de Tarefa',   perm: 'task_type_create', altPerm: 'system_manage_users' },
+      { route: 'roles',      icon: '◈',  label: 'Roles e Acesso',    perm: 'system_manage_roles', altPerm: 'system_manage_users' },
+      { route: 'audit',      icon: '◌',  label: 'Auditoria',         perm: 'system_manage_settings' },
+      { route: 'settings',   icon: '⚙',  label: 'Configurações',     perm: 'system_manage_settings' },
+      { route: 'about',      icon: '◎',  label: 'Sobre o sistema',   perm: 'system_manage_users' },
     ]
   }
 ];
