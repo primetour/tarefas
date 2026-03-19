@@ -30,7 +30,8 @@ const NAV_GROUPS = [
       { route: 'goals',      icon: '◎',  label: 'Metas',       roles: ['admin','manager','member'] },
       { route: 'csat',       icon: '★',  label: 'CSAT',        roles: ['admin','manager'] },
       { route: 'dashboards',    icon: '◫',  label: 'Análise de dados',         roles: ['admin','manager'] },
-      { route: 'nl-performance',icon: '◈',  label: 'Performance de Newsletters', roles: ['admin','manager'] },
+      { route: 'nl-performance',   icon: '◈', label: 'Performance de Newsletters', roles: ['admin','manager'] },
+      { route: 'meta-performance', icon: '◈', label: 'Performance Redes Sociais',  roles: ['admin','manager'] },
     ]
   },
   {
