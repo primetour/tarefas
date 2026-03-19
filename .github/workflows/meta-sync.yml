@@ -1,0 +1,48 @@
+name: Sync Meta Instagram
+
+on:
+  schedule:
+    # Roda todo dia às 7h UTC (4h de Brasília)
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Quantos dias para sincronizar (padrão: 90)'
+        required: false
+        default: '90'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install node-fetch firebase-admin
+        working-directory: scripts
+
+      - name: Run Meta Instagram sync
+        env:
+          META_APP_ID:          ${{ secrets.META_APP_ID }}
+          META_APP_SECRET:      ${{ secrets.META_APP_SECRET }}
+          META_ACCESS_TOKEN:    ${{ secrets.META_ACCESS_TOKEN }}
+          FIREBASE_PROJECT_ID:  ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          SYNC_DAYS: ${{ github.event.inputs.days || '90' }}
+        run: node meta-sync.js
+        working-directory: scripts
