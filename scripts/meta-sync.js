@@ -290,6 +290,15 @@ async function main() {
         const productType = media.media_product_type || media.media_type || 'IMAGE';
         const insights    = await fetchInsights(media.id, productType, ACCESS_TOKEN);
         if ((insights.reach ?? 0) > 0) withReach++;
+        // Log first story of each account for verification
+        if (productType === 'STORY' && written === 0) {
+          console.log('   first story insights: reach=' + (insights.reach||0) +
+            ' replies=' + (insights.replies||0) +
+            ' tapsForward=' + (insights.taps_forward||0) +
+            ' tapsBack=' + (insights.taps_back||0) +
+            ' exits=' + (insights.exits||0) +
+            ' saved=' + (insights.saved||0));
+        }
         const doc   = buildDoc(media, insights, account);
         const docId = account.igId + '_' + media.id;
         batch.set(db.collection('meta_performance').doc(docId), doc, { merge: true });
