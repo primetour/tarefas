@@ -165,21 +165,30 @@ async function fetchInsights(mediaId, productType, token) {
   const out     = {};
 
   if (isStory) {
-    // Log full raw response for first story to diagnose
-    try {
-      const testUrl = GRAPH + '/' + mediaId + '/insights?metric=reach,impressions,exits,replies,taps_forward,taps_back&period=lifetime&access_token=' + token;
-      console.log('   STORY ' + mediaId + ' insights URL (teste sem token):');
-      console.log('   ' + GRAPH + '/' + mediaId + '/insights?metric=reach,impressions,exits,replies,taps_forward,taps_back&period=lifetime');
-      const testRes = await fetch(testUrl);
-      const testD   = await testRes.json();
-      console.log('   RAW response: ' + JSON.stringify(testD).slice(0, 300));
-    } catch(e) {}
-    // Stories: reach + impressions + interactions (v25 still supports these)
-    for (const m of ['reach', 'impressions', 'exits', 'replies', 'taps_forward', 'taps_back']) {
-      const v = await fetchMetric(mediaId, m, token, true);
+    // v25 story metrics: reach, replies, navigation, saved, profile_visits
+    // removed in v22+: impressions, exits, taps_forward, taps_back
+    // 'navigation' replaces exits/taps and returns a breakdown object
+    for (const m of ['reach', 'replies', 'saved']) {
+      const v = await fetchMetric(mediaId, m, token);
       if (v !== null) out[m] = v;
       await new Promise(r => setTimeout(r, 60));
     }
+    // navigation returns {SWIPE_FORWARD, TAP_FORWARD, TAP_BACK, TAP_EXIT}
+    try {
+      const params = new URLSearchParams({
+        metric: 'navigation', period: 'lifetime', access_token: token,
+      }).toString();
+      const res = await fetch(GRAPH + '/' + mediaId + '/insights?' + params);
+      const d   = await res.json();
+      if (!d.error && d.data?.[0]) {
+        const nav = d.data[0].values?.[0]?.value ?? d.data[0].value ?? {};
+        if (typeof nav === 'object') {
+          out.taps_forward = (nav.TAP_FORWARD  || 0) + (nav.SWIPE_FORWARD || 0);
+          out.taps_back    = nav.TAP_BACK  || 0;
+          out.exits        = nav.TAP_EXIT  || 0;
+        }
+      }
+    } catch(e) {}
   } else if (isReel) {
     // Reels v25: reach ✓ | impressions ✗ (removed) | saved ✓ | shares ✓ | plays ✓
     for (const m of ['reach', 'saved', 'shares', 'plays']) {
