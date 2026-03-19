@@ -44,7 +44,6 @@ const COLS = [
   { key: 'postedAt',       label: 'Data'          },
   { key: 'mediaType',      label: 'Tipo'          },
   { key: 'reach',          label: 'Alcance'       },
-  { key: 'impressions',    label: 'Impressões'    },
   { key: 'likes',          label: 'Curtidas'      },
   { key: 'comments',       label: 'Comentários'   },
   { key: 'saved',          label: 'Salvamentos'   },
@@ -327,7 +326,6 @@ function renderTable(editMode = false) {
       <td style="padding:8px 12px;vertical-align:middle;white-space:nowrap;color:var(--text-muted);font-size:0.75rem;">${fmt(r.postedAt)}</td>
       <td style="padding:8px 12px;vertical-align:middle;">${typeChip}</td>
       <td style="padding:8px 12px;text-align:right;vertical-align:middle;">${num(r.reach)}</td>
-      <td style="padding:8px 12px;text-align:right;vertical-align:middle;color:var(--text-muted);">${num(r.impressions)}</td>
       <td style="padding:8px 12px;text-align:right;vertical-align:middle;">${num(r.likes)}</td>
       <td style="padding:8px 12px;text-align:right;vertical-align:middle;">${num(r.comments)}</td>
       <td style="padding:8px 12px;text-align:right;vertical-align:middle;">${num(r.saved)}</td>
@@ -477,13 +475,13 @@ async function exportXLSX() {
     const headers = [
       ...(haAcct?['Conta']:[]),
       'Data','Tipo','Legenda',
-      'Alcance','Impressões','Curtidas','Comentários','Saves','Compartilhamentos','Plays',
+      'Alcance','Curtidas','Comentários','Saves','Compartilhamentos','Plays',
       'Engajamento','% Engajamento','Seguidores+','Visitas Perfil',
     ];
     const data = rows.map(r => [
       ...(haAcct?[`@${r.accountHandle}`]:[]),
       fmt(r.postedAt), r.mediaType, r.caption,
-      r.reach, r.impressions, r.likes, r.comments, r.saved, r.shares, r.plays||0,
+      r.reach, r.likes, r.comments, r.saved, r.shares, r.plays||0,
       r.engagement, r.engagementRate, r.follows, r.profileVisits,
     ]);
     const ws = window.XLSX.utils.aoa_to_sheet([headers, ...data]);
@@ -520,13 +518,13 @@ async function exportPDF() {
     const head = [[
       ...(haAcct?['Conta']:[]),
       'Data','Tipo','Legenda',
-      'Alcance','Impress.','Curtidas','Coment.','Saves','Plays',
+      'Alcance','Curtidas','Coment.','Saves','Plays',
       'Engaj.','% Engaj.',
     ]];
     const body = rows.map(r => [
       ...(haAcct?[`@${r.accountHandle}`]:[]),
       fmt(r.postedAt), r.mediaType||'—', (r.caption||'').slice(0,50),
-      num(r.reach), num(r.impressions), num(r.likes), num(r.comments),
+      num(r.reach), num(r.likes), num(r.comments),
       num(r.saved), r.mediaType==='Reel'?num(r.plays):'—',
       num(r.engagement), pct(r.engagementRate),
     ]);
