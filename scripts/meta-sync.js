@@ -246,11 +246,11 @@ function buildDoc(media, insights, account) {
 /* ─── Debug: show token info ──────────────────────────────── */
 async function debugToken(token) {
   try {
-    const me = await gql('me', token, { fields: 'id,name,type' });
-    console.log(`  Token válido. me → id:${me.id} name:${me.name} type:${me.type||'user'}`);
+    const me = await gql('me', token, { fields: 'id,name' });
+    console.log(`  Token válido → id:${me.id} name:"${me.name}"`);
   } catch(e) {
-    console.log(`  Token inválido: ${e.message}`);
-    process.exit(1);
+    console.log(`  Aviso ao verificar token: ${e.message}`);
+    // Não interrompe — pode ser limitação de campo em System User
   }
 }
 
