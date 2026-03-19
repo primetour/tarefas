@@ -86,6 +86,7 @@ function mediaTypeLabel(type) {
   if (type === 'IMAGE')          return 'Post';
   if (type === 'STORY')          return 'Story';
   if (type === 'REELS')          return 'Reel';
+  if (type === 'FEED')           return 'Post'; // fallback for ambiguous FEED type
   return type || 'Post';
 }
 
@@ -110,10 +111,8 @@ async function fetchMedia(igId, token, days) {
 /* ─── Fetch stories (endpoint separado, últimas 24h visíveis) ─ */
 async function fetchStories(igId, token) {
   // /stories retorna apenas stories ativos (últimas 24h)
-  // Para histórico, usamos /{ig-user-id}/media que inclui STORY
-  // mas stories >24h só ficam em insights de conta, não em mídia individual
-  // Aqui buscamos os stories ainda ativos
-  const fields = 'id,timestamp,media_type,media_product_type,caption,permalink,thumbnail_url,media_url,like_count,comments_count';
+  // media_product_type pode vir como null ou 'FEED' — forçamos 'STORY'
+  const fields = 'id,timestamp,media_type,media_product_type,caption,permalink,thumbnail_url,media_url';
   try {
     const url = GRAPH + '/' + igId + '/stories?fields=' + fields + '&limit=50&access_token=' + token;
     const res = await fetch(url);
@@ -122,7 +121,14 @@ async function fetchStories(igId, token) {
       console.log('   stories endpoint: ' + d.error.message.slice(0, 80));
       return [];
     }
-    return d.data || [];
+    // Force media_product_type = 'STORY' — API may return null or 'FEED' for stories
+    return (d.data || []).map(s => ({
+      ...s,
+      media_product_type: 'STORY',
+      media_type:         'STORY',
+      like_count:         0,   // stories don't have public like counts
+      comments_count:     0,
+    }));
   } catch(e) { return []; }
 }
 
