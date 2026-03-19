@@ -41,18 +41,21 @@ const PERIODS = [
 ];
 
 const COLS = [
-  { key: 'postedAt',       label: 'Data'          },
-  { key: 'mediaType',      label: 'Tipo'          },
-  { key: 'reach',          label: 'Alcance'       },
-  { key: 'likes',          label: 'Curtidas'      },
-  { key: 'comments',       label: 'Comentários'   },
-  { key: 'saved',          label: 'Salvamentos'   },
-  { key: 'shares',         label: 'Compartilhamentos' },
-  { key: 'plays',          label: 'Plays (Reels)' },
-  { key: 'engagement',     label: 'Engajamento'   },
-  { key: 'engagementRate', label: '% Engajamento' },
-  { key: 'follows',        label: 'Seguidores+'   },
-  { key: 'profileVisits',  label: 'Visitas perfil'},
+  { key: 'postedAt',       label: 'Data'               },
+  { key: 'mediaType',      label: 'Tipo'               },
+  { key: 'reach',          label: 'Alcance'            },
+  { key: 'impressions',    label: 'Impressões'         , storyOnly: true  },
+  { key: 'likes',          label: 'Curtidas'           , noStory: true    },
+  { key: 'comments',       label: 'Comentários'        , noStory: true    },
+  { key: 'saved',          label: 'Salvamentos'        , noStory: true    },
+  { key: 'shares',         label: 'Compartilhamentos'  , noStory: true    },
+  { key: 'plays',          label: 'Plays (Reels)'      , reelOnly: true   },
+  { key: 'exits',          label: 'Saídas'             , storyOnly: true  },
+  { key: 'tapsForward',    label: 'Taps Frente'        , storyOnly: true  },
+  { key: 'tapsBack',       label: 'Taps Voltar'        , storyOnly: true  },
+  { key: 'replies',        label: 'Respostas'          , storyOnly: true  },
+  { key: 'engagement',     label: 'Engajamento'        , noStory: true    },
+  { key: 'engagementRate', label: '% Engajamento'      , noStory: true    },
 ];
 
 let allData     = [];
@@ -326,15 +329,18 @@ function renderTable(editMode = false) {
       <td style="padding:8px 12px;vertical-align:middle;white-space:nowrap;color:var(--text-muted);font-size:0.75rem;">${fmt(r.postedAt)}</td>
       <td style="padding:8px 12px;vertical-align:middle;">${typeChip}</td>
       <td style="padding:8px 12px;text-align:right;vertical-align:middle;">${num(r.reach)}</td>
-      <td style="padding:8px 12px;text-align:right;vertical-align:middle;">${num(r.likes)}</td>
-      <td style="padding:8px 12px;text-align:right;vertical-align:middle;">${num(r.comments)}</td>
-      <td style="padding:8px 12px;text-align:right;vertical-align:middle;">${num(r.saved)}</td>
-      <td style="padding:8px 12px;text-align:right;vertical-align:middle;">${num(r.shares)}</td>
+      ${storyCell(r, num(r.impressions), true, false)}
+      ${storyCell(r, num(r.likes),    false, true)}
+      ${storyCell(r, num(r.comments), false, true)}
+      ${storyCell(r, num(r.saved),    false, true)}
+      ${storyCell(r, num(r.shares),   false, true)}
       <td style="padding:8px 12px;text-align:right;vertical-align:middle;color:var(--text-muted);">${r.mediaType==='Reel'?num(r.plays):'—'}</td>
-      <td style="padding:8px 12px;text-align:right;vertical-align:middle;font-weight:600;">${num(r.engagement)}</td>
-      <td style="padding:8px 12px;text-align:right;vertical-align:middle;${engColor(r.engagementRate)}">${pct(r.engagementRate)}</td>
-      <td style="padding:8px 12px;text-align:right;vertical-align:middle;color:var(--text-muted);">${num(r.follows)}</td>
-      <td style="padding:8px 12px;text-align:right;vertical-align:middle;color:var(--text-muted);">${num(r.profileVisits)}</td>
+      ${storyCell(r, num(r.exits),       true, false)}
+      ${storyCell(r, num(r.tapsForward), true, false)}
+      ${storyCell(r, num(r.tapsBack),    true, false)}
+      ${storyCell(r, num(r.replies),     true, false)}
+      ${storyCell(r, num(r.engagement),          false, true)}
+      ${storyCell(r, pct(r.engagementRate), false, true, engColor(r.engagementRate))}
     </tr>`;
   }).join('');
 
@@ -417,8 +423,9 @@ function renderTopPosts(rows) {
             </div>
             <div style="display:flex;gap:12px;margin-top:6px;font-size:0.75rem;color:var(--text-muted);">
               <span>👁 ${num(r.reach)}</span>
-              <span>❤ ${num(r.likes)}</span>
-              <span>💬 ${num(r.comments)}</span>
+              ${r.mediaType==='Story'
+                ? `<span>↩ ${num(r.replies)}</span><span>⏭ ${num(r.tapsForward)}</span>`
+                : `<span>❤ ${num(r.likes)}</span><span>💬 ${num(r.comments)}</span>`}
               ${r.mediaType==='Reel'?`<span>▶ ${num(r.plays)}</span>`:''}
             </div>
           </div>
@@ -456,6 +463,15 @@ function engColor(v) {
   if (v >= 5) return 'color:#22C55E;font-weight:600;';
   if (v >= 2) return 'color:#F59E0B;font-weight:600;';
   return 'color:#EF4444;';
+}
+
+// storyOnly=true: só mostra para stories, — para outros
+// noStory=true: mostra para todos exceto stories
+function storyCell(r, value, storyOnly, noStory, extraStyle) {
+  const isStory = r.mediaType === 'Story';
+  const show    = storyOnly ? isStory : (noStory ? !isStory : true);
+  const style   = 'padding:8px 12px;text-align:right;vertical-align:middle;' + (extraStyle || '');
+  return '<td style="' + style + '">' + (show ? value : '<span style="color:var(--text-muted);">—</span>') + '</td>';
 }
 
 /* ─── Export XLSX ─────────────────────────────────────────── */
