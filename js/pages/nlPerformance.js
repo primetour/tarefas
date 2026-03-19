@@ -210,8 +210,9 @@ async function loadData(editMode = false) {
     allData = [];
     snap.forEach(d => {
       const data     = { id: d.id, ...d.data() };
-      // Skip [Teste] emails
-      if (/^\s*\[Teste\]/i.test(data.subject || '')) return;
+      // Skip [Teste] emails — except CSAT (they're always operational test-style sends)
+      const isCsat = /^CSAT_/i.test((data.name || '').trim());
+      if (!isCsat && /^\s*\[Teste\]/i.test(data.subject || '')) return;
       const sentDate = data.sentDate?.toDate?.() || (data.sentDate ? new Date(data.sentDate) : null);
       if (!sentDate || sentDate >= cutoff) {
         const virtualBuId   = getVirtualBuId(data);
@@ -243,23 +244,21 @@ async function loadData(editMode = false) {
 
 /* ─── Merge wave sends (U0197_1/2/3/4 → 1 row) ──────────────── */
 function mergeWaves(rows) {
-  // Extract base code — strip trailing _N, -N, _2, _A etc.
+  // Extract base code — strip trailing wave suffixes in various formats
   function baseCode(name) {
     return (name || '')
       .trim()
-      .replace(/_\d+$/, '')   // U0197_1 → U0197
-      .replace(/-\d+$/, '')   // P0193-2 → P0193
-      .replace(/_[A-Z]$/, '') // CODE_A  → CODE
+      .replace(/\s*-\s*\d+$/, '')  // U0195 - 4  → U0195
+      .replace(/_\d+$/, '')          // U0197_1    → U0197
+      .replace(/-\d+$/, '')          // P0193-2    → P0193
+      .replace(/_[A-Z]$/, '')         // CODE_A     → CODE
       .trim();
   }
 
-  // Group by virtualBuId + baseCode + same calendar day
+  // Group by virtualBuId + baseCode (no day — waves can span multiple days)
   const groups = new Map();
   for (const r of rows) {
-    const day = r._sentDate
-      ? r._sentDate.toISOString().slice(0, 10)
-      : (r.sentDate?.toDate?.()?.toISOString?.()?.slice(0, 10) || 'unknown');
-    const key = (r.virtualBuId || r.buId) + '|' + baseCode(r.name) + '|' + day;
+    const key = (r.virtualBuId || r.buId) + '|' + baseCode(r.name);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   }
