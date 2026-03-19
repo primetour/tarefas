@@ -44,15 +44,14 @@ const COLS = [
   { key: 'postedAt',       label: 'Data'               },
   { key: 'mediaType',      label: 'Tipo'               },
   { key: 'reach',          label: 'Alcance'            },
-  { key: 'impressions',    label: 'Impressões'         , storyOnly: true  },
+  { key: 'exits',          label: 'Saídas'             , storyOnly: true  },
+  { key: 'tapsForward',    label: 'Taps Frente'         , storyOnly: true  },
+  { key: 'tapsBack',       label: 'Taps Voltar'         , storyOnly: true  },
   { key: 'likes',          label: 'Curtidas'           , noStory: true    },
   { key: 'comments',       label: 'Comentários'        , noStory: true    },
   { key: 'saved',          label: 'Salvamentos'        , noStory: true    },
   { key: 'shares',         label: 'Compartilhamentos'  , noStory: true    },
   { key: 'plays',          label: 'Plays (Reels)'      , reelOnly: true   },
-  { key: 'exits',          label: 'Saídas'             , storyOnly: true  },
-  { key: 'tapsForward',    label: 'Taps Frente'        , storyOnly: true  },
-  { key: 'tapsBack',       label: 'Taps Voltar'        , storyOnly: true  },
   { key: 'replies',        label: 'Respostas'          , storyOnly: true  },
   { key: 'engagement',     label: 'Engajamento'        , noStory: true    },
   { key: 'engagementRate', label: '% Engajamento'      , noStory: true    },
@@ -329,7 +328,6 @@ function renderTable(editMode = false) {
       <td style="padding:8px 12px;vertical-align:middle;white-space:nowrap;color:var(--text-muted);font-size:0.75rem;">${fmt(r.postedAt)}</td>
       <td style="padding:8px 12px;vertical-align:middle;">${typeChip}</td>
       <td style="padding:8px 12px;text-align:right;vertical-align:middle;">${num(r.reach)}</td>
-      ${storyCell(r, num(r.impressions), true, false)}
       ${storyCell(r, num(r.likes),    false, true)}
       ${storyCell(r, num(r.comments), false, true)}
       ${storyCell(r, num(r.saved),    false, true)}
