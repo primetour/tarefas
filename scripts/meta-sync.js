@@ -115,25 +115,29 @@ async function fetchStories(igId, token) {
   const fields = 'id,timestamp,media_type,media_product_type,caption,permalink,thumbnail_url,media_url';
   try {
     const url = GRAPH + '/' + igId + '/stories?fields=' + fields + '&limit=50&access_token=' + token;
+    console.log('   fetching stories: /' + igId + '/stories');
     const res = await fetch(url);
     const d   = await res.json();
     if (d.error) {
-      console.log('   stories endpoint: ' + d.error.message.slice(0, 80));
+      console.log('   stories ERR ' + d.error.code + ': ' + d.error.message.slice(0, 120));
       return [];
     }
+    const items = d.data || [];
+    console.log('   /stories retornou ' + items.length + ' item(s)');
+    if (items.length > 0) console.log('   primeiro item raw: ' + JSON.stringify(items[0]).slice(0, 200));
     // Force media_product_type = 'STORY' — API may return null or 'FEED' for stories
-    return (d.data || []).map(s => ({
+    return items.map(s => ({
       ...s,
       media_product_type: 'STORY',
       media_type:         'STORY',
-      like_count:         0,   // stories don't have public like counts
+      like_count:         0,
       comments_count:     0,
     }));
-  } catch(e) { return []; }
+  } catch(e) { console.log('   stories exception: ' + e.message); return []; }
 }
 
 /* ─── Fetch one metric safely ─────────────────────────────── */
-async function fetchMetric(mediaId, metric, token) {
+async function fetchMetric(mediaId, metric, token, verbose) {
   try {
     const params = new URLSearchParams({
       metric,
@@ -142,10 +146,15 @@ async function fetchMetric(mediaId, metric, token) {
     }).toString();
     const res = await fetch(GRAPH + '/' + mediaId + '/insights?' + params);
     const d   = await res.json();
-    if (d.error) return null;
+    if (d.error) {
+      if (verbose) console.log('     metric [' + metric + '] ERR ' + d.error.code + ': ' + d.error.message.slice(0, 100));
+      return null;
+    }
     const item = d.data?.[0];
-    if (!item) return null;
-    return item.values?.[0]?.value ?? item.value ?? null;
+    if (!item) { if (verbose) console.log('     metric [' + metric + '] empty response'); return null; }
+    const val = item.values?.[0]?.value ?? item.value ?? null;
+    if (verbose) console.log('     metric [' + metric + '] = ' + val);
+    return val;
   } catch(e) { return null; }
 }
 
@@ -156,9 +165,18 @@ async function fetchInsights(mediaId, productType, token) {
   const out     = {};
 
   if (isStory) {
+    // Log full raw response for first story to diagnose
+    try {
+      const testUrl = GRAPH + '/' + mediaId + '/insights?metric=reach,impressions,exits,replies,taps_forward,taps_back&period=lifetime&access_token=' + token;
+      console.log('   STORY ' + mediaId + ' insights URL (teste sem token):');
+      console.log('   ' + GRAPH + '/' + mediaId + '/insights?metric=reach,impressions,exits,replies,taps_forward,taps_back&period=lifetime');
+      const testRes = await fetch(testUrl);
+      const testD   = await testRes.json();
+      console.log('   RAW response: ' + JSON.stringify(testD).slice(0, 300));
+    } catch(e) {}
     // Stories: reach + impressions + interactions (v25 still supports these)
     for (const m of ['reach', 'impressions', 'exits', 'replies', 'taps_forward', 'taps_back']) {
-      const v = await fetchMetric(mediaId, m, token);
+      const v = await fetchMetric(mediaId, m, token, true);
       if (v !== null) out[m] = v;
       await new Promise(r => setTimeout(r, 60));
     }
