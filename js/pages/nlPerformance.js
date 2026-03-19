@@ -41,14 +41,16 @@ const BUS = [
   { id: 'qualidade',          name: 'Qualidade (CSAT)'    },
 ];
 
-// Derives virtual buId from a raw Firestore doc (buId='primetour' only)
+// Derives virtual buId — CSAT applies to ALL BUs
 function getVirtualBuId(r) {
-  if (r.buId !== 'primetour') return r.buId;
   const name = (r.name || '').trim();
+  // CSAT overrides BU — any BU can have CSAT sends
   if (/^CSAT_/i.test(name)) return 'qualidade';
+  if (r.buId !== 'primetour') return r.buId;
+  // Primetour sub-BUs
   if (/^AG\d+/i.test(name)) return 'primetour-agencias';
   if (/^\d{3,5}/.test(name)) return 'primetour-lazer';
-  return 'primetour-lazer'; // fallback for other Primetour sends
+  return 'primetour-lazer';
 }
 
 function getVirtualBuName(buId) {
@@ -239,10 +241,92 @@ async function loadData(editMode = false) {
   }
 }
 
+/* ─── Merge wave sends (U0197_1/2/3/4 → 1 row) ──────────────── */
+function mergeWaves(rows) {
+  // Extract base code — strip trailing _N, -N, _2, _A etc.
+  function baseCode(name) {
+    return (name || '')
+      .trim()
+      .replace(/_\d+$/, '')   // U0197_1 → U0197
+      .replace(/-\d+$/, '')   // P0193-2 → P0193
+      .replace(/_[A-Z]$/, '') // CODE_A  → CODE
+      .trim();
+  }
+
+  // Group by virtualBuId + baseCode + same calendar day
+  const groups = new Map();
+  for (const r of rows) {
+    const day = r._sentDate
+      ? r._sentDate.toISOString().slice(0, 10)
+      : (r.sentDate?.toDate?.()?.toISOString?.()?.slice(0, 10) || 'unknown');
+    const key = (r.virtualBuId || r.buId) + '|' + baseCode(r.name) + '|' + day;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+
+  const merged = [];
+  for (const [, group] of groups) {
+    if (group.length === 1) {
+      merged.push(group[0]);
+      continue;
+    }
+    // Sort waves by name so _1 is first
+    group.sort((a, b) => (a.name||'').localeCompare(b.name||''));
+    const base = group[0];
+    const waves = group.length;
+
+    // Sum numeric metrics
+    const sum = k => group.reduce((t, r) => t + (Number(r[k]) || 0), 0);
+    const avg = k => { const s = sum(k); return s > 0 ? Math.round(s / waves * 10) / 10 : 0; };
+
+    const totalSent    = sum('totalSent');
+    const delivered    = sum('totalSent') > 0
+      ? Math.round(group.reduce((t,r) => t + (r.deliveryRate||0) * (r.totalSent||0), 0) / totalSent * 10) / 10
+      : 0;
+    const openUnique   = sum('openUnique');
+    const clickUnique  = sum('clickUnique');
+    const hardBounce   = sum('hardBounce');
+    const softBounce   = sum('softBounce');
+    const blockBounce  = sum('blockBounce');
+    const optOut       = sum('optOut');
+    const openRate     = delivered > 0 ? Math.round(openUnique / (totalSent * (delivered/100)) * 1000) / 10 : 0;
+    const clickRate    = delivered > 0 ? Math.round(clickUnique / (totalSent * (delivered/100)) * 1000) / 10 : 0;
+
+    // Wave label list for tooltip: "1776_1 / 1776_2 / 1776_3 / 1776_4"
+    const waveNames = group.map(r => r.name).join(' / ');
+
+    merged.push({
+      ...base,
+      name:         baseCode(base.name),  // show clean base name
+      waveCount:    waves,
+      waveNames,
+      totalSent,
+      deliveryRate: delivered,
+      openUnique,
+      clickUnique,
+      hardBounce,
+      softBounce,
+      blockBounce,
+      optOut,
+      openRate,
+      clickRate,
+      // Use earliest sentDate
+      sentDate:   base.sentDate,
+      _sentDate:  base._sentDate,
+      // jobId = first wave's jobId for hide/show
+      jobId: base.jobId,
+    });
+  }
+  return merged;
+}
+
 /* ─── Render table ────────────────────────────────────────── */
 function renderTable(editMode = false) {
   let rows = allData;
   if (filterBu) rows = rows.filter(r => r.virtualBuId === filterBu);
+
+  // Merge wave sends (U0197_1/U0197_2/... → single row)
+  rows = mergeWaves(rows);
 
   // Sort
   rows = [...rows].sort((a, b) => {
@@ -361,11 +445,14 @@ function renderTable(editMode = false) {
         padding:9px 12px;vertical-align:middle;overflow:hidden;">${buBadge(r.virtualBuId, r.virtualBuName)}</td>` : ''}
       ${tdFixed(buOffset + editOffset, 112, fmt(r.sentDate), 'color:var(--text-muted);font-size:0.75rem;')}
       ${tdFixed(buOffset + editOffset + 112, 190,
-        `<span title="${esc(r.name)}" style="display:block;overflow:hidden;text-overflow:ellipsis;
-          white-space:nowrap;font-size:0.8125rem;">${esc(r.name?.slice(0,40))}${(r.name||'').length>40?'…':''}</span>`,
-        `box-shadow:4px 0 8px -4px rgba(0,0,0,.2);`)}
-      <td style="${tdStyle()};max-width:220px;white-space:normal;color:var(--text-muted);font-size:0.75rem;line-height:1.3;">
-        ${esc(r.subject?.slice(0,70))}${(r.subject||'').length>70?'…':''}
+        `<span style="display:block;font-size:0.8125rem;white-space:normal;line-height:1.35;word-break:break-word;">
+          ${esc(r.name || '—')}
+          ${r.waveCount > 1 ? `<br><span title="${esc(r.waveNames)}" style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;cursor:help;">⊞ ${r.waveCount} ondas</span>` : ''}
+        </span>`,
+        `box-shadow:4px 0 8px -4px rgba(0,0,0,.2);vertical-align:top;`)}
+      <td style="padding:9px 12px;vertical-align:top;white-space:normal;word-break:break-word;
+        color:var(--text-muted);font-size:0.75rem;line-height:1.4;min-width:180px;max-width:300px;">
+        ${esc(r.subject || '—')}
       </td>
       <td style="${tdStyle('right')}">${num(r.totalSent)}</td>
       <td style="${tdStyle('right')};${rateColor(r.deliveryRate, 95, 85)}">${pct(r.deliveryRate)}</td>
@@ -408,8 +495,7 @@ function updateHiddenCount() {
 function getExportRows() {
   let rows = allData;
   if (filterBu) rows = rows.filter(r => r.virtualBuId === filterBu);
-  rows = rows
-    .filter(r => !hiddenRows.has(r.jobId))
+  rows = mergeWaves(rows.filter(r => !hiddenRows.has(r.jobId)))
     .sort((a, b) => {
       let va = a[sortKey], vb = b[sortKey];
       if (sortKey === 'sentDate') { va = a._sentDate; vb = b._sentDate; }
@@ -625,8 +711,10 @@ function thStyle(active = false) {
     border-bottom:1px solid var(--border-subtle);
     ${active ? 'color:var(--brand-gold);' : 'color:var(--text-muted);'}`;
 }
-function tdStyle(align = 'left') {
-  return `padding:9px 12px;text-align:${align};vertical-align:middle;white-space:nowrap;color:var(--text-primary);`;
+function tdStyle(align = 'left', wrap = false) {
+  return `padding:9px 12px;text-align:${align};vertical-align:middle;
+    ${wrap ? 'white-space:normal;word-break:break-word;' : 'white-space:nowrap;'}
+    color:var(--text-primary);`;
 }
 function rateColor(val, good, warn) {
   if (val == null) return '';
