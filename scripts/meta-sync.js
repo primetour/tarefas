@@ -107,6 +107,25 @@ async function fetchMedia(igId, token, days) {
   return all;
 }
 
+/* ─── Fetch stories (endpoint separado, últimas 24h visíveis) ─ */
+async function fetchStories(igId, token) {
+  // /stories retorna apenas stories ativos (últimas 24h)
+  // Para histórico, usamos /{ig-user-id}/media que inclui STORY
+  // mas stories >24h só ficam em insights de conta, não em mídia individual
+  // Aqui buscamos os stories ainda ativos
+  const fields = 'id,timestamp,media_type,media_product_type,caption,permalink,thumbnail_url,media_url,like_count,comments_count';
+  try {
+    const url = GRAPH + '/' + igId + '/stories?fields=' + fields + '&limit=50&access_token=' + token;
+    const res = await fetch(url);
+    const d   = await res.json();
+    if (d.error) {
+      console.log('   stories endpoint: ' + d.error.message.slice(0, 80));
+      return [];
+    }
+    return d.data || [];
+  } catch(e) { return []; }
+}
+
 /* ─── Fetch one metric safely ─────────────────────────────── */
 async function fetchMetric(mediaId, metric, token) {
   try {
@@ -222,8 +241,14 @@ async function main() {
   for (const account of igAccounts) {
     console.log('📷 @' + account.username + ' — ' + account.label);
     try {
-      const mediaList = await fetchMedia(account.igId, ACCESS_TOKEN, SYNC_DAYS);
-      console.log('   ' + mediaList.length + ' posts encontrados');
+      const mediaList   = await fetchMedia(account.igId, ACCESS_TOKEN, SYNC_DAYS);
+      const storiesList = await fetchStories(account.igId, ACCESS_TOKEN);
+      // Merge stories into media list, avoiding duplicates
+      const seenIds = new Set(mediaList.map(m => m.id));
+      for (const s of storiesList) {
+        if (!seenIds.has(s.id)) mediaList.push(s);
+      }
+      console.log('   ' + mediaList.length + ' posts encontrados (' + storiesList.length + ' stories ativos)');
       if (!mediaList.length) { summary.push('@' + account.username + ' (0)'); continue; }
 
       let batch = db.batch(), batchSize = 0, written = 0, withReach = 0;
