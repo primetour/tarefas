@@ -12,9 +12,10 @@ import { db }    from '../firebase.js';
 import { store } from '../store.js';
 
 /* ─── Cloudflare R2 ───────────────────────────────────────── */
-export const R2_PUBLIC_URL = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev';
+export const R2_PUBLIC_URL   = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev';
+export const R2_ACCOUNT_ID   = '29a66e93504dfad5ae7cdb2c6044ed6f';
 export const R2_WORKER_URL   = 'https://primetour-images.rene-castro.workers.dev';
-export const R2_UPLOAD_TOKEN = 'primetour2026-imagens-secreto-xk9q'; // mesmo valor do R2_TOKEN
+export const R2_UPLOAD_TOKEN = 'primetour2026-imagens-secreto-xk9q';
 
 /* ─── Continents ──────────────────────────────────────────── */
 export const CONTINENTS = [
@@ -239,12 +240,39 @@ export async function fetchImages({ continent, country, city } = {}) {
 
 export async function saveImageMeta(data) {
   const ref = doc(collection(db, 'portal_images'));
-  await setDoc(ref, { ...data, uploadedAt: serverTimestamp(), uploadedBy: uid() });
+  const meta = {
+    continent:    data.continent    || '',
+    country:      data.country      || '',
+    city:         data.city         || '',
+    name:         data.name         || data.originalName || '',
+    tags:         Array.isArray(data.tags) ? data.tags : [],
+    type:         data.type         || 'galeria', // 'destaque'|'galeria'|'logo_area'|'banner'
+    url:          data.url          || '',
+    path:         data.path         || '',
+    originalName: data.originalName || '',
+    sizeMB:       data.sizeMB       || 0,
+    width:        data.width        || 0,
+    height:       data.height       || 0,
+    uploadedAt:   serverTimestamp(),
+    uploadedBy:   uid(),
+  };
+  await setDoc(ref, meta);
   return ref.id;
+}
+
+export async function updateImageMeta(id, data) {
+  const allowed = ['name','tags','type','continent','country','city'];
+  const patch   = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
+  await updateDoc(doc(db, 'portal_images', id), patch);
 }
 
 export async function deleteImageMeta(id) {
   if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  // Also remove from R2 if path exists
+  const snap = await getDoc(doc(db, 'portal_images', id));
+  if (snap.exists() && snap.data().path) {
+    await deleteFromR2(snap.data().path).catch(() => {}); // non-fatal
+  }
   await deleteDoc(doc(db, 'portal_images', id));
 }
 
@@ -259,8 +287,12 @@ export async function convertToWebp(file, maxWidth = 1920, quality = 0.85) {
       canvas.width  = Math.round(img.width  * scale);
       canvas.height = Math.round(img.height * scale);
       canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Conversão WebP falhou.')),
-        'image/webp', quality);
+      canvas.toBlob(
+        blob => blob
+          ? resolve({ blob, width: canvas.width, height: canvas.height })
+          : reject(new Error('Conversão WebP falhou.')),
+        'image/webp', quality
+      );
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Imagem inválida.')); };
     img.src = url;
@@ -268,13 +300,30 @@ export async function convertToWebp(file, maxWidth = 1920, quality = 0.85) {
 }
 
 export async function uploadImageToR2(webpBlob, path) {
-  if (!R2_WORKER_URL) throw new Error('Worker URL não configurada.');
+  if (!R2_WORKER_URL)   throw new Error('R2_WORKER_URL não configurada. Faça o deploy do Worker.');
+  if (!R2_UPLOAD_TOKEN) throw new Error('R2_UPLOAD_TOKEN não configurado.');
   const fd = new FormData();
   fd.append('file', webpBlob, path.split('/').pop());
   fd.append('path', path);
-  const res = await fetch(R2_WORKER_URL, { method: 'POST', body: fd });
-  if (!res.ok) throw new Error(`Upload falhou: ${res.status}`);
+  const res = await fetch(R2_WORKER_URL, {
+    method: 'POST',
+    headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN },
+    body: fd,
+  });
+  if (!res.ok) {
+    const msg = await res.text().catch(() => res.status);
+    throw new Error(`Upload falhou: ${msg}`);
+  }
   return `${R2_PUBLIC_URL}/${path}`;
+}
+
+export async function deleteFromR2(path) {
+  if (!R2_WORKER_URL || !R2_UPLOAD_TOKEN) return; // silently skip if not configured
+  const url = `${R2_WORKER_URL}?path=${encodeURIComponent(path)}`;
+  await fetch(url, {
+    method: 'DELETE',
+    headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN },
+  });
 }
 
 /* ─── Generations ─────────────────────────────────────────── */
