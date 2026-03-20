@@ -71,6 +71,15 @@ export const PERMISSION_CATALOG = [
       { key: 'csat_view_all',        label: 'Ver CSAT de toda a equipe',           info: 'Ver pesquisas e respostas de outros usuários.' },
     ],
   },
+  {
+    group: 'Portal de Dicas',
+    permissions: [
+      { key: 'portal_access',        label: 'Acessar Portal de Dicas',             info: 'Ver e gerar dicas de destinos.' },
+      { key: 'portal_create',        label: 'Criar e editar dicas',                info: 'Criar, editar e excluir dicas de destinos no portal.' },
+      { key: 'portal_manage',        label: 'Administrar Portal de Dicas',         info: 'Gerenciar áreas, destinos, banco de imagens e templates.' },
+      { key: 'portal_download_unlimited', label: 'Downloads ilimitados',           info: 'Gerar downloads sem limite diário. Parceiros têm limite de 5/dia.' },
+    ],
+  },
 ];
 
 /* ─── Roles padrão do sistema ────────────────────────────── */
@@ -102,6 +111,7 @@ export const SYSTEM_ROLES = [
       project_create: true,   project_edit: true,   project_delete: true,
       dashboard_view: true,   dashboard_customize: true, report_export: true,
       csat_send: true,        csat_view_all: true,
+      portal_access: true,  portal_create: true,  portal_manage: true,  portal_download_unlimited: true,
     },
   },
   {
@@ -121,6 +131,7 @@ export const SYSTEM_ROLES = [
       project_create: true,   project_edit: true,   project_delete: false,
       dashboard_view: true,   dashboard_customize: true, report_export: true,
       csat_send: true,        csat_view_all: true,
+      portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
     },
   },
   {
@@ -140,6 +151,28 @@ export const SYSTEM_ROLES = [
       project_create: true,   project_edit: true,   project_delete: false,
       dashboard_view: true,   dashboard_customize: true, report_export: true,
       csat_send: true,        csat_view_all: true,
+      portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
+    },
+  },
+  {
+    id:          'partner',
+    name:        'Parceiro',
+    description: 'Acesso exclusivo ao Portal de Dicas. Pode gerar e baixar dicas com limite de 5 downloads/dia.',
+    isSystem:    true,
+    color:       '#D4A843',
+    permissions: {
+      system_view_all: false, system_manage_users: false,
+      system_manage_roles: false, system_manage_settings: false,
+      workspace_create: false, workspace_edit: false,
+      workspace_delete: false, workspace_invite: false,
+      task_type_create: false, task_type_edit: false, task_type_delete: false,
+      task_create: false,      task_edit_any: false,
+      task_delete: false,      task_view_all: false,
+      project_create: false,   project_edit: false,  project_delete: false,
+      dashboard_view: false,   dashboard_customize: false, report_export: false,
+      csat_send: false,        csat_view_all: false,
+      portal_access: true,     portal_create: false,
+      portal_manage: false,    portal_download_unlimited: false,
     },
   },
   {
@@ -159,6 +192,7 @@ export const SYSTEM_ROLES = [
       project_create: false,   project_edit: false,  project_delete: false,
       dashboard_view: true,    dashboard_customize: false, report_export: false,
       csat_send: false,        csat_view_all: false,
+      portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
     },
   },
 ];
