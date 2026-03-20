@@ -1,12 +1,6 @@
 /**
- * PRIMETOUR — Portal de Dicas Service
- * Gerencia áreas, destinos, dicas, banco de imagens e controle de downloads
- *
- * Cloudflare R2:
- *   Account ID:  29a66e93504dfad5ae7cdb2c6044ed6f
- *   Bucket:      primetour-portal
- *   Public URL:  https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev
- *   (Credenciais de escrita ficam no backend / GitHub Actions — nunca no frontend)
+ * PRIMETOUR — Portal de Dicas: Service
+ * Firestore CRUD, R2 upload, download control, segments config
  */
 
 import {
@@ -17,32 +11,48 @@ import {
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
 
-/* ─── Configuração Cloudflare R2 ──────────────────────────── */
+/* ─── Cloudflare R2 ───────────────────────────────────────── */
 export const R2_PUBLIC_URL = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev';
 export const R2_ACCOUNT_ID = '29a66e93504dfad5ae7cdb2c6044ed6f';
-// Upload de imagens é feito via endpoint serverless (Cloudflare Worker) para não
-// expor credenciais R2 no frontend. O Worker recebe o arquivo, converte para .webp
-// e salva no bucket.
-export const R2_WORKER_URL = ''; // configurar após deploy do Worker
+export const R2_WORKER_URL = ''; // set after Worker deploy
 
-/* ─── Constantes ──────────────────────────────────────────── */
+/* ─── Continents ──────────────────────────────────────────── */
 export const CONTINENTS = [
   'Brasil', 'África', 'América Central', 'Caribe',
   'América do Norte', 'América do Sul', 'Ásia',
   'Europa', 'Oriente Médio', 'Oceania', 'Antártica',
 ];
 
+/* ─── Default categories per segment ─────────────────────── */
+export const DEFAULT_CATEGORIES = {
+  atracoes:         ['Edifícios e construções urbanas','Galerias de arte','Igrejas e templos','Parques e Jardins','Museus e centros culturais','Complexos esportivos'],
+  atracoes_criancas:['Edifícios e construções urbanas','Galerias de arte','Parques e Jardins','Museus e centros culturais','Complexos esportivos'],
+  restaurantes:     ['Cafés e bistrôs','Vegetariano e vegano','Asiático','Culinária Internacional','Mediterrâneo','Infantil'],
+  vida_noturna:     ['Balada','Bares e lounges','Vinhos'],
+  espetaculos:      ['Teatro','Shows'],
+  compras:          ['Antiguidades','Itens em couro','Boutiques','Brinquedos','Cosméticos','Decoração','Gourmet','Joias e Relógios','Livrarias','Lojas de Departamento','Moda Feminina','Moda Infantil','Moda Masculina','Sapatos Femininos','Outlet','Eletrônicos','Variados','Vinhos','Vintage'],
+  highlights:       ['Arquitetura','Atividades de Verão','Passeio de Helicóptero'],
+  agenda_cultural:  ['Concertos','Dança','Espetáculos de Variedades','Eventos Esportivos','Exposições','Festivais','Musicais','Óperas','Shows'],
+};
+
+/* ─── Segments definition ─────────────────────────────────── */
+// mode:
+//   special_info  → Informações Gerais (structured form)
+//   simple_list   → Bairros, Arredores (text items)
+//   place_list    → standard list with category+place fields
+//   agenda        → Agenda Cultural (place_list + period per item)
 export const SEGMENTS = [
-  { key: 'informacoes_gerais',    label: 'Informações Gerais',    mode: 'text'  },
-  { key: 'bairros',               label: 'Bairros',               mode: 'text'  },
-  { key: 'atracoes',              label: 'Atrações',              mode: 'list'  },
-  { key: 'atracoes_criancas',     label: 'Atrações para Crianças', mode: 'list' },
-  { key: 'restaurantes',          label: 'Restaurantes',          mode: 'list'  },
-  { key: 'vida_noturna',          label: 'Vida Noturna',          mode: 'list'  },
-  { key: 'compras',               label: 'Compras',               mode: 'list'  },
-  { key: 'arredores',             label: 'Arredores',             mode: 'text'  },
-  { key: 'highlights',            label: 'Highlights',            mode: 'text'  },
-  { key: 'agenda_cultural',       label: 'Agenda Cultural',       mode: 'list'  },
+  { key: 'informacoes_gerais',  label: 'Informações Gerais',               mode: 'special_info' },
+  { key: 'bairros',             label: 'Bairros',                          mode: 'simple_list'  },
+  { key: 'atracoes',            label: 'Atrações',                         mode: 'place_list'   },
+  { key: 'atracoes_criancas',   label: 'Atrações para Crianças',           mode: 'place_list'   },
+  { key: 'restaurantes',        label: 'Restaurantes',                     mode: 'place_list'   },
+  { key: 'vida_noturna',        label: 'Vida Noturna',                     mode: 'place_list'   },
+  { key: 'espetaculos',         label: 'Casas de Espetáculos, Teatros e Cia.', mode: 'place_list' },
+  { key: 'compras',             label: 'Compras',                          mode: 'place_list'   },
+  { key: 'arredores',           label: 'Arredores',                        mode: 'simple_list'  },
+  { key: 'highlights',          label: 'Highlights',                       mode: 'place_list'   },
+  { key: 'agenda_cultural',     label: 'Agenda Cultural',                  mode: 'agenda'       },
 ];
 
 export const GENERATION_FORMATS = [
@@ -52,12 +62,32 @@ export const GENERATION_FORMATS = [
   { key: 'web',  label: 'Link Web'     },
 ];
 
+export const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 export const PARTNER_DAILY_LIMIT = 5;
 
-/* ─── Helpers ─────────────────────────────────────────────── */
 function uid() { return store.get('currentUser')?.uid; }
 
-/* ─── ÁREAS ───────────────────────────────────────────────── */
+/* ─── Categories (dynamic, per segment) ──────────────────── */
+export async function fetchCategories(segmentKey) {
+  try {
+    const snap = await getDoc(doc(db, 'portal_categories', segmentKey));
+    if (snap.exists()) {
+      return snap.data().categories || DEFAULT_CATEGORIES[segmentKey] || [];
+    }
+  } catch(e) {}
+  return DEFAULT_CATEGORIES[segmentKey] || [];
+}
+
+export async function saveCategories(segmentKey, categories) {
+  if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  await setDoc(doc(db, 'portal_categories', segmentKey), {
+    categories,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid(),
+  }, { merge: true });
+}
+
+/* ─── Areas ───────────────────────────────────────────────── */
 export async function fetchAreas() {
   const snap = await getDocs(query(collection(db, 'portal_areas'), orderBy('name')));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -80,14 +110,12 @@ export async function deleteArea(id) {
   await deleteDoc(doc(db, 'portal_areas', id));
 }
 
-/* ─── DESTINOS ────────────────────────────────────────────── */
+/* ─── Destinations ────────────────────────────────────────── */
 export async function fetchDestinations({ continent, country } = {}) {
-  // Client-side filtering + sorting to avoid composite Firestore indexes
   const snap = await getDocs(collection(db, 'portal_destinations'));
   let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   if (continent) docs = docs.filter(d => d.continent === continent);
   if (country)   docs = docs.filter(d => d.country   === country);
-  // Sort: continent → country → city
   docs.sort((a, b) => {
     const ca = (a.continent||'').localeCompare(b.continent||'', 'pt-BR');
     if (ca !== 0) return ca;
@@ -109,7 +137,6 @@ export async function saveDestination(id, data) {
   const ref = id
     ? doc(db, 'portal_destinations', id)
     : doc(collection(db, 'portal_destinations'));
-  // Build slug: continent/country/city
   const slug = [data.continent, data.country, data.city]
     .filter(Boolean).map(s => s.toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -129,7 +156,7 @@ export async function deleteDestination(id) {
   await deleteDoc(doc(db, 'portal_destinations', id));
 }
 
-/* ─── DICAS ───────────────────────────────────────────────── */
+/* ─── Tips ────────────────────────────────────────────────── */
 export async function fetchTip(destinationId) {
   const snap = await getDocs(
     query(collection(db, 'portal_tips'),
@@ -139,27 +166,12 @@ export async function fetchTip(destinationId) {
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
-// Returns array of segment keys that have content for a given destination
-export async function fetchAvailableSegments(destinationId) {
-  const tip = await fetchTip(destinationId);
-  if (!tip?.segments) return [];
-  return Object.entries(tip.segments)
-    .filter(([, seg]) => {
-      if (!seg) return false;
-      // Check if segment has actual content
-      if (typeof seg.content === 'string' && seg.content.trim()) return true;
-      if (Array.isArray(seg.items) && seg.items.length > 0) return true;
-      return false;
-    })
-    .map(([key]) => key);
-}
-
 export async function fetchTips({ continent, country } = {}) {
-  let constraints = [orderBy('updatedAt', 'desc')];
-  if (continent) constraints.unshift(where('continent', '==', continent));
-  if (country)   constraints.unshift(where('country',   '==', country));
-  const snap = await getDocs(query(collection(db, 'portal_tips'), ...constraints));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const snap = await getDocs(query(collection(db, 'portal_tips'), orderBy('updatedAt', 'desc')));
+  let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (continent) docs = docs.filter(d => d.continent === continent);
+  if (country)   docs = docs.filter(d => d.country   === country);
+  return docs;
 }
 
 export async function saveTip(id, data) {
@@ -181,52 +193,53 @@ export async function deleteTip(id) {
   await deleteDoc(doc(db, 'portal_tips', id));
 }
 
-/* ─── CONTROLE DE DOWNLOADS (limite Parceiro) ─────────────── */
+export async function fetchAvailableSegments(destinationId) {
+  const tip = await fetchTip(destinationId);
+  if (!tip?.segments) return [];
+  return Object.entries(tip.segments)
+    .filter(([, seg]) => {
+      if (!seg) return false;
+      if (seg.info && Object.values(seg.info).some(v => v && String(v).trim())) return true;
+      if (typeof seg.content === 'string' && seg.content.trim()) return true;
+      if (Array.isArray(seg.items) && seg.items.length > 0) return true;
+      return false;
+    })
+    .map(([key]) => key);
+}
+
+/* ─── Download control ────────────────────────────────────── */
 export async function checkDownloadLimit() {
-  // Master e quem tem portal_download_unlimited não tem limite
-  if (store.isMaster() || store.can('portal_download_unlimited')) return { allowed: true, remaining: Infinity };
-
+  if (store.isMaster() || store.can('portal_download_unlimited'))
+    return { allowed: true, remaining: Infinity };
   const today  = new Date().toISOString().slice(0, 10);
-  const docId  = `${uid()}_${today}`;
-  const ref    = doc(db, 'portal_downloads', docId);
+  const ref    = doc(db, 'portal_downloads', `${uid()}_${today}`);
   const snap   = await getDoc(ref);
-  const count  = snap.exists() ? (snap.data().count || 0) : 0;
-  const remaining = PARTNER_DAILY_LIMIT - count;
-
-  return { allowed: remaining > 0, remaining, count };
+  const count  = snap.exists ? (snap.data().count || 0) : 0;
+  return { allowed: count < PARTNER_DAILY_LIMIT, remaining: PARTNER_DAILY_LIMIT - count, count };
 }
 
 export async function registerDownload() {
   if (store.isMaster() || store.can('portal_download_unlimited')) return;
   const today = new Date().toISOString().slice(0, 10);
-  const docId = `${uid()}_${today}`;
-  const ref   = doc(db, 'portal_downloads', docId);
+  const ref   = doc(db, 'portal_downloads', `${uid()}_${today}`);
   const snap  = await getDoc(ref);
-  if (snap.exists()) {
-    await updateDoc(ref, { count: increment(1), lastAt: serverTimestamp() });
-  } else {
-    await setDoc(ref, { userId: uid(), date: today, count: 1, lastAt: serverTimestamp() });
-  }
+  if (snap.exists) await updateDoc(ref, { count: increment(1), lastAt: serverTimestamp() });
+  else await setDoc(ref, { userId: uid(), date: today, count: 1, lastAt: serverTimestamp() });
 }
 
-/* ─── BANCO DE IMAGENS ────────────────────────────────────── */
+/* ─── Images ──────────────────────────────────────────────── */
 export async function fetchImages({ continent, country, city } = {}) {
-  let constraints = [orderBy('uploadedAt', 'desc')];
-  if (continent) constraints.unshift(where('continent', '==', continent));
-  if (country)   constraints.unshift(where('country',   '==', country));
-  if (city)      constraints.unshift(where('city',      '==', city));
-  const snap = await getDocs(query(collection(db, 'portal_images'), ...constraints));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const snap = await getDocs(query(collection(db, 'portal_images'), orderBy('uploadedAt', 'desc')));
+  let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (continent) docs = docs.filter(d => d.continent === continent);
+  if (country)   docs = docs.filter(d => d.country   === country);
+  if (city)      docs = docs.filter(d => d.city       === city);
+  return docs;
 }
 
 export async function saveImageMeta(data) {
-  // Called after successful R2 upload
   const ref = doc(collection(db, 'portal_images'));
-  await setDoc(ref, {
-    ...data,
-    uploadedAt: serverTimestamp(),
-    uploadedBy: uid(),
-  });
+  await setDoc(ref, { ...data, uploadedAt: serverTimestamp(), uploadedBy: uid() });
   return ref.id;
 }
 
@@ -235,13 +248,6 @@ export async function deleteImageMeta(id) {
   await deleteDoc(doc(db, 'portal_images', id));
 }
 
-/**
- * Converte File → .webp via canvas (client-side, sem custo de servidor)
- * @param {File} file — qualquer formato de imagem
- * @param {number} maxWidth — largura máxima (default: 1920)
- * @param {number} quality — 0-1 (default: 0.85)
- * @returns {Promise<Blob>} webp blob
- */
 export async function convertToWebp(file, maxWidth = 1920, quality = 0.85) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -252,54 +258,33 @@ export async function convertToWebp(file, maxWidth = 1920, quality = 0.85) {
       const canvas = document.createElement('canvas');
       canvas.width  = Math.round(img.width  * scale);
       canvas.height = Math.round(img.height * scale);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => {
-        if (blob) resolve(blob);
-        else reject(new Error('Conversão WebP falhou.'));
-      }, 'image/webp', quality);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Conversão WebP falhou.')),
+        'image/webp', quality);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Imagem inválida.')); };
     img.src = url;
   });
 }
 
-/**
- * Upload de imagem para Cloudflare R2 via Worker
- * Path no bucket: {continent}/{country}/{city}/{filename}.webp
- */
 export async function uploadImageToR2(webpBlob, path) {
   if (!R2_WORKER_URL) throw new Error('Worker URL não configurada.');
-  const formData = new FormData();
-  formData.append('file', webpBlob, path.split('/').pop());
-  formData.append('path', path);
-  const res = await fetch(R2_WORKER_URL, { method: 'POST', body: formData });
+  const fd = new FormData();
+  fd.append('file', webpBlob, path.split('/').pop());
+  fd.append('path', path);
+  const res = await fetch(R2_WORKER_URL, { method: 'POST', body: fd });
   if (!res.ok) throw new Error(`Upload falhou: ${res.status}`);
-  const data = await res.json();
   return `${R2_PUBLIC_URL}/${path}`;
 }
 
-/* ─── GERAÇÕES ────────────────────────────────────────────── */
+/* ─── Generations ─────────────────────────────────────────── */
 export async function recordGeneration(data) {
   const ref = doc(collection(db, 'portal_generations'));
-  await setDoc(ref, {
-    ...data,
-    generatedBy:   uid(),
-    generatedAt:   serverTimestamp(),
-  });
-  // Atualiza contador do destino
-  if (data.destinationIds?.length) {
-    for (const destId of data.destinationIds) {
-      const tipRef = doc(db, 'portal_tips_stats', destId);
-      const snap   = await getDoc(tipRef);
-      if (snap.exists()) await updateDoc(tipRef, { generationCount: increment(1) });
-      else await setDoc(tipRef, { destinationId: destId, generationCount: 1 });
-    }
-  }
+  await setDoc(ref, { ...data, generatedBy: uid(), generatedAt: serverTimestamp() });
   return ref.id;
 }
 
-/* ─── TERMOS DE USO ───────────────────────────────────────── */
+/* ─── Terms ───────────────────────────────────────────────── */
 export async function getActiveTerms() {
   const snap = await getDocs(
     query(collection(db, 'portal_terms'), orderBy('updatedAt', 'desc'), limit(1))
@@ -311,15 +296,11 @@ export async function getActiveTerms() {
 export async function hasAcceptedTerms(termsId) {
   const ref  = doc(db, 'portal_terms_acceptance', `${uid()}_${termsId}`);
   const snap = await getDoc(ref);
-  return snap.exists();
+  return snap.exists;
 }
 
 export async function acceptTerms(termsId) {
-  const ref = doc(db, 'portal_terms_acceptance', `${uid()}_${termsId}`);
-  await setDoc(ref, {
-    userId:    uid(),
-    termsId,
-    acceptedAt: serverTimestamp(),
-    userAgent:  navigator.userAgent,
+  await setDoc(doc(db, 'portal_terms_acceptance', `${uid()}_${termsId}`), {
+    userId: uid(), termsId, acceptedAt: serverTimestamp(), userAgent: navigator.userAgent,
   });
 }
