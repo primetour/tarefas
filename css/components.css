@@ -447,6 +447,52 @@
   color: var(--text-primary);
 }
 
+/* Inputs and textareas don't need the dropdown arrow */
+input.filter-select,
+textarea.filter-select {
+  background-image: none;
+  padding-right: 12px;
+  cursor: text;
+  color: var(--text-primary);
+}
+
+/* Portal editor field style — same look as filter-select but no arrow */
+.portal-field {
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: var(--font-ui);
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+.portal-field:focus { border-color: var(--brand-gold); }
+textarea.portal-field { resize: vertical; }
+
+/* Portal area picker */
+.portal-area-cat {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; padding: 10px 8px; border: 2px solid var(--border-subtle);
+  border-radius: var(--radius-md); background: transparent; cursor: pointer;
+  transition: all 0.15s; min-height: 68px; width: 100%;
+  font-size: 0.8125rem; color: var(--text-secondary);
+}
+.portal-area-cat:hover { border-color: var(--brand-gold); color: var(--text-primary); }
+.portal-area-cat.selected { border-color: var(--brand-gold); background: var(--brand-gold)18; color: var(--brand-gold); }
+.portal-area-cat .cat-chevron { font-size: 0.625rem; color: var(--text-muted); }
+
+.portal-area-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  background: transparent; cursor: pointer; transition: all 0.15s; width: 100%;
+  font-size: 0.8125rem; color: var(--text-secondary);
+}
+.portal-area-item:hover { border-color: var(--brand-gold); color: var(--text-primary); background: var(--bg-surface); }
+.portal-area-item.selected { border-color: var(--brand-gold); background: var(--brand-gold)15; color: var(--brand-gold); font-weight: 600; }
+
 /* ─── MODAL ───────────────────────────────────────────────── */
 .modal-backdrop {
   position: fixed;
