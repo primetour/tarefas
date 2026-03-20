@@ -13,8 +13,8 @@ import { store } from '../store.js';
 
 /* ─── Cloudflare R2 ───────────────────────────────────────── */
 export const R2_PUBLIC_URL = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev';
-export const R2_ACCOUNT_ID = '29a66e93504dfad5ae7cdb2c6044ed6f';
-export const R2_WORKER_URL = ''; // set after Worker deploy
+export const R2_WORKER_URL   = 'https://primetour-images.rene-castro.workers.dev';
+export const R2_UPLOAD_TOKEN = 'primetour2026-imagens-secreto-xk9q'; // mesmo valor do R2_TOKEN
 
 /* ─── Continents ──────────────────────────────────────────── */
 export const CONTINENTS = [
