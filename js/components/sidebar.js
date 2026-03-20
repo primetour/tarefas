@@ -43,7 +43,8 @@ const NAV_GROUPS = [
   {
     label: 'Serviços',
     items: [
-      { route: 'portal-tips',         icon: '✈', label: 'Portal de Dicas',     perm: 'portal_access' },
+      { route: 'portal-tips',         icon: '✈', label: 'Portal de Dicas',     perm: 'portal_access'  },
+      { route: 'portal-import',       icon: '↑', label: 'Importar Dicas',      perm: 'portal_create'  },
     ]
   },
   {
