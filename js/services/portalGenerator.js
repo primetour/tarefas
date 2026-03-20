@@ -4,6 +4,10 @@
  */
 
 import { SEGMENTS, MONTHS, recordGeneration, registerDownload } from './portal.js';
+import { db } from '../firebase.js';
+import {
+  doc, collection, setDoc, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -11,16 +15,16 @@ const esc = s => String(s||'').replace(/[&<>"']/g, c =>
 /* ─── CDN libraries ───────────────────────────────────────── */
 async function loadDocx() {
   if (window.docx) return;
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.umd.min.js');
+  await loadScript('https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js');
 }
 async function loadJsPDF() {
   if (window.jspdf) return;
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js');
+  await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+  await loadScript('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js');
 }
 async function loadPptxGenJS() {
   if (window.PptxGenJS) return;
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.js');
+  await loadScript('https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js');
 }
 function loadScript(src) {
   return new Promise((res,rej) => {
@@ -523,13 +527,8 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
 
 /* ─── Web Link ────────────────────────────────────────────── */
 async function generateWebLink({ allTips, segments, areaName, area, colors }) {
-  const { doc: fbDoc, collection, setDoc, serverTimestamp } = await import(
-    'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
-  );
-  const { db } = await import('./firebase.js' );
-
   const token  = generateToken();
-  const ref    = fbDoc(collection(db, 'portal_web_links'), token);
+  const ref    = doc(collection(db, 'portal_web_links'), token);
   await setDoc(ref, {
     token,
     allTips:   allTips.map(({ tip, dest }) => ({ tipId: tip?.id || null, destId: dest?.id || null })),
