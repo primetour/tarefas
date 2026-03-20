@@ -180,145 +180,27 @@
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
   import { firebaseConfig } from './js/config.js';
 
+  /* ── helpers (fora do IIFE para ficarem acessíveis entre funções) ── */
   const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-
-  const app = initializeApp(firebaseConfig, 'portal-view');
-  const db  = getFirestore(app);
-
-  const token  = window.location.hash.slice(1);
-  const appEl  = document.getElementById('app');
-  const navEl  = document.getElementById('seg-nav');
-
-  document.getElementById('footer-date').textContent =
-    new Date().toLocaleDateString('pt-BR', { year:'numeric', month:'long' });
-
-  if (!token) {
-    showError('Link inválido', 'Este link não contém um token de acesso.');
-    throw new Error('no token');
-  }
-
-  const snap = await getDoc(doc(db, 'portal_web_links', token));
-  if (!snap.exists()) {
-    showError('Link não encontrado', 'Este link pode ter expirado ou foi removido.');
-    throw new Error('not found');
-  }
-
-  const linkData = snap.data();
-  await updateDoc(doc(db, 'portal_web_links', token), { views: increment(1) });
-
-  // Area logo
-  if (linkData.areaLogoUrl) {
-    const img = document.getElementById('area-logo-img');
-    img.src = linkData.areaLogoUrl; img.style.display = 'block';
-  }
-
-  const allTips  = linkData.tipData || [];
-  const segments = linkData.segments || [];
-  const colors   = linkData.colors   || {};
-  if (colors.primary) {
-    document.documentElement.style.setProperty('--gold', colors.primary);
-  }
-
-  // Build nav
   const SEGMENTS = [
-    { key:'informacoes_gerais', label:'Informações Gerais' },
-    { key:'bairros',            label:'Bairros'            },
-    { key:'atracoes',           label:'Atrações'           },
-    { key:'atracoes_criancas',  label:'Atrações para Crianças' },
-    { key:'restaurantes',       label:'Restaurantes'       },
-    { key:'vida_noturna',       label:'Vida Noturna'       },
-    { key:'espetaculos',        label:'Casas de Espetáculos' },
-    { key:'compras',            label:'Compras'            },
-    { key:'arredores',          label:'Arredores'          },
-    { key:'highlights',         label:'Highlights'         },
-    { key:'agenda_cultural',    label:'Agenda Cultural'    },
+    { key:'informacoes_gerais', label:'Informações Gerais'      },
+    { key:'bairros',            label:'Bairros'                 },
+    { key:'atracoes',           label:'Atrações'                },
+    { key:'atracoes_criancas',  label:'Atrações para Crianças'  },
+    { key:'restaurantes',       label:'Restaurantes'            },
+    { key:'vida_noturna',       label:'Vida Noturna'            },
+    { key:'espetaculos',        label:'Casas de Espetáculos'    },
+    { key:'compras',            label:'Compras'                 },
+    { key:'arredores',          label:'Arredores'               },
+    { key:'highlights',         label:'Highlights'              },
+    { key:'agenda_cultural',    label:'Agenda Cultural'         },
   ];
 
-  const activeSeg = segments.filter(k =>
-    allTips.some(({ tip }) => tip?.segments?.[k])
-  );
-
-  if (activeSeg.length > 1) {
-    navEl.style.display = 'flex';
-    activeSeg.forEach(k => {
-      const seg = SEGMENTS.find(s => s.key === k);
-      const a   = document.createElement('a');
-      a.href      = `#seg-${k}`;
-      a.textContent = seg?.label || k;
-      a.id = `nav-${k}`;
-      navEl.appendChild(a);
-    });
+  function esc(s) {
+    return String(s||'').replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  // Render
-  // Multi-destination: render as tabs if >1, or direct content if 1
-  if (allTips.length > 1) {
-    const tabs = allTips.map((item, i) => {
-      const d = item.dest;
-      const label = [d?.city, d?.country].filter(Boolean).join(', ') || `Destino ${i+1}`;
-      return `<button class="dest-tab${i===0?' active':''}" data-idx="${i}">${esc(label)}</button>`;
-    }).join('');
-    appEl.innerHTML = `<div class="dest-tabs" id="dest-tabs">${tabs}</div><div id="dest-content"></div>`;
-    const renderTab = (idx) => {
-      const { tip, dest } = allTips[idx];
-      document.getElementById('dest-content').innerHTML = renderDestBlock(tip, dest, activeSegs, 0);
-    };
-    appEl.querySelectorAll('.dest-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        appEl.querySelectorAll('.dest-tab').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        renderTab(Number(btn.dataset.idx));
-      });
-    });
-    renderTab(0);
-    document.getElementById('loading').style.display = 'none';
-    appEl.style.display = 'block';
-    return;
-  }
-
-  appEl.innerHTML = allTips.map(({ tip, dest }, idx) => {
-    const label  = [dest?.city, dest?.country, dest?.continent].filter(Boolean).join(', ');
-    const parts  = [];
-
-    for (const segKey of segments) {
-      const segDef = SEGMENTS.find(s => s.key === segKey);
-      const data   = tip?.segments?.[segKey];
-      if (!segDef || !data) continue;
-
-      const segHtml = renderSegment(segDef, data);
-      if (!segHtml) continue;
-
-      parts.push(`
-        <div class="segment-block" id="seg-${segKey}">
-          <div class="segment-heading">${esc(segDef.label)}</div>
-          ${segHtml}
-        </div>
-      `);
-    }
-
-    return `
-      <div class="container">
-        <h1 class="dest-title">${esc(dest?.city || dest?.country || '—')}</h1>
-        <p class="dest-subtitle">${esc([dest?.country, dest?.continent].filter(Boolean).join(' · '))}</p>
-        ${parts.join('')}
-      </div>
-      ${idx < allTips.length - 1 ? '<hr class="dest-divider">' : ''}
-    `;
-  }).join('');
-
-  // Scroll spy
-  window.addEventListener('scroll', () => {
-    activeSeg.forEach(k => {
-      const el  = document.getElementById(`seg-${k}`);
-      const nav = document.getElementById(`nav-${k}`);
-      if (!el || !nav) return;
-      const rect = el.getBoundingClientRect();
-      if (rect.top <= 120 && rect.bottom > 120) nav.classList.add('active');
-      else nav.classList.remove('active');
-    });
-  }, { passive: true });
-
-  /* ── Renderers ── */
   function renderSegment(segDef, data) {
     if (segDef.key === 'informacoes_gerais') return renderInfoGeral(data);
     if (segDef.key === 'bairros' || segDef.key === 'arredores') return renderSimpleList(data);
@@ -329,20 +211,26 @@
   function renderInfoGeral(data) {
     const inf = data.info || {};
     const fields = [
-      ['Descrição', inf.descricao], ['Dica', inf.dica],
-      ['População', inf.populacao], ['Moeda', inf.moeda],
-      ['Língua oficial', inf.lingua], ['Religião', inf.religiao],
-      ['Fuso horário', inf.fusoSinal && inf.fusoHoras ? `${inf.fusoSinal}${inf.fusoHoras}h de Brasília` : ''],
-      ['Voltagem', inf.voltagem], ['DDD', inf.ddd],
+      ['Descrição',             inf.descricao],
+      ['Dica',                  inf.dica],
+      ['População',             inf.populacao],
+      ['Moeda',                 inf.moeda],
+      ['Língua oficial',        inf.lingua],
+      ['Religião',              inf.religiao],
+      ['Fuso horário', inf.fusoSinal && inf.fusoHoras
+        ? `${inf.fusoSinal}${inf.fusoHoras}h de Brasília` : ''],
+      ['Voltagem',              inf.voltagem],
+      ['DDD',                   inf.ddd],
     ].filter(([,v]) => v);
 
     if (!fields.length && !inf.clima) return '';
 
     const cells = fields.map(([l,v]) => `
-      <div class="info-cell"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div></div>
-    `).join('');
+      <div class="info-cell">
+        <div class="label">${esc(l)}</div>
+        <div class="value">${esc(v)}</div>
+      </div>`).join('');
 
-    // Clima
     const cli = inf.clima || {};
     const hasClima = MONTHS.some((_,i) => cli[`max_${i}`] || cli[`min_${i}`]);
     const climaHtml = hasClima ? `
@@ -365,12 +253,11 @@
         </table>
       </div>` : '';
 
-    // Representação
     const rep = inf.representacao || {};
     const repHtml = rep.nome ? `
       <div class="rep-block">
         <div class="rep-title">Representação Brasileira</div>
-        ${rep.nome     ? `<div><strong>Nome:</strong> ${esc(rep.nome)}</div>` : ''}
+        ${rep.nome     ? `<div><strong>Nome:</strong> ${esc(rep.nome)}</div>`      : ''}
         ${rep.endereco ? `<div><strong>Endereço:</strong> ${esc(rep.endereco)}</div>` : ''}
         ${rep.telefone ? `<div><strong>Telefone:</strong> ${esc(rep.telefone)}</div>` : ''}
         ${rep.link     ? `<div><strong>Site:</strong> <a href="${esc(rep.link)}" target="_blank">${esc(rep.link)}</a></div>` : ''}
@@ -397,38 +284,148 @@
       ? `<p class="theme-desc">${esc(data.themeDesc)}</p>` : '';
     const agendaHeader = isAgenda && data.periodoAgenda
       ? `<div style="font-size:0.875rem;color:var(--gold);margin-bottom:12px;">📅 ${esc(data.periodoAgenda)}</div>` : '';
-
     const itemsHtml = items.map(item => `
       <div class="place-item">
         ${item.categoria ? `<div class="pi-cat">${esc(item.categoria)}</div>` : ''}
         <div class="pi-title">${esc(item.titulo)}</div>
-        ${isAgenda && (item.periodo||item.periodoIndeterminado) ? `
-          <div class="pi-period">📅 ${item.periodoIndeterminado ? 'Tempo indeterminado' : esc(item.periodo||'')}</div>` : ''}
+        ${isAgenda && (item.periodo || item.periodoIndeterminado) ? `
+          <div class="pi-period">📅 ${item.periodoIndeterminado
+            ? 'Tempo indeterminado' : esc(item.periodo||'')}</div>` : ''}
         ${item.descricao ? `<div class="pi-desc">${esc(item.descricao)}</div>` : ''}
         <div class="pi-details">
           ${item.endereco ? `<span>📍 ${esc(item.endereco)}</span>` : ''}
           ${item.telefone ? `<span>📞 ${esc(item.telefone)}</span>` : ''}
-          ${item.site     ? `<a href="${esc(item.site)}" target="_blank" rel="noopener">🌐 Site oficial</a>` : ''}
+          ${item.site ? `<a href="${esc(item.site)}" target="_blank" rel="noopener">🌐 Site oficial</a>` : ''}
         </div>
         ${item.observacoes ? `<div class="pi-obs">💡 ${esc(item.observacoes)}</div>` : ''}
       </div>`).join('');
-
     return themeHtml + agendaHeader + itemsHtml;
   }
 
-  function esc(s) {
-    return String(s||'').replace(/[&<>"']/g, c =>
-      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
-
-  function showError(title, msg) {
-    appEl.innerHTML = `
-      <div class="error-state">
-        <div style="font-size:3rem;margin-bottom:16px;">✈</div>
-        <h2>${esc(title)}</h2>
-        <p style="color:var(--muted);">${esc(msg)}</p>
+  function renderDestContent(tip, dest, segments) {
+    const parts = [];
+    for (const segKey of segments) {
+      const segDef = SEGMENTS.find(s => s.key === segKey);
+      const data   = tip?.segments?.[segKey];
+      if (!segDef || !data) continue;
+      const segHtml = renderSegment(segDef, data);
+      if (!segHtml) continue;
+      parts.push(`
+        <div class="segment-block" id="seg-${segKey}">
+          <div class="segment-heading">${esc(segDef.label)}</div>
+          ${segHtml}
+        </div>`);
+    }
+    return `
+      <div class="container">
+        <h1 class="dest-title">${esc(dest?.city || dest?.country || '—')}</h1>
+        <p class="dest-subtitle">${esc([dest?.country, dest?.continent].filter(Boolean).join(' · '))}</p>
+        ${parts.join('')}
       </div>`;
   }
+
+  /* ── main ── */
+  (async () => {
+    const app   = initializeApp(firebaseConfig, 'portal-view');
+    const db    = getFirestore(app);
+    const token = window.location.hash.slice(1);
+    const appEl = document.getElementById('app');
+    const navEl = document.getElementById('seg-nav');
+
+    document.getElementById('footer-date').textContent =
+      new Date().toLocaleDateString('pt-BR', { year:'numeric', month:'long' });
+
+    const showError = (title, msg) => {
+      appEl.innerHTML = `
+        <div class="error-state">
+          <div style="font-size:3rem;margin-bottom:16px;">✈</div>
+          <h2>${esc(title)}</h2>
+          <p style="color:var(--muted);">${esc(msg)}</p>
+        </div>`;
+    };
+
+    if (!token) { showError('Link inválido', 'Este link não contém um token de acesso.'); return; }
+
+    let snap;
+    try {
+      snap = await getDoc(doc(db, 'portal_web_links', token));
+    } catch(e) {
+      showError('Erro de conexão', 'Não foi possível carregar a dica. Tente novamente.'); return;
+    }
+
+    if (!snap.exists()) {
+      showError('Link não encontrado', 'Este link pode ter expirado ou foi removido.'); return;
+    }
+
+    const linkData = snap.data();
+    updateDoc(doc(db, 'portal_web_links', token), { views: increment(1) }).catch(() => {});
+
+    if (linkData.areaLogoUrl) {
+      const img = document.getElementById('area-logo-img');
+      img.src = linkData.areaLogoUrl; img.style.display = 'block';
+    }
+
+    const allTips  = linkData.tipData || [];
+    const segments = linkData.segments || [];
+    const colors   = linkData.colors   || {};
+
+    if (colors.primary) {
+      document.documentElement.style.setProperty('--gold', colors.primary);
+    }
+
+    const activeSeg = segments.filter(k =>
+      allTips.some(({ tip }) => tip?.segments?.[k])
+    );
+
+    // Segment nav
+    if (activeSeg.length > 1) {
+      navEl.style.display = 'flex';
+      activeSeg.forEach(k => {
+        const seg = SEGMENTS.find(s => s.key === k);
+        const a   = document.createElement('a');
+        a.href = `#seg-${k}`; a.textContent = seg?.label || k; a.id = `nav-${k}`;
+        navEl.appendChild(a);
+      });
+    }
+
+    // Multi-dest tabs or single layout
+    if (allTips.length > 1) {
+      const tabs = allTips.map((item, i) => {
+        const d = item.dest;
+        const label = [d?.city, d?.country].filter(Boolean).join(', ') || `Destino ${i+1}`;
+        return `<button class="dest-tab${i===0?' active':''}" data-idx="${i}">${esc(label)}</button>`;
+      }).join('');
+      appEl.innerHTML = `<div style="display:flex;gap:0;border-bottom:1px solid var(--border);
+        overflow-x:auto;">${tabs}</div><div id="dest-content"></div>`;
+      const renderTab = (idx) => {
+        const { tip, dest } = allTips[idx];
+        document.getElementById('dest-content').innerHTML = renderDestContent(tip, dest, segments);
+      };
+      appEl.querySelectorAll('.dest-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          appEl.querySelectorAll('.dest-tab').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          renderTab(Number(btn.dataset.idx));
+        });
+      });
+      renderTab(0);
+    } else {
+      const { tip, dest } = allTips[0] || {};
+      appEl.innerHTML = renderDestContent(tip, dest, segments);
+    }
+
+    // Scroll spy
+    window.addEventListener('scroll', () => {
+      activeSeg.forEach(k => {
+        const el  = document.getElementById(`seg-${k}`);
+        const nav = document.getElementById(`nav-${k}`);
+        if (!el || !nav) return;
+        const rect = el.getBoundingClientRect();
+        if (rect.top <= 120 && rect.bottom > 120) nav.classList.add('active');
+        else nav.classList.remove('active');
+      });
+    }, { passive: true });
+  })();
 </script>
 </body>
 </html>
