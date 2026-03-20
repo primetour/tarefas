@@ -180,48 +180,165 @@ export async function renderPortalTips(container) {
 }
 
 /* ─── Init form logic ─────────────────────────────────────── */
-async function initPortalForm() {
-  // Load areas
-  try {
-    const areas = await fetchAreas();
-    const grid  = document.getElementById('portal-areas-grid');
-    if (grid) {
-      if (!areas.length) {
-        grid.innerHTML = `<div style="grid-column:1/-1;color:var(--text-muted);font-size:0.8125rem;
-          padding:12px 0;">Nenhuma área cadastrada.
-          ${store.canManagePortal() ? '<a href="#portal-areas" style="color:var(--brand-gold);">Cadastrar área</a>' : ''}
-        </div>`;
-      } else {
-        grid.innerHTML = areas.map(a => `
-          <button class="portal-area-btn" data-id="${a.id}"
-            style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-            gap:6px;padding:10px 6px;border:2px solid var(--border-subtle);
-            border-radius:var(--radius-md);background:transparent;cursor:pointer;
-            transition:all .15s;min-height:64px;"
-            onmouseover="this.style.borderColor='var(--brand-gold)'"
-            onmouseout="this.classList.contains('selected')?null:this.style.borderColor='var(--border-subtle)'">
-            ${a.logoUrl
-              ? `<img src="${esc(a.logoUrl)}" style="height:28px;object-fit:contain;" alt="${esc(a.name)}">`
-              : `<span style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">${esc(a.name)}</span>`
-            }
-            <span style="font-size:0.6875rem;color:var(--text-muted);">${esc(a.name)}</span>
-          </button>
-        `).join('');
+/* ─── Two-level area picker with keyboard search ─────────── */
+let allAreas = [];
 
-        grid.querySelectorAll('.portal-area-btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-            grid.querySelectorAll('.portal-area-btn').forEach(b => {
-              b.classList.remove('selected');
-              b.style.borderColor = 'var(--border-subtle)';
-              b.style.background  = 'transparent';
-            });
-            btn.classList.add('selected');
-            btn.style.borderColor = 'var(--brand-gold)';
-            btn.style.background  = 'var(--brand-gold)18';
-            updatePreview();
-          });
-        });
+function renderAreaPicker(grid, areas, activeCategoryFilter) {
+  allAreas = areas;
+
+  // Separate categories (areas with sub-areas) from standalone areas
+  const categories = [...new Set(areas.map(a => a.category).filter(Boolean))].sort();
+  const standaloneAreas = areas.filter(a => !a.category);
+
+  // If showing sub-areas inside a category
+  if (activeCategoryFilter !== null) {
+    const subareas = areas.filter(a => a.category === activeCategoryFilter);
+    grid.innerHTML = `
+      <!-- Back + search -->
+      <div style="grid-column:1/-1;display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <button id="area-back-btn"
+          style="border:none;background:none;cursor:pointer;color:var(--brand-gold);
+          font-size:0.8125rem;padding:4px 0;display:flex;align-items:center;gap:4px;">
+          ← ${esc(activeCategoryFilter)}
+        </button>
+        <span style="font-size:0.75rem;color:var(--text-muted);">${subareas.length} áreas</span>
+      </div>
+      <div style="grid-column:1/-1;position:relative;margin-bottom:8px;">
+        <input type="text" id="area-search" placeholder="Buscar área… (ou pressione a letra inicial)"
+          class="portal-field" style="width:100%;padding-left:30px;"
+          autocomplete="off">
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);
+          color:var(--text-muted);font-size:0.875rem;">🔍</span>
+      </div>
+      <div id="area-sublist" style="grid-column:1/-1;display:flex;flex-direction:column;gap:4px;
+        max-height:300px;overflow-y:auto;">
+        ${subareas.map(a => areaItemRow(a)).join('')}
+      </div>
+    `;
+
+    // Back button
+    document.getElementById('area-back-btn')?.addEventListener('click', () => {
+      renderAreaPicker(grid, areas, null);
+    });
+
+    // Search + keyboard navigation
+    const searchInput  = document.getElementById('area-search');
+    const sublistEl    = document.getElementById('area-sublist');
+    let highlightedIdx = -1;
+
+    const getItems = () => [...(sublistEl?.querySelectorAll('.portal-area-item') || [])];
+
+    const filterItems = (q) => {
+      const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      getItems().forEach(item => {
+        const name = (item.dataset.name||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+        item.style.display = name.includes(norm) ? '' : 'none';
+      });
+      highlightedIdx = -1;
+    };
+
+    searchInput?.addEventListener('input', e => filterItems(e.target.value));
+
+    searchInput?.addEventListener('keydown', e => {
+      const visible = getItems().filter(i => i.style.display !== 'none');
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        highlightedIdx = Math.min(highlightedIdx + 1, visible.length - 1);
+        visible.forEach((i,idx) => i.style.background = idx === highlightedIdx ? 'var(--bg-surface)' : '');
+        visible[highlightedIdx]?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        highlightedIdx = Math.max(highlightedIdx - 1, 0);
+        visible.forEach((i,idx) => i.style.background = idx === highlightedIdx ? 'var(--bg-surface)' : '');
+        visible[highlightedIdx]?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter' && highlightedIdx >= 0) {
+        e.preventDefault();
+        visible[highlightedIdx]?.click();
+      } else if (e.key.length === 1 && /[a-zA-ZÀ-ú]/.test(e.key) && !e.target.value) {
+        // Keyboard letter jump — already handled by input event
       }
+    });
+
+    // Bind item clicks
+    sublistEl?.querySelectorAll('.portal-area-item').forEach(item => {
+      item.addEventListener('click', () => {
+        sublistEl.querySelectorAll('.portal-area-item').forEach(i => i.classList.remove('selected'));
+        item.classList.add('selected');
+        // Also update the grid header to show selected
+        const nameEl = grid.querySelector('#area-selected-label');
+        if (nameEl) nameEl.textContent = item.dataset.name;
+        updatePreview();
+      });
+    });
+
+    searchInput?.focus();
+    return;
+  }
+
+  // Top level: categories + standalone areas
+  grid.innerHTML = `
+    ${categories.map(cat => {
+      const subareas = areas.filter(a => a.category === cat);
+      return `
+        <button class="portal-area-cat" data-category="${esc(cat)}">
+          <span style="font-size:0.8125rem;font-weight:600;">${esc(cat)}</span>
+          <span style="font-size:0.6875rem;color:var(--text-muted);">${subareas.length} áreas</span>
+          <span class="cat-chevron">▶</span>
+        </button>
+      `;
+    }).join('')}
+    ${standaloneAreas.map(a => `
+      <button class="portal-area-btn portal-area-cat" data-id="${a.id}" data-name="${esc(a.name)}">
+        ${a.logoUrl
+          ? `<img src="${esc(a.logoUrl)}" style="height:26px;object-fit:contain;" alt="${esc(a.name)}">`
+          : `<span style="font-size:0.8125rem;font-weight:600;">${esc(a.name)}</span>`
+        }
+        <span style="font-size:0.6875rem;color:var(--text-muted);">${esc(a.name)}</span>
+      </button>
+    `).join('')}
+  `;
+
+  // Category click → drill down
+  grid.querySelectorAll('[data-category]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      renderAreaPicker(grid, areas, btn.dataset.category);
+    });
+  });
+
+  // Standalone area click
+  grid.querySelectorAll('.portal-area-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      grid.querySelectorAll('.portal-area-btn,.portal-area-cat').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      updatePreview();
+    });
+  });
+}
+
+function areaItemRow(a) {
+  return `<button class="portal-area-item" data-id="${a.id}" data-name="${esc(a.name)}">
+    ${a.logoUrl
+      ? `<img src="${esc(a.logoUrl)}" style="height:20px;object-fit:contain;flex-shrink:0;" alt="">`
+      : `<span style="width:20px;height:20px;border-radius:var(--radius-sm);
+          background:var(--brand-gold)20;display:inline-flex;align-items:center;
+          justify-content:center;font-size:0.625rem;flex-shrink:0;">◈</span>`
+    }
+    <span style="flex:1;text-align:left;font-size:0.875rem;">${esc(a.name)}</span>
+  </button>`;
+}
+
+async function initPortalForm() {
+  // Load areas — two-level picker (categories → subareas)
+  try {
+    const areas  = await fetchAreas();
+    const grid   = document.getElementById('portal-areas-grid');
+    if (!grid || !areas.length) {
+      if (grid) grid.innerHTML = `<div style="grid-column:1/-1;color:var(--text-muted);
+        font-size:0.8125rem;padding:12px 0;">Nenhuma área cadastrada.
+        ${store.canManagePortal() ? '<a href="#portal-areas" style="color:var(--brand-gold);">Cadastrar</a>' : ''}
+      </div>`;
+    } else {
+      renderAreaPicker(grid, areas, null);
     }
   } catch(e) { console.warn('fetchAreas:', e.message); }
 
@@ -395,7 +512,7 @@ async function updatePreview() {
   const card = document.getElementById('portal-preview-card');
   if (!card) return;
 
-  const areaBtn   = document.querySelector('.portal-area-btn.selected');
+  const areaBtn   = document.querySelector('.portal-area-btn.selected, .portal-area-item.selected');
   const continent = document.getElementById('portal-continent')?.value;
   const country   = document.getElementById('portal-country')?.value;
   const city      = document.getElementById('portal-city')?.value;
@@ -477,7 +594,7 @@ async function handleGenerate() {
     return;
   }
 
-  const areaBtn  = document.querySelector('.portal-area-btn.selected');
+  const areaBtn  = document.querySelector('.portal-area-btn.selected, .portal-area-item.selected');
   const country  = document.getElementById('portal-country')?.value;
   const format   = document.querySelector('input[name=format]:checked')?.value;
   const segments = [...document.querySelectorAll('input[name=segment]:checked')].map(i => i.value);

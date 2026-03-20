@@ -305,7 +305,7 @@ function expiryControls(data) {
       </label>
       <div id="seg-expiry-field" style="display:${data.hasExpiry?'flex':'none'};align-items:center;gap:6px;">
         <input type="date" id="seg-expiry-date" value="${esc(data.expiryDate||'')}"
-          class="filter-select" style="padding:5px 8px;font-size:0.8125rem;width:140px;">
+          class="portal-field" style="padding:5px 8px;font-size:0.8125rem;width:140px;">
         ${isExpired ? `<span style="font-size:0.75rem;color:#EF4444;font-weight:600;">● Vencido</span>` : ''}
       </div>
     </div>`;
@@ -339,7 +339,7 @@ function buildInfoGeneraisPanel(data) {
               ${MONTHS.map((m,i)=>`
                 <td style="padding:4px;border:1px solid var(--border-subtle);">
                   <div style="display:flex;align-items:center;gap:2px;">
-                    <input type="number" class="clima-input" data-type="${type}" data-month="${i}"
+                    <input type="text" class="clima-input" data-type="${type}" data-month="${i}"
                       value="${esc(String(cli[`${type}_${i}`]??''))}"
                       style="width:42px;border:none;background:transparent;text-align:center;
                       font-size:0.8125rem;color:var(--text-primary);outline:none;padding:4px 2px;"
@@ -378,8 +378,8 @@ function buildInfoGeneraisPanel(data) {
               <option value="+" ${inf.fusoSinal!=='-'?'selected':''}>+</option>
               <option value="-" ${inf.fusoSinal==='-'?'selected':''}>-</option>
             </select>
-            <input type="number" id="ig-fuso-horas" class="filter-select" style="width:60px;"
-              value="${esc(String(inf.fusoHoras??''))}" placeholder="0" min="0" max="14">
+            <input type="text" id="ig-fuso-horas" class="portal-field" style="width:60px;"
+              value="${esc(String(inf.fusoHoras??''))}" placeholder="0">
             <span style="font-size:0.875rem;color:var(--text-muted);">horas em relação a Brasília</span>
           </div>
         </div>
@@ -426,7 +426,7 @@ function buildInfoGeneraisPanel(data) {
 const LBL = `font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;color:var(--text-secondary);`;
 
 function field(id, label, type, value='', opts={}) {
-  const base = `class="filter-select" id="${id}" style="width:100%;${opts.style||''}"`;
+  const base = `class="portal-field" id="${id}" style="${opts.style||''}"`;
   if (type === 'textarea') return `<div><label style="${LBL}">${label}</label>
     <textarea ${base} rows="${opts.rows||3}" placeholder="${esc(opts.placeholder||'')}">${esc(value||'')}</textarea></div>`;
   return `<div><label style="${LBL}">${label}</label>
@@ -466,10 +466,10 @@ function simpleItemRow(item, i) {
   return `<div class="simple-item" data-index="${i}"
     style="display:flex;gap:8px;align-items:flex-start;">
     <div style="flex:1;">
-      <input type="text" class="simple-item-title filter-select" data-index="${i}"
+      <input type="text" class="simple-item-title portal-field" data-index="${i}"
         style="width:100%;margin-bottom:6px;font-weight:600;"
         placeholder="Nome do bairro / local" value="${esc(item.title||'')}">
-      <textarea class="simple-item-desc filter-select" data-index="${i}"
+      <textarea class="simple-item-desc portal-field" data-index="${i}"
         style="width:100%;resize:vertical;min-height:60px;" placeholder="Descrição (opcional)"
         rows="2">${esc(item.description||'')}</textarea>
     </div>
@@ -520,7 +520,7 @@ function buildPlaceListPanel(seg, data) {
       <!-- Theme description -->
       <div style="margin-bottom:16px;">
         <label style="${LBL}">Descrição do tema <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
-        <textarea id="place-theme-desc" class="filter-select" style="width:100%;resize:vertical;" rows="2"
+        <textarea id="place-theme-desc" class="portal-field" style="width:100%;resize:vertical;" rows="2"
           placeholder="Texto introdutório sobre este segmento neste destino…"
         >${esc(data.themeDesc||'')}</textarea>
       </div>
@@ -549,7 +549,7 @@ function buildAgendaPanel(seg, data) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
         <div>
           <label style="${LBL}">Período da agenda</label>
-          <input type="text" id="agenda-periodo" class="filter-select" style="width:100%;"
+          <input type="text" id="agenda-periodo" class="portal-field" style="width:100%;"
             placeholder="Ex: Janeiro a Março 2026" value="${esc(data.periodoAgenda||'')}">
         </div>
         <div>
@@ -557,7 +557,7 @@ function buildAgendaPanel(seg, data) {
         </div>
         <div style="grid-column:1/-1;">
           <label style="${LBL}">Descrição do tema</label>
-          <textarea id="place-theme-desc" class="filter-select" style="width:100%;resize:vertical;" rows="2"
+          <textarea id="place-theme-desc" class="portal-field" style="width:100%;resize:vertical;" rows="2"
             placeholder="Introdução sobre a agenda cultural do destino…"
           >${esc(data.themeDesc||'')}</textarea>
         </div>
@@ -597,7 +597,7 @@ function placeItemBlock(item, i, cats, isAgenda) {
       </div>
       <div>
         <label style="${LBL}">Título / Nome *</label>
-        <input type="text" class="place-title filter-select" data-index="${i}"
+        <input type="text" class="place-title portal-field" data-index="${i}"
           style="width:100%;font-weight:600;" placeholder="Nome do local"
           value="${esc(item.titulo||'')}">
       </div>
@@ -605,7 +605,7 @@ function placeItemBlock(item, i, cats, isAgenda) {
 
     <div style="margin-bottom:10px;">
       <label style="${LBL}">Descrição</label>
-      <textarea class="place-desc filter-select" data-index="${i}"
+      <textarea class="place-desc portal-field" data-index="${i}"
         style="width:100%;resize:vertical;" rows="3"
         placeholder="Descrição do local…">${esc(item.descricao||'')}</textarea>
     </div>
@@ -614,7 +614,7 @@ function placeItemBlock(item, i, cats, isAgenda) {
     <div style="margin-bottom:10px;">
       <label style="${LBL}">Período do evento</label>
       <div style="display:flex;gap:8px;align-items:center;">
-        <input type="text" class="place-periodo filter-select" data-index="${i}"
+        <input type="text" class="place-periodo portal-field" data-index="${i}"
           style="flex:1;" placeholder="Ex: 10 a 20 de março de 2026"
           value="${esc(item.periodo||'')}">
         <label style="display:flex;align-items:center;gap:6px;font-size:0.8125rem;white-space:nowrap;">
@@ -629,22 +629,22 @@ function placeItemBlock(item, i, cats, isAgenda) {
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
       <div>
         <label style="${LBL}">Endereço</label>
-        <input type="text" class="place-endereco filter-select" data-index="${i}"
+        <input type="text" class="place-endereco portal-field" data-index="${i}"
           style="width:100%;" value="${esc(item.endereco||'')}">
       </div>
       <div>
         <label style="${LBL}">Telefone</label>
-        <input type="text" class="place-telefone filter-select" data-index="${i}"
+        <input type="text" class="place-telefone portal-field" data-index="${i}"
           style="width:100%;" value="${esc(item.telefone||'')}">
       </div>
       <div>
         <label style="${LBL}">Site</label>
-        <input type="url" class="place-site filter-select" data-index="${i}"
+        <input type="url" class="place-site portal-field" data-index="${i}"
           style="width:100%;" placeholder="https://" value="${esc(item.site||'')}">
       </div>
       <div style="grid-column:1/-1;">
         <label style="${LBL}">Observações</label>
-        <input type="text" class="place-obs filter-select" data-index="${i}"
+        <input type="text" class="place-obs portal-field" data-index="${i}"
           style="width:100%;" value="${esc(item.observacoes||'')}">
       </div>
     </div>
