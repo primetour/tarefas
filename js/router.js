@@ -55,10 +55,11 @@ class Router {
 
   // ─── Resolver rota atual ──────────────────────────────────
   async _resolve() {
-    const hash  = window.location.hash.replace('#', '') || 'dashboard';
-    const parts = hash.split('/');
-    const route = parts[0];
-    const params = parts.slice(1);
+    const hash    = window.location.hash.replace('#', '') || 'dashboard';
+    const noQuery = hash.split('?')[0];          // strip ?key=val
+    const parts   = noQuery.split('/');
+    const route   = parts[0];
+    const params  = parts.slice(1);
 
     // Verificar guards
     for (const guard of this.guards) {
@@ -91,7 +92,7 @@ class Router {
 
   // ─── Utilitários ─────────────────────────────────────────
   getCurrentRoute() {
-    return window.location.hash.replace('#', '') || 'dashboard';
+    return (window.location.hash.replace('#', '') || 'dashboard').split('?')[0];
   }
 
   isActive(route) {
