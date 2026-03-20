@@ -12,7 +12,7 @@ import {
 
 /* ── Config ── */
 export const AI_WORKER_URL   = 'https://primetour-claude.rene-castro.workers.dev';
-export const AI_WORKER_TOKEN = 'primetour-ai-2026-segredo'; // cole o WORKER_TOKEN após configurar no Cloudflare
+export const AI_WORKER_TOKEN = ''; // cole o WORKER_TOKEN após configurar no Cloudflare
 
 export const BUS = [
   { id: 'pts',                name: 'PTS Bradesco'        },
@@ -41,7 +41,7 @@ export async function saveBrandVoice(buId, content) {
   await setDoc(doc(db, 'ai_settings', `brand_voice_${buId}`), {
     buId, content,
     updatedAt: serverTimestamp(),
-    updatedBy: store.getState()?.user?.uid || '',
+    updatedBy: store._state?.currentUser?.uid || '',
   });
   voiceCache[buId] = content; // update cache
 }
@@ -213,7 +213,7 @@ async function logGeneration({ buId, userPrompt, response, maxTokens }) {
       promptLen:  userPrompt.length,
       responseLen: response.length,
       maxTokens,
-      generatedBy: store.getState()?.user?.uid || '',
+      generatedBy: store._state?.currentUser?.uid || '',
       generatedAt: serverTimestamp(),
     });
   } catch { /* non-fatal */ }
