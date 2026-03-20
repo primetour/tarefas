@@ -73,10 +73,17 @@
     /* ── Clima ── */
     .clima-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; overflow-x: auto; display: block; }
     .clima-table th, .clima-table td { padding: 7px 10px; text-align: center; border: 1px solid var(--border); }
-    .clima-table th { background: var(--surface); color: var(--muted); font-weight: 600; font-size: 0.6875rem; }
+    .clima-table th { background: var(--surface); color: var(--gold); font-weight: 700; font-size: 0.6875rem; }
     .clima-table .row-label { text-align: left; font-weight: 600; white-space: nowrap; color: var(--muted); }
     .clima-table .max { color: #F97316; }
     .clima-table .min { color: #38BDF8; }
+    .dest-tabs { display:flex; gap:8px; margin-bottom:28px; flex-wrap:wrap; }
+    .dest-tab {
+      padding:7px 16px; border-radius:20px; font-size:0.8125rem; font-weight:600;
+      cursor:pointer; border:1px solid var(--border); background:transparent;
+      color:var(--muted); transition:all .15s;
+    }
+    .dest-tab.active { background:var(--gold); color:var(--dark); border-color:var(--gold); }
 
     /* ── Representação ── */
     .rep-block {
@@ -171,11 +178,11 @@
   import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
   import { getFirestore, doc, getDoc, updateDoc, increment }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-  import { FIREBASE_CONFIG } from './js/config.js';
+  import { firebaseConfig } from './js/config.js';
 
   const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
-  const app = initializeApp(FIREBASE_CONFIG);
+  const app = initializeApp(firebaseConfig, 'portal-view');
   const db  = getFirestore(app);
 
   const token  = window.location.hash.slice(1);
@@ -244,6 +251,31 @@
   }
 
   // Render
+  // Multi-destination: render as tabs if >1, or direct content if 1
+  if (allTips.length > 1) {
+    const tabs = allTips.map((item, i) => {
+      const d = item.dest;
+      const label = [d?.city, d?.country].filter(Boolean).join(', ') || `Destino ${i+1}`;
+      return `<button class="dest-tab${i===0?' active':''}" data-idx="${i}">${esc(label)}</button>`;
+    }).join('');
+    appEl.innerHTML = `<div class="dest-tabs" id="dest-tabs">${tabs}</div><div id="dest-content"></div>`;
+    const renderTab = (idx) => {
+      const { tip, dest } = allTips[idx];
+      document.getElementById('dest-content').innerHTML = renderDestBlock(tip, dest, activeSegs, 0);
+    };
+    appEl.querySelectorAll('.dest-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        appEl.querySelectorAll('.dest-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderTab(Number(btn.dataset.idx));
+      });
+    });
+    renderTab(0);
+    document.getElementById('loading').style.display = 'none';
+    appEl.style.display = 'block';
+    return;
+  }
+
   appEl.innerHTML = allTips.map(({ tip, dest }, idx) => {
     const label  = [dest?.city, dest?.country, dest?.continent].filter(Boolean).join(', ');
     const parts  = [];
