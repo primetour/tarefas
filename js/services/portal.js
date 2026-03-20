@@ -82,12 +82,20 @@ export async function deleteArea(id) {
 
 /* ─── DESTINOS ────────────────────────────────────────────── */
 export async function fetchDestinations({ continent, country } = {}) {
-  let q = collection(db, 'portal_destinations');
-  const constraints = [orderBy('continent'), orderBy('country'), orderBy('city')];
-  if (continent) constraints.unshift(where('continent', '==', continent));
-  if (country)   constraints.unshift(where('country',   '==', country));
-  const snap = await getDocs(query(q, ...constraints));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Client-side filtering + sorting to avoid composite Firestore indexes
+  const snap = await getDocs(collection(db, 'portal_destinations'));
+  let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (continent) docs = docs.filter(d => d.continent === continent);
+  if (country)   docs = docs.filter(d => d.country   === country);
+  // Sort: continent → country → city
+  docs.sort((a, b) => {
+    const ca = (a.continent||'').localeCompare(b.continent||'', 'pt-BR');
+    if (ca !== 0) return ca;
+    const cb = (a.country||'').localeCompare(b.country||'', 'pt-BR');
+    if (cb !== 0) return cb;
+    return (a.city||'').localeCompare(b.city||'', 'pt-BR');
+  });
+  return docs;
 }
 
 export async function fetchContinentsWithContent() {
@@ -129,6 +137,21 @@ export async function fetchTip(destinationId) {
   );
   if (snap.empty) return null;
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
+// Returns array of segment keys that have content for a given destination
+export async function fetchAvailableSegments(destinationId) {
+  const tip = await fetchTip(destinationId);
+  if (!tip?.segments) return [];
+  return Object.entries(tip.segments)
+    .filter(([, seg]) => {
+      if (!seg) return false;
+      // Check if segment has actual content
+      if (typeof seg.content === 'string' && seg.content.trim()) return true;
+      if (Array.isArray(seg.items) && seg.items.length > 0) return true;
+      return false;
+    })
+    .map(([key]) => key);
 }
 
 export async function fetchTips({ continent, country } = {}) {
