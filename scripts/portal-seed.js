@@ -68,7 +68,7 @@ async function seed() {
   // 1. Seed Terms of Use
   const termsRef = db.collection('portal_terms').doc('v1_20250730');
   const termsSnap = await termsRef.get();
-  if (!termsSnap.exists()) {
+  if (!termsSnap.exists) {
     await termsRef.set({
       version:   'v1_20250730',
       text:      TERMS_TEXT,
@@ -93,7 +93,7 @@ async function seed() {
   for (const area of DEFAULT_AREAS) {
     const ref  = db.collection('portal_areas').doc(area.id);
     const snap = await ref.get();
-    if (!snap.exists()) {
+    if (!snap.exists) {
       await ref.set({
         ...area,
         templates:   [],
