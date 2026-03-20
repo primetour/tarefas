@@ -44,6 +44,7 @@ import { renderPortalImages }             from './pages/portalImages.js';
 import { renderPortalDashboard }          from './pages/portalDashboard.js';
 import { renderPortalTipEditor }          from './pages/portalTipEditor.js';
 import { renderPortalImport }             from './pages/portalImport.js';
+import { renderPortalTipsList }           from './pages/portalTipsList.js';
 import { renderPortalImportManual }       from './pages/portalImportManual.js';
 
 // ─── Instâncias globais ───────────────────────────────────
@@ -221,6 +222,7 @@ function setupRouter() {
     'portal-dashboard':     async () => { await renderPortalDashboard(content); },
     'portal-tip-editor':    async () => { await renderPortalTipEditor(content); },
     'portal-import':        async () => { await renderPortalImport(content); },
+    'portal-tips-list':     async () => { await renderPortalTipsList(content); },
     'portal-import-manual': async () => { await renderPortalImportManual(content); },
     'profile':      async () => { await renderProfile(content); },
     '404':          async () => render404(content),
