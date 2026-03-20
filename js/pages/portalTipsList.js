@@ -6,9 +6,10 @@
 import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
-  fetchTips, fetchDestinations, deleteTip,
+  fetchTips, fetchDestinations, fetchAreas, deleteTip,
   SEGMENTS,
 } from '../services/portal.js';
+import { generateTip } from '../services/portalGenerator.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -227,6 +228,9 @@ function renderTable() {
       <td style="padding:12px 16px;color:var(--text-muted);font-size:0.8125rem;">${fmt(r.updatedAt)}</td>
       <td style="padding:12px 16px;text-align:right;">
         <div style="display:flex;gap:6px;justify-content:flex-end;">
+          <button class="btn btn-ghost btn-sm tip-preview-btn"
+            data-id="${r.id}" data-dest-id="${r.destinationId}"
+            style="font-size:0.75rem;color:var(--text-muted);">👁 Preview</button>
           <a href="#portal-tip-editor?destId=${r.destinationId}" class="btn btn-ghost btn-sm"
             style="font-size:0.75rem;text-decoration:none;color:var(--brand-gold);">✎ Editar</a>
           <button class="btn btn-ghost btn-sm tip-delete-btn" data-id="${r.id}"
@@ -236,6 +240,15 @@ function renderTable() {
       </td>
     </tr>`;
   }).join('');
+
+  tbody.querySelectorAll('.tip-preview-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tip  = allTips.find(t => t.id === btn.dataset.id);
+      const dest = allDests.find(d => d.id === btn.dataset.destId);
+      if (!tip || !dest) { toast.error('Dica não encontrada.'); return; }
+      showPreviewModal(tip, dest);
+    });
+  });
 
   tbody.querySelectorAll('.tip-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -268,4 +281,197 @@ function hasExpiringSegment(tip, now, deadline) {
 
 function hasAnyExpiry(tip) {
   return SEGMENTS.some(s => tip.segments?.[s.key]?.hasExpiry);
+}
+
+/* ─── Preview Modal ───────────────────────────────────────── */
+function showPreviewModal(tip, dest) {
+  const existing = document.getElementById('tip-preview-modal');
+  if (existing) existing.remove();
+
+  const destLabel = [dest?.city, dest?.country, dest?.continent].filter(Boolean).join(', ') || '—';
+  const segsWithContent = SEGMENTS.filter(s => {
+    const seg = tip?.segments?.[s.key];
+    if (!seg) return false;
+    if (seg.info && Object.values(seg.info).some(v => v && String(v).trim())) return true;
+    return Array.isArray(seg.items) && seg.items.length > 0;
+  });
+
+  const modal = document.createElement('div');
+  modal.id = 'tip-preview-modal';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:2000;
+    display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;`;
+
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:760px;padding:0;overflow:hidden;
+      margin:auto;max-height:90vh;display:flex;flex-direction:column;">
+
+      <!-- Header -->
+      <div style="padding:18px 24px;background:var(--bg-surface);
+        border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:12px;
+        flex-shrink:0;">
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:1.0625rem;">${esc(destLabel)}</div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:2px;">
+            ${segsWithContent.length} segmento${segsWithContent.length!==1?'s':''} com conteúdo
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <a href="#portal-tip-editor?destId=${esc(tip.destinationId)}"
+            class="btn btn-secondary btn-sm"
+            style="text-decoration:none;font-size:0.8125rem;">✎ Editar</a>
+          <button id="preview-close-btn" style="border:none;background:none;cursor:pointer;
+            font-size:1.25rem;color:var(--text-muted);padding:0 4px;">✕</button>
+        </div>
+      </div>
+
+      <!-- Segment tabs -->
+      <div style="display:flex;gap:0;overflow-x:auto;border-bottom:1px solid var(--border-subtle);
+        flex-shrink:0;background:var(--bg-surface);">
+        ${segsWithContent.map((s, i) => `
+          <button class="preview-seg-tab" data-seg="${esc(s.key)}"
+            style="padding:10px 14px;border:none;background:none;cursor:pointer;
+            font-size:0.8125rem;white-space:nowrap;color:var(--text-muted);
+            border-bottom:2px solid ${i===0?'var(--brand-gold)':'transparent'};
+            color:${i===0?'var(--brand-gold)':'var(--text-muted)'};
+            transition:all .15s;">
+            ${esc(s.label)}
+          </button>`).join('')}
+      </div>
+
+      <!-- Content -->
+      <div id="preview-content" style="padding:24px;overflow-y:auto;flex:1;min-height:200px;">
+        ${segsWithContent.length ? renderSegPreview(tip, segsWithContent[0].key) : '<div style="color:var(--text-muted);text-align:center;padding:40px;">Sem conteúdo.</div>'}
+      </div>
+
+      <!-- Footer -->
+      <div style="padding:14px 24px;border-top:1px solid var(--border-subtle);
+        background:var(--bg-surface);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;">
+        <button id="preview-close-btn2" class="btn btn-ghost btn-sm">Fechar</button>
+        <a href="#portal-tip-editor?destId=${esc(tip.destinationId)}"
+          class="btn btn-primary btn-sm" style="text-decoration:none;">✎ Editar dica</a>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+  document.getElementById('preview-close-btn')?.addEventListener('click', close);
+  document.getElementById('preview-close-btn2')?.addEventListener('click', close);
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+  // Tab switching
+  modal.querySelectorAll('.preview-seg-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      modal.querySelectorAll('.preview-seg-tab').forEach(t => {
+        t.style.borderBottomColor = 'transparent';
+        t.style.color = 'var(--text-muted)';
+      });
+      tab.style.borderBottomColor = 'var(--brand-gold)';
+      tab.style.color = 'var(--brand-gold)';
+      document.getElementById('preview-content').innerHTML =
+        renderSegPreview(tip, tab.dataset.seg);
+    });
+  });
+}
+
+function renderSegPreview(tip, segKey) {
+  const segDef = SEGMENTS.find(s => s.key === segKey);
+  const data   = tip?.segments?.[segKey];
+  if (!segDef || !data) return '<div style="color:var(--text-muted);">Sem dados.</div>';
+
+  const LBL = 'font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:4px;';
+  const VAL = 'font-size:0.9375rem;color:var(--text-primary);';
+
+  if (segDef.mode === 'special_info') {
+    const inf = data.info || {};
+    const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const fields = [
+      ['Descrição', inf.descricao], ['Dica', inf.dica],
+      ['População', inf.populacao], ['Moeda', inf.moeda],
+      ['Língua oficial', inf.lingua], ['Religião', inf.religiao],
+      ['Fuso horário', inf.fusoSinal && inf.fusoHoras ? `${inf.fusoSinal}${inf.fusoHoras}h de Brasília` : ''],
+      ['Voltagem', inf.voltagem], ['DDD', inf.ddd],
+    ].filter(([,v]) => v);
+
+    const cli = inf.clima || {};
+    const hasClima = MONTHS.some((_,i) => cli[`max_${i}`] || cli[`min_${i}`]);
+
+    return `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+        ${fields.map(([l,v]) => `
+          <div style="background:var(--bg-surface);border-radius:var(--radius-sm);padding:10px 12px;">
+            <div style="${LBL}">${esc(l)}</div>
+            <div style="${VAL}">${esc(v)}</div>
+          </div>`).join('')}
+      </div>
+      ${hasClima ? `
+        <div style="margin-bottom:12px;">
+          <div style="${LBL}">Clima (°C)</div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.8125rem;margin-top:6px;">
+              <thead><tr>
+                <th style="text-align:left;padding:5px 8px;color:var(--text-muted);font-size:0.6875rem;">°C</th>
+                ${MONTHS.map(m=>`<th style="padding:5px 6px;color:var(--text-muted);font-size:0.6875rem;">${m}</th>`).join('')}
+              </tr></thead>
+              <tbody>
+                <tr style="color:#F97316;">
+                  <td style="padding:5px 8px;font-weight:600;font-size:0.75rem;">↑</td>
+                  ${MONTHS.map((_,i)=>`<td style="text-align:center;padding:5px 6px;">${cli[`max_${i}`]??'—'}</td>`).join('')}
+                </tr>
+                <tr style="color:#38BDF8;">
+                  <td style="padding:5px 8px;font-weight:600;font-size:0.75rem;">↓</td>
+                  ${MONTHS.map((_,i)=>`<td style="text-align:center;padding:5px 6px;">${cli[`min_${i}`]??'—'}</td>`).join('')}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+      ${inf.representacao?.nome ? `
+        <div style="background:var(--bg-surface);border-radius:var(--radius-sm);padding:12px 14px;">
+          <div style="${LBL};margin-bottom:8px;">Representação Brasileira</div>
+          ${[['Nome',inf.representacao.nome],['Endereço',inf.representacao.endereco],
+             ['Telefone',inf.representacao.telefone],['Site',inf.representacao.link]]
+            .filter(([,v])=>v)
+            .map(([l,v])=>`<div style="font-size:0.875rem;margin-bottom:4px;">
+              <strong>${esc(l)}:</strong> ${esc(v)}</div>`).join('')}
+        </div>` : ''}
+    `;
+  }
+
+  if (segDef.mode === 'simple_list') {
+    const items = (data.items || []).filter(i => i.title);
+    if (!items.length) return '<div style="color:var(--text-muted);">Sem itens.</div>';
+    return items.map(item => `
+      <div style="padding:12px 0;border-bottom:1px solid var(--border-subtle)88;">
+        <div style="font-weight:600;font-size:0.9375rem;margin-bottom:4px;">${esc(item.title)}</div>
+        ${item.description ? `<div style="font-size:0.875rem;color:var(--text-muted);">${esc(item.description)}</div>` : ''}
+      </div>`).join('');
+  }
+
+  // place_list / agenda
+  const items = (data.items || []).filter(i => i.titulo);
+  if (!items.length && !data.themeDesc) return '<div style="color:var(--text-muted);">Sem itens.</div>';
+  return `
+    ${data.themeDesc ? `<p style="color:var(--text-muted);font-style:italic;margin-bottom:16px;">${esc(data.themeDesc)}</p>` : ''}
+    ${segDef.mode === 'agenda' && data.periodoAgenda ? `
+      <div style="font-size:0.875rem;color:var(--brand-gold);margin-bottom:12px;">📅 ${esc(data.periodoAgenda)}</div>` : ''}
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      ${items.map(item => `
+        <div style="background:var(--bg-surface);border-radius:var(--radius-sm);
+          padding:14px 16px;border:1px solid var(--border-subtle);">
+          ${item.categoria ? `<div style="font-size:0.6875rem;color:var(--brand-gold);text-transform:uppercase;
+            letter-spacing:.07em;margin-bottom:4px;">${esc(item.categoria)}</div>` : ''}
+          <div style="font-weight:700;font-size:0.9375rem;margin-bottom:6px;">${esc(item.titulo)}</div>
+          ${item.descricao ? `<div style="font-size:0.875rem;color:var(--text-muted);margin-bottom:8px;line-height:1.5;">${esc(item.descricao)}</div>` : ''}
+          <div style="display:flex;flex-wrap:wrap;gap:10px;font-size:0.8125rem;color:var(--text-muted);">
+            ${item.endereco ? `<span>📍 ${esc(item.endereco)}</span>` : ''}
+            ${item.telefone ? `<span>📞 ${esc(item.telefone)}</span>` : ''}
+            ${item.site     ? `<a href="${esc(item.site)}" target="_blank" style="color:var(--brand-gold);text-decoration:none;">🌐 Site</a>` : ''}
+            ${item.periodo  ? `<span>📅 ${esc(item.periodo)}</span>` : ''}
+          </div>
+          ${item.observacoes ? `<div style="margin-top:6px;font-size:0.8125rem;color:var(--text-muted);font-style:italic;">💡 ${esc(item.observacoes)}</div>` : ''}
+        </div>`).join('')}
+    </div>
+  `;
 }
