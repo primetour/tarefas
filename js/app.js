@@ -37,6 +37,11 @@ import { renderSettings }                 from './pages/settings.js';
 import { renderAbout }                    from './pages/about.js';
 import { renderNlPerformance }            from './pages/nlPerformance.js';
 import { renderMetaPerformance }          from './pages/metaPerformance.js';
+import { renderPortalTips }               from './pages/portalTips.js';
+import { renderPortalAreas }              from './pages/portalAreas.js';
+import { renderPortalDestinations }       from './pages/portalDestinations.js';
+import { renderPortalImages }             from './pages/portalImages.js';
+import { renderPortalDashboard }          from './pages/portalDashboard.js';
 
 // ─── Instâncias globais ───────────────────────────────────
 let sidebar = null;
@@ -204,8 +209,13 @@ function setupRouter() {
     'settings':     async () => { await renderSettings(content); },
     'integrations': async () => { await renderIntegrations(content); },
     'about':        async () => { await renderAbout(content); },
-    'nl-performance':   async () => { await renderNlPerformance(content); },
-    'meta-performance': async () => { await renderMetaPerformance(content); },
+    'nl-performance':       async () => { await renderNlPerformance(content); },
+    'meta-performance':     async () => { await renderMetaPerformance(content); },
+    'portal-tips':          async () => { await renderPortalTips(content); },
+    'portal-areas':         async () => { await renderPortalAreas(content); },
+    'portal-destinations':  async () => { await renderPortalDestinations(content); },
+    'portal-images':        async () => { await renderPortalImages(content); },
+    'portal-dashboard':     async () => { await renderPortalDashboard(content); },
     'profile':      async () => { await renderProfile(content); },
     '404':          async () => render404(content),
   });
@@ -213,7 +223,15 @@ function setupRouter() {
   // Guard: só acessa app se autenticado
   router.addGuard((route) => {
     if (!store.get('isAuthenticated')) {
-      return false; // Bloqueia
+      return false;
+    }
+    // Parceiros só acessam rotas do portal
+    if (store.isPartner()) {
+      const portalRoutes = ['portal-tips','portal-dashboard','profile'];
+      if (!portalRoutes.includes(route)) {
+        router.navigate('portal-tips');
+        return false;
+      }
     }
     return true;
   });

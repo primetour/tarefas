@@ -113,6 +113,13 @@ class Store {
   // Mantidos como aliases — safe para remover em versão futura
   isAdmin()   { return this.can('system_manage_users'); }
   isManager() { return this.can('workspace_create') || this.can('system_manage_users'); }
+  isPartner() {
+    const profile = this._state.userProfile;
+    return profile?.roleId === 'partner' && !this.isMaster();
+  }
+  canPortal()  { return this.isMaster() || this.can('portal_access'); }
+  canCreateTip() { return this.isMaster() || this.can('portal_create'); }
+  canManagePortal() { return this.isMaster() || this.can('portal_manage'); }
 
   /**
    * getVisibleSectors()
