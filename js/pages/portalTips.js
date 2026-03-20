@@ -7,8 +7,9 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
   fetchAreas, fetchDestinations, fetchContinentsWithContent,
-  fetchTip, checkDownloadLimit, hasAcceptedTerms, getActiveTerms,
-  acceptTerms, recordGeneration, registerDownload,
+  fetchTip, fetchAvailableSegments, checkDownloadLimit,
+  hasAcceptedTerms, getActiveTerms, acceptTerms,
+  recordGeneration, registerDownload,
   SEGMENTS, GENERATION_FORMATS,
 } from '../services/portal.js';
 
@@ -95,7 +96,7 @@ export async function renderPortalTips(container) {
               <option value="">Carregando continentes…</option>
             </select>
             <select class="filter-select" id="portal-country" style="width:100%;" disabled>
-              <option value="">Selecione o continente</option>
+              <option value="">Selecione o país</option>
             </select>
             <select class="filter-select" id="portal-city" style="width:100%;" disabled>
               <option value="">Cidade/Região (opcional)</option>
@@ -124,16 +125,9 @@ export async function renderPortalTips(container) {
             </button>
           </div>
           <div id="portal-segments" style="display:flex;flex-direction:column;gap:6px;">
-            ${SEGMENTS.map(s => `
-              <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;
-                border-radius:var(--radius-sm);cursor:pointer;transition:background .1s;"
-                onmouseover="this.style.background='var(--bg-surface)'"
-                onmouseout="this.style.background=''">
-                <input type="checkbox" name="segment" value="${s.key}" checked
-                  style="width:15px;height:15px;accent-color:var(--brand-gold);cursor:pointer;">
-                <span style="font-size:0.875rem;color:var(--text-primary);">${esc(s.label)}</span>
-              </label>
-            `).join('')}
+            <div style="font-size:0.8125rem;color:var(--text-muted);padding:8px 0;text-align:center;">
+              Selecione um destino para ver os segmentos disponíveis.
+            </div>
           </div>
         </div>
       </div>
@@ -245,7 +239,15 @@ async function initPortalForm() {
 
   // Country change
   document.getElementById('portal-country')?.addEventListener('change', () => onCountryChange());
-  document.getElementById('portal-city')?.addEventListener('change',    () => updatePreview());
+  document.getElementById('portal-city')?.addEventListener('change', async () => {
+    const continent = document.getElementById('portal-continent')?.value;
+    const country   = document.getElementById('portal-country')?.value;
+    const city      = document.getElementById('portal-city')?.value;
+    const dests     = await fetchDestinations({ continent, country });
+    const dest      = city ? dests.find(d => d.city === city) : dests.find(d => !d.city) || dests[0];
+    if (dest) await updateSegments(dest.id);
+    updatePreview();
+  });
 
   // Segments
   document.getElementById('portal-seg-all')?.addEventListener('click', () => {
@@ -293,15 +295,18 @@ async function onCountryChange() {
 
   citySel.innerHTML = '<option value="">Cidade/Região (opcional)</option>';
   citySel.disabled  = !country;
-  if (!country) return;
+  if (!country) { await updateSegments(null); return; }
 
   const dests  = await fetchDestinations({ continent, country });
   const cities = dests.map(d => d.city).filter(Boolean).sort();
   if (cities.length) {
-    citySel.innerHTML = `<option value="">Qualquer cidade</option>` +
+    citySel.innerHTML = `<option value="">Qualquer país (sem cidade específica)</option>` +
       cities.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
     citySel.disabled = false;
   }
+  // Update segments for the country-level destination
+  const dest = dests.find(d => !d.city) || dests[0];
+  if (dest) await updateSegments(dest.id);
   updatePreview();
 }
 
@@ -345,6 +350,45 @@ function addExtraDestination() {
       countrySel.disabled = false;
     });
   });
+}
+
+async function updateSegments(destinationId) {
+  const container = document.getElementById('portal-segments');
+  if (!container) return;
+
+  if (!destinationId) {
+    container.innerHTML = `<div style="font-size:0.8125rem;color:var(--text-muted);padding:8px 0;text-align:center;">
+      Selecione um destino para ver os segmentos disponíveis.
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = `<div style="font-size:0.8125rem;color:var(--text-muted);padding:8px 0;text-align:center;">
+    Verificando conteúdo disponível…
+  </div>`;
+
+  const available = await fetchAvailableSegments(destinationId);
+
+  if (!available.length) {
+    container.innerHTML = `<div style="font-size:0.8125rem;color:var(--text-muted);padding:8px 0;text-align:center;">
+      Nenhum segmento com conteúdo cadastrado para este destino.
+      ${store.canCreateTip() ? '<br><a href="#portal-tip-editor" style="color:var(--brand-gold);">Criar dica</a>' : ''}
+    </div>`;
+    return;
+  }
+
+  const segsWithContent = SEGMENTS.filter(s => available.includes(s.key));
+  container.innerHTML = segsWithContent.map(s => `
+    <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+      border-radius:var(--radius-sm);cursor:pointer;transition:background .1s;"
+      onmouseover="this.style.background='var(--bg-surface)'"
+      onmouseout="this.style.background=''">
+      <input type="checkbox" name="segment" value="${s.key}" checked
+        style="width:15px;height:15px;accent-color:var(--brand-gold);cursor:pointer;"
+        onchange="updatePreview()">
+      <span style="font-size:0.875rem;color:var(--text-primary);">${esc(s.label)}</span>
+    </label>
+  `).join('');
 }
 
 async function updatePreview() {

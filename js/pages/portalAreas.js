@@ -38,7 +38,10 @@ export async function renderPortalAreas(container) {
 
   await loadAreas();
 
-  document.getElementById('area-new-btn')?.addEventListener('click', () => showAreaModal(null));
+  document.getElementById('area-new-btn')?.addEventListener('click', async () => {
+    const areas = await fetchAreas();
+    showAreaModal(null, areas);
+  });
 }
 
 async function loadAreas() {
@@ -53,7 +56,15 @@ async function loadAreas() {
     return;
   }
 
-  grid.innerHTML = areas.map(a => `
+  // Group by category
+  const categories = [...new Set(areas.map(a => a.category || '').filter(Boolean))].sort();
+  const noCategory = areas.filter(a => !a.category);
+  const grouped    = [
+    ...(noCategory.length ? [{ cat: '', items: noCategory }] : []),
+    ...categories.map(cat => ({ cat, items: areas.filter(a => a.category === cat) })),
+  ];
+
+  const renderCard = a => `
     <div class="card" style="padding:20px;position:relative;">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         ${a.logoUrl
@@ -73,16 +84,24 @@ async function loadAreas() {
         <button class="btn btn-ghost btn-sm" data-delete="${a.id}"
           style="color:#EF4444;">Excluir</button>
       </div>
-    </div>
+    </div>`;
+
+  grid.innerHTML = grouped.map(({ cat, items }) => `
+    ${cat ? `<div style="grid-column:1/-1;margin-top:8px;">
+      <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+        color:var(--text-muted);padding:4px 0 8px;border-bottom:1px solid var(--border-subtle);
+        margin-bottom:4px;">${esc(cat)}</div>
+    </div>` : ''}
+    ${items.map(renderCard).join('')}
   `).join('');
 
   grid.querySelectorAll('[data-edit]').forEach(btn =>
-    btn.addEventListener('click', () => showAreaModal(areas.find(a => a.id === btn.dataset.edit))));
+    btn.addEventListener('click', () => showAreaModal(areas.find(a => a.id === btn.dataset.edit), areas)));
   grid.querySelectorAll('[data-delete]').forEach(btn =>
     btn.addEventListener('click', () => handleDeleteArea(btn.dataset.delete, areas.find(a => a.id === btn.dataset.delete)?.name)));
 }
 
-function showAreaModal(area) {
+function showAreaModal(area, areas = []) {
   const modal = document.getElementById('area-modal');
   if (!modal) return;
   modal.style.display = 'flex';
@@ -104,6 +123,21 @@ function showAreaModal(area) {
           </label>
           <input type="text" id="area-name" class="filter-select" style="width:100%;"
             placeholder="Ex: BTG Partners" value="${esc(area?.name || '')}">
+        </div>
+        <div>
+          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
+            Categoria <span style="font-weight:400;color:var(--text-muted);">(agrupa áreas)</span>
+          </label>
+          <input type="text" id="area-category" class="filter-select" style="width:100%;"
+            placeholder="Ex: ICs, BTG, Bradesco…" value="${esc(area?.category || '')}"
+            list="area-category-list">
+          <datalist id="area-category-list">
+            ${[...new Set(areas.map(a => a.category).filter(Boolean))].map(c =>
+              `<option value="${esc(c)}">`).join('')}
+          </datalist>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+            Deixe vazio para área independente. Áreas da mesma categoria são agrupadas no portal.
+          </div>
         </div>
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
@@ -170,6 +204,7 @@ function showAreaModal(area) {
     try {
       await saveArea(area?.id || null, {
         name,
+        category:    document.getElementById('area-category')?.value?.trim() || '',
         logoUrl:     document.getElementById('area-logo')?.value?.trim() || null,
         description: document.getElementById('area-desc')?.value?.trim() || '',
         colors: {
