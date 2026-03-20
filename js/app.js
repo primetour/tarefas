@@ -42,6 +42,7 @@ import { renderPortalAreas }              from './pages/portalAreas.js';
 import { renderPortalDestinations }       from './pages/portalDestinations.js';
 import { renderPortalImages }             from './pages/portalImages.js';
 import { renderPortalDashboard }          from './pages/portalDashboard.js';
+import { renderPortalTipEditor }          from './pages/portalTipEditor.js';
 
 // ─── Instâncias globais ───────────────────────────────────
 let sidebar = null;
@@ -216,6 +217,7 @@ function setupRouter() {
     'portal-destinations':  async () => { await renderPortalDestinations(content); },
     'portal-images':        async () => { await renderPortalImages(content); },
     'portal-dashboard':     async () => { await renderPortalDashboard(content); },
+    'portal-tip-editor':    async () => { await renderPortalTipEditor(content); },
     'profile':      async () => { await renderProfile(content); },
     '404':          async () => render404(content),
   });
