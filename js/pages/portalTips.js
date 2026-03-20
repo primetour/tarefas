@@ -12,6 +12,7 @@ import {
   recordGeneration, registerDownload,
   SEGMENTS, GENERATION_FORMATS,
 } from '../services/portal.js';
+import { generateTip } from '../services/portalGenerator.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -590,39 +591,233 @@ async function updatePreview() {
 async function handleGenerate() {
   const limitInfo = await checkDownloadLimit();
   if (!limitInfo.allowed) {
-    toast.error('Limite diário de downloads atingido.');
+    toast.error('Limite diário de downloads atingido. Tente novamente amanhã.');
     return;
   }
 
-  const areaBtn  = document.querySelector('.portal-area-btn.selected, .portal-area-item.selected');
-  const country  = document.getElementById('portal-country')?.value;
-  const format   = document.querySelector('input[name=format]:checked')?.value;
-  const segments = [...document.querySelectorAll('input[name=segment]:checked')].map(i => i.value);
+  const areaBtn   = document.querySelector('.portal-area-btn.selected, .portal-area-item.selected');
+  const continent = document.getElementById('portal-continent')?.value;
+  const country   = document.getElementById('portal-country')?.value;
+  const city      = document.getElementById('portal-city')?.value;
+  const format    = document.querySelector('input[name=format]:checked')?.value;
+  const segments  = [...document.querySelectorAll('input[name=segment]:checked')].map(i => i.value);
 
-  if (!areaBtn) { toast.error('Selecione uma área.'); return; }
-  if (!country) { toast.error('Selecione um destino.'); return; }
-  if (!segments.length) { toast.error('Selecione ao menos um segmento.'); return; }
+  if (!areaBtn)        { toast.error('Selecione uma área.'); return; }
+  if (!country)        { toast.error('Selecione um destino.'); return; }
+  if (!segments.length){ toast.error('Selecione ao menos um segmento.'); return; }
 
-  const btn = document.getElementById('portal-generate-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando…'; }
+  // Resolve destination + tip
+  const dests = await fetchDestinations({ continent, country });
+  const dest  = city ? dests.find(d => d.city === city) : dests.find(d => !d.city) || dests[0];
+  if (!dest) { toast.error('Destino não encontrado.'); return; }
 
-  try {
-    toast.info('Gerando material… isso pode levar alguns segundos.');
-    // Generation logic will be implemented in E5
-    // For now, record the generation intent
-    await recordGeneration({
-      areaId:   areaBtn.dataset.id,
-      format,
-      segments,
-      status:   'pending',
-    });
-    await registerDownload();
-    toast.success('Material gerado com sucesso! (Implementação completa no E5)');
-  } catch(e) {
-    toast.error('Erro ao gerar: ' + e.message);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '✈ Gerar Material'; }
+  const tip = await fetchTip(dest.id);
+  if (!tip)  { toast.error('Nenhuma dica cadastrada para este destino.'); return; }
+
+  // Resolve extra destinations (combined)
+  const extraTips = [];
+  for (const block of document.querySelectorAll('.extra-dest-block')) {
+    const eCont = block.querySelector('.extra-continent')?.value;
+    const eCoun = block.querySelector('.extra-country')?.value;
+    const eCity = block.querySelector('.extra-city')?.value;
+    if (!eCoun) continue;
+    const ed = await fetchDestinations({ continent: eCont, country: eCoun });
+    const edest = eCity ? ed.find(d => d.city === eCity) : ed.find(d => !d.city) || ed[0];
+    if (!edest) continue;
+    const etip = await fetchTip(edest.id);
+    if (etip) extraTips.push({ tip: etip, dest: edest });
   }
+
+  // Load area data
+  const { fetchAreas: _fa } = await import('../services/portal.js');
+  const areas = await _fa();
+  const area  = areas.find(a => a.id === areaBtn.dataset.id) || {};
+
+  // Show preview modal
+  showPreviewModal({ tip, dest, area, segments, format, extraTips });
+}
+
+function showPreviewModal({ tip, dest, area, segments, format, extraTips }) {
+  const existing = document.getElementById('portal-preview-modal');
+  if (existing) existing.remove();
+
+  const allTips   = [{ tip, dest }, ...extraTips];
+  const segLabels = SEGMENTS.filter(s => segments.includes(s.key)).map(s => s.label);
+  const fmtLabel  = GENERATION_FORMATS.find(f => f.key === format)?.label || format;
+  const destLabels = allTips.map(({ dest: d }) =>
+    [d?.city, d?.country].filter(Boolean).join(', ')
+  ).join(' + ');
+
+  const modal = document.createElement('div');
+  modal.id    = 'portal-preview-modal';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
+    display:flex;align-items:center;justify-content:center;padding:20px;`;
+
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:600px;padding:0;overflow:hidden;max-height:90vh;
+      display:flex;flex-direction:column;">
+
+      <!-- Header -->
+      <div style="padding:20px 24px;border-bottom:1px solid var(--border-subtle);
+        background:var(--bg-surface);display:flex;align-items:center;gap:12px;">
+        <span style="font-size:1.5rem;">✈</span>
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:1rem;">Confirmar Geração</div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);">Revise antes de gerar o material</div>
+        </div>
+        <button id="preview-close" style="border:none;background:none;cursor:pointer;
+          font-size:1.25rem;color:var(--text-muted);">✕</button>
+      </div>
+
+      <!-- Body -->
+      <div style="padding:24px;overflow-y:auto;flex:1;">
+
+        <!-- Destino(s) -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+            letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Destino${allTips.length>1?'s':''}</div>
+          ${allTips.map(({ dest: d, tip: t }) => `
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
+              background:var(--bg-surface);border-radius:var(--radius-sm);margin-bottom:6px;">
+              <span style="font-size:1.25rem;">📍</span>
+              <div style="flex:1;">
+                <div style="font-weight:600;font-size:0.9375rem;">
+                  ${esc([d?.city, d?.country, d?.continent].filter(Boolean).join(', '))}
+                </div>
+                <div style="font-size:0.75rem;color:var(--text-muted);">
+                  ${SEGMENTS.filter(s => segments.includes(s.key) && t?.segments?.[s.key]).length} segmento(s) com conteúdo
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <!-- Área -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+            letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Área</div>
+          <div style="padding:10px 12px;background:var(--bg-surface);border-radius:var(--radius-sm);
+            display:flex;align-items:center;gap:10px;">
+            ${area?.logoUrl
+              ? `<img src="${esc(area.logoUrl)}" style="height:24px;object-fit:contain;">`
+              : `<span style="font-size:0.875rem;font-weight:600;">${esc(area?.name||'—')}</span>`}
+            ${area?.logoUrl ? `<span style="font-size:0.875rem;">${esc(area.name||'')}</span>` : ''}
+          </div>
+        </div>
+
+        <!-- Segmentos -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+            letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">
+            Segmentos (${segLabels.length})
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${segLabels.map(l => `
+              <span style="font-size:0.75rem;padding:3px 10px;background:var(--bg-surface);
+                border:1px solid var(--border-subtle);border-radius:var(--radius-full);">
+                ${esc(l)}
+              </span>`).join('')}
+          </div>
+        </div>
+
+        <!-- Formato -->
+        <div>
+          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+            letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Formato</div>
+          <div style="padding:10px 12px;background:var(--brand-gold)12;
+            border:1px solid var(--brand-gold)40;border-radius:var(--radius-sm);
+            font-weight:600;font-size:0.9375rem;color:var(--brand-gold);">
+            ${esc(fmtLabel)}
+            ${format === 'web' ? ' — link exclusivo permanente' : ''}
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div style="padding:16px 24px;border-top:1px solid var(--border-subtle);
+        display:flex;gap:10px;background:var(--bg-surface);">
+        <button class="btn btn-secondary" id="preview-cancel" style="flex:1;">
+          Voltar e ajustar
+        </button>
+        <button class="btn btn-primary" id="preview-confirm" style="flex:2;font-weight:600;">
+          ✈ Gerar agora
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+  document.getElementById('preview-close')?.addEventListener('click', close);
+  document.getElementById('preview-cancel')?.addEventListener('click', close);
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+  document.getElementById('preview-confirm')?.addEventListener('click', async () => {
+    const btn = document.getElementById('preview-confirm');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando…'; }
+
+    try {
+      const result = await generateTip({ tip, dest, area, segments, format, extraTips });
+
+      await recordGeneration({
+        areaId:       area?.id   || null,
+        format,
+        segments,
+        destinationIds: allTips.map(({dest:d}) => d?.id).filter(Boolean),
+        status:       'done',
+        ...(result.url ? { webUrl: result.url } : {}),
+      });
+      await registerDownload();
+      close();
+
+      if (format === 'web' && result.url) {
+        showWebLinkResult(result.url);
+      } else {
+        toast.success('Material gerado e download iniciado!');
+      }
+    } catch(e) {
+      toast.error('Erro ao gerar: ' + e.message);
+      if (btn) { btn.disabled = false; btn.textContent = '✈ Gerar agora'; }
+    }
+  });
+}
+
+function showWebLinkResult(url) {
+  const existing = document.getElementById('weblink-result-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id    = 'weblink-result-modal';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
+    display:flex;align-items:center;justify-content:center;padding:20px;`;
+
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:500px;padding:32px;text-align:center;">
+      <div style="font-size:2.5rem;margin-bottom:12px;">🔗</div>
+      <h2 style="font-size:1.125rem;margin:0 0 8px;">Link gerado com sucesso!</h2>
+      <p style="font-size:0.875rem;color:var(--text-muted);margin:0 0 20px;">
+        Compartilhe este link com o cliente. O conteúdo fica disponível permanentemente.
+      </p>
+      <div style="display:flex;gap:8px;margin-bottom:20px;">
+        <input type="text" id="weblink-url" value="${esc(url)}" readonly
+          class="portal-field" style="flex:1;font-size:0.8125rem;">
+        <button class="btn btn-primary btn-sm" id="weblink-copy">Copiar</button>
+      </div>
+      <a href="${esc(url)}" target="_blank" class="btn btn-secondary btn-sm"
+        style="text-decoration:none;display:inline-block;margin-right:8px;">
+        Abrir link ↗
+      </a>
+      <button class="btn btn-ghost btn-sm" id="weblink-close">Fechar</button>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  document.getElementById('weblink-copy')?.addEventListener('click', () => {
+    navigator.clipboard.writeText(url).then(() => toast.success('Link copiado!'));
+  });
+  document.getElementById('weblink-close')?.addEventListener('click', () => modal.remove());
 }
 
 /* ─── Terms modal ─────────────────────────────────────────── */
