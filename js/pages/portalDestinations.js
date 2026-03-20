@@ -140,9 +140,13 @@ function renderTable() {
       </td>
       <td style="padding:10px 16px;text-align:right;">
         <div style="display:flex;gap:6px;justify-content:flex-end;">
-          <button class="btn btn-ghost btn-sm" data-edit="${d.id}" style="font-size:0.75rem;">Editar</button>
+          <a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
+            style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;">
+            ✎ Dica
+          </a>
+          <button class="btn btn-ghost btn-sm" data-edit="${d.id}" style="font-size:0.75rem;">Destino</button>
           <button class="btn btn-ghost btn-sm" data-delete="${d.id}"
-            style="font-size:0.75rem;color:#EF4444;">Excluir</button>
+            style="font-size:0.75rem;color:#EF4444;">✕</button>
         </div>
       </td>
     </tr>
