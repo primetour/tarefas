@@ -38,7 +38,7 @@ const NAV_GROUPS = [
       { route: 'nl-performance',      icon: '◈', label: 'Newsletters',         roles: ['admin','manager'] },
       { route: 'meta-performance',    icon: '◈', label: 'Redes Sociais',       roles: ['admin','manager'] },
       { route: 'portal-dashboard',    icon: '◈', label: 'Portal de Dicas',     perm: 'portal_manage' },
-      { route: 'portal-ai-agent',     icon: '🤖', label: 'Agente de IA',        perm: 'portal_manage' },
+      { route: 'portal-ai-agent',     icon: '◑', label: 'Agente de IA',        perm: 'portal_manage' },
     ]
   },
   {
@@ -46,7 +46,7 @@ const NAV_GROUPS = [
     items: [
       { route: 'portal-tips',         icon: '✈', label: 'Portal de Dicas',     perm: 'portal_access'  },
       { route: 'portal-tips-list',    icon: '◈', label: 'Dicas Cadastradas',    perm: 'portal_create'  },
-      { route: 'portal-images',       icon: '🖼', label: 'Banco de Imagens',     perm: 'portal_manage'  },
+      { route: 'portal-images',       icon: '▨', label: 'Banco de Imagens',     perm: 'portal_manage'  },
       { route: 'portal-import',       icon: '↑', label: 'Importar Dicas',      perm: 'portal_create'  },
     ]
   },
