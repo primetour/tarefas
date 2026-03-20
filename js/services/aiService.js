@@ -12,7 +12,7 @@ import {
 
 /* ── Config ── */
 export const AI_WORKER_URL   = 'https://primetour-claude.rene-castro.workers.dev';
-export const AI_WORKER_TOKEN = ''; // cole o WORKER_TOKEN após configurar no Cloudflare
+export const AI_WORKER_TOKEN = 'primetour-ai-2026-segredo'; // cole o WORKER_TOKEN após configurar no Cloudflare
 
 export const BUS = [
   { id: 'pts',                name: 'PTS Bradesco'        },
