@@ -34,9 +34,16 @@ const NAV_GROUPS = [
   {
     label: 'Análise de Dados',
     items: [
-      { route: 'dashboards',       icon: '◫', label: 'Produtividade',  roles: ['admin','manager'] },
-      { route: 'nl-performance',   icon: '◈', label: 'Newsletters',    roles: ['admin','manager'] },
-      { route: 'meta-performance', icon: '◈', label: 'Redes Sociais',  roles: ['admin','manager'] },
+      { route: 'dashboards',          icon: '◫', label: 'Produtividade',       roles: ['admin','manager'] },
+      { route: 'nl-performance',      icon: '◈', label: 'Newsletters',         roles: ['admin','manager'] },
+      { route: 'meta-performance',    icon: '◈', label: 'Redes Sociais',       roles: ['admin','manager'] },
+      { route: 'portal-dashboard',    icon: '◈', label: 'Portal de Dicas',     perm: 'portal_manage' },
+    ]
+  },
+  {
+    label: 'Serviços',
+    items: [
+      { route: 'portal-tips',         icon: '✈', label: 'Portal de Dicas',     perm: 'portal_access' },
     ]
   },
   {
