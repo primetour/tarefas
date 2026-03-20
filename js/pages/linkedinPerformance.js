@@ -25,7 +25,7 @@ const LI_CLIENT_ID = '77t7i2nytso78n';
 const REDIRECT_URI = `${window.location.origin}/tarefas/`;
 
 export async function renderLinkedinPerformance(container) {
-  if (!store.getState()?.user) {
+  if (!store.can('analytics_view') && !store.isAdmin() && !store.isMaster()) {
     container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">◈</div>
       <div class="empty-state-title">Acesso restrito</div></div>`;
     return;
