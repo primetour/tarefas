@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Conectando ao LinkedIn…</title>
+  <style>
+    body {
+      font-family: -apple-system, sans-serif;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; margin: 0;
+      background: #0F1624; color: #E2E8F0;
+      flex-direction: column; gap: 16px; text-align: center;
+    }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid #2A3650;
+      border-top-color: #D4A843;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    p { font-size: 0.9375rem; color: #8899B8; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <p id="msg">Autenticando com LinkedIn…</p>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const code   = params.get('code');
+    const state  = params.get('state');
+    const error  = params.get('error');
+
+    if (error) {
+      document.getElementById('msg').textContent = 'Erro: ' + (params.get('error_description') || error);
+      if (window.opener) {
+        window.opener.postMessage({ type: 'linkedin_oauth_error', error }, window.location.origin);
+      }
+      setTimeout(() => window.close(), 2000);
+    } else if (code && state === 'linkedin_oauth') {
+      document.getElementById('msg').textContent = 'Autorizado! Fechando…';
+      if (window.opener) {
+        window.opener.postMessage({ type: 'linkedin_oauth_code', code }, window.location.origin);
+      }
+      window.close();
+    } else {
+      document.getElementById('msg').textContent = 'Parâmetros inválidos.';
+      setTimeout(() => window.close(), 2000);
+    }
+  </script>
+</body>
+</html>
