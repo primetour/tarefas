@@ -31,17 +31,6 @@ export async function renderLinkedinPerformance(container) {
     return;
   }
 
-  // Check OAuth callback (code in hash/search)
-  const urlParams = new URLSearchParams(window.location.search);
-  const oauthCode = urlParams.get('code');
-  const oauthState = urlParams.get('state');
-  if (oauthCode && oauthState === 'linkedin_oauth') {
-    await handleOAuthCallback(oauthCode, container);
-    // Clean URL
-    history.replaceState(null, '', window.location.pathname + '#linkedin-performance');
-    return;
-  }
-
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
@@ -140,7 +129,7 @@ function startOAuth() {
   window.location.href = authUrl;
 }
 
-async function handleOAuthCallback(code, container) {
+export async function handleLinkedinOAuth(code, container) {
   container.innerHTML = `<div class="page-header">
     <div class="page-header-left">
       <h1 class="page-title">LinkedIn</h1>
