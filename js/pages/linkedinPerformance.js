@@ -9,6 +9,7 @@ import { db }     from '../firebase.js';
 import {
   doc, getDoc, setDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { AI_WORKER_URL, AI_WORKER_TOKEN } from '../services/aiService.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -139,7 +140,6 @@ export async function handleLinkedinOAuth(code, container) {
 
   try {
     // Exchange code for token via Cloudflare Worker (keeps client_secret safe)
-    const { AI_WORKER_URL, AI_WORKER_TOKEN } = await import('../services/aiService.js');
     const resp = await fetch(`${AI_WORKER_URL}/linkedin-oauth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Worker-Token': AI_WORKER_TOKEN },
@@ -177,7 +177,6 @@ async function getLinkedinConfig() {
 
 async function liGet(path, token) {
   // All LinkedIn API calls go through the Cloudflare Worker to avoid CORS
-  const { AI_WORKER_URL, AI_WORKER_TOKEN } = await import('../services/aiService.js');
   const res = await fetch(`${AI_WORKER_URL}/linkedin-proxy`, {
     method: 'POST',
     headers: {
