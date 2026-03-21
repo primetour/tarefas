@@ -43,7 +43,6 @@ import { renderPortalDestinations }       from './pages/portalDestinations.js';
 import { renderPortalImages }             from './pages/portalImages.js';
 import { renderPortalDashboard }          from './pages/portalDashboard.js';
 import { renderPortalAiAgent }            from './pages/portalAiAgent.js';
-import { renderLinkedinPerformance }       from './pages/linkedinPerformance.js';
 import { renderPortalTipEditor }          from './pages/portalTipEditor.js';
 import { renderPortalImport }             from './pages/portalImport.js';
 import { renderPortalTipsList }           from './pages/portalTipsList.js';
@@ -217,7 +216,6 @@ function setupRouter() {
     'about':        async () => { await renderAbout(content); },
     'nl-performance':       async () => { await renderNlPerformance(content); },
     'meta-performance':     async () => { await renderMetaPerformance(content); },
-    'linkedin-performance': async () => { await renderLinkedinPerformance(content); },
     'portal-tips':          async () => { await renderPortalTips(content); },
     'portal-areas':         async () => { await renderPortalAreas(content); },
     'portal-destinations':  async () => { await renderPortalDestinations(content); },
