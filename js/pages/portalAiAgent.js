@@ -786,7 +786,6 @@ async function renderSocialTab(container) {
 
   const FORMATS = {
     instagram: ['Post', 'Reel', 'Carrossel', 'Story'],
-    linkedin:  ['Post', 'Artigo'],
   };
 
   const render = () => {
@@ -799,7 +798,7 @@ async function renderSocialTab(container) {
           <!-- Platform tabs -->
           <div style="display:flex;gap:0;border-bottom:1px solid var(--border-subtle);
             margin-bottom:4px;">
-            ${[{id:'instagram',label:'Instagram'},{id:'linkedin',label:'LinkedIn'}].map(p => `
+            ${[{id:'instagram',label:'Instagram'}].map(p => `
               <button class="social-platform-btn" data-platform="${p.id}"
                 style="padding:8px 16px;border:none;background:none;cursor:pointer;
                 font-size:0.875rem;border-bottom:2px solid ${platform===p.id?'var(--brand-gold)':'transparent'};
@@ -847,7 +846,7 @@ async function renderSocialTab(container) {
             <div style="border-top:1px solid var(--border-subtle);padding-top:14px;margin-top:4px;">
               <div style="font-size:0.8125rem;font-weight:600;margin-bottom:10px;">
                 Publicar agora</div>
-              ${platform === 'instagram' ? instagramPublishForm() : linkedinPublishForm()}
+              ${platform === 'instagram' ? instagramPublishForm() : ''}
             </div>` : ''}
         </div>
 
@@ -906,7 +905,6 @@ async function renderSocialTab(container) {
 
     // Wire publish buttons
     wireInstagramPublish(result);
-    wireLinkedinPublish(result);
   };
 
   render();
@@ -934,23 +932,7 @@ function instagramPublishForm() {
     </div>`;
 }
 
-function linkedinPublishForm() {
-  return `
-    <div style="display:flex;flex-direction:column;gap:10px;">
-      <div style="font-size:0.8125rem;color:var(--text-muted);">
-        Publicação na company page PRIMETOUR via API LinkedIn.
-      </div>
-      <div>
-        <label style="${LBL}">URL de imagem <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
-        <input type="url" id="li-image-url" class="portal-field" style="width:100%;"
-          placeholder="https://…">
-      </div>
-      <button id="li-publish-btn" class="btn btn-secondary btn-sm">
-        ◎ Publicar no LinkedIn
-      </button>
-      <div id="li-publish-status" style="font-size:0.8125rem;"></div>
-    </div>`;
-}
+
 
 function wireInstagramPublish(caption) {
   document.getElementById('ig-publish-btn')?.addEventListener('click', async () => {
@@ -975,26 +957,7 @@ function wireInstagramPublish(caption) {
   });
 }
 
-function wireLinkedinPublish(text) {
-  document.getElementById('li-publish-btn')?.addEventListener('click', async () => {
-    const btn    = document.getElementById('li-publish-btn');
-    const status = document.getElementById('li-publish-status');
-    if (!text) { toast.error('Gere o conteúdo antes de publicar.'); return; }
 
-    btn.disabled = true; btn.textContent = '⏳ Publicando…';
-    if (status) { status.textContent = 'Enviando para a API do LinkedIn…'; status.style.color = 'var(--brand-gold)'; }
-
-    try {
-      const { publishLinkedinPost } = await import('../services/linkedinPublish.js');
-      const imageUrl = document.getElementById('li-image-url')?.value.trim() || null;
-      await publishLinkedinPost({ text, imageUrl });
-      if (status) { status.textContent = '✓ Publicado com sucesso!'; status.style.color = '#22C55E'; }
-      toast.success('Post publicado no LinkedIn!');
-    } catch(e) {
-      if (status) { status.textContent = '✗ ' + e.message; status.style.color = '#EF4444'; }
-    } finally { btn.disabled = false; btn.textContent = '◎ Publicar no LinkedIn'; }
-  });
-}
 
 /* ─── Shared helpers ──────────────────────────────────────── */
 const LBL = `font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;`;
