@@ -38,7 +38,6 @@ const NAV_GROUPS = [
       { route: 'nl-performance',      icon: '◈', label: 'Newsletters',         roles: ['admin','manager'] },
       { route: 'meta-performance',    icon: '◈', label: 'Instagram',            roles: ['admin','manager'] },
       { route: 'portal-dashboard',    icon: '◈', label: 'Portal de Dicas',     perm: 'portal_manage' },
-      { route: 'portal-ai-agent',     icon: '◑', label: 'Agente de IA',        perm: 'portal_manage' },
     ]
   },
   {
