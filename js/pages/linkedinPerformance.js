@@ -23,7 +23,7 @@ const fmt = ts => {
 const LI_API      = 'https://api.linkedin.com/v2';
 const LI_CLIENT_ID = '77t7i2nytso78n';
 // OAuth redirect must match exactly what's registered in LinkedIn app
-const REDIRECT_URI = 'https://primetour.github.io/tarefas/';
+const REDIRECT_URI = 'https://primetour.github.io/tarefas/linkedin-callback.html';
 
 export async function renderLinkedinPerformance(container) {
   if (!store.can('analytics_view') && !store.isAdmin() && !store.isMaster()) {
@@ -56,6 +56,7 @@ export async function renderLinkedinPerformance(container) {
 async function loadData(container) {
   const body = document.getElementById('li-body');
   if (!body) return;
+  body.innerHTML = loadingHtml('Carregando métricas do LinkedIn…');
 
   const cfg = await getLinkedinConfig();
 
@@ -118,16 +119,57 @@ function startOAuth() {
     'w_organization_social',
     'r_basicprofile',
     'rw_organization_admin',
-  ].join('%20');
+  ].join(' ');
 
-  const authUrl = `https://www.linkedin.com/oauth/v2/authorization`
-    + `?response_type=code`
+  const authUrl = 'https://www.linkedin.com/oauth/v2/authorization'
+    + '?response_type=code'
     + `&client_id=${LI_CLIENT_ID}`
     + `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`
-    + `&state=linkedin_oauth`
-    + `&scope=${scope}`;
+    + '&state=linkedin_oauth'
+    + `&scope=${encodeURIComponent(scope)}`;
 
-  window.location.href = authUrl;
+  // Open popup — avoids full-page redirect issues on static sites
+  const w = 520, h = 620;
+  const left = Math.round(screen.width  / 2 - w / 2);
+  const top  = Math.round(screen.height / 2 - h / 2);
+  const popup = window.open(
+    authUrl,
+    'linkedin_oauth',
+    `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes`
+  );
+
+  if (!popup) {
+    toast.error('Popup bloqueado pelo navegador. Permita popups para este site e tente novamente.');
+    return;
+  }
+
+  // Listen for code from popup via postMessage
+  const handler = async (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (event.data?.type === 'linkedin_oauth_code') {
+      window.removeEventListener('message', handler);
+      const body = document.getElementById('li-body');
+      if (body) {
+        body.innerHTML = loadingHtml('Obtendo token de acesso…');
+        const container = body.closest('[id]') || document.body;
+        await handleLinkedinOAuth(event.data.code, { innerHTML: '' });
+        await loadData({ querySelector: () => body });
+      }
+    }
+    if (event.data?.type === 'linkedin_oauth_error') {
+      window.removeEventListener('message', handler);
+      toast.error('Erro OAuth: ' + (event.data.error || 'desconhecido'));
+    }
+  };
+  window.addEventListener('message', handler);
+
+  // Fallback: clean up listener if popup closes without posting
+  const poll = setInterval(() => {
+    if (popup.closed) {
+      clearInterval(poll);
+      window.removeEventListener('message', handler);
+    }
+  }, 500);
 }
 
 export async function handleLinkedinOAuth(code, container) {
