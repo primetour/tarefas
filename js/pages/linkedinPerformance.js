@@ -22,7 +22,7 @@ const fmt = ts => {
 const LI_API      = 'https://api.linkedin.com/v2';
 const LI_CLIENT_ID = '77t7i2nytso78n';
 // OAuth redirect must match exactly what's registered in LinkedIn app
-const REDIRECT_URI = `${window.location.origin}/tarefas/`;
+const REDIRECT_URI = 'https://primetour.github.io/tarefas/';
 
 export async function renderLinkedinPerformance(container) {
   if (!store.can('analytics_view') && !store.isAdmin() && !store.isMaster()) {
@@ -187,15 +187,19 @@ async function getLinkedinConfig() {
 }
 
 async function liGet(path, token) {
-  const res = await fetch(`${LI_API}${path}`, {
+  // All LinkedIn API calls go through the Cloudflare Worker to avoid CORS
+  const { AI_WORKER_URL, AI_WORKER_TOKEN } = await import('../services/aiService.js');
+  const res = await fetch(`${AI_WORKER_URL}/linkedin-proxy`, {
+    method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
-      'X-Restli-Protocol-Version': '2.0.0',
+      'Content-Type':   'application/json',
+      'X-Worker-Token': AI_WORKER_TOKEN,
     },
+    body: JSON.stringify({ path, token }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `LinkedIn API ${res.status}`);
+    throw new Error(err.error || `Worker ${res.status}`);
   }
   return res.json();
 }
