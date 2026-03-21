@@ -58,6 +58,27 @@ async function init() {
   const root = document.getElementById('app');
   if (!root) return;
 
+  // ── LinkedIn OAuth callback intercept ─────────────────
+  // LinkedIn redirects back to /?code=...&state=linkedin_oauth (no hash)
+  // Must be handled before routing so it works regardless of active page
+  const _liParams = new URLSearchParams(window.location.search);
+  if (_liParams.get('state') === 'linkedin_oauth' && _liParams.get('code')) {
+    const _liCode = _liParams.get('code');
+    // Clean URL immediately so a refresh doesn't re-trigger
+    history.replaceState(null, '', window.location.pathname + '#linkedin-performance');
+    // Wait for auth then process the code
+    initAuthObserver(async () => {
+      hideLoadingScreen();
+      renderApp(root);
+      // Give the shell time to mount then process OAuth
+      await new Promise(r => setTimeout(r, 800));
+      const { handleLinkedinOAuth } = await import('./pages/linkedinPerformance.js');
+      const content = document.getElementById('main-content');
+      if (content) await handleLinkedinOAuth(_liCode, content);
+    });
+    return;
+  }
+
   // Aguarda estado de auth antes de qualquer render
   initAuthObserver(() => {
     hideLoadingScreen();
