@@ -245,6 +245,7 @@ export async function saveImageMeta(data) {
     country:      data.country      || '',
     city:         data.city         || '',
     name:         data.name         || data.originalName || '',
+    placeName:    data.placeName    || '', // nome do lugar específico que a foto representa
     tags:         Array.isArray(data.tags) ? data.tags : [],
     type:         data.type         || 'galeria', // 'destaque'|'galeria'|'logo_area'|'banner'
     url:          data.url          || '',
@@ -261,7 +262,7 @@ export async function saveImageMeta(data) {
 }
 
 export async function updateImageMeta(id, data) {
-  const allowed = ['name','tags','type','continent','country','city'];
+  const allowed = ['name','placeName','tags','type','continent','country','city'];
   const patch   = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
   await updateDoc(doc(db, 'portal_images', id), patch);
 }

@@ -384,7 +384,7 @@ async function resolveImages(dest) {
     });
     const byType = t => imgs.filter(i => i.type === t);
     const hero    = byType('destaque')[0]?.url   || byType('banner')[0]?.url || byType('galeria')[0]?.url || null;
-    const gallery = byType('galeria').map(i => ({ url: i.url, name: i.name, tags: i.tags || [] }));
+    const gallery = byType('galeria').map(i => ({ url: i.url, name: i.name, placeName: i.placeName || '', tags: i.tags || [] }));
     // Map gallery images to segments by tag matching
     const banners = {};
     SEGMENTS.forEach(s => {
