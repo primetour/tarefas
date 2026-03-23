@@ -644,7 +644,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
   const allTips  = [{ tip, dest }, ...extraTips];
   const fmtLabel = GENERATION_FORMATS.find(f => f.key === format)?.label || format;
 
-  // Deep-clone tip data so edits don't affect originals
+  // Deep-clone so edits never touch originals
   const workingTips = allTips.map(({ tip: t, dest: d }) => ({
     tip:  JSON.parse(JSON.stringify(t || {})),
     dest: d,
@@ -655,16 +655,12 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
   for (const { dest: d } of allTips) {
     if (d?.id) {
       try {
-        const imgs = await fetchImages({ continent: d.continent, country: d.country, city: d.city });
-        imagesByDest[d.id] = imgs;
+        imagesByDest[d.id] = await fetchImages({
+          continent: d.continent, country: d.country, city: d.city,
+        });
       } catch { imagesByDest[d.id] = []; }
     }
   }
-
-  const modal = document.createElement('div');
-  modal.id    = 'portal-preview-modal';
-  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;
-    display:flex;align-items:center;justify-content:center;padding:16px;`;
 
   const activeSeg = segments.filter(k =>
     workingTips.some(({ tip: t }) => {
@@ -675,170 +671,179 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
     })
   );
 
-  // Selected images per destId per segKey — starts empty (system will choose)
-  // format: { [destId]: { [segKey]: [{ url, name }] } }
-  const selectedImages = {};
+  const selectedImages = {};  // { [destId]: { [segKey]: { [idx]: { url, name } } } }
 
-  let curDestIdx  = 0;
-  let activeSegKey0 = activeSeg[0];
+  // Mutable state — never re-declared
+  let curDestIdx   = 0;
+  let curSegKey    = activeSeg[0] || '';
 
-  const renderEditor = () => {
-    const { tip: wTip, dest: wDest } = workingTips[curDestIdx];
-    const destId    = wDest?.id || curDestIdx;
-    const destLabel = [wDest?.city, wDest?.country].filter(Boolean).join(', ') || '—';
-    const destImgs  = imagesByDest[destId] || [];
+  // ── Build static shell (rendered once, never replaced) ──────
+  const modal = document.createElement('div');
+  modal.id    = 'portal-preview-modal';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;
+    display:flex;align-items:center;justify-content:center;padding:16px;`;
 
-    modal.innerHTML = `
-      <div class="card" style="width:100%;max-width:900px;max-height:92vh;
-        padding:0;overflow:hidden;display:flex;flex-direction:column;">
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:900px;max-height:92vh;
+      padding:0;overflow:hidden;display:flex;flex-direction:column;">
 
-        <!-- Header -->
-        <div style="padding:16px 20px;background:var(--bg-surface);
-          border-bottom:1px solid var(--border-subtle);
-          display:flex;align-items:center;gap:12px;flex-shrink:0;">
-          <div style="flex:1;">
-            <div style="font-weight:700;font-size:1rem;">Editor de Geração</div>
-            <div style="font-size:0.8125rem;color:var(--text-muted);">
-              Ajuste textos e imagens apenas para este material · o conteúdo original não é alterado
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:0.75rem;padding:3px 10px;background:var(--brand-gold)15;
-              color:var(--brand-gold);border-radius:var(--radius-full);font-weight:600;">
-              ${esc(fmtLabel)}
-            </span>
-            <button id="preview-close" style="border:none;background:none;cursor:pointer;
-              font-size:1.25rem;color:var(--text-muted);">✕</button>
+      <!-- Header (static) -->
+      <div style="padding:16px 20px;background:var(--bg-surface);
+        border-bottom:1px solid var(--border-subtle);
+        display:flex;align-items:center;gap:12px;flex-shrink:0;">
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:1rem;">Editor de Geração</div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);">
+            Ajuste textos e imagens apenas para este material · o conteúdo original não é alterado
           </div>
         </div>
-
-        <!-- Dest tabs (if multi-dest) -->
-        ${workingTips.length > 1 ? `
-        <div style="display:flex;overflow-x:auto;border-bottom:1px solid var(--border-subtle);
-          background:var(--bg-surface);flex-shrink:0;">
-          ${workingTips.map((item, i) => {
-            const lbl = [item.dest?.city, item.dest?.country].filter(Boolean).join(', ');
-            return `<button class="dest-tab" data-idx="${i}"
-              style="padding:10px 16px;border:none;background:none;cursor:pointer;
-              font-size:0.8125rem;white-space:nowrap;border-bottom:2px solid
-              ${i===curDestIdx?'var(--brand-gold)':'transparent'};
-              color:${i===curDestIdx?'var(--brand-gold)':'var(--text-muted)'};
-              transition:all .15s;">${esc(lbl||`Destino ${i+1}`)}</button>`;
-          }).join('')}
-        </div>` : ''}
-
-        <!-- Two-panel layout -->
-        <div style="display:grid;grid-template-columns:200px 1fr;flex:1;overflow:hidden;min-height:0;">
-
-          <!-- Left: segment list -->
-          <div style="border-right:1px solid var(--border-subtle);overflow-y:auto;
-            background:var(--bg-surface);">
-            ${activeSeg.map((k) => {
-              const seg = SEGMENTS.find(s => s.key === k);
-              const segData = wTip?.segments?.[k];
-              const hasContent = segData && (
-                (segData.info && Object.values(segData.info).some(v => v && String(v).trim())) ||
-                (Array.isArray(segData.items) && segData.items.length > 0)
-              );
-              const isActive = k === activeSegKey0;
-              return `<button class="editor-seg-btn" data-seg="${k}"
-                style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
-                padding:12px 14px;border:none;
-                background:${isActive?'var(--brand-gold)10':'transparent'};
-                border-left:3px solid ${isActive?'var(--brand-gold)':'transparent'};
-                cursor:pointer;transition:all .15s;font-size:0.8125rem;">
-                <span style="flex:1;color:${isActive?'var(--brand-gold)':'var(--text-secondary)'};">
-                  ${esc(seg?.label || k)}</span>
-                ${hasContent ? `<span style="width:6px;height:6px;border-radius:50%;
-                  background:#22C55E;flex-shrink:0;"></span>` : ''}
-              </button>`;
-            }).join('')}
-          </div>
-
-          <!-- Right: segment editor -->
-          <div id="editor-right-panel" style="overflow-y:auto;padding:20px;">
-            ${renderSegEditor(wTip, activeSegKey0, destImgs, selectedImages[destId] || {}, destId)}
-          </div>
-        </div>
-
-        <!-- Footer -->
-        <div style="padding:14px 20px;border-top:1px solid var(--border-subtle);
-          background:var(--bg-surface);display:flex;gap:10px;flex-shrink:0;">
-          <button class="btn btn-secondary" id="preview-cancel" style="flex:1;">
-            ← Voltar
-          </button>
-          <button class="btn btn-primary" id="preview-confirm" style="flex:2;font-weight:600;">
-            ✈ Gerar ${esc(fmtLabel)}
-          </button>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:0.75rem;padding:3px 10px;background:var(--brand-gold)15;
+            color:var(--brand-gold);border-radius:var(--radius-full);font-weight:600;">
+            ${esc(fmtLabel)}
+          </span>
+          <button id="gen-close" style="border:none;background:none;cursor:pointer;
+            font-size:1.25rem;color:var(--text-muted);">✕</button>
         </div>
       </div>
-    `;
 
-    // Wire close/back
-    document.getElementById('preview-close')?.addEventListener('click', () => modal.remove());
-    document.getElementById('preview-cancel')?.addEventListener('click', () => modal.remove());
-    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+      <!-- Dest tabs (static shell, updated via JS) -->
+      <div id="gen-dest-tabs" style="display:${workingTips.length > 1 ? 'flex' : 'none'};
+        overflow-x:auto;border-bottom:1px solid var(--border-subtle);
+        background:var(--bg-surface);flex-shrink:0;">
+        ${workingTips.map((item, i) => {
+          const lbl = [item.dest?.city, item.dest?.country].filter(Boolean).join(', ');
+          return `<button class="gen-dest-tab" data-idx="${i}"
+            style="padding:10px 16px;border:none;background:none;cursor:pointer;
+            font-size:0.8125rem;white-space:nowrap;
+            border-bottom:2px solid ${i===0?'var(--brand-gold)':'transparent'};
+            color:${i===0?'var(--brand-gold)':'var(--text-muted)'};
+            transition:all .15s;">${esc(lbl||`Destino ${i+1}`)}</button>`;
+        }).join('')}
+      </div>
 
-    // Wire dest tabs
-    modal.querySelectorAll('.dest-tab').forEach(btn => {
+      <!-- Body: seg list (left) + editor panel (right) -->
+      <div style="display:grid;grid-template-columns:200px 1fr;flex:1;overflow:hidden;min-height:0;">
+        <div id="gen-seg-list" style="border-right:1px solid var(--border-subtle);
+          overflow-y:auto;background:var(--bg-surface);"></div>
+        <div id="gen-right-panel" style="overflow-y:auto;padding:20px;"></div>
+      </div>
+
+      <!-- Footer (static) -->
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle);
+        background:var(--bg-surface);display:flex;gap:10px;flex-shrink:0;">
+        <button class="btn btn-secondary" id="gen-cancel" style="flex:1;">← Voltar</button>
+        <button class="btn btn-primary"   id="gen-confirm" style="flex:2;font-weight:600;">
+          ✈ Gerar ${esc(fmtLabel)}
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  // ── Helpers to update dynamic zones ──────────────────────────
+  const refreshSegList = () => {
+    const { tip: wTip } = workingTips[curDestIdx];
+    document.getElementById('gen-seg-list').innerHTML = activeSeg.map(k => {
+      const seg = SEGMENTS.find(s => s.key === k);
+      const segData = wTip?.segments?.[k];
+      const hasContent = segData && (
+        (segData.info && Object.values(segData.info).some(v => v && String(v).trim())) ||
+        (Array.isArray(segData.items) && segData.items.length > 0)
+      );
+      const isActive = k === curSegKey;
+      return `<button class="gen-seg-btn" data-seg="${k}"
+        style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+        padding:12px 14px;border:none;
+        background:${isActive?'var(--brand-gold)10':'transparent'};
+        border-left:3px solid ${isActive?'var(--brand-gold)':'transparent'};
+        cursor:pointer;transition:all .15s;font-size:0.8125rem;">
+        <span style="flex:1;color:${isActive?'var(--brand-gold)':'var(--text-secondary)'};">
+          ${esc(seg?.label||k)}</span>
+        ${hasContent?`<span style="width:6px;height:6px;border-radius:50%;
+          background:#22C55E;flex-shrink:0;"></span>`:''}
+      </button>`;
+    }).join('');
+
+    // re-wire seg buttons every time list is refreshed
+    document.querySelectorAll('.gen-seg-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        curDestIdx = Number(btn.dataset.idx);
-        activeSegKey0 = activeSeg[0];
-        renderEditor();
+        curSegKey = btn.dataset.seg;
+        refreshSegList();
+        refreshRightPanel();
       });
-    });
-
-    // Wire segment tabs
-    modal.querySelectorAll('.editor-seg-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        activeSegKey0 = btn.dataset.seg;
-        modal.querySelectorAll('.editor-seg-btn').forEach(b => {
-          const isActive = b.dataset.seg === activeSegKey0;
-          b.style.background      = isActive ? 'var(--brand-gold)10' : 'transparent';
-          b.style.borderLeftColor = isActive ? 'var(--brand-gold)'   : 'transparent';
-          const span = b.querySelector('span');
-          if (span) span.style.color = isActive ? 'var(--brand-gold)' : 'var(--text-secondary)';
-        });
-        const panel = document.getElementById('editor-right-panel');
-        if (panel) panel.innerHTML = renderSegEditor(wTip, activeSegKey0, destImgs, selectedImages[destId] || {}, destId);
-        wireSegEditor(wTip, activeSegKey0, destImgs, destId, selectedImages, workingTips, curDestIdx);
-      });
-    });
-
-    wireSegEditor(wTip, activeSegKey0, destImgs, destId, selectedImages, workingTips, curDestIdx);
-
-    // Wire generate
-    document.getElementById('preview-confirm')?.addEventListener('click', async () => {
-      const btn = document.getElementById('preview-confirm');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando…'; }
-      try {
-        // Pass working (edited) tips + selected images override
-        const result = await generateTip({
-          tip:        workingTips[0].tip,
-          dest:       workingTips[0].dest,
-          area, segments, format,
-          extraTips:  workingTips.slice(1),
-          imagesOverride: selectedImages,
-        });
-        await recordGeneration({
-          areaId: area?.id || null, format, segments,
-          destinationIds: allTips.map(({dest:d})=>d?.id).filter(Boolean),
-          status: 'done',
-          ...(result.url ? { webUrl: result.url } : {}),
-        });
-        await registerDownload();
-        modal.remove();
-        if (format === 'web' && result.url) showWebLinkResult(result.url);
-        else toast.success('Material gerado e download iniciado!');
-      } catch(e) {
-        toast.error('Erro ao gerar: ' + e.message);
-        if (btn) { btn.disabled = false; btn.textContent = `✈ Gerar ${fmtLabel}`; }
-      }
     });
   };
 
-  document.body.appendChild(modal);
-  renderEditor();
+  const refreshRightPanel = () => {
+    const { tip: wTip, dest: wDest } = workingTips[curDestIdx];
+    const destId   = wDest?.id || curDestIdx;
+    const destImgs = imagesByDest[destId] || [];
+    const segImgs  = selectedImages[destId]?.[curSegKey] || {};
+
+    document.getElementById('gen-right-panel').innerHTML =
+      renderSegEditor(wTip, curSegKey, destImgs, segImgs, destId);
+
+    wireSegEditor(wTip, curSegKey, destImgs, destId, selectedImages, workingTips, curDestIdx);
+  };
+
+  const refreshDestTabs = () => {
+    document.querySelectorAll('.gen-dest-tab').forEach(btn => {
+      const i = Number(btn.dataset.idx);
+      btn.style.borderBottomColor = i === curDestIdx ? 'var(--brand-gold)' : 'transparent';
+      btn.style.color = i === curDestIdx ? 'var(--brand-gold)' : 'var(--text-muted)';
+    });
+  };
+
+  // ── Wire events ONCE ──────────────────────────────────────────
+  document.getElementById('gen-close')?.addEventListener('click', () => modal.remove());
+  document.getElementById('gen-cancel')?.addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  document.querySelectorAll('.gen-dest-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      curDestIdx = Number(btn.dataset.idx);
+      curSegKey  = activeSeg[0] || '';
+      refreshDestTabs();
+      refreshSegList();
+      refreshRightPanel();
+    });
+  });
+
+  // Generate button — wired ONCE here, never re-attached
+  document.getElementById('gen-confirm')?.addEventListener('click', async () => {
+    const btn = document.getElementById('gen-confirm');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = '⏳ Gerando…';
+    try {
+      const result = await generateTip({
+        tip:            workingTips[0].tip,
+        dest:           workingTips[0].dest,
+        area, segments, format,
+        extraTips:      workingTips.slice(1),
+        imagesOverride: selectedImages,
+      });
+      await recordGeneration({
+        areaId: area?.id || null, format, segments,
+        destinationIds: allTips.map(({ dest: d }) => d?.id).filter(Boolean),
+        status: 'done',
+        ...(result.url ? { webUrl: result.url } : {}),
+      });
+      await registerDownload();
+      modal.remove();
+      if (format === 'web' && result.url) showWebLinkResult(result.url);
+      else toast.success('Material gerado e download iniciado!');
+    } catch(e) {
+      toast.error('Erro ao gerar: ' + (e.message || 'desconhecido'));
+      btn.disabled   = false;
+      btn.textContent = `✈ Gerar ${fmtLabel}`;
+    }
+  });
+
+  // Initial render
+  refreshSegList();
+  refreshRightPanel();
 }
 
 /* ─── Segment editor renderer ──────────────────────────────── */
