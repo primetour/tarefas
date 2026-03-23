@@ -7,7 +7,8 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
   fetchTips, fetchDestinations, fetchAreas, deleteTip,
-  SEGMENTS,
+  fetchWebLinksByTip, updateWebLink, fetchImages,
+  SEGMENTS, GENERATION_FORMATS,
 } from '../services/portal.js';
 import { generateTip } from '../services/portalGenerator.js';
 
@@ -231,8 +232,11 @@ function renderTable() {
           <button class="btn btn-ghost btn-sm tip-preview-btn"
             data-id="${r.id}" data-dest-id="${r.destinationId}"
             style="font-size:0.75rem;color:var(--text-muted);">👁 Preview</button>
+          <button class="btn btn-ghost btn-sm tip-materials-btn"
+            data-id="${r.id}" data-dest-id="${r.destinationId}"
+            style="font-size:0.75rem;color:var(--brand-gold);">✈ Materiais</button>
           <a href="#portal-tip-editor?destId=${r.destinationId}" class="btn btn-ghost btn-sm"
-            style="font-size:0.75rem;text-decoration:none;color:var(--brand-gold);">✎ Editar</a>
+            style="font-size:0.75rem;text-decoration:none;color:var(--text-muted);">✎ Editar</a>
           <button class="btn btn-ghost btn-sm tip-delete-btn" data-id="${r.id}"
             data-label="${esc(label)}"
             style="font-size:0.75rem;color:#EF4444;">✕</button>
@@ -250,6 +254,15 @@ function renderTable() {
     });
   });
 
+  tbody.querySelectorAll('.tip-materials-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tip  = allTips.find(t => t.id === btn.dataset.id);
+      const dest = allDests.find(d => d.id === btn.dataset.destId);
+      if (!tip || !dest) { toast.error('Dica não encontrada.'); return; }
+      showMaterialsModal(tip, dest);
+    });
+  });
+
   tbody.querySelectorAll('.tip-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm(`Excluir a dica de "${btn.dataset.label}"? Esta ação não pode ser desfeita.`)) return;
@@ -258,6 +271,453 @@ function renderTable() {
         toast.success('Dica excluída.');
         await loadData();
       } catch(e) { toast.error('Erro: ' + e.message); }
+    });
+  });
+}
+
+/* ─── Materials modal ────────────────────────────────────── */
+const FMT_ICONS = { docx:'📄', pdf:'📑', pptx:'📊', web:'🔗' };
+const FMT_LABELS = { docx:'Word', pdf:'PDF', pptx:'PowerPoint', web:'Link Web' };
+
+async function showMaterialsModal(tip, dest) {
+  const existing = document.getElementById('materials-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'materials-modal';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
+    display:flex;align-items:center;justify-content:center;padding:20px;`;
+
+  const label = [dest?.city, dest?.country].filter(Boolean).join(', ') || '—';
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:560px;padding:0;overflow:hidden;">
+      <div style="padding:18px 22px;background:var(--bg-surface);
+        border-bottom:1px solid var(--border-subtle);
+        display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-weight:700;font-size:1rem;">Materiais Gerados</div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);">${esc(label)}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button id="mat-new-btn" class="btn btn-primary btn-sm">+ Novo material</button>
+          <button id="mat-close" style="border:none;background:none;cursor:pointer;
+            font-size:1.25rem;color:var(--text-muted);">✕</button>
+        </div>
+      </div>
+      <div id="mat-list" style="padding:16px 22px;min-height:80px;max-height:60vh;overflow-y:auto;">
+        <div style="color:var(--text-muted);font-size:0.875rem;text-align:center;padding:20px;">
+          ⏳ Carregando…
+        </div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.getElementById('mat-close')?.addEventListener('click', () => modal.remove());
+
+  document.getElementById('mat-new-btn')?.addEventListener('click', () => {
+    modal.remove();
+    // Navigate to portal-tips pre-selecting this destination
+    location.hash = `portal-tips`;
+    toast.success('Selecione o destino e os segmentos para gerar um novo material.');
+  });
+
+  // Load web links for this tip
+  let links = [];
+  try { links = await fetchWebLinksByTip(tip.id); }
+  catch(e) { console.error(e); }
+
+  const listEl = document.getElementById('mat-list');
+  if (!listEl) return;
+
+  if (!links.length) {
+    listEl.innerHTML = `<div style="color:var(--text-muted);font-size:0.875rem;
+      text-align:center;padding:32px 20px;">
+      <div style="font-size:2rem;margin-bottom:8px;">✈</div>
+      Nenhum material gerado para esta dica ainda.<br>
+      <span style="font-size:0.8125rem;">Clique em "+ Novo material" para criar.</span>
+    </div>`;
+    return;
+  }
+
+  listEl.innerHTML = links.map(link => {
+    const date = link.createdAt?.toDate
+      ? link.createdAt.toDate().toLocaleDateString('pt-BR') : '—';
+    const updDate = link.updatedAt?.toDate
+      ? ' · editado ' + link.updatedAt.toDate().toLocaleDateString('pt-BR') : '';
+    const segsCount = (link.segments || []).length;
+    const destNames = (link.tipData || [])
+      .map(({ dest: d }) => [d?.city, d?.country].filter(Boolean).join(', '))
+      .filter(Boolean).join(' + ') || label;
+    const fmt = link.format || 'web';
+
+    return `<div class="mat-item" style="display:flex;align-items:center;gap:12px;
+      padding:12px 0;border-bottom:1px solid var(--border-subtle);">
+      <div style="font-size:1.5rem;flex-shrink:0;">${FMT_ICONS[fmt]||'📄'}</div>
+      <div style="flex:1;overflow:hidden;">
+        <div style="font-weight:600;font-size:0.9375rem;">${esc(destNames)}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          ${FMT_LABELS[fmt]||fmt} · ${segsCount} segmento${segsCount!==1?'s':''}
+          · ${esc(date)}${esc(updDate)}
+          ${link.views ? ` · ${link.views} visualização${link.views!==1?'ões':''}` : ''}
+          ${link.createdBy?.name ? ` · por <strong style="color:var(--text-secondary);">${esc(link.createdBy.name)}</strong>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        ${fmt === 'web' && link.token ? `
+          <a href="${esc(window.location.origin + window.location.pathname.replace(/index\.html$/,'') + 'portal-view.html#' + link.token)}"
+            target="_blank" class="btn btn-ghost btn-sm"
+            style="font-size:0.75rem;text-decoration:none;">🔗 Abrir</a>` : ''}
+        <button class="btn btn-ghost btn-sm mat-edit-btn"
+          data-token="${esc(link.token || link.id)}"
+          style="font-size:0.75rem;color:var(--brand-gold);">✎ Editar</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Wire edit buttons
+  listEl.querySelectorAll('.mat-edit-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const token = btn.dataset.token;
+      const link  = links.find(l => (l.token || l.id) === token);
+      if (!link) return;
+      modal.remove();
+      await showRegenEditor({ link, tip, dest });
+    });
+  });
+}
+
+/* ─── Re-generation editor (edit saved material) ──────────── */
+async function showRegenEditor({ link, tip, dest }) {
+  const existing = document.getElementById('regen-modal');
+  if (existing) existing.remove();
+
+  // Deep-clone tipData from saved link
+  const workingTips = (link.tipData || []).map(({ tip: t, dest: d }) => ({
+    tip:  JSON.parse(JSON.stringify(t || {})),
+    dest: d,
+  }));
+  if (!workingTips.length) { toast.error('Dados do material não encontrados.'); return; }
+
+  const segments  = link.segments || [];
+  const area      = { name: link.areaName, logoUrl: link.areaLogoUrl, colors: link.colors };
+  const fmt       = link.format || 'web';
+  const fmtLabel  = FMT_LABELS[fmt] || fmt;
+  const token     = link.token || link.id;
+
+  // Load available images for each dest
+  const imagesByDest = {};
+  for (const { dest: d } of workingTips) {
+    if (d?.id) {
+      try {
+        const imgs = await fetchImages({ continent: d.continent, country: d.country, city: d.city });
+        imagesByDest[d.id] = imgs;
+      } catch { imagesByDest[d.id] = []; }
+    }
+  }
+
+  // Read existing overrides back from saved imagesByDest
+  const selectedImages = {};
+  for (const [destId, imgs] of Object.entries(link.imagesByDest || {})) {
+    if (imgs._overrides) selectedImages[destId] = imgs._overrides;
+  }
+
+  const modal = document.createElement('div');
+  modal.id    = 'regen-modal';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;
+    display:flex;align-items:center;justify-content:center;padding:16px;`;
+
+  const activeSeg = segments.filter(k =>
+    workingTips.some(({ tip: t }) => {
+      const seg = t?.segments?.[k];
+      if (!seg) return false;
+      if (seg.info && Object.values(seg.info).some(v => v && String(v).trim())) return true;
+      return Array.isArray(seg.items) && seg.items.length > 0;
+    })
+  );
+
+  let curDestIdx = 0;
+  let activeSegKey = activeSeg[0];
+
+  const renderPanel = () => {
+    const { tip: wTip, dest: wDest } = workingTips[curDestIdx];
+    const destId   = wDest?.id || curDestIdx;
+    const destImgs = imagesByDest[destId] || [];
+    const destLabel = [wDest?.city, wDest?.country].filter(Boolean).join(', ') || '—';
+
+    modal.innerHTML = `
+      <div class="card" style="width:100%;max-width:900px;max-height:92vh;
+        padding:0;overflow:hidden;display:flex;flex-direction:column;">
+
+        <div style="padding:14px 20px;background:var(--bg-surface);
+          border-bottom:1px solid var(--border-subtle);
+          display:flex;align-items:center;gap:12px;flex-shrink:0;">
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:1rem;">Editar Material Gerado</div>
+            <div style="font-size:0.8125rem;color:var(--text-muted);">
+              ${esc(destLabel)} · ${esc(fmtLabel)} · Alterações salvas no material, sem afetar a dica original
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="font-size:0.75rem;padding:3px 10px;background:var(--brand-gold)15;
+              color:var(--brand-gold);border-radius:var(--radius-full);font-weight:600;">
+              ${esc(fmtLabel)}
+            </span>
+            <button id="regen-close" style="border:none;background:none;cursor:pointer;
+              font-size:1.25rem;color:var(--text-muted);">✕</button>
+          </div>
+        </div>
+
+        ${workingTips.length > 1 ? `
+        <div style="display:flex;overflow-x:auto;border-bottom:1px solid var(--border-subtle);
+          background:var(--bg-surface);flex-shrink:0;">
+          ${workingTips.map((item, i) => {
+            const lbl = [item.dest?.city, item.dest?.country].filter(Boolean).join(', ');
+            return `<button class="regen-dest-tab" data-idx="${i}"
+              style="padding:10px 16px;border:none;background:none;cursor:pointer;
+              font-size:0.8125rem;white-space:nowrap;
+              border-bottom:2px solid ${i===curDestIdx?'var(--brand-gold)':'transparent'};
+              color:${i===curDestIdx?'var(--brand-gold)':'var(--text-muted)'};
+              transition:all .15s;">${esc(lbl||`Destino ${i+1}`)}</button>`;
+          }).join('')}
+        </div>` : ''}
+
+        <div style="display:grid;grid-template-columns:200px 1fr;flex:1;overflow:hidden;min-height:0;">
+          <div style="border-right:1px solid var(--border-subtle);overflow-y:auto;
+            background:var(--bg-surface);">
+            ${activeSeg.map((k, i) => {
+              const seg = SEGMENTS.find(s => s.key === k);
+              const isActive = k === activeSegKey;
+              return `<button class="regen-seg-btn" data-seg="${k}"
+                style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+                padding:12px 14px;border:none;
+                background:${isActive?'var(--brand-gold)10':'transparent'};
+                border-left:3px solid ${isActive?'var(--brand-gold)':'transparent'};
+                cursor:pointer;transition:all .15s;font-size:0.8125rem;">
+                <span style="flex:1;color:${isActive?'var(--brand-gold)':'var(--text-secondary)'};">
+                  ${esc(seg?.label || k)}</span>
+              </button>`;
+            }).join('')}
+          </div>
+          <div id="regen-right-panel" style="overflow-y:auto;padding:20px;">
+            ${renderSegEditorForList(wTip, activeSegKey, destImgs, selectedImages[destId] || {}, destId)}
+          </div>
+        </div>
+
+        <div style="padding:14px 20px;border-top:1px solid var(--border-subtle);
+          background:var(--bg-surface);display:flex;gap:10px;flex-shrink:0;">
+          <button class="btn btn-secondary" id="regen-cancel" style="flex:1;">← Fechar</button>
+          <button class="btn btn-primary" id="regen-save" style="flex:2;font-weight:600;">
+            💾 Salvar alterações
+          </button>
+          ${fmt === 'web' && token ? `
+          <a href="${esc(window.location.origin + window.location.pathname.replace(/index\.html$/,'') + 'portal-view.html#' + token)}"
+            target="_blank" class="btn btn-secondary" style="flex:1;text-decoration:none;text-align:center;">
+            🔗 Ver link
+          </a>` : ''}
+        </div>
+      </div>`;
+
+    document.getElementById('regen-close')?.addEventListener('click', () => modal.remove());
+    document.getElementById('regen-cancel')?.addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+    // Dest tabs
+    modal.querySelectorAll('.regen-dest-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        curDestIdx = Number(btn.dataset.idx);
+        renderPanel();
+      });
+    });
+
+    // Seg tabs
+    modal.querySelectorAll('.regen-seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeSegKey = btn.dataset.seg;
+        renderPanel();
+      });
+    });
+
+    // Wire text + image events
+    wireRegenEditor(wTip, activeSegKey, destImgs, destId, selectedImages, workingTips, curDestIdx);
+
+    // Save
+    document.getElementById('regen-save')?.addEventListener('click', async () => {
+      const saveBtn = document.getElementById('regen-save');
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Salvando…'; }
+      try {
+        // Rebuild imagesByDest with overrides for web links
+        const newImagesByDest = JSON.parse(JSON.stringify(link.imagesByDest || {}));
+        for (const [destId2, overrides] of Object.entries(selectedImages)) {
+          if (!newImagesByDest[destId2]) newImagesByDest[destId2] = { hero: null, gallery: [], banners: {} };
+          newImagesByDest[destId2]._overrides = overrides;
+        }
+        await updateWebLink(token, {
+          tipData:     workingTips.map(({ tip: t, dest: d }) => ({ tip: t, dest: d })),
+          imagesByDest: newImagesByDest,
+        });
+        toast.success('Material atualizado com sucesso!');
+        modal.remove();
+      } catch(e) {
+        toast.error('Erro ao salvar: ' + e.message);
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Salvar alterações'; }
+      }
+    });
+  };
+
+  document.body.appendChild(modal);
+  renderPanel();
+}
+
+/* ─── Segment editor (reused from portalTips, standalone copy) */
+function renderSegEditorForList(tip, segKey, destImgs, segSelectedImgs, destId) {
+  if (!segKey) return '<div style="color:var(--text-muted);padding:20px;">Selecione um segmento.</div>';
+  const segDef = SEGMENTS.find(s => s.key === segKey);
+  const data   = tip?.segments?.[segKey];
+  if (!segDef || !data) return `<div style="color:var(--text-muted);">Sem conteúdo para este segmento.</div>`;
+
+  const LBL = `font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;`;
+  const galeria = destImgs.filter ? destImgs.filter(i => i.type === 'galeria' || i.type === 'destaque') : [];
+
+  let html = `<div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.07em;color:var(--brand-gold);margin-bottom:16px;">${esc(segDef.label)}</div>`;
+
+  if (segDef.mode === 'special_info') {
+    const inf = data.info || {};
+    const fields = [
+      ['descricao','Descrição','textarea',inf.descricao],
+      ['dica','Dica','textarea',inf.dica],
+      ['populacao','População','text',inf.populacao],
+      ['moeda','Moeda','text',inf.moeda],
+      ['lingua','Língua oficial','text',inf.lingua],
+      ['religiao','Religião','text',inf.religiao],
+      ['voltagem','Voltagem','text',inf.voltagem],
+      ['ddd','DDD','text',inf.ddd],
+    ].filter(([,,,v]) => v !== undefined);
+    html += fields.map(([field,label,type,value]) => `
+      <div style="margin-bottom:12px;">
+        <label style="${LBL}">${esc(label)}</label>
+        ${type==='textarea'
+          ? `<textarea class="portal-field regen-field" data-seg="${segKey}" data-field="${field}"
+              rows="3" style="width:100%;font-size:0.875rem;">${esc(value||'')}</textarea>`
+          : `<input type="text" class="portal-field regen-field" data-seg="${segKey}" data-field="${field}"
+              value="${esc(value||'')}" style="width:100%;font-size:0.875rem;">`}
+      </div>`).join('');
+  } else {
+    const items = data.items || [];
+    if (data.themeDesc !== undefined) {
+      html += `<div style="margin-bottom:16px;">
+        <label style="${LBL}">Descrição do tema</label>
+        <textarea class="portal-field regen-field" data-seg="${segKey}" data-field="themeDesc"
+          rows="2" style="width:100%;font-size:0.875rem;">${esc(data.themeDesc||'')}</textarea>
+      </div>`;
+    }
+    html += items.map((item, idx) => `
+      <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+        border-radius:var(--radius-md);padding:14px 16px;margin-bottom:12px;">
+        <div style="font-size:0.6875rem;font-weight:700;color:var(--text-muted);
+          margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+          <span style="background:var(--brand-gold);color:#fff;border-radius:50%;
+            width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;
+            font-size:0.5rem;font-weight:800;flex-shrink:0;">${idx+1}</span>
+          ${esc(item.titulo || item.title || `Item ${idx+1}`)}
+        </div>
+        <div style="margin-bottom:8px;">
+          <label style="${LBL}">${item.titulo!==undefined?'Título':'Nome'}</label>
+          <input type="text" class="portal-field regen-item-field" data-seg="${segKey}"
+            data-idx="${idx}" data-subfield="${item.titulo!==undefined?'titulo':'title'}"
+            value="${esc(item.titulo||item.title||'')}" style="width:100%;font-size:0.875rem;">
+        </div>
+        ${item.descricao!==undefined ? `
+        <div style="margin-bottom:8px;">
+          <label style="${LBL}">Descrição</label>
+          <textarea class="portal-field regen-item-field" data-seg="${segKey}"
+            data-idx="${idx}" data-subfield="descricao" rows="3"
+            style="width:100%;font-size:0.875rem;">${esc(item.descricao||'')}</textarea>
+        </div>` : ''}
+        ${item.observacoes!==undefined ? `
+        <div style="margin-bottom:8px;">
+          <label style="${LBL}">Observações</label>
+          <input type="text" class="portal-field regen-item-field" data-seg="${segKey}"
+            data-idx="${idx}" data-subfield="observacoes"
+            value="${esc(item.observacoes||'')}" style="width:100%;font-size:0.875rem;">
+        </div>` : ''}
+        ${galeria.length > 0 ? `
+        <div style="margin-top:10px;">
+          <label style="${LBL}">Imagem para este lugar</label>
+          <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
+            <button class="regen-img-none"
+              data-seg="${segKey}" data-idx="${idx}"
+              style="flex-shrink:0;width:56px;height:42px;border:2px solid
+              ${!(segSelectedImgs[segKey]?.[idx])?'var(--brand-gold)':'var(--border-subtle)'};
+              border-radius:var(--radius-sm);background:var(--bg-surface);cursor:pointer;
+              font-size:0.5rem;color:var(--text-muted);display:flex;align-items:center;
+              justify-content:center;flex-direction:column;">
+              <span style="font-size:0.75rem;">◑</span>auto
+            </button>
+            ${galeria.slice(0,8).map(img => {
+              const isSel = segSelectedImgs[segKey]?.[idx]?.url === img.url;
+              return `<button class="regen-img-pick"
+                data-seg="${segKey}" data-idx="${idx}"
+                data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
+                style="flex-shrink:0;border:2px solid ${isSel?'var(--brand-gold)':'var(--border-subtle)'};
+                border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;
+                width:56px;height:42px;padding:0;background:none;">
+                <img src="${esc(img.url)}" alt="" style="width:100%;height:100%;object-fit:cover;">
+              </button>`;
+            }).join('')}
+          </div>
+        </div>` : ''}
+      </div>`).join('');
+  }
+  return html;
+}
+
+function wireRegenEditor(wTip, segKey, destImgs, destId, selectedImages, workingTips, curDestIdx) {
+  document.querySelectorAll(`.regen-field[data-seg="${segKey}"]`).forEach(el => {
+    el.addEventListener('input', () => {
+      const field = el.dataset.field;
+      if (!wTip.segments?.[segKey]) return;
+      if (segKey === 'informacoes_gerais') {
+        if (!wTip.segments[segKey].info) wTip.segments[segKey].info = {};
+        wTip.segments[segKey].info[field] = el.value;
+      } else {
+        wTip.segments[segKey][field] = el.value;
+      }
+      workingTips[curDestIdx].tip = wTip;
+    });
+  });
+  document.querySelectorAll(`.regen-item-field[data-seg="${segKey}"]`).forEach(el => {
+    el.addEventListener('input', () => {
+      const idx = Number(el.dataset.idx);
+      const sub = el.dataset.subfield;
+      if (!wTip.segments?.[segKey]?.items?.[idx]) return;
+      wTip.segments[segKey].items[idx][sub] = el.value;
+      workingTips[curDestIdx].tip = wTip;
+    });
+  });
+  if (!selectedImages[destId]) selectedImages[destId] = {};
+  if (!selectedImages[destId][segKey]) selectedImages[destId][segKey] = {};
+  document.querySelectorAll(`.regen-img-pick[data-seg="${segKey}"]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.idx);
+      document.querySelectorAll(`.regen-img-pick[data-seg="${segKey}"][data-idx="${idx}"],
+        .regen-img-none[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
+        b.style.borderColor = 'var(--border-subtle)';
+      });
+      btn.style.borderColor = 'var(--brand-gold)';
+      selectedImages[destId][segKey][idx] = { url: btn.dataset.url, name: btn.dataset.name };
+    });
+  });
+  document.querySelectorAll(`.regen-img-none[data-seg="${segKey}"]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.idx);
+      document.querySelectorAll(`.regen-img-pick[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
+        b.style.borderColor = 'var(--border-subtle)';
+      });
+      btn.style.borderColor = 'var(--brand-gold)';
+      delete selectedImages[destId]?.[segKey]?.[idx];
     });
   });
 }
