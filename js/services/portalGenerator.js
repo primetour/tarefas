@@ -56,7 +56,7 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
     case 'docx': return generateDocx({ allTips, segments, areaName, area, colors, filename });
     case 'pdf':  return generatePDF({ allTips, segments, areaName, area, colors, filename });
     case 'pptx': return generatePptx({ allTips, segments, areaName, area, colors, filename });
-    case 'web':  return generateWebLink({ allTips, segments, areaName, area, colors, imagesOverride });
+    case 'web':  return generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride });
     default:     throw new Error(`Formato desconhecido: ${format}`);
   }
 }
@@ -398,7 +398,7 @@ async function resolveImages(dest) {
   } catch { return { hero: null, gallery: [], banners: {} }; }
 }
 
-async function generateWebLink({ allTips, segments, areaName, area, colors, imagesOverride = {} }) {
+async function generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride = {} }) {
   const token  = generateToken();
   const ref    = doc(collection(db, 'portal_web_links'), token);
 
@@ -440,24 +440,29 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, imag
   const profile = store.get('userProfile') || {};
   const uid     = store.get('currentUser')?.uid || null;
 
-  await setDoc(ref, {
-    token,
-    format,
-    allTips:      allTips.map(({ tip, dest }) => ({ tipId: tip?.id || null, destId: dest?.id || null })),
-    tipData:      allTips.map(({ tip, dest }) => ({ tip, dest })),
-    segments,
-    areaName,
-    areaLogoUrl:  area?.logoUrl || null,
-    colors,
-    imagesByDest,
-    createdBy: {
-      uid:   uid,
-      name:  profile.name  || profile.displayName || 'Usuário',
-      email: profile.email || '',
-    },
-    createdAt:    serverTimestamp(),
-    views: 0,
-  });
+  try {
+    await setDoc(ref, {
+      token,
+      format,
+      allTips:      allTips.map(({ tip, dest }) => ({ tipId: tip?.id || null, destId: dest?.id || null })),
+      tipData:      allTips.map(({ tip, dest }) => ({ tip, dest })),
+      segments,
+      areaName,
+      areaLogoUrl:  area?.logoUrl || null,
+      colors,
+      imagesByDest,
+      createdBy: {
+        uid:   uid,
+        name:  profile.name  || profile.displayName || 'Usuário',
+        email: profile.email || '',
+      },
+      createdAt:    serverTimestamp(),
+      views: 0,
+    });
+  } catch(e) {
+    console.error('[PRIMETOUR] Erro ao salvar portal_web_links:', e);
+    throw e;
+  }
 
   const baseUrl = window.location.origin + window.location.pathname.replace(/index\.html$/, '');
   const url     = `${baseUrl}portal-view.html#${token}`;
