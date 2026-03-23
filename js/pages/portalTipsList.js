@@ -8,7 +8,7 @@ import { toast }  from '../components/toast.js';
 import {
   fetchTips, fetchDestinations, fetchAreas, deleteTip,
   fetchWebLinksByTip, updateWebLink, fetchImages,
-  fetchGenerationsByTip,
+  fetchGenerationsByTip, recordGeneration, registerDownload,
   SEGMENTS, GENERATION_FORMATS,
 } from '../services/portal.js';
 import { generateTip } from '../services/portalGenerator.js';
@@ -284,64 +284,101 @@ async function showMaterialsModal(tip, dest) {
   const existing = document.getElementById('materials-modal');
   if (existing) existing.remove();
 
+  const label    = [dest?.city, dest?.country].filter(Boolean).join(', ') || '—';
+  const segments = Object.keys(tip.segments || {}).filter(k => {
+    const seg = tip.segments[k];
+    if (!seg) return false;
+    if (seg.info && Object.values(seg.info).some(v => v && String(v).trim())) return true;
+    return Array.isArray(seg.items) && seg.items.length > 0;
+  });
+
   const modal = document.createElement('div');
   modal.id = 'materials-modal';
   modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
     display:flex;align-items:center;justify-content:center;padding:20px;`;
 
-  const label = [dest?.city, dest?.country].filter(Boolean).join(', ') || '—';
   modal.innerHTML = `
-    <div class="card" style="width:100%;max-width:560px;padding:0;overflow:hidden;">
+    <div class="card" style="width:100%;max-width:620px;padding:0;overflow:hidden;
+      max-height:90vh;display:flex;flex-direction:column;">
+
+      <!-- Header -->
       <div style="padding:18px 22px;background:var(--bg-surface);
         border-bottom:1px solid var(--border-subtle);
-        display:flex;align-items:center;justify-content:space-between;">
+        display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
         <div>
-          <div style="font-weight:700;font-size:1rem;">Materiais Gerados</div>
-          <div style="font-size:0.8125rem;color:var(--text-muted);">${esc(label)}</div>
+          <div style="font-weight:700;font-size:1rem;">Materiais · ${esc(label)}</div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);">
+            Gere novos formatos ou edite materiais já gerados
+          </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button id="mat-new-btn" class="btn btn-primary btn-sm">+ Novo material</button>
-          <button id="mat-close" style="border:none;background:none;cursor:pointer;
-            font-size:1.25rem;color:var(--text-muted);">✕</button>
+        <button id="mat-close" style="border:none;background:none;cursor:pointer;
+          font-size:1.25rem;color:var(--text-muted);">✕</button>
+      </div>
+
+      <!-- Gerar novo formato -->
+      <div style="padding:16px 22px;border-bottom:1px solid var(--border-subtle);flex-shrink:0;">
+        <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:.07em;color:var(--text-muted);margin-bottom:10px;">
+          Gerar novo material
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${GENERATION_FORMATS.map(f => `
+            <button class="mat-new-format btn btn-secondary btn-sm" data-format="${f.key}"
+              style="display:flex;align-items:center;gap:6px;font-size:0.8125rem;">
+              ${FMT_ICONS[f.key]||'📄'} ${esc(f.label)}
+            </button>`).join('')}
         </div>
       </div>
-      <div id="mat-list" style="padding:16px 22px;min-height:80px;max-height:60vh;overflow-y:auto;">
-        <div style="color:var(--text-muted);font-size:0.875rem;text-align:center;padding:20px;">
+
+      <!-- Lista de materiais já gerados -->
+      <div id="mat-list"
+        style="padding:16px 22px;overflow-y:auto;flex:1;min-height:60px;">
+        <div style="color:var(--text-muted);font-size:0.875rem;text-align:center;padding:16px;">
           ⏳ Carregando…
         </div>
       </div>
     </div>`;
 
   document.body.appendChild(modal);
-
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.getElementById('mat-close')?.addEventListener('click', () => modal.remove());
 
-  document.getElementById('mat-new-btn')?.addEventListener('click', () => {
-    modal.remove();
-    // Navigate to portal-tips pre-selecting this destination
-    location.hash = `portal-tips`;
-    toast.success('Selecione o destino e os segmentos para gerar um novo material.');
+  // Wire format buttons — open generation editor directly with this tip
+  modal.querySelectorAll('.mat-new-format').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = '⏳ Abrindo…';
+      try {
+        // Fetch area for this tip
+        const areas  = await fetchAreas().catch(() => []);
+        const area   = areas.find(a => a.id === tip.areaId) || areas[0] || { name: 'PRIMETOUR' };
+        const format = btn.dataset.format;
+        modal.remove();
+        // Open the same generation editor from portalTips
+        await openGenerationEditor({ tip, dest, area, segments, format });
+      } catch(e) {
+        toast.error('Erro: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = `${FMT_ICONS[btn.dataset.format]||'📄'} ${FMT_LABELS[btn.dataset.format]||btn.dataset.format}`;
+      }
+    });
   });
 
+  // Load existing materials
   const listEl = document.getElementById('mat-list');
   if (!listEl) return;
 
-  // Load both web links and other format generations in parallel
-  let [links, gens] = await Promise.all([
+  const [links, gens] = await Promise.all([
     fetchWebLinksByTip(tip.id).catch(() => []),
     fetchGenerationsByTip(tip.id).catch(() => []),
   ]);
-
-  // Filter gens to non-web formats (web links are already in links[])
   const otherGens = gens.filter(g => g.format && g.format !== 'web');
 
   if (!links.length && !otherGens.length) {
     listEl.innerHTML = `<div style="color:var(--text-muted);font-size:0.875rem;
-      text-align:center;padding:32px 20px;">
-      <div style="font-size:2rem;margin-bottom:8px;">✈</div>
-      Nenhum material gerado para esta dica ainda.<br>
-      <span style="font-size:0.8125rem;">Clique em "+ Novo material" para criar.</span>
+      text-align:center;padding:24px 20px;">
+      <div style="font-size:1.75rem;margin-bottom:8px;">✈</div>
+      Nenhum material gerado ainda.<br>
+      <span style="font-size:0.8125rem;">Use os botões acima para criar o primeiro.</span>
     </div>`;
     return;
   }
@@ -351,24 +388,20 @@ async function showMaterialsModal(tip, dest) {
       ? (item.createdAt||item.generatedAt).toDate().toLocaleDateString('pt-BR') : '—';
     const updDate = item.updatedAt?.toDate
       ? ' · editado ' + item.updatedAt.toDate().toLocaleDateString('pt-BR') : '';
-    const segsCount = (item.segments || []).length;
-    const destNames = isWebLink
-      ? (item.tipData || []).map(({ dest: d }) => [d?.city, d?.country].filter(Boolean).join(', ')).filter(Boolean).join(' + ') || label
-      : label;
-    const fmt = item.format || (isWebLink ? 'web' : '?');
-    const author = item.createdBy?.name || item.generatedBy || null;
+    const segsCount = (item.segments||[]).length;
+    const fmt    = item.format || (isWebLink ? 'web' : '?');
+    const author = item.createdBy?.name || null;
 
-    return `<div class="mat-item" style="display:flex;align-items:center;gap:12px;
-      padding:12px 0;border-bottom:1px solid var(--border-subtle);">
-      <div style="font-size:1.5rem;flex-shrink:0;">${FMT_ICONS[fmt]||'📄'}</div>
-      <div style="flex:1;overflow:hidden;">
-        <div style="font-weight:600;font-size:0.9375rem;">${esc(destNames)}</div>
-        <div style="font-size:0.75rem;color:var(--text-muted);">
-          ${esc(FMT_LABELS[fmt]||fmt)}
-          ${segsCount ? ` · ${segsCount} segmento${segsCount!==1?'s':''}` : ''}
-          · ${esc(date)}${esc(updDate)}
-          ${item.views ? ` · ${item.views} visualização${item.views!==1?'ões':''}` : ''}
-          ${author ? ` · por <strong style="color:var(--text-secondary);">${esc(author)}</strong>` : ''}
+    return `<div style="display:flex;align-items:center;gap:12px;
+      padding:10px 0;border-bottom:1px solid var(--border-subtle);">
+      <div style="font-size:1.25rem;flex-shrink:0;">${FMT_ICONS[fmt]||'📄'}</div>
+      <div style="flex:1;overflow:hidden;min-width:0;">
+        <div style="font-weight:600;font-size:0.875rem;">${esc(FMT_LABELS[fmt]||fmt)}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;
+          overflow:hidden;text-overflow:ellipsis;">
+          ${segsCount ? `${segsCount} seg. · ` : ''}${esc(date)}${esc(updDate)}
+          ${author ? ` · ${esc(author)}` : ''}
+          ${item.views ? ` · ${item.views} views` : ''}
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
@@ -378,53 +411,218 @@ async function showMaterialsModal(tip, dest) {
             style="font-size:0.75rem;text-decoration:none;">🔗 Abrir</a>` : ''}
         ${isWebLink
           ? `<button class="btn btn-ghost btn-sm mat-edit-btn"
-              data-token="${esc(item.token || item.id)}"
+              data-token="${esc(item.token||item.id)}"
               style="font-size:0.75rem;color:var(--brand-gold);">✎ Editar</button>`
           : `<button class="btn btn-ghost btn-sm mat-regen-btn"
               data-genid="${esc(item.id)}" data-format="${esc(fmt)}"
-              style="font-size:0.75rem;color:var(--brand-gold);">↓ Baixar novamente</button>`
+              style="font-size:0.75rem;color:var(--brand-gold);">↓ Baixar</button>`
         }
       </div>
     </div>`;
   };
 
   listEl.innerHTML =
+    (links.length ? `<div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Links web</div>` : '') +
     links.map(l => renderItem(l, true)).join('') +
+    (otherGens.length ? `<div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.07em;color:var(--text-muted);margin:12px 0 8px;">Documentos</div>` : '') +
     otherGens.map(g => renderItem(g, false)).join('');
 
-  // Wire web link edit buttons
+  // Wire edit buttons (web links)
   listEl.querySelectorAll('.mat-edit-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const token = btn.dataset.token;
-      const link  = links.find(l => (l.token || l.id) === token);
+      const link  = links.find(l => (l.token||l.id) === token);
       if (!link) return;
       modal.remove();
       await showRegenEditor({ link, tip, dest });
     });
   });
 
-  // Wire re-download buttons for docx/pdf/pptx
+  // Wire re-download buttons
   listEl.querySelectorAll('.mat-regen-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       btn.disabled = true; btn.textContent = '⏳';
       try {
-        const area = allDests.find ? null : null; // area not available here, use tip directly
-        await generateTip({
-          tip, dest,
-          area:     { name: 'PRIMETOUR' },
-          segments: tip._segments || Object.keys(tip.segments || {}),
-          format:   btn.dataset.format,
-          extraTips: [],
-        });
+        const areas = await fetchAreas().catch(() => []);
+        const area  = areas.find(a => a.id === tip.areaId) || areas[0] || { name: 'PRIMETOUR' };
+        await generateTip({ tip, dest, area, segments, format: btn.dataset.format, extraTips: [] });
         toast.success('Download iniciado!');
       } catch(e) {
         toast.error('Erro: ' + e.message);
       } finally {
-        btn.disabled = false; btn.textContent = '↓ Baixar novamente';
+        btn.disabled = false; btn.textContent = '↓ Baixar';
       }
     });
   });
 }
+
+/* ─── Generation editor (called from materials modal) ────────── */
+async function openGenerationEditor({ tip, dest, area, segments, format }) {
+  // Lazy-import showPreviewModal logic — replicate inline since it's in portalTips.js
+  // We use generateTip directly with an inline confirm UI
+  const fmtLabel = GENERATION_FORMATS.find(f => f.key === format)?.label || format;
+
+  // Deep-clone tip
+  const workingTips   = [{ tip: JSON.parse(JSON.stringify(tip)), dest }];
+  const allTips       = [{ tip, dest }];
+  const selectedImages = {};
+
+  // Load images
+  const imagesByDest = {};
+  if (dest?.id) {
+    try {
+      const { fetchImages } = await import('../services/portal.js');
+      imagesByDest[dest.id] = await fetchImages({
+        continent: dest.continent, country: dest.country, city: dest.city,
+      });
+    } catch { imagesByDest[dest.id] = []; }
+  }
+
+  const activeSeg = segments.filter(k => {
+    const seg = tip.segments?.[k];
+    if (!seg) return false;
+    if (seg.info && Object.values(seg.info).some(v => v && String(v).trim())) return true;
+    return Array.isArray(seg.items) && seg.items.length > 0;
+  });
+
+  let curSegKey = activeSeg[0] || '';
+  const destId  = dest?.id || 0;
+  const destImgs = imagesByDest[destId] || [];
+
+  const modal = document.createElement('div');
+  modal.id    = 'gen-from-list-modal';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;
+    display:flex;align-items:center;justify-content:center;padding:16px;`;
+
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:900px;max-height:92vh;
+      padding:0;overflow:hidden;display:flex;flex-direction:column;">
+      <div style="padding:14px 20px;background:var(--bg-surface);
+        border-bottom:1px solid var(--border-subtle);
+        display:flex;align-items:center;gap:12px;flex-shrink:0;">
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:1rem;">Gerar Material</div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);">
+            ${esc([dest?.city, dest?.country].filter(Boolean).join(', '))} · ${esc(fmtLabel)}
+          </div>
+        </div>
+        <span style="font-size:0.75rem;padding:3px 10px;background:var(--brand-gold)15;
+          color:var(--brand-gold);border-radius:var(--radius-full);font-weight:600;">
+          ${esc(fmtLabel)}
+        </span>
+        <button id="gfl-close" style="border:none;background:none;cursor:pointer;
+          font-size:1.25rem;color:var(--text-muted);">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:200px 1fr;flex:1;overflow:hidden;min-height:0;">
+        <div id="gfl-seg-list" style="border-right:1px solid var(--border-subtle);
+          overflow-y:auto;background:var(--bg-surface);"></div>
+        <div id="gfl-right-panel" style="overflow-y:auto;padding:20px;"></div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle);
+        background:var(--bg-surface);display:flex;gap:10px;flex-shrink:0;">
+        <button class="btn btn-secondary" id="gfl-cancel" style="flex:1;">← Voltar</button>
+        <button class="btn btn-primary"   id="gfl-confirm" style="flex:2;font-weight:600;">
+          ✈ Gerar ${esc(fmtLabel)}
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  const refreshSegList = () => {
+    const { tip: wTip } = workingTips[0];
+    document.getElementById('gfl-seg-list').innerHTML = activeSeg.map(k => {
+      const seg = SEGMENTS.find(s => s.key === k);
+      const isActive = k === curSegKey;
+      return `<button class="gfl-seg-btn" data-seg="${k}"
+        style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+        padding:12px 14px;border:none;
+        background:${isActive?'var(--brand-gold)10':'transparent'};
+        border-left:3px solid ${isActive?'var(--brand-gold)':'transparent'};
+        cursor:pointer;transition:all .15s;font-size:0.8125rem;">
+        <span style="flex:1;color:${isActive?'var(--brand-gold)':'var(--text-secondary)'};">
+          ${esc(seg?.label||k)}</span>
+      </button>`;
+    }).join('');
+    document.querySelectorAll('.gfl-seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        curSegKey = btn.dataset.seg;
+        refreshSegList();
+        refreshRightPanel();
+      });
+    });
+  };
+
+  const refreshRightPanel = () => {
+    const { tip: wTip } = workingTips[0];
+    const panel = document.getElementById('gfl-right-panel');
+    if (!panel) return;
+    panel.innerHTML = renderSegEditorForList(wTip, curSegKey, destImgs, selectedImages[destId]?.[curSegKey] || {}, destId);
+    wireRegenEditor(wTip, curSegKey, destImgs, destId, selectedImages, workingTips, 0);
+  };
+
+  document.getElementById('gfl-close')?.addEventListener('click', () => modal.remove());
+  document.getElementById('gfl-cancel')?.addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  document.getElementById('gfl-confirm')?.addEventListener('click', async () => {
+    const btn = document.getElementById('gfl-confirm');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true; btn.textContent = '⏳ Gerando…';
+    try {
+      const result = await generateTip({
+        tip:            workingTips[0].tip,
+        dest,
+        area, segments, format,
+        extraTips:      [],
+        imagesOverride: selectedImages,
+      });
+      await recordGeneration({
+        areaId:    area?.id  || null,
+        tipId:     tip?.id   || null,
+        format, segments,
+        destinationIds: [dest?.id].filter(Boolean),
+        status:    'done',
+        ...(result.url   ? { webUrl:   result.url   } : {}),
+        ...(result.token ? { webToken: result.token } : {}),
+      });
+      await registerDownload();
+      modal.remove();
+      if (format === 'web' && result.url) {
+        // Show web link result
+        const rm = document.createElement('div');
+        rm.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2100;
+          display:flex;align-items:center;justify-content:center;padding:20px;`;
+        rm.innerHTML = `<div class="card" style="max-width:480px;width:100%;padding:32px;text-align:center;">
+          <div style="font-size:2rem;margin-bottom:12px;">🔗</div>
+          <h2 style="font-size:1.125rem;margin:0 0 8px;">Link gerado!</h2>
+          <input type="text" value="${esc(result.url)}" readonly
+            style="width:100%;padding:10px;background:var(--bg-surface);border:1px solid var(--border-subtle);
+            border-radius:var(--radius-sm);font-size:0.8125rem;margin-bottom:16px;">
+          <div style="display:flex;gap:8px;justify-content:center;">
+            <a href="${esc(result.url)}" target="_blank" class="btn btn-primary btn-sm">Abrir link</a>
+            <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${esc(result.url)}');this.textContent='✓ Copiado!'">Copiar</button>
+            <button class="btn btn-ghost btn-sm" onclick="this.closest('[style*=fixed]').remove()">Fechar</button>
+          </div>
+        </div>`;
+        document.body.appendChild(rm);
+        rm.addEventListener('click', e => { if (e.target === rm) rm.remove(); });
+      } else {
+        toast.success('Material gerado e download iniciado!');
+      }
+    } catch(e) {
+      console.error('[PRIMETOUR] Erro ao gerar:', e);
+      toast.error('Erro ao gerar: ' + (e.message || 'desconhecido'));
+      btn.disabled = false; btn.textContent = `✈ Gerar ${fmtLabel}`;
+    }
+  });
+
+  refreshSegList();
+  refreshRightPanel();
+}
+
 
 /* ─── Re-generation editor (edit saved material) ──────────── */
 async function showRegenEditor({ link, tip, dest }) {
