@@ -15,10 +15,38 @@ const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 const IMAGE_TYPES = [
-  { key: 'destaque',  label: 'Destaque'       },
-  { key: 'galeria',   label: 'Galeria'         },
-  { key: 'banner',    label: 'Banner'          },
-  { key: 'logo_area', label: 'Logo de Área'    },
+  {
+    key:   'destaque',
+    label: 'Destaque',
+    desc:  'Foto principal do destino. Usada como hero (capa) nos materiais gerados — link web, PDF e PPTX.',
+    icon:  '★',
+  },
+  {
+    key:   'galeria',
+    label: 'Galeria',
+    desc:  'Fotos gerais do destino. Usadas nos cards de lugares nos materiais. Quanto mais, melhor a cobertura.',
+    icon:  '▦',
+  },
+  {
+    key:   'banner',
+    label: 'Banner',
+    desc:  'Imagem horizontal para cabeçalhos de seção. Fallback para Destaque quando não há foto principal.',
+    icon:  '▬',
+  },
+  {
+    key:   'logo_area',
+    label: 'Logo de Área',
+    desc:  'Logotipo da área (ex: BTG Partners, Centurion). Exibido no header dos materiais e do link web.',
+    icon:  '◈',
+  },
+];
+
+// Tags sugeridas para o Portal de Dicas — aparecem como chips clicáveis no upload
+const PORTAL_TAGS = [
+  'atrações', 'restaurante', 'hotel', 'compras', 'vida noturna',
+  'espetáculos', 'museu', 'parque', 'praia', 'natureza',
+  'gastronomia', 'cultura', 'esporte', 'crianças', 'transporte',
+  'panorâmica', 'noturna', 'principal', 'destaque', 'bairro',
 ];
 
 let allImages   = [];
@@ -111,55 +139,90 @@ export async function renderPortalImages(container) {
 /* ── Upload panel ── */
 function uploadPanelHtml() {
   return `
-    <div class="card" style="padding:24px;">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:16px;">
-        <div>
-          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
-            Continente *</label>
-          <select id="up-continent" class="filter-select" style="width:100%;">
-            <option value="">Selecione</option>
-            ${CONTINENTS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
-          </select>
+    <div class="card" style="padding:0;overflow:hidden;">
+
+      <!-- Step 1: Drop zone — always visible and large -->
+      <div style="padding:24px;border-bottom:1px solid var(--border-subtle);">
+        <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:.07em;color:var(--text-muted);margin-bottom:14px;">
+          1 · Selecione as imagens
         </div>
-        <div>
-          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
-            País *</label>
-          <select id="up-country" class="filter-select" style="width:100%;" disabled>
-            <option value="">Selecione o continente</option>
-          </select>
-        </div>
-        <div>
-          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
-            Cidade <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
-          <select id="up-city" class="filter-select" style="width:100%;" disabled>
-            <option value="">Todas as cidades</option>
-          </select>
-        </div>
-        <div>
-          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
-            Tipo</label>
-          <select id="up-type" class="filter-select" style="width:100%;">
-            ${IMAGE_TYPES.map(t => `<option value="${t.key}">${t.label}</option>`).join('')}
-          </select>
+        <div id="img-dropzone"
+          style="border:2px dashed var(--border-subtle);border-radius:var(--radius-md);
+          padding:40px 24px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;">
+          <div style="font-size:2.5rem;margin-bottom:12px;">🖼</div>
+          <div style="font-size:1rem;font-weight:600;margin-bottom:6px;">
+            Arraste quantas imagens quiser aqui</div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:16px;">
+            ou clique para selecionar · JPG, PNG, WEBP, HEIC · Máx 10 MB por arquivo
+          </div>
+          <div style="display:inline-flex;align-items:center;gap:8px;padding:8px 20px;
+            background:var(--bg-surface);border:1px solid var(--border-subtle);
+            border-radius:var(--radius-sm);font-size:0.8125rem;color:var(--text-secondary);">
+            ↑ Selecionar arquivos
+          </div>
+          <input type="file" id="img-file-input" multiple accept="image/*" style="display:none;">
         </div>
       </div>
-      <div style="margin-bottom:12px;">
-        <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
-          Tags <span style="font-weight:400;color:var(--text-muted);">(separadas por vírgula)</span></label>
-        <input type="text" id="up-tags" class="portal-field"
-          placeholder="ex: monumento, noturna, principal" style="width:100%;">
+
+      <!-- Step 2: Per-image metadata (appears after drop) -->
+      <div id="img-batch-list" style="display:none;">
+        <div style="padding:16px 24px;background:var(--bg-surface);
+          border-bottom:1px solid var(--border-subtle);
+          display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+              letter-spacing:.07em;color:var(--text-muted);">2 · Configure cada imagem</div>
+            <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:2px;">
+              Preencha destino, tipo e tags. Campos em branco herdam os valores padrão abaixo.
+            </div>
+          </div>
+          <button id="img-upload-all-btn" class="btn btn-primary btn-sm" style="white-space:nowrap;">
+            ↑ Enviar todas
+          </button>
+        </div>
+
+        <!-- Default values (apply to all that don't have individual values) -->
+        <div style="padding:16px 24px;background:var(--brand-gold)08;
+          border-bottom:1px solid var(--border-subtle);">
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:10px;color:var(--brand-gold);">
+            ◈ Valores padrão — aplicados a todas as imagens sem preenchimento individual
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
+            <div>
+              <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">Continente</label>
+              <select id="def-continent" class="filter-select" style="width:100%;">
+                <option value="">—</option>
+                ${CONTINENTS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">País</label>
+              <select id="def-country" class="filter-select" style="width:100%;" disabled>
+                <option value="">—</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">Cidade</label>
+              <select id="def-city" class="filter-select" style="width:100%;" disabled>
+                <option value="">—</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">Tipo</label>
+              <select id="def-type" class="filter-select" style="width:100%;">
+                ${IMAGE_TYPES.map(t => `<option value="${t.key}">${t.icon} ${t.label}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Per-image rows (injected by JS) -->
+        <div id="img-item-rows" style="padding:16px 24px;display:flex;flex-direction:column;gap:12px;"></div>
       </div>
-      <div id="img-dropzone"
-        style="border:2px dashed var(--border-subtle);border-radius:var(--radius-md);
-        padding:32px;text-align:center;cursor:pointer;transition:border-color .2s;">
-        <div style="font-size:2rem;margin-bottom:8px;">🖼</div>
-        <div style="font-size:0.9375rem;font-weight:600;margin-bottom:4px;">
-          Arraste imagens aqui ou clique para selecionar</div>
-        <div style="font-size:0.8125rem;color:var(--text-muted);">
-          JPG, PNG, WEBP, HEIC · Convertido automaticamente para .webp · Máx 10 MB/arquivo</div>
-        <input type="file" id="img-file-input" multiple accept="image/*" style="display:none;">
-      </div>
-      <div id="img-upload-queue" style="margin-top:12px;"></div>
+
+      <!-- Upload progress (appears during upload) -->
+      <div id="img-upload-queue" style="display:none;padding:16px 24px;"></div>
     </div>
   `;
 }
@@ -169,117 +232,245 @@ function wireUploadPanel() {
   const fileInput = document.getElementById('img-file-input');
   if (!dropzone) return;
 
+  // Dropzone interactions
   dropzone.addEventListener('click', () => fileInput?.click());
   dropzone.addEventListener('dragover', e => {
     e.preventDefault();
     dropzone.style.borderColor = 'var(--brand-gold)';
+    dropzone.style.background  = 'var(--brand-gold)06';
   });
   dropzone.addEventListener('dragleave', () => {
     dropzone.style.borderColor = 'var(--border-subtle)';
+    dropzone.style.background  = '';
   });
   dropzone.addEventListener('drop', e => {
     e.preventDefault();
     dropzone.style.borderColor = 'var(--border-subtle)';
-    handleFiles([...e.dataTransfer.files]);
+    dropzone.style.background  = '';
+    buildBatchList([...e.dataTransfer.files].filter(f => f.type.startsWith('image/')));
   });
   fileInput?.addEventListener('change', () => {
-    handleFiles([...fileInput.files]);
+    buildBatchList([...fileInput.files].filter(f => f.type.startsWith('image/')));
     fileInput.value = '';
   });
 
-  // Continent → Country → City cascade (linked to portal_destinations)
-  document.getElementById('up-continent')?.addEventListener('change', e => {
-    const cont     = e.target.value;
-    const countries= [...new Set(allDests.filter(d => !cont || d.continent === cont)
-      .map(d => d.country).filter(Boolean))].sort();
-    const countrySel = document.getElementById('up-country');
-    countrySel.innerHTML = `<option value="">Selecione o país</option>` +
-      countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-    countrySel.disabled = !cont;
-    const citySel = document.getElementById('up-city');
-    citySel.innerHTML = `<option value="">Todas as cidades</option>`;
-    citySel.disabled = true;
-  });
+  // Default values cascade
+  wireCascade('def-continent', 'def-country', 'def-city');
 
-  document.getElementById('up-country')?.addEventListener('change', e => {
-    const cont  = document.getElementById('up-continent')?.value;
+  // Upload all button
+  document.getElementById('img-upload-all-btn')?.addEventListener('click', () => uploadBatch());
+}
+
+/* ── Destination cascade helper ── */
+function wireCascade(contId, countryId, cityId) {
+  document.getElementById(contId)?.addEventListener('change', e => {
+    const cont     = e.target.value;
+    const countries = [...new Set(allDests.filter(d => !cont || d.continent === cont)
+      .map(d => d.country).filter(Boolean))].sort();
+    const cSel = document.getElementById(countryId);
+    if (!cSel) return;
+    cSel.innerHTML = `<option value="">—</option>` +
+      countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    cSel.disabled = !cont;
+    const citySel = document.getElementById(cityId);
+    if (citySel) { citySel.innerHTML = `<option value="">—</option>`; citySel.disabled = true; }
+  });
+  document.getElementById(countryId)?.addEventListener('change', e => {
+    const cont  = document.getElementById(contId)?.value;
     const count = e.target.value;
     const cities = [...new Set(allDests.filter(d =>
       (!cont  || d.continent === cont) &&
       (!count || d.country   === count) && d.city
     ).map(d => d.city))].sort();
-    const citySel = document.getElementById('up-city');
-    citySel.innerHTML = `<option value="">Todas as cidades</option>` +
+    const citySel = document.getElementById(cityId);
+    if (!citySel) return;
+    citySel.innerHTML = `<option value="">—</option>` +
       cities.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
     citySel.disabled = !count;
   });
 }
 
-async function handleFiles(files) {
-  const continent = document.getElementById('up-continent')?.value;
-  const country   = document.getElementById('up-country')?.value;
-  if (!continent || !country) {
-    toast.error('Selecione continente e país antes de fazer upload.'); return;
-  }
-  const city  = document.getElementById('up-city')?.value   || '';
-  const type  = document.getElementById('up-type')?.value   || 'galeria';
-  const tags  = (document.getElementById('up-tags')?.value  || '')
-    .split(',').map(t => t.trim()).filter(Boolean);
+/* ── Build per-image metadata rows ── */
+function buildBatchList(files) {
+  if (!files.length) return;
+  const batchList = document.getElementById('img-batch-list');
+  const itemRows  = document.getElementById('img-item-rows');
+  if (!batchList || !itemRows) return;
 
-  const imgFiles = files.filter(f => f.type.startsWith('image/'));
-  if (!imgFiles.length) { toast.error('Nenhuma imagem selecionada.'); return; }
+  batchList.style.display = 'block';
 
-  const queue = document.getElementById('img-upload-queue');
-  if (!queue) return;
-
-  // Build queue rows
-  const rows = imgFiles.map(file => {
+  // Append new rows (don't replace existing ones)
+  files.forEach((file, i) => {
+    const id  = `item-${Date.now()}-${i}`;
     const row = document.createElement('div');
-    row.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px 0;
-      border-bottom:1px solid var(--border-subtle);`;
-    row.innerHTML = `
-      <div id="up-thumb-${esc(file.name)}"
-        style="width:40px;height:40px;border-radius:var(--radius-sm);background:var(--bg-surface);
-        overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-        font-size:1.25rem;color:var(--text-muted);">🖼</div>
-      <div style="flex:1;overflow:hidden;">
-        <div style="font-size:0.8125rem;font-weight:600;white-space:nowrap;
-          overflow:hidden;text-overflow:ellipsis;">${esc(file.name)}</div>
-        <div class="up-status-${esc(file.name)}"
-          style="font-size:0.75rem;color:var(--text-muted);">Aguardando…</div>
-      </div>
-      <div class="up-size-${esc(file.name)}"
-        style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;"></div>
-    `;
-    return { file, row };
-  });
-  queue.innerHTML = '';
-  rows.forEach(({ row }) => queue.appendChild(row));
+    row.id    = `batch-row-${id}`;
+    row.dataset.file = file.name;
+    row.style.cssText = `background:var(--bg-surface);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-md);overflow:hidden;`;
 
-  // Process all in parallel
-  await Promise.all(rows.map(async ({ file, row }) => {
-    const safeKey    = esc(file.name);
-    const statusEl   = row.querySelector(`.up-status-${safeKey}`);
-    const sizeEl     = row.querySelector(`.up-size-${safeKey}`);
-    const thumbEl    = row.querySelector(`#up-thumb-${safeKey}`);
-    const setStatus  = (msg, color = 'var(--text-muted)') => {
-      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color; }
-    };
+    // Preview thumbnail (generated client-side)
+    const thumbUrl = URL.createObjectURL(file);
+
+    row.innerHTML = `
+      <div style="display:flex;gap:12px;padding:12px 14px;">
+        <!-- Thumbnail -->
+        <img src="${esc(thumbUrl)}" alt=""
+          style="width:72px;height:54px;object-fit:cover;border-radius:var(--radius-sm);flex-shrink:0;"
+          onload="URL.revokeObjectURL(this.src)">
+
+        <!-- Fields -->
+        <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
+          <!-- Row 1: name + remove button -->
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input type="text" class="portal-field batch-name" data-id="${id}"
+              style="flex:1;font-size:0.8125rem;"
+              value="${esc(file.name.replace(/\.[^.]+$/,'').replace(/[-_]/g,' '))}"
+              placeholder="Nome da imagem">
+            <button class="btn btn-ghost btn-sm batch-remove" data-id="${id}"
+              style="font-size:0.75rem;color:var(--text-muted);flex-shrink:0;">✕</button>
+          </div>
+
+          <!-- Row 2: continent / country / city / type -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
+            <select class="filter-select batch-continent" data-id="${id}" style="font-size:0.75rem;">
+              <option value="">Continente</option>
+              ${CONTINENTS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+            </select>
+            <select class="filter-select batch-country" data-id="${id}" style="font-size:0.75rem;" disabled>
+              <option value="">País</option>
+            </select>
+            <select class="filter-select batch-city" data-id="${id}" style="font-size:0.75rem;" disabled>
+              <option value="">Cidade</option>
+            </select>
+            <select class="filter-select batch-type" data-id="${id}" style="font-size:0.75rem;">
+              ${IMAGE_TYPES.map(t => `<option value="${t.key}">${t.icon} ${t.label}</option>`).join('')}
+            </select>
+          </div>
+
+          <!-- Row 3: tag chips + free text -->
+          <div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">
+              ${PORTAL_TAGS.map(tag => `
+                <button class="tag-chip batch-tag-chip" data-id="${id}" data-tag="${esc(tag)}"
+                  style="padding:2px 8px;border-radius:20px;border:1px solid var(--border-subtle);
+                  background:transparent;cursor:pointer;font-size:0.6875rem;
+                  color:var(--text-muted);transition:all .15s;">
+                  ${esc(tag)}
+                </button>`).join('')}
+            </div>
+            <input type="text" class="portal-field batch-tags-input" data-id="${id}"
+              style="font-size:0.75rem;width:100%;"
+              placeholder="Tags livres adicionais (separadas por vírgula)">
+          </div>
+
+          <!-- Status -->
+          <div class="batch-status" data-id="${id}"
+            style="font-size:0.75rem;color:var(--text-muted);display:none;"></div>
+        </div>
+      </div>
+    `;
+
+    // Store file reference
+    row._file = file;
+    itemRows.appendChild(row);
+
+    // Wire per-row cascade
+    wireBatchCascade(row, id);
+
+    // Wire tag chips
+    row.querySelectorAll('.batch-tag-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        chip.classList.toggle('active');
+        const active = chip.classList.contains('active');
+        chip.style.background    = active ? 'var(--brand-gold)18' : 'transparent';
+        chip.style.borderColor   = active ? 'var(--brand-gold)'   : 'var(--border-subtle)';
+        chip.style.color         = active ? 'var(--brand-gold)'   : 'var(--text-muted)';
+      });
+    });
+
+    // Wire remove button
+    row.querySelector(`.batch-remove[data-id="${id}"]`)?.addEventListener('click', () => {
+      row.remove();
+      const remaining = document.querySelectorAll('[id^="batch-row-"]').length;
+      if (!remaining) document.getElementById('img-batch-list').style.display = 'none';
+    });
+  });
+}
+
+function wireBatchCascade(row, id) {
+  const contSel    = row.querySelector(`.batch-continent[data-id="${id}"]`);
+  const countrySel = row.querySelector(`.batch-country[data-id="${id}"]`);
+  const citySel    = row.querySelector(`.batch-city[data-id="${id}"]`);
+
+  contSel?.addEventListener('change', e => {
+    const cont = e.target.value;
+    const countries = [...new Set(allDests.filter(d => !cont || d.continent === cont)
+      .map(d => d.country).filter(Boolean))].sort();
+    countrySel.innerHTML = `<option value="">País</option>` +
+      countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    countrySel.disabled = !cont;
+    citySel.innerHTML = `<option value="">Cidade</option>`; citySel.disabled = true;
+  });
+  countrySel?.addEventListener('change', e => {
+    const cont  = contSel?.value;
+    const count = e.target.value;
+    const cities = [...new Set(allDests.filter(d =>
+      (!cont || d.continent === cont) && (!count || d.country === count) && d.city
+    ).map(d => d.city))].sort();
+    citySel.innerHTML = `<option value="">Cidade</option>` +
+      cities.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    citySel.disabled = !count;
+  });
+}
+
+/* ── Upload batch ── */
+async function uploadBatch() {
+  const rows = [...document.querySelectorAll('[id^="batch-row-"]')];
+  if (!rows.length) { toast.error('Nenhuma imagem na fila.'); return; }
+
+  const btn = document.getElementById('img-upload-all-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando…'; }
+
+  // Get defaults
+  const defContinent = document.getElementById('def-continent')?.value || '';
+  const defCountry   = document.getElementById('def-country')?.value   || '';
+  const defCity      = document.getElementById('def-city')?.value      || '';
+  const defType      = document.getElementById('def-type')?.value      || 'galeria';
+
+  let success = 0, failed = 0;
+
+  await Promise.all(rows.map(async row => {
+    const id   = row.id.replace('batch-row-','');
+    const file = row._file;
+    if (!file) return;
+
+    const statusEl = row.querySelector(`.batch-status[data-id="${id}"]`);
+    if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Convertendo…'; statusEl.style.color = 'var(--brand-gold)'; }
+
+    // Read per-row values, fall back to defaults
+    const continent = row.querySelector(`.batch-continent[data-id="${id}"]`)?.value || defContinent;
+    const country   = row.querySelector(`.batch-country[data-id="${id}"]`)?.value   || defCountry;
+    const city      = row.querySelector(`.batch-city[data-id="${id}"]`)?.value      || defCity;
+    const type      = row.querySelector(`.batch-type[data-id="${id}"]`)?.value      || defType;
+    const name      = row.querySelector(`.batch-name[data-id="${id}"]`)?.value?.trim() || file.name;
+
+    // Active chip tags
+    const chipTags = [...row.querySelectorAll(`.batch-tag-chip.active`)].map(c => c.dataset.tag);
+    // Free text tags
+    const freeTags = (row.querySelector(`.batch-tags-input[data-id="${id}"]`)?.value || '')
+      .split(',').map(t => t.trim()).filter(Boolean);
+    const tags = [...new Set([...chipTags, ...freeTags])];
+
+    if (!continent || !country) {
+      if (statusEl) { statusEl.textContent = '✗ Selecione continente e país'; statusEl.style.color = '#EF4444'; }
+      failed++;
+      return;
+    }
 
     try {
-      setStatus('Convertendo para .webp…', 'var(--brand-gold)');
       const { blob, width, height } = await convertToWebp(file);
       const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
-      if (sizeEl) sizeEl.textContent = `${sizeMB} MB`;
-
-      // Show preview thumbnail
-      if (thumbEl) {
-        const objUrl = URL.createObjectURL(blob);
-        thumbEl.innerHTML = `<img src="${objUrl}" style="width:100%;height:100%;object-fit:cover;"
-          onload="URL.revokeObjectURL(this.src)">`;
-      }
-
-      setStatus(`WebP pronto (${sizeMB} MB) — enviando…`, 'var(--brand-gold)');
+      if (statusEl) statusEl.textContent = `WebP (${sizeMB} MB) — enviando…`;
 
       const slug = s => s.toLowerCase().normalize('NFD')
         .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
@@ -287,26 +478,39 @@ async function handleFiles(files) {
         + '/' + Date.now() + '-' + slug(file.name.replace(/\.[^.]+$/,'')) + '.webp';
 
       const url = await uploadImageToR2(blob, path);
+      await saveImageMeta({ continent, country, city, type, tags, name, url, path,
+        originalName: file.name, sizeMB: parseFloat(sizeMB), width, height });
 
-      // Default name = file name without extension, prettified
-      const defaultName = file.name.replace(/\.[^.]+$/,'').replace(/[-_]/g,' ')
-        .replace(/\b\w/g, c => c.toUpperCase());
+      if (statusEl) { statusEl.textContent = '✓ Enviado'; statusEl.style.color = '#22C55E'; }
 
-      await saveImageMeta({
-        continent, country, city, type, tags, url, path,
-        name: defaultName, originalName: file.name,
-        sizeMB: parseFloat(sizeMB), width, height,
-      });
-
-      setStatus('✓ Enviado com sucesso', '#22C55E');
+      // Mark row as done
+      row.style.borderColor = '#22C55E40';
+      row.style.background  = '#22C55E06';
+      success++;
     } catch(e) {
-      setStatus('✗ ' + e.message.slice(0, 60), '#EF4444');
+      if (statusEl) { statusEl.textContent = '✗ ' + e.message.slice(0,50); statusEl.style.color = '#EF4444'; }
+      failed++;
     }
   }));
 
-  toast.success('Upload concluído!');
-  await loadImages();
+  if (btn) { btn.disabled = false; btn.textContent = '↑ Enviar todas'; }
+  toast.success(`${success} enviada${success!==1?'s':''} com sucesso${failed ? ` · ${failed} com erro` : ''}.`);
+
+  if (success > 0) {
+    setTimeout(async () => {
+      // Remove successful rows
+      document.querySelectorAll('[id^="batch-row-"]').forEach(r => {
+        if (r.style.borderColor.includes('22C55E')) r.remove();
+      });
+      if (!document.querySelectorAll('[id^="batch-row-"]').length) {
+        document.getElementById('img-batch-list').style.display = 'none';
+      }
+      await loadImages();
+    }, 1500);
+  }
 }
+
+
 
 /* ── Data ── */
 async function loadImages() {
@@ -642,9 +846,14 @@ function openEditModal(imgId) {
             Tipo</label>
           <select id="edit-img-type" class="filter-select" style="width:100%;">
             ${IMAGE_TYPES.map(t =>
-              `<option value="${t.key}" ${img.type===t.key?'selected':''}>${t.label}</option>`
+              `<option value="${t.key}" ${img.type===t.key?'selected':''}>${t.icon} ${t.label}</option>`
             ).join('')}
           </select>
+          <div id="edit-type-desc"
+            style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;line-height:1.5;
+            padding:8px 10px;background:var(--bg-surface);border-radius:var(--radius-sm);">
+            ${IMAGE_TYPES.find(t=>t.key===(img.type||'galeria'))?.desc||''}
+          </div>
         </div>
         <div style="font-size:0.75rem;color:var(--text-muted);">
           ${img.width && img.height ? `${img.width} × ${img.height} px · ` : ''}${img.sizeMB || '—'} MB ·
@@ -664,6 +873,12 @@ function openEditModal(imgId) {
   document.getElementById('edit-img-close')?.addEventListener('click', close);
   document.getElementById('edit-img-cancel')?.addEventListener('click', close);
   modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+  document.getElementById('edit-img-type')?.addEventListener('change', e => {
+    const desc = IMAGE_TYPES.find(t => t.key === e.target.value)?.desc || '';
+    const el   = document.getElementById('edit-type-desc');
+    if (el) el.textContent = desc;
+  });
 
   document.getElementById('edit-img-save')?.addEventListener('click', async () => {
     const name = document.getElementById('edit-img-name')?.value.trim();
