@@ -437,137 +437,165 @@ async function showRegenEditor({ link, tip, dest }) {
     })
   );
 
-  let curDestIdx = 0;
-  let activeSegKey = activeSeg[0];
+  let curDestIdx  = 0;
+  let curSegKey   = activeSeg[0] || '';
 
-  const renderPanel = () => {
-    const { tip: wTip, dest: wDest } = workingTips[curDestIdx];
-    const destId   = wDest?.id || curDestIdx;
-    const destImgs = imagesByDest[destId] || [];
-    const destLabel = [wDest?.city, wDest?.country].filter(Boolean).join(', ') || '—';
+  // ── Build static shell once ───────────────────────────────
+  const webUrl = fmt === 'web' && token
+    ? (window.location.origin + window.location.pathname.replace(/index\.html$/, '') + 'portal-view.html#' + token)
+    : null;
 
-    modal.innerHTML = `
-      <div class="card" style="width:100%;max-width:900px;max-height:92vh;
-        padding:0;overflow:hidden;display:flex;flex-direction:column;">
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:900px;max-height:92vh;
+      padding:0;overflow:hidden;display:flex;flex-direction:column;">
 
-        <div style="padding:14px 20px;background:var(--bg-surface);
-          border-bottom:1px solid var(--border-subtle);
-          display:flex;align-items:center;gap:12px;flex-shrink:0;">
-          <div style="flex:1;">
-            <div style="font-weight:700;font-size:1rem;">Editar Material Gerado</div>
-            <div style="font-size:0.8125rem;color:var(--text-muted);">
-              ${esc(destLabel)} · ${esc(fmtLabel)} · Alterações salvas no material, sem afetar a dica original
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <span style="font-size:0.75rem;padding:3px 10px;background:var(--brand-gold)15;
-              color:var(--brand-gold);border-radius:var(--radius-full);font-weight:600;">
-              ${esc(fmtLabel)}
-            </span>
-            <button id="regen-close" style="border:none;background:none;cursor:pointer;
-              font-size:1.25rem;color:var(--text-muted);">✕</button>
+      <!-- Header -->
+      <div style="padding:14px 20px;background:var(--bg-surface);
+        border-bottom:1px solid var(--border-subtle);
+        display:flex;align-items:center;gap:12px;flex-shrink:0;">
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:1rem;">Editar Material Gerado</div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);" id="regen-header-sub">
+            ${esc(fmtLabel)} · Alterações salvas no material, sem afetar a dica original
           </div>
         </div>
-
-        ${workingTips.length > 1 ? `
-        <div style="display:flex;overflow-x:auto;border-bottom:1px solid var(--border-subtle);
-          background:var(--bg-surface);flex-shrink:0;">
-          ${workingTips.map((item, i) => {
-            const lbl = [item.dest?.city, item.dest?.country].filter(Boolean).join(', ');
-            return `<button class="regen-dest-tab" data-idx="${i}"
-              style="padding:10px 16px;border:none;background:none;cursor:pointer;
-              font-size:0.8125rem;white-space:nowrap;
-              border-bottom:2px solid ${i===curDestIdx?'var(--brand-gold)':'transparent'};
-              color:${i===curDestIdx?'var(--brand-gold)':'var(--text-muted)'};
-              transition:all .15s;">${esc(lbl||`Destino ${i+1}`)}</button>`;
-          }).join('')}
-        </div>` : ''}
-
-        <div style="display:grid;grid-template-columns:200px 1fr;flex:1;overflow:hidden;min-height:0;">
-          <div style="border-right:1px solid var(--border-subtle);overflow-y:auto;
-            background:var(--bg-surface);">
-            ${activeSeg.map((k, i) => {
-              const seg = SEGMENTS.find(s => s.key === k);
-              const isActive = k === activeSegKey;
-              return `<button class="regen-seg-btn" data-seg="${k}"
-                style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
-                padding:12px 14px;border:none;
-                background:${isActive?'var(--brand-gold)10':'transparent'};
-                border-left:3px solid ${isActive?'var(--brand-gold)':'transparent'};
-                cursor:pointer;transition:all .15s;font-size:0.8125rem;">
-                <span style="flex:1;color:${isActive?'var(--brand-gold)':'var(--text-secondary)'};">
-                  ${esc(seg?.label || k)}</span>
-              </button>`;
-            }).join('')}
-          </div>
-          <div id="regen-right-panel" style="overflow-y:auto;padding:20px;">
-            ${renderSegEditorForList(wTip, activeSegKey, destImgs, selectedImages[destId] || {}, destId)}
-          </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="font-size:0.75rem;padding:3px 10px;background:var(--brand-gold)15;
+            color:var(--brand-gold);border-radius:var(--radius-full);font-weight:600;">
+            ${esc(fmtLabel)}
+          </span>
+          <button id="regen-close" style="border:none;background:none;cursor:pointer;
+            font-size:1.25rem;color:var(--text-muted);">✕</button>
         </div>
+      </div>
 
-        <div style="padding:14px 20px;border-top:1px solid var(--border-subtle);
-          background:var(--bg-surface);display:flex;gap:10px;flex-shrink:0;">
-          <button class="btn btn-secondary" id="regen-cancel" style="flex:1;">← Fechar</button>
-          <button class="btn btn-primary" id="regen-save" style="flex:2;font-weight:600;">
-            💾 Salvar alterações
-          </button>
-          ${fmt === 'web' && token ? `
-          <a href="${esc(window.location.origin + window.location.pathname.replace(/index\.html$/,'') + 'portal-view.html#' + token)}"
-            target="_blank" class="btn btn-secondary" style="flex:1;text-decoration:none;text-align:center;">
-            🔗 Ver link
-          </a>` : ''}
-        </div>
-      </div>`;
+      <!-- Dest tabs (static, shown only for multi-dest) -->
+      <div id="regen-dest-tabs" style="display:${workingTips.length > 1 ? 'flex' : 'none'};
+        overflow-x:auto;border-bottom:1px solid var(--border-subtle);
+        background:var(--bg-surface);flex-shrink:0;">
+        ${workingTips.map((item, i) => {
+          const lbl = [item.dest?.city, item.dest?.country].filter(Boolean).join(', ');
+          return `<button class="regen-dest-tab" data-idx="${i}"
+            style="padding:10px 16px;border:none;background:none;cursor:pointer;
+            font-size:0.8125rem;white-space:nowrap;
+            border-bottom:2px solid ${i===0?'var(--brand-gold)':'transparent'};
+            color:${i===0?'var(--brand-gold)':'var(--text-muted)'};
+            transition:all .15s;">${esc(lbl||`Destino ${i+1}`)}</button>`;
+        }).join('')}
+      </div>
 
-    document.getElementById('regen-close')?.addEventListener('click', () => modal.remove());
-    document.getElementById('regen-cancel')?.addEventListener('click', () => modal.remove());
-    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+      <!-- Body -->
+      <div style="display:grid;grid-template-columns:200px 1fr;flex:1;overflow:hidden;min-height:0;">
+        <div id="regen-seg-list" style="border-right:1px solid var(--border-subtle);
+          overflow-y:auto;background:var(--bg-surface);"></div>
+        <div id="regen-right-panel" style="overflow-y:auto;padding:20px;"></div>
+      </div>
 
-    // Dest tabs
-    modal.querySelectorAll('.regen-dest-tab').forEach(btn => {
+      <!-- Footer -->
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle);
+        background:var(--bg-surface);display:flex;gap:10px;flex-shrink:0;">
+        <button class="btn btn-secondary" id="regen-cancel" style="flex:1;">← Fechar</button>
+        <button class="btn btn-primary"   id="regen-save"   style="flex:2;font-weight:600;">
+          💾 Salvar alterações
+        </button>
+        ${webUrl ? `
+        <a href="${esc(webUrl)}" target="_blank" class="btn btn-secondary"
+          style="flex:1;text-decoration:none;text-align:center;">
+          🔗 Ver link
+        </a>` : ''}
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  // ── Refresh helpers (update dynamic zones only) ───────────
+  const refreshSegList = () => {
+    const { tip: wTip } = workingTips[curDestIdx];
+    document.getElementById('regen-seg-list').innerHTML = activeSeg.map(k => {
+      const seg = SEGMENTS.find(s => s.key === k);
+      const isActive = k === curSegKey;
+      return `<button class="regen-seg-btn" data-seg="${k}"
+        style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+        padding:12px 14px;border:none;
+        background:${isActive?'var(--brand-gold)10':'transparent'};
+        border-left:3px solid ${isActive?'var(--brand-gold)':'transparent'};
+        cursor:pointer;transition:all .15s;font-size:0.8125rem;">
+        <span style="flex:1;color:${isActive?'var(--brand-gold)':'var(--text-secondary)'};">
+          ${esc(seg?.label||k)}</span>
+      </button>`;
+    }).join('');
+    document.querySelectorAll('.regen-seg-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        curDestIdx = Number(btn.dataset.idx);
-        renderPanel();
+        curSegKey = btn.dataset.seg;
+        refreshSegList();
+        refreshRightPanel();
       });
-    });
-
-    // Seg tabs
-    modal.querySelectorAll('.regen-seg-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        activeSegKey = btn.dataset.seg;
-        renderPanel();
-      });
-    });
-
-    // Wire text + image events
-    wireRegenEditor(wTip, activeSegKey, destImgs, destId, selectedImages, workingTips, curDestIdx);
-
-    // Save
-    document.getElementById('regen-save')?.addEventListener('click', async () => {
-      const saveBtn = document.getElementById('regen-save');
-      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Salvando…'; }
-      try {
-        // Rebuild imagesByDest with overrides for web links
-        const newImagesByDest = JSON.parse(JSON.stringify(link.imagesByDest || {}));
-        for (const [destId2, overrides] of Object.entries(selectedImages)) {
-          if (!newImagesByDest[destId2]) newImagesByDest[destId2] = { hero: null, gallery: [], banners: {} };
-          newImagesByDest[destId2]._overrides = overrides;
-        }
-        await updateWebLink(token, {
-          tipData:     workingTips.map(({ tip: t, dest: d }) => ({ tip: t, dest: d })),
-          imagesByDest: newImagesByDest,
-        });
-        toast.success('Material atualizado com sucesso!');
-        modal.remove();
-      } catch(e) {
-        toast.error('Erro ao salvar: ' + e.message);
-        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Salvar alterações'; }
-      }
     });
   };
 
-  document.body.appendChild(modal);
-  renderPanel();
+  const refreshRightPanel = () => {
+    const { tip: wTip, dest: wDest } = workingTips[curDestIdx];
+    const destId   = wDest?.id || curDestIdx;
+    const destImgs = imagesByDest[destId] || [];
+    const segImgs  = selectedImages[destId]?.[curSegKey] || {};
+    document.getElementById('regen-right-panel').innerHTML =
+      renderSegEditorForList(wTip, curSegKey, destImgs, segImgs, destId);
+    wireRegenEditor(wTip, curSegKey, destImgs, destId, selectedImages, workingTips, curDestIdx);
+  };
+
+  const refreshDestTabs = () => {
+    document.querySelectorAll('.regen-dest-tab').forEach(btn => {
+      const i = Number(btn.dataset.idx);
+      btn.style.borderBottomColor = i === curDestIdx ? 'var(--brand-gold)' : 'transparent';
+      btn.style.color = i === curDestIdx ? 'var(--brand-gold)' : 'var(--text-muted)';
+    });
+  };
+
+  // ── Wire events ONCE ──────────────────────────────────────
+  document.getElementById('regen-close')?.addEventListener('click', () => modal.remove());
+  document.getElementById('regen-cancel')?.addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  document.querySelectorAll('.regen-dest-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      curDestIdx = Number(btn.dataset.idx);
+      curSegKey  = activeSeg[0] || '';
+      refreshDestTabs();
+      refreshSegList();
+      refreshRightPanel();
+    });
+  });
+
+  // Save — wired ONCE
+  document.getElementById('regen-save')?.addEventListener('click', async () => {
+    const saveBtn = document.getElementById('regen-save');
+    if (!saveBtn || saveBtn.disabled) return;
+    saveBtn.disabled = true;
+    saveBtn.textContent = '⏳ Salvando…';
+    try {
+      // Merge overrides into imagesByDest
+      const newImagesByDest = JSON.parse(JSON.stringify(link.imagesByDest || {}));
+      for (const [dId, overrides] of Object.entries(selectedImages)) {
+        if (!newImagesByDest[dId]) newImagesByDest[dId] = { hero: null, gallery: [], banners: {} };
+        newImagesByDest[dId]._overrides = overrides;
+      }
+      await updateWebLink(token, {
+        tipData:      workingTips.map(({ tip: t, dest: d }) => ({ tip: t, dest: d })),
+        imagesByDest: newImagesByDest,
+      });
+      toast.success('Material atualizado com sucesso!');
+      modal.remove();
+    } catch(e) {
+      console.error('[PRIMETOUR] Erro ao salvar material:', e);
+      toast.error('Erro ao salvar: ' + e.message);
+      saveBtn.disabled = false;
+      saveBtn.textContent = '💾 Salvar alterações';
+    }
+  });
+
+  // Initial render
+  refreshSegList();
+  refreshRightPanel();
 }
 
 /* ─── Segment editor (reused from portalTips, standalone copy) */
