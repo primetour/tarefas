@@ -208,6 +208,18 @@ export async function fetchAvailableSegments(destinationId) {
     .map(([key]) => key);
 }
 
+/* ─── Generations ────────────────────────────────────────── */
+export async function fetchGenerationsByTip(tipId) {
+  const snap = await getDocs(
+    query(collection(db, 'portal_generations'),
+      orderBy('generatedAt', 'desc')
+    )
+  );
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(g => g.tipId === tipId || g.destinationIds?.includes(tipId));
+}
+
 /* ─── Web Links ──────────────────────────────────────────── */
 export async function fetchWebLinksByTip(tipId) {
   const snap = await getDocs(
