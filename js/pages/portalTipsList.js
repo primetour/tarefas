@@ -678,14 +678,14 @@ function renderSegEditorForList(tip, segKey, destImgs, segSelectedImgs, destId) 
             <button class="regen-img-none"
               data-seg="${segKey}" data-idx="${idx}"
               style="flex-shrink:0;width:56px;height:42px;border:2px solid
-              ${!(segSelectedImgs[segKey]?.[idx])?'var(--brand-gold)':'var(--border-subtle)'};
+              ${!(segSelectedImgs[idx])?'var(--brand-gold)':'var(--border-subtle)'};
               border-radius:var(--radius-sm);background:var(--bg-surface);cursor:pointer;
               font-size:0.5rem;color:var(--text-muted);display:flex;align-items:center;
               justify-content:center;flex-direction:column;">
               <span style="font-size:0.75rem;">◑</span>auto
             </button>
             ${galeria.slice(0,8).map(img => {
-              const isSel = segSelectedImgs[segKey]?.[idx]?.url === img.url;
+              const isSel = segSelectedImgs[idx]?.url === img.url;
               return `<button class="regen-img-pick"
                 data-seg="${segKey}" data-idx="${idx}"
                 data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"

@@ -947,17 +947,17 @@ function renderSegEditor(tip, segKey, destImgs, segSelectedImgs, destId) {
           <label style="${LBL}">Imagem para este lugar</label>
           <div class="img-picker-row" data-seg="${segKey}" data-idx="${idx}"
             style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
-            <button class="img-pick-none ${!(segSelectedImgs[segKey]?.[idx]) ? 'active' : ''}"
+            <button class="img-pick-none ${!(segSelectedImgs[idx]) ? 'active' : ''}"
               data-seg="${segKey}" data-idx="${idx}"
               style="flex-shrink:0;width:56px;height:42px;border:2px solid
-              ${!(segSelectedImgs[segKey]?.[idx]) ? 'var(--brand-gold)' : 'var(--border-subtle)'};
+              ${!(segSelectedImgs[idx]) ? 'var(--brand-gold)' : 'var(--border-subtle)'};
               border-radius:var(--radius-sm);background:var(--bg-surface);cursor:pointer;
               font-size:0.5rem;color:var(--text-muted);display:flex;align-items:center;
               justify-content:center;flex-direction:column;gap:1px;">
               <span style="font-size:0.75rem;">◑</span>auto
             </button>
             ${galeria.slice(0, 8).map((img, iIdx) => {
-              const isSelected = segSelectedImgs[segKey]?.[idx]?.url === img.url;
+              const isSelected = segSelectedImgs[idx]?.url === img.url;
               return `<button class="img-pick-btn"
                 data-seg="${segKey}" data-idx="${idx}" data-iidx="${iIdx}"
                 data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
