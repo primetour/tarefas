@@ -835,6 +835,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
       if (format === 'web' && result.url) showWebLinkResult(result.url);
       else toast.success('Material gerado e download iniciado!');
     } catch(e) {
+      console.error('[PRIMETOUR] Erro ao gerar material:', e);
       toast.error('Erro ao gerar: ' + (e.message || 'desconhecido'));
       btn.disabled   = false;
       btn.textContent = `✈ Gerar ${fmtLabel}`;
