@@ -679,11 +679,10 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
   // format: { [destId]: { [segKey]: [{ url, name }] } }
   const selectedImages = {};
 
+  let curDestIdx  = 0;
+  let activeSegKey0 = activeSeg[0];
+
   const renderEditor = () => {
-    const activeDestIdx = workingTips.findIndex((_, i) =>
-      modal.querySelector(`.dest-tab[data-idx="${i}"]`)?.classList.contains('active')
-    );
-    const curDestIdx = Math.max(0, activeDestIdx);
     const { tip: wTip, dest: wDest } = workingTips[curDestIdx];
     const destId    = wDest?.id || curDestIdx;
     const destLabel = [wDest?.city, wDest?.country].filter(Boolean).join(', ') || '—';
@@ -734,19 +733,21 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
           <!-- Left: segment list -->
           <div style="border-right:1px solid var(--border-subtle);overflow-y:auto;
             background:var(--bg-surface);">
-            ${activeSeg.map((k, i) => {
+            ${activeSeg.map((k) => {
               const seg = SEGMENTS.find(s => s.key === k);
               const segData = wTip?.segments?.[k];
               const hasContent = segData && (
                 (segData.info && Object.values(segData.info).some(v => v && String(v).trim())) ||
                 (Array.isArray(segData.items) && segData.items.length > 0)
               );
+              const isActive = k === activeSegKey0;
               return `<button class="editor-seg-btn" data-seg="${k}"
                 style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
-                padding:12px 14px;border:none;background:${i===0?'var(--brand-gold)10':'transparent'};
-                border-left:3px solid ${i===0?'var(--brand-gold)':'transparent'};
+                padding:12px 14px;border:none;
+                background:${isActive?'var(--brand-gold)10':'transparent'};
+                border-left:3px solid ${isActive?'var(--brand-gold)':'transparent'};
                 cursor:pointer;transition:all .15s;font-size:0.8125rem;">
-                <span style="flex:1;color:${i===0?'var(--brand-gold)':'var(--text-secondary)'};">
+                <span style="flex:1;color:${isActive?'var(--brand-gold)':'var(--text-secondary)'};">
                   ${esc(seg?.label || k)}</span>
                 ${hasContent ? `<span style="width:6px;height:6px;border-radius:50%;
                   background:#22C55E;flex-shrink:0;"></span>` : ''}
@@ -756,7 +757,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
 
           <!-- Right: segment editor -->
           <div id="editor-right-panel" style="overflow-y:auto;padding:20px;">
-            ${renderSegEditor(wTip, activeSeg[0], destImgs, selectedImages[destId] || {}, destId)}
+            ${renderSegEditor(wTip, activeSegKey0, destImgs, selectedImages[destId] || {}, destId)}
           </div>
         </div>
 
@@ -781,34 +782,30 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
     // Wire dest tabs
     modal.querySelectorAll('.dest-tab').forEach(btn => {
       btn.addEventListener('click', () => {
-        workingTips.forEach((_, i) => {
-          const tb = modal.querySelector(`.dest-tab[data-idx="${i}"]`);
-          if (tb) {
-            tb.style.borderBottomColor = i === Number(btn.dataset.idx) ? 'var(--brand-gold)' : 'transparent';
-            tb.style.color = i === Number(btn.dataset.idx) ? 'var(--brand-gold)' : 'var(--text-muted)';
-          }
-        });
+        curDestIdx = Number(btn.dataset.idx);
+        activeSegKey0 = activeSeg[0];
         renderEditor();
       });
     });
 
     // Wire segment tabs
-    let activeSegKey = activeSeg[0];
     modal.querySelectorAll('.editor-seg-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        activeSegKey = btn.dataset.seg;
+        activeSegKey0 = btn.dataset.seg;
         modal.querySelectorAll('.editor-seg-btn').forEach(b => {
-          b.style.background  = b.dataset.seg === activeSegKey ? 'var(--brand-gold)10' : 'transparent';
-          b.style.borderLeftColor = b.dataset.seg === activeSegKey ? 'var(--brand-gold)' : 'transparent';
-          b.querySelector('span')?.style && (b.querySelector('span').style.color = b.dataset.seg === activeSegKey ? 'var(--brand-gold)' : 'var(--text-secondary)');
+          const isActive = b.dataset.seg === activeSegKey0;
+          b.style.background      = isActive ? 'var(--brand-gold)10' : 'transparent';
+          b.style.borderLeftColor = isActive ? 'var(--brand-gold)'   : 'transparent';
+          const span = b.querySelector('span');
+          if (span) span.style.color = isActive ? 'var(--brand-gold)' : 'var(--text-secondary)';
         });
         const panel = document.getElementById('editor-right-panel');
-        if (panel) panel.innerHTML = renderSegEditor(wTip, activeSegKey, destImgs, selectedImages[destId] || {}, destId);
-        wireSegEditor(wTip, activeSegKey, destImgs, destId, selectedImages, workingTips, curDestIdx);
+        if (panel) panel.innerHTML = renderSegEditor(wTip, activeSegKey0, destImgs, selectedImages[destId] || {}, destId);
+        wireSegEditor(wTip, activeSegKey0, destImgs, destId, selectedImages, workingTips, curDestIdx);
       });
     });
 
-    wireSegEditor(wTip, activeSeg[0], destImgs, destId, selectedImages, workingTips, curDestIdx);
+    wireSegEditor(wTip, activeSegKey0, destImgs, destId, selectedImages, workingTips, curDestIdx);
 
     // Wire generate
     document.getElementById('preview-confirm')?.addEventListener('click', async () => {
