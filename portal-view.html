@@ -250,7 +250,45 @@ function renderPlaces(sd,data,imgs,isAgenda){
   const gold=getComputedStyle(document.documentElement).getPropertyValue('--gold').trim();
   const navy=getComputedStyle(document.documentElement).getPropertyValue('--navy').trim();
 
-  const getImg=(item,idx)=>{const tag=(item.titulo||'').toLowerCase().slice(0,12);const m=gallery.find(g=>g.name?.toLowerCase().includes(tag)||g.tags?.some(t=>t.toLowerCase().includes(tag)));return m?.url||gallery[idx%Math.max(gallery.length,1)]?.url||null;};
+  // Track which gallery images have been used so we don't repeat
+  const usedImgUrls = new Set();
+
+  const getImg=(item,idx)=>{
+    const title = (item.titulo||'').toLowerCase().trim();
+    const cat   = (item.categoria||'').toLowerCase();
+
+    // Priority 1: exact placeName match
+    let m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
+
+    // Priority 2: placeName partial match (title contains placeName or vice versa)
+    if (!m) m = gallery.find(g => g.placeName &&
+      (title.includes(g.placeName.toLowerCase()) || g.placeName.toLowerCase().includes(title.slice(0,15)))
+    );
+
+    // Priority 3: name/tag matches title keywords
+    if (!m) {
+      const words = title.split(/\s+/).filter(w => w.length > 3);
+      m = gallery.find(g =>
+        words.some(w => g.name?.toLowerCase().includes(w)) ||
+        g.tags?.some(t => words.some(w => t.toLowerCase().includes(w)))
+      );
+    }
+
+    // Priority 4: tag matches segment category
+    if (!m) m = gallery.find(g =>
+      !usedImgUrls.has(g.url) &&
+      g.tags?.some(t => cat.includes(t.toLowerCase()) || t.toLowerCase().includes(cat.slice(0,6)))
+    );
+
+    // Priority 5: cyclic fallback — prefer unused images
+    if (!m) {
+      const unused = gallery.filter(g => !usedImgUrls.has(g.url));
+      m = unused.length ? unused[idx % unused.length] : gallery[idx % Math.max(gallery.length,1)];
+    }
+
+    if (m?.url) usedImgUrls.add(m.url);
+    return m?.url || null;
+  };
 
   const ph=(lbl)=>`<div class="place-card-placeholder" style="background:linear-gradient(135deg,${navy}18 0%,${gold}22 100%);"><span style="font-size:.5rem;letter-spacing:.3em;font-weight:600;text-transform:uppercase;color:${navy};opacity:.4;">${esc(lbl||'')}</span></div>`;
 
