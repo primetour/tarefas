@@ -273,7 +273,6 @@ function renderPlaces(sd,data,imgs,isAgenda){
 function scrollToSeg(key,btn){document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));btn?.classList.add('active');document.getElementById(`seg-${key}`)?.scrollIntoView({behavior:'smooth',block:'start'});}
 window.scrollToSeg=scrollToSeg;
 
-function shade(hex,amt){const n=parseInt(hex.replace('#',''),16);const r=Math.min(255,Math.max(0,(n>>16)+amt));const g=Math.min(255,Math.max(0,((n>>8)&0xff)+amt));const b=Math.min(255,Math.max(0,(n&0xff)+amt));return '#'+((r<<16)|(g<<8)|b).toString(16).padStart(6,'0');}
 
 function showErr(title,msg){document.getElementById('loading').style.display='none';document.getElementById('app').innerHTML=`<div class="error-state" style="margin-top:64px;"><div style="font-size:2.5rem;">✈</div><h2>${esc(title)}</h2><p>${esc(msg)}</p></div>`;}
 </script>
