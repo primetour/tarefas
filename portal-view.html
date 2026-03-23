@@ -250,12 +250,20 @@ function renderPlaces(sd,data,imgs,isAgenda){
   const gold=getComputedStyle(document.documentElement).getPropertyValue('--gold').trim();
   const navy=getComputedStyle(document.documentElement).getPropertyValue('--navy').trim();
 
+  // Manually selected images override (stored in imagesByDest._overrides)
+  const overrides = imgs._overrides || {};
+
   // Track which gallery images have been used so we don't repeat
   const usedImgUrls = new Set();
 
-  const getImg=(item,idx)=>{
+  const getImg=(item,idx,segDef=null)=>{
     const title = (item.titulo||'').toLowerCase().trim();
     const cat   = (item.categoria||'').toLowerCase();
+
+    // Priority 0: manual override from generation editor
+    if (overrides[segDef?.key]?.[idx]) {
+      return overrides[segDef.key][idx].url || null;
+    }
 
     // Priority 1: exact placeName match
     let m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
@@ -292,9 +300,9 @@ function renderPlaces(sd,data,imgs,isAgenda){
 
   const ph=(lbl)=>`<div class="place-card-placeholder" style="background:linear-gradient(135deg,${navy}18 0%,${gold}22 100%);"><span style="font-size:.5rem;letter-spacing:.3em;font-weight:600;text-transform:uppercase;color:${navy};opacity:.4;">${esc(lbl||'')}</span></div>`;
 
-  const card=(item,idx)=>{const img=getImg(item,idx);return `<div class="place-card"><div class="place-card-img">${img?`<img src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy"><div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(36,35,98,.12),transparent);pointer-events:none;"></div>`:ph(item.titulo)}</div><div class="place-card-body">${item.categoria?`<div class="place-cat-label">${esc(item.categoria)}</div>`:''}<div class="place-card-title">${esc(item.titulo)}</div>${isAgenda&&(item.periodo||item.periodoIndeterminado)?`<div style="font-size:.75rem;color:var(--gold);margin-bottom:8px;font-weight:500;">◷ ${item.periodoIndeterminado?'Tempo indeterminado':esc(item.periodo||'')}</div>`:''}${item.descricao?`<div class="place-card-desc">${esc(item.descricao)}</div>`:''}<div class="place-card-details">${item.endereco?`<span>📍 ${esc(item.endereco)}</span>`:''}${item.telefone?`<span>📞 ${esc(item.telefone)}</span>`:''}${item.site?`<a href="${esc(item.site)}" target="_blank" rel="noopener">🌐 Site oficial</a>`:''}</div>${item.observacoes?`<div class="place-card-obs">💡 ${esc(item.observacoes)}</div>`:''}</div></div>`;};
+  const card=(item,idx,segDef=null)=>{const img=getImg(item,idx,segDef);return `<div class="place-card"><div class="place-card-img">${img?`<img src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy"><div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(36,35,98,.12),transparent);pointer-events:none;"></div>`:ph(item.titulo)}</div><div class="place-card-body">${item.categoria?`<div class="place-cat-label">${esc(item.categoria)}</div>`:''}<div class="place-card-title">${esc(item.titulo)}</div>${isAgenda&&(item.periodo||item.periodoIndeterminado)?`<div style="font-size:.75rem;color:var(--gold);margin-bottom:8px;font-weight:500;">◷ ${item.periodoIndeterminado?'Tempo indeterminado':esc(item.periodo||'')}</div>`:''}${item.descricao?`<div class="place-card-desc">${esc(item.descricao)}</div>`:''}<div class="place-card-details">${item.endereco?`<span>📍 ${esc(item.endereco)}</span>`:''}${item.telefone?`<span>📞 ${esc(item.telefone)}</span>`:''}${item.site?`<a href="${esc(item.site)}" target="_blank" rel="noopener">🌐 Site oficial</a>`:''}</div>${item.observacoes?`<div class="place-card-obs">💡 ${esc(item.observacoes)}</div>`:''}</div></div>`;};
 
-  const heroCard=(item,idx)=>{const img=getImg(item,idx);return `<div class="hero-card"><div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy} 0%,${shade(navy,-20)} 100%);"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle">${esc(item.categoria)}</div>`:''}<div class="card-title">${esc(item.titulo)}</div><div class="card-underline"></div></div></div>`;};
+  const heroCard=(item,idx,segDef=null)=>{const img=getImg(item,idx,segDef);return `<div class="hero-card"><div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy} 0%,${shade(navy,-20)} 100%);"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle">${esc(item.categoria)}</div>`:''}<div class="card-title">${esc(item.titulo)}</div><div class="card-underline"></div></div></div>`;};
 
   const themeHtml=data.themeDesc?`<p style="padding:0 32px 24px;font-size:.875rem;color:var(--muted);font-style:italic;line-height:1.7;">${esc(data.themeDesc)}</p>`:'';
   const agendaHtml=isAgenda&&data.periodoAgenda?`<div class="agenda-period">📅 ${esc(data.periodoAgenda)}</div>`:'';
