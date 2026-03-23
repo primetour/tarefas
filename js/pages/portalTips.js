@@ -1045,6 +1045,7 @@ function wireSegEditor(wTip, segKey, destImgs, destId, selectedImages, workingTi
       delete selectedImages[destId]?.[segKey]?.[idx];
     });
   });
+}
 
 function showWebLinkResult(url) {
   const existing = document.getElementById('weblink-result-modal');
