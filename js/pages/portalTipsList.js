@@ -674,7 +674,7 @@ async function openGenerationEditor({ tip, dest, area, segments, format, initial
     const panel = document.getElementById('gfl-right-panel');
     if (!panel) return;
     panel.innerHTML = renderSegEditorForList(wTip, curSegKey, destImgs, selectedImages[destId]?.[curSegKey] || {}, destId);
-    wireRegenEditor(wTip, curSegKey, destImgs, destId, selectedImages, workingTips, 0);
+    wireRegenEditor(wTip, curSegKey, destImgs, destId, selectedImages, workingTips, 0, 'gfl-right-panel');
   };
 
   document.getElementById('gfl-close')?.addEventListener('click', () => modal.remove());
@@ -1052,9 +1052,9 @@ function renderSegEditorForList(tip, segKey, destImgs, segSelectedImgs, destId) 
   return html;
 }
 
-function wireRegenEditor(wTip, segKey, destImgs, destId, selectedImages, workingTips, curDestIdx) {
+function wireRegenEditor(wTip, segKey, destImgs, destId, selectedImages, workingTips, curDestIdx, panelId = 'regen-right-panel') {
   // Scope all queries to the right panel to avoid cross-modal interference
-  const panel = document.getElementById('regen-right-panel');
+  const panel = document.getElementById(panelId);
   if (!panel) return;
   const qs = sel => panel.querySelectorAll(sel);
 
