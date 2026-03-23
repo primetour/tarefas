@@ -298,42 +298,22 @@ async function showMaterialsModal(tip, dest) {
     display:flex;align-items:center;justify-content:center;padding:20px;`;
 
   modal.innerHTML = `
-    <div class="card" style="width:100%;max-width:620px;padding:0;overflow:hidden;
+    <div class="card" style="width:100%;max-width:660px;padding:0;overflow:hidden;
       max-height:90vh;display:flex;flex-direction:column;">
-
-      <!-- Header -->
       <div style="padding:18px 22px;background:var(--bg-surface);
         border-bottom:1px solid var(--border-subtle);
         display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
         <div>
           <div style="font-weight:700;font-size:1rem;">Materiais · ${esc(label)}</div>
           <div style="font-size:0.8125rem;color:var(--text-muted);">
-            Gere novos formatos ou edite materiais já gerados
+            Escolha um material existente como base, ou gere do original
           </div>
         </div>
         <button id="mat-close" style="border:none;background:none;cursor:pointer;
           font-size:1.25rem;color:var(--text-muted);">✕</button>
       </div>
-
-      <!-- Gerar novo formato -->
-      <div style="padding:16px 22px;border-bottom:1px solid var(--border-subtle);flex-shrink:0;">
-        <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:.07em;color:var(--text-muted);margin-bottom:10px;">
-          Gerar novo material
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          ${GENERATION_FORMATS.map(f => `
-            <button class="mat-new-format btn btn-secondary btn-sm" data-format="${f.key}"
-              style="display:flex;align-items:center;gap:6px;font-size:0.8125rem;">
-              ${FMT_ICONS[f.key]||'📄'} ${esc(f.label)}
-            </button>`).join('')}
-        </div>
-      </div>
-
-      <!-- Lista de materiais já gerados -->
-      <div id="mat-list"
-        style="padding:16px 22px;overflow-y:auto;flex:1;min-height:60px;">
-        <div style="color:var(--text-muted);font-size:0.875rem;text-align:center;padding:16px;">
+      <div id="mat-list" style="padding:16px 22px;overflow-y:auto;flex:1;min-height:80px;">
+        <div style="color:var(--text-muted);font-size:0.875rem;text-align:center;padding:20px;">
           ⏳ Carregando…
         </div>
       </div>
@@ -343,27 +323,6 @@ async function showMaterialsModal(tip, dest) {
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.getElementById('mat-close')?.addEventListener('click', () => modal.remove());
 
-  // Wire format buttons — open generation editor directly with this tip
-  modal.querySelectorAll('.mat-new-format').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      btn.disabled = true; btn.textContent = '⏳ Abrindo…';
-      try {
-        // Fetch area for this tip
-        const areas  = await fetchAreas().catch(() => []);
-        const area   = areas.find(a => a.id === tip.areaId) || areas[0] || { name: 'PRIMETOUR' };
-        const format = btn.dataset.format;
-        modal.remove();
-        // Open the same generation editor from portalTips
-        await openGenerationEditor({ tip, dest, area, segments, format });
-      } catch(e) {
-        toast.error('Erro: ' + e.message);
-        btn.disabled = false;
-        btn.innerHTML = `${FMT_ICONS[btn.dataset.format]||'📄'} ${FMT_LABELS[btn.dataset.format]||btn.dataset.format}`;
-      }
-    });
-  });
-
-  // Load existing materials
   const listEl = document.getElementById('mat-list');
   if (!listEl) return;
 
@@ -373,63 +332,139 @@ async function showMaterialsModal(tip, dest) {
   ]);
   const otherGens = gens.filter(g => g.format && g.format !== 'web');
 
-  if (!links.length && !otherGens.length) {
-    listEl.innerHTML = `<div style="color:var(--text-muted);font-size:0.875rem;
-      text-align:center;padding:24px 20px;">
-      <div style="font-size:1.75rem;margin-bottom:8px;">✈</div>
-      Nenhum material gerado ainda.<br>
-      <span style="font-size:0.8125rem;">Use os botões acima para criar o primeiro.</span>
-    </div>`;
-    return;
-  }
-
-  const renderItem = (item, isWebLink) => {
-    const date = (item.createdAt||item.generatedAt)?.toDate
-      ? (item.createdAt||item.generatedAt).toDate().toLocaleDateString('pt-BR') : '—';
-    const updDate = item.updatedAt?.toDate
-      ? ' · editado ' + item.updatedAt.toDate().toLocaleDateString('pt-BR') : '';
-    const segsCount = (item.segments||[]).length;
-    const fmt    = item.format || (isWebLink ? 'web' : '?');
-    const author = item.createdBy?.name || null;
-
-    return `<div style="display:flex;align-items:center;gap:12px;
-      padding:10px 0;border-bottom:1px solid var(--border-subtle);">
-      <div style="font-size:1.25rem;flex-shrink:0;">${FMT_ICONS[fmt]||'📄'}</div>
-      <div style="flex:1;overflow:hidden;min-width:0;">
-        <div style="font-weight:600;font-size:0.875rem;">${esc(FMT_LABELS[fmt]||fmt)}</div>
-        <div style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;
-          overflow:hidden;text-overflow:ellipsis;">
-          ${segsCount ? `${segsCount} seg. · ` : ''}${esc(date)}${esc(updDate)}
-          ${author ? ` · ${esc(author)}` : ''}
-          ${item.views ? ` · ${item.views} views` : ''}
-        </div>
+  const formatPicker = (onPickFormat) => `
+    <div class="fmt-picker" style="display:none;margin-top:10px;padding:10px 12px;
+      background:var(--bg-surface);border-radius:var(--radius-sm);
+      border:1px solid var(--border-subtle);">
+      <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:8px;font-weight:600;">
+        Escolha o formato de saída:
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;">
-        ${fmt === 'web' && item.token ? `
-          <a href="${esc(window.location.origin + window.location.pathname.replace(/index\.html$/,'') + 'portal-view.html#' + item.token)}"
-            target="_blank" class="btn btn-ghost btn-sm"
-            style="font-size:0.75rem;text-decoration:none;">🔗 Abrir</a>` : ''}
-        ${isWebLink
-          ? `<button class="btn btn-ghost btn-sm mat-edit-btn"
-              data-token="${esc(item.token||item.id)}"
-              style="font-size:0.75rem;color:var(--brand-gold);">✎ Editar</button>`
-          : `<button class="btn btn-ghost btn-sm mat-regen-btn"
-              data-genid="${esc(item.id)}" data-format="${esc(fmt)}"
-              style="font-size:0.75rem;color:var(--brand-gold);">↓ Baixar</button>`
-        }
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${GENERATION_FORMATS.map(f =>
+          `<button class="fmt-pick-btn btn btn-ghost btn-sm" data-format="${f.key}"
+            style="font-size:0.8125rem;">${FMT_ICONS[f.key]} ${esc(f.label)}</button>`
+        ).join('')}
+      </div>
+    </div>`;
+
+  const renderWebLink = (link) => {
+    const date    = (link.createdAt)?.toDate ? link.createdAt.toDate().toLocaleDateString('pt-BR') : '—';
+    const upd     = link.updatedAt?.toDate ? ' · ed. '+link.updatedAt.toDate().toLocaleDateString('pt-BR') : '';
+    const segs    = (link.segments||[]).length;
+    const author  = link.createdBy?.name || null;
+    const views   = link.views ? ` · ${link.views} views` : '';
+    const token   = link.token || link.id;
+    const webUrl  = window.location.origin +
+      window.location.pathname.replace(/index\.html$/,'') + 'portal-view.html#' + token;
+
+    return `<div class="mat-card" style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <div style="font-size:1.25rem;margin-top:2px;">🔗</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:0.9375rem;margin-bottom:3px;">Link Web</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">
+            ${segs ? segs+' seg. · ' : ''}${esc(date)}${esc(upd)}${views}
+            ${author ? ` · <strong>${esc(author)}</strong>` : ''}
+          </div>
+          ${formatPicker('')}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;">
+          <a href="${esc(webUrl)}" target="_blank" class="btn btn-ghost btn-sm"
+            style="font-size:0.75rem;text-decoration:none;">🔗 Abrir</a>
+          <button class="btn btn-ghost btn-sm mat-edit-btn" data-token="${esc(token)}"
+            style="font-size:0.75rem;color:var(--text-muted);">✎ Editar</button>
+          <button class="btn btn-primary btn-sm mat-derive-btn" data-token="${esc(token)}"
+            style="font-size:0.75rem;">+ Formato</button>
+        </div>
       </div>
     </div>`;
   };
 
-  listEl.innerHTML =
-    (links.length ? `<div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-      letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Links web</div>` : '') +
-    links.map(l => renderItem(l, true)).join('') +
-    (otherGens.length ? `<div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-      letter-spacing:.07em;color:var(--text-muted);margin:12px 0 8px;">Documentos</div>` : '') +
-    otherGens.map(g => renderItem(g, false)).join('');
+  const renderDocItem = (gen) => {
+    const date   = gen.generatedAt?.toDate ? gen.generatedAt.toDate().toLocaleDateString('pt-BR') : '—';
+    const segs   = (gen.segments||[]).length;
+    const fmt    = gen.format || '?';
+    return `<div class="mat-card" style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-md);padding:14px 16px;margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <div style="font-size:1.25rem;margin-top:2px;">${FMT_ICONS[fmt]||'📄'}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:0.9375rem;margin-bottom:3px;">${esc(FMT_LABELS[fmt]||fmt)}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">
+            ${segs ? segs+' seg. · ' : ''}${esc(date)}
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;font-style:italic;">
+            Documentos baixados não ficam armazenados — use "↓ Baixar" para regerar
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button class="btn btn-ghost btn-sm mat-regen-btn" data-format="${esc(fmt)}"
+            style="font-size:0.75rem;color:var(--brand-gold);">↓ Baixar</button>
+        </div>
+      </div>
+    </div>`;
+  };
 
-  // Wire edit buttons (web links)
+  // "Do original" card — always shown at bottom
+  const originalCard = `
+    <div style="margin-top:8px;border-top:1px solid var(--border-subtle);padding-top:14px;">
+      <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.07em;color:var(--text-muted);margin-bottom:10px;">
+        Começar do original
+      </div>
+      <div class="mat-card" style="background:var(--bg-surface);border:1px dashed var(--border-subtle);
+        border-radius:var(--radius-md);padding:14px 16px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="font-size:1.25rem;">📋</div>
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:0.875rem;">Dica original (sem personalizações)</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">
+              Gera um novo material do zero a partir do conteúdo cadastrado
+            </div>
+            <div class="fmt-picker" style="display:none;margin-top:10px;padding:10px 12px;
+              background:var(--bg-dark);border-radius:var(--radius-sm);">
+              <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:8px;font-weight:600;">
+                Escolha o formato:
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                ${GENERATION_FORMATS.map(f =>
+                  `<button class="fmt-pick-btn btn btn-ghost btn-sm" data-format="${f.key}"
+                    style="font-size:0.8125rem;">${FMT_ICONS[f.key]} ${esc(f.label)}</button>`
+                ).join('')}
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm mat-original-btn" style="flex-shrink:0;font-size:0.8125rem;">
+            Escolher formato →
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  if (!links.length && !otherGens.length) {
+    listEl.innerHTML = `
+      <div style="color:var(--text-muted);font-size:0.875rem;text-align:center;
+        padding:20px 0 8px;">Nenhum material gerado ainda.</div>
+      ${originalCard}`;
+  } else {
+    listEl.innerHTML =
+      (links.length ? `<div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.07em;color:var(--text-muted);margin-bottom:10px;">Links web</div>` : '') +
+      links.map(l => renderWebLink(l)).join('') +
+      (otherGens.length ? `<div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.07em;color:var(--text-muted);margin:14px 0 10px;">Documentos</div>` : '') +
+      otherGens.map(g => renderDocItem(g)).join('') +
+      originalCard;
+  }
+
+  // Helper: toggle format picker on a card
+  const togglePicker = (card, show) => {
+    const picker = card.querySelector('.fmt-picker');
+    if (picker) picker.style.display = show ? 'block' : 'none';
+  };
+
+  // Wire "✎ Editar" buttons (web links — opens text/image editor)
   listEl.querySelectorAll('.mat-edit-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const token = btn.dataset.token;
@@ -440,7 +475,82 @@ async function showMaterialsModal(tip, dest) {
     });
   });
 
-  // Wire re-download buttons
+  // Wire "+ Formato" buttons (derive new format from existing material)
+  listEl.querySelectorAll('.mat-derive-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('.mat-card');
+      const isOpen = card.querySelector('.fmt-picker')?.style.display !== 'none';
+      // Close all pickers first
+      listEl.querySelectorAll('.fmt-picker').forEach(p => p.style.display = 'none');
+      listEl.querySelectorAll('.mat-original-btn').forEach(b => b.textContent = 'Escolher formato →');
+      if (!isOpen) togglePicker(card, true);
+    });
+  });
+
+  // Wire "Escolher formato →" on original card
+  listEl.querySelectorAll('.mat-original-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card   = btn.closest('.mat-card');
+      const picker = card.querySelector('.fmt-picker');
+      const isOpen = picker?.style.display !== 'none';
+      listEl.querySelectorAll('.fmt-picker').forEach(p => p.style.display = 'none');
+      listEl.querySelectorAll('.mat-derive-btn').forEach(b => {});
+      if (!isOpen) {
+        picker.style.display = 'block';
+        btn.textContent = 'Fechar ✕';
+      } else {
+        btn.textContent = 'Escolher formato →';
+      }
+    });
+  });
+
+  // Wire format pick buttons
+  listEl.addEventListener('click', async e => {
+    const btn = e.target.closest('.fmt-pick-btn');
+    if (!btn) return;
+
+    const format  = btn.dataset.format;
+    const card    = btn.closest('.mat-card');
+    const deriveBtn = card.querySelector('.mat-derive-btn');
+    const isOriginal = !!card.querySelector('.mat-original-btn');
+
+    // Determine base: web link or original
+    const token = deriveBtn?.dataset.token || null;
+    const baseLink = token ? links.find(l => (l.token||l.id) === token) : null;
+
+    modal.remove();
+
+    try {
+      const areas = await fetchAreas().catch(() => []);
+      const area  = areas.find(a => a.id === tip.areaId) || areas[0] || { name: 'PRIMETOUR' };
+
+      if (isOriginal || !baseLink) {
+        // Fresh from original tip
+        await openGenerationEditor({ tip, dest, area, segments, format });
+      } else {
+        // Derive from existing material — carry over its tipData and image overrides
+        const baseTip  = baseLink.tipData?.[0]?.tip  || tip;
+        const baseDest = baseLink.tipData?.[0]?.dest || dest;
+        const baseSegs = baseLink.segments || segments;
+        const baseImgOverrides = {};
+        for (const [dId, imgs] of Object.entries(baseLink.imagesByDest || {})) {
+          if (imgs._overrides) baseImgOverrides[dId] = imgs._overrides;
+        }
+        await openGenerationEditor({
+          tip:      baseTip,
+          dest:     baseDest,
+          area,
+          segments: baseSegs,
+          format,
+          initialImages: baseImgOverrides,
+        });
+      }
+    } catch(e) {
+      toast.error('Erro: ' + e.message);
+    }
+  });
+
+  // Wire "↓ Baixar" buttons
   listEl.querySelectorAll('.mat-regen-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       btn.disabled = true; btn.textContent = '⏳';
@@ -458,8 +568,9 @@ async function showMaterialsModal(tip, dest) {
   });
 }
 
+
 /* ─── Generation editor (called from materials modal) ────────── */
-async function openGenerationEditor({ tip, dest, area, segments, format }) {
+async function openGenerationEditor({ tip, dest, area, segments, format, initialImages = {} }) {
   // Lazy-import showPreviewModal logic — replicate inline since it's in portalTips.js
   // We use generateTip directly with an inline confirm UI
   const fmtLabel = GENERATION_FORMATS.find(f => f.key === format)?.label || format;
@@ -467,7 +578,10 @@ async function openGenerationEditor({ tip, dest, area, segments, format }) {
   // Deep-clone tip
   const workingTips   = [{ tip: JSON.parse(JSON.stringify(tip)), dest }];
   const allTips       = [{ tip, dest }];
-  const selectedImages = {};
+  // Pre-populate with overrides from base material (if deriving from existing)
+  const selectedImages = Object.keys(initialImages).length
+    ? JSON.parse(JSON.stringify(initialImages))
+    : {};
 
   // Load images
   const imagesByDest = {};
