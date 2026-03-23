@@ -347,6 +347,16 @@ function buildBatchList(files) {
             </select>
           </div>
 
+          <!-- Row 2b: place name (for matching with tip items) -->
+          <div>
+            <input type="text" class="portal-field batch-placename" data-id="${id}"
+              style="font-size:0.8125rem;width:100%;"
+              placeholder="Nome do lugar que esta foto representa (ex: Torre Eiffel, Restaurante Jules Verne)">
+            <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:3px;">
+              💡 Quando informado, o sistema usa esta foto especificamente para este lugar nas dicas geradas.
+            </div>
+          </div>
+
           <!-- Row 3: tag chips + free text -->
           <div>
             <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;">
@@ -453,6 +463,7 @@ async function uploadBatch() {
     const city      = row.querySelector(`.batch-city[data-id="${id}"]`)?.value      || defCity;
     const type      = row.querySelector(`.batch-type[data-id="${id}"]`)?.value      || defType;
     const name      = row.querySelector(`.batch-name[data-id="${id}"]`)?.value?.trim() || file.name;
+    const placeName = row.querySelector(`.batch-placename[data-id="${id}"]`)?.value?.trim() || '';
 
     // Active chip tags
     const chipTags = [...row.querySelectorAll(`.batch-tag-chip.active`)].map(c => c.dataset.tag);
@@ -478,7 +489,7 @@ async function uploadBatch() {
         + '/' + Date.now() + '-' + slug(file.name.replace(/\.[^.]+$/,'')) + '.webp';
 
       const url = await uploadImageToR2(blob, path);
-      await saveImageMeta({ continent, country, city, type, tags, name, url, path,
+      await saveImageMeta({ continent, country, city, type, tags, name, placeName, url, path,
         originalName: file.name, sizeMB: parseFloat(sizeMB), width, height });
 
       if (statusEl) { statusEl.textContent = '✓ Enviado'; statusEl.style.color = '#22C55E'; }
@@ -837,6 +848,17 @@ function openEditModal(imgId) {
         </div>
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
+            Lugar representado
+            <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
+          <input type="text" id="edit-img-placename" value="${esc(img.placeName||'')}"
+            class="portal-field" style="width:100%;"
+            placeholder="Ex: Torre Eiffel, Restaurante Jules Verne, Museu do Louvre">
+          <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+            Quando preenchido, esta foto é usada especificamente para este lugar nas dicas geradas.
+          </div>
+        </div>
+        <div>
+          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
             Tags <span style="font-weight:400;color:var(--text-muted);">(separadas por vírgula)</span></label>
           <input type="text" id="edit-img-tags" value="${esc((img.tags||[]).join(', '))}"
             class="portal-field" style="width:100%;">
@@ -881,12 +903,13 @@ function openEditModal(imgId) {
   });
 
   document.getElementById('edit-img-save')?.addEventListener('click', async () => {
-    const name = document.getElementById('edit-img-name')?.value.trim();
+    const name      = document.getElementById('edit-img-name')?.value.trim();
+    const placeName = document.getElementById('edit-img-placename')?.value.trim() || '';
     const tags = (document.getElementById('edit-img-tags')?.value || '')
       .split(',').map(t => t.trim()).filter(Boolean);
     const type = document.getElementById('edit-img-type')?.value;
     try {
-      await updateImageMeta(imgId, { name, tags, type });
+      await updateImageMeta(imgId, { name, placeName, tags, type });
       toast.success('Imagem atualizada.');
       close();
       await loadImages();
