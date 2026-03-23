@@ -136,31 +136,44 @@ function pickImg(item, idx, imgs, segKey) {
   return m?.url || null;
 }
 
-/* Fetch image as base64 for embedding in docx/pdf/pptx */
-async function imgToBase64(url) {
+const R2_PROXY = 'https://primetour-images.rene-castro.workers.dev';
+
+/* Fetch image via CORS-safe proxy, return { dataUrl, mimeType, ext, arrayBuffer } */
+async function fetchImgData(url) {
   if (!url) return null;
   try {
-    // Route through R2 Worker to get CORS headers
-    const R2_WORKER = 'https://primetour-images.rene-castro.workers.dev';
-    const proxyUrl  = `${R2_WORKER}?url=${encodeURIComponent(url)}`;
-    const res  = await fetch(proxyUrl);
+    const proxyUrl = `${R2_PROXY}?url=${encodeURIComponent(url)}`;
+    const res      = await fetch(proxyUrl);
     if (!res.ok) return null;
-    const blob = await res.blob();
-    return new Promise((resolve) => {
+    const blob     = await res.blob();
+    const mime     = blob.type || 'image/jpeg';
+    // Normalise extension
+    const extMap   = { 'image/jpeg':'jpg','image/jpg':'jpg','image/png':'png',
+                       'image/webp':'png','image/gif':'gif' };
+    const ext      = extMap[mime] || 'jpg';
+    // dataUrl for PDF/PPTX
+    const dataUrl  = await new Promise((resolve) => {
       const r = new FileReader();
       r.onload  = () => resolve(r.result);
       r.onerror = () => resolve(null);
       r.readAsDataURL(blob);
     });
+    // ArrayBuffer for DOCX
+    const arrayBuffer = await blob.arrayBuffer();
+    return { dataUrl, mimeType: mime, ext, arrayBuffer };
   } catch { return null; }
 }
 
-function base64Data(dataUrl) {
-  return dataUrl ? dataUrl.split(',')[1] : null;
+/* Convenience wrappers */
+async function imgToBase64(url) {
+  const d = await fetchImgData(url);
+  return d?.dataUrl || null;
 }
+
+function base64Data(dataUrl) { return dataUrl ? dataUrl.split(',')[1] : null; }
 function base64Ext(dataUrl) {
   const m = dataUrl?.match(/data:image\/([a-zA-Z+]+);/);
-  return m ? m[1].replace('jpeg','jpg').replace('+xml','') : 'jpg';
+  return m ? m[1].replace('jpeg','jpg').replace('webp','png').replace('+xml','') : 'jpg';
 }
 
 async function generateDocx({ allTips, segments, areaName, area, colors, filename, imagesByDest = {} }) {
@@ -174,15 +187,7 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
   const children = [];
   const date = new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long',day:'numeric'});
 
-  // Helper: fetch image as ArrayBuffer for docx ImageRun
-  const fetchImgBuffer = async (url) => {
-    if (!url) return null;
-    try {
-      const res  = await fetch(url);
-      const buf  = await res.arrayBuffer();
-      return buf;
-    } catch { return null; }
-  };
+  // Use shared fetchImgData (CORS-safe, returns arrayBuffer + mimeType)
 
   // Cover
   children.push(new Paragraph({children:[new TextRun({text:areaName.toUpperCase(),bold:true,size:52,color:gold,characterSpacing:200})],alignment:AlignmentType.CENTER,spacing:{before:2400,after:160}}));
@@ -197,13 +202,15 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
     const label=destLabel(dest);
 
     // Hero image if available
-    const heroBuffer = await fetchImgBuffer(imgs.hero);
-    if(heroBuffer){
-      children.push(new Paragraph({
-        children:[new ImageRun({data:heroBuffer,transformation:{width:530,height:250},type:'jpg'})],
-        alignment:AlignmentType.CENTER,
-        spacing:{before:0,after:200},
-      }));
+    const heroData = await fetchImgData(imgs.hero);
+    if(heroData?.arrayBuffer){
+      try {
+        children.push(new Paragraph({
+          children:[new ImageRun({data:heroData.arrayBuffer,transformation:{width:530,height:250},type:heroData.ext})],
+          alignment:AlignmentType.CENTER,
+          spacing:{before:0,after:200},
+        }));
+      } catch(e) { console.warn('Hero image skip:', e.message); }
     }
 
     children.push(new Paragraph({children:[new TextRun({text:label.toUpperCase(),bold:true,size:32,color:navy,characterSpacing:120})],spacing:{before:heroBuffer?100:400,after:80},border:{bottom:{style:BorderStyle.SINGLE,size:12,color:gold}}}));
@@ -249,16 +256,18 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
 
           // Image
           const imgUrl=pickImg(item,itemIdx,imgs,segDef.key);
-          const imgBuffer=await fetchImgBuffer(imgUrl);
+          const imgData=await fetchImgData(imgUrl);
 
           if(item.categoria) children.push(new Paragraph({children:[new TextRun({text:item.categoria.toUpperCase(),size:13,color:gold,bold:true,characterSpacing:200})],spacing:{before:240,after:20}}));
-          children.push(new Paragraph({children:[new TextRun({text:item.titulo,bold:true,size:22,color:navy})],spacing:{after:imgBuffer?80:60}}));
+          children.push(new Paragraph({children:[new TextRun({text:item.titulo,bold:true,size:22,color:navy})],spacing:{after:imgData?.arrayBuffer?80:60}}));
 
-          if(imgBuffer){
-            children.push(new Paragraph({
-              children:[new ImageRun({data:imgBuffer,transformation:{width:400,height:200},type:'jpg'})],
-              spacing:{after:120},
-            }));
+          if(imgData?.arrayBuffer){
+            try {
+              children.push(new Paragraph({
+                children:[new ImageRun({data:imgData.arrayBuffer,transformation:{width:420,height:220},type:imgData.ext})],
+                spacing:{after:120},
+              }));
+            } catch(e) { console.warn('Item image skip:', e.message); }
           }
 
           if(item.descricao) children.push(new Paragraph({children:[new TextRun({text:item.descricao,size:18,color:'474650'})],spacing:{after:80}}));
@@ -476,10 +485,11 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
 
     // Destination slide — with hero image if available
     const heroUrl = imgs.hero;
-    const heroB64 = await imgToBase64(heroUrl);
+    const heroImgData = await fetchImgData(heroUrl);
     const ds=pptx.addSlide(); ds.background={color:bgHex};
-    if (heroB64) {
-      ds.addImage({ data: heroB64, x:0, y:0, w:W, h:H, sizing:{type:'cover',w:W,h:H} });
+    if (heroImgData?.dataUrl) {
+      try { ds.addImage({ data: base64Data(heroImgData.dataUrl), x:0, y:0, w:W, h:H,
+        sizing:{type:'cover',w:W,h:H}, extn: heroImgData.ext.toUpperCase() }); } catch(e) {}
       ds.addShape(pptx.ShapeType.rect,{x:0,y:H*0.5,w:W,h:H*0.5,fill:{color:bgHex,transparency:35},line:{type:'none'}});
     }
     ds.addShape(pptx.ShapeType.rect,{x:0,y:H-1.6,w:0.08,h:1.2,fill:{color:pHex},line:{type:'none'}});
@@ -532,13 +542,15 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
         await Promise.all(items.map(async (item,i) => {
           const x=0.3+i*(cW+0.08);
           const imgUrl = pickImg(item, i, imgs, segDef.key);
-          const imgB64 = await imgToBase64(imgUrl);
+          const imgDataP = await fetchImgData(imgUrl);
+          const imgB64 = imgDataP?.dataUrl || null;
 
           if (imgB64) {
             // Image fills top ~55% of card
             const imgH = cH * 0.52;
             slide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:cH,fill:{color:'FFFFFF'},line:{color:'E5E7EB',width:0.5}});
-            slide.addImage({ data: imgB64, x, y:sY, w:cW, h:imgH, sizing:{type:'cover',w:cW,h:imgH} });
+            try { slide.addImage({ data: base64Data(imgB64), x, y:sY, w:cW, h:imgH,
+              sizing:{type:'cover',w:cW,h:imgH}, extn:(imgDataP?.ext||'jpg').toUpperCase() }); } catch(e) {}
             // Gold top accent
             slide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:0.05,fill:{color:pHex},line:{type:'none'}});
             const tY = sY + imgH + 0.1;
