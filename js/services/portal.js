@@ -208,6 +208,29 @@ export async function fetchAvailableSegments(destinationId) {
     .map(([key]) => key);
 }
 
+/* ─── Web Links ──────────────────────────────────────────── */
+export async function fetchWebLinksByTip(tipId) {
+  const snap = await getDocs(
+    query(collection(db, 'portal_web_links'), orderBy('createdAt', 'desc'))
+  );
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(link =>
+      (link.allTips  || []).some(t  => t.tipId      === tipId) ||
+      (link.tipData  || []).some(({ tip }) => tip?.id === tipId)
+    );
+}
+
+export async function updateWebLink(token, updates) {
+  const { updateDoc } = await import(
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+  );
+  await updateDoc(doc(db, 'portal_web_links', token), {
+    ...updates,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 /* ─── Download control ────────────────────────────────────── */
 export async function checkDownloadLimit() {
   if (store.isMaster() || store.can('portal_download_unlimited'))

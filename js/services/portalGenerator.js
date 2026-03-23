@@ -4,6 +4,7 @@
  */
 
 import { SEGMENTS, MONTHS, recordGeneration, registerDownload, fetchImages } from './portal.js';
+import { store } from '../store.js';
 import { db } from '../firebase.js';
 import {
   doc, collection, setDoc, serverTimestamp,
@@ -436,8 +437,12 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, imag
     }
   }
 
+  const profile = store.get('userProfile') || {};
+  const uid     = store.get('currentUser')?.uid || null;
+
   await setDoc(ref, {
     token,
+    format,
     allTips:      allTips.map(({ tip, dest }) => ({ tipId: tip?.id || null, destId: dest?.id || null })),
     tipData:      allTips.map(({ tip, dest }) => ({ tip, dest })),
     segments,
@@ -445,6 +450,11 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, imag
     areaLogoUrl:  area?.logoUrl || null,
     colors,
     imagesByDest,
+    createdBy: {
+      uid:   uid,
+      name:  profile.name  || profile.displayName || 'Usuário',
+      email: profile.email || '',
+    },
     createdAt:    serverTimestamp(),
     views: 0,
   });
