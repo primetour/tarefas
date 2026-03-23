@@ -9,7 +9,7 @@ import {
   fetchAreas, fetchDestinations, fetchContinentsWithContent,
   fetchTip, fetchAvailableSegments, checkDownloadLimit,
   hasAcceptedTerms, getActiveTerms, acceptTerms,
-  recordGeneration, registerDownload,
+  recordGeneration, registerDownload, fetchImages,
   SEGMENTS, GENERATION_FORMATS,
 } from '../services/portal.js';
 import { generateTip } from '../services/portalGenerator.js';
@@ -637,149 +637,408 @@ async function handleGenerate() {
   showPreviewModal({ tip, dest, area, segments, format, extraTips });
 }
 
-function showPreviewModal({ tip, dest, area, segments, format, extraTips }) {
+async function showPreviewModal({ tip, dest, area, segments, format, extraTips }) {
   const existing = document.getElementById('portal-preview-modal');
   if (existing) existing.remove();
 
-  const allTips   = [{ tip, dest }, ...extraTips];
-  const segLabels = SEGMENTS.filter(s => segments.includes(s.key)).map(s => s.label);
-  const fmtLabel  = GENERATION_FORMATS.find(f => f.key === format)?.label || format;
-  const destLabels = allTips.map(({ dest: d }) =>
-    [d?.city, d?.country].filter(Boolean).join(', ')
-  ).join(' + ');
+  const allTips  = [{ tip, dest }, ...extraTips];
+  const fmtLabel = GENERATION_FORMATS.find(f => f.key === format)?.label || format;
+
+  // Deep-clone tip data so edits don't affect originals
+  const workingTips = allTips.map(({ tip: t, dest: d }) => ({
+    tip:  JSON.parse(JSON.stringify(t || {})),
+    dest: d,
+  }));
+
+  // Load images for all destinations
+  const imagesByDest = {};
+  for (const { dest: d } of allTips) {
+    if (d?.id) {
+      try {
+        const imgs = await fetchImages({ continent: d.continent, country: d.country, city: d.city });
+        imagesByDest[d.id] = imgs;
+      } catch { imagesByDest[d.id] = []; }
+    }
+  }
 
   const modal = document.createElement('div');
   modal.id    = 'portal-preview-modal';
-  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
-    display:flex;align-items:center;justify-content:center;padding:20px;`;
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;
+    display:flex;align-items:center;justify-content:center;padding:16px;`;
 
-  modal.innerHTML = `
-    <div class="card" style="width:100%;max-width:600px;padding:0;overflow:hidden;max-height:90vh;
-      display:flex;flex-direction:column;">
+  const activeSeg = segments.filter(k =>
+    workingTips.some(({ tip: t }) => {
+      const seg = t?.segments?.[k];
+      if (!seg) return false;
+      if (seg.info && Object.values(seg.info).some(v => v && String(v).trim())) return true;
+      return Array.isArray(seg.items) && seg.items.length > 0;
+    })
+  );
 
-      <!-- Header -->
-      <div style="padding:20px 24px;border-bottom:1px solid var(--border-subtle);
-        background:var(--bg-surface);display:flex;align-items:center;gap:12px;">
-        <span style="font-size:1.5rem;">✈</span>
-        <div style="flex:1;">
-          <div style="font-weight:700;font-size:1rem;">Confirmar Geração</div>
-          <div style="font-size:0.8125rem;color:var(--text-muted);">Revise antes de gerar o material</div>
-        </div>
-        <button id="preview-close" style="border:none;background:none;cursor:pointer;
-          font-size:1.25rem;color:var(--text-muted);">✕</button>
-      </div>
+  // Selected images per destId per segKey — starts empty (system will choose)
+  // format: { [destId]: { [segKey]: [{ url, name }] } }
+  const selectedImages = {};
 
-      <!-- Body -->
-      <div style="padding:24px;overflow-y:auto;flex:1;">
+  const renderEditor = () => {
+    const activeDestIdx = workingTips.findIndex((_, i) =>
+      modal.querySelector(`.dest-tab[data-idx="${i}"]`)?.classList.contains('active')
+    );
+    const curDestIdx = Math.max(0, activeDestIdx);
+    const { tip: wTip, dest: wDest } = workingTips[curDestIdx];
+    const destId    = wDest?.id || curDestIdx;
+    const destLabel = [wDest?.city, wDest?.country].filter(Boolean).join(', ') || '—';
+    const destImgs  = imagesByDest[destId] || [];
 
-        <!-- Destino(s) -->
-        <div style="margin-bottom:16px;">
-          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-            letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Destino${allTips.length>1?'s':''}</div>
-          ${allTips.map(({ dest: d, tip: t }) => `
-            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
-              background:var(--bg-surface);border-radius:var(--radius-sm);margin-bottom:6px;">
-              <span style="font-size:1.25rem;">📍</span>
-              <div style="flex:1;">
-                <div style="font-weight:600;font-size:0.9375rem;">
-                  ${esc([d?.city, d?.country, d?.continent].filter(Boolean).join(', '))}
-                </div>
-                <div style="font-size:0.75rem;color:var(--text-muted);">
-                  ${SEGMENTS.filter(s => segments.includes(s.key) && t?.segments?.[s.key]).length} segmento(s) com conteúdo
-                </div>
-              </div>
+    modal.innerHTML = `
+      <div class="card" style="width:100%;max-width:900px;max-height:92vh;
+        padding:0;overflow:hidden;display:flex;flex-direction:column;">
+
+        <!-- Header -->
+        <div style="padding:16px 20px;background:var(--bg-surface);
+          border-bottom:1px solid var(--border-subtle);
+          display:flex;align-items:center;gap:12px;flex-shrink:0;">
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:1rem;">Editor de Geração</div>
+            <div style="font-size:0.8125rem;color:var(--text-muted);">
+              Ajuste textos e imagens apenas para este material · o conteúdo original não é alterado
             </div>
-          `).join('')}
-        </div>
-
-        <!-- Área -->
-        <div style="margin-bottom:16px;">
-          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-            letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Área</div>
-          <div style="padding:10px 12px;background:var(--bg-surface);border-radius:var(--radius-sm);
-            display:flex;align-items:center;gap:10px;">
-            ${area?.logoUrl
-              ? `<img src="${esc(area.logoUrl)}" style="height:24px;object-fit:contain;">`
-              : `<span style="font-size:0.875rem;font-weight:600;">${esc(area?.name||'—')}</span>`}
-            ${area?.logoUrl ? `<span style="font-size:0.875rem;">${esc(area.name||'')}</span>` : ''}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:0.75rem;padding:3px 10px;background:var(--brand-gold)15;
+              color:var(--brand-gold);border-radius:var(--radius-full);font-weight:600;">
+              ${esc(fmtLabel)}
+            </span>
+            <button id="preview-close" style="border:none;background:none;cursor:pointer;
+              font-size:1.25rem;color:var(--text-muted);">✕</button>
           </div>
         </div>
 
-        <!-- Segmentos -->
-        <div style="margin-bottom:16px;">
-          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-            letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">
-            Segmentos (${segLabels.length})
+        <!-- Dest tabs (if multi-dest) -->
+        ${workingTips.length > 1 ? `
+        <div style="display:flex;overflow-x:auto;border-bottom:1px solid var(--border-subtle);
+          background:var(--bg-surface);flex-shrink:0;">
+          ${workingTips.map((item, i) => {
+            const lbl = [item.dest?.city, item.dest?.country].filter(Boolean).join(', ');
+            return `<button class="dest-tab" data-idx="${i}"
+              style="padding:10px 16px;border:none;background:none;cursor:pointer;
+              font-size:0.8125rem;white-space:nowrap;border-bottom:2px solid
+              ${i===curDestIdx?'var(--brand-gold)':'transparent'};
+              color:${i===curDestIdx?'var(--brand-gold)':'var(--text-muted)'};
+              transition:all .15s;">${esc(lbl||`Destino ${i+1}`)}</button>`;
+          }).join('')}
+        </div>` : ''}
+
+        <!-- Two-panel layout -->
+        <div style="display:grid;grid-template-columns:200px 1fr;flex:1;overflow:hidden;min-height:0;">
+
+          <!-- Left: segment list -->
+          <div style="border-right:1px solid var(--border-subtle);overflow-y:auto;
+            background:var(--bg-surface);">
+            ${activeSeg.map((k, i) => {
+              const seg = SEGMENTS.find(s => s.key === k);
+              const segData = wTip?.segments?.[k];
+              const hasContent = segData && (
+                (segData.info && Object.values(segData.info).some(v => v && String(v).trim())) ||
+                (Array.isArray(segData.items) && segData.items.length > 0)
+              );
+              return `<button class="editor-seg-btn" data-seg="${k}"
+                style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+                padding:12px 14px;border:none;background:${i===0?'var(--brand-gold)10':'transparent'};
+                border-left:3px solid ${i===0?'var(--brand-gold)':'transparent'};
+                cursor:pointer;transition:all .15s;font-size:0.8125rem;">
+                <span style="flex:1;color:${i===0?'var(--brand-gold)':'var(--text-secondary)'};">
+                  ${esc(seg?.label || k)}</span>
+                ${hasContent ? `<span style="width:6px;height:6px;border-radius:50%;
+                  background:#22C55E;flex-shrink:0;"></span>` : ''}
+              </button>`;
+            }).join('')}
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            ${segLabels.map(l => `
-              <span style="font-size:0.75rem;padding:3px 10px;background:var(--bg-surface);
-                border:1px solid var(--border-subtle);border-radius:var(--radius-full);">
-                ${esc(l)}
-              </span>`).join('')}
+
+          <!-- Right: segment editor -->
+          <div id="editor-right-panel" style="overflow-y:auto;padding:20px;">
+            ${renderSegEditor(wTip, activeSeg[0], destImgs, selectedImages[destId] || {}, destId)}
           </div>
         </div>
 
-        <!-- Formato -->
-        <div>
-          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-            letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Formato</div>
-          <div style="padding:10px 12px;background:var(--brand-gold)12;
-            border:1px solid var(--brand-gold)40;border-radius:var(--radius-sm);
-            font-weight:600;font-size:0.9375rem;color:var(--brand-gold);">
-            ${esc(fmtLabel)}
-            ${format === 'web' ? ' — link exclusivo permanente' : ''}
-          </div>
+        <!-- Footer -->
+        <div style="padding:14px 20px;border-top:1px solid var(--border-subtle);
+          background:var(--bg-surface);display:flex;gap:10px;flex-shrink:0;">
+          <button class="btn btn-secondary" id="preview-cancel" style="flex:1;">
+            ← Voltar
+          </button>
+          <button class="btn btn-primary" id="preview-confirm" style="flex:2;font-weight:600;">
+            ✈ Gerar ${esc(fmtLabel)}
+          </button>
         </div>
       </div>
+    `;
 
-      <!-- Footer -->
-      <div style="padding:16px 24px;border-top:1px solid var(--border-subtle);
-        display:flex;gap:10px;background:var(--bg-surface);">
-        <button class="btn btn-secondary" id="preview-cancel" style="flex:1;">
-          Voltar e ajustar
-        </button>
-        <button class="btn btn-primary" id="preview-confirm" style="flex:2;font-weight:600;">
-          ✈ Gerar agora
-        </button>
-      </div>
-    </div>
-  `;
+    // Wire close/back
+    document.getElementById('preview-close')?.addEventListener('click', () => modal.remove());
+    document.getElementById('preview-cancel')?.addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+    // Wire dest tabs
+    modal.querySelectorAll('.dest-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        workingTips.forEach((_, i) => {
+          const tb = modal.querySelector(`.dest-tab[data-idx="${i}"]`);
+          if (tb) {
+            tb.style.borderBottomColor = i === Number(btn.dataset.idx) ? 'var(--brand-gold)' : 'transparent';
+            tb.style.color = i === Number(btn.dataset.idx) ? 'var(--brand-gold)' : 'var(--text-muted)';
+          }
+        });
+        renderEditor();
+      });
+    });
+
+    // Wire segment tabs
+    let activeSegKey = activeSeg[0];
+    modal.querySelectorAll('.editor-seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeSegKey = btn.dataset.seg;
+        modal.querySelectorAll('.editor-seg-btn').forEach(b => {
+          b.style.background  = b.dataset.seg === activeSegKey ? 'var(--brand-gold)10' : 'transparent';
+          b.style.borderLeftColor = b.dataset.seg === activeSegKey ? 'var(--brand-gold)' : 'transparent';
+          b.querySelector('span')?.style && (b.querySelector('span').style.color = b.dataset.seg === activeSegKey ? 'var(--brand-gold)' : 'var(--text-secondary)');
+        });
+        const panel = document.getElementById('editor-right-panel');
+        if (panel) panel.innerHTML = renderSegEditor(wTip, activeSegKey, destImgs, selectedImages[destId] || {}, destId);
+        wireSegEditor(wTip, activeSegKey, destImgs, destId, selectedImages, workingTips, curDestIdx);
+      });
+    });
+
+    wireSegEditor(wTip, activeSeg[0], destImgs, destId, selectedImages, workingTips, curDestIdx);
+
+    // Wire generate
+    document.getElementById('preview-confirm')?.addEventListener('click', async () => {
+      const btn = document.getElementById('preview-confirm');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando…'; }
+      try {
+        // Pass working (edited) tips + selected images override
+        const result = await generateTip({
+          tip:        workingTips[0].tip,
+          dest:       workingTips[0].dest,
+          area, segments, format,
+          extraTips:  workingTips.slice(1),
+          imagesOverride: selectedImages,
+        });
+        await recordGeneration({
+          areaId: area?.id || null, format, segments,
+          destinationIds: allTips.map(({dest:d})=>d?.id).filter(Boolean),
+          status: 'done',
+          ...(result.url ? { webUrl: result.url } : {}),
+        });
+        await registerDownload();
+        modal.remove();
+        if (format === 'web' && result.url) showWebLinkResult(result.url);
+        else toast.success('Material gerado e download iniciado!');
+      } catch(e) {
+        toast.error('Erro ao gerar: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = `✈ Gerar ${fmtLabel}`; }
+      }
+    });
+  };
 
   document.body.appendChild(modal);
+  renderEditor();
+}
 
-  const close = () => modal.remove();
-  document.getElementById('preview-close')?.addEventListener('click', close);
-  document.getElementById('preview-cancel')?.addEventListener('click', close);
-  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+/* ─── Segment editor renderer ──────────────────────────────── */
+function renderSegEditor(tip, segKey, destImgs, segSelectedImgs, destId) {
+  if (!segKey) return '<div style="color:var(--text-muted);padding:20px;">Selecione um segmento.</div>';
+  const segDef = SEGMENTS.find(s => s.key === segKey);
+  const data   = tip?.segments?.[segKey];
+  if (!segDef || !data) return `<div style="color:var(--text-muted);">Sem conteúdo para este segmento.</div>`;
 
-  document.getElementById('preview-confirm')?.addEventListener('click', async () => {
-    const btn = document.getElementById('preview-confirm');
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ Gerando…'; }
+  const LBL = `font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;`;
+  const galeria = destImgs.filter(i => i.type === 'galeria' || i.type === 'destaque');
 
-    try {
-      const result = await generateTip({ tip, dest, area, segments, format, extraTips });
+  let html = `<div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+    letter-spacing:.07em;color:var(--brand-gold);margin-bottom:16px;">${esc(segDef.label)}</div>`;
 
-      await recordGeneration({
-        areaId:       area?.id   || null,
-        format,
-        segments,
-        destinationIds: allTips.map(({dest:d}) => d?.id).filter(Boolean),
-        status:       'done',
-        ...(result.url ? { webUrl: result.url } : {}),
-      });
-      await registerDownload();
-      close();
+  if (segDef.mode === 'special_info') {
+    const inf = data.info || {};
+    const fields = [
+      ['descricao', 'Descrição',      'textarea', inf.descricao],
+      ['dica',      'Dica',           'textarea', inf.dica],
+      ['populacao', 'População',      'text',     inf.populacao],
+      ['moeda',     'Moeda',          'text',     inf.moeda],
+      ['lingua',    'Língua oficial', 'text',     inf.lingua],
+      ['religiao',  'Religião',       'text',     inf.religiao],
+      ['voltagem',  'Voltagem',       'text',     inf.voltagem],
+      ['ddd',       'DDD',            'text',     inf.ddd],
+    ].filter(([,, ,v]) => v !== undefined);
 
-      if (format === 'web' && result.url) {
-        showWebLinkResult(result.url);
-      } else {
-        toast.success('Material gerado e download iniciado!');
-      }
-    } catch(e) {
-      toast.error('Erro ao gerar: ' + e.message);
-      if (btn) { btn.disabled = false; btn.textContent = '✈ Gerar agora'; }
+    html += fields.map(([field, label, type, value]) => `
+      <div style="margin-bottom:12px;">
+        <label style="${LBL}">${esc(label)}</label>
+        ${type === 'textarea'
+          ? `<textarea class="portal-field editor-field" data-seg="${segKey}" data-field="${field}"
+              rows="3" style="width:100%;font-size:0.875rem;">${esc(value||'')}</textarea>`
+          : `<input type="text" class="portal-field editor-field" data-seg="${segKey}" data-field="${field}"
+              value="${esc(value||'')}" style="width:100%;font-size:0.875rem;">`
+        }
+      </div>`).join('');
+
+  } else {
+    const items = data.items || [];
+
+    if (data.themeDesc !== undefined) {
+      html += `<div style="margin-bottom:16px;">
+        <label style="${LBL}">Descrição do tema</label>
+        <textarea class="portal-field editor-field" data-seg="${segKey}" data-field="themeDesc"
+          rows="2" style="width:100%;font-size:0.875rem;">${esc(data.themeDesc||'')}</textarea>
+      </div>`;
     }
+
+    html += items.map((item, idx) => `
+      <div class="editor-item-card" style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+        border-radius:var(--radius-md);padding:14px 16px;margin-bottom:12px;">
+
+        <!-- Item header -->
+        <div style="font-size:0.6875rem;font-weight:700;color:var(--text-muted);
+          margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+          <span style="background:var(--brand-gold);color:#fff;border-radius:50%;
+            width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;
+            font-size:0.5rem;font-weight:800;flex-shrink:0;">${idx+1}</span>
+          ${esc(item.titulo || item.title || `Item ${idx+1}`)}
+        </div>
+
+        <!-- Title -->
+        <div style="margin-bottom:8px;">
+          <label style="${LBL}">${item.titulo !== undefined ? 'Título' : 'Nome'}</label>
+          <input type="text" class="portal-field editor-item-field" data-seg="${segKey}"
+            data-idx="${idx}" data-subfield="${item.titulo !== undefined ? 'titulo' : 'title'}"
+            value="${esc(item.titulo || item.title || '')}"
+            style="width:100%;font-size:0.875rem;">
+        </div>
+
+        ${item.descricao !== undefined ? `
+        <div style="margin-bottom:8px;">
+          <label style="${LBL}">Descrição</label>
+          <textarea class="portal-field editor-item-field" data-seg="${segKey}"
+            data-idx="${idx}" data-subfield="descricao" rows="3"
+            style="width:100%;font-size:0.875rem;">${esc(item.descricao||'')}</textarea>
+        </div>` : ''}
+
+        ${item.description !== undefined ? `
+        <div style="margin-bottom:8px;">
+          <label style="${LBL}">Descrição</label>
+          <textarea class="portal-field editor-item-field" data-seg="${segKey}"
+            data-idx="${idx}" data-subfield="description" rows="3"
+            style="width:100%;font-size:0.875rem;">${esc(item.description||'')}</textarea>
+        </div>` : ''}
+
+        ${item.observacoes !== undefined ? `
+        <div style="margin-bottom:8px;">
+          <label style="${LBL}">Observações</label>
+          <input type="text" class="portal-field editor-item-field" data-seg="${segKey}"
+            data-idx="${idx}" data-subfield="observacoes"
+            value="${esc(item.observacoes||'')}" style="width:100%;font-size:0.875rem;">
+        </div>` : ''}
+
+        <!-- Image picker for this item -->
+        ${galeria.length > 0 ? `
+        <div style="margin-top:10px;">
+          <label style="${LBL}">Imagem para este lugar</label>
+          <div class="img-picker-row" data-seg="${segKey}" data-idx="${idx}"
+            style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
+            <button class="img-pick-none ${!(segSelectedImgs[segKey]?.[idx]) ? 'active' : ''}"
+              data-seg="${segKey}" data-idx="${idx}"
+              style="flex-shrink:0;width:56px;height:42px;border:2px solid
+              ${!(segSelectedImgs[segKey]?.[idx]) ? 'var(--brand-gold)' : 'var(--border-subtle)'};
+              border-radius:var(--radius-sm);background:var(--bg-surface);cursor:pointer;
+              font-size:0.5rem;color:var(--text-muted);display:flex;align-items:center;
+              justify-content:center;flex-direction:column;gap:1px;">
+              <span style="font-size:0.75rem;">◑</span>auto
+            </button>
+            ${galeria.slice(0, 8).map((img, iIdx) => {
+              const isSelected = segSelectedImgs[segKey]?.[idx]?.url === img.url;
+              return `<button class="img-pick-btn"
+                data-seg="${segKey}" data-idx="${idx}" data-iidx="${iIdx}"
+                data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
+                style="flex-shrink:0;border:2px solid
+                ${isSelected ? 'var(--brand-gold)' : 'var(--border-subtle)'};
+                border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;
+                width:56px;height:42px;padding:0;background:none;">
+                <img src="${esc(img.url)}" alt="${esc(img.name||'')}"
+                  style="width:100%;height:100%;object-fit:cover;"
+                  title="${esc(img.name||'')}${img.placeName ? ' · '+img.placeName : ''}">
+              </button>`;
+            }).join('')}
+            ${galeria.length > 8 ? `
+              <span style="flex-shrink:0;display:flex;align-items:center;
+                font-size:0.6875rem;color:var(--text-muted);white-space:nowrap;padding:0 4px;">
+                +${galeria.length-8} mais
+              </span>` : ''}
+          </div>
+        </div>` : ''}
+      </div>`).join('');
+  }
+
+  return html;
+}
+
+/* ─── Wire segment editor events ──────────────────────────── */
+function wireSegEditor(wTip, segKey, destImgs, destId, selectedImages, workingTips, curDestIdx) {
+  if (!segKey) return;
+
+  // Text edits — update working tip in place
+  document.querySelectorAll(`.editor-field[data-seg="${segKey}"]`).forEach(el => {
+    el.addEventListener('input', () => {
+      const field = el.dataset.field;
+      if (!wTip.segments?.[segKey]) return;
+      if (segKey === 'informacoes_gerais') {
+        if (!wTip.segments[segKey].info) wTip.segments[segKey].info = {};
+        wTip.segments[segKey].info[field] = el.value;
+      } else {
+        wTip.segments[segKey][field] = el.value;
+      }
+      workingTips[curDestIdx].tip = wTip;
+    });
+  });
+
+  document.querySelectorAll(`.editor-item-field[data-seg="${segKey}"]`).forEach(el => {
+    el.addEventListener('input', () => {
+      const idx      = Number(el.dataset.idx);
+      const subfield = el.dataset.subfield;
+      if (!wTip.segments?.[segKey]?.items?.[idx]) return;
+      wTip.segments[segKey].items[idx][subfield] = el.value;
+      workingTips[curDestIdx].tip = wTip;
+    });
+  });
+
+  // Image picker
+  if (!selectedImages[destId]) selectedImages[destId] = {};
+  if (!selectedImages[destId][segKey]) selectedImages[destId][segKey] = {};
+
+  document.querySelectorAll(`.img-pick-btn[data-seg="${segKey}"]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx  = Number(btn.dataset.idx);
+      const url  = btn.dataset.url;
+      const name = btn.dataset.name;
+
+      // Deselect all in this row
+      document.querySelectorAll(`.img-pick-btn[data-seg="${segKey}"][data-idx="${idx}"],
+        .img-pick-none[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
+        b.style.borderColor = 'var(--border-subtle)';
+      });
+
+      btn.style.borderColor = 'var(--brand-gold)';
+      selectedImages[destId][segKey][idx] = { url, name };
+    });
+  });
+
+  document.querySelectorAll(`.img-pick-none[data-seg="${segKey}"]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.idx);
+      document.querySelectorAll(`.img-pick-btn[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
+        b.style.borderColor = 'var(--border-subtle)';
+      });
+      btn.style.borderColor = 'var(--brand-gold)';
+      delete selectedImages[destId]?.[segKey]?.[idx];
+    });
   });
 }
 
