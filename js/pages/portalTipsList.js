@@ -703,7 +703,12 @@ function renderSegEditorForList(tip, segKey, destImgs, segSelectedImgs, destId) 
 }
 
 function wireRegenEditor(wTip, segKey, destImgs, destId, selectedImages, workingTips, curDestIdx) {
-  document.querySelectorAll(`.regen-field[data-seg="${segKey}"]`).forEach(el => {
+  // Scope all queries to the right panel to avoid cross-modal interference
+  const panel = document.getElementById('regen-right-panel');
+  if (!panel) return;
+  const qs = sel => panel.querySelectorAll(sel);
+
+  qs(`.regen-field[data-seg="${segKey}"]`).forEach(el => {
     el.addEventListener('input', () => {
       const field = el.dataset.field;
       if (!wTip.segments?.[segKey]) return;
@@ -716,7 +721,8 @@ function wireRegenEditor(wTip, segKey, destImgs, destId, selectedImages, working
       workingTips[curDestIdx].tip = wTip;
     });
   });
-  document.querySelectorAll(`.regen-item-field[data-seg="${segKey}"]`).forEach(el => {
+
+  qs(`.regen-item-field[data-seg="${segKey}"]`).forEach(el => {
     el.addEventListener('input', () => {
       const idx = Number(el.dataset.idx);
       const sub = el.dataset.subfield;
@@ -725,23 +731,31 @@ function wireRegenEditor(wTip, segKey, destImgs, destId, selectedImages, working
       workingTips[curDestIdx].tip = wTip;
     });
   });
-  if (!selectedImages[destId]) selectedImages[destId] = {};
-  if (!selectedImages[destId][segKey]) selectedImages[destId][segKey] = {};
-  document.querySelectorAll(`.regen-img-pick[data-seg="${segKey}"]`).forEach(btn => {
+
+  if (!selectedImages[destId])          selectedImages[destId] = {};
+  if (!selectedImages[destId][segKey])  selectedImages[destId][segKey] = {};
+
+  qs(`.regen-img-pick[data-seg="${segKey}"]`).forEach(btn => {
     btn.addEventListener('click', () => {
       const idx = Number(btn.dataset.idx);
-      document.querySelectorAll(`.regen-img-pick[data-seg="${segKey}"][data-idx="${idx}"],
-        .regen-img-none[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
+      // Deselect all thumbnails for this item
+      qs(`.regen-img-pick[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
         b.style.borderColor = 'var(--border-subtle)';
       });
+      qs(`.regen-img-none[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
+        b.style.borderColor = 'var(--border-subtle)';
+      });
+      // Select this one
       btn.style.borderColor = 'var(--brand-gold)';
+      // Persist selection
       selectedImages[destId][segKey][idx] = { url: btn.dataset.url, name: btn.dataset.name };
     });
   });
-  document.querySelectorAll(`.regen-img-none[data-seg="${segKey}"]`).forEach(btn => {
+
+  qs(`.regen-img-none[data-seg="${segKey}"]`).forEach(btn => {
     btn.addEventListener('click', () => {
       const idx = Number(btn.dataset.idx);
-      document.querySelectorAll(`.regen-img-pick[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
+      qs(`.regen-img-pick[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
         b.style.borderColor = 'var(--border-subtle)';
       });
       btn.style.borderColor = 'var(--brand-gold)';

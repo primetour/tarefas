@@ -987,8 +987,12 @@ function renderSegEditor(tip, segKey, destImgs, segSelectedImgs, destId) {
 function wireSegEditor(wTip, segKey, destImgs, destId, selectedImages, workingTips, curDestIdx) {
   if (!segKey) return;
 
-  // Text edits — update working tip in place
-  document.querySelectorAll(`.editor-field[data-seg="${segKey}"]`).forEach(el => {
+  // Scope all queries to the right panel only
+  const panel = document.getElementById('gen-right-panel');
+  if (!panel) return;
+  const qs = sel => panel.querySelectorAll(sel);
+
+  qs(`.editor-field[data-seg="${segKey}"]`).forEach(el => {
     el.addEventListener('input', () => {
       const field = el.dataset.field;
       if (!wTip.segments?.[segKey]) return;
@@ -1002,7 +1006,7 @@ function wireSegEditor(wTip, segKey, destImgs, destId, selectedImages, workingTi
     });
   });
 
-  document.querySelectorAll(`.editor-item-field[data-seg="${segKey}"]`).forEach(el => {
+  qs(`.editor-item-field[data-seg="${segKey}"]`).forEach(el => {
     el.addEventListener('input', () => {
       const idx      = Number(el.dataset.idx);
       const subfield = el.dataset.subfield;
@@ -1012,38 +1016,35 @@ function wireSegEditor(wTip, segKey, destImgs, destId, selectedImages, workingTi
     });
   });
 
-  // Image picker
-  if (!selectedImages[destId]) selectedImages[destId] = {};
+  if (!selectedImages[destId])         selectedImages[destId] = {};
   if (!selectedImages[destId][segKey]) selectedImages[destId][segKey] = {};
 
-  document.querySelectorAll(`.img-pick-btn[data-seg="${segKey}"]`).forEach(btn => {
+  qs(`.img-pick-btn[data-seg="${segKey}"]`).forEach(btn => {
     btn.addEventListener('click', () => {
       const idx  = Number(btn.dataset.idx);
       const url  = btn.dataset.url;
       const name = btn.dataset.name;
-
-      // Deselect all in this row
-      document.querySelectorAll(`.img-pick-btn[data-seg="${segKey}"][data-idx="${idx}"],
-        .img-pick-none[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
+      qs(`.img-pick-btn[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
         b.style.borderColor = 'var(--border-subtle)';
       });
-
+      qs(`.img-pick-none[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
+        b.style.borderColor = 'var(--border-subtle)';
+      });
       btn.style.borderColor = 'var(--brand-gold)';
       selectedImages[destId][segKey][idx] = { url, name };
     });
   });
 
-  document.querySelectorAll(`.img-pick-none[data-seg="${segKey}"]`).forEach(btn => {
+  qs(`.img-pick-none[data-seg="${segKey}"]`).forEach(btn => {
     btn.addEventListener('click', () => {
       const idx = Number(btn.dataset.idx);
-      document.querySelectorAll(`.img-pick-btn[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
+      qs(`.img-pick-btn[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
         b.style.borderColor = 'var(--border-subtle)';
       });
       btn.style.borderColor = 'var(--brand-gold)';
       delete selectedImages[destId]?.[segKey]?.[idx];
     });
   });
-}
 
 function showWebLinkResult(url) {
   const existing = document.getElementById('weblink-result-modal');
