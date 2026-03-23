@@ -825,10 +825,13 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
         imagesOverride: selectedImages,
       });
       await recordGeneration({
-        areaId: area?.id || null, format, segments,
+        areaId:         area?.id  || null,
+        tipId:          tip?.id   || null,
+        format, segments,
         destinationIds: allTips.map(({ dest: d }) => d?.id).filter(Boolean),
-        status: 'done',
-        ...(result.url ? { webUrl: result.url } : {}),
+        status:         'done',
+        ...(result.url   ? { webUrl: result.url }     : {}),
+        ...(result.token ? { webToken: result.token } : {}),
       });
       await registerDownload();
       modal.remove();

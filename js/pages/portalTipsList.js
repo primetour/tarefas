@@ -8,6 +8,7 @@ import { toast }  from '../components/toast.js';
 import {
   fetchTips, fetchDestinations, fetchAreas, deleteTip,
   fetchWebLinksByTip, updateWebLink, fetchImages,
+  fetchGenerationsByTip,
   SEGMENTS, GENERATION_FORMATS,
 } from '../services/portal.js';
 import { generateTip } from '../services/portalGenerator.js';
@@ -331,7 +332,16 @@ async function showMaterialsModal(tip, dest) {
   const listEl = document.getElementById('mat-list');
   if (!listEl) return;
 
-  if (!links.length) {
+  // Load both web links and other format generations in parallel
+  let [links, gens] = await Promise.all([
+    fetchWebLinksByTip(tip.id).catch(() => []),
+    fetchGenerationsByTip(tip.id).catch(() => []),
+  ]);
+
+  // Filter gens to non-web formats (web links are already in links[])
+  const otherGens = gens.filter(g => g.format && g.format !== 'web');
+
+  if (!links.length && !otherGens.length) {
     listEl.innerHTML = `<div style="color:var(--text-muted);font-size:0.875rem;
       text-align:center;padding:32px 20px;">
       <div style="font-size:2rem;margin-bottom:8px;">✈</div>
@@ -341,16 +351,17 @@ async function showMaterialsModal(tip, dest) {
     return;
   }
 
-  listEl.innerHTML = links.map(link => {
-    const date = link.createdAt?.toDate
-      ? link.createdAt.toDate().toLocaleDateString('pt-BR') : '—';
-    const updDate = link.updatedAt?.toDate
-      ? ' · editado ' + link.updatedAt.toDate().toLocaleDateString('pt-BR') : '';
-    const segsCount = (link.segments || []).length;
-    const destNames = (link.tipData || [])
-      .map(({ dest: d }) => [d?.city, d?.country].filter(Boolean).join(', '))
-      .filter(Boolean).join(' + ') || label;
-    const fmt = link.format || 'web';
+  const renderItem = (item, isWebLink) => {
+    const date = (item.createdAt||item.generatedAt)?.toDate
+      ? (item.createdAt||item.generatedAt).toDate().toLocaleDateString('pt-BR') : '—';
+    const updDate = item.updatedAt?.toDate
+      ? ' · editado ' + item.updatedAt.toDate().toLocaleDateString('pt-BR') : '';
+    const segsCount = (item.segments || []).length;
+    const destNames = isWebLink
+      ? (item.tipData || []).map(({ dest: d }) => [d?.city, d?.country].filter(Boolean).join(', ')).filter(Boolean).join(' + ') || label
+      : label;
+    const fmt = item.format || (isWebLink ? 'web' : '?');
+    const author = item.createdBy?.name || item.generatedBy || null;
 
     return `<div class="mat-item" style="display:flex;align-items:center;gap:12px;
       padding:12px 0;border-bottom:1px solid var(--border-subtle);">
@@ -358,25 +369,35 @@ async function showMaterialsModal(tip, dest) {
       <div style="flex:1;overflow:hidden;">
         <div style="font-weight:600;font-size:0.9375rem;">${esc(destNames)}</div>
         <div style="font-size:0.75rem;color:var(--text-muted);">
-          ${FMT_LABELS[fmt]||fmt} · ${segsCount} segmento${segsCount!==1?'s':''}
+          ${esc(FMT_LABELS[fmt]||fmt)}
+          ${segsCount ? ` · ${segsCount} segmento${segsCount!==1?'s':''}` : ''}
           · ${esc(date)}${esc(updDate)}
-          ${link.views ? ` · ${link.views} visualização${link.views!==1?'ões':''}` : ''}
-          ${link.createdBy?.name ? ` · por <strong style="color:var(--text-secondary);">${esc(link.createdBy.name)}</strong>` : ''}
+          ${item.views ? ` · ${item.views} visualização${item.views!==1?'ões':''}` : ''}
+          ${author ? ` · por <strong style="color:var(--text-secondary);">${esc(author)}</strong>` : ''}
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
-        ${fmt === 'web' && link.token ? `
-          <a href="${esc(window.location.origin + window.location.pathname.replace(/index\.html$/,'') + 'portal-view.html#' + link.token)}"
+        ${fmt === 'web' && item.token ? `
+          <a href="${esc(window.location.origin + window.location.pathname.replace(/index\.html$/,'') + 'portal-view.html#' + item.token)}"
             target="_blank" class="btn btn-ghost btn-sm"
             style="font-size:0.75rem;text-decoration:none;">🔗 Abrir</a>` : ''}
-        <button class="btn btn-ghost btn-sm mat-edit-btn"
-          data-token="${esc(link.token || link.id)}"
-          style="font-size:0.75rem;color:var(--brand-gold);">✎ Editar</button>
+        ${isWebLink
+          ? `<button class="btn btn-ghost btn-sm mat-edit-btn"
+              data-token="${esc(item.token || item.id)}"
+              style="font-size:0.75rem;color:var(--brand-gold);">✎ Editar</button>`
+          : `<button class="btn btn-ghost btn-sm mat-regen-btn"
+              data-genid="${esc(item.id)}" data-format="${esc(fmt)}"
+              style="font-size:0.75rem;color:var(--brand-gold);">↓ Baixar novamente</button>`
+        }
       </div>
     </div>`;
-  }).join('');
+  };
 
-  // Wire edit buttons
+  listEl.innerHTML =
+    links.map(l => renderItem(l, true)).join('') +
+    otherGens.map(g => renderItem(g, false)).join('');
+
+  // Wire web link edit buttons
   listEl.querySelectorAll('.mat-edit-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const token = btn.dataset.token;
@@ -384,6 +405,28 @@ async function showMaterialsModal(tip, dest) {
       if (!link) return;
       modal.remove();
       await showRegenEditor({ link, tip, dest });
+    });
+  });
+
+  // Wire re-download buttons for docx/pdf/pptx
+  listEl.querySelectorAll('.mat-regen-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = '⏳';
+      try {
+        const area = allDests.find ? null : null; // area not available here, use tip directly
+        await generateTip({
+          tip, dest,
+          area:     { name: 'PRIMETOUR' },
+          segments: tip._segments || Object.keys(tip.segments || {}),
+          format:   btn.dataset.format,
+          extraTips: [],
+        });
+        toast.success('Download iniciado!');
+      } catch(e) {
+        toast.error('Erro: ' + e.message);
+      } finally {
+        btn.disabled = false; btn.textContent = '↓ Baixar novamente';
+      }
     });
   });
 }
