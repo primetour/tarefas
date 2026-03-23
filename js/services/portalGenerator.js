@@ -45,7 +45,7 @@ function loadScript(src) {
  * @param {string[]} params.destIds  — for combined destinations
  * @returns {object} { url?, filename? }
  */
-export async function generateTip({ tip, area, dest, segments, format, extraTips = [] }) {
+export async function generateTip({ tip, area, dest, segments, format, extraTips = [], imagesOverride = {} }) {
   const allTips  = [{ tip, dest }, ...extraTips];
   const areaName = area?.name || 'PRIMETOUR';
   const colors   = area?.colors || { primary: '#D4A843', secondary: '#1A1A2E' };
@@ -55,7 +55,7 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
     case 'docx': return generateDocx({ allTips, segments, areaName, area, colors, filename });
     case 'pdf':  return generatePDF({ allTips, segments, areaName, area, colors, filename });
     case 'pptx': return generatePptx({ allTips, segments, areaName, area, colors, filename });
-    case 'web':  return generateWebLink({ allTips, segments, areaName, area, colors });
+    case 'web':  return generateWebLink({ allTips, segments, areaName, area, colors, imagesOverride });
     default:     throw new Error(`Formato desconhecido: ${format}`);
   }
 }
@@ -397,7 +397,7 @@ async function resolveImages(dest) {
   } catch { return { hero: null, gallery: [], banners: {} }; }
 }
 
-async function generateWebLink({ allTips, segments, areaName, area, colors }) {
+async function generateWebLink({ allTips, segments, areaName, area, colors, imagesOverride = {} }) {
   const token  = generateToken();
   const ref    = doc(collection(db, 'portal_web_links'), token);
 
@@ -406,6 +406,33 @@ async function generateWebLink({ allTips, segments, areaName, area, colors }) {
   for (const { dest } of allTips) {
     if (dest?.id) {
       imagesByDest[dest.id] = await resolveImages(dest);
+
+      // Apply manual image overrides from the generation editor
+      // imagesOverride format: { [destId]: { [segKey]: { [itemIdx]: { url, name } } } }
+      const overrides = imagesOverride[dest.id] || {};
+      if (Object.keys(overrides).length) {
+        // Inject override images into gallery so getImg picks them up via placeName match
+        const overrideGallery = [];
+        for (const [segKey, items] of Object.entries(overrides)) {
+          for (const [idxStr, imgData] of Object.entries(items)) {
+            overrideGallery.push({
+              url:       imgData.url,
+              name:      imgData.name || '',
+              placeName: `__override_${segKey}_${idxStr}`, // unique key
+              tags:      [],
+              _override: true,
+              _segKey:   segKey,
+              _itemIdx:  Number(idxStr),
+            });
+          }
+        }
+        // Prepend override images so they take priority
+        imagesByDest[dest.id].gallery = [
+          ...overrideGallery,
+          ...(imagesByDest[dest.id].gallery || []),
+        ];
+        imagesByDest[dest.id]._overrides = overrides;
+      }
     }
   }
 
