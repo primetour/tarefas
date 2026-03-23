@@ -213,7 +213,7 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
       } catch(e) { console.warn('Hero image skip:', e.message); }
     }
 
-    children.push(new Paragraph({children:[new TextRun({text:label.toUpperCase(),bold:true,size:32,color:navy,characterSpacing:120})],spacing:{before:heroBuffer?100:400,after:80},border:{bottom:{style:BorderStyle.SINGLE,size:12,color:gold}}}));
+    children.push(new Paragraph({children:[new TextRun({text:label.toUpperCase(),bold:true,size:32,color:navy,characterSpacing:120})],spacing:{before:heroData?.arrayBuffer?100:400,after:80},border:{bottom:{style:BorderStyle.SINGLE,size:12,color:gold}}}));
     children.push(new Paragraph({spacing:{after:200}}));
 
     const content=buildContent(tip,segments);
@@ -488,8 +488,8 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
     const heroImgData = await fetchImgData(heroUrl);
     const ds=pptx.addSlide(); ds.background={color:bgHex};
     if (heroImgData?.dataUrl) {
-      try { ds.addImage({ data: base64Data(heroImgData.dataUrl), x:0, y:0, w:W, h:H,
-        sizing:{type:'cover',w:W,h:H}, extn: heroImgData.ext.toUpperCase() }); } catch(e) {}
+      try { ds.addImage({ data: heroImgData.dataUrl, x:0, y:0, w:W, h:H,
+        sizing:{type:'cover',w:W,h:H} }); } catch(e) { console.warn('PPTX hero img:', e.message); }
       ds.addShape(pptx.ShapeType.rect,{x:0,y:H*0.5,w:W,h:H*0.5,fill:{color:bgHex,transparency:35},line:{type:'none'}});
     }
     ds.addShape(pptx.ShapeType.rect,{x:0,y:H-1.6,w:0.08,h:1.2,fill:{color:pHex},line:{type:'none'}});
@@ -549,8 +549,8 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
             // Image fills top ~55% of card
             const imgH = cH * 0.52;
             slide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:cH,fill:{color:'FFFFFF'},line:{color:'E5E7EB',width:0.5}});
-            try { slide.addImage({ data: base64Data(imgB64), x, y:sY, w:cW, h:imgH,
-              sizing:{type:'cover',w:cW,h:imgH}, extn:(imgDataP?.ext||'jpg').toUpperCase() }); } catch(e) {}
+            try { slide.addImage({ data: imgB64, x, y:sY, w:cW, h:imgH,
+              sizing:{type:'cover',w:cW,h:imgH} }); } catch(e) { console.warn('PPTX item img:', e.message); }
             // Gold top accent
             slide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:0.05,fill:{color:pHex},line:{type:'none'}});
             const tY = sY + imgH + 0.1;
