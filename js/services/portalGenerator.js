@@ -3,7 +3,7 @@
  * Converte dados de dica + área em .docx, .pdf, .pptx ou link web
  */
 
-import { SEGMENTS, MONTHS, recordGeneration, registerDownload } from './portal.js';
+import { SEGMENTS, MONTHS, recordGeneration, registerDownload, fetchImages } from './portal.js';
 import { db } from '../firebase.js';
 import {
   doc, collection, setDoc, serverTimestamp,
@@ -89,174 +89,80 @@ function destLabel(dest) {
 /* ─── DOCX ────────────────────────────────────────────────── */
 async function generateDocx({ allTips, segments, areaName, area, colors, filename }) {
   await loadDocx();
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow,
-          TableCell, BorderStyle, WidthType, AlignmentType, ExternalHyperlink,
-          ShadingType } = window.docx;
+  const {
+    Document, Packer, Paragraph, TextRun, AlignmentType,
+    ExternalHyperlink, BorderStyle, Table, TableRow, TableCell,
+    WidthType, ShadingType, PageBreak,
+  } = window.docx;
 
-  const primary   = hexToDocxColor(colors.primary   || '#D4A843');
-  const secondary = hexToDocxColor(colors.secondary || '#1A1A2E');
-
+  const gold = (colors.primary   || '#D4AF37').replace('#','');
+  const navy = (colors.secondary || '#242362').replace('#','');
   const children = [];
+  const date = new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long',day:'numeric'});
 
-  // Title
-  children.push(new Paragraph({
-    children: [new TextRun({ text: areaName.toUpperCase(), bold: true, size: 36, color: primary })],
-    spacing: { after: 200 },
-  }));
+  // Cover
+  children.push(new Paragraph({ children:[new TextRun({text:areaName.toUpperCase(),bold:true,size:52,color:gold,characterSpacing:200})], alignment:AlignmentType.CENTER, spacing:{before:2400,after:160} }));
+  children.push(new Paragraph({ children:[new TextRun({text:'PORTAL DE DICAS',size:18,color:'888888',characterSpacing:300})], alignment:AlignmentType.CENTER, spacing:{after:600} }));
+  for(const{dest}of allTips) children.push(new Paragraph({children:[new TextRun({text:destLabel(dest),bold:true,size:28,color:navy})],alignment:AlignmentType.CENTER,spacing:{after:120}}));
+  children.push(new Paragraph({children:[new TextRun({text:'─────────────────────────',color:gold,size:16})],alignment:AlignmentType.CENTER,spacing:{before:400,after:200}}));
+  children.push(new Paragraph({children:[new TextRun({text:date,size:16,color:'AAAAAA'})],alignment:AlignmentType.CENTER}));
+  children.push(new Paragraph({children:[new PageBreak()]}));
 
-  for (const { tip, dest } of allTips) {
-    const label = destLabel(dest);
+  for(const{tip,dest}of allTips){
+    const label=destLabel(dest);
+    children.push(new Paragraph({children:[new TextRun({text:label.toUpperCase(),bold:true,size:32,color:navy,characterSpacing:120})],spacing:{before:400,after:80},border:{bottom:{style:BorderStyle.SINGLE,size:12,color:gold}}}));
+    children.push(new Paragraph({spacing:{after:200}}));
 
-    // Destination heading
-    children.push(new Paragraph({
-      children: [new TextRun({ text: label, bold: true, size: 28, color: secondary })],
-      heading: HeadingLevel.HEADING_1,
-      spacing: { before: 400, after: 200 },
-      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: primary } },
-    }));
+    const content=buildContent(tip,segments);
+    for(const{segDef,data}of content){
+      children.push(new Paragraph({children:[new TextRun({text:segDef.label.toUpperCase(),bold:true,size:16,color:gold,characterSpacing:250})],spacing:{before:360,after:40},border:{left:{style:BorderStyle.SINGLE,size:18,color:gold}},indent:{left:120}}));
+      children.push(new Paragraph({spacing:{after:100}}));
 
-    const content = buildContent(tip, segments);
-
-    for (const { segDef, data } of content) {
-      // Segment heading
-      children.push(new Paragraph({
-        children: [new TextRun({ text: segDef.label.toUpperCase(), bold: true, size: 22, color: primary })],
-        heading: HeadingLevel.HEADING_2,
-        spacing: { before: 320, after: 120 },
-      }));
-
-      if (segDef.mode === 'special_info') {
-        const inf = data.info || {};
-        const fields = [
-          ['Descrição', inf.descricao],
-          ['Dica', inf.dica],
-          ['População', inf.populacao],
-          ['Moeda', inf.moeda],
-          ['Língua oficial', inf.lingua],
-          ['Religião predominante', inf.religiao],
-          ['Fuso horário', inf.fusoSinal && inf.fusoHoras ? `${inf.fusoSinal}${inf.fusoHoras}h em relação a Brasília` : ''],
-          ['Voltagem', inf.voltagem],
-          ['DDD do País', inf.ddd],
-        ].filter(([,v]) => v);
-
-        for (const [label, value] of fields) {
-          children.push(new Paragraph({
-            children: [
-              new TextRun({ text: `${label}: `, bold: true, size: 18 }),
-              new TextRun({ text: value, size: 18 }),
-            ],
-            spacing: { after: 80 },
-          }));
+      if(segDef.mode==='special_info'){
+        const inf=data.info||{};
+        const fields=[['Descrição',inf.descricao],['Dica',inf.dica],['População',inf.populacao],['Moeda',inf.moeda],['Língua oficial',inf.lingua],['Religião',inf.religiao],['Fuso horário',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h de Brasília`:''],['Voltagem',inf.voltagem],['DDD',inf.ddd]].filter(([,v])=>v);
+        if(fields.length){
+          const rows=[];
+          for(let i=0;i<fields.length;i+=2){
+            const pair=fields.slice(i,i+2);
+            rows.push(new TableRow({children:[...pair,...(pair.length<2?[null]:[])].map(f=>f?new TableCell({width:{size:4500,type:WidthType.DXA},borders:{top:{style:BorderStyle.NONE},bottom:{style:BorderStyle.SINGLE,size:4,color:'EEEEEE'},left:{style:BorderStyle.NONE},right:{style:BorderStyle.NONE}},children:[new Paragraph({children:[new TextRun({text:f[0].toUpperCase(),size:14,color:gold,bold:true,characterSpacing:150})],spacing:{after:20}}),new Paragraph({children:[new TextRun({text:f[1],size:18,color:navy})],spacing:{after:80}})]}):new TableCell({width:{size:4500,type:WidthType.DXA},borders:{top:{style:BorderStyle.NONE},bottom:{style:BorderStyle.NONE},left:{style:BorderStyle.NONE},right:{style:BorderStyle.NONE}},children:[]}))}));
+          }
+          children.push(new Table({rows,width:{size:9000,type:WidthType.DXA}}));
+          children.push(new Paragraph({spacing:{after:160}}));
         }
-
-        // Representação brasileira
-        const rep = inf.representacao || {};
-        if (rep.nome) {
-          children.push(new Paragraph({
-            children: [new TextRun({ text: 'Representação Brasileira', bold: true, size: 20, color: primary })],
-            spacing: { before: 200, after: 80 },
-          }));
-          for (const [l,v] of [['Nome',rep.nome],['Endereço',rep.endereco],['Telefone',rep.telefone],['Site',rep.link]].filter(([,v])=>v)) {
-            if (l === 'Site' && v) {
-              children.push(new Paragraph({
-                children: [
-                  new TextRun({ text: 'Site: ', bold: true, size: 18 }),
-                  new ExternalHyperlink({ link: v, children: [new TextRun({ text: v, size: 18, style: 'Hyperlink' })] }),
-                ],
-                spacing: { after: 60 },
-              }));
-            } else {
-              children.push(new Paragraph({
-                children: [new TextRun({ text: `${l}: `, bold: true, size: 18 }), new TextRun({ text: v, size: 18 })],
-                spacing: { after: 60 },
-              }));
-            }
+        const rep=inf.representacao||{};
+        if(rep.nome){
+          children.push(new Paragraph({children:[new TextRun({text:'REPRESENTAÇÃO BRASILEIRA',size:14,bold:true,color:gold,characterSpacing:200})],spacing:{before:200,after:60}}));
+          for(const[l,v]of[['Nome',rep.nome],['Endereço',rep.endereco],['Telefone',rep.telefone],['Site',rep.link]].filter(([,v])=>v)){
+            if(l==='Site') children.push(new Paragraph({children:[new TextRun({text:`${l}: `,bold:true,size:18,color:navy}),new ExternalHyperlink({link:v,children:[new TextRun({text:v,size:18,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
+            else children.push(new Paragraph({children:[new TextRun({text:`${l}: `,bold:true,size:18,color:navy}),new TextRun({text:v,size:18,color:'474650'})],spacing:{after:60}}));
           }
         }
-
-      } else if (segDef.mode === 'simple_list') {
-        for (const item of (data.items || [])) {
-          if (item.title) {
-            children.push(new Paragraph({
-              children: [new TextRun({ text: `• ${item.title}`, bold: true, size: 18 })],
-              spacing: { before: 120, after: 40 },
-            }));
-          }
-          if (item.description) {
-            children.push(new Paragraph({
-              children: [new TextRun({ text: item.description, size: 18 })],
-              indent: { left: 360 },
-              spacing: { after: 80 },
-            }));
-          }
+      } else if(segDef.mode==='simple_list'){
+        for(const item of(data.items||[])){
+          if(!item.title)continue;
+          children.push(new Paragraph({children:[new TextRun({text:item.title,bold:true,size:20,color:navy})],spacing:{before:160,after:40},bullet:{level:0}}));
+          if(item.description)children.push(new Paragraph({children:[new TextRun({text:item.description,size:18,color:'474650'})],spacing:{after:80},indent:{left:360}}));
         }
-
-      } else { // place_list or agenda
-        if (data.themeDesc) {
-          children.push(new Paragraph({
-            children: [new TextRun({ text: data.themeDesc, size: 18, italics: true })],
-            spacing: { after: 160 },
-          }));
-        }
-
-        for (const item of (data.items || [])) {
-          if (!item.titulo) continue;
-
-          // Item title + category
-          const titleParts = [new TextRun({ text: item.titulo, bold: true, size: 20 })];
-          if (item.categoria) titleParts.push(new TextRun({ text: ` · ${item.categoria}`, size: 16, color: '888888' }));
-          children.push(new Paragraph({ children: titleParts, spacing: { before: 200, after: 60 } }));
-
-          if (item.descricao) {
-            children.push(new Paragraph({
-              children: [new TextRun({ text: item.descricao, size: 18 })],
-              spacing: { after: 80 },
-            }));
-          }
-
-          // Details line
-          const details = [
-            item.endereco   && `📍 ${item.endereco}`,
-            item.telefone   && `📞 ${item.telefone}`,
-            item.periodo    && `📅 ${item.periodo}`,
-          ].filter(Boolean);
-
-          if (details.length) {
-            children.push(new Paragraph({
-              children: [new TextRun({ text: details.join('   '), size: 16, color: '666666' })],
-              spacing: { after: 60 },
-            }));
-          }
-
-          if (item.site) {
-            children.push(new Paragraph({
-              children: [
-                new TextRun({ text: '🌐 ', size: 16 }),
-                new ExternalHyperlink({ link: item.site, children: [new TextRun({ text: item.site, size: 16, style: 'Hyperlink' })] }),
-              ],
-              spacing: { after: 80 },
-            }));
-          }
-
-          if (item.observacoes) {
-            children.push(new Paragraph({
-              children: [new TextRun({ text: `💡 ${item.observacoes}`, size: 16, italics: true, color: '888888' })],
-              spacing: { after: 80 },
-            }));
-          }
+      } else {
+        if(data.themeDesc)children.push(new Paragraph({children:[new TextRun({text:data.themeDesc,size:18,italics:true,color:'474650'})],spacing:{after:160}}));
+        for(const item of(data.items||[])){
+          if(!item.titulo)continue;
+          if(item.categoria)children.push(new Paragraph({children:[new TextRun({text:item.categoria.toUpperCase(),size:13,color:gold,bold:true,characterSpacing:200})],spacing:{before:240,after:20}}));
+          children.push(new Paragraph({children:[new TextRun({text:item.titulo,bold:true,size:22,color:navy})],spacing:{after:60}}));
+          if(item.descricao)children.push(new Paragraph({children:[new TextRun({text:item.descricao,size:18,color:'474650'})],spacing:{after:80}}));
+          const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`,item.periodo&&`📅 ${item.periodo}`].filter(Boolean);
+          if(det.length)children.push(new Paragraph({children:[new TextRun({text:det.join('   '),size:16,color:'888888'})],spacing:{after:60}}));
+          if(item.site)children.push(new Paragraph({children:[new TextRun({text:'🌐 ',size:16}),new ExternalHyperlink({link:item.site,children:[new TextRun({text:item.site,size:16,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
+          if(item.observacoes)children.push(new Paragraph({children:[new TextRun({text:`💡 ${item.observacoes}`,size:16,italics:true,color:'AAAAAA'})],spacing:{after:80}}));
+          children.push(new Paragraph({border:{bottom:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'}},spacing:{after:80}}));
         }
       }
     }
+    children.push(new Paragraph({children:[new PageBreak()]}));
   }
 
-  // Footer
-  children.push(new Paragraph({
-    children: [new TextRun({ text: `Gerado por PRIMETOUR Portal de Dicas · ${new Date().toLocaleDateString('pt-BR')}`, size: 14, color: 'AAAAAA' })],
-    alignment: AlignmentType.CENTER,
-    spacing: { before: 600 },
-  }));
-
-  const doc = new Document({ sections: [{ properties: {}, children }] });
+  const doc = new Document({sections:[{properties:{},children}]});
   const blob = await Packer.toBlob(doc);
   triggerDownload(blob, filename, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   return { filename };
@@ -265,135 +171,117 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
 /* ─── PDF ─────────────────────────────────────────────────── */
 async function generatePDF({ allTips, segments, areaName, area, colors, filename }) {
   await loadJsPDF();
-  const { jsPDF } = window.jspdf;
-  const doc      = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const primary  = colors.primary   || '#D4A843';
-  const PAGE_W   = 210;
-  const MARGIN   = 18;
-  const CONTENT  = PAGE_W - MARGIN * 2;
-  let y = MARGIN;
+  const {jsPDF} = window.jspdf;
+  const doc    = new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const primary= colors.primary   || '#D4AF37';
+  const second = colors.secondary || '#242362';
+  const PAGE_W=210, MARGIN=18, CONTENT=210-18*2;
+  let y=MARGIN;
+  const pR=hexToR(primary),pG=hexToG(primary),pB=hexToB(primary);
+  const sR=hexToR(second), sG=hexToG(second), sB=hexToB(second);
 
-  const addPage = () => {
-    doc.addPage();
-    y = MARGIN;
-    addFooter();
-  };
-  const checkPage = (needed = 10) => { if (y + needed > 280) addPage(); };
-  const addFooter = () => {
-    const pg = doc.getNumberOfPages();
-    doc.setPage(pg);
-    doc.setFontSize(8); doc.setTextColor(180);
-    doc.text(`PRIMETOUR Portal de Dicas · ${new Date().toLocaleDateString('pt-BR')} · p. ${pg}`,
-      PAGE_W / 2, 290, { align: 'center' });
+  const addPage=()=>{doc.addPage();y=MARGIN;addFooter();};
+  const checkPage=(n=10)=>{if(y+n>282)addPage();};
+  const addFooter=()=>{
+    const pg=doc.getNumberOfPages();doc.setPage(pg);
+    doc.setDrawColor(pR,pG,pB);doc.setLineWidth(0.3);
+    doc.line(MARGIN,288,PAGE_W-MARGIN,288);
+    doc.setFontSize(7);doc.setTextColor(180,180,180);
+    doc.text(`${areaName.toUpperCase()}  ·  Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`,PAGE_W/2,293,{align:'center'});
   };
 
-  // Header with area name
-  doc.setFillColor(hexToR(colors.secondary||'#1A1A2E'), hexToG(colors.secondary||'#1A1A2E'), hexToB(colors.secondary||'#1A1A2E'));
-  doc.rect(0, 0, PAGE_W, 28, 'F');
-  doc.setFontSize(16); doc.setFont('helvetica','bold');
-  doc.setTextColor(hexToR(primary), hexToG(primary), hexToB(primary));
-  doc.text(areaName.toUpperCase(), MARGIN, 17);
-  y = 38; addFooter();
+  // Cover
+  doc.setFillColor(sR,sG,sB);doc.rect(0,0,PAGE_W,297,'F');
+  doc.setFillColor(pR,pG,pB);doc.rect(MARGIN,108,CONTENT,0.8,'F');
+  doc.setFontSize(28);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
+  doc.text(areaName.toUpperCase(),PAGE_W/2,100,{align:'center',charSpace:3});
+  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(255,255,255);
+  doc.text('PORTAL DE DICAS',PAGE_W/2,91,{align:'center',charSpace:2});
+  let dY=124;
+  for(const{dest}of allTips){
+    doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
+    doc.text(destLabel(dest),PAGE_W/2,dY,{align:'center'});dY+=10;
+  }
+  doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(pR,pG,pB);
+  doc.text(new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'}),PAGE_W/2,dY+14,{align:'center'});
+  doc.addPage();y=MARGIN;addFooter();
 
-  for (const { tip, dest } of allTips) {
-    // Destination heading
-    checkPage(20);
-    doc.setFontSize(14); doc.setFont('helvetica','bold');
-    doc.setTextColor(hexToR(colors.secondary||'#1A1A2E'), hexToG(colors.secondary||'#1A1A2E'), hexToB(colors.secondary||'#1A1A2E'));
-    doc.text(destLabel(dest), MARGIN, y); y += 5;
-    doc.setDrawColor(hexToR(primary), hexToG(primary), hexToB(primary));
-    doc.setLineWidth(0.8); doc.line(MARGIN, y, MARGIN + CONTENT, y); y += 8;
+  for(const{tip,dest}of allTips){
+    checkPage(24);
+    doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(sR,sG,sB);
+    doc.text(destLabel(dest).toUpperCase(),MARGIN,y);y+=2;
+    doc.setFillColor(pR,pG,pB);doc.rect(MARGIN,y,CONTENT,0.6,'F');y+=8;
 
-    const content = buildContent(tip, segments);
-
-    for (const { segDef, data } of content) {
-      checkPage(14);
-      // Segment heading
-      doc.setFillColor(hexToR(primary), hexToG(primary), hexToB(primary));
-      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-      doc.roundedRect(MARGIN, y - 5, CONTENT, 8, 1, 1, 'F');
-      doc.text(segDef.label.toUpperCase(), MARGIN + 4, y); y += 10;
+    const content=buildContent(tip,segments);
+    for(const{segDef,data}of content){
+      checkPage(16);
+      doc.setFillColor(pR,pG,pB);doc.rect(MARGIN,y-4,2.5,7,'F');
+      doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
+      doc.text(segDef.label.toUpperCase(),MARGIN+5,y,{charSpace:1});y+=8;
       doc.setTextColor(40,40,40);
 
-      if (segDef.mode === 'special_info') {
-        const inf = data.info || {};
-        const pairs = [
-          ['Descrição', inf.descricao], ['Dica', inf.dica],
-          ['População', inf.populacao], ['Moeda', inf.moeda],
-          ['Língua', inf.lingua], ['Religião', inf.religiao],
-          ['Fuso', inf.fusoSinal && inf.fusoHoras ? `${inf.fusoSinal}${inf.fusoHoras}h` : ''],
-          ['Voltagem', inf.voltagem], ['DDD', inf.ddd],
-        ].filter(([,v]) => v);
-
-        doc.autoTable({
-          startY: y, margin: { left: MARGIN, right: MARGIN },
-          head: [], body: pairs,
-          styles: { fontSize: 8, cellPadding: 2 },
-          columnStyles: { 0: { fontStyle: 'bold', cellWidth: 30 }, 1: { cellWidth: CONTENT - 30 } },
-          theme: 'plain',
-          didDrawPage: () => { y = doc.lastAutoTable.finalY + 4; addFooter(); },
-        });
-        y = doc.lastAutoTable.finalY + 6;
-
-      } else if (segDef.mode === 'simple_list') {
-        for (const item of (data.items || [])) {
-          checkPage(12);
-          doc.setFontSize(9); doc.setFont('helvetica','bold');
-          doc.text(`• ${item.title||''}`, MARGIN + 3, y); y += 5;
-          if (item.description) {
-            doc.setFont('helvetica','normal'); doc.setFontSize(8);
-            const lines = doc.splitTextToSize(item.description, CONTENT - 8);
-            checkPage(lines.length * 4 + 2);
-            doc.text(lines, MARGIN + 8, y); y += lines.length * 4 + 2;
+      if(segDef.mode==='special_info'){
+        const inf=data.info||{};
+        const pairs=[['Descrição',inf.descricao],['Dica',inf.dica],['População',inf.populacao],['Moeda',inf.moeda],['Língua',inf.lingua],['Religião',inf.religiao],['Fuso',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h`:''],['Voltagem',inf.voltagem],['DDD',inf.ddd]].filter(([,v])=>v);
+        const cW=(CONTENT-4)/2;
+        for(let i=0;i<pairs.length;i+=2){
+          checkPage(14);
+          const left=pairs[i],right=pairs[i+1];
+          doc.setFillColor(248,247,244);doc.rect(MARGIN,y-3,cW,11,'F');
+          doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
+          doc.text(left[0].toUpperCase(),MARGIN+2,y,{charSpace:0.8});
+          doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(sR,sG,sB);
+          doc.text(String(left[1]).slice(0,40),MARGIN+2,y+4.5);
+          if(right){
+            doc.setFillColor(248,247,244);doc.rect(MARGIN+cW+4,y-3,cW,11,'F');
+            doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
+            doc.text(right[0].toUpperCase(),MARGIN+cW+6,y,{charSpace:0.8});
+            doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(sR,sG,sB);
+            doc.text(String(right[1]).slice(0,40),MARGIN+cW+6,y+4.5);
           }
+          y+=13;
         }
-        y += 4;
-
-      } else {
-        if (data.themeDesc) {
-          doc.setFont('helvetica','italic'); doc.setFontSize(8);
-          const lines = doc.splitTextToSize(data.themeDesc, CONTENT);
-          doc.text(lines, MARGIN, y); y += lines.length * 4 + 4;
-        }
-        for (const item of (data.items || [])) {
-          if (!item.titulo) continue;
+        const rep=inf.representacao||{};
+        if(rep.nome){
           checkPage(20);
-          // Item title
-          doc.setFont('helvetica','bold'); doc.setFontSize(10);
-          doc.setTextColor(hexToR(colors.secondary||'#1A1A2E'), hexToG(colors.secondary||'#1A1A2E'), hexToB(colors.secondary||'#1A1A2E'));
-          doc.text(item.titulo, MARGIN + 2, y); y += 5;
-          if (item.categoria) {
-            doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(120,120,120);
-            doc.text(item.categoria, MARGIN + 2, y); y += 4;
+          doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
+          doc.text('REPRESENTAÇÃO BRASILEIRA',MARGIN+2,y,{charSpace:0.8});y+=5;
+          for(const[l,v]of[['Nome',rep.nome],['Endereço',rep.endereco],['Telefone',rep.telefone]].filter(([,v])=>v)){
+            doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(sR,sG,sB);
+            doc.text(`${l}: `,MARGIN+2,y);doc.setFont('helvetica','normal');doc.setTextColor(70,70,80);
+            doc.text(v,MARGIN+2+doc.getTextWidth(`${l}: `),y);y+=5;
           }
-          doc.setTextColor(40,40,40);
-          if (item.descricao) {
-            doc.setFont('helvetica','normal'); doc.setFontSize(8);
-            const lines = doc.splitTextToSize(item.descricao, CONTENT - 4);
-            checkPage(lines.length * 4 + 2);
-            doc.text(lines, MARGIN + 2, y); y += lines.length * 4 + 2;
-          }
-          const details = [item.endereco&&`📍 ${item.endereco}`, item.telefone&&`📞 ${item.telefone}`, item.periodo&&`📅 ${item.periodo}`].filter(Boolean);
-          if (details.length) {
-            doc.setFontSize(7.5); doc.setTextColor(100,100,100);
-            doc.text(details.join('   '), MARGIN + 2, y); y += 4;
-          }
-          if (item.site) {
-            doc.setFontSize(7.5); doc.setTextColor(hexToR(primary), hexToG(primary), hexToB(primary));
-            doc.textWithLink(item.site, MARGIN + 2, y, { url: item.site }); y += 4;
-          }
-          if (item.observacoes) {
-            doc.setFontSize(7.5); doc.setTextColor(130,130,130); doc.setFont('helvetica','italic');
-            doc.text(`💡 ${item.observacoes}`, MARGIN + 2, y); y += 4;
-          }
-          y += 3;
-          doc.setDrawColor(220,220,220); doc.line(MARGIN + 2, y, MARGIN + CONTENT - 2, y); y += 3;
+        }
+      } else if(segDef.mode==='simple_list'){
+        for(const item of(data.items||[])){
+          checkPage(12);
+          doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(sR,sG,sB);
+          doc.setFillColor(pR,pG,pB);doc.circle(MARGIN+1.5,y-1,1,'F');
+          doc.text(item.title||'',MARGIN+5,y);y+=5;
+          if(item.description){doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(70,70,80);const lines=doc.splitTextToSize(item.description,CONTENT-8);checkPage(lines.length*4+2);doc.text(lines,MARGIN+8,y);y+=lines.length*4+2;}
+        }
+        y+=4;
+      } else {
+        if(data.themeDesc){doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(100,100,100);const lines=doc.splitTextToSize(data.themeDesc,CONTENT);doc.text(lines,MARGIN,y);y+=lines.length*4+4;}
+        for(const item of(data.items||[])){
+          if(!item.titulo)continue;
+          checkPage(22);
+          if(item.categoria){doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);doc.text(item.categoria.toUpperCase(),MARGIN+2,y,{charSpace:0.8});y+=4;}
+          doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(sR,sG,sB);
+          doc.text(item.titulo,MARGIN+2,y);y+=5;
+          if(item.descricao){doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(70,70,80);const lines=doc.splitTextToSize(item.descricao,CONTENT-4);checkPage(lines.length*4+2);doc.text(lines,MARGIN+2,y);y+=lines.length*4+2;}
+          const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`,item.periodo&&`📅 ${item.periodo}`].filter(Boolean);
+          if(det.length){doc.setFontSize(7.5);doc.setTextColor(130,130,130);doc.text(det.join('   '),MARGIN+2,y);y+=4;}
+          if(item.site){doc.setFontSize(7.5);doc.setTextColor(pR,pG,pB);doc.textWithLink('🌐 '+item.site,MARGIN+2,y,{url:item.site});y+=4;}
+          if(item.observacoes){doc.setFontSize(7.5);doc.setTextColor(160,160,160);doc.setFont('helvetica','italic');doc.text(`💡 ${item.observacoes}`,MARGIN+2,y);y+=4;}
+          doc.setDrawColor(235,235,235);doc.setLineWidth(0.2);doc.line(MARGIN+2,y,MARGIN+CONTENT-2,y);y+=4;
         }
       }
+      y+=4;
     }
-    y += 10;
+    doc.addPage();y=MARGIN;addFooter();
   }
-
+  const pgCount=doc.getNumberOfPages();if(pgCount>1)doc.deletePage(pgCount);
   doc.save(filename);
   return { filename };
 }
@@ -401,123 +289,77 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
 /* ─── PPTX ────────────────────────────────────────────────── */
 async function generatePptx({ allTips, segments, areaName, area, colors, filename }) {
   await loadPptxGenJS();
-  const pptx    = new window.PptxGenJS();
-  const primary = colors.primary   || '#D4A843';
-  const bg      = colors.secondary || '#1A1A2E';
+  const pptx   = new window.PptxGenJS();
+  const primary= colors.primary   || '#D4AF37';
+  const bgColor= colors.secondary || '#242362';
+  const pHex   = primary.replace('#','');
+  const bgHex  = bgColor.replace('#','');
+  const W=13.33, H=7.5;
+  const date=new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'});
+  pptx.layout='LAYOUT_WIDE';pptx.author='PRIMETOUR Portal de Dicas';
 
-  pptx.layout = 'LAYOUT_WIDE';
-  pptx.author = 'PRIMETOUR Portal de Dicas';
+  // Cover
+  const cover=pptx.addSlide();
+  cover.background={color:bgHex};
+  cover.addShape(pptx.ShapeType.rect,{x:1.5,y:3.55,w:W-3,h:0.04,fill:{color:pHex},line:{type:'none'}});
+  cover.addText('PORTAL DE DICAS',{x:0.5,y:1.7,w:W-1,h:0.4,fontSize:10,color:'AAAAAA',align:'center',charSpacing:3});
+  cover.addText(areaName.toUpperCase(),{x:0.5,y:2.2,w:W-1,h:1.1,fontSize:38,bold:true,color:pHex,align:'center',charSpacing:4});
+  cover.addText(allTips.map(({dest})=>destLabel(dest)).join('  ·  '),{x:0.5,y:3.8,w:W-1,h:0.6,fontSize:16,bold:true,color:'FFFFFF',align:'center'});
+  cover.addText(date,{x:0.5,y:H-0.6,w:W-1,h:0.35,fontSize:9,color:pHex,align:'center'});
 
-  // Cover slide
-  const cover = pptx.addSlide();
-  cover.background = { color: bg.replace('#','') };
-  cover.addText(areaName.toUpperCase(), {
-    x:0.5, y:2.5, w:12, h:0.8,
-    fontSize: 32, bold: true, color: primary.replace('#',''), align: 'center',
-  });
-  cover.addText('Portal de Dicas', {
-    x:0.5, y:3.4, w:12, h:0.5,
-    fontSize: 16, color: 'FFFFFF', align: 'center',
-  });
-  cover.addText(new Date().toLocaleDateString('pt-BR'), {
-    x:0.5, y:6.8, w:12, h:0.3,
-    fontSize: 10, color: '888888', align: 'center',
-  });
+  for(const{tip,dest}of allTips){
+    const label=destLabel(dest);
+    const[city,...rest]=label.split(',');
 
-  for (const { tip, dest } of allTips) {
-    const label = destLabel(dest);
+    // Dest intro slide
+    const ds=pptx.addSlide();ds.background={color:bgHex};
+    ds.addShape(pptx.ShapeType.rect,{x:1.5,y:4.0,w:W-3,h:0.04,fill:{color:pHex},line:{type:'none'}});
+    ds.addText(city.trim(),{x:0.5,y:2.4,w:W-1,h:1.2,fontSize:42,bold:true,color:'FFFFFF',align:'center',charSpacing:1});
+    if(rest.length)ds.addText(rest.join(',').trim().toUpperCase(),{x:0.5,y:4.2,w:W-1,h:0.4,fontSize:10,color:pHex,align:'center',charSpacing:3});
 
-    // Destination slide
-    const destSlide = pptx.addSlide();
-    destSlide.background = { color: bg.replace('#','') };
-    destSlide.addText(label, {
-      x:0.5, y:2.8, w:12, h:1.2,
-      fontSize: 36, bold: true, color: primary.replace('#',''), align: 'center',
-    });
-
-    const content = buildContent(tip, segments);
-
-    for (const { segDef, data } of content) {
-      const slide = pptx.addSlide();
-      slide.background = { color: 'FFFFFF' };
-
-      // Header bar
-      slide.addShape(pptx.ShapeType.rect, {
-        x:0, y:0, w:13.33, h:0.8,
-        fill: { color: bg.replace('#','') },
-      });
-      slide.addText(segDef.label.toUpperCase(), {
-        x:0.3, y:0.1, w:9, h:0.6,
-        fontSize: 14, bold: true, color: 'FFFFFF',
-      });
-      slide.addText(label, {
-        x:9.5, y:0.1, w:3.5, h:0.6,
-        fontSize: 9, color: primary.replace('#',''), align: 'right',
-      });
-
-      let textContent = '';
-
-      if (segDef.mode === 'special_info') {
-        const inf = data.info || {};
-        const pairs = [
-          ['Descrição', inf.descricao], ['Moeda', inf.moeda],
-          ['Língua', inf.lingua], ['Fuso', inf.fusoSinal && inf.fusoHoras ? `${inf.fusoSinal}${inf.fusoHoras}h` : ''],
-          ['Voltagem', inf.voltagem], ['DDD', inf.ddd],
-        ].filter(([,v]) => v);
-
-        const rows = pairs.map(([l,v]) => [
-          { text: l+':', options: { bold: true, fontSize: 10 } },
-          { text: v, options: { fontSize: 10 } },
-        ]);
-        if (rows.length) {
-          slide.addTable(rows, {
-            x:0.3, y:1, w:12.7, h:5,
-            colW:[2.5,10],
-            border: { type:'none' },
-            fill: { type:'none' },
-          });
-        }
-
-      } else if (segDef.mode === 'simple_list') {
-        const items = (data.items || []).slice(0, 8);
-        textContent = items.map(i => `• ${i.title}${i.description ? '\n   ' + i.description.slice(0,100) : ''}`).join('\n');
-        slide.addText(textContent, { x:0.3, y:1, w:12.7, h:5.5, fontSize: 11, valign: 'top', wrap: true });
-
-      } else {
-        const items = (data.items || []).slice(0, 4);
-        if (data.themeDesc) {
-          slide.addText(data.themeDesc.slice(0,200), { x:0.3, y:0.9, w:12.7, h:0.6, fontSize: 9, italic: true, color: '666666' });
-        }
-        const startY = data.themeDesc ? 1.6 : 1;
-        const colW   = items.length <= 2 ? 6 : 3.1;
-        const cols   = items.length <= 2 ? 2 : 4;
-        items.forEach((item, i) => {
-          const col = i % cols;
-          const row = Math.floor(i / cols);
-          const x   = 0.3 + col * (colW + 0.2);
-          const y   = startY + row * 2.4;
-          slide.addShape(pptx.ShapeType.rect, {
-            x, y, w:colW, h:2.2,
-            fill: { color: 'F8F9FA' },
-            line: { color: 'EEEEEE', width: 0.5 },
-          });
-          slide.addText(item.titulo, { x:x+0.1, y:y+0.1, w:colW-0.2, h:0.45, fontSize: 10, bold: true, color: bg.replace('#',''), wrap:true });
-          if (item.categoria) slide.addText(item.categoria, { x:x+0.1, y:y+0.55, w:colW-0.2, h:0.25, fontSize: 7.5, italic:true, color:'999999' });
-          if (item.descricao) slide.addText(item.descricao.slice(0,140), { x:x+0.1, y:y+0.8, w:colW-0.2, h:1.1, fontSize: 8, color:'444444', wrap:true });
-          if (item.site) slide.addText(item.site, { x:x+0.1, y:y+1.92, w:colW-0.2, h:0.22, fontSize: 7, color: primary.replace('#',''), hyperlink:{ url:item.site } });
-        });
-        if (data.items?.length > 4) {
-          slide.addText(`+ ${data.items.length - 4} itens adicionais`, {
-            x:0.3, y:6.3, w:12.7, h:0.3, fontSize:9, italic:true, color:'888888', align:'center',
-          });
-        }
-      }
-
+    for(const{segDef,data}of buildContent(tip,segments)){
+      const slide=pptx.addSlide();slide.background={color:'FFFFFF'};
+      // Header
+      slide.addShape(pptx.ShapeType.rect,{x:0,y:0,w:W,h:0.72,fill:{color:bgHex},line:{type:'none'}});
+      slide.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.08,h:0.72,fill:{color:pHex},line:{type:'none'}});
+      slide.addText(segDef.label.toUpperCase(),{x:0.25,y:0.08,w:8,h:0.56,fontSize:13,bold:true,color:'FFFFFF',charSpacing:2});
+      slide.addText(label,{x:8.5,y:0.08,w:4.5,h:0.56,fontSize:9,color:pHex,align:'right'});
       // Footer
-      slide.addText(`PRIMETOUR Portal de Dicas · ${new Date().toLocaleDateString('pt-BR')}`, {
-        x:0, y:7.15, w:13.33, h:0.35,
-        fontSize: 8, color: 'AAAAAA', align: 'center',
-      });
+      slide.addShape(pptx.ShapeType.rect,{x:0,y:H-0.3,w:W,h:0.3,fill:{color:'F8F7F4'},line:{type:'none'}});
+      slide.addText(`PRIMETOUR  ·  Portal de Dicas  ·  ${date}`,{x:0.3,y:H-0.25,w:W-0.6,h:0.22,fontSize:7,color:'AAAAAA',align:'center'});
+
+      if(segDef.mode==='special_info'){
+        const inf=data.info||{};
+        const pairs=[['Descrição',inf.descricao],['Moeda',inf.moeda],['Língua',inf.lingua],['Fuso',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h`:''],['Voltagem',inf.voltagem],['DDD',inf.ddd],['Religião',inf.religiao],['População',inf.populacao]].filter(([,v])=>v);
+        const cW=3.0,cH=1.4,gX=0.12,gY=0.12,sX=0.3,sY=0.9;
+        pairs.slice(0,8).forEach(([l,v],i)=>{
+          const col=i%4,row=Math.floor(i/4),x=sX+col*(cW+gX),y=sY+row*(cH+gY);
+          slide.addShape(pptx.ShapeType.rect,{x,y,w:cW,h:cH,fill:{color:'F8F7F4'},line:{color:'EEEEEE',width:0.5}});
+          slide.addText(l.toUpperCase(),{x:x+0.1,y:y+0.12,w:cW-0.2,h:0.28,fontSize:6,bold:true,color:pHex,charSpacing:1});
+          slide.addText(String(v).slice(0,60),{x:x+0.1,y:y+0.42,w:cW-0.2,h:0.88,fontSize:9,color:bgHex,wrap:true,valign:'top'});
+        });
+      } else if(segDef.mode==='simple_list'){
+        const items=(data.items||[]).slice(0,10);
+        slide.addText(items.map(i=>({text:`${i.title||''}${i.description?'\n'+i.description.slice(0,80):''}`,options:{bullet:{type:'bullet'},fontSize:10,color:'333333',paraSpaceAfter:6}})),{x:0.3,y:0.9,w:W-0.6,h:H-1.4});
+      } else {
+        const items=(data.items||[]).slice(0,4);
+        if(data.themeDesc)slide.addText(data.themeDesc.slice(0,180),{x:0.3,y:0.85,w:W-0.6,h:0.45,fontSize:8,italic:true,color:'888888'});
+        const sY=data.themeDesc?1.38:0.88;
+        const cols=items.length<=2?2:4,cW=items.length<=2?(W-0.8)/2:(W-0.8)/4,cH=5.6;
+        items.forEach((item,i)=>{
+          const x=0.3+i*(cW+0.08);
+          slide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:cH,fill:{color:'FFFFFF'},line:{color:'E5E7EB',width:0.5}});
+          slide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:0.06,fill:{color:pHex},line:{type:'none'}});
+          let iy=sY+0.14;
+          if(item.categoria){slide.addText(item.categoria.toUpperCase(),{x:x+0.1,y:iy,w:cW-0.2,h:0.28,fontSize:6,bold:true,color:pHex,charSpacing:1});iy+=0.3;}
+          slide.addText(item.titulo,{x:x+0.1,y:iy,w:cW-0.2,h:0.6,fontSize:cols===2?12:10,bold:true,color:bgHex,wrap:true});iy+=0.65;
+          if(item.descricao){slide.addText(item.descricao.slice(0,cols===2?200:100),{x:x+0.1,y:iy,w:cW-0.2,h:cols===2?2.8:2.2,fontSize:cols===2?9:8,color:'555555',wrap:true,valign:'top'});iy+=cols===2?2.9:2.3;}
+          const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
+          if(det.length)slide.addText(det.join('  '),{x:x+0.1,y:sY+cH-0.7,w:cW-0.2,h:0.35,fontSize:7,color:'888888',wrap:true});
+          if(item.site)slide.addText(item.site,{x:x+0.1,y:sY+cH-0.38,w:cW-0.2,h:0.28,fontSize:7,color:pHex,hyperlink:{url:item.site}});
+        });
+        if((data.items||[]).length>4)slide.addText(`+ ${data.items.length-4} itens adicionais`,{x:0.3,y:H-0.45,w:W-0.6,h:0.25,fontSize:8,italic:true,color:'AAAAAA',align:'center'});
+      }
     }
   }
 
@@ -526,18 +368,57 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
 }
 
 /* ─── Web Link ────────────────────────────────────────────── */
+
+/* ─── Image resolver ──────────────────────────────────────── */
+/**
+ * Resolves images for a destination from portal_images.
+ * Returns { hero, gallery[], banners{} } with fallback nulls.
+ */
+async function resolveImages(dest) {
+  if (!dest) return { hero: null, gallery: [], banners: {} };
+  try {
+    const imgs = await fetchImages({
+      continent: dest.continent,
+      country:   dest.country,
+      city:      dest.city,
+    });
+    const byType = t => imgs.filter(i => i.type === t);
+    const hero    = byType('destaque')[0]?.url   || byType('banner')[0]?.url || byType('galeria')[0]?.url || null;
+    const gallery = byType('galeria').map(i => ({ url: i.url, name: i.name, tags: i.tags || [] }));
+    // Map gallery images to segments by tag matching
+    const banners = {};
+    SEGMENTS.forEach(s => {
+      const match = gallery.find(i => i.tags?.some(t =>
+        t.toLowerCase().includes(s.key.replace(/_/g,' ').split(' ')[0])
+      ));
+      if (match) banners[s.key] = match.url;
+    });
+    return { hero, gallery, banners };
+  } catch { return { hero: null, gallery: [], banners: {} }; }
+}
+
 async function generateWebLink({ allTips, segments, areaName, area, colors }) {
   const token  = generateToken();
   const ref    = doc(collection(db, 'portal_web_links'), token);
+
+  // Resolve images for each destination
+  const imagesByDest = {};
+  for (const { dest } of allTips) {
+    if (dest?.id) {
+      imagesByDest[dest.id] = await resolveImages(dest);
+    }
+  }
+
   await setDoc(ref, {
     token,
-    allTips:   allTips.map(({ tip, dest }) => ({ tipId: tip?.id || null, destId: dest?.id || null })),
-    tipData:   allTips.map(({ tip, dest }) => ({ tip, dest })),
+    allTips:      allTips.map(({ tip, dest }) => ({ tipId: tip?.id || null, destId: dest?.id || null })),
+    tipData:      allTips.map(({ tip, dest }) => ({ tip, dest })),
     segments,
     areaName,
-    areaLogoUrl: area?.logoUrl || null,
+    areaLogoUrl:  area?.logoUrl || null,
     colors,
-    createdAt: serverTimestamp(),
+    imagesByDest,
+    createdAt:    serverTimestamp(),
     views: 0,
   });
 
