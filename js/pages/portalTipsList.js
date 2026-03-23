@@ -324,11 +324,6 @@ async function showMaterialsModal(tip, dest) {
     toast.success('Selecione o destino e os segmentos para gerar um novo material.');
   });
 
-  // Load web links for this tip
-  let links = [];
-  try { links = await fetchWebLinksByTip(tip.id); }
-  catch(e) { console.error(e); }
-
   const listEl = document.getElementById('mat-list');
   if (!listEl) return;
 
