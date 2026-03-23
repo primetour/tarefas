@@ -140,11 +140,15 @@ function pickImg(item, idx, imgs, segKey) {
 async function imgToBase64(url) {
   if (!url) return null;
   try {
-    const res  = await fetch(url);
+    // Route through R2 Worker to get CORS headers
+    const R2_WORKER = 'https://primetour-images.rene-castro.workers.dev';
+    const proxyUrl  = `${R2_WORKER}?url=${encodeURIComponent(url)}`;
+    const res  = await fetch(proxyUrl);
+    if (!res.ok) return null;
     const blob = await res.blob();
     return new Promise((resolve) => {
       const r = new FileReader();
-      r.onload = () => resolve(r.result); // data:image/...;base64,...
+      r.onload  = () => resolve(r.result);
       r.onerror = () => resolve(null);
       r.readAsDataURL(blob);
     });
