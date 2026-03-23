@@ -261,8 +261,11 @@ function renderPlaces(sd,data,imgs,isAgenda){
     const cat   = (item.categoria||'').toLowerCase();
 
     // Priority 0: manual override from generation editor
-    if (overrides[segDef?.key]?.[idx]) {
-      return overrides[segDef.key][idx].url || null;
+    // Firestore stores numeric keys as strings, so check both
+    const ovKey = segDef?.key;
+    if (ovKey && overrides[ovKey]) {
+      const ov = overrides[ovKey][idx] || overrides[ovKey][String(idx)];
+      if (ov?.url) return ov.url;
     }
 
     // Priority 1: exact placeName match
@@ -309,9 +312,9 @@ function renderPlaces(sd,data,imgs,isAgenda){
 
   let itemsHtml='';
   if(items.length===0)itemsHtml='';
-  else if(items.length===1)itemsHtml=heroCard(items[0],0);
-  else if(items.length===2)itemsHtml=heroCard(items[0],0)+`<div class="cards-grid" style="margin-top:1px;">${card(items[1],1)}</div>`;
-  else itemsHtml=heroCard(items[0],0)+`<div class="bento-grid" style="margin-top:1px;">${items.slice(1,3).map((item,i)=>{const img=getImg(item,i+1);return `<div class="bento-card"><div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy}dd,${shade(navy,-15)});"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle" style="font-size:.5rem;">${esc(item.categoria)}</div>`:''}<div class="card-title" style="font-size:1.375rem;">${esc(item.titulo)}</div></div></div>`;}).join('')}</div>${items.length>3?`<div class="cards-grid" style="margin-top:1px;">${items.slice(3).map((item,i)=>card(item,i+3)).join('')}</div>`:''}`;
+  else if(items.length===1)itemsHtml=heroCard(items[0],0,sd);
+  else if(items.length===2)itemsHtml=heroCard(items[0],0,sd)+`<div class="cards-grid" style="margin-top:1px;">${card(items[1],1,sd)}</div>`;
+  else itemsHtml=heroCard(items[0],0,sd)+`<div class="bento-grid" style="margin-top:1px;">${items.slice(1,3).map((item,i)=>{const img=getImg(item,i+1,sd);return `<div class="bento-card"><div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy}dd,${shade(navy,-15)});"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle" style="font-size:.5rem;">${esc(item.categoria)}</div>`:''}<div class="card-title" style="font-size:1.375rem;">${esc(item.titulo)}</div></div></div>`;}).join('')}</div>${items.length>3?`<div class="cards-grid" style="margin-top:1px;">${items.slice(3).map((item,i)=>card(item,i+3,sd)).join('')}</div>`:''}`;
 
   return `${segHead(sd)}${themeHtml}${agendaHtml}${itemsHtml}`;
 }
