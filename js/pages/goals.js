@@ -43,12 +43,14 @@ export async function renderGoals(container) {
         <h1 class="page-title">Metas</h1>
         <p class="page-subtitle">Acompanhe metas individuais e do núcleo</p>
       </div>
-      <div class="page-header-actions">
+      <div class="page-header-actions" style="gap:8px;">
         ${(() => {
           const sectors = store.getVisibleSectors();
           if (sectors?.length === 1) return `<span style="font-size:0.8125rem;padding:5px 10px;border-radius:var(--radius-full);background:rgba(212,168,67,.1);color:var(--brand-gold);border:1px solid rgba(212,168,67,.3);">🏢 ${sectors[0]}</span>`;
           return '';
         })()}
+        <button class="btn btn-secondary btn-sm" id="goal-export-xls">↓ XLS</button>
+        <button class="btn btn-secondary btn-sm" id="goal-export-pdf">↓ PDF</button>
         <button class="btn btn-primary" id="new-goal-btn">+ Nova Meta</button>
       </div>
     </div>
@@ -64,6 +66,19 @@ export async function renderGoals(container) {
         O sistema conta automaticamente as tarefas concluídas que se encaixam nesses critérios.
         Clique em <strong>↺ Recalcular</strong> para atualizar o progresso a qualquer momento.
       </span>
+    </div>
+
+    <!-- Search + status filter -->
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+      <input type="text" id="goal-search" class="portal-field"
+        placeholder="Buscar meta…" style="flex:1;min-width:180px;font-size:0.875rem;">
+      <select id="goal-status-filter" class="filter-select" style="min-width:150px;">
+        <option value="">Todos os status</option>
+        <option value="on_track">No prazo</option>
+        <option value="at_risk">Em risco</option>
+        <option value="behind">Atrasada</option>
+        <option value="completed">Concluída</option>
+      </select>
     </div>
 
     <!-- Tabs -->
@@ -85,6 +100,21 @@ export async function renderGoals(container) {
   `;
 
   document.getElementById('new-goal-btn')?.addEventListener('click', () => openGoalModal());
+
+  let goalSearchQ = '';
+  let goalStatusF = '';
+
+  document.getElementById('goal-search')?.addEventListener('input', e => {
+    goalSearchQ = e.target.value.toLowerCase();
+    renderGoalsList(goalSearchQ, goalStatusF);
+  });
+  document.getElementById('goal-status-filter')?.addEventListener('change', e => {
+    goalStatusF = e.target.value;
+    renderGoalsList(goalSearchQ, goalStatusF);
+  });
+  document.getElementById('goal-export-xls')?.addEventListener('click', () => exportGoalsXls());
+  document.getElementById('goal-export-pdf')?.addEventListener('click', () => exportGoalsPdf());
+
   container.querySelectorAll('.goal-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       activeTab = btn.dataset.tab;
@@ -123,7 +153,7 @@ async function loadAndRender() {
   }
 }
 
-function renderGoalsList() {
+function renderGoalsList(searchQ = '', statusF = '') {
   const el = document.getElementById('goals-content');
   if (!el) return;
 
@@ -418,4 +448,72 @@ async function confirmDelete(goalId) {
     toast.success('Meta excluída.');
     await loadAndRender();
   } catch(e) { toast.error(e.message); }
+}
+
+
+/* ─── Export XLS ─────────────────────────────────────────── */
+async function exportGoalsXls() {
+  if (!allGoals.length) { (await import('../components/toast.js')).toast.error('Nenhuma meta para exportar.'); return; }
+  if (!window.XLSX) await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+  const { toast } = await import('../components/toast.js');
+  const rows = [
+    ['Título','Tipo','Setor','Progresso','Meta','Início','Fim','Status'],
+    ...allGoals.map(g => {
+      const due = g.endDate?.toDate ? g.endDate.toDate() : (g.endDate ? new Date(g.endDate) : null);
+      const sta = g.endDate?.toDate ? g.startDate?.toDate() : (g.startDate ? new Date(g.startDate) : null);
+      return [
+        g.title||'',
+        g.type||'',
+        g.sector||'',
+        `${Math.round(g.progress||0)}%`,
+        g.target||'',
+        sta ? sta.toLocaleDateString('pt-BR') : '—',
+        due ? due.toLocaleDateString('pt-BR') : '—',
+        g.progress>=100 ? 'Concluída' : due && due < new Date() ? 'Atrasada' : 'Em andamento',
+      ];
+    }),
+  ];
+  const wb = window.XLSX.utils.book_new();
+  const ws = window.XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [40,15,20,12,10,12,12,15].map(w=>({wch:w}));
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Metas');
+  window.XLSX.writeFile(wb, `primetour_metas_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast.success('XLS exportado.');
+}
+
+/* ─── Export PDF ─────────────────────────────────────────── */
+async function exportGoalsPdf() {
+  if (!allGoals.length) { (await import('../components/toast.js')).toast.error('Nenhuma meta para exportar.'); return; }
+  const { toast } = await import('../components/toast.js');
+  if (!window.jspdf) {
+    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(36,35,98);
+  doc.text('PRIMETOUR — Metas', 14, 16);
+  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(100,100,100);
+  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${allGoals.length} metas`, 14, 22);
+  doc.autoTable({
+    startY: 27,
+    head: [['Título','Tipo','Setor','Progresso','Fim','Status']],
+    body: allGoals.map(g => {
+      const due = g.endDate?.toDate ? g.endDate.toDate() : (g.endDate ? new Date(g.endDate) : null);
+      return [
+        (g.title||'').slice(0,50),
+        g.type||'',
+        g.sector||'',
+        `${Math.round(g.progress||0)}%`,
+        due ? due.toLocaleDateString('pt-BR') : '—',
+        g.progress>=100 ? 'Concluída' : due && due < new Date() ? 'Atrasada' : 'Em andamento',
+      ];
+    }),
+    styles:{fontSize:8,cellPadding:3},
+    headStyles:{fillColor:[36,35,98],textColor:255,fontStyle:'bold'},
+    columnStyles:{0:{cellWidth:80},1:{cellWidth:25},2:{cellWidth:30},3:{cellWidth:22},4:{cellWidth:22},5:{cellWidth:28}},
+    alternateRowStyles:{fillColor:[248,247,244]},
+  });
+  doc.save(`primetour_metas_${new Date().toISOString().slice(0,10)}.pdf`);
+  toast.success('PDF exportado.');
 }

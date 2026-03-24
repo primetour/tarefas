@@ -123,7 +123,14 @@ export async function renderNlPerformance(container) {
       </select>
       <select class="filter-select" id="nl-period-filter" style="min-width:160px;">
         ${PERIODS.map(p=>`<option value="${p.value}" ${p.value==='30'?'selected':''}>${p.label}</option>`).join('')}
+        <option value="custom">Período personalizado…</option>
       </select>
+      <div id="nl-custom-range" style="display:none;display:flex;gap:6px;align-items:center;">
+        <input type="date" id="nl-date-from" class="portal-field" style="font-size:0.8125rem;">
+        <span style="color:var(--text-muted);font-size:0.8125rem;">→</span>
+        <input type="date" id="nl-date-to" class="portal-field" style="font-size:0.8125rem;">
+        <button class="btn btn-primary btn-sm" id="nl-apply-range" style="font-size:0.8125rem;">Aplicar</button>
+      </div>
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
         <span id="nl-hidden-count" style="font-size:0.75rem;color:var(--text-muted);display:none;"></span>
         <button class="btn btn-ghost btn-sm" id="nl-toggle-edit" style="font-size:0.8125rem;">
@@ -165,7 +172,22 @@ export async function renderNlPerformance(container) {
     filterBu = e.target.value; renderTable(editMode);
   });
   document.getElementById('nl-period-filter')?.addEventListener('change', e => {
-    filterDays = e.target.value; loadData(editMode);
+    const val = e.target.value;
+    const rangeEl = document.getElementById('nl-custom-range');
+    if (val === 'custom') {
+      if (rangeEl) rangeEl.style.display = 'flex';
+    } else {
+      if (rangeEl) rangeEl.style.display = 'none';
+      filterDays = val;
+      loadData(editMode);
+    }
+  });
+  document.getElementById('nl-apply-range')?.addEventListener('click', () => {
+    const from = document.getElementById('nl-date-from')?.value;
+    const to   = document.getElementById('nl-date-to')?.value;
+    if (!from || !to) { return; }
+    filterDays = `custom:${from}:${to}`;
+    loadData(editMode);
   });
 
   // Edit mode toggle

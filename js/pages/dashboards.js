@@ -20,6 +20,8 @@ const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 
 /* ─── State ──────────────────────────────────────────────── */
 let currentPeriod = '30d';
+let customFrom = '';
+let customTo   = '';
 let chartInstances = {};
 let metrics = null;
 
@@ -52,7 +54,7 @@ export async function renderDashboards(container) {
     <!-- Period selector -->
     <div class="dashboard-toolbar">
       <span class="dashboard-toolbar-title"></span>
-      <div class="date-range-bar">
+      <div class="date-range-bar" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
         ${['7d','30d','90d','12m'].map(p => `
           <button class="date-range-btn ${p===currentPeriod?'active':''}" data-period="${p}">
             ${{
@@ -63,6 +65,19 @@ export async function renderDashboards(container) {
             }[p]}
           </button>
         `).join('')}
+        <button class="date-range-btn ${'custom'===currentPeriod?'active':''}" data-period="custom">
+          Personalizado
+        </button>
+        <div id="dash-custom-range" style="display:${'custom'===currentPeriod?'flex':'none'};
+          gap:6px;align-items:center;margin-left:4px;">
+          <input type="date" id="dash-from" class="portal-field"
+            style="font-size:0.8125rem;padding:4px 8px;" value="${customFrom||''}">
+          <span style="color:var(--text-muted);">→</span>
+          <input type="date" id="dash-to" class="portal-field"
+            style="font-size:0.8125rem;padding:4px 8px;" value="${customTo||''}">
+          <button class="btn btn-primary btn-sm" id="dash-apply-custom"
+            style="font-size:0.8125rem;">Aplicar</button>
+        </div>
       </div>
     </div>
 

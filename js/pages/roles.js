@@ -123,8 +123,9 @@ function renderGrid() {
             }).join('')}
           </div>
           <button class="btn btn-ghost btn-sm role-detail-btn" data-id="${role.id}"
+            data-editable="${canEdit?'1':'0'}"
             style="margin-top:12px;font-size:0.8125rem;width:100%;justify-content:center;">
-            Ver permissões →
+            ${canEdit ? '✎ Editar permissões' : 'Ver permissões →'}
           </button>
         </div>
       </div>
@@ -139,7 +140,11 @@ function renderGrid() {
     btn.addEventListener('click', () => confirmDeleteRole(btn.dataset.id))
   );
   grid.querySelectorAll('.role-detail-btn').forEach(btn =>
-    btn.addEventListener('click', () => openDetailModal(allRoles.find(r => r.id === btn.dataset.id)))
+    btn.addEventListener('click', () => {
+      const role = allRoles.find(r => r.id === btn.dataset.id);
+      if (btn.dataset.editable === '1') openRoleModal(role);
+      else openDetailModal(role);
+    })
   );
 }
 

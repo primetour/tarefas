@@ -215,14 +215,24 @@ const CONTENT = {
         </thead>
         <tbody>
           ${[
-            ['Tarefas (lista)',    '✓ Automático pelo setor do usuário',     '✓ Disponível',              'Área, responsável, status, projeto'],
-            ['Steps / Kanban',    '◐ Via filtro combinado',                   '✓ Seletor na esteira',      'Área, responsável, projeto'],
-            ['Calendário',        '◐ Via filtro combinado',                   '✓ Seletor na esteira/agenda','Área, responsável, projeto'],
-            ['Timeline',          '◐ Via filtro combinado',                   '◐ Via filtro combinado',    'Área, projeto'],
-            ['Portal (público)',  '✓ Campo obrigatório no formulário',        '✓ Filtrado pelo setor',     'Variação, área solicitante'],
-            ['Solicitações',      '◐ Via filtro de status',                   '◐ Via filtro de tipo',      'Status'],
-            ['Tipos de tarefa',   '✓ Campo setor no builder',                 '— (é o próprio objeto)',    'Agrupado por categoria'],
-            ['Setores e Núcleos', '✓ Gerencia os setores',                   '—',                         '—'],
+            ['Tarefas (lista)',       '✓ Automático pelo setor do usuário',  '✓ Disponível',              'Área, responsável, status, projeto, meta'],
+            ['Steps / Kanban',        '◐ Via filtro combinado',              '✓ Seletor na esteira',      'Área, responsável, projeto'],
+            ['Calendário',            '◐ Via filtro combinado',              '✓ Seletor na esteira',      'Área, responsável, projeto'],
+            ['Timeline',              '◐ Via filtro combinado',              '◐ Via filtro combinado',    'Área, projeto'],
+            ['Metas',                 '✓ Por setor/núcleo',                  '—',                         'Busca, status, exportação XLS/PDF'],
+            ['Portal de Dicas',       '✓ Campo obrigatório',                 '✓ Filtrado pelo setor',     'Variação, área solicitante, materiais por formato'],
+            ['Banco de Imagens',      '— (global)',                           '—',                         'Continente, país, cidade, tipo, tags, placeName'],
+            ['Landing Pages',         '— (global)',                           '—',                         'Layout, seções configuráveis, link público'],
+            ['CMS / Site',            '— (global)',                           '—',                         'Páginas, blog, SEO — via Cloudflare Workers'],
+            ['Editor de Artes',       '— (global)',                           '—',                         'Templates por BU/categoria, canvas Fabric.js, export PNG/JPG'],
+            ['Monitoramento de Notícias','— (global)',                        '—',                         'Categoria, subcategoria, validade, exportação XLS/PDF, ✈ Tarefa'],
+            ['Newsletters (dashboard)','— (global)',                          '—',                         'Período (incluindo personalizado), por BU'],
+            ['Produtividade (dashboard)','✓ Pelo setor do usuário',           '—',                         'Período (incluindo personalizado)'],
+            ['Solicitações',          '◐ Via filtro de status',              '◐ Via filtro de tipo',      'Status'],
+            ['Tipos de tarefa',       '✓ Campo setor no builder',            '— (é o próprio objeto)',    'Agrupado por categoria'],
+            ['Setores e Núcleos',     '✓ Gerencia os setores',              '—',                         '—'],
+            ['Roles e Acesso',        '— (global)',                           '—',                         'Permissões editáveis por role, excluir usuário'],
+            ['Log de Auditoria',      '— (global)',                           '—',                         'Todos os módulos, detalhes de exclusão de tarefa'],
           ].map(([mod,...rest]) => `
             <tr style="border-bottom:1px solid var(--border-subtle);">
               <td style="padding:9px 12px;font-weight:600;color:var(--text-primary);white-space:nowrap;">${mod}</td>

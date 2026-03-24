@@ -90,6 +90,7 @@ export async function renderPortalDestinations(container) {
   });
 
   allDests = await fetchDestinations();
+  updateCountryFilter();
   renderTable();
 }
 
@@ -97,11 +98,12 @@ function updateCountryFilter() {
   const sel = document.getElementById('dest-filter-country');
   if (!sel) return;
   const countries = [...new Set(
-    allDests.filter(d => !filterCont || d.continent === filterCont)
+    allDests.filter(d => d.continent === filterCont)
       .map(d => d.country).filter(Boolean)
   )].sort();
   sel.innerHTML = `<option value="">Todos os países</option>` +
     countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.value    = filterCoun; // restores if still valid, otherwise empty
   sel.disabled = !filterCont;
 }
 

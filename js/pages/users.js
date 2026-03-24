@@ -364,6 +364,8 @@ function renderUserRow(user) {
             ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="deactivate" data-uid="${user.id}" title="Desativar">⊘</button>`
             : `<button class="btn btn-success btn-icon btn-sm" data-action="activate" data-uid="${user.id}" title="Reativar">✓</button>`
           }
+          <button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-uid="${user.id}"
+            title="Excluir permanentemente" style="color:#EF4444;">🗑</button>
         </div>
       </td>
     </tr>
@@ -761,6 +763,28 @@ function _attachTableEvents() {
               await loadUsers();
             } catch (err) {
               toast.error(err.message);
+            }
+          }
+          break;
+        case 'delete':
+          if (await modal.confirm({
+            title:       'Excluir perfil permanentemente',
+            message:     `Esta ação remove o perfil de <strong>${escHtml(user.name)}</strong> do sistema.<br>
+                          <br><strong>⚠ Atenção:</strong> tarefas e dados vinculados a este usuário não serão excluídos,
+                          mas ele perderá acesso imediatamente e não poderá ser recuperado.`,
+            confirmText: 'Excluir permanentemente',
+            danger:      true,
+            icon:        '🗑️',
+          })) {
+            try {
+              // Delete from Firestore profiles collection
+              const { doc, deleteDoc, getFirestore } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+              const { db } = await import('../firebase.js');
+              await deleteDoc(doc(db, 'users', uid));
+              toast.success(`Perfil de "${user.name}" excluído.`);
+              await loadUsers();
+            } catch (err) {
+              toast.error('Erro ao excluir: ' + err.message);
             }
           }
           break;

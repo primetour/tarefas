@@ -104,6 +104,21 @@ export async function renderAudit(container) {
           <option value="users.update">Atualizar usuário</option>
           <option value="users.deactivate">Desativar usuário</option>
           <option value="users.reactivate">Reativar usuário</option>
+          <option value="users.delete">Excluir usuário</option>
+        </optgroup>
+        <optgroup label="Portal de Dicas">
+          <option value="portal.tip_create">Criar dica</option>
+          <option value="portal.tip_update">Atualizar dica</option>
+          <option value="portal.tip_delete">Excluir dica</option>
+          <option value="portal.generate">Gerar material</option>
+        </optgroup>
+        <optgroup label="Hub de Marketing">
+          <option value="lp.create">Criar landing page</option>
+          <option value="lp.publish">Publicar landing page</option>
+          <option value="lp.delete">Excluir landing page</option>
+          <option value="arts.generate">Gerar arte</option>
+          <option value="news.create">Cadastrar notícia</option>
+          <option value="news.delete">Excluir notícia</option>
         </optgroup>
       </select>
       <select class="filter-select" id="audit-filter-user">
@@ -243,9 +258,20 @@ function renderLogs() {
     const actionClass = getActionClass(log.action);
     const icon        = getActionIcon(log.action);
 
-    const details = log.details ? Object.entries(log.details)
-      .filter(([k]) => !['_ts','userAgent'].includes(k))
-      .map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join(' · ') : '';
+    // Build human-readable details
+    const rawDetails = log.details || {};
+    let detailParts = [];
+    // Special: deleted task shows title prominently
+    if (log.action === 'tasks.delete' && rawDetails.title) {
+      detailParts.push(`"${rawDetails.title}"`);
+      if (rawDetails.status)   detailParts.push(`status: ${rawDetails.status}`);
+      if (rawDetails.assignee) detailParts.push(`responsável: ${rawDetails.assignee}`);
+    } else {
+      detailParts = Object.entries(rawDetails)
+        .filter(([k]) => !['_ts','userAgent'].includes(k))
+        .map(([k,v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`);
+    }
+    const details = detailParts.join(' · ');
 
     const userColor = (store.get('users')||[]).find(u=>u.id===log.userId)?.avatarColor || '#6B7280';
     const initials  = (log.userName||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
@@ -271,8 +297,13 @@ function renderLogs() {
         <div style="font-size:0.75rem; color:var(--text-muted); font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
           ${log.entityType ? `${esc(log.entityType)}${log.entityId ? ' · ' + esc(log.entityId.slice(0,8)) : ''}` : '—'}
         </div>
-        <div style="font-size:0.75rem; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-          ${esc(details.slice(0, 80))}${details.length > 80 ? '…' : ''}
+        <div class="audit-detail-cell" title="${esc(details)}"
+          style="font-size:0.75rem; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis;
+          white-space:nowrap; cursor:${details.length > 60 ? 'pointer' : 'default'};"
+          ${details.length > 60 ? `onclick="this.style.whiteSpace=this.style.whiteSpace==='normal'?'nowrap':'normal';this.style.overflow=this.style.overflow==='visible'?'hidden':'visible';"` : ''}>
+          ${log.action==='tasks.delete' && log.details?.title
+            ? `<strong style="color:var(--text-primary);">${esc(log.details.title)}</strong> — ${esc(details.replace('"'+log.details.title+'" · ','').slice(0,60))}`
+            : esc(details.slice(0, 80))}${details.length > 80 ? '…' : ''}
         </div>
       </div>
     `;
