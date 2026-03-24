@@ -80,6 +80,16 @@ export const PERMISSION_CATALOG = [
       { key: 'portal_download_unlimited', label: 'Downloads ilimitados',           info: 'Gerar downloads sem limite diário. Parceiros têm limite de 5/dia.' },
     ],
   },
+  {
+    group: 'Hub de Marketing',
+    permissions: [
+      { key: 'landing_pages_manage', label: 'Gerenciar Landing Pages',             info: 'Criar, editar, publicar e excluir landing pages de campanha.' },
+      { key: 'cms_manage',           label: 'Gerenciar CMS / Site',                info: 'Criar e editar páginas e posts do site oficial.' },
+      { key: 'arts_manage',          label: 'Usar Editor de Artes',                info: 'Criar artes usando os templates disponíveis.' },
+      { key: 'arts_templates_manage',label: 'Gerenciar templates de artes',        info: 'Criar, editar e excluir templates no Editor de Artes. Reservado para design.' },
+      { key: 'news_manage',          label: 'Gerenciar Monitoramento de Notícias', info: 'Cadastrar, editar e excluir notícias.' },
+    ],
+  },
 ];
 
 /* ─── Roles padrão do sistema ────────────────────────────── */
