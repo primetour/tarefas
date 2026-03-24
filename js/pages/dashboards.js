@@ -22,6 +22,10 @@ const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 let currentPeriod = '30d';
 let customFrom = '';
 let customTo   = '';
+const activePeriod = () =>
+  currentPeriod === 'custom' && customFrom && customTo
+    ? `custom:${customFrom}:${customTo}`
+    : currentPeriod;
 let chartInstances = {};
 let metrics = null;
 
@@ -147,6 +151,15 @@ export async function renderDashboards(container) {
   // Period buttons
   document.querySelectorAll('.date-range-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      const rangeEl = document.getElementById('dash-custom-range');
+      if (btn.dataset.period === 'custom') {
+        if (rangeEl) rangeEl.style.display = 'flex';
+        currentPeriod = 'custom';
+        document.querySelectorAll('.date-range-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        return; // wait for Aplicar
+      }
+      if (rangeEl) rangeEl.style.display = 'none';
       currentPeriod = btn.dataset.period;
       document.querySelectorAll('.date-range-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -154,6 +167,18 @@ export async function renderDashboards(container) {
       loadData(container);
     });
   });
+
+  const applyCustom = document.getElementById('dash-apply-custom');
+  if (applyCustom) {
+    applyCustom.addEventListener('click', () => {
+      customFrom = document.getElementById('dash-from')?.value || '';
+      customTo   = document.getElementById('dash-to')?.value   || '';
+      if (!customFrom || !customTo) { toast.error('Selecione as duas datas.'); return; }
+      if (customFrom > customTo) { toast.error('Data inicial deve ser anterior à data final.'); return; }
+      destroyCharts();
+      loadData(container);
+    });
+  }
 
   document.getElementById('dash-new-task')?.addEventListener('click', () =>
     openTaskModal({ onSave: () => loadData(container) })
@@ -168,7 +193,7 @@ async function loadData(container) {
   try {
     const [Chart, m, surveys] = await Promise.all([
       loadChartJS(),
-      getOverviewMetrics(currentPeriod),
+      getOverviewMetrics(activePeriod()),
       fetchSurveys({ limitN: 500 }).catch(() => []),
     ]);
     metrics = m;
@@ -311,8 +336,8 @@ function renderAllCharts(Chart, m) {
   }
 
   /* 4 — Daily bar (4-col) */
-  const createdByDay   = getTasksByDay(tasks, currentPeriod, 'created');
-  const completedByDay = getTasksByDay(tasks, currentPeriod, 'completed');
+  const createdByDay   = getTasksByDay(tasks, activePeriod(), 'created');
+  const completedByDay = getTasksByDay(tasks, activePeriod(), 'completed');
   const stride = currentPeriod === '90d' ? 6 : currentPeriod === '12m' ? 14 : currentPeriod === '7d' ? 1 : 3;
   const filtLabels  = createdByDay.filter((_,i)=>i%stride===0).map(d=>d.label);
   const filtCreated = createdByDay.filter((_,i)=>i%stride===0).map(d=>d.value);
@@ -618,7 +643,7 @@ function renderHeatmap(widgetId, tasks) {
 /* ─── Export ─────────────────────────────────────────────── */
 function exportReport() {
   if (!metrics) { toast.warning('Aguarde o carregamento dos dados.'); return; }
-  const { start, end } = getPeriodDates(currentPeriod);
+  const { start, end } = getPeriodDates(activePeriod());
   const fmtDate = d => new Intl.DateTimeFormat('pt-BR').format(d);
   const lines = [
     `PRIMETOUR — Relatório de Atividade`,
@@ -771,7 +796,7 @@ function renderReworkWidget(tasks) {
 function renderNewslettersWidget(tasks) {
   const el = document.getElementById('r3-newsletters');
   if (!el) return;
-  const n = getNewslettersOutOfCalendar(tasks, currentPeriod);
+  const n = getNewslettersOutOfCalendar(tasks, activePeriod());
   const color = n.outOfCalendarPct === 0 ? '#22C55E' : n.outOfCalendarPct < 20 ? '#F59E0B' : '#EF4444';
 
   el.innerHTML = `

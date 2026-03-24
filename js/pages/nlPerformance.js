@@ -125,7 +125,7 @@ export async function renderNlPerformance(container) {
         ${PERIODS.map(p=>`<option value="${p.value}" ${p.value==='30'?'selected':''}>${p.label}</option>`).join('')}
         <option value="custom">Período personalizado…</option>
       </select>
-      <div id="nl-custom-range" style="display:none;display:flex;gap:6px;align-items:center;">
+      <div id="nl-custom-range" style="display:none;gap:6px;align-items:center;">
         <input type="date" id="nl-date-from" class="portal-field" style="font-size:0.8125rem;">
         <span style="color:var(--text-muted);font-size:0.8125rem;">→</span>
         <input type="date" id="nl-date-to" class="portal-field" style="font-size:0.8125rem;">
@@ -222,8 +222,15 @@ async function loadData(editMode = false) {
     color:var(--text-muted);">Carregando…</td></tr>`;
 
   try {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - parseInt(filterDays));
+    let cutoff, cutoffTo = null;
+    if (String(filterDays).startsWith('custom:')) {
+      const [, from, to] = filterDays.split(':');
+      cutoff   = new Date(from + 'T00:00:00');
+      cutoffTo = new Date(to   + 'T23:59:59');
+    } else {
+      cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - parseInt(filterDays));
+    }
 
     const snap = await getDocs(
       query(collection(db, 'mc_performance'), orderBy('sentDate', 'desc'), limit(2000))
@@ -236,11 +243,12 @@ async function loadData(editMode = false) {
       const isCsat = /^CSAT_/i.test((data.name || '').trim());
       if (!isCsat && /^\s*\[Teste\]/i.test(data.subject || '')) return;
       const sentDate = data.sentDate?.toDate?.() || (data.sentDate ? new Date(data.sentDate) : null);
-      if (!sentDate || sentDate >= cutoff) {
-        const virtualBuId   = getVirtualBuId(data);
-        const virtualBuName = getVirtualBuName(virtualBuId);
-        allData.push({ ...data, _sentDate: sentDate, virtualBuId, virtualBuName });
-      }
+      if (!sentDate) return;
+      if (sentDate < cutoff) return;
+      if (cutoffTo && sentDate > cutoffTo) return;
+      const virtualBuId   = getVirtualBuId(data);
+      const virtualBuName = getVirtualBuName(virtualBuId);
+      allData.push({ ...data, _sentDate: sentDate, virtualBuId, virtualBuName });
     });
 
     // Sync status

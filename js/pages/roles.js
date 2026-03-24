@@ -81,8 +81,8 @@ function renderGrid() {
     const permCount    = Object.values(role.permissions || {}).filter(Boolean).length;
     const totalPerms   = PERMISSION_CATALOG.flatMap(g => g.permissions).length;
     const isSystem     = role.isSystem;
-    const canEdit      = store.can('system_manage_roles') && !isSystem;
-    const canDelete    = store.can('system_manage_roles') && !isSystem;
+    const canEdit      = store.can('system_manage_roles'); // all roles editable
+    const canDelete    = store.can('system_manage_roles') && !isSystem; // system roles can't be deleted
 
     return `
       <div class="card" style="border-top:3px solid ${esc(role.color||'#6B7280')};">
@@ -126,8 +126,7 @@ function renderGrid() {
             data-editable="${canEdit?'1':'0'}"
             style="margin-top:12px;font-size:0.8125rem;width:100%;justify-content:center;">
             ${canEdit ? '✎ Editar permissões' : 'Ver permissões →'}
-          </button>
-        </div>
+          </button>        </div>
       </div>
     `;
   }).join('');
