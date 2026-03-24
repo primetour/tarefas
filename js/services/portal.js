@@ -312,13 +312,15 @@ export async function deleteImageMeta(id) {
   await deleteDoc(doc(db, 'portal_images', id));
 }
 
-export async function convertToWebp(file, maxWidth = 1920, quality = 0.85) {
+export async function convertToWebp(file, quality = 0.92) {
+  const MAX_SIDE = 2560;
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const scale  = Math.min(1, maxWidth / img.width);
+      // Scale down only if the longest side exceeds MAX_SIDE — never upscale
+      const scale  = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
       const canvas = document.createElement('canvas');
       canvas.width  = Math.round(img.width  * scale);
       canvas.height = Math.round(img.height * scale);
