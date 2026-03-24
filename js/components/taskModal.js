@@ -206,18 +206,8 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         <label class="form-label">Descrição</label>
         <textarea id="tm-desc" class="form-textarea" rows="3"
           placeholder="Descreva a tarefa...">${esc(task.description)}</textarea>
-          </div>
-
-          <!-- Link to goal -->
-          <div class="form-group">
-            <label class="form-label">Atrelar a uma meta <span style="font-size:0.75rem;
-              color:var(--text-muted);font-weight:400;">(opcional)</span></label>
-            <select id="tm-goal" class="filter-select" style="width:100%;">
-              <option value="">Sem meta vinculada</option>
-              <!-- populated by JS -->
-            </select>
-          </div>
       </div>
+    
       ${isEdit ? `
         <div class="task-detail-field">
           <div class="task-detail-label">Subtarefas <span class="subtask-progress" id="subtask-progress">${getSubtaskProgress(task.subtasks||[])}</span></div>
@@ -357,6 +347,13 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         <div class="task-detail-label">Projeto</div>
         <select class="form-select" id="tm-project" style="padding:8px 32px 8px 12px;">
           ${projectOpts}
+        </select>
+      </div>
+      <div class="task-detail-field">
+        <div class="task-detail-label">Meta vinculada</div>
+        <select class="form-select" id="tm-goal" style="padding:8px 32px 8px 12px;">
+          <option value="">Sem meta vinculada</option>
+          <!-- populated async -->
         </select>
       </div>
       <div class="task-detail-field">
