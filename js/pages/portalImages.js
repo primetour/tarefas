@@ -314,9 +314,8 @@ function buildBatchList(files) {
     row.innerHTML = `
       <div style="display:flex;gap:12px;padding:12px 14px;">
         <!-- Thumbnail -->
-        <img src="${esc(thumbUrl)}" alt=""
-          style="width:72px;height:54px;object-fit:cover;border-radius:var(--radius-sm);flex-shrink:0;"
-          onload="URL.revokeObjectURL(this.src)">
+        <img class="batch-thumb" alt=""
+          style="width:72px;height:54px;object-fit:cover;border-radius:var(--radius-sm);flex-shrink:0;">
 
         <!-- Fields -->
         <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
@@ -383,6 +382,13 @@ function buildBatchList(files) {
     // Store file reference
     row._file = file;
     itemRows.appendChild(row);
+
+    // Set thumbnail src via JS (avoids inline onload scope issues)
+    const thumbImg = row.querySelector('.batch-thumb');
+    if (thumbImg) {
+      thumbImg.onload = () => URL.revokeObjectURL(thumbImg.src);
+      thumbImg.src = thumbUrl;
+    }
 
     // Wire per-row cascade
     wireBatchCascade(row, id);
