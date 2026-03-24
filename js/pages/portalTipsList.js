@@ -235,9 +235,9 @@ function renderTable() {
             style="font-size:0.75rem;color:var(--text-muted);">👁 Preview</button>
           <button class="btn btn-ghost btn-sm tip-materials-btn"
             data-id="${r.id}" data-dest-id="${r.destinationId}"
-            style="font-size:0.75rem;color:var(--brand-gold);">✈ Materiais</button>
+            style="font-size:0.75rem;color:var(--brand-gold);">✈ Materiais gerados</button>
           <a href="#portal-tip-editor?destId=${r.destinationId}" class="btn btn-ghost btn-sm"
-            style="font-size:0.75rem;text-decoration:none;color:var(--text-muted);">✎ Editar</a>
+            style="font-size:0.75rem;text-decoration:none;color:var(--text-muted);">✎ Editar original</a>
           <button class="btn btn-ghost btn-sm tip-delete-btn" data-id="${r.id}"
             data-label="${esc(label)}"
             style="font-size:0.75rem;color:#EF4444;">✕</button>
@@ -888,8 +888,11 @@ async function showRegenEditor({ link, tip, dest }) {
     const destId   = wDest?.id || curDestIdx;
     const destImgs = imagesByDest[destId] || [];
     const segImgs  = selectedImages[destId]?.[curSegKey] || {};
-    document.getElementById('regen-right-panel').innerHTML =
-      renderSegEditorForList(wTip, curSegKey, destImgs, segImgs, destId);
+    const panel = document.getElementById('regen-right-panel');
+    if (panel) {
+      panel.innerHTML = renderSegEditorForList(wTip, curSegKey, destImgs, segImgs, destId);
+      panel._refreshRef = { refresh: refreshRightPanel };
+    }
     wireRegenEditor(wTip, curSegKey, destImgs, destId, selectedImages, workingTips, curDestIdx);
   };
 
@@ -999,7 +1002,10 @@ function renderSegEditorForList(tip, segKey, destImgs, segSelectedImgs, destId) 
           <span style="background:var(--brand-gold);color:#fff;border-radius:50%;
             width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;
             font-size:0.5rem;font-weight:800;flex-shrink:0;">${idx+1}</span>
-          ${esc(item.titulo || item.title || `Item ${idx+1}`)}
+          <span style="flex:1;">${esc(item.titulo || item.title || `Item ${idx+1}`)}</span>
+          <button class="regen-item-del btn btn-ghost" data-seg="${segKey}" data-idx="${idx}"
+            style="padding:1px 5px;font-size:0.7rem;color:#EF4444;margin-left:auto;">
+            ✕ remover</button>
         </div>
         <div style="margin-bottom:8px;">
           <label style="${LBL}">${item.titulo!==undefined?'Título':'Nome'}</label>
@@ -1034,17 +1040,28 @@ function renderSegEditorForList(tip, segKey, destImgs, segSelectedImgs, destId) 
               justify-content:center;flex-direction:column;">
               <span style="font-size:0.75rem;">◑</span>auto
             </button>
-            ${galeria.slice(0,8).map(img => {
+            ${galeria.slice(0,12).map(img => {
               const isSel = segSelectedImgs[idx]?.url === img.url;
-              return `<button class="regen-img-pick"
-                data-seg="${segKey}" data-idx="${idx}"
-                data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
-                style="flex-shrink:0;border:2px solid ${isSel?'var(--brand-gold)':'var(--border-subtle)'};
-                border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;
-                width:56px;height:42px;padding:0;background:none;">
-                <img src="${esc(img.url)}" alt="" style="width:100%;height:100%;object-fit:cover;">
-              </button>`;
+              return `<div style="flex-shrink:0;display:flex;flex-direction:column;gap:2px;">
+                <button class="regen-img-pick"
+                  data-seg="${segKey}" data-idx="${idx}"
+                  data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
+                  style="flex-shrink:0;border:2px solid ${isSel?'var(--brand-gold)':'var(--border-subtle)'};
+                  border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;
+                  width:72px;height:54px;padding:0;background:none;display:block;">
+                  <img src="${esc(img.url)}" alt=""
+                    style="width:100%;height:100%;object-fit:cover;"
+                    title="${esc(img.name||'')}">
+                </button>
+                <button class="regen-img-preview btn btn-ghost"
+                  data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
+                  style="width:72px;font-size:0.5625rem;padding:1px 0;text-align:center;
+                  color:var(--text-muted);" title="Ampliar">⤢</button>
+              </div>`;
             }).join('')}
+            ${galeria.length > 12 ? `<span style="flex-shrink:0;display:flex;align-items:center;
+              font-size:0.6875rem;color:var(--text-muted);white-space:nowrap;padding:0 4px;">
+              +${galeria.length-12} mais</span>` : ''}
           </div>
         </div>` : ''}
       </div>`).join('');
@@ -1112,6 +1129,40 @@ function wireRegenEditor(wTip, segKey, destImgs, destId, selectedImages, working
       delete selectedImages[destId]?.[segKey]?.[idx];
     });
   });
+
+  // Delete item — re-renders the panel
+  qs(`.regen-item-del[data-seg="${segKey}"]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.idx);
+      if (!wTip.segments?.[segKey]?.items) return;
+      wTip.segments[segKey].items.splice(idx, 1);
+      workingTips[curDestIdx].tip = wTip;
+      // Trigger re-render via stored ref
+      const p = document.getElementById(panelId);
+      if (p?._refreshRef?.refresh) p._refreshRef.refresh();
+    });
+  });
+
+  // Image preview lightbox
+  qs('.regen-img-preview').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const url  = btn.dataset.url;
+      const name = btn.dataset.name || '';
+      if (!url) return;
+      const lb = document.createElement('div');
+      lb.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9999;
+        display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;
+        cursor:zoom-out;`;
+      lb.innerHTML = `
+        <img src="${esc(url)}" alt="${esc(name)}"
+          style="max-width:90vw;max-height:80vh;object-fit:contain;border-radius:4px;
+          box-shadow:0 8px 40px rgba(0,0,0,.6);">
+        <div style="color:rgba(255,255,255,.7);font-size:0.875rem;">${esc(name)}</div>
+        <div style="font-size:0.75rem;color:rgba(255,255,255,.4);">Clique para fechar</div>`;
+      lb.addEventListener('click', () => lb.remove());
+      document.body.appendChild(lb);
+    });
+  });
 }
 
 /* ─── Expiry helpers ──────────────────────────────────────── */
@@ -1168,9 +1219,6 @@ function showPreviewModal(tip, dest) {
           </div>
         </div>
         <div style="display:flex;gap:8px;">
-          <a href="#portal-tip-editor?destId=${esc(tip.destinationId)}"
-            class="btn btn-secondary btn-sm"
-            style="text-decoration:none;font-size:0.8125rem;">✎ Editar</a>
           <button id="preview-close-btn" style="border:none;background:none;cursor:pointer;
             font-size:1.25rem;color:var(--text-muted);padding:0 4px;">✕</button>
         </div>
@@ -1199,8 +1247,7 @@ function showPreviewModal(tip, dest) {
       <div style="padding:14px 24px;border-top:1px solid var(--border-subtle);
         background:var(--bg-surface);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;">
         <button id="preview-close-btn2" class="btn btn-ghost btn-sm">Fechar</button>
-        <a href="#portal-tip-editor?destId=${esc(tip.destinationId)}"
-          class="btn btn-primary btn-sm" style="text-decoration:none;">✎ Editar dica</a>
+        <button id="preview-edit-btn" class="btn btn-primary btn-sm">✎ Editar original</button>
       </div>
     </div>
   `;
@@ -1210,6 +1257,10 @@ function showPreviewModal(tip, dest) {
   const close = () => modal.remove();
   document.getElementById('preview-close-btn')?.addEventListener('click', close);
   document.getElementById('preview-close-btn2')?.addEventListener('click', close);
+  document.getElementById('preview-edit-btn')?.addEventListener('click', () => {
+    close();
+    location.hash = `portal-tip-editor?destId=${encodeURIComponent(tip.destinationId)}`;
+  });
   modal.addEventListener('click', e => { if (e.target === modal) close(); });
 
   // Tab switching
