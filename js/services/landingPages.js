@@ -4,6 +4,8 @@
  */
 
 import { db } from '../firebase.js';
+import { auditLog } from '../auth/audit.js';
+import { auditLog } from '../auth/audit.js';
 import { store } from '../store.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
@@ -88,10 +90,12 @@ export async function saveLandingPage(id, data) {
     updatedBy:  uid(),
     ...(isNew ? { createdAt: serverTimestamp(), createdBy: uid(), views: 0, status: 'draft' } : {}),
   }, { merge: true });
+  await auditLog(id ? 'lp.update' : 'lp.create', 'landing_pages', ref.id, { name: data.name || '', token });
   return { id: ref.id, token };
 }
 
 export async function publishLandingPage(id) {
+  await auditLog('lp.publish', 'landing_pages', id, {});
   await updateDoc(doc(db, 'landing_pages', id), {
     status: 'published',
     publishedAt: serverTimestamp(),
@@ -105,6 +109,7 @@ export async function unpublishLandingPage(id) {
 
 export async function deleteLandingPage(id) {
   await deleteDoc(doc(db, 'landing_pages', id));
+  await auditLog('lp.delete', 'landing_pages', id, {});
 }
 
 export async function incrementLpViews(token) {

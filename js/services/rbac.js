@@ -16,78 +16,86 @@ export const PERMISSION_CATALOG = [
   {
     group: 'Sistema',
     permissions: [
-      { key: 'system_view_all',      label: 'Ver todos os workspaces e dados',     info: 'Permite enxergar todos os workspaces, usuários e tarefas do sistema, independente de estar vinculado.' },
-      { key: 'system_manage_users',  label: 'Gerenciar usuários',                  info: 'Criar, editar, ativar e desativar usuários do sistema.' },
-      { key: 'system_manage_roles',  label: 'Gerenciar roles e permissões',        info: 'Criar, editar e excluir roles. Atenção: roles do sistema não podem ser excluídos.' },
-      { key: 'system_manage_settings', label: 'Gerenciar configurações globais',   info: 'Acesso às configurações gerais, integrações e auditoria do sistema.' },
+      { key: 'system_view_all',        label: 'Visualizar todos os dados',           info: 'Permite enxergar todos os workspaces, usuários e tarefas do sistema.' },
+      { key: 'system_manage_users',    label: 'Gerenciar usuários',                  info: 'Criar, editar, ativar e desativar usuários do sistema.' },
+      { key: 'system_manage_roles',    label: 'Gerenciar roles e permissões',        info: 'Criar e editar roles. Atenção: roles do sistema não podem ser excluídos.' },
+      { key: 'system_manage_settings', label: 'Gerenciar configurações globais',     info: 'Acesso às configurações gerais, integrações e auditoria do sistema.' },
     ],
   },
   {
     group: 'Workspaces',
     permissions: [
-      { key: 'workspace_create',     label: 'Criar workspaces',                    info: 'Permite criar novos workspaces. Quem cria vira automaticamente admin do workspace.' },
-      { key: 'workspace_edit',       label: 'Editar workspaces que administra',    info: 'Editar nome, descrição, cor e ícone de workspaces onde é admin.' },
-      { key: 'workspace_delete',     label: 'Excluir workspaces que administra',   info: 'Excluir workspaces onde é admin. Atenção: exclui todas as tarefas vinculadas.' },
-      { key: 'workspace_invite',     label: 'Convidar membros para workspaces',    info: 'Enviar convites por e-mail para outros usuários entrarem em workspaces que administra.' },
+      { key: 'workspace_view',    label: 'Visualizar workspaces',               info: 'Ver workspaces que faz parte.' },
+      { key: 'workspace_create',  label: 'Criar workspaces',                    info: 'Permite criar novos workspaces.' },
+      { key: 'workspace_edit',    label: 'Editar workspaces',                   info: 'Editar nome, descrição, cor e ícone dos workspaces que administra.' },
+      { key: 'workspace_delete',  label: 'Excluir workspaces',                  info: 'Excluir workspaces que administra. Exclui todas as tarefas vinculadas.' },
+      { key: 'workspace_invite',  label: 'Convidar membros',                    info: 'Enviar convites por e-mail para outros usuários.' },
     ],
   },
   {
     group: 'Tipos de Tarefa',
     permissions: [
-      { key: 'task_type_create',     label: 'Criar tipos de tarefa',               info: 'Criar novos tipos de tarefa com campos customizados, SLA e regras de negócio.' },
-      { key: 'task_type_edit',       label: 'Editar tipos de tarefa',              info: 'Editar tipos de tarefa existentes nos workspaces que administra.' },
-      { key: 'task_type_delete',     label: 'Excluir tipos de tarefa',             info: 'Excluir tipos de tarefa. Tarefas existentes desse tipo não são excluídas.' },
+      { key: 'task_type_view',    label: 'Visualizar tipos de tarefa',          info: 'Ver tipos de tarefa disponíveis.' },
+      { key: 'task_type_create',  label: 'Criar tipos de tarefa',               info: 'Criar novos tipos de tarefa com campos customizados.' },
+      { key: 'task_type_edit',    label: 'Editar tipos de tarefa',              info: 'Editar tipos de tarefa existentes.' },
+      { key: 'task_type_delete',  label: 'Excluir tipos de tarefa',             info: 'Excluir tipos de tarefa.' },
     ],
   },
   {
     group: 'Tarefas',
     permissions: [
-      { key: 'task_create',          label: 'Criar tarefas',                       info: 'Criar novas tarefas nos workspaces que faz parte.' },
-      { key: 'task_edit_any',        label: 'Editar qualquer tarefa',              info: 'Editar tarefas de outros usuários. Sem essa permissão, só edita as próprias.' },
-      { key: 'task_delete',          label: 'Excluir tarefas',                     info: 'Excluir tarefas permanentemente. Recomendado apenas para gerentes e admins.' },
-      { key: 'task_view_all',        label: 'Ver tarefas de todos os membros',     info: 'Ver tarefas atribuídas a outros usuários nos workspaces que faz parte.' },
+      { key: 'task_view_all',     label: 'Visualizar tarefas de todos',         info: 'Ver tarefas atribuídas a outros usuários.' },
+      { key: 'task_create',       label: 'Criar tarefas',                       info: 'Criar novas tarefas nos workspaces que faz parte.' },
+      { key: 'task_edit_any',     label: 'Editar qualquer tarefa',              info: 'Editar tarefas de outros usuários.' },
+      { key: 'task_delete',       label: 'Excluir tarefas',                     info: 'Excluir tarefas permanentemente.' },
     ],
   },
   {
     group: 'Projetos',
     permissions: [
-      { key: 'project_create',       label: 'Criar projetos',                      info: 'Criar novos projetos dentro dos workspaces.' },
-      { key: 'project_edit',         label: 'Editar projetos',                     info: 'Editar projetos existentes.' },
-      { key: 'project_delete',       label: 'Excluir projetos',                    info: 'Excluir projetos e desvincular tarefas.' },
+      { key: 'project_view',      label: 'Visualizar projetos',                 info: 'Ver projetos disponíveis nos workspaces.' },
+      { key: 'project_create',    label: 'Criar projetos',                      info: 'Criar novos projetos dentro dos workspaces.' },
+      { key: 'project_edit',      label: 'Editar projetos',                     info: 'Editar projetos existentes.' },
+      { key: 'project_delete',    label: 'Excluir projetos',                    info: 'Excluir projetos e desvincular tarefas.' },
     ],
   },
   {
     group: 'Dashboards e Relatórios',
     permissions: [
-      { key: 'dashboard_view',       label: 'Ver dashboards',                      info: 'Acesso à página de dashboards e métricas.' },
-      { key: 'dashboard_customize',  label: 'Personalizar dashboards',             info: 'Criar e editar configurações de dashboard por workspace.' },
-      { key: 'report_export',        label: 'Exportar relatórios',                 info: 'Exportar dados em CSV ou TXT.' },
+      { key: 'dashboard_view',       label: 'Visualizar dashboards',            info: 'Acesso à página de dashboards e métricas.' },
+      { key: 'dashboard_customize',  label: 'Personalizar dashboards',          info: 'Criar e editar configurações de dashboard.' },
+      { key: 'report_export',        label: 'Exportar relatórios',              info: 'Exportar dados em XLS, PDF ou CSV.' },
     ],
   },
   {
     group: 'CSAT',
     permissions: [
-      { key: 'csat_send',            label: 'Enviar pesquisas CSAT',               info: 'Criar e enviar pesquisas de satisfação para clientes.' },
-      { key: 'csat_view_all',        label: 'Ver CSAT de toda a equipe',           info: 'Ver pesquisas e respostas de outros usuários.' },
+      { key: 'csat_view',         label: 'Visualizar pesquisas CSAT',           info: 'Ver pesquisas e respostas do próprio usuário.' },
+      { key: 'csat_send',         label: 'Enviar pesquisas CSAT',               info: 'Criar e enviar pesquisas de satisfação para clientes.' },
+      { key: 'csat_view_all',     label: 'Ver CSAT de toda a equipe',           info: 'Ver pesquisas e respostas de todos os usuários.' },
     ],
   },
   {
     group: 'Portal de Dicas',
     permissions: [
-      { key: 'portal_access',        label: 'Acessar Portal de Dicas',             info: 'Ver e gerar dicas de destinos.' },
-      { key: 'portal_create',        label: 'Criar e editar dicas',                info: 'Criar, editar e excluir dicas de destinos no portal.' },
-      { key: 'portal_manage',        label: 'Administrar Portal de Dicas',         info: 'Gerenciar áreas, destinos, banco de imagens e templates.' },
-      { key: 'portal_download_unlimited', label: 'Downloads ilimitados',           info: 'Gerar downloads sem limite diário. Parceiros têm limite de 5/dia.' },
+      { key: 'portal_access',              label: 'Visualizar e usar Portal',          info: 'Ver e gerar dicas de destinos.' },
+      { key: 'portal_create',              label: 'Criar e editar dicas',              info: 'Criar, editar e excluir dicas de destinos no portal.' },
+      { key: 'portal_manage',              label: 'Administrar Portal de Dicas',       info: 'Gerenciar áreas, destinos, banco de imagens e templates.' },
+      { key: 'portal_download_unlimited',  label: 'Downloads ilimitados',              info: 'Gerar downloads sem limite diário.' },
     ],
   },
   {
     group: 'Hub de Marketing',
     permissions: [
-      { key: 'landing_pages_manage', label: 'Gerenciar Landing Pages',             info: 'Criar, editar, publicar e excluir landing pages de campanha.' },
-      { key: 'cms_manage',           label: 'Gerenciar CMS / Site',                info: 'Criar e editar páginas e posts do site oficial.' },
-      { key: 'arts_manage',          label: 'Usar Editor de Artes',                info: 'Criar artes usando os templates disponíveis.' },
-      { key: 'arts_templates_manage',label: 'Gerenciar templates de artes',        info: 'Criar, editar e excluir templates no Editor de Artes. Reservado para design.' },
-      { key: 'news_manage',          label: 'Gerenciar Monitoramento de Notícias', info: 'Cadastrar, editar e excluir notícias.' },
+      { key: 'landing_pages_view',     label: 'Visualizar Landing Pages',            info: 'Ver landing pages criadas.' },
+      { key: 'landing_pages_manage',   label: 'Gerenciar Landing Pages',             info: 'Criar, editar, publicar e excluir landing pages de campanha.' },
+      { key: 'cms_view',               label: 'Visualizar CMS',                      info: 'Ver páginas e posts do site oficial.' },
+      { key: 'cms_manage',             label: 'Gerenciar CMS / Site',                info: 'Criar e editar páginas e posts do site oficial.' },
+      { key: 'arts_view',              label: 'Visualizar Editor de Artes',          info: 'Ver templates disponíveis no editor.' },
+      { key: 'arts_manage',            label: 'Usar Editor de Artes',                info: 'Criar artes usando os templates disponíveis.' },
+      { key: 'arts_templates_manage',  label: 'Gerenciar templates de artes',        info: 'Criar, editar e excluir templates. Reservado para design.' },
+      { key: 'news_view',              label: 'Visualizar Monitoramento de Notícias',info: 'Ver notícias cadastradas.' },
+      { key: 'news_manage',            label: 'Gerenciar Monitoramento de Notícias', info: 'Cadastrar, editar e excluir notícias.' },
     ],
   },
 ];
@@ -282,7 +290,7 @@ export async function updateRole(roleId, { name, description, color, permissions
   if (!store.can('system_manage_roles')) throw new Error('Permissão negada.');
   const role = await getRole(roleId);
   if (!role) throw new Error('Role não encontrado.');
-  if (role.isSystem) throw new Error('Roles do sistema não podem ser editados.');
+  // System roles can have permissions edited, but cannot be deleted
 
   const user = store.get('currentUser');
   await updateDoc(doc(db, 'roles', roleId), {

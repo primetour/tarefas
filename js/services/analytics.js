@@ -32,6 +32,10 @@ export function formatMonthLabel(date) {
 /* ─── Calcular período ────────────────────────────────────── */
 export function getPeriodDates(period) {
   const now = new Date();
+  if (String(period).startsWith('custom:')) {
+    const [, from, to] = period.split(':');
+    return { start: new Date(from + 'T00:00:00'), end: new Date(to + 'T23:59:59') };
+  }
   switch (period) {
     case '7d':  return { start: subDays(now, 6),  end: now };
     case '30d': return { start: subDays(now, 29), end: now };

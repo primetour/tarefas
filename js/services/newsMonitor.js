@@ -2,6 +2,8 @@
  * PRIMETOUR — News Monitor Service
  */
 import { db }   from '../firebase.js';
+import { auditLog } from '../auth/audit.js';
+import { auditLog } from '../auth/audit.js';
 import { store } from '../store.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
@@ -54,9 +56,11 @@ export async function saveNewsItem(id, data) {
     updatedBy:  uid(),
     ...(id ? {} : { createdAt: serverTimestamp(), createdBy: uid() }),
   }, { merge: true });
+  await auditLog(id ? 'news.update' : 'news.create', 'news_monitor', ref.id, { title: data.title || '' });
   return ref.id;
 }
 
 export async function deleteNewsItem(id) {
   await deleteDoc(doc(db, 'news_monitor', id));
+  await auditLog('news.delete', 'news_monitor', id, {});
 }
