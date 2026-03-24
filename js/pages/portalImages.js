@@ -297,9 +297,9 @@ function buildBatchList(files) {
   const itemRows  = document.getElementById('img-item-rows');
   if (!batchList || !itemRows) return;
 
+  // Clear previous rows before building a new batch
+  itemRows.innerHTML = '';
   batchList.style.display = 'block';
-
-  // Append new rows (don't replace existing ones)
   files.forEach((file, i) => {
     const id  = `item-${Date.now()}-${i}`;
     const row = document.createElement('div');
