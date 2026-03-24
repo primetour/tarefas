@@ -5,7 +5,6 @@
 
 import { db } from '../firebase.js';
 import { auditLog } from '../auth/audit.js';
-import { auditLog } from '../auth/audit.js';
 import { store } from '../store.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
