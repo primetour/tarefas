@@ -528,25 +528,4 @@ async function exportPdf() {
   toast.success('PDF exportado.');
 }
 
-function applyClientFilters(items) {
-  return items.filter(item => {
-    const now = new Date();
-    if (filters.search) {
-      const s = filters.search.toLowerCase();
-      if (!(item.title+item.description+item.category+item.subcategory+'').toLowerCase().includes(s)) return false;
-    }
-    if (filters.category    && item.category    !== filters.category)    return false;
-    if (filters.subcategory && item.subcategory !== filters.subcategory) return false;
-    if (filters.validity === 'valid'   && item.expiresAt && new Date(item.expiresAt) < now)  return false;
-    if (filters.validity === 'expired' && !(item.expiresAt && new Date(item.expiresAt) < now)) return false;
-    if (filters.dateFrom) {
-      const d = item.publishedAt?.toDate?.() || new Date(item.publishedAt||0);
-      if (d < new Date(filters.dateFrom)) return false;
-    }
-    if (filters.dateTo) {
-      const d = item.publishedAt?.toDate?.() || new Date(item.publishedAt||0);
-      if (d > new Date(filters.dateTo + 'T23:59:59')) return false;
-    }
-    return true;
-  });
-}
+
