@@ -46,7 +46,10 @@ const NAV_GROUPS = [
       { route: 'portal-tips',         icon: '✈', label: 'Portal de Dicas',     perm: 'portal_access'  },
       { route: 'portal-tips-list',    icon: '◈', label: 'Dicas Cadastradas',    perm: 'portal_create'  },
       { route: 'portal-images',       icon: '▨', label: 'Banco de Imagens',     perm: 'portal_manage'  },
-      { route: 'portal-import',       icon: '↑', label: 'Importar Dicas',      perm: 'portal_create'  },
+      { route: 'portal-import',       icon: '↑', label: 'Importar Dicas',       perm: 'portal_create'  },
+      { route: 'landing-pages',       icon: '◱', label: 'Landing Pages',        perm: 'portal_manage'  },
+      { route: 'cms',                 icon: '◫', label: 'CMS / Site',           perm: 'portal_manage'  },
+      { route: 'arts-editor',         icon: '▣', label: 'Editor de Artes',      perm: 'portal_manage'  },
     ]
   },
   {
