@@ -46,6 +46,9 @@ import { renderPortalTipEditor }          from './pages/portalTipEditor.js';
 import { renderPortalImport }             from './pages/portalImport.js';
 import { renderPortalTipsList }           from './pages/portalTipsList.js';
 import { renderPortalImportManual }       from './pages/portalImportManual.js';
+import { renderLandingPages }             from './pages/landingPages.js';
+import { renderCms }                      from './pages/cms.js';
+import { renderArtsEditor }              from './pages/artsEditor.js';
 
 // ─── Instâncias globais ───────────────────────────────────
 let sidebar = null;
