@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PRIMETOUR</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+:root{--gold:#D4AF37;--navy:#242362;--white:#fff;--light:#F8F7F4;--muted:#474650}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Poppins',sans-serif;background:var(--white);color:var(--navy);overflow-x:hidden}
+#loading{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;
+  justify-content:center;flex-direction:column;gap:16px;z-index:999;transition:opacity .5s}
+#loading .brand{color:var(--gold);font-size:1.125rem;letter-spacing:.3em;font-weight:300}
+.spinner{width:36px;height:36px;border:2px solid rgba(212,175,55,.2);
+  border-top-color:var(--gold);border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Sections */
+.lp-section{width:100%}
+
+/* Hero */
+.hero-section{position:relative;min-height:90vh;display:flex;align-items:flex-end;overflow:hidden}
+.hero-bg{position:absolute;inset:0;background-size:cover;background-position:center;
+  animation:heroZoom 14s ease-out forwards}
+@keyframes heroZoom{from{transform:scale(1.1)}to{transform:scale(1)}}
+.hero-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(36,35,98,.88) 0%,rgba(36,35,98,.2) 60%,transparent 100%)}
+.hero-content{position:relative;padding:60px 40px;max-width:900px}
+.hero-badge{display:inline-block;padding:4px 14px;background:var(--gold);color:#fff;
+  font-size:.625rem;letter-spacing:.3em;font-weight:600;text-transform:uppercase;margin-bottom:16px}
+.hero-title{font-size:clamp(2.5rem,7vw,5rem);font-weight:700;color:#fff;line-height:1.05;letter-spacing:-.02em}
+.hero-sub{font-size:1.0625rem;color:rgba(255,255,255,.8);margin-top:12px;font-weight:300;max-width:560px}
+.hero-cta{display:inline-block;margin-top:28px;padding:14px 36px;background:var(--gold);
+  color:#fff;font-size:.6875rem;letter-spacing:.2em;font-weight:600;text-transform:uppercase;
+  text-decoration:none;transition:filter .2s,transform .1s;border:none;cursor:pointer;font-family:'Poppins',sans-serif}
+.hero-cta:hover{filter:brightness(1.1)}
+.hero-cta:active{transform:scale(.98)}
+
+/* Hero full */
+.hero-full{min-height:100vh}
+
+/* Text section */
+.text-section{padding:80px 40px;max-width:800px;margin:0 auto}
+.text-section h2{font-size:2rem;font-weight:700;margin-bottom:20px;color:var(--navy)}
+.text-section p{font-size:1rem;line-height:1.85;color:var(--muted);white-space:pre-line}
+
+/* Gallery grid */
+.gallery-section{padding:60px 32px}
+.gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px}
+.gallery-grid img{width:100%;height:240px;object-fit:cover;display:block;transition:transform .5s}
+.gallery-grid img:hover{transform:scale(1.03)}
+
+/* Gallery masonry */
+.gallery-masonry{padding:60px 32px;columns:3;column-gap:4px}
+@media(max-width:700px){.gallery-masonry{columns:2}}
+.gallery-masonry img{width:100%;margin-bottom:4px;break-inside:avoid;display:block}
+
+/* Gallery horizontal */
+.gallery-horiz{padding:60px 0;overflow-x:auto;display:flex;gap:4px;scrollbar-width:none}
+.gallery-horiz::-webkit-scrollbar{display:none}
+.gallery-horiz img{height:340px;width:auto;flex-shrink:0}
+
+/* Highlights */
+.highlights-section{padding:80px 40px;background:var(--light)}
+.highlights-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:24px;max-width:1100px;margin:40px auto 0}
+.highlight-card{background:var(--white);padding:28px;border-radius:2px;
+  border-top:3px solid var(--gold)}
+.highlight-card h3{font-size:1.0625rem;font-weight:700;margin-bottom:10px}
+.highlight-card p{font-size:.875rem;color:var(--muted);line-height:1.7}
+
+/* Benefits */
+.benefits-section{padding:80px 40px;max-width:1000px;margin:0 auto}
+.benefits-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:20px;margin-top:40px}
+.benefit-item{text-align:center;padding:24px 16px}
+.benefit-icon{font-size:2rem;margin-bottom:12px}
+.benefit-title{font-weight:700;font-size:.9375rem;margin-bottom:8px}
+.benefit-desc{font-size:.8125rem;color:var(--muted);line-height:1.6}
+
+/* Destinations grid */
+.dests-section{padding:80px 40px}
+.dests-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:2px;margin-top:40px}
+.dest-card{position:relative;aspect-ratio:3/4;overflow:hidden;cursor:pointer}
+.dest-card img{width:100%;height:100%;object-fit:cover;transition:transform .7s}
+.dest-card:hover img{transform:scale(1.07)}
+.dest-card-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(36,35,98,.85) 0%,transparent 50%)}
+.dest-card-content{position:absolute;bottom:24px;left:24px}
+.dest-card-content h3{font-size:1.375rem;font-weight:700;color:#fff}
+.dest-card-content p{font-size:.8125rem;color:rgba(255,255,255,.75);margin-top:4px}
+
+/* Journey steps */
+.journey-section{padding:80px 0;background:var(--navy);overflow-x:auto}
+.journey-inner{display:flex;gap:0;min-width:max-content;padding:0 40px}
+.journey-step{width:320px;flex-shrink:0;padding:40px 32px;border-right:1px solid rgba(255,255,255,.1);
+  position:relative}
+.journey-step:last-child{border-right:none}
+.journey-num{font-size:4rem;font-weight:700;color:var(--gold);opacity:.25;line-height:1;margin-bottom:16px}
+.journey-step h3{font-size:1.125rem;font-weight:700;color:#fff;margin-bottom:12px}
+.journey-step p{font-size:.875rem;color:rgba(255,255,255,.65);line-height:1.7}
+.journey-step img{width:100%;height:180px;object-fit:cover;margin-bottom:20px;opacity:.85}
+
+/* Testimonials */
+.testimonials-section{padding:80px 40px;background:var(--light)}
+.testimonials-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:20px;max-width:1100px;margin:40px auto 0}
+.testimonial-card{background:var(--white);padding:28px;border-radius:2px;
+  border-left:3px solid var(--gold)}
+.testimonial-text{font-size:.9375rem;line-height:1.8;color:var(--muted);font-style:italic;margin-bottom:16px}
+.testimonial-author{font-weight:700;font-size:.875rem}
+
+/* Countdown */
+.countdown-section{padding:80px 40px;background:var(--navy);text-align:center}
+.countdown-label{font-size:.625rem;letter-spacing:.3em;color:var(--gold);font-weight:600;
+  text-transform:uppercase;margin-bottom:24px}
+.countdown-timer{display:flex;gap:24px;justify-content:center;margin-bottom:32px}
+.countdown-unit{text-align:center}
+.countdown-num{font-size:4rem;font-weight:700;color:#fff;display:block;line-height:1}
+.countdown-unit-label{font-size:.625rem;color:rgba(255,255,255,.5);letter-spacing:.15em;text-transform:uppercase}
+
+/* CTA */
+.cta-section{padding:100px 40px;text-align:center}
+.cta-section h2{font-size:2.5rem;font-weight:700;margin-bottom:16px}
+.cta-section p{font-size:1rem;color:var(--muted);margin-bottom:32px;max-width:520px;margin-left:auto;margin-right:auto}
+.cta-strong-section{background:var(--navy);color:#fff;padding:100px 40px;text-align:center}
+.cta-strong-section h2{font-size:2.75rem;font-weight:700;color:#fff;margin-bottom:12px}
+.cta-strong-section p{color:rgba(255,255,255,.7);margin-bottom:32px;max-width:500px;margin-left:auto;margin-right:auto}
+.cta-urgency{font-size:.75rem;color:var(--gold);margin-top:16px;letter-spacing:.05em}
+
+/* Section header */
+.section-label{font-size:.625rem;letter-spacing:.3em;font-weight:600;color:var(--gold);
+  text-transform:uppercase;display:block;margin-bottom:8px}
+.section-title{font-size:clamp(1.75rem,4vw,2.5rem);font-weight:700;color:var(--navy)}
+.section-header{text-align:center;margin-bottom:0}
+
+/* Error */
+.error-state{min-height:80vh;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:16px;text-align:center;padding:40px;color:var(--muted)}
+.error-state h2{color:var(--gold);font-size:1.25rem;font-weight:600}
+
+@media(max-width:600px){
+  .hero-content{padding:40px 20px}
+  .text-section,.gallery-section,.cta-section,.highlights-section,.benefits-section,.dests-section{padding:60px 20px}
+  .gallery-masonry{columns:1}
+  .gallery-grid{grid-template-columns:1fr}
+}
+  </style>
+</head>
+<body>
+<div id="loading"><div class="spinner"></div><div class="brand">PRIMETOUR</div></div>
+<div id="app"></div>
+
+<script type="module">
+import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getFirestore, collection, query, where, getDocs, updateDoc, increment }
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { firebaseConfig } from './js/config.js';
+
+const app = initializeApp(firebaseConfig, 'lp-view');
+const db  = getFirestore(app);
+const esc = s => String(s||'').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+(async () => {
+  const token = window.location.hash.slice(1);
+  if (!token) { showError('Link inválido', 'Este link não contém um token de acesso.'); return; }
+
+  let page;
+  try {
+    const snap = await getDocs(query(collection(db, 'landing_pages'), where('token','==',token)));
+    if (snap.empty) { showError('Página não encontrada', 'Este link pode ter expirado.'); return; }
+    page = { id: snap.docs[0].id, ...snap.docs[0].data() };
+    updateDoc(snap.docs[0].ref, { views: increment(1) }).catch(()=>{});
+  } catch(e) { showError('Erro de conexão', 'Não foi possível carregar a página.'); return; }
+
+  if (page.status !== 'published') {
+    showError('Página não publicada', 'Esta página ainda não está disponível.'); return;
+  }
+
+  // Apply colors
+  const primary   = page.colors?.primary   || '#D4AF37';
+  const secondary = page.colors?.secondary || '#242362';
+  document.documentElement.style.setProperty('--gold', primary);
+  document.documentElement.style.setProperty('--navy', secondary);
+
+  // Set page title
+  if (page.name) document.title = page.name + ' · PRIMETOUR';
+
+  // Render sections
+  const app = document.getElementById('app');
+  app.innerHTML = (page.sections || []).map(sec => renderSection(sec)).join('');
+
+  // Wire countdown timers
+  document.querySelectorAll('[data-countdown]').forEach(el => {
+    const target = new Date(el.dataset.countdown);
+    const update = () => {
+      const now  = new Date();
+      const diff = target - now;
+      if (diff <= 0) { el.innerHTML = '<span style="color:var(--gold)">Oferta encerrada</span>'; return; }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000)  / 60000);
+      const s = Math.floor((diff % 60000)    / 1000);
+      el.innerHTML = [
+        [d,'dias'],[h,'horas'],[m,'min'],[s,'seg']
+      ].map(([n,l]) => `<div class="countdown-unit">
+        <span class="countdown-num">${String(n).padStart(2,'0')}</span>
+        <span class="countdown-unit-label">${l}</span>
+      </div>`).join('');
+    };
+    update(); setInterval(update, 1000);
+  });
+
+  // Hide loading
+  const loading = document.getElementById('loading');
+  loading.style.opacity = '0';
+  setTimeout(() => loading.style.display = 'none', 500);
+})();
+
+function renderSection(sec) {
+  const d = sec.data || {};
+  switch(sec.type) {
+    case 'hero':
+    case 'hero_full': {
+      const full = sec.type === 'hero_full';
+      const opacity = d.overlay_opacity || 0.5;
+      return `<section class="lp-section hero-section ${full ? 'hero-full' : ''}">
+        ${d.bg_image ? `<div class="hero-bg" style="background-image:url('${esc(d.bg_image)}');"></div>` : ''}
+        <div class="hero-overlay" style="background:linear-gradient(to top,
+          rgba(36,35,98,.9) 0%,rgba(36,35,98,${opacity}) 55%,transparent 100%);"></div>
+        <div class="hero-content">
+          ${d.badge_text || d.title ? `<span class="hero-badge">${esc(d.badge_text || 'PRIMETOUR')}</span>` : ''}
+          <h1 class="hero-title">${esc(d.title || d.headline || '')}</h1>
+          ${d.subtitle || d.subheadline ? `<p class="hero-sub">${esc(d.subtitle || d.subheadline)}</p>` : ''}
+          ${d.cta_text ? `<a href="${esc(d.cta_link||'#')}" class="hero-cta">${esc(d.cta_text)}</a>` : ''}
+        </div>
+      </section>`;
+    }
+    case 'hero_campaign': {
+      return `<section class="lp-section hero-section">
+        ${d.bg_image ? `<div class="hero-bg" style="background-image:url('${esc(d.bg_image)}');"></div>` : ''}
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+          ${d.badge_text ? `<span class="hero-badge">★ ${esc(d.badge_text)}</span>` : ''}
+          <h1 class="hero-title">${esc(d.headline || '')}</h1>
+          ${d.subheadline ? `<p class="hero-sub">${esc(d.subheadline)}</p>` : ''}
+          ${d.cta_text ? `<a href="${esc(d.cta_link||'#')}" class="hero-cta">${esc(d.cta_text)}</a>` : ''}
+        </div>
+      </section>`;
+    }
+    case 'text': {
+      const align = d.align || 'left';
+      return `<section class="lp-section text-section" style="text-align:${align};">
+        ${d.title ? `<h2>${esc(d.title)}</h2>` : ''}
+        ${d.body  ? `<p style="margin-top:${d.title?'20px':'0'}">${esc(d.body)}</p>` : ''}
+      </section>`;
+    }
+    case 'gallery': {
+      const imgs = Array.isArray(d.images) ? d.images : [];
+      return `<section class="lp-section gallery-section">
+        <div class="gallery-grid">
+          ${imgs.map(url => `<img src="${esc(url)}" alt="" loading="lazy">`).join('')}
+        </div>
+      </section>`;
+    }
+    case 'gallery_masonry': {
+      const imgs = Array.isArray(d.images) ? d.images : [];
+      return `<section class="lp-section">
+        <div class="gallery-masonry">
+          ${imgs.map(url => `<img src="${esc(url)}" alt="" loading="lazy">`).join('')}
+        </div>
+      </section>`;
+    }
+    case 'gallery_horizontal': {
+      const imgs = Array.isArray(d.images) ? d.images : [];
+      return `<section class="lp-section">
+        <div class="gallery-horiz">
+          ${imgs.map(url => `<img src="${esc(url)}" alt="" loading="lazy">`).join('')}
+        </div>
+      </section>`;
+    }
+    case 'highlights': {
+      const items = Array.isArray(d.items) ? d.items : [];
+      return `<section class="lp-section highlights-section">
+        <div style="text-align:center;">
+          <span class="section-label">Destaques</span>
+          <h2 class="section-title" style="color:var(--navy);">${esc(d.title || 'O que você vai encontrar')}</h2>
+        </div>
+        <div class="highlights-grid">
+          ${items.map(item => `<div class="highlight-card">
+            ${item.icon ? `<div style="font-size:1.75rem;margin-bottom:12px;">${esc(item.icon)}</div>` : ''}
+            <h3>${esc(item.title || '')}</h3>
+            <p>${esc(item.desc || item.description || '')}</p>
+          </div>`).join('')}
+        </div>
+      </section>`;
+    }
+    case 'benefits': {
+      const items = Array.isArray(d.items) ? d.items : [];
+      return `<section class="lp-section benefits-section">
+        <div style="text-align:center;">
+          <span class="section-label">Por que escolher</span>
+          <h2 class="section-title">${esc(d.title || 'Benefícios')}</h2>
+        </div>
+        <div class="benefits-grid">
+          ${items.map(item => `<div class="benefit-item">
+            <div class="benefit-icon">${esc(item.icon || '✦')}</div>
+            <div class="benefit-title">${esc(item.title || '')}</div>
+            <div class="benefit-desc">${esc(item.desc || '')}</div>
+          </div>`).join('')}
+        </div>
+      </section>`;
+    }
+    case 'destinations_grid': {
+      const dests = Array.isArray(d.destinations) ? d.destinations : [];
+      return `<section class="lp-section dests-section">
+        <div style="text-align:center;margin-bottom:0;">
+          <span class="section-label">Destinos</span>
+          <h2 class="section-title">${esc(d.title || 'Explore o mundo')}</h2>
+        </div>
+        <div class="dests-grid" style="margin-top:40px;">
+          ${dests.map(dest => `<div class="dest-card">
+            ${dest.image ? `<img src="${esc(dest.image)}" alt="${esc(dest.name||'')}">` :
+              `<div style="width:100%;height:100%;background:var(--navy);"></div>`}
+            <div class="dest-card-overlay"></div>
+            <div class="dest-card-content">
+              <h3>${esc(dest.name || '')}</h3>
+              ${dest.subtitle ? `<p>${esc(dest.subtitle)}</p>` : ''}
+            </div>
+          </div>`).join('')}
+        </div>
+      </section>`;
+    }
+    case 'journey_steps': {
+      const steps = Array.isArray(d.steps) ? d.steps : [];
+      return `<section class="lp-section journey-section">
+        <div style="text-align:center;padding:0 40px 40px;">
+          <span class="section-label" style="color:var(--gold);">Sua jornada</span>
+          <h2 class="section-title" style="color:#fff;">${esc(d.title || 'Etapa a etapa')}</h2>
+        </div>
+        <div class="journey-inner">
+          ${steps.map((step, i) => `<div class="journey-step">
+            <div class="journey-num">${String(i+1).padStart(2,'0')}</div>
+            ${step.image ? `<img src="${esc(step.image)}" alt="" loading="lazy">` : ''}
+            <h3>${esc(step.title || '')}</h3>
+            <p>${esc(step.desc || step.description || '')}</p>
+          </div>`).join('')}
+        </div>
+      </section>`;
+    }
+    case 'testimonials': {
+      const items = Array.isArray(d.items) ? d.items : [];
+      return `<section class="lp-section testimonials-section">
+        <div style="text-align:center;">
+          <span class="section-label">Quem já viajou</span>
+          <h2 class="section-title">${esc(d.title || 'Depoimentos')}</h2>
+        </div>
+        <div class="testimonials-grid">
+          ${items.map(t => `<div class="testimonial-card">
+            <p class="testimonial-text">"${esc(t.text || '')}"</p>
+            <div class="testimonial-author">${esc(t.author || '')}</div>
+            ${t.trip ? `<div style="font-size:.75rem;color:var(--muted);margin-top:4px;">${esc(t.trip)}</div>` : ''}
+          </div>`).join('')}
+        </div>
+      </section>`;
+    }
+    case 'countdown': {
+      return `<section class="lp-section countdown-section">
+        <div class="countdown-label">${esc(d.label || 'Oferta expira em')}</div>
+        <div class="countdown-timer" data-countdown="${esc(d.target_date || '')}"></div>
+        ${d.cta_text ? `<a href="${esc(d.cta_link||'#')}" class="hero-cta">${esc(d.cta_text)}</a>` : ''}
+      </section>`;
+    }
+    case 'cta': {
+      const bg = d.bg_color || 'var(--light)';
+      return `<section class="lp-section cta-section" style="background:${esc(bg)};">
+        ${d.title ? `<h2>${esc(d.title)}</h2>` : ''}
+        ${d.subtitle ? `<p>${esc(d.subtitle)}</p>` : ''}
+        ${d.button_text ? `<a href="${esc(d.button_link||'#')}" class="hero-cta">${esc(d.button_text)}</a>` : ''}
+      </section>`;
+    }
+    case 'cta_strong': {
+      return `<section class="lp-section cta-strong-section">
+        ${d.title ? `<h2>${esc(d.title)}</h2>` : ''}
+        ${d.subtitle ? `<p>${esc(d.subtitle)}</p>` : ''}
+        ${d.button_text ? `<a href="${esc(d.button_link||'#')}" class="hero-cta">${esc(d.button_text)}</a>` : ''}
+        ${d.urgency_text ? `<div class="cta-urgency">⏰ ${esc(d.urgency_text)}</div>` : ''}
+      </section>`;
+    }
+    default: return '';
+  }
+}
+
+function showError(title, msg) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').innerHTML = `
+    <div class="error-state">
+      <div style="font-size:2.5rem;">✈</div>
+      <h2>${esc(title)}</h2>
+      <p>${esc(msg)}</p>
+    </div>`;
+}
+</script>
+</body>
+</html>
