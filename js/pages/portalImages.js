@@ -509,15 +509,20 @@ async function uploadBatch() {
 
   if (success > 0) {
     setTimeout(async () => {
-      // Remove successful rows
-      document.querySelectorAll('[id^="batch-row-"]').forEach(r => {
-        if (r.style.borderColor.includes('22C55E')) r.remove();
-      });
-      if (!document.querySelectorAll('[id^="batch-row-"]').length) {
-        document.getElementById('img-batch-list').style.display = 'none';
-      }
       await loadImages();
-    }, 1500);
+      if (!failed) {
+        // All succeeded — close the upload panel
+        const panel = document.getElementById('img-upload-panel');
+        if (panel) panel.style.display = 'none';
+        const btn = document.getElementById('img-toggle-upload');
+        if (btn) btn.textContent = '↑ Enviar imagens';
+      } else {
+        // Some failed — only remove successful rows
+        document.querySelectorAll('[id^="batch-row-"]').forEach(r => {
+          if (r.style.borderColor.includes('22C55E')) r.remove();
+        });
+      }
+    }, 1200);
   }
 }
 
