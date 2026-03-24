@@ -781,8 +781,11 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
     const destImgs = imagesByDest[destId] || [];
     const segImgs  = selectedImages[destId]?.[curSegKey] || {};
 
-    document.getElementById('gen-right-panel').innerHTML =
-      renderSegEditor(wTip, curSegKey, destImgs, segImgs, destId);
+    const panel = document.getElementById('gen-right-panel');
+    if (panel) {
+      panel.innerHTML = renderSegEditor(wTip, curSegKey, destImgs, segImgs, destId);
+      panel._refreshRef = { refreshRightPanel };
+    }
 
     wireSegEditor(wTip, curSegKey, destImgs, destId, selectedImages, workingTips, curDestIdx);
   };
@@ -908,7 +911,11 @@ function renderSegEditor(tip, segKey, destImgs, segSelectedImgs, destId) {
           <span style="background:var(--brand-gold);color:#fff;border-radius:50%;
             width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;
             font-size:0.5rem;font-weight:800;flex-shrink:0;">${idx+1}</span>
-          ${esc(item.titulo || item.title || `Item ${idx+1}`)}
+          <span style="flex:1;">${esc(item.titulo || item.title || `Item ${idx+1}`)}</span>
+          <button class="editor-item-del btn btn-ghost" data-seg="${segKey}" data-idx="${idx}"
+            title="Remover item"
+            style="padding:1px 5px;font-size:0.7rem;color:#EF4444;border-radius:var(--radius-sm);
+            margin-left:auto;">✕ remover</button>
         </div>
 
         <!-- Title -->
@@ -959,24 +966,30 @@ function renderSegEditor(tip, segKey, destImgs, segSelectedImgs, destId) {
               justify-content:center;flex-direction:column;gap:1px;">
               <span style="font-size:0.75rem;">◑</span>auto
             </button>
-            ${galeria.slice(0, 8).map((img, iIdx) => {
+            ${galeria.slice(0, 12).map((img, iIdx) => {
               const isSelected = segSelectedImgs[idx]?.url === img.url;
-              return `<button class="img-pick-btn"
-                data-seg="${segKey}" data-idx="${idx}" data-iidx="${iIdx}"
-                data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
-                style="flex-shrink:0;border:2px solid
-                ${isSelected ? 'var(--brand-gold)' : 'var(--border-subtle)'};
-                border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;
-                width:56px;height:42px;padding:0;background:none;">
-                <img src="${esc(img.url)}" alt="${esc(img.name||'')}"
-                  style="width:100%;height:100%;object-fit:cover;"
-                  title="${esc(img.name||'')}${img.placeName ? ' · '+img.placeName : ''}">
-              </button>`;
+              return `<div style="flex-shrink:0;position:relative;display:flex;flex-direction:column;gap:2px;">
+                <button class="img-pick-btn"
+                  data-seg="${segKey}" data-idx="${idx}" data-iidx="${iIdx}"
+                  data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
+                  style="flex-shrink:0;border:2px solid
+                  ${isSelected ? 'var(--brand-gold)' : 'var(--border-subtle)'};
+                  border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;
+                  width:72px;height:54px;padding:0;background:none;display:block;">
+                  <img src="${esc(img.url)}" alt="${esc(img.name||'')}"
+                    style="width:100%;height:100%;object-fit:cover;"
+                    title="${esc(img.name||'')}${img.placeName ? ' · '+img.placeName : ''}">
+                </button>
+                <button class="img-preview-btn btn btn-ghost"
+                  data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
+                  style="width:72px;font-size:0.5625rem;padding:1px 0;
+                  text-align:center;color:var(--text-muted);" title="Ampliar">⤢</button>
+              </div>`;
             }).join('')}
-            ${galeria.length > 8 ? `
+            ${galeria.length > 12 ? `
               <span style="flex-shrink:0;display:flex;align-items:center;
                 font-size:0.6875rem;color:var(--text-muted);white-space:nowrap;padding:0 4px;">
-                +${galeria.length-8} mais
+                +${galeria.length-12} mais
               </span>` : ''}
           </div>
         </div>` : ''}
@@ -1046,6 +1059,44 @@ function wireSegEditor(wTip, segKey, destImgs, destId, selectedImages, workingTi
       });
       btn.style.borderColor = 'var(--brand-gold)';
       delete selectedImages[destId]?.[segKey]?.[idx];
+    });
+  });
+
+  // Delete item
+  qs(`.editor-item-del[data-seg="${segKey}"]`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.idx);
+      if (!wTip.segments?.[segKey]?.items) return;
+      wTip.segments[segKey].items.splice(idx, 1);
+      workingTips[curDestIdx].tip = wTip;
+      // Re-render the right panel
+      const panel = document.getElementById('gen-right-panel');
+      if (panel) {
+        const { refreshRightPanel } = panel._refreshRef || {};
+        if (refreshRightPanel) refreshRightPanel();
+        else panel.dispatchEvent(new CustomEvent('refresh-segment'));
+      }
+    });
+  });
+
+  // Image preview lightbox
+  qs('.img-preview-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const url  = btn.dataset.url;
+      const name = btn.dataset.name || '';
+      if (!url) return;
+      const lb = document.createElement('div');
+      lb.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9999;
+        display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;
+        cursor:zoom-out;`;
+      lb.innerHTML = `
+        <img src="${esc(url)}" alt="${esc(name)}"
+          style="max-width:90vw;max-height:80vh;object-fit:contain;border-radius:4px;
+          box-shadow:0 8px 40px rgba(0,0,0,.6);">
+        <div style="color:rgba(255,255,255,.7);font-size:0.875rem;">${esc(name)}</div>
+        <div style="font-size:0.75rem;color:rgba(255,255,255,.4);">Clique para fechar</div>`;
+      lb.addEventListener('click', () => lb.remove());
+      document.body.appendChild(lb);
     });
   });
 }

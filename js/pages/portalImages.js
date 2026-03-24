@@ -711,6 +711,28 @@ function renderGallery() {
       openEditModal(btn.dataset.id);
     });
   });
+  gallery.querySelectorAll('.img-download-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const url  = btn.dataset.url;
+      const name = (btn.dataset.name || 'imagem').replace(/\s+/g, '-');
+      try {
+        // Proxy through R2 worker to avoid CORS
+        const R2_PROXY = 'https://primetour-images.rene-castro.workers.dev';
+        const res  = await fetch(`${R2_PROXY}?url=${encodeURIComponent(url)}`);
+        const blob = await res.blob();
+        const ext  = blob.type?.split('/')[1]?.replace('jpeg','jpg') || 'jpg';
+        const a    = document.createElement('a');
+        a.href     = URL.createObjectURL(blob);
+        a.download = `${name}.${ext}`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch(e) {
+        // Fallback: open in new tab
+        window.open(url, '_blank');
+      }
+    });
+  });
+
   gallery.querySelectorAll('.img-copy-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -769,6 +791,9 @@ function imgCard(img, idx) {
             style="font-size:0.7rem;flex:1;">✎ Editar</button>
           <button class="img-copy-btn btn btn-ghost btn-sm" data-url="${esc(img.url)}"
             style="font-size:0.7rem;" title="Copiar URL">⎘</button>
+          <button class="img-download-btn btn btn-ghost btn-sm"
+            data-url="${esc(img.url)}" data-name="${esc(img.name||'imagem')}"
+            style="font-size:0.7rem;color:var(--brand-gold);" title="Baixar">↓</button>
           <button class="img-delete-btn btn btn-ghost btn-sm" data-id="${img.id}"
             style="font-size:0.7rem;color:#EF4444;" title="Excluir">✕</button>
         </div>
@@ -810,6 +835,9 @@ function imgRow(img, idx) {
             style="font-size:0.75rem;">✎</button>
           <button class="img-copy-btn btn btn-ghost btn-sm" data-url="${esc(img.url)}"
             style="font-size:0.75rem;" title="Copiar URL">⎘</button>
+          <button class="img-download-btn btn btn-ghost btn-sm"
+            data-url="${esc(img.url)}" data-name="${esc(img.name||'imagem')}"
+            style="font-size:0.75rem;color:var(--brand-gold);" title="Baixar">↓</button>
           <button class="img-delete-btn btn btn-ghost btn-sm" data-id="${img.id}"
             style="font-size:0.75rem;color:#EF4444;">✕</button>
         </div>
