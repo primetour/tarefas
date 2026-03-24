@@ -401,7 +401,7 @@ function buildBatchList(files) {
     // Wire remove button
     row.querySelector(`.batch-remove[data-id="${id}"]`)?.addEventListener('click', () => {
       row.remove();
-      const remaining = document.querySelectorAll('[id^="batch-row-"]').length;
+      const remaining = document.getElementById('img-item-rows')?.querySelectorAll('[id^="batch-row-"]').length || 0;
       if (!remaining) document.getElementById('img-batch-list').style.display = 'none';
     });
   });
@@ -435,7 +435,8 @@ function wireBatchCascade(row, id) {
 
 /* ── Upload batch ── */
 async function uploadBatch() {
-  const rows = [...document.querySelectorAll('[id^="batch-row-"]')];
+  const itemRows = document.getElementById('img-item-rows');
+  const rows = itemRows ? [...itemRows.querySelectorAll('[id^="batch-row-"]')] : [];
   if (!rows.length) { toast.error('Nenhuma imagem na fila.'); return; }
 
   const btn = document.getElementById('img-upload-all-btn');
@@ -517,8 +518,9 @@ async function uploadBatch() {
         const btn = document.getElementById('img-toggle-upload');
         if (btn) btn.textContent = '↑ Enviar imagens';
       } else {
-        // Some failed — only remove successful rows
-        document.querySelectorAll('[id^="batch-row-"]').forEach(r => {
+        // Some failed — only remove successful rows, keep failed ones
+        const ir = document.getElementById('img-item-rows');
+        ir?.querySelectorAll('[id^="batch-row-"]').forEach(r => {
           if (r.style.borderColor.includes('22C55E')) r.remove();
         });
       }
