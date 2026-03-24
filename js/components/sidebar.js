@@ -50,7 +50,7 @@ const NAV_GROUPS = [
       { route: 'landing-pages',       icon: '◱', label: 'Landing Pages',        perm: 'portal_manage'  },
       { route: 'cms',                 icon: '◫', label: 'CMS / Site',           perm: 'portal_manage'  },
       { route: 'arts-editor',         icon: '▣', label: 'Editor de Artes',      perm: 'portal_manage'  },
-      { route: 'news-monitor',        icon: '📰', label: 'Notícias',              roles: ['admin','manager','member'] },
+      { route: 'news-monitor',        icon: '◉', label: 'Notícias',              roles: ['admin','manager','member'] },
     ]
   },
   {

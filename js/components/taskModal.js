@@ -67,6 +67,19 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     } catch(e) {}
   }
 
+  // Load goals for selector
+  try {
+    const { fetchGoals } = await import('../services/goals.js');
+    const goals = await fetchGoals({}).catch(()=>[]);
+    setTimeout(() => {
+      const sel = document.getElementById('tm-goal');
+      if (sel && goals.length) {
+        sel.innerHTML = '<option value="">Sem meta vinculada</option>' +
+          goals.map(g => `<option value="${g.id}" ${task.goalId===g.id?'selected':''}>${g.title||g.id}</option>`).join('');
+      }
+    }, 100);
+  } catch(e) {}
+
   // Sanitize taskData — ensure arrays are always arrays
   const sanitize = (td) => ({
     title:'', description:'', status, priority:'medium',
@@ -85,6 +98,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     comments:     Array.isArray(td?.comments)     ? td.comments    : [],
     nucleos:      Array.isArray(td?.nucleos)      ? td.nucleos     : [],
     customFields: td?.customFields || {},
+    goalId:       td?.goalId || null,
   });
 
   let task = sanitize(taskData);
@@ -192,6 +206,17 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         <label class="form-label">Descrição</label>
         <textarea id="tm-desc" class="form-textarea" rows="3"
           placeholder="Descreva a tarefa...">${esc(task.description)}</textarea>
+          </div>
+
+          <!-- Link to goal -->
+          <div class="form-group">
+            <label class="form-label">Atrelar a uma meta <span style="font-size:0.75rem;
+              color:var(--text-muted);font-weight:400;">(opcional)</span></label>
+            <select id="tm-goal" class="filter-select" style="width:100%;">
+              <option value="">Sem meta vinculada</option>
+              <!-- populated by JS -->
+            </select>
+          </div>
       </div>
       ${isEdit ? `
         <div class="task-detail-field">
@@ -584,6 +609,7 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   const data={
     title,
     description:  ctx.querySelector('#tm-desc')?.value?.trim()||'',
+    goalId:       ctx.querySelector('#tm-goal')?.value || null,
     status:       ctx.querySelector('#tm-status')?.value||'not_started',
     priority:     ctx.querySelector('#tm-priority')?.value||'medium',
     projectId:    ctx.querySelector('#tm-project')?.value||null,
