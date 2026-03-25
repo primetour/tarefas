@@ -518,11 +518,15 @@ async function uploadBatch() {
     setTimeout(async () => {
       await loadImages();
       if (!failed) {
-        // All succeeded — close the upload panel
-        const panel = document.getElementById('img-upload-panel');
-        if (panel) panel.style.display = 'none';
-        const btn = document.getElementById('img-toggle-upload');
-        if (btn) btn.textContent = '↑ Enviar imagens';
+        // All succeeded — close and reset the upload panel
+        const panel    = document.getElementById('img-upload-panel');
+        const batchList = document.getElementById('img-batch-list');
+        const itemRows  = document.getElementById('img-item-rows');
+        if (itemRows)  itemRows.innerHTML = '';
+        if (batchList) batchList.style.display = 'none';
+        if (panel)     panel.style.display = 'none';
+        const toggleBtn = document.getElementById('img-upload-toggle');
+        if (toggleBtn) toggleBtn.textContent = '↑ Upload';
       } else {
         // Some failed — only remove successful rows, keep failed ones
         const ir = document.getElementById('img-item-rows');
