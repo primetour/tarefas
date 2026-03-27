@@ -575,8 +575,14 @@ function openEvaluationForm(goal, existingEval, onSave) {
     if (barEl) barEl.style.width = p + '%';
   };
 
-  overlay.querySelectorAll('.eval-kpi-score').forEach(inp =>
-    inp.addEventListener('input', updatePreview));
+  overlay.querySelectorAll('.eval-kpi-score').forEach(inp => {
+    inp.addEventListener('input', () => {
+      // Cap at 100
+      if (Number(inp.value) > 100) inp.value = 100;
+      if (Number(inp.value) < 0)   inp.value = 0;
+      updatePreview();
+    });
+  });
   updatePreview();
 
   // Save
