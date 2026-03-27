@@ -611,6 +611,7 @@ function openEvaluationForm(goal, existingEval, onSave) {
     try {
       await saveEvaluation(existingEval?.id || null, {
         goalId:    goal.id,
+        gestorId:  goal.gestorId || '',
         periodoRef,
         kpiScores: kpiScoresFinal,
         status:    isPartial ? 'parcial' : 'completa',
@@ -619,7 +620,9 @@ function openEvaluationForm(goal, existingEval, onSave) {
       close();
       onSave?.();
     } catch(e) {
-      toast.error('Erro ao salvar: ' + e.message);
+      console.error('Erro ao salvar avaliação:', e);
+      const msg = e?.message || e?.code || JSON.stringify(e) || 'Erro desconhecido';
+      toast.error('Erro ao salvar: ' + msg);
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = '💾 Salvar avaliação'; }
     }
