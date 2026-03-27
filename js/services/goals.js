@@ -141,7 +141,8 @@ export function calcGoalProgress(goal, evaluations = []) {
   let totalProgress = 0;
   let totalPilarWeight = 0;
 
-  for (const pilar of goal.pilares) {
+  for (let pIdx = 0; pIdx < goal.pilares.length; pIdx++) {
+    const pilar = goal.pilares[pIdx];
     if (!pilar.metas?.length) continue;
     const pilarWeight = Number(pilar.ponderacao) || 0;
     totalPilarWeight += pilarWeight;
@@ -154,9 +155,9 @@ export function calcGoalProgress(goal, evaluations = []) {
       const metaWeight = Number(meta.ponderacao) || 0;
       totalMetaWeight += metaWeight;
 
-      // Get latest evaluation for this pilar/meta
+      // Get latest evaluation for this pilar/meta (use array index, not _idx)
       const eval_ = evaluations
-        .filter(e => e.pilarIdx === pilar._idx && e.metaIdx === mIdx)
+        .filter(e => e.pilarIdx === pIdx && e.metaIdx === mIdx)
         .sort((a, b) => {
           const ta = a.createdAt?.toDate?.() || new Date(0);
           const tb = b.createdAt?.toDate?.() || new Date(0);
