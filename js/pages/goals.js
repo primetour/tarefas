@@ -437,176 +437,193 @@ async function renderEvaluationTab(el, container) {
 
 /* ─── Evaluation form ──────────────────────────────────────── */
 function openEvaluationForm(goal, existingEval, onSave) {
-  const periods   = generatePendingPeriods(goal);
-  const kpiScores = existingEval?.kpiScores
-    ? JSON.parse(JSON.stringify(existingEval.kpiScores))
-    : [];
+  const MODAL_ID = 'eval-form-overlay';
+  document.getElementById(MODAL_ID)?.remove();
 
-  // Build KPI inputs across all pilares/metas
+  const periods = generatePendingPeriods(goal);
+
+  // Build KPI rows
   const allKpiRows = [];
   (goal.pilares || []).forEach((pilar, pIdx) => {
     (pilar.metas || []).forEach((meta, mIdx) => {
       (meta.kpis || []).forEach((kpi, kIdx) => {
-        const existing = kpiScores.find(s => s.pilarIdx===pIdx && s.metaIdx===mIdx && s.kpiIdx===kIdx);
+        const existing = (existingEval?.kpiScores || [])
+          .find(s => s.pilarIdx === pIdx && s.metaIdx === mIdx && s.kpiIdx === kIdx);
         allKpiRows.push({ pilar, pIdx, meta, mIdx, kpi, kIdx, existing });
       });
     });
   });
 
-  const content = `
-    <div style="display:flex;flex-direction:column;gap:16px;">
-      <div>
-        <label style="${LBL}">Período de referência *</label>
-        ${periods.length
-          ? `<select id="ev-period" class="filter-select" style="${FIELD}">
+  const overlay = document.createElement('div');
+  overlay.id = MODAL_ID;
+  overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:3000;
+    display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;`;
+
+  overlay.innerHTML = `
+    <div class="card" style="width:100%;max-width:600px;padding:0;overflow:hidden;margin:auto;">
+      <div style="padding:16px 22px;background:var(--bg-surface);
+        border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;justify-content:space-between;
+        position:sticky;top:0;z-index:10;">
+        <div style="font-weight:700;font-size:1rem;">
+          ${existingEval ? 'Editar Avaliação' : 'Nova Avaliação'}
+        </div>
+        <button id="eval-close" style="border:none;background:none;cursor:pointer;
+          font-size:1.25rem;color:var(--text-muted);padding:0 4px;">✕</button>
+      </div>
+
+      <div style="padding:20px 22px;display:flex;flex-direction:column;gap:14px;">
+
+        <!-- Período -->
+        <div>
+          <label style="${LBL}">Período de referência *</label>
+          ${periods.length ? `
+            <select id="eval-period-sel" class="filter-select" style="${FIELD}">
               <option value="">Selecione…</option>
               ${periods.map(p => `<option value="${esc(p.label)}"
                 ${existingEval?.periodoRef === p.label ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
-              <option value="custom" ${existingEval?.periodoRef && !periods.find(p=>p.label===existingEval.periodoRef)?'selected':''}>Período personalizado…</option>
+              <option value="__custom__">Período personalizado…</option>
             </select>
-            <input type="text" id="ev-period-custom" class="portal-field" style="${FIELD};margin-top:6px;display:none;"
+            <input type="text" id="eval-period-txt" class="portal-field"
+              style="${FIELD};margin-top:6px;display:${existingEval?.periodoRef && !periods.find(p=>p.label===existingEval.periodoRef) ? 'block' : 'none'};"
               value="${esc(existingEval?.periodoRef||'')}" placeholder="Ex: Abril 2025">`
-          : `<input type="text" id="ev-period-custom" class="portal-field" style="${FIELD}"
-              value="${esc(existingEval?.periodoRef||'')}" placeholder="Ex: Abril 2025">`
-        }
+          : `<input type="text" id="eval-period-txt" class="portal-field" style="${FIELD}"
+              value="${esc(existingEval?.periodoRef||'')}" placeholder="Ex: Abril 2025">`}
+        </div>
+
+        <!-- KPIs -->
+        ${allKpiRows.map((row, i) => `
+          <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px 16px;">
+            <div style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:.07em;
+              color:var(--text-muted);margin-bottom:4px;">
+              ${esc(row.pilar.titulo||`Pilar ${row.pIdx+1}`)} › ${esc(row.meta.titulo||`Meta ${row.mIdx+1}`)}
+            </div>
+            <div style="font-weight:600;font-size:0.875rem;margin-bottom:10px;">
+              ${esc(row.kpi.descricao||`KPI ${row.kIdx+1}`)}
+              <span style="font-weight:400;color:var(--text-muted);margin-left:6px;">Peso: ${row.kpi.peso||0}%</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;">
+              <div>
+                <label style="${LBL}">Nota (%)</label>
+                <input type="number" class="portal-field eval-kpi-score"
+                  min="0" max="100"
+                  data-pidx="${row.pIdx}" data-midx="${row.mIdx}" data-kidx="${row.kIdx}"
+                  value="${row.existing?.score ?? ''}"
+                  style="${FIELD}" placeholder="0–100">
+              </div>
+              <div>
+                <label style="${LBL}">Comentário</label>
+                <input type="text" class="portal-field eval-kpi-comment"
+                  data-pidx="${row.pIdx}" data-midx="${row.mIdx}" data-kidx="${row.kIdx}"
+                  value="${esc(row.existing?.comentario||'')}"
+                  style="${FIELD}" placeholder="Justificativa (opcional)">
+              </div>
+            </div>
+          </div>`).join('')}
+
+        <!-- Progresso ao vivo -->
+        <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px 16px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span style="font-size:0.875rem;font-weight:600;">Progresso calculado</span>
+            <span id="eval-prog-val" style="font-size:1.125rem;font-weight:700;color:var(--brand-gold);">—</span>
+          </div>
+          <div style="height:6px;background:var(--bg-dark);border-radius:3px;overflow:hidden;">
+            <div id="eval-prog-bar" style="height:100%;width:0%;background:var(--brand-gold);
+              border-radius:3px;transition:width .3s;"></div>
+          </div>
+        </div>
       </div>
 
-      ${allKpiRows.map((row, i) => `
-        <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px 16px;">
-          <div style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:.07em;
-            color:var(--text-muted);margin-bottom:4px;">
-            ${esc(row.pilar.titulo||`Pilar ${row.pIdx+1}`)} › ${esc(row.meta.titulo||`Meta ${row.mIdx+1}`)}
-          </div>
-          <div style="font-weight:600;font-size:0.875rem;margin-bottom:10px;">
-            ${esc(row.kpi.descricao||`KPI ${row.kIdx+1}`)}
-            <span style="font-weight:400;color:var(--text-muted);margin-left:6px;">Peso: ${row.kpi.peso||0}%</span>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;">
-            <div>
-              <label style="${LBL}">Nota (%)</label>
-              <input type="number" class="portal-field ev-kpi-score"
-                id="ev-score-${i}" min="0" max="100"
-                data-pilar="${row.pIdx}" data-meta="${row.mIdx}" data-kpi="${row.kIdx}"
-                value="${row.existing?.score ?? ''}"
-                style="${FIELD}" placeholder="0–100">
-            </div>
-            <div>
-              <label style="${LBL}">Comentário</label>
-              <input type="text" class="portal-field ev-kpi-comment"
-                id="ev-comment-${i}"
-                data-pilar="${row.pIdx}" data-meta="${row.mIdx}" data-kpi="${row.kIdx}"
-                value="${esc(row.existing?.comentario||'')}"
-                style="${FIELD}" placeholder="Justificativa (opcional)">
-            </div>
-          </div>
-        </div>`).join('')}
-
-      <!-- Live progress preview -->
-      <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px 16px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-          <span style="font-size:0.875rem;font-weight:600;">Progresso calculado</span>
-          <span id="ev-progress-val" style="font-size:1.125rem;font-weight:700;color:var(--brand-gold);">—</span>
-        </div>
-        <div style="height:6px;background:var(--bg-dark);border-radius:3px;overflow:hidden;">
-          <div id="ev-progress-bar" style="height:100%;width:0%;background:var(--brand-gold);
-            border-radius:3px;transition:width .3s;"></div>
-        </div>
+      <div style="padding:14px 22px;border-top:1px solid var(--border-subtle);
+        background:var(--bg-surface);display:flex;gap:8px;justify-content:flex-end;">
+        <button id="eval-cancel" class="btn btn-secondary btn-sm">Cancelar</button>
+        <button id="eval-save" class="btn btn-primary btn-sm">💾 Salvar avaliação</button>
       </div>
     </div>`;
 
-  const m = modal.open({
-    title: existingEval ? 'Editar Avaliação' : 'Nova Avaliação',
-    size: 'lg',
-    content,
-    footer: [
-      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
-      {
-        label: 'Salvar avaliação', class: 'btn-primary', closeOnClick: false,
-        onClick: async (_, { close }) => {
-          const periodSel  = document.getElementById('ev-period')?.value;
-          const periodCustom = document.getElementById('ev-period-custom')?.value?.trim();
-          const periodoRef = periodSel === 'custom' || !document.getElementById('ev-period')
-            ? periodCustom : periodSel;
+  document.body.appendChild(overlay);
 
-          if (!periodoRef) { toast.error('Selecione o período de referência.'); return; }
-
-          const kpiScoresFinal = [];
-          // Scope to modal body to avoid cross-modal interference
-          const modalBody = document.querySelector('.modal-body') || document;
-          modalBody.querySelectorAll('.ev-kpi-score').forEach(inp => {
-            const score    = inp.value !== '' ? Number(inp.value) : null;
-            const pilarIdx = Number(inp.dataset.pilar);
-            const metaIdx  = Number(inp.dataset.meta);
-            const kpiIdx   = Number(inp.dataset.kpi);
-            const commentEl = modalBody.querySelector(
-              `.ev-kpi-comment[data-pilar="${pilarIdx}"][data-meta="${metaIdx}"][data-kpi="${kpiIdx}"]`);
-            kpiScoresFinal.push({
-              pilarIdx, metaIdx, kpiIdx,
-              score:     score,
-              comentario: commentEl?.value?.trim() || '',
-            });
-          });
-
-          const isPartial = kpiScoresFinal.some(s => s.score === null);
-
-          const btn2 = document.querySelector('.modal-footer .btn-primary');
-          if (btn2) { btn2.disabled = true; btn2.textContent = '⏳'; }
-
-          try {
-            await saveEvaluation(existingEval?.id || null, {
-              goalId:    goal.id,
-              periodoRef,
-              kpiScores: kpiScoresFinal,
-              status:    isPartial ? 'parcial' : 'completa',
-              // Store pilar/meta index at the evaluation level for display
-              // Individual scores also carry pilarIdx/metaIdx per KPI
-            });
-            toast.success('Avaliação salva!');
-            close();
-            onSave?.();
-          } catch(e) {
-            toast.error('Erro: ' + e.message);
-          } finally {
-            if (btn2) { btn2.disabled = false; btn2.textContent = 'Salvar avaliação'; }
-          }
-        },
-      },
-    ],
-  });
+  const close = () => overlay.remove();
+  document.getElementById('eval-close')?.addEventListener('click', close);
+  document.getElementById('eval-cancel')?.addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
   // Period select toggle
-  document.getElementById('ev-period')?.addEventListener('change', e => {
-    const custom = document.getElementById('ev-period-custom');
-    if (custom) custom.style.display = e.target.value === 'custom' ? 'block' : 'none';
+  document.getElementById('eval-period-sel')?.addEventListener('change', e => {
+    const txt = document.getElementById('eval-period-txt');
+    if (txt) txt.style.display = e.target.value === '__custom__' ? 'block' : 'none';
   });
 
-  // Live progress preview
+  // Live progress preview — scoped entirely to this overlay
   const updatePreview = () => {
     const scores = {};
-    const mb = document.querySelector('.modal-body') || document;
-    mb.querySelectorAll('.ev-kpi-score').forEach(inp => {
-      scores[`${inp.dataset.pilar}_${inp.dataset.meta}_${inp.dataset.kpi}`] = Number(inp.value) || 0;
+    overlay.querySelectorAll('.eval-kpi-score').forEach(inp => {
+      scores[`${inp.dataset.pidx}_${inp.dataset.midx}_${inp.dataset.kidx}`] = Number(inp.value) || 0;
     });
     const fakeEval = {
-      pilarIdx: null, metaIdx: null,
       kpiScores: allKpiRows.map(row => ({
         pilarIdx: row.pIdx, metaIdx: row.mIdx, kpiIdx: row.kIdx,
         score: scores[`${row.pIdx}_${row.mIdx}_${row.kIdx}`] || 0,
       })),
     };
     const p = calcGoalProgress(goal, [fakeEval]);
-    const valEl = document.getElementById('ev-progress-val');
-    const barEl = document.getElementById('ev-progress-bar');
+    const valEl = document.getElementById('eval-prog-val');
+    const barEl = document.getElementById('eval-prog-bar');
     if (valEl) valEl.textContent = p + '%';
     if (barEl) barEl.style.width = p + '%';
   };
 
-  setTimeout(() => {
-    const mb = document.querySelector('.modal-body') || document;
-    mb.querySelectorAll('.ev-kpi-score').forEach(inp =>
-      inp.addEventListener('input', updatePreview));
-    updatePreview();
-  }, 100);
+  overlay.querySelectorAll('.eval-kpi-score').forEach(inp =>
+    inp.addEventListener('input', updatePreview));
+  updatePreview();
+
+  // Save
+  document.getElementById('eval-save')?.addEventListener('click', async () => {
+    const btn = document.getElementById('eval-save');
+
+    // Collect period
+    const selEl = document.getElementById('eval-period-sel');
+    const txtEl = document.getElementById('eval-period-txt');
+    const periodoRef = (selEl?.value === '__custom__' || !selEl)
+      ? txtEl?.value?.trim()
+      : selEl?.value;
+
+    if (!periodoRef) { toast.error('Selecione o período de referência.'); return; }
+
+    // Collect KPI scores — scoped to this overlay
+    const kpiScoresFinal = [];
+    overlay.querySelectorAll('.eval-kpi-score').forEach(inp => {
+      const score    = inp.value !== '' ? Number(inp.value) : null;
+      const pilarIdx = Number(inp.dataset.pidx);
+      const metaIdx  = Number(inp.dataset.midx);
+      const kpiIdx   = Number(inp.dataset.kidx);
+      const commentEl = overlay.querySelector(
+        `.eval-kpi-comment[data-pidx="${pilarIdx}"][data-midx="${metaIdx}"][data-kidx="${kpiIdx}"]`);
+      kpiScoresFinal.push({
+        pilarIdx, metaIdx, kpiIdx,
+        score,
+        comentario: commentEl?.value?.trim() || '',
+      });
+    });
+
+    const isPartial = kpiScoresFinal.some(s => s.score === null);
+
+    if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+    try {
+      await saveEvaluation(existingEval?.id || null, {
+        goalId:    goal.id,
+        periodoRef,
+        kpiScores: kpiScoresFinal,
+        status:    isPartial ? 'parcial' : 'completa',
+      });
+      toast.success('Avaliação salva!');
+      close();
+      onSave?.();
+    } catch(e) {
+      toast.error('Erro ao salvar: ' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '💾 Salvar avaliação'; }
+    }
+  });
 }
 
 /* ─── Goal form (create/edit) ──────────────────────────────── */
