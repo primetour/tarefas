@@ -487,7 +487,10 @@ function openEvaluationForm(goal, existingEval, onSave) {
               style="${FIELD};margin-top:6px;display:${existingEval?.periodoRef && !periods.find(p=>p.label===existingEval.periodoRef) ? 'block' : 'none'};"
               value="${esc(existingEval?.periodoRef||'')}" placeholder="Ex: Abril 2025">`
           : `<input type="text" id="eval-period-txt" class="portal-field" style="${FIELD}"
-              value="${esc(existingEval?.periodoRef||'')}" placeholder="Ex: Abril 2025">`}
+              value="${esc(existingEval?.periodoRef||'')}" placeholder="Ex: Abril 2025 ou Q1 2025">
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+              ℹ️ Descreva o período que está sendo avaliado (ex: Janeiro 2025, Q1 2025, Anual 2025)
+            </div>`}
         </div>
 
         <!-- KPIs -->
