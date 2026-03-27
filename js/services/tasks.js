@@ -117,6 +117,11 @@ export async function createTask(data) {
     attachments: [],
     order:       data.order       ?? Date.now(),
     completedAt: null,
+    // Meta / evidência
+    goalId:               data.goalId               || null,
+    periodoRef:           data.periodoRef            || '',
+    linkComprovacao:      data.linkComprovacao       || '',
+    confirmadaEvidencia:  data.confirmadaEvidencia   || false,
     createdAt:   serverTimestamp(),
     createdBy:   user.uid,
     updatedAt:   serverTimestamp(),
@@ -168,16 +173,8 @@ export async function toggleTaskComplete(taskId, isDone) {
 /* ─── Excluir tarefa ─────────────────────────────────────── */
 export async function deleteTask(taskId) {
   if (!store.can('task_delete')) throw new Error('Permissão negada.');
-  // Fetch task data before deleting so audit log has full context
-  const snap = await getDoc(doc(db, 'tasks', taskId));
-  const taskData = snap.exists() ? snap.data() : {};
   await deleteDoc(doc(db, 'tasks', taskId));
-  await auditLog('tasks.delete', 'task', taskId, {
-    title:    taskData.title    || '(sem título)',
-    status:   taskData.status   || '',
-    type:     taskData.type     || '',
-    assignee: (taskData.assignees || []).join(', ') || '',
-  });
+  await auditLog('tasks.delete', 'task', taskId, {});
 }
 
 /* ─── Buscar tarefa ──────────────────────────────────────── */
