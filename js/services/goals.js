@@ -101,12 +101,18 @@ export async function publishGoal(id) {
 
 /* ─── CRUD Avaliações ──────────────────────────────────────── */
 export async function fetchEvaluations(goalId) {
+  // No orderBy to avoid composite index requirement — sort client-side
   const snap = await getDocs(
     query(collection(db, 'goal_evaluations'),
-      where('goalId', '==', goalId),
-      orderBy('createdAt', 'desc'))
+      where('goalId', '==', goalId))
   );
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Sort by createdAt descending (most recent first)
+  return docs.sort((a, b) => {
+    const ta = a.createdAt?.toDate?.() || (a.createdAt ? new Date(a.createdAt) : new Date(0));
+    const tb = b.createdAt?.toDate?.() || (b.createdAt ? new Date(b.createdAt) : new Date(0));
+    return tb - ta;
+  });
 }
 
 export async function saveEvaluation(evalId, data) {
