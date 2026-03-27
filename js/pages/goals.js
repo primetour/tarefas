@@ -531,12 +531,14 @@ function openEvaluationForm(goal, existingEval, onSave) {
           if (!periodoRef) { toast.error('Selecione o período de referência.'); return; }
 
           const kpiScoresFinal = [];
-          document.querySelectorAll('.ev-kpi-score').forEach(inp => {
+          // Scope to modal body to avoid cross-modal interference
+          const modalBody = document.querySelector('.modal-body') || document;
+          modalBody.querySelectorAll('.ev-kpi-score').forEach(inp => {
             const score    = inp.value !== '' ? Number(inp.value) : null;
             const pilarIdx = Number(inp.dataset.pilar);
             const metaIdx  = Number(inp.dataset.meta);
             const kpiIdx   = Number(inp.dataset.kpi);
-            const commentEl = document.querySelector(
+            const commentEl = modalBody.querySelector(
               `.ev-kpi-comment[data-pilar="${pilarIdx}"][data-meta="${metaIdx}"][data-kpi="${kpiIdx}"]`);
             kpiScoresFinal.push({
               pilarIdx, metaIdx, kpiIdx,
@@ -552,10 +554,12 @@ function openEvaluationForm(goal, existingEval, onSave) {
 
           try {
             await saveEvaluation(existingEval?.id || null, {
-              goalId: goal.id,
+              goalId:    goal.id,
               periodoRef,
               kpiScores: kpiScoresFinal,
-              status: isPartial ? 'parcial' : 'completa',
+              status:    isPartial ? 'parcial' : 'completa',
+              // Store pilar/meta index at the evaluation level for display
+              // Individual scores also carry pilarIdx/metaIdx per KPI
             });
             toast.success('Avaliação salva!');
             close();
@@ -579,7 +583,8 @@ function openEvaluationForm(goal, existingEval, onSave) {
   // Live progress preview
   const updatePreview = () => {
     const scores = {};
-    document.querySelectorAll('.ev-kpi-score').forEach(inp => {
+    const mb = document.querySelector('.modal-body') || document;
+    mb.querySelectorAll('.ev-kpi-score').forEach(inp => {
       scores[`${inp.dataset.pilar}_${inp.dataset.meta}_${inp.dataset.kpi}`] = Number(inp.value) || 0;
     });
     const fakeEval = {
@@ -597,7 +602,8 @@ function openEvaluationForm(goal, existingEval, onSave) {
   };
 
   setTimeout(() => {
-    document.querySelectorAll('.ev-kpi-score').forEach(inp =>
+    const mb = document.querySelector('.modal-body') || document;
+    mb.querySelectorAll('.ev-kpi-score').forEach(inp =>
       inp.addEventListener('input', updatePreview));
     updatePreview();
   }, 100);
@@ -931,7 +937,38 @@ function renderPilares(m, goal) {
     });
   });
   cont.querySelectorAll('.gf-pilar-pond, .gf-meta-pond, .gf-kpi-peso').forEach(inp => {
-    inp.addEventListener('input', () => wirePonderacaoWarnings(m, goal));
+    inp.addEventListener('input', () => {
+      // Cap KPI peso so sum cannot exceed 100
+      if (inp.classList.contains('gf-kpi-peso')) {
+        const pIdx = inp.dataset.pidx, mIdx = inp.dataset.midx;
+        const allKpiInputs = [...cont.querySelectorAll(`.gf-kpi-peso[data-pidx="${pIdx}"][data-midx="${mIdx}"]`)];
+        const othersSum = allKpiInputs
+          .filter(x => x !== inp)
+          .reduce((s, x) => s + (Number(x.value) || 0), 0);
+        const maxAllowed = 100 - othersSum;
+        if (Number(inp.value) > maxAllowed) inp.value = maxAllowed;
+      }
+      // Cap meta ponderacao per pilar
+      if (inp.classList.contains('gf-meta-pond')) {
+        const pIdx = inp.dataset.pidx;
+        const allMetaInputs = [...cont.querySelectorAll(`.gf-meta-pond[data-pidx="${pIdx}"]`)];
+        const othersSum = allMetaInputs
+          .filter(x => x !== inp)
+          .reduce((s, x) => s + (Number(x.value) || 0), 0);
+        const maxAllowed = 100 - othersSum;
+        if (Number(inp.value) > maxAllowed) inp.value = maxAllowed;
+      }
+      // Cap pilar ponderacao overall
+      if (inp.classList.contains('gf-pilar-pond')) {
+        const allPilarInputs = [...cont.querySelectorAll('.gf-pilar-pond')];
+        const othersSum = allPilarInputs
+          .filter(x => x !== inp)
+          .reduce((s, x) => s + (Number(x.value) || 0), 0);
+        const maxAllowed = 100 - othersSum;
+        if (Number(inp.value) > maxAllowed) inp.value = maxAllowed;
+      }
+      wirePonderacaoWarnings(m, goal);
+    });
   });
 }
 
