@@ -132,46 +132,49 @@ export async function deleteEvaluation(id) {
 /* ─── Cálculo de progresso ─────────────────────────────────── */
 /**
  * Calcula o progresso de uma meta com base nas avaliações.
+ * Modelo: uma avaliação por período, com kpiScores flat: [{pilarIdx, metaIdx, kpiIdx, score}]
  * Fórmula: Σ(score_kpi × peso_kpi / 100) × ponderacao_meta / 100 × ponderacao_pilar / 100
  * Retorna valor 0–100.
  */
 export function calcGoalProgress(goal, evaluations = []) {
-  if (!goal.pilares?.length) return 0;
+  if (!goal.pilares?.length || !evaluations.length) return 0;
+
+  // Use the most recent evaluation (by createdAt)
+  const latestEval = [...evaluations].sort((a, b) => {
+    const ta = a.createdAt?.toDate?.() || (a.createdAt ? new Date(a.createdAt) : new Date(0));
+    const tb = b.createdAt?.toDate?.() || (b.createdAt ? new Date(b.createdAt) : new Date(0));
+    return tb - ta;
+  })[0];
+
+  if (!latestEval?.kpiScores?.length) return 0;
+
+  // Build a lookup: "pIdx_mIdx_kIdx" → score
+  const scoreLookup = {};
+  for (const s of latestEval.kpiScores) {
+    scoreLookup[`${s.pilarIdx}_${s.metaIdx}_${s.kpiIdx}`] = Number(s.score) || 0;
+  }
 
   let totalProgress = 0;
-  let totalPilarWeight = 0;
 
   for (let pIdx = 0; pIdx < goal.pilares.length; pIdx++) {
     const pilar = goal.pilares[pIdx];
     if (!pilar.metas?.length) continue;
     const pilarWeight = Number(pilar.ponderacao) || 0;
-    totalPilarWeight += pilarWeight;
+    if (!pilarWeight) continue;
 
     let pilarScore = 0;
-    let totalMetaWeight = 0;
 
     for (let mIdx = 0; mIdx < pilar.metas.length; mIdx++) {
       const meta = pilar.metas[mIdx];
       const metaWeight = Number(meta.ponderacao) || 0;
-      totalMetaWeight += metaWeight;
+      if (!metaWeight || !meta.kpis?.length) continue;
 
-      // Get latest evaluation for this pilar/meta (use array index, not _idx)
-      const eval_ = evaluations
-        .filter(e => e.pilarIdx === pIdx && e.metaIdx === mIdx)
-        .sort((a, b) => {
-          const ta = a.createdAt?.toDate?.() || new Date(0);
-          const tb = b.createdAt?.toDate?.() || new Date(0);
-          return tb - ta;
-        })[0];
-
-      if (!eval_?.kpiScores?.length) continue;
-
-      // Score for this meta = Σ(kpi_score × kpi_peso / 100)
+      // Score for this meta = Σ(score_kpi × peso_kpi / 100)
       let metaScore = 0;
-      for (let kIdx = 0; kIdx < (meta.kpis || []).length; kIdx++) {
+      for (let kIdx = 0; kIdx < meta.kpis.length; kIdx++) {
         const kpi   = meta.kpis[kIdx];
-        const score = eval_.kpiScores[kIdx]?.score ?? 0;
-        metaScore  += (Number(score) * (Number(kpi.peso) || 0)) / 100;
+        const score = scoreLookup[`${pIdx}_${mIdx}_${kIdx}`] ?? 0;
+        metaScore  += (score * (Number(kpi.peso) || 0)) / 100;
       }
 
       pilarScore += (metaScore * metaWeight) / 100;
