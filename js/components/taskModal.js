@@ -77,6 +77,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     workspaceId: store.get('currentWorkspace')?.id || null,
     typeId: typeId || null,
     customFields: {},
+    goalId: null,
     ...(td || {}),
     // Always sanitize arrays regardless of source
     tags:         Array.isArray(td?.tags)        ? td.tags        : [],
@@ -335,6 +336,13 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         </select>
       </div>
       <div class="task-detail-field">
+        <div class="task-detail-label">Meta vinculada</div>
+        <select class="form-select" id="tm-goal" style="padding:8px 32px 8px 12px;">
+          <option value="">Sem meta vinculada</option>
+          <!-- populated async -->
+        </select>
+      </div>
+      <div class="task-detail-field">
         <div class="task-detail-label">Responsáveis</div>
         <div class="assignee-picker" id="assignee-picker">
           ${assigneeChips}
@@ -584,6 +592,7 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   const data={
     title,
     description:  ctx.querySelector('#tm-desc')?.value?.trim()||'',
+    goalId:       ctx.querySelector('#tm-goal')?.value || null,
     status:       ctx.querySelector('#tm-status')?.value||'not_started',
     priority:     ctx.querySelector('#tm-priority')?.value||'medium',
     projectId:    ctx.querySelector('#tm-project')?.value||null,
@@ -611,26 +620,7 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   // Collect nucleos from legacy chips
   data.nucleos = Array.from(ctx.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);
 
-  // Collect goalId from sidebar selector
-  data.goalId            = ctx.querySelector('#tm-goal')?.value || task.goalId || null;
-  data.periodoRef        = task.periodoRef || null;
-  data.linkComprovacao   = task.linkComprovacao || null;
-  data.confirmadaEvidencia = task.confirmadaEvidencia || false;
-
   if(isEdit) data._prevStatus=task.status;
-
-  // Double-check when completing a task without a goal link
-  const isCompletingNow = data.status === 'done' && task.status !== 'done';
-  if (isCompletingNow && !data.goalId) {
-    try {
-      const { hasPublishedGoals } = await import('../services/goals.js');
-      const anyGoals = await hasPublishedGoals();
-      if (anyGoals) {
-        const confirm = await showGoalDoubleCheck(ctx, task, data);
-        if (!confirm) return; // user cancelled
-      }
-    } catch(e) { /* goals module not available, skip */ }
-  }
 
   const btn=document.querySelector('.modal-footer .btn-primary');
   if(btn){btn.classList.add('loading');btn.disabled=true;}
@@ -645,69 +635,26 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
       toast.success('Tarefa criada!');
     }
     close();
+
+    // Double-check: task being marked done without goal link
+    const isBeingCompleted = data.status === 'done' &&
+      (!isEdit || task.status !== 'done');
+
+    if (isBeingCompleted && !data.goalId) {
+      try {
+        const { hasPublishedGoals } = await import('../services/goals.js');
+        const hasPubGoals = await hasPublishedGoals();
+        if (hasPubGoals) {
+          showEvidenceModal(savedTask?.id || task.id, data);
+        }
+      } catch(e) { /* ignore, non-blocking */ }
+    } else if (isBeingCompleted && data.goalId) {
+      showEvidenceModal(savedTask?.id || task.id, data);
+    }
+
     onSave?.(savedTask?.id, savedTask);
   } catch(err){toast.error(err.message);}
   finally{if(btn){btn.classList.remove('loading');btn.disabled=false;}}
-}
-
-/* ─── Goal double-check dialog ─────────────────────────────── */
-async function showGoalDoubleCheck(ctx, task, data) {
-  return new Promise(resolve => {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;
-      display:flex;align-items:center;justify-content:center;padding:20px;`;
-
-    let goals = [];
-    import('../services/goals.js').then(({ fetchGoals }) => fetchGoals()).then(gs => {
-      goals = gs.filter(g => g.status === 'publicada');
-      const goalOpts = goals.map(g =>
-        `<option value="${String(g.id||'').replace(/"/g,'&quot;')}">${String(g.objetivoNucleo||g.pilares?.[0]?.titulo||'Meta').replace(/</g,'&lt;')}</option>`
-      ).join('');
-
-      overlay.innerHTML = `
-        <div class="card" style="width:100%;max-width:480px;padding:28px;">
-          <div style="font-size:1.5rem;margin-bottom:12px;text-align:center;">🎯</div>
-          <h3 style="font-size:1rem;font-weight:700;margin-bottom:8px;text-align:center;">
-            Esta tarefa deveria estar vinculada a uma meta?
-          </h3>
-          <p style="font-size:0.875rem;color:var(--text-muted);text-align:center;margin-bottom:20px;line-height:1.6;">
-            Há metas publicadas no sistema. Tarefas concluídas podem servir como evidência de entrega.
-          </p>
-          <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
-            <select id="dbl-goal-sel" class="filter-select" style="width:100%;">
-              <option value="">Não vincular a nenhuma meta</option>
-              ${goalOpts}
-            </select>
-            <input type="text" id="dbl-periodo" class="portal-field" style="width:100%;"
-              placeholder="Período de referência (ex: Abril 2025)" value="${String(data.periodoRef||'').replace(/"/g,'&quot;')}">
-            <input type="url" id="dbl-link" class="portal-field" style="width:100%;"
-              placeholder="Link de comprovação (opcional)" value="${String(data.linkComprovacao||'').replace(/"/g,'&quot;')}">
-          </div>
-          <div style="display:flex;gap:10px;">
-            <button id="dbl-skip" class="btn btn-secondary" style="flex:1;">Concluir sem vincular</button>
-            <button id="dbl-confirm" class="btn btn-primary" style="flex:2;">✓ Confirmar conclusão</button>
-          </div>
-        </div>`;
-
-      document.getElementById('dbl-skip')?.addEventListener('click', () => {
-        overlay.remove(); resolve(true);
-      });
-      document.getElementById('dbl-confirm')?.addEventListener('click', () => {
-        const goalId = document.getElementById('dbl-goal-sel')?.value || null;
-        const periodo = document.getElementById('dbl-periodo')?.value?.trim() || null;
-        const link    = document.getElementById('dbl-link')?.value?.trim() || null;
-        if (goalId) {
-          data.goalId              = goalId;
-          data.periodoRef          = periodo;
-          data.linkComprovacao     = link;
-          data.confirmadaEvidencia = true;
-        }
-        overlay.remove(); resolve(true);
-      });
-    }).catch(() => { overlay.remove(); resolve(true); });
-
-    document.body.appendChild(overlay);
-  });
 }
 
 function getSubtaskProgress(subtasks) {
@@ -729,4 +676,119 @@ function renderCommentItem(c){
       <div class="comment-header"><span class="comment-author">${esc(c.authorName)}</span><span class="comment-time">${time}</span></div>
       <p class="comment-text">${esc(c.text)}</p>
     </div></div>`;
+}
+
+/* ─── Evidence / goal double-check modal ──────────────────── */
+async function showEvidenceModal(taskId, taskData) {
+  const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const LBL = `font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;`;
+
+  let goals = [];
+  let periods = [];
+
+  try {
+    const { fetchGoals, generatePendingPeriods } = await import('../services/goals.js');
+    goals = (await fetchGoals()).filter(g => g.status === 'publicada');
+  } catch(e) { return; }
+
+  const hasGoal = !!taskData.goalId;
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:3000;
+    display:flex;align-items:center;justify-content:center;padding:20px;`;
+
+  const render = (selectedGoalId) => {
+    const selGoal = goals.find(g => g.id === selectedGoalId);
+    if (selGoal) {
+      periods = generatePendingPeriods(selGoal);
+    }
+
+    overlay.innerHTML = `
+      <div class="card" style="width:100%;max-width:500px;padding:0;overflow:hidden;">
+        <div style="padding:16px 22px;background:var(--bg-surface);
+          border-bottom:1px solid var(--border-subtle);">
+          <div style="font-weight:700;font-size:1rem;margin-bottom:4px;">
+            ${hasGoal ? '✅ Tarefa concluída — registrar evidência' : '⚠ Tarefa concluída sem meta vinculada'}
+          </div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);">
+            ${hasGoal
+              ? 'Deseja registrar esta entrega como evidência da meta?'
+              : 'Há metas publicadas no sistema. Esta tarefa deveria estar vinculada a alguma delas?'}
+          </div>
+        </div>
+        <div style="padding:20px 22px;display:flex;flex-direction:column;gap:14px;">
+          ${!hasGoal ? `
+            <div>
+              <label style="${LBL}">Vincular a uma meta</label>
+              <select id="ev-goal-sel" class="filter-select" style="width:100%;">
+                <option value="">Não está relacionada a nenhuma meta</option>
+                ${goals.map(g => `<option value="${esc(g.id)}" ${taskData.goalId===g.id?'selected':''}>${esc(g.titulo)} — ${esc(g.responsavelNome||'')}</option>`).join('')}
+              </select>
+            </div>` : ''}
+          <div id="ev-extra" style="${selectedGoalId || hasGoal ? '' : 'display:none;'}">
+            <div>
+              <label style="${LBL}">Período de referência</label>
+              <select id="ev-periodo-sel" class="filter-select" style="width:100%;margin-bottom:8px;">
+                <option value="">Selecione o período…</option>
+                ${periods.map(p => `<option value="${esc(p.label)}">${esc(p.label)}</option>`).join('')}
+                <option value="custom">Informar manualmente…</option>
+              </select>
+              <input type="text" id="ev-periodo-custom" class="portal-field" style="width:100%;display:none;"
+                placeholder="Ex: Relatório de produtividade — Abril 2025">
+            </div>
+            <div>
+              <label style="${LBL};margin-top:10px;">Link de comprovação <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
+              <input type="url" id="ev-link" class="portal-field" style="width:100%;"
+                placeholder="https://…" value="${esc(taskData.linkComprovacao||'')}">
+            </div>
+          </div>
+        </div>
+        <div style="padding:14px 22px;border-top:1px solid var(--border-subtle);
+          background:var(--bg-surface);display:flex;gap:8px;justify-content:flex-end;">
+          <button id="ev-skip" class="btn btn-ghost btn-sm">Pular</button>
+          <button id="ev-save" class="btn btn-primary btn-sm">
+            ${selectedGoalId || hasGoal ? 'Registrar evidência' : 'Confirmar'}
+          </button>
+        </div>
+      </div>`;
+
+    // Wire goal selector
+    document.getElementById('ev-goal-sel')?.addEventListener('change', e => {
+      render(e.target.value);
+    });
+
+    // Wire period selector
+    document.getElementById('ev-periodo-sel')?.addEventListener('change', e => {
+      const custom = document.getElementById('ev-periodo-custom');
+      if (custom) custom.style.display = e.target.value === 'custom' ? 'block' : 'none';
+    });
+
+    document.getElementById('ev-skip')?.addEventListener('click', () => overlay.remove());
+
+    document.getElementById('ev-save')?.addEventListener('click', async () => {
+      const goalId   = document.getElementById('ev-goal-sel')?.value || taskData.goalId || null;
+      const periodSel = document.getElementById('ev-periodo-sel')?.value;
+      const periodCustom = document.getElementById('ev-periodo-custom')?.value?.trim();
+      const periodoRef = periodSel === 'custom' ? periodCustom : periodSel;
+      const link = document.getElementById('ev-link')?.value?.trim() || '';
+
+      if (goalId || hasGoal) {
+        try {
+          const { updateTask } = await import('../services/tasks.js');
+          await updateTask(taskId, {
+            goalId:               goalId || taskData.goalId,
+            periodoRef:           periodoRef || '',
+            linkComprovacao:      link,
+            confirmadaEvidencia:  true,
+          });
+          toast.success('Evidência registrada!');
+        } catch(e) { toast.error('Erro ao registrar evidência: ' + e.message); }
+      }
+      overlay.remove();
+    });
+  };
+
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  render(taskData.goalId || '');
 }
