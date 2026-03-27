@@ -135,6 +135,21 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       bindEvents(task, users, currentTags, currentAssignees, isEdit);
+
+      // Populate goal selector async (non-blocking)
+      import('../services/goals.js').then(({ fetchGoals }) => {
+        return fetchGoals();
+      }).then(goals => {
+        const published = goals.filter(g => g.status === 'publicada');
+        const sel = document.getElementById('tm-goal');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Sem meta vinculada</option>' +
+          published.map(g =>
+            `<option value="${g.id}" ${task.goalId === g.id ? 'selected' : ''}>${
+              g.titulo || g.id
+            }</option>`
+          ).join('');
+      }).catch(() => {});
     });
   });
 }
