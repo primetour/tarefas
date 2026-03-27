@@ -136,80 +136,73 @@ export async function deleteEvaluation(id) {
 }
 
 /* ─── Cálculo de progresso ─────────────────────────────────── */
+
+/** Conta o total de períodos esperados baseado na configuração da meta */
+export function countExpectedPeriods(goal) {
+  const toDate = v => v?.toDate?.() || (v ? new Date(v) : null);
+  const start  = toDate(goal.inicio);
+  const end    = toDate(goal.fim);
+  if (!start || !end || !goal.recorrenciaAval) return 1;
+
+  const step = { monthly:1, bimonthly:2, quarterly:3, semiannual:6, annual:12 }[goal.periodicidadeAval] || 1;
+  const addM = (d, n) => { const r = new Date(d); r.setMonth(r.getMonth() + n); return r; };
+
+  let count = 0, cur = new Date(start);
+  while (cur <= end) { count++; cur = addM(cur, step); }
+  return Math.max(1, count);
+}
+
 /**
- * Calcula o progresso de uma meta com base nas avaliações.
- * Modelo: uma avaliação por período, com kpiScores flat: [{pilarIdx, metaIdx, kpiIdx, score}]
- * Fórmula: Σ(score_kpi × peso_kpi / 100) × ponderacao_meta / 100 × ponderacao_pilar / 100
- * Retorna valor 0–100.
- * Fallback: se pesos/ponderações não estiverem preenchidos, distribui igualmente.
+ * Calcula o score de uma avaliação individual (0–100).
+ * Usa pesos dos KPIs/metas/pilares com fallback de distribuição igual se não preenchidos.
+ */
+export function calcEvalScore(goal, evaluation) {
+  if (!evaluation?.kpiScores?.length || !goal.pilares?.length) return 0;
+
+  const lookup = {};
+  for (const s of evaluation.kpiScores) {
+    if (s.score !== null && s.score !== undefined)
+      lookup[s.pilarIdx + '_' + s.metaIdx + '_' + s.kpiIdx] = Number(s.score) || 0;
+  }
+
+  const pilares  = goal.pilares;
+  const pWeights = pilares.map(p => Number(p.ponderacao) || 0);
+  const pTotal   = pWeights.reduce((a, b) => a + b, 0);
+  const pW       = pTotal > 0 ? pWeights : pilares.map(() => 100 / pilares.length);
+
+  let total = 0;
+  for (let pIdx = 0; pIdx < pilares.length; pIdx++) {
+    const metas    = pilares[pIdx].metas || [];
+    if (!metas.length) continue;
+    const mWeights = metas.map(m => Number(m.ponderacao) || 0);
+    const mTotal   = mWeights.reduce((a, b) => a + b, 0);
+    const mW       = mTotal > 0 ? mWeights : metas.map(() => 100 / metas.length);
+    let ps = 0;
+    for (let mIdx = 0; mIdx < metas.length; mIdx++) {
+      const kpis    = metas[mIdx].kpis || [];
+      if (!kpis.length) continue;
+      const kWeights = kpis.map(k => Number(k.peso) || 0);
+      const kTotal   = kWeights.reduce((a, b) => a + b, 0);
+      const kW       = kTotal > 0 ? kWeights : kpis.map(() => 100 / kpis.length);
+      let ms = 0;
+      for (let kIdx = 0; kIdx < kpis.length; kIdx++) {
+        ms += ((lookup[pIdx + '_' + mIdx + '_' + kIdx] ?? 0) * kW[kIdx]) / 100;
+      }
+      ps += (ms * mW[mIdx]) / 100;
+    }
+    total += (ps * pW[pIdx]) / 100;
+  }
+  return Math.round(Math.min(100, total));
+}
+
+/**
+ * Progresso acumulado da meta = Σ(score de cada período avaliado) / total períodos esperados
  */
 export function calcGoalProgress(goal, evaluations = []) {
   if (!goal.pilares?.length || !evaluations.length) return 0;
-
-  // Use the most recent evaluation (by createdAt)
-  const latestEval = [...evaluations].sort((a, b) => {
-    const ta = a.createdAt?.toDate?.() || (a.createdAt ? new Date(a.createdAt) : new Date(0));
-    const tb = b.createdAt?.toDate?.() || (b.createdAt ? new Date(b.createdAt) : new Date(0));
-    return tb - ta;
-  })[0];
-
-  if (!latestEval?.kpiScores?.length) return 0;
-
-  // Build lookup: "pIdx_mIdx_kIdx" → score
-  const scoreLookup = {};
-  for (const s of latestEval.kpiScores) {
-    if (s.score !== null && s.score !== undefined)
-      scoreLookup[`${s.pilarIdx}_${s.metaIdx}_${s.kpiIdx}`] = Number(s.score) || 0;
-  }
-
-  const pilares = goal.pilares;
-  // Pilar weights: use defined values, or equal split if all zero
-  const pilarWeights = pilares.map(p => Number(p.ponderacao) || 0);
-  const pilarTotal   = pilarWeights.reduce((a, b) => a + b, 0);
-  const pilarW       = pilarTotal > 0
-    ? pilarWeights
-    : pilares.map(() => 100 / pilares.length);
-
-  let totalProgress = 0;
-
-  for (let pIdx = 0; pIdx < pilares.length; pIdx++) {
-    const pilar = pilares[pIdx];
-    if (!pilar.metas?.length) continue;
-
-    const metas = pilar.metas;
-    // Meta weights within pilar
-    const metaWeights = metas.map(m => Number(m.ponderacao) || 0);
-    const metaTotal   = metaWeights.reduce((a, b) => a + b, 0);
-    const metaW       = metaTotal > 0
-      ? metaWeights
-      : metas.map(() => 100 / metas.length);
-
-    let pilarScore = 0;
-
-    for (let mIdx = 0; mIdx < metas.length; mIdx++) {
-      const meta = metas[mIdx];
-      if (!meta.kpis?.length) continue;
-
-      // KPI weights within meta
-      const kpiWeights = meta.kpis.map(k => Number(k.peso) || 0);
-      const kpiTotal   = kpiWeights.reduce((a, b) => a + b, 0);
-      const kpiW       = kpiTotal > 0
-        ? kpiWeights
-        : meta.kpis.map(() => 100 / meta.kpis.length);
-
-      let metaScore = 0;
-      for (let kIdx = 0; kIdx < meta.kpis.length; kIdx++) {
-        const score = scoreLookup[`${pIdx}_${mIdx}_${kIdx}`] ?? 0;
-        metaScore  += (score * kpiW[kIdx]) / 100;
-      }
-
-      pilarScore += (metaScore * metaW[mIdx]) / 100;
-    }
-
-    totalProgress += (pilarScore * pilarW[pIdx]) / 100;
-  }
-
-  return Math.round(Math.min(100, totalProgress));
+  const totalPeriods = countExpectedPeriods(goal);
+  const sumScores = evaluations.reduce((sum, ev) => sum + calcEvalScore(goal, ev), 0);
+  return Math.round(Math.min(100, sumScores / totalPeriods));
 }
 
 /** Verifica se há metas publicadas no sistema (para double-check de tarefa) */
