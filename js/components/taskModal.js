@@ -67,19 +67,6 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     } catch(e) {}
   }
 
-  // Load goals for selector
-  try {
-    const { fetchGoals } = await import('../services/goals.js');
-    const goals = await fetchGoals({}).catch(()=>[]);
-    setTimeout(() => {
-      const sel = document.getElementById('tm-goal');
-      if (sel && goals.length) {
-        sel.innerHTML = '<option value="">Sem meta vinculada</option>' +
-          goals.map(g => `<option value="${g.id}" ${task.goalId===g.id?'selected':''}>${g.title||g.id}</option>`).join('');
-      }
-    }, 100);
-  } catch(e) {}
-
   // Sanitize taskData — ensure arrays are always arrays
   const sanitize = (td) => ({
     title:'', description:'', status, priority:'medium',
@@ -98,7 +85,6 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     comments:     Array.isArray(td?.comments)     ? td.comments    : [],
     nucleos:      Array.isArray(td?.nucleos)      ? td.nucleos     : [],
     customFields: td?.customFields || {},
-    goalId:       td?.goalId || null,
   });
 
   let task = sanitize(taskData);
@@ -207,7 +193,6 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         <textarea id="tm-desc" class="form-textarea" rows="3"
           placeholder="Descreva a tarefa...">${esc(task.description)}</textarea>
       </div>
-    
       ${isEdit ? `
         <div class="task-detail-field">
           <div class="task-detail-label">Subtarefas <span class="subtask-progress" id="subtask-progress">${getSubtaskProgress(task.subtasks||[])}</span></div>
@@ -347,13 +332,6 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         <div class="task-detail-label">Projeto</div>
         <select class="form-select" id="tm-project" style="padding:8px 32px 8px 12px;">
           ${projectOpts}
-        </select>
-      </div>
-      <div class="task-detail-field">
-        <div class="task-detail-label">Meta vinculada</div>
-        <select class="form-select" id="tm-goal" style="padding:8px 32px 8px 12px;">
-          <option value="">Sem meta vinculada</option>
-          <!-- populated async -->
         </select>
       </div>
       <div class="task-detail-field">
@@ -606,7 +584,6 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   const data={
     title,
     description:  ctx.querySelector('#tm-desc')?.value?.trim()||'',
-    goalId:       ctx.querySelector('#tm-goal')?.value || null,
     status:       ctx.querySelector('#tm-status')?.value||'not_started',
     priority:     ctx.querySelector('#tm-priority')?.value||'medium',
     projectId:    ctx.querySelector('#tm-project')?.value||null,
@@ -634,7 +611,26 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   // Collect nucleos from legacy chips
   data.nucleos = Array.from(ctx.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);
 
+  // Collect goalId from sidebar selector
+  data.goalId            = ctx.querySelector('#tm-goal')?.value || task.goalId || null;
+  data.periodoRef        = task.periodoRef || null;
+  data.linkComprovacao   = task.linkComprovacao || null;
+  data.confirmadaEvidencia = task.confirmadaEvidencia || false;
+
   if(isEdit) data._prevStatus=task.status;
+
+  // Double-check when completing a task without a goal link
+  const isCompletingNow = data.status === 'done' && task.status !== 'done';
+  if (isCompletingNow && !data.goalId) {
+    try {
+      const { hasPublishedGoals } = await import('../services/goals.js');
+      const anyGoals = await hasPublishedGoals();
+      if (anyGoals) {
+        const confirm = await showGoalDoubleCheck(ctx, task, data);
+        if (!confirm) return; // user cancelled
+      }
+    } catch(e) { /* goals module not available, skip */ }
+  }
 
   const btn=document.querySelector('.modal-footer .btn-primary');
   if(btn){btn.classList.add('loading');btn.disabled=true;}
@@ -652,6 +648,66 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     onSave?.(savedTask?.id, savedTask);
   } catch(err){toast.error(err.message);}
   finally{if(btn){btn.classList.remove('loading');btn.disabled=false;}}
+}
+
+/* ─── Goal double-check dialog ─────────────────────────────── */
+async function showGoalDoubleCheck(ctx, task, data) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;
+      display:flex;align-items:center;justify-content:center;padding:20px;`;
+
+    let goals = [];
+    import('../services/goals.js').then(({ fetchGoals }) => fetchGoals()).then(gs => {
+      goals = gs.filter(g => g.status === 'publicada');
+      const goalOpts = goals.map(g =>
+        `<option value="${String(g.id||'').replace(/"/g,'&quot;')}">${String(g.objetivoNucleo||g.pilares?.[0]?.titulo||'Meta').replace(/</g,'&lt;')}</option>`
+      ).join('');
+
+      overlay.innerHTML = `
+        <div class="card" style="width:100%;max-width:480px;padding:28px;">
+          <div style="font-size:1.5rem;margin-bottom:12px;text-align:center;">🎯</div>
+          <h3 style="font-size:1rem;font-weight:700;margin-bottom:8px;text-align:center;">
+            Esta tarefa deveria estar vinculada a uma meta?
+          </h3>
+          <p style="font-size:0.875rem;color:var(--text-muted);text-align:center;margin-bottom:20px;line-height:1.6;">
+            Há metas publicadas no sistema. Tarefas concluídas podem servir como evidência de entrega.
+          </p>
+          <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
+            <select id="dbl-goal-sel" class="filter-select" style="width:100%;">
+              <option value="">Não vincular a nenhuma meta</option>
+              ${goalOpts}
+            </select>
+            <input type="text" id="dbl-periodo" class="portal-field" style="width:100%;"
+              placeholder="Período de referência (ex: Abril 2025)" value="${String(data.periodoRef||'').replace(/"/g,'&quot;')}">
+            <input type="url" id="dbl-link" class="portal-field" style="width:100%;"
+              placeholder="Link de comprovação (opcional)" value="${String(data.linkComprovacao||'').replace(/"/g,'&quot;')}">
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button id="dbl-skip" class="btn btn-secondary" style="flex:1;">Concluir sem vincular</button>
+            <button id="dbl-confirm" class="btn btn-primary" style="flex:2;">✓ Confirmar conclusão</button>
+          </div>
+        </div>`;
+
+      document.getElementById('dbl-skip')?.addEventListener('click', () => {
+        overlay.remove(); resolve(true);
+      });
+      document.getElementById('dbl-confirm')?.addEventListener('click', () => {
+        const goalId = document.getElementById('dbl-goal-sel')?.value || null;
+        const periodo = document.getElementById('dbl-periodo')?.value?.trim() || null;
+        const link    = document.getElementById('dbl-link')?.value?.trim() || null;
+        if (goalId) {
+          data.goalId              = goalId;
+          data.periodoRef          = periodo;
+          data.linkComprovacao     = link;
+          data.confirmadaEvidencia = true;
+        }
+        overlay.remove(); resolve(true);
+      });
+    }).catch(() => { overlay.remove(); resolve(true); });
+
+    document.body.appendChild(overlay);
+  });
 }
 
 function getSubtaskProgress(subtasks) {
