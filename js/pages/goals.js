@@ -9,7 +9,7 @@ import { modal }  from '../components/modal.js';
 import {
   fetchGoals, fetchGoal, saveGoal, deleteGoal, publishGoal,
   fetchEvaluations, saveEvaluation, deleteEvaluation,
-  calcGoalProgress, generatePendingPeriods,
+  calcGoalProgress, calcEvalScore, countExpectedPeriods, generatePendingPeriods,
   GOAL_SCOPES, GOAL_PERIODS,
 } from '../services/goals.js';
 import { NUCLEOS } from '../services/tasks.js';
@@ -357,16 +357,16 @@ async function renderEvaluationTab(el, container) {
   el.innerHTML = relevant.map(g => `
     <div class="card" style="padding:0;margin-bottom:12px;overflow:hidden;">
       <div style="padding:14px 20px;background:var(--bg-surface);border-bottom:1px solid var(--border-subtle);
-        display:flex;align-items:center;justify-content:space-between;">
-        <div>
+        display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+        <div style="flex:1;">
           <div style="font-weight:700;">${esc(g.titulo)}</div>
-          <div style="font-size:0.8125rem;color:var(--text-muted);">
+          <div class="eval-header-${esc(g.id)}" style="font-size:0.8125rem;color:var(--text-muted);">
             ${esc(g.responsavelNome || '')} · Gestor: ${esc(g.gestorNome || '')}
           </div>
         </div>
         ${(isGestor || g.gestorId === curUser?.uid) ? `
           <button class="btn btn-primary btn-sm eval-new-btn" data-id="${esc(g.id)}"
-            style="font-size:0.8125rem;">+ Nova Avaliação</button>` : ''}
+            style="font-size:0.8125rem;flex-shrink:0;">+ Nova Avaliação</button>` : ''}
       </div>
       <div class="eval-list-${esc(g.id)}" style="padding:14px 20px;">
         <div style="color:var(--text-muted);font-size:0.875rem;">⏳ Carregando avaliações…</div>
@@ -379,13 +379,38 @@ async function renderEvaluationTab(el, container) {
     const listEl = el.querySelector(`.eval-list-${g.id}`);
     if (!listEl) continue;
 
+    const totalPeriods   = countExpectedPeriods(g);
+    const doneCount      = evals.length;
+    const overallProgress = calcGoalProgress(g, evals);
+
+    // Update card header to show progress summary
+    const headerEl = el.querySelector(`.eval-header-${g.id}`);
+    if (headerEl) {
+      headerEl.innerHTML = `
+        <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:2px;">
+          ${esc(g.responsavelNome || '')} · Gestor: ${esc(g.gestorNome || '')}
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
+          <span style="font-size:0.8125rem;color:var(--text-muted);">
+            ${doneCount} de ${totalPeriods} avaliação${totalPeriods!==1?'ões':''} realizada${doneCount!==1?'s':''}
+          </span>
+          <div style="flex:1;height:4px;background:var(--bg-dark);border-radius:2px;max-width:120px;">
+            <div style="height:100%;width:${(doneCount/totalPeriods*100).toFixed(0)}%;
+              background:var(--brand-gold);border-radius:2px;"></div>
+          </div>
+          <span style="font-weight:700;color:var(--brand-gold);font-size:0.875rem;">
+            Progresso: ${overallProgress}%
+          </span>
+        </div>`;
+    }
+
     if (!evals.length) {
       listEl.innerHTML = `<div style="color:var(--text-muted);font-size:0.875rem;">
         Nenhuma avaliação registrada ainda.</div>`;
     } else {
       listEl.innerHTML = evals.map(ev => {
-        const progress = calcGoalProgress(g, [ev]);
-        const isPartial = ev.status === 'parcial';
+        const periodScore = calcEvalScore(g, ev);
+        const isPartial   = ev.status === 'parcial';
         return `
         <div style="display:flex;align-items:center;gap:12px;padding:8px 0;
           border-bottom:1px solid var(--border-subtle);">
@@ -393,20 +418,31 @@ async function renderEvaluationTab(el, container) {
             <span style="font-size:0.875rem;font-weight:600;">${esc(ev.periodoRef || 'Período não definido')}</span>
             ${isPartial ? `<span style="font-size:0.625rem;margin-left:6px;padding:1px 6px;border-radius:20px;
               background:#F59E0B18;color:#F59E0B;font-weight:600;">Parcial</span>` : ''}
-            <span style="font-size:0.75rem;color:var(--text-muted);margin-left:8px;">
-              ${fmt(ev.createdAt)}
-            </span>
+            <span style="font-size:0.75rem;color:var(--text-muted);margin-left:8px;">${fmt(ev.createdAt)}</span>
           </div>
-          <span style="font-weight:700;color:var(--brand-gold);">${progress}%</span>
+          <div style="text-align:right;">
+            <div style="font-weight:700;color:var(--brand-gold);font-size:0.9375rem;">${periodScore}%</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">nota do período</div>
+          </div>
           ${(isGestor || g.gestorId === curUser?.uid) ? `
             <button class="btn btn-ghost btn-sm eval-edit-btn"
               data-goal-id="${esc(g.id)}" data-eval-id="${esc(ev.id)}"
-              style="font-size:0.75rem;color:var(--brand-gold);">✎ Editar</button>
+              style="font-size:0.75rem;color:var(--brand-gold);">✎</button>
             <button class="btn btn-ghost btn-sm eval-del-btn"
               data-eval-id="${esc(ev.id)}"
               style="font-size:0.75rem;color:#EF4444;">✕</button>` : ''}
         </div>`;
-      }).join('');
+      }).join('') + `
+        <div style="padding:10px 0 2px;display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:0.8125rem;color:var(--text-muted);">
+            Progresso acumulado (${doneCount}/${totalPeriods} períodos)
+          </span>
+          <span style="font-weight:700;color:var(--brand-gold);font-size:1rem;">${overallProgress}%</span>
+        </div>
+        <div style="height:6px;background:var(--bg-dark);border-radius:3px;overflow:hidden;margin-bottom:4px;">
+          <div style="height:100%;width:${overallProgress}%;background:var(--brand-gold);
+            border-radius:3px;transition:width .5s;"></div>
+        </div>`;
     }
   }
 
@@ -525,13 +561,16 @@ function openEvaluationForm(goal, existingEval, onSave) {
 
         <!-- Progresso ao vivo -->
         <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:14px 16px;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-            <span style="font-size:0.875rem;font-weight:600;">Progresso calculado</span>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:0.875rem;font-weight:600;">Nota do período</span>
             <span id="eval-prog-val" style="font-size:1.125rem;font-weight:700;color:var(--brand-gold);">—</span>
           </div>
-          <div style="height:6px;background:var(--bg-dark);border-radius:3px;overflow:hidden;">
+          <div style="height:6px;background:var(--bg-dark);border-radius:3px;overflow:hidden;margin-bottom:6px;">
             <div id="eval-prog-bar" style="height:100%;width:0%;background:var(--brand-gold);
               border-radius:3px;transition:width .3s;"></div>
+          </div>
+          <div id="eval-contrib-label" style="font-size:0.75rem;color:var(--text-muted);text-align:right;">
+            contribuição para o progresso geral: —
           </div>
         </div>
       </div>
@@ -560,19 +599,26 @@ function openEvaluationForm(goal, existingEval, onSave) {
   const updatePreview = () => {
     const scores = {};
     overlay.querySelectorAll('.eval-kpi-score').forEach(inp => {
-      scores[`${inp.dataset.pidx}_${inp.dataset.midx}_${inp.dataset.kidx}`] = Number(inp.value) || 0;
+      scores[inp.dataset.pidx + '_' + inp.dataset.midx + '_' + inp.dataset.kidx] = Number(inp.value) || 0;
     });
     const fakeEval = {
       kpiScores: allKpiRows.map(row => ({
         pilarIdx: row.pIdx, metaIdx: row.mIdx, kpiIdx: row.kIdx,
-        score: scores[`${row.pIdx}_${row.mIdx}_${row.kIdx}`] || 0,
+        score: scores[row.pIdx + '_' + row.mIdx + '_' + row.kIdx] || 0,
       })),
     };
-    const p = calcGoalProgress(goal, [fakeEval]);
-    const valEl = document.getElementById('eval-prog-val');
-    const barEl = document.getElementById('eval-prog-bar');
-    if (valEl) valEl.textContent = p + '%';
-    if (barEl) barEl.style.width = p + '%';
+    const periodScore   = calcEvalScore(goal, fakeEval);
+    const totalPeriods  = countExpectedPeriods(goal);
+    const contribution  = (periodScore / totalPeriods).toFixed(1);
+    const valEl  = document.getElementById('eval-prog-val');
+    const barEl  = document.getElementById('eval-prog-bar');
+    const contEl = document.getElementById('eval-contrib-label');
+    if (valEl)  valEl.textContent  = periodScore + '%';
+    if (barEl)  barEl.style.width  = periodScore + '%';
+    if (contEl) contEl.textContent =
+      totalPeriods > 1
+        ? `contribuição para o progresso geral: ${contribution}% (1 de ${totalPeriods} períodos)`
+        : 'meta com avaliação única';
   };
 
   overlay.querySelectorAll('.eval-kpi-score').forEach(inp => {
