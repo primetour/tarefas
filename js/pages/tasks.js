@@ -204,7 +204,88 @@ function renderTaskList() {
 }
 
 function renderListHeader() {
-\t< truncated lines 212-291 >
+  return `<div class="task-list-header">
+    <div></div>
+    <div>Título</div>
+    <div>Status</div>
+    <div>Tipo / Etapa</div>
+    <div>Área</div>
+    <div>Prazo</div>
+    <div>Responsáveis</div>
+  </div>`;
+}
+
+function renderTaskRow(task) {
+  const isDone  = task.status === 'done';
+  const status  = STATUS_MAP[task.status]   || { label: task.status, color: '#6B7280' };
+  const prio    = PRIORITY_MAP[task.priority] || { label: task.priority, color: '#6B7280' };
+  const project = allProjects.find(p => p.id === task.projectId);
+  const users   = store.get('users') || [];
+  const assignees = (task.assignees||[]).slice(0,3).map(uid => {
+    const u = users.find(u=>u.id===uid);
+    if (!u) return '';
+    return `<div class="avatar avatar-sm" title="${esc(u.name)}"
+      style="background:${u.avatarColor||'#3B82F6'}; margin-left:-6px; border:2px solid var(--bg-card);">
+      ${(u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+    </div>`;
+  }).join('');
+  const extraAssignees = (task.assignees||[]).length > 3
+    ? `<div class="avatar avatar-sm" style="background:var(--bg-elevated); color:var(--text-muted); margin-left:-6px; border:2px solid var(--bg-card); font-size:0.5rem;">
+        +${(task.assignees.length-3)}
+      </div>` : '';
+
+  const dueText = task.dueDate ? formatDue(task.dueDate) : '';
+  const dueClass = task.dueDate ? getDueClass(task.dueDate, isDone) : '';
+
+  const nlStatus = task.type === 'newsletter' && task.newsletterStatus
+    ? NEWSLETTER_STATUSES?.find(s=>s.value===task.newsletterStatus)?.label || task.newsletterStatus
+    : null;
+  const typeLabel = TASK_TYPES?.find(t=>t.value===task.type)?.label || '';
+
+  return `
+    <div class="task-row ${isDone?'done':''}" data-task-id="${task.id}">
+      <div class="task-check ${isDone?'checked':''}" data-check-id="${task.id}">
+        ${isDone ? '✓' : ''}
+      </div>
+      <div>
+        <div class="task-row-title">${esc(task.title)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;align-items:center;">
+          <span class="badge badge-priority-${task.priority}" style="font-size:0.6rem;">${prio.label}</span>
+          ${(task.nucleos||[]).length ? `<span style="font-size:0.6875rem;color:var(--text-muted);">◈ ${(task.nucleos||[]).map(n=>NUCLEOS.find(x=>x.value===n)?.label||n).join(', ')}</span>` : ''}
+          ${task.tags?.length ? task.tags.slice(0,2).map(t=>`<span style="font-size:0.6875rem;color:var(--text-muted);">#${esc(t)}</span>`).join('') : ''}
+          ${project ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${project.icon} ${esc(project.name)}</span>` : ''}
+        </div>
+      </div>
+      <div>
+        <span class="badge badge-status-${task.status}" style="font-size:0.6875rem;">
+          ${status.label}
+        </span>
+      </div>
+      <div style="font-size:0.8125rem;">
+        ${typeLabel ? `<div style="color:var(--text-secondary);">${esc(typeLabel)}</div>` : '—'}
+        ${nlStatus ? `<div style="font-size:0.75rem;color:var(--brand-gold);margin-top:2px;">↳ ${esc(nlStatus)}</div>` : ''}
+        ${(() => {
+          // Show showInList custom fields for this task's type
+          if (!task.typeId && !task.type) return '';
+          const tt = pageTaskTypes.find(t => t.id === task.typeId || t.name?.toLowerCase() === task.type);
+          if (!tt) return '';
+          return (tt.fields||[])
+            .filter(f => f.showInList && f.key !== 'newsletterStatus' && f.key !== 'outOfCalendar')
+            .map(f => {
+              const val = task.customFields?.[f.key];
+              if (val === null || val === undefined || val === '') return '';
+              const display = Array.isArray(val) ? val.join(', ') : String(val);
+              return `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:1px;">${esc(f.label)}: ${esc(display)}</div>`;
+            }).join('');
+        })()}
+      </div>
+      <div style="font-size:0.8125rem; color:var(--text-muted);">
+        ${task.requestingArea ? esc(task.requestingArea) : '—'}
+      </div>
+      <div class="kanban-card-due ${dueClass}" style="font-size:0.8125rem;">${dueText}</div>
+      <div style="display:flex; align-items:center;">${assignees}${extraAssignees}</div>
+    </div>
+  `;
     })).filter(g => g.tasks.length > 0);
   }
   if (groupBy === 'priority') {
