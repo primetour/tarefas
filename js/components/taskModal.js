@@ -659,7 +659,9 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
       (!isEdit || task.status !== 'done');
 
     if (isBeingCompleted) {
-      showEvidenceModal(savedTask?.id || task.id, { ...data, id: savedTask?.id || task.id });
+      // Show overlay BEFORE onSave re-renders the page;
+      // onSave fires after user confirms/skips the overlay
+      await showEvidenceModal(savedTask?.id || task.id, { ...data, id: savedTask?.id || task.id });
     }
 
     onSave?.(savedTask?.id, savedTask);
@@ -689,7 +691,8 @@ function renderCommentItem(c){
 }
 
 /* ─── Double-check: CSAT + evidência de meta ───────────────── */
-async function showEvidenceModal(taskId, taskData) {
+function showEvidenceModal(taskId, taskData) {
+  return new Promise(async (resolveOverlay) => {
   const esc2 = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const LBL2 = `font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;color:var(--text-muted);`;
   const F2   = `width:100%;`;
@@ -705,7 +708,7 @@ async function showEvidenceModal(taskId, taskData) {
   const hasGoals = goals.length > 0;
 
   // Nothing to show — skip overlay silently
-  if (!hasCsat && !hasGoal && !hasGoals) return;
+  if (!hasCsat && !hasGoal && !hasGoals) { resolveOverlay(); return; }
 
   if (hasGoal) {
     try {
@@ -855,7 +858,7 @@ async function showEvidenceModal(taskId, taskData) {
       if (txt) txt.style.display = e.target.value === '__custom__' ? 'block' : 'none';
     });
 
-    document.getElementById('dc-skip')?.addEventListener('click', () => overlay.remove());
+    document.getElementById('dc-skip')?.addEventListener('click', () => { overlay.remove(); resolveOverlay(); });
 
     document.getElementById('dc-confirm')?.addEventListener('click', async () => {
       const btn = document.getElementById('dc-confirm');
@@ -890,18 +893,20 @@ async function showEvidenceModal(taskId, taskData) {
         );
       }
 
-      // Send CSAT
+      // Send CSAT via csat service
       if (sendCsat && csatEmail) {
         ops.push(
-          import('../services/email.js').then(({ emailCsat }) => {
-            const base = location.origin + location.pathname.replace(/\/[^/]*$/, '');
-            return emailCsat({
+          import('../services/csat.js').then(({ createCsatSurvey, sendCsatEmail }) => {
+            return createCsatSurvey({
+              taskId,
+              taskTitle:   taskData.title || 'Entrega PRIMETOUR',
+              projectId:   taskData.projectId || null,
+              projectName: taskData.projectName || null,
               clientEmail: csatEmail,
               clientName:  csatEmail.split('@')[0],
-              taskTitle:   taskData.title || 'Entrega PRIMETOUR',
-              csatUrl:     base + '/csat-response.html?taskId=' + taskId,
-            });
-          }).catch(e => console.warn('CSAT email failed:', e.message))
+              assignedTo:  (taskData.assignees||[])[0] || null,
+            }).then(survey => sendCsatEmail(survey.id));
+          }).catch(e => console.warn('CSAT send failed:', e.message))
         );
       }
 
@@ -911,13 +916,15 @@ async function showEvidenceModal(taskId, taskData) {
       if (regMeta && goalId)     toast.success('Evidência registrada!');
 
       overlay.remove();
+      resolveOverlay();
       if (btn) { btn.disabled = false; btn.textContent = 'Confirmar'; }
     });
   };
 
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolveOverlay(); } });
   renderOverlay(taskData.goalId || '');
+  }); // end Promise
 }
 
 /* ─── Public entry point for quick-complete (task list / kanban) ── */
