@@ -1006,17 +1006,16 @@ function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEva
         ms+=sc*kp; pw+=kp; filled++;
       });
       const progress = pw>0?Math.round(ms/pw*100)/100:0;
-      const lbl = document.getElementById('ev-progress-label');
-      const bar  = document.getElementById('ev-progress-bar');
+      const lbl   = document.getElementById('ev-progress-label');
+      const bar   = document.getElementById('ev-progress-bar');
       const badge = document.getElementById('ev-incomplete-badge');
-      if (lbl) lbl.textContent = progress.toFixed(1)+'%';
-        if (bar) bar.style.width = Math.min(progress,100)+'%';
-        const totalPeso = meta.kpis.reduce((s,k)=>s+(Number(k.peso)||0)/100,0);
-        if (badge) badge.style.display = filled>0&&pw<totalPeso-0.01?'block':'none';
-      };
-      document.querySelectorAll('.ev-kpi-score').forEach(el => el.addEventListener('input', recalc));
-    },
-  });
+      if (lbl)   lbl.textContent = progress.toFixed(1)+'%';
+      if (bar)   bar.style.width = Math.min(progress,100)+'%';
+      const totalPeso = meta.kpis.reduce((s,k)=>s+(Number(k.peso)||0)/100,0);
+      if (badge) badge.style.display = filled>0&&pw<totalPeso-0.01?'block':'none';
+    };
+    document.querySelectorAll('.ev-kpi-score').forEach(el => el.addEventListener('input', recalc));
+  }, 0);
 }
 
 /* ─── Exports ────────────────────────────────────────────── */
