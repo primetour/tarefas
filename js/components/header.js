@@ -61,6 +61,11 @@ export class Header {
           <span class="notif-dot"></span>
         </button>
 
+        <button class="header-action-btn" id="theme-toggle-btn"
+          title="Alternar tema claro/escuro">
+          ${document.documentElement.dataset.theme === 'light' ? '🌙' : '☀️'}
+        </button>
+
         <button class="header-action-btn" id="help-btn" title="Ajuda">
           ❓
         </button>
@@ -141,6 +146,16 @@ export class Header {
         dropdown.style.display = 'none';
         this._handleAction(action);
       });
+    });
+
+    // Theme toggle
+    const themeBtn = this.el.querySelector('#theme-toggle-btn');
+    themeBtn?.addEventListener('click', () => {
+      const isLight = document.documentElement.dataset.theme === 'light';
+      const newTheme = isLight ? 'dark' : 'light';
+      document.documentElement.dataset.theme = newTheme;
+      localStorage.setItem('primetour-theme', newTheme);
+      themeBtn.textContent = newTheme === 'light' ? '🌙' : '☀️';
     });
 
     // Mobile menu
