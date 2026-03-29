@@ -297,6 +297,17 @@ function renderTaskRow(task) {
   `;
 }
 
+function renderQuickAdd(groupKey) {
+  return `
+    <div class="quick-add-bar" data-group="${groupKey}" style="margin-top:4px;">
+      <span style="color:var(--text-muted);font-size:1rem;">+</span>
+      <input type="text" class="quick-add-input quick-add-task-input"
+        placeholder="Adicionar tarefa... (Enter para confirmar)"
+        data-group="${groupKey}" maxlength="200" />
+    </div>
+  `;
+}
+
 function buildGroups() {
   if (groupBy === 'status') {
     return STATUSES.map(s => ({
