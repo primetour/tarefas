@@ -4,6 +4,7 @@ import { modal }  from '../components/modal.js';
 import {
   fetchTasks, subscribeToTasks, toggleTaskComplete, getTask,
   STATUSES, PRIORITIES, STATUS_MAP, PRIORITY_MAP,
+  TASK_TYPES, NEWSLETTER_STATUSES, NUCLEOS,
 } from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
 import { openTaskModal, openTaskDoneOverlay } from '../components/taskModal.js';
@@ -14,6 +15,7 @@ const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 /* \u2500\u2500\u2500 State \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500*/
 let allTasks     = [];
 let allProjects  = [];
+let pageTaskTypes = [];
 let filteredTasks = [];
 let unsubscribe  = null;
 let groupBy      = 'status';    // 'status' | 'priority' | 'project' | 'none'
@@ -95,6 +97,12 @@ export async function renderTasks(container) {
       });
     }
   } catch (e) { console.warn('Projects fetch:', e); }
+
+  // Load task types for renderTaskRow custom fields
+  try {
+    const { fetchTaskTypes } = await import('../services/taskTypes.js');
+    pageTaskTypes = await fetchTaskTypes();
+  } catch (e) { pageTaskTypes = []; }
 
   _attachPageEvents();
   _subscribeToTasks();
