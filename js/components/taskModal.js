@@ -927,3 +927,19 @@ async function showEvidenceModal(taskId, taskData) {
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   renderOverlay(taskData.goalId || '');
 }
+
+/* ─── Public entry point for quick-complete (task list / kanban) ── */
+export async function openTaskDoneOverlay(taskId, taskData) {
+  // Check if there's anything worth asking about
+  const hasCsat  = !!taskData?.clientEmail;
+  const hasGoalId = !!taskData?.goalId;
+
+  let hasGoals = false;
+  try {
+    const { hasPublishedGoals } = await import('../services/goals.js');
+    hasGoals = await hasPublishedGoals();
+  } catch(e) { /* non-blocking */ }
+
+  if (!hasCsat && !hasGoalId && !hasGoals) return; // nothing to ask
+  showEvidenceModal(taskId, taskData || {});
+}
