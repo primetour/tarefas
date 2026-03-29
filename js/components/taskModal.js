@@ -125,7 +125,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
       { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
       { label: isEdit ? 'Salvar alterações' : 'Criar tarefa', class:'btn-primary', closeOnClick:false,
         onClick: async (_,{close}) => {
-          const modalEl = document.querySelector('.modal-body');
+          const modalEl = document.querySelector('.modal-body') || document.querySelector('.modal') || document;
           await handleSave(task, currentTags, currentAssignees, isEdit, close, onSave, modalEl);
         } },
     ],
@@ -575,7 +575,9 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
 }
 
 async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=document) {
-  const title=ctx.querySelector('#tm-title')?.value?.trim();
+  // Ensure ctx is a valid element - fallback to document
+  if (!ctx || typeof ctx.querySelector !== 'function') ctx = document;
+  const title=ctx.querySelector('#tm-title')?.value?.trim() || document.getElementById('tm-title')?.value?.trim();
   const errEl=ctx.querySelector('#tm-title-error');
   if(!title){if(errEl)errEl.textContent='Título é obrigatório.';return;}
   if(errEl)errEl.textContent='';
@@ -655,14 +657,17 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     const isBeingCompleted = data.status === 'done' &&
       (!isEdit || task.status !== 'done');
 
+    console.log('[taskModal] isBeingCompleted:', isBeingCompleted, '| status:', data.status, '| prev:', task.status, '| goalId:', data.goalId);
+
     if (isBeingCompleted && !data.goalId) {
       try {
         const { hasPublishedGoals } = await import('../services/goals.js');
         const hasPubGoals = await hasPublishedGoals();
+        console.log('[taskModal] hasPubGoals:', hasPubGoals);
         if (hasPubGoals) {
           showEvidenceModal(savedTask?.id || task.id, data);
         }
-      } catch(e) { /* ignore, non-blocking */ }
+      } catch(e) { console.warn('[taskModal] evidence check failed:', e); }
     } else if (isBeingCompleted && data.goalId) {
       showEvidenceModal(savedTask?.id || task.id, data);
     }
