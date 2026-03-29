@@ -40,15 +40,19 @@
 }
 
 .btn-icon {
-  padding: 8px;
-  width: 36px;
-  height: 36px;
+  padding: 10px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .btn-icon.btn-sm {
-  padding: 6px;
-  width: 30px;
-  height: 30px;
+  padding: 8px;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
 }
 
 /* Primary - Gold */
@@ -540,8 +544,8 @@ textarea.portal-field { resize: vertical; }
 }
 
 .modal-close {
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -840,8 +844,8 @@ textarea.portal-field { resize: vertical; }
 }
 
 .pagination-btn {
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -911,6 +915,46 @@ textarea.portal-field { resize: vertical; }
 .confirm-icon {
   font-size: 3rem;
   margin-bottom: var(--space-4);
+}
+
+/* ─── RESPONSIVE ──────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .modal-overlay .modal-container {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    max-height: 90vh;
+    margin: 5vh auto;
+  }
+
+  .modal-footer {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .modal-footer .btn { width: 100%; }
+
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-bar .filter-select,
+  .filter-bar .filter-input {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .btn { padding: 8px 14px; font-size: 0.8125rem; }
+  .badge { font-size: 0.625rem; padding: 2px 6px; }
+  .tab-btn { padding: 8px 12px; font-size: 0.8125rem; }
 }
 
 .confirm-title {

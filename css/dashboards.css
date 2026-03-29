@@ -3,6 +3,13 @@
    Widgets, Charts, Audit, Profile
    ============================================================ */
 
+/* ─── DASHBOARD MAIN GRID ─────────────────────────────────── */
+.dash-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+}
+
 /* ─── DASHBOARD LAYOUT ────────────────────────────────────── */
 .dashboard-grid {
   display: grid;
@@ -464,6 +471,7 @@
   .col-span-4 { grid-column: span 6; }
 }
 @media (max-width: 768px) {
+  .dash-main-grid { grid-template-columns: 1fr; }
   .dashboard-grid { grid-template-columns: 1fr; }
   .col-span-3, .col-span-4, .col-span-6, .col-span-8, .col-span-12 { grid-column: span 1; }
   .audit-log-row    { grid-template-columns: 1fr 1fr; }

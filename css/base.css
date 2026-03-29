@@ -97,6 +97,43 @@
   --z-toast:   9000;
 }
 
+/* ─── LIGHT THEME ────────────────────────────────────────── */
+:root[data-theme="light"] {
+  /* Background Scale */
+  --bg-deepest:  #F0F2F5;
+  --bg-dark:     #FFFFFF;
+  --bg-medium:   #F5F7FA;
+  --bg-surface:  #EDF1F7;
+  --bg-elevated: #FFFFFF;
+  --bg-card:     #FFFFFF;
+  --bg-hover:    #E8ECF2;
+
+  /* Border */
+  --border-subtle:  rgba(0,0,0,0.06);
+  --border-default: rgba(0,0,0,0.12);
+  --border-accent:  rgba(212,168,67,0.35);
+
+  /* Text */
+  --text-primary:   #1A2B44;
+  --text-secondary: #556882;
+  --text-muted:     #8899B8;
+  --text-inverse:   #FFFFFF;
+  --text-gold:      #A8842F;
+
+  /* Semantic Colors — slightly deeper for white bg contrast */
+  --color-success-bg:   rgba(34,197,94,0.10);
+  --color-warning-bg:   rgba(245,158,11,0.10);
+  --color-danger-bg:    rgba(239,68,68,0.10);
+  --color-info-bg:      rgba(56,189,248,0.10);
+
+  /* Shadows — softer for light bg */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.10);
+  --shadow-lg:  0 8px 32px rgba(0,0,0,0.12);
+  --shadow-xl:  0 16px 64px rgba(0,0,0,0.14);
+  --shadow-gold: 0 0 30px rgba(212,168,67,0.15);
+}
+
 /* ─── RESET ──────────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
