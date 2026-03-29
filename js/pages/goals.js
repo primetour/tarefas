@@ -409,7 +409,20 @@ async function openGoalForm(container, goalId) {
   // Deep-copy for editing
   let draft = JSON.parse(JSON.stringify(goal));
 
-  const users = store.get('users')||[];
+  // Use allUsers if available, fall back to store, then fetch directly
+  let users = allUsers.length ? allUsers : (store.get('users')||[]);
+  if (!users.length) {
+    try {
+      const { getDocs, collection, query, orderBy } = await import(
+        'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+      );
+      const { db } = await import('../firebase.js');
+      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
+      users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      allUsers = users;
+      store.set('users', users);
+    } catch(e) { console.warn('users fetch failed:', e.message); }
+  }
 
   modal.open({
     title: goalId ? 'Editar Meta' : 'Nova Meta',
