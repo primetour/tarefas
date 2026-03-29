@@ -575,16 +575,17 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
 }
 
 async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=document) {
-  // Ensure ctx is a valid element - fallback to document
-  if (!ctx || typeof ctx.querySelector !== 'function') ctx = document;
-  const title=ctx.querySelector('#tm-title')?.value?.trim() || document.getElementById('tm-title')?.value?.trim();
-  const errEl=ctx.querySelector('#tm-title-error');
+  // Use getElementById directly — modal fields can be anywhere in the DOM
+  const $ = id => document.getElementById(id) || ctx?.querySelector?.('#' + id);
+
+  const title  = $('tm-title')?.value?.trim();
+  const errEl  = $('tm-title-error');
   if(!title){if(errEl)errEl.textContent='Título é obrigatório.';return;}
   if(errEl)errEl.textContent='';
 
-  const startVal   = ctx.querySelector('#tm-start')?.value;
-  const dueVal     = ctx.querySelector('#tm-due')?.value;
-  const typeIdVal  = ctx.querySelector('#tm-type-id')?.value || '';
+  const startVal   = $('tm-start')?.value;
+  const dueVal     = $('tm-due')?.value;
+  const typeIdVal  = $('tm-type-id')?.value || '';
   const typeDoc    = typeIdVal ? (store.get('taskTypes')||[]).find(t=>t.id===typeIdVal) : null;
 
   // Validate required custom fields
@@ -596,8 +597,8 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   // Collect dynamic field values
   const customFields = collectFieldValues(ctx);
 
-  const variationId  = ctx.querySelector('#tm-variation')?.value || null;
-  const variationOpt = ctx.querySelector('#tm-variation option:checked');
+  const variationId  = $('tm-variation')?.value || null;
+  const variationOpt = $('tm-variation option:checked');
   const variationSLA = variationOpt ? parseInt(variationOpt.dataset?.sla) : null;
 
   // Sector: from task prefill → from typeDoc → from user's sector
@@ -608,11 +609,11 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
 
   const data={
     title,
-    description:  ctx.querySelector('#tm-desc')?.value?.trim()||'',
-    goalId:       ctx.querySelector('#tm-goal')?.value || null,
-    status:       ctx.querySelector('#tm-status')?.value||'not_started',
-    priority:     ctx.querySelector('#tm-priority')?.value||'medium',
-    projectId:    ctx.querySelector('#tm-project')?.value||null,
+    description:  $('tm-desc')?.value?.trim()||'',
+    goalId:       $('tm-goal')?.value || null,
+    status:       $('tm-status')?.value||'not_started',
+    priority:     $('tm-priority')?.value||'medium',
+    projectId:    $('tm-project')?.value||null,
     typeId:       typeIdVal || null,
     sector:       taskSector,
     variationId:  variationId || null,
@@ -623,9 +624,9 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     type:             typeDoc?.name?.toLowerCase() || '',
     newsletterStatus: customFields.newsletterStatus || '',
     outOfCalendar:    customFields.outOfCalendar    || false,
-    requestingArea:   ctx.querySelector('#tm-area')?.value||'',
-    clientEmail:      ctx.querySelector('#tm-client-email')?.value?.trim()||'',
-    workspaceId: ctx.querySelector('#tm-workspace')?.value
+    requestingArea:   $('tm-area')?.value||'',
+    clientEmail:      $('tm-client-email')?.value?.trim()||'',
+    workspaceId: $('tm-workspace')?.value
       || task.workspaceId
       || store.get('currentWorkspace')?.id
       || null,
@@ -635,7 +636,7 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     dueDate:   dueVal   ? new Date(dueVal  +'T23:59:59') : null,
   };
   // Collect nucleos from legacy chips
-  data.nucleos = Array.from(ctx.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);
+  data.nucleos = Array.from(document.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);
 
   if(isEdit) data._prevStatus=task.status;
 
@@ -698,117 +699,231 @@ function renderCommentItem(c){
     </div></div>`;
 }
 
-/* ─── Evidence / goal double-check modal ──────────────────── */
+/* ─── Double-check: CSAT + evidência de meta ───────────────── */
 async function showEvidenceModal(taskId, taskData) {
-  const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const LBL = `font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;`;
+  const esc2 = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const LBL2 = `font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;color:var(--text-muted);`;
+  const F2   = `width:100%;`;
 
-  let goals = [];
-  let periods = [];
-
+  let goals = [], periods = [];
   try {
-    const { fetchGoals, generatePendingPeriods } = await import('../services/goals.js');
+    const { fetchGoals } = await import('../services/goals.js');
     goals = (await fetchGoals()).filter(g => g.status === 'publicada');
-  } catch(e) { return; }
+  } catch(e) { goals = []; }
 
-  const hasGoal = !!taskData.goalId;
+  const hasCsat  = !!taskData.clientEmail;
+  const hasGoal  = !!taskData.goalId;
+  const hasGoals = goals.length > 0;
 
+  if (hasGoal) {
+    try {
+      const { generatePendingPeriods } = await import('../services/goals.js');
+      const g = goals.find(x => x.id === taskData.goalId);
+      if (g) periods = generatePendingPeriods(g);
+    } catch(e) {}
+  }
+
+  const OVERLAY_ID = 'task-done-overlay';
+  document.getElementById(OVERLAY_ID)?.remove();
   const overlay = document.createElement('div');
-  overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:3000;
-    display:flex;align-items:center;justify-content:center;padding:20px;`;
+  overlay.id = OVERLAY_ID;
+  overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9000;
+    display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;`;
 
-  const render = (selectedGoalId) => {
-    const selGoal = goals.find(g => g.id === selectedGoalId);
-    if (selGoal) {
-      periods = generatePendingPeriods(selGoal);
-    }
+  const renderOverlay = (activeGoalId) => {
+    const activeGoal = goals.find(g => g.id === activeGoalId);
 
     overlay.innerHTML = `
-      <div class="card" style="width:100%;max-width:500px;padding:0;overflow:hidden;">
+      <div class="card" style="width:100%;max-width:540px;padding:0;overflow:hidden;">
         <div style="padding:16px 22px;background:var(--bg-surface);
           border-bottom:1px solid var(--border-subtle);">
-          <div style="font-weight:700;font-size:1rem;margin-bottom:4px;">
-            ${hasGoal ? '✅ Tarefa concluída — registrar evidência' : '⚠ Tarefa concluída sem meta vinculada'}
-          </div>
-          <div style="font-size:0.8125rem;color:var(--text-muted);">
-            ${hasGoal
-              ? 'Deseja registrar esta entrega como evidência da meta?'
-              : 'Há metas publicadas no sistema. Esta tarefa deveria estar vinculada a alguma delas?'}
+          <div style="font-weight:700;font-size:1rem;">✅ Tarefa concluída</div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:3px;">
+            Confirme o envio do CSAT e/ou o vínculo com uma meta de desempenho.
           </div>
         </div>
-        <div style="padding:20px 22px;display:flex;flex-direction:column;gap:14px;">
-          ${!hasGoal ? `
-            <div>
-              <label style="${LBL}">Vincular a uma meta</label>
-              <select id="ev-goal-sel" class="filter-select" style="width:100%;">
-                <option value="">Não está relacionada a nenhuma meta</option>
-                ${goals.map(g => `<option value="${esc(g.id)}" ${taskData.goalId===g.id?'selected':''}>${esc(g.titulo)} — ${esc(g.responsavelNome||'')}</option>`).join('')}
-              </select>
-            </div>` : ''}
-          <div id="ev-extra" style="${selectedGoalId || hasGoal ? '' : 'display:none;'}">
-            <div>
-              <label style="${LBL}">Período de referência</label>
-              <select id="ev-periodo-sel" class="filter-select" style="width:100%;margin-bottom:8px;">
-                <option value="">Selecione o período…</option>
-                ${periods.map(p => `<option value="${esc(p.label)}">${esc(p.label)}</option>`).join('')}
-                <option value="custom">Informar manualmente…</option>
-              </select>
-              <input type="text" id="ev-periodo-custom" class="portal-field" style="width:100%;display:none;"
-                placeholder="Ex: Relatório de produtividade — Abril 2025">
+        <div style="padding:20px 22px;display:flex;flex-direction:column;gap:18px;">
+
+          <!-- CSAT -->
+          <div style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
+            <div style="padding:12px 16px;background:var(--bg-surface);
+              display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <div>
+                <div style="font-weight:600;font-size:0.875rem;">📧 Pesquisa de satisfação (CSAT)</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+                  ${hasCsat
+                    ? `E-mail pré-preenchido: <strong>${esc2(taskData.clientEmail)}</strong>`
+                    : 'Nenhum e-mail cadastrado — preencha abaixo se quiser enviar'}
+                </div>
+              </div>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex-shrink:0;">
+                <input type="checkbox" id="dc-csat-check" ${hasCsat ? 'checked' : ''}
+                  style="width:16px;height:16px;cursor:pointer;">
+                <span style="font-size:0.8125rem;font-weight:500;">Enviar</span>
+              </label>
             </div>
-            <div>
-              <label style="${LBL};margin-top:10px;">Link de comprovação <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
-              <input type="url" id="ev-link" class="portal-field" style="width:100%;"
-                placeholder="https://…" value="${esc(taskData.linkComprovacao||'')}">
+            <div id="dc-csat-body" style="padding:12px 16px;display:${hasCsat ? 'block' : 'none'};">
+              <label style="${LBL2}">E-mail do cliente</label>
+              <input type="email" id="dc-csat-email" class="portal-field" style="${F2}"
+                value="${esc2(taskData.clientEmail||'')}" placeholder="cliente@empresa.com">
             </div>
           </div>
+
+          <!-- Meta -->
+          <div style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
+            <div style="padding:12px 16px;background:var(--bg-surface);
+              display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <div>
+                <div style="font-weight:600;font-size:0.875rem;">🎯 Evidência de meta</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+                  ${hasGoal
+                    ? `Meta: <strong>${esc2(activeGoal?.titulo || taskData.goalId)}</strong>`
+                    : hasGoals
+                      ? 'Selecione abaixo se esta tarefa é evidência de uma meta'
+                      : 'Nenhuma meta publicada no sistema'}
+                </div>
+              </div>
+              ${hasGoals ? `
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex-shrink:0;">
+                  <input type="checkbox" id="dc-meta-check" ${hasGoal ? 'checked' : ''}
+                    style="width:16px;height:16px;cursor:pointer;">
+                  <span style="font-size:0.8125rem;font-weight:500;">Registrar</span>
+                </label>` : ''}
+            </div>
+            ${hasGoals ? `
+            <div id="dc-meta-body" style="padding:12px 16px;flex-direction:column;gap:10px;
+              display:${hasGoal ? 'flex' : 'none'};">
+              <div>
+                <label style="${LBL2}">Meta vinculada</label>
+                <select id="dc-goal-sel" class="filter-select" style="${F2}">
+                  <option value="">— Selecione —</option>
+                  ${goals.map(g => `<option value="${esc2(g.id)}"
+                    ${g.id === activeGoalId ? 'selected' : ''}>
+                    ${esc2(g.titulo)} · ${esc2(g.responsavelNome||'')}
+                  </option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label style="${LBL2}">Período de referência</label>
+                <select id="dc-periodo-sel" class="filter-select" style="${F2}">
+                  <option value="">Selecione o período…</option>
+                  ${periods.map(p => `<option value="${esc2(p.label)}">${esc2(p.label)}</option>`).join('')}
+                  <option value="__custom__">Informar manualmente…</option>
+                </select>
+                <input type="text" id="dc-periodo-txt" class="portal-field"
+                  style="${F2};margin-top:6px;display:none;"
+                  placeholder="Ex: Abril 2025"
+                  value="${esc2(taskData.periodoRef||'')}">
+              </div>
+              <div>
+                <label style="${LBL2}">Link de comprovação <span style="font-weight:400;">(opcional)</span></label>
+                <input type="url" id="dc-link" class="portal-field" style="${F2}"
+                  placeholder="https://…" value="${esc2(taskData.linkComprovacao||'')}">
+              </div>
+            </div>` : ''}
+          </div>
+
         </div>
         <div style="padding:14px 22px;border-top:1px solid var(--border-subtle);
           background:var(--bg-surface);display:flex;gap:8px;justify-content:flex-end;">
-          <button id="ev-skip" class="btn btn-ghost btn-sm">Pular</button>
-          <button id="ev-save" class="btn btn-primary btn-sm">
-            ${selectedGoalId || hasGoal ? 'Registrar evidência' : 'Confirmar'}
-          </button>
+          <button id="dc-skip" class="btn btn-ghost btn-sm">Pular</button>
+          <button id="dc-confirm" class="btn btn-primary btn-sm">Confirmar</button>
         </div>
       </div>`;
 
-    // Wire goal selector
-    document.getElementById('ev-goal-sel')?.addEventListener('change', e => {
-      render(e.target.value);
+    // Wire checkboxes
+    document.getElementById('dc-csat-check')?.addEventListener('change', e => {
+      const body = document.getElementById('dc-csat-body');
+      if (body) body.style.display = e.target.checked ? 'block' : 'none';
+    });
+    document.getElementById('dc-meta-check')?.addEventListener('change', e => {
+      const body = document.getElementById('dc-meta-body');
+      if (body) body.style.display = e.target.checked ? 'flex' : 'none';
     });
 
-    // Wire period selector
-    document.getElementById('ev-periodo-sel')?.addEventListener('change', e => {
-      const custom = document.getElementById('ev-periodo-custom');
-      if (custom) custom.style.display = e.target.value === 'custom' ? 'block' : 'none';
-    });
-
-    document.getElementById('ev-skip')?.addEventListener('click', () => overlay.remove());
-
-    document.getElementById('ev-save')?.addEventListener('click', async () => {
-      const goalId   = document.getElementById('ev-goal-sel')?.value || taskData.goalId || null;
-      const periodSel = document.getElementById('ev-periodo-sel')?.value;
-      const periodCustom = document.getElementById('ev-periodo-custom')?.value?.trim();
-      const periodoRef = periodSel === 'custom' ? periodCustom : periodSel;
-      const link = document.getElementById('ev-link')?.value?.trim() || '';
-
-      if (goalId || hasGoal) {
+    // Goal change → reload periods
+    document.getElementById('dc-goal-sel')?.addEventListener('change', async e => {
+      const gId = e.target.value;
+      const g   = goals.find(x => x.id === gId);
+      if (g) {
         try {
-          const { updateTask } = await import('../services/tasks.js');
-          await updateTask(taskId, {
-            goalId:               goalId || taskData.goalId,
-            periodoRef:           periodoRef || '',
-            linkComprovacao:      link,
-            confirmadaEvidencia:  true,
-          });
-          toast.success('Evidência registrada!');
-        } catch(e) { toast.error('Erro ao registrar evidência: ' + e.message); }
+          const { generatePendingPeriods } = await import('../services/goals.js');
+          periods = generatePendingPeriods(g);
+          const pSel = document.getElementById('dc-periodo-sel');
+          if (pSel) pSel.innerHTML =
+            `<option value="">Selecione o período…</option>` +
+            periods.map(p => `<option value="${esc2(p.label)}">${esc2(p.label)}</option>`).join('') +
+            `<option value="__custom__">Informar manualmente…</option>`;
+        } catch(err) {}
       }
+    });
+
+    document.getElementById('dc-periodo-sel')?.addEventListener('change', e => {
+      const txt = document.getElementById('dc-periodo-txt');
+      if (txt) txt.style.display = e.target.value === '__custom__' ? 'block' : 'none';
+    });
+
+    document.getElementById('dc-skip')?.addEventListener('click', () => overlay.remove());
+
+    document.getElementById('dc-confirm')?.addEventListener('click', async () => {
+      const btn = document.getElementById('dc-confirm');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+
+      const sendCsat  = document.getElementById('dc-csat-check')?.checked;
+      const regMeta   = document.getElementById('dc-meta-check')?.checked;
+      const csatEmail = document.getElementById('dc-csat-email')?.value?.trim();
+      const goalId    = document.getElementById('dc-goal-sel')?.value || (hasGoal ? taskData.goalId : null);
+      const pSel      = document.getElementById('dc-periodo-sel')?.value;
+      const pTxt      = document.getElementById('dc-periodo-txt')?.value?.trim();
+      const periodoRef = pSel === '__custom__' ? pTxt : pSel;
+      const link       = document.getElementById('dc-link')?.value?.trim() || '';
+
+      const ops = [];
+
+      // Update task
+      const updates = {};
+      if (regMeta && goalId) {
+        updates.goalId = goalId;
+        updates.periodoRef = periodoRef || '';
+        updates.linkComprovacao = link;
+        updates.confirmadaEvidencia = true;
+      }
+      if (sendCsat && csatEmail) updates.clientEmail = csatEmail;
+
+      if (Object.keys(updates).length) {
+        ops.push(
+          import('../services/tasks.js')
+            .then(({ updateTask }) => updateTask(taskId, updates))
+            .catch(e => console.error('task update error:', e))
+        );
+      }
+
+      // Send CSAT
+      if (sendCsat && csatEmail) {
+        ops.push(
+          import('../services/email.js').then(({ emailCsat }) => {
+            const base = location.origin + location.pathname.replace(/\/[^/]*$/, '');
+            return emailCsat({
+              clientEmail: csatEmail,
+              clientName:  csatEmail.split('@')[0],
+              taskTitle:   taskData.title || 'Entrega PRIMETOUR',
+              csatUrl:     base + '/csat-response.html?taskId=' + taskId,
+            });
+          }).catch(e => console.warn('CSAT email failed:', e.message))
+        );
+      }
+
+      await Promise.all(ops);
+
+      if (sendCsat && csatEmail) toast.success('CSAT enviado para ' + csatEmail);
+      if (regMeta && goalId)     toast.success('Evidência registrada!');
+
       overlay.remove();
+      if (btn) { btn.disabled = false; btn.textContent = 'Confirmar'; }
     });
   };
 
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-  render(taskData.goalId || '');
+  renderOverlay(taskData.goalId || '');
 }
