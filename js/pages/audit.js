@@ -70,7 +70,8 @@ export async function renderAudit(container) {
       </div>
       <div class="page-header-actions">
         <button class="btn btn-secondary btn-sm" id="audit-refresh-btn">↺ Atualizar</button>
-        <button class="btn btn-secondary btn-sm" id="audit-export-btn">↓ Exportar CSV</button>
+        <button class="btn btn-secondary btn-sm" id="audit-export-xls">↓ XLS</button>
+        <button class="btn btn-secondary btn-sm" id="audit-export-pdf">↓ PDF</button>
       </div>
     </div>
 
@@ -392,7 +393,8 @@ function _bindAuditEvents() {
   document.getElementById('audit-filter-date-from')?.addEventListener('change', () => loadLogs());
   document.getElementById('audit-filter-date-to')?.addEventListener('change',   () => loadLogs());
   document.getElementById('audit-refresh-btn')?.addEventListener('click', () => loadLogs());
-  document.getElementById('audit-export-btn')?.addEventListener('click', exportAuditCSV);
+  document.getElementById('audit-export-xls')?.addEventListener('click', exportAuditXls);
+  document.getElementById('audit-export-pdf')?.addEventListener('click', exportAuditPdf);
   document.getElementById('audit-clear-filters')?.addEventListener('click', () => {
     searchTerm = ''; filterAction = ''; filterUser = '';
     document.getElementById('audit-search').value = '';
@@ -405,33 +407,60 @@ function _bindAuditEvents() {
 }
 
 /* ─── CSV Export ─────────────────────────────────────────── */
-function exportAuditCSV() {
-  const headers = ['Data/Hora','Ação','Descrição','Usuário','Email','Recurso','ID','Detalhes'];
-  const rows = filteredLogs.map(log => {
+function _auditRows() {
+  return filteredLogs.map(log => {
     const ts  = log.timestamp?.toDate ? log.timestamp.toDate() : new Date(log.timestamp||0);
     const fmt = new Intl.DateTimeFormat('pt-BR',{
       day:'2-digit', month:'2-digit', year:'numeric',
       hour:'2-digit', minute:'2-digit', second:'2-digit',
     }).format(ts);
     return [
-      fmt,
-      log.action||'',
+      fmt, log.action||'',
       ACTION_LABELS[log.action] || log.action || '',
-      log.userName||'',
-      log.userEmail||'',
-      log.entityType||'',
-      log.entityId||'',
+      log.userName||'', log.userEmail||'',
+      log.entityType||'', log.entityId||'',
       JSON.stringify(log.details||{}),
     ];
   });
-  const csv = [headers, ...rows]
-    .map(r => r.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const a    = Object.assign(document.createElement('a'), {
-    href: URL.createObjectURL(blob),
-    download: `auditoria_${new Date().toISOString().slice(0,10)}.csv`,
-  });
-  a.click();
+}
+
+async function exportAuditXls() {
+  if (!filteredLogs.length) { toast.error('Nenhum registro.'); return; }
+  if (!window.XLSX) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+
+  const headers = ['Data/Hora','Ação','Descrição','Usuário','Email','Recurso','ID','Detalhes'];
+  const wb = window.XLSX.utils.book_new();
+  const ws = window.XLSX.utils.aoa_to_sheet([headers, ..._auditRows()]);
+  ws['!cols'] = [18, 20, 25, 20, 25, 12, 20, 40].map(w=>({wch:w}));
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Auditoria');
+  window.XLSX.writeFile(wb, `primetour_auditoria_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast.success(`${filteredLogs.length} registros exportados!`);
+}
+
+async function exportAuditPdf() {
+  if (!filteredLogs.length) { toast.error('Nenhum registro.'); return; }
+  if (!window.jspdf) {
+    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+  }
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+
+  doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
+  doc.text('PRIMETOUR — Log de Auditoria', 14, 16);
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
+  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${filteredLogs.length} registros`, 14, 22);
+
+  const rows = _auditRows().map(r => [r[0], r[2], r[3], r[4], r[5], r[6]]);
+  doc.autoTable({
+    startY: 27,
+    head: [['Data/Hora','Descrição','Usuário','Email','Recurso','ID']],
+    body: rows,
+    styles: { fontSize: 7, cellPadding: 2 },
+    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248,247,244] },
+  });
+
+  doc.save(`primetour_auditoria_${new Date().toISOString().slice(0,10)}.pdf`);
+  toast.success('PDF exportado!');
 }

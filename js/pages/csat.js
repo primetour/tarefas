@@ -32,7 +32,8 @@ export async function renderCsat(container) {
         <p class="page-subtitle">Pesquisas de satisfação do cliente</p>
       </div>
       <div class="page-header-actions">
-        <button class="btn btn-secondary btn-sm" id="csat-export-btn">↓ Exportar CSV</button>
+        <button class="btn btn-secondary btn-sm" id="csat-export-xls">↓ XLS</button>
+        <button class="btn btn-secondary btn-sm" id="csat-export-pdf">↓ PDF</button>
         ${store.can('csat_send') ? `<button class="btn btn-primary" id="csat-new-btn">+ Nova Pesquisa</button>` : ''}
       </div>
     </div>
@@ -77,7 +78,8 @@ export async function renderCsat(container) {
 
   // Events
   document.getElementById('csat-new-btn')?.addEventListener('click', () => openNewSurveyModal());
-  document.getElementById('csat-export-btn')?.addEventListener('click', exportCSV);
+  document.getElementById('csat-export-xls')?.addEventListener('click', exportCsatXls);
+  document.getElementById('csat-export-pdf')?.addEventListener('click', exportCsatPdf);
 
   let timer;
   document.getElementById('csat-search')?.addEventListener('input', e => {
@@ -639,27 +641,66 @@ function renderBottom(surveys) {
   }, 80);
 }
 
-/* ─── CSV Export ─────────────────────────────────────────── */
-function exportCSV() {
+/* ─── Export XLS ────────────────────────────────────────── */
+async function exportCsatXls() {
   const list = getFiltered();
+  if (!list.length) { toast.error('Nenhuma pesquisa para exportar.'); return; }
+  if (!window.XLSX) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+
   const headers = ['Tarefa','Projeto','Cliente','E-mail','Status','Nota','Comentário','Criado','Enviado','Respondido'];
   const rows = list.map(s => [
     s.taskTitle||'', s.projectName||'', s.clientName||'', s.clientEmail||'',
     CSAT_STATUS[s.status]?.label||s.status,
-    s.score||'',
-    s.comment||'',
-    s.createdAt   ? fmtDate(s.createdAt)   : '',
-    s.sentAt      ? fmtDate(s.sentAt)      : '',
+    s.score||'', s.comment||'',
+    s.createdAt ? fmtDate(s.createdAt) : '',
+    s.sentAt ? fmtDate(s.sentAt) : '',
     s.respondedAt ? fmtDate(s.respondedAt) : '',
   ]);
-  const csv = [headers,...rows]
-    .map(r => r.map(v=>`"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
-  const a = Object.assign(document.createElement('a'), {
-    href: URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'})),
-    download: `csat_${new Date().toISOString().slice(0,10)}.csv`,
-  });
-  a.click();
+
+  const wb = window.XLSX.utils.book_new();
+  const ws = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  ws['!cols'] = [30, 20, 20, 25, 14, 8, 35, 14, 14, 14].map(w=>({wch:w}));
+  window.XLSX.utils.book_append_sheet(wb, ws, 'CSAT');
+  window.XLSX.writeFile(wb, `primetour_csat_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast.success(`${list.length} pesquisas exportadas!`);
+}
+
+/* ─── Export PDF ────────────────────────────────────────── */
+async function exportCsatPdf() {
+  const list = getFiltered();
+  if (!list.length) { toast.error('Nenhuma pesquisa para exportar.'); return; }
+  if (!window.jspdf) {
+    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+  }
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+
+  doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
+  doc.text('PRIMETOUR — Pesquisas CSAT', 14, 16);
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
+  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${list.length} pesquisas`, 14, 22);
+
+  const rows = list.map(s => [
+    (s.taskTitle||'').slice(0,30), (s.projectName||'').slice(0,20),
+    (s.clientName||'').slice(0,20), (s.clientEmail||'').slice(0,25),
+    CSAT_STATUS[s.status]?.label||s.status,
+    s.score||'', (s.comment||'').slice(0,30),
+    s.createdAt ? fmtDate(s.createdAt) : '',
+    s.respondedAt ? fmtDate(s.respondedAt) : '',
+  ]);
+
+  doc.autoTable({
+    startY: 27,
+    head: [['Tarefa','Projeto','Cliente','E-mail','Status','Nota','Comentário','Criado','Respondido']],
+    body: rows,
+    styles: { fontSize: 7, cellPadding: 2 },
+    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248,247,244] },
+  });
+
+  doc.save(`primetour_csat_${new Date().toISOString().slice(0,10)}.pdf`);
+  toast.success('PDF exportado.');
 }
 
 /* ─── Helpers ─────────────────────────────────────────────── */

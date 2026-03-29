@@ -404,6 +404,14 @@ async function renderAvaliacoes(container) {
                 style="font-size:0.75rem;flex-shrink:0;color:var(--brand-gold);">
                 🔗
               </a>`:''}
+            ${isGestorForLink?`
+              <button class="btn btn-ghost btn-sm goal-unlink-task-btn"
+                data-task-id="${esc(t.id)}" data-goal-id="${esc(goal.id)}"
+                onclick="event.stopPropagation();"
+                title="Desvincular tarefa"
+                style="font-size:0.75rem;flex-shrink:0;color:var(--text-muted);padding:4px 6px;">
+                ✕
+              </button>`:''}
           </div>`;
         }).join('') : `<div style="font-size:0.8125rem;color:var(--text-muted);text-align:center;
           padding:12px;">Nenhuma tarefa vinculada a esta meta.</div>`}
@@ -432,6 +440,21 @@ async function renderAvaliacoes(container) {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         openLinkTaskToGoalModal(btn.dataset.goalId, allTasksRaw, container);
+      });
+    });
+
+    // Wire "Desvincular tarefa" buttons
+    evalEl.querySelectorAll('.goal-unlink-task-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const taskId = btn.dataset.taskId;
+        const taskTitle = allTasksRaw.find(t=>t.id===taskId)?.title || 'esta tarefa';
+        if (!confirm(`Desvincular "${taskTitle}" desta meta?`)) return;
+        try {
+          await updateTask(taskId, { goalId: null, confirmadaEvidencia: false, periodoRef: '', linkComprovacao: '' });
+          toast.success('Tarefa desvinculada.');
+          renderAvaliacoes(container);
+        } catch(err) { toast.error('Erro ao desvincular: ' + err.message); }
       });
     });
   }
@@ -1164,35 +1187,59 @@ function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEva
 async function exportGoalsXls() {
   if (!allGoals.length) { toast.error('Nenhuma meta.'); return; }
   if (!window.XLSX) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
-  const rows=[['Escopo','Objetivo','Responsável','Gestor','Setor','Status','Pilares','Metas','Início','Fim']];
+
+  // Sheet 1 — Metas
+  const rows=[['Escopo','Objetivo','Responsável','Gestor','Setor','Status','Pilares','Metas','Tarefas vinc.','Início','Fim']];
   allGoals.forEach(g => {
     const resp  = (store.get('users')||[]).find(u=>u.id===g.responsavelId)?.name||'—';
     const gestor= (store.get('users')||[]).find(u=>u.id===g.gestorId)?.name||'—';
+    const linkedCount = allTasksForGoals.filter(t=>t.goalId===g.id).length;
     rows.push([
       GOAL_SCOPES.find(s=>s.value===g.escopo)?.label||g.escopo||'—',
       g.objetivoNucleo||g.pilares?.[0]?.titulo||'—', resp, gestor,
       g.setor||'—', g.status||'—',
       (g.pilares||[]).length, (g.pilares||[]).reduce((s,p)=>s+(p.metas||[]).length,0),
-      fmtDate(g.inicio), fmtDate(g.fim),
+      linkedCount, fmtDate(g.inicio), fmtDate(g.fim),
     ]);
-    // Sub-rows for each meta
     (g.pilares||[]).forEach((pilar,pi) => {
       (pilar.metas||[]).forEach((meta,mi) => {
         rows.push(['','','','','',
           `  Pilar ${pi+1}: ${pilar.titulo||''}`,
           `  Meta ${mi+1}: ${meta.titulo||''}`,
           `  Pond: ${meta.ponderacao||0}%`,
-          meta.criterio||'',
+          '', meta.criterio||'',
           `${meta.prazoTipo||''} ${meta.recorrencia?'(recorrente)':''}`,
         ]);
       });
     });
   });
-  const wb=window.XLSX.utils.book_new();
-  const ws=window.XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[15,40,20,20,15,12,8,8,12,12].map(w=>({wch:w}));
-  window.XLSX.utils.book_append_sheet(wb,ws,'Metas');
-  window.XLSX.writeFile(wb,`primetour_metas_${new Date().toISOString().slice(0,10)}.xlsx`);
+
+  // Sheet 2 — Tarefas vinculadas
+  const taskHeaders = ['Meta (objetivo)', 'Tarefa', 'Status', 'Evidência', 'Período ref.', 'Link comprovação', 'Concluída em'];
+  const taskRows = [];
+  allGoals.forEach(g => {
+    const linked = allTasksForGoals.filter(t => t.goalId === g.id);
+    linked.forEach(t => {
+      const doneDate = t.completedAt?.toDate ? t.completedAt.toDate().toLocaleDateString('pt-BR') : '';
+      taskRows.push([
+        g.objetivoNucleo || g.pilares?.[0]?.titulo || '—',
+        t.title || '', t.status || '',
+        t.confirmadaEvidencia ? 'Sim' : 'Não',
+        t.periodoRef || '', t.linkComprovacao || '', doneDate,
+      ]);
+    });
+  });
+
+  const wb = window.XLSX.utils.book_new();
+  const ws1 = window.XLSX.utils.aoa_to_sheet(rows);
+  ws1['!cols'] = [15, 40, 20, 20, 15, 12, 8, 8, 8, 12, 12].map(w => ({ wch: w }));
+  window.XLSX.utils.book_append_sheet(wb, ws1, 'Metas');
+
+  const ws2 = window.XLSX.utils.aoa_to_sheet([taskHeaders, ...taskRows]);
+  ws2['!cols'] = [35, 35, 14, 10, 15, 30, 12].map(w => ({ wch: w }));
+  window.XLSX.utils.book_append_sheet(wb, ws2, 'Tarefas vinculadas');
+
+  window.XLSX.writeFile(wb, `primetour_metas_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast.success('XLS exportado.');
 }
 
@@ -1204,6 +1251,8 @@ async function exportGoalsPdf() {
   }
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+
+  // Page 1 — Metas
   doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(36,35,98);
   doc.text('PRIMETOUR — Quadro de Metas',14,16);
   doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(100,100,100);
@@ -1212,6 +1261,7 @@ async function exportGoalsPdf() {
   allGoals.forEach(g => {
     const resp=(store.get('users')||[]).find(u=>u.id===g.responsavelId)?.name||'—';
     const gestor=(store.get('users')||[]).find(u=>u.id===g.gestorId)?.name||'—';
+    const linkedCount = allTasksForGoals.filter(t=>t.goalId===g.id).length;
     (g.pilares||[]).forEach((pilar,pi) => {
       (pilar.metas||[]).forEach((meta,mi) => {
         rows.push([
@@ -1222,20 +1272,54 @@ async function exportGoalsPdf() {
           `${meta.ponderacao||0}%`,
           meta.criterio?.slice(0,30)||'—',
           GOAL_PRAZO_TYPES.find(p=>p.value===meta.prazoTipo)?.label||'—',
-          resp.slice(0,15), gestor.slice(0,15), g.status||'—',
+          resp.slice(0,15), gestor.slice(0,15),
+          `${linkedCount}`, g.status||'—',
         ]);
       });
     });
   });
   doc.autoTable({
     startY:27,
-    head:[['Escopo','Objetivo','Pilar','Meta','Pond.','Critério','Prazo','Responsável','Gestor','Status']],
+    head:[['Escopo','Objetivo','Pilar','Meta','Pond.','Critério','Prazo','Responsável','Gestor','Tarefas','Status']],
     body: rows,
     styles:{fontSize:7,cellPadding:2},
     headStyles:{fillColor:[36,35,98],textColor:255,fontStyle:'bold'},
     alternateRowStyles:{fillColor:[248,247,244]},
-    columnStyles:{0:{cellWidth:18},1:{cellWidth:30},2:{cellWidth:25},3:{cellWidth:30},4:{cellWidth:12},5:{cellWidth:28},6:{cellWidth:18},7:{cellWidth:20},8:{cellWidth:20},9:{cellWidth:14}},
+    columnStyles:{0:{cellWidth:16},1:{cellWidth:28},2:{cellWidth:22},3:{cellWidth:28},4:{cellWidth:10},5:{cellWidth:26},6:{cellWidth:16},7:{cellWidth:18},8:{cellWidth:18},9:{cellWidth:12},10:{cellWidth:12}},
   });
+
+  // Page 2 — Tarefas vinculadas
+  const taskRows = [];
+  allGoals.forEach(g => {
+    const linked = allTasksForGoals.filter(t => t.goalId === g.id);
+    linked.forEach(t => {
+      const doneDate = t.completedAt?.toDate ? t.completedAt.toDate().toLocaleDateString('pt-BR') : '';
+      taskRows.push([
+        (g.objetivoNucleo || '').slice(0, 25),
+        (t.title || '').slice(0, 35),
+        t.status === 'done' ? 'Concluída' : t.status === 'in_progress' ? 'Em andamento' : t.status || '',
+        t.confirmadaEvidencia ? 'Sim' : 'Não',
+        (t.periodoRef || '').slice(0, 15),
+        doneDate,
+      ]);
+    });
+  });
+  if (taskRows.length) {
+    doc.addPage();
+    doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(36,35,98);
+    doc.text('PRIMETOUR — Tarefas vinculadas a Metas',14,16);
+    doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(100,100,100);
+    doc.text(`${taskRows.length} tarefas vinculadas`,14,22);
+    doc.autoTable({
+      startY:27,
+      head:[['Meta','Tarefa','Status','Evidência','Período','Concluída']],
+      body: taskRows,
+      styles:{fontSize:7,cellPadding:2},
+      headStyles:{fillColor:[36,35,98],textColor:255,fontStyle:'bold'},
+      alternateRowStyles:{fillColor:[248,247,244]},
+    });
+  }
+
   doc.save(`primetour_metas_${new Date().toISOString().slice(0,10)}.pdf`);
   toast.success('PDF exportado.');
 }

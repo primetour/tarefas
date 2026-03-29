@@ -35,7 +35,8 @@ export async function renderTasks(container) {
       </div>
       <div class="page-header-actions">
         <button class="btn btn-secondary btn-sm" id="tasks-import-btn">\u2191 Importar</button>
-        <button class="btn btn-secondary btn-sm" id="tasks-export-btn">\u2193 Exportar CSV</button>
+        <button class="btn btn-secondary btn-sm" id="tasks-export-xls">\u2193 XLS</button>
+        <button class="btn btn-secondary btn-sm" id="tasks-export-pdf">\u2193 PDF</button>
         <button class="btn btn-primary" id="new-task-btn">+ Nova Tarefa</button>
       </div>
     </div>
@@ -341,7 +342,8 @@ function buildGroups() {
 /* \u2500\u2500\u2500 Event Handlers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 function _attachPageEvents() {
   document.getElementById('new-task-btn')?.addEventListener('click', () => openNewTask());
-  document.getElementById('tasks-export-btn')?.addEventListener('click', exportCSV);
+  document.getElementById('tasks-export-xls')?.addEventListener('click', exportTasksXls);
+  document.getElementById('tasks-export-pdf')?.addEventListener('click', exportTasksPdf);
 
   // Search
   let timer;
@@ -443,33 +445,97 @@ function getDueClass(ts, done) {
   return '';
 }
 
-function exportCSV() {
-  const headers = ['T\u00edtulo','Status','Prioridade','Prazo','Projeto','Respons\u00e1veis','Tags'];
-  const users   = store.get('users') || [];
-  const rows = filteredTasks.map(t => {
-    const project = allProjects.find(p=>p.id===t.projectId);
-    const assigneeNames = (t.assignees||[])
-      .map(uid => users.find(u=>u.id===uid)?.name||uid).join('; ');
-    const due = t.dueDate ? (t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate))
-      .toLocaleDateString('pt-BR') : '';
-    return [
-      t.title, STATUS_MAP[t.status]?.label||t.status,
-      PRIORITY_MAP[t.priority]?.label||t.priority,
-      due, project?.name||'', assigneeNames, (t.tags||[]).join('; ')
-    ];
+/* ─── Helpers for export ─────────────────────────────────── */
+const fmtDateExport = ts => { if(!ts) return ''; const d = ts?.toDate ? ts.toDate() : new Date(ts); return d.toLocaleDateString('pt-BR'); };
+
+function _buildTaskRows() {
+  const users = store.get('users') || [];
+  return filteredTasks.map(t => {
+    const project = allProjects.find(p => p.id === t.projectId);
+    const assigneeNames = (t.assignees || [])
+      .map(uid => users.find(u => u.id === uid)?.name || uid).join('; ');
+    const due = fmtDateExport(t.dueDate);
+    const created = fmtDateExport(t.createdAt);
+    const completed = fmtDateExport(t.completedAt);
+    const nucleo = NUCLEOS?.find(n => n.value === t.nucleo)?.label || t.nucleo || '';
+    const taskType = TASK_TYPES?.find(tt => tt.value === t.taskType)?.label || t.taskType || '';
+    return {
+      title: t.title || '',
+      status: STATUS_MAP[t.status]?.label || t.status || '',
+      priority: PRIORITY_MAP[t.priority]?.label || t.priority || '',
+      due,
+      created,
+      completed,
+      project: project?.name || '',
+      assignees: assigneeNames,
+      nucleo,
+      taskType,
+      tags: (t.tags || []).join('; '),
+      clientEmail: t.clientEmail || '',
+      goalLinked: t.goalId ? 'Sim' : 'Não',
+    };
+  });
+}
+
+async function exportTasksXls() {
+  if (!filteredTasks.length) { toast.error('Nenhuma tarefa para exportar.'); return; }
+  if (!window.XLSX) await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = res; s.onerror = rej; document.head.appendChild(s);
   });
 
-  const csv = [headers,...rows]
-    .map(r=>r.map(v=>`"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\
-');
-  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url;
-  a.download = `tarefas_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-  toast.success('Exporta\u00e7\u00e3o conclu\u00edda!');
+  const headers = ['Título', 'Status', 'Prioridade', 'Prazo', 'Criada em', 'Concluída em',
+    'Projeto', 'Responsáveis', 'Núcleo', 'Tipo', 'Tags', 'E-mail cliente', 'Meta vinculada'];
+  const rows = _buildTaskRows().map(r => [
+    r.title, r.status, r.priority, r.due, r.created, r.completed,
+    r.project, r.assignees, r.nucleo, r.taskType, r.tags, r.clientEmail, r.goalLinked,
+  ]);
+
+  const wb = window.XLSX.utils.book_new();
+  const ws = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  ws['!cols'] = [35, 14, 12, 12, 12, 12, 20, 25, 15, 15, 20, 25, 10].map(w => ({ wch: w }));
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Tarefas');
+  window.XLSX.writeFile(wb, `primetour_tarefas_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  toast.success('XLS exportado.');
+}
+
+async function exportTasksPdf() {
+  if (!filteredTasks.length) { toast.error('Nenhuma tarefa para exportar.'); return; }
+  if (!window.jspdf) {
+    await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+    await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.setTextColor(36, 35, 98);
+  doc.text('PRIMETOUR — Tarefas', 14, 16);
+  doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100);
+  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${filteredTasks.length} tarefas`, 14, 22);
+
+  const taskRows = _buildTaskRows().map(r => [
+    r.title.slice(0, 35), r.status, r.priority, r.due, r.project.slice(0, 20),
+    r.assignees.slice(0, 25), r.nucleo.slice(0, 15), r.taskType.slice(0, 15),
+    r.completed, r.goalLinked,
+  ]);
+
+  doc.autoTable({
+    startY: 27,
+    head: [['Título', 'Status', 'Prioridade', 'Prazo', 'Projeto', 'Responsáveis', 'Núcleo', 'Tipo', 'Concluída', 'Meta']],
+    body: taskRows,
+    styles: { fontSize: 7, cellPadding: 2 },
+    headStyles: { fillColor: [36, 35, 98], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 247, 244] },
+    columnStyles: {
+      0: { cellWidth: 40 }, 1: { cellWidth: 18 }, 2: { cellWidth: 16 }, 3: { cellWidth: 18 },
+      4: { cellWidth: 25 }, 5: { cellWidth: 30 }, 6: { cellWidth: 20 }, 7: { cellWidth: 20 },
+      8: { cellWidth: 18 }, 9: { cellWidth: 12 },
+    },
+  });
+
+  doc.save(`primetour_tarefas_${new Date().toISOString().slice(0, 10)}.pdf`);
+  toast.success('PDF exportado.');
 }
 
 /* \u2500\u2500\u2500 Cleanup \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */

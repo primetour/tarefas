@@ -50,7 +50,8 @@ export async function renderDashboards(container) {
         <p class="page-subtitle">Métricas e análises do time</p>
       </div>
       <div class="page-header-actions">
-        <button class="btn btn-secondary btn-sm" id="dash-export-btn">↓ Exportar Relatório</button>
+        <button class="btn btn-secondary btn-sm" id="dash-export-xls">↓ XLS</button>
+        <button class="btn btn-secondary btn-sm" id="dash-export-pdf">↓ PDF</button>
         <button class="btn btn-primary" id="dash-new-task">+ Nova Tarefa</button>
       </div>
     </div>
@@ -183,7 +184,8 @@ export async function renderDashboards(container) {
   document.getElementById('dash-new-task')?.addEventListener('click', () =>
     openTaskModal({ onSave: () => loadData(container) })
   );
-  document.getElementById('dash-export-btn')?.addEventListener('click', () => exportReport());
+  document.getElementById('dash-export-xls')?.addEventListener('click', () => exportDashXls());
+  document.getElementById('dash-export-pdf')?.addEventListener('click', () => exportDashPdf());
 
   await loadData(container);
 }
@@ -641,37 +643,111 @@ function renderHeatmap(widgetId, tasks) {
 }
 
 /* ─── Export ─────────────────────────────────────────────── */
-function exportReport() {
+async function exportDashXls() {
   if (!metrics) { toast.warning('Aguarde o carregamento dos dados.'); return; }
+  if (!window.XLSX) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+
   const { start, end } = getPeriodDates(activePeriod());
-  const fmtDate = d => new Intl.DateTimeFormat('pt-BR').format(d);
-  const lines = [
-    `PRIMETOUR — Relatório de Atividade`,
-    `Período: ${fmtDate(start)} a ${fmtDate(end)}`,
-    `Gerado em: ${fmtDate(new Date())}`,
-    ``,
-    `=== MÉTRICAS GERAIS ===`,
-    `Total de tarefas: ${metrics.total}`,
-    `Em andamento: ${metrics.inProgress}`,
-    `Concluídas no período: ${metrics.doneInPeriod}`,
-    `Em atraso: ${metrics.overdue}`,
-    `Taxa de conclusão: ${metrics.completionRate}%`,
-    `Projetos ativos: ${metrics.activeProjects}`,
-    ``,
-    `=== DISTRIBUIÇÃO POR STATUS ===`,
-    ...getStatusDistribution(metrics.tasks).map(s => `${s.label}: ${s.count}`),
-    ``,
-    `=== RANKING DA EQUIPE ===`,
-    ...getTasksByMember(metrics.tasks).map((u,i) => `${i+1}. ${u.name}: ${u.done} concluídas / ${u.total} total (${u.rate}%)`),
+  const fmtD = d => new Intl.DateTimeFormat('pt-BR').format(d);
+  const wb = window.XLSX.utils.book_new();
+
+  // Sheet 1 — Resumo
+  const summary = [
+    ['PRIMETOUR — Relatório de Atividade'],
+    [`Período: ${fmtD(start)} a ${fmtD(end)}`],
+    [`Gerado em: ${fmtD(new Date())}`],
+    [],
+    ['Métrica', 'Valor'],
+    ['Total de tarefas', metrics.total],
+    ['Em andamento', metrics.inProgress],
+    ['Concluídas no período', metrics.doneInPeriod],
+    ['Em atraso', metrics.overdue],
+    ['Taxa de conclusão', `${metrics.completionRate}%`],
+    ['Projetos ativos', metrics.activeProjects],
   ];
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement('a'), {
-    href: url, download: `primetour-relatorio-${new Date().toISOString().slice(0,10)}.txt`,
+  const ws1 = window.XLSX.utils.aoa_to_sheet(summary);
+  ws1['!cols'] = [{ wch: 30 }, { wch: 15 }];
+  window.XLSX.utils.book_append_sheet(wb, ws1, 'Resumo');
+
+  // Sheet 2 — Status
+  const statusRows = [['Status', 'Quantidade'], ...getStatusDistribution(metrics.tasks).map(s => [s.label, s.count])];
+  const ws2 = window.XLSX.utils.aoa_to_sheet(statusRows);
+  ws2['!cols'] = [{ wch: 20 }, { wch: 12 }];
+  window.XLSX.utils.book_append_sheet(wb, ws2, 'Por status');
+
+  // Sheet 3 — Equipe
+  const teamRows = [['Membro', 'Concluídas', 'Total', 'Taxa (%)'],
+    ...getTasksByMember(metrics.tasks).map(u => [u.name, u.done, u.total, u.rate])];
+  const ws3 = window.XLSX.utils.aoa_to_sheet(teamRows);
+  ws3['!cols'] = [{ wch: 25 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
+  window.XLSX.utils.book_append_sheet(wb, ws3, 'Equipe');
+
+  window.XLSX.writeFile(wb, `primetour_dashboard_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast.success('XLS exportado!');
+}
+
+async function exportDashPdf() {
+  if (!metrics) { toast.warning('Aguarde o carregamento dos dados.'); return; }
+  if (!window.jspdf) {
+    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const { start, end } = getPeriodDates(activePeriod());
+  const fmtD = d => new Intl.DateTimeFormat('pt-BR').format(d);
+
+  doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
+  doc.text('PRIMETOUR — Relatório de Atividade', 14, 18);
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
+  doc.text(`Período: ${fmtD(start)} a ${fmtD(end)} · Gerado em ${fmtD(new Date())}`, 14, 25);
+
+  // Metrics summary
+  doc.autoTable({
+    startY: 32,
+    head: [['Métrica', 'Valor']],
+    body: [
+      ['Total de tarefas', metrics.total],
+      ['Em andamento', metrics.inProgress],
+      ['Concluídas no período', metrics.doneInPeriod],
+      ['Em atraso', metrics.overdue],
+      ['Taxa de conclusão', `${metrics.completionRate}%`],
+      ['Projetos ativos', metrics.activeProjects],
+    ],
+    styles: { fontSize: 9, cellPadding: 3 },
+    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248,247,244] },
+    columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 30 } },
   });
-  a.click();
-  URL.revokeObjectURL(url);
-  toast.success('Relatório exportado!');
+
+  // Status distribution
+  let y = doc.lastAutoTable.finalY + 10;
+  doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
+  doc.text('Distribuição por Status', 14, y);
+  doc.autoTable({
+    startY: y + 4,
+    head: [['Status', 'Quantidade']],
+    body: getStatusDistribution(metrics.tasks).filter(s=>s.count>0).map(s => [s.label, s.count]),
+    styles: { fontSize: 9, cellPadding: 3 },
+    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248,247,244] },
+  });
+
+  // Team ranking
+  y = doc.lastAutoTable.finalY + 10;
+  doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
+  doc.text('Ranking da Equipe', 14, y);
+  doc.autoTable({
+    startY: y + 4,
+    head: [['Membro', 'Concluídas', 'Total', 'Taxa (%)']],
+    body: getTasksByMember(metrics.tasks).map(u => [u.name, u.done, u.total, `${u.rate}%`]),
+    styles: { fontSize: 9, cellPadding: 3 },
+    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248,247,244] },
+  });
+
+  doc.save(`primetour_dashboard_${new Date().toISOString().slice(0,10)}.pdf`);
+  toast.success('PDF exportado!');
 }
 
 /* ─── Helpers ─────────────────────────────────────────────── */
