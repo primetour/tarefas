@@ -17,7 +17,7 @@ import { NUCLEOS, fetchTasks } from '../services/tasks.js';
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtDate = ts => { if(!ts) return '—'; const d=ts?.toDate?ts.toDate():new Date(ts); return d.toLocaleDateString('pt-BR'); };
 
-let allGoals=[], allUsers=[], evaluations=[], activeTab='metas';
+let allGoals=[], allUsers=[], allTasksForGoals=[], evaluations=[], activeTab='metas';
 
 export async function renderGoals(container) {
   container.innerHTML = `
@@ -66,9 +66,10 @@ export async function renderGoals(container) {
     <div id="goals-content"></div>`;
 
   // Load data
-  [allGoals, allUsers] = await Promise.all([
+  [allGoals, allUsers, allTasksForGoals] = await Promise.all([
     fetchGoals().catch(()=>[]),
     Promise.resolve(store.get('users')||[]),
+    fetchTasks().catch(()=>[]),
   ]);
 
   // Wire tabs
@@ -129,6 +130,9 @@ function renderGoalsList(container) {
     const pilarCount = (goal.pilares||[]).length;
     const metaCount  = (goal.pilares||[]).reduce((s,p)=>s+(p.metas||[]).length,0);
     const warnings   = validateGoalWeights(goal);
+    const linkedTasks    = allTasksForGoals.filter(t => t.goalId === goal.id);
+    const confirmedTasks = linkedTasks.filter(t => t.confirmadaEvidencia);
+    const doneTasks      = linkedTasks.filter(t => t.status === 'done');
     const statusColors = { rascunho:'#6B7280', publicada:'#22C55E', encerrada:'#A78BFA' };
 
     return `
@@ -159,6 +163,8 @@ function renderGoalsList(container) {
             </div>
             <div style="font-size:0.8125rem;color:var(--text-muted);">
               ${pilarCount} pilar${pilarCount!==1?'es':''} · ${metaCount} meta${metaCount!==1?'s':''}
+              · <span style="color:var(--color-info);">${linkedTasks.length} tarefa${linkedTasks.length!==1?'s':''}</span>
+              (${doneTasks.length} concluída${doneTasks.length!==1?'s':''}, ${confirmedTasks.length} com evidência)
               ${resp?` · Responsável: <strong style="color:var(--text-secondary);">${esc(resp.name)}</strong>`:''}
               ${gestor?` · Gestor: <strong style="color:var(--text-secondary);">${esc(gestor.name)}</strong>`:''}
               ${goal.inicio?` · ${fmtDate(goal.inicio)}`:''} ${goal.fim?`→ ${fmtDate(goal.fim)}`:''}

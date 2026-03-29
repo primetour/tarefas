@@ -45,7 +45,7 @@ export async function renderDashboard(container) {
       ${[0,1,2,3].map(()=>'<div class="stat-card skeleton" style="height:100px;"></div>').join('')}
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;" id="dash-main">
+    <div class="dash-main-grid" id="dash-main">
       <div class="card"><div class="card-body skeleton" style="height:240px;"></div></div>
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div class="card"><div class="card-body skeleton" style="height:120px;"></div></div>
@@ -206,12 +206,17 @@ export async function renderDashboard(container) {
               ${myGoals.slice(0,3).map(g => {
                 const pct = g.target > 0 ? Math.min(100, Math.round((g.current||0)/g.target*100)) : g.progress||0;
                 const color = pct>=100?'#22C55E':pct>=60?'#F59E0B':'#38BDF8';
+                const gTasks = tasks.filter(t => t.goalId === g.id);
+                const gDone  = gTasks.filter(t => t.status === 'done').length;
                 return `<div>
                   <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
                     <span style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
-                      white-space:nowrap;max-width:70%;">${esc(g.title)}</span>
+                      white-space:nowrap;max-width:60%;">${esc(g.title || g.objetivoNucleo || g.pilares?.[0]?.titulo || 'Meta')}</span>
                     <span style="font-size:0.8125rem;font-weight:700;color:${color};">${pct}%</span>
                   </div>
+                  ${gTasks.length ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:3px;">
+                    ${gTasks.length} tarefa${gTasks.length!==1?'s':''} vinculada${gTasks.length!==1?'s':''} · ${gDone} concluída${gDone!==1?'s':''}
+                  </div>` : ''}
                   <div class="progress" style="height:4px;">
                     <div class="progress-bar" style="width:${pct}%;background:${color};"></div>
                   </div>

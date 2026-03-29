@@ -10,8 +10,9 @@ import {
   createAbsence, updateAbsence, deleteAbsence,
   fetchUserAbsences, fetchAllAbsences,
   getTeamAvailability, isUserAvailable,
-  ABSENCE_TYPES,
+  calcUserWorkload, ABSENCE_TYPES,
 } from '../services/capacity.js';
+import { fetchTasks } from '../services/tasks.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -218,7 +219,12 @@ async function renderTeamAvailability(container) {
     const now     = new Date();
     const start   = new Date(now.getFullYear(), now.getMonth(), 1);
     const end     = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const team    = await getTeamAvailability(users.filter(u=>u.active).map(u=>u.id), start, end);
+    const [team, allTasks] = await Promise.all([
+      getTeamAvailability(users.filter(u=>u.active).map(u=>u.id), start, end),
+      fetchTasks().catch(()=>[]),
+    ]);
+    // Enrich team with workload data
+    team.forEach(u => { u.workload = calcUserWorkload(allTasks, u.userId); });
 
     // Calendar grid for current month
     const days = [];
@@ -244,7 +250,9 @@ async function renderTeamAvailability(container) {
                   <div style="flex:1;min-width:0;">
                     <div style="font-size:0.8125rem;font-weight:500;color:var(--text-primary);
                       overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.name)}</div>
-                    <div style="font-size:0.6875rem;color:var(--text-muted);">${u.available}/${u.total} dias</div>
+                    <div style="font-size:0.6875rem;color:var(--text-muted);">${u.available}/${u.total} dias
+                      · ${u.workload?.open||0} tarefa${(u.workload?.open||0)!==1?'s':''} abertas${u.workload?.overdue?` <span style="color:var(--color-danger);">(${u.workload.overdue} atraso)</span>`:''}
+                    </div>
                   </div>
                   <span style="font-size:0.8125rem;font-weight:700;
                     color:${u.rate>=80?'#22C55E':u.rate>=50?'#F59E0B':'#EF4444'};">
