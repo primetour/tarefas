@@ -707,8 +707,7 @@ function showEvidenceModal(taskId, taskData) {
   const hasGoal  = !!taskData.goalId;
   const hasGoals = goals.length > 0;
 
-  // Nothing to show — skip overlay silently
-  if (!hasCsat && !hasGoal && !hasGoals) { resolveOverlay(); return; }
+  // Always show the overlay so user can optionally fill CSAT / goal
 
   if (hasGoal) {
     try {
@@ -939,6 +938,6 @@ export async function openTaskDoneOverlay(taskId, taskData) {
     hasGoals = await hasPublishedGoals();
   } catch(e) { /* non-blocking */ }
 
-  if (!hasCsat && !hasGoalId && !hasGoals) return; // nothing to ask
-  showEvidenceModal(taskId, taskData || {});
+  // Always show — user decides what to confirm
+  await showEvidenceModal(taskId, taskData || {});
 }
