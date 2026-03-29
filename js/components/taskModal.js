@@ -654,23 +654,12 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     }
     close();
 
-    // Double-check: task being marked done without goal link
+    // Double-check overlay: show whenever a task is being completed
     const isBeingCompleted = data.status === 'done' &&
       (!isEdit || task.status !== 'done');
 
-    console.log('[taskModal] isBeingCompleted:', isBeingCompleted, '| status:', data.status, '| prev:', task.status, '| goalId:', data.goalId);
-
-    if (isBeingCompleted && !data.goalId) {
-      try {
-        const { hasPublishedGoals } = await import('../services/goals.js');
-        const hasPubGoals = await hasPublishedGoals();
-        console.log('[taskModal] hasPubGoals:', hasPubGoals);
-        if (hasPubGoals) {
-          showEvidenceModal(savedTask?.id || task.id, data);
-        }
-      } catch(e) { console.warn('[taskModal] evidence check failed:', e); }
-    } else if (isBeingCompleted && data.goalId) {
-      showEvidenceModal(savedTask?.id || task.id, data);
+    if (isBeingCompleted) {
+      showEvidenceModal(savedTask?.id || task.id, { ...data, id: savedTask?.id || task.id });
     }
 
     onSave?.(savedTask?.id, savedTask);
@@ -714,6 +703,9 @@ async function showEvidenceModal(taskId, taskData) {
   const hasCsat  = !!taskData.clientEmail;
   const hasGoal  = !!taskData.goalId;
   const hasGoals = goals.length > 0;
+
+  // Nothing to show — skip overlay silently
+  if (!hasCsat && !hasGoal && !hasGoals) return;
 
   if (hasGoal) {
     try {
