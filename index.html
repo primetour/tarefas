@@ -1,5 +1,9 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+<script>
+  // Aplica tema salvo antes do render para evitar flash
+  (function(){var t=localStorage.getItem('primetour-theme');if(t)document.documentElement.dataset.theme=t;})();
+</script>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -20,6 +24,7 @@
   <link rel="stylesheet" href="css/dashboards.css" />
   <link rel="stylesheet" href="css/csat.css" />
   <link rel="stylesheet" href="css/integrations.css" />
+  <link rel="stylesheet" href="css/portal.css" />
 </head>
 <body>
 
