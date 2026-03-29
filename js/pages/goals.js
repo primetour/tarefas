@@ -411,7 +411,7 @@ async function openGoalForm(container, goalId) {
 
   const users = store.get('users')||[];
 
-  const m = modal.open({
+  modal.open({
     title: goalId ? 'Editar Meta' : 'Nova Meta',
     size: 'xl',
     content: buildGoalFormHTML(draft, users),
@@ -436,8 +436,9 @@ async function openGoalForm(container, goalId) {
         }
       }
     ],
-    onOpen: () => wireGoalForm(draft),
   });
+  // modal.open doesn't support onOpen — wire form after DOM is inserted
+  setTimeout(() => wireGoalForm(draft), 0);
 }
 
 function buildGoalFormHTML(draft, users) {
@@ -990,23 +991,25 @@ function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEva
         }
       }
     ],
-    onOpen: () => {
-      // Live progress calculation
-      const recalc = () => {
-        const scores = [...document.querySelectorAll('.ev-kpi-score')].map(el=>
-          el.value!==''?Number(el.value):null
-        );
-        let ms=0,pw=0,filled=0;
-        scores.forEach((sc,ki) => {
-          if (sc===null) return;
-          const kp=(Number(meta.kpis[ki]?.peso)||0)/100;
-          ms+=sc*kp; pw+=kp; filled++;
-        });
-        const progress = pw>0?Math.round(ms/pw*100)/100:0;
-        const lbl = document.getElementById('ev-progress-label');
-        const bar  = document.getElementById('ev-progress-bar');
-        const badge = document.getElementById('ev-incomplete-badge');
-        if (lbl) lbl.textContent = progress.toFixed(1)+'%';
+  });
+
+  // modal.open doesn't support onOpen — wire live progress recalc after DOM is inserted
+  setTimeout(() => {
+    const recalc = () => {
+      const scores = [...document.querySelectorAll('.ev-kpi-score')].map(el=>
+        el.value!==''?Number(el.value):null
+      );
+      let ms=0,pw=0,filled=0;
+      scores.forEach((sc,ki) => {
+        if (sc===null) return;
+        const kp=(Number(meta.kpis[ki]?.peso)||0)/100;
+        ms+=sc*kp; pw+=kp; filled++;
+      });
+      const progress = pw>0?Math.round(ms/pw*100)/100:0;
+      const lbl = document.getElementById('ev-progress-label');
+      const bar  = document.getElementById('ev-progress-bar');
+      const badge = document.getElementById('ev-incomplete-badge');
+      if (lbl) lbl.textContent = progress.toFixed(1)+'%';
         if (bar) bar.style.width = Math.min(progress,100)+'%';
         const totalPeso = meta.kpis.reduce((s,k)=>s+(Number(k.peso)||0)/100,0);
         if (badge) badge.style.display = filled>0&&pw<totalPeso-0.01?'block':'none';
