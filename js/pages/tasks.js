@@ -285,7 +285,17 @@ function renderTaskRow(task) {
       <div class="kanban-card-due ${dueClass}" style="font-size:0.8125rem;">${dueText}</div>
       <div style="display:flex; align-items:center;">${assignees}${extraAssignees}</div>
     </div>
+
   `;
+}
+
+function buildGroups() {
+  if (groupBy === 'status') {
+    return STATUSES.map(s => ({
+      key:   s.value,
+      label: s.label,
+      color: s.color,
+      tasks: filteredTasks.filter(t => t.status === s.value),
     })).filter(g => g.tasks.length > 0);
   }
   if (groupBy === 'priority') {
