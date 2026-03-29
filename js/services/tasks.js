@@ -74,6 +74,7 @@ export const PRIORITY_MAP  = Object.fromEntries(PRIORITIES.map(p => [p.value, p]
 
 /* ─── Criar tarefa ───────────────────────────────────────── */
 export async function createTask(data) {
+  if (!store.can('task_create')) throw new Error('Permissão negada.');
   // Validar regras de negócio do tipo de tarefa
   if (data.typeId) {
     const { validateTaskTypeRules, calcSla } = await import('./taskTypes.js');
@@ -136,6 +137,13 @@ export async function createTask(data) {
 /* ─── Atualizar tarefa ───────────────────────────────────── */
 export async function updateTask(taskId, data) {
   const user = store.get('currentUser');
+  // Permitir edição se tem permissão global OU é o criador da tarefa
+  if (!store.can('task_edit_any')) {
+    const snap = await getDoc(doc(db, 'tasks', taskId));
+    if (snap.exists() && snap.data().createdBy !== user.uid) {
+      throw new Error('Permissão negada.');
+    }
+  }
   const updates = { ...data, updatedAt: serverTimestamp(), updatedBy: user.uid };
 
   // Se status mudou para rework, registrar no audit log

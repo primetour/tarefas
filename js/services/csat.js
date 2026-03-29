@@ -58,6 +58,7 @@ export async function createCsatSurvey({
   assignedTo   = null,   // uid do responsável principal
   customMessage = '',
 }) {
+  if (!store.can('csat_send')) throw new Error('Permissão negada.');
   const user = store.get('currentUser');
   if (!clientEmail) throw new Error('E-mail do cliente é obrigatório.');
 
@@ -269,6 +270,27 @@ export async function triggerCsatOnTaskComplete(task) {
   // (se delayHours > 0, o envio é feito por um job externo ou manualmente)
 
   return survey;
+}
+
+/* ─── Mapa de surveys por taskId (para cruzamento com tarefas) */
+export async function fetchSurveyMapByTaskIds(taskIds = []) {
+  if (!taskIds.length) return {};
+  // Firestore 'in' query supports max 30 items per call
+  const map = {};
+  const chunks = [];
+  for (let i = 0; i < taskIds.length; i += 30) chunks.push(taskIds.slice(i, i + 30));
+  for (const chunk of chunks) {
+    const snap = await getDocs(query(
+      collection(db, 'csat_surveys'),
+      where('taskId', 'in', chunk)
+    ));
+    for (const d of snap.docs) {
+      const data = { id: d.id, ...d.data() };
+      if (!map[data.taskId]) map[data.taskId] = [];
+      map[data.taskId].push(data);
+    }
+  }
+  return map;
 }
 
 /* ─── Helper: token único ────────────────────────────────── */

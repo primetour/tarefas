@@ -29,6 +29,106 @@ export const GOAL_PERIODS = [
 
 export const GOAL_TYPES = GOAL_SCOPES; // backward-compat alias
 
+export const GOAL_PRAZO_TYPES = [
+  { value: 'monthly',    label: 'Mensal'               },
+  { value: 'bimonthly',  label: 'Bimestral'            },
+  { value: 'quarterly',  label: 'Trimestral'           },
+  { value: 'semiannual', label: 'Semestral'            },
+  { value: 'annual',     label: 'Anual'                },
+  { value: 'custom',     label: 'Período personalizado'},
+];
+
+/* ─── Templates vazios ───────────────────────────────────── */
+export function emptyKpi() {
+  return { titulo: '', unidade: '', alvo: '', peso: 0 };
+}
+
+export function emptyMeta() {
+  return {
+    titulo: '', descricao: '', ponderacao: 0,
+    prazoTipo: 'monthly', prazoCustomInicio: '', prazoCustomFim: '',
+    periodicidadeTipo: 'monthly', recorrenciaAval: false,
+    kpis: [emptyKpi()],
+  };
+}
+
+export function emptyPilar() {
+  return { titulo: '', ponderacao: 0, metas: [emptyMeta()] };
+}
+
+export function emptyGoal() {
+  return {
+    titulo: '', descricao: '', escopo: 'individual',
+    responsavelId: '', gestorId: '', nucleo: '',
+    inicio: '', fim: '',
+    periodicidadeAval: 'monthly', recorrenciaAval: false,
+    status: 'rascunho',
+    pilares: [emptyPilar()],
+  };
+}
+
+/* ─── Validação de pesos ──────────────────────────────────── */
+export function validateGoalWeights(goal) {
+  const warnings = [];
+  const pilares = goal.pilares || [];
+  if (!pilares.length) return warnings;
+
+  const pSum = pilares.reduce((s, p) => s + (Number(p.ponderacao) || 0), 0);
+  if (pSum > 0 && Math.abs(pSum - 100) > 0.01) {
+    warnings.push(`Ponderação dos pilares soma ${pSum}% (esperado 100%)`);
+  }
+
+  pilares.forEach((pilar, pi) => {
+    const metas = pilar.metas || [];
+    if (!metas.length) return;
+    const mSum = metas.reduce((s, m) => s + (Number(m.ponderacao) || 0), 0);
+    if (mSum > 0 && Math.abs(mSum - 100) > 0.01) {
+      warnings.push(`Pilar "${pilar.titulo || pi + 1}": metas somam ${mSum}% (esperado 100%)`);
+    }
+    metas.forEach((meta, mi) => {
+      const kpis = meta.kpis || [];
+      if (!kpis.length) return;
+      const kSum = kpis.reduce((s, k) => s + (Number(k.peso) || 0), 0);
+      if (kSum > 0 && Math.abs(kSum - 100) > 0.01) {
+        warnings.push(`Meta "${meta.titulo || mi + 1}": KPIs somam ${kSum}% (esperado 100%)`);
+      }
+    });
+  });
+  return warnings;
+}
+
+/* ─── Períodos pendentes de avaliação (por meta) ──────────── */
+export function getPendingPeriods(meta, existingEvals = []) {
+  const periods = [];
+  const tipo = meta.prazoTipo || meta.periodicidadeTipo || 'monthly';
+  const step = { monthly: 1, bimonthly: 2, quarterly: 3, semiannual: 6, annual: 12 }[tipo] || 1;
+
+  const startStr = meta.prazoCustomInicio || meta.inicio;
+  const endStr   = meta.prazoCustomFim    || meta.fim;
+  const start = startStr ? new Date(startStr) : null;
+  const end   = endStr   ? new Date(endStr)   : null;
+  if (!start) return periods;
+
+  const now = new Date();
+  const addMonths = (d, n) => { const r = new Date(d); r.setMonth(r.getMonth() + n); return r; };
+  const fmt = d => d.toLocaleDateString('pt-BR');
+  const evalKeys = new Set((existingEvals || []).map(e => e.periodoRef));
+
+  let cur = new Date(start);
+  while (cur <= (end || now)) {
+    const next = addMonths(cur, step);
+    const pEnd = end && next > end ? end : new Date(next.getTime() - 1);
+    const key  = `${cur.toISOString().slice(0,10)}_${pEnd.toISOString().slice(0,10)}`;
+    if (!evalKeys.has(key)) {
+      periods.push({ start: new Date(cur), end: pEnd, key, label: `${fmt(cur)} – ${fmt(pEnd)}` });
+    }
+    if (!meta.recorrenciaAval) break;
+    cur = next;
+    if (cur > now) break;
+  }
+  return periods;
+}
+
 /* ─── Helpers ─────────────────────────────────────────────── */
 const uid = () => store.get('currentUser')?.uid;
 
@@ -71,6 +171,7 @@ export async function fetchGoal(id) {
 }
 
 export async function saveGoal(id, data) {
+  if (!store.can('goals_manage')) throw new Error('Permissão negada.');
   const payload = {
     ...data,
     updatedAt: serverTimestamp(),
@@ -89,6 +190,7 @@ export async function saveGoal(id, data) {
 }
 
 export async function deleteGoal(id) {
+  if (!store.can('goals_manage')) throw new Error('Permissão negada.');
   await deleteDoc(doc(db, 'goals', id));
   await auditLog('goals.delete', 'goal', id, {});
 }
@@ -116,6 +218,7 @@ export async function fetchEvaluations(goalId) {
 }
 
 export async function saveEvaluation(evalId, data) {
+  if (!store.can('goals_evaluate')) throw new Error('Permissão negada.');
   const payload = {
     ...data,
     updatedAt: serverTimestamp(),
@@ -132,6 +235,7 @@ export async function saveEvaluation(evalId, data) {
 }
 
 export async function deleteEvaluation(id) {
+  if (!store.can('goals_evaluate')) throw new Error('Permissão negada.');
   await deleteDoc(doc(db, 'goal_evaluations', id));
 }
 

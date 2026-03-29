@@ -127,6 +127,43 @@ export function calcAvailableDays(absences, userId, startDate, endDate) {
   return { total, available, absent: total - available };
 }
 
+/* ─── Carga de trabalho por usuário (cruzamento com tarefas) */
+export function calcUserWorkload(tasks, userId) {
+  const assigned = tasks.filter(t => (t.assignees || []).includes(userId));
+  const open     = assigned.filter(t => !['done', 'cancelled'].includes(t.status));
+  const overdue  = open.filter(t => {
+    if (!t.dueDate) return false;
+    const d = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+    return d < new Date();
+  });
+  return {
+    total:    assigned.length,
+    open:     open.length,
+    done:     assigned.filter(t => t.status === 'done').length,
+    overdue:  overdue.length,
+  };
+}
+
+/* ─── Resumo de disponibilidade da equipe com carga ──────── */
+export async function getTeamCapacityWithWorkload(userIds, tasks, startDate, endDate) {
+  const absences = await fetchAllAbsences({ startDate, endDate });
+  return userIds.map(uid => {
+    const users = store.get('users') || [];
+    const user  = users.find(u => u.id === uid);
+    const { available, absent, total } = calcAvailableDays(absences, uid, startDate, endDate);
+    const workload = calcUserWorkload(tasks, uid);
+    return {
+      userId: uid,
+      name:   user?.name || uid,
+      avatarColor: user?.avatarColor || '#6B7280',
+      total, available, absent,
+      rate: total ? Math.round((available / total) * 100) : 100,
+      workload,
+      absences: absences.filter(a => a.userId === uid),
+    };
+  });
+}
+
 /* ─── Resumo de disponibilidade da equipe ────────────────── */
 export async function getTeamAvailability(userIds, startDate, endDate) {
   const absences = await fetchAllAbsences({ startDate, endDate });
