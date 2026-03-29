@@ -10,7 +10,7 @@ import {
   STATUSES, PRIORITY_MAP,
 } from '../services/tasks.js';
 import { fetchProjects }  from '../services/projects.js';
-import { openTaskModal }  from '../components/taskModal.js';
+import { openTaskModal, openTaskDoneOverlay }  from '../components/taskModal.js';
 import { fetchTaskTypes }         from '../services/taskTypes.js';
 import {
   renderFilterBar, bindFilterBar, buildFilterFn,
@@ -588,13 +588,20 @@ function bindPipelineColumnDrop(col, type) {
     if (!taskId) return;
 
     try {
-      const { updateTask } = await import('../services/tasks.js');
+      const { updateTask, getTask } = await import('../services/tasks.js');
       const updates = {
         customFields: { ...(dragTask?.customFields||{}), currentStep: stepId || null },
         status:       isDone ? 'done' : 'in_progress',
+        _prevStatus:  dragTask?.status || 'in_progress',
         order:        Date.now(),
       };
       await updateTask(taskId, updates);
+
+      // Double-check overlay when completing a task via kanban drag
+      if (isDone) {
+        const fresh = await getTask(taskId).catch(() => dragTask);
+        openTaskDoneOverlay(taskId, fresh || dragTask || {});
+      }
     } catch(err) {
       toast.error('Erro ao mover tarefa: ' + err.message);
     }
