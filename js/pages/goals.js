@@ -12,7 +12,8 @@ import {
   emptyGoal, emptyPilar, emptyMeta, emptyKpi,
   GOAL_SCOPES, GOAL_PRAZO_TYPES,
 } from '../services/goals.js';
-import { NUCLEOS, fetchTasks } from '../services/tasks.js';
+import { NUCLEOS, fetchTasks, updateTask } from '../services/tasks.js';
+import { openTaskModal } from '../components/taskModal.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtDate = ts => { if(!ts) return '—'; const d=ts?.toDate?ts.toDate():new Date(ts); return d.toLocaleDateString('pt-BR'); };
@@ -287,7 +288,8 @@ async function renderAvaliacoes(container) {
       fetchEvaluations(goal.id).catch(()=>[]),
       fetchTasks().catch(()=>[]),
     ]);
-    const evidenceTasks = allTasksRaw.filter(t => t.goalId === goal.id && t.confirmadaEvidencia);
+    const linkedTasks   = allTasksRaw.filter(t => t.goalId === goal.id);
+    const evidenceTasks = linkedTasks.filter(t => t.confirmadaEvidencia);
 
     const evalEl = document.getElementById(`goal-evals-${goal.id}`);
     if (!evalEl) continue;
@@ -349,41 +351,63 @@ async function renderAvaliacoes(container) {
       }).join('')}` : `<div style="font-size:0.8125rem;color:var(--text-muted);text-align:center;padding:12px;">
         Nenhuma avaliação registrada ainda.</div>`;
 
-    // Evidence tasks section
-    const evidenceHTML = evidenceTasks.length ? `
+    // Linked tasks section — shows ALL tasks, not just confirmed evidence
+    const statusIcons = { done:'✓', in_progress:'▶', review:'◉', not_started:'○', cancelled:'✕', rework:'↺' };
+    const statusColors = { done:'#22C55E', in_progress:'#F59E0B', review:'#A78BFA', not_started:'#38BDF8', cancelled:'#EF4444', rework:'#F97316' };
+    const isGestorForLink = goal.gestorId === store.get('currentUser')?.uid || store.isMaster() || store.can('system_manage_roles');
+
+    const evidenceHTML = `
       <div style="margin-top:${evals.length?'20px':'0'};">
-        <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:.07em;color:var(--text-muted);margin-bottom:10px;">
-          📎 Tarefas vinculadas como evidência (${evidenceTasks.length})
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+            letter-spacing:.07em;color:var(--text-muted);">
+            📎 Tarefas vinculadas (${linkedTasks.length})
+            ${evidenceTasks.length?` · ${evidenceTasks.length} com evidência`:''}
+          </div>
+          ${isGestorForLink ? `<button class="btn btn-ghost btn-sm goal-link-task-btn"
+            data-goal-id="${esc(goal.id)}" style="font-size:0.75rem;color:var(--brand-gold);">
+            + Vincular tarefa</button>` : ''}
         </div>
-        ${evidenceTasks.map(t => {
+        ${linkedTasks.length ? linkedTasks.map(t => {
           const doneDate = t.completedAt?.toDate ? t.completedAt.toDate() : null;
+          const sIcon = statusIcons[t.status] || '○';
+          const sColor = statusColors[t.status] || '#6B7280';
           return `
-          <div style="background:var(--bg-surface);border-radius:var(--radius-md);
+          <div class="goal-linked-task" data-task-id="${esc(t.id)}"
+            style="background:var(--bg-surface);border-radius:var(--radius-md);
             padding:10px 14px;margin-bottom:6px;border:1px solid var(--border-subtle);
-            display:flex;align-items:center;gap:10px;">
-            <span style="color:#22C55E;font-size:0.875rem;flex-shrink:0;">✓</span>
+            display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .15s;"
+            onmouseover="this.style.borderColor='var(--border-accent)'"
+            onmouseout="this.style.borderColor='var(--border-subtle)'">
+            <span style="color:${sColor};font-size:0.875rem;flex-shrink:0;">${sIcon}</span>
             <div style="flex:1;min-width:0;">
               <div style="font-size:0.8125rem;font-weight:600;
                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                 ${esc(t.title)}
               </div>
-              <div style="display:flex;gap:8px;margin-top:2px;flex-wrap:wrap;">
-                ${t.periodoRef?`<span style="font-size:0.75rem;color:var(--brand-gold);">
+              <div style="display:flex;gap:8px;margin-top:2px;flex-wrap:wrap;align-items:center;">
+                <span class="badge badge-status-${t.status}" style="font-size:0.5625rem;padding:1px 6px;">
+                  ${t.status === 'done' ? 'Concluída' : t.status === 'in_progress' ? 'Em andamento' : t.status}
+                </span>
+                ${t.confirmadaEvidencia?`<span style="font-size:0.625rem;color:#22C55E;
+                  background:rgba(34,197,94,.1);padding:1px 6px;border-radius:var(--radius-full);">
+                  ✓ Evidência</span>`:''}
+                ${t.periodoRef?`<span style="font-size:0.6875rem;color:var(--brand-gold);">
                   📅 ${esc(t.periodoRef)}</span>`:''}
-                ${doneDate?`<span style="font-size:0.75rem;color:var(--text-muted);">
-                  Concluída ${doneDate.toLocaleDateString('pt-BR')}</span>`:''}
+                ${doneDate?`<span style="font-size:0.6875rem;color:var(--text-muted);">
+                  ${doneDate.toLocaleDateString('pt-BR')}</span>`:''}
               </div>
             </div>
             ${t.linkComprovacao?`
               <a href="${esc(t.linkComprovacao)}" target="_blank" rel="noopener"
-                class="btn btn-ghost btn-sm"
+                class="btn btn-ghost btn-sm" onclick="event.stopPropagation();"
                 style="font-size:0.75rem;flex-shrink:0;color:var(--brand-gold);">
-                🔗 Ver
+                🔗
               </a>`:''}
           </div>`;
-        }).join('')}
-      </div>` : '';
+        }).join('') : `<div style="font-size:0.8125rem;color:var(--text-muted);text-align:center;
+          padding:12px;">Nenhuma tarefa vinculada a esta meta.</div>`}
+      </div>`;
 
     evalEl.innerHTML = evalsHTML + evidenceHTML;
 
@@ -392,6 +416,22 @@ async function renderAvaliacoes(container) {
       btn.addEventListener('click', async () => {
         const ev = evals.find(e=>e.id===btn.dataset.eval);
         if (ev) openEvaluationForm(goal, ev.pillarIdx||0, ev.metaIdx||0, evals, ev);
+      });
+    });
+
+    // Wire click on linked tasks → open task modal
+    evalEl.querySelectorAll('.goal-linked-task').forEach(div => {
+      div.addEventListener('click', () => {
+        const t = allTasksRaw.find(x => x.id === div.dataset.taskId);
+        if (t) openTaskModal({ taskData: t, onSave: () => renderAvaliacoes(container) });
+      });
+    });
+
+    // Wire "Vincular tarefa" button
+    evalEl.querySelectorAll('.goal-link-task-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openLinkTaskToGoalModal(btn.dataset.goalId, allTasksRaw, container);
       });
     });
   }
@@ -873,6 +913,89 @@ function wireGoalForm(draft) {
 function readFormIntoDraft(draft) {
   // Header fields already wired live. Just sync pilares structure read-only pass is redundant.
   // All inputs wired live via wireGoalForm.
+}
+
+/* ─── Link existing tasks to a goal ──────────────────────── */
+function openLinkTaskToGoalModal(goalId, allTasks, container) {
+  const goal = allGoals.find(g => g.id === goalId);
+  if (!goal) return;
+
+  // Tasks not yet linked to this goal
+  const unlinked = allTasks.filter(t => t.goalId !== goalId && !['cancelled'].includes(t.status));
+  const linked   = allTasks.filter(t => t.goalId === goalId);
+  let search = '';
+
+  const renderList = () => {
+    const filtered = search
+      ? unlinked.filter(t => (t.title||'').toLowerCase().includes(search.toLowerCase()))
+      : unlinked.slice(0, 30);
+
+    return filtered.length ? filtered.map(t => `
+      <div class="link-task-item" data-task-id="${esc(t.id)}"
+        style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+        border-bottom:1px solid var(--border-subtle);cursor:pointer;transition:background .15s;"
+        onmouseover="this.style.background='var(--bg-hover)'"
+        onmouseout="this.style.background='transparent'">
+        <input type="checkbox" class="link-task-check" data-task-id="${esc(t.id)}"
+          ${linked.some(l=>l.id===t.id)?'checked':''}
+          style="width:18px;height:18px;accent-color:var(--brand-gold);cursor:pointer;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${esc(t.title)}
+          </div>
+          <div style="font-size:0.6875rem;color:var(--text-muted);">
+            ${t.status==='done'?'✓ Concluída':t.status==='in_progress'?'▶ Em andamento':'○ '+t.status}
+            ${t.assignees?.length?` · ${t.assignees.length} responsável(is)`:''}
+          </div>
+        </div>
+      </div>`).join('') : `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+        Nenhuma tarefa encontrada.</div>`;
+  };
+
+  modal.open({
+    title: `Vincular tarefas à meta "${esc(goal.objetivoNucleo || goal.pilares?.[0]?.titulo || 'Meta')}"`,
+    size: 'lg',
+    content: `
+      <div style="margin-bottom:12px;">
+        <input type="text" id="link-task-search" class="portal-field" style="width:100%;"
+          placeholder="Buscar tarefa por título...">
+      </div>
+      <div style="max-height:400px;overflow-y:auto;border:1px solid var(--border-subtle);
+        border-radius:var(--radius-md);" id="link-task-list">
+        ${renderList()}
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">
+        Selecione as tarefas que deseja vincular como evidência a esta meta.
+      </div>`,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+      { label: 'Vincular selecionadas', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const checked = document.querySelectorAll('.link-task-check:checked');
+          if (!checked.length) { toast.warning('Selecione ao menos uma tarefa.'); return; }
+          try {
+            const ops = Array.from(checked).map(cb =>
+              updateTask(cb.dataset.taskId, { goalId, confirmadaEvidencia: true })
+            );
+            await Promise.all(ops);
+            toast.success(`${checked.length} tarefa(s) vinculada(s)!`);
+            close();
+            renderAvaliacoes(container);
+          } catch(e) { toast.error('Erro: ' + e.message); }
+        }
+      }
+    ],
+  });
+
+  // Wire search after modal is open
+  setTimeout(() => {
+    const searchInput = document.getElementById('link-task-search');
+    const listEl      = document.getElementById('link-task-list');
+    searchInput?.addEventListener('input', (e) => {
+      search = e.target.value;
+      if (listEl) listEl.innerHTML = renderList();
+    });
+  }, 0);
 }
 
 /* ─── Evaluation form ────────────────────────────────────── */
