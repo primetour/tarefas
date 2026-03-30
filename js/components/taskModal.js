@@ -699,9 +699,24 @@ function showEvidenceModal(taskId, taskData) {
 
   let goals = [], periods = [];
   try {
-    const { fetchGoals } = await import('../services/goals.js');
-    goals = (await fetchGoals()).filter(g => g.status === 'publicada');
-  } catch(e) { goals = []; }
+    const goalsModule = await import('../services/goals.js');
+    let allGoals = [];
+    try {
+      allGoals = await goalsModule.fetchGoals();
+    } catch(fetchErr) {
+      // Fallback: direct query without orderBy (avoids Firestore index issues)
+      console.warn('[overlay] fetchGoals failed, trying direct query:', fetchErr.message);
+      const { collection: col, getDocs: gd } = await import(
+        'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+      );
+      const { db: fireDb } = await import('../firebase.js');
+      const snap = await gd(col(fireDb, 'goals'));
+      allGoals = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+    // Show published goals primarily; include drafts as secondary option
+    goals = allGoals.filter(g => g.status === 'publicada');
+    if (!goals.length) goals = allGoals.filter(g => g.status !== 'encerrada');
+  } catch(e) { console.error('[overlay] goals load error:', e); goals = []; }
 
   const hasCsat  = !!taskData.clientEmail;
   const hasGoal  = !!taskData.goalId;
@@ -771,7 +786,7 @@ function showEvidenceModal(taskId, taskData) {
                 <div style="font-weight:600;font-size:0.875rem;">🎯 Evidência de meta</div>
                 <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
                   ${hasGoal
-                    ? `Meta: <strong>${esc2(activeGoal?.titulo || taskData.goalId)}</strong>`
+                    ? `Meta: <strong>${esc2(activeGoal?.objetivoNucleo || activeGoal?.titulo || taskData.goalId)}</strong>`
                     : hasGoals
                       ? 'Selecione abaixo se esta tarefa é evidência de uma meta'
                       : 'Nenhuma meta publicada no sistema'}
@@ -791,10 +806,15 @@ function showEvidenceModal(taskId, taskData) {
                 <label style="${LBL2}">Meta vinculada</label>
                 <select id="dc-goal-sel" class="filter-select" style="${F2}">
                   <option value="">— Selecione —</option>
-                  ${goals.map(g => `<option value="${esc2(g.id)}"
-                    ${g.id === activeGoalId ? 'selected' : ''}>
-                    ${esc2(g.titulo)} · ${esc2(g.responsavelNome||'')}
-                  </option>`).join('')}
+                  ${goals.map(g => {
+                    const users = store.get('users') || [];
+                    const respName = users.find(u => u.id === g.responsavelId)?.name || '';
+                    const goalName = g.objetivoNucleo || g.titulo || g.pilares?.[0]?.titulo || 'Meta';
+                    return `<option value="${esc2(g.id)}"
+                      ${g.id === activeGoalId ? 'selected' : ''}>
+                      ${esc2(goalName)}${respName ? ' · ' + esc2(respName) : ''}
+                    </option>`;
+                  }).join('')}
                 </select>
               </div>
               <div>
