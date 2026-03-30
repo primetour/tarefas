@@ -719,45 +719,76 @@ function fmtDate(ts) {
 
 /* ─── Envio em massa ─────────────────────────────────────── */
 function openBulkCsatModal() {
-  const completedTasks = allTasks.filter(t => t.status === 'done' && t.clientEmail);
-  const otherDone      = allTasks.filter(t => t.status === 'done' && !t.clientEmail);
+  // Todas as tarefas concluídas — com e sem e-mail
+  const completedTasks = allTasks.filter(t => t.status === 'done');
 
-  // Agrupa por e-mail para mostrar quantas tarefas cada cliente tem
-  const byEmail = {};
+  // Mapa de surveys existentes para marcar tarefas já enviadas
+  const existingSurveyTaskIds = new Set(allSurveys.map(s => s.taskId));
+
+  // Email editáveis por tarefa (pre-filled se já tiver)
+  const taskEmails = {};
+  const taskNames  = {};
   completedTasks.forEach(t => {
-    const email = t.clientEmail.trim().toLowerCase();
-    if (!byEmail[email]) byEmail[email] = { email, name: t.clientName || email.split('@')[0], tasks: [] };
-    byEmail[email].tasks.push(t);
+    taskEmails[t.id] = t.clientEmail || '';
+    taskNames[t.id]  = t.clientName  || '';
   });
-  const groups = Object.values(byEmail);
 
   let searchBulk = '';
 
   const renderTaskList = () => {
     const filtered = searchBulk
-      ? completedTasks.filter(t => (t.title||'').toLowerCase().includes(searchBulk) || (t.clientEmail||'').toLowerCase().includes(searchBulk))
+      ? completedTasks.filter(t =>
+          (t.title||'').toLowerCase().includes(searchBulk) ||
+          (taskEmails[t.id]||'').toLowerCase().includes(searchBulk) ||
+          (t.clientEmail||'').toLowerCase().includes(searchBulk))
       : completedTasks;
 
     if (!filtered.length) return `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
-      Nenhuma tarefa concluída com e-mail de cliente.</div>`;
+      Nenhuma tarefa concluída encontrada.</div>`;
 
-    return filtered.map(t => `
-      <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
-        border-bottom:1px solid var(--border-subtle);cursor:pointer;transition:background .15s;"
+    return filtered.map(t => {
+      const hasSurvey = existingSurveyTaskIds.has(t.id);
+      const email     = taskEmails[t.id] || '';
+      const projName  = allProjects.find(p => p.id === t.projectId)?.name || '';
+
+      return `
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;
+        border-bottom:1px solid var(--border-subtle);transition:background .15s;
+        ${hasSurvey ? 'opacity:0.5;' : ''}"
         onmouseover="this.style.background='var(--bg-hover)'"
         onmouseout="this.style.background='transparent'">
         <input type="checkbox" class="bulk-task-check" data-task-id="${esc(t.id)}"
-          checked style="width:18px;height:18px;accent-color:var(--brand-gold);cursor:pointer;flex-shrink:0;">
+          ${!hasSurvey && email ? 'checked' : ''} ${hasSurvey ? 'disabled title="Já possui pesquisa CSAT"' : ''}
+          style="width:18px;height:18px;accent-color:var(--brand-gold);cursor:pointer;flex-shrink:0;margin-top:4px;">
         <div style="flex:1;min-width:0;">
-          <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            ${esc(t.title)}
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <span style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
+              ${esc(t.title)}
+            </span>
+            ${hasSurvey ? '<span style="font-size:0.625rem;background:#22C55E22;color:#22C55E;padding:2px 6px;border-radius:4px;flex-shrink:0;">CSAT enviado</span>' : ''}
+            ${projName ? `<span style="font-size:0.625rem;background:var(--bg-surface);color:var(--text-muted);padding:2px 6px;border-radius:4px;flex-shrink:0;">${esc(projName)}</span>` : ''}
           </div>
-          <div style="font-size:0.6875rem;color:var(--text-muted);">
-            📧 ${esc(t.clientEmail)} ${t.clientName ? '· ' + esc(t.clientName) : ''}
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="email" class="bulk-email-input" data-task-id="${esc(t.id)}"
+              value="${esc(email)}" placeholder="email@cliente.com"
+              ${hasSurvey ? 'disabled' : ''}
+              style="flex:1;font-size:0.75rem;padding:4px 8px;border:1px solid var(--border-subtle);
+                border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);
+                ${!email && !hasSurvey ? 'border-color:#F59E0B;' : ''}">
+            <input type="text" class="bulk-name-input" data-task-id="${esc(t.id)}"
+              value="${esc(taskNames[t.id] || '')}" placeholder="Nome do cliente"
+              ${hasSurvey ? 'disabled' : ''}
+              style="width:140px;font-size:0.75rem;padding:4px 8px;border:1px solid var(--border-subtle);
+                border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);">
           </div>
         </div>
-      </label>`).join('');
+      </div>`;
+    }).join('');
   };
+
+  const withEmail = completedTasks.filter(t => t.clientEmail).length;
+  const noEmail   = completedTasks.length - withEmail;
+  const pending   = completedTasks.filter(t => !existingSurveyTaskIds.has(t.id)).length;
 
   modal.open({
     title: '📨 Envio de CSAT em massa',
@@ -767,8 +798,9 @@ function openBulkCsatModal() {
         border-radius:var(--radius-md);padding:14px 16px;margin-bottom:16px;">
         <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;">
           <strong style="color:var(--text-primary);">Como funciona:</strong> O sistema agrupa as tarefas por e-mail do cliente.
-          Cada cliente recebe <strong>1 único e-mail</strong> com todas as suas tarefas para avaliar.
-          ${groups.length ? `<br>📊 <strong>${completedTasks.length} tarefas</strong> de <strong>${groups.length} clientes</strong> disponíveis.` : ''}
+          Cada cliente recebe <strong>1 único e-mail</strong> com todas as suas tarefas para avaliar.<br>
+          📊 <strong>${completedTasks.length} tarefas concluídas</strong> · ${pending} pendente(s) de CSAT ·
+          ${noEmail ? `<span style="color:#F59E0B;">${noEmail} sem e-mail</span>` : 'todas com e-mail'}
         </div>
       </div>
 
@@ -777,14 +809,14 @@ function openBulkCsatModal() {
           placeholder="Buscar tarefa ou e-mail...">
       </div>
 
-      <div style="display:flex;gap:10px;margin-bottom:8px;">
-        <button class="btn btn-ghost btn-sm" id="bulk-select-all">✓ Selecionar todas</button>
+      <div style="display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" id="bulk-select-all">✓ Selecionar pendentes</button>
         <button class="btn btn-ghost btn-sm" id="bulk-deselect-all">✕ Limpar seleção</button>
         <span style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);align-self:center;"
-          id="bulk-count">${completedTasks.length} selecionadas</span>
+          id="bulk-count">0 selecionadas</span>
       </div>
 
-      <div style="max-height:350px;overflow-y:auto;border:1px solid var(--border-subtle);
+      <div style="max-height:380px;overflow-y:auto;border:1px solid var(--border-subtle);
         border-radius:var(--radius-md);" id="bulk-task-list">
         ${renderTaskList()}
       </div>
@@ -800,13 +832,37 @@ function openBulkCsatModal() {
       {
         label: '📨 Enviar pesquisas', class: 'btn-primary', closeOnClick: false,
         onClick: async (_, { close }) => {
-          const checked = document.querySelectorAll('.bulk-task-check:checked');
+          const checked = document.querySelectorAll('.bulk-task-check:checked:not(:disabled)');
           if (!checked.length) { toast.warning('Selecione ao menos uma tarefa.'); return; }
 
-          const selectedIds = new Set(Array.from(checked).map(cb => cb.dataset.taskId));
-          const selectedTasks = completedTasks.filter(t => selectedIds.has(t.id));
-          const message = document.getElementById('bulk-message')?.value?.trim() || '';
+          // Lê emails editados pelo usuário
+          const selectedTasks = [];
+          let missingEmail = false;
+          checked.forEach(cb => {
+            const taskId = cb.dataset.taskId;
+            const emailInput = document.querySelector(`.bulk-email-input[data-task-id="${taskId}"]`);
+            const nameInput  = document.querySelector(`.bulk-name-input[data-task-id="${taskId}"]`);
+            const email = emailInput?.value?.trim() || '';
+            const name  = nameInput?.value?.trim()  || '';
 
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+              missingEmail = true;
+              if (emailInput) emailInput.style.borderColor = '#EF4444';
+              return;
+            }
+
+            const task = completedTasks.find(t => t.id === taskId);
+            if (task) {
+              selectedTasks.push({ ...task, clientEmail: email, clientName: name || email.split('@')[0] });
+            }
+          });
+
+          if (missingEmail) {
+            toast.warning('Preencha o e-mail de todas as tarefas selecionadas.');
+            return;
+          }
+
+          const message = document.getElementById('bulk-message')?.value?.trim() || '';
           const btn = document.querySelector('.modal-footer .btn-primary');
           if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
 
@@ -831,28 +887,40 @@ function openBulkCsatModal() {
     ],
   });
 
-  // Wire search & select/deselect after modal opens
+  // Wire search, select/deselect, email sync
   setTimeout(() => {
-    const listEl = document.getElementById('bulk-task-list');
+    const listEl  = document.getElementById('bulk-task-list');
     const countEl = document.getElementById('bulk-count');
 
     const updateCount = () => {
-      const n = document.querySelectorAll('.bulk-task-check:checked').length;
+      const n = document.querySelectorAll('.bulk-task-check:checked:not(:disabled)').length;
       if (countEl) countEl.textContent = `${n} selecionada${n !== 1 ? 's' : ''}`;
     };
+    updateCount();
 
     document.getElementById('bulk-search')?.addEventListener('input', e => {
       searchBulk = e.target.value.toLowerCase();
-      if (listEl) listEl.innerHTML = renderTaskList();
+      if (listEl) { listEl.innerHTML = renderTaskList(); updateCount(); }
     });
 
     document.getElementById('bulk-select-all')?.addEventListener('click', () => {
-      document.querySelectorAll('.bulk-task-check').forEach(cb => cb.checked = true);
+      document.querySelectorAll('.bulk-task-check:not(:disabled)').forEach(cb => cb.checked = true);
       updateCount();
     });
     document.getElementById('bulk-deselect-all')?.addEventListener('click', () => {
-      document.querySelectorAll('.bulk-task-check').forEach(cb => cb.checked = false);
+      document.querySelectorAll('.bulk-task-check:not(:disabled)').forEach(cb => cb.checked = false);
       updateCount();
+    });
+
+    // Sync email/name edits back to local map
+    listEl?.addEventListener('input', e => {
+      if (e.target.classList.contains('bulk-email-input')) {
+        taskEmails[e.target.dataset.taskId] = e.target.value;
+        e.target.style.borderColor = e.target.value.trim() ? 'var(--border-subtle)' : '#F59E0B';
+      }
+      if (e.target.classList.contains('bulk-name-input')) {
+        taskNames[e.target.dataset.taskId] = e.target.value;
+      }
     });
 
     listEl?.addEventListener('change', updateCount);
@@ -861,29 +929,48 @@ function openBulkCsatModal() {
 
 /* ─── Automação: enviar pendentes do período ─────────────── */
 function openAutoCsatModal() {
+  // Estado local para guardar tarefas encontradas e emails editáveis
+  let foundTasks = [];
+  const autoEmails = {};
+  const autoNames  = {};
+
   modal.open({
     title: '⏱ Envio automático de CSAT',
-    size:  'md',
+    size:  'lg',
     content: `
       <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
         border-radius:var(--radius-md);padding:14px 16px;margin-bottom:20px;">
         <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;">
           <strong style="color:var(--text-primary);">Como funciona:</strong>
-          O sistema busca tarefas concluídas no período selecionado que tenham e-mail de cliente
-          e <strong>ainda não receberam</strong> pesquisa CSAT. As pesquisas são agrupadas por cliente
-          — cada um recebe 1 único e-mail.
+          O sistema busca <strong>todas</strong> as tarefas concluídas no período que
+          <strong>ainda não receberam</strong> pesquisa CSAT — com ou sem e-mail.<br>
+          Preencha o e-mail de cada tarefa e envie. Tarefas do mesmo cliente são agrupadas em 1 e-mail.
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Período de busca</label>
-        <select class="form-select" id="auto-period" style="padding:8px 32px 8px 12px;">
-          <option value="7">Últimos 7 dias</option>
-          <option value="14">Últimos 14 dias</option>
-          <option value="30" selected>Últimos 30 dias</option>
-          <option value="60">Últimos 60 dias</option>
-          <option value="90">Últimos 90 dias</option>
-        </select>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:12px;margin-bottom:16px;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Período de busca</label>
+          <select class="form-select" id="auto-period" style="padding:8px 32px 8px 12px;">
+            <option value="7">Últimos 7 dias</option>
+            <option value="14">Últimos 14 dias</option>
+            <option value="30" selected>Últimos 30 dias</option>
+            <option value="60">Últimos 60 dias</option>
+            <option value="90">Últimos 90 dias</option>
+            <option value="180">Últimos 180 dias</option>
+            <option value="365">Último ano</option>
+          </select>
+        </div>
+        <div style="align-self:flex-end;">
+          <button class="btn btn-secondary" id="auto-scan-btn" style="height:38px;">🔍 Buscar pendentes</button>
+        </div>
+      </div>
+
+      <div id="auto-preview" style="margin-bottom:16px;">
+        <div style="background:var(--bg-surface);border-radius:var(--radius-md);
+          padding:16px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+          Clique em "Buscar pendentes" para encontrar tarefas sem CSAT.
+        </div>
       </div>
 
       <div class="form-group">
@@ -891,31 +978,48 @@ function openAutoCsatModal() {
         <textarea class="form-textarea" id="auto-message" rows="2" maxlength="500"
           placeholder="Gostaríamos de saber sua opinião sobre nosso trabalho recente..."></textarea>
       </div>
-
-      <div id="auto-preview" style="margin-top:16px;">
-        <button class="btn btn-ghost btn-sm" id="auto-scan-btn">🔍 Buscar tarefas pendentes</button>
-      </div>
     `,
     footer: [
       { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
       {
-        label: '📨 Enviar todas', class: 'btn-primary', closeOnClick: false,
+        label: '📨 Enviar selecionadas', class: 'btn-primary', closeOnClick: false,
         onClick: async (_, { close }) => {
-          const period  = parseInt(document.getElementById('auto-period')?.value || '30');
-          const message = document.getElementById('auto-message')?.value?.trim() || '';
+          // Coleta tarefas checadas com emails preenchidos
+          const checked = document.querySelectorAll('.auto-task-check:checked');
+          if (!checked.length) { toast.warning('Busque e selecione tarefas primeiro.'); return; }
 
+          const tasksToSend = [];
+          let missingEmail = false;
+          checked.forEach(cb => {
+            const taskId = cb.dataset.taskId;
+            const emailInput = document.querySelector(`.auto-email-input[data-task-id="${taskId}"]`);
+            const nameInput  = document.querySelector(`.auto-name-input[data-task-id="${taskId}"]`);
+            const email = emailInput?.value?.trim() || '';
+            const name  = nameInput?.value?.trim()  || '';
+
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+              missingEmail = true;
+              if (emailInput) emailInput.style.borderColor = '#EF4444';
+              return;
+            }
+
+            const task = foundTasks.find(t => t.id === taskId);
+            if (task) {
+              tasksToSend.push({ ...task, clientEmail: email, clientName: name || email.split('@')[0] });
+            }
+          });
+
+          if (missingEmail) {
+            toast.warning('Preencha o e-mail de todas as tarefas selecionadas.');
+            return;
+          }
+
+          const message = document.getElementById('auto-message')?.value?.trim() || '';
           const btn = document.querySelector('.modal-footer .btn-primary');
           if (btn) { btn.disabled = true; btn.textContent = '⏳ Processando...'; }
 
           try {
-            const pending = await findTasksWithoutCsat({ periodDays: period });
-            if (!pending.length) {
-              toast.info('Nenhuma tarefa pendente de CSAT no período.');
-              if (btn) { btn.disabled = false; btn.textContent = '📨 Enviar todas'; }
-              return;
-            }
-
-            const results = await sendBulkCsat(pending, { customMessage: message, sendNow: true });
+            const results = await sendBulkCsat(tasksToSend, { customMessage: message, sendNow: true });
             const msgs = [];
             if (results.created) msgs.push(`${results.created} pesquisa(s) criada(s)`);
             if (results.sent)    msgs.push(`${results.sent} e-mail(s) enviado(s)`);
@@ -925,7 +1029,7 @@ function openAutoCsatModal() {
           } catch(e) {
             toast.error(e.message);
           } finally {
-            if (btn) { btn.disabled = false; btn.textContent = '📨 Enviar todas'; }
+            if (btn) { btn.disabled = false; btn.textContent = '📨 Enviar selecionadas'; }
           }
         }
       }
@@ -937,46 +1041,99 @@ function openAutoCsatModal() {
     document.getElementById('auto-scan-btn')?.addEventListener('click', async () => {
       const preview = document.getElementById('auto-preview');
       const period  = parseInt(document.getElementById('auto-period')?.value || '30');
-      if (preview) preview.innerHTML = `<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:0.8125rem;">⏳ Buscando...</div>`;
+      const scanBtn = document.getElementById('auto-scan-btn');
+      if (scanBtn) { scanBtn.disabled = true; scanBtn.textContent = '⏳ Buscando...'; }
+      if (preview) preview.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:0.8125rem;">⏳ Buscando tarefas pendentes...</div>`;
 
       try {
         const pending = await findTasksWithoutCsat({ periodDays: period });
+        foundTasks = pending;
 
-        // Agrupa por email
-        const byEmail = {};
+        // Inicializa emails editáveis
         pending.forEach(t => {
-          const em = t.clientEmail.trim().toLowerCase();
-          if (!byEmail[em]) byEmail[em] = [];
-          byEmail[em].push(t);
+          autoEmails[t.id] = t.clientEmail || '';
+          autoNames[t.id]  = t.clientName  || '';
         });
-        const groups = Object.entries(byEmail);
 
         if (preview) {
           if (!pending.length) {
             preview.innerHTML = `<div style="background:var(--bg-surface);border-radius:var(--radius-md);
-              padding:16px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+              padding:20px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
               ✓ Nenhuma tarefa pendente de CSAT nos últimos ${period} dias.</div>`;
           } else {
+            const withEmail = pending.filter(t => t.clientEmail).length;
+            const noEmail   = pending.length - withEmail;
+
             preview.innerHTML = `
-              <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
-                color:var(--text-muted);margin-bottom:8px;">
-                Encontradas: ${pending.length} tarefa(s) de ${groups.length} cliente(s)
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);">
+                  ${pending.length} tarefa(s) pendente(s)
+                  ${noEmail ? `· <span style="color:#F59E0B;">${noEmail} sem e-mail</span>` : ''}
+                </div>
+                <div style="display:flex;gap:8px;">
+                  <button class="btn btn-ghost btn-sm" id="auto-select-all">✓ Todas</button>
+                  <button class="btn btn-ghost btn-sm" id="auto-deselect-all">✕ Limpar</button>
+                </div>
               </div>
-              <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border-subtle);
-                border-radius:var(--radius-md);">
-                ${groups.map(([email, tasks]) => `
-                  <div style="padding:10px 14px;border-bottom:1px solid var(--border-subtle);">
-                    <div style="font-size:0.8125rem;font-weight:600;">📧 ${esc(email)}</div>
-                    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
-                      ${tasks.length} tarefa(s): ${tasks.map(t => esc(t.title)).join(', ')}
+              <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:var(--radius-md);">
+                ${pending.map(t => {
+                  const email    = autoEmails[t.id] || '';
+                  const projName = allProjects.find(p => p.id === t.projectId)?.name || '';
+                  return `
+                  <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;
+                    border-bottom:1px solid var(--border-subtle);">
+                    <input type="checkbox" class="auto-task-check" data-task-id="${esc(t.id)}"
+                      ${email ? 'checked' : ''}
+                      style="width:18px;height:18px;accent-color:var(--brand-gold);cursor:pointer;flex-shrink:0;margin-top:4px;">
+                    <div style="flex:1;min-width:0;">
+                      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                        <span style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
+                          ${esc(t.title)}
+                        </span>
+                        ${projName ? `<span style="font-size:0.625rem;background:var(--bg-surface);color:var(--text-muted);padding:2px 6px;border-radius:4px;flex-shrink:0;">${esc(projName)}</span>` : ''}
+                      </div>
+                      <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="email" class="auto-email-input" data-task-id="${esc(t.id)}"
+                          value="${esc(email)}" placeholder="email@cliente.com"
+                          style="flex:1;font-size:0.75rem;padding:4px 8px;border:1px solid var(--border-subtle);
+                            border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);
+                            ${!email ? 'border-color:#F59E0B;' : ''}">
+                        <input type="text" class="auto-name-input" data-task-id="${esc(t.id)}"
+                          value="${esc(autoNames[t.id] || '')}" placeholder="Nome"
+                          style="width:120px;font-size:0.75rem;padding:4px 8px;border:1px solid var(--border-subtle);
+                            border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);">
+                      </div>
                     </div>
-                  </div>
-                `).join('')}
+                  </div>`;
+                }).join('')}
               </div>`;
+
+            // Wire select/deselect after rendering
+            setTimeout(() => {
+              document.getElementById('auto-select-all')?.addEventListener('click', () => {
+                document.querySelectorAll('.auto-task-check').forEach(cb => cb.checked = true);
+              });
+              document.getElementById('auto-deselect-all')?.addEventListener('click', () => {
+                document.querySelectorAll('.auto-task-check').forEach(cb => cb.checked = false);
+              });
+
+              // Sync email/name edits
+              preview?.addEventListener('input', e => {
+                if (e.target.classList.contains('auto-email-input')) {
+                  autoEmails[e.target.dataset.taskId] = e.target.value;
+                  e.target.style.borderColor = e.target.value.trim() ? 'var(--border-subtle)' : '#F59E0B';
+                }
+                if (e.target.classList.contains('auto-name-input')) {
+                  autoNames[e.target.dataset.taskId] = e.target.value;
+                }
+              });
+            }, 0);
           }
         }
       } catch(e) {
-        if (preview) preview.innerHTML = `<div style="color:var(--color-danger);font-size:0.8125rem;">Erro: ${esc(e.message)}</div>`;
+        if (preview) preview.innerHTML = `<div style="color:var(--color-danger);font-size:0.8125rem;padding:12px;">Erro: ${esc(e.message)}</div>`;
+      } finally {
+        if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = '🔍 Buscar pendentes'; }
       }
     });
   }, 0);
