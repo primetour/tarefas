@@ -102,8 +102,10 @@ export async function sendCsatEmail(surveyId) {
 
   const ejs = await loadEmailJS();
 
-  const baseUrl   = APP_CONFIG.csat.baseUrl || window.location.origin;
-  const surveyUrl = `${baseUrl}#csat-response?token=${survey.token}&id=${surveyId}`;
+  // Aponta direto para csat-response.html (página pública, sem autenticação)
+  const origin    = APP_CONFIG.csat.baseUrl || window.location.origin;
+  const basePath  = window.location.pathname.replace(/\/[^/]*$/, '');
+  const surveyUrl = `${origin}${basePath}/csat-response.html?token=${survey.token}&id=${surveyId}`;
 
   // Template params (customize os nomes conforme seu template EmailJS)
   const params = {
