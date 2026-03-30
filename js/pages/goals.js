@@ -160,7 +160,7 @@ function renderGoalsList(container) {
                 title="${esc(warnings.join('\n'))}">⚠ ponderação pendente</span>`:''}
             </div>
             <div style="font-weight:700;font-size:0.9375rem;margin-bottom:4px;">
-              ${esc(goal.objetivoNucleo || (goal.pilares?.[0]?.titulo) || 'Meta sem título')}
+              ${esc(goal.nome || goal.objetivoNucleo || (goal.pilares?.[0]?.titulo) || 'Meta sem título')}
             </div>
             <div style="font-size:0.8125rem;color:var(--text-muted);">
               ${pilarCount} pilar${pilarCount!==1?'es':''} · ${metaCount} meta${metaCount!==1?'s':''}
@@ -266,7 +266,7 @@ async function renderAvaliacoes(container) {
         border-bottom:1px solid var(--border-subtle);
         display:flex;align-items:center;justify-content:space-between;">
         <div>
-          <div style="font-weight:700;">${esc(goal.objetivoNucleo||(goal.pilares?.[0]?.titulo)||'Meta')}</div>
+          <div style="font-weight:700;">${esc(goal.nome || goal.objetivoNucleo||(goal.pilares?.[0]?.titulo)||'Meta')}</div>
           <div style="font-size:0.8125rem;color:var(--text-muted);">
             ${resp?esc(resp.name):'—'} · Gestor: ${gestor?esc(gestor.name):'—'}
           </div>
@@ -539,6 +539,11 @@ function buildGoalFormHTML(draft, users) {
       <div style="font-size:0.625rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
         color:var(--brand-gold);margin-bottom:14px;">Dados da Meta</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="grid-column:span 2;">
+          <label style="${LBL}">Nome da meta <span style="font-weight:400;color:var(--text-muted);">(identificação para visualização)</span></label>
+          <input type="text" id="gf-nome" class="portal-field" style="width:100%;"
+            value="${esc(draft.nome||'')}" placeholder="Ex: Meta de Produtividade Q1 2026">
+        </div>
         <div>
           <label style="${LBL}">Escopo</label>
           <select id="gf-escopo" class="filter-select" style="width:100%;">
@@ -919,6 +924,7 @@ function wireGoalForm(draft) {
   document.getElementById('gf-escopo')?.addEventListener('change', e => { draft.escopo = e.target.value; });
   document.getElementById('gf-nucleo')?.addEventListener('change', e => { draft.nucleo = e.target.value; });
   document.getElementById('gf-cargo')?.addEventListener('input', e => { draft.cargo = e.target.value; });
+  document.getElementById('gf-nome')?.addEventListener('input', e => { draft.nome = e.target.value; });
   document.getElementById('gf-objetivo')?.addEventListener('input', e => { draft.objetivoNucleo = e.target.value; });
   document.getElementById('gf-inicio')?.addEventListener('input', e => { draft.inicio = e.target.value; });
   document.getElementById('gf-fim')?.addEventListener('input', e => { draft.fim = e.target.value; });

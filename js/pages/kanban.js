@@ -370,6 +370,13 @@ function bindColumnDrop(col) {
 
     try {
       await moveTaskKanban(taskId, newStatus, newOrder);
+
+      // Double-check overlay when completing a task via kanban drag
+      if (newStatus === 'done') {
+        const { getTask } = await import('../services/tasks.js');
+        const fresh = await getTask(taskId).catch(() => dragTask);
+        openTaskDoneOverlay(taskId, fresh || dragTask || {});
+      }
     } catch(err) {
       toast.error('Erro ao mover tarefa: ' + err.message);
     }
