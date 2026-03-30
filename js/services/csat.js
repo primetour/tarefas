@@ -421,13 +421,16 @@ export async function findTasksWithoutCsat({ periodDays = 30 } = {}) {
   const since = new Date();
   since.setDate(since.getDate() - periodDays);
 
-  // Busca tarefas concluídas no período que tenham e-mail do cliente
+  // Busca TODAS as tarefas concluídas no período (com ou sem e-mail)
   const { fetchTasks } = await import('./tasks.js');
   const tasks = await fetchTasks();
   const doneTasks = tasks.filter(t => {
-    if (t.status !== 'done' || !t.clientEmail) return false;
-    const completedAt = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt || 0);
-    return completedAt >= since;
+    if (t.status !== 'done') return false;
+    // Tenta usar completedAt, updatedAt ou createdAt como referência
+    const ref = t.completedAt || t.updatedAt || t.createdAt;
+    if (!ref) return true; // Sem data = inclui (pode ser tarefa antiga)
+    const date = ref?.toDate ? ref.toDate() : new Date(ref);
+    return date >= since;
   });
 
   if (!doneTasks.length) return [];
