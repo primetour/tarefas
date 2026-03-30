@@ -9,7 +9,8 @@ import { modal }   from '../components/modal.js';
 import {
   subscribeSurveys, createCsatSurvey, sendCsatEmail,
   cancelSurvey, resendSurvey, calcCsatMetrics,
-  fetchSurveys, CSAT_STATUS, SCORE_LABELS,
+  fetchSurveys, sendBulkCsat, findTasksWithoutCsat,
+  CSAT_STATUS, SCORE_LABELS,
 } from '../services/csat.js';
 import { fetchTasks }    from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
@@ -31,10 +32,14 @@ export async function renderCsat(container) {
         <h1 class="page-title">CSAT</h1>
         <p class="page-subtitle">Pesquisas de satisfação do cliente</p>
       </div>
-      <div class="page-header-actions">
+      <div class="page-header-actions" style="gap:8px;">
         <button class="btn btn-secondary btn-sm" id="csat-export-xls">↓ XLS</button>
         <button class="btn btn-secondary btn-sm" id="csat-export-pdf">↓ PDF</button>
-        ${store.can('csat_send') ? `<button class="btn btn-primary" id="csat-new-btn">+ Nova Pesquisa</button>` : ''}
+        ${store.can('csat_send') ? `
+          <button class="btn btn-secondary btn-sm" id="csat-auto-btn" title="Enviar pendentes do período">⏱ Automático</button>
+          <button class="btn btn-secondary" id="csat-bulk-btn">📨 Envio em massa</button>
+          <button class="btn btn-primary" id="csat-new-btn">+ Nova Pesquisa</button>
+        ` : ''}
       </div>
     </div>
 
@@ -78,6 +83,8 @@ export async function renderCsat(container) {
 
   // Events
   document.getElementById('csat-new-btn')?.addEventListener('click', () => openNewSurveyModal());
+  document.getElementById('csat-bulk-btn')?.addEventListener('click', () => openBulkCsatModal());
+  document.getElementById('csat-auto-btn')?.addEventListener('click', () => openAutoCsatModal());
   document.getElementById('csat-export-xls')?.addEventListener('click', exportCsatXls);
   document.getElementById('csat-export-pdf')?.addEventListener('click', exportCsatPdf);
 
@@ -708,6 +715,271 @@ function fmtDate(ts) {
   if (!ts) return '—';
   const d = ts?.toDate ? ts.toDate() : new Date(ts);
   return new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}).format(d);
+}
+
+/* ─── Envio em massa ─────────────────────────────────────── */
+function openBulkCsatModal() {
+  const completedTasks = allTasks.filter(t => t.status === 'done' && t.clientEmail);
+  const otherDone      = allTasks.filter(t => t.status === 'done' && !t.clientEmail);
+
+  // Agrupa por e-mail para mostrar quantas tarefas cada cliente tem
+  const byEmail = {};
+  completedTasks.forEach(t => {
+    const email = t.clientEmail.trim().toLowerCase();
+    if (!byEmail[email]) byEmail[email] = { email, name: t.clientName || email.split('@')[0], tasks: [] };
+    byEmail[email].tasks.push(t);
+  });
+  const groups = Object.values(byEmail);
+
+  let searchBulk = '';
+
+  const renderTaskList = () => {
+    const filtered = searchBulk
+      ? completedTasks.filter(t => (t.title||'').toLowerCase().includes(searchBulk) || (t.clientEmail||'').toLowerCase().includes(searchBulk))
+      : completedTasks;
+
+    if (!filtered.length) return `<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+      Nenhuma tarefa concluída com e-mail de cliente.</div>`;
+
+    return filtered.map(t => `
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+        border-bottom:1px solid var(--border-subtle);cursor:pointer;transition:background .15s;"
+        onmouseover="this.style.background='var(--bg-hover)'"
+        onmouseout="this.style.background='transparent'">
+        <input type="checkbox" class="bulk-task-check" data-task-id="${esc(t.id)}"
+          checked style="width:18px;height:18px;accent-color:var(--brand-gold);cursor:pointer;flex-shrink:0;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${esc(t.title)}
+          </div>
+          <div style="font-size:0.6875rem;color:var(--text-muted);">
+            📧 ${esc(t.clientEmail)} ${t.clientName ? '· ' + esc(t.clientName) : ''}
+          </div>
+        </div>
+      </label>`).join('');
+  };
+
+  modal.open({
+    title: '📨 Envio de CSAT em massa',
+    size:  'lg',
+    content: `
+      <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+        border-radius:var(--radius-md);padding:14px 16px;margin-bottom:16px;">
+        <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;">
+          <strong style="color:var(--text-primary);">Como funciona:</strong> O sistema agrupa as tarefas por e-mail do cliente.
+          Cada cliente recebe <strong>1 único e-mail</strong> com todas as suas tarefas para avaliar.
+          ${groups.length ? `<br>📊 <strong>${completedTasks.length} tarefas</strong> de <strong>${groups.length} clientes</strong> disponíveis.` : ''}
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <input type="text" id="bulk-search" class="portal-field" style="width:100%;"
+          placeholder="Buscar tarefa ou e-mail...">
+      </div>
+
+      <div style="display:flex;gap:10px;margin-bottom:8px;">
+        <button class="btn btn-ghost btn-sm" id="bulk-select-all">✓ Selecionar todas</button>
+        <button class="btn btn-ghost btn-sm" id="bulk-deselect-all">✕ Limpar seleção</button>
+        <span style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);align-self:center;"
+          id="bulk-count">${completedTasks.length} selecionadas</span>
+      </div>
+
+      <div style="max-height:350px;overflow-y:auto;border:1px solid var(--border-subtle);
+        border-radius:var(--radius-md);" id="bulk-task-list">
+        ${renderTaskList()}
+      </div>
+
+      <div class="form-group" style="margin-top:16px;">
+        <label class="form-label">Mensagem personalizada <span style="color:var(--text-muted);font-weight:400;">(opcional)</span></label>
+        <textarea class="form-textarea" id="bulk-message" rows="2" maxlength="500"
+          placeholder="Gostaríamos de saber sua opinião sobre nosso trabalho recente..."></textarea>
+      </div>
+    `,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+      {
+        label: '📨 Enviar pesquisas', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const checked = document.querySelectorAll('.bulk-task-check:checked');
+          if (!checked.length) { toast.warning('Selecione ao menos uma tarefa.'); return; }
+
+          const selectedIds = new Set(Array.from(checked).map(cb => cb.dataset.taskId));
+          const selectedTasks = completedTasks.filter(t => selectedIds.has(t.id));
+          const message = document.getElementById('bulk-message')?.value?.trim() || '';
+
+          const btn = document.querySelector('.modal-footer .btn-primary');
+          if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
+
+          try {
+            const results = await sendBulkCsat(selectedTasks, { customMessage: message, sendNow: true });
+            const msgs = [];
+            if (results.created) msgs.push(`${results.created} pesquisa(s) criada(s)`);
+            if (results.sent)    msgs.push(`${results.sent} e-mail(s) enviado(s)`);
+            if (results.skipped) msgs.push(`${results.skipped} já existente(s)`);
+            toast.success(msgs.join(' · '));
+            if (results.errors.length) {
+              results.errors.forEach(e => toast.warning(`Falha ${e.email}: ${e.error}`));
+            }
+            close();
+          } catch(e) {
+            toast.error(e.message);
+          } finally {
+            if (btn) { btn.disabled = false; btn.textContent = '📨 Enviar pesquisas'; }
+          }
+        }
+      }
+    ],
+  });
+
+  // Wire search & select/deselect after modal opens
+  setTimeout(() => {
+    const listEl = document.getElementById('bulk-task-list');
+    const countEl = document.getElementById('bulk-count');
+
+    const updateCount = () => {
+      const n = document.querySelectorAll('.bulk-task-check:checked').length;
+      if (countEl) countEl.textContent = `${n} selecionada${n !== 1 ? 's' : ''}`;
+    };
+
+    document.getElementById('bulk-search')?.addEventListener('input', e => {
+      searchBulk = e.target.value.toLowerCase();
+      if (listEl) listEl.innerHTML = renderTaskList();
+    });
+
+    document.getElementById('bulk-select-all')?.addEventListener('click', () => {
+      document.querySelectorAll('.bulk-task-check').forEach(cb => cb.checked = true);
+      updateCount();
+    });
+    document.getElementById('bulk-deselect-all')?.addEventListener('click', () => {
+      document.querySelectorAll('.bulk-task-check').forEach(cb => cb.checked = false);
+      updateCount();
+    });
+
+    listEl?.addEventListener('change', updateCount);
+  }, 0);
+}
+
+/* ─── Automação: enviar pendentes do período ─────────────── */
+function openAutoCsatModal() {
+  modal.open({
+    title: '⏱ Envio automático de CSAT',
+    size:  'md',
+    content: `
+      <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+        border-radius:var(--radius-md);padding:14px 16px;margin-bottom:20px;">
+        <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;">
+          <strong style="color:var(--text-primary);">Como funciona:</strong>
+          O sistema busca tarefas concluídas no período selecionado que tenham e-mail de cliente
+          e <strong>ainda não receberam</strong> pesquisa CSAT. As pesquisas são agrupadas por cliente
+          — cada um recebe 1 único e-mail.
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Período de busca</label>
+        <select class="form-select" id="auto-period" style="padding:8px 32px 8px 12px;">
+          <option value="7">Últimos 7 dias</option>
+          <option value="14">Últimos 14 dias</option>
+          <option value="30" selected>Últimos 30 dias</option>
+          <option value="60">Últimos 60 dias</option>
+          <option value="90">Últimos 90 dias</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Mensagem personalizada <span style="color:var(--text-muted);font-weight:400;">(opcional)</span></label>
+        <textarea class="form-textarea" id="auto-message" rows="2" maxlength="500"
+          placeholder="Gostaríamos de saber sua opinião sobre nosso trabalho recente..."></textarea>
+      </div>
+
+      <div id="auto-preview" style="margin-top:16px;">
+        <button class="btn btn-ghost btn-sm" id="auto-scan-btn">🔍 Buscar tarefas pendentes</button>
+      </div>
+    `,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+      {
+        label: '📨 Enviar todas', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const period  = parseInt(document.getElementById('auto-period')?.value || '30');
+          const message = document.getElementById('auto-message')?.value?.trim() || '';
+
+          const btn = document.querySelector('.modal-footer .btn-primary');
+          if (btn) { btn.disabled = true; btn.textContent = '⏳ Processando...'; }
+
+          try {
+            const pending = await findTasksWithoutCsat({ periodDays: period });
+            if (!pending.length) {
+              toast.info('Nenhuma tarefa pendente de CSAT no período.');
+              if (btn) { btn.disabled = false; btn.textContent = '📨 Enviar todas'; }
+              return;
+            }
+
+            const results = await sendBulkCsat(pending, { customMessage: message, sendNow: true });
+            const msgs = [];
+            if (results.created) msgs.push(`${results.created} pesquisa(s) criada(s)`);
+            if (results.sent)    msgs.push(`${results.sent} e-mail(s) enviado(s)`);
+            if (results.skipped) msgs.push(`${results.skipped} já existente(s)`);
+            toast.success(msgs.join(' · '));
+            close();
+          } catch(e) {
+            toast.error(e.message);
+          } finally {
+            if (btn) { btn.disabled = false; btn.textContent = '📨 Enviar todas'; }
+          }
+        }
+      }
+    ],
+  });
+
+  // Wire scan button
+  setTimeout(() => {
+    document.getElementById('auto-scan-btn')?.addEventListener('click', async () => {
+      const preview = document.getElementById('auto-preview');
+      const period  = parseInt(document.getElementById('auto-period')?.value || '30');
+      if (preview) preview.innerHTML = `<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:0.8125rem;">⏳ Buscando...</div>`;
+
+      try {
+        const pending = await findTasksWithoutCsat({ periodDays: period });
+
+        // Agrupa por email
+        const byEmail = {};
+        pending.forEach(t => {
+          const em = t.clientEmail.trim().toLowerCase();
+          if (!byEmail[em]) byEmail[em] = [];
+          byEmail[em].push(t);
+        });
+        const groups = Object.entries(byEmail);
+
+        if (preview) {
+          if (!pending.length) {
+            preview.innerHTML = `<div style="background:var(--bg-surface);border-radius:var(--radius-md);
+              padding:16px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+              ✓ Nenhuma tarefa pendente de CSAT nos últimos ${period} dias.</div>`;
+          } else {
+            preview.innerHTML = `
+              <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+                color:var(--text-muted);margin-bottom:8px;">
+                Encontradas: ${pending.length} tarefa(s) de ${groups.length} cliente(s)
+              </div>
+              <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border-subtle);
+                border-radius:var(--radius-md);">
+                ${groups.map(([email, tasks]) => `
+                  <div style="padding:10px 14px;border-bottom:1px solid var(--border-subtle);">
+                    <div style="font-size:0.8125rem;font-weight:600;">📧 ${esc(email)}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+                      ${tasks.length} tarefa(s): ${tasks.map(t => esc(t.title)).join(', ')}
+                    </div>
+                  </div>
+                `).join('')}
+              </div>`;
+          }
+        }
+      } catch(e) {
+        if (preview) preview.innerHTML = `<div style="color:var(--color-danger);font-size:0.8125rem;">Erro: ${esc(e.message)}</div>`;
+      }
+    });
+  }, 0);
 }
 
 /* ─── Cleanup ─────────────────────────────────────────────── */
