@@ -13,12 +13,12 @@ const NAV_GROUPS = [
   {
     label: 'Principal',
     items: [
-      { route: 'dashboard',  icon: '⊞',  label: 'Painel',      roles: ['admin','manager','member'] },
-      { route: 'tasks',      icon: '✓',  label: 'Tarefas',     roles: ['admin','manager','member'] },
-      { route: 'projects',   icon: '◈',  label: 'Projetos',    roles: ['admin','manager','member'] },
-      { route: 'kanban',     icon: '▤',  label: 'Steps',       roles: ['admin','manager','member'] },
-      { route: 'calendar',   icon: '◷',  label: 'Calendário',  roles: ['admin','manager','member'] },
-      { route: 'timeline',   icon: '━━', label: 'Timeline',    roles: ['admin','manager'] },
+      { route: 'dashboard',  icon: '⊞',  label: 'Painel',      perm: 'dashboard_view' },
+      { route: 'tasks',      icon: '✓',  label: 'Tarefas',     perm: 'task_create' },
+      { route: 'projects',   icon: '◈',  label: 'Projetos',    perm: 'task_create',       altPerm: 'project_create' },
+      { route: 'kanban',     icon: '▤',  label: 'Steps',       perm: 'task_create' },
+      { route: 'calendar',   icon: '◷',  label: 'Calendário',  perm: 'task_create' },
+      { route: 'timeline',   icon: '━━', label: 'Timeline',    perm: 'task_edit_any' },
     ]
   },
   {
@@ -26,17 +26,17 @@ const NAV_GROUPS = [
     items: [
       { route: 'workspaces', icon: '◈',  label: 'Workspaces',   perm: 'workspace_create', altPerm: 'system_view_all' },
       { route: 'requests',   icon: '◌',  label: 'Solicitações', perm: 'task_create', badge: true },
-      { route: 'team',       icon: '◎',  label: 'Equipe',       roles: ['admin','manager','member'] },
-      { route: 'goals',      icon: '◎',  label: 'Metas',        roles: ['admin','manager','member'] },
-      { route: 'csat',       icon: '★',  label: 'CSAT',         roles: ['admin','manager'] },
+      { route: 'team',       icon: '◎',  label: 'Equipe',       perm: 'task_view_all' },
+      { route: 'goals',      icon: '◎',  label: 'Metas',        perm: 'goals_view' },
+      { route: 'csat',       icon: '★',  label: 'CSAT',         perm: 'csat_send',        altPerm: 'csat_view_all' },
     ]
   },
   {
     label: 'Análise de Dados',
     items: [
-      { route: 'dashboards',          icon: '◫', label: 'Produtividade',       roles: ['admin','manager'] },
-      { route: 'nl-performance',      icon: '◈', label: 'Newsletters',         roles: ['admin','manager'] },
-      { route: 'meta-performance',    icon: '◈', label: 'Instagram',            roles: ['admin','manager'] },
+      { route: 'dashboards',          icon: '◫', label: 'Produtividade',       perm: 'analytics_view',  altPerm: 'dashboard_view' },
+      { route: 'nl-performance',      icon: '◈', label: 'Newsletters',         perm: 'analytics_view' },
+      { route: 'meta-performance',    icon: '◈', label: 'Instagram',            perm: 'analytics_view' },
       { route: 'portal-dashboard',    icon: '◈', label: 'Portal de Dicas',     perm: 'portal_manage' },
     ]
   },
@@ -50,7 +50,7 @@ const NAV_GROUPS = [
       { route: 'landing-pages',       icon: '◱', label: 'Landing Pages',        perm: 'portal_manage'  },
       { route: 'cms',                 icon: '◫', label: 'CMS / Site',           perm: 'portal_manage'  },
       { route: 'arts-editor',         icon: '▣', label: 'Editor de Artes',      perm: 'portal_manage'  },
-      { route: 'news-monitor',        icon: '◉', label: 'Notícias',              roles: ['admin','manager','member'] },
+      { route: 'news-monitor',        icon: '◉', label: 'Notícias',              perm: 'dashboard_view' },
     ]
   },
   {
@@ -126,12 +126,9 @@ export class Sidebar {
       const items = group.items.filter(item => {
         // Master always sees everything
         if (store.isMaster()) return true;
+        // All items now use permission-based checks
         if (item.perm) return store.can(item.perm) || (item.altPerm && store.can(item.altPerm));
-        if (!item.roles) return true;
-        // Role name mapping for nav purposes
-        const ROLE_NAV_MAP = { master: 'admin', coordinator: 'manager' };
-        const effectiveRole = ROLE_NAV_MAP[role] || role;
-        return item.roles.includes(effectiveRole);
+        return true;
       });
       if (!items.length) return '';
 
