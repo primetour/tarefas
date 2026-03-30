@@ -166,39 +166,66 @@ export async function fetchUserProfile(uid) {
 }
 
 // ─── Criar usuário (somente admins) ───────────────────────
-export async function createUser({ name, email, password, role, department = '' }) {
+export async function createUser({ name, email, password, role, roleId, department = '', nucleo = '', sector = '' }) {
   if (!store.can('system_manage_users')) throw new Error('Permissão negada.');
 
-  // Cria no Firebase Auth via instância secundária
-  const credential = await createUserWithEmailAndPassword(
-    secondaryAuth, email.trim(), password
-  );
+  let uid;
+  let isRecovery = false;
 
-  const uid = credential.user.uid;
+  try {
+    // Tenta criar no Firebase Auth via instância secundária
+    const credential = await createUserWithEmailAndPassword(
+      secondaryAuth, email.trim(), password
+    );
+    uid = credential.user.uid;
 
-  // Atualizar displayName no Auth
-  await updateProfile(credential.user, { displayName: name }).catch(() => {});
+    // Atualizar displayName no Auth
+    await updateProfile(credential.user, { displayName: name }).catch(() => {});
 
-  // Deslogar instância secundária imediatamente
-  await firebaseSignOut(secondaryAuth);
+    // Deslogar instância secundária imediatamente
+    await firebaseSignOut(secondaryAuth);
+
+  } catch (authErr) {
+    // Se e-mail já existe no Auth, tenta fazer login para recuperar o UID
+    if (authErr.code === 'auth/email-already-in-use') {
+      try {
+        const cred = await signInWithEmailAndPassword(secondaryAuth, email.trim(), password);
+        uid = cred.user.uid;
+        await updateProfile(cred.user, { displayName: name }).catch(() => {});
+        await firebaseSignOut(secondaryAuth);
+        isRecovery = true;
+      } catch (loginErr) {
+        // Senha diferente ou conta desabilitada — não consegue recuperar
+        await firebaseSignOut(secondaryAuth).catch(() => {});
+        throw new Error(
+          'Este e-mail já existe no sistema de autenticação. ' +
+          'Para reativar, use a mesma senha anterior ou redefina a senha pelo Firebase Console.'
+        );
+      }
+    } else {
+      throw authErr;
+    }
+  }
 
   // Gerar cor de avatar
   const colorIdx = Math.floor(Math.random() * APP_CONFIG.avatarColors.length);
   const avatarColor = APP_CONFIG.avatarColors[colorIdx];
 
-  // Criar documento no Firestore
+  // Criar/recriar documento no Firestore
   const userDoc = {
     id:           uid,
     name:         name.trim(),
     email:        email.trim().toLowerCase(),
-    role:         role,         // mantido para compatibilidade
-    roleId:       role,         // novo campo RBAC
-    nucleo:       department.trim(),     // núcleo do usuário (ex: Design)
-    department:   department.trim(),     // mantido por compatibilidade
-    sector:       '',                    // setor preenchido separadamente
+    role:         role || roleId,    // mantido para compatibilidade
+    roleId:       roleId || role,    // novo campo RBAC
+    nucleo:       (nucleo || department).trim(),
+    department:   (nucleo || department).trim(),
+    sector:       (sector || '').trim(),
     avatarColor:  avatarColor,
     active:       true,
     firstLogin:   true,
+    deletedAt:    null,
+    deletedBy:    null,
     createdAt:    serverTimestamp(),
     createdBy:    store.get('currentUser').uid,
     lastLogin:    null,
@@ -207,8 +234,8 @@ export async function createUser({ name, email, password, role, department = '' 
   await setDoc(doc(db, 'users', uid), userDoc);
 
   // Auditoria
-  await auditLog('users.create', 'user', uid, {
-    name, email, role, department
+  await auditLog(isRecovery ? 'users.recover' : 'users.create', 'user', uid, {
+    name, email, role: role || roleId, department: nucleo || department, isRecovery,
   });
 
   return { id: uid, ...userDoc };
