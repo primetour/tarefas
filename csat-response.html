@@ -208,6 +208,7 @@
     const hashQuery = new URLSearchParams(window.location.hash.replace(/^#csat-response\?/, ''));
     const token     = params.get('token') || hashQuery.get('token');
     const surveyId  = params.get('id')    || hashQuery.get('id');
+    const digestEmail = params.get('digest') || hashQuery.get('digest');
     const preScore  = parseInt(params.get('score') || hashQuery.get('score') || '0');
 
     const SCORE_DATA = {
@@ -223,7 +224,6 @@
     // ─── Load Firebase config from parent app (same origin) ──
     let db;
     try {
-      // Try to read firebaseConfig from sibling config.js
       const cfgModule = await import('./js/config.js');
       const app = initializeApp(cfgModule.firebaseConfig, 'csat-public');
       db = getFirestore(app);
@@ -232,35 +232,145 @@
       throw e;
     }
 
-    // ─── Load survey ──────────────────────────────────────
-    let survey = null;
-    try {
-      if (surveyId) {
-        const snap = await getDoc(doc(db, 'csat_surveys', surveyId));
-        if (snap.exists()) survey = { id: snap.id, ...snap.data() };
-      } else if (token) {
-        const q   = query(collection(db, 'csat_surveys'), where('token','==',token), limit(1));
-        const snp = await getDocs(q);
-        if (!snp.empty) survey = { id: snp.docs[0].id, ...snp.docs[0].data() };
+    // ─── Digest mode: multiple surveys for the same client ──
+    if (digestEmail) {
+      try {
+        const q = query(
+          collection(db, 'csat_surveys'),
+          where('clientEmail', '==', digestEmail.trim().toLowerCase()),
+          where('status', '==', 'sent')
+        );
+        const snap = await getDocs(q);
+        const surveys = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (!surveys.length) {
+          showError('Nenhuma pesquisa pendente encontrada.');
+        } else {
+          renderDigestForm(surveys);
+        }
+      } catch(e) {
+        showError('Erro ao carregar pesquisas: ' + e.message);
       }
-    } catch(e) {
-      showError('Erro ao carregar pesquisa: ' + e.message);
-      throw e;
+    } else {
+      // ─── Single survey mode ──────────────────────────────
+      let survey = null;
+      try {
+        if (surveyId) {
+          const snap = await getDoc(doc(db, 'csat_surveys', surveyId));
+          if (snap.exists()) survey = { id: snap.id, ...snap.data() };
+        } else if (token) {
+          const q = query(collection(db, 'csat_surveys'), where('token','==',token), limit(1));
+          const snp = await getDocs(q);
+          if (!snp.empty) survey = { id: snp.docs[0].id, ...snp.docs[0].data() };
+        }
+      } catch(e) {
+        showError('Erro ao carregar pesquisa: ' + e.message);
+        throw e;
+      }
+
+      let selectedScore = preScore || 0;
+
+      if (!survey) {
+        showError('Pesquisa não encontrada ou link inválido.');
+      } else {
+        const expiresAt = survey.expiresAt?.toDate ? survey.expiresAt.toDate() : new Date(survey.expiresAt || 0);
+        if (expiresAt < new Date()) {
+          showExpired(survey);
+        } else if (survey.status === 'responded') {
+          showAlreadyDone(survey);
+        } else {
+          renderForm(survey, selectedScore);
+        }
+      }
     }
 
-    let selectedScore = preScore || 0;
+    // ─── Digest form: multiple tasks to rate ──────────────
+    function renderDigestForm(surveys) {
+      const scores = {};
+      surveys.forEach(s => { scores[s.id] = 0; });
 
-    if (!survey) {
-      showError('Pesquisa não encontrada ou link inválido.');
-    } else {
-      const expiresAt = survey.expiresAt?.toDate ? survey.expiresAt.toDate() : new Date(survey.expiresAt || 0);
-      if (expiresAt < new Date()) {
-        showExpired(survey);
-      } else if (survey.status === 'responded') {
-        showAlreadyDone(survey);
-      } else {
-        renderForm(survey, selectedScore);
-      }
+      card.style.maxWidth = '600px';
+      card.innerHTML = `
+        <div class="brand">PRIMETOUR</div>
+        <h1>Avalie nossas entregas</h1>
+        <p class="subtitle">Temos ${surveys.length} entregas para você avaliar. Sua opinião é fundamental!</p>
+
+        <div id="digest-list" style="text-align:left;display:flex;flex-direction:column;gap:16px;margin-bottom:24px;">
+          ${surveys.map((s, i) => `
+            <div style="border:1px solid var(--border-default);border-radius:var(--radius-md);
+              padding:16px;background:var(--bg-surface);">
+              <div style="font-size:0.8125rem;font-weight:600;margin-bottom:4px;">${i+1}. ${escHtml(s.taskTitle)}</div>
+              ${s.projectName ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;">${escHtml(s.projectName)}</div>` : ''}
+              <div class="score-picker" style="justify-content:flex-start;gap:6px;margin-bottom:0;">
+                ${[1,2,3,4,5].map(n => {
+                  const sd = SCORE_DATA[n];
+                  return `<button class="score-btn digest-score-btn" data-survey="${s.id}" data-score="${n}" type="button"
+                    style="min-width:52px;padding:8px 4px;">
+                    <span class="score-btn-emoji" style="font-size:1.25rem;">${sd.emoji}</span>
+                    <span class="score-btn-num" style="font-size:0.875rem;">${n}</span>
+                  </button>`;
+                }).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <textarea id="digest-comment" rows="3" maxlength="500"
+          placeholder="Comentário geral (opcional)..."></textarea>
+
+        <button class="btn-submit" id="digest-submit" type="button">Enviar avaliações</button>
+      `;
+
+      // Wire score buttons
+      card.querySelectorAll('.digest-score-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const sid = btn.dataset.survey;
+          const sc  = parseInt(btn.dataset.score);
+          scores[sid] = sc;
+          card.querySelectorAll(`.digest-score-btn[data-survey="${sid}"]`).forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+        });
+      });
+
+      // Wire submit
+      document.getElementById('digest-submit').addEventListener('click', async () => {
+        const unanswered = surveys.filter(s => !scores[s.id]);
+        if (unanswered.length) {
+          alert(`Selecione uma nota para todas as tarefas. Faltam ${unanswered.length}.`);
+          return;
+        }
+
+        const submitBtn = document.getElementById('digest-submit');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Enviando...';
+        const comment = document.getElementById('digest-comment')?.value?.trim() || '';
+
+        try {
+          for (const s of surveys) {
+            await updateDoc(doc(db, 'csat_surveys', s.id), {
+              score:       scores[s.id],
+              comment,
+              status:      'responded',
+              respondedAt: serverTimestamp(),
+            });
+          }
+
+          const avgScore = Math.round(surveys.reduce((sum, s) => sum + scores[s.id], 0) / surveys.length * 10) / 10;
+          const sd = SCORE_DATA[Math.round(avgScore)];
+          card.innerHTML = `
+            <div class="brand">PRIMETOUR</div>
+            <span class="success-icon">${sd?.emoji || '✓'}</span>
+            <div class="success-title" style="color:${sd?.color || 'var(--color-success)'};">Obrigado!</div>
+            <p class="success-msg">
+              Você avaliou <strong>${surveys.length} entregas</strong> com média <strong style="color:${sd?.color};">${avgScore}/5</strong>.<br>
+              Suas avaliações são muito importantes para continuarmos melhorando.
+            </p>
+          `;
+        } catch(err) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Enviar avaliações';
+          alert('Erro ao enviar: ' + err.message);
+        }
+      });
     }
 
     function renderForm(s, initScore) {
