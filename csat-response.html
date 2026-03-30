@@ -249,23 +249,18 @@
     }
 
     if (!survey) {
-      return showError('Pesquisa não encontrada ou link inválido.');
+      showError('Pesquisa não encontrada ou link inválido.');
+    } else {
+      const expiresAt = survey.expiresAt?.toDate ? survey.expiresAt.toDate() : new Date(survey.expiresAt || 0);
+      if (expiresAt < new Date()) {
+        showExpired(survey);
+      } else if (survey.status === 'responded') {
+        showAlreadyDone(survey);
+      } else {
+        let selectedScore = preScore || 0;
+        renderForm(survey, selectedScore);
+      }
     }
-
-    // Expirado?
-    const expiresAt = survey.expiresAt?.toDate ? survey.expiresAt.toDate() : new Date(survey.expiresAt || 0);
-    if (expiresAt < new Date()) {
-      return showExpired(survey);
-    }
-
-    // Já respondido?
-    if (survey.status === 'responded') {
-      return showAlreadyDone(survey);
-    }
-
-    // ─── Render form ──────────────────────────────────────
-    let selectedScore = preScore || 0;
-    renderForm(survey, selectedScore);
 
     function renderForm(s, initScore) {
       card.innerHTML = `
