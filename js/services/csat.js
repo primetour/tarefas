@@ -295,6 +295,151 @@ export async function fetchSurveyMapByTaskIds(taskIds = []) {
   return map;
 }
 
+/* ─── Envio em lote (digest): agrupa por e-mail do cliente ── */
+export async function sendBulkCsat(tasks, { customMessage = '', sendNow = true } = {}) {
+  if (!store.can('csat_send')) throw new Error('Permissão negada.');
+
+  // Agrupa tarefas por e-mail do cliente
+  const byEmail = {};
+  for (const task of tasks) {
+    const email = (task.clientEmail || '').trim().toLowerCase();
+    if (!email) continue;
+    if (!byEmail[email]) byEmail[email] = { email, name: task.clientName || email.split('@')[0], tasks: [] };
+    byEmail[email].tasks.push(task);
+  }
+
+  const groups = Object.values(byEmail);
+  if (!groups.length) throw new Error('Nenhuma tarefa com e-mail de cliente.');
+
+  const results = { created: 0, sent: 0, skipped: 0, errors: [] };
+
+  for (const group of groups) {
+    // Cria um survey por tarefa (cada uma precisa de nota individual)
+    const surveyIds = [];
+    for (const task of group.tasks) {
+      // Verifica se já existe survey para esta tarefa
+      const existing = await fetchSurveys({ taskId: task.id, limitN: 1 });
+      if (existing.length) { results.skipped++; continue; }
+
+      const survey = await createCsatSurvey({
+        taskId:       task.id,
+        taskTitle:    task.title,
+        projectId:    task.projectId,
+        projectName:  task.projectName || '',
+        clientEmail:  group.email,
+        clientName:   group.name,
+        customMessage,
+        assignedTo:   task.assignees?.[0] || null,
+      });
+      surveyIds.push(survey.id);
+      results.created++;
+    }
+
+    if (!surveyIds.length) continue;
+
+    // Envia UM e-mail digest para este cliente com todas as tarefas
+    if (sendNow) {
+      try {
+        if (surveyIds.length === 1) {
+          await sendCsatEmail(surveyIds[0]);
+        } else {
+          await sendDigestEmail(group, surveyIds);
+        }
+        results.sent++;
+      } catch(e) {
+        results.errors.push({ email: group.email, error: e.message });
+      }
+    }
+  }
+
+  return results;
+}
+
+/* ─── E-mail digest: múltiplas tarefas em 1 e-mail ────────── */
+async function sendDigestEmail(group, surveyIds) {
+  const cfg = APP_CONFIG.emailjs;
+  if (!cfg.publicKey || cfg.publicKey.startsWith('SUA_')) {
+    throw new Error('EmailJS não configurado.');
+  }
+
+  const ejs = await loadEmailJS();
+  const origin   = APP_CONFIG.csat.baseUrl || window.location.origin;
+  const basePath = window.location.pathname.replace(/\/[^/]*$/, '');
+
+  // Carrega os surveys criados para montar a lista
+  const surveys = [];
+  for (const id of surveyIds) {
+    const snap = await getDoc(doc(db, 'csat_surveys', id));
+    if (snap.exists()) surveys.push({ id: snap.id, ...snap.data() });
+  }
+
+  // URL digest: page shows all surveys for this client
+  const digestToken = surveys[0]?.token || '';
+  const digestUrl   = `${origin}${basePath}/csat-response.html?digest=${group.email}&token=${digestToken}`;
+
+  // Monta lista de tarefas em HTML para o template
+  const taskListHtml = surveys.map((s, i) => {
+    const url = `${origin}${basePath}/csat-response.html?token=${s.token}&id=${s.id}`;
+    return `${i + 1}. ${s.taskTitle}`;
+  }).join(' | ');
+
+  const params = {
+    to_email:       group.email,
+    to_name:        group.name,
+    task_title:     `${surveys.length} entregas para avaliar`,
+    project_name:   surveys[0]?.projectName || 'PRIMETOUR',
+    custom_message: surveys[0]?.customMessage || `Concluímos ${surveys.length} tarefas para você! Avalie cada uma delas — leva menos de 1 minuto.`,
+    survey_url:     digestUrl,
+    score_1_url:    digestUrl,
+    score_2_url:    digestUrl,
+    score_3_url:    digestUrl,
+    score_4_url:    digestUrl,
+    score_5_url:    digestUrl,
+    task_list:      taskListHtml,
+    brand_color:    APP_CONFIG.csat.brandColor || 'D4A843',
+    from_name:      APP_CONFIG.csat.fromName   || 'PRIMETOUR',
+    year:           new Date().getFullYear(),
+  };
+
+  await ejs.send(cfg.serviceId, cfg.templateCsat, params);
+
+  // Marcar todos como enviados
+  for (const s of surveys) {
+    await updateDoc(doc(db, 'csat_surveys', s.id), {
+      status: 'sent',
+      sentAt: serverTimestamp(),
+      digestGroup: group.email,
+    });
+  }
+  await auditLog('csat.send_digest', 'survey', surveyIds[0], {
+    clientEmail: group.email, count: surveys.length,
+  });
+}
+
+/* ─── Buscar tarefas pendentes de CSAT (para automação) ───── */
+export async function findTasksWithoutCsat({ periodDays = 30 } = {}) {
+  const since = new Date();
+  since.setDate(since.getDate() - periodDays);
+
+  // Busca tarefas concluídas no período que tenham e-mail do cliente
+  const { fetchTasks } = await import('./tasks.js');
+  const tasks = await fetchTasks();
+  const doneTasks = tasks.filter(t => {
+    if (t.status !== 'done' || !t.clientEmail) return false;
+    const completedAt = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt || 0);
+    return completedAt >= since;
+  });
+
+  if (!doneTasks.length) return [];
+
+  // Busca surveys existentes para essas tarefas
+  const taskIds = doneTasks.map(t => t.id);
+  const existingMap = await fetchSurveyMapByTaskIds(taskIds);
+
+  // Retorna apenas tarefas que ainda não têm CSAT
+  return doneTasks.filter(t => !existingMap[t.id]?.length);
+}
+
 /* ─── Helper: token único ────────────────────────────────── */
 function generateToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)))
