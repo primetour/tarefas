@@ -248,6 +248,8 @@
       throw e;
     }
 
+    let selectedScore = preScore || 0;
+
     if (!survey) {
       showError('Pesquisa não encontrada ou link inválido.');
     } else {
@@ -257,7 +259,6 @@
       } else if (survey.status === 'responded') {
         showAlreadyDone(survey);
       } else {
-        let selectedScore = preScore || 0;
         renderForm(survey, selectedScore);
       }
     }
