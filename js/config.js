@@ -104,9 +104,9 @@ export const APP_CONFIG = {
   // 3. Crie 2 templates (veja README para os campos esperados)
   // 4. Substitua os valores abaixo com suas credenciais
   emailjs: {
-    publicKey:           'SUA_EMAILJS_PUBLIC_KEY',     // Account > API Keys
-    serviceId:           'SEU_EMAILJS_SERVICE_ID',     // Email Services > Service ID
-    templateCsat:        'SEU_TEMPLATE_CSAT_ID',       // Template de envio ao cliente
+    publicKey:           'LctNxJvF_1lDbPpfE',     // Account > API Keys
+    serviceId:           'service_ri6pgns',     // Email Services > Service ID
+    templateCsat:        'template_0y9028t',       // Template de envio ao cliente
     templateInternal:    'SEU_TEMPLATE_INTERNO_ID',    // Template de notificação interna (opcional)
   },
 
