@@ -136,19 +136,33 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     requestAnimationFrame(() => {
       bindEvents(task, users, currentTags, currentAssignees, isEdit);
 
-      // Populate goal selector async (non-blocking)
+      // Populate meta selector async — show individual metas (not goals)
       import('../services/goals.js').then(({ fetchGoals }) => {
         return fetchGoals();
       }).then(goals => {
-        const published = goals.filter(g => g.status === 'publicada');
+        let available = goals.filter(g => g.status === 'publicada');
+        if (!available.length) available = goals.filter(g => g.status !== 'encerrada');
         const sel = document.getElementById('tm-goal');
         if (!sel) return;
-        sel.innerHTML = '<option value="">Sem meta vinculada</option>' +
-          published.map(g =>
-            `<option value="${g.id}" ${task.goalId === g.id ? 'selected' : ''}>${
-              g.titulo || g.id
-            }</option>`
-          ).join('');
+
+        // Build flat meta list
+        const opts = [];
+        available.forEach(g => {
+          const goalName = g.nome || g.objetivoNucleo || g.titulo || 'Meta';
+          (g.pilares || []).forEach((pilar, pi) => {
+            (pilar.metas || []).forEach((meta, mi) => {
+              const val = `${g.id}:${pi}:${mi}`;
+              const metaName = meta.titulo || `Meta ${mi + 1}`;
+              const pilarName = pilar.titulo || `Pilar ${pi + 1}`;
+              // Check if this task is linked to this specific meta
+              const isSelected = task.goalId === g.id &&
+                (task.goalMetaRef === `${pi}:${mi}` || (!task.goalMetaRef && pi === 0 && mi === 0));
+              opts.push(`<option value="${val}" ${isSelected ? 'selected' : ''}>${metaName} — Pilar: ${pilarName} (${goalName})</option>`);
+            });
+          });
+        });
+
+        sel.innerHTML = '<option value="">Sem meta vinculada</option>' + opts.join('');
       }).catch(() => {});
     });
   });
@@ -610,7 +624,8 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
   const data={
     title,
     description:  $('tm-desc')?.value?.trim()||'',
-    goalId:       $('tm-goal')?.value || null,
+    goalId:       ($('tm-goal')?.value || '').split(':')[0] || null,
+    goalMetaRef:  ($('tm-goal')?.value || '').includes(':') ? ($('tm-goal').value.split(':').slice(1).join(':')) : null,
     status:       $('tm-status')?.value||'not_started',
     priority:     $('tm-priority')?.value||'medium',
     projectId:    $('tm-project')?.value||null,
@@ -697,14 +712,14 @@ function showEvidenceModal(taskId, taskData) {
   const LBL2 = `font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;color:var(--text-muted);`;
   const F2   = `width:100%;`;
 
-  let goals = [], periods = [];
+  // Flatten goals → pilares → metas into a selectable list
+  let goals = [], metaOptions = [], periods = [];
   try {
     const goalsModule = await import('../services/goals.js');
     let allGoals = [];
     try {
       allGoals = await goalsModule.fetchGoals();
     } catch(fetchErr) {
-      // Fallback: direct query without orderBy (avoids Firestore index issues)
       console.warn('[overlay] fetchGoals failed, trying direct query:', fetchErr.message);
       const { collection: col, getDocs: gd } = await import(
         'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
@@ -713,23 +728,52 @@ function showEvidenceModal(taskId, taskData) {
       const snap = await gd(col(fireDb, 'goals'));
       allGoals = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     }
-    // Show published goals primarily; include drafts as secondary option
     goals = allGoals.filter(g => g.status === 'publicada');
     if (!goals.length) goals = allGoals.filter(g => g.status !== 'encerrada');
+
+    // Build flat list: each entry = one meta from one pilar from one goal
+    goals.forEach(g => {
+      const goalName = g.nome || g.objetivoNucleo || g.titulo || 'Meta';
+      (g.pilares || []).forEach((pilar, pi) => {
+        (pilar.metas || []).forEach((meta, mi) => {
+          metaOptions.push({
+            goalId:    g.id,
+            pilarIdx:  pi,
+            metaIdx:   mi,
+            value:     `${g.id}:${pi}:${mi}`,
+            metaName:  meta.titulo || `Meta ${mi + 1}`,
+            pilarName: pilar.titulo || `Pilar ${pi + 1}`,
+            goalName,
+            goal: g,
+          });
+        });
+      });
+    });
   } catch(e) { console.error('[overlay] goals load error:', e); goals = []; }
 
-  const hasCsat  = !!taskData.clientEmail;
-  const hasGoal  = !!taskData.goalId;
-  const hasGoals = goals.length > 0;
+  const hasCsat    = !!taskData.clientEmail;
+  const hasMetaRef = !!taskData.goalId && taskData.goalMetaRef;
+  const hasMetas   = metaOptions.length > 0;
 
-  // Always show the overlay so user can optionally fill CSAT / goal
+  // Find pre-selected meta if task already linked
+  let preselectedValue = '';
+  if (hasMetaRef) {
+    preselectedValue = `${taskData.goalId}:${taskData.goalMetaRef}`;
+  } else if (taskData.goalId) {
+    // Legacy: linked to goal but no specific meta — select first meta of that goal
+    const first = metaOptions.find(m => m.goalId === taskData.goalId);
+    if (first) preselectedValue = first.value;
+  }
 
-  if (hasGoal) {
-    try {
-      const { generatePendingPeriods } = await import('../services/goals.js');
-      const g = goals.find(x => x.id === taskData.goalId);
-      if (g) periods = generatePendingPeriods(g);
-    } catch(e) {}
+  // Load periods for pre-selected goal
+  if (preselectedValue) {
+    const sel = metaOptions.find(m => m.value === preselectedValue);
+    if (sel) {
+      try {
+        const { generatePendingPeriods } = await import('../services/goals.js');
+        periods = generatePendingPeriods(sel.goal);
+      } catch(e) {}
+    }
   }
 
   const OVERLAY_ID = 'task-done-overlay';
@@ -739,8 +783,8 @@ function showEvidenceModal(taskId, taskData) {
   overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9000;
     display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;`;
 
-  const renderOverlay = (activeGoalId) => {
-    const activeGoal = goals.find(g => g.id === activeGoalId);
+  const renderOverlay = (activeMetaValue) => {
+    const activeMeta = metaOptions.find(m => m.value === activeMetaValue);
 
     overlay.innerHTML = `
       <div class="card" style="width:100%;max-width:540px;padding:0;overflow:hidden;">
@@ -785,37 +829,37 @@ function showEvidenceModal(taskId, taskData) {
               <div>
                 <div style="font-weight:600;font-size:0.875rem;">🎯 Evidência de meta</div>
                 <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
-                  ${hasGoal
-                    ? `Meta: <strong>${esc2(activeGoal?.objetivoNucleo || activeGoal?.titulo || taskData.goalId)}</strong>`
-                    : hasGoals
-                      ? 'Selecione abaixo se esta tarefa é evidência de uma meta'
+                  ${activeMeta
+                    ? `Meta: <strong>${esc2(activeMeta.metaName)}</strong> (Pilar: ${esc2(activeMeta.pilarName)})`
+                    : hasMetas
+                      ? 'Selecione a meta do pilar à qual esta tarefa é evidência'
                       : 'Nenhuma meta publicada no sistema'}
                 </div>
               </div>
-              ${hasGoals ? `
+              ${hasMetas ? `
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex-shrink:0;">
-                  <input type="checkbox" id="dc-meta-check" ${hasGoal ? 'checked' : ''}
+                  <input type="checkbox" id="dc-meta-check" ${activeMeta ? 'checked' : ''}
                     style="width:16px;height:16px;cursor:pointer;">
                   <span style="font-size:0.8125rem;font-weight:500;">Registrar</span>
                 </label>` : ''}
             </div>
-            ${hasGoals ? `
+            ${hasMetas ? `
             <div id="dc-meta-body" style="padding:12px 16px;flex-direction:column;gap:10px;
-              display:${hasGoal ? 'flex' : 'none'};">
+              display:${activeMeta ? 'flex' : 'none'};">
               <div>
-                <label style="${LBL2}">Meta vinculada</label>
-                <select id="dc-goal-sel" class="filter-select" style="${F2}">
-                  <option value="">— Selecione —</option>
-                  ${goals.map(g => {
-                    const users = store.get('users') || [];
-                    const respName = users.find(u => u.id === g.responsavelId)?.name || '';
-                    const goalName = g.objetivoNucleo || g.titulo || g.pilares?.[0]?.titulo || 'Meta';
-                    return `<option value="${esc2(g.id)}"
-                      ${g.id === activeGoalId ? 'selected' : ''}>
-                      ${esc2(goalName)}${respName ? ' · ' + esc2(respName) : ''}
-                    </option>`;
-                  }).join('')}
+                <label style="${LBL2}">Meta do pilar</label>
+                <select id="dc-meta-sel" class="filter-select" style="${F2}">
+                  <option value="">— Selecione a meta —</option>
+                  ${metaOptions.map(m => `<option value="${esc2(m.value)}"
+                    ${m.value === activeMetaValue ? 'selected' : ''}>
+                    ${esc2(m.metaName)} — Pilar: ${esc2(m.pilarName)} (${esc2(m.goalName)})
+                  </option>`).join('')}
                 </select>
+              </div>
+              <div id="dc-pilar-info" style="display:${activeMeta ? 'block' : 'none'};
+                background:var(--bg-hover);border-radius:var(--radius-sm);padding:8px 12px;
+                font-size:0.75rem;color:var(--text-muted);">
+                ${activeMeta ? `<strong>Pilar:</strong> ${esc2(activeMeta.pilarName)} · <strong>Meta geral:</strong> ${esc2(activeMeta.goalName)}` : ''}
               </div>
               <div>
                 <label style="${LBL2}">Período de referência</label>
@@ -855,20 +899,27 @@ function showEvidenceModal(taskId, taskData) {
       if (body) body.style.display = e.target.checked ? 'flex' : 'none';
     });
 
-    // Goal change → reload periods
-    document.getElementById('dc-goal-sel')?.addEventListener('change', async e => {
-      const gId = e.target.value;
-      const g   = goals.find(x => x.id === gId);
-      if (g) {
+    // Meta change → show pilar info + reload periods
+    document.getElementById('dc-meta-sel')?.addEventListener('change', async e => {
+      const val = e.target.value;
+      const meta = metaOptions.find(m => m.value === val);
+      const infoEl = document.getElementById('dc-pilar-info');
+      if (meta) {
+        if (infoEl) {
+          infoEl.style.display = 'block';
+          infoEl.innerHTML = `<strong>Pilar:</strong> ${esc2(meta.pilarName)} · <strong>Meta geral:</strong> ${esc2(meta.goalName)}`;
+        }
         try {
           const { generatePendingPeriods } = await import('../services/goals.js');
-          periods = generatePendingPeriods(g);
+          periods = generatePendingPeriods(meta.goal);
           const pSel = document.getElementById('dc-periodo-sel');
           if (pSel) pSel.innerHTML =
             `<option value="">Selecione o período…</option>` +
             periods.map(p => `<option value="${esc2(p.label)}">${esc2(p.label)}</option>`).join('') +
             `<option value="__custom__">Informar manualmente…</option>`;
         } catch(err) {}
+      } else {
+        if (infoEl) infoEl.style.display = 'none';
       }
     });
 
@@ -886,7 +937,8 @@ function showEvidenceModal(taskId, taskData) {
       const sendCsat  = document.getElementById('dc-csat-check')?.checked;
       const regMeta   = document.getElementById('dc-meta-check')?.checked;
       const csatEmail = document.getElementById('dc-csat-email')?.value?.trim();
-      const goalId    = document.getElementById('dc-goal-sel')?.value || (hasGoal ? taskData.goalId : null);
+      const metaVal   = document.getElementById('dc-meta-sel')?.value || '';
+      const selMeta   = metaOptions.find(m => m.value === metaVal);
       const pSel      = document.getElementById('dc-periodo-sel')?.value;
       const pTxt      = document.getElementById('dc-periodo-txt')?.value?.trim();
       const periodoRef = pSel === '__custom__' ? pTxt : pSel;
@@ -896,8 +948,11 @@ function showEvidenceModal(taskId, taskData) {
 
       // Update task
       const updates = {};
-      if (regMeta && goalId) {
-        updates.goalId = goalId;
+      if (regMeta && selMeta) {
+        updates.goalId = selMeta.goalId;
+        updates.goalMetaRef = `${selMeta.pilarIdx}:${selMeta.metaIdx}`;
+        updates.goalMetaName = selMeta.metaName;
+        updates.goalPilarName = selMeta.pilarName;
         updates.periodoRef = periodoRef || '';
         updates.linkComprovacao = link;
         updates.confirmadaEvidencia = true;
@@ -932,7 +987,7 @@ function showEvidenceModal(taskId, taskData) {
       await Promise.all(ops);
 
       if (sendCsat && csatEmail) toast.success('CSAT enviado para ' + csatEmail);
-      if (regMeta && goalId)     toast.success('Evidência registrada!');
+      if (regMeta && selMeta)    toast.success('Evidência registrada!');
 
       overlay.remove();
       resolveOverlay();
@@ -942,7 +997,7 @@ function showEvidenceModal(taskId, taskData) {
 
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolveOverlay(); } });
-  renderOverlay(taskData.goalId || '');
+  renderOverlay(preselectedValue);
   }); // end Promise
 }
 
