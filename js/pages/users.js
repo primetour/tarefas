@@ -9,7 +9,7 @@ import {
 
 import { db }          from '../firebase.js';
 import { store }       from '../store.js';
-import { createUser, updateUserProfile, deactivateUser, reactivateUser } from '../auth/auth.js';
+import { createUser, updateUserProfile, deactivateUser, reactivateUser, getErrorMessage } from '../auth/auth.js';
 import { REQUESTING_AREAS } from '../services/tasks.js';
 import { fetchRoles } from '../services/rbac.js';
 import { toast }       from '../components/toast.js';
@@ -602,7 +602,9 @@ async function handleUserSave(userId, isEdit, closeModal) {
     closeModal();
     await loadUsers();
   } catch (err) {
-    toast.error(err.message || 'Erro ao salvar usuário.');
+    // Traduz erros do Firebase Auth para português
+    const msg = err.code ? getErrorMessage(err.code) : (err.message || 'Erro ao salvar usuário.');
+    toast.error(msg);
     console.error(err);
   } finally {
     if (submitBtn) {
@@ -768,23 +770,21 @@ function _attachTableEvents() {
           break;
         case 'delete':
           if (await modal.confirm({
-            title:       'Excluir perfil permanentemente',
-            message:     `Esta ação remove o perfil de <strong>${escHtml(user.name)}</strong> do sistema.<br>
-                          <br><strong>⚠ Atenção:</strong> tarefas e dados vinculados a este usuário não serão excluídos,
-                          mas ele perderá acesso imediatamente e não poderá ser recuperado.`,
-            confirmText: 'Excluir permanentemente',
+            title:       'Desativar usuário',
+            message:     `Esta ação desativa o perfil de <strong>${escHtml(user.name)}</strong>.<br>
+                          <br>O usuário perderá acesso imediatamente. Ele poderá ser reativado
+                          futuramente ou recriado com o mesmo e-mail.<br>
+                          <br><strong>Tarefas e dados vinculados serão mantidos.</strong>`,
+            confirmText: 'Desativar usuário',
             danger:      true,
             icon:        '🗑️',
           })) {
             try {
-              // Delete from Firestore profiles collection
-              const { doc, deleteDoc, getFirestore } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-              const { db } = await import('../firebase.js');
-              await deleteDoc(doc(db, 'users', uid));
-              toast.success(`Perfil de "${user.name}" excluído.`);
+              await deactivateUser(uid);
+              toast.success(`Usuário "${user.name}" desativado.`);
               await loadUsers();
             } catch (err) {
-              toast.error('Erro ao excluir: ' + err.message);
+              toast.error('Erro ao desativar: ' + err.message);
             }
           }
           break;
