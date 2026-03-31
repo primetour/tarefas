@@ -28,12 +28,26 @@
 const { BetaAnalyticsDataClient } = require('@google-analytics/data');
 const admin = require('firebase-admin');
 
+/* ─── Fix PEM key formatting ─────────────────────────────── */
+function fixPem(raw) {
+  if (!raw) return '';
+  // Replace literal \n with real newlines
+  let key = raw.replace(/\\n/g, '\n');
+  // If it still has no real newlines between header/footer, fix it
+  if (!key.includes('\n-----END')) {
+    key = key
+      .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
+      .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----\n');
+  }
+  return key;
+}
+
 /* ─── Firebase init ──────────────────────────────────────── */
 admin.initializeApp({
   credential: admin.credential.cert({
     projectId:   process.env.FIREBASE_PROJECT_ID,
     clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    privateKey:  fixPem(process.env.FIREBASE_PRIVATE_KEY),
   }),
 });
 const db = admin.firestore();
@@ -45,7 +59,7 @@ const SYNC_DAYS      = parseInt(process.env.SYNC_DAYS) || 90;
 const analyticsClient = new BetaAnalyticsDataClient({
   credentials: {
     client_email: process.env.GA_CLIENT_EMAIL,
-    private_key:  process.env.GA_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    private_key:  fixPem(process.env.GA_PRIVATE_KEY),
   },
 });
 
