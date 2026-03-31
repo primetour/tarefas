@@ -161,12 +161,16 @@ const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 (async () => {
-  const token = window.location.hash.slice(1);
-  if (!token) { showError('Link inválido', 'Este link não contém um token de acesso.'); return; }
+  const identifier = window.location.hash.slice(1);
+  if (!identifier) { showError('Link inválido', 'Este link não contém um identificador.'); return; }
 
   let page;
   try {
-    const snap = await getDocs(query(collection(db, 'landing_pages'), where('token','==',token)));
+    // Try slug first, then fallback to token
+    let snap = await getDocs(query(collection(db, 'landing_pages'), where('slug','==',identifier)));
+    if (snap.empty) {
+      snap = await getDocs(query(collection(db, 'landing_pages'), where('token','==',identifier)));
+    }
     if (snap.empty) { showError('Página não encontrada', 'Este link pode ter expirado.'); return; }
     page = { id: snap.docs[0].id, ...snap.docs[0].data() };
     updateDoc(snap.docs[0].ref, { views: increment(1) }).catch(()=>{});
