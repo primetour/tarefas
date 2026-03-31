@@ -37,6 +37,7 @@ import { renderSettings }                 from './pages/settings.js';
 import { renderAbout }                    from './pages/about.js';
 import { renderNlPerformance }            from './pages/nlPerformance.js';
 import { renderMetaPerformance }          from './pages/metaPerformance.js';
+import { renderGaPerformance }            from './pages/gaPerformance.js';
 import { renderPortalTips }               from './pages/portalTips.js';
 import { renderPortalAreas }              from './pages/portalAreas.js';
 import { renderPortalDestinations }       from './pages/portalDestinations.js';
@@ -219,6 +220,7 @@ function setupRouter() {
     'about':        async () => { await renderAbout(content); },
     'nl-performance':       async () => { await renderNlPerformance(content); },
     'meta-performance':     async () => { await renderMetaPerformance(content); },
+    'ga-performance':       async () => { await renderGaPerformance(content); },
     'portal-tips':          async () => { await renderPortalTips(content); },
     'portal-areas':         async () => { await renderPortalAreas(content); },
     'portal-destinations':  async () => { await renderPortalDestinations(content); },
