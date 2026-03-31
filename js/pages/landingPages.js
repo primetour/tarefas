@@ -191,7 +191,7 @@ function showLayoutPicker(container) {
             style="text-align:left;padding:18px 20px;background:var(--bg-surface);
             border:2px solid var(--border-subtle);border-radius:var(--radius-md);
             cursor:pointer;transition:all .2s;width:100%;">
-            <div style="font-weight:700;font-size:0.9375rem;margin-bottom:4px;">
+            <div style="font-weight:700;font-size:0.9375rem;margin-bottom:4px;color:var(--text-primary);">
               ${esc(l.label)}
             </div>
             <div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:8px;">
@@ -277,6 +277,7 @@ async function showBuilder(container, pageId, layoutKey) {
         </span>
         <button id="lpb-preview" class="btn btn-secondary btn-sm">👁 Preview</button>
         <button id="lpb-save" class="btn btn-primary btn-sm">💾 Salvar</button>
+        <button id="lpb-exit" class="btn btn-ghost btn-sm" style="color:var(--text-muted);">✕ Sair</button>
       </div>
 
       <!-- Slug bar -->
@@ -519,11 +520,13 @@ async function showBuilder(container, pageId, layoutKey) {
   });
 
   /* ── Close ──────────────────────────────────────────────── */
-  document.getElementById('lpb-close')?.addEventListener('click', () => {
+  const exitBuilder = () => {
     if (dirty && !confirm('Há alterações não salvas. Sair mesmo assim?')) return;
     modal.remove();
     loadList(container);
-  });
+  };
+  document.getElementById('lpb-close')?.addEventListener('click', exitBuilder);
+  document.getElementById('lpb-exit')?.addEventListener('click', exitBuilder);
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -626,6 +629,42 @@ function renderSectionFields(sec, typeDef) {
           placeholder='[]'>${esc(JSON.stringify(data[field]||[], null, 2))}</textarea>
       </div>`;
 
+    // ── Background color selector ──
+    if (field === 'bg_color') {
+      const presets = [
+        { value: '#F8F7F4', label: 'Claro' },
+        { value: '#242362', label: 'Marinho' },
+        { value: '#D4AF37', label: 'Dourado' },
+        { value: '#1a1a2e', label: 'Escuro' },
+        { value: '#ffffff', label: 'Branco' },
+        { value: '#f0f4f8', label: 'Cinza claro' },
+        { value: '#0f3460', label: 'Azul profundo' },
+        { value: '#16213e', label: 'Noite' },
+      ];
+      const current = data[field] || '#F8F7F4';
+      return `
+        <div style="margin-bottom:16px;">
+          <label style="${LBL}">${esc(label)}</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+            ${presets.map(p => `
+              <button class="lp-color-preset" data-color="${p.value}"
+                style="width:36px;height:36px;border-radius:var(--radius-sm);border:2px solid
+                ${current===p.value?'var(--brand-gold)':'var(--border-subtle)'};
+                background:${p.value};cursor:pointer;transition:border-color .15s;"
+                title="${esc(p.label)}"></button>`).join('')}
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="color" class="sec-field lp-color-input" data-field="${field}"
+              value="${esc(current)}"
+              style="width:36px;height:36px;border:none;cursor:pointer;padding:0;background:none;">
+            <input type="text" class="portal-field sec-field lp-color-hex" data-field="${field}"
+              value="${esc(current)}" placeholder="#RRGGBB"
+              style="width:100px;font-size:0.8125rem;font-family:monospace;">
+            <span style="font-size:0.75rem;color:var(--text-muted);">Cor personalizada</span>
+          </div>
+        </div>`;
+    }
+
     // ── Align selector ──
     if (field === 'align') return `
       <div style="margin-bottom:16px;">
@@ -682,6 +721,39 @@ function wireSectionFields(sec, editorEl, markDirty, reRender) {
       markDirty();
     });
   });
+
+  // ── Color presets ──
+  editorEl.querySelectorAll('.lp-color-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const color = btn.dataset.color;
+      sec.data.bg_color = color;
+      // Sync inputs
+      const colorInput = editorEl.querySelector('.lp-color-input');
+      const hexInput   = editorEl.querySelector('.lp-color-hex');
+      if (colorInput) colorInput.value = color;
+      if (hexInput)   hexInput.value = color;
+      markDirty();
+      reRender();
+    });
+  });
+
+  // ── Sync color picker ↔ hex input ──
+  const colorInput = editorEl.querySelector('.lp-color-input');
+  const hexInput   = editorEl.querySelector('.lp-color-hex');
+  if (colorInput && hexInput) {
+    colorInput.addEventListener('input', () => {
+      hexInput.value = colorInput.value;
+      sec.data.bg_color = colorInput.value;
+      markDirty();
+    });
+    hexInput.addEventListener('input', () => {
+      if (/^#[0-9a-fA-F]{6}$/.test(hexInput.value)) {
+        colorInput.value = hexInput.value;
+        sec.data.bg_color = hexInput.value;
+        markDirty();
+      }
+    });
+  }
 
   // ── Image picker (single) ──
   editorEl.querySelectorAll('.lp-pick-image').forEach(btn => {
