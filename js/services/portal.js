@@ -194,6 +194,15 @@ export async function deleteTip(id) {
   await deleteDoc(doc(db, 'portal_tips', id));
 }
 
+export async function toggleTipPriority(tipId, priority) {
+  if (!store.canCreateTip()) throw new Error('Permissão negada.');
+  await updateDoc(doc(db, 'portal_tips', tipId), {
+    priority: !!priority,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid(),
+  });
+}
+
 export async function fetchAvailableSegments(destinationId) {
   const tip = await fetchTip(destinationId);
   if (!tip?.segments) return [];
