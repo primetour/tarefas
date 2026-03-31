@@ -251,6 +251,19 @@ export class Header {
       } catch { /* ignore */ }
     }
 
+    // Portal tips — search if user has portal access
+    let tips = [];
+    if (store.canPortal()) {
+      tips = store.get('portalTips') || [];
+      if (!tips.length) {
+        try {
+          const snap = await getDocs(collection(db, 'portal_tips'));
+          tips = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          store.set('portalTips', tips);
+        } catch { /* ignore */ }
+      }
+    }
+
     // Match tasks
     const matchTasks = tasks.filter(t => {
       const title = (t.title || '').toLowerCase();
@@ -271,7 +284,18 @@ export class Header {
         || (u.email || '').toLowerCase().includes(lower);
     }).slice(0, 4);
 
-    const total = matchTasks.length + matchProjects.length + matchUsers.length;
+    // Match portal tips
+    const matchTips = tips.filter(t => {
+      const title    = (t.title || '').toLowerCase();
+      const city     = (t.city || '').toLowerCase();
+      const country  = (t.country || '').toLowerCase();
+      const continent= (t.continent || '').toLowerCase();
+      const segments = (t.segments || []).join(' ').toLowerCase();
+      return title.includes(lower) || city.includes(lower) || country.includes(lower)
+        || continent.includes(lower) || segments.includes(lower);
+    }).slice(0, 6);
+
+    const total = matchTasks.length + matchProjects.length + matchUsers.length + matchTips.length;
     if (!total) {
       this._showSearchResults(`
         <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
@@ -351,6 +375,32 @@ export class Header {
         </div>`).join('');
     }
 
+    if (matchTips.length) {
+      const PRIORITY_COLORS = { high:'#EF4444', medium:'#F97316', low:'#22C55E' };
+      html += `<div style="padding:6px 12px;font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.08em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+        Dicas do Portal (${matchTips.length})</div>`;
+      html += matchTips.map(t => `
+        <div class="search-result-item" data-type="tip" data-id="${esc(t.id)}"
+          style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;
+          border-bottom:1px solid var(--border-subtle);transition:background .1s;"
+          onmouseover="this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background=''">
+          <span style="font-size:0.875rem;">🌍</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+              white-space:nowrap;">${esc(t.title || t.city || 'Sem título')}</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">
+              ${esc([t.city, t.country, t.continent].filter(Boolean).join(' · '))}
+            </div>
+          </div>
+          ${t.priority ? `<span style="font-size:0.625rem;padding:2px 6px;border-radius:10px;
+            background:${(PRIORITY_COLORS[t.priority]||'#6B7280')}20;
+            color:${PRIORITY_COLORS[t.priority]||'#6B7280'};
+            font-weight:600;text-transform:uppercase;">${t.priority}</span>` : ''}
+        </div>`).join('');
+    }
+
     this._showSearchResults(html);
   }
 
@@ -391,6 +441,8 @@ export class Header {
         } else if (type === 'user') {
           if (store.can('system_manage_users')) router.navigate('users');
           else router.navigate('team');
+        } else if (type === 'tip') {
+          router.navigate('portal');
         }
       });
     });
