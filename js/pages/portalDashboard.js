@@ -85,16 +85,23 @@ async function load(container) {
       covered: tips.filter(t => hasContent(t, s.key)).length,
     }));
 
+    const priorityTips    = tips.filter(t => t.priority);
+    const priorityExpired = priorityTips.filter(t => hasBadSeg(t, now, null));
+
     body.innerHTML = `
       <!-- KPIs -->
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:24px;">
         ${kpi('Áreas',       areas.length,          '🗂')}
         ${kpi('Destinos',    dests.length,           '📍')}
         ${kpi('Dicas',       tips.length,            '✈')}
+        ${kpi('Prioritárias', priorityTips.length,   '★', null,
+              priorityExpired.length > 0
+                ? `<span style="color:#EF4444;font-size:0.6875rem;">${priorityExpired.length} vencida${priorityExpired.length>1?'s':''}</span>`
+                : priorityTips.length > 0
+                  ? `<span style="color:#22C55E;font-size:0.6875rem;">atualizadas</span>` : '')}
         ${kpi('Cobertura',   pct(totalFilled,maxFilled)+'%','📊')}
         ${kpi('Gerações /30d', recentGens.length,   '⚡')}
         ${kpi('Links web',   links.length,           '🔗')}
-        ${kpi('Views links', totalViews,             '👁')}
         ${kpi('Vencidas',    expired.length,         '⚠', expired.length > 0 ? '#EF4444' : null)}
       </div>
 
@@ -253,12 +260,13 @@ function buildViewUrl(token) {
   return `${base}portal-view.html#${token}`;
 }
 
-function kpi(label, value, icon, color) {
+function kpi(label, value, icon, color, extra) {
   return `<div class="card" style="padding:16px;">
     <div style="font-size:1.25rem;margin-bottom:6px;">${icon}</div>
     <div style="font-size:1.625rem;font-weight:800;line-height:1;${color?`color:${color};`:''}">
       ${value}</div>
     <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px;">${label}</div>
+    ${extra ? `<div style="margin-top:2px;">${extra}</div>` : ''}
   </div>`;
 }
 
@@ -360,14 +368,15 @@ async function exportPortalPdf() {
 
     // ── KPIs (2 rows x 4) ──
     let y = 28;
+    const pdfPriorityTips = tips.filter(t => t.priority);
     const kpis = [
       { label:'Áreas',       value:String(areas.length),     color:[56,189,248]  },
       { label:'Destinos',    value:String(dests.length),      color:[167,139,250] },
       { label:'Dicas',       value:String(tips.length),       color:[34,197,94]   },
-      { label:'Cobertura',   value:coveragePct+'%',           color:[212,168,67]  },
-      { label:'Gerações /30d', value:String(recentGens.length), color:[96,165,250] },
-      { label:'Links web',   value:String(links.length),      color:[167,139,250] },
-      { label:'Views links', value:String(totalViews),        color:[56,189,248]  },
+      { label:'Prioritárias', value:String(pdfPriorityTips.length), color:[212,168,67] },
+      { label:'Cobertura',   value:coveragePct+'%',           color:[96,165,250]  },
+      { label:'Gerações /30d', value:String(recentGens.length), color:[167,139,250] },
+      { label:'Links web',   value:String(links.length),      color:[56,189,248]  },
       { label:'Vencidas',    value:String(expired.length),    color: expired.length > 0 ? [239,68,68] : [34,197,94] },
     ];
     const cols = 4;

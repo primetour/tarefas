@@ -92,6 +92,20 @@ export async function renderPortalTipEditor(container) {
       </div>
     </div>
 
+    <!-- Priority flag -->
+    <div id="editor-priority-bar" style="display:none;margin-bottom:16px;">
+      <div class="card" style="padding:14px 20px;display:flex;align-items:center;gap:12px;">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.875rem;
+          font-weight:600;user-select:none;">
+          <input type="checkbox" id="editor-priority" style="width:18px;height:18px;accent-color:var(--brand-gold);cursor:pointer;">
+          <span style="color:var(--brand-gold);">★</span> Destino prioritário
+        </label>
+        <span style="font-size:0.75rem;color:var(--text-muted);">
+          Destinos prioritários são destacados na listagem e no dashboard.
+        </span>
+      </div>
+    </div>
+
     <!-- Editor layout -->
     <div id="editor-layout" style="display:none;">
       <div style="display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start;">
@@ -129,6 +143,7 @@ export async function renderPortalTipEditor(container) {
   });
   document.getElementById('editor-load-dest-btn')?.addEventListener('click', loadDestination);
   document.getElementById('editor-save-btn')?.addEventListener('click', saveDraft);
+  document.getElementById('editor-priority')?.addEventListener('change', () => markDirty());
 
   if (destId) await loadDestinationById(destId);
 }
@@ -213,6 +228,10 @@ async function loadDestinationById(destId, destInfo = null) {
   document.getElementById('editor-save-btn').disabled    = false;
   document.getElementById('editor-layout').style.display = 'block';
   document.getElementById('editor-dest-selector').style.display = 'none';
+  const priorityBar = document.getElementById('editor-priority-bar');
+  const priorityChk = document.getElementById('editor-priority');
+  if (priorityBar) priorityBar.style.display = 'block';
+  if (priorityChk) priorityChk.checked = !!tip?.priority;
 
   const status = document.getElementById('editor-save-status');
   if (status) status.textContent = tip
@@ -787,11 +806,13 @@ async function saveDraft() {
       const data = segmentData[seg.key];
       if (segHasContent(seg.key) || data?.hasExpiry) segments[seg.key] = data;
     }
+    const priority = document.getElementById('editor-priority')?.checked || false;
     const tipId = await saveTip(currentTip?.id || null, {
       destinationId: currentDestId,
       continent:     currentDestInfo?.continent || '',
       country:       currentDestInfo?.country   || '',
       city:          currentDestInfo?.city       || '',
+      priority,
       segments,
     });
     if (!currentTip) currentTip = { id: tipId };

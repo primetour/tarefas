@@ -6,7 +6,7 @@
 import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
-  fetchTips, fetchDestinations, fetchAreas, deleteTip,
+  fetchTips, fetchDestinations, fetchAreas, deleteTip, toggleTipPriority,
   fetchWebLinksByTip, updateWebLink, fetchImages,
   fetchGenerationsByTip, recordGeneration, registerDownload,
   SEGMENTS, GENERATION_FORMATS,
@@ -26,6 +26,7 @@ let allTips   = [];
 let allDests  = [];
 let filterStr = '';
 let filterExp = '';   // 'expired' | 'expiring' | 'ok' | ''
+let filterPriority = false;
 
 export async function renderPortalTipsList(container) {
   if (!store.canCreateTip()) {
@@ -63,6 +64,10 @@ export async function renderPortalTipsList(container) {
         <option value="ok">✓ Em dia</option>
         <option value="no-expiry">Sem validade definida</option>
       </select>
+      <button class="btn btn-ghost btn-sm" id="tips-filter-priority"
+        style="font-size:0.8125rem;padding:5px 12px;border:1px solid var(--border-subtle);
+        border-radius:var(--radius-full);white-space:nowrap;"
+        title="Filtrar destinos prioritários">☆ Prioritários</button>
       <span id="tips-count" style="font-size:0.8125rem;color:var(--text-muted);"></span>
     </div>
 
@@ -99,6 +104,17 @@ export async function renderPortalTipsList(container) {
     filterExp = e.target.value;
     renderTable();
   });
+  document.getElementById('tips-filter-priority')?.addEventListener('click', () => {
+    filterPriority = !filterPriority;
+    const btn = document.getElementById('tips-filter-priority');
+    if (btn) {
+      btn.textContent = filterPriority ? '★ Prioritários' : '☆ Prioritários';
+      btn.style.background = filterPriority ? 'var(--brand-gold)' : '';
+      btn.style.color      = filterPriority ? '#fff' : '';
+      btn.style.borderColor = filterPriority ? 'var(--brand-gold)' : 'var(--border-subtle)';
+    }
+    renderTable();
+  });
 
   await loadData();
 }
@@ -120,8 +136,12 @@ function renderKpis() {
   const in30    = new Date(now.getTime() + 30 * 86400000);
   const expired = allTips.filter(t => hasExpiredSegment(t, now)).length;
   const expiring= allTips.filter(t => !hasExpiredSegment(t, now) && hasExpiringSegment(t, now, in30)).length;
+  const priorityCount = allTips.filter(t => t.priority).length;
+  const priorityExpired = allTips.filter(t => t.priority && hasExpiredSegment(t, now)).length;
   const kpis = [
     { label: 'Total de dicas',  value: allTips.length, color: 'var(--text-primary)' },
+    { label: 'Prioritárias',    value: priorityCount, color: 'var(--brand-gold)',
+      sub: priorityExpired > 0 ? `${priorityExpired} vencida${priorityExpired>1?'s':''}` : 'atualizadas' },
     { label: 'Vencidas',        value: expired,  color: expired  > 0 ? '#EF4444' : '#22C55E' },
     { label: 'Vencendo em 30d', value: expiring, color: expiring > 0 ? '#F59E0B' : '#22C55E' },
     { label: 'Em dia',          value: allTips.length - expired - expiring, color: '#22C55E' },
@@ -131,6 +151,7 @@ function renderKpis() {
       <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;
         letter-spacing:.06em;margin-bottom:6px;">${k.label}</div>
       <div style="font-size:1.5rem;font-weight:700;color:${k.color};">${k.value}</div>
+      ${k.sub ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">${k.sub}</div>` : ''}
     </div>
   `).join('');
 }
@@ -160,6 +181,7 @@ function renderTable() {
   if (filterExp === 'expiring')  rows = rows.filter(r => !hasExpiredSegment(r,now) && hasExpiringSegment(r,now,in30));
   if (filterExp === 'ok')        rows = rows.filter(r => !hasExpiredSegment(r,now) && !hasExpiringSegment(r,now,in30));
   if (filterExp === 'no-expiry') rows = rows.filter(r => !hasAnyExpiry(r));
+  if (filterPriority) rows = rows.filter(r => r.priority);
 
   if (count) count.textContent = `${rows.length} dica${rows.length !== 1 ? 's' : ''}`;
 
@@ -210,7 +232,13 @@ function renderTable() {
       onmouseover="this.style.background='var(--bg-surface)'"
       onmouseout="this.style.background=''">
       <td style="padding:12px 16px;">
-        <div style="font-weight:600;font-size:0.9375rem;">${esc(label)}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="tip-star-btn" data-id="${r.id}" data-priority="${r.priority?'1':'0'}"
+            style="border:none;background:none;cursor:pointer;font-size:1.1rem;line-height:1;
+            padding:0;color:${r.priority ? 'var(--brand-gold)' : 'var(--border-subtle)'};"
+            title="${r.priority ? 'Remover prioridade' : 'Marcar como prioritário'}">${r.priority ? '★' : '☆'}</button>
+          <div style="font-weight:600;font-size:0.9375rem;">${esc(label)}</div>
+        </div>
       </td>
       <td style="padding:12px 16px;">
         <div style="display:flex;flex-wrap:wrap;gap:4px;">
@@ -272,6 +300,35 @@ function renderTable() {
         toast.success('Dica excluída.');
         await loadData();
       } catch(e) { toast.error('Erro: ' + e.message); }
+    });
+  });
+
+  tbody.querySelectorAll('.tip-star-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const tipId    = btn.dataset.id;
+      const wasPrio  = btn.dataset.priority === '1';
+      const newPrio  = !wasPrio;
+      // Optimistic UI update
+      btn.textContent   = newPrio ? '★' : '☆';
+      btn.style.color   = newPrio ? 'var(--brand-gold)' : 'var(--border-subtle)';
+      btn.dataset.priority = newPrio ? '1' : '0';
+      btn.title = newPrio ? 'Remover prioridade' : 'Marcar como prioritário';
+      // Update local data
+      const tip = allTips.find(t => t.id === tipId);
+      if (tip) tip.priority = newPrio;
+      renderKpis();
+      try {
+        await toggleTipPriority(tipId, newPrio);
+      } catch(err) {
+        // Rollback
+        btn.textContent   = wasPrio ? '★' : '☆';
+        btn.style.color   = wasPrio ? 'var(--brand-gold)' : 'var(--border-subtle)';
+        btn.dataset.priority = wasPrio ? '1' : '0';
+        if (tip) tip.priority = wasPrio;
+        renderKpis();
+        toast.error('Erro ao atualizar prioridade.');
+      }
     });
   });
 }
