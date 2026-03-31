@@ -11,6 +11,8 @@ import { toast }            from './components/toast.js';
 import { Sidebar }          from './components/sidebar.js';
 import { Header }           from './components/header.js';
 import { subscribeNotifications, cleanupExpired } from './services/notifications.js';
+import { startScheduler, stopScheduler }          from './services/notificationScheduler.js';
+import { checkAndPlaySound, resetSoundCounter }   from './components/notificationPanel.js';
 
 import { renderLogin }       from './pages/login.js';
 import { renderDashboard }   from './pages/dashboard.js';
@@ -197,10 +199,14 @@ function mountShell(root) {
   if (currentUser?.uid) {
     _unsubNotifications = subscribeNotifications(currentUser.uid, (notifications) => {
       store.set('notifications', notifications);
-      store.set('unreadCount', notifications.filter(n => !n.read).length);
+      const unread = notifications.filter(n => !n.read).length;
+      store.set('unreadCount', unread);
+      checkAndPlaySound(unread);
     });
     // Cleanup expired notifications (runs once on login)
     cleanupExpired(currentUser.uid).catch(() => {});
+    // Start deadline check scheduler
+    startScheduler();
   }
 }
 
@@ -351,6 +357,8 @@ function destroyShell() {
   header?.destroy();
   sidebar = null;
   header  = null;
+  // Stop deadline scheduler
+  stopScheduler();
   // Cleanup notification listener
   if (_unsubNotifications) {
     _unsubNotifications();
@@ -358,6 +366,7 @@ function destroyShell() {
   }
   store.set('notifications', []);
   store.set('unreadCount', 0);
+  resetSoundCounter();
 }
 
 // ─── Loading screen ───────────────────────────────────────
