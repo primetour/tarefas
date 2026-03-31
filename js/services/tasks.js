@@ -256,10 +256,14 @@ export async function fetchTasks({
   const snap = await getDocs(q);
   let tasks  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+  // Tarefas atribuídas ao usuário sempre são visíveis, independente de workspace/setor
+  const currentUid = store.get('currentUser')?.uid;
+  const isAssignee = (t) => currentUid && (t.assignees || []).includes(currentUid);
+
   // Filtro por workspace — documentos sem workspaceId são visíveis para todos
   const activeIds = workspaceIds ?? store.getActiveWorkspaceIds();
   if (activeIds) {
-    tasks = tasks.filter(t => !t.workspaceId || activeIds.includes(t.workspaceId));
+    tasks = tasks.filter(t => isAssignee(t) || !t.workspaceId || activeIds.includes(t.workspaceId));
   }
 
   // Filtro por setor via getVisibleSectors()
@@ -270,7 +274,7 @@ export async function fetchTasks({
       // Usuário sem setor definido — não filtra (mostra tudo para não quebrar a UX)
       // Idealmente o admin configura o setor do usuário
     } else {
-      tasks = tasks.filter(t => !t.sector || visibleSectors.includes(t.sector));
+      tasks = tasks.filter(t => isAssignee(t) || !t.sector || visibleSectors.includes(t.sector));
     }
   }
 
@@ -289,16 +293,20 @@ export function subscribeToTasks(callback, filters = {}) {
   return onSnapshot(q, (snap) => {
     let tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+    // Tarefas atribuídas ao usuário sempre são visíveis
+    const currentUid = store.get('currentUser')?.uid;
+    const isAssignee = (t) => currentUid && (t.assignees || []).includes(currentUid);
+
     // Filtro por workspace
     const activeIds = store.getActiveWorkspaceIds();
     if (activeIds) {
-      tasks = tasks.filter(t => !t.workspaceId || activeIds.includes(t.workspaceId));
+      tasks = tasks.filter(t => isAssignee(t) || !t.workspaceId || activeIds.includes(t.workspaceId));
     }
 
     // Filtro por setor
     const visibleSectors = store.get('visibleSectors') || [];
     if (!store.isMaster() && visibleSectors.length > 0) {
-      tasks = tasks.filter(t => !t.sector || visibleSectors.includes(t.sector));
+      tasks = tasks.filter(t => isAssignee(t) || !t.sector || visibleSectors.includes(t.sector));
     }
 
     if (filters.projectId) tasks = tasks.filter(t => t.projectId === filters.projectId);

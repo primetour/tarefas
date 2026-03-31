@@ -148,19 +148,30 @@ export async function notify(type, {
    Real-time subscription (one per user session)
    ════════════════════════════════════════════════════════════ */
 export function subscribeNotifications(userId, callback) {
+  // Single-field query to avoid composite index requirement.
+  // Filter dismissed + sort client-side.
   const q = query(
     collection(db, 'notifications'),
     where('recipientId', '==', userId),
-    where('dismissed', '==', false),
-    orderBy('createdAt', 'desc'),
-    limit(50),
+    limit(200),
   );
 
   return onSnapshot(q, snap => {
-    const notifications = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const notifications = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(n => n.dismissed !== true)
+      .sort((a, b) => {
+        const ta = a.createdAt?.toMillis?.() || 0;
+        const tb = b.createdAt?.toMillis?.() || 0;
+        return tb - ta;
+      })
+      .slice(0, 50);
     callback(notifications);
   }, err => {
     console.warn('Notification listener error:', err.message);
+    // If index is missing, Firestore returns an error with a link to create it.
+    // Log full error for debugging.
+    console.error('Full notification error:', err);
   });
 }
 
