@@ -389,7 +389,7 @@ function renderKpis(rows) {
   if (!rows.length) { el.innerHTML = ''; return; }
 
   const avg = key => {
-    const vals = rows.map(r => r[key]).filter(v => v != null && !isNaN(v) && v > 0);
+    const vals = rows.map(r => r[key]).filter(v => v != null && !isNaN(v));
     return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : 0;
   };
   const sum = key => rows.reduce((a,r) => a + (Number(r[key])||0), 0);
