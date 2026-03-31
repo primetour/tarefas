@@ -135,7 +135,8 @@ export async function createTask(data) {
   // Notify assignees
   if (taskDoc.assignees?.length) {
     import('./notifications.js').then(({ notify }) => {
-      notify('task.assigned', {
+      console.log('[Notify] task.assigned → recipients:', taskDoc.assignees);
+      return notify('task.assigned', {
         entityType: 'task', entityId: ref.id,
         recipientIds: taskDoc.assignees,
         title: 'Nova tarefa atribuída',
@@ -143,7 +144,7 @@ export async function createTask(data) {
         route: 'tasks',
         priority: taskDoc.priority === 'urgent' ? 'high' : 'normal',
       });
-    }).catch(() => {});
+    }).catch(e => console.warn('[Notify] task.assigned error:', e));
   }
 
   return { id: ref.id, ...taskDoc };

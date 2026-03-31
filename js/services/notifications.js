@@ -78,7 +78,7 @@ export async function notify(type, {
   priority = 'normal',
   category,
 }) {
-  if (!recipientIds.length) return;
+  if (!recipientIds.length) { console.log('[Notify] No recipients, skipping'); return; }
 
   const actorId   = uid();
   const actorName = store.get('userProfile')?.name || 'Sistema';
@@ -86,11 +86,16 @@ export async function notify(type, {
   // Auto-detect category from type
   if (!category) category = type.split('.')[0];
 
+  console.log(`[Notify] type=${type}, actor=${actorId}, recipients=`, recipientIds);
+
   // Check admin-level setting
   const adminPrefKey = TYPE_TO_ADMIN_PREF[type];
   if (adminPrefKey) {
     const enabled = await isGloballyEnabled(adminPrefKey);
-    if (!enabled) return;
+    if (!enabled) {
+      console.log(`[Notify] Blocked by admin setting: ${adminPrefKey}=false`);
+      return;
+    }
   }
 
   // Load user preferences for recipients (batch)
@@ -104,13 +109,19 @@ export async function notify(type, {
 
   for (const recipientId of recipientIds) {
     // Never notify the actor themselves
-    if (recipientId === actorId) continue;
+    if (recipientId === actorId) {
+      console.log(`[Notify] Skipping self: ${recipientId}`);
+      continue;
+    }
 
     // Check user preference
     const userPrefKey = TYPE_TO_USER_PREF[type];
     if (userPrefKey) {
       const prefs = userPrefs[recipientId];
-      if (prefs && prefs[userPrefKey] === false) continue;
+      if (prefs && prefs[userPrefKey] === false) {
+        console.log(`[Notify] Blocked by user pref: ${recipientId}.${userPrefKey}=false`);
+        continue;
+      }
     }
 
     const ref = doc(collection(db, 'notifications'));
@@ -138,9 +149,12 @@ export async function notify(type, {
   if (created > 0) {
     try {
       await batch.commit();
+      console.log(`[Notify] ✓ ${created} notification(s) created for type=${type}`);
     } catch (err) {
-      console.warn('Notification batch failed:', err.message);
+      console.error('[Notify] Batch commit FAILED:', err);
     }
+  } else {
+    console.log(`[Notify] No notifications created (all filtered)`);
   }
 }
 
