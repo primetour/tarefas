@@ -17,6 +17,7 @@ import {
   renderTypeFields, collectFieldValues,
   bindDynamicFieldEvents, validateRequiredFields,
 } from './dynamicFields.js';
+import { fetchAllAbsences } from '../services/capacity.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cleanVarName = s => String(s||'').replace(/\s*[·•]\s*\d+d\s*$|\s*[·•]\s*mesmo dia\s*$/i, '').trim();
@@ -41,6 +42,31 @@ function getInitials(name) {
   return (name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
 }
 
+/** Verifica se o usuário tem ausência que sobrepõe o período da tarefa */
+function getUserAbsenceInPeriod(absences, userId, startDate, dueDate) {
+  if (!absences.length) return null;
+  // Usa dueDate como referência principal; se não existir, usa hoje
+  const taskStart = startDate ? (startDate?.toDate ? startDate.toDate() : new Date(startDate)) : new Date();
+  const taskEnd   = dueDate   ? (dueDate?.toDate   ? dueDate.toDate()   : new Date(dueDate))   : taskStart;
+  taskStart.setHours(0,0,0,0);
+  taskEnd.setHours(23,59,59,999);
+
+  return absences.find(a => {
+    if (a.userId !== userId) return false;
+    const aStart = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
+    const aEnd   = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
+    aStart.setHours(0,0,0,0);
+    aEnd.setHours(23,59,59,999);
+    // Sobreposição de intervalos
+    return aStart <= taskEnd && aEnd >= taskStart;
+  });
+}
+
+const ABSENCE_TYPE_LABELS = {
+  vacation: 'Férias', sick: 'Licença médica', remote: 'Home office',
+  training: 'Treinamento', event: 'Evento externo', other: 'Ausente',
+};
+
 export async function openTaskModal({ taskData=null, projectId=null, status='not_started', onSave=null, typeId=null } = {}) {
   // isEdit only when taskData has a real Firestore id (not a prefill from requests portal)
   const isEdit = !!(taskData?.id);
@@ -58,6 +84,10 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   }
 
   const projects = await fetchProjects().catch(() => []);
+
+  // Carrega ausências para indicar indisponibilidade no seletor de responsáveis
+  let allAbsences = [];
+  try { allAbsences = await fetchAllAbsences(); } catch(e) { /* silent */ }
 
   // Ensure task types are loaded — critical for variation cascade
   if (!(store.get('taskTypes') || []).length) {
@@ -111,7 +141,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     title: modalTitle,
     size: 'xl',
     content: buildHTML(task, users, projects, currentTags, currentAssignees, isEdit, currentTaskType,
-      task.sector || currentTaskType?.sector || store.get('userSector') || null),
+      task.sector || currentTaskType?.sector || store.get('userSector') || null, allAbsences),
     footer: [
       ...(isEdit && store.can('task_delete') ? [{
         label:'🗑 Excluir', class:'btn-danger btn-sm', closeOnClick:false,
@@ -134,7 +164,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   // Bind events after next paint — use requestAnimationFrame for reliability
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      bindEvents(task, users, currentTags, currentAssignees, isEdit);
+      bindEvents(task, users, currentTags, currentAssignees, isEdit, allAbsences);
 
       // Populate meta selector async — show individual metas (not goals)
       import('../services/goals.js').then(({ fetchGoals }) => {
@@ -168,7 +198,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   });
 }
 
-function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = null, taskSector = null) {
+function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = null, taskSector = null, absences = []) {
   const opt = (arr, valKey, labelKey, cur) => arr.map(x =>
     `<option value="${x[valKey]}" ${cur===x[valKey]?'selected':''}>${esc(x[labelKey])}</option>`
   ).join('');
@@ -197,20 +227,36 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
   const assigneeChips = assignees.map(uid => {
     const u = activeUsers.find(u=>u.id===uid);
     if (!u) return '';
-    return `<div class="assignee-chip" data-uid="${uid}">
+    const absence = getUserAbsenceInPeriod(absences, uid, task.startDate, task.dueDate);
+    const absIcon = absence ? '<span title="' + esc(ABSENCE_TYPE_LABELS[absence.type]||'Ausente') + '" style="color:#EF4444;font-size:0.625rem;margin-left:2px;">⚠</span>' : '';
+    return `<div class="assignee-chip" data-uid="${uid}" ${absence?'style="border-color:#EF4444;background:#EF444410;"':''}>
       <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${getInitials(u.name)}</div>
-      ${esc(u.name.split(' ')[0])}<span style="font-size:0.7rem;opacity:0.6;">✕</span></div>`;
+      ${esc(u.name.split(' ')[0])}${absIcon}<span style="font-size:0.7rem;opacity:0.6;">✕</span></div>`;
   }).join('');
 
   const userListHTML = activeUsers.length
-    ? activeUsers.map(u => `
-        <div class="dropdown-item" data-add-uid="${u.id}" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 12px;">
+    ? activeUsers.map(u => {
+        const absence = getUserAbsenceInPeriod(absences, u.id, task.startDate, task.dueDate);
+        const absLabel = absence ? (ABSENCE_TYPE_LABELS[absence.type] || 'Ausente') : '';
+        const fmtAbsDate = (d) => {
+          const dt = d?.toDate ? d.toDate() : new Date(d);
+          return dt.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
+        };
+        return `
+        <div class="dropdown-item" data-add-uid="${u.id}" data-absent="${absence?'1':''}"
+          style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 12px;
+          ${absence?'opacity:0.6;':''}">
           <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">${getInitials(u.name)}</div>
-          <div>
+          <div style="flex:1;min-width:0;">
             <div style="font-size:0.875rem;color:var(--text-primary);">${esc(u.name)}</div>
             <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u.department||u.role||'')}</div>
           </div>
-        </div>`).join('')
+          ${absence ? `<span style="font-size:0.625rem;padding:2px 6px;border-radius:4px;
+            background:#EF444418;color:#EF4444;white-space:nowrap;flex-shrink:0;"
+            title="${absLabel}: ${fmtAbsDate(absence.startDate)} a ${fmtAbsDate(absence.endDate)}">
+            ${absLabel} ${fmtAbsDate(absence.startDate)}-${fmtAbsDate(absence.endDate)}</span>` : ''}
+        </div>`;
+      }).join('')
     : `<div style="padding:12px;color:var(--text-muted);font-size:0.875rem;">Nenhum usuário ativo.</div>`;
 
   return `<div class="task-modal-grid">
@@ -418,7 +464,7 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
   </div>`;
 }
 
-function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
+function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences = []) {
   // Tags
   document.getElementById('tag-input')?.addEventListener('keydown', (e) => {
     if ((e.key==='Enter'||e.key===',') && e.target.value.trim()) {
@@ -531,14 +577,29 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
     if (!item) return;
     const uid = item.dataset.addUid;
     if (!currentAssignees.includes(uid)) {
+      // Verifica ausência no período da tarefa
+      const startVal = document.getElementById('tm-start')?.value;
+      const dueVal   = document.getElementById('tm-due')?.value;
+      const absence  = getUserAbsenceInPeriod(absences, uid,
+        startVal ? new Date(startVal+'T00:00:00') : task.startDate,
+        dueVal   ? new Date(dueVal+'T00:00:00')   : task.dueDate);
+
       currentAssignees.push(uid);
       const u = users.find(u=>u.id===uid);
       if (u) {
+        const absIcon = absence ? '<span title="' + esc(ABSENCE_TYPE_LABELS[absence.type]||'Ausente') + '" style="color:#EF4444;font-size:0.625rem;margin-left:2px;">⚠</span>' : '';
         const el = document.createElement('div');
         el.className='assignee-chip'; el.dataset.uid=uid;
-        el.innerHTML=`<div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${getInitials(u.name)}</div>${esc(u.name.split(' ')[0])}<span style="font-size:0.7rem;opacity:0.6;">✕</span>`;
+        if (absence) { el.style.borderColor='#EF4444'; el.style.background='#EF444410'; }
+        el.innerHTML=`<div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${getInitials(u.name)}</div>${esc(u.name.split(' ')[0])}${absIcon}<span style="font-size:0.7rem;opacity:0.6;">✕</span>`;
         const btn=document.getElementById('assignee-add-btn');
         document.getElementById('assignee-picker')?.insertBefore(el,btn);
+
+        if (absence) {
+          const absLabel = ABSENCE_TYPE_LABELS[absence.type] || 'Ausente';
+          const fmtD = d => { const dt = d?.toDate ? d.toDate() : new Date(d); return dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); };
+          toast.warning(`${u.name.split(' ')[0]} está em "${absLabel}" de ${fmtD(absence.startDate)} a ${fmtD(absence.endDate)}. Tarefa atribuída mesmo assim.`);
+        }
       }
     }
     document.getElementById('assignee-dropdown').style.display='none';
@@ -548,6 +609,53 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit) {
     if (chip){const uid=chip.dataset.uid;const i=currentAssignees.indexOf(uid);if(i>-1)currentAssignees.splice(i,1);chip.remove();}
   });
   document.addEventListener('click', () => { const dd=document.getElementById('assignee-dropdown'); if(dd)dd.style.display='none'; });
+
+  // Quando datas mudam, atualizar indicadores de ausência no dropdown
+  const updateAbsenceIndicators = () => {
+    const startVal = document.getElementById('tm-start')?.value;
+    const dueVal   = document.getElementById('tm-due')?.value;
+    const sDate = startVal ? new Date(startVal+'T00:00:00') : null;
+    const dDate = dueVal   ? new Date(dueVal+'T00:00:00')   : null;
+
+    // Atualizar dropdown
+    document.querySelectorAll('#assignee-dropdown [data-add-uid]').forEach(item => {
+      const uid = item.dataset.addUid;
+      const absence = getUserAbsenceInPeriod(absences, uid, sDate, dDate);
+      item.style.opacity = absence ? '0.6' : '';
+      item.dataset.absent = absence ? '1' : '';
+      const badge = item.querySelector('span[style*="EF4444"]');
+      if (!absence && badge) badge.remove();
+      if (absence && !badge) {
+        const fmtD = d => { const dt = d?.toDate ? d.toDate() : new Date(d); return dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}); };
+        const absLabel = ABSENCE_TYPE_LABELS[absence.type] || 'Ausente';
+        const span = document.createElement('span');
+        span.style.cssText = 'font-size:0.625rem;padding:2px 6px;border-radius:4px;background:#EF444418;color:#EF4444;white-space:nowrap;flex-shrink:0;';
+        span.title = `${absLabel}: ${fmtD(absence.startDate)} a ${fmtD(absence.endDate)}`;
+        span.textContent = `${absLabel} ${fmtD(absence.startDate)}-${fmtD(absence.endDate)}`;
+        item.appendChild(span);
+      }
+    });
+
+    // Atualizar chips existentes
+    document.querySelectorAll('#assignee-picker .assignee-chip[data-uid]').forEach(chip => {
+      const uid = chip.dataset.uid;
+      const absence = getUserAbsenceInPeriod(absences, uid, sDate, dDate);
+      chip.style.borderColor = absence ? '#EF4444' : '';
+      chip.style.background  = absence ? '#EF444410' : '';
+      const warn = chip.querySelector('span[style*="EF4444"][title]');
+      if (!absence && warn) warn.remove();
+      if (absence && !warn) {
+        const s = document.createElement('span');
+        s.title = ABSENCE_TYPE_LABELS[absence.type] || 'Ausente';
+        s.style.cssText = 'color:#EF4444;font-size:0.625rem;margin-left:2px;';
+        s.textContent = '⚠';
+        chip.querySelector('span:last-child')?.before(s);
+      }
+    });
+  };
+
+  document.getElementById('tm-start')?.addEventListener('change', updateAbsenceIndicators);
+  document.getElementById('tm-due')?.addEventListener('change', updateAbsenceIndicators);
 
   if (!isEdit) return;
 
