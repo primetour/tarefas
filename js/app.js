@@ -34,6 +34,7 @@ import { renderTeam }         from './pages/team.js';
 import { renderGoals }        from './pages/goals.js';
 import { renderSectors }      from './pages/sectors.js';
 import { renderRequests, destroyRequests } from './pages/requests.js';
+import { renderNotifications, destroyNotifications } from './pages/notifications.js';
 import { renderCsat, destroyCsat }      from './pages/csat.js';
 import { renderIntegrations }             from './pages/integrations.js';
 import { renderSettings }                 from './pages/settings.js';
@@ -202,6 +203,7 @@ function mountShell(root) {
       const unread = notifications.filter(n => !n.read).length;
       store.set('unreadCount', unread);
       checkAndPlaySound(unread);
+      updateNotifSidebarBadge(unread);
     });
     // Cleanup expired notifications (runs once on login)
     cleanupExpired(currentUser.uid).catch(() => {});
@@ -232,7 +234,8 @@ function setupRouter() {
     'capacity':     async () => { await renderTeam(content); }, // capacity merged into team
     'goals':        async () => { await renderGoals(content); },
     'sectors':      async () => { await renderSectors(content); },
-    'requests':     async () => { await renderRequests(content); },
+    'requests':      async () => { await renderRequests(content); },
+    'notifications': async () => { destroyNotifications(); await renderNotifications(content); },
     'roles':        async () => { await renderRoles(content); },
     'settings':     async () => { await renderSettings(content); },
     'integrations': async () => { await renderIntegrations(content); },
@@ -309,6 +312,7 @@ function setupRouter() {
       destroyTasksPage();
       destroyCsat();
       destroyRequests();
+      destroyNotifications();
       // Limpar o container garante que não há resíduos visuais
       content.innerHTML = '';
     }
@@ -324,9 +328,16 @@ function setupRouter() {
   router.init();
 }
 
-// ─── Sidebar badge helper ─────────────────────────────────
+// ─── Sidebar badge helpers ────────────────────────────────
 function updateSidebarBadge(count) {
   const badge = document.querySelector('[data-route="requests"] .sidebar-badge');
+  if (!badge) return;
+  badge.textContent = count > 0 ? (count > 99 ? '99+' : count) : '';
+  badge.style.display = count > 0 ? 'flex' : 'none';
+}
+
+function updateNotifSidebarBadge(count) {
+  const badge = document.querySelector('[data-route="notifications"] .sidebar-badge');
   if (!badge) return;
   badge.textContent = count > 0 ? (count > 99 ? '99+' : count) : '';
   badge.style.display = count > 0 ? 'flex' : 'none';
