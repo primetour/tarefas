@@ -1,0 +1,37 @@
+name: GA4 → Firestore Sync
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # Todo dia às 06:00 UTC (03:00 BRT)
+  workflow_dispatch:       # Permite execução manual via GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          cd scripts
+          npm init -y 2>/dev/null || true
+          npm install firebase-admin@12 @google-analytics/data@4
+
+      - name: Run GA Sync
+        env:
+          GA_PROPERTY_ID:       ${{ secrets.GA_PROPERTY_ID }}
+          GA_CLIENT_EMAIL:      ${{ secrets.GA_CLIENT_EMAIL }}
+          GA_PRIVATE_KEY:       ${{ secrets.GA_PRIVATE_KEY }}
+          FIREBASE_PROJECT_ID:  ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          SYNC_DAYS:            '90'
+        run: node scripts/ga-sync.js
