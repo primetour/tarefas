@@ -13,6 +13,49 @@ import {
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/* ─── Notification sound (Web Audio API) ─────────────────── */
+let _audioCtx = null;
+let _prevUnread = 0;
+
+function playNotifSound() {
+  try {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _audioCtx;
+    const now = ctx.currentTime;
+
+    // Two-tone chime: C6 → E6
+    [1047, 1319].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + i * 0.12);
+      gain.gain.linearRampToValueAtTime(0.15, now + i * 0.12 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.12 + 0.25);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + i * 0.12);
+      osc.stop(now + i * 0.12 + 0.3);
+    });
+  } catch { /* AudioContext not available */ }
+}
+
+/** Call from store subscription to play sound on new unread notifications */
+export function checkAndPlaySound(newUnread) {
+  if (newUnread > _prevUnread && _prevUnread >= 0) {
+    // Respect user sound preference
+    const profile = store.get('userProfile');
+    if (profile?.prefs?.notifySound !== false) {
+      playNotifSound();
+    }
+  }
+  _prevUnread = newUnread;
+}
+
+/** Reset counter (on logout) */
+export function resetSoundCounter() {
+  _prevUnread = 0;
+}
+
 const CATEGORIES = [
   { key: '',        label: 'Todas' },
   { key: 'task',    label: 'Tarefas' },
@@ -138,6 +181,20 @@ function buildPanelHTML() {
     </div>`;
 }
 
+/* ─── Date grouping helper ───────────────────────────────── */
+function getDateGroup(timestamp) {
+  const d = timestamp?.toDate?.() || (timestamp ? new Date(timestamp) : null);
+  if (!d || isNaN(d.getTime())) return 'Anteriores';
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7);
+  if (d >= today) return 'Hoje';
+  if (d >= yesterday) return 'Ontem';
+  if (d >= weekAgo) return 'Esta semana';
+  return 'Anteriores';
+}
+
 function buildListHTML() {
   let notifications = store.get('notifications') || [];
 
@@ -154,7 +211,27 @@ function buildListHTML() {
     </div>`;
   }
 
-  return notifications.map(n => {
+  // Group by date
+  const groups = {};
+  const groupOrder = ['Hoje', 'Ontem', 'Esta semana', 'Anteriores'];
+  for (const n of notifications) {
+    const g = getDateGroup(n.createdAt);
+    (groups[g] ||= []).push(n);
+  }
+
+  let html = '';
+  for (const label of groupOrder) {
+    const items = groups[label];
+    if (!items?.length) continue;
+    html += `<div style="padding:8px 20px 4px;font-size:0.6875rem;font-weight:700;
+      color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;
+      background:var(--bg-dark);position:sticky;top:0;z-index:1;">${esc(label)}</div>`;
+    html += items.map(n => buildNotifItem(n)).join('');
+  }
+  return html;
+}
+
+  function buildNotifItem(n) {
     const icon = NOTIF_ICONS[n.category] || '🔔';
     const time = timeAgo(n.createdAt);
     const isUnread = !n.read;
@@ -199,8 +276,7 @@ function buildListHTML() {
           font-size:0.75rem;padding:4px;flex-shrink:0;opacity:0;transition:opacity .15s;"
           title="Descartar">✕</button>
       </div>`;
-  }).join('');
-}
+  }
 
 /* ════════════════════════════════════════════════════════════
    Wire events
