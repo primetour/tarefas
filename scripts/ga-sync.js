@@ -170,7 +170,7 @@ async function syncPages(propertyId) {
   const docs = (response.rows || []).map((row, i) => {
     const d = row.dimensionValues;
     const m = row.metricValues;
-    const slug = (d[1].value || 'unknown').replace(/[^a-z0-9/\-]/gi, '_').slice(0, 80);
+    const slug = (d[1].value || 'unknown').replace(/[^a-z0-9\-]/gi, '_').slice(0, 80);
     return {
       id:                `${propNum}_page_${i}_${slug}`,
       propertyId:        propNum,
