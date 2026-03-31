@@ -181,6 +181,7 @@ export async function renderProfile(container) {
                 { id:'pref-notify-assign',   label:'Notificações de atribuição', desc:'Alertar quando uma tarefa for atribuída a mim', checked: profile.prefs?.notifyAssign !== false },
                 { id:'pref-notify-mention',  label:'Notificações de menção',      desc:'Alertar quando alguém comentar em minhas tarefas', checked: profile.prefs?.notifyMention !== false },
                 { id:'pref-notify-deadline', label:'Alertas de prazo',            desc:'Alertar 2 dias antes do prazo de uma tarefa minha', checked: profile.prefs?.notifyDeadline !== false },
+                { id:'pref-notify-sound',    label:'Som de notificação',          desc:'Tocar som ao receber novas notificações', checked: profile.prefs?.notifySound !== false },
               ].map(p => `
                 <div style="display:flex; align-items:flex-start; gap:12px; justify-content:space-between;">
                   <div>
@@ -364,6 +365,7 @@ function _bindProfileEvents(profile) {
           notifyAssign:   document.getElementById('pref-notify-assign')?.checked ?? true,
           notifyMention:  document.getElementById('pref-notify-mention')?.checked ?? true,
           notifyDeadline: document.getElementById('pref-notify-deadline')?.checked ?? true,
+          notifySound:    document.getElementById('pref-notify-sound')?.checked ?? true,
         }
       });
       toast.success('Preferências salvas!');
