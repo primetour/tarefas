@@ -547,23 +547,55 @@ async function exportPDF() {
       await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
       await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
     }
-    const rows = getRows();
+    const rows   = getRows();
     const haAcct = !filterAcct;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-
-    doc.setFontSize(13); doc.setFont('helvetica','bold');
-    doc.text('Performance Redes Sociais — PRIMETOUR', 14, 16);
-    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(120);
+    const W   = doc.internal.pageSize.getWidth();
     const acct = filterAcct ? `@${filterAcct}` : 'Todas as contas';
-    doc.text(`${acct}  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  ${rows.length} posts`, 14, 22);
-    doc.setTextColor(0);
+    const date = new Date().toLocaleDateString('pt-BR');
 
+    // ── Header ──
+    doc.setFillColor(212,168,67);
+    doc.rect(0, 0, W, 3, 'F');
+    doc.setFillColor(36,35,98);
+    doc.rect(0, 3, W, 20, 'F');
+    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+    doc.text('PRIMETOUR', 14, 14);
+    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(212,168,67);
+    doc.text('Performance Redes Sociais', 14, 19);
+    doc.setTextColor(200,200,200);
+    doc.text(`${acct}  ·  ${date}  ·  ${rows.length} posts`, W-14, 19, {align:'right'});
+
+    // ── KPIs ──
+    const avg = key => { const vals=rows.map(r=>r[key]).filter(v=>v!=null&&!isNaN(v)); return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0; };
+    const sumK = key => rows.reduce((a,r)=>a+(Number(r[key])||0), 0);
+    const best = rows.reduce((a,r)=>(r.reach||0)>(a.reach||0)?r:a, rows[0]||{});
+    const kpis = [
+      { label:'Posts',           value:String(rows.length),               color:[56,189,248]  },
+      { label:'Alcance médio',   value:num(Math.round(avg('reach'))),     color:[167,139,250] },
+      { label:'Engaj. médio',    value:pct(avg('engagementRate')),        color:[34,197,94]   },
+      { label:'Curtidas',        value:num(sumK('likes')),                color:[239,68,68]   },
+      { label:'Saves',           value:num(sumK('saved')),                color:[212,168,67]  },
+      { label:'Maior alcance',   value:num(best?.reach||0),              color:[56,189,248]  },
+    ];
+    let y = 28;
+    const kpiW = (W - 28 - (kpis.length-1)*3) / kpis.length;
+    kpis.forEach((k,i) => {
+      const x = 14 + i*(kpiW+3);
+      doc.setFillColor(...k.color);
+      doc.roundedRect(x, y, kpiW, 16, 2, 2, 'F');
+      doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+      doc.text(k.value, x+kpiW/2, y+7, {align:'center'});
+      doc.setFontSize(5.5); doc.setFont('helvetica','normal');
+      doc.text(k.label, x+kpiW/2, y+12.5, {align:'center'});
+    });
+    y += 22;
+
+    // ── Tabela ──
     const head = [[
       ...(haAcct?['Conta']:[]),
-      'Data','Tipo','Legenda',
-      'Alcance','Curtidas','Coment.','Saves','Plays',
-      'Engaj.','% Engaj.',
+      'Data','Tipo','Legenda','Alcance','Curtidas','Coment.','Saves','Plays','Engaj.','% Engaj.',
     ]];
     const body = rows.map(r => [
       ...(haAcct?[`@${r.accountHandle}`]:[]),
@@ -573,18 +605,37 @@ async function exportPDF() {
       num(r.engagement), pct(r.engagementRate),
     ]);
 
-    const colCount = head[0].length;
-    const colW = haAcct
-      ? { 0:20, 1:18, 2:14, 3:46, 4:16, 5:16, 6:14, 7:14, 8:12, 9:12, 10:14, 11:14 }
-      : { 0:18, 1:14, 2:50, 3:16, 4:16, 5:14, 6:14, 7:12, 8:12, 9:14, 10:14 };
-
     doc.autoTable({
-      head, body, startY:28,
-      styles:{ fontSize:7, cellPadding:2, overflow:'linebreak' },
-      headStyles:{ fillColor:[30,30,30], textColor:255, fontStyle:'bold' },
-      alternateRowStyles:{ fillColor:[245,245,245] },
-      columnStyles: colW,
+      head, body, startY: y,
+      styles: { fontSize:7, cellPadding:2.5, overflow:'linebreak' },
+      headStyles: { fillColor:[36,35,98], textColor:255, fontStyle:'bold', fontSize:6.5 },
+      alternateRowStyles: { fillColor:[248,247,244] },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+          const colIdx = data.column.index - (haAcct?1:0);
+          // Colorir engajamento
+          if (colIdx === 9) {
+            const val = parseFloat(String(data.cell.raw).replace('%','').replace(',','.'));
+            if (!isNaN(val)) {
+              data.cell.styles.textColor = val >= 3 ? [34,197,94] : val >= 1 ? [212,168,67] : [239,68,68];
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        }
+      },
     });
+
+    // ── Footer ──
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i=1;i<=pageCount;i++) {
+      doc.setPage(i);
+      const pH = doc.internal.pageSize.getHeight();
+      doc.setFillColor(36,35,98);
+      doc.rect(0, pH-7, W, 7, 'F');
+      doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
+      doc.text('PRIMETOUR — Performance Redes Sociais', 14, pH-2.5);
+      doc.text(`Página ${i}/${pageCount}`, W-14, pH-2.5, {align:'right'});
+    }
 
     doc.save(`primetour_instagram_${new Date().toISOString().slice(0,10)}.pdf`);
     toast.success(`PDF gerado com ${rows.length} posts.`);

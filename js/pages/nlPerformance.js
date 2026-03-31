@@ -597,101 +597,102 @@ async function exportPDF() {
   const btn = document.getElementById('nl-export-pdf');
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
   try {
-    // Load jsPDF + AutoTable
     if (!window.jspdf) {
-      await new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src    = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-        s.onload = res; s.onerror = rej;
-        document.head.appendChild(s);
-      });
-      await new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src    = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js';
-        s.onload = res; s.onerror = rej;
-        document.head.appendChild(s);
-      });
+      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
+      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
     }
 
-    const rows  = getExportRows();
-    const hasBu = !filterBu;
+    const rows   = getExportRows();
+    const visible = rows.filter(r => !hiddenRows.has(r.jobId));
+    const hasBu  = !filterBu;
     const { jsPDF } = window.jspdf;
-    const doc   = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+    const W   = doc.internal.pageSize.getWidth();
+    const bu  = filterBu ? (BUS.find(b=>b.id===filterBu)?.name||filterBu) : 'Todas as unidades';
+    const date = new Date().toLocaleDateString('pt-BR');
 
-    // Title
-    doc.setFontSize(13);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Performance de Newsletters — PRIMETOUR', 14, 16);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(120);
-    const bu    = filterBu ? (BUS.find(b => b.id === filterBu)?.name || filterBu) : 'Todas as unidades';
-    const date  = new Date().toLocaleDateString('pt-BR');
-    doc.text(`${bu}  ·  Exportado em ${date}  ·  ${rows.length} disparos`, 14, 22);
-    doc.setTextColor(0);
+    // ── Header ──
+    doc.setFillColor(212,168,67);
+    doc.rect(0, 0, W, 3, 'F');
+    doc.setFillColor(36,35,98);
+    doc.rect(0, 3, W, 20, 'F');
+    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+    doc.text('PRIMETOUR', 14, 14);
+    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(212,168,67);
+    doc.text('Performance de Newsletters', 14, 19);
+    doc.setTextColor(200,200,200);
+    doc.text(`${bu}  ·  ${date}  ·  ${rows.length} disparos`, W-14, 19, {align:'right'});
 
+    // ── KPIs ──
+    const avg = key => { const vals=visible.map(r=>r[key]).filter(v=>v!=null&&!isNaN(v)); return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0; };
+    const sum = key => visible.reduce((a,r) => a+(Number(r[key])||0), 0);
+    const kpis = [
+      { label:'Disparos',       value:String(visible.length), color:[56,189,248]  },
+      { label:'Enviados',       value:sum('totalSent').toLocaleString('pt-BR'), color:[167,139,250] },
+      { label:'Tx. Abertura',   value:pct(avg('openRate')),   color:[34,197,94]   },
+      { label:'Tx. Cliques',    value:pct(avg('clickRate')),  color:[212,168,67]  },
+      { label:'Tx. Entrega',    value:pct(avg('deliveryRate')),color:[56,189,248] },
+    ];
+    let y = 28;
+    const kpiW = (W - 28 - (kpis.length-1)*4) / kpis.length;
+    kpis.forEach((k,i) => {
+      const x = 14 + i*(kpiW+4);
+      doc.setFillColor(...k.color);
+      doc.roundedRect(x, y, kpiW, 16, 2, 2, 'F');
+      doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+      doc.text(k.value, x+kpiW/2, y+7, {align:'center'});
+      doc.setFontSize(6); doc.setFont('helvetica','normal');
+      doc.text(k.label, x+kpiW/2, y+12.5, {align:'center'});
+    });
+    y += 22;
+
+    // ── Tabela ──
     const head = [[
       ...(hasBu ? ['Unidade'] : []),
-      'Data', 'Nome', 'Assunto',
-      'Enviados', 'Entrega',
-      'Hard', 'Soft', 'Block',
-      'Abertura', '% Abertura',
-      'Cliques', '% Cliques',
-      'Opt-out',
+      'Data','Nome','Assunto','Enviados','Entrega',
+      'Hard','Soft','Block','Abertura','% Ab.','Cliques','% Cl.','Opt-out',
     ]];
-
     const body = rows.map(r => [
       ...(hasBu ? [r.virtualBuName] : []),
-      fmt(r.sentDate),
-      (r.name || '').slice(0, 32),
-      (r.subject || '').slice(0, 40),
+      fmt(r.sentDate), (r.name||'').slice(0,32), (r.subject||'').slice(0,40),
       num(r.totalSent), pct(r.deliveryRate),
       num(r.hardBounce), num(r.softBounce), num(r.blockBounce),
-      num(r.openUnique), pct(r.openRate),
-      num(r.clickUnique), pct(r.clickRate),
-      num(r.optOut),
+      num(r.openUnique), pct(r.openRate), num(r.clickUnique), pct(r.clickRate), num(r.optOut),
     ]);
 
     doc.autoTable({
-      head, body,
-      startY:   28,
-      styles:   { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-      headStyles: { fillColor: [30, 30, 30], textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [245, 245, 245] },
-      columnStyles: hasBu ? {
-        0: { cellWidth: 20 },   // Unidade
-        1: { cellWidth: 18 },   // Data
-        2: { cellWidth: 38 },   // Nome
-        3: { cellWidth: 44 },   // Assunto
-        4: { cellWidth: 16 },   // Enviados
-        5: { cellWidth: 14 },   // Entrega
-        6: { cellWidth: 12 },   // Hard
-        7: { cellWidth: 12 },   // Soft
-        8: { cellWidth: 12 },   // Block
-        9: { cellWidth: 14 },   // Ab.
-        10:{ cellWidth: 13 },   // Taxa Ab.
-        11:{ cellWidth: 14 },   // Cliques
-        12:{ cellWidth: 13 },   // Taxa Cl.
-        13:{ cellWidth: 12 },   // Opt-out
-      } : {
-        0: { cellWidth: 18 },   // Data
-        1: { cellWidth: 42 },   // Nome
-        2: { cellWidth: 52 },   // Assunto
-        3: { cellWidth: 16 },   // Enviados
-        4: { cellWidth: 14 },   // Entrega
-        5: { cellWidth: 12 },   // Hard
-        6: { cellWidth: 12 },   // Soft
-        7: { cellWidth: 12 },   // Block
-        8: { cellWidth: 14 },   // Ab.
-        9: { cellWidth: 13 },   // Taxa Ab.
-        10:{ cellWidth: 14 },   // Cliques
-        11:{ cellWidth: 13 },   // Taxa Cl.
-        12:{ cellWidth: 12 },   // Opt-out
+      head, body, startY: y,
+      styles: { fontSize:7, cellPadding:2.5, overflow:'linebreak' },
+      headStyles: { fillColor:[36,35,98], textColor:255, fontStyle:'bold', fontSize:6.5 },
+      alternateRowStyles: { fillColor:[248,247,244] },
+      didParseCell: (data) => {
+        // Colorir taxas
+        if (data.section === 'body') {
+          const colIdx = data.column.index - (hasBu?1:0);
+          if ([5,9,10].includes(colIdx)) {
+            const val = parseFloat(String(data.cell.raw).replace('%','').replace(',','.'));
+            if (!isNaN(val)) {
+              data.cell.styles.textColor = val >= 20 ? [34,197,94] : val >= 10 ? [212,168,67] : [239,68,68];
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        }
       },
     });
 
-    const dateStr = new Date().toISOString().slice(0,10);
-    doc.save(`primetour_newsletters_${dateStr}.pdf`);
+    // ── Footer ──
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i=1;i<=pageCount;i++) {
+      doc.setPage(i);
+      const pH = doc.internal.pageSize.getHeight();
+      doc.setFillColor(36,35,98);
+      doc.rect(0, pH-7, W, 7, 'F');
+      doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
+      doc.text('PRIMETOUR — Performance de Newsletters', 14, pH-2.5);
+      doc.text(`Página ${i}/${pageCount}`, W-14, pH-2.5, {align:'right'});
+    }
+
+    doc.save(`primetour_newsletters_${new Date().toISOString().slice(0,10)}.pdf`);
     toast.success(`PDF gerado com ${rows.length} disparos.`);
   } catch(e) {
     toast.error('Erro ao gerar PDF: ' + e.message);

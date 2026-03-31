@@ -694,57 +694,140 @@ async function exportDashPdf() {
   }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth();
   const { start, end } = getPeriodDates(activePeriod());
   const fmtD = d => new Intl.DateTimeFormat('pt-BR').format(d);
 
-  doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
-  doc.text('PRIMETOUR — Relatório de Atividade', 14, 18);
-  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
-  doc.text(`Período: ${fmtD(start)} a ${fmtD(end)} · Gerado em ${fmtD(new Date())}`, 14, 25);
+  // ── Header com barra dourada ──
+  doc.setFillColor(212, 168, 67);
+  doc.rect(0, 0, W, 3, 'F');
+  doc.setFillColor(36, 35, 98);
+  doc.rect(0, 3, W, 22, 'F');
+  doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+  doc.text('PRIMETOUR', 14, 15);
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(212,168,67);
+  doc.text('Relatório de Produtividade', 14, 21);
+  doc.setTextColor(200,200,200);
+  doc.text(`${fmtD(start)} a ${fmtD(end)}  ·  Gerado em ${fmtD(new Date())}`, W - 14, 21, { align:'right' });
 
-  // Metrics summary
-  doc.autoTable({
-    startY: 32,
-    head: [['Métrica', 'Valor']],
-    body: [
-      ['Total de tarefas', metrics.total],
-      ['Em andamento', metrics.inProgress],
-      ['Concluídas no período', metrics.doneInPeriod],
-      ['Em atraso', metrics.overdue],
-      ['Taxa de conclusão', `${metrics.completionRate}%`],
-      ['Projetos ativos', metrics.activeProjects],
-    ],
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [248,247,244] },
-    columnStyles: { 0: { cellWidth: 60 }, 1: { cellWidth: 30 } },
+  // ── KPI Cards ──
+  let y = 32;
+  const kpis = [
+    { label:'Total de tarefas', value: String(metrics.total),        color:[56,189,248] },
+    { label:'Concluídas',       value: String(metrics.doneInPeriod), color:[34,197,94]  },
+    { label:'Em andamento',     value: String(metrics.inProgress),   color:[212,168,67] },
+    { label:'Em atraso',        value: String(metrics.overdue),      color:[239,68,68]  },
+    { label:'No prazo',         value: `${metrics.onTimeRate}%`,     color:[34,197,94]  },
+  ];
+  const kpiW = (W - 28 - (kpis.length-1)*4) / kpis.length;
+  kpis.forEach((k, i) => {
+    const x = 14 + i * (kpiW + 4);
+    doc.setFillColor(...k.color);
+    doc.roundedRect(x, y, kpiW, 18, 2, 2, 'F');
+    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+    doc.text(k.value, x + kpiW/2, y + 8, { align:'center' });
+    doc.setFontSize(6.5); doc.setFont('helvetica','normal');
+    doc.text(k.label, x + kpiW/2, y + 14, { align:'center' });
+  });
+  y += 26;
+
+  // ── Capturar gráficos do canvas ──
+  const chartIds = ['velocity-chart','status-donut','priority-donut','daily-chart'];
+  const charts = [];
+  for (const cid of chartIds) {
+    const canvas = document.getElementById(cid);
+    if (canvas) {
+      try { charts.push({ id: cid, img: canvas.toDataURL('image/png', 0.92) }); } catch(e) {}
+    }
+  }
+
+  if (charts.length >= 2) {
+    // Velocity chart largo
+    const vc = charts.find(c => c.id === 'velocity-chart');
+    if (vc) {
+      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
+      doc.text('Tendência de tarefas', 14, y + 4);
+      doc.addImage(vc.img, 'PNG', 14, y + 6, W - 28, 50);
+      y += 60;
+    }
+
+    // Donuts lado a lado
+    const sd = charts.find(c => c.id === 'status-donut');
+    const pd = charts.find(c => c.id === 'priority-donut');
+    if (sd || pd) {
+      const halfW = (W - 32) / 2;
+      if (sd) {
+        doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
+        doc.text('Por Status', 14, y + 4);
+        doc.addImage(sd.img, 'PNG', 14, y + 6, halfW, 45);
+      }
+      if (pd) {
+        doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
+        doc.text('Por Prioridade', 18 + halfW, y + 4);
+        doc.addImage(pd.img, 'PNG', 18 + halfW, y + 6, halfW, 45);
+      }
+      y += 55;
+    }
+  }
+
+  // ── Distribuição por status (barras desenhadas) ──
+  if (y > 230) { doc.addPage(); y = 14; }
+  doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
+  doc.text('Distribuição por Status', 14, y + 4);
+  y += 8;
+  const statusDist = getStatusDistribution(metrics.tasks).filter(s => s.count > 0);
+  const maxCount   = Math.max(...statusDist.map(s => s.count), 1);
+  statusDist.forEach(s => {
+    const barW = Math.max(2, ((W - 80) * s.count) / maxCount);
+    const hex  = s.color || '#6B7280';
+    const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+    doc.setFillColor(r, g, b);
+    doc.roundedRect(50, y, barW, 5, 1, 1, 'F');
+    doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
+    doc.text(s.label, 14, y + 4);
+    doc.setFont('helvetica','bold'); doc.setTextColor(r, g, b);
+    doc.text(String(s.count), 52 + barW, y + 4);
+    y += 8;
   });
 
-  // Status distribution
-  let y = doc.lastAutoTable.finalY + 10;
-  doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
-  doc.text('Distribuição por Status', 14, y);
+  // ── Ranking da equipe ──
+  y += 4;
+  if (y > 230) { doc.addPage(); y = 14; }
+  doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
+  doc.text('Ranking da Equipe', 14, y + 4);
+  const members = getTasksByMember(metrics.tasks);
   doc.autoTable({
-    startY: y + 4,
-    head: [['Status', 'Quantidade']],
-    body: getStatusDistribution(metrics.tasks).filter(s=>s.count>0).map(s => [s.label, s.count]),
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold' },
+    startY: y + 8,
+    head: [['#','Membro','Concluídas','Total','Taxa']],
+    body: members.map((u,i) => [i+1, u.name, u.done, u.total, `${u.rate}%`]),
+    styles: { fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold', fontSize: 7 },
     alternateRowStyles: { fillColor: [248,247,244] },
+    columnStyles: { 0:{cellWidth:8,halign:'center'}, 4:{halign:'center'} },
+    didDrawCell: (data) => {
+      // Barra de progresso na coluna "Taxa"
+      if (data.section === 'body' && data.column.index === 4) {
+        const rate = members[data.row.index]?.rate || 0;
+        const barX = data.cell.x + 1;
+        const barY = data.cell.y + data.cell.height - 2.5;
+        const barMaxW = data.cell.width - 2;
+        doc.setFillColor(34,197,94);
+        doc.rect(barX, barY, barMaxW * rate / 100, 1.5, 'F');
+      }
+    },
   });
 
-  // Team ranking
-  y = doc.lastAutoTable.finalY + 10;
-  doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
-  doc.text('Ranking da Equipe', 14, y);
-  doc.autoTable({
-    startY: y + 4,
-    head: [['Membro', 'Concluídas', 'Total', 'Taxa (%)']],
-    body: getTasksByMember(metrics.tasks).map(u => [u.name, u.done, u.total, `${u.rate}%`]),
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [248,247,244] },
-  });
+  // ── Footer ──
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    const pH = doc.internal.pageSize.getHeight();
+    doc.setFillColor(36,35,98);
+    doc.rect(0, pH - 8, W, 8, 'F');
+    doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
+    doc.text('PRIMETOUR — Sistema de Gestão de Tarefas', 14, pH - 3);
+    doc.text(`Página ${i} de ${pageCount}`, W - 14, pH - 3, { align:'right' });
+  }
 
   doc.save(`primetour_dashboard_${new Date().toISOString().slice(0,10)}.pdf`);
   toast.success('PDF exportado!');
