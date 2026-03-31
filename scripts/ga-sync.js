@@ -144,176 +144,181 @@ async function syncDaily(propertyId) {
   return n;
 }
 
+/* ─── Periods for breakdown syncs ─────────────────────────── */
+const BREAKDOWN_PERIODS = [
+  { days: 7,   key: '7d'  },
+  { days: 14,  key: '14d' },
+  { days: 28,  key: '28d' },
+  { days: 30,  key: '30d' },
+  { days: 90,  key: '90d' },
+];
+
 /* ─── Sync: Top pages ─────────────────────────────────────── */
 async function syncPages(propertyId) {
   console.log('  📄 Sync páginas...');
-
-  const [response] = await analyticsClient.runReport({
-    property: propertyId,
-    dateRanges: [{ startDate: dateStr(SYNC_DAYS), endDate: 'today' }],
-    dimensions: [
-      { name: 'pageTitle' },
-      { name: 'pagePath' },
-    ],
-    metrics: [
-      { name: 'screenPageViews' },
-      { name: 'activeUsers' },
-      { name: 'averageSessionDuration' },
-      { name: 'bounceRate' },
-      { name: 'engagementRate' },
-    ],
-    orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
-    limit: 200,
-  });
-
   const propNum = propertyId.replace('properties/', '');
-  const docs = (response.rows || []).map((row, i) => {
-    const d = row.dimensionValues;
-    const m = row.metricValues;
-    const slug = (d[1].value || 'unknown').replace(/[^a-z0-9\-]/gi, '_').slice(0, 80);
-    return {
-      id:                `${propNum}_page_${i}_${slug}`,
-      propertyId:        propNum,
-      pageTitle:         d[0].value || '(sem título)',
-      pagePath:          d[1].value || '/',
-      screenPageViews:   parseInt(m[0].value) || 0,
-      activeUsers:       parseInt(m[1].value) || 0,
-      avgSessionDuration:parseFloat(m[2].value) || 0,
-      bounceRate:        parseFloat(m[3].value) || 0,
-      engagementRate:    parseFloat(m[4].value) || 0,
-      syncedAt:          admin.firestore.FieldValue.serverTimestamp(),
-    };
-  });
+  let total = 0;
 
-  const n = await batchWrite('ga_pages', docs);
-  console.log(`    ✅ ${n} páginas sincronizadas`);
-  return n;
+  for (const p of BREAKDOWN_PERIODS) {
+    try {
+      const [response] = await analyticsClient.runReport({
+        property: propertyId,
+        dateRanges: [{ startDate: dateStr(p.days), endDate: 'today' }],
+        dimensions: [{ name: 'pageTitle' }, { name: 'pagePath' }],
+        metrics: [
+          { name: 'screenPageViews' }, { name: 'activeUsers' },
+          { name: 'averageSessionDuration' }, { name: 'bounceRate' }, { name: 'engagementRate' },
+        ],
+        orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+        limit: 100,
+      });
+
+      const docs = (response.rows || []).map((row, i) => {
+        const d = row.dimensionValues, m = row.metricValues;
+        const slug = (d[1].value || 'unknown').replace(/[^a-z0-9\-]/gi, '_').slice(0, 60);
+        return {
+          id:                `${propNum}_${p.key}_page_${i}_${slug}`,
+          propertyId:        propNum,
+          period:            p.key,
+          pageTitle:         d[0].value || '(sem título)',
+          pagePath:          d[1].value || '/',
+          screenPageViews:   parseInt(m[0].value) || 0,
+          activeUsers:       parseInt(m[1].value) || 0,
+          avgSessionDuration:parseFloat(m[2].value) || 0,
+          bounceRate:        parseFloat(m[3].value) || 0,
+          engagementRate:    parseFloat(m[4].value) || 0,
+          syncedAt:          admin.firestore.FieldValue.serverTimestamp(),
+        };
+      });
+      total += await batchWrite('ga_pages', docs);
+    } catch(e) { console.warn(`    ⚠ Páginas ${p.key}: ${e.message}`); }
+  }
+  console.log(`    ✅ ${total} páginas sincronizadas`);
+  return total;
 }
 
 /* ─── Sync: Sources / Medium ──────────────────────────────── */
 async function syncSources(propertyId) {
   console.log('  🔗 Sync origens...');
-
-  const [response] = await analyticsClient.runReport({
-    property: propertyId,
-    dateRanges: [{ startDate: dateStr(SYNC_DAYS), endDate: 'today' }],
-    dimensions: [
-      { name: 'sessionSource' },
-      { name: 'sessionMedium' },
-    ],
-    metrics: [
-      { name: 'sessions' },
-      { name: 'activeUsers' },
-      { name: 'newUsers' },
-      { name: 'bounceRate' },
-      { name: 'engagementRate' },
-      { name: 'conversions' },
-    ],
-    orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
-    limit: 100,
-  });
-
   const propNum = propertyId.replace('properties/', '');
-  const docs = (response.rows || []).map((row, i) => {
-    const d = row.dimensionValues;
-    const m = row.metricValues;
-    return {
-      id:             `${propNum}_src_${i}`,
-      propertyId:     propNum,
-      source:         d[0].value || '(direct)',
-      medium:         d[1].value || '(none)',
-      sessions:       parseInt(m[0].value) || 0,
-      activeUsers:    parseInt(m[1].value) || 0,
-      newUsers:       parseInt(m[2].value) || 0,
-      bounceRate:     parseFloat(m[3].value) || 0,
-      engagementRate: parseFloat(m[4].value) || 0,
-      conversions:    parseInt(m[5].value) || 0,
-      syncedAt:       admin.firestore.FieldValue.serverTimestamp(),
-    };
-  });
+  let total = 0;
 
-  const n = await batchWrite('ga_sources', docs);
-  console.log(`    ✅ ${n} origens sincronizadas`);
-  return n;
+  for (const p of BREAKDOWN_PERIODS) {
+    try {
+      const [response] = await analyticsClient.runReport({
+        property: propertyId,
+        dateRanges: [{ startDate: dateStr(p.days), endDate: 'today' }],
+        dimensions: [{ name: 'sessionSource' }, { name: 'sessionMedium' }],
+        metrics: [
+          { name: 'sessions' }, { name: 'activeUsers' }, { name: 'newUsers' },
+          { name: 'bounceRate' }, { name: 'engagementRate' }, { name: 'conversions' },
+        ],
+        orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+        limit: 50,
+      });
+
+      const docs = (response.rows || []).map((row, i) => {
+        const d = row.dimensionValues, m = row.metricValues;
+        return {
+          id:             `${propNum}_${p.key}_src_${i}`,
+          propertyId:     propNum,
+          period:         p.key,
+          source:         d[0].value || '(direct)',
+          medium:         d[1].value || '(none)',
+          sessions:       parseInt(m[0].value) || 0,
+          activeUsers:    parseInt(m[1].value) || 0,
+          newUsers:       parseInt(m[2].value) || 0,
+          bounceRate:     parseFloat(m[3].value) || 0,
+          engagementRate: parseFloat(m[4].value) || 0,
+          conversions:    parseInt(m[5].value) || 0,
+          syncedAt:       admin.firestore.FieldValue.serverTimestamp(),
+        };
+      });
+      total += await batchWrite('ga_sources', docs);
+    } catch(e) { console.warn(`    ⚠ Origens ${p.key}: ${e.message}`); }
+  }
+  console.log(`    ✅ ${total} origens sincronizadas`);
+  return total;
 }
 
 /* ─── Sync: Devices ───────────────────────────────────────── */
 async function syncDevices(propertyId) {
   console.log('  📱 Sync dispositivos...');
-
-  const [response] = await analyticsClient.runReport({
-    property: propertyId,
-    dateRanges: [{ startDate: dateStr(SYNC_DAYS), endDate: 'today' }],
-    dimensions: [{ name: 'deviceCategory' }],
-    metrics: [
-      { name: 'sessions' },
-      { name: 'activeUsers' },
-      { name: 'bounceRate' },
-      { name: 'averageSessionDuration' },
-    ],
-    orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
-  });
-
   const propNum = propertyId.replace('properties/', '');
-  const docs = (response.rows || []).map(row => {
-    const d = row.dimensionValues;
-    const m = row.metricValues;
-    return {
-      id:                 `${propNum}_dev_${d[0].value}`,
-      propertyId:         propNum,
-      deviceCategory:     d[0].value || 'unknown',
-      sessions:           parseInt(m[0].value) || 0,
-      activeUsers:        parseInt(m[1].value) || 0,
-      bounceRate:         parseFloat(m[2].value) || 0,
-      avgSessionDuration: parseFloat(m[3].value) || 0,
-      syncedAt:           admin.firestore.FieldValue.serverTimestamp(),
-    };
-  });
+  let total = 0;
 
-  const n = await batchWrite('ga_devices', docs);
-  console.log(`    ✅ ${n} dispositivos sincronizados`);
-  return n;
+  for (const p of BREAKDOWN_PERIODS) {
+    try {
+      const [response] = await analyticsClient.runReport({
+        property: propertyId,
+        dateRanges: [{ startDate: dateStr(p.days), endDate: 'today' }],
+        dimensions: [{ name: 'deviceCategory' }],
+        metrics: [
+          { name: 'sessions' }, { name: 'activeUsers' },
+          { name: 'bounceRate' }, { name: 'averageSessionDuration' },
+        ],
+        orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+      });
+
+      const docs = (response.rows || []).map(row => {
+        const d = row.dimensionValues, m = row.metricValues;
+        return {
+          id:                 `${propNum}_${p.key}_dev_${d[0].value}`,
+          propertyId:         propNum,
+          period:             p.key,
+          deviceCategory:     d[0].value || 'unknown',
+          sessions:           parseInt(m[0].value) || 0,
+          activeUsers:        parseInt(m[1].value) || 0,
+          bounceRate:         parseFloat(m[2].value) || 0,
+          avgSessionDuration: parseFloat(m[3].value) || 0,
+          syncedAt:           admin.firestore.FieldValue.serverTimestamp(),
+        };
+      });
+      total += await batchWrite('ga_devices', docs);
+    } catch(e) { console.warn(`    ⚠ Dispositivos ${p.key}: ${e.message}`); }
+  }
+  console.log(`    ✅ ${total} dispositivos sincronizados`);
+  return total;
 }
 
 /* ─── Sync: Countries / Cities ────────────────────────────── */
 async function syncCountries(propertyId) {
   console.log('  🌍 Sync países...');
-
-  const [response] = await analyticsClient.runReport({
-    property: propertyId,
-    dateRanges: [{ startDate: dateStr(SYNC_DAYS), endDate: 'today' }],
-    dimensions: [
-      { name: 'country' },
-      { name: 'city' },
-    ],
-    metrics: [
-      { name: 'sessions' },
-      { name: 'activeUsers' },
-      { name: 'engagementRate' },
-    ],
-    orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
-    limit: 100,
-  });
-
   const propNum = propertyId.replace('properties/', '');
-  const docs = (response.rows || []).map((row, i) => {
-    const d = row.dimensionValues;
-    const m = row.metricValues;
-    return {
-      id:              `${propNum}_geo_${i}`,
-      propertyId:      propNum,
-      country:         d[0].value || '(unknown)',
-      city:            d[1].value || '(unknown)',
-      sessions:        parseInt(m[0].value) || 0,
-      activeUsers:     parseInt(m[1].value) || 0,
-      engagementRate:  parseFloat(m[2].value) || 0,
-      syncedAt:        admin.firestore.FieldValue.serverTimestamp(),
-    };
-  });
+  let total = 0;
 
-  const n = await batchWrite('ga_countries', docs);
-  console.log(`    ✅ ${n} registros geográficos sincronizados`);
-  return n;
+  for (const p of BREAKDOWN_PERIODS) {
+    try {
+      const [response] = await analyticsClient.runReport({
+        property: propertyId,
+        dateRanges: [{ startDate: dateStr(p.days), endDate: 'today' }],
+        dimensions: [{ name: 'country' }, { name: 'city' }],
+        metrics: [
+          { name: 'sessions' }, { name: 'activeUsers' }, { name: 'engagementRate' },
+        ],
+        orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+        limit: 50,
+      });
+
+      const docs = (response.rows || []).map((row, i) => {
+        const d = row.dimensionValues, m = row.metricValues;
+        return {
+          id:              `${propNum}_${p.key}_geo_${i}`,
+          propertyId:      propNum,
+          period:          p.key,
+          country:         d[0].value || '(unknown)',
+          city:            d[1].value || '(unknown)',
+          sessions:        parseInt(m[0].value) || 0,
+          activeUsers:     parseInt(m[1].value) || 0,
+          engagementRate:  parseFloat(m[2].value) || 0,
+          syncedAt:        admin.firestore.FieldValue.serverTimestamp(),
+        };
+      });
+      total += await batchWrite('ga_countries', docs);
+    } catch(e) { console.warn(`    ⚠ Países ${p.key}: ${e.message}`); }
+  }
+  console.log(`    ✅ ${total} registros geográficos sincronizados`);
+  return total;
 }
 
 /* ─── Sync: Period totals (deduplicated) ──────────────────── */
