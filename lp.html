@@ -176,9 +176,9 @@ const esc = s => String(s||'').replace(/[&<>"']/g, c =>
     updateDoc(snap.docs[0].ref, { views: increment(1) }).catch(()=>{});
   } catch(e) { showError('Erro de conexão', 'Não foi possível carregar a página.'); return; }
 
-  if (page.status !== 'published') {
-    showError('Página não publicada', 'Esta página ainda não está disponível.'); return;
-  }
+  // Allow preview for drafts (accessed from admin), block only if explicitly unpublished externally
+  // Draft pages show a banner indicating it's a preview
+  const isDraft = page.status !== 'published';
 
   // Apply colors
   const primary   = page.colors?.primary   || '#D4AF37';
@@ -191,7 +191,12 @@ const esc = s => String(s||'').replace(/[&<>"']/g, c =>
 
   // Render sections
   const app = document.getElementById('app');
-  app.innerHTML = (page.sections || []).map(sec => renderSection(sec)).join('');
+  const draftBanner = isDraft ? `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;
+    background:#F97316;color:#fff;text-align:center;padding:8px 16px;font-size:0.8125rem;
+    font-weight:600;letter-spacing:.05em;">
+    PREVIEW — Esta página ainda não foi publicada
+  </div>` : '';
+  app.innerHTML = draftBanner + (page.sections || []).map(sec => renderSection(sec)).join('');
 
   // Wire countdown timers
   document.querySelectorAll('[data-countdown]').forEach(el => {
