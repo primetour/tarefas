@@ -290,7 +290,8 @@ export class Header {
       const city     = (t.city || '').toLowerCase();
       const country  = (t.country || '').toLowerCase();
       const continent= (t.continent || '').toLowerCase();
-      const segments = (t.segments || []).join(' ').toLowerCase();
+      const segRaw   = t.segments;
+      const segments = (Array.isArray(segRaw) ? segRaw : typeof segRaw === 'object' && segRaw ? Object.keys(segRaw) : []).join(' ').toLowerCase();
       return title.includes(lower) || city.includes(lower) || country.includes(lower)
         || continent.includes(lower) || segments.includes(lower);
     }).slice(0, 6);
