@@ -10,6 +10,7 @@ import { router }           from './router.js';
 import { toast }            from './components/toast.js';
 import { Sidebar }          from './components/sidebar.js';
 import { Header }           from './components/header.js';
+import { subscribeNotifications, cleanupExpired } from './services/notifications.js';
 
 import { renderLogin }       from './pages/login.js';
 import { renderDashboard }   from './pages/dashboard.js';
@@ -55,6 +56,7 @@ import { renderArtsEditor }              from './pages/artsEditor.js';
 // ─── Instâncias globais ───────────────────────────────────
 let sidebar = null;
 let header  = null;
+let _unsubNotifications = null;
 
 // ─── Init ─────────────────────────────────────────────────
 async function init() {
@@ -188,6 +190,17 @@ function mountShell(root) {
       userName: profile.name,
       email:    profile.email
     }).catch(() => {});
+  }
+
+  // Start real-time notification listener
+  const currentUser = store.get('currentUser');
+  if (currentUser?.uid) {
+    _unsubNotifications = subscribeNotifications(currentUser.uid, (notifications) => {
+      store.set('notifications', notifications);
+      store.set('unreadCount', notifications.filter(n => !n.read).length);
+    });
+    // Cleanup expired notifications (runs once on login)
+    cleanupExpired(currentUser.uid).catch(() => {});
   }
 }
 
@@ -338,6 +351,13 @@ function destroyShell() {
   header?.destroy();
   sidebar = null;
   header  = null;
+  // Cleanup notification listener
+  if (_unsubNotifications) {
+    _unsubNotifications();
+    _unsubNotifications = null;
+  }
+  store.set('notifications', []);
+  store.set('unreadCount', 0);
 }
 
 // ─── Loading screen ───────────────────────────────────────

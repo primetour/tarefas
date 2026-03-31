@@ -37,6 +37,10 @@ class Store {
       userSector:     null,   // setor do usuário logado
       visibleSectors: [],     // setores visíveis (Head pode ter múltiplos)
 
+      // Notificações
+      notifications: [],
+      unreadCount:   0,
+
       // UI
       globalLoading: false,
     };
