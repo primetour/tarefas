@@ -41,7 +41,16 @@ export async function renderPortalDashboard(container) {
     return;
   }
 
-  const users = (store.get('users') || []).filter(u => u.active !== false);
+  // Load users from Firestore if not in store yet
+  let users = (store.get('users') || []).filter(u => u.active !== false);
+  if (!users.length) {
+    try {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const allUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      store.set('users', allUsers);
+      users = allUsers.filter(u => u.active !== false);
+    } catch { /* ignore */ }
+  }
 
   container.innerHTML = `
     <div class="page-header">
