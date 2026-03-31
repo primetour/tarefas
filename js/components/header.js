@@ -7,6 +7,10 @@ import { store }   from '../store.js';
 import { signOut } from '../auth/auth.js';
 import { router }  from '../router.js';
 import { toast }   from './toast.js';
+import {
+  collection, getDocs, query, orderBy, limit, where,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { db } from '../firebase.js';
 
 const PAGE_TITLES = {
   dashboard:    { title: 'Dashboard',           icon: '⊞' },
@@ -167,8 +171,25 @@ export class Header {
 
     // Global search
     const searchInput = this.el.querySelector('#global-search-input');
+    let searchTimeout = null;
     searchInput?.addEventListener('input', (e) => {
-      this._handleSearch(e.target.value);
+      clearTimeout(searchTimeout);
+      const q = e.target.value.trim();
+      if (!q || q.length < 2) {
+        this._closeSearchResults();
+        return;
+      }
+      searchTimeout = setTimeout(() => this._handleSearch(q), 300);
+    });
+    searchInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        searchInput.value = '';
+        this._closeSearchResults();
+      }
+    });
+    // Close search results on outside click
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.header-search')) this._closeSearchResults();
     });
 
     // Subscribe to route changes
@@ -202,9 +223,184 @@ export class Header {
     }
   }
 
-  _handleSearch(query) {
-    // Será implementado na Etapa 2 com debounce e busca no Firestore
-    console.log('Search:', query);
+  async _handleSearch(q) {
+    const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const lower = q.toLowerCase();
+
+    // Remove existing results
+    this._closeSearchResults();
+
+    // Search locally first (tasks from store or Firestore)
+    let tasks = store.get('allTasks') || [];
+    let projects = store.get('projects') || [];
+    const users = store.get('users') || [];
+
+    // If no cached tasks, fetch from Firestore
+    if (!tasks.length) {
+      try {
+        const snap = await getDocs(query(collection(db, 'tasks'), orderBy('createdAt', 'desc'), limit(500)));
+        tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        store.set('allTasks', tasks);
+      } catch { /* ignore */ }
+    }
+    if (!projects.length) {
+      try {
+        const snap = await getDocs(collection(db, 'projects'));
+        projects = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        store.set('projects', projects);
+      } catch { /* ignore */ }
+    }
+
+    // Match tasks
+    const matchTasks = tasks.filter(t => {
+      const title = (t.title || '').toLowerCase();
+      const desc  = (t.description || '').toLowerCase();
+      const id    = (t.id || '').toLowerCase();
+      return title.includes(lower) || desc.includes(lower) || id.includes(lower);
+    }).slice(0, 8);
+
+    // Match projects
+    const matchProjects = projects.filter(p => {
+      return (p.name || '').toLowerCase().includes(lower)
+        || (p.description || '').toLowerCase().includes(lower);
+    }).slice(0, 4);
+
+    // Match users
+    const matchUsers = users.filter(u => {
+      return (u.name || '').toLowerCase().includes(lower)
+        || (u.email || '').toLowerCase().includes(lower);
+    }).slice(0, 4);
+
+    const total = matchTasks.length + matchProjects.length + matchUsers.length;
+    if (!total) {
+      this._showSearchResults(`
+        <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+          Nenhum resultado para "<strong>${esc(q)}</strong>"
+        </div>`);
+      return;
+    }
+
+    const STATUS_ICONS = {
+      todo:'🔵', in_progress:'🟡', review:'🟣', done:'🟢', backlog:'⚪', cancelled:'🔴', rework:'🟠'
+    };
+
+    let html = '';
+
+    if (matchTasks.length) {
+      html += `<div style="padding:6px 12px;font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.08em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+        Tarefas (${matchTasks.length})</div>`;
+      html += matchTasks.map(t => {
+        const assignee = users.find(u => (t.assignees||[]).includes(u.id));
+        return `<div class="search-result-item" data-type="task" data-id="${esc(t.id)}"
+          style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;
+          border-bottom:1px solid var(--border-subtle);transition:background .1s;"
+          onmouseover="this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background=''">
+          <span style="font-size:0.875rem;">${STATUS_ICONS[t.status]||'⚪'}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+              white-space:nowrap;">${esc(t.title)}</div>
+            ${assignee ? `<div style="font-size:0.6875rem;color:var(--text-muted);">${esc(assignee.name)}</div>` : ''}
+          </div>
+          ${t.priority ? `<span style="font-size:0.625rem;padding:2px 6px;border-radius:10px;
+            background:${t.priority==='urgent'?'#EF444420':t.priority==='high'?'#F9731620':'var(--bg-surface)'};
+            color:${t.priority==='urgent'?'#EF4444':t.priority==='high'?'#F97316':'var(--text-muted)'};
+            font-weight:600;text-transform:uppercase;">${t.priority}</span>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    if (matchProjects.length) {
+      html += `<div style="padding:6px 12px;font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.08em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+        Projetos (${matchProjects.length})</div>`;
+      html += matchProjects.map(p => `
+        <div class="search-result-item" data-type="project" data-id="${esc(p.id)}"
+          style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;
+          border-bottom:1px solid var(--border-subtle);transition:background .1s;"
+          onmouseover="this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background=''">
+          <span style="font-size:0.875rem;">${p.icon||'◈'}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.8125rem;font-weight:500;">${esc(p.name)}</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">${esc(p.status||'')}</div>
+          </div>
+        </div>`).join('');
+    }
+
+    if (matchUsers.length) {
+      html += `<div style="padding:6px 12px;font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.08em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+        Usuários (${matchUsers.length})</div>`;
+      html += matchUsers.map(u => `
+        <div class="search-result-item" data-type="user" data-id="${esc(u.id)}"
+          style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;
+          border-bottom:1px solid var(--border-subtle);transition:background .1s;"
+          onmouseover="this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background=''">
+          <div style="width:24px;height:24px;border-radius:50%;background:${u.avatarColor||'#6B7280'};
+            display:flex;align-items:center;justify-content:center;font-size:0.625rem;
+            color:white;font-weight:600;flex-shrink:0;">
+            ${(u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.8125rem;font-weight:500;">${esc(u.name)}</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">${esc(u.email||'')}</div>
+          </div>
+        </div>`).join('');
+    }
+
+    this._showSearchResults(html);
+  }
+
+  _showSearchResults(html) {
+    this._closeSearchResults();
+    const container = this.el.querySelector('.header-search');
+    if (!container) return;
+    const dropdown = document.createElement('div');
+    dropdown.className = 'search-results-dropdown';
+    dropdown.style.cssText = `position:absolute;top:100%;left:0;right:0;z-index:200;
+      background:var(--bg-card);border:1px solid var(--border-subtle);
+      border-radius:0 0 var(--radius-md) var(--radius-md);box-shadow:var(--shadow-lg);
+      max-height:420px;overflow-y:auto;`;
+    dropdown.innerHTML = html;
+
+    // Click handlers for results
+    dropdown.querySelectorAll('.search-result-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const type = item.dataset.type;
+        const id   = item.dataset.id;
+        this._closeSearchResults();
+        const input = this.el.querySelector('#global-search-input');
+        if (input) input.value = '';
+
+        if (type === 'task') {
+          // Navigate to tasks and open modal
+          router.navigate('tasks');
+          setTimeout(async () => {
+            try {
+              const { openTaskModal } = await import('./taskModal.js');
+              const allTasks = store.get('allTasks') || [];
+              const task = allTasks.find(t => t.id === id);
+              if (task) openTaskModal({ taskData: task, onSave: () => {} });
+            } catch {}
+          }, 300);
+        } else if (type === 'project') {
+          router.navigate('projects');
+        } else if (type === 'user') {
+          if (store.can('system_manage_users')) router.navigate('users');
+          else router.navigate('team');
+        }
+      });
+    });
+
+    container.style.position = 'relative';
+    container.appendChild(dropdown);
+  }
+
+  _closeSearchResults() {
+    document.querySelectorAll('.search-results-dropdown').forEach(el => el.remove());
   }
 
   update() {
