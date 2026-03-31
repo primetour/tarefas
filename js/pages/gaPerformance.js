@@ -72,6 +72,7 @@ let sortKey      = 'date';
 let sortDir      = -1;
 let hiddenRows   = new Set();
 let syncMeta     = null;
+let periodTotals = null;
 
 /* ─── Render page ─────────────────────────────────────────── */
 export async function renderGaPerformance(container) {
@@ -207,8 +208,9 @@ async function loadData() {
     cutoff.setDate(cutoff.getDate() - parseInt(filterDays));
 
     // Load all data collections in parallel
-    const [dailySnap, pagesSnap, sourcesSnap, devicesSnap, countriesSnap, metaSnap] = await Promise.all([
+    const [dailySnap, totalsSnap, pagesSnap, sourcesSnap, devicesSnap, countriesSnap, metaSnap] = await Promise.all([
       getDocs(query(collection(db, 'ga_daily'), orderBy('date', 'desc'), limit(500))),
+      getDocs(collection(db, 'ga_totals')),
       getDocs(query(collection(db, 'ga_pages'), orderBy('screenPageViews', 'desc'), limit(200))),
       getDocs(query(collection(db, 'ga_sources'), orderBy('sessions', 'desc'), limit(100))),
       getDocs(query(collection(db, 'ga_devices'), orderBy('sessions', 'desc'), limit(50))),
@@ -241,6 +243,13 @@ async function loadData() {
     allDevices   = filterByProp(devicesSnap.docs);
     allCountries = filterByProp(countriesSnap.docs);
 
+    // Period totals (deduplicated by GA4)
+    const allTotals = totalsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const periodKey = filterDays + 'd';
+    periodTotals = allTotals.find(t =>
+      t.period === periodKey && (!filterProp || t.propertyId === filterProp)
+    ) || null;
+
     // Sync status
     if (metaSnap?.exists?.()) {
       syncMeta = metaSnap.data();
@@ -272,32 +281,57 @@ function renderKpis() {
   if (!el) return;
   if (!allData.length) { el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text-muted);">Nenhum dado no período.</div>'; return; }
 
+  // Use period totals (deduplicated by GA4) when available, fallback to daily sums
+  const pt = periodTotals;
   const sum = key => allData.reduce((a,r) => a + (Number(r[key])||0), 0);
   const avg = key => {
     const vals = allData.map(r => r[key]).filter(v => v != null && !isNaN(v));
     return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : 0;
   };
 
-  const totalUsers     = sum('activeUsers');
-  const totalSessions  = sum('sessions');
-  const totalPageViews = sum('screenPageViews');
-  const avgBounce      = avg('bounceRate');
-  const avgDuration    = avg('avgSessionDuration');
-  const avgEngagement  = avg('engagementRate');
+  const totalUsers     = pt?.activeUsers     ?? sum('activeUsers');
+  const totalNewUsers  = pt?.newUsers         ?? sum('newUsers');
+  const totalSessions  = pt?.sessions         ?? sum('sessions');
+  const totalPageViews = pt?.screenPageViews  ?? sum('screenPageViews');
+  const bounceRate     = pt?.bounceRate        ?? avg('bounceRate');
+  const avgDuration    = pt?.avgSessionDuration?? avg('avgSessionDuration');
+  const engagementRate = pt?.engagementRate    ?? avg('engagementRate');
+  const sessPerUser    = pt?.sessionsPerUser   ?? (totalUsers ? totalSessions / totalUsers : 0);
+  const pagesPerSess   = pt?.pageViewsPerSession ?? (totalSessions ? totalPageViews / totalSessions : 0);
 
   const kpis = [
-    { label: 'Usuários Ativos',   value: num(totalUsers),        sub: 'no período' },
-    { label: 'Sessões',           value: num(totalSessions),     sub: 'total' },
-    { label: 'Visualizações',     value: num(totalPageViews),    sub: 'páginas' },
-    { label: 'Taxa Rejeição',     value: pct(avgBounce * 100),   sub: 'média', warn: avgBounce > 0.6 },
-    { label: 'Duração Média',     value: dur(avgDuration),       sub: 'por sessão' },
-    { label: 'Tx. Engajamento',   value: pct(avgEngagement * 100), sub: 'média' },
+    { label: 'Usuários Ativos',   value: num(totalUsers),
+      sub: `${num(totalNewUsers)} novos`,
+      info: 'Usuários únicos (deduplicados) que iniciaram pelo menos uma sessão no período. Um mesmo visitante conta uma vez, independente de quantas vezes acessou.' },
+    { label: 'Sessões',           value: num(totalSessions),
+      sub: `${dec(sessPerUser,1)} por usuário`,
+      info: 'Total de sessões iniciadas. Uma sessão começa quando o usuário acessa o site e termina após 30 min de inatividade ou à meia-noite.' },
+    { label: 'Visualizações',     value: num(totalPageViews),
+      sub: `${dec(pagesPerSess,1)} por sessão`,
+      info: 'Número total de páginas ou telas visualizadas. Inclui visualizações repetidas da mesma página.' },
+    { label: 'Taxa Rejeição',     value: pct(bounceRate * 100),
+      sub: bounceRate > 0.6 ? '⚠ acima do ideal' : '✓ saudável',
+      warn: bounceRate > 0.6,
+      info: 'Percentual de sessões que NÃO foram engajadas. Uma sessão é considerada rejeitada se durou menos de 10 segundos, não teve conversão e não teve mais de 1 visualização de página. Ideal: abaixo de 50%.' },
+    { label: 'Duração Média',     value: dur(avgDuration),
+      sub: 'por sessão',
+      info: 'Tempo médio que os usuários permanecem no site por sessão. Conta desde o início da sessão até a última interação registrada.' },
+    { label: 'Tx. Engajamento',   value: pct(engagementRate * 100),
+      sub: engagementRate >= 0.6 ? '✓ bom' : engagementRate >= 0.4 ? '~ regular' : '⚠ baixo',
+      info: 'Percentual de sessões engajadas. Uma sessão é engajada se: durou mais de 10 segundos, OU teve 2+ visualizações de página, OU teve pelo menos 1 evento de conversão. É o oposto da taxa de rejeição.' },
   ];
 
   el.innerHTML = kpis.map(k => `
-    <div class="card" style="padding:14px 16px;">
-      <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;
-        letter-spacing:.06em;margin-bottom:6px;">${k.label}</div>
+    <div class="card" style="padding:14px 16px;position:relative;">
+      <div style="display:flex;align-items:center;gap:4px;font-size:0.6875rem;color:var(--text-muted);
+        text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">
+        ${k.label}
+        <span class="ga-info-icon" style="display:inline-flex;align-items:center;justify-content:center;
+          width:14px;height:14px;border-radius:50%;background:var(--bg-surface);
+          border:1px solid var(--border-subtle);font-size:0.5625rem;cursor:help;
+          text-transform:none;letter-spacing:0;font-weight:700;color:var(--text-muted);flex-shrink:0;"
+          title="${esc(k.info)}">i</span>
+      </div>
       <div style="font-size:1.25rem;font-weight:600;color:${k.warn?'#EF4444':'var(--text-primary)'};line-height:1.1;">
         ${k.value}</div>
       <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">${k.sub}</div>
@@ -706,15 +740,16 @@ async function exportPDF() {
     doc.text(`${prop}  ·  ${date}  ·  ${sorted.length} dias`, W-14, 19, {align:'right'});
 
     // ── KPIs ──
+    const pt = periodTotals;
     const sum = key => allData.reduce((a,r) => a+(Number(r[key])||0), 0);
     const avg = key => { const vals=allData.map(r=>r[key]).filter(v=>v!=null&&!isNaN(v)); return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0; };
     const kpis = [
-      { label:'Usuários',     value:num(sum('activeUsers')),         color:[56,189,248]  },
-      { label:'Sessões',      value:num(sum('sessions')),            color:[167,139,250] },
-      { label:'Visualizações',value:num(sum('screenPageViews')),     color:[34,197,94]   },
-      { label:'Tx. Rejeição', value:pct(avg('bounceRate')*100),      color:[239,68,68]   },
-      { label:'Duração',      value:dur(avg('avgSessionDuration')),  color:[212,168,67]  },
-      { label:'Engajamento',  value:pct(avg('engagementRate')*100),  color:[56,189,248]  },
+      { label:'Usuários',     value:num(pt?.activeUsers ?? sum('activeUsers')),                color:[56,189,248]  },
+      { label:'Sessões',      value:num(pt?.sessions ?? sum('sessions')),                      color:[167,139,250] },
+      { label:'Visualizações',value:num(pt?.screenPageViews ?? sum('screenPageViews')),         color:[34,197,94]   },
+      { label:'Tx. Rejeição', value:pct((pt?.bounceRate ?? avg('bounceRate'))*100),             color:[239,68,68]   },
+      { label:'Duração',      value:dur(pt?.avgSessionDuration ?? avg('avgSessionDuration')),   color:[212,168,67]  },
+      { label:'Engajamento',  value:pct((pt?.engagementRate ?? avg('engagementRate'))*100),     color:[56,189,248]  },
     ];
     let y = 28;
     const kpiW = (W - 28 - (kpis.length-1)*3) / kpis.length;
