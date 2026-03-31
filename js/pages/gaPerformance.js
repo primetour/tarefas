@@ -230,19 +230,22 @@ async function loadData() {
       }
     });
 
-    const filterByProp = docs => {
+    const SYNCED_PERIODS = ['7d','14d','28d','30d','90d'];
+    const filterByPropAndPeriod = docs => {
       let items = docs.map(d => ({ id: d.id, ...d.data() }));
       if (filterProp) items = items.filter(i => i.propertyId === filterProp);
-      return items.filter(i => {
-        const dt = i.date?.toDate?.() || (i.date ? new Date(i.date) : null) || i._syncDate;
-        return !dt || dt >= cutoff;
-      });
+      // Filter by period field (synced per period: 7d, 14d, 28d, 30d, 90d)
+      let periodKey = filterDays + 'd';
+      // Fallback: if period not synced (e.g. 365d), use 90d
+      if (!SYNCED_PERIODS.includes(periodKey)) periodKey = '90d';
+      items = items.filter(i => i.period === periodKey);
+      return items;
     };
 
-    allPages     = filterByProp(pagesSnap.docs);
-    allSources   = filterByProp(sourcesSnap.docs);
-    allDevices   = filterByProp(devicesSnap.docs);
-    allCountries = filterByProp(countriesSnap.docs);
+    allPages     = filterByPropAndPeriod(pagesSnap.docs);
+    allSources   = filterByPropAndPeriod(sourcesSnap.docs);
+    allDevices   = filterByPropAndPeriod(devicesSnap.docs);
+    allCountries = filterByPropAndPeriod(countriesSnap.docs);
 
     // Period totals (deduplicated by GA4)
     const allTotals = totalsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -263,7 +266,9 @@ async function loadData() {
 
     renderKpis();
     renderCharts();
-    renderTable('daily');
+    // Re-render the active tab (not always 'daily')
+    const activeTab = document.querySelector('.ga-tab.active')?.dataset?.tab || 'daily';
+    renderTable(activeTab);
 
     const count = document.getElementById('ga-count');
     if (count) count.textContent = `${allData.length} dias`;
@@ -446,6 +451,16 @@ async function renderCharts() {
   }
 }
 
+/* ─── Column info helper ─────────────────────────────────── */
+function thInfo(label, tip) {
+  if (!tip) return label;
+  return `${label} <span style="display:inline-flex;align-items:center;justify-content:center;
+    width:13px;height:13px;border-radius:50%;background:var(--bg-card);
+    border:1px solid var(--border-subtle);font-size:0.5rem;cursor:help;
+    text-transform:none;letter-spacing:0;font-weight:700;vertical-align:middle;"
+    title="${esc(tip)}">i</span>`;
+}
+
 /* ─── Tab-based table rendering ──────────────────────────── */
 function renderTable(tab = 'daily') {
   const thead = document.getElementById('ga-thead');
@@ -505,11 +520,11 @@ function renderDailyTable(thead, tbody, thStyle) {
 function renderPagesTable(thead, tbody, thStyle) {
   thead.innerHTML = `<tr style="background:var(--bg-surface);">
     <th style="${thStyle}">Página</th>
-    <th style="${thStyle}">Visualizações</th>
-    <th style="${thStyle}">Usuários</th>
-    <th style="${thStyle}">Duração Média</th>
-    <th style="${thStyle}">Taxa Rejeição</th>
-    <th style="${thStyle}">Engajamento</th>
+    <th style="${thStyle}">${thInfo('Visualizações', 'Total de vezes que a página foi carregada. Inclui recarregamentos.')}</th>
+    <th style="${thStyle}">${thInfo('Usuários', 'Usuários únicos que visitaram esta página no período selecionado.')}</th>
+    <th style="${thStyle}">${thInfo('Duração Média', 'Tempo médio de permanência nesta página por sessão.')}</th>
+    <th style="${thStyle}">${thInfo('Taxa Rejeição', 'Percentual de sessões que começaram nesta página e não foram engajadas (< 10s, sem conversão, 1 page view).')}</th>
+    <th style="${thStyle}">${thInfo('Engajamento', 'Percentual de sessões engajadas que incluíram esta página.')}</th>
   </tr>`;
 
   if (!allPages.length) { tbody.innerHTML = emptyRow(6); return; }
@@ -533,13 +548,13 @@ function renderPagesTable(thead, tbody, thStyle) {
 
 function renderSourcesTable(thead, tbody, thStyle) {
   thead.innerHTML = `<tr style="background:var(--bg-surface);">
-    <th style="${thStyle}">Origem / Mídia</th>
+    <th style="${thStyle}">${thInfo('Origem / Mídia', 'De onde vieram os visitantes. Origem = site/plataforma (google, facebook). Mídia = tipo de tráfego (organic, cpc, referral, email).')}</th>
     <th style="${thStyle}">Sessões</th>
     <th style="${thStyle}">Usuários</th>
     <th style="${thStyle}">Novos Usuários</th>
-    <th style="${thStyle}">Taxa Rejeição</th>
-    <th style="${thStyle}">Engajamento</th>
-    <th style="${thStyle}">Conversões</th>
+    <th style="${thStyle}">${thInfo('Taxa Rejeição', 'Sessões não engajadas desta origem.')}</th>
+    <th style="${thStyle}">${thInfo('Engajamento', 'Sessões engajadas (> 10s ou 2+ páginas ou conversão).')}</th>
+    <th style="${thStyle}">${thInfo('Conversões', 'Eventos marcados como conversão no GA4 vindos desta origem.')}</th>
   </tr>`;
 
   if (!allSources.length) { tbody.innerHTML = emptyRow(7); return; }
@@ -567,11 +582,11 @@ function renderSourcesTable(thead, tbody, thStyle) {
 
 function renderDevicesTable(thead, tbody, thStyle) {
   thead.innerHTML = `<tr style="background:var(--bg-surface);">
-    <th style="${thStyle}">Dispositivo</th>
+    <th style="${thStyle}">${thInfo('Dispositivo', 'Categoria do dispositivo usado: desktop (computador), mobile (celular) ou tablet.')}</th>
     <th style="${thStyle}">Sessões</th>
     <th style="${thStyle}">Usuários</th>
     <th style="${thStyle}">% do Total</th>
-    <th style="${thStyle}">Taxa Rejeição</th>
+    <th style="${thStyle}">${thInfo('Taxa Rejeição', 'Sessões não engajadas por tipo de dispositivo.')}</th>
     <th style="${thStyle}">Duração Média</th>
   </tr>`;
 
@@ -611,7 +626,7 @@ function renderCountriesTable(thead, tbody, thStyle) {
     <th style="${thStyle}">Sessões</th>
     <th style="${thStyle}">Usuários</th>
     <th style="${thStyle}">% do Total</th>
-    <th style="${thStyle}">Engajamento</th>
+    <th style="${thStyle}">${thInfo('Engajamento', 'Percentual de sessões engajadas vindas deste local.')}</th>
   </tr>`;
 
   if (!allCountries.length) { tbody.innerHTML = emptyRow(6); return; }
