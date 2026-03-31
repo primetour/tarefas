@@ -15,6 +15,11 @@ import {
   getReworkRate, getNewslettersOutOfCalendar,
 } from '../services/analytics.js';
 import { fetchSurveys } from '../services/csat.js';
+import { REQUESTING_AREAS } from '../components/filterBar.js';
+import {
+  collection, getDocs,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { db } from '../firebase.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -22,12 +27,25 @@ const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 let currentPeriod = '30d';
 let customFrom = '';
 let customTo   = '';
+let filterUser   = '';
+let filterNucleo = '';
+let filterSector = '';
 const activePeriod = () =>
   currentPeriod === 'custom' && customFrom && customTo
     ? `custom:${customFrom}:${customTo}`
     : currentPeriod;
 let chartInstances = {};
 let metrics = null;
+
+const NUCLEOS_LIST = [
+  { value:'design',        label:'Design'        },
+  { value:'comunicacao',   label:'Comunicação'   },
+  { value:'redes_sociais', label:'Redes Sociais' },
+  { value:'dados',         label:'Dados'         },
+  { value:'web',           label:'Web'           },
+  { value:'sistemas',      label:'Sistemas'      },
+  { value:'ia',            label:'IA'            },
+];
 
 /* ─── Chart.js loader ────────────────────────────────────── */
 async function loadChartJS() {
@@ -43,6 +61,17 @@ async function loadChartJS() {
 
 /* ─── Render shell ────────────────────────────────────────── */
 export async function renderDashboards(container) {
+  // Load users if not in store
+  let users = (store.get('users') || []).filter(u => u.active !== false);
+  if (!users.length) {
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      store.set('users', all);
+      users = all.filter(u => u.active !== false);
+    } catch { /* ignore */ }
+  }
+
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
@@ -84,6 +113,25 @@ export async function renderDashboards(container) {
             style="font-size:0.8125rem;">Aplicar</button>
         </div>
       </div>
+    </div>
+
+    <!-- Filters: user, núcleo, área -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
+      <select class="filter-select" id="dash-user-filter" style="min-width:190px;">
+        <option value="">Todos os usuários</option>
+        ${users.map(u => `<option value="${esc(u.id)}" ${filterUser===u.id?'selected':''}>${esc(u.name || u.email)}</option>`).join('')}
+      </select>
+      <select class="filter-select" id="dash-nucleo-filter" style="min-width:150px;">
+        <option value="">Todos os núcleos</option>
+        ${NUCLEOS_LIST.map(n => `<option value="${esc(n.value)}" ${filterNucleo===n.value?'selected':''}>${esc(n.label)}</option>`).join('')}
+      </select>
+      <select class="filter-select" id="dash-sector-filter" style="min-width:160px;">
+        <option value="">Todas as áreas</option>
+        ${REQUESTING_AREAS.map(s => `<option value="${esc(s)}" ${filterSector===s?'selected':''}>${esc(s)}</option>`).join('')}
+      </select>
+      ${(filterUser||filterNucleo||filterSector) ? `
+        <button class="btn btn-ghost btn-sm" id="dash-clear-filters"
+          style="font-size:0.75rem;color:var(--text-muted);">✕ Limpar filtros</button>` : ''}
     </div>
 
     <!-- Skeleton KPIs -->
@@ -181,6 +229,28 @@ export async function renderDashboards(container) {
     });
   }
 
+  // Filter dropdowns
+  document.getElementById('dash-user-filter')?.addEventListener('change', e => {
+    filterUser = e.target.value;
+    destroyCharts(); loadData(container);
+  });
+  document.getElementById('dash-nucleo-filter')?.addEventListener('change', e => {
+    filterNucleo = e.target.value;
+    destroyCharts(); loadData(container);
+  });
+  document.getElementById('dash-sector-filter')?.addEventListener('change', e => {
+    filterSector = e.target.value;
+    destroyCharts(); loadData(container);
+  });
+  document.getElementById('dash-clear-filters')?.addEventListener('click', () => {
+    filterUser = ''; filterNucleo = ''; filterSector = '';
+    const uf = document.getElementById('dash-user-filter');   if (uf) uf.value = '';
+    const nf = document.getElementById('dash-nucleo-filter'); if (nf) nf.value = '';
+    const sf = document.getElementById('dash-sector-filter'); if (sf) sf.value = '';
+    const cb = document.getElementById('dash-clear-filters'); if (cb) cb.remove();
+    destroyCharts(); loadData(container);
+  });
+
   document.getElementById('dash-new-task')?.addEventListener('click', () =>
     openTaskModal({ onSave: () => loadData(container) })
   );
@@ -188,6 +258,21 @@ export async function renderDashboards(container) {
   document.getElementById('dash-export-pdf')?.addEventListener('click', () => exportDashPdf());
 
   await loadData(container);
+}
+
+/* ─── Filter tasks helper ────────────────────────────────── */
+function applyFilters(tasks) {
+  let filtered = tasks;
+  if (filterUser) {
+    filtered = filtered.filter(t => (t.assignees || []).includes(filterUser) || t.createdBy === filterUser);
+  }
+  if (filterNucleo) {
+    filtered = filtered.filter(t => (t.nucleos || []).includes(filterNucleo));
+  }
+  if (filterSector) {
+    filtered = filtered.filter(t => t.sector === filterSector);
+  }
+  return filtered;
 }
 
 /* ─── Load & render all charts ────────────────────────────── */
@@ -198,6 +283,38 @@ async function loadData(container) {
       getOverviewMetrics(activePeriod()),
       fetchSurveys({ limitN: 500 }).catch(() => []),
     ]);
+
+    // Apply user/nucleo/sector filters
+    m.tasks    = applyFilters(m.tasks);
+    m.total    = m.tasks.length;
+
+    const { start } = getPeriodDates(activePeriod());
+    const done       = m.tasks.filter(t => t.status === 'done');
+    const inProgress = m.tasks.filter(t => t.status === 'in_progress');
+    const overdue    = m.tasks.filter(t => {
+      if (!t.dueDate || t.status === 'done') return false;
+      const d = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+      return d < new Date();
+    });
+    const doneInPeriod = done.filter(t => {
+      if (!t.completedAt) return false;
+      const d = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
+      return d >= start;
+    });
+    const doneOnTime = done.filter(t => {
+      if (!t.dueDate || !t.completedAt) return false;
+      const due       = t.dueDate?.toDate       ? t.dueDate.toDate()       : new Date(t.dueDate);
+      const completed = t.completedAt?.toDate   ? t.completedAt.toDate()   : new Date(t.completedAt);
+      return completed <= due;
+    });
+
+    m.done         = done.length;
+    m.inProgress   = inProgress.length;
+    m.overdue      = overdue.length;
+    m.doneInPeriod = doneInPeriod.length;
+    m.doneOnTime   = doneOnTime.length;
+    m.onTimeRate   = done.length ? Math.round((doneOnTime.length / done.length) * 100) : 0;
+
     metrics = m;
     metrics.surveys = surveys;
     renderKPIs(m);
@@ -337,30 +454,7 @@ function renderAllCharts(Chart, m) {
     emptyWidget('charts-grid', 'priority-donut', 'col-span-4', '▲ Prioridade das Tarefas', 200);
   }
 
-  /* 4 — Daily bar (4-col) */
-  const createdByDay   = getTasksByDay(tasks, activePeriod(), 'created');
-  const completedByDay = getTasksByDay(tasks, activePeriod(), 'completed');
-  const stride = currentPeriod === '90d' ? 6 : currentPeriod === '12m' ? 14 : currentPeriod === '7d' ? 1 : 3;
-  const filtLabels  = createdByDay.filter((_,i)=>i%stride===0).map(d=>d.label);
-  const filtCreated = createdByDay.filter((_,i)=>i%stride===0).map(d=>d.value);
-  const filtDone    = completedByDay.filter((_,i)=>i%stride===0).map(d=>d.value);
-  const hasDaily    = filtCreated.some(v=>v>0) || filtDone.some(v=>v>0);
-
-  if (hasDaily) {
-    renderBarChart(Chart, 'charts-grid', 'daily-chart', 'col-span-4', {
-      title:  '📊 Criadas vs Concluídas (período)',
-      labels: filtLabels,
-      datasets: [
-        { label: 'Criadas',    data: filtCreated, backgroundColor: 'rgba(56,189,248,0.65)' },
-        { label: 'Concluídas', data: filtDone,    backgroundColor: 'rgba(34,197,94,0.65)'  },
-      ],
-      gridColor, height: 200,
-    });
-  } else {
-    emptyWidget('charts-grid', 'daily-chart', 'col-span-4', '📊 Criadas vs Concluídas', 200);
-  }
-
-  /* 5 — Projects progress bar (4-col) */
+  /* 4 — Projects progress bar (4-col) */
   const byProject = getTasksByProject(tasks, projects);
   if (byProject.length) {
     renderHorizontalBarChart(Chart, 'charts-grid', 'projects-chart', 'col-span-4', {
