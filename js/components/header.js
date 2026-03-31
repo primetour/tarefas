@@ -251,40 +251,61 @@ export class Header {
       } catch { /* ignore */ }
     }
 
-    // Portal tips — search if user has portal access
-    let tips = [];
-    if (store.canPortal()) {
-      tips = store.get('portalTips') || [];
-      if (!tips.length) {
+    // Helper: fetch & cache a collection
+    const cached = async (key, col, opts) => {
+      let data = store.get(key) || [];
+      if (!data.length) {
         try {
-          const snap = await getDocs(collection(db, 'portal_tips'));
-          tips = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          store.set('portalTips', tips);
+          const ref = opts ? query(collection(db, col), ...opts) : collection(db, col);
+          const snap = await getDocs(ref);
+          data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          store.set(key, data);
         } catch { /* ignore */ }
       }
-    }
+      return data;
+    };
 
-    // Match tasks
+    // Portal tips
+    let tips = [];
+    if (store.canPortal()) tips = await cached('portalTips', 'portal_tips');
+
+    // Portal images
+    let images = [];
+    if (store.canPortal()) images = await cached('portalImages', 'portal_images');
+
+    // Solicitações
+    const requests = await cached('searchRequests', 'requests', [orderBy('createdAt', 'desc'), limit(500)]);
+
+    // Metas
+    const goals = await cached('searchGoals', 'goals');
+
+    // CSAT surveys
+    const surveys = await cached('searchSurveys', 'csat_surveys', [orderBy('createdAt', 'desc'), limit(500)]);
+
+    // Notícias
+    const news = await cached('searchNews', 'news_monitor', [orderBy('createdAt', 'desc'), limit(500)]);
+
+    // ── Match tasks ──
     const matchTasks = tasks.filter(t => {
       const title = (t.title || '').toLowerCase();
       const desc  = (t.description || '').toLowerCase();
       const id    = (t.id || '').toLowerCase();
       return title.includes(lower) || desc.includes(lower) || id.includes(lower);
-    }).slice(0, 8);
+    }).slice(0, 6);
 
-    // Match projects
+    // ── Match projects ──
     const matchProjects = projects.filter(p => {
       return (p.name || '').toLowerCase().includes(lower)
         || (p.description || '').toLowerCase().includes(lower);
     }).slice(0, 4);
 
-    // Match users
+    // ── Match users ──
     const matchUsers = users.filter(u => {
       return (u.name || '').toLowerCase().includes(lower)
         || (u.email || '').toLowerCase().includes(lower);
     }).slice(0, 4);
 
-    // Match portal tips
+    // ── Match portal tips ──
     const matchTips = tips.filter(t => {
       const title    = (t.title || '').toLowerCase();
       const city     = (t.city || '').toLowerCase();
@@ -294,9 +315,48 @@ export class Header {
       const segments = (Array.isArray(segRaw) ? segRaw : typeof segRaw === 'object' && segRaw ? Object.keys(segRaw) : []).join(' ').toLowerCase();
       return title.includes(lower) || city.includes(lower) || country.includes(lower)
         || continent.includes(lower) || segments.includes(lower);
-    }).slice(0, 6);
+    }).slice(0, 4);
 
-    const total = matchTasks.length + matchProjects.length + matchUsers.length + matchTips.length;
+    // ── Match solicitações ──
+    const matchRequests = requests.filter(r => {
+      return (r.requesterName || '').toLowerCase().includes(lower)
+        || (r.typeName || '').toLowerCase().includes(lower)
+        || (r.description || '').toLowerCase().includes(lower)
+        || (r.requestingArea || '').toLowerCase().includes(lower);
+    }).slice(0, 4);
+
+    // ── Match metas ──
+    const matchGoals = goals.filter(g => {
+      return (g.titulo || '').toLowerCase().includes(lower)
+        || (g.descricao || '').toLowerCase().includes(lower);
+    }).slice(0, 4);
+
+    // ── Match CSAT ──
+    const matchSurveys = surveys.filter(s => {
+      return (s.taskTitle || '').toLowerCase().includes(lower)
+        || (s.clientName || '').toLowerCase().includes(lower)
+        || (s.comment || '').toLowerCase().includes(lower)
+        || (s.projectName || '').toLowerCase().includes(lower);
+    }).slice(0, 4);
+
+    // ── Match imagens do portal ──
+    const matchImages = images.filter(i => {
+      return (i.name || '').toLowerCase().includes(lower)
+        || (i.placeName || '').toLowerCase().includes(lower)
+        || (i.country || '').toLowerCase().includes(lower)
+        || (i.city || '').toLowerCase().includes(lower)
+        || (Array.isArray(i.tags) ? i.tags : []).join(' ').toLowerCase().includes(lower);
+    }).slice(0, 4);
+
+    // ── Match notícias ──
+    const matchNews = news.filter(n => {
+      return (n.title || '').toLowerCase().includes(lower)
+        || (n.description || '').toLowerCase().includes(lower)
+        || (n.category || '').toLowerCase().includes(lower);
+    }).slice(0, 4);
+
+    const total = matchTasks.length + matchProjects.length + matchUsers.length + matchTips.length
+      + matchRequests.length + matchGoals.length + matchSurveys.length + matchImages.length + matchNews.length;
     if (!total) {
       this._showSearchResults(`
         <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
@@ -402,6 +462,120 @@ export class Header {
         </div>`).join('');
     }
 
+    if (matchRequests.length) {
+      const REQ_STATUS = { pending:'🟡', converted:'🟢', rejected:'🔴' };
+      html += `<div style="padding:6px 12px;font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.08em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+        Solicitações (${matchRequests.length})</div>`;
+      html += matchRequests.map(r => `
+        <div class="search-result-item" data-type="request" data-id="${esc(r.id)}"
+          style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;
+          border-bottom:1px solid var(--border-subtle);transition:background .1s;"
+          onmouseover="this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background=''">
+          <span style="font-size:0.875rem;">${REQ_STATUS[r.status]||'⚪'}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+              white-space:nowrap;">${esc(r.typeName || r.description || 'Solicitação')}</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">
+              ${esc([r.requesterName, r.requestingArea].filter(Boolean).join(' · '))}
+            </div>
+          </div>
+          ${r.urgency ? `<span style="font-size:0.625rem;padding:2px 6px;border-radius:10px;
+            background:#EF444420;color:#EF4444;font-weight:600;">URGENTE</span>` : ''}
+        </div>`).join('');
+    }
+
+    if (matchGoals.length) {
+      const GOAL_STATUS = { rascunho:'📝', publicada:'🟢', encerrada:'⚫' };
+      html += `<div style="padding:6px 12px;font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.08em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+        Metas (${matchGoals.length})</div>`;
+      html += matchGoals.map(g => `
+        <div class="search-result-item" data-type="goal" data-id="${esc(g.id)}"
+          style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;
+          border-bottom:1px solid var(--border-subtle);transition:background .1s;"
+          onmouseover="this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background=''">
+          <span style="font-size:0.875rem;">${GOAL_STATUS[g.status]||'📋'}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+              white-space:nowrap;">${esc(g.titulo)}</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">
+              ${esc([g.escopo, g.nucleo].filter(Boolean).join(' · '))}
+            </div>
+          </div>
+        </div>`).join('');
+    }
+
+    if (matchSurveys.length) {
+      const SCORE_COLOR = s => s >= 4 ? '#22C55E' : s >= 3 ? '#F97316' : '#EF4444';
+      html += `<div style="padding:6px 12px;font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.08em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+        CSAT (${matchSurveys.length})</div>`;
+      html += matchSurveys.map(s => `
+        <div class="search-result-item" data-type="csat" data-id="${esc(s.id)}"
+          style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;
+          border-bottom:1px solid var(--border-subtle);transition:background .1s;"
+          onmouseover="this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background=''">
+          <span style="font-size:0.875rem;">💬</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+              white-space:nowrap;">${esc(s.taskTitle || s.clientName || 'Pesquisa CSAT')}</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">
+              ${esc([s.clientName, s.comment ? s.comment.substring(0,60)+'…' : ''].filter(Boolean).join(' — '))}
+            </div>
+          </div>
+          ${s.score ? `<span style="font-size:0.75rem;font-weight:700;color:${SCORE_COLOR(s.score)};">
+            ${'★'.repeat(s.score)}</span>` : ''}
+        </div>`).join('');
+    }
+
+    if (matchImages.length) {
+      html += `<div style="padding:6px 12px;font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.08em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+        Banco de Imagens (${matchImages.length})</div>`;
+      html += matchImages.map(i => `
+        <div class="search-result-item" data-type="image" data-id="${esc(i.id)}"
+          style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;
+          border-bottom:1px solid var(--border-subtle);transition:background .1s;"
+          onmouseover="this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background=''">
+          <span style="font-size:0.875rem;">🖼️</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+              white-space:nowrap;">${esc(i.name || i.placeName || i.originalName || 'Imagem')}</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">
+              ${esc([i.city, i.country, i.continent].filter(Boolean).join(' · '))}
+            </div>
+          </div>
+          ${i.type ? `<span style="font-size:0.625rem;padding:2px 6px;border-radius:10px;
+            background:var(--bg-surface);color:var(--text-muted);font-weight:600;">${esc(i.type)}</span>` : ''}
+        </div>`).join('');
+    }
+
+    if (matchNews.length) {
+      html += `<div style="padding:6px 12px;font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.08em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">
+        Notícias (${matchNews.length})</div>`;
+      html += matchNews.map(n => `
+        <div class="search-result-item" data-type="news" data-id="${esc(n.id)}"
+          style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;
+          border-bottom:1px solid var(--border-subtle);transition:background .1s;"
+          onmouseover="this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background=''">
+          <span style="font-size:0.875rem;">📰</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+              white-space:nowrap;">${esc(n.title)}</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">
+              ${esc([n.category, n.subcategory].filter(Boolean).join(' · '))}
+            </div>
+          </div>
+        </div>`).join('');
+    }
+
     this._showSearchResults(html);
   }
 
@@ -444,6 +618,16 @@ export class Header {
           else router.navigate('team');
         } else if (type === 'tip') {
           router.navigate('portal');
+        } else if (type === 'request') {
+          router.navigate('requests');
+        } else if (type === 'goal') {
+          router.navigate('goals');
+        } else if (type === 'csat') {
+          router.navigate('csat');
+        } else if (type === 'image') {
+          router.navigate('portal-images');
+        } else if (type === 'news') {
+          router.navigate('news-monitor');
         }
       });
     });
