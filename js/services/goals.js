@@ -199,6 +199,27 @@ export async function publishGoal(id) {
   await updateDoc(doc(db, 'goals', id), {
     status: 'publicada', publishedAt: serverTimestamp(), updatedBy: uid(),
   });
+
+  // Notify responsável about published goal
+  try {
+    const snap = await getDoc(doc(db, 'goals', id));
+    if (snap.exists()) {
+      const goal = snap.data();
+      const recipients = [goal.responsavelId, goal.gestorId].filter(Boolean);
+      if (recipients.length) {
+        import('./notifications.js').then(({ notify }) => {
+          notify('goal.published', {
+            entityType: 'goal', entityId: id,
+            recipientIds: recipients,
+            title: 'Meta publicada',
+            body: goal.titulo || 'Nova meta publicada',
+            route: 'goals',
+            category: 'goal',
+          });
+        }).catch(() => {});
+      }
+    }
+  } catch { /* non-blocking */ }
 }
 
 /* ─── CRUD Avaliações ──────────────────────────────────────── */

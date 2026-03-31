@@ -177,6 +177,7 @@ export async function fetchTips({ continent, country } = {}) {
 
 export async function saveTip(id, data) {
   if (!store.canCreateTip()) throw new Error('Permissão negada.');
+  const isNew = !id;
   const ref = id
     ? doc(db, 'portal_tips', id)
     : doc(collection(db, 'portal_tips'));
@@ -184,8 +185,32 @@ export async function saveTip(id, data) {
     ...data,
     updatedAt: serverTimestamp(),
     updatedBy: uid(),
-    ...(id ? {} : { createdAt: serverTimestamp(), createdBy: uid() }),
+    ...(isNew ? { createdAt: serverTimestamp(), createdBy: uid() } : {}),
   }, { merge: true });
+
+  // Notify team about new tip creation
+  if (isNew) {
+    try {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const portalUsers = usersSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(u => u.active !== false && (u.isMaster || u.roleId === 'admin' || u.roleId === 'head'))
+        .map(u => u.id);
+      if (portalUsers.length) {
+        import('./notifications.js').then(({ notify }) => {
+          notify('portal.tip_created', {
+            entityType: 'portal_tip', entityId: ref.id,
+            recipientIds: portalUsers,
+            title: 'Nova dica criada',
+            body: `${data.city || data.country || 'Destino'} — ${data.continent || ''}`.trim(),
+            route: 'portal-tips',
+            category: 'portal',
+          });
+        }).catch(() => {});
+      }
+    } catch { /* non-blocking */ }
+  }
+
   return ref.id;
 }
 

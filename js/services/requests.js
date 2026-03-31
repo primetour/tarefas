@@ -58,6 +58,29 @@ export async function createRequest({
   };
 
   const ref = await addDoc(collection(db, 'requests'), reqDoc);
+
+  // Notify admins/managers about new request
+  try {
+    const { notify } = await import('./notifications.js');
+    // Get admin/manager users to notify
+    const usersSnap = await getDocs(collection(db, 'users'));
+    const admins = usersSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(u => u.active !== false && (u.isMaster || u.roleId === 'admin' || u.roleId === 'head'))
+      .map(u => u.id);
+    if (admins.length) {
+      notify('request.created', {
+        entityType: 'request', entityId: ref.id,
+        recipientIds: admins,
+        title: 'Nova solicitação recebida',
+        body: `${requesterName} — ${typeName || 'Solicitação'}${urgency ? ' (URGENTE)' : ''}`,
+        route: 'requests',
+        category: 'request',
+        priority: urgency ? 'high' : 'normal',
+      });
+    }
+  } catch { /* non-blocking */ }
+
   return { id: ref.id, ...reqDoc };
 }
 

@@ -131,6 +131,21 @@ export async function createTask(data) {
 
   const ref = await addDoc(collection(db, 'tasks'), taskDoc);
   await auditLog('tasks.create', 'task', ref.id, { title: taskDoc.title });
+
+  // Notify assignees
+  if (taskDoc.assignees?.length) {
+    import('./notifications.js').then(({ notify }) => {
+      notify('task.assigned', {
+        entityType: 'task', entityId: ref.id,
+        recipientIds: taskDoc.assignees,
+        title: 'Nova tarefa atribuída',
+        body: `"${taskDoc.title}" foi atribuída a você`,
+        route: 'tasks',
+        priority: taskDoc.priority === 'urgent' ? 'high' : 'normal',
+      });
+    }).catch(() => {});
+  }
+
   return { id: ref.id, ...taskDoc };
 }
 
@@ -164,6 +179,43 @@ export async function updateTask(taskId, data) {
 
   await updateDoc(doc(db, 'tasks', taskId), updates);
   await auditLog('tasks.update', 'task', taskId, { fields: Object.keys(data) });
+
+  // Notify on status changes
+  if (data.status && data.status !== data._prevStatus) {
+    import('./notifications.js').then(({ notify }) => {
+      if (data.status === 'done') {
+        // Notify creator that task is done
+        const recipients = [data.createdBy, ...(data.assignees || [])].filter(Boolean);
+        notify('task.completed', {
+          entityType: 'task', entityId: taskId,
+          recipientIds: recipients,
+          title: 'Tarefa concluída',
+          body: `"${data.title || 'Tarefa'}" foi concluída`,
+          route: 'tasks',
+        });
+      } else if (data.status === 'rework') {
+        notify('task.rework', {
+          entityType: 'task', entityId: taskId,
+          recipientIds: data.assignees || [],
+          title: 'Tarefa devolvida para retrabalho',
+          body: `"${data.title || 'Tarefa'}" precisa de ajustes`,
+          route: 'tasks',
+          priority: 'high',
+        });
+      } else {
+        // Generic status change → notify creator
+        if (data.createdBy) {
+          notify('task.status_changed', {
+            entityType: 'task', entityId: taskId,
+            recipientIds: [data.createdBy],
+            title: 'Status alterado',
+            body: `"${data.title || 'Tarefa'}" mudou para ${data.status}`,
+            route: 'tasks',
+          });
+        }
+      }
+    }).catch(() => {});
+  }
 }
 
 /* ─── Completar tarefa (toggle) ──────────────────────────── */
@@ -321,5 +373,24 @@ export async function addComment(taskId, text) {
     comments:  arrayUnion(comment),
     updatedAt: serverTimestamp(),
   });
+
+  // Notify task participants about the comment
+  import('./notifications.js').then(async ({ notify }) => {
+    const taskSnap = await getDoc(doc(db, 'tasks', taskId));
+    if (!taskSnap.exists()) return;
+    const task = taskSnap.data();
+    const recipients = [...new Set([
+      task.createdBy,
+      ...(task.assignees || []),
+    ])].filter(Boolean);
+    notify('task.commented', {
+      entityType: 'task', entityId: taskId,
+      recipientIds: recipients,
+      title: 'Novo comentário',
+      body: `${profile?.name || 'Alguém'} comentou em "${task.title || 'tarefa'}": ${text.slice(0, 80)}`,
+      route: 'tasks',
+    });
+  }).catch(() => {});
+
   return comment;
 }

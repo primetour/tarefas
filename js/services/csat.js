@@ -141,6 +141,10 @@ export async function sendCsatEmail(surveyId) {
 export async function respondCsatSurvey(surveyId, { score, comment = '' }) {
   if (!score || score < 1 || score > 5) throw new Error('Nota inválida (1–5).');
 
+  // Fetch survey data before updating to get recipient info
+  const surveySnap = await getDoc(doc(db, 'csat_surveys', surveyId));
+  const surveyData = surveySnap.exists() ? surveySnap.data() : {};
+
   await updateDoc(doc(db, 'csat_surveys', surveyId), {
     score,
     comment:     comment.trim(),
@@ -148,6 +152,23 @@ export async function respondCsatSurvey(surveyId, { score, comment = '' }) {
     respondedAt: serverTimestamp(),
   });
   await auditLog('csat.respond', 'survey', surveyId, { score });
+
+  // Notify assignee + creator
+  const recipients = [surveyData.assignedTo, surveyData.createdBy].filter(Boolean);
+  if (recipients.length) {
+    import('./notifications.js').then(({ notify }) => {
+      const type = score <= 2 ? 'csat.low_score' : 'csat.responded';
+      notify(type, {
+        entityType: 'csat_survey', entityId: surveyId,
+        recipientIds: recipients,
+        title: score <= 2 ? 'CSAT crítico recebido' : 'Resposta CSAT recebida',
+        body: `${surveyData.clientName || 'Cliente'} avaliou com ${'★'.repeat(score)}${comment ? ': ' + comment.slice(0, 60) : ''}`,
+        route: 'csat',
+        category: 'csat',
+        priority: score <= 2 ? 'high' : 'normal',
+      });
+    }).catch(() => {});
+  }
 }
 
 /* ─── Buscar survey por token ────────────────────────────── */
