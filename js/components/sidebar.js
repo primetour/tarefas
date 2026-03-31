@@ -37,6 +37,7 @@ const NAV_GROUPS = [
       { route: 'dashboards',          icon: '◫', label: 'Produtividade',       perm: 'analytics_view',  altPerm: 'dashboard_view' },
       { route: 'nl-performance',      icon: '◈', label: 'Newsletters',         perm: 'analytics_view' },
       { route: 'meta-performance',    icon: '◈', label: 'Instagram',            perm: 'analytics_view' },
+      { route: 'ga-performance',      icon: '◈', label: 'Google Analytics',    perm: 'analytics_view' },
       { route: 'portal-dashboard',    icon: '◈', label: 'Portal de Dicas',     perm: 'portal_manage' },
     ]
   },
