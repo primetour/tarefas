@@ -49,7 +49,7 @@ import { renderPortalImportManual }       from './pages/portalImportManual.js';
 import { renderLandingPages }             from './pages/landingPages.js';
 import { renderCms }                      from './pages/cms.js';
 import { renderArtsEditor }              from './pages/artsEditor.js';
-import { renderNewsMonitor }              from './pages/newsMonitor.js';
+// newsMonitor carregado dinamicamente para evitar bloqueio pré-login
 
 // ─── Instâncias globais ───────────────────────────────────
 let sidebar = null;
@@ -229,7 +229,7 @@ function setupRouter() {
     'landing-pages':        async () => { await renderLandingPages(content); },
     'cms':                  async () => { await renderCms(content); },
     'arts-editor':          async () => { await renderArtsEditor(content); },
-    'news-monitor':         async () => { await renderNewsMonitor(content); },
+    'news-monitor':         async () => { const { renderNewsMonitor } = await import('./pages/newsMonitor.js'); await renderNewsMonitor(content); },
     'portal-tips-list':     async () => { await renderPortalTipsList(content); },
     'portal-import-manual': async () => { await renderPortalImportManual(content); },
     'profile':      async () => { await renderProfile(content); },
