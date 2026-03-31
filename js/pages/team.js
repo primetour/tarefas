@@ -30,6 +30,17 @@ let activeTab   = 'capacity'; // 'capacity' | 'mine' | 'members'
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderTeam(container) {
+  // Garantir que users estejam carregados no store
+  if (!(store.get('users') || []).length) {
+    try {
+      const { collection, getDocs, query, orderBy } =
+        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('../firebase.js');
+      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
+      store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch(e) { console.warn('Erro ao carregar usuários:', e.message); }
+  }
+
   const users      = store.get('users') || [];
   const workspaces = store.get('userWorkspaces') || [];
   const canViewAll = store.can('system_manage_users') || store.can('system_view_all');
@@ -367,9 +378,23 @@ async function renderTeamAvailability(container) {
 }
 
 /* ─── Modal ausência ─────────────────────────────────────── */
-function openAbsenceModal(absence = null) {
+async function openAbsenceModal(absence = null) {
   const isEdit  = !!absence;
-  const users   = (store.get('users') || []).filter(u => u.active !== false);
+  let users     = (store.get('users') || []).filter(u => u.active !== false);
+
+  // Se store de users estiver vazio, carregar do Firestore
+  if (!users.length) {
+    try {
+      const { collection, getDocs, query, orderBy } =
+        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('../firebase.js');
+      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
+      const all  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      store.set('users', all);
+      users = all.filter(u => u.active !== false);
+    } catch(e) { console.warn('Erro ao carregar usuários:', e.message); }
+  }
+
   const uid     = store.get('currentUser').uid;
   const canMgr  = store.can('system_manage_users');
 
