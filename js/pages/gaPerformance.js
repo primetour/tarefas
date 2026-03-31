@@ -40,6 +40,7 @@ const PROPERTIES = [
 const PERIODS = [
   { value: '7',   label: 'Últimos 7 dias'  },
   { value: '14',  label: 'Últimos 14 dias' },
+  { value: '28',  label: 'Últimos 28 dias (padrão GA4)' },
   { value: '30',  label: 'Últimos 30 dias' },
   { value: '90',  label: 'Últimos 90 dias' },
   { value: '365', label: 'Último ano'      },
@@ -67,7 +68,7 @@ let allDevices   = [];
 let allCountries = [];
 let properties   = [];
 let filterProp   = '';
-let filterDays   = '30';
+let filterDays   = '28';
 let sortKey      = 'date';
 let sortDir      = -1;
 let hiddenRows   = new Set();
@@ -107,7 +108,7 @@ export async function renderGaPerformance(container) {
           .map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')}
       </select>
       <select class="filter-select" id="ga-period-filter" style="min-width:160px;">
-        ${PERIODS.map(p=>`<option value="${p.value}" ${p.value==='30'?'selected':''}>${p.label}</option>`).join('')}
+        ${PERIODS.map(p=>`<option value="${p.value}" ${p.value==='28'?'selected':''}>${p.label}</option>`).join('')}
       </select>
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
         <span id="ga-count" style="font-size:0.8125rem;color:var(--text-muted);"></span>
@@ -289,7 +290,7 @@ function renderKpis() {
     return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : 0;
   };
 
-  const totalUsers     = pt?.activeUsers     ?? sum('activeUsers');
+  const totalUsers     = pt?.totalUsers       ?? pt?.activeUsers ?? sum('activeUsers');
   const totalNewUsers  = pt?.newUsers         ?? sum('newUsers');
   const totalSessions  = pt?.sessions         ?? sum('sessions');
   const totalPageViews = pt?.screenPageViews  ?? sum('screenPageViews');
@@ -302,7 +303,7 @@ function renderKpis() {
   const kpis = [
     { label: 'Usuários Ativos',   value: num(totalUsers),
       sub: `${num(totalNewUsers)} novos`,
-      info: 'Usuários únicos (deduplicados) que iniciaram pelo menos uma sessão no período. Um mesmo visitante conta uma vez, independente de quantas vezes acessou.' },
+      info: 'Total de usuários únicos (deduplicados) que acessaram o site no período. Corresponde à métrica "Total users" do GA4. Um mesmo visitante conta uma vez, independente de quantas vezes acessou.' },
     { label: 'Sessões',           value: num(totalSessions),
       sub: `${dec(sessPerUser,1)} por usuário`,
       info: 'Total de sessões iniciadas. Uma sessão começa quando o usuário acessa o site e termina após 30 min de inatividade ou à meia-noite.' },
@@ -744,7 +745,7 @@ async function exportPDF() {
     const sum = key => allData.reduce((a,r) => a+(Number(r[key])||0), 0);
     const avg = key => { const vals=allData.map(r=>r[key]).filter(v=>v!=null&&!isNaN(v)); return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0; };
     const kpis = [
-      { label:'Usuários',     value:num(pt?.activeUsers ?? sum('activeUsers')),                color:[56,189,248]  },
+      { label:'Usuários',     value:num(pt?.totalUsers ?? pt?.activeUsers ?? sum('activeUsers')), color:[56,189,248]  },
       { label:'Sessões',      value:num(pt?.sessions ?? sum('sessions')),                      color:[167,139,250] },
       { label:'Visualizações',value:num(pt?.screenPageViews ?? sum('screenPageViews')),         color:[34,197,94]   },
       { label:'Tx. Rejeição', value:pct((pt?.bounceRate ?? avg('bounceRate'))*100),             color:[239,68,68]   },
