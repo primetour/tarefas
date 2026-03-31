@@ -334,9 +334,12 @@ async function syncTotals(propertyId) {
 
   for (const p of periods) {
     try {
-      const [response] = await analyticsClient.runReport({
+      const range = [{ startDate: dateStr(p.days), endDate: 'today' }];
+
+      // Batch 1: 8 metrics
+      const [r1] = await analyticsClient.runReport({
         property: propertyId,
-        dateRanges: [{ startDate: dateStr(p.days), endDate: 'today' }],
+        dateRanges: range,
         metrics: [
           { name: 'activeUsers' },
           { name: 'newUsers' },
@@ -346,6 +349,14 @@ async function syncTotals(propertyId) {
           { name: 'bounceRate' },
           { name: 'averageSessionDuration' },
           { name: 'engagedSessions' },
+        ],
+      });
+
+      // Batch 2: 5 metrics
+      const [r2] = await analyticsClient.runReport({
+        property: propertyId,
+        dateRanges: range,
+        metrics: [
           { name: 'engagementRate' },
           { name: 'eventCount' },
           { name: 'conversions' },
@@ -354,27 +365,27 @@ async function syncTotals(propertyId) {
         ],
       });
 
-      const row = response.rows?.[0];
-      if (row) {
-        const m = row.metricValues;
+      const m1 = r1.rows?.[0]?.metricValues;
+      const m2 = r2.rows?.[0]?.metricValues;
+      if (m1 && m2) {
         docs.push({
           id:                       `${propNum}_totals_${p.key}`,
           propertyId:               propNum,
           period:                   p.key,
           days:                     p.days,
-          activeUsers:              parseInt(m[0].value) || 0,
-          newUsers:                 parseInt(m[1].value) || 0,
-          totalUsers:               parseInt(m[2].value) || 0,
-          sessions:                 parseInt(m[3].value) || 0,
-          screenPageViews:          parseInt(m[4].value) || 0,
-          bounceRate:               parseFloat(m[5].value) || 0,
-          avgSessionDuration:       parseFloat(m[6].value) || 0,
-          engagedSessions:          parseInt(m[7].value) || 0,
-          engagementRate:           parseFloat(m[8].value) || 0,
-          eventsCount:              parseInt(m[9].value) || 0,
-          conversions:              parseInt(m[10].value) || 0,
-          sessionsPerUser:          parseFloat(m[11].value) || 0,
-          pageViewsPerSession:      parseFloat(m[12].value) || 0,
+          activeUsers:              parseInt(m1[0].value) || 0,
+          newUsers:                 parseInt(m1[1].value) || 0,
+          totalUsers:               parseInt(m1[2].value) || 0,
+          sessions:                 parseInt(m1[3].value) || 0,
+          screenPageViews:          parseInt(m1[4].value) || 0,
+          bounceRate:               parseFloat(m1[5].value) || 0,
+          avgSessionDuration:       parseFloat(m1[6].value) || 0,
+          engagedSessions:          parseInt(m1[7].value) || 0,
+          engagementRate:           parseFloat(m2[0].value) || 0,
+          eventsCount:              parseInt(m2[1].value) || 0,
+          conversions:              parseInt(m2[2].value) || 0,
+          sessionsPerUser:          parseFloat(m2[3].value) || 0,
+          pageViewsPerSession:      parseFloat(m2[4].value) || 0,
           syncedAt:                 admin.firestore.FieldValue.serverTimestamp(),
         });
       }
