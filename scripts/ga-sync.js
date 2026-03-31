@@ -316,6 +316,78 @@ async function syncCountries(propertyId) {
   return n;
 }
 
+/* ─── Sync: Period totals (deduplicated) ──────────────────── */
+async function syncTotals(propertyId) {
+  console.log('  📈 Sync totais do período...');
+
+  // Query sem dimensão = GA retorna totais agregados/deduplicados
+  const periods = [
+    { days: 7,   key: '7d'  },
+    { days: 14,  key: '14d' },
+    { days: 30,  key: '30d' },
+    { days: 90,  key: '90d' },
+    { days: 365, key: '365d'},
+  ];
+
+  const propNum = propertyId.replace('properties/', '');
+  const docs = [];
+
+  for (const p of periods) {
+    try {
+      const [response] = await analyticsClient.runReport({
+        property: propertyId,
+        dateRanges: [{ startDate: dateStr(p.days), endDate: 'today' }],
+        metrics: [
+          { name: 'activeUsers' },
+          { name: 'newUsers' },
+          { name: 'totalUsers' },
+          { name: 'sessions' },
+          { name: 'screenPageViews' },
+          { name: 'bounceRate' },
+          { name: 'averageSessionDuration' },
+          { name: 'engagedSessions' },
+          { name: 'engagementRate' },
+          { name: 'eventCount' },
+          { name: 'conversions' },
+          { name: 'sessionsPerUser' },
+          { name: 'screenPageViewsPerSession' },
+        ],
+      });
+
+      const row = response.rows?.[0];
+      if (row) {
+        const m = row.metricValues;
+        docs.push({
+          id:                       `${propNum}_totals_${p.key}`,
+          propertyId:               propNum,
+          period:                   p.key,
+          days:                     p.days,
+          activeUsers:              parseInt(m[0].value) || 0,
+          newUsers:                 parseInt(m[1].value) || 0,
+          totalUsers:               parseInt(m[2].value) || 0,
+          sessions:                 parseInt(m[3].value) || 0,
+          screenPageViews:          parseInt(m[4].value) || 0,
+          bounceRate:               parseFloat(m[5].value) || 0,
+          avgSessionDuration:       parseFloat(m[6].value) || 0,
+          engagedSessions:          parseInt(m[7].value) || 0,
+          engagementRate:           parseFloat(m[8].value) || 0,
+          eventsCount:              parseInt(m[9].value) || 0,
+          conversions:              parseInt(m[10].value) || 0,
+          sessionsPerUser:          parseFloat(m[11].value) || 0,
+          pageViewsPerSession:      parseFloat(m[12].value) || 0,
+          syncedAt:                 admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    } catch(e) {
+      console.warn(`    ⚠ Erro totais ${p.key}: ${e.message}`);
+    }
+  }
+
+  const n = await batchWrite('ga_totals', docs);
+  console.log(`    ✅ ${n} períodos sincronizados`);
+  return n;
+}
+
 /* ─── Main ────────────────────────────────────────────────── */
 async function main() {
   console.log('═══════════════════════════════════════════════');
@@ -351,12 +423,13 @@ async function main() {
       }, { merge: true });
 
       const daily     = await syncDaily(propId);
+      const totals    = await syncTotals(propId);
       const pages     = await syncPages(propId);
       const sources   = await syncSources(propId);
       const devices   = await syncDevices(propId);
       const countries = await syncCountries(propId);
 
-      totalDocs += daily + pages + sources + devices + countries;
+      totalDocs += daily + totals + pages + sources + devices + countries;
     } catch (e) {
       console.error(`  ❌ Erro na propriedade ${propId}: ${e.message}`);
     }
