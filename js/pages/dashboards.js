@@ -115,11 +115,26 @@ export async function renderDashboards(container) {
       </div>
     </div>
 
-    <!-- Filters: user, núcleo, área -->
+    <!-- Filters: user, núcleo, área (restricted by permissions) -->
+    ${(() => {
+      const isMasterOrAdmin = store.isMaster() || store.can('system_view_all');
+      const visibleSectors = store.getVisibleSectors(); // null=master, []=nenhum, [...]
+      // Filter users: master sees all; others see only users in their visible sectors
+      const visibleUsers = isMasterOrAdmin ? users
+        : users.filter(u => {
+            const uSector = u.sector || u.department || '';
+            if (!uSector) return true; // user without sector — show (safe, tasks already filtered)
+            return visibleSectors && visibleSectors.includes(uSector);
+          });
+      // Filter areas: master sees all; others see only their visible sectors
+      const visibleAreas = isMasterOrAdmin ? REQUESTING_AREAS
+        : REQUESTING_AREAS.filter(s => visibleSectors && visibleSectors.includes(s));
+      // Núcleos: show all (núcleos are cross-sector, no permission restriction needed)
+      return `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
       <select class="filter-select" id="dash-user-filter" style="min-width:190px;">
         <option value="">Todos os usuários</option>
-        ${users.map(u => `<option value="${esc(u.id)}" ${filterUser===u.id?'selected':''}>${esc(u.name || u.email)}</option>`).join('')}
+        ${visibleUsers.map(u => `<option value="${esc(u.id)}" ${filterUser===u.id?'selected':''}>${esc(u.name || u.email)}</option>`).join('')}
       </select>
       <select class="filter-select" id="dash-nucleo-filter" style="min-width:150px;">
         <option value="">Todos os núcleos</option>
@@ -127,12 +142,13 @@ export async function renderDashboards(container) {
       </select>
       <select class="filter-select" id="dash-sector-filter" style="min-width:160px;">
         <option value="">Todas as áreas</option>
-        ${REQUESTING_AREAS.map(s => `<option value="${esc(s)}" ${filterSector===s?'selected':''}>${esc(s)}</option>`).join('')}
+        ${visibleAreas.map(s => `<option value="${esc(s)}" ${filterSector===s?'selected':''}>${esc(s)}</option>`).join('')}
       </select>
       ${(filterUser||filterNucleo||filterSector) ? `
         <button class="btn btn-ghost btn-sm" id="dash-clear-filters"
           style="font-size:0.75rem;color:var(--text-muted);">✕ Limpar filtros</button>` : ''}
-    </div>
+    </div>`;
+    })()}
 
     <!-- Skeleton KPIs -->
     <div class="dashboard-grid" id="kpi-row">
