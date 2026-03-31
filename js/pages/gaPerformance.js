@@ -124,12 +124,16 @@ export async function renderGaPerformance(container) {
       <div class="card" style="padding:20px;">
         <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
           color:var(--text-muted);margin-bottom:12px;">Usuários & Sessões (diário)</div>
-        <canvas id="ga-chart-users" height="200"></canvas>
+        <div style="position:relative;height:220px;">
+          <canvas id="ga-chart-users"></canvas>
+        </div>
       </div>
       <div class="card" style="padding:20px;">
         <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
           color:var(--text-muted);margin-bottom:12px;">Taxa de Engajamento & Rejeição</div>
-        <canvas id="ga-chart-rates" height="200"></canvas>
+        <div style="position:relative;height:220px;">
+          <canvas id="ga-chart-rates"></canvas>
+        </div>
       </div>
     </div>
 
@@ -355,6 +359,8 @@ async function renderCharts() {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
+        resizeDelay: 100,
+        animation: { duration: 400 },
         plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
         scales: {
           x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 15 } },
@@ -393,6 +399,8 @@ async function renderCharts() {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
+        resizeDelay: 100,
+        animation: { duration: 400 },
         plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
         scales: {
           x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 15 } },
