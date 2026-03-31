@@ -7,6 +7,7 @@ import { store }   from '../store.js';
 import { signOut } from '../auth/auth.js';
 import { router }  from '../router.js';
 import { toast }   from './toast.js';
+import { toggleNotificationPanel } from './notificationPanel.js';
 import {
   collection, getDocs, query, orderBy, limit, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -60,9 +61,13 @@ export class Header {
       </div>
 
       <div class="header-actions">
-        <button class="header-action-btn" id="notif-btn" title="Notificações">
+        <button class="header-action-btn" id="notif-btn" title="Notificações"
+          style="position:relative;">
           🔔
-          <span class="notif-dot"></span>
+          <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;
+            min-width:16px;height:16px;border-radius:8px;background:#EF4444;color:#fff;
+            font-size:0.5625rem;font-weight:700;line-height:16px;text-align:center;
+            padding:0 4px;"></span>
         </button>
 
         <button class="header-action-btn" id="theme-toggle-btn"
@@ -161,6 +166,24 @@ export class Header {
       localStorage.setItem('primetour-theme', newTheme);
       themeBtn.textContent = newTheme === 'light' ? '🌙' : '☀️';
     });
+
+    // Notifications bell
+    const notifBtn = this.el.querySelector('#notif-btn');
+    notifBtn?.addEventListener('click', () => toggleNotificationPanel());
+
+    // Subscribe to unread count for badge
+    const updateBadge = (count) => {
+      const badge = this.el.querySelector('#notif-badge');
+      if (!badge) return;
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.style.display = 'block';
+      } else {
+        badge.style.display = 'none';
+      }
+    };
+    updateBadge(store.get('unreadCount') || 0);
+    this._unsubNotif = store.subscribe('unreadCount', updateBadge);
 
     // Mobile menu
     const mobileBtn = this.el.querySelector('#mobile-menu-btn');
@@ -646,6 +669,7 @@ export class Header {
 
   destroy() {
     this._unsubRoute?.();
+    this._unsubNotif?.();
   }
 }
 
