@@ -324,6 +324,7 @@ async function syncTotals(propertyId) {
   const periods = [
     { days: 7,   key: '7d'  },
     { days: 14,  key: '14d' },
+    { days: 28,  key: '28d' },
     { days: 30,  key: '30d' },
     { days: 90,  key: '90d' },
     { days: 365, key: '365d'},
