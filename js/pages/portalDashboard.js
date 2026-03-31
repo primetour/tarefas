@@ -351,18 +351,26 @@ function renderDash() {
 
     <!-- KPIs row 1 -->
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:12px;margin-bottom:24px;">
-      ${kpi('Dicas Cadastradas',  allTips.length,   '✈')}
-      ${kpi('Criadas no Período', tips.length,      '📝')}
+      ${kpi('Dicas Cadastradas',  allTips.length,   '✈', null, '',
+            'Total de dicas cadastradas no sistema, independente do filtro de período.')}
+      ${kpi('Criadas no Período', tips.length,      '📝', null, '',
+            'Quantidade de dicas criadas dentro do período e usuário selecionados nos filtros acima.')}
       ${kpi('Prioritárias',       priorityTips.length, '★', null,
             priorityExpired.length > 0
               ? `<span style="color:#EF4444;font-size:0.6875rem;">${priorityExpired.length} vencida${priorityExpired.length>1?'s':''}</span>`
               : priorityTips.length > 0
-                ? `<span style="color:#22C55E;font-size:0.6875rem;">atualizadas</span>` : '')}
-      ${kpi('Cobertura',          pct(totalFilled,maxFilled)+'%', '📊')}
-      ${kpi('Vencidas',           expired.length,   '⚠', expired.length > 0 ? '#EF4444' : null)}
-      ${kpi('Imagens (banco)',    rawImages.length,  '🖼')}
-      ${kpi('Gerações',           gens.length,       '⚡')}
-      ${kpi('Links Web',          links.length,      '🔗')}
+                ? `<span style="color:#22C55E;font-size:0.6875rem;">atualizadas</span>` : '',
+            'Destinos marcados com estrela (★) como prioritários. Indica os destinos mais importantes que devem ser mantidos sempre atualizados.')}
+      ${kpi('Cobertura',          pct(totalFilled,maxFilled)+'%', '📊', null, '',
+            'Percentual de preenchimento dos segmentos em todas as dicas. Cada dica tem ' + SEGMENTS.length + ' segmentos possíveis (ex: Informações, Bairros, Atrações, Restaurantes…). Cobertura = (segmentos preenchidos ÷ total possível) × 100.')}
+      ${kpi('Vencidas',           expired.length,   '⚠', expired.length > 0 ? '#EF4444' : null, '',
+            'Dicas que possuem pelo menos um segmento com data de validade expirada. Esses segmentos precisam ser revisados e atualizados.')}
+      ${kpi('Imagens (banco)',    rawImages.length,  '🖼', null, '',
+            'Total de imagens cadastradas no banco de imagens do portal, considerando todos os continentes e países.')}
+      ${kpi('Gerações',           gens.length,       '⚡', null, '',
+            'Quantidade de materiais gerados (Word, PDF, PowerPoint ou Link Web) no período e pelo usuário selecionados.')}
+      ${kpi('Links Web',          links.length,      '🔗', null, '',
+            'Links web criados para compartilhamento de dicas de viagem com clientes. Cada link é acessível sem login.')}
     </div>
 
     <!-- Row: Validade + Cobertura por Segmento -->
@@ -698,12 +706,19 @@ function buildViewUrl(token) {
   return `${base}portal-view.html#${token}`;
 }
 
-function kpi(label, value, icon, color, extra) {
+function kpi(label, value, icon, color, extra, info) {
   return `<div class="card" style="padding:16px;">
     <div style="font-size:1.25rem;margin-bottom:6px;">${icon}</div>
     <div style="font-size:1.625rem;font-weight:800;line-height:1;${color?`color:${color};`:''}">
       ${value}</div>
-    <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px;">${label}</div>
+    <div style="display:flex;align-items:center;gap:4px;font-size:0.75rem;color:var(--text-secondary);margin-top:4px;">
+      ${label}
+      ${info ? `<span style="display:inline-flex;align-items:center;justify-content:center;
+        width:13px;height:13px;border-radius:50%;background:var(--bg-surface);
+        border:1px solid var(--border-subtle);font-size:0.5rem;cursor:help;
+        font-weight:700;color:var(--text-muted);flex-shrink:0;"
+        title="${esc(info)}">i</span>` : ''}
+    </div>
     ${extra ? `<div style="margin-top:2px;">${extra}</div>` : ''}
   </div>`;
 }
