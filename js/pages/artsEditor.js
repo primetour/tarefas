@@ -22,6 +22,168 @@ let fabricCanvas = null;
 let _currentLayers = null;
 let _currentScale = 1;
 
+/* ── Responsive CSS (injected once) ─────────────────────────── */
+function injectResponsiveStyles() {
+  if (document.getElementById('arts-responsive-css')) return;
+  const style = document.createElement('style');
+  style.id = 'arts-responsive-css';
+  style.textContent = `
+    /* ─── Mobile: Arts Editor ─────────────────────────── */
+    @media (max-width: 768px) {
+      /* Main page header */
+      .arts-page-header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 12px !important;
+      }
+      .arts-page-header .page-header-actions {
+        width: 100% !important;
+        justify-content: flex-start !important;
+      }
+      .arts-page-header .page-header-actions .btn {
+        flex: 1 !important;
+        min-width: 0 !important;
+        font-size: 0.75rem !important;
+        padding: 8px 6px !important;
+      }
+
+      /* Filters card */
+      .arts-filters-bar {
+        flex-direction: column !important;
+        gap: 10px !important;
+      }
+      .arts-filters-bar > div:first-child {
+        max-width: 100% !important;
+        min-width: 100% !important;
+      }
+      #arts-cat-pills {
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 4px;
+        scrollbar-width: none;
+      }
+      #arts-cat-pills::-webkit-scrollbar { display: none; }
+      #arts-cat-pills .arts-cat-btn {
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+      }
+      #arts-sector-filter, #arts-size-filter {
+        width: 100% !important;
+      }
+
+      /* Template grid — 2 cols on mobile */
+      #arts-template-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 10px !important;
+      }
+
+      /* ─── Editor modal ──────────────────────────────── */
+      #arts-editor-modal {
+        flex-direction: column !important;
+      }
+      .arts-editor-toolbar {
+        padding: 8px 12px !important;
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+      }
+      .arts-editor-toolbar .btn {
+        padding: 8px 10px !important;
+        font-size: 0.75rem !important;
+        min-height: 36px !important;
+      }
+      .arts-editor-toolbar .arts-tpl-name {
+        width: 100% !important;
+        order: -1 !important;
+        flex: none !important;
+        text-align: center !important;
+      }
+      .arts-editor-body {
+        grid-template-columns: 1fr !important;
+        grid-template-rows: 1fr auto !important;
+      }
+      #arts-canvas-area {
+        padding: 12px !important;
+        min-height: 0 !important;
+      }
+      .arts-right-panel {
+        border-left: none !important;
+        border-top: 1px solid var(--border-subtle) !important;
+        max-height: 45vh !important;
+        min-height: 180px !important;
+      }
+      .arts-panel-tab {
+        padding: 12px 8px !important;
+        font-size: 0.8125rem !important;
+        min-height: 44px !important;
+      }
+
+      /* Layer fields compact */
+      .arts-layer-fields .lf-grid-2 {
+        grid-template-columns: 1fr !important;
+      }
+      .arts-layer-item {
+        padding: 14px 12px !important;
+      }
+
+      /* ─── Sub-modals fullscreen on mobile ───────────── */
+      .arts-sub-modal {
+        padding: 0 !important;
+        align-items: stretch !important;
+        justify-content: stretch !important;
+      }
+      .arts-sub-modal > .card {
+        max-width: 100% !important;
+        max-height: 100% !important;
+        height: 100% !important;
+        border-radius: 0 !important;
+      }
+
+      /* Filter grid 2 cols on mobile */
+      .arts-filter-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+
+      /* Template editor 1-col grid */
+      .te-grid-3 {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* Image bank grid */
+      .ibp-grid {
+        grid-template-columns: repeat(3, 1fr) !important;
+      }
+    }
+
+    /* ─── Very small screens (< 400px) ────────────────── */
+    @media (max-width: 400px) {
+      #arts-template-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .ibp-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+      .arts-filter-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+    }
+
+    /* ─── Touch-friendly adjustments ──────────────────── */
+    @media (hover: none) and (pointer: coarse) {
+      .arts-layer-item,
+      .tip-item,
+      .filter-preview-btn,
+      .ibp-img-btn {
+        min-height: 44px !important;
+      }
+      .filter-preview-btn {
+        padding: 10px 6px !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 /* ════════════════════════════════════════════════════════════
    Main render
    ════════════════════════════════════════════════════════════ */
@@ -36,8 +198,10 @@ export async function renderArtsEditor(container) {
   const isAdmin = store.isMaster() || store.can('system_manage_users');
   const categories = await fetchArtCategories().catch(() => []);
 
+  injectResponsiveStyles();
+
   container.innerHTML = `
-    <div class="page-header">
+    <div class="page-header arts-page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
       <div class="page-header-left">
         <h1 class="page-title">Editor de Artes</h1>
         <p class="page-subtitle">Templates para redes sociais, e-mails e comunicados</p>
@@ -54,7 +218,7 @@ export async function renderArtsEditor(container) {
 
     <!-- Filters -->
     <div class="card" style="padding:14px 20px;margin-bottom:20px;">
-      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <div class="arts-filters-bar" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
         <!-- Search -->
         <div style="flex:1;min-width:180px;max-width:300px;position:relative;">
           <input type="text" class="form-input" id="arts-search"
@@ -244,11 +408,12 @@ async function openEditor(container, templateId) {
 
   editorModal.innerHTML = `
     <!-- Toolbar -->
-    <div style="padding:10px 20px;background:var(--bg-surface);border-bottom:1px solid var(--border-subtle);
-      display:flex;align-items:center;gap:12px;flex-shrink:0;">
+    <div class="arts-editor-toolbar" style="padding:10px 20px;background:var(--bg-surface);
+      border-bottom:1px solid var(--border-subtle);
+      display:flex;align-items:center;gap:12px;flex-shrink:0;flex-wrap:wrap;">
       <button id="arts-editor-close" class="btn btn-ghost btn-sm">← Voltar</button>
-      <div style="flex:1;font-weight:700;font-size:0.9375rem;overflow:hidden;text-overflow:ellipsis;
-        white-space:nowrap;">${esc(template.name)}</div>
+      <div class="arts-tpl-name" style="flex:1;font-weight:700;font-size:0.9375rem;overflow:hidden;
+        text-overflow:ellipsis;white-space:nowrap;">${esc(template.name)}</div>
       <span style="font-size:0.75rem;color:var(--text-muted);">${esc(size.label)}</span>
       <button id="arts-zoom-in" class="btn btn-ghost btn-sm" title="Zoom +">+</button>
       <button id="arts-zoom-out" class="btn btn-ghost btn-sm" title="Zoom −">−</button>
@@ -257,18 +422,21 @@ async function openEditor(container, templateId) {
     </div>
 
     <!-- Editor body -->
-    <div style="display:grid;grid-template-columns:1fr 320px;flex:1;overflow:hidden;min-height:0;">
+    <div class="arts-editor-body" style="display:grid;grid-template-columns:1fr 320px;
+      flex:1;overflow:hidden;min-height:0;">
 
       <!-- Canvas area -->
       <div id="arts-canvas-area" style="background:#1a1a1a;display:flex;align-items:center;
         justify-content:center;overflow:auto;padding:24px;">
-        <div id="arts-canvas-wrap" style="position:relative;box-shadow:0 20px 60px rgba(0,0,0,.5);">
+        <div id="arts-canvas-wrap" style="position:relative;box-shadow:0 20px 60px rgba(0,0,0,.5);
+          transform-origin:center center;">
           <canvas id="arts-fabric-canvas"></canvas>
         </div>
       </div>
 
-      <!-- Right panel -->
-      <div style="background:var(--bg-surface);border-left:1px solid var(--border-subtle);
+      <!-- Right panel (bottom on mobile) -->
+      <div class="arts-right-panel" style="background:var(--bg-surface);
+        border-left:1px solid var(--border-subtle);
         display:flex;flex-direction:column;overflow:hidden;">
 
         <!-- Tab bar -->
@@ -353,7 +521,13 @@ async function loadFabric() {
 }
 
 function initFabricCanvas(template, size) {
-  const MAX_DISPLAY = 600;
+  // Responsive: measure available canvas area
+  const canvasArea = document.getElementById('arts-canvas-area');
+  const isMobile = window.innerWidth <= 768;
+  const availW = canvasArea ? canvasArea.clientWidth - (isMobile ? 24 : 48) : 600;
+  const availH = canvasArea ? canvasArea.clientHeight - (isMobile ? 24 : 48) : 600;
+  const MAX_DISPLAY = Math.min(availW, availH, isMobile ? availW : 600);
+
   _currentScale = Math.min(MAX_DISPLAY / size.w, MAX_DISPLAY / size.h, 1);
   const displayW = Math.round(size.w * _currentScale);
   const displayH = Math.round(size.h * _currentScale);
@@ -543,7 +717,7 @@ function renderLayerFields(container, layer, idx, scale) {
 
   // FONT SIZE + WEIGHT
   if (editableFields.includes('font_size')) {
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+    html += `<div class="lf-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
       <div>
         <label style="${LBL}">Tamanho</label>
         <input id="lf-fsize-${idx}" type="number" class="form-input"
@@ -561,7 +735,7 @@ function renderLayerFields(container, layer, idx, scale) {
 
   // ALIGN + LINE HEIGHT
   if (editableFields.includes('align')) {
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+    html += `<div class="lf-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
       <div>
         <label style="${LBL}">Alinhamento</label>
         <select id="lf-align-${idx}" class="filter-select" style="width:100%;font-size:0.8125rem;">
@@ -811,7 +985,7 @@ function renderFiltersPanel() {
       <div style="font-size:0.8125rem;font-weight:600;margin-bottom:10px;">
         ${esc(layer.label || 'Imagem')}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+      <div class="arts-filter-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
         ${IMAGE_FILTERS.map(f => `
           <button class="filter-preview-btn" data-idx="${layer.idx}" data-filter="${esc(f.key)}"
             style="border:2px solid ${(layer.filter || 'none') === f.key ? 'var(--brand-gold)' : 'var(--border-subtle)'};
@@ -930,6 +1104,7 @@ async function renderTipsPanel() {
 /* ─── Image bank picker modal ──────────────────────────────── */
 function showImageBankPicker(onSelect) {
   const pickerModal = document.createElement('div');
+  pickerModal.className = 'arts-sub-modal';
   pickerModal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:3000;
     display:flex;align-items:center;justify-content:center;padding:20px;`;
   pickerModal.innerHTML = `
@@ -937,14 +1112,14 @@ function showImageBankPicker(onSelect) {
       padding:0;overflow:hidden;display:flex;flex-direction:column;">
       <div style="padding:14px 20px;background:var(--bg-surface);
         border-bottom:1px solid var(--border-subtle);
-        display:flex;align-items:center;gap:12px;flex-shrink:0;">
-        <div style="font-weight:700;flex:1;">🖼 Banco de Imagens</div>
+        display:flex;align-items:center;gap:12px;flex-shrink:0;flex-wrap:wrap;">
+        <div style="font-weight:700;flex:1;min-width:120px;">🖼 Banco de Imagens</div>
         <input type="text" class="form-input" id="ibp-search"
-          placeholder="Buscar imagens..." style="width:200px;height:32px;font-size:0.8125rem;">
+          placeholder="Buscar imagens..." style="flex:1;min-width:140px;height:36px;font-size:0.8125rem;">
         <button id="ibp-close" style="border:none;background:none;cursor:pointer;
-          font-size:1.25rem;color:var(--text-muted);">✕</button>
+          font-size:1.25rem;color:var(--text-muted);min-width:36px;min-height:36px;">✕</button>
       </div>
-      <div id="ibp-grid" style="padding:16px;overflow-y:auto;flex:1;
+      <div id="ibp-grid" class="ibp-grid" style="padding:16px;overflow-y:auto;flex:1;
         display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;">
         <div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text-muted);">
           <div class="chart-loading-spinner"></div>
@@ -1029,17 +1204,48 @@ function exportCanvas(format, name) {
   if (!fabricCanvas) return;
   fabricCanvas.discardActiveObject();
   fabricCanvas.renderAll();
+
+  // Use higher multiplier on desktop, lower on mobile to avoid memory issues
+  const isMobile = window.innerWidth <= 768;
+  const multiplier = isMobile ? 2 : 3;
+
   const dataUrl = fabricCanvas.toDataURL({
     format: format === 'jpg' ? 'jpeg' : 'png',
     quality: 0.92,
-    multiplier: 3,
+    multiplier,
   });
-  const a = document.createElement('a');
-  a.href = dataUrl;
-  a.download = `${(name || 'arte').replace(/\s+/g, '-')}.${format}`;
-  a.click();
+
+  const fileName = `${(name || 'arte').replace(/\s+/g, '-')}.${format}`;
+
+  // On mobile Safari/iOS, blob download works better for saving to gallery
+  if (isMobile && navigator.share && format === 'png') {
+    // Use Web Share API if available (iOS Safari, Android Chrome)
+    fetch(dataUrl)
+      .then(res => res.blob())
+      .then(blob => {
+        const file = new File([blob], fileName, { type: `image/${format === 'jpg' ? 'jpeg' : 'png'}` });
+        navigator.share({ files: [file], title: fileName }).catch(() => {
+          // Fallback to download link if share was cancelled
+          triggerDownload(dataUrl, fileName);
+        });
+      })
+      .catch(() => triggerDownload(dataUrl, fileName));
+  } else {
+    triggerDownload(dataUrl, fileName);
+  }
+
   toast.success(`Arte exportada em ${format.toUpperCase()}!`);
   recordArtGeneration({ templateName: name, format }).catch(() => {});
+}
+
+function triggerDownload(dataUrl, fileName) {
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = fileName;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 100);
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -1047,6 +1253,7 @@ function exportCanvas(format, name) {
    ════════════════════════════════════════════════════════════ */
 async function showTemplateManager(container) {
   const mgr = document.createElement('div');
+  mgr.className = 'arts-sub-modal';
   mgr.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2000;
     display:flex;align-items:center;justify-content:center;padding:20px;`;
   mgr.innerHTML = `
@@ -1147,6 +1354,7 @@ async function showTemplateEditor(container, templateId) {
   const categories = await fetchArtCategories().catch(() => []);
 
   const edModal = document.createElement('div');
+  edModal.className = 'arts-sub-modal';
   edModal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2000;
     display:flex;align-items:center;justify-content:center;padding:20px;`;
 
@@ -1170,7 +1378,7 @@ async function showTemplateEditor(container, templateId) {
             value="${esc(template.name)}" placeholder="Ex: Destaque de Destino - Stories">
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div class="te-grid-3" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;">
           <div>
             <label style="${LBL}">Categoria de rede</label>
             <select id="te-cat" class="filter-select" style="width:100%;">
@@ -1295,6 +1503,7 @@ async function showTemplateEditor(container, templateId) {
    ════════════════════════════════════════════════════════════ */
 async function showCategoryManager(container) {
   const catModal = document.createElement('div');
+  catModal.className = 'arts-sub-modal';
   catModal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2000;
     display:flex;align-items:center;justify-content:center;padding:20px;`;
 
@@ -1378,6 +1587,7 @@ async function showCategoryManager(container) {
    ════════════════════════════════════════════════════════════ */
 function showBestPractices() {
   const guideModal = document.createElement('div');
+  guideModal.className = 'arts-sub-modal';
   guideModal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2000;
     display:flex;align-items:center;justify-content:center;padding:20px;`;
   guideModal.innerHTML = `
