@@ -71,7 +71,7 @@ export async function deleteNewsItem(id) {
 export const CLIPPING_MEDIA_TYPES = ['Digital', 'Impresso', 'Televisivo'];
 
 export const CLIPPING_CONTENT_TYPES = [
-  'Negócios', 'Análises', 'Tendências', 'Novidades', 'Publieditorial', 'Eventos',
+  'Negócios', 'Análises', 'Tendências', 'Novidades', 'Publieditorial', 'Eventos', 'Premiações', 'Sustentabilidade',
 ];
 
 export const CLIPPING_SENTIMENTS = [
