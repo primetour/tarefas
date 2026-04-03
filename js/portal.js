@@ -1,0 +1,1713 @@
+/**
+ * PRIMETOUR — Portal de Solicitações (Fase 4)
+ * Autenticação obrigatória via Firebase Auth
+ */
+
+import { initializeApp }  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import {
+  getFirestore, collection, addDoc, getDocs, doc, getDoc, updateDoc,
+  query, where, orderBy, limit, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import {
+  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+
+/* ─── Estado do usuário autenticado ─────────────────────────── */
+let portalUser = null; // { uid, name, email, department }
+
+/* ─── Bootstrap ───────────────────────────────────────────── */
+async function boot() {
+  const configModule = await import('../config.js').catch(() => null);
+  const firebaseConfig = configModule?.firebaseConfig;
+  if (!firebaseConfig) {
+    showError('Configuração do sistema não encontrada.');
+    return;
+  }
+
+  // Usa a mesma instância nomeada do app principal para compartilhar sessão de auth
+  let app;
+  try {
+    const { getApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+    app = getApp('primetour-main');
+  } catch(e) {
+    app = initializeApp(firebaseConfig, 'primetour-main');
+  }
+  const db   = getFirestore(app);
+  const auth = getAuth(app);
+
+  // Verificar sessão ativa ou exibir login
+  onAuthStateChanged(auth, async (user) => {
+    const root = document.getElementById('portal-root');
+    if (!root) return;
+
+    if (user) {
+      // Carregar perfil do Firestore
+      let profile = {};
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (snap.exists()) profile = snap.data();
+      } catch(e) { console.warn('Perfil não encontrado:', e.message); }
+
+      portalUser = {
+        uid:        user.uid,
+        name:       profile.displayName || user.displayName || '',
+        email:      user.email || '',
+        department: profile.department || '',
+      };
+
+      const taskTypes = await loadTaskTypes(db);
+      await renderForm(db, taskTypes, auth);
+    } else {
+      portalUser = null;
+      renderLoginScreen(auth, root);
+    }
+  });
+}
+
+/* ─── Tela de login ──────────────────────────────────────── */
+function renderLoginScreen(auth, root) {
+  root.innerHTML = `
+    <div class="portal-wrap">
+      <header class="portal-header">
+        <div class="portal-brand">
+          <div class="portal-brand-icon">✦</div>
+          <div>
+            <div class="portal-brand-name">PRIMETOUR</div>
+            <div class="portal-brand-sub">Portal de Solicitações</div>
+          </div>
+        </div>
+      </header>
+      <main class="portal-main">
+        <div class="portal-container" style="max-width:420px;">
+          <div class="portal-card" style="margin-top:40px;">
+            <div class="portal-card-title" style="text-align:center;">Acesse sua conta</div>
+            <p style="font-size:0.8125rem;color:var(--text-muted);text-align:center;margin-bottom:20px;">
+              Faça login com seu e-mail corporativo para enviar solicitações.
+            </p>
+            <div class="form-group" id="fg-login-email">
+              <label class="form-label">E-mail</label>
+              <input type="email" class="form-input" id="login-email"
+                placeholder="seu@email.com" autocomplete="email" />
+            </div>
+            <div class="form-group" id="fg-login-pass">
+              <label class="form-label">Senha</label>
+              <input type="password" class="form-input" id="login-pass"
+                placeholder="Sua senha" autocomplete="current-password" />
+            </div>
+            <div class="alert-banner warning" id="login-error" style="display:none;">
+              <span style="font-size:1.125rem;flex-shrink:0;">⚠</span>
+              <span id="login-error-msg">Erro ao fazer login.</span>
+            </div>
+            <button class="portal-submit" id="login-btn" style="margin-top:12px;width:100%;">
+              Entrar →
+            </button>
+            <div style="text-align:center;margin-top:16px;">
+              <a href="index.html" style="font-size:0.8125rem;color:var(--brand-gold);text-decoration:none;">
+                ← Ir para o sistema principal
+              </a>
+            </div>
+          </div>
+        </div>
+      </main>
+      <footer class="portal-footer">
+        PRIMETOUR &copy; ${new Date().getFullYear()} — Sistema de Gestão de Tarefas
+      </footer>
+    </div>
+  `;
+
+  const btnLogin   = document.getElementById('login-btn');
+  const emailInput = document.getElementById('login-email');
+  const passInput  = document.getElementById('login-pass');
+  const errBanner  = document.getElementById('login-error');
+  const errMsg     = document.getElementById('login-error-msg');
+
+  const doLogin = async () => {
+    const email = emailInput?.value?.trim();
+    const pass  = passInput?.value;
+    if (!email || !pass) {
+      errBanner.style.display = 'flex';
+      errMsg.textContent = 'Preencha e-mail e senha.';
+      return;
+    }
+    btnLogin.disabled = true;
+    btnLogin.textContent = 'Entrando...';
+    errBanner.style.display = 'none';
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+      // onAuthStateChanged will handle the rest
+    } catch(e) {
+      const msgs = {
+        'auth/user-not-found':       'Usuário não encontrado.',
+        'auth/wrong-password':       'Senha incorreta.',
+        'auth/invalid-credential':   'Credenciais inválidas.',
+        'auth/invalid-email':        'E-mail inválido.',
+        'auth/too-many-requests':    'Muitas tentativas. Tente novamente mais tarde.',
+      };
+      errBanner.style.display = 'flex';
+      errMsg.textContent = msgs[e.code] || 'Erro ao fazer login: ' + e.message;
+      btnLogin.disabled = false;
+      btnLogin.textContent = 'Entrar →';
+    }
+  };
+
+  btnLogin?.addEventListener('click', doLogin);
+  passInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+  emailInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') passInput?.focus(); });
+}
+
+async function loadTaskTypes(db) {
+  try {
+    // No orderBy to avoid composite index requirement
+    const snap = await getDocs(collection(db, 'task_types'));
+    const types = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Sort client-side
+    return types.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+  } catch(e) {
+    console.warn('loadTaskTypes error:', e.message);
+    // Fallback: return newsletter as minimum
+    return [{ id: 'newsletter', name: 'Newsletter', icon: '📧', color: '#D4A843',
+      sla: { days: 2, label: '2 dias úteis' } }];
+  }
+}
+
+/* ─── Load nucleos from Firestore by sector ─────────────── */
+async function loadNucleosBySector(db, sector) {
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'nucleos'),
+      where('sector', '==', sector)
+    ));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => a.name.localeCompare(b.name,'pt-BR'));
+  } catch(e) {
+    return [];
+  }
+}
+
+/* ─── Setores (espelha REQUESTING_AREAS) ────────────────── */
+// NUCLEOS agora são carregados do Firestore por setor
+
+const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const REQUESTING_AREAS = [
+  'BTG','C&P','Célula ICs','Centurion','CEP','Concierge Bradesco',
+  'Contabilidade','Diretoria','Eventos','Financeiro','Lazer','Marketing',
+  'Operadora','Programa ICs','Projetos','PTS Bradesco','Qualidade','Suppliers','TI',
+];
+
+/* ─── Render form ─────────────────────────────────────────── */
+async function renderForm(db, taskTypes, auth) {
+  const root = document.getElementById('portal-root');
+  if (!root) return;
+
+  const u = portalUser || {};
+
+  root.innerHTML = `
+    <div class="portal-wrap">
+      <!-- Header -->
+      <header class="portal-header">
+        <div class="portal-brand">
+          <div class="portal-brand-icon">✦</div>
+          <div>
+            <div class="portal-brand-name">PRIMETOUR</div>
+            <div class="portal-brand-sub">Portal de Solicitações</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-left:auto;">
+          <span style="font-size:0.8125rem;color:var(--text-secondary);">${esc(u.name || u.email)}</span>
+          <a href="index.html" id="portal-go-system" style="font-size:0.75rem;padding:4px 12px;border-radius:4px;
+            border:1px solid var(--brand-gold);background:transparent;color:var(--brand-gold);
+            cursor:pointer;text-decoration:none;font-weight:500;">Ir para o sistema</a>
+          <button id="portal-logout-btn" style="font-size:0.75rem;padding:4px 12px;border-radius:4px;
+            border:1px solid var(--border-subtle);background:transparent;color:var(--text-muted);
+            cursor:pointer;">Sair</button>
+        </div>
+      </header>
+
+      <main class="portal-main">
+        <div class="portal-container">
+          <!-- Form view -->
+          <div id="form-view">
+            <h1 class="portal-title">Faça sua solicitação</h1>
+            <p class="portal-subtitle">
+              Preencha o formulário abaixo para enviar uma demanda ao time de produção.
+              Nossa equipe irá analisar e entrar em contato em breve.
+            </p>
+
+            <!-- Seção 1: Identificação -->
+            <div class="portal-card">
+              <div class="portal-card-title">Seus dados</div>
+              <div class="form-grid-2">
+                <div class="form-group" id="fg-name">
+                  <label class="form-label">Nome</label>
+                  <input type="text" class="form-input" id="p-name"
+                    value="${esc(u.name)}" readonly
+                    style="background:var(--bg-surface);opacity:0.7;cursor:not-allowed;" />
+                </div>
+                <div class="form-group" id="fg-email">
+                  <label class="form-label">E-mail</label>
+                  <input type="email" class="form-input" id="p-email"
+                    value="${esc(u.email)}" readonly
+                    style="background:var(--bg-surface);opacity:0.7;cursor:not-allowed;" />
+                </div>
+              </div>
+              <div class="form-grid-2">
+                <div class="form-group" id="fg-user-area">
+                  <label class="form-label">Sua área</label>
+                  <input type="text" class="form-input" id="p-user-area"
+                    value="${esc(u.department)}" readonly
+                    style="background:var(--bg-surface);opacity:0.7;cursor:not-allowed;" />
+                </div>
+                <div class="form-group" id="fg-area">
+                  <label class="form-label">Área solicitante <span class="required">*</span>
+                    <span class="info-tip" title="Pode ser diferente da sua área, caso esteja solicitando em nome de outra.">ℹ</span>
+                  </label>
+                  <select class="form-select" id="p-area">
+                    ${REQUESTING_AREAS.map(a => `<option value="${a}" ${a===u.department?'selected':''}>${a}</option>`).join('')}
+                  </select>
+                  <div class="form-error" id="err-area">Selecione uma área.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Seção 2: Demanda em cascata -->
+            <div class="portal-card">
+              <div class="portal-card-title">Detalhes da demanda</div>
+
+              <!-- Passo 1: Setor responsável -->
+              <div class="form-group" id="fg-setor">
+                <label class="form-label">
+                  Setor responsável <span class="required">*</span>
+                  <span class="info-tip" title="Selecione o setor que receberá esta demanda. Os tipos de demanda disponíveis serão filtrados por setor.">ℹ</span>
+                </label>
+                <select class="form-select" id="p-setor">
+                  <option value="">— Selecione o setor —</option>
+                  ${REQUESTING_AREAS.map(a => `<option value="${a}">${a}</option>`).join('')}
+                </select>
+                <div class="form-error" id="err-setor">Selecione um setor.</div>
+              </div>
+
+              <!-- Passo 2: Tipo de demanda (filtrado pelo setor) -->
+              <div class="form-group" id="fg-type" style="display:none;">
+                <label class="form-label">
+                  Tipo de demanda <span class="required">*</span>
+                  <span class="info-tip" title="Tipos disponíveis para o setor selecionado.">ℹ</span>
+                </label>
+                <select class="form-select" id="p-type">
+                  <option value="">— Selecione o tipo —</option>
+                </select>
+                <div class="form-error" id="err-type">Selecione um tipo.</div>
+              </div>
+
+              <!-- Passo 3: Calendário + Data (aparece após tipo) -->
+              <div class="form-group">
+                <label class="form-label">
+                  Data desejada para entrega
+                  <span class="info-tip" title="Selecione uma data no calendário ou defina manualmente. O calendário mostra os slots pré-agendados — clique em um para preencher automaticamente os campos abaixo.">ℹ</span>
+                </label>
+                <input type="date" class="form-input" id="p-date"
+                  min="${getMinDate()}" />
+
+                <!-- Calendar widget inserted here by renderPortalCalendar -->
+                <div class="slots-container" id="slots-container"></div>
+              </div>
+
+              <!-- Urgency -->
+              <div class="form-group">
+                <label class="form-label">
+                  Prioridade
+                  <span class="info-tip" title="Use urgência apenas quando há um prazo real e inegociável.">ℹ</span>
+                </label>
+                <label class="urgency-toggle" id="urgency-toggle">
+                  <input type="checkbox" id="p-urgency" />
+                  <div class="urgency-dot" id="urgency-dot">✓</div>
+                  <div>
+                    <div style="font-size:0.9375rem;color:var(--text-primary);font-weight:500;">
+                      Marcar como urgente
+                    </div>
+                    <div style="font-size:0.8125rem;color:var(--text-muted);">
+                      Selecione somente se há um prazo real e inegociável.
+                    </div>
+                  </div>
+                </label>
+
+                <!-- Alerta educativo urgência -->
+                <div class="alert-banner warning" id="urgency-alert">
+                  <span style="font-size:1.125rem;flex-shrink:0;">⚠</span>
+                  <span>
+                    <strong>Atenção:</strong> Urgências injustificadas prejudicam o planejamento
+                    e a qualidade das entregas de toda a equipe. Use este campo apenas quando há
+                    um prazo real e inegociável. Sua solicitação será avaliada pela equipe.
+                  </span>
+                </div>
+              </div>
+
+              <!-- Fora do calendário -->
+              <div class="form-group">
+                <label class="urgency-toggle" id="out-of-calendar-toggle">
+                  <input type="checkbox" id="p-out-of-calendar" />
+                  <div class="urgency-dot" id="out-calendar-dot">✓</div>
+                  <div>
+                    <div style="font-size:0.9375rem;color:var(--text-primary);font-weight:500;">
+                      Fora do calendário
+                    </div>
+                    <div style="font-size:0.8125rem;color:var(--text-muted);">
+                      Marque quando esta demanda não estava prevista no calendário editorial.
+                    </div>
+                  </div>
+                </label>
+                <div class="alert-banner warning" id="out-calendar-alert" style="display:none;">
+                  <span style="font-size:1.125rem;flex-shrink:0;">⚠</span>
+                  <span>
+                    <strong>Atenção: impacto de operar fora do calendário editorial</strong><br/>
+                    Demandas fora do calendário prejudicam o planejamento da equipe e podem comprometer
+                    a <strong>performance de entrega</strong>, <strong>taxa de cliques</strong> e
+                    <strong>saúde do servidor de disparo</strong> da PRIMETOUR — especialmente para newsletters.
+                    Envios não planejados aumentam o risco de marcação como spam e reduzem o engajamento da base.
+                    Use este campo apenas quando estritamente necessário.
+                  </span>
+                </div>
+              </div>
+
+              <div class="alert-banner info" id="calendar-alert">
+                <span style="font-size:1.125rem;flex-shrink:0;">📅</span>
+                <span>
+                  A data selecionada não está no calendário editorial padrão.
+                  O time avaliará a viabilidade de encaixe. Considere selecionar
+                  uma das datas sugeridas acima.
+                </span>
+              </div>
+
+              <!-- Passo 4: Variação do material (pre-preenchida pelo slot) -->
+              <div class="form-group" id="fg-variation" style="display:none;">
+                <label class="form-label">
+                  Variação do material <span class="required">*</span>
+                  <span class="info-tip" title="A variação define o SLA de produção. Pode ser preenchida automaticamente ao clicar em um slot do calendário.">ℹ</span>
+                </label>
+                <select class="form-select" id="p-variation">
+                  <option value="">— Selecione a variação —</option>
+                </select>
+                <div class="sla-badge" id="sla-badge" style="margin-top:8px;">
+                  <span style="color:var(--brand-gold);">⏱</span>
+                  <span>SLA de produção: <strong id="sla-label"></strong></span>
+                </div>
+              </div>
+
+              <!-- Passo 5: Núcleo (pre-preenchido pelo slot) -->
+              <div class="form-group" id="fg-nucleo" style="display:none;">
+                <label class="form-label">
+                  Núcleo responsável
+                  <span class="info-tip" title="Núcleo específico dentro do setor. Pode ser preenchido automaticamente ao clicar em um slot do calendário.">ℹ</span>
+                </label>
+                <select class="form-select" id="p-nucleo">
+                  <option value="">— Selecione o núcleo —</option>
+                </select>
+              </div>
+
+              <!-- Passo 6: Título (pre-preenchido pelo slot) -->
+              <div class="form-group" id="fg-title">
+                <label class="form-label">Título da demanda <span class="required">*</span></label>
+                <input type="text" class="form-input" id="p-title"
+                  placeholder="Ex: Newsletter Maio — Programa ICs" maxlength="120" />
+                <div class="form-error" id="err-title">Informe um título para a demanda.</div>
+              </div>
+
+              <!-- Passo 7: Descrição -->
+              <div class="form-group" id="fg-desc">
+                <label class="form-label">Descrição da demanda <span class="required">*</span></label>
+                <textarea class="form-textarea" id="p-desc" rows="4"
+                  placeholder="Descreva em detalhes o que você precisa, contexto, referências e objetivos..."></textarea>
+                <div class="form-error" id="err-desc">Descreva sua demanda.</div>
+              </div>
+            </div>
+
+            <!-- Submit buttons -->
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <button class="portal-submit" id="portal-add-batch-btn">
+                Adicionar ao lote +
+              </button>
+              <button class="portal-submit portal-submit-alt" id="portal-submit-btn">
+                Enviar apenas esta solicitação →
+              </button>
+            </div>
+
+            <!-- Batch queue panel -->
+            <div class="portal-card batch-panel" id="batch-panel" style="display:none;">
+              <div class="portal-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Solicitações em lote</span>
+                <span class="batch-count-badge" id="batch-count">0</span>
+              </div>
+              <div id="batch-list"></div>
+              <button class="portal-submit" id="batch-submit-btn" style="margin-top:12px;">
+                Enviar todas as solicitações →
+              </button>
+            </div>
+          </div>
+
+          <!-- Success view -->
+          <div class="success-screen" id="success-view">
+            <div class="success-icon">✓</div>
+            <div class="success-title">Solicitação enviada!</div>
+            <p class="success-sub" id="success-msg">
+              Recebemos sua solicitação. Nossa equipe irá analisar e entrar
+              em contato em breve pelo e-mail informado.
+            </p>
+            <button class="portal-submit" id="new-request-btn"
+              style="margin-top:32px;max-width:280px;">
+              Fazer nova solicitação
+            </button>
+          </div>
+        </div>
+      </main>
+
+      <footer class="portal-footer">
+        PRIMETOUR &copy; ${new Date().getFullYear()} — Sistema de Gestão de Tarefas
+      </footer>
+    </div>
+  `;
+
+  // Logout button
+  document.getElementById('portal-logout-btn')?.addEventListener('click', async () => {
+    if (auth) await signOut(auth);
+  });
+
+  // Load calendar slots for next 2 weeks
+  await loadCalendarSlots(db, taskTypes);
+  bindFormEvents(db, taskTypes);
+}
+
+/* ─── Calendar slots + Newsletter mini-calendar ────────────── */
+async function loadCalendarSlots(db, taskTypes=[]) {
+  // Store references for later use by type-change handler
+  window._portalDb         = db;
+  window._portalTaskTypes  = taskTypes;
+  // Calendar widget is rendered after type selection (see bindFormEvents → renderPortalCalendar)
+}
+
+/* ─── Batch queue state ──────────────────────────────────── */
+let batchQueue      = [];
+let currentEditIndex = -1;
+
+/* ─── Portal calendar widget ────────────────────────────── */
+let portalCalGran     = 'month'; // 'month'|'week'|'day'
+let portalCalDate     = new Date();
+let portalCalTypeId   = 'newsletter';
+let portalCalExpanded = false;
+
+async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
+  const slotsContainer = document.getElementById('slots-container');
+  if (!slotsContainer) return;
+  document.getElementById('portal-calendar-widget')?.remove();
+
+  // Load all task types if not passed
+  let types = taskTypes;
+  if (!types) {
+    try {
+      const snap = await getDocs(collection(db, 'task_types'));
+      types = snap.docs.map(d=>({id:d.id,...d.data()}));
+    } catch(e) { types = []; }
+  }
+
+  // Build calendar data — search by both typeId and legacy type field
+  const buildCalData = async () => {
+    const y = portalCalDate.getFullYear();
+    const m = portalCalDate.getMonth();
+    let taskMap = {};
+
+    try {
+      // Query by typeId (new schema)
+      const snap1 = await getDocs(query(
+        collection(db,'tasks'),
+        where('typeId','==',portalCalTypeId),
+        limit(300)
+      ));
+
+      // Query by legacy type name (old schema — newsletter stored as type:'newsletter')
+      const activeType = (types||[]).find(t=>t.id===portalCalTypeId);
+      const typeName   = activeType?.name?.toLowerCase() || portalCalTypeId;
+      const snap2 = await getDocs(query(
+        collection(db,'tasks'),
+        where('type','==',typeName),
+        limit(300)
+      )).catch(()=>({docs:[]}));
+
+      // Merge, deduplicate by id
+      const seen = new Set();
+      [...snap1.docs, ...snap2.docs].forEach(d=>{
+        if (seen.has(d.id)) return;
+        seen.add(d.id);
+        const t = d.data();
+        if (t.status === 'cancelled') return;
+        const df = t.dueDate||t.startDate;
+        if (!df) return;
+        const dt = df.toDate?df.toDate():new Date(df);
+        if (dt.getFullYear()!==y||dt.getMonth()!==m) return;
+        const k = dt.getDate();
+        if (!taskMap[k]) taskMap[k]=[];
+        taskMap[k].push({title:t.title||'',requestingArea:t.requestingArea||'',status:t.status||''});
+      });
+    } catch(e) { console.warn('portal calendar data error:', e.message); }
+    return taskMap;
+  };
+
+  // Build user requests map — shows what user already submitted for each date
+  const buildRequestMap = async () => {
+    const requestMap = {}; // key=ISO date, value={ status, title, statusLabel, statusColor, statusIcon }
+    if (!portalUser?.uid) return requestMap;
+    const STATUS_LABELS = {
+      pending:   { label: 'Aguardando triagem', color: '#F59E0B', icon: '◌' },
+      converted: { label: 'Convertida',         color: '#22C55E', icon: '✓' },
+      rejected:  { label: 'Recusada',           color: '#EF4444', icon: '✕' },
+    };
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'requests'),
+        where('userId', '==', portalUser.uid),
+        where('typeId', '==', portalCalTypeId),
+        limit(200)
+      ));
+      snap.docs.forEach(d => {
+        const r = d.data();
+        const df = r.desiredDate;
+        if (!df) return;
+        const dt = df.toDate ? df.toDate() : new Date(df);
+        const iso = dt.toISOString().slice(0, 10);
+        const info = STATUS_LABELS[r.status] || STATUS_LABELS.pending;
+        // Keep the most relevant status per date (converted > pending > rejected)
+        if (!requestMap[iso] || r.status === 'converted' || (r.status === 'pending' && requestMap[iso].status === 'rejected')) {
+          requestMap[iso] = { status: r.status, title: r.title || r.typeName || '', ...info };
+        }
+      });
+    } catch(e) { /* user may not have requests yet */ }
+    return requestMap;
+  };
+
+  const PT_MONTHS  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const PT_DAYS_S  = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const activeType = types.find(t=>t.id===portalCalTypeId);
+
+  // Get schedule slots for a date
+  const getSlotsForDate = (date) => {
+    if (!activeType?.scheduleSlots) return [];
+    const y=date.getFullYear(), m=date.getMonth(), d=date.getDate();
+    const dow=date.getDay();
+    const iso=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    return (activeType.scheduleSlots||[]).filter(s=>{
+      if (s.active===false) return false;
+      if (s.recurrence==='weekly')       return s.weekDay===dow;
+      if (s.recurrence==='monthly_days') return (s.monthDays||[]).includes(d);
+      if (s.recurrence==='custom')       return (s.customDates||[]).includes(iso);
+      return false;
+    });
+  };
+
+  const [taskMap, requestMap] = await Promise.all([buildCalData(), buildRequestMap()]);
+  const y = portalCalDate.getFullYear();
+  const m = portalCalDate.getMonth();
+
+  // Build month grid
+  const buildMonth = () => {
+    const firstDay = new Date(y,m,1).getDay();
+    const dim = new Date(y,m+1,0).getDate();
+    const today = new Date(); today.setHours(0,0,0,0);
+    let cells = '';
+    for(let i=firstDay-1;i>=0;i--) cells+=`<div></div>`;
+    for(let d=1;d<=dim;d++){
+      const tasks  = taskMap[d]||[];
+      const slots  = getSlotsForDate(new Date(y,m,d));
+      const isToday= d===today.getDate()&&m===today.getMonth()&&y===today.getFullYear();
+      const hasTasks= tasks.length>0;
+      const hasSlots= slots.length>0;
+      const dateISO= `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const isPast = new Date(y,m,d) < today;
+      const dow    = new Date(y,m,d).getDay();
+      const isWeekend = dow===0||dow===6;
+      const clickable = !isPast && !isWeekend;
+      const cellH = portalCalExpanded ? '100px' : '60px';
+      const cellPad = portalCalExpanded ? '6px' : '3px';
+      const cellFont = portalCalExpanded ? '0.75rem' : '0.6875rem';
+      const slotFont = portalCalExpanded ? '0.6875rem' : '0.5625rem';
+      cells+=`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
+        style="min-height:${cellH};padding:${cellPad};border-radius:4px;cursor:${clickable?'pointer':'default'};
+        background:${hasTasks?'rgba(212,168,67,0.08)':hasSlots?'rgba(212,168,67,0.04)':'transparent'};
+        border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':hasSlots?'rgba(212,168,67,0.15)':'transparent'};">
+        <div style="font-size:${cellFont};font-weight:${isToday?700:400};
+          color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</div>
+        ${slots.map(s=>{const maxChars=portalCalExpanded?22:12;return`<div class="pcal-slot-click" data-slot-date="${dateISO}"
+          data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
+          data-slot-area="${esc(s.requestingArea||'')}"
+          style="font-size:${slotFont};color:${s.color||'var(--brand-gold)'};
+          border-bottom:1px dashed ${s.color||'var(--brand-gold)'};margin-bottom:${portalCalExpanded?'2px':'1px'};
+          padding:${portalCalExpanded?'1px 0':0};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
+          title="Clique para adicionar: ${esc(s.title)}">◌ ${s.title.slice(0,maxChars)}${s.title.length>maxChars?'…':''}</div>`;}).join('')}
+        ${tasks.map(t=>{const maxChars=portalCalExpanded?22:12;return`<div style="font-size:${slotFont};color:var(--brand-gold);
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};"
+          title="${t.title}${t.requestingArea?' · '+t.requestingArea:''}">● ${t.title.slice(0,maxChars)}${t.title.length>maxChars?'…':''}</div>`;}).join('')}
+        ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
+          padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
+          title="${rq.icon} ${rq.label}">${rq.icon} ${portalCalExpanded?rq.label:rq.label.split(' ')[0]}</div>`;})()}
+      </div>`;
+    }
+    return cells;
+  };
+
+  // Build week grid
+  const buildWeek = () => {
+    const base  = new Date(portalCalDate);
+    const dow   = base.getDay();
+    const mon   = new Date(base); mon.setDate(base.getDate()-(dow===0?6:dow-1));
+    const days  = Array.from({length:7},(_,i)=>{ const d=new Date(mon); d.setDate(mon.getDate()+i); return d; });
+    const today = new Date(); today.setHours(0,0,0,0);
+    return days.map(d=>{
+      const dm = new Date(d); dm.setHours(0,0,0,0);
+      const isToday = dm.getTime()===today.getTime();
+      const dayTasks = (taskMap[d.getDate()]||[]).filter(()=>d.getFullYear()===y&&d.getMonth()===m);
+      const slots    = getSlotsForDate(d);
+      const isPast   = dm < today;
+      const isWeekend= d.getDay()===0||d.getDay()===6;
+      const clickable= !isPast && !isWeekend;
+      const dateISO  = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const wkH = portalCalExpanded ? '120px' : '80px';
+      const wkFont = portalCalExpanded ? '0.75rem' : '0.6875rem';
+      const wkSlotFont = portalCalExpanded ? '0.6875rem' : '0.5625rem';
+      const wkMaxChars = portalCalExpanded ? 22 : 14;
+      return `<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
+        style="padding:${portalCalExpanded?'6px':'4px'};min-height:${wkH};border-radius:4px;cursor:${clickable?'pointer':'default'};
+        border:1px solid ${isToday?'var(--brand-gold)':'var(--border-subtle)'};">
+        <div style="font-size:${wkFont};color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
+          font-weight:${isToday?700:400};margin-bottom:3px;">${PT_DAYS_S[d.getDay()]} ${d.getDate()}</div>
+        ${slots.map(s=>`<div class="pcal-slot-click" data-slot-date="${dateISO}"
+          data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
+          data-slot-area="${esc(s.requestingArea||'')}"
+          style="font-size:${wkSlotFont};border:1px dashed ${s.color||'var(--brand-gold)'};
+          color:${s.color||'var(--brand-gold)'};border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
+          title="Clique para adicionar: ${esc(s.title)}">
+          ◌ ${s.title.slice(0,wkMaxChars)}${s.title.length>wkMaxChars?'…':''}</div>`).join('')}
+        ${dayTasks.map(t=>`<div style="font-size:${wkSlotFont};background:rgba(212,168,67,0.12);
+          color:var(--brand-gold);border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.title}">
+          ● ${t.title.slice(0,wkMaxChars)}${t.title.length>wkMaxChars?'…':''}</div>`).join('')}
+        ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
+          padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
+          title="${rq.icon} ${rq.label}">${rq.icon} ${rq.label}</div>`;})()}
+      </div>`;
+    }).join('');
+  };
+
+  // Build day view
+  const buildDay = () => {
+    const d     = portalCalDate;
+    const slots = getSlotsForDate(d);
+    const today = new Date(); today.setHours(0,0,0,0);
+    const dm    = new Date(d); dm.setHours(0,0,0,0);
+    const dTasks= (taskMap[d.getDate()]||[]);
+    const isPast   = dm < today;
+    const isWeekend= d.getDay()===0||d.getDay()===6;
+    const clickable= !isPast && !isWeekend;
+    const dateISO  = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    return `<div class="${clickable&&!slots.length?'pcal-day-cell':''}" ${clickable&&!slots.length?`data-pcal-date="${dateISO}"`:''}
+      style="padding:12px;">
+      ${slots.length?`
+        <div style="margin-bottom:10px;">
+          <div style="font-size:0.75rem;font-weight:600;color:var(--brand-gold);margin-bottom:6px;">◌ Agenda do dia</div>
+          ${slots.map(s=>`<div class="${clickable?'pcal-slot-click':''}" ${clickable?`data-slot-date="${dateISO}"
+            data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
+            data-slot-area="${esc(s.requestingArea||'')}"`:''}
+            style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:${clickable?'pointer':'default'};
+            border:1.5px dashed ${s.color||'var(--brand-gold)'};background:${s.color||'var(--brand-gold)'}08;">
+            <div style="font-size:0.8125rem;font-weight:500;color:${s.color||'var(--brand-gold)'};">◌ ${s.title}</div>
+            ${s.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${s.requestingArea}</div>`:''}
+            ${clickable?`<div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">Clique para adicionar ao formulário</div>`:''}
+          </div>`).join('')}
+        </div>
+      `:''}
+      ${dTasks.length?`
+        <div>
+          <div style="font-size:0.75rem;font-weight:600;color:var(--text-primary);margin-bottom:6px;">● Tarefas agendadas</div>
+          ${dTasks.map(t=>`<div style="padding:8px 10px;border-radius:4px;margin-bottom:4px;
+            background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.2);">
+            <div style="font-size:0.8125rem;color:var(--text-primary);">${t.title}</div>
+            ${t.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${t.requestingArea}</div>`:''}
+          </div>`).join('')}
+        </div>
+      `:''}
+      ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`
+        <div style="margin-top:10px;padding:8px 10px;border-radius:4px;background:${rq.color}12;border:1px solid ${rq.color}30;">
+          <div style="font-size:0.8125rem;font-weight:600;color:${rq.color};">${rq.icon} Sua solicitação: ${rq.label}</div>
+          ${rq.title?`<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${esc(rq.title)}</div>`:''}
+        </div>`;})()}
+      ${!slots.length&&!dTasks.length&&!requestMap[dateISO]?`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
+        style="font-size:0.875rem;color:var(--text-muted);text-align:center;padding:16px 0;cursor:${clickable?'pointer':'default'};">
+        Nenhuma agenda ou tarefa para este dia.${clickable?' Clique para criar demanda fora do calendário.':''}
+      </div>`:''}
+    </div>`;
+  };
+
+  // Nav label
+  const navLabel = () => {
+    if (portalCalGran==='month') return `${PT_MONTHS[m]} ${y}`;
+    if (portalCalGran==='day') {
+      const d = portalCalDate;
+      return `${d.getDate()} de ${PT_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    }
+    // week
+    const base  = new Date(portalCalDate);
+    const dow   = base.getDay();
+    const mon   = new Date(base); mon.setDate(base.getDate()-(dow===0?6:dow-1));
+    const sun   = new Date(mon); sun.setDate(mon.getDate()+6);
+    return `${mon.getDate()} ${PT_MONTHS[mon.getMonth()].slice(0,3)} — ${sun.getDate()} ${PT_MONTHS[sun.getMonth()].slice(0,3)} ${sun.getFullYear()}`;
+  };
+
+  const wrap = document.createElement('div');
+  wrap.id = 'portal-calendar-widget';
+  wrap.style.cssText = 'margin-top:16px;';
+  wrap.innerHTML = `
+    <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+      border-radius:8px;padding:${portalCalExpanded?'16px':'12px'};font-family:var(--font-ui);
+      transition:all 0.2s ease;">
+
+      <!-- Header: type selector + gran switcher + nav -->
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">
+        ${types.length>1?`
+          <select id="pcal-type-sel" style="font-size:0.75rem;padding:4px 8px;border-radius:4px;
+            border:1px solid var(--border-subtle);background:var(--bg-card);color:var(--text-primary);">
+            ${types.map(t=>`<option value="${t.id}" ${portalCalTypeId===t.id?'selected':''}>${t.icon||''} ${t.name}</option>`).join('')}
+          </select>
+        `:`<span style="font-size:0.8125rem;font-weight:600;color:var(--brand-gold);">📅 ${activeType?.name||'Calendário'}</span>`}
+
+        <!-- Granularity -->
+        <div style="display:flex;border:1px solid var(--border-subtle);border-radius:4px;overflow:hidden;margin-left:auto;">
+          ${[['month','Mês'],['week','Sem'],['day','Dia']].map(([g,l])=>`
+            <button class="pcal-gran" data-gran="${g}" style="padding:3px 10px;border:none;cursor:pointer;
+              font-size:0.6875rem;background:${portalCalGran===g?'var(--brand-gold)':'var(--bg-card)'};
+              color:${portalCalGran===g?'#000':'var(--text-muted)'};transition:all 0.15s;">${l}</button>
+          `).join('')}
+        </div>
+
+        <!-- Nav -->
+        <div style="display:flex;gap:4px;">
+          <button id="pcal-prev" style="padding:3px 8px;border:1px solid var(--border-subtle);
+            border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;">◀</button>
+          <button id="pcal-today" style="padding:3px 8px;border:1px solid var(--border-subtle);
+            border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:0.6875rem;">Hoje</button>
+          <button id="pcal-next" style="padding:3px 8px;border:1px solid var(--border-subtle);
+            border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;">▶</button>
+        </div>
+
+        <!-- Expand/collapse -->
+        <button id="pcal-expand" style="padding:3px 8px;border:1px solid var(--border-subtle);
+          border-radius:4px;background:${portalCalExpanded?'var(--brand-gold)':'transparent'};
+          color:${portalCalExpanded?'#000':'var(--text-muted)'};cursor:pointer;font-size:0.6875rem;"
+          title="${portalCalExpanded?'Reduzir calendário':'Expandir calendário'}">
+          ${portalCalExpanded?'⤡ Reduzir':'⤢ Expandir'}
+        </button>
+      </div>
+
+      <!-- Nav title -->
+      <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin-bottom:8px;">${navLabel()}</div>
+
+      <!-- Legend -->
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;font-size:0.6875rem;color:var(--text-muted);">
+        <span>◌ Agenda (referência)</span>
+        <span>● Tarefa agendada</span>
+        <span style="color:#F59E0B;">◌ Aguardando triagem</span>
+        <span style="color:#22C55E;">✓ Convertida</span>
+      </div>
+
+      <!-- Grid -->
+      ${portalCalGran==='month'?`
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:${portalCalExpanded?'4px':'2px'};margin-bottom:4px;">
+          ${PT_DAYS_S.map(d=>`<div style="text-align:center;font-size:${portalCalExpanded?'0.6875rem':'0.5625rem'};
+            color:var(--text-muted);font-weight:${portalCalExpanded?600:400};">${portalCalExpanded?d:d[0]}</div>`).join('')}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:${portalCalExpanded?'4px':'2px'};">${buildMonth()}</div>
+      `:portalCalGran==='week'?`
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:${portalCalExpanded?'6px':'4px'};">${buildWeek()}</div>
+      `:buildDay()}
+    </div>
+  `;
+
+  slotsContainer.after(wrap);
+
+  // Bind events
+  wrap.querySelectorAll('.pcal-gran').forEach(btn => {
+    btn.addEventListener('click', () => {
+      portalCalGran = btn.dataset.gran;
+      renderPortalCalendar(db, types, null);
+    });
+  });
+  wrap.querySelector('#pcal-type-sel')?.addEventListener('change', e => {
+    portalCalTypeId = e.target.value;
+    renderPortalCalendar(db, types, null);
+  });
+  wrap.querySelector('#pcal-prev')?.addEventListener('click', () => {
+    if (portalCalGran==='month') portalCalDate = new Date(portalCalDate.getFullYear(), portalCalDate.getMonth()-1, 1);
+    else if (portalCalGran==='week') { portalCalDate = new Date(portalCalDate); portalCalDate.setDate(portalCalDate.getDate()-7); }
+    else { portalCalDate = new Date(portalCalDate); portalCalDate.setDate(portalCalDate.getDate()-1); }
+    renderPortalCalendar(db, types, null);
+  });
+  wrap.querySelector('#pcal-next')?.addEventListener('click', () => {
+    if (portalCalGran==='month') portalCalDate = new Date(portalCalDate.getFullYear(), portalCalDate.getMonth()+1, 1);
+    else if (portalCalGran==='week') { portalCalDate = new Date(portalCalDate); portalCalDate.setDate(portalCalDate.getDate()+7); }
+    else { portalCalDate = new Date(portalCalDate); portalCalDate.setDate(portalCalDate.getDate()+1); }
+    renderPortalCalendar(db, types, null);
+  });
+  wrap.querySelector('#pcal-today')?.addEventListener('click', () => {
+    portalCalDate = new Date();
+    renderPortalCalendar(db, types, null);
+  });
+  wrap.querySelector('#pcal-expand')?.addEventListener('click', () => {
+    portalCalExpanded = !portalCalExpanded;
+    renderPortalCalendar(db, types, null);
+  });
+
+  // Slot clicks → pre-fill form from slot data
+  wrap.querySelectorAll('.pcal-slot-click').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dateISO = el.dataset.slotDate;
+      const title   = el.dataset.slotTitle || '';
+      const varId   = el.dataset.slotVariation || '';
+      const area    = el.dataset.slotArea || '';
+      fillFormFromSlot(dateISO, title, varId, area);
+    });
+  });
+
+  // Empty day clicks → out-of-calendar mode
+  wrap.querySelectorAll('.pcal-day-cell').forEach(cell => {
+    cell.addEventListener('click', (e) => {
+      if (e.target.closest('.pcal-slot-click')) return; // slot handled above
+      const dateISO = cell.dataset.pcalDate;
+      if (!dateISO) return;
+      const date  = new Date(dateISO + 'T12:00:00');
+      const slots = getSlotsForDate(date);
+      if (slots.length > 0) {
+        // Day has slots but user clicked empty area — just fill date
+        fillFormFromSlot(dateISO, '', '', '');
+      } else {
+        // No slots → out-of-calendar
+        fillFormFromEmptyDay(dateISO);
+      }
+    });
+  });
+}
+
+
+/* ─── Slot/day click helpers ──────────────────────────────── */
+function fillFormFromSlot(dateISO, title, variationId, area) {
+  const dateEl = document.getElementById('p-date');
+  if (dateEl) { dateEl.value = dateISO; dateEl.dispatchEvent(new Event('change')); }
+
+  // Pre-fill requesting area from slot area if available
+  if (area) {
+    const areaSel = document.getElementById('p-area');
+    if (areaSel) {
+      for (const opt of areaSel.options) {
+        if (opt.value === area) { areaSel.value = area; break; }
+      }
+    }
+  }
+
+  // Select variation — try by id first, then match by title/name
+  const varSel = document.getElementById('p-variation');
+  if (varSel) {
+    let matched = false;
+    if (variationId) {
+      varSel.value = variationId;
+      matched = varSel.value === variationId;
+    }
+    // Fallback: match variation option by slot title
+    if (!matched && title) {
+      const titleLower = title.trim().toLowerCase();
+      for (const opt of varSel.options) {
+        if (!opt.value) continue;
+        const optName = opt.textContent.split('·')[0].trim().toLowerCase();
+        if (optName === titleLower || optName.includes(titleLower) || titleLower.includes(optName)) {
+          varSel.value = opt.value;
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (matched) varSel.dispatchEvent(new Event('change'));
+  }
+
+  // Unlock toggles
+  unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+  unlockToggle('urgency-toggle', 'p-urgency', false);
+  document.getElementById('locked-urgency-banner')?.remove();
+  document.getElementById('locked-ooc-banner')?.remove();
+  // Check urgency by deadline
+  checkUrgencyByDeadline(dateISO);
+  // Scroll to variation/title area so user can review pre-filled fields
+  const scrollTarget = document.getElementById('fg-variation')?.style.display !== 'none'
+    ? document.getElementById('fg-variation')
+    : document.getElementById('fg-title');
+  scrollTarget?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function fillFormFromEmptyDay(dateISO) {
+  const dateEl = document.getElementById('p-date');
+  if (dateEl) { dateEl.value = dateISO; dateEl.dispatchEvent(new Event('change')); }
+  // Force out-of-calendar ON + lock
+  lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
+  document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'flex');
+  // Show locked banner for out-of-calendar
+  showLockedBanner('locked-ooc-banner', 'out-of-calendar-toggle',
+    'Esta data não está no calendário editorial. "Fora do calendário" foi definido automaticamente.');
+  // Check urgency by deadline
+  checkUrgencyByDeadline(dateISO);
+  // Scroll to description
+  document.getElementById('p-desc')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function checkUrgencyByDeadline(dateISO) {
+  if (!dateISO) return;
+  const deadline = new Date(dateISO + 'T23:59:59');
+  const now = new Date();
+  const hoursUntil = (deadline - now) / 3600000;
+  if (hoursUntil <= 24) {
+    lockToggle('urgency-toggle', 'p-urgency', 'urgency-dot', true);
+    document.getElementById('urgency-alert')?.classList.add('visible');
+    showLockedBanner('locked-urgency-banner', 'urgency-toggle',
+      'Prazo inferior a 24h. Urgência definida automaticamente.');
+  } else {
+    unlockToggle('urgency-toggle', 'p-urgency', false);
+    document.getElementById('locked-urgency-banner')?.remove();
+  }
+}
+
+function lockToggle(toggleId, cbId, dotId, checked) {
+  const cb = document.getElementById(cbId);
+  const toggle = document.getElementById(toggleId);
+  if (cb) cb.checked = checked;
+  if (toggle) { toggle.classList.toggle('active', checked); toggle.classList.add('locked'); }
+}
+
+function unlockToggle(toggleId, cbId, checked) {
+  const cb = document.getElementById(cbId);
+  const toggle = document.getElementById(toggleId);
+  if (cb) cb.checked = checked;
+  if (toggle) { toggle.classList.toggle('active', checked); toggle.classList.remove('locked'); }
+}
+
+function showLockedBanner(id, afterId, message) {
+  document.getElementById(id)?.remove();
+  const banner = document.createElement('div');
+  banner.id = id;
+  banner.className = 'alert-banner info visible';
+  banner.style.cssText = 'margin-top:8px;';
+  banner.innerHTML = '<span style="font-size:1.125rem;flex-shrink:0;">🔒</span><span>' + message + '</span>';
+  document.getElementById(afterId)?.after(banner);
+}
+
+/* ─── Batch queue functions ──────────────────────────────── */
+function collectFormData(taskTypes) {
+  const typeId      = document.getElementById('p-type')?.value || '';
+  const typeData    = taskTypes.find(t => t.id === typeId);
+  const varOpt      = document.querySelector('#p-variation option:checked');
+  return {
+    requestingArea: document.getElementById('p-area')?.value || '',
+    sector:         document.getElementById('p-setor')?.value || '',
+    typeId:         typeId,
+    typeName:       typeData?.name || typeId || '',
+    typeIcon:       typeData?.icon || '',
+    typeColor:      typeData?.color || '#D4A843',
+    autoAccept:     typeData?.autoAccept || false,
+    variationId:    document.getElementById('p-variation')?.value || null,
+    variationName:  varOpt?.value ? varOpt.textContent.split('·')[0].trim() : '',
+    nucleo:         document.getElementById('p-nucleo')?.value || '',
+    title:          document.getElementById('p-title')?.value?.trim() || '',
+    description:    document.getElementById('p-desc')?.value?.trim() || '',
+    urgency:        document.getElementById('p-urgency')?.checked || false,
+    outOfCalendar:  document.getElementById('p-out-of-calendar')?.checked || false,
+    desiredDate:    document.getElementById('p-date')?.value || '',
+  };
+}
+
+function addToBatch(taskTypes) {
+  if (!validate()) {
+    document.querySelector('.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  const item = collectFormData(taskTypes);
+  if (currentEditIndex >= 0) {
+    batchQueue[currentEditIndex] = item;
+    currentEditIndex = -1;
+    const btn = document.getElementById('portal-add-batch-btn');
+    if (btn) btn.textContent = 'Adicionar ao lote +';
+  } else {
+    batchQueue.push(item);
+  }
+  resetFormForNextItem();
+  renderBatchList(taskTypes);
+  document.getElementById('batch-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function resetFormForNextItem() {
+  // Clear per-item fields, keep shared (name, email, area, sector, type)
+  const fields = ['p-title', 'p-desc', 'p-date', 'p-nucleo', 'p-variation'];
+  fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  // Reset toggles
+  unlockToggle('urgency-toggle', 'p-urgency', false);
+  unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+  document.getElementById('urgency-alert')?.classList.remove('visible');
+  document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'none');
+  document.getElementById('calendar-alert')?.classList.remove('visible');
+  document.getElementById('sla-badge')?.classList.remove('visible');
+  document.getElementById('locked-urgency-banner')?.remove();
+  document.getElementById('locked-ooc-banner')?.remove();
+  document.querySelectorAll('.slot-day').forEach(s => s.classList.remove('selected'));
+}
+
+function renderBatchList(taskTypes) {
+  const panel = document.getElementById('batch-panel');
+  const list  = document.getElementById('batch-list');
+  const count = document.getElementById('batch-count');
+  const submitBtn = document.getElementById('batch-submit-btn');
+  if (!panel || !list) return;
+
+  if (!batchQueue.length) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+  if (count) count.textContent = batchQueue.length;
+  if (submitBtn) submitBtn.textContent = 'Enviar ' + batchQueue.length + ' solicitaç' + (batchQueue.length === 1 ? 'ão' : 'ões') + ' →';
+
+  const MONTHS = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  list.innerHTML = batchQueue.map((item, i) => {
+    const dateStr = item.desiredDate
+      ? (() => { const d = new Date(item.desiredDate + 'T12:00:00'); return d.getDate() + ' ' + MONTHS[d.getMonth()]; })()
+      : 'Sem data';
+    return '<div class="batch-item" style="border-left-color:' + (item.typeColor || 'var(--brand-gold)') + ';">' +
+      '<div class="batch-item-body">' +
+        '<div class="batch-item-title">' + esc(item.title || 'Sem título') + '</div>' +
+        '<div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">' +
+          (item.typeIcon ? item.typeIcon + ' ' : '') + esc(item.typeName || 'Sem tipo') +
+          (item.variationName ? ' — ' + esc(item.variationName) : '') + '</div>' +
+        '<div class="batch-item-meta">' +
+          esc(item.requestingArea || '') + (item.nucleo ? ' · ' + esc(item.nucleo) : '') + ' · ' + dateStr +
+        '</div>' +
+        (item.urgency ? '<span style="font-size:0.625rem;background:#EF444420;color:#EF4444;padding:1px 6px;border-radius:8px;font-weight:600;margin-right:4px;">URGENTE</span>' : '') +
+        (item.outOfCalendar ? '<span style="font-size:0.625rem;background:#F59E0B20;color:#F59E0B;padding:1px 6px;border-radius:8px;font-weight:600;">FORA DO CAL.</span>' : '') +
+        '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+          esc(item.description.slice(0, 60)) + (item.description.length > 60 ? '…' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="batch-item-actions">' +
+        '<button class="batch-item-btn" data-batch-edit="' + i + '" title="Editar">✎</button>' +
+        '<button class="batch-item-btn danger" data-batch-remove="' + i + '" title="Remover">✕</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  // Bind edit/remove
+  list.querySelectorAll('[data-batch-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.batchEdit);
+      editBatchItem(idx, taskTypes);
+    });
+  });
+  list.querySelectorAll('[data-batch-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.batchRemove);
+      batchQueue.splice(idx, 1);
+      if (currentEditIndex === idx) { currentEditIndex = -1; document.getElementById('portal-add-batch-btn').textContent = 'Adicionar ao lote +'; }
+      else if (currentEditIndex > idx) currentEditIndex--;
+      renderBatchList(taskTypes);
+    });
+  });
+}
+
+async function editBatchItem(idx, taskTypes) {
+  const item = batchQueue[idx];
+  if (!item) return;
+  currentEditIndex = idx;
+
+  // 1. Set area (no cascade needed)
+  const areaEl = document.getElementById('p-area');
+  if (areaEl) areaEl.value = item.requestingArea || '';
+
+  // 2. Set sector and trigger cascade (loads types + nucleos)
+  const setorEl = document.getElementById('p-setor');
+  if (setorEl && item.sector) {
+    setorEl.value = item.sector;
+    await new Promise(resolve => {
+      setorEl.dispatchEvent(new Event('change'));
+      // Wait for async cascade (loadNucleosBySector) to complete
+      setTimeout(resolve, 300);
+    });
+  }
+
+  // 3. Set type and trigger cascade (loads variations + calendar)
+  const typeEl = document.getElementById('p-type');
+  if (typeEl && item.typeId) {
+    typeEl.value = item.typeId;
+    await new Promise(resolve => {
+      typeEl.dispatchEvent(new Event('change'));
+      setTimeout(resolve, 300);
+    });
+  }
+
+  // 4. Set variation (after type cascade populated the options)
+  const varEl = document.getElementById('p-variation');
+  if (varEl && item.variationId) {
+    varEl.value = item.variationId;
+    varEl.dispatchEvent(new Event('change'));
+  }
+
+  // 5. Set nucleo (after sector cascade populated the options)
+  const nucleoEl = document.getElementById('p-nucleo');
+  if (nucleoEl && item.nucleo) nucleoEl.value = item.nucleo;
+
+  // 6. Set title, description and date
+  const titleEl = document.getElementById('p-title');
+  if (titleEl) titleEl.value = item.title || '';
+  const descEl = document.getElementById('p-desc');
+  if (descEl) descEl.value = item.description || '';
+  const dateEl = document.getElementById('p-date');
+  if (dateEl && item.desiredDate) {
+    dateEl.value = item.desiredDate;
+    dateEl.dispatchEvent(new Event('change'));
+  }
+
+  // 7. Set toggles
+  if (item.urgency) {
+    lockToggle('urgency-toggle', 'p-urgency', 'urgency-dot', true);
+  } else {
+    unlockToggle('urgency-toggle', 'p-urgency', false);
+  }
+  if (item.outOfCalendar) {
+    lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
+  } else {
+    unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+  }
+
+  // Update button
+  const btn = document.getElementById('portal-add-batch-btn');
+  if (btn) btn.textContent = 'Atualizar item ✓';
+  // Scroll to form
+  document.getElementById('fg-desc')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function handleBatchSubmit(db, taskTypes) {
+  if (!batchQueue.length) return;
+  // Name/email come from authenticated profile
+  const name  = portalUser?.name || document.getElementById('p-name')?.value?.trim() || '';
+  const email = portalUser?.email || document.getElementById('p-email')?.value?.trim() || '';
+  if (!name || !email) return;
+
+  const btn = document.getElementById('batch-submit-btn');
+  if (btn) { btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Enviando...'; }
+
+  try {
+    const batchId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const total   = batchQueue.length;
+
+    for (let i = 0; i < batchQueue.length; i++) {
+      const item = batchQueue[i];
+      const reqDoc = {
+        userId:         portalUser?.uid || null,
+        requesterName:  name,
+        requesterEmail: email.toLowerCase(),
+        userArea:       portalUser?.department || '',
+        requestingArea: item.requestingArea || '',
+        sector:         item.sector || '',
+        typeId:         item.typeId || null,
+        typeName:       item.typeName || '',
+        variationId:    item.variationId || null,
+        variationName:  item.variationName || '',
+        nucleo:         item.nucleo || '',
+        title:          item.title || '',
+        description:    item.description || '',
+        urgency:        item.urgency === true,
+        outOfCalendar:  item.outOfCalendar === true,
+        desiredDate:    item.desiredDate ? new Date(item.desiredDate + 'T12:00:00') : null,
+        status:         item.autoAccept ? 'converted' : 'pending',
+        taskId:         null,
+        workspaceId:    null,
+        internalNote:   '',
+        rejectionNote:  '',
+        batchId:        batchId,
+        batchIndex:     i,
+        batchTotal:     total,
+        createdAt:      serverTimestamp(),
+        updatedAt:      serverTimestamp(),
+      };
+      const reqRef = await addDoc(collection(db, 'requests'), reqDoc);
+
+      // Auto-create task if type has autoAccept
+      if (item.autoAccept) {
+        const typeData = taskTypes.find(t => t.id === item.typeId);
+        if (typeData) await autoCreateTask(db, reqRef, reqDoc, typeData);
+      }
+    }
+
+    // Send ONE consolidated email
+    await notifyTeam({
+      requesterName: name, requesterEmail: email,
+      requestingArea: batchQueue[0]?.requestingArea || '',
+      sector: batchQueue[0]?.sector || '',
+      typeName: batchQueue.map(i => i.typeName).filter(Boolean).join(', '),
+      description: total + ' solicitaç' + (total === 1 ? 'ão' : 'ões') + ' em lote',
+      urgency: batchQueue.some(i => i.urgency),
+      outOfCalendar: batchQueue.some(i => i.outOfCalendar),
+    }).catch(() => {});
+
+    // Show success
+    batchQueue = [];
+    currentEditIndex = -1;
+    document.getElementById('form-view').style.display = 'none';
+    const successView = document.getElementById('success-view');
+    successView?.classList.add('visible');
+    const msg = document.getElementById('success-msg');
+    if (msg) msg.textContent = 'Enviamos ' + total + ' solicitaç' + (total === 1 ? 'ão' : 'ões') +
+      '. Nossa equipe irá analisar cada uma e entrará em contato com ' + email + ' em breve.';
+  } catch(e) {
+    alert('Erro ao enviar solicitações: ' + e.message);
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Enviar todas as solicitações →'; }
+  }
+}
+
+/* ─── Bind events ─────────────────────────────────────────── */
+function bindFormEvents(db, taskTypes) {
+
+  // ── Setor → filter types + nucleos ──────────────────────
+  document.getElementById('p-setor')?.addEventListener('change', async (e) => {
+    const sector    = e.target.value;
+    const typeFG    = document.getElementById('fg-type');
+    const typeSel   = document.getElementById('p-type');
+    const varFG     = document.getElementById('fg-variation');
+    const nucleoFG  = document.getElementById('fg-nucleo');
+    const nucleoSel = document.getElementById('p-nucleo');
+    const slaBadge  = document.getElementById('sla-badge');
+
+    // Reset all downstream
+    if (varFG)    varFG.style.display   = 'none';
+    if (slaBadge) slaBadge.classList.remove('visible');
+    document.getElementById('portal-calendar-widget')?.remove();
+    if (typeSel)  typeSel.innerHTML = '<option value="">— Selecione o tipo —</option>';
+
+    if (!sector) {
+      if (typeFG)   typeFG.style.display   = 'none';
+      if (nucleoFG) nucleoFG.style.display = 'none';
+      return;
+    }
+
+    // Load nucleos for this sector to know which types to show
+    const nucleos = await loadNucleosBySector(db, sector);
+    const nucleoNames = nucleos.map(n => n.name);
+
+    // Filter types by sector field (primary) — show types whose sector matches
+    // OR types with no sector (global/universal types)
+    const sectorTypes = taskTypes.filter(t =>
+      !t.sector || t.sector === sector
+    );
+
+    if (typeSel) {
+      typeSel.innerHTML = '<option value="">— Selecione o tipo —</option>' +
+        sectorTypes.map(t => `<option value="${t.id}">${t.icon||''} ${esc(t.name)}</option>`).join('');
+    }
+    if (typeFG) typeFG.style.display = 'block';
+
+    // Show nucleos for this sector
+    if (nucleoSel && nucleos.length) {
+      nucleoSel.innerHTML = '<option value="">— Selecione o núcleo —</option>' +
+        nucleos.map(n => `<option value="${n.name}">${n.name}</option>`).join('');
+      if (nucleoFG) nucleoFG.style.display = 'block';
+    } else {
+      if (nucleoFG) nucleoFG.style.display = 'none';
+    }
+  });
+
+  // ── Type → show variations + calendar (NO SLA here) ────
+  document.getElementById('p-type')?.addEventListener('change', async (e) => {
+    const typeId    = e.target.value;
+    const typeData  = taskTypes.find(t => t.id === typeId);
+    const varFG     = document.getElementById('fg-variation');
+    const varSel    = document.getElementById('p-variation');
+    const slaBadge  = document.getElementById('sla-badge');
+    const slotsEl   = document.getElementById('slots-container');
+
+    // Always hide SLA on type change — only variation drives it
+    if (slaBadge) slaBadge.classList.remove('visible');
+
+    if (!typeId || !typeData) {
+      if (varFG) varFG.style.display = 'none';
+      document.getElementById('portal-calendar-widget')?.remove();
+      return;
+    }
+
+    // Show variation dropdown if type has variations
+    if (varSel && varFG) {
+      if (typeData.variations?.length) {
+        varSel.innerHTML = '<option value="">— Selecione a variação —</option>' +
+          typeData.variations.map(v =>
+            `<option value="${v.id}" data-sla="${v.slaDays}">${esc(v.name)} · ${v.slaDays===0?'mesmo dia':v.slaDays+'d'}</option>`
+          ).join('');
+        varFG.style.display = 'block';
+      } else {
+        // Type has no variations — hide the field
+        varFG.style.display = 'none';
+      }
+    }
+
+    if (slotsEl) slotsEl.classList.add('visible');
+
+    // Show calendar widget for this type
+    const dbRef  = window._portalDb;
+    const types  = window._portalTaskTypes || taskTypes;
+    if (dbRef && typeId) {
+      portalCalTypeId = typeId;
+      await renderPortalCalendar(dbRef, types, null);
+    } else {
+      document.getElementById('portal-calendar-widget')?.remove();
+    }
+  });
+
+  // ── Variation → show SLA + auto-fill date ───────────────
+  document.getElementById('p-variation')?.addEventListener('change', (e) => {
+    const opt      = e.target.selectedOptions[0];
+    const days     = parseInt(opt?.dataset?.sla);
+    const slaBadge = document.getElementById('sla-badge');
+    const slaLabel = document.getElementById('sla-label');
+    const dueEl    = document.getElementById('p-date');
+
+    if (opt?.value && !isNaN(days) && slaBadge && slaLabel) {
+      slaLabel.textContent = days === 0 ? 'Mesmo dia' : `${days} dia${days!==1?'s':''}`;
+      slaBadge.classList.add('visible');
+      // Auto-fill due date
+      if (dueEl && !dueEl.value) {
+        const due = new Date();
+        if (days === 0) {
+          dueEl.value = due.toISOString().slice(0,10);
+        } else {
+          let biz = days;
+          while (biz > 0) {
+            due.setDate(due.getDate() + 1);
+            const dow = due.getDay();
+            if (dow !== 0 && dow !== 6) biz--;
+          }
+          dueEl.value = due.toISOString().slice(0,10);
+        }
+      }
+    } else if (slaBadge) {
+      slaBadge.classList.remove('visible');
+    }
+  });
+
+  // (urgency, out-of-calendar, and date handlers are defined above with lock support)
+
+  // Date change → check urgency + out-of-calendar
+  const dateInput = document.getElementById('p-date');
+  dateInput?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (!val) return;
+    // Check out-of-calendar via slots
+    const dbRef = window._portalDb;
+    const types = window._portalTaskTypes || taskTypes;
+    const typeId = document.getElementById('p-type')?.value;
+    const typeData = types.find(t => t.id === typeId);
+    if (typeData?.scheduleSlots) {
+      const date = new Date(val + 'T12:00:00');
+      const dow = date.getDay();
+      const d = date.getDate(), m = date.getMonth(), y = date.getFullYear();
+      const iso = val;
+      const slots = (typeData.scheduleSlots || []).filter(s => {
+        if (s.active === false) return false;
+        if (s.recurrence === 'weekly') return s.weekDay === dow;
+        if (s.recurrence === 'monthly_days') return (s.monthDays || []).includes(d);
+        if (s.recurrence === 'custom') return (s.customDates || []).includes(iso);
+        return false;
+      });
+      if (slots.length === 0) {
+        lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
+        document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'flex');
+        showLockedBanner('locked-ooc-banner', 'out-of-calendar-toggle',
+          'Esta data não está no calendário editorial. "Fora do calendário" foi definido automaticamente.');
+      } else {
+        unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+        document.getElementById('locked-ooc-banner')?.remove();
+        document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'none');
+      }
+    }
+    checkUrgencyByDeadline(val);
+  });
+
+  // Urgency toggle — only allow if not locked
+  document.getElementById('urgency-toggle')?.addEventListener('click', () => {
+    const toggle = document.getElementById('urgency-toggle');
+    if (toggle?.classList.contains('locked')) return;
+    const cb = document.getElementById('p-urgency');
+    const alert = document.getElementById('urgency-alert');
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    toggle?.classList.toggle('active', cb.checked);
+    if (alert) alert.classList.toggle('visible', cb.checked);
+  });
+
+  // Out-of-calendar toggle — only allow if not locked
+  document.getElementById('out-of-calendar-toggle')?.addEventListener('click', () => {
+    const toggle = document.getElementById('out-of-calendar-toggle');
+    if (toggle?.classList.contains('locked')) return;
+    const cb = document.getElementById('p-out-of-calendar');
+    const alert = document.getElementById('out-calendar-alert');
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    toggle?.classList.toggle('active', cb.checked);
+    if (alert) alert.style.display = cb.checked ? 'flex' : 'none';
+  });
+
+  // Batch: add to batch
+  document.getElementById('portal-add-batch-btn')?.addEventListener('click', () => addToBatch(taskTypes));
+  // Batch: submit all
+  document.getElementById('batch-submit-btn')?.addEventListener('click', () => handleBatchSubmit(db, taskTypes));
+
+  // Single submit
+  document.getElementById('portal-submit-btn')?.addEventListener('click', () => handleSubmit(db, taskTypes));
+  document.getElementById('new-request-btn')?.addEventListener('click', () => {
+    document.getElementById('success-view')?.classList.remove('visible');
+    document.getElementById('form-view').style.display = 'block';
+    // Reset form — preserve readonly fields (name, email, user-area)
+    const preserve = new Set(['p-name', 'p-email', 'p-user-area']);
+    document.querySelectorAll('.form-input,.form-select,.form-textarea').forEach(el => {
+      if (!preserve.has(el.id)) el.value = '';
+    });
+    // Re-select user's area as default in requesting area dropdown
+    const u = portalUser || {};
+    const areaSel = document.getElementById('p-area');
+    if (areaSel && u.department) {
+      for (const opt of areaSel.options) { if (opt.value === u.department) { areaSel.value = u.department; break; } }
+    }
+    document.getElementById('p-urgency').checked = false;
+    document.getElementById('p-out-of-calendar').checked = false;
+    unlockToggle('urgency-toggle', 'p-urgency', false);
+    unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+    document.getElementById('urgency-alert')?.classList.remove('visible');
+    document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'none');
+    document.getElementById('sla-badge')?.classList.remove('visible');
+    document.getElementById('slots-container')?.classList.remove('visible');
+    document.getElementById('locked-urgency-banner')?.remove();
+    document.getElementById('locked-ooc-banner')?.remove();
+    document.getElementById('batch-panel')?.style && (document.getElementById('batch-panel').style.display = 'none');
+    // Remove calendar widget and hide downstream fields
+    document.getElementById('portal-calendar-widget')?.remove();
+    document.getElementById('fg-type')?.style && (document.getElementById('fg-type').style.display = 'none');
+    document.getElementById('fg-variation')?.style && (document.getElementById('fg-variation').style.display = 'none');
+    document.getElementById('fg-nucleo')?.style && (document.getElementById('fg-nucleo').style.display = 'none');
+    batchQueue = [];
+    currentEditIndex = -1;
+  });
+}
+
+/* ─── Validation ──────────────────────────────────────────── */
+function validate() {
+  let ok = true;
+  const rules = [
+    // name/email are auto-filled from authenticated profile (readonly)
+    { id: 'p-area',   errId: 'err-area',   fgId: 'fg-area',   check: v => v !== '' },
+    { id: 'p-setor',  errId: 'err-setor',  fgId: 'fg-setor',  check: v => v !== '' },
+    // type only required if visible
+    ...(document.getElementById('fg-type')?.style.display !== 'none'
+      ? [{ id: 'p-type', errId: 'err-type', fgId: 'fg-type', check: v => v !== '' }]
+      : []),
+    { id: 'p-title',  errId: 'err-title',  fgId: 'fg-title',  check: v => v.trim().length >= 3 },
+    { id: 'p-desc',   errId: 'err-desc',   fgId: 'fg-desc',   check: v => v.trim().length >= 10 },
+  ];
+
+  rules.forEach(r => {
+    const el  = document.getElementById(r.id);
+    const fg  = document.getElementById(r.fgId);
+    const valid = el && r.check(el.value);
+    fg?.classList.toggle('has-error', !valid);
+    if (!valid) ok = false;
+  });
+
+  return ok;
+}
+
+/* ─── Submit ──────────────────────────────────────────────── */
+async function handleSubmit(db, taskTypes) {
+  if (!validate()) {
+    // Scroll to first error
+    document.querySelector('.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  const btn = document.getElementById('portal-submit-btn');
+  if (btn) { btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Enviando...'; }
+
+  try {
+    const typeId      = document.getElementById('p-type')?.value || '';
+    const typeData    = taskTypes.find(t => t.id === typeId);
+    const urgency     = document.getElementById('p-urgency')?.checked || false;
+    const outOfCal    = document.getElementById('p-out-of-calendar')?.checked || false;
+    const variationId = document.getElementById('p-variation')?.value || null;
+    const varOpt      = document.querySelector('#p-variation option:checked');
+    const variationName = varOpt?.textContent?.split('·')[0]?.trim() || '';
+    const sector      = document.getElementById('p-setor')?.value || '';
+
+    // Build request document matching createRequest service schema exactly
+    const reqDoc = {
+      userId:         portalUser?.uid || null,
+      requesterName:  document.getElementById('p-name')?.value?.trim()             || '',
+      requesterEmail: document.getElementById('p-email')?.value?.trim().toLowerCase() || '',
+      userArea:       portalUser?.department || '',
+      requestingArea: document.getElementById('p-area')?.value                     || '',
+      sector:         sector                                                        || '',
+      outOfCalendar:  outOfCal === true,
+      variationId:    variationId    || null,
+      variationName:  variationName  || '',
+      typeId:         typeId         || null,
+      typeName:       typeData?.name || typeId || '',
+      nucleo:         document.getElementById('p-nucleo')?.value                   || '',
+      title:          document.getElementById('p-title')?.value?.trim()            || '',
+      description:    document.getElementById('p-desc')?.value?.trim()             || '',
+      urgency:        urgency === true,
+      desiredDate:    document.getElementById('p-date')?.value
+        ? new Date(document.getElementById('p-date').value + 'T12:00:00')
+        : null,
+      status:         typeData?.autoAccept ? 'converted' : 'pending',
+      taskId:         null,
+      workspaceId:    null,
+      internalNote:   '',
+      rejectionNote:  '',
+      createdAt:      serverTimestamp(),
+      updatedAt:      serverTimestamp(),
+    };
+
+    const ref = await addDoc(collection(db, 'requests'), reqDoc);
+
+    // Auto-create task if type has autoAccept
+    if (typeData?.autoAccept) {
+      await autoCreateTask(db, ref, reqDoc, typeData);
+    }
+
+    // Notify team via EmailJS
+    await notifyTeam({ ...reqDoc, requestId: ref.id }).catch(() => {});
+
+    // Show success
+    document.getElementById('form-view').style.display = 'none';
+    const successView = document.getElementById('success-view');
+    successView?.classList.add('visible');
+    const msg = document.getElementById('success-msg');
+    if (msg) {
+      msg.textContent = typeData?.autoAccept
+        ? `Sua solicitação foi aceita automaticamente e já está na esteira de produção. Acompanhe pelo sistema.`
+        : urgency
+          ? `Recebemos sua solicitação urgente. Nossa equipe será notificada imediatamente e entrará em contato com ${reqDoc.requesterEmail}.`
+          : `Recebemos sua solicitação. Nossa equipe analisará e entrará em contato com ${reqDoc.requesterEmail} em breve.`;
+    }
+  } catch(e) {
+    alert('Erro ao enviar solicitação: ' + e.message);
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Enviar apenas esta solicitação →'; }
+  }
+}
+
+/* ─── Auto-create task for autoAccept types ─────────────── */
+async function autoCreateTask(db, reqRef, reqDoc, typeData) {
+  try {
+    const variation = typeData.variations?.find(v => v.id === reqDoc.variationId);
+    const slaDays = variation?.slaDays ?? 2;
+    // Calculate due date from SLA
+    let dueDate = reqDoc.desiredDate || new Date();
+    if (!reqDoc.desiredDate) {
+      const d = new Date();
+      let biz = slaDays;
+      while (biz > 0) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6) biz--; }
+      dueDate = d;
+    }
+
+    const taskDoc = {
+      workspaceId:      null,
+      sector:           reqDoc.sector || null,
+      title:            reqDoc.title || reqDoc.typeName || 'Nova Tarefa',
+      description:      reqDoc.description || '',
+      status:           'not_started',
+      priority:         reqDoc.urgency ? 'urgent' : 'medium',
+      projectId:        null,
+      assignees:        [],
+      tags:             [],
+      startDate:        serverTimestamp(),
+      dueDate:          dueDate,
+      typeId:           reqDoc.typeId || null,
+      variationId:      reqDoc.variationId || null,
+      variationName:    reqDoc.variationName || '',
+      variationSLADays: slaDays,
+      customFields:     {},
+      type:             reqDoc.typeName?.toLowerCase() || '',
+      requestingArea:   reqDoc.requestingArea || '',
+      nucleos:          reqDoc.nucleo ? [reqDoc.nucleo] : [],
+      outOfCalendar:    reqDoc.outOfCalendar || false,
+      subtasks:         [],
+      comments:         [],
+      attachments:      [],
+      order:            Date.now(),
+      completedAt:      null,
+      createdAt:        serverTimestamp(),
+      createdBy:        portalUser?.uid || 'portal',
+      updatedAt:        serverTimestamp(),
+      updatedBy:        portalUser?.uid || 'portal',
+      sourceRequestId:  reqRef.id,
+    };
+
+    const taskRef = await addDoc(collection(db, 'tasks'), taskDoc);
+
+    // Update request with taskId and converted status
+    await updateDoc(doc(db, 'requests', reqRef.id), {
+      status: 'converted',
+      taskId: taskRef.id,
+      updatedAt: serverTimestamp(),
+    });
+
+    return taskRef;
+  } catch(e) {
+    console.warn('autoCreateTask error:', e.message);
+    return null;
+  }
+}
+
+/* ─── Email notification via Firebase Function ───────────── */
+async function notifyTeam(reqDoc) {
+  try {
+    const res = await fetch(
+      (await import('../config.js')).APP_CONFIG?.functions?.sendEmailUrl || '',
+      {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ type: 'new_request', to: null, data: {
+          requesterName:  reqDoc.requesterName,
+          requesterEmail: reqDoc.requesterEmail,
+          requestingArea: reqDoc.requestingArea || '',
+          sector:         reqDoc.sector         || '',
+          typeName:       reqDoc.typeName        || '',
+          variationName:  reqDoc.variationName   || '',
+          description:    reqDoc.description     || '',
+          urgency:        reqDoc.urgency         || false,
+          outOfCalendar:  reqDoc.outOfCalendar   || false,
+          desiredDate:    reqDoc.desiredDate
+            ? new Date(reqDoc.desiredDate).toLocaleDateString('pt-BR') : '',
+        }}),
+      }
+    );
+    if (!res.ok) console.warn('notifyTeam failed:', await res.text());
+  } catch(e) {
+    console.warn('notifyTeam error:', e.message);
+  }
+}
+
+/* ─── Helpers ─────────────────────────────────────────────── */
+function getMinDate() {
+  return new Date().toISOString().slice(0,10);
+}
+
+function showError(msg) {
+  const root = document.getElementById('portal-root');
+  if (root) root.innerHTML = `<div style="color:#EF4444;padding:40px;text-align:center;">${msg}</div>`;
+}
+
+// Boot
+boot().catch(e => showError('Erro ao inicializar: ' + e.message));
