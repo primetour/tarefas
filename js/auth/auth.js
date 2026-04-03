@@ -73,7 +73,6 @@ export function initAuthObserver(onReady) {
 
         store.set('currentUser',     firebaseUser);
         store.set('userProfile',     profile);
-        store.set('isAuthenticated', true);
 
         // Carregar role e permissões ANTES de liberar o app
         const roleId  = profile.roleId || profile.role || 'member';
@@ -108,6 +107,7 @@ export function initAuthObserver(onReady) {
         localStorage.setItem('primetour-palette', savedPalette);
 
         // Só agora libera o app — permissões e workspaces já estão no store
+        store.set('isAuthenticated', true);
         store.set('authLoading', false);
 
         // Inicializar e carregar tipos de tarefa (silencioso)
