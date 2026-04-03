@@ -12,6 +12,39 @@ import { fetchProjects } from '../services/projects.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+const PROFILE_PALETTES = [
+  { id:'midnight',  label:'Midnight Navy',  desc:'Azul escuro clássico',    colors:['#0A1628','#D4A843','#1E293B','#94A3B8'] },
+  { id:'platinum',  label:'Platinum',        desc:'Claro e clean',           colors:['#F8FAFC','#6366F1','#E2E8F0','#334155'] },
+  { id:'charcoal',  label:'Charcoal',        desc:'Cinza escuro elegante',   colors:['#1A1A2E','#E94560','#16213E','#A0AEC0'] },
+  { id:'ocean',     label:'Ocean Blue',      desc:'Azul oceano profundo',    colors:['#0B1929','#00BCD4','#132F4C','#B0BEC5'] },
+  { id:'forest',    label:'Forest Green',    desc:'Verde floresta natural',   colors:['#0D1F0D','#4CAF50','#1B3A1B','#A5D6A7'] },
+  { id:'royal',     label:'Royal Purple',    desc:'Roxo real sofisticado',    colors:['#1A0A2E','#9C27B0','#2D1B4E','#CE93D8'] },
+  { id:'sunset',    label:'Warm Sunset',     desc:'Laranja quente e acolhedor', colors:['#1A0F0A','#FF6B35','#2D1810','#FFAB91'] },
+  { id:'rose',      label:'Rose',            desc:'Rosa vibrante e moderno',  colors:['#1A0A14','#E91E63','#2D1520','#F48FB1'] },
+  { id:'sand',      label:'Sand',            desc:'Claro com tons quentes',   colors:['#FAF6F1','#8B6914','#E8E0D4','#5D4E37'] },
+];
+
+function _buildPaletteCards(currentPalette) {
+  return PROFILE_PALETTES.map(p => {
+    const active = currentPalette === p.id;
+    const swatches = p.colors.map(c =>
+      '<span style="width:18px;height:18px;border-radius:50%;background:' + c +
+      ';border:1px solid rgba(128,128,128,0.3);display:inline-block;"></span>'
+    ).join('');
+    return '<div class="palette-card' + (active ? ' selected' : '') + '" data-palette-id="' + p.id + '"' +
+      ' style="padding:14px;border-radius:var(--radius-md);border:2px solid ' +
+      (active ? 'var(--brand-gold)' : 'var(--border-subtle)') +
+      ';background:var(--bg-surface);cursor:pointer;transition:all 0.2s;">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+      '<div style="display:flex;gap:4px;">' + swatches + '</div>' +
+      (active ? '<span style="margin-left:auto;color:var(--brand-gold);font-weight:700;">✓</span>' : '') +
+      '</div>' +
+      '<div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);">' + esc(p.label) + '</div>' +
+      '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">' + esc(p.desc) + '</div>' +
+      '</div>';
+  }).join('');
+}
+
 const AVATAR_COLORS = [
   '#D4A843','#38BDF8','#22C55E','#A78BFA',
   '#F97316','#EC4899','#06B6D4','#EF4444',
@@ -206,35 +239,7 @@ export async function renderProfile(container) {
           </div>
           <div class="card-body">
             <div id="palette-chooser" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px;">
-              ${[
-                { id:'midnight',  label:'Midnight Navy',  desc:'Azul escuro clássico',    colors:['#0A1628','#D4A843','#1E293B','#94A3B8'] },
-                { id:'platinum',  label:'Platinum',        desc:'Claro e clean',           colors:['#F8FAFC','#6366F1','#E2E8F0','#334155'] },
-                { id:'charcoal',  label:'Charcoal',        desc:'Cinza escuro elegante',   colors:['#1A1A2E','#E94560','#16213E','#A0AEC0'] },
-                { id:'ocean',     label:'Ocean Blue',      desc:'Azul oceano profundo',    colors:['#0B1929','#00BCD4','#132F4C','#B0BEC5'] },
-                { id:'forest',    label:'Forest Green',    desc:'Verde floresta natural',   colors:['#0D1F0D','#4CAF50','#1B3A1B','#A5D6A7'] },
-                { id:'royal',     label:'Royal Purple',    desc:'Roxo real sofisticado',    colors:['#1A0A2E','#9C27B0','#2D1B4E','#CE93D8'] },
-                { id:'sunset',    label:'Warm Sunset',     desc:'Laranja quente e acolhedor', colors:['#1A0F0A','#FF6B35','#2D1810','#FFAB91'] },
-                { id:'rose',      label:'Rose',            desc:'Rosa vibrante e moderno',  colors:['#1A0A14','#E91E63','#2D1520','#F48FB1'] },
-                { id:'sand',      label:'Sand',            desc:'Claro com tons quentes',   colors:['#FAF6F1','#8B6914','#E8E0D4','#5D4E37'] },
-              ].map(p => {
-                const active = (profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'midnight') === p.id;
-                return \`
-                  <div class="palette-card \${active ? 'selected' : ''}" data-palette-id="\${p.id}"
-                    style="padding:14px; border-radius:var(--radius-md);
-                    border:2px solid \${active ? 'var(--brand-gold)' : 'var(--border-subtle)'};
-                    background:var(--bg-surface); cursor:pointer; transition:all 0.2s;">
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                      <div style="display:flex; gap:4px;">
-                        \${p.colors.map(c => \`<span style="width:18px;height:18px;border-radius:50%;
-                          background:\${c};border:1px solid rgba(128,128,128,0.3);display:inline-block;"></span>\`).join('')}
-                      </div>
-                      \${active ? '<span style="margin-left:auto;color:var(--brand-gold);font-weight:700;">✓</span>' : ''}
-                    </div>
-                    <div style="font-size:0.875rem; font-weight:600; color:var(--text-primary);">\${p.label}</div>
-                    <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">\${p.desc}</div>
-                  </div>
-                \`;
-              }).join('')}
+              ${_buildPaletteCards(profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'midnight')}
             </div>
             <div style="display:flex; justify-content:flex-end; margin-top:16px;">
               <button class="btn btn-primary btn-sm" id="prefs-save-btn">Salvar preferências</button>
