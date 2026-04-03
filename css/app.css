@@ -539,11 +539,16 @@
 
 @media (max-width: 768px) {
   /* Mobile layout: body scrolls, not page-content */
+  body {
+    height: auto !important;
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .app-shell {
     height: auto;
     min-height: 100vh;
     overflow: visible;
-    flex-direction: column;
   }
 
   .sidebar {
