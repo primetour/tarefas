@@ -171,9 +171,9 @@ export async function renderProfile(container) {
         </div>
 
         <!-- Notifications preferences -->
-        <div class="card">
+        <div class="card" style="margin-bottom:20px;">
           <div class="card-header">
-            <div class="card-title">Preferências</div>
+            <div class="card-title">Notificações</div>
           </div>
           <div class="card-body">
             <div style="display:flex; flex-direction:column; gap:16px;">
@@ -194,6 +194,47 @@ export async function renderProfile(container) {
                   </label>
                 </div>
               `).join('')}
+            </div>
+          </div>
+        </div>
+
+        <!-- Color palette preference -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Aparência</div>
+            <div class="card-subtitle">Escolha a paleta de cores do sistema</div>
+          </div>
+          <div class="card-body">
+            <div id="palette-chooser" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px;">
+              ${[
+                { id:'midnight',  label:'Midnight Navy',  desc:'Azul escuro clássico',    colors:['#0A1628','#D4A843','#1E293B','#94A3B8'] },
+                { id:'platinum',  label:'Platinum',        desc:'Claro e clean',           colors:['#F8FAFC','#6366F1','#E2E8F0','#334155'] },
+                { id:'charcoal',  label:'Charcoal',        desc:'Cinza escuro elegante',   colors:['#1A1A2E','#E94560','#16213E','#A0AEC0'] },
+                { id:'ocean',     label:'Ocean Blue',      desc:'Azul oceano profundo',    colors:['#0B1929','#00BCD4','#132F4C','#B0BEC5'] },
+                { id:'forest',    label:'Forest Green',    desc:'Verde floresta natural',   colors:['#0D1F0D','#4CAF50','#1B3A1B','#A5D6A7'] },
+                { id:'royal',     label:'Royal Purple',    desc:'Roxo real sofisticado',    colors:['#1A0A2E','#9C27B0','#2D1B4E','#CE93D8'] },
+                { id:'sunset',    label:'Warm Sunset',     desc:'Laranja quente e acolhedor', colors:['#1A0F0A','#FF6B35','#2D1810','#FFAB91'] },
+                { id:'rose',      label:'Rose',            desc:'Rosa vibrante e moderno',  colors:['#1A0A14','#E91E63','#2D1520','#F48FB1'] },
+                { id:'sand',      label:'Sand',            desc:'Claro com tons quentes',   colors:['#FAF6F1','#8B6914','#E8E0D4','#5D4E37'] },
+              ].map(p => {
+                const active = (profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'midnight') === p.id;
+                return \`
+                  <div class="palette-card \${active ? 'selected' : ''}" data-palette-id="\${p.id}"
+                    style="padding:14px; border-radius:var(--radius-md);
+                    border:2px solid \${active ? 'var(--brand-gold)' : 'var(--border-subtle)'};
+                    background:var(--bg-surface); cursor:pointer; transition:all 0.2s;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                      <div style="display:flex; gap:4px;">
+                        \${p.colors.map(c => \`<span style="width:18px;height:18px;border-radius:50%;
+                          background:\${c};border:1px solid rgba(128,128,128,0.3);display:inline-block;"></span>\`).join('')}
+                      </div>
+                      \${active ? '<span style="margin-left:auto;color:var(--brand-gold);font-weight:700;">✓</span>' : ''}
+                    </div>
+                    <div style="font-size:0.875rem; font-weight:600; color:var(--text-primary);">\${p.label}</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">\${p.desc}</div>
+                  </div>
+                \`;
+              }).join('')}
             </div>
             <div style="display:flex; justify-content:flex-end; margin-top:16px;">
               <button class="btn btn-primary btn-sm" id="prefs-save-btn">Salvar preferências</button>
@@ -355,7 +396,34 @@ function _bindProfileEvents(profile) {
     finally { if(btn) { btn.classList.remove('loading'); btn.disabled=false; } }
   });
 
-  // Save preferences
+  // Palette chooser click events
+  let _selectedPalette = profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'midnight';
+  document.querySelectorAll('#palette-chooser .palette-card').forEach(card => {
+    card.addEventListener('click', () => {
+      _selectedPalette = card.dataset.paletteId;
+      // Apply immediately for live preview
+      document.documentElement.dataset.palette = _selectedPalette;
+      localStorage.setItem('primetour-palette', _selectedPalette);
+      // Update selected state
+      document.querySelectorAll('#palette-chooser .palette-card').forEach(c => {
+        const isActive = c.dataset.paletteId === _selectedPalette;
+        c.classList.toggle('selected', isActive);
+        c.style.borderColor = isActive ? 'var(--brand-gold)' : 'var(--border-subtle)';
+        const check = c.querySelector('span[style*="margin-left:auto"]');
+        if (isActive && !check) {
+          const firstRow = c.querySelector('div');
+          const s = document.createElement('span');
+          s.style.cssText = 'margin-left:auto;color:var(--brand-gold);font-weight:700;';
+          s.textContent = '✓';
+          firstRow.appendChild(s);
+        } else if (!isActive && check) {
+          check.remove();
+        }
+      });
+    });
+  });
+
+  // Save preferences (notifications + palette)
   document.getElementById('prefs-save-btn')?.addEventListener('click', async () => {
     const btn = document.getElementById('prefs-save-btn');
     if(btn) { btn.classList.add('loading'); btn.disabled=true; }
@@ -366,6 +434,7 @@ function _bindProfileEvents(profile) {
           notifyMention:  document.getElementById('pref-notify-mention')?.checked ?? true,
           notifyDeadline: document.getElementById('pref-notify-deadline')?.checked ?? true,
           notifySound:    document.getElementById('pref-notify-sound')?.checked ?? true,
+          palette:        _selectedPalette,
         }
       });
       toast.success('Preferências salvas!');
