@@ -287,10 +287,27 @@ async function renderForm(db, taskTypes) {
               </div>
             </div>
 
-            <!-- Submit -->
-            <button class="portal-submit" id="portal-submit-btn">
-              Enviar solicitação →
-            </button>
+            <!-- Submit buttons -->
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <button class="portal-submit" id="portal-add-batch-btn">
+                Adicionar ao lote +
+              </button>
+              <button class="portal-submit portal-submit-alt" id="portal-submit-btn">
+                Enviar apenas esta solicitação →
+              </button>
+            </div>
+
+            <!-- Batch queue panel -->
+            <div class="portal-card batch-panel" id="batch-panel" style="display:none;">
+              <div class="portal-card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Solicitações em lote</span>
+                <span class="batch-count-badge" id="batch-count">0</span>
+              </div>
+              <div id="batch-list"></div>
+              <button class="portal-submit" id="batch-submit-btn" style="margin-top:12px;">
+                Enviar todas as solicitações →
+              </button>
+            </div>
           </div>
 
           <!-- Success view -->
@@ -402,6 +419,10 @@ async function loadCalendarSlots(db, taskTypes=[]) {
   // Calendar widget is shown only after type selection (see bindFormEvents)
 }
 
+/* ─── Batch queue state ──────────────────────────────────── */
+let batchQueue      = [];
+let currentEditIndex = -1;
+
 /* ─── Portal calendar widget ────────────────────────────── */
 let portalCalGran   = 'month'; // 'month'|'week'|'day'
 let portalCalDate   = new Date();
@@ -499,15 +520,24 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       const isToday= d===today.getDate()&&m===today.getMonth()&&y===today.getFullYear();
       const hasTasks= tasks.length>0;
       const hasSlots= slots.length>0;
-      cells+=`<div style="min-height:60px;padding:3px;border-radius:4px;
+      const dateISO= `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const isPast = new Date(y,m,d) < today;
+      const dow    = new Date(y,m,d).getDay();
+      const isWeekend = dow===0||dow===6;
+      const clickable = !isPast && !isWeekend;
+      cells+=`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
+        style="min-height:60px;padding:3px;border-radius:4px;cursor:${clickable?'pointer':'default'};
         background:${hasTasks?'rgba(212,168,67,0.08)':hasSlots?'rgba(212,168,67,0.04)':'transparent'};
         border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':hasSlots?'rgba(212,168,67,0.15)':'transparent'};">
         <div style="font-size:0.6875rem;font-weight:${isToday?700:400};
           color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</div>
-        ${slots.map(s=>`<div style="font-size:0.5625rem;color:${s.color||'var(--brand-gold)'};
+        ${slots.map(s=>`<div class="pcal-slot-click" data-slot-date="${dateISO}"
+          data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
+          data-slot-area="${esc(s.requestingArea||'')}"
+          style="font-size:0.5625rem;color:${s.color||'var(--brand-gold)'};
           border-bottom:1px dashed ${s.color||'var(--brand-gold)'};margin-bottom:1px;
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
-          title="Agenda: ${s.title}">◌ ${s.title.slice(0,12)}${s.title.length>12?'…':''}</div>`).join('')}
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
+          title="Clique para adicionar: ${esc(s.title)}">◌ ${s.title.slice(0,12)}${s.title.length>12?'…':''}</div>`).join('')}
         ${tasks.map(t=>`<div style="font-size:0.5625rem;color:var(--brand-gold);
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
           title="${t.title}${t.requestingArea?' · '+t.requestingArea:''}">● ${t.title.slice(0,12)}${t.title.length>12?'…':''}</div>`).join('')}
@@ -528,13 +558,22 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       const isToday = dm.getTime()===today.getTime();
       const dayTasks = (taskMap[d.getDate()]||[]).filter(()=>d.getFullYear()===y&&d.getMonth()===m);
       const slots    = getSlotsForDate(d);
-      return `<div style="padding:4px;min-height:80px;border-radius:4px;
+      const isPast   = dm < today;
+      const isWeekend= d.getDay()===0||d.getDay()===6;
+      const clickable= !isPast && !isWeekend;
+      const dateISO  = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      return `<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
+        style="padding:4px;min-height:80px;border-radius:4px;cursor:${clickable?'pointer':'default'};
         border:1px solid ${isToday?'var(--brand-gold)':'var(--border-subtle)'};">
         <div style="font-size:0.6875rem;color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
           font-weight:${isToday?700:400};margin-bottom:3px;">${PT_DAYS_S[d.getDay()]} ${d.getDate()}</div>
-        ${slots.map(s=>`<div style="font-size:0.5625rem;border:1px dashed ${s.color||'var(--brand-gold)'};
+        ${slots.map(s=>`<div class="pcal-slot-click" data-slot-date="${dateISO}"
+          data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
+          data-slot-area="${esc(s.requestingArea||'')}"
+          style="font-size:0.5625rem;border:1px dashed ${s.color||'var(--brand-gold)'};
           color:${s.color||'var(--brand-gold)'};border-radius:2px;padding:1px 3px;margin-bottom:2px;
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Agenda: ${s.title}">
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
+          title="Clique para adicionar: ${esc(s.title)}">
           ◌ ${s.title.slice(0,14)}${s.title.length>14?'…':''}</div>`).join('')}
         ${dayTasks.map(t=>`<div style="font-size:0.5625rem;background:rgba(212,168,67,0.12);
           color:var(--brand-gold);border-radius:2px;padding:1px 3px;margin-bottom:2px;
@@ -551,14 +590,23 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     const today = new Date(); today.setHours(0,0,0,0);
     const dm    = new Date(d); dm.setHours(0,0,0,0);
     const dTasks= (taskMap[d.getDate()]||[]);
-    return `<div style="padding:12px;">
+    const isPast   = dm < today;
+    const isWeekend= d.getDay()===0||d.getDay()===6;
+    const clickable= !isPast && !isWeekend;
+    const dateISO  = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    return `<div class="${clickable&&!slots.length?'pcal-day-cell':''}" ${clickable&&!slots.length?`data-pcal-date="${dateISO}"`:''}
+      style="padding:12px;">
       ${slots.length?`
         <div style="margin-bottom:10px;">
           <div style="font-size:0.75rem;font-weight:600;color:var(--brand-gold);margin-bottom:6px;">◌ Agenda do dia</div>
-          ${slots.map(s=>`<div style="padding:8px 10px;border-radius:4px;margin-bottom:4px;
+          ${slots.map(s=>`<div class="${clickable?'pcal-slot-click':''}" ${clickable?`data-slot-date="${dateISO}"
+            data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
+            data-slot-area="${esc(s.requestingArea||'')}"`:''}
+            style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:${clickable?'pointer':'default'};
             border:1.5px dashed ${s.color||'var(--brand-gold)'};background:${s.color||'var(--brand-gold)'}08;">
             <div style="font-size:0.8125rem;font-weight:500;color:${s.color||'var(--brand-gold)'};">◌ ${s.title}</div>
             ${s.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${s.requestingArea}</div>`:''}
+            ${clickable?`<div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">Clique para adicionar ao formulário</div>`:''}
           </div>`).join('')}
         </div>
       `:''}
@@ -572,7 +620,10 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           </div>`).join('')}
         </div>
       `:''}
-      ${!slots.length&&!dTasks.length?`<div style="font-size:0.875rem;color:var(--text-muted);text-align:center;padding:16px 0;">Nenhuma agenda ou tarefa para este dia.</div>`:''}
+      ${!slots.length&&!dTasks.length?`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
+        style="font-size:0.875rem;color:var(--text-muted);text-align:center;padding:16px 0;cursor:${clickable?'pointer':'default'};">
+        Nenhuma agenda ou tarefa para este dia.${clickable?' Clique para criar demanda fora do calendário.':''}
+      </div>`:''}
     </div>`;
   };
 
@@ -677,8 +728,373 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     portalCalDate = new Date();
     renderPortalCalendar(db, types, null);
   });
+
+  // Slot clicks → pre-fill form from slot data
+  wrap.querySelectorAll('.pcal-slot-click').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dateISO = el.dataset.slotDate;
+      const title   = el.dataset.slotTitle || '';
+      const varId   = el.dataset.slotVariation || '';
+      const area    = el.dataset.slotArea || '';
+      fillFormFromSlot(dateISO, title, varId, area);
+    });
+  });
+
+  // Empty day clicks → out-of-calendar mode
+  wrap.querySelectorAll('.pcal-day-cell').forEach(cell => {
+    cell.addEventListener('click', (e) => {
+      if (e.target.closest('.pcal-slot-click')) return; // slot handled above
+      const dateISO = cell.dataset.pcalDate;
+      if (!dateISO) return;
+      const date  = new Date(dateISO + 'T12:00:00');
+      const slots = getSlotsForDate(date);
+      if (slots.length > 0) {
+        // Day has slots but user clicked empty area — just fill date
+        fillFormFromSlot(dateISO, '', '', '');
+      } else {
+        // No slots → out-of-calendar
+        fillFormFromEmptyDay(dateISO);
+      }
+    });
+  });
 }
 
+
+/* ─── Slot/day click helpers ──────────────────────────────── */
+function fillFormFromSlot(dateISO, title, variationId, area) {
+  const dateEl = document.getElementById('p-date');
+  if (dateEl) { dateEl.value = dateISO; dateEl.dispatchEvent(new Event('change')); }
+  // Select variation if provided
+  if (variationId) {
+    const varSel = document.getElementById('p-variation');
+    if (varSel) { varSel.value = variationId; varSel.dispatchEvent(new Event('change')); }
+  }
+  // Pre-fill description hint
+  const descEl = document.getElementById('p-desc');
+  if (descEl && !descEl.value && title) {
+    descEl.value = 'Demanda referente a: ' + title;
+  }
+  // Unlock toggles
+  unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+  unlockToggle('urgency-toggle', 'p-urgency', false);
+  document.getElementById('locked-urgency-banner')?.remove();
+  document.getElementById('locked-ooc-banner')?.remove();
+  // Check urgency by deadline
+  checkUrgencyByDeadline(dateISO);
+  // Scroll to description
+  descEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function fillFormFromEmptyDay(dateISO) {
+  const dateEl = document.getElementById('p-date');
+  if (dateEl) { dateEl.value = dateISO; dateEl.dispatchEvent(new Event('change')); }
+  // Force out-of-calendar ON + lock
+  lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
+  document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'flex');
+  // Show locked banner for out-of-calendar
+  showLockedBanner('locked-ooc-banner', 'out-of-calendar-toggle',
+    'Esta data não está no calendário editorial. "Fora do calendário" foi definido automaticamente.');
+  // Check urgency by deadline
+  checkUrgencyByDeadline(dateISO);
+  // Scroll to description
+  document.getElementById('p-desc')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function checkUrgencyByDeadline(dateISO) {
+  if (!dateISO) return;
+  const deadline = new Date(dateISO + 'T23:59:59');
+  const now = new Date();
+  const hoursUntil = (deadline - now) / 3600000;
+  if (hoursUntil <= 24) {
+    lockToggle('urgency-toggle', 'p-urgency', 'urgency-dot', true);
+    document.getElementById('urgency-alert')?.classList.add('visible');
+    showLockedBanner('locked-urgency-banner', 'urgency-toggle',
+      'Prazo inferior a 24h. Urgência definida automaticamente.');
+  } else {
+    unlockToggle('urgency-toggle', 'p-urgency', false);
+    document.getElementById('locked-urgency-banner')?.remove();
+  }
+}
+
+function lockToggle(toggleId, cbId, dotId, checked) {
+  const cb = document.getElementById(cbId);
+  const toggle = document.getElementById(toggleId);
+  if (cb) cb.checked = checked;
+  if (toggle) { toggle.classList.toggle('active', checked); toggle.classList.add('locked'); }
+}
+
+function unlockToggle(toggleId, cbId, checked) {
+  const cb = document.getElementById(cbId);
+  const toggle = document.getElementById(toggleId);
+  if (cb) cb.checked = checked;
+  if (toggle) { toggle.classList.toggle('active', checked); toggle.classList.remove('locked'); }
+}
+
+function showLockedBanner(id, afterId, message) {
+  document.getElementById(id)?.remove();
+  const banner = document.createElement('div');
+  banner.id = id;
+  banner.className = 'alert-banner info visible';
+  banner.style.cssText = 'margin-top:8px;';
+  banner.innerHTML = '<span style="font-size:1.125rem;flex-shrink:0;">🔒</span><span>' + message + '</span>';
+  document.getElementById(afterId)?.after(banner);
+}
+
+/* ─── Batch queue functions ──────────────────────────────── */
+function collectFormData(taskTypes) {
+  const typeId      = document.getElementById('p-type')?.value || '';
+  const typeData    = taskTypes.find(t => t.id === typeId);
+  const varOpt      = document.querySelector('#p-variation option:checked');
+  return {
+    requestingArea: document.getElementById('p-area')?.value || '',
+    sector:         document.getElementById('p-setor')?.value || '',
+    typeId:         typeId,
+    typeName:       typeData?.name || typeId || '',
+    typeIcon:       typeData?.icon || '',
+    typeColor:      typeData?.color || '#D4A843',
+    variationId:    document.getElementById('p-variation')?.value || null,
+    variationName:  varOpt?.value ? varOpt.textContent.split('·')[0].trim() : '',
+    nucleo:         document.getElementById('p-nucleo')?.value || '',
+    description:    document.getElementById('p-desc')?.value?.trim() || '',
+    urgency:        document.getElementById('p-urgency')?.checked || false,
+    outOfCalendar:  document.getElementById('p-out-of-calendar')?.checked || false,
+    desiredDate:    document.getElementById('p-date')?.value || '',
+  };
+}
+
+function addToBatch(taskTypes) {
+  if (!validate()) {
+    document.querySelector('.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  const item = collectFormData(taskTypes);
+  if (currentEditIndex >= 0) {
+    batchQueue[currentEditIndex] = item;
+    currentEditIndex = -1;
+    const btn = document.getElementById('portal-add-batch-btn');
+    if (btn) btn.textContent = 'Adicionar ao lote +';
+  } else {
+    batchQueue.push(item);
+  }
+  resetFormForNextItem();
+  renderBatchList(taskTypes);
+  document.getElementById('batch-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function resetFormForNextItem() {
+  // Clear per-item fields, keep shared (name, email, area, sector, type)
+  const fields = ['p-desc', 'p-date', 'p-nucleo', 'p-variation'];
+  fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  // Reset toggles
+  unlockToggle('urgency-toggle', 'p-urgency', false);
+  unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+  document.getElementById('urgency-alert')?.classList.remove('visible');
+  document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'none');
+  document.getElementById('calendar-alert')?.classList.remove('visible');
+  document.getElementById('sla-badge')?.classList.remove('visible');
+  document.getElementById('locked-urgency-banner')?.remove();
+  document.getElementById('locked-ooc-banner')?.remove();
+  document.querySelectorAll('.slot-day').forEach(s => s.classList.remove('selected'));
+}
+
+function renderBatchList(taskTypes) {
+  const panel = document.getElementById('batch-panel');
+  const list  = document.getElementById('batch-list');
+  const count = document.getElementById('batch-count');
+  const submitBtn = document.getElementById('batch-submit-btn');
+  if (!panel || !list) return;
+
+  if (!batchQueue.length) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+  if (count) count.textContent = batchQueue.length;
+  if (submitBtn) submitBtn.textContent = 'Enviar ' + batchQueue.length + ' solicitaç' + (batchQueue.length === 1 ? 'ão' : 'ões') + ' →';
+
+  const MONTHS = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  list.innerHTML = batchQueue.map((item, i) => {
+    const dateStr = item.desiredDate
+      ? (() => { const d = new Date(item.desiredDate + 'T12:00:00'); return d.getDate() + ' ' + MONTHS[d.getMonth()]; })()
+      : 'Sem data';
+    return '<div class="batch-item" style="border-left-color:' + (item.typeColor || 'var(--brand-gold)') + ';">' +
+      '<div class="batch-item-body">' +
+        '<div class="batch-item-title">' + (item.typeIcon ? item.typeIcon + ' ' : '') + esc(item.typeName || 'Sem tipo') +
+          (item.variationName ? ' — ' + esc(item.variationName) : '') + '</div>' +
+        '<div class="batch-item-meta">' +
+          esc(item.requestingArea || '') + (item.nucleo ? ' · ' + esc(item.nucleo) : '') + ' · ' + dateStr +
+        '</div>' +
+        (item.urgency ? '<span style="font-size:0.625rem;background:#EF444420;color:#EF4444;padding:1px 6px;border-radius:8px;font-weight:600;margin-right:4px;">URGENTE</span>' : '') +
+        (item.outOfCalendar ? '<span style="font-size:0.625rem;background:#F59E0B20;color:#F59E0B;padding:1px 6px;border-radius:8px;font-weight:600;">FORA DO CAL.</span>' : '') +
+        '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+          esc(item.description.slice(0, 60)) + (item.description.length > 60 ? '…' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="batch-item-actions">' +
+        '<button class="batch-item-btn" data-batch-edit="' + i + '" title="Editar">✎</button>' +
+        '<button class="batch-item-btn danger" data-batch-remove="' + i + '" title="Remover">✕</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  // Bind edit/remove
+  list.querySelectorAll('[data-batch-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.batchEdit);
+      editBatchItem(idx, taskTypes);
+    });
+  });
+  list.querySelectorAll('[data-batch-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.batchRemove);
+      batchQueue.splice(idx, 1);
+      if (currentEditIndex === idx) { currentEditIndex = -1; document.getElementById('portal-add-batch-btn').textContent = 'Adicionar ao lote +'; }
+      else if (currentEditIndex > idx) currentEditIndex--;
+      renderBatchList(taskTypes);
+    });
+  });
+}
+
+async function editBatchItem(idx, taskTypes) {
+  const item = batchQueue[idx];
+  if (!item) return;
+  currentEditIndex = idx;
+
+  // 1. Set area (no cascade needed)
+  const areaEl = document.getElementById('p-area');
+  if (areaEl) areaEl.value = item.requestingArea || '';
+
+  // 2. Set sector and trigger cascade (loads types + nucleos)
+  const setorEl = document.getElementById('p-setor');
+  if (setorEl && item.sector) {
+    setorEl.value = item.sector;
+    await new Promise(resolve => {
+      setorEl.dispatchEvent(new Event('change'));
+      // Wait for async cascade (loadNucleosBySector) to complete
+      setTimeout(resolve, 300);
+    });
+  }
+
+  // 3. Set type and trigger cascade (loads variations + calendar)
+  const typeEl = document.getElementById('p-type');
+  if (typeEl && item.typeId) {
+    typeEl.value = item.typeId;
+    await new Promise(resolve => {
+      typeEl.dispatchEvent(new Event('change'));
+      setTimeout(resolve, 300);
+    });
+  }
+
+  // 4. Set variation (after type cascade populated the options)
+  const varEl = document.getElementById('p-variation');
+  if (varEl && item.variationId) {
+    varEl.value = item.variationId;
+    varEl.dispatchEvent(new Event('change'));
+  }
+
+  // 5. Set nucleo (after sector cascade populated the options)
+  const nucleoEl = document.getElementById('p-nucleo');
+  if (nucleoEl && item.nucleo) nucleoEl.value = item.nucleo;
+
+  // 6. Set description and date
+  const descEl = document.getElementById('p-desc');
+  if (descEl) descEl.value = item.description || '';
+  const dateEl = document.getElementById('p-date');
+  if (dateEl && item.desiredDate) {
+    dateEl.value = item.desiredDate;
+    dateEl.dispatchEvent(new Event('change'));
+  }
+
+  // 7. Set toggles
+  if (item.urgency) {
+    lockToggle('urgency-toggle', 'p-urgency', 'urgency-dot', true);
+  } else {
+    unlockToggle('urgency-toggle', 'p-urgency', false);
+  }
+  if (item.outOfCalendar) {
+    lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
+  } else {
+    unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+  }
+
+  // Update button
+  const btn = document.getElementById('portal-add-batch-btn');
+  if (btn) btn.textContent = 'Atualizar item ✓';
+  // Scroll to form
+  document.getElementById('fg-desc')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function handleBatchSubmit(db, taskTypes) {
+  if (!batchQueue.length) return;
+  // Validate shared fields (name, email)
+  const name  = document.getElementById('p-name')?.value?.trim();
+  const email = document.getElementById('p-email')?.value?.trim();
+  if (!name || name.length < 2) { document.getElementById('fg-name')?.classList.add('has-error'); return; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { document.getElementById('fg-email')?.classList.add('has-error'); return; }
+
+  const btn = document.getElementById('batch-submit-btn');
+  if (btn) { btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Enviando...'; }
+
+  try {
+    const batchId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const total   = batchQueue.length;
+
+    for (let i = 0; i < batchQueue.length; i++) {
+      const item = batchQueue[i];
+      const reqDoc = {
+        requesterName:  name,
+        requesterEmail: email.toLowerCase(),
+        requestingArea: item.requestingArea || '',
+        sector:         item.sector || '',
+        typeId:         item.typeId || null,
+        typeName:       item.typeName || '',
+        variationId:    item.variationId || null,
+        variationName:  item.variationName || '',
+        nucleo:         item.nucleo || '',
+        description:    item.description || '',
+        urgency:        item.urgency === true,
+        outOfCalendar:  item.outOfCalendar === true,
+        desiredDate:    item.desiredDate ? new Date(item.desiredDate + 'T12:00:00') : null,
+        status:         'pending',
+        taskId:         null,
+        workspaceId:    null,
+        internalNote:   '',
+        rejectionNote:  '',
+        batchId:        batchId,
+        batchIndex:     i,
+        batchTotal:     total,
+        createdAt:      serverTimestamp(),
+        updatedAt:      serverTimestamp(),
+      };
+      await addDoc(collection(db, 'requests'), reqDoc);
+    }
+
+    // Send ONE consolidated email
+    await notifyTeam({
+      requesterName: name, requesterEmail: email,
+      requestingArea: batchQueue[0]?.requestingArea || '',
+      sector: batchQueue[0]?.sector || '',
+      typeName: batchQueue.map(i => i.typeName).filter(Boolean).join(', '),
+      description: total + ' solicitaç' + (total === 1 ? 'ão' : 'ões') + ' em lote',
+      urgency: batchQueue.some(i => i.urgency),
+      outOfCalendar: batchQueue.some(i => i.outOfCalendar),
+    }).catch(() => {});
+
+    // Show success
+    batchQueue = [];
+    currentEditIndex = -1;
+    document.getElementById('form-view').style.display = 'none';
+    const successView = document.getElementById('success-view');
+    successView?.classList.add('visible');
+    const msg = document.getElementById('success-msg');
+    if (msg) msg.textContent = 'Enviamos ' + total + ' solicitaç' + (total === 1 ? 'ão' : 'ões') +
+      '. Nossa equipe irá analisar cada uma e entrará em contato com ' + email + ' em breve.';
+  } catch(e) {
+    alert('Erro ao enviar solicitações: ' + e.message);
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Enviar todas as solicitações →'; }
+  }
+}
 
 /* ─── Bind events ─────────────────────────────────────────── */
 function bindFormEvents(db, taskTypes) {
@@ -807,10 +1223,61 @@ function bindFormEvents(db, taskTypes) {
     }
   });
 
-  // Out-of-calendar toggle — same pattern as urgency
+  // (urgency, out-of-calendar, and date handlers are defined above with lock support)
+
+  // Date change → check urgency + out-of-calendar
+  const dateInput = document.getElementById('p-date');
+  dateInput?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (!val) return;
+    // Check out-of-calendar via slots
+    const dbRef = window._portalDb;
+    const types = window._portalTaskTypes || taskTypes;
+    const typeId = document.getElementById('p-type')?.value;
+    const typeData = types.find(t => t.id === typeId);
+    if (typeData?.scheduleSlots) {
+      const date = new Date(val + 'T12:00:00');
+      const dow = date.getDay();
+      const d = date.getDate(), m = date.getMonth(), y = date.getFullYear();
+      const iso = val;
+      const slots = (typeData.scheduleSlots || []).filter(s => {
+        if (s.active === false) return false;
+        if (s.recurrence === 'weekly') return s.weekDay === dow;
+        if (s.recurrence === 'monthly_days') return (s.monthDays || []).includes(d);
+        if (s.recurrence === 'custom') return (s.customDates || []).includes(iso);
+        return false;
+      });
+      if (slots.length === 0) {
+        lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
+        document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'flex');
+        showLockedBanner('locked-ooc-banner', 'out-of-calendar-toggle',
+          'Esta data não está no calendário editorial. "Fora do calendário" foi definido automaticamente.');
+      } else {
+        unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+        document.getElementById('locked-ooc-banner')?.remove();
+        document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'none');
+      }
+    }
+    checkUrgencyByDeadline(val);
+  });
+
+  // Urgency toggle — only allow if not locked
+  document.getElementById('urgency-toggle')?.addEventListener('click', () => {
+    const toggle = document.getElementById('urgency-toggle');
+    if (toggle?.classList.contains('locked')) return;
+    const cb = document.getElementById('p-urgency');
+    const alert = document.getElementById('urgency-alert');
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    toggle?.classList.toggle('active', cb.checked);
+    if (alert) alert.classList.toggle('visible', cb.checked);
+  });
+
+  // Out-of-calendar toggle — only allow if not locked
   document.getElementById('out-of-calendar-toggle')?.addEventListener('click', () => {
-    const cb    = document.getElementById('p-out-of-calendar');
-    const toggle= document.getElementById('out-of-calendar-toggle');
+    const toggle = document.getElementById('out-of-calendar-toggle');
+    if (toggle?.classList.contains('locked')) return;
+    const cb = document.getElementById('p-out-of-calendar');
     const alert = document.getElementById('out-calendar-alert');
     if (!cb) return;
     cb.checked = !cb.checked;
@@ -818,38 +1285,12 @@ function bindFormEvents(db, taskTypes) {
     if (alert) alert.style.display = cb.checked ? 'flex' : 'none';
   });
 
-  // Date change → out-of-calendar check
-  document.getElementById('p-date')?.addEventListener('change', (e) => {
-    const val = e.target.value;
-    if (!val) return;
-    const d   = new Date(val + 'T12:00:00');
-    const dow = d.getDay();
-    const calAlert = document.getElementById('calendar-alert');
-    // Weekends = out of calendar
-    if (dow === 0 || dow === 6) {
-      calAlert?.classList.add('visible');
-    } else {
-      calAlert?.classList.remove('visible');
-    }
-    // Sync slot selection
-    document.querySelectorAll('.slot-day').forEach(s => {
-      s.classList.toggle('selected', s.dataset.date === val);
-    });
-  });
+  // Batch: add to batch
+  document.getElementById('portal-add-batch-btn')?.addEventListener('click', () => addToBatch(taskTypes));
+  // Batch: submit all
+  document.getElementById('batch-submit-btn')?.addEventListener('click', () => handleBatchSubmit(db, taskTypes));
 
-  // Urgency toggle
-  document.getElementById('urgency-toggle')?.addEventListener('click', () => {
-    const cb      = document.getElementById('p-urgency');
-    const toggle  = document.getElementById('urgency-toggle');
-    const dot     = document.getElementById('urgency-dot');
-    const alert   = document.getElementById('urgency-alert');
-    if (!cb) return;
-    cb.checked = !cb.checked;
-    toggle?.classList.toggle('active', cb.checked);
-    if (alert) alert.classList.toggle('visible', cb.checked);
-  });
-
-  // Submit
+  // Single submit
   document.getElementById('portal-submit-btn')?.addEventListener('click', () => handleSubmit(db, taskTypes));
   document.getElementById('new-request-btn')?.addEventListener('click', () => {
     document.getElementById('success-view')?.classList.remove('visible');
@@ -857,10 +1298,18 @@ function bindFormEvents(db, taskTypes) {
     // Reset form
     document.querySelectorAll('.form-input,.form-select,.form-textarea').forEach(el => { el.value = ''; });
     document.getElementById('p-urgency').checked = false;
-    document.getElementById('urgency-toggle')?.classList.remove('active');
+    document.getElementById('p-out-of-calendar').checked = false;
+    unlockToggle('urgency-toggle', 'p-urgency', false);
+    unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
     document.getElementById('urgency-alert')?.classList.remove('visible');
+    document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'none');
     document.getElementById('sla-badge')?.classList.remove('visible');
     document.getElementById('slots-container')?.classList.remove('visible');
+    document.getElementById('locked-urgency-banner')?.remove();
+    document.getElementById('locked-ooc-banner')?.remove();
+    document.getElementById('batch-panel')?.style && (document.getElementById('batch-panel').style.display = 'none');
+    batchQueue = [];
+    currentEditIndex = -1;
   });
 }
 
@@ -954,7 +1403,7 @@ async function handleSubmit(db, taskTypes) {
     }
   } catch(e) {
     alert('Erro ao enviar solicitação: ' + e.message);
-    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Enviar solicitação →'; }
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Enviar apenas esta solicitação →'; }
   }
 }
 
