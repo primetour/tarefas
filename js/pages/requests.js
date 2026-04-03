@@ -23,6 +23,12 @@ function fmtDate(ts) {
   return new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(d);
 }
 
+function fmtDateOnly(ts) {
+  if (!ts) return '—';
+  const d = ts?.toDate ? ts.toDate() : new Date(ts);
+  return new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}).format(d);
+}
+
 let allRequests  = [];
 let unsubscribe  = null;
 let filterStatus = '';
@@ -133,8 +139,9 @@ function renderList() {
         <div class="card-body" style="padding:14px 16px;">
           <div style="display:flex;align-items:flex-start;gap:12px;">
             <div style="flex:1;min-width:0;">
+              ${req.title?`<div style="font-weight:600;font-size:0.9375rem;color:var(--text-primary);margin-bottom:2px;">${esc(req.title)}</div>`:''}
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
-                <span style="font-weight:600;color:var(--text-primary);">${esc(req.requesterName)}</span>
+                <span style="font-weight:${req.title?'400':'600'};color:var(--text-${req.title?'secondary':'primary'});font-size:${req.title?'0.8125rem':'inherit'};">${esc(req.requesterName)}</span>
                 <span style="font-size:0.75rem;color:var(--text-muted);">${esc(req.requesterEmail)}</span>
                 ${urgent?`<span style="font-size:0.6875rem;padding:1px 6px;border-radius:var(--radius-full);
                   background:rgba(239,68,68,0.15);color:#EF4444;">🔴 Urgente</span>`:''}
@@ -215,6 +222,15 @@ async function openRequestDetail(req) {
           </div>
         </div>
 
+        <!-- Title -->
+        ${req.title?`
+        <div style="padding:10px 14px;background:var(--bg-surface);border-radius:var(--radius-md);
+          border-left:3px solid var(--brand-gold);">
+          <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">Título da demanda</div>
+          <div style="font-size:1rem;font-weight:600;color:var(--text-primary);">${esc(req.title)}</div>
+        </div>
+        `:''}
+
         <!-- Demand info -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;
           padding:12px;background:var(--bg-surface);border-radius:var(--radius-md);">
@@ -236,7 +252,7 @@ async function openRequestDetail(req) {
           </div>
           ${req.desiredDate?`<div>
             <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">Data desejada</div>
-            <div style="font-size:0.875rem;">📅 ${fmtDate(req.desiredDate)}</div>
+            <div style="font-size:0.875rem;">📅 ${fmtDateOnly(req.desiredDate)}</div>
           </div>`:''}
         </div>
 
@@ -333,7 +349,7 @@ async function openRequestDetail(req) {
               toast.success('Solicitação convertida em tarefa!');
             },
             taskData: {
-              title:          `[Solicitação] ${req.typeName||'Demanda'} — ${req.requesterName}`,
+              title:          req.title || `[Solicitação] ${req.typeName||'Demanda'} — ${req.requesterName}`,
               description:    req.description   || '',
               requestingArea: req.requestingArea || '',
               sector:         req.sector         || '',
