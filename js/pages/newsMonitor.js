@@ -1042,7 +1042,16 @@ async function exportClipXls() {
   ];
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [50, 45, 25, 14, 16, 18, 14].map(w => ({ wch: w }));
+  ws['!cols'] = [50, 55, 25, 14, 16, 18, 14].map(w => ({ wch: w }));
+
+  // Make links clickable in the Link column (column B, index 1)
+  items.forEach((item, idx) => {
+    if (item.link) {
+      const cellRef = XLSX.utils.encode_cell({ r: idx + 1, c: 1 }); // +1 for header row
+      if (ws[cellRef]) ws[cellRef].l = { Target: item.link, Tooltip: item.title || 'Abrir matéria' };
+    }
+  });
+
   XLSX.utils.book_append_sheet(wb, ws, 'Clipping');
   XLSX.writeFile(wb, `primetour_clipping_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast.success('XLS exportado.');
@@ -1076,11 +1085,15 @@ async function exportClipPdf() {
   doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100);
   doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${items.length} itens`, 14, 22);
 
+  // Store links to make them clickable after table is drawn
+  const linkMap = items.map(i => i.link || '');
+
   doc.autoTable({
     startY: 27,
-    head: [['Título', 'Veículo', 'Data', 'Mídia', 'Conteúdo', 'Sentimento']],
+    head: [['Título', 'Link', 'Veículo', 'Data', 'Mídia', 'Conteúdo', 'Sentimento']],
     body: items.map(i => [
-      (i.title || '').slice(0, 60),
+      (i.title || '').slice(0, 55),
+      i.link ? 'Abrir matéria' : '—',
       i.siteName || '',
       fmt(i.publishedAt),
       i.mediaType || '',
@@ -1090,10 +1103,18 @@ async function exportClipPdf() {
     styles: { fontSize: 8, cellPadding: 3 },
     headStyles: { fillColor: [36, 35, 98], textColor: 255, fontStyle: 'bold' },
     columnStyles: {
-      0: { cellWidth: 70 }, 1: { cellWidth: 35 }, 2: { cellWidth: 22 },
-      3: { cellWidth: 22 }, 4: { cellWidth: 28 }, 5: { cellWidth: 22 },
+      0: { cellWidth: 60 }, 1: { cellWidth: 28, textColor: [0, 102, 204] },
+      2: { cellWidth: 30 }, 3: { cellWidth: 20 },
+      4: { cellWidth: 18 }, 5: { cellWidth: 24 }, 6: { cellWidth: 20 },
     },
     alternateRowStyles: { fillColor: [248, 247, 244] },
+    didDrawCell: (data) => {
+      // Add clickable link on the "Link" column (index 1), body rows only
+      if (data.section === 'body' && data.column.index === 1 && linkMap[data.row.index]) {
+        doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height,
+          { url: linkMap[data.row.index] });
+      }
+    },
     didDrawPage: () => {
       doc.setFontSize(7); doc.setTextColor(180, 180, 180);
       doc.text(`PRIMETOUR · p.${doc.getNumberOfPages()}`, 285, 205, { align: 'right' });
