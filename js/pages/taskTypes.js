@@ -439,6 +439,19 @@ function openTypeModal(type = null) {
           placeholder="Ex: Apresentação de até 15 slides com identidade visual da marca...">${esc(type?.deliveryStandard||'')}</textarea>
       </div>
 
+      <!-- Aceitar sem análise -->
+      <div class="form-group" style="padding:10px 14px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface);">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0;">
+          <input type="checkbox" id="tt-autoaccept" ${type?.autoAccept?'checked':''} style="width:18px;height:18px;accent-color:var(--brand-gold);" />
+          <div>
+            <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">Aceitar sem análise</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">
+              Solicitações deste tipo entram diretamente na esteira de produção, sem passar pela triagem do módulo de solicitações.
+            </div>
+          </div>
+        </label>
+      </div>
+
       <!-- Variações -->
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
@@ -512,6 +525,7 @@ function openTypeModal(type = null) {
             categoryName:     catName || '',
             nucleos:          nucleosSelected,
             deliveryStandard: document.getElementById('tt-delivery')?.value?.trim()  || '',
+            autoAccept:       document.getElementById('tt-autoaccept')?.checked || false,
             variations:       variations.filter(v => v.name?.trim()),
             steps,
             scheduleSlots:    slots.filter(s => s.title?.trim()),
