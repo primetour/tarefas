@@ -39,16 +39,9 @@
   .page-title { font-size: 1.25rem !important; }
   .page-subtitle { font-size: 0.8125rem !important; }
 
-  /* Fix mobile viewport: 100vh inclui area atras da barra do browser */
-  .app-shell {
-    height: 100dvh !important;
-    height: -webkit-fill-available !important;
-  }
-
-  /* Page content: smooth iOS scroll + extra bottom space */
+  /* Page content: smooth iOS scroll */
   .page-content {
     -webkit-overflow-scrolling: touch;
-    padding-bottom: 80px !important;
   }
 
   /* Cards */
@@ -116,17 +109,11 @@
   }
 }
 
-/* ─── SIDEBAR: Improved mobile sidebar ────────────────────── */
+/* ─── SIDEBAR: Mobile enhancements ────────────────────────── */
 @media (max-width: 768px) {
   .sidebar {
-    width: var(--sidebar-width) !important;
-    transform: translateX(-100%);
-    transition: transform var(--transition-normal);
     overflow-y: auto !important;
     overflow-x: hidden !important;
-  }
-  .sidebar.mobile-open {
-    transform: translateX(0);
   }
   /* Undo collapsed state on mobile — always show full sidebar */
   .sidebar.collapsed {
@@ -143,23 +130,7 @@
   .sidebar.collapsed .nav-item {
     justify-content: flex-start !important;
   }
-  .sidebar.collapsed .sidebar-toggle {
-    display: none !important;
-  }
-  .main-content {
-    margin-left: 0 !important;
-    width: 100% !important;
-  }
-  .header-search { display: none !important; }
-  #mobile-menu-btn { display: flex !important; }
-  .app-header {
-    padding: 0 var(--space-3) !important;
-    gap: var(--space-2) !important;
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 90 !important;
-  }
-  /* Sidebar toggle desnecessário no mobile */
+  .sidebar.collapsed .sidebar-toggle,
   .sidebar-toggle {
     display: none !important;
   }
