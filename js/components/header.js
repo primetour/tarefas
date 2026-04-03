@@ -30,6 +30,38 @@ const PAGE_TITLES = {
   profile:      { title: 'Meu Perfil',           icon: '👤' },
 };
 
+const PALETTES = [
+  { id:'midnight',  label:'Midnight Navy',  colors:['#0A1628','#D4A843','#1E293B'] },
+  { id:'platinum',  label:'Platinum',        colors:['#F8FAFC','#6366F1','#E2E8F0'] },
+  { id:'charcoal',  label:'Charcoal',        colors:['#1A1A2E','#E94560','#16213E'] },
+  { id:'ocean',     label:'Ocean Blue',      colors:['#0B1929','#00BCD4','#132F4C'] },
+  { id:'forest',    label:'Forest Green',    colors:['#0D1F0D','#4CAF50','#1B3A1B'] },
+  { id:'royal',     label:'Royal Purple',    colors:['#1A0A2E','#9C27B0','#2D1B4E'] },
+  { id:'sunset',    label:'Warm Sunset',     colors:['#1A0F0A','#FF6B35','#2D1810'] },
+  { id:'rose',      label:'Rose',            colors:['#1A0A14','#E91E63','#2D1520'] },
+  { id:'sand',      label:'Sand',            colors:['#FAF6F1','#8B6914','#E8E0D4'] },
+];
+
+function _buildPaletteOptions() {
+  const current = document.documentElement.dataset.palette || 'midnight';
+  return PALETTES.map(p => {
+    const active = current === p.id;
+    const swatches = p.colors.map(c =>
+      '<span style="width:14px;height:14px;border-radius:50%;background:' + c +
+      ';border:1px solid rgba(128,128,128,0.3);display:inline-block;"></span>'
+    ).join('');
+    return '<button class="dropdown-item palette-option' + (active ? ' active' : '') +
+      '" data-palette="' + p.id + '"' +
+      ' style="display:flex;align-items:center;gap:10px;padding:8px 14px;' +
+      (active ? 'background:var(--bg-surface);' : '') + '">' +
+      '<div style="display:flex;gap:3px;">' + swatches + '</div>' +
+      '<span style="font-size:0.8125rem;font-weight:' + (active ? '600' : '400') +
+      ';color:' + (active ? 'var(--brand-gold)' : 'var(--text-primary)') + ';">' + p.label + '</span>' +
+      (active ? '<span style="margin-left:auto;font-size:0.75rem;color:var(--brand-gold);">✓</span>' : '') +
+      '</button>';
+  }).join('');
+}
+
 export class Header {
   constructor() {
     this.el = null;
@@ -80,29 +112,7 @@ export class Header {
               font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);">
               Paleta de Cores
             </div>
-            ${[
-              { id:'midnight',  label:'Midnight Navy',  colors:['#0A1628','#D4A843','#1E293B'] },
-              { id:'platinum',  label:'Platinum',        colors:['#F8FAFC','#6366F1','#E2E8F0'] },
-              { id:'charcoal',  label:'Charcoal',        colors:['#1A1A2E','#E94560','#16213E'] },
-              { id:'ocean',     label:'Ocean Blue',      colors:['#0B1929','#00BCD4','#132F4C'] },
-              { id:'forest',    label:'Forest Green',    colors:['#0D1F0D','#4CAF50','#1B3A1B'] },
-              { id:'royal',     label:'Royal Purple',    colors:['#1A0A2E','#9C27B0','#2D1B4E'] },
-              { id:'sunset',    label:'Warm Sunset',     colors:['#1A0F0A','#FF6B35','#2D1810'] },
-              { id:'rose',      label:'Rose',            colors:['#1A0A14','#E91E63','#2D1520'] },
-              { id:'sand',      label:'Sand',            colors:['#FAF6F1','#8B6914','#E8E0D4'] },
-            ].map(p => {
-              const active = document.documentElement.dataset.palette === p.id;
-              return \`<button class="dropdown-item palette-option \${active?'active':''}" data-palette="\${p.id}"
-                style="display:flex;align-items:center;gap:10px;padding:8px 14px;\${active?'background:var(--bg-surface);':''}">
-                <div style="display:flex;gap:3px;">
-                  \${p.colors.map(c=>\`<span style="width:14px;height:14px;border-radius:50%;background:\${c};
-                    border:1px solid rgba(128,128,128,0.3);display:inline-block;"></span>\`).join('')}
-                </div>
-                <span style="font-size:0.8125rem;font-weight:\${active?'600':'400'};
-                  color:\${active?'var(--brand-gold)':'var(--text-primary)'};">\${p.label}</span>
-                \${active?'<span style="margin-left:auto;font-size:0.75rem;color:var(--brand-gold);">✓</span>':''}
-              </button>\`;
-            }).join('')}
+            ${_buildPaletteOptions()}
           </div>
         </div>
 
