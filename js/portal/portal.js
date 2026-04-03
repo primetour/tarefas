@@ -24,13 +24,13 @@ async function boot() {
     return;
   }
 
-  // Usa a instância padrão (default) do Firebase para compartilhar sessão com o app principal
+  // Usa a mesma instância nomeada do app principal para compartilhar sessão de auth
   let app;
   try {
     const { getApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
-    app = getApp();
+    app = getApp('primetour-main');
   } catch(e) {
-    app = initializeApp(firebaseConfig);
+    app = initializeApp(firebaseConfig, 'primetour-main');
   }
   const db   = getFirestore(app);
   const auth = getAuth(app);
@@ -307,13 +307,8 @@ async function renderForm(db, taskTypes, auth) {
                 <input type="date" class="form-input" id="p-date"
                   min="${getMinDate()}" />
 
-                <!-- Calendar slots -->
-                <div class="slots-container" id="slots-container">
-                  <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:8px;">
-                    Próximas datas disponíveis — clique para selecionar:
-                  </p>
-                  <div class="slots-week" id="slots-week"></div>
-                </div>
+                <!-- Calendar widget inserted here by renderPortalCalendar -->
+                <div class="slots-container" id="slots-container"></div>
               </div>
 
               <!-- Urgency -->
@@ -483,83 +478,9 @@ async function renderForm(db, taskTypes, auth) {
 /* ─── Calendar slots + Newsletter mini-calendar ────────────── */
 async function loadCalendarSlots(db, taskTypes=[]) {
   // Store references for later use by type-change handler
-  // MUST be set before any early returns
   window._portalDb         = db;
   window._portalTaskTypes  = taskTypes;
-
-  const today    = new Date(); today.setHours(0,0,0,0);
-  const twoWeeks = new Date(today); twoWeeks.setDate(twoWeeks.getDate() + 14);
-
-  // Buscar newsletters do mês para mostrar ocupação
-  let newsletterDates = {};
-  try {
-    const snap = await getDocs(query(
-      collection(db, 'tasks'),
-      where('type', '==', 'newsletter'),
-      limit(200),
-    ));
-    snap.docs.forEach(d => {
-      const t = d.data();
-      const dateField = t.dueDate || t.startDate;
-      if (!dateField) return;
-      const dt  = dateField.toDate ? dateField.toDate() : new Date(dateField);
-      const key = dt.toISOString().slice(0,10);
-      if (!newsletterDates[key]) newsletterDates[key] = [];
-      newsletterDates[key].push({ title: t.title, requestingArea: t.requestingArea || '', status: t.status });
-    });
-  } catch(e) {} // silently ignore — portal is unauthenticated
-
-  const slotsWrap = document.getElementById('slots-week');
-  if (!slotsWrap) return; // slots-week hidden until type selected — that's OK, db refs are already stored
-
-  const days = [];
-  for (let d = new Date(today); d <= twoWeeks; d.setDate(d.getDate()+1)) {
-    const dow = d.getDay();
-    if (dow === 0 || dow === 6) continue;
-    days.push(new Date(d));
-  }
-
-  const DAYS_PT   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const MONTHS_PT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-
-  slotsWrap.innerHTML = days.slice(0, 10).map(d => {
-    const key      = d.toISOString().slice(0,10);
-    const entries  = newsletterDates[key] || [];
-    const taken    = entries.length > 0;
-    const dow      = d.getDay();
-    const tooltip  = taken
-      ? entries.map(e => e.title + (e.requestingArea?' ('+e.requestingArea+')':'')).join(', ')
-      : 'Disponível';
-
-    return `
-      <div class="slot-day ${taken?'slot-taken':''}"
-        data-date="${key}" title="${tooltip}">
-        <div class="slot-day-name">${DAYS_PT[dow]}</div>
-        <div class="slot-day-num">${d.getDate()}</div>
-        <div class="slot-day-info">${MONTHS_PT[d.getMonth()]}${taken?' · ocupado':''}</div>
-        ${taken && entries[0] ? `
-          <div style="font-size:0.5rem;color:#F59E0B;margin-top:2px;overflow:hidden;
-            text-overflow:ellipsis;white-space:nowrap;max-width:100%;">
-            ${entries[0].title.slice(0,14)}${entries[0].title.length>14?'…':''}
-          </div>
-        ` : ''}
-      </div>
-    `;
-  }).join('');
-
-  slotsWrap.querySelectorAll('.slot-day:not(.slot-taken)').forEach(slot => {
-    slot.addEventListener('click', () => {
-      slotsWrap.querySelectorAll('.slot-day').forEach(s => s.classList.remove('selected'));
-      slot.classList.add('selected');
-      const dateInput = document.getElementById('p-date');
-      if (dateInput) {
-        dateInput.value = slot.dataset.date;
-        dateInput.dispatchEvent(new Event('change'));
-      }
-    });
-  });
-
-  // Calendar widget is shown only after type selection (see bindFormEvents)
+  // Calendar widget is rendered after type selection (see bindFormEvents → renderPortalCalendar)
 }
 
 /* ─── Batch queue state ──────────────────────────────────── */
@@ -687,7 +608,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
   const buildMonth = () => {
     const firstDay = new Date(y,m,1).getDay();
     const dim = new Date(y,m+1,0).getDate();
-    const today = new Date();
+    const today = new Date(); today.setHours(0,0,0,0);
     let cells = '';
     for(let i=firstDay-1;i>=0;i--) cells+=`<div></div>`;
     for(let d=1;d<=dim;d++){
@@ -978,16 +899,6 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
 function fillFormFromSlot(dateISO, title, variationId, area) {
   const dateEl = document.getElementById('p-date');
   if (dateEl) { dateEl.value = dateISO; dateEl.dispatchEvent(new Event('change')); }
-
-  // Pre-fill title from slot
-  const titleEl = document.getElementById('p-title');
-  if (titleEl) titleEl.value = title || '';
-
-  // Pre-fill description hint from slot
-  const descEl = document.getElementById('p-desc');
-  if (descEl && title) {
-    descEl.value = 'Demanda referente a: ' + title + (dateISO ? ' (' + dateISO + ')' : '');
-  }
 
   // Pre-fill requesting area from slot area if available
   if (area) {
@@ -1776,8 +1687,7 @@ async function notifyTeam(reqDoc) {
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 function getMinDate() {
-  const d = new Date(); d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0,10);
+  return new Date().toISOString().slice(0,10);
 }
 
 function showError(msg) {
