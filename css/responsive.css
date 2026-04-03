@@ -1,0 +1,387 @@
+/* ============================================================
+   PRIMETOUR — Responsive Overhaul
+   Global mobile-first responsive rules for ALL modules
+   ============================================================ */
+
+/* ─── GLOBAL: Tables → Cards on mobile ────────────────────── */
+@media (max-width: 768px) {
+  /* Generic table scroll wrapper */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  table thead { white-space: nowrap; }
+  table th, table td {
+    font-size: 0.75rem !important;
+    padding: 8px 10px !important;
+  }
+
+  /* Page header */
+  .page-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+  .page-header-left { width: 100%; }
+  .page-header-actions {
+    width: 100% !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+  .page-header-actions .btn {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    font-size: 0.75rem !important;
+    white-space: nowrap !important;
+  }
+  .page-title { font-size: 1.25rem !important; }
+  .page-subtitle { font-size: 0.8125rem !important; }
+
+  /* Cards */
+  .card { border-radius: var(--radius-sm) !important; }
+  .card-header { padding: 14px 16px !important; }
+  .card-body { padding: 14px 16px !important; }
+
+  /* Filters */
+  .filter-select, .portal-field, .form-input, .form-textarea {
+    font-size: 0.875rem !important;
+    min-height: 40px;
+  }
+
+  /* KPI strips — scrollable on mobile */
+  [id$="-kpi"], [style*="display:flex"][style*="gap:12px"][style*="flex-wrap:wrap"] {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 8px;
+    scrollbar-width: none;
+  }
+  [id$="-kpi"]::-webkit-scrollbar { display: none; }
+
+  /* Modals — fullscreen on mobile */
+  [style*="position:fixed"][style*="inset:0"][style*="z-index:2000"],
+  [style*="position:fixed"][style*="inset:0"][style*="z-index:3000"] {
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
+  [style*="position:fixed"][style*="inset:0"] > .card {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    height: 100% !important;
+    border-radius: 0 !important;
+  }
+
+  /* Generic grids — collapse to 1 col */
+  [style*="grid-template-columns:repeat(auto-fill"] {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important;
+  }
+
+  /* Form grid 2 cols → 1 col */
+  [style*="grid-template-columns:1fr 1fr;"],
+  [style*="grid-template-columns: 1fr 1fr;"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Form grid 3 cols → 1 col */
+  [style*="grid-template-columns:1fr 1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Tabs — scrollable */
+  [style*="border-bottom:2px solid"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  [style*="border-bottom:2px solid"]::-webkit-scrollbar { display: none; }
+
+  /* Generic side-by-side flex → stack */
+  [style*="display:flex"][style*="gap:12px"][style*="flex-wrap:wrap"] > div[style*="min-width:1"] {
+    min-width: 100% !important;
+  }
+}
+
+/* ─── SIDEBAR: Improved mobile sidebar ────────────────────── */
+@media (max-width: 768px) {
+  .sidebar {
+    width: var(--sidebar-width) !important;
+    transform: translateX(-100%);
+    transition: transform var(--transition-normal);
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  .main-content {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+  .header-search { display: none !important; }
+  #mobile-menu-btn { display: flex !important; }
+  .app-header {
+    padding: 0 var(--space-3) !important;
+    gap: var(--space-2) !important;
+  }
+}
+
+/* ─── TASKS module ────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .task-row {
+    grid-template-columns: 1fr !important;
+    gap: 6px !important;
+    padding: 12px !important;
+  }
+  .task-row-col { display: none; }
+  .task-row-col:nth-child(1),
+  .task-row-col:nth-child(2),
+  .task-row-col:nth-child(3) { display: block; }
+
+  .task-filters-bar {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  .task-filters-bar > * {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+/* ─── KANBAN module ───────────────────────────────────────── */
+@media (max-width: 768px) {
+  .kanban-board {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+  .kanban-column {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+}
+
+/* ─── DASHBOARD module ────────────────────────────────────── */
+@media (max-width: 768px) {
+  .dash-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .dash-grid > [style*="grid-column"] {
+    grid-column: 1 / -1 !important;
+  }
+  .date-range-bar {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+  .date-range-btn {
+    font-size: 0.75rem !important;
+    padding: 6px 10px !important;
+  }
+}
+
+/* ─── CALENDAR module ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  .calendar-grid {
+    font-size: 0.6875rem !important;
+  }
+  .calendar-grid td {
+    padding: 2px !important;
+    height: 60px !important;
+  }
+  .calendar-event {
+    font-size: 0.5625rem !important;
+    padding: 1px 3px !important;
+  }
+}
+
+/* ─── TIMELINE module ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  .timeline-container {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ─── GOALS module ────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .goal-card {
+    padding: 14px !important;
+  }
+  .goal-kpis-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── TEAM module ─────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .team-member-card {
+    padding: 12px !important;
+  }
+  .team-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── CSAT module ─────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .csat-score-buttons {
+    gap: 4px !important;
+  }
+  .csat-score-buttons button {
+    min-width: 36px !important;
+    min-height: 36px !important;
+    font-size: 0.75rem !important;
+  }
+}
+
+/* ─── PORTAL modules ──────────────────────────────────────── */
+@media (max-width: 768px) {
+  .portal-card-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .portal-tip-card {
+    padding: 14px !important;
+  }
+  .form-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── PROFILE page ────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .profile-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .profile-avatar-section {
+    flex-direction: column !important;
+    text-align: center !important;
+  }
+}
+
+/* ─── NOTIFICATIONS page ──────────────────────────────────── */
+@media (max-width: 768px) {
+  .notif-card {
+    padding: 12px !important;
+  }
+}
+
+/* ─── USERS / ROLES admin ─────────────────────────────────── */
+@media (max-width: 768px) {
+  .users-grid, .roles-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── NEWS MONITOR / CLIPPING ─────────────────────────────── */
+@media (max-width: 768px) {
+  [style*="grid-template-columns:repeat(auto-fill,minmax(340px"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── FEEDBACKS module ────────────────────────────────────── */
+@media (max-width: 768px) {
+  [style*="grid-template-columns:repeat(auto-fit,minmax(340px"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── INTEGRATIONS ────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .integrations-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── SMALL SCREENS (< 480px) ─────────────────────────────── */
+@media (max-width: 480px) {
+  .page-content { padding: 12px !important; }
+
+  .btn { padding: 8px 12px !important; font-size: 0.8125rem !important; }
+  .btn-sm { padding: 6px 10px !important; font-size: 0.75rem !important; }
+
+  .badge { font-size: 0.625rem !important; padding: 2px 6px !important; }
+
+  /* KPI cards even smaller */
+  [id$="-kpi"] > div {
+    min-width: 80px !important;
+    padding: 10px 12px !important;
+  }
+  [id$="-kpi"] > div > div:first-child {
+    font-size: 1.25rem !important;
+  }
+
+  /* Period buttons compact */
+  [class*="period-btn"], .date-range-btn, .clip-period-btn, .fb-period-btn {
+    padding: 5px 10px !important;
+    font-size: 0.6875rem !important;
+  }
+
+  /* Template/clipping grids: 1 col */
+  [style*="grid-template-columns:repeat(2"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ─── TOUCH FRIENDLY ──────────────────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+  /* Min touch targets 44px (Apple/Google guideline) */
+  .btn, button, a.btn, select, .filter-select {
+    min-height: 44px;
+  }
+  input[type="text"], input[type="url"], input[type="date"],
+  input[type="email"], input[type="password"], input[type="number"],
+  textarea, .portal-field, .form-input {
+    min-height: 44px;
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+
+  /* Bigger tap targets for table rows */
+  table td, table th {
+    padding: 12px 10px !important;
+  }
+
+  /* Toggle switches bigger */
+  .toggle-switch {
+    transform: scale(1.15);
+    transform-origin: right center;
+  }
+}
+
+/* ─── LANDSCAPE PHONE ─────────────────────────────────────── */
+@media (max-height: 500px) and (orientation: landscape) {
+  .page-content { padding: 8px 16px !important; }
+  .page-header { gap: 8px !important; }
+
+  /* Modals: max height limited */
+  [style*="position:fixed"][style*="inset:0"] > .card {
+    max-height: 90vh !important;
+  }
+}
+
+/* ─── TABLET (769px - 1024px) ─────────────────────────────── */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .page-content { padding: 20px !important; }
+
+  /* 2 cols instead of 3 on grids */
+  [style*="grid-template-columns:repeat(auto-fill,minmax(340px"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Dashboard grids adapt */
+  .dash-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+/* ─── PRINT ───────────────────────────────────────────────── */
+@media print {
+  .sidebar, .app-header, .sidebar-overlay,
+  .page-header-actions, .filter-bar,
+  [id$="-kpi"], .btn, button { display: none !important; }
+  .main-content { margin-left: 0 !important; }
+  .page-content { padding: 0 !important; }
+  body { background: #fff !important; color: #000 !important; }
+  table { font-size: 9pt !important; }
+}
