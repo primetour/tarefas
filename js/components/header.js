@@ -70,10 +70,41 @@ export class Header {
             padding:0 4px;"></span>
         </button>
 
-        <button class="header-action-btn" id="theme-toggle-btn"
-          title="Alternar tema claro/escuro">
-          ${document.documentElement.dataset.theme === 'light' ? '🌙' : '☀️'}
-        </button>
+        <div class="dropdown" style="position:relative;">
+          <button class="header-action-btn" id="palette-toggle-btn"
+            title="Paleta de cores">
+            🎨
+          </button>
+          <div class="dropdown-menu palette-dropdown" id="palette-dropdown" style="display:none;min-width:200px;">
+            <div style="padding:10px 14px;border-bottom:1px solid var(--border-subtle);font-size:0.75rem;
+              font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);">
+              Paleta de Cores
+            </div>
+            ${[
+              { id:'midnight',  label:'Midnight Navy',  colors:['#0A1628','#D4A843','#1E293B'] },
+              { id:'platinum',  label:'Platinum',        colors:['#F8FAFC','#6366F1','#E2E8F0'] },
+              { id:'charcoal',  label:'Charcoal',        colors:['#1A1A2E','#E94560','#16213E'] },
+              { id:'ocean',     label:'Ocean Blue',      colors:['#0B1929','#00BCD4','#132F4C'] },
+              { id:'forest',    label:'Forest Green',    colors:['#0D1F0D','#4CAF50','#1B3A1B'] },
+              { id:'royal',     label:'Royal Purple',    colors:['#1A0A2E','#9C27B0','#2D1B4E'] },
+              { id:'sunset',    label:'Warm Sunset',     colors:['#1A0F0A','#FF6B35','#2D1810'] },
+              { id:'rose',      label:'Rose',            colors:['#1A0A14','#E91E63','#2D1520'] },
+              { id:'sand',      label:'Sand',            colors:['#FAF6F1','#8B6914','#E8E0D4'] },
+            ].map(p => {
+              const active = document.documentElement.dataset.palette === p.id;
+              return \`<button class="dropdown-item palette-option \${active?'active':''}" data-palette="\${p.id}"
+                style="display:flex;align-items:center;gap:10px;padding:8px 14px;\${active?'background:var(--bg-surface);':''}">
+                <div style="display:flex;gap:3px;">
+                  \${p.colors.map(c=>\`<span style="width:14px;height:14px;border-radius:50%;background:\${c};
+                    border:1px solid rgba(128,128,128,0.3);display:inline-block;"></span>\`).join('')}
+                </div>
+                <span style="font-size:0.8125rem;font-weight:\${active?'600':'400'};
+                  color:\${active?'var(--brand-gold)':'var(--text-primary)'};">\${p.label}</span>
+                \${active?'<span style="margin-left:auto;font-size:0.75rem;color:var(--brand-gold);">✓</span>':''}
+              </button>\`;
+            }).join('')}
+          </div>
+        </div>
 
         <button class="header-action-btn" id="help-btn" title="Ajuda">
           ❓
@@ -157,14 +188,59 @@ export class Header {
       });
     });
 
-    // Theme toggle
-    const themeBtn = this.el.querySelector('#theme-toggle-btn');
-    themeBtn?.addEventListener('click', () => {
-      const isLight = document.documentElement.dataset.theme === 'light';
-      const newTheme = isLight ? 'dark' : 'light';
-      document.documentElement.dataset.theme = newTheme;
-      localStorage.setItem('primetour-theme', newTheme);
-      themeBtn.textContent = newTheme === 'light' ? '🌙' : '☀️';
+    // Palette picker
+    const paletteBtn = this.el.querySelector('#palette-toggle-btn');
+    const paletteDrop = this.el.querySelector('#palette-dropdown');
+    paletteBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isVisible = paletteDrop.style.display !== 'none';
+      if (isVisible) {
+        paletteDrop.style.display = 'none';
+      } else {
+        const rect = paletteBtn.getBoundingClientRect();
+        paletteDrop.style.top = (rect.bottom + 6) + 'px';
+        paletteDrop.style.right = (window.innerWidth - rect.right) + 'px';
+        paletteDrop.style.display = 'block';
+      }
+    });
+    paletteDrop?.querySelectorAll('[data-palette]').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const paletteId = item.dataset.palette;
+        document.documentElement.dataset.palette = paletteId;
+        localStorage.setItem('primetour-palette', paletteId);
+        // Update active state in dropdown
+        paletteDrop.querySelectorAll('.palette-option').forEach(el => {
+          const isActive = el.dataset.palette === paletteId;
+          el.classList.toggle('active', isActive);
+          el.style.background = isActive ? 'var(--bg-surface)' : '';
+          const label = el.querySelector('span:nth-child(2)');
+          if (label) {
+            label.style.fontWeight = isActive ? '600' : '400';
+            label.style.color = isActive ? 'var(--brand-gold)' : 'var(--text-primary)';
+          }
+          const check = el.querySelector('span:nth-child(3)');
+          if (check && isActive) { /* already has check */ }
+          else if (!isActive && check) check.remove();
+          else if (isActive && !check) {
+            const s = document.createElement('span');
+            s.style.cssText = 'margin-left:auto;font-size:0.75rem;color:var(--brand-gold);';
+            s.textContent = '✓';
+            el.appendChild(s);
+          }
+        });
+        paletteDrop.style.display = 'none';
+        // Save to user profile if logged in
+        const uid = store.get('currentUser')?.uid;
+        if (uid) {
+          import('../auth/auth.js').then(({ updateUserProfile }) => {
+            updateUserProfile(uid, { 'prefs.palette': paletteId }).catch(() => {});
+          });
+        }
+      });
+    });
+    document.addEventListener('click', () => {
+      if (paletteDrop) paletteDrop.style.display = 'none';
     });
 
     // Notifications bell
