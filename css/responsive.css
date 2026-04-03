@@ -39,6 +39,12 @@
   .page-title { font-size: 1.25rem !important; }
   .page-subtitle { font-size: 0.8125rem !important; }
 
+  /* Fix mobile viewport: 100vh inclui area atras da barra do browser */
+  .app-shell {
+    height: 100dvh !important;
+    height: -webkit-fill-available !important;
+  }
+
   /* Page content: smooth iOS scroll + extra bottom space */
   .page-content {
     -webkit-overflow-scrolling: touch;
