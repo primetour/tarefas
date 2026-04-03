@@ -233,6 +233,7 @@ function setupRouter() {
     'task-types':   async () => { await renderTaskTypes(content); },
     'capacity':     async () => { await renderTeam(content); }, // capacity merged into team
     'goals':        async () => { await renderGoals(content); },
+    'feedbacks':    async () => { const { renderFeedbacks } = await import('./pages/feedbacks.js'); await renderFeedbacks(content); },
     'sectors':      async () => { await renderSectors(content); },
     'requests':      async () => { await renderRequests(content); },
     'notifications': async () => { destroyNotifications(); await renderNotifications(content); },
