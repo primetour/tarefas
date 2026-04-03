@@ -1,23 +1,22 @@
 /**
  * PRIMETOUR — Portal de Solicitações (Fase 4)
- * Página pública — sem autenticação
+ * Autenticação obrigatória via Firebase Auth
  */
 
 import { initializeApp }  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
-  getFirestore, collection, addDoc, getDocs,
+  getFirestore, collection, addDoc, getDocs, doc, getDoc, updateDoc,
   query, where, orderBy, limit, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import {
+  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
-/* ─── Config Firebase (duplicada do config.js — portal é standalone) */
-const FIREBASE_CONFIG = {
-  // Será preenchido automaticamente via config.js no build
-  // Por ora, importa dinamicamente
-};
+/* ─── Estado do usuário autenticado ─────────────────────────── */
+let portalUser = null; // { uid, name, email, department }
 
 /* ─── Bootstrap ───────────────────────────────────────────── */
 async function boot() {
-  // Importar config do app principal
   const configModule = await import('../config.js').catch(() => null);
   const firebaseConfig = configModule?.firebaseConfig;
   if (!firebaseConfig) {
@@ -25,7 +24,6 @@ async function boot() {
     return;
   }
 
-  // Avoid duplicate app error on hot reload
   let app;
   try {
     const { getApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
@@ -33,11 +31,127 @@ async function boot() {
   } catch(e) {
     app = initializeApp(firebaseConfig, 'portal');
   }
-  const db  = getFirestore(app);
+  const db   = getFirestore(app);
+  const auth = getAuth(app);
 
-  // Carregar tipos de tarefa disponíveis (sempre fresh)
-  const taskTypes = await loadTaskTypes(db);
-  await renderForm(db, taskTypes);
+  // Verificar sessão ativa ou exibir login
+  onAuthStateChanged(auth, async (user) => {
+    const root = document.getElementById('portal-root');
+    if (!root) return;
+
+    if (user) {
+      // Carregar perfil do Firestore
+      let profile = {};
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (snap.exists()) profile = snap.data();
+      } catch(e) { console.warn('Perfil não encontrado:', e.message); }
+
+      portalUser = {
+        uid:        user.uid,
+        name:       profile.displayName || user.displayName || '',
+        email:      user.email || '',
+        department: profile.department || '',
+      };
+
+      const taskTypes = await loadTaskTypes(db);
+      await renderForm(db, taskTypes, auth);
+    } else {
+      portalUser = null;
+      renderLoginScreen(auth, root);
+    }
+  });
+}
+
+/* ─── Tela de login ──────────────────────────────────────── */
+function renderLoginScreen(auth, root) {
+  root.innerHTML = `
+    <div class="portal-wrap">
+      <header class="portal-header">
+        <div class="portal-brand">
+          <div class="portal-brand-icon">✦</div>
+          <div>
+            <div class="portal-brand-name">PRIMETOUR</div>
+            <div class="portal-brand-sub">Portal de Solicitações</div>
+          </div>
+        </div>
+      </header>
+      <main class="portal-main">
+        <div class="portal-container" style="max-width:420px;">
+          <div class="portal-card" style="margin-top:40px;">
+            <div class="portal-card-title" style="text-align:center;">Acesse sua conta</div>
+            <p style="font-size:0.8125rem;color:var(--text-muted);text-align:center;margin-bottom:20px;">
+              Faça login com seu e-mail corporativo para enviar solicitações.
+            </p>
+            <div class="form-group" id="fg-login-email">
+              <label class="form-label">E-mail</label>
+              <input type="email" class="form-input" id="login-email"
+                placeholder="seu@email.com" autocomplete="email" />
+            </div>
+            <div class="form-group" id="fg-login-pass">
+              <label class="form-label">Senha</label>
+              <input type="password" class="form-input" id="login-pass"
+                placeholder="Sua senha" autocomplete="current-password" />
+            </div>
+            <div class="alert-banner warning" id="login-error" style="display:none;">
+              <span style="font-size:1.125rem;flex-shrink:0;">⚠</span>
+              <span id="login-error-msg">Erro ao fazer login.</span>
+            </div>
+            <button class="portal-submit" id="login-btn" style="margin-top:12px;width:100%;">
+              Entrar →
+            </button>
+            <div style="text-align:center;margin-top:16px;">
+              <a href="index.html" style="font-size:0.8125rem;color:var(--brand-gold);text-decoration:none;">
+                ← Ir para o sistema principal
+              </a>
+            </div>
+          </div>
+        </div>
+      </main>
+      <footer class="portal-footer">
+        PRIMETOUR &copy; ${new Date().getFullYear()} — Sistema de Gestão de Tarefas
+      </footer>
+    </div>
+  `;
+
+  const btnLogin   = document.getElementById('login-btn');
+  const emailInput = document.getElementById('login-email');
+  const passInput  = document.getElementById('login-pass');
+  const errBanner  = document.getElementById('login-error');
+  const errMsg     = document.getElementById('login-error-msg');
+
+  const doLogin = async () => {
+    const email = emailInput?.value?.trim();
+    const pass  = passInput?.value;
+    if (!email || !pass) {
+      errBanner.style.display = 'flex';
+      errMsg.textContent = 'Preencha e-mail e senha.';
+      return;
+    }
+    btnLogin.disabled = true;
+    btnLogin.textContent = 'Entrando...';
+    errBanner.style.display = 'none';
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+      // onAuthStateChanged will handle the rest
+    } catch(e) {
+      const msgs = {
+        'auth/user-not-found':       'Usuário não encontrado.',
+        'auth/wrong-password':       'Senha incorreta.',
+        'auth/invalid-credential':   'Credenciais inválidas.',
+        'auth/invalid-email':        'E-mail inválido.',
+        'auth/too-many-requests':    'Muitas tentativas. Tente novamente mais tarde.',
+      };
+      errBanner.style.display = 'flex';
+      errMsg.textContent = msgs[e.code] || 'Erro ao fazer login: ' + e.message;
+      btnLogin.disabled = false;
+      btnLogin.textContent = 'Entrar →';
+    }
+  };
+
+  btnLogin?.addEventListener('click', doLogin);
+  passInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+  emailInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') passInput?.focus(); });
 }
 
 async function loadTaskTypes(db) {
@@ -80,9 +194,11 @@ const REQUESTING_AREAS = [
 ];
 
 /* ─── Render form ─────────────────────────────────────────── */
-async function renderForm(db, taskTypes) {
+async function renderForm(db, taskTypes, auth) {
   const root = document.getElementById('portal-root');
   if (!root) return;
+
+  const u = portalUser || {};
 
   root.innerHTML = `
     <div class="portal-wrap">
@@ -94,6 +210,15 @@ async function renderForm(db, taskTypes) {
             <div class="portal-brand-name">PRIMETOUR</div>
             <div class="portal-brand-sub">Portal de Solicitações</div>
           </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-left:auto;">
+          <span style="font-size:0.8125rem;color:var(--text-secondary);">${esc(u.name || u.email)}</span>
+          <a href="index.html" id="portal-go-system" style="font-size:0.75rem;padding:4px 12px;border-radius:4px;
+            border:1px solid var(--brand-gold);background:transparent;color:var(--brand-gold);
+            cursor:pointer;text-decoration:none;font-weight:500;">Ir para o sistema</a>
+          <button id="portal-logout-btn" style="font-size:0.75rem;padding:4px 12px;border-radius:4px;
+            border:1px solid var(--border-subtle);background:transparent;color:var(--text-muted);
+            cursor:pointer;">Sair</button>
         </div>
       </header>
 
@@ -112,25 +237,34 @@ async function renderForm(db, taskTypes) {
               <div class="portal-card-title">Seus dados</div>
               <div class="form-grid-2">
                 <div class="form-group" id="fg-name">
-                  <label class="form-label">Nome <span class="required">*</span></label>
+                  <label class="form-label">Nome</label>
                   <input type="text" class="form-input" id="p-name"
-                    placeholder="Seu nome completo" maxlength="80" autocomplete="name" />
-                  <div class="form-error" id="err-name">Campo obrigatório.</div>
+                    value="${esc(u.name)}" readonly
+                    style="background:var(--bg-surface);opacity:0.7;cursor:not-allowed;" />
                 </div>
                 <div class="form-group" id="fg-email">
-                  <label class="form-label">E-mail <span class="required">*</span></label>
+                  <label class="form-label">E-mail</label>
                   <input type="email" class="form-input" id="p-email"
-                    placeholder="seu@email.com" autocomplete="email" />
-                  <div class="form-error" id="err-email">E-mail inválido.</div>
+                    value="${esc(u.email)}" readonly
+                    style="background:var(--bg-surface);opacity:0.7;cursor:not-allowed;" />
                 </div>
               </div>
-              <div class="form-group" id="fg-area">
-                <label class="form-label">Área solicitante <span class="required">*</span></label>
-                <select class="form-select" id="p-area">
-                  <option value="">— Selecione sua área —</option>
-                  ${REQUESTING_AREAS.map(a => `<option value="${a}">${a}</option>`).join('')}
-                </select>
-                <div class="form-error" id="err-area">Selecione uma área.</div>
+              <div class="form-grid-2">
+                <div class="form-group" id="fg-user-area">
+                  <label class="form-label">Sua área</label>
+                  <input type="text" class="form-input" id="p-user-area"
+                    value="${esc(u.department)}" readonly
+                    style="background:var(--bg-surface);opacity:0.7;cursor:not-allowed;" />
+                </div>
+                <div class="form-group" id="fg-area">
+                  <label class="form-label">Área solicitante <span class="required">*</span>
+                    <span class="info-tip" title="Pode ser diferente da sua área, caso esteja solicitando em nome de outra.">ℹ</span>
+                  </label>
+                  <select class="form-select" id="p-area">
+                    ${REQUESTING_AREAS.map(a => `<option value="${a}" ${a===u.department?'selected':''}>${a}</option>`).join('')}
+                  </select>
+                  <div class="form-error" id="err-area">Selecione uma área.</div>
+                </div>
               </div>
             </div>
 
@@ -188,6 +322,13 @@ async function renderForm(db, taskTypes) {
                 <select class="form-select" id="p-nucleo">
                   <option value="">— Selecione o núcleo —</option>
                 </select>
+              </div>
+
+              <div class="form-group" id="fg-title">
+                <label class="form-label">Título da demanda <span class="required">*</span></label>
+                <input type="text" class="form-input" id="p-title"
+                  placeholder="Ex: Newsletter Maio — Programa ICs" maxlength="120" />
+                <div class="form-error" id="err-title">Informe um título para a demanda.</div>
               </div>
 
               <div class="form-group" id="fg-desc">
@@ -331,6 +472,11 @@ async function renderForm(db, taskTypes) {
       </footer>
     </div>
   `;
+
+  // Logout button
+  document.getElementById('portal-logout-btn')?.addEventListener('click', async () => {
+    if (auth) await signOut(auth);
+  });
 
   // Load calendar slots for next 2 weeks
   await loadCalendarSlots(db, taskTypes);
@@ -485,6 +631,38 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     return taskMap;
   };
 
+  // Build user requests map — shows what user already submitted for each date
+  const buildRequestMap = async () => {
+    const requestMap = {}; // key=ISO date, value={ status, title, statusLabel, statusColor, statusIcon }
+    if (!portalUser?.uid) return requestMap;
+    const STATUS_LABELS = {
+      pending:   { label: 'Aguardando triagem', color: '#F59E0B', icon: '◌' },
+      converted: { label: 'Convertida',         color: '#22C55E', icon: '✓' },
+      rejected:  { label: 'Recusada',           color: '#EF4444', icon: '✕' },
+    };
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'requests'),
+        where('userId', '==', portalUser.uid),
+        where('typeId', '==', portalCalTypeId),
+        limit(200)
+      ));
+      snap.docs.forEach(d => {
+        const r = d.data();
+        const df = r.desiredDate;
+        if (!df) return;
+        const dt = df.toDate ? df.toDate() : new Date(df);
+        const iso = dt.toISOString().slice(0, 10);
+        const info = STATUS_LABELS[r.status] || STATUS_LABELS.pending;
+        // Keep the most relevant status per date (converted > pending > rejected)
+        if (!requestMap[iso] || r.status === 'converted' || (r.status === 'pending' && requestMap[iso].status === 'rejected')) {
+          requestMap[iso] = { status: r.status, title: r.title || r.typeName || '', ...info };
+        }
+      });
+    } catch(e) { /* user may not have requests yet */ }
+    return requestMap;
+  };
+
   const PT_MONTHS  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const PT_DAYS_S  = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const activeType = types.find(t=>t.id===portalCalTypeId);
@@ -504,7 +682,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     });
   };
 
-  const taskMap = await buildCalData();
+  const [taskMap, requestMap] = await Promise.all([buildCalData(), buildRequestMap()]);
   const y = portalCalDate.getFullYear();
   const m = portalCalDate.getMonth();
 
@@ -546,6 +724,10 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         ${tasks.map(t=>{const maxChars=portalCalExpanded?22:12;return`<div style="font-size:${slotFont};color:var(--brand-gold);
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};"
           title="${t.title}${t.requestingArea?' · '+t.requestingArea:''}">● ${t.title.slice(0,maxChars)}${t.title.length>maxChars?'…':''}</div>`;}).join('')}
+        ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
+          padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
+          title="${rq.icon} ${rq.label}">${rq.icon} ${portalCalExpanded?rq.label:rq.label.split(' ')[0]}</div>`;})()}
       </div>`;
     }
     return cells;
@@ -588,6 +770,10 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           color:var(--brand-gold);border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.title}">
           ● ${t.title.slice(0,wkMaxChars)}${t.title.length>wkMaxChars?'…':''}</div>`).join('')}
+        ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
+          padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
+          title="${rq.icon} ${rq.label}">${rq.icon} ${rq.label}</div>`;})()}
       </div>`;
     }).join('');
   };
@@ -629,7 +815,12 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           </div>`).join('')}
         </div>
       `:''}
-      ${!slots.length&&!dTasks.length?`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
+      ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`
+        <div style="margin-top:10px;padding:8px 10px;border-radius:4px;background:${rq.color}12;border:1px solid ${rq.color}30;">
+          <div style="font-size:0.8125rem;font-weight:600;color:${rq.color};">${rq.icon} Sua solicitação: ${rq.label}</div>
+          ${rq.title?`<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${esc(rq.title)}</div>`:''}
+        </div>`;})()}
+      ${!slots.length&&!dTasks.length&&!requestMap[dateISO]?`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
         style="font-size:0.875rem;color:var(--text-muted);text-align:center;padding:16px 0;cursor:${clickable?'pointer':'default'};">
         Nenhuma agenda ou tarefa para este dia.${clickable?' Clique para criar demanda fora do calendário.':''}
       </div>`:''}
@@ -700,9 +891,11 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin-bottom:8px;">${navLabel()}</div>
 
       <!-- Legend -->
-      <div style="display:flex;gap:10px;margin-bottom:8px;font-size:0.6875rem;color:var(--text-muted);">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;font-size:0.6875rem;color:var(--text-muted);">
         <span>◌ Agenda (referência)</span>
         <span>● Tarefa agendada</span>
+        <span style="color:#F59E0B;">◌ Aguardando triagem</span>
+        <span style="color:#22C55E;">✓ Convertida</span>
       </div>
 
       <!-- Grid -->
@@ -788,6 +981,10 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
 function fillFormFromSlot(dateISO, title, variationId, area) {
   const dateEl = document.getElementById('p-date');
   if (dateEl) { dateEl.value = dateISO; dateEl.dispatchEvent(new Event('change')); }
+
+  // Pre-fill title from slot
+  const titleEl = document.getElementById('p-title');
+  if (titleEl && title) titleEl.value = title;
 
   // Select variation — try by id first, then match by title/name
   const varSel = document.getElementById('p-variation');
@@ -892,9 +1089,11 @@ function collectFormData(taskTypes) {
     typeName:       typeData?.name || typeId || '',
     typeIcon:       typeData?.icon || '',
     typeColor:      typeData?.color || '#D4A843',
+    autoAccept:     typeData?.autoAccept || false,
     variationId:    document.getElementById('p-variation')?.value || null,
     variationName:  varOpt?.value ? varOpt.textContent.split('·')[0].trim() : '',
     nucleo:         document.getElementById('p-nucleo')?.value || '',
+    title:          document.getElementById('p-title')?.value?.trim() || '',
     description:    document.getElementById('p-desc')?.value?.trim() || '',
     urgency:        document.getElementById('p-urgency')?.checked || false,
     outOfCalendar:  document.getElementById('p-out-of-calendar')?.checked || false,
@@ -923,7 +1122,7 @@ function addToBatch(taskTypes) {
 
 function resetFormForNextItem() {
   // Clear per-item fields, keep shared (name, email, area, sector, type)
-  const fields = ['p-desc', 'p-date', 'p-nucleo', 'p-variation'];
+  const fields = ['p-title', 'p-desc', 'p-date', 'p-nucleo', 'p-variation'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   // Reset toggles
   unlockToggle('urgency-toggle', 'p-urgency', false);
@@ -959,7 +1158,9 @@ function renderBatchList(taskTypes) {
       : 'Sem data';
     return '<div class="batch-item" style="border-left-color:' + (item.typeColor || 'var(--brand-gold)') + ';">' +
       '<div class="batch-item-body">' +
-        '<div class="batch-item-title">' + (item.typeIcon ? item.typeIcon + ' ' : '') + esc(item.typeName || 'Sem tipo') +
+        '<div class="batch-item-title">' + esc(item.title || 'Sem título') + '</div>' +
+        '<div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">' +
+          (item.typeIcon ? item.typeIcon + ' ' : '') + esc(item.typeName || 'Sem tipo') +
           (item.variationName ? ' — ' + esc(item.variationName) : '') + '</div>' +
         '<div class="batch-item-meta">' +
           esc(item.requestingArea || '') + (item.nucleo ? ' · ' + esc(item.nucleo) : '') + ' · ' + dateStr +
@@ -1036,7 +1237,9 @@ async function editBatchItem(idx, taskTypes) {
   const nucleoEl = document.getElementById('p-nucleo');
   if (nucleoEl && item.nucleo) nucleoEl.value = item.nucleo;
 
-  // 6. Set description and date
+  // 6. Set title, description and date
+  const titleEl = document.getElementById('p-title');
+  if (titleEl) titleEl.value = item.title || '';
   const descEl = document.getElementById('p-desc');
   if (descEl) descEl.value = item.description || '';
   const dateEl = document.getElementById('p-date');
@@ -1066,11 +1269,10 @@ async function editBatchItem(idx, taskTypes) {
 
 async function handleBatchSubmit(db, taskTypes) {
   if (!batchQueue.length) return;
-  // Validate shared fields (name, email)
-  const name  = document.getElementById('p-name')?.value?.trim();
-  const email = document.getElementById('p-email')?.value?.trim();
-  if (!name || name.length < 2) { document.getElementById('fg-name')?.classList.add('has-error'); return; }
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { document.getElementById('fg-email')?.classList.add('has-error'); return; }
+  // Name/email come from authenticated profile
+  const name  = portalUser?.name || document.getElementById('p-name')?.value?.trim() || '';
+  const email = portalUser?.email || document.getElementById('p-email')?.value?.trim() || '';
+  if (!name || !email) return;
 
   const btn = document.getElementById('batch-submit-btn');
   if (btn) { btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Enviando...'; }
@@ -1082,8 +1284,10 @@ async function handleBatchSubmit(db, taskTypes) {
     for (let i = 0; i < batchQueue.length; i++) {
       const item = batchQueue[i];
       const reqDoc = {
+        userId:         portalUser?.uid || null,
         requesterName:  name,
         requesterEmail: email.toLowerCase(),
+        userArea:       portalUser?.department || '',
         requestingArea: item.requestingArea || '',
         sector:         item.sector || '',
         typeId:         item.typeId || null,
@@ -1091,11 +1295,12 @@ async function handleBatchSubmit(db, taskTypes) {
         variationId:    item.variationId || null,
         variationName:  item.variationName || '',
         nucleo:         item.nucleo || '',
+        title:          item.title || '',
         description:    item.description || '',
         urgency:        item.urgency === true,
         outOfCalendar:  item.outOfCalendar === true,
         desiredDate:    item.desiredDate ? new Date(item.desiredDate + 'T12:00:00') : null,
-        status:         'pending',
+        status:         item.autoAccept ? 'converted' : 'pending',
         taskId:         null,
         workspaceId:    null,
         internalNote:   '',
@@ -1106,7 +1311,13 @@ async function handleBatchSubmit(db, taskTypes) {
         createdAt:      serverTimestamp(),
         updatedAt:      serverTimestamp(),
       };
-      await addDoc(collection(db, 'requests'), reqDoc);
+      const reqRef = await addDoc(collection(db, 'requests'), reqDoc);
+
+      // Auto-create task if type has autoAccept
+      if (item.autoAccept) {
+        const typeData = taskTypes.find(t => t.id === item.typeId);
+        if (typeData) await autoCreateTask(db, reqRef, reqDoc, typeData);
+      }
     }
 
     // Send ONE consolidated email
@@ -1356,14 +1567,14 @@ function bindFormEvents(db, taskTypes) {
 function validate() {
   let ok = true;
   const rules = [
-    { id: 'p-name',   errId: 'err-name',   fgId: 'fg-name',   check: v => v.trim().length >= 2 },
-    { id: 'p-email',  errId: 'err-email',  fgId: 'fg-email',  check: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) },
+    // name/email are auto-filled from authenticated profile (readonly)
     { id: 'p-area',   errId: 'err-area',   fgId: 'fg-area',   check: v => v !== '' },
     { id: 'p-setor',  errId: 'err-setor',  fgId: 'fg-setor',  check: v => v !== '' },
     // type only required if visible
     ...(document.getElementById('fg-type')?.style.display !== 'none'
       ? [{ id: 'p-type', errId: 'err-type', fgId: 'fg-type', check: v => v !== '' }]
       : []),
+    { id: 'p-title',  errId: 'err-title',  fgId: 'fg-title',  check: v => v.trim().length >= 3 },
     { id: 'p-desc',   errId: 'err-desc',   fgId: 'fg-desc',   check: v => v.trim().length >= 10 },
   ];
 
@@ -1401,8 +1612,10 @@ async function handleSubmit(db, taskTypes) {
 
     // Build request document matching createRequest service schema exactly
     const reqDoc = {
+      userId:         portalUser?.uid || null,
       requesterName:  document.getElementById('p-name')?.value?.trim()             || '',
       requesterEmail: document.getElementById('p-email')?.value?.trim().toLowerCase() || '',
+      userArea:       portalUser?.department || '',
       requestingArea: document.getElementById('p-area')?.value                     || '',
       sector:         sector                                                        || '',
       outOfCalendar:  outOfCal === true,
@@ -1411,12 +1624,13 @@ async function handleSubmit(db, taskTypes) {
       typeId:         typeId         || null,
       typeName:       typeData?.name || typeId || '',
       nucleo:         document.getElementById('p-nucleo')?.value                   || '',
+      title:          document.getElementById('p-title')?.value?.trim()            || '',
       description:    document.getElementById('p-desc')?.value?.trim()             || '',
       urgency:        urgency === true,
       desiredDate:    document.getElementById('p-date')?.value
         ? new Date(document.getElementById('p-date').value + 'T12:00:00')
         : null,
-      status:         'pending',
+      status:         typeData?.autoAccept ? 'converted' : 'pending',
       taskId:         null,
       workspaceId:    null,
       internalNote:   '',
@@ -1427,6 +1641,11 @@ async function handleSubmit(db, taskTypes) {
 
     const ref = await addDoc(collection(db, 'requests'), reqDoc);
 
+    // Auto-create task if type has autoAccept
+    if (typeData?.autoAccept) {
+      await autoCreateTask(db, ref, reqDoc, typeData);
+    }
+
     // Notify team via EmailJS
     await notifyTeam({ ...reqDoc, requestId: ref.id }).catch(() => {});
 
@@ -1436,13 +1655,78 @@ async function handleSubmit(db, taskTypes) {
     successView?.classList.add('visible');
     const msg = document.getElementById('success-msg');
     if (msg) {
-      msg.textContent = urgency
-        ? `Recebemos sua solicitação urgente. Nossa equipe será notificada imediatamente e entrará em contato com ${reqDoc.requesterEmail}.`
-        : `Recebemos sua solicitação. Nossa equipe analisará e entrará em contato com ${reqDoc.requesterEmail} em breve.`;
+      msg.textContent = typeData?.autoAccept
+        ? `Sua solicitação foi aceita automaticamente e já está na esteira de produção. Acompanhe pelo sistema.`
+        : urgency
+          ? `Recebemos sua solicitação urgente. Nossa equipe será notificada imediatamente e entrará em contato com ${reqDoc.requesterEmail}.`
+          : `Recebemos sua solicitação. Nossa equipe analisará e entrará em contato com ${reqDoc.requesterEmail} em breve.`;
     }
   } catch(e) {
     alert('Erro ao enviar solicitação: ' + e.message);
     if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Enviar apenas esta solicitação →'; }
+  }
+}
+
+/* ─── Auto-create task for autoAccept types ─────────────── */
+async function autoCreateTask(db, reqRef, reqDoc, typeData) {
+  try {
+    const variation = typeData.variations?.find(v => v.id === reqDoc.variationId);
+    const slaDays = variation?.slaDays ?? 2;
+    // Calculate due date from SLA
+    let dueDate = reqDoc.desiredDate || new Date();
+    if (!reqDoc.desiredDate) {
+      const d = new Date();
+      let biz = slaDays;
+      while (biz > 0) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6) biz--; }
+      dueDate = d;
+    }
+
+    const taskDoc = {
+      workspaceId:      null,
+      sector:           reqDoc.sector || null,
+      title:            reqDoc.title || reqDoc.typeName || 'Nova Tarefa',
+      description:      reqDoc.description || '',
+      status:           'not_started',
+      priority:         reqDoc.urgency ? 'urgent' : 'medium',
+      projectId:        null,
+      assignees:        [],
+      tags:             [],
+      startDate:        serverTimestamp(),
+      dueDate:          dueDate,
+      typeId:           reqDoc.typeId || null,
+      variationId:      reqDoc.variationId || null,
+      variationName:    reqDoc.variationName || '',
+      variationSLADays: slaDays,
+      customFields:     {},
+      type:             reqDoc.typeName?.toLowerCase() || '',
+      requestingArea:   reqDoc.requestingArea || '',
+      nucleos:          reqDoc.nucleo ? [reqDoc.nucleo] : [],
+      outOfCalendar:    reqDoc.outOfCalendar || false,
+      subtasks:         [],
+      comments:         [],
+      attachments:      [],
+      order:            Date.now(),
+      completedAt:      null,
+      createdAt:        serverTimestamp(),
+      createdBy:        portalUser?.uid || 'portal',
+      updatedAt:        serverTimestamp(),
+      updatedBy:        portalUser?.uid || 'portal',
+      sourceRequestId:  reqRef.id,
+    };
+
+    const taskRef = await addDoc(collection(db, 'tasks'), taskDoc);
+
+    // Update request with taskId and converted status
+    await updateDoc(doc(db, 'requests', reqRef.id), {
+      status: 'converted',
+      taskId: taskRef.id,
+      updatedAt: serverTimestamp(),
+    });
+
+    return taskRef;
+  } catch(e) {
+    console.warn('autoCreateTask error:', e.message);
+    return null;
   }
 }
 
