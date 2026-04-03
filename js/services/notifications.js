@@ -61,6 +61,8 @@ export const NOTIF_TYPE_LABELS = {
   'goal.published':           'Meta publicada',
   'goal.deadline':            'Prazo de meta',
   'portal.tip_created':       'Nova dica',
+  'feedback.created':         'Novo feedback',
+  'feedback.schedule_due':    'Feedback pendente',
   'system.mention':           'Menção',
 };
 

@@ -81,6 +81,13 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
+    group: 'Feedbacks',
+    permissions: [
+      { key: 'feedback_view',   label: 'Ver feedbacks',   info: 'Visualizar feedbacks registrados. Restrito a coordenadores, gerentes, heads e diretoria.' },
+      { key: 'feedback_create', label: 'Criar feedbacks', info: 'Registrar novos feedbacks para colaboradores.' },
+    ],
+  },
+  {
     group: 'Portal de Dicas',
     permissions: [
       { key: 'portal_access',        label: 'Acessar Portal de Dicas',             info: 'Ver e gerar dicas de destinos.' },
@@ -122,6 +129,7 @@ export const SYSTEM_ROLES = [
       csat_send: true,        csat_view_all: true,
       goals_view: true,       goals_manage: true,   goals_evaluate: true,
       analytics_view: true,
+      feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: true,  portal_download_unlimited: true,
     },
   },
@@ -144,6 +152,7 @@ export const SYSTEM_ROLES = [
       csat_send: true,        csat_view_all: true,
       goals_view: true,       goals_manage: true,   goals_evaluate: true,
       analytics_view: true,
+      feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
     },
   },
@@ -166,6 +175,7 @@ export const SYSTEM_ROLES = [
       csat_send: true,        csat_view_all: true,
       goals_view: true,       goals_manage: true,   goals_evaluate: false,
       analytics_view: true,
+      feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
     },
   },
@@ -188,6 +198,7 @@ export const SYSTEM_ROLES = [
       csat_send: false,        csat_view_all: false,
       goals_view: false,       goals_manage: false,   goals_evaluate: false,
       analytics_view: false,
+      feedback_view: false, feedback_create: false,
       portal_access: true,     portal_create: false,
       portal_manage: false,    portal_download_unlimited: false,
     },
@@ -211,6 +222,7 @@ export const SYSTEM_ROLES = [
       csat_send: false,        csat_view_all: false,
       goals_view: true,        goals_manage: false,  goals_evaluate: false,
       analytics_view: false,
+      feedback_view: false, feedback_create: false,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
     },
   },
