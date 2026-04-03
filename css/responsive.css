@@ -5,19 +5,15 @@
 
 /* ─── GLOBAL: Layout fix for mobile scroll ───────────────── */
 @media (max-width: 768px) {
-  .app-shell {
-    height: auto !important;
-    min-height: 100vh;
-    overflow: visible !important;
-  }
   .main-content {
-    overflow: visible !important;
-    height: auto !important;
-    min-height: 100vh;
+    height: 100vh !important;
+    display: flex !important;
+    flex-direction: column !important;
   }
   .page-content {
-    overflow: visible !important;
-    min-height: calc(100vh - 64px);
+    flex: 1 1 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
     padding-bottom: 80px !important;
   }
 }
