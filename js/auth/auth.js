@@ -102,6 +102,11 @@ export function initAuthObserver(onReady) {
         loadCategories().catch(() => {});
         loadCardPrefs();
 
+        // Aplicar paleta de cores do perfil do usuário
+        const savedPalette = profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'midnight';
+        document.documentElement.dataset.palette = savedPalette;
+        localStorage.setItem('primetour-palette', savedPalette);
+
         // Só agora libera o app — permissões e workspaces já estão no store
         store.set('authLoading', false);
 
