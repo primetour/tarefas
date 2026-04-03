@@ -24,12 +24,13 @@ async function boot() {
     return;
   }
 
+  // Usa a instância padrão (default) do Firebase para compartilhar sessão com o app principal
   let app;
   try {
     const { getApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
-    app = getApp('portal');
+    app = getApp();
   } catch(e) {
-    app = initializeApp(firebaseConfig, 'portal');
+    app = initializeApp(firebaseConfig);
   }
   const db   = getFirestore(app);
   const auth = getAuth(app);
@@ -297,55 +298,11 @@ async function renderForm(db, taskTypes, auth) {
                 <div class="form-error" id="err-type">Selecione um tipo.</div>
               </div>
 
-              <!-- Passo 3: Variação do material (filtrada pelo tipo) -->
-              <div class="form-group" id="fg-variation" style="display:none;">
-                <label class="form-label">
-                  Variação do material <span class="required">*</span>
-                  <span class="info-tip" title="A variação define o SLA de produção.">ℹ</span>
-                </label>
-                <select class="form-select" id="p-variation">
-                  <option value="">— Selecione a variação —</option>
-                </select>
-                <!-- SLA badge aparece após selecionar variação -->
-                <div class="sla-badge" id="sla-badge" style="margin-top:8px;">
-                  <span style="color:var(--brand-gold);">⏱</span>
-                  <span>SLA de produção: <strong id="sla-label"></strong></span>
-                </div>
-              </div>
-
-              <!-- Passo 4: Núcleo (filtrado pelo setor, opcional) -->
-              <div class="form-group" id="fg-nucleo" style="display:none;">
-                <label class="form-label">
-                  Núcleo responsável
-                  <span class="info-tip" title="Núcleo específico dentro do setor (opcional).">ℹ</span>
-                </label>
-                <select class="form-select" id="p-nucleo">
-                  <option value="">— Selecione o núcleo —</option>
-                </select>
-              </div>
-
-              <div class="form-group" id="fg-title">
-                <label class="form-label">Título da demanda <span class="required">*</span></label>
-                <input type="text" class="form-input" id="p-title"
-                  placeholder="Ex: Newsletter Maio — Programa ICs" maxlength="120" />
-                <div class="form-error" id="err-title">Informe um título para a demanda.</div>
-              </div>
-
-              <div class="form-group" id="fg-desc">
-                <label class="form-label">Descrição da demanda <span class="required">*</span></label>
-                <textarea class="form-textarea" id="p-desc" rows="4"
-                  placeholder="Descreva em detalhes o que você precisa, contexto, referências e objetivos..."></textarea>
-                <div class="form-error" id="err-desc">Descreva sua demanda.</div>
-              </div>
-            </div>
-
-            <!-- Seção 3: Data desejada -->
-            <div class="portal-card">
-              <div class="portal-card-title">Prazo desejado</div>
+              <!-- Passo 3: Calendário + Data (aparece após tipo) -->
               <div class="form-group">
                 <label class="form-label">
                   Data desejada para entrega
-                  <span class="info-tip" title="Indicativa — o time avaliará a viabilidade conforme o calendário.">ℹ</span>
+                  <span class="info-tip" title="Selecione uma data no calendário ou defina manualmente. O calendário mostra os slots pré-agendados — clique em um para preencher automaticamente os campos abaixo.">ℹ</span>
                 </label>
                 <input type="date" class="form-input" id="p-date"
                   min="${getMinDate()}" />
@@ -403,21 +360,19 @@ async function renderForm(db, taskTypes, auth) {
                     </div>
                   </div>
                 </label>
-                <!-- Alerta: impacto de sair do calendário -->
                 <div class="alert-banner warning" id="out-calendar-alert" style="display:none;">
                   <span style="font-size:1.125rem;flex-shrink:0;">⚠</span>
                   <span>
                     <strong>Atenção: impacto de operar fora do calendário editorial</strong><br/>
-                    Demandas fora do calendário prejudicam o planejamento da equipe e podem comprometer 
-                    a <strong>performance de entrega</strong>, <strong>taxa de cliques</strong> e 
-                    <strong>saúde do servidor de disparo</strong> da PRIMETOUR — especialmente para newsletters. 
+                    Demandas fora do calendário prejudicam o planejamento da equipe e podem comprometer
+                    a <strong>performance de entrega</strong>, <strong>taxa de cliques</strong> e
+                    <strong>saúde do servidor de disparo</strong> da PRIMETOUR — especialmente para newsletters.
                     Envios não planejados aumentam o risco de marcação como spam e reduzem o engajamento da base.
                     Use este campo apenas quando estritamente necessário.
                   </span>
                 </div>
               </div>
 
-              <!-- Alerta fora do calendário -->
               <div class="alert-banner info" id="calendar-alert">
                 <span style="font-size:1.125rem;flex-shrink:0;">📅</span>
                 <span>
@@ -425,6 +380,48 @@ async function renderForm(db, taskTypes, auth) {
                   O time avaliará a viabilidade de encaixe. Considere selecionar
                   uma das datas sugeridas acima.
                 </span>
+              </div>
+
+              <!-- Passo 4: Variação do material (pre-preenchida pelo slot) -->
+              <div class="form-group" id="fg-variation" style="display:none;">
+                <label class="form-label">
+                  Variação do material <span class="required">*</span>
+                  <span class="info-tip" title="A variação define o SLA de produção. Pode ser preenchida automaticamente ao clicar em um slot do calendário.">ℹ</span>
+                </label>
+                <select class="form-select" id="p-variation">
+                  <option value="">— Selecione a variação —</option>
+                </select>
+                <div class="sla-badge" id="sla-badge" style="margin-top:8px;">
+                  <span style="color:var(--brand-gold);">⏱</span>
+                  <span>SLA de produção: <strong id="sla-label"></strong></span>
+                </div>
+              </div>
+
+              <!-- Passo 5: Núcleo (pre-preenchido pelo slot) -->
+              <div class="form-group" id="fg-nucleo" style="display:none;">
+                <label class="form-label">
+                  Núcleo responsável
+                  <span class="info-tip" title="Núcleo específico dentro do setor. Pode ser preenchido automaticamente ao clicar em um slot do calendário.">ℹ</span>
+                </label>
+                <select class="form-select" id="p-nucleo">
+                  <option value="">— Selecione o núcleo —</option>
+                </select>
+              </div>
+
+              <!-- Passo 6: Título (pre-preenchido pelo slot) -->
+              <div class="form-group" id="fg-title">
+                <label class="form-label">Título da demanda <span class="required">*</span></label>
+                <input type="text" class="form-input" id="p-title"
+                  placeholder="Ex: Newsletter Maio — Programa ICs" maxlength="120" />
+                <div class="form-error" id="err-title">Informe um título para a demanda.</div>
+              </div>
+
+              <!-- Passo 7: Descrição -->
+              <div class="form-group" id="fg-desc">
+                <label class="form-label">Descrição da demanda <span class="required">*</span></label>
+                <textarea class="form-textarea" id="p-desc" rows="4"
+                  placeholder="Descreva em detalhes o que você precisa, contexto, referências e objetivos..."></textarea>
+                <div class="form-error" id="err-desc">Descreva sua demanda.</div>
               </div>
             </div>
 
@@ -984,7 +981,23 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
 
   // Pre-fill title from slot
   const titleEl = document.getElementById('p-title');
-  if (titleEl && title) titleEl.value = title;
+  if (titleEl) titleEl.value = title || '';
+
+  // Pre-fill description hint from slot
+  const descEl = document.getElementById('p-desc');
+  if (descEl && title) {
+    descEl.value = 'Demanda referente a: ' + title + (dateISO ? ' (' + dateISO + ')' : '');
+  }
+
+  // Pre-fill requesting area from slot area if available
+  if (area) {
+    const areaSel = document.getElementById('p-area');
+    if (areaSel) {
+      for (const opt of areaSel.options) {
+        if (opt.value === area) { areaSel.value = area; break; }
+      }
+    }
+  }
 
   // Select variation — try by id first, then match by title/name
   const varSel = document.getElementById('p-variation');
@@ -1017,9 +1030,11 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
   document.getElementById('locked-ooc-banner')?.remove();
   // Check urgency by deadline
   checkUrgencyByDeadline(dateISO);
-  // Scroll to description field (user fills manually)
-  const descEl = document.getElementById('p-desc');
-  descEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Scroll to variation/title area so user can review pre-filled fields
+  const scrollTarget = document.getElementById('fg-variation')?.style.display !== 'none'
+    ? document.getElementById('fg-variation')
+    : document.getElementById('fg-title');
+  scrollTarget?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function fillFormFromEmptyDay(dateISO) {
