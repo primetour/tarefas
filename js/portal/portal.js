@@ -424,9 +424,10 @@ let batchQueue      = [];
 let currentEditIndex = -1;
 
 /* ─── Portal calendar widget ────────────────────────────── */
-let portalCalGran   = 'month'; // 'month'|'week'|'day'
-let portalCalDate   = new Date();
-let portalCalTypeId = 'newsletter';
+let portalCalGran     = 'month'; // 'month'|'week'|'day'
+let portalCalDate     = new Date();
+let portalCalTypeId   = 'newsletter';
+let portalCalExpanded = false;
 
 async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
   const slotsContainer = document.getElementById('slots-container');
@@ -525,22 +526,26 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       const dow    = new Date(y,m,d).getDay();
       const isWeekend = dow===0||dow===6;
       const clickable = !isPast && !isWeekend;
+      const cellH = portalCalExpanded ? '100px' : '60px';
+      const cellPad = portalCalExpanded ? '6px' : '3px';
+      const cellFont = portalCalExpanded ? '0.75rem' : '0.6875rem';
+      const slotFont = portalCalExpanded ? '0.6875rem' : '0.5625rem';
       cells+=`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
-        style="min-height:60px;padding:3px;border-radius:4px;cursor:${clickable?'pointer':'default'};
+        style="min-height:${cellH};padding:${cellPad};border-radius:4px;cursor:${clickable?'pointer':'default'};
         background:${hasTasks?'rgba(212,168,67,0.08)':hasSlots?'rgba(212,168,67,0.04)':'transparent'};
         border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':hasSlots?'rgba(212,168,67,0.15)':'transparent'};">
-        <div style="font-size:0.6875rem;font-weight:${isToday?700:400};
+        <div style="font-size:${cellFont};font-weight:${isToday?700:400};
           color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</div>
-        ${slots.map(s=>`<div class="pcal-slot-click" data-slot-date="${dateISO}"
+        ${slots.map(s=>{const maxChars=portalCalExpanded?22:12;return`<div class="pcal-slot-click" data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
           data-slot-area="${esc(s.requestingArea||'')}"
-          style="font-size:0.5625rem;color:${s.color||'var(--brand-gold)'};
-          border-bottom:1px dashed ${s.color||'var(--brand-gold)'};margin-bottom:1px;
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
-          title="Clique para adicionar: ${esc(s.title)}">◌ ${s.title.slice(0,12)}${s.title.length>12?'…':''}</div>`).join('')}
-        ${tasks.map(t=>`<div style="font-size:0.5625rem;color:var(--brand-gold);
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
-          title="${t.title}${t.requestingArea?' · '+t.requestingArea:''}">● ${t.title.slice(0,12)}${t.title.length>12?'…':''}</div>`).join('')}
+          style="font-size:${slotFont};color:${s.color||'var(--brand-gold)'};
+          border-bottom:1px dashed ${s.color||'var(--brand-gold)'};margin-bottom:${portalCalExpanded?'2px':'1px'};
+          padding:${portalCalExpanded?'1px 0':0};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
+          title="Clique para adicionar: ${esc(s.title)}">◌ ${s.title.slice(0,maxChars)}${s.title.length>maxChars?'…':''}</div>`;}).join('')}
+        ${tasks.map(t=>{const maxChars=portalCalExpanded?22:12;return`<div style="font-size:${slotFont};color:var(--brand-gold);
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};"
+          title="${t.title}${t.requestingArea?' · '+t.requestingArea:''}">● ${t.title.slice(0,maxChars)}${t.title.length>maxChars?'…':''}</div>`;}).join('')}
       </div>`;
     }
     return cells;
@@ -562,23 +567,27 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       const isWeekend= d.getDay()===0||d.getDay()===6;
       const clickable= !isPast && !isWeekend;
       const dateISO  = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const wkH = portalCalExpanded ? '120px' : '80px';
+      const wkFont = portalCalExpanded ? '0.75rem' : '0.6875rem';
+      const wkSlotFont = portalCalExpanded ? '0.6875rem' : '0.5625rem';
+      const wkMaxChars = portalCalExpanded ? 22 : 14;
       return `<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
-        style="padding:4px;min-height:80px;border-radius:4px;cursor:${clickable?'pointer':'default'};
+        style="padding:${portalCalExpanded?'6px':'4px'};min-height:${wkH};border-radius:4px;cursor:${clickable?'pointer':'default'};
         border:1px solid ${isToday?'var(--brand-gold)':'var(--border-subtle)'};">
-        <div style="font-size:0.6875rem;color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
+        <div style="font-size:${wkFont};color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
           font-weight:${isToday?700:400};margin-bottom:3px;">${PT_DAYS_S[d.getDay()]} ${d.getDate()}</div>
         ${slots.map(s=>`<div class="pcal-slot-click" data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
           data-slot-area="${esc(s.requestingArea||'')}"
-          style="font-size:0.5625rem;border:1px dashed ${s.color||'var(--brand-gold)'};
-          color:${s.color||'var(--brand-gold)'};border-radius:2px;padding:1px 3px;margin-bottom:2px;
+          style="font-size:${wkSlotFont};border:1px dashed ${s.color||'var(--brand-gold)'};
+          color:${s.color||'var(--brand-gold)'};border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
           title="Clique para adicionar: ${esc(s.title)}">
-          ◌ ${s.title.slice(0,14)}${s.title.length>14?'…':''}</div>`).join('')}
-        ${dayTasks.map(t=>`<div style="font-size:0.5625rem;background:rgba(212,168,67,0.12);
-          color:var(--brand-gold);border-radius:2px;padding:1px 3px;margin-bottom:2px;
+          ◌ ${s.title.slice(0,wkMaxChars)}${s.title.length>wkMaxChars?'…':''}</div>`).join('')}
+        ${dayTasks.map(t=>`<div style="font-size:${wkSlotFont};background:rgba(212,168,67,0.12);
+          color:var(--brand-gold);border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.title}">
-          ● ${t.title.slice(0,14)}${t.title.length>14?'…':''}</div>`).join('')}
+          ● ${t.title.slice(0,wkMaxChars)}${t.title.length>wkMaxChars?'…':''}</div>`).join('')}
       </div>`;
     }).join('');
   };
@@ -647,7 +656,8 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
   wrap.style.cssText = 'margin-top:16px;';
   wrap.innerHTML = `
     <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
-      border-radius:8px;padding:12px;font-family:var(--font-ui);">
+      border-radius:8px;padding:${portalCalExpanded?'16px':'12px'};font-family:var(--font-ui);
+      transition:all 0.2s ease;">
 
       <!-- Header: type selector + gran switcher + nav -->
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">
@@ -676,6 +686,14 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           <button id="pcal-next" style="padding:3px 8px;border:1px solid var(--border-subtle);
             border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;">▶</button>
         </div>
+
+        <!-- Expand/collapse -->
+        <button id="pcal-expand" style="padding:3px 8px;border:1px solid var(--border-subtle);
+          border-radius:4px;background:${portalCalExpanded?'var(--brand-gold)':'transparent'};
+          color:${portalCalExpanded?'#000':'var(--text-muted)'};cursor:pointer;font-size:0.6875rem;"
+          title="${portalCalExpanded?'Reduzir calendário':'Expandir calendário'}">
+          ${portalCalExpanded?'⤡ Reduzir':'⤢ Expandir'}
+        </button>
       </div>
 
       <!-- Nav title -->
@@ -689,12 +707,13 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
 
       <!-- Grid -->
       ${portalCalGran==='month'?`
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">
-          ${PT_DAYS_S.map(d=>`<div style="text-align:center;font-size:0.5625rem;color:var(--text-muted);">${d[0]}</div>`).join('')}
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:${portalCalExpanded?'4px':'2px'};margin-bottom:4px;">
+          ${PT_DAYS_S.map(d=>`<div style="text-align:center;font-size:${portalCalExpanded?'0.6875rem':'0.5625rem'};
+            color:var(--text-muted);font-weight:${portalCalExpanded?600:400};">${portalCalExpanded?d:d[0]}</div>`).join('')}
         </div>
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">${buildMonth()}</div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:${portalCalExpanded?'4px':'2px'};">${buildMonth()}</div>
       `:portalCalGran==='week'?`
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">${buildWeek()}</div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:${portalCalExpanded?'6px':'4px'};">${buildWeek()}</div>
       `:buildDay()}
     </div>
   `;
@@ -726,6 +745,10 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
   });
   wrap.querySelector('#pcal-today')?.addEventListener('click', () => {
     portalCalDate = new Date();
+    renderPortalCalendar(db, types, null);
+  });
+  wrap.querySelector('#pcal-expand')?.addEventListener('click', () => {
+    portalCalExpanded = !portalCalExpanded;
     renderPortalCalendar(db, types, null);
   });
 
@@ -765,16 +788,31 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
 function fillFormFromSlot(dateISO, title, variationId, area) {
   const dateEl = document.getElementById('p-date');
   if (dateEl) { dateEl.value = dateISO; dateEl.dispatchEvent(new Event('change')); }
-  // Select variation if provided
-  if (variationId) {
-    const varSel = document.getElementById('p-variation');
-    if (varSel) { varSel.value = variationId; varSel.dispatchEvent(new Event('change')); }
+
+  // Select variation — try by id first, then match by title/name
+  const varSel = document.getElementById('p-variation');
+  if (varSel) {
+    let matched = false;
+    if (variationId) {
+      varSel.value = variationId;
+      matched = varSel.value === variationId;
+    }
+    // Fallback: match variation option by slot title
+    if (!matched && title) {
+      const titleLower = title.trim().toLowerCase();
+      for (const opt of varSel.options) {
+        if (!opt.value) continue;
+        const optName = opt.textContent.split('·')[0].trim().toLowerCase();
+        if (optName === titleLower || optName.includes(titleLower) || titleLower.includes(optName)) {
+          varSel.value = opt.value;
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (matched) varSel.dispatchEvent(new Event('change'));
   }
-  // Pre-fill description hint
-  const descEl = document.getElementById('p-desc');
-  if (descEl && !descEl.value && title) {
-    descEl.value = 'Demanda referente a: ' + title;
-  }
+
   // Unlock toggles
   unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
   unlockToggle('urgency-toggle', 'p-urgency', false);
@@ -782,7 +820,8 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
   document.getElementById('locked-ooc-banner')?.remove();
   // Check urgency by deadline
   checkUrgencyByDeadline(dateISO);
-  // Scroll to description
+  // Scroll to description field (user fills manually)
+  const descEl = document.getElementById('p-desc');
   descEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
