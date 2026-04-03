@@ -3,21 +3,6 @@
    Global mobile-first responsive rules for ALL modules
    ============================================================ */
 
-/* ─── GLOBAL: Layout fix for mobile scroll ───────────────── */
-@media (max-width: 768px) {
-  .main-content {
-    height: 100vh !important;
-    display: flex !important;
-    flex-direction: column !important;
-  }
-  .page-content {
-    flex: 1 1 0 !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 80px !important;
-  }
-}
-
 /* ─── GLOBAL: Tables → Cards on mobile ────────────────────── */
 @media (max-width: 768px) {
   /* Generic table scroll wrapper */
@@ -53,6 +38,12 @@
   }
   .page-title { font-size: 1.25rem !important; }
   .page-subtitle { font-size: 0.8125rem !important; }
+
+  /* Page content: smooth iOS scroll + extra bottom space */
+  .page-content {
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 80px !important;
+  }
 
   /* Cards */
   .card { border-radius: var(--radius-sm) !important; }
