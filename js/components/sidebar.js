@@ -28,6 +28,7 @@ const NAV_GROUPS = [
       { route: 'requests',       icon: '◌',  label: 'Solicitações', perm: 'task_create', badge: true },
       { route: 'notifications', icon: '⊘',  label: 'Notificações', perm: 'dashboard_view', badge: true },
       { route: 'team',       icon: '◎',  label: 'Equipe',       perm: 'task_view_all' },
+      { route: 'feedbacks',  icon: '◈',  label: 'Feedbacks',    perm: 'feedback_view', altPerm: 'feedback_create' },
       { route: 'goals',      icon: '◎',  label: 'Metas',        perm: 'goals_view' },
       { route: 'csat',       icon: '★',  label: 'CSAT',         perm: 'csat_send',        altPerm: 'csat_view_all' },
     ]
