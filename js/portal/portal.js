@@ -50,7 +50,7 @@ async function boot() {
 
       portalUser = {
         uid:        user.uid,
-        name:       profile.displayName || user.displayName || '',
+        name:       profile.name || user.displayName || '',
         email:      user.email || '',
         department: profile.department || '',
       };
@@ -1471,8 +1471,24 @@ function bindFormEvents(db, taskTypes) {
   document.getElementById('new-request-btn')?.addEventListener('click', () => {
     document.getElementById('success-view')?.classList.remove('visible');
     document.getElementById('form-view').style.display = 'block';
-    // Reset form
-    document.querySelectorAll('.form-input,.form-select,.form-textarea').forEach(el => { el.value = ''; });
+    // Reset form — preserve readonly fields (name, email, user-area)
+    const preserve = new Set(['p-name', 'p-email', 'p-user-area']);
+    document.querySelectorAll('.form-input,.form-select,.form-textarea').forEach(el => {
+      if (!preserve.has(el.id)) el.value = '';
+    });
+    // Re-fill user data from portalUser (in case values were lost)
+    const u = portalUser || {};
+    const nameEl = document.getElementById('p-name');
+    const emailEl = document.getElementById('p-email');
+    const userAreaEl = document.getElementById('p-user-area');
+    if (nameEl)     nameEl.value = u.name || '';
+    if (emailEl)    emailEl.value = u.email || '';
+    if (userAreaEl) userAreaEl.value = u.department || '';
+    // Re-select user's area as default in requesting area dropdown
+    const areaSel = document.getElementById('p-area');
+    if (areaSel && u.department) {
+      for (const opt of areaSel.options) { if (opt.value === u.department) { areaSel.value = u.department; break; } }
+    }
     document.getElementById('p-urgency').checked = false;
     document.getElementById('p-out-of-calendar').checked = false;
     unlockToggle('urgency-toggle', 'p-urgency', false);
@@ -1484,6 +1500,11 @@ function bindFormEvents(db, taskTypes) {
     document.getElementById('locked-urgency-banner')?.remove();
     document.getElementById('locked-ooc-banner')?.remove();
     document.getElementById('batch-panel')?.style && (document.getElementById('batch-panel').style.display = 'none');
+    // Remove calendar widget and hide downstream fields
+    document.getElementById('portal-calendar-widget')?.remove();
+    document.getElementById('fg-type')?.style && (document.getElementById('fg-type').style.display = 'none');
+    document.getElementById('fg-variation')?.style && (document.getElementById('fg-variation').style.display = 'none');
+    document.getElementById('fg-nucleo')?.style && (document.getElementById('fg-nucleo').style.display = 'none');
     batchQueue = [];
     currentEditIndex = -1;
   });
