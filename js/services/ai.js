@@ -35,6 +35,7 @@ export const MODULE_REGISTRY = {
 export const AI_PROVIDERS = [
   { id: 'gemini',     label: 'Google Gemini (grátis)',        icon: '◈', free: true,  configFields: ['apiKey'],                     signupUrl: 'https://aistudio.google.com/apikey' },
   { id: 'groq',       label: 'Groq (grátis)',                icon: '▤', free: true,  configFields: ['apiKey'],                     signupUrl: 'https://console.groq.com/keys' },
+  { id: 'openai',     label: 'OpenAI (ChatGPT)',              icon: '◎', free: false, configFields: ['apiKey'] },
   { id: 'anthropic',  label: 'Anthropic (Claude)',            icon: '◈', free: false, configFields: ['apiKey'] },
   { id: 'azure',      label: 'Microsoft Azure / Foundry',    icon: '◫', free: false, configFields: ['apiKey','azureEndpoint'] },
 ];
@@ -51,6 +52,14 @@ export const AI_MODELS = {
     { id: 'llama-4-maverick-17b-128e-instruct', label: 'Llama 4 Maverick', desc: 'Grátis — Meta Llama 4, máxima qualidade' },
     { id: 'gemma2-9b-it',        label: 'Gemma 2 9B',           desc: 'Grátis — Google Gemma 2, leve e eficiente' },
     { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B',    desc: 'Grátis — muito capaz para tarefas complexas' },
+  ],
+  openai: [
+    { id: 'gpt-4o',             label: 'GPT-4o',             desc: 'Modelo principal — multimodal e rápido' },
+    { id: 'gpt-4o-mini',        label: 'GPT-4o Mini',        desc: 'Versão econômica do GPT-4o' },
+    { id: 'gpt-4.1',            label: 'GPT-4.1',            desc: 'Última geração — máximo desempenho' },
+    { id: 'gpt-4.1-mini',       label: 'GPT-4.1 Mini',       desc: 'Compacto e rápido' },
+    { id: 'gpt-4.1-nano',       label: 'GPT-4.1 Nano',       desc: 'Ultra-leve para tarefas simples' },
+    { id: 'o4-mini',            label: 'o4-mini',            desc: 'Modelo de raciocínio — ideal para análise complexa' },
   ],
   anthropic: [
     { id: 'claude-sonnet-4-6',  label: 'Claude Sonnet 4.6',  desc: 'Rápido e econômico — ideal para tarefas do dia a dia' },
@@ -70,6 +79,7 @@ export const AI_MODELS = {
 const PROVIDER_DEFAULTS = {
   gemini:    { model: 'gemini-2.5-flash',   maxTokens: 1024 },
   groq:      { model: 'llama-4-scout-17b-16e-instruct', maxTokens: 1024 },
+  openai:    { model: 'gpt-4o-mini',        maxTokens: 1024 },
   anthropic: { model: 'claude-sonnet-4-6',  maxTokens: 1024 },
   azure:     { model: 'gpt-4o',             maxTokens: 1024 },
 };
@@ -142,6 +152,7 @@ export async function createKnowledgeDoc(data) {
     title:     data.title?.trim() || 'Sem título',
     content:   data.content || '',
     type:      data.type || 'text',         // 'text' | 'url'
+    folder:    data.folder?.trim() || '',
     sourceUrl: data.sourceUrl?.trim() || '',
     tags:      data.tags || [],
     charCount: (data.content || '').length,
@@ -240,6 +251,7 @@ export async function runSkill(skillId, context = {}) {
   const providerKeyMap = {
     gemini:    config?.geminiApiKey   || '',
     groq:      config?.groqApiKey     || '',
+    openai:    config?.openaiApiKey    || '',
     anthropic: config?.anthropicApiKey || '',
     azure:     config?.azureApiKey     || '',
   };
@@ -259,12 +271,20 @@ export async function runSkill(skillId, context = {}) {
     }
   }
 
+  // Carregar documento de tom de voz (se vinculado)
+  let voiceContext = '';
+  if (skill.voiceDocId) {
+    const voiceDoc = await getKnowledgeDoc(skill.voiceDocId).catch(() => null);
+    if (voiceDoc) {
+      voiceContext = `\n\n=== MANUAL DE TOM DE VOZ / REDAÇÃO ===\nSiga RIGOROSAMENTE as diretrizes abaixo para tom de voz, estilo e redação:\n\n${voiceDoc.content}\n=== FIM DO MANUAL ===`;
+    }
+  }
+
   // Montar system prompt enriquecido
   const systemParts = [];
   if (skill.systemPrompt) systemParts.push(skill.systemPrompt);
+  if (voiceContext) systemParts.push(voiceContext);
   if (knowledgeContext) systemParts.push('Use a base de conhecimento abaixo como referência principal para suas respostas. Priorize informações da base sobre conhecimento geral.' + knowledgeContext);
-  if (skill.voiceTone) systemParts.push(`Tom de voz: ${skill.voiceTone}`);
-  if (skill.charLimit) systemParts.push(`Limite de caracteres na resposta: ${skill.charLimit}`);
   if (skill.outputFormat === 'json') systemParts.push('Responda APENAS em JSON válido.');
   if (skill.outputFormat === 'html') systemParts.push('Responda em HTML semântico.');
   if (skill.allowedSources?.length) systemParts.push(`Fontes autorizadas: ${skill.allowedSources.join(', ')}`);
@@ -282,6 +302,9 @@ export async function runSkill(skillId, context = {}) {
       break;
     case 'groq':
       result = await callGroq({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature: skill.temperature });
+      break;
+    case 'openai':
+      result = await callOpenAI({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature: skill.temperature });
       break;
     case 'azure':
       result = await callAzure({ config, apiKey, model, maxTokens, systemPrompt, userPrompt, temperature: skill.temperature });
@@ -336,6 +359,38 @@ async function callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPromp
     model:        data.model,
     inputTokens:  data.usage?.input_tokens || 0,
     outputTokens: data.usage?.output_tokens || 0,
+  };
+}
+
+/* ─── Provider: OpenAI (ChatGPT) ─────────────────────────── */
+async function callOpenAI({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature }) {
+  const messages = [];
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  messages.push({ role: 'user', content: userPrompt });
+
+  const body = { model, messages, max_tokens: maxTokens };
+  if (temperature != null) body.temperature = temperature;
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Erro OpenAI: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return {
+    text:         data.choices?.[0]?.message?.content || '',
+    model:        data.model || model,
+    inputTokens:  data.usage?.prompt_tokens || 0,
+    outputTokens: data.usage?.completion_tokens || 0,
   };
 }
 
