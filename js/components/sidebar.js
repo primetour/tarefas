@@ -41,12 +41,14 @@ const NAV_GROUPS = [
       { route: 'meta-performance',    icon: '◈', label: 'Instagram',            perm: 'analytics_view' },
       { route: 'ga-performance',      icon: '◈', label: 'Google Analytics',    perm: 'analytics_view' },
       { route: 'portal-dashboard',    icon: '◈', label: 'Portal de Dicas',     perm: 'portal_manage' },
+      { route: 'roteiro-dashboard', icon: '✈', label: 'Roteiros',            perm: 'roteiro_manage' },
       { route: 'ai-dashboard',       icon: '◈', label: 'Inteligência Artificial', perm: 'system_manage_settings' },
     ]
   },
   {
     label: 'Serviços',
     items: [
+      { route: 'roteiros',            icon: '✈', label: 'Roteiros de Viagem',  perm: 'roteiro_access' },
       { route: 'portal-tips',         icon: '✈', label: 'Portal de Dicas',     perm: 'portal_access'  },
       { route: 'portal-tips-list',    icon: '◈', label: 'Dicas Cadastradas',    perm: 'portal_create'  },
       { route: 'portal-images',       icon: '▨', label: 'Banco de Imagens',     perm: 'portal_manage'  },
