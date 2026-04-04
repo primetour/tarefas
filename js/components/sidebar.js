@@ -41,6 +41,7 @@ const NAV_GROUPS = [
       { route: 'meta-performance',    icon: '◈', label: 'Instagram',            perm: 'analytics_view' },
       { route: 'ga-performance',      icon: '◈', label: 'Google Analytics',    perm: 'analytics_view' },
       { route: 'portal-dashboard',    icon: '◈', label: 'Portal de Dicas',     perm: 'portal_manage' },
+      { route: 'ai-dashboard',       icon: '◈', label: 'Inteligência Artificial', perm: 'system_manage_settings' },
     ]
   },
   {
@@ -63,6 +64,7 @@ const NAV_GROUPS = [
       { route: 'sectors',    icon: '◈',  label: 'Setores e Núcleos', perm: 'system_manage_users' },
       { route: 'task-types', icon: '▣',  label: 'Tipos de Tarefa',   perm: 'task_type_create', altPerm: 'system_manage_users' },
       { route: 'roles',      icon: '◈',  label: 'Roles e Acesso',    perm: 'system_manage_roles', altPerm: 'system_manage_users' },
+      { route: 'ai-skills',   icon: '◈',  label: 'IA Skills',          perm: 'system_manage_settings' },
       { route: 'audit',      icon: '◌',  label: 'Auditoria',         perm: 'system_manage_settings' },
       { route: 'settings',   icon: '⚙',  label: 'Configurações',     perm: 'system_manage_settings' },
       { route: 'about',      icon: '◎',  label: 'Sobre o sistema',   perm: 'system_manage_users' },
