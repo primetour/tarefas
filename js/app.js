@@ -55,6 +55,7 @@ import { renderLandingPages }             from './pages/landingPages.js';
 import { renderCms }                      from './pages/cms.js';
 import { renderArtsEditor }              from './pages/artsEditor.js';
 import { renderAiSkills }               from './pages/aiSkills.js';
+import { renderAiDashboard, destroyAiDashboard } from './pages/aiDashboard.js';
 // newsMonitor carregado dinamicamente para evitar bloqueio pré-login
 
 // ─── Instâncias globais ───────────────────────────────────
@@ -241,6 +242,7 @@ function setupRouter() {
     'roles':        async () => { await renderRoles(content); },
     'settings':     async () => { await renderSettings(content); },
     'ai-skills':    async () => { await renderAiSkills(content); },
+    'ai-dashboard': async () => { destroyAiDashboard(); await renderAiDashboard(content); },
     'integrations': async () => { await renderIntegrations(content); },
     'about':        async () => { await renderAbout(content); },
     'nl-performance':       async () => { await renderNlPerformance(content); },
