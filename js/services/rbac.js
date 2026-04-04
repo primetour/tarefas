@@ -96,6 +96,14 @@ export const PERMISSION_CATALOG = [
       { key: 'portal_download_unlimited', label: 'Downloads ilimitados',           info: 'Gerar downloads sem limite diário. Parceiros têm limite de 5/dia.' },
     ],
   },
+  {
+    group: 'Roteiros de Viagem',
+    permissions: [
+      { key: 'roteiro_access',  label: 'Acessar Roteiros de Viagem',  info: 'Ver roteiros próprios e da equipe.' },
+      { key: 'roteiro_create',  label: 'Criar e editar roteiros',     info: 'Criar roteiros, editar os próprios, gerar exports.' },
+      { key: 'roteiro_manage',  label: 'Administrar Roteiros',        info: 'Ver todos os roteiros, editar de qualquer consultor, dashboard.' },
+    ],
+  },
 ];
 
 /* ─── Roles padrão do sistema ────────────────────────────── */
@@ -131,6 +139,7 @@ export const SYSTEM_ROLES = [
       analytics_view: true,
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: true,  portal_download_unlimited: true,
+      roteiro_access: true, roteiro_create: true, roteiro_manage: true,
     },
   },
   {
@@ -154,6 +163,7 @@ export const SYSTEM_ROLES = [
       analytics_view: true,
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
+      roteiro_access: true, roteiro_create: true, roteiro_manage: true,
     },
   },
   {
@@ -177,6 +187,7 @@ export const SYSTEM_ROLES = [
       analytics_view: true,
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
+      roteiro_access: true, roteiro_create: true, roteiro_manage: false,
     },
   },
   {
@@ -201,6 +212,7 @@ export const SYSTEM_ROLES = [
       feedback_view: false, feedback_create: false,
       portal_access: true,     portal_create: false,
       portal_manage: false,    portal_download_unlimited: false,
+      roteiro_access: false, roteiro_create: false, roteiro_manage: false,
     },
   },
   {
@@ -224,6 +236,7 @@ export const SYSTEM_ROLES = [
       analytics_view: false,
       feedback_view: false, feedback_create: false,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
+      roteiro_access: true, roteiro_create: true, roteiro_manage: false,
     },
   },
 ];

@@ -28,6 +28,7 @@ export const MODULE_REGISTRY = {
   'cms':              { label: 'CMS / Site',          icon: '◫',  contextFields: ['page','content','seo','images'] },
   'landing-pages':    { label: 'Landing Pages',       icon: '◱',  contextFields: ['page','content','audience','cta'] },
   'arts-editor':      { label: 'Editor de Artes',     icon: '▣',  contextFields: ['design','template','text','brand'] },
+  'roteiros':         { label: 'Roteiros de Viagem',  icon: '✈',  contextFields: ['destination','clientProfile','dayNumber','narrative','hotels','pricing','portalTips'] },
   'general':          { label: 'Geral (todos)',       icon: '⊞',  contextFields: ['input'] },
 };
 
