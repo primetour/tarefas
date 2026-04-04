@@ -78,8 +78,9 @@ function renderGrid() {
   if (!grid) return;
 
   grid.innerHTML = allRoles.map(role => {
-    const permCount    = Object.values(role.permissions || {}).filter(Boolean).length;
-    const totalPerms   = PERMISSION_CATALOG.flatMap(g => g.permissions).length;
+    const catalogKeys  = new Set(PERMISSION_CATALOG.flatMap(g => g.permissions.map(p => p.key)));
+    const totalPerms   = catalogKeys.size;
+    const permCount    = Object.entries(role.permissions || {}).filter(([k, v]) => v && catalogKeys.has(k)).length;
     const isSystem     = role.isSystem;
     const canEdit      = store.can('system_manage_roles'); // all roles editable
     const canDelete    = store.can('system_manage_roles') && !isSystem; // system roles can't be deleted
