@@ -308,13 +308,31 @@ async function renderConfigTab(el) {
  * ═══════════════════════════════════════════════════════════ */
 function renderKnowledgeTab(el) {
   const totalChars = allKnowledge.reduce((s, d) => s + (d.charCount || d.content?.length || 0), 0);
-  const totalTokensEst = Math.round(totalChars / 4); // ~4 chars per token
+  const totalTokensEst = Math.round(totalChars / 4);
+
+  // Agrupar por pasta
+  const grouped = {};
+  for (const d of allKnowledge) {
+    const folder = d.folder || 'Sem pasta';
+    if (!grouped[folder]) grouped[folder] = [];
+    grouped[folder].push(d);
+  }
+  // Ordenar: pastas nomeadas primeiro, "Sem pasta" por último
+  const folderNames = Object.keys(grouped).sort((a, b) => {
+    if (a === 'Sem pasta') return 1;
+    if (b === 'Sem pasta') return -1;
+    return a.localeCompare(b);
+  });
+
+  // Lista de pastas existentes para o datalist
+  const existingFolders = [...new Set(allKnowledge.map(d => d.folder).filter(Boolean))].sort();
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
       <div>
         <span style="font-size:0.8125rem;color:var(--text-muted);">
           ${allKnowledge.length} documento${allKnowledge.length !== 1 ? 's' : ''} ·
+          ${folderNames.length} pasta${folderNames.length !== 1 ? 's' : ''} ·
           ~${totalTokensEst.toLocaleString('pt-BR')} tokens estimados
         </span>
       </div>
@@ -327,19 +345,49 @@ function renderKnowledgeTab(el) {
         <div class="empty-state-title">Nenhum documento na base</div>
         <p class="empty-state-sub">Adicione documentos (manuais, guias, textos) para que as skills de IA possam consultá-los como referência.</p>
       </div>
-    ` : `
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;">
-        ${allKnowledge.map(d => renderKnowledgeCard(d)).join('')}
-      </div>
-    `}
+    ` : folderNames.map(folder => {
+      const docs = grouped[folder];
+      const folderChars = docs.reduce((s, d) => s + (d.charCount || d.content?.length || 0), 0);
+      const isDefaultFolder = folder === 'Sem pasta';
+      return `
+        <div style="margin-bottom:24px;">
+          <div class="kb-folder-header" data-folder="${esc(folder)}" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;user-select:none;">
+            <span class="kb-folder-chevron" style="font-size:0.75rem;color:var(--text-muted);transition:transform 0.2s;">▼</span>
+            <span style="font-size:1rem;">${isDefaultFolder ? '📄' : '📁'}</span>
+            <span style="font-weight:600;color:var(--text-primary);font-size:0.9375rem;">${esc(folder)}</span>
+            <span style="font-size:0.75rem;color:var(--text-muted);background:var(--bg-surface);
+              padding:2px 8px;border-radius:10px;">${docs.length}</span>
+            <span style="font-size:0.6875rem;color:var(--text-muted);">· ~${Math.round(folderChars / 4).toLocaleString('pt-BR')} tokens</span>
+          </div>
+          <div class="kb-folder-content" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;">
+            ${docs.map(d => renderKnowledgeCard(d)).join('')}
+          </div>
+        </div>
+      `;
+    }).join('')}
   `;
 
-  document.getElementById('new-knowledge-btn')?.addEventListener('click', () => openKnowledgeModal());
+  document.getElementById('new-knowledge-btn')?.addEventListener('click', () => openKnowledgeModal(null, existingFolders));
+
+  // Folder collapse/expand
+  el.querySelectorAll('.kb-folder-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const content = header.nextElementSibling;
+      const chevron = header.querySelector('.kb-folder-chevron');
+      if (content.style.display === 'none') {
+        content.style.display = '';
+        if (chevron) chevron.style.transform = '';
+      } else {
+        content.style.display = 'none';
+        if (chevron) chevron.style.transform = 'rotate(-90deg)';
+      }
+    });
+  });
 
   el.querySelectorAll('.kb-edit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const d = allKnowledge.find(x => x.id === btn.dataset.id);
-      if (d) openKnowledgeModal(d);
+      if (d) openKnowledgeModal(d, existingFolders);
     });
   });
   el.querySelectorAll('.kb-delete-btn').forEach(btn => {
@@ -390,8 +438,9 @@ function renderKnowledgeCard(d) {
   `;
 }
 
-function openKnowledgeModal(doc = null) {
+function openKnowledgeModal(doc = null, existingFolders = []) {
   const isEdit = !!doc;
+  const folderListId = 'kb-folder-list-' + Date.now();
 
   modal.open({
     title: isEdit ? 'Editar Documento' : 'Novo Documento de Conhecimento',
@@ -402,6 +451,17 @@ function openKnowledgeModal(doc = null) {
           <label class="form-label">Título *</label>
           <input type="text" class="form-input" id="kb-title" value="${esc(doc?.title || '')}"
             placeholder="Ex: Manual de Tom de Voz, Guia de Destinos, FAQ Interno" />
+        </div>
+
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Pasta
+            <span class="info-tip" title="Organize seus documentos em pastas. Digite o nome de uma pasta existente ou crie uma nova.">ℹ</span>
+          </label>
+          <input type="text" class="form-input" id="kb-folder" list="${folderListId}" value="${esc(doc?.folder || '')}"
+            placeholder="Ex: Manuais, Destinos, Tom de Voz (deixe vazio para raiz)" />
+          <datalist id="${folderListId}">
+            ${existingFolders.map(f => `<option value="${esc(f)}">`).join('')}
+          </datalist>
         </div>
 
         <div class="form-group" style="margin:0;">
@@ -439,13 +499,14 @@ function openKnowledgeModal(doc = null) {
 
         const tags      = (document.getElementById('kb-tags')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
         const sourceUrl = document.getElementById('kb-source-url')?.value?.trim() || '';
+        const folder    = document.getElementById('kb-folder')?.value?.trim() || '';
 
         try {
           if (isEdit) {
-            await updateKnowledgeDoc(doc.id, { title, content, tags, sourceUrl });
+            await updateKnowledgeDoc(doc.id, { title, content, tags, sourceUrl, folder });
             toast.success('Documento atualizado!');
           } else {
-            await createKnowledgeDoc({ title, content, type: 'text', tags, sourceUrl });
+            await createKnowledgeDoc({ title, content, type: 'text', tags, sourceUrl, folder });
             toast.success('Documento criado!');
           }
           close();
@@ -587,6 +648,74 @@ function openSkillModal(skill = null) {
   });
 }
 
+/* Explicações amigáveis para cada variável de contexto */
+const VAR_EXPLANATIONS = {
+  title:         'Título do item (tarefa, dica, projeto...)',
+  description:   'Descrição ou texto principal do item',
+  body:          'Corpo/conteúdo completo do texto',
+  type:          'Tipo ou categoria do item',
+  typeName:      'Nome do tipo de tarefa',
+  status:        'Status atual (aberto, em andamento, concluído...)',
+  assignee:      'Pessoa responsável pelo item',
+  deadline:      'Data limite / prazo de entrega',
+  sector:        'Setor responsável',
+  priority:      'Nível de prioridade',
+  variationName: 'Nome da variação do tipo de tarefa',
+  nucleo:        'Núcleo responsável dentro do setor',
+  category:      'Categoria do item',
+  destination:   'Destino turístico (Portal de Dicas)',
+  area:          'Área ou departamento',
+  lastUpdated:   'Data da última atualização',
+  metrics:       'Dados numéricos e métricas do período',
+  period:        'Período de análise selecionado',
+  chartData:     'Dados dos gráficos exibidos',
+  filters:       'Filtros ativos no momento',
+  summary:       'Resumo geral dos dados',
+  card:          'Dados do card no kanban',
+  column:        'Coluna atual no kanban',
+  project:       'Projeto vinculado',
+  requester:     'Nome de quem solicitou',
+  desiredDate:   'Data desejada para entrega',
+  topic:         'Tema ou assunto da busca',
+  sources:       'Fontes de informação configuradas',
+  currentFeed:   'Conteúdo atual do feed',
+  keywords:      'Palavras-chave para busca',
+  feedbackText:  'Texto do feedback recebido',
+  audioUrl:      'URL do áudio anexado',
+  rating:        'Nota ou avaliação dada',
+  customer:      'Cliente que deu o feedback',
+  surveyData:    'Dados da pesquisa CSAT',
+  responses:     'Respostas coletadas',
+  score:         'Pontuação/score calculado',
+  goal:          'Objetivo ou meta definida',
+  keyResults:    'Resultados-chave da meta (OKR)',
+  progress:      'Percentual de progresso',
+  name:          'Nome do item',
+  tasks:         'Lista de tarefas vinculadas',
+  members:       'Membros da equipe',
+  channel:       'Canal de publicação (Instagram, blog, e-mail...)',
+  audience:      'Público-alvo do conteúdo',
+  brief:         'Briefing ou instruções do conteúdo',
+  previousPosts: 'Últimas publicações feitas',
+  calendar:      'Calendário editorial',
+  objectives:    'Objetivos de comunicação',
+  events:        'Eventos no calendário',
+  page:          'Página ou seção do site',
+  content:       'Conteúdo da página',
+  seo:           'Dados de SEO (título, meta, keywords)',
+  images:        'Imagens vinculadas',
+  cta:           'Call-to-action da página',
+  design:        'Dados do design/layout',
+  template:      'Template selecionado',
+  text:          'Texto do elemento',
+  brand:         'Identidade visual / marca',
+  input:         'Texto livre digitado pelo usuário',
+};
+
+function getVarExplanation(field) {
+  return VAR_EXPLANATIONS[field] || 'Dado do módulo';
+}
+
 function buildSkillForm(s = null) {
   const moduleOptions = Object.entries(MODULE_REGISTRY)
     .map(([id, m]) => `<option value="${id}" ${s?.module === id ? 'selected' : ''}>${m.icon} ${m.label}</option>`)
@@ -661,7 +790,7 @@ function buildSkillForm(s = null) {
 
         <div class="form-group" style="margin:0 0 12px 0;">
           <label class="form-label">System Prompt
-            <span class="info-tip" title="Instruções gerais para a IA: persona, regras, tom de voz, limites. Este texto é enviado como contexto do sistema.">ℹ</span>
+            <span class="info-tip" title="Instruções gerais para a IA: persona, regras, limites. Este texto é enviado como contexto do sistema e define o comportamento da IA.">ℹ</span>
           </label>
           <textarea class="form-textarea" id="sk-system-prompt" rows="5"
             placeholder="Ex: Você é um redator profissional de turismo da Primetour. Escreva textos engajadores, informativos e com tom acolhedor."
@@ -669,40 +798,59 @@ function buildSkillForm(s = null) {
         </div>
 
         <div class="form-group" style="margin:0 0 12px 0;">
-          <label class="form-label">Template do Prompt (usuário)
-            <span class="info-tip" title="Use {{campo}} para inserir dados do contexto do módulo. Ex: {{title}}, {{body}}, {{description}}">ℹ</span>
+          <label class="form-label">Template do Prompt
+            <span class="info-tip" title="Monte a instrução que será enviada à IA. Use as variáveis abaixo para puxar dados automaticamente do módulo.">ℹ</span>
           </label>
           <textarea class="form-textarea" id="sk-user-prompt" rows="4"
             placeholder="Ex: Reescreva o texto abaixo mantendo as informações, mas com linguagem mais engajadora:&#10;&#10;{{body}}"
             style="font-family:monospace;font-size:0.8125rem;line-height:1.6;">${esc(s?.userPromptTemplate || '')}</textarea>
         </div>
 
+        <!-- Variáveis do módulo com explicação -->
         <div id="sk-context-hint" style="font-size:0.75rem;color:var(--text-muted);background:var(--bg-surface);
-          padding:8px 12px;border-radius:6px;margin-bottom:12px;${modFields.length ? '' : 'display:none;'}">
-          Variáveis disponíveis para este módulo: ${modFields.map(f => `<code style="background:var(--bg-dark);padding:1px 4px;border-radius:3px;">{{${f}}}</code>`).join(' ')}
+          padding:10px 12px;border-radius:6px;margin-bottom:12px;${modFields.length ? '' : 'display:none;'}">
+          <div style="font-weight:600;margin-bottom:6px;color:var(--text-secondary);">Variáveis disponíveis (clique para inserir no template):</div>
+          <div id="sk-vars-list" style="display:flex;flex-wrap:wrap;gap:4px;">
+            ${modFields.map(f => `<code class="sk-var-btn" data-var="${f}" style="background:var(--bg-dark);padding:3px 8px;border-radius:4px;cursor:pointer;
+              border:1px solid var(--border-subtle);transition:all 0.15s;"
+              title="${getVarExplanation(f)}">{{${f}}}</code>`).join('')}
+          </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <!-- Tom de voz vinculado à base de conhecimento -->
+        <div class="form-group" style="margin:0 0 12px 0;">
+          <label class="form-label">Tom de voz / Manual de redação
+            <span class="info-tip" title="Selecione um documento da Base de Conhecimento que define o tom de voz, estilo e regras de redação. A IA usará como referência obrigatória.">ℹ</span>
+          </label>
+          <select class="form-select" id="sk-voice-doc">
+            <option value="">Nenhum (sem referência de tom)</option>
+            ${allKnowledge.map(d => `<option value="${d.id}" ${s?.voiceDocId === d.id ? 'selected' : ''}>📄 ${esc(d.title)}</option>`).join('')}
+          </select>
+          ${!allKnowledge.length ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;font-style:italic;">
+            Nenhum documento disponível. Crie um manual de redação na aba "Base de Conhecimento".
+          </div>` : ''}
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group" style="margin:0;">
-            <label class="form-label">Tom de voz</label>
-            <input type="text" class="form-input" id="sk-voice-tone" value="${esc(s?.voiceTone || '')}"
-              placeholder="profissional, acolhedor" />
-          </div>
-          <div class="form-group" style="margin:0;">
-            <label class="form-label">Limite de caracteres</label>
-            <input type="number" class="form-input" id="sk-char-limit" value="${s?.charLimit || ''}"
-              placeholder="Ex: 500" min="0" />
-          </div>
-          <div class="form-group" style="margin:0;">
-            <label class="form-label">Temperatura</label>
+            <label class="form-label">Temperatura
+              <span class="info-tip" title="Controla a criatividade da IA.&#10;&#10;0.0 = Respostas mais previsíveis e consistentes. Ideal para análise de dados, classificação e respostas factuais.&#10;&#10;0.5 = Equilíbrio entre criatividade e consistência. Bom para a maioria dos casos.&#10;&#10;1.0 = Respostas mais criativas e variadas. Ideal para redação criativa, brainstorming e geração de ideias.&#10;&#10;Dica: comece com 0.5 e ajuste conforme o resultado.">ℹ</span>
+            </label>
             <input type="number" class="form-input" id="sk-temperature" value="${s?.temperature ?? ''}"
-              placeholder="0.0 a 1.0" min="0" max="1" step="0.1" />
+              placeholder="0.0 a 1.0 (padrão: 0.5)" min="0" max="1" step="0.1" />
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Max tokens
+              <span class="info-tip" title="Limite máximo de tokens na resposta da IA. 1 token ≈ 4 caracteres. Ex: 1024 tokens ≈ 4000 caracteres (~1 página).">ℹ</span>
+            </label>
+            <input type="number" class="form-input" id="sk-max-tokens" value="${s?.maxTokens || ''}"
+              placeholder="Padrão: 1024" min="100" max="16000" />
           </div>
         </div>
       </div>
 
       <!-- Comportamento -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="form-group" style="margin:0;">
           <label class="form-label">Formato de saída</label>
           <select class="form-select" id="sk-output-format">${outputOptions}</select>
@@ -710,11 +858,6 @@ function buildSkillForm(s = null) {
         <div class="form-group" style="margin:0;">
           <label class="form-label">Gatilho</label>
           <select class="form-select" id="sk-trigger">${triggerOptions}</select>
-        </div>
-        <div class="form-group" style="margin:0;">
-          <label class="form-label">Max tokens</label>
-          <input type="number" class="form-input" id="sk-max-tokens" value="${s?.maxTokens || ''}"
-            placeholder="Padrão: 1024" min="100" max="16000" />
         </div>
       </div>
 
@@ -784,26 +927,52 @@ function bindSkillFormEvents() {
     }
   });
 
-  // Module change → show context fields hint
+  // Module change → show context fields with explanations
   document.getElementById('sk-module')?.addEventListener('change', (e) => {
     const hint = document.getElementById('sk-context-hint');
+    const varsList = document.getElementById('sk-vars-list');
     const fields = MODULE_REGISTRY[e.target.value]?.contextFields || [];
     if (hint) {
       if (fields.length) {
         hint.style.display = '';
-        hint.innerHTML = `Variáveis disponíveis: ${fields.map(f =>
-          `<code style="background:var(--bg-dark);padding:1px 4px;border-radius:3px;cursor:pointer;"
-            onclick="document.getElementById('sk-user-prompt').value+=' {{${f}}}';document.getElementById('sk-user-prompt').focus();">{{${f}}}</code>`
-        ).join(' ')}`;
+        if (varsList) {
+          varsList.innerHTML = fields.map(f =>
+            `<code class="sk-var-btn" data-var="${f}" style="background:var(--bg-dark);padding:3px 8px;border-radius:4px;cursor:pointer;
+              border:1px solid var(--border-subtle);transition:all 0.15s;"
+              title="${getVarExplanation(f)}">{{${f}}}</code>`
+          ).join('');
+          bindVarButtons();
+        }
       } else {
         hint.style.display = 'none';
       }
     }
   });
+
+  // Bind initial variable buttons
+  bindVarButtons();
+}
+
+function bindVarButtons() {
+  document.querySelectorAll('.sk-var-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const textarea = document.getElementById('sk-user-prompt');
+      if (!textarea) return;
+      const varName = btn.dataset.var;
+      const pos = textarea.selectionStart || textarea.value.length;
+      const before = textarea.value.substring(0, pos);
+      const after = textarea.value.substring(pos);
+      textarea.value = before + `{{${varName}}}` + after;
+      textarea.focus();
+      textarea.selectionStart = textarea.selectionEnd = pos + varName.length + 4;
+    });
+    // Hover effect
+    btn.addEventListener('mouseenter', () => { btn.style.borderColor = 'var(--brand-gold)'; btn.style.color = 'var(--brand-gold)'; });
+    btn.addEventListener('mouseleave', () => { btn.style.borderColor = 'var(--border-subtle)'; btn.style.color = ''; });
+  });
 }
 
 function collectSkillForm() {
-  const charLimit = parseInt(document.getElementById('sk-char-limit')?.value);
   const temperature = parseFloat(document.getElementById('sk-temperature')?.value);
   const maxTokens = parseInt(document.getElementById('sk-max-tokens')?.value);
   const sources = document.getElementById('sk-sources')?.value?.trim();
@@ -816,8 +985,7 @@ function collectSkillForm() {
     model:              document.getElementById('sk-model')?.value || '',
     systemPrompt:       document.getElementById('sk-system-prompt')?.value?.trim() || '',
     userPromptTemplate: document.getElementById('sk-user-prompt')?.value?.trim() || '',
-    voiceTone:          document.getElementById('sk-voice-tone')?.value?.trim() || '',
-    charLimit:          isNaN(charLimit) ? null : charLimit,
+    voiceDocId:         document.getElementById('sk-voice-doc')?.value || '',
     temperature:        isNaN(temperature) ? null : temperature,
     maxTokens:          isNaN(maxTokens) ? null : maxTokens,
     outputFormat:       document.getElementById('sk-output-format')?.value || 'text',
