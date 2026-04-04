@@ -125,6 +125,10 @@ class Store {
   canCreateTip() { return this.isMaster() || this.can('portal_create'); }
   canManagePortal() { return this.isMaster() || this.can('portal_manage'); }
 
+  canAccessRoteiros()  { return this.isMaster() || this.can('roteiro_access'); }
+  canCreateRoteiro()   { return this.isMaster() || this.can('roteiro_create'); }
+  canManageRoteiros()  { return this.isMaster() || this.can('roteiro_manage'); }
+
   /**
    * getVisibleSectors()
    * Returns:
