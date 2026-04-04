@@ -56,6 +56,9 @@ import { renderCms }                      from './pages/cms.js';
 import { renderArtsEditor }              from './pages/artsEditor.js';
 import { renderAiSkills }               from './pages/aiSkills.js';
 import { renderAiDashboard, destroyAiDashboard } from './pages/aiDashboard.js';
+import { renderRoteiros }               from './pages/roteiros.js';
+import { renderRoteiroEditor, destroyRoteiroEditor } from './pages/roteiroEditor.js';
+import { renderRoteiroDashboard, destroyRoteiroDashboard } from './pages/roteiroDashboard.js';
 // newsMonitor carregado dinamicamente para evitar bloqueio pré-login
 
 // ─── Instâncias globais ───────────────────────────────────
@@ -243,6 +246,9 @@ function setupRouter() {
     'settings':     async () => { await renderSettings(content); },
     'ai-skills':    async () => { await renderAiSkills(content); },
     'ai-dashboard': async () => { destroyAiDashboard(); await renderAiDashboard(content); },
+    'roteiros':         async () => { await renderRoteiros(content); },
+    'roteiro-editor':   async () => { destroyRoteiroEditor(); await renderRoteiroEditor(content); },
+    'roteiro-dashboard': async () => { destroyRoteiroDashboard(); await renderRoteiroDashboard(content); },
     'integrations': async () => { await renderIntegrations(content); },
     'about':        async () => { await renderAbout(content); },
     'nl-performance':       async () => { await renderNlPerformance(content); },
@@ -318,6 +324,7 @@ function setupRouter() {
       destroyCsat();
       destroyRequests();
       destroyNotifications();
+      destroyRoteiroEditor();
       // Limpar o container garante que não há resíduos visuais
       content.innerHTML = '';
     }
