@@ -407,15 +407,43 @@ function setupRouter() {
           content.prepend(aiDiv);
         }
 
-        // Montar — se não houver skills para o módulo, nada aparece
+        // Montar — se não houver skills E não houver config, nada aparece
         await mountAiPanel(aiDiv, moduleId, () => {
-          // Contexto genérico: informações da página atual
-          return {
+          // Captura contexto dinâmico da página visível
+          const ctx = {
             currentRoute: route,
             moduleId,
             sector:  store.get('userSector') || '',
             user:    store.get('currentUser')?.email || '',
+            pageTitle: content.querySelector('.page-title')?.textContent || '',
+            pageSubtitle: content.querySelector('.page-subtitle,.page-header p')?.textContent || '',
           };
+
+          // Capturar stats/contadores visíveis
+          const statsEls = content.querySelectorAll('.stat-value,.kpi-value,[class*="count"]');
+          if (statsEls.length) {
+            ctx.visibleStats = [...statsEls].slice(0, 10).map(el => ({
+              label: el.closest('.stat-card,.kpi-card,[class*="stat"]')?.querySelector('.stat-label,.kpi-label,small,span')?.textContent || '',
+              value: el.textContent?.trim() || '',
+            })).filter(s => s.value);
+          }
+
+          // Capturar filtros ativos
+          const filters = content.querySelectorAll('select.filter-select');
+          if (filters.length) {
+            ctx.activeFilters = [...filters].map(s => ({
+              name: s.id || s.name || '',
+              value: s.options[s.selectedIndex]?.textContent || '',
+            })).filter(f => f.value && !f.value.startsWith('Todos'));
+          }
+
+          // Capturar dados de tabelas/listas (primeiras linhas)
+          const rows = content.querySelectorAll('tr, .task-row, .card-item, .kanban-card');
+          if (rows.length) {
+            ctx.visibleItems = Math.min(rows.length, 50);
+          }
+
+          return ctx;
         });
 
         // Se o painel não renderizou nada (sem skills), remover o div vazio
