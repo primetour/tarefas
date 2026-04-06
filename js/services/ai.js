@@ -526,9 +526,17 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
     `- Você pode incluir MÚLTIPLOS blocos <<<ACTION>>> na mesma resposta. Use isso para encadear ações (ex: list_tasks + update_task).`,
   ];
 
-  // Adicionar contexto do módulo
-  if (context && Object.keys(context).length) {
-    systemParts.push(`\n=== CONTEXTO DO MÓDULO (${moduleLabel}) ===\n${JSON.stringify(context, null, 2)}\n=== FIM DO CONTEXTO ===`);
+  // Adicionar contexto do módulo (excluir __fileContext do JSON)
+  const fileContext = context?.__fileContext || '';
+  const moduleContext = { ...context };
+  delete moduleContext.__fileContext;
+  if (moduleContext && Object.keys(moduleContext).length) {
+    systemParts.push(`\n=== CONTEXTO DO MÓDULO (${moduleLabel}) ===\n${JSON.stringify(moduleContext, null, 2)}\n=== FIM DO CONTEXTO ===`);
+  }
+
+  // Adicionar conteúdo de arquivos anexados (separado do contexto do módulo)
+  if (fileContext) {
+    systemParts.push(fileContext);
   }
 
   // Adicionar ações disponíveis para o módulo

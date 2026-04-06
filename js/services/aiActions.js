@@ -1048,7 +1048,7 @@ const MODULE_ACTIONS = {
       },
       execute: async (params) => {
         const { saveFeedback } = await import('./feedbacks.js');
-        await saveFeedback({
+        await saveFeedback(null, {
           title: params.title,
           type: params.type || 'outro',
           description: params.description || '',
@@ -1365,23 +1365,30 @@ const MODULE_ACTIONS = {
     },
     {
       name: 'create_request',
-      description: 'Criar uma nova solicitação',
+      description: 'Criar uma nova solicitação no sistema',
       params: {
-        title: 'string — título da solicitação (obrigatório)',
-        type: 'string — tipo da solicitação (opcional)',
-        description: 'string — descrição detalhada (opcional)',
-        priority: 'string — urgent, high, medium, low (default: medium)',
+        requesterName: 'string — nome do solicitante (obrigatório)',
+        requesterEmail: 'string — email do solicitante (obrigatório)',
+        typeName: 'string — tipo da solicitação (opcional)',
+        description: 'string — descrição detalhada (obrigatório)',
+        urgency: 'boolean — marcar como urgente (default: false)',
+        desiredDate: 'string — data desejada YYYY-MM-DD (opcional)',
+        nucleo: 'string — núcleo/departamento (opcional)',
+        sector: 'string — setor (opcional)',
       },
       execute: async (params) => {
         const { createRequest } = await import('./requests.js');
-        await createRequest({
-          title: params.title,
-          type: params.type || '',
+        const req = await createRequest({
+          requesterName: params.requesterName || 'Via Assistente IA',
+          requesterEmail: params.requesterEmail || '',
+          typeName: params.typeName || '',
           description: params.description || '',
-          priority: params.priority || 'medium',
-          status: 'pending',
+          urgency: params.urgency === true,
+          desiredDate: params.desiredDate || null,
+          nucleo: params.nucleo || '',
+          sector: params.sector || '',
         });
-        return { success: true, message: `Solicitação "${params.title}" criada!` };
+        return { success: true, message: `Solicitação de "${params.requesterName}" criada!`, data: { requestId: req?.id } };
       },
     },
     {
@@ -1866,8 +1873,19 @@ export function cleanActionBlocks(text) {
 
 /* ─── Executar uma ação ──────────────────────────────────── */
 export async function executeAction(moduleId, actionName, params = {}) {
-  const actions = getActionsForModule(moduleId);
-  const action = actions.find(a => a.name === actionName);
+  let actions = getActionsForModule(moduleId);
+  let action = actions.find(a => a.name === actionName);
+
+  // Fallback: se não encontrou no módulo atual, procurar em TODOS os módulos
+  if (!action) {
+    const allModuleKeys = Object.keys(MODULE_ACTIONS);
+    for (const key of allModuleKeys) {
+      if (key === moduleId) continue;
+      const modActions = MODULE_ACTIONS[key] || [];
+      action = modActions.find(a => a.name === actionName);
+      if (action) break;
+    }
+  }
 
   if (!action) {
     return { success: false, message: `Ação "${actionName}" não encontrada` };
