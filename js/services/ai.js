@@ -49,10 +49,10 @@ export const AI_MODELS = {
     { id: 'gemini-2.0-flash',    label: 'Gemini 2.0 Flash',     desc: 'Grátis — geração anterior, ainda muito capaz' },
   ],
   groq: [
-    { id: 'llama-4-scout-17b-16e-instruct',  label: 'Llama 4 Scout',    desc: 'Grátis — Meta Llama 4, rápido e inteligente' },
-    { id: 'llama-4-maverick-17b-128e-instruct', label: 'Llama 4 Maverick', desc: 'Grátis — Meta Llama 4, máxima qualidade' },
-    { id: 'gemma2-9b-it',        label: 'Gemma 2 9B',           desc: 'Grátis — Google Gemma 2, leve e eficiente' },
-    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B',    desc: 'Grátis — muito capaz para tarefas complexas' },
+    { id: 'llama-3.3-70b-versatile',                       label: 'Llama 3.3 70B',       desc: 'Grátis — produção, muito capaz para tarefas complexas' },
+    { id: 'llama-3.1-8b-instant',                           label: 'Llama 3.1 8B',        desc: 'Grátis — produção, ultra-rápido para tarefas simples' },
+    { id: 'meta-llama/llama-4-scout-17b-16e-instruct',     label: 'Llama 4 Scout',       desc: 'Grátis — preview, rápido e inteligente' },
+    { id: 'meta-llama/llama-4-maverick-17b-128e-instruct',  label: 'Llama 4 Maverick',    desc: 'Grátis — preview, máxima qualidade' },
   ],
   openai: [
     { id: 'gpt-4o',             label: 'GPT-4o',             desc: 'Modelo principal — multimodal e rápido' },
@@ -79,7 +79,7 @@ export const AI_MODELS = {
 /* ─── Defaults por provider ──────────────────────────────── */
 const PROVIDER_DEFAULTS = {
   gemini:    { model: 'gemini-2.5-flash',   maxTokens: 1024 },
-  groq:      { model: 'llama-4-scout-17b-16e-instruct', maxTokens: 1024 },
+  groq:      { model: 'llama-3.3-70b-versatile', maxTokens: 1024 },
   openai:    { model: 'gpt-4o-mini',        maxTokens: 1024 },
   anthropic: { model: 'claude-sonnet-4-6',  maxTokens: 1024 },
   azure:     { model: 'gpt-4o',             maxTokens: 1024 },
@@ -494,8 +494,7 @@ export async function runSkill(skillId, context = {}) {
  */
 export async function chatWithAI(userMessage, context = {}, opts = {}) {
   let config = await getAIConfig() || {};
-  // Se o usuário escolheu um provider no dropdown, usar esse; senão usar o configurado
-  const provider = opts.overrideProvider || config?.provider || 'gemini';
+  const provider = config?.provider || 'gemini';
 
   const resolved = await resolveApiKey(provider);
   const apiKey = resolved.apiKey;
@@ -548,9 +547,7 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
 
   const systemPrompt = systemParts.join('\n');
   const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.gemini;
-  // Se mudou de provider via override, usar modelo default do novo provider (o modelo salvo pode ser incompatível)
-  const isOverridden = opts.overrideProvider && opts.overrideProvider !== (config?.provider || 'gemini');
-  const model     = isOverridden ? defaults.model : (config?.defaultModel || defaults.model);
+  const model     = config?.defaultModel || defaults.model;
   const maxTokens = Math.max(config?.defaultMaxTokens || defaults.maxTokens, 4096);
 
   let result;
