@@ -6,7 +6,7 @@
  * Mostra provider ativo, permite trocar, mensagem personalizada por módulo.
  */
 
-import { fetchSkillsForModule, runSkill, chatWithAI, MODULE_REGISTRY, getAIConfig, AI_PROVIDERS } from '../services/ai.js';
+import { fetchSkillsForModule, runSkill, chatWithAI, MODULE_REGISTRY, getAIConfig } from '../services/ai.js';
 import { parseActions, cleanActionBlocks, executeAction, getActionsForModule } from '../services/aiActions.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -88,8 +88,6 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
   const panelId = `ai-panel-${moduleId}-${Date.now()}`;
   const moduleMeta = MODULE_REGISTRY[moduleId] || { label: moduleId, icon: '◈' };
   const hasSkills = skills.length > 0;
-  const activeProvider = config?.provider || 'gemini';
-  const providerInfo = AI_PROVIDERS.find(p => p.id === activeProvider) || AI_PROVIDERS[0];
   const caps = MODULE_CAPABILITIES[moduleId] || MODULE_CAPABILITIES.general;
 
   // Mensagem de boas-vindas personalizada
@@ -102,15 +100,8 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
     </div>
     ${hasSkills ? `<div style="margin-top:8px;font-size:0.6875rem;color:var(--brand-gold,#D4A843);">
       ⚡ Você também tem ${skills.length} skill${skills.length>1?'s':''} especializada${skills.length>1?'s':''} — use os atalhos acima.
-    </div>` : `<div style="margin-top:8px;font-size:0.6875rem;color:var(--text-muted);">
-      💡 Quer funcionalidades específicas? Crie <strong>Skills</strong> em IA Skills e vincule a este módulo.
-    </div>`}
+    </div>` : ''}
   `;
-
-  // Provider selector HTML
-  const providerOptions = AI_PROVIDERS.map(p =>
-    `<option value="${p.id}" ${p.id === activeProvider ? 'selected' : ''}>${esc(p.label)}</option>`
-  ).join('');
 
   const panelHtml = `
     <div id="${panelId}" class="ai-panel-floating">
@@ -129,15 +120,6 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           </div>
           ${hasSkills ? `<span class="ai-chat-badge">${skills.length} skill${skills.length>1?'s':''}</span>` : ''}
           <button class="ai-chat-close" title="Minimizar">✕</button>
-        </div>
-
-        <!-- Provider bar -->
-        <div class="ai-provider-bar">
-          <span class="ai-provider-label">Modelo:</span>
-          <select class="ai-provider-select" id="${panelId}-provider">
-            ${providerOptions}
-          </select>
-          <span class="ai-provider-status" id="${panelId}-provider-status">${providerInfo.free ? '● Grátis' : '● Pago'}</span>
         </div>
 
         ${hasSkills ? `
@@ -200,25 +182,6 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           font-size:0.875rem;padding:4px 8px;border-radius:6px;transition:all 0.15s;
         }
         .ai-chat-close:hover { background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1); }
-
-        .ai-provider-bar {
-          display:flex;align-items:center;gap:6px;padding:6px 12px;
-          background:var(--bg-surface,#16202C);border-bottom:1px solid var(--border-subtle,#1E2D3D);
-          font-size:0.6875rem;
-        }
-        .ai-provider-label { color:var(--text-muted,#5A6B7A);white-space:nowrap; }
-        .ai-provider-select {
-          flex:1;background:var(--bg-card,#111B27);color:var(--text-primary,#E8ECF1);
-          border:1px solid var(--border-subtle,#1E2D3D);border-radius:6px;
-          padding:3px 6px;font-size:0.6875rem;font-family:inherit;cursor:pointer;
-          outline:none;
-        }
-        .ai-provider-select:focus { border-color:var(--brand-gold,#D4A843); }
-        .ai-provider-status {
-          font-size:0.625rem;white-space:nowrap;padding:2px 6px;border-radius:4px;
-        }
-        .ai-provider-status.free { color:#4ade80; }
-        .ai-provider-status.paid { color:var(--text-muted,#5A6B7A); }
 
         .ai-skills-bar {
           padding:8px 12px;border-bottom:1px solid var(--border-subtle,#1E2D3D);
@@ -304,7 +267,6 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
   const chatHistory = [];
   let isProcessing = false;
   let expanded = false;
-  let selectedProvider = activeProvider;
 
   // ── DOM refs ──
   const fabBtn       = panel.querySelector('.ai-fab');
@@ -313,20 +275,6 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
   const messagesEl   = document.getElementById(`${panelId}-messages`);
   const inputEl      = document.getElementById(`${panelId}-input`);
   const sendBtn      = document.getElementById(`${panelId}-send`);
-  const providerSel  = document.getElementById(`${panelId}-provider`);
-  const providerStat = document.getElementById(`${panelId}-provider-status`);
-
-  // ── Provider selector ──
-  providerSel?.addEventListener('change', () => {
-    selectedProvider = providerSel.value;
-    const info = AI_PROVIDERS.find(p => p.id === selectedProvider);
-    if (providerStat) {
-      providerStat.textContent = info?.free ? '● Grátis' : '● Pago';
-      providerStat.className = 'ai-provider-status ' + (info?.free ? 'free' : 'paid');
-    }
-  });
-  // Set initial status class
-  if (providerStat) providerStat.className = 'ai-provider-status ' + (providerInfo.free ? 'free' : 'paid');
 
   // ── Toggle open/close ──
   function toggleChat(open) {
@@ -492,16 +440,14 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
         const followUpResult = await chatWithAI(followUpMsg, context, {
           moduleId,
           history: chatHistory.slice(-12),
-          overrideProvider: selectedProvider,
         });
 
         loadingEl.remove();
-        const fMeta = `${followUpResult.provider || '?'} · ${followUpResult.model || '?'} · ${((followUpResult.inputTokens||0)+(followUpResult.outputTokens||0)).toLocaleString('pt-BR')} tokens`;
 
         const followActions = parseActions(followUpResult.text);
         const followClean = cleanActionBlocks(followUpResult.text);
         if (followClean) {
-          addMessage('assistant', esc(followClean), fMeta);
+          addMessage('assistant', esc(followClean));
           chatHistory.push({ role: 'assistant', text: followClean });
         }
         for (const fa of followActions) {
@@ -536,12 +482,10 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       const result = await chatWithAI(text, context, {
         moduleId,
         history: chatHistory.slice(-10),
-        overrideProvider: selectedProvider,
       });
 
       loadingEl.remove();
-      const meta = `${result.provider || '?'} · ${result.model || '?'} · ${((result.inputTokens||0)+(result.outputTokens||0)).toLocaleString('pt-BR')} tokens`;
-      await processAIResponse(result.text, meta, getContext);
+      await processAIResponse(result.text, '', getContext);
     } catch (err) {
       loadingEl.remove();
       addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro: ${esc(err.message)}</span>`);
@@ -581,8 +525,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
         const context = typeof getContext === 'function' ? getContext() : {};
         const result = await runSkill(skillId, context);
         loadingEl.remove();
-        const meta = `${result.isMock ? 'DEMO' : result.provider} · ${result.model} · ${((result.inputTokens||0)+(result.outputTokens||0)).toLocaleString('pt-BR')} tokens`;
-        await processAIResponse(result.text, meta, getContext);
+        await processAIResponse(result.text, '', getContext);
         if (options.onResult) options.onResult(result, skill);
       } catch (err) {
         loadingEl.remove();
