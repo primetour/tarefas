@@ -484,6 +484,77 @@ export async function runSkill(skillId, context = {}) {
   };
 }
 
+/**
+ * Chat livre com IA — mensagem do usuário no contexto de um módulo.
+ * Usa a config global (provider padrão, API key resolvida em cascata).
+ * @param {string} userMessage — texto digitado pelo usuário
+ * @param {Object} context — contexto do módulo (dados da página atual)
+ * @param {Object} [opts] — { moduleId, history[] }
+ */
+export async function chatWithAI(userMessage, context = {}, opts = {}) {
+  let config = await getAIConfig() || {};
+  const provider = config?.provider || 'gemini';
+
+  const resolved = await resolveApiKey(provider);
+  const apiKey = resolved.apiKey;
+  if (!apiKey) {
+    return {
+      text: '[SEM API KEY CONFIGURADA]\n\nConfigure uma API Key em IA Skills → Configurar API para usar o chat.',
+      model: 'none', provider, inputTokens: 0, outputTokens: 0, isMock: true,
+    };
+  }
+  if (resolved.config?.azureEndpoint) config = { ...config, azureEndpoint: resolved.config.azureEndpoint };
+
+  // System prompt contextual
+  const moduleLabel = MODULE_REGISTRY[opts.moduleId]?.label || opts.moduleId || 'Sistema';
+  const systemParts = [
+    `Você é o assistente IA do sistema PRIMETOUR, integrado ao módulo "${moduleLabel}".`,
+    `Responda sempre em português brasileiro, de forma clara e objetiva.`,
+    `Você tem acesso ao contexto atual do módulo fornecido abaixo. Use-o para dar respostas relevantes.`,
+  ];
+
+  // Adicionar contexto do módulo
+  if (context && Object.keys(context).length) {
+    systemParts.push(`\n=== CONTEXTO DO MÓDULO (${moduleLabel}) ===\n${JSON.stringify(context, null, 2)}\n=== FIM DO CONTEXTO ===`);
+  }
+
+  // Histórico de conversa (para continuidade)
+  const history = opts.history || [];
+  let fullUserPrompt = userMessage;
+  if (history.length) {
+    const historyText = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.text}`).join('\n\n');
+    fullUserPrompt = `Histórico da conversa:\n${historyText}\n\nUsuário: ${userMessage}`;
+  }
+
+  const systemPrompt = systemParts.join('\n');
+  const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.gemini;
+  const model     = config?.defaultModel || defaults.model;
+  const maxTokens = config?.defaultMaxTokens || defaults.maxTokens;
+
+  let result;
+  switch (provider) {
+    case 'gemini':
+      result = await callGemini({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      break;
+    case 'groq':
+      result = await callGroq({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      break;
+    case 'openai':
+      result = await callOpenAI({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      break;
+    case 'azure':
+      result = await callAzure({ config, apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      break;
+    default:
+      result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+  }
+
+  // Log silencioso
+  logUsage({ id: 'chat', name: 'Chat Livre', module: opts.moduleId || 'general' }, { ...result, provider, keyScope: resolved.resolvedFrom, keyScopeLabel: resolved.label }).catch(() => {});
+
+  return { text: result.text, model: result.model, provider, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
+}
+
 /* ─── Provider: Anthropic (Claude) ───────────────────────── */
 async function callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature }) {
   const body = {
