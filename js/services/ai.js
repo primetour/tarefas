@@ -29,6 +29,7 @@ export const MODULE_REGISTRY = {
   'landing-pages':    { label: 'Landing Pages',       icon: '◱',  contextFields: ['page','content','audience','cta'] },
   'arts-editor':      { label: 'Editor de Artes',     icon: '▣',  contextFields: ['design','template','text','brand'] },
   'roteiros':         { label: 'Roteiros de Viagem',  icon: '✈',  contextFields: ['destination','clientProfile','dayNumber','narrative','hotels','pricing','portalTips'] },
+  'ai-automations':   { label: 'Automações IA',       icon: '⚡', contextFields: ['automationName','type','frequency','status','lastRun'] },
   'general':          { label: 'Geral (todos)',       icon: '⊞',  contextFields: ['input'] },
 };
 

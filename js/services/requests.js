@@ -4,7 +4,7 @@
  */
 
 import {
-  collection, doc, addDoc, updateDoc, getDoc, getDocs,
+  collection, doc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, orderBy, where, limit, serverTimestamp, onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }       from '../firebase.js';
@@ -119,6 +119,12 @@ export async function convertToTask(reqId, taskData) {
   await updateRequestStatus(reqId, 'converted', { taskId: task.id });
   await auditLog('requests.convert', 'request', reqId, { taskId: task.id });
   return task;
+}
+
+/* ─── Excluir solicitação (admin only) ──────────────────── */
+export async function deleteRequest(reqId) {
+  await deleteDoc(doc(db, 'requests', reqId));
+  await auditLog('requests.delete', 'request', reqId, {});
 }
 
 /* ─── Contar pendentes (para badge) ─────────────────────── */
