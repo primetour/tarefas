@@ -8,11 +8,30 @@
 
 import { fetchSkillsForModule, runSkill, chatWithAI, MODULE_REGISTRY, getAIConfig } from '../services/ai.js';
 import { parseActions, cleanActionBlocks, executeAction, getActionsForModule } from '../services/aiActions.js';
+import { parseFiles, formatFilesForPrompt, validateFile, getAcceptString, MAX_FILES } from '../services/aiFileParser.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let _toast = () => {};
 try { const m = await import('../components/toast.js'); _toast = m.toast?.success || m.toast || _toast; } catch {}
+
+/* ─── Log de ações executadas pela IA ────────────────────── */
+async function logAction(moduleId, actionName, success, params) {
+  try {
+    const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const { db } = await import('../firebase.js');
+    const { store } = await import('../store.js');
+    const user = store.get('currentUser');
+    await addDoc(collection(db, 'ai_action_logs'), {
+      action: actionName,
+      module: moduleId,
+      success,
+      params: params ? JSON.stringify(params).substring(0, 500) : '',
+      userId: user?.uid || null,
+      timestamp: serverTimestamp(),
+    });
+  } catch { /* silencioso */ }
+}
 
 /* ─── Descrições de capacidades por módulo ─────────────────── */
 const MODULE_CAPABILITIES = {
@@ -141,8 +160,15 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           </div>
         </div>
 
+        <!-- Attachment preview -->
+        <div class="ai-attach-preview" id="${panelId}-attach-preview" style="display:none;"></div>
+
         <!-- Input -->
         <div class="ai-chat-input-area">
+          <button class="ai-attach-btn" id="${panelId}-attach" title="Anexar arquivo (PDF, Excel, CSV, DOCX, TXT, imagem)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <input type="file" id="${panelId}-file-input" multiple accept="${getAcceptString()}" style="display:none;">
           <textarea id="${panelId}-input" rows="1" placeholder="Pergunte algo ou peça uma ação..."></textarea>
           <button id="${panelId}-send" class="ai-send-btn">Enviar</button>
         </div>
@@ -254,6 +280,48 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
         .ai-send-btn:disabled { opacity:0.4;cursor:default; }
         .ai-typing::after { content:'...';animation:ai-dots 1.5s infinite; }
         @keyframes ai-dots { 0%{content:'.'} 33%{content:'..'} 66%{content:'...'} }
+        /* Attachment button */
+        .ai-attach-btn {
+          display:flex;align-items:center;justify-content:center;
+          width:36px;height:36px;min-width:36px;border-radius:10px;border:1px solid var(--border-subtle,#1E2D3D);
+          background:var(--bg-surface,#16202C);color:var(--text-secondary,#9BA8B7);
+          cursor:pointer;transition:all 0.15s;flex-shrink:0;
+        }
+        .ai-attach-btn:hover { border-color:var(--brand-gold,#D4A843);color:var(--brand-gold,#D4A843); }
+        .ai-attach-btn.has-files { border-color:var(--brand-gold,#D4A843);color:var(--brand-gold,#D4A843);background:rgba(212,168,67,0.1); }
+
+        /* Attachment preview bar */
+        .ai-attach-preview {
+          padding:6px 12px;border-top:1px solid var(--border-subtle,#1E2D3D);
+          display:flex;flex-wrap:wrap;gap:4px;align-items:center;
+          background:rgba(212,168,67,0.03);
+        }
+        .ai-attach-chip {
+          display:inline-flex;align-items:center;gap:4px;
+          padding:3px 8px;border-radius:6px;font-size:0.6875rem;
+          background:rgba(212,168,67,0.1);border:1px solid rgba(212,168,67,0.2);
+          color:var(--text-secondary,#9BA8B7);max-width:180px;
+        }
+        .ai-attach-chip-name {
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+        }
+        .ai-attach-chip-remove {
+          cursor:pointer;opacity:0.6;font-size:0.75rem;line-height:1;
+          margin-left:2px;transition:opacity 0.15s;
+        }
+        .ai-attach-chip-remove:hover { opacity:1;color:var(--danger,#EF4444); }
+        .ai-attach-status {
+          font-size:0.625rem;color:var(--text-muted,#5A6B7A);margin-left:auto;
+        }
+
+        /* File content in chat bubble */
+        .ai-file-badge {
+          display:inline-flex;align-items:center;gap:4px;
+          padding:2px 8px;border-radius:4px;font-size:0.6875rem;
+          background:rgba(212,168,67,0.1);border:1px solid rgba(212,168,67,0.15);
+          margin-bottom:4px;
+        }
+
         @media (max-width:480px) {
           .ai-chat-window { width:calc(100vw - 16px);right:8px;bottom:8px;max-height:calc(100vh - 16px); }
           .ai-fab-label { display:none; }
@@ -271,14 +339,19 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
   const chatHistory = [];
   let isProcessing = false;
   let expanded = false;
+  let pendingFiles = []; // File objects aguardando envio
+  let parsedAttachments = []; // Resultados do parsing
 
   // ── DOM refs ──
-  const fabBtn       = panel.querySelector('.ai-fab');
-  const chatWindow   = panel.querySelector('.ai-chat-window');
-  const closeBtn     = panel.querySelector('.ai-chat-close');
-  const messagesEl   = document.getElementById(`${panelId}-messages`);
-  const inputEl      = document.getElementById(`${panelId}-input`);
-  const sendBtn      = document.getElementById(`${panelId}-send`);
+  const fabBtn         = panel.querySelector('.ai-fab');
+  const chatWindow     = panel.querySelector('.ai-chat-window');
+  const closeBtn       = panel.querySelector('.ai-chat-close');
+  const messagesEl     = document.getElementById(`${panelId}-messages`);
+  const inputEl        = document.getElementById(`${panelId}-input`);
+  const sendBtn        = document.getElementById(`${panelId}-send`);
+  const attachBtn      = document.getElementById(`${panelId}-attach`);
+  const fileInput      = document.getElementById(`${panelId}-file-input`);
+  const attachPreview  = document.getElementById(`${panelId}-attach-preview`);
 
   // ── Toggle open/close ──
   function toggleChat(open) {
@@ -295,6 +368,83 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
     inputEl.style.height = 'auto';
     inputEl.style.height = Math.min(inputEl.scrollHeight, 100) + 'px';
   });
+
+  // ── File attachment logic ──
+  attachBtn?.addEventListener('click', () => fileInput?.click());
+
+  fileInput?.addEventListener('change', () => {
+    const files = Array.from(fileInput.files || []);
+    if (!files.length) return;
+
+    // Validar e adicionar (até MAX_FILES total)
+    for (const file of files) {
+      if (pendingFiles.length >= MAX_FILES) {
+        _toast(`Máximo de ${MAX_FILES} arquivos.`);
+        break;
+      }
+      const check = validateFile(file);
+      if (!check.valid) {
+        _toast(check.error);
+        continue;
+      }
+      // Evitar duplicatas
+      if (pendingFiles.some(f => f.name === file.name && f.size === file.size)) continue;
+      pendingFiles.push(file);
+    }
+
+    fileInput.value = ''; // reset input
+    renderAttachPreview();
+  });
+
+  // Drag & drop no chat
+  const chatBody = panel.querySelector('.ai-chat-window');
+  if (chatBody) {
+    chatBody.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); chatBody.style.outline = '2px dashed var(--brand-gold)'; });
+    chatBody.addEventListener('dragleave', () => { chatBody.style.outline = ''; });
+    chatBody.addEventListener('drop', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      chatBody.style.outline = '';
+      const files = Array.from(e.dataTransfer?.files || []);
+      for (const file of files) {
+        if (pendingFiles.length >= MAX_FILES) break;
+        const check = validateFile(file);
+        if (!check.valid) continue;
+        if (pendingFiles.some(f => f.name === file.name && f.size === file.size)) continue;
+        pendingFiles.push(file);
+      }
+      renderAttachPreview();
+    });
+  }
+
+  function renderAttachPreview() {
+    if (!attachPreview) return;
+    if (!pendingFiles.length) {
+      attachPreview.style.display = 'none';
+      attachBtn?.classList.remove('has-files');
+      return;
+    }
+
+    attachBtn?.classList.add('has-files');
+    attachPreview.style.display = 'flex';
+    attachPreview.innerHTML = pendingFiles.map((f, i) => {
+      const ext = f.name.split('.').pop()?.toUpperCase() || '?';
+      const size = f.size < 1024 ? `${f.size} B` : `${(f.size / 1024).toFixed(0)} KB`;
+      return `<span class="ai-attach-chip">
+        <span style="font-size:0.75rem;">${ext === 'PDF' ? '📄' : ext === 'XLSX' || ext === 'XLS' || ext === 'CSV' ? '📊' : ext === 'DOCX' ? '📝' : '🖼'}</span>
+        <span class="ai-attach-chip-name" title="${esc(f.name)}">${esc(f.name)}</span>
+        <span class="ai-attach-chip-remove" data-idx="${i}" title="Remover">✕</span>
+      </span>`;
+    }).join('') + `<span class="ai-attach-status">${pendingFiles.length}/${MAX_FILES}</span>`;
+
+    // Remove handlers
+    attachPreview.querySelectorAll('.ai-attach-chip-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx);
+        pendingFiles.splice(idx, 1);
+        renderAttachPreview();
+      });
+    });
+  }
 
   // ── Data actions set (for follow-up) ──
   const DATA_ACTIONS = new Set([
@@ -410,6 +560,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       addMessage('action', `Executando: <strong>${esc(action)}</strong>...`);
       try {
         const result = await executeAction(moduleId, action, params || {});
+        logAction(moduleId, action, result.success, params);
         if (result.success) {
           const dp = formatActionData(action, result.data);
           addMessage('action', `✅ ${esc(result.message || 'Sucesso')}${dp}`);
@@ -464,6 +615,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           try {
             addMessage('action', `Executando: <strong>${esc(fa.action)}</strong>...`);
             const r = await executeAction(moduleId, fa.action, fa.params || {});
+            logAction(moduleId, fa.action, r.success, fa.params);
             const dp = formatActionData(fa.action, r.data);
             addMessage('action', `${r.success ? '✅' : '❌'} ${esc(r.message || '')}${dp}`);
           } catch {}
@@ -477,19 +629,61 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
 
   // ── Send message ──
   async function sendMessage(text) {
-    if (!text.trim() || isProcessing) return;
+    const hasFiles = pendingFiles.length > 0;
+    if (!text.trim() && !hasFiles) return;
+    if (isProcessing) return;
     isProcessing = true;
     sendBtn.disabled = true;
     inputEl.disabled = true;
+    if (attachBtn) attachBtn.disabled = true;
 
-    addMessage('user', esc(text));
-    chatHistory.push({ role: 'user', text });
+    // Montar mensagem visual do usuário
+    let userHtml = '';
+    if (hasFiles) {
+      userHtml += pendingFiles.map(f => {
+        const ext = f.name.split('.').pop()?.toUpperCase() || '?';
+        return `<div class="ai-file-badge">${ext === 'PDF' ? '📄' : ext === 'XLSX' || ext === 'XLS' || ext === 'CSV' ? '📊' : ext === 'DOCX' ? '📝' : '🖼'} ${esc(f.name)}</div>`;
+      }).join('');
+    }
+    if (text.trim()) userHtml += esc(text);
+    else if (hasFiles) userHtml += '<em style="opacity:0.6;">Analise este(s) arquivo(s)</em>';
+
+    addMessage('user', userHtml);
+    chatHistory.push({ role: 'user', text: text || '[Arquivos anexados]' });
+
+    // Parse dos arquivos (se houver)
+    let fileContextBlock = '';
+    if (hasFiles) {
+      const parsingEl = addLoading('Processando arquivo(s)');
+      try {
+        parsedAttachments = await parseFiles(pendingFiles);
+        fileContextBlock = formatFilesForPrompt(parsedAttachments);
+        // Mostrar resumo do parsing
+        for (const p of parsedAttachments) {
+          if (p.error) {
+            addMessage('action', `⚠ ${esc(p.fileName)}: ${esc(p.error)}`);
+          } else {
+            addMessage('action', `${p.fileIcon} ${esc(p.fileName)} — ${esc(p.summary)}`);
+          }
+        }
+      } catch (err) {
+        addMessage('action', `⚠ Erro ao processar arquivos: ${esc(err.message)}`);
+      }
+      parsingEl.remove();
+      // Limpar anexos
+      pendingFiles = [];
+      renderAttachPreview();
+    }
 
     const loadingEl = addLoading();
 
     try {
       const context = typeof getContext === 'function' ? getContext() : {};
-      const result = await chatWithAI(text, context, {
+      // Injetar conteúdo dos arquivos no contexto
+      if (fileContextBlock) {
+        context.__fileContext = fileContextBlock;
+      }
+      const result = await chatWithAI(text || 'Analise os arquivos anexados e descreva o conteúdo.', context, {
         moduleId,
         history: chatHistory.slice(-10),
       });
@@ -504,8 +698,10 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
     isProcessing = false;
     sendBtn.disabled = false;
     inputEl.disabled = false;
+    if (attachBtn) attachBtn.disabled = false;
     inputEl.value = '';
     inputEl.style.height = 'auto';
+    parsedAttachments = [];
     inputEl.focus();
   }
 
