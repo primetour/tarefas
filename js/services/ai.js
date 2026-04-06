@@ -494,7 +494,8 @@ export async function runSkill(skillId, context = {}) {
  */
 export async function chatWithAI(userMessage, context = {}, opts = {}) {
   let config = await getAIConfig() || {};
-  const provider = config?.provider || 'gemini';
+  // Se o usuário escolheu um provider no dropdown, usar esse; senão usar o configurado
+  const provider = opts.overrideProvider || config?.provider || 'gemini';
 
   const resolved = await resolveApiKey(provider);
   const apiKey = resolved.apiKey;
@@ -510,14 +511,19 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
   const moduleLabel = MODULE_REGISTRY[opts.moduleId]?.label || opts.moduleId || 'Sistema';
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+  const tomorrowStr = new Date(today.getTime() + 86400000).toISOString().split('T')[0];
   const todayBR = today.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const systemParts = [
     `Você é o assistente IA do sistema PRIMETOUR, integrado ao módulo "${moduleLabel}".`,
-    `Data de hoje: ${todayStr} (${todayBR}).`,
-    `Responda sempre em português brasileiro, de forma clara e objetiva.`,
-    `Você tem acesso ao contexto atual do módulo fornecido abaixo. Use-o para dar respostas relevantes.`,
-    `Quando o usuário pedir para executar ações (criar, atualizar, listar, navegar), use os blocos de ação disponíveis.`,
-    `IMPORTANTE: Ao criar tarefas com datas, use SEMPRE datas futuras a partir de hoje (${todayStr}). Nunca use datas no passado.`,
+    `Data de hoje: ${todayStr} (${todayBR}). Amanhã: ${tomorrowStr}.`,
+    `Responda em português brasileiro, de forma CONCISA e direta. Máximo 2-3 frases antes de executar uma ação.`,
+    `REGRAS DE COMPORTAMENTO:`,
+    `- SEMPRE execute a ação imediatamente. NUNCA diga "eu faria" ou "se eu pudesse" — FAÇA.`,
+    `- Se precisar de um ID que não tem, use list_tasks/list_projects para buscar, e NA MESMA RESPOSTA já execute a ação seguinte com o ID encontrado.`,
+    `- Ao criar algo, guarde o ID retornado. Se o usuário pedir para modificar algo que acabou de criar, use o ID que foi retornado.`,
+    `- Ao criar tarefas com datas, use SEMPRE datas futuras. "amanhã" = ${tomorrowStr}, "hoje" = ${todayStr}.`,
+    `- Seja breve. Não repita o que o usuário disse. Não gere conteúdo longo no chat — se for texto grande, coloque na descrição da tarefa via update_task.`,
+    `- Você pode incluir MÚLTIPLOS blocos <<<ACTION>>> na mesma resposta. Use isso para encadear ações (ex: list_tasks + update_task).`,
   ];
 
   // Adicionar contexto do módulo
@@ -542,7 +548,9 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
 
   const systemPrompt = systemParts.join('\n');
   const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.gemini;
-  const model     = config?.defaultModel || defaults.model;
+  // Se mudou de provider via override, usar modelo default do novo provider (o modelo salvo pode ser incompatível)
+  const isOverridden = opts.overrideProvider && opts.overrideProvider !== (config?.provider || 'gemini');
+  const model     = isOverridden ? defaults.model : (config?.defaultModel || defaults.model);
   const maxTokens = Math.max(config?.defaultMaxTokens || defaults.maxTokens, 4096);
 
   let result;
