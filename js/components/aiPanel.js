@@ -3,56 +3,122 @@
  *
  * Componente universal de IA para todos os módulos.
  * Renderiza um widget de chat flutuante no canto inferior direito.
- * A IA pode executar ações no sistema via blocos <<<ACTION>>>.
- *
- * Uso:
- *   import { mountAiPanel } from '../components/aiPanel.js';
- *   mountAiPanel(containerEl, 'tasks', () => ({ title, body, ... }));
+ * Mostra provider ativo, permite trocar, mensagem personalizada por módulo.
  */
 
-import { fetchSkillsForModule, runSkill, chatWithAI, MODULE_REGISTRY, getAIConfig } from '../services/ai.js';
+import { fetchSkillsForModule, runSkill, chatWithAI, MODULE_REGISTRY, getAIConfig, AI_PROVIDERS } from '../services/ai.js';
 import { parseActions, cleanActionBlocks, executeAction, getActionsForModule } from '../services/aiActions.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-// Toast import (silencioso se falhar)
 let _toast = () => {};
 try { const m = await import('../components/toast.js'); _toast = m.toast?.success || m.toast || _toast; } catch {}
 
+/* ─── Descrições de capacidades por módulo ─────────────────── */
+const MODULE_CAPABILITIES = {
+  tasks: {
+    greeting: 'Posso te ajudar a gerenciar suas tarefas.',
+    capabilities: ['Criar e editar tarefas', 'Listar tarefas por status/prioridade', 'Marcar como concluída', 'Adicionar comentários', 'Atualizar várias tarefas de uma vez', 'Aplicar filtros na tela'],
+  },
+  kanban: {
+    greeting: 'Posso te ajudar a gerenciar o quadro Kanban.',
+    capabilities: ['Mover cards entre colunas', 'Resumo do board por status', 'Listar cards de uma coluna'],
+  },
+  projects: {
+    greeting: 'Posso te ajudar a gerenciar seus projetos.',
+    capabilities: ['Criar e editar projetos', 'Listar projetos ativos', 'Ver tarefas de um projeto'],
+  },
+  'portal-tips': {
+    greeting: 'Posso te ajudar com o Portal de Dicas.',
+    capabilities: ['Listar destinos e dicas', 'Ver detalhes de uma dica', 'Destacar dicas prioritárias', 'Listar áreas/BUs e imagens'],
+  },
+  roteiros: {
+    greeting: 'Posso te ajudar com Roteiros de Viagem.',
+    capabilities: ['Listar roteiros por status', 'Ver detalhes de um roteiro', 'Alterar status (rascunho → revisão → enviado)', 'Duplicar roteiros', 'Estatísticas e clientes recentes'],
+  },
+  feedbacks: {
+    greeting: 'Posso te ajudar com Feedbacks.',
+    capabilities: ['Listar e registrar feedbacks', 'Ver detalhes de um feedback', 'Resumo com rating médio por tipo'],
+  },
+  goals: {
+    greeting: 'Posso te ajudar com Metas e OKRs.',
+    capabilities: ['Listar e criar metas', 'Ver detalhes e progresso', 'Resumo geral de metas'],
+  },
+  csat: {
+    greeting: 'Posso te ajudar com Pesquisas de Satisfação.',
+    capabilities: ['Listar pesquisas CSAT', 'Calcular métricas (score, NPS, taxa de resposta)', 'Capturar dados da tela'],
+  },
+  requests: {
+    greeting: 'Posso te ajudar com Solicitações.',
+    capabilities: ['Listar e criar solicitações', 'Aprovar ou rejeitar', 'Converter em tarefa', 'Resumo por status'],
+  },
+  calendar: {
+    greeting: 'Posso te ajudar com o Calendário.',
+    capabilities: ['Listar eventos', 'Ver agenda de hoje'],
+  },
+  dashboards: {
+    greeting: 'Posso te ajudar a analisar os dados do Dashboard.',
+    capabilities: ['Capturar KPIs visíveis', 'Visão geral de tarefas (por status, prioridade, atrasadas)'],
+  },
+  general: {
+    greeting: 'Posso te ajudar com informações do sistema.',
+    capabilities: ['Capturar dados da tela', 'Listar notificações', 'Navegar entre módulos'],
+  },
+  content: {
+    greeting: 'Posso te ajudar a analisar performance de conteúdo.',
+    capabilities: ['Capturar métricas de performance visíveis'],
+  },
+};
+
 /**
- * Monta o painel de IA flutuante (chat + skills + actions) em um container
+ * Monta o painel de IA flutuante
  */
 export async function mountAiPanel(container, moduleId, getContext, options = {}) {
   if (!container || !moduleId) return;
 
-  // Verificar se há config de IA (global ou escopada)
   const [skills, config] = await Promise.all([
     fetchSkillsForModule(moduleId).catch(() => []),
     getAIConfig().catch(() => null),
   ]);
 
-  // Verificar se o módulo tem ações de IA registradas (além das globais)
   const moduleActions = getActionsForModule(moduleId);
   const hasModuleActions = moduleActions.length > 3;
-
-  // Montar painel se:
-  //   - O módulo tem skills vinculadas, OU
-  //   - O módulo tem ações específicas registradas E existe config de API
   if (!skills.length && (!config || !hasModuleActions)) return;
 
   const panelId = `ai-panel-${moduleId}-${Date.now()}`;
   const moduleMeta = MODULE_REGISTRY[moduleId] || { label: moduleId, icon: '◈' };
   const hasSkills = skills.length > 0;
+  const activeProvider = config?.provider || 'gemini';
+  const providerInfo = AI_PROVIDERS.find(p => p.id === activeProvider) || AI_PROVIDERS[0];
+  const caps = MODULE_CAPABILITIES[moduleId] || MODULE_CAPABILITIES.general;
+
+  // Mensagem de boas-vindas personalizada
+  const capsList = caps.capabilities.map(c => `<div style="padding:1px 0;">• ${esc(c)}</div>`).join('');
+  const welcomeHtml = `
+    <strong>${esc(caps.greeting)}</strong>
+    <div style="margin-top:6px;font-size:0.6875rem;color:var(--text-muted);">
+      <div style="margin-bottom:3px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;">O que posso fazer:</div>
+      ${capsList}
+    </div>
+    ${hasSkills ? `<div style="margin-top:8px;font-size:0.6875rem;color:var(--brand-gold,#D4A843);">
+      ⚡ Você também tem ${skills.length} skill${skills.length>1?'s':''} especializada${skills.length>1?'s':''} — use os atalhos acima.
+    </div>` : `<div style="margin-top:8px;font-size:0.6875rem;color:var(--text-muted);">
+      💡 Quer funcionalidades específicas? Crie <strong>Skills</strong> em IA Skills e vincule a este módulo.
+    </div>`}
+  `;
+
+  // Provider selector HTML
+  const providerOptions = AI_PROVIDERS.map(p =>
+    `<option value="${p.id}" ${p.id === activeProvider ? 'selected' : ''}>${esc(p.label)}</option>`
+  ).join('');
 
   const panelHtml = `
     <div id="${panelId}" class="ai-panel-floating">
-      <!-- FAB Button (visível quando chat fechado) -->
       <button class="ai-fab" title="Assistente IA — ${esc(moduleMeta.label)}">
         <span class="ai-fab-icon">◈</span>
         <span class="ai-fab-label">IA</span>
       </button>
 
-      <!-- Chat Window (visível quando expandido) -->
       <div class="ai-chat-window" style="display:none;">
         <!-- Header -->
         <div class="ai-chat-header">
@@ -65,29 +131,27 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           <button class="ai-chat-close" title="Minimizar">✕</button>
         </div>
 
+        <!-- Provider bar -->
+        <div class="ai-provider-bar">
+          <span class="ai-provider-label">Modelo:</span>
+          <select class="ai-provider-select" id="${panelId}-provider">
+            ${providerOptions}
+          </select>
+          <span class="ai-provider-status" id="${panelId}-provider-status">${providerInfo.free ? '● Grátis' : '● Pago'}</span>
+        </div>
+
         ${hasSkills ? `
-        <!-- Skills rápidas -->
         <div class="ai-skills-bar">
           ${skills.map(s => `
             <button class="ai-skill-btn" data-skill-id="${s.id}" title="${esc(s.description || '')}">▶ ${esc(s.name)}</button>
           `).join('')}
-        </div>
-        ` : ''}
+        </div>` : ''}
 
-        <!-- Chat Messages -->
+        <!-- Messages -->
         <div class="ai-chat-messages" id="${panelId}-messages">
           <div class="ai-msg ai-msg-assistant">
             <div class="ai-avatar ai-avatar-bot">IA</div>
-            <div class="ai-bubble ai-bubble-bot">
-              Olá! Sou o assistente IA do módulo <strong>${esc(moduleMeta.label)}</strong>.
-              ${hasSkills
-                ? `Tenho ${skills.length} skill${skills.length>1?'s':''} prontas — use os atalhos acima ou me pergunte qualquer coisa.`
-                : 'Me pergunte qualquer coisa ou peça para executar ações neste módulo.'
-              }
-              <div style="margin-top:6px;font-size:0.6875rem;color:var(--text-muted);">
-                💡 Posso criar tarefas, listar dados, aplicar filtros, navegar e mais.
-              </div>
-            </div>
+            <div class="ai-bubble ai-bubble-bot">${welcomeHtml}</div>
           </div>
         </div>
 
@@ -99,8 +163,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       </div>
 
       <style>
-        .ai-panel-floating { position:relative; }
-
+        .ai-panel-floating { position:relative;display:inline-block; }
         .ai-fab {
           display:flex;align-items:center;gap:6px;
           padding:10px 18px;border-radius:28px;border:none;cursor:pointer;
@@ -109,18 +172,17 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           box-shadow:0 4px 20px rgba(212,168,67,0.3),0 2px 8px rgba(0,0,0,0.2);
           transition:all 0.2s;
         }
-        .ai-fab:hover { transform:scale(1.05);box-shadow:0 6px 24px rgba(212,168,67,0.4),0 3px 10px rgba(0,0,0,0.3); }
+        .ai-fab:hover { transform:scale(1.05);box-shadow:0 6px 24px rgba(212,168,67,0.4); }
         .ai-fab-icon { font-size:1.125rem; }
 
         .ai-chat-window {
-          position:absolute;bottom:52px;right:0;
-          width:420px;max-width:calc(100vw - 40px);max-height:520px;
+          position:fixed;bottom:24px;right:24px;
+          width:420px;max-width:calc(100vw - 40px);max-height:min(580px, calc(100vh - 48px));
           background:var(--bg-card,#111B27);border:1px solid var(--border-subtle,#1E2D3D);
           border-radius:16px;overflow:hidden;
           box-shadow:0 12px 40px rgba(0,0,0,0.4),0 4px 12px rgba(0,0,0,0.2);
           display:flex;flex-direction:column;
         }
-
         .ai-chat-header {
           display:flex;align-items:center;gap:8px;padding:12px 16px;
           background:linear-gradient(135deg,rgba(212,168,67,0.1),rgba(212,168,67,0.03));
@@ -138,6 +200,25 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           font-size:0.875rem;padding:4px 8px;border-radius:6px;transition:all 0.15s;
         }
         .ai-chat-close:hover { background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1); }
+
+        .ai-provider-bar {
+          display:flex;align-items:center;gap:6px;padding:6px 12px;
+          background:var(--bg-surface,#16202C);border-bottom:1px solid var(--border-subtle,#1E2D3D);
+          font-size:0.6875rem;
+        }
+        .ai-provider-label { color:var(--text-muted,#5A6B7A);white-space:nowrap; }
+        .ai-provider-select {
+          flex:1;background:var(--bg-card,#111B27);color:var(--text-primary,#E8ECF1);
+          border:1px solid var(--border-subtle,#1E2D3D);border-radius:6px;
+          padding:3px 6px;font-size:0.6875rem;font-family:inherit;cursor:pointer;
+          outline:none;
+        }
+        .ai-provider-select:focus { border-color:var(--brand-gold,#D4A843); }
+        .ai-provider-status {
+          font-size:0.625rem;white-space:nowrap;padding:2px 6px;border-radius:4px;
+        }
+        .ai-provider-status.free { color:#4ade80; }
+        .ai-provider-status.paid { color:var(--text-muted,#5A6B7A); }
 
         .ai-skills-bar {
           padding:8px 12px;border-bottom:1px solid var(--border-subtle,#1E2D3D);
@@ -157,10 +238,8 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           flex:1;padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;
           min-height:120px;max-height:320px;
         }
-
         .ai-msg { display:flex;gap:8px;align-items:flex-start; }
         .ai-msg-user { flex-direction:row-reverse; }
-
         .ai-avatar {
           min-width:26px;height:26px;border-radius:50%;
           display:flex;align-items:center;justify-content:center;
@@ -168,17 +247,13 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
         }
         .ai-avatar-bot { background:var(--brand-gold,#D4A843);color:var(--bg-dark,#0C1926); }
         .ai-avatar-user { background:var(--brand-primary,#3b82f6);color:#fff; }
-
         .ai-bubble {
           max-width:82%;border-radius:12px;padding:8px 12px;
           font-size:0.8125rem;line-height:1.55;white-space:pre-wrap;word-wrap:break-word;
         }
         .ai-bubble-bot { background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1); }
         .ai-bubble-user { background:var(--brand-gold,#D4A843);color:var(--bg-dark,#0C1926); }
-
-        .ai-msg-meta {
-          font-size:0.625rem;color:var(--text-muted,#5A6B7A);margin-top:3px;
-        }
+        .ai-msg-meta { font-size:0.625rem;color:var(--text-muted,#5A6B7A);margin-top:3px; }
         .ai-msg-actions { display:flex;gap:4px;margin-top:3px; }
         .ai-copy-btn {
           font-size:0.625rem;color:var(--text-muted,#5A6B7A);background:none;
@@ -186,14 +261,11 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           font-family:inherit;transition:background 0.15s;
         }
         .ai-copy-btn:hover { background:var(--bg-surface,#16202C); }
-
         .ai-action-block {
           margin:0 8px;padding:6px 10px;border-radius:8px;font-size:0.6875rem;
           background:rgba(212,168,67,0.06);border:1px solid rgba(212,168,67,0.15);
           color:var(--text-secondary,#9BA8B7);display:flex;align-items:center;gap:6px;
         }
-        .ai-action-block .ai-action-icon { font-size:0.875rem; }
-
         .ai-chat-input-area {
           padding:10px 12px;border-top:1px solid var(--border-subtle,#1E2D3D);
           display:flex;gap:8px;align-items:flex-end;
@@ -205,7 +277,6 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           max-height:100px;overflow-y:auto;outline:none;transition:border-color 0.2s;
         }
         .ai-chat-input-area textarea:focus { border-color:var(--brand-gold,#D4A843); }
-
         .ai-send-btn {
           padding:8px 14px;border-radius:10px;border:none;
           background:var(--brand-gold,#D4A843);color:var(--bg-dark,#0C1926);
@@ -214,12 +285,10 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
         }
         .ai-send-btn:hover { opacity:0.9; }
         .ai-send-btn:disabled { opacity:0.4;cursor:default; }
-
         .ai-typing::after { content:'...';animation:ai-dots 1.5s infinite; }
         @keyframes ai-dots { 0%{content:'.'} 33%{content:'..'} 66%{content:'...'} }
-
         @media (max-width:480px) {
-          .ai-chat-window { width:calc(100vw - 20px);bottom:48px;right:-10px; }
+          .ai-chat-window { width:calc(100vw - 16px);right:8px;bottom:8px;max-height:calc(100vh - 16px); }
           .ai-fab-label { display:none; }
         }
       </style>
@@ -235,14 +304,29 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
   const chatHistory = [];
   let isProcessing = false;
   let expanded = false;
+  let selectedProvider = activeProvider;
 
   // ── DOM refs ──
-  const fabBtn     = panel.querySelector('.ai-fab');
-  const chatWindow = panel.querySelector('.ai-chat-window');
-  const closeBtn   = panel.querySelector('.ai-chat-close');
-  const messagesEl = document.getElementById(`${panelId}-messages`);
-  const inputEl    = document.getElementById(`${panelId}-input`);
-  const sendBtn    = document.getElementById(`${panelId}-send`);
+  const fabBtn       = panel.querySelector('.ai-fab');
+  const chatWindow   = panel.querySelector('.ai-chat-window');
+  const closeBtn     = panel.querySelector('.ai-chat-close');
+  const messagesEl   = document.getElementById(`${panelId}-messages`);
+  const inputEl      = document.getElementById(`${panelId}-input`);
+  const sendBtn      = document.getElementById(`${panelId}-send`);
+  const providerSel  = document.getElementById(`${panelId}-provider`);
+  const providerStat = document.getElementById(`${panelId}-provider-status`);
+
+  // ── Provider selector ──
+  providerSel?.addEventListener('change', () => {
+    selectedProvider = providerSel.value;
+    const info = AI_PROVIDERS.find(p => p.id === selectedProvider);
+    if (providerStat) {
+      providerStat.textContent = info?.free ? '● Grátis' : '● Pago';
+      providerStat.className = 'ai-provider-status ' + (info?.free ? 'free' : 'paid');
+    }
+  });
+  // Set initial status class
+  if (providerStat) providerStat.className = 'ai-provider-status ' + (providerInfo.free ? 'free' : 'paid');
 
   // ── Toggle open/close ──
   function toggleChat(open) {
@@ -251,7 +335,6 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
     fabBtn.style.display = expanded ? 'none' : 'flex';
     if (expanded) inputEl?.focus();
   }
-
   fabBtn?.addEventListener('click', () => toggleChat(true));
   closeBtn?.addEventListener('click', () => toggleChat(false));
 
@@ -261,65 +344,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
     inputEl.style.height = Math.min(inputEl.scrollHeight, 100) + 'px';
   });
 
-  // ── Helper: add message to chat ──
-  function addMessage(role, html, meta = '') {
-    const isUser = role === 'user';
-    const isAction = role === 'action';
-    const msgEl = document.createElement('div');
-
-    if (isAction) {
-      msgEl.className = 'ai-action-block';
-      msgEl.innerHTML = `<span class="ai-action-icon">⚡</span><span>${html}</span>`;
-      messagesEl.appendChild(msgEl);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-      return msgEl;
-    }
-
-    msgEl.className = `ai-msg ai-msg-${role}`;
-
-    const avatarClass = isUser ? 'ai-avatar-user' : 'ai-avatar-bot';
-    const avatarText = isUser ? 'EU' : 'IA';
-    const bubbleClass = isUser ? 'ai-bubble-user' : 'ai-bubble-bot';
-
-    msgEl.innerHTML = `
-      <div class="ai-avatar ${avatarClass}">${avatarText}</div>
-      <div style="max-width:82%;">
-        <div class="ai-bubble ${bubbleClass}">${html}</div>
-        ${meta ? `<div class="ai-msg-meta" style="${isUser?'text-align:right;':''}">${meta}</div>` : ''}
-        ${!isUser ? `<div class="ai-msg-actions">
-          <button class="ai-copy-btn">Copiar</button>
-        </div>` : ''}
-      </div>
-    `;
-
-    messagesEl.appendChild(msgEl);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-
-    // Copy handler
-    msgEl.querySelector('.ai-copy-btn')?.addEventListener('click', () => {
-      const text = msgEl.querySelector('.ai-bubble')?.textContent || '';
-      navigator.clipboard.writeText(text).then(() => _toast('Copiado!')).catch(() => {});
-    });
-
-    return msgEl;
-  }
-
-  // ── Helper: loading indicator ──
-  function addLoading(label = 'Pensando') {
-    const el = document.createElement('div');
-    el.className = 'ai-msg ai-msg-assistant';
-    el.innerHTML = `
-      <div class="ai-avatar ai-avatar-bot">IA</div>
-      <div class="ai-bubble ai-bubble-bot" style="color:var(--text-muted);">
-        <span class="ai-typing">${esc(label)}</span>
-      </div>
-    `;
-    messagesEl.appendChild(el);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    return el;
-  }
-
-  // ── Ações de leitura que retornam dados para análise ──
+  // ── Data actions set (for follow-up) ──
   const DATA_ACTIONS = new Set([
     'list_tasks','list_projects','list_roteiros','list_feedbacks','list_goals','list_events',
     'list_requests','list_destinations','list_tips','list_areas','list_images','list_surveys',
@@ -331,117 +356,70 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
     'get_system_overview','get_content_metrics','get_requests_summary',
   ]);
 
-  // ── Process AI response: parse actions, execute, and follow-up ──
-  async function processAIResponse(rawText, meta, getContextFn) {
-    const actions = parseActions(rawText);
-    const cleanText = cleanActionBlocks(rawText);
+  // ── Helper: add message ──
+  function addMessage(role, html, meta = '') {
+    const isUser = role === 'user';
+    const isAction = role === 'action';
+    const msgEl = document.createElement('div');
 
-    if (cleanText) {
-      addMessage('assistant', esc(cleanText), meta);
-      chatHistory.push({ role: 'assistant', text: cleanText });
+    if (isAction) {
+      msgEl.className = 'ai-action-block';
+      msgEl.innerHTML = `<span style="font-size:0.875rem;">⚡</span><span>${html}</span>`;
+      messagesEl.appendChild(msgEl);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return msgEl;
     }
 
-    if (actions.length === 0) return;
+    msgEl.className = `ai-msg ai-msg-${role}`;
+    const avatarClass = isUser ? 'ai-avatar-user' : 'ai-avatar-bot';
+    const avatarText = isUser ? 'EU' : 'IA';
+    const bubbleClass = isUser ? 'ai-bubble-user' : 'ai-bubble-bot';
 
-    // Executar todas as ações e coletar resultados de dados
-    const dataResults = [];
+    msgEl.innerHTML = `
+      <div class="ai-avatar ${avatarClass}">${avatarText}</div>
+      <div style="max-width:82%;">
+        <div class="ai-bubble ${bubbleClass}">${html}</div>
+        ${meta ? `<div class="ai-msg-meta" style="${isUser?'text-align:right;':''}">${meta}</div>` : ''}
+        ${!isUser ? `<div class="ai-msg-actions"><button class="ai-copy-btn">Copiar</button></div>` : ''}
+      </div>
+    `;
+    messagesEl.appendChild(msgEl);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
 
-    for (const actionBlock of actions) {
-      const { action, params } = actionBlock;
-      addMessage('action', `Executando: <strong>${esc(action)}</strong>...`);
-
-      try {
-        const result = await executeAction(moduleId, action, params || {});
-        if (result.success) {
-          const dataPreview = formatActionData(action, result.data);
-          addMessage('action', `✅ ${esc(result.message || 'Sucesso')}${dataPreview}`);
-
-          // Se é ação de leitura com dados, guardar para follow-up
-          if (DATA_ACTIONS.has(action) && result.data) {
-            dataResults.push({ action, data: result.data, message: result.message });
-          }
-
-          const dataStr = result.data != null ? JSON.stringify(result.data) : '';
-          chatHistory.push({
-            role: 'assistant',
-            text: `[Resultado de ${action}]: ${result.message || 'OK'}${dataStr ? '. Dados: ' + dataStr.substring(0, 800) : ''}`,
-          });
-        } else {
-          addMessage('action', `❌ ${esc(result.message || 'Erro na execução')}`);
-          chatHistory.push({ role: 'assistant', text: `[Erro em ${action}]: ${result.message}` });
-        }
-      } catch (err) {
-        addMessage('action', `❌ Erro: ${esc(err.message)}`);
-      }
-    }
-
-    // ── FOLLOW-UP: se ações de leitura retornaram dados, chamar a IA novamente ──
-    // para que ela ANALISE os resultados e responda ao usuário
-    if (dataResults.length > 0) {
-      const loadingEl = addLoading('Analisando dados');
-
-      try {
-        // Montar prompt com resultados das ações
-        const dataContext = dataResults.map(r =>
-          `Ação "${r.action}" retornou: ${r.message}\nDados:\n${JSON.stringify(r.data ?? {}, null, 1).substring(0, 1500)}`
-        ).join('\n\n');
-
-        const followUpMsg = `Os dados foram capturados com sucesso. Aqui estão os resultados:\n\n${dataContext}\n\nAgora analise esses dados e responda ao que o usuário pediu originalmente. Seja específico com números e insights. NÃO execute mais ações — apenas analise e responda.`;
-
-        chatHistory.push({ role: 'user', text: followUpMsg });
-
-        const context = typeof getContextFn === 'function' ? getContextFn() : {};
-        const followUpResult = await chatWithAI(followUpMsg, context, {
-          moduleId,
-          history: chatHistory.slice(-12),
-        });
-
-        loadingEl.remove();
-
-        const followMeta = `${followUpResult.provider || '?'} · ${followUpResult.model || '?'} · ${((followUpResult.inputTokens||0)+(followUpResult.outputTokens||0)).toLocaleString('pt-BR')} tokens`;
-
-        // Processar follow-up (sem recursão — se tiver mais ações, para aqui)
-        const followActions = parseActions(followUpResult.text);
-        const followClean = cleanActionBlocks(followUpResult.text);
-        if (followClean) {
-          addMessage('assistant', esc(followClean), followMeta);
-          chatHistory.push({ role: 'assistant', text: followClean });
-        }
-        // Executar ações do follow-up (se houver) — sem recursão
-        for (const fa of followActions) {
-          try {
-            addMessage('action', `Executando: <strong>${esc(fa.action)}</strong>...`);
-            const r = await executeAction(moduleId, fa.action, fa.params || {});
-            const dp = formatActionData(fa.action, r.data);
-            addMessage('action', `${r.success ? '✅' : '❌'} ${esc(r.message || '')}${dp}`);
-          } catch {}
-        }
-      } catch (err) {
-        loadingEl.remove();
-        addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro na análise: ${esc(err.message)}</span>`);
-      }
-    }
+    msgEl.querySelector('.ai-copy-btn')?.addEventListener('click', () => {
+      const text = msgEl.querySelector('.ai-bubble')?.textContent || '';
+      navigator.clipboard.writeText(text).then(() => _toast('Copiado!')).catch(() => {});
+    });
+    return msgEl;
   }
 
-  // ── Format action data for display ──
+  function addLoading(label = 'Pensando') {
+    const el = document.createElement('div');
+    el.className = 'ai-msg ai-msg-assistant';
+    el.innerHTML = `
+      <div class="ai-avatar ai-avatar-bot">IA</div>
+      <div class="ai-bubble ai-bubble-bot" style="color:var(--text-muted);"><span class="ai-typing">${esc(label)}</span></div>
+    `;
+    messagesEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return el;
+  }
+
+  // ── Format action data ──
   function formatActionData(actionName, data) {
     if (!data) return '';
-
     if (Array.isArray(data) && data.length > 0) {
-      const maxItems = 5;
-      const items = data.slice(0, maxItems);
+      const items = data.slice(0, 5);
       let html = '<div style="margin-top:4px;font-size:0.6875rem;">';
       items.forEach(item => {
         const label = item.title || item.name || item.clientName || item.label || JSON.stringify(item).substring(0, 50);
         const badge = item.status ? ` <span style="opacity:0.6;">[${item.status}]</span>` : '';
-        const extra = item.priority ? ` <span style="opacity:0.6;">(${item.priority})</span>` : '';
-        html += `<div style="padding:1px 0;">• ${esc(label)}${badge}${extra}</div>`;
+        html += `<div style="padding:1px 0;">• ${esc(label)}${badge}</div>`;
       });
-      if (data.length > maxItems) html += `<div style="opacity:0.5;">... +${data.length - maxItems}</div>`;
+      if (data.length > 5) html += `<div style="opacity:0.5;">... +${data.length - 5}</div>`;
       html += '</div>';
       return html;
     }
-
     if (typeof data === 'object' && !Array.isArray(data)) {
       let html = '<div style="margin-top:4px;font-size:0.6875rem;">';
       for (const [key, value] of Object.entries(data)) {
@@ -457,11 +435,91 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       html += '</div>';
       return html;
     }
-
     return '';
   }
 
-  // ── Send chat message ──
+  // ── Process AI response ──
+  async function processAIResponse(rawText, meta, getContextFn) {
+    const actions = parseActions(rawText);
+    const cleanText = cleanActionBlocks(rawText);
+
+    if (cleanText) {
+      addMessage('assistant', esc(cleanText), meta);
+      chatHistory.push({ role: 'assistant', text: cleanText });
+    }
+
+    if (actions.length === 0) return;
+
+    const dataResults = [];
+
+    for (const actionBlock of actions) {
+      const { action, params } = actionBlock;
+      addMessage('action', `Executando: <strong>${esc(action)}</strong>...`);
+      try {
+        const result = await executeAction(moduleId, action, params || {});
+        if (result.success) {
+          const dp = formatActionData(action, result.data);
+          addMessage('action', `✅ ${esc(result.message || 'Sucesso')}${dp}`);
+          if (DATA_ACTIONS.has(action) && result.data) {
+            dataResults.push({ action, data: result.data, message: result.message });
+          }
+          const dataStr = result.data != null ? JSON.stringify(result.data) : '';
+          chatHistory.push({
+            role: 'assistant',
+            text: `[Resultado de ${action}]: ${result.message || 'OK'}${dataStr ? '. Dados: ' + dataStr.substring(0, 800) : ''}`,
+          });
+        } else {
+          addMessage('action', `❌ ${esc(result.message || 'Erro')}`);
+          chatHistory.push({ role: 'assistant', text: `[Erro em ${action}]: ${result.message}` });
+        }
+      } catch (err) {
+        addMessage('action', `❌ Erro: ${esc(err.message)}`);
+      }
+    }
+
+    // Follow-up: se ações de leitura retornaram dados, chamar IA para analisar/agir
+    if (dataResults.length > 0) {
+      const loadingEl = addLoading('Analisando');
+      try {
+        const dataContext = dataResults.map(r =>
+          `Ação "${r.action}" retornou: ${r.message}\nDados:\n${JSON.stringify(r.data ?? {}, null, 1).substring(0, 1500)}`
+        ).join('\n\n');
+
+        const followUpMsg = `Resultados das ações:\n\n${dataContext}\n\nCom base nesses dados, responda ao pedido original. Se envolvia modificar algo e agora você tem o ID, EXECUTE a ação com <<<ACTION>>>. Se era consulta, analise de forma concisa.`;
+        chatHistory.push({ role: 'user', text: followUpMsg });
+
+        const context = typeof getContextFn === 'function' ? getContextFn() : {};
+        const followUpResult = await chatWithAI(followUpMsg, context, {
+          moduleId,
+          history: chatHistory.slice(-12),
+          overrideProvider: selectedProvider,
+        });
+
+        loadingEl.remove();
+        const fMeta = `${followUpResult.provider || '?'} · ${followUpResult.model || '?'} · ${((followUpResult.inputTokens||0)+(followUpResult.outputTokens||0)).toLocaleString('pt-BR')} tokens`;
+
+        const followActions = parseActions(followUpResult.text);
+        const followClean = cleanActionBlocks(followUpResult.text);
+        if (followClean) {
+          addMessage('assistant', esc(followClean), fMeta);
+          chatHistory.push({ role: 'assistant', text: followClean });
+        }
+        for (const fa of followActions) {
+          try {
+            addMessage('action', `Executando: <strong>${esc(fa.action)}</strong>...`);
+            const r = await executeAction(moduleId, fa.action, fa.params || {});
+            const dp = formatActionData(fa.action, r.data);
+            addMessage('action', `${r.success ? '✅' : '❌'} ${esc(r.message || '')}${dp}`);
+          } catch {}
+        }
+      } catch (err) {
+        loadingEl.remove();
+        addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro: ${esc(err.message)}</span>`);
+      }
+    }
+  }
+
+  // ── Send message ──
   async function sendMessage(text) {
     if (!text.trim() || isProcessing) return;
     isProcessing = true;
@@ -478,6 +536,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       const result = await chatWithAI(text, context, {
         moduleId,
         history: chatHistory.slice(-10),
+        overrideProvider: selectedProvider,
       });
 
       loadingEl.remove();
@@ -496,18 +555,12 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
     inputEl.focus();
   }
 
-  // ── Event: Send button ──
   sendBtn?.addEventListener('click', () => sendMessage(inputEl?.value || ''));
-
-  // ── Event: Enter to send ──
   inputEl?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(inputEl.value);
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(inputEl.value); }
   });
 
-  // ── Event: Skill buttons ──
+  // ── Skill buttons ──
   panel.querySelectorAll('.ai-skill-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (isProcessing) return;
@@ -521,20 +574,15 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
 
       addMessage('user', `▶ <strong>${esc(skill.name)}</strong>`);
       chatHistory.push({ role: 'user', text: `[Skill: ${skill.name}]` });
-
-      // Expandir se fechado
       if (!expanded) toggleChat(true);
 
       const loadingEl = addLoading();
-
       try {
         const context = typeof getContext === 'function' ? getContext() : {};
         const result = await runSkill(skillId, context);
         loadingEl.remove();
-
         const meta = `${result.isMock ? 'DEMO' : result.provider} · ${result.model} · ${((result.inputTokens||0)+(result.outputTokens||0)).toLocaleString('pt-BR')} tokens`;
         await processAIResponse(result.text, meta, getContext);
-
         if (options.onResult) options.onResult(result, skill);
       } catch (err) {
         loadingEl.remove();
@@ -550,9 +598,6 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
   return panel;
 }
 
-/**
- * Remove o painel de IA de um container (cleanup)
- */
 export function unmountAiPanel(container) {
   if (!container) return;
   container.querySelectorAll('.ai-panel-floating').forEach(el => el.remove());
