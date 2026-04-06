@@ -30,7 +30,7 @@ const MODULE_CAPABILITIES = {
   },
   'portal-tips': {
     greeting: 'Posso te ajudar com o Portal de Dicas.',
-    capabilities: ['Listar destinos e dicas', 'Ver detalhes de uma dica', 'Destacar dicas prioritárias', 'Listar áreas/BUs e imagens'],
+    capabilities: ['Criar destinos e dicas de viagem', 'Listar destinos e dicas', 'Editar conteúdo de dicas', 'Destacar dicas prioritárias', 'Listar áreas/BUs e imagens'],
   },
   roteiros: {
     greeting: 'Posso te ajudar com Roteiros de Viagem.',
@@ -59,6 +59,10 @@ const MODULE_CAPABILITIES = {
   dashboards: {
     greeting: 'Posso te ajudar a analisar os dados do Dashboard.',
     capabilities: ['Capturar KPIs visíveis', 'Visão geral de tarefas (por status, prioridade, atrasadas)'],
+  },
+  'news-monitor': {
+    greeting: 'Posso te ajudar com Notícias e Clipping.',
+    capabilities: ['Buscar notícias do setor de turismo na web', 'Cadastrar notícias no sistema', 'Rastrear menções da PRIMETOUR na internet', 'Cadastrar clippings', 'Listar e filtrar notícias e clippings'],
   },
   general: {
     greeting: 'Posso te ajudar com informações do sistema.',
@@ -296,12 +300,13 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
   const DATA_ACTIONS = new Set([
     'list_tasks','list_projects','list_roteiros','list_feedbacks','list_goals','list_events',
     'list_requests','list_destinations','list_tips','list_areas','list_images','list_surveys',
-    'list_recent_clients','list_notifications',
+    'list_recent_clients','list_notifications','list_news','list_clippings',
     'get_task_summary','get_board_summary','get_project_tasks','get_dashboard_summary',
     'get_csat_dom_summary','get_csat_metrics','get_current_user',
     'get_roteiro','get_roteiro_stats','get_tip_detail','get_feedback','get_feedback_summary',
     'get_goal','get_goals_summary','get_today_agenda','get_tasks_overview',
     'get_system_overview','get_content_metrics','get_requests_summary',
+    'search_web_news','search_web_clipping',
   ]);
 
   // ── Helper: add message ──
@@ -411,10 +416,15 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           if (DATA_ACTIONS.has(action) && result.data) {
             dataResults.push({ action, data: result.data, message: result.message });
           }
+          // Montar histórico com IDs bem destacados para a IA reutilizar
           const dataStr = result.data != null ? JSON.stringify(result.data) : '';
+          const createdId = result.data?.taskId || result.data?.newsId || result.data?.clippingId
+                         || result.data?.tipId || result.data?.destinationId || result.data?.id
+                         || result.taskId || '';
+          const idHint = createdId ? ` >>> ID_CRIADO="${createdId}" <<<` : '';
           chatHistory.push({
             role: 'assistant',
-            text: `[Resultado de ${action}]: ${result.message || 'OK'}${dataStr ? '. Dados: ' + dataStr.substring(0, 800) : ''}`,
+            text: `[Resultado de ${action}]: ${result.message || 'OK'}${idHint}${dataStr ? '. Dados: ' + dataStr.substring(0, 800) : ''}`,
           });
         } else {
           addMessage('action', `❌ ${esc(result.message || 'Erro')}`);
