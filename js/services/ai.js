@@ -103,9 +103,18 @@ export const TRIGGER_TYPES = [
   { id: 'context',   label: 'Menu de contexto' },
 ];
 
-/* ─── Configuração global da API ─────────────────────────── */
-const CONFIG_DOC_ID = 'ai-config';
+/* ─── Configuração de API Keys (multi-escopo) ───────────── */
+/*
+ * Hierarquia de resolução (maior prioridade primeiro):
+ *   1. Usuário  → ai_api_keys/{scope:'user',   scopeId: uid}
+ *   2. Núcleo   → ai_api_keys/{scope:'nucleo', scopeId: nucleoValue}
+ *   3. Área     → ai_api_keys/{scope:'area',   scopeId: areaName}
+ *   4. Global   → system_config/ai-config  (legado, compatível)
+ */
+const CONFIG_DOC_ID   = 'ai-config';
+const API_KEYS_COL    = 'ai_api_keys';
 
+/** Carrega config global (legado — mantido para compatibilidade) */
 export async function getAIConfig() {
   try {
     const snap = await getDoc(doc(db, 'system_config', CONFIG_DOC_ID));
@@ -113,6 +122,7 @@ export async function getAIConfig() {
   } catch { return null; }
 }
 
+/** Salva config global (legado) */
 export async function saveAIConfig(data) {
   const user = store.get('currentUser');
   await updateDoc(doc(db, 'system_config', CONFIG_DOC_ID), {
@@ -120,7 +130,6 @@ export async function saveAIConfig(data) {
     updatedAt: serverTimestamp(),
     updatedBy: user?.uid || null,
   }).catch(async () => {
-    // Doc may not exist yet — create it
     const { setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
     await setDoc(doc(db, 'system_config', CONFIG_DOC_ID), {
       ...data,
@@ -129,6 +138,113 @@ export async function saveAIConfig(data) {
       updatedAt: serverTimestamp(),
     });
   });
+}
+
+/* ─── CRUD: Configurações de API por Escopo ──────────────── */
+
+/**
+ * Busca config de API key por escopo (user, nucleo, area)
+ * @param {'user'|'nucleo'|'area'} scope
+ * @param {string} scopeId — uid, nucleoValue ou areaName
+ */
+export async function getScopedApiConfig(scope, scopeId) {
+  try {
+    const q2 = query(
+      collection(db, API_KEYS_COL),
+      where('scope', '==', scope),
+      where('scopeId', '==', scopeId),
+    );
+    const snap = await getDocs(q2);
+    if (snap.empty) return null;
+    const d = snap.docs[0];
+    return { id: d.id, ...d.data() };
+  } catch { return null; }
+}
+
+/** Lista TODAS as configurações de escopo (para admin) */
+export async function listAllScopedConfigs() {
+  try {
+    const snap = await getDocs(query(collection(db, API_KEYS_COL), orderBy('scope')));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch { return []; }
+}
+
+/** Salva/atualiza config de escopo */
+export async function saveScopedApiConfig(scope, scopeId, scopeLabel, data) {
+  const user = store.get('currentUser');
+  const existing = await getScopedApiConfig(scope, scopeId);
+
+  const payload = {
+    ...data,
+    scope,
+    scopeId,
+    scopeLabel,
+    active: data.active !== false,
+    updatedAt: serverTimestamp(),
+    updatedBy: user?.uid || null,
+  };
+
+  if (existing) {
+    await updateDoc(doc(db, API_KEYS_COL, existing.id), payload);
+  } else {
+    payload.createdAt = serverTimestamp();
+    payload.createdBy = user?.uid || null;
+    await addDoc(collection(db, API_KEYS_COL), payload);
+  }
+}
+
+/** Remove config de escopo */
+export async function deleteScopedApiConfig(docId) {
+  await deleteDoc(doc(db, API_KEYS_COL, docId));
+}
+
+/**
+ * Resolve a API key com cascata de prioridade:
+ *   Usuário → Núcleo(s) → Área(s) → Global
+ * Retorna { config, resolvedFrom } onde resolvedFrom indica o nível usado.
+ */
+export async function resolveApiKey(provider) {
+  const user    = store.get('currentUser');
+  const profile = store.get('currentProfile') || {};
+  const extractKey = (cfg) => cfg?.[provider + 'ApiKey'] || '';
+
+  // 1. Nível USUÁRIO
+  if (user?.uid) {
+    const userCfg = await getScopedApiConfig('user', user.uid);
+    if (userCfg?.active !== false) {
+      const k = extractKey(userCfg);
+      if (k) return { config: userCfg, apiKey: k, resolvedFrom: 'user', label: profile.name || user.email };
+    }
+  }
+
+  // 2. Nível NÚCLEO (usuário pode pertencer a múltiplos — testa todos)
+  const userNucleos = profile.nucleos || (profile.nucleo ? [profile.nucleo] : []);
+  for (const nuc of userNucleos) {
+    const nucCfg = await getScopedApiConfig('nucleo', nuc);
+    if (nucCfg?.active !== false) {
+      const k = extractKey(nucCfg);
+      if (k) return { config: nucCfg, apiKey: k, resolvedFrom: 'nucleo', label: nucCfg.scopeLabel || nuc };
+    }
+  }
+
+  // 3. Nível ÁREA (sector, visibleSectors, requestingArea)
+  const userAreas = new Set();
+  if (profile.sector) userAreas.add(profile.sector);
+  if (profile.department) userAreas.add(profile.department);
+  (profile.visibleSectors || []).forEach(s => userAreas.add(s));
+
+  for (const area of userAreas) {
+    const areaCfg = await getScopedApiConfig('area', area);
+    if (areaCfg?.active !== false) {
+      const k = extractKey(areaCfg);
+      if (k) return { config: areaCfg, apiKey: k, resolvedFrom: 'area', label: areaCfg.scopeLabel || area };
+    }
+  }
+
+  // 4. Nível GLOBAL (fallback — legado)
+  const globalCfg = await getAIConfig();
+  const k = extractKey(globalCfg);
+  return { config: globalCfg, apiKey: k || '', resolvedFrom: 'global', label: 'Global' };
 }
 
 /* ─── CRUD: Base de Conhecimento ─────────────────────────── */
@@ -233,7 +349,7 @@ export async function deleteSkill(id) {
 
 /* ─── Execução de Skill (chamada à API) ─────────────────── */
 export async function runSkill(skillId, context = {}) {
-  const config = await getAIConfig();
+  let config = await getAIConfig();
   const skill  = await getSkill(skillId);
   if (!skill) throw new Error('Skill não encontrada.');
 
@@ -248,17 +364,15 @@ export async function runSkill(skillId, context = {}) {
   // Determinar provider
   const provider = skill.provider || config?.provider || 'gemini';
 
-  // Resolver API key do provider
-  const providerKeyMap = {
-    gemini:    config?.geminiApiKey   || '',
-    groq:      config?.groqApiKey     || '',
-    openai:    config?.openaiApiKey    || '',
-    anthropic: config?.anthropicApiKey || '',
-    azure:     config?.azureApiKey     || '',
-  };
-  const apiKey = providerKeyMap[provider] || '';
+  // Resolver API key com cascata: Usuário → Núcleo → Área → Global
+  const resolved = await resolveApiKey(provider);
+  const apiKey = resolved.apiKey;
   if (!apiKey) {
     return mockResponse(skill, userPrompt);
+  }
+  // Se a config resolvida tem azureEndpoint, usar ela (para o provider Azure)
+  if (resolved.config?.azureEndpoint && !config?.azureEndpoint) {
+    config = { ...config, azureEndpoint: resolved.config.azureEndpoint };
   }
 
   // Carregar base de conhecimento vinculada à skill
@@ -314,8 +428,8 @@ export async function runSkill(skillId, context = {}) {
       result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature: skill.temperature });
   }
 
-  // Log de uso (silencioso)
-  logUsage(skill, { ...result, provider }).catch(() => {});
+  // Log de uso (silencioso) — inclui escopo da key usada
+  logUsage(skill, { ...result, provider, keyScope: resolved.resolvedFrom, keyScopeLabel: resolved.label }).catch(() => {});
 
   return {
     text:         result.text,
@@ -325,6 +439,8 @@ export async function runSkill(skillId, context = {}) {
     outputTokens: result.outputTokens,
     skillId:      skill.id,
     skillName:    skill.name,
+    keyScope:     resolved.resolvedFrom,
+    keyScopeLabel: resolved.label,
   };
 }
 
@@ -552,6 +668,8 @@ async function logUsage(skill, result) {
     inputTokens:  result.inputTokens || 0,
     outputTokens: result.outputTokens || 0,
     userId:       user?.uid || null,
+    keyScope:     result.keyScope || 'global',
+    keyScopeLabel: result.keyScopeLabel || 'Global',
     timestamp:    serverTimestamp(),
   });
 }
