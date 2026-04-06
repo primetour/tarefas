@@ -180,44 +180,80 @@ const MODULE_ACTIONS = {
   tasks: [
     {
       name: 'create_task',
-      description: 'Criar uma nova tarefa no sistema',
+      description: 'Criar uma nova tarefa no sistema com todos os campos disponíveis',
       params: {
         title: 'string — título da tarefa (obrigatório)',
         description: 'string — descrição detalhada (opcional)',
         priority: 'string — urgent, high, medium, low (default: medium)',
-        status: 'string — not_started, in_progress, review, done (default: not_started)',
+        status: 'string — not_started, in_progress, review, rework, done, cancelled (default: not_started)',
         sector: 'string — setor responsável (opcional)',
         dueDate: 'string — data de vencimento YYYY-MM-DD (opcional)',
+        startDate: 'string — data de início YYYY-MM-DD (opcional)',
+        assignees: 'string[] — array de UIDs dos responsáveis (opcional, default: usuário atual)',
+        projectId: 'string — ID do projeto (opcional)',
+        tags: 'string[] — array de tags/etiquetas (opcional)',
+        nucleos: 'string[] — array de núcleos (opcional)',
+        typeId: 'string — ID do tipo de tarefa (opcional, use list_task_types para ver opções)',
+        variationId: 'string — ID da variação dentro do tipo (opcional)',
+        customFields: 'object — campos personalizados do tipo de tarefa (opcional). Ex: {"outOfCalendar":true,"newsletterStatus":"Pauta"}',
+        requestingArea: 'string — área solicitante (opcional)',
       },
       execute: async (params) => {
         const { createTask } = await import('./tasks.js');
         const user = store.get('currentUser');
-        const task = await createTask({
+        const taskData = {
           title: params.title,
           description: params.description || '',
           priority: params.priority || 'medium',
           status: params.status || 'not_started',
           sector: params.sector || store.get('userSector') || '',
           createdBy: user?.uid,
-          assignees: user?.uid ? [user.uid] : [],
-          ...(params.dueDate ? { dueDate: new Date(params.dueDate + 'T12:00:00') } : {}),
-        });
+          assignees: params.assignees || (user?.uid ? [user.uid] : []),
+        };
+        if (params.dueDate) taskData.dueDate = new Date(params.dueDate + 'T12:00:00');
+        if (params.startDate) taskData.startDate = new Date(params.startDate + 'T12:00:00');
+        if (params.projectId) taskData.projectId = params.projectId;
+        if (params.tags) taskData.tags = Array.isArray(params.tags) ? params.tags : [params.tags];
+        if (params.nucleos) taskData.nucleos = Array.isArray(params.nucleos) ? params.nucleos : [params.nucleos];
+        if (params.typeId) taskData.typeId = params.typeId;
+        if (params.variationId) taskData.variationId = params.variationId;
+        if (params.customFields) taskData.customFields = params.customFields;
+        if (params.requestingArea) taskData.requestingArea = params.requestingArea;
+        const task = await createTask(taskData);
         return { success: true, message: `Tarefa "${params.title}" criada com sucesso! ID: ${task?.id}`, taskId: task?.id, data: { taskId: task?.id, title: params.title } };
       },
     },
     {
       name: 'update_task',
-      description: 'Atualizar uma tarefa existente (mudar status, prioridade, descrição, etc.)',
+      description: 'Atualizar qualquer campo de uma tarefa existente',
       params: {
         taskId: 'string — ID da tarefa (obrigatório)',
         title: 'string — novo título (opcional)',
         description: 'string — nova descrição (opcional)',
-        status: 'string — not_started, in_progress, review, done, cancelled (opcional)',
+        status: 'string — not_started, in_progress, review, rework, done, cancelled (opcional)',
         priority: 'string — urgent, high, medium, low (opcional)',
+        dueDate: 'string — nova data de vencimento YYYY-MM-DD (opcional)',
+        startDate: 'string — nova data de início YYYY-MM-DD (opcional)',
+        assignees: 'string[] — novos responsáveis, array de UIDs (opcional)',
+        projectId: 'string — ID do projeto (opcional)',
+        tags: 'string[] — tags/etiquetas (opcional)',
+        nucleos: 'string[] — núcleos (opcional)',
+        typeId: 'string — ID do tipo de tarefa (opcional)',
+        variationId: 'string — ID da variação (opcional)',
+        customFields: 'object — campos personalizados. Ex: {"outOfCalendar":true,"newsletterStatus":"Redação"} (opcional)',
+        requestingArea: 'string — área solicitante (opcional)',
       },
       execute: async (params) => {
         const { updateTask } = await import('./tasks.js');
         const { taskId, ...data } = params;
+        // Converter datas
+        if (data.dueDate) data.dueDate = new Date(data.dueDate + 'T12:00:00');
+        if (data.startDate) data.startDate = new Date(data.startDate + 'T12:00:00');
+        // Garantir arrays
+        if (data.tags && !Array.isArray(data.tags)) data.tags = [data.tags];
+        if (data.nucleos && !Array.isArray(data.nucleos)) data.nucleos = [data.nucleos];
+        if (data.assignees && !Array.isArray(data.assignees)) data.assignees = [data.assignees];
+        // Remover campos undefined
         Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
         await updateTask(taskId, data);
         return { success: true, message: `Tarefa atualizada com sucesso!` };
@@ -248,21 +284,26 @@ const MODULE_ACTIONS = {
     },
     {
       name: 'list_tasks',
-      description: 'Listar tarefas com filtros opcionais. Use para buscar dados antes de responder perguntas sobre tarefas.',
+      description: 'Listar tarefas com filtros opcionais. Use para buscar dados/IDs antes de modificar tarefas.',
       params: {
         status: 'string — filtrar por status: not_started, in_progress, review, done (opcional)',
         priority: 'string — filtrar por prioridade: urgent, high, medium, low (opcional)',
         sector: 'string — filtrar por setor (opcional)',
+        search: 'string — buscar por título (opcional)',
         limitN: 'number — limitar quantidade de resultados (default: 20)',
       },
       execute: async (params) => {
         const { fetchTasks } = await import('./tasks.js');
-        const tasks = await fetchTasks({
+        let tasks = await fetchTasks({
           status: params.status,
           priority: params.priority,
           sector: params.sector,
           limitN: params.limitN || 20,
         });
+        if (params.search) {
+          const s = params.search.toLowerCase();
+          tasks = tasks.filter(t => (t.title || '').toLowerCase().includes(s));
+        }
         const summary = tasks.map(t => ({
           id: t.id,
           title: t.title,
@@ -271,9 +312,65 @@ const MODULE_ACTIONS = {
           sector: t.sector || '',
           assignees: t.assigneeNames || t.assignees,
           dueDate: t.dueDate?.toDate?.()?.toLocaleDateString?.('pt-BR') || t.dueDate || '',
-          createdAt: t.createdAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
+          type: t.type || '',
+          variationName: t.variationName || '',
+          tags: t.tags || [],
+          customFields: t.customFields || {},
+          projectId: t.projectId || '',
         }));
         return { success: true, data: summary, message: `${tasks.length} tarefa(s) encontrada(s)` };
+      },
+    },
+    {
+      name: 'list_task_types',
+      description: 'Listar tipos de tarefas disponíveis no sistema (com suas variações e campos personalizados)',
+      params: {},
+      execute: async () => {
+        try {
+          const { collection, getDocs, query, orderBy } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+          const { db } = await import('../firebase.js');
+          const snap = await getDocs(query(collection(db, 'task_types'), orderBy('name')));
+          const types = snap.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id,
+              name: data.name || '',
+              sector: data.sector || '',
+              variations: (data.variations || []).map(v => ({
+                id: v.id, name: v.name, slaDays: v.slaDays || null,
+              })),
+              customFields: (data.fields || []).map(f => ({
+                key: f.key, label: f.label, type: f.type,
+                options: f.options || [],
+                required: f.required || false,
+              })),
+            };
+          });
+          return { success: true, data: types, message: `${types.length} tipo(s) de tarefa` };
+        } catch (e) {
+          return { success: false, message: 'Erro ao buscar tipos: ' + e.message };
+        }
+      },
+    },
+    {
+      name: 'add_subtask',
+      description: 'Adicionar uma subtarefa/checklist item a uma tarefa existente',
+      params: {
+        taskId: 'string — ID da tarefa pai (obrigatório)',
+        title: 'string — título da subtarefa (obrigatório)',
+      },
+      execute: async ({ taskId, title }) => {
+        if (!taskId || !title) return { success: false, message: 'taskId e title são obrigatórios' };
+        const { updateTask } = await import('./tasks.js');
+        const { arrayUnion } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const subtask = {
+          id: Date.now().toString(36) + Math.random().toString(36).substring(2, 6),
+          title,
+          done: false,
+          createdAt: new Date().toISOString(),
+        };
+        await updateTask(taskId, { subtasks: arrayUnion(subtask) });
+        return { success: true, message: `Subtarefa "${title}" adicionada!` };
       },
     },
     {
@@ -343,7 +440,7 @@ const MODULE_ACTIONS = {
       description: 'Mover um card do Kanban para outro status/coluna',
       params: {
         taskId: 'string — ID da tarefa/card',
-        newStatus: 'string — novo status: not_started, in_progress, review, done',
+        newStatus: 'string — novo status: not_started, in_progress, review, rework, done',
       },
       execute: async ({ taskId, newStatus }) => {
         const { moveTaskKanban } = await import('./tasks.js');
@@ -352,23 +449,77 @@ const MODULE_ACTIONS = {
       },
     },
     {
+      name: 'create_card',
+      description: 'Criar um novo card no Kanban',
+      params: {
+        title: 'string — título do card (obrigatório)',
+        status: 'string — coluna: not_started, in_progress, review (default: not_started)',
+        priority: 'string — urgent, high, medium, low (default: medium)',
+        description: 'string — descrição (opcional)',
+        assignees: 'string[] — UIDs dos responsáveis (opcional)',
+        dueDate: 'string — data de vencimento YYYY-MM-DD (opcional)',
+        projectId: 'string — ID do projeto (opcional)',
+      },
+      execute: async (params) => {
+        const { createTask } = await import('./tasks.js');
+        const user = store.get('currentUser');
+        const task = await createTask({
+          title: params.title,
+          description: params.description || '',
+          priority: params.priority || 'medium',
+          status: params.status || 'not_started',
+          assignees: params.assignees || (user?.uid ? [user.uid] : []),
+          sector: store.get('userSector') || '',
+          createdBy: user?.uid,
+          ...(params.dueDate ? { dueDate: new Date(params.dueDate + 'T12:00:00') } : {}),
+          ...(params.projectId ? { projectId: params.projectId } : {}),
+        });
+        showToast('success', `Card "${params.title}" criado!`);
+        return { success: true, message: `Card "${params.title}" criado! ID: ${task?.id}`, data: { taskId: task?.id } };
+      },
+    },
+    {
+      name: 'update_card',
+      description: 'Atualizar campos de um card do Kanban',
+      params: {
+        taskId: 'string — ID do card (obrigatório)',
+        title: 'string — novo título (opcional)',
+        description: 'string — nova descrição (opcional)',
+        priority: 'string — urgent, high, medium, low (opcional)',
+        assignees: 'string[] — novos responsáveis (opcional)',
+        dueDate: 'string — nova data YYYY-MM-DD (opcional)',
+      },
+      execute: async (params) => {
+        const { updateTask } = await import('./tasks.js');
+        const { taskId, ...data } = params;
+        if (data.dueDate) data.dueDate = new Date(data.dueDate + 'T12:00:00');
+        if (data.assignees && !Array.isArray(data.assignees)) data.assignees = [data.assignees];
+        Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+        await updateTask(taskId, data);
+        return { success: true, message: 'Card atualizado!' };
+      },
+    },
+    {
       name: 'list_tasks',
-      description: 'Listar todas as tarefas do board (para análise ou busca)',
+      description: 'Listar todos os cards do board (para análise ou busca)',
       params: {
         status: 'string — filtrar por coluna/status (opcional)',
+        search: 'string — buscar por título (opcional)',
         limitN: 'number — limitar resultados (default: 50)',
       },
       execute: async (params) => {
         const { fetchTasks } = await import('./tasks.js');
-        const tasks = await fetchTasks({ status: params.status, limitN: params.limitN || 50 });
+        let tasks = await fetchTasks({ status: params.status, limitN: params.limitN || 50 });
+        if (params.search) {
+          const s = params.search.toLowerCase();
+          tasks = tasks.filter(t => (t.title || '').toLowerCase().includes(s));
+        }
         const summary = tasks.map(t => ({
-          id: t.id,
-          title: t.title,
-          status: t.status,
-          priority: t.priority,
+          id: t.id, title: t.title, status: t.status, priority: t.priority,
           assignees: t.assigneeNames || t.assignees,
+          dueDate: t.dueDate?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
         }));
-        return { success: true, data: summary, message: `${tasks.length} card(s) encontrado(s)` };
+        return { success: true, data: summary, message: `${tasks.length} card(s)` };
       },
     },
     {
@@ -378,7 +529,7 @@ const MODULE_ACTIONS = {
       execute: async () => {
         const { fetchTasks } = await import('./tasks.js');
         const tasks = await fetchTasks({ limitN: 500 });
-        const columns = { not_started: 0, in_progress: 0, review: 0, done: 0 };
+        const columns = { not_started: 0, in_progress: 0, review: 0, rework: 0, done: 0 };
         tasks.forEach(t => { if (columns[t.status] !== undefined) columns[t.status]++; });
         return {
           success: true,
@@ -401,46 +552,85 @@ const MODULE_ACTIONS = {
         description: 'string — descrição (opcional)',
         color: 'string — cor hex (opcional, default: #3B82F6)',
         icon: 'string — emoji do projeto (opcional, default: 📁)',
+        status: 'string — planning, active, on_hold, completed, cancelled (default: active)',
+        startDate: 'string — data de início YYYY-MM-DD (opcional)',
+        endDate: 'string — data de término YYYY-MM-DD (opcional)',
+        members: 'string[] — UIDs dos membros (opcional)',
       },
       execute: async (params) => {
         const { createProject } = await import('./projects.js');
-        await createProject({
+        const data = {
           name: params.name,
           description: params.description || '',
           color: params.color || '#3B82F6',
           icon: params.icon || '📁',
-          status: 'active',
-        });
-        return { success: true, message: `Projeto "${params.name}" criado!` };
+          status: params.status || 'active',
+        };
+        if (params.startDate) data.startDate = new Date(params.startDate + 'T12:00:00');
+        if (params.endDate) data.endDate = new Date(params.endDate + 'T12:00:00');
+        if (params.members) data.members = Array.isArray(params.members) ? params.members : [params.members];
+        const project = await createProject(data);
+        showToast('success', `Projeto "${params.name}" criado!`);
+        return { success: true, message: `Projeto "${params.name}" criado!`, data: { projectId: project?.id || '' } };
       },
     },
     {
       name: 'list_projects',
-      description: 'Listar projetos ativos',
-      params: { status: 'string — filtrar por status: active, archived (opcional, default: todos)' },
+      description: 'Listar projetos do sistema',
+      params: {
+        status: 'string — filtrar: planning, active, on_hold, completed, cancelled (opcional)',
+        search: 'string — buscar por nome (opcional)',
+      },
       execute: async (params) => {
         const { fetchProjects } = await import('./projects.js');
-        let projects = await fetchProjects();
+        let projects = await fetchProjects({ includeArchived: true });
         if (params?.status) projects = projects.filter(p => p.status === params.status);
-        const summary = projects.map(p => ({ id: p.id, name: p.name, status: p.status, icon: p.icon, description: p.description || '' }));
+        if (params?.search) {
+          const s = params.search.toLowerCase();
+          projects = projects.filter(p => (p.name || '').toLowerCase().includes(s));
+        }
+        const summary = projects.map(p => ({
+          id: p.id, name: p.name, status: p.status, icon: p.icon || '',
+          description: (p.description || '').substring(0, 100),
+          taskCount: p.taskCount || 0, doneCount: p.doneCount || 0,
+        }));
         return { success: true, data: summary, message: `${projects.length} projeto(s)` };
       },
     },
     {
       name: 'update_project',
-      description: 'Atualizar dados de um projeto (nome, descrição, status)',
+      description: 'Atualizar dados de um projeto',
       params: {
         projectId: 'string — ID do projeto (obrigatório)',
         name: 'string — novo nome (opcional)',
         description: 'string — nova descrição (opcional)',
-        status: 'string — active, archived (opcional)',
+        status: 'string — planning, active, on_hold, completed, cancelled (opcional)',
+        color: 'string — nova cor hex (opcional)',
+        icon: 'string — novo emoji (opcional)',
+        startDate: 'string — data de início YYYY-MM-DD (opcional)',
+        endDate: 'string — data de término YYYY-MM-DD (opcional)',
+        members: 'string[] — UIDs dos membros (opcional)',
       },
       execute: async (params) => {
         const { updateProject } = await import('./projects.js');
         const { projectId, ...data } = params;
+        if (data.startDate) data.startDate = new Date(data.startDate + 'T12:00:00');
+        if (data.endDate) data.endDate = new Date(data.endDate + 'T12:00:00');
+        if (data.members && !Array.isArray(data.members)) data.members = [data.members];
         Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
         await updateProject(projectId, data);
-        return { success: true, message: `Projeto atualizado!` };
+        return { success: true, message: 'Projeto atualizado!' };
+      },
+    },
+    {
+      name: 'delete_project',
+      description: 'Excluir um projeto (as tarefas vinculadas não são apagadas)',
+      params: { projectId: 'string — ID do projeto (obrigatório)' },
+      execute: async ({ projectId }) => {
+        const { deleteProject } = await import('./projects.js');
+        await deleteProject(projectId);
+        showToast('success', 'Projeto excluído!');
+        return { success: true, message: 'Projeto excluído!' };
       },
     },
     {
@@ -454,8 +644,34 @@ const MODULE_ACTIONS = {
         const { fetchTasks } = await import('./tasks.js');
         let tasks = await fetchTasks({ projectId, limitN: 50 });
         if (status) tasks = tasks.filter(t => t.status === status);
-        const summary = tasks.map(t => ({ id: t.id, title: t.title, status: t.status, priority: t.priority }));
+        const summary = tasks.map(t => ({
+          id: t.id, title: t.title, status: t.status, priority: t.priority,
+          assignees: t.assigneeNames || t.assignees,
+          dueDate: t.dueDate?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
+        }));
         return { success: true, data: summary, message: `${tasks.length} tarefa(s) no projeto` };
+      },
+    },
+    {
+      name: 'get_project_progress',
+      description: 'Obter progresso de um projeto (% concluído, tarefas por status)',
+      params: { projectId: 'string — ID do projeto (obrigatório)' },
+      execute: async ({ projectId }) => {
+        const { fetchTasks } = await import('./tasks.js');
+        const { getProject } = await import('./projects.js');
+        const [project, tasks] = await Promise.all([
+          getProject(projectId),
+          fetchTasks({ projectId, limitN: 500 }),
+        ]);
+        const byStatus = {};
+        tasks.forEach(t => { byStatus[t.status] = (byStatus[t.status] || 0) + 1; });
+        const done = byStatus.done || 0;
+        const pct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+        return {
+          success: true,
+          data: { name: project?.name || '', total: tasks.length, done, pct, byStatus },
+          message: `Projeto "${project?.name || projectId}": ${pct}% concluído (${done}/${tasks.length})`,
+        };
       },
     },
   ],
@@ -546,6 +762,70 @@ const MODULE_ACTIONS = {
         const { fetchRecentClients } = await import('./roteiros.js');
         const clients = await fetchRecentClients();
         return { success: true, data: clients.slice(0, 15), message: `${clients.length} cliente(s) recente(s)` };
+      },
+    },
+    {
+      name: 'create_roteiro',
+      description: 'Criar um novo roteiro de viagem',
+      params: {
+        title: 'string — título do roteiro (obrigatório)',
+        clientName: 'string — nome do cliente (obrigatório)',
+        clientEmail: 'string — email do cliente (opcional)',
+        clientType: 'string — individual, couple, family, group (default: individual)',
+        destinations: 'string — destinos, separados por vírgula (ex: "Miami, Orlando")',
+        startDate: 'string — data de início YYYY-MM-DD (opcional)',
+        nights: 'number — total de noites (opcional)',
+      },
+      execute: async (params) => {
+        const { saveRoteiro, emptyRoteiro } = await import('./roteiros.js');
+        const roteiro = emptyRoteiro();
+        roteiro.title = params.title;
+        roteiro.client.name = params.clientName;
+        if (params.clientEmail) roteiro.client.email = params.clientEmail;
+        if (params.clientType) roteiro.client.type = params.clientType;
+        if (params.destinations) {
+          roteiro.travel.destinations = params.destinations.split(',').map(d => ({
+            city: d.trim(), country: '', nights: 0,
+          }));
+        }
+        if (params.startDate) roteiro.travel.startDate = params.startDate;
+        if (params.nights) roteiro.travel.nights = params.nights;
+        const id = await saveRoteiro(null, roteiro);
+        showToast('success', `Roteiro "${params.title}" criado!`);
+        return { success: true, message: `Roteiro "${params.title}" criado! ID: ${id}`, data: { roteiroId: id } };
+      },
+    },
+    {
+      name: 'update_roteiro',
+      description: 'Atualizar dados de um roteiro existente',
+      params: {
+        roteiroId: 'string — ID do roteiro (obrigatório)',
+        title: 'string — novo título (opcional)',
+        clientName: 'string — nome do cliente (opcional)',
+        clientEmail: 'string — email (opcional)',
+        notes: 'string — observações/notas internas (opcional)',
+      },
+      execute: async (params) => {
+        const { fetchRoteiro, saveRoteiro } = await import('./roteiros.js');
+        const roteiro = await fetchRoteiro(params.roteiroId);
+        if (!roteiro) return { success: false, message: 'Roteiro não encontrado' };
+        if (params.title) roteiro.title = params.title;
+        if (params.clientName) roteiro.client = { ...roteiro.client, name: params.clientName };
+        if (params.clientEmail) roteiro.client = { ...roteiro.client, email: params.clientEmail };
+        if (params.notes) roteiro.notes = params.notes;
+        await saveRoteiro(params.roteiroId, roteiro);
+        return { success: true, message: 'Roteiro atualizado!' };
+      },
+    },
+    {
+      name: 'delete_roteiro',
+      description: 'Excluir um roteiro de viagem',
+      params: { roteiroId: 'string — ID do roteiro (obrigatório)' },
+      execute: async ({ roteiroId }) => {
+        const { deleteRoteiro } = await import('./roteiros.js');
+        await deleteRoteiro(roteiroId);
+        showToast('success', 'Roteiro excluído!');
+        return { success: true, message: 'Roteiro excluído!' };
       },
     },
   ],
@@ -782,6 +1062,37 @@ const MODULE_ACTIONS = {
       },
     },
     {
+      name: 'update_feedback',
+      description: 'Atualizar dados de um feedback existente',
+      params: {
+        feedbackId: 'string — ID do feedback (obrigatório)',
+        title: 'string — novo título (opcional)',
+        type: 'string — positive, negative, mixed, development (opcional)',
+        description: 'string — nova descrição (opcional)',
+        rating: 'number — nova nota 1-5 (opcional)',
+        status: 'string — novo status (opcional)',
+      },
+      execute: async (params) => {
+        const { saveFeedback } = await import('./feedbacks.js');
+        const { feedbackId, ...data } = params;
+        if (data.description) data.feedbackText = data.description;
+        Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+        await saveFeedback(feedbackId, data);
+        return { success: true, message: 'Feedback atualizado!' };
+      },
+    },
+    {
+      name: 'delete_feedback',
+      description: 'Excluir um feedback',
+      params: { feedbackId: 'string — ID do feedback (obrigatório)' },
+      execute: async ({ feedbackId }) => {
+        const { deleteFeedback } = await import('./feedbacks.js');
+        await deleteFeedback(feedbackId);
+        showToast('success', 'Feedback excluído!');
+        return { success: true, message: 'Feedback excluído!' };
+      },
+    },
+    {
       name: 'get_feedback_summary',
       description: 'Obter resumo de feedbacks (total, por tipo, rating médio)',
       params: {},
@@ -851,21 +1162,64 @@ const MODULE_ACTIONS = {
     },
     {
       name: 'create_goal',
-      description: 'Criar uma nova meta',
+      description: 'Criar uma nova meta/OKR',
       params: {
         title: 'string — título da meta (obrigatório)',
         period: 'string — período (ex: 2026-Q1, 2026-S1, 2026) (opcional)',
         description: 'string — descrição (opcional)',
+        scope: 'string — individual, nucleo, area (default: individual)',
       },
       execute: async (params) => {
-        const { createGoal } = await import('./goals.js');
-        await createGoal({
-          title: params.title,
-          period: params.period || '',
-          description: params.description || '',
-          status: 'draft',
-        });
-        return { success: true, message: `Meta "${params.title}" criada!` };
+        const { saveGoal, emptyGoal } = await import('./goals.js');
+        const goal = emptyGoal ? emptyGoal() : {};
+        goal.title = params.title;
+        goal.period = params.period || '';
+        goal.description = params.description || '';
+        goal.scope = params.scope || 'individual';
+        goal.status = 'draft';
+        const id = await saveGoal(null, goal);
+        showToast('success', `Meta "${params.title}" criada!`);
+        return { success: true, message: `Meta "${params.title}" criada!`, data: { goalId: id } };
+      },
+    },
+    {
+      name: 'update_goal',
+      description: 'Atualizar dados de uma meta existente',
+      params: {
+        goalId: 'string — ID da meta (obrigatório)',
+        title: 'string — novo título (opcional)',
+        description: 'string — nova descrição (opcional)',
+        period: 'string — novo período (opcional)',
+        status: 'string — draft, publicada, encerrada (opcional)',
+      },
+      execute: async (params) => {
+        const { saveGoal } = await import('./goals.js');
+        const { goalId, ...data } = params;
+        Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+        await saveGoal(goalId, data);
+        return { success: true, message: 'Meta atualizada!' };
+      },
+    },
+    {
+      name: 'publish_goal',
+      description: 'Publicar uma meta (muda status de draft para publicada e notifica responsáveis)',
+      params: { goalId: 'string — ID da meta (obrigatório)' },
+      execute: async ({ goalId }) => {
+        const { publishGoal } = await import('./goals.js');
+        await publishGoal(goalId);
+        showToast('success', 'Meta publicada!');
+        return { success: true, message: 'Meta publicada e responsáveis notificados!' };
+      },
+    },
+    {
+      name: 'delete_goal',
+      description: 'Excluir uma meta',
+      params: { goalId: 'string — ID da meta (obrigatório)' },
+      execute: async ({ goalId }) => {
+        const { deleteGoal } = await import('./goals.js');
+        await deleteGoal(goalId);
+        showToast('success', 'Meta excluída!');
+        return { success: true, message: 'Meta excluída!' };
       },
     },
     {
@@ -1092,20 +1446,100 @@ const MODULE_ACTIONS = {
   csat: [
     {
       name: 'list_surveys',
-      description: 'Listar pesquisas CSAT enviadas',
-      params: { status: 'string — filtrar por status: pending, answered, expired, cancelled (opcional)' },
+      description: 'Listar pesquisas CSAT',
+      params: {
+        status: 'string — filtrar: pending, sent, responded, expired, cancelled (opcional)',
+        search: 'string — buscar por nome do cliente (opcional)',
+      },
       execute: async (params) => {
         const { fetchSurveys } = await import('./csat.js');
         let surveys = await fetchSurveys();
         if (params?.status) surveys = surveys.filter(s => s.status === params.status);
+        if (params?.search) {
+          const s = params.search.toLowerCase();
+          surveys = surveys.filter(sv => ((sv.customerName || sv.customerEmail || '').toLowerCase().includes(s)));
+        }
         const summary = surveys.slice(0, 20).map(s => ({
           id: s.id,
           customer: s.customerName || s.customerEmail || '',
           status: s.status || '',
           score: s.score ?? '',
+          taskTitle: s.taskTitle || '',
           sentAt: s.sentAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
         }));
         return { success: true, data: summary, message: `${surveys.length} pesquisa(s)` };
+      },
+    },
+    {
+      name: 'create_survey',
+      description: 'Criar uma pesquisa CSAT para um cliente (vinculada a uma tarefa)',
+      params: {
+        taskId: 'string — ID da tarefa (obrigatório)',
+        taskTitle: 'string — título da tarefa (obrigatório)',
+        clientEmail: 'string — email do cliente (obrigatório)',
+        clientName: 'string — nome do cliente (opcional)',
+        customMessage: 'string — mensagem personalizada (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.taskId || !params.clientEmail) return { success: false, message: 'taskId e clientEmail são obrigatórios' };
+        const { createCsatSurvey } = await import('./csat.js');
+        const user = store.get('currentUser');
+        const survey = await createCsatSurvey({
+          taskId: params.taskId,
+          taskTitle: params.taskTitle || '',
+          clientEmail: params.clientEmail,
+          clientName: params.clientName || '',
+          assignedTo: user?.uid || '',
+          customMessage: params.customMessage || '',
+        });
+        showToast('success', `Pesquisa CSAT criada para ${params.clientName || params.clientEmail}!`);
+        return { success: true, message: `Pesquisa CSAT criada!`, data: { surveyId: survey?.id || '' } };
+      },
+    },
+    {
+      name: 'send_survey',
+      description: 'Enviar uma pesquisa CSAT por email ao cliente',
+      params: { surveyId: 'string — ID da pesquisa (obrigatório)' },
+      execute: async ({ surveyId }) => {
+        const { sendCsatEmail } = await import('./csat.js');
+        await sendCsatEmail(surveyId);
+        showToast('success', 'Pesquisa CSAT enviada!');
+        return { success: true, message: 'Email de pesquisa enviado ao cliente!' };
+      },
+    },
+    {
+      name: 'cancel_survey',
+      description: 'Cancelar uma pesquisa CSAT pendente',
+      params: { surveyId: 'string — ID da pesquisa (obrigatório)' },
+      execute: async ({ surveyId }) => {
+        const { cancelSurvey } = await import('./csat.js');
+        await cancelSurvey(surveyId);
+        return { success: true, message: 'Pesquisa cancelada!' };
+      },
+    },
+    {
+      name: 'resend_survey',
+      description: 'Reenviar uma pesquisa CSAT (reseta expiry e envia novamente)',
+      params: { surveyId: 'string — ID da pesquisa (obrigatório)' },
+      execute: async ({ surveyId }) => {
+        const { resendSurvey } = await import('./csat.js');
+        await resendSurvey(surveyId);
+        showToast('success', 'Pesquisa reenviada!');
+        return { success: true, message: 'Pesquisa reenviada com nova validade!' };
+      },
+    },
+    {
+      name: 'find_tasks_without_csat',
+      description: 'Encontrar tarefas concluídas que ainda não têm pesquisa CSAT',
+      params: { periodDays: 'number — buscar nos últimos N dias (default: 30)' },
+      execute: async (params) => {
+        const { findTasksWithoutCsat } = await import('./csat.js');
+        const tasks = await findTasksWithoutCsat({ periodDays: params?.periodDays || 30 });
+        const summary = tasks.slice(0, 20).map(t => ({
+          id: t.id, title: t.title, clientEmail: t.clientEmail || '',
+          completedAt: t.completedAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
+        }));
+        return { success: true, data: summary, message: `${tasks.length} tarefa(s) sem CSAT` };
       },
     },
     {
