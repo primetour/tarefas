@@ -18,6 +18,55 @@ import { store }  from '../store.js';
 import { router } from '../router.js';
 import { toast }  from '../components/toast.js';
 
+/* ─── Helper: captura KPIs/stats do DOM da página visível ── */
+function scrapeVisibleStats() {
+  const content = document.getElementById('page-content');
+  if (!content) return [];
+  const stats = [];
+
+  // 1. stat-card (dashboard principal)
+  content.querySelectorAll('.stat-card').forEach(card => {
+    const label = card.querySelector('.stat-card-label, small')?.textContent?.trim() || '';
+    const value = card.querySelector('.stat-card-value')?.textContent?.trim() || '';
+    if (label && value) stats.push({ label, value });
+  });
+
+  // 2. card genérico com KPIs (gaPerformance, metaPerformance, nlPerformance)
+  //    Esses usam class="card" com <small> para label e texto grande para valor
+  content.querySelectorAll('#ga-kpis .card, #meta-kpis .card, #nl-kpis .card').forEach(card => {
+    const label = card.querySelector('small')?.textContent?.trim() || '';
+    const value = card.querySelector('div[style*="font-size:1."]')?.textContent?.trim()
+               || card.querySelector('div[style*="font-size:2"]')?.textContent?.trim()
+               || card.querySelector('b, strong')?.textContent?.trim() || '';
+    if (label && value) stats.push({ label, value });
+  });
+
+  // 3. rd-kpi-card (roteiroDashboard)
+  content.querySelectorAll('.rd-kpi-card').forEach(card => {
+    const label = card.querySelector('.rd-kpi-label')?.textContent?.trim() || '';
+    const value = card.querySelector('.rd-kpi-value')?.textContent?.trim() || '';
+    if (label && value) stats.push({ label, value });
+  });
+
+  // 4. kpi-card genérico (CSAT, outros)
+  content.querySelectorAll('.kpi-card').forEach(card => {
+    const label = card.querySelector('.kpi-label, small, [class*="label"]')?.textContent?.trim() || '';
+    const value = card.querySelector('.kpi-value, [class*="value"]')?.textContent?.trim() || '';
+    if (label && value && !stats.some(s => s.label === label)) stats.push({ label, value });
+  });
+
+  // 5. Fallback genérico: qualquer div com padrão label/value não capturado
+  if (!stats.length) {
+    content.querySelectorAll('[class*="metric"], [class*="stat-"], [class*="kpi"]').forEach(card => {
+      const label = card.querySelector('small, [class*="label"], span')?.textContent?.trim() || '';
+      const value = card.querySelector('[class*="value"], [class*="count"], b, strong')?.textContent?.trim() || '';
+      if (label && value) stats.push({ label, value });
+    });
+  }
+
+  return stats;
+}
+
 /* ─── Registry de ações GLOBAIS ────────────────────────────── */
 
 const GLOBAL_ACTIONS = [
@@ -779,12 +828,7 @@ const MODULE_ACTIONS = {
       description: 'Obter resumo dos KPIs visíveis no dashboard atual (captura do DOM)',
       params: {},
       execute: async () => {
-        const stats = [];
-        document.querySelectorAll('.stat-card, .kpi-card, [class*="metric"], [class*="stat-"]').forEach(card => {
-          const label = card.querySelector('.stat-label, .kpi-label, small, .metric-label, [class*="label"]')?.textContent?.trim() || '';
-          const value = card.querySelector('.stat-value, .kpi-value, .metric-value, [class*="count"], [class*="value"]')?.textContent?.trim() || '';
-          if (label && value) stats.push({ label, value });
-        });
+        const stats = scrapeVisibleStats();
         return { success: true, data: stats, message: `${stats.length} KPI(s) capturado(s) do dashboard` };
       },
     },
@@ -958,12 +1002,7 @@ const MODULE_ACTIONS = {
       description: 'Obter resumo de CSAT/NPS visível na tela atual',
       params: {},
       execute: async () => {
-        const stats = [];
-        document.querySelectorAll('.stat-card, .kpi-card, .csat-card, [class*="csat"], [class*="nps"]').forEach(card => {
-          const label = card.querySelector('.stat-label, .kpi-label, small, [class*="label"]')?.textContent?.trim() || '';
-          const value = card.querySelector('.stat-value, .kpi-value, [class*="value"], [class*="score"]')?.textContent?.trim() || '';
-          if (label && value) stats.push({ label, value });
-        });
+        const stats = scrapeVisibleStats();
         return { success: true, data: stats, message: `${stats.length} métrica(s) CSAT visível(is)` };
       },
     },
@@ -978,12 +1017,7 @@ const MODULE_ACTIONS = {
       description: 'Obter visão geral do sistema (KPIs visíveis na tela)',
       params: {},
       execute: async () => {
-        const stats = [];
-        document.querySelectorAll('.stat-card, .kpi-card, [class*="stat-"], [class*="metric"]').forEach(card => {
-          const label = card.querySelector('.stat-label, .kpi-label, small, [class*="label"]')?.textContent?.trim() || '';
-          const value = card.querySelector('.stat-value, .kpi-value, [class*="value"], [class*="count"]')?.textContent?.trim() || '';
-          if (label && value) stats.push({ label, value });
-        });
+        const stats = scrapeVisibleStats();
         return { success: true, data: stats, message: `${stats.length} dado(s) capturado(s) da tela` };
       },
     },
@@ -1013,12 +1047,7 @@ const MODULE_ACTIONS = {
       description: 'Capturar métricas de performance de conteúdo visíveis na tela',
       params: {},
       execute: async () => {
-        const stats = [];
-        document.querySelectorAll('.stat-card, .kpi-card, .metric-card, [class*="performance"]').forEach(card => {
-          const label = card.querySelector('.stat-label, .kpi-label, small, th, [class*="label"]')?.textContent?.trim() || '';
-          const value = card.querySelector('.stat-value, .kpi-value, td, [class*="value"]')?.textContent?.trim() || '';
-          if (label && value) stats.push({ label, value });
-        });
+        const stats = scrapeVisibleStats();
         return { success: true, data: stats, message: `${stats.length} métrica(s) de conteúdo` };
       },
     },

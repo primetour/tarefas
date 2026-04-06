@@ -538,7 +538,7 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
   const systemPrompt = systemParts.join('\n');
   const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.gemini;
   const model     = config?.defaultModel || defaults.model;
-  const maxTokens = Math.max(config?.defaultMaxTokens || defaults.maxTokens, 2048);
+  const maxTokens = Math.max(config?.defaultMaxTokens || defaults.maxTokens, 4096);
 
   let result;
   switch (provider) {
