@@ -326,6 +326,8 @@ function setupRouter() {
       destroyRequests();
       destroyNotifications();
       destroyRoteiroEditor();
+      // Remover painel de IA flutuante (será recriado para o novo módulo)
+      document.getElementById('ai-panel-auto')?.remove();
       // Limpar o container garante que não há resíduos visuais
       content.innerHTML = '';
     }
@@ -391,23 +393,19 @@ function setupRouter() {
     // Esperar o DOM do módulo renderizar (pequeno delay para async renders)
     setTimeout(async () => {
       try {
-        // Criar container para o painel de IA (após o header da página)
+        // Criar container flutuante para o painel de IA (canto inferior direito)
         if (document.getElementById('ai-panel-auto')) return; // já montado
         const aiDiv = document.createElement('div');
         aiDiv.id = 'ai-panel-auto';
-        aiDiv.style.cssText = 'margin-bottom:12px;';
+        aiDiv.style.cssText = `
+          position:fixed;bottom:20px;right:20px;z-index:999;
+          width:420px;max-width:calc(100vw - 40px);
+        `;
 
-        // Inserir após o primeiro .page-header ou .toolbar, ou no topo do content
-        const anchor = content.querySelector('.toolbar') || content.querySelector('.page-header');
-        if (anchor && anchor.nextSibling) {
-          anchor.parentNode.insertBefore(aiDiv, anchor.nextSibling);
-        } else if (anchor) {
-          anchor.parentNode.appendChild(aiDiv);
-        } else {
-          content.prepend(aiDiv);
-        }
+        // Append no body (é fixed, não precisa estar no fluxo do page-content)
+        document.body.appendChild(aiDiv);
 
-        // Montar — se não houver skills E não houver config, nada aparece
+        // Montar — se não houver skills E não houver ações, nada aparece
         await mountAiPanel(aiDiv, moduleId, () => {
           // Captura contexto dinâmico da página visível
           const ctx = {
@@ -420,16 +418,16 @@ function setupRouter() {
           };
 
           // Capturar stats/contadores visíveis
-          const statsEls = content.querySelectorAll('.stat-value,.kpi-value,[class*="count"]');
+          const statsEls = content.querySelectorAll('.stat-card-value,.kpi-value,.rd-kpi-value');
           if (statsEls.length) {
             ctx.visibleStats = [...statsEls].slice(0, 10).map(el => ({
-              label: el.closest('.stat-card,.kpi-card,[class*="stat"]')?.querySelector('.stat-label,.kpi-label,small,span')?.textContent || '',
+              label: el.closest('.stat-card,.kpi-card,.rd-kpi-card')?.querySelector('.stat-card-label,.kpi-label,.rd-kpi-label,small')?.textContent || '',
               value: el.textContent?.trim() || '',
             })).filter(s => s.value);
           }
 
           // Capturar filtros ativos
-          const filters = content.querySelectorAll('select.filter-select');
+          const filters = content.querySelectorAll('select.filter-select, select[id*="filter"]');
           if (filters.length) {
             ctx.activeFilters = [...filters].map(s => ({
               name: s.id || s.name || '',
@@ -446,7 +444,7 @@ function setupRouter() {
           return ctx;
         });
 
-        // Se o painel não renderizou nada (sem skills), remover o div vazio
+        // Se o painel não renderizou nada (sem skills/config), remover
         if (!aiDiv.innerHTML.trim()) aiDiv.remove();
       } catch (e) { /* silencioso */ }
     }, 150);
