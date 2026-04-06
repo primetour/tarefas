@@ -34,44 +34,93 @@ function scrapeVisibleStats() {
   const content = document.getElementById('page-content');
   if (!content) return [];
   const stats = [];
+  const seen = new Set();
 
-  // 1. stat-card (dashboard principal)
+  function add(label, value, source) {
+    if (!label || !value) return;
+    const key = label.toLowerCase().trim();
+    if (seen.has(key)) return;
+    seen.add(key);
+    stats.push({ label: label.trim(), value: value.trim(), source });
+  }
+
+  // 1. Dashboard principal — .kpi-widget (usa .kpi-label + .kpi-value)
+  content.querySelectorAll('.kpi-widget').forEach(card => {
+    const label = card.querySelector('.kpi-label')?.textContent?.trim() || '';
+    const value = card.querySelector('.kpi-value')?.textContent?.trim() || '';
+    add(label, value, 'dashboard');
+  });
+
+  // 2. GA / Meta / Newsletter — cards com inline styles
+  //    Estrutura: .card > div(label uppercase) > div(valor bold) > div(subtexto)
+  content.querySelectorAll('#ga-kpis .card, #meta-kpis .card, #nl-kpis .card').forEach(card => {
+    const divs = card.querySelectorAll(':scope > div');
+    let label = '', value = '', sub = '';
+    for (const d of divs) {
+      const s = (d.getAttribute('style') || '').toLowerCase();
+      const t = d.textContent?.trim() || '';
+      if (!t) continue;
+      if (s.includes('uppercase') || s.includes('letter-spacing')) {
+        // Label — pode conter ícone "i" no final, limpar
+        label = t.replace(/\s*i\s*$/, '').trim();
+      } else if (s.includes('font-weight') && (s.includes('600') || s.includes('700') || s.includes('bold'))) {
+        value = t;
+      } else if (s.includes('font-size:1.') || s.includes('font-size: 1.')) {
+        value = t;
+      } else if (label && value) {
+        sub = t;
+      }
+    }
+    // Fallback: se não pegou por style, usar posição dos filhos
+    if (!label || !value) {
+      const children = Array.from(divs);
+      if (children.length >= 2) {
+        label = label || children[0]?.textContent?.trim() || '';
+        value = value || children[1]?.textContent?.trim() || '';
+        if (children.length >= 3) sub = sub || children[2]?.textContent?.trim() || '';
+      }
+    }
+    const section = card.closest('#ga-kpis') ? 'Google Analytics'
+                  : card.closest('#meta-kpis') ? 'Meta/Instagram'
+                  : 'Newsletter';
+    add(label, sub ? `${value} (${sub})` : value, section);
+  });
+
+  // 3. stat-card (variante legada)
   content.querySelectorAll('.stat-card').forEach(card => {
     const label = card.querySelector('.stat-card-label, small')?.textContent?.trim() || '';
     const value = card.querySelector('.stat-card-value')?.textContent?.trim() || '';
-    if (label && value) stats.push({ label, value });
+    add(label, value, 'stat-card');
   });
 
-  // 2. card genérico com KPIs (gaPerformance, metaPerformance, nlPerformance)
-  //    Esses usam class="card" com <small> para label e texto grande para valor
-  content.querySelectorAll('#ga-kpis .card, #meta-kpis .card, #nl-kpis .card').forEach(card => {
-    const label = card.querySelector('small')?.textContent?.trim() || '';
-    const value = card.querySelector('div[style*="font-size:1."]')?.textContent?.trim()
-               || card.querySelector('div[style*="font-size:2"]')?.textContent?.trim()
-               || card.querySelector('b, strong')?.textContent?.trim() || '';
-    if (label && value) stats.push({ label, value });
-  });
-
-  // 3. rd-kpi-card (roteiroDashboard)
+  // 4. rd-kpi-card (roteiroDashboard)
   content.querySelectorAll('.rd-kpi-card').forEach(card => {
     const label = card.querySelector('.rd-kpi-label')?.textContent?.trim() || '';
     const value = card.querySelector('.rd-kpi-value')?.textContent?.trim() || '';
-    if (label && value) stats.push({ label, value });
+    add(label, value, 'roteiros');
   });
 
-  // 4. kpi-card genérico (CSAT, outros)
+  // 5. kpi-card genérico (CSAT, outros)
   content.querySelectorAll('.kpi-card').forEach(card => {
     const label = card.querySelector('.kpi-label, small, [class*="label"]')?.textContent?.trim() || '';
     const value = card.querySelector('.kpi-value, [class*="value"]')?.textContent?.trim() || '';
-    if (label && value && !stats.some(s => s.label === label)) stats.push({ label, value });
+    add(label, value, 'kpi-card');
   });
 
-  // 5. Fallback genérico: qualquer div com padrão label/value não capturado
+  // 6. dash-widget sem kpi-widget (caso use outro layout)
+  content.querySelectorAll('.dash-widget').forEach(card => {
+    if (card.querySelector('.kpi-widget')) return; // já capturado no passo 1
+    const label = card.querySelector('.kpi-label, small, [class*="label"]')?.textContent?.trim() || '';
+    const value = card.querySelector('.kpi-value, [class*="value"], b, strong')?.textContent?.trim() || '';
+    add(label, value, 'dash-widget');
+  });
+
+  // 7. Fallback: elementos com metric/stat/kpi no class
   if (!stats.length) {
-    content.querySelectorAll('[class*="metric"], [class*="stat-"], [class*="kpi"]').forEach(card => {
-      const label = card.querySelector('small, [class*="label"], span')?.textContent?.trim() || '';
-      const value = card.querySelector('[class*="value"], [class*="count"], b, strong')?.textContent?.trim() || '';
-      if (label && value) stats.push({ label, value });
+    content.querySelectorAll('[class*="metric"], [class*="stat-"], [class*="kpi"]').forEach(el => {
+      const label = el.querySelector('small, [class*="label"], span')?.textContent?.trim() || '';
+      const value = el.querySelector('[class*="value"], [class*="count"], b, strong')?.textContent?.trim() || '';
+      add(label, value, 'fallback');
     });
   }
 
@@ -153,7 +202,7 @@ const MODULE_ACTIONS = {
           assignees: user?.uid ? [user.uid] : [],
           ...(params.dueDate ? { dueDate: new Date(params.dueDate + 'T12:00:00') } : {}),
         });
-        return { success: true, message: `Tarefa "${params.title}" criada com sucesso!`, taskId: task?.id };
+        return { success: true, message: `Tarefa "${params.title}" criada com sucesso! ID: ${task?.id}`, taskId: task?.id, data: { taskId: task?.id, title: params.title } };
       },
     },
     {
@@ -596,6 +645,73 @@ const MODULE_ACTIONS = {
         return { success: true, message: priority ? 'Dica marcada como prioritária!' : 'Destaque removido da dica' };
       },
     },
+    {
+      name: 'create_destination',
+      description: 'Criar um novo destino no portal de dicas',
+      params: {
+        name: 'string — nome do destino (ex: "Miami")',
+        city: 'string — cidade (ex: "Miami")',
+        country: 'string — país (ex: "Estados Unidos")',
+        continent: 'string — continente: america_do_norte, america_do_sul, europa, asia, africa, oceania',
+        description: 'string — descrição breve do destino (opcional)',
+      },
+      execute: async (params) => {
+        const { saveDestination } = await import('./portal.js');
+        const id = await saveDestination(null, {
+          name: params.name,
+          city: params.city || params.name,
+          country: params.country || '',
+          continent: params.continent || '',
+          description: params.description || '',
+        });
+        showToast('success', `Destino "${params.name}" criado!`);
+        return { success: true, message: `Destino "${params.name}" criado!`, data: { destinationId: id, name: params.name } };
+      },
+    },
+    {
+      name: 'create_tip',
+      description: 'Criar uma nova dica de viagem para um destino',
+      params: {
+        destinationId: 'string — ID do destino (obrigatório). Use list_destinations para encontrar.',
+        title: 'string — título da dica (ex: "Melhores restaurantes em Miami")',
+        category: 'string — categoria: restaurantes, atracoes, hoteis, informacoes_gerais, compras, vida_noturna, transporte, dicas_praticas',
+        content: 'string — conteúdo/texto da dica (pode ser longo)',
+        priority: 'boolean — true para destacar (opcional, default: false)',
+      },
+      execute: async (params) => {
+        if (!params.destinationId) return { success: false, message: 'destinationId é obrigatório. Use list_destinations para encontrar o ID do destino.' };
+        const { saveTip } = await import('./portal.js');
+        const id = await saveTip(null, {
+          destinationId: params.destinationId,
+          title: params.title || '',
+          category: params.category || 'informacoes_gerais',
+          content: params.content || '',
+          priority: params.priority || false,
+        });
+        showToast('success', `Dica "${params.title}" criada!`);
+        return { success: true, message: `Dica "${params.title}" criada!`, data: { tipId: id, title: params.title } };
+      },
+    },
+    {
+      name: 'update_tip',
+      description: 'Atualizar o conteúdo de uma dica existente',
+      params: {
+        tipId: 'string — ID da dica (obrigatório)',
+        title: 'string — novo título (opcional)',
+        content: 'string — novo conteúdo (opcional)',
+        category: 'string — nova categoria (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.tipId) return { success: false, message: 'tipId é obrigatório' };
+        const { saveTip } = await import('./portal.js');
+        const { tipId, ...data } = params;
+        // Remover campos vazios
+        Object.keys(data).forEach(k => { if (!data[k]) delete data[k]; });
+        await saveTip(tipId, data);
+        showToast('success', 'Dica atualizada!');
+        return { success: true, message: 'Dica atualizada com sucesso!' };
+      },
+    },
   ],
 
   /* ═══════════════════════════════════════════════════════════
@@ -1019,6 +1135,198 @@ const MODULE_ACTIONS = {
   ],
 
   /* ═══════════════════════════════════════════════════════════
+   * NEWS-MONITOR — Notícias do setor + Clipping da empresa
+   * ═══════════════════════════════════════════════════════════ */
+  'news-monitor': [
+    {
+      name: 'list_news',
+      description: 'Listar notícias cadastradas no sistema',
+      params: {
+        category: 'string — filtrar: Hotelaria, Cruzeiros, Destinos, Companhias Aéreas, Mercado, Sistemas, Agências e Operadoras (opcional)',
+        subcategory: 'string — filtrar: Notícias, Curiosidades, Dicas, Tendências, Insights, Eventos, Tecnologia, Sustentabilidade, Educação (opcional)',
+        search: 'string — busca por texto livre (opcional)',
+      },
+      execute: async (params) => {
+        const { fetchNews } = await import('./newsMonitor.js');
+        const items = await fetchNews(params || {});
+        const summary = items.slice(0, 20).map(n => ({
+          id: n.id,
+          title: n.title || '',
+          category: n.category || '',
+          subcategory: n.subcategory || '',
+          source: n.sourceName || n.sourceUrl || '',
+          publishedAt: n.publishedAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
+        }));
+        return { success: true, data: summary, message: `${items.length} notícia(s) encontrada(s)` };
+      },
+    },
+    {
+      name: 'create_news',
+      description: 'Cadastrar uma nova notícia no monitor. Use para salvar notícias encontradas na web.',
+      params: {
+        title: 'string — título da notícia (obrigatório)',
+        description: 'string — resumo/descrição da notícia',
+        sourceUrl: 'string — URL da fonte original',
+        sourceName: 'string — nome do veículo/site (ex: Panrotas, Travel3)',
+        category: 'string — Hotelaria, Cruzeiros, Destinos, Companhias Aéreas, Mercado, Sistemas, Agências e Operadoras',
+        subcategory: 'string — Notícias, Curiosidades, Dicas, Tendências, Insights, Eventos, Tecnologia, Sustentabilidade, Educação',
+        publishedAt: 'string — data de publicação YYYY-MM-DD (default: hoje)',
+        expiresAt: 'string — data de expiração YYYY-MM-DD (opcional)',
+        thumbnail: 'string — URL da imagem/thumbnail (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.title) return { success: false, message: 'Título é obrigatório.' };
+        const { saveNewsItem, fetchUrlMetadata } = await import('./newsMonitor.js');
+        // Tentar buscar metadados da URL se não informou thumbnail/sourceName
+        let meta = {};
+        if (params.sourceUrl && (!params.thumbnail || !params.sourceName)) {
+          try { meta = await fetchUrlMetadata(params.sourceUrl); } catch {}
+        }
+        const pubDate = params.publishedAt
+          ? new Date(params.publishedAt + 'T12:00:00')
+          : new Date();
+        const data = {
+          title: params.title,
+          description: params.description || '',
+          sourceUrl: params.sourceUrl || '',
+          sourceName: params.sourceName || meta.siteName || '',
+          category: params.category || 'Mercado',
+          subcategory: params.subcategory || 'Notícias',
+          publishedAt: pubDate,
+          thumbnail: params.thumbnail || meta.thumbnail || '',
+        };
+        if (params.expiresAt) data.expiresAt = params.expiresAt;
+        const id = await saveNewsItem(null, data);
+        showToast('success', `Notícia "${params.title}" cadastrada!`);
+        return { success: true, message: `Notícia "${params.title}" cadastrada!`, data: { newsId: id, title: params.title } };
+      },
+    },
+    {
+      name: 'update_news',
+      description: 'Atualizar uma notícia existente',
+      params: {
+        newsId: 'string — ID da notícia (obrigatório)',
+        title: 'string — novo título (opcional)',
+        description: 'string — nova descrição (opcional)',
+        category: 'string — nova categoria (opcional)',
+        subcategory: 'string — nova subcategoria (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.newsId) return { success: false, message: 'newsId é obrigatório' };
+        const { saveNewsItem } = await import('./newsMonitor.js');
+        const { newsId, ...data } = params;
+        Object.keys(data).forEach(k => { if (!data[k]) delete data[k]; });
+        await saveNewsItem(newsId, data);
+        showToast('success', 'Notícia atualizada!');
+        return { success: true, message: 'Notícia atualizada!' };
+      },
+    },
+    {
+      name: 'list_clippings',
+      description: 'Listar clippings (citações da PRIMETOUR na mídia)',
+      params: {
+        sentiment: 'string — filtrar: positive, neutral, negative (opcional)',
+      },
+      execute: async (params) => {
+        const { fetchClippings } = await import('./newsMonitor.js');
+        let items = await fetchClippings();
+        if (params?.sentiment) items = items.filter(c => c.sentiment === params.sentiment);
+        const summary = items.slice(0, 20).map(c => ({
+          id: c.id,
+          title: c.title || '',
+          mediaType: c.mediaType || '',
+          contentType: c.contentType || '',
+          sentiment: c.sentiment || '',
+          sourceName: c.sourceName || '',
+          publishedAt: c.publishedAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
+        }));
+        return { success: true, data: summary, message: `${items.length} clipping(s)` };
+      },
+    },
+    {
+      name: 'create_clipping',
+      description: 'Cadastrar um novo clipping (citação/menção da PRIMETOUR na mídia). Use para registrar menções encontradas na internet.',
+      params: {
+        title: 'string — título da matéria/menção (obrigatório)',
+        description: 'string — resumo do conteúdo/contexto da citação',
+        sourceUrl: 'string — URL da matéria/publicação',
+        sourceName: 'string — nome do veículo (ex: Folha de S.Paulo, Panrotas)',
+        mediaType: 'string — Digital, Impresso ou Televisivo (default: Digital)',
+        contentType: 'string — Negócios, Análises, Tendências, Novidades, Publieditorial, Eventos',
+        sentiment: 'string — positive, neutral ou negative',
+        publishedAt: 'string — data de publicação YYYY-MM-DD (default: hoje)',
+        excerpt: 'string — trecho relevante da citação (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.title) return { success: false, message: 'Título é obrigatório.' };
+        const { saveClipping, fetchUrlMetadata } = await import('./newsMonitor.js');
+        let meta = {};
+        if (params.sourceUrl && !params.sourceName) {
+          try { meta = await fetchUrlMetadata(params.sourceUrl); } catch {}
+        }
+        const pubDate = params.publishedAt
+          ? new Date(params.publishedAt + 'T12:00:00')
+          : new Date();
+        const data = {
+          title: params.title,
+          description: params.description || '',
+          sourceUrl: params.sourceUrl || '',
+          sourceName: params.sourceName || meta.siteName || '',
+          mediaType: params.mediaType || 'Digital',
+          contentType: params.contentType || 'Novidades',
+          sentiment: params.sentiment || 'neutral',
+          publishedAt: pubDate,
+          excerpt: params.excerpt || '',
+          thumbnail: meta.thumbnail || '',
+        };
+        const id = await saveClipping(null, data);
+        showToast('success', `Clipping "${params.title}" cadastrado!`);
+        return { success: true, message: `Clipping "${params.title}" cadastrado!`, data: { clippingId: id, title: params.title } };
+      },
+    },
+    {
+      name: 'search_web_news',
+      description: 'Buscar notícias recentes na web sobre um tema do turismo. Retorna resultados para você avaliar e cadastrar via create_news.',
+      params: {
+        query: 'string — termo de busca (ex: "novos voos para Miami", "tendências hotelaria 2026")',
+        sites: 'string — limitar a sites específicos separados por vírgula (ex: "panrotas.com.br,mercadoeventos.com.br") (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.query) return { success: false, message: 'query é obrigatória' };
+        // Usa a API do microlink para buscar metadados de URLs encontradas
+        // A busca real será feita pelo LLM via web search no prompt
+        return {
+          success: true,
+          message: 'Para buscar notícias na web, use seu conhecimento atualizado e/ou web search. Quando encontrar notícias relevantes, use create_news para cadastrar cada uma no sistema.',
+          data: {
+            instruction: 'Use web search para buscar sobre: ' + params.query + (params.sites ? '. Sites preferidos: ' + params.sites : ''),
+            tip: 'Após encontrar, cadastre cada notícia com create_news incluindo título, resumo, URL, fonte e categoria.',
+          },
+        };
+      },
+    },
+    {
+      name: 'search_web_clipping',
+      description: 'Buscar menções/citações recentes da PRIMETOUR na internet. Retorna instrução para buscar e cadastrar via create_clipping.',
+      params: {
+        additionalTerms: 'string — termos extras além de "PRIMETOUR" (ex: "Prime Tour Viagens") (opcional)',
+      },
+      execute: async (params) => {
+        const terms = ['PRIMETOUR', 'Prime Tour Viagens', 'primetour.com.br'];
+        if (params?.additionalTerms) terms.push(params.additionalTerms);
+        return {
+          success: true,
+          message: 'Para buscar clippings, use web search com os termos abaixo. Cadastre cada menção encontrada com create_clipping.',
+          data: {
+            searchTerms: terms,
+            tip: 'Busque cada termo na web. Para cada citação da PRIMETOUR encontrada, use create_clipping com título, resumo, URL, veículo, sentimento (positive/neutral/negative) e trecho relevante.',
+          },
+        };
+      },
+    },
+  ],
+
+  /* ═══════════════════════════════════════════════════════════
    * GENERAL — Módulos administrativos (users, settings, etc.)
    * ═══════════════════════════════════════════════════════════ */
   general: [
@@ -1085,20 +1393,18 @@ export function formatActionsForPrompt(moduleId) {
 
   return `
 === AÇÕES DISPONÍVEIS ===
-Você pode EXECUTAR ações no sistema. Quando quiser executar uma ação, inclua no final da sua resposta um bloco no formato:
-
+Formato para executar ações:
 <<<ACTION>>>
-{"action": "nome_da_acao", "params": {"param1": "valor1", "param2": "valor2"}}
+{"action": "nome_da_acao", "params": {"param1": "valor1"}}
 <<<END_ACTION>>>
 
-Você pode incluir múltiplos blocos de ação na mesma resposta.
-
-REGRAS IMPORTANTES:
-1. Sempre explique ao usuário o que você vai fazer ANTES do bloco de ação.
-2. Só execute ações quando o usuário pedir explicitamente ou quando for claramente necessário.
-3. Se o usuário perguntar sobre dados (ex: "quantas tarefas tenho?"), use list_tasks ou get_task_summary PRIMEIRO para obter os dados, e responda com base neles.
-4. Para criar/atualizar/deletar, confirme com o usuário antes de executar, a menos que ele tenha sido bem explícito.
-5. Os blocos <<<ACTION>>> NÃO são visíveis ao usuário — eles são processados internamente pelo sistema.
+REGRAS OBRIGATÓRIAS:
+1. SEMPRE execute a ação. NUNCA diga "eu faria" ou "se eu pudesse" — inclua o bloco <<<ACTION>>> e o sistema executa.
+2. Seja CONCISO: 1-2 frases + bloco de ação. Não repita o pedido do usuário.
+3. Múltiplas ações na mesma resposta: use vários blocos <<<ACTION>>>. Ex: list_tasks para buscar ID + update_task para modificar.
+4. Os blocos <<<ACTION>>> são INVISÍVEIS ao usuário — processados pelo sistema automaticamente.
+5. NUNCA INVENTE IDs. IDs do Firestore são hashes como "aB3xK9qW2mNp". Se no histórico houver >>> ID_CRIADO="xxx" <<<, use "xxx" como taskId. Se NÃO encontrar o ID real no histórico, faça list_tasks PRIMEIRO para buscar.
+6. Para conteúdos longos (descrições, textos), coloque DENTRO do params da ação (ex: description no update_task), não no texto da resposta.
 
 Ações disponíveis:
 ${lines.join('\n')}
