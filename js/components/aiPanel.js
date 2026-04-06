@@ -18,15 +18,15 @@ try { const m = await import('../components/toast.js'); _toast = m.toast?.succes
 const MODULE_CAPABILITIES = {
   tasks: {
     greeting: 'Posso te ajudar a gerenciar suas tarefas.',
-    capabilities: ['Criar e editar tarefas', 'Listar tarefas por status/prioridade', 'Marcar como concluída', 'Adicionar comentários', 'Atualizar várias tarefas de uma vez', 'Aplicar filtros na tela'],
+    capabilities: ['Criar tarefas com todos os campos (tipo, variação, tags, projeto, datas, etc.)', 'Editar qualquer campo (descrição, customFields, status, fora do calendário...)', 'Listar e buscar tarefas por status/prioridade/texto', 'Marcar como concluída', 'Adicionar comentários e subtarefas', 'Atualizar várias tarefas de uma vez', 'Ver tipos de tarefa e campos personalizados'],
   },
   kanban: {
     greeting: 'Posso te ajudar a gerenciar o quadro Kanban.',
-    capabilities: ['Mover cards entre colunas', 'Resumo do board por status', 'Listar cards de uma coluna'],
+    capabilities: ['Criar e mover cards entre colunas', 'Editar cards (título, descrição, prioridade, responsáveis)', 'Buscar cards por título', 'Resumo do board por status'],
   },
   projects: {
     greeting: 'Posso te ajudar a gerenciar seus projetos.',
-    capabilities: ['Criar e editar projetos', 'Listar projetos ativos', 'Ver tarefas de um projeto'],
+    capabilities: ['Criar e editar projetos (nome, datas, membros, status)', 'Excluir projetos', 'Ver tarefas e progresso de um projeto', 'Listar e buscar projetos'],
   },
   'portal-tips': {
     greeting: 'Posso te ajudar com o Portal de Dicas.',
@@ -34,19 +34,19 @@ const MODULE_CAPABILITIES = {
   },
   roteiros: {
     greeting: 'Posso te ajudar com Roteiros de Viagem.',
-    capabilities: ['Listar roteiros por status', 'Ver detalhes de um roteiro', 'Alterar status (rascunho → revisão → enviado)', 'Duplicar roteiros', 'Estatísticas e clientes recentes'],
+    capabilities: ['Criar e editar roteiros', 'Alterar status (rascunho → revisão → enviado)', 'Duplicar e excluir roteiros', 'Buscar clientes recentes', 'Estatísticas gerais'],
   },
   feedbacks: {
     greeting: 'Posso te ajudar com Feedbacks.',
-    capabilities: ['Listar e registrar feedbacks', 'Ver detalhes de um feedback', 'Resumo com rating médio por tipo'],
+    capabilities: ['Criar, editar e excluir feedbacks', 'Listar e ver detalhes', 'Resumo com rating médio por tipo'],
   },
   goals: {
     greeting: 'Posso te ajudar com Metas e OKRs.',
-    capabilities: ['Listar e criar metas', 'Ver detalhes e progresso', 'Resumo geral de metas'],
+    capabilities: ['Criar, editar e publicar metas', 'Excluir metas', 'Ver detalhes e progresso', 'Resumo geral por status'],
   },
   csat: {
     greeting: 'Posso te ajudar com Pesquisas de Satisfação.',
-    capabilities: ['Listar pesquisas CSAT', 'Calcular métricas (score, NPS, taxa de resposta)', 'Capturar dados da tela'],
+    capabilities: ['Criar e enviar pesquisas CSAT', 'Reenviar e cancelar pesquisas', 'Encontrar tarefas sem CSAT', 'Calcular métricas (score, NPS, taxa de resposta)'],
   },
   requests: {
     greeting: 'Posso te ajudar com Solicitações.',
@@ -58,7 +58,7 @@ const MODULE_CAPABILITIES = {
   },
   dashboards: {
     greeting: 'Posso te ajudar a analisar os dados do Dashboard.',
-    capabilities: ['Capturar KPIs visíveis', 'Visão geral de tarefas (por status, prioridade, atrasadas)'],
+    capabilities: ['Capturar KPIs visíveis (GA, Instagram, Newsletter)', 'Visão geral de tarefas (por status, prioridade, atrasadas)'],
   },
   'news-monitor': {
     greeting: 'Posso te ajudar com Notícias e Clipping.',
@@ -298,11 +298,11 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
 
   // ── Data actions set (for follow-up) ──
   const DATA_ACTIONS = new Set([
-    'list_tasks','list_projects','list_roteiros','list_feedbacks','list_goals','list_events',
+    'list_tasks','list_task_types','list_projects','list_roteiros','list_feedbacks','list_goals','list_events',
     'list_requests','list_destinations','list_tips','list_areas','list_images','list_surveys',
     'list_recent_clients','list_notifications','list_news','list_clippings',
-    'get_task_summary','get_board_summary','get_project_tasks','get_dashboard_summary',
-    'get_csat_dom_summary','get_csat_metrics','get_current_user',
+    'get_task_summary','get_board_summary','get_project_tasks','get_project_progress','get_dashboard_summary',
+    'get_csat_dom_summary','get_csat_metrics','get_current_user','find_tasks_without_csat',
     'get_roteiro','get_roteiro_stats','get_tip_detail','get_feedback','get_feedback_summary',
     'get_goal','get_goals_summary','get_today_agenda','get_tasks_overview',
     'get_system_overview','get_content_metrics','get_requests_summary',
