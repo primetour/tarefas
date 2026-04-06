@@ -487,6 +487,7 @@ export async function runSkill(skillId, context = {}) {
 /**
  * Chat livre com IA — mensagem do usuário no contexto de um módulo.
  * Usa a config global (provider padrão, API key resolvida em cascata).
+ * Inclui ações disponíveis no system prompt para o módulo atual.
  * @param {string} userMessage — texto digitado pelo usuário
  * @param {Object} context — contexto do módulo (dados da página atual)
  * @param {Object} [opts] — { moduleId, history[] }
@@ -511,12 +512,20 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
     `Você é o assistente IA do sistema PRIMETOUR, integrado ao módulo "${moduleLabel}".`,
     `Responda sempre em português brasileiro, de forma clara e objetiva.`,
     `Você tem acesso ao contexto atual do módulo fornecido abaixo. Use-o para dar respostas relevantes.`,
+    `Quando o usuário pedir para executar ações (criar, atualizar, listar, navegar), use os blocos de ação disponíveis.`,
   ];
 
   // Adicionar contexto do módulo
   if (context && Object.keys(context).length) {
     systemParts.push(`\n=== CONTEXTO DO MÓDULO (${moduleLabel}) ===\n${JSON.stringify(context, null, 2)}\n=== FIM DO CONTEXTO ===`);
   }
+
+  // Adicionar ações disponíveis para o módulo
+  try {
+    const { formatActionsForPrompt } = await import('./aiActions.js');
+    const actionsPrompt = formatActionsForPrompt(opts.moduleId || 'general');
+    if (actionsPrompt) systemParts.push(actionsPrompt);
+  } catch (e) { /* aiActions não disponível, continuar sem ações */ }
 
   // Histórico de conversa (para continuidade)
   const history = opts.history || [];
@@ -529,7 +538,7 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
   const systemPrompt = systemParts.join('\n');
   const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.gemini;
   const model     = config?.defaultModel || defaults.model;
-  const maxTokens = config?.defaultMaxTokens || defaults.maxTokens;
+  const maxTokens = Math.max(config?.defaultMaxTokens || defaults.maxTokens, 2048);
 
   let result;
   switch (provider) {
