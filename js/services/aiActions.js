@@ -151,7 +151,7 @@ const MODULE_ACTIONS = {
           sector: params.sector || store.get('userSector') || '',
           createdBy: user?.uid,
           assignees: user?.uid ? [user.uid] : [],
-          ...(params.dueDate ? { dueDate: new Date(params.dueDate) } : {}),
+          ...(params.dueDate ? { dueDate: new Date(params.dueDate + 'T12:00:00') } : {}),
         });
         return { success: true, message: `Tarefa "${params.title}" criada com sucesso!`, taskId: task?.id };
       },
