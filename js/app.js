@@ -398,8 +398,7 @@ function setupRouter() {
         const aiDiv = document.createElement('div');
         aiDiv.id = 'ai-panel-auto';
         aiDiv.style.cssText = `
-          position:fixed;bottom:20px;right:20px;z-index:999;
-          width:420px;max-width:calc(100vw - 40px);
+          position:fixed;bottom:24px;right:24px;z-index:9999;
         `;
 
         // Append no body (é fixed, não precisa estar no fluxo do page-content)
