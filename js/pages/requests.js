@@ -11,7 +11,7 @@ import { openTaskModal } from '../components/taskModal.js';
 import {
   fetchRequests, subscribeRequests,
   updateRequestStatus, convertToTask,
-  notifyRequesterRejected,
+  notifyRequesterRejected, deleteRequest,
   REQUEST_STATUSES, REQUEST_STATUS_MAP,
 } from '../services/requests.js';
 
@@ -302,6 +302,20 @@ async function openRequestDetail(req) {
     `,
     footer: [
       { label:'Fechar', class:'btn-secondary', closeOnClick:true },
+
+      // Excluir — admin only
+      ...(store.can('system_manage_settings') ? [{
+        label: '🗑 Excluir', class: 'btn-secondary btn-sm', closeOnClick: false,
+        style: 'color:#EF4444;border-color:#EF4444;margin-right:auto;',
+        onClick: async (_, { close }) => {
+          if (!confirm(`Deseja excluir permanentemente esta solicitação de ${req.requesterName}?\n\nEssa ação não pode ser desfeita.`)) return;
+          try {
+            await deleteRequest(req.id);
+            toast.success('Solicitação excluída.');
+            close();
+          } catch(e) { toast.error('Erro ao excluir: ' + e.message); }
+        },
+      }] : []),
 
       // Recusar — only when pending
       ...(req.status === 'pending' ? [{

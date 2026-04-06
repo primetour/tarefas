@@ -16,6 +16,7 @@ const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 let chartInstances = {};
 let currentPeriod = '30d';
 let allLogs = [];
+let allActionLogs = [];
 let allUsers = [];
 
 /* ─── Chart.js loader (mesmo padrão do dashboards.js) ──── */
@@ -97,6 +98,25 @@ export async function renderAiDashboard(container) {
       <div class="card skeleton" style="height:280px;"></div>
       <div class="card skeleton" style="height:280px;"></div>
     </div>
+
+    <!-- Row 5: Action metrics -->
+    <div style="margin-top:8px;margin-bottom:16px;">
+      <h2 style="font-size:1.125rem;font-weight:600;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+        <span style="color:var(--brand-gold);">⚡</span> Ações Executadas pelo Assistente
+      </h2>
+      <p style="font-size:0.8125rem;color:var(--text-muted);margin-top:2px;">Ações reais executadas pela IA nos módulos do sistema</p>
+    </div>
+    <div id="ai-action-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:24px;">
+      ${[0,1,2,3].map(()=>'<div class="card skeleton" style="height:80px;"></div>').join('')}
+    </div>
+    <div id="ai-charts-r5" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+      <div class="card skeleton" style="height:320px;"></div>
+      <div class="card skeleton" style="height:320px;"></div>
+    </div>
+    <div id="ai-charts-r6" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+      <div class="card skeleton" style="height:280px;"></div>
+      <div class="card skeleton" style="height:280px;"></div>
+    </div>
   `;
 
   // Period buttons
@@ -125,23 +145,28 @@ export async function renderAiDashboard(container) {
 
 /* ─── Data loading ───────────────────────────────────────── */
 async function loadLogs() {
-  try {
-    const snap = await getDocs(query(
-      collection(db, 'ai_usage_logs'),
-      orderBy('timestamp', 'desc'),
-      fbLimit(5000),
-    ));
-    allLogs = snap.docs.map(d => {
+  // Load usage logs + action logs in parallel
+  const [usageSnap, actionSnap] = await Promise.all([
+    getDocs(query(collection(db, 'ai_usage_logs'), orderBy('timestamp', 'desc'), fbLimit(5000))).catch(() => null),
+    getDocs(query(collection(db, 'ai_action_logs'), orderBy('timestamp', 'desc'), fbLimit(5000))).catch(() => null),
+  ]);
+
+  if (usageSnap) {
+    allLogs = usageSnap.docs.map(d => {
       const data = d.data();
-      return {
-        ...data,
-        id: d.id,
-        ts: data.timestamp?.toDate ? data.timestamp.toDate() : null,
-      };
+      return { ...data, id: d.id, ts: data.timestamp?.toDate ? data.timestamp.toDate() : null };
     }).filter(l => l.ts);
-  } catch (e) {
+  } else {
     allLogs = [];
-    console.warn('Erro ao carregar logs IA:', e);
+  }
+
+  if (actionSnap) {
+    allActionLogs = actionSnap.docs.map(d => {
+      const data = d.data();
+      return { ...data, id: d.id, ts: data.timestamp?.toDate ? data.timestamp.toDate() : null };
+    }).filter(l => l.ts);
+  } else {
+    allActionLogs = [];
   }
 
   await processAndRender();
@@ -160,6 +185,7 @@ function filterByPeriod(logs) {
 async function processAndRender() {
   const Chart = await loadChartJS();
   const logs = filterByPeriod(allLogs);
+  const actions = filterByPeriod(allActionLogs);
 
   renderKPIs(logs);
   renderCallsPerDay(Chart, logs);
@@ -171,6 +197,13 @@ async function processAndRender() {
   renderTopUsers(Chart, logs);
   renderCostByModule(Chart, logs);
   renderUnusedSkills(logs);
+
+  // Action metrics
+  renderActionKPIs(actions);
+  renderTopActions(Chart, actions);
+  renderActionsPerDay(Chart, actions);
+  renderActionsByModule(Chart, actions);
+  renderActionSuccessRate(Chart, actions);
 }
 
 /* ─── KPI cards ──────────────────────────────────────────── */
@@ -215,8 +248,9 @@ function estimateCost(logs) {
     // por 1M tokens [input, output]
     'gemini':    [0, 0],        // grátis
     'groq':      [0, 0],        // grátis
+    'openai':    [2.5, 10],     // GPT-4o default
     'anthropic': [3, 15],       // Sonnet default
-    'azure':     [2.5, 10],     // GPT-4o default
+    'azure':     [2.5, 10],     // GPT-4o via Azure
   };
   let total = 0;
   for (const l of logs) {
@@ -646,6 +680,350 @@ function createInfoWidget(parent, id, title, height) {
   `;
   parent.appendChild(wrap);
   return wrap;
+}
+
+/* ─── Action KPIs ───────────────────────────────────────── */
+function renderActionKPIs(actions) {
+  const el = document.getElementById('ai-action-kpis');
+  if (!el) return;
+
+  const total     = actions.length;
+  const success   = actions.filter(a => a.success === true).length;
+  const fail      = actions.filter(a => a.success === false).length;
+  const rate      = total ? Math.round(success / total * 100) : 0;
+  const modules   = new Set(actions.map(a => a.module).filter(Boolean)).size;
+
+  const kpis = [
+    { value: total.toLocaleString('pt-BR'),  label: 'Ações executadas',  color: '#38BDF8' },
+    { value: success.toLocaleString('pt-BR'), label: 'Sucesso',           color: '#22C55E' },
+    { value: fail.toLocaleString('pt-BR'),    label: 'Falhas',            color: '#EF4444' },
+    { value: `${rate}%`,                      label: 'Taxa de sucesso',   color: rate >= 80 ? '#22C55E' : rate >= 50 ? '#F59E0B' : '#EF4444' },
+  ];
+
+  el.innerHTML = kpis.map(k => `
+    <div class="card" style="padding:16px;text-align:center;">
+      <div style="font-size:1.5rem;font-weight:700;color:${k.color};">${k.value}</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${k.label}</div>
+    </div>
+  `).join('');
+}
+
+/* ─── Tradução de nomes técnicos → linguagem do usuário ── */
+const ACTION_LABELS = {
+  // Sistema
+  navigate:               'Navegar entre páginas',
+  show_toast:             'Exibir notificação',
+  get_current_user:       'Consultar usuário logado',
+  get_system_overview:    'Visão geral do sistema',
+  list_notifications:     'Listar notificações',
+  // Tarefas
+  create_task:            'Criar tarefa',
+  update_task:            'Atualizar tarefa',
+  complete_task:          'Concluir tarefa',
+  add_comment:            'Adicionar comentário',
+  list_tasks:             'Listar tarefas',
+  list_task_types:        'Listar tipos de tarefa',
+  add_subtask:            'Adicionar subtarefa',
+  filter_view:            'Filtrar visualização',
+  get_task_summary:       'Resumo de tarefas',
+  bulk_update_status:     'Atualizar status em lote',
+  // Kanban
+  move_card:              'Mover card no Kanban',
+  create_card:            'Criar card no Kanban',
+  update_card:            'Atualizar card no Kanban',
+  get_board_summary:      'Resumo do quadro Kanban',
+  // Projetos
+  create_project:         'Criar projeto',
+  list_projects:          'Listar projetos',
+  update_project:         'Atualizar projeto',
+  delete_project:         'Excluir projeto',
+  get_project_tasks:      'Listar tarefas do projeto',
+  get_project_progress:   'Progresso do projeto',
+  // Roteiros
+  list_roteiros:          'Listar roteiros',
+  get_roteiro:            'Ver roteiro',
+  update_roteiro_status:  'Atualizar status do roteiro',
+  duplicate_roteiro:      'Duplicar roteiro',
+  get_roteiro_stats:      'Estatísticas de roteiros',
+  list_recent_clients:    'Listar clientes recentes',
+  create_roteiro:         'Criar roteiro',
+  update_roteiro:         'Atualizar roteiro',
+  delete_roteiro:         'Excluir roteiro',
+  // Portal de Dicas
+  list_destinations:      'Listar destinos',
+  list_tips:              'Listar dicas',
+  get_tip_detail:         'Ver detalhe da dica',
+  list_areas:             'Listar áreas/BUs',
+  list_images:            'Listar imagens',
+  toggle_tip_priority:    'Alternar prioridade da dica',
+  create_destination:     'Criar destino',
+  create_tip:             'Criar dica',
+  update_tip:             'Atualizar dica',
+  // Feedbacks
+  list_feedbacks:         'Listar feedbacks',
+  get_feedback:           'Ver feedback',
+  create_feedback:        'Criar feedback',
+  update_feedback:        'Atualizar feedback',
+  delete_feedback:        'Excluir feedback',
+  get_feedback_summary:   'Resumo de feedbacks',
+  // Metas
+  list_goals:             'Listar metas',
+  get_goal:               'Ver meta',
+  create_goal:            'Criar meta',
+  update_goal:            'Atualizar meta',
+  publish_goal:           'Publicar meta',
+  delete_goal:            'Excluir meta',
+  get_goals_summary:      'Resumo de metas',
+  // Calendário
+  list_events:            'Listar eventos',
+  get_today_agenda:       'Agenda de hoje',
+  // Dashboards
+  get_dashboard_summary:  'Resumo do dashboard',
+  get_tasks_overview:     'Visão geral de tarefas',
+  get_content_metrics:    'Métricas de conteúdo',
+  scrape_visible_stats:   'Capturar KPIs visíveis',
+  // Solicitações
+  list_requests:          'Listar solicitações',
+  create_request:         'Criar solicitação',
+  approve_request:        'Aprovar solicitação',
+  reject_request:         'Recusar solicitação',
+  convert_request_to_task:'Converter solicitação em tarefa',
+  get_requests_summary:   'Resumo de solicitações',
+  // CSAT
+  list_surveys:           'Listar pesquisas CSAT',
+  create_survey:          'Criar pesquisa CSAT',
+  send_survey:            'Enviar pesquisa CSAT',
+  cancel_survey:          'Cancelar pesquisa CSAT',
+  resend_survey:          'Reenviar pesquisa CSAT',
+  find_tasks_without_csat:'Tarefas sem CSAT',
+  get_csat_metrics:       'Métricas CSAT',
+  get_csat_dom_summary:   'Resumo CSAT da tela',
+  // Notícias
+  list_news:              'Listar notícias',
+  create_news:            'Criar notícia',
+  update_news:            'Atualizar notícia',
+  list_clippings:         'Listar clippings',
+  create_clipping:        'Criar clipping',
+  search_web_news:        'Buscar notícias na web',
+  search_web_clipping:    'Buscar clipping na web',
+};
+
+function friendlyActionName(actionId) {
+  return ACTION_LABELS[actionId] || actionId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/* ─── Chart: Top actions ────────────────────────────────── */
+function renderTopActions(Chart, actions) {
+  const el = document.getElementById('ai-charts-r5');
+  if (!el) return;
+  el.innerHTML = '';
+
+  const grouped = {};
+  for (const a of actions) {
+    const name = a.action || 'unknown';
+    grouped[name] = (grouped[name] || 0) + 1;
+  }
+  const sorted = Object.entries(grouped).sort((a,b) => b[1] - a[1]).slice(0, 15);
+
+  if (!sorted.length) {
+    const wrap = createInfoWidget(el, 'ai-top-actions', 'Top ações mais executadas', 300);
+    wrap.querySelector('.widget-body-content').innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+        <div style="font-size:2rem;margin-bottom:8px;">⚡</div>
+        <div style="font-size:0.875rem;">Nenhuma ação executada neste período.</div>
+      </div>`;
+    renderActionsPerDayEmpty(el);
+    return;
+  }
+
+  const labels = sorted.map(([n]) => {
+    const friendly = friendlyActionName(n);
+    return friendly.length > 30 ? friendly.substring(0, 28) + '…' : friendly;
+  });
+  const data   = sorted.map(([,v]) => v);
+  const colors = ['#D4A843','#38BDF8','#22C55E','#A78BFA','#F59E0B','#EF4444','#EC4899',
+                  '#64748B','#06B6D4','#84CC16','#F97316','#8B5CF6','#14B8A6','#E11D48','#6366F1'];
+
+  const wrap = createChartWidget(el, 'ai-top-actions', 'Top ações mais executadas', 300);
+  const canvas = wrap.querySelector('canvas');
+  chartInstances['ai-top-actions'] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Execuções', data, backgroundColor: colors.slice(0, data.length).map(c => c + 'BB'), borderRadius: 4 }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: tooltipStyle() },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.04)' }, beginAtZero: true, ticks: { stepSize: 1 } },
+        y: { grid: { display: false }, ticks: { font: { size: 10 } } },
+      },
+    },
+  });
+}
+
+function renderActionsPerDayEmpty(el) {
+  const wrap = createInfoWidget(el, 'ai-actions-day', 'Ações por dia', 300);
+  wrap.querySelector('.widget-body-content').innerHTML = `
+    <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+      <div style="font-size:0.875rem;">Sem dados para exibir.</div>
+    </div>`;
+}
+
+/* ─── Chart: Actions per day ────────────────────────────── */
+function renderActionsPerDay(Chart, actions) {
+  const el = document.getElementById('ai-charts-r5');
+  if (!el || !actions.length) return;
+
+  // If already rendered empty, skip
+  if (document.getElementById('ai-actions-day')) return;
+
+  const map = {};
+  for (const a of actions) {
+    const key = a.ts.toISOString().slice(0, 10);
+    if (!map[key]) map[key] = { success: 0, fail: 0 };
+    if (a.success === false) map[key].fail++;
+    else map[key].success++;
+  }
+  const sorted = Object.entries(map).sort((a,b) => a[0].localeCompare(b[0]));
+  const labels = sorted.map(([d]) => formatDateLabel(d));
+  const successData = sorted.map(([,v]) => v.success);
+  const failData    = sorted.map(([,v]) => v.fail);
+
+  const wrap = createChartWidget(el, 'ai-actions-day', 'Ações por dia', 300);
+  const canvas = wrap.querySelector('canvas');
+  chartInstances['ai-actions-day'] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Sucesso', data: successData, backgroundColor: 'rgba(34,197,94,0.7)', borderRadius: 3 },
+        { label: 'Falha',   data: failData,    backgroundColor: 'rgba(239,68,68,0.7)', borderRadius: 3 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 10, padding: 12 } },
+        tooltip: tooltipStyle(),
+      },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.04)' }, stacked: true, ticks: { maxTicksLimit: 10, font: { size: 10 } } },
+        y: { grid: { color: 'rgba(255,255,255,0.04)' }, stacked: true, beginAtZero: true, ticks: { stepSize: 1 } },
+      },
+    },
+  });
+}
+
+/* ─── Chart: Actions by module ──────────────────────────── */
+function renderActionsByModule(Chart, actions) {
+  const el = document.getElementById('ai-charts-r6');
+  if (!el) return;
+  el.innerHTML = '';
+
+  const grouped = {};
+  for (const a of actions) {
+    const m = a.module || 'general';
+    grouped[m] = (grouped[m] || 0) + 1;
+  }
+  const sorted = Object.entries(grouped).sort((a,b) => b[1] - a[1]).slice(0, 10);
+
+  if (!sorted.length) {
+    const wrap = createInfoWidget(el, 'ai-actions-module', 'Ações por módulo', 260);
+    wrap.querySelector('.widget-body-content').innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+        <div style="font-size:0.875rem;">Sem dados.</div>
+      </div>`;
+    renderActionSuccessRateEmpty(el);
+    return;
+  }
+
+  const labels = sorted.map(([m]) => MODULE_REGISTRY[m]?.label || m);
+  const data   = sorted.map(([,v]) => v);
+  const colors = ['#D4A843','#38BDF8','#22C55E','#A78BFA','#F59E0B','#EF4444','#EC4899','#64748B','#06B6D4','#84CC16'];
+
+  const wrap = createChartWidget(el, 'ai-actions-module', 'Ações por módulo', 260);
+  const canvas = wrap.querySelector('canvas');
+  chartInstances['ai-actions-module'] = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: colors.slice(0, data.length).map(c => c + 'CC'),
+        borderColor: colors.slice(0, data.length), borderWidth: 1.5, hoverOffset: 6 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '65%',
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 10, padding: 10, font: { size: 11 } } },
+        tooltip: { ...tooltipStyle(), callbacks: {
+          label: ctx => {
+            const total = ctx.dataset.data.reduce((a,b) => a + b, 0) || 1;
+            return ` ${ctx.label}: ${ctx.parsed} (${Math.round(ctx.parsed / total * 100)}%)`;
+          }
+        }},
+      },
+    },
+  });
+}
+
+function renderActionSuccessRateEmpty(el) {
+  const wrap = createInfoWidget(el, 'ai-actions-success', 'Taxa de sucesso por ação', 260);
+  wrap.querySelector('.widget-body-content').innerHTML = `
+    <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+      <div style="font-size:0.875rem;">Sem dados.</div>
+    </div>`;
+}
+
+/* ─── Chart: Success rate by action ─────────────────────── */
+function renderActionSuccessRate(Chart, actions) {
+  const el = document.getElementById('ai-charts-r6');
+  if (!el || !actions.length) return;
+
+  if (document.getElementById('ai-actions-success')) return;
+
+  // Group by action → success/total
+  const grouped = {};
+  for (const a of actions) {
+    const name = a.action || 'unknown';
+    if (!grouped[name]) grouped[name] = { success: 0, total: 0 };
+    grouped[name].total++;
+    if (a.success !== false) grouped[name].success++;
+  }
+  // Sort by total descending, top 10
+  const sorted = Object.entries(grouped).sort((a,b) => b[1].total - a[1].total).slice(0, 10);
+  const labels = sorted.map(([n]) => {
+    const friendly = friendlyActionName(n);
+    return friendly.length > 27 ? friendly.substring(0, 25) + '…' : friendly;
+  });
+  const rates  = sorted.map(([,v]) => Math.round(v.success / v.total * 100));
+  const barColors = rates.map(r => r >= 80 ? 'rgba(34,197,94,0.7)' : r >= 50 ? 'rgba(245,158,11,0.7)' : 'rgba(239,68,68,0.7)');
+
+  const wrap = createChartWidget(el, 'ai-actions-success', 'Taxa de sucesso por ação (%)', 260);
+  const canvas = wrap.querySelector('canvas');
+  chartInstances['ai-actions-success'] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: '% Sucesso', data: rates, backgroundColor: barColors, borderRadius: 4 }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { ...tooltipStyle(), callbacks: {
+          label: ctx => ` ${ctx.parsed.x}% de sucesso (${sorted[ctx.dataIndex][1].total} execuções)`,
+        }},
+      },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.04)' }, min: 0, max: 100,
+          ticks: { callback: v => v + '%' } },
+        y: { grid: { display: false }, ticks: { font: { size: 10 } } },
+      },
+    },
+  });
 }
 
 /* ─── Cleanup ────────────────────────────────────────────── */
