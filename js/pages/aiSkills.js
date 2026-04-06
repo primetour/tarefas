@@ -10,10 +10,12 @@ import { modal }  from '../components/modal.js';
 import {
   fetchSkills, createSkill, updateSkill, deleteSkill, getSkill,
   getAIConfig, saveAIConfig,
+  getScopedApiConfig, saveScopedApiConfig, deleteScopedApiConfig, listAllScopedConfigs,
   fetchKnowledge, createKnowledgeDoc, updateKnowledgeDoc, deleteKnowledgeDoc,
   AI_PROVIDERS, AI_MODELS, MODULE_REGISTRY, OUTPUT_FORMATS, TRIGGER_TYPES,
   getModelsForProvider, runSkill,
 } from '../services/ai.js';
+import { REQUESTING_AREAS, NUCLEOS } from '../services/tasks.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -205,18 +207,205 @@ function renderSkillCard(s) {
 }
 
 /* ═══════════════════════════════════════════════════════════ *
- *  TAB: Configurar API                                       *
+ *  TAB: Configurar API  (multi-escopo)                       *
  * ═══════════════════════════════════════════════════════════ */
+let _cfgScope = 'global'; // 'global' | 'user' | 'nucleo' | 'area'
+let _cfgScopeId = null;
+let _cfgScopeLabel = null;
+let _allScopedConfigs = [];
+
 async function renderConfigTab(el) {
   el.innerHTML = `<div class="card skeleton" style="height:200px;"></div>`;
-  const config = await getAIConfig() || {};
+
+  // Carregar configs existentes em paralelo
+  const [globalConfig, scopedConfigs] = await Promise.all([
+    getAIConfig().then(c => c || {}),
+    listAllScopedConfigs(),
+  ]);
+  _allScopedConfigs = scopedConfigs;
+
+  const users   = store.get('users') || [];
+  const nucleos = store.get('nucleos') || NUCLEOS;
 
   el.innerHTML = `
-    <div style="max-width:720px;">
-      <div class="card" style="padding:24px;margin-bottom:20px;">
-        <div style="font-weight:600;font-size:1rem;color:var(--text-primary);margin-bottom:4px;">Configuração de Providers</div>
+    <div style="max-width:760px;">
+
+      <!-- ESCOPO SELECTOR -->
+      <div class="card" style="padding:20px;margin-bottom:16px;">
+        <div style="font-weight:600;font-size:1rem;color:var(--text-primary);margin-bottom:4px;">
+          Escopo da Configuração
+        </div>
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:14px;">
+          Defina API Keys por nível. A resolução segue a prioridade:
+          <strong>Usuário → Núcleo → Área → Global</strong>.
+        </p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;" id="ai-scope-tabs">
+          <button class="btn ${_cfgScope==='global'?'btn-primary':'btn-ghost'} ai-scope-tab" data-scope="global" style="font-size:0.8125rem;">
+            🌐 Global
+          </button>
+          <button class="btn ${_cfgScope==='user'?'btn-primary':'btn-ghost'} ai-scope-tab" data-scope="user" style="font-size:0.8125rem;">
+            👤 Por Usuário
+          </button>
+          <button class="btn ${_cfgScope==='nucleo'?'btn-primary':'btn-ghost'} ai-scope-tab" data-scope="nucleo" style="font-size:0.8125rem;">
+            ◎ Por Núcleo
+          </button>
+          <button class="btn ${_cfgScope==='area'?'btn-primary':'btn-ghost'} ai-scope-tab" data-scope="area" style="font-size:0.8125rem;">
+            ◈ Por Área
+          </button>
+        </div>
+
+        <!-- Selector de entidade (escondido quando Global) -->
+        <div id="ai-scope-entity" style="display:${_cfgScope==='global'?'none':'block'};">
+          <div id="ai-scope-entity-inner"></div>
+        </div>
+      </div>
+
+      <!-- CARDS de configs existentes por escopo -->
+      <div id="ai-scoped-list" style="margin-bottom:16px;"></div>
+
+      <!-- PROVIDER KEYS FORM -->
+      <div id="ai-cfg-form-area"></div>
+
+      <!-- PADRÕES GLOBAIS (só aparece no escopo Global) -->
+      <div id="ai-cfg-defaults-area"></div>
+
+      <!-- BOTÃO SALVAR -->
+      <button class="btn btn-primary" id="ai-cfg-save" style="width:100%;margin-top:8px;">
+        Salvar configurações
+      </button>
+    </div>
+  `;
+
+  // ── Render helpers ─────────────────────────────────────
+  function renderEntitySelector() {
+    const inner = document.getElementById('ai-scope-entity-inner');
+    const wrap  = document.getElementById('ai-scope-entity');
+    if (!inner || !wrap) return;
+    wrap.style.display = _cfgScope === 'global' ? 'none' : 'block';
+
+    if (_cfgScope === 'user') {
+      inner.innerHTML = `
+        <label class="form-label" style="font-size:0.8125rem;">Selecione o Usuário</label>
+        <select class="form-select" id="ai-scope-select" style="font-size:0.8125rem;">
+          <option value="">-- Selecione --</option>
+          ${users.filter(u => u.active !== false).map(u =>
+            `<option value="${u.id}" ${_cfgScopeId===u.id?'selected':''}>${esc(u.name || u.email)}</option>`
+          ).join('')}
+        </select>`;
+    } else if (_cfgScope === 'nucleo') {
+      const nucleoList = Array.isArray(nucleos) ? nucleos : [];
+      inner.innerHTML = `
+        <label class="form-label" style="font-size:0.8125rem;">Selecione o Núcleo</label>
+        <select class="form-select" id="ai-scope-select" style="font-size:0.8125rem;">
+          <option value="">-- Selecione --</option>
+          ${nucleoList.map(n => {
+            const val = n.value || n.id || n.name;
+            const lbl = n.label || n.name || val;
+            return `<option value="${esc(val)}" ${_cfgScopeId===val?'selected':''}>${esc(lbl)}</option>`;
+          }).join('')}
+        </select>`;
+    } else if (_cfgScope === 'area') {
+      inner.innerHTML = `
+        <label class="form-label" style="font-size:0.8125rem;">Selecione a Área</label>
+        <select class="form-select" id="ai-scope-select" style="font-size:0.8125rem;">
+          <option value="">-- Selecione --</option>
+          ${REQUESTING_AREAS.map(a =>
+            `<option value="${esc(a)}" ${_cfgScopeId===a?'selected':''}>${esc(a)}</option>`
+          ).join('')}
+        </select>`;
+    }
+
+    document.getElementById('ai-scope-select')?.addEventListener('change', (e) => {
+      _cfgScopeId = e.target.value || null;
+      _cfgScopeLabel = e.target.options[e.target.selectedIndex]?.textContent || _cfgScopeId;
+      renderKeyForm();
+    });
+  }
+
+  function renderScopedList() {
+    const listEl = document.getElementById('ai-scoped-list');
+    if (!listEl) return;
+    const scopeConfigs = _cfgScope === 'global' ? [] : _allScopedConfigs.filter(c => c.scope === _cfgScope);
+    if (!scopeConfigs.length) { listEl.innerHTML = ''; return; }
+
+    listEl.innerHTML = `
+      <div class="card" style="padding:16px;">
+        <div style="font-weight:600;font-size:0.875rem;color:var(--text-primary);margin-bottom:10px;">
+          Configurações existentes (${_cfgScope === 'user' ? 'Usuários' : _cfgScope === 'nucleo' ? 'Núcleos' : 'Áreas'})
+        </div>
+        ${scopeConfigs.map(c => {
+          const provs = AI_PROVIDERS.filter(p => c[p.id + 'ApiKey']).map(p => p.icon + ' ' + p.label.split(' ')[0]);
+          return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle);">
+            <span style="font-weight:500;color:var(--text-primary);min-width:140px;">${esc(c.scopeLabel || c.scopeId)}</span>
+            <span style="font-size:0.75rem;color:var(--text-muted);flex:1;">${provs.length ? provs.join(', ') : 'Nenhum provider'}</span>
+            ${c.active === false ? '<span style="color:var(--danger);font-size:0.75rem;">Inativa</span>' : '<span style="color:var(--success);font-size:0.75rem;">Ativa</span>'}
+            <button class="btn btn-ghost btn-sm ai-scope-edit" data-id="${c.scopeId}" data-label="${esc(c.scopeLabel||c.scopeId)}" style="font-size:0.75rem;">Editar</button>
+            <button class="btn btn-ghost btn-sm ai-scope-del" data-doc="${c.id}" data-label="${esc(c.scopeLabel||c.scopeId)}" style="font-size:0.75rem;color:var(--danger);">Remover</button>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+
+    listEl.querySelectorAll('.ai-scope-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _cfgScopeId = btn.dataset.id;
+        _cfgScopeLabel = btn.dataset.label;
+        const sel = document.getElementById('ai-scope-select');
+        if (sel) sel.value = _cfgScopeId;
+        renderKeyForm();
+      });
+    });
+
+    listEl.querySelectorAll('.ai-scope-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`Remover configuração de "${btn.dataset.label}"?`)) return;
+        try {
+          await deleteScopedApiConfig(btn.dataset.doc);
+          toast.success('Configuração removida.');
+          _allScopedConfigs = await listAllScopedConfigs();
+          renderScopedList();
+        } catch (e) { toast.error('Erro: ' + e.message); }
+      });
+    });
+  }
+
+  async function renderKeyForm() {
+    const formEl = document.getElementById('ai-cfg-form-area');
+    const defEl  = document.getElementById('ai-cfg-defaults-area');
+    if (!formEl) return;
+
+    // Carregar config do escopo selecionado
+    let config = {};
+    if (_cfgScope === 'global') {
+      config = globalConfig;
+    } else if (_cfgScopeId) {
+      const scoped = await getScopedApiConfig(_cfgScope, _cfgScopeId);
+      config = scoped || {};
+    } else {
+      formEl.innerHTML = `<div class="card" style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.875rem;">
+        Selecione ${_cfgScope === 'user' ? 'um usuário' : _cfgScope === 'nucleo' ? 'um núcleo' : 'uma área'} acima para configurar.
+      </div>`;
+      if (defEl) defEl.innerHTML = '';
+      return;
+    }
+
+    const scopeLabel = _cfgScope === 'global' ? 'Global (todos os usuários)'
+      : _cfgScope === 'user' ? `Usuário: ${_cfgScopeLabel || _cfgScopeId}`
+      : _cfgScope === 'nucleo' ? `Núcleo: ${_cfgScopeLabel || _cfgScopeId}`
+      : `Área: ${_cfgScopeLabel || _cfgScopeId}`;
+
+    formEl.innerHTML = `
+      <div class="card" style="padding:24px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <div style="font-weight:600;font-size:1rem;color:var(--text-primary);">API Keys</div>
+          <span style="font-size:0.75rem;background:var(--bg-surface);padding:2px 10px;border-radius:10px;color:var(--brand-gold);">
+            ${esc(scopeLabel)}
+          </span>
+        </div>
         <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:20px;">
-          Configure as API Keys dos providers que deseja usar. Providers gratuitos permitem testar imediatamente.
+          ${_cfgScope === 'global'
+            ? 'Chave padrão usada quando não há configuração específica para o usuário, núcleo ou área.'
+            : 'Estas chaves terão prioridade sobre a configuração global para este escopo.'}
         </p>
 
         ${AI_PROVIDERS.map(p => `
@@ -252,40 +441,58 @@ async function renderConfigTab(el) {
           </div>
         `).join('')}
       </div>
+    `;
 
-      <div class="card" style="padding:24px;margin-bottom:20px;">
-        <div style="font-weight:600;font-size:1rem;color:var(--text-primary);margin-bottom:4px;">Padrões globais</div>
-        <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:16px;">
-          Valores padrão usados quando a skill não define explicitamente.
-        </p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-          <div class="form-group" style="margin:0;">
-            <label class="form-label" style="font-size:0.8125rem;">Provider padrão</label>
-            <select class="form-select" id="ai-cfg-provider" style="font-size:0.8125rem;">
-              ${AI_PROVIDERS.map(p => `<option value="${p.id}" ${config.provider === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}
-            </select>
+    // Padrões globais — só no escopo global
+    if (defEl) {
+      if (_cfgScope === 'global') {
+        defEl.innerHTML = `
+          <div class="card" style="padding:24px;margin-bottom:16px;">
+            <div style="font-weight:600;font-size:1rem;color:var(--text-primary);margin-bottom:4px;">Padrões globais</div>
+            <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:16px;">
+              Valores padrão usados quando a skill não define explicitamente.
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="form-group" style="margin:0;">
+                <label class="form-label" style="font-size:0.8125rem;">Provider padrão</label>
+                <select class="form-select" id="ai-cfg-provider" style="font-size:0.8125rem;">
+                  ${AI_PROVIDERS.map(p => `<option value="${p.id}" ${config.provider === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label class="form-label" style="font-size:0.8125rem;">Max tokens padrão</label>
+                <input type="number" class="form-input" id="ai-cfg-max-tokens"
+                  value="${config.defaultMaxTokens || 1024}" min="100" max="16000"
+                  style="font-size:0.8125rem;" />
+              </div>
+            </div>
           </div>
-          <div class="form-group" style="margin:0;">
-            <label class="form-label" style="font-size:0.8125rem;">Max tokens padrão</label>
-            <input type="number" class="form-input" id="ai-cfg-max-tokens"
-              value="${config.defaultMaxTokens || 1024}" min="100" max="16000"
-              style="font-size:0.8125rem;" />
-          </div>
-        </div>
-      </div>
+        `;
+      } else {
+        defEl.innerHTML = '';
+      }
+    }
+  }
 
-      <button class="btn btn-primary" id="ai-cfg-save" style="width:100%;">Salvar configurações</button>
-    </div>
-  `;
+  // ── Event: Scope tabs ──────────────────────────────────
+  el.querySelectorAll('.ai-scope-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _cfgScope = btn.dataset.scope;
+      _cfgScopeId = null;
+      _cfgScopeLabel = null;
+      el.querySelectorAll('.ai-scope-tab').forEach(b => b.classList.replace('btn-primary','btn-ghost'));
+      btn.classList.replace('btn-ghost','btn-primary');
+      renderEntitySelector();
+      renderScopedList();
+      renderKeyForm();
+    });
+  });
 
+  // ── Event: Save ────────────────────────────────────────
   document.getElementById('ai-cfg-save')?.addEventListener('click', async () => {
-    const data = {
-      provider:         document.getElementById('ai-cfg-provider')?.value || 'gemini',
-      defaultMaxTokens: parseInt(document.getElementById('ai-cfg-max-tokens')?.value) || 1024,
-      azureEndpoint:    document.getElementById('ai-cfg-azure-endpoint')?.value?.trim() || '',
-    };
+    const data = {};
 
-    // Coletar API keys (só salva se o campo foi alterado — não salvar bullets)
+    // Coletar API keys (só salva se o campo foi alterado)
     document.querySelectorAll('.ai-cfg-key').forEach(input => {
       const pid = input.dataset.provider;
       const val = input.value.trim();
@@ -294,13 +501,33 @@ async function renderConfigTab(el) {
       }
     });
 
+    // Azure endpoint
+    const azEndpoint = document.getElementById('ai-cfg-azure-endpoint')?.value?.trim();
+    if (azEndpoint !== undefined) data.azureEndpoint = azEndpoint || '';
+
     try {
-      await saveAIConfig(data);
+      if (_cfgScope === 'global') {
+        // Salvar na config global (legado)
+        data.provider         = document.getElementById('ai-cfg-provider')?.value || 'gemini';
+        data.defaultMaxTokens = parseInt(document.getElementById('ai-cfg-max-tokens')?.value) || 1024;
+        await saveAIConfig(data);
+      } else {
+        // Salvar na coleção de escopos
+        if (!_cfgScopeId) { toast.error('Selecione o escopo antes de salvar.'); return; }
+        await saveScopedApiConfig(_cfgScope, _cfgScopeId, _cfgScopeLabel || _cfgScopeId, data);
+        _allScopedConfigs = await listAllScopedConfigs();
+        renderScopedList();
+      }
       toast.success('Configurações salvas!');
     } catch (e) {
       toast.error('Erro ao salvar: ' + e.message);
     }
   });
+
+  // ── Initial render ─────────────────────────────────────
+  renderEntitySelector();
+  renderScopedList();
+  renderKeyForm();
 }
 
 /* ═══════════════════════════════════════════════════════════ *
