@@ -72,11 +72,26 @@ async function init() {
   const root = document.getElementById('app');
   if (!root) return;
 
+  let authResolved = false;
+
   // Aguarda estado de auth antes de qualquer render
   initAuthObserver(() => {
+    if (authResolved) return;
+    authResolved = true;
     hideLoadingScreen();
     renderApp(root);
   });
+
+  // Safety timeout: se o auth observer não disparar em 8s, forçar render
+  setTimeout(() => {
+    if (!authResolved) {
+      authResolved = true;
+      console.warn('[App] Auth timeout — forçando render');
+      store.set('authLoading', false);
+      hideLoadingScreen();
+      renderApp(root);
+    }
+  }, 8000);
 
   // Observa mudanças de auth para re-renderizar
   store.subscribe('isAuthenticated', (isAuth) => {
