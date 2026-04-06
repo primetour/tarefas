@@ -59,6 +59,7 @@ import { renderAiDashboard, destroyAiDashboard } from './pages/aiDashboard.js';
 import { renderRoteiros }               from './pages/roteiros.js';
 import { renderRoteiroEditor, destroyRoteiroEditor } from './pages/roteiroEditor.js';
 import { renderRoteiroDashboard, destroyRoteiroDashboard } from './pages/roteiroDashboard.js';
+import { mountAiPanel } from './components/aiPanel.js';
 // newsMonitor carregado dinamicamente para evitar bloqueio pré-login
 
 // ─── Instâncias globais ───────────────────────────────────
@@ -330,11 +331,97 @@ function setupRouter() {
     }
   });
 
-  // Atualiza header ao navegar
-  router.afterNavigation((route) => {
+  // Atualiza header ao navegar + monta painel de IA automaticamente
+  router.afterNavigation(async (route) => {
     header?.update?.();
-    // Atualiza sidebar active state
     sidebar?.setActive?.(route);
+
+    // ── Auto-mount AI Panel ──────────────────────────────────
+    // Mapa: rota do sistema → moduleId do MODULE_REGISTRY (ai.js)
+    // Se a rota estiver aqui e houver skills ativas para o módulo,
+    // o painel de IA aparece automaticamente. Senão, nada acontece.
+    const ROUTE_TO_MODULE = {
+      'tasks':              'tasks',
+      'kanban':             'kanban',
+      'calendar':           'calendar',
+      'timeline':           'tasks',
+      'projects':           'projects',
+      'dashboard':          'dashboards',
+      'dashboards':         'dashboards',
+      'portal-tips':        'portal-tips',
+      'portal-tip-editor':  'portal-tips',
+      'portal-tips-list':   'portal-tips',
+      'portal-dashboard':   'portal-tips',
+      'portal-areas':       'portal-tips',
+      'portal-destinations':'portal-tips',
+      'portal-images':      'portal-tips',
+      'portal-import':      'portal-tips',
+      'portal-import-manual':'portal-tips',
+      'roteiros':           'roteiros',
+      'roteiro-editor':     'roteiros',
+      'roteiro-dashboard':  'roteiros',
+      'feedbacks':          'feedbacks',
+      'goals':              'goals',
+      'csat':               'csat',
+      'requests':           'requests',
+      'news-monitor':       'news-monitor',
+      'nl-performance':     'content',
+      'meta-performance':   'content',
+      'ga-performance':     'content',
+      'landing-pages':      'landing-pages',
+      'cms':                'cms',
+      'arts-editor':        'arts-editor',
+      'team':               'general',
+      'capacity':           'general',
+      'workspaces':         'general',
+      'settings':           'general',
+      'users':              'general',
+      'roles':              'general',
+      'sectors':            'general',
+      'audit':              'general',
+      'integrations':       'general',
+      'notifications':      'general',
+      'task-types':         'general',
+      'ai-dashboard':       'general',
+    };
+
+    const moduleId = ROUTE_TO_MODULE[route];
+    if (!moduleId || !content) return;
+
+    // Esperar o DOM do módulo renderizar (pequeno delay para async renders)
+    setTimeout(async () => {
+      try {
+        // Criar container para o painel de IA (após o header da página)
+        if (document.getElementById('ai-panel-auto')) return; // já montado
+        const aiDiv = document.createElement('div');
+        aiDiv.id = 'ai-panel-auto';
+        aiDiv.style.cssText = 'margin-bottom:12px;';
+
+        // Inserir após o primeiro .page-header ou .toolbar, ou no topo do content
+        const anchor = content.querySelector('.toolbar') || content.querySelector('.page-header');
+        if (anchor && anchor.nextSibling) {
+          anchor.parentNode.insertBefore(aiDiv, anchor.nextSibling);
+        } else if (anchor) {
+          anchor.parentNode.appendChild(aiDiv);
+        } else {
+          content.prepend(aiDiv);
+        }
+
+        // Montar — se não houver skills para o módulo, nada aparece
+        await mountAiPanel(aiDiv, moduleId, () => {
+          // Contexto genérico: informações da página atual
+          return {
+            currentRoute: route,
+            moduleId,
+            sector:  store.get('userSector') || '',
+            user:    store.get('currentUser')?.email || '',
+          };
+        });
+
+        // Se o painel não renderizou nada (sem skills), remover o div vazio
+        if (!aiDiv.innerHTML.trim()) aiDiv.remove();
+      } catch (e) { /* silencioso */ }
+    }, 150);
   });
 
   router.init();
