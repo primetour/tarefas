@@ -305,14 +305,54 @@ async function renderConfigTab(el) {
           }).join('')}
         </select>`;
     } else if (_cfgScope === 'area') {
+      // Multi-select com checkboxes para áreas
+      const selectedAreas = Array.isArray(_cfgScopeId) ? _cfgScopeId : (_cfgScopeId ? [_cfgScopeId] : []);
       inner.innerHTML = `
-        <label class="form-label" style="font-size:0.8125rem;">Selecione a Área</label>
-        <select class="form-select" id="ai-scope-select" style="font-size:0.8125rem;">
-          <option value="">-- Selecione --</option>
-          ${REQUESTING_AREAS.map(a =>
-            `<option value="${esc(a)}" ${_cfgScopeId===a?'selected':''}>${esc(a)}</option>`
-          ).join('')}
-        </select>`;
+        <label class="form-label" style="font-size:0.8125rem;">Selecione as Áreas (múltiplas)</label>
+        <div style="display:flex;gap:4px;margin-bottom:8px;">
+          <button class="btn btn-ghost btn-sm" id="ai-area-select-all" style="font-size:0.6875rem;">Selecionar todas</button>
+          <button class="btn btn-ghost btn-sm" id="ai-area-clear-all" style="font-size:0.6875rem;">Limpar</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;
+          max-height:180px;overflow-y:auto;padding:10px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-surface);">
+          ${REQUESTING_AREAS.map(a => `
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.8125rem;color:var(--text-primary);
+              padding:4px 8px;border-radius:6px;transition:background 0.15s;${selectedAreas.includes(a) ? 'background:var(--brand-gold-10,rgba(212,168,67,0.15));' : ''}"
+              class="ai-area-chip">
+              <input type="checkbox" class="ai-area-check" value="${esc(a)}" ${selectedAreas.includes(a) ? 'checked' : ''}
+                style="accent-color:var(--brand-gold);" />
+              ${esc(a)}
+            </label>
+          `).join('')}
+        </div>
+        <div id="ai-area-count" style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">
+          ${selectedAreas.length} área(s) selecionada(s)
+        </div>`;
+
+      // Handlers para checkboxes
+      const updateAreaSelection = () => {
+        const checked = [...inner.querySelectorAll('.ai-area-check:checked')].map(cb => cb.value);
+        _cfgScopeId = checked.length ? checked : null;
+        _cfgScopeLabel = checked.length ? checked.join(', ') : null;
+        const countEl = document.getElementById('ai-area-count');
+        if (countEl) countEl.textContent = `${checked.length} área(s) selecionada(s)`;
+        // Highlight checked chips
+        inner.querySelectorAll('.ai-area-chip').forEach(chip => {
+          const cb = chip.querySelector('.ai-area-check');
+          chip.style.background = cb?.checked ? 'var(--brand-gold-10,rgba(212,168,67,0.15))' : '';
+        });
+        renderKeyForm();
+      };
+      inner.querySelectorAll('.ai-area-check').forEach(cb => cb.addEventListener('change', updateAreaSelection));
+      document.getElementById('ai-area-select-all')?.addEventListener('click', () => {
+        inner.querySelectorAll('.ai-area-check').forEach(cb => { cb.checked = true; });
+        updateAreaSelection();
+      });
+      document.getElementById('ai-area-clear-all')?.addEventListener('click', () => {
+        inner.querySelectorAll('.ai-area-check').forEach(cb => { cb.checked = false; });
+        updateAreaSelection();
+      });
+      return; // skip single-select handler below
     }
 
     document.getElementById('ai-scope-select')?.addEventListener('change', (e) => {
@@ -335,11 +375,18 @@ async function renderConfigTab(el) {
         </div>
         ${scopeConfigs.map(c => {
           const provs = AI_PROVIDERS.filter(p => c[p.id + 'ApiKey']).map(p => p.icon + ' ' + p.label.split(' ')[0]);
-          return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle);">
-            <span style="font-weight:500;color:var(--text-primary);min-width:140px;">${esc(c.scopeLabel || c.scopeId)}</span>
-            <span style="font-size:0.75rem;color:var(--text-muted);flex:1;">${provs.length ? provs.join(', ') : 'Nenhum provider'}</span>
+          const areaIds = c.scopeIds || [];
+          const displayLabel = _cfgScope === 'area' && areaIds.length
+            ? areaIds.map(a => `<span style="display:inline-block;background:var(--bg-surface);padding:1px 6px;border-radius:4px;font-size:0.6875rem;margin:1px 2px;">${esc(a)}</span>`).join('')
+            : esc(c.scopeLabel || c.scopeId);
+          const editData = _cfgScope === 'area' && areaIds.length
+            ? `data-ids='${JSON.stringify(areaIds)}'`
+            : `data-id="${esc(c.scopeId)}"`;
+          return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle);flex-wrap:wrap;">
+            <span style="font-weight:500;color:var(--text-primary);min-width:140px;flex:1;">${displayLabel}</span>
+            <span style="font-size:0.75rem;color:var(--text-muted);">${provs.length ? provs.join(', ') : 'Nenhum provider'}</span>
             ${c.active === false ? '<span style="color:var(--danger);font-size:0.75rem;">Inativa</span>' : '<span style="color:var(--success);font-size:0.75rem;">Ativa</span>'}
-            <button class="btn btn-ghost btn-sm ai-scope-edit" data-id="${c.scopeId}" data-label="${esc(c.scopeLabel||c.scopeId)}" style="font-size:0.75rem;">Editar</button>
+            <button class="btn btn-ghost btn-sm ai-scope-edit" ${editData} data-label="${esc(c.scopeLabel||c.scopeId)}" style="font-size:0.75rem;">Editar</button>
             <button class="btn btn-ghost btn-sm ai-scope-del" data-doc="${c.id}" data-label="${esc(c.scopeLabel||c.scopeId)}" style="font-size:0.75rem;color:var(--danger);">Remover</button>
           </div>`;
         }).join('')}
@@ -348,10 +395,17 @@ async function renderConfigTab(el) {
 
     listEl.querySelectorAll('.ai-scope-edit').forEach(btn => {
       btn.addEventListener('click', () => {
-        _cfgScopeId = btn.dataset.id;
-        _cfgScopeLabel = btn.dataset.label;
-        const sel = document.getElementById('ai-scope-select');
-        if (sel) sel.value = _cfgScopeId;
+        if (_cfgScope === 'area' && btn.dataset.ids) {
+          // Restaurar seleção múltipla de áreas
+          try { _cfgScopeId = JSON.parse(btn.dataset.ids); } catch { _cfgScopeId = [btn.dataset.id]; }
+          _cfgScopeLabel = btn.dataset.label;
+          renderEntitySelector(); // re-render checkboxes com seleção
+        } else {
+          _cfgScopeId = btn.dataset.id;
+          _cfgScopeLabel = btn.dataset.label;
+          const sel = document.getElementById('ai-scope-select');
+          if (sel) sel.value = _cfgScopeId;
+        }
         renderKeyForm();
       });
     });
@@ -378,21 +432,35 @@ async function renderConfigTab(el) {
     let config = {};
     if (_cfgScope === 'global') {
       config = globalConfig;
+    } else if (_cfgScope === 'area') {
+      // Área: _cfgScopeId é um array
+      const areaArr = Array.isArray(_cfgScopeId) ? _cfgScopeId : (_cfgScopeId ? [_cfgScopeId] : []);
+      if (!areaArr.length) {
+        formEl.innerHTML = `<div class="card" style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.875rem;">
+          Selecione ao menos uma área acima para configurar.
+        </div>`;
+        if (defEl) defEl.innerHTML = '';
+        return;
+      }
+      // Busca config pela primeira área selecionada (todas compartilham a mesma config)
+      const scoped = await getScopedApiConfig('area', areaArr[0]);
+      config = scoped || {};
     } else if (_cfgScopeId) {
       const scoped = await getScopedApiConfig(_cfgScope, _cfgScopeId);
       config = scoped || {};
     } else {
       formEl.innerHTML = `<div class="card" style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.875rem;">
-        Selecione ${_cfgScope === 'user' ? 'um usuário' : _cfgScope === 'nucleo' ? 'um núcleo' : 'uma área'} acima para configurar.
+        Selecione ${_cfgScope === 'user' ? 'um usuário' : 'um núcleo'} acima para configurar.
       </div>`;
       if (defEl) defEl.innerHTML = '';
       return;
     }
 
+    const areaCount = Array.isArray(_cfgScopeId) ? _cfgScopeId.length : 0;
     const scopeLabel = _cfgScope === 'global' ? 'Global (todos os usuários)'
       : _cfgScope === 'user' ? `Usuário: ${_cfgScopeLabel || _cfgScopeId}`
       : _cfgScope === 'nucleo' ? `Núcleo: ${_cfgScopeLabel || _cfgScopeId}`
-      : `Área: ${_cfgScopeLabel || _cfgScopeId}`;
+      : `${areaCount} Área(s): ${(Array.isArray(_cfgScopeId) ? _cfgScopeId : [_cfgScopeId]).join(', ')}`;
 
     formEl.innerHTML = `
       <div class="card" style="padding:24px;margin-bottom:16px;">
@@ -513,8 +581,14 @@ async function renderConfigTab(el) {
         await saveAIConfig(data);
       } else {
         // Salvar na coleção de escopos
-        if (!_cfgScopeId) { toast.error('Selecione o escopo antes de salvar.'); return; }
-        await saveScopedApiConfig(_cfgScope, _cfgScopeId, _cfgScopeLabel || _cfgScopeId, data);
+        const isEmpty = _cfgScope === 'area'
+          ? (!Array.isArray(_cfgScopeId) || !_cfgScopeId.length)
+          : !_cfgScopeId;
+        if (isEmpty) {
+          toast.error(_cfgScope === 'area' ? 'Selecione ao menos uma área.' : 'Selecione o escopo antes de salvar.');
+          return;
+        }
+        await saveScopedApiConfig(_cfgScope, _cfgScopeId, _cfgScopeLabel || String(_cfgScopeId), data);
         _allScopedConfigs = await listAllScopedConfigs();
         renderScopedList();
       }
