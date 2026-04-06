@@ -361,9 +361,10 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
             dataResults.push({ action, data: result.data, message: result.message });
           }
 
+          const dataStr = result.data != null ? JSON.stringify(result.data) : '';
           chatHistory.push({
             role: 'assistant',
-            text: `[Resultado de ${action}]: ${result.message}. Dados: ${JSON.stringify(result.data).substring(0, 800)}`,
+            text: `[Resultado de ${action}]: ${result.message || 'OK'}${dataStr ? '. Dados: ' + dataStr.substring(0, 800) : ''}`,
           });
         } else {
           addMessage('action', `❌ ${esc(result.message || 'Erro na execução')}`);
@@ -382,7 +383,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       try {
         // Montar prompt com resultados das ações
         const dataContext = dataResults.map(r =>
-          `Ação "${r.action}" retornou: ${r.message}\nDados:\n${JSON.stringify(r.data, null, 1).substring(0, 1500)}`
+          `Ação "${r.action}" retornou: ${r.message}\nDados:\n${JSON.stringify(r.data ?? {}, null, 1).substring(0, 1500)}`
         ).join('\n\n');
 
         const followUpMsg = `Os dados foram capturados com sucesso. Aqui estão os resultados:\n\n${dataContext}\n\nAgora analise esses dados e responda ao que o usuário pediu originalmente. Seja específico com números e insights. NÃO execute mais ações — apenas analise e responda.`;
