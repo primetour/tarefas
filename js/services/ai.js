@@ -144,16 +144,27 @@ export async function saveAIConfig(data) {
 
 /**
  * Busca config de API key por escopo (user, nucleo, area)
+ * Para 'area' busca usando array-contains em scopeIds.
  * @param {'user'|'nucleo'|'area'} scope
  * @param {string} scopeId — uid, nucleoValue ou areaName
  */
 export async function getScopedApiConfig(scope, scopeId) {
   try {
-    const q2 = query(
-      collection(db, API_KEYS_COL),
-      where('scope', '==', scope),
-      where('scopeId', '==', scopeId),
-    );
+    let q2;
+    if (scope === 'area') {
+      // Área usa scopeIds (array) — busca com array-contains
+      q2 = query(
+        collection(db, API_KEYS_COL),
+        where('scope', '==', 'area'),
+        where('scopeIds', 'array-contains', scopeId),
+      );
+    } else {
+      q2 = query(
+        collection(db, API_KEYS_COL),
+        where('scope', '==', scope),
+        where('scopeId', '==', scopeId),
+      );
+    }
     const snap = await getDocs(q2);
     if (snap.empty) return null;
     const d = snap.docs[0];
@@ -169,27 +180,55 @@ export async function listAllScopedConfigs() {
   } catch { return []; }
 }
 
-/** Salva/atualiza config de escopo */
+/**
+ * Salva/atualiza config de escopo.
+ * Para scope='area', scopeId pode ser um array de áreas (múltiplas áreas).
+ */
 export async function saveScopedApiConfig(scope, scopeId, scopeLabel, data) {
   const user = store.get('currentUser');
-  const existing = await getScopedApiConfig(scope, scopeId);
 
   const payload = {
     ...data,
     scope,
-    scopeId,
-    scopeLabel,
     active: data.active !== false,
     updatedAt: serverTimestamp(),
     updatedBy: user?.uid || null,
   };
 
-  if (existing) {
-    await updateDoc(doc(db, API_KEYS_COL, existing.id), payload);
+  if (scope === 'area') {
+    // Área: scopeId é um array de áreas selecionadas
+    const areaIds = Array.isArray(scopeId) ? scopeId : [scopeId];
+    payload.scopeIds   = areaIds;
+    payload.scopeId    = areaIds.join(', '); // para display / compatibilidade
+    payload.scopeLabel = scopeLabel || areaIds.join(', ');
+
+    // Buscar doc existente que contenha QUALQUER dessas áreas
+    let existing = null;
+    for (const aid of areaIds) {
+      existing = await getScopedApiConfig('area', aid);
+      if (existing) break;
+    }
+
+    if (existing) {
+      await updateDoc(doc(db, API_KEYS_COL, existing.id), payload);
+    } else {
+      payload.createdAt = serverTimestamp();
+      payload.createdBy = user?.uid || null;
+      await addDoc(collection(db, API_KEYS_COL), payload);
+    }
   } else {
-    payload.createdAt = serverTimestamp();
-    payload.createdBy = user?.uid || null;
-    await addDoc(collection(db, API_KEYS_COL), payload);
+    // User / Núcleo: escopo simples
+    payload.scopeId    = scopeId;
+    payload.scopeLabel = scopeLabel;
+
+    const existing = await getScopedApiConfig(scope, scopeId);
+    if (existing) {
+      await updateDoc(doc(db, API_KEYS_COL, existing.id), payload);
+    } else {
+      payload.createdAt = serverTimestamp();
+      payload.createdBy = user?.uid || null;
+      await addDoc(collection(db, API_KEYS_COL), payload);
+    }
   }
 }
 
@@ -201,7 +240,7 @@ export async function deleteScopedApiConfig(docId) {
 /**
  * Resolve a API key com cascata de prioridade:
  *   Usuário → Núcleo(s) → Área(s) → Global
- * Retorna { config, resolvedFrom } onde resolvedFrom indica o nível usado.
+ * Retorna { config, apiKey, resolvedFrom, label }.
  */
 export async function resolveApiKey(provider) {
   const user    = store.get('currentUser');
@@ -227,7 +266,8 @@ export async function resolveApiKey(provider) {
     }
   }
 
-  // 3. Nível ÁREA (sector, visibleSectors, requestingArea)
+  // 3. Nível ÁREA — busca por cada área do usuário (sector, visibleSectors)
+  //    Como area usa scopeIds (array), uma config pode cobrir múltiplas áreas
   const userAreas = new Set();
   if (profile.sector) userAreas.add(profile.sector);
   if (profile.department) userAreas.add(profile.department);
