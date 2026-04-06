@@ -16,7 +16,18 @@
 
 import { store }  from '../store.js';
 import { router } from '../router.js';
-import { toast }  from '../components/toast.js';
+
+/* Toast — import seguro para evitar erros quando o container não existe */
+let toast = { success(){}, error(){}, info(){}, warning(){} };
+try {
+  const m = await import('../components/toast.js');
+  if (m.toast) toast = m.toast;
+} catch {}
+
+/* Wrapper seguro para evitar perda de `this` */
+function showToast(type, message) {
+  try { toast[type]?.(message) || toast.info?.(message); } catch {}
+}
 
 /* ─── Helper: captura KPIs/stats do DOM da página visível ── */
 function scrapeVisibleStats() {
@@ -84,8 +95,7 @@ const GLOBAL_ACTIONS = [
     description: 'Mostrar uma notificação/mensagem para o usuário',
     params: { message: 'string — texto da mensagem', type: 'string — success, error, info, warning (default: info)' },
     execute: async ({ message, type }) => {
-      const fn = toast[type] || toast.info || toast;
-      fn(message);
+      showToast(type || 'info', message);
       return { success: true };
     },
   },
@@ -1137,12 +1147,12 @@ export async function executeAction(moduleId, actionName, params = {}) {
       'get_system_overview','get_content_metrics','get_requests_summary',
     ];
     if (result.message && !READ_ACTIONS.includes(actionName)) {
-      (result.success ? toast.success : toast.error)?.(result.message);
+      showToast(result.success ? 'success' : 'error', result.message);
     }
     return result;
   } catch (e) {
     const msg = `Erro ao executar "${actionName}": ${e.message}`;
-    toast.error?.(msg);
+    showToast('error', msg);
     return { success: false, message: msg };
   }
 }

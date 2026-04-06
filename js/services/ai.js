@@ -508,11 +508,16 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
 
   // System prompt contextual
   const moduleLabel = MODULE_REGISTRY[opts.moduleId]?.label || opts.moduleId || 'Sistema';
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+  const todayBR = today.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const systemParts = [
     `Você é o assistente IA do sistema PRIMETOUR, integrado ao módulo "${moduleLabel}".`,
+    `Data de hoje: ${todayStr} (${todayBR}).`,
     `Responda sempre em português brasileiro, de forma clara e objetiva.`,
     `Você tem acesso ao contexto atual do módulo fornecido abaixo. Use-o para dar respostas relevantes.`,
     `Quando o usuário pedir para executar ações (criar, atualizar, listar, navegar), use os blocos de ação disponíveis.`,
+    `IMPORTANTE: Ao criar tarefas com datas, use SEMPRE datas futuras a partir de hoje (${todayStr}). Nunca use datas no passado.`,
   ];
 
   // Adicionar contexto do módulo
