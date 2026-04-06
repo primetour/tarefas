@@ -215,6 +215,8 @@ function mountShell(root) {
     cleanupExpired(currentUser.uid).catch(() => {});
     // Start deadline check scheduler
     startScheduler();
+    // Start AI automations scheduler
+    import('./services/aiAutomations.js').then(m => m.startAutomationScheduler()).catch(() => {});
   }
 }
 
@@ -247,6 +249,7 @@ function setupRouter() {
     'settings':     async () => { await renderSettings(content); },
     'ai-skills':    async () => { await renderAiSkills(content); },
     'ai-dashboard': async () => { destroyAiDashboard(); await renderAiDashboard(content); },
+    'ai-automations': async () => { const { renderAiAutomations } = await import('./pages/aiAutomations.js'); await renderAiAutomations(content); },
     'roteiros':         async () => { await renderRoteiros(content); },
     'roteiro-editor':   async () => { destroyRoteiroEditor(); await renderRoteiroEditor(content); },
     'roteiro-dashboard': async () => { destroyRoteiroDashboard(); await renderRoteiroDashboard(content); },
@@ -494,6 +497,8 @@ function destroyShell() {
   header  = null;
   // Stop deadline scheduler
   stopScheduler();
+  // Stop AI automations scheduler
+  import('./services/aiAutomations.js').then(m => m.stopAutomationScheduler()).catch(() => {});
   // Cleanup notification listener
   if (_unsubNotifications) {
     _unsubNotifications();
