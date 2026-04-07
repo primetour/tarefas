@@ -21,6 +21,28 @@ function _toast(msg) {
     .catch(() => {});
 }
 
+/* ─── Helpers: classificação automática de conteúdo ────── */
+function guessContentType(title, snippet) {
+  const text = ((title || '') + ' ' + (snippet || '')).toLowerCase();
+  if (/evento|congresso|feira|summit|encontro|convenção/.test(text)) return 'Eventos';
+  if (/análise|estudo|pesquisa|relatório|dados|números/.test(text)) return 'Análises';
+  if (/tendência|futuro|perspectiva|previsão/.test(text)) return 'Tendências';
+  if (/negócio|faturamento|receita|crescimento|resultado|lucro|mercado/.test(text)) return 'Negócios';
+  if (/publieditorial|patrocinado|branded/.test(text)) return 'Publieditorial';
+  return 'Novidades';
+}
+
+function guessCategory(title, snippet) {
+  const text = ((title || '') + ' ' + (snippet || '')).toLowerCase();
+  if (/hotel|resort|hospedagem|check-in|hotelaria/.test(text)) return 'Hotelaria';
+  if (/cruzeiro|navio|msc|costa|royal caribbean/.test(text)) return 'Cruzeiros';
+  if (/destino|viagem|turismo|roteiro/.test(text)) return 'Destinos';
+  if (/aérea|voo|avião|latam|gol|azul|airline/.test(text)) return 'Companhias Aéreas';
+  if (/sistema|tecnologia|plataforma|software/.test(text)) return 'Sistemas';
+  if (/agência|operadora|consolidadora|primetour/.test(text)) return 'Agências e Operadoras';
+  return 'Mercado';
+}
+
 /* ─── Log de ações executadas pela IA ────────────────────── */
 async function logAction(moduleId, actionName, success, params) {
   try {
@@ -625,32 +647,60 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
         }
 
         const skippedCount = webData.length - newItems.length;
-        const skippedMsg = skippedCount > 0 ? `\n(${skippedCount} resultado(s) já existente(s) foram filtrados automaticamente)\n` : '';
 
-        const webDataStr = JSON.stringify(newItems.slice(0, 10), null, 1).substring(0, 2500);
-
-        // Determinar qual ação de busca gerou os resultados
+        // ══ CADASTRO DIRETO (sem depender da IA — mais rápido e confiável) ══
         const wasClippingSearch = webResults.some(r => r.action === 'search_web_clipping');
         const createAction = wasClippingSearch ? 'create_clipping' : 'create_news';
-        const cadastrarMsg = `Resultados NOVOS da busca web (duplicatas já removidas automaticamente):${skippedMsg}\n${webDataStr}\n\n`
-          + `TAREFA OBRIGATÓRIA: Cadastre TODOS os ${newItems.length} resultado(s) acima usando ${createAction}.\n`
-          + `- Para CADA item preencha: title (copie o título EXATO do resultado), description (1-2 frases baseadas no snippet), sourceUrl (copie a URL exata), sourceName (nome do veículo/site), publishedAt (YYYY-MM-DD, use a data de hoje se não souber).\n`
-          + `- Gere EXATAMENTE ${newItems.length} bloco(s) <<<ACTION>>>. NÃO faça novas buscas. APENAS cadastre.`;
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
-        chatHistory.push({ role: 'user', text: cadastrarMsg });
-        const ctx = typeof getContextFn === 'function' ? getContextFn() : {};
-        const aiResult = await chatWithAI(cadastrarMsg, ctx, { moduleId, history: chatHistory.slice(-6) });
+        let created = 0;
+        let errors = 0;
+        const createdTitles = [];
+
+        for (const item of newItems.slice(0, 10)) {
+          try {
+            const params = {
+              title: item.title || 'Sem título',
+              description: item.snippet || '',
+              sourceUrl: item.url || '',
+              sourceName: item.source || '',
+              publishedAt: today,
+            };
+
+            // Campos específicos por tipo
+            if (createAction === 'create_clipping') {
+              params.mediaType = 'Digital';
+              params.contentType = guessContentType(item.title, item.snippet);
+              params.sentiment = 'neutral';
+            } else {
+              params.category = guessCategory(item.title, item.snippet);
+              params.subcategory = 'Notícias';
+            }
+
+            const result = await executeAction(moduleId, createAction, params);
+            if (result.success) {
+              created++;
+              createdTitles.push(item.title);
+              addMessage('system', `⚡ ✅ ${createAction === 'create_clipping' ? 'Clipping' : 'Notícia'} cadastrado: <strong>${esc(item.title)}</strong>`
+                + (item.url ? `<br><a href="${esc(item.url)}" target="_blank" style="color:var(--primary);font-size:0.8rem;">${esc(item.source || item.url)}</a>` : ''));
+            } else {
+              errors++;
+            }
+          } catch (e) {
+            errors++;
+            console.warn('[cadastro direto] Erro:', e.message);
+          }
+        }
+
         loadingEl.remove();
 
-        // Executar cadastros
-        const cadastroActions = parseActions(aiResult.text);
-        let cadastroText = cleanActionBlocks(aiResult.text);
-        cadastroText = cadastroText.replace(/<<<ACTION>>>?/g, '').replace(/<<<END_ACTION>>>?/g, '').trim();
-        if (cadastroText) {
-          addMessage('assistant', esc(cadastroText));
-          chatHistory.push({ role: 'assistant', text: cadastroText });
-        }
-        await executeActionBatch(cadastroActions, getContextFn);
+        // Resumo final
+        const resumo = [];
+        if (created > 0) resumo.push(`✅ ${created} novo(s) cadastrado(s)`);
+        if (skippedCount > 0) resumo.push(`⏭️ ${skippedCount} já existente(s) ignorado(s)`);
+        if (errors > 0) resumo.push(`❌ ${errors} erro(s)`);
+        addMessage('assistant', resumo.join(' · '));
+        chatHistory.push({ role: 'assistant', text: `Cadastro concluído: ${resumo.join(', ')}. Itens: ${createdTitles.join('; ')}` });
       } catch (err) {
         loadingEl.remove();
         addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro: ${esc(err.message)}</span>`);
@@ -744,23 +794,44 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
                 return;
               }
 
+              // CADASTRO DIRETO (mesmo padrão do cenário 1)
               const chainWasClipping = followWebResults.some(r => r.action === 'search_web_clipping');
               const chainCreateAction = chainWasClipping ? 'create_clipping' : 'create_news';
-              const chainMsg = `Resultados NOVOS (duplicatas já removidas):\n${JSON.stringify(chainNewItems.slice(0, 10), null, 1).substring(0, 2500)}\n\n`
-                + `TAREFA: Cadastre TODOS os ${chainNewItems.length} resultado(s) usando ${chainCreateAction}.\n`
-                + `Preencha: title (EXATO), description, sourceUrl, sourceName, publishedAt (YYYY-MM-DD). Gere ${chainNewItems.length} <<<ACTION>>>. APENAS cadastre.`;
-              chatHistory.push({ role: 'user', text: chainMsg });
-              const ctx2 = typeof getContextFn === 'function' ? getContextFn() : {};
-              const chainResult = await chatWithAI(chainMsg, ctx2, { moduleId, history: chatHistory.slice(-6) });
-              chainLoading.remove();
-              const chainActions = parseActions(chainResult.text);
-              let chainClean = cleanActionBlocks(chainResult.text);
-              chainClean = chainClean.replace(/<<<ACTION>>>?/g, '').replace(/<<<END_ACTION>>>?/g, '').trim();
-              if (chainClean) {
-                addMessage('assistant', esc(chainClean));
-                chatHistory.push({ role: 'assistant', text: chainClean });
+              const chainToday = new Date().toISOString().split('T')[0];
+              let chainCreated = 0, chainErrors = 0;
+
+              for (const item of chainNewItems.slice(0, 10)) {
+                try {
+                  const p = {
+                    title: item.title || 'Sem título',
+                    description: item.snippet || '',
+                    sourceUrl: item.url || '',
+                    sourceName: item.source || '',
+                    publishedAt: chainToday,
+                  };
+                  if (chainCreateAction === 'create_clipping') {
+                    p.mediaType = 'Digital';
+                    p.contentType = guessContentType(item.title, item.snippet);
+                    p.sentiment = 'neutral';
+                  } else {
+                    p.category = guessCategory(item.title, item.snippet);
+                    p.subcategory = 'Notícias';
+                  }
+                  const res = await executeAction(moduleId, chainCreateAction, p);
+                  if (res.success) {
+                    chainCreated++;
+                    addMessage('system', `⚡ ✅ Cadastrado: <strong>${esc(item.title)}</strong>`
+                      + (item.url ? `<br><a href="${esc(item.url)}" target="_blank" style="color:var(--primary);font-size:0.8rem;">${esc(item.source || item.url)}</a>` : ''));
+                  } else { chainErrors++; }
+                } catch { chainErrors++; }
               }
-              await executeActionBatch(chainActions, getContextFn);
+              chainLoading.remove();
+              const chainSkipped = webData.length - chainNewItems.length;
+              const cR = [];
+              if (chainCreated > 0) cR.push(`✅ ${chainCreated} cadastrado(s)`);
+              if (chainSkipped > 0) cR.push(`⏭️ ${chainSkipped} já existente(s)`);
+              if (chainErrors > 0) cR.push(`❌ ${chainErrors} erro(s)`);
+              addMessage('assistant', cR.join(' · '));
             }
           } catch (err) {
             chainLoading.remove();
