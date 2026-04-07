@@ -24,6 +24,29 @@ try {
   if (m.toast) toast = m.toast;
 } catch {}
 
+/**
+ * Resolver taskId: se não parecer hash Firestore, busca por título.
+ * IDs Firestore: 20 chars alfanuméricos. Se o modelo enviar um título
+ * ou ID inventado, tentamos buscar a tarefa real.
+ */
+async function resolveTaskId(taskId) {
+  if (!taskId) return taskId;
+  // Hash Firestore válido: 20+ chars alfanuméricos
+  if (/^[a-zA-Z0-9]{15,}$/.test(taskId)) return taskId;
+  // Parece título ou ID fake — buscar por título
+  try {
+    const { fetchTasks } = await import('./tasks.js');
+    const tasks = await fetchTasks();
+    const searchLower = taskId.toLowerCase();
+    const found = tasks.find(t =>
+      t.title?.toLowerCase().includes(searchLower) ||
+      t.title?.toLowerCase() === searchLower
+    );
+    if (found) return found.id;
+  } catch { /* ignore */ }
+  return taskId; // retornar original se não encontrar
+}
+
 /* Wrapper seguro para evitar perda de `this` */
 function showToast(type, message) {
   try { toast[type]?.(message) || toast.info?.(message); } catch {}
@@ -1888,26 +1911,155 @@ ${lines.join('\n')}
 /* ─── Parser: extrair ações da resposta da IA ────────────── */
 export function parseActions(text) {
   const actions = [];
-  const regex = /<<<ACTION>>>{0,3}\s*(\{[\s\S]*?\})\s*<<<END_ACTION>>>{0,3}/g;
   let match;
+
+  // 1. Regex principal: <<<ACTION>>>...<<<END_ACTION>>> (tolerante a variações de >)
+  const regex = /<<<ACTION>>>{0,3}\s*(\{[\s\S]*?\})\s*<<<END_ACTION>>>{0,3}/g;
   while ((match = regex.exec(text)) !== null) {
     try {
       const parsed = JSON.parse(match[1]);
       if (parsed.action) actions.push(parsed);
     } catch (e) { /* JSON inválido, ignorar */ }
   }
+
+  // 2. Fallback A: <<<ACTION>>> sem END_ACTION (modelo esqueceu de fechar)
+  if (actions.length === 0) {
+    const fallback = /<<<ACTION>>>{0,3}\s*(\{[\s\S]*?"action"\s*:\s*"[^"]+[\s\S]*?\})\s*$/g;
+    while ((match = fallback.exec(text)) !== null) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (parsed.action) actions.push(parsed);
+      } catch (e) { /* JSON inválido, ignorar */ }
+    }
+  }
+
+  // 3. Fallback B: modelo usou tag customizada (ex: <<<CREATE_TASK>>>, <<<SHOW_TOAST>>>)
+  //    Alguns modelos (llama3) inventam tags como <<<CREATE_TASK>>> em vez de <<<ACTION>>>
+  if (actions.length === 0) {
+    const customTag = /<<<[A-Z_]+>>>{0,3}\s*(\{[\s\S]*?"action"\s*:\s*"[^"]+[\s\S]*?\})\s*<<<END_[A-Z_]+>>>{0,3}/g;
+    while ((match = customTag.exec(text)) !== null) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (parsed.action) actions.push(parsed);
+      } catch (e) { /* JSON inválido, ignorar */ }
+    }
+  }
+
+  // 4. Limpar params: remover valores null/undefined que modelos pequenos adicionam
+  for (const a of actions) {
+    if (a.params) {
+      for (const key of Object.keys(a.params)) {
+        if (a.params[key] === null || a.params[key] === undefined || a.params[key] === '') {
+          delete a.params[key];
+        }
+      }
+    }
+  }
+
   return actions;
 }
 
 /* ─── Remover blocos de ação do texto exibido ────────────── */
 export function cleanActionBlocks(text) {
-  return text.replace(/<<<ACTION>>>{0,3}[\s\S]*?<<<END_ACTION>>>{0,3}/g, '').trim();
+  // 1. Remover blocos completos (com END_*)
+  let clean = text.replace(/<<<[A-Z_]+>>>{0,3}[\s\S]*?<<<END_[A-Z_]+>>>{0,3}/g, '');
+  // 2. Remover blocos incompletos (sem END — modelo esqueceu de fechar)
+  clean = clean.replace(/<<<[A-Z_]+>>>{0,3}\s*\{[\s\S]*$/g, '');
+  return clean.trim();
 }
+
+/* ─── Normalizar parâmetros (modelos pequenos enviam formatos variados) ── */
+const PRIORITY_MAP = {
+  'urgente': 1, 'crítica': 1, 'critical': 1, 'urgent': 1, 'máxima': 1,
+  'alta': 2, 'high': 2,
+  'média': 3, 'media': 3, 'medium': 3, 'normal': 3,
+  'baixa': 4, 'low': 4,
+};
+
+const STATUS_MAP = {
+  'pendente': 'not_started', 'pending': 'not_started', 'não iniciado': 'not_started', 'novo': 'not_started',
+  'em andamento': 'in_progress', 'em_andamento': 'in_progress', 'in progress': 'in_progress', 'andamento': 'in_progress',
+  'revisão': 'review', 'review': 'review', 'em revisão': 'review',
+  'concluído': 'done', 'concluída': 'done', 'done': 'done', 'finalizado': 'done', 'completo': 'done',
+};
+
+async function normalizeParams(actionName, params) {
+  if (!params || typeof params !== 'object') return params;
+  const p = { ...params };
+
+  // Resolver taskId se não parecer hash Firestore
+  if (p.taskId) {
+    p.taskId = await resolveTaskId(p.taskId);
+  }
+
+  // Normalizar priority: string → número
+  if (p.priority != null) {
+    if (typeof p.priority === 'string') {
+      const key = p.priority.toLowerCase().trim();
+      p.priority = PRIORITY_MAP[key] || 3;
+    } else if (typeof p.priority === 'number' && p.priority === 5) {
+      p.priority = 1; // Alguns modelos usam 5=máxima
+    }
+  }
+
+  // Normalizar status: pt-BR → enum interno
+  if (p.status != null && typeof p.status === 'string') {
+    const key = p.status.toLowerCase().trim();
+    p.status = STATUS_MAP[key] || p.status;
+  } else if (p.status != null && typeof p.status === 'number') {
+    // Modelo enviou número como status — remover
+    delete p.status;
+  }
+
+  // Remover IDs claramente inventados (numéricos, genéricos)
+  for (const idKey of ['taskId', 'assigneeId', 'projectId']) {
+    if (p[idKey] != null) {
+      const val = String(p[idKey]);
+      // IDs Firestore são strings alfanuméricas de 20+ chars
+      // Rejeitar: números puros, "user123", "proj456", "ID_CRIADO_xxx"
+      if (/^\d+$/.test(val) || /^(user|proj|task|ID_CRIADO)\d*/i.test(val)) {
+        if (idKey === 'taskId') {
+          // taskId é obrigatório — não podemos remover, vai dar erro na ação
+          // O erro será tratado pelo executeAction
+        } else {
+          delete p[idKey]; // params opcionais: remover silenciosamente
+        }
+      }
+    }
+  }
+
+  return p;
+}
+
+/* ─── Mapa de aliases para ações (modelos inventam nomes alternativos) ── */
+const ACTION_ALIASES = {
+  'mark_as_done': 'complete_task',
+  'mark_done': 'complete_task',
+  'finish_task': 'complete_task',
+  'close_task': 'complete_task',
+  'remove_task': 'delete_task',
+  'destroy_task': 'delete_task',
+  'erase_task': 'delete_task',
+  'edit_task': 'update_task',
+  'modify_task': 'update_task',
+  'change_task': 'update_task',
+  'new_task': 'create_task',
+  'add_task': 'create_task',
+  'get_tasks': 'list_tasks',
+  'search_tasks': 'list_tasks',
+  'find_tasks': 'list_tasks',
+  'toast': 'show_toast',
+  'notify': 'show_toast',
+  'message': 'show_toast',
+};
 
 /* ─── Executar uma ação ──────────────────────────────────── */
 export async function executeAction(moduleId, actionName, params = {}) {
+  // Resolver aliases (modelos pequenos inventam nomes de ação)
+  const resolvedName = ACTION_ALIASES[actionName] || actionName;
+
   let actions = getActionsForModule(moduleId);
-  let action = actions.find(a => a.name === actionName);
+  let action = actions.find(a => a.name === resolvedName);
 
   // Fallback: se não encontrou no módulo atual, procurar em TODOS os módulos
   if (!action) {
@@ -1915,7 +2067,7 @@ export async function executeAction(moduleId, actionName, params = {}) {
     for (const key of allModuleKeys) {
       if (key === moduleId) continue;
       const modActions = MODULE_ACTIONS[key] || [];
-      action = modActions.find(a => a.name === actionName);
+      action = modActions.find(a => a.name === resolvedName);
       if (action) break;
     }
   }
@@ -1923,6 +2075,9 @@ export async function executeAction(moduleId, actionName, params = {}) {
   if (!action) {
     return { success: false, message: `Ação "${actionName}" não encontrada` };
   }
+
+  // Normalizar parâmetros (modelos pequenos enviam formatos variados)
+  params = await normalizeParams(actionName, params);
 
   try {
     const result = await action.execute(params);

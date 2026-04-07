@@ -535,7 +535,7 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
   const todayBR = today.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const systemParts = [
     `Assistente IA PRIMETOUR — módulo "${moduleLabel}". Hoje: ${todayStr} (${todayBR}). Amanhã: ${tomorrowStr}.`,
-    `Responda em pt-BR, conciso (1-2 frases + ação). SEMPRE execute ações, NUNCA diga "eu faria". IDs são hashes Firestore (ex: "aB3xK9qW2mNp") — NUNCA invente. Use IDs do histórico (>>> ID_CRIADO="xxx" <<<) ou faça list_ primeiro. Múltiplos <<<ACTION>>> permitidos. Textos longos vão nos params da ação, não no chat.`,
+    `Responda em pt-BR, conciso (1-2 frases + ação). SEMPRE execute ações, NUNCA diga "eu faria". NUNCA invente IDs — use APENAS IDs do histórico (>>> ID_CRIADO="xxx" <<<). Se não souber o ID, faça list_ primeiro. NUNCA preencha params opcionais com valores inventados — omita-os. Formato OBRIGATÓRIO: <<<ACTION>>>{"action":"x","params":{}}<<<END_ACTION>>> — SEMPRE feche com <<<END_ACTION>>>.`,
   ];
 
   // Adicionar contexto do módulo (excluir __fileContext do JSON)
