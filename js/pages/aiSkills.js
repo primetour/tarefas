@@ -547,6 +547,55 @@ async function renderConfigTab(el) {
               </div>
             </div>
           </div>
+          <div class="card" style="padding:24px;margin-bottom:16px;">
+            <div style="font-weight:600;font-size:1rem;color:var(--text-primary);margin-bottom:4px;">🔍 Busca Web (Clipping / Notícias)</div>
+            <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:16px;">
+              API para buscar menções na web. Configure ao menos uma opção.
+            </p>
+
+            <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px;">
+              <div style="font-weight:600;font-size:0.875rem;color:var(--success,#22C55E);margin-bottom:8px;">
+                ⭐ Opção 1: Serper.dev <span style="font-weight:400;color:var(--text-muted);">(recomendado — mais fácil)</span>
+              </div>
+              <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">
+                Busca Google completa. 2.500 créditos gratuitos.
+                <a href="https://serper.dev/" target="_blank" style="color:var(--primary);">Criar conta e obter API Key →</a>
+              </p>
+              <div class="form-group" style="margin:0;">
+                <label class="form-label" style="font-size:0.8125rem;">Serper API Key</label>
+                <input type="password" class="form-input" id="ai-cfg-serper-key"
+                  value="${esc(config.serperApiKey || '')}"
+                  placeholder="Cole sua API key aqui..."
+                  style="font-family:monospace;font-size:0.8125rem;" />
+              </div>
+            </div>
+
+            <div style="border:1px solid var(--border);border-radius:8px;padding:16px;">
+              <div style="font-weight:600;font-size:0.875rem;color:var(--text-muted);margin-bottom:8px;">
+                Opção 2: Google Custom Search <span style="font-weight:400;">(busca em sites específicos)</span>
+              </div>
+              <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">
+                100 buscas/dia gratuitas. Requer criar Search Engine com sites configurados.
+                <a href="https://programmablesearchengine.google.com/" target="_blank" style="color:var(--primary);">Criar →</a>
+              </p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label" style="font-size:0.8125rem;">API Key</label>
+                  <input type="password" class="form-input" id="ai-cfg-google-search-key"
+                    value="${esc(config.googleSearchApiKey || '')}"
+                    placeholder="AIzaSy..."
+                    style="font-family:monospace;font-size:0.8125rem;" />
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label" style="font-size:0.8125rem;">Search Engine ID (CX)</label>
+                  <input type="text" class="form-input" id="ai-cfg-google-search-cx"
+                    value="${esc(config.googleSearchCx || '')}"
+                    placeholder="a1b2c3d4e5f6..."
+                    style="font-family:monospace;font-size:0.8125rem;" />
+                </div>
+              </div>
+            </div>
+          </div>
         `;
       } else {
         defEl.innerHTML = '';
@@ -588,6 +637,14 @@ async function renderConfigTab(el) {
     // Local (Ollama/vLLM) endpoint
     const localEndpoint = document.getElementById('ai-cfg-local-endpoint')?.value?.trim();
     if (localEndpoint !== undefined) data.localEndpoint = localEndpoint || 'http://localhost:11434';
+
+    // APIs de busca web (para clipping/notícias)
+    const serperKey = document.getElementById('ai-cfg-serper-key')?.value?.trim();
+    if (serperKey !== undefined && serperKey && !serperKey.startsWith('••')) data.serperApiKey = serperKey;
+    const gSearchKey = document.getElementById('ai-cfg-google-search-key')?.value?.trim();
+    const gSearchCx = document.getElementById('ai-cfg-google-search-cx')?.value?.trim();
+    if (gSearchKey !== undefined && gSearchKey && !gSearchKey.startsWith('••')) data.googleSearchApiKey = gSearchKey;
+    if (gSearchCx !== undefined) data.googleSearchCx = gSearchCx || '';
 
     try {
       if (_cfgScope === 'global') {
