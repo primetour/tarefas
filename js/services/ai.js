@@ -535,8 +535,27 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
   const todayBR = today.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const systemParts = [
     `Assistente IA PRIMETOUR — módulo "${moduleLabel}". Hoje: ${todayStr} (${todayBR}). Amanhã: ${tomorrowStr}.`,
-    `Responda em pt-BR, conciso (1-2 frases + ação). SEMPRE execute ações, NUNCA diga "eu faria". NUNCA invente IDs — use APENAS IDs do histórico (>>> ID_CRIADO="xxx" <<<). Se não souber o ID, faça list_ primeiro. NUNCA preencha params opcionais com valores inventados — omita-os. Formato OBRIGATÓRIO: <<<ACTION>>>{"action":"x","params":{}}<<<END_ACTION>>> — SEMPRE feche com <<<END_ACTION>>>.`,
+    `Responda em pt-BR, conciso (1-2 frases + ação). SEMPRE execute ações, NUNCA diga "eu faria". NUNCA invente IDs — use APENAS IDs do histórico (>>> ID_CRIADO="xxx" <<<). Se não souber o ID, faça list_ primeiro. NUNCA preencha params opcionais com valores inventados — omita-os. Formato OBRIGATÓRIO: <<<ACTION>>>{"action":"x","params":{}}<<<END_ACTION>>> — SEMPRE feche com <<<END_ACTION>>>. Pode usar MÚLTIPLOS blocos <<<ACTION>>> na mesma resposta para executar várias ações de uma vez.`,
   ];
+
+  // Orientações específicas por módulo — guiam a IA na escolha correta de ações
+  const MODULE_HINTS = {
+    'news-monitor': `MÓDULO NOTÍCIAS — REGRAS IMPORTANTES:
+- Quando o usuário pedir para BUSCAR, TRAZER, ENCONTRAR, PESQUISAR ou "últimas" notícias → use search_web_news (busca na INTERNET real). NUNCA use list_news para buscar notícias novas.
+- Quando o usuário mencionar CLIPPING, menções ou citações da PRIMETOUR → use search_web_clipping (busca na INTERNET).
+- list_news e list_clippings servem APENAS para consultar o que JÁ ESTÁ cadastrado no banco interno.
+- Para evitar duplicatas: faça list_clippings e search_web_clipping juntos (2 ações na mesma resposta), depois compare e cadastre apenas os novos.
+- SEMPRE use search_web_news com sites relevantes: "panrotas.com.br,mercadoeventos.com.br,trade.travel3.com.br,diariodoturismo.com.br"
+- Ao cadastrar via create_news/create_clipping, SEMPRE preencha: title, description, sourceUrl, sourceName, category, subcategory, publishedAt.
+- PRIORIDADE DE AÇÃO: se o usuário quer notícias novas → search_web PRIMEIRO. Não perca tempo listando banco vazio.`,
+    'portal-tips': `MÓDULO PORTAL DE DICAS — REGRAS:
+- Ao criar dicas com create_tip, SEMPRE forneça conteúdo detalhado (300+ palavras) no campo "content".
+- NUNCA crie dicas vazias ou com conteúdo genérico de 1-2 frases.
+- Inclua informações práticas, endereços, horários, preços quando possível.
+- AVISO: Seu conhecimento pode estar desatualizado. Informe ao usuário que os dados devem ser verificados.`,
+  };
+  const moduleHint = MODULE_HINTS[opts.moduleId];
+  if (moduleHint) systemParts.push(moduleHint);
 
   // Adicionar contexto do módulo (excluir __fileContext do JSON)
   const fileContext = context?.__fileContext || '';

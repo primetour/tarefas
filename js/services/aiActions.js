@@ -83,6 +83,8 @@ async function searchWeb(query, sites) {
     'https://search.sapti.me',
     'https://searx.be',
     'https://search.ononoki.org',
+    'https://searx.work',
+    'https://priv.au',
   ];
   for (const instance of searxInstances) {
     if (results.length > 0) break;
@@ -113,6 +115,7 @@ async function searchWeb(query, sites) {
     const proxies = [
       url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
       url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
     ];
     for (const mkProxy of proxies) {
       if (results.length > 0) break;
@@ -144,7 +147,39 @@ async function searchWeb(query, sites) {
     }
   }
 
-  // Estratégia 3: Se nada funcionou, retornar instrução para busca manual
+  // Estratégia 3: Google via proxy (alternativa)
+  if (results.length === 0) {
+    try {
+      const googleUrl = `https://www.google.com/search?q=${encoded}&hl=pt-BR&num=10`;
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(googleUrl)}`;
+      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
+      if (resp.ok) {
+        const html = await resp.text();
+        if (html.length > 1000) {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          // Google results: <h3> dentro de <a>
+          doc.querySelectorAll('a[href^="/url?"]').forEach(a => {
+            if (results.length >= 8) return;
+            const rawUrl = a.getAttribute('href') || '';
+            const urlMatch = rawUrl.match(/[?&]q=([^&]+)/);
+            if (!urlMatch) return;
+            const url = decodeURIComponent(urlMatch[1]);
+            if (url.includes('google.com') || url.includes('youtube.com')) return;
+            const title = a.querySelector('h3')?.textContent?.trim() || a.textContent?.trim();
+            if (!title || title.length < 5) return;
+            let hostname = '';
+            try { hostname = new URL(url).hostname.replace('www.', ''); } catch {}
+            results.push({ title, url, snippet: '', source: hostname });
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[searchWeb] Google via proxy falhou:', e.message);
+    }
+  }
+
+  // Estratégia 4: Se nada funcionou, retornar instrução para busca manual
   if (results.length === 0) {
     return [{
       title: '⚠️ Busca automática indisponível',
@@ -2378,12 +2413,13 @@ export function formatActionsForPrompt(moduleId) {
   const actions = getActionsForModule(moduleId);
   if (!actions.length) return '';
 
-  // Formato compacto para economizar tokens: nome(params) — descrição curta
+  // Formato com descrição para que a IA entenda o propósito de cada ação
   const lines = actions.map(a => {
     const paramKeys = Object.keys(a.params || {});
     const required = paramKeys.filter(k => (a.params[k] || '').includes('obrigatório'));
     const optional = paramKeys.filter(k => !(a.params[k] || '').includes('obrigatório'));
     let sig = `• ${a.name}(${required.join(', ')}${optional.length ? ` [,${optional.join(',')}]` : ''})`;
+    sig += ` — ${a.description}`;
     return sig;
   });
 
