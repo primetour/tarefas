@@ -56,8 +56,16 @@ function showToast(type, message) {
 async function searchWeb(query, sites) {
   let searchQuery = query;
   if (sites) {
-    const siteList = sites.split(',').map(s => `site:${s.trim()}`).join(' OR ');
-    searchQuery = `${query} (${siteList})`;
+    // Normalizar: aceitar string, array ou objeto
+    let siteList;
+    if (Array.isArray(sites)) {
+      siteList = sites.map(s => `site:${String(s).trim()}`).join(' OR ');
+    } else if (typeof sites === 'string') {
+      siteList = sites.split(',').map(s => `site:${s.trim()}`).join(' OR ');
+    } else {
+      siteList = `site:${String(sites).trim()}`;
+    }
+    if (siteList) searchQuery = `${query} (${siteList})`;
   }
 
   const results = [];
@@ -2315,14 +2323,30 @@ const MODULE_ACTIONS = {
     },
     {
       name: 'search_web_news',
-      description: 'Buscar notícias REAIS e recentes na web. Retorna links, títulos e resumos atuais para cadastrar via create_news.',
+      description: 'Buscar notícias REAIS e recentes na web sobre turismo/viagens. Já busca automaticamente nos principais portais do trade (Panrotas, Mercado&Eventos, etc).',
       params: {
-        query: 'string — termo de busca (ex: "novos voos para Miami", "tendências hotelaria 2026") (obrigatório)',
-        sites: 'string — limitar a sites específicos (ex: "panrotas.com.br,mercadoeventos.com.br") (opcional)',
+        query: 'string — termo de busca (ex: "novos voos para Miami", "Primetour", "tendências hotelaria 2026") (obrigatório)',
+        sites: 'string — sites adicionais para buscar, separados por vírgula (opcional — já inclui panrotas, mercadoeventos, etc)',
       },
       execute: async (params) => {
         if (!params.query) return { success: false, message: 'query é obrigatória' };
-        const results = await searchWeb(params.query, params.sites);
+        // Sempre incluir sites do trade de turismo para resultados relevantes
+        const tradeSites = 'panrotas.com.br,mercadoeventos.com.br,trade.travel3.com.br,diariodoturismo.com.br,revistahoteis.com.br,hoteliernews.com.br';
+        let allSites = tradeSites;
+        if (params.sites) {
+          const extra = Array.isArray(params.sites) ? params.sites.join(',') : String(params.sites);
+          allSites = tradeSites + ',' + extra;
+        }
+        // Fazer 2 buscas: uma nos sites do trade e outra geral, depois mesclar
+        const tradeResults = await searchWeb(params.query, allSites);
+        const generalResults = await searchWeb(params.query);
+        // Mesclar: trade primeiro, depois geral (sem duplicar)
+        const seen = new Set(tradeResults.map(r => r.url));
+        const merged = [...tradeResults];
+        for (const r of generalResults) {
+          if (!seen.has(r.url)) { merged.push(r); seen.add(r.url); }
+        }
+        const results = merged.slice(0, 10);
         if (!results.length) {
           return { success: true, data: [], message: 'Nenhum resultado encontrado. Tente termos diferentes.' };
         }
