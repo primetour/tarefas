@@ -56,15 +56,10 @@ function showToast(type, message) {
 async function searchWeb(query, sites) {
   let searchQuery = query;
   if (sites) {
-    // Normalizar: aceitar string, array ou objeto
     let siteList;
-    if (Array.isArray(sites)) {
-      siteList = sites.map(s => `site:${String(s).trim()}`).join(' OR ');
-    } else if (typeof sites === 'string') {
-      siteList = sites.split(',').map(s => `site:${s.trim()}`).join(' OR ');
-    } else {
-      siteList = `site:${String(sites).trim()}`;
-    }
+    if (Array.isArray(sites)) siteList = sites.map(s => `site:${String(s).trim()}`).join(' OR ');
+    else if (typeof sites === 'string') siteList = sites.split(',').map(s => `site:${s.trim()}`).join(' OR ');
+    else siteList = `site:${String(sites).trim()}`;
     if (siteList) searchQuery = `${query} (${siteList})`;
   }
 
@@ -76,8 +71,8 @@ async function searchWeb(query, sites) {
     if (!rawUrl) return '';
     try {
       if (rawUrl.includes('uddg=')) {
-        const match = rawUrl.match(/uddg=([^&]+)/);
-        if (match) return decodeURIComponent(match[1]);
+        const m = rawUrl.match(/uddg=([^&]+)/);
+        if (m) return decodeURIComponent(m[1]);
       }
       if (rawUrl.startsWith('http')) return rawUrl;
       if (rawUrl.startsWith('//')) return 'https:' + rawUrl;
@@ -85,122 +80,133 @@ async function searchWeb(query, sites) {
     return rawUrl;
   }
 
-  // Estratégia 1: SearXNG público (JSON API — CORS-friendly quando disponível)
+  // Helper: tentar fetch com timeout curto
+  async function quickFetch(url, timeout = 6000) {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(timeout) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp;
+  }
+
+  // Helper: parsear HTML do DDG
+  function parseDdgHtml(html) {
+    if (!html || html.length < 500) return [];
+    const hits = [];
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    doc.querySelectorAll('.result__a, a.result__a').forEach(a => {
+      if (hits.length >= 10) return;
+      const rawUrl = a.getAttribute('href') || '';
+      const url = cleanDdgUrl(rawUrl);
+      if (!url || url.includes('duckduckgo.com') || url.includes('bing.com/aclick')) return;
+      const title = a.textContent?.trim() || '';
+      if (!title) return;
+      const resultDiv = a.closest('.result');
+      const snippet = resultDiv?.querySelector('.result__snippet')?.textContent?.trim()?.substring(0, 250) || '';
+      let hostname = '';
+      try { hostname = new URL(url).hostname.replace('www.', ''); } catch {}
+      hits.push({ title, url, snippet, source: hostname });
+    });
+    return hits;
+  }
+
+  // ── Rodar todas as estratégias em PARALELO (mais rápido) ──
+  const strategies = [];
+
+  // Estratégia 1: SearXNG (várias instâncias em paralelo)
   const searxInstances = [
     'https://searx.tiekoetter.com',
     'https://search.sapti.me',
     'https://searx.be',
     'https://search.ononoki.org',
-    'https://searx.work',
     'https://priv.au',
   ];
   for (const instance of searxInstances) {
-    if (results.length > 0) break;
-    try {
-      const url = `${instance}/search?q=${encoded}&format=json&language=pt-BR&categories=general,news`;
-      const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      (data.results || []).slice(0, 8).forEach(r => {
-        if (r.url && r.title) {
+    strategies.push(
+      quickFetch(`${instance}/search?q=${encoded}&format=json&language=pt-BR&categories=general,news`)
+        .then(r => r.json())
+        .then(data => (data.results || []).slice(0, 8).map(r => {
           let hostname = '';
           try { hostname = new URL(r.url).hostname.replace('www.', ''); } catch {}
-          results.push({
-            title: r.title,
-            url: r.url,
-            snippet: (r.content || '').substring(0, 250),
-            source: hostname || r.engine || '',
-          });
-        }
-      });
-    } catch (e) {
-      console.warn(`[searchWeb] SearXNG ${instance} falhou:`, e.message);
-    }
+          return { title: r.title, url: r.url, snippet: (r.content || '').substring(0, 250), source: hostname || r.engine || '' };
+        }).filter(r => r.url && r.title))
+        .catch(() => [])
+    );
   }
 
-  // Estratégia 2: DuckDuckGo HTML via proxy CORS
-  if (results.length === 0) {
-    const proxies = [
-      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-      url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-      url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-    ];
-    for (const mkProxy of proxies) {
-      if (results.length > 0) break;
-      try {
-        const ddgUrl = `https://html.duckduckgo.com/html/?q=${encoded}&kl=br-pt`;
-        const resp = await fetch(mkProxy(ddgUrl), { signal: AbortSignal.timeout(12000) });
-        if (!resp.ok) continue;
-        const html = await resp.text();
-        if (html.length < 500) continue;
-
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        doc.querySelectorAll('.result__a, a.result__a').forEach((a, i) => {
-          if (results.length >= 8) return;
-          const rawUrl = a.getAttribute('href') || '';
-          const url = cleanDdgUrl(rawUrl);
-          if (!url || url.includes('duckduckgo.com') || url.includes('bing.com/aclick')) return;
-          const title = a.textContent?.trim() || '';
-          if (!title) return;
-          const resultDiv = a.closest('.result');
-          const snippet = resultDiv?.querySelector('.result__snippet')?.textContent?.trim()?.substring(0, 250) || '';
-          let hostname = '';
-          try { hostname = new URL(url).hostname.replace('www.', ''); } catch {}
-          results.push({ title, url, snippet, source: hostname });
-        });
-      } catch (e) {
-        console.warn('[searchWeb] DDG proxy falhou:', e.message);
-      }
-    }
+  // Estratégia 2: DuckDuckGo via proxies CORS
+  const ddgUrl = `https://html.duckduckgo.com/html/?q=${encoded}&kl=br-pt`;
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(ddgUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(ddgUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(ddgUrl)}`,
+  ];
+  for (const proxyUrl of proxies) {
+    strategies.push(
+      quickFetch(proxyUrl, 10000)
+        .then(r => r.text())
+        .then(html => parseDdgHtml(html))
+        .catch(() => [])
+    );
   }
 
-  // Estratégia 3: Google via proxy (alternativa)
-  if (results.length === 0) {
-    try {
-      const googleUrl = `https://www.google.com/search?q=${encoded}&hl=pt-BR&num=10`;
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(googleUrl)}`;
-      const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
-      if (resp.ok) {
-        const html = await resp.text();
-        if (html.length > 1000) {
-          const parser = new DOMParser();
-          const doc = parser.parseFromString(html, 'text/html');
-          // Google results: <h3> dentro de <a>
-          doc.querySelectorAll('a[href^="/url?"]').forEach(a => {
-            if (results.length >= 8) return;
-            const rawUrl = a.getAttribute('href') || '';
-            const urlMatch = rawUrl.match(/[?&]q=([^&]+)/);
-            if (!urlMatch) return;
-            const url = decodeURIComponent(urlMatch[1]);
-            if (url.includes('google.com') || url.includes('youtube.com')) return;
-            const title = a.querySelector('h3')?.textContent?.trim() || a.textContent?.trim();
-            if (!title || title.length < 5) return;
+  // Estratégia 3: DuckDuckGo API JSON (lite, sem HTML parsing)
+  strategies.push(
+    quickFetch(`https://api.duckduckgo.com/?q=${encoded}&format=json&no_html=1&skip_disambig=1`)
+      .then(r => r.json())
+      .then(data => {
+        const hits = [];
+        // Related topics
+        (data.RelatedTopics || []).forEach(t => {
+          if (hits.length >= 6 && !t.FirstURL) return;
+          if (t.FirstURL && t.Text) {
             let hostname = '';
-            try { hostname = new URL(url).hostname.replace('www.', ''); } catch {}
-            results.push({ title, url, snippet: '', source: hostname });
-          });
+            try { hostname = new URL(t.FirstURL).hostname.replace('www.', ''); } catch {}
+            hits.push({ title: t.Text.substring(0, 120), url: t.FirstURL, snippet: '', source: hostname });
+          }
+        });
+        // Abstract
+        if (data.AbstractURL && data.Abstract) {
+          let hostname = '';
+          try { hostname = new URL(data.AbstractURL).hostname.replace('www.', ''); } catch {}
+          hits.unshift({ title: data.Heading || data.Abstract.substring(0, 80), url: data.AbstractURL, snippet: data.Abstract.substring(0, 250), source: hostname });
         }
+        return hits;
+      })
+      .catch(() => [])
+  );
+
+  // Esperar TODAS as estratégias (timeout global de 15s)
+  try {
+    const allResults = await Promise.race([
+      Promise.allSettled(strategies),
+      new Promise(resolve => setTimeout(() => resolve([]), 15000)), // timeout global
+    ]);
+
+    // Coletar todos os resultados válidos
+    for (const settled of allResults) {
+      if (settled?.status === 'fulfilled' && Array.isArray(settled.value)) {
+        results.push(...settled.value);
       }
-    } catch (e) {
-      console.warn('[searchWeb] Google via proxy falhou:', e.message);
     }
+  } catch (e) {
+    console.warn('[searchWeb] Erro geral:', e.message);
   }
 
-  // Estratégia 4: Se nada funcionou, retornar instrução para busca manual
+  // Se nada funcionou, retornar link para busca manual
   if (results.length === 0) {
     return [{
-      title: '⚠️ Busca automática indisponível',
+      title: '⚠️ Busca automática indisponível — clique para buscar manualmente',
       url: `https://www.google.com/search?q=${encoded}&hl=pt-BR`,
-      snippet: `Não foi possível realizar a busca automaticamente. Clique no link acima para buscar manualmente ou tente novamente em alguns minutos.`,
+      snippet: `Nenhum mecanismo de busca respondeu. Clique no link para buscar manualmente.`,
       source: 'sistema',
     }];
   }
 
-  // Deduplificar
+  // Deduplificar por URL
   const seen = new Set();
   return results.filter(r => {
-    const key = r.source + '|' + r.title.substring(0, 40);
+    if (!r.url || !r.title) return false;
+    const key = r.url.replace(/https?:\/\/(www\.)?/, '').substring(0, 60);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -2323,37 +2329,25 @@ const MODULE_ACTIONS = {
     },
     {
       name: 'search_web_news',
-      description: 'Buscar notícias REAIS e recentes na web sobre turismo/viagens. Já busca automaticamente nos principais portais do trade (Panrotas, Mercado&Eventos, etc).',
+      description: 'Buscar notícias REAIS e recentes na web sobre turismo/viagens.',
       params: {
-        query: 'string — termo de busca (ex: "novos voos para Miami", "Primetour", "tendências hotelaria 2026") (obrigatório)',
-        sites: 'string — sites adicionais para buscar, separados por vírgula (opcional — já inclui panrotas, mercadoeventos, etc)',
+        query: 'string — termo de busca (ex: "Primetour", "novos voos Miami") (obrigatório)',
       },
       execute: async (params) => {
-        if (!params.query) return { success: false, message: 'query é obrigatória' };
-        // Sempre incluir sites do trade de turismo para resultados relevantes
-        const tradeSites = 'panrotas.com.br,mercadoeventos.com.br,trade.travel3.com.br,diariodoturismo.com.br,revistahoteis.com.br,hoteliernews.com.br';
-        let allSites = tradeSites;
-        if (params.sites) {
-          const extra = Array.isArray(params.sites) ? params.sites.join(',') : String(params.sites);
-          allSites = tradeSites + ',' + extra;
-        }
-        // Fazer 2 buscas: uma nos sites do trade e outra geral, depois mesclar
-        const tradeResults = await searchWeb(params.query, allSites);
-        const generalResults = await searchWeb(params.query);
-        // Mesclar: trade primeiro, depois geral (sem duplicar)
-        const seen = new Set(tradeResults.map(r => r.url));
-        const merged = [...tradeResults];
-        for (const r of generalResults) {
-          if (!seen.has(r.url)) { merged.push(r); seen.add(r.url); }
-        }
-        const results = merged.slice(0, 10);
-        if (!results.length) {
+        // Fallback: se IA não mandou query, usar "Primetour" como padrão
+        const query = params.query || params.search || params.term || params.q || 'Primetour turismo';
+        params.query = query;
+        // Uma única busca — sem duplicar chamadas
+        const results = await searchWeb(params.query);
+        // Filtrar resultados inválidos (fallbacks de busca indisponível)
+        const valid = results.filter(r => r.source !== 'sistema' && !r.title?.includes('indisponível'));
+        if (!valid.length) {
           return { success: true, data: [], message: 'Nenhum resultado encontrado. Tente termos diferentes.' };
         }
         return {
           success: true,
-          data: results,
-          message: `${results.length} resultado(s) encontrado(s). Avalie os resultados e use create_news para cadastrar os relevantes.`,
+          data: valid,
+          message: `${valid.length} resultado(s) encontrado(s). Avalie e cadastre os relevantes.`,
         };
       },
     },
@@ -2492,37 +2486,27 @@ ${lines.join('\n')}
 /* ─── Parser: extrair ações da resposta da IA ────────────── */
 export function parseActions(text) {
   const actions = [];
-  let match;
 
-  // 1. Regex principal: <<<ACTION>>>...<<<END_ACTION>>> (tolerante a variações de >)
-  const regex = /<<<ACTION>>>{0,3}\s*(\{[\s\S]*?\})\s*<<<END_ACTION>>>{0,3}/g;
-  while ((match = regex.exec(text)) !== null) {
-    try {
-      const parsed = JSON.parse(match[1]);
-      if (parsed.action) actions.push(parsed);
-    } catch (e) { /* JSON inválido, ignorar */ }
-  }
-
-  // 2. Fallback A: <<<ACTION>>> sem END_ACTION (modelo esqueceu de fechar)
-  if (actions.length === 0) {
-    const fallback = /<<<ACTION>>>{0,3}\s*(\{[\s\S]*?"action"\s*:\s*"[^"]+[\s\S]*?\})\s*$/g;
-    while ((match = fallback.exec(text)) !== null) {
+  // Método robusto: dividir por <<<ACTION>>> (ou tags customizadas) e extrair JSON de cada parte
+  // Funciona com ou sem END_ACTION, com múltiplas ações, com tags customizadas
+  const parts = text.split(/<<<(?:ACTION|[A-Z_]+)>>>{0,3}\s*/);
+  for (let i = 1; i < parts.length; i++) {
+    // Remover tudo depois de <<<END_...>>> se presente
+    let chunk = parts[i].split(/<<<END_[A-Z_]+>>>{0,3}/)[0].trim();
+    // Extrair o JSON do chunk
+    const jsonMatch = chunk.match(/(\{[\s\S]*\})/);
+    if (jsonMatch) {
       try {
-        const parsed = JSON.parse(match[1]);
+        const parsed = JSON.parse(jsonMatch[1]);
         if (parsed.action) actions.push(parsed);
-      } catch (e) { /* JSON inválido, ignorar */ }
-    }
-  }
-
-  // 3. Fallback B: modelo usou tag customizada (ex: <<<CREATE_TASK>>>, <<<SHOW_TOAST>>>)
-  //    Alguns modelos (llama3) inventam tags como <<<CREATE_TASK>>> em vez de <<<ACTION>>>
-  if (actions.length === 0) {
-    const customTag = /<<<[A-Z_]+>>>{0,3}\s*(\{[\s\S]*?"action"\s*:\s*"[^"]+[\s\S]*?\})\s*<<<END_[A-Z_]+>>>{0,3}/g;
-    while ((match = customTag.exec(text)) !== null) {
-      try {
-        const parsed = JSON.parse(match[1]);
-        if (parsed.action) actions.push(parsed);
-      } catch (e) { /* JSON inválido, ignorar */ }
+      } catch (e) {
+        // Tentar limpar JSON mal-formado (trailing commas, etc)
+        try {
+          const cleaned = jsonMatch[1].replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+          const parsed = JSON.parse(cleaned);
+          if (parsed.action) actions.push(parsed);
+        } catch (e2) { /* JSON realmente inválido */ }
+      }
     }
   }
 
