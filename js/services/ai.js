@@ -30,6 +30,11 @@ export const MODULE_REGISTRY = {
   'arts-editor':      { label: 'Editor de Artes',     icon: '▣',  contextFields: ['design','template','text','brand'] },
   'roteiros':         { label: 'Roteiros de Viagem',  icon: '✈',  contextFields: ['destination','clientProfile','dayNumber','narrative','hotels','pricing','portalTips'] },
   'ai-automations':   { label: 'Automações IA',       icon: '⚡', contextFields: ['automationName','type','frequency','status','lastRun'] },
+  'sectors':          { label: 'Setores e Núcleos',   icon: '◈',  contextFields: ['sector','nucleo','members'] },
+  'workspaces':       { label: 'Workspaces',          icon: '▤',  contextFields: ['name','sector','members','archived'] },
+  'task-types':       { label: 'Tipos de Tarefa',     icon: '📋', contextFields: ['name','sector','category','variations','fields','sla'] },
+  'capacity':         { label: 'Capacidade/Ausências', icon: '◷', contextFields: ['userId','type','startDate','endDate','availability'] },
+  'task-categories':  { label: 'Categorias de Tarefa', icon: '◉', contextFields: ['name','sector','color'] },
   'general':          { label: 'Geral (todos)',       icon: '⊞',  contextFields: ['input'] },
 };
 
@@ -566,7 +571,35 @@ DUPLICATAS:
 - Ao criar dicas com create_tip, SEMPRE forneça conteúdo detalhado (300+ palavras) no campo "content".
 - NUNCA crie dicas vazias ou com conteúdo genérico de 1-2 frases.
 - Inclua informações práticas, endereços, horários, preços quando possível.
-- AVISO: Seu conhecimento pode estar desatualizado. Informe ao usuário que os dados devem ser verificados.`,
+- AVISO: Seu conhecimento pode estar desatualizado. Informe ao usuário que os dados devem ser verificados.
+- Para EXCLUIR: use delete_tip (dica), delete_destination (destino), delete_area (BU).
+- Para ATUALIZAR destino: use update_destination. Para atualizar dica: use update_tip.`,
+    'goals': `MÓDULO METAS — REGRAS:
+- Metas têm status: draft → publicada → encerrada.
+- Use publish_goal para publicar e notificar responsáveis.
+- Avaliações (evaluations) são registros periódicos de progresso de uma meta.
+- Use list_evaluations para ver avaliações existentes, create_evaluation para registrar nova, delete_evaluation para remover.`,
+    'feedbacks': `MÓDULO FEEDBACKS — REGRAS:
+- Feedbacks são registros de elogios, sugestões, reclamações de clientes.
+- Agendamentos (schedules) definem feedbacks recorrentes automáticos.
+- Use list_feedback_schedules para ver agendamentos, create_feedback_schedule para criar, delete_feedback_schedule para remover.`,
+    'capacity': `MÓDULO CAPACIDADE/AUSÊNCIAS — REGRAS:
+- Ausências representam períodos em que colaboradores estão indisponíveis (férias, licença, folga, atestado).
+- Use get_team_availability para verificar quem está disponível em um período.
+- Datas no formato YYYY-MM-DD.`,
+    'sectors': `MÓDULO SETORES E NÚCLEOS — REGRAS:
+- Núcleos são subdivisões dentro de setores.
+- Cada núcleo pertence a um setor.
+- Use list_nucleos para listar, create_nucleo para criar (name + sector obrigatórios).`,
+    'workspaces': `MÓDULO WORKSPACES — REGRAS:
+- Workspaces são espaços de trabalho que agrupam tarefas e membros.
+- Use archive_workspace para desativar (soft delete), não exclui permanentemente.
+- Use add_workspace_member/remove_workspace_member para gerenciar membros.`,
+    'requests': `MÓDULO SOLICITAÇÕES — REGRAS:
+- Solicitações passam por: pending → approved/rejected → converted (em tarefa).
+- Use approve_request/reject_request para moderar.
+- Use convert_request_to_task para transformar em tarefa após aprovação.
+- Use delete_request para excluir permanentemente.`,
   };
   const moduleHint = MODULE_HINTS[opts.moduleId];
   if (moduleHint) systemParts.push(moduleHint);

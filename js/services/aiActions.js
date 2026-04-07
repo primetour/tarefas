@@ -1757,6 +1757,83 @@ const MODULE_ACTIONS = {
         return { success: true, message: 'Dica atualizada com sucesso!' };
       },
     },
+    {
+      name: 'update_destination',
+      description: 'Atualizar dados de um destino existente',
+      params: {
+        destinationId: 'string — ID do destino (obrigatório)',
+        name: 'string — novo nome (opcional)',
+        city: 'string — nova cidade (opcional)',
+        country: 'string — novo país (opcional)',
+        continent: 'string — novo continente (opcional)',
+        description: 'string — nova descrição (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.destinationId) return { success: false, message: 'destinationId é obrigatório' };
+        const { saveDestination } = await import('./portal.js');
+        const { destinationId, ...data } = params;
+        Object.keys(data).forEach(k => { if (!data[k]) delete data[k]; });
+        await saveDestination(destinationId, data);
+        showToast('success', 'Destino atualizado!');
+        return { success: true, message: 'Destino atualizado com sucesso!' };
+      },
+    },
+    {
+      name: 'delete_destination',
+      description: 'Excluir um destino do portal de dicas',
+      params: { destinationId: 'string — ID do destino (obrigatório)' },
+      execute: async ({ destinationId }) => {
+        if (!destinationId) return { success: false, message: 'destinationId é obrigatório' };
+        const { deleteDestination } = await import('./portal.js');
+        await deleteDestination(destinationId);
+        showToast('success', 'Destino excluído!');
+        return { success: true, message: 'Destino excluído!' };
+      },
+    },
+    {
+      name: 'delete_tip',
+      description: 'Excluir uma dica de viagem',
+      params: { tipId: 'string — ID da dica (obrigatório)' },
+      execute: async ({ tipId }) => {
+        if (!tipId) return { success: false, message: 'tipId é obrigatório' };
+        const { deleteTip } = await import('./portal.js');
+        await deleteTip(tipId);
+        showToast('success', 'Dica excluída!');
+        return { success: true, message: 'Dica excluída!' };
+      },
+    },
+    {
+      name: 'create_area',
+      description: 'Criar uma nova área/BU (identidade visual) no portal',
+      params: {
+        name: 'string — nome da área/BU (obrigatório)',
+        primaryColor: 'string — cor primária hex (ex: "#1a237e") (opcional)',
+        secondaryColor: 'string — cor secundária hex (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.name) return { success: false, message: 'name é obrigatório' };
+        const { saveArea } = await import('./portal.js');
+        const id = await saveArea(null, {
+          name: params.name,
+          primaryColor: params.primaryColor || '#1a237e',
+          secondaryColor: params.secondaryColor || '#ffffff',
+        });
+        showToast('success', `Área "${params.name}" criada!`);
+        return { success: true, message: `Área "${params.name}" criada!`, data: { areaId: id } };
+      },
+    },
+    {
+      name: 'delete_area',
+      description: 'Excluir uma área/BU do portal',
+      params: { areaId: 'string — ID da área (obrigatório)' },
+      execute: async ({ areaId }) => {
+        if (!areaId) return { success: false, message: 'areaId é obrigatório' };
+        const { deleteArea } = await import('./portal.js');
+        await deleteArea(areaId);
+        showToast('success', 'Área excluída!');
+        return { success: true, message: 'Área excluída!' };
+      },
+    },
   ],
 
   /* ═══════════════════════════════════════════════════════════
@@ -1879,6 +1956,55 @@ const MODULE_ACTIONS = {
           },
           message: `${feedbacks.length} feedback(s) no total`,
         };
+      },
+    },
+    {
+      name: 'list_feedback_schedules',
+      description: 'Listar agendamentos de feedback',
+      params: {},
+      execute: async () => {
+        const { fetchFeedbackSchedules } = await import('./feedbacks.js');
+        const schedules = await fetchFeedbackSchedules();
+        const summary = schedules.slice(0, 20).map(s => ({
+          id: s.id, title: s.title || '', frequency: s.frequency || '',
+          nextDate: s.nextDate?.toDate?.()?.toLocaleDateString?.('pt-BR') || s.nextDate || '',
+          participants: s.participants?.length || 0,
+        }));
+        return { success: true, data: summary, message: `${schedules.length} agendamento(s)` };
+      },
+    },
+    {
+      name: 'create_feedback_schedule',
+      description: 'Criar um agendamento de feedback recorrente',
+      params: {
+        title: 'string — título do agendamento (obrigatório)',
+        frequency: 'string — semanal, quinzenal, mensal, trimestral (default: mensal)',
+        participants: 'string[] — UIDs dos participantes (opcional)',
+        notes: 'string — observações (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.title) return { success: false, message: 'title é obrigatório' };
+        const { saveFeedbackSchedule } = await import('./feedbacks.js');
+        const id = await saveFeedbackSchedule(null, {
+          title: params.title,
+          frequency: params.frequency || 'mensal',
+          participants: params.participants || [],
+          notes: params.notes || '',
+        });
+        showToast('success', `Agendamento "${params.title}" criado!`);
+        return { success: true, message: `Agendamento "${params.title}" criado!`, data: { scheduleId: id } };
+      },
+    },
+    {
+      name: 'delete_feedback_schedule',
+      description: 'Excluir um agendamento de feedback',
+      params: { scheduleId: 'string — ID do agendamento (obrigatório)' },
+      execute: async ({ scheduleId }) => {
+        if (!scheduleId) return { success: false, message: 'scheduleId é obrigatório' };
+        const { deleteFeedbackSchedule } = await import('./feedbacks.js');
+        await deleteFeedbackSchedule(scheduleId);
+        showToast('success', 'Agendamento excluído!');
+        return { success: true, message: 'Agendamento excluído!' };
       },
     },
   ],
@@ -2009,6 +2135,56 @@ const MODULE_ACTIONS = {
           },
           message: `${goals.length} meta(s) cadastrada(s)`,
         };
+      },
+    },
+    {
+      name: 'list_evaluations',
+      description: 'Listar avaliações de uma meta específica',
+      params: { goalId: 'string — ID da meta (obrigatório)' },
+      execute: async ({ goalId }) => {
+        if (!goalId) return { success: false, message: 'goalId é obrigatório' };
+        const { fetchEvaluations } = await import('./goals.js');
+        const evals = await fetchEvaluations(goalId);
+        const summary = evals.slice(0, 30).map(e => ({
+          id: e.id, period: e.period || '', score: e.score ?? '', status: e.status || '',
+          evaluatedAt: e.evaluatedAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
+        }));
+        return { success: true, data: summary, message: `${evals.length} avaliação(ões)` };
+      },
+    },
+    {
+      name: 'create_evaluation',
+      description: 'Registrar uma avaliação para uma meta',
+      params: {
+        goalId: 'string — ID da meta (obrigatório)',
+        period: 'string — período avaliado (ex: "2026-03") (obrigatório)',
+        score: 'number — nota/score da avaliação (opcional)',
+        notes: 'string — observações da avaliação (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.goalId) return { success: false, message: 'goalId é obrigatório' };
+        const { saveEvaluation } = await import('./goals.js');
+        const id = await saveEvaluation(null, {
+          goalId: params.goalId,
+          period: params.period || '',
+          score: params.score ?? null,
+          notes: params.notes || '',
+          status: 'completed',
+        });
+        showToast('success', 'Avaliação registrada!');
+        return { success: true, message: 'Avaliação registrada!', data: { evaluationId: id } };
+      },
+    },
+    {
+      name: 'delete_evaluation',
+      description: 'Excluir uma avaliação de meta',
+      params: { evaluationId: 'string — ID da avaliação (obrigatório)' },
+      execute: async ({ evaluationId }) => {
+        if (!evaluationId) return { success: false, message: 'evaluationId é obrigatório' };
+        const { deleteEvaluation } = await import('./goals.js');
+        await deleteEvaluation(evaluationId);
+        showToast('success', 'Avaliação excluída!');
+        return { success: true, message: 'Avaliação excluída!' };
       },
     },
   ],
@@ -2210,6 +2386,18 @@ const MODULE_ACTIONS = {
         };
       },
     },
+    {
+      name: 'delete_request',
+      description: 'Excluir uma solicitação',
+      params: { requestId: 'string — ID da solicitação (obrigatório)' },
+      execute: async ({ requestId }) => {
+        if (!requestId) return { success: false, message: 'requestId é obrigatório' };
+        const { deleteRequest } = await import('./requests.js');
+        await deleteRequest(requestId);
+        showToast('success', 'Solicitação excluída!');
+        return { success: true, message: 'Solicitação excluída!' };
+      },
+    },
   ],
 
   /* ═══════════════════════════════════════════════════════════
@@ -2358,12 +2546,28 @@ const MODULE_ACTIONS = {
         const summary = items.slice(0, 20).map(n => ({
           id: n.id,
           title: n.title || '',
+          sourceUrl: n.sourceUrl || '',
+          sourceName: n.sourceName || '',
           category: n.category || '',
           subcategory: n.subcategory || '',
-          source: n.sourceName || n.sourceUrl || '',
           publishedAt: n.publishedAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
         }));
         return { success: true, data: summary, message: `${items.length} notícia(s) encontrada(s)` };
+      },
+    },
+    {
+      name: 'delete_news',
+      description: 'Excluir uma notícia por ID.',
+      params: {
+        newsId: 'string — ID da notícia a excluir (obrigatório)',
+      },
+      execute: async (params) => {
+        const id = params.newsId || params.id;
+        if (!id) return { success: false, message: 'newsId é obrigatório.' };
+        const { deleteNewsItem } = await import('./newsMonitor.js');
+        await deleteNewsItem(id);
+        showToast('success', 'Notícia excluída!');
+        return { success: true, message: `Notícia "${id}" excluída.` };
       },
     },
     {
@@ -2383,9 +2587,9 @@ const MODULE_ACTIONS = {
       execute: async (params) => {
         if (!params.title) return { success: false, message: 'Título é obrigatório.' };
         const { saveNewsItem, fetchUrlMetadata } = await import('./newsMonitor.js');
-        // Tentar buscar metadados da URL se não informou thumbnail/sourceName
+        // SEMPRE buscar metadados da URL (thumbnail, siteName) quando tem sourceUrl
         let meta = {};
-        if (params.sourceUrl && (!params.thumbnail || !params.sourceName)) {
+        if (params.sourceUrl) {
           try { meta = await fetchUrlMetadata(params.sourceUrl); } catch {}
         }
         const pubDate = safeParseDate(params.publishedAt);
@@ -2438,13 +2642,29 @@ const MODULE_ACTIONS = {
         const summary = items.slice(0, 20).map(c => ({
           id: c.id,
           title: c.title || '',
+          sourceUrl: c.sourceUrl || '',
+          sourceName: c.sourceName || '',
           mediaType: c.mediaType || '',
           contentType: c.contentType || '',
           sentiment: c.sentiment || '',
-          sourceName: c.sourceName || '',
           publishedAt: c.publishedAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
         }));
         return { success: true, data: summary, message: `${items.length} clipping(s)` };
+      },
+    },
+    {
+      name: 'delete_clipping',
+      description: 'Excluir um clipping por ID.',
+      params: {
+        clippingId: 'string — ID do clipping a excluir (obrigatório)',
+      },
+      execute: async (params) => {
+        const id = params.clippingId || params.id;
+        if (!id) return { success: false, message: 'clippingId é obrigatório.' };
+        const { deleteClipping } = await import('./newsMonitor.js');
+        await deleteClipping(id);
+        showToast('success', 'Clipping excluído!');
+        return { success: true, message: `Clipping "${id}" excluído.` };
       },
     },
     {
@@ -2464,14 +2684,15 @@ const MODULE_ACTIONS = {
       execute: async (params) => {
         if (!params.title) return { success: false, message: 'Título é obrigatório.' };
         const { saveClipping, fetchUrlMetadata } = await import('./newsMonitor.js');
+        // SEMPRE buscar metadados da URL (thumbnail, siteName) quando tem sourceUrl
         let meta = {};
-        if (params.sourceUrl && !params.sourceName) {
+        if (params.sourceUrl) {
           try { meta = await fetchUrlMetadata(params.sourceUrl); } catch {}
         }
         const pubDate = safeParseDate(params.publishedAt);
         const data = {
           title: params.title,
-          description: params.description || '',
+          description: params.description || meta.description || '',
           sourceUrl: params.sourceUrl || '',
           sourceName: params.sourceName || meta.siteName || '',
           mediaType: params.mediaType || 'Digital',
@@ -2479,11 +2700,32 @@ const MODULE_ACTIONS = {
           sentiment: params.sentiment || 'neutral',
           publishedAt: pubDate,
           excerpt: params.excerpt || '',
-          thumbnail: meta.thumbnail || '',
+          thumbnail: params.thumbnail || meta.thumbnail || '',
         };
         const id = await saveClipping(null, data);
         showToast('success', `Clipping "${params.title}" cadastrado!`);
         return { success: true, message: `Clipping "${params.title}" cadastrado!`, data: { clippingId: id, title: params.title } };
+      },
+    },
+    {
+      name: 'update_clipping',
+      description: 'Atualizar um clipping existente',
+      params: {
+        clippingId: 'string — ID do clipping (obrigatório)',
+        title: 'string — novo título (opcional)',
+        description: 'string — nova descrição (opcional)',
+        sentiment: 'string — positive, neutral, negative (opcional)',
+        contentType: 'string — Negócios, Análises, Tendências, Novidades, Publieditorial, Eventos (opcional)',
+        mediaType: 'string — Digital, Impresso, Televisivo (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.clippingId) return { success: false, message: 'clippingId é obrigatório' };
+        const { saveClipping } = await import('./newsMonitor.js');
+        const { clippingId, ...data } = params;
+        Object.keys(data).forEach(k => { if (!data[k]) delete data[k]; });
+        await saveClipping(clippingId, data);
+        showToast('success', 'Clipping atualizado!');
+        return { success: true, message: 'Clipping atualizado!' };
       },
     },
     {
@@ -2612,6 +2854,476 @@ const MODULE_ACTIONS = {
       execute: async () => {
         const stats = scrapeVisibleStats();
         return { success: true, data: stats, message: `${stats.length} métrica(s) de conteúdo` };
+      },
+    },
+  ],
+
+  /* ═══════════════════════════════════════════════════════════
+   * SECTORS — Setores e Núcleos
+   * ═══════════════════════════════════════════════════════════ */
+  sectors: [
+    {
+      name: 'list_nucleos',
+      description: 'Listar núcleos/departamentos cadastrados',
+      params: { sector: 'string — filtrar por setor (opcional)' },
+      execute: async (params) => {
+        const { fetchNucleos } = await import('./sectors.js');
+        let nucleos = await fetchNucleos(params?.sector ? { sector: params.sector } : undefined);
+        const summary = nucleos.slice(0, 30).map(n => ({
+          id: n.id, name: n.name || '', sector: n.sector || '', color: n.color || '',
+        }));
+        return { success: true, data: summary, message: `${nucleos.length} núcleo(s)` };
+      },
+    },
+    {
+      name: 'create_nucleo',
+      description: 'Criar um novo núcleo/departamento',
+      params: {
+        name: 'string — nome do núcleo (obrigatório)',
+        sector: 'string — setor ao qual pertence (obrigatório)',
+        description: 'string — descrição (opcional)',
+        color: 'string — cor hex (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.name || !params.sector) return { success: false, message: 'name e sector são obrigatórios' };
+        const { createNucleo } = await import('./sectors.js');
+        const id = await createNucleo({
+          name: params.name,
+          sector: params.sector,
+          description: params.description || '',
+          color: params.color || '',
+        });
+        showToast('success', `Núcleo "${params.name}" criado!`);
+        return { success: true, message: `Núcleo "${params.name}" criado!`, data: { nucleoId: id } };
+      },
+    },
+    {
+      name: 'update_nucleo',
+      description: 'Atualizar dados de um núcleo existente',
+      params: {
+        nucleoId: 'string — ID do núcleo (obrigatório)',
+        name: 'string — novo nome (opcional)',
+        sector: 'string — novo setor (opcional)',
+        description: 'string — nova descrição (opcional)',
+        color: 'string — nova cor (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.nucleoId) return { success: false, message: 'nucleoId é obrigatório' };
+        const { updateNucleo } = await import('./sectors.js');
+        const { nucleoId, ...data } = params;
+        Object.keys(data).forEach(k => { if (!data[k]) delete data[k]; });
+        await updateNucleo(nucleoId, data);
+        showToast('success', 'Núcleo atualizado!');
+        return { success: true, message: 'Núcleo atualizado!' };
+      },
+    },
+    {
+      name: 'delete_nucleo',
+      description: 'Excluir um núcleo/departamento',
+      params: { nucleoId: 'string — ID do núcleo (obrigatório)' },
+      execute: async ({ nucleoId }) => {
+        if (!nucleoId) return { success: false, message: 'nucleoId é obrigatório' };
+        const { deleteNucleo } = await import('./sectors.js');
+        await deleteNucleo(nucleoId);
+        showToast('success', 'Núcleo excluído!');
+        return { success: true, message: 'Núcleo excluído!' };
+      },
+    },
+  ],
+
+  /* ═══════════════════════════════════════════════════════════
+   * WORKSPACES — Espaços de Trabalho
+   * ═══════════════════════════════════════════════════════════ */
+  workspaces: [
+    {
+      name: 'list_workspaces',
+      description: 'Listar workspaces/espaços de trabalho',
+      params: { all: 'boolean — true para listar todos (admin), false para apenas os do usuário (default: false)' },
+      execute: async (params) => {
+        const { fetchUserWorkspaces, fetchAllWorkspaces } = await import('./workspaces.js');
+        const user = store.get('currentUser');
+        const workspaces = params?.all
+          ? await fetchAllWorkspaces()
+          : await fetchUserWorkspaces(user?.uid);
+        const summary = workspaces.slice(0, 30).map(w => ({
+          id: w.id, name: w.name || '', sector: w.sector || '',
+          color: w.color || '', memberCount: w.members?.length || 0,
+          archived: w.archived || false,
+        }));
+        return { success: true, data: summary, message: `${workspaces.length} workspace(s)` };
+      },
+    },
+    {
+      name: 'create_workspace',
+      description: 'Criar um novo workspace/espaço de trabalho',
+      params: {
+        name: 'string — nome do workspace (obrigatório)',
+        description: 'string — descrição (opcional)',
+        sector: 'string — setor (opcional)',
+        color: 'string — cor hex (opcional)',
+        icon: 'string — emoji/ícone (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.name) return { success: false, message: 'name é obrigatório' };
+        const { createWorkspace } = await import('./workspaces.js');
+        const id = await createWorkspace({
+          name: params.name,
+          description: params.description || '',
+          sector: params.sector || '',
+          color: params.color || '',
+          icon: params.icon || '',
+        });
+        showToast('success', `Workspace "${params.name}" criado!`);
+        return { success: true, message: `Workspace "${params.name}" criado!`, data: { workspaceId: id } };
+      },
+    },
+    {
+      name: 'update_workspace',
+      description: 'Atualizar dados de um workspace existente',
+      params: {
+        workspaceId: 'string — ID do workspace (obrigatório)',
+        name: 'string — novo nome (opcional)',
+        description: 'string — nova descrição (opcional)',
+        sector: 'string — novo setor (opcional)',
+        color: 'string — nova cor (opcional)',
+        icon: 'string — novo ícone (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.workspaceId) return { success: false, message: 'workspaceId é obrigatório' };
+        const { updateWorkspace } = await import('./workspaces.js');
+        const { workspaceId, ...data } = params;
+        Object.keys(data).forEach(k => { if (!data[k]) delete data[k]; });
+        await updateWorkspace(workspaceId, data);
+        showToast('success', 'Workspace atualizado!');
+        return { success: true, message: 'Workspace atualizado!' };
+      },
+    },
+    {
+      name: 'archive_workspace',
+      description: 'Arquivar um workspace (soft delete)',
+      params: { workspaceId: 'string — ID do workspace (obrigatório)' },
+      execute: async ({ workspaceId }) => {
+        if (!workspaceId) return { success: false, message: 'workspaceId é obrigatório' };
+        const { archiveWorkspace } = await import('./workspaces.js');
+        await archiveWorkspace(workspaceId);
+        showToast('success', 'Workspace arquivado!');
+        return { success: true, message: 'Workspace arquivado!' };
+      },
+    },
+    {
+      name: 'add_workspace_member',
+      description: 'Adicionar um membro a um workspace',
+      params: {
+        workspaceId: 'string — ID do workspace (obrigatório)',
+        userId: 'string — UID do usuário a adicionar (obrigatório)',
+      },
+      execute: async ({ workspaceId, userId }) => {
+        if (!workspaceId || !userId) return { success: false, message: 'workspaceId e userId são obrigatórios' };
+        const { addMember } = await import('./workspaces.js');
+        await addMember(workspaceId, userId);
+        showToast('success', 'Membro adicionado!');
+        return { success: true, message: 'Membro adicionado ao workspace!' };
+      },
+    },
+    {
+      name: 'remove_workspace_member',
+      description: 'Remover um membro de um workspace',
+      params: {
+        workspaceId: 'string — ID do workspace (obrigatório)',
+        userId: 'string — UID do usuário a remover (obrigatório)',
+      },
+      execute: async ({ workspaceId, userId }) => {
+        if (!workspaceId || !userId) return { success: false, message: 'workspaceId e userId são obrigatórios' };
+        const { removeMember } = await import('./workspaces.js');
+        await removeMember(workspaceId, userId);
+        showToast('success', 'Membro removido!');
+        return { success: true, message: 'Membro removido do workspace!' };
+      },
+    },
+  ],
+
+  /* ═══════════════════════════════════════════════════════════
+   * TASK-TYPES — Tipos de Tarefa
+   * ═══════════════════════════════════════════════════════════ */
+  'task-types': [
+    {
+      name: 'list_task_types_full',
+      description: 'Listar tipos de tarefa com detalhes (variações, campos, SLA)',
+      params: { workspaceId: 'string — filtrar por workspace (opcional)' },
+      execute: async (params) => {
+        const { fetchTaskTypes } = await import('./taskTypes.js');
+        const types = await fetchTaskTypes(params?.workspaceId ? { workspaceId: params.workspaceId } : undefined);
+        const summary = types.slice(0, 30).map(t => ({
+          id: t.id, name: t.name || '', icon: t.icon || '', sector: t.sector || '',
+          categoryName: t.categoryName || '',
+          variationsCount: t.variations?.length || 0,
+          fieldsCount: t.fields?.length || 0,
+        }));
+        return { success: true, data: summary, message: `${types.length} tipo(s) de tarefa` };
+      },
+    },
+    {
+      name: 'create_task_type',
+      description: 'Criar um novo tipo de tarefa',
+      params: {
+        name: 'string — nome do tipo (obrigatório)',
+        description: 'string — descrição (opcional)',
+        icon: 'string — emoji/ícone (opcional)',
+        color: 'string — cor hex (opcional)',
+        sector: 'string — setor (opcional)',
+        categoryId: 'string — ID da categoria (opcional)',
+        categoryName: 'string — nome da categoria (opcional)',
+        deliveryStandard: 'number — SLA padrão em dias (opcional)',
+        workspaceId: 'string — ID do workspace (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.name) return { success: false, message: 'name é obrigatório' };
+        const { createTaskType } = await import('./taskTypes.js');
+        const id = await createTaskType({
+          name: params.name,
+          description: params.description || '',
+          icon: params.icon || '📋',
+          color: params.color || '',
+          sector: params.sector || '',
+          categoryId: params.categoryId || '',
+          categoryName: params.categoryName || '',
+          deliveryStandard: params.deliveryStandard || null,
+          workspaceId: params.workspaceId || '',
+          variations: [],
+          fields: [],
+        });
+        showToast('success', `Tipo "${params.name}" criado!`);
+        return { success: true, message: `Tipo de tarefa "${params.name}" criado!`, data: { taskTypeId: id } };
+      },
+    },
+    {
+      name: 'update_task_type',
+      description: 'Atualizar um tipo de tarefa existente',
+      params: {
+        typeId: 'string — ID do tipo (obrigatório)',
+        name: 'string — novo nome (opcional)',
+        description: 'string — nova descrição (opcional)',
+        icon: 'string — novo ícone (opcional)',
+        sector: 'string — novo setor (opcional)',
+        deliveryStandard: 'number — novo SLA em dias (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.typeId) return { success: false, message: 'typeId é obrigatório' };
+        const { updateTaskType } = await import('./taskTypes.js');
+        const { typeId, ...data } = params;
+        Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+        await updateTaskType(typeId, data);
+        showToast('success', 'Tipo de tarefa atualizado!');
+        return { success: true, message: 'Tipo de tarefa atualizado!' };
+      },
+    },
+    {
+      name: 'delete_task_type',
+      description: 'Excluir um tipo de tarefa',
+      params: { typeId: 'string — ID do tipo (obrigatório)' },
+      execute: async ({ typeId }) => {
+        if (!typeId) return { success: false, message: 'typeId é obrigatório' };
+        const { deleteTaskType } = await import('./taskTypes.js');
+        await deleteTaskType(typeId);
+        showToast('success', 'Tipo de tarefa excluído!');
+        return { success: true, message: 'Tipo de tarefa excluído!' };
+      },
+    },
+  ],
+
+  /* ═══════════════════════════════════════════════════════════
+   * CAPACITY — Ausências e Capacidade
+   * ═══════════════════════════════════════════════════════════ */
+  capacity: [
+    {
+      name: 'list_absences',
+      description: 'Listar ausências cadastradas (férias, licenças, etc.)',
+      params: {
+        userId: 'string — filtrar por usuário (opcional)',
+        startDate: 'string — data início YYYY-MM-DD (opcional)',
+        endDate: 'string — data fim YYYY-MM-DD (opcional)',
+      },
+      execute: async (params) => {
+        const { fetchAllAbsences, fetchUserAbsences } = await import('./capacity.js');
+        let absences;
+        if (params?.userId) {
+          absences = await fetchUserAbsences(params.userId);
+        } else {
+          const filters = {};
+          if (params?.startDate) filters.startDate = new Date(params.startDate);
+          if (params?.endDate) filters.endDate = new Date(params.endDate);
+          absences = await fetchAllAbsences(filters);
+        }
+        const summary = absences.slice(0, 30).map(a => ({
+          id: a.id, userId: a.userId || '', type: a.type || '',
+          startDate: a.startDate?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
+          endDate: a.endDate?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
+          note: a.note || '',
+        }));
+        return { success: true, data: summary, message: `${absences.length} ausência(s)` };
+      },
+    },
+    {
+      name: 'create_absence',
+      description: 'Registrar uma ausência (férias, licença, folga, etc.)',
+      params: {
+        userId: 'string — UID do usuário (obrigatório)',
+        type: 'string — tipo: ferias, licenca, folga, atestado, outro (obrigatório)',
+        startDate: 'string — data início YYYY-MM-DD (obrigatório)',
+        endDate: 'string — data fim YYYY-MM-DD (obrigatório)',
+        note: 'string — observação (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.userId || !params.startDate || !params.endDate) {
+          return { success: false, message: 'userId, startDate e endDate são obrigatórios' };
+        }
+        const { createAbsence } = await import('./capacity.js');
+        const id = await createAbsence({
+          userId: params.userId,
+          type: params.type || 'outro',
+          startDate: safeParseDate(params.startDate),
+          endDate: safeParseDate(params.endDate),
+          note: params.note || '',
+        });
+        showToast('success', 'Ausência registrada!');
+        return { success: true, message: 'Ausência registrada!', data: { absenceId: id } };
+      },
+    },
+    {
+      name: 'update_absence',
+      description: 'Atualizar uma ausência existente',
+      params: {
+        absenceId: 'string — ID da ausência (obrigatório)',
+        type: 'string — novo tipo (opcional)',
+        startDate: 'string — nova data início YYYY-MM-DD (opcional)',
+        endDate: 'string — nova data fim YYYY-MM-DD (opcional)',
+        note: 'string — nova observação (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.absenceId) return { success: false, message: 'absenceId é obrigatório' };
+        const { updateAbsence } = await import('./capacity.js');
+        const { absenceId, ...data } = params;
+        if (data.startDate) data.startDate = safeParseDate(data.startDate);
+        if (data.endDate) data.endDate = safeParseDate(data.endDate);
+        Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+        await updateAbsence(absenceId, data);
+        showToast('success', 'Ausência atualizada!');
+        return { success: true, message: 'Ausência atualizada!' };
+      },
+    },
+    {
+      name: 'delete_absence',
+      description: 'Excluir uma ausência',
+      params: { absenceId: 'string — ID da ausência (obrigatório)' },
+      execute: async ({ absenceId }) => {
+        if (!absenceId) return { success: false, message: 'absenceId é obrigatório' };
+        const { deleteAbsence } = await import('./capacity.js');
+        await deleteAbsence(absenceId);
+        showToast('success', 'Ausência excluída!');
+        return { success: true, message: 'Ausência excluída!' };
+      },
+    },
+    {
+      name: 'get_team_availability',
+      description: 'Verificar disponibilidade da equipe em um período',
+      params: {
+        startDate: 'string — data início YYYY-MM-DD (obrigatório)',
+        endDate: 'string — data fim YYYY-MM-DD (obrigatório)',
+      },
+      execute: async (params) => {
+        if (!params.startDate || !params.endDate) return { success: false, message: 'startDate e endDate são obrigatórios' };
+        const { fetchAllAbsences } = await import('./capacity.js');
+        const absences = await fetchAllAbsences({
+          startDate: new Date(params.startDate),
+          endDate: new Date(params.endDate),
+        });
+        const byUser = {};
+        absences.forEach(a => {
+          const uid = a.userId || 'desconhecido';
+          if (!byUser[uid]) byUser[uid] = [];
+          byUser[uid].push({ type: a.type, start: a.startDate?.toDate?.()?.toLocaleDateString?.('pt-BR') || '', end: a.endDate?.toDate?.()?.toLocaleDateString?.('pt-BR') || '' });
+        });
+        return {
+          success: true,
+          data: { totalAbsences: absences.length, byUser },
+          message: `${absences.length} ausência(s) no período, ${Object.keys(byUser).length} pessoa(s) afetada(s)`,
+        };
+      },
+    },
+  ],
+
+  /* ═══════════════════════════════════════════════════════════
+   * TASK-CATEGORIES — Categorias de Tarefa
+   * ═══════════════════════════════════════════════════════════ */
+  'task-categories': [
+    {
+      name: 'list_categories',
+      description: 'Listar categorias de tarefa cadastradas',
+      params: { sector: 'string — filtrar por setor (opcional)' },
+      execute: async (params) => {
+        const { fetchCategories, fetchCategoriesBySector } = await import('./taskCategories.js');
+        const categories = params?.sector
+          ? await fetchCategoriesBySector(params.sector)
+          : await fetchCategories();
+        const summary = categories.slice(0, 30).map(c => ({
+          id: c.id, name: c.name || '', sector: c.sector || '',
+          color: c.color || '', icon: c.icon || '',
+        }));
+        return { success: true, data: summary, message: `${categories.length} categoria(s)` };
+      },
+    },
+    {
+      name: 'create_category',
+      description: 'Criar uma nova categoria de tarefa',
+      params: {
+        name: 'string — nome da categoria (obrigatório)',
+        sector: 'string — setor (opcional)',
+        color: 'string — cor hex (opcional)',
+        icon: 'string — emoji/ícone (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.name) return { success: false, message: 'name é obrigatório' };
+        const { createCategory } = await import('./taskCategories.js');
+        const id = await createCategory({
+          name: params.name,
+          sector: params.sector || '',
+          color: params.color || '',
+          icon: params.icon || '',
+        });
+        showToast('success', `Categoria "${params.name}" criada!`);
+        return { success: true, message: `Categoria "${params.name}" criada!`, data: { categoryId: id } };
+      },
+    },
+    {
+      name: 'update_category',
+      description: 'Atualizar uma categoria existente',
+      params: {
+        categoryId: 'string — ID da categoria (obrigatório)',
+        name: 'string — novo nome (opcional)',
+        sector: 'string — novo setor (opcional)',
+        color: 'string — nova cor (opcional)',
+        icon: 'string — novo ícone (opcional)',
+      },
+      execute: async (params) => {
+        if (!params.categoryId) return { success: false, message: 'categoryId é obrigatório' };
+        const { updateCategory } = await import('./taskCategories.js');
+        const { categoryId, ...data } = params;
+        Object.keys(data).forEach(k => { if (!data[k]) delete data[k]; });
+        await updateCategory(categoryId, data);
+        showToast('success', 'Categoria atualizada!');
+        return { success: true, message: 'Categoria atualizada!' };
+      },
+    },
+    {
+      name: 'delete_category',
+      description: 'Excluir uma categoria de tarefa',
+      params: { categoryId: 'string — ID da categoria (obrigatório)' },
+      execute: async ({ categoryId }) => {
+        if (!categoryId) return { success: false, message: 'categoryId é obrigatório' };
+        const { deleteCategory } = await import('./taskCategories.js');
+        await deleteCategory(categoryId);
+        showToast('success', 'Categoria excluída!');
+        return { success: true, message: 'Categoria excluída!' };
       },
     },
   ],
