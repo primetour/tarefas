@@ -586,21 +586,27 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       }
     }
 
-    // Follow-up: se ações de leitura retornaram dados, chamar IA para analisar/agir
-    if (dataResults.length > 0) {
+    // Follow-up: SOMENTE se a resposta original continha mix de data-actions + write-actions
+    // (ex: IA pediu list_tasks para pegar ID e depois quer update_task).
+    // Para consultas puras (list_tasks sozinho), os dados já estão no histórico e visíveis
+    // ao usuário via formatActionData — NÃO gasta tokens com follow-up desnecessário.
+    const hasWriteActions = actions.some(a => !DATA_ACTIONS.has(a.action));
+    const needsFollowUp = dataResults.length > 0 && hasWriteActions;
+
+    if (needsFollowUp) {
       const loadingEl = addLoading('Analisando');
       try {
         const dataContext = dataResults.map(r =>
-          `Ação "${r.action}" retornou: ${r.message}\nDados:\n${JSON.stringify(r.data ?? {}, null, 1).substring(0, 1500)}`
+          `Ação "${r.action}" retornou: ${r.message}\nDados:\n${JSON.stringify(r.data ?? {}, null, 1).substring(0, 800)}`
         ).join('\n\n');
 
-        const followUpMsg = `Resultados das ações:\n\n${dataContext}\n\nCom base nesses dados, responda ao pedido original. Se envolvia modificar algo e agora você tem o ID, EXECUTE a ação com <<<ACTION>>>. Se era consulta, analise de forma concisa.`;
+        const followUpMsg = `Resultados:\n${dataContext}\n\nAgora execute a ação necessária com os IDs encontrados.`;
         chatHistory.push({ role: 'user', text: followUpMsg });
 
         const context = typeof getContextFn === 'function' ? getContextFn() : {};
         const followUpResult = await chatWithAI(followUpMsg, context, {
           moduleId,
-          history: chatHistory.slice(-12),
+          history: chatHistory.slice(-8),
         });
 
         loadingEl.remove();
@@ -685,7 +691,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       }
       const result = await chatWithAI(text || 'Analise os arquivos anexados e descreva o conteúdo.', context, {
         moduleId,
-        history: chatHistory.slice(-10),
+        history: chatHistory.slice(-6),
       });
 
       loadingEl.remove();
