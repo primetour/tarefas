@@ -17,12 +17,8 @@
 import { store }  from '../store.js';
 import { router } from '../router.js';
 
-/* Toast — import seguro para evitar erros quando o container não existe */
-let toast = { success(){}, error(){}, info(){}, warning(){} };
-try {
-  const m = await import('../components/toast.js');
-  if (m.toast) toast = m.toast;
-} catch {}
+/* Toast — import lazy para evitar top-level await (trava Chrome/Edge) */
+let toast = null;
 
 /**
  * Resolver taskId: se não parecer hash Firestore, busca por título.
@@ -47,9 +43,19 @@ async function resolveTaskId(taskId) {
   return taskId; // retornar original se não encontrar
 }
 
-/* Wrapper seguro para evitar perda de `this` */
+/* Wrapper seguro com lazy load do toast (evita top-level await) */
 function showToast(type, message) {
-  try { toast[type]?.(message) || toast.info?.(message); } catch {}
+  if (toast) {
+    try { toast[type]?.(message) || toast.info?.(message); } catch {}
+    return;
+  }
+  // Lazy load na primeira chamada
+  import('../components/toast.js')
+    .then(m => {
+      toast = m.toast || { success(){}, error(){}, info(){}, warning(){} };
+      try { toast[type]?.(message) || toast.info?.(message); } catch {}
+    })
+    .catch(() => {});
 }
 
 /* ─── Helper: busca web real ──────────────────────────────── */
