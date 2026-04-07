@@ -800,80 +800,88 @@ async function callLocal({ config, apiKey, model, maxTokens, systemPrompt, userP
   // Detectar tipo de API: Ollama nativo vs OpenAI-compatible
   const isOllamaApi = endpoint.includes('11434') && !endpoint.includes('/v1');
 
-  if (isOllamaApi) {
-    // ─── Ollama API nativa (/api/chat) ───
-    const body = {
-      model,
-      messages: [],
-      stream: false,
-      options: {
-        num_predict: maxTokens,
-      },
-    };
-    if (temperature != null) body.options.temperature = temperature;
-    if (systemPrompt) body.messages.push({ role: 'system', content: systemPrompt });
-    body.messages.push({ role: 'user', content: userPrompt });
+  try {
+    if (isOllamaApi) {
+      // ─── Ollama API nativa (/api/chat) ───
+      const body = {
+        model,
+        messages: [],
+        stream: false,
+        options: {
+          num_predict: maxTokens,
+        },
+      };
+      if (temperature != null) body.options.temperature = temperature;
+      if (systemPrompt) body.messages.push({ role: 'system', content: systemPrompt });
+      body.messages.push({ role: 'user', content: userPrompt });
 
-    const url = endpoint.replace(/\/+$/, '') + '/api/chat';
-    const headers = { 'Content-Type': 'application/json' };
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+      const url = endpoint.replace(/\/+$/, '') + '/api/chat';
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey && apiKey !== 'local') headers['Authorization'] = `Bearer ${apiKey}`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => response.status);
-      if (response.status === 0 || errText.includes('Failed to fetch')) {
-        throw new Error(`Servidor local indisponível em ${endpoint}. Verifique se o Ollama está rodando (ollama serve) e se o endereço está correto.`);
+      if (!response.ok) {
+        const errText = await response.text().catch(() => String(response.status));
+        throw new Error(`Erro servidor local (${response.status}): ${errText}`);
       }
-      throw new Error(`Erro servidor local: ${errText}`);
-    }
 
-    const data = await response.json();
-    return {
-      text:         data.message?.content || '',
-      model:        data.model || model,
-      inputTokens:  data.prompt_eval_count || 0,
-      outputTokens: data.eval_count || 0,
-    };
-  } else {
-    // ─── OpenAI-compatible API (/v1/chat/completions) ───
-    // Funciona com: vLLM, text-generation-inference, LiteLLM, LocalAI, Ollama (modo OpenAI)
-    const messages = [];
-    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-    messages.push({ role: 'user', content: userPrompt });
+      const data = await response.json();
+      return {
+        text:         data.message?.content || '',
+        model:        data.model || model,
+        inputTokens:  data.prompt_eval_count || 0,
+        outputTokens: data.eval_count || 0,
+      };
+    } else {
+      // ─── OpenAI-compatible API (/v1/chat/completions) ───
+      // Funciona com: vLLM, text-generation-inference, LiteLLM, LocalAI, Ollama (modo OpenAI)
+      const messages = [];
+      if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+      messages.push({ role: 'user', content: userPrompt });
 
-    const body = { model, messages, max_tokens: maxTokens };
-    if (temperature != null) body.temperature = temperature;
+      const body = { model, messages, max_tokens: maxTokens };
+      if (temperature != null) body.temperature = temperature;
 
-    const url = endpoint.replace(/\/+$/, '') + '/v1/chat/completions';
-    const headers = { 'Content-Type': 'application/json' };
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+      const url = endpoint.replace(/\/+$/, '') + '/v1/chat/completions';
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey && apiKey !== 'local') headers['Authorization'] = `Bearer ${apiKey}`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => response.status);
-      if (response.status === 0 || errText.includes('Failed to fetch')) {
-        throw new Error(`Servidor local indisponível em ${endpoint}. Verifique se o serviço está rodando e acessível.`);
+      if (!response.ok) {
+        const errText = await response.text().catch(() => String(response.status));
+        throw new Error(`Erro servidor local (${response.status}): ${errText}`);
       }
-      throw new Error(`Erro servidor local: ${errText}`);
-    }
 
-    const data = await response.json();
-    return {
-      text:         data.choices?.[0]?.message?.content || '',
-      model:        data.model || model,
-      inputTokens:  data.usage?.prompt_tokens || 0,
-      outputTokens: data.usage?.completion_tokens || 0,
-    };
+      const data = await response.json();
+      return {
+        text:         data.choices?.[0]?.message?.content || '',
+        model:        data.model || model,
+        inputTokens:  data.usage?.prompt_tokens || 0,
+        outputTokens: data.usage?.completion_tokens || 0,
+      };
+    }
+  } catch (err) {
+    // Detectar erro de CORS ou servidor offline (ambos geram TypeError: Failed to fetch)
+    if (err.name === 'TypeError' || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+      throw new Error(
+        `Não foi possível conectar ao servidor local (${endpoint}).\n\n` +
+        `Possíveis causas:\n` +
+        `1. Ollama não está rodando → abra o app Ollama ou execute "ollama serve"\n` +
+        `2. CORS bloqueado → configure: launchctl setenv OLLAMA_ORIGINS "*" e reinicie o Ollama\n` +
+        `3. Endereço incorreto → verifique o endpoint nas configurações de IA`
+      );
+    }
+    throw err;
   }
 }
 
