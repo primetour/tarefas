@@ -514,16 +514,8 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
   const tomorrowStr = new Date(today.getTime() + 86400000).toISOString().split('T')[0];
   const todayBR = today.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const systemParts = [
-    `Você é o assistente IA do sistema PRIMETOUR, integrado ao módulo "${moduleLabel}".`,
-    `Data de hoje: ${todayStr} (${todayBR}). Amanhã: ${tomorrowStr}.`,
-    `Responda em português brasileiro, de forma CONCISA e direta. Máximo 2-3 frases antes de executar uma ação.`,
-    `REGRAS DE COMPORTAMENTO:`,
-    `- SEMPRE execute a ação imediatamente. NUNCA diga "eu faria" ou "se eu pudesse" — FAÇA.`,
-    `- Se precisar de um ID que não tem, use list_tasks/list_projects para buscar, e NA MESMA RESPOSTA já execute a ação seguinte com o ID encontrado.`,
-    `- REGRA CRÍTICA DE IDs: Os IDs do sistema são hashes do Firestore (ex: "aB3xK9qW2mNp"). NUNCA invente IDs descritivos como "id_da_tarefa_teste". Quando uma ação retorna um ID no histórico (ex: "[Resultado de create_task]: ... taskId: aB3xK9qW2mNp"), use EXATAMENTE esse ID nas ações seguintes. Se não encontrar o ID no histórico, use list_tasks para buscar.`,
-    `- Ao criar tarefas com datas, use SEMPRE datas futuras. "amanhã" = ${tomorrowStr}, "hoje" = ${todayStr}.`,
-    `- Seja breve. Não repita o que o usuário disse. Não gere conteúdo longo no chat — se for texto grande, coloque na descrição da tarefa via update_task.`,
-    `- Você pode incluir MÚLTIPLOS blocos <<<ACTION>>> na mesma resposta. Use isso para encadear ações (ex: list_tasks + update_task).`,
+    `Assistente IA PRIMETOUR — módulo "${moduleLabel}". Hoje: ${todayStr} (${todayBR}). Amanhã: ${tomorrowStr}.`,
+    `Responda em pt-BR, conciso (1-2 frases + ação). SEMPRE execute ações, NUNCA diga "eu faria". IDs são hashes Firestore (ex: "aB3xK9qW2mNp") — NUNCA invente. Use IDs do histórico (>>> ID_CRIADO="xxx" <<<) ou faça list_ primeiro. Múltiplos <<<ACTION>>> permitidos. Textos longos vão nos params da ação, não no chat.`,
   ];
 
   // Adicionar contexto do módulo (excluir __fileContext do JSON)
@@ -546,18 +538,23 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
     if (actionsPrompt) systemParts.push(actionsPrompt);
   } catch (e) { /* aiActions não disponível, continuar sem ações */ }
 
-  // Histórico de conversa (para continuidade)
+  // Histórico de conversa (para continuidade) — limitar para economizar tokens
   const history = opts.history || [];
   let fullUserPrompt = userMessage;
   if (history.length) {
-    const historyText = history.map(h => `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${h.text}`).join('\n\n');
-    fullUserPrompt = `Histórico da conversa:\n${historyText}\n\nUsuário: ${userMessage}`;
+    // Compactar histórico: manter últimas 6 mensagens, truncar textos longos
+    const recentHistory = history.slice(-6).map(h => {
+      const truncated = h.text.length > 300 ? h.text.substring(0, 300) + '...' : h.text;
+      return `${h.role === 'user' ? 'Usuário' : 'Assistente'}: ${truncated}`;
+    });
+    fullUserPrompt = `Histórico:\n${recentHistory.join('\n')}\n\nUsuário: ${userMessage}`;
   }
 
   const systemPrompt = systemParts.join('\n');
   const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.gemini;
   const model     = config?.defaultModel || defaults.model;
-  const maxTokens = Math.max(config?.defaultMaxTokens || defaults.maxTokens, 4096);
+  // Usar maxTokens configurado, com mínimo razoável de 2048 (antes era 4096 — desperdiçava tokens)
+  const maxTokens = config?.defaultMaxTokens || defaults.maxTokens || 2048;
 
   let result;
   switch (provider) {

@@ -1824,6 +1824,29 @@ export function formatActionsForPrompt(moduleId) {
   const actions = getActionsForModule(moduleId);
   if (!actions.length) return '';
 
+  // Formato compacto para economizar tokens: nome(params) — descrição curta
+  const lines = actions.map(a => {
+    const paramKeys = Object.keys(a.params || {});
+    const required = paramKeys.filter(k => (a.params[k] || '').includes('obrigatório'));
+    const optional = paramKeys.filter(k => !(a.params[k] || '').includes('obrigatório'));
+    let sig = `• ${a.name}(${required.join(', ')}${optional.length ? ` [,${optional.join(',')}]` : ''})`;
+    return sig;
+  });
+
+  return `
+=== AÇÕES ===
+Formato: <<<ACTION>>>{"action":"nome","params":{...}}<<<END_ACTION>>>
+Regras: Execute SEMPRE. Seja conciso (1-2 frases + ação). NUNCA invente IDs — use IDs do histórico (>>> ID_CRIADO="xxx" <<<) ou faça list_ primeiro.
+Ações:
+${lines.join('\n')}
+=== FIM ===`;
+}
+
+/** Formato detalhado — usado apenas quando explicitamente solicitado ou para documentação */
+export function formatActionsForPromptDetailed(moduleId) {
+  const actions = getActionsForModule(moduleId);
+  if (!actions.length) return '';
+
   const lines = actions.map(a => {
     const paramEntries = Object.entries(a.params || {});
     const paramDesc = paramEntries
