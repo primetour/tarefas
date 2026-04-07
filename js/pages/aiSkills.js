@@ -506,6 +506,18 @@ async function renderConfigTab(el) {
                   style="font-family:monospace;font-size:0.8125rem;" />
               </div>
             ` : ''}
+            ${p.id === 'local' ? `
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label" style="font-size:0.8125rem;">Endpoint do servidor</label>
+                <input type="text" class="form-input" id="ai-cfg-local-endpoint"
+                  value="${esc(config.localEndpoint || 'http://localhost:11434')}"
+                  placeholder="http://localhost:11434"
+                  style="font-family:monospace;font-size:0.8125rem;" />
+                <small style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;display:block;">
+                  Ollama: porta 11434 · vLLM/TGI: porta 8000 · API Key opcional
+                </small>
+              </div>
+            ` : ''}
           </div>
         `).join('')}
       </div>
@@ -572,6 +584,10 @@ async function renderConfigTab(el) {
     // Azure endpoint
     const azEndpoint = document.getElementById('ai-cfg-azure-endpoint')?.value?.trim();
     if (azEndpoint !== undefined) data.azureEndpoint = azEndpoint || '';
+
+    // Local (Ollama/vLLM) endpoint
+    const localEndpoint = document.getElementById('ai-cfg-local-endpoint')?.value?.trim();
+    if (localEndpoint !== undefined) data.localEndpoint = localEndpoint || 'http://localhost:11434';
 
     try {
       if (_cfgScope === 'global') {
