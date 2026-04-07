@@ -77,11 +77,14 @@ export const AI_MODELS = {
     { id: 'gpt-4.1-nano',       label: 'GPT-4.1 Nano',       desc: 'Ultra-leve para tarefas simples' },
   ],
   local: [
-    { id: 'llama3.3:70b',       label: 'Llama 3.3 70B',      desc: 'On-premise — sigilo total, alta qualidade' },
+    // Modelos populares — o id deve corresponder ao nome no Ollama (ollama list)
+    { id: 'qwen2.5',            label: 'Qwen 2.5 7B',        desc: 'On-premise — excelente para português, rápido' },
+    { id: 'llama3',             label: 'Llama 3 8B',          desc: 'On-premise — sigilo total, rápido' },
+    { id: 'llama3.3:70b',       label: 'Llama 3.3 70B',      desc: 'On-premise — alta qualidade (requer GPU potente)' },
     { id: 'llama3.3',           label: 'Llama 3.3 8B',       desc: 'On-premise — sigilo total, rápido' },
-    { id: 'llama3.1:70b',       label: 'Llama 3.1 70B',      desc: 'On-premise — sigilo total, estável' },
+    { id: 'llama3.1:70b',       label: 'Llama 3.1 70B',      desc: 'On-premise — estável (requer GPU potente)' },
     { id: 'llama3.1',           label: 'Llama 3.1 8B',       desc: 'On-premise — sigilo total, ultra-rápido' },
-    { id: 'qwen3:32b',          label: 'Qwen 3 32B',         desc: 'On-premise — excelente para português' },
+    { id: 'qwen3:32b',          label: 'Qwen 3 32B',         desc: 'On-premise — excelente para português, pesado' },
     { id: 'mistral',            label: 'Mistral 7B',         desc: 'On-premise — leve e eficiente' },
     { id: 'gemma3',             label: 'Gemma 3',            desc: 'On-premise — modelo Google compacto' },
     { id: 'custom',             label: 'Modelo personalizado', desc: 'Informe o nome do modelo no campo de configuração' },
@@ -95,7 +98,7 @@ const PROVIDER_DEFAULTS = {
   openai:    { model: 'gpt-4o-mini',        maxTokens: 1024 },
   anthropic: { model: 'claude-sonnet-4-6',  maxTokens: 1024 },
   azure:     { model: 'gpt-4o',             maxTokens: 1024 },
-  local:     { model: 'llama3.3',           maxTokens: 2048 },
+  local:     { model: 'qwen2.5',            maxTokens: 2048 },
 };
 
 /* Helper: lista flat de modelos do provider ativo */
