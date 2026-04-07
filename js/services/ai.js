@@ -40,6 +40,7 @@ export const AI_PROVIDERS = [
   { id: 'openai',     label: 'OpenAI (ChatGPT)',              icon: '◎', free: false, configFields: ['apiKey'] },
   { id: 'anthropic',  label: 'Anthropic (Claude)',            icon: '◈', free: false, configFields: ['apiKey'] },
   { id: 'azure',      label: 'Microsoft Azure / Foundry',    icon: '◫', free: false, configFields: ['apiKey','azureEndpoint'] },
+  { id: 'local',      label: 'Servidor Local (Ollama/vLLM)', icon: '⊚', free: true,  configFields: ['localEndpoint'],              signupUrl: 'https://ollama.com/download' },
 ];
 
 /* ─── Constantes ─────────────────────────────────────────── */
@@ -75,6 +76,16 @@ export const AI_MODELS = {
     { id: 'gpt-4.1-mini',       label: 'GPT-4.1 Mini',       desc: 'Versão compacta do GPT-4.1' },
     { id: 'gpt-4.1-nano',       label: 'GPT-4.1 Nano',       desc: 'Ultra-leve para tarefas simples' },
   ],
+  local: [
+    { id: 'llama3.3:70b',       label: 'Llama 3.3 70B',      desc: 'On-premise — sigilo total, alta qualidade' },
+    { id: 'llama3.3',           label: 'Llama 3.3 8B',       desc: 'On-premise — sigilo total, rápido' },
+    { id: 'llama3.1:70b',       label: 'Llama 3.1 70B',      desc: 'On-premise — sigilo total, estável' },
+    { id: 'llama3.1',           label: 'Llama 3.1 8B',       desc: 'On-premise — sigilo total, ultra-rápido' },
+    { id: 'qwen3:32b',          label: 'Qwen 3 32B',         desc: 'On-premise — excelente para português' },
+    { id: 'mistral',            label: 'Mistral 7B',         desc: 'On-premise — leve e eficiente' },
+    { id: 'gemma3',             label: 'Gemma 3',            desc: 'On-premise — modelo Google compacto' },
+    { id: 'custom',             label: 'Modelo personalizado', desc: 'Informe o nome do modelo no campo de configuração' },
+  ],
 };
 
 /* ─── Defaults por provider ──────────────────────────────── */
@@ -84,6 +95,7 @@ const PROVIDER_DEFAULTS = {
   openai:    { model: 'gpt-4o-mini',        maxTokens: 1024 },
   anthropic: { model: 'claude-sonnet-4-6',  maxTokens: 1024 },
   azure:     { model: 'gpt-4o',             maxTokens: 1024 },
+  local:     { model: 'llama3.3',           maxTokens: 2048 },
 };
 
 /* Helper: lista flat de modelos do provider ativo */
@@ -246,7 +258,11 @@ export async function deleteScopedApiConfig(docId) {
 export async function resolveApiKey(provider) {
   const user    = store.get('currentUser');
   const profile = store.get('currentProfile') || {};
-  const extractKey = (cfg) => cfg?.[provider + 'ApiKey'] || '';
+  // Para provider 'local', a "key" é o endpoint (não precisa de API key real)
+  const extractKey = (cfg) => {
+    if (provider === 'local') return cfg?.localEndpoint || cfg?.localApiKey || 'local';
+    return cfg?.[provider + 'ApiKey'] || '';
+  };
 
   // 1. Nível USUÁRIO
   if (user?.uid) {
@@ -499,7 +515,8 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
 
   const resolved = await resolveApiKey(provider);
   const apiKey = resolved.apiKey;
-  if (!apiKey) {
+  // Provider local não precisa de API key — usa localEndpoint
+  if (!apiKey && provider !== 'local') {
     return {
       text: '[SEM API KEY CONFIGURADA]\n\nConfigure uma API Key em IA Skills → Configurar API para usar o chat.',
       model: 'none', provider, inputTokens: 0, outputTokens: 0, isMock: true,
@@ -569,6 +586,9 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
       break;
     case 'azure':
       result = await callAzure({ config, apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      break;
+    case 'local':
+      result = await callLocal({ config: resolved.config, apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
       break;
     default:
       result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
@@ -765,6 +785,93 @@ async function callGroq({ apiKey, model, maxTokens, systemPrompt, userPrompt, te
     inputTokens:  data.usage?.prompt_tokens || 0,
     outputTokens: data.usage?.completion_tokens || 0,
   };
+}
+
+/* ─── Provider: Local (Ollama / vLLM / TGI) ─────────────── */
+async function callLocal({ config, apiKey, model, maxTokens, systemPrompt, userPrompt, temperature }) {
+  // Endpoint configurável — padrão: Ollama na porta 11434
+  const endpoint = config?.localEndpoint
+    || config?.azureEndpoint  // campo reutilizado se vier de config legada
+    || 'http://localhost:11434';
+
+  // Detectar tipo de API: Ollama nativo vs OpenAI-compatible
+  const isOllamaApi = endpoint.includes('11434') && !endpoint.includes('/v1');
+
+  if (isOllamaApi) {
+    // ─── Ollama API nativa (/api/chat) ───
+    const body = {
+      model,
+      messages: [],
+      stream: false,
+      options: {
+        num_predict: maxTokens,
+      },
+    };
+    if (temperature != null) body.options.temperature = temperature;
+    if (systemPrompt) body.messages.push({ role: 'system', content: systemPrompt });
+    body.messages.push({ role: 'user', content: userPrompt });
+
+    const url = endpoint.replace(/\/+$/, '') + '/api/chat';
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => response.status);
+      if (response.status === 0 || errText.includes('Failed to fetch')) {
+        throw new Error(`Servidor local indisponível em ${endpoint}. Verifique se o Ollama está rodando (ollama serve) e se o endereço está correto.`);
+      }
+      throw new Error(`Erro servidor local: ${errText}`);
+    }
+
+    const data = await response.json();
+    return {
+      text:         data.message?.content || '',
+      model:        data.model || model,
+      inputTokens:  data.prompt_eval_count || 0,
+      outputTokens: data.eval_count || 0,
+    };
+  } else {
+    // ─── OpenAI-compatible API (/v1/chat/completions) ───
+    // Funciona com: vLLM, text-generation-inference, LiteLLM, LocalAI, Ollama (modo OpenAI)
+    const messages = [];
+    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+    messages.push({ role: 'user', content: userPrompt });
+
+    const body = { model, messages, max_tokens: maxTokens };
+    if (temperature != null) body.temperature = temperature;
+
+    const url = endpoint.replace(/\/+$/, '') + '/v1/chat/completions';
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => response.status);
+      if (response.status === 0 || errText.includes('Failed to fetch')) {
+        throw new Error(`Servidor local indisponível em ${endpoint}. Verifique se o serviço está rodando e acessível.`);
+      }
+      throw new Error(`Erro servidor local: ${errText}`);
+    }
+
+    const data = await response.json();
+    return {
+      text:         data.choices?.[0]?.message?.content || '',
+      model:        data.model || model,
+      inputTokens:  data.usage?.prompt_tokens || 0,
+      outputTokens: data.usage?.completion_tokens || 0,
+    };
+  }
 }
 
 /* ─── Mock response (sem API key) ────────────────────────── */
