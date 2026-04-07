@@ -2452,13 +2452,33 @@ const MODULE_ACTIONS = {
         if (params?.additionalTerms) terms.push(params.additionalTerms);
         const query = terms.join(' OR ');
         const results = await searchWeb(query);
-        if (!results.length) {
-          return { success: true, data: [], message: 'Nenhuma menção encontrada. Tente termos adicionais.' };
+
+        // Filtrar resultados genéricos (redes sociais, homepage, páginas institucionais)
+        const SKIP_DOMAINS = ['instagram.com', 'facebook.com', 'linkedin.com', 'twitter.com', 'x.com', 'youtube.com', 'tiktok.com'];
+        const SKIP_TITLES = ['homepage', 'home |', 'perfil', 'profile', '(@', 'fotos e vídeos', 'photos and videos'];
+        const filtered = results.filter(r => {
+          if (!r.url || !r.title) return false;
+          const urlLower = r.url.toLowerCase();
+          const titleLower = r.title.toLowerCase();
+          // Pular redes sociais
+          if (SKIP_DOMAINS.some(d => urlLower.includes(d))) return false;
+          // Pular páginas genéricas da empresa
+          if (SKIP_TITLES.some(t => titleLower.includes(t))) return false;
+          // Pular homepage (URL sem path significativo)
+          try {
+            const u = new URL(r.url);
+            if (u.pathname === '/' || u.pathname === '') return false;
+          } catch {}
+          return true;
+        });
+
+        if (!filtered.length) {
+          return { success: true, data: [], message: 'Nenhuma menção jornalística encontrada. Tente termos adicionais.' };
         }
         return {
           success: true,
-          data: results,
-          message: `${results.length} resultado(s) encontrado(s). Avalie e use create_clipping para cadastrar as menções relevantes.`,
+          data: filtered,
+          message: `${filtered.length} menção(ões) encontrada(s). Use create_clipping para cadastrar as relevantes. NÃO use create_news.`,
         };
       },
     },

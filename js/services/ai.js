@@ -541,13 +541,27 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
   // Orientações específicas por módulo — guiam a IA na escolha correta de ações
   const MODULE_HINTS = {
     'news-monitor': `MÓDULO NOTÍCIAS — REGRAS IMPORTANTES:
-- Quando o usuário pedir para BUSCAR, TRAZER, ENCONTRAR, PESQUISAR ou "últimas" notícias → use search_web_news (busca na INTERNET real). NUNCA use list_news para buscar notícias novas.
-- Quando o usuário mencionar CLIPPING, menções ou citações da PRIMETOUR → use search_web_clipping (busca na INTERNET).
-- list_news e list_clippings servem APENAS para consultar o que JÁ ESTÁ cadastrado no banco interno.
-- Para evitar duplicatas: faça list_clippings e search_web_clipping juntos (2 ações na mesma resposta), depois compare e cadastre apenas os novos.
-- SEMPRE use search_web_news com sites relevantes: "panrotas.com.br,mercadoeventos.com.br,trade.travel3.com.br,diariodoturismo.com.br"
-- Ao cadastrar via create_news/create_clipping, SEMPRE preencha: title, description, sourceUrl, sourceName, category, subcategory, publishedAt.
-- PRIORIDADE DE AÇÃO: se o usuário quer notícias novas → search_web PRIMEIRO. Não perca tempo listando banco vazio.`,
+
+CONCEITOS:
+- NOTÍCIA (create_news) = notícias GERAIS do mercado de turismo (novos voos, tendências, destinos). Fontes: Panrotas, Mercado & Eventos, etc.
+- CLIPPING (create_clipping) = menções/citações da PRIMETOUR na mídia. Monitoramento de marca. Quando alguém fala SOBRE a Primetour.
+
+REGRAS DE BUSCA:
+- Quando o usuário pedir "notícias sobre a Primetour", "últimas da Primetour", menções, clipping → use search_web_clipping (busca menções da empresa na INTERNET).
+- Quando pedir notícias GERAIS do setor de turismo (sem mencionar Primetour) → use search_web_news.
+- NUNCA use list_news ou list_clippings para buscar notícias NOVAS. Esses servem APENAS para consultar o banco interno.
+- PRIORIDADE: search_web PRIMEIRO. Não perca tempo listando banco vazio.
+
+REGRAS DE CADASTRO:
+- Para menções/notícias sobre a PRIMETOUR → SEMPRE use create_clipping (NUNCA create_news).
+- Para notícias gerais do setor → use create_news.
+- SEMPRE preencha: title, description (1-2 frases), sourceUrl, sourceName, publishedAt (formato YYYY-MM-DD).
+- IGNORE resultados de redes sociais (Instagram, Facebook, LinkedIn, Twitter/X) e páginas institucionais (homepage da empresa). Só cadastre MATÉRIAS JORNALÍSTICAS reais.
+
+DUPLICATAS:
+- ANTES de cadastrar, execute list_clippings para ver o que já existe.
+- Compare títulos/URLs. NÃO cadastre itens que já existem.
+- Use search_web_clipping E list_clippings juntos (2 ações na mesma resposta).`,
     'portal-tips': `MÓDULO PORTAL DE DICAS — REGRAS:
 - Ao criar dicas com create_tip, SEMPRE forneça conteúdo detalhado (300+ palavras) no campo "content".
 - NUNCA crie dicas vazias ou com conteúdo genérico de 1-2 frases.
