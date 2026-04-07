@@ -590,23 +590,44 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
 
     // ── Follow-up inteligente ──
     // Cenário A: data+write mix → IA precisa dos IDs para executar writes
-    // Cenário B: data-only → IA deve ANALISAR os dados e dar insights/sugestões
+    // Cenário B: data-only com dados → IA deve ANALISAR e dar insights/sugestões
+    // Cenário B2: data-only com dados VAZIOS no news-monitor → sugerir busca web
     // Cenário C: write-only sem data → sem follow-up necessário
     const hasWriteActions = actions.some(a => !DATA_ACTIONS.has(a.action));
     const hasDataOnly = dataResults.length > 0 && !hasWriteActions;
     const hasDataAndWrite = dataResults.length > 0 && hasWriteActions;
     const needsFollowUp = hasDataOnly || hasDataAndWrite;
 
+    // Detectar se os resultados de dados estão vazios (0 itens, array vazio)
+    const isDataEmpty = dataResults.every(r => {
+      const d = r.data;
+      if (Array.isArray(d) && d.length === 0) return true;
+      if (r.message && /\b0\s+(notícia|clipping|item|registro|tarefa|resultado)/i.test(r.message)) return true;
+      return false;
+    });
+
+    // Detectar se a ação foi uma listagem local (list_*) que pode ter alternativa web
+    const hasListAction = dataResults.some(r => /^list_/.test(r.action));
+    const NEWS_MODULES_WITH_WEB = ['news-monitor'];
+    const canSearchWeb = NEWS_MODULES_WITH_WEB.includes(moduleId) && hasListAction && isDataEmpty;
+
     if (needsFollowUp) {
-      const loadingEl = addLoading(hasDataOnly ? 'Analisando dados' : 'Processando');
+      const loadingEl = addLoading(canSearchWeb ? 'Buscando na web' : (hasDataOnly ? 'Analisando dados' : 'Processando'));
       try {
         const dataContext = dataResults.map(r =>
           `Ação "${r.action}" retornou: ${r.message}\nDados:\n${JSON.stringify(r.data ?? {}, null, 1).substring(0, 1500)}`
         ).join('\n\n');
 
         let followUpMsg;
-        if (hasDataOnly) {
-          // Cenário B: análise de dados — pedir insights reais
+        if (canSearchWeb) {
+          // Cenário B2: listagem local retornou vazio no módulo de notícias → buscar na web
+          const originalMsg = chatHistory.find(h => h.role === 'user')?.text || '';
+          followUpMsg = `O banco interno não tem resultados. O usuário pediu: "${originalMsg}".\n`
+            + `TAREFA: Agora busque na INTERNET usando search_web_news ou search_web_clipping. `
+            + `Use sites relevantes do trade de turismo (panrotas.com.br, mercadoeventos.com.br, trade.travel3.com.br). `
+            + `Extraia termos de busca do pedido original do usuário. Execute a ação de busca web AGORA.`;
+        } else if (hasDataOnly && !isDataEmpty) {
+          // Cenário B: análise de dados com dados reais
           followUpMsg = `Dados obtidos:\n${dataContext}\n\n`
             + `TAREFA: Analise estes dados em profundidade. Forneça:\n`
             + `1. RESUMO: visão geral dos números e estado atual\n`
@@ -614,6 +635,10 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
             + `3. SUGESTÕES: 3-5 recomendações práticas e específicas para melhorar os resultados\n`
             + `4. ALERTAS: problemas urgentes ou tendências preocupantes\n`
             + `Seja específico, use os dados reais. NÃO execute ações — apenas analise e responda em texto.`;
+        } else if (hasDataOnly && isDataEmpty) {
+          // Cenário B vazio (módulo sem web search) — responder conciso
+          followUpMsg = `Dados obtidos:\n${dataContext}\n\n`
+            + `O banco está vazio para esta consulta. Informe isso ao usuário de forma concisa e sugira como popular os dados.`;
         } else {
           // Cenário A: dados + ações pendentes
           followUpMsg = `Resultados:\n${dataContext}\n\nAgora execute a ação necessária com os IDs encontrados.`;
@@ -636,14 +661,86 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           addMessage('assistant', esc(followClean));
           chatHistory.push({ role: 'assistant', text: followClean });
         }
+
+        // Executar ações do follow-up e coletar resultados para possível encadeamento
+        const followUpDataResults = [];
         for (const fa of followActions) {
           try {
-            addMessage('action', `Executando: <strong>${esc(fa.action)}</strong>...`);
+            addMessage('action', `⚡Executando: <strong>${esc(fa.action)}</strong>...`);
             const r = await executeAction(moduleId, fa.action, fa.params || {});
             logAction(moduleId, fa.action, r.success, fa.params);
             const dp = formatActionData(fa.action, r.data);
             addMessage('action', `${r.success ? '✅' : '❌'} ${esc(r.message || '')}${dp}`);
+
+            // Coletar resultados de search_web para encadear com cadastros
+            if (r.success && r.data && DATA_ACTIONS.has(fa.action)) {
+              followUpDataResults.push({ action: fa.action, data: r.data, message: r.message });
+              const createdId = r.data?.newsId || r.data?.clippingId || r.data?.id || '';
+              const idHint = createdId ? ` >>> ID_CRIADO="${createdId}" <<<` : '';
+              chatHistory.push({
+                role: 'assistant',
+                text: `[Resultado de ${fa.action}]: ${r.message || 'OK'}${idHint}. Dados: ${JSON.stringify(r.data).substring(0, 1500)}`,
+              });
+            }
           } catch {}
+        }
+
+        // ── Follow-up encadeado: se ações de busca web retornaram dados,
+        //    pedir à IA para cadastrar os resultados relevantes ──
+        const webSearchActions = ['search_web_news', 'search_web_clipping'];
+        const hasWebResults = followUpDataResults.some(r =>
+          webSearchActions.includes(r.action) && Array.isArray(r.data) && r.data.length > 0
+        );
+
+        if (hasWebResults) {
+          const chainLoading = addLoading('Cadastrando resultados');
+          try {
+            const webData = followUpDataResults
+              .filter(r => webSearchActions.includes(r.action))
+              .map(r => `Resultados de "${r.action}":\n${JSON.stringify(r.data, null, 1).substring(0, 2000)}`)
+              .join('\n\n');
+
+            // Buscar itens existentes para evitar duplicatas
+            const existingContext = chatHistory
+              .filter(h => h.text.includes('list_news') || h.text.includes('list_clipping'))
+              .map(h => h.text).join('\n').substring(0, 800);
+
+            const chainMsg = `Resultados da busca web:\n${webData}\n\n`
+              + (existingContext ? `Itens JÁ cadastrados no banco (NÃO duplicar):\n${existingContext}\n\n` : '')
+              + `TAREFA: Cadastre CADA resultado relevante encontrado usando create_news ou create_clipping. `
+              + `NÃO duplique itens que já existam no banco. `
+              + `Para CADA item, inclua: title, description (resumo de 1-2 frases), sourceUrl, sourceName, category, subcategory, publishedAt. `
+              + `Gere MÚLTIPLOS blocos <<<ACTION>>> na mesma resposta (um por notícia/clipping).`;
+
+            chatHistory.push({ role: 'user', text: chainMsg });
+            const ctx2 = typeof getContextFn === 'function' ? getContextFn() : {};
+            const chainResult = await chatWithAI(chainMsg, ctx2, {
+              moduleId,
+              history: chatHistory.slice(-8),
+            });
+
+            chainLoading.remove();
+
+            const chainActions = parseActions(chainResult.text);
+            let chainClean = cleanActionBlocks(chainResult.text);
+            chainClean = chainClean.replace(/<<<ACTION>>>?/g, '').replace(/<<<END_ACTION>>>?/g, '').trim();
+            if (chainClean) {
+              addMessage('assistant', esc(chainClean));
+              chatHistory.push({ role: 'assistant', text: chainClean });
+            }
+            for (const ca of chainActions) {
+              try {
+                addMessage('action', `⚡Executando: <strong>${esc(ca.action)}</strong>...`);
+                const cr = await executeAction(moduleId, ca.action, ca.params || {});
+                logAction(moduleId, ca.action, cr.success, ca.params);
+                const cdp = formatActionData(ca.action, cr.data);
+                addMessage('action', `${cr.success ? '✅' : '❌'} ${esc(cr.message || '')}${cdp}`);
+              } catch {}
+            }
+          } catch (err) {
+            chainLoading.remove();
+            addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro ao cadastrar: ${esc(err.message)}</span>`);
+          }
         }
       } catch (err) {
         loadingEl.remove();
