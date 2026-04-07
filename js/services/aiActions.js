@@ -52,6 +52,118 @@ function showToast(type, message) {
   try { toast[type]?.(message) || toast.info?.(message); } catch {}
 }
 
+/* ─── Helper: busca web real ──────────────────────────────── */
+async function searchWeb(query, sites) {
+  let searchQuery = query;
+  if (sites) {
+    const siteList = sites.split(',').map(s => `site:${s.trim()}`).join(' OR ');
+    searchQuery = `${query} (${siteList})`;
+  }
+
+  const results = [];
+  const encoded = encodeURIComponent(searchQuery);
+
+  // Helper: extrair URL real de redirect DDG
+  function cleanDdgUrl(rawUrl) {
+    if (!rawUrl) return '';
+    try {
+      if (rawUrl.includes('uddg=')) {
+        const match = rawUrl.match(/uddg=([^&]+)/);
+        if (match) return decodeURIComponent(match[1]);
+      }
+      if (rawUrl.startsWith('http')) return rawUrl;
+      if (rawUrl.startsWith('//')) return 'https:' + rawUrl;
+    } catch {}
+    return rawUrl;
+  }
+
+  // Estratégia 1: SearXNG público (JSON API — CORS-friendly quando disponível)
+  const searxInstances = [
+    'https://searx.tiekoetter.com',
+    'https://search.sapti.me',
+    'https://searx.be',
+    'https://search.ononoki.org',
+  ];
+  for (const instance of searxInstances) {
+    if (results.length > 0) break;
+    try {
+      const url = `${instance}/search?q=${encoded}&format=json&language=pt-BR&categories=general,news`;
+      const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      (data.results || []).slice(0, 8).forEach(r => {
+        if (r.url && r.title) {
+          let hostname = '';
+          try { hostname = new URL(r.url).hostname.replace('www.', ''); } catch {}
+          results.push({
+            title: r.title,
+            url: r.url,
+            snippet: (r.content || '').substring(0, 250),
+            source: hostname || r.engine || '',
+          });
+        }
+      });
+    } catch (e) {
+      console.warn(`[searchWeb] SearXNG ${instance} falhou:`, e.message);
+    }
+  }
+
+  // Estratégia 2: DuckDuckGo HTML via proxy CORS
+  if (results.length === 0) {
+    const proxies = [
+      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    ];
+    for (const mkProxy of proxies) {
+      if (results.length > 0) break;
+      try {
+        const ddgUrl = `https://html.duckduckgo.com/html/?q=${encoded}&kl=br-pt`;
+        const resp = await fetch(mkProxy(ddgUrl), { signal: AbortSignal.timeout(12000) });
+        if (!resp.ok) continue;
+        const html = await resp.text();
+        if (html.length < 500) continue;
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        doc.querySelectorAll('.result__a, a.result__a').forEach((a, i) => {
+          if (results.length >= 8) return;
+          const rawUrl = a.getAttribute('href') || '';
+          const url = cleanDdgUrl(rawUrl);
+          if (!url || url.includes('duckduckgo.com') || url.includes('bing.com/aclick')) return;
+          const title = a.textContent?.trim() || '';
+          if (!title) return;
+          const resultDiv = a.closest('.result');
+          const snippet = resultDiv?.querySelector('.result__snippet')?.textContent?.trim()?.substring(0, 250) || '';
+          let hostname = '';
+          try { hostname = new URL(url).hostname.replace('www.', ''); } catch {}
+          results.push({ title, url, snippet, source: hostname });
+        });
+      } catch (e) {
+        console.warn('[searchWeb] DDG proxy falhou:', e.message);
+      }
+    }
+  }
+
+  // Estratégia 3: Se nada funcionou, retornar instrução para busca manual
+  if (results.length === 0) {
+    return [{
+      title: '⚠️ Busca automática indisponível',
+      url: `https://www.google.com/search?q=${encoded}&hl=pt-BR`,
+      snippet: `Não foi possível realizar a busca automaticamente. Clique no link acima para buscar manualmente ou tente novamente em alguns minutos.`,
+      source: 'sistema',
+    }];
+  }
+
+  // Deduplificar
+  const seen = new Set();
+  return results.filter(r => {
+    const key = r.source + '|' + r.title.substring(0, 40);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 8);
+}
+
 /* ─── Helper: captura KPIs/stats do DOM da página visível ── */
 function scrapeVisibleStats() {
   const content = document.getElementById('page-content');
@@ -2168,41 +2280,42 @@ const MODULE_ACTIONS = {
     },
     {
       name: 'search_web_news',
-      description: 'Buscar notícias recentes na web sobre um tema do turismo. Retorna resultados para você avaliar e cadastrar via create_news.',
+      description: 'Buscar notícias REAIS e recentes na web. Retorna links, títulos e resumos atuais para cadastrar via create_news.',
       params: {
-        query: 'string — termo de busca (ex: "novos voos para Miami", "tendências hotelaria 2026")',
-        sites: 'string — limitar a sites específicos separados por vírgula (ex: "panrotas.com.br,mercadoeventos.com.br") (opcional)',
+        query: 'string — termo de busca (ex: "novos voos para Miami", "tendências hotelaria 2026") (obrigatório)',
+        sites: 'string — limitar a sites específicos (ex: "panrotas.com.br,mercadoeventos.com.br") (opcional)',
       },
       execute: async (params) => {
         if (!params.query) return { success: false, message: 'query é obrigatória' };
-        // Usa a API do microlink para buscar metadados de URLs encontradas
-        // A busca real será feita pelo LLM via web search no prompt
+        const results = await searchWeb(params.query, params.sites);
+        if (!results.length) {
+          return { success: true, data: [], message: 'Nenhum resultado encontrado. Tente termos diferentes.' };
+        }
         return {
           success: true,
-          message: 'Para buscar notícias na web, use seu conhecimento atualizado e/ou web search. Quando encontrar notícias relevantes, use create_news para cadastrar cada uma no sistema.',
-          data: {
-            instruction: 'Use web search para buscar sobre: ' + params.query + (params.sites ? '. Sites preferidos: ' + params.sites : ''),
-            tip: 'Após encontrar, cadastre cada notícia com create_news incluindo título, resumo, URL, fonte e categoria.',
-          },
+          data: results,
+          message: `${results.length} resultado(s) encontrado(s). Avalie os resultados e use create_news para cadastrar os relevantes.`,
         };
       },
     },
     {
       name: 'search_web_clipping',
-      description: 'Buscar menções/citações recentes da PRIMETOUR na internet. Retorna instrução para buscar e cadastrar via create_clipping.',
+      description: 'Buscar menções/citações recentes da PRIMETOUR na internet para clipping.',
       params: {
         additionalTerms: 'string — termos extras além de "PRIMETOUR" (ex: "Prime Tour Viagens") (opcional)',
       },
       execute: async (params) => {
-        const terms = ['PRIMETOUR', 'Prime Tour Viagens', 'primetour.com.br'];
+        const terms = ['PRIMETOUR turismo', 'Prime Tour Viagens'];
         if (params?.additionalTerms) terms.push(params.additionalTerms);
+        const query = terms.join(' OR ');
+        const results = await searchWeb(query);
+        if (!results.length) {
+          return { success: true, data: [], message: 'Nenhuma menção encontrada. Tente termos adicionais.' };
+        }
         return {
           success: true,
-          message: 'Para buscar clippings, use web search com os termos abaixo. Cadastre cada menção encontrada com create_clipping.',
-          data: {
-            searchTerms: terms,
-            tip: 'Busque cada termo na web. Para cada citação da PRIMETOUR encontrada, use create_clipping com título, resumo, URL, veículo, sentimento (positive/neutral/negative) e trecho relevante.',
-          },
+          data: results,
+          message: `${results.length} resultado(s) encontrado(s). Avalie e use create_clipping para cadastrar as menções relevantes.`,
         };
       },
     },
