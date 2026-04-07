@@ -573,7 +573,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
 
     // Cenário 1: Busca web retornou resultados → cadastrar diretamente (sem pedir à IA para buscar de novo)
     if (webResults.length > 0) {
-      const loadingEl = addLoading('Cadastrando resultados');
+      const loadingEl = addLoading('Filtrando duplicatas e cadastrando');
       try {
         // Montar lista de resultados web
         const webData = webResults
@@ -586,24 +586,56 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           return;
         }
 
-        // Montar lista de existentes para evitar duplicatas
-        const existingTitles = listResults
-          .map(r => (Array.isArray(r.data) ? r.data : []).map(d => d.title || ''))
-          .flat()
-          .filter(Boolean);
+        // ══ DEDUPLICAÇÃO PROGRAMÁTICA (não depende da IA) ══
+        // Coletar títulos e URLs dos itens já cadastrados
+        const existingItems = listResults
+          .map(r => (Array.isArray(r.data) ? r.data : []))
+          .flat();
 
-        const existingInfo = existingTitles.length > 0
-          ? `\nItens JÁ cadastrados (NÃO duplicar):\n${existingTitles.map(t => `- ${t}`).join('\n')}\n`
-          : '';
+        const existingTitlesLower = new Set(
+          existingItems.map(d => (d.title || '').toLowerCase().trim()).filter(Boolean)
+        );
+        const existingUrls = new Set(
+          existingItems.map(d => (d.sourceUrl || d.url || '').replace(/https?:\/\/(www\.)?/, '').replace(/\/+$/, '').toLowerCase()).filter(Boolean)
+        );
 
-        const webDataStr = JSON.stringify(webData.slice(0, 10), null, 1).substring(0, 2500);
+        // Filtrar: só manter resultados que NÃO existem no banco
+        const newItems = webData.filter(item => {
+          const titleLower = (item.title || '').toLowerCase().trim();
+          const urlClean = (item.url || '').replace(/https?:\/\/(www\.)?/, '').replace(/\/+$/, '').toLowerCase();
+          // Verificar por título (similaridade parcial — se o título existente CONTÉM ou É CONTIDO no novo)
+          for (const existing of existingTitlesLower) {
+            if (!existing || !titleLower) continue;
+            if (existing === titleLower) return false; // título idêntico
+            // Títulos com >60% de sobreposição
+            const shorter = existing.length < titleLower.length ? existing : titleLower;
+            const longer = existing.length < titleLower.length ? titleLower : existing;
+            if (longer.includes(shorter) && shorter.length > 15) return false; // um contém o outro
+          }
+          // Verificar por URL
+          if (urlClean && existingUrls.has(urlClean)) return false;
+          return true;
+        });
 
-        const cadastrarMsg = `Resultados da busca web:\n${webDataStr}\n${existingInfo}\n`
-          + `TAREFA OBRIGATÓRIA: Cadastre os resultados relevantes que NÃO existam no banco.\n`
-          + `- Use create_news para notícias do setor e create_clipping para menções da PRIMETOUR.\n`
-          + `- Ignore links de redes sociais (Instagram, Facebook, LinkedIn) e sites institucionais.\n`
-          + `- Para CADA item: title, description (1-2 frases), sourceUrl, sourceName, category, publishedAt.\n`
-          + `- Gere MÚLTIPLOS blocos <<<ACTION>>> (um por item). NÃO faça novas buscas. APENAS cadastre.`;
+        if (newItems.length === 0) {
+          loadingEl.remove();
+          const totalFound = webData.length;
+          addMessage('assistant', `Busca encontrou ${totalFound} resultado(s), mas todos já estão cadastrados no banco. Nenhuma novidade para adicionar. ✅`);
+          return;
+        }
+
+        const skippedCount = webData.length - newItems.length;
+        const skippedMsg = skippedCount > 0 ? `\n(${skippedCount} resultado(s) já existente(s) foram filtrados automaticamente)\n` : '';
+
+        const webDataStr = JSON.stringify(newItems.slice(0, 10), null, 1).substring(0, 2500);
+
+        // Determinar qual ação de busca gerou os resultados
+        const wasClippingSearch = webResults.some(r => r.action === 'search_web_clipping');
+        const createAction = wasClippingSearch ? 'create_clipping' : 'create_news';
+        const cadastrarMsg = `Resultados NOVOS da busca web (duplicatas já removidas automaticamente):${skippedMsg}\n${webDataStr}\n\n`
+          + `TAREFA OBRIGATÓRIA: Cadastre TODOS os ${newItems.length} resultado(s) acima usando ${createAction}.\n`
+          + `- Para CADA item preencha: title (copie o título EXATO do resultado), description (1-2 frases baseadas no snippet), sourceUrl (copie a URL exata), sourceName (nome do veículo/site), publishedAt (YYYY-MM-DD, use a data de hoje se não souber).\n`
+          + `- Gere EXATAMENTE ${newItems.length} bloco(s) <<<ACTION>>>. NÃO faça novas buscas. APENAS cadastre.`;
 
         chatHistory.push({ role: 'user', text: cadastrarMsg });
         const ctx = typeof getContextFn === 'function' ? getContextFn() : {};
@@ -681,21 +713,42 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
           r.success && WEB_ACTIONS.has(r.action) && Array.isArray(r.data) && r.data.length > 0
         );
         if (followWebResults.length > 0) {
-          const chainLoading = addLoading('Cadastrando resultados');
+          const chainLoading = addLoading('Filtrando duplicatas e cadastrando');
           try {
             const webData = followWebResults
               .map(r => r.data.filter(d => d.url && !d.title?.includes('indisponível')))
               .flat();
             if (webData.length > 0) {
-              const existingTitles = listResults
-                .map(r => (Array.isArray(r.data) ? r.data : []).map(d => d.title || ''))
-                .flat().filter(Boolean);
-              const existingInfo = existingTitles.length > 0
-                ? `\nItens JÁ cadastrados (NÃO duplicar):\n${existingTitles.map(t => `- ${t}`).join('\n')}\n`
-                : '';
-              const chainMsg = `Resultados da busca web:\n${JSON.stringify(webData.slice(0, 10), null, 1).substring(0, 2500)}\n${existingInfo}\n`
-                + `TAREFA OBRIGATÓRIA: Cadastre os resultados relevantes usando create_news ou create_clipping.\n`
-                + `Ignore redes sociais e sites institucionais. Gere MÚLTIPLOS <<<ACTION>>>. APENAS cadastre, NÃO busque mais.`;
+              // Deduplicação programática (mesmo padrão do cenário 1)
+              const chainExisting = listResults.map(r => (Array.isArray(r.data) ? r.data : [])).flat();
+              const chainExistTitles = new Set(chainExisting.map(d => (d.title || '').toLowerCase().trim()).filter(Boolean));
+              const chainExistUrls = new Set(chainExisting.map(d => (d.sourceUrl || d.url || '').replace(/https?:\/\/(www\.)?/, '').replace(/\/+$/, '').toLowerCase()).filter(Boolean));
+
+              const chainNewItems = webData.filter(item => {
+                const tl = (item.title || '').toLowerCase().trim();
+                const uc = (item.url || '').replace(/https?:\/\/(www\.)?/, '').replace(/\/+$/, '').toLowerCase();
+                for (const et of chainExistTitles) {
+                  if (!et || !tl) continue;
+                  if (et === tl) return false;
+                  const shorter = et.length < tl.length ? et : tl;
+                  const longer = et.length < tl.length ? tl : et;
+                  if (longer.includes(shorter) && shorter.length > 15) return false;
+                }
+                if (uc && chainExistUrls.has(uc)) return false;
+                return true;
+              });
+
+              if (chainNewItems.length === 0) {
+                chainLoading.remove();
+                addMessage('assistant', `Todos os resultados da busca já estão cadastrados. Nenhuma novidade. ✅`);
+                return;
+              }
+
+              const chainWasClipping = followWebResults.some(r => r.action === 'search_web_clipping');
+              const chainCreateAction = chainWasClipping ? 'create_clipping' : 'create_news';
+              const chainMsg = `Resultados NOVOS (duplicatas já removidas):\n${JSON.stringify(chainNewItems.slice(0, 10), null, 1).substring(0, 2500)}\n\n`
+                + `TAREFA: Cadastre TODOS os ${chainNewItems.length} resultado(s) usando ${chainCreateAction}.\n`
+                + `Preencha: title (EXATO), description, sourceUrl, sourceName, publishedAt (YYYY-MM-DD). Gere ${chainNewItems.length} <<<ACTION>>>. APENAS cadastre.`;
               chatHistory.push({ role: 'user', text: chainMsg });
               const ctx2 = typeof getContextFn === 'function' ? getContextFn() : {};
               const chainResult = await chatWithAI(chainMsg, ctx2, { moduleId, history: chatHistory.slice(-6) });
