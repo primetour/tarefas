@@ -545,7 +545,6 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
   async function processAIResponse(rawText, meta, getContextFn) {
     const actions = parseActions(rawText);
     let cleanText = cleanActionBlocks(rawText);
-    // Segurança extra: nunca exibir blocos ACTION residuais ao usuário
     cleanText = cleanText.replace(/<<<ACTION>>>?/g, '').replace(/<<<END_ACTION>>>?/g, '').trim();
 
     if (cleanText) {
@@ -555,209 +554,158 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
 
     if (actions.length === 0) return;
 
-    const dataResults = [];
-    const failedActions = [];   // rastrear ações que falharam
-    const succeededActions = []; // rastrear ações que funcionaram
+    // ── Passo 1: executar todas as ações da resposta da IA ──
+    const results = await executeActionBatch(actions, getContextFn);
 
-    for (const actionBlock of actions) {
-      const { action, params } = actionBlock;
-      addMessage('action', `⚡Executando: <strong>${esc(action)}</strong>...`);
+    // ── Passo 2: decidir follow-up baseado nos resultados ──
+    const WEB_ACTIONS = new Set(['search_web_news', 'search_web_clipping']);
+    const webResults = results.filter(r => r.success && WEB_ACTIONS.has(r.action) && Array.isArray(r.data) && r.data.length > 0);
+    const listResults = results.filter(r => r.success && /^list_/.test(r.action) && r.data);
+    const hasWriteActions = actions.some(a => !DATA_ACTIONS.has(a.action));
+    const dataResults = results.filter(r => r.success && DATA_ACTIONS.has(r.action) && r.data);
+    const allDataEmpty = dataResults.length === 0 || dataResults.every(r => Array.isArray(r.data) && r.data.length === 0);
+
+    // Cenário 1: Busca web retornou resultados → cadastrar diretamente (sem pedir à IA para buscar de novo)
+    if (webResults.length > 0) {
+      const loadingEl = addLoading('Cadastrando resultados');
       try {
-        const result = await executeAction(moduleId, action, params || {});
-        logAction(moduleId, action, result.success, params);
-        if (result.success) {
-          succeededActions.push(action);
-          const dp = formatActionData(action, result.data);
-          addMessage('action', `✅ ${esc(result.message || 'Sucesso')}${dp}`);
-          if (DATA_ACTIONS.has(action) && result.data) {
-            dataResults.push({ action, data: result.data, message: result.message });
-          }
-          // Montar histórico com IDs bem destacados para a IA reutilizar
-          const dataStr = result.data != null ? JSON.stringify(result.data) : '';
-          const createdId = result.data?.taskId || result.data?.newsId || result.data?.clippingId
-                         || result.data?.tipId || result.data?.destinationId || result.data?.id
-                         || result.taskId || '';
-          const idHint = createdId ? ` >>> ID_CRIADO="${createdId}" <<<` : '';
-          chatHistory.push({
-            role: 'assistant',
-            text: `[Resultado de ${action}]: ${result.message || 'OK'}${idHint}${dataStr ? '. Dados: ' + dataStr.substring(0, 800) : ''}`,
-          });
-        } else {
-          failedActions.push(action);
-          addMessage('action', `❌ ${esc(result.message || 'Erro')}`);
-          chatHistory.push({ role: 'assistant', text: `[Erro em ${action}]: ${result.message}` });
+        // Montar lista de resultados web
+        const webData = webResults
+          .map(r => r.data.filter(d => d.url && !d.title?.includes('indisponível')))  // filtrar fallbacks
+          .flat();
+
+        if (webData.length === 0) {
+          loadingEl.remove();
+          addMessage('assistant', 'A busca web não retornou resultados válidos. Tente novamente ou use termos diferentes.');
+          return;
         }
+
+        // Montar lista de existentes para evitar duplicatas
+        const existingTitles = listResults
+          .map(r => (Array.isArray(r.data) ? r.data : []).map(d => d.title || ''))
+          .flat()
+          .filter(Boolean);
+
+        const existingInfo = existingTitles.length > 0
+          ? `\nItens JÁ cadastrados (NÃO duplicar):\n${existingTitles.map(t => `- ${t}`).join('\n')}\n`
+          : '';
+
+        const webDataStr = JSON.stringify(webData.slice(0, 10), null, 1).substring(0, 2500);
+
+        const cadastrarMsg = `Resultados da busca web:\n${webDataStr}\n${existingInfo}\n`
+          + `TAREFA OBRIGATÓRIA: Cadastre os resultados relevantes que NÃO existam no banco.\n`
+          + `- Use create_news para notícias do setor e create_clipping para menções da PRIMETOUR.\n`
+          + `- Ignore links de redes sociais (Instagram, Facebook, LinkedIn) e sites institucionais.\n`
+          + `- Para CADA item: title, description (1-2 frases), sourceUrl, sourceName, category, publishedAt.\n`
+          + `- Gere MÚLTIPLOS blocos <<<ACTION>>> (um por item). NÃO faça novas buscas. APENAS cadastre.`;
+
+        chatHistory.push({ role: 'user', text: cadastrarMsg });
+        const ctx = typeof getContextFn === 'function' ? getContextFn() : {};
+        const aiResult = await chatWithAI(cadastrarMsg, ctx, { moduleId, history: chatHistory.slice(-6) });
+        loadingEl.remove();
+
+        // Executar cadastros
+        const cadastroActions = parseActions(aiResult.text);
+        let cadastroText = cleanActionBlocks(aiResult.text);
+        cadastroText = cadastroText.replace(/<<<ACTION>>>?/g, '').replace(/<<<END_ACTION>>>?/g, '').trim();
+        if (cadastroText) {
+          addMessage('assistant', esc(cadastroText));
+          chatHistory.push({ role: 'assistant', text: cadastroText });
+        }
+        await executeActionBatch(cadastroActions, getContextFn);
       } catch (err) {
-        failedActions.push(action);
-        addMessage('action', `❌ Erro ao executar "${esc(action)}": ${esc(err.message)}`);
-        chatHistory.push({ role: 'assistant', text: `[Erro em ${action}]: ${err.message}` });
+        loadingEl.remove();
+        addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro: ${esc(err.message)}</span>`);
       }
+      return; // FIM — não encadear mais nada
     }
 
-    // ── Follow-up inteligente ──
-    const hasWriteActions = actions.some(a => !DATA_ACTIONS.has(a.action));
-    const hasDataOnly = dataResults.length > 0 && !hasWriteActions;
-    const hasDataAndWrite = dataResults.length > 0 && hasWriteActions;
+    // Cenário 2: Só ações de escrita sem dados → sem follow-up
+    if (hasWriteActions && dataResults.length === 0) return;
 
-    // Detectar se os resultados de dados estão vazios (0 itens, array vazio)
-    const isDataEmpty = dataResults.length === 0 || dataResults.every(r => {
-      const d = r.data;
-      if (Array.isArray(d) && d.length === 0) return true;
-      if (r.message && /\b0\s+(notícia|clipping|item|registro|tarefa|resultado)/i.test(r.message)) return true;
-      return false;
-    });
-
-    // Detectar se a busca web falhou ou não foi feita
-    const webSearchActions = ['search_web_news', 'search_web_clipping'];
-    const webSearchFailed = failedActions.some(a => webSearchActions.includes(a));
-    const webSearchSucceeded = succeededActions.some(a => webSearchActions.includes(a));
-    const hasListAction = dataResults.some(r => /^list_/.test(r.action));
-
-    // Cenários para busca web:
-    // 1. Banco vazio + módulo de notícias → sugerir busca web
-    // 2. Busca web falhou mas list_ funcionou → re-tentar busca web
-    const NEWS_MODULES = ['news-monitor'];
-    const canSearchWeb = NEWS_MODULES.includes(moduleId) && !webSearchSucceeded && (
-      (hasListAction && isDataEmpty) ||   // banco vazio
-      webSearchFailed                       // busca web falhou, tentar novamente
-    );
-
-    const needsFollowUp = hasDataOnly || hasDataAndWrite || canSearchWeb;
-
-    if (needsFollowUp) {
-      const loadingEl = addLoading(canSearchWeb ? 'Buscando na web' : (hasDataOnly ? 'Analisando dados' : 'Processando'));
+    // Cenário 3: Dados de listagem sem busca web → análise ou encaminhamento
+    if (dataResults.length > 0) {
+      const loadingEl = addLoading('Analisando dados');
       try {
         const dataContext = dataResults.map(r =>
           `Ação "${r.action}" retornou: ${r.message}\nDados:\n${JSON.stringify(r.data ?? {}, null, 1).substring(0, 1500)}`
         ).join('\n\n');
 
         let followUpMsg;
-        if (canSearchWeb) {
-          // Cenário: precisa buscar na web (banco vazio ou busca anterior falhou)
+
+        // Se banco vazio no módulo de notícias e não teve busca web → pedir busca web
+        const isNewsModule = moduleId === 'news-monitor';
+        if (isNewsModule && allDataEmpty) {
           const originalMsg = chatHistory.find(h => h.role === 'user')?.text || '';
-          const existingData = dataResults.length > 0
-            ? `\nItens JÁ existentes no banco (NÃO duplicar):\n${dataContext}\n`
-            : '';
-          const failedNote = webSearchFailed
-            ? 'A busca web anterior falhou por erro técnico. Tente novamente agora — o erro foi corrigido.\n'
-            : 'O banco interno não tem resultados suficientes.\n';
-          followUpMsg = `${failedNote}O usuário pediu: "${originalMsg}".${existingData}\n`
-            + `TAREFA: Busque na INTERNET usando search_web_news (com query baseada no pedido) ou search_web_clipping. `
-            + `NÃO use list_news ou list_clippings — já temos esses dados. Execute a busca web AGORA.`;
-        } else if (hasDataOnly && !isDataEmpty) {
-          // Cenário B: análise de dados com dados reais
+          followUpMsg = `O banco interno está vazio. O usuário pediu: "${originalMsg}".\n`
+            + `TAREFA: Busque na INTERNET usando search_web_news (query: termos do pedido) e/ou search_web_clipping.\n`
+            + `NÃO use list_news ou list_clippings. Execute APENAS busca web AGORA.`;
+        } else if (hasWriteActions) {
+          // Dados + ações de escrita pendentes → usar IDs
+          followUpMsg = `Resultados:\n${dataContext}\n\nAgora execute a ação necessária com os IDs encontrados.`;
+        } else {
+          // Dados puros → análise
           followUpMsg = `Dados obtidos:\n${dataContext}\n\n`
             + `TAREFA: Analise estes dados em profundidade. Forneça:\n`
             + `1. RESUMO: visão geral dos números e estado atual\n`
-            + `2. DESTAQUES: pontos positivos e negativos que chamam atenção\n`
-            + `3. SUGESTÕES: 3-5 recomendações práticas e específicas para melhorar os resultados\n`
+            + `2. DESTAQUES: pontos positivos e negativos\n`
+            + `3. SUGESTÕES: 3-5 recomendações práticas\n`
             + `4. ALERTAS: problemas urgentes ou tendências preocupantes\n`
-            + `Seja específico, use os dados reais. NÃO execute ações — apenas analise e responda em texto.`;
-        } else if (hasDataOnly && isDataEmpty) {
-          // Cenário B vazio (módulo sem web search) — responder conciso
-          followUpMsg = `Dados obtidos:\n${dataContext}\n\n`
-            + `O banco está vazio para esta consulta. Informe isso ao usuário de forma concisa e sugira como popular os dados.`;
-        } else {
-          // Cenário A: dados + ações pendentes
-          followUpMsg = `Resultados:\n${dataContext}\n\nAgora execute a ação necessária com os IDs encontrados.`;
+            + `Seja específico, use os dados reais. NÃO execute ações — apenas analise em texto.`;
         }
 
         chatHistory.push({ role: 'user', text: followUpMsg });
-
-        const context = typeof getContextFn === 'function' ? getContextFn() : {};
-        const followUpResult = await chatWithAI(followUpMsg, context, {
-          moduleId,
-          history: chatHistory.slice(-8),
-        });
-
+        const ctx = typeof getContextFn === 'function' ? getContextFn() : {};
+        const followResult = await chatWithAI(followUpMsg, ctx, { moduleId, history: chatHistory.slice(-8) });
         loadingEl.remove();
 
-        const followActions = parseActions(followUpResult.text);
-        let followClean = cleanActionBlocks(followUpResult.text);
+        const followActions = parseActions(followResult.text);
+        let followClean = cleanActionBlocks(followResult.text);
         followClean = followClean.replace(/<<<ACTION>>>?/g, '').replace(/<<<END_ACTION>>>?/g, '').trim();
         if (followClean) {
           addMessage('assistant', esc(followClean));
           chatHistory.push({ role: 'assistant', text: followClean });
         }
 
-        // Executar ações do follow-up e coletar resultados para possível encadeamento
-        const followUpDataResults = [];
-        for (const fa of followActions) {
-          try {
-            addMessage('action', `⚡Executando: <strong>${esc(fa.action)}</strong>...`);
-            const r = await executeAction(moduleId, fa.action, fa.params || {});
-            logAction(moduleId, fa.action, r.success, fa.params);
-            const dp = formatActionData(fa.action, r.data);
-            addMessage('action', `${r.success ? '✅' : '❌'} ${esc(r.message || '')}${dp}`);
+        // Executar ações do follow-up (ex: search_web após banco vazio, ou write com IDs)
+        const followBatchResults = await executeActionBatch(followActions, getContextFn);
 
-            // Coletar resultados de search_web para encadear com cadastros
-            if (r.success && r.data && DATA_ACTIONS.has(fa.action)) {
-              followUpDataResults.push({ action: fa.action, data: r.data, message: r.message });
-              const createdId = r.data?.newsId || r.data?.clippingId || r.data?.id || '';
-              const idHint = createdId ? ` >>> ID_CRIADO="${createdId}" <<<` : '';
-              chatHistory.push({
-                role: 'assistant',
-                text: `[Resultado de ${fa.action}]: ${r.message || 'OK'}${idHint}. Dados: ${JSON.stringify(r.data).substring(0, 1500)}`,
-              });
-            }
-          } catch {}
-        }
-
-        // ── Follow-up encadeado: se ações de busca web retornaram dados,
-        //    pedir à IA para cadastrar os resultados relevantes ──
-        const webSearchActions = ['search_web_news', 'search_web_clipping'];
-        const hasWebResults = followUpDataResults.some(r =>
-          webSearchActions.includes(r.action) && Array.isArray(r.data) && r.data.length > 0
+        // Se o follow-up gerou busca web com resultados → cadastrar (1 nível extra apenas)
+        const followWebResults = followBatchResults.filter(r =>
+          r.success && WEB_ACTIONS.has(r.action) && Array.isArray(r.data) && r.data.length > 0
         );
-
-        if (hasWebResults) {
+        if (followWebResults.length > 0) {
           const chainLoading = addLoading('Cadastrando resultados');
           try {
-            const webData = followUpDataResults
-              .filter(r => webSearchActions.includes(r.action))
-              .map(r => `Resultados de "${r.action}":\n${JSON.stringify(r.data, null, 1).substring(0, 2000)}`)
-              .join('\n\n');
-
-            // Buscar itens existentes para evitar duplicatas
-            const existingContext = chatHistory
-              .filter(h => h.text.includes('list_news') || h.text.includes('list_clipping'))
-              .map(h => h.text).join('\n').substring(0, 800);
-
-            const chainMsg = `Resultados da busca web:\n${webData}\n\n`
-              + (existingContext ? `Itens JÁ cadastrados no banco (NÃO duplicar):\n${existingContext}\n\n` : '')
-              + `TAREFA: Cadastre CADA resultado relevante encontrado usando create_news ou create_clipping. `
-              + `NÃO duplique itens que já existam no banco. `
-              + `Para CADA item, inclua: title, description (resumo de 1-2 frases), sourceUrl, sourceName, category, subcategory, publishedAt. `
-              + `Gere MÚLTIPLOS blocos <<<ACTION>>> na mesma resposta (um por notícia/clipping).`;
-
-            chatHistory.push({ role: 'user', text: chainMsg });
-            const ctx2 = typeof getContextFn === 'function' ? getContextFn() : {};
-            const chainResult = await chatWithAI(chainMsg, ctx2, {
-              moduleId,
-              history: chatHistory.slice(-8),
-            });
-
-            chainLoading.remove();
-
-            const chainActions = parseActions(chainResult.text);
-            let chainClean = cleanActionBlocks(chainResult.text);
-            chainClean = chainClean.replace(/<<<ACTION>>>?/g, '').replace(/<<<END_ACTION>>>?/g, '').trim();
-            if (chainClean) {
-              addMessage('assistant', esc(chainClean));
-              chatHistory.push({ role: 'assistant', text: chainClean });
-            }
-            for (const ca of chainActions) {
-              try {
-                addMessage('action', `⚡Executando: <strong>${esc(ca.action)}</strong>...`);
-                const cr = await executeAction(moduleId, ca.action, ca.params || {});
-                logAction(moduleId, ca.action, cr.success, ca.params);
-                const cdp = formatActionData(ca.action, cr.data);
-                addMessage('action', `${cr.success ? '✅' : '❌'} ${esc(cr.message || '')}${cdp}`);
-              } catch {}
+            const webData = followWebResults
+              .map(r => r.data.filter(d => d.url && !d.title?.includes('indisponível')))
+              .flat();
+            if (webData.length > 0) {
+              const existingTitles = listResults
+                .map(r => (Array.isArray(r.data) ? r.data : []).map(d => d.title || ''))
+                .flat().filter(Boolean);
+              const existingInfo = existingTitles.length > 0
+                ? `\nItens JÁ cadastrados (NÃO duplicar):\n${existingTitles.map(t => `- ${t}`).join('\n')}\n`
+                : '';
+              const chainMsg = `Resultados da busca web:\n${JSON.stringify(webData.slice(0, 10), null, 1).substring(0, 2500)}\n${existingInfo}\n`
+                + `TAREFA OBRIGATÓRIA: Cadastre os resultados relevantes usando create_news ou create_clipping.\n`
+                + `Ignore redes sociais e sites institucionais. Gere MÚLTIPLOS <<<ACTION>>>. APENAS cadastre, NÃO busque mais.`;
+              chatHistory.push({ role: 'user', text: chainMsg });
+              const ctx2 = typeof getContextFn === 'function' ? getContextFn() : {};
+              const chainResult = await chatWithAI(chainMsg, ctx2, { moduleId, history: chatHistory.slice(-6) });
+              chainLoading.remove();
+              const chainActions = parseActions(chainResult.text);
+              let chainClean = cleanActionBlocks(chainResult.text);
+              chainClean = chainClean.replace(/<<<ACTION>>>?/g, '').replace(/<<<END_ACTION>>>?/g, '').trim();
+              if (chainClean) {
+                addMessage('assistant', esc(chainClean));
+                chatHistory.push({ role: 'assistant', text: chainClean });
+              }
+              await executeActionBatch(chainActions, getContextFn);
             }
           } catch (err) {
             chainLoading.remove();
-            addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro ao cadastrar: ${esc(err.message)}</span>`);
+            addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro: ${esc(err.message)}</span>`);
           }
         }
       } catch (err) {
@@ -765,6 +713,41 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
         addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro: ${esc(err.message)}</span>`);
       }
     }
+  }
+
+  /**
+   * Executa um lote de ações e retorna os resultados.
+   * Sem follow-up — apenas executa e registra no histórico.
+   */
+  async function executeActionBatch(actionList, getContextFn) {
+    const batchResults = [];
+    for (const actionBlock of actionList) {
+      const { action, params } = actionBlock;
+      addMessage('action', `⚡Executando: <strong>${esc(action)}</strong>...`);
+      try {
+        const result = await executeAction(moduleId, action, params || {});
+        logAction(moduleId, action, result.success, params);
+        const dp = formatActionData(action, result.data);
+        addMessage('action', `${result.success ? '✅' : '❌'} ${esc(result.message || 'OK')}${dp}`);
+
+        const dataStr = result.data != null ? JSON.stringify(result.data) : '';
+        const createdId = result.data?.taskId || result.data?.newsId || result.data?.clippingId
+                       || result.data?.tipId || result.data?.destinationId || result.data?.id
+                       || result.taskId || '';
+        const idHint = createdId ? ` >>> ID_CRIADO="${createdId}" <<<` : '';
+        chatHistory.push({
+          role: 'assistant',
+          text: `[${result.success ? 'OK' : 'Erro'} ${action}]: ${result.message || ''}${idHint}${dataStr ? '. Dados: ' + dataStr.substring(0, 800) : ''}`,
+        });
+
+        batchResults.push({ action, success: result.success, data: result.data, message: result.message });
+      } catch (err) {
+        addMessage('action', `❌ Erro: ${esc(err.message)}`);
+        chatHistory.push({ role: 'assistant', text: `[Erro ${action}]: ${err.message}` });
+        batchResults.push({ action, success: false, data: null, message: err.message });
+      }
+    }
+    return batchResults;
   }
 
   // ── Send message ──
