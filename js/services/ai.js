@@ -838,10 +838,14 @@ async function callLocal({ config, apiKey, model, maxTokens, systemPrompt, userP
       const headers = { 'Content-Type': 'application/json' };
       if (apiKey && apiKey !== 'local') headers['Authorization'] = `Bearer ${apiKey}`;
 
+      // Timeout de 90s para modelos locais (podem ser lentos dependendo do hardware)
+      const LOCAL_TIMEOUT = 90000;
+
       const response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(LOCAL_TIMEOUT),
       });
 
       if (!response.ok) {
@@ -874,6 +878,7 @@ async function callLocal({ config, apiKey, model, maxTokens, systemPrompt, userP
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(LOCAL_TIMEOUT),
       });
 
       if (!response.ok) {
@@ -890,6 +895,16 @@ async function callLocal({ config, apiKey, model, maxTokens, systemPrompt, userP
       };
     }
   } catch (err) {
+    // Timeout — modelo demorou demais para responder
+    if (err.name === 'TimeoutError' || err.message?.includes('signal') || err.message?.includes('abort')) {
+      throw new Error(
+        `O modelo local demorou demais para responder (timeout de 90s).\n\n` +
+        `Possíveis causas:\n` +
+        `1. Modelo muito grande para seu hardware → tente um modelo menor (qwen2.5 ou llama3:8b)\n` +
+        `2. Outra requisição em andamento → aguarde e tente novamente\n` +
+        `3. Computador sobrecarregado → feche apps pesados e tente novamente`
+      );
+    }
     // Detectar erro de CORS ou servidor offline (ambos geram TypeError: Failed to fetch)
     if (err.name === 'TypeError' || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
       throw new Error(
