@@ -1674,14 +1674,30 @@ const MODULE_ACTIONS = {
         let content = params.content || '';
         let wasGenerated = false;
 
-        // Se conteúdo veio vazio ou muito curto, gerar via IA automaticamente
-        if (content.length < 100) {
+        // Se conteúdo veio vazio ou insuficiente (<500 chars ≈ <80 palavras), gerar via IA automaticamente
+        if (content.length < 500) {
           try {
             const { chatWithAI } = await import('./ai.js');
-            const genResult = await chatWithAI(
+            // Tentar buscar info do destino para enriquecer o prompt
+            let destinationName = '';
+            try {
+              const { fetchDestinations } = await import('./portal.js');
+              const dests = await fetchDestinations();
+              const dest = dests.find(d => d.id === params.destinationId);
+              if (dest) destinationName = `${dest.city || dest.name || ''}, ${dest.country || ''}`.replace(/, $/, '');
+            } catch {}
+
+            const baseContext = content.length > 50
+              ? `\nO modelo de IA já gerou um rascunho curto. Use-o como base e EXPANDA para 300-500 palavras:\n"${content}"\n`
+              : '';
+
+            // Timeout de 30s para não travar — se falhar, salva com conteúdo que tem
+            const genPromise = chatWithAI(
               `Gere um texto completo e detalhado (300-500 palavras) para uma dica de viagem.\n`
+              + `Destino: ${destinationName || 'não especificado'}\n`
               + `Título: "${params.title || params.category || 'Dica de viagem'}"\n`
-              + `Categoria: ${params.category || 'informacoes_gerais'}\n\n`
+              + `Categoria: ${params.category || 'informacoes_gerais'}\n`
+              + baseContext + `\n`
               + `REGRAS:\n`
               + `- Escreva APENAS em português do Brasil. NUNCA use outro idioma.\n`
               + `- Inclua informações práticas: endereços famosos, faixas de preço, horários típicos, dicas de como aproveitar.\n`
@@ -1692,6 +1708,9 @@ const MODULE_ACTIONS = {
               {},
               { moduleId: 'portal-tips', history: [] }
             );
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000));
+            const genResult = await Promise.race([genPromise, timeoutPromise]);
+
             let generatedText = genResult?.text || '';
             // Limpar: remover blocos ACTION residuais
             generatedText = generatedText.replace(/<<<[A-Z_]+>>>[\s\S]*?<<<END_[A-Z_]+>>>/g, '').trim();
@@ -1705,6 +1724,7 @@ const MODULE_ACTIONS = {
             }
           } catch (e) {
             console.warn('[create_tip] Falha ao gerar conteúdo via IA:', e.message);
+            // Continua normalmente — salva a dica com o conteúdo que tem
           }
         }
 
