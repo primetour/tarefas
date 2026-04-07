@@ -147,6 +147,49 @@ function scrapeVisibleStats() {
     });
   }
 
+  // 8. Capturar dados tabulares (tabelas de dados na página)
+  const tables = content.querySelectorAll('table, .table-container');
+  if (tables.length > 0) {
+    tables.forEach((table, tIdx) => {
+      const headers = [];
+      table.querySelectorAll('thead th, tr:first-child th').forEach(th => {
+        const h = th.textContent?.trim();
+        if (h) headers.push(h);
+      });
+      const rows = [];
+      table.querySelectorAll('tbody tr').forEach((tr, rIdx) => {
+        if (rIdx >= 20) return; // max 20 rows
+        const cells = [];
+        tr.querySelectorAll('td').forEach(td => cells.push(td.textContent?.trim() || '—'));
+        if (cells.length > 0) rows.push(cells);
+      });
+      if (headers.length || rows.length) {
+        stats.push({
+          label: `Tabela ${tIdx + 1}`,
+          value: `${rows.length} linhas`,
+          source: 'table',
+          headers: headers.join(' | '),
+          rows: rows.slice(0, 10).map(r => r.join(' | ')),
+        });
+      }
+    });
+  }
+
+  // 9. Capturar listas/cards de itens (ex: dicas, roteiros, solicitações)
+  const listItems = content.querySelectorAll('.tip-row, .roteiro-card, .request-row, .task-row, [class*="item-row"]');
+  if (listItems.length > 0 && stats.length < 5) {
+    const items = [];
+    listItems.forEach((item, i) => {
+      if (i >= 15) return;
+      const title = item.querySelector('.tip-title, .roteiro-title, h3, h4, .title, [class*="title"]')?.textContent?.trim() || '';
+      const status = item.querySelector('.badge, [class*="status"], [class*="badge"]')?.textContent?.trim() || '';
+      if (title) items.push(status ? `${title} (${status})` : title);
+    });
+    if (items.length) {
+      stats.push({ label: 'Itens listados', value: `${items.length} itens`, source: 'list', items });
+    }
+  }
+
   return stats;
 }
 
@@ -169,6 +212,316 @@ const GLOBAL_ACTIONS = [
     execute: async ({ message, type }) => {
       showToast(type || 'info', message);
       return { success: true };
+    },
+  },
+  {
+    name: 'export_page',
+    description: 'Exportar os dados da página atual em PDF ou XLS/XLSX. Aciona o botão de export da página.',
+    params: {
+      format: 'string — "pdf" ou "xls" (obrigatório)',
+    },
+    execute: async ({ format }) => {
+      const fmt = (format || 'pdf').toLowerCase().replace('xlsx', 'xls');
+
+      // Mapa de seletores de botões de export por página
+      const exportBtnSelectors = [
+        `#tasks-export-${fmt}`,
+        `#meta-export-${fmt === 'xls' ? 'xlsx' : fmt}`,
+        `#nl-export-${fmt === 'xls' ? 'xlsx' : fmt}`,
+        `#ga-export-${fmt === 'xls' ? 'xlsx' : fmt}`,
+        `[id*="export"][id*="${fmt}"]`,
+        `button[id*="export-${fmt}"]`,
+      ];
+
+      for (const sel of exportBtnSelectors) {
+        const btn = document.querySelector(sel);
+        if (btn) {
+          btn.click();
+          return { success: true, message: `Export ${fmt.toUpperCase()} iniciado!` };
+        }
+      }
+      return { success: false, message: `Botão de export ${fmt.toUpperCase()} não encontrado nesta página. Navegue para a página com dados antes de exportar.` };
+    },
+  },
+  {
+    name: 'export_ai_report',
+    description: 'Gerar e baixar PDF com relatório: dados da página + análise da IA. Use APÓS analisar dados.',
+    params: {
+      title: 'string — título do relatório (ex: "Análise de Performance - Abril 2026")',
+      analysis: 'string — texto completo da análise feita pela IA (resumo, destaques, sugestões, alertas). OBRIGATÓRIO e detalhado.',
+    },
+    execute: async ({ title, analysis }) => {
+      if (!analysis || analysis.length < 30) {
+        return { success: false, message: 'Análise muito curta. Primeiro analise os dados, depois exporte o relatório com o texto da análise completa.' };
+      }
+
+      // Carregar jsPDF
+      if (!window.jspdf) {
+        await new Promise((res, rej) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+          s.onload = res; s.onerror = rej; document.head.appendChild(s);
+        });
+      }
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const W = doc.internal.pageSize.getWidth();
+      const H = doc.internal.pageSize.getHeight();
+      const margin = 15;
+      const usable = W - margin * 2;
+      let y = 0;
+
+      // ─── Cores ───
+      const primary = [30, 58, 95];     // azul escuro
+      const accent = [212, 175, 55];    // dourado
+      const darkBg = [20, 25, 35];      // fundo escuro
+      const white = [255, 255, 255];
+      const lightGray = [200, 200, 200];
+      const textColor = [60, 60, 60];
+
+      // ─── Helper: quebrar texto longo ───
+      function addWrappedText(text, x, startY, maxWidth, lineHeight = 6) {
+        const lines = doc.splitTextToSize(text, maxWidth);
+        let curY = startY;
+        for (const line of lines) {
+          if (curY > H - 20) {
+            doc.addPage();
+            curY = margin;
+          }
+          doc.text(line, x, curY);
+          curY += lineHeight;
+        }
+        return curY;
+      }
+
+      // ─── Capa ───
+      doc.setFillColor(...darkBg);
+      doc.rect(0, 0, W, H, 'F');
+
+      // Linha dourada decorativa
+      doc.setDrawColor(...accent);
+      doc.setLineWidth(0.8);
+      doc.line(margin, 60, W - margin, 60);
+      doc.line(margin, 62, W - margin, 62);
+
+      // Logo text
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(...accent);
+      doc.text('PRIMETOUR', margin, 50);
+
+      // Título
+      doc.setFontSize(28);
+      doc.setTextColor(...white);
+      const titleLines = doc.splitTextToSize(title || 'Relatório de Análise', usable);
+      doc.text(titleLines, margin, 85);
+
+      // Subtítulo
+      doc.setFontSize(12);
+      doc.setTextColor(...lightGray);
+      doc.text('Relatório gerado por Inteligência Artificial', margin, 85 + titleLines.length * 12 + 10);
+
+      const today = new Date();
+      doc.setFontSize(10);
+      doc.text(`Data: ${today.toLocaleDateString('pt-BR')}`, margin, 85 + titleLines.length * 12 + 20);
+
+      const profile = store.get('currentProfile') || store.get('userProfile') || {};
+      const userName = profile.name || profile.displayName || '';
+      if (userName) {
+        doc.text(`Gerado por: ${userName}`, margin, 85 + titleLines.length * 12 + 28);
+      }
+
+      // Rodapé capa
+      doc.setFontSize(8);
+      doc.setTextColor(...lightGray);
+      doc.text('Documento gerado automaticamente pelo Assistente IA PRIMETOUR', margin, H - 15);
+      doc.text('Informações confidenciais — uso interno', margin, H - 10);
+
+      // ─── Página de Dados ───
+      doc.addPage();
+      y = margin;
+
+      // Capturar dados da tela
+      const stats = scrapeVisibleStats();
+      const kpis = stats.filter(s => s.source !== 'table' && s.source !== 'list');
+      const tables = stats.filter(s => s.source === 'table');
+
+      if (kpis.length > 0) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.setTextColor(...primary);
+        doc.text('Indicadores', margin, y);
+        y += 10;
+
+        // KPI cards em grid
+        const cardW = (usable - 10) / 3;
+        const cardH = 20;
+        kpis.forEach((kpi, i) => {
+          const col = i % 3;
+          const row = Math.floor(i / 3);
+          const cx = margin + col * (cardW + 5);
+          const cy = y + row * (cardH + 5);
+
+          if (cy + cardH > H - 20) {
+            doc.addPage();
+            y = margin;
+          }
+
+          // Card background
+          doc.setFillColor(240, 242, 245);
+          doc.roundedRect(cx, cy, cardW, cardH, 2, 2, 'F');
+
+          // Label
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7);
+          doc.setTextColor(120, 120, 120);
+          doc.text((kpi.label || '').toUpperCase(), cx + 3, cy + 6);
+
+          // Value
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(14);
+          doc.setTextColor(...primary);
+          doc.text(String(kpi.value || '—'), cx + 3, cy + 15);
+        });
+
+        y += Math.ceil(kpis.length / 3) * (cardH + 5) + 10;
+      }
+
+      // Tabelas
+      if (tables.length > 0 && window.jspdf) {
+        for (const tbl of tables) {
+          if (y > H - 40) { doc.addPage(); y = margin; }
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(12);
+          doc.setTextColor(...primary);
+          doc.text(tbl.label || 'Dados', margin, y);
+          y += 8;
+
+          if (tbl.headers && tbl.rows?.length) {
+            const headers = tbl.headers.split(' | ');
+            const body = tbl.rows.map(r => (typeof r === 'string' ? r.split(' | ') : r));
+            try {
+              doc.autoTable({
+                startY: y,
+                head: [headers],
+                body,
+                margin: { left: margin, right: margin },
+                styles: { fontSize: 8, cellPadding: 2 },
+                headStyles: { fillColor: primary, textColor: white },
+                alternateRowStyles: { fillColor: [245, 247, 250] },
+              });
+              y = doc.lastAutoTable.finalY + 10;
+            } catch {
+              y += 5;
+            }
+          }
+        }
+      }
+
+      // ─── Página de Análise IA ───
+      doc.addPage();
+      y = margin;
+
+      // Header
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(...primary);
+      doc.text('Análise da Inteligência Artificial', margin, y);
+      y += 4;
+      doc.setDrawColor(...accent);
+      doc.setLineWidth(0.5);
+      doc.line(margin, y, W - margin, y);
+      y += 10;
+
+      // Processar texto da análise — detectar seções (###, **, números)
+      const analysisLines = analysis.split('\n');
+      for (const line of analysisLines) {
+        const trimmed = line.trim();
+        if (!trimmed) { y += 3; continue; }
+
+        if (y > H - 20) {
+          doc.addPage();
+          y = margin;
+        }
+
+        // Título de seção (### ou MAIÚSCULAS ou número seguido de ponto)
+        if (/^#{1,3}\s/.test(trimmed) || /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ\s]{5,}:?\s*$/.test(trimmed)) {
+          const sectionTitle = trimmed.replace(/^#+\s*/, '').replace(/:$/, '');
+          y += 3;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(12);
+          doc.setTextColor(...primary);
+          doc.text(sectionTitle, margin, y);
+          y += 7;
+        }
+        // Sub-item com negrito (**texto**)
+        else if (/^\*\*/.test(trimmed) || /^-\s*\*\*/.test(trimmed)) {
+          const clean = trimmed.replace(/\*\*/g, '').replace(/^-\s*/, '');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(40, 40, 40);
+          y = addWrappedText(`• ${clean}`, margin + 3, y, usable - 6, 5);
+          y += 1;
+        }
+        // Item numerado
+        else if (/^\d+\.\s/.test(trimmed)) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(40, 40, 40);
+          const num = trimmed.match(/^(\d+\.)/)[1];
+          const rest = trimmed.replace(/^\d+\.\s*/, '').replace(/\*\*/g, '');
+          doc.text(num, margin + 2, y);
+          doc.setFont('helvetica', 'normal');
+          y = addWrappedText(rest, margin + 10, y, usable - 13, 5);
+          y += 2;
+        }
+        // Bullet point
+        else if (/^[-•]\s/.test(trimmed)) {
+          const clean = trimmed.replace(/^[-•]\s*/, '').replace(/\*\*/g, '');
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9);
+          doc.setTextColor(...textColor);
+          y = addWrappedText(`• ${clean}`, margin + 5, y, usable - 8, 5);
+          y += 1;
+        }
+        // Sub-item com travessão
+        else if (/^\s+-\s/.test(line)) {
+          const clean = line.trim().replace(/^-\s*/, '').replace(/\*\*/g, '');
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(80, 80, 80);
+          y = addWrappedText(`  ‣ ${clean}`, margin + 10, y, usable - 15, 5);
+        }
+        // Texto normal
+        else {
+          const clean = trimmed.replace(/\*\*/g, '');
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9);
+          doc.setTextColor(...textColor);
+          y = addWrappedText(clean, margin, y, usable, 5);
+          y += 1;
+        }
+      }
+
+      // ─── Rodapé em todas as páginas ───
+      const totalPages = doc.internal.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        if (p > 1) {
+          doc.text('PRIMETOUR — Relatório IA', margin, H - 7);
+          doc.text(`Página ${p - 1} de ${totalPages - 1}`, W - margin - 25, H - 7);
+        }
+      }
+
+      // ─── Download ───
+      const dateStr = today.toISOString().split('T')[0];
+      const filename = `Relatorio_IA_${(title || 'Analise').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40)}_${dateStr}.pdf`;
+      doc.save(filename);
+
+      return { success: true, message: `Relatório PDF gerado: ${filename}` };
     },
   },
   {
@@ -983,26 +1336,81 @@ const MODULE_ACTIONS = {
     },
     {
       name: 'create_tip',
-      description: 'Criar uma nova dica de viagem para um destino',
+      description: 'Criar uma nova dica de viagem para um destino. SEMPRE gere conteúdo detalhado no "content". Avise que o conteúdo é baseado em conhecimento geral e deve ser revisado pela equipe antes de publicar.',
       params: {
         destinationId: 'string — ID do destino (obrigatório). Use list_destinations para encontrar.',
         title: 'string — título da dica (ex: "Melhores restaurantes em Miami")',
         category: 'string — categoria: restaurantes, atracoes, hoteis, informacoes_gerais, compras, vida_noturna, transporte, dicas_praticas',
-        content: 'string — conteúdo/texto da dica (pode ser longo)',
+        content: 'string — conteúdo/texto da dica — OBRIGATÓRIO e detalhado (mín. 200 chars). Escreva informações úteis sobre o destino.',
         priority: 'boolean — true para destacar (opcional, default: false)',
       },
       execute: async (params) => {
         if (!params.destinationId) return { success: false, message: 'destinationId é obrigatório. Use list_destinations para encontrar o ID do destino.' };
+
+        let content = params.content || '';
+        let wasGenerated = false;
+
+        // Se conteúdo veio vazio ou muito curto, gerar via IA automaticamente
+        if (content.length < 100) {
+          try {
+            const { chatWithAI } = await import('./ai.js');
+            const genResult = await chatWithAI(
+              `Gere um texto completo e detalhado (300-500 palavras) para uma dica de viagem.\n`
+              + `Título: "${params.title || params.category || 'Dica de viagem'}"\n`
+              + `Categoria: ${params.category || 'informacoes_gerais'}\n\n`
+              + `REGRAS:\n`
+              + `- Escreva APENAS em português do Brasil. NUNCA use outro idioma.\n`
+              + `- Inclua informações práticas: endereços famosos, faixas de preço, horários típicos, dicas de como aproveitar.\n`
+              + `- Use conhecimento geral e consolidado — NÃO invente nomes de estabelecimentos.\n`
+              + `- Se citar locais, use apenas os mais conhecidos e tradicionais do destino.\n`
+              + `- Tom profissional mas acessível, como um consultor de viagens experiente.\n`
+              + `- NÃO use blocos <<<ACTION>>>. Retorne APENAS o texto da dica, sem formatação markdown.`,
+              {},
+              { moduleId: 'portal-tips', history: [] }
+            );
+            let generatedText = genResult?.text || '';
+            // Limpar: remover blocos ACTION residuais
+            generatedText = generatedText.replace(/<<<[A-Z_]+>>>[\s\S]*?<<<END_[A-Z_]+>>>/g, '').trim();
+            // Limpar: remover texto em outros idiomas (chinês, japonês, coreano, etc)
+            generatedText = generatedText.replace(/[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]+[^.]*[.。]?\s*/g, '').trim();
+            // Limpar: remover linhas que parecem meta-instruções
+            generatedText = generatedText.split('\n').filter(l => !/^(aqui|segue|abaixo|clar[oa]|cert[oa])/i.test(l.trim())).join('\n').trim();
+            if (generatedText.length > 50) {
+              content = generatedText;
+              wasGenerated = true;
+            }
+          } catch (e) {
+            console.warn('[create_tip] Falha ao gerar conteúdo via IA:', e.message);
+          }
+        }
+
         const { saveTip } = await import('./portal.js');
         const id = await saveTip(null, {
           destinationId: params.destinationId,
           title: params.title || '',
           category: params.category || 'informacoes_gerais',
-          content: params.content || '',
+          content,
           priority: params.priority || false,
         });
-        showToast('success', `Dica "${params.title}" criada!`);
-        return { success: true, message: `Dica "${params.title}" criada!`, data: { tipId: id, title: params.title } };
+
+        const hasContent = content.length > 50;
+        let msg = `Dica "${params.title}" criada`;
+        if (hasContent) {
+          msg += ` com ${content.length} caracteres de conteúdo`;
+          if (wasGenerated) {
+            msg += `.\n\n⚠️ IMPORTANTE: O conteúdo foi gerado com base em conhecimento geral da IA e pode conter informações desatualizadas (preços, horários, estabelecimentos que fecharam). `
+              + `Recomendamos que a equipe revise e valide o conteúdo antes de publicar, especialmente informações de restaurantes, atrações e valores.`;
+          }
+        } else {
+          msg += ' (sem conteúdo — edite manualmente)';
+        }
+
+        showToast('success', `Dica "${params.title}" criada${hasContent ? ' com conteúdo!' : '!'}`);
+        return {
+          success: true,
+          message: msg + '!',
+          data: { tipId: id, title: params.title },
+        };
       },
     },
     {
