@@ -58,6 +58,27 @@ function showToast(type, message) {
     .catch(() => {});
 }
 
+/* ─── Helper: parse de data robusto (aceita qualquer formato do modelo) ── */
+function safeParseDate(dateStr) {
+  if (!dateStr) return new Date();
+  // Formato ISO: 2026-04-07
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const d = new Date(dateStr + 'T12:00:00');
+    if (!isNaN(d.getTime())) return d;
+  }
+  // Formato BR: 07/04/2026
+  const brMatch = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brMatch) {
+    const d = new Date(`${brMatch[3]}-${brMatch[2]}-${brMatch[1]}T12:00:00`);
+    if (!isNaN(d.getTime())) return d;
+  }
+  // Tentar parse genérico
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) return d;
+  // Fallback: hoje
+  return new Date();
+}
+
 /* ─── Helper: busca web real ──────────────────────────────── */
 async function searchWeb(query, sites) {
   let searchQuery = query;
@@ -115,6 +136,49 @@ async function searchWeb(query, sites) {
     return hits;
   }
 
+  // Helper: parsear HTML do Google Search
+  function parseGoogleHtml(html) {
+    if (!html || html.length < 1000) return [];
+    const hits = [];
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    // Google results: <a href="..."><h3>title</h3></a> + nearby snippet
+    doc.querySelectorAll('a[href]').forEach(a => {
+      if (hits.length >= 10) return;
+      const h3 = a.querySelector('h3');
+      if (!h3) return;
+      const title = h3.textContent?.trim();
+      if (!title) return;
+      let url = a.getAttribute('href') || '';
+      // Google wraps URLs in /url?q=...
+      if (url.includes('/url?q=')) {
+        const m = url.match(/\/url\?q=([^&]+)/);
+        if (m) url = decodeURIComponent(m[1]);
+      }
+      if (!url.startsWith('http')) return;
+      if (url.includes('google.com') || url.includes('accounts.google') || url.includes('support.google')) return;
+      // Snippet: next sibling text or parent container
+      let snippet = '';
+      const parent = a.closest('div');
+      if (parent) {
+        const spans = parent.parentElement?.querySelectorAll('span, div[data-sncf]');
+        if (spans) {
+          for (const s of spans) {
+            const t = s.textContent?.trim();
+            if (t && t.length > 40 && !t.includes(title)) {
+              snippet = t.substring(0, 250);
+              break;
+            }
+          }
+        }
+      }
+      let hostname = '';
+      try { hostname = new URL(url).hostname.replace('www.', ''); } catch {}
+      hits.push({ title, url, snippet, source: hostname });
+    });
+    return hits;
+  }
+
   // ── Rodar todas as estratégias em PARALELO (mais rápido) ──
   const strategies = [];
 
@@ -155,7 +219,31 @@ async function searchWeb(query, sites) {
     );
   }
 
-  // Estratégia 3: DuckDuckGo API JSON (lite, sem HTML parsing)
+  // Estratégia 3: AllOrigins /get JSON wrapper (CONFIRMADO FUNCIONAL em testes de browser)
+  // /get retorna JSON com campo "contents" contendo o HTML — contorna CORS
+  const googleUrl = `https://www.google.com/search?q=${encoded}&hl=pt-BR&num=10`;
+  strategies.push(
+    quickFetch(`https://api.allorigins.win/get?url=${encodeURIComponent(googleUrl)}`, 20000)
+      .then(r => r.json())
+      .then(data => {
+        if (!data?.contents) return [];
+        return parseGoogleHtml(data.contents);
+      })
+      .catch(() => [])
+  );
+
+  // Estratégia 3b: AllOrigins /get com DDG (backup)
+  strategies.push(
+    quickFetch(`https://api.allorigins.win/get?url=${encodeURIComponent(ddgUrl)}`, 20000)
+      .then(r => r.json())
+      .then(data => {
+        if (!data?.contents) return [];
+        return parseDdgHtml(data.contents);
+      })
+      .catch(() => [])
+  );
+
+  // Estratégia 4: DuckDuckGo API JSON (lite, sem HTML parsing)
   strategies.push(
     quickFetch(`https://api.duckduckgo.com/?q=${encoded}&format=json&no_html=1&skip_disambig=1`)
       .then(r => r.json())
@@ -181,11 +269,11 @@ async function searchWeb(query, sites) {
       .catch(() => [])
   );
 
-  // Esperar TODAS as estratégias (timeout global de 15s)
+  // Esperar TODAS as estratégias (timeout global de 25s — AllOrigins /get precisa ~15-20s)
   try {
     const allResults = await Promise.race([
       Promise.allSettled(strategies),
-      new Promise(resolve => setTimeout(() => resolve([]), 15000)), // timeout global
+      new Promise(resolve => setTimeout(() => resolve([]), 25000)), // timeout global
     ]);
 
     // Coletar todos os resultados válidos
@@ -2231,9 +2319,7 @@ const MODULE_ACTIONS = {
         if (params.sourceUrl && (!params.thumbnail || !params.sourceName)) {
           try { meta = await fetchUrlMetadata(params.sourceUrl); } catch {}
         }
-        const pubDate = params.publishedAt
-          ? new Date(params.publishedAt + 'T12:00:00')
-          : new Date();
+        const pubDate = safeParseDate(params.publishedAt);
         const data = {
           title: params.title,
           description: params.description || '',
@@ -2244,7 +2330,7 @@ const MODULE_ACTIONS = {
           publishedAt: pubDate,
           thumbnail: params.thumbnail || meta.thumbnail || '',
         };
-        if (params.expiresAt) data.expiresAt = params.expiresAt;
+        if (params.expiresAt) data.expiresAt = safeParseDate(params.expiresAt);
         const id = await saveNewsItem(null, data);
         showToast('success', `Notícia "${params.title}" cadastrada!`);
         return { success: true, message: `Notícia "${params.title}" cadastrada!`, data: { newsId: id, title: params.title } };
@@ -2313,9 +2399,7 @@ const MODULE_ACTIONS = {
         if (params.sourceUrl && !params.sourceName) {
           try { meta = await fetchUrlMetadata(params.sourceUrl); } catch {}
         }
-        const pubDate = params.publishedAt
-          ? new Date(params.publishedAt + 'T12:00:00')
-          : new Date();
+        const pubDate = safeParseDate(params.publishedAt);
         const data = {
           title: params.title,
           description: params.description || '',
