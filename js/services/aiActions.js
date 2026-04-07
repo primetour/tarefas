@@ -93,6 +93,75 @@ async function searchWeb(query, sites) {
   const results = [];
   const encoded = encodeURIComponent(searchQuery);
 
+  // ══════════════════════════════════════════════════════════════
+  // ESTRATÉGIAS PRIMÁRIAS (APIs confiáveis com CORS)
+  // Configurar em Configurações > IA
+  // ══════════════════════════════════════════════════════════════
+  let _searchCfg = null;
+  try {
+    const { getAIConfig } = await import('./ai.js');
+    _searchCfg = await getAIConfig() || {};
+  } catch { _searchCfg = {}; }
+
+  // ── Opção 1: Serper.dev (mais fácil — só API key, busca toda web do Google)
+  // Gratuita: 2.500 créditos — https://serper.dev/
+  try {
+    const serperKey = _searchCfg.serperApiKey || '';
+    if (serperKey) {
+      const resp = await fetch('https://google.serper.dev/search', {
+        method: 'POST',
+        headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: searchQuery, gl: 'br', hl: 'pt-br', num: 10 }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const organic = data.organic || [];
+        if (organic.length > 0) {
+          console.log(`[searchWeb] Serper.dev: ${organic.length} resultados`);
+          return organic.map(item => ({
+            title: item.title || '',
+            url: item.link || '',
+            snippet: (item.snippet || '').substring(0, 250),
+            source: (() => { try { return new URL(item.link).hostname.replace('www.', ''); } catch { return ''; } })(),
+          }));
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[searchWeb] Serper.dev falhou:', e.message);
+  }
+
+  // ── Opção 2: Google Custom Search JSON API (requer engine configurada com sites específicos)
+  // Gratuita: 100 buscas/dia — https://programmablesearchengine.google.com/
+  try {
+    const googleApiKey = _searchCfg.googleSearchApiKey || '';
+    const googleCx = _searchCfg.googleSearchCx || '';
+    if (googleApiKey && googleCx) {
+      const gUrl = `https://www.googleapis.com/customsearch/v1?key=${googleApiKey}&cx=${googleCx}&q=${encoded}&num=10&hl=pt-BR`;
+      const resp = await fetch(gUrl, { signal: AbortSignal.timeout(10000) });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.items && data.items.length > 0) {
+          console.log(`[searchWeb] Google CSE: ${data.items.length} resultados`);
+          return data.items.map(item => ({
+            title: item.title || '',
+            url: item.link || '',
+            snippet: (item.snippet || '').substring(0, 250),
+            source: (() => { try { return new URL(item.link).hostname.replace('www.', ''); } catch { return ''; } })(),
+          }));
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[searchWeb] Google CSE falhou:', e.message);
+  }
+
+  // Se nenhuma API configurada, log e continuar para fallbacks (proxies)
+  if (!_searchCfg.serperApiKey && !_searchCfg.googleSearchApiKey) {
+    console.warn('[searchWeb] Nenhuma API de busca configurada. Usando proxies (instáveis). Configure Serper.dev ou Google CSE em Configurações > IA.');
+  }
+
   // Helper: extrair URL real de redirect DDG
   function cleanDdgUrl(rawUrl) {
     if (!rawUrl) return '';
@@ -2448,21 +2517,39 @@ const MODULE_ACTIONS = {
         additionalTerms: 'string — termos extras além de "PRIMETOUR" (ex: "Prime Tour Viagens") (opcional)',
       },
       execute: async (params) => {
-        const terms = ['PRIMETOUR turismo', 'Prime Tour Viagens'];
-        if (params?.additionalTerms) terms.push(params.additionalTerms);
-        const query = terms.join(' OR ');
-        const results = await searchWeb(query);
+        // Buscar menções da Primetour em sites de TERCEIROS (excluir site próprio)
+        const baseTerms = '"Primetour" OR "Prime Tour Viagens"';
+        const excludeOwn = '-site:primetour.com.br -site:primetourupdates.com.br';
+        // Priorizar portais de turismo/notícias
+        const newsSites = 'site:panrotas.com.br OR site:mercadoeventos.com.br OR site:trade.travel3.com.br OR site:diariodoturismo.com.br OR site:revistahoteis.com.br OR site:hoteliernews.com.br';
 
-        // Filtrar resultados genéricos (redes sociais, homepage, páginas institucionais)
-        const SKIP_DOMAINS = ['instagram.com', 'facebook.com', 'linkedin.com', 'twitter.com', 'x.com', 'youtube.com', 'tiktok.com'];
-        const SKIP_TITLES = ['homepage', 'home |', 'perfil', 'profile', '(@', 'fotos e vídeos', 'photos and videos'];
-        const filtered = results.filter(r => {
+        // Fazer 2 buscas em paralelo: uma focada em portais de turismo, outra geral
+        const [focusedResults, generalResults] = await Promise.all([
+          searchWeb(`${baseTerms} (${newsSites})`).catch(() => []),
+          searchWeb(`${baseTerms} ${excludeOwn} ${params?.additionalTerms || ''}`).catch(() => []),
+        ]);
+
+        const allResults = [...focusedResults, ...generalResults];
+
+        // Filtrar resultados genéricos (redes sociais, site próprio, páginas institucionais)
+        const SKIP_DOMAINS = [
+          'instagram.com', 'facebook.com', 'linkedin.com', 'twitter.com', 'x.com',
+          'youtube.com', 'tiktok.com', 'pinterest.com',
+          'primetour.com.br', 'primetourupdates.com.br', // site próprio da empresa
+        ];
+        const SKIP_TITLES = ['homepage', 'home |', 'perfil', 'profile', '(@', 'fotos e vídeos', 'photos and videos', 'ofertas |', 'contato |', 'sobre |', 'about |'];
+        const seen = new Set();
+        const filtered = allResults.filter(r => {
           if (!r.url || !r.title) return false;
+          // Deduplicar
+          const key = r.url.replace(/https?:\/\/(www\.)?/, '').substring(0, 80);
+          if (seen.has(key)) return false;
+          seen.add(key);
           const urlLower = r.url.toLowerCase();
           const titleLower = r.title.toLowerCase();
-          // Pular redes sociais
+          // Pular redes sociais e site próprio
           if (SKIP_DOMAINS.some(d => urlLower.includes(d))) return false;
-          // Pular páginas genéricas da empresa
+          // Pular páginas genéricas
           if (SKIP_TITLES.some(t => titleLower.includes(t))) return false;
           // Pular homepage (URL sem path significativo)
           try {
@@ -2473,12 +2560,12 @@ const MODULE_ACTIONS = {
         });
 
         if (!filtered.length) {
-          return { success: true, data: [], message: 'Nenhuma menção jornalística encontrada. Tente termos adicionais.' };
+          return { success: true, data: [], message: 'Nenhuma menção jornalística de terceiros encontrada. A busca filtrou redes sociais e o site da própria empresa. Tente termos adicionais.' };
         }
         return {
           success: true,
           data: filtered,
-          message: `${filtered.length} menção(ões) encontrada(s). Use create_clipping para cadastrar as relevantes. NÃO use create_news.`,
+          message: `${filtered.length} menção(ões) jornalística(s) encontrada(s) em sites de terceiros. Use create_clipping para cadastrar. Preencha title, description, sourceUrl, sourceName, publishedAt.`,
         };
       },
     },
