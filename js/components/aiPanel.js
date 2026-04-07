@@ -12,8 +12,14 @@ import { parseFiles, formatFilesForPrompt, validateFile, getAcceptString, MAX_FI
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-let _toast = () => {};
-try { const m = await import('../components/toast.js'); _toast = m.toast?.success || m.toast || _toast; } catch {}
+/* Toast — lazy load para evitar top-level await (trava Chrome/Edge) */
+let _toastFn = null;
+function _toast(msg) {
+  if (_toastFn) return _toastFn(msg);
+  import('../components/toast.js')
+    .then(m => { _toastFn = m.toast?.success || m.toast || (() => {}); _toastFn(msg); })
+    .catch(() => {});
+}
 
 /* ─── Log de ações executadas pela IA ────────────────────── */
 async function logAction(moduleId, actionName, success, params) {
