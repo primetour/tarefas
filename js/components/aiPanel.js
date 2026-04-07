@@ -588,21 +588,37 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       }
     }
 
-    // Follow-up: SOMENTE se a resposta original continha mix de data-actions + write-actions
-    // (ex: IA pediu list_tasks para pegar ID e depois quer update_task).
-    // Para consultas puras (list_tasks sozinho), os dados já estão no histórico e visíveis
-    // ao usuário via formatActionData — NÃO gasta tokens com follow-up desnecessário.
+    // ── Follow-up inteligente ──
+    // Cenário A: data+write mix → IA precisa dos IDs para executar writes
+    // Cenário B: data-only → IA deve ANALISAR os dados e dar insights/sugestões
+    // Cenário C: write-only sem data → sem follow-up necessário
     const hasWriteActions = actions.some(a => !DATA_ACTIONS.has(a.action));
-    const needsFollowUp = dataResults.length > 0 && hasWriteActions;
+    const hasDataOnly = dataResults.length > 0 && !hasWriteActions;
+    const hasDataAndWrite = dataResults.length > 0 && hasWriteActions;
+    const needsFollowUp = hasDataOnly || hasDataAndWrite;
 
     if (needsFollowUp) {
-      const loadingEl = addLoading('Analisando');
+      const loadingEl = addLoading(hasDataOnly ? 'Analisando dados' : 'Processando');
       try {
         const dataContext = dataResults.map(r =>
-          `Ação "${r.action}" retornou: ${r.message}\nDados:\n${JSON.stringify(r.data ?? {}, null, 1).substring(0, 800)}`
+          `Ação "${r.action}" retornou: ${r.message}\nDados:\n${JSON.stringify(r.data ?? {}, null, 1).substring(0, 1500)}`
         ).join('\n\n');
 
-        const followUpMsg = `Resultados:\n${dataContext}\n\nAgora execute a ação necessária com os IDs encontrados.`;
+        let followUpMsg;
+        if (hasDataOnly) {
+          // Cenário B: análise de dados — pedir insights reais
+          followUpMsg = `Dados obtidos:\n${dataContext}\n\n`
+            + `TAREFA: Analise estes dados em profundidade. Forneça:\n`
+            + `1. RESUMO: visão geral dos números e estado atual\n`
+            + `2. DESTAQUES: pontos positivos e negativos que chamam atenção\n`
+            + `3. SUGESTÕES: 3-5 recomendações práticas e específicas para melhorar os resultados\n`
+            + `4. ALERTAS: problemas urgentes ou tendências preocupantes\n`
+            + `Seja específico, use os dados reais. NÃO execute ações — apenas analise e responda em texto.`;
+        } else {
+          // Cenário A: dados + ações pendentes
+          followUpMsg = `Resultados:\n${dataContext}\n\nAgora execute a ação necessária com os IDs encontrados.`;
+        }
+
         chatHistory.push({ role: 'user', text: followUpMsg });
 
         const context = typeof getContextFn === 'function' ? getContextFn() : {};
@@ -614,7 +630,8 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
         loadingEl.remove();
 
         const followActions = parseActions(followUpResult.text);
-        const followClean = cleanActionBlocks(followUpResult.text);
+        let followClean = cleanActionBlocks(followUpResult.text);
+        followClean = followClean.replace(/<<<ACTION>>>?/g, '').replace(/<<<END_ACTION>>>?/g, '').trim();
         if (followClean) {
           addMessage('assistant', esc(followClean));
           chatHistory.push({ role: 'assistant', text: followClean });
