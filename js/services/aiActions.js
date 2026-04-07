@@ -270,6 +270,16 @@ const MODULE_ACTIONS = {
       },
     },
     {
+      name: 'delete_task',
+      description: 'Excluir/apagar uma tarefa permanentemente',
+      params: { taskId: 'string — ID da tarefa (obrigatório)' },
+      execute: async ({ taskId }) => {
+        const { deleteTask } = await import('./tasks.js');
+        await deleteTask(taskId);
+        return { success: true, message: 'Tarefa excluída com sucesso!' };
+      },
+    },
+    {
       name: 'add_comment',
       description: 'Adicionar um comentário em uma tarefa',
       params: {
@@ -1878,7 +1888,7 @@ ${lines.join('\n')}
 /* ─── Parser: extrair ações da resposta da IA ────────────── */
 export function parseActions(text) {
   const actions = [];
-  const regex = /<<<ACTION>>>\s*(\{[\s\S]*?\})\s*<<<END_ACTION>>>/g;
+  const regex = /<<<ACTION>>>{0,3}\s*(\{[\s\S]*?\})\s*<<<END_ACTION>>>{0,3}/g;
   let match;
   while ((match = regex.exec(text)) !== null) {
     try {
@@ -1891,7 +1901,7 @@ export function parseActions(text) {
 
 /* ─── Remover blocos de ação do texto exibido ────────────── */
 export function cleanActionBlocks(text) {
-  return text.replace(/<<<ACTION>>>[\s\S]*?<<<END_ACTION>>>/g, '').trim();
+  return text.replace(/<<<ACTION>>>{0,3}[\s\S]*?<<<END_ACTION>>>{0,3}/g, '').trim();
 }
 
 /* ─── Executar uma ação ──────────────────────────────────── */
