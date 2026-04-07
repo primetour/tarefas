@@ -556,14 +556,17 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
     if (actions.length === 0) return;
 
     const dataResults = [];
+    const failedActions = [];   // rastrear ações que falharam
+    const succeededActions = []; // rastrear ações que funcionaram
 
     for (const actionBlock of actions) {
       const { action, params } = actionBlock;
-      addMessage('action', `Executando: <strong>${esc(action)}</strong>...`);
+      addMessage('action', `⚡Executando: <strong>${esc(action)}</strong>...`);
       try {
         const result = await executeAction(moduleId, action, params || {});
         logAction(moduleId, action, result.success, params);
         if (result.success) {
+          succeededActions.push(action);
           const dp = formatActionData(action, result.data);
           addMessage('action', `✅ ${esc(result.message || 'Sucesso')}${dp}`);
           if (DATA_ACTIONS.has(action) && result.data) {
@@ -580,36 +583,46 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
             text: `[Resultado de ${action}]: ${result.message || 'OK'}${idHint}${dataStr ? '. Dados: ' + dataStr.substring(0, 800) : ''}`,
           });
         } else {
+          failedActions.push(action);
           addMessage('action', `❌ ${esc(result.message || 'Erro')}`);
           chatHistory.push({ role: 'assistant', text: `[Erro em ${action}]: ${result.message}` });
         }
       } catch (err) {
-        addMessage('action', `❌ Erro: ${esc(err.message)}`);
+        failedActions.push(action);
+        addMessage('action', `❌ Erro ao executar "${esc(action)}": ${esc(err.message)}`);
+        chatHistory.push({ role: 'assistant', text: `[Erro em ${action}]: ${err.message}` });
       }
     }
 
     // ── Follow-up inteligente ──
-    // Cenário A: data+write mix → IA precisa dos IDs para executar writes
-    // Cenário B: data-only com dados → IA deve ANALISAR e dar insights/sugestões
-    // Cenário B2: data-only com dados VAZIOS no news-monitor → sugerir busca web
-    // Cenário C: write-only sem data → sem follow-up necessário
     const hasWriteActions = actions.some(a => !DATA_ACTIONS.has(a.action));
     const hasDataOnly = dataResults.length > 0 && !hasWriteActions;
     const hasDataAndWrite = dataResults.length > 0 && hasWriteActions;
-    const needsFollowUp = hasDataOnly || hasDataAndWrite;
 
     // Detectar se os resultados de dados estão vazios (0 itens, array vazio)
-    const isDataEmpty = dataResults.every(r => {
+    const isDataEmpty = dataResults.length === 0 || dataResults.every(r => {
       const d = r.data;
       if (Array.isArray(d) && d.length === 0) return true;
       if (r.message && /\b0\s+(notícia|clipping|item|registro|tarefa|resultado)/i.test(r.message)) return true;
       return false;
     });
 
-    // Detectar se a ação foi uma listagem local (list_*) que pode ter alternativa web
+    // Detectar se a busca web falhou ou não foi feita
+    const webSearchActions = ['search_web_news', 'search_web_clipping'];
+    const webSearchFailed = failedActions.some(a => webSearchActions.includes(a));
+    const webSearchSucceeded = succeededActions.some(a => webSearchActions.includes(a));
     const hasListAction = dataResults.some(r => /^list_/.test(r.action));
-    const NEWS_MODULES_WITH_WEB = ['news-monitor'];
-    const canSearchWeb = NEWS_MODULES_WITH_WEB.includes(moduleId) && hasListAction && isDataEmpty;
+
+    // Cenários para busca web:
+    // 1. Banco vazio + módulo de notícias → sugerir busca web
+    // 2. Busca web falhou mas list_ funcionou → re-tentar busca web
+    const NEWS_MODULES = ['news-monitor'];
+    const canSearchWeb = NEWS_MODULES.includes(moduleId) && !webSearchSucceeded && (
+      (hasListAction && isDataEmpty) ||   // banco vazio
+      webSearchFailed                       // busca web falhou, tentar novamente
+    );
+
+    const needsFollowUp = hasDataOnly || hasDataAndWrite || canSearchWeb;
 
     if (needsFollowUp) {
       const loadingEl = addLoading(canSearchWeb ? 'Buscando na web' : (hasDataOnly ? 'Analisando dados' : 'Processando'));
@@ -620,12 +633,17 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
 
         let followUpMsg;
         if (canSearchWeb) {
-          // Cenário B2: listagem local retornou vazio no módulo de notícias → buscar na web
+          // Cenário: precisa buscar na web (banco vazio ou busca anterior falhou)
           const originalMsg = chatHistory.find(h => h.role === 'user')?.text || '';
-          followUpMsg = `O banco interno não tem resultados. O usuário pediu: "${originalMsg}".\n`
-            + `TAREFA: Agora busque na INTERNET usando search_web_news ou search_web_clipping. `
-            + `Use sites relevantes do trade de turismo (panrotas.com.br, mercadoeventos.com.br, trade.travel3.com.br). `
-            + `Extraia termos de busca do pedido original do usuário. Execute a ação de busca web AGORA.`;
+          const existingData = dataResults.length > 0
+            ? `\nItens JÁ existentes no banco (NÃO duplicar):\n${dataContext}\n`
+            : '';
+          const failedNote = webSearchFailed
+            ? 'A busca web anterior falhou por erro técnico. Tente novamente agora — o erro foi corrigido.\n'
+            : 'O banco interno não tem resultados suficientes.\n';
+          followUpMsg = `${failedNote}O usuário pediu: "${originalMsg}".${existingData}\n`
+            + `TAREFA: Busque na INTERNET usando search_web_news (com query baseada no pedido) ou search_web_clipping. `
+            + `NÃO use list_news ou list_clippings — já temos esses dados. Execute a busca web AGORA.`;
         } else if (hasDataOnly && !isDataEmpty) {
           // Cenário B: análise de dados com dados reais
           followUpMsg = `Dados obtidos:\n${dataContext}\n\n`
