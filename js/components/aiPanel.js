@@ -544,7 +544,9 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
   // ── Process AI response ──
   async function processAIResponse(rawText, meta, getContextFn) {
     const actions = parseActions(rawText);
-    const cleanText = cleanActionBlocks(rawText);
+    let cleanText = cleanActionBlocks(rawText);
+    // Segurança extra: nunca exibir blocos ACTION residuais ao usuário
+    cleanText = cleanText.replace(/<<<ACTION>>>?/g, '').replace(/<<<END_ACTION>>>?/g, '').trim();
 
     if (cleanText) {
       addMessage('assistant', esc(cleanText), meta);
