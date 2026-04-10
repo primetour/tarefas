@@ -7,7 +7,7 @@ import { SEGMENTS, MONTHS, recordGeneration, registerDownload, fetchImages } fro
 import { store } from '../store.js';
 import { db } from '../firebase.js';
 import {
-  doc, collection, setDoc, serverTimestamp,
+  doc, collection, setDoc, getDoc, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
@@ -46,7 +46,7 @@ function loadScript(src) {
  * @param {string[]} params.destIds  — for combined destinations
  * @returns {object} { url?, filename? }
  */
-export async function generateTip({ tip, area, dest, segments, format, extraTips = [], imagesOverride = {} }) {
+export async function generateTip({ tip, area, dest, segments, format, extraTips = [], imagesOverride = {}, clientName = '' }) {
   const allTips  = [{ tip, dest }, ...extraTips];
   const areaName = area?.name || 'PRIMETOUR';
   const colors   = area?.colors || { primary: '#D4A843', secondary: '#1A1A2E' };
@@ -77,7 +77,7 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
     case 'docx': return generateDocx({ allTips, segments, areaName, area, colors, filename, imagesByDest });
     case 'pdf':  return generatePDF({ allTips, segments, areaName, area, colors, filename, imagesByDest });
     case 'pptx': return generatePptx({ allTips, segments, areaName, area, colors, filename, imagesByDest });
-    case 'web':  return generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride });
+    case 'web':  return generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride, clientName });
     default:     throw new Error(`Formato desconhecido: ${format}`);
   }
 }
@@ -616,8 +616,9 @@ async function resolveImages(dest) {
   } catch { return { hero: null, gallery: [], banners: {} }; }
 }
 
-async function generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride = {} }) {
-  const token  = generateToken();
+async function generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride = {}, clientName = '' }) {
+  // Gera token amigável (slug) baseado em cliente + destino + mês/ano
+  const token  = await buildUniqueWebLinkSlug({ clientName, allTips });
   const ref    = doc(collection(db, 'portal_web_links'), token);
 
   // Resolve images for each destination
@@ -691,6 +692,65 @@ function generateToken() {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   return Array.from(crypto.getRandomValues(new Uint8Array(16)))
     .map(b => chars[b % chars.length]).join('');
+}
+
+/* ─── Slug builder for portal_web_links ──────────────────── */
+// Gera tokens amigáveis tipo "joao-e-maria-nova-york-jan-2026"
+// com fallback para "nova-york-jan-2026" / "nova-york" / "nova-york-2" em colisões.
+function slugify(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' e ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50);
+}
+
+function buildSlugCandidates({ clientName, allTips }) {
+  const MONTHS_SHORT = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  const d    = new Date();
+  const ym   = MONTHS_SHORT[d.getMonth()] + '-' + d.getFullYear();
+
+  // Destino principal = primeiro destino da lista (cidade + opc. país)
+  const first = allTips.find(({ dest }) => dest)?.dest || {};
+  const destParts = [first.city, first.country].filter(Boolean).join(' ');
+  const destSlug  = slugify(destParts) || slugify(first.continent || 'destino');
+
+  const clientSlug = slugify(clientName);
+
+  const candidates = [];
+  if (clientSlug && destSlug) candidates.push(`${clientSlug}-${destSlug}-${ym}`);
+  if (destSlug)               candidates.push(`${destSlug}-${ym}`);
+  if (destSlug)               candidates.push(destSlug);
+  // Fallback absoluto
+  candidates.push(`link-${ym}`);
+  return candidates;
+}
+
+async function slugExists(token) {
+  try {
+    const snap = await getDoc(doc(db, 'portal_web_links', token));
+    return snap.exists();
+  } catch {
+    return false;
+  }
+}
+
+async function buildUniqueWebLinkSlug({ clientName, allTips }) {
+  const candidates = buildSlugCandidates({ clientName, allTips });
+
+  for (const base of candidates) {
+    if (!base) continue;
+    if (!(await slugExists(base))) return base;
+    // Colisão — tenta sufixos numéricos -2, -3, ...
+    for (let n = 2; n <= 20; n++) {
+      const alt = `${base}-${n}`;
+      if (!(await slugExists(alt))) return alt;
+    }
+  }
+  // Último recurso — token aleatório
+  return generateToken();
 }
 
 function triggerDownload(blob, filename, mimeType) {
