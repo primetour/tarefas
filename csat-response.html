@@ -267,8 +267,6 @@
         throw e;
       }
 
-      let selectedScore = preScore || 0;
-
       if (!survey) {
         showError('Pesquisa não encontrada ou link inválido.');
       } else {
@@ -278,7 +276,7 @@
         } else if (survey.status === 'responded') {
           showAlreadyDone(survey);
         } else {
-          renderForm(survey, selectedScore);
+          renderForm(survey, preScore || 0);
         }
       }
     }
@@ -374,6 +372,7 @@
     }
 
     function renderForm(s, initScore) {
+      let selectedScore = initScore || 0;
       card.innerHTML = `
         <div class="brand">PRIMETOUR</div>
         <div class="task-chip">✓ ${escHtml(s.taskTitle)}</div>
