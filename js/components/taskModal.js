@@ -466,18 +466,30 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
       })()}
       ${(() => {
         const workspaces  = store.get('userWorkspaces') || [];
-        const currentWsId = task.workspaceId || store.get('currentWorkspace')?.id;
-        const wsName      = workspaces.find(w => w.id === currentWsId)?.name || '';
-        if (isEdit && wsName) {
+        const currentWsId = task.workspaceId || store.get('currentWorkspace')?.id || '';
+        // Sempre mostra o seletor quando o usuário tem ao menos 1 squad —
+        // inclui a opção "Sem squad" para deixar explícito que a task não é
+        // de nenhum grupo específico.
+        if (workspaces.length >= 1) {
+          const canEditWs = !isEdit || store.can('task_edit');
+          const wsName = workspaces.find(w => w.id === currentWsId)?.name || '';
+          if (!canEditWs) {
+            return `<div class="task-detail-field">
+              <div class="task-detail-label">Squad / Workspace</div>
+              <div class="task-detail-value" style="font-size:0.875rem;color:var(--text-secondary);">
+                ${wsName ? esc(wsName) : '<em>Sem squad</em>'}
+              </div>
+            </div>`;
+          }
           return `<div class="task-detail-field">
-            <div class="task-detail-label">Workspace</div>
-            <div class="task-detail-value" style="font-size:0.875rem;color:var(--text-secondary);">${esc(wsName)}</div>
-          </div>`;
-        } else if (!isEdit && workspaces.length > 1) {
-          return `<div class="task-detail-field">
-            <div class="task-detail-label">Workspace</div>
+            <div class="task-detail-label">Squad / Workspace</div>
             <select class="form-select" id="tm-workspace" style="padding:8px 32px 8px 12px;">
-              ${workspaces.map(w => `<option value="${w.id}" ${currentWsId===w.id?'selected':''}>${esc(w.name)}</option>`).join('')}
+              <option value="" ${!currentWsId ? 'selected' : ''}>— Sem squad (apenas por setor)</option>
+              ${workspaces.map(w => `
+                <option value="${w.id}" ${currentWsId===w.id?'selected':''}>
+                  ${esc(w.icon||'◈')} ${esc(w.name)}${w.multiSector ? ' · multissetor' : ''}
+                </option>
+              `).join('')}
             </select>
           </div>`;
         }
@@ -1078,10 +1090,13 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     requestingArea:   $('tm-area')?.value||'',
     clientEmail:      $('tm-client-email')?.value?.trim()||'',
     deliveryLink:     $('tm-delivery-link')?.value?.trim()||'',
-    workspaceId: $('tm-workspace')?.value
-      || task.workspaceId
-      || store.get('currentWorkspace')?.id
-      || null,
+    // Se o seletor existe na UI, ele é a fonte de verdade (incluindo "" = sem squad).
+    // Se não existe (usuário sem squads), cai no fallback do contexto.
+    workspaceId: (() => {
+      const el = $('tm-workspace');
+      if (el) return el.value || null;
+      return task.workspaceId || store.get('currentWorkspace')?.id || null;
+    })(),
     assignees,
     tags: Array.from(document.querySelectorAll('.tag-chip[data-tag]')).map(el => el.dataset.tag),
     startDate: startVal ? new Date(startVal+'T00:00:00') : null,

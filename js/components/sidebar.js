@@ -24,7 +24,7 @@ const NAV_GROUPS = [
   {
     label: 'Gestão',
     items: [
-      { route: 'workspaces', icon: '◈',  label: 'Workspaces',   perm: 'workspace_create', altPerm: 'system_view_all' },
+      { route: 'workspaces', icon: '◈',  label: 'Squads / Workspaces',   perm: 'workspace_create', altPerm: 'system_view_all' },
       { route: 'requests',       icon: '◌',  label: 'Solicitações', perm: 'task_create', badge: true },
       { route: 'notifications', icon: '⊘',  label: 'Notificações', perm: 'dashboard_view', badge: true },
       { route: 'team',       icon: '◎',  label: 'Equipe',       perm: 'task_view_all' },
@@ -75,7 +75,7 @@ const NAV_GROUPS = [
   }
 ];
 
-/* ─── Workspace selector HTML ────────────────────────────── */
+/* ─── Workspace / Squads selector HTML ───────────────────── */
 function buildWsSelector() {
   const workspaces   = store.get('userWorkspaces') || [];
   const activeIds    = store.get('activeWorkspaces') || [];
@@ -85,13 +85,20 @@ function buildWsSelector() {
 
   return `
     <div style="padding:8px 12px 4px; border-bottom:1px solid var(--border-subtle);">
-      <div style="font-size:0.625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;
-        color:var(--text-muted);margin-bottom:6px;">Workspaces</div>
+      <div class="nav-label" style="display:flex;align-items:center;justify-content:space-between;
+        font-size:0.625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;
+        color:var(--text-muted);margin-bottom:6px;">
+        <span>Squads</span>
+        <span title="Clique no nome para ativar/desativar a visibilidade do squad. Clique no ponto à direita para definir como squad padrão (onde novas tarefas são criadas)."
+          style="cursor:help;font-size:0.75rem;opacity:0.7;">ℹ</span>
+      </div>
       <div style="display:flex;flex-direction:column;gap:3px;">
         ${workspaces.map(ws => {
-          const isActive = activeIds.includes(ws.id);
+          const isActive  = activeIds.includes(ws.id);
+          const isCurrent = current?.id === ws.id;
           return `
             <div class="ws-toggle-chip ${isActive?'active':''}" data-wsid="${ws.id}"
+              title="${esc(ws.name)}${ws.multiSector ? ' · multissetor' : ''}\n${isActive ? '✓ Squad visível' : '○ Clique para ativar'}"
               style="display:flex;align-items:center;gap:8px;padding:5px 8px;
               border-radius:var(--radius-md);cursor:pointer;transition:all 0.15s;
               background:${isActive?ws.color+'18':'transparent'};
@@ -101,19 +108,29 @@ function buildWsSelector() {
               <span class="nav-label" style="font-size:0.8125rem;
                 color:${isActive?'var(--text-primary)':'var(--text-muted)'};
                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
-                ${ws.name}
+                ${esc(ws.name)}
               </span>
+              ${ws.multiSector ? `<span class="nav-label" title="Squad multissetor"
+                style="font-size:0.625rem;color:var(--text-muted);flex-shrink:0;">⇌</span>` : ''}
               <div class="ws-current-dot" data-wsid="${ws.id}"
-                title="Definir como workspace padrão"
-                style="width:6px;height:6px;border-radius:50%;flex-shrink:0;
-                  background:${current?.id===ws.id?'var(--brand-gold)':'var(--border-subtle)'};
-                  transition:background 0.15s;">
+                title="${isCurrent ? 'Squad padrão atual (onde novas tarefas são criadas)' : 'Definir como squad padrão'}"
+                style="width:8px;height:8px;border-radius:50%;flex-shrink:0;cursor:pointer;
+                  background:${isCurrent?'var(--brand-gold)':'var(--border-subtle)'};
+                  box-shadow:${isCurrent?'0 0 0 2px rgba(212,168,67,0.25)':'none'};
+                  transition:all 0.15s;">
               </div>
             </div>`;
         }).join('')}
       </div>
     </div>
   `;
+}
+
+/* ─── HTML-escape local para o selector ──────────────────── */
+function esc(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
 }
 
 export class Sidebar {
