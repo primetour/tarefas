@@ -182,7 +182,7 @@ function renderProjectCard(p) {
         <div class="project-card-footer">
           <div style="display:flex; align-items:center; margin-left:6px;">${members}</div>
           <button class="btn btn-secondary btn-sm" data-action="view-tasks" data-project-id="${p.id}"
-            onclick="event.stopPropagation(); location.hash='#tasks';">
+            onclick="event.stopPropagation(); location.hash='#tasks?projectId=${encodeURIComponent(p.id)}';">
             Ver tarefas →
           </button>
         </div>
@@ -409,12 +409,8 @@ async function handleDeleteProject(proj) {
 }
 
 function openProjectDetail(projectId) {
-  // Navega para tasks filtrado por projeto
-  location.hash = '#tasks';
-  setTimeout(() => {
-    const sel = document.getElementById('filter-project');
-    if (sel) { sel.value = projectId; sel.dispatchEvent(new Event('change')); }
-  }, 300);
+  // Navega para tasks filtrado por projeto (via query param p/ evitar race com fetchProjects)
+  location.hash = `#tasks?projectId=${encodeURIComponent(projectId)}`;
 }
 
 function toInputDate(ts) {
