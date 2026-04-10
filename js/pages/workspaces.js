@@ -132,12 +132,13 @@ function renderGrid() {
               </div>
             </div>
           </div>
-          ${isAdmin || store.can('system_view_all') ? `
-            <div style="display:flex;gap:4px;">
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-ghost btn-icon btn-sm ws-open-btn" data-id="${ws.id}" title="Abrir workspace do squad">↗</button>
+            ${isAdmin || store.can('system_view_all') ? `
               <button class="btn btn-ghost btn-icon btn-sm ws-edit-btn" data-id="${ws.id}" title="Editar">✎</button>
               <button class="btn btn-ghost btn-icon btn-sm ws-members-btn" data-id="${ws.id}" title="Membros">◉</button>
-            </div>
-          ` : ''}
+            ` : ''}
+          </div>
         </div>
         <div class="card-body" style="padding-top:0;">
           ${ws.description ? `<p style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">${esc(ws.description)}</p>` : ''}
@@ -170,6 +171,11 @@ function renderGrid() {
   }).join('');
 
   // Events
+  grid.querySelectorAll('.ws-open-btn').forEach(btn =>
+    btn.addEventListener('click', () => {
+      window.location.hash = `#squad?id=${encodeURIComponent(btn.dataset.id)}`;
+    })
+  );
   grid.querySelectorAll('.ws-edit-btn').forEach(btn =>
     btn.addEventListener('click', () => openWorkspaceModal(allWorkspaces.find(w => w.id === btn.dataset.id)))
   );

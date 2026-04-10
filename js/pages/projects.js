@@ -203,7 +203,7 @@ function renderProjectCard(p) {
 }
 
 /* ─── Project Modal ─────────────────────────────────────────*/
-function openProjectModal(project = null) {
+export function openProjectModal(project = null, { defaultWorkspaceId = null, onSave = null } = {}) {
   const isEdit = !!project;
   const users  = (store.get('users')||[]).filter(u=>u.active);
   const userWorkspaces = store.get('userWorkspaces') || [];
@@ -212,7 +212,7 @@ function openProjectModal(project = null) {
   let selectedColor = project?.color || PROJECT_COLORS[0];
   let selectedIcon  = project?.icon  || '📦';
   let selectedMembers = project?.members || [store.get('currentUser')?.uid].filter(Boolean);
-  let selectedWorkspaceId = project?.workspaceId ?? currentWs?.id ?? '';
+  let selectedWorkspaceId = project?.workspaceId ?? defaultWorkspaceId ?? currentWs?.id ?? '';
 
   const content = `
     <form id="proj-form" novalidate>
@@ -381,7 +381,13 @@ function openProjectModal(project = null) {
             else        await createProject(data);
             toast.success(isEdit ? 'Projeto atualizado!' : 'Projeto criado!');
             close();
-            await loadData();
+            // Recarrega a página de projetos só se ela estiver montada
+            if (document.getElementById('projects-content')) {
+              await loadData();
+            }
+            if (typeof onSave === 'function') {
+              try { await onSave(); } catch (_) {}
+            }
           } catch(e) { toast.error(e.message); }
           finally { if(btn){ btn.classList.remove('loading'); btn.disabled=false; } }
         }
