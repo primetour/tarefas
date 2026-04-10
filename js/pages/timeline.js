@@ -221,6 +221,7 @@ function renderGantt() {
                     <div style="display:flex;align-items:center;gap:8px;">
                       <div class="priority-dot priority-${task.priority||'medium'}"></div>
                       <span style="font-size:0.8125rem; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(task.title)}</span>
+                      ${renderSubtaskBadge(task)}
                     </div>
                     ${renderCardFields(task, { compact:true })}
                   </div>
@@ -235,6 +236,7 @@ function renderGantt() {
                     ` : `
                       <div style="position:absolute; left:${barLeft}px; top:14px; width:12px; height:12px; border-radius:50%; background:${color}; opacity:0.7;" title="Sem período definido"></div>
                     `}
+                    ${renderSubtaskDots(task, startWindow, endWindow, DAY_W, barLeft, Math.max(barWidth, 20))}
                   </div>
                 </div>
               `;
@@ -248,12 +250,38 @@ function renderGantt() {
   // Click on task label or bar
   content.querySelectorAll('[data-task-id]').forEach(el => {
     el.addEventListener('click', (e) => {
+      // Ignora se o clique veio de um touchpoint de subtarefa (handler abaixo)
+      if (e.target.closest('.timeline-subtask-dot')) return;
       const tid  = el.dataset.taskId || el.closest('[data-task-id]')?.dataset.taskId;
       const task = allTasks.find(t=>t.id===tid);
       if (task) openTaskModal({ taskData: task, onSave: async () => {
         allTasks = await fetchTasks().catch(()=>allTasks);
         renderGantt();
       }});
+    });
+  });
+
+  // Click em um touchpoint de subtarefa: abre modal e rola até subtarefas
+  content.querySelectorAll('.timeline-subtask-dot').forEach(dot => {
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tid = dot.dataset.taskId;
+      const task = allTasks.find(t => t.id === tid);
+      if (!task) return;
+      openTaskModal({
+        taskData: task,
+        onSave: async () => {
+          allTasks = await fetchTasks().catch(() => allTasks);
+          renderGantt();
+        },
+      });
+      // Aguarda o modal montar e rola até a seção de subtarefas
+      setTimeout(() => {
+        const list = document.querySelector('.modal-backdrop:last-child #subtask-list');
+        list?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        list?.classList.add('tl-flash');
+        setTimeout(() => list?.classList.remove('tl-flash'), 1200);
+      }, 350);
     });
   });
 }
@@ -316,4 +344,84 @@ function renderTodayLine(today, startWindow, dayW) {
   if (diff < 0) return '';
   const left = Math.round(diff * dayW);
   return `<div class="timeline-today-line" style="left:${left}px;"></div>`;
+}
+
+/* ─── Subtask touchpoints ─────────────────────────────────
+ * Renderiza cada subtarefa como um ponto visual na linha
+ * da tarefa. Se a subtarefa tem `dueDate` própria, ela é
+ * posicionada nesse dia; caso contrário, é distribuída
+ * uniformemente ao longo da barra da tarefa.
+ * Dots concluídos aparecem preenchidos em verde; pendentes
+ * ficam vazados com a cor da tarefa.
+ */
+function renderSubtaskDots(task, startWindow, endWindow, dayW, barLeft, barWidth) {
+  const subs = Array.isArray(task.subtasks) ? task.subtasks : [];
+  if (!subs.length) return '';
+
+  // Garante ao menos 1px de largura para evitar divisão por zero quando
+  // a tarefa não tem intervalo (ex: apenas dueDate).
+  const effWidth = Math.max(barWidth, 1);
+
+  // Para subtarefas sem dueDate própria, distribui igualmente entre
+  // (barLeft + margem) e (barLeft + effWidth - margem).
+  const evenSpaced = [];
+  const datedSubs  = [];
+  subs.forEach((s, i) => {
+    if (s.dueDate) datedSubs.push({ s, i });
+    else evenSpaced.push({ s, i });
+  });
+
+  const dots = [];
+
+  // Datadas: posiciona pelo dueDate dentro da janela visível
+  datedSubs.forEach(({ s }) => {
+    const d = new Date(s.dueDate);
+    if (isNaN(d.getTime())) return;
+    d.setHours(0, 0, 0, 0);
+    if (d < startWindow || d > endWindow) return;
+    const diff = (d - startWindow) / (1000 * 60 * 60 * 24);
+    const left = Math.round(diff * dayW);
+    dots.push(buildSubtaskDotHTML(s, left, 'dated', task.id));
+  });
+
+  // Sem data: distribui ao longo da barra
+  if (evenSpaced.length && effWidth > 0) {
+    const pad = 6;
+    const usable = Math.max(effWidth - pad * 2, 0);
+    evenSpaced.forEach((entry, idx) => {
+      const step = evenSpaced.length > 1 ? usable / (evenSpaced.length - 1) : 0;
+      const offset = evenSpaced.length === 1 ? usable / 2 : step * idx;
+      const left = Math.round(barLeft + pad + offset);
+      dots.push(buildSubtaskDotHTML(entry.s, left, 'auto', task.id));
+    });
+  }
+
+  return dots.join('');
+}
+
+function renderSubtaskBadge(task) {
+  const subs = Array.isArray(task.subtasks) ? task.subtasks : [];
+  if (!subs.length) return '';
+  const done  = subs.filter(s => s.done).length;
+  const total = subs.length;
+  const pct   = Math.round((done / total) * 100);
+  return `<span class="tl-subtask-badge" title="${done} de ${total} subtarefas concluídas (${pct}%)">
+    ◎ ${done}/${total}
+  </span>`;
+}
+
+function buildSubtaskDotHTML(sub, left, mode, taskId) {
+  const done   = !!sub.done;
+  const title  = esc(sub.title || '').replace(/"/g, '');
+  const dueTxt = sub.dueDate
+    ? new Date(sub.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+    : '';
+  const tooltip = dueTxt
+    ? `${title} · ${dueTxt}${done ? ' ✓' : ''}`
+    : `${title}${done ? ' ✓' : ''}`;
+  return `<div class="timeline-subtask-dot ${done ? 'done' : ''} ${mode}"
+    data-task-id="${taskId}"
+    data-sub-id="${esc(sub.id || '')}"
+    style="left:${left}px;"
+    title="${tooltip}"></div>`;
 }
