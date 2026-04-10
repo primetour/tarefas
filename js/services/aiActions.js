@@ -901,6 +901,15 @@ const MODULE_ACTIONS = {
       execute: async (params) => {
         const { createTask } = await import('./tasks.js');
         const user = store.get('currentUser');
+        // Garantir que assignees seja SEMPRE array (IA às vezes manda string)
+        let assignees;
+        if (Array.isArray(params.assignees)) {
+          assignees = params.assignees.filter(Boolean);
+        } else if (typeof params.assignees === 'string' && params.assignees.trim()) {
+          assignees = [params.assignees.trim()];
+        } else {
+          assignees = user?.uid ? [user.uid] : [];
+        }
         const taskData = {
           title: params.title,
           description: params.description || '',
@@ -908,7 +917,7 @@ const MODULE_ACTIONS = {
           status: params.status || 'not_started',
           sector: params.sector || store.get('userSector') || '',
           createdBy: user?.uid,
-          assignees: params.assignees || (user?.uid ? [user.uid] : []),
+          assignees,
         };
         if (params.dueDate) taskData.dueDate = new Date(params.dueDate + 'T12:00:00');
         if (params.startDate) taskData.startDate = new Date(params.startDate + 'T12:00:00');
@@ -1173,12 +1182,21 @@ const MODULE_ACTIONS = {
       execute: async (params) => {
         const { createTask } = await import('./tasks.js');
         const user = store.get('currentUser');
+        // Normalizar assignees → sempre array de UIDs (IA às vezes manda string/nome)
+        let assignees;
+        if (Array.isArray(params.assignees)) {
+          assignees = params.assignees.filter(Boolean);
+        } else if (typeof params.assignees === 'string' && params.assignees.trim()) {
+          assignees = [params.assignees.trim()];
+        } else {
+          assignees = user?.uid ? [user.uid] : [];
+        }
         const task = await createTask({
           title: params.title,
           description: params.description || '',
           priority: params.priority || 'medium',
           status: params.status || 'not_started',
-          assignees: params.assignees || (user?.uid ? [user.uid] : []),
+          assignees,
           sector: store.get('userSector') || '',
           createdBy: user?.uid,
           ...(params.dueDate ? { dueDate: new Date(params.dueDate + 'T12:00:00') } : {}),

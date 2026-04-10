@@ -124,6 +124,308 @@ export const TRIGGER_TYPES = [
   { id: 'context',   label: 'Menu de contexto' },
 ];
 
+/* ─── Hints de prompt por módulo (defaults) ──────────────── */
+/*
+ * Estes defaults servem como FALLBACK quando não há override no Firestore
+ * (collection `ai_module_hints`, gerenciada pela aba "Prompts por Módulo").
+ * Cada hint cobre: terminologia, formatos de campo, enums válidos,
+ * ordem de chamadas, armadilhas comuns.
+ */
+export const DEFAULT_MODULE_HINTS = {
+
+  /* ═════════════════ TASKS ═════════════════ */
+  'tasks': `MÓDULO TAREFAS — REGRAS CRÍTICAS:
+
+FORMATO DOS CAMPOS (NUNCA QUEBRE):
+- assignees: SEMPRE array de UIDs de usuários. NUNCA nomes ("João"), NUNCA string solta. Se não souber o UID, OMITA o campo (o sistema usará o usuário atual por padrão).
+- tags, nucleos: SEMPRE arrays de strings, mesmo com um só item. Ex: ["marketing"] e não "marketing".
+- dueDate, startDate: SEMPRE formato YYYY-MM-DD (ex: "2026-04-15"). NUNCA datas por extenso.
+- priority: APENAS urgent | high | medium | low.
+- status: APENAS not_started | in_progress | review | rework | done | cancelled.
+- customFields: objeto { key: value }. SÓ use se souber o typeId e seus campos reais (rode list_task_types antes). Exemplo: {"outOfCalendar": true, "newsletterStatus": "Pauta"}.
+
+FLUXOS OBRIGATÓRIOS:
+- Antes de usar typeId/variationId → execute list_task_types para pegar IDs reais. NUNCA invente IDs.
+- Antes de update_task/delete_task → execute list_tasks para confirmar que o ID existe (ou use o >>> ID_CRIADO do histórico).
+- Para "marcar como feito" → use complete_task (NUNCA update_task com status=done).
+- Para excluir permanentemente → use delete_task. Para arquivar/ocultar → use update_task com status=cancelled.
+
+ARMADILHAS COMUNS:
+- NUNCA passe assignees como nome de pessoa. Se o usuário disser "atribuir pro Tiago", deixe o campo vazio e informe "Associei a você; o Tiago pode ser adicionado depois pelo menu de membros."
+- NUNCA preencha sector com valor inventado — se não souber, omita.
+- Ao criar tarefas em lote, use UM bloco <<<ACTION>>> por tarefa.`,
+
+  /* ═════════════════ KANBAN ═════════════════ */
+  'kanban': `MÓDULO KANBAN — REGRAS:
+
+CONCEITO:
+- Kanban é a visualização de board das mesmas tarefas. Criar um "card" = criar uma tarefa.
+
+FORMATO:
+- assignees: SEMPRE array de UIDs, NUNCA nomes. Se não souber, omita.
+- status (coluna): APENAS not_started | in_progress | review | rework | done | cancelled.
+- dueDate: YYYY-MM-DD.
+
+FLUXOS:
+- Para mover card → use move_card com taskId e newStatus (uma das colunas acima).
+- Para ver o board → use get_board_summary (contagem por coluna) ou list_tasks.
+- Para criar card rápido → use create_card (versão simplificada de create_task).
+- Para atualizar um card existente → use update_card. Para apagar, volte ao módulo tasks e use delete_task.`,
+
+  /* ═════════════════ PROJECTS ═════════════════ */
+  'projects': `MÓDULO PROJETOS — REGRAS:
+
+FORMATO:
+- members: SEMPRE array de UIDs. NUNCA nomes. Se não souber, omita.
+- status: APENAS planning | active | on_hold | completed | cancelled.
+- startDate, endDate: YYYY-MM-DD.
+- color: hex com # (ex: "#3B82F6"). icon: um emoji único.
+
+FLUXOS:
+- Antes de vincular tarefas a um projeto → use list_projects para pegar o projectId real.
+- Para ver tarefas de um projeto → use get_project_tasks (nunca filtre manualmente no list_tasks).
+- Para ver progresso (% concluído) → use get_project_progress.
+- delete_project NÃO apaga as tarefas vinculadas; elas apenas ficam sem projeto.`,
+
+  /* ═════════════════ ROTEIROS ═════════════════ */
+  'roteiros': `MÓDULO ROTEIROS DE VIAGEM — REGRAS:
+
+CONCEITO:
+- Roteiro = proposta de viagem personalizada para um cliente. Estrutura rica com cliente, viagem, day-by-day, hotéis, valores, opcionais, inclui/exclui, pagamento, cancelamento, info importantes.
+
+FORMATO:
+- status: APENAS draft | review | sent | approved | archived.
+- Datas (startDate, endDate, checkIn, checkOut, validUntil): YYYY-MM-DD.
+- client.type: individual | couple | family | group.
+- client.economicProfile: standard | premium | luxury.
+- pricing.currency: BRL | USD | EUR.
+- days[].narrative: texto imersivo de 150+ palavras por dia. Se for curto, recuse e peça mais contexto ou gere com IA.
+
+FLUXOS:
+- Antes de criar roteiro → pergunte ao usuário: destino, datas, número de pax, perfil do cliente.
+- Para preencher destinos → consulte portal-tips (list_destinations) para pegar IDs reais de destino.
+- Para gerar narrativas do dia → use as skills de IA do módulo (não tente escrever tudo de uma vez).`,
+
+  /* ═════════════════ PORTAL-TIPS ═════════════════ */
+  'portal-tips': `MÓDULO PORTAL DE DICAS — REGRAS:
+
+HIERARQUIA (respeitar ordem de criação):
+- area (BU) → continent → country → destination → tip
+- Antes de criar uma dica, o destino precisa existir. Antes do destino, continent/country precisam existir.
+- Use list_destinations / list_continents / list_countries para pegar IDs antes de criar dica.
+
+CONTEÚDO:
+- create_tip DEVE ter o campo "content" com 300+ palavras reais, com informações práticas (endereços, horários, preços, dicas locais).
+- NUNCA crie dicas vazias ou com 1-2 frases genéricas.
+- Se o conteúdo for curto (<500 chars), o sistema expande automaticamente via IA — mas prefira mandar completo.
+- AVISO: Seu conhecimento pode estar desatualizado. Diga sempre "dados devem ser verificados" ao final.
+
+EXCLUSÕES:
+- delete_tip (dica específica), delete_destination (destino inteiro — CUIDADO, apaga dicas filhas), delete_area (BU inteira — CUIDADO).
+- SEMPRE confirme com o usuário antes de delete_destination ou delete_area.
+
+ATUALIZAÇÃO:
+- update_destination para destino, update_tip para dica. NUNCA recrie se já existe — atualize.`,
+
+  /* ═════════════════ NEWS-MONITOR ═════════════════ */
+  'news-monitor': `MÓDULO NOTÍCIAS — REGRAS:
+
+CONCEITOS (NÃO CONFUNDIR):
+- NOTÍCIA (create_news) = notícias GERAIS do mercado de turismo (novos voos, tendências, destinos). Fontes: Panrotas, Mercado & Eventos, etc.
+- CLIPPING (create_clipping) = menções/citações DA PRIMETOUR na mídia. Quando alguém fala SOBRE a Primetour.
+
+BUSCA:
+- "notícias sobre a Primetour" / menções / clipping → search_web_clipping.
+- notícias gerais do setor (sem mencionar Primetour) → search_web_news.
+- NUNCA use list_news ou list_clippings para buscar notícias NOVAS. Esses listam APENAS o banco interno.
+- PRIORIDADE: search_web PRIMEIRO. Não perca tempo listando banco vazio.
+
+CADASTRO:
+- Menções sobre a PRIMETOUR → SEMPRE create_clipping (NUNCA create_news).
+- Notícias gerais → create_news.
+- Campos obrigatórios: title, description (1-2 frases), sourceUrl, sourceName, publishedAt (YYYY-MM-DD).
+- IGNORE redes sociais (Instagram, Facebook, LinkedIn, Twitter/X) e páginas institucionais. Só matérias jornalísticas reais.
+
+DUPLICATAS:
+- Antes de cadastrar, execute list_clippings / list_news para ver o que já existe.
+- Compare títulos/URLs. NÃO cadastre duplicatas.
+- Pode usar search_web + list juntos (2 ações na mesma resposta).`,
+
+  /* ═════════════════ REQUESTS ═════════════════ */
+  'requests': `MÓDULO SOLICITAÇÕES — REGRAS:
+
+CICLO DE VIDA:
+- pending → approved/rejected → converted (em tarefa).
+
+AÇÕES:
+- approve_request / reject_request → moderar.
+- convert_request_to_task → transformar solicitação aprovada em tarefa.
+- delete_request → excluir permanentemente (irreversível, confirme com usuário).
+
+FORMATO:
+- requesterName, requesterEmail, description são obrigatórios em create_request.
+- status: APENAS pending | approved | rejected | converted.
+- desiredDate: YYYY-MM-DD.`,
+
+  /* ═════════════════ CSAT ═════════════════ */
+  'csat': `MÓDULO CSAT — REGRAS:
+
+CICLO DE VIDA:
+- pending → sent → responded (ou expired/cancelled).
+
+FLUXO PARA ENVIAR PESQUISA A UM CLIENTE:
+1. Execute find_tasks_without_csat para ver tarefas concluídas sem pesquisa.
+2. Execute create_survey passando taskId, taskTitle, clientEmail (obrigatórios).
+3. Execute send_survey com o surveyId retornado para disparar o email.
+ISSO SÃO 2 PASSOS DISTINTOS — create_survey NÃO envia automaticamente.
+
+FORMATO:
+- status: APENAS pending | sent | responded | expired | cancelled.
+- clientEmail é obrigatório em create_survey.
+
+OUTRAS AÇÕES:
+- cancel_survey → cancela uma pendente.
+- resend_survey → reenvia com nova validade.
+- get_csat_metrics → calcula score médio, NPS, taxa de resposta.`,
+
+  /* ═════════════════ CALENDAR ═════════════════ */
+  'calendar': `MÓDULO CALENDÁRIO — REGRAS:
+
+CONCEITO:
+- O calendário mostra tarefas com dueDate + eventos. Não há CRUD de "evento" separado no backend — tarefas com dueDate aparecem aqui automaticamente.
+
+AÇÕES:
+- get_today_agenda → tarefas com vencimento hoje (use para "o que tenho hoje?").
+- list_events → eventos visíveis no store ou DOM.
+- Para criar compromissos futuros → use create_task (do módulo tasks) com dueDate definida. NÃO invente uma ação create_event.
+
+FORMATO:
+- Datas sempre YYYY-MM-DD.`,
+
+  /* ═════════════════ DASHBOARDS ═════════════════ */
+  'dashboards': `MÓDULO DASHBOARDS — REGRAS:
+
+ESCOPO:
+- Este módulo é APENAS LEITURA/ANÁLISE. NUNCA modifique dados daqui.
+- Use get_dashboard_summary para ler KPIs visíveis na tela.
+- Use get_tasks_overview para análise agregada de tarefas (por status, prioridade, setor, atrasadas).
+- Para criar/editar tarefas, oriente o usuário a ir ao módulo Tarefas.`,
+
+  /* ═════════════════ GOALS ═════════════════ */
+  'goals': `MÓDULO METAS — REGRAS:
+
+CICLO DE VIDA:
+- draft → publicada → encerrada.
+
+AÇÕES:
+- publish_goal → publica e notifica responsáveis (passo explícito, não é automático).
+- Avaliações (evaluations) = registros periódicos de progresso.
+- list_evaluations (ver), create_evaluation (registrar nova), delete_evaluation (remover).
+
+FORMATO:
+- Datas (period.start, period.end): YYYY-MM-DD.
+- Metas têm keyResults (array de resultados-chave).`,
+
+  /* ═════════════════ FEEDBACKS ═════════════════ */
+  'feedbacks': `MÓDULO FEEDBACKS — REGRAS:
+
+CONCEITO:
+- Feedback = registro de elogio/sugestão/reclamação de cliente.
+- Schedule = configuração de feedback recorrente automático.
+
+AÇÕES:
+- list_feedback_schedules (ver), create_feedback_schedule (criar), delete_feedback_schedule (remover).
+- Para criar feedback manual, use o CRUD normal de feedbacks.
+
+FORMATO:
+- rating: número 1-5.
+- category: define o tipo (elogio, sugestão, reclamação, etc).`,
+
+  /* ═════════════════ CAPACITY ═════════════════ */
+  'capacity': `MÓDULO CAPACIDADE/AUSÊNCIAS — REGRAS:
+
+CONCEITO:
+- Ausência = período em que colaborador está indisponível (férias, licença, folga, atestado).
+
+FORMATO:
+- type: vacation | leave | dayoff | sick | other.
+- startDate, endDate: YYYY-MM-DD.
+- userId: UID do colaborador (NUNCA nome).
+
+FLUXOS:
+- get_team_availability → verifica quem está disponível em um período (use para "quem está de férias em março?").
+- Se não souber o userId, peça ao usuário antes de criar ausência.`,
+
+  /* ═════════════════ SECTORS ═════════════════ */
+  'sectors': `MÓDULO SETORES E NÚCLEOS — REGRAS:
+
+HIERARQUIA:
+- Setor → Núcleos (um núcleo pertence a um setor).
+
+AÇÕES:
+- list_nucleos (ver todos ou filtrar por setor), create_nucleo (name + sector obrigatórios), update_nucleo, delete_nucleo.
+
+FORMATO:
+- color: hex com # (ex: "#FF5733"), opcional.`,
+
+  /* ═════════════════ WORKSPACES ═════════════════ */
+  'workspaces': `MÓDULO WORKSPACES — REGRAS:
+
+CONCEITO:
+- Workspace = espaço de trabalho que agrupa tarefas e membros de um setor/projeto.
+
+AÇÕES:
+- archive_workspace → desativa (soft delete, não apaga permanentemente). Prefira esta a qualquer exclusão.
+- add_workspace_member / remove_workspace_member → gerencia membros (userId é UID, nunca nome).
+
+FORMATO:
+- members: array de UIDs.
+- icon: um emoji único.`,
+
+  /* ═════════════════ TASK-TYPES ═════════════════ */
+  'task-types': `MÓDULO TIPOS DE TAREFA — REGRAS:
+
+CONCEITO:
+- Tipo de tarefa = template reutilizável com variações (sub-tipos), campos customizados e SLA.
+- Ex: "Newsletter" tem variações "Domingo", "Quarta" e campos "newsletterStatus", "outOfCalendar".
+
+ESTRUTURA COMPLEXA:
+- variations: array de { name, slaHours, color }.
+- fields: array de { key, label, type (text|number|select|checkbox|date), options }.
+
+FLUXOS:
+- Antes de criar tipo novo, execute list_task_types_full para ver se já existe.
+- Ao passar fields/variations, SEMPRE use arrays (mesmo com 1 item).
+- Antes de excluir, verifique se há tarefas usando esse tipo — senão as tarefas ficam órfãs.`,
+
+  /* ═════════════════ TASK-CATEGORIES ═════════════════ */
+  'task-categories': `MÓDULO CATEGORIAS DE TAREFA — REGRAS:
+
+CONCEITO:
+- Categoria = agrupamento visual de tipos de tarefa (ex: "Marketing", "Operações", "Financeiro").
+- Cada categoria tem nome, setor e cor.
+
+FORMATO:
+- color: hex com #.
+- sector: obrigatório para vincular categoria a um setor.`,
+
+  /* ═════════════════ CONTENT ═════════════════ */
+  'content': `MÓDULO GESTÃO DE CONTEÚDO — REGRAS:
+
+ESCOPO ATUAL:
+- Apenas leitura de métricas visíveis via get_content_metrics.
+- Para criar/editar conteúdo, oriente o usuário a usar a página específica (ainda não há CRUD via IA).
+- Foque em análise: performance, alcance, engajamento baseado nos KPIs da tela.`,
+
+  /* ═════════════════ GENERAL ═════════════════ */
+  'general': `MÓDULO GERAL (modo livre) — REGRAS:
+
+ESCOPO:
+- Ferramentas utilitárias: busca web, resumos, análise de texto, cálculos.
+- NÃO modifique dados do sistema a partir daqui — se o usuário pedir para criar/editar algo específico (tarefa, dica, projeto), oriente a ir ao módulo correspondente.
+- Para perguntas sobre o sistema em si (ajuda, navegação), responda diretamente sem ações.`,
+};
+
 /* ─── Configuração de API Keys (multi-escopo) ───────────── */
 /*
  * Hierarquia de resolução (maior prioridade primeiro):
@@ -543,65 +845,14 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
     `Responda em pt-BR, conciso (1-2 frases + ação). SEMPRE execute ações, NUNCA diga "eu faria". NUNCA invente IDs — use APENAS IDs do histórico (>>> ID_CRIADO="xxx" <<<). Se não souber o ID, faça list_ primeiro. NUNCA preencha params opcionais com valores inventados — omita-os. Formato OBRIGATÓRIO: <<<ACTION>>>{"action":"x","params":{}}<<<END_ACTION>>> — SEMPRE feche com <<<END_ACTION>>>. Pode usar MÚLTIPLOS blocos <<<ACTION>>> na mesma resposta para executar várias ações de uma vez.`,
   ];
 
-  // Orientações específicas por módulo — guiam a IA na escolha correta de ações
-  const MODULE_HINTS = {
-    'news-monitor': `MÓDULO NOTÍCIAS — REGRAS IMPORTANTES:
-
-CONCEITOS:
-- NOTÍCIA (create_news) = notícias GERAIS do mercado de turismo (novos voos, tendências, destinos). Fontes: Panrotas, Mercado & Eventos, etc.
-- CLIPPING (create_clipping) = menções/citações da PRIMETOUR na mídia. Monitoramento de marca. Quando alguém fala SOBRE a Primetour.
-
-REGRAS DE BUSCA:
-- Quando o usuário pedir "notícias sobre a Primetour", "últimas da Primetour", menções, clipping → use search_web_clipping (busca menções da empresa na INTERNET).
-- Quando pedir notícias GERAIS do setor de turismo (sem mencionar Primetour) → use search_web_news.
-- NUNCA use list_news ou list_clippings para buscar notícias NOVAS. Esses servem APENAS para consultar o banco interno.
-- PRIORIDADE: search_web PRIMEIRO. Não perca tempo listando banco vazio.
-
-REGRAS DE CADASTRO:
-- Para menções/notícias sobre a PRIMETOUR → SEMPRE use create_clipping (NUNCA create_news).
-- Para notícias gerais do setor → use create_news.
-- SEMPRE preencha: title, description (1-2 frases), sourceUrl, sourceName, publishedAt (formato YYYY-MM-DD).
-- IGNORE resultados de redes sociais (Instagram, Facebook, LinkedIn, Twitter/X) e páginas institucionais (homepage da empresa). Só cadastre MATÉRIAS JORNALÍSTICAS reais.
-
-DUPLICATAS:
-- ANTES de cadastrar, execute list_clippings para ver o que já existe.
-- Compare títulos/URLs. NÃO cadastre itens que já existem.
-- Use search_web_clipping E list_clippings juntos (2 ações na mesma resposta).`,
-    'portal-tips': `MÓDULO PORTAL DE DICAS — REGRAS:
-- Ao criar dicas com create_tip, SEMPRE forneça conteúdo detalhado (300+ palavras) no campo "content".
-- NUNCA crie dicas vazias ou com conteúdo genérico de 1-2 frases.
-- Inclua informações práticas, endereços, horários, preços quando possível.
-- AVISO: Seu conhecimento pode estar desatualizado. Informe ao usuário que os dados devem ser verificados.
-- Para EXCLUIR: use delete_tip (dica), delete_destination (destino), delete_area (BU).
-- Para ATUALIZAR destino: use update_destination. Para atualizar dica: use update_tip.`,
-    'goals': `MÓDULO METAS — REGRAS:
-- Metas têm status: draft → publicada → encerrada.
-- Use publish_goal para publicar e notificar responsáveis.
-- Avaliações (evaluations) são registros periódicos de progresso de uma meta.
-- Use list_evaluations para ver avaliações existentes, create_evaluation para registrar nova, delete_evaluation para remover.`,
-    'feedbacks': `MÓDULO FEEDBACKS — REGRAS:
-- Feedbacks são registros de elogios, sugestões, reclamações de clientes.
-- Agendamentos (schedules) definem feedbacks recorrentes automáticos.
-- Use list_feedback_schedules para ver agendamentos, create_feedback_schedule para criar, delete_feedback_schedule para remover.`,
-    'capacity': `MÓDULO CAPACIDADE/AUSÊNCIAS — REGRAS:
-- Ausências representam períodos em que colaboradores estão indisponíveis (férias, licença, folga, atestado).
-- Use get_team_availability para verificar quem está disponível em um período.
-- Datas no formato YYYY-MM-DD.`,
-    'sectors': `MÓDULO SETORES E NÚCLEOS — REGRAS:
-- Núcleos são subdivisões dentro de setores.
-- Cada núcleo pertence a um setor.
-- Use list_nucleos para listar, create_nucleo para criar (name + sector obrigatórios).`,
-    'workspaces': `MÓDULO WORKSPACES — REGRAS:
-- Workspaces são espaços de trabalho que agrupam tarefas e membros.
-- Use archive_workspace para desativar (soft delete), não exclui permanentemente.
-- Use add_workspace_member/remove_workspace_member para gerenciar membros.`,
-    'requests': `MÓDULO SOLICITAÇÕES — REGRAS:
-- Solicitações passam por: pending → approved/rejected → converted (em tarefa).
-- Use approve_request/reject_request para moderar.
-- Use convert_request_to_task para transformar em tarefa após aprovação.
-- Use delete_request para excluir permanentemente.`,
-  };
-  const moduleHint = MODULE_HINTS[opts.moduleId];
+  // Orientações específicas por módulo — carregadas do Firestore com fallback para DEFAULT_MODULE_HINTS.
+  // Gerenciadas pela aba "Prompts por Módulo" na página IA Skills.
+  let moduleHint = DEFAULT_MODULE_HINTS[opts.moduleId] || '';
+  try {
+    const { getModuleHint } = await import('./aiModuleHints.js');
+    const customHint = await getModuleHint(opts.moduleId);
+    if (typeof customHint === 'string' && customHint.trim()) moduleHint = customHint;
+  } catch (_) { /* serviço indisponível — usa fallback */ }
   if (moduleHint) systemParts.push(moduleHint);
 
   // Adicionar contexto do módulo (excluir __fileContext do JSON)
