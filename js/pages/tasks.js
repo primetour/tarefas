@@ -29,12 +29,13 @@ let filterDateFrom = '';         // ISO YYYY-MM-DD (para custom)
 let filterDateTo   = '';
 let filterArea     = '';
 let filterTag      = '';
+let filterSquad    = '';   // workspaceId | '' (todos)
 
 // Visibilidade de filtros (persistida no localStorage por usuário)
 const FILTER_VISIBILITY_KEY = 'tasks.filterVisibility.v1';
 const DEFAULT_FILTER_VISIBILITY = {
   status: true, priority: true, project: true, assignee: true,
-  datePreset: true, area: false, tag: false,
+  datePreset: true, squad: true, area: false, tag: false,
 };
 let filterVisibility = { ...DEFAULT_FILTER_VISIBILITY };
 function loadFilterVisibility() {
@@ -53,16 +54,19 @@ export async function renderTasks(container) {
 
   // Lê query params do hash (ex: #tasks?projectId=xxx) para pré-filtrar
   // Reset antes de aplicar query para evitar "lembrar" um filtro antigo de outra navegação
-  let urlProjectId = '';
+  let urlProjectId   = '';
+  let urlWorkspaceId = '';
   try {
     const rawHash = window.location.hash || '';
     const qIdx = rawHash.indexOf('?');
     if (qIdx >= 0) {
       const qs = new URLSearchParams(rawHash.slice(qIdx + 1));
-      urlProjectId = qs.get('projectId') || '';
+      urlProjectId   = qs.get('projectId')   || '';
+      urlWorkspaceId = qs.get('workspaceId') || '';
     }
   } catch (_) { /* noop */ }
   filterProject = urlProjectId;
+  filterSquad   = urlWorkspaceId;
 
   container.innerHTML = `
     <div class="page-header">
@@ -96,6 +100,13 @@ export async function renderTasks(container) {
       <select class="filter-select" id="filter-project" style="${filterVisibility.project?'':'display:none;'}">
         <option value="">Todos os projetos</option>
       </select>
+      <select class="filter-select" id="filter-squad" style="${filterVisibility.squad?'':'display:none;'}">
+        <option value="">Todos os squads</option>
+        <option value="__none__">— Sem squad</option>
+        ${(store.get('userWorkspaces')||[]).map(ws => `
+          <option value="${ws.id}">${esc(ws.icon || '◈')} ${esc(ws.name)}${ws.multiSector ? ' (multissetor)' : ''}</option>
+        `).join('')}
+      </select>
       <select class="filter-select" id="filter-assignee" style="${filterVisibility.assignee?'':'display:none;'}">
         <option value="">Todos os respons\u00e1veis</option>
         ${(store.get('users')||[]).filter(u=>u.active).map(u=>`
@@ -120,8 +131,6 @@ export async function renderTasks(container) {
       <select class="filter-select" id="filter-tag" style="${filterVisibility.tag?'':'display:none;'}">
         <option value="">Todas as tags</option>
       </select>
-      <button class="btn btn-ghost btn-sm" id="filter-config-btn" title="Configurar filtros visíveis"
-        style="padding:6px 10px;">⚙</button>
       <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
         <label style="font-size:0.8125rem; color:var(--text-muted);">Agrupar:</label>
         <select class="filter-select" id="group-by">
@@ -131,6 +140,8 @@ export async function renderTasks(container) {
           <option value="project">Por projeto</option>
           <option value="none">Sem agrupamento</option>
         </select>
+        <button class="btn btn-ghost btn-sm" id="filter-config-btn" title="Configurar filtros visíveis"
+          style="padding:6px 10px;">⚙</button>
       </div>
     </div>
     <div id="filter-date-custom" style="display:none;margin-bottom:12px;gap:8px;align-items:center;">
@@ -169,6 +180,16 @@ export async function renderTasks(container) {
       }
     }
   } catch (e) { console.warn('Projects fetch:', e); }
+
+  // Pré-seleciona squad se chegou via ?workspaceId=xxx
+  if (filterSquad) {
+    const squadFilter = document.getElementById('filter-squad');
+    if (squadFilter) {
+      squadFilter.value = filterSquad;
+      squadFilter.style.display = '';
+      filterVisibility.squad = true;
+    }
+  }
 
   // Load task types for renderTaskRow custom fields
   try {
@@ -227,6 +248,11 @@ function applyFilters() {
   if (filterAssignee) result = result.filter(t => t.assignees?.includes(filterAssignee));
   if (filterArea)     result = result.filter(t => t.requestingArea === filterArea);
   if (filterTag)      result = result.filter(t => (t.tags || []).includes(filterTag));
+  if (filterSquad === '__none__') {
+    result = result.filter(t => !t.workspaceId);
+  } else if (filterSquad) {
+    result = result.filter(t => t.workspaceId === filterSquad);
+  }
 
   // Date preset filters
   if (filterDatePreset) {
@@ -565,6 +591,7 @@ function _attachPageEvents() {
   document.getElementById('filter-status')?.addEventListener('change', e => { filterStatus = e.target.value; applyFilters(); });
   document.getElementById('filter-priority')?.addEventListener('change', e => { filterPriority = e.target.value; applyFilters(); });
   document.getElementById('filter-project')?.addEventListener('change', e => { filterProject = e.target.value; applyFilters(); });
+  document.getElementById('filter-squad')?.addEventListener('change', e => { filterSquad = e.target.value; applyFilters(); });
   document.getElementById('filter-assignee')?.addEventListener('change', e => { filterAssignee = e.target.value; applyFilters(); });
   document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
   document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; applyFilters(); });
@@ -595,6 +622,7 @@ function openFilterConfigModal() {
     { key: 'status',     label: 'Status' },
     { key: 'priority',   label: 'Prioridade' },
     { key: 'project',    label: 'Projeto' },
+    { key: 'squad',      label: 'Squad / Workspace' },
     { key: 'assignee',   label: 'Responsável' },
     { key: 'datePreset', label: 'Prazo (hoje, semana, mês…)' },
     { key: 'area',       label: 'Área solicitante' },
