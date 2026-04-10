@@ -692,11 +692,25 @@ async function openGenerationEditor({ tip, dest, area, segments, format, initial
         <div id="gfl-right-panel" style="overflow-y:auto;padding:20px;"></div>
       </div>
       <div style="padding:14px 20px;border-top:1px solid var(--border-subtle);
-        background:var(--bg-surface);display:flex;gap:10px;flex-shrink:0;">
-        <button class="btn btn-secondary" id="gfl-cancel" style="flex:1;">← Voltar</button>
-        <button class="btn btn-primary"   id="gfl-confirm" style="flex:2;font-weight:600;">
-          ✈ Gerar ${esc(fmtLabel)}
-        </button>
+        background:var(--bg-surface);flex-shrink:0;display:flex;flex-direction:column;gap:10px;">
+        ${format === 'web' ? `
+          <div>
+            <label style="font-size:0.75rem;font-weight:600;color:var(--text-muted);
+              display:block;margin-bottom:4px;">
+              Nome do cliente <span style="font-weight:400;">(opcional — usado na URL amigável)</span>
+            </label>
+            <input type="text" id="gfl-client-name" placeholder="ex.: João e Maria"
+              style="width:100%;padding:8px 10px;font-size:0.8125rem;
+              background:var(--bg-base);border:1px solid var(--border-subtle);
+              border-radius:var(--radius-sm);">
+          </div>
+        ` : ''}
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-secondary" id="gfl-cancel" style="flex:1;">← Voltar</button>
+          <button class="btn btn-primary"   id="gfl-confirm" style="flex:2;font-weight:600;">
+            ✈ Gerar ${esc(fmtLabel)}
+          </button>
+        </div>
       </div>
     </div>`;
 
@@ -743,12 +757,14 @@ async function openGenerationEditor({ tip, dest, area, segments, format, initial
     if (!btn || btn.disabled) return;
     btn.disabled = true; btn.textContent = '⏳ Gerando…';
     try {
+      const clientName = document.getElementById('gfl-client-name')?.value?.trim() || '';
       const result = await generateTip({
         tip:            workingTips[0].tip,
         dest,
         area, segments, format,
         extraTips:      [],
         imagesOverride: selectedImages,
+        clientName,
       });
       await recordGeneration({
         areaId:    area?.id  || null,
