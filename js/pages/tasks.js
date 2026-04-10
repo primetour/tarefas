@@ -50,6 +50,20 @@ function saveFilterVisibility() {
 /* \u2500\u2500\u2500 Render principal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 export async function renderTasks(container) {
   loadFilterVisibility();
+
+  // Lê query params do hash (ex: #tasks?projectId=xxx) para pré-filtrar
+  // Reset antes de aplicar query para evitar "lembrar" um filtro antigo de outra navegação
+  let urlProjectId = '';
+  try {
+    const rawHash = window.location.hash || '';
+    const qIdx = rawHash.indexOf('?');
+    if (qIdx >= 0) {
+      const qs = new URLSearchParams(rawHash.slice(qIdx + 1));
+      urlProjectId = qs.get('projectId') || '';
+    }
+  } catch (_) { /* noop */ }
+  filterProject = urlProjectId;
+
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
@@ -147,6 +161,12 @@ export async function renderTasks(container) {
         opt.textContent = `${p.icon} ${p.name}`;
         projFilter.appendChild(opt);
       });
+      // Se chegou com ?projectId=xxx, seleciona no filtro e garante visível
+      if (filterProject) {
+        projFilter.value = filterProject;
+        projFilter.style.display = '';
+        filterVisibility.project = true;
+      }
     }
   } catch (e) { console.warn('Projects fetch:', e); }
 
