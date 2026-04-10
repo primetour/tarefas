@@ -421,6 +421,60 @@
 .subtask-item:hover .subtask-add-due { opacity: 0.7; }
 .subtask-add-due:hover { opacity: 1 !important; }
 
+/* Drag handle */
+.subtask-drag-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  letter-spacing: -2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  user-select: none;
+  padding: 0 2px;
+  line-height: 1;
+}
+.subtask-item:hover .subtask-drag-handle { opacity: 0.6; }
+.subtask-drag-handle:hover { opacity: 1 !important; }
+.subtask-drag-handle:active { cursor: grabbing; }
+.subtask-item.dragging {
+  opacity: 0.45;
+  background: var(--bg-elevated);
+  border-color: var(--border-accent);
+}
+
+/* Label clicável p/ edição inline */
+.subtask-label { cursor: text; }
+.subtask-edit-input {
+  flex: 1;
+  font-size: 0.875rem;
+  padding: 4px 6px;
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input, var(--bg-elevated));
+  color: var(--text-primary);
+  font-family: inherit;
+  outline: none;
+}
+
+/* Botão remover subtarefa */
+.subtask-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 6px;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+  border-radius: var(--radius-sm);
+}
+.subtask-item:hover .subtask-delete-btn { opacity: 0.6; }
+.subtask-delete-btn:hover {
+  opacity: 1 !important;
+  color: var(--color-danger);
+}
+
 /* Comments */
 .comment-list { display: flex; flex-direction: column; gap: 12px; }
 .comment-item {
@@ -675,6 +729,59 @@
   background: var(--brand-gold);
   opacity: 0.6;
   z-index: 1;
+}
+
+/* ─── Subtask touchpoints na timeline ─────────────────────── */
+.timeline-subtask-dot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-card);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  z-index: 3;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.timeline-subtask-dot:hover {
+  transform: translate(-50%, -50%) scale(1.35);
+  box-shadow: 0 0 0 2px var(--brand-gold), 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.timeline-subtask-dot.done {
+  background: #22c55e;
+  border-color: rgba(255, 255, 255, 0.95);
+}
+.timeline-subtask-dot.dated {
+  border-style: solid;
+}
+.timeline-subtask-dot.auto {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.tl-subtask-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tl-flash {
+  animation: tl-flash-anim 1.2s ease;
+}
+@keyframes tl-flash-anim {
+  0%, 100% { box-shadow: none; }
+  30%      { box-shadow: 0 0 0 2px var(--brand-gold), 0 0 14px rgba(212, 168, 67, 0.5); }
 }
 
 /* ─── PROJECT CARDS ───────────────────────────────────────── */
