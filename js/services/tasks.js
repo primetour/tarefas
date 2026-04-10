@@ -114,7 +114,10 @@ export async function createTask(data) {
     nucleos:          data.nucleos              || [],
     outOfCalendar:    data.outOfCalendar        || false,
     deliveryLink:     data.deliveryLink?.trim() || '',
-    subtasks:    [],
+    // Rastreabilidade para tarefas geradas por templates recorrentes
+    recurringFromTemplateId: data.recurringFromTemplateId || null,
+    recurringOccurrence:     data.recurringOccurrence     || null,
+    subtasks:    Array.isArray(data.subtasks) ? data.subtasks : [],
     comments:    [],
     attachments: [],
     order:       data.order       ?? Date.now(),
@@ -388,6 +391,40 @@ export async function updateSubtaskDue(taskId, subtaskId, dueDate, currentSubtas
     updatedAt: serverTimestamp(),
   });
   return updated;
+}
+
+/* ─── Atualizar título da subtarefa ──────────────────────── */
+export async function updateSubtaskTitle(taskId, subtaskId, title, currentSubtasks) {
+  const trimmed = String(title || '').trim();
+  if (!trimmed) throw new Error('Título não pode ficar vazio.');
+  const updated = (currentSubtasks || []).map(s =>
+    s.id === subtaskId ? { ...s, title: trimmed } : s
+  );
+  await updateDoc(doc(db, 'tasks', taskId), {
+    subtasks:  updated,
+    updatedAt: serverTimestamp(),
+  });
+  return updated;
+}
+
+/* ─── Remover subtarefa ──────────────────────────────────── */
+export async function deleteSubtask(taskId, subtaskId, currentSubtasks) {
+  const updated = (currentSubtasks || []).filter(s => s.id !== subtaskId);
+  await updateDoc(doc(db, 'tasks', taskId), {
+    subtasks:  updated,
+    updatedAt: serverTimestamp(),
+  });
+  return updated;
+}
+
+/* ─── Reordenar subtarefas (drag and drop) ───────────────── */
+export async function reorderSubtasks(taskId, orderedSubtasks) {
+  // orderedSubtasks: array já na ordem desejada
+  await updateDoc(doc(db, 'tasks', taskId), {
+    subtasks:  orderedSubtasks,
+    updatedAt: serverTimestamp(),
+  });
+  return orderedSubtasks;
 }
 
 /* ─── Adicionar comentário ───────────────────────────────── */
