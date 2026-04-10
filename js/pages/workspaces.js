@@ -27,11 +27,11 @@ export async function renderWorkspaces(container) {
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">Workspaces</h1>
-        <p class="page-subtitle">Ambientes de trabalho por setor ou grupo</p>
+        <h1 class="page-title">Squads / Workspaces</h1>
+        <p class="page-subtitle">Times de trabalho temporários ou permanentes — agrupam pessoas, projetos e tarefas de uma iniciativa</p>
       </div>
       <div class="page-header-actions">
-        ${canCreate ? `<button class="btn btn-primary" id="new-ws-btn">+ Novo Workspace</button>` : ''}
+        ${canCreate ? `<button class="btn btn-primary" id="new-ws-btn">+ Novo Squad</button>` : ''}
       </div>
     </div>
 
@@ -42,9 +42,11 @@ export async function renderWorkspaces(container) {
       font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;">
       <span style="font-size:1rem;flex-shrink:0;">ℹ</span>
       <span>
-        Workspaces isolam tarefas e projetos por setor ou grupo de trabalho.
-        Um usuário pode fazer parte de múltiplos workspaces e ver todos eles simultaneamente.
-        O admin do workspace pode convidar membros e personalizar o ambiente.
+        <strong>Squads</strong> são grupos de trabalho que agrupam pessoas, projetos e tarefas de uma mesma iniciativa.
+        Diferente do <em>setor</em> (que é fixo no cadastro do usuário), um squad pode ser
+        <strong>monossetorial</strong> (ex: "Time Vendas SP") ou <strong>multissetor</strong>
+        (ex: "Feirão 2026" juntando Vendas, Marketing e Operações).
+        Na sidebar você escolhe quais squads ficam ativos (afetam o que você vê) e qual é o seu padrão (onde novas tarefas são criadas).
       </span>
     </div>
 
@@ -81,14 +83,14 @@ function renderGrid() {
       <div style="grid-column:1/-1;">
         <div class="empty-state" style="min-height:40vh;">
           <div class="empty-state-icon">◈</div>
-          <div class="empty-state-title">Nenhum workspace ainda</div>
+          <div class="empty-state-title">Nenhum squad ainda</div>
           <p class="text-sm text-muted">
             ${store.can('workspace_create')
-              ? 'Crie o primeiro workspace para começar a organizar tarefas por setor.'
-              : 'Você ainda não foi adicionado a nenhum workspace. Contate seu gestor.'}
+              ? 'Crie o primeiro squad para agrupar projetos e tarefas de uma iniciativa ou time.'
+              : 'Você ainda não foi adicionado a nenhum squad. Contate seu gestor.'}
           </p>
           ${store.can('workspace_create') ? `
-            <button class="btn btn-primary mt-4" id="empty-new-ws-btn">+ Criar Workspace</button>
+            <button class="btn btn-primary mt-4" id="empty-new-ws-btn">+ Criar Squad</button>
           ` : ''}
         </div>
       </div>`;
@@ -123,7 +125,11 @@ function renderGrid() {
             <div style="min-width:0;">
               <div style="font-weight:600;color:var(--text-primary);font-size:0.9375rem;
                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(ws.name)}</div>
-              ${ws.sector ? `<div style="font-size:0.75rem;color:var(--text-muted);">${esc(ws.sector)}</div>` : ''}
+              <div style="font-size:0.75rem;color:var(--text-muted);display:flex;align-items:center;gap:6px;">
+                ${ws.multiSector
+                  ? `<span title="Squad multissetor — aceita membros de qualquer setor">⇌ Multissetor</span>`
+                  : (ws.sector ? esc(ws.sector) : 'Sem setor definido')}
+              </div>
             </div>
           </div>
           ${isAdmin || store.can('system_view_all') ? `
@@ -180,29 +186,32 @@ function openWorkspaceModal(ws = null) {
   const isEdit = !!ws;
 
   modal.open({
-    title:   isEdit ? `Editar — ${ws.name}` : 'Novo Workspace',
+    title:   isEdit ? `Editar squad — ${ws.name}` : 'Novo Squad',
     size:    'md',
     content: `
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div class="form-group">
-          <label class="form-label">Nome *</label>
+          <label class="form-label">Nome do squad *</label>
           <input type="text" class="form-input" id="ws-name"
-            value="${esc(ws?.name||'')}" placeholder="Ex: Marketing e Comunicação" maxlength="60" />
+            value="${esc(ws?.name||'')}" placeholder="Ex: Feirão 2026, Time Vendas SP, Squad Lançamento App" maxlength="60" />
           <span class="form-error-msg" id="ws-name-error"></span>
         </div>
         <div class="form-group">
-          <label class="form-label">Setor / Área</label>
+          <label class="form-label">Setor principal (opcional)</label>
           <select class="form-select" id="ws-sector">
-            <option value="">— Selecione a área —</option>
+            <option value="">— Nenhum setor específico —</option>
             ${REQUESTING_AREAS.map(a =>
               `<option value="${a}" ${(ws?.sector||'')=== a?'selected':''}>${a}</option>`
             ).join('')}
           </select>
+          <small style="display:block;margin-top:4px;font-size:0.75rem;color:var(--text-muted);">
+            Usado para sugerir membros quando não é multissetor. Deixe em branco se o squad é transversal.
+          </small>
         </div>
         <div class="form-group">
           <label class="form-label">Descrição</label>
           <textarea class="form-textarea" id="ws-description" rows="2" maxlength="200"
-            placeholder="Descreva o propósito deste workspace...">${esc(ws?.description||'')}</textarea>
+            placeholder="Objetivo, prazo previsto, escopo do squad...">${esc(ws?.description||'')}</textarea>
         </div>
         <div class="form-group">
           <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;
@@ -263,7 +272,7 @@ function openWorkspaceModal(ws = null) {
     footer: [
       { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
       {
-        label: isEdit ? 'Salvar' : 'Criar workspace',
+        label: isEdit ? 'Salvar' : 'Criar squad',
         class: 'btn-primary', closeOnClick: false,
         onClick: async (_, { close }) => {
           const name = document.getElementById('ws-name')?.value?.trim();
@@ -277,6 +286,7 @@ function openWorkspaceModal(ws = null) {
             sector:      document.getElementById('ws-sector')?.value?.trim() || '',
             color:       document.getElementById('ws-color')?.value || WORKSPACE_COLORS[0],
             icon:        document.getElementById('ws-icon')?.value  || WORKSPACE_ICONS[0],
+            multiSector: !!document.getElementById('ws-multisector')?.checked,
           };
 
           const btn = document.querySelector('.modal-footer .btn-primary');

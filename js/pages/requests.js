@@ -288,13 +288,22 @@ async function openRequestDetail(req) {
             placeholder="Adicione observações internas...">${esc(req.internalNote||'')}</textarea>
         </div>
 
-        <!-- Workspace (for conversion) -->
+        <!-- Squad / Workspace (for conversion) -->
         ${req.status === 'pending' ? `
           <div class="form-group">
-            <label class="form-label">Workspace para conversão</label>
+            <label class="form-label">
+              Squad / Workspace para conversão
+              <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:6px;">
+                — onde a tarefa gerada será agrupada
+              </span>
+            </label>
             <select class="form-select" id="req-workspace">
-              <option value="">— Selecione o workspace —</option>
-              ${workspaces.map(w => `<option value="${w.id}">${esc(w.icon||'◈')} ${esc(w.name)}</option>`).join('')}
+              <option value="" ${!store.get('currentWorkspace')?.id ? 'selected' : ''}>— Sem squad (apenas por setor)</option>
+              ${workspaces.map(w => `
+                <option value="${w.id}" ${store.get('currentWorkspace')?.id === w.id ? 'selected' : ''}>
+                  ${esc(w.icon||'◈')} ${esc(w.name)}${w.multiSector ? ' · multissetor' : ''}
+                </option>
+              `).join('')}
             </select>
           </div>
         ` : ''}
