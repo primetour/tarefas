@@ -28,6 +28,7 @@ import { renderAudit }       from './pages/audit.js';
 import { renderProfile }     from './pages/profile.js';
 import { renderRoles }       from './pages/roles.js';
 import { renderWorkspaces }   from './pages/workspaces.js';
+import { renderSquadWorkspace } from './pages/squadWorkspace.js';
 import { renderTaskTypes }    from './pages/taskTypes.js';
 import { renderCapacity }     from './pages/capacity.js';
 import { renderTeam }         from './pages/team.js';
@@ -253,6 +254,7 @@ function setupRouter() {
     'dashboards':   async () => { destroyDashboards(); await renderDashboards(content); },
     'audit':        async () => { await renderAudit(content); },
     'workspaces':   async () => { await renderWorkspaces(content); },
+    'squad':        async () => { await renderSquadWorkspace(content); },
     'task-types':   async () => { await renderTaskTypes(content); },
     'capacity':     async () => { await renderTeam(content); }, // capacity merged into team
     'goals':        async () => { await renderGoals(content); },
@@ -328,6 +330,7 @@ function setupRouter() {
       'dashboard': () => import('./pages/dashboard.js').then(m => m.renderDashboard(content)),
       'dashboards':() => { destroyDashboards(); import('./pages/dashboards.js').then(m => m.renderDashboards(content)); },
       'csat':      () => { destroyCsat(); import('./pages/csat.js').then(m => m.renderCsat(content)); },
+      'squad':     () => import('./pages/squadWorkspace.js').then(m => m.renderSquadWorkspace(content)),
     };
     refreshMap[route]?.()?.catch?.(console.warn);
   });
