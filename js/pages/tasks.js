@@ -543,9 +543,16 @@ function buildGroups() {
 
 /* \u2500\u2500\u2500 Event Handlers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 function _attachPageEvents() {
-  document.getElementById('new-task-btn')?.addEventListener('click', () => openNewTask());
-  document.getElementById('tasks-export-xls')?.addEventListener('click', exportTasksXls);
-  document.getElementById('tasks-export-pdf')?.addEventListener('click', exportTasksPdf);
+  // Use onXxx assignments (not addEventListener) para os botões críticos:
+  // assim, se renderTasks rodar duas vezes em paralelo (ex: initial render +
+  // store.subscribe('activeWorkspaces')), o handler não é duplicado e o clique
+  // não abre o modal duas vezes.
+  const newBtn = document.getElementById('new-task-btn');
+  if (newBtn) newBtn.onclick = () => openNewTask();
+  const xlsBtn = document.getElementById('tasks-export-xls');
+  if (xlsBtn) xlsBtn.onclick = exportTasksXls;
+  const pdfBtn = document.getElementById('tasks-export-pdf');
+  if (pdfBtn) pdfBtn.onclick = exportTasksPdf;
 
   // Search
   let timer;
