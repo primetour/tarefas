@@ -7,7 +7,8 @@ import { toast }  from './toast.js';
 import { store }  from '../store.js';
 import {
   createTask, updateTask, deleteTask,
-  addSubtask, toggleSubtask, updateSubtaskDue, addComment,
+  addSubtask, toggleSubtask, updateSubtaskDue, updateSubtaskTitle,
+  deleteSubtask, reorderSubtasks, addComment,
   STATUSES, PRIORITIES,
   NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
 } from '../services/tasks.js';
@@ -164,7 +165,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   // Bind events after next paint — use requestAnimationFrame for reliability
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      bindEvents(task, users, currentTags, currentAssignees, isEdit, allAbsences);
+      bindEvents(task, users, currentTags, currentAssignees, isEdit, allAbsences, m.getElement());
 
       // Populate meta selector async — show individual metas (not goals)
       import('../services/goals.js').then(({ fetchGoals }) => {
@@ -343,21 +344,21 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
           </div>
         </div>
       ` : ''}
-      ${isEdit ? `
-        <div class="task-detail-field">
-          <div class="task-detail-label" style="display:flex;align-items:center;justify-content:space-between;">
-            <span>Subtarefas</span>
-            <span class="subtask-progress" id="subtask-progress" style="font-size:0.6875rem;color:var(--text-muted);">${getSubtaskProgress(task.subtasks||[])}</span>
-          </div>
-          <div class="subtask-progress-bar" id="subtask-progress-bar" style="margin:4px 0 8px;">
-            ${renderSubtaskProgressBar(task.subtasks||[])}
-          </div>
-          <div class="subtask-list" id="subtask-list">${renderSubtasks(task.subtasks||[])}</div>
-          <div class="quick-add-bar">
-            <span style="color:var(--text-muted);font-size:1rem;">+</span>
-            <input type="text" class="quick-add-input" id="subtask-input" placeholder="Adicionar subtarefa... (Enter)" maxlength="200" />
-          </div>
+      <div class="task-detail-field">
+        <div class="task-detail-label" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Subtarefas</span>
+          <span class="subtask-progress" id="subtask-progress" style="font-size:0.6875rem;color:var(--text-muted);">${getSubtaskProgress(task.subtasks||[])}</span>
         </div>
+        <div class="subtask-progress-bar" id="subtask-progress-bar" style="margin:4px 0 8px;">
+          ${renderSubtaskProgressBar(task.subtasks||[])}
+        </div>
+        <div class="subtask-list" id="subtask-list">${renderSubtasks(task.subtasks||[])}</div>
+        <div class="quick-add-bar">
+          <span style="color:var(--text-muted);font-size:1rem;">+</span>
+          <input type="text" class="quick-add-input" id="subtask-input" placeholder="Adicionar subtarefa... (Enter)" maxlength="200" />
+        </div>
+      </div>
+      ${isEdit ? `
         <div class="task-detail-field mt-6">
           <div class="task-detail-label">Comentários</div>
           <div class="comment-list" id="comment-list">${renderComments(task.comments||[])}</div>
@@ -548,7 +549,11 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
   </div>`;
 }
 
-function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences = []) {
+function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences = [], rootEl = null) {
+  // Scope used for subtask (and other) DOM queries. Falls back to `document`
+  // when a modal root isn't provided, preserving legacy behavior.
+  const root = rootEl || document;
+  const qId = (id) => (rootEl ? rootEl.querySelector('#' + id) : document.getElementById(id));
   // Recorrência (apenas criação)
   if (!isEdit) {
     const recToggle = document.getElementById('tm-recurring-toggle');
@@ -762,28 +767,68 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
   document.getElementById('tm-start')?.addEventListener('change', updateAbsenceIndicators);
   document.getElementById('tm-due')?.addEventListener('change', updateAbsenceIndicators);
 
-  if (!isEdit) return;
-
-  // Subtasks
+  // ── Subtasks (funciona tanto em criar quanto em editar) ──
+  // Em "criar" (isEdit=false), as operações alteram apenas task.subtasks em memória
+  // e são persistidas no createTask() ao salvar. Em "editar", persistem via services.
+  // IMPORTANT: todas as queries são escopadas ao `root` (o backdrop do modal) para
+  // evitar colisões com elementos antigos/duplicados fora deste modal.
+  const subtaskList = qId('subtask-list');
   const refreshSubtaskUI = () => {
-    const el = document.getElementById('subtask-progress');
+    const el = qId('subtask-progress');
     if (el) el.textContent = getSubtaskProgress(task.subtasks);
-    const bar = document.getElementById('subtask-progress-bar');
+    const bar = qId('subtask-progress-bar');
     if (bar) bar.innerHTML = renderSubtaskProgressBar(task.subtasks);
   };
-  document.getElementById('subtask-input')?.addEventListener('keydown', async (e) => {
-    if (e.key==='Enter') {
-      const val=e.target.value.trim(); if(!val)return; e.preventDefault();
-      try {
-        const sub=await addSubtask(task.id,val);
-        task.subtasks=[...(task.subtasks||[]),sub]; e.target.value='';
-        document.getElementById('subtask-list')?.insertAdjacentHTML('beforeend',renderSubtaskItem(sub));
-        refreshSubtaskUI();
-      } catch(err){toast.error(err.message);}
-    }
+  const rerenderSubtaskList = () => {
+    if (subtaskList) subtaskList.innerHTML = renderSubtasks(task.subtasks || []);
+    refreshSubtaskUI();
+  };
+
+  qId('subtask-input')?.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    const val = e.target.value.trim();
+    if (!val) return;
+    e.preventDefault();
+    try {
+      let sub;
+      if (isEdit) {
+        sub = await addSubtask(task.id, val);
+        task.subtasks = [...(task.subtasks || []), sub];
+      } else {
+        // Modo criar: gera subtarefa local, sem tocar no Firestore
+        sub = {
+          id:        `sub_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+          title:     val,
+          done:      false,
+          createdAt: new Date().toISOString(),
+          createdBy: store.get('currentUser')?.uid || '',
+        };
+        task.subtasks = [...(task.subtasks || []), sub];
+      }
+      e.target.value = '';
+      subtaskList?.insertAdjacentHTML('beforeend', renderSubtaskItem(sub));
+      refreshSubtaskUI();
+    } catch (err) { toast.error(err.message); }
   });
-  document.getElementById('subtask-list')?.addEventListener('click', async (e) => {
-    // Add due date handler
+
+  subtaskList?.addEventListener('click', async (e) => {
+    // Delete
+    const delBtn = e.target.closest('[data-sub-del]');
+    if (delBtn) {
+      const subId = delBtn.dataset.subDel;
+      try {
+        if (isEdit) {
+          task.subtasks = await deleteSubtask(task.id, subId, task.subtasks);
+        } else {
+          task.subtasks = (task.subtasks || []).filter(s => s.id !== subId);
+        }
+        subtaskList?.querySelector(`.subtask-item[data-sub="${subId}"]`)?.remove();
+        refreshSubtaskUI();
+      } catch (err) { toast.error(err.message); }
+      return;
+    }
+
+    // Add due date
     const dueAdd = e.target.closest('[data-sub-due-add]');
     if (dueAdd) {
       const subId = dueAdd.dataset.subDueAdd;
@@ -796,8 +841,14 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
       input.addEventListener('change', async () => {
         if (!input.value) return;
         try {
-          task.subtasks = await updateSubtaskDue(task.id, subId, input.value, task.subtasks);
-          const row = document.querySelector(`.subtask-item[data-sub="${subId}"]`);
+          if (isEdit) {
+            task.subtasks = await updateSubtaskDue(task.id, subId, input.value, task.subtasks);
+          } else {
+            task.subtasks = (task.subtasks || []).map(s =>
+              s.id === subId ? { ...s, dueDate: input.value } : s
+            );
+          }
+          const row = subtaskList?.querySelector(`.subtask-item[data-sub="${subId}"]`);
           if (row) row.outerHTML = renderSubtaskItem(task.subtasks.find(s => s.id === subId));
           refreshSubtaskUI();
         } catch (err) { toast.error(err.message); }
@@ -815,6 +866,7 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
       });
       return;
     }
+
     // Edit existing due date
     const dueChip = e.target.closest('[data-sub-due]');
     if (dueChip && !dueChip.dataset.subDueAdd) {
@@ -828,23 +880,135 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
       input.focus();
       input.addEventListener('change', async () => {
         try {
-          task.subtasks = await updateSubtaskDue(task.id, subId, input.value || null, task.subtasks);
-          const row = document.querySelector(`.subtask-item[data-sub="${subId}"]`);
+          const newVal = input.value || null;
+          if (isEdit) {
+            task.subtasks = await updateSubtaskDue(task.id, subId, newVal, task.subtasks);
+          } else {
+            task.subtasks = (task.subtasks || []).map(s =>
+              s.id === subId ? { ...s, dueDate: newVal } : s
+            );
+          }
+          const row = subtaskList?.querySelector(`.subtask-item[data-sub="${subId}"]`);
           if (row) row.outerHTML = renderSubtaskItem(task.subtasks.find(s => s.id === subId));
         } catch (err) { toast.error(err.message); }
       });
       return;
     }
-    const check=e.target.closest('.task-check[data-sub-id]'); if(!check)return;
+
+    // Inline edit title
+    const label = e.target.closest('[data-sub-edit]');
+    if (label) {
+      const subId = label.dataset.subEdit;
+      const sub = task.subtasks.find(s => s.id === subId);
+      if (!sub) return;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = sub.title;
+      input.maxLength = 200;
+      input.className = 'subtask-edit-input';
+      label.replaceWith(input);
+      input.focus();
+      input.select();
+      const commit = async () => {
+        const newTitle = input.value.trim();
+        if (!newTitle || newTitle === sub.title) {
+          input.replaceWith(Object.assign(document.createElement('span'), {
+            className: 'subtask-label', textContent: sub.title, title: 'Clique para editar',
+          }));
+          subtaskList?.querySelector(`.subtask-item[data-sub="${subId}"] .subtask-label`)
+            ?.setAttribute('data-sub-edit', subId);
+          return;
+        }
+        try {
+          if (isEdit) {
+            task.subtasks = await updateSubtaskTitle(task.id, subId, newTitle, task.subtasks);
+          } else {
+            task.subtasks = (task.subtasks || []).map(s =>
+              s.id === subId ? { ...s, title: newTitle } : s
+            );
+          }
+          const row = subtaskList?.querySelector(`.subtask-item[data-sub="${subId}"]`);
+          if (row) row.outerHTML = renderSubtaskItem(task.subtasks.find(s => s.id === subId));
+        } catch (err) { toast.error(err.message); }
+      };
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+        if (ev.key === 'Escape') { input.value = sub.title; input.blur(); }
+      });
+      return;
+    }
+
+    // Toggle check
+    const check = e.target.closest('.task-check[data-sub-id]');
+    if (!check) return;
     try {
-      task.subtasks=await toggleSubtask(task.id,check.dataset.subId,task.subtasks);
-      const sub=task.subtasks.find(s=>s.id===check.dataset.subId);
-      const row=check.closest('.subtask-item');
-      if(sub?.done){check.classList.add('checked');check.textContent='✓';row?.classList.add('done');}
-      else{check.classList.remove('checked');check.textContent='';row?.classList.remove('done');}
+      if (isEdit) {
+        task.subtasks = await toggleSubtask(task.id, check.dataset.subId, task.subtasks);
+      } else {
+        task.subtasks = (task.subtasks || []).map(s =>
+          s.id === check.dataset.subId ? { ...s, done: !s.done } : s
+        );
+      }
+      const sub = task.subtasks.find(s => s.id === check.dataset.subId);
+      const row = check.closest('.subtask-item');
+      if (sub?.done) { check.classList.add('checked'); check.textContent = '✓'; row?.classList.add('done'); }
+      else           { check.classList.remove('checked'); check.textContent = '';  row?.classList.remove('done'); }
       refreshSubtaskUI();
-    } catch(err){toast.error(err.message);}
+    } catch (err) { toast.error(err.message); }
   });
+
+  // ── Drag and drop (reorder) ──
+  (() => {
+    const list = subtaskList;
+    if (!list) return;
+    let draggingId = null;
+
+    list.addEventListener('dragstart', (e) => {
+      const item = e.target.closest('.subtask-item');
+      if (!item) return;
+      draggingId = item.dataset.sub;
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', draggingId); } catch (_) {}
+    });
+
+    list.addEventListener('dragend', (e) => {
+      e.target.closest('.subtask-item')?.classList.remove('dragging');
+      list.querySelectorAll('.subtask-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+      draggingId = null;
+    });
+
+    list.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const target = e.target.closest('.subtask-item');
+      if (!target || target.dataset.sub === draggingId) return;
+      const draggingEl = list.querySelector('.subtask-item.dragging');
+      if (!draggingEl) return;
+      const rect = target.getBoundingClientRect();
+      const after = (e.clientY - rect.top) > rect.height / 2;
+      if (after) target.after(draggingEl);
+      else       target.before(draggingEl);
+    });
+
+    list.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      // Reconstruir a ordem a partir do DOM
+      const newOrderIds = Array.from(list.querySelectorAll('.subtask-item')).map(el => el.dataset.sub);
+      const reordered = newOrderIds
+        .map(id => (task.subtasks || []).find(s => s.id === id))
+        .filter(Boolean);
+      if (reordered.length !== (task.subtasks || []).length) return;
+      task.subtasks = reordered;
+      if (isEdit) {
+        try { await reorderSubtasks(task.id, reordered); }
+        catch (err) { toast.error(err.message); }
+      }
+    });
+  })();
+
+  if (!isEdit) return;
 
   // Comments
   const send = async () => {
@@ -894,6 +1058,7 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
 
   const data={
     title,
+    subtasks:     Array.isArray(task.subtasks) ? task.subtasks : [],
     description:  $('tm-desc')?.value?.trim()||'',
     goalId:       ($('tm-goal')?.value || '').split(':')[0] || null,
     goalMetaRef:  ($('tm-goal')?.value || '').includes(':') ? ($('tm-goal').value.split(':').slice(1).join(':')) : null,
@@ -1007,10 +1172,12 @@ function renderSubtaskProgressBar(subtasks) {
 function renderSubtasks(subtasks){return subtasks.map(s=>renderSubtaskItem(s)).join('');}
 function renderSubtaskItem(s){
   const dueDisplay = s.dueDate ? formatSubtaskDue(s.dueDate) : '';
-  return `<div class="subtask-item ${s.done?'done':''}" data-sub="${s.id}">
+  return `<div class="subtask-item ${s.done?'done':''}" data-sub="${s.id}" draggable="true">
+    <span class="subtask-drag-handle" title="Arrastar para reordenar">⋮⋮</span>
     <div class="task-check ${s.done?'checked':''}" data-sub-id="${s.id}">${s.done?'✓':''}</div>
-    <span class="subtask-label">${esc(s.title)}</span>
+    <span class="subtask-label" data-sub-edit="${s.id}" title="Clique para editar">${esc(s.title)}</span>
     ${dueDisplay ? `<span class="subtask-due ${dueDisplay.className}" title="Vencimento da subtarefa" data-sub-due="${s.id}">${dueDisplay.text}</span>` : `<button class="subtask-add-due" data-sub-due-add="${s.id}" title="Definir vencimento" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:0.75rem;padding:0 4px;">📅</button>`}
+    <button class="subtask-delete-btn" data-sub-del="${s.id}" title="Remover subtarefa" type="button">×</button>
     </div>`;
 }
 function formatSubtaskDue(dateStr) {
