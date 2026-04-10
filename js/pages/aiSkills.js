@@ -21,7 +21,8 @@ const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 
 let allSkills = [];
 let allKnowledge = [];
-let currentTab = 'skills'; // 'skills' | 'config' | 'knowledge' | 'logs'
+let currentTab = 'skills'; // 'skills' | 'config' | 'knowledge' | 'hints' | 'logs'
+let allModuleHints = [];
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderAiSkills(container) {
@@ -59,6 +60,9 @@ export async function renderAiSkills(container) {
       <button class="ai-tab" data-tab="knowledge" style="padding:10px 20px;background:none;border:none;
         border-bottom:2px solid transparent;color:var(--text-muted);font-weight:500;cursor:pointer;
         font-size:0.875rem;">Base de Conhecimento</button>
+      <button class="ai-tab" data-tab="hints" style="padding:10px 20px;background:none;border:none;
+        border-bottom:2px solid transparent;color:var(--text-muted);font-weight:500;cursor:pointer;
+        font-size:0.875rem;">Prompts por Módulo</button>
       <button class="ai-tab" data-tab="logs" style="padding:10px 20px;background:none;border:none;
         border-bottom:2px solid transparent;color:var(--text-muted);font-weight:500;cursor:pointer;
         font-size:0.875rem;">Uso e Logs</button>
@@ -82,6 +86,9 @@ export async function renderAiSkills(container) {
       btn.style.fontWeight = '600';
       btn.classList.add('active');
       currentTab = btn.dataset.tab;
+      // Botão "+ Nova Skill" só faz sentido na aba Skills
+      const newBtn = document.getElementById('new-skill-btn');
+      if (newBtn) newBtn.style.display = (currentTab === 'skills') ? '' : 'none';
       renderTab();
     });
   });
@@ -101,6 +108,7 @@ function renderTab() {
   if (!el) return;
   if (currentTab === 'config')    return renderConfigTab(el);
   if (currentTab === 'knowledge') return renderKnowledgeTab(el);
+  if (currentTab === 'hints')     return renderHintsTab(el);
   if (currentTab === 'logs')      return renderLogsTab(el);
   renderSkillsTab(el);
 }
@@ -981,6 +989,270 @@ async function renderLogsTab(el) {
       </table>
     </div>
   `;
+}
+
+/* ═══════════════════════════════════════════════════════════ *
+ *  TAB: Prompts por Módulo                                   *
+ * ═══════════════════════════════════════════════════════════ */
+async function renderHintsTab(el) {
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+      flex-wrap:wrap;margin-bottom:20px;">
+      <div style="max-width:640px;">
+        <h3 style="margin:0 0 6px;font-size:1rem;color:var(--text-primary);">Prompts por Módulo</h3>
+        <p style="margin:0;font-size:0.8125rem;color:var(--text-muted);line-height:1.55;">
+          Cada módulo do sistema tem um prompt próprio que orienta a IA sobre formatos de campo,
+          enums válidos e fluxos corretos. Edite aqui sem precisar mexer em código — mudanças
+          entram em vigor na próxima mensagem do chat. Se algo der errado, use
+          <strong>Restaurar padrão</strong> para voltar ao default.
+        </p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" id="hints-import-defaults" style="font-size:0.8125rem;">
+          ⤓ Importar defaults
+        </button>
+        <button class="btn btn-ghost" id="hints-refresh" style="font-size:0.8125rem;">
+          ↻ Atualizar
+        </button>
+      </div>
+    </div>
+
+    <div id="hints-list" style="display:grid;gap:12px;">
+      <div style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.875rem;">
+        Carregando prompts…
+      </div>
+    </div>
+  `;
+
+  // Handlers dos botões do cabeçalho
+  document.getElementById('hints-refresh')?.addEventListener('click', () => loadHintsList());
+  document.getElementById('hints-import-defaults')?.addEventListener('click', async () => {
+    const confirmed = await new Promise(resolve => {
+      modal.open({
+        title: 'Importar defaults do código?',
+        size: 'sm',
+        content: `
+          <p style="margin:0 0 12px;font-size:0.875rem;line-height:1.55;">
+            Isso criará um documento no Firestore para cada módulo com o prompt default atual,
+            permitindo que você os edite livremente.
+          </p>
+          <p style="margin:0 0 12px;font-size:0.8125rem;color:var(--text-muted);">
+            <strong>Módulos já customizados NÃO serão sobrescritos</strong> — apenas os novos serão importados.
+          </p>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+            <button class="btn btn-ghost" id="imp-cancel">Cancelar</button>
+            <button class="btn btn-primary" id="imp-confirm">Importar</button>
+          </div>
+        `,
+        onOpen: () => {
+          document.getElementById('imp-cancel')?.addEventListener('click', () => { modal.close(); resolve(false); });
+          document.getElementById('imp-confirm')?.addEventListener('click', () => { modal.close(); resolve(true); });
+        },
+      });
+    });
+    if (!confirmed) return;
+
+    try {
+      const { importDefaultHints } = await import('../services/aiModuleHints.js');
+      const result = await importDefaultHints({ overwrite: false });
+      toast.success(`Importação concluída: ${result.imported} importado(s), ${result.skipped} já existiam.`);
+      loadHintsList();
+    } catch (e) {
+      toast.error('Erro ao importar: ' + (e?.message || e));
+    }
+  });
+
+  await loadHintsList();
+}
+
+async function loadHintsList() {
+  const listEl = document.getElementById('hints-list');
+  if (!listEl) return;
+  try {
+    const { listAllModuleHints, invalidateCache } = await import('../services/aiModuleHints.js');
+    invalidateCache();
+    allModuleHints = await listAllModuleHints();
+  } catch (e) {
+    listEl.innerHTML = `<div style="padding:20px;color:var(--danger);font-size:0.875rem;">
+      Erro ao carregar: ${esc(e?.message || e)}
+    </div>`;
+    return;
+  }
+
+  if (!allModuleHints.length) {
+    listEl.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.875rem;">
+      Nenhum módulo encontrado.
+    </div>`;
+    return;
+  }
+
+  listEl.innerHTML = allModuleHints.map(h => {
+    const statusBadge = h.isCustom
+      ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:999px;
+          background:rgba(16,185,129,0.15);color:#10b981;font-weight:600;">Customizado</span>`
+      : (h.hasDefault
+          ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:999px;
+              background:rgba(148,163,184,0.15);color:var(--text-muted);font-weight:600;">Default</span>`
+          : `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:999px;
+              background:rgba(239,68,68,0.15);color:#ef4444;font-weight:600;">Sem prompt</span>`);
+    const preview = (h.effectiveHint || '').substring(0, 140).replace(/\n/g, ' ');
+    return `
+      <div class="hint-card" data-module-id="${esc(h.moduleId)}"
+        style="padding:14px 16px;background:var(--bg-surface);border:1px solid var(--border-subtle);
+        border-radius:10px;cursor:pointer;transition:all 0.15s;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+            <span style="font-size:1.125rem;">${esc(h.icon)}</span>
+            <strong style="font-size:0.9375rem;color:var(--text-primary);">${esc(h.label)}</strong>
+            <span style="font-size:0.6875rem;color:var(--text-muted);font-family:monospace;">${esc(h.moduleId)}</span>
+          </div>
+          ${statusBadge}
+        </div>
+        <div style="font-size:0.8125rem;color:var(--text-muted);line-height:1.5;">
+          ${preview ? esc(preview) + (h.effectiveHint.length > 140 ? '…' : '') : '<em>(vazio)</em>'}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Click → abrir editor
+  listEl.querySelectorAll('.hint-card').forEach(card => {
+    card.addEventListener('mouseenter', () => {
+      card.style.borderColor = 'var(--brand-gold)';
+      card.style.transform = 'translateY(-1px)';
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.borderColor = 'var(--border-subtle)';
+      card.style.transform = 'translateY(0)';
+    });
+    card.addEventListener('click', () => {
+      const moduleId = card.dataset.moduleId;
+      const hint = allModuleHints.find(h => h.moduleId === moduleId);
+      if (hint) openHintEditor(hint);
+    });
+  });
+}
+
+function openHintEditor(hint) {
+  const { moduleId, label, icon, defaultHint, customHint, isCustom } = hint;
+  const currentText = customHint || defaultHint || '';
+
+  modal.open({
+    title: `${icon} ${label}`,
+    size: 'lg',
+    content: `
+      <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="font-size:0.8125rem;color:var(--text-muted);">
+          <span style="font-family:monospace;">${esc(moduleId)}</span>
+          ${isCustom ? '<span style="margin-left:8px;color:#10b981;font-weight:600;">● Customizado</span>'
+                    : '<span style="margin-left:8px;">usando default</span>'}
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost" id="hint-preview-btn" style="font-size:0.75rem;">
+            ⎋ Testar prompt
+          </button>
+          ${isCustom ? `<button class="btn btn-ghost" id="hint-reset-btn" style="font-size:0.75rem;color:#ef4444;">
+            ⟲ Restaurar padrão
+          </button>` : ''}
+        </div>
+      </div>
+
+      <label style="display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;font-weight:600;">
+        Prompt do módulo (texto injetado no system prompt)
+      </label>
+      <textarea id="hint-textarea" rows="22"
+        style="width:100%;padding:12px;background:var(--bg-base);border:1px solid var(--border-subtle);
+        border-radius:8px;font-family:ui-monospace,Menlo,Monaco,Consolas,monospace;font-size:0.8125rem;
+        color:var(--text-primary);line-height:1.55;resize:vertical;">${esc(currentText)}</textarea>
+
+      ${!isCustom && defaultHint ? `
+        <div style="margin-top:10px;padding:10px 12px;background:rgba(245,158,11,0.08);
+          border-left:3px solid var(--brand-gold);border-radius:6px;font-size:0.75rem;color:var(--text-muted);line-height:1.55;">
+          ⓘ Este módulo está usando o default hardcoded. Ao salvar, uma versão customizada será criada no Firestore
+          e passará a ter prioridade sobre o default.
+        </div>
+      ` : ''}
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--border-subtle);">
+        <button class="btn btn-ghost" id="hint-cancel-btn">Cancelar</button>
+        <button class="btn btn-primary" id="hint-save-btn">Salvar</button>
+      </div>
+    `,
+    onOpen: () => {
+      document.getElementById('hint-cancel-btn')?.addEventListener('click', () => modal.close());
+
+      document.getElementById('hint-save-btn')?.addEventListener('click', async () => {
+        const text = document.getElementById('hint-textarea')?.value || '';
+        try {
+          const { saveModuleHint } = await import('../services/aiModuleHints.js');
+          await saveModuleHint(moduleId, text);
+          toast.success(`Prompt de "${label}" salvo!`);
+          modal.close();
+          loadHintsList();
+        } catch (e) {
+          toast.error('Erro ao salvar: ' + (e?.message || e));
+        }
+      });
+
+      document.getElementById('hint-reset-btn')?.addEventListener('click', async () => {
+        if (!confirm(`Restaurar o prompt padrão de "${label}"? Sua versão customizada será apagada.`)) return;
+        try {
+          const { resetModuleHint } = await import('../services/aiModuleHints.js');
+          await resetModuleHint(moduleId);
+          toast.success('Prompt restaurado para o padrão!');
+          modal.close();
+          loadHintsList();
+        } catch (e) {
+          toast.error('Erro ao restaurar: ' + (e?.message || e));
+        }
+      });
+
+      document.getElementById('hint-preview-btn')?.addEventListener('click', async () => {
+        // Salvar temporariamente o texto do textarea para preview
+        const currentText = document.getElementById('hint-textarea')?.value || '';
+        try {
+          const { previewSystemPrompt } = await import('../services/aiModuleHints.js');
+          // Se o usuário editou mas não salvou, usar o texto do textarea como preview
+          const preview = await previewSystemPrompt(moduleId);
+          // Substituir a seção do hint pelo texto atual do textarea
+          let fullPrompt = preview.fullPrompt;
+          if (currentText && currentText !== (customHint || defaultHint)) {
+            // Substituir pelo texto editado
+            fullPrompt = fullPrompt.replace(
+              (customHint || defaultHint || ''),
+              currentText + '\n[⚠ ALTERAÇÃO NÃO SALVA — este preview reflete o texto atual do editor]'
+            );
+          }
+          openPromptPreviewModal(label, preview.hintSource, fullPrompt);
+        } catch (e) {
+          toast.error('Erro no preview: ' + (e?.message || e));
+        }
+      });
+    },
+  });
+}
+
+function openPromptPreviewModal(label, hintSource, fullPrompt) {
+  modal.open({
+    title: `Preview — ${label}`,
+    size: 'xl',
+    content: `
+      <div style="margin-bottom:10px;font-size:0.75rem;color:var(--text-muted);">
+        Fonte do hint: <strong>${esc(hintSource)}</strong> ·
+        Tamanho total: <strong>${fullPrompt.length}</strong> chars ·
+        <strong>${fullPrompt.split(/\s+/).length}</strong> tokens aprox.
+      </div>
+      <pre style="max-height:60vh;overflow:auto;padding:14px;background:var(--bg-base);
+        border:1px solid var(--border-subtle);border-radius:8px;font-family:ui-monospace,Menlo,monospace;
+        font-size:0.75rem;line-height:1.5;color:var(--text-primary);white-space:pre-wrap;word-wrap:break-word;">${esc(fullPrompt)}</pre>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-ghost" id="preview-close">Fechar</button>
+      </div>
+    `,
+    onOpen: () => {
+      document.getElementById('preview-close')?.addEventListener('click', () => modal.close());
+    },
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════ *

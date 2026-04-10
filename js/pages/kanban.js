@@ -240,7 +240,10 @@ function renderKanbanCard(task, type = null) {
   const prio    = PRIORITY_MAP[task.priority] || {};
   const project = allProjects.find(p => p.id === task.projectId);
   const users   = store.get('users') || [];
-  const assignees = (task.assignees||[]).slice(0,3).map(uid => {
+  const assigneesArr = Array.isArray(task.assignees)
+    ? task.assignees
+    : (typeof task.assignees === 'string' && task.assignees ? [task.assignees] : []);
+  const assignees = assigneesArr.slice(0,3).map(uid => {
     const u = users.find(u=>u.id===uid);
     if (!u) return '';
     return `<div class="avatar" style="background:${u.avatarColor||'#3B82F6'};

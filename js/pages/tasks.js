@@ -230,7 +230,11 @@ function renderTaskRow(task) {
   const prio    = PRIORITY_MAP[task.priority] || { label: task.priority, color: '#6B7280' };
   const project = allProjects.find(p => p.id === task.projectId);
   const users   = store.get('users') || [];
-  const assignees = (task.assignees||[]).slice(0,3).map(uid => {
+  // Defensivo: assignees pode vir como string se a IA salvou errado
+  const assigneesArr = Array.isArray(task.assignees)
+    ? task.assignees
+    : (typeof task.assignees === 'string' && task.assignees ? [task.assignees] : []);
+  const assignees = assigneesArr.slice(0,3).map(uid => {
     const u = users.find(u=>u.id===uid);
     if (!u) return '';
     return `<div class="avatar avatar-sm" title="${esc(u.name)}"
@@ -238,9 +242,9 @@ function renderTaskRow(task) {
       ${(u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
     </div>`;
   }).join('');
-  const extraAssignees = (task.assignees||[]).length > 3
+  const extraAssignees = assigneesArr.length > 3
     ? `<div class="avatar avatar-sm" style="background:var(--bg-elevated); color:var(--text-muted); margin-left:-6px; border:2px solid var(--bg-card); font-size:0.5rem;">
-        +${(task.assignees.length-3)}
+        +${(assigneesArr.length-3)}
       </div>` : '';
 
   const dueText = task.dueDate ? formatDue(task.dueDate) : '';
