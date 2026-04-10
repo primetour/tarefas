@@ -272,10 +272,16 @@ export async function fetchTasks({
   const currentUid = store.get('currentUser')?.uid;
   const isAssignee = (t) => currentUid && (t.assignees || []).includes(currentUid);
 
-  // Filtro por workspace — documentos sem workspaceId são visíveis para todos
-  const activeIds = workspaceIds ?? store.getActiveWorkspaceIds();
-  if (activeIds) {
-    tasks = tasks.filter(t => isAssignee(t) || !t.workspaceId || activeIds.includes(t.workspaceId));
+  // Filtro por workspace (squad) — documentos sem workspaceId são visíveis para todos
+  const activeIdsSet = new Set(workspaceIds ?? store.getActiveWorkspaceIds() ?? []);
+  const hasWsFilter  = activeIdsSet.size > 0 || workspaceIds != null;
+  // Ser membro de um squad ativo cancela o filtro de setor para aquela task,
+  // permitindo que squads multissetor funcionem: membros veem tudo do squad
+  // mesmo se o setor da task não bate com o setor do usuário.
+  const isInActiveSquad = (t) => !!t.workspaceId && activeIdsSet.has(t.workspaceId);
+
+  if (hasWsFilter) {
+    tasks = tasks.filter(t => isAssignee(t) || !t.workspaceId || activeIdsSet.has(t.workspaceId));
   }
 
   // Filtro por setor via getVisibleSectors()
@@ -284,9 +290,13 @@ export async function fetchTasks({
   if (visibleSectors !== null) {
     if (visibleSectors.length === 0) {
       // Usuário sem setor definido — não filtra (mostra tudo para não quebrar a UX)
-      // Idealmente o admin configura o setor do usuário
     } else {
-      tasks = tasks.filter(t => isAssignee(t) || !t.sector || visibleSectors.includes(t.sector));
+      tasks = tasks.filter(t =>
+        isAssignee(t)
+        || isInActiveSquad(t)        // squad membership overrides sector filter
+        || !t.sector
+        || visibleSectors.includes(t.sector)
+      );
     }
   }
 
@@ -309,16 +319,24 @@ export function subscribeToTasks(callback, filters = {}) {
     const currentUid = store.get('currentUser')?.uid;
     const isAssignee = (t) => currentUid && (t.assignees || []).includes(currentUid);
 
-    // Filtro por workspace
-    const activeIds = store.getActiveWorkspaceIds();
-    if (activeIds) {
-      tasks = tasks.filter(t => isAssignee(t) || !t.workspaceId || activeIds.includes(t.workspaceId));
+    // Filtro por workspace (squad)
+    const activeIdsArr = store.getActiveWorkspaceIds();
+    const activeIdsSet = new Set(activeIdsArr ?? []);
+    const isInActiveSquad = (t) => !!t.workspaceId && activeIdsSet.has(t.workspaceId);
+
+    if (activeIdsArr) {
+      tasks = tasks.filter(t => isAssignee(t) || !t.workspaceId || activeIdsSet.has(t.workspaceId));
     }
 
-    // Filtro por setor
+    // Filtro por setor — squad membership sobrescreve (multissetor funcional)
     const visibleSectors = store.get('visibleSectors') || [];
     if (!store.isMaster() && visibleSectors.length > 0) {
-      tasks = tasks.filter(t => isAssignee(t) || !t.sector || visibleSectors.includes(t.sector));
+      tasks = tasks.filter(t =>
+        isAssignee(t)
+        || isInActiveSquad(t)
+        || !t.sector
+        || visibleSectors.includes(t.sector)
+      );
     }
 
     if (filters.projectId) tasks = tasks.filter(t => t.projectId === filters.projectId);

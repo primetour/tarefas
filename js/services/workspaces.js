@@ -25,7 +25,7 @@ export const WORKSPACE_COLORS = [
 ];
 
 /* ─── Criar workspace ────────────────────────────────────── */
-export async function createWorkspace({ name, description = '', sector = '', color, icon }) {
+export async function createWorkspace({ name, description = '', sector = '', color, icon, multiSector = false }) {
   if (!store.can('workspace_create')) throw new Error('Permissão negada.');
   const user = store.get('currentUser');
 
@@ -36,7 +36,10 @@ export async function createWorkspace({ name, description = '', sector = '', col
     sector:      sector.trim() || userSector || '',
     color:       color  || WORKSPACE_COLORS[0],
     icon:        icon   || WORKSPACE_ICONS[0],
-    multiSector: false,    // true = aceita usuários de outros setores
+    // Squad multissetor: permite membros de setores diferentes;
+    // tasks/projects vinculados ao squad ficam visíveis para todos os membros
+    // independente do setor de origem.
+    multiSector: !!multiSector,
     ownerId:     user.uid,
     adminIds:    [user.uid],
     members:     [user.uid],
@@ -78,7 +81,7 @@ export async function fetchAllWorkspaces() {
 }
 
 /* ─── Atualizar workspace ────────────────────────────────── */
-export async function updateWorkspace(wsId, { name, description, sector, color, icon }) {
+export async function updateWorkspace(wsId, { name, description, sector, color, icon, multiSector }) {
   const user = store.get('currentUser');
   const ws   = await getWorkspace(wsId);
   if (!ws) throw new Error('Workspace não encontrado.');
@@ -86,15 +89,20 @@ export async function updateWorkspace(wsId, { name, description, sector, color, 
   const isWsAdmin = ws.adminIds?.includes(user.uid);
   if (!store.can('system_view_all') && !isWsAdmin) throw new Error('Permissão negada.');
 
-  await updateDoc(doc(db, 'workspaces', wsId), {
+  const patch = {
     name, description, sector, color, icon,
     updatedAt: serverTimestamp(),
     updatedBy: user.uid,
-  });
+  };
+  if (typeof multiSector === 'boolean') patch.multiSector = multiSector;
+
+  await updateDoc(doc(db, 'workspaces', wsId), patch);
   await auditLog('workspaces.update', 'workspace', wsId, { name });
 
   // Atualizar store
-  const updated = store.get('userWorkspaces').map(w => w.id === wsId ? { ...w, name, description, sector, color, icon } : w);
+  const updated = store.get('userWorkspaces').map(w =>
+    w.id === wsId ? { ...w, name, description, sector, color, icon, ...(typeof multiSector === 'boolean' ? { multiSector } : {}) } : w
+  );
   store.set('userWorkspaces', updated);
 }
 

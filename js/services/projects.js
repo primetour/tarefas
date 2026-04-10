@@ -93,16 +93,23 @@ export async function fetchProjects({ includeArchived = false, workspaceIds = nu
   const snap = await getDocs(q);
   let all    = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  // Filtro por workspace — documentos sem workspaceId visíveis para todos
-  const activeIds = workspaceIds ?? store.getActiveWorkspaceIds();
-  if (activeIds) {
-    all = all.filter(p => !p.workspaceId || activeIds.includes(p.workspaceId));
+  // Filtro por workspace (squad) — documentos sem workspaceId visíveis para todos
+  const activeIdsArr = workspaceIds ?? store.getActiveWorkspaceIds();
+  const activeIdsSet = new Set(activeIdsArr ?? []);
+  const isInActiveSquad = (p) => !!p.workspaceId && activeIdsSet.has(p.workspaceId);
+
+  if (activeIdsArr) {
+    all = all.filter(p => !p.workspaceId || activeIdsSet.has(p.workspaceId));
   }
 
-  // Filtro por setor
+  // Filtro por setor — ser membro do squad ativo sobrescreve (squad multissetor)
   const visibleSectors = store.get('visibleSectors') || [];
   if (!store.isMaster() && visibleSectors.length > 0) {
-    all = all.filter(p => !p.sector || visibleSectors.includes(p.sector));
+    all = all.filter(p =>
+      isInActiveSquad(p)
+      || !p.sector
+      || visibleSectors.includes(p.sector)
+    );
   }
 
   return includeArchived ? all : all.filter(p => !p.archived);
@@ -114,16 +121,23 @@ export function subscribeToProjects(callback) {
   return onSnapshot(q, (snap) => {
     let all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    // Filtro por workspace
-    const activeIds = store.getActiveWorkspaceIds();
-    if (activeIds) {
-      all = all.filter(p => !p.workspaceId || activeIds.includes(p.workspaceId));
+    // Filtro por workspace (squad)
+    const activeIdsArr = store.getActiveWorkspaceIds();
+    const activeIdsSet = new Set(activeIdsArr ?? []);
+    const isInActiveSquad = (p) => !!p.workspaceId && activeIdsSet.has(p.workspaceId);
+
+    if (activeIdsArr) {
+      all = all.filter(p => !p.workspaceId || activeIdsSet.has(p.workspaceId));
     }
 
-    // Filtro por setor
+    // Filtro por setor — squad ativo sobrescreve
     const visibleSectors = store.get('visibleSectors') || [];
     if (!store.isMaster() && visibleSectors.length > 0) {
-      all = all.filter(p => !p.sector || visibleSectors.includes(p.sector));
+      all = all.filter(p =>
+        isInActiveSquad(p)
+        || !p.sector
+        || visibleSectors.includes(p.sector)
+      );
     }
 
     callback(all.filter(p => !p.archived));
