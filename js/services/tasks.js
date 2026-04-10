@@ -113,6 +113,7 @@ export async function createTask(data) {
     clientEmail:      data.clientEmail          || '',
     nucleos:          data.nucleos              || [],
     outOfCalendar:    data.outOfCalendar        || false,
+    deliveryLink:     data.deliveryLink?.trim() || '',
     subtasks:    [],
     comments:    [],
     attachments: [],
@@ -159,6 +160,10 @@ export async function updateTask(taskId, data) {
     if (snap.exists() && snap.data().createdBy !== user.uid) {
       throw new Error('Permissão negada.');
     }
+  }
+  // Bloquear mudança para "done" sem permissão task_complete
+  if (data.status === 'done' && data._prevStatus !== 'done' && !store.can('task_complete')) {
+    throw new Error('Você não tem permissão para concluir tarefas. Peça a um coordenador para homologar.');
   }
   const updates = { ...data, updatedAt: serverTimestamp(), updatedBy: user.uid };
 
@@ -221,6 +226,9 @@ export async function updateTask(taskId, data) {
 
 /* ─── Completar tarefa (toggle) ──────────────────────────── */
 export async function toggleTaskComplete(taskId, isDone) {
+  if (isDone && !store.can('task_complete')) {
+    throw new Error('Você não tem permissão para concluir tarefas. Peça a um coordenador para homologar.');
+  }
   const user = store.get('currentUser');
   await updateDoc(doc(db, 'tasks', taskId), {
     status:      isDone ? 'done' : 'not_started',
@@ -324,6 +332,9 @@ export function subscribeToTasks(callback, filters = {}) {
 
 /* ─── Mover task no kanban (atualiza order + status) ────── */
 export async function moveTaskKanban(taskId, newStatus, newOrder) {
+  if (newStatus === 'done' && !store.can('task_complete')) {
+    throw new Error('Você não tem permissão para concluir tarefas. Peça a um coordenador para homologar.');
+  }
   const user = store.get('currentUser');
   const updates = {
     status:    newStatus,
@@ -358,6 +369,19 @@ export async function addSubtask(taskId, title) {
 export async function toggleSubtask(taskId, subtaskId, currentSubtasks) {
   const updated = currentSubtasks.map(s =>
     s.id === subtaskId ? { ...s, done: !s.done } : s
+  );
+  await updateDoc(doc(db, 'tasks', taskId), {
+    subtasks:  updated,
+    updatedAt: serverTimestamp(),
+  });
+  return updated;
+}
+
+/* ─── Atualizar data de vencimento da subtarefa ──────────── */
+export async function updateSubtaskDue(taskId, subtaskId, dueDate, currentSubtasks) {
+  // dueDate: string 'YYYY-MM-DD' ou null para remover
+  const updated = (currentSubtasks || []).map(s =>
+    s.id === subtaskId ? { ...s, dueDate: dueDate || null } : s
   );
   await updateDoc(doc(db, 'tasks', taskId), {
     subtasks:  updated,
