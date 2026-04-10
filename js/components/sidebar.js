@@ -89,7 +89,7 @@ function buildWsSelector() {
         font-size:0.625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;
         color:var(--text-muted);margin-bottom:6px;">
         <span>Squads</span>
-        <span title="Clique no nome do squad para ver as tarefas dele. Clique no ponto dourado à direita para definir como squad padrão (onde novas tarefas serão criadas)."
+        <span title="Clique no nome do squad para abrir o workspace dele (projetos + tarefas). Clique no ponto dourado à direita para definir como squad padrão (onde novas tarefas serão criadas)."
           style="cursor:help;font-size:0.75rem;opacity:0.7;">ℹ</span>
       </div>
       <div style="display:flex;flex-direction:column;gap:3px;">
@@ -98,7 +98,7 @@ function buildWsSelector() {
           const isCurrent = current?.id === ws.id;
           return `
             <div class="ws-toggle-chip ${isActive?'active':''}" data-wsid="${ws.id}"
-              title="${esc(ws.name)}${ws.multiSector ? ' · multissetor' : ''}\n${isActive ? '✓ Squad visível' : '○ Clique para ativar'}"
+              title="${esc(ws.name)}${ws.multiSector ? ' · multissetor' : ''}\nClique para abrir o workspace deste squad"
               style="display:flex;align-items:center;gap:8px;padding:5px 8px;
               border-radius:var(--radius-md);cursor:pointer;transition:all 0.15s;
               background:${isActive?ws.color+'18':'transparent'};
@@ -296,7 +296,7 @@ export class Sidebar {
 
   _attachWsEvents() {
     // Click no chip → ativa este squad como único, define como atual e
-    // navega para Tarefas filtrado por ele.
+    // abre o workspace do squad (página dedicada com projetos + tarefas).
     this.el?.querySelectorAll('.ws-toggle-chip').forEach(chip => {
       chip.addEventListener('click', (e) => {
         // Não interceptar clique no dot direito (set currentWorkspace)
@@ -312,9 +312,8 @@ export class Sidebar {
         const sel = this.el?.querySelector('#sidebar-ws-selector');
         if (sel) sel.innerHTML = buildWsSelector();
         this._attachWsEvents();
-        // Navegar para Tarefas com filtro do squad
-        router.navigate(`tasks?workspaceId=${encodeURIComponent(wsId)}`);
-        this.setActive('tasks');
+        // Navegar para o workspace do squad (página dedicada)
+        router.navigate(`squad?id=${encodeURIComponent(wsId)}`);
         this.closeMobile();
       });
     });
