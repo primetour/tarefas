@@ -9,6 +9,7 @@ import {
   fetchDestinations, fetchTip, saveTip,
   SEGMENTS, DEFAULT_CATEGORIES, MONTHS,
 } from '../services/portal.js';
+import { parsePortalPdf } from '../services/portalPdfParser.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -51,12 +52,12 @@ export async function renderPortalImport(container) {
         onmouseout="this.style.borderColor='var(--border-subtle)'">
         <div style="font-size:2.5rem;margin-bottom:10px;">📊</div>
         <div style="font-size:1rem;font-weight:600;margin-bottom:6px;">
-          Arraste os arquivos .xlsx aqui ou clique para selecionar
+          Arraste os arquivos .xlsx ou .pdf aqui ou clique para selecionar
         </div>
         <div style="font-size:0.875rem;color:var(--text-muted);">
-          Aceita múltiplos arquivos · Cada arquivo = um ou mais destinos
+          Aceita múltiplos arquivos · .xlsx (planilha modelo) ou .pdf (dica completa)
         </div>
-        <input type="file" id="import-file-input" multiple accept=".xlsx,.xls" style="display:none;">
+        <input type="file" id="import-file-input" multiple accept=".xlsx,.xls,.pdf" style="display:none;">
       </div>
 
       <div id="import-file-list" style="margin-top:12px;display:flex;flex-direction:column;gap:6px;"></div>
@@ -111,22 +112,22 @@ export async function renderPortalImport(container) {
 let parsedImportData = [];
 
 async function handleFiles(files) {
-  const xlsxFiles = files.filter(f => f.name.match(/\.xlsx?$/i));
-  if (!xlsxFiles.length) { toast.error('Selecione arquivos .xlsx'); return; }
+  const accepted = files.filter(f => /\.(xlsx?|pdf)$/i.test(f.name));
+  if (!accepted.length) { toast.error('Selecione arquivos .xlsx ou .pdf'); return; }
 
   const list = document.getElementById('import-file-list');
-  if (list) list.innerHTML = xlsxFiles.map(f => `
+  if (list) list.innerHTML = accepted.map(f => `
     <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;
       background:var(--bg-surface);border-radius:var(--radius-sm);">
-      <span style="font-size:1rem;">📊</span>
+      <span style="font-size:1rem;">${/\.pdf$/i.test(f.name) ? '📄' : '📊'}</span>
       <span style="flex:1;font-size:0.875rem;">${esc(f.name)}</span>
       <span style="font-size:0.75rem;color:var(--text-muted);">${(f.size/1024).toFixed(1)} KB</span>
       <span class="file-parse-status" style="font-size:0.75rem;color:var(--brand-gold);">Lendo…</span>
     </div>
   `).join('');
 
-  // Load SheetJS
-  if (!window.XLSX) {
+  // Load SheetJS se for preciso
+  if (accepted.some(f => /\.xlsx?$/i.test(f.name)) && !window.XLSX) {
     await new Promise((res,rej) => {
       const s = document.createElement('script');
       s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
@@ -138,16 +139,19 @@ async function handleFiles(files) {
   parsedImportData = [];
   const statusEls = list?.querySelectorAll('.file-parse-status') || [];
 
-  for (let fi = 0; fi < xlsxFiles.length; fi++) {
-    const file = xlsxFiles[fi];
+  for (let fi = 0; fi < accepted.length; fi++) {
+    const file = accepted[fi];
     try {
-      const result = await parseXLSX(file);
+      const result = /\.pdf$/i.test(file.name)
+        ? await parsePortalPdf(file)
+        : await parseXLSX(file);
       parsedImportData.push(...result);
       if (statusEls[fi]) {
         statusEls[fi].textContent = `✓ ${result.length} item(s)`;
         statusEls[fi].style.color = '#22C55E';
       }
     } catch(e) {
+      console.error('[portalImport] parse error', e);
       if (statusEls[fi]) {
         statusEls[fi].textContent = `✗ ${e.message.slice(0,40)}`;
         statusEls[fi].style.color = '#EF4444';
