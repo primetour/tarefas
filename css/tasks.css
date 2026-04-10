@@ -159,8 +159,12 @@
   gap: 16px;
   overflow-x: auto;
   padding-bottom: 16px;
-  align-items: flex-start;
-  min-height: calc(100vh - 200px);
+  align-items: stretch;
+  /* Fixed height so columns can scroll internally regardless of data volume.
+     The 220px offset accounts for app-header (64) + page-content padding (24)
+     + page header/filters (~100) + a small safety margin. */
+  height: calc(100vh - 220px);
+  min-height: 420px;
 }
 .kanban-board::-webkit-scrollbar { height: 6px; }
 
@@ -172,7 +176,11 @@
   border: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 200px);
+  /* Use explicit height + min-height:0 so that .kanban-col-body can
+     properly engage overflow-y:auto when there are many cards. */
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 .kanban-column-header {
   padding: 14px 16px 10px;
@@ -180,11 +188,9 @@
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid var(--border-subtle);
-  position: sticky;
-  top: 0;
   background: var(--bg-surface);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  z-index: 1;
+  flex-shrink: 0;
 }
 .kanban-col-dot {
   width: 10px; height: 10px;
@@ -207,13 +213,24 @@
   border: 1px solid var(--border-subtle);
 }
 .kanban-col-body {
-  flex: 1;
+  /* flex: 1 1 0 + min-height:0 is the canonical fix for
+     "overflow-y:auto inside a flex column" behaving correctly. */
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 80px;
+}
+.kanban-col-body::-webkit-scrollbar { width: 6px; }
+.kanban-col-body::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 3px;
+}
+.kanban-col-body::-webkit-scrollbar-thumb:hover {
+  background: var(--border-default);
 }
 .kanban-col-body.drag-over {
   background: rgba(212,168,67,0.05);
@@ -310,6 +327,7 @@
   width: calc(100% - 20px);
   text-align: left;
   transition: all var(--transition-fast);
+  flex-shrink: 0;
 }
 .kanban-add-btn:hover {
   border-color: var(--brand-gold);

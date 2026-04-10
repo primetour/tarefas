@@ -163,12 +163,15 @@
   .kanban-board {
     flex-direction: column !important;
     gap: 12px !important;
+    /* On mobile, let the page scroll normally; no fixed board height. */
+    height: auto !important;
+    min-height: 0 !important;
   }
   .kanban-column {
     width: 100% !important;
     min-width: 0 !important;
-    max-height: 400px;
-    overflow-y: auto;
+    height: auto !important;
+    max-height: 70vh;
   }
 }
 
