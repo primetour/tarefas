@@ -7,7 +7,7 @@ import { toast }  from './toast.js';
 import { store }  from '../store.js';
 import {
   createTask, updateTask, deleteTask,
-  addSubtask, toggleSubtask, addComment,
+  addSubtask, toggleSubtask, updateSubtaskDue, addComment,
   STATUSES, PRIORITIES,
   NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
 } from '../services/tasks.js';
@@ -103,7 +103,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     projectId: projectId||null, assignees:[], tags:[],
     startDate:null, dueDate:null, subtasks:[], comments:[],
     type:'', newsletterStatus:'', requestingArea:'', clientEmail:'',
-    nucleos:[], outOfCalendar:false,
+    nucleos:[], outOfCalendar:false, deliveryLink:'',
     workspaceId: store.get('currentWorkspace')?.id || null,
     typeId: typeId || null,
     customFields: {},
@@ -269,9 +269,89 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         <textarea id="tm-desc" class="form-textarea" rows="3"
           placeholder="Descreva a tarefa...">${esc(task.description)}</textarea>
       </div>
+      <div class="form-group mt-4">
+        <label class="form-label" style="display:flex;align-items:center;gap:6px;">
+          <span>🔗 Link da entrega</span>
+          <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">(opcional)</span>
+        </label>
+        <input type="url" id="tm-delivery-link" class="form-input"
+          placeholder="https://drive.google.com/... ou https://figma.com/..."
+          value="${esc(task.deliveryLink || '')}" />
+        ${task.deliveryLink ? `
+          <div style="margin-top:6px;">
+            <a href="${esc(task.deliveryLink)}" target="_blank" rel="noopener"
+              style="font-size:0.8125rem;color:var(--brand-gold);text-decoration:none;
+              display:inline-flex;align-items:center;gap:4px;">
+              ↗ Abrir link atual
+            </a>
+          </div>` : ''}
+      </div>
+      ${!isEdit ? `
+        <div class="form-group mt-4" id="tm-recurrence-section">
+          <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="tm-recurring-toggle" />
+            <span>🔄 Tarefa recorrente</span>
+            <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">(gera automaticamente)</span>
+          </label>
+          <div id="tm-recurrence-config" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-elevated);">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div>
+                <label class="form-label" style="font-size:0.75rem;">Frequência</label>
+                <select id="tm-rec-frequency" class="form-select">
+                  <option value="daily">Diariamente</option>
+                  <option value="weekly" selected>Semanalmente</option>
+                  <option value="monthly">Mensalmente</option>
+                  <option value="custom">A cada N dias</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.75rem;">Prazo (dias após geração)</label>
+                <input type="number" id="tm-rec-due-offset" class="form-input" min="0" max="90" value="3" />
+              </div>
+            </div>
+            <div id="tm-rec-weekly" style="margin-top:10px;">
+              <label class="form-label" style="font-size:0.75rem;">Dias da semana</label>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                ${['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map((n, i) => `
+                  <label style="display:flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid var(--border-default);border-radius:6px;cursor:pointer;font-size:0.75rem;">
+                    <input type="checkbox" class="tm-rec-weekday" data-day="${i}" ${i >= 1 && i <= 5 ? 'checked' : ''} />${n}
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+            <div id="tm-rec-monthly" style="display:none;margin-top:10px;">
+              <label class="form-label" style="font-size:0.75rem;">Dia do mês</label>
+              <input type="number" id="tm-rec-month-day" class="form-input" min="1" max="31" value="1" style="width:100px;" />
+            </div>
+            <div id="tm-rec-custom" style="display:none;margin-top:10px;">
+              <label class="form-label" style="font-size:0.75rem;">Intervalo (dias)</label>
+              <input type="number" id="tm-rec-interval" class="form-input" min="1" max="365" value="7" style="width:100px;" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
+              <div>
+                <label class="form-label" style="font-size:0.75rem;">Começar em</label>
+                <input type="date" id="tm-rec-start" class="form-input" />
+              </div>
+              <div>
+                <label class="form-label" style="font-size:0.75rem;">Parar em (opcional)</label>
+                <input type="date" id="tm-rec-end" class="form-input" />
+              </div>
+            </div>
+            <p style="font-size:0.7rem;color:var(--text-muted);margin-top:10px;margin-bottom:0;">
+              ℹ As instâncias são geradas automaticamente quando alguém abrir a página de Tarefas. Você pode gerenciar templates em Configurações › Tarefas recorrentes.
+            </p>
+          </div>
+        </div>
+      ` : ''}
       ${isEdit ? `
         <div class="task-detail-field">
-          <div class="task-detail-label">Subtarefas <span class="subtask-progress" id="subtask-progress">${getSubtaskProgress(task.subtasks||[])}</span></div>
+          <div class="task-detail-label" style="display:flex;align-items:center;justify-content:space-between;">
+            <span>Subtarefas</span>
+            <span class="subtask-progress" id="subtask-progress" style="font-size:0.6875rem;color:var(--text-muted);">${getSubtaskProgress(task.subtasks||[])}</span>
+          </div>
+          <div class="subtask-progress-bar" id="subtask-progress-bar" style="margin:4px 0 8px;">
+            ${renderSubtaskProgressBar(task.subtasks||[])}
+          </div>
           <div class="subtask-list" id="subtask-list">${renderSubtasks(task.subtasks||[])}</div>
           <div class="quick-add-bar">
             <span style="color:var(--text-muted);font-size:1rem;">+</span>
@@ -295,8 +375,12 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
       <div class="task-detail-field">
         <div class="task-detail-label">Status</div>
         <select class="form-select" id="tm-status" style="padding:8px 32px 8px 12px;">
-          ${opt(STATUSES,'value','label',task.status)}
+          ${STATUSES
+            .filter(s => s.value !== 'done' || store.can('task_complete') || task.status === 'done')
+            .map(s => `<option value="${s.value}" ${task.status===s.value?'selected':''}>${esc(s.label)}</option>`)
+            .join('')}
         </select>
+        ${!store.can('task_complete') ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">🔒 Apenas coordenadores+ podem marcar como concluída.</div>` : ''}
       </div>
       <div class="task-detail-field">
         <div class="task-detail-label">Prioridade</div>
@@ -465,6 +549,27 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
 }
 
 function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences = []) {
+  // Recorrência (apenas criação)
+  if (!isEdit) {
+    const recToggle = document.getElementById('tm-recurring-toggle');
+    const recConfig = document.getElementById('tm-recurrence-config');
+    const recStart  = document.getElementById('tm-rec-start');
+    if (recStart && !recStart.value) recStart.value = new Date().toISOString().slice(0,10);
+    recToggle?.addEventListener('change', () => {
+      if (recConfig) recConfig.style.display = recToggle.checked ? 'block' : 'none';
+    });
+    const recFreq = document.getElementById('tm-rec-frequency');
+    recFreq?.addEventListener('change', () => {
+      const freq = recFreq.value;
+      const wk = document.getElementById('tm-rec-weekly');
+      const mn = document.getElementById('tm-rec-monthly');
+      const cu = document.getElementById('tm-rec-custom');
+      if (wk) wk.style.display = freq === 'weekly'  ? 'block' : 'none';
+      if (mn) mn.style.display = freq === 'monthly' ? 'block' : 'none';
+      if (cu) cu.style.display = freq === 'custom'  ? 'block' : 'none';
+    });
+  }
+
   // Tags
   document.getElementById('tag-input')?.addEventListener('keydown', (e) => {
     if ((e.key==='Enter'||e.key===',') && e.target.value.trim()) {
@@ -660,6 +765,12 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
   if (!isEdit) return;
 
   // Subtasks
+  const refreshSubtaskUI = () => {
+    const el = document.getElementById('subtask-progress');
+    if (el) el.textContent = getSubtaskProgress(task.subtasks);
+    const bar = document.getElementById('subtask-progress-bar');
+    if (bar) bar.innerHTML = renderSubtaskProgressBar(task.subtasks);
+  };
   document.getElementById('subtask-input')?.addEventListener('keydown', async (e) => {
     if (e.key==='Enter') {
       const val=e.target.value.trim(); if(!val)return; e.preventDefault();
@@ -667,11 +778,63 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
         const sub=await addSubtask(task.id,val);
         task.subtasks=[...(task.subtasks||[]),sub]; e.target.value='';
         document.getElementById('subtask-list')?.insertAdjacentHTML('beforeend',renderSubtaskItem(sub));
-        const el=document.getElementById('subtask-progress'); if(el)el.textContent=getSubtaskProgress(task.subtasks);
+        refreshSubtaskUI();
       } catch(err){toast.error(err.message);}
     }
   });
   document.getElementById('subtask-list')?.addEventListener('click', async (e) => {
+    // Add due date handler
+    const dueAdd = e.target.closest('[data-sub-due-add]');
+    if (dueAdd) {
+      const subId = dueAdd.dataset.subDueAdd;
+      const input = document.createElement('input');
+      input.type = 'date';
+      input.className = 'subtask-due-input';
+      input.style.cssText = 'font-size:0.7rem;padding:2px 4px;border:1px solid var(--border-default);border-radius:4px;background:var(--bg-input);color:var(--text-primary);';
+      dueAdd.replaceWith(input);
+      input.focus();
+      input.addEventListener('change', async () => {
+        if (!input.value) return;
+        try {
+          task.subtasks = await updateSubtaskDue(task.id, subId, input.value, task.subtasks);
+          const row = document.querySelector(`.subtask-item[data-sub="${subId}"]`);
+          if (row) row.outerHTML = renderSubtaskItem(task.subtasks.find(s => s.id === subId));
+          refreshSubtaskUI();
+        } catch (err) { toast.error(err.message); }
+      });
+      input.addEventListener('blur', () => {
+        if (!input.value) {
+          const btn = document.createElement('button');
+          btn.className = 'subtask-add-due';
+          btn.dataset.subDueAdd = subId;
+          btn.title = 'Definir vencimento';
+          btn.style.cssText = 'background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:0.75rem;padding:0 4px;';
+          btn.textContent = '📅';
+          input.replaceWith(btn);
+        }
+      });
+      return;
+    }
+    // Edit existing due date
+    const dueChip = e.target.closest('[data-sub-due]');
+    if (dueChip && !dueChip.dataset.subDueAdd) {
+      const subId = dueChip.dataset.subDue;
+      const sub = task.subtasks.find(s => s.id === subId);
+      const input = document.createElement('input');
+      input.type = 'date';
+      input.value = sub?.dueDate || '';
+      input.style.cssText = 'font-size:0.7rem;padding:2px 4px;border:1px solid var(--border-default);border-radius:4px;background:var(--bg-input);color:var(--text-primary);';
+      dueChip.replaceWith(input);
+      input.focus();
+      input.addEventListener('change', async () => {
+        try {
+          task.subtasks = await updateSubtaskDue(task.id, subId, input.value || null, task.subtasks);
+          const row = document.querySelector(`.subtask-item[data-sub="${subId}"]`);
+          if (row) row.outerHTML = renderSubtaskItem(task.subtasks.find(s => s.id === subId));
+        } catch (err) { toast.error(err.message); }
+      });
+      return;
+    }
     const check=e.target.closest('.task-check[data-sub-id]'); if(!check)return;
     try {
       task.subtasks=await toggleSubtask(task.id,check.dataset.subId,task.subtasks);
@@ -679,7 +842,7 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
       const row=check.closest('.subtask-item');
       if(sub?.done){check.classList.add('checked');check.textContent='✓';row?.classList.add('done');}
       else{check.classList.remove('checked');check.textContent='';row?.classList.remove('done');}
-      const el=document.getElementById('subtask-progress'); if(el)el.textContent=getSubtaskProgress(task.subtasks);
+      refreshSubtaskUI();
     } catch(err){toast.error(err.message);}
   });
 
@@ -749,6 +912,7 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     outOfCalendar:    customFields.outOfCalendar    || false,
     requestingArea:   $('tm-area')?.value||'',
     clientEmail:      $('tm-client-email')?.value?.trim()||'',
+    deliveryLink:     $('tm-delivery-link')?.value?.trim()||'',
     workspaceId: $('tm-workspace')?.value
       || task.workspaceId
       || store.get('currentWorkspace')?.id
@@ -763,6 +927,8 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
 
   if(isEdit) data._prevStatus=task.status;
 
+  // Recorrência: se marcado na criação, cria template em vez de tarefa
+  const isRecurring = !isEdit && $('tm-recurring-toggle')?.checked;
   const btn=document.querySelector('.modal-footer .btn-primary');
   if(btn){btn.classList.add('loading');btn.disabled=true;}
   try {
@@ -771,6 +937,35 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
       await updateTask(task.id,data);
       toast.success('Tarefa atualizada!');
       savedTask = { id: task.id, ...data };
+    } else if (isRecurring) {
+      // Criar template de recorrência em vez de tarefa pontual
+      const { createTemplate, runDueRecurrenceGeneration } = await import('../services/recurringTasks.js');
+      const freq       = $('tm-rec-frequency')?.value || 'weekly';
+      const dueOffset  = parseInt($('tm-rec-due-offset')?.value || '0', 10) || 0;
+      const startDate  = $('tm-rec-start')?.value || new Date().toISOString().slice(0,10);
+      const endDate    = $('tm-rec-end')?.value || null;
+      const weekdays   = Array.from(document.querySelectorAll('.tm-rec-weekday:checked'))
+        .map(cb => Number(cb.dataset.day));
+      const monthDay   = parseInt($('tm-rec-month-day')?.value || '1', 10) || 1;
+      const intervalDays = parseInt($('tm-rec-interval')?.value || '7', 10) || 7;
+
+      // Remove campos incompatíveis do template (startDate/dueDate viram offsets)
+      const templateTaskData = { ...data };
+      delete templateTaskData.startDate;
+      delete templateTaskData.dueDate;
+      delete templateTaskData._prevStatus;
+
+      await createTemplate({
+        taskData: templateTaskData,
+        frequency: freq,
+        weekdays, monthDay, intervalDays,
+        startDate, endDate,
+        dueOffsetDays: dueOffset,
+      });
+      toast.success('Tarefa recorrente criada! As instâncias serão geradas automaticamente.');
+      // Gerar imediatamente as ocorrências pendentes (inclusive a de hoje)
+      runDueRecurrenceGeneration({ force: true }).catch(() => {});
+      savedTask = null;
     } else {
       savedTask = await createTask(data);
       toast.success('Tarefa criada!');
@@ -794,13 +989,41 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
 
 function getSubtaskProgress(subtasks) {
   if(!subtasks?.length)return '';
-  return `${subtasks.filter(s=>s.done).length}/${subtasks.length}`;
+  const done = subtasks.filter(s=>s.done).length;
+  const pct = Math.round((done/subtasks.length) * 100);
+  return `${done}/${subtasks.length} (${pct}%)`;
+}
+function renderSubtaskProgressBar(subtasks) {
+  if (!subtasks?.length) return '';
+  const done = subtasks.filter(s => s.done).length;
+  const pct = Math.round((done / subtasks.length) * 100);
+  const color = pct === 100 ? 'var(--color-success)' : pct >= 50 ? 'var(--brand-gold)' : 'var(--color-info,#3B82F6)';
+  return `
+    <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
+      <div style="height:100%;width:${pct}%;background:${color};transition:width 0.3s ease;"></div>
+    </div>
+  `;
 }
 function renderSubtasks(subtasks){return subtasks.map(s=>renderSubtaskItem(s)).join('');}
 function renderSubtaskItem(s){
+  const dueDisplay = s.dueDate ? formatSubtaskDue(s.dueDate) : '';
   return `<div class="subtask-item ${s.done?'done':''}" data-sub="${s.id}">
     <div class="task-check ${s.done?'checked':''}" data-sub-id="${s.id}">${s.done?'✓':''}</div>
-    <span class="subtask-label">${esc(s.title)}</span></div>`;
+    <span class="subtask-label">${esc(s.title)}</span>
+    ${dueDisplay ? `<span class="subtask-due ${dueDisplay.className}" title="Vencimento da subtarefa" data-sub-due="${s.id}">${dueDisplay.text}</span>` : `<button class="subtask-add-due" data-sub-due-add="${s.id}" title="Definir vencimento" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:0.75rem;padding:0 4px;">📅</button>`}
+    </div>`;
+}
+function formatSubtaskDue(dateStr) {
+  // dateStr: ISO YYYY-MM-DD
+  const d = new Date(dateStr + 'T23:59:59');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.floor((d - today) / (1000*60*60*24));
+  const dayMonth = d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
+  if (diff < 0) return { text: `⏰ ${dayMonth}`, className: 'overdue' };
+  if (diff === 0) return { text: `Hoje`, className: 'today' };
+  if (diff === 1) return { text: `Amanhã`, className: 'soon' };
+  if (diff <= 7) return { text: `${dayMonth}`, className: 'soon' };
+  return { text: dayMonth, className: '' };
 }
 function renderComments(comments){return comments.map(c=>renderCommentItem(c)).join('');}
 function renderCommentItem(c){
