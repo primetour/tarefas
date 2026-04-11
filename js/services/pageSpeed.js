@@ -17,16 +17,85 @@ const CWV_THRESHOLDS = {
 };
 
 export const CWV_LABELS = {
-  lcp:  { label: 'LCP',  full: 'Largest Contentful Paint',  unit: 'ms',
-          info: 'Tempo até o maior elemento visível carregar. Mede a percepção de velocidade.' },
-  inp:  { label: 'INP',  full: 'Interaction to Next Paint', unit: 'ms',
-          info: 'Latência da interação do usuário. Substituiu o FID em março/2024.' },
-  cls:  { label: 'CLS',  full: 'Cumulative Layout Shift',   unit: '',
-          info: 'Instabilidade visual: quanto o layout se desloca durante o carregamento.' },
-  fcp:  { label: 'FCP',  full: 'First Contentful Paint',    unit: 'ms',
-          info: 'Tempo até o primeiro conteúdo aparecer na tela.' },
-  ttfb: { label: 'TTFB', full: 'Time To First Byte',        unit: 'ms',
-          info: 'Tempo até o servidor começar a responder.' },
+  lcp:  { label: 'LCP',  full: 'Maior Elemento Visível',  english: 'Largest Contentful Paint', unit: 'ms',
+          info: 'Tempo até o maior elemento da página (geralmente imagem ou título principal) aparecer na tela. Indica a percepção de velocidade do usuário. Bom: até 2,5s. Ruim: acima de 4s.' },
+  inp:  { label: 'INP',  full: 'Resposta à Interação',    english: 'Interaction to Next Paint', unit: 'ms',
+          info: 'Latência média quando o usuário clica, toca ou digita na página. Substituiu o FID em março/2024 como Core Web Vital oficial. Bom: até 200ms. Ruim: acima de 500ms.' },
+  cls:  { label: 'CLS',  full: 'Estabilidade Visual',     english: 'Cumulative Layout Shift',   unit: '',
+          info: 'Mede o quanto o layout da página "pula" durante o carregamento (ex.: imagem que empurra o texto, banner de anúncio que aparece depois). Bom: até 0,1. Ruim: acima de 0,25.' },
+  fcp:  { label: 'FCP',  full: 'Primeiro Conteúdo',       english: 'First Contentful Paint',    unit: 'ms',
+          info: 'Tempo até o primeiro texto ou imagem aparecer na tela. Indica quando o usuário começa a ver que a página está carregando. Bom: até 1,8s. Ruim: acima de 3s.' },
+  ttfb: { label: 'TTFB', full: 'Tempo de Resposta do Servidor', english: 'Time To First Byte', unit: 'ms',
+          info: 'Tempo até o servidor começar a responder. Indica a velocidade do backend/hospedagem. Bom: até 800ms. Ruim: acima de 1,8s.' },
+};
+
+/* ─── Glossário de termos técnicos usados na UI ────────── */
+export const GLOSSARY = {
+  CWV: {
+    term: 'Core Web Vitals',
+    pt:   'Métricas Essenciais da Web',
+    info: 'Conjunto de 3 métricas oficiais do Google (LCP, INP e CLS) que medem a experiência real do usuário em uma página: velocidade de carregamento, capacidade de resposta e estabilidade visual. Impactam diretamente o ranqueamento no Google.',
+  },
+  SEO: {
+    term: 'SEO',
+    pt:   'Otimização para Mecanismos de Busca',
+    info: 'Conjunto de práticas que ajudam uma página a aparecer melhor posicionada em buscadores como o Google. Inclui estrutura HTML, meta tags, conteúdo, velocidade e acessibilidade.',
+  },
+  A11Y: {
+    term: 'Acessibilidade',
+    pt:   'Acessibilidade (a11y)',
+    info: 'Avalia se o site pode ser usado por pessoas com deficiência visual, motora ou cognitiva. Inclui contraste de cores, rótulos em formulários, ordem de navegação, compatibilidade com leitores de tela, etc.',
+  },
+  BP: {
+    term: 'Boas Práticas',
+    pt:   'Boas Práticas',
+    info: 'Verifica padrões modernos de desenvolvimento web: HTTPS, APIs atualizadas, ausência de erros no console, dimensões corretas em imagens, políticas de segurança, etc.',
+  },
+  FIELD_DATA: {
+    term: 'Dados de Campo (CrUX)',
+    pt:   'Dados reais dos usuários',
+    info: 'Dados coletados de usuários reais do Chrome nos últimos 28 dias (Chrome User Experience Report). É a fonte mais confiável pois reflete o comportamento de verdade, mas só está disponível em sites com tráfego mínimo.',
+  },
+  LAB_DATA: {
+    term: 'Dados de Laboratório',
+    pt:   'Simulação do Lighthouse',
+    info: 'Dados gerados a partir de uma única execução simulada do Lighthouse em condições controladas (mobile 4G lento, CPU limitada). Útil quando não há dados de campo suficientes, mas não reflete 100% a experiência real.',
+  },
+  OPPORTUNITY: {
+    term: 'Oportunidades',
+    pt:   'Oportunidades de melhoria',
+    info: 'Sugestões específicas do Lighthouse para ganhar velocidade. Cada uma mostra a economia estimada em tempo (ms) ou dados (KB/MB) que você pode conseguir ao corrigir.',
+  },
+  DIAGNOSTIC: {
+    term: 'Diagnósticos',
+    pt:   'Diagnósticos técnicos',
+    info: 'Informações que explicam o "porquê" dos problemas — qual elemento específico é o LCP, quais scripts travam a página, qual domínio de terceiros consome mais recursos.',
+  },
+  THIRD_PARTY: {
+    term: 'Scripts de terceiros',
+    pt:   'Scripts de terceiros',
+    info: 'Códigos externos carregados pela página (Google Analytics, Facebook Pixel, chat, mapas, etc.). Quando mal otimizados, são uma das principais causas de lentidão.',
+  },
+  MAIN_THREAD: {
+    term: 'Main thread',
+    pt:   'Thread principal (processamento)',
+    info: 'A "linha de execução" única onde o navegador processa JavaScript, layout e pintura. Quando sobrecarregada, a página trava e fica irresponsiva a cliques.',
+  },
+  BOOTUP: {
+    term: 'Bootup time',
+    pt:   'Tempo de inicialização do JS',
+    info: 'Tempo que o navegador gasta interpretando e executando os arquivos JavaScript na primeira carga. Scripts grandes demoram mais para "ligar".',
+  },
+  DOM: {
+    term: 'DOM',
+    pt:   'Árvore de elementos HTML',
+    info: 'Document Object Model — a estrutura em árvore de todos os elementos HTML de uma página. Quando muito grande, deixa o navegador lento.',
+  },
+  LIGHTHOUSE: {
+    term: 'Lighthouse',
+    pt:   'Lighthouse (Google)',
+    info: 'Ferramenta oficial de auditoria do Google que avalia performance, acessibilidade, boas práticas e SEO de uma página. É a mesma engine usada no DevTools do Chrome e no PageSpeed Insights.',
+  },
 };
 
 export const CATEGORY_COLORS = {
@@ -263,6 +332,7 @@ export async function runPageSpeedAudit(url, strategy, apiKey) {
   const params = new URLSearchParams({
     url,
     strategy,
+    locale: 'pt_BR', // ← Google retorna títulos, descrições e displayValues em PT-BR
     key: apiKey,
   });
   // category param aceita repetição — não dá pra usar URLSearchParams direto pra isso
