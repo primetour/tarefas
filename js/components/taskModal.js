@@ -8,6 +8,7 @@ import { store }  from '../store.js';
 import {
   createTask, updateTask, deleteTask,
   addSubtask, toggleSubtask, updateSubtaskDue, updateSubtaskTitle,
+  updateSubtaskAssignees,
   deleteSubtask, reorderSubtasks, addComment,
   STATUSES, PRIORITIES,
   NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
@@ -824,6 +825,19 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
   });
 
   subtaskList?.addEventListener('click', async (e) => {
+    // Assignees (abre popover de seleção)
+    const assignBtn = e.target.closest('[data-sub-assign]');
+    if (assignBtn) {
+      e.stopPropagation();
+      const subId = assignBtn.dataset.subAssign;
+      openSubtaskAssigneesPopover(assignBtn, subId, task, isEdit, users, (updatedSubtasks) => {
+        task.subtasks = updatedSubtasks;
+        const row = subtaskList?.querySelector(`.subtask-item[data-sub="${subId}"]`);
+        if (row) row.outerHTML = renderSubtaskItem(task.subtasks.find(s => s.id === subId));
+      });
+      return;
+    }
+
     // Delete
     const delBtn = e.target.closest('[data-sub-del]');
     if (delBtn) {
@@ -1191,10 +1205,186 @@ function renderSubtaskItem(s){
     <span class="subtask-drag-handle" title="Arrastar para reordenar">⋮⋮</span>
     <div class="task-check ${s.done?'checked':''}" data-sub-id="${s.id}">${s.done?'✓':''}</div>
     <span class="subtask-label" data-sub-edit="${s.id}" title="Clique para editar">${esc(s.title)}</span>
+    ${renderSubtaskAssignees(s)}
     ${dueDisplay ? `<span class="subtask-due ${dueDisplay.className}" title="Vencimento da subtarefa" data-sub-due="${s.id}">${dueDisplay.text}</span>` : `<button class="subtask-add-due" data-sub-due-add="${s.id}" title="Definir vencimento" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:0.75rem;padding:0 4px;">📅</button>`}
     <button class="subtask-delete-btn" data-sub-del="${s.id}" title="Remover subtarefa" type="button">×</button>
     </div>`;
 }
+function renderSubtaskAssignees(s) {
+  const assignees = Array.isArray(s.assignees) ? s.assignees : [];
+  const users = store.get('users') || [];
+  if (!assignees.length) {
+    return `<button class="subtask-assignees-btn" data-sub-assign="${s.id}"
+      title="Atribuir responsáveis"
+      type="button"
+      style="background:none;border:1px dashed var(--border-default);border-radius:var(--radius-full);
+        cursor:pointer;color:var(--text-muted);font-size:0.7rem;padding:2px 8px;display:inline-flex;
+        align-items:center;gap:4px;height:22px;">
+      <span style="font-size:0.85rem;line-height:1;">👤</span>
+      <span>+</span>
+    </button>`;
+  }
+  const shown = assignees.slice(0, 3).map(uid => {
+    const u = users.find(u => u.id === uid);
+    if (!u) return '';
+    return `<div class="avatar avatar-sm" title="${esc(u.name)}"
+      style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.55rem;
+        margin-left:-4px;border:2px solid var(--bg-card);">
+      ${getInitials(u.name)}
+    </div>`;
+  }).join('');
+  const extra = assignees.length > 3
+    ? `<div class="avatar avatar-sm" style="background:var(--bg-elevated);color:var(--text-muted);
+        width:20px;height:20px;font-size:0.55rem;margin-left:-4px;border:2px solid var(--bg-card);">
+        +${assignees.length-3}
+      </div>`
+    : '';
+  return `<button class="subtask-assignees-btn" data-sub-assign="${s.id}"
+    title="Editar responsáveis (${assignees.length})"
+    type="button"
+    style="background:none;border:none;cursor:pointer;padding:0 4px;display:inline-flex;align-items:center;">
+    ${shown}${extra}
+  </button>`;
+}
+/* ─── Popover de responsáveis da subtarefa ──────────────── */
+function openSubtaskAssigneesPopover(anchorEl, subId, task, isEdit, allUsers, onUpdate) {
+  // Remove qualquer popover anterior
+  document.querySelectorAll('.subtask-assignees-popover').forEach(p => p.remove());
+
+  const sub = (task.subtasks || []).find(s => s.id === subId);
+  if (!sub) return;
+
+  let currentIds = new Set(Array.isArray(sub.assignees) ? sub.assignees : []);
+  const activeUsers = (allUsers || []).filter(u => u.active !== false);
+
+  const pop = document.createElement('div');
+  pop.className = 'subtask-assignees-popover';
+  pop.style.cssText = `
+    position:fixed;z-index:10010;
+    background:var(--bg-card);border:1px solid var(--border-default);
+    border-radius:var(--radius-md);box-shadow:var(--shadow-lg);
+    padding:8px;width:260px;max-height:340px;display:flex;flex-direction:column;
+  `;
+  pop.innerHTML = `
+    <div style="font-size:0.6875rem;font-weight:700;color:var(--text-muted);
+      text-transform:uppercase;letter-spacing:0.05em;padding:4px 6px 8px;">
+      Responsáveis da subtarefa
+    </div>
+    <input type="text" class="subtask-assignees-search" placeholder="Buscar..."
+      style="font-size:0.8125rem;padding:6px 10px;border:1px solid var(--border-default);
+        border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);
+        margin-bottom:6px;outline:none;" />
+    <div class="subtask-assignees-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px;"></div>
+    <div style="display:flex;justify-content:space-between;gap:6px;padding-top:8px;
+      border-top:1px solid var(--border-subtle);margin-top:6px;">
+      <button type="button" class="btn btn-ghost btn-sm" data-pop-clear
+        style="font-size:0.75rem;padding:4px 8px;">Limpar</button>
+      <div style="display:flex;gap:6px;">
+        <button type="button" class="btn btn-secondary btn-sm" data-pop-cancel
+          style="font-size:0.75rem;padding:4px 10px;">Cancelar</button>
+        <button type="button" class="btn btn-primary btn-sm" data-pop-save
+          style="font-size:0.75rem;padding:4px 10px;">Salvar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(pop);
+
+  // Posiciona o popover perto do botão (flip se não couber)
+  const rect = anchorEl.getBoundingClientRect();
+  const popW = 260;
+  const popH = Math.min(340, window.innerHeight - 40);
+  let left = rect.left;
+  if (left + popW > window.innerWidth - 12) left = window.innerWidth - popW - 12;
+  if (left < 12) left = 12;
+  let top = rect.bottom + 6;
+  if (top + popH > window.innerHeight - 12) top = rect.top - popH - 6;
+  if (top < 12) top = 12;
+  pop.style.left = `${left}px`;
+  pop.style.top  = `${top}px`;
+
+  const listEl = pop.querySelector('.subtask-assignees-list');
+  const searchEl = pop.querySelector('.subtask-assignees-search');
+
+  const renderList = (filter = '') => {
+    const q = filter.toLowerCase().trim();
+    const filtered = q
+      ? activeUsers.filter(u => (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q))
+      : activeUsers;
+    listEl.innerHTML = filtered.map(u => {
+      const checked = currentIds.has(u.id);
+      return `
+        <label data-uid="${u.id}" style="
+          display:flex;align-items:center;gap:8px;padding:6px 8px;
+          border-radius:var(--radius-sm);cursor:pointer;
+          background:${checked ? 'rgba(212,168,67,0.12)' : 'transparent'};
+          border:1px solid ${checked ? 'rgba(212,168,67,0.35)' : 'transparent'};">
+          <input type="checkbox" ${checked ? 'checked' : ''}
+            style="margin:0;cursor:pointer;" />
+          <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};
+            width:22px;height:22px;font-size:0.55rem;flex-shrink:0;">
+            ${getInitials(u.name)}
+          </div>
+          <span style="font-size:0.8125rem;color:var(--text-primary);overflow:hidden;
+            text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(u.name || u.email || '—')}</span>
+        </label>
+      `;
+    }).join('') || `<div style="text-align:center;padding:16px;color:var(--text-muted);font-size:0.75rem;">Nenhum usuário encontrado.</div>`;
+  };
+  renderList();
+  setTimeout(() => searchEl.focus(), 30);
+
+  listEl.addEventListener('click', (ev) => {
+    const lbl = ev.target.closest('label[data-uid]');
+    if (!lbl) return;
+    ev.preventDefault();
+    const uid = lbl.dataset.uid;
+    if (currentIds.has(uid)) currentIds.delete(uid);
+    else currentIds.add(uid);
+    renderList(searchEl.value);
+  });
+
+  searchEl.addEventListener('input', () => renderList(searchEl.value));
+
+  const close = () => {
+    pop.remove();
+    document.removeEventListener('mousedown', onDocClick, true);
+    document.removeEventListener('keydown', onKey, true);
+  };
+  const onDocClick = (ev) => {
+    if (!pop.contains(ev.target) && ev.target !== anchorEl) close();
+  };
+  const onKey = (ev) => {
+    if (ev.key === 'Escape') { ev.preventDefault(); close(); }
+  };
+  setTimeout(() => {
+    document.addEventListener('mousedown', onDocClick, true);
+    document.addEventListener('keydown', onKey, true);
+  }, 0);
+
+  pop.querySelector('[data-pop-cancel]').addEventListener('click', close);
+  pop.querySelector('[data-pop-clear]').addEventListener('click', () => {
+    currentIds = new Set();
+    renderList(searchEl.value);
+  });
+  pop.querySelector('[data-pop-save]').addEventListener('click', async () => {
+    const ids = Array.from(currentIds);
+    try {
+      let updated;
+      if (isEdit && task.id) {
+        updated = await updateSubtaskAssignees(task.id, subId, ids, task.subtasks);
+      } else {
+        updated = (task.subtasks || []).map(s =>
+          s.id === subId ? { ...s, assignees: ids } : s
+        );
+      }
+      onUpdate(updated);
+      close();
+    } catch (err) {
+      toast.error(err.message || 'Erro ao salvar responsáveis.');
+    }
+  });
+}
+
 function formatSubtaskDue(dateStr) {
   // dateStr: ISO YYYY-MM-DD
   const d = new Date(dateStr + 'T23:59:59');
