@@ -131,11 +131,27 @@ export async function addMember(wsId, uid) {
   const isWsAdmin = ws.adminIds?.includes(user.uid);
   if (!store.can('system_view_all') && !isWsAdmin) throw new Error('Permissão negada.');
 
+  // Evita notificar se o usuário já era membro
+  const wasMember = Array.isArray(ws.members) && ws.members.includes(uid);
+
   await updateDoc(doc(db, 'workspaces', wsId), {
     members:   arrayUnion(uid),
     updatedAt: serverTimestamp(),
   });
   await auditLog('workspaces.add_member', 'workspace', wsId, { uid });
+
+  // Notificar o novo membro
+  if (!wasMember && uid) {
+    import('./notifications.js').then(({ notify }) => {
+      notify('squad.member_added', {
+        entityType: 'workspace', entityId: wsId,
+        recipientIds: [uid],
+        title: 'Você foi adicionado a um squad',
+        body: `Você agora faz parte do squad "${ws.name || 'Squad'}"`,
+        route: `squad?id=${wsId}`,
+      });
+    }).catch(() => {});
+  }
 }
 
 /* ─── Remover membro ─────────────────────────────────────── */
@@ -148,12 +164,27 @@ export async function removeMember(wsId, uid) {
   if (!store.can('system_view_all') && !isWsAdmin) throw new Error('Permissão negada.');
   if (uid === ws.ownerId) throw new Error('O dono do workspace não pode ser removido.');
 
+  const wasMember = Array.isArray(ws.members) && ws.members.includes(uid);
+
   await updateDoc(doc(db, 'workspaces', wsId), {
     members:   arrayRemove(uid),
     adminIds:  arrayRemove(uid),
     updatedAt: serverTimestamp(),
   });
   await auditLog('workspaces.remove_member', 'workspace', wsId, { uid });
+
+  // Notifica o membro removido (exceto auto-remoção)
+  if (wasMember && uid && uid !== user.uid) {
+    import('./notifications.js').then(({ notify }) => {
+      notify('squad.member_removed', {
+        entityType: 'workspace', entityId: wsId,
+        recipientIds: [uid],
+        title: 'Você foi removido de um squad',
+        body: `Você não faz mais parte do squad "${ws.name || 'Squad'}"`,
+        route: 'workspaces',
+      });
+    }).catch(() => {});
+  }
 }
 
 /* ─── Promover/rebaixar admin do workspace ───────────────── */
@@ -166,11 +197,28 @@ export async function toggleWorkspaceAdmin(wsId, uid, makeAdmin) {
   if (!store.can('system_view_all') && !isWsAdmin) throw new Error('Permissão negada.');
   if (uid === ws.ownerId && !makeAdmin) throw new Error('O dono não pode ser rebaixado.');
 
+  const wasAdmin = Array.isArray(ws.adminIds) && ws.adminIds.includes(uid);
+  // Evita notificação "fantasma" (promover quem já é / rebaixar quem não era)
+  const stateChanged = makeAdmin ? !wasAdmin : wasAdmin;
+
   await updateDoc(doc(db, 'workspaces', wsId), {
     adminIds:  makeAdmin ? arrayUnion(uid) : arrayRemove(uid),
     updatedAt: serverTimestamp(),
   });
   await auditLog(makeAdmin ? 'workspaces.promote_admin' : 'workspaces.demote_admin', 'workspace', wsId, { uid });
+
+  // Notifica o usuário afetado (exceto quando ele mesmo é o ator)
+  if (stateChanged && uid && uid !== user.uid) {
+    import('./notifications.js').then(({ notify }) => {
+      notify(makeAdmin ? 'squad.admin_granted' : 'squad.admin_revoked', {
+        entityType: 'workspace', entityId: wsId,
+        recipientIds: [uid],
+        title: makeAdmin ? 'Você agora é admin de um squad' : 'Seu acesso de admin foi removido',
+        body: `No squad "${ws.name || 'Squad'}"`,
+        route: `squad?id=${wsId}`,
+      });
+    }).catch(() => {});
+  }
 }
 
 /* ─── Criar convite ──────────────────────────────────────── */

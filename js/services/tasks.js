@@ -157,10 +157,14 @@ export async function createTask(data) {
 /* ─── Atualizar tarefa ───────────────────────────────────── */
 export async function updateTask(taskId, data) {
   const user = store.get('currentUser');
+  // Captura o snapshot prévio — usado tanto para permissão quanto para diff de assignees
+  let prevSnap = null;
+  try { prevSnap = await getDoc(doc(db, 'tasks', taskId)); } catch (_) {}
+  const prevData = prevSnap?.exists() ? prevSnap.data() : null;
+
   // Permitir edição se tem permissão global OU é o criador da tarefa
   if (!store.can('task_edit_any')) {
-    const snap = await getDoc(doc(db, 'tasks', taskId));
-    if (snap.exists() && snap.data().createdBy !== user.uid) {
+    if (prevData && prevData.createdBy !== user.uid) {
       throw new Error('Permissão negada.');
     }
   }
@@ -188,6 +192,36 @@ export async function updateTask(taskId, data) {
 
   await updateDoc(doc(db, 'tasks', taskId), updates);
   await auditLog('tasks.update', 'task', taskId, { fields: Object.keys(data) });
+
+  // Notify newly-added / removed assignees (diff prev vs new)
+  if (Array.isArray(data.assignees) && prevData) {
+    const prevAssignees = Array.isArray(prevData.assignees) ? prevData.assignees : [];
+    const added   = data.assignees.filter(uid => uid && !prevAssignees.includes(uid));
+    const removed = prevAssignees.filter(uid => uid && !data.assignees.includes(uid));
+    if (added.length) {
+      import('./notifications.js').then(({ notify }) => {
+        notify('task.assigned', {
+          entityType: 'task', entityId: taskId,
+          recipientIds: added,
+          title: 'Nova tarefa atribuída',
+          body: `"${data.title || prevData.title || 'Tarefa'}" foi atribuída a você`,
+          route: 'tasks',
+          priority: data.priority === 'urgent' ? 'high' : 'normal',
+        });
+      }).catch(e => console.warn('[Notify] task.assigned (update) error:', e));
+    }
+    if (removed.length) {
+      import('./notifications.js').then(({ notify }) => {
+        notify('task.unassigned', {
+          entityType: 'task', entityId: taskId,
+          recipientIds: removed,
+          title: 'Você foi removido de uma tarefa',
+          body: `Você não é mais responsável por "${data.title || prevData.title || 'Tarefa'}"`,
+          route: 'tasks',
+        });
+      }).catch(() => {});
+    }
+  }
 
   // Notify on status changes
   if (data.status && data.status !== data._prevStatus) {
@@ -429,6 +463,8 @@ export async function updateSubtaskTitle(taskId, subtaskId, title, currentSubtas
 /* ─── Atualizar responsáveis da subtarefa ────────────────── */
 export async function updateSubtaskAssignees(taskId, subtaskId, assignees, currentSubtasks) {
   const clean = Array.isArray(assignees) ? [...new Set(assignees.filter(Boolean))] : [];
+  const prev  = (currentSubtasks || []).find(s => s.id === subtaskId);
+  const prevAssignees = Array.isArray(prev?.assignees) ? prev.assignees : [];
   const updated = (currentSubtasks || []).map(s =>
     s.id === subtaskId ? { ...s, assignees: clean } : s
   );
@@ -436,6 +472,39 @@ export async function updateSubtaskAssignees(taskId, subtaskId, assignees, curre
     subtasks:  updated,
     updatedAt: serverTimestamp(),
   });
+
+  // Notificar adicionados e removidos (diff)
+  const added   = clean.filter(uid => !prevAssignees.includes(uid));
+  const removed = prevAssignees.filter(uid => uid && !clean.includes(uid));
+  if (added.length || removed.length) {
+    try {
+      const taskSnap = await getDoc(doc(db, 'tasks', taskId));
+      const taskData = taskSnap.exists() ? taskSnap.data() : {};
+      const taskTitle = taskData.title || 'Tarefa';
+      const subTitle  = prev?.title || updated.find(s => s.id === subtaskId)?.title || 'Subtarefa';
+      const mod = await import('./notifications.js');
+      const notify = mod.notify;
+      if (added.length) {
+        notify('subtask.assigned', {
+          entityType: 'task', entityId: taskId,
+          recipientIds: added,
+          title: 'Subtarefa atribuída',
+          body: `"${subTitle}" (em "${taskTitle}") foi atribuída a você`,
+          route: 'tasks',
+        });
+      }
+      if (removed.length) {
+        notify('subtask.unassigned', {
+          entityType: 'task', entityId: taskId,
+          recipientIds: removed,
+          title: 'Você foi removido de uma subtarefa',
+          body: `Você não é mais responsável por "${subTitle}" (em "${taskTitle}")`,
+          route: 'tasks',
+        });
+      }
+    } catch (_) { /* silent */ }
+  }
+
   return updated;
 }
 
@@ -476,7 +545,7 @@ export async function addComment(taskId, text) {
     updatedAt: serverTimestamp(),
   });
 
-  // Notify task participants about the comment
+  // Notify task participants about the comment + mentions
   import('./notifications.js').then(async ({ notify }) => {
     const taskSnap = await getDoc(doc(db, 'tasks', taskId));
     if (!taskSnap.exists()) return;
@@ -492,7 +561,45 @@ export async function addComment(taskId, text) {
       body: `${profile?.name || 'Alguém'} comentou em "${task.title || 'tarefa'}": ${text.slice(0, 80)}`,
       route: 'tasks',
     });
+    // Parse @mentions → notify mentioned users (prioridade alta)
+    const mentioned = parseMentions(text, store.get('users') || [], user.uid);
+    if (mentioned.length) {
+      notify('system.mention', {
+        entityType: 'task', entityId: taskId,
+        recipientIds: mentioned,
+        title: 'Você foi mencionado',
+        body: `${profile?.name || 'Alguém'} mencionou você em "${task.title || 'tarefa'}": ${text.slice(0, 80)}`,
+        route: 'tasks',
+        priority: 'high',
+      });
+    }
   }).catch(() => {});
 
   return comment;
+}
+
+/* ─── Parser de @mentions em texto ───────────────────────── */
+function parseMentions(text, users, currentUid) {
+  if (!text || !Array.isArray(users) || !users.length) return [];
+  const lower = String(text).toLowerCase();
+  // Só processa se houver pelo menos um '@'
+  if (!lower.includes('@')) return [];
+  const mentioned = new Set();
+  for (const u of users) {
+    if (!u || !u.id || u.id === currentUid) continue;
+    const name = String(u.name || '').trim();
+    if (!name) continue;
+    const first = name.split(/\s+/)[0];
+    const candidates = [
+      '@' + name.toLowerCase(),
+      '@' + first.toLowerCase(),
+    ];
+    for (const c of candidates) {
+      if (c.length > 1 && lower.includes(c)) {
+        mentioned.add(u.id);
+        break;
+      }
+    }
+  }
+  return [...mentioned];
 }

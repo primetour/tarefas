@@ -26,10 +26,19 @@ const TYPE_TO_ADMIN_PREF = {
 
 const TYPE_TO_USER_PREF = {
   'task.assigned':            'notifyAssign',
+  'task.unassigned':          'notifyAssign',
   'task.rework':              'notifyAssign',
   'task.commented':           'notifyMention',
   'task.overdue':             'notifyDeadline',
   'task.deadline_approaching':'notifyDeadline',
+  'subtask.assigned':         'notifyAssign',
+  'subtask.unassigned':       'notifyAssign',
+  'project.member_added':     'notifyAssign',
+  'project.member_removed':   'notifyAssign',
+  'squad.member_added':       'notifyAssign',
+  'squad.member_removed':     'notifyAssign',
+  'squad.admin_granted':      'notifyAssign',
+  'squad.admin_revoked':      'notifyAssign',
   'system.mention':           'notifyMention',
 };
 
@@ -47,13 +56,22 @@ export const NOTIF_ICONS = {
 /* ─── Notification type labels ────────────────────────────── */
 export const NOTIF_TYPE_LABELS = {
   'task.assigned':            'Tarefa atribuída',
+  'task.unassigned':          'Removido de tarefa',
   'task.completed':           'Tarefa concluída',
   'task.commented':           'Novo comentário',
   'task.overdue':             'Tarefa atrasada',
   'task.deadline_approaching':'Prazo próximo',
   'task.status_changed':      'Status alterado',
   'task.rework':              'Tarefa devolvida',
+  'subtask.assigned':         'Subtarefa atribuída',
+  'subtask.unassigned':       'Removido de subtarefa',
   'project.updated':          'Projeto atualizado',
+  'project.member_added':     'Adicionado a projeto',
+  'project.member_removed':   'Removido de projeto',
+  'squad.member_added':       'Adicionado a squad',
+  'squad.member_removed':     'Removido de squad',
+  'squad.admin_granted':      'Promovido a admin do squad',
+  'squad.admin_revoked':      'Admin do squad removido',
   'request.created':          'Nova solicitação',
   'request.converted':        'Solicitação convertida',
   'csat.responded':           'Resposta CSAT',

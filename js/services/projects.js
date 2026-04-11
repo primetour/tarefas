@@ -61,6 +61,21 @@ export async function createProject(data) {
 
   const ref = await addDoc(collection(db, 'projects'), projectDoc);
   await auditLog('projects.create', 'project', ref.id, { name: projectDoc.name });
+
+  // Notificar membros (exceto o próprio criador — notify() já pula o ator)
+  const initialMembers = (projectDoc.members || []).filter(uid => uid && uid !== user.uid);
+  if (initialMembers.length) {
+    import('./notifications.js').then(({ notify }) => {
+      notify('project.member_added', {
+        entityType: 'project', entityId: ref.id,
+        recipientIds: initialMembers,
+        title: 'Você foi adicionado a um projeto',
+        body: `Você faz parte do projeto "${projectDoc.name}"`,
+        route: 'projects',
+      });
+    }).catch(() => {});
+  }
+
   return { id: ref.id, ...projectDoc };
 }
 
@@ -68,10 +83,47 @@ export async function createProject(data) {
 export async function updateProject(projectId, data) {
   if (!store.can('project_edit')) throw new Error('Permissão negada.');
   const user = store.get('currentUser');
+
+  // Captura prev para diff de membros
+  let prevData = null;
+  try {
+    const snap = await getDoc(doc(db, 'projects', projectId));
+    if (snap.exists()) prevData = snap.data();
+  } catch (_) {}
+
   await updateDoc(doc(db, 'projects', projectId), {
     ...data, updatedAt: serverTimestamp(), updatedBy: user.uid,
   });
   await auditLog('projects.update', 'project', projectId, { fields: Object.keys(data) });
+
+  // Notificar membros recém-adicionados e removidos (diff)
+  if (Array.isArray(data.members) && prevData) {
+    const prevMembers = Array.isArray(prevData.members) ? prevData.members : [];
+    const added   = data.members.filter(uid => uid && !prevMembers.includes(uid));
+    const removed = prevMembers.filter(uid => uid && !data.members.includes(uid));
+    if (added.length) {
+      import('./notifications.js').then(({ notify }) => {
+        notify('project.member_added', {
+          entityType: 'project', entityId: projectId,
+          recipientIds: added,
+          title: 'Você foi adicionado a um projeto',
+          body: `Você agora faz parte do projeto "${data.name || prevData.name || 'Projeto'}"`,
+          route: 'projects',
+        });
+      }).catch(() => {});
+    }
+    if (removed.length) {
+      import('./notifications.js').then(({ notify }) => {
+        notify('project.member_removed', {
+          entityType: 'project', entityId: projectId,
+          recipientIds: removed,
+          title: 'Você foi removido de um projeto',
+          body: `Você não faz mais parte do projeto "${data.name || prevData.name || 'Projeto'}"`,
+          route: 'projects',
+        });
+      }).catch(() => {});
+    }
+  }
 }
 
 /* ─── Excluir projeto ────────────────────────────────────── */
