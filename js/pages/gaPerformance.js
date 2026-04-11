@@ -1254,7 +1254,7 @@ function attachCwvEvents() {
 /* ─── Diálogo de cadastro de site ────────────────────────── */
 async function openAddSiteDialog() {
   const { modal } = await import('../components/modal.js');
-  const html = `
+  const content = `
     <div class="form-group">
       <label class="form-label">URL do site</label>
       <input type="url" class="form-input" id="cwv-new-url"
@@ -1269,23 +1269,57 @@ async function openAddSiteDialog() {
         placeholder="Ex.: Primetour — Site Principal" maxlength="80" />
     </div>
   `;
-  const ok = await modal.confirm({
-    title:      'Cadastrar site',
-    message:    html,
-    confirmText:'Cadastrar',
-    icon:       '⚡',
+
+  return new Promise((resolve) => {
+    const m = modal.open({
+      title:   'Cadastrar site',
+      content,
+      size:    'sm',
+      footer: [
+        {
+          label: 'Cancelar',
+          class: 'btn-secondary',
+        },
+        {
+          label: 'Cadastrar',
+          class: 'btn-primary',
+          // Captura os valores ANTES de o modal fechar
+          onClick: async (_e, { close }) => {
+            const body = m.getBody();
+            const url   = body.querySelector('#cwv-new-url')?.value?.trim();
+            const label = body.querySelector('#cwv-new-label')?.value?.trim();
+            if (!url) {
+              toast.error('URL é obrigatória.');
+              return; // não fecha
+            }
+            close();
+            try {
+              const id = await createSite({ url, label });
+              toast.success('Site cadastrado.');
+              cwvSelectedId = id;
+              await loadCwvData();
+              renderCwvView();
+            } catch (e) {
+              toast.error('Erro: ' + e.message);
+            }
+            resolve();
+          },
+          closeOnClick: false, // controlamos o close manualmente
+        },
+      ],
+      onClose: () => resolve(),
+    });
+
+    // Enter no input principal dispara o cadastro
+    setTimeout(() => {
+      const urlInput = m.getBody().querySelector('#cwv-new-url');
+      urlInput?.focus();
+      urlInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          m.getElement().querySelector('[data-btn-index="1"]')?.click();
+        }
+      });
+    }, 50);
   });
-  if (!ok) return;
-  const url   = document.getElementById('cwv-new-url')?.value?.trim();
-  const label = document.getElementById('cwv-new-label')?.value?.trim();
-  if (!url) { toast.error('URL é obrigatória.'); return; }
-  try {
-    const id = await createSite({ url, label });
-    toast.success('Site cadastrado.');
-    cwvSelectedId = id;
-    await loadCwvData();
-    renderCwvView();
-  } catch (e) {
-    toast.error('Erro: ' + e.message);
-  }
 }
