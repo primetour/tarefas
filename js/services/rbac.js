@@ -105,6 +105,13 @@ export const PERMISSION_CATALOG = [
       { key: 'roteiro_manage',  label: 'Administrar Roteiros',        info: 'Ver todos os roteiros, editar de qualquer consultor, dashboard.' },
     ],
   },
+  {
+    group: 'Auditoria de Sites (Core Web Vitals)',
+    permissions: [
+      { key: 'site_audit_view',   label: 'Visualizar auditorias de sites', info: 'Ver o histórico de auditorias Core Web Vitals e SEO dos sites cadastrados.' },
+      { key: 'site_audit_manage', label: 'Executar e gerenciar auditorias', info: 'Cadastrar sites, disparar auditorias via PageSpeed Insights API e remover sites/histórico.' },
+    ],
+  },
 ];
 
 /* ─── Roles padrão do sistema ────────────────────────────── */
@@ -142,6 +149,7 @@ export const SYSTEM_ROLES = [
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: true,  portal_download_unlimited: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: true,
+      site_audit_view: true, site_audit_manage: true,
     },
   },
   {
@@ -167,6 +175,7 @@ export const SYSTEM_ROLES = [
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: true,
+      site_audit_view: true, site_audit_manage: true,
     },
   },
   {
@@ -192,6 +201,7 @@ export const SYSTEM_ROLES = [
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false,
+      site_audit_view: true, site_audit_manage: false,
     },
   },
   {
@@ -218,6 +228,7 @@ export const SYSTEM_ROLES = [
       portal_access: true,     portal_create: false,
       portal_manage: false,    portal_download_unlimited: false,
       roteiro_access: false, roteiro_create: false, roteiro_manage: false,
+      site_audit_view: false, site_audit_manage: false,
     },
   },
   {
@@ -243,6 +254,7 @@ export const SYSTEM_ROLES = [
       feedback_view: false, feedback_create: false,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_download_unlimited: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false,
+      site_audit_view: true, site_audit_manage: false,
     },
   },
 ];
