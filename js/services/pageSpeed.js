@@ -112,26 +112,130 @@ function buildCwv(fieldExp, lh) {
   };
 }
 
-/* ─── Extrai auditorias SEO que falharam ─────────────────── */
-function extractFailedSeoAudits(lh) {
-  if (!lh?.audits || !lh?.categories?.seo) return [];
-  const refs = lh.categories.seo.auditRefs || [];
+/* ─── Normaliza items do details para salvar (top N, campos úteis) ── */
+function normalizeAuditItems(details, maxItems = 5) {
+  if (!details?.items || !Array.isArray(details.items)) return [];
+  return details.items.slice(0, maxItems).map(item => {
+    const out = {};
+    // Campos comuns em auditorias de performance
+    if (item.url)              out.url          = String(item.url).slice(0, 300);
+    if (item.source?.url)      out.url          = String(item.source.url).slice(0, 300);
+    if (item.totalBytes != null)   out.totalBytes   = item.totalBytes;
+    if (item.wastedBytes != null)  out.wastedBytes  = item.wastedBytes;
+    if (item.wastedMs != null)     out.wastedMs     = item.wastedMs;
+    if (item.wastedPercent != null) out.wastedPercent = Math.round(item.wastedPercent);
+    // Campos de a11y/SEO (nó do DOM)
+    if (item.node?.snippet)    out.snippet      = String(item.node.snippet).slice(0, 300);
+    if (item.node?.selector)   out.selector     = String(item.node.selector).slice(0, 200);
+    if (item.node?.nodeLabel)  out.nodeLabel    = String(item.node.nodeLabel).slice(0, 200);
+    // Campos de terceiros/rede
+    if (item.entity)           out.entity       = String(item.entity).slice(0, 120);
+    if (item.transferSize != null) out.transferSize = item.transferSize;
+    if (item.mainThreadTime != null) out.mainThreadTime = item.mainThreadTime;
+    if (item.blockingTime != null)   out.blockingTime   = item.blockingTime;
+    // Tempo genérico
+    if (item.duration != null) out.duration     = item.duration;
+    if (item.startTime != null) out.startTime   = item.startTime;
+    return out;
+  });
+}
+
+/* ─── Extrai auditorias falhas de uma categoria qualquer ─── */
+function extractCategoryFails(lh, categoryKey, opts = {}) {
+  const { includeInformative = false, includePassed = false, maxItems = 5 } = opts;
+  if (!lh?.audits || !lh?.categories?.[categoryKey]) return [];
+  const refs = lh.categories[categoryKey].auditRefs || [];
   const fails = [];
   for (const ref of refs) {
     const audit = lh.audits[ref.id];
     if (!audit) continue;
-    // score === null → informativo (não conta); score < 1 → falhou; score === 1 → ok
-    if (audit.score !== null && audit.score < 1) {
-      fails.push({
-        id:          ref.id,
-        title:       audit.title,
-        description: audit.description,
-        score:       audit.score,
-        displayValue:audit.displayValue || '',
-      });
+    // score === null → informativo/diagnóstico
+    // score < 1 → falhou
+    // score === 1 → passou
+    if (audit.score === null) {
+      if (!includeInformative) continue;
+    } else if (audit.score >= 1) {
+      if (!includePassed) continue;
     }
+    const numericValue = audit.numericValue ?? null;
+    const savingsMs    = audit.details?.overallSavingsMs    ?? audit.metricSavings?.LCP ?? null;
+    const savingsBytes = audit.details?.overallSavingsBytes ?? null;
+
+    fails.push({
+      id:            ref.id,
+      group:         ref.group || null,
+      weight:        ref.weight ?? 0,
+      title:         audit.title || '',
+      description:   audit.description || '',
+      displayValue:  audit.displayValue || '',
+      score:         audit.score,
+      scoreDisplayMode: audit.scoreDisplayMode || '',
+      numericValue,
+      savingsMs,
+      savingsBytes,
+      items:         normalizeAuditItems(audit.details, maxItems),
+    });
   }
   return fails;
+}
+
+/* ─── Extrai oportunidades de performance (opportunity + diagnostic) ── */
+function extractOpportunities(lh) {
+  if (!lh?.audits || !lh?.categories?.performance) return [];
+  const refs = lh.categories.performance.auditRefs || [];
+  const opps = [];
+  for (const ref of refs) {
+    const audit = lh.audits[ref.id];
+    if (!audit) continue;
+    const mode = audit.scoreDisplayMode;
+    // 'numeric' e 'binary' com score < 1 são oportunidades reais
+    if (mode !== 'numeric' && mode !== 'binary') continue;
+    if (audit.score === null || audit.score >= 0.9) continue;
+
+    const savingsMs    = audit.details?.overallSavingsMs    ?? 0;
+    const savingsBytes = audit.details?.overallSavingsBytes ?? 0;
+
+    opps.push({
+      id:           ref.id,
+      group:        ref.group || 'diagnostic',
+      weight:       ref.weight ?? 0,
+      title:        audit.title || '',
+      description:  audit.description || '',
+      displayValue: audit.displayValue || '',
+      score:        audit.score,
+      savingsMs,
+      savingsBytes,
+      items:        normalizeAuditItems(audit.details, 5),
+    });
+  }
+  // Ordena por savingsMs desc, depois por (1 - score) desc
+  opps.sort((a, b) => (b.savingsMs - a.savingsMs) || ((1 - a.score) - (1 - b.score)));
+  return opps;
+}
+
+/* ─── Extrai diagnósticos-chave (elementos LCP, CLS, third-party) ── */
+function extractDiagnostics(lh) {
+  if (!lh?.audits) return {};
+  const a = lh.audits;
+  const pick = (id, maxItems = 8) => {
+    const au = a[id];
+    if (!au) return null;
+    return {
+      title:        au.title || '',
+      displayValue: au.displayValue || '',
+      items:        normalizeAuditItems(au.details, maxItems),
+    };
+  };
+  return {
+    lcpElement:        pick('largest-contentful-paint-element', 1),
+    layoutShiftEls:    pick('layout-shift-elements', 5),
+    longTasks:         pick('long-tasks', 5),
+    mainthreadBreakdown: pick('mainthread-work-breakdown', 5),
+    bootupTime:        pick('bootup-time', 5),
+    thirdParty:        pick('third-party-summary', 8),
+    networkRtt:        pick('network-rtt', 1),
+    networkServerLatency: pick('network-server-latency', 1),
+  };
 }
 
 /* ─── Extrai scores das 4 categorias ─────────────────────── */
@@ -211,7 +315,13 @@ export async function runPageSpeedAudit(url, strategy, apiKey) {
     scores:       extractScores(lh),
     cwv:          cwv.metrics,
     cwvSource:    cwv.source,
-    seoFails:     extractFailedSeoAudits(lh),
+    // Oportunidades e diagnósticos de performance
+    opportunities: extractOpportunities(lh),
+    diagnostics:   extractDiagnostics(lh),
+    // Falhas das outras categorias
+    seoFails:      extractCategoryFails(lh, 'seo',            { maxItems: 5 }),
+    a11yFails:     extractCategoryFails(lh, 'accessibility',  { maxItems: 5 }),
+    bpFails:       extractCategoryFails(lh, 'best-practices', { maxItems: 5 }),
     lhVersion:    lh?.lighthouseVersion || null,
     fetchTime:    lh?.fetchTime || null,
     finalUrl:     lh?.finalUrl || url,
