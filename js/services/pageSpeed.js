@@ -166,21 +166,37 @@ export async function runPageSpeedAudit(url, strategy, apiKey) {
     .map(c => `category=${c}`).join('&');
 
   const endpoint = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?${params.toString()}&${categoryParams}`;
+  // Log sem a key (para debug sem vazar credencial)
+  const safeEndpoint = endpoint.replace(/key=[^&]+/, 'key=***');
+  console.log('[PSI] request →', safeEndpoint);
 
   let resp;
   try {
     resp = await fetch(endpoint);
   } catch (e) {
+    console.error('[PSI] network error', e);
     throw new Error(`Falha de rede ao chamar PSI API: ${e.message}`);
   }
 
   if (!resp.ok) {
-    let errMsg = `PSI API retornou HTTP ${resp.status}`;
-    try {
-      const errBody = await resp.json();
-      if (errBody?.error?.message) errMsg += ` — ${errBody.error.message}`;
-    } catch (_) {}
-    throw new Error(errMsg);
+    let errBody = null;
+    try { errBody = await resp.json(); } catch (_) {}
+    console.error('[PSI] HTTP', resp.status, errBody);
+
+    const gmsg = errBody?.error?.message || '';
+    let hint = '';
+    if (resp.status === 400) {
+      if (/API key not valid/i.test(gmsg)) {
+        hint = ' — Verifique: (1) a key está correta; (2) a API "PageSpeed Insights API" está HABILITADA no projeto do Google Cloud; (3) restrições HTTP referrer incluem este domínio.';
+      } else if (/referer/i.test(gmsg) || /restricted/i.test(gmsg)) {
+        hint = ` — Origem bloqueada. Adicione "${location.origin}/*" nas restrições HTTP referrer da key no Google Cloud Console.`;
+      }
+    } else if (resp.status === 403) {
+      hint = ' — API não habilitada ou key sem acesso. No Google Cloud: APIs & Services → Library → habilitar "PageSpeed Insights API".';
+    } else if (resp.status === 429) {
+      hint = ' — Quota excedida (limite gratuito: 25.000/dia, 240/min).';
+    }
+    throw new Error(`PSI HTTP ${resp.status}${gmsg ? ' — ' + gmsg : ''}${hint}`);
   }
 
   const json = await resp.json();
