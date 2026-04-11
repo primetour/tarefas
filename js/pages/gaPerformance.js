@@ -9,7 +9,7 @@ import {
   collection, getDocs, query, orderBy, limit, where, doc, getDoc,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from '../firebase.js';
-import { CWV_LABELS, CATEGORY_COLORS } from '../services/pageSpeed.js';
+import { CWV_LABELS, CATEGORY_COLORS, GLOSSARY } from '../services/pageSpeed.js';
 import {
   fetchSites, createSite, deleteSite, runAuditAndSave,
   fetchLatestRuns, getPsiApiKey,
@@ -125,8 +125,9 @@ export async function renderGaPerformance(container) {
       <button class="btn btn-ghost btn-sm ga-tab" data-tab="countries"
         style="font-size:0.8125rem;">🌍 Países</button>
       <button class="btn btn-ghost btn-sm ga-tab" data-tab="cwv"
-        style="font-size:0.8125rem;border-left:2px solid var(--border-subtle);margin-left:4px;padding-left:10px;">
-        ⚡ Core Web Vitals + SEO</button>
+        style="font-size:0.8125rem;border-left:2px solid var(--border-subtle);margin-left:4px;padding-left:10px;"
+        title="Core Web Vitals — Métricas essenciais da web (Google). Avalia velocidade, interatividade e estabilidade visual dos sites cadastrados. Inclui também auditoria de SEO, acessibilidade e boas práticas.">
+        ⚡ Performance da Web (CWV + SEO)</button>
     </div>
 
     <!-- ═══ Traffic view (tabs daily/pages/sources/devices/countries) ═══ -->
@@ -978,10 +979,10 @@ function renderCwvResults(latest, allRuns) {
     ${renderDiagnosticsCard(latest.mobile, latest.desktop)}
 
     <!-- Acessibilidade -->
-    ${renderCategoryFailsCard('a11y', '♿ Problemas de Acessibilidade', latest.mobile?.a11yFails, latest.desktop?.a11yFails)}
+    ${renderCategoryFailsCard('a11y', '♿ Problemas de Acessibilidade', 'A11Y', latest.mobile?.a11yFails, latest.desktop?.a11yFails)}
 
     <!-- Boas práticas -->
-    ${renderCategoryFailsCard('bp', '🛡 Problemas de Boas Práticas', latest.mobile?.bpFails, latest.desktop?.bpFails)}
+    ${renderCategoryFailsCard('bp', '🛡 Problemas de Boas Práticas', 'BP', latest.mobile?.bpFails, latest.desktop?.bpFails)}
 
     <!-- SEO audits (falhas) -->
     ${renderSeoFailsCard(latest.mobile, latest.desktop)}
@@ -1000,22 +1001,23 @@ function renderCwvStrategyCard(key, title, data) {
   const scores = data.scores || {};
   const cwv    = data.cwv    || {};
   const source = data.cwvSource || 'lab';
+  const sourceKey = source === 'field' ? 'FIELD_DATA' : 'LAB_DATA';
+  const sourceLabel = source === 'field' ? '● Dados reais (CrUX)' : '○ Simulação (Lighthouse)';
   return `
     <div class="card" style="padding:20px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
         <div style="font-size:0.9375rem;font-weight:600;">${title}</div>
-        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;"
-          title="${source==='field'?'Dados reais de usuários Chrome (CrUX)':'Simulação Lighthouse (lab)'}">
-          ${source==='field' ? '● Field data (CrUX)' : '○ Lab data (Lighthouse)'}
+        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;display:flex;align-items:center;">
+          ${sourceLabel}${infoIcon(sourceKey)}
         </div>
       </div>
 
       <!-- Scores 0-100 -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">
-        ${scoreCircle('Performance',   scores.performance)}
-        ${scoreCircle('Acessib.',      scores.accessibility)}
-        ${scoreCircle('Boas Práticas', scores.bestPractices)}
-        ${scoreCircle('SEO',           scores.seo)}
+        ${scoreCircle('Performance',   scores.performance,   'Velocidade geral da página (0 a 100). Calculada a partir dos Core Web Vitals e outras métricas de carregamento.')}
+        ${scoreCircle('Acessib.',      scores.accessibility, GLOSSARY.A11Y.info)}
+        ${scoreCircle('Boas Práticas', scores.bestPractices, GLOSSARY.BP.info)}
+        ${scoreCircle('SEO',           scores.seo,           GLOSSARY.SEO.info)}
       </div>
 
       <!-- CWV metrics -->
@@ -1026,17 +1028,18 @@ function renderCwvStrategyCard(key, title, data) {
   `;
 }
 
-function scoreCircle(label, score) {
+function scoreCircle(label, score, tooltip = '') {
   const color = score == null ? '#9CA3AF'
     : score >= 90 ? '#22C55E'
     : score >= 50 ? '#F59E0B'
     : '#EF4444';
   const display = score == null ? '—' : score;
   return `
-    <div style="text-align:center;">
+    <div style="text-align:center;" ${tooltip ? `title="${esc(tooltip)}"` : ''}>
       <div style="width:52px;height:52px;border-radius:50%;margin:0 auto 6px;
         border:3px solid ${color};display:flex;align-items:center;justify-content:center;
-        font-size:0.9375rem;font-weight:700;color:${color};">
+        font-size:0.9375rem;font-weight:700;color:${color};
+        ${tooltip ? 'cursor:help;' : ''}">
         ${display}
       </div>
       <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">
@@ -1058,20 +1061,24 @@ function cwvBadge(key, metric) {
   const catLabel = cat === 'FAST' ? 'Bom'
     : cat === 'AVERAGE' || cat === 'NEEDS_IMPROVEMENT' ? 'Precisa melhorar'
     : cat === 'SLOW' ? 'Ruim' : '—';
+  const tip = `${meta.label} (${meta.english}) — ${meta.info}`;
   return `
     <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;
       background:var(--bg-surface);border-radius:var(--radius-md);
-      border-left:3px solid ${color};">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:0.75rem;font-weight:600;" title="${esc(meta.info)}">
-          ${meta.label} <span style="color:var(--text-muted);font-weight:400;font-size:0.6875rem;">
-          ${meta.full}</span>
+      border-left:3px solid ${color};" title="${esc(tip)}">
+      <div style="flex:1;min-width:0;cursor:help;">
+        <div style="font-size:0.75rem;font-weight:600;">
+          ${meta.full}
+          <span style="color:var(--text-muted);font-weight:500;font-size:0.625rem;
+            text-transform:uppercase;letter-spacing:.05em;margin-left:4px;">
+            (${meta.label})
+          </span>
         </div>
       </div>
       <div style="font-size:0.8125rem;font-weight:700;color:${color};min-width:64px;text-align:right;">
         ${display}
       </div>
-      <div style="font-size:0.625rem;text-transform:uppercase;color:${color};min-width:80px;text-align:right;">
+      <div style="font-size:0.625rem;text-transform:uppercase;color:${color};min-width:100px;text-align:right;">
         ${catLabel}
       </div>
     </div>
@@ -1115,8 +1122,9 @@ function renderOpportunitiesCard(mobile, desktop) {
   return `
     <div class="card" style="padding:20px;margin-bottom:20px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <div style="font-size:0.9375rem;font-weight:600;">
+        <div style="font-size:0.9375rem;font-weight:600;display:flex;align-items:center;">
           💡 Oportunidades de melhoria de performance (${opps.length})
+          ${infoIcon('OPPORTUNITY')}
         </div>
         <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;">
           Ordenado por impacto
@@ -1141,8 +1149,11 @@ function renderDiagnosticsCard(mobile, desktop) {
   if (lcpEl?.items?.length) {
     sections.push({
       icon: '🎯',
-      title: 'Elemento do LCP (Largest Contentful Paint)',
-      subtitle: lcpEl.displayValue || 'Maior elemento visível da página',
+      title: 'Elemento do Maior Conteúdo Visível',
+      tooltipKey: null,
+      titleExtra: `<span style="color:var(--text-muted);font-size:0.6875rem;margin-left:6px;">(${acronymBadge('CWV') ? 'LCP' : 'LCP'})</span>`,
+      tooltip: CWV_LABELS.lcp.info,
+      subtitle: lcpEl.displayValue || 'Maior elemento visível da página (geralmente imagem ou título)',
       items: lcpEl.items.map(it => ({
         primary: it.nodeLabel || it.selector || 'Elemento não identificado',
         secondary: it.snippet || '',
@@ -1156,8 +1167,10 @@ function renderDiagnosticsCard(mobile, desktop) {
   if (lsEls?.items?.length) {
     sections.push({
       icon: '📐',
-      title: 'Elementos que causaram layout shift (CLS)',
-      subtitle: lsEls.displayValue || '',
+      title: 'Elementos que causaram deslocamento de layout',
+      titleExtra: '<span style="color:var(--text-muted);font-size:0.6875rem;margin-left:6px;">(CLS)</span>',
+      tooltip: CWV_LABELS.cls.info,
+      subtitle: lsEls.displayValue || 'Elementos que "pularam" durante o carregamento',
       items: lsEls.items.map(it => ({
         primary: it.nodeLabel || it.selector || '—',
         secondary: it.snippet || '',
@@ -1172,13 +1185,14 @@ function renderDiagnosticsCard(mobile, desktop) {
     sections.push({
       icon: '🌐',
       title: 'Impacto de scripts de terceiros',
-      subtitle: tp.displayValue || '',
+      tooltip: GLOSSARY.THIRD_PARTY.info,
+      subtitle: tp.displayValue || 'Códigos externos (analytics, chat, mapas, etc.) carregados pela página',
       items: tp.items.map(it => ({
         primary: it.entity || it.url || '—',
         secondary: [
           it.transferSize != null ? `${fmtBytes(it.transferSize)} transferidos` : '',
-          it.mainThreadTime != null ? `${Math.round(it.mainThreadTime)}ms main thread` : '',
-          it.blockingTime != null ? `${Math.round(it.blockingTime)}ms bloqueio` : '',
+          it.mainThreadTime != null ? `${Math.round(it.mainThreadTime)}ms de processamento` : '',
+          it.blockingTime != null ? `${Math.round(it.blockingTime)}ms bloqueando a página` : '',
         ].filter(Boolean).join(' • '),
       })),
       color: '#A78BFA',
@@ -1190,8 +1204,9 @@ function renderDiagnosticsCard(mobile, desktop) {
   if (mt?.items?.length) {
     sections.push({
       icon: '⚙',
-      title: 'Onde a main thread está gastando tempo',
-      subtitle: mt.displayValue || '',
+      title: 'Onde o processamento da página foi gasto',
+      tooltip: GLOSSARY.MAIN_THREAD.info,
+      subtitle: mt.displayValue || 'Tempo gasto processando JavaScript, layout e renderização',
       items: mt.items.map(it => ({
         primary: it.groupLabel || it.entity || 'Atividade',
         secondary: it.duration != null ? `${Math.round(it.duration)}ms` : '',
@@ -1205,8 +1220,9 @@ function renderDiagnosticsCard(mobile, desktop) {
   if (bt?.items?.length) {
     sections.push({
       icon: '🚀',
-      title: 'Tempo de inicialização de JavaScript',
-      subtitle: bt.displayValue || '',
+      title: 'Tempo de inicialização de JavaScript por script',
+      tooltip: GLOSSARY.BOOTUP.info,
+      subtitle: bt.displayValue || 'Quanto tempo cada arquivo JS demorou para ser interpretado',
       items: bt.items.map(it => ({
         primary: it.url || '—',
         secondary: [
@@ -1223,8 +1239,8 @@ function renderDiagnosticsCard(mobile, desktop) {
   return `
     <div class="card" style="padding:20px;margin-bottom:20px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <div style="font-size:0.9375rem;font-weight:600;">
-          🔍 Diagnósticos detalhados
+        <div style="font-size:0.9375rem;font-weight:600;display:flex;align-items:center;">
+          🔍 Diagnósticos detalhados${infoIcon('DIAGNOSTIC')}
         </div>
         <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;">
           O que está causando os problemas
@@ -1235,10 +1251,13 @@ function renderDiagnosticsCard(mobile, desktop) {
           <details style="background:var(--bg-surface);border-radius:var(--radius-md);
             border-left:3px solid ${s.color};">
             <summary style="padding:10px 12px;cursor:pointer;list-style:none;
-              display:flex;align-items:center;gap:10px;">
+              display:flex;align-items:center;gap:10px;"
+              ${s.tooltip ? `title="${esc(s.tooltip)}"` : ''}>
               <span style="font-size:1rem;">${s.icon}</span>
               <div style="flex:1;min-width:0;">
-                <div style="font-size:0.8125rem;font-weight:600;">${esc(s.title)}</div>
+                <div style="font-size:0.8125rem;font-weight:600;">
+                  ${esc(s.title)}${s.titleExtra || ''}
+                </div>
                 ${s.subtitle ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">${esc(s.subtitle)}</div>` : ''}
               </div>
               <span style="font-size:0.625rem;color:var(--text-muted);">▾</span>
@@ -1260,7 +1279,7 @@ function renderDiagnosticsCard(mobile, desktop) {
 }
 
 /* ─── Card genérico de falhas de categoria (a11y / BP) ──── */
-function renderCategoryFailsCard(key, title, mobileFails, desktopFails) {
+function renderCategoryFailsCard(key, title, glossaryKey, mobileFails, desktopFails) {
   const map = new Map();
   for (const src of [mobileFails, desktopFails]) {
     if (!Array.isArray(src)) continue;
@@ -1269,19 +1288,20 @@ function renderCategoryFailsCard(key, title, mobileFails, desktopFails) {
     }
   }
   const fails = [...map.values()].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
+  const tip = glossaryKey ? infoIcon(glossaryKey) : '';
   if (!fails.length) {
     return `
       <div class="card" style="padding:16px 20px;margin-bottom:20px;border-left:3px solid #22C55E;">
-        <div style="font-size:0.8125rem;font-weight:600;color:#22C55E;">
-          ✓ ${esc(title.replace(/^[^ ]+ /, ''))} — nenhum problema detectado
+        <div style="font-size:0.8125rem;font-weight:600;color:#22C55E;display:flex;align-items:center;">
+          ✓ ${esc(title.replace(/^[^ ]+ /, ''))} — nenhum problema detectado${tip}
         </div>
       </div>
     `;
   }
   return `
     <div class="card" style="padding:20px;margin-bottom:20px;">
-      <div style="font-size:0.9375rem;font-weight:600;margin-bottom:12px;">
-        ${title} (${fails.length})
+      <div style="font-size:0.9375rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;">
+        ${title} (${fails.length})${tip}
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
         ${fails.map((f, i) => renderAuditAccordion(`${key}-${i}`, f, 'other')).join('')}
@@ -1362,6 +1382,31 @@ function renderAuditAccordion(id, audit, kind) {
   `;
 }
 
+/* ─── Ícone (i) com tooltip nativo ───────────────────────── */
+function infoIcon(key) {
+  const entry = GLOSSARY[key];
+  if (!entry) return '';
+  const tip = `${entry.pt} — ${entry.info}`;
+  return `<span class="info-tip" tabindex="0" role="button"
+    aria-label="${esc(entry.term)}"
+    title="${esc(tip)}"
+    style="display:inline-flex;align-items:center;justify-content:center;
+      width:14px;height:14px;border-radius:50%;margin-left:5px;
+      background:var(--bg-surface);border:1px solid var(--border-subtle);
+      color:var(--text-muted);font-size:0.5625rem;font-weight:700;
+      font-family:Georgia,serif;font-style:italic;cursor:help;vertical-align:middle;
+      line-height:1;">i</span>`;
+}
+
+/* ─── Badge com sigla + nome em português + tooltip ────── */
+function acronymBadge(key) {
+  const entry = GLOSSARY[key];
+  if (!entry) return '';
+  const tip = `${entry.pt} — ${entry.info}`;
+  return `<span title="${esc(tip)}"
+    style="cursor:help;border-bottom:1px dotted var(--text-muted);">${esc(entry.term)}</span>`;
+}
+
 /* ─── Formatador de bytes ───────────────────────────────── */
 function fmtBytes(bytes) {
   if (bytes == null || bytes === 0) return '0 B';
@@ -1384,11 +1429,11 @@ function renderSeoFailsCard(mobile, desktop) {
   if (!fails.length) {
     return `
       <div class="card" style="padding:20px;margin-bottom:20px;border-left:3px solid #22C55E;">
-        <div style="font-size:0.9375rem;font-weight:600;color:#22C55E;">
-          ✓ Todas as verificações SEO passaram
+        <div style="font-size:0.9375rem;font-weight:600;color:#22C55E;display:flex;align-items:center;">
+          ✓ Todas as verificações de SEO passaram${infoIcon('SEO')}
         </div>
         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
-          Lighthouse não encontrou problemas de SEO nesta auditoria.
+          O Lighthouse não encontrou problemas de SEO nesta auditoria.
         </div>
       </div>
     `;
@@ -1396,9 +1441,11 @@ function renderSeoFailsCard(mobile, desktop) {
   return `
     <div class="card" style="padding:20px;margin-bottom:20px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-        <div style="font-size:0.9375rem;font-weight:600;">⚠ Problemas de SEO detectados (${fails.length})</div>
-        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;">
-          Lighthouse audits
+        <div style="font-size:0.9375rem;font-weight:600;display:flex;align-items:center;">
+          ⚠ Problemas de SEO detectados (${fails.length})${infoIcon('SEO')}
+        </div>
+        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;display:flex;align-items:center;">
+          Auditorias ${acronymBadge('LIGHTHOUSE')}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
@@ -1433,12 +1480,12 @@ function renderCwvHistory(runs) {
           <thead>
             <tr style="color:var(--text-muted);font-size:0.625rem;text-transform:uppercase;letter-spacing:.05em;">
               <th style="text-align:left;padding:6px 8px;">Data</th>
-              <th style="text-align:right;padding:6px 8px;">Perf. 📱</th>
-              <th style="text-align:right;padding:6px 8px;">Perf. 🖥</th>
-              <th style="text-align:right;padding:6px 8px;">SEO 📱</th>
-              <th style="text-align:right;padding:6px 8px;">LCP</th>
-              <th style="text-align:right;padding:6px 8px;">INP</th>
-              <th style="text-align:right;padding:6px 8px;">CLS</th>
+              <th style="text-align:right;padding:6px 8px;" title="Score de Performance no Mobile (0 a 100)">Perf. 📱</th>
+              <th style="text-align:right;padding:6px 8px;" title="Score de Performance no Desktop (0 a 100)">Perf. 🖥</th>
+              <th style="text-align:right;padding:6px 8px;" title="Score de SEO no Mobile (0 a 100)">SEO 📱</th>
+              <th style="text-align:right;padding:6px 8px;" title="${esc(CWV_LABELS.lcp.full + ' — ' + CWV_LABELS.lcp.info)}">LCP</th>
+              <th style="text-align:right;padding:6px 8px;" title="${esc(CWV_LABELS.inp.full + ' — ' + CWV_LABELS.inp.info)}">INP</th>
+              <th style="text-align:right;padding:6px 8px;" title="${esc(CWV_LABELS.cls.full + ' — ' + CWV_LABELS.cls.info)}">CLS</th>
             </tr>
           </thead>
           <tbody>
