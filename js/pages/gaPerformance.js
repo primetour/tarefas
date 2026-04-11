@@ -9,6 +9,11 @@ import {
   collection, getDocs, query, orderBy, limit, where, doc, getDoc,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from '../firebase.js';
+import { CWV_LABELS, CATEGORY_COLORS } from '../services/pageSpeed.js';
+import {
+  fetchSites, createSite, deleteSite, runAuditAndSave,
+  fetchLatestRuns, getPsiApiKey,
+} from '../services/siteAudits.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num  = v => (v != null ? Number(v).toLocaleString('pt-BR') : '—');
@@ -75,6 +80,12 @@ let hiddenRows   = new Set();
 let syncMeta     = null;
 let periodTotals = null;
 
+// ─── CWV state ────────────────────────────────────────────
+let cwvSites        = [];
+let cwvSelectedId   = null;
+let cwvLatestRuns   = [];  // últimas N runs do site selecionado
+let cwvLoaded       = false;  // lazy load no primeiro clique da tab
+
 /* ─── Render page ─────────────────────────────────────────── */
 export async function renderGaPerformance(container) {
   if (!store.can('analytics_view') && !store.isMaster()) {
@@ -101,46 +112,8 @@ export async function renderGaPerformance(container) {
       </div>
     </div>
 
-    <!-- Filters -->
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center;">
-      <select class="filter-select" id="ga-prop-filter" style="min-width:200px;">
-        ${[{ id:'', label:'Todas as propriedades' }, ...properties]
-          .map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')}
-      </select>
-      <select class="filter-select" id="ga-period-filter" style="min-width:160px;">
-        ${PERIODS.map(p=>`<option value="${p.value}" ${p.value==='28'?'selected':''}>${p.label}</option>`).join('')}
-      </select>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-        <span id="ga-count" style="font-size:0.8125rem;color:var(--text-muted);"></span>
-      </div>
-    </div>
-
-    <!-- KPI cards -->
-    <div id="ga-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));
-      gap:12px;margin-bottom:24px;">
-      ${[0,1,2,3,4,5].map(()=>`<div class="card skeleton" style="height:80px;"></div>`).join('')}
-    </div>
-
-    <!-- Charts row -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
-      <div class="card" style="padding:20px;">
-        <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
-          color:var(--text-muted);margin-bottom:12px;">Usuários & Sessões (diário)</div>
-        <div style="position:relative;height:220px;">
-          <canvas id="ga-chart-users"></canvas>
-        </div>
-      </div>
-      <div class="card" style="padding:20px;">
-        <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
-          color:var(--text-muted);margin-bottom:12px;">Taxa de Engajamento & Rejeição</div>
-        <div style="position:relative;height:220px;">
-          <canvas id="ga-chart-rates"></canvas>
-        </div>
-      </div>
-    </div>
-
     <!-- Breakdown tabs -->
-    <div style="display:flex;gap:6px;margin-bottom:16px;">
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
       <button class="btn btn-ghost btn-sm ga-tab active" data-tab="daily"
         style="font-size:0.8125rem;">📊 Diário</button>
       <button class="btn btn-ghost btn-sm ga-tab" data-tab="pages"
@@ -151,21 +124,68 @@ export async function renderGaPerformance(container) {
         style="font-size:0.8125rem;">📱 Dispositivos</button>
       <button class="btn btn-ghost btn-sm ga-tab" data-tab="countries"
         style="font-size:0.8125rem;">🌍 Países</button>
+      <button class="btn btn-ghost btn-sm ga-tab" data-tab="cwv"
+        style="font-size:0.8125rem;border-left:2px solid var(--border-subtle);margin-left:4px;padding-left:10px;">
+        ⚡ Core Web Vitals + SEO</button>
     </div>
 
-    <!-- Data table -->
-    <div class="card" style="padding:0;overflow:hidden;">
-      <div style="overflow-x:auto;max-height:60vh;overflow-y:auto;">
-        <table id="ga-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:0.8125rem;">
-          <thead id="ga-thead"></thead>
-          <tbody id="ga-tbody">
-            <tr><td colspan="12" style="padding:40px;text-align:center;color:var(--text-muted);">
-              Carregando…
-            </td></tr>
-          </tbody>
-        </table>
+    <!-- ═══ Traffic view (tabs daily/pages/sources/devices/countries) ═══ -->
+    <div id="ga-traffic-view">
+      <!-- Filters -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center;">
+        <select class="filter-select" id="ga-prop-filter" style="min-width:200px;">
+          ${[{ id:'', label:'Todas as propriedades' }, ...properties]
+            .map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')}
+        </select>
+        <select class="filter-select" id="ga-period-filter" style="min-width:160px;">
+          ${PERIODS.map(p=>`<option value="${p.value}" ${p.value==='28'?'selected':''}>${p.label}</option>`).join('')}
+        </select>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+          <span id="ga-count" style="font-size:0.8125rem;color:var(--text-muted);"></span>
+        </div>
+      </div>
+
+      <!-- KPI cards -->
+      <div id="ga-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));
+        gap:12px;margin-bottom:24px;">
+        ${[0,1,2,3,4,5].map(()=>`<div class="card skeleton" style="height:80px;"></div>`).join('')}
+      </div>
+
+      <!-- Charts row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+        <div class="card" style="padding:20px;">
+          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+            color:var(--text-muted);margin-bottom:12px;">Usuários & Sessões (diário)</div>
+          <div style="position:relative;height:220px;">
+            <canvas id="ga-chart-users"></canvas>
+          </div>
+        </div>
+        <div class="card" style="padding:20px;">
+          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+            color:var(--text-muted);margin-bottom:12px;">Taxa de Engajamento & Rejeição</div>
+          <div style="position:relative;height:220px;">
+            <canvas id="ga-chart-rates"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data table -->
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div style="overflow-x:auto;max-height:60vh;overflow-y:auto;">
+          <table id="ga-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:0.8125rem;">
+            <thead id="ga-thead"></thead>
+            <tbody id="ga-tbody">
+              <tr><td colspan="12" style="padding:40px;text-align:center;color:var(--text-muted);">
+                Carregando…
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
+
+    <!-- ═══ CWV view ═══ -->
+    <div id="ga-cwv-view" style="display:none;"></div>
   `;
 
   // Event bindings
@@ -180,10 +200,26 @@ export async function renderGaPerformance(container) {
 
   // Tab switching
   container.querySelectorAll('.ga-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       container.querySelectorAll('.ga-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      renderTable(btn.dataset.tab);
+      const tab = btn.dataset.tab;
+      const trafficView = document.getElementById('ga-traffic-view');
+      const cwvView     = document.getElementById('ga-cwv-view');
+      if (tab === 'cwv') {
+        if (trafficView) trafficView.style.display = 'none';
+        if (cwvView)     cwvView.style.display     = '';
+        // Lazy load no primeiro clique
+        if (!cwvLoaded) {
+          cwvLoaded = true;
+          await loadCwvData();
+        }
+        renderCwvView();
+      } else {
+        if (trafficView) trafficView.style.display = '';
+        if (cwvView)     cwvView.style.display     = 'none';
+        renderTable(tab);
+      }
     });
   });
 
@@ -841,4 +877,415 @@ async function exportPDF() {
     toast.success(`PDF gerado com ${sorted.length} dias.`);
   } catch(e) { toast.error('Erro PDF: '+e.message); }
   finally { if(btn){btn.disabled=false;btn.textContent='⬇ PDF';} }
+}
+
+/* ══════════════════════════════════════════════════════════
+   CORE WEB VITALS + SEO (PageSpeed Insights API)
+   ══════════════════════════════════════════════════════════ */
+
+async function loadCwvData() {
+  try {
+    cwvSites = await fetchSites();
+    if (!cwvSelectedId && cwvSites.length) cwvSelectedId = cwvSites[0].id;
+    if (cwvSelectedId) {
+      cwvLatestRuns = await fetchLatestRuns(cwvSelectedId, 10);
+    } else {
+      cwvLatestRuns = [];
+    }
+  } catch (e) {
+    console.warn('[CWV] load error:', e);
+    toast.error('Erro ao carregar auditorias: ' + e.message);
+  }
+}
+
+function renderCwvView() {
+  const root = document.getElementById('ga-cwv-view');
+  if (!root) return;
+  const canManage = store.can('site_audit_manage') || store.isMaster();
+  const selected  = cwvSites.find(s => s.id === cwvSelectedId);
+  const latest    = cwvLatestRuns[0];
+
+  root.innerHTML = `
+    <!-- Header + seletor de site + ações -->
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px;">
+      <select class="filter-select" id="cwv-site-select" style="min-width:240px;">
+        ${cwvSites.length
+          ? cwvSites.map(s => `<option value="${esc(s.id)}" ${s.id===cwvSelectedId?'selected':''}>
+              ${esc(s.label)}
+            </option>`).join('')
+          : `<option value="">— Nenhum site cadastrado —</option>`}
+      </select>
+      ${canManage ? `
+        <button class="btn btn-secondary btn-sm" id="cwv-add-site">+ Cadastrar site</button>
+        <button class="btn btn-primary btn-sm" id="cwv-run-now" ${!selected ? 'disabled' : ''}>
+          ▶ Executar auditoria agora
+        </button>
+        ${selected ? `<button class="btn btn-ghost btn-sm" id="cwv-delete-site"
+          style="color:var(--color-danger);" title="Remover site e histórico">🗑</button>` : ''}
+      ` : ''}
+      <div style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);">
+        ${latest ? `Última auditoria: ${fmtDateTime(latest.runAt)}` : 'Sem auditorias'}
+      </div>
+    </div>
+
+    ${cwvSites.length === 0 ? renderCwvEmptyState(canManage) : ''}
+    ${cwvSites.length > 0 && !latest ? renderCwvNoRunsState(canManage) : ''}
+    ${latest ? renderCwvResults(latest, cwvLatestRuns) : ''}
+  `;
+
+  attachCwvEvents();
+}
+
+function renderCwvEmptyState(canManage) {
+  return `
+    <div class="card" style="padding:40px;text-align:center;">
+      <div style="font-size:2rem;margin-bottom:8px;">⚡</div>
+      <div style="font-size:1.0625rem;font-weight:600;margin-bottom:6px;">Nenhum site cadastrado ainda</div>
+      <div style="font-size:0.8125rem;color:var(--text-muted);max-width:420px;margin:0 auto 16px;">
+        Cadastre um site para começar a medir Core Web Vitals (LCP, INP, CLS) e SEO
+        via PageSpeed Insights API.
+      </div>
+      ${canManage ? `<button class="btn btn-primary btn-sm" id="cwv-add-site-empty">+ Cadastrar primeiro site</button>` : `
+        <div style="font-size:0.75rem;color:var(--text-muted);">Seu perfil não tem permissão para cadastrar sites.</div>
+      `}
+    </div>
+  `;
+}
+
+function renderCwvNoRunsState(canManage) {
+  return `
+    <div class="card" style="padding:32px;text-align:center;">
+      <div style="font-size:0.9375rem;font-weight:600;margin-bottom:6px;">Nenhuma auditoria executada</div>
+      <div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:14px;">
+        ${canManage ? 'Clique em "Executar auditoria agora" para gerar a primeira medição.' : 'Aguarde um administrador executar a primeira auditoria.'}
+      </div>
+    </div>
+  `;
+}
+
+function renderCwvResults(latest, allRuns) {
+  return `
+    <!-- Mobile + Desktop lado a lado -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+      ${renderCwvStrategyCard('mobile',  '📱 Mobile',  latest.mobile)}
+      ${renderCwvStrategyCard('desktop', '🖥 Desktop', latest.desktop)}
+    </div>
+
+    <!-- SEO audits (falhas) -->
+    ${renderSeoFailsCard(latest.mobile, latest.desktop)}
+
+    <!-- Histórico -->
+    ${allRuns.length > 1 ? renderCwvHistory(allRuns) : ''}
+  `;
+}
+
+function renderCwvStrategyCard(key, title, data) {
+  if (!data) {
+    return `<div class="card" style="padding:20px;">
+      <div style="font-size:0.75rem;color:var(--text-muted);">${title} — sem dados</div>
+    </div>`;
+  }
+  const scores = data.scores || {};
+  const cwv    = data.cwv    || {};
+  const source = data.cwvSource || 'lab';
+  return `
+    <div class="card" style="padding:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div style="font-size:0.9375rem;font-weight:600;">${title}</div>
+        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;"
+          title="${source==='field'?'Dados reais de usuários Chrome (CrUX)':'Simulação Lighthouse (lab)'}">
+          ${source==='field' ? '● Field data (CrUX)' : '○ Lab data (Lighthouse)'}
+        </div>
+      </div>
+
+      <!-- Scores 0-100 -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">
+        ${scoreCircle('Performance',   scores.performance)}
+        ${scoreCircle('Acessib.',      scores.accessibility)}
+        ${scoreCircle('Boas Práticas', scores.bestPractices)}
+        ${scoreCircle('SEO',           scores.seo)}
+      </div>
+
+      <!-- CWV metrics -->
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${['lcp','inp','cls','fcp','ttfb'].map(k => cwvBadge(k, cwv[k])).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function scoreCircle(label, score) {
+  const color = score == null ? '#9CA3AF'
+    : score >= 90 ? '#22C55E'
+    : score >= 50 ? '#F59E0B'
+    : '#EF4444';
+  const display = score == null ? '—' : score;
+  return `
+    <div style="text-align:center;">
+      <div style="width:52px;height:52px;border-radius:50%;margin:0 auto 6px;
+        border:3px solid ${color};display:flex;align-items:center;justify-content:center;
+        font-size:0.9375rem;font-weight:700;color:${color};">
+        ${display}
+      </div>
+      <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">
+        ${label}
+      </div>
+    </div>
+  `;
+}
+
+function cwvBadge(key, metric) {
+  const meta = CWV_LABELS[key];
+  if (!meta) return '';
+  const value = metric?.value;
+  const cat   = metric?.category;
+  const color = CATEGORY_COLORS[cat] || '#9CA3AF';
+  const display = value == null ? '—'
+    : key === 'cls' ? Number(value).toFixed(3).replace('.', ',')
+    : `${Math.round(value)}${meta.unit}`;
+  const catLabel = cat === 'FAST' ? 'Bom'
+    : cat === 'AVERAGE' || cat === 'NEEDS_IMPROVEMENT' ? 'Precisa melhorar'
+    : cat === 'SLOW' ? 'Ruim' : '—';
+  return `
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;
+      background:var(--bg-surface);border-radius:var(--radius-md);
+      border-left:3px solid ${color};">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.75rem;font-weight:600;" title="${esc(meta.info)}">
+          ${meta.label} <span style="color:var(--text-muted);font-weight:400;font-size:0.6875rem;">
+          ${meta.full}</span>
+        </div>
+      </div>
+      <div style="font-size:0.8125rem;font-weight:700;color:${color};min-width:64px;text-align:right;">
+        ${display}
+      </div>
+      <div style="font-size:0.625rem;text-transform:uppercase;color:${color};min-width:80px;text-align:right;">
+        ${catLabel}
+      </div>
+    </div>
+  `;
+}
+
+function renderSeoFailsCard(mobile, desktop) {
+  // Une falhas únicas das duas estratégias (o SEO check é o mesmo, mas por segurança)
+  const map = new Map();
+  for (const src of [mobile, desktop]) {
+    if (!src?.seoFails) continue;
+    for (const f of src.seoFails) {
+      if (!map.has(f.id)) map.set(f.id, f);
+    }
+  }
+  const fails = [...map.values()];
+  if (!fails.length) {
+    return `
+      <div class="card" style="padding:20px;margin-bottom:20px;border-left:3px solid #22C55E;">
+        <div style="font-size:0.9375rem;font-weight:600;color:#22C55E;">
+          ✓ Todas as verificações SEO passaram
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+          Lighthouse não encontrou problemas de SEO nesta auditoria.
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="card" style="padding:20px;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:0.9375rem;font-weight:600;">⚠ Problemas de SEO detectados (${fails.length})</div>
+        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;">
+          Lighthouse audits
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${fails.map(f => `
+          <div style="padding:10px 12px;background:var(--bg-surface);border-radius:var(--radius-md);
+            border-left:3px solid #F59E0B;">
+            <div style="font-size:0.8125rem;font-weight:600;margin-bottom:2px;">${esc(f.title)}</div>
+            ${f.displayValue ? `<div style="font-size:0.6875rem;color:#F59E0B;margin-bottom:2px;">${esc(f.displayValue)}</div>` : ''}
+            <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.45;">${esc(stripMarkdown(f.description))}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderCwvHistory(runs) {
+  // Mini timeline dos últimos runs: score de performance (mobile) + INP
+  const sorted = [...runs].reverse(); // mais antigos primeiro
+  const rows = sorted.map(r => {
+    const dt = r.runAt?.toDate ? r.runAt.toDate() : new Date(r.runAt);
+    return {
+      date:    dt,
+      perfMob: r.mobile?.scores?.performance ?? null,
+      perfDesk:r.desktop?.scores?.performance ?? null,
+      seoMob:  r.mobile?.scores?.seo ?? null,
+      lcpMob:  r.mobile?.cwv?.lcp?.value ?? null,
+      inpMob:  r.mobile?.cwv?.inp?.value ?? null,
+      clsMob:  r.mobile?.cwv?.cls?.value ?? null,
+    };
+  });
+  return `
+    <div class="card" style="padding:20px;">
+      <div style="font-size:0.9375rem;font-weight:600;margin-bottom:12px;">
+        Histórico das últimas ${runs.length} auditorias
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;font-size:0.75rem;border-collapse:collapse;">
+          <thead>
+            <tr style="color:var(--text-muted);font-size:0.625rem;text-transform:uppercase;letter-spacing:.05em;">
+              <th style="text-align:left;padding:6px 8px;">Data</th>
+              <th style="text-align:right;padding:6px 8px;">Perf. 📱</th>
+              <th style="text-align:right;padding:6px 8px;">Perf. 🖥</th>
+              <th style="text-align:right;padding:6px 8px;">SEO 📱</th>
+              <th style="text-align:right;padding:6px 8px;">LCP</th>
+              <th style="text-align:right;padding:6px 8px;">INP</th>
+              <th style="text-align:right;padding:6px 8px;">CLS</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.reverse().map(r => `
+              <tr style="border-top:1px solid var(--border-subtle);">
+                <td style="padding:6px 8px;color:var(--text-muted);">${fmtDateTime(r.date)}</td>
+                <td style="padding:6px 8px;text-align:right;${scoreTextColor(r.perfMob)}">${r.perfMob ?? '—'}</td>
+                <td style="padding:6px 8px;text-align:right;${scoreTextColor(r.perfDesk)}">${r.perfDesk ?? '—'}</td>
+                <td style="padding:6px 8px;text-align:right;${scoreTextColor(r.seoMob)}">${r.seoMob ?? '—'}</td>
+                <td style="padding:6px 8px;text-align:right;">${r.lcpMob != null ? Math.round(r.lcpMob)+'ms' : '—'}</td>
+                <td style="padding:6px 8px;text-align:right;">${r.inpMob != null ? Math.round(r.inpMob)+'ms' : '—'}</td>
+                <td style="padding:6px 8px;text-align:right;">${r.clsMob != null ? Number(r.clsMob).toFixed(3).replace('.',',') : '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function scoreTextColor(score) {
+  if (score == null) return 'color:var(--text-muted);';
+  if (score >= 90)   return 'color:#22C55E;font-weight:600;';
+  if (score >= 50)   return 'color:#F59E0B;font-weight:600;';
+  return 'color:#EF4444;font-weight:600;';
+}
+
+function stripMarkdown(str) {
+  if (!str) return '';
+  // Remove [text](url) → text, backticks, **bold**
+  return String(str)
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .trim();
+}
+
+function fmtDateTime(ts) {
+  if (!ts) return '—';
+  const d = ts?.toDate ? ts.toDate() : new Date(ts);
+  if (!d || isNaN(d.getTime())) return '—';
+  return new Intl.DateTimeFormat('pt-BR', {
+    day:'2-digit', month:'2-digit', year:'numeric',
+    hour:'2-digit', minute:'2-digit',
+  }).format(d);
+}
+
+/* ─── Eventos da CWV view ────────────────────────────────── */
+function attachCwvEvents() {
+  const root = document.getElementById('ga-cwv-view');
+  if (!root) return;
+
+  // Seletor de site
+  root.querySelector('#cwv-site-select')?.addEventListener('change', async (e) => {
+    cwvSelectedId = e.target.value || null;
+    cwvLatestRuns = cwvSelectedId ? await fetchLatestRuns(cwvSelectedId, 10) : [];
+    renderCwvView();
+  });
+
+  // Cadastrar site (botão principal + botão do empty state)
+  root.querySelector('#cwv-add-site')?.addEventListener('click', openAddSiteDialog);
+  root.querySelector('#cwv-add-site-empty')?.addEventListener('click', openAddSiteDialog);
+
+  // Executar auditoria agora
+  root.querySelector('#cwv-run-now')?.addEventListener('click', async () => {
+    if (!cwvSelectedId) return;
+    const btn = root.querySelector('#cwv-run-now');
+    const apiKey = await getPsiApiKey();
+    if (!apiKey) {
+      toast.error('Configure a API key do PageSpeed Insights em Configurações → Integrações.');
+      return;
+    }
+    try {
+      if (btn) { btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Auditando… (~15s)'; }
+      await runAuditAndSave(cwvSelectedId);
+      toast.success('Auditoria concluída e salva no histórico.');
+      cwvLatestRuns = await fetchLatestRuns(cwvSelectedId, 10);
+      renderCwvView();
+    } catch (e) {
+      toast.error('Erro na auditoria: ' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = '▶ Executar auditoria agora'; }
+    }
+  });
+
+  // Remover site
+  root.querySelector('#cwv-delete-site')?.addEventListener('click', async () => {
+    if (!cwvSelectedId) return;
+    const site = cwvSites.find(s => s.id === cwvSelectedId);
+    const { modal } = await import('../components/modal.js');
+    const ok = await modal.confirm({
+      title:   'Remover site?',
+      message: `Remover <strong>${esc(site?.label || '')}</strong> e todo o histórico de auditorias? Essa ação não pode ser desfeita.`,
+      confirmText: 'Remover', danger: true, icon: '⚠',
+    });
+    if (!ok) return;
+    try {
+      await deleteSite(cwvSelectedId);
+      toast.success('Site removido.');
+      cwvSelectedId = null;
+      cwvLatestRuns = [];
+      await loadCwvData();
+      renderCwvView();
+    } catch (e) {
+      toast.error('Erro: ' + e.message);
+    }
+  });
+}
+
+/* ─── Diálogo de cadastro de site ────────────────────────── */
+async function openAddSiteDialog() {
+  const { modal } = await import('../components/modal.js');
+  const html = `
+    <div class="form-group">
+      <label class="form-label">URL do site</label>
+      <input type="url" class="form-input" id="cwv-new-url"
+        placeholder="https://primetour.com.br" autofocus />
+      <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+        Se omitir https://, será adicionado automaticamente.
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Nome/rótulo</label>
+      <input type="text" class="form-input" id="cwv-new-label"
+        placeholder="Ex.: Primetour — Site Principal" maxlength="80" />
+    </div>
+  `;
+  const ok = await modal.confirm({
+    title:      'Cadastrar site',
+    message:    html,
+    confirmText:'Cadastrar',
+    icon:       '⚡',
+  });
+  if (!ok) return;
+  const url   = document.getElementById('cwv-new-url')?.value?.trim();
+  const label = document.getElementById('cwv-new-label')?.value?.trim();
+  if (!url) { toast.error('URL é obrigatória.'); return; }
+  try {
+    const id = await createSite({ url, label });
+    toast.success('Site cadastrado.');
+    cwvSelectedId = id;
+    await loadCwvData();
+    renderCwvView();
+  } catch (e) {
+    toast.error('Erro: ' + e.message);
+  }
 }

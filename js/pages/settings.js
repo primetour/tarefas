@@ -71,6 +71,7 @@ export async function renderSettings(container) {
           { id:'tasks',         icon:'✓',  label:'Tarefas' },
           { id:'notifications', icon:'🔔', label:'Notificações' },
           { id:'csat-settings', icon:'★',  label:'CSAT' },
+          { id:'integrations',  icon:'🔌', label:'Integrações' },
           { id:'data',          icon:'💾', label:'Dados' },
         ].map((s,i) => `
           <div class="settings-nav-item ${i===0?'active':''}" data-section="${s.id}"
@@ -106,6 +107,7 @@ export async function renderSettings(container) {
         tasks:         renderSectionTasks,
         notifications: renderSectionNotifications,
         'csat-settings': renderSectionCsat,
+        integrations:  renderSectionIntegrations,
         data:          renderSectionData,
       };
       const fn = sections[item.dataset.section];
@@ -286,6 +288,43 @@ function renderSectionCsat(s) {
   `;
 }
 
+function renderSectionIntegrations(s) {
+  const psiKey = s.psiApiKey || '';
+  const masked = psiKey ? psiKey.slice(0, 6) + '…' + psiKey.slice(-4) : '';
+  return `
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">
+        <div class="card-title">⚡ PageSpeed Insights API</div>
+      </div>
+      <div class="card-body">
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:14px;">
+          Usada pela aba <strong>Core Web Vitals + SEO</strong> dentro de <em>Google Analytics</em>
+          para auditar sites cadastrados. Crie uma key em
+          <a href="https://console.cloud.google.com/apis/library/pagespeedonline.googleapis.com" target="_blank" rel="noopener"
+             style="color:var(--brand-gold);text-decoration:underline;">Google Cloud Console → PageSpeed Insights API</a>.
+        </p>
+        <div class="form-group">
+          <label class="form-label">API key</label>
+          <input type="password" class="form-input" id="s-psi-api-key"
+            value="${esc(psiKey)}" autocomplete="off"
+            placeholder="AIzaSy…" maxlength="200" />
+          ${psiKey ? `<div style="font-size:0.6875rem;color:#22C55E;margin-top:4px;">
+            ✓ Key configurada (${esc(masked)})
+          </div>` : `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+            Nenhuma key salva. Sem ela, as auditorias não funcionam.
+          </div>`}
+        </div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.5;padding:10px 12px;
+          background:var(--bg-surface);border-radius:var(--radius-md);">
+          <strong>Segurança:</strong> a key é lida do browser para chamar a PSI API diretamente. Restrinja-a por
+          <em>HTTP referrer</em> no Google Cloud Console com os domínios do sistema para evitar uso indevido.
+          Limite gratuito: 25.000 requests/dia.
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderSectionData(s) {
   return `
     <div class="card" style="margin-bottom:20px;">
@@ -442,6 +481,10 @@ async function saveAllSettings() {
       updatedAt:          serverTimestamp(),
       updatedBy:          store.get('currentUser').uid,
     };
+
+    // psiApiKey: só salva se a seção Integrações estiver aberta (senão preserva valor)
+    const psiEl = document.getElementById('s-psi-api-key');
+    if (psiEl) data.psiApiKey = psiEl.value?.trim() || '';
 
     // Remove nulls
     Object.keys(data).forEach(k => { if(data[k] === null || data[k] === undefined) delete data[k]; });
