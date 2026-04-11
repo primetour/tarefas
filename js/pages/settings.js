@@ -313,6 +313,9 @@ function renderSectionIntegrations(s) {
           </div>` : `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
             Nenhuma key salva. Sem ela, as auditorias não funcionam.
           </div>`}
+          <button type="button" class="btn btn-ghost btn-sm" id="s-psi-test"
+            style="margin-top:10px;">🧪 Testar conexão com PSI</button>
+          <div id="s-psi-test-result" style="margin-top:8px;font-size:0.75rem;"></div>
         </div>
         <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.5;padding:10px 12px;
           background:var(--bg-surface);border-radius:var(--radius-md);">
@@ -433,6 +436,51 @@ function bindSectionEvents(settings) {
     sessionStorage.clear();
     toast.success('Cache limpo! A página será recarregada.');
     setTimeout(() => location.reload(), 1000);
+  });
+
+  // Testar key do PageSpeed Insights
+  document.getElementById('s-psi-test')?.addEventListener('click', async () => {
+    const btn = document.getElementById('s-psi-test');
+    const out = document.getElementById('s-psi-test-result');
+    if (!out) return;
+    const key = document.getElementById('s-psi-api-key')?.value?.trim();
+    if (!key) {
+      out.innerHTML = '<span style="color:#EF4444;">⚠ Digite a key no campo acima antes de testar.</span>';
+      return;
+    }
+    btn.disabled = true;
+    out.innerHTML = '<span style="color:var(--text-muted);">Testando…</span>';
+    try {
+      // Chamada mínima: só categoria performance, URL leve (google.com)
+      const ep = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed'
+        + '?url=https%3A%2F%2Fwww.google.com'
+        + '&strategy=mobile'
+        + '&category=performance'
+        + '&key=' + encodeURIComponent(key);
+      const resp = await fetch(ep);
+      if (resp.ok) {
+        const j = await resp.json();
+        const score = Math.round((j?.lighthouseResult?.categories?.performance?.score ?? 0) * 100);
+        out.innerHTML = `<span style="color:#22C55E;">✓ Conexão OK — resposta do Google recebida (score de teste: ${score}).
+          Pode salvar a key e executar auditorias.</span>`;
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        const gmsg = err?.error?.message || 'Erro desconhecido';
+        let diag = '';
+        if (resp.status === 400) {
+          diag = '<br><strong>Possível causa:</strong> API não habilitada no projeto Google Cloud, key inválida, ou restrição de referrer. Vá em <em>APIs & Services → Library</em> e habilite <strong>PageSpeed Insights API</strong>.';
+        } else if (resp.status === 403) {
+          diag = '<br><strong>Possível causa:</strong> sem permissão. Verifique se a key tem acesso ao PSI.';
+        } else if (resp.status === 429) {
+          diag = '<br><strong>Possível causa:</strong> quota excedida.';
+        }
+        out.innerHTML = `<span style="color:#EF4444;">✗ HTTP ${resp.status} — ${gmsg}${diag}</span>`;
+      }
+    } catch (e) {
+      out.innerHTML = `<span style="color:#EF4444;">✗ Falha de rede: ${e.message}</span>`;
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   document.getElementById('reset-settings-btn')?.addEventListener('click', async () => {

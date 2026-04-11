@@ -971,6 +971,18 @@ function renderCwvResults(latest, allRuns) {
       ${renderCwvStrategyCard('desktop', '🖥 Desktop', latest.desktop)}
     </div>
 
+    <!-- Oportunidades de performance (mobile por padrão — mais crítico) -->
+    ${renderOpportunitiesCard(latest.mobile, latest.desktop)}
+
+    <!-- Diagnósticos (elementos LCP, CLS, third-party) -->
+    ${renderDiagnosticsCard(latest.mobile, latest.desktop)}
+
+    <!-- Acessibilidade -->
+    ${renderCategoryFailsCard('a11y', '♿ Problemas de Acessibilidade', latest.mobile?.a11yFails, latest.desktop?.a11yFails)}
+
+    <!-- Boas práticas -->
+    ${renderCategoryFailsCard('bp', '🛡 Problemas de Boas Práticas', latest.mobile?.bpFails, latest.desktop?.bpFails)}
+
     <!-- SEO audits (falhas) -->
     ${renderSeoFailsCard(latest.mobile, latest.desktop)}
 
@@ -1066,6 +1078,299 @@ function cwvBadge(key, metric) {
   `;
 }
 
+/* ─── Oportunidades de performance ───────────────────────── */
+function renderOpportunitiesCard(mobile, desktop) {
+  // Une por id, pegando o maior savingsMs entre as duas estratégias
+  const map = new Map();
+  for (const [strategyKey, src] of [['mobile', mobile], ['desktop', desktop]]) {
+    if (!src?.opportunities) continue;
+    for (const o of src.opportunities) {
+      const existing = map.get(o.id);
+      if (!existing) {
+        map.set(o.id, { ...o, _strategies: { [strategyKey]: { savingsMs: o.savingsMs, score: o.score } } });
+      } else {
+        existing._strategies[strategyKey] = { savingsMs: o.savingsMs, score: o.score };
+        if (o.savingsMs > existing.savingsMs) {
+          existing.savingsMs    = o.savingsMs;
+          existing.savingsBytes = o.savingsBytes;
+          existing.items        = o.items;
+          existing.displayValue = o.displayValue;
+        }
+      }
+    }
+  }
+  const opps = [...map.values()].sort((a, b) => b.savingsMs - a.savingsMs);
+  if (!opps.length) {
+    return `
+      <div class="card" style="padding:20px;margin-bottom:20px;border-left:3px solid #22C55E;">
+        <div style="font-size:0.9375rem;font-weight:600;color:#22C55E;">
+          ✓ Nenhuma oportunidade crítica de performance
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+          O Lighthouse não encontrou melhorias significativas a sugerir.
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="card" style="padding:20px;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:0.9375rem;font-weight:600;">
+          💡 Oportunidades de melhoria de performance (${opps.length})
+        </div>
+        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;">
+          Ordenado por impacto
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${opps.map((o, i) => renderAuditAccordion(`opp-${i}`, o, 'perf')).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/* ─── Diagnósticos-chave ─────────────────────────────────── */
+function renderDiagnosticsCard(mobile, desktop) {
+  const mobDiag = mobile?.diagnostics || {};
+  const deskDiag = desktop?.diagnostics || {};
+
+  const sections = [];
+
+  // LCP element
+  const lcpEl = mobDiag.lcpElement || deskDiag.lcpElement;
+  if (lcpEl?.items?.length) {
+    sections.push({
+      icon: '🎯',
+      title: 'Elemento do LCP (Largest Contentful Paint)',
+      subtitle: lcpEl.displayValue || 'Maior elemento visível da página',
+      items: lcpEl.items.map(it => ({
+        primary: it.nodeLabel || it.selector || 'Elemento não identificado',
+        secondary: it.snippet || '',
+      })),
+      color: '#F59E0B',
+    });
+  }
+
+  // Layout shift elements
+  const lsEls = mobDiag.layoutShiftEls || deskDiag.layoutShiftEls;
+  if (lsEls?.items?.length) {
+    sections.push({
+      icon: '📐',
+      title: 'Elementos que causaram layout shift (CLS)',
+      subtitle: lsEls.displayValue || '',
+      items: lsEls.items.map(it => ({
+        primary: it.nodeLabel || it.selector || '—',
+        secondary: it.snippet || '',
+      })),
+      color: '#EF4444',
+    });
+  }
+
+  // Third-party summary
+  const tp = mobDiag.thirdParty || deskDiag.thirdParty;
+  if (tp?.items?.length) {
+    sections.push({
+      icon: '🌐',
+      title: 'Impacto de scripts de terceiros',
+      subtitle: tp.displayValue || '',
+      items: tp.items.map(it => ({
+        primary: it.entity || it.url || '—',
+        secondary: [
+          it.transferSize != null ? `${fmtBytes(it.transferSize)} transferidos` : '',
+          it.mainThreadTime != null ? `${Math.round(it.mainThreadTime)}ms main thread` : '',
+          it.blockingTime != null ? `${Math.round(it.blockingTime)}ms bloqueio` : '',
+        ].filter(Boolean).join(' • '),
+      })),
+      color: '#A78BFA',
+    });
+  }
+
+  // Main thread breakdown
+  const mt = mobDiag.mainthreadBreakdown || deskDiag.mainthreadBreakdown;
+  if (mt?.items?.length) {
+    sections.push({
+      icon: '⚙',
+      title: 'Onde a main thread está gastando tempo',
+      subtitle: mt.displayValue || '',
+      items: mt.items.map(it => ({
+        primary: it.groupLabel || it.entity || 'Atividade',
+        secondary: it.duration != null ? `${Math.round(it.duration)}ms` : '',
+      })),
+      color: '#38BDF8',
+    });
+  }
+
+  // Bootup time (JS evaluation por script)
+  const bt = mobDiag.bootupTime || deskDiag.bootupTime;
+  if (bt?.items?.length) {
+    sections.push({
+      icon: '🚀',
+      title: 'Tempo de inicialização de JavaScript',
+      subtitle: bt.displayValue || '',
+      items: bt.items.map(it => ({
+        primary: it.url || '—',
+        secondary: [
+          it.totalBytes != null ? fmtBytes(it.totalBytes) : '',
+          it.duration != null ? `${Math.round(it.duration)}ms total` : '',
+        ].filter(Boolean).join(' • '),
+      })),
+      color: '#F97316',
+    });
+  }
+
+  if (!sections.length) return '';
+
+  return `
+    <div class="card" style="padding:20px;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:0.9375rem;font-weight:600;">
+          🔍 Diagnósticos detalhados
+        </div>
+        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;">
+          O que está causando os problemas
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${sections.map((s, i) => `
+          <details style="background:var(--bg-surface);border-radius:var(--radius-md);
+            border-left:3px solid ${s.color};">
+            <summary style="padding:10px 12px;cursor:pointer;list-style:none;
+              display:flex;align-items:center;gap:10px;">
+              <span style="font-size:1rem;">${s.icon}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.8125rem;font-weight:600;">${esc(s.title)}</div>
+                ${s.subtitle ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">${esc(s.subtitle)}</div>` : ''}
+              </div>
+              <span style="font-size:0.625rem;color:var(--text-muted);">▾</span>
+            </summary>
+            <div style="padding:0 12px 12px 40px;display:flex;flex-direction:column;gap:6px;">
+              ${s.items.map(it => `
+                <div style="font-size:0.75rem;line-height:1.4;padding:6px 8px;
+                  background:var(--bg-card);border-radius:var(--radius-sm);">
+                  <div style="font-family:ui-monospace,monospace;word-break:break-all;">${esc(it.primary)}</div>
+                  ${it.secondary ? `<div style="color:var(--text-muted);font-size:0.6875rem;margin-top:2px;">${esc(it.secondary)}</div>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </details>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/* ─── Card genérico de falhas de categoria (a11y / BP) ──── */
+function renderCategoryFailsCard(key, title, mobileFails, desktopFails) {
+  const map = new Map();
+  for (const src of [mobileFails, desktopFails]) {
+    if (!Array.isArray(src)) continue;
+    for (const f of src) {
+      if (!map.has(f.id)) map.set(f.id, f);
+    }
+  }
+  const fails = [...map.values()].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
+  if (!fails.length) {
+    return `
+      <div class="card" style="padding:16px 20px;margin-bottom:20px;border-left:3px solid #22C55E;">
+        <div style="font-size:0.8125rem;font-weight:600;color:#22C55E;">
+          ✓ ${esc(title.replace(/^[^ ]+ /, ''))} — nenhum problema detectado
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="card" style="padding:20px;margin-bottom:20px;">
+      <div style="font-size:0.9375rem;font-weight:600;margin-bottom:12px;">
+        ${title} (${fails.length})
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${fails.map((f, i) => renderAuditAccordion(`${key}-${i}`, f, 'other')).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/* ─── Accordion único para qualquer audit (opp / a11y / bp) ── */
+function renderAuditAccordion(id, audit, kind) {
+  const savingsMs    = audit.savingsMs || 0;
+  const savingsBytes = audit.savingsBytes || 0;
+  const savingsLabel = [
+    savingsMs > 0    ? `-${Math.round(savingsMs)}ms`    : '',
+    savingsBytes > 0 ? `-${fmtBytes(savingsBytes)}`     : '',
+  ].filter(Boolean).join(' • ');
+
+  const color = kind === 'perf'
+    ? (savingsMs >= 1000 ? '#EF4444' : savingsMs >= 300 ? '#F59E0B' : '#38BDF8')
+    : '#F59E0B';
+
+  const items = (audit.items || []).map(it => {
+    // Item de performance (URL + wastedBytes/Ms)
+    if (it.url) {
+      const waste = [
+        it.wastedMs    ? `-${Math.round(it.wastedMs)}ms`    : '',
+        it.wastedBytes ? `-${fmtBytes(it.wastedBytes)}`     : '',
+        it.totalBytes  ? `(${fmtBytes(it.totalBytes)} total)` : '',
+      ].filter(Boolean).join(' ');
+      return `
+        <div style="font-size:0.6875rem;padding:5px 8px;background:var(--bg-card);
+          border-radius:var(--radius-sm);line-height:1.4;">
+          <div style="font-family:ui-monospace,monospace;word-break:break-all;">${esc(it.url)}</div>
+          ${waste ? `<div style="color:var(--text-muted);margin-top:2px;">${esc(waste)}</div>` : ''}
+        </div>
+      `;
+    }
+    // Item de a11y/BP (node do DOM)
+    if (it.snippet || it.selector || it.nodeLabel) {
+      return `
+        <div style="font-size:0.6875rem;padding:5px 8px;background:var(--bg-card);
+          border-radius:var(--radius-sm);line-height:1.4;">
+          ${it.nodeLabel ? `<div style="color:var(--text-secondary);">${esc(it.nodeLabel)}</div>` : ''}
+          ${it.snippet ? `<div style="font-family:ui-monospace,monospace;color:var(--text-muted);font-size:0.625rem;margin-top:2px;">${esc(it.snippet)}</div>` : ''}
+          ${it.selector ? `<div style="font-family:ui-monospace,monospace;color:var(--text-muted);font-size:0.625rem;margin-top:2px;">${esc(it.selector)}</div>` : ''}
+        </div>
+      `;
+    }
+    return '';
+  }).filter(Boolean).join('');
+
+  return `
+    <details style="background:var(--bg-surface);border-radius:var(--radius-md);
+      border-left:3px solid ${color};" data-audit-id="${esc(audit.id)}">
+      <summary style="padding:10px 12px;cursor:pointer;list-style:none;
+        display:flex;align-items:center;gap:10px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.8125rem;font-weight:600;">${esc(audit.title)}</div>
+          ${audit.displayValue ? `<div style="font-size:0.6875rem;color:${color};margin-top:2px;">${esc(audit.displayValue)}</div>` : ''}
+        </div>
+        ${savingsLabel ? `
+          <div style="font-size:0.6875rem;font-weight:700;color:${color};
+            padding:3px 8px;background:${color}22;border-radius:10px;white-space:nowrap;">
+            ${esc(savingsLabel)}
+          </div>
+        ` : ''}
+        <span style="font-size:0.625rem;color:var(--text-muted);">▾</span>
+      </summary>
+      <div style="padding:0 12px 12px 12px;">
+        ${audit.description ? `
+          <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.5;margin-bottom:8px;">
+            ${esc(stripMarkdown(audit.description))}
+          </div>
+        ` : ''}
+        ${items ? `<div style="display:flex;flex-direction:column;gap:4px;">${items}</div>` : ''}
+      </div>
+    </details>
+  `;
+}
+
+/* ─── Formatador de bytes ───────────────────────────────── */
+function fmtBytes(bytes) {
+  if (bytes == null || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`;
+}
+
 function renderSeoFailsCard(mobile, desktop) {
   // Une falhas únicas das duas estratégias (o SEO check é o mesmo, mas por segurança)
   const map = new Map();
@@ -1097,14 +1402,7 @@ function renderSeoFailsCard(mobile, desktop) {
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        ${fails.map(f => `
-          <div style="padding:10px 12px;background:var(--bg-surface);border-radius:var(--radius-md);
-            border-left:3px solid #F59E0B;">
-            <div style="font-size:0.8125rem;font-weight:600;margin-bottom:2px;">${esc(f.title)}</div>
-            ${f.displayValue ? `<div style="font-size:0.6875rem;color:#F59E0B;margin-bottom:2px;">${esc(f.displayValue)}</div>` : ''}
-            <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.45;">${esc(stripMarkdown(f.description))}</div>
-          </div>
-        `).join('')}
+        ${fails.map((f, i) => renderAuditAccordion(`seo-${i}`, f, 'other')).join('')}
       </div>
     </div>
   `;
