@@ -75,53 +75,59 @@ const NAV_GROUPS = [
   }
 ];
 
-/* ─── Workspace / Squads selector HTML ───────────────────── */
-function buildWsSelector() {
-  const workspaces   = store.get('userWorkspaces') || [];
-  const activeIds    = store.get('activeWorkspaces') || [];
-  const current      = store.get('currentWorkspace');
+/* ─── Helper: lê squadId atual da URL (?id=XXX) ──────────── */
+function getCurrentSquadIdFromHash() {
+  const hash = window.location.hash || '';
+  const q = hash.split('?')[1] || '';
+  const params = new URLSearchParams(q);
+  return params.get('id') || null;
+}
 
+/* ─── Squads expansível (subitens do menu principal) ─────── */
+function buildSquadsMenuItem() {
+  const workspaces = store.get('userWorkspaces') || [];
   if (!workspaces.length) return '';
 
+  const current       = store.get('currentWorkspace');
+  const currentSquadId = getCurrentSquadIdFromHash();
+  const isSquadRoute  = (store.get('currentRoute') || '').startsWith('squad');
+  const collapsed     = store.get('sidebar_squads_collapsed') === true;
+
+  const subItems = workspaces.map(ws => {
+    const isOpen    = isSquadRoute && currentSquadId === ws.id;
+    const isCurrent = current?.id === ws.id;
+    return `
+      <div class="nav-item nav-squad-subitem ${isOpen?'active':''}"
+           data-squad-id="${ws.id}"
+           data-tooltip="${esc(ws.name)}${ws.multiSector ? ' · multissetor' : ''}"
+           title="Abrir workspace do squad${isCurrent ? ' (squad padrão)' : ''}"
+           style="padding-left:32px;">
+        <span class="nav-icon" style="color:${ws.color||'#D4A843'};font-size:0.875rem;">●</span>
+        <span class="nav-label" style="font-size:0.8125rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
+          ${esc(ws.name)}
+        </span>
+        ${ws.multiSector ? `<span class="nav-label" title="Squad multissetor"
+          style="font-size:0.625rem;color:var(--text-muted);margin-left:4px;">⇌</span>` : ''}
+        <span class="nav-label ws-current-dot" data-wsid="${ws.id}"
+          title="${isCurrent ? 'Squad padrão atual (onde novas tarefas são criadas)' : 'Definir como squad padrão'}"
+          style="width:8px;height:8px;border-radius:50%;flex-shrink:0;cursor:pointer;margin-left:6px;
+            background:${isCurrent?'var(--brand-gold)':'var(--border-subtle)'};
+            box-shadow:${isCurrent?'0 0 0 2px rgba(212,168,67,0.25)':'none'};
+            transition:all 0.15s;display:inline-block;"></span>
+      </div>`;
+  }).join('');
+
   return `
-    <div style="padding:8px 12px 4px; border-bottom:1px solid var(--border-subtle);">
-      <div class="nav-label" style="display:flex;align-items:center;justify-content:space-between;
-        font-size:0.625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;
-        color:var(--text-muted);margin-bottom:6px;">
-        <span>Squads</span>
-        <span title="Clique no nome do squad para abrir o workspace dele (projetos + tarefas). Clique no ponto dourado à direita para definir como squad padrão (onde novas tarefas serão criadas)."
-          style="cursor:help;font-size:0.75rem;opacity:0.7;">ℹ</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:3px;">
-        ${workspaces.map(ws => {
-          const isActive  = activeIds.includes(ws.id);
-          const isCurrent = current?.id === ws.id;
-          return `
-            <div class="ws-toggle-chip ${isActive?'active':''}" data-wsid="${ws.id}"
-              title="${esc(ws.name)}${ws.multiSector ? ' · multissetor' : ''}\nClique para abrir o workspace deste squad"
-              style="display:flex;align-items:center;gap:8px;padding:5px 8px;
-              border-radius:var(--radius-md);cursor:pointer;transition:all 0.15s;
-              background:${isActive?ws.color+'18':'transparent'};
-              border:1px solid ${isActive?ws.color+'44':'transparent'};">
-              <div style="width:8px;height:8px;border-radius:50%;flex-shrink:0;
-                background:${ws.color||'#D4A843'};opacity:${isActive?1:0.4};"></div>
-              <span class="nav-label" style="font-size:0.8125rem;
-                color:${isActive?'var(--text-primary)':'var(--text-muted)'};
-                overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">
-                ${esc(ws.name)}
-              </span>
-              ${ws.multiSector ? `<span class="nav-label" title="Squad multissetor"
-                style="font-size:0.625rem;color:var(--text-muted);flex-shrink:0;">⇌</span>` : ''}
-              <div class="ws-current-dot" data-wsid="${ws.id}"
-                title="${isCurrent ? 'Squad padrão atual (onde novas tarefas são criadas)' : 'Definir como squad padrão'}"
-                style="width:8px;height:8px;border-radius:50%;flex-shrink:0;cursor:pointer;
-                  background:${isCurrent?'var(--brand-gold)':'var(--border-subtle)'};
-                  box-shadow:${isCurrent?'0 0 0 2px rgba(212,168,67,0.25)':'none'};
-                  transition:all 0.15s;">
-              </div>
-            </div>`;
-        }).join('')}
-      </div>
+    <div class="nav-item nav-squads-parent ${isSquadRoute ? 'active' : ''}" data-squads-toggle>
+      <span class="nav-icon">◈</span>
+      <span class="nav-label">Squads</span>
+      <span class="nav-label" style="margin-left:auto;font-size:0.625rem;opacity:0.6;
+        background:var(--bg-subtle);padding:1px 6px;border-radius:var(--radius-full);">${workspaces.length}</span>
+      <span class="nav-label section-chevron" style="font-size:0.55rem;opacity:0.5;margin-left:6px;transition:transform 0.2s;
+        transform:${collapsed?'rotate(-90deg)':'rotate(0deg)'};">▼</span>
+    </div>
+    <div class="nav-squads-children" style="display:${collapsed?'none':'block'};">
+      ${subItems}
     </div>
   `;
 }
@@ -157,6 +163,39 @@ export class Sidebar {
       });
       if (!items.length) return '';
 
+      // Montar HTML de itens, injetando o bloco de Squads após "projects"
+      // no grupo Principal quando o usuário tiver squads.
+      const renderNavItem = (item) => `
+        <div
+          class="nav-item ${router.isActive(item.route) ? 'active' : ''}"
+          data-route="${item.route}"
+          data-tooltip="${item.label}"
+        >
+          <span class="nav-icon">${item.icon}</span>
+          <span class="nav-label">${item.label}</span>
+          ${item.badge ? `<span class="sidebar-badge" style="
+            display:none;min-width:18px;height:18px;padding:0 4px;
+            border-radius:var(--radius-full);background:var(--color-danger);
+            color:#fff;font-size:0.625rem;font-weight:700;
+            align-items:center;justify-content:center;margin-left:auto;"></span>` : ''}
+        </div>
+      `;
+
+      let itemsHTML = '';
+      const userWorkspaces = store.get('userWorkspaces') || [];
+      const showSquadsHere = group.label === 'Principal' && userWorkspaces.length > 0;
+      if (showSquadsHere) {
+        // Injeta "Squads" logo após "projects"
+        for (const item of items) {
+          itemsHTML += renderNavItem(item);
+          if (item.route === 'projects') {
+            itemsHTML += buildSquadsMenuItem();
+          }
+        }
+      } else {
+        itemsHTML = items.map(renderNavItem).join('');
+      }
+
       const isCollapsed = store.get(`sidebar_section_${group.label}`) === true;
       return `
         <div class="sidebar-section" data-section="${group.label}">
@@ -167,21 +206,7 @@ export class Sidebar {
               transform:${isCollapsed?'rotate(-90deg)':'rotate(0deg)'};">▼</span>
           </div>
           <div class="sidebar-section-items" style="display:${isCollapsed?'none':'block'}">
-            ${items.map(item => `
-              <div
-                class="nav-item ${router.isActive(item.route) ? 'active' : ''}"
-                data-route="${item.route}"
-                data-tooltip="${item.label}"
-              >
-                <span class="nav-icon">${item.icon}</span>
-                <span class="nav-label">${item.label}</span>
-                ${item.badge ? `<span class="sidebar-badge" style="
-                  display:none;min-width:18px;height:18px;padding:0 4px;
-                  border-radius:var(--radius-full);background:var(--color-danger);
-                  color:#fff;font-size:0.625rem;font-weight:700;
-                  align-items:center;justify-content:center;margin-left:auto;"></span>` : ''}
-              </div>
-            `).join('')}
+            ${itemsHTML}
           </div>
         </div>
       `;
@@ -206,11 +231,6 @@ export class Sidebar {
         <button class="sidebar-toggle" id="sidebar-toggle-btn" aria-label="Recolher menu">
           ◀
         </button>
-      </div>
-
-      <!-- Workspace selector -->
-      <div class="sidebar-ws-selector" id="sidebar-ws-selector">
-        ${buildWsSelector()}
       </div>
 
       <nav class="sidebar-nav">
@@ -251,7 +271,7 @@ export class Sidebar {
     const toggleBtn = this.el.querySelector('#sidebar-toggle-btn');
     toggleBtn?.addEventListener('click', () => this.toggleCollapse());
 
-    // Nav items
+    // Nav items (com data-route) — navegação padrão
     this.el.querySelectorAll('.nav-item[data-route]').forEach(item => {
       item.addEventListener('click', () => {
         const route = item.dataset.route;
@@ -268,6 +288,8 @@ export class Sidebar {
     // Subscribe to route changes
     this._unsubRoute = store.subscribe('currentRoute', (route) => {
       this.setActive(route);
+      // Re-render squads para marcar subitem ativo conforme ?id=XXX
+      this._rerenderSquadsBlock();
     });
 
     // Accordion section toggles
@@ -284,52 +306,105 @@ export class Sidebar {
       });
     });
 
-    // Subscribe to workspace changes — re-render selector
+    // Subscribe to workspace changes — re-render Squads block
     this._unsubWs = store.subscribe('userWorkspaces', () => {
-      const sel = this.el?.querySelector('#sidebar-ws-selector');
-      if (sel) sel.innerHTML = buildWsSelector();
-      this._attachWsEvents();
+      this._rerenderSquadsBlock(true);
     });
 
-    this._attachWsEvents();
+    this._attachSquadEvents();
   }
 
-  _attachWsEvents() {
-    // Click no chip → ativa este squad como único, define como atual e
-    // abre o workspace do squad (página dedicada com projetos + tarefas).
-    this.el?.querySelectorAll('.ws-toggle-chip').forEach(chip => {
-      chip.addEventListener('click', (e) => {
-        // Não interceptar clique no dot direito (set currentWorkspace)
+  /**
+   * Re-renderiza o bloco "Squads" (item pai + subitens) sem perder
+   * estado do resto do sidebar. Se `structural=true`, pode ter
+   * havido mudança no número de squads (ou vazio), então reconstrói
+   * todo o sidebar via re-render parcial do nav.
+   */
+  _rerenderSquadsBlock(structural = false) {
+    if (!this.el) return;
+    const parent   = this.el.querySelector('.nav-squads-parent');
+    const children = this.el.querySelector('.nav-squads-children');
+    const workspaces = store.get('userWorkspaces') || [];
+
+    // Caso estrutural: criar do zero se não existia, remover se ficou vazio
+    if (structural) {
+      // Remover antigos
+      if (parent)   parent.remove();
+      if (children) children.remove();
+      if (workspaces.length) {
+        // Inserir após o item "projects"
+        const projectsItem = this.el.querySelector('.nav-item[data-route="projects"]');
+        if (projectsItem) {
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = buildSquadsMenuItem();
+          // Insere cada filho do wrapper após projectsItem, na ordem
+          const nodes = [...wrapper.children];
+          let anchor = projectsItem;
+          for (const n of nodes) {
+            anchor.after(n);
+            anchor = n;
+          }
+        }
+      }
+    } else if (parent || children) {
+      // Apenas atualiza classes/ativo dos subitens existentes
+      const html = buildSquadsMenuItem();
+      if (html && parent && children) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = html;
+        const newParent   = wrapper.querySelector('.nav-squads-parent');
+        const newChildren = wrapper.querySelector('.nav-squads-children');
+        if (newParent)   parent.replaceWith(newParent);
+        if (newChildren) children.replaceWith(newChildren);
+      }
+    }
+    this._attachSquadEvents();
+  }
+
+  _attachSquadEvents() {
+    // Toggle expandir/colapsar lista de squads
+    const parent = this.el?.querySelector('.nav-squads-parent[data-squads-toggle]');
+    if (parent) {
+      parent.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const children = this.el.querySelector('.nav-squads-children');
+        const chevron  = parent.querySelector('.section-chevron');
+        const collapsed = children?.style.display === 'none';
+        if (children) children.style.display = collapsed ? 'block' : 'none';
+        if (chevron)  chevron.style.transform = collapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
+        store.set('sidebar_squads_collapsed', !collapsed);
+      });
+    }
+
+    // Click em subitem → ativa squad + navega para página dedicada
+    this.el?.querySelectorAll('.nav-squad-subitem').forEach(sub => {
+      sub.addEventListener('click', (e) => {
+        // Clique no dot de "squad padrão" não navega
         if (e.target.closest('.ws-current-dot')) return;
         e.stopPropagation();
-        const wsId = chip.dataset.wsid;
+        const wsId = sub.dataset.squadId;
         const ws   = (store.get('userWorkspaces') || []).find(w => w.id === wsId);
         if (!ws) return;
         store.set('activeWorkspaces', [wsId]);
         store.set('currentWorkspace', ws);
         saveWorkspaceSelection([wsId], wsId);
-        // Re-render selector
-        const sel = this.el?.querySelector('#sidebar-ws-selector');
-        if (sel) sel.innerHTML = buildWsSelector();
-        this._attachWsEvents();
-        // Navegar para o workspace do squad (página dedicada)
         router.navigate(`squad?id=${encodeURIComponent(wsId)}`);
         this.closeMobile();
+        // Atualiza estado visual (ativo / dot)
+        this._rerenderSquadsBlock();
       });
     });
 
-    // Set current workspace (dot)
-    this.el?.querySelectorAll('.ws-current-dot').forEach(dot => {
+    // Dot de "squad padrão" — apenas define currentWorkspace sem navegar
+    this.el?.querySelectorAll('.nav-squad-subitem .ws-current-dot').forEach(dot => {
       dot.addEventListener('click', (e) => {
         e.stopPropagation();
         const wsId = dot.dataset.wsid;
-        const ws   = (store.get('userWorkspaces')||[]).find(w => w.id === wsId);
+        const ws   = (store.get('userWorkspaces') || []).find(w => w.id === wsId);
         if (!ws) return;
         store.set('currentWorkspace', ws);
-        saveWorkspaceSelection(store.get('activeWorkspaces')||[], wsId);
-        const sel = this.el?.querySelector('#sidebar-ws-selector');
-        if (sel) sel.innerHTML = buildWsSelector();
-        this._attachWsEvents();
+        saveWorkspaceSelection(store.get('activeWorkspaces') || [], wsId);
+        this._rerenderSquadsBlock();
       });
     });
   }
