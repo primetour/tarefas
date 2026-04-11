@@ -86,6 +86,12 @@ let cwvSelectedId   = null;
 let cwvLatestRuns   = [];  // últimas N runs do site selecionado
 let cwvLoaded       = false;  // lazy load no primeiro clique da tab
 
+// ─── CWV Evolution state ─────────────────────────────────
+let evoAllRuns      = [];     // todas as runs (até 200) do site selecionado
+let evoPeriod       = '30';   // '7' | '30' | '90' | 'all'
+let evoLoaded       = false;
+let evoChartInstances = [];   // Chart.js instances para destruir ao re-render
+
 /* ─── Render page ─────────────────────────────────────────── */
 export async function renderGaPerformance(container) {
   if (!store.can('analytics_view') && !store.isMaster()) {
@@ -128,6 +134,10 @@ export async function renderGaPerformance(container) {
         style="font-size:0.8125rem;border-left:2px solid var(--border-subtle);margin-left:4px;padding-left:10px;"
         title="Core Web Vitals — Métricas essenciais da web (Google). Avalia velocidade, interatividade e estabilidade visual dos sites cadastrados. Inclui também auditoria de SEO, acessibilidade e boas práticas.">
         ⚡ Performance da Web (CWV + SEO)</button>
+      <button class="btn btn-ghost btn-sm ga-tab" data-tab="evolution"
+        style="font-size:0.8125rem;"
+        title="Evolução histórica dos scores e Core Web Vitals ao longo do tempo. Mostra tendências, deltas e detecta regressões entre auditorias.">
+        📈 Evolução da Performance</button>
     </div>
 
     <!-- ═══ Traffic view (tabs daily/pages/sources/devices/countries) ═══ -->
@@ -187,6 +197,9 @@ export async function renderGaPerformance(container) {
 
     <!-- ═══ CWV view ═══ -->
     <div id="ga-cwv-view" style="display:none;"></div>
+
+    <!-- ═══ CWV Evolution view (tab evolution) ═══ -->
+    <div id="ga-cwv-evolution-view" style="display:none;"></div>
   `;
 
   // Event bindings
@@ -207,18 +220,25 @@ export async function renderGaPerformance(container) {
       const tab = btn.dataset.tab;
       const trafficView = document.getElementById('ga-traffic-view');
       const cwvView     = document.getElementById('ga-cwv-view');
+      const evoView     = document.getElementById('ga-cwv-evolution-view');
+
+      // Esconde todas as views
+      if (trafficView) trafficView.style.display = 'none';
+      if (cwvView)     cwvView.style.display     = 'none';
+      if (evoView)     evoView.style.display     = 'none';
+
       if (tab === 'cwv') {
-        if (trafficView) trafficView.style.display = 'none';
-        if (cwvView)     cwvView.style.display     = '';
-        // Lazy load no primeiro clique
-        if (!cwvLoaded) {
-          cwvLoaded = true;
-          await loadCwvData();
-        }
+        if (cwvView) cwvView.style.display = '';
+        if (!cwvLoaded) { cwvLoaded = true; await loadCwvData(); }
         renderCwvView();
+      } else if (tab === 'evolution') {
+        if (evoView) evoView.style.display = '';
+        // Reaproveita cwvSites se já carregados
+        if (!cwvLoaded) { cwvLoaded = true; await loadCwvData(); }
+        if (!evoLoaded) { evoLoaded = true; await loadEvolutionData(); }
+        renderEvolutionView();
       } else {
         if (trafficView) trafficView.style.display = '';
-        if (cwvView)     cwvView.style.display     = 'none';
         renderTable(tab);
       }
     });
@@ -899,6 +919,624 @@ async function loadCwvData() {
   }
 }
 
+/* ═══ CWV Evolution view ═══════════════════════════════════ */
+
+async function loadEvolutionData() {
+  try {
+    if (!cwvSelectedId) { evoAllRuns = []; return; }
+    // Busca até 200 runs para ter base ampla — ainda cabe fácil em memória
+    evoAllRuns = await fetchLatestRuns(cwvSelectedId, 200);
+  } catch (e) {
+    console.warn('[Evo] load error:', e);
+    toast.error('Erro ao carregar histórico: ' + e.message);
+    evoAllRuns = [];
+  }
+}
+
+function destroyEvoCharts() {
+  for (const inst of evoChartInstances) {
+    try { inst.destroy(); } catch (_) {}
+  }
+  evoChartInstances = [];
+}
+
+function filterRunsByPeriod(runs, period) {
+  if (period === 'all') return runs;
+  const days = parseInt(period, 10);
+  if (!days) return runs;
+  const cutoff = Date.now() - (days * 86400000);
+  return runs.filter(r => {
+    const t = r.runAt?.toDate ? r.runAt.toDate().getTime() : new Date(r.runAt).getTime();
+    return !isNaN(t) && t >= cutoff;
+  });
+}
+
+function renderEvolutionView() {
+  const root = document.getElementById('ga-cwv-evolution-view');
+  if (!root) return;
+  destroyEvoCharts();
+
+  // Sem sites cadastrados
+  if (!cwvSites.length) {
+    root.innerHTML = `
+      <div class="empty-state" style="padding:40px 20px;text-align:center;">
+        <div style="font-size:2.5rem;margin-bottom:10px;">📈</div>
+        <div style="font-size:0.9375rem;font-weight:600;margin-bottom:6px;">Nenhum site cadastrado</div>
+        <div style="font-size:0.8125rem;color:var(--text-muted);">
+          Cadastre um site na aba <strong>⚡ Performance da Web (CWV + SEO)</strong> e execute pelo menos 2 auditorias.
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const selected = cwvSites.find(s => s.id === cwvSelectedId);
+
+  // Header com seletor de site + período
+  root.innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:20px;">
+      <select class="filter-select" id="evo-site-select" style="min-width:240px;">
+        ${cwvSites.map(s => `
+          <option value="${esc(s.id)}" ${s.id===cwvSelectedId?'selected':''}>
+            ${esc(s.label || s.url)}
+          </option>
+        `).join('')}
+      </select>
+      <div style="display:flex;gap:4px;background:var(--bg-surface);padding:4px;border-radius:var(--radius-md);">
+        ${[
+          { v:'7',   l:'7 dias'   },
+          { v:'30',  l:'30 dias'  },
+          { v:'90',  l:'90 dias'  },
+          { v:'all', l:'Tudo'     },
+        ].map(p => `
+          <button class="evo-period-btn" data-period="${p.v}"
+            style="padding:5px 12px;border:none;background:${evoPeriod===p.v?'var(--brand-gold)':'transparent'};
+              color:${evoPeriod===p.v?'#000':'var(--text-secondary)'};
+              border-radius:calc(var(--radius-md) - 2px);cursor:pointer;
+              font-size:0.75rem;font-weight:${evoPeriod===p.v?'600':'500'};transition:all .15s;">
+            ${p.l}
+          </button>
+        `).join('')}
+      </div>
+      <div style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);">
+        ${selected ? esc(selected.url) : ''}
+      </div>
+    </div>
+  `;
+
+  const filteredRuns = filterRunsByPeriod(evoAllRuns, evoPeriod);
+
+  // Poucas runs
+  if (filteredRuns.length < 2) {
+    root.innerHTML += `
+      <div class="empty-state" style="padding:40px 20px;text-align:center;">
+        <div style="font-size:2.5rem;margin-bottom:10px;">📊</div>
+        <div style="font-size:0.9375rem;font-weight:600;margin-bottom:6px;">
+          Dados insuficientes para análise de tendência
+        </div>
+        <div style="font-size:0.8125rem;color:var(--text-muted);line-height:1.5;">
+          ${evoAllRuns.length === 0
+            ? 'Este site ainda não tem auditorias executadas.'
+            : evoAllRuns.length === 1
+              ? 'Precisa de pelo menos 2 auditorias para comparar. Execute uma nova na aba <strong>⚡ Performance da Web</strong>.'
+              : `Foram encontradas apenas ${filteredRuns.length} auditoria${filteredRuns.length===1?'':'s'} no período selecionado. Tente aumentar para <strong>Tudo</strong>.`}
+        </div>
+      </div>
+    `;
+    attachEvoEvents();
+    return;
+  }
+
+  // Ordenar do mais antigo para o mais novo (para gráficos)
+  const runs = [...filteredRuns].sort((a, b) => {
+    const ta = a.runAt?.toDate ? a.runAt.toDate().getTime() : new Date(a.runAt).getTime();
+    const tb = b.runAt?.toDate ? b.runAt.toDate().getTime() : new Date(b.runAt).getTime();
+    return ta - tb;
+  });
+
+  root.innerHTML += `
+    ${renderRegressionBanner(runs)}
+    ${renderEvolutionKpis(runs)}
+    <div class="card" style="padding:20px;margin-bottom:20px;">
+      <div style="font-size:0.9375rem;font-weight:600;margin-bottom:4px;display:flex;align-items:center;">
+        Evolução dos scores (Mobile)${infoIcon('LIGHTHOUSE')}
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:14px;">
+        Pontuação 0-100 nas 4 categorias do Lighthouse ao longo do tempo
+      </div>
+      <div style="position:relative;height:280px;">
+        <canvas id="evo-scores-chart"></canvas>
+      </div>
+    </div>
+
+    <div class="card" style="padding:20px;margin-bottom:20px;">
+      <div style="font-size:0.9375rem;font-weight:600;margin-bottom:4px;display:flex;align-items:center;">
+        Evolução das métricas essenciais${infoIcon('CWV')}
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:14px;">
+        Core Web Vitals ao longo do tempo (mobile) — linhas tracejadas mostram os limites "Bom" e "Precisa melhorar"
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+        <div>
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:6px;text-align:center;">
+            ${CWV_LABELS.lcp.full}
+            <span style="color:var(--text-muted);font-weight:500;font-size:0.625rem;">(LCP)</span>
+          </div>
+          <div style="position:relative;height:160px;"><canvas id="evo-lcp-chart"></canvas></div>
+        </div>
+        <div>
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:6px;text-align:center;">
+            ${CWV_LABELS.inp.full}
+            <span style="color:var(--text-muted);font-weight:500;font-size:0.625rem;">(INP)</span>
+          </div>
+          <div style="position:relative;height:160px;"><canvas id="evo-inp-chart"></canvas></div>
+        </div>
+        <div>
+          <div style="font-size:0.75rem;font-weight:600;margin-bottom:6px;text-align:center;">
+            ${CWV_LABELS.cls.full}
+            <span style="color:var(--text-muted);font-weight:500;font-size:0.625rem;">(CLS)</span>
+          </div>
+          <div style="position:relative;height:160px;"><canvas id="evo-cls-chart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    ${renderEvolutionTable(runs)}
+  `;
+
+  // Desenhar os gráficos depois do innerHTML
+  drawScoresChart(runs);
+  drawCwvChart('evo-lcp-chart', runs, 'lcp', { good: 2500, ni: 4000, unit: 'ms' });
+  drawCwvChart('evo-inp-chart', runs, 'inp', { good: 200,  ni: 500,  unit: 'ms' });
+  drawCwvChart('evo-cls-chart', runs, 'cls', { good: 0.1,  ni: 0.25, unit: ''   });
+
+  attachEvoEvents();
+}
+
+/* ─── KPI cards com delta + sparkline SVG ────────────────── */
+function renderEvolutionKpis(runs) {
+  const first = runs[0];
+  const last  = runs[runs.length - 1];
+
+  const perfMobSeries  = runs.map(r => r.mobile?.scores?.performance ?? null);
+  const perfDeskSeries = runs.map(r => r.desktop?.scores?.performance ?? null);
+
+  // % de CWV em "Bom" (LCP+INP+CLS)
+  const passingSeries = runs.map(r => {
+    const m = r.mobile;
+    if (!m?.cwv) return null;
+    const metrics = ['lcp','inp','cls'];
+    let ok = 0, total = 0;
+    for (const k of metrics) {
+      const cat = m.cwv[k]?.category;
+      if (!cat) continue;
+      total++;
+      if (cat === 'FAST') ok++;
+    }
+    return total > 0 ? Math.round((ok / total) * 100) : null;
+  });
+
+  // Oportunidades críticas (savings ≥ 1000ms)
+  const oppsSeries = runs.map(r => {
+    const opps = r.mobile?.opportunities || [];
+    return opps.filter(o => (o.savingsMs || 0) >= 1000).length;
+  });
+
+  const kpis = [
+    {
+      label: 'Performance Mobile',
+      tip:   'Score de 0 a 100 na versão mobile — ponderação dos Core Web Vitals e outras métricas',
+      series: perfMobSeries,
+      current: last.mobile?.scores?.performance ?? null,
+      previous: first.mobile?.scores?.performance ?? null,
+      unit:  '',
+      higherIsBetter: true,
+      thresholds: { good: 90, ni: 50 },
+    },
+    {
+      label: 'Performance Desktop',
+      tip:   'Score de 0 a 100 na versão desktop',
+      series: perfDeskSeries,
+      current: last.desktop?.scores?.performance ?? null,
+      previous: first.desktop?.scores?.performance ?? null,
+      unit:  '',
+      higherIsBetter: true,
+      thresholds: { good: 90, ni: 50 },
+    },
+    {
+      label: 'CWV em "Bom"',
+      tip:   'Percentual das 3 métricas essenciais (LCP, INP, CLS) classificadas como "Bom" na última auditoria',
+      series: passingSeries,
+      current: passingSeries[passingSeries.length - 1],
+      previous: passingSeries[0],
+      unit:  '%',
+      higherIsBetter: true,
+      thresholds: { good: 100, ni: 66 },
+    },
+    {
+      label: 'Oportunidades críticas',
+      tip:   'Número de oportunidades com economia estimada ≥ 1 segundo — indicador de "dívida de performance"',
+      series: oppsSeries,
+      current: oppsSeries[oppsSeries.length - 1],
+      previous: oppsSeries[0],
+      unit:  '',
+      higherIsBetter: false,
+      thresholds: null,
+    },
+  ];
+
+  return `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+      ${kpis.map(k => renderKpiCard(k)).join('')}
+    </div>
+  `;
+}
+
+function renderKpiCard(k) {
+  const { current, previous, series, higherIsBetter, thresholds } = k;
+  const validSeries = series.filter(v => v != null);
+  if (validSeries.length === 0 || current == null) {
+    return `
+      <div class="card" style="padding:14px;">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">
+          ${esc(k.label)}
+        </div>
+        <div style="font-size:1.5rem;font-weight:700;color:var(--text-muted);">—</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">sem dados</div>
+      </div>
+    `;
+  }
+
+  const delta = previous == null ? 0 : (current - previous);
+  const improved = higherIsBetter ? delta > 0 : delta < 0;
+  const worsened = higherIsBetter ? delta < 0 : delta > 0;
+  const deltaColor = Math.abs(delta) < 0.5 ? '#9CA3AF'
+    : improved ? '#22C55E'
+    : worsened ? '#EF4444'
+    : '#9CA3AF';
+  const deltaIcon  = Math.abs(delta) < 0.5 ? '→'
+    : improved ? '↑'
+    : worsened ? '↓'
+    : '→';
+  const deltaStr = delta === 0 ? '0'
+    : delta > 0 ? `+${k.unit === '' && Number.isInteger(delta) ? delta : delta.toFixed(0)}`
+    : `${k.unit === '' && Number.isInteger(delta) ? delta : delta.toFixed(0)}`;
+
+  let currentColor = 'var(--text-primary)';
+  if (thresholds) {
+    if (higherIsBetter) {
+      currentColor = current >= thresholds.good ? '#22C55E'
+        : current >= thresholds.ni ? '#F59E0B'
+        : '#EF4444';
+    } else {
+      currentColor = current <= thresholds.ni ? '#22C55E'
+        : '#F59E0B';
+    }
+  }
+
+  return `
+    <div class="card" style="padding:14px;" title="${esc(k.tip)}">
+      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px;">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">
+          ${esc(k.label)}
+        </div>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;">
+        <div style="font-size:1.5rem;font-weight:700;color:${currentColor};line-height:1;">
+          ${current}${k.unit}
+        </div>
+        <div style="font-size:0.75rem;font-weight:600;color:${deltaColor};">
+          ${deltaIcon} ${deltaStr}${k.unit}
+        </div>
+      </div>
+      ${renderSparkline(series, higherIsBetter ? '#22C55E' : '#F59E0B')}
+    </div>
+  `;
+}
+
+/* ─── SVG sparkline (sem dependências) ───────────────────── */
+function renderSparkline(series, color) {
+  const valid = series.map((v, i) => ({ v, i })).filter(o => o.v != null);
+  if (valid.length < 2) {
+    return `<div style="height:30px;color:var(--text-muted);font-size:0.625rem;">sem tendência</div>`;
+  }
+  const w = 140, h = 30;
+  const min = Math.min(...valid.map(o => o.v));
+  const max = Math.max(...valid.map(o => o.v));
+  const range = max - min || 1;
+  const points = valid.map(o => {
+    const x = (o.i / (series.length - 1)) * w;
+    const y = h - ((o.v - min) / range) * (h - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `
+    <svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"
+      style="display:block;">
+      <polyline fill="none" stroke="${color}" stroke-width="1.5"
+        stroke-linecap="round" stroke-linejoin="round" points="${points}"/>
+    </svg>
+  `;
+}
+
+/* ─── Detector de regressões ──────────────────────────────── */
+function renderRegressionBanner(runs) {
+  // Compara cada run com a anterior no score de performance mobile
+  // Alerta se caiu >= 10 pontos ou CWV passou de FAST pra SLOW em alguma métrica
+  const alerts = [];
+  for (let i = 1; i < runs.length; i++) {
+    const prev = runs[i - 1];
+    const cur  = runs[i];
+    const prevScore = prev.mobile?.scores?.performance;
+    const curScore  = cur.mobile?.scores?.performance;
+    if (prevScore != null && curScore != null && (prevScore - curScore) >= 10) {
+      alerts.push({
+        date: cur.runAt?.toDate ? cur.runAt.toDate() : new Date(cur.runAt),
+        type: 'performance',
+        msg:  `Score de performance mobile caiu ${prevScore - curScore} pontos (${prevScore} → ${curScore})`,
+      });
+    }
+    // CWV degradação
+    for (const metric of ['lcp','inp','cls']) {
+      const pCat = prev.mobile?.cwv?.[metric]?.category;
+      const cCat = cur.mobile?.cwv?.[metric]?.category;
+      if (pCat === 'FAST' && cCat === 'SLOW') {
+        alerts.push({
+          date: cur.runAt?.toDate ? cur.runAt.toDate() : new Date(cur.runAt),
+          type: 'cwv',
+          msg:  `${CWV_LABELS[metric].full} (${metric.toUpperCase()}) passou de "Bom" para "Ruim"`,
+        });
+      }
+    }
+  }
+  if (!alerts.length) return '';
+
+  const shown = alerts.slice(-3).reverse(); // últimas 3, mais recentes primeiro
+  return `
+    <div class="card" style="padding:14px 16px;margin-bottom:20px;
+      border-left:3px solid #EF4444;background:rgba(239,68,68,0.06);">
+      <div style="font-size:0.8125rem;font-weight:600;color:#EF4444;margin-bottom:6px;">
+        ⚠ ${alerts.length} regressão${alerts.length>1?'ões':''} detectada${alerts.length>1?'s':''} no período
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        ${shown.map(a => `
+          <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.4;">
+            <span style="color:var(--text-muted);">${fmtDateTime(a.date)}</span> — ${esc(a.msg)}
+          </div>
+        `).join('')}
+        ${alerts.length > 3 ? `
+          <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+            + ${alerts.length - 3} outras regressões
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+/* ─── Chart.js: gráfico principal de scores ──────────────── */
+function drawScoresChart(runs) {
+  const canvas = document.getElementById('evo-scores-chart');
+  if (!canvas || typeof Chart === 'undefined') return;
+  const ctx = canvas.getContext('2d');
+  const labels = runs.map(r => {
+    const d = r.runAt?.toDate ? r.runAt.toDate() : new Date(r.runAt);
+    return new Intl.DateTimeFormat('pt-BR', { day:'2-digit', month:'2-digit' }).format(d);
+  });
+  const series = (key) => runs.map(r => r.mobile?.scores?.[key] ?? null);
+
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Performance',
+          data: series('performance'),
+          borderColor: '#F97316', backgroundColor: '#F9731620',
+          tension: 0.3, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, fill: false,
+        },
+        {
+          label: 'Acessibilidade',
+          data: series('accessibility'),
+          borderColor: '#A78BFA', backgroundColor: '#A78BFA20',
+          tension: 0.3, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, fill: false,
+        },
+        {
+          label: 'Boas Práticas',
+          data: series('bestPractices'),
+          borderColor: '#38BDF8', backgroundColor: '#38BDF820',
+          tension: 0.3, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, fill: false,
+        },
+        {
+          label: 'SEO',
+          data: series('seo'),
+          borderColor: '#22C55E', backgroundColor: '#22C55E20',
+          tension: 0.3, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            label: (c) => `${c.dataset.label}: ${c.parsed.y ?? '—'}`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 12 } },
+        y: {
+          min: 0, max: 100,
+          ticks: { font: { size: 10 }, stepSize: 20 },
+          grid: { color: 'rgba(128,128,128,0.1)' },
+        },
+      },
+    },
+  });
+  evoChartInstances.push(chart);
+}
+
+/* ─── Chart.js: mini chart de CWV (LCP/INP/CLS) ──────────── */
+function drawCwvChart(canvasId, runs, metric, thresholds) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || typeof Chart === 'undefined') return;
+  const ctx = canvas.getContext('2d');
+  const labels = runs.map(r => {
+    const d = r.runAt?.toDate ? r.runAt.toDate() : new Date(r.runAt);
+    return new Intl.DateTimeFormat('pt-BR', { day:'2-digit', month:'2-digit' }).format(d);
+  });
+  const data = runs.map(r => r.mobile?.cwv?.[metric]?.value ?? null);
+  const validData = data.filter(v => v != null);
+  if (!validData.length) return;
+
+  // Cor da linha: baseada no último valor
+  const last = validData[validData.length - 1];
+  const lineColor = last <= thresholds.good ? '#22C55E'
+    : last <= thresholds.ni ? '#F59E0B'
+    : '#EF4444';
+
+  // Max do eixo Y: pelo menos um pouco acima do threshold "ni"
+  const dataMax = Math.max(...validData);
+  const yMax = Math.max(dataMax * 1.15, thresholds.ni * 1.1);
+
+  // Threshold lines
+  const goodLine = new Array(labels.length).fill(thresholds.good);
+  const niLine   = new Array(labels.length).fill(thresholds.ni);
+
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: metric.toUpperCase(),
+          data,
+          borderColor: lineColor, backgroundColor: lineColor + '30',
+          tension: 0.3, pointRadius: 2.5, pointHoverRadius: 4.5,
+          borderWidth: 2, fill: true,
+        },
+        {
+          label: 'Bom',
+          data: goodLine,
+          borderColor: '#22C55E80', borderDash: [4, 4], borderWidth: 1,
+          pointRadius: 0, fill: false,
+        },
+        {
+          label: 'Precisa melhorar',
+          data: niLine,
+          borderColor: '#F59E0B80', borderDash: [4, 4], borderWidth: 1,
+          pointRadius: 0, fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (c) => {
+              const v = c.parsed.y;
+              if (v == null) return '—';
+              if (metric === 'cls') return `${metric.toUpperCase()}: ${Number(v).toFixed(3).replace('.', ',')}`;
+              return `${metric.toUpperCase()}: ${Math.round(v)}${thresholds.unit}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 9 }, maxTicksLimit: 6 } },
+        y: {
+          min: 0, max: yMax,
+          ticks: {
+            font: { size: 9 },
+            callback: (v) => metric === 'cls' ? Number(v).toFixed(2).replace('.', ',') : Math.round(v),
+          },
+          grid: { color: 'rgba(128,128,128,0.08)' },
+        },
+      },
+    },
+  });
+  evoChartInstances.push(chart);
+}
+
+/* ─── Tabela resumo das últimas runs (só na evolução) ────── */
+function renderEvolutionTable(runs) {
+  const recent = [...runs].slice(-15).reverse(); // últimas 15, mais recente primeiro
+  return `
+    <div class="card" style="padding:20px;">
+      <div style="font-size:0.9375rem;font-weight:600;margin-bottom:12px;">
+        Últimas ${recent.length} auditorias (${runs.length} no total do período)
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;font-size:0.75rem;border-collapse:collapse;">
+          <thead>
+            <tr style="color:var(--text-muted);font-size:0.625rem;text-transform:uppercase;letter-spacing:.05em;">
+              <th style="text-align:left;padding:6px 8px;">Data</th>
+              <th style="text-align:right;padding:6px 8px;" title="Performance Mobile">Perf. 📱</th>
+              <th style="text-align:right;padding:6px 8px;" title="Performance Desktop">Perf. 🖥</th>
+              <th style="text-align:right;padding:6px 8px;">SEO</th>
+              <th style="text-align:right;padding:6px 8px;">Acessib.</th>
+              <th style="text-align:right;padding:6px 8px;">B. Práticas</th>
+              <th style="text-align:right;padding:6px 8px;" title="${esc(CWV_LABELS.lcp.info)}">LCP</th>
+              <th style="text-align:right;padding:6px 8px;" title="${esc(CWV_LABELS.inp.info)}">INP</th>
+              <th style="text-align:right;padding:6px 8px;" title="${esc(CWV_LABELS.cls.info)}">CLS</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${recent.map(r => {
+              const dt = r.runAt?.toDate ? r.runAt.toDate() : new Date(r.runAt);
+              const ms = r.mobile?.scores || {};
+              const ds = r.desktop?.scores || {};
+              const cwv = r.mobile?.cwv || {};
+              return `
+                <tr style="border-top:1px solid var(--border-subtle);">
+                  <td style="padding:6px 8px;color:var(--text-muted);">${fmtDateTime(dt)}</td>
+                  <td style="padding:6px 8px;text-align:right;${scoreTextColor(ms.performance)}">${ms.performance ?? '—'}</td>
+                  <td style="padding:6px 8px;text-align:right;${scoreTextColor(ds.performance)}">${ds.performance ?? '—'}</td>
+                  <td style="padding:6px 8px;text-align:right;${scoreTextColor(ms.seo)}">${ms.seo ?? '—'}</td>
+                  <td style="padding:6px 8px;text-align:right;${scoreTextColor(ms.accessibility)}">${ms.accessibility ?? '—'}</td>
+                  <td style="padding:6px 8px;text-align:right;${scoreTextColor(ms.bestPractices)}">${ms.bestPractices ?? '—'}</td>
+                  <td style="padding:6px 8px;text-align:right;">${cwv.lcp?.value != null ? Math.round(cwv.lcp.value)+'ms' : '—'}</td>
+                  <td style="padding:6px 8px;text-align:right;">${cwv.inp?.value != null ? Math.round(cwv.inp.value)+'ms' : '—'}</td>
+                  <td style="padding:6px 8px;text-align:right;">${cwv.cls?.value != null ? Number(cwv.cls.value).toFixed(3).replace('.',',') : '—'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+/* ─── Eventos da view de evolução ────────────────────────── */
+function attachEvoEvents() {
+  const root = document.getElementById('ga-cwv-evolution-view');
+  if (!root) return;
+
+  // Seletor de site
+  root.querySelector('#evo-site-select')?.addEventListener('change', async (e) => {
+    cwvSelectedId = e.target.value || null;
+    // Recarrega runs (evolução + aba CWV normal)
+    await loadEvolutionData();
+    cwvLatestRuns = evoAllRuns.slice(0, 10); // sincroniza com a outra aba
+    renderEvolutionView();
+  });
+
+  // Chips de período
+  root.querySelectorAll('.evo-period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      evoPeriod = btn.dataset.period;
+      renderEvolutionView();
+    });
+  });
+}
+
 function renderCwvView() {
   const root = document.getElementById('ga-cwv-view');
   if (!root) return;
@@ -1543,6 +2181,9 @@ function attachCwvEvents() {
   root.querySelector('#cwv-site-select')?.addEventListener('change', async (e) => {
     cwvSelectedId = e.target.value || null;
     cwvLatestRuns = cwvSelectedId ? await fetchLatestRuns(cwvSelectedId, 10) : [];
+    // Invalida cache da evolução — próximo clique na aba vai recarregar
+    evoLoaded = false;
+    evoAllRuns = [];
     renderCwvView();
   });
 
@@ -1564,6 +2205,9 @@ function attachCwvEvents() {
       await runAuditAndSave(cwvSelectedId);
       toast.success('Auditoria concluída e salva no histórico.');
       cwvLatestRuns = await fetchLatestRuns(cwvSelectedId, 10);
+      // Invalida cache da evolução — próximo clique na aba vai recarregar com a nova run
+      evoLoaded = false;
+      evoAllRuns = [];
       renderCwvView();
     } catch (e) {
       toast.error('Erro na auditoria: ' + e.message);
@@ -1588,6 +2232,8 @@ function attachCwvEvents() {
       toast.success('Site removido.');
       cwvSelectedId = null;
       cwvLatestRuns = [];
+      evoLoaded = false;
+      evoAllRuns = [];
       await loadCwvData();
       renderCwvView();
     } catch (e) {
