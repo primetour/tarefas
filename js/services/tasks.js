@@ -376,6 +376,7 @@ export async function addSubtask(taskId, title) {
     id:        `sub_${Date.now()}`,
     title:     title.trim(),
     done:      false,
+    assignees: [],
     createdAt: new Date().toISOString(),
     createdBy: user.uid,
   };
@@ -417,6 +418,19 @@ export async function updateSubtaskTitle(taskId, subtaskId, title, currentSubtas
   if (!trimmed) throw new Error('Título não pode ficar vazio.');
   const updated = (currentSubtasks || []).map(s =>
     s.id === subtaskId ? { ...s, title: trimmed } : s
+  );
+  await updateDoc(doc(db, 'tasks', taskId), {
+    subtasks:  updated,
+    updatedAt: serverTimestamp(),
+  });
+  return updated;
+}
+
+/* ─── Atualizar responsáveis da subtarefa ────────────────── */
+export async function updateSubtaskAssignees(taskId, subtaskId, assignees, currentSubtasks) {
+  const clean = Array.isArray(assignees) ? [...new Set(assignees.filter(Boolean))] : [];
+  const updated = (currentSubtasks || []).map(s =>
+    s.id === subtaskId ? { ...s, assignees: clean } : s
   );
   await updateDoc(doc(db, 'tasks', taskId), {
     subtasks:  updated,
