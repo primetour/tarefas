@@ -233,7 +233,7 @@ function _populateTagFilter() {
 
 /* \u2500\u2500\u2500 Filters \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 function applyFilters() {
-  let result = [...allTasks];
+  let result = allTasks.filter(t => !t.archived);
 
   if (searchTerm) {
     const q = searchTerm.toLowerCase();

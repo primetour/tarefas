@@ -211,7 +211,7 @@ function _renderKbFilters(container) {
 
 function renderCards(tasks, _ignored = '') {
   // Merge optimistic tasks (mostrar imediatamente antes do Firestore confirmar)
-  const merged = [...optimisticTasks.filter(ot => !tasks.some(t => t.title === ot.title && t.status === ot.status)), ...tasks];
+  const merged = [...optimisticTasks.filter(ot => !tasks.some(t => t.title === ot.title && t.status === ot.status)), ...tasks].filter(t => !t.archived);
   const filterFn = buildFilterFn(kbFilterState);
   STATUSES.forEach(s => {
     const body  = document.getElementById(`col-body-${s.value}`);
@@ -505,7 +505,7 @@ function renderPipelineCards(tasks) {
 
   const steps = [...(type.steps||[])].sort((a,b)=>a.order-b.order);
   const typeTasks = tasks.filter(t =>
-    t.typeId === type.id || t.type === type.name?.toLowerCase()
+    !t.archived && (t.typeId === type.id || t.type === type.name?.toLowerCase())
   );
 
   // Each step column: tasks where customFields.currentStep === step.id

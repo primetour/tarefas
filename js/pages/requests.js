@@ -12,6 +12,7 @@ import {
   fetchRequests, subscribeRequests,
   updateRequestStatus, convertToTask,
   notifyRequesterRejected, deleteRequest,
+  suggestTaskFromRequest,
   REQUEST_STATUSES, REQUEST_STATUS_MAP,
 } from '../services/requests.js';
 
@@ -351,6 +352,68 @@ async function openRequestDetail(req) {
             toast.success('Solicitação recusada. E-mail enviado ao solicitante.');
             close();
           } catch(e) { toast.error(e.message); }
+        },
+      }] : []),
+
+      // Converter com IA — only when pending
+      ...(req.status === 'pending' ? [{
+        label: '✨ Converter com IA', class: 'btn-secondary', closeOnClick: false,
+        style: 'color:var(--brand-gold);border-color:var(--brand-gold);',
+        onClick: async (btn, { close }) => {
+          const wsId = document.getElementById('req-workspace')?.value || null;
+          const note = document.getElementById('req-internal-note')?.value || '';
+          btn.disabled = true;
+          btn.textContent = '⏳ Analisando...';
+          try {
+            const suggestion = await suggestTaskFromRequest(req);
+            btn.disabled = false;
+            btn.textContent = '✨ Converter com IA';
+            if (!suggestion) {
+              toast.warning('IA não disponível. Configure a API em Configurações > IA. Usando conversão manual.');
+            }
+            close();
+            openTaskModal({
+              typeId: suggestion?.suggestedTypeId || req.typeId || null,
+              onSave: async (taskId) => {
+                await updateRequestStatus(req.id, 'converted', {
+                  taskId,
+                  workspaceId:  wsId,
+                  internalNote: note + (suggestion?.reasoning ? `\n[IA] ${suggestion.reasoning}` : ''),
+                }).catch(() => {});
+                toast.success('Solicitação convertida em tarefa com sugestões da IA!');
+              },
+              taskData: {
+                title:          suggestion?.title || req.title || `[Solicitação] ${req.typeName||'Demanda'} — ${req.requesterName}`,
+                description:    suggestion?.description || req.description || '',
+                requestingArea: suggestion?.requestingArea || req.requestingArea || '',
+                sector:         req.sector         || '',
+                typeId:         suggestion?.suggestedTypeId || req.typeId || null,
+                type:           req.typeName?.toLowerCase() || '',
+                variationId:    req.variationId    || null,
+                variationName:  req.variationName  || '',
+                nucleos:        req.nucleo ? [req.nucleo] : [],
+                outOfCalendar:  req.outOfCalendar  || false,
+                customFields: {
+                  outOfCalendar:   req.outOfCalendar || false,
+                  variationId:     req.variationId   || null,
+                  variationName:   req.variationName || '',
+                },
+                clientEmail:    req.requesterEmail || '',
+                dueDate:        req.desiredDate    || null,
+                workspaceId:    wsId || store.get('currentWorkspace')?.id || null,
+                status:         'not_started',
+                priority:       suggestion?.priority || (req.urgency ? 'urgent' : 'medium'),
+                tags:           ['solicitação'],
+                assignees:      [],
+                subtasks:       [],
+                comments:       [],
+              },
+            });
+          } catch (e) {
+            btn.disabled = false;
+            btn.textContent = '✨ Converter com IA';
+            toast.error('Erro na análise IA: ' + e.message);
+          }
         },
       }] : []),
 
