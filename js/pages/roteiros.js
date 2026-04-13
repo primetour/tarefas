@@ -4,7 +4,8 @@
  */
 
 import { store } from '../store.js';
-import { showToast } from '../components/toast.js';
+import { toast } from '../components/toast.js';
+const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiros, deleteRoteiro, duplicateRoteiro, updateRoteiroStatus } from '../services/roteiros.js';
 
 /* ─── Helpers ─────────────────────────────────────────────── */
