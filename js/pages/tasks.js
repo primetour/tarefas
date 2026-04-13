@@ -2,13 +2,14 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import {
-  fetchTasks, subscribeToTasks, toggleTaskComplete, getTask,
+  fetchTasks, subscribeToTasks, toggleTaskComplete, getTask, updateTask,
   STATUSES, PRIORITIES, STATUS_MAP, PRIORITY_MAP,
   TASK_TYPES, NEWSLETTER_STATUSES, NUCLEOS, REQUESTING_AREAS,
 } from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
 import { openTaskModal, openTaskDoneOverlay } from '../components/taskModal.js';
 import { APP_CONFIG }    from '../config.js';
+import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -144,6 +145,8 @@ export async function renderTasks(container) {
         </select>
         <button class="btn btn-ghost btn-sm" id="filter-config-btn" title="Configurar filtros visíveis"
           style="padding:6px 10px;">⚙</button>
+        <button class="btn btn-ghost btn-sm" id="tasks-card-prefs-btn" title="Personalizar campos dos cards"
+          style="padding:6px 10px;font-size:0.9rem;">🎛</button>
       </div>
     </div>
     <div id="filter-date-custom" style="display:none;margin-bottom:12px;gap:8px;align-items:center;">
@@ -427,7 +430,7 @@ function renderTaskRow(task) {
   const subDone = subs.filter(s => s.done).length;
   const subPct = subs.length ? Math.round((subDone / subs.length) * 100) : 0;
   return `
-    <div class="task-row ${isDone?'done':''}" data-task-id="${task.id}">
+    <div class="task-row ${isDone?'done':''}" data-task-id="${task.id}" draggable="true">
       <div class="task-check ${isDone?'checked':''} ${!canComplete && !isDone ? 'disabled' : ''}"
            data-check-id="${task.id}"
            ${!canComplete && !isDone ? 'title="Sem permissão para concluir tarefas. Peça a um coordenador."' : ''}>
@@ -445,13 +448,27 @@ function renderTaskRow(task) {
           ${(task.nucleos||[]).length ? `<span style="font-size:0.6875rem;color:var(--text-muted);">◈ ${(task.nucleos||[]).map(n=>NUCLEOS.find(x=>x.value===n)?.label||n).join(', ')}</span>` : ''}
           ${task.tags?.length ? task.tags.slice(0,2).map(t=>`<span style="font-size:0.6875rem;color:var(--text-muted);">#${esc(t)}</span>`).join('') : ''}
           ${project ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${project.icon} ${esc(project.name)}</span>` : ''}
-          ${subs.length ? `
-            <span title="${subDone}/${subs.length} subtarefas concluídas" style="display:inline-flex;align-items:center;gap:4px;font-size:0.6875rem;color:var(--text-muted);">
+          ${subs.length ? (() => {
+            const now = new Date();
+            const overdueSubs = subs.filter(s => s.dueDate && !s.done && new Date(s.dueDate) < now);
+            const upcomingSubs = subs.filter(s => s.dueDate && !s.done && (() => {
+              const d = new Date(s.dueDate); const diff = (d - now) / 86400000; return diff >= 0 && diff <= 3;
+            })());
+            let subExtra = '';
+            if (overdueSubs.length) {
+              subExtra = `<span style="color:#EF4444;font-weight:600;font-size:0.6875rem;" title="${overdueSubs.map(s=>esc(s.title)).join(', ')}">⚠ ${overdueSubs.length} atrasada${overdueSubs.length>1?'s':''}</span>`;
+            } else if (upcomingSubs.length) {
+              const next = upcomingSubs.sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate))[0];
+              const dd = new Date(next.dueDate);
+              subExtra = `<span style="color:#D97706;font-size:0.6875rem;" title="${esc(next.title)}">📅 ${String(dd.getDate()).padStart(2,'0')}/${String(dd.getMonth()+1).padStart(2,'0')}</span>`;
+            }
+            return `<span title="${subDone}/${subs.length} subtarefas concluídas" style="display:inline-flex;align-items:center;gap:4px;font-size:0.6875rem;color:var(--text-muted);">
               <span style="width:40px;height:4px;background:var(--bg-elevated);border-radius:2px;overflow:hidden;display:inline-block;">
                 <span style="display:block;height:100%;width:${subPct}%;background:${subPct===100?'var(--color-success)':'var(--brand-gold)'};"></span>
               </span>
               ${subDone}/${subs.length}
-            </span>` : ''}
+            </span>${subExtra}`;
+          })() : ''}
         </div>
       </div>
       <div>
@@ -622,6 +639,7 @@ function _attachPageEvents() {
     applyFilters();
   });
   document.getElementById('filter-config-btn')?.addEventListener('click', openFilterConfigModal);
+  document.getElementById('tasks-card-prefs-btn')?.addEventListener('click', () => openCardPrefsModal(() => renderTaskList()));
   document.getElementById('group-by')?.addEventListener('change', e => { groupBy = e.target.value; renderTaskList(); });
 }
 
@@ -687,6 +705,13 @@ function _attachListEvents() {
 
   container.addEventListener('click', _handleDelegatedClick);
   container.addEventListener('keydown', _handleDelegatedKeydown);
+
+  // Drag and drop
+  container.addEventListener('dragstart', _handleDragStart);
+  container.addEventListener('dragend', _handleDragEnd);
+  container.addEventListener('dragover', _handleDragOver);
+  container.addEventListener('drop', _handleDrop);
+
   _delegationAttached = true;
 }
 
@@ -757,6 +782,110 @@ async function _handleDelegatedKeydown(e) {
       toast.success('Tarefa criada!');
     } catch(err) { toast.error(err.message); }
   }
+}
+
+/* ─── Drag and Drop ────────────────────────────────────────── */
+let _dragTaskId = null;
+
+function _handleDragStart(e) {
+  const row = e.target.closest('.task-row[data-task-id]');
+  if (!row) return;
+  _dragTaskId = row.dataset.taskId;
+  row.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', _dragTaskId);
+  // Make the drag image slightly transparent
+  requestAnimationFrame(() => { row.style.opacity = '0.4'; });
+}
+
+function _handleDragEnd(e) {
+  const row = e.target.closest('.task-row[data-task-id]');
+  if (row) { row.classList.remove('dragging'); row.style.opacity = ''; }
+  _dragTaskId = null;
+  // Remove all drag-over highlights
+  document.querySelectorAll('.task-group.drag-over').forEach(g => g.classList.remove('drag-over'));
+  document.querySelectorAll('.task-row.drag-insert-above,.task-row.drag-insert-below').forEach(r => {
+    r.classList.remove('drag-insert-above', 'drag-insert-below');
+  });
+}
+
+function _handleDragOver(e) {
+  if (!_dragTaskId) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+
+  // Highlight target group
+  const group = e.target.closest('.task-group[data-group]');
+  document.querySelectorAll('.task-group.drag-over').forEach(g => {
+    if (g !== group) g.classList.remove('drag-over');
+  });
+  if (group) group.classList.add('drag-over');
+
+  // Show insert indicator on nearest row
+  const row = e.target.closest('.task-row[data-task-id]');
+  document.querySelectorAll('.task-row.drag-insert-above,.task-row.drag-insert-below').forEach(r => {
+    if (r !== row) r.classList.remove('drag-insert-above', 'drag-insert-below');
+  });
+  if (row && row.dataset.taskId !== _dragTaskId) {
+    const rect = row.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    if (e.clientY < midY) {
+      row.classList.add('drag-insert-above');
+      row.classList.remove('drag-insert-below');
+    } else {
+      row.classList.add('drag-insert-below');
+      row.classList.remove('drag-insert-above');
+    }
+  }
+}
+
+async function _handleDrop(e) {
+  e.preventDefault();
+  if (!_dragTaskId) return;
+
+  const targetGroup = e.target.closest('.task-group[data-group]');
+  const task = allTasks.find(t => t.id === _dragTaskId);
+  if (!task) return;
+
+  // When grouped by status, change status
+  if (groupBy === 'status' && targetGroup) {
+    const newStatus = targetGroup.dataset.group;
+    if (newStatus && newStatus !== task.status) {
+      try {
+        if (newStatus === 'done') {
+          await toggleTaskComplete(_dragTaskId, true);
+          const fresh = await getTask(_dragTaskId).catch(() => task);
+          openTaskDoneOverlay(_dragTaskId, fresh);
+        } else {
+          await updateTask(_dragTaskId, { status: newStatus });
+        }
+        toast.success(`Status alterado para ${STATUS_MAP[newStatus]?.label || newStatus}`);
+      } catch (err) { toast.error(err.message); }
+    }
+  }
+  // When grouped by priority, change priority
+  else if (groupBy === 'priority' && targetGroup) {
+    const newPriority = targetGroup.dataset.group;
+    if (newPriority && newPriority !== task.priority) {
+      try {
+        await updateTask(_dragTaskId, { priority: newPriority });
+        toast.success(`Prioridade alterada para ${PRIORITY_MAP[newPriority]?.label || newPriority}`);
+      } catch (err) { toast.error(err.message); }
+    }
+  }
+  // When grouped by project, change project
+  else if (groupBy === 'project' && targetGroup) {
+    const newProjectId = targetGroup.dataset.group;
+    if (newProjectId !== (task.projectId || 'none')) {
+      try {
+        await updateTask(_dragTaskId, { projectId: newProjectId === 'none' ? null : newProjectId });
+        const proj = allProjects.find(p => p.id === newProjectId);
+        toast.success(proj ? `Movida para ${proj.name}` : 'Removida do projeto');
+      } catch (err) { toast.error(err.message); }
+    }
+  }
+
+  _dragTaskId = null;
 }
 
 function openNewTask(presets = {}) {

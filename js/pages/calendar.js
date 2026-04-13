@@ -4,7 +4,7 @@
  * Suporte a schedule slots (agenda prévia dos tipos de tarefa)
  */
 
-import { fetchTasks, PRIORITY_MAP }  from '../services/tasks.js';
+import { fetchTasks, updateTask, PRIORITY_MAP }  from '../services/tasks.js';
 import { openTaskModal }             from '../components/taskModal.js';
 import { store }                     from '../store.js';
 import {
@@ -222,6 +222,65 @@ function bindSlotClicks(container) {
   });
 }
 
+/* ─── Calendar Drag & Drop ──────────────────────────────── */
+let _calDragTaskId = null;
+
+function _bindCalendarDragDrop(container) {
+  // Drag start
+  container.addEventListener('dragstart', e => {
+    const pill = e.target.closest('.cal-task-pill[data-task-id]');
+    if (!pill) return;
+    _calDragTaskId = pill.dataset.taskId;
+    pill.style.opacity = '0.4';
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', _calDragTaskId);
+  });
+
+  // Drag end
+  container.addEventListener('dragend', e => {
+    const pill = e.target.closest('.cal-task-pill[data-task-id]');
+    if (pill) pill.style.opacity = '';
+    _calDragTaskId = null;
+    container.querySelectorAll('[data-date].cal-drag-over').forEach(c => c.classList.remove('cal-drag-over'));
+  });
+
+  // Drag over day cells
+  container.addEventListener('dragover', e => {
+    if (!_calDragTaskId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const cell = e.target.closest('[data-date]');
+    container.querySelectorAll('[data-date].cal-drag-over').forEach(c => {
+      if (c !== cell) c.classList.remove('cal-drag-over');
+    });
+    if (cell && cell.dataset.date) cell.classList.add('cal-drag-over');
+  });
+
+  // Drop on day cell
+  container.addEventListener('drop', async e => {
+    e.preventDefault();
+    if (!_calDragTaskId) return;
+    const cell = e.target.closest('[data-date]');
+    if (!cell || !cell.dataset.date) return;
+
+    const newDateStr = cell.dataset.date; // YYYY-MM-DD
+    const task = allTasks.find(t => t.id === _calDragTaskId);
+    if (!task) return;
+
+    try {
+      const newDate = new Date(newDateStr + 'T12:00:00');
+      await updateTask(_calDragTaskId, { dueDate: newDate });
+      toast.success(`Prazo alterado para ${String(newDate.getDate()).padStart(2,'0')}/${String(newDate.getMonth()+1).padStart(2,'0')}`);
+      await load();
+    } catch (err) {
+      toast.error('Erro ao mover: ' + err.message);
+    }
+
+    _calDragTaskId = null;
+    container.querySelectorAll('[data-date].cal-drag-over').forEach(c => c.classList.remove('cal-drag-over'));
+  });
+}
+
 function fmtShort(ts) {
   if (!ts) return '';
   const d = ts?.toDate ? ts.toDate() : new Date(ts);
@@ -245,9 +304,9 @@ function taskPill(task, compact=false) {
   const prio  = PRIORITY_MAP[task.priority]||{};
   const color = prio.color||'#6B7280';
   const done  = task.status==='done';
-  return `<div class="cal-task-pill" data-task-id="${task.id}"
+  return `<div class="cal-task-pill" data-task-id="${task.id}" draggable="true"
     style="background:${color}20;border-left:3px solid ${color};border-radius:3px;
-      padding:3px 6px;margin-bottom:2px;cursor:pointer;opacity:${done?0.5:1};">
+      padding:3px 6px;margin-bottom:2px;cursor:grab;opacity:${done?0.5:1};">
     <div style="font-size:0.75rem;color:var(--text-primary);line-height:1.3;
       ${done?'text-decoration:line-through;':''}">
       ${esc(task.title.slice(0,compact?24:32))}${task.title.length>(compact?24:32)?'…':''}
@@ -329,6 +388,7 @@ function renderMonth() {
       if(t) openTaskModal({taskData:t,onSave:()=>load()});
     });
   });
+  _bindCalendarDragDrop(el);
   bindSlotClicks(el);
 }
 
@@ -409,6 +469,7 @@ function renderWeek() {
       if(t) openTaskModal({taskData:t,onSave:()=>load()});
     });
   });
+  _bindCalendarDragDrop(el);
   bindSlotClicks(el);
 }
 
