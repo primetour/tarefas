@@ -172,6 +172,15 @@ export function initAuthObserver(onReady) {
         document.documentElement.dataset.palette = savedPalette;
         localStorage.setItem('primetour-palette', savedPalette);
 
+        // Aplicar fonte do perfil do usuário
+        const savedFont = profile.prefs?.font || localStorage.getItem('primetour-font') || 'outfit';
+        if (savedFont && savedFont !== 'outfit') {
+          document.documentElement.dataset.font = savedFont;
+        } else {
+          delete document.documentElement.dataset.font;
+        }
+        localStorage.setItem('primetour-font', savedFont);
+
         // Só agora libera o app — permissões e workspaces já estão no store
         store.set('isAuthenticated', true);
         store.set('authLoading', false);
