@@ -537,6 +537,296 @@ function showFeedbackDetail(fb) {
 }
 
 /* ─── Feedback form modal ─────────────────────────────────── */
+/* ─── Audio transcription helpers ────────────────────────── */
+
+async function transcribeWithGroq(audioBlob) {
+  const { getAIConfig, resolveApiConfig } = await import('../services/ai.js');
+
+  // Try to get Groq key from scoped configs, fallback to global
+  let groqKey = '';
+  try {
+    const resolved = await resolveApiConfig();
+    const cfg = resolved?.config || {};
+    if (cfg.provider === 'groq' && cfg.apiKey) {
+      groqKey = cfg.apiKey;
+    }
+    if (!groqKey) {
+      // Check global
+      const globalCfg = await getAIConfig();
+      if (globalCfg?.provider === 'groq' && globalCfg?.apiKey) {
+        groqKey = globalCfg.apiKey;
+      }
+    }
+  } catch {}
+
+  if (!groqKey) {
+    throw new Error('Configure uma API Key do Groq (grátis) em Configurações → IA para usar transcrição de áudio.');
+  }
+
+  const formData = new FormData();
+  const ext = audioBlob.type.includes('webm') ? 'webm' : audioBlob.type.includes('mp4') ? 'm4a' : 'wav';
+  formData.append('file', audioBlob, `audio.${ext}`);
+  formData.append('model', 'whisper-large-v3');
+  formData.append('language', 'pt');
+  formData.append('response_format', 'json');
+
+  const resp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${groqKey}` },
+    body: formData,
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => '');
+    throw new Error(`Erro na transcrição (${resp.status}): ${err}`);
+  }
+
+  const data = await resp.json();
+  return data.text || '';
+}
+
+async function parseTranscriptWithAI(text) {
+  // Use the AI service to parse the transcript into structured feedback fields
+  try {
+    const { getAIConfig, resolveApiConfig } = await import('../services/ai.js');
+    const resolved = await resolveApiConfig();
+    const cfg = resolved?.config || {};
+    const apiKey = resolved?.apiKey || cfg.apiKey || '';
+    const provider = cfg.provider || 'groq';
+
+    if (!apiKey) return null;
+
+    const systemPrompt = `Você é um assistente que extrai informações de uma transcrição de áudio de feedback.
+Analise o texto e retorne APENAS um JSON válido (sem markdown, sem backticks) com estes campos:
+{
+  "theme": "tema principal do feedback (1 frase curta)",
+  "highlights": ["ponto positivo 1", "ponto positivo 2"],
+  "improvements": ["ponto a desenvolver 1", "ponto a desenvolver 2"],
+  "actionPlan": "ações combinadas (texto livre)",
+  "perception": "reação/percepção do colaborador (texto livre)",
+  "suggestedType": "positive|negative|mixed|development"
+}
+Se algum campo não for mencionado, use string vazia ou array vazio. Seja conciso.`;
+
+    let url, headers, body;
+
+    if (provider === 'groq') {
+      url = 'https://api.groq.com/openai/v1/chat/completions';
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+      body = JSON.stringify({ model: cfg.model || 'llama-3.3-70b-versatile', messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: text }
+      ], temperature: 0.2, max_tokens: 800, response_format: { type: 'json_object' } });
+    } else if (provider === 'gemini') {
+      url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model || 'gemini-2.5-flash'}:generateContent?key=${apiKey}`;
+      headers = { 'Content-Type': 'application/json' };
+      body = JSON.stringify({ contents: [{ parts: [{ text: systemPrompt + '\n\nTranscrição:\n' + text }] }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 800, responseMimeType: 'application/json' } });
+    } else if (provider === 'openai' || provider === 'azure') {
+      const base = provider === 'azure' && cfg.azureEndpoint ? cfg.azureEndpoint : 'https://api.openai.com/v1';
+      url = `${base}/chat/completions`;
+      headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+      body = JSON.stringify({ model: cfg.model || 'gpt-4o-mini', messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: text }
+      ], temperature: 0.2, max_tokens: 800, response_format: { type: 'json_object' } });
+    } else if (provider === 'anthropic') {
+      url = 'https://api.anthropic.com/v1/messages';
+      headers = { 'x-api-key': apiKey, 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true' };
+      body = JSON.stringify({ model: cfg.model || 'claude-sonnet-4-6', max_tokens: 800,
+        system: systemPrompt, messages: [{ role: 'user', content: text }] });
+    } else {
+      return null;
+    }
+
+    const resp = await fetch(url, { method: 'POST', headers, body });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+
+    let jsonText = '';
+    if (provider === 'gemini') {
+      jsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } else if (provider === 'anthropic') {
+      jsonText = data.content?.[0]?.text || '';
+    } else {
+      jsonText = data.choices?.[0]?.message?.content || '';
+    }
+
+    // Clean markdown wrapping if present
+    jsonText = jsonText.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim();
+    return JSON.parse(jsonText);
+  } catch (e) {
+    console.warn('[Feedback] Erro ao parsear transcrição com IA:', e);
+    return null;
+  }
+}
+
+function setupAudioTranscription(modal, addRow) {
+  const recBtn   = modal.querySelector('#fbf-rec-btn');
+  const recIcon  = modal.querySelector('#fbf-rec-icon');
+  const recLabel = modal.querySelector('#fbf-rec-label');
+  const fileInput = modal.querySelector('#fbf-audio-file');
+  const statusEl = modal.querySelector('#fbf-rec-status');
+  const previewEl = modal.querySelector('#fbf-transcript-preview');
+
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let isRecording = false;
+
+  function showStatus(html) {
+    statusEl.style.display = 'flex';
+    statusEl.innerHTML = html;
+  }
+
+  function hideStatus() {
+    statusEl.style.display = 'none';
+    statusEl.innerHTML = '';
+  }
+
+  async function fillFieldsFromTranscript(text) {
+    // Show raw transcript
+    previewEl.style.display = 'block';
+    previewEl.innerHTML = `<div style="font-size:0.6875rem;font-weight:600;color:var(--text-muted);
+      text-transform:uppercase;margin-bottom:4px;">Transcrição</div>${esc(text)}`;
+
+    // Try to parse with AI
+    showStatus('⚙ Analisando com IA...');
+    const parsed = await parseTranscriptWithAI(text);
+
+    if (parsed) {
+      // Fill fields
+      if (parsed.theme && !modal.querySelector('#fbf-theme')?.value) {
+        modal.querySelector('#fbf-theme').value = parsed.theme;
+      }
+
+      if (parsed.suggestedType) {
+        const typeSelect = modal.querySelector('#fbf-type');
+        if (typeSelect && !typeSelect.value) typeSelect.value = parsed.suggestedType;
+      }
+
+      if (parsed.highlights?.length) {
+        const hlContainer = modal.querySelector('#fbf-highlights');
+        const existingInputs = hlContainer.querySelectorAll('.fbf-hl-input');
+        parsed.highlights.forEach((h, i) => {
+          if (i < existingInputs.length) {
+            if (!existingInputs[i].value) existingInputs[i].value = h;
+          } else {
+            addRow('fbf-highlights', 'fbf-hl');
+            const newInputs = hlContainer.querySelectorAll('.fbf-hl-input');
+            newInputs[newInputs.length - 1].value = h;
+          }
+        });
+      }
+
+      if (parsed.improvements?.length) {
+        const impContainer = modal.querySelector('#fbf-improvements');
+        const existingInputs = impContainer.querySelectorAll('.fbf-imp-input');
+        parsed.improvements.forEach((h, i) => {
+          if (i < existingInputs.length) {
+            if (!existingInputs[i].value) existingInputs[i].value = h;
+          } else {
+            addRow('fbf-improvements', 'fbf-imp');
+            const newInputs = impContainer.querySelectorAll('.fbf-imp-input');
+            newInputs[newInputs.length - 1].value = h;
+          }
+        });
+      }
+
+      if (parsed.actionPlan) {
+        const el = modal.querySelector('#fbf-action');
+        if (el && !el.value) el.value = parsed.actionPlan;
+      }
+
+      if (parsed.perception) {
+        const el = modal.querySelector('#fbf-perception');
+        if (el && !el.value) el.value = parsed.perception;
+      }
+
+      showStatus('✓ Campos preenchidos automaticamente. Revise antes de salvar.');
+      toast.success('Áudio transcrito e campos preenchidos!');
+    } else {
+      // No AI parsing — just put raw text in action plan as fallback
+      const actionEl = modal.querySelector('#fbf-action');
+      if (actionEl && !actionEl.value) actionEl.value = text;
+      showStatus('✓ Transcrito. Distribua o texto nos campos manualmente.');
+      toast.info('Áudio transcrito. Edite os campos conforme necessário.');
+    }
+  }
+
+  // ── Record button ──
+  recBtn?.addEventListener('click', async () => {
+    if (isRecording) {
+      // Stop recording
+      mediaRecorder?.stop();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' });
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        isRecording = false;
+        recIcon.textContent = '🎙';
+        recLabel.textContent = 'Gravar áudio';
+        recBtn.style.borderColor = 'var(--border-default)';
+        recBtn.style.background = 'var(--bg-surface)';
+        stream.getTracks().forEach(t => t.stop());
+
+        if (!audioChunks.length) return;
+        const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+
+        showStatus('⏳ Transcrevendo áudio...');
+        try {
+          const text = await transcribeWithGroq(blob);
+          if (!text?.trim()) { showStatus('Nenhum texto detectado no áudio.'); return; }
+          await fillFieldsFromTranscript(text);
+        } catch (e) {
+          showStatus(`❌ ${e.message}`);
+          toast.error(e.message);
+        }
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      recIcon.textContent = '⏹';
+      recLabel.textContent = 'Parar gravação';
+      recBtn.style.borderColor = 'var(--color-danger)';
+      recBtn.style.background = 'rgba(239,68,68,0.08)';
+      showStatus('<span style="color:var(--color-danger);animation:pulse 1.5s infinite;">●</span> Gravando...');
+    } catch (e) {
+      toast.error('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
+    }
+  });
+
+  // ── File upload ──
+  fileInput?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error('Arquivo muito grande. Máximo 25 MB.');
+      return;
+    }
+
+    showStatus(`⏳ Transcrevendo "${file.name}"...`);
+    try {
+      const text = await transcribeWithGroq(file);
+      if (!text?.trim()) { showStatus('Nenhum texto detectado no arquivo.'); return; }
+      await fillFieldsFromTranscript(text);
+    } catch (e) {
+      showStatus(`❌ ${e.message}`);
+      toast.error(e.message);
+    }
+    fileInput.value = '';
+  });
+}
+
 function showFeedbackForm(container, fb = null) {
   const isEdit = !!fb?.id;
   const m = document.createElement('div');
@@ -610,6 +900,37 @@ function showFeedbackForm(container, fb = null) {
           <label style="${LBL}">Tema *</label>
           <input id="fbf-theme" type="text" class="portal-field" style="width:100%;"
             value="${esc(fb?.theme || '')}" placeholder="Principal motivo que gerou o feedback">
+        </div>
+
+        <!-- Audio transcription -->
+        <div style="background:var(--bg-elevated);border:1px solid var(--border-subtle);
+          border-radius:var(--radius-md);padding:14px 16px;">
+          <label style="${LBL}color:var(--brand-gold);">🎙 Preencher por áudio</label>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;line-height:1.4;">
+            Grave ou envie um áudio descrevendo o feedback. O sistema transcreve e preenche os campos automaticamente.
+          </p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" id="fbf-rec-btn" class="btn btn-sm"
+              style="background:var(--bg-surface);border:1px solid var(--border-default);
+              color:var(--text-primary);gap:6px;">
+              <span id="fbf-rec-icon">🎙</span>
+              <span id="fbf-rec-label">Gravar áudio</span>
+            </button>
+            <label class="btn btn-sm" style="background:var(--bg-surface);cursor:pointer;
+              border:1px solid var(--border-default);color:var(--text-primary);gap:6px;">
+              📎 Enviar arquivo
+              <input type="file" id="fbf-audio-file" accept="audio/*,.m4a,.mp3,.wav,.ogg,.webm"
+                style="display:none;">
+            </label>
+          </div>
+          <div id="fbf-rec-status" style="display:none;margin-top:10px;font-size:0.8125rem;
+            color:var(--text-secondary);display:flex;align-items:center;gap:8px;">
+          </div>
+          <div id="fbf-transcript-preview" style="display:none;margin-top:10px;
+            background:var(--bg-surface);border-radius:var(--radius-sm);padding:10px 12px;
+            font-size:0.8125rem;color:var(--text-secondary);max-height:120px;overflow-y:auto;
+            border:1px solid var(--border-subtle);">
+          </div>
         </div>
 
         <!-- Highlights (dynamic) -->
@@ -704,6 +1025,9 @@ function showFeedbackForm(container, fb = null) {
   m.querySelector('#fbf-add-imp')?.addEventListener('click', () => addRow('fbf-improvements', 'fbf-imp'));
   wireRemove(document.getElementById('fbf-highlights'), 'fbf-hl');
   wireRemove(document.getElementById('fbf-improvements'), 'fbf-imp');
+
+  // ─── Audio recording & transcription ───
+  setupAudioTranscription(m, addRow);
 
   // Save
   m.querySelector('#fbf-save')?.addEventListener('click', async () => {
