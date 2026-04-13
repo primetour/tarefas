@@ -193,19 +193,18 @@ export async function suggestWeekContent({ startDate, endDate, account, count = 
 
   let topPosts = [];
   try {
-    const postsConstraints = [
-      where('account', '==', account),
-      where('date', '>=', postsIsoDate),
-      orderBy('date', 'desc'),
-      limit(100),
-    ];
-    const postsSnap = await getDocs(query(collection(db, 'meta_posts'), ...postsConstraints));
+    // Query simples sem índice composto — filtra client-side
+    const postsSnap = await getDocs(
+      query(collection(db, 'meta_posts'), orderBy('date', 'desc'), limit(100))
+    );
     topPosts = postsSnap.docs
       .map(d => ({ id: d.id, ...d.data() }))
+      .filter(p => (!account || p.account === account) && (p.date || '') >= postsIsoDate)
       .sort((a, b) => (b.engagement || 0) - (a.engagement || 0))
       .slice(0, 10);
   } catch (e) {
-    console.warn('[ContentCalendar AI] Falha ao buscar meta_posts:', e);
+    console.warn('[ContentCalendar AI] meta_posts indisponível, continuando sem dados de performance:', e.message || e);
+    // Continua normalmente — meta_posts é opcional para sugestões
   }
 
   // 2. Buscar dicas do portal atualizadas recentemente (últimos 30 dias)
@@ -216,15 +215,23 @@ export async function suggestWeekContent({ startDate, endDate, account, count = 
   let recentTips = [];
   try {
     const tipsSnap = await getDocs(
-      query(collection(db, 'portal_tips'), where('lastUpdated', '>=', tipsIsoDate), orderBy('lastUpdated', 'desc'), limit(20))
+      query(collection(db, 'portal_tips'), orderBy('lastUpdated', 'desc'), limit(20))
     );
-    recentTips = tipsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    recentTips = tipsSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(t => (t.lastUpdated || '') >= tipsIsoDate);
   } catch (e) {
-    console.warn('[ContentCalendar AI] Falha ao buscar portal_tips:', e);
+    console.warn('[ContentCalendar AI] portal_tips indisponível, continuando sem dicas:', e.message || e);
+    // Continua normalmente — portal_tips é opcional
   }
 
   // 3. Identificar gaps (dias sem conteúdo na semana)
-  const existingSlots = await fetchSlots({ startDate, endDate, account });
+  let existingSlots = [];
+  try {
+    existingSlots = await fetchSlots({ startDate, endDate, account });
+  } catch (e) {
+    console.warn('[ContentCalendar AI] Falha ao buscar slots existentes:', e.message || e);
+  }
   const daysWithContent = new Set(existingSlots.map(s => s.scheduledDate).filter(Boolean));
 
   const gaps = [];
