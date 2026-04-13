@@ -24,6 +24,7 @@ export const CARD_FIELDS = [
   { key: 'status',         label: 'Status',                icon: '◎',  default: false },
   { key: 'sector',         label: 'Setor',                 icon: '🏢', default: false },
   { key: 'tags',           label: 'Tags',                  icon: '🏷',  default: false },
+  { key: 'subtasks',       label: 'Subtarefas (com prazo)', icon: '☑',  default: false },
 ];
 
 export const DEFAULT_CARD_FIELDS = CARD_FIELDS
@@ -178,6 +179,41 @@ export function renderCardFields(task, opts = {}) {
         if (task.tags?.length) bits.push(
           `<span title="Tags: ${task.tags.join(', ')}">${fieldDef.icon} ${task.tags.slice(0,2).join(', ')}</span>`
         );
+        break;
+
+      case 'subtasks':
+        if (task.subtasks?.length) {
+          const total = task.subtasks.length;
+          const done  = task.subtasks.filter(s => s.done).length;
+          const pct   = Math.round(done / total * 100);
+          const now   = new Date();
+          // Find subtasks with due dates
+          const withDue = task.subtasks.filter(s => s.dueDate && !s.done);
+          const overdue = withDue.filter(s => new Date(s.dueDate) < now);
+          const upcoming = withDue.filter(s => {
+            const d = new Date(s.dueDate);
+            const diff = (d - now) / 86400000;
+            return diff >= 0 && diff <= 3;
+          });
+
+          // Progress badge
+          const pColor = pct === 100 ? '#16A34A' : pct >= 50 ? '#D4A843' : '#3B82F6';
+          let html = `<span style="color:${pColor};" title="Subtarefas: ${done}/${total}">${fieldDef.icon} ${done}/${total}</span>`;
+
+          // Overdue subtasks
+          if (overdue.length) {
+            html += `<span style="color:#EF4444;font-weight:600;" title="${overdue.map(s => s.title).join(', ')}">⚠ ${overdue.length} atrasada${overdue.length > 1 ? 's' : ''}</span>`;
+          }
+          // Upcoming subtasks (next 3 days)
+          if (upcoming.length && !overdue.length) {
+            const next = upcoming.sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate))[0];
+            const dd = new Date(next.dueDate);
+            const fmt = `${String(dd.getDate()).padStart(2,'0')}/${String(dd.getMonth()+1).padStart(2,'0')}`;
+            html += `<span style="color:#D97706;" title="${next.title}">📅 ${fmt}</span>`;
+          }
+
+          bits.push(html);
+        }
         break;
     }
   });
