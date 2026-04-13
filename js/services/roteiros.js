@@ -343,97 +343,134 @@ export async function generateRoteiroFromPrompt(userPrompt) {
   const today = new Date().toISOString().split('T')[0];
   const profile = store.get('userProfile');
 
-  const systemPrompt = `Você é um consultor de viagens sênior da PRIMETOUR, uma agência premium de turismo.
-Crie um roteiro de viagem COMPLETO e DETALHADO baseado na solicitação do cliente.
+  // ── 1. Web Search: buscar em fontes de turismo luxury ──
+  const LUXURY_SITES = [
+    'virtuoso.com',
+    'telegraph.co.uk/travel',
+    'nytimes.com/section/travel',
+    'cntraveler.com',
+    'travelandleisure.com',
+    'elitetraveler.com',
+    'luxurytravelmagazine.com',
+    'monocle.com',
+    'ft.com/htsi',
+    'corriere.it',
+  ];
 
-REGRAS:
-- Gere conteúdo realista com nomes reais de hotéis, restaurantes e atrações
-- Narrativas de cada dia devem ter 100-200 palavras, imersivas, em 1ª pessoa do plural
-- Atividades com horários realistas (check-in hotel 15h, jantar 19h-20h, etc.)
-- Preços em USD salvo menção a moeda específica
+  let webResearchContext = '';
+  try {
+    const { searchWeb } = await import('./aiActions.js');
+
+    // Extrair destinos do prompt para busca
+    const destQuery = userPrompt.substring(0, 150);
+    const searchResults = await searchWeb(
+      `luxury travel itinerary ${destQuery} best hotels restaurants experiences`,
+      LUXURY_SITES
+    );
+
+    if (searchResults?.results?.length) {
+      webResearchContext = '\n\nPESQUISA WEB (fontes especializadas em turismo luxury):\n' +
+        searchResults.results.slice(0, 8).map((r, i) =>
+          `[${i+1}] ${r.title || ''} — ${r.snippet || ''} (${r.source || r.link || ''})`
+        ).join('\n');
+    }
+  } catch (e) {
+    console.warn('[Roteiro IA] Web search indisponível, continuando sem pesquisa:', e.message || e);
+  }
+
+  // ── 2. System prompt robusto ──
+  const systemPrompt = `Você é um consultor de viagens sênior da PRIMETOUR, agência premium de turismo.
+Crie um roteiro de viagem COMPLETO e PROFISSIONAL baseado na solicitação.
+
+ESTE ROTEIRO SERVE COMO ORÇAMENTO PARA O CLIENTE. Deve ser completo em TODAS as seções.
+
+REGRAS OBRIGATÓRIAS:
+- Use nomes REAIS de hotéis, restaurantes e atrações que existam de fato
+- Se dados de pesquisa web estiverem disponíveis abaixo, USE-OS para recomendar hotéis e experiências
+- Narrativas de cada dia: 150-250 palavras, tom imersivo, 1ª pessoa do plural ("Começamos o dia...")
+- Atividades com horários realistas (café 07:30, check-in 15h, jantar 19:30, etc.)
+- Mínimo 4-6 atividades por dia
 - Data de hoje: ${today}
 - Se nenhuma data for informada, use datas a partir de 30 dias de hoje
-- Preencha TODOS os campos do JSON — não deixe nenhum vazio se puder inferir
-- Inclua política de cancelamento padrão
-- Inclua informações importantes (passaporte, visto, clima, etc.) baseadas no destino
+- Preencha TODOS os campos — este é um documento comercial completo
 
-RESPONDA EXCLUSIVAMENTE com um JSON válido (sem markdown, sem comentários) no formato:
+REGRAS DE PREÇOS (CRÍTICO):
+- NÃO INVENTE valores de preços. Preços são SEMPRE definidos pelo consultor.
+- pricing.perPerson = null, pricing.perCouple = null (o consultor preenche depois)
+- pricing.disclaimer = "Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro."
+- optionals: priceAdult = null, priceChild = null (consultor define)
+- Em customRows, NÃO adicione linhas com valores inventados
+
+SEÇÕES OBRIGATÓRIAS (preencha TODAS):
+1. client: inferir tipo (couple/family/group/individual), perfil econômico, preferências
+2. travel: destinos com noites, datas calculadas corretamente
+3. days: TODOS os dias, com narrativa completa, atividades detalhadas, cidade pernoite
+4. hotels: hotel REAL para cada cidade (nome, categoria, regime, datas check-in/out)
+5. includes: mínimo 5 itens (hospedagem, café, transfers, seguro, passeios, etc.)
+6. excludes: mínimo 5 itens (aéreo, refeições não mencionadas, extras, gorjetas, etc.)
+7. payment: termos padrão
+8. cancellation: 4 faixas padrão
+9. importantInfo: passaporte, visto, vacinas, clima, bagagem, voos — TUDO preenchido para o(s) destino(s)
+
+RESPONDA EXCLUSIVAMENTE com JSON válido. Sem markdown, sem comentários, sem texto antes ou depois.
+O JSON deve seguir EXATAMENTE esta estrutura:
 {
-  "title": "Título do roteiro",
+  "title": "Título descritivo do roteiro",
   "client": {
-    "name": "",
-    "email": "",
-    "phone": "",
-    "type": "couple|individual|family|group",
-    "adults": 2,
-    "children": 0,
-    "childrenAges": [],
-    "preferences": ["Gastronomia","Cultura","Aventura","Relaxamento","Compras","Natureza"],
+    "name": "", "email": "", "phone": "",
+    "type": "couple",
+    "adults": 2, "children": 0, "childrenAges": [],
+    "preferences": [],
     "restrictions": [],
-    "economicProfile": "standard|premium|luxury",
-    "notes": ""
+    "economicProfile": "premium",
+    "notes": "Notas inferidas da solicitação"
   },
   "travel": {
-    "startDate": "YYYY-MM-DD",
-    "endDate": "YYYY-MM-DD",
-    "nights": 0,
-    "destinations": [
-      { "city": "Cidade", "country": "País", "nights": 3 }
-    ]
+    "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "nights": 0,
+    "destinations": [{ "city": "", "country": "", "nights": 0 }]
   },
-  "days": [
-    {
-      "dayNumber": 1,
-      "date": "YYYY-MM-DD",
-      "title": "Título do dia",
-      "city": "Cidade",
-      "narrative": "Narrativa detalhada do dia...",
-      "activities": [
-        { "time": "09:00", "description": "Descrição", "type": "passeio|refeição|transfer|livre" }
-      ],
-      "overnightCity": "Cidade"
-    }
-  ],
-  "hotels": [
-    { "city": "Cidade", "hotelName": "Nome do Hotel", "roomType": "Superior/Deluxe/Suite", "regime": "Café da manhã", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "nights": 3 }
-  ],
+  "days": [{
+    "dayNumber": 1, "date": "YYYY-MM-DD",
+    "title": "Título do dia",
+    "city": "Cidade",
+    "narrative": "Narrativa longa e detalhada...",
+    "activities": [{ "time": "09:00", "description": "Descrição completa", "type": "passeio" }],
+    "overnightCity": "Cidade"
+  }],
+  "hotels": [{ "city": "", "hotelName": "", "roomType": "", "regime": "", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "nights": 0 }],
   "pricing": {
-    "perPerson": null,
-    "perCouple": null,
-    "currency": "USD",
-    "validUntil": "YYYY-MM-DD",
-    "disclaimer": "Valores sujeitos a confirmação no ato da reserva.",
+    "perPerson": null, "perCouple": null,
+    "currency": "USD", "validUntil": "YYYY-MM-DD",
+    "disclaimer": "Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro.",
     "customRows": []
   },
-  "optionals": [
-    { "service": "Descrição", "priceAdult": null, "priceChild": null, "notes": "" }
-  ],
-  "includes": ["item1", "item2"],
-  "excludes": ["item1", "item2"],
+  "optionals": [{ "service": "", "priceAdult": null, "priceChild": null, "notes": "" }],
+  "includes": [],
+  "excludes": [],
   "payment": {
     "deposit": "30% no ato da reserva",
-    "installments": "Saldo em até 6x",
+    "installments": "Saldo em até 6x sem juros",
     "deadline": "Até 45 dias antes do embarque",
     "notes": ""
   },
   "cancellation": [
-    { "period": "Até 60 dias antes", "penalty": "Sem custo" },
+    { "period": "Até 60 dias antes da viagem", "penalty": "Sem custo de cancelamento" },
     { "period": "Entre 59 e 30 dias", "penalty": "50% do valor total" },
     { "period": "Entre 29 e 15 dias", "penalty": "75% do valor total" },
-    { "period": "Menos de 15 dias", "penalty": "100% do valor total" }
+    { "period": "Menos de 15 dias ou no-show", "penalty": "100% do valor total" }
   ],
   "importantInfo": {
-    "passport": "",
-    "visa": "",
-    "vaccines": "",
-    "climate": "",
-    "luggage": "",
-    "flights": "",
+    "passport": "Informações detalhadas sobre passaporte...",
+    "visa": "Requisitos de visto para o destino...",
+    "vaccines": "Vacinas recomendadas/obrigatórias...",
+    "climate": "Clima esperado no período da viagem...",
+    "luggage": "Dicas de bagagem para o destino...",
+    "flights": "Informações sobre voos e conexões...",
     "customFields": []
   }
-}`;
+}${webResearchContext}`;
 
-  // Tentar via skill configurada, senão via chatWithAI
+  // ── 3. Chamar IA ──
   let result;
   try {
     const skills = await fetchSkillsForModule('roteiros').catch(() => []);
@@ -444,7 +481,10 @@ RESPONDA EXCLUSIVAMENTE com um JSON válido (sem markdown, sem comentários) no 
     );
 
     if (createSkill) {
-      result = await runSkill(createSkill.id, { userPrompt, today, consultantName: profile?.name });
+      result = await runSkill(createSkill.id, {
+        userPrompt, today, consultantName: profile?.name,
+        webResearch: webResearchContext,
+      });
     } else {
       result = await chatWithAI(userPrompt, {}, {
         moduleId: 'roteiros',
@@ -457,11 +497,15 @@ RESPONDA EXCLUSIVAMENTE com um JSON válido (sem markdown, sem comentários) no 
     throw new Error('Falha ao gerar roteiro via IA: ' + (e.message || e));
   }
 
-  // Parsear resposta JSON
+  // ── 4. Parsear resposta JSON ──
   const text = result?.text || result?.content || '';
   try {
-    // Extrair JSON do texto (pode vir com markdown)
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    // Limpar markdown wrappers se presentes
+    let cleanText = text.trim();
+    cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+
+    // Extrair JSON do texto
+    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('JSON não encontrado na resposta.');
     const parsed = JSON.parse(jsonMatch[0]);
 
@@ -470,6 +514,18 @@ RESPONDA EXCLUSIVAMENTE com um JSON válido (sem markdown, sem comentários) no 
     const roteiro = deepMergeRoteiro(base, parsed);
     roteiro.aiGenerated = true;
     roteiro.aiPrompt = userPrompt.substring(0, 500);
+
+    // Garantir que preços não foram inventados pela IA
+    if (roteiro.pricing) {
+      roteiro.pricing.perPerson = null;
+      roteiro.pricing.perCouple = null;
+      if (!roteiro.pricing.disclaimer || roteiro.pricing.disclaimer.length < 10) {
+        roteiro.pricing.disclaimer = 'Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro.';
+      }
+    }
+    if (roteiro.optionals?.length) {
+      roteiro.optionals.forEach(o => { o.priceAdult = null; o.priceChild = null; });
+    }
 
     return roteiro;
   } catch (e) {

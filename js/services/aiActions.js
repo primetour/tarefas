@@ -80,7 +80,7 @@ function safeParseDate(dateStr) {
 }
 
 /* ─── Helper: busca web real ──────────────────────────────── */
-async function searchWeb(query, sites) {
+export async function searchWeb(query, sites) {
   let searchQuery = query;
   if (sites) {
     let siteList;
