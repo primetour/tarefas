@@ -14,7 +14,18 @@ import {
   NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
 } from '../services/tasks.js';
 import { fetchProjects }  from '../services/projects.js';
-import { getTaskType, getSubtaskTemplate } from '../services/taskTypes.js';
+import { getTaskType } from '../services/taskTypes.js';
+/* getSubtaskTemplate: lazy-loaded (may not exist in older deployments) */
+let getSubtaskTemplate = () => [];
+let _ttLoaded = false;
+async function _loadSubtaskTemplate() {
+  if (_ttLoaded) return;
+  try {
+    const mod = await import('../services/taskTypes.js');
+    if (mod.getSubtaskTemplate) getSubtaskTemplate = mod.getSubtaskTemplate;
+    _ttLoaded = true;
+  } catch { /* not available */ }
+}
 import {
   renderTypeFields, collectFieldValues,
   bindDynamicFieldEvents, validateRequiredFields,
@@ -83,7 +94,7 @@ const ABSENCE_TYPE_LABELS = {
 };
 
 export async function openTaskModal({ taskData=null, projectId=null, status='not_started', onSave=null, typeId=null } = {}) {
-  await _loadWorkflowEngine();
+  await Promise.all([_loadWorkflowEngine(), _loadSubtaskTemplate()]);
   // isEdit only when taskData has a real Firestore id (not a prefill from requests portal)
   const isEdit = !!(taskData?.id);
 
