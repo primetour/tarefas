@@ -71,12 +71,13 @@ export function renderCardFields(task, opts = {}) {
   const taskTypes= store.get('taskTypes') || [];
   const nucleos  = store.get('nucleos') || [];
 
-  const { compact = false } = opts;
+  const { compact = false, skipFields = [] } = opts;
   const fontSize = compact ? '0.6875rem' : '0.75rem';
 
   const bits = [];
 
   prefs.forEach(key => {
+    if (skipFields.includes(key)) return;
     const fieldDef = CARD_FIELDS.find(f => f.key === key);
     if (!fieldDef) return;
 
