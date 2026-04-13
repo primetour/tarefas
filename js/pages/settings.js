@@ -383,27 +383,27 @@ async function loadPrivacySection() {
   const anonModules = config.anonymizeModules || [];
   const allowedProviders = config.allowedProviders || [];
 
-  el.innerHTML = \`
+  el.innerHTML = `
     <!-- Anonimização -->
     <div style="margin-bottom:24px;">
       <h4 style="font-size:0.875rem;font-weight:600;margin-bottom:10px;color:var(--text-primary);">
         Anonimização de Dados Pessoais
       </h4>
       <label style="display:flex;align-items:center;gap:10px;margin-bottom:12px;cursor:pointer;font-size:0.8125rem;">
-        <input type="checkbox" id="priv-anonymize" \${config.anonymizePii ? 'checked' : ''}
+        <input type="checkbox" id="priv-anonymize" ${config.anonymizePii ? 'checked' : ''}
           style="accent-color:var(--brand-gold);width:16px;height:16px;">
         Anonimizar PII (e-mails, telefones, CPFs) antes de enviar para provedores de IA
       </label>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-left:26px;" id="priv-modules">
-        \${modules.map(m => \`
+        ${modules.map(m => `
           <label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;
             border:1px solid var(--border-subtle);font-size:0.75rem;cursor:pointer;">
-            <input type="checkbox" class="priv-module-cb" data-module="\${m.key}"
-              \${anonModules.includes(m.key) ? 'checked' : ''}
+            <input type="checkbox" class="priv-module-cb" data-module="${m.key}"
+              ${anonModules.includes(m.key) ? 'checked' : ''}
               style="accent-color:var(--brand-gold);width:14px;height:14px;">
-            \${m.label}
+            ${m.label}
           </label>
-        \`).join('')}
+        `).join('')}
       </div>
     </div>
 
@@ -413,12 +413,12 @@ async function loadPrivacySection() {
         Consentimento
       </h4>
       <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer;font-size:0.8125rem;">
-        <input type="checkbox" id="priv-consent" \${config.consentRequired ? 'checked' : ''}
+        <input type="checkbox" id="priv-consent" ${config.consentRequired ? 'checked' : ''}
           style="accent-color:var(--brand-gold);width:16px;height:16px;">
         Exigir consentimento do usuário antes do primeiro uso de IA
       </label>
       <div style="margin-left:26px;font-size:0.75rem;color:var(--text-muted);">
-        Versão atual: <strong>\${config.consentVersion || '1.0'}</strong>
+        Versão atual: <strong>${config.consentVersion || '1.0'}</strong>
         — alterar a versão força todos os usuários a aceitar novamente.
       </div>
     </div>
@@ -432,11 +432,11 @@ async function loadPrivacySection() {
         <label style="font-size:0.8125rem;">Manter logs de uso por:</label>
         <select id="priv-retention" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border-subtle);
           background:var(--bg-surface);color:var(--text-primary);font-size:0.8125rem;">
-          <option value="30" \${config.dataRetentionDays == 30 ? 'selected' : ''}>30 dias</option>
-          <option value="60" \${config.dataRetentionDays == 60 ? 'selected' : ''}>60 dias</option>
-          <option value="90" \${config.dataRetentionDays == 90 ? 'selected' : ''}>90 dias</option>
-          <option value="180" \${config.dataRetentionDays == 180 ? 'selected' : ''}>180 dias</option>
-          <option value="365" \${config.dataRetentionDays == 365 ? 'selected' : ''}>1 ano</option>
+          <option value="30" ${config.dataRetentionDays == 30 ? 'selected' : ''}>30 dias</option>
+          <option value="60" ${config.dataRetentionDays == 60 ? 'selected' : ''}>60 dias</option>
+          <option value="90" ${config.dataRetentionDays == 90 ? 'selected' : ''}>90 dias</option>
+          <option value="180" ${config.dataRetentionDays == 180 ? 'selected' : ''}>180 dias</option>
+          <option value="365" ${config.dataRetentionDays == 365 ? 'selected' : ''}>1 ano</option>
         </select>
         <button id="priv-clean-logs" style="padding:6px 14px;border-radius:6px;border:1px solid var(--danger,#EF4444);
           background:transparent;color:var(--danger,#EF4444);font-size:0.75rem;cursor:pointer;font-family:inherit;">
@@ -451,18 +451,18 @@ async function loadPrivacySection() {
         Provedores Permitidos
       </h4>
       <div style="display:flex;flex-wrap:wrap;gap:8px;" id="priv-providers">
-        \${providers.map(p => \`
+        ${providers.map(p => `
           <label style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;
             border:1px solid var(--border-subtle);font-size:0.8125rem;cursor:pointer;">
-            <input type="checkbox" class="priv-provider-cb" data-provider="\${p.key}"
-              \${allowedProviders.includes(p.key) ? 'checked' : ''}
+            <input type="checkbox" class="priv-provider-cb" data-provider="${p.key}"
+              ${allowedProviders.includes(p.key) ? 'checked' : ''}
               style="accent-color:var(--brand-gold);width:14px;height:14px;">
-            \${p.label}
+            ${p.label}
           </label>
-        \`).join('')}
+        `).join('')}
       </div>
       <label style="display:flex;align-items:center;gap:10px;margin-top:10px;cursor:pointer;font-size:0.8125rem;">
-        <input type="checkbox" id="priv-local-preferred" \${config.localPreferred ? 'checked' : ''}
+        <input type="checkbox" id="priv-local-preferred" ${config.localPreferred ? 'checked' : ''}
           style="accent-color:var(--brand-gold);width:16px;height:16px;">
         Preferir servidor local (Ollama) para módulos com dados sensíveis
       </label>
@@ -485,15 +485,15 @@ async function loadPrivacySection() {
             </tr>
           </thead>
           <tbody>
-            \${providers.map(p => {
+            ${providers.map(p => {
               const info = provInfo[p.key] || {};
-              return \`<tr style="border-bottom:1px solid var(--border-subtle,#1E2D3D);">
-                <td style="padding:8px;font-weight:500;">\${p.label}</td>
-                <td style="padding:8px;text-align:center;">\${info.gdpr ? '<span style="color:#22C55E;">✓</span>' : '<span style="color:#EF4444;">✕</span>'}</td>
-                <td style="padding:8px;text-align:center;">\${info.lgpd ? '<span style="color:#22C55E;">✓</span>' : '<span style="color:#F59E0B;">—</span>'}</td>
-                <td style="padding:8px;text-align:center;color:var(--text-muted);">\${info.region || '—'}</td>
-                <td style="padding:8px;color:var(--text-muted);font-size:0.6875rem;">\${info.note || ''}</td>
-              </tr>\`;
+              return `<tr style="border-bottom:1px solid var(--border-subtle,#1E2D3D);">
+                <td style="padding:8px;font-weight:500;">${p.label}</td>
+                <td style="padding:8px;text-align:center;">${info.gdpr ? '<span style="color:#22C55E;">✓</span>' : '<span style="color:#EF4444;">✕</span>'}</td>
+                <td style="padding:8px;text-align:center;">${info.lgpd ? '<span style="color:#22C55E;">✓</span>' : '<span style="color:#F59E0B;">—</span>'}</td>
+                <td style="padding:8px;text-align:center;color:var(--text-muted);">${info.region || '—'}</td>
+                <td style="padding:8px;color:var(--text-muted);font-size:0.6875rem;">${info.note || ''}</td>
+              </tr>`;
             }).join('')}
           </tbody>
         </table>
@@ -519,7 +519,7 @@ async function loadPrivacySection() {
         Salvar Configurações
       </button>
     </div>
-  \`;
+  `;
 
   // Bind events
   document.getElementById('priv-save')?.addEventListener('click', async () => {
@@ -552,7 +552,7 @@ async function loadPrivacySection() {
       const { cleanExpiredLogs } = await import('../services/aiDataGuard.js');
       const count = await cleanExpiredLogs();
       const { toast } = await import('../components/toast.js');
-      toast.success(\`\${count} log(s) removido(s).\`);
+      toast.success(`${count} log(s) removido(s).`);
     } catch (e) {
       const { toast } = await import('../components/toast.js');
       toast.error('Erro: ' + e.message);
@@ -566,42 +566,42 @@ async function loadPrivacySection() {
     try {
       const { generateLgpdReport } = await import('../services/aiDataGuard.js');
       const report = await generateLgpdReport();
-      resultEl.innerHTML = \`
+      resultEl.innerHTML = `
         <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;padding:16px;font-size:0.75rem;">
-          <div style="font-weight:600;margin-bottom:12px;">Relatório LGPD — Últimos \${report.period}</div>
+          <div style="font-weight:600;margin-bottom:12px;">Relatório LGPD — Últimos ${report.period}</div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;">
             <div style="text-align:center;">
-              <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">\${report.usage.totalCalls}</div>
+              <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">${report.usage.totalCalls}</div>
               <div style="color:var(--text-muted);">Chamadas IA</div>
             </div>
             <div style="text-align:center;">
-              <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">\${report.usage.totalTokens.toLocaleString()}</div>
+              <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">${report.usage.totalTokens.toLocaleString()}</div>
               <div style="color:var(--text-muted);">Tokens processados</div>
             </div>
             <div style="text-align:center;">
-              <div style="font-size:1.25rem;font-weight:700;color:\${report.usage.anonymizationRate >= 80 ? '#22C55E' : '#F59E0B'};">\${report.usage.anonymizationRate}%</div>
+              <div style="font-size:1.25rem;font-weight:700;color:${report.usage.anonymizationRate >= 80 ? '#22C55E' : '#F59E0B'};">${report.usage.anonymizationRate}%</div>
               <div style="color:var(--text-muted);">Taxa de anonimização</div>
             </div>
             <div style="text-align:center;">
-              <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">\${report.consent.consented}/\${report.consent.total}</div>
+              <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">${report.consent.consented}/${report.consent.total}</div>
               <div style="color:var(--text-muted);">Consentimentos ativos</div>
             </div>
           </div>
           <div style="margin-bottom:12px;">
             <strong>Por provedor:</strong>
-            \${Object.entries(report.usage.byProvider).map(([p,c]) => \`<span style="margin-left:8px;">\${p}: \${c}</span>\`).join(' |')}
+            ${Object.entries(report.usage.byProvider).map(([p,c]) => `<span style="margin-left:8px;">${p}: ${c}</span>`).join(' |')}
           </div>
           <div>
             <strong>Por módulo:</strong>
-            \${Object.entries(report.usage.byModule).map(([m,c]) => \`<span style="margin-left:8px;">\${m}: \${c}</span>\`).join(' |')}
+            ${Object.entries(report.usage.byModule).map(([m,c]) => `<span style="margin-left:8px;">${m}: ${c}</span>`).join(' |')}
           </div>
           <div style="margin-top:12px;color:var(--text-muted);font-size:0.6875rem;">
-            Gerado em: \${new Date(report.generatedAt).toLocaleString('pt-BR')}
+            Gerado em: ${new Date(report.generatedAt).toLocaleString('pt-BR')}
           </div>
         </div>
-      \`;
+      `;
     } catch (e) {
-      resultEl.innerHTML = \`<div style="color:var(--danger);">Erro ao gerar relatório: \${e.message}</div>\`;
+      resultEl.innerHTML = `<div style="color:var(--danger);">Erro ao gerar relatório: ${e.message}</div>`;
     }
   });
 }
