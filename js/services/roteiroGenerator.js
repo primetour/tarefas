@@ -260,12 +260,14 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   doc.save(filename);
 
   try {
-    await logGeneration({
-      roteiroId: roteiro.id,
-      format: 'pdf',
-      areaId: area?.id || roteiro.areaId || '',
-      destinations: roteiro.travel?.destinations?.map(d => d.city || d.country) || [],
-    });
+    if (roteiro.id) {
+      await logGeneration({
+        roteiroId: roteiro.id,
+        format: 'pdf',
+        areaId: area?.id || roteiro.areaId || '',
+        destinations: roteiro.travel?.destinations?.map(d => d.city || d.country) || [],
+      });
+    }
   } catch (e) {
     console.warn('[roteiroGenerator] PDF generation tracking failed:', e);
   }
