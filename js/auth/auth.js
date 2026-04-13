@@ -6,11 +6,13 @@
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
+  linkWithCredential,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   sendPasswordResetEmail,
   updatePassword,
   EmailAuthProvider,
+  OAuthProvider,
   reauthenticateWithCredential,
   createUserWithEmailAndPassword,
   updateProfile,
@@ -187,16 +189,43 @@ export async function signIn(email, password) {
 
 // ─── Login SSO Microsoft ──────────────────────────────────
 export async function signInWithMicrosoft() {
-  const result = await signInWithPopup(auth, microsoftProvider);
-  const email  = (result.user.email || '').toLowerCase();
+  try {
+    const result = await signInWithPopup(auth, microsoftProvider);
+    const email  = (result.user.email || '').toLowerCase();
 
-  // Dupla validação de domínio (segurança — tenant param já restringe)
-  if (!email.endsWith('@primetour.com.br')) {
-    await firebaseSignOut(auth);
-    throw new Error('SSO restrito a contas @primetour.com.br');
+    // Dupla validação de domínio (segurança — tenant param já restringe)
+    if (!email.endsWith('@primetour.com.br')) {
+      await firebaseSignOut(auth);
+      throw new Error('SSO restrito a contas @primetour.com.br');
+    }
+
+    // O initAuthObserver cuida do resto (auto-provisioning + carregamento de perfil)
+    return result.user;
+  } catch (err) {
+    // Conta já existe com email/senha — precisa vincular manualmente
+    if (err.code === 'auth/account-exists-with-different-credential') {
+      const pendingCred = OAuthProvider.credentialFromError(err);
+      const email = err.customData?.email || '';
+      // Propaga erro enriquecido para o login.js tratar com UI
+      const linkError = new Error('LINK_REQUIRED');
+      linkError.code = 'auth/account-exists-with-different-credential';
+      linkError.pendingCredential = pendingCred;
+      linkError.email = email;
+      throw linkError;
+    }
+    throw err;
   }
+}
 
-  // O initAuthObserver cuida do resto (auto-provisioning + carregamento de perfil)
+// ─── Vincular Microsoft a conta existente (email/senha) ───
+export async function linkMicrosoftToExistingAccount(email, password, pendingCredential) {
+  // 1. Login com email/senha
+  const result = await signInWithEmailAndPassword(auth, email.trim(), password);
+
+  // 2. Vincular o credential Microsoft à conta
+  await linkWithCredential(result.user, pendingCredential);
+
+  // 3. Retorna user — onAuthStateChanged cuida do resto
   return result.user;
 }
 
