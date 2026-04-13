@@ -14,7 +14,7 @@ import { parsePortalPdf } from '../services/portalPdfParser.js';
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-export async function renderPortalImport(container) {
+export async function renderPortalImport(container, { embedded = false } = {}) {
   if (!store.canCreateTip()) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
@@ -24,6 +24,7 @@ export async function renderPortalImport(container) {
   }
 
   container.innerHTML = `
+    ${!embedded ? `
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title">Importação em Massa</h1>
@@ -39,6 +40,17 @@ export async function renderPortalImport(container) {
         </button>
       </div>
     </div>
+    ` : `
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button class="btn btn-secondary btn-sm" id="download-template-btn">
+        ⬇ Baixar Planilha Modelo
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="location.hash='portal-import-manual'"
+        style="color:var(--brand-gold);">
+        📖 Manual de Importação
+      </button>
+    </div>
+    `}
 
     <!-- Upload area -->
     <div class="card" style="padding:24px;margin-bottom:20px;">

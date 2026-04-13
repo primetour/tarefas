@@ -28,7 +28,7 @@ let filterStr = '';
 let filterExp = '';   // 'expired' | 'expiring' | 'ok' | ''
 let filterPriority = false;
 
-export async function renderPortalTipsList(container) {
+export async function renderPortalTipsList(container, { embedded = false } = {}) {
   if (!store.canCreateTip()) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
@@ -38,6 +38,7 @@ export async function renderPortalTipsList(container) {
   }
 
   container.innerHTML = `
+    ${!embedded ? `
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title">Dicas Cadastradas</h1>
@@ -48,6 +49,7 @@ export async function renderPortalTipsList(container) {
         <button class="btn btn-primary btn-sm" onclick="location.hash='portal-tip-editor'">+ Nova Dica</button>
       </div>
     </div>
+    ` : ''}
 
     <!-- Filters -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center;">

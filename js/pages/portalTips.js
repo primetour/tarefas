@@ -17,7 +17,13 @@ import { generateTip } from '../services/portalGenerator.js';
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-export async function renderPortalTips(container) {
+/* ════════════════════════════════════════════════════════════
+   Hub principal — Portal de Dicas com tabs internas
+   ════════════════════════════════════════════════════════════ */
+
+let _activeTab = 'generate';
+
+export async function renderPortalTips(container, requestedTab) {
   if (!store.canPortal()) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
@@ -37,14 +43,26 @@ export async function renderPortalTips(container) {
     }
   }
 
-  // Check download limit for partners
-  const limitInfo = await checkDownloadLimit();
+  // Determinar tab ativa (via parâmetro, URL ou default)
+  const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  const tabParam = requestedTab || urlParams.get('tab');
+  if (tabParam === 'list' || tabParam === 'import') _activeTab = tabParam;
+  else if (!requestedTab) _activeTab = 'generate';
+
+  // Tabs disponíveis (baseado em permissões)
+  const tabs = [
+    { id: 'generate', icon: '✈', label: 'Gerar Material', perm: 'portal_access' },
+  ];
+  if (store.canCreateTip()) {
+    tabs.push({ id: 'list',   icon: '◈', label: 'Dicas Cadastradas', perm: 'portal_create' });
+    tabs.push({ id: 'import', icon: '↑', label: 'Importar Dicas',    perm: 'portal_create' });
+  }
 
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title">Portal de Dicas</h1>
-        <p class="page-subtitle">Gere materiais personalizados para seus clientes viajantes</p>
+        <p class="page-subtitle">Gerencie e gere materiais personalizados para seus clientes</p>
       </div>
       ${store.canCreateTip() ? `
         <div class="page-header-actions">
@@ -61,6 +79,58 @@ export async function renderPortalTips(container) {
       ` : ''}
     </div>
 
+    <!-- Tabs de navegação interna -->
+    ${tabs.length > 1 ? `
+    <div class="portal-hub-tabs" style="display:flex;gap:2px;margin-bottom:20px;
+      background:var(--bg-dark);border-radius:var(--radius-md);padding:3px;width:fit-content;">
+      ${tabs.map(t => `
+        <button class="portal-hub-tab ${_activeTab === t.id ? 'active' : ''}" data-tab="${t.id}"
+          style="padding:8px 18px;border:none;border-radius:var(--radius-sm);cursor:pointer;
+          font-family:inherit;font-size:0.8125rem;font-weight:500;transition:all .15s;
+          ${_activeTab === t.id
+            ? 'background:linear-gradient(135deg,#D4A843,#B8922F);color:#0C1926;'
+            : 'background:transparent;color:var(--text-muted);'}">
+          ${t.icon} ${t.label}
+        </button>
+      `).join('')}
+    </div>
+    ` : ''}
+
+    <!-- Conteúdo da tab ativa -->
+    <div id="portal-hub-content"></div>
+  `;
+
+  // Bind tabs
+  container.querySelectorAll('.portal-hub-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
+      if (tab === _activeTab) return;
+      _activeTab = tab;
+      renderPortalTips(container, tab);
+    });
+  });
+
+  // Renderizar conteúdo da tab ativa
+  const hubContent = container.querySelector('#portal-hub-content');
+  if (_activeTab === 'list') {
+    const { renderPortalTipsList } = await import('./portalTipsList.js');
+    await renderPortalTipsList(hubContent, { embedded: true });
+  } else if (_activeTab === 'import') {
+    const { renderPortalImport } = await import('./portalImport.js');
+    await renderPortalImport(hubContent, { embedded: true });
+  } else {
+    await renderGenerateTab(hubContent);
+  }
+}
+
+/* ════════════════════════════════════════════════════════════
+   Tab "Gerar Material" — conteúdo original do Portal de Dicas
+   ════════════════════════════════════════════════════════════ */
+
+async function renderGenerateTab(container) {
+  const limitInfo = await checkDownloadLimit();
+
+  container.innerHTML = `
     ${store.isPartner() ? `
       <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-md);
         padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px;">
