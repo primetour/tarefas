@@ -31,35 +31,72 @@ const PAGE_TITLES = {
 };
 
 const PALETTES = [
-  { id:'midnight',  label:'Midnight Navy',  colors:['#0A1628','#D4A843','#1E293B'] },
-  { id:'platinum',  label:'Platinum',        colors:['#F8FAFC','#6366F1','#E2E8F0'] },
-  { id:'charcoal',  label:'Charcoal',        colors:['#1A1A2E','#E94560','#16213E'] },
-  { id:'ocean',     label:'Ocean Blue',      colors:['#0B1929','#00BCD4','#132F4C'] },
-  { id:'forest',    label:'Forest Green',    colors:['#0D1F0D','#4CAF50','#1B3A1B'] },
-  { id:'royal',     label:'Royal Purple',    colors:['#1A0A2E','#9C27B0','#2D1B4E'] },
-  { id:'sunset',    label:'Warm Sunset',     colors:['#1A0F0A','#FF6B35','#2D1810'] },
-  { id:'rose',      label:'Rose',            colors:['#1A0A14','#E91E63','#2D1520'] },
-  { id:'sand',      label:'Sand',            colors:['#FAF6F1','#8B6914','#E8E0D4'] },
+  { id:'midnight',  label:'Midnight Navy',  colors:['#0A1628','#D4A843','#152440'] },
+  { id:'platinum',  label:'Platinum',        colors:['#FFFFFF','#6366F1','#EDF1F7'] },
+  { id:'charcoal',  label:'Charcoal',        colors:['#1E1E22','#E94560','#2D2D32'] },
+  { id:'ocean',     label:'Ocean Blue',      colors:['#0F172A','#00BCD4','#1E3A5F'] },
+  { id:'forest',    label:'Forest Green',    colors:['#0B1B0E','#4CAF50','#1A3A22'] },
+  { id:'royal',     label:'Royal Purple',    colors:['#150D24','#9C27B0','#2A1D47'] },
+  { id:'sunset',    label:'Warm Sunset',     colors:['#271510','#FF6B35','#452B1E'] },
+  { id:'rose',      label:'Rose',            colors:['#260E18','#E91E63','#451D2E'] },
+  { id:'sand',      label:'Sand',            colors:['#FAF7F2','#8B6914','#E8E0D2'] },
 ];
 
-function _buildPaletteOptions() {
-  const current = document.documentElement.dataset.palette || 'midnight';
-  return PALETTES.map(p => {
-    const active = current === p.id;
+const FONTS = [
+  { id:'outfit',      label:'Outfit',            family:'Outfit' },
+  { id:'inter',       label:'Inter',             family:'Inter' },
+  { id:'dm-sans',     label:'DM Sans',           family:'DM Sans' },
+  { id:'jakarta',     label:'Jakarta Sans',      family:'Plus Jakarta Sans' },
+  { id:'nunito',      label:'Nunito',             family:'Nunito' },
+  { id:'source-sans', label:'Source Sans',        family:'Source Sans 3' },
+  { id:'system',      label:'Sistema',            family:'system-ui' },
+];
+
+function _buildCustomizePanel() {
+  const currentPalette = document.documentElement.dataset.palette || 'midnight';
+  const currentFont = document.documentElement.dataset.font || 'outfit';
+
+  // ── Seção: Paletas ──
+  const paletteItems = PALETTES.map(p => {
+    const active = currentPalette === p.id;
     const swatches = p.colors.map(c =>
-      '<span style="width:14px;height:14px;border-radius:50%;background:' + c +
-      ';border:1px solid rgba(128,128,128,0.3);display:inline-block;"></span>'
+      '<span style="width:12px;height:12px;border-radius:50%;background:' + c +
+      ';border:1px solid rgba(128,128,128,0.25);display:inline-block;"></span>'
     ).join('');
     return '<button class="dropdown-item palette-option' + (active ? ' active' : '') +
       '" data-palette="' + p.id + '"' +
-      ' style="display:flex;align-items:center;gap:10px;padding:8px 14px;' +
-      (active ? 'background:var(--bg-surface);' : '') + '">' +
-      '<div style="display:flex;gap:3px;">' + swatches + '</div>' +
+      ' style="display:flex;align-items:center;gap:8px;padding:7px 14px;' +
+      (active ? 'background:var(--bg-hover);' : '') + '">' +
+      '<div style="display:flex;gap:2px;">' + swatches + '</div>' +
       '<span style="font-size:0.8125rem;font-weight:' + (active ? '600' : '400') +
       ';color:' + (active ? 'var(--brand-gold)' : 'var(--text-primary)') + ';">' + p.label + '</span>' +
-      (active ? '<span style="margin-left:auto;font-size:0.75rem;color:var(--brand-gold);">✓</span>' : '') +
+      (active ? '<span style="margin-left:auto;font-size:0.6875rem;color:var(--brand-gold);">✓</span>' : '') +
       '</button>';
   }).join('');
+
+  // ── Seção: Fontes ──
+  const fontItems = FONTS.map(f => {
+    const active = currentFont === f.id;
+    return '<button class="dropdown-item font-option' + (active ? ' active' : '') +
+      '" data-font="' + f.id + '"' +
+      ' style="display:flex;align-items:center;gap:8px;padding:7px 14px;' +
+      (active ? 'background:var(--bg-hover);' : '') + '">' +
+      '<span style="font-size:0.8125rem;font-family:\'' + f.family + '\',sans-serif;font-weight:' +
+      (active ? '600' : '400') + ';color:' + (active ? 'var(--brand-gold)' : 'var(--text-primary)') +
+      ';">' + f.label + '</span>' +
+      (active ? '<span style="margin-left:auto;font-size:0.6875rem;color:var(--brand-gold);">✓</span>' : '') +
+      '</button>';
+  }).join('');
+
+  return `
+    <div style="padding:10px 14px 6px;font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.06em;color:var(--text-muted);">Paleta de Cores</div>
+    ${paletteItems}
+    <div style="height:1px;background:var(--border-subtle);margin:6px 0;"></div>
+    <div style="padding:6px 14px;font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.06em;color:var(--text-muted);">Fonte</div>
+    ${fontItems}
+  `;
 }
 
 export class Header {
@@ -107,12 +144,9 @@ export class Header {
             title="Paleta de cores">
             🎨
           </button>
-          <div class="dropdown-menu palette-dropdown" id="palette-dropdown" style="display:none;min-width:200px;">
-            <div style="padding:10px 14px;border-bottom:1px solid var(--border-subtle);font-size:0.75rem;
-              font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);">
-              Paleta de Cores
-            </div>
-            ${_buildPaletteOptions()}
+          <div class="dropdown-menu palette-dropdown" id="palette-dropdown"
+            style="display:none;min-width:220px;max-height:480px;overflow-y:auto;">
+            ${_buildCustomizePanel()}
           </div>
         </div>
 
@@ -213,38 +247,44 @@ export class Header {
         paletteDrop.style.display = 'block';
       }
     });
+    // ── Palette selection ──
     paletteDrop?.querySelectorAll('[data-palette]').forEach(item => {
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         const paletteId = item.dataset.palette;
         document.documentElement.dataset.palette = paletteId;
         localStorage.setItem('primetour-palette', paletteId);
-        // Update active state in dropdown
-        paletteDrop.querySelectorAll('.palette-option').forEach(el => {
-          const isActive = el.dataset.palette === paletteId;
-          el.classList.toggle('active', isActive);
-          el.style.background = isActive ? 'var(--bg-surface)' : '';
-          const label = el.querySelector('span:nth-child(2)');
-          if (label) {
-            label.style.fontWeight = isActive ? '600' : '400';
-            label.style.color = isActive ? 'var(--brand-gold)' : 'var(--text-primary)';
-          }
-          const check = el.querySelector('span:nth-child(3)');
-          if (check && isActive) { /* already has check */ }
-          else if (!isActive && check) check.remove();
-          else if (isActive && !check) {
-            const s = document.createElement('span');
-            s.style.cssText = 'margin-left:auto;font-size:0.75rem;color:var(--brand-gold);';
-            s.textContent = '✓';
-            el.appendChild(s);
-          }
-        });
-        paletteDrop.style.display = 'none';
-        // Save to user profile if logged in
+        // Rebuild panel to reflect new active state
+        paletteDrop.innerHTML = _buildCustomizePanel();
+        this._reattachCustomizeEvents(paletteDrop);
+        // Save to user profile
         const uid = store.get('currentUser')?.uid;
         if (uid) {
           import('../auth/auth.js').then(({ updateUserProfile }) => {
             updateUserProfile(uid, { 'prefs.palette': paletteId }).catch(() => {});
+          });
+        }
+      });
+    });
+    // ── Font selection ──
+    paletteDrop?.querySelectorAll('[data-font]').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const fontId = item.dataset.font;
+        if (fontId === 'outfit') {
+          delete document.documentElement.dataset.font;
+        } else {
+          document.documentElement.dataset.font = fontId;
+        }
+        localStorage.setItem('primetour-font', fontId);
+        // Rebuild panel to reflect new active state
+        paletteDrop.innerHTML = _buildCustomizePanel();
+        this._reattachCustomizeEvents(paletteDrop);
+        // Save to user profile
+        const uid = store.get('currentUser')?.uid;
+        if (uid) {
+          import('../auth/auth.js').then(({ updateUserProfile }) => {
+            updateUserProfile(uid, { 'prefs.font': fontId }).catch(() => {});
           });
         }
       });
@@ -311,6 +351,47 @@ export class Header {
           ${page.title}
         `;
       }
+    });
+  }
+
+  _reattachCustomizeEvents(paletteDrop) {
+    // Re-bind palette clicks
+    paletteDrop.querySelectorAll('[data-palette]').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const paletteId = item.dataset.palette;
+        document.documentElement.dataset.palette = paletteId;
+        localStorage.setItem('primetour-palette', paletteId);
+        paletteDrop.innerHTML = _buildCustomizePanel();
+        this._reattachCustomizeEvents(paletteDrop);
+        const uid = store.get('currentUser')?.uid;
+        if (uid) {
+          import('../auth/auth.js').then(({ updateUserProfile }) => {
+            updateUserProfile(uid, { 'prefs.palette': paletteId }).catch(() => {});
+          });
+        }
+      });
+    });
+    // Re-bind font clicks
+    paletteDrop.querySelectorAll('[data-font]').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const fontId = item.dataset.font;
+        if (fontId === 'outfit') {
+          delete document.documentElement.dataset.font;
+        } else {
+          document.documentElement.dataset.font = fontId;
+        }
+        localStorage.setItem('primetour-font', fontId);
+        paletteDrop.innerHTML = _buildCustomizePanel();
+        this._reattachCustomizeEvents(paletteDrop);
+        const uid = store.get('currentUser')?.uid;
+        if (uid) {
+          import('../auth/auth.js').then(({ updateUserProfile }) => {
+            updateUserProfile(uid, { 'prefs.font': fontId }).catch(() => {});
+          });
+        }
+      });
     });
   }
 
