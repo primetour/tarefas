@@ -18,6 +18,7 @@ let allProjects  = [];
 let pageTaskTypes = [];
 let filteredTasks = [];
 let unsubscribe  = null;
+let _delegationAttached = false;
 let groupBy      = 'dueDate';   // 'dueDate' | 'status' | 'priority' | 'project' | 'none'
 let searchTerm   = '';
 let filterStatus = '';
@@ -330,7 +331,7 @@ function renderTaskList() {
         ` : ''}
       </div>
     `;
-    document.getElementById('empty-new-task-btn')?.addEventListener('click', () => openNewTask());
+    _attachListEvents();
     return;
   }
 
@@ -670,68 +671,84 @@ function openFilterConfigModal() {
 }
 
 function _attachListEvents() {
-  // Check toggle
-  document.querySelectorAll('.task-check[data-check-id]').forEach(el => {
-    el.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id   = el.dataset.checkId;
-      const task = allTasks.find(t => t.id === id);
-      if (!task) return;
-      const isDone = task.status !== 'done';
-      try {
-        await toggleTaskComplete(id, isDone);
-        if (isDone) {
-          const fresh = await getTask(id).catch(() => task);
-          openTaskDoneOverlay(id, fresh);
-        }
-      } catch(err) { toast.error(err.message); }
-    });
-  });
+  // Event delegation: attach ONE set of listeners to the container, not per-element.
+  // The flag ensures we never add duplicate listeners across re-renders.
+  if (_delegationAttached) return;
+  const container = document.getElementById('tasks-container');
+  if (!container) return;
 
-  // Row click \u2192 open modal
-  document.querySelectorAll('.task-row[data-task-id]').forEach(row => {
-    row.addEventListener('click', (e) => {
-      if (e.target.closest('.task-check')) return;
-      if (e.target.closest('[data-stop-row]')) return;
-      const id   = row.dataset.taskId;
-      const task = allTasks.find(t => t.id === id);
-      if (task) openTaskModal({ taskData: task, onSave: () => {} });
-    });
-  });
+  container.addEventListener('click', _handleDelegatedClick);
+  container.addEventListener('keydown', _handleDelegatedKeydown);
+  _delegationAttached = true;
+}
 
-  // Quick add
-  document.querySelectorAll('.quick-add-task-input').forEach(input => {
-    input.addEventListener('keydown', async (e) => {
-      if (e.key !== 'Enter') return;
-      const val = input.value.trim();
-      if (!val) return;
-      e.preventDefault();
-      const groupKey = input.dataset.group;
-      const newTaskData = { title: val };
-      if (groupBy === 'status' && groupKey !== 'none') newTaskData.status = groupKey;
-      if (groupBy === 'priority' && groupKey !== 'none') newTaskData.priority = groupKey;
-      if (groupBy === 'project' && groupKey !== 'none') newTaskData.projectId = groupKey;
-      try {
-        const { createTask } = await import('../services/tasks.js');
-        await createTask(newTaskData);
-        input.value = '';
-        toast.success('Tarefa criada!');
-      } catch(err) { toast.error(err.message); }
-    });
-  });
+async function _handleDelegatedClick(e) {
+  // --- "Empty state" new-task button ---
+  const emptyBtn = e.target.closest('#empty-new-task-btn');
+  if (emptyBtn) { openNewTask(); return; }
 
-  // Add group task button
-  document.querySelectorAll('.add-group-task-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const key = btn.dataset.groupKey;
-      const presets = {};
-      if (groupBy === 'status')   presets.status    = key;
-      if (groupBy === 'priority') presets.priority  = key;
-      if (groupBy === 'project')  presets.projectId = key !== 'none' ? key : null;
-      openNewTask(presets);
-    });
-  });
+  // --- Task check toggle (must come before row click) ---
+  const check = e.target.closest('.task-check[data-check-id]');
+  if (check) {
+    e.stopPropagation();
+    const id   = check.dataset.checkId;
+    const task = allTasks.find(t => t.id === id);
+    if (!task) return;
+    const isDone = task.status !== 'done';
+    try {
+      await toggleTaskComplete(id, isDone);
+      if (isDone) {
+        const fresh = await getTask(id).catch(() => task);
+        openTaskDoneOverlay(id, fresh);
+      }
+    } catch(err) { toast.error(err.message); }
+    return;
+  }
+
+  // --- Add-group-task button (inside group header) ---
+  const addGroupBtn = e.target.closest('.add-group-task-btn');
+  if (addGroupBtn) {
+    e.stopPropagation();
+    const key = addGroupBtn.dataset.groupKey;
+    const presets = {};
+    if (groupBy === 'status')   presets.status    = key;
+    if (groupBy === 'priority') presets.priority  = key;
+    if (groupBy === 'project')  presets.projectId = key !== 'none' ? key : null;
+    openNewTask(presets);
+    return;
+  }
+
+  // --- Row click -> open modal (skip if clicking check or stop-row link) ---
+  const row = e.target.closest('.task-row[data-task-id]');
+  if (row) {
+    if (e.target.closest('.task-check')) return;
+    if (e.target.closest('[data-stop-row]')) return;
+    const id   = row.dataset.taskId;
+    const task = allTasks.find(t => t.id === id);
+    if (task) openTaskModal({ taskData: task, onSave: () => {} });
+    return;
+  }
+}
+
+async function _handleDelegatedKeydown(e) {
+  // --- Quick-add input (Enter to create task) ---
+  const input = e.target.closest('.quick-add-task-input');
+  if (input && e.key === 'Enter') {
+    const val = input.value.trim();
+    if (!val) return;
+    e.preventDefault();
+    const groupKey = input.dataset.group;
+    const newTaskData = { title: val };
+    if (groupBy === 'status' && groupKey !== 'none') newTaskData.status = groupKey;
+    if (groupBy === 'priority' && groupKey !== 'none') newTaskData.priority = groupKey;
+    if (groupBy === 'project' && groupKey !== 'none') newTaskData.projectId = groupKey;
+    try {
+      const { createTask } = await import('../services/tasks.js');
+      await createTask(newTaskData);
+      input.value = '';
+      toast.success('Tarefa criada!');
+    } catch(err) { toast.error(err.message); }
+  }
 }
 
 function openNewTask(presets = {}) {
@@ -851,6 +868,7 @@ async function exportTasksPdf() {
 /* \u2500\u2500\u2500 Cleanup \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 export function destroyTasksPage() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  _delegationAttached = false;
 }
 
 /* \u2500\u2500\u2500 CSAT prompt on task completion \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500*/
