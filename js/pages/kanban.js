@@ -26,6 +26,7 @@ let allTaskTypes = [];
 let unsubscribe  = null;
 let dragTask     = null;
 let dragOriginCol = null;
+let optimisticTasks = [];
 let activeView   = 'kanban';   // 'kanban' | 'pipeline'
 let kbFilterState = { sector: null, type: null, project: null, area: null, assignee: null };
 
@@ -209,13 +210,15 @@ function _renderKbFilters(container) {
 }
 
 function renderCards(tasks, _ignored = '') {
+  // Merge optimistic tasks (mostrar imediatamente antes do Firestore confirmar)
+  const merged = [...optimisticTasks.filter(ot => !tasks.some(t => t.title === ot.title && t.status === ot.status)), ...tasks];
   const filterFn = buildFilterFn(kbFilterState);
   STATUSES.forEach(s => {
     const body  = document.getElementById(`col-body-${s.value}`);
     const count = document.getElementById(`col-count-${s.value}`);
     if (!body) return;
 
-    let colTasks = tasks.filter(t => t.status === s.value && filterFn(t));
+    let colTasks = merged.filter(t => t.status === s.value && filterFn(t));
 
     body.innerHTML = colTasks.map(t => renderKanbanCard(t)).join('');
     if (count) count.textContent = colTasks.length;
@@ -234,6 +237,19 @@ function renderCards(tasks, _ignored = '') {
 
   // Bind column drop zones
   document.querySelectorAll('.kanban-col-body').forEach(col => bindColumnDrop(col));
+}
+
+/** Adiciona tarefa otimista (aparece imediatamente na UI) */
+export function addOptimisticTask(taskData) {
+  const optimistic = { ...taskData, _optimistic: true, id: '_opt_' + Date.now() };
+  optimisticTasks.push(optimistic);
+  renderCards(allTasks);
+  return optimistic.id;
+}
+
+/** Remove tarefa otimista (quando Firestore confirma ou falha) */
+export function removeOptimisticTask(optId) {
+  optimisticTasks = optimisticTasks.filter(t => t.id !== optId);
 }
 
 function renderKanbanCard(task, type = null) {
@@ -270,7 +286,8 @@ function renderKanbanCard(task, type = null) {
   return `
     <div class="kanban-card ${task.priority||'medium'}"
       data-task-id="${task.id}"
-      draggable="true">
+      draggable="true"
+      style="${task._optimistic ? 'opacity:0.6;pointer-events:none;' : ''}">
       ${project ? `<div class="kanban-card-project">${project.icon} ${esc(project.name)}</div>` : ''}
       <div class="kanban-card-title">${esc(task.title)}</div>
       ${tagsHTML ? `<div class="kanban-card-tags">${tagsHTML}</div>` : ''}
