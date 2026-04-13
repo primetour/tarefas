@@ -123,13 +123,15 @@ export async function archiveWorkspace(wsId) {
 }
 
 /* ─── Adicionar membro ───────────────────────────────────── */
-export async function addMember(wsId, uid) {
+export async function addMember(wsId, uid, { selfJoin = false } = {}) {
   const user = store.get('currentUser');
   const ws   = await getWorkspace(wsId);
   if (!ws) throw new Error('Workspace não encontrado.');
 
   const isWsAdmin = ws.adminIds?.includes(user.uid);
-  if (!store.can('system_view_all') && !isWsAdmin) throw new Error('Permissão negada.');
+  // selfJoin: permite que o próprio usuário se adicione (wizard de primeiro acesso)
+  const isSelfJoin = selfJoin && uid === user.uid;
+  if (!store.can('system_view_all') && !isWsAdmin && !isSelfJoin) throw new Error('Permissão negada.');
 
   // Evita notificar se o usuário já era membro
   const wasMember = Array.isArray(ws.members) && ws.members.includes(uid);
