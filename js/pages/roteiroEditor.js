@@ -1,31 +1,24 @@
 /**
  * PRIMETOUR — Roteiro Editor: Multi-section Itinerary Editor
- * Accordion-style editor with 11 collapsible sections
+ * Two-column layout with sidebar navigation and 11 content sections
  */
 
 import { store }  from '../store.js';
-import { router } from '../router.js';
-import { toast }  from '../components/toast.js';
-import { modal }  from '../components/modal.js';
-import {
-  fetchRoteiro, saveRoteiro, emptyRoteiro, generateDays,
-  ROTEIRO_STATUSES, CLIENT_TYPES, ECONOMIC_PROFILES,
-  PREFERENCE_OPTIONS, RESTRICTION_OPTIONS, CURRENCIES,
-  INCLUDES_PRESETS, EXCLUDES_PRESETS,
-} from '../services/roteiros.js';
-import { CONTINENTS, fetchDestinations, fetchTip, fetchTips, fetchAreas, fetchImages } from '../services/portal.js';
-import { generateRoteiroPDF, generateRoteiroPPTX } from '../services/roteiroGenerator.js';
-import { fetchSkillsForModule, runSkill } from '../services/ai.js';
-import { createWebLink, fetchRecentClients } from '../services/roteiros.js';
+import { showToast } from '../components/toast.js';
+import { fetchRoteiro, saveRoteiro } from '../services/roteiros.js';
+import { generateRoteiroForExport } from '../services/roteiroGenerator.js';
+import { fetchDestinations, fetchAreas } from '../services/portal.js';
 
-/* ─── Helpers ─────────────────────────────────────────────── */
-const esc = s => (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+/* ─── State ───────────────────────────────────────────────── */
+let currentRoteiro = null;
+let isDirty = false;
+let autoSaveTimer = null;
+let allDestinations = [];
+let allAreas = [];
+let activeSection = 0;
 
-function fmtDateBR(d) {
-  if (!d) return '';
-  const dt = d.toDate ? d.toDate() : new Date(d);
-  return dt.toLocaleDateString('pt-BR', { day:'2-digit', month:'short', year:'numeric' });
-}
+/* ─── Helper ──────────────────────────────────────────────── */
+const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
 
 function addDaysToDate(dateStr, days) {
   if (!dateStr) return '';
@@ -39,593 +32,731 @@ function diffDays(a, b) {
   return Math.round((new Date(b) - new Date(a)) / 86400000);
 }
 
-/* ─── State ───────────────────────────────────────────────── */
-let _container = null;
-let _roteiroId = null;
-let _data = null;
-let _autoSaveTimer = null;
-let _dirty = false;
+function formatDateForDay(startDate, dayIndex) {
+  if (!startDate) return '';
+  const d = new Date(startDate + 'T12:00:00');
+  d.setDate(d.getDate() + dayIndex);
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+/* ─── Sections definition ─────────────────────────────────── */
+const SECTIONS = [
+  { icon: '\u{1F464}', label: 'Cliente' },
+  { icon: '\u{1F30D}', label: 'Viagem' },
+  { icon: '\u{1F4C5}', label: 'Dia a dia' },
+  { icon: '\u{1F3E8}', label: 'Hot\u00e9is' },
+  { icon: '\u{1F4B0}', label: 'Valores' },
+  { icon: '\u2B50',    label: 'Opcionais' },
+  { icon: '\u2713',    label: 'Inclui / N\u00e3o inclui' },
+  { icon: '\u{1F4B3}', label: 'Pagamento' },
+  { icon: '\u274C',    label: 'Cancelamento' },
+  { icon: '\u2139',    label: 'Informa\u00e7\u00f5es Importantes' },
+  { icon: '\u{1F4C4}', label: 'Preview & Export' },
+];
+
+/* ─── Preferences & Restrictions options ──────────────────── */
+const PREF_OPTIONS = ['Gastronomia','Cultura','Aventura','Relaxamento','Compras','Natureza'];
+const REST_OPTIONS = ['Mobilidade reduzida','Restri\u00e7\u00e3o alimentar','Outro'];
+
+/* ─── Default cancellation presets ────────────────────────── */
+const CANCELLATION_PRESETS = [
+  { period: 'At\u00e9 60 dias antes', penalty: 'Sem custo' },
+  { period: 'Entre 59 e 30 dias',     penalty: '50% do valor total' },
+  { period: 'Entre 29 e 15 dias',     penalty: '75% do valor total' },
+  { period: 'Menos de 15 dias',       penalty: '100% do valor total (no-show)' },
+];
+
+/* ─── Includes/Excludes presets ───────────────────────────── */
+const INCLUDES_PRESETS = [
+  'Hospedagem conforme descrito',
+  'Caf\u00e9 da manh\u00e3',
+  'Transfers privativos',
+  'Seguro viagem',
+  'Passeios mencionados no roteiro',
+];
+const EXCLUDES_PRESETS = [
+  'Passagem a\u00e9rea',
+  'Refei\u00e7\u00f5es n\u00e3o mencionadas',
+  'Despesas pessoais',
+  'Gorjetas',
+  'Seguro viagem opcional',
+];
 
 /* ─── CSS ─────────────────────────────────────────────────── */
 const EDITOR_CSS = `
-.re-topbar {
-  display:flex;align-items:center;gap:12px;padding:12px 0;margin-bottom:16px;
-  border-bottom:1px solid var(--border-subtle);flex-wrap:wrap;
+.re-header {
+  display: flex; align-items: center; gap: 12px; padding: 12px 0; margin-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle, #333); flex-wrap: wrap;
 }
-.re-topbar-title {
-  font-size:1.25rem;font-weight:700;color:var(--text-primary);flex:1;min-width:200px;
+.re-header-title {
+  font-size: 1.25rem; font-weight: 700; color: var(--text-primary); flex: 1; min-width: 200px;
 }
-.re-topbar .btn { flex-shrink:0; }
-.re-autosave {
-  font-size:0.75rem;color:var(--text-muted);margin-left:8px;
+.re-header .status-badge {
+  padding: 4px 12px; border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+  background: var(--bg-surface, #222); color: var(--text-muted);
 }
-.re-section {
-  border:1px solid var(--border-subtle);border-radius:var(--radius-lg);margin-bottom:8px;overflow:hidden;
+.re-layout {
+  display: grid; grid-template-columns: 220px 1fr; gap: 1.5rem;
 }
-.re-section-header {
-  padding:12px 16px;background:var(--bg-surface);cursor:pointer;display:flex;
-  align-items:center;justify-content:space-between;font-weight:600;color:var(--text-primary);
+.re-sidebar {
+  position: sticky; top: 80px; align-self: start;
 }
-.re-section-header:hover { background:var(--bg-card); }
-.re-section-body { padding:16px 20px;display:none; }
-.re-section.open .re-section-body { display:block; }
-.re-section-header .chevron { transition:transform 0.2s; }
-.re-section.open .re-section-header .chevron { transform:rotate(90deg); }
-.re-row { display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px; }
-.re-row > .form-group { flex:1;min-width:180px; }
-.re-grid-2 { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
-.re-grid-3 { display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px; }
-.re-checkbox-group { display:flex;flex-wrap:wrap;gap:8px;margin-top:4px; }
+.re-nav-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0.75rem 1rem; border-radius: 8px; cursor: pointer;
+  background: transparent; border-left: 3px solid transparent;
+  font-size: 0.875rem; color: var(--text-secondary); transition: all 0.15s;
+  margin-bottom: 2px; user-select: none;
+}
+.re-nav-item:hover { background: var(--bg-hover, rgba(255,255,255,0.05)); }
+.re-nav-item.active {
+  background: var(--bg-hover, rgba(255,255,255,0.05));
+  border-left-color: var(--brand-blue, #3B82F6);
+  color: var(--text-primary); font-weight: 600;
+}
+.re-content {
+  min-height: 400px;
+}
+.re-section-title {
+  font-size: 1.1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 16px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle, #333);
+}
+.re-form-group {
+  margin-bottom: 14px;
+}
+.re-label {
+  font-size: 0.75rem; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; display: block;
+}
+.re-input, .re-select, .re-textarea {
+  width: 100%; padding: 0.5rem 0.75rem;
+  background: var(--bg-input, var(--bg-card, #1a1a2e));
+  border: 1px solid var(--border, #333); border-radius: 6px;
+  color: var(--text-primary); font-size: 0.875rem;
+  font-family: inherit; box-sizing: border-box;
+}
+.re-textarea { resize: vertical; min-height: 60px; }
+.re-input:focus, .re-select:focus, .re-textarea:focus {
+  outline: none; border-color: var(--brand-blue, #3B82F6);
+}
+.re-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.re-row > .re-form-group { flex: 1; min-width: 180px; margin-bottom: 0; }
+.re-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.re-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.re-checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .re-checkbox-group label {
-  display:flex;align-items:center;gap:5px;font-size:0.8125rem;color:var(--text-secondary);
-  padding:4px 10px;border:1px solid var(--border-subtle);border-radius:var(--radius-full);
-  cursor:pointer;transition:all 0.15s;user-select:none;
+  display: flex; align-items: center; gap: 5px; font-size: 0.8125rem; color: var(--text-secondary);
+  padding: 4px 10px; border: 1px solid var(--border-subtle, #333); border-radius: 999px;
+  cursor: pointer; transition: all 0.15s; user-select: none;
 }
-.re-checkbox-group label:hover { background:var(--bg-surface); }
+.re-checkbox-group label:hover { background: var(--bg-surface, #222); }
 .re-checkbox-group label.checked {
-  background:var(--brand-gold);color:#000;border-color:var(--brand-gold);
+  background: var(--brand-blue, #3B82F6); color: #fff; border-color: var(--brand-blue, #3B82F6);
 }
-.re-dyn-table { width:100%;border-collapse:collapse;font-size:0.8125rem; }
+.re-dyn-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; margin-bottom: 8px; }
 .re-dyn-table th {
-  text-align:left;padding:6px 8px;font-weight:600;color:var(--text-muted);
-  border-bottom:1px solid var(--border-subtle);font-size:0.75rem;
+  text-align: left; padding: 6px 8px; font-weight: 600; color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle, #333); font-size: 0.75rem;
 }
-.re-dyn-table td { padding:4px 6px; }
+.re-dyn-table td { padding: 4px 6px; }
 .re-dyn-table input, .re-dyn-table select, .re-dyn-table textarea {
-  width:100%;padding:6px 8px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);
-  background:var(--bg-card);color:var(--text-primary);font-size:0.8125rem;
+  width: 100%; padding: 6px 8px; border: 1px solid var(--border-subtle, #333); border-radius: 6px;
+  background: var(--bg-card, #1a1a2e); color: var(--text-primary); font-size: 0.8125rem;
+  font-family: inherit; box-sizing: border-box;
 }
-.re-dyn-table textarea { resize:vertical;min-height:32px; }
+.re-dyn-table textarea { resize: vertical; min-height: 32px; }
 .re-add-btn {
-  display:inline-flex;align-items:center;gap:4px;padding:6px 14px;font-size:0.8125rem;
-  font-weight:600;color:var(--brand-gold);background:transparent;
-  border:1px dashed var(--brand-gold);border-radius:var(--radius-md);
-  cursor:pointer;margin-top:8px;transition:all 0.15s;
+  display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; font-size: 0.8125rem;
+  font-weight: 600; color: var(--brand-blue, #3B82F6); background: transparent;
+  border: 1px dashed var(--brand-blue, #3B82F6); border-radius: 6px;
+  cursor: pointer; margin-top: 8px; transition: all 0.15s;
 }
-.re-add-btn:hover { background:var(--brand-gold);color:#000; }
+.re-add-btn:hover { background: var(--brand-blue, #3B82F6); color: #fff; }
 .re-remove-btn {
-  background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1rem;
-  padding:2px 6px;border-radius:var(--radius-md);transition:all 0.15s;
+  background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem;
+  padding: 2px 6px; border-radius: 6px; transition: all 0.15s;
 }
-.re-remove-btn:hover { background:rgba(239,68,68,0.1);color:#EF4444; }
+.re-remove-btn:hover { background: rgba(239,68,68,0.1); color: #EF4444; }
 .re-day-card {
-  border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:16px;
-  margin-bottom:12px;position:relative;background:var(--bg-card);
+  border: 1px solid var(--border-subtle, #333); border-radius: 8px; padding: 16px;
+  margin-bottom: 12px; position: relative; background: var(--bg-card, #1a1a2e);
 }
 .re-day-card .re-day-num {
-  position:absolute;top:-1px;left:16px;background:var(--brand-gold);color:#000;
-  font-weight:700;font-size:0.75rem;padding:2px 10px;border-radius:0 0 var(--radius-md) var(--radius-md);
+  position: absolute; top: -1px; left: 16px; background: var(--brand-blue, #3B82F6); color: #fff;
+  font-weight: 700; font-size: 0.75rem; padding: 2px 10px; border-radius: 0 0 6px 6px;
 }
 .re-day-card .re-day-date {
-  font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;padding-left:60px;
+  font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px; padding-left: 80px;
 }
-.re-two-cols { display:grid;grid-template-columns:1fr 1fr;gap:20px; }
-.re-list-col { display:flex;flex-direction:column;gap:6px; }
-.re-list-item {
-  display:flex;align-items:center;gap:6px;padding:4px 0;
+.re-two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.re-list-col { display: flex; flex-direction: column; gap: 6px; }
+.re-list-item { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+.re-list-item input { flex: 1; }
+.re-dest-row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
+.re-dest-row .re-form-group { margin-bottom: 0; }
+.re-activity-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.re-activity-row input, .re-activity-row select { font-size: 0.8125rem; }
+.re-preview-summary {
+  background: var(--bg-surface, #222); border-radius: 8px; padding: 16px; margin-bottom: 16px;
+  font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6;
 }
-.re-list-item input { flex:1; }
-.re-timeline-line {
-  position:absolute;left:28px;top:0;bottom:0;width:2px;background:var(--border-subtle);z-index:0;
+.re-autosave {
+  font-size: 0.75rem; color: var(--text-muted); margin-left: 8px;
 }
-@media (max-width:768px) {
-  .re-grid-2, .re-grid-3, .re-two-cols { grid-template-columns:1fr; }
-  .re-row { flex-direction:column; }
+@media (max-width: 768px) {
+  .re-layout { grid-template-columns: 1fr; }
+  .re-sidebar { position: static; display: flex; flex-wrap: wrap; gap: 4px; }
+  .re-nav-item { padding: 6px 10px; font-size: 0.75rem; border-left: none; border-bottom: 2px solid transparent; }
+  .re-nav-item.active { border-bottom-color: var(--brand-blue, #3B82F6); border-left-color: transparent; }
+  .re-grid-2, .re-grid-3, .re-two-cols { grid-template-columns: 1fr; }
+  .re-row { flex-direction: column; }
 }
 `;
 
-/* ─── Section builder ─────────────────────────────────────── */
-function sectionHTML(id, title, bodyHTML, openByDefault = false) {
-  return `
-    <div class="re-section${openByDefault ? ' open' : ''}" data-section="${id}">
-      <div class="re-section-header" data-toggle="${id}">
-        <span>${title}</span>
-        <span class="chevron">&#9656;</span>
-      </div>
-      <div class="re-section-body">${bodyHTML}</div>
-    </div>`;
-}
-
 /* ─── Section renderers ───────────────────────────────────── */
 
-function renderClientSection() {
-  const c = _data.client;
+function renderSectionContent(index) {
+  switch (index) {
+    case 0:  return renderClienteSection();
+    case 1:  return renderViagemSection();
+    case 2:  return renderDiaDiaSection();
+    case 3:  return renderHoteisSection();
+    case 4:  return renderValoresSection();
+    case 5:  return renderOpcionaisSection();
+    case 6:  return renderIncluiSection();
+    case 7:  return renderPagamentoSection();
+    case 8:  return renderCancelamentoSection();
+    case 9:  return renderInfoSection();
+    case 10: return renderPreviewSection();
+    default: return '';
+  }
+}
+
+/* ── 0: Cliente ──────────────────────────────────────────── */
+function renderClienteSection() {
+  const c = currentRoteiro.client;
+  const childrenAgesHTML = (c.childrenAges || []).map((age, i) =>
+    `<input class="re-input" type="number" min="0" max="17" data-age-idx="${i}" value="${age}" style="width:70px;" />`
+  ).join('');
+
   return `
+    <div class="re-section-title">Cliente</div>
     <div class="re-row">
-      <div class="form-group">
-        <label class="form-label">Nome do Cliente</label>
-        <input class="form-input" data-field="client.name" value="${esc(c.name)}" placeholder="Nome completo" list="re-recent-clients" />
-        <datalist id="re-recent-clients"></datalist>
+      <div class="re-form-group">
+        <label class="re-label">Nome do Cliente</label>
+        <input class="re-input" data-field="client.name" value="${esc(c.name)}" placeholder="Nome completo" />
       </div>
-      <div class="form-group">
-        <label class="form-label">E-mail</label>
-        <input class="form-input" type="email" data-field="client.email" value="${esc(c.email)}" placeholder="email@exemplo.com" />
+      <div class="re-form-group">
+        <label class="re-label">Email</label>
+        <input class="re-input" type="email" data-field="client.email" value="${esc(c.email)}" placeholder="email@exemplo.com" />
       </div>
-      <div class="form-group">
-        <label class="form-label">Telefone</label>
-        <input class="form-input" data-field="client.phone" value="${esc(c.phone)}" placeholder="+55 11 99999-0000" />
+      <div class="re-form-group">
+        <label class="re-label">Telefone</label>
+        <input class="re-input" data-field="client.phone" value="${esc(c.phone)}" placeholder="+55 11 99999-0000" />
       </div>
     </div>
     <div class="re-row">
-      <div class="form-group">
-        <label class="form-label">Tipo de Cliente</label>
-        <select class="form-select" data-field="client.type">
-          ${CLIENT_TYPES.map(t => `<option value="${t.key}" ${c.type===t.key?'selected':''}>${t.label}</option>`).join('')}
+      <div class="re-form-group">
+        <label class="re-label">Tipo</label>
+        <select class="re-select" data-field="client.type">
+          <option value="individual" ${c.type==='individual'?'selected':''}>Individual</option>
+          <option value="couple" ${c.type==='couple'?'selected':''}>Casal</option>
+          <option value="family" ${c.type==='family'?'selected':''}>Fam\u00edlia</option>
+          <option value="group" ${c.type==='group'?'selected':''}>Grupo</option>
         </select>
       </div>
-      <div class="form-group">
-        <label class="form-label">Adultos</label>
-        <input class="form-input" type="number" min="1" data-field="client.adults" value="${c.adults||2}" />
+      <div class="re-form-group">
+        <label class="re-label">Adultos</label>
+        <input class="re-input" type="number" min="1" data-field="client.adults" value="${c.adults || 2}" />
       </div>
-      <div class="form-group">
-        <label class="form-label">Criancas</label>
-        <input class="form-input" type="number" min="0" data-field="client.children" value="${c.children||0}" />
-      </div>
-    </div>
-    <div id="re-children-ages" style="margin-bottom:12px;${c.children > 0 ? '' : 'display:none;'}">
-      <label class="form-label">Idades das Criancas</label>
-      <div class="re-row" id="re-ages-row">
-        ${(c.childrenAges||[]).map((age, i) => `
-          <input class="form-input" type="number" min="0" max="17" data-age-idx="${i}" value="${age}" style="width:70px;" />
-        `).join('')}
+      <div class="re-form-group">
+        <label class="re-label">Crian\u00e7as</label>
+        <input class="re-input" type="number" min="0" data-field="client.children" value="${c.children || 0}" id="re-children-count" />
       </div>
     </div>
-    <div class="form-group" style="margin-bottom:12px;">
-      <label class="form-label">Preferencias</label>
+    <div id="re-children-ages" class="re-form-group" style="${c.children > 0 ? '' : 'display:none;'}">
+      <label class="re-label">Idades das Crian\u00e7as</label>
+      <div class="re-row" id="re-ages-row">${childrenAgesHTML}</div>
+    </div>
+    <div class="re-form-group">
+      <label class="re-label">Prefer\u00eancias</label>
       <div class="re-checkbox-group" id="re-pref-group">
-        ${PREFERENCE_OPTIONS.map(p => `
+        ${PREF_OPTIONS.map(p => `
           <label class="${(c.preferences||[]).includes(p)?'checked':''}" data-pref="${esc(p)}">
             <input type="checkbox" ${(c.preferences||[]).includes(p)?'checked':''} style="display:none;" /> ${esc(p)}
           </label>
         `).join('')}
       </div>
     </div>
-    <div class="form-group" style="margin-bottom:12px;">
-      <label class="form-label">Restricoes</label>
+    <div class="re-form-group">
+      <label class="re-label">Restri\u00e7\u00f5es</label>
       <div class="re-checkbox-group" id="re-rest-group">
-        ${RESTRICTION_OPTIONS.map(r => `
+        ${REST_OPTIONS.map(r => `
           <label class="${(c.restrictions||[]).includes(r)?'checked':''}" data-rest="${esc(r)}">
             <input type="checkbox" ${(c.restrictions||[]).includes(r)?'checked':''} style="display:none;" /> ${esc(r)}
           </label>
         `).join('')}
       </div>
     </div>
-    <div class="re-row">
-      <div class="form-group">
-        <label class="form-label">Perfil Economico</label>
-        <select class="form-select" data-field="client.economicProfile">
-          ${ECONOMIC_PROFILES.map(e => `<option value="${e.key}" ${c.economicProfile===e.key?'selected':''}>${e.label}</option>`).join('')}
-        </select>
-      </div>
+    <div class="re-form-group">
+      <label class="re-label">Perfil Econ\u00f4mico</label>
+      <select class="re-select" data-field="client.economicProfile" style="max-width:250px;">
+        <option value="standard" ${c.economicProfile==='standard'?'selected':''}>Standard</option>
+        <option value="premium" ${c.economicProfile==='premium'?'selected':''}>Premium</option>
+        <option value="luxury" ${c.economicProfile==='luxury'?'selected':''}>Luxury</option>
+      </select>
     </div>
-    <div class="form-group">
-      <label class="form-label">Ideia de Viagem / Notas</label>
-      <textarea class="form-textarea" data-field="client.notes" rows="3" placeholder="Descreva a ideia de viagem do cliente...">${esc(c.notes)}</textarea>
+    <div class="re-form-group">
+      <label class="re-label">Observa\u00e7\u00f5es</label>
+      <textarea class="re-textarea" data-field="client.notes" rows="3" placeholder="Notas sobre o cliente...">${esc(c.notes)}</textarea>
     </div>
   `;
 }
 
-function renderTravelSection() {
-  const t = _data.travel;
+/* ── 1: Viagem ───────────────────────────────────────────── */
+function renderViagemSection() {
+  const t = currentRoteiro.travel;
   const dests = t.destinations || [];
-  const totalNights = dests.reduce((sum, d) => sum + (parseInt(d.nights)||0), 0);
+  const totalNights = dests.reduce((sum, d) => sum + (parseInt(d.nights) || 0), 0);
   const endDate = t.startDate ? addDaysToDate(t.startDate, totalNights) : '';
 
   return `
+    <div class="re-section-title">Viagem</div>
     <div class="re-row">
-      <div class="form-group">
-        <label class="form-label">Data de Inicio</label>
-        <input class="form-input" type="date" data-field="travel.startDate" value="${t.startDate||''}" />
+      <div class="re-form-group">
+        <label class="re-label">Data In\u00edcio</label>
+        <input class="re-input" type="date" data-field="travel.startDate" value="${t.startDate || ''}" />
       </div>
-      <div class="form-group">
-        <label class="form-label">Data de Termino (auto)</label>
-        <input class="form-input" type="date" id="re-end-date" value="${endDate}" readonly style="opacity:0.7;" />
+      <div class="re-form-group">
+        <label class="re-label">Data Fim (auto)</label>
+        <input class="re-input" type="date" id="re-end-date" value="${endDate}" readonly style="opacity:0.7;" />
       </div>
-      <div class="form-group" style="flex:0 0 auto;display:flex;align-items:flex-end;">
-        <span style="padding:8px 14px;background:var(--bg-surface);border-radius:var(--radius-md);
+      <div class="re-form-group" style="flex:0 0 auto;display:flex;align-items:flex-end;">
+        <span style="padding:8px 14px;background:var(--bg-surface,#222);border-radius:6px;
           font-weight:700;color:var(--text-primary);font-size:0.875rem;white-space:nowrap;">
           Total: <span id="re-total-nights">${totalNights}</span> noites
         </span>
       </div>
     </div>
-    <label class="form-label" style="margin-bottom:8px;">Destinos</label>
+    <label class="re-label" style="margin-bottom:8px;">Destinos</label>
     <div id="re-destinations">
-      ${dests.map((d, i) => destinationRowHTML(d, i)).join('')}
+      ${dests.map((d, i) => renderDestRow(d, i, dests.length)).join('')}
     </div>
-    <button class="re-add-btn" id="re-add-dest">+ Adicionar Destino</button>
-    <div style="margin-top:16px;">
-      <button class="btn btn-secondary" id="re-gen-days" style="gap:6px;">
-        Auto-gerar dias
-      </button>
-    </div>
+    <button class="re-add-btn" data-action="add-dest">+ Adicionar Destino</button>
   `;
 }
 
-function destinationRowHTML(d, i) {
+function renderDestRow(d, i, total) {
+  const destOptions = allDestinations.length
+    ? allDestinations.map(dest => {
+        const label = `${dest.city || ''}, ${dest.country || ''}`.replace(/^, |, $/g, '');
+        const selected = (d.city === dest.city && d.country === dest.country) ? 'selected' : '';
+        return `<option value="${esc(dest.city||'')}|${esc(dest.country||'')}" ${selected}>${esc(label)}</option>`;
+      }).join('')
+    : '';
+
   return `
-    <div class="re-row" data-dest-idx="${i}" style="align-items:flex-end;margin-bottom:8px;">
-      <div class="form-group" style="flex:2;">
-        <label class="form-label" style="font-size:0.75rem;">Cidade</label>
-        <input class="form-input" data-dest="city" value="${esc(d.city||'')}" placeholder="Cidade" />
+    <div class="re-dest-row" data-dest-idx="${i}">
+      <div class="re-form-group" style="flex:2;">
+        <label class="re-label" style="font-size:0.7rem;">Cidade</label>
+        <input class="re-input" data-dest="city" value="${esc(d.city || '')}" placeholder="Cidade" />
       </div>
-      <div class="form-group" style="flex:2;">
-        <label class="form-label" style="font-size:0.75rem;">Pais</label>
-        <input class="form-input" data-dest="country" value="${esc(d.country||'')}" placeholder="Pais" />
+      <div class="re-form-group" style="flex:2;">
+        <label class="re-label" style="font-size:0.7rem;">Pa\u00eds</label>
+        <input class="re-input" data-dest="country" value="${esc(d.country || '')}" placeholder="Pa\u00eds" />
       </div>
-      <div class="form-group" style="flex:2;">
-        <label class="form-label" style="font-size:0.75rem;">Continente</label>
-        <select class="form-select" data-dest="continent">
-          <option value="">Selecione...</option>
-          ${CONTINENTS.map(c => `<option value="${esc(c)}" ${d.continent===c?'selected':''}>${esc(c)}</option>`).join('')}
-        </select>
+      <div class="re-form-group" style="flex:0 0 80px;">
+        <label class="re-label" style="font-size:0.7rem;">Noites</label>
+        <input class="re-input" type="number" min="0" data-dest="nights" value="${d.nights || 1}" />
       </div>
-      <div class="form-group" style="flex:0 0 80px;">
-        <label class="form-label" style="font-size:0.75rem;">Noites</label>
-        <input class="form-input" type="number" min="0" data-dest="nights" value="${d.nights||1}" />
+      <div style="display:flex;gap:4px;align-items:flex-end;padding-bottom:2px;">
+        ${i > 0 ? `<button class="re-remove-btn" data-action="move-dest-up" data-idx="${i}" title="Mover para cima">\u25B2</button>` : ''}
+        ${i < total - 1 ? `<button class="re-remove-btn" data-action="move-dest-down" data-idx="${i}" title="Mover para baixo">\u25BC</button>` : ''}
+        <button class="re-remove-btn" data-action="remove-dest" data-idx="${i}" title="Remover">\u2715</button>
       </div>
-      <button class="re-remove-btn" data-remove-dest="${i}" title="Remover destino">&#10005;</button>
     </div>
   `;
 }
 
-function renderDaysSection() {
-  const days = _data.days || [];
+/* ── 2: Dia a dia ────────────────────────────────────────── */
+function renderDiaDiaSection() {
+  const days = currentRoteiro.days || [];
   if (!days.length) {
     return `
+      <div class="re-section-title">Dia a Dia</div>
       <div style="text-align:center;padding:30px;color:var(--text-muted);">
         <p>Nenhum dia gerado ainda.</p>
-        <p style="font-size:0.8125rem;">Use o botao "Auto-gerar dias" na secao Viagem para criar os dias automaticamente.</p>
+        <p style="font-size:0.8125rem;">Preencha as datas e destinos na se\u00e7\u00e3o Viagem e clique em "Gerar dias automaticamente".</p>
       </div>
+      <button class="re-add-btn" data-action="generate-days" style="margin-top:8px;">Gerar dias automaticamente</button>
+      <button class="re-add-btn" data-action="add-day" style="margin-left:8px;">+ Adicionar dia manualmente</button>
     `;
   }
+
   return `
-    <div id="re-days-list" style="position:relative;">
-      ${days.map((d, i) => dayCardHTML(d, i)).join('')}
+    <div class="re-section-title">Dia a Dia</div>
+    <div style="margin-bottom:12px;">
+      <button class="re-add-btn" data-action="generate-days">Gerar dias automaticamente</button>
     </div>
-    <button class="re-add-btn" id="re-add-day">+ Adicionar Dia</button>
+    <div id="re-days-list">
+      ${days.map((d, i) => renderDayCard(d, i)).join('')}
+    </div>
+    <button class="re-add-btn" data-action="add-day">+ Adicionar Dia</button>
   `;
 }
 
-function dayCardHTML(d, i) {
+function renderDayCard(d, i) {
+  const dateLabel = currentRoteiro.travel.startDate
+    ? formatDateForDay(currentRoteiro.travel.startDate, i)
+    : (d.date || '');
+  const activities = d.activities || [];
+
   return `
     <div class="re-day-card" data-day-idx="${i}">
-      <div class="re-day-num">Dia ${d.dayNumber || i+1}</div>
-      <div class="re-day-date">${d.date || ''} ${d.city ? '- ' + esc(d.city) : ''}</div>
-      <div class="re-row" style="margin-top:8px;">
-        <div class="form-group" style="flex:1;">
-          <label class="form-label" style="font-size:0.75rem;">Titulo do Dia</label>
-          <input class="form-input" data-day="title" value="${esc(d.title||'')}" placeholder="Ex: Chegada em Paris" />
+      <div class="re-day-num">Dia ${d.dayNumber || i + 1}</div>
+      <div class="re-day-date">${esc(dateLabel)} ${d.city ? '- ' + esc(d.city) : ''}</div>
+      <div class="re-row" style="margin-top:10px;">
+        <div class="re-form-group" style="flex:1;">
+          <label class="re-label" style="font-size:0.7rem;">T\u00edtulo do Dia</label>
+          <input class="re-input" data-day="title" value="${esc(d.title || '')}" placeholder="Ex: Chegada em Paris" />
         </div>
-        <div class="form-group" style="flex:0 0 180px;">
-          <label class="form-label" style="font-size:0.75rem;">Cidade Pernoite</label>
-          <input class="form-input" data-day="overnightCity" value="${esc(d.overnightCity||'')}" placeholder="Cidade" />
+        <div class="re-form-group" style="flex:0 0 160px;">
+          <label class="re-label" style="font-size:0.7rem;">Cidade</label>
+          <input class="re-input" data-day="city" value="${esc(d.city || '')}" placeholder="Cidade" />
         </div>
       </div>
-      <div class="form-group">
-        <label class="form-label" style="font-size:0.75rem;">Narrativa</label>
-        <textarea class="form-textarea" data-day="narrative" rows="4" placeholder="Descreva as atividades e experiencias do dia...">${esc(d.narrative||'')}</textarea>
+      <div class="re-form-group">
+        <label class="re-label" style="font-size:0.7rem;">Narrativa</label>
+        <textarea class="re-textarea" data-day="narrative" rows="4" placeholder="Descreva as atividades e experi\u00eancias do dia...">${esc(d.narrative || '')}</textarea>
+      </div>
+      <div class="re-form-group">
+        <label class="re-label" style="font-size:0.7rem;">Atividades</label>
+        <div id="re-activities-${i}">
+          ${activities.map((act, ai) => `
+            <div class="re-activity-row" data-activity-idx="${ai}">
+              <input class="re-input" data-activity="time" value="${esc(act.time || '')}" placeholder="Hor\u00e1rio" style="width:80px;" />
+              <input class="re-input" data-activity="description" value="${esc(act.description || '')}" placeholder="Descri\u00e7\u00e3o" style="flex:1;" />
+              <select class="re-select" data-activity="type" style="width:120px;">
+                <option value="passeio" ${act.type==='passeio'?'selected':''}>Passeio</option>
+                <option value="refeicao" ${act.type==='refeicao'?'selected':''}>Refei\u00e7\u00e3o</option>
+                <option value="transfer" ${act.type==='transfer'?'selected':''}>Transfer</option>
+                <option value="livre" ${act.type==='livre'?'selected':''}>Livre</option>
+              </select>
+              <button class="re-remove-btn" data-action="remove-activity" data-day="${i}" data-aidx="${ai}">\u2715</button>
+            </div>
+          `).join('')}
+        </div>
+        <button class="re-add-btn" data-action="add-activity" data-day="${i}" style="font-size:0.75rem;padding:4px 10px;margin-top:4px;">+ Atividade</button>
+      </div>
+      <div class="re-row" style="margin-top:4px;">
+        <div class="re-form-group" style="flex:0 0 200px;">
+          <label class="re-label" style="font-size:0.7rem;">Pernoite</label>
+          <input class="re-input" data-day="overnightCity" value="${esc(d.overnightCity || '')}" placeholder="Cidade do pernoite" />
+        </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:8px;">
-        <button class="btn btn-secondary" style="font-size:0.75rem;padding:4px 10px;" data-day-ai="${i}">
-          Gerar com IA
-        </button>
-        <button class="re-remove-btn" data-remove-day="${i}" title="Remover dia" style="margin-left:auto;">&#10005; Remover</button>
+        <button class="re-add-btn" data-action="ai-day" data-idx="${i}" style="font-size:0.75rem;padding:4px 10px;">Gerar com IA</button>
+        <button class="re-remove-btn" data-action="remove-day" data-idx="${i}" style="margin-left:auto;">\u2715 Remover</button>
       </div>
     </div>
   `;
 }
 
-function renderHotelsSection() {
-  const hotels = _data.hotels || [];
+/* ── 3: Hot\u00e9is ──────────────────────────────────────────── */
+function renderHoteisSection() {
+  const hotels = currentRoteiro.hotels || [];
   return `
+    <div class="re-section-title">Hot\u00e9is</div>
     <table class="re-dyn-table">
       <thead>
         <tr>
-          <th>Cidade</th><th>Hotel</th><th>Tipo de Quarto</th><th>Regime</th>
+          <th>Cidade</th><th>Nome do Hotel</th><th>Categoria Quarto</th><th>Regime</th>
           <th>Check-in</th><th>Check-out</th><th>Noites</th><th></th>
         </tr>
       </thead>
       <tbody id="re-hotels-body">
-        ${hotels.map((h, i) => hotelRowHTML(h, i)).join('')}
+        ${hotels.map((h, i) => renderHotelRow(h, i)).join('')}
       </tbody>
     </table>
-    <button class="re-add-btn" id="re-add-hotel">+ Adicionar Hotel</button>
+    <button class="re-add-btn" data-action="add-hotel">+ Adicionar Hotel</button>
   `;
 }
 
-function hotelRowHTML(h, i) {
+function renderHotelRow(h, i) {
   const nights = (h.checkIn && h.checkOut) ? diffDays(h.checkIn, h.checkOut) : (h.nights || '');
   return `
     <tr data-hotel-idx="${i}">
-      <td><input data-hotel="city" value="${esc(h.city||'')}" placeholder="Cidade" /></td>
-      <td><input data-hotel="hotelName" value="${esc(h.hotelName||'')}" placeholder="Nome do hotel" /></td>
-      <td><input data-hotel="roomType" value="${esc(h.roomType||'')}" placeholder="Tipo de quarto" /></td>
-      <td><input data-hotel="regime" value="${esc(h.regime||'')}" placeholder="Regime" /></td>
-      <td><input data-hotel="checkIn" type="date" value="${h.checkIn||''}" /></td>
-      <td><input data-hotel="checkOut" type="date" value="${h.checkOut||''}" /></td>
-      <td><input data-hotel="nights" type="number" value="${nights}" readonly style="opacity:0.7;width:50px;" /></td>
-      <td><button class="re-remove-btn" data-remove-hotel="${i}">&#10005;</button></td>
+      <td><input data-hotel="city" value="${esc(h.city || '')}" placeholder="Cidade" /></td>
+      <td><input data-hotel="hotelName" value="${esc(h.hotelName || '')}" placeholder="Nome do hotel" /></td>
+      <td><input data-hotel="roomType" value="${esc(h.roomType || '')}" placeholder="Categoria" /></td>
+      <td><input data-hotel="regime" value="${esc(h.regime || '')}" placeholder="Regime" /></td>
+      <td><input data-hotel="checkIn" type="date" value="${h.checkIn || ''}" /></td>
+      <td><input data-hotel="checkOut" type="date" value="${h.checkOut || ''}" /></td>
+      <td><input data-hotel="nights" type="number" value="${nights}" readonly style="opacity:0.7;width:55px;" /></td>
+      <td><button class="re-remove-btn" data-action="remove-hotel" data-idx="${i}">\u2715</button></td>
     </tr>
   `;
 }
 
-function renderPricingSection() {
-  const p = _data.pricing;
+/* ── 4: Valores ──────────────────────────────────────────── */
+function renderValoresSection() {
+  const p = currentRoteiro.pricing;
   const rows = p.customRows || [];
   return `
+    <div class="re-section-title">Valores</div>
     <div class="re-row">
-      <div class="form-group">
-        <label class="form-label">Moeda</label>
-        <select class="form-select" data-field="pricing.currency">
-          ${CURRENCIES.map(c => `<option value="${c}" ${p.currency===c?'selected':''}>${c}</option>`).join('')}
+      <div class="re-form-group">
+        <label class="re-label">Valor por Pessoa</label>
+        <input class="re-input" type="number" step="0.01" data-field="pricing.perPerson" value="${p.perPerson || ''}" placeholder="0.00" />
+      </div>
+      <div class="re-form-group">
+        <label class="re-label">Valor por Casal</label>
+        <input class="re-input" type="number" step="0.01" data-field="pricing.perCouple" value="${p.perCouple || ''}" placeholder="0.00" />
+      </div>
+      <div class="re-form-group">
+        <label class="re-label">Moeda</label>
+        <select class="re-select" data-field="pricing.currency">
+          <option value="BRL" ${p.currency==='BRL'?'selected':''}>BRL</option>
+          <option value="USD" ${p.currency==='USD'?'selected':''}>USD</option>
+          <option value="EUR" ${p.currency==='EUR'?'selected':''}>EUR</option>
         </select>
       </div>
-      <div class="form-group">
-        <label class="form-label">Valor por Pessoa</label>
-        <input class="form-input" type="number" step="0.01" data-field="pricing.perPerson" value="${p.perPerson||''}" placeholder="0.00" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Valor por Casal</label>
-        <input class="form-input" type="number" step="0.01" data-field="pricing.perCouple" value="${p.perCouple||''}" placeholder="0.00" />
-      </div>
     </div>
-    <div class="re-row">
-      <div class="form-group">
-        <label class="form-label">Valido Ate</label>
-        <input class="form-input" type="date" data-field="pricing.validUntil" value="${p.validUntil||''}" />
-      </div>
+    <div class="re-form-group">
+      <label class="re-label">Validade</label>
+      <input class="re-input" type="date" data-field="pricing.validUntil" value="${p.validUntil || ''}" style="max-width:250px;" />
     </div>
-    <div class="form-group" style="margin-bottom:12px;">
-      <label class="form-label">Disclaimer</label>
-      <textarea class="form-textarea" data-field="pricing.disclaimer" rows="3">${esc(p.disclaimer||'')}</textarea>
+    <div class="re-form-group">
+      <label class="re-label">Disclaimer</label>
+      <textarea class="re-textarea" data-field="pricing.disclaimer" rows="3">${esc(p.disclaimer || '')}</textarea>
     </div>
-    <label class="form-label">Valores Adicionais</label>
-    <table class="re-dyn-table" style="margin-top:4px;">
-      <thead><tr><th>Descricao</th><th>Valor</th><th></th></tr></thead>
+    <label class="re-label">Valores Adicionais</label>
+    <table class="re-dyn-table">
+      <thead><tr><th>Descri\u00e7\u00e3o</th><th>Valor</th><th></th></tr></thead>
       <tbody id="re-pricing-rows">
         ${rows.map((r, i) => `
           <tr data-prow-idx="${i}">
-            <td><input data-prow="label" value="${esc(r.label||'')}" placeholder="Descricao" /></td>
-            <td><input data-prow="value" value="${esc(r.value||'')}" placeholder="Valor" /></td>
-            <td><button class="re-remove-btn" data-remove-prow="${i}">&#10005;</button></td>
+            <td><input data-prow="label" value="${esc(r.label || '')}" placeholder="Descri\u00e7\u00e3o" /></td>
+            <td><input data-prow="value" value="${esc(r.value || '')}" placeholder="Valor" /></td>
+            <td><button class="re-remove-btn" data-action="remove-prow" data-idx="${i}">\u2715</button></td>
           </tr>
         `).join('')}
       </tbody>
     </table>
-    <button class="re-add-btn" id="re-add-prow">+ Adicionar Linha</button>
+    <button class="re-add-btn" data-action="add-prow">+ Adicionar Linha</button>
   `;
 }
 
-function renderOptionalsSection() {
-  const opts = _data.optionals || [];
+/* ── 5: Opcionais ────────────────────────────────────────── */
+function renderOpcionaisSection() {
+  const opts = currentRoteiro.optionals || [];
   return `
+    <div class="re-section-title">Opcionais</div>
     <table class="re-dyn-table">
-      <thead><tr><th>Servico</th><th>Preco Adulto</th><th>Preco Crianca</th><th>Observacoes</th><th></th></tr></thead>
+      <thead>
+        <tr><th>Servi\u00e7o</th><th>Pre\u00e7o Adulto</th><th>Pre\u00e7o Crian\u00e7a</th><th>Observa\u00e7\u00f5es</th><th></th></tr>
+      </thead>
       <tbody id="re-optionals-body">
         ${opts.map((o, i) => `
           <tr data-opt-idx="${i}">
-            <td><input data-opt="service" value="${esc(o.service||'')}" placeholder="Nome do servico" /></td>
-            <td><input data-opt="priceAdult" type="number" step="0.01" value="${o.priceAdult||''}" placeholder="0.00" /></td>
-            <td><input data-opt="priceChild" type="number" step="0.01" value="${o.priceChild||''}" placeholder="0.00" /></td>
-            <td><input data-opt="notes" value="${esc(o.notes||'')}" placeholder="Notas" /></td>
-            <td><button class="re-remove-btn" data-remove-opt="${i}">&#10005;</button></td>
+            <td><input data-opt="service" value="${esc(o.service || '')}" placeholder="Nome do servi\u00e7o" /></td>
+            <td><input data-opt="priceAdult" type="number" step="0.01" value="${o.priceAdult || ''}" placeholder="0.00" /></td>
+            <td><input data-opt="priceChild" type="number" step="0.01" value="${o.priceChild || ''}" placeholder="0.00" /></td>
+            <td><input data-opt="notes" value="${esc(o.notes || '')}" placeholder="Notas" /></td>
+            <td><button class="re-remove-btn" data-action="remove-opt" data-idx="${i}">\u2715</button></td>
           </tr>
         `).join('')}
       </tbody>
     </table>
-    <button class="re-add-btn" id="re-add-opt">+ Adicionar Opcional</button>
+    <button class="re-add-btn" data-action="add-opt">+ Adicionar Opcional</button>
   `;
 }
 
-function renderIncExcSection() {
-  const inc = _data.includes || [];
-  const exc = _data.excludes || [];
+/* ── 6: Inclui / N\u00e3o inclui ─────────────────────────────── */
+function renderIncluiSection() {
+  const inc = currentRoteiro.includes || [];
+  const exc = currentRoteiro.excludes || [];
   return `
-    <div style="margin-bottom:12px;">
-      <button class="btn btn-secondary" id="re-load-presets" style="font-size:0.8125rem;padding:6px 14px;">
-        Carregar Presets
-      </button>
+    <div class="re-section-title">Inclui / N\u00e3o Inclui</div>
+    <div style="margin-bottom:12px;display:flex;gap:8px;">
+      <button class="re-add-btn" data-action="preset-includes" style="margin-top:0;">Adicionar padr\u00e3o (Inclui)</button>
+      <button class="re-add-btn" data-action="preset-excludes" style="margin-top:0;">Adicionar padr\u00e3o (N\u00e3o Inclui)</button>
     </div>
     <div class="re-two-cols">
       <div>
-        <label class="form-label" style="color:var(--brand-gold);font-weight:700;">Inclui</label>
+        <label class="re-label" style="color:var(--brand-blue,#3B82F6);font-weight:700;">Inclui</label>
         <div class="re-list-col" id="re-includes-list">
           ${inc.map((item, i) => `
             <div class="re-list-item" data-inc-idx="${i}">
-              <input class="form-input" data-inc="text" value="${esc(item)}" />
-              <button class="re-remove-btn" data-remove-inc="${i}">&#10005;</button>
+              <input class="re-input" data-inc="text" value="${esc(item)}" placeholder="Item incluso..." />
+              <button class="re-remove-btn" data-action="remove-inc" data-idx="${i}">\u2715</button>
             </div>
           `).join('')}
         </div>
-        <button class="re-add-btn" id="re-add-inc">+ Adicionar</button>
+        <button class="re-add-btn" data-action="add-inc">+ Adicionar</button>
       </div>
       <div>
-        <label class="form-label" style="color:#EF4444;font-weight:700;">Nao Inclui</label>
+        <label class="re-label" style="color:#EF4444;font-weight:700;">N\u00e3o Inclui</label>
         <div class="re-list-col" id="re-excludes-list">
           ${exc.map((item, i) => `
             <div class="re-list-item" data-exc-idx="${i}">
-              <input class="form-input" data-exc="text" value="${esc(item)}" />
-              <button class="re-remove-btn" data-remove-exc="${i}">&#10005;</button>
+              <input class="re-input" data-exc="text" value="${esc(item)}" placeholder="Item n\u00e3o incluso..." />
+              <button class="re-remove-btn" data-action="remove-exc" data-idx="${i}">\u2715</button>
             </div>
           `).join('')}
         </div>
-        <button class="re-add-btn" id="re-add-exc">+ Adicionar</button>
+        <button class="re-add-btn" data-action="add-exc">+ Adicionar</button>
       </div>
     </div>
   `;
 }
 
-function renderPaymentSection() {
-  const p = _data.payment;
+/* ── 7: Pagamento ────────────────────────────────────────── */
+function renderPagamentoSection() {
+  const p = currentRoteiro.payment;
   return `
+    <div class="re-section-title">Pagamento</div>
     <div class="re-row">
-      <div class="form-group">
-        <label class="form-label">Deposito / Sinal</label>
-        <input class="form-input" data-field="payment.deposit" value="${esc(p.deposit||'')}" placeholder="Ex: 30% no ato da reserva" />
+      <div class="re-form-group">
+        <label class="re-label">Sinal / Entrada</label>
+        <input class="re-input" data-field="payment.deposit" value="${esc(p.deposit || '')}" placeholder="Ex: 30% no ato da reserva" />
       </div>
-      <div class="form-group">
-        <label class="form-label">Parcelamento</label>
-        <input class="form-input" data-field="payment.installments" value="${esc(p.installments||'')}" placeholder="Ex: Saldo em ate 3x sem juros" />
+      <div class="re-form-group">
+        <label class="re-label">Parcelas</label>
+        <input class="re-input" data-field="payment.installments" value="${esc(p.installments || '')}" placeholder="Ex: Saldo em at\u00e9 3x sem juros" />
       </div>
     </div>
-    <div class="re-row">
-      <div class="form-group">
-        <label class="form-label">Prazo</label>
-        <input class="form-input" data-field="payment.deadline" value="${esc(p.deadline||'')}" placeholder="Ex: Ate 30 dias antes do embarque" />
-      </div>
+    <div class="re-form-group">
+      <label class="re-label">Prazo</label>
+      <input class="re-input" data-field="payment.deadline" value="${esc(p.deadline || '')}" placeholder="Ex: At\u00e9 30 dias antes do embarque" style="max-width:400px;" />
     </div>
-    <div class="form-group">
-      <label class="form-label">Observacoes de Pagamento</label>
-      <textarea class="form-textarea" data-field="payment.notes" rows="3" placeholder="Informacoes adicionais sobre pagamento...">${esc(p.notes||'')}</textarea>
+    <div class="re-form-group">
+      <label class="re-label">Observa\u00e7\u00f5es</label>
+      <textarea class="re-textarea" data-field="payment.notes" rows="3" placeholder="Informa\u00e7\u00f5es adicionais sobre pagamento...">${esc(p.notes || '')}</textarea>
     </div>
   `;
 }
 
-function renderCancellationSection() {
-  const canc = _data.cancellation || [];
+/* ── 8: Cancelamento ─────────────────────────────────────── */
+function renderCancelamentoSection() {
+  const canc = currentRoteiro.cancellation || [];
   return `
+    <div class="re-section-title">Cancelamento</div>
     <table class="re-dyn-table">
-      <thead><tr><th>Periodo</th><th>Penalidade</th><th></th></tr></thead>
+      <thead><tr><th>Per\u00edodo</th><th>Penalidade</th><th></th></tr></thead>
       <tbody id="re-canc-body">
         ${canc.map((c, i) => `
           <tr data-canc-idx="${i}">
-            <td><input data-canc="period" value="${esc(c.period||'')}" placeholder="Ex: Entre 90 e 45 dias" /></td>
-            <td><input data-canc="penalty" value="${esc(c.penalty||'')}" placeholder="Ex: 80% do valor total" /></td>
-            <td><button class="re-remove-btn" data-remove-canc="${i}">&#10005;</button></td>
+            <td><input data-canc="period" value="${esc(c.period || '')}" placeholder="Ex: At\u00e9 30 dias antes" /></td>
+            <td><input data-canc="penalty" value="${esc(c.penalty || '')}" placeholder="Ex: Sem custo" /></td>
+            <td><button class="re-remove-btn" data-action="remove-canc" data-idx="${i}">\u2715</button></td>
           </tr>
         `).join('')}
       </tbody>
     </table>
-    <button class="re-add-btn" id="re-add-canc">+ Adicionar Regra</button>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button class="re-add-btn" data-action="add-canc">+ Adicionar Regra</button>
+      <button class="re-add-btn" data-action="preset-canc">Adicionar pol\u00edtica padr\u00e3o</button>
+    </div>
   `;
 }
 
-function renderImportantInfoSection() {
-  const info = _data.importantInfo;
+/* ── 9: Informa\u00e7\u00f5es Importantes ─────────────────────────── */
+function renderInfoSection() {
+  const info = currentRoteiro.importantInfo;
   const custom = info.customFields || [];
   return `
-    <div class="re-grid-2" style="margin-bottom:12px;">
-      <div class="form-group">
-        <label class="form-label">Passaporte</label>
-        <textarea class="form-textarea" data-field="importantInfo.passport" rows="2" placeholder="Informacoes sobre passaporte...">${esc(info.passport||'')}</textarea>
+    <div class="re-section-title">Informa\u00e7\u00f5es Importantes</div>
+    <div class="re-grid-2">
+      <div class="re-form-group">
+        <label class="re-label">Passaporte</label>
+        <textarea class="re-textarea" data-field="importantInfo.passport" rows="2" placeholder="Informa\u00e7\u00f5es sobre passaporte...">${esc(info.passport || '')}</textarea>
       </div>
-      <div class="form-group">
-        <label class="form-label">Visto</label>
-        <textarea class="form-textarea" data-field="importantInfo.visa" rows="2" placeholder="Informacoes sobre visto...">${esc(info.visa||'')}</textarea>
+      <div class="re-form-group">
+        <label class="re-label">Visto</label>
+        <textarea class="re-textarea" data-field="importantInfo.visa" rows="2" placeholder="Informa\u00e7\u00f5es sobre visto...">${esc(info.visa || '')}</textarea>
       </div>
-      <div class="form-group">
-        <label class="form-label">Vacinas</label>
-        <textarea class="form-textarea" data-field="importantInfo.vaccines" rows="2" placeholder="Vacinas recomendadas ou obrigatorias...">${esc(info.vaccines||'')}</textarea>
+      <div class="re-form-group">
+        <label class="re-label">Vacinas</label>
+        <textarea class="re-textarea" data-field="importantInfo.vaccines" rows="2" placeholder="Vacinas recomendadas...">${esc(info.vaccines || '')}</textarea>
       </div>
-      <div class="form-group">
-        <label class="form-label">Clima</label>
-        <textarea class="form-textarea" data-field="importantInfo.climate" rows="2" placeholder="Informacoes sobre o clima...">${esc(info.climate||'')}</textarea>
+      <div class="re-form-group">
+        <label class="re-label">Clima</label>
+        <textarea class="re-textarea" data-field="importantInfo.climate" rows="2" placeholder="Informa\u00e7\u00f5es sobre o clima...">${esc(info.climate || '')}</textarea>
       </div>
-      <div class="form-group">
-        <label class="form-label">Bagagem</label>
-        <textarea class="form-textarea" data-field="importantInfo.luggage" rows="2" placeholder="Dicas sobre bagagem...">${esc(info.luggage||'')}</textarea>
+      <div class="re-form-group">
+        <label class="re-label">Bagagem</label>
+        <textarea class="re-textarea" data-field="importantInfo.luggage" rows="2" placeholder="Dicas sobre bagagem...">${esc(info.luggage || '')}</textarea>
       </div>
-      <div class="form-group">
-        <label class="form-label">Voos</label>
-        <textarea class="form-textarea" data-field="importantInfo.flights" rows="2" placeholder="Informacoes sobre voos...">${esc(info.flights||'')}</textarea>
+      <div class="re-form-group">
+        <label class="re-label">Voos</label>
+        <textarea class="re-textarea" data-field="importantInfo.flights" rows="2" placeholder="Informa\u00e7\u00f5es sobre voos...">${esc(info.flights || '')}</textarea>
       </div>
     </div>
-    <label class="form-label">Campos Adicionais</label>
+    <label class="re-label">Campos Adicionais</label>
     <table class="re-dyn-table" style="margin-top:4px;">
-      <thead><tr><th>Campo</th><th>Conteudo</th><th></th></tr></thead>
+      <thead><tr><th>Campo</th><th>Conte\u00fado</th><th></th></tr></thead>
       <tbody id="re-info-custom-body">
         ${custom.map((f, i) => `
           <tr data-infoc-idx="${i}">
-            <td><input data-infoc="label" value="${esc(f.label||'')}" placeholder="Nome do campo" /></td>
-            <td><textarea data-infoc="value" rows="2" placeholder="Conteudo">${esc(f.value||'')}</textarea></td>
-            <td><button class="re-remove-btn" data-remove-infoc="${i}">&#10005;</button></td>
+            <td><input data-infoc="label" value="${esc(f.label || '')}" placeholder="Nome do campo" /></td>
+            <td><textarea data-infoc="value" rows="2" placeholder="Conte\u00fado">${esc(f.value || '')}</textarea></td>
+            <td><button class="re-remove-btn" data-action="remove-infoc" data-idx="${i}">\u2715</button></td>
           </tr>
         `).join('')}
       </tbody>
     </table>
-    <button class="re-add-btn" id="re-add-infoc">+ Adicionar Campo</button>
-    <div style="margin-top:16px;">
-      <button class="btn btn-secondary" id="re-autofill-portal" style="font-size:0.8125rem;padding:6px 14px;">
-        Auto-preencher do Portal
-      </button>
-    </div>
+    <button class="re-add-btn" data-action="add-infoc">+ Adicionar Campo</button>
   `;
 }
 
+/* ── 10: Preview & Export ────────────────────────────────── */
 function renderPreviewSection() {
+  const areaOptions = allAreas.map(a =>
+    `<option value="${esc(a.id)}" ${currentRoteiro.areaId === a.id ? 'selected' : ''}>${esc(a.name)}</option>`
+  ).join('');
+
+  const r = currentRoteiro;
+  const t = r.travel || {};
+  const c = r.client || {};
+  const dests = (t.destinations || []).map(d => d.city || d.country).filter(Boolean).join(' \u2192 ');
+  const totalNights = (t.destinations || []).reduce((s, d) => s + (parseInt(d.nights) || 0), 0);
+
   return `
-    <div class="re-row">
-      <div class="form-group" style="flex:2;">
-        <label class="form-label">Titulo do Roteiro</label>
-        <input class="form-input" data-field="title" value="${esc(_data.title||'')}" placeholder="Ex: Lua de Mel Europa 2026" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Area / BU (identidade visual)</label>
-        <select class="form-select" id="re-area-select" data-field="areaId">
-          <option value="">Padrão Primetour</option>
-        </select>
-        <span id="re-area-loading" style="font-size:0.75rem;color:var(--text-muted);">Carregando áreas...</span>
-      </div>
+    <div class="re-section-title">Preview & Export</div>
+    <div class="re-form-group">
+      <label class="re-label">\u00c1rea / BU</label>
+      <select class="re-select" data-field="areaId" id="re-area-select" style="max-width:300px;">
+        <option value="">Padr\u00e3o</option>
+        ${areaOptions}
+      </select>
     </div>
-    <div class="re-row">
-      <div class="form-group">
-        <label class="form-label">Status</label>
-        <select class="form-select" data-field="status">
-          ${ROTEIRO_STATUSES.map(s => `<option value="${s.key}" ${_data.status===s.key?'selected':''}>${s.label}</option>`).join('')}
-        </select>
-      </div>
+    <div class="re-preview-summary">
+      <strong>Resumo do Roteiro:</strong><br/>
+      <strong>T\u00edtulo:</strong> ${esc(r.title) || '(sem t\u00edtulo)'}<br/>
+      <strong>Cliente:</strong> ${esc(c.name) || '(n\u00e3o informado)'}<br/>
+      <strong>Destinos:</strong> ${esc(dests) || '(nenhum)'}<br/>
+      <strong>Per\u00edodo:</strong> ${t.startDate || '?'} a ${t.endDate || '?'} (${totalNights} noites)<br/>
+      <strong>Dias:</strong> ${(r.days || []).length} dia(s) configurado(s)<br/>
+      <strong>Hot\u00e9is:</strong> ${(r.hotels || []).length} hotel(\u00e9is)<br/>
+      <strong>Status:</strong> ${esc(r.status)}
     </div>
-    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">
-      <button class="btn btn-primary" id="re-export-pdf" style="gap:6px;">
-        Exportar PDF
-      </button>
-      <button class="btn btn-secondary" id="re-export-pptx" style="gap:6px;">
-        Exportar PPTX
-      </button>
-      <button class="btn btn-secondary" id="re-gen-link" style="gap:6px;">
-        Gerar Link Web
-      </button>
-    </div>
-    <div id="re-web-link-result" style="display:none;margin-top:12px;padding:12px;background:var(--bg-surface);border-radius:var(--radius-md);">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="re-add-btn" data-action="export-pdf" style="margin-top:0;font-weight:700;">Exportar PDF</button>
+      <button class="re-add-btn" data-action="export-pptx" style="margin-top:0;">Exportar PPTX</button>
+      <button class="re-add-btn" data-action="gen-link" style="margin-top:0;">Gerar Web Link</button>
     </div>
   `;
 }
 
-/* ─── Collect all form data ───────────────────────────────── */
-function collectData() {
-  const el = (sel) => _container.querySelector(sel);
-  const val = (sel) => (el(sel)?.value ?? '').trim();
-  const numVal = (sel) => { const v = parseFloat(el(sel)?.value); return isNaN(v) ? null : v; };
+/* ─── Collect form data from DOM ──────────────────────────── */
+function collectFormData() {
+  const container = document.getElementById('re-content-area');
+  if (!container) return currentRoteiro;
 
-  // Simple fields via data-field
-  const fieldMap = {};
-  _container.querySelectorAll('[data-field]').forEach(input => {
-    const path = input.dataset.field;
-    const v = input.type === 'number' ? (input.value === '' ? null : parseFloat(input.value)) : input.value;
-    fieldMap[path] = v;
-  });
+  const data = JSON.parse(JSON.stringify(currentRoteiro));
 
-  // Build nested object from fieldMap
+  // Helper to set nested value
   function setNested(obj, path, val) {
     const parts = path.split('.');
     let cur = obj;
@@ -636,93 +767,118 @@ function collectData() {
     cur[parts[parts.length - 1]] = val;
   }
 
-  const data = JSON.parse(JSON.stringify(_data));
+  // Collect all data-field inputs from the ENTIRE container (parent), not just active section
+  const mainContainer = document.getElementById('re-editor-root');
+  if (!mainContainer) return data;
 
-  for (const [path, v] of Object.entries(fieldMap)) {
+  mainContainer.querySelectorAll('[data-field]').forEach(input => {
+    const path = input.dataset.field;
+    let v;
+    if (input.type === 'number') {
+      v = input.value === '' ? null : parseFloat(input.value);
+    } else {
+      v = input.value;
+    }
     setNested(data, path, v);
-  }
+  });
 
-  // Client children ages
+  // Children ages
   const ages = [];
-  _container.querySelectorAll('[data-age-idx]').forEach(input => {
+  mainContainer.querySelectorAll('[data-age-idx]').forEach(input => {
     ages.push(parseInt(input.value) || 0);
   });
-  data.client.childrenAges = ages;
+  if (ages.length) data.client.childrenAges = ages;
 
-  // Client preferences
+  // Preferences
   const prefs = [];
-  _container.querySelectorAll('#re-pref-group label.checked').forEach(lbl => {
+  mainContainer.querySelectorAll('#re-pref-group label.checked').forEach(lbl => {
     prefs.push(lbl.dataset.pref);
   });
-  data.client.preferences = prefs;
+  if (mainContainer.querySelector('#re-pref-group')) data.client.preferences = prefs;
 
-  // Client restrictions
+  // Restrictions
   const rests = [];
-  _container.querySelectorAll('#re-rest-group label.checked').forEach(lbl => {
+  mainContainer.querySelectorAll('#re-rest-group label.checked').forEach(lbl => {
     rests.push(lbl.dataset.rest);
   });
-  data.client.restrictions = rests;
+  if (mainContainer.querySelector('#re-rest-group')) data.client.restrictions = rests;
 
   // Destinations
-  const dests = [];
-  _container.querySelectorAll('[data-dest-idx]').forEach(row => {
-    dests.push({
-      city:      row.querySelector('[data-dest="city"]')?.value?.trim() || '',
-      country:   row.querySelector('[data-dest="country"]')?.value?.trim() || '',
-      continent: row.querySelector('[data-dest="continent"]')?.value || '',
-      nights:    parseInt(row.querySelector('[data-dest="nights"]')?.value) || 0,
+  const destRows = mainContainer.querySelectorAll('[data-dest-idx]');
+  if (destRows.length || mainContainer.querySelector('#re-destinations')) {
+    const dests = [];
+    destRows.forEach(row => {
+      dests.push({
+        city:    row.querySelector('[data-dest="city"]')?.value?.trim() || '',
+        country: row.querySelector('[data-dest="country"]')?.value?.trim() || '',
+        nights:  parseInt(row.querySelector('[data-dest="nights"]')?.value) || 0,
+      });
     });
-  });
-  data.travel.destinations = dests;
-  data.travel.nights = dests.reduce((s, d) => s + (d.nights||0), 0);
-  data.travel.endDate = data.travel.startDate ? addDaysToDate(data.travel.startDate, data.travel.nights) : '';
+    data.travel.destinations = dests;
+    data.travel.nights = dests.reduce((s, d) => s + (d.nights || 0), 0);
+    data.travel.endDate = data.travel.startDate ? addDaysToDate(data.travel.startDate, data.travel.nights) : '';
+  }
 
   // Days
-  const days = [];
-  _container.querySelectorAll('[data-day-idx]').forEach((card, idx) => {
-    const existing = (_data.days || [])[idx] || {};
-    days.push({
-      dayNumber:    existing.dayNumber || idx + 1,
-      date:         existing.date || '',
-      city:         existing.city || '',
-      title:        card.querySelector('[data-day="title"]')?.value?.trim() || '',
-      narrative:    card.querySelector('[data-day="narrative"]')?.value?.trim() || '',
-      overnightCity:card.querySelector('[data-day="overnightCity"]')?.value?.trim() || '',
-      activities:   existing.activities || [],
-      imageIds:     existing.imageIds || [],
+  const dayCards = mainContainer.querySelectorAll('[data-day-idx]');
+  if (dayCards.length || mainContainer.querySelector('#re-days-list')) {
+    const days = [];
+    dayCards.forEach((card, idx) => {
+      const existing = (currentRoteiro.days || [])[idx] || {};
+      const activities = [];
+      card.querySelectorAll('[data-activity-idx]').forEach(actRow => {
+        activities.push({
+          time:        actRow.querySelector('[data-activity="time"]')?.value?.trim() || '',
+          description: actRow.querySelector('[data-activity="description"]')?.value?.trim() || '',
+          type:        actRow.querySelector('[data-activity="type"]')?.value || 'passeio',
+        });
+      });
+      days.push({
+        dayNumber:     existing.dayNumber || idx + 1,
+        date:          existing.date || (data.travel.startDate ? addDaysToDate(data.travel.startDate, idx) : ''),
+        city:          card.querySelector('[data-day="city"]')?.value?.trim() || existing.city || '',
+        title:         card.querySelector('[data-day="title"]')?.value?.trim() || '',
+        narrative:     card.querySelector('[data-day="narrative"]')?.value?.trim() || '',
+        overnightCity: card.querySelector('[data-day="overnightCity"]')?.value?.trim() || '',
+        activities:    activities,
+        imageIds:      existing.imageIds || [],
+      });
     });
-  });
-  data.days = days;
+    data.days = days;
+  }
 
   // Hotels
-  const hotels = [];
-  _container.querySelectorAll('[data-hotel-idx]').forEach(row => {
-    const checkIn = row.querySelector('[data-hotel="checkIn"]')?.value || '';
-    const checkOut = row.querySelector('[data-hotel="checkOut"]')?.value || '';
-    const nights = (checkIn && checkOut) ? diffDays(checkIn, checkOut) : 0;
-    hotels.push({
-      city:      row.querySelector('[data-hotel="city"]')?.value?.trim() || '',
-      hotelName: row.querySelector('[data-hotel="hotelName"]')?.value?.trim() || '',
-      roomType:  row.querySelector('[data-hotel="roomType"]')?.value?.trim() || '',
-      regime:    row.querySelector('[data-hotel="regime"]')?.value?.trim() || '',
-      checkIn, checkOut, nights,
+  const hotelRows = mainContainer.querySelectorAll('[data-hotel-idx]');
+  if (hotelRows.length || mainContainer.querySelector('#re-hotels-body')) {
+    const hotels = [];
+    hotelRows.forEach(row => {
+      const checkIn = row.querySelector('[data-hotel="checkIn"]')?.value || '';
+      const checkOut = row.querySelector('[data-hotel="checkOut"]')?.value || '';
+      const nights = (checkIn && checkOut) ? diffDays(checkIn, checkOut) : 0;
+      hotels.push({
+        city:      row.querySelector('[data-hotel="city"]')?.value?.trim() || '',
+        hotelName: row.querySelector('[data-hotel="hotelName"]')?.value?.trim() || '',
+        roomType:  row.querySelector('[data-hotel="roomType"]')?.value?.trim() || '',
+        regime:    row.querySelector('[data-hotel="regime"]')?.value?.trim() || '',
+        checkIn, checkOut, nights,
+      });
     });
-  });
-  data.hotels = hotels;
+    data.hotels = hotels;
+  }
 
   // Pricing custom rows
   const prows = [];
-  _container.querySelectorAll('[data-prow-idx]').forEach(row => {
+  mainContainer.querySelectorAll('[data-prow-idx]').forEach(row => {
     prows.push({
       label: row.querySelector('[data-prow="label"]')?.value?.trim() || '',
       value: row.querySelector('[data-prow="value"]')?.value?.trim() || '',
     });
   });
-  data.pricing.customRows = prows;
+  if (mainContainer.querySelector('#re-pricing-rows')) data.pricing.customRows = prows;
 
   // Optionals
   const optionals = [];
-  _container.querySelectorAll('[data-opt-idx]').forEach(row => {
+  mainContainer.querySelectorAll('[data-opt-idx]').forEach(row => {
     optionals.push({
       service:    row.querySelector('[data-opt="service"]')?.value?.trim() || '',
       priceAdult: parseFloat(row.querySelector('[data-opt="priceAdult"]')?.value) || null,
@@ -730,889 +886,689 @@ function collectData() {
       notes:      row.querySelector('[data-opt="notes"]')?.value?.trim() || '',
     });
   });
-  data.optionals = optionals;
+  if (mainContainer.querySelector('#re-optionals-body')) data.optionals = optionals;
 
-  // Includes (preserva linhas em branco: a limpeza final é feita no save)
+  // Includes
   const includes = [];
-  _container.querySelectorAll('[data-inc-idx] [data-inc="text"]').forEach(input => {
+  mainContainer.querySelectorAll('[data-inc-idx] [data-inc="text"]').forEach(input => {
     includes.push(input.value);
   });
-  data.includes = includes;
+  if (mainContainer.querySelector('#re-includes-list')) data.includes = includes;
 
-  // Excludes (preserva linhas em branco: a limpeza final é feita no save)
+  // Excludes
   const excludes = [];
-  _container.querySelectorAll('[data-exc-idx] [data-exc="text"]').forEach(input => {
+  mainContainer.querySelectorAll('[data-exc-idx] [data-exc="text"]').forEach(input => {
     excludes.push(input.value);
   });
-  data.excludes = excludes;
+  if (mainContainer.querySelector('#re-excludes-list')) data.excludes = excludes;
 
   // Cancellation
   const canc = [];
-  _container.querySelectorAll('[data-canc-idx]').forEach(row => {
+  mainContainer.querySelectorAll('[data-canc-idx]').forEach(row => {
     canc.push({
       period:  row.querySelector('[data-canc="period"]')?.value?.trim() || '',
       penalty: row.querySelector('[data-canc="penalty"]')?.value?.trim() || '',
     });
   });
-  data.cancellation = canc;
+  if (mainContainer.querySelector('#re-canc-body')) data.cancellation = canc;
 
   // Important info custom fields
   const infoCust = [];
-  _container.querySelectorAll('[data-infoc-idx]').forEach(row => {
+  mainContainer.querySelectorAll('[data-infoc-idx]').forEach(row => {
     infoCust.push({
       label: row.querySelector('[data-infoc="label"]')?.value?.trim() || '',
       value: row.querySelector('[data-infoc="value"]')?.value?.trim() || '',
     });
   });
-  data.importantInfo.customFields = infoCust;
+  if (mainContainer.querySelector('#re-info-custom-body')) data.importantInfo.customFields = infoCust;
 
   return data;
 }
 
-/* ─── Re-render a specific section body ───────────────────── */
-/**
- * IMPORTANTE: Não chamar collectData() aqui!
- * Todos os callers já sincronizaram _data antes (ex.: `_data = collectData();
- * _data.travel.destinations.push(...)`). Se chamássemos collectData() de novo,
- * sobrescreveríamos a modificação em memória com o estado do DOM "velho"
- * (que ainda não reflete a modificação), perdendo add/remove de linhas.
- */
-function refreshSection(sectionId, rendererFn) {
-  const sec = _container.querySelector(`[data-section="${sectionId}"] .re-section-body`);
-  if (!sec) return;
-  sec.innerHTML = rendererFn();
-  bindSectionEvents(sectionId);
-}
-
-/* ─── Event bindings (per section) ────────────────────────── */
-function bindSectionEvents(sectionId) {
-  switch (sectionId) {
-    case 'client': bindClientEvents(); break;
-    case 'travel': bindTravelEvents(); break;
-    case 'days':   bindDaysEvents(); break;
-    case 'hotels': bindHotelsEvents(); break;
-    case 'pricing': bindPricingEvents(); break;
-    case 'optionals': bindOptionalsEvents(); break;
-    case 'incexc': bindIncExcEvents(); break;
-    case 'payment': break; // no dynamic elements
-    case 'cancellation': bindCancellationEvents(); break;
-    case 'importantInfo': bindImportantInfoEvents(); break;
-    case 'preview': bindPreviewEvents(); break;
-  }
-}
-
-function bindClientEvents() {
-  // Load recent clients autocomplete
-  loadRecentClientsAutocomplete();
-
-  // Children count → toggle ages
-  const childrenInput = _container.querySelector('[data-field="client.children"]');
-  if (childrenInput) {
-    childrenInput.addEventListener('change', () => {
-      const count = parseInt(childrenInput.value) || 0;
-      const agesDiv = _container.querySelector('#re-children-ages');
-      const agesRow = _container.querySelector('#re-ages-row');
-      if (!agesDiv || !agesRow) return;
-      agesDiv.style.display = count > 0 ? '' : 'none';
-      // Sync age inputs
-      const current = _container.querySelectorAll('[data-age-idx]');
-      const currentAges = Array.from(current).map(inp => parseInt(inp.value) || 0);
-      let html = '';
-      for (let i = 0; i < count; i++) {
-        html += `<input class="form-input" type="number" min="0" max="17" data-age-idx="${i}" value="${currentAges[i]||0}" style="width:70px;" />`;
-      }
-      agesRow.innerHTML = html;
-      markDirty();
-    });
-  }
-
-  // Checkbox groups
-  _container.querySelectorAll('#re-pref-group label').forEach(lbl => {
-    lbl.addEventListener('click', (e) => {
-      e.preventDefault();
-      lbl.classList.toggle('checked');
-      const cb = lbl.querySelector('input[type="checkbox"]');
-      if (cb) cb.checked = lbl.classList.contains('checked');
-      markDirty();
-    });
-  });
-  _container.querySelectorAll('#re-rest-group label').forEach(lbl => {
-    lbl.addEventListener('click', (e) => {
-      e.preventDefault();
-      lbl.classList.toggle('checked');
-      const cb = lbl.querySelector('input[type="checkbox"]');
-      if (cb) cb.checked = lbl.classList.contains('checked');
-      markDirty();
-    });
-  });
-}
-
-function bindTravelEvents() {
-  // Add destination
-  _container.querySelector('#re-add-dest')?.addEventListener('click', () => {
-    _data = collectData();
-    _data.travel.destinations.push({ city:'', country:'', continent:'', nights:1 });
-    refreshSection('travel', renderTravelSection);
-  });
-
-  // Remove destination
-  _container.querySelectorAll('[data-remove-dest]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _data = collectData();
-      _data.travel.destinations.splice(parseInt(btn.dataset.removeDest), 1);
-      refreshSection('travel', renderTravelSection);
-    });
-  });
-
-  // Recalc nights on change
-  _container.querySelectorAll('[data-dest="nights"]').forEach(input => {
-    input.addEventListener('change', () => {
-      recalcTravelTotals();
-    });
-  });
-
-  _container.querySelector('[data-field="travel.startDate"]')?.addEventListener('change', () => {
-    recalcTravelTotals();
-  });
-
-  // Generate days button
-  _container.querySelector('#re-gen-days')?.addEventListener('click', () => {
-    _data = collectData();
-    const { startDate, destinations } = _data.travel;
-    if (!startDate) { toast.warning('Preencha a data de inicio.'); return; }
-    if (!destinations.length) { toast.warning('Adicione pelo menos um destino.'); return; }
-    _data.days = generateDays(startDate, destinations);
-    refreshSection('days', renderDaysSection);
-    toast.success(`${_data.days.length} dias gerados!`);
-    // Open days section
-    const daysSec = _container.querySelector('[data-section="days"]');
-    if (daysSec && !daysSec.classList.contains('open')) daysSec.classList.add('open');
-    markDirty();
-  });
-}
-
-function recalcTravelTotals() {
-  const destRows = _container.querySelectorAll('[data-dest-idx]');
-  let totalNights = 0;
-  destRows.forEach(row => {
-    totalNights += parseInt(row.querySelector('[data-dest="nights"]')?.value) || 0;
-  });
-  const totalEl = _container.querySelector('#re-total-nights');
-  if (totalEl) totalEl.textContent = totalNights;
-
-  const startInput = _container.querySelector('[data-field="travel.startDate"]');
-  const endInput = _container.querySelector('#re-end-date');
-  if (startInput?.value && endInput) {
-    endInput.value = addDaysToDate(startInput.value, totalNights);
-  }
-}
-
-/* ─── Recent clients autocomplete ─────────────────────────── */
-let _recentClients = null;
-async function loadRecentClientsAutocomplete() {
-  const datalist = _container?.querySelector('#re-recent-clients');
-  if (!datalist) return;
+/* ─── Save logic ──────────────────────────────────────────── */
+async function handleSave() {
   try {
-    _recentClients = await fetchRecentClients(20);
-    datalist.innerHTML = _recentClients.map(c =>
-      `<option value="${esc(c.name)}" data-email="${esc(c.email||'')}" data-phone="${esc(c.phone||'')}">`
-    ).join('');
+    currentRoteiro = collectFormData();
+    // Clean empty strings from includes/excludes
+    currentRoteiro.includes = (currentRoteiro.includes || []).map(s => (s || '').trim()).filter(Boolean);
+    currentRoteiro.excludes = (currentRoteiro.excludes || []).map(s => (s || '').trim()).filter(Boolean);
 
-    // When a name is selected from datalist, fill email/phone/type
-    const nameInput = _container?.querySelector('[data-field="client.name"]');
-    nameInput?.addEventListener('change', () => {
-      const match = _recentClients?.find(c => c.name === nameInput.value);
-      if (match) {
-        const fill = (field, val) => {
-          const el = _container?.querySelector(`[data-field="${field}"]`);
-          if (el && !el.value.trim() && val) el.value = val;
-        };
-        fill('client.email', match.email);
-        fill('client.phone', match.phone);
-        if (match.type) {
-          const sel = _container?.querySelector('[data-field="client.type"]');
-          if (sel) sel.value = match.type;
-        }
-        if (match.economicProfile) {
-          const sel = _container?.querySelector('[data-field="client.economicProfile"]');
-          if (sel) sel.value = match.economicProfile;
-        }
-        markDirty();
-      }
-    });
-  } catch (e) { /* non-critical */ }
-}
+    const indicator = document.getElementById('re-autosave-status');
+    if (indicator) indicator.textContent = 'Salvando...';
 
-/* ─── AI helpers for day generation ───────────────────────── */
-function buildDayContext(idx) {
-  const data = collectData();
-  const day = data.days[idx] || {};
-  const client = data.client || {};
-  const dests = data.travel?.destinations || [];
+    const newId = await saveRoteiro(currentRoteiro.id || null, currentRoteiro);
+    isDirty = false;
 
-  // Try to find portal tip data for this day's city
-  const destInfo = dests.find(d => d.city === day.city || d.country === day.city);
+    if (!currentRoteiro.id && newId) {
+      currentRoteiro.id = newId;
+      const hash = `#roteiro-editor?id=${newId}`;
+      history.replaceState(null, '', hash);
+    }
 
-  return {
-    dayNumber:     day.dayNumber || idx + 1,
-    date:          day.date || '',
-    city:          day.city || '',
-    country:       destInfo?.country || '',
-    destination:   `${day.city || ''}, ${destInfo?.country || ''}`.trim().replace(/^,|,$/g, ''),
-    existingTitle: day.title || '',
-    overnightCity: day.overnightCity || '',
-    clientProfile: `${client.type || 'couple'}, ${client.adults || 2} adultos${client.children ? ', ' + client.children + ' crianças' : ''}, perfil ${client.economicProfile || 'premium'}`,
-    preferences:   (client.preferences || []).join(', ') || 'sem preferência específica',
-    restrictions:  (client.restrictions || []).join(', ') || 'nenhuma',
-    travelIdea:    client.notes || '',
-    totalDays:     data.days.length,
-    allDestinations: dests.map(d => d.city || d.country).join(' → '),
-  };
-}
-
-function applyNarrativeResult(idx, result) {
-  const text = result?.text || result?.content || result || '';
-  if (!text) { toast.error('IA não retornou resultado.'); return; }
-
-  // Find the textarea for this day
-  const card = _container.querySelector(`[data-day-idx="${idx}"]`);
-  const textarea = card?.querySelector('[data-day="narrative"]');
-  if (textarea) {
-    textarea.value = text;
-    markDirty();
-    toast.success(`Narrativa do dia ${idx + 1} gerada!`);
+    if (indicator) indicator.textContent = 'Salvo';
+    showToast('Roteiro salvo com sucesso!', 'success');
+  } catch (err) {
+    const indicator = document.getElementById('re-autosave-status');
+    if (indicator) indicator.textContent = 'Erro ao salvar';
+    showToast('Erro ao salvar: ' + err.message, 'error');
   }
 }
 
-function bindDaysEvents() {
-  // Add day
-  _container.querySelector('#re-add-day')?.addEventListener('click', () => {
-    _data = collectData();
-    const lastDay = _data.days[_data.days.length - 1];
-    const newDate = lastDay?.date ? addDaysToDate(lastDay.date, 1) : '';
-    _data.days.push({
-      dayNumber: _data.days.length + 1,
-      date: newDate,
-      city: '',
-      title: '',
-      narrative: '',
-      overnightCity: '',
-      activities: [],
-      imageIds: [],
-    });
-    refreshSection('days', renderDaysSection);
-    markDirty();
-  });
-
-  // Remove day
-  _container.querySelectorAll('[data-remove-day]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _data = collectData();
-      _data.days.splice(parseInt(btn.dataset.removeDay), 1);
-      // Renumber
-      _data.days.forEach((d, i) => d.dayNumber = i + 1);
-      refreshSection('days', renderDaysSection);
-      markDirty();
-    });
-  });
-
-  // AI: generate day narrative
-  _container.querySelectorAll('[data-day-ai]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const idx = parseInt(btn.dataset.dayAi);
-      const dayData = (_data.days || [])[idx];
-      if (!dayData) return;
-
-      btn.disabled = true;
-      btn.textContent = 'Gerando...';
-
-      try {
-        // Find AI skills for roteiros module
-        const skills = await fetchSkillsForModule('roteiros').catch(() => []);
-        const narrativeSkill = skills.find(s =>
-          s.name?.toLowerCase().includes('narrat') ||
-          s.name?.toLowerCase().includes('dia') ||
-          s.name?.toLowerCase().includes('day')
-        );
-
-        if (!narrativeSkill) {
-          // Fallback: use first available skill for roteiros, or show guidance
-          if (skills.length) {
-            const skill = skills[0];
-            const context = buildDayContext(idx);
-            const result = await runSkill(skill.id, context);
-            applyNarrativeResult(idx, result);
-          } else {
-            toast.info('Nenhuma skill de IA configurada para Roteiros. Crie uma em IA Skills → módulo "Roteiros de Viagem".');
-          }
-          return;
-        }
-
-        const context = buildDayContext(idx);
-        const result = await runSkill(narrativeSkill.id, context);
-        applyNarrativeResult(idx, result);
-      } catch (e) {
-        toast.error('Erro ao gerar com IA: ' + e.message);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Gerar com IA';
-      }
-    });
-  });
+/* ─── Mark dirty & auto-save ──────────────────────────────── */
+function markDirty() {
+  isDirty = true;
+  const indicator = document.getElementById('re-autosave-status');
+  if (indicator) indicator.textContent = 'Altera\u00e7\u00f5es n\u00e3o salvas';
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    if (isDirty) handleSave();
+  }, 30000);
 }
 
-function bindHotelsEvents() {
-  _container.querySelector('#re-add-hotel')?.addEventListener('click', () => {
-    _data = collectData();
-    _data.hotels.push({ city:'', hotelName:'', roomType:'', regime:'', checkIn:'', checkOut:'', nights:0 });
-    refreshSection('hotels', renderHotelsSection);
-    markDirty();
-  });
+/* ─── Switch active section ───────────────────────────────── */
+function switchSection(index) {
+  // Save current section data before switching
+  currentRoteiro = collectFormData();
 
-  _container.querySelectorAll('[data-remove-hotel]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _data = collectData();
-      _data.hotels.splice(parseInt(btn.dataset.removeHotel), 1);
-      refreshSection('hotels', renderHotelsSection);
-      markDirty();
+  activeSection = index;
+
+  // Update nav items
+  const nav = document.getElementById('re-sidebar-nav');
+  if (nav) {
+    nav.querySelectorAll('.re-nav-item').forEach((item, i) => {
+      item.classList.toggle('active', i === index);
     });
-  });
+  }
 
-  // Auto-calc nights on date change
-  _container.querySelectorAll('[data-hotel="checkIn"], [data-hotel="checkOut"]').forEach(input => {
-    input.addEventListener('change', () => {
-      const row = input.closest('[data-hotel-idx]');
-      if (!row) return;
+  // Render new section content
+  const content = document.getElementById('re-content-area');
+  if (content) {
+    content.innerHTML = renderSectionContent(index);
+  }
+}
+
+/* ─── Generate empty days from travel data ────────────────── */
+function generateDaysFromTravel() {
+  const t = currentRoteiro.travel;
+  if (!t.startDate) {
+    showToast('Preencha a data de in\u00edcio na se\u00e7\u00e3o Viagem.', 'warning');
+    return;
+  }
+  const dests = t.destinations || [];
+  if (!dests.length) {
+    showToast('Adicione pelo menos um destino.', 'warning');
+    return;
+  }
+  const days = [];
+  let dayNum = 0;
+  const start = new Date(t.startDate + 'T12:00:00');
+  for (const dest of dests) {
+    const nights = parseInt(dest.nights) || 1;
+    for (let n = 0; n <= nights; n++) {
+      // Last night of last destination = departure day
+      if (dest !== dests[dests.length - 1] && n >= nights) break;
+      const date = new Date(start);
+      date.setDate(date.getDate() + dayNum);
+      days.push({
+        dayNumber: dayNum + 1,
+        date: date.toISOString().split('T')[0],
+        title: '',
+        city: dest.city || dest.country || '',
+        narrative: '',
+        activities: [],
+        overnightCity: n < nights ? (dest.city || dest.country || '') : '',
+        imageIds: [],
+      });
+      dayNum++;
+    }
+  }
+  currentRoteiro.days = days;
+  showToast(`${days.length} dias gerados!`, 'success');
+}
+
+/* ─── Event delegation handler ────────────────────────────── */
+function handleEditorClick(e) {
+  const target = e.target.closest('[data-action]');
+  if (!target) {
+    // Handle checkbox groups
+    const cbLabel = e.target.closest('.re-checkbox-group label');
+    if (cbLabel) {
+      e.preventDefault();
+      cbLabel.classList.toggle('checked');
+      const cb = cbLabel.querySelector('input[type="checkbox"]');
+      if (cb) cb.checked = cbLabel.classList.contains('checked');
+      markDirty();
+      return;
+    }
+    // Handle nav items
+    const navItem = e.target.closest('.re-nav-item');
+    if (navItem && navItem.dataset.sectionIdx !== undefined) {
+      switchSection(parseInt(navItem.dataset.sectionIdx));
+      return;
+    }
+    return;
+  }
+
+  const action = target.dataset.action;
+  const idx = parseInt(target.dataset.idx);
+
+  switch (action) {
+    /* ── Save ─────────────────────────────────────────────── */
+    case 'save':
+      handleSave();
+      break;
+
+    case 'back':
+      if (isDirty) {
+        if (confirm('Voc\u00ea tem altera\u00e7\u00f5es n\u00e3o salvas. Deseja sair sem salvar?')) {
+          isDirty = false;
+          location.hash = '#roteiros';
+        }
+      } else {
+        location.hash = '#roteiros';
+      }
+      break;
+
+    /* ── Destinations ─────────────────────────────────────── */
+    case 'add-dest':
+      currentRoteiro = collectFormData();
+      currentRoteiro.travel.destinations.push({ city: '', country: '', nights: 1 });
+      switchSection(1);
+      markDirty();
+      break;
+
+    case 'remove-dest':
+      currentRoteiro = collectFormData();
+      currentRoteiro.travel.destinations.splice(idx, 1);
+      switchSection(1);
+      markDirty();
+      break;
+
+    case 'move-dest-up':
+      currentRoteiro = collectFormData();
+      if (idx > 0) {
+        const dArr = currentRoteiro.travel.destinations;
+        [dArr[idx - 1], dArr[idx]] = [dArr[idx], dArr[idx - 1]];
+      }
+      switchSection(1);
+      markDirty();
+      break;
+
+    case 'move-dest-down':
+      currentRoteiro = collectFormData();
+      const destsDown = currentRoteiro.travel.destinations;
+      if (idx < destsDown.length - 1) {
+        [destsDown[idx], destsDown[idx + 1]] = [destsDown[idx + 1], destsDown[idx]];
+      }
+      switchSection(1);
+      markDirty();
+      break;
+
+    /* ── Days ─────────────────────────────────────────────── */
+    case 'generate-days':
+      currentRoteiro = collectFormData();
+      generateDaysFromTravel();
+      switchSection(2);
+      break;
+
+    case 'add-day': {
+      currentRoteiro = collectFormData();
+      const lastDay = currentRoteiro.days[currentRoteiro.days.length - 1];
+      const newDate = lastDay?.date ? addDaysToDate(lastDay.date, 1) : '';
+      currentRoteiro.days.push({
+        dayNumber: currentRoteiro.days.length + 1,
+        date: newDate,
+        city: '', title: '', narrative: '', overnightCity: '',
+        activities: [], imageIds: [],
+      });
+      switchSection(2);
+      markDirty();
+      break;
+    }
+
+    case 'remove-day':
+      currentRoteiro = collectFormData();
+      currentRoteiro.days.splice(idx, 1);
+      currentRoteiro.days.forEach((d, i) => d.dayNumber = i + 1);
+      switchSection(2);
+      markDirty();
+      break;
+
+    case 'ai-day':
+      showToast('Gera\u00e7\u00e3o com IA dispon\u00edvel em breve.', 'info');
+      break;
+
+    case 'add-activity': {
+      const dayIdx = parseInt(target.dataset.day);
+      currentRoteiro = collectFormData();
+      if (!currentRoteiro.days[dayIdx]) break;
+      if (!currentRoteiro.days[dayIdx].activities) currentRoteiro.days[dayIdx].activities = [];
+      currentRoteiro.days[dayIdx].activities.push({ time: '', description: '', type: 'passeio' });
+      switchSection(2);
+      markDirty();
+      break;
+    }
+
+    case 'remove-activity': {
+      const dIdx = parseInt(target.dataset.day);
+      const aIdx = parseInt(target.dataset.aidx);
+      currentRoteiro = collectFormData();
+      if (currentRoteiro.days[dIdx]?.activities) {
+        currentRoteiro.days[dIdx].activities.splice(aIdx, 1);
+      }
+      switchSection(2);
+      markDirty();
+      break;
+    }
+
+    /* ── Hotels ───────────────────────────────────────────── */
+    case 'add-hotel':
+      currentRoteiro = collectFormData();
+      currentRoteiro.hotels.push({ city: '', hotelName: '', roomType: '', regime: '', checkIn: '', checkOut: '', nights: 0 });
+      switchSection(3);
+      markDirty();
+      break;
+
+    case 'remove-hotel':
+      currentRoteiro = collectFormData();
+      currentRoteiro.hotels.splice(idx, 1);
+      switchSection(3);
+      markDirty();
+      break;
+
+    /* ── Pricing rows ─────────────────────────────────────── */
+    case 'add-prow':
+      currentRoteiro = collectFormData();
+      currentRoteiro.pricing.customRows.push({ label: '', value: '' });
+      switchSection(4);
+      markDirty();
+      break;
+
+    case 'remove-prow':
+      currentRoteiro = collectFormData();
+      currentRoteiro.pricing.customRows.splice(idx, 1);
+      switchSection(4);
+      markDirty();
+      break;
+
+    /* ── Optionals ────────────────────────────────────────── */
+    case 'add-opt':
+      currentRoteiro = collectFormData();
+      currentRoteiro.optionals.push({ service: '', priceAdult: null, priceChild: null, notes: '' });
+      switchSection(5);
+      markDirty();
+      break;
+
+    case 'remove-opt':
+      currentRoteiro = collectFormData();
+      currentRoteiro.optionals.splice(idx, 1);
+      switchSection(5);
+      markDirty();
+      break;
+
+    /* ── Includes / Excludes ──────────────────────────────── */
+    case 'add-inc':
+      currentRoteiro = collectFormData();
+      currentRoteiro.includes.push('');
+      switchSection(6);
+      markDirty();
+      break;
+
+    case 'remove-inc':
+      currentRoteiro = collectFormData();
+      currentRoteiro.includes.splice(idx, 1);
+      switchSection(6);
+      markDirty();
+      break;
+
+    case 'add-exc':
+      currentRoteiro = collectFormData();
+      currentRoteiro.excludes.push('');
+      switchSection(6);
+      markDirty();
+      break;
+
+    case 'remove-exc':
+      currentRoteiro = collectFormData();
+      currentRoteiro.excludes.splice(idx, 1);
+      switchSection(6);
+      markDirty();
+      break;
+
+    case 'preset-includes':
+      currentRoteiro = collectFormData();
+      INCLUDES_PRESETS.forEach(p => {
+        if (!currentRoteiro.includes.includes(p)) currentRoteiro.includes.push(p);
+      });
+      switchSection(6);
+      markDirty();
+      showToast('Itens padr\u00e3o adicionados (Inclui).', 'success');
+      break;
+
+    case 'preset-excludes':
+      currentRoteiro = collectFormData();
+      EXCLUDES_PRESETS.forEach(p => {
+        if (!currentRoteiro.excludes.includes(p)) currentRoteiro.excludes.push(p);
+      });
+      switchSection(6);
+      markDirty();
+      showToast('Itens padr\u00e3o adicionados (N\u00e3o Inclui).', 'success');
+      break;
+
+    /* ── Cancellation ─────────────────────────────────────── */
+    case 'add-canc':
+      currentRoteiro = collectFormData();
+      currentRoteiro.cancellation.push({ period: '', penalty: '' });
+      switchSection(8);
+      markDirty();
+      break;
+
+    case 'remove-canc':
+      currentRoteiro = collectFormData();
+      currentRoteiro.cancellation.splice(idx, 1);
+      switchSection(8);
+      markDirty();
+      break;
+
+    case 'preset-canc':
+      currentRoteiro = collectFormData();
+      CANCELLATION_PRESETS.forEach(p => {
+        const exists = currentRoteiro.cancellation.some(c => c.period === p.period);
+        if (!exists) currentRoteiro.cancellation.push({ ...p });
+      });
+      switchSection(8);
+      markDirty();
+      showToast('Pol\u00edtica de cancelamento padr\u00e3o adicionada.', 'success');
+      break;
+
+    /* ── Important Info custom fields ─────────────────────── */
+    case 'add-infoc':
+      currentRoteiro = collectFormData();
+      currentRoteiro.importantInfo.customFields.push({ label: '', value: '' });
+      switchSection(9);
+      markDirty();
+      break;
+
+    case 'remove-infoc':
+      currentRoteiro = collectFormData();
+      currentRoteiro.importantInfo.customFields.splice(idx, 1);
+      switchSection(9);
+      markDirty();
+      break;
+
+    /* ── Export ────────────────────────────────────────────── */
+    case 'export-pdf': {
+      currentRoteiro = collectFormData();
+      if (!(currentRoteiro.days || []).length) {
+        showToast('Adicione pelo menos um dia antes de exportar.', 'warning');
+        break;
+      }
+      (async () => {
+        try {
+          if (isDirty) await handleSave();
+          const areaId = document.getElementById('re-area-select')?.value || '';
+          const area = allAreas.find(a => a.id === areaId) || null;
+          await generateRoteiroForExport(currentRoteiro, areaId);
+          showToast('PDF gerado com sucesso!', 'success');
+        } catch (err) {
+          showToast('Erro ao gerar PDF: ' + err.message, 'error');
+        }
+      })();
+      break;
+    }
+
+    case 'export-pptx':
+      showToast('Exporta\u00e7\u00e3o PPTX dispon\u00edvel em breve.', 'info');
+      break;
+
+    case 'gen-link':
+      showToast('Gera\u00e7\u00e3o de link web dispon\u00edvel em breve.', 'info');
+      break;
+  }
+}
+
+/* ─── Handle input changes for hotel night calc & travel totals ── */
+function handleEditorChange(e) {
+  markDirty();
+
+  const target = e.target;
+
+  // Auto-calc hotel nights
+  if (target.dataset.hotel === 'checkIn' || target.dataset.hotel === 'checkOut') {
+    const row = target.closest('[data-hotel-idx]');
+    if (row) {
       const ci = row.querySelector('[data-hotel="checkIn"]')?.value;
       const co = row.querySelector('[data-hotel="checkOut"]')?.value;
       const nightsInput = row.querySelector('[data-hotel="nights"]');
       if (ci && co && nightsInput) {
         nightsInput.value = diffDays(ci, co);
       }
-      markDirty();
-    });
-  });
-}
-
-function bindPricingEvents() {
-  _container.querySelector('#re-add-prow')?.addEventListener('click', () => {
-    _data = collectData();
-    _data.pricing.customRows.push({ label:'', value:'' });
-    refreshSection('pricing', renderPricingSection);
-    markDirty();
-  });
-
-  _container.querySelectorAll('[data-remove-prow]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _data = collectData();
-      _data.pricing.customRows.splice(parseInt(btn.dataset.removeProw), 1);
-      refreshSection('pricing', renderPricingSection);
-      markDirty();
-    });
-  });
-}
-
-function bindOptionalsEvents() {
-  _container.querySelector('#re-add-opt')?.addEventListener('click', () => {
-    _data = collectData();
-    _data.optionals.push({ service:'', priceAdult:null, priceChild:null, notes:'' });
-    refreshSection('optionals', renderOptionalsSection);
-    markDirty();
-  });
-
-  _container.querySelectorAll('[data-remove-opt]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _data = collectData();
-      _data.optionals.splice(parseInt(btn.dataset.removeOpt), 1);
-      refreshSection('optionals', renderOptionalsSection);
-      markDirty();
-    });
-  });
-}
-
-function bindIncExcEvents() {
-  // Add includes
-  _container.querySelector('#re-add-inc')?.addEventListener('click', () => {
-    _data = collectData();
-    _data.includes.push('');
-    refreshSection('incexc', renderIncExcSection);
-    markDirty();
-  });
-
-  // Remove includes
-  _container.querySelectorAll('[data-remove-inc]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _data = collectData();
-      _data.includes.splice(parseInt(btn.dataset.removeInc), 1);
-      refreshSection('incexc', renderIncExcSection);
-      markDirty();
-    });
-  });
-
-  // Add excludes
-  _container.querySelector('#re-add-exc')?.addEventListener('click', () => {
-    _data = collectData();
-    _data.excludes.push('');
-    refreshSection('incexc', renderIncExcSection);
-    markDirty();
-  });
-
-  // Remove excludes
-  _container.querySelectorAll('[data-remove-exc]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _data = collectData();
-      _data.excludes.splice(parseInt(btn.dataset.removeExc), 1);
-      refreshSection('incexc', renderIncExcSection);
-      markDirty();
-    });
-  });
-
-  // Load presets
-  _container.querySelector('#re-load-presets')?.addEventListener('click', openPresetsModal);
-}
-
-function openPresetsModal() {
-  _data = collectData();
-  const incSet = new Set(_data.includes);
-  const excSet = new Set(_data.excludes);
-
-  modal.open({
-    title: 'Carregar Presets',
-    size: 'lg',
-    content: `
-      <div class="re-two-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-        <div>
-          <h4 style="color:var(--text-primary);margin:0 0 8px;font-size:0.875rem;">Inclui</h4>
-          ${INCLUDES_PRESETS.map((p, i) => `
-            <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;font-size:0.8125rem;color:var(--text-secondary);cursor:pointer;">
-              <input type="checkbox" class="preset-inc" data-preset-inc="${i}" ${incSet.has(p)?'checked':''} style="margin-top:2px;" />
-              ${esc(p)}
-            </label>
-          `).join('')}
-        </div>
-        <div>
-          <h4 style="color:var(--text-primary);margin:0 0 8px;font-size:0.875rem;">Nao Inclui</h4>
-          ${EXCLUDES_PRESETS.map((p, i) => `
-            <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;font-size:0.8125rem;color:var(--text-secondary);cursor:pointer;">
-              <input type="checkbox" class="preset-exc" data-preset-exc="${i}" ${excSet.has(p)?'checked':''} style="margin-top:2px;" />
-              ${esc(p)}
-            </label>
-          `).join('')}
-        </div>
-      </div>
-    `,
-    footer: [
-      { label: 'Cancelar', class: 'btn-secondary' },
-      { label: 'Aplicar', class: 'btn-primary', onClick: (e, { close }) => {
-        const newInc = new Set(_data.includes);
-        const newExc = new Set(_data.excludes);
-
-        document.querySelectorAll('.preset-inc:checked').forEach(cb => {
-          newInc.add(INCLUDES_PRESETS[parseInt(cb.dataset.presetInc)]);
-        });
-        document.querySelectorAll('.preset-inc:not(:checked)').forEach(cb => {
-          newInc.delete(INCLUDES_PRESETS[parseInt(cb.dataset.presetInc)]);
-        });
-        document.querySelectorAll('.preset-exc:checked').forEach(cb => {
-          newExc.add(EXCLUDES_PRESETS[parseInt(cb.dataset.presetExc)]);
-        });
-        document.querySelectorAll('.preset-exc:not(:checked)').forEach(cb => {
-          newExc.delete(EXCLUDES_PRESETS[parseInt(cb.dataset.presetExc)]);
-        });
-
-        _data.includes = Array.from(newInc);
-        _data.excludes = Array.from(newExc);
-        refreshSection('incexc', renderIncExcSection);
-        markDirty();
-        close();
-        toast.success('Presets aplicados!');
-      }},
-    ],
-  });
-}
-
-function bindCancellationEvents() {
-  _container.querySelector('#re-add-canc')?.addEventListener('click', () => {
-    _data = collectData();
-    _data.cancellation.push({ period:'', penalty:'' });
-    refreshSection('cancellation', renderCancellationSection);
-    markDirty();
-  });
-
-  _container.querySelectorAll('[data-remove-canc]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _data = collectData();
-      _data.cancellation.splice(parseInt(btn.dataset.removeCanc), 1);
-      refreshSection('cancellation', renderCancellationSection);
-      markDirty();
-    });
-  });
-}
-
-function bindImportantInfoEvents() {
-  _container.querySelector('#re-add-infoc')?.addEventListener('click', () => {
-    _data = collectData();
-    _data.importantInfo.customFields.push({ label:'', value:'' });
-    refreshSection('importantInfo', renderImportantInfoSection);
-    markDirty();
-  });
-
-  _container.querySelectorAll('[data-remove-infoc]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _data = collectData();
-      _data.importantInfo.customFields.splice(parseInt(btn.dataset.removeInfoc), 1);
-      refreshSection('importantInfo', renderImportantInfoSection);
-      markDirty();
-    });
-  });
-
-  _container.querySelector('#re-autofill-portal')?.addEventListener('click', async () => {
-    const data = collectData();
-    const dests = data.travel?.destinations || [];
-    if (!dests.length) { toast.error('Adicione destinos na seção Viagem primeiro.'); return; }
-
-    const btn = _container.querySelector('#re-autofill-portal');
-    btn.disabled = true; btn.textContent = 'Buscando...';
-
-    try {
-      // Search portal_tips for matching destinations
-      let foundTip = null;
-      for (const dest of dests) {
-        if (!dest.country && !dest.city) continue;
-        const tips = await fetchTips({ country: dest.country }).catch(() => []);
-        const match = tips.find(t =>
-          (dest.city && t.city?.toLowerCase() === dest.city.toLowerCase()) ||
-          (!dest.city && t.country?.toLowerCase() === dest.country.toLowerCase())
-        );
-        if (match) { foundTip = match; break; }
-      }
-
-      if (!foundTip || !foundTip.segments?.informacoes_gerais?.info) {
-        toast.info('Nenhuma dica encontrada no Portal para os destinos informados.');
-        return;
-      }
-
-      const info = foundTip.segments.informacoes_gerais.info;
-
-      // Fill fields that are empty
-      const fill = (id, value) => {
-        const el = _container.querySelector(`[data-field="importantInfo.${id}"]`);
-        if (el && !el.value.trim() && value) { el.value = value; }
-      };
-
-      // Climate from portal
-      if (info.clima) {
-        const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-        const climaText = months.map((m, i) => {
-          const max = info.clima[`max_${m}`];
-          const min = info.clima[`min_${m}`];
-          return (max != null && min != null) ? `${m}: ${min}°C a ${max}°C` : null;
-        }).filter(Boolean).join(' | ');
-        fill('climate', climaText);
-      }
-
-      // Visa from portal description
-      fill('visa', `${foundTip.country || ''} — consultar requisitos atualizados de visto.`);
-
-      // Voltage / general info
-      const extras = [];
-      if (info.voltagem) extras.push(`Voltagem: ${info.voltagem}`);
-      if (info.moeda) extras.push(`Moeda: ${info.moeda}`);
-      if (info.lingua) extras.push(`Idioma: ${info.lingua}`);
-      if (info.ddd) extras.push(`DDI: ${info.ddd}`);
-      if (info.fusoHoras) extras.push(`Fuso: ${info.fusoSinal || '+'}${info.fusoHoras}h em relação a Brasília`);
-
-      if (extras.length) {
-        const existing = _container.querySelector('[data-field="importantInfo.flights"]');
-        if (existing && !existing.value.trim()) {
-          existing.value = extras.join('\n');
-        }
-      }
-
-      markDirty();
-      toast.success('Informações preenchidas do Portal de Dicas!');
-    } catch (e) {
-      toast.error('Erro ao buscar do Portal: ' + e.message);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Auto-preencher do Portal';
     }
-  });
-}
+  }
 
-function bindPreviewEvents() {
-  // Load areas for BU selector
-  loadAreaSelector();
+  // Recalc travel totals
+  if (target.dataset.dest === 'nights' || target.dataset.field === 'travel.startDate') {
+    recalcTravelTotals();
+  }
 
-  // Export PDF
-  _container.querySelector('#re-export-pdf')?.addEventListener('click', async () => {
-    const data = collectData();
-    if (!data.days?.length) { toast.error('Adicione pelo menos um dia ao roteiro antes de exportar.'); return; }
-    const btn = _container.querySelector('#re-export-pdf');
-    btn.disabled = true; btn.textContent = 'Gerando PDF...';
-    try {
-      if (_dirty) { await handleSave(); }
-      const area = await getSelectedArea();
-      await generateRoteiroPDF({ id: _roteiroId, ...data }, area);
-      toast.success('PDF gerado com sucesso!');
-    } catch (e) { toast.error('Erro ao gerar PDF: ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = 'Exportar PDF'; }
-  });
-
-  // Export PPTX
-  _container.querySelector('#re-export-pptx')?.addEventListener('click', async () => {
-    const data = collectData();
-    if (!data.days?.length) { toast.error('Adicione pelo menos um dia ao roteiro antes de exportar.'); return; }
-    const btn = _container.querySelector('#re-export-pptx');
-    btn.disabled = true; btn.textContent = 'Gerando PPTX...';
-    try {
-      if (_dirty) { await handleSave(); }
-      const area = await getSelectedArea();
-      await generateRoteiroPPTX({ id: _roteiroId, ...data }, area);
-      toast.success('PPTX gerado com sucesso!');
-    } catch (e) { toast.error('Erro ao gerar PPTX: ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = 'Exportar PPTX'; }
-  });
-
-  // Generate Web Link
-  _container.querySelector('#re-gen-link')?.addEventListener('click', async () => {
-    const data = collectData();
-    if (!data.days?.length) { toast.error('Adicione pelo menos um dia ao roteiro.'); return; }
-    const btn = _container.querySelector('#re-gen-link');
-    btn.disabled = true; btn.textContent = 'Gerando link...';
-    try {
-      if (_dirty) { await handleSave(); }
-      const area = await getSelectedArea();
-      const token = await createWebLink(_roteiroId || 'draft', data, area);
-      const url = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}roteiro-view.html#${token}`;
-      const resultDiv = _container.querySelector('#re-web-link-result');
-      if (resultDiv) {
-        resultDiv.style.display = 'block';
-        resultDiv.innerHTML = `
-          <div style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:8px;">Link gerado:</div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <input class="form-input" value="${esc(url)}" readonly style="flex:1;font-size:0.8125rem;" id="re-web-link-url" />
-            <button class="btn btn-primary" id="re-copy-link" style="padding:6px 14px;font-size:0.8125rem;">Copiar</button>
-          </div>
-        `;
-        resultDiv.querySelector('#re-copy-link')?.addEventListener('click', () => {
-          navigator.clipboard.writeText(url).then(() => toast.success('Link copiado!'));
-        });
+  // Children count change
+  if (target.id === 're-children-count') {
+    const count = parseInt(target.value) || 0;
+    const agesDiv = document.getElementById('re-children-ages');
+    const agesRow = document.getElementById('re-ages-row');
+    if (agesDiv && agesRow) {
+      agesDiv.style.display = count > 0 ? '' : 'none';
+      const current = document.querySelectorAll('[data-age-idx]');
+      const currentAges = Array.from(current).map(inp => parseInt(inp.value) || 0);
+      let html = '';
+      for (let i = 0; i < count; i++) {
+        html += `<input class="re-input" type="number" min="0" max="17" data-age-idx="${i}" value="${currentAges[i] || 0}" style="width:70px;" />`;
       }
-      toast.success('Link web gerado!');
-    } catch (e) { toast.error('Erro: ' + e.message); }
-    finally { btn.disabled = false; btn.textContent = 'Gerar Link Web'; }
-  });
-}
-
-/* ─── Area selector ──────────────────────────────────────── */
-let _cachedAreas = null;
-async function loadAreaSelector() {
-  const select = _container?.querySelector('#re-area-select');
-  const loading = _container?.querySelector('#re-area-loading');
-  if (!select) return;
-  try {
-    _cachedAreas = await fetchAreas();
-    _cachedAreas.forEach(a => {
-      const opt = document.createElement('option');
-      opt.value = a.id;
-      opt.textContent = a.name;
-      if (_data.areaId === a.id) opt.selected = true;
-      select.appendChild(opt);
-    });
-  } catch (e) { console.warn('Failed to load areas:', e); }
-  if (loading) loading.style.display = 'none';
-}
-
-async function getSelectedArea() {
-  const areaId = _container?.querySelector('#re-area-select')?.value;
-  if (!areaId || !_cachedAreas) return null;
-  return _cachedAreas.find(a => a.id === areaId) || null;
-}
-
-/* ─── Dirty tracking / auto-save indicator ────────────────── */
-function markDirty() {
-  _dirty = true;
-  updateAutoSaveIndicator('Alteracoes nao salvas');
-}
-
-function updateAutoSaveIndicator(text) {
-  const el = _container?.querySelector('#re-autosave-status');
-  if (el) el.textContent = text;
-}
-
-/* ─── Save ────────────────────────────────────────────────── */
-async function handleSave() {
-  try {
-    _data = collectData();
-    // Limpa linhas em branco antes de persistir
-    _data.includes = (_data.includes || []).map(s => (s || '').trim()).filter(Boolean);
-    _data.excludes = (_data.excludes || []).map(s => (s || '').trim()).filter(Boolean);
-    updateAutoSaveIndicator('Salvando...');
-    const newId = await saveRoteiro(_roteiroId, _data);
-    _dirty = false;
-    updateAutoSaveIndicator('Salvo');
-
-    if (!_roteiroId && newId) {
-      _roteiroId = newId;
-      // Update URL without triggering hashchange
-      const hash = `#roteiro-editor?id=${newId}`;
-      history.replaceState(null, '', hash);
+      agesRow.innerHTML = html;
     }
-
-    toast.success('Roteiro salvo com sucesso!');
-  } catch (err) {
-    toast.error('Erro ao salvar: ' + err.message);
-    updateAutoSaveIndicator('Erro ao salvar');
   }
 }
 
-/* ─── Main Render ─────────────────────────────────────────── */
+function recalcTravelTotals() {
+  const mainContainer = document.getElementById('re-editor-root');
+  if (!mainContainer) return;
+  const destRows = mainContainer.querySelectorAll('[data-dest-idx]');
+  let totalNights = 0;
+  destRows.forEach(row => {
+    totalNights += parseInt(row.querySelector('[data-dest="nights"]')?.value) || 0;
+  });
+  const totalEl = mainContainer.querySelector('#re-total-nights');
+  if (totalEl) totalEl.textContent = totalNights;
+
+  const startInput = mainContainer.querySelector('[data-field="travel.startDate"]');
+  const endInput = mainContainer.querySelector('#re-end-date');
+  if (startInput?.value && endInput) {
+    endInput.value = addDaysToDate(startInput.value, totalNights);
+  }
+}
+
+/* ─── Main render ─────────────────────────────────────────── */
 export async function renderRoteiroEditor(container) {
-  if (!store.canAccessRoteiros()) {
-    container.innerHTML = `<div class="empty-state"><span style="font-size:2rem;">🔒</span><p>Acesso restrito</p><p class="text-muted">Você não tem permissão para acessar Roteiros de Viagem.</p></div>`;
+  // Permission check
+  if (!store.canCreateRoteiro()) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+        <div style="font-size:2rem;margin-bottom:12px;">\u{1F512}</div>
+        <p style="font-size:1.1rem;font-weight:600;">Acesso Restrito</p>
+        <p>Voc\u00ea n\u00e3o tem permiss\u00e3o para criar ou editar roteiros.</p>
+      </div>`;
     return;
   }
-  _container = container;
 
   // Parse ID from hash
-  const params = new URLSearchParams(location.hash.split('?')[1] || '');
-  _roteiroId = params.get('id') || null;
+  const idMatch = location.hash.match(/[?&]id=([^&]+)/);
+  const roteiroId = idMatch ? idMatch[1] : null;
 
-  // Load or create
+  // Show loading
+  container.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-muted);">Carregando editor...</div>';
+
   try {
-    if (_roteiroId) {
-      _data = await fetchRoteiro(_roteiroId);
+    // Load data in parallel
+    const [roteiroData, destinations, areas] = await Promise.all([
+      roteiroId ? fetchRoteiro(roteiroId) : null,
+      fetchDestinations().catch(() => []),
+      fetchAreas().catch(() => []),
+    ]);
+
+    allDestinations = destinations || [];
+    allAreas = areas || [];
+
+    if (roteiroData) {
+      currentRoteiro = roteiroData;
     } else {
-      _data = emptyRoteiro();
+      currentRoteiro = {
+        status: 'draft',
+        title: '',
+        areaId: '',
+        consultantId: store.get('user')?.uid,
+        consultantName: store.get('user')?.displayName || '',
+        client: {
+          name: '', email: '', phone: '', type: 'individual',
+          adults: 2, children: 0, childrenAges: [],
+          preferences: [], restrictions: [],
+          economicProfile: 'premium', notes: '',
+        },
+        travel: { startDate: '', endDate: '', nights: 0, destinations: [] },
+        days: [],
+        hotels: [],
+        pricing: {
+          perPerson: null, perCouple: null, currency: 'BRL',
+          validUntil: '', disclaimer: '', customRows: [],
+        },
+        optionals: [],
+        includes: [],
+        excludes: [],
+        payment: { deposit: '', installments: '', deadline: '', notes: '' },
+        cancellation: [],
+        importantInfo: {
+          passport: '', visa: '', vaccines: '', climate: '',
+          luggage: '', flights: '', customFields: [],
+        },
+      };
     }
+
+    // Ensure all sub-objects
+    currentRoteiro.client = currentRoteiro.client || {};
+    currentRoteiro.client.childrenAges = currentRoteiro.client.childrenAges || [];
+    currentRoteiro.client.preferences = currentRoteiro.client.preferences || [];
+    currentRoteiro.client.restrictions = currentRoteiro.client.restrictions || [];
+    currentRoteiro.travel = currentRoteiro.travel || {};
+    currentRoteiro.travel.destinations = currentRoteiro.travel.destinations || [];
+    currentRoteiro.days = currentRoteiro.days || [];
+    currentRoteiro.hotels = currentRoteiro.hotels || [];
+    currentRoteiro.pricing = currentRoteiro.pricing || {};
+    currentRoteiro.pricing.customRows = currentRoteiro.pricing.customRows || [];
+    currentRoteiro.optionals = currentRoteiro.optionals || [];
+    currentRoteiro.includes = currentRoteiro.includes || [];
+    currentRoteiro.excludes = currentRoteiro.excludes || [];
+    currentRoteiro.payment = currentRoteiro.payment || {};
+    currentRoteiro.cancellation = currentRoteiro.cancellation || [];
+    currentRoteiro.importantInfo = currentRoteiro.importantInfo || {};
+    currentRoteiro.importantInfo.customFields = currentRoteiro.importantInfo.customFields || [];
+
+    const pageTitle = roteiroId ? 'Editar Roteiro' : 'Novo Roteiro';
+    const statusLabel = currentRoteiro.status || 'draft';
+
+    // Inject CSS
+    const styleEl = document.createElement('style');
+    styleEl.textContent = EDITOR_CSS;
+    document.head.appendChild(styleEl);
+    container._styleEl = styleEl;
+
+    // Render page
+    container.innerHTML = `
+      <div id="re-editor-root">
+        <!-- Header -->
+        <div class="re-header">
+          <button class="re-add-btn" data-action="back" style="margin-top:0;padding:6px 14px;font-size:0.8125rem;">\u2190 Voltar</button>
+          <span class="re-header-title">${esc(pageTitle)}</span>
+          <span class="status-badge">${esc(statusLabel)}</span>
+          <span class="re-autosave" id="re-autosave-status">${roteiroId ? 'Carregado' : 'Novo roteiro'}</span>
+          <button class="re-add-btn" data-action="save" style="margin-top:0;font-weight:700;padding:8px 20px;">Salvar</button>
+          ${roteiroId ? '<button class="re-add-btn" data-action="export-pdf" style="margin-top:0;padding:8px 16px;">Exportar PDF</button>' : ''}
+        </div>
+
+        <!-- Two-column layout -->
+        <div class="re-layout">
+          <!-- Sidebar nav -->
+          <div class="re-sidebar" id="re-sidebar-nav">
+            ${SECTIONS.map((s, i) => `
+              <div class="re-nav-item${i === 0 ? ' active' : ''}" data-section-idx="${i}">
+                <span>${s.icon}</span>
+                <span>${s.label}</span>
+              </div>
+            `).join('')}
+          </div>
+
+          <!-- Content area -->
+          <div class="re-content" id="re-content-area">
+            ${renderSectionContent(0)}
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Event delegation
+    container.addEventListener('click', handleEditorClick);
+    container.addEventListener('input', handleEditorChange);
+    container.addEventListener('change', handleEditorChange);
+
+    // Keyboard shortcut: Ctrl+S / Cmd+S
+    const keyHandler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    document.addEventListener('keydown', keyHandler);
+    container._keyHandler = keyHandler;
+    container._clickHandler = handleEditorClick;
+    container._changeHandler = handleEditorChange;
+
+    activeSection = 0;
+    isDirty = false;
+
   } catch (err) {
-    container.innerHTML = `<div class="empty-state"><p>Erro: ${esc(err.message)}</p>
-      <button class="btn btn-secondary" id="re-back-err">Voltar</button></div>`;
-    container.querySelector('#re-back-err')?.addEventListener('click', () => router.navigate('roteiros'));
-    return;
+    container.innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+        <p style="font-size:1.1rem;font-weight:600;">Erro ao carregar</p>
+        <p>${esc(err.message)}</p>
+        <button class="re-add-btn" onclick="location.hash='#roteiros'" style="margin-top:16px;">Voltar</button>
+      </div>`;
   }
-
-  // Ensure all sub-objects exist
-  _data.client        = _data.client        || {};
-  _data.travel        = _data.travel        || {};
-  _data.travel.destinations = _data.travel.destinations || [];
-  _data.days          = _data.days          || [];
-  _data.hotels        = _data.hotels        || [];
-  _data.pricing       = _data.pricing       || {};
-  _data.pricing.customRows = _data.pricing.customRows || [];
-  _data.optionals     = _data.optionals     || [];
-  _data.includes      = _data.includes      || [];
-  _data.excludes      = _data.excludes      || [];
-  _data.payment       = _data.payment       || {};
-  _data.cancellation  = _data.cancellation  || [];
-  _data.importantInfo = _data.importantInfo || {};
-  _data.importantInfo.customFields = _data.importantInfo.customFields || [];
-
-  // Inject CSS
-  const style = document.createElement('style');
-  style.textContent = EDITOR_CSS;
-
-  const pageTitle = _data.title || (_roteiroId ? 'Editar Roteiro' : 'Novo Roteiro');
-
-  container.innerHTML = `
-    <div class="re-topbar">
-      <button class="btn btn-secondary" id="re-back" style="padding:6px 14px;font-size:0.8125rem;">
-        &larr; Voltar
-      </button>
-      <span class="re-topbar-title">${esc(pageTitle)}</span>
-      <span class="re-autosave" id="re-autosave-status"></span>
-      <button class="btn btn-primary" id="re-save" style="padding:8px 20px;">
-        Salvar
-      </button>
-    </div>
-    <div id="re-sections">
-      ${sectionHTML('client',       '1. Cliente',                renderClientSection(),        true)}
-      ${sectionHTML('travel',       '2. Viagem',                 renderTravelSection(),        false)}
-      ${sectionHTML('days',         '3. Dia a Dia',              renderDaysSection(),          false)}
-      ${sectionHTML('hotels',       '4. Hoteis',                 renderHotelsSection(),        false)}
-      ${sectionHTML('pricing',      '5. Valores',                renderPricingSection(),       false)}
-      ${sectionHTML('optionals',    '6. Opcionais',              renderOptionalsSection(),     false)}
-      ${sectionHTML('incexc',       '7. Inclui / Nao Inclui',   renderIncExcSection(),        false)}
-      ${sectionHTML('payment',      '8. Pagamento',              renderPaymentSection(),       false)}
-      ${sectionHTML('cancellation', '9. Cancelamento',           renderCancellationSection(),  false)}
-      ${sectionHTML('importantInfo','10. Informacoes Importantes',renderImportantInfoSection(), false)}
-      ${sectionHTML('preview',      '11. Preview & Export',      renderPreviewSection(),       false)}
-    </div>
-  `;
-
-  container.appendChild(style);
-
-  // ─── Global events ─────────────────────────────────────────
-
-  // Back button
-  container.querySelector('#re-back').addEventListener('click', () => {
-    if (_dirty) {
-      modal.open({
-        title: 'Alteracoes nao salvas',
-        size: 'sm',
-        content: '<p style="color:var(--text-secondary);">Voce tem alteracoes nao salvas. Deseja sair sem salvar?</p>',
-        footer: [
-          { label: 'Cancelar', class: 'btn-secondary' },
-          { label: 'Sair sem salvar', class: 'btn-primary', style:'background:#EF4444;border-color:#EF4444;', onClick: (e, { close }) => {
-            close();
-            _dirty = false;
-            router.navigate('roteiros');
-          }},
-          { label: 'Salvar e sair', class: 'btn-primary', onClick: async (e, { close }) => {
-            await handleSave();
-            close();
-            router.navigate('roteiros');
-          }},
-        ],
-      });
-    } else {
-      router.navigate('roteiros');
-    }
-  });
-
-  // Save button
-  container.querySelector('#re-save').addEventListener('click', handleSave);
-
-  // Accordion toggle
-  container.querySelectorAll('.re-section-header').forEach(hdr => {
-    hdr.addEventListener('click', () => {
-      hdr.parentElement.classList.toggle('open');
-    });
-  });
-
-  // Bind all section events
-  ['client','travel','days','hotels','pricing','optionals','incexc','payment','cancellation','importantInfo','preview']
-    .forEach(id => bindSectionEvents(id));
-
-  // Global input change → mark dirty
-  container.addEventListener('input', () => { markDirty(); });
-  container.addEventListener('change', () => { markDirty(); });
-
-  // Keyboard shortcut: Ctrl+S / Cmd+S
-  const _keyHandler = (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-      e.preventDefault();
-      handleSave();
-    }
-  };
-  document.addEventListener('keydown', _keyHandler);
-  container._keyHandler = _keyHandler;
-
-  _dirty = false;
-  updateAutoSaveIndicator(_roteiroId ? 'Carregado' : 'Novo roteiro');
 }
 
 /* ─── Destroy ─────────────────────────────────────────────── */
 export function destroyRoteiroEditor() {
-  if (_autoSaveTimer) {
-    clearInterval(_autoSaveTimer);
-    _autoSaveTimer = null;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = null;
+
+  // Clean up event listeners
+  const container = document.getElementById('re-editor-root')?.parentElement;
+  if (container) {
+    if (container._keyHandler) {
+      document.removeEventListener('keydown', container._keyHandler);
+    }
+    if (container._clickHandler) {
+      container.removeEventListener('click', container._clickHandler);
+    }
+    if (container._changeHandler) {
+      container.removeEventListener('input', container._changeHandler);
+      container.removeEventListener('change', container._changeHandler);
+    }
+    if (container._styleEl) {
+      container._styleEl.remove();
+    }
   }
-  if (_container?._keyHandler) {
-    document.removeEventListener('keydown', _container._keyHandler);
-  }
-  _container = null;
-  _roteiroId = null;
-  _data = null;
-  _dirty = false;
+
+  currentRoteiro = null;
+  isDirty = false;
+  allDestinations = [];
+  allAreas = [];
+  activeSection = 0;
 }
