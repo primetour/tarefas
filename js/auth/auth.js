@@ -114,15 +114,16 @@ export function initAuthObserver(onReady) {
         store.set('currentUser',     firebaseUser);
         store.set('userProfile',     profile);
 
-        // Carregar role e permissões ANTES de liberar o app
-        const roleId  = profile.roleId || profile.role || 'member';
-        const roleDoc = await getRole(roleId).catch(() => null)
+        // Carregar role + workspaces em paralelo (otimização de latência)
+        const roleId = profile.roleId || profile.role || 'member';
+        const [roleDoc, _ws] = await Promise.all([
+          getRole(roleId).catch(() => null),
+          loadUserWorkspaces().catch(() => {}),
+        ]);
+        const finalRole = roleDoc
           || SYSTEM_ROLES.find(r => r.id === roleId)
           || SYSTEM_ROLES.find(r => r.id === 'member');
-        store.loadPermissions(roleDoc);
-
-        // Carregar workspaces ANTES de liberar o app
-        await loadUserWorkspaces().catch(() => {});
+        store.loadPermissions(finalRole);
 
         // Definir setor do usuário no store
         const userSector = profile.sector || profile.department
@@ -137,9 +138,11 @@ export function initAuthObserver(onReady) {
         store.set('visibleSectors', rawVisibleSectors);
 
         // Carregar núcleos, categorias e preferências de card
-        loadNucleos().catch(() => {});
-        loadCategories().catch(() => {});
-        loadCardPrefs();
+        Promise.all([
+          loadNucleos().catch(() => {}),
+          loadCategories().catch(() => {}),
+          Promise.resolve(loadCardPrefs()).catch(() => {}),
+        ]).catch(() => {});
 
         // Aplicar paleta de cores do perfil do usuário
         const savedPalette = profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'midnight';
