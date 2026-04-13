@@ -72,7 +72,6 @@ const ABSENCE_TYPE_LABELS = {
 export async function openTaskModal({ taskData=null, projectId=null, status='not_started', onSave=null, typeId=null } = {}) {
   // isEdit only when taskData has a real Firestore id (not a prefill from requests portal)
   const isEdit = !!(taskData?.id);
-  let _isDirty = false;
 
   let users = store.get('users') || [];
   if (!users.length) {
