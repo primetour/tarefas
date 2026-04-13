@@ -338,6 +338,9 @@ function renderActionBtns(s, size = '') {
   if (['pending','sent'].includes(s.status) && store.can('csat_send')) {
     actions.push(`<button class="${cls} btn-ghost" data-action="cancel" data-sid="${s.id}" style="color:var(--color-danger);">✕</button>`);
   }
+  if (s.status === 'sent' && s.token) {
+    actions.push(`<button class="${cls} btn-ghost" data-action="open-survey" data-sid="${s.id}" data-token="${esc(s.token)}" title="Abrir pesquisa em nova aba">🔗</button>`);
+  }
   if (s.status === 'responded') {
     actions.push(`<button class="${cls} btn-ghost" data-action="view" data-sid="${s.id}">👁 Ver resposta</button>`);
   }
@@ -356,6 +359,12 @@ function bindSurveyActions(container) {
       if (action === 'resend') await handleResend(sid, btn);
       if (action === 'cancel') await handleCancel(sid, survey);
       if (action === 'view')   openResponseModal(survey);
+      if (action === 'open-survey') {
+        const origin   = window.location.origin;
+        const basePath = window.location.pathname.replace(/\/[^/]*$/, '');
+        const url = `${origin}${basePath}/csat-response.html?token=${survey.token}&id=${sid}`;
+        window.open(url, '_blank');
+      }
     });
   });
 }

@@ -760,7 +760,7 @@ async function _handleDelegatedKeydown(e) {
 }
 
 function openNewTask(presets = {}) {
-  openTaskModal({ ...presets, onSave: () => {} });
+  openTaskModal({ projectId: filterProject || null, ...presets, onSave: () => {} });
 }
 
 /* \u2500\u2500\u2500 Email \u2192 Tarefa \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
