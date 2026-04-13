@@ -79,6 +79,7 @@ export async function renderTasks(container) {
         <button class="btn btn-secondary btn-sm" id="tasks-import-btn">\u2191 Importar</button>
         <button class="btn btn-secondary btn-sm" id="tasks-export-xls">\u2193 XLS</button>
         <button class="btn btn-secondary btn-sm" id="tasks-export-pdf">\u2193 PDF</button>
+        <button class="btn btn-secondary btn-sm" id="email-task-btn" title="Criar tarefa a partir de email">📧 Email → Tarefa</button>
         <button class="btn btn-primary" id="new-task-btn">+ Nova Tarefa</button>
       </div>
     </div>
@@ -576,6 +577,8 @@ function _attachPageEvents() {
   // não abre o modal duas vezes.
   const newBtn = document.getElementById('new-task-btn');
   if (newBtn) newBtn.onclick = () => openNewTask();
+  const emailBtn = document.getElementById('email-task-btn');
+  if (emailBtn) emailBtn.onclick = () => openEmailToTaskModal();
   const xlsBtn = document.getElementById('tasks-export-xls');
   if (xlsBtn) xlsBtn.onclick = exportTasksXls;
   const pdfBtn = document.getElementById('tasks-export-pdf');
@@ -753,6 +756,216 @@ async function _handleDelegatedKeydown(e) {
 
 function openNewTask(presets = {}) {
   openTaskModal({ ...presets, onSave: () => {} });
+}
+
+/* \u2500\u2500\u2500 Email \u2192 Tarefa \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+function openEmailToTaskModal() {
+  modal.open({
+    title: '\ud83d\udce7 Criar Tarefa a partir de Email',
+    size: 'lg',
+    body: `
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <p style="margin:0;font-size:0.8125rem;color:var(--text-muted);">
+          Cole o conte\u00fado do email abaixo. A IA ir\u00e1 analisar e pr\u00e9-preencher os campos da tarefa automaticamente.
+        </p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <label style="font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">
+              De (remetente)
+            </label>
+            <input type="text" id="email-from" class="form-input"
+              placeholder="nome@empresa.com" style="margin-top:4px;" />
+          </div>
+          <div>
+            <label style="font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">
+              Assunto
+            </label>
+            <input type="text" id="email-subject" class="form-input"
+              placeholder="Assunto do email" style="margin-top:4px;" />
+          </div>
+        </div>
+        <div>
+          <label style="font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">
+            Corpo do email
+          </label>
+          <textarea id="email-body" class="form-input" rows="10"
+            placeholder="Cole aqui o conte\u00fado completo do email..."
+            style="margin-top:4px;resize:vertical;min-height:180px;font-size:0.8125rem;line-height:1.6;"></textarea>
+        </div>
+        <div id="email-parse-status" style="display:none;padding:10px 14px;border-radius:8px;
+          background:var(--bg-surface);font-size:0.8125rem;color:var(--text-muted);text-align:center;">
+        </div>
+      </div>
+    `,
+    buttons: [
+      {
+        label: '\u2728 Analisar com IA e criar tarefa',
+        class: 'btn-primary',
+        closeOnClick: false,
+        onClick: async (btn, { close }) => {
+          const from    = document.getElementById('email-from')?.value?.trim() || '';
+          const subject = document.getElementById('email-subject')?.value?.trim() || '';
+          const body    = document.getElementById('email-body')?.value?.trim() || '';
+          const statusEl = document.getElementById('email-parse-status');
+
+          if (!body && !subject) {
+            toast.warning('Cole pelo menos o assunto ou corpo do email.');
+            return;
+          }
+
+          btn.disabled = true;
+          btn.textContent = '\u23f3 Analisando email...';
+          if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Enviando para IA...'; }
+
+          try {
+            const suggestion = await parseEmailToTask(from, subject, body);
+
+            if (!suggestion) {
+              if (statusEl) { statusEl.textContent = 'IA n\u00e3o dispon\u00edvel. Abrindo formul\u00e1rio manual...'; }
+              setTimeout(() => {
+                close();
+                openTaskModal({
+                  taskData: {
+                    title: subject || 'Tarefa de email',
+                    description: `De: ${from}\nAssunto: ${subject}\n\n${body}`,
+                  },
+                  onSave: () => {},
+                });
+              }, 800);
+              return;
+            }
+
+            if (statusEl) { statusEl.textContent = '\u2705 An\u00e1lise conclu\u00edda! Abrindo formul\u00e1rio...'; }
+            setTimeout(() => {
+              close();
+              openTaskModal({
+                typeId: suggestion.suggestedTypeId || null,
+                taskData: {
+                  title:       suggestion.title || subject || 'Tarefa de email',
+                  description: suggestion.description || `De: ${from}\nAssunto: ${subject}\n\n${body}`,
+                  priority:    suggestion.priority || 'medium',
+                  clientName:  suggestion.clientName || from || '',
+                  clientEmail: suggestion.clientEmail || from || '',
+                },
+                onSave: () => {},
+              });
+            }, 600);
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = '\u2728 Analisar com IA e criar tarefa';
+            if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '\u274c Erro: ' + err.message; }
+            toast.error('Erro ao analisar email: ' + err.message);
+          }
+        },
+      },
+    ],
+  });
+  setTimeout(() => document.getElementById('email-subject')?.focus(), 200);
+}
+
+async function parseEmailToTask(from, subject, body) {
+  const { getAIConfig, resolveApiKey } = await import('../services/ai.js');
+  const cfg = await getAIConfig() || {};
+  const provider = cfg.provider || 'groq';
+  const resolved = await resolveApiKey(provider);
+  const apiKey = resolved.apiKey;
+  if (!apiKey) return null;
+
+  let typesSummary = '';
+  try {
+    const { fetchTaskTypes } = await import('../services/taskTypes.js');
+    const taskTypes = await fetchTaskTypes();
+    typesSummary = taskTypes.map(t => `${t.id}: ${t.name} (setor: ${t.sector || 'geral'})`).join('\n');
+  } catch { /* ignore */ }
+
+  const systemPrompt = `Voc\u00ea \u00e9 um assistente que analisa emails e extrai informa\u00e7\u00f5es para criar tarefas de trabalho.
+${typesSummary ? `Tipos de tarefa dispon\u00edveis:\n${typesSummary}\n` : ''}
+Analise o email e retorne APENAS JSON v\u00e1lido (sem markdown, sem \\\`\\\`\\\`) com:
+{
+  "title": "t\u00edtulo curto e claro para a tarefa (m\u00e1x 80 chars)",
+  "description": "descri\u00e7\u00e3o detalhada da demanda extra\u00edda do email, incluindo contexto relevante",
+  "priority": "urgent|high|medium|low",
+  "suggestedTypeId": "ID do tipo mais adequado ou string vazia",
+  "clientName": "nome do remetente/cliente se identific\u00e1vel",
+  "clientEmail": "email do remetente se fornecido",
+  "deadline": "prazo mencionado no email (formato YYYY-MM-DD) ou string vazia",
+  "reasoning": "1 frase explicando sua an\u00e1lise"
+}
+
+Regras:
+- O t\u00edtulo deve ser uma a\u00e7\u00e3o clara (ex: "Criar arte para campanha X", "Atualizar roteiro Jap\u00e3o")
+- A descri\u00e7\u00e3o deve conter o contexto do pedido, n\u00e3o repetir o email inteiro
+- Se o email mencionar urg\u00eancia, prazo curto ou palavras como "urgente", "asap", marque priority como "urgent" ou "high"
+- Se n\u00e3o conseguir identificar um tipo de tarefa, deixe suggestedTypeId vazio`;
+
+  const userContent = `Email recebido:
+De: ${from || '(n\u00e3o informado)'}
+Assunto: ${subject || '(sem assunto)'}
+
+Corpo:
+${body || '(vazio)'}`;
+
+  let url, headers, reqBody;
+
+  if (provider === 'groq') {
+    url = 'https://api.groq.com/openai/v1/chat/completions';
+    headers = { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+    reqBody = JSON.stringify({
+      model: cfg.model || 'llama-3.3-70b-versatile',
+      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }],
+      temperature: 0.2, max_tokens: 600,
+      response_format: { type: 'json_object' },
+    });
+  } else if (provider === 'gemini') {
+    url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model || 'gemini-2.5-flash'}:generateContent?key=${apiKey}`;
+    headers = { 'Content-Type': 'application/json' };
+    reqBody = JSON.stringify({
+      contents: [{ parts: [{ text: systemPrompt + '\n\n' + userContent }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 600, responseMimeType: 'application/json' },
+    });
+  } else if (provider === 'openai' || provider === 'azure') {
+    url = provider === 'azure' && cfg.azureEndpoint
+      ? `${cfg.azureEndpoint}/openai/deployments/${cfg.model || 'gpt-4o-mini'}/chat/completions?api-version=2024-02-01`
+      : 'https://api.openai.com/v1/chat/completions';
+    headers = {
+      'Content-Type': 'application/json',
+      ...(provider === 'azure' ? { 'api-key': apiKey } : { 'Authorization': `Bearer ${apiKey}` }),
+    };
+    reqBody = JSON.stringify({
+      model: cfg.model || 'gpt-4o-mini',
+      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }],
+      temperature: 0.2, max_tokens: 600,
+      response_format: { type: 'json_object' },
+    });
+  } else if (provider === 'anthropic') {
+    url = 'https://api.anthropic.com/v1/messages';
+    headers = { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json',
+      'anthropic-dangerous-direct-browser-access': 'true' };
+    reqBody = JSON.stringify({
+      model: cfg.model || 'claude-sonnet-4-20250514',
+      max_tokens: 600, system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }],
+    });
+  } else {
+    return null;
+  }
+
+  const resp = await fetch(url, { method: 'POST', headers, body: reqBody });
+  if (!resp.ok) throw new Error(`API ${provider}: ${resp.status}`);
+  const data = await resp.json();
+
+  let text = '';
+  if (provider === 'gemini') {
+    text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  } else if (provider === 'anthropic') {
+    text = data.content?.[0]?.text || '';
+  } else {
+    text = data.choices?.[0]?.message?.content || '';
+  }
+
+  text = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  try { return JSON.parse(text); }
+  catch { console.warn('[email-to-task] Failed to parse AI response:', text); return null; }
 }
 
 /* \u2500\u2500\u2500 Helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
