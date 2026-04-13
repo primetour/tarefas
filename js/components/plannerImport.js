@@ -1,84 +1,52 @@
 /**
  * PRIMETOUR — Planner Import Wizard
  * Importação detalhada de tarefas do Microsoft Planner (XLSX)
- * 5 etapas: Upload → Mapeamento → Usuários → Buckets → Revisão/Edição/Importação
+ * 5 etapas: Upload → Mapeamento → Usuários → Buckets/Setores → Revisão/Edição/Importação
  */
 
 import { store } from '../store.js';
 import { modal } from './modal.js';
 import { toast } from './toast.js';
-import { createTask } from '../services/tasks.js';
+import { createTask, REQUESTING_AREAS } from '../services/tasks.js';
 
 /* ─── Constants ──────────────────────────────────────────── */
-const PROGRESS_MAP = {
-  'Não iniciado': 'not_started',
-  'Em andamento': 'in_progress',
-  'Concluída':    'done',
-};
-const PROGRESS_MAP_REV = Object.fromEntries(Object.entries(PROGRESS_MAP).map(([k,v]) => [v,k]));
+const PROGRESS_MAP = { 'Não iniciado': 'not_started', 'Em andamento': 'in_progress', 'Concluída': 'done' };
+const PRIORITY_MAP = { 'Urgente': 'urgent', 'Importante': 'high', 'Média': 'medium', 'Baixa': 'low' };
 
-const PRIORITY_MAP = {
-  'Urgente':    'urgent',
-  'Importante': 'high',
-  'Média':      'medium',
-  'Baixa':      'low',
-};
-const PRIORITY_MAP_REV = Object.fromEntries(Object.entries(PRIORITY_MAP).map(([k,v]) => [v,k]));
-
-const STATUS_OPTIONS = [
+const STATUS_OPTS = [
   { value: 'not_started', label: 'Não iniciado', color: '#3B82F6' },
   { value: 'in_progress', label: 'Em andamento', color: '#F59E0B' },
   { value: 'done',        label: 'Concluída',    color: '#16A34A' },
 ];
-
-const PRIO_OPTIONS = [
-  { value: 'urgent', label: 'Urgente',    color: '#EF4444', icon: '🔴' },
-  { value: 'high',   label: 'Alta',       color: '#F97316', icon: '🟠' },
-  { value: 'medium', label: 'Média',      color: '#F59E0B', icon: '🟡' },
-  { value: 'low',    label: 'Baixa',      color: '#6B7280', icon: '⚪' },
+const PRIO_OPTS = [
+  { value: 'urgent', label: 'Urgente', color: '#EF4444', icon: '🔴' },
+  { value: 'high',   label: 'Alta',    color: '#F97316', icon: '🟠' },
+  { value: 'medium', label: 'Média',   color: '#F59E0B', icon: '🟡' },
+  { value: 'low',    label: 'Baixa',   color: '#6B7280', icon: '⚪' },
 ];
 
-const esc = s => String(s||'').replace(/[&<>"']/g, c =>
-  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const SYSTEM_SECTORS = [...REQUESTING_AREAS];
 
-/* ─── Wizard State ───────────────────────────────────────── */
-let wiz = {
-  step: 1,
-  rawRows: [],
-  headers: [],
-  // Editable task data (built from rawRows with overrides)
-  tasks: [],         // [{ _idx, title, status, priority, assigneeIds:[], bucket, dueDate, description, checklist, labels, ... }]
-  // Step 2 — field mapping
-  fieldMap: {},
-  // Step 3 — user mapping
-  plannerUsers: [],
-  systemUsers: [],
-  userMap: {},       // plannerName → { userId, userName } | null
-  // Step 4 — bucket mapping
-  plannerBuckets: [],
-  bucketMap: {},
-  // Step 5 — selection & import
-  selectedRows: new Set(),
-  importTag: '',
-  importResults: null,
-  modalRef: null,
-  // Filters
-  previewSearch: '',
-  previewBucket: '',
-  previewStatus: '',
-};
+const esc = s => String(s || '').replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-/* ─── Entry Point ────────────────────────────────────────── */
-export function openPlannerImportWizard() {
+/* ─── State ──────────────────────────────────────────────── */
+let wiz = {};
+
+function resetState() {
   wiz = {
     step: 1, rawRows: [], headers: [], tasks: [],
-    fieldMap: {}, plannerUsers: [], systemUsers: [],
-    userMap: {}, plannerBuckets: [], bucketMap: {},
+    plannerUsers: [], systemUsers: [], userMap: {},
+    plannerBuckets: [], bucketMap: {},
     selectedRows: new Set(), importTag: 'planner-import',
     importResults: null, modalRef: null,
     previewSearch: '', previewBucket: '', previewStatus: '',
   };
+}
 
+/* ─── Entry Point ────────────────────────────────────────── */
+export function openPlannerImportWizard() {
+  resetState();
   const ref = modal.open({
     title: '📋 Importar do Microsoft Planner',
     content: renderStep1(),
@@ -94,58 +62,48 @@ export function openPlannerImportWizard() {
    STEP 1 — Upload
    ═══════════════════════════════════════════════════════════ */
 function renderStep1() {
-  return `
-    <div class="pi-wizard">
-      ${stepIndicator(1)}
-      <div class="pi-step-body">
-        <h3 style="margin:0 0 8px;">Enviar arquivo do Planner</h3>
-        <p style="color:var(--text-muted);font-size:0.875rem;margin:0 0 20px;">
-          Exporte suas tarefas do Microsoft Planner em formato <strong>.xlsx</strong>
-          e selecione o arquivo abaixo.
-        </p>
-        <div id="pi-dropzone" style="border:2px dashed var(--border,#e5e7eb);border-radius:12px;
-          padding:48px 24px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg-surface,#f9fafb);">
-          <div style="font-size:3rem;margin-bottom:12px;opacity:0.4;">📁</div>
-          <p style="color:var(--text-muted);margin:0 0 8px;">Arraste o arquivo aqui ou clique para selecionar</p>
-          <p style="color:var(--text-muted);font-size:0.75rem;margin:0;">Formato aceito: .xlsx</p>
-          <input type="file" id="pi-file" accept=".xlsx" style="display:none;" />
-        </div>
-        <div id="pi-file-info" style="margin-top:12px;display:none;padding:12px 16px;
-          background:var(--bg-surface);border-radius:8px;border:1px solid var(--border);"></div>
-        <div id="pi-parse-error" style="margin-top:12px;display:none;padding:12px 16px;
-          background:#FEF2F2;color:#DC2626;border-radius:8px;font-size:0.875rem;"></div>
+  return `<div class="pi-wiz">
+    ${stepBar(1)}
+    <div class="pi-body">
+      <h3 style="margin:0 0 8px;">Enviar arquivo do Planner</h3>
+      <p class="pi-muted" style="margin:0 0 20px;">
+        Exporte suas tarefas do Microsoft Planner como <strong>.xlsx</strong> e selecione o arquivo abaixo.
+      </p>
+      <div id="pi-drop" class="pi-dropzone">
+        <div style="font-size:3rem;margin-bottom:12px;opacity:0.4;">📁</div>
+        <p class="pi-muted" style="margin:0 0 8px;">Arraste o arquivo aqui ou clique para selecionar</p>
+        <p class="pi-muted" style="font-size:0.75rem;margin:0;">Formato aceito: .xlsx</p>
+        <input type="file" id="pi-file" accept=".xlsx" style="display:none;" />
       </div>
-    </div>`;
+      <div id="pi-file-info" style="margin-top:12px;display:none;" class="pi-infobox"></div>
+      <div id="pi-error" style="margin-top:12px;display:none;padding:12px 16px;background:#FEF2F2;color:#DC2626;border-radius:8px;font-size:0.875rem;"></div>
+    </div>
+  </div>`;
 }
 
 function attachStep1Events() {
-  const body = wiz.modalRef?.getBody();
-  if (!body) return;
-  const dropzone = body.querySelector('#pi-dropzone');
-  const fileInput = body.querySelector('#pi-file');
-  dropzone?.addEventListener('click', () => fileInput?.click());
-  dropzone?.addEventListener('dragover', e => { e.preventDefault(); dropzone.style.borderColor = 'var(--brand-blue)'; });
-  dropzone?.addEventListener('dragleave', () => { dropzone.style.borderColor = 'var(--border,#e5e7eb)'; });
-  dropzone?.addEventListener('drop', e => {
-    e.preventDefault(); dropzone.style.borderColor = 'var(--border,#e5e7eb)';
-    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
-  });
-  fileInput?.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+  const body = wiz.modalRef?.getBody(); if (!body) return;
+  const drop = body.querySelector('#pi-drop');
+  const input = body.querySelector('#pi-file');
+  drop?.addEventListener('click', () => input?.click());
+  drop?.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = 'var(--brand-blue)'; });
+  drop?.addEventListener('dragleave', () => { drop.style.borderColor = 'var(--border,#e5e7eb)'; });
+  drop?.addEventListener('drop', e => { e.preventDefault(); drop.style.borderColor = 'var(--border,#e5e7eb)'; if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+  input?.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
 }
 
 async function handleFile(file) {
-  const body = wiz.modalRef?.getBody();
-  if (!body) return;
-  const errDiv = body.querySelector('#pi-parse-error');
-  const infoDiv = body.querySelector('#pi-file-info');
+  const body = wiz.modalRef?.getBody(); if (!body) return;
+  const err = body.querySelector('#pi-error');
+  const info = body.querySelector('#pi-file-info');
 
   if (!file.name.endsWith('.xlsx')) {
-    errDiv.textContent = 'Formato inválido. Selecione um arquivo .xlsx exportado do Planner.';
-    errDiv.style.display = 'block'; return;
+    err.textContent = 'Formato inválido. Selecione um arquivo .xlsx.';
+    err.style.display = 'block'; return;
   }
-  errDiv.style.display = 'none';
-  infoDiv.style.display = 'block';
-  infoDiv.innerHTML = `<span style="color:var(--text-muted);">Processando <strong>${esc(file.name)}</strong>...</span>`;
+  err.style.display = 'none';
+  info.style.display = 'block';
+  info.innerHTML = `<span class="pi-muted">Processando <strong>${esc(file.name)}</strong>...</span>`;
 
   try {
     if (!window.XLSX) await loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
@@ -156,319 +114,573 @@ async function handleFile(file) {
 
     wiz.headers = Object.keys(rows[0]);
     wiz.rawRows = rows;
-    autoMapFields();
     extractPlannerUsers();
     extractBuckets();
     buildEditableTasks();
 
     const total = rows.length;
-    const withDates = rows.filter(r => r['Data de conclusão']).length;
-    const completed = rows.filter(r => (r['Progresso']||'') === 'Concluída').length;
-
-    infoDiv.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;">
-        <span style="font-size:1.5rem;">✅</span>
-        <div>
-          <strong>${esc(file.name)}</strong>
-          <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:2px;">
-            ${total} tarefas · ${withDates} com prazo · ${completed} concluídas · ${wiz.plannerUsers.length} pessoas · ${wiz.plannerBuckets.length} buckets
-          </div>
+    const completed = rows.filter(r => (r['Progresso'] || '') === 'Concluída').length;
+    info.innerHTML = `<div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:1.5rem;">✅</span>
+      <div><strong>${esc(file.name)}</strong>
+        <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:2px;">
+          ${total} tarefas · ${completed} concluídas · ${wiz.plannerUsers.length} pessoas · ${wiz.plannerBuckets.length} buckets
         </div>
-      </div>`;
+      </div>
+    </div>`;
     updateFooter();
-  } catch (err) {
-    errDiv.textContent = 'Erro ao processar: ' + err.message;
-    errDiv.style.display = 'block'; infoDiv.style.display = 'none';
+  } catch (e) {
+    err.textContent = 'Erro: ' + e.message;
+    err.style.display = 'block'; info.style.display = 'none';
   }
 }
 
-function autoMapFields() {
-  wiz.fieldMap = {
-    title: 'Nome da tarefa', description: 'Descrição', status: 'Progresso',
-    priority: 'Prioridade', assignees: 'Atribuído a', startDate: 'Data de início',
-    dueDate: 'Data de conclusão', bucket: 'Nome do Bucket', labels: 'Rótulos',
-    checklist: 'Itens da lista de verificação', checklistDone: 'Itens concluídos da lista de verificação',
-    createdAt: 'Criado em', createdBy: 'Criado por', isRecurring: 'É Recorrente',
-    completedAt: 'Concluído em', completedBy: 'Concluída por', plannerId: 'Identificação da tarefa',
-  };
-}
-
 function extractPlannerUsers() {
-  const nameSet = new Set();
+  const set = new Set();
   wiz.rawRows.forEach(r => {
-    (r['Atribuído a'] || '').split(';').map(n => n.trim()).filter(Boolean).forEach(n => nameSet.add(n));
-    const cb = (r['Criado por'] || '').trim();
-    if (cb) nameSet.add(cb);
+    (r['Atribuído a'] || '').split(';').map(n => n.trim()).filter(Boolean).forEach(n => set.add(n));
   });
-  wiz.plannerUsers = [...nameSet].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  wiz.plannerUsers = [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
 function extractBuckets() {
   const set = new Set();
-  wiz.rawRows.forEach(r => { const b = (r['Nome do Bucket']||'').trim(); if (b) set.add(b); });
+  wiz.rawRows.forEach(r => { const b = (r['Nome do Bucket'] || '').trim(); if (b) set.add(b); });
   wiz.plannerBuckets = [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
-/** Build editable task objects from raw rows */
 function buildEditableTasks() {
-  wiz.tasks = wiz.rawRows.map((r, i) => {
-    const progress = (r['Progresso'] || '').trim();
-    const prio = (r['Prioridade'] || '').trim();
-    const assignedRaw = (r['Atribuído a'] || '').split(';').map(n => n.trim()).filter(Boolean);
-    return {
-      _idx: i,
-      title: (r['Nome da tarefa'] || '').trim() || 'Sem título',
-      status: PROGRESS_MAP[progress] || 'not_started',
-      priority: PRIORITY_MAP[prio] || 'medium',
-      assigneeNames: assignedRaw,
-      bucket: (r['Nome do Bucket'] || '').trim(),
-      dueDate: r['Data de conclusão'] || null,
-      startDate: r['Data de início'] || null,
-      description: (r['Descrição'] || '').trim(),
-      labels: (r['Rótulos'] || '').split(';').map(l => l.trim()).filter(Boolean),
-      checklistItems: (r['Itens da lista de verificação'] || '').split(';').map(s => s.trim()).filter(Boolean),
-      checklistDone: r['Itens concluídos da lista de verificação'] || '',
-      isRecurring: (r['É Recorrente'] || '').toLowerCase() === 'sim',
-      plannerId: (r['Identificação da tarefa'] || '').trim(),
-      plannerCreatedBy: (r['Criado por'] || '').trim(),
-      plannerCreatedAt: (r['Criado em'] || '').toString(),
-    };
-  });
+  wiz.tasks = wiz.rawRows.map((r, i) => ({
+    _idx: i,
+    title: (r['Nome da tarefa'] || '').trim() || 'Sem título',
+    status: PROGRESS_MAP[(r['Progresso'] || '').trim()] || 'not_started',
+    priority: PRIORITY_MAP[(r['Prioridade'] || '').trim()] || 'medium',
+    assigneeNames: (r['Atribuído a'] || '').split(';').map(n => n.trim()).filter(Boolean),
+    bucket: (r['Nome do Bucket'] || '').trim(),
+    dueDate: r['Data de conclusão'] || null,
+    startDate: r['Data de início'] || null,
+    description: (r['Descrição'] || '').trim(),
+    labels: (r['Rótulos'] || '').split(';').map(l => l.trim()).filter(Boolean),
+    checklistItems: (r['Itens da lista de verificação'] || '').split(';').map(s => s.trim()).filter(Boolean),
+    checklistDone: r['Itens concluídos da lista de verificação'] || '',
+    isRecurring: (r['É Recorrente'] || '').toLowerCase() === 'sim',
+    plannerId: (r['Identificação da tarefa'] || '').trim(),
+    plannerCreatedBy: (r['Criado por'] || '').trim(),
+    plannerCreatedAt: (r['Criado em'] || '').toString(),
+  }));
 }
 
 /* ═══════════════════════════════════════════════════════════
-   STEP 2 — Field Mapping
+   STEP 2 — Field Mapping (visual, com exemplos reais)
    ═══════════════════════════════════════════════════════════ */
 function renderStep2() {
-  const fields = [
-    { key: 'title',       sys: 'title',          type: 'exact',   info: '' },
-    { key: 'description', sys: 'description',    type: 'exact',   info: '' },
-    { key: 'status',      sys: 'status',         type: 'convert', info: 'Não iniciado → not_started, Em andamento → in_progress, Concluída → done' },
-    { key: 'priority',    sys: 'priority',       type: 'convert', info: 'Urgente → urgent, Importante → high, Média → medium, Baixa → low' },
-    { key: 'assignees',   sys: 'assignees',      type: 'convert', info: 'Nomes do Planner → IDs de usuários (Etapa 3)' },
-    { key: 'startDate',   sys: 'startDate',      type: 'exact',   info: '' },
-    { key: 'dueDate',     sys: 'dueDate',        type: 'exact',   info: '' },
-    { key: 'bucket',      sys: 'tags / projeto', type: 'convert', info: 'Bucket → tag ou ignorado (Etapa 4)' },
-    { key: 'labels',      sys: 'tags',           type: 'exact',   info: 'Rótulos do Planner viram tags' },
-    { key: 'checklist',   sys: 'subtasks',       type: 'convert', info: 'Itens ";" → subtasks com status de conclusão' },
-    { key: 'createdAt',   sys: 'metadados',      type: 'info',    info: 'Preservado em customFields' },
-    { key: 'createdBy',   sys: 'metadados',      type: 'info',    info: 'Preservado em customFields' },
-    { key: 'isRecurring', sys: 'tags',           type: 'convert', info: '"Sim" → tag recorrente-planner' },
-    { key: 'plannerId',   sys: 'customFields',   type: 'exact',   info: 'ID original preservado para rastreabilidade' },
+  // Pegar exemplos reais do arquivo
+  const sample = wiz.rawRows[0] || {};
+  const sampleRow2 = wiz.rawRows[1] || {};
+
+  const mappings = [
+    {
+      planner: 'Nome da tarefa', sistema: 'Título da tarefa',
+      exemplo: sample['Nome da tarefa'] || '',
+      resultado: sample['Nome da tarefa'] || '',
+      color: 'green',
+    },
+    {
+      planner: 'Progresso', sistema: 'Status',
+      exemplo: sample['Progresso'] || 'Não iniciado',
+      resultado: statusLabel(PROGRESS_MAP[(sample['Progresso'] || '').trim()] || 'not_started'),
+      color: 'yellow',
+    },
+    {
+      planner: 'Prioridade', sistema: 'Prioridade',
+      exemplo: sample['Prioridade'] || 'Média',
+      resultado: prioLabel(PRIORITY_MAP[(sample['Prioridade'] || '').trim()] || 'medium'),
+      color: 'yellow',
+    },
+    {
+      planner: 'Atribuído a', sistema: 'Responsáveis',
+      exemplo: sample['Atribuído a'] || '',
+      resultado: '→ IDs do sistema (Etapa 3)',
+      color: 'yellow',
+    },
+    {
+      planner: 'Data de conclusão', sistema: 'Prazo',
+      exemplo: sample['Data de conclusão'] ? fmtDate(sample['Data de conclusão']) : '—',
+      resultado: sample['Data de conclusão'] ? fmtDate(sample['Data de conclusão']) : '—',
+      color: 'green',
+    },
+    {
+      planner: 'Data de início', sistema: 'Data de início',
+      exemplo: sample['Data de início'] ? fmtDate(sample['Data de início']) : '—',
+      resultado: sample['Data de início'] ? fmtDate(sample['Data de início']) : '—',
+      color: 'green',
+    },
+    {
+      planner: 'Nome do Bucket', sistema: 'Setor / Tag',
+      exemplo: sample['Nome do Bucket'] || '',
+      resultado: '→ Setor ou tag (Etapa 4)',
+      color: 'yellow',
+    },
+    {
+      planner: 'Rótulos', sistema: 'Tags',
+      exemplo: sample['Rótulos'] || '—',
+      resultado: sample['Rótulos'] ? (sample['Rótulos'] || '').split(';').map(s => s.trim()).filter(Boolean).join(', ') : '—',
+      color: 'green',
+    },
+    {
+      planner: 'Descrição', sistema: 'Descrição',
+      exemplo: (sample['Descrição'] || '').slice(0, 60) + ((sample['Descrição'] || '').length > 60 ? '...' : '') || '—',
+      resultado: 'Mantido como está',
+      color: 'green',
+    },
+    {
+      planner: 'Lista de verificação', sistema: 'Subtarefas',
+      exemplo: (sample['Itens da lista de verificação'] || '').split(';').filter(Boolean).length + ' itens',
+      resultado: '→ Subtarefas com status',
+      color: 'yellow',
+    },
+    {
+      planner: 'Identificação', sistema: 'customFields.plannerId',
+      exemplo: (sample['Identificação da tarefa'] || '').slice(0, 20) + '...',
+      resultado: 'Salvo para rastreabilidade',
+      color: 'gray',
+    },
   ];
 
-  const stats = {};
-  fields.forEach(f => {
-    const col = wiz.fieldMap[f.key]; if (!col) return;
-    stats[f.key] = wiz.rawRows.filter(r => r[col] !== '' && r[col] != null).length;
-  });
+  const total = wiz.rawRows.length;
+  const counts = {
+    comTitulo: wiz.rawRows.filter(r => r['Nome da tarefa']).length,
+    comPrazo: wiz.rawRows.filter(r => r['Data de conclusão']).length,
+    comResp: wiz.rawRows.filter(r => r['Atribuído a']).length,
+    comDesc: wiz.rawRows.filter(r => r['Descrição']).length,
+    comChecklist: wiz.rawRows.filter(r => r['Itens da lista de verificação']).length,
+  };
 
-  return `
-    <div class="pi-wizard">
-      ${stepIndicator(2)}
-      <div class="pi-step-body">
-        <h3 style="margin:0 0 4px;">Mapeamento de campos</h3>
-        <p style="color:var(--text-muted);font-size:0.8125rem;margin:0 0 16px;">
-          Como cada coluna do Planner será convertida.
-          <span class="pi-badge-exact">Verde = direto</span>
-          <span class="pi-badge-convert">Amarelo = conversão</span>
-          <span class="pi-badge-info">Cinza = informativo</span>
-        </p>
-        <div style="overflow-x:auto;">
-          <table class="pi-table">
-            <thead>
-              <tr>
-                <th>Coluna Planner</th>
-                <th>Campo no Sistema</th>
-                <th style="text-align:center;">Tipo</th>
-                <th style="text-align:right;">Preenchidos</th>
-                <th>Conversão</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${fields.map(f => {
-                const col = wiz.fieldMap[f.key] || '—';
-                const found = wiz.headers.includes(col);
-                const count = stats[f.key] || 0;
-                const pct = wiz.rawRows.length ? Math.round(count / wiz.rawRows.length * 100) : 0;
-                const tc = f.type === 'exact' ? '#16A34A' : f.type === 'convert' ? '#D97706' : '#6B7280';
-                const tl = f.type === 'exact' ? 'Direto' : f.type === 'convert' ? 'Conversão' : 'Info';
-                return `<tr>
-                  <td><strong>${esc(col)}</strong>${!found && col !== '—' ? ' <span style="color:#EF4444;font-size:0.7rem;">(ausente)</span>' : ''}</td>
-                  <td>${esc(f.sys)}</td>
-                  <td style="text-align:center;"><span class="pi-type-badge" style="--tc:${tc};">${tl}</span></td>
-                  <td style="text-align:right;"><strong>${count}</strong><span class="text-muted"> / ${wiz.rawRows.length} (${pct}%)</span></td>
-                  <td class="text-muted" style="font-size:0.75rem;max-width:240px;">${f.info || '—'}</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
+  return `<div class="pi-wiz">
+    ${stepBar(2)}
+    <div class="pi-body">
+      <h3 style="margin:0 0 4px;">Como seus dados serão importados</h3>
+      <p class="pi-muted" style="margin:0 0 16px;">
+        Veja abaixo como cada campo do Planner será convertido. Os valores da primeira tarefa são usados como exemplo.
+      </p>
+
+      <!-- Resumo de preenchimento -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        ${miniStat(counts.comTitulo, total, 'Com título')}
+        ${miniStat(counts.comPrazo, total, 'Com prazo')}
+        ${miniStat(counts.comResp, total, 'Com responsável')}
+        ${miniStat(counts.comDesc, total, 'Com descrição')}
+        ${miniStat(counts.comChecklist, total, 'Com checklist')}
       </div>
-    </div>`;
+
+      <div style="overflow-x:auto;">
+        <table class="pi-table">
+          <thead>
+            <tr>
+              <th style="width:30px;"></th>
+              <th>Campo no Planner</th>
+              <th>Exemplo do arquivo</th>
+              <th style="width:30px;text-align:center;">→</th>
+              <th>Campo no Sistema</th>
+              <th>Resultado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${mappings.map(m => {
+              const dot = m.color === 'green' ? '#16A34A' : m.color === 'yellow' ? '#D97706' : '#9CA3AF';
+              const bg = m.color === 'green' ? 'rgba(22,163,74,0.06)' : m.color === 'yellow' ? 'rgba(217,119,6,0.06)' : 'transparent';
+              return `<tr style="background:${bg};">
+                <td style="text-align:center;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${dot};"></span></td>
+                <td><strong>${esc(m.planner)}</strong></td>
+                <td class="pi-muted" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(m.exemplo)}">${esc(m.exemplo)}</td>
+                <td style="text-align:center;color:var(--text-muted);">→</td>
+                <td><strong>${esc(m.sistema)}</strong></td>
+                <td style="font-size:0.8rem;">${esc(m.resultado)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pi-note" style="margin-top:16px;">
+        <strong>Legenda:</strong>
+        <span style="display:inline-flex;align-items:center;gap:4px;margin:0 12px;"><span style="width:10px;height:10px;border-radius:50%;background:#16A34A;display:inline-block;"></span> Transferência direta</span>
+        <span style="display:inline-flex;align-items:center;gap:4px;margin:0 12px;"><span style="width:10px;height:10px;border-radius:50%;background:#D97706;display:inline-block;"></span> Precisa de ajuste (próximas etapas)</span>
+        <span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:#9CA3AF;display:inline-block;"></span> Metadado (preservado internamente)</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function miniStat(count, total, label) {
+  const pct = total ? Math.round(count / total * 100) : 0;
+  const color = pct > 80 ? '#16A34A' : pct > 40 ? '#D97706' : '#9CA3AF';
+  return `<div style="padding:6px 12px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border);font-size:0.75rem;">
+    <strong style="color:${color};">${pct}%</strong> <span class="pi-muted">${label}</span>
+  </div>`;
+}
+
+function statusLabel(val) {
+  const s = STATUS_OPTS.find(o => o.value === val);
+  return s ? s.label : val;
+}
+
+function prioLabel(val) {
+  const p = PRIO_OPTS.find(o => o.value === val);
+  return p ? `${p.icon} ${p.label}` : val;
 }
 
 /* ═══════════════════════════════════════════════════════════
-   STEP 3 — User Resolution
+   STEP 3 — User Resolution (com fetch do Firestore)
    ═══════════════════════════════════════════════════════════ */
-function renderStep3() {
-  const sysUsers = store.get('users') || [];
-  wiz.systemUsers = sysUsers.filter(u => u.active !== false);
+async function loadSystemUsers() {
+  let users = store.get('users');
+  if (!users || !users.length) {
+    try {
+      const { collection, getDocs, query, orderBy } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('../firebase.js');
+      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
+      users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      store.set('users', users);
+    } catch (e) {
+      console.warn('Erro ao carregar usuários:', e.message);
+      users = [];
+    }
+  }
+  wiz.systemUsers = users.filter(u => u.active !== false);
+}
 
-  if (!Object.keys(wiz.userMap).length) {
-    wiz.plannerUsers.forEach(pName => { wiz.userMap[pName] = findBestUserMatch(pName, wiz.systemUsers); });
+function autoMatchUsers() {
+  wiz.plannerUsers.forEach(pName => {
+    if (wiz.userMap[pName]) return; // já mapeado
+    wiz.userMap[pName] = findBestUserMatch(pName, wiz.systemUsers);
+  });
+}
+
+function findBestUserMatch(plannerName, sysUsers) {
+  if (!plannerName || !sysUsers.length) return null;
+  const pn = norm(plannerName);
+
+  // 1. Exact
+  let m = sysUsers.find(u => norm(u.name) === pn);
+  if (m) return { userId: m.id, userName: m.name, confidence: 'exato' };
+
+  // 2. First + Last name
+  const pp = pn.split(/\s+/);
+  if (pp.length >= 2) {
+    m = sysUsers.find(u => {
+      const sp = norm(u.name).split(/\s+/);
+      return sp[0] === pp[0] && sp[sp.length - 1] === pp[pp.length - 1];
+    });
+    if (m) return { userId: m.id, userName: m.name, confidence: 'nome+sobrenome' };
   }
 
+  // 3. First name only (unique match)
+  if (pp.length >= 1) {
+    const fm = sysUsers.filter(u => norm(u.name).split(/\s+/)[0] === pp[0]);
+    if (fm.length === 1) return { userId: fm[0].id, userName: fm[0].name, confidence: 'primeiro nome' };
+  }
+
+  // 4. Contains match
+  m = sysUsers.find(u => norm(u.name).includes(pn) || pn.includes(norm(u.name)));
+  if (m) return { userId: m.id, userName: m.name, confidence: 'parcial' };
+
+  // 5. Email username match (e.g. "joao.silva" in email)
+  if (pp.length >= 1) {
+    m = sysUsers.find(u => {
+      if (!u.email) return false;
+      const emailName = u.email.split('@')[0].toLowerCase().replace(/[._-]/g, ' ');
+      return emailName.includes(pp[0]) || pp.some(p => emailName.includes(p));
+    });
+    if (m) return { userId: m.id, userName: m.name, confidence: 'email' };
+  }
+
+  return null;
+}
+
+function norm(s) { return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); }
+
+function renderStep3() {
   const matched = wiz.plannerUsers.filter(n => wiz.userMap[n]?.userId).length;
   const unmatched = wiz.plannerUsers.length - matched;
-  const taskCounts = {};
+
+  // Count tasks per user
+  const counts = {};
   wiz.rawRows.forEach(r => {
-    (r['Atribuído a'] || '').split(';').map(n => n.trim()).filter(Boolean).forEach(n => { taskCounts[n] = (taskCounts[n] || 0) + 1; });
+    (r['Atribuído a'] || '').split(';').map(n => n.trim()).filter(Boolean).forEach(n => { counts[n] = (counts[n] || 0) + 1; });
   });
 
-  return `
-    <div class="pi-wizard">
-      ${stepIndicator(3)}
-      <div class="pi-step-body">
-        <h3 style="margin:0 0 4px;">Resolução de usuários</h3>
-        <p style="color:var(--text-muted);font-size:0.8125rem;margin:0 0 12px;">
-          Conecte cada pessoa do Planner a um usuário cadastrado no sistema.
-        </p>
-        <div style="display:flex;gap:12px;margin-bottom:16px;">
-          <div class="pi-stat-card" style="--bg:#F0FDF4;--bc:#BBF7D0;--tc:#16A34A;">
-            <strong>${matched}</strong> conectados
-          </div>
-          <div class="pi-stat-card" style="--bg:${unmatched ? '#FEF3C7' : '#F0FDF4'};--bc:${unmatched ? '#FDE68A' : '#BBF7D0'};--tc:${unmatched ? '#D97706' : '#16A34A'};">
-            <strong>${unmatched}</strong> sem correspondência
-          </div>
+  return `<div class="pi-wiz">
+    ${stepBar(3)}
+    <div class="pi-body">
+      <h3 style="margin:0 0 4px;">Conectar pessoas do Planner aos usuários do sistema</h3>
+      <p class="pi-muted" style="margin:0 0 12px;">
+        O sistema tentou identificar automaticamente cada pessoa. Revise e corrija se necessário.
+      </p>
+
+      <div style="display:flex;gap:12px;margin-bottom:16px;">
+        <div class="pi-stat-card" style="background:#F0FDF4;border-color:#BBF7D0;color:#16A34A;">
+          <strong>${matched}</strong> identificados automaticamente
         </div>
-        <div style="overflow-x:auto;">
-          <table class="pi-table">
-            <thead>
-              <tr>
-                <th>Pessoa no Planner</th>
-                <th style="text-align:center;">Tarefas</th>
-                <th style="text-align:center;">Match</th>
-                <th>Usuário no Sistema</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${wiz.plannerUsers.map(pName => {
-                const map = wiz.userMap[pName];
-                const isM = !!map?.userId;
-                return `<tr data-puser="${esc(pName)}">
-                  <td><strong>${esc(pName)}</strong></td>
-                  <td style="text-align:center;">${taskCounts[pName] || 0}</td>
-                  <td style="text-align:center;">
-                    <span class="pi-match-dot" style="--c:${isM ? '#16A34A' : '#D97706'};">${isM ? '✓' : '?'}</span>
-                  </td>
-                  <td>
-                    <select class="pi-user-sel form-input" data-pname="${esc(pName)}"
-                      style="height:32px;font-size:0.8125rem;min-width:240px;
-                      border-color:${isM ? '#16A34A' : '#D97706'};">
-                      <option value="">— Sem responsável (tag para filtrar depois) —</option>
-                      ${wiz.systemUsers.map(u => `<option value="${esc(u.id)}" ${map?.userId === u.id ? 'selected' : ''}>${esc(u.name)}${u.email ? ` (${esc(u.email)})` : u.sector ? ` (${esc(u.sector)})` : ''}</option>`).join('')}
-                    </select>
-                  </td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-        <div class="pi-note">
-          <strong>Nota:</strong> Pessoas sem correspondência receberão a tag
-          <code>planner-sem-responsavel</code> para fácil localização e atualização posterior.
-        </div>
+        ${unmatched ? `<div class="pi-stat-card" style="background:#FEF3C7;border-color:#FDE68A;color:#D97706;">
+          <strong>${unmatched}</strong> precisam de atenção
+        </div>` : `<div class="pi-stat-card" style="background:#F0FDF4;border-color:#BBF7D0;color:#16A34A;">
+          Todos conectados!
+        </div>`}
       </div>
-    </div>`;
+
+      <div style="overflow-x:auto;">
+        <table class="pi-table">
+          <thead>
+            <tr>
+              <th>Pessoa no Planner</th>
+              <th style="text-align:center;">Tarefas</th>
+              <th style="text-align:center;">Match</th>
+              <th>Usuário no Sistema</th>
+              <th>Confiança</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${wiz.plannerUsers.map(pName => {
+              const map = wiz.userMap[pName];
+              const isM = !!map?.userId;
+              const count = counts[pName] || 0;
+              const conf = map?.confidence || '';
+              const confColor = conf === 'exato' ? '#16A34A' : conf ? '#D97706' : '#EF4444';
+              return `<tr>
+                <td><strong>${esc(pName)}</strong></td>
+                <td style="text-align:center;">${count}</td>
+                <td style="text-align:center;">
+                  <span class="pi-dot" style="background:${isM ? '#16A34A' : '#D97706'}20;color:${isM ? '#16A34A' : '#D97706'};">
+                    ${isM ? '✓' : '?'}
+                  </span>
+                </td>
+                <td>
+                  <select class="pi-user-sel form-input" data-pname="${esc(pName)}"
+                    style="height:32px;font-size:0.8125rem;min-width:240px;border-color:${isM ? '#16A34A' : '#D97706'};">
+                    <option value="">— Sem responsável —</option>
+                    ${wiz.systemUsers.map(u => `<option value="${esc(u.id)}" ${map?.userId === u.id ? 'selected' : ''}>
+                      ${esc(u.name)}${u.email ? ` (${esc(u.email)})` : u.sector ? ` · ${esc(u.sector)}` : ''}
+                    </option>`).join('')}
+                  </select>
+                </td>
+                <td style="font-size:0.75rem;">
+                  ${conf ? `<span style="color:${confColor};font-weight:600;">${esc(conf)}</span>` : '<span style="color:#9CA3AF;">—</span>'}
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pi-note" style="margin-top:16px;">
+        <strong>Pessoas sem conexão</strong> terão suas tarefas importadas sem responsável,
+        com a tag <code>planner-sem-responsavel</code> para fácil localização e atualização posterior.
+      </div>
+    </div>
+  </div>`;
 }
 
 function attachStep3Events() {
   const body = wiz.modalRef?.getBody(); if (!body) return;
   body.querySelectorAll('.pi-user-sel').forEach(sel => {
     sel.addEventListener('change', e => {
-      const pn = e.target.dataset.pname, uid = e.target.value;
+      const pn = e.target.dataset.pname;
+      const uid = e.target.value;
       if (uid) {
         const u = wiz.systemUsers.find(u => u.id === uid);
-        wiz.userMap[pn] = { userId: uid, userName: u?.name || '' };
+        wiz.userMap[pn] = { userId: uid, userName: u?.name || '', confidence: 'manual' };
         e.target.style.borderColor = '#16A34A';
       } else {
         wiz.userMap[pn] = null;
         e.target.style.borderColor = '#D97706';
       }
-      const dot = e.target.closest('tr')?.querySelector('.pi-match-dot');
-      if (dot) { dot.style.setProperty('--c', uid ? '#16A34A' : '#D97706'); dot.textContent = uid ? '✓' : '?'; }
+      // Update dot
+      const dot = e.target.closest('tr')?.querySelector('.pi-dot');
+      if (dot) {
+        dot.style.background = uid ? '#16A34A20' : '#D9770620';
+        dot.style.color = uid ? '#16A34A' : '#D97706';
+        dot.textContent = uid ? '✓' : '?';
+      }
+      // Update confidence
+      const confCell = e.target.closest('tr')?.querySelectorAll('td')[4];
+      if (confCell) confCell.innerHTML = uid
+        ? '<span style="color:#3B82F6;font-weight:600;">manual</span>'
+        : '<span style="color:#9CA3AF;">—</span>';
     });
   });
 }
 
-function findBestUserMatch(plannerName, systemUsers) {
-  if (!plannerName || !systemUsers.length) return null;
-  const pn = norm(plannerName);
-  let m = systemUsers.find(u => norm(u.name) === pn);
-  if (m) return { userId: m.id, userName: m.name };
-  const pp = pn.split(/\s+/);
-  if (pp.length >= 2) {
-    m = systemUsers.find(u => { const sp = norm(u.name).split(/\s+/); return sp[0] === pp[0] && sp[sp.length-1] === pp[pp.length-1]; });
-    if (m) return { userId: m.id, userName: m.name };
-  }
-  if (pp.length >= 1) {
-    const fm = systemUsers.filter(u => norm(u.name).split(/\s+/)[0] === pp[0]);
-    if (fm.length === 1) return { userId: fm[0].id, userName: fm[0].name };
-  }
-  return null;
-}
-
-function norm(s) { return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
-
 /* ═══════════════════════════════════════════════════════════
-   STEP 4 — Bucket Mapping
+   STEP 4 — Bucket → Setor / Tag mapping
    ═══════════════════════════════════════════════════════════ */
 function renderStep4() {
   const counts = {};
-  wiz.rawRows.forEach(r => { const b = (r['Nome do Bucket']||'').trim(); if (b) counts[b] = (counts[b]||0) + 1; });
-  if (!Object.keys(wiz.bucketMap).length) wiz.plannerBuckets.forEach(b => { wiz.bucketMap[b] = 'tag'; });
+  wiz.rawRows.forEach(r => { const b = (r['Nome do Bucket'] || '').trim(); if (b) counts[b] = (counts[b] || 0) + 1; });
 
-  return `
-    <div class="pi-wizard">
-      ${stepIndicator(4)}
-      <div class="pi-step-body">
-        <h3 style="margin:0 0 4px;">Mapeamento de Buckets</h3>
-        <p style="color:var(--text-muted);font-size:0.8125rem;margin:0 0 16px;">
-          Cada Bucket do Planner pode virar uma <strong>tag</strong> no sistema ou ser ignorado.
-        </p>
-        <div style="overflow-x:auto;">
-          <table class="pi-table">
-            <thead><tr><th>Bucket</th><th style="text-align:center;">Tarefas</th><th>Ação</th></tr></thead>
-            <tbody>
-              ${wiz.plannerBuckets.map(b => `<tr>
+  // Auto-match buckets to sectors on first visit
+  if (!Object.keys(wiz.bucketMap).length) {
+    wiz.plannerBuckets.forEach(b => {
+      const match = findBestSectorMatch(b);
+      wiz.bucketMap[b] = match ? { action: 'sector', sector: match.sector } : { action: 'tag' };
+    });
+  }
+
+  return `<div class="pi-wiz">
+    ${stepBar(4)}
+    <div class="pi-body">
+      <h3 style="margin:0 0 4px;">Mapeamento de Buckets → Setores</h3>
+      <p class="pi-muted" style="margin:0 0 16px;">
+        Os Buckets do Planner geralmente correspondem a setores/áreas do sistema.
+        O sistema já tentou conectar automaticamente. Revise e ajuste.
+      </p>
+
+      <div style="overflow-x:auto;">
+        <table class="pi-table">
+          <thead>
+            <tr>
+              <th>Bucket no Planner</th>
+              <th style="text-align:center;">Tarefas</th>
+              <th style="text-align:center;">Match</th>
+              <th>Destino no Sistema</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${wiz.plannerBuckets.map(b => {
+              const count = counts[b] || 0;
+              const map = wiz.bucketMap[b] || { action: 'tag' };
+              const isSector = map.action === 'sector' && map.sector;
+              return `<tr>
                 <td><strong>${esc(b)}</strong></td>
-                <td style="text-align:center;">${counts[b]||0}</td>
-                <td><select class="pi-bucket-sel form-input" data-bucket="${esc(b)}" style="height:32px;font-size:0.8125rem;">
-                  <option value="tag" ${wiz.bucketMap[b]==='tag'?'selected':''}>Converter em Tag</option>
-                  <option value="ignore" ${wiz.bucketMap[b]==='ignore'?'selected':''}>Ignorar</option>
-                </select></td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-        <div style="margin-top:16px;padding:12px 16px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border);">
-          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">Tag de importação (aplicada a todas):</label>
-          <input type="text" id="pi-import-tag" class="form-input" value="${esc(wiz.importTag)}"
-            style="height:32px;font-size:0.8125rem;max-width:300px;" placeholder="ex: planner-import" />
-          <p style="color:var(--text-muted);font-size:0.75rem;margin:4px 0 0;">
-            Facilita filtrar todas as tarefas importadas.
-          </p>
-        </div>
+                <td style="text-align:center;">${count}</td>
+                <td style="text-align:center;">
+                  <span class="pi-dot" style="background:${isSector ? '#16A34A20' : map.action === 'tag' ? '#3B82F620' : '#9CA3AF20'};
+                    color:${isSector ? '#16A34A' : map.action === 'tag' ? '#3B82F6' : '#9CA3AF'};">
+                    ${isSector ? '✓' : map.action === 'tag' ? 'T' : '—'}
+                  </span>
+                </td>
+                <td>
+                  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                    <select class="pi-bucket-action form-input" data-bucket="${esc(b)}"
+                      style="height:32px;font-size:0.8125rem;width:130px;">
+                      <option value="sector" ${map.action === 'sector' ? 'selected' : ''}>Setor</option>
+                      <option value="tag" ${map.action === 'tag' ? 'selected' : ''}>Tag</option>
+                      <option value="ignore" ${map.action === 'ignore' ? 'selected' : ''}>Ignorar</option>
+                    </select>
+                    <select class="pi-bucket-sector form-input" data-bucket="${esc(b)}"
+                      style="height:32px;font-size:0.8125rem;min-width:180px;${map.action !== 'sector' ? 'display:none;' : ''}
+                      border-color:${isSector ? '#16A34A' : '#D97706'};">
+                      <option value="">— Selecionar setor —</option>
+                      ${SYSTEM_SECTORS.map(s => `<option value="${esc(s)}" ${map.sector === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+                    </select>
+                  </div>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
       </div>
-    </div>`;
+
+      <div style="margin-top:16px;padding:12px 16px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border);">
+        <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
+          Tag de importação (aplicada a todas as tarefas):
+        </label>
+        <input type="text" id="pi-import-tag" class="form-input" value="${esc(wiz.importTag)}"
+          style="height:32px;font-size:0.8125rem;max-width:300px;" placeholder="ex: planner-import" />
+        <p class="pi-muted" style="font-size:0.75rem;margin:4px 0 0;">
+          Facilita filtrar todas as tarefas importadas do Planner.
+        </p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function findBestSectorMatch(bucketName) {
+  if (!bucketName) return null;
+  const bn = norm(bucketName);
+
+  // Exact match
+  let m = SYSTEM_SECTORS.find(s => norm(s) === bn);
+  if (m) return { sector: m, confidence: 'exato' };
+
+  // Contains match
+  m = SYSTEM_SECTORS.find(s => norm(s).includes(bn) || bn.includes(norm(s)));
+  if (m) return { sector: m, confidence: 'parcial' };
+
+  // Special mappings
+  const specialMap = {
+    'pts/centurion': 'Centurion',
+    'pts centurion': 'Centurion',
+    'social media': 'Marketing',
+    'redes sociais': 'Marketing',
+    'institucional/mkt': 'Marketing',
+    'institucional': 'Marketing',
+    'ics': 'Célula ICs',
+    'city guides & agendas culturais': 'Marketing',
+    'city guides': 'Marketing',
+    'sites & hotsites': 'TI',
+    'sites': 'TI',
+    'concierge': 'Concierge Bradesco',
+    'areas de suporte': null,
+    'sustentabilidade': 'Qualidade',
+  };
+
+  for (const [key, val] of Object.entries(specialMap)) {
+    if (bn.includes(key) || key.includes(bn)) {
+      if (val) return { sector: val, confidence: 'sugerido' };
+      return null;
+    }
+  }
+
+  return null;
 }
 
 function attachStep4Events() {
   const body = wiz.modalRef?.getBody(); if (!body) return;
-  body.querySelectorAll('.pi-bucket-sel').forEach(sel => {
-    sel.addEventListener('change', e => { wiz.bucketMap[e.target.dataset.bucket] = e.target.value; });
+
+  // Action type change (sector/tag/ignore)
+  body.querySelectorAll('.pi-bucket-action').forEach(sel => {
+    sel.addEventListener('change', e => {
+      const bucket = e.target.dataset.bucket;
+      const action = e.target.value;
+      const sectorSel = e.target.closest('td')?.querySelector('.pi-bucket-sector');
+
+      if (action === 'sector') {
+        if (sectorSel) sectorSel.style.display = '';
+        const prevMap = wiz.bucketMap[bucket];
+        wiz.bucketMap[bucket] = { action: 'sector', sector: prevMap?.sector || '' };
+      } else {
+        if (sectorSel) sectorSel.style.display = 'none';
+        wiz.bucketMap[bucket] = { action };
+      }
+
+      // Update dot
+      const dot = e.target.closest('tr')?.querySelector('.pi-dot');
+      if (dot) {
+        const isSector = action === 'sector' && wiz.bucketMap[bucket]?.sector;
+        dot.style.background = isSector ? '#16A34A20' : action === 'tag' ? '#3B82F620' : '#9CA3AF20';
+        dot.style.color = isSector ? '#16A34A' : action === 'tag' ? '#3B82F6' : '#9CA3AF';
+        dot.textContent = isSector ? '✓' : action === 'tag' ? 'T' : '—';
+      }
+    });
   });
+
+  // Sector selection
+  body.querySelectorAll('.pi-bucket-sector').forEach(sel => {
+    sel.addEventListener('change', e => {
+      const bucket = e.target.dataset.bucket;
+      wiz.bucketMap[bucket] = { action: 'sector', sector: e.target.value };
+      e.target.style.borderColor = e.target.value ? '#16A34A' : '#D97706';
+
+      const dot = e.target.closest('tr')?.querySelector('.pi-dot');
+      if (dot) {
+        dot.style.background = e.target.value ? '#16A34A20' : '#D9770620';
+        dot.style.color = e.target.value ? '#16A34A' : '#D97706';
+        dot.textContent = e.target.value ? '✓' : '?';
+      }
+    });
+  });
+
   body.querySelector('#pi-import-tag')?.addEventListener('input', e => { wiz.importTag = e.target.value.trim(); });
 }
 
@@ -484,83 +696,79 @@ function renderStep5() {
   tasks.forEach(t => { byStatus[t.status] = (byStatus[t.status] || 0) + 1; });
 
   // Pre-select non-completed on first visit
-  if (wiz.selectedRows.size === 0 && !wiz.importResults) {
+  if (wiz.selectedRows.size === 0) {
     tasks.forEach((t, i) => { if (t.status !== 'done') wiz.selectedRows.add(i); });
   }
 
   const filtered = getFilteredTasks();
 
-  return `
-    <div class="pi-wizard">
-      ${stepIndicator(5)}
-      <div class="pi-step-body">
-        <h3 style="margin:0 0 4px;">Revisão e edição</h3>
-        <p style="color:var(--text-muted);font-size:0.8125rem;margin:0 0 12px;">
-          Edite qualquer campo diretamente na tabela antes de importar.
-          Clique no valor para alterar.
-        </p>
+  return `<div class="pi-wiz">
+    ${stepBar(5)}
+    <div class="pi-body">
+      <h3 style="margin:0 0 4px;">Revisão final e edição</h3>
+      <p class="pi-muted" style="margin:0 0 12px;">
+        Edite título, status, prioridade e prazo diretamente na tabela antes de importar.
+      </p>
 
-        <!-- Summary cards -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px;">
-          ${summaryCard(total, 'Total', 'var(--bg-surface)', 'var(--border)', 'var(--text-primary)')}
-          ${summaryCard(byStatus.not_started, 'Não iniciadas', '#EFF6FF', '#BFDBFE', '#3B82F6')}
-          ${summaryCard(byStatus.in_progress, 'Em andamento', '#FFFBEB', '#FDE68A', '#D97706')}
-          ${summaryCard(byStatus.done, 'Concluídas', '#F0FDF4', '#BBF7D0', '#16A34A')}
-          ${summaryCard(wiz.selectedRows.size, 'Selecionadas', '#F5F3FF', '#DDD6FE', '#7C3AED')}
-        </div>
-
-        <!-- Filters & quick selection -->
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
-          <span style="font-size:0.8125rem;font-weight:600;">Selecionar:</span>
-          <button class="pi-qsel btn btn-sm" data-sel="all">Todas</button>
-          <button class="pi-qsel btn btn-sm" data-sel="none">Nenhuma</button>
-          <button class="pi-qsel btn btn-sm" data-sel="not_started">Não inic.</button>
-          <button class="pi-qsel btn btn-sm" data-sel="in_progress">Em andam.</button>
-          <button class="pi-qsel btn btn-sm" data-sel="done">Concluídas</button>
-          <span style="border-left:1px solid var(--border);height:20px;margin:0 4px;"></span>
-          <select id="pi-filter-bucket" class="form-input" style="height:30px;font-size:0.75rem;max-width:160px;">
-            <option value="">Todos os buckets</option>
-            ${wiz.plannerBuckets.map(b => `<option value="${esc(b)}" ${wiz.previewBucket===b?'selected':''}>${esc(b)}</option>`).join('')}
-          </select>
-          <select id="pi-filter-status" class="form-input" style="height:30px;font-size:0.75rem;max-width:140px;">
-            <option value="">Todos status</option>
-            ${STATUS_OPTIONS.map(s => `<option value="${s.value}" ${wiz.previewStatus===s.value?'selected':''}>${s.label}</option>`).join('')}
-          </select>
-          <input type="text" id="pi-search" class="form-input" placeholder="Buscar..."
-            style="height:30px;font-size:0.75rem;width:180px;margin-left:auto;" value="${esc(wiz.previewSearch)}" />
-        </div>
-
-        <!-- Editable tasks table -->
-        <div style="max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;" id="pi-table-wrap">
-          <table class="pi-table pi-edit-table" id="pi-edit-table">
-            <thead style="position:sticky;top:0;z-index:2;">
-              <tr>
-                <th style="width:30px;text-align:center;"><input type="checkbox" id="pi-sel-all" /></th>
-                <th style="min-width:200px;">Tarefa</th>
-                <th style="min-width:100px;">Status</th>
-                <th style="min-width:90px;">Prioridade</th>
-                <th style="min-width:150px;">Responsável</th>
-                <th style="min-width:100px;">Bucket</th>
-                <th style="min-width:100px;">Prazo</th>
-              </tr>
-            </thead>
-            <tbody id="pi-edit-tbody">
-              ${filtered.map(t => renderEditRow(t)).join('')}
-            </tbody>
-          </table>
-        </div>
-        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">
-          Mostrando ${filtered.length} de ${total} tarefas
-          ${wiz.selectedRows.size > 0 ? ` · <strong style="color:#7C3AED;">${wiz.selectedRows.size} selecionadas para importar</strong>` : ''}
-        </div>
+      <!-- Summary -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:14px;">
+        ${sCard(total, 'Total', 'var(--bg-surface)', 'var(--border)', 'var(--text-primary)')}
+        ${sCard(byStatus.not_started, 'Não inic.', '#EFF6FF', '#BFDBFE', '#3B82F6')}
+        ${sCard(byStatus.in_progress, 'Em andam.', '#FFFBEB', '#FDE68A', '#D97706')}
+        ${sCard(byStatus.done, 'Concluídas', '#F0FDF4', '#BBF7D0', '#16A34A')}
+        ${sCard(wiz.selectedRows.size, 'Selecionadas', '#F5F3FF', '#DDD6FE', '#7C3AED')}
       </div>
-    </div>`;
+
+      <!-- Filters -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
+        <span style="font-size:0.8125rem;font-weight:600;">Selecionar:</span>
+        <button class="pi-qsel btn btn-sm" data-sel="all">Todas</button>
+        <button class="pi-qsel btn btn-sm" data-sel="none">Nenhuma</button>
+        <button class="pi-qsel btn btn-sm" data-sel="not_started">Não inic.</button>
+        <button class="pi-qsel btn btn-sm" data-sel="in_progress">Em andam.</button>
+        <button class="pi-qsel btn btn-sm" data-sel="done">Concluídas</button>
+        <span style="border-left:1px solid var(--border);height:20px;margin:0 4px;"></span>
+        <select id="pi-fbucket" class="form-input" style="height:30px;font-size:0.75rem;max-width:160px;">
+          <option value="">Todos buckets</option>
+          ${wiz.plannerBuckets.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('')}
+        </select>
+        <select id="pi-fstatus" class="form-input" style="height:30px;font-size:0.75rem;max-width:140px;">
+          <option value="">Todos status</option>
+          ${STATUS_OPTS.map(s => `<option value="${s.value}">${s.label}</option>`).join('')}
+        </select>
+        <input type="text" id="pi-fsearch" class="form-input" placeholder="Buscar..."
+          style="height:30px;font-size:0.75rem;width:180px;margin-left:auto;" />
+      </div>
+
+      <!-- Table -->
+      <div style="max-height:400px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
+        <table class="pi-table pi-etable" id="pi-etable">
+          <thead style="position:sticky;top:0;z-index:2;">
+            <tr>
+              <th style="width:30px;text-align:center;"><input type="checkbox" id="pi-selall" /></th>
+              <th style="min-width:180px;">Tarefa</th>
+              <th style="min-width:95px;">Status</th>
+              <th style="min-width:85px;">Prioridade</th>
+              <th style="min-width:130px;">Responsável</th>
+              <th style="min-width:90px;">Setor</th>
+              <th style="min-width:100px;">Prazo</th>
+            </tr>
+          </thead>
+          <tbody id="pi-ebody">${filtered.map(t => editRow(t)).join('')}</tbody>
+        </table>
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">
+        ${filtered.length} de ${total} tarefas
+        · <strong style="color:#7C3AED;">${wiz.selectedRows.size} para importar</strong>
+      </div>
+    </div>
+  </div>`;
 }
 
-function summaryCard(n, label, bg, border, color) {
-  return `<div style="padding:8px 12px;border-radius:8px;background:${bg};border:1px solid ${border};text-align:center;">
-    <div style="font-size:1.15rem;font-weight:700;color:${color};">${n}</div>
-    <div style="font-size:0.7rem;color:${color};">${label}</div>
+function sCard(n, label, bg, bc, color) {
+  return `<div style="padding:7px 10px;border-radius:8px;background:${bg};border:1px solid ${bc};text-align:center;">
+    <div style="font-size:1.1rem;font-weight:700;color:${color};">${n}</div>
+    <div style="font-size:0.65rem;color:${color};">${label}</div>
   </div>`;
 }
 
@@ -570,131 +778,94 @@ function getFilteredTasks() {
   if (wiz.previewStatus) list = list.filter(t => t.status === wiz.previewStatus);
   if (wiz.previewSearch) {
     const q = wiz.previewSearch.toLowerCase();
-    list = list.filter(t =>
-      t.title.toLowerCase().includes(q) ||
-      t.bucket.toLowerCase().includes(q) ||
-      t.assigneeNames.some(n => n.toLowerCase().includes(q))
-    );
+    list = list.filter(t => t.title.toLowerCase().includes(q) || t.bucket.toLowerCase().includes(q) || t.assigneeNames.some(n => n.toLowerCase().includes(q)));
   }
   return list;
 }
 
-function renderEditRow(t) {
+function editRow(t) {
   const i = t._idx;
-  const checked = wiz.selectedRows.has(i);
+  const chk = wiz.selectedRows.has(i);
+  const st = STATUS_OPTS.find(s => s.value === t.status) || STATUS_OPTS[0];
+  const pr = PRIO_OPTS.find(p => p.value === t.priority) || PRIO_OPTS[2];
 
   // Resolve assignees
-  const resolvedNames = t.assigneeNames.map(n => {
+  const names = t.assigneeNames.map(n => {
     const m = wiz.userMap[n];
-    return m?.userId ? { name: m.userName || n, resolved: true } : { name: n, resolved: false };
+    return m?.userId ? { name: m.userName || n, ok: true } : { name: n, ok: false };
   });
-  const allResolved = resolvedNames.length === 0 || resolvedNames.every(r => r.resolved);
-  const hasUnresolved = resolvedNames.some(r => !r.resolved);
+  const hasUnresolved = names.some(r => !r.ok);
 
-  // Status info
-  const st = STATUS_OPTIONS.find(s => s.value === t.status) || STATUS_OPTIONS[0];
-  // Priority info
-  const pr = PRIO_OPTIONS.find(p => p.value === t.priority) || PRIO_OPTIONS[2];
+  // Sector from bucket mapping
+  const bMap = wiz.bucketMap[t.bucket];
+  const sector = bMap?.action === 'sector' && bMap.sector ? bMap.sector : '';
 
-  // Due date formatting
-  const dueFmt = t.dueDate ? fmtDate(t.dueDate) : '';
+  // Overdue check
   const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date();
 
-  // Row background color
-  let rowBg = '';
-  if (!checked) rowBg = 'opacity:0.5;';
-  else if (hasUnresolved) rowBg = 'background:rgba(217,119,6,0.04);';
-  else if (t.status === 'done') rowBg = 'background:rgba(22,163,74,0.04);';
+  // Row color
+  let rowStyle = '';
+  if (!chk) rowStyle = 'opacity:0.4;';
+  else if (hasUnresolved) rowStyle = 'background:rgba(217,119,6,0.05);';
 
-  return `
-    <tr class="pi-erow" data-idx="${i}" style="${rowBg}">
-      <td style="text-align:center;"><input type="checkbox" class="pi-rcb" data-idx="${i}" ${checked ? 'checked' : ''} /></td>
-      <td>
-        <input type="text" class="pi-inline-input pi-ed-title" data-idx="${i}" value="${esc(t.title)}"
-          style="width:100%;font-weight:600;" />
-      </td>
-      <td>
-        <select class="pi-inline-select pi-ed-status" data-idx="${i}" style="color:${st.color};font-weight:600;">
-          ${STATUS_OPTIONS.map(s => `<option value="${s.value}" ${s.value===t.status?'selected':''}
-            style="color:${s.color};">${s.label}</option>`).join('')}
-        </select>
-      </td>
-      <td>
-        <select class="pi-inline-select pi-ed-prio" data-idx="${i}">
-          ${PRIO_OPTIONS.map(p => `<option value="${p.value}" ${p.value===t.priority?'selected':''}>${p.icon} ${p.label}</option>`).join('')}
-        </select>
-      </td>
-      <td>
-        ${resolvedNames.length ? resolvedNames.map(r => `
-          <span class="pi-user-chip" style="--chip-c:${r.resolved ? '#16A34A' : '#D97706'};">
-            ${r.resolved ? '✓' : '?'} ${esc(r.name.split(' ')[0])}
-          </span>
-        `).join(' ') : '<span class="text-muted" style="font-size:0.75rem;">— sem resp.</span>'}
-      </td>
-      <td style="font-size:0.75rem;">${esc(t.bucket)}</td>
-      <td>
-        <input type="date" class="pi-inline-input pi-ed-date" data-idx="${i}"
-          value="${t.dueDate ? toISODate(t.dueDate) : ''}"
-          style="font-size:0.75rem;${isOverdue ? 'color:#EF4444;font-weight:600;' : ''}" />
-      </td>
-    </tr>`;
+  return `<tr class="pi-erow" data-idx="${i}" style="${rowStyle}">
+    <td style="text-align:center;"><input type="checkbox" class="pi-rcb" data-idx="${i}" ${chk ? 'checked' : ''} /></td>
+    <td><input type="text" class="pi-iinput pi-ed-t" data-idx="${i}" value="${esc(t.title)}" style="width:100%;font-weight:600;" /></td>
+    <td><select class="pi-isel pi-ed-s" data-idx="${i}" style="color:${st.color};font-weight:600;">
+      ${STATUS_OPTS.map(s => `<option value="${s.value}" ${s.value === t.status ? 'selected' : ''} style="color:${s.color};">${s.label}</option>`).join('')}
+    </select></td>
+    <td><select class="pi-isel pi-ed-p" data-idx="${i}">
+      ${PRIO_OPTS.map(p => `<option value="${p.value}" ${p.value === t.priority ? 'selected' : ''}>${p.icon} ${p.label}</option>`).join('')}
+    </select></td>
+    <td>${names.length ? names.map(r => `<span class="pi-chip" style="--cc:${r.ok ? '#16A34A' : '#D97706'};">
+      ${r.ok ? '✓' : '?'} ${esc(r.name.split(' ')[0])}</span>`).join(' ')
+      : '<span class="pi-muted" style="font-size:0.7rem;">—</span>'}</td>
+    <td style="font-size:0.75rem;${sector ? 'color:var(--text-primary);font-weight:500;' : 'color:var(--text-muted);'}">${esc(sector || t.bucket)}</td>
+    <td><input type="date" class="pi-iinput pi-ed-d" data-idx="${i}" value="${t.dueDate ? toISO(t.dueDate) : ''}"
+      style="font-size:0.75rem;${isOverdue ? 'color:#EF4444;font-weight:600;' : ''}" /></td>
+  </tr>`;
 }
 
 function attachStep5Events() {
   const body = wiz.modalRef?.getBody(); if (!body) return;
 
-  // Inline editing — title
+  // Inline edits
   body.addEventListener('input', e => {
-    if (e.target.classList.contains('pi-ed-title')) {
-      const idx = parseInt(e.target.dataset.idx);
-      wiz.tasks[idx].title = e.target.value;
+    if (e.target.classList.contains('pi-ed-t')) {
+      wiz.tasks[parseInt(e.target.dataset.idx)].title = e.target.value;
     }
   });
-
-  // Inline editing — status
   body.addEventListener('change', e => {
-    if (e.target.classList.contains('pi-ed-status')) {
-      const idx = parseInt(e.target.dataset.idx);
+    const idx = parseInt(e.target.dataset.idx);
+    if (e.target.classList.contains('pi-ed-s')) {
       wiz.tasks[idx].status = e.target.value;
-      const st = STATUS_OPTIONS.find(s => s.value === e.target.value);
+      const st = STATUS_OPTS.find(s => s.value === e.target.value);
       if (st) e.target.style.color = st.color;
     }
-    if (e.target.classList.contains('pi-ed-prio')) {
-      const idx = parseInt(e.target.dataset.idx);
-      wiz.tasks[idx].priority = e.target.value;
-    }
-    if (e.target.classList.contains('pi-ed-date')) {
-      const idx = parseInt(e.target.dataset.idx);
-      wiz.tasks[idx].dueDate = e.target.value || null;
-    }
-  });
+    if (e.target.classList.contains('pi-ed-p')) wiz.tasks[idx].priority = e.target.value;
+    if (e.target.classList.contains('pi-ed-d')) wiz.tasks[idx].dueDate = e.target.value || null;
 
-  // Checkboxes
-  body.addEventListener('change', e => {
+    // Checkboxes
     if (e.target.classList.contains('pi-rcb')) {
-      const idx = parseInt(e.target.dataset.idx);
       if (e.target.checked) wiz.selectedRows.add(idx); else wiz.selectedRows.delete(idx);
-      // Update row opacity
       const row = e.target.closest('tr');
-      if (row) row.style.opacity = e.target.checked ? '1' : '0.5';
-      updateSelectedCount();
+      if (row) row.style.opacity = e.target.checked ? '1' : '0.4';
+      updateFooter();
     }
   });
 
   // Select all
-  body.querySelector('#pi-sel-all')?.addEventListener('change', e => {
-    const checked = e.target.checked;
-    body.querySelectorAll('#pi-edit-tbody .pi-rcb').forEach(cb => {
+  body.querySelector('#pi-selall')?.addEventListener('change', e => {
+    body.querySelectorAll('#pi-ebody .pi-rcb').forEach(cb => {
       const idx = parseInt(cb.dataset.idx);
-      cb.checked = checked;
-      if (checked) wiz.selectedRows.add(idx); else wiz.selectedRows.delete(idx);
-      const row = cb.closest('tr');
-      if (row) row.style.opacity = checked ? '1' : '0.5';
+      cb.checked = e.target.checked;
+      if (e.target.checked) wiz.selectedRows.add(idx); else wiz.selectedRows.delete(idx);
+      const row = cb.closest('tr'); if (row) row.style.opacity = e.target.checked ? '1' : '0.4';
     });
-    updateSelectedCount();
+    updateFooter();
   });
 
-  // Quick selection buttons
+  // Quick select
   body.querySelectorAll('.pi-qsel').forEach(btn => {
     btn.addEventListener('click', () => {
       const sel = btn.dataset.sel;
@@ -706,40 +877,29 @@ function attachStep5Events() {
   });
 
   // Filters
-  body.querySelector('#pi-filter-bucket')?.addEventListener('change', e => { wiz.previewBucket = e.target.value; refreshTable(); });
-  body.querySelector('#pi-filter-status')?.addEventListener('change', e => { wiz.previewStatus = e.target.value; refreshTable(); });
+  body.querySelector('#pi-fbucket')?.addEventListener('change', e => { wiz.previewBucket = e.target.value; refreshTable(); });
+  body.querySelector('#pi-fstatus')?.addEventListener('change', e => { wiz.previewStatus = e.target.value; refreshTable(); });
   let timer;
-  body.querySelector('#pi-search')?.addEventListener('input', e => {
-    clearTimeout(timer);
-    timer = setTimeout(() => { wiz.previewSearch = e.target.value; refreshTable(); }, 250);
+  body.querySelector('#pi-fsearch')?.addEventListener('input', e => {
+    clearTimeout(timer); timer = setTimeout(() => { wiz.previewSearch = e.target.value; refreshTable(); }, 250);
   });
 }
 
 function refreshTable() {
   const body = wiz.modalRef?.getBody(); if (!body) return;
-  const tbody = body.querySelector('#pi-edit-tbody');
-  if (!tbody) return;
-  const filtered = getFilteredTasks();
-  tbody.innerHTML = filtered.map(t => renderEditRow(t)).join('');
-  updateSelectedCount();
-}
-
-function updateSelectedCount() {
-  const body = wiz.modalRef?.getBody(); if (!body) return;
-  // Update the purple summary card if visible
-  const cards = body.querySelectorAll('.pi-step-body > div:first-of-type > div');
-  // Update footer button text
+  const tbody = body.querySelector('#pi-ebody'); if (!tbody) return;
+  tbody.innerHTML = getFilteredTasks().map(t => editRow(t)).join('');
   updateFooter();
 }
 
-/* ─── Import Execution ───────────────────────────────────── */
+/* ─── Import Execution ────────────────────────────────────── */
 async function executeImport() {
   const indices = [...wiz.selectedRows].sort((a, b) => a - b);
   if (!indices.length) { toast.warning('Selecione ao menos uma tarefa.'); return; }
 
   const ok = await modal.confirm({
     title: 'Confirmar importação',
-    message: `Importar <strong>${indices.length}</strong> tarefas do Planner?<br>
+    message: `Importar <strong>${indices.length}</strong> tarefas do Planner para o sistema?<br>
       <span style="font-size:0.8125rem;color:var(--text-muted);">Novas tarefas serão criadas. Nada existente será alterado.</span>`,
     confirmText: `Importar ${indices.length} tarefas`,
     icon: '📋',
@@ -747,60 +907,67 @@ async function executeImport() {
   if (!ok) return;
 
   const body = wiz.modalRef?.getBody(); if (!body) return;
-  body.innerHTML = `
-    <div class="pi-wizard">
-      ${stepIndicator(5)}
-      <div class="pi-step-body" style="text-align:center;padding:40px 20px;">
-        <div style="font-size:3rem;margin-bottom:16px;">⏳</div>
-        <h3 id="pi-prog-title">Importando tarefas...</h3>
-        <div style="max-width:400px;margin:16px auto;">
-          <div style="background:var(--border);border-radius:999px;height:8px;overflow:hidden;">
-            <div id="pi-prog-bar" style="width:0%;height:100%;background:var(--brand-blue,#3B82F6);border-radius:999px;transition:width 0.3s;"></div>
-          </div>
-          <p id="pi-prog-text" style="color:var(--text-muted);font-size:0.8125rem;margin:8px 0 0;">0 / ${indices.length}</p>
+  body.innerHTML = `<div class="pi-wiz">${stepBar(5)}
+    <div class="pi-body" style="text-align:center;padding:40px 20px;">
+      <div style="font-size:3rem;margin-bottom:16px;">⏳</div>
+      <h3 id="pi-ptitle">Importando tarefas...</h3>
+      <div style="max-width:400px;margin:16px auto;">
+        <div style="background:var(--border);border-radius:999px;height:8px;overflow:hidden;">
+          <div id="pi-pbar" style="width:0%;height:100%;background:var(--brand-blue,#3B82F6);border-radius:999px;transition:width 0.3s;"></div>
         </div>
-        <div id="pi-prog-log" style="text-align:left;max-height:200px;overflow-y:auto;font-size:0.75rem;
-          color:var(--text-muted);margin-top:20px;padding:12px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border);"></div>
+        <p id="pi-ptxt" class="pi-muted" style="margin:8px 0 0;">0 / ${indices.length}</p>
       </div>
-    </div>`;
+      <div id="pi-plog" style="text-align:left;max-height:200px;overflow-y:auto;font-size:0.75rem;
+        color:var(--text-muted);margin-top:20px;padding:12px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border);"></div>
+    </div>
+  </div>`;
 
-  const bar = body.querySelector('#pi-prog-bar');
-  const txt = body.querySelector('#pi-prog-text');
-  const log = body.querySelector('#pi-prog-log');
+  const bar = body.querySelector('#pi-pbar');
+  const txt = body.querySelector('#pi-ptxt');
+  const log = body.querySelector('#pi-plog');
   let success = 0, errors = 0;
-  const errDetails = [];
+  const errList = [];
 
   for (let x = 0; x < indices.length; x++) {
     const t = wiz.tasks[indices[x]];
     try {
-      const data = buildTaskPayload(t);
-      await createTask(data);
+      await createTask(buildPayload(t));
       success++;
       log.innerHTML += `<div style="color:#16A34A;">✓ ${esc(t.title)}</div>`;
     } catch (err) {
       errors++;
-      errDetails.push({ title: t.title, error: err.message });
+      errList.push({ title: t.title, error: err.message });
       log.innerHTML += `<div style="color:#EF4444;">✗ ${esc(t.title)}: ${esc(err.message)}</div>`;
     }
-    const pct = Math.round(((x + 1) / indices.length) * 100);
-    bar.style.width = pct + '%';
+    bar.style.width = Math.round(((x + 1) / indices.length) * 100) + '%';
     txt.textContent = `${x + 1} / ${indices.length}`;
     log.scrollTop = log.scrollHeight;
     if ((x + 1) % 10 === 0) await sleep(50);
   }
 
-  wiz.importResults = { success, errors, errDetails, total: indices.length };
+  wiz.importResults = { success, errors, errList, total: indices.length };
   body.innerHTML = renderImportResults();
   updateFooter();
 }
 
-function buildTaskPayload(t) {
+function buildPayload(t) {
   const tags = [];
   if (wiz.importTag) tags.push(wiz.importTag);
-  if (t.bucket && wiz.bucketMap[t.bucket] === 'tag') tags.push(`planner:${t.bucket}`);
+
+  // Bucket → tag or sector
+  const bMap = wiz.bucketMap[t.bucket];
+  let sector = null;
+  if (bMap?.action === 'sector' && bMap.sector) {
+    sector = bMap.sector;
+  } else if (bMap?.action === 'tag' && t.bucket) {
+    tags.push(`planner:${t.bucket}`);
+  }
+
+  // Labels → tags
   t.labels.forEach(l => tags.push(l));
   if (t.isRecurring) tags.push('recorrente-planner');
 
+  // Assignees
   const assignees = [];
   let hasUnresolved = false;
   t.assigneeNames.forEach(name => {
@@ -810,20 +977,21 @@ function buildTaskPayload(t) {
   });
   if (hasUnresolved) tags.push('planner-sem-responsavel');
 
+  // Subtasks
   const subtasks = t.checklistItems.map((title, i) => {
-    const doneMatch = (t.checklistDone || '').match(/^(\d+)/);
-    const doneCount = doneMatch ? parseInt(doneMatch[1]) : 0;
-    return { title, done: i < doneCount };
+    const dm = (t.checklistDone || '').match(/^(\d+)/);
+    return { title, done: i < (dm ? parseInt(dm[1]) : 0) };
   });
 
   let desc = t.description;
-  if (t.plannerId) { desc += (desc ? '\n\n' : '') + `[Importado do Planner — ID: ${t.plannerId}]`; }
+  if (t.plannerId) desc += (desc ? '\n\n' : '') + `[Importado do Planner — ID: ${t.plannerId}]`;
 
   return {
     title: t.title || 'Sem título',
     description: desc,
     status: t.status,
     priority: t.priority,
+    sector,
     assignees,
     tags,
     startDate: parseDate(t.startDate),
@@ -840,38 +1008,36 @@ function buildTaskPayload(t) {
 
 function renderImportResults() {
   const r = wiz.importResults; if (!r) return '';
-  return `
-    <div class="pi-wizard">
-      ${stepIndicator(5)}
-      <div class="pi-step-body" style="text-align:center;padding:30px 20px;">
-        <div style="font-size:4rem;margin-bottom:16px;">${r.errors ? '⚠️' : '🎉'}</div>
-        <h3 style="margin:0 0 8px;">Importação concluída!</h3>
-        <div style="display:flex;gap:16px;justify-content:center;margin:20px 0;">
-          <div style="padding:14px 24px;border-radius:10px;background:#F0FDF4;border:1px solid #BBF7D0;">
-            <div style="font-size:1.75rem;font-weight:700;color:#16A34A;">${r.success}</div>
-            <div style="font-size:0.8125rem;color:#16A34A;">Importadas</div>
-          </div>
-          ${r.errors ? `<div style="padding:14px 24px;border-radius:10px;background:#FEF2F2;border:1px solid #FECACA;">
-            <div style="font-size:1.75rem;font-weight:700;color:#EF4444;">${r.errors}</div>
-            <div style="font-size:0.8125rem;color:#EF4444;">Com erro</div>
-          </div>` : ''}
+  return `<div class="pi-wiz">${stepBar(5)}
+    <div class="pi-body" style="text-align:center;padding:30px 20px;">
+      <div style="font-size:4rem;margin-bottom:16px;">${r.errors ? '⚠️' : '🎉'}</div>
+      <h3 style="margin:0 0 8px;">Importação concluída!</h3>
+      <div style="display:flex;gap:16px;justify-content:center;margin:20px 0;">
+        <div style="padding:14px 24px;border-radius:10px;background:#F0FDF4;border:1px solid #BBF7D0;">
+          <div style="font-size:1.75rem;font-weight:700;color:#16A34A;">${r.success}</div>
+          <div style="font-size:0.8125rem;color:#16A34A;">Importadas</div>
         </div>
-        ${r.errors && r.errDetails.length ? `<div style="text-align:left;max-height:200px;overflow-y:auto;font-size:0.75rem;
-          padding:12px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border);margin-top:12px;">
-          ${r.errDetails.map(e => `<div style="color:#EF4444;margin-bottom:4px;">✗ <strong>${esc(e.title)}</strong>: ${esc(e.error)}</div>`).join('')}
+        ${r.errors ? `<div style="padding:14px 24px;border-radius:10px;background:#FEF2F2;border:1px solid #FECACA;">
+          <div style="font-size:1.75rem;font-weight:700;color:#EF4444;">${r.errors}</div>
+          <div style="font-size:0.8125rem;color:#EF4444;">Com erro</div>
         </div>` : ''}
-        <p style="color:var(--text-muted);font-size:0.8125rem;margin-top:20px;">
-          ${wiz.importTag ? `Filtre por <code style="background:#EFF6FF;padding:2px 6px;border-radius:4px;">${esc(wiz.importTag)}</code> para ver todas.` : ''}
-        </p>
       </div>
-    </div>`;
+      ${r.errors && r.errList.length ? `<div style="text-align:left;max-height:200px;overflow-y:auto;font-size:0.75rem;
+        padding:12px;background:var(--bg-surface);border-radius:8px;border:1px solid var(--border);margin-top:12px;">
+        ${r.errList.map(e => `<div style="color:#EF4444;margin-bottom:4px;">✗ <strong>${esc(e.title)}</strong>: ${esc(e.error)}</div>`).join('')}
+      </div>` : ''}
+      <p class="pi-muted" style="margin-top:20px;">
+        ${wiz.importTag ? `Filtre por <code style="background:#EFF6FF;padding:2px 6px;border-radius:4px;">${esc(wiz.importTag)}</code> para ver todas as tarefas importadas.` : ''}
+      </p>
+    </div>
+  </div>`;
 }
 
 /* ═══════════════════════════════════════════════════════════
    Navigation & Footer
    ═══════════════════════════════════════════════════════════ */
-function stepIndicator(cur) {
-  const steps = [{n:1,l:'Upload'},{n:2,l:'Campos'},{n:3,l:'Usuários'},{n:4,l:'Buckets'},{n:5,l:'Revisar'}];
+function stepBar(cur) {
+  const steps = [{ n: 1, l: 'Upload' }, { n: 2, l: 'Campos' }, { n: 3, l: 'Pessoas' }, { n: 4, l: 'Setores' }, { n: 5, l: 'Importar' }];
   return `<div style="display:flex;gap:4px;margin-bottom:24px;justify-content:center;">
     ${steps.map(s => {
       const act = s.n === cur, done = s.n < cur;
@@ -882,57 +1048,56 @@ function stepIndicator(cur) {
           display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;">
           ${done ? '✓' : s.n}</div>
         <span style="font-size:0.75rem;font-weight:600;color:${act ? 'var(--text-primary)' : 'var(--text-muted)'};
-          ${s.n<5?'margin-right:12px;':''}">${s.l}</span>
-        ${s.n<5 ? '<div style="width:24px;height:2px;background:var(--border,#e5e7eb);margin-right:4px;"></div>' : ''}
+          ${s.n < 5 ? 'margin-right:12px;' : ''}">${s.l}</span>
+        ${s.n < 5 ? '<div style="width:24px;height:2px;background:var(--border,#e5e7eb);margin-right:4px;"></div>' : ''}
       </div>`;
     }).join('')}
   </div>`;
 }
 
 function buildFooter() {
-  const step = wiz.step;
+  const { step } = wiz;
   const hasData = wiz.rawRows.length > 0;
-  const isRes = !!wiz.importResults;
+  if (wiz.importResults) return [{ label: 'Fechar', class: 'btn-primary', closeOnClick: true, onClick: () => {} }];
   const btns = [];
-
-  if (isRes) return [{ label: 'Fechar', class: 'btn-primary', closeOnClick: true, onClick: () => {} }];
-
   if (step > 1) btns.push({ label: '← Voltar', class: 'btn-secondary', closeOnClick: false, onClick: () => goToStep(step - 1) });
-
   if (step < 5) btns.push({
-    label: 'Avançar →',
-    class: 'btn-primary' + (!hasData && step === 1 ? ' disabled' : ''),
-    closeOnClick: false,
-    onClick: () => { if (!hasData && step === 1) { toast.warning('Selecione um arquivo.'); return; } goToStep(step + 1); },
+    label: 'Avançar →', class: 'btn-primary' + (!hasData && step === 1 ? ' disabled' : ''),
+    closeOnClick: false, onClick: () => { if (!hasData && step === 1) { toast.warning('Selecione um arquivo.'); return; } goToStep(step + 1); },
   });
-
-  if (step === 5 && !isRes) btns.push({
-    label: `Importar ${wiz.selectedRows.size} tarefas`,
-    class: 'btn-primary',
-    closeOnClick: false,
-    onClick: () => executeImport(),
+  if (step === 5) btns.push({
+    label: `Importar ${wiz.selectedRows.size} tarefas`, class: 'btn-primary',
+    closeOnClick: false, onClick: () => executeImport(),
   });
-
   return btns;
 }
 
 function updateFooter() {
   const el = wiz.modalRef?.getElement(); if (!el) return;
-  const footerEl = el.querySelector('.modal-footer'); if (!footerEl) return;
+  const f = el.querySelector('.modal-footer'); if (!f) return;
   const btns = buildFooter();
-  footerEl.innerHTML = btns.map((b, i) => `<button class="btn ${b.class||''}" data-fi="${i}">${b.label}</button>`).join('');
-  footerEl.querySelectorAll('button').forEach(btn => {
+  f.innerHTML = btns.map((b, i) => `<button class="btn ${b.class || ''}" data-fi="${i}">${b.label}</button>`).join('');
+  f.querySelectorAll('button').forEach(btn => {
     const cfg = btns[parseInt(btn.dataset.fi)];
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', async e => {
       if (cfg.onClick) await cfg.onClick(e, { close: () => wiz.modalRef?.close() });
       if (cfg.closeOnClick) wiz.modalRef?.close();
     });
   });
 }
 
-function goToStep(step) {
+async function goToStep(step) {
   wiz.step = step;
   const body = wiz.modalRef?.getBody(); if (!body) return;
+
+  // Step 3 needs to load users first
+  if (step === 3) {
+    body.innerHTML = `<div class="pi-wiz">${stepBar(3)}<div class="pi-body" style="text-align:center;padding:40px;">
+      <p class="pi-muted">Carregando usuários do sistema...</p></div></div>`;
+    await loadSystemUsers();
+    autoMatchUsers();
+  }
+
   switch (step) {
     case 1: body.innerHTML = renderStep1(); attachStep1Events(); break;
     case 2: body.innerHTML = renderStep2(); break;
@@ -945,93 +1110,72 @@ function goToStep(step) {
 
 /* ─── Utilities ──────────────────────────────────────────── */
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-function parseDate(v) {
-  if (!v) return null;
-  if (v instanceof Date && !isNaN(v)) return v;
-  const d = new Date(v); return isNaN(d.getTime()) ? null : d;
-}
-function fmtDate(v) {
-  const d = v instanceof Date ? v : new Date(v);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' });
-}
-function toISODate(v) {
-  const d = v instanceof Date ? v : new Date(v);
-  if (isNaN(d.getTime())) return '';
-  return d.toISOString().slice(0, 10);
-}
+function parseDate(v) { if (!v) return null; const d = v instanceof Date ? v : new Date(v); return isNaN(d.getTime()) ? null : d; }
+function fmtDate(v) { const d = v instanceof Date ? v : new Date(v); return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }); }
+function toISO(v) { const d = v instanceof Date ? v : new Date(v); return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10); }
 function loadScript(src) {
   return new Promise((res, rej) => {
     if (document.querySelector(`script[src="${src}"]`)) return res();
-    const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej;
-    document.head.appendChild(s);
+    const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s);
   });
 }
 
-/* ─── Styles ─────────────────────────────────────────────── */
-(function injectStyles() {
-  if (document.getElementById('pi-wiz-css')) return;
+/* ─── CSS ────────────────────────────────────────────────── */
+(function injectCSS() {
+  if (document.getElementById('pi-css')) return;
   const s = document.createElement('style');
-  s.id = 'pi-wiz-css';
+  s.id = 'pi-css';
   s.textContent = `
-    .pi-wizard { max-width:100%; }
-    .pi-step-body { min-height:200px; }
+    .pi-wiz { max-width:100%; }
+    .pi-body { min-height:200px; }
+    .pi-muted { color:var(--text-muted); font-size:0.8125rem; }
+
+    .pi-dropzone { border:2px dashed var(--border,#e5e7eb); border-radius:12px; padding:48px 24px;
+      text-align:center; cursor:pointer; transition:all 0.2s; background:var(--bg-surface,#f9fafb); }
+    .pi-dropzone:hover { border-color:var(--brand-blue,#3B82F6); }
+
+    .pi-infobox { padding:12px 16px; background:var(--bg-surface); border-radius:8px; border:1px solid var(--border); }
 
     .pi-table { width:100%; border-collapse:collapse; font-size:0.8125rem; }
     .pi-table th { padding:8px 10px; text-align:left; white-space:nowrap; background:var(--bg-surface);
-      border-bottom:2px solid var(--border); font-weight:700; font-size:0.75rem;
+      border-bottom:2px solid var(--border); font-weight:700; font-size:0.7rem;
       text-transform:uppercase; letter-spacing:0.03em; color:var(--text-muted); }
     .pi-table td { padding:7px 10px; border-bottom:1px solid var(--border,#f3f4f6); vertical-align:middle; }
     .pi-table tbody tr:hover { background:var(--bg-surface,#f9fafb); }
 
-    .pi-type-badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:0.6875rem;
-      font-weight:600; background:color-mix(in srgb, var(--tc) 12%, transparent);
-      color:var(--tc); border:1px solid color-mix(in srgb, var(--tc) 25%, transparent); }
+    .pi-stat-card { padding:8px 16px; border-radius:8px; font-size:0.8125rem; border:1px solid; }
 
-    .pi-badge-exact, .pi-badge-convert, .pi-badge-info {
-      display:inline-block; padding:1px 8px; border-radius:999px; font-size:0.6875rem; font-weight:600; margin:0 2px; }
-    .pi-badge-exact   { background:#F0FDF4; color:#16A34A; border:1px solid #BBF7D0; }
-    .pi-badge-convert { background:#FEF3C7; color:#D97706; border:1px solid #FDE68A; }
-    .pi-badge-info    { background:#F3F4F6; color:#6B7280; border:1px solid #E5E7EB; }
+    .pi-dot { display:inline-flex; align-items:center; justify-content:center;
+      width:24px; height:24px; border-radius:50%; font-size:0.75rem; font-weight:700; }
 
-    .pi-stat-card { padding:8px 16px; border-radius:8px; font-size:0.8125rem;
-      background:var(--bg); border:1px solid var(--bc); color:var(--tc); }
-
-    .pi-match-dot { display:inline-flex; align-items:center; justify-content:center;
-      width:24px; height:24px; border-radius:50%; font-size:0.75rem; font-weight:700;
-      background:color-mix(in srgb, var(--c) 12%, transparent); color:var(--c); }
-
-    .pi-note { margin-top:16px; padding:12px 16px; background:var(--bg-surface); border-radius:8px;
+    .pi-note { padding:12px 16px; background:var(--bg-surface); border-radius:8px;
       border:1px solid var(--border); font-size:0.8125rem; }
     .pi-note code { background:#FEF3C7; padding:1px 6px; border-radius:4px; font-size:0.75rem; }
 
-    .pi-user-chip { display:inline-block; padding:1px 7px; border-radius:999px; font-size:0.6875rem;
-      font-weight:600; background:color-mix(in srgb, var(--chip-c) 10%, transparent);
-      color:var(--chip-c); border:1px solid color-mix(in srgb, var(--chip-c) 20%, transparent);
-      margin:1px 2px; white-space:nowrap; }
+    .pi-chip { display:inline-block; padding:1px 7px; border-radius:999px; font-size:0.6875rem;
+      font-weight:600; margin:1px 2px; white-space:nowrap;
+      background:color-mix(in srgb, var(--cc) 10%, transparent);
+      color:var(--cc); border:1px solid color-mix(in srgb, var(--cc) 20%, transparent); }
 
-    /* Inline edit fields */
-    .pi-inline-input { background:transparent; border:1px solid transparent; border-radius:4px;
-      padding:3px 6px; font-size:0.75rem; color:var(--text-primary);
-      transition:border-color 0.15s; outline:none; }
-    .pi-inline-input:hover { border-color:var(--border); }
-    .pi-inline-input:focus { border-color:var(--brand-blue,#3B82F6); background:var(--bg-card,#fff); }
+    .pi-iinput { background:transparent; border:1px solid transparent; border-radius:4px;
+      padding:3px 6px; font-size:0.75rem; color:var(--text-primary); transition:border-color 0.15s; outline:none; }
+    .pi-iinput:hover { border-color:var(--border); }
+    .pi-iinput:focus { border-color:var(--brand-blue,#3B82F6); background:var(--bg-card,#fff); }
 
-    .pi-inline-select { background:transparent; border:1px solid transparent; border-radius:4px;
+    .pi-isel { background:transparent; border:1px solid transparent; border-radius:4px;
       padding:3px 4px; font-size:0.75rem; cursor:pointer; outline:none;
       transition:border-color 0.15s; -webkit-appearance:none; appearance:none; }
-    .pi-inline-select:hover { border-color:var(--border); }
-    .pi-inline-select:focus { border-color:var(--brand-blue,#3B82F6); }
+    .pi-isel:hover { border-color:var(--border); }
+    .pi-isel:focus { border-color:var(--brand-blue,#3B82F6); }
 
-    .pi-edit-table tbody tr { transition:opacity 0.15s; }
     .pi-erow td { padding:5px 8px !important; }
-
+    .pi-erow { transition:opacity 0.15s; }
     .pi-qsel { padding:3px 10px !important; font-size:0.75rem !important; }
     .btn.disabled { opacity:0.5; pointer-events:none; }
-    .text-muted { color:var(--text-muted); }
 
     @media (max-width:768px) {
-      .pi-edit-table { font-size:0.7rem; }
-      .pi-inline-input, .pi-inline-select { font-size:0.7rem; }
+      .pi-etable { font-size:0.7rem; }
+      .pi-iinput, .pi-isel { font-size:0.7rem; }
     }
   `;
   document.head.appendChild(s);
