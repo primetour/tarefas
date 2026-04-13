@@ -957,11 +957,12 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
     fullUserPrompt = `Histórico:\n${recentHistory.join('\n')}\n\nUsuário: ${userMessage}`;
   }
 
-  const systemPrompt = systemParts.join('\n');
+  // Se opts.systemPrompt foi fornecido, usa ele diretamente (sem actions/hints do módulo)
+  const systemPrompt = opts.systemPrompt || systemParts.join('\n');
   const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.gemini;
   const model     = config?.defaultModel || defaults.model;
   // Usar maxTokens configurado, com mínimo razoável de 2048 (antes era 4096 — desperdiçava tokens)
-  const maxTokens = config?.defaultMaxTokens || defaults.maxTokens || 2048;
+  const maxTokens = opts.maxTokens || config?.defaultMaxTokens || defaults.maxTokens || 2048;
 
   let result;
   switch (provider) {

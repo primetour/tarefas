@@ -449,6 +449,7 @@ RESPONDA EXCLUSIVAMENTE com um JSON válido (sem markdown, sem comentários) no 
       result = await chatWithAI(userPrompt, {}, {
         moduleId: 'roteiros',
         systemPrompt,
+        maxTokens: 8192,
       });
     }
   } catch (e) {
