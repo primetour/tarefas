@@ -87,6 +87,43 @@ class Store {
     });
   }
 
+  // ─── Cache com TTL ────────────────────────────────────────
+  _cache = {};  // { key: { data, timestamp } }
+
+  /**
+   * Retorna dados cacheados se ainda válidos (dentro do TTL).
+   * @param {string} key - chave do cache
+   * @param {number} ttlMs - tempo de vida em ms (default 5 minutos)
+   * @returns {any|null} dados cacheados ou null se expirado/inexistente
+   */
+  getCached(key, ttlMs = 300000) {
+    const entry = this._cache[key];
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > ttlMs) {
+      delete this._cache[key];
+      return null;
+    }
+    return entry.data;
+  }
+
+  /**
+   * Salva dados no cache com timestamp.
+   * @param {string} key
+   * @param {any} data
+   */
+  setCache(key, data) {
+    this._cache[key] = { data, timestamp: Date.now() };
+  }
+
+  /** Invalida uma chave específica do cache */
+  invalidateCache(key) {
+    if (key) {
+      delete this._cache[key];
+    } else {
+      this._cache = {};
+    }
+  }
+
   // ─── RBAC: carregar permissões do usuário ─────────────────
   loadPermissions(roleDoc) {
     if (!roleDoc) {
