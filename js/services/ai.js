@@ -29,6 +29,7 @@ export const MODULE_REGISTRY = {
   'landing-pages':    { label: 'Landing Pages',       icon: '◱',  contextFields: ['page','content','audience','cta'] },
   'arts-editor':      { label: 'Editor de Artes',     icon: '▣',  contextFields: ['design','template','text','brand'] },
   'roteiros':         { label: 'Roteiros de Viagem',  icon: '✈',  contextFields: ['destination','clientProfile','dayNumber','narrative','hotels','pricing','portalTips'] },
+  'content-calendar':  { label: 'Calendário de Conteúdo', icon: '📱', contextFields: ['slot','platform','account','brief','performance','schedule','contentType'] },
   'ai-automations':   { label: 'Automações IA',       icon: '⚡', contextFields: ['automationName','type','frequency','status','lastRun'] },
   'sectors':          { label: 'Setores e Núcleos',   icon: '◈',  contextFields: ['sector','nucleo','members'] },
   'workspaces':       { label: 'Workspaces',          icon: '▤',  contextFields: ['name','sector','members','archived'] },
@@ -720,6 +721,29 @@ export async function runSkill(skillId, context = {}) {
   const skill  = await getSkill(skillId);
   if (!skill) throw new Error('Skill não encontrada.');
 
+  // ── LGPD: verificar consentimento e anonimizar PII ──
+  let _piiMapping = null;
+  let _piiAnonymized = false;
+  let _consentVersion = null;
+  try {
+    const { checkConsent, shouldAnonymize, anonymizeContext, isProviderAllowed, getPreferredProvider }
+      = await import('./aiDataGuard.js');
+    const consent = await checkConsent();
+    if (!consent.consented) throw new Error('AI_CONSENT_REQUIRED');
+    _consentVersion = consent.version;
+
+    // Verificar se deve anonimizar para este módulo
+    if (await shouldAnonymize(skill.module)) {
+      const anon = anonymizeContext(context, skill.module);
+      context = anon.anonymized;
+      _piiMapping = anon.mapping;
+      _piiAnonymized = Object.keys(anon.mapping).length > 0;
+    }
+  } catch (e) {
+    if (e.message === 'AI_CONSENT_REQUIRED') throw e;
+    /* aiDataGuard indisponível — continuar sem proteção */
+  }
+
   // Montar o prompt do usuário com variáveis do contexto
   let userPrompt = skill.userPromptTemplate || '';
   for (const [key, val] of Object.entries(context)) {
@@ -795,11 +819,24 @@ export async function runSkill(skillId, context = {}) {
       result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature: skill.temperature });
   }
 
-  // Log de uso (silencioso) — inclui escopo da key usada
-  logUsage(skill, { ...result, provider, keyScope: resolved.resolvedFrom, keyScopeLabel: resolved.label }).catch(() => {});
+  // ── LGPD: restaurar PII na resposta ──
+  let finalText = result.text;
+  if (_piiMapping && Object.keys(_piiMapping).length) {
+    try {
+      const { restoreText } = await import('./aiDataGuard.js');
+      finalText = restoreText(result.text, _piiMapping);
+    } catch { /* fallback: texto sem restauração */ }
+  }
+
+  // Log de uso (silencioso) — inclui escopo da key usada + LGPD metadata
+  logUsage(skill, {
+    ...result, provider,
+    keyScope: resolved.resolvedFrom, keyScopeLabel: resolved.label,
+    piiAnonymized: _piiAnonymized, consentVersion: _consentVersion,
+  }).catch(() => {});
 
   return {
-    text:         result.text,
+    text:         finalText,
     model:        result.model,
     provider,
     inputTokens:  result.inputTokens,
@@ -822,6 +859,39 @@ export async function runSkill(skillId, context = {}) {
 export async function chatWithAI(userMessage, context = {}, opts = {}) {
   let config = await getAIConfig() || {};
   const provider = config?.provider || 'gemini';
+
+  // ── LGPD: verificar consentimento e anonimizar PII ──
+  let _chatPiiMapping = null;
+  let _chatPiiAnonymized = false;
+  let _chatConsentVersion = null;
+  try {
+    const { checkConsent, shouldAnonymize, anonymizeContext, anonymizeText, isProviderAllowed }
+      = await import('./aiDataGuard.js');
+    const consent = await checkConsent();
+    if (!consent.consented) throw new Error('AI_CONSENT_REQUIRED');
+    _chatConsentVersion = consent.version;
+
+    // Verificar provider
+    if (!(await isProviderAllowed(provider))) {
+      return { text: `Provider "${provider}" não autorizado pela política de privacidade.`, model: 'none', provider, inputTokens: 0, outputTokens: 0, isMock: true };
+    }
+
+    // Anonimizar contexto e mensagem do usuário
+    const moduleId = opts.moduleId || 'general';
+    if (await shouldAnonymize(moduleId)) {
+      const anonCtx = anonymizeContext(context, moduleId);
+      context = anonCtx.anonymized;
+      _chatPiiMapping = { ...anonCtx.mapping };
+      // Anonimizar a própria mensagem do user
+      const anonMsg = anonymizeText(userMessage);
+      userMessage = anonMsg.anonymized;
+      Object.assign(_chatPiiMapping, anonMsg.mapping);
+      _chatPiiAnonymized = Object.keys(_chatPiiMapping).length > 0;
+    }
+  } catch (e) {
+    if (e.message === 'AI_CONSENT_REQUIRED') throw e;
+    /* aiDataGuard indisponível — continuar sem proteção */
+  }
 
   const resolved = await resolveApiKey(provider);
   const apiKey = resolved.apiKey;
@@ -914,10 +984,23 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
       result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
   }
 
-  // Log silencioso
-  logUsage({ id: 'chat', name: 'Chat Livre', module: opts.moduleId || 'general' }, { ...result, provider, keyScope: resolved.resolvedFrom, keyScopeLabel: resolved.label }).catch(() => {});
+  // ── LGPD: restaurar PII na resposta ──
+  let chatFinalText = result.text;
+  if (_chatPiiMapping && Object.keys(_chatPiiMapping).length) {
+    try {
+      const { restoreText } = await import('./aiDataGuard.js');
+      chatFinalText = restoreText(result.text, _chatPiiMapping);
+    } catch { /* fallback */ }
+  }
 
-  return { text: result.text, model: result.model, provider, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
+  // Log silencioso + LGPD metadata
+  logUsage({ id: 'chat', name: 'Chat Livre', module: opts.moduleId || 'general' }, {
+    ...result, provider,
+    keyScope: resolved.resolvedFrom, keyScopeLabel: resolved.label,
+    piiAnonymized: _chatPiiAnonymized, consentVersion: _chatConsentVersion,
+  }).catch(() => {});
+
+  return { text: chatFinalText, model: result.model, provider, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
 }
 
 /* ─── Provider: Anthropic (Claude) ───────────────────────── */
@@ -1246,16 +1329,19 @@ function mockResponse(skill, prompt) {
 async function logUsage(skill, result) {
   const user = store.get('currentUser');
   await addDoc(collection(db, 'ai_usage_logs'), {
-    skillId:      skill.id,
-    skillName:    skill.name,
-    module:       skill.module,
-    provider:     result.provider || 'anthropic',
-    model:        result.model || '',
-    inputTokens:  result.inputTokens || 0,
-    outputTokens: result.outputTokens || 0,
-    userId:       user?.uid || null,
-    keyScope:     result.keyScope || 'global',
-    keyScopeLabel: result.keyScopeLabel || 'Global',
-    timestamp:    serverTimestamp(),
+    skillId:        skill.id,
+    skillName:      skill.name,
+    module:         skill.module,
+    provider:       result.provider || 'anthropic',
+    model:          result.model || '',
+    inputTokens:    result.inputTokens || 0,
+    outputTokens:   result.outputTokens || 0,
+    userId:         user?.uid || null,
+    keyScope:       result.keyScope || 'global',
+    keyScopeLabel:  result.keyScopeLabel || 'Global',
+    // LGPD metadata
+    piiAnonymized:  result.piiAnonymized || false,
+    consentVersion: result.consentVersion || null,
+    timestamp:      serverTimestamp(),
   });
 }

@@ -425,3 +425,130 @@ export async function acceptTerms(termsId) {
     userId: uid(), termsId, acceptedAt: serverTimestamp(), userAgent: navigator.userAgent,
   });
 }
+
+/* ─── IA: Sugerir atualização para segmento vencido ──────── */
+
+const AI_TRAVEL_SITES = ['tripadvisor.com', 'timeout.com', 'lonelyplanet.com', 'viator.com', 'thefork.com'];
+
+/**
+ * Usa IA para sugerir conteúdo atualizado para um segmento vencido.
+ * @param {string} tipId — ID do documento portal_tips
+ * @param {string} segmentKey — chave do segmento (ex: 'restaurantes')
+ * @returns {{ suggestion: string, sources: Array, model: string, provider: string } | null}
+ */
+export async function suggestExpiredUpdate(tipId, segmentKey) {
+  // 1. Carregar dados do tip
+  const tipDoc = await getDoc(doc(db, 'portal_tips', tipId));
+  if (!tipDoc.exists()) throw new Error('Dica não encontrada.');
+  const tip = tipDoc.data();
+
+  const segDef = SEGMENTS.find(s => s.key === segmentKey);
+  if (!segDef) throw new Error('Segmento inválido.');
+
+  const segData = tip.segments?.[segmentKey];
+  if (!segData) throw new Error('Segmento sem dados.');
+
+  // Serializar conteúdo do segmento para contexto
+  let oldContent = '';
+  if (segDef.mode === 'special_info' && segData.info) {
+    oldContent = Object.entries(segData.info)
+      .filter(([, v]) => v)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n');
+  } else if (segData.items?.length) {
+    oldContent = segData.items.slice(0, 15).map(item => {
+      let line = item.title || item.name || '';
+      if (item.category) line = `[${item.category}] ${line}`;
+      if (item.description) line += ` — ${item.description.substring(0, 120)}`;
+      if (item.address) line += ` (${item.address})`;
+      return line;
+    }).join('\n');
+  }
+  if (segData.dica) oldContent += `\nDica: ${segData.dica}`;
+  if (!oldContent.trim()) oldContent = '(sem conteúdo)';
+
+  const destinationName = `${tip.city || ''}, ${tip.country || ''}`.replace(/^,\s*|,\s*$/g, '');
+
+  // 2. Buscar dados frescos na web
+  let webResults = [];
+  let webText = '';
+  try {
+    const { default: searchWebFromActions } = await import('./aiActions.js').catch(() => ({}));
+    // Tentar buscar via a função de AI actions ou diretamente
+    const { getAIConfig } = await import('./ai.js');
+    const cfg = await getAIConfig() || {};
+
+    if (cfg.serperApiKey) {
+      const searchQuery = `${destinationName} ${segDef.label} ${new Date().getFullYear()}`;
+      const siteFilter = AI_TRAVEL_SITES.map(s => `site:${s}`).join(' OR ');
+      const resp = await fetch('https://google.serper.dev/search', {
+        method: 'POST',
+        headers: { 'X-API-KEY': cfg.serperApiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: `${searchQuery} (${siteFilter})`, gl: 'br', hl: 'pt-br', num: 8 }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        webResults = (data.organic || []).map(item => ({
+          title: item.title || '',
+          url: item.link || '',
+          snippet: (item.snippet || '').substring(0, 250),
+          source: (() => { try { return new URL(item.link).hostname.replace('www.', ''); } catch { return ''; } })(),
+        }));
+        webText = webResults.map(r => `[${r.source}] ${r.title}\n${r.snippet}`).join('\n\n');
+      }
+    }
+  } catch (e) {
+    console.warn('[Portal AI] Web search failed:', e);
+    webText = '(pesquisa web indisponível)';
+  }
+
+  // 3. Chamar IA via skill ou prompt direto
+  const { runSkill, fetchSkillsForModule, chatWithAI } = await import('./ai.js');
+
+  // Tentar encontrar skill configurada para este propósito
+  const skills = await fetchSkillsForModule('portal-tips').catch(() => []);
+  const updateSkill = skills.find(s =>
+    s.name?.toLowerCase().includes('vencid') ||
+    s.name?.toLowerCase().includes('atualizar dica') ||
+    s.name?.toLowerCase().includes('expired')
+  );
+
+  let result;
+  if (updateSkill) {
+    // Usar skill configurada pelo admin
+    result = await runSkill(updateSkill.id, {
+      destinationName,
+      segmentLabel: segDef.label,
+      oldContent: oldContent.substring(0, 3000),
+      expiryDate: segData.expiryDate || '',
+      webSearchResults: webText.substring(0, 4000),
+    });
+  } else {
+    // Fallback: usar chatWithAI com prompt inline
+    const prompt = `Atualize o conteúdo vencido do Portal de Dicas de viagem.
+
+Destino: ${destinationName}
+Segmento: ${segDef.label}
+
+CONTEÚDO ATUAL (vencido em ${segData.expiryDate || 'data indefinida'}):
+${oldContent.substring(0, 3000)}
+
+PESQUISA WEB RECENTE:
+${webText.substring(0, 4000) || '(sem resultados)'}
+
+Gere uma versão atualizada mantendo o mesmo formato e tom. Português BR. Seja conciso e prático.`;
+
+    result = await chatWithAI(prompt, {}, { moduleId: 'portal-tips' });
+  }
+
+  return {
+    suggestion: result.text,
+    sources: webResults.slice(0, 5),
+    model: result.model,
+    provider: result.provider,
+    segmentKey,
+    segmentLabel: segDef.label,
+    destinationName,
+  };
+}
