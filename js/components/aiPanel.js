@@ -381,12 +381,86 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
   const fileInput      = document.getElementById(`${panelId}-file-input`);
   const attachPreview  = document.getElementById(`${panelId}-attach-preview`);
 
+  // ── LGPD: consent check state ──
+  let _consentChecked = false;
+  let _consentGranted = false;
+
+  async function ensureAiConsent() {
+    if (_consentChecked && _consentGranted) return true;
+    try {
+      const { checkConsent, acceptAiConsent, getPrivacyConfig } = await import('../services/aiDataGuard.js');
+      const consent = await checkConsent();
+      if (consent.consented) {
+        _consentChecked = true;
+        _consentGranted = true;
+        return true;
+      }
+      // Mostrar banner de consentimento
+      const config = await getPrivacyConfig();
+      return new Promise(resolve => {
+        const consentHtml = `
+          <div class="ai-consent-banner" style="padding:16px;text-align:center;">
+            <div style="font-size:1.5rem;margin-bottom:8px;">🔐</div>
+            <div style="font-weight:600;font-size:0.875rem;margin-bottom:8px;color:var(--text-primary,#E8ECF1);">
+              Inteligência Artificial PRIMETOUR
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted,#5A6B7A);line-height:1.5;margin-bottom:12px;">
+              Este recurso utiliza IA de provedores externos para auxiliar no seu trabalho.
+              <br><br>
+              <span style="color:var(--brand-gold,#D4A843);">•</span> Dados pessoais são anonimizados antes do envio<br>
+              <span style="color:var(--brand-gold,#D4A843);">•</span> Nenhum dado é usado para treinamento de IA<br>
+              <span style="color:var(--brand-gold,#D4A843);">•</span> Você pode revogar a qualquer momento
+            </div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:14px;">
+              Ao continuar, você concorda com o processamento de dados via IA conforme nossa política de privacidade.
+            </div>
+            <div style="display:flex;gap:8px;justify-content:center;">
+              <button class="ai-consent-accept" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;
+                background:linear-gradient(135deg,#D4A843,#B8922F);color:#0C1926;font-weight:600;font-size:0.8125rem;font-family:inherit;">
+                Aceitar e continuar
+              </button>
+              <button class="ai-consent-info" style="padding:8px 16px;border-radius:8px;border:1px solid var(--border-subtle,#1E2D3D);
+                background:transparent;color:var(--text-muted);cursor:pointer;font-size:0.75rem;font-family:inherit;">
+                Saber mais
+              </button>
+            </div>
+          </div>`;
+        messagesEl.innerHTML = consentHtml;
+
+        messagesEl.querySelector('.ai-consent-accept')?.addEventListener('click', async () => {
+          await acceptAiConsent();
+          _consentChecked = true;
+          _consentGranted = true;
+          // Restaurar welcome message
+          messagesEl.innerHTML = `<div class="ai-msg ai-msg-assistant">
+            <div class="ai-avatar ai-avatar-bot">IA</div>
+            <div class="ai-bubble ai-bubble-bot">${welcomeHtml}</div>
+          </div>`;
+          resolve(true);
+        });
+
+        messagesEl.querySelector('.ai-consent-info')?.addEventListener('click', () => {
+          _toast('Acesse Configurações → Privacidade e IA para mais detalhes.');
+        });
+      });
+    } catch {
+      // aiDataGuard indisponível — consentimento implícito
+      _consentChecked = true;
+      _consentGranted = true;
+      return true;
+    }
+  }
+
   // ── Toggle open/close ──
   function toggleChat(open) {
     expanded = open !== undefined ? open : !expanded;
     chatWindow.style.display = expanded ? 'flex' : 'none';
     fabBtn.style.display = expanded ? 'none' : 'flex';
-    if (expanded) inputEl?.focus();
+    if (expanded) {
+      inputEl?.focus();
+      // Verificar consentimento ao abrir pela primeira vez
+      if (!_consentChecked) ensureAiConsent();
+    }
   }
   fabBtn?.addEventListener('click', () => toggleChat(true));
   closeBtn?.addEventListener('click', () => toggleChat(false));
@@ -945,7 +1019,13 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       await processAIResponse(result.text, '', getContext);
     } catch (err) {
       loadingEl.remove();
-      addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro: ${esc(err.message)}</span>`);
+      if (err.message === 'AI_CONSENT_REQUIRED') {
+        _consentChecked = false;
+        _consentGranted = false;
+        await ensureAiConsent();
+      } else {
+        addMessage('assistant', `<span style="color:var(--danger,#EF4444);">Erro: ${esc(err.message)}</span>`);
+      }
     }
 
     isProcessing = false;

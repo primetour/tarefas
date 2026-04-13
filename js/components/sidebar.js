@@ -48,6 +48,7 @@ const NAV_GROUPS = [
   {
     label: 'Serviços',
     items: [
+      { route: 'content-calendar',     icon: '📱', label: 'Calendário de Conteúdo', perm: 'content_calendar_view' },
       { route: 'roteiros',            icon: '✈', label: 'Roteiros de Viagem',  perm: 'roteiro_access' },
       { route: 'portal-tips',         icon: '✈', label: 'Portal de Dicas',     perm: 'portal_access'  },
       { route: 'portal-tips-list',    icon: '◈', label: 'Dicas Cadastradas',    perm: 'portal_create'  },
