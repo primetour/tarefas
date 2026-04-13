@@ -125,7 +125,7 @@
   color: var(--text-primary);
   line-height: 1;
   margin-bottom: 6px;
-  font-family: var(--font-display);
+  font-family: var(--font-ui);
 }
 .kpi-sublabel {
   font-size: 0.8125rem;
