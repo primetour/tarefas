@@ -540,21 +540,21 @@ function showFeedbackDetail(fb) {
 /* ─── Audio transcription helpers ────────────────────────── */
 
 async function transcribeWithGroq(audioBlob) {
-  const { getAIConfig, resolveApiConfig } = await import('../services/ai.js');
+  const { getAIConfig, resolveApiKey } = await import('../services/ai.js');
 
-  // Try to get Groq key from scoped configs, fallback to global
+  // Buscar API key do Groq — cascata: user → nucleo → area → global
   let groqKey = '';
   try {
-    const resolved = await resolveApiConfig();
-    const cfg = resolved?.config || {};
-    if (cfg.provider === 'groq' && cfg.apiKey) {
-      groqKey = cfg.apiKey;
-    }
+    // 1. Tentar via resolveApiKey (cascata completa)
+    const resolved = await resolveApiKey('groq');
+    groqKey = resolved?.apiKey || '';
+
+    // 2. Fallback: buscar na config global (campo groqApiKey ou apiKey se provider=groq)
     if (!groqKey) {
-      // Check global
       const globalCfg = await getAIConfig();
-      if (globalCfg?.provider === 'groq' && globalCfg?.apiKey) {
-        groqKey = globalCfg.apiKey;
+      groqKey = globalCfg?.groqApiKey || '';
+      if (!groqKey && globalCfg?.provider === 'groq') {
+        groqKey = globalCfg?.apiKey || '';
       }
     }
   } catch {}
@@ -588,11 +588,11 @@ async function transcribeWithGroq(audioBlob) {
 async function parseTranscriptWithAI(text) {
   // Use the AI service to parse the transcript into structured feedback fields
   try {
-    const { getAIConfig, resolveApiConfig } = await import('../services/ai.js');
-    const resolved = await resolveApiConfig();
-    const cfg = resolved?.config || {};
-    const apiKey = resolved?.apiKey || cfg.apiKey || '';
-    const provider = cfg.provider || 'groq';
+    const { getAIConfig } = await import('../services/ai.js');
+    const globalCfg = await getAIConfig() || {};
+    const provider = globalCfg.provider || 'groq';
+    const apiKey = globalCfg.apiKey || globalCfg[provider + 'ApiKey'] || '';
+    const cfg = globalCfg;
 
     if (!apiKey) return null;
 
