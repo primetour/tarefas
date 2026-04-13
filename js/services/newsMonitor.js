@@ -6,7 +6,7 @@ import { auditLog } from '../auth/audit.js';
 import { store } from '../store.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  query, orderBy, serverTimestamp, where,
+  query, orderBy, serverTimestamp, where, limit,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const uid = () => store.get('currentUser')?.uid;
@@ -22,7 +22,7 @@ export const NEWS_SUBCATEGORIES = [
 ];
 
 export async function fetchNews(filters = {}) {
-  let q = query(collection(db, 'news_monitor'), orderBy('publishedAt', 'desc'));
+  let q = query(collection(db, 'news_monitor'), orderBy('publishedAt', 'desc'), limit(500));
   const snap = await getDocs(q);
   let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -71,7 +71,7 @@ export async function deleteNewsItem(id) {
 export const CLIPPING_MEDIA_TYPES = ['Digital', 'Impresso', 'Televisivo'];
 
 export const CLIPPING_CONTENT_TYPES = [
-  'Negócios', 'Análises', 'Tendências', 'Novidades', 'Publieditorial', 'Eventos', 'Premiações', 'Sustentabilidade',
+  'Negócios', 'Análises', 'Tendências', 'Novidades', 'Publieditorial', 'Eventos',
 ];
 
 export const CLIPPING_SENTIMENTS = [
@@ -81,7 +81,7 @@ export const CLIPPING_SENTIMENTS = [
 ];
 
 export async function fetchClippings() {
-  const q2 = query(collection(db, 'news_clipping'), orderBy('publishedAt', 'desc'));
+  const q2 = query(collection(db, 'news_clipping'), orderBy('publishedAt', 'desc'), limit(200));
   const snap = await getDocs(q2);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
@@ -216,7 +216,7 @@ export async function fetchUrlMetadata(url) {
 }
 
 function decodeHTMLEntities(str) {
-  const el = document.createElement('textarea');
-  el.innerHTML = str;
-  return el.value;
+  if (!str) return '';
+  const doc = new DOMParser().parseFromString(str, 'text/html');
+  return doc.documentElement.textContent || '';
 }
