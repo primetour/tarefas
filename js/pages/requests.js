@@ -12,9 +12,16 @@ import {
   fetchRequests, subscribeRequests,
   updateRequestStatus, convertToTask,
   notifyRequesterRejected, deleteRequest,
-  suggestTaskFromRequest,
   REQUEST_STATUSES, REQUEST_STATUS_MAP,
 } from '../services/requests.js';
+/* suggestTaskFromRequest: lazy-loaded (may not exist in older deployments) */
+let suggestTaskFromRequest = async () => null;
+(async () => {
+  try {
+    const mod = await import('../services/requests.js');
+    if (mod.suggestTaskFromRequest) suggestTaskFromRequest = mod.suggestTaskFromRequest;
+  } catch { /* not available */ }
+})();
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
