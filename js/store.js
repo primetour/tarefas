@@ -166,6 +166,10 @@ class Store {
   canCreateRoteiro()   { return this.isMaster() || this.can('roteiro_create'); }
   canManageRoteiros()  { return this.isMaster() || this.can('roteiro_manage'); }
 
+  canViewContentCalendar()   { return this.isMaster() || this.can('content_calendar_view'); }
+  canCreateContentCalendar() { return this.isMaster() || this.can('content_calendar_create'); }
+  canManageContentCalendar() { return this.isMaster() || this.can('content_calendar_manage'); }
+
   /**
    * getVisibleSectors()
    * Returns:

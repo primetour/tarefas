@@ -60,6 +60,7 @@ import { renderAiDashboard, destroyAiDashboard } from './pages/aiDashboard.js';
 import { renderRoteiros }               from './pages/roteiros.js';
 import { renderRoteiroEditor, destroyRoteiroEditor } from './pages/roteiroEditor.js';
 import { renderRoteiroDashboard, destroyRoteiroDashboard } from './pages/roteiroDashboard.js';
+import { renderContentCalendar }         from './pages/contentCalendar.js';
 import { mountAiPanel } from './components/aiPanel.js';
 // newsMonitor carregado dinamicamente para evitar bloqueio pré-login
 
@@ -466,6 +467,7 @@ function setupRouter() {
     'cms':                  async () => { await renderCms(content); },
     'arts-editor':          async () => { await renderArtsEditor(content); },
     'news-monitor':         async () => { const { renderNewsMonitor } = await import('./pages/newsMonitor.js'); await renderNewsMonitor(content); },
+    'content-calendar':     async () => { await renderContentCalendar(content); },
     'portal-tips-list':     async () => { await renderPortalTipsList(content); },
     'portal-import-manual': async () => { await renderPortalImportManual(content); },
     'profile':      async () => { await renderProfile(content); },
@@ -568,6 +570,7 @@ function setupRouter() {
       'csat':               'csat',
       'requests':           'requests',
       'news-monitor':       'news-monitor',
+      'content-calendar':   'content-calendar',
       'nl-performance':     'content',
       'meta-performance':   'content',
       'ga-performance':     'content',
