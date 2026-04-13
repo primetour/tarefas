@@ -72,6 +72,15 @@
 .task-row.done { opacity: 0.55; }
 .task-row.done .task-row-title { text-decoration: line-through; color: var(--text-muted); }
 
+/* Drag and drop */
+.task-row[draggable="true"] { cursor: grab; }
+.task-row[draggable="true"]:active { cursor: grabbing; }
+.task-row.dragging { opacity: 0.4; cursor: grabbing; transform: rotate(1deg) scale(1.01); }
+.task-row.drag-insert-above { border-top: 2px solid var(--brand-gold) !important; }
+.task-row.drag-insert-below { border-bottom: 2px solid var(--brand-gold) !important; }
+.task-group.drag-over { background: rgba(212,168,67,0.06); border-radius: var(--radius-lg); }
+.task-group.drag-over .task-group-header { color: var(--brand-gold); }
+
 .task-check {
   width: 18px; height: 18px;
   border: 2px solid var(--border-default);
@@ -1073,3 +1082,12 @@
   .task-list-header > *:nth-child(n+4) { display: none; }
   .projects-grid { grid-template-columns: 1fr; }
 }
+
+/* Calendar drag and drop */
+[data-date].cal-drag-over {
+  background: rgba(212,168,67,0.12) !important;
+  outline: 2px dashed var(--brand-gold);
+  outline-offset: -2px;
+}
+.cal-task-pill[draggable="true"] { cursor: grab; }
+.cal-task-pill[draggable="true"]:active { cursor: grabbing; }
