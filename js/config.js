@@ -159,7 +159,3 @@ export const APP_CONFIG = {
   },
 };
 
-// Expõe o token para o modal de reset de senha
-if (typeof window !== 'undefined') {
-  window.PRIMETOUR_GH_TOKEN = APP_CONFIG.github?.token || '';
-}
