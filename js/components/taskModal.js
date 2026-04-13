@@ -19,7 +19,19 @@ import {
   renderTypeFields, collectFieldValues,
   bindDynamicFieldEvents, validateRequiredFields,
 } from './dynamicFields.js';
-import { getValidTransitions, checkSubtaskAutoAdvance } from '../services/workflowEngine.js';
+/* workflowEngine: lazy-loaded to avoid blocking pre-login */
+let _wfLoaded = false;
+let getValidTransitions = (status) => Object.keys({ not_started:1, in_progress:1, review:1, rework:1, done:1, cancelled:1 });
+let checkSubtaskAutoAdvance = () => null;
+async function _loadWorkflowEngine() {
+  if (_wfLoaded) return;
+  try {
+    const wf = await import('../services/workflowEngine.js');
+    getValidTransitions = wf.getValidTransitions;
+    checkSubtaskAutoAdvance = wf.checkSubtaskAutoAdvance;
+    _wfLoaded = true;
+  } catch { /* module not available yet */ }
+}
 import { fetchAllAbsences } from '../services/capacity.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -71,6 +83,7 @@ const ABSENCE_TYPE_LABELS = {
 };
 
 export async function openTaskModal({ taskData=null, projectId=null, status='not_started', onSave=null, typeId=null } = {}) {
+  await _loadWorkflowEngine();
   // isEdit only when taskData has a real Firestore id (not a prefill from requests portal)
   const isEdit = !!(taskData?.id);
 
