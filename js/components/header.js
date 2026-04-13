@@ -8,6 +8,7 @@ import { signOut } from '../auth/auth.js';
 import { router }  from '../router.js';
 import { toast }   from './toast.js';
 import { toggleNotificationPanel } from './notificationPanel.js';
+import { toggleHelpPanel } from './helpPanel.js';
 import {
   collection, getDocs, query, orderBy, limit, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -292,6 +293,10 @@ export class Header {
     document.addEventListener('click', () => {
       if (paletteDrop) paletteDrop.style.display = 'none';
     });
+
+    // Help button
+    const helpBtn = this.el.querySelector('#help-btn');
+    helpBtn?.addEventListener('click', () => toggleHelpPanel());
 
     // Notifications bell
     const notifBtn = this.el.querySelector('#notif-btn');
