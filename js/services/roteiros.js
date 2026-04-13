@@ -325,3 +325,204 @@ export async function fetchRoteiroStats() {
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
+
+/* ════════════════════════════════════════════════════════════
+   IA — Gerar roteiro completo a partir de prompt livre
+   ════════════════════════════════════════════════════════════ */
+
+/**
+ * Gera um roteiro completo via IA a partir de descrição em texto livre.
+ * @param {string} userPrompt - Descrição livre do roteiro desejado
+ * @returns {Promise<Object>} Objeto roteiro preenchido pela IA
+ */
+export async function generateRoteiroFromPrompt(userPrompt) {
+  if (!userPrompt?.trim()) throw new Error('Descrição do roteiro é obrigatória.');
+
+  const { chatWithAI, fetchSkillsForModule, runSkill } = await import('./ai.js');
+
+  const today = new Date().toISOString().split('T')[0];
+  const profile = store.get('userProfile');
+
+  const systemPrompt = `Você é um consultor de viagens sênior da PRIMETOUR, uma agência premium de turismo.
+Crie um roteiro de viagem COMPLETO e DETALHADO baseado na solicitação do cliente.
+
+REGRAS:
+- Gere conteúdo realista com nomes reais de hotéis, restaurantes e atrações
+- Narrativas de cada dia devem ter 100-200 palavras, imersivas, em 1ª pessoa do plural
+- Atividades com horários realistas (check-in hotel 15h, jantar 19h-20h, etc.)
+- Preços em USD salvo menção a moeda específica
+- Data de hoje: ${today}
+- Se nenhuma data for informada, use datas a partir de 30 dias de hoje
+- Preencha TODOS os campos do JSON — não deixe nenhum vazio se puder inferir
+- Inclua política de cancelamento padrão
+- Inclua informações importantes (passaporte, visto, clima, etc.) baseadas no destino
+
+RESPONDA EXCLUSIVAMENTE com um JSON válido (sem markdown, sem comentários) no formato:
+{
+  "title": "Título do roteiro",
+  "client": {
+    "name": "",
+    "email": "",
+    "phone": "",
+    "type": "couple|individual|family|group",
+    "adults": 2,
+    "children": 0,
+    "childrenAges": [],
+    "preferences": ["Gastronomia","Cultura","Aventura","Relaxamento","Compras","Natureza"],
+    "restrictions": [],
+    "economicProfile": "standard|premium|luxury",
+    "notes": ""
+  },
+  "travel": {
+    "startDate": "YYYY-MM-DD",
+    "endDate": "YYYY-MM-DD",
+    "nights": 0,
+    "destinations": [
+      { "city": "Cidade", "country": "País", "nights": 3 }
+    ]
+  },
+  "days": [
+    {
+      "dayNumber": 1,
+      "date": "YYYY-MM-DD",
+      "title": "Título do dia",
+      "city": "Cidade",
+      "narrative": "Narrativa detalhada do dia...",
+      "activities": [
+        { "time": "09:00", "description": "Descrição", "type": "passeio|refeição|transfer|livre" }
+      ],
+      "overnightCity": "Cidade"
+    }
+  ],
+  "hotels": [
+    { "city": "Cidade", "hotelName": "Nome do Hotel", "roomType": "Superior/Deluxe/Suite", "regime": "Café da manhã", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "nights": 3 }
+  ],
+  "pricing": {
+    "perPerson": null,
+    "perCouple": null,
+    "currency": "USD",
+    "validUntil": "YYYY-MM-DD",
+    "disclaimer": "Valores sujeitos a confirmação no ato da reserva.",
+    "customRows": []
+  },
+  "optionals": [
+    { "service": "Descrição", "priceAdult": null, "priceChild": null, "notes": "" }
+  ],
+  "includes": ["item1", "item2"],
+  "excludes": ["item1", "item2"],
+  "payment": {
+    "deposit": "30% no ato da reserva",
+    "installments": "Saldo em até 6x",
+    "deadline": "Até 45 dias antes do embarque",
+    "notes": ""
+  },
+  "cancellation": [
+    { "period": "Até 60 dias antes", "penalty": "Sem custo" },
+    { "period": "Entre 59 e 30 dias", "penalty": "50% do valor total" },
+    { "period": "Entre 29 e 15 dias", "penalty": "75% do valor total" },
+    { "period": "Menos de 15 dias", "penalty": "100% do valor total" }
+  ],
+  "importantInfo": {
+    "passport": "",
+    "visa": "",
+    "vaccines": "",
+    "climate": "",
+    "luggage": "",
+    "flights": "",
+    "customFields": []
+  }
+}`;
+
+  // Tentar via skill configurada, senão via chatWithAI
+  let result;
+  try {
+    const skills = await fetchSkillsForModule('roteiros').catch(() => []);
+    const createSkill = skills.find(s =>
+      s.name?.toLowerCase().includes('criar') ||
+      s.name?.toLowerCase().includes('gerar') ||
+      s.name?.toLowerCase().includes('create')
+    );
+
+    if (createSkill) {
+      result = await runSkill(createSkill.id, { userPrompt, today, consultantName: profile?.name });
+    } else {
+      result = await chatWithAI(userPrompt, {}, {
+        moduleId: 'roteiros',
+        systemPrompt,
+      });
+    }
+  } catch (e) {
+    console.error('[Roteiro IA] Erro na chamada IA:', e);
+    throw new Error('Falha ao gerar roteiro via IA: ' + (e.message || e));
+  }
+
+  // Parsear resposta JSON
+  const text = result?.text || result?.content || '';
+  try {
+    // Extrair JSON do texto (pode vir com markdown)
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('JSON não encontrado na resposta.');
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Merge com template vazio para garantir estrutura completa
+    const base = emptyRoteiro();
+    const roteiro = deepMergeRoteiro(base, parsed);
+    roteiro.aiGenerated = true;
+    roteiro.aiPrompt = userPrompt.substring(0, 500);
+
+    return roteiro;
+  } catch (e) {
+    console.error('[Roteiro IA] Erro ao parsear:', e, text.substring(0, 500));
+    throw new Error('Não foi possível interpretar a resposta da IA. Tente reformular sua descrição.');
+  }
+}
+
+/** Merge profundo: base garante estrutura, parsed sobrescreve com dados da IA */
+function deepMergeRoteiro(base, parsed) {
+  const result = { ...base };
+
+  // Campos simples
+  if (parsed.title) result.title = parsed.title;
+  if (parsed.status) result.status = parsed.status;
+
+  // Client
+  if (parsed.client && typeof parsed.client === 'object') {
+    result.client = { ...result.client, ...parsed.client };
+    result.client.childrenAges = Array.isArray(parsed.client.childrenAges) ? parsed.client.childrenAges : result.client.childrenAges;
+    result.client.preferences = Array.isArray(parsed.client.preferences) ? parsed.client.preferences : result.client.preferences;
+    result.client.restrictions = Array.isArray(parsed.client.restrictions) ? parsed.client.restrictions : result.client.restrictions;
+  }
+
+  // Travel
+  if (parsed.travel && typeof parsed.travel === 'object') {
+    result.travel = { ...result.travel, ...parsed.travel };
+    result.travel.destinations = Array.isArray(parsed.travel.destinations) ? parsed.travel.destinations : result.travel.destinations;
+  }
+
+  // Arrays diretos
+  if (Array.isArray(parsed.days) && parsed.days.length) result.days = parsed.days;
+  if (Array.isArray(parsed.hotels) && parsed.hotels.length) result.hotels = parsed.hotels;
+  if (Array.isArray(parsed.optionals) && parsed.optionals.length) result.optionals = parsed.optionals;
+  if (Array.isArray(parsed.includes) && parsed.includes.length) result.includes = parsed.includes;
+  if (Array.isArray(parsed.excludes) && parsed.excludes.length) result.excludes = parsed.excludes;
+  if (Array.isArray(parsed.cancellation) && parsed.cancellation.length) result.cancellation = parsed.cancellation;
+
+  // Pricing
+  if (parsed.pricing && typeof parsed.pricing === 'object') {
+    result.pricing = { ...result.pricing, ...parsed.pricing };
+    result.pricing.customRows = Array.isArray(parsed.pricing.customRows) ? parsed.pricing.customRows : result.pricing.customRows;
+  }
+
+  // Payment
+  if (parsed.payment && typeof parsed.payment === 'object') {
+    result.payment = { ...result.payment, ...parsed.payment };
+  }
+
+  // Important Info
+  if (parsed.importantInfo && typeof parsed.importantInfo === 'object') {
+    result.importantInfo = { ...result.importantInfo, ...parsed.importantInfo };
+    result.importantInfo.customFields = Array.isArray(parsed.importantInfo.customFields) ? parsed.importantInfo.customFields : result.importantInfo.customFields;
+  }
+
+  return result;
+}
