@@ -51,9 +51,7 @@ const NAV_GROUPS = [
       { route: 'content-calendar',     icon: '📱', label: 'Calendário de Conteúdo', perm: 'content_calendar_view' },
       { route: 'roteiros',            icon: '✈', label: 'Roteiros de Viagem',  perm: 'roteiro_access' },
       { route: 'portal-tips',         icon: '✈', label: 'Portal de Dicas',     perm: 'portal_access'  },
-      { route: 'portal-tips-list',    icon: '◈', label: 'Dicas Cadastradas',    perm: 'portal_create'  },
       { route: 'portal-images',       icon: '▨', label: 'Banco de Imagens',     perm: 'portal_manage'  },
-      { route: 'portal-import',       icon: '↑', label: 'Importar Dicas',       perm: 'portal_create'  },
       { route: 'landing-pages',       icon: '◱', label: 'Landing Pages',        perm: 'portal_manage'  },
       { route: 'cms',                 icon: '◫', label: 'CMS / Site',           perm: 'portal_manage'  },
       { route: 'arts-editor',         icon: '▣', label: 'Editor de Artes',      perm: 'portal_manage'  },
@@ -412,9 +410,20 @@ export class Sidebar {
 
   setActive(route) {
     if (!this.el) return;
+    // Mapear rotas filhas para o item pai no sidebar
+    const routeAliases = {
+      'portal-tips-list': 'portal-tips',
+      'portal-import':    'portal-tips',
+      'portal-tip-editor':'portal-tips',
+      'portal-import-manual':'portal-tips',
+    };
+    const effectiveRoute = routeAliases[route] || route;
     this.el.querySelectorAll('.nav-item').forEach(item => {
       const itemRoute = item.dataset.route;
-      item.classList.toggle('active', route === itemRoute || route.startsWith(itemRoute + '/'));
+      item.classList.toggle('active',
+        effectiveRoute === itemRoute || effectiveRoute.startsWith(itemRoute + '/') ||
+        route === itemRoute || route.startsWith(itemRoute + '/')
+      );
     });
   }
 
