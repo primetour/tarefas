@@ -111,6 +111,14 @@ function renderApp(root) {
     return;
   }
 
+  // Wizard de primeiro acesso (SSO ou criado pelo admin)
+  const profile = store.get('userProfile');
+  if (profile?.firstLogin && !store.isMaster()) {
+    root.innerHTML = '';
+    renderFirstLoginWizard(root);
+    return;
+  }
+
   // Verificar se usuário tem workspace (exceto master/system_view_all)
   if (!store.hasWorkspaceAccess() && !store.can('system_view_all')) {
     root.innerHTML = '';
@@ -168,6 +176,178 @@ function renderNoWorkspace(root) {
     const { signOut } = await import('./auth/auth.js');
     await signOut().catch(() => {});
   });
+}
+
+/* ─── Wizard de primeiro acesso ──────────────────────────── */
+async function renderFirstLoginWizard(root) {
+  const profile = store.get('userProfile');
+  const userName = profile?.name || 'Usuário';
+
+  // Carregar setores e squads disponíveis
+  const { REQUESTING_AREAS } = await import('./services/tasks.js');
+  const { fetchAllWorkspaces, addMember, loadUserWorkspaces } = await import('./services/workspaces.js');
+  const { updateUserProfile } = await import('./auth/auth.js');
+
+  let allWorkspaces = [];
+  try { allWorkspaces = await fetchAllWorkspaces(); } catch(_) {}
+  const activeWorkspaces = allWorkspaces.filter(w => !w.archived);
+
+  // Pré-preencher setor se o admin já definiu
+  let selectedSector = profile?.sector || profile?.department || '';
+  let selectedSquads = new Set();
+
+  const render = () => {
+    const sectorSquads = activeWorkspaces.filter(w => !w.sector || w.sector === selectedSector || w.multiSector);
+
+    root.innerHTML = `
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
+        background:var(--bg-dark);font-family:var(--font-ui);">
+        <div style="width:100%;max-width:520px;padding:40px 24px;">
+
+          <!-- Header -->
+          <div style="text-align:center;margin-bottom:32px;">
+            <div style="font-size:2.5rem;margin-bottom:12px;">✈</div>
+            <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);margin:0 0 8px;">
+              Bem-vindo(a), ${userName.split(' ')[0]}!
+            </h1>
+            <p style="font-size:0.9375rem;color:var(--text-secondary);line-height:1.6;margin:0;">
+              Configure seu perfil para começar a usar o Gestor de Tarefas.
+            </p>
+          </div>
+
+          <!-- Card -->
+          <div style="background:var(--bg-surface);border:1px solid var(--border-default);
+            border-radius:var(--radius-lg);padding:28px 24px;">
+
+            <!-- Passo 1: Setor -->
+            <div style="margin-bottom:24px;">
+              <label style="display:block;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+                text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">
+                1. Qual é o seu setor?
+              </label>
+              <select id="wiz-sector" style="width:100%;padding:10px 14px;background:var(--bg-elevated);
+                border:1px solid var(--border-default);border-radius:var(--radius-md);
+                color:var(--text-primary);font-size:0.9375rem;">
+                <option value="">Selecione seu setor...</option>
+                ${REQUESTING_AREAS.map(s => `<option value="${s}" ${selectedSector===s?'selected':''}>${s}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- Passo 2: Squads -->
+            <div style="margin-bottom:24px;${!selectedSector ? 'opacity:0.4;pointer-events:none;' : ''}">
+              <label style="display:block;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+                text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">
+                2. Participa de algum squad? <span style="font-weight:400;text-transform:none;">(opcional)</span>
+              </label>
+              ${sectorSquads.length ? `
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  ${sectorSquads.map(w => `
+                    <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+                      background:${selectedSquads.has(w.id) ? 'rgba(212,168,67,0.1)' : 'var(--bg-elevated)'};
+                      border:1px solid ${selectedSquads.has(w.id) ? 'var(--brand-gold)' : 'var(--border-default)'};
+                      border-radius:var(--radius-md);cursor:pointer;transition:all 0.15s;">
+                      <input type="checkbox" value="${w.id}" class="wiz-squad-check"
+                        ${selectedSquads.has(w.id) ? 'checked' : ''}
+                        style="accent-color:var(--brand-gold);width:16px;height:16px;" />
+                      <div>
+                        <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">
+                          ${w.icon || '◈'} ${w.name}
+                        </div>
+                        ${w.description ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${w.description}</div>` : ''}
+                      </div>
+                    </label>
+                  `).join('')}
+                </div>
+              ` : `
+                <p style="font-size:0.8125rem;color:var(--text-muted);padding:12px 0;">
+                  ${selectedSector ? 'Nenhum squad disponível para este setor.' : 'Selecione um setor primeiro.'}
+                </p>
+              `}
+            </div>
+
+            <!-- Botão -->
+            <button id="wiz-submit" class="btn btn-primary" style="width:100%;padding:12px;font-size:0.9375rem;"
+              ${!selectedSector ? 'disabled' : ''}>
+              Começar a usar →
+            </button>
+          </div>
+
+          <!-- Logout -->
+          <div style="text-align:center;margin-top:16px;">
+            <button id="wiz-logout" style="background:none;border:none;color:var(--text-muted);
+              font-size:0.8125rem;cursor:pointer;text-decoration:underline;">
+              Sair da conta
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // ─── Events ───
+    document.getElementById('wiz-sector')?.addEventListener('change', (e) => {
+      selectedSector = e.target.value;
+      selectedSquads.clear();
+      render();
+    });
+
+    document.querySelectorAll('.wiz-squad-check').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedSquads.add(cb.value);
+        else selectedSquads.delete(cb.value);
+        render();
+      });
+    });
+
+    document.getElementById('wiz-submit')?.addEventListener('click', async () => {
+      const btn = document.getElementById('wiz-submit');
+      btn.classList.add('loading');
+      btn.disabled = true;
+      btn.textContent = 'Configurando...';
+
+      try {
+        const uid = store.get('currentUser').uid;
+
+        // 1. Atualizar setor + firstLogin no perfil
+        await updateUserProfile(uid, {
+          sector: selectedSector,
+          department: selectedSector,
+          firstLogin: false,
+        });
+
+        // 2. Adicionar aos squads selecionados
+        for (const wsId of selectedSquads) {
+          try { await addMember(wsId, uid, { selfJoin: true }); } catch(e) {
+            console.warn('[Wizard] Erro ao adicionar ao squad:', wsId, e.message);
+          }
+        }
+
+        // 3. Recarregar workspaces e setor no store
+        store.set('userSector', selectedSector);
+        store.set('visibleSectors', [selectedSector]);
+        await loadUserWorkspaces().catch(() => {});
+
+        // 4. Atualizar perfil no store
+        const updatedProfile = { ...store.get('userProfile'), sector: selectedSector, department: selectedSector, firstLogin: false };
+        store.set('userProfile', updatedProfile);
+
+        toast.success('Configuração concluída! Bem-vindo(a) ao Gestor de Tarefas.');
+        renderApp(root);
+      } catch(err) {
+        console.error('[Wizard] Erro:', err);
+        toast.error('Erro ao configurar. Tente novamente.');
+        btn.classList.remove('loading');
+        btn.disabled = false;
+        btn.textContent = 'Começar a usar →';
+      }
+    });
+
+    document.getElementById('wiz-logout')?.addEventListener('click', async () => {
+      const { signOut } = await import('./auth/auth.js');
+      await signOut().catch(() => {});
+    });
+  };
+
+  render();
 }
 
 // ─── Monta o shell (sidebar + header + content) ───────────
