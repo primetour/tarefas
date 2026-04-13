@@ -763,7 +763,7 @@ function openEmailToTaskModal() {
   modal.open({
     title: '\ud83d\udce7 Criar Tarefa a partir de Email',
     size: 'lg',
-    body: `
+    content: `
       <div style="display:flex;flex-direction:column;gap:16px;">
         <p style="margin:0;font-size:0.8125rem;color:var(--text-muted);">
           Cole o conte\u00fado do email abaixo. A IA ir\u00e1 analisar e pr\u00e9-preencher os campos da tarefa automaticamente.
@@ -797,18 +797,19 @@ function openEmailToTaskModal() {
         </div>
       </div>
     `,
-    buttons: [
+    footer: [
       {
         label: '\u2728 Analisar com IA e criar tarefa',
         class: 'btn-primary',
         closeOnClick: false,
-        onClick: async (btn, { close }) => {
+        onClick: async (e, { close }) => {
+          const btn = e.target;
           const from    = document.getElementById('email-from')?.value?.trim() || '';
           const subject = document.getElementById('email-subject')?.value?.trim() || '';
-          const body    = document.getElementById('email-body')?.value?.trim() || '';
+          const emailBody = document.getElementById('email-body')?.value?.trim() || '';
           const statusEl = document.getElementById('email-parse-status');
 
-          if (!body && !subject) {
+          if (!emailBody && !subject) {
             toast.warning('Cole pelo menos o assunto ou corpo do email.');
             return;
           }
@@ -818,7 +819,7 @@ function openEmailToTaskModal() {
           if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Enviando para IA...'; }
 
           try {
-            const suggestion = await parseEmailToTask(from, subject, body);
+            const suggestion = await parseEmailToTask(from, subject, emailBody);
 
             if (!suggestion) {
               if (statusEl) { statusEl.textContent = 'IA n\u00e3o dispon\u00edvel. Abrindo formul\u00e1rio manual...'; }
@@ -827,7 +828,7 @@ function openEmailToTaskModal() {
                 openTaskModal({
                   taskData: {
                     title: subject || 'Tarefa de email',
-                    description: `De: ${from}\nAssunto: ${subject}\n\n${body}`,
+                    description: `De: ${from}\nAssunto: ${subject}\n\n${emailBody}`,
                   },
                   onSave: () => {},
                 });
@@ -842,7 +843,7 @@ function openEmailToTaskModal() {
                 typeId: suggestion.suggestedTypeId || null,
                 taskData: {
                   title:       suggestion.title || subject || 'Tarefa de email',
-                  description: suggestion.description || `De: ${from}\nAssunto: ${subject}\n\n${body}`,
+                  description: suggestion.description || `De: ${from}\nAssunto: ${subject}\n\n${emailBody}`,
                   priority:    suggestion.priority || 'medium',
                   clientName:  suggestion.clientName || from || '',
                   clientEmail: suggestion.clientEmail || from || '',
