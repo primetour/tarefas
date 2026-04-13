@@ -148,7 +148,7 @@ async function handleFile(file) {
   infoDiv.innerHTML = `<span style="color:var(--text-muted);">Processando <strong>${esc(file.name)}</strong>...</span>`;
 
   try {
-    if (!window.XLSX) await loadScript('https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js');
+    if (!window.XLSX) await loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
     const data = await file.arrayBuffer();
     const wb = XLSX.read(data, { type: 'array', cellDates: true });
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
