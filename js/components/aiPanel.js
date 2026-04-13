@@ -510,7 +510,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       <div class="ai-avatar ${avatarClass}">${avatarText}</div>
       <div style="max-width:82%;">
         <div class="ai-bubble ${bubbleClass}">${html}</div>
-        ${meta ? `<div class="ai-msg-meta" style="${isUser?'text-align:right;':''}">${meta}</div>` : ''}
+        ${meta ? `<div class="ai-msg-meta" style="${isUser?'text-align:right;':''}">${esc(meta)}</div>` : ''}
         ${!isUser ? `<div class="ai-msg-actions"><button class="ai-copy-btn">Copiar</button></div>` : ''}
       </div>
     `;
