@@ -292,7 +292,7 @@ function renderKanbanCard(task, type = null) {
           background:${step.color||'#6B7280'}22;color:${step.color||'#6B7280'};
           border:1px solid ${step.color||'#6B7280'}44;">${esc(step.label)}</div>` : '';
       })() : ''}
-      ${renderCardFields(task, { compact: true })}
+      ${renderCardFields(task, { compact: true, skipFields: ['dueDate', 'assignees'] })}
       <div class="kanban-card-meta">
         <div class="kanban-card-due ${dueClass}">
           ${dueText ? `📅 ${dueText}` : ''}
