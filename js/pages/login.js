@@ -3,7 +3,7 @@
  * Tela de autenticação
  */
 
-import { signIn, signInWithMicrosoft, resetPassword, getErrorMessage } from '../auth/auth.js';
+import { signIn, signInWithMicrosoft, linkMicrosoftToExistingAccount, resetPassword, getErrorMessage } from '../auth/auth.js';
 import { toast } from '../components/toast.js';
 import { auditLog } from '../auth/audit.js';
 
@@ -180,6 +180,11 @@ export function renderLogin(container) {
       // Ignorar cancelamento silencioso
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         // Silencioso — usuário fechou a janela
+
+      // Conta já existe com email/senha → mostrar tela de vinculação
+      } else if (err.code === 'auth/account-exists-with-different-credential' && err.pendingCredential) {
+        showLinkAccountUI(err.email, err.pendingCredential);
+
       } else {
         const msg = getErrorMessage(err.code) || err.message || 'Erro ao autenticar via Microsoft.';
         showAlert('error', msg);
@@ -274,6 +279,102 @@ export function renderLogin(container) {
 
   // Focus no email
   setTimeout(() => emailInput.focus(), 300);
+
+  // ─── Vincular conta Microsoft a email/senha existente ────
+  function showLinkAccountUI(email, pendingCredential) {
+    const formContainer = document.querySelector('.auth-form-container');
+    if (!formContainer) return;
+
+    // Substituir conteúdo por formulário de vinculação
+    formContainer.innerHTML = `
+      <div class="auth-form-header">
+        <h1 class="auth-form-title">Vincular conta Microsoft</h1>
+        <p class="auth-form-subtitle">
+          O e-mail <strong>${email}</strong> já possui uma conta com senha.
+          Digite sua senha para vincular o login Microsoft.
+        </p>
+      </div>
+
+      <div id="link-alert" style="display:none;"></div>
+
+      <form id="link-form" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="link-email">E-mail</label>
+          <div class="form-input-wrapper">
+            <span class="form-input-icon">✉</span>
+            <input type="email" id="link-email" class="form-input has-icon"
+              value="${email}" disabled
+              style="opacity:0.7;" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="link-password">Senha atual</label>
+          <div class="form-input-wrapper">
+            <span class="form-input-icon">🔒</span>
+            <input type="password" id="link-password" class="form-input has-icon"
+              placeholder="Digite sua senha atual" autocomplete="current-password" required />
+          </div>
+          <span class="form-error-msg" id="link-password-error"></span>
+        </div>
+
+        <button type="submit" class="btn-auth-submit" id="link-submit">
+          🔗 Vincular e entrar
+        </button>
+      </form>
+
+      <button type="button" id="link-cancel" class="btn-auth-microsoft" style="margin-top:12px;">
+        ← Voltar ao login
+      </button>
+
+      <p class="text-center mt-6 text-xs" style="color:var(--text-muted);">
+        Após vincular, você poderá entrar via Microsoft nas próximas vezes sem precisar de senha.
+      </p>
+    `;
+
+    const linkForm     = document.getElementById('link-form');
+    const linkPwInput  = document.getElementById('link-password');
+    const linkSubmit   = document.getElementById('link-submit');
+    const linkAlert    = document.getElementById('link-alert');
+    const linkCancel   = document.getElementById('link-cancel');
+
+    // Voltar ao login normal
+    linkCancel.addEventListener('click', () => renderLogin(container));
+
+    // Focus na senha
+    setTimeout(() => linkPwInput.focus(), 200);
+
+    // Submit — vincular
+    linkForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const password = linkPwInput.value;
+
+      if (!password) {
+        const errEl = document.getElementById('link-password-error');
+        if (errEl) errEl.textContent = 'Senha é obrigatória.';
+        return;
+      }
+
+      linkSubmit.classList.add('loading');
+      linkPwInput.disabled = true;
+
+      try {
+        await linkMicrosoftToExistingAccount(email, password, pendingCredential);
+        // onAuthStateChanged cuida do resto
+        toast.success('Conta Microsoft vinculada com sucesso! Nas próximas vezes, basta usar o botão Microsoft.');
+      } catch (err) {
+        linkAlert.style.display = 'flex';
+        linkAlert.className = 'auth-alert error';
+        const msg = err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential'
+          ? 'Senha incorreta. Tente novamente.'
+          : getErrorMessage(err.code) || err.message;
+        linkAlert.innerHTML = `<span>✕</span><span>${msg}</span>`;
+      } finally {
+        linkSubmit.classList.remove('loading');
+        linkPwInput.disabled = false;
+      }
+    });
+  }
 
   // ─── Helpers ──────────────────────────────────────────────
   function showAlert(type, message) {
