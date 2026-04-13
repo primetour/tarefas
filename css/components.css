@@ -974,3 +974,47 @@ textarea.portal-field { resize: vertical; }
 .badge-role-admin   { background: rgba(167,139,250,0.12); color: var(--role-admin);   border: 1px solid rgba(167,139,250,0.25); }
 .badge-role-manager { background: rgba(56,189,248,0.12);  color: var(--role-manager); border: 1px solid rgba(56,189,248,0.25);  }
 .badge-role-member  { background: rgba(34,197,94,0.12);   color: var(--role-member);  border: 1px solid rgba(34,197,94,0.25);   }
+
+/* ─── Section headers com accent ─────────────────────────── */
+.section-accent {
+  position: relative;
+  padding-left: 14px;
+}
+.section-accent::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--brand-gold);
+}
+.section-accent.accent-success::before { background: var(--color-success); }
+.section-accent.accent-info::before    { background: var(--color-info); }
+.section-accent.accent-warning::before { background: var(--color-warning); }
+.section-accent.accent-danger::before  { background: var(--color-danger); }
+
+/* ─── Cards com borda colorida lateral ───────────────────── */
+.card-accent-left {
+  border-left: 3px solid var(--brand-gold);
+}
+.card-accent-left.accent-success { border-left-color: var(--color-success); }
+.card-accent-left.accent-info    { border-left-color: var(--color-info); }
+.card-accent-left.accent-warning { border-left-color: var(--color-warning); }
+.card-accent-left.accent-danger  { border-left-color: var(--color-danger); }
+
+/* ─── Elevated surface (mais destaque que card) ──────────── */
+.surface-elevated {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+/* ─── Glass-style surface ────────────────────────────────── */
+.surface-glass {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius-lg);
+}

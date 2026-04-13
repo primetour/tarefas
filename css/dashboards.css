@@ -93,7 +93,24 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative;
 }
+/* Accent stripe no topo das KPI cards */
+.dash-widget.kpi::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--brand-gold);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  opacity: 0.6;
+}
+/* Variantes de cor para KPIs (via data-accent) */
+.dash-widget[data-accent="success"]::before { background: var(--color-success); }
+.dash-widget[data-accent="info"]::before    { background: var(--color-info); }
+.dash-widget[data-accent="warning"]::before { background: var(--color-warning); }
+.dash-widget[data-accent="danger"]::before  { background: var(--color-danger); }
+.dash-widget[data-accent="brand"]::before   { background: var(--brand-gold); }
 .kpi-label {
   font-size: 0.6875rem;
   font-weight: 600;
@@ -155,7 +172,7 @@
   text-align: center;
   flex-shrink: 0;
 }
-.leaderboard-rank.gold   { color: #F59E0B; }
+.leaderboard-rank.gold   { color: var(--color-warning); }
 .leaderboard-rank.silver { color: #94A3B8; }
 .leaderboard-rank.bronze { color: #B45309; }
 .leaderboard-info { flex: 1; min-width: 0; }
@@ -202,8 +219,8 @@
   color: var(--text-primary);
 }
 .date-range-btn.active {
-  background: rgba(212,168,67,0.15);
-  border-color: rgba(212,168,67,0.4);
+  background: var(--color-info-bg);
+  border-color: var(--border-accent);
   color: var(--brand-gold);
 }
 
@@ -279,10 +296,10 @@
 }
 .heatmap-cell:hover { transform: scale(1.3); z-index: 1; }
 .heatmap-0  { background: var(--bg-elevated); }
-.heatmap-1  { background: rgba(212,168,67,0.20); }
-.heatmap-2  { background: rgba(212,168,67,0.40); }
-.heatmap-3  { background: rgba(212,168,67,0.65); }
-.heatmap-4  { background: rgba(212,168,67,0.90); }
+.heatmap-1  { background: var(--border-accent); opacity: 0.5; }
+.heatmap-2  { background: var(--border-accent); opacity: 0.7; }
+.heatmap-3  { background: var(--border-accent); }
+.heatmap-4  { background: var(--brand-gold); }
 
 /* ─── AUDIT PAGE ──────────────────────────────────────────── */
 .audit-log-row {
