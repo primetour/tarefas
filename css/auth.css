@@ -365,6 +365,68 @@
   to { transform: translate(-50%,-50%) rotate(360deg); }
 }
 
+/* ─── MICROSOFT SSO BUTTON ───────────────────────────────── */
+.btn-auth-microsoft {
+  width: 100%;
+  padding: 13px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-auth-microsoft:hover {
+  border-color: var(--brand-gold);
+  background: var(--bg-elevated);
+}
+
+.btn-auth-microsoft:active { transform: scale(0.99); }
+
+.btn-auth-microsoft:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-auth-microsoft-domain {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.btn-auth-microsoft.loading {
+  color: transparent;
+  pointer-events: none;
+}
+
+.btn-auth-microsoft.loading svg,
+.btn-auth-microsoft.loading .btn-auth-microsoft-domain {
+  visibility: hidden;
+}
+
+.btn-auth-microsoft.loading::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%,-50%);
+  border: 2px solid var(--border-default);
+  border-top-color: var(--brand-gold);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
 /* ─── AUTH EXTRAS ─────────────────────────────────────────── */
 .auth-divider {
   display: flex;
