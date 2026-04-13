@@ -57,12 +57,23 @@ export function initAuthObserver(onReady) {
             && firebaseUser.providerData?.some(p => p.providerId === 'microsoft.com');
 
           if (isSSOPrimetour) {
+            // Extrair nome do Microsoft — displayName ou fallback formatado do email
+            const msProvider = firebaseUser.providerData?.find(p => p.providerId === 'microsoft.com');
+            const rawName = firebaseUser.displayName
+              || msProvider?.displayName
+              || email.split('@')[0];
+            // Formatar "joao.silva" → "Joao Silva"
+            const formattedName = rawName.includes('.')
+              ? rawName.split('.').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
+              : rawName;
+
             // Criar perfil automaticamente com role 'member'
             const colorIdx = Math.floor(Math.random() * APP_CONFIG.avatarColors.length);
             const newProfile = {
               id:          firebaseUser.uid,
-              name:        firebaseUser.displayName || email.split('@')[0],
+              name:        formattedName,
               email:       email,
+              phone:       msProvider?.phoneNumber || '',
               role:        'member',
               roleId:      'member',
               nucleo:      '',
@@ -77,15 +88,27 @@ export function initAuthObserver(onReady) {
               createdBy:   'sso-microsoft',
               lastLogin:   serverTimestamp(),
             };
-            await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
+
+            try {
+              await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
+              console.log('[SSO] Perfil criado com sucesso:', formattedName, email);
+            } catch (writeErr) {
+              console.error('[SSO] Erro ao criar perfil no Firestore:', writeErr);
+              toast.error('Erro ao criar perfil. Verifique as regras do Firestore (users create).');
+              await signOut().catch(() => {});
+              store.set('authLoading', false);
+              callReady();
+              return;
+            }
+
             profile = { ...newProfile, id: firebaseUser.uid };
 
             // Audit log
             auditLog('users.sso_auto_provision', 'user', firebaseUser.uid, {
-              name: newProfile.name, email, provider: 'microsoft.com',
+              name: formattedName, email, provider: 'microsoft.com',
             }).catch(() => {});
 
-            toast.success(`Bem-vindo(a), ${newProfile.name}! Sua conta foi criada automaticamente via SSO Microsoft.`);
+            toast.success(`Bem-vindo(a), ${formattedName}! Sua conta foi criada automaticamente via SSO Microsoft.`);
           } else {
             await signOut().catch(() => {});
             toast.error('Perfil não encontrado. Contate o administrador.');
