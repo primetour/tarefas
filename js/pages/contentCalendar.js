@@ -168,12 +168,8 @@ export async function renderContentCalendar(container) {
   const main = container || document.getElementById('main');
   if (!main) return;
 
-  try {
-    allSlots = await fetchSlots();
-  } catch (e) {
-    allSlots = [];
-    toast.error('Erro ao carregar slots de conteudo');
-  }
+  // fetchSlots já retorna [] em caso de erro/collection vazia
+  allSlots = await fetchSlots();
 
   renderPage(main);
 }
