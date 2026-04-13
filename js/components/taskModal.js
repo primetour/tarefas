@@ -72,6 +72,7 @@ const ABSENCE_TYPE_LABELS = {
 export async function openTaskModal({ taskData=null, projectId=null, status='not_started', onSave=null, typeId=null } = {}) {
   // isEdit only when taskData has a real Firestore id (not a prefill from requests portal)
   const isEdit = !!(taskData?.id);
+  let _isDirty = false;
 
   let users = store.get('users') || [];
   if (!users.length) {
@@ -139,6 +140,9 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
       ? 'Nova Tarefa — a partir de solicitação'
       : 'Nova Tarefa';
 
+  let _isDirty = false;
+  let _bypassDirtyCheck = false;
+
   const m = modal.open({
     title: modalTitle,
     size: 'xl',
@@ -149,24 +153,54 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         label:'🗑 Excluir', class:'btn-danger btn-sm', closeOnClick:false,
         onClick: async (_,{close}) => {
           if (await modal.confirm({ title:'Excluir tarefa', message:`Excluir "<strong>${esc(task.title)}</strong>"?`, confirmText:'Excluir', danger:true, icon:'🗑️' })) {
-            try { await deleteTask(task.id); toast.success('Tarefa excluída.'); close(); onSave?.(); }
+            try { await deleteTask(task.id); toast.success('Tarefa excluída.'); _bypassDirtyCheck = true; close(); onSave?.(); }
             catch(e) { toast.error(e.message); }
           }
         },
       }] : []),
-      { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
+      { label:'Cancelar', class:'btn-secondary', closeOnClick:false,
+        onClick: () => {
+          if (_isDirty && !confirm('Você tem alterações não salvas. Deseja descartar?')) return;
+          _bypassDirtyCheck = true;
+          m.close();
+        } },
       { label: isEdit ? 'Salvar alterações' : 'Criar tarefa', class:'btn-primary', closeOnClick:false,
         onClick: async (_,{close}) => {
           const modalEl = document.querySelector('.modal-body') || document.querySelector('.modal') || document;
+          _bypassDirtyCheck = true;
           await handleSave(task, currentTags, currentAssignees, isEdit, close, onSave, modalEl);
         } },
     ],
   });
 
+  // Intercept all close paths (X button, backdrop, ESC) with dirty check
+  // by monkey-patching modal.close for this modal's ID
+  const _origManagerClose = modal.close.bind(modal);
+  const modalId = m.id;
+  modal.close = (id) => {
+    if (id === modalId && !_bypassDirtyCheck && _isDirty) {
+      if (!confirm('Você tem alterações não salvas. Deseja descartar?')) return;
+    }
+    _origManagerClose(id);
+    // Restore original close once this modal is closed
+    if (id === modalId) {
+      modal.close = _origManagerClose;
+    }
+  };
+
   // Bind events after next paint — use requestAnimationFrame for reliability
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       bindEvents(task, users, currentTags, currentAssignees, isEdit, allAbsences, m.getElement());
+
+      // Track dirty state for cancel confirmation
+      setTimeout(() => {
+        const modalBody = m.getElement()?.querySelector('.modal-body');
+        if (modalBody) {
+          modalBody.addEventListener('input', () => { _isDirty = true; }, { once: false });
+          modalBody.addEventListener('change', () => { _isDirty = true; }, { once: false });
+        }
+      }, 100);
 
       // Populate meta selector async — show individual metas (not goals)
       import('../services/goals.js').then(({ fetchGoals }) => {
@@ -1161,10 +1195,30 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
       runDueRecurrenceGeneration({ force: true }).catch(() => {});
       savedTask = null;
     } else {
-      savedTask = await createTask(data);
-      toast.success('Tarefa criada!');
+      // ── Optimistic UI: fechar modal imediatamente, criar em background ──
+      close();
+      let optId = null;
+      try {
+        const kanban = await import('../pages/kanban.js').catch(() => null);
+        if (kanban?.addOptimisticTask) optId = kanban.addOptimisticTask(data);
+      } catch(_) {}
+
+      try {
+        savedTask = await createTask(data);
+        toast.success('Tarefa criada!');
+      } finally {
+        // Remove card otimista (subscription do Firestore traz o real)
+        if (optId) {
+          try {
+            const kanban = await import('../pages/kanban.js').catch(() => null);
+            if (kanban?.removeOptimisticTask) kanban.removeOptimisticTask(optId);
+          } catch(_) {}
+        }
+      }
     }
-    close();
+
+    // close() para edição/recorrência (criação já fechou acima)
+    if (isEdit || isRecurring) close();
 
     // Double-check overlay: show whenever a task is being completed
     const isBeingCompleted = data.status === 'done' &&
