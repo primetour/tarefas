@@ -732,17 +732,17 @@ function collectData() {
   });
   data.optionals = optionals;
 
-  // Includes
+  // Includes (preserva linhas em branco: a limpeza final é feita no save)
   const includes = [];
   _container.querySelectorAll('[data-inc-idx] [data-inc="text"]').forEach(input => {
-    if (input.value.trim()) includes.push(input.value.trim());
+    includes.push(input.value);
   });
   data.includes = includes;
 
-  // Excludes
+  // Excludes (preserva linhas em branco: a limpeza final é feita no save)
   const excludes = [];
   _container.querySelectorAll('[data-exc-idx] [data-exc="text"]').forEach(input => {
-    if (input.value.trim()) excludes.push(input.value.trim());
+    excludes.push(input.value);
   });
   data.excludes = excludes;
 
@@ -770,8 +770,14 @@ function collectData() {
 }
 
 /* ─── Re-render a specific section body ───────────────────── */
+/**
+ * IMPORTANTE: Não chamar collectData() aqui!
+ * Todos os callers já sincronizaram _data antes (ex.: `_data = collectData();
+ * _data.travel.destinations.push(...)`). Se chamássemos collectData() de novo,
+ * sobrescreveríamos a modificação em memória com o estado do DOM "velho"
+ * (que ainda não reflete a modificação), perdendo add/remove de linhas.
+ */
 function refreshSection(sectionId, rendererFn) {
-  _data = collectData();
   const sec = _container.querySelector(`[data-section="${sectionId}"] .re-section-body`);
   if (!sec) return;
   sec.innerHTML = rendererFn();
@@ -1438,6 +1444,9 @@ function updateAutoSaveIndicator(text) {
 async function handleSave() {
   try {
     _data = collectData();
+    // Limpa linhas em branco antes de persistir
+    _data.includes = (_data.includes || []).map(s => (s || '').trim()).filter(Boolean);
+    _data.excludes = (_data.excludes || []).map(s => (s || '').trim()).filter(Boolean);
     updateAutoSaveIndicator('Salvando...');
     const newId = await saveRoteiro(_roteiroId, _data);
     _dirty = false;
@@ -1459,6 +1468,10 @@ async function handleSave() {
 
 /* ─── Main Render ─────────────────────────────────────────── */
 export async function renderRoteiroEditor(container) {
+  if (!store.canAccessRoteiros()) {
+    container.innerHTML = `<div class="empty-state"><span style="font-size:2rem;">🔒</span><p>Acesso restrito</p><p class="text-muted">Você não tem permissão para acessar Roteiros de Viagem.</p></div>`;
+    return;
+  }
   _container = container;
 
   // Parse ID from hash

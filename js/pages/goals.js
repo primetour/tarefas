@@ -21,6 +21,14 @@ const fmtDate = ts => { if(!ts) return '—'; const d=ts?.toDate?ts.toDate():new
 let allGoals=[], allUsers=[], allTasksForGoals=[], evaluations=[], activeTab='metas';
 
 export async function renderGoals(container) {
+  if (!store.can('goals_view') && !store.isMaster()) {
+    container.innerHTML = `<div class="empty-state" style="padding:60px 20px;text-align:center;">
+      <div class="empty-state-icon">🔒</div>
+      <div class="empty-state-title">Acesso restrito</div>
+      <div class="empty-state-subtitle">Você não tem permissão para acessar metas.</div>
+    </div>`;
+    return;
+  }
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">

@@ -45,6 +45,10 @@ function tooltipStyle() {
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderAiDashboard(container) {
+  if (!store.can('system_manage_settings') && !store.isMaster()) {
+    container.innerHTML = `<div class="empty-state"><span style="font-size:2rem;">🔒</span><p>Acesso restrito</p><p class="text-muted">Você não tem permissão para acessar o Dashboard IA.</p></div>`;
+    return;
+  }
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">

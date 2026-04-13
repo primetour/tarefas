@@ -9,6 +9,10 @@ const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 export async function renderCms(container) {
+  if (!store.can('portal_manage') && !store.isMaster()) {
+    container.innerHTML = `<div class="empty-state"><span style="font-size:2rem;">🔒</span><p>Acesso restrito</p><p class="text-muted">Você não tem permissão para acessar o CMS.</p></div>`;
+    return;
+  }
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">

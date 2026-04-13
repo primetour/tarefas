@@ -130,6 +130,7 @@ export async function renderGaPerformance(container) {
         style="font-size:0.8125rem;">📱 Dispositivos</button>
       <button class="btn btn-ghost btn-sm ga-tab" data-tab="countries"
         style="font-size:0.8125rem;">🌍 Países</button>
+      ${store.can('site_audit_view') || store.isMaster() ? `
       <button class="btn btn-ghost btn-sm ga-tab" data-tab="cwv"
         style="font-size:0.8125rem;border-left:2px solid var(--border-subtle);margin-left:4px;padding-left:10px;"
         title="Core Web Vitals — Métricas essenciais da web (Google). Avalia velocidade, interatividade e estabilidade visual dos sites cadastrados. Inclui também auditoria de SEO, acessibilidade e boas práticas.">
@@ -138,6 +139,7 @@ export async function renderGaPerformance(container) {
         style="font-size:0.8125rem;"
         title="Evolução histórica dos scores e Core Web Vitals ao longo do tempo. Mostra tendências, deltas e detecta regressões entre auditorias.">
         📈 Evolução da Performance</button>
+      ` : ''}
     </div>
 
     <!-- ═══ Traffic view (tabs daily/pages/sources/devices/countries) ═══ -->

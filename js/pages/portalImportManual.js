@@ -2,8 +2,13 @@
  * PRIMETOUR — Portal de Dicas: Manual de Importação
  * Guia completo em tela para uso da importação em massa
  */
+import { store } from '../store.js';
 
 export async function renderPortalImportManual(container) {
+  if (!store.can('portal_manage') && !store.isMaster()) {
+    container.innerHTML = `<div class="empty-state"><span style="font-size:2rem;">🔒</span><p>Acesso restrito</p><p class="text-muted">Você não tem permissão para acessar o Manual de Importação.</p></div>`;
+    return;
+  }
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">

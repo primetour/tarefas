@@ -61,6 +61,15 @@ async function loadChartJS() {
 
 /* ─── Render shell ────────────────────────────────────────── */
 export async function renderDashboards(container) {
+  // Guard: permissão necessária
+  if (!store.can('analytics_view') && !store.can('dashboard_view') && !store.isMaster()) {
+    container.innerHTML = `<div class="empty-state" style="padding:60px 20px;text-align:center;">
+      <div class="empty-state-icon">🔒</div>
+      <div class="empty-state-title">Acesso restrito</div>
+      <div class="empty-state-subtitle">Você não tem permissão para acessar os dashboards de produtividade.</div>
+    </div>`;
+    return;
+  }
   // Load users if not in store
   let users = (store.get('users') || []).filter(u => u.active !== false);
   if (!users.length) {

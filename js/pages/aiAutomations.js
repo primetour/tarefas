@@ -16,6 +16,10 @@ let automations = [];
 
 /* ─── Render principal ──────────────────────────────────── */
 export async function renderAiAutomations(container) {
+  if (!store.can('dashboard_view') && !store.isMaster()) {
+    container.innerHTML = `<div class="empty-state"><span style="font-size:2rem;">🔒</span><p>Acesso restrito</p><p class="text-muted">Você não tem permissão para acessar Automações IA.</p></div>`;
+    return;
+  }
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">

@@ -28,6 +28,10 @@ let allClippings = [];
 let activeTab = 'noticias';
 
 export async function renderNewsMonitor(container) {
+  if (!store.can('dashboard_view') && !store.isMaster()) {
+    container.innerHTML = `<div class="empty-state"><span style="font-size:2rem;">🔒</span><p>Acesso restrito</p><p class="text-muted">Você não tem permissão para acessar o Monitoramento de Notícias.</p></div>`;
+    return;
+  }
   container.innerHTML = `
     <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
       <div class="page-header-left">
