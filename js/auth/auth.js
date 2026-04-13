@@ -5,6 +5,7 @@
 
 import {
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   sendPasswordResetEmail,
@@ -23,7 +24,7 @@ import {
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
-import { auth, secondaryAuth, db } from '../firebase.js';
+import { auth, secondaryAuth, db, microsoftProvider } from '../firebase.js';
 import { getRole, initSystemRoles, SYSTEM_ROLES } from '../services/rbac.js';
 import { loadUserWorkspaces }          from '../services/workspaces.js';
 import { loadNucleos }                  from '../services/sectors.js';
@@ -45,14 +46,51 @@ export function initAuthObserver(onReady) {
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       try {
-        const profile = await fetchUserProfile(firebaseUser.uid);
+        let profile = await fetchUserProfile(firebaseUser.uid);
 
+        // ── Auto-provisioning SSO Microsoft (@primetour.com.br) ──
         if (!profile) {
-          await signOut().catch(() => {});
-          toast.error('Perfil não encontrado. Contate o administrador.');
-          store.set('authLoading', false);
-          callReady();
-          return;
+          const email = (firebaseUser.email || '').toLowerCase();
+          const isSSOPrimetour = email.endsWith('@primetour.com.br')
+            && firebaseUser.providerData?.some(p => p.providerId === 'microsoft.com');
+
+          if (isSSOPrimetour) {
+            // Criar perfil automaticamente com role 'member'
+            const colorIdx = Math.floor(Math.random() * APP_CONFIG.avatarColors.length);
+            const newProfile = {
+              id:          firebaseUser.uid,
+              name:        firebaseUser.displayName || email.split('@')[0],
+              email:       email,
+              role:        'member',
+              roleId:      'member',
+              nucleo:      '',
+              department:  '',
+              sector:      '',
+              avatarColor: APP_CONFIG.avatarColors[colorIdx],
+              active:      true,
+              firstLogin:  true,
+              deletedAt:   null,
+              deletedBy:   null,
+              createdAt:   serverTimestamp(),
+              createdBy:   'sso-microsoft',
+              lastLogin:   serverTimestamp(),
+            };
+            await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
+            profile = { ...newProfile, id: firebaseUser.uid };
+
+            // Audit log
+            auditLog('users.sso_auto_provision', 'user', firebaseUser.uid, {
+              name: newProfile.name, email, provider: 'microsoft.com',
+            }).catch(() => {});
+
+            toast.success(`Bem-vindo(a), ${newProfile.name}! Sua conta foi criada automaticamente via SSO Microsoft.`);
+          } else {
+            await signOut().catch(() => {});
+            toast.error('Perfil não encontrado. Contate o administrador.');
+            store.set('authLoading', false);
+            callReady();
+            return;
+          }
         }
 
         if (!profile.active) {
@@ -145,6 +183,21 @@ export function initAuthObserver(onReady) {
 export async function signIn(email, password) {
   const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
   return credential.user;
+}
+
+// ─── Login SSO Microsoft ──────────────────────────────────
+export async function signInWithMicrosoft() {
+  const result = await signInWithPopup(auth, microsoftProvider);
+  const email  = (result.user.email || '').toLowerCase();
+
+  // Dupla validação de domínio (segurança — tenant param já restringe)
+  if (!email.endsWith('@primetour.com.br')) {
+    await firebaseSignOut(auth);
+    throw new Error('SSO restrito a contas @primetour.com.br');
+  }
+
+  // O initAuthObserver cuida do resto (auto-provisioning + carregamento de perfil)
+  return result.user;
 }
 
 // ─── Logout ───────────────────────────────────────────────
@@ -339,6 +392,10 @@ export function getErrorMessage(code) {
     'auth/weak-password':        'Senha muito fraca (mínimo 6 caracteres).',
     'auth/network-request-failed': 'Erro de conexão. Verifique sua internet.',
     'auth/invalid-credential':   'E-mail ou senha incorretos.',
+    'auth/popup-closed-by-user': 'Login cancelado. A janela foi fechada.',
+    'auth/popup-blocked':        'Pop-up bloqueado pelo navegador. Permita pop-ups e tente novamente.',
+    'auth/account-exists-with-different-credential': 'Este e-mail já possui conta com outro método de login. Tente e-mail/senha.',
+    'auth/cancelled-popup-request': 'Outra janela de login já está aberta.',
   };
   return messages[code] || 'Erro inesperado. Tente novamente.';
 }
