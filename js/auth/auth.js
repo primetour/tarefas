@@ -195,6 +195,25 @@ export function initAuthObserver(onReady) {
           email:    profile.email,
         }).catch(() => {});
 
+        // ─── Automation services (lazy, non-blocking) ───
+        Promise.resolve().then(async () => {
+          const [
+            { checkSlaAlerts },
+            { checkStaleTasks },
+            { runAutoArchive },
+            { generateDailySummary },
+          ] = await Promise.all([
+            import('../services/slaAlerts.js'),
+            import('../services/staleTaskNudge.js'),
+            import('../services/autoArchive.js'),
+            import('../services/dailySummary.js'),
+          ]);
+          checkSlaAlerts().catch(() => {});
+          checkStaleTasks().catch(() => {});
+          runAutoArchive().catch(() => {});
+          generateDailySummary().catch(() => {});
+        }).catch(() => {});
+
       } catch (err) {
         console.error('Auth state error:', err);
         // Se for erro de permissão do Firestore, ainda assim redirecionar
