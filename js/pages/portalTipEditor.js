@@ -305,6 +305,32 @@ function renderSegmentPanel(key) {
     markDirty();
   });
   document.getElementById('seg-expiry-date')?.addEventListener('change', markDirty);
+
+  // ── Botão IA: Atualizar segmento vencido ──
+  document.querySelector('.btn-ai-update-seg')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = '◈ Gerando...';
+    try {
+      const { suggestExpiredUpdate } = await import('../services/portal.js');
+      const result = await suggestExpiredUpdate(currentTip?.id, activeSegKey);
+      // Mostrar sugestão inline
+      _showSegmentAiSuggestion(result);
+    } catch (err) {
+      if (err.message === 'AI_CONSENT_REQUIRED') {
+        const { toast } = await import('../components/toast.js');
+        toast.info('Aceite os termos de uso de IA primeiro.');
+      } else {
+        const { toast } = await import('../components/toast.js');
+        toast.error('Erro: ' + err.message);
+      }
+    }
+    btn.disabled = false;
+    btn.textContent = '◈ IA: Atualizar';
+  });
+
+  // ── Verificar se há sugestão de IA pendente do sessionStorage ──
+  _checkPendingAiSuggestion();
 }
 
 /* ─── Panel builders ──────────────────────────────────────── */
@@ -325,7 +351,12 @@ function expiryControls(data) {
       <div id="seg-expiry-field" style="display:${data.hasExpiry?'flex':'none'};align-items:center;gap:6px;">
         <input type="date" id="seg-expiry-date" value="${esc(data.expiryDate||'')}"
           class="portal-field" style="padding:5px 8px;font-size:0.8125rem;width:140px;">
-        ${isExpired ? `<span style="font-size:0.75rem;color:#EF4444;font-weight:600;">● Vencido</span>` : ''}
+        ${isExpired ? `<span style="font-size:0.75rem;color:#EF4444;font-weight:600;">● Vencido</span>
+          <button class="btn-ai-update-seg" style="font-size:0.625rem;padding:2px 8px;border-radius:var(--radius-full);
+            border:1px solid rgba(212,168,67,0.4);background:rgba(212,168,67,0.08);color:var(--brand-gold,#D4A843);
+            cursor:pointer;font-family:inherit;white-space:nowrap;" title="Sugestão de IA para atualizar">
+            ◈ IA: Atualizar
+          </button>` : ''}
       </div>
     </div>`;
 }
@@ -856,4 +887,83 @@ function fmt(ts) {
   if (!ts) return '—';
   const d = ts?.toDate ? ts.toDate() : new Date(ts);
   return new Intl.DateTimeFormat('pt-BR').format(d);
+}
+
+/* ─── IA: Sugestão para segmentos vencidos ────────────────── */
+
+function _showSegmentAiSuggestion(result) {
+  // Remove container anterior
+  document.getElementById('ai-seg-suggestion')?.remove();
+
+  const escHtml = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const container = document.createElement('div');
+  container.id = 'ai-seg-suggestion';
+  container.style.cssText = `margin:16px 0;border:1px solid rgba(212,168,67,0.3);border-radius:10px;
+    background:rgba(212,168,67,0.04);overflow:hidden;`;
+
+  const sourcesHtml = result.sources?.length
+    ? result.sources.slice(0, 3).map(s =>
+      `<a href="${escHtml(s.url)}" target="_blank" rel="noopener" style="color:var(--brand-gold);font-size:0.6875rem;text-decoration:none;">
+        ${escHtml(s.source)}</a>`
+    ).join(' · ')
+    : '';
+
+  container.innerHTML = `
+    <div style="padding:10px 14px;background:rgba(212,168,67,0.08);border-bottom:1px solid rgba(212,168,67,0.2);
+      display:flex;align-items:center;gap:8px;">
+      <span>◈</span>
+      <span style="font-size:0.8125rem;font-weight:600;flex:1;">Sugestão de IA — ${escHtml(result.segmentLabel)}</span>
+      <span style="font-size:0.625rem;color:var(--text-muted);">${escHtml(result.provider)}/${escHtml(result.model)}</span>
+      <button class="ai-seg-close" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.875rem;">✕</button>
+    </div>
+    <div style="padding:14px;">
+      <pre style="white-space:pre-wrap;word-wrap:break-word;font-family:inherit;font-size:0.8125rem;
+        line-height:1.6;color:var(--text-primary);margin:0;">${escHtml(result.suggestion)}</pre>
+
+      <div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:6px;padding:8px 10px;
+        margin-top:10px;font-size:0.6875rem;color:#92400E;">
+        ⚠ <strong>Conteúdo gerado por IA</strong> — verifique antes de publicar.
+        ${sourcesHtml ? `<br>Fontes: ${sourcesHtml}` : ''}
+      </div>
+    </div>
+  `;
+
+  // Inserir no topo do painel do segmento
+  const segPanel = document.getElementById('segment-editor-panel');
+  if (segPanel) {
+    segPanel.insertBefore(container, segPanel.firstChild);
+  } else {
+    document.getElementById('editor-main')?.prepend(container);
+  }
+
+  container.querySelector('.ai-seg-close')?.addEventListener('click', () => container.remove());
+}
+
+function _checkPendingAiSuggestion() {
+  try {
+    const raw = sessionStorage.getItem('ai-suggestion');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    // Verificar se é para este tip
+    if (data.tipId !== currentTip?.id) return;
+    // Verificar se o segmento corresponde
+    if (data.segmentKey && data.segmentKey !== activeSegKey) return;
+    // Verificar se não é muito antigo (mais de 5 min)
+    if (Date.now() - new Date(data.appliedAt).getTime() > 300_000) {
+      sessionStorage.removeItem('ai-suggestion');
+      return;
+    }
+
+    // Mostrar sugestão
+    _showSegmentAiSuggestion({
+      suggestion: data.suggestion,
+      sources: [],
+      segmentLabel: SEGMENTS.find(s => s.key === data.segmentKey)?.label || data.segmentKey,
+      provider: 'cache',
+      model: 'sessão anterior',
+    });
+
+    sessionStorage.removeItem('ai-suggestion');
+  } catch { /* ignore */ }
 }

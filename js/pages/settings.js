@@ -72,6 +72,7 @@ export async function renderSettings(container) {
           { id:'notifications', icon:'🔔', label:'Notificações' },
           { id:'csat-settings', icon:'★',  label:'CSAT' },
           { id:'integrations',  icon:'🔌', label:'Integrações' },
+          { id:'privacy',       icon:'🔐', label:'Privacidade e IA' },
           { id:'data',          icon:'💾', label:'Dados' },
         ].map((s,i) => `
           <div class="settings-nav-item ${i===0?'active':''}" data-section="${s.id}"
@@ -108,12 +109,15 @@ export async function renderSettings(container) {
         notifications: renderSectionNotifications,
         'csat-settings': renderSectionCsat,
         integrations:  renderSectionIntegrations,
+        privacy:       renderSectionPrivacy,
         data:          renderSectionData,
       };
       const fn = sections[item.dataset.section];
       const el = document.getElementById('settings-content');
       if(fn && el) el.innerHTML = fn(settings);
       bindSectionEvents(settings);
+      // Carregar seções assíncronas
+      if (item.dataset.section === 'privacy') loadPrivacySection();
     });
   });
   bindSectionEvents(settings);
@@ -326,6 +330,280 @@ function renderSectionIntegrations(s) {
       </div>
     </div>
   `;
+}
+
+function renderSectionPrivacy() {
+  return `
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header">
+        <div class="card-title">🔐 Privacidade e IA — LGPD</div>
+        <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+          Configurações de proteção de dados para uso de inteligência artificial
+        </div>
+      </div>
+      <div class="card-body" id="privacy-content" style="padding:16px;">
+        <div style="text-align:center;padding:20px;color:var(--text-muted);">Carregando configurações...</div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadPrivacySection() {
+  const el = document.getElementById('privacy-content');
+  if (!el) return;
+
+  let config;
+  try {
+    const { getPrivacyConfig } = await import('../services/aiDataGuard.js');
+    config = await getPrivacyConfig();
+  } catch {
+    el.innerHTML = '<div style="color:var(--text-muted);padding:16px;">Erro ao carregar configurações de privacidade.</div>';
+    return;
+  }
+
+  const modules = [
+    { key: 'roteiros',  label: 'Roteiros' },
+    { key: 'feedbacks', label: 'Feedbacks' },
+    { key: 'csat',      label: 'CSAT' },
+    { key: 'tasks',     label: 'Tarefas' },
+    { key: 'portal-tips', label: 'Portal de Dicas' },
+    { key: 'content-calendar', label: 'Calendário Conteúdo' },
+  ];
+
+  const providers = [
+    { key: 'gemini',    label: 'Google Gemini' },
+    { key: 'groq',      label: 'Groq' },
+    { key: 'openai',    label: 'OpenAI' },
+    { key: 'anthropic', label: 'Anthropic' },
+    { key: 'azure',     label: 'Azure OpenAI' },
+    { key: 'local',     label: 'Local (Ollama)' },
+  ];
+
+  const provInfo = config.providerInfo || {};
+  const anonModules = config.anonymizeModules || [];
+  const allowedProviders = config.allowedProviders || [];
+
+  el.innerHTML = \`
+    <!-- Anonimização -->
+    <div style="margin-bottom:24px;">
+      <h4 style="font-size:0.875rem;font-weight:600;margin-bottom:10px;color:var(--text-primary);">
+        Anonimização de Dados Pessoais
+      </h4>
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:12px;cursor:pointer;font-size:0.8125rem;">
+        <input type="checkbox" id="priv-anonymize" \${config.anonymizePii ? 'checked' : ''}
+          style="accent-color:var(--brand-gold);width:16px;height:16px;">
+        Anonimizar PII (e-mails, telefones, CPFs) antes de enviar para provedores de IA
+      </label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-left:26px;" id="priv-modules">
+        \${modules.map(m => \`
+          <label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;
+            border:1px solid var(--border-subtle);font-size:0.75rem;cursor:pointer;">
+            <input type="checkbox" class="priv-module-cb" data-module="\${m.key}"
+              \${anonModules.includes(m.key) ? 'checked' : ''}
+              style="accent-color:var(--brand-gold);width:14px;height:14px;">
+            \${m.label}
+          </label>
+        \`).join('')}
+      </div>
+    </div>
+
+    <!-- Consentimento -->
+    <div style="margin-bottom:24px;">
+      <h4 style="font-size:0.875rem;font-weight:600;margin-bottom:10px;color:var(--text-primary);">
+        Consentimento
+      </h4>
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer;font-size:0.8125rem;">
+        <input type="checkbox" id="priv-consent" \${config.consentRequired ? 'checked' : ''}
+          style="accent-color:var(--brand-gold);width:16px;height:16px;">
+        Exigir consentimento do usuário antes do primeiro uso de IA
+      </label>
+      <div style="margin-left:26px;font-size:0.75rem;color:var(--text-muted);">
+        Versão atual: <strong>\${config.consentVersion || '1.0'}</strong>
+        — alterar a versão força todos os usuários a aceitar novamente.
+      </div>
+    </div>
+
+    <!-- Retenção -->
+    <div style="margin-bottom:24px;">
+      <h4 style="font-size:0.875rem;font-weight:600;margin-bottom:10px;color:var(--text-primary);">
+        Retenção de Logs
+      </h4>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <label style="font-size:0.8125rem;">Manter logs de uso por:</label>
+        <select id="priv-retention" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border-subtle);
+          background:var(--bg-surface);color:var(--text-primary);font-size:0.8125rem;">
+          <option value="30" \${config.dataRetentionDays == 30 ? 'selected' : ''}>30 dias</option>
+          <option value="60" \${config.dataRetentionDays == 60 ? 'selected' : ''}>60 dias</option>
+          <option value="90" \${config.dataRetentionDays == 90 ? 'selected' : ''}>90 dias</option>
+          <option value="180" \${config.dataRetentionDays == 180 ? 'selected' : ''}>180 dias</option>
+          <option value="365" \${config.dataRetentionDays == 365 ? 'selected' : ''}>1 ano</option>
+        </select>
+        <button id="priv-clean-logs" style="padding:6px 14px;border-radius:6px;border:1px solid var(--danger,#EF4444);
+          background:transparent;color:var(--danger,#EF4444);font-size:0.75rem;cursor:pointer;font-family:inherit;">
+          Limpar logs antigos
+        </button>
+      </div>
+    </div>
+
+    <!-- Provedores permitidos -->
+    <div style="margin-bottom:24px;">
+      <h4 style="font-size:0.875rem;font-weight:600;margin-bottom:10px;color:var(--text-primary);">
+        Provedores Permitidos
+      </h4>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;" id="priv-providers">
+        \${providers.map(p => \`
+          <label style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;
+            border:1px solid var(--border-subtle);font-size:0.8125rem;cursor:pointer;">
+            <input type="checkbox" class="priv-provider-cb" data-provider="\${p.key}"
+              \${allowedProviders.includes(p.key) ? 'checked' : ''}
+              style="accent-color:var(--brand-gold);width:14px;height:14px;">
+            \${p.label}
+          </label>
+        \`).join('')}
+      </div>
+      <label style="display:flex;align-items:center;gap:10px;margin-top:10px;cursor:pointer;font-size:0.8125rem;">
+        <input type="checkbox" id="priv-local-preferred" \${config.localPreferred ? 'checked' : ''}
+          style="accent-color:var(--brand-gold);width:16px;height:16px;">
+        Preferir servidor local (Ollama) para módulos com dados sensíveis
+      </label>
+    </div>
+
+    <!-- Tabela de Compliance -->
+    <div style="margin-bottom:24px;">
+      <h4 style="font-size:0.875rem;font-weight:600;margin-bottom:10px;color:var(--text-primary);">
+        Compliance dos Provedores
+      </h4>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border-subtle);">
+              <th style="text-align:left;padding:8px;color:var(--text-muted);">Provedor</th>
+              <th style="text-align:center;padding:8px;color:var(--text-muted);">GDPR</th>
+              <th style="text-align:center;padding:8px;color:var(--text-muted);">LGPD</th>
+              <th style="text-align:center;padding:8px;color:var(--text-muted);">Região</th>
+              <th style="text-align:left;padding:8px;color:var(--text-muted);">Observação</th>
+            </tr>
+          </thead>
+          <tbody>
+            \${providers.map(p => {
+              const info = provInfo[p.key] || {};
+              return \`<tr style="border-bottom:1px solid var(--border-subtle,#1E2D3D);">
+                <td style="padding:8px;font-weight:500;">\${p.label}</td>
+                <td style="padding:8px;text-align:center;">\${info.gdpr ? '<span style="color:#22C55E;">✓</span>' : '<span style="color:#EF4444;">✕</span>'}</td>
+                <td style="padding:8px;text-align:center;">\${info.lgpd ? '<span style="color:#22C55E;">✓</span>' : '<span style="color:#F59E0B;">—</span>'}</td>
+                <td style="padding:8px;text-align:center;color:var(--text-muted);">\${info.region || '—'}</td>
+                <td style="padding:8px;color:var(--text-muted);font-size:0.6875rem;">\${info.note || ''}</td>
+              </tr>\`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Relatório LGPD -->
+    <div style="margin-bottom:16px;">
+      <h4 style="font-size:0.875rem;font-weight:600;margin-bottom:10px;color:var(--text-primary);">
+        Relatório LGPD
+      </h4>
+      <button id="priv-lgpd-report" style="padding:8px 18px;border-radius:8px;border:none;cursor:pointer;
+        background:linear-gradient(135deg,#D4A843,#B8922F);color:#0C1926;font-weight:600;font-size:0.8125rem;font-family:inherit;">
+        Gerar Relatório LGPD (30 dias)
+      </button>
+      <div id="priv-lgpd-result" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- Botão salvar -->
+    <div style="border-top:1px solid var(--border-subtle);padding-top:16px;display:flex;justify-content:flex-end;">
+      <button id="priv-save" style="padding:10px 28px;border-radius:8px;border:none;cursor:pointer;
+        background:linear-gradient(135deg,#D4A843,#B8922F);color:#0C1926;font-weight:600;font-size:0.875rem;font-family:inherit;">
+        Salvar Configurações
+      </button>
+    </div>
+  \`;
+
+  // Bind events
+  document.getElementById('priv-save')?.addEventListener('click', async () => {
+    try {
+      const { savePrivacyConfig } = await import('../services/aiDataGuard.js');
+      const newModules = Array.from(document.querySelectorAll('.priv-module-cb:checked')).map(cb => cb.dataset.module);
+      const newProviders = Array.from(document.querySelectorAll('.priv-provider-cb:checked')).map(cb => cb.dataset.provider);
+
+      await savePrivacyConfig({
+        anonymizePii: document.getElementById('priv-anonymize')?.checked ?? true,
+        anonymizeModules: newModules,
+        consentRequired: document.getElementById('priv-consent')?.checked ?? true,
+        consentVersion: config.consentVersion || '1.0',
+        dataRetentionDays: parseInt(document.getElementById('priv-retention')?.value || '90'),
+        allowedProviders: newProviders,
+        localPreferred: document.getElementById('priv-local-preferred')?.checked ?? false,
+        showDisclaimer: true,
+        providerInfo: config.providerInfo,
+      });
+      const { toast } = await import('../components/toast.js');
+      toast.success('Configurações de privacidade salvas.');
+    } catch (e) {
+      const { toast } = await import('../components/toast.js');
+      toast.error('Erro ao salvar: ' + e.message);
+    }
+  });
+
+  document.getElementById('priv-clean-logs')?.addEventListener('click', async () => {
+    try {
+      const { cleanExpiredLogs } = await import('../services/aiDataGuard.js');
+      const count = await cleanExpiredLogs();
+      const { toast } = await import('../components/toast.js');
+      toast.success(\`\${count} log(s) removido(s).\`);
+    } catch (e) {
+      const { toast } = await import('../components/toast.js');
+      toast.error('Erro: ' + e.message);
+    }
+  });
+
+  document.getElementById('priv-lgpd-report')?.addEventListener('click', async () => {
+    const resultEl = document.getElementById('priv-lgpd-result');
+    if (!resultEl) return;
+    resultEl.innerHTML = '<div style="color:var(--text-muted);">Gerando relatório...</div>';
+    try {
+      const { generateLgpdReport } = await import('../services/aiDataGuard.js');
+      const report = await generateLgpdReport();
+      resultEl.innerHTML = \`
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;padding:16px;font-size:0.75rem;">
+          <div style="font-weight:600;margin-bottom:12px;">Relatório LGPD — Últimos \${report.period}</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;">
+            <div style="text-align:center;">
+              <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">\${report.usage.totalCalls}</div>
+              <div style="color:var(--text-muted);">Chamadas IA</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">\${report.usage.totalTokens.toLocaleString()}</div>
+              <div style="color:var(--text-muted);">Tokens processados</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:1.25rem;font-weight:700;color:\${report.usage.anonymizationRate >= 80 ? '#22C55E' : '#F59E0B'};">\${report.usage.anonymizationRate}%</div>
+              <div style="color:var(--text-muted);">Taxa de anonimização</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">\${report.consent.consented}/\${report.consent.total}</div>
+              <div style="color:var(--text-muted);">Consentimentos ativos</div>
+            </div>
+          </div>
+          <div style="margin-bottom:12px;">
+            <strong>Por provedor:</strong>
+            \${Object.entries(report.usage.byProvider).map(([p,c]) => \`<span style="margin-left:8px;">\${p}: \${c}</span>\`).join(' |')}
+          </div>
+          <div>
+            <strong>Por módulo:</strong>
+            \${Object.entries(report.usage.byModule).map(([m,c]) => \`<span style="margin-left:8px;">\${m}: \${c}</span>\`).join(' |')}
+          </div>
+          <div style="margin-top:12px;color:var(--text-muted);font-size:0.6875rem;">
+            Gerado em: \${new Date(report.generatedAt).toLocaleString('pt-BR')}
+          </div>
+        </div>
+      \`;
+    } catch (e) {
+      resultEl.innerHTML = \`<div style="color:var(--danger);">Erro ao gerar relatório: \${e.message}</div>\`;
+    }
+  });
 }
 
 function renderSectionData(s) {

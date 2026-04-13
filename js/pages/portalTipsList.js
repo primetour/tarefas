@@ -219,9 +219,17 @@ function renderTable() {
     });
 
     const expiryBadge = expiredSegs.length
-      ? `<span style="font-size:0.75rem;padding:2px 8px;background:#EF444415;color:#EF4444;
-          border:1px solid #EF444430;border-radius:var(--radius-full);" title="${esc(expiredSegs.map(s=>s.label).join(', '))}">
-          ⚠ ${expiredSegs.length} vencido${expiredSegs.length!==1?'s':''}</span>`
+      ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span style="font-size:0.75rem;padding:2px 8px;background:#EF444415;color:#EF4444;
+            border:1px solid #EF444430;border-radius:var(--radius-full);" title="${esc(expiredSegs.map(s=>s.label).join(', '))}">
+            ⚠ ${expiredSegs.length} vencido${expiredSegs.length!==1?'s':''}</span>
+          <button class="btn-ai-suggest" data-tip-id="${r.id}" data-seg-key="${expiredSegs[0].key}"
+            style="font-size:0.625rem;padding:2px 8px;border-radius:var(--radius-full);border:1px solid rgba(212,168,67,0.4);
+            background:rgba(212,168,67,0.08);color:var(--brand-gold,#D4A843);cursor:pointer;font-family:inherit;
+            white-space:nowrap;" title="Sugestão de IA para atualizar segmento vencido">
+            ◈ IA: Sugerir
+          </button>
+        </div>`
       : expiringSegs.length
         ? `<span style="font-size:0.75rem;padding:2px 8px;background:#F59E0B15;color:#F59E0B;
             border:1px solid #F59E0B30;border-radius:var(--radius-full);" title="${esc(expiringSegs.map(s=>s.label).join(', '))}">
@@ -330,6 +338,110 @@ function renderTable() {
         toast.error('Erro ao atualizar prioridade.');
       }
     });
+  });
+
+  // ── Botões IA: Sugerir atualização para segmentos vencidos ──
+  tbody.querySelectorAll('.btn-ai-suggest').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const tipId  = btn.dataset.tipId;
+      const segKey = btn.dataset.segKey;
+      btn.disabled = true;
+      btn.textContent = '◈ Gerando...';
+
+      try {
+        const { suggestExpiredUpdate } = await import('../services/portal.js');
+        const result = await suggestExpiredUpdate(tipId, segKey);
+        showAiSuggestionPanel(tipId, segKey, result);
+      } catch (err) {
+        if (err.message === 'AI_CONSENT_REQUIRED') {
+          toast.info('Aceite os termos de uso de IA antes de continuar.');
+        } else {
+          toast.error('Erro ao gerar sugestão: ' + err.message);
+        }
+      }
+      btn.disabled = false;
+      btn.textContent = '◈ IA: Sugerir';
+    });
+  });
+}
+
+/* ─── Painel de sugestão de IA ────────────────────────────── */
+function showAiSuggestionPanel(tipId, segKey, result) {
+  // Remove painel anterior se existir
+  document.getElementById('ai-suggestion-panel')?.remove();
+
+  const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const sourcesHtml = result.sources?.length
+    ? result.sources.map(s =>
+      `<a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--brand-gold);font-size:0.6875rem;text-decoration:none;">
+        ${esc(s.source)} — ${esc(s.title?.substring(0, 60))}
+      </a>`
+    ).join('<br>')
+    : '<span style="color:var(--text-muted);font-size:0.6875rem;">Nenhuma fonte disponível</span>';
+
+  const panel = document.createElement('div');
+  panel.id = 'ai-suggestion-panel';
+  panel.style.cssText = `position:fixed;top:0;right:0;width:480px;max-width:100vw;height:100vh;
+    background:var(--bg-card,#111B27);border-left:1px solid var(--border-subtle,#1E2D3D);
+    box-shadow:-8px 0 30px rgba(0,0,0,0.3);z-index:10000;display:flex;flex-direction:column;
+    animation:slideIn 0.25s ease;`;
+
+  panel.innerHTML = `
+    <style>@keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}</style>
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:10px;">
+      <span style="font-size:1.125rem;">◈</span>
+      <div style="flex:1;">
+        <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);">Sugestão de IA</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);">${esc(result.destinationName)} — ${esc(result.segmentLabel)}</div>
+      </div>
+      <span style="font-size:0.625rem;padding:2px 8px;border-radius:var(--radius-full);
+        background:rgba(212,168,67,0.1);color:var(--brand-gold);">${esc(result.provider)} / ${esc(result.model)}</span>
+      <button id="ai-panel-close" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1rem;padding:4px 8px;">✕</button>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;padding:20px;">
+      <textarea id="ai-suggestion-text" style="width:100%;min-height:300px;padding:14px;border-radius:8px;
+        border:1px solid var(--border-subtle);background:var(--bg-surface);color:var(--text-primary);
+        font-family:inherit;font-size:0.8125rem;line-height:1.6;resize:vertical;">${esc(result.suggestion)}</textarea>
+
+      <div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:10px;margin-top:12px;font-size:0.75rem;color:#92400E;">
+        ⚠ <strong>Conteúdo gerado por IA</strong> — pode conter erros. Verifique preços, horários e endereços antes de publicar.
+      </div>
+
+      <div style="margin-top:16px;">
+        <div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:6px;">FONTES CONSULTADAS</div>
+        ${sourcesHtml}
+      </div>
+    </div>
+
+    <div style="padding:16px 20px;border-top:1px solid var(--border-subtle);display:flex;gap:10px;justify-content:flex-end;">
+      <button id="ai-discard" class="btn btn-ghost" style="font-size:0.8125rem;">Descartar</button>
+      <button id="ai-apply" class="btn" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;
+        background:linear-gradient(135deg,#D4A843,#B8922F);color:#0C1926;font-weight:600;font-size:0.8125rem;font-family:inherit;">
+        Aplicar ao Editor
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(panel);
+
+  document.getElementById('ai-panel-close')?.addEventListener('click', () => panel.remove());
+  document.getElementById('ai-discard')?.addEventListener('click', () => panel.remove());
+
+  document.getElementById('ai-apply')?.addEventListener('click', () => {
+    // Navegar para o editor com o tipId e segmentKey
+    const text = document.getElementById('ai-suggestion-text')?.value || '';
+    // Salvar sugestão no sessionStorage para o editor pegar
+    sessionStorage.setItem('ai-suggestion', JSON.stringify({
+      tipId, segmentKey,
+      suggestion: text,
+      appliedAt: new Date().toISOString(),
+    }));
+    panel.remove();
+    // Navegar para o editor
+    window.location.hash = `portal-tip-editor?id=${tipId}&seg=${segKey}&ai=1`;
   });
 }
 
