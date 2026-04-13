@@ -1299,7 +1299,12 @@ function handleEditorClick(e) {
 
     /* ── Export ────────────────────────────────────────────── */
     case 'export-pdf': {
-      currentRoteiro = collectFormData();
+      const formData = collectFormData();
+      if (formData) currentRoteiro = formData;
+      if (!currentRoteiro) {
+        showToast('Roteiro n\u00e3o carregado. Recarregue a p\u00e1gina.', 'error');
+        break;
+      }
       if (!(currentRoteiro.days || []).length) {
         showToast('Adicione pelo menos um dia antes de exportar.', 'warning');
         break;
@@ -1309,9 +1314,7 @@ function handleEditorClick(e) {
           // Sempre salvar antes de exportar (garante ID no Firestore)
           if (isDirty || !currentRoteiro.id) await handleSave();
           const areaId = document.getElementById('re-area-select')?.value || '';
-          const area = allAreas.find(a => a.id === areaId) || null;
           await generateRoteiroForExport(currentRoteiro, areaId);
-          showToast('PDF gerado com sucesso!', 'success');
         } catch (err) {
           showToast('Erro ao gerar PDF: ' + err.message, 'error');
         }
