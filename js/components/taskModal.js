@@ -472,7 +472,7 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         // inclui a opção "Sem squad" para deixar explícito que a task não é
         // de nenhum grupo específico.
         if (workspaces.length >= 1) {
-          const canEditWs = !isEdit || store.can('task_edit');
+          const canEditWs = !isEdit || store.can('task_edit_any');
           const wsName = workspaces.find(w => w.id === currentWsId)?.name || '';
           if (!canEditWs) {
             return `<div class="task-detail-field">
