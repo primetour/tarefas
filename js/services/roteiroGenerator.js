@@ -5,6 +5,7 @@
  */
 
 import { store } from '../store.js';
+import { toast } from '../components/toast.js';
 import { fetchAreas } from './portal.js';
 import { recordGeneration as logGeneration } from './roteiros.js';
 
@@ -290,22 +291,13 @@ export async function generateRoteiroForExport(roteiro, areaId) {
     }
     const result = await generateRoteiroPDF(roteiro, area);
 
-    // Show success toast if available
-    if (typeof store?.dispatch === 'function') {
-      store.dispatch('showToast', { message: `PDF gerado: ${result.filename}`, type: 'success' });
-    } else if (store?.showToast) {
-      store.showToast(`PDF gerado: ${result.filename}`, 'success');
-    }
+    toast.success(`PDF gerado: ${result.filename}`);
 
     return result;
   } catch (err) {
     console.error('[roteiroGenerator] Export failed:', err);
 
-    if (typeof store?.dispatch === 'function') {
-      store.dispatch('showToast', { message: 'Erro ao gerar PDF do roteiro.', type: 'error' });
-    } else if (store?.showToast) {
-      store.showToast('Erro ao gerar PDF do roteiro.', 'error');
-    }
+    toast.error('Erro ao gerar PDF do roteiro.');
 
     throw err;
   }
