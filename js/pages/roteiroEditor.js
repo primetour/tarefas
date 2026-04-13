@@ -1306,7 +1306,8 @@ function handleEditorClick(e) {
       }
       (async () => {
         try {
-          if (isDirty) await handleSave();
+          // Sempre salvar antes de exportar (garante ID no Firestore)
+          if (isDirty || !currentRoteiro.id) await handleSave();
           const areaId = document.getElementById('re-area-select')?.value || '';
           const area = allAreas.find(a => a.id === areaId) || null;
           await generateRoteiroForExport(currentRoteiro, areaId);
@@ -1539,7 +1540,7 @@ export async function renderRoteiroEditor(container) {
           <span class="status-badge">${esc(statusLabel)}</span>
           <span class="re-autosave" id="re-autosave-status">${roteiroId ? 'Carregado' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Novo roteiro')}</span>
           <button class="re-add-btn" data-action="save" style="margin-top:0;font-weight:700;padding:8px 20px;">Salvar</button>
-          ${roteiroId ? '<button class="re-add-btn" data-action="export-pdf" style="margin-top:0;padding:8px 16px;">Exportar PDF</button>' : ''}
+          <button class="re-add-btn" data-action="export-pdf" style="margin-top:0;padding:8px 16px;">Exportar PDF</button>
         </div>
 
         <!-- Two-column layout -->
