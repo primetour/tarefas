@@ -4,8 +4,8 @@
  */
 
 import { initializeApp }       from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth }             from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore }        from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getAuth, OAuthProvider } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore }          from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig }      from './config.js';
 
 // ─── Instância principal ───────────────────────────────────
@@ -14,6 +14,14 @@ const app = initializeApp(firebaseConfig, 'primetour-main');
 // ─── Instância secundária para criação de usuários ────────
 // Permite que o admin crie novos usuários sem fazer logout
 const secondaryApp = initializeApp(firebaseConfig, 'primetour-secondary');
+
+// ─── Microsoft SSO Provider ───────────────────────────────
+export const microsoftProvider = new OAuthProvider('microsoft.com');
+microsoftProvider.setCustomParameters({
+  tenant: 'primetour.com.br',     // Restringe ao tenant Microsoft da Primetour
+  prompt: 'select_account',       // Sempre mostra seletor de conta
+});
+microsoftProvider.addScope('user.read');
 
 // ─── Serviços exportados ───────────────────────────────────
 export const auth          = getAuth(app);
