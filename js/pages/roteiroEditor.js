@@ -1404,11 +1404,26 @@ export async function renderRoteiroEditor(container) {
   // Parse ID from hash
   const idMatch = location.hash.match(/[?&]id=([^&]+)/);
   const roteiroId = idMatch ? idMatch[1] : null;
+  const isAiCreate = location.hash.includes('ai=1');
 
   // Show loading
-  container.innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-muted);">Carregando editor...</div>';
+  container.innerHTML = `<div style="text-align:center;padding:60px;color:var(--text-muted);">
+    ${isAiCreate ? 'Carregando roteiro gerado por IA...' : 'Carregando editor...'}
+  </div>`;
 
   try {
+    // Check for AI-generated data in sessionStorage
+    let aiData = null;
+    if (isAiCreate) {
+      const raw = sessionStorage.getItem('ai_roteiro_data');
+      const ts = parseInt(sessionStorage.getItem('ai_roteiro_ts') || '0');
+      if (raw && (Date.now() - ts) < 300000) { // 5 min TTL
+        try { aiData = JSON.parse(raw); } catch (e) { /* ignore */ }
+      }
+      sessionStorage.removeItem('ai_roteiro_data');
+      sessionStorage.removeItem('ai_roteiro_ts');
+    }
+
     // Load data in parallel
     const [roteiroData, destinations, areas] = await Promise.all([
       roteiroId ? fetchRoteiro(roteiroId) : null,
@@ -1421,6 +1436,12 @@ export async function renderRoteiroEditor(container) {
 
     if (roteiroData) {
       currentRoteiro = roteiroData;
+    } else if (aiData) {
+      // Roteiro gerado pela IA
+      currentRoteiro = aiData;
+      currentRoteiro.status = 'draft';
+      currentRoteiro.consultantId = store.get('user')?.uid || '';
+      currentRoteiro.consultantName = store.get('user')?.displayName || '';
     } else {
       currentRoteiro = {
         status: 'draft',
@@ -1472,7 +1493,8 @@ export async function renderRoteiroEditor(container) {
     currentRoteiro.importantInfo = currentRoteiro.importantInfo || {};
     currentRoteiro.importantInfo.customFields = currentRoteiro.importantInfo.customFields || [];
 
-    const pageTitle = roteiroId ? 'Editar Roteiro' : 'Novo Roteiro';
+    const isAiGenerated = currentRoteiro.aiGenerated === true;
+    const pageTitle = roteiroId ? 'Editar Roteiro' : (isAiGenerated ? 'Roteiro Gerado por IA' : 'Novo Roteiro');
     const statusLabel = currentRoteiro.status || 'draft';
 
     // Inject CSS
@@ -1484,12 +1506,38 @@ export async function renderRoteiroEditor(container) {
     // Render page
     container.innerHTML = `
       <div id="re-editor-root">
+        ${isAiGenerated && !roteiroId ? `
+        <!-- AI Banner -->
+        <div style="background:#FEF3C720;border:1px solid #F59E0B33;border-radius:10px;
+          padding:14px 18px;margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;">
+          <span style="font-size:1.25rem;">◈</span>
+          <div style="flex:1;">
+            <div style="font-size:0.875rem;font-weight:600;color:#F59E0B;margin-bottom:4px;">
+              Roteiro gerado por Intelig\u00eancia Artificial
+            </div>
+            <div style="font-size:0.8125rem;color:var(--text-muted);line-height:1.5;">
+              Revise todas as se\u00e7\u00f5es antes de salvar. Verifique nomes de hot\u00e9is, pre\u00e7os,
+              hor\u00e1rios e informa\u00e7\u00f5es importantes. A IA pode gerar dados imprecisos.
+            </div>
+            ${currentRoteiro.aiPrompt ? `
+            <details style="margin-top:8px;">
+              <summary style="font-size:0.75rem;color:var(--text-muted);cursor:pointer;">Prompt utilizado</summary>
+              <p style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;padding:8px;
+                background:var(--bg-dark,#0C1926);border-radius:6px;white-space:pre-wrap;">${esc(currentRoteiro.aiPrompt)}</p>
+            </details>
+            ` : ''}
+          </div>
+          <button onclick="this.closest('div[style]').remove()" style="background:none;border:none;
+            color:var(--text-muted);cursor:pointer;font-size:1.25rem;padding:0 4px;">&times;</button>
+        </div>
+        ` : ''}
+
         <!-- Header -->
         <div class="re-header">
           <button class="re-add-btn" data-action="back" style="margin-top:0;padding:6px 14px;font-size:0.8125rem;">\u2190 Voltar</button>
           <span class="re-header-title">${esc(pageTitle)}</span>
           <span class="status-badge">${esc(statusLabel)}</span>
-          <span class="re-autosave" id="re-autosave-status">${roteiroId ? 'Carregado' : 'Novo roteiro'}</span>
+          <span class="re-autosave" id="re-autosave-status">${roteiroId ? 'Carregado' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Novo roteiro')}</span>
           <button class="re-add-btn" data-action="save" style="margin-top:0;font-weight:700;padding:8px 20px;">Salvar</button>
           ${roteiroId ? '<button class="re-add-btn" data-action="export-pdf" style="margin-top:0;padding:8px 16px;">Exportar PDF</button>' : ''}
         </div>

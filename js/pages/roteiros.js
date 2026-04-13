@@ -6,7 +6,7 @@
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
-import { fetchRoteiros, deleteRoteiro, duplicateRoteiro, updateRoteiroStatus } from '../services/roteiros.js';
+import { fetchRoteiros, deleteRoteiro, duplicateRoteiro, updateRoteiroStatus, generateRoteiroFromPrompt } from '../services/roteiros.js';
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
@@ -89,8 +89,12 @@ export async function renderRoteiros(container) {
           Crie e gerencie roteiros personalizados para seus clientes
         </p>
       </div>
-      <div class="page-actions">
+      <div class="page-actions" style="display:flex;gap:8px;">
         ${store.canCreateRoteiro() ? `
+          <button class="btn btn-secondary" data-action="ai-create" style="gap:6px;"
+            title="Criar roteiro completo via IA a partir de uma descrição em texto livre">
+            ◈ Criar com IA
+          </button>
           <button class="btn btn-primary" data-action="new-roteiro" style="gap:6px;">
             + Novo Roteiro
           </button>
@@ -304,6 +308,11 @@ export async function renderRoteiros(container) {
       return;
     }
 
+    if (action === 'ai-create') {
+      openAiCreateModal(container);
+      return;
+    }
+
     if (action === 'edit') {
       location.hash = `#roteiro-editor?id=${id}`;
       return;
@@ -390,4 +399,195 @@ export async function renderRoteiros(container) {
 
   /* ── Init ── */
   await loadData();
+}
+
+/* ════════════════════════════════════════════════════════════
+   Modal: Criar Roteiro com IA
+   ════════════════════════════════════════════════════════════ */
+
+function openAiCreateModal(container) {
+  // Remove modal anterior se existir
+  document.getElementById('ai-roteiro-modal-overlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'ai-roteiro-modal-overlay';
+  overlay.style.cssText = `
+    position:fixed;top:0;left:0;right:0;bottom:0;z-index:9000;
+    background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;
+    animation:fadeIn .2s ease;
+  `;
+
+  overlay.innerHTML = `
+    <div id="ai-roteiro-modal" style="
+      background:var(--bg-surface,#1a1a2e);border-radius:16px;width:95%;max-width:680px;
+      max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.4);
+      border:1px solid var(--border-subtle,#333);padding:32px;">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+        <div style="width:44px;height:44px;border-radius:12px;
+          background:linear-gradient(135deg,#D4A843,#B8922F);
+          display:flex;align-items:center;justify-content:center;font-size:1.25rem;">
+          ◈
+        </div>
+        <div style="flex:1;">
+          <h2 style="margin:0;font-size:1.25rem;font-weight:700;color:var(--text-primary);">
+            Criar Roteiro com IA
+          </h2>
+          <p style="margin:2px 0 0;font-size:0.8125rem;color:var(--text-muted);">
+            Descreva a viagem e a IA gera o roteiro completo para você
+          </p>
+        </div>
+        <button id="ai-roteiro-close" style="background:none;border:none;cursor:pointer;
+          color:var(--text-muted);font-size:1.5rem;padding:4px 8px;border-radius:8px;
+          transition:all .15s;" onmouseover="this.style.color='var(--text-primary)'"
+          onmouseout="this.style.color='var(--text-muted)'">&times;</button>
+      </div>
+
+      <!-- Prompt -->
+      <div style="margin-bottom:16px;">
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-muted);
+          text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
+          Descreva o roteiro desejado
+        </label>
+        <textarea id="ai-roteiro-prompt" rows="7"
+          style="width:100%;padding:14px;border-radius:10px;font-size:0.9375rem;
+          font-family:inherit;resize:vertical;line-height:1.6;
+          background:var(--bg-input,var(--bg-dark,#0C1926));
+          border:1px solid var(--border-subtle,#333);
+          color:var(--text-primary);box-sizing:border-box;"
+          placeholder="Exemplo: Roteiro de 12 dias pela Itália para um casal em lua de mel, perfil luxury. Começando por Roma (3 noites), depois Toscana (3 noites), Costa Amalfitana (3 noites) e finalizando em Veneza (2 noites). Interesse em gastronomia, cultura e vinícolas. Partindo em 15 de junho de 2026."></textarea>
+      </div>
+
+      <!-- Dicas -->
+      <div style="background:var(--bg-dark,#0C1926);border-radius:10px;padding:14px 16px;
+        margin-bottom:20px;font-size:0.8125rem;color:var(--text-muted);line-height:1.6;">
+        <strong style="color:var(--text-secondary);">Dicas para um bom resultado:</strong>
+        <ul style="margin:8px 0 0;padding-left:18px;">
+          <li>Informe destinos, quantidade de noites em cada um</li>
+          <li>Tipo de viajante: casal, família, grupo, individual</li>
+          <li>Perfil econômico: standard, premium ou luxury</li>
+          <li>Interesses: gastronomia, cultura, aventura, natureza...</li>
+          <li>Datas de viagem (ou deixe em branco para sugestão automática)</li>
+          <li>Restrições: mobilidade, alimentação, etc.</li>
+        </ul>
+      </div>
+
+      <!-- Disclaimer -->
+      <div style="background:#FEF3C720;border:1px solid #F59E0B33;border-radius:8px;
+        padding:10px 14px;margin-bottom:20px;font-size:0.75rem;color:#F59E0B;line-height:1.5;">
+        ◈ <strong>Conteúdo gerado por IA</strong> — O roteiro será criado como rascunho para sua revisão.
+        Verifique nomes de hotéis, preços e informações antes de enviar ao cliente.
+      </div>
+
+      <!-- Ações -->
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button id="ai-roteiro-cancel"
+          style="padding:10px 24px;border-radius:8px;border:1px solid var(--border-subtle,#333);
+          background:transparent;color:var(--text-secondary);font-size:0.875rem;
+          cursor:pointer;font-family:inherit;">
+          Cancelar
+        </button>
+        <button id="ai-roteiro-generate"
+          style="padding:10px 28px;border-radius:8px;border:none;cursor:pointer;
+          background:linear-gradient(135deg,#D4A843,#B8922F);color:#0C1926;
+          font-weight:700;font-size:0.875rem;font-family:inherit;
+          display:flex;align-items:center;gap:8px;">
+          ◈ Gerar Roteiro
+        </button>
+      </div>
+
+      <!-- Progress (hidden initially) -->
+      <div id="ai-roteiro-progress" style="display:none;margin-top:20px;text-align:center;">
+        <div style="margin-bottom:12px;">
+          <div style="width:40px;height:40px;border:3px solid var(--border-subtle);
+            border-top-color:var(--brand-gold,#D4A843);border-radius:50%;
+            animation:spin 1s linear infinite;margin:0 auto;"></div>
+        </div>
+        <p id="ai-roteiro-progress-text" style="font-size:0.875rem;color:var(--text-muted);">
+          Gerando roteiro... Isso pode levar até 30 segundos.
+        </p>
+      </div>
+    </div>
+
+    <style>
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Focus no textarea
+  setTimeout(() => document.getElementById('ai-roteiro-prompt')?.focus(), 100);
+
+  // Fechar modal
+  const closeModal = () => overlay.remove();
+  document.getElementById('ai-roteiro-close').addEventListener('click', closeModal);
+  document.getElementById('ai-roteiro-cancel').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+  // Esc para fechar
+  const escHandler = (e) => { if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', escHandler); } };
+  document.addEventListener('keydown', escHandler);
+
+  // Gerar roteiro
+  document.getElementById('ai-roteiro-generate').addEventListener('click', async () => {
+    const prompt = document.getElementById('ai-roteiro-prompt')?.value?.trim();
+    if (!prompt) {
+      toast.error('Digite uma descrição para o roteiro.');
+      return;
+    }
+    if (prompt.length < 20) {
+      toast.error('Descrição muito curta. Forneça mais detalhes sobre a viagem.');
+      return;
+    }
+
+    const btn = document.getElementById('ai-roteiro-generate');
+    const progress = document.getElementById('ai-roteiro-progress');
+    const progressText = document.getElementById('ai-roteiro-progress-text');
+
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    btn.textContent = 'Gerando...';
+    progress.style.display = 'block';
+
+    // Mensagens de progresso
+    const messages = [
+      'Analisando destinos e preferências...',
+      'Montando dia a dia do roteiro...',
+      'Selecionando hotéis e restaurantes...',
+      'Criando narrativas de cada dia...',
+      'Finalizando detalhes e informações...',
+    ];
+    let msgIdx = 0;
+    const msgTimer = setInterval(() => {
+      msgIdx = Math.min(msgIdx + 1, messages.length - 1);
+      if (progressText) progressText.textContent = messages[msgIdx];
+    }, 5000);
+
+    try {
+      const roteiro = await generateRoteiroFromPrompt(prompt);
+
+      clearInterval(msgTimer);
+
+      // Salvar no sessionStorage para o editor carregar
+      sessionStorage.setItem('ai_roteiro_data', JSON.stringify(roteiro));
+      sessionStorage.setItem('ai_roteiro_ts', Date.now().toString());
+
+      closeModal();
+      toast.success('Roteiro gerado! Abrindo editor para revisão...');
+
+      // Navegar para o editor com flag de IA
+      location.hash = '#roteiro-editor?ai=1';
+    } catch (e) {
+      clearInterval(msgTimer);
+      console.error('Erro ao gerar roteiro via IA:', e);
+      toast.error(e.message || 'Erro ao gerar roteiro via IA.');
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.textContent = '◈ Gerar Roteiro';
+      progress.style.display = 'none';
+    }
+  });
 }
