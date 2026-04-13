@@ -126,6 +126,13 @@ export async function initSystemTaskTypes() {
 
 /* ─── Buscar todos os tipos disponíveis para o usuário ────── */
 export async function fetchTaskTypes({ workspaceId = null } = {}) {
+  // Cache: retorna dados em cache se < 5 min (evita re-fetch em cada navegação)
+  const cached = store.getCached('taskTypes');
+  if (cached) {
+    const wsId = workspaceId || store.get('currentWorkspace')?.id;
+    return cached.filter(t => !t.workspaceId || t.workspaceId === wsId);
+  }
+
   const snap = await getDocs(query(collection(db, 'task_types'), orderBy('createdAt', 'asc')));
   let types  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -133,6 +140,7 @@ export async function fetchTaskTypes({ workspaceId = null } = {}) {
   const wsId = workspaceId || store.get('currentWorkspace')?.id;
   types = types.filter(t => !t.workspaceId || t.workspaceId === wsId);
 
+  store.setCache('taskTypes', snap.docs.map(d => ({ id: d.id, ...d.data() })));
   return types;
 }
 
@@ -230,6 +238,7 @@ export async function createTaskType({
   const newType = { id: ref.id, ...typeDoc };
   // Atualizar cache
   store.set('taskTypes', [...(store.get('taskTypes') || []), newType]);
+  store.invalidateCache('taskTypes');
   return newType;
 }
 
@@ -263,6 +272,7 @@ export async function updateTaskType(typeId, data) {
     t.id === typeId ? { ...t, ...updates } : t
   );
   store.set('taskTypes', types);
+  store.invalidateCache('taskTypes');
 }
 
 /* ─── Excluir tipo ────────────────────────────────────────── */
@@ -276,6 +286,7 @@ export async function deleteTaskType(typeId) {
   await auditLog('task_types.delete', 'task_type', typeId, { name: type.name });
 
   store.set('taskTypes', (store.get('taskTypes') || []).filter(t => t.id !== typeId));
+  store.invalidateCache('taskTypes');
 }
 
 /* ─── Validar regras de negócio ao criar tarefa ──────────── */

@@ -76,6 +76,7 @@ export async function createProject(data) {
     }).catch(() => {});
   }
 
+  store.invalidateCache('projects');
   return { id: ref.id, ...projectDoc };
 }
 
@@ -95,6 +96,7 @@ export async function updateProject(projectId, data) {
     ...data, updatedAt: serverTimestamp(), updatedBy: user.uid,
   });
   await auditLog('projects.update', 'project', projectId, { fields: Object.keys(data) });
+  store.invalidateCache('projects');
 
   // Notificar membros recém-adicionados e removidos (diff)
   if (Array.isArray(data.members) && prevData) {
@@ -131,6 +133,7 @@ export async function deleteProject(projectId) {
   if (!store.can('project_delete')) throw new Error('Permissão negada.');
   await deleteDoc(doc(db, 'projects', projectId));
   await auditLog('projects.delete', 'project', projectId, {});
+  store.invalidateCache('projects');
 }
 
 /* ─── Buscar projeto ─────────────────────────────────────── */
@@ -141,6 +144,10 @@ export async function getProject(projectId) {
 
 /* ─── Listar projetos ────────────────────────────────────── */
 export async function fetchProjects({ includeArchived = false, workspaceIds = null } = {}) {
+  // Cache: retorna dados em cache se < 5 min (evita re-fetch em cada navegação)
+  const cached = store.getCached('projects');
+  if (cached) return includeArchived ? cached : cached.filter(p => !p.archived);
+
   const q    = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
   const snap = await getDocs(q);
   let all    = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -164,6 +171,7 @@ export async function fetchProjects({ includeArchived = false, workspaceIds = nu
     );
   }
 
+  store.setCache('projects', all);
   return includeArchived ? all : all.filter(p => !p.archived);
 }
 

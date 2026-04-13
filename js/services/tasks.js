@@ -296,9 +296,15 @@ export async function fetchTasks({
   status       = null,
   priority     = null,
   workspaceIds = null,   // null = usa activeWorkspaces do store
-  limitN       = 500,
+  limitN       = 200,
 } = {}) {
-  const q    = query(collection(db, 'tasks'), orderBy('order', 'asc'), limit(limitN));
+  // Otimização: filtrar por workspace no Firestore quando possível
+  const constraints = [orderBy('order', 'asc'), limit(limitN)];
+  const activeIds = workspaceIds ?? store.getActiveWorkspaceIds();
+  if (activeIds && activeIds.length === 1) {
+    constraints.unshift(where('workspaceId', '==', activeIds[0]));
+  }
+  const q = query(collection(db, 'tasks'), ...constraints);
   const snap = await getDocs(q);
   let tasks  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -344,37 +350,47 @@ export async function fetchTasks({
 
 /* ─── Real-time listener ─────────────────────────────────── */
 export function subscribeToTasks(callback, filters = {}) {
-  const q = query(collection(db, 'tasks'), orderBy('order', 'asc'), limit(500));
+  // Otimização: filtrar por workspace no Firestore quando possível
+  const constraints = [orderBy('order', 'asc'), limit(200)];
+  const activeIds = store.getActiveWorkspaceIds();
+  if (activeIds && activeIds.length === 1) {
+    constraints.unshift(where('workspaceId', '==', activeIds[0]));
+  }
+  const q = query(collection(db, 'tasks'), ...constraints);
 
+  let debounceTimer = null;
   return onSnapshot(q, (snap) => {
-    let tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      let tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    // Tarefas atribuídas ao usuário sempre são visíveis
-    const currentUid = store.get('currentUser')?.uid;
-    const isAssignee = (t) => currentUid && (t.assignees || []).includes(currentUid);
+      // Tarefas atribuídas ao usuário sempre são visíveis
+      const currentUid = store.get('currentUser')?.uid;
+      const isAssignee = (t) => currentUid && (t.assignees || []).includes(currentUid);
 
-    // Filtro por workspace (squad)
-    const activeIdsArr = store.getActiveWorkspaceIds();
-    const activeIdsSet = new Set(activeIdsArr ?? []);
-    const isInActiveSquad = (t) => !!t.workspaceId && activeIdsSet.has(t.workspaceId);
+      // Filtro por workspace (squad)
+      const activeIdsArr = store.getActiveWorkspaceIds();
+      const activeIdsSet = new Set(activeIdsArr ?? []);
+      const isInActiveSquad = (t) => !!t.workspaceId && activeIdsSet.has(t.workspaceId);
 
-    if (activeIdsArr) {
-      tasks = tasks.filter(t => isAssignee(t) || !t.workspaceId || activeIdsSet.has(t.workspaceId));
-    }
+      if (activeIdsArr) {
+        tasks = tasks.filter(t => isAssignee(t) || !t.workspaceId || activeIdsSet.has(t.workspaceId));
+      }
 
-    // Filtro por setor — squad membership sobrescreve (multissetor funcional)
-    const visibleSectors = store.get('visibleSectors') || [];
-    if (!store.isMaster() && visibleSectors.length > 0) {
-      tasks = tasks.filter(t =>
-        isAssignee(t)
-        || isInActiveSquad(t)
-        || !t.sector
-        || visibleSectors.includes(t.sector)
-      );
-    }
+      // Filtro por setor — squad membership sobrescreve (multissetor funcional)
+      const visibleSectors = store.get('visibleSectors') || [];
+      if (!store.isMaster() && visibleSectors.length > 0) {
+        tasks = tasks.filter(t =>
+          isAssignee(t)
+          || isInActiveSquad(t)
+          || !t.sector
+          || visibleSectors.includes(t.sector)
+        );
+      }
 
-    if (filters.projectId) tasks = tasks.filter(t => t.projectId === filters.projectId);
-    callback(tasks);
+      if (filters.projectId) tasks = tasks.filter(t => t.projectId === filters.projectId);
+      callback(tasks);
+    }, 300);
   }, (error) => {
     // Handle permission errors gracefully — fallback to empty array
     console.warn('subscribeToTasks error:', error.code, error.message);
