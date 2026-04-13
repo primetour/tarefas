@@ -113,7 +113,7 @@ export async function deleteArea(id) {
 
 /* ─── Destinations ────────────────────────────────────────── */
 export async function fetchDestinations({ continent, country } = {}) {
-  const snap = await getDocs(collection(db, 'portal_destinations'));
+  const snap = await getDocs(query(collection(db, 'portal_destinations'), limit(1000)));
   let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   if (continent) docs = docs.filter(d => d.continent === continent);
   if (country)   docs = docs.filter(d => d.country   === country);
@@ -128,7 +128,7 @@ export async function fetchDestinations({ continent, country } = {}) {
 }
 
 export async function fetchContinentsWithContent() {
-  const snap = await getDocs(collection(db, 'portal_destinations'));
+  const snap = await getDocs(query(collection(db, 'portal_destinations'), limit(1000)));
   const continents = new Set(snap.docs.map(d => d.data().continent).filter(Boolean));
   return CONTINENTS.filter(c => continents.has(c));
 }
@@ -168,7 +168,7 @@ export async function fetchTip(destinationId) {
 }
 
 export async function fetchTips({ continent, country } = {}) {
-  const snap = await getDocs(query(collection(db, 'portal_tips'), orderBy('updatedAt', 'desc')));
+  const snap = await getDocs(query(collection(db, 'portal_tips'), orderBy('updatedAt', 'desc'), limit(500)));
   let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   if (continent) docs = docs.filter(d => d.continent === continent);
   if (country)   docs = docs.filter(d => d.country   === country);
@@ -299,7 +299,7 @@ export async function registerDownload() {
 
 /* ─── Images ──────────────────────────────────────────────── */
 export async function fetchImages({ continent, country, city } = {}) {
-  const snap = await getDocs(query(collection(db, 'portal_images'), orderBy('uploadedAt', 'desc')));
+  const snap = await getDocs(query(collection(db, 'portal_images'), orderBy('uploadedAt', 'desc'), limit(200)));
   let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   if (continent) docs = docs.filter(d => d.continent === continent);
   if (country)   docs = docs.filter(d => d.country   === country);

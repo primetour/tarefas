@@ -11,7 +11,7 @@
 
 import {
   collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, serverTimestamp, Timestamp,
+  query, where, orderBy, serverTimestamp, Timestamp, increment,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -139,15 +139,9 @@ export async function logAutomationRun(id, success, result = '') {
     updatedAt:     serverTimestamp(),
   };
 
-  // Increment counters — Firestore doesn't have atomic increment in client SDK easily,
-  // so we fetch + update
-  try {
-    const current = await fetchAutomation(id);
-    if (current) {
-      updates.runCount   = (current.runCount || 0) + 1;
-      updates.errorCount = success ? (current.errorCount || 0) : (current.errorCount || 0) + 1;
-    }
-  } catch {}
+  // Use atomic increment — no extra read needed
+  updates.runCount   = increment(1);
+  updates.errorCount = success ? increment(0) : increment(1);
 
   await updateDoc(doc(db, COL, id), updates);
 }

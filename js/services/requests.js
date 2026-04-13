@@ -63,7 +63,7 @@ export async function createRequest({
   try {
     const { notify } = await import('./notifications.js');
     // Get admin/manager users to notify
-    const usersSnap = await getDocs(collection(db, 'users'));
+    const usersSnap = await getDocs(query(collection(db, 'users'), where('active', '==', true), limit(500)));
     const admins = usersSnap.docs
       .map(d => ({ id: d.id, ...d.data() }))
       .filter(u => u.active !== false && (u.isMaster || u.roleId === 'admin' || u.roleId === 'head'))

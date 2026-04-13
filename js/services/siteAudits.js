@@ -31,7 +31,7 @@ export async function getPsiApiKey() {
 
 /* ─── Lista sites cadastrados ────────────────────────────── */
 export async function fetchSites() {
-  const snap = await getDocs(query(collection(db, 'audit_sites'), orderBy('label')));
+  const snap = await getDocs(query(collection(db, 'audit_sites'), orderBy('label'), limit(500)));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 

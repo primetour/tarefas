@@ -302,11 +302,13 @@ export async function fetchSurveyMapByTaskIds(taskIds = []) {
   const map = {};
   const chunks = [];
   for (let i = 0; i < taskIds.length; i += 30) chunks.push(taskIds.slice(i, i + 30));
-  for (const chunk of chunks) {
-    const snap = await getDocs(query(
+  const results = await Promise.all(chunks.map(chunk =>
+    getDocs(query(
       collection(db, 'csat_surveys'),
       where('taskId', 'in', chunk)
-    ));
+    ))
+  ));
+  for (const snap of results) {
     for (const d of snap.docs) {
       const data = { id: d.id, ...d.data() };
       if (!map[data.taskId]) map[data.taskId] = [];
