@@ -354,10 +354,10 @@ async function loadData(container) {
 function renderKPIs(m) {
   document.getElementById('kpi-row').innerHTML = `
     ${kpiCard('Total de Tarefas',    m.total,                   '📋', 'rgba(212,168,67,0.12)',  'var(--brand-gold)')}
-    ${kpiCard('Em Andamento',        m.inProgress,              '▶',  'rgba(56,189,248,0.12)',  '#38BDF8')}
-    ${kpiCard('Concluídas (período)',m.doneInPeriod,             '✓',  'rgba(34,197,94,0.12)',   '#22C55E')}
-    ${kpiCard('Em Atraso',           m.overdue,                 '⚠',  'rgba(239,68,68,0.12)',   '#EF4444')}
-    ${kpiCard('Entregues no Prazo',  m.onTimeRate + '%',        '🎯', 'rgba(167,139,250,0.12)', '#A78BFA',
+    ${kpiCard('Em Andamento',        m.inProgress,              '▶',  'rgba(56,189,248,0.12)',  'var(--color-info)')}
+    ${kpiCard('Concluídas (período)',m.doneInPeriod,             '✓',  'rgba(34,197,94,0.12)',   'var(--color-success)')}
+    ${kpiCard('Em Atraso',           m.overdue,                 '⚠',  'rgba(239,68,68,0.12)',   'var(--color-danger)')}
+    ${kpiCard('Entregues no Prazo',  m.onTimeRate + '%',        '🎯', 'rgba(167,139,250,0.12)', 'var(--role-admin)',
       `${m.doneOnTime} de ${m.done} concluídas`)}
   `;
   // Animate bars
@@ -370,8 +370,12 @@ function renderKPIs(m) {
 
 function kpiCard(label, value, icon, ibg, ic, sub = '') {
   const pct = typeof value === 'string' ? parseInt(value) : Math.min(100, Math.round(value / 20 * 100));
+  // Map color to accent type for CSS stripe
+  const accentMap = { 'var(--color-info)':'info', 'var(--color-success)':'success',
+    'var(--color-danger)':'danger', 'var(--color-warning)':'warning', 'var(--brand-gold)':'brand' };
+  const accent = accentMap[ic] || 'brand';
   return `
-    <div class="dash-widget col-span-3" style="min-height:unset;">
+    <div class="dash-widget kpi col-span-3" data-accent="${accent}" style="min-height:unset;">
       <div class="kpi-widget">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
           <div class="widget-icon" style="background:${ibg}; color:${ic};">${icon}</div>
@@ -666,8 +670,8 @@ function renderUpcoming(gridId, id, colClass, tasks) {
   grid.appendChild(wrap);
 
   const { PRIORITY_MAP } = { PRIORITY_MAP: {
-    urgent:{label:'Urgente',color:'#EF4444'}, high:{label:'Alta',color:'#F97316'},
-    medium:{label:'Média',color:'#F59E0B'},   low:{label:'Baixa',color:'#6B7280'},
+    urgent:{label:'Urgente',color:'var(--color-danger)'}, high:{label:'Alta',color:'#F97316'},
+    medium:{label:'Média',color:'var(--color-warning)'},   low:{label:'Baixa',color:'#6B7280'},
   }};
 
   wrap.innerHTML = `
@@ -995,7 +999,7 @@ function renderCsatGeneral(tasks, surveys) {
   if (!el) return;
   const m = getCsatGeneral(surveys);
   const stars = m.avg ? '★'.repeat(Math.round(m.avg)) + '☆'.repeat(5-Math.round(m.avg)) : '—';
-  const scoreColor = m.avg >= 4 ? '#22C55E' : m.avg >= 3 ? '#F59E0B' : m.avg > 0 ? '#EF4444' : 'var(--text-muted)';
+  const scoreColor = m.avg >= 4 ? 'var(--color-success)' : m.avg >= 3 ? 'var(--color-warning)' : m.avg > 0 ? 'var(--color-danger)' : 'var(--text-muted)';
 
   el.innerHTML = `
     <div class="widget-header">
@@ -1018,10 +1022,10 @@ function renderCsatGeneral(tasks, surveys) {
           </div>
           <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             ${[
-              ['Total enviadas', m.total,        '#38BDF8'],
-              ['Respondidas',    m.responded,    '#22C55E'],
+              ['Total enviadas', m.total,        'var(--color-info)'],
+              ['Respondidas',    m.responded,    'var(--color-success)'],
               ['Taxa resposta',  m.responseRate+'%', '#A78BFA'],
-              ['Enviadas',       m.sent,         '#F59E0B'],
+              ['Enviadas',       m.sent,         'var(--color-warning)'],
             ].map(([label,val,color]) => `
               <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:8px 10px;">
                 <div style="font-size:1.125rem;font-weight:700;color:${color};">${val}</div>
@@ -1040,7 +1044,7 @@ function renderReworkWidget(tasks) {
   const el = document.getElementById('r3-rework');
   if (!el) return;
   const r = getReworkRate(tasks);
-  const color = r.noReworkRate >= 80 ? '#22C55E' : r.noReworkRate >= 60 ? '#F59E0B' : '#EF4444';
+  const color = r.noReworkRate >= 80 ? 'var(--color-success)' : r.noReworkRate >= 60 ? 'var(--color-warning)' : 'var(--color-danger)';
 
   el.innerHTML = `
     <div class="widget-header">
@@ -1063,7 +1067,7 @@ function renderReworkWidget(tasks) {
         </div>
         <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);">
           <span>🔄 Em retrabalho agora: <strong style="color:var(--color-warning);">${r.inRework}</strong></span>
-          <span>Com retrabalho: <strong style="color:#EF4444;">${r.withRework}</strong></span>
+          <span>Com retrabalho: <strong style="color:var(--color-danger);">${r.withRework}</strong></span>
         </div>
       `}
     </div>
@@ -1075,7 +1079,7 @@ function renderNewslettersWidget(tasks) {
   const el = document.getElementById('r3-newsletters');
   if (!el) return;
   const n = getNewslettersOutOfCalendar(tasks, activePeriod());
-  const color = n.outOfCalendarPct === 0 ? '#22C55E' : n.outOfCalendarPct < 20 ? '#F59E0B' : '#EF4444';
+  const color = n.outOfCalendarPct === 0 ? 'var(--color-success)' : n.outOfCalendarPct < 20 ? 'var(--color-warning)' : 'var(--color-danger)';
 
   el.innerHTML = `
     <div class="widget-header">
@@ -1097,7 +1101,7 @@ function renderNewslettersWidget(tasks) {
           <div style="height:100%;width:${n.outOfCalendarPct}%;background:${color};border-radius:4px;transition:width 0.8s ease;"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);">
-          <span>✓ No calendário: <strong style="color:#22C55E;">${n.inCalendar}</strong></span>
+          <span>✓ No calendário: <strong style="color:var(--color-success);">${n.inCalendar}</strong></span>
           <span>⚠ Fora: <strong style="color:${color};">${n.outOfCalendar}</strong></span>
         </div>
       `}
@@ -1124,7 +1128,7 @@ function renderCsatByAreaWidget(tasks, surveys) {
         </div>` :
         data.map(d => {
           const avg   = d.avg || 0;
-          const color = avg >= 4 ? '#22C55E' : avg >= 3 ? '#F59E0B' : avg > 0 ? '#EF4444' : '#6B7280';
+          const color = avg >= 4 ? 'var(--color-success)' : avg >= 3 ? 'var(--color-warning)' : avg > 0 ? 'var(--color-danger)' : '#6B7280';
           return `
             <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle);">
               <div style="min-width:120px;font-size:0.8125rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(d.area)}">${esc(d.area)}</div>

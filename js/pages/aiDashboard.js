@@ -53,7 +53,7 @@ export async function renderAiDashboard(container) {
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title">
-          <span style="background:linear-gradient(135deg,var(--brand-gold),#F59E0B);-webkit-background-clip:text;
+          <span style="background:linear-gradient(135deg,var(--brand-gold),var(--brand-gold-light));-webkit-background-clip:text;
             -webkit-text-fill-color:transparent;font-weight:700;">◈ Dashboard IA</span>
         </h1>
         <p class="page-subtitle">Análise de uso de inteligência artificial nos módulos</p>
@@ -228,8 +228,8 @@ function renderKPIs(logs) {
     { value: formatTokens(totalTokens),              label: 'Tokens totais',   color: 'var(--text-primary)' },
     { value: formatTokens(totalTokensIn),            label: 'Tokens input',    color: '#38BDF8' },
     { value: formatTokens(totalTokensOut),           label: 'Tokens output',   color: '#A78BFA' },
-    { value: uniqueUsers,                            label: 'Usuários ativos', color: '#22C55E' },
-    { value: `~R$ ${costEst.toFixed(2)}`,            label: 'Custo estimado',  color: '#F59E0B' },
+    { value: uniqueUsers,                            label: 'Usuários ativos', color: 'var(--color-success)' },
+    { value: `~R$ ${costEst.toFixed(2)}`,            label: 'Custo estimado',  color: 'var(--color-warning)' },
   ];
 
   el.innerHTML = kpis.map(k => `
@@ -699,9 +699,9 @@ function renderActionKPIs(actions) {
 
   const kpis = [
     { value: total.toLocaleString('pt-BR'),  label: 'Ações executadas',  color: '#38BDF8' },
-    { value: success.toLocaleString('pt-BR'), label: 'Sucesso',           color: '#22C55E' },
-    { value: fail.toLocaleString('pt-BR'),    label: 'Falhas',            color: '#EF4444' },
-    { value: `${rate}%`,                      label: 'Taxa de sucesso',   color: rate >= 80 ? '#22C55E' : rate >= 50 ? '#F59E0B' : '#EF4444' },
+    { value: success.toLocaleString('pt-BR'), label: 'Sucesso',           color: 'var(--color-success)' },
+    { value: fail.toLocaleString('pt-BR'),    label: 'Falhas',            color: 'var(--color-danger)' },
+    { value: `${rate}%`,                      label: 'Taxa de sucesso',   color: rate >= 80 ? 'var(--color-success)' : rate >= 50 ? 'var(--color-warning)' : 'var(--color-danger)' },
   ];
 
   el.innerHTML = kpis.map(k => `
