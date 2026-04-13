@@ -579,6 +579,8 @@ function _attachPageEvents() {
   if (newBtn) newBtn.onclick = () => openNewTask();
   const emailBtn = document.getElementById('email-task-btn');
   if (emailBtn) emailBtn.onclick = () => openEmailToTaskModal();
+  const importBtn = document.getElementById('tasks-import-btn');
+  if (importBtn) importBtn.onclick = () => openPlannerImportModal();
   const xlsBtn = document.getElementById('tasks-export-xls');
   if (xlsBtn) xlsBtn.onclick = exportTasksXls;
   const pdfBtn = document.getElementById('tasks-export-pdf');
@@ -756,6 +758,435 @@ async function _handleDelegatedKeydown(e) {
 
 function openNewTask(presets = {}) {
   openTaskModal({ ...presets, onSave: () => {} });
+}
+
+/* \u2500\u2500\u2500 Importar Planner (XLSX) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+const PLANNER_STATUS_MAP  = { 'Conclu\u00edda': 'done', 'Em andamento': 'in_progress', 'N\u00e3o iniciado': 'not_started' };
+const PLANNER_PRIORITY_MAP = { 'Urgente': 'urgent', 'Importante': 'high', 'M\u00e9dia': 'medium', 'Baixa': 'low' };
+
+async function loadSheetJS() {
+  if (window.XLSX) return window.XLSX;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+function parsePlannerXlsx(workbook) {
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  return rows.map(r => {
+    // Parse checklist items
+    const checklistRaw = String(r['Itens da lista de verifica\u00e7\u00e3o'] || '');
+    const completedRaw = String(r['Itens conclu\u00eddos da lista de verifica\u00e7\u00e3o'] || '');
+    const completedCount = parseInt(completedRaw.split('/')[0]) || 0;
+    const checklistItems = checklistRaw ? checklistRaw.split(';').map(s => s.trim()).filter(Boolean) : [];
+
+    // Parse labels
+    const labelsRaw = String(r['R\u00f3tulos'] || '');
+    const labels = labelsRaw ? labelsRaw.split(';').map(s => s.trim()).filter(Boolean) : [];
+
+    // Parse assignees (names, will need resolution to UIDs later)
+    const assigneesRaw = String(r['Atribu\u00eddo a'] || '');
+    const assigneeNames = assigneesRaw ? assigneesRaw.split(';').map(s => s.trim()).filter(Boolean) : [];
+
+    // Parse dates
+    const parseDate = (v) => {
+      if (!v) return null;
+      const s = String(v).trim();
+      if (!s || s === 'NaN') return null;
+      // Try dd/mm/yyyy
+      const parts = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (parts) return new Date(+parts[3], +parts[2] - 1, +parts[1]);
+      // Try Excel serial number
+      if (/^\d+(\.\d+)?$/.test(s)) {
+        const serial = parseFloat(s);
+        if (serial > 40000 && serial < 50000) {
+          return new Date((serial - 25569) * 86400 * 1000);
+        }
+      }
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
+    return {
+      plannerTaskId:  String(r['Identifica\u00e7\u00e3o da tarefa'] || ''),
+      title:          String(r['Nome da tarefa'] || '').trim(),
+      description:    String(r['Descri\u00e7\u00e3o'] || '').trim().replace(/\\n/g, '\n'),
+      bucket:         String(r['Nome do Bucket'] || '').trim(),
+      status:         PLANNER_STATUS_MAP[String(r['Progresso'] || '')] || 'not_started',
+      priority:       PLANNER_PRIORITY_MAP[String(r['Prioridade'] || '')] || 'medium',
+      assigneeNames,
+      createdByName:  String(r['Criado por'] || '').trim(),
+      createdAt:      parseDate(r['Criado em']),
+      startDate:      parseDate(r['Data de in\u00edcio']),
+      deadline:       parseDate(r['Data de conclus\u00e3o']),
+      completedAt:    parseDate(r['Conclu\u00eddo em']),
+      completedByName:String(r['Conclu\u00edda por'] || '').trim(),
+      isRecurring:    String(r['\u00c9 Recorrente'] || '').toLowerCase() === 'true',
+      isOverdue:      String(r['Atrasados'] || '').toLowerCase() === 'true',
+      labels,
+      subtasks:       checklistItems.map((item, i) => ({
+        title: item,
+        done: i < completedCount,
+      })),
+    };
+  }).filter(r => r.title);
+}
+
+function resolveAssignees(parsedRows, systemUsers) {
+  const nameMap = {};
+  systemUsers.forEach(u => {
+    if (u.name) {
+      nameMap[u.name.toLowerCase().trim()] = u.id;
+      // Also map by first+last name partial match
+      const parts = u.name.toLowerCase().trim().split(/\s+/);
+      if (parts.length >= 2) {
+        nameMap[parts[0] + ' ' + parts[parts.length - 1]] = u.id;
+      }
+    }
+  });
+
+  return parsedRows.map(row => {
+    const assignees = row.assigneeNames
+      .map(name => nameMap[name.toLowerCase().trim()])
+      .filter(Boolean);
+    const createdBy = nameMap[row.createdByName.toLowerCase().trim()] || null;
+    return { ...row, assignees, createdBy };
+  });
+}
+
+function openPlannerImportModal() {
+  modal.open({
+    title: '\u2191 Importar Tarefas do Planner',
+    size: 'lg',
+    content: `
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <p style="margin:0;font-size:0.8125rem;color:var(--text-muted);">
+          Exporte suas tarefas do Microsoft Planner como Excel (.xlsx) e fa\u00e7a upload aqui.
+          O sistema ir\u00e1 mapear os campos automaticamente.
+        </p>
+
+        <div style="background:var(--bg-surface);border-radius:10px;padding:20px;border:2px dashed var(--border);
+          text-align:center;cursor:pointer;transition:border-color .2s;" id="import-drop-zone">
+          <input type="file" id="import-file-input" accept=".xlsx,.xls,.csv"
+            style="display:none;" />
+          <div style="font-size:2rem;margin-bottom:8px;">\ud83d\udcc1</div>
+          <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);">
+            Clique ou arraste o arquivo aqui
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+            Formatos aceitos: .xlsx, .xls, .csv (exporta\u00e7\u00e3o do Planner)
+          </div>
+        </div>
+
+        <div id="import-preview" style="display:none;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h4 style="margin:0;font-size:0.875rem;font-weight:700;color:var(--text-primary);">
+              Pr\u00e9-visualiza\u00e7\u00e3o
+            </h4>
+            <span id="import-count" style="font-size:0.75rem;color:var(--text-muted);"></span>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;" id="import-stats"></div>
+
+          <details style="margin-bottom:12px;">
+            <summary style="cursor:pointer;font-size:0.8125rem;font-weight:600;color:var(--text-primary);padding:8px 0;">
+              Mapeamento de campos
+            </summary>
+            <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.8;padding:8px 0;">
+              <div>\u2714 <strong>Nome da tarefa</strong> \u2192 T\u00edtulo</div>
+              <div>\u2714 <strong>Descri\u00e7\u00e3o</strong> \u2192 Descri\u00e7\u00e3o</div>
+              <div>\u2714 <strong>Progresso</strong> \u2192 Status (Conclu\u00edda\u2192done, Em andamento\u2192in_progress, N\u00e3o iniciado\u2192not_started)</div>
+              <div>\u2714 <strong>Prioridade</strong> \u2192 Prioridade (Urgente\u2192urgent, Importante\u2192high, M\u00e9dia\u2192medium, Baixa\u2192low)</div>
+              <div>\u2714 <strong>Atribu\u00eddo a</strong> \u2192 Respons\u00e1veis (resolvido por nome \u2192 UID)</div>
+              <div>\u2714 <strong>Data de conclus\u00e3o</strong> \u2192 Prazo</div>
+              <div>\u2714 <strong>R\u00f3tulos</strong> \u2192 Tags</div>
+              <div>\u2714 <strong>Nome do Bucket</strong> \u2192 Setor / \u00c1rea</div>
+              <div>\u2714 <strong>Itens da lista de verifica\u00e7\u00e3o</strong> \u2192 Subtarefas</div>
+              <div>\u2714 <strong>Criado em / Conclu\u00eddo em</strong> \u2192 Datas</div>
+            </div>
+          </details>
+
+          <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:8px;">
+            <table style="width:100%;font-size:0.75rem;border-collapse:collapse;" id="import-table">
+              <thead>
+                <tr style="position:sticky;top:0;background:var(--bg-surface);">
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);">
+                    <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                      <input type="checkbox" id="import-select-all" checked /> Todas
+                    </label>
+                  </th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);">Tarefa</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);">Status</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);">Prioridade</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);">Bucket</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);">Prazo</th>
+                </tr>
+              </thead>
+              <tbody id="import-table-body"></tbody>
+            </table>
+          </div>
+
+          <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+            <label style="font-size:0.75rem;font-weight:600;color:var(--text-muted);">Filtrar status:</label>
+            <select id="import-filter-status" class="form-select" style="font-size:0.75rem;padding:4px 8px;">
+              <option value="">Todos</option>
+              <option value="not_started">N\u00e3o iniciado</option>
+              <option value="in_progress">Em andamento</option>
+              <option value="done">Conclu\u00edda</option>
+            </select>
+            <label style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-left:8px;">Duplicatas:</label>
+            <select id="import-duplicates" class="form-select" style="font-size:0.75rem;padding:4px 8px;">
+              <option value="skip">Pular existentes</option>
+              <option value="import">Importar todas</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="import-progress" style="display:none;">
+          <div style="background:var(--bg-surface);border-radius:8px;overflow:hidden;height:8px;margin-bottom:8px;">
+            <div id="import-progress-bar" style="height:100%;background:var(--brand-blue);width:0%;transition:width .3s;border-radius:8px;"></div>
+          </div>
+          <div id="import-progress-text" style="font-size:0.75rem;color:var(--text-muted);text-align:center;"></div>
+        </div>
+      </div>
+    `,
+    footer: [
+      {
+        label: '\ud83d\udce5 Importar selecionadas',
+        class: 'btn-primary',
+        closeOnClick: false,
+        onClick: async (e, { close }) => {
+          const btn = e.target;
+          await executePlannerImport(btn, close);
+        },
+      },
+    ],
+  });
+
+  // Wire file input & drag-drop
+  setTimeout(() => {
+    const dropZone = document.getElementById('import-drop-zone');
+    const fileInput = document.getElementById('import-file-input');
+
+    dropZone?.addEventListener('click', () => fileInput?.click());
+    dropZone?.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--brand-blue)';
+    });
+    dropZone?.addEventListener('dragleave', () => {
+      dropZone.style.borderColor = 'var(--border)';
+    });
+    dropZone?.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--border)';
+      const file = e.dataTransfer?.files?.[0];
+      if (file) handleImportFile(file);
+    });
+    fileInput?.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (file) handleImportFile(file);
+    });
+  }, 200);
+}
+
+let _importParsedRows = [];
+
+async function handleImportFile(file) {
+  const dropZone = document.getElementById('import-drop-zone');
+  const preview = document.getElementById('import-preview');
+
+  try {
+    dropZone.innerHTML = '<div style="color:var(--text-muted);font-size:0.8125rem;">\u23f3 Processando...</div>';
+
+    const XLSX = await loadSheetJS();
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+
+    _importParsedRows = parsePlannerXlsx(workbook);
+
+    // Resolve assignees with system users
+    const users = store.get('users') || [];
+    if (users.length) {
+      _importParsedRows = resolveAssignees(_importParsedRows, users);
+    }
+
+    // Check for existing tasks (by plannerTaskId)
+    const existingIds = new Set(
+      (store.get('allTasks') || allTasks || [])
+        .map(t => t.plannerTaskId)
+        .filter(Boolean)
+    );
+    _importParsedRows.forEach(r => {
+      r._exists = existingIds.has(r.plannerTaskId);
+    });
+
+    // Show stats
+    const stats = document.getElementById('import-stats');
+    const byStatus = { done: 0, in_progress: 0, not_started: 0 };
+    _importParsedRows.forEach(r => byStatus[r.status] = (byStatus[r.status] || 0) + 1);
+    const existing = _importParsedRows.filter(r => r._exists).length;
+
+    stats.innerHTML = `
+      <div style="background:var(--bg-card);border-radius:8px;padding:10px;text-align:center;border:1px solid var(--border-subtle);">
+        <div style="font-size:1.25rem;font-weight:700;color:var(--brand-green);">${byStatus.done}</div>
+        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;">Conclu\u00eddas</div>
+      </div>
+      <div style="background:var(--bg-card);border-radius:8px;padding:10px;text-align:center;border:1px solid var(--border-subtle);">
+        <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">${byStatus.in_progress}</div>
+        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;">Em andamento</div>
+      </div>
+      <div style="background:var(--bg-card);border-radius:8px;padding:10px;text-align:center;border:1px solid var(--border-subtle);">
+        <div style="font-size:1.25rem;font-weight:700;color:var(--text-muted);">${byStatus.not_started}</div>
+        <div style="font-size:0.625rem;color:var(--text-muted);text-transform:uppercase;">N\u00e3o iniciadas</div>
+      </div>
+    `;
+
+    document.getElementById('import-count').textContent =
+      `${_importParsedRows.length} tarefas encontradas` + (existing ? ` (${existing} j\u00e1 existentes)` : '');
+
+    // Render table
+    renderImportTable('');
+
+    // Wire filter
+    document.getElementById('import-filter-status')?.addEventListener('change', (e) => {
+      renderImportTable(e.target.value);
+    });
+
+    // Wire select-all
+    document.getElementById('import-select-all')?.addEventListener('change', (e) => {
+      document.querySelectorAll('.import-row-check').forEach(cb => cb.checked = e.target.checked);
+    });
+
+    // Update drop zone
+    dropZone.innerHTML = `<div style="font-size:0.8125rem;color:var(--brand-green);">\u2705 ${esc(file.name)}</div>`;
+    preview.style.display = 'block';
+  } catch (err) {
+    dropZone.innerHTML = `<div style="color:#EF4444;font-size:0.8125rem;">\u274c Erro: ${esc(err.message)}</div>`;
+    toast.error('Erro ao processar arquivo: ' + err.message);
+  }
+}
+
+function renderImportTable(statusFilter) {
+  const tbody = document.getElementById('import-table-body');
+  if (!tbody) return;
+  const dupMode = document.getElementById('import-duplicates')?.value || 'skip';
+
+  const STATUS_LABELS = { done: 'Conclu\u00edda', in_progress: 'Em andamento', not_started: 'N\u00e3o iniciado' };
+  const STATUS_COLORS = { done: 'var(--brand-green)', in_progress: 'var(--brand-gold)', not_started: 'var(--text-muted)' };
+  const PRI_LABELS = { urgent: 'Urgente', high: 'Alta', medium: 'M\u00e9dia', low: 'Baixa' };
+
+  const filtered = _importParsedRows.filter(r => {
+    if (statusFilter && r.status !== statusFilter) return false;
+    if (dupMode === 'skip' && r._exists) return false;
+    return true;
+  });
+
+  const fmtDate = d => d ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(d) : '\u2014';
+
+  tbody.innerHTML = filtered.map((r, i) => `
+    <tr style="border-bottom:1px solid var(--border-subtle);" data-import-idx="${_importParsedRows.indexOf(r)}">
+      <td style="padding:4px 8px;">
+        <input type="checkbox" class="import-row-check" data-idx="${_importParsedRows.indexOf(r)}" checked />
+      </td>
+      <td style="padding:4px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+        ${esc(r.title)}${r._exists ? ' <span style="color:var(--brand-gold);font-size:0.625rem;">(existe)</span>' : ''}
+      </td>
+      <td style="padding:4px 8px;color:${STATUS_COLORS[r.status]};">${STATUS_LABELS[r.status] || r.status}</td>
+      <td style="padding:4px 8px;">${PRI_LABELS[r.priority] || r.priority}</td>
+      <td style="padding:4px 8px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.bucket)}</td>
+      <td style="padding:4px 8px;">${fmtDate(r.deadline)}</td>
+    </tr>
+  `).join('');
+}
+
+async function executePlannerImport(btn, closeModal) {
+  const checked = Array.from(document.querySelectorAll('.import-row-check:checked'))
+    .map(cb => parseInt(cb.dataset.idx))
+    .filter(i => !isNaN(i));
+
+  if (!checked.length) {
+    toast.warning('Nenhuma tarefa selecionada para importar.');
+    return;
+  }
+
+  const rowsToImport = checked.map(i => _importParsedRows[i]).filter(Boolean);
+  btn.disabled = true;
+  btn.textContent = '\u23f3 Importando...';
+
+  const progressDiv = document.getElementById('import-progress');
+  const progressBar = document.getElementById('import-progress-bar');
+  const progressText = document.getElementById('import-progress-text');
+  if (progressDiv) progressDiv.style.display = 'block';
+
+  const { createTask } = await import('../services/tasks.js');
+  const { serverTimestamp, Timestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+  let created = 0, errors = 0;
+
+  for (let i = 0; i < rowsToImport.length; i++) {
+    const row = rowsToImport[i];
+
+    if (progressBar) progressBar.style.width = `${((i + 1) / rowsToImport.length * 100).toFixed(0)}%`;
+    if (progressText) progressText.textContent = `${i + 1} de ${rowsToImport.length}...`;
+
+    try {
+      const taskData = {
+        title: row.title,
+        description: row.description || '',
+        status: row.status,
+        priority: row.priority,
+        assignees: row.assignees || [],
+        tags: row.labels || [],
+        sector: row.bucket || '',
+        plannerTaskId: row.plannerTaskId,
+        importedFrom: 'planner',
+        importedAt: serverTimestamp(),
+      };
+
+      if (row.deadline) taskData.deadline = Timestamp.fromDate(row.deadline);
+      if (row.startDate) taskData.startDate = Timestamp.fromDate(row.startDate);
+      if (row.createdAt) taskData.createdAt = Timestamp.fromDate(row.createdAt);
+      if (row.completedAt) taskData.completedAt = Timestamp.fromDate(row.completedAt);
+      if (row.createdBy) taskData.createdBy = row.createdBy;
+
+      const taskId = await createTask(taskData);
+
+      // Add subtasks if any
+      if (row.subtasks.length && taskId) {
+        const { addSubtask, toggleSubtask } = await import('../services/tasks.js');
+        for (const sub of row.subtasks) {
+          try {
+            const subId = await addSubtask(taskId, sub.title);
+            if (sub.done && subId) {
+              await toggleSubtask(taskId, subId, true);
+            }
+          } catch { /* skip subtask error */ }
+        }
+      }
+
+      created++;
+    } catch (err) {
+      console.warn('[import] Failed to import:', row.title, err);
+      errors++;
+    }
+  }
+
+  if (progressText) progressText.textContent = `\u2705 ${created} importadas` + (errors ? `, ${errors} erros` : '');
+  toast.success(`Importa\u00e7\u00e3o conclu\u00edda: ${created} tarefas criadas` + (errors ? `, ${errors} erros` : ''));
+
+  setTimeout(() => {
+    closeModal();
+    // Reload tasks
+    if (typeof renderTasks === 'function') {
+      const container = document.querySelector('.page-content') || document.querySelector('[data-page]');
+      if (container) renderTasks(container);
+    }
+  }, 1500);
 }
 
 /* \u2500\u2500\u2500 Email \u2192 Tarefa \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
