@@ -320,8 +320,7 @@ export async function createUser({ name, email, password, role, roleId, departme
         // Senha diferente ou conta desabilitada — não consegue recuperar
         await firebaseSignOut(secondaryAuth).catch(() => {});
         throw new Error(
-          'Este e-mail já existe no sistema de autenticação. ' +
-          'Para reativar, use a mesma senha anterior ou redefina a senha pelo Firebase Console.'
+          'Não foi possível criar a conta. Verifique os dados ou contate o administrador.'
         );
       }
     } else {
