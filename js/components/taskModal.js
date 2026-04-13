@@ -14,11 +14,12 @@ import {
   NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
 } from '../services/tasks.js';
 import { fetchProjects }  from '../services/projects.js';
-import { getTaskType }    from '../services/taskTypes.js';
+import { getTaskType, getSubtaskTemplate } from '../services/taskTypes.js';
 import {
   renderTypeFields, collectFieldValues,
   bindDynamicFieldEvents, validateRequiredFields,
 } from './dynamicFields.js';
+import { getValidTransitions, checkSubtaskAutoAdvance } from '../services/workflowEngine.js';
 import { fetchAllAbsences } from '../services/capacity.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -122,6 +123,18 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
   let task = sanitize(taskData);
 
+  const isPrefill = !!(taskData && !taskData.id); // has data but no Firestore id
+
+  // ── Smart Defaults: apply remembered values for NEW tasks ──
+  if (!isEdit && !isPrefill) {
+    const smartDefaults = JSON.parse(localStorage.getItem('primetour-task-defaults') || '{}');
+    if (!task.projectId && smartDefaults.projectId) task.projectId = smartDefaults.projectId;
+    if (!task.priority) task.priority = smartDefaults.priority || 'medium';
+    if (!task.requestingArea && smartDefaults.requestingArea) task.requestingArea = smartDefaults.requestingArea;
+    if (!task.typeId && smartDefaults.typeId) task.typeId = smartDefaults.typeId;
+    if (!task.variationId && smartDefaults.variationId) task.variationId = smartDefaults.variationId;
+  }
+
   // Load current task type for dynamic fields
   const currentTypeId = task.typeId || (task.type && task.type !== '' ? task.type : null);
   let currentTaskType = null;
@@ -132,7 +145,11 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   let currentTags      = [...(task.tags||[])];
   let currentAssignees = [...(task.assignees||[])];
 
-  const isPrefill = !!(taskData && !taskData.id); // has data but no Firestore id
+  // ── Auto-assign self for NEW tasks ──
+  if (!isEdit && !isPrefill && currentAssignees.length === 0) {
+    const uid = store.get('currentUser')?.uid;
+    if (uid) { currentAssignees = [uid]; task.assignees = [uid]; }
+  }
   const modalTitle = isEdit
     ? 'Detalhes da Tarefa'
     : isPrefill
@@ -410,10 +427,17 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
       <div class="task-detail-field">
         <div class="task-detail-label">Status</div>
         <select class="form-select" id="tm-status" style="padding:8px 32px 8px 12px;">
-          ${STATUSES
-            .filter(s => s.value !== 'done' || store.can('task_complete') || task.status === 'done')
-            .map(s => `<option value="${s.value}" ${task.status===s.value?'selected':''}>${esc(s.label)}</option>`)
-            .join('')}
+          ${(() => {
+            const validNext = getValidTransitions(task.status);
+            return STATUSES
+              .filter(s => {
+                if (s.value === task.status) return true; // always show current
+                if (s.value === 'done' && !store.can('task_complete') && task.status !== 'done') return false;
+                return validNext.includes(s.value);
+              })
+              .map(s => `<option value="${s.value}" ${task.status===s.value?'selected':''}>${esc(s.label)}</option>`)
+              .join('');
+          })()}
         </select>
         ${!store.can('task_complete') ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">🔒 Apenas coordenadores+ podem marcar como concluída.</div>` : ''}
       </div>
@@ -682,6 +706,16 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
 
     // Clear SLA badge when type changes
     if (slaEl) { slaEl.style.display = 'none'; slaEl.innerHTML = ''; }
+
+    // Auto-populate subtasks from template for NEW tasks
+    if (!isEdit && typeDoc && (task.subtasks || []).length === 0) {
+      const template = getSubtaskTemplate(typeDoc);
+      if (template.length > 0) {
+        task.subtasks = template;
+        rerenderSubtaskList();
+        toast.info(`${template.length} subtarefa(s) adicionada(s) do template "${typeDoc.name}".`);
+      }
+    }
   });
 
   // Variation change → show SLA badge + auto-fill due date
@@ -1014,6 +1048,15 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
       if (sub?.done) { check.classList.add('checked'); check.textContent = '✓'; row?.classList.add('done'); }
       else           { check.classList.remove('checked'); check.textContent = '';  row?.classList.remove('done'); }
       refreshSubtaskUI();
+
+      // Auto-advance: check if all subtasks done
+      const statusSelect = qId('tm-status');
+      const suggested = checkSubtaskAutoAdvance(task);
+      if (suggested && statusSelect && statusSelect.value !== 'done' && statusSelect.value !== suggested) {
+        statusSelect.value = suggested;
+        const statusLabel = suggested === 'review' ? 'Em Revisao' : 'Em Andamento';
+        toast.info(`Todas as subtarefas concluidas — status movido para "${statusLabel}".`);
+      }
     } catch (err) { toast.error(err.message); }
   });
 
@@ -1230,6 +1273,15 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     }
 
     onSave?.(savedTask?.id, savedTask);
+
+    // ── Save smart defaults for next new task ──
+    localStorage.setItem('primetour-task-defaults', JSON.stringify({
+      projectId: data.projectId || null,
+      typeId: data.typeId || null,
+      variationId: data.variationId || null,
+      requestingArea: data.requestingArea || '',
+      priority: data.priority || 'medium',
+    }));
   } catch(err){toast.error(err.message);}
   finally{if(btn){btn.classList.remove('loading');btn.disabled=false;}}
 }
