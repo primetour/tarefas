@@ -960,29 +960,30 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
   // Se opts.systemPrompt foi fornecido, usa ele diretamente (sem actions/hints do módulo)
   const systemPrompt = opts.systemPrompt || systemParts.join('\n');
   const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.gemini;
-  const model     = config?.defaultModel || defaults.model;
+  const model     = opts.model || config?.defaultModel || defaults.model;
   // Usar maxTokens configurado, com mínimo razoável de 2048 (antes era 4096 — desperdiçava tokens)
   const maxTokens = opts.maxTokens || config?.defaultMaxTokens || defaults.maxTokens || 2048;
+  const temperature = opts.temperature ?? 0.7;
 
   let result;
   switch (provider) {
     case 'gemini':
-      result = await callGemini({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      result = await callGemini({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature });
       break;
     case 'groq':
-      result = await callGroq({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      result = await callGroq({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature });
       break;
     case 'openai':
-      result = await callOpenAI({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      result = await callOpenAI({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature });
       break;
     case 'azure':
-      result = await callAzure({ config, apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      result = await callAzure({ config, apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature });
       break;
     case 'local':
-      result = await callLocal({ config: resolved.config, apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      result = await callLocal({ config: resolved.config, apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature });
       break;
     default:
-      result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature: 0.7 });
+      result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature });
   }
 
   // ── LGPD: restaurar PII na resposta ──

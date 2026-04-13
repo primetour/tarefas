@@ -186,6 +186,7 @@ function addSeparator(doc, y, primary) {
  * @returns {{ filename: string }}
  */
 export async function generateRoteiroPDF(roteiro, area = null) {
+  if (!roteiro) throw new Error('Roteiro não encontrado. Salve o roteiro antes de exportar.');
   await loadJsPDF();
 
   const { jsPDF } = window.jspdf;

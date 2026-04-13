@@ -357,73 +357,93 @@ export async function generateRoteiroFromPrompt(userPrompt) {
     'corriere.it',
   ];
 
-  let webResearchContext = '';
+  let webResults = [];
+  let webResearchSection = '';
   try {
     const { searchWeb } = await import('./aiActions.js');
 
-    // Extrair destinos do prompt para busca
-    const destQuery = userPrompt.substring(0, 150);
-    const searchResults = await searchWeb(
-      `luxury travel itinerary ${destQuery} best hotels restaurants experiences`,
-      LUXURY_SITES
-    );
+    // Extrair termos-chave do prompt
+    const destQuery = userPrompt.substring(0, 120).replace(/[^\w\sáéíóúâêîôûãõçÀ-ú]/g, '');
 
-    if (searchResults?.results?.length) {
-      webResearchContext = '\n\nPESQUISA WEB (fontes especializadas em turismo luxury):\n' +
-        searchResults.results.slice(0, 8).map((r, i) =>
-          `[${i+1}] ${r.title || ''} — ${r.snippet || ''} (${r.source || r.link || ''})`
-        ).join('\n');
+    // Fazer 2 buscas paralelas: hotéis + experiências
+    const [hotelsSearch, expSearch] = await Promise.allSettled([
+      searchWeb(`best luxury hotels ${destQuery}`, LUXURY_SITES.slice(0, 5)),
+      searchWeb(`best restaurants experiences things to do ${destQuery}`, LUXURY_SITES.slice(3)),
+    ]);
+
+    const hotelResults = hotelsSearch.status === 'fulfilled' ? (hotelsSearch.value?.results || []) : [];
+    const expResults = expSearch.status === 'fulfilled' ? (expSearch.value?.results || []) : [];
+    webResults = [...hotelResults.slice(0, 5), ...expResults.slice(0, 5)];
+
+    if (webResults.length) {
+      webResearchSection = '\n\n=== PESQUISA WEB — FONTES LUXURY (use estes dados para enriquecer o roteiro) ===\n' +
+        webResults.map((r, i) =>
+          `[${i+1}] ${r.title || ''}\n    ${r.snippet || ''}\n    Fonte: ${r.link || r.source || 'N/A'}`
+        ).join('\n\n') +
+        '\n=== FIM DA PESQUISA ===';
     }
   } catch (e) {
-    console.warn('[Roteiro IA] Web search indisponível, continuando sem pesquisa:', e.message || e);
+    console.warn('[Roteiro IA] Web search indisponível:', e.message || e);
   }
 
-  // ── 2. System prompt robusto ──
-  const systemPrompt = `Você é um consultor de viagens sênior da PRIMETOUR, agência premium de turismo.
-Crie um roteiro de viagem COMPLETO e PROFISSIONAL baseado na solicitação.
+  // ── 2. System prompt — nível consultor sênior ──
+  const systemPrompt = `Você é um consultor de viagens sênior de altíssimo nível da PRIMETOUR, agência premium de turismo com 30+ anos de experiência. Seu trabalho é criar roteiros que vendem — documentos comerciais completos que encantam clientes exigentes.
 
-ESTE ROTEIRO SERVE COMO ORÇAMENTO PARA O CLIENTE. Deve ser completo em TODAS as seções.
+CONTEXTO: Este documento será entregue como PROPOSTA COMERCIAL / ORÇAMENTO ao cliente. Precisa ser impecável.
+Data de hoje: ${today}. Se nenhuma data for mencionada, planeje a partir de 45 dias de hoje.
 
-REGRAS OBRIGATÓRIAS:
-- Use nomes REAIS de hotéis, restaurantes e atrações que existam de fato
-- Se dados de pesquisa web estiverem disponíveis abaixo, USE-OS para recomendar hotéis e experiências
-- Narrativas de cada dia: 150-250 palavras, tom imersivo, 1ª pessoa do plural ("Começamos o dia...")
-- Atividades com horários realistas (café 07:30, check-in 15h, jantar 19:30, etc.)
-- Mínimo 4-6 atividades por dia
-- Data de hoje: ${today}
-- Se nenhuma data for informada, use datas a partir de 30 dias de hoje
-- Preencha TODOS os campos — este é um documento comercial completo
+═══ ESTILO DE ESCRITA (CRÍTICO) ═══
+- Narrativas IMERSIVAS e SENSORIAIS: descreva aromas, texturas, cores, sabores, emoções
+- Tom: sofisticado mas acolhedor, como um amigo bem-viajado contando sobre lugares que ama
+- 1ª pessoa do plural: "Acordamos com vista para...", "Caminhamos pelas ruelas de..."
+- Cada narrativa de dia: 200-350 palavras MÍNIMO — conte uma história, não liste atividades
+- Inclua NOMES REAIS de estabelecimentos: restaurantes específicos, bares, cafés, mercados
+- Mencione pratos típicos pelo nome, vinícolas específicas, experiências únicas locais
+- Evite clichês genéricos como "explorar a cidade" — seja ESPECÍFICO: "cruzar a Ponte Vecchio ao pôr do sol"
 
-REGRAS DE PREÇOS (CRÍTICO):
-- NÃO INVENTE valores de preços. Preços são SEMPRE definidos pelo consultor.
-- pricing.perPerson = null, pricing.perCouple = null (o consultor preenche depois)
-- pricing.disclaimer = "Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro."
-- optionals: priceAdult = null, priceChild = null (consultor define)
-- Em customRows, NÃO adicione linhas com valores inventados
+═══ ATIVIDADES (MÍNIMO 5-7 POR DIA) ═══
+- Cada atividade com horário realista e descrição rica (não "visita ao museu", mas "visita guiada privativa ao Museu Uffizi com acesso prioritário — foco em Botticelli e Caravaggio")
+- Incluir: café da manhã, almoço, tempo livre estratégico, jantar com nome do restaurante
+- Types válidos: "passeio", "refeição", "transfer", "livre"
 
-SEÇÕES OBRIGATÓRIAS (preencha TODAS):
-1. client: inferir tipo (couple/family/group/individual), perfil econômico, preferências
-2. travel: destinos com noites, datas calculadas corretamente
-3. days: TODOS os dias, com narrativa completa, atividades detalhadas, cidade pernoite
-4. hotels: hotel REAL para cada cidade (nome, categoria, regime, datas check-in/out)
-5. includes: mínimo 5 itens (hospedagem, café, transfers, seguro, passeios, etc.)
-6. excludes: mínimo 5 itens (aéreo, refeições não mencionadas, extras, gorjetas, etc.)
-7. payment: termos padrão
-8. cancellation: 4 faixas padrão
-9. importantInfo: passaporte, visto, vacinas, clima, bagagem, voos — TUDO preenchido para o(s) destino(s)
+═══ HOTÉIS (OBRIGATÓRIO) ═══
+- Use APENAS hotéis que existem de fato — nomes corretos, categorias reais
+- Para luxury: Four Seasons, Aman, Belmond, Mandarin Oriental, Rosewood, etc.
+- Para premium: Relais & Châteaux, Leading Hotels, SLH, boutiques reconhecidos
+- Inclua categoria do quarto realista (Deluxe Room, Junior Suite, etc.)
+- Regime: "Café da manhã incluso" ou "Meia-pensão" conforme padrão local
 
-RESPONDA EXCLUSIVAMENTE com JSON válido. Sem markdown, sem comentários, sem texto antes ou depois.
-O JSON deve seguir EXATAMENTE esta estrutura:
+═══ PREÇOS — REGRA ABSOLUTA ═══
+- NUNCA invente valores. Todos os campos de preço = null
+- pricing.perPerson = null, pricing.perCouple = null
+- optionals[].priceAdult = null, optionals[].priceChild = null
+- pricing.customRows = [] (vazio)
+- disclaimer: "Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro e disponibilidade hoteleira."
+
+═══ INFORMAÇÕES IMPORTANTES (DETALHADAS) ═══
+- passport: requisitos específicos (validade mínima, páginas em branco)
+- visa: regras para brasileiros no destino (isenção, e-visa, etc.)
+- vaccines: vacinas obrigatórias E recomendadas
+- climate: temperatura média no período, o que esperar, chuvas
+- luggage: dicas práticas (tipo de roupa, adaptadores, moeda local)
+- flights: companhias que operam a rota, tempo de voo estimado, conexões comuns
+
+═══ FONTES CONSULTADAS (NOVO CAMPO) ═══
+- Adicione "aiSources": [] com os links/nomes das fontes usadas da pesquisa web
+- Isso aparecerá no backoffice para o consultor verificar
+
+═══ FORMATO DE RESPOSTA ═══
+Responda EXCLUSIVAMENTE com JSON válido. NENHUM texto antes ou depois. Sem markdown.
 {
-  "title": "Título descritivo do roteiro",
+  "title": "string",
+  "aiSources": ["url ou nome da fonte 1", "url ou nome da fonte 2"],
   "client": {
     "name": "", "email": "", "phone": "",
-    "type": "couple",
+    "type": "couple|individual|family|group",
     "adults": 2, "children": 0, "childrenAges": [],
-    "preferences": [],
-    "restrictions": [],
-    "economicProfile": "premium",
-    "notes": "Notas inferidas da solicitação"
+    "preferences": [], "restrictions": [],
+    "economicProfile": "standard|premium|luxury",
+    "notes": "Observações inferidas da solicitação do cliente"
   },
   "travel": {
     "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "nights": 0,
@@ -431,46 +451,36 @@ O JSON deve seguir EXATAMENTE esta estrutura:
   },
   "days": [{
     "dayNumber": 1, "date": "YYYY-MM-DD",
-    "title": "Título do dia",
+    "title": "Título evocativo do dia",
     "city": "Cidade",
-    "narrative": "Narrativa longa e detalhada...",
-    "activities": [{ "time": "09:00", "description": "Descrição completa", "type": "passeio" }],
+    "narrative": "Narrativa longa, imersiva e sensorial de 200-350 palavras...",
+    "activities": [
+      { "time": "07:30", "description": "Descrição rica e específica", "type": "refeição" },
+      { "time": "09:00", "description": "Descrição com nome real do local", "type": "passeio" }
+    ],
     "overnightCity": "Cidade"
   }],
-  "hotels": [{ "city": "", "hotelName": "", "roomType": "", "regime": "", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "nights": 0 }],
-  "pricing": {
-    "perPerson": null, "perCouple": null,
-    "currency": "USD", "validUntil": "YYYY-MM-DD",
-    "disclaimer": "Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro.",
-    "customRows": []
-  },
-  "optionals": [{ "service": "", "priceAdult": null, "priceChild": null, "notes": "" }],
-  "includes": [],
-  "excludes": [],
-  "payment": {
-    "deposit": "30% no ato da reserva",
-    "installments": "Saldo em até 6x sem juros",
-    "deadline": "Até 45 dias antes do embarque",
-    "notes": ""
-  },
+  "hotels": [{ "city": "", "hotelName": "Nome Real", "roomType": "Categoria Real", "regime": "Café da manhã", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "nights": 0 }],
+  "pricing": { "perPerson": null, "perCouple": null, "currency": "USD", "validUntil": "YYYY-MM-DD", "disclaimer": "Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro e disponibilidade hoteleira.", "customRows": [] },
+  "optionals": [{ "service": "Descrição do serviço opcional", "priceAdult": null, "priceChild": null, "notes": "" }],
+  "includes": ["item detalhado 1", "item 2", "item 3", "item 4", "item 5", "item 6"],
+  "excludes": ["item 1", "item 2", "item 3", "item 4", "item 5"],
+  "payment": { "deposit": "30% no ato da reserva", "installments": "Saldo em até 6x sem juros", "deadline": "Até 45 dias antes do embarque", "notes": "" },
   "cancellation": [
     { "period": "Até 60 dias antes da viagem", "penalty": "Sem custo de cancelamento" },
-    { "period": "Entre 59 e 30 dias", "penalty": "50% do valor total" },
-    { "period": "Entre 29 e 15 dias", "penalty": "75% do valor total" },
-    { "period": "Menos de 15 dias ou no-show", "penalty": "100% do valor total" }
+    { "period": "Entre 59 e 30 dias", "penalty": "Multa de 50% do valor total" },
+    { "period": "Entre 29 e 15 dias", "penalty": "Multa de 75% do valor total" },
+    { "period": "Menos de 15 dias ou no-show", "penalty": "Multa de 100% do valor total" }
   ],
   "importantInfo": {
-    "passport": "Informações detalhadas sobre passaporte...",
-    "visa": "Requisitos de visto para o destino...",
-    "vaccines": "Vacinas recomendadas/obrigatórias...",
-    "climate": "Clima esperado no período da viagem...",
-    "luggage": "Dicas de bagagem para o destino...",
-    "flights": "Informações sobre voos e conexões...",
+    "passport": "Detalhes completos...", "visa": "Requisitos para brasileiros...",
+    "vaccines": "Lista completa...", "climate": "Clima detalhado no período...",
+    "luggage": "Dicas práticas...", "flights": "Informações de voos...",
     "customFields": []
   }
-}${webResearchContext}`;
+}${webResearchSection}`;
 
-  // ── 3. Chamar IA ──
+  // ── 3. Chamar IA (com model robusto e mais tokens) ──
   let result;
   try {
     const skills = await fetchSkillsForModule('roteiros').catch(() => []);
@@ -483,13 +493,14 @@ O JSON deve seguir EXATAMENTE esta estrutura:
     if (createSkill) {
       result = await runSkill(createSkill.id, {
         userPrompt, today, consultantName: profile?.name,
-        webResearch: webResearchContext,
+        webResearch: webResearchSection,
       });
     } else {
       result = await chatWithAI(userPrompt, {}, {
         moduleId: 'roteiros',
         systemPrompt,
-        maxTokens: 8192,
+        maxTokens: 16384,
+        temperature: 0.8,
       });
     }
   } catch (e) {
@@ -504,10 +515,26 @@ O JSON deve seguir EXATAMENTE esta estrutura:
     let cleanText = text.trim();
     cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
 
-    // Extrair JSON do texto
+    // Extrair JSON — pegar o maior bloco JSON possível
     const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('JSON não encontrado na resposta.');
-    const parsed = JSON.parse(jsonMatch[0]);
+    if (!jsonMatch) throw new Error('JSON não encontrado na resposta da IA.');
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (parseErr) {
+      // Tentar corrigir JSON truncado (response cortada por maxTokens)
+      let fixedJson = jsonMatch[0];
+      // Fechar arrays e objetos abertos
+      const opens = (fixedJson.match(/[{[]/g) || []).length;
+      const closes = (fixedJson.match(/[}\]]/g) || []).length;
+      for (let i = 0; i < opens - closes; i++) {
+        fixedJson += fixedJson.lastIndexOf('[') > fixedJson.lastIndexOf('{') ? ']' : '}';
+      }
+      // Remover trailing comma antes de } ou ]
+      fixedJson = fixedJson.replace(/,\s*([}\]])/g, '$1');
+      parsed = JSON.parse(fixedJson);
+    }
 
     // Merge com template vazio para garantir estrutura completa
     const base = emptyRoteiro();
@@ -515,12 +542,18 @@ O JSON deve seguir EXATAMENTE esta estrutura:
     roteiro.aiGenerated = true;
     roteiro.aiPrompt = userPrompt.substring(0, 500);
 
-    // Garantir que preços não foram inventados pela IA
+    // Gravar fontes consultadas (para backoffice)
+    roteiro.aiSources = parsed.aiSources || webResults.map(r => r.link || r.source).filter(Boolean);
+    roteiro.aiProvider = result?.provider || 'unknown';
+    roteiro.aiModel = result?.model || 'unknown';
+
+    // Garantir que preços NÃO foram inventados pela IA
     if (roteiro.pricing) {
       roteiro.pricing.perPerson = null;
       roteiro.pricing.perCouple = null;
+      roteiro.pricing.customRows = [];
       if (!roteiro.pricing.disclaimer || roteiro.pricing.disclaimer.length < 10) {
-        roteiro.pricing.disclaimer = 'Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro.';
+        roteiro.pricing.disclaimer = 'Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro e disponibilidade hoteleira.';
       }
     }
     if (roteiro.optionals?.length) {
@@ -529,7 +562,7 @@ O JSON deve seguir EXATAMENTE esta estrutura:
 
     return roteiro;
   } catch (e) {
-    console.error('[Roteiro IA] Erro ao parsear:', e, text.substring(0, 500));
+    console.error('[Roteiro IA] Erro ao parsear:', e, '\nResposta (primeiros 800 chars):', text.substring(0, 800));
     throw new Error('Não foi possível interpretar a resposta da IA. Tente reformular sua descrição.');
   }
 }
