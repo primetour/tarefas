@@ -3,7 +3,7 @@
  * Tela de autenticação
  */
 
-import { signIn, resetPassword, getErrorMessage } from '../auth/auth.js';
+import { signIn, signInWithMicrosoft, resetPassword, getErrorMessage } from '../auth/auth.js';
 import { toast } from '../components/toast.js';
 import { auditLog } from '../auth/audit.js';
 
@@ -127,6 +127,21 @@ export function renderLogin(container) {
             </button>
           </form>
 
+          <!-- Divider -->
+          <div class="auth-divider"><span>ou</span></div>
+
+          <!-- SSO Microsoft -->
+          <button type="button" class="btn-auth-microsoft" id="btn-microsoft-sso">
+            <svg width="20" height="20" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
+              <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
+              <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
+              <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+            </svg>
+            Entrar com Microsoft
+            <span class="btn-auth-microsoft-domain">@primetour.com.br</span>
+          </button>
+
           <p class="text-center mt-6 text-xs" style="color:var(--text-muted);">
             Não possui acesso? Solicite ao administrador do sistema.
           </p>
@@ -143,12 +158,42 @@ export function renderLogin(container) {
   const alertEl      = document.getElementById('auth-alert');
   const togglePwBtn  = document.getElementById('toggle-password');
   const forgotLink   = document.getElementById('forgot-link');
+  const microsoftBtn = document.getElementById('btn-microsoft-sso');
 
   // Toggle password visibility
   togglePwBtn.addEventListener('click', () => {
     const isText = passwordInput.type === 'text';
     passwordInput.type = isText ? 'password' : 'text';
     togglePwBtn.textContent = isText ? '👁' : '🙈';
+  });
+
+  // ─── SSO Microsoft ──────────────────────────────────────
+  microsoftBtn.addEventListener('click', async () => {
+    microsoftBtn.classList.add('loading');
+    microsoftBtn.disabled = true;
+    clearAlert();
+
+    try {
+      await signInWithMicrosoft();
+      // Auth observer cuidará do redirecionamento + auto-provisioning
+    } catch (err) {
+      // Ignorar cancelamento silencioso
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        // Silencioso — usuário fechou a janela
+      } else {
+        const msg = getErrorMessage(err.code) || err.message || 'Erro ao autenticar via Microsoft.';
+        showAlert('error', msg);
+
+        auditLog('auth.sso_failed', 'session', null, {
+          provider: 'microsoft.com',
+          errorCode: err.code || 'unknown',
+          errorMsg:  err.message || '',
+        }).catch(() => {});
+      }
+    } finally {
+      microsoftBtn.classList.remove('loading');
+      microsoftBtn.disabled = false;
+    }
   });
 
   // Clear errors on input
