@@ -146,7 +146,7 @@ export function renderCardFields(task, opts = {}) {
       case 'taskType': {
         const tt = taskTypes.find(t => t.id === task.typeId);
         if (tt) bits.push(
-          `<span title="Tipo: ${tt.name}">${fieldDef.icon} ${tt.icon||''} ${tt.name}</span>`
+          `<span title="Tipo: ${tt.name}">${tt.icon || fieldDef.icon} ${tt.name}</span>`
         );
         break;
       }
