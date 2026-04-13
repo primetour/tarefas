@@ -98,21 +98,27 @@ export const CONTENT_TYPE_MAP = Object.fromEntries(CONTENT_TYPES.map(t => [t.val
  * Buscar slots com filtros opcionais.
  */
 export async function fetchSlots({ startDate, endDate, account, platform, status } = {}) {
-  const constraints = [orderBy('scheduledDate', 'asc')];
+  try {
+    // Query simples sem orderBy composto — ordena client-side
+    const q = query(collection(db, COL));
+    const snap = await getDocs(q);
+    let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  if (startDate) constraints.push(where('scheduledDate', '>=', startDate));
-  if (endDate)   constraints.push(where('scheduledDate', '<=', endDate));
-  if (account)   constraints.push(where('account', '==', account));
+    // Filtros client-side (evita índices compostos)
+    if (startDate) items = items.filter(i => i.scheduledDate && i.scheduledDate >= startDate);
+    if (endDate)   items = items.filter(i => i.scheduledDate && i.scheduledDate <= endDate);
+    if (account)   items = items.filter(i => i.account === account);
+    if (platform)  items = items.filter(i => i.platform === platform);
+    if (status)    items = items.filter(i => i.status === status);
 
-  const q = query(collection(db, COL), ...constraints);
-  const snap = await getDocs(q);
-  let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Ordenar por data agendada
+    items.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
 
-  // Filtros client-side (evita índices compostos extras)
-  if (platform) items = items.filter(i => i.platform === platform);
-  if (status)   items = items.filter(i => i.status === status);
-
-  return items;
+    return items;
+  } catch (e) {
+    console.warn('[ContentCalendar] fetchSlots error:', e.message || e);
+    return [];
+  }
 }
 
 /**
