@@ -192,20 +192,27 @@ FLUXOS:
   'roteiros': `MÓDULO ROTEIROS DE VIAGEM — REGRAS:
 
 CONCEITO:
-- Roteiro = proposta de viagem personalizada para um cliente. Estrutura rica com cliente, viagem, day-by-day, hotéis, valores, opcionais, inclui/exclui, pagamento, cancelamento, info importantes.
+- Roteiro = proposta comercial de viagem personalizada. Estrutura: cliente, viagem, day-by-day, hotéis, opcionais, inclui/exclui, pagamento, cancelamento, info importantes.
+- O botão "Criar com IA" gera roteiro completo via prompt livre (usa system prompt dedicado com web search).
 
 FORMATO:
 - status: APENAS draft | review | sent | approved | archived.
-- Datas (startDate, endDate, checkIn, checkOut, validUntil): YYYY-MM-DD.
-- client.type: individual | couple | family | group.
-- client.economicProfile: standard | premium | luxury.
-- pricing.currency: BRL | USD | EUR.
-- days[].narrative: texto imersivo de 150+ palavras por dia. Se for curto, recuse e peça mais contexto ou gere com IA.
+- Datas: YYYY-MM-DD. client.type: individual | couple | family | group.
+- client.economicProfile: standard | premium | luxury. pricing.currency: BRL | USD | EUR.
+- days[].narrative: texto imersivo 200+ palavras/dia, sensorial, com nomes reais de restaurantes/hotéis.
 
-FLUXOS:
-- Antes de criar roteiro → pergunte ao usuário: destino, datas, número de pax, perfil do cliente.
-- Para preencher destinos → consulte portal-tips (list_destinations) para pegar IDs reais de destino.
-- Para gerar narrativas do dia → use as skills de IA do módulo (não tente escrever tudo de uma vez).`,
+GERAÇÃO IA (CRÍTICO):
+- Narrativas IMERSIVAS: aromas, texturas, emoções. Tom sofisticado-acolhedor, 1ª pessoa plural.
+- 5-7 atividades/dia com horário realista. Types: "passeio" | "refeição" | "transfer" | "livre".
+- Hotéis REAIS (Four Seasons, Aman, Belmond, Mandarin Oriental, Relais & Châteaux, SLH).
+- PREÇOS: NUNCA inventar. Todos os campos de preço = null. customRows = [].
+- Web search via Serper.dev busca referências de hotéis e experiências para enriquecer.
+- aiSources: array de URLs/fontes consultadas (backoffice).
+
+FLUXOS CHAT:
+- Antes de criar roteiro → pergunte: destino, datas, número de pax, perfil do cliente.
+- Para preencher destinos → consulte portal-tips (list_destinations).
+- Para gerar narrativas do dia → use as skills de IA do módulo.`,
 
   /* ═════════════════ PORTAL-TIPS ═════════════════ */
   'portal-tips': `MÓDULO PORTAL DE DICAS — REGRAS:

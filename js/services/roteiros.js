@@ -383,7 +383,14 @@ export async function generateRoteiroFromPrompt(userPrompt) {
     console.warn('[Roteiro IA] Web search indisponível:', e.message || e);
   }
 
-  // ── 2. System prompt — compacto para caber nos limites de token ──
+  // ── 2. System prompt — compacto + carrega hints customizados do Firestore ──
+  let customHint = '';
+  try {
+    const { getModuleHint } = await import('./aiModuleHints.js');
+    const hint = await getModuleHint('roteiros');
+    if (typeof hint === 'string' && hint.trim()) customHint = hint;
+  } catch (_) { /* serviço indisponível */ }
+
   const systemPrompt = `Consultor sênior PRIMETOUR. Crie roteiro COMPLETO como PROPOSTA COMERCIAL. Hoje: ${today}. Sem data mencionada → planeje a partir de +45 dias.
 
 ESCRITA: Narrativas imersivas/sensoriais (aromas, texturas, emoções). Tom sofisticado-acolhedor. 1ª pessoa plural. Cada dia: 200+ palavras. NOMES REAIS de restaurantes, bares, mercados, pratos típicos. Seja ESPECÍFICO (não "explorar a cidade" → "cruzar a Ponte Vecchio ao pôr do sol").
@@ -395,7 +402,7 @@ HOTÉIS: Apenas hotéis REAIS. Luxury: Four Seasons, Aman, Belmond, Mandarin Ori
 PREÇOS: TODOS null. NUNCA invente valores. pricing.perPerson=null, perCouple=null, optionals[].priceAdult=null, priceChild=null, customRows=[].
 
 INFO: passport (validade, páginas), visa (regras brasileiros), vaccines, climate (temperaturas período), luggage (roupa, adaptadores, moeda), flights (companhias, tempo voo).
-
+${customHint ? '\n=== INSTRUÇÕES CUSTOMIZADAS (Prompts por Módulo) ===\n' + customHint + '\n=== FIM ===\n' : ''}
 Responda EXCLUSIVAMENTE com JSON válido, sem texto/markdown ao redor:
 {"title":"","aiSources":["fonte1"],"client":{"name":"","email":"","phone":"","type":"couple|individual|family|group","adults":2,"children":0,"childrenAges":[],"preferences":[],"restrictions":[],"economicProfile":"standard|premium|luxury","notes":""},"travel":{"startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","nights":0,"destinations":[{"city":"","country":"","nights":0}]},"days":[{"dayNumber":1,"date":"YYYY-MM-DD","title":"","city":"","narrative":"200+ palavras","activities":[{"time":"HH:MM","description":"","type":"passeio"}],"overnightCity":""}],"hotels":[{"city":"","hotelName":"","roomType":"","regime":"","checkIn":"YYYY-MM-DD","checkOut":"YYYY-MM-DD","nights":0}],"pricing":{"perPerson":null,"perCouple":null,"currency":"USD","validUntil":"YYYY-MM-DD","disclaimer":"Valores sob consulta.","customRows":[]},"optionals":[{"service":"","priceAdult":null,"priceChild":null,"notes":""}],"includes":["item1"],"excludes":["item1"],"payment":{"deposit":"30% no ato","installments":"Até 6x sem juros","deadline":"45 dias antes","notes":""},"cancellation":[{"period":"Até 60 dias","penalty":"Sem custo"},{"period":"59-30 dias","penalty":"50%"},{"period":"29-15 dias","penalty":"75%"},{"period":"<15 dias/no-show","penalty":"100%"}],"importantInfo":{"passport":"","visa":"","vaccines":"","climate":"","luggage":"","flights":"","customFields":[]}}${webResearchSection}`;
 
