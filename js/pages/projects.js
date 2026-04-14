@@ -7,6 +7,7 @@ import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import {
   fetchProjects, createProject, updateProject, deleteProject,
+  archiveProject, unarchiveProject, fetchArchivedProjects, checkProjectDependencies,
   PROJECT_COLORS, PROJECT_ICONS, PROJECT_STATUSES, PROJECT_STATUS_MAP,
 } from '../services/projects.js';
 import { fetchTasks } from '../services/tasks.js';
@@ -45,9 +46,29 @@ export async function renderProjects(container) {
     <div id="projects-content">
       <div class="task-empty"><div class="task-empty-icon">⟳</div><div class="task-empty-title">Carregando projetos...</div></div>
     </div>
+
+    <!-- Projetos arquivados -->
+    <div id="archived-projects-section" style="margin-top:32px;display:none;">
+      <button id="toggle-archived-projects" style="display:flex;align-items:center;gap:8px;
+        background:none;border:none;cursor:pointer;padding:8px 0;
+        font-size:0.875rem;font-weight:600;color:var(--text-muted);">
+        <span id="archived-proj-arrow" style="transition:transform 0.2s;">▸</span>
+        Projetos Arquivados (<span id="archived-proj-count">0</span>)
+      </button>
+      <div id="archived-projects-grid" style="display:none;margin-top:12px;">
+      </div>
+    </div>
   `;
 
   document.getElementById('new-project-btn')?.addEventListener('click', () => openProjectModal());
+  document.getElementById('toggle-archived-projects')?.addEventListener('click', () => {
+    const grid  = document.getElementById('archived-projects-grid');
+    const arrow = document.getElementById('archived-proj-arrow');
+    if (!grid) return;
+    const show = grid.style.display === 'none';
+    grid.style.display = show ? 'block' : 'none';
+    if (arrow) arrow.style.transform = show ? 'rotate(90deg)' : '';
+  });
 
   let timer;
   document.getElementById('proj-search')?.addEventListener('input', e => {
@@ -65,6 +86,7 @@ async function loadData() {
   try {
     [allProjects, allTasks] = await Promise.all([fetchProjects(), fetchTasks()]);
     renderList();
+    loadArchivedProjects();
   } catch(e) {
     toast.error('Erro ao carregar projetos.');
     console.error(e);
@@ -114,8 +136,8 @@ function renderList() {
       e.stopPropagation();
       const { action, projectId } = btn.dataset;
       const proj = allProjects.find(p => p.id === projectId);
-      if (action === 'edit')   openProjectModal(proj);
-      if (action === 'delete') await handleDeleteProject(proj);
+      if (action === 'edit')    openProjectModal(proj);
+      if (action === 'archive') await handleArchiveProject(proj);
     });
   });
 }
@@ -157,7 +179,7 @@ function renderProjectCard(p) {
             </span>
             ${store.can('project_edit') ? `
               <button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-project-id="${p.id}" title="Editar">✎</button>
-              ${store.can('project_delete') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-project-id="${p.id}" title="Excluir" style="color:var(--color-danger);">🗑</button>` : ''}
+              ${store.can('project_delete') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="archive" data-project-id="${p.id}" title="Arquivar">📥</button>` : ''}
             ` : ''}
           </div>
         </div>
@@ -439,18 +461,107 @@ export function openProjectModal(project = null, { defaultWorkspaceId = null, on
   }, 60);
 }
 
-async function handleDeleteProject(proj) {
+async function handleArchiveProject(proj) {
   const confirmed = await modal.confirm({
-    title:       'Excluir projeto',
-    message:     `Excluir permanentemente o projeto "<strong>${esc(proj.name)}</strong>"?<br>As tarefas vinculadas NÃO serão excluídas.`,
-    confirmText: 'Excluir', danger: true, icon: '🗑️',
+    title:       'Arquivar projeto',
+    message:     `Arquivar o projeto "<strong>${esc(proj.name)}</strong>"?<br>As tarefas vinculadas continuarão acessíveis. Você poderá restaurá-lo depois.`,
+    confirmText: 'Arquivar', danger: false, icon: '📥',
   });
   if (!confirmed) return;
   try {
-    await deleteProject(proj.id);
-    toast.success(`Projeto "${proj.name}" excluído.`);
+    await archiveProject(proj.id);
+    toast.success(`Projeto "${proj.name}" arquivado.`);
     await loadData();
   } catch(e) { toast.error(e.message); }
+}
+
+async function loadArchivedProjects() {
+  try {
+    const archived = await fetchArchivedProjects();
+    const section  = document.getElementById('archived-projects-section');
+    const countEl  = document.getElementById('archived-proj-count');
+    const grid     = document.getElementById('archived-projects-grid');
+    if (!section || !grid) return;
+
+    if (!archived.length) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    if (countEl) countEl.textContent = archived.length;
+
+    grid.innerHTML = `<div class="projects-grid">${archived.map(p => {
+      const status = PROJECT_STATUS_MAP[p.status] || { label: p.status, color: '#6B7280' };
+      return `
+        <div class="project-card" style="opacity:0.65;">
+          <div class="project-card-banner" style="background:${p.color||'#888'};"></div>
+          <div class="project-card-body">
+            <div class="project-card-header">
+              <div>
+                <div class="project-card-icon" style="background:${p.color||'#888'}18;font-size:1.5rem;">${p.icon||'📦'}</div>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <span class="badge" style="background:rgba(245,158,11,0.12);color:var(--color-warning);border:1px solid rgba(245,158,11,0.3);font-size:0.6875rem;">
+                  Arquivado
+                </span>
+                ${store.can('project_edit') ? `
+                  <button class="btn btn-secondary btn-sm restore-proj-btn" data-id="${p.id}">Restaurar</button>
+                ` : ''}
+                ${store.can('project_delete') ? `
+                  <button class="btn btn-ghost btn-icon btn-sm delete-proj-btn" data-id="${p.id}"
+                    title="Excluir permanentemente" style="color:var(--color-danger);">🗑</button>
+                ` : ''}
+              </div>
+            </div>
+            <div class="project-card-name">${esc(p.name)}</div>
+            ${p.description ? `<div class="project-card-desc">${esc(p.description)}</div>` : ''}
+          </div>
+        </div>`;
+    }).join('')}</div>`;
+
+    grid.querySelectorAll('.restore-proj-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const proj = archived.find(p => p.id === btn.dataset.id);
+        try {
+          await unarchiveProject(btn.dataset.id);
+          toast.success(`Projeto "${proj?.name}" restaurado!`);
+          await loadData();
+        } catch(e) { toast.error(e.message); }
+      });
+    });
+
+    grid.querySelectorAll('.delete-proj-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const proj = archived.find(p => p.id === btn.dataset.id);
+
+        // Verificar dependências
+        let depsMsg = '';
+        try {
+          const deps = await checkProjectDependencies(btn.dataset.id);
+          if (deps.total > 0) {
+            const parts = [];
+            if (deps.tasks)       parts.push(`${deps.tasks} tarefa(s)`);
+            if (deps.csatSurveys) parts.push(`${deps.csatSurveys} pesquisa(s) CSAT`);
+            depsMsg = `<br><br><strong style="color:var(--color-warning);">Atenção:</strong> este projeto possui ${parts.join(' e ')} vinculado(s). Os vínculos ficarão órfãos.`;
+          }
+        } catch(_) {}
+
+        const ok = await modal.confirm({
+          title: 'Excluir projeto permanentemente',
+          message: `Excluir "<strong>${esc(proj?.name||'')}</strong>" de forma irreversível?${depsMsg}`,
+          confirmText: 'Excluir permanentemente', danger: true, icon: '🗑',
+        });
+        if (ok) {
+          try {
+            await deleteProject(btn.dataset.id, { force: true });
+            toast.success('Projeto excluído permanentemente.');
+            await loadData();
+          } catch(e) { toast.error(e.message); }
+        }
+      });
+    });
+  } catch(e) {
+    console.warn('[Projects] Erro ao carregar arquivados:', e.message);
+  }
 }
 
 function openProjectDetail(projectId) {

@@ -8,10 +8,10 @@ import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { REQUESTING_AREAS } from '../services/tasks.js';
 import {
-  createWorkspace, updateWorkspace, archiveWorkspace,
+  createWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace,
   addMember, removeMember, toggleWorkspaceAdmin,
   createInvite, fetchInvites, getWorkspace,
-  fetchUserWorkspaces, fetchAllWorkspaces,
+  fetchUserWorkspaces, fetchAllWorkspaces, fetchArchivedWorkspaces,
   WORKSPACE_ICONS, WORKSPACE_COLORS,
 } from '../services/workspaces.js';
 
@@ -53,10 +53,26 @@ export async function renderWorkspaces(container) {
     <div id="ws-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:20px;">
       ${[0,1,2].map(()=>'<div class="card skeleton" style="height:200px;"></div>').join('')}
     </div>
+
+    <!-- Seção de workspaces arquivados -->
+    ${canViewAll ? `
+    <div id="archived-section" style="margin-top:32px;display:none;">
+      <button id="toggle-archived-btn" style="display:flex;align-items:center;gap:8px;
+        background:none;border:none;cursor:pointer;padding:8px 0;
+        font-size:0.875rem;font-weight:600;color:var(--text-muted);">
+        <span id="archived-arrow" style="transition:transform 0.2s;">▸</span>
+        Squads Arquivados (<span id="archived-count">0</span>)
+      </button>
+      <div id="archived-grid" style="display:none;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:20px;margin-top:12px;">
+      </div>
+    </div>
+    ` : ''}
   `;
 
   document.getElementById('new-ws-btn')?.addEventListener('click', () => openWorkspaceModal());
+  document.getElementById('toggle-archived-btn')?.addEventListener('click', toggleArchivedSection);
   await loadWorkspaces();
+  if (canViewAll) loadArchivedWorkspaces();
 }
 
 async function loadWorkspaces() {
@@ -185,6 +201,86 @@ function renderGrid() {
   grid.querySelectorAll('.ws-invite-btn').forEach(btn =>
     btn.addEventListener('click', () => openInviteModal(btn.dataset.id))
   );
+}
+
+/* ─── Seção Arquivados ──────────────────────────────────── */
+function toggleArchivedSection() {
+  const grid  = document.getElementById('archived-grid');
+  const arrow = document.getElementById('archived-arrow');
+  if (!grid) return;
+  const show = grid.style.display === 'none';
+  grid.style.display = show ? 'grid' : 'none';
+  if (arrow) arrow.style.transform = show ? 'rotate(90deg)' : '';
+}
+
+async function loadArchivedWorkspaces() {
+  try {
+    const archived = await fetchArchivedWorkspaces();
+    const section  = document.getElementById('archived-section');
+    const countEl  = document.getElementById('archived-count');
+    const grid     = document.getElementById('archived-grid');
+    if (!section || !grid) return;
+
+    if (!archived.length) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    if (countEl) countEl.textContent = archived.length;
+
+    const allUsers = store.get('users') || [];
+
+    grid.innerHTML = archived.map(ws => {
+      const memberCount = ws.members?.length || 0;
+      return `
+        <div class="card" style="border-top:3px solid ${esc(ws.color||'#888')};opacity:0.7;">
+          <div class="card-header" style="padding-bottom:12px;">
+            <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;">
+              <div style="width:40px;height:40px;border-radius:var(--radius-md);
+                background:${esc(ws.color||'#888')}22;color:${esc(ws.color||'#888')};
+                display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0;">
+                ${esc(ws.icon||'◈')}
+              </div>
+              <div style="min-width:0;">
+                <div style="font-weight:600;color:var(--text-primary);font-size:0.9375rem;
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(ws.name)}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);display:flex;align-items:center;gap:6px;">
+                  <span style="color:var(--color-warning);">Arquivado</span>
+                  · ${memberCount} membro${memberCount!==1?'s':''}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card-body" style="padding-top:0;">
+            ${ws.description ? `<p style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">${esc(ws.description)}</p>` : ''}
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+              <button class="btn btn-secondary btn-sm ws-restore-btn" data-id="${ws.id}">
+                Restaurar
+              </button>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    grid.querySelectorAll('.ws-restore-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const wsId = btn.dataset.id;
+        const ws = archived.find(w => w.id === wsId);
+        const ok = await modal.confirm({
+          title: 'Restaurar workspace',
+          message: `Restaurar <strong>${esc(ws?.name||'')}</strong>? Ele voltará a aparecer para todos os membros.`,
+          confirmText: 'Restaurar', icon: '↩',
+        });
+        if (ok) {
+          try {
+            await unarchiveWorkspace(wsId);
+            toast.success('Workspace restaurado!');
+            await loadWorkspaces();
+            await loadArchivedWorkspaces();
+          } catch(e) { toast.error(e.message); }
+        }
+      });
+    });
+  } catch(e) {
+    console.warn('[Workspaces] Erro ao carregar arquivados:', e.message);
+  }
 }
 
 /* ─── Modal: criar / editar workspace ───────────────────── */
