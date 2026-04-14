@@ -14,7 +14,7 @@ import {
 } from '../services/tasks.js';
 import { openTaskModal, openTaskDoneOverlay } from '../components/taskModal.js';
 import { openProjectModal } from './projects.js';
-import { addMember, removeMember, toggleWorkspaceAdmin } from '../services/workspaces.js';
+import { addMember, removeMember, toggleWorkspaceAdmin, getWorkspace } from '../services/workspaces.js';
 import { modal } from '../components/modal.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -148,6 +148,7 @@ function renderHeader(ws, projCount, taskCount) {
         <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
           <button class="btn btn-secondary btn-sm" id="sw-back-btn" title="Voltar para Squads">← Squads</button>
           ${store.can('workspace_create') ? `<button class="btn btn-primary btn-sm" id="sw-new-squad-btn" title="Criar novo squad">+ Novo Squad</button>` : ''}
+          ${canEdit ? `<button class="btn btn-ghost btn-sm" id="sw-invite-btn" title="Convidar membros" style="color:var(--brand-gold);">+ Convidar</button>` : ''}
           ${canEdit ? `<button class="btn btn-ghost btn-sm" id="sw-members-btn" title="Gerenciar membros">👥 Membros</button>` : ''}
           ${canEdit ? `<button class="btn btn-ghost btn-sm" id="sw-edit-btn" title="Editar squad">⚙ Editar</button>` : ''}
         </div>
@@ -403,6 +404,7 @@ function attachEvents() {
   document.getElementById('sw-new-squad-btn')?.addEventListener('click', () => router.navigate('workspaces'));
   document.getElementById('sw-edit-btn')?.addEventListener('click', () => router.navigate('workspaces'));
   document.getElementById('sw-members-btn')?.addEventListener('click', () => openMembersModal());
+  document.getElementById('sw-invite-btn')?.addEventListener('click', () => openSquadInviteModal());
 
   // Novo projeto neste squad
   const newProjBtn = document.getElementById('sw-new-project-btn');
@@ -611,6 +613,82 @@ async function openMembersModal() {
           document.querySelector('.modal-overlay')?.click();
           await reload();
         } catch (e) { toast.error(e.message); }
+      });
+    });
+  }, 50);
+}
+
+/* ─── Modal: convidar membros (visual amigável) ──────────── */
+async function openSquadInviteModal() {
+  if (!squad) return;
+
+  // Busca workspace fresco para ter members atualizado
+  const freshWs = await getWorkspace(squad.id).catch(() => squad);
+  const wsMembers = Array.isArray(freshWs?.members) ? freshWs.members : [];
+  const wsSector = freshWs?.sector || '';
+  const isMultiSector = freshWs?.multiSector === true;
+
+  const allUsers = (store.get('users') || []).filter(u => u.active !== false);
+  const nonMembers = allUsers.filter(u => {
+    if (wsMembers.includes(u.id)) return false;
+    if (isMultiSector) return true;
+    if (wsSector) {
+      const uSector = u.sector || u.department;
+      return !uSector || uSector === wsSector;
+    }
+    return true;
+  });
+
+  modal.open({
+    title: `+ Convidar para — ${esc(squad.name)}`,
+    size: 'sm',
+    content: `
+      <div style="margin-bottom:16px;">
+        <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">
+          Selecione usuários para adicionar ao squad.
+        </p>
+        ${nonMembers.length ? `
+          <div style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;">
+            ${nonMembers.map(u => {
+              const initials = (u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+              return `
+                <div class="dropdown-item sw-add-invite" data-uid="${u.id}"
+                  style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+                  border-radius:var(--radius-md);cursor:pointer;border:1px solid transparent;
+                  transition:all 0.15s;">
+                  <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">
+                    ${initials}
+                  </div>
+                  <div>
+                    <div style="font-size:0.875rem;color:var(--text-primary);">${esc(u.name)}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u.department||u.role||'')}</div>
+                  </div>
+                  <span style="margin-left:auto;font-size:0.8125rem;color:var(--brand-gold);">+ Adicionar</span>
+                </div>`;
+            }).join('')}
+          </div>
+        ` : `
+          <div class="empty-state" style="padding:24px;">
+            <div class="empty-state-icon">◉</div>
+            <div class="empty-state-title" style="font-size:0.875rem;">Todos os usuários já são membros</div>
+          </div>
+        `}
+      </div>
+    `,
+    footer: [{ label: 'Fechar', class: 'btn-secondary', closeOnClick: true }],
+  });
+
+  setTimeout(() => {
+    document.querySelectorAll('.sw-add-invite').forEach(item => {
+      item.addEventListener('click', async () => {
+        const uid = item.dataset.uid;
+        const u = allUsers.find(x => x.id === uid);
+        try {
+          await addMember(squad.id, uid);
+          toast.success(`${esc(u?.name)} adicionado ao squad!`);
+          document.querySelector('.modal-overlay')?.click();
+          await reload();
+        } catch(e) { toast.error(e.message); }
       });
     });
   }, 50);

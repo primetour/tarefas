@@ -438,12 +438,18 @@ function openWorkspaceModal(ws = null) {
             if (isEdit) {
               await updateWorkspace(ws.id, data);
               toast.success('Workspace atualizado!');
+              close();
+              await loadWorkspaces();
             } else {
-              await createWorkspace(data);
-              toast.success(`Workspace "${data.name}" criado!`);
+              const newWs = await createWorkspace(data);
+              toast.success(`Workspace "${data.name}" criado! Adicione membros.`);
+              close();
+              await loadWorkspaces();
+              // Abre modal de convite automaticamente após criar
+              if (newWs?.id) {
+                setTimeout(() => openInviteModal(newWs.id), 300);
+              }
             }
-            close();
-            await loadWorkspaces();
           } catch(e) { toast.error(e.message); }
           finally { if(btn){ btn.classList.remove('loading'); btn.disabled=false; } }
         },
