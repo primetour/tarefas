@@ -62,6 +62,14 @@ export const ACTION_LABELS = {
 export async function auditLog(action, entity, entityId, details = {}) {
   try {
     const user = store.get('currentUser');
+
+    // Guard: se não há user autenticado, não tenta gravar no Firestore
+    // (evita erro de permissão durante transição de auth, ex.: login SSO)
+    if (!user?.uid) {
+      console.debug('Audit log skipped: no authenticated user yet');
+      return;
+    }
+
     const profile = store.get('userProfile');
 
     const entry = {
