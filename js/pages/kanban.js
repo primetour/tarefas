@@ -220,6 +220,16 @@ function renderCards(tasks, _ignored = '') {
 
     let colTasks = merged.filter(t => t.status === s.value && filterFn(t));
 
+    // Tarefas concluídas/canceladas vão para o final da lista
+    if (s.value === 'done' || s.value === 'cancelled') {
+      colTasks.sort((a, b) => {
+        const aTime = a.completedAt?.toDate?.() || a.completedAt || a.updatedAt?.toDate?.() || a.updatedAt || 0;
+        const bTime = b.completedAt?.toDate?.() || b.completedAt || b.updatedAt?.toDate?.() || b.updatedAt || 0;
+        // Mais recentes no final
+        return (new Date(aTime)) - (new Date(bTime));
+      });
+    }
+
     body.innerHTML = colTasks.map(t => renderKanbanCard(t)).join('');
     if (count) count.textContent = colTasks.length;
 
@@ -523,6 +533,12 @@ function renderPipelineCards(tasks) {
     let colTasks;
     if (col.id === '__done__') {
       colTasks = typeTasks.filter(t => t.status === 'done');
+      // Concluídas mais recentes no final
+      colTasks.sort((a, b) => {
+        const aTime = a.completedAt?.toDate?.() || a.completedAt || a.updatedAt?.toDate?.() || a.updatedAt || 0;
+        const bTime = b.completedAt?.toDate?.() || b.completedAt || b.updatedAt?.toDate?.() || b.updatedAt || 0;
+        return (new Date(aTime)) - (new Date(bTime));
+      });
     } else {
       // Tasks in this step: either customFields.currentStep matches, or
       // fall back to first step for tasks without a currentStep
