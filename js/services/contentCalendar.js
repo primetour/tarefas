@@ -191,7 +191,7 @@ export async function duplicateSlot(id) {
  * Sugere conteúdos para a semana informada usando IA.
  * Analisa posts recentes, dicas do portal e lacunas no calendário.
  */
-export async function suggestWeekContent({ startDate, endDate, account, count = 5 }) {
+export async function suggestWeekContent({ startDate, endDate, account, count = 5, userPrompt = '' }) {
   // 1. Buscar top 10 posts por engajamento (últimos 90 dias)
   const ninetyDaysAgo = new Date();
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
@@ -269,10 +269,14 @@ export async function suggestWeekContent({ startDate, endDate, account, count = 
   const typeList = CONTENT_TYPES.map(t => `${t.value} (${t.label})`).join(', ');
   const categoryList = CATEGORIES.map(c => `${c.value} (${c.label})`).join(', ');
 
+  const userInstructions = userPrompt?.trim()
+    ? `\nINSTRUÇÕES DO USUÁRIO (prioridade máxima — adapte as sugestões conforme solicitado):\n${userPrompt.trim()}\n`
+    : '';
+
   const prompt = `Você é um estrategista de conteúdo digital para a agência de viagens PRIMETOUR.
 
 Analise os dados abaixo e sugira ${count} conteúdos para a semana de ${startDate} a ${endDate}.
-
+${userInstructions}
 TOP POSTS RECENTES (maior engajamento):
 ${JSON.stringify(topPostsSummary, null, 2)}
 
@@ -369,15 +373,23 @@ Responda APENAS com um JSON array (sem markdown) no formato:
 /**
  * Gera legenda/caption para um conteúdo usando IA.
  */
-export async function suggestCaption({ title, brief, platform, category, account }) {
+export async function suggestCaption({ title, brief, platform, category, account, userPrompt = '', type = 'caption' }) {
   const { chatWithAI } = await import('./ai.js');
+
+  const userInstructions = userPrompt?.trim()
+    ? `\nINSTRUÇÕES DO USUÁRIO (prioridade máxima — siga fielmente):\n${userPrompt.trim()}\n`
+    : '';
+
+  const isBrief = type === 'brief';
 
   const prompt = `Você é um copywriter de redes sociais da agência de viagens PRIMETOUR.
 
-Gere uma legenda/caption para o seguinte conteúdo:
-
+${isBrief
+  ? `Gere um BRIEF (direcionamento criativo) para o seguinte conteúdo. O brief deve orientar quem vai produzir o conteúdo: abordagem, tom, elementos visuais sugeridos, mensagem principal e CTA.`
+  : `Gere uma legenda/caption para o seguinte conteúdo:`}
+${userInstructions}
 Título: ${title || '(sem título)'}
-Briefing: ${brief || '(sem briefing)'}
+${!isBrief && brief ? `Briefing: ${brief}` : ''}
 Plataforma: ${platform || 'instagram'}
 Categoria: ${category || 'geral'}
 Conta: ${account || 'PRIMETOUR'}
