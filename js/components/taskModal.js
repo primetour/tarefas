@@ -1970,7 +1970,7 @@ function showEvidenceModal(taskId, taskData) {
               clientName:  csatEmail.split('@')[0],
               assignedTo:  (taskData.assignees||[])[0] || null,
             }).then(survey => sendCsatEmail(survey.id));
-          }).catch(e => console.warn('CSAT send failed:', e.message))
+          }).catch(e => console.error('CSAT send failed:', e?.message || e?.text || e))
         );
       }
 
