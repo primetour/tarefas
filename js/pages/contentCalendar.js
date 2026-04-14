@@ -629,75 +629,142 @@ function bindHeaderEvents(container) {
   // Suggest week
   const suggestBtn = document.getElementById('cc-suggest-week');
   if (suggestBtn) {
-    suggestBtn.addEventListener('click', () => handleSuggestWeek(container));
+    suggestBtn.addEventListener('click', () => openSuggestWeekModal(container));
   }
 }
 
 /* ── Suggest week handler ───────────────────────────────── */
 
-async function handleSuggestWeek(container) {
-  const btn = document.getElementById('cc-suggest-week');
-  if (!btn) return;
+function openSuggestWeekModal(container) {
+  const ws = startOfWeek(currentDate);
+  const we = endOfWeek(currentDate);
+  const weekLabel = `${formatDate(ws)} a ${formatDate(we)}`;
 
-  const originalText = btn.textContent;
-  btn.textContent = 'Gerando...';
-  btn.disabled = true;
-  btn.style.opacity = '0.6';
+  const overlay = document.getElementById('cc-modal-overlay');
+  if (!overlay) return;
 
-  try {
-    const ws = startOfWeek(currentDate);
-    const we = endOfWeek(currentDate);
-    const account = activeAccount || 'primetourviagens';
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card,#1A2332);border-radius:12px;width:100%;max-width:520px;
+      box-shadow:0 20px 60px rgba(0,0,0,0.5);border:1px solid var(--border-subtle,#1E2D3D);
+      overflow:hidden;margin:auto;">
+      <div style="padding:20px 24px;border-bottom:1px solid var(--border-subtle,#1E2D3D);
+        display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <h3 style="margin:0;font-size:1rem;color:var(--text-primary,#E8ECF1);">IA: Sugerir Conteudo Semanal</h3>
+          <p style="margin:4px 0 0;font-size:0.75rem;color:var(--text-muted,#6B7B8D);">Semana ${weekLabel}</p>
+        </div>
+        <button id="cc-suggest-close" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.25rem;">✕</button>
+      </div>
+      <div style="padding:20px 24px;display:flex;flex-direction:column;gap:16px;">
+        <div>
+          <label style="display:block;font-size:0.8125rem;font-weight:600;color:var(--text-secondary,#A0AEC0);margin-bottom:6px;">
+            O que voce quer? (opcional)
+          </label>
+          <textarea id="cc-suggest-prompt" rows="4" placeholder="Ex: Quero focar em destinos europeus para o verao, com pelo menos 2 reels e 1 carrossel. Tons leves e inspiradores..."
+            style="width:100%;padding:10px 12px;border:1px solid var(--border-subtle,#1E2D3D);
+            border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
+            font-size:0.8125rem;resize:vertical;min-height:80px;font-family:inherit;
+            box-sizing:border-box;"></textarea>
+          <p style="margin:6px 0 0;font-size:0.6875rem;color:var(--text-muted,#6B7B8D);line-height:1.5;">
+            Descreva o tema, tom, tipos de conteudo ou qualquer direcao criativa.
+            Se deixar vazio, a IA analisa performance passada e sugere automaticamente.
+          </p>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div>
+            <label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-muted,#6B7B8D);margin-bottom:4px;">Quantidade</label>
+            <select id="cc-suggest-count" style="width:100%;padding:8px 10px;border:1px solid var(--border-subtle,#1E2D3D);
+              border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);font-size:0.8125rem;">
+              <option value="3">3 sugestoes</option>
+              <option value="5" selected>5 sugestoes</option>
+              <option value="7">7 sugestoes</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-muted,#6B7B8D);margin-bottom:4px;">Conta</label>
+            <select id="cc-suggest-account" style="width:100%;padding:8px 10px;border:1px solid var(--border-subtle,#1E2D3D);
+              border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);font-size:0.8125rem;">
+              <option value="primetourviagens" ${(activeAccount||'primetourviagens')==='primetourviagens'?'selected':''}>@primetourviagens</option>
+              <option value="icsbyprimetour" ${activeAccount==='icsbyprimetour'?'selected':''}>@icsbyprimetour</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div style="padding:16px 24px;border-top:1px solid var(--border-subtle,#1E2D3D);
+        display:flex;justify-content:flex-end;gap:10px;">
+        <button id="cc-suggest-cancel" style="padding:8px 18px;border:1px solid var(--border-subtle,#1E2D3D);
+          border-radius:8px;background:transparent;color:var(--text-secondary,#A0AEC0);font-size:0.8125rem;
+          cursor:pointer;">Cancelar</button>
+        <button id="cc-suggest-go" style="padding:8px 22px;border:none;border-radius:8px;
+          background:var(--brand-gold,#D4A843);color:#000;font-size:0.8125rem;font-weight:600;
+          cursor:pointer;">Gerar Sugestoes</button>
+      </div>
+    </div>`;
 
-    const suggestions = await suggestWeekContent({
-      startDate: formatDate(ws),
-      endDate: formatDate(we),
-      account,
-    });
+  document.getElementById('cc-suggest-close')?.addEventListener('click', () => { overlay.style.display = 'none'; overlay.innerHTML = ''; });
+  document.getElementById('cc-suggest-cancel')?.addEventListener('click', () => { overlay.style.display = 'none'; overlay.innerHTML = ''; });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.style.display = 'none'; overlay.innerHTML = ''; } });
 
-    if (!suggestions || !suggestions.length) {
-      toast.info('Nenhuma sugestao gerada pela IA');
-      return;
-    }
+  document.getElementById('cc-suggest-go')?.addEventListener('click', async () => {
+    const userPrompt = document.getElementById('cc-suggest-prompt')?.value || '';
+    const count = parseInt(document.getElementById('cc-suggest-count')?.value || '5', 10);
+    const account = document.getElementById('cc-suggest-account')?.value || 'primetourviagens';
 
-    let created = 0;
-    for (const sug of suggestions) {
-      try {
-        const newSlot = await createSlot({
-          title: sug.title || 'Sugestao IA',
-          platform: sug.platform || 'instagram',
-          contentType: sug.contentType || 'post',
-          account: account,
-          scheduledDate: sug.date || sug.scheduledDate,
-          scheduledTime: sug.time || '',
-          slotTime: sug.slotTime || 'manha',
-          category: sug.category || 'destinos',
-          status: 'ideia',
-          brief: sug.brief || sug.description || '',
-          caption: sug.caption || '',
-          hashtags: sug.hashtags || '',
-          imageNotes: sug.imageNotes || '',
-          campaign: sug.campaign || '',
-        });
-        if (newSlot) {
-          allSlots.push(newSlot);
-          created++;
-        }
-      } catch (e) {
-        console.error('Erro ao criar slot sugerido:', e);
+    const goBtn = document.getElementById('cc-suggest-go');
+    if (goBtn) { goBtn.textContent = 'Gerando...'; goBtn.disabled = true; goBtn.style.opacity = '0.6'; }
+
+    try {
+      const suggestions = await suggestWeekContent({
+        startDate: formatDate(ws),
+        endDate: formatDate(we),
+        account,
+        count,
+        userPrompt,
+      });
+
+      if (!suggestions || !suggestions.length) {
+        toast.info('Nenhuma sugestao gerada pela IA');
+        return;
       }
-    }
 
-    toast.success(`${created} slot(s) criado(s) com sugestoes da IA`);
-    renderPage(container);
-  } catch (e) {
-    console.error('Erro ao sugerir semana:', e);
-    toast.error('Erro ao gerar sugestoes de conteudo');
-  } finally {
-    btn.textContent = originalText;
-    btn.disabled = false;
-    btn.style.opacity = '1';
-  }
+      let created = 0;
+      for (const sug of suggestions) {
+        try {
+          const newSlot = await createSlot({
+            title: sug.title || 'Sugestao IA',
+            platform: sug.platform || 'instagram',
+            contentType: sug.contentType || 'post',
+            account: account,
+            scheduledDate: sug.date || sug.scheduledDate,
+            scheduledTime: sug.time || '',
+            slotTime: sug.slotTime || 'manha',
+            category: sug.category || 'destinos',
+            status: 'ideia',
+            brief: sug.brief || sug.description || '',
+            caption: sug.caption || '',
+            hashtags: sug.hashtags || '',
+            imageNotes: sug.imageNotes || '',
+            campaign: sug.campaign || '',
+          });
+          if (newSlot) { allSlots.push(newSlot); created++; }
+        } catch (e) { console.error('Erro ao criar slot sugerido:', e); }
+      }
+
+      overlay.style.display = 'none';
+      overlay.innerHTML = '';
+      toast.success(`${created} slot(s) criado(s) com sugestoes da IA`);
+      renderPage(container);
+    } catch (e) {
+      console.error('Erro ao sugerir semana:', e);
+      toast.error('Erro ao gerar sugestoes de conteudo');
+    } finally {
+      if (goBtn) { goBtn.textContent = 'Gerar Sugestoes'; goBtn.disabled = false; goBtn.style.opacity = '1'; }
+    }
+  });
+
+  // Focus no campo de texto
+  setTimeout(() => document.getElementById('cc-suggest-prompt')?.focus(), 100);
 }
 
 /* ── Slot Modal ─────────────────────────────────────────── */
@@ -844,10 +911,22 @@ function openSlotModal(slot, prefillDate) {
         <div style="${fieldGroupStyle}">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
             <label style="${labelStyle}margin-bottom:0;">Brief</label>
-            <button id="cc-ai-brief" style="padding:3px 10px;border:1px solid var(--brand-gold,#D4A843);
+            <button id="cc-ai-brief-toggle" style="padding:3px 10px;border:1px solid var(--brand-gold,#D4A843);
               border-radius:6px;background:transparent;color:var(--brand-gold,#D4A843);
               font-size:0.6875rem;cursor:pointer;font-weight:600;transition:opacity 0.15s;">
               &#9670; IA: Gerar Brief</button>
+          </div>
+          <div id="cc-ai-brief-input" style="display:none;margin-bottom:8px;padding:10px;
+            border:1px solid var(--brand-gold,#D4A843);border-radius:8px;
+            background:rgba(212,168,67,0.05);">
+            <input type="text" id="cc-ai-brief-prompt" placeholder="Ex: Foco em experiencias gastronomicas, tom sofisticado..."
+              style="${inputStyle}margin-bottom:6px;font-size:0.8125rem;" />
+            <div style="display:flex;gap:6px;justify-content:flex-end;">
+              <button id="cc-ai-brief-cancel" style="padding:4px 12px;border:1px solid var(--border-subtle,#1E2D3D);
+                border-radius:6px;background:transparent;color:var(--text-muted);font-size:0.75rem;cursor:pointer;">Cancelar</button>
+              <button id="cc-ai-brief" style="padding:4px 14px;border:none;border-radius:6px;
+                background:var(--brand-gold,#D4A843);color:#000;font-size:0.75rem;font-weight:600;cursor:pointer;">Gerar</button>
+            </div>
           </div>
           <textarea id="cc-f-brief" rows="3" placeholder="Descreva o objetivo e direcionamento do conteudo..."
             style="${inputStyle}resize:vertical;min-height:70px;">${esc(s.brief || '')}</textarea>
@@ -857,10 +936,22 @@ function openSlotModal(slot, prefillDate) {
         <div style="${fieldGroupStyle}">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
             <label style="${labelStyle}margin-bottom:0;">Legenda</label>
-            <button id="cc-ai-caption" style="padding:3px 10px;border:1px solid var(--brand-gold,#D4A843);
+            <button id="cc-ai-caption-toggle" style="padding:3px 10px;border:1px solid var(--brand-gold,#D4A843);
               border-radius:6px;background:transparent;color:var(--brand-gold,#D4A843);
               font-size:0.6875rem;cursor:pointer;font-weight:600;transition:opacity 0.15s;">
               &#9670; IA: Gerar Legenda</button>
+          </div>
+          <div id="cc-ai-caption-input" style="display:none;margin-bottom:8px;padding:10px;
+            border:1px solid var(--brand-gold,#D4A843);border-radius:8px;
+            background:rgba(212,168,67,0.05);">
+            <input type="text" id="cc-ai-caption-prompt" placeholder="Ex: Legenda curta e impactante, com CTA para DM..."
+              style="${inputStyle}margin-bottom:6px;font-size:0.8125rem;" />
+            <div style="display:flex;gap:6px;justify-content:flex-end;">
+              <button id="cc-ai-caption-cancel" style="padding:4px 12px;border:1px solid var(--border-subtle,#1E2D3D);
+                border-radius:6px;background:transparent;color:var(--text-muted);font-size:0.75rem;cursor:pointer;">Cancelar</button>
+              <button id="cc-ai-caption" style="padding:4px 14px;border:none;border-radius:6px;
+                background:var(--brand-gold,#D4A843);color:#000;font-size:0.75rem;font-weight:600;cursor:pointer;">Gerar</button>
+            </div>
           </div>
           <textarea id="cc-f-caption" rows="4" placeholder="Legenda para a publicacao..."
             style="${inputStyle}resize:vertical;min-height:90px;">${esc(s.caption || '')}</textarea>
@@ -953,13 +1044,29 @@ function bindModalEvents() {
     });
   }
 
-  // AI Brief
-  const aiBriefBtn = document.getElementById('cc-ai-brief');
-  if (aiBriefBtn) aiBriefBtn.addEventListener('click', handleAIBrief);
+  // AI Brief — toggle input + generate
+  document.getElementById('cc-ai-brief-toggle')?.addEventListener('click', () => {
+    const panel = document.getElementById('cc-ai-brief-input');
+    if (panel) { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; }
+    document.getElementById('cc-ai-brief-prompt')?.focus();
+  });
+  document.getElementById('cc-ai-brief-cancel')?.addEventListener('click', () => {
+    const panel = document.getElementById('cc-ai-brief-input');
+    if (panel) panel.style.display = 'none';
+  });
+  document.getElementById('cc-ai-brief')?.addEventListener('click', handleAIBrief);
 
-  // AI Caption
-  const aiCaptionBtn = document.getElementById('cc-ai-caption');
-  if (aiCaptionBtn) aiCaptionBtn.addEventListener('click', handleAICaption);
+  // AI Caption — toggle input + generate
+  document.getElementById('cc-ai-caption-toggle')?.addEventListener('click', () => {
+    const panel = document.getElementById('cc-ai-caption-input');
+    if (panel) { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; }
+    document.getElementById('cc-ai-caption-prompt')?.focus();
+  });
+  document.getElementById('cc-ai-caption-cancel')?.addEventListener('click', () => {
+    const panel = document.getElementById('cc-ai-caption-input');
+    if (panel) panel.style.display = 'none';
+  });
+  document.getElementById('cc-ai-caption')?.addEventListener('click', handleAICaption);
 
   // Keyboard: Escape to close
   const escHandler = (e) => {
@@ -1093,6 +1200,7 @@ async function handleAIBrief() {
   if (!btn || !textarea) return;
 
   const data = getFormData();
+  const userPrompt = document.getElementById('cc-ai-brief-prompt')?.value || '';
   const originalText = btn.innerHTML;
   btn.innerHTML = 'Gerando...';
   btn.disabled = true;
@@ -1107,11 +1215,15 @@ async function handleAIBrief() {
       category: data.category,
       campaign: data.campaign,
       account: data.account,
+      userPrompt,
     });
 
     if (result && result.text) {
       textarea.value = result.text;
       toast.success('Brief gerado pela IA');
+      // Fechar painel de input após sucesso
+      const panel = document.getElementById('cc-ai-brief-input');
+      if (panel) panel.style.display = 'none';
     } else {
       toast.info('Nenhuma sugestao disponivel');
     }
@@ -1133,6 +1245,7 @@ async function handleAICaption() {
   if (!btn || !textarea) return;
 
   const data = getFormData();
+  const userPrompt = document.getElementById('cc-ai-caption-prompt')?.value || '';
   const originalText = btn.innerHTML;
   btn.innerHTML = 'Gerando...';
   btn.disabled = true;
@@ -1148,11 +1261,14 @@ async function handleAICaption() {
       campaign: data.campaign,
       account: data.account,
       brief: data.brief,
+      userPrompt,
     });
 
     if (result && result.text) {
       textarea.value = result.text;
       toast.success('Legenda gerada pela IA');
+      const panel = document.getElementById('cc-ai-caption-input');
+      if (panel) panel.style.display = 'none';
     } else {
       toast.info('Nenhuma sugestao disponivel');
     }
