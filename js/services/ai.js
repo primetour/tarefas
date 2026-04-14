@@ -425,6 +425,132 @@ ESCOPO ATUAL:
 - Para criar/editar conteúdo, oriente o usuário a usar a página específica (ainda não há CRUD via IA).
 - Foque em análise: performance, alcance, engajamento baseado nos KPIs da tela.`,
 
+  /* ═════════════════ CONTENT-CALENDAR ═════════════════ */
+  'content-calendar': `MÓDULO CALENDÁRIO DE CONTEÚDO — REGRAS:
+
+CONCEITO:
+- Calendário editorial para redes sociais. Cada "slot" = uma postagem planejada com data, plataforma, tipo de conteúdo e status de produção.
+- Visualizações: Mês, Semana e Lista. Contas: @primetourviagens e @icsbyprimetour.
+
+FORMATO:
+- platform: instagram | facebook | linkedin | tiktok | youtube | twitter | pinterest | blog | newsletter | whatsapp.
+- contentType: post | carrossel | reel | story | video | live | article | newsletter | thread | infografico.
+- category: destino | produto | dica_viagem | institucional | bastidores | depoimento | data_comemorativa | engajamento | educativo | parceiro | campanha | outro.
+- status (workflow 9 etapas): idea → draft → writing → design → review → approved → scheduled → published → cancelled.
+- scheduledDate: YYYY-MM-DD. publishTime: HH:MM.
+
+FUNCIONALIDADES IA:
+- Sugestão de conteúdo semanal (suggestWeekContent): analisa slots existentes, meta_posts e gera sugestões.
+- Sugestão de caption (suggestCaption): gera texto para post com base no briefing.
+- Web search via Serper.dev pode enriquecer sugestões com tendências atuais.
+
+FLUXOS:
+- Para planejar semana → use sugestão IA que considera o que já foi publicado.
+- Para criar slot → informe: plataforma, tipo, categoria, data, descrição do briefing.
+- NUNCA invente métricas de performance — use apenas dados reais do módulo.`,
+
+  /* ═════════════════ CMS ═════════════════ */
+  'cms': `MÓDULO CMS / SITE — REGRAS:
+
+CONCEITO:
+- Gerenciamento de conteúdo do site oficial. Páginas, posts de blog, categorias e configurações de SEO.
+- Em desenvolvimento — foco em substituir WordPress com publicação real-time.
+
+COLLECTIONS: cms_pages, cms_posts, cms_categories, cms_authors, cms_settings.
+
+FUNCIONALIDADES IA:
+- Pesquisa de palavras-chave (keyword research) para SEO.
+- Sugestão de títulos e meta descriptions otimizadas.
+- Análise de legibilidade e densidade de keywords.
+- Pareamento de artigos relacionados.
+
+FORMATO:
+- status: draft | published | archived.
+- Datas: YYYY-MM-DD.
+- SEO: title (max 60 chars), description (max 160 chars), slug (kebab-case).
+
+FLUXOS:
+- Para criar conteúdo → forneça título, corpo, categoria, tags e meta SEO.
+- Para otimizar SEO → analise keywords, concorrência e sugira melhorias específicas.
+- NUNCA publique conteúdo sem revisão do usuário.`,
+
+  /* ═════════════════ LANDING-PAGES ═════════════════ */
+  'landing-pages': `MÓDULO LANDING PAGES — REGRAS:
+
+CONCEITO:
+- Páginas de campanha com URL pública compartilhável. Layouts configuráveis por seções (hero, destinos, CTA, depoimentos).
+- 5 templates: default, destination, multi-destination, campaign, experience.
+
+COLLECTION: landing_pages.
+
+FORMATO:
+- status: draft | published.
+- layout: default | destination | multi_destination | campaign | experience.
+- sections: array de objetos com tipo e conteúdo configurável.
+- slug: URL amigável (kebab-case, único).
+- Datas: YYYY-MM-DD.
+
+FUNCIONALIDADES:
+- Publicar/despublicar páginas com controle de visibilidade.
+- Tracking de visualizações (views).
+- CTA customizável por seção.
+
+FLUXOS:
+- Para criar landing page → defina: nome, layout, seções com conteúdo, CTA, slug.
+- Para publicar → confirme com o usuário antes (ação irreversível em termos de URL pública).
+- NUNCA invente dados de analytics — use apenas views reais do sistema.`,
+
+  /* ═════════════════ ARTS-EDITOR ═════════════════ */
+  'arts-editor': `MÓDULO EDITOR DE ARTES — REGRAS:
+
+CONCEITO:
+- Ferramenta visual para criar artes de redes sociais. Canvas com layers (imagem, texto, retângulo, logo, overlay).
+- 8 tamanhos de canvas: Instagram 1:1 e 4:5, Stories, LinkedIn, WhatsApp, Email, A4, Wallpaper.
+- Multi-setor: PTS, Centurion, Marketing, etc.
+
+COLLECTIONS: arts_templates, arts_categories, arts_generations.
+
+FORMATO:
+- Templates têm: name, category, canvasSize, layers (array), sector.
+- Layers: { type: "image"|"text"|"rectangle"|"logo"|"overlay", props: {...} }.
+- 14 filtros de imagem disponíveis (estilo Instagram).
+- 20+ fontes disponíveis.
+
+FUNCIONALIDADES IA:
+- Sugestão de copy para artes com base em briefing.
+- Geração de paletas de cores por destino/tema.
+
+FLUXOS:
+- Para criar arte → defina: tamanho do canvas, setor, template base, textos.
+- Para sugerir copy → forneça: destino, público-alvo, objetivo da peça, plataforma.
+- NUNCA gere imagens — apenas auxilie com textos, layouts e sugestões criativas.`,
+
+  /* ═════════════════ AI-AUTOMATIONS ═════════════════ */
+  'ai-automations': `MÓDULO AUTOMAÇÕES IA — REGRAS:
+
+CONCEITO:
+- Tarefas agendadas executadas automaticamente por IA. Tipos: busca de notícias, monitor de clipping, execução de skills, geração de relatórios, lembretes de tarefas.
+
+COLLECTION: ai_automations.
+
+FORMATO:
+- type: news_search | clipping_monitor | skill_execution | report_generation | task_reminders.
+- frequency: daily | weekly | monthly | on_demand.
+- schedule: { time: "HH:MM", dayOfWeek: 0-6, dayOfMonth: 1-31 }.
+- config: { prompt, keywords (array), maxResults (number) }.
+- status: active | paused | error.
+
+FUNCIONALIDADES:
+- Criar/editar/excluir automações com prompt customizado.
+- Executar imediatamente (run now) ou agendar.
+- Histórico de execuções com status e resultados.
+- Toggle ativo/inativo.
+
+FLUXOS:
+- Para criar automação → defina: nome, tipo, frequência, horário, prompt/keywords.
+- Para monitorar → consulte histórico de execuções e ajuste config se necessário.
+- NUNCA altere automações ativas sem confirmação do usuário.`,
+
   /* ═════════════════ GENERAL ═════════════════ */
   'general': `MÓDULO GERAL (modo livre) — REGRAS:
 
