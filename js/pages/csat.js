@@ -8,7 +8,7 @@ import { toast }   from '../components/toast.js';
 import { modal }   from '../components/modal.js';
 import {
   subscribeSurveys, createCsatSurvey, sendCsatEmail,
-  cancelSurvey, resendSurvey, calcCsatMetrics,
+  cancelSurvey, resendSurvey, deleteCsatSurvey, calcCsatMetrics,
   fetchSurveys, sendBulkCsat, findTasksWithoutCsat,
   CSAT_STATUS, SCORE_LABELS,
 } from '../services/csat.js';
@@ -344,6 +344,9 @@ function renderActionBtns(s, size = '') {
   if (s.status === 'responded') {
     actions.push(`<button class="${cls} btn-ghost" data-action="view" data-sid="${s.id}">👁 Ver resposta</button>`);
   }
+  if (store.can('csat_manage')) {
+    actions.push(`<button class="${cls} btn-ghost" data-action="delete" data-sid="${s.id}" title="Excluir permanentemente" style="color:var(--color-danger);">🗑</button>`);
+  }
   return actions.join('');
 }
 
@@ -358,6 +361,7 @@ function bindSurveyActions(container) {
       if (action === 'send')   await handleSend(sid, btn);
       if (action === 'resend') await handleResend(sid, btn);
       if (action === 'cancel') await handleCancel(sid, survey);
+      if (action === 'delete') await handleDelete(sid, survey);
       if (action === 'view')   openResponseModal(survey);
       if (action === 'open-survey') {
         const origin   = window.location.origin;
@@ -405,6 +409,21 @@ async function handleCancel(sid, survey) {
     try {
       await cancelSurvey(sid);
       toast.success('Pesquisa cancelada.');
+    } catch(e) { toast.error(e.message); }
+  }
+}
+
+async function handleDelete(sid, survey) {
+  const ok = await modal.confirm({
+    title:       'Excluir avaliação',
+    message:     `Excluir permanentemente a avaliação de <strong>${esc(survey.clientEmail)}</strong>?<br><span style="color:var(--color-danger);font-size:0.85rem;">Esta ação não pode ser desfeita.</span>`,
+    confirmText: 'Excluir',
+    danger:      true, icon: '🗑',
+  });
+  if (ok) {
+    try {
+      await deleteCsatSurvey(sid);
+      toast.success('Avaliação excluída.');
     } catch(e) { toast.error(e.message); }
   }
 }
