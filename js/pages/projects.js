@@ -542,6 +542,9 @@ async function loadArchivedProjects() {
             if (deps.tasks)       parts.push(`${deps.tasks} tarefa(s)`);
             if (deps.csatSurveys) parts.push(`${deps.csatSurveys} pesquisa(s) CSAT`);
             depsMsg = `<br><br><strong style="color:var(--color-warning);">Atenção:</strong> este projeto possui ${parts.join(' e ')} vinculado(s). Os vínculos ficarão órfãos.`;
+            if (deps.goalEvidence > 0) {
+              depsMsg += `<br><strong style="color:var(--color-danger);">Risco:</strong> ${deps.goalEvidence} tarefa(s) são evidência de metas — excluir pode comprometer avaliações.`;
+            }
           }
         } catch(_) {}
 

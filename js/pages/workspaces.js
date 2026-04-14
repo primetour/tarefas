@@ -9,6 +9,7 @@ import { modal }  from '../components/modal.js';
 import { REQUESTING_AREAS } from '../services/tasks.js';
 import {
   createWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace,
+  deleteWorkspace, checkWorkspaceDependencies,
   addMember, removeMember, toggleWorkspaceAdmin,
   createInvite, fetchInvites, getWorkspace,
   fetchUserWorkspaces, fetchAllWorkspaces, fetchArchivedWorkspaces,
@@ -254,6 +255,10 @@ async function loadArchivedWorkspaces() {
               <button class="btn btn-secondary btn-sm ws-restore-btn" data-id="${ws.id}">
                 Restaurar
               </button>
+              <button class="btn btn-ghost btn-sm ws-delete-btn" data-id="${ws.id}"
+                style="color:var(--color-danger);font-size:0.8125rem;" title="Excluir permanentemente">
+                Excluir
+              </button>
             </div>
           </div>
         </div>`;
@@ -272,6 +277,42 @@ async function loadArchivedWorkspaces() {
           try {
             await unarchiveWorkspace(wsId);
             toast.success('Workspace restaurado!');
+            await loadWorkspaces();
+            await loadArchivedWorkspaces();
+          } catch(e) { toast.error(e.message); }
+        }
+      });
+    });
+
+    grid.querySelectorAll('.ws-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const wsId = btn.dataset.id;
+        const ws = archived.find(w => w.id === wsId);
+
+        // Verificar dependências
+        let depsMsg = '';
+        try {
+          const deps = await checkWorkspaceDependencies(wsId);
+          if (deps.total > 0) {
+            const parts = [];
+            if (deps.projects) parts.push(`${deps.projects} projeto(s)`);
+            if (deps.tasks)    parts.push(`${deps.tasks} tarefa(s)`);
+            depsMsg = `<br><br><strong style="color:var(--color-warning);">Atenção:</strong> este squad possui ${parts.join(' e ')} vinculado(s). Os vínculos ficarão órfãos.`;
+            if (deps.goalEvidence > 0) {
+              depsMsg += `<br><strong style="color:var(--color-danger);">Risco:</strong> ${deps.goalEvidence} tarefa(s) são evidência de metas — excluir pode comprometer avaliações.`;
+            }
+          }
+        } catch(_) {}
+
+        const ok = await modal.confirm({
+          title: 'Excluir squad permanentemente',
+          message: `Excluir "<strong>${esc(ws?.name||'')}</strong>" de forma irreversível? Esta ação não pode ser desfeita.${depsMsg}`,
+          confirmText: 'Excluir permanentemente', danger: true, icon: '🗑',
+        });
+        if (ok) {
+          try {
+            await deleteWorkspace(wsId, { force: true });
+            toast.success('Workspace excluído permanentemente.');
             await loadWorkspaces();
             await loadArchivedWorkspaces();
           } catch(e) { toast.error(e.message); }
