@@ -328,7 +328,7 @@ async function loadArchivedWorkspaces() {
 function openWorkspaceModal(ws = null) {
   const isEdit = !!ws;
 
-  modal.open({
+  const wsModal = modal.open({
     title:   isEdit ? `Editar squad — ${ws.name}` : 'Novo Squad',
     size:    'md',
     content: `
@@ -483,9 +483,10 @@ function openWorkspaceModal(ws = null) {
       if (ok) {
         try {
           await archiveWorkspace(ws.id);
+          wsModal.close();
           toast.success('Workspace arquivado.');
-          document.querySelector('.modal-overlay')?.click();
           await loadWorkspaces();
+          await loadArchivedWorkspaces();
         } catch(e) { toast.error(e.message); }
       }
     });

@@ -30,6 +30,7 @@ export async function renderSquadWorkspace(container) {
   squadId = parseSquadIdFromHash();
   if (!squadId) {
     container.innerHTML = renderEmpty('Nenhum squad selecionado.', 'Volte para a lista de squads e clique em um para abrir.');
+    container.querySelector('.btn-primary')?.addEventListener('click', () => router.navigate('workspaces'));
     return;
   }
 
@@ -146,6 +147,7 @@ function renderHeader(ws, projCount, taskCount) {
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
           <button class="btn btn-secondary btn-sm" id="sw-back-btn" title="Voltar para Squads">← Squads</button>
+          ${store.can('workspace_create') ? `<button class="btn btn-primary btn-sm" id="sw-new-squad-btn" title="Criar novo squad">+ Novo Squad</button>` : ''}
           ${canEdit ? `<button class="btn btn-ghost btn-sm" id="sw-members-btn" title="Gerenciar membros">👥 Membros</button>` : ''}
           ${canEdit ? `<button class="btn btn-ghost btn-sm" id="sw-edit-btn" title="Editar squad">⚙ Editar</button>` : ''}
         </div>
@@ -396,8 +398,9 @@ function renderLoading() {
 
 /* ─── Eventos ─────────────────────────────────────────────── */
 function attachEvents() {
-  // Voltar / editar squad / gerenciar membros
+  // Voltar / novo squad / editar squad / gerenciar membros
   document.getElementById('sw-back-btn')?.addEventListener('click', () => router.navigate('workspaces'));
+  document.getElementById('sw-new-squad-btn')?.addEventListener('click', () => router.navigate('workspaces'));
   document.getElementById('sw-edit-btn')?.addEventListener('click', () => router.navigate('workspaces'));
   document.getElementById('sw-members-btn')?.addEventListener('click', () => openMembersModal());
 

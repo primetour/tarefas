@@ -75,6 +75,9 @@ export async function renderDashboard(container) {
       fetchGoals({ type: 'personal' }).catch(() => []),
     ]);
 
+    // Guard: user navigated away during async fetch — container no longer in DOM
+    if (!document.getElementById('dash-stats')) return;
+
     // If master selected a specific sector in the filter, apply it
     const sectorSel = document.getElementById('dash-sector-filter')?.value || null;
     const visibleTasks = sectorSel ? tasks.filter(t => !t.sector || t.sector === sectorSel) : tasks;
@@ -90,7 +93,9 @@ export async function renderDashboard(container) {
     });
 
     // ── Stats ─────────────────────────────────────────────
-    document.getElementById('dash-stats').innerHTML = `
+    const $stats = document.getElementById('dash-stats');
+    if (!$stats) return; // user navigated away
+    $stats.innerHTML = `
       ${statCard('Tarefas Abertas', openTasks.length, '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)', '#tasks')}
       ${statCard('Em Andamento', inProgress.length, '▶', 'rgba(56,189,248,0.12)', 'var(--role-manager)', '#kanban')}
       ${statCard('Concluídas Hoje', doneToday.length, '✓', 'var(--color-success-bg)', 'var(--color-success)', '#tasks')}
@@ -104,7 +109,9 @@ export async function renderDashboard(container) {
     });
 
     // ── Main grid ─────────────────────────────────────────
-    document.getElementById('dash-main').innerHTML = `
+    const $main = document.getElementById('dash-main');
+    if (!$main) return; // user navigated away
+    $main.innerHTML = `
       <!-- My tasks card -->
       <div class="card">
         <div class="card-header">
@@ -115,34 +122,67 @@ export async function renderDashboard(container) {
           <button class="btn btn-ghost btn-sm" onclick="location.hash='#tasks'">Ver todas →</button>
         </div>
         <div style="padding:0 16px 8px;">
-          ${myTasks.length === 0
-            ? `<div class="empty-state" style="padding:24px;"><div class="empty-state-icon">🎉</div>
-                <div class="empty-state-title">Nenhuma tarefa atribuída a você</div></div>`
-            : myTasks.slice(0, 7).map(t => {
-                const isDone = t.status === 'done';
-                const status = STATUS_MAP[t.status];
-                const typeLabel = TASK_TYPES?.find(x=>x.value===t.type)?.label||'';
-                const nlLabel   = t.type==='newsletter' && t.newsletterStatus
-                  ? (NEWSLETTER_STATUSES?.find(s=>s.value===t.newsletterStatus)?.label||'') : '';
-                return `<div class="task-row ${isDone?'done':''} dash-task-row" data-tid="${t.id}"
-                  style="grid-template-columns:10px 1fr auto; padding:9px 0; gap:10px;">
-                  <div class="priority-dot priority-${t.priority||'medium'}"></div>
-                  <div style="overflow:hidden; min-width:0;">
-                    <div class="task-row-title">${esc(t.title)}</div>
-                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px; align-items:center;">
-                      ${t.requestingArea ? `<span style="font-size:0.6875rem;color:var(--text-muted);">📍 ${esc(t.requestingArea)}</span>` : ''}
-                      ${typeLabel ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${esc(typeLabel)}</span>` : ''}
-                      ${nlLabel ? `<span style="font-size:0.6875rem;color:var(--brand-gold);">↳ ${esc(nlLabel)}</span>` : ''}
-                      ${(t.nucleos||[]).length ? `<span style="font-size:0.6875rem;color:var(--text-muted);">◈ ${(t.nucleos||[]).map(n=>NUCLEOS.find(x=>x.value===n)?.label||n).join(', ')}</span>` : ''}
-                      ${t.dueDate ? `<span class="text-xs" style="color:${dueColor(t.dueDate,isDone)};">📅 ${fmtShort(t.dueDate)}</span>` : ''}
-                    </div>
+          ${(() => {
+            const myActive = myTasks.filter(t => !['done','cancelled'].includes(t.status));
+            const myDone   = myTasks.filter(t => t.status === 'done');
+
+            if (!myTasks.length) return `<div class="empty-state" style="padding:24px;"><div class="empty-state-icon">🎉</div>
+                <div class="empty-state-title">Nenhuma tarefa atribuída a você</div></div>`;
+
+            const renderRow = (t) => {
+              const isDone = t.status === 'done';
+              const status = STATUS_MAP[t.status];
+              const typeLabel = TASK_TYPES?.find(x=>x.value===t.type)?.label||'';
+              const nlLabel   = t.type==='newsletter' && t.newsletterStatus
+                ? (NEWSLETTER_STATUSES?.find(s=>s.value===t.newsletterStatus)?.label||'') : '';
+              return `<div class="task-row ${isDone?'done':''} dash-task-row" data-tid="${t.id}"
+                style="grid-template-columns:10px 1fr auto; padding:9px 0; gap:10px;">
+                <div class="priority-dot priority-${t.priority||'medium'}"></div>
+                <div style="overflow:hidden; min-width:0;">
+                  <div class="task-row-title">${esc(t.title)}</div>
+                  <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:2px; align-items:center;">
+                    ${t.requestingArea ? `<span style="font-size:0.6875rem;color:var(--text-muted);">📍 ${esc(t.requestingArea)}</span>` : ''}
+                    ${typeLabel ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${esc(typeLabel)}</span>` : ''}
+                    ${nlLabel ? `<span style="font-size:0.6875rem;color:var(--brand-gold);">↳ ${esc(nlLabel)}</span>` : ''}
+                    ${(t.nucleos||[]).length ? `<span style="font-size:0.6875rem;color:var(--text-muted);">◈ ${(t.nucleos||[]).map(n=>NUCLEOS.find(x=>x.value===n)?.label||n).join(', ')}</span>` : ''}
+                    ${t.dueDate ? `<span class="text-xs" style="color:${dueColor(t.dueDate,isDone)};">📅 ${fmtShort(t.dueDate)}</span>` : ''}
                   </div>
-                  <span class="badge badge-status-${t.status}" style="font-size:0.625rem;white-space:nowrap;">${status?.label||t.status}</span>
+                </div>
+                <span class="badge badge-status-${t.status}" style="font-size:0.625rem;white-space:nowrap;">${status?.label||t.status}</span>
+              </div>`;
+            };
+
+            let html = '';
+
+            // Tarefas ativas
+            if (myActive.length) {
+              html += myActive.slice(0, 7).map(renderRow).join('');
+              if (myActive.length > 7) {
+                html += `<div style="padding:6px 0;text-align:center;">
+                  <a href="#tasks" style="font-size:0.8125rem;color:var(--brand-gold);">+${myActive.length-7} mais</a></div>`;
+              }
+            }
+
+            // Seção Concluídas (colapsável)
+            if (myDone.length) {
+              html += `
+                <div style="border-top:1px solid var(--border-subtle);margin-top:8px;padding-top:8px;">
+                  <button id="dash-toggle-done" style="display:flex;align-items:center;gap:6px;width:100%;
+                    background:none;border:none;cursor:pointer;padding:4px 0;
+                    font-size:0.8125rem;font-weight:600;color:var(--text-muted);">
+                    <span id="dash-done-arrow" style="transition:transform 0.2s;font-size:0.75rem;">▸</span>
+                    ✓ Concluídas (${myDone.length})
+                  </button>
+                  <div id="dash-done-list" style="display:none;">
+                    ${myDone.slice(0, 5).map(renderRow).join('')}
+                    ${myDone.length > 5 ? `<div style="padding:6px 0;text-align:center;">
+                      <a href="#tasks" style="font-size:0.8125rem;color:var(--brand-gold);">+${myDone.length-5} mais</a></div>` : ''}
+                  </div>
                 </div>`;
-              }).join('')
-          }
-          ${myTasks.length > 7 ? `<div style="padding:8px 0; text-align:center;">
-            <a href="#tasks" style="font-size:0.8125rem; color:var(--brand-gold);">+${myTasks.length-7} mais</a></div>` : ''}
+            }
+
+            return html;
+          })()}
         </div>
       </div>
 
@@ -286,6 +326,16 @@ export async function renderDashboard(container) {
         const task = tasks.find(t=>t.id===row.dataset.tid);
         if (task) openTaskModal({ taskData: task, onSave: () => renderDashboard(container) });
       });
+    });
+
+    // Toggle concluídas
+    document.getElementById('dash-toggle-done')?.addEventListener('click', () => {
+      const list  = document.getElementById('dash-done-list');
+      const arrow = document.getElementById('dash-done-arrow');
+      if (!list) return;
+      const show = list.style.display === 'none';
+      list.style.display = show ? 'block' : 'none';
+      if (arrow) arrow.style.transform = show ? 'rotate(90deg)' : '';
     });
 
   } catch(e) {
