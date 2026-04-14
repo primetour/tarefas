@@ -364,14 +364,33 @@ export class Sidebar {
     // Toggle expandir/colapsar lista de squads
     const parent = this.el?.querySelector('.nav-squads-parent[data-squads-toggle]');
     if (parent) {
+      // Clique no chevron → apenas toggle expandir/colapsar
+      const chevron = parent.querySelector('.section-chevron');
+      if (chevron) {
+        chevron.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const children = this.el.querySelector('.nav-squads-children');
+          const collapsed = children?.style.display === 'none';
+          if (children) children.style.display = collapsed ? 'block' : 'none';
+          chevron.style.transform = collapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
+          store.set('sidebar_squads_collapsed', !collapsed);
+        });
+      }
+      // Clique no item pai → navega para lista de squads
       parent.addEventListener('click', (e) => {
+        if (e.target.closest('.section-chevron')) return; // ignora se clicou no chevron
         e.stopPropagation();
+        // Expande os subitens se estavam colapsados
         const children = this.el.querySelector('.nav-squads-children');
-        const chevron  = parent.querySelector('.section-chevron');
-        const collapsed = children?.style.display === 'none';
-        if (children) children.style.display = collapsed ? 'block' : 'none';
-        if (chevron)  chevron.style.transform = collapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
-        store.set('sidebar_squads_collapsed', !collapsed);
+        if (children?.style.display === 'none') {
+          children.style.display = 'block';
+          const chev = parent.querySelector('.section-chevron');
+          if (chev) chev.style.transform = 'rotate(0deg)';
+          store.set('sidebar_squads_collapsed', false);
+        }
+        router.navigate('workspaces');
+        this.setActive('workspaces');
+        this.closeMobile();
       });
     }
 
