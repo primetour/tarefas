@@ -14,6 +14,8 @@ import {
 } from '../services/tasks.js';
 import { openTaskModal, openTaskDoneOverlay } from '../components/taskModal.js';
 import { openProjectModal } from './projects.js';
+import { addMember, removeMember, toggleWorkspaceAdmin } from '../services/workspaces.js';
+import { modal } from '../components/modal.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -144,6 +146,7 @@ function renderHeader(ws, projCount, taskCount) {
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
           <button class="btn btn-secondary btn-sm" id="sw-back-btn" title="Voltar para Squads">← Squads</button>
+          ${canEdit ? `<button class="btn btn-ghost btn-sm" id="sw-members-btn" title="Gerenciar membros">👥 Membros</button>` : ''}
           ${canEdit ? `<button class="btn btn-ghost btn-sm" id="sw-edit-btn" title="Editar squad">⚙ Editar</button>` : ''}
         </div>
       </div>
@@ -393,9 +396,10 @@ function renderLoading() {
 
 /* ─── Eventos ─────────────────────────────────────────────── */
 function attachEvents() {
-  // Voltar / editar squad
+  // Voltar / editar squad / gerenciar membros
   document.getElementById('sw-back-btn')?.addEventListener('click', () => router.navigate('workspaces'));
   document.getElementById('sw-edit-btn')?.addEventListener('click', () => router.navigate('workspaces'));
+  document.getElementById('sw-members-btn')?.addEventListener('click', () => openMembersModal());
 
   // Novo projeto neste squad
   const newProjBtn = document.getElementById('sw-new-project-btn');
@@ -467,6 +471,11 @@ function attachEvents() {
     });
   });
 
+  // Click nos avatares de membros (atalho para gerenciar)
+  document.querySelector('.sw-members-avatars')?.addEventListener('click', () => {
+    if (store.can('workspace_edit') || store.isMaster()) openMembersModal();
+  });
+
   // Toggle conclusão
   document.querySelectorAll('.sw-task-check[data-check-id]').forEach(el => {
     el.addEventListener('click', async (e) => {
@@ -486,4 +495,120 @@ function attachEvents() {
       } catch (err) { toast.error(err.message); }
     });
   });
+}
+
+/* ─── Modal: Gerenciar Membros do Squad ──────────────────── */
+async function openMembersModal() {
+  if (!squad) return;
+  const allUsers = (store.get('users') || []).filter(u => u.active !== false);
+  const memberIds = squad.members || [];
+  const currentUid = store.get('currentUser')?.uid;
+  const isOwner = uid => uid === squad.createdBy;
+  const isAdmin = uid => (squad.admins || []).includes(uid);
+  const canManage = store.can('workspace_edit') || store.isMaster();
+
+  const memberRows = memberIds.map(mid => {
+    const u = allUsers.find(x => x.id === mid);
+    const name = u?.name || u?.displayName || mid;
+    const color = u?.avatarColor || '#3B82F6';
+    const initials = (name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    const ownerBadge = isOwner(mid)
+      ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:99px;background:rgba(212,168,67,0.12);color:var(--brand-gold);">Dono</span>`
+      : isAdmin(mid)
+        ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:99px;background:rgba(56,189,248,0.12);color:#38BDF8;">Admin</span>`
+        : '';
+    const actions = canManage && !isOwner(mid)
+      ? `<button class="btn btn-ghost btn-icon btn-sm sw-toggle-admin" data-uid="${mid}" data-admin="${isAdmin(mid)}" title="${isAdmin(mid) ? 'Rebaixar' : 'Promover a admin'}">
+           ${isAdmin(mid) ? '↓' : '↑'}
+         </button>
+         <button class="btn btn-ghost btn-icon btn-sm sw-remove-member" data-uid="${mid}" title="Remover" style="color:var(--color-danger);">✕</button>`
+      : '';
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle);">
+        <div class="avatar avatar-sm" style="background:${color};">${initials}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${esc(name)}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u?.email || '')}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${ownerBadge}
+          ${actions}
+        </div>
+      </div>`;
+  }).join('');
+
+  // Lista de usuários que NÃO são membros (para adicionar)
+  const nonMembers = allUsers.filter(u => !memberIds.includes(u.id));
+  const addSelect = canManage && nonMembers.length
+    ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-subtle);">
+         <label style="font-size:0.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Adicionar membro</label>
+         <div style="display:flex;gap:8px;">
+           <select id="sw-add-member-select" class="form-select" style="flex:1;font-size:0.8125rem;">
+             <option value="">Selecione um usuário...</option>
+             ${nonMembers.map(u => `<option value="${u.id}">${esc(u.name || u.displayName || u.email)}</option>`).join('')}
+           </select>
+           <button class="btn btn-primary btn-sm" id="sw-add-member-btn">+ Adicionar</button>
+         </div>
+       </div>`
+    : '';
+
+  modal.open({
+    title: `👥 Membros — ${esc(squad.name)}`,
+    body: `
+      <div style="max-height:360px;overflow-y:auto;">
+        ${memberRows || '<p style="color:var(--text-muted);font-size:0.875rem;">Nenhum membro.</p>'}
+      </div>
+      ${addSelect}
+    `,
+    footer: [{ label: 'Fechar', class: 'btn-secondary', closeOnClick: true }],
+  });
+
+  // Bind eventos após render
+  setTimeout(() => {
+    // Adicionar membro
+    document.getElementById('sw-add-member-btn')?.addEventListener('click', async () => {
+      const sel = document.getElementById('sw-add-member-select');
+      const uid = sel?.value;
+      if (!uid) return;
+      try {
+        await addMember(squad.id, uid);
+        toast.success('Membro adicionado.');
+        document.querySelector('.modal-overlay')?.click();
+        await reload();
+      } catch (e) { toast.error(e.message); }
+    });
+
+    // Remover membro
+    document.querySelectorAll('.sw-remove-member').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const u = allUsers.find(x => x.id === btn.dataset.uid);
+        const ok = await modal.confirm({
+          title: 'Remover membro',
+          message: `Remover <strong>${esc(u?.name || btn.dataset.uid)}</strong> deste squad?`,
+          confirmText: 'Remover', danger: true, icon: '✕',
+        });
+        if (ok) {
+          try {
+            await removeMember(squad.id, btn.dataset.uid);
+            toast.success('Membro removido.');
+            document.querySelector('.modal-overlay')?.click();
+            await reload();
+          } catch (e) { toast.error(e.message); }
+        }
+      });
+    });
+
+    // Toggle admin
+    document.querySelectorAll('.sw-toggle-admin').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const makeAdmin = btn.dataset.admin === 'false';
+        try {
+          await toggleWorkspaceAdmin(squad.id, btn.dataset.uid, makeAdmin);
+          toast.success(makeAdmin ? 'Promovido a admin.' : 'Admin rebaixado.');
+          document.querySelector('.modal-overlay')?.click();
+          await reload();
+        } catch (e) { toast.error(e.message); }
+      });
+    });
+  }, 50);
 }
