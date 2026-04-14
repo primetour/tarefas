@@ -1147,6 +1147,9 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
   };
   document.getElementById('comment-send-btn')?.addEventListener('click',send);
   document.getElementById('comment-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)send();});
+
+  // ── @Mention Autocomplete ──────────────────────────────────
+  setupMentionAutocomplete();
 }
 
 async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=document) {
@@ -1527,14 +1530,169 @@ function formatSubtaskDue(dateStr) {
   return { text: dayMonth, className: '' };
 }
 function renderComments(comments){return comments.map(c=>renderCommentItem(c)).join('');}
+
+/** Renderiza texto do comentário com @mentions destacados */
+function highlightMentions(text) {
+  const safe = esc(text);
+  const users = store.get('users') || [];
+  if (!users.length) return safe;
+  // Criar regex com nomes dos usuários (mais longos primeiro para match guloso)
+  const names = users
+    .map(u => u.name || u.displayName || '')
+    .filter(n => n.length > 1)
+    .sort((a, b) => b.length - a.length);
+  if (!names.length) return safe;
+  const escapedNames = names.map(n => esc(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const pattern = new RegExp(`@(${escapedNames.join('|')})`, 'gi');
+  return safe.replace(pattern, '<span class="mention-tag">@$1</span>');
+}
+
 function renderCommentItem(c){
   const time=c.createdAt?new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(c.createdAt?.toDate?c.createdAt.toDate():new Date(c.createdAt)):'';
   return `<div class="comment-item">
     <div class="avatar avatar-sm" style="background:${c.authorColor||'#3B82F6'};">${getInitials(c.authorName)}</div>
     <div class="comment-bubble">
       <div class="comment-header"><span class="comment-author">${esc(c.authorName)}</span><span class="comment-time">${time}</span></div>
-      <p class="comment-text">${esc(c.text)}</p>
+      <p class="comment-text">${highlightMentions(c.text)}</p>
     </div></div>`;
+}
+
+/* ─── @Mention Autocomplete ────────────────────────────────── */
+function setupMentionAutocomplete() {
+  const input = document.getElementById('comment-input');
+  if (!input) return;
+
+  let dropdown = null;
+  let mentionStart = -1;
+
+  function removeDropdown() {
+    if (dropdown) { dropdown.remove(); dropdown = null; }
+    mentionStart = -1;
+  }
+
+  function insertMention(name) {
+    const val = input.value;
+    const before = val.substring(0, mentionStart);
+    const after = val.substring(input.selectionStart);
+    input.value = `${before}@${name} ${after}`;
+    const cursorPos = before.length + name.length + 2; // +2 for @ and space
+    input.setSelectionRange(cursorPos, cursorPos);
+    input.focus();
+    removeDropdown();
+  }
+
+  function showDropdown(query) {
+    removeDropdown();
+    const users = (store.get('users') || []).filter(u => u.active !== false);
+    const q = query.toLowerCase();
+    const matches = users.filter(u => {
+      const name = (u.name || u.displayName || '').toLowerCase();
+      return name.includes(q);
+    }).slice(0, 6);
+
+    if (!matches.length) return;
+
+    dropdown = document.createElement('div');
+    dropdown.className = 'mention-dropdown';
+    dropdown.style.cssText = `
+      position:absolute; z-index:9999; background:var(--bg-surface);
+      border:1px solid var(--border-subtle); border-radius:8px;
+      box-shadow:0 8px 24px rgba(0,0,0,0.18); max-height:200px;
+      overflow-y:auto; min-width:200px; padding:4px 0;
+    `;
+
+    matches.forEach((u, i) => {
+      const item = document.createElement('div');
+      item.className = 'mention-item';
+      item.style.cssText = `
+        display:flex; align-items:center; gap:8px; padding:8px 12px;
+        cursor:pointer; font-size:0.875rem; color:var(--text-primary);
+        transition: background 0.1s;
+      `;
+      if (i === 0) item.style.background = 'var(--bg-hover)';
+      item.innerHTML = `
+        <div style="width:26px;height:26px;border-radius:50%;background:${u.avatarColor||'#3B82F6'};
+          display:flex;align-items:center;justify-content:center;color:#fff;font-size:0.6875rem;
+          font-weight:700;flex-shrink:0;">${getInitials(u.name||u.displayName||'')}</div>
+        <span>${esc(u.name || u.displayName || '')}</span>
+      `;
+      item.addEventListener('mouseenter', () => {
+        dropdown.querySelectorAll('.mention-item').forEach(el => el.style.background = '');
+        item.style.background = 'var(--bg-hover)';
+      });
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        insertMention(u.name || u.displayName || '');
+      });
+      dropdown.appendChild(item);
+    });
+
+    // Posicionar abaixo do textarea
+    const rect = input.getBoundingClientRect();
+    dropdown.style.left = rect.left + 'px';
+    dropdown.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+    dropdown.style.position = 'fixed';
+    document.body.appendChild(dropdown);
+  }
+
+  input.addEventListener('input', () => {
+    const val = input.value;
+    const cursor = input.selectionStart;
+
+    // Encontrar @ mais recente antes do cursor
+    const before = val.substring(0, cursor);
+    const atIdx = before.lastIndexOf('@');
+
+    if (atIdx === -1 || (atIdx > 0 && /\S/.test(before[atIdx - 1]) && before[atIdx - 1] !== '\n')) {
+      removeDropdown();
+      return;
+    }
+
+    const query = before.substring(atIdx + 1);
+    // Se tem espaço no meio, pode ser mention de nome composto — verificar se faz match
+    if (query.length > 30) { removeDropdown(); return; }
+
+    mentionStart = atIdx;
+    showDropdown(query);
+  });
+
+  // Navegação por teclado no dropdown
+  input.addEventListener('keydown', (e) => {
+    if (!dropdown) return;
+    const items = dropdown.querySelectorAll('.mention-item');
+    if (!items.length) return;
+
+    let activeIdx = [...items].findIndex(el => el.style.background && el.style.background !== '');
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      items.forEach(el => el.style.background = '');
+      activeIdx = (activeIdx + 1) % items.length;
+      items[activeIdx].style.background = 'var(--bg-hover)';
+      items[activeIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      items.forEach(el => el.style.background = '');
+      activeIdx = activeIdx <= 0 ? items.length - 1 : activeIdx - 1;
+      items[activeIdx].style.background = 'var(--bg-hover)';
+      items[activeIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && !e.ctrlKey) {
+      e.preventDefault();
+      const activeItem = items[activeIdx >= 0 ? activeIdx : 0];
+      if (activeItem) activeItem.click();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      removeDropdown();
+    }
+  });
+
+  // Fechar dropdown ao clicar fora
+  document.addEventListener('click', (e) => {
+    if (dropdown && !dropdown.contains(e.target) && e.target !== input) {
+      removeDropdown();
+    }
+  }, { once: false });
 }
 
 /* ─── Double-check: CSAT + evidência de meta ───────────────── */
