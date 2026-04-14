@@ -122,6 +122,24 @@ export async function archiveWorkspace(wsId) {
   store.set('userWorkspaces', updated);
 }
 
+/* ─── Restaurar workspace arquivado ────────────────────────── */
+export async function unarchiveWorkspace(wsId) {
+  const user = store.get('currentUser');
+  if (!store.can('system_view_all') && !store.isMaster()) throw new Error('Permissão negada.');
+
+  await updateDoc(doc(db, 'workspaces', wsId), { archived: false, updatedAt: serverTimestamp() });
+  await auditLog('workspaces.unarchive', 'workspace', wsId, {});
+}
+
+/* ─── Listar workspaces arquivados ─────────────────────────── */
+export async function fetchArchivedWorkspaces() {
+  const uid = store.get('currentUser')?.uid;
+  if (!uid) return [];
+  const q = query(collection(db, 'workspaces'), where('archived', '==', true));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 /* ─── Adicionar membro ───────────────────────────────────── */
 export async function addMember(wsId, uid, { selfJoin = false } = {}) {
   const user = store.get('currentUser');

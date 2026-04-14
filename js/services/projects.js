@@ -128,9 +128,73 @@ export async function updateProject(projectId, data) {
   }
 }
 
-/* ─── Excluir projeto ────────────────────────────────────── */
-export async function deleteProject(projectId) {
+/* ─── Arquivar projeto ───────────────────────────────────── */
+export async function archiveProject(projectId) {
   if (!store.can('project_delete')) throw new Error('Permissão negada.');
+  const user = store.get('currentUser');
+  await updateDoc(doc(db, 'projects', projectId), {
+    archived: true, updatedAt: serverTimestamp(), updatedBy: user.uid,
+  });
+  await auditLog('projects.archive', 'project', projectId, {});
+  store.invalidateCache('projects');
+}
+
+/* ─── Restaurar projeto arquivado ────────────────────────── */
+export async function unarchiveProject(projectId) {
+  if (!store.can('project_edit')) throw new Error('Permissão negada.');
+  const user = store.get('currentUser');
+  await updateDoc(doc(db, 'projects', projectId), {
+    archived: false, updatedAt: serverTimestamp(), updatedBy: user.uid,
+  });
+  await auditLog('projects.unarchive', 'project', projectId, {});
+  store.invalidateCache('projects');
+}
+
+/* ─── Listar projetos arquivados ─────────────────────────── */
+export async function fetchArchivedProjects() {
+  const snap = await getDocs(query(collection(db, 'projects'), orderBy('createdAt', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.archived);
+}
+
+/* ─── Verificar vínculos antes de excluir ────────────────── */
+export async function checkProjectDependencies(projectId) {
+  const deps = { tasks: 0, csatSurveys: 0 };
+
+  // Tarefas vinculadas
+  const taskSnap = await getDocs(query(
+    collection(db, 'tasks'), where('projectId', '==', projectId)
+  ));
+  deps.tasks = taskSnap.size;
+
+  // Pesquisas CSAT vinculadas
+  try {
+    const csatSnap = await getDocs(query(
+      collection(db, 'csat_surveys'), where('projectId', '==', projectId)
+    ));
+    deps.csatSurveys = csatSnap.size;
+  } catch (_) {}
+
+  deps.total = deps.tasks + deps.csatSurveys;
+  return deps;
+}
+
+/* ─── Excluir projeto (com verificação de vínculos) ──────── */
+export async function deleteProject(projectId, { force = false } = {}) {
+  if (!store.can('project_delete')) throw new Error('Permissão negada.');
+
+  if (!force) {
+    const deps = await checkProjectDependencies(projectId);
+    if (deps.total > 0) {
+      const parts = [];
+      if (deps.tasks)       parts.push(`${deps.tasks} tarefa(s)`);
+      if (deps.csatSurveys) parts.push(`${deps.csatSurveys} pesquisa(s) CSAT`);
+      throw new Error(
+        `Este projeto possui ${parts.join(' e ')} vinculado(s). ` +
+        `Arquive o projeto ou remova os vínculos antes de excluir.`
+      );
+    }
+  }
+
   await deleteDoc(doc(db, 'projects', projectId));
   await auditLog('projects.delete', 'project', projectId, {});
   store.invalidateCache('projects');
