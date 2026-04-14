@@ -4,7 +4,7 @@
  */
 
 import {
-  collection, doc, addDoc, updateDoc, getDoc, getDocs,
+  collection, doc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, where, orderBy, limit, serverTimestamp, onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }       from '../firebase.js';
@@ -125,7 +125,14 @@ export async function sendCsatEmail(surveyId) {
     year:          new Date().getFullYear(),
   };
 
-  await ejs.send(cfg.serviceId, cfg.templateCsat, params);
+  try {
+    await ejs.send(cfg.serviceId, cfg.templateCsat, params);
+  } catch (ejsErr) {
+    // EmailJS rejeita com {status, text} em vez de Error
+    const detail = ejsErr?.text || ejsErr?.message || JSON.stringify(ejsErr);
+    console.error('EmailJS send error:', ejsErr);
+    throw new Error(`Falha ao enviar e-mail: ${detail}`);
+  }
 
   // Marcar como enviado
   await updateDoc(doc(db, 'csat_surveys', surveyId), {
@@ -215,6 +222,12 @@ export function subscribeSurveys(callback) {
   return onSnapshot(q, snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   });
+}
+
+/* ─── Excluir survey permanentemente ─────────────────────── */
+export async function deleteCsatSurvey(surveyId) {
+  await deleteDoc(doc(db, 'csat_surveys', surveyId));
+  await auditLog('csat.delete', 'survey', surveyId, {});
 }
 
 /* ─── Cancelar survey ────────────────────────────────────── */
