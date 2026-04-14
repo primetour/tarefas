@@ -158,13 +158,18 @@ export async function fetchArchivedProjects() {
 
 /* ─── Verificar vínculos antes de excluir ────────────────── */
 export async function checkProjectDependencies(projectId) {
-  const deps = { tasks: 0, csatSurveys: 0 };
+  const deps = { tasks: 0, goalEvidence: 0, csatSurveys: 0 };
 
   // Tarefas vinculadas
   const taskSnap = await getDocs(query(
     collection(db, 'tasks'), where('projectId', '==', projectId)
   ));
   deps.tasks = taskSnap.size;
+
+  // Dentre as tarefas, quantas são evidência de meta?
+  taskSnap.docs.forEach(d => {
+    if (d.data().goalId) deps.goalEvidence++;
+  });
 
   // Pesquisas CSAT vinculadas
   try {

@@ -140,6 +140,54 @@ export async function fetchArchivedWorkspaces() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+/* ─── Verificar vínculos antes de excluir workspace ──────── */
+export async function checkWorkspaceDependencies(wsId) {
+  const deps = { projects: 0, tasks: 0, goalEvidence: 0 };
+
+  const projSnap = await getDocs(query(
+    collection(db, 'projects'), where('workspaceId', '==', wsId)
+  ));
+  deps.projects = projSnap.size;
+
+  const taskSnap = await getDocs(query(
+    collection(db, 'tasks'), where('workspaceId', '==', wsId)
+  ));
+  deps.tasks = taskSnap.size;
+
+  // Dentre as tarefas, quantas são evidência de meta?
+  taskSnap.docs.forEach(d => {
+    if (d.data().goalId) deps.goalEvidence++;
+  });
+
+  deps.total = deps.projects + deps.tasks;
+  return deps;
+}
+
+/* ─── Excluir workspace permanentemente ──────────────────── */
+export async function deleteWorkspace(wsId, { force = false } = {}) {
+  const user = store.get('currentUser');
+  if (!store.can('system_view_all') && !store.isMaster()) throw new Error('Permissão negada.');
+
+  if (!force) {
+    const deps = await checkWorkspaceDependencies(wsId);
+    if (deps.total > 0) {
+      const parts = [];
+      if (deps.projects) parts.push(`${deps.projects} projeto(s)`);
+      if (deps.tasks)    parts.push(`${deps.tasks} tarefa(s)`);
+      throw new Error(
+        `Este workspace possui ${parts.join(' e ')} vinculado(s). ` +
+        `Remova os vínculos antes de excluir ou force a exclusão.`
+      );
+    }
+  }
+
+  await deleteDoc(doc(db, 'workspaces', wsId));
+  await auditLog('workspaces.delete', 'workspace', wsId, {});
+
+  const updated = (store.get('userWorkspaces') || []).filter(w => w.id !== wsId);
+  store.set('userWorkspaces', updated);
+}
+
 /* ─── Adicionar membro ───────────────────────────────────── */
 export async function addMember(wsId, uid, { selfJoin = false } = {}) {
   const user = store.get('currentUser');
