@@ -555,6 +555,16 @@
 }
 .comment-input:focus { border-color: var(--brand-gold); }
 
+/* ─── @MENTION TAG ─────────────────────────────────────────── */
+.mention-tag {
+  color: var(--brand-gold);
+  font-weight: 600;
+  background: rgba(212, 175, 55, 0.10);
+  padding: 1px 4px;
+  border-radius: 4px;
+  cursor: default;
+}
+
 /* ─── CALENDAR VIEW ───────────────────────────────────────── */
 .calendar-wrapper {
   background: var(--bg-card);
