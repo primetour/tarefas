@@ -343,42 +343,39 @@ export async function generateRoteiroFromPrompt(userPrompt) {
   const today = new Date().toISOString().split('T')[0];
   const profile = store.get('userProfile');
 
-  // ── 1. Web Search: buscar em fontes de turismo luxury ──
-  const LUXURY_SITES = [
-    'virtuoso.com',
-    'telegraph.co.uk/travel',
-    'nytimes.com/section/travel',
-    'cntraveler.com',
-    'travelandleisure.com',
-    'elitetraveler.com',
-    'luxurytravelmagazine.com',
-    'monocle.com',
-    'ft.com/htsi',
-    'corriere.it',
-  ];
-
+  // ── 1. Web Search: buscar referências de turismo luxury ──
   let webResults = [];
   let webResearchSection = '';
   try {
     const { searchWeb } = await import('./aiActions.js');
 
-    // Extrair termos-chave do prompt
-    const destQuery = userPrompt.substring(0, 120).replace(/[^\w\sáéíóúâêîôûãõçÀ-ú]/g, '');
+    // Extrair APENAS destino/palavras-chave do prompt (máx 60 chars, sem ruído)
+    const destQuery = userPrompt
+      .substring(0, 200)
+      .replace(/[^\w\sáéíóúâêîôûãõçÀ-ú,.-]/g, '')
+      .replace(/\b(quero|quer|gostaria|preciso|dias|noites|casal|familia|grupo|jovem|adulto|criança|viagem|roteiro|passar|todos|principais|destino)\b/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+      .substring(0, 60);
 
-    // Fazer 2 buscas paralelas: hotéis + experiências
+    console.log('[Roteiro IA] Busca web destino:', destQuery);
+
+    // Fazer 2 buscas paralelas: hotéis + experiências (queries curtas e focadas)
     const [hotelsSearch, expSearch] = await Promise.allSettled([
-      searchWeb(`best luxury hotels ${destQuery}`, LUXURY_SITES.slice(0, 5)),
-      searchWeb(`best restaurants experiences things to do ${destQuery}`, LUXURY_SITES.slice(3)),
+      searchWeb(`melhores hotéis luxo ${destQuery}`),
+      searchWeb(`melhores restaurantes experiências ${destQuery}`),
     ]);
 
-    const hotelResults = hotelsSearch.status === 'fulfilled' ? (hotelsSearch.value?.results || []) : [];
-    const expResults = expSearch.status === 'fulfilled' ? (expSearch.value?.results || []) : [];
+    // searchWeb retorna array direto, NÃO { results: [] }
+    const hotelResults = hotelsSearch.status === 'fulfilled' ? (hotelsSearch.value || []) : [];
+    const expResults = expSearch.status === 'fulfilled' ? (expSearch.value || []) : [];
     webResults = [...hotelResults.slice(0, 5), ...expResults.slice(0, 5)];
+    console.log(`[Roteiro IA] Web search: ${hotelResults.length} hotéis, ${expResults.length} experiências`);
 
     if (webResults.length) {
       webResearchSection = '\n\n=== PESQUISA WEB — FONTES LUXURY (use estes dados para enriquecer o roteiro) ===\n' +
         webResults.map((r, i) =>
-          `[${i+1}] ${r.title || ''}\n    ${r.snippet || ''}\n    Fonte: ${r.link || r.source || 'N/A'}`
+          `[${i+1}] ${r.title || ''}\n    ${r.snippet || ''}\n    Fonte: ${r.url || r.source || 'N/A'}`
         ).join('\n\n') +
         '\n=== FIM DA PESQUISA ===';
     }
@@ -386,102 +383,31 @@ export async function generateRoteiroFromPrompt(userPrompt) {
     console.warn('[Roteiro IA] Web search indisponível:', e.message || e);
   }
 
-  // ── 2. System prompt — nível consultor sênior ──
-  const systemPrompt = `Você é um consultor de viagens sênior de altíssimo nível da PRIMETOUR, agência premium de turismo com 30+ anos de experiência. Seu trabalho é criar roteiros que vendem — documentos comerciais completos que encantam clientes exigentes.
+  // ── 2. System prompt — compacto para caber nos limites de token ──
+  const systemPrompt = `Consultor sênior PRIMETOUR. Crie roteiro COMPLETO como PROPOSTA COMERCIAL. Hoje: ${today}. Sem data mencionada → planeje a partir de +45 dias.
 
-CONTEXTO: Este documento será entregue como PROPOSTA COMERCIAL / ORÇAMENTO ao cliente. Precisa ser impecável.
-Data de hoje: ${today}. Se nenhuma data for mencionada, planeje a partir de 45 dias de hoje.
+ESCRITA: Narrativas imersivas/sensoriais (aromas, texturas, emoções). Tom sofisticado-acolhedor. 1ª pessoa plural. Cada dia: 200+ palavras. NOMES REAIS de restaurantes, bares, mercados, pratos típicos. Seja ESPECÍFICO (não "explorar a cidade" → "cruzar a Ponte Vecchio ao pôr do sol").
 
-═══ ESTILO DE ESCRITA (CRÍTICO) ═══
-- Narrativas IMERSIVAS e SENSORIAIS: descreva aromas, texturas, cores, sabores, emoções
-- Tom: sofisticado mas acolhedor, como um amigo bem-viajado contando sobre lugares que ama
-- 1ª pessoa do plural: "Acordamos com vista para...", "Caminhamos pelas ruelas de..."
-- Cada narrativa de dia: 200-350 palavras MÍNIMO — conte uma história, não liste atividades
-- Inclua NOMES REAIS de estabelecimentos: restaurantes específicos, bares, cafés, mercados
-- Mencione pratos típicos pelo nome, vinícolas específicas, experiências únicas locais
-- Evite clichês genéricos como "explorar a cidade" — seja ESPECÍFICO: "cruzar a Ponte Vecchio ao pôr do sol"
+ATIVIDADES: 5-7/dia com horário realista. Incluir café, almoço, jantar (nome do restaurante), tempo livre. Types: "passeio"|"refeição"|"transfer"|"livre".
 
-═══ ATIVIDADES (MÍNIMO 5-7 POR DIA) ═══
-- Cada atividade com horário realista e descrição rica (não "visita ao museu", mas "visita guiada privativa ao Museu Uffizi com acesso prioritário — foco em Botticelli e Caravaggio")
-- Incluir: café da manhã, almoço, tempo livre estratégico, jantar com nome do restaurante
-- Types válidos: "passeio", "refeição", "transfer", "livre"
+HOTÉIS: Apenas hotéis REAIS. Luxury: Four Seasons, Aman, Belmond, Mandarin Oriental. Premium: Relais & Châteaux, SLH. Categoria real do quarto.
 
-═══ HOTÉIS (OBRIGATÓRIO) ═══
-- Use APENAS hotéis que existem de fato — nomes corretos, categorias reais
-- Para luxury: Four Seasons, Aman, Belmond, Mandarin Oriental, Rosewood, etc.
-- Para premium: Relais & Châteaux, Leading Hotels, SLH, boutiques reconhecidos
-- Inclua categoria do quarto realista (Deluxe Room, Junior Suite, etc.)
-- Regime: "Café da manhã incluso" ou "Meia-pensão" conforme padrão local
+PREÇOS: TODOS null. NUNCA invente valores. pricing.perPerson=null, perCouple=null, optionals[].priceAdult=null, priceChild=null, customRows=[].
 
-═══ PREÇOS — REGRA ABSOLUTA ═══
-- NUNCA invente valores. Todos os campos de preço = null
-- pricing.perPerson = null, pricing.perCouple = null
-- optionals[].priceAdult = null, optionals[].priceChild = null
-- pricing.customRows = [] (vazio)
-- disclaimer: "Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro e disponibilidade hoteleira."
+INFO: passport (validade, páginas), visa (regras brasileiros), vaccines, climate (temperaturas período), luggage (roupa, adaptadores, moeda), flights (companhias, tempo voo).
 
-═══ INFORMAÇÕES IMPORTANTES (DETALHADAS) ═══
-- passport: requisitos específicos (validade mínima, páginas em branco)
-- visa: regras para brasileiros no destino (isenção, e-visa, etc.)
-- vaccines: vacinas obrigatórias E recomendadas
-- climate: temperatura média no período, o que esperar, chuvas
-- luggage: dicas práticas (tipo de roupa, adaptadores, moeda local)
-- flights: companhias que operam a rota, tempo de voo estimado, conexões comuns
+Responda EXCLUSIVAMENTE com JSON válido, sem texto/markdown ao redor:
+{"title":"","aiSources":["fonte1"],"client":{"name":"","email":"","phone":"","type":"couple|individual|family|group","adults":2,"children":0,"childrenAges":[],"preferences":[],"restrictions":[],"economicProfile":"standard|premium|luxury","notes":""},"travel":{"startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","nights":0,"destinations":[{"city":"","country":"","nights":0}]},"days":[{"dayNumber":1,"date":"YYYY-MM-DD","title":"","city":"","narrative":"200+ palavras","activities":[{"time":"HH:MM","description":"","type":"passeio"}],"overnightCity":""}],"hotels":[{"city":"","hotelName":"","roomType":"","regime":"","checkIn":"YYYY-MM-DD","checkOut":"YYYY-MM-DD","nights":0}],"pricing":{"perPerson":null,"perCouple":null,"currency":"USD","validUntil":"YYYY-MM-DD","disclaimer":"Valores sob consulta.","customRows":[]},"optionals":[{"service":"","priceAdult":null,"priceChild":null,"notes":""}],"includes":["item1"],"excludes":["item1"],"payment":{"deposit":"30% no ato","installments":"Até 6x sem juros","deadline":"45 dias antes","notes":""},"cancellation":[{"period":"Até 60 dias","penalty":"Sem custo"},{"period":"59-30 dias","penalty":"50%"},{"period":"29-15 dias","penalty":"75%"},{"period":"<15 dias/no-show","penalty":"100%"}],"importantInfo":{"passport":"","visa":"","vaccines":"","climate":"","luggage":"","flights":"","customFields":[]}}${webResearchSection}`;
 
-═══ FONTES CONSULTADAS (NOVO CAMPO) ═══
-- Adicione "aiSources": [] com os links/nomes das fontes usadas da pesquisa web
-- Isso aparecerá no backoffice para o consultor verificar
-
-═══ FORMATO DE RESPOSTA ═══
-Responda EXCLUSIVAMENTE com JSON válido. NENHUM texto antes ou depois. Sem markdown.
-{
-  "title": "string",
-  "aiSources": ["url ou nome da fonte 1", "url ou nome da fonte 2"],
-  "client": {
-    "name": "", "email": "", "phone": "",
-    "type": "couple|individual|family|group",
-    "adults": 2, "children": 0, "childrenAges": [],
-    "preferences": [], "restrictions": [],
-    "economicProfile": "standard|premium|luxury",
-    "notes": "Observações inferidas da solicitação do cliente"
-  },
-  "travel": {
-    "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "nights": 0,
-    "destinations": [{ "city": "", "country": "", "nights": 0 }]
-  },
-  "days": [{
-    "dayNumber": 1, "date": "YYYY-MM-DD",
-    "title": "Título evocativo do dia",
-    "city": "Cidade",
-    "narrative": "Narrativa longa, imersiva e sensorial de 200-350 palavras...",
-    "activities": [
-      { "time": "07:30", "description": "Descrição rica e específica", "type": "refeição" },
-      { "time": "09:00", "description": "Descrição com nome real do local", "type": "passeio" }
-    ],
-    "overnightCity": "Cidade"
-  }],
-  "hotels": [{ "city": "", "hotelName": "Nome Real", "roomType": "Categoria Real", "regime": "Café da manhã", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "nights": 0 }],
-  "pricing": { "perPerson": null, "perCouple": null, "currency": "USD", "validUntil": "YYYY-MM-DD", "disclaimer": "Valores sob consulta. Cotação personalizada será enviada após confirmação do roteiro e disponibilidade hoteleira.", "customRows": [] },
-  "optionals": [{ "service": "Descrição do serviço opcional", "priceAdult": null, "priceChild": null, "notes": "" }],
-  "includes": ["item detalhado 1", "item 2", "item 3", "item 4", "item 5", "item 6"],
-  "excludes": ["item 1", "item 2", "item 3", "item 4", "item 5"],
-  "payment": { "deposit": "30% no ato da reserva", "installments": "Saldo em até 6x sem juros", "deadline": "Até 45 dias antes do embarque", "notes": "" },
-  "cancellation": [
-    { "period": "Até 60 dias antes da viagem", "penalty": "Sem custo de cancelamento" },
-    { "period": "Entre 59 e 30 dias", "penalty": "Multa de 50% do valor total" },
-    { "period": "Entre 29 e 15 dias", "penalty": "Multa de 75% do valor total" },
-    { "period": "Menos de 15 dias ou no-show", "penalty": "Multa de 100% do valor total" }
-  ],
-  "importantInfo": {
-    "passport": "Detalhes completos...", "visa": "Requisitos para brasileiros...",
-    "vaccines": "Lista completa...", "climate": "Clima detalhado no período...",
-    "luggage": "Dicas práticas...", "flights": "Informações de voos...",
-    "customFields": []
-  }
-}${webResearchSection}`;
-
-  // ── 3. Chamar IA (com model robusto e mais tokens) ──
+  // ── 3. Chamar IA — com fallback automático de provider ──
   let result;
+  const aiOpts = {
+    moduleId: 'roteiros',
+    systemPrompt,
+    maxTokens: 8192,
+    temperature: 0.8,
+  };
+
   try {
     const skills = await fetchSkillsForModule('roteiros').catch(() => []);
     const createSkill = skills.find(s =>
@@ -496,12 +422,18 @@ Responda EXCLUSIVAMENTE com JSON válido. NENHUM texto antes ou depois. Sem mark
         webResearch: webResearchSection,
       });
     } else {
-      result = await chatWithAI(userPrompt, {}, {
-        moduleId: 'roteiros',
-        systemPrompt,
-        maxTokens: 16384,
-        temperature: 0.8,
-      });
+      try {
+        result = await chatWithAI(userPrompt, {}, aiOpts);
+      } catch (firstErr) {
+        // Se Groq falhar por TPM/tamanho, tentar com Gemini (sem custo e aceita prompts grandes)
+        const msg = firstErr.message || '';
+        if (msg.includes('too large') || msg.includes('Limit') || msg.includes('TPM') || msg.includes('token')) {
+          console.warn('[Roteiro IA] Provider primário falhou por limite de tokens, tentando Gemini...');
+          result = await chatWithAI(userPrompt, {}, { ...aiOpts, provider: 'gemini' });
+        } else {
+          throw firstErr;
+        }
+      }
     }
   } catch (e) {
     console.error('[Roteiro IA] Erro na chamada IA:', e);

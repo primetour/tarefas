@@ -108,6 +108,7 @@ export async function searchWeb(query, sites) {
   try {
     const serperKey = _searchCfg.serperApiKey || '';
     if (serperKey) {
+      console.log(`[searchWeb] Serper.dev query: "${searchQuery.substring(0, 80)}..."`);
       const resp = await fetch('https://google.serper.dev/search', {
         method: 'POST',
         headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
@@ -117,8 +118,8 @@ export async function searchWeb(query, sites) {
       if (resp.ok) {
         const data = await resp.json();
         const organic = data.organic || [];
+        console.log(`[searchWeb] Serper.dev: ${organic.length} resultados (status ${resp.status})`);
         if (organic.length > 0) {
-          console.log(`[searchWeb] Serper.dev: ${organic.length} resultados`);
           return organic.map(item => ({
             title: item.title || '',
             url: item.link || '',
@@ -126,6 +127,9 @@ export async function searchWeb(query, sites) {
             source: (() => { try { return new URL(item.link).hostname.replace('www.', ''); } catch { return ''; } })(),
           }));
         }
+      } else {
+        const errBody = await resp.text().catch(() => '');
+        console.warn(`[searchWeb] Serper.dev HTTP ${resp.status}: ${errBody.substring(0, 200)}`);
       }
     }
   } catch (e) {
@@ -157,223 +161,15 @@ export async function searchWeb(query, sites) {
     console.warn('[searchWeb] Google CSE falhou:', e.message);
   }
 
-  // Se nenhuma API configurada, log e continuar para fallbacks (proxies)
+  // Sem API de busca configurada — retornar vazio silenciosamente
+  // (fallbacks SearXNG/CORS proxies são bloqueados por CSP em produção)
   if (!_searchCfg.serperApiKey && !_searchCfg.googleSearchApiKey) {
-    console.warn('[searchWeb] Nenhuma API de busca configurada. Usando proxies (instáveis). Configure Serper.dev ou Google CSE em Configurações > IA.');
+    console.info('[searchWeb] Nenhuma API de busca configurada. Configure Serper.dev ou Google CSE em Configurações > IA.');
+    return [];
   }
 
-  // Helper: extrair URL real de redirect DDG
-  function cleanDdgUrl(rawUrl) {
-    if (!rawUrl) return '';
-    try {
-      if (rawUrl.includes('uddg=')) {
-        const m = rawUrl.match(/uddg=([^&]+)/);
-        if (m) return decodeURIComponent(m[1]);
-      }
-      if (rawUrl.startsWith('http')) return rawUrl;
-      if (rawUrl.startsWith('//')) return 'https:' + rawUrl;
-    } catch {}
-    return rawUrl;
-  }
-
-  // Helper: tentar fetch com timeout curto
-  async function quickFetch(url, timeout = 6000) {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(timeout) });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return resp;
-  }
-
-  // Helper: parsear HTML do DDG
-  function parseDdgHtml(html) {
-    if (!html || html.length < 500) return [];
-    const hits = [];
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    doc.querySelectorAll('.result__a, a.result__a').forEach(a => {
-      if (hits.length >= 10) return;
-      const rawUrl = a.getAttribute('href') || '';
-      const url = cleanDdgUrl(rawUrl);
-      if (!url || url.includes('duckduckgo.com') || url.includes('bing.com/aclick')) return;
-      const title = a.textContent?.trim() || '';
-      if (!title) return;
-      const resultDiv = a.closest('.result');
-      const snippet = resultDiv?.querySelector('.result__snippet')?.textContent?.trim()?.substring(0, 250) || '';
-      let hostname = '';
-      try { hostname = new URL(url).hostname.replace('www.', ''); } catch {}
-      hits.push({ title, url, snippet, source: hostname });
-    });
-    return hits;
-  }
-
-  // Helper: parsear HTML do Google Search
-  function parseGoogleHtml(html) {
-    if (!html || html.length < 1000) return [];
-    const hits = [];
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    // Google results: <a href="..."><h3>title</h3></a> + nearby snippet
-    doc.querySelectorAll('a[href]').forEach(a => {
-      if (hits.length >= 10) return;
-      const h3 = a.querySelector('h3');
-      if (!h3) return;
-      const title = h3.textContent?.trim();
-      if (!title) return;
-      let url = a.getAttribute('href') || '';
-      // Google wraps URLs in /url?q=...
-      if (url.includes('/url?q=')) {
-        const m = url.match(/\/url\?q=([^&]+)/);
-        if (m) url = decodeURIComponent(m[1]);
-      }
-      if (!url.startsWith('http')) return;
-      if (url.includes('google.com') || url.includes('accounts.google') || url.includes('support.google')) return;
-      // Snippet: next sibling text or parent container
-      let snippet = '';
-      const parent = a.closest('div');
-      if (parent) {
-        const spans = parent.parentElement?.querySelectorAll('span, div[data-sncf]');
-        if (spans) {
-          for (const s of spans) {
-            const t = s.textContent?.trim();
-            if (t && t.length > 40 && !t.includes(title)) {
-              snippet = t.substring(0, 250);
-              break;
-            }
-          }
-        }
-      }
-      let hostname = '';
-      try { hostname = new URL(url).hostname.replace('www.', ''); } catch {}
-      hits.push({ title, url, snippet, source: hostname });
-    });
-    return hits;
-  }
-
-  // ── Rodar todas as estratégias em PARALELO (mais rápido) ──
-  const strategies = [];
-
-  // Estratégia 1: SearXNG (várias instâncias em paralelo)
-  const searxInstances = [
-    'https://searx.tiekoetter.com',
-    'https://search.sapti.me',
-    'https://searx.be',
-    'https://search.ononoki.org',
-    'https://priv.au',
-  ];
-  for (const instance of searxInstances) {
-    strategies.push(
-      quickFetch(`${instance}/search?q=${encoded}&format=json&language=pt-BR&categories=general,news`)
-        .then(r => r.json())
-        .then(data => (data.results || []).slice(0, 8).map(r => {
-          let hostname = '';
-          try { hostname = new URL(r.url).hostname.replace('www.', ''); } catch {}
-          return { title: r.title, url: r.url, snippet: (r.content || '').substring(0, 250), source: hostname || r.engine || '' };
-        }).filter(r => r.url && r.title))
-        .catch(() => [])
-    );
-  }
-
-  // Estratégia 2: DuckDuckGo via proxies CORS
-  const ddgUrl = `https://html.duckduckgo.com/html/?q=${encoded}&kl=br-pt`;
-  const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(ddgUrl)}`,
-    `https://corsproxy.io/?${encodeURIComponent(ddgUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(ddgUrl)}`,
-  ];
-  for (const proxyUrl of proxies) {
-    strategies.push(
-      quickFetch(proxyUrl, 10000)
-        .then(r => r.text())
-        .then(html => parseDdgHtml(html))
-        .catch(() => [])
-    );
-  }
-
-  // Estratégia 3: AllOrigins /get JSON wrapper (CONFIRMADO FUNCIONAL em testes de browser)
-  // /get retorna JSON com campo "contents" contendo o HTML — contorna CORS
-  const googleUrl = `https://www.google.com/search?q=${encoded}&hl=pt-BR&num=10`;
-  strategies.push(
-    quickFetch(`https://api.allorigins.win/get?url=${encodeURIComponent(googleUrl)}`, 20000)
-      .then(r => r.json())
-      .then(data => {
-        if (!data?.contents) return [];
-        return parseGoogleHtml(data.contents);
-      })
-      .catch(() => [])
-  );
-
-  // Estratégia 3b: AllOrigins /get com DDG (backup)
-  strategies.push(
-    quickFetch(`https://api.allorigins.win/get?url=${encodeURIComponent(ddgUrl)}`, 20000)
-      .then(r => r.json())
-      .then(data => {
-        if (!data?.contents) return [];
-        return parseDdgHtml(data.contents);
-      })
-      .catch(() => [])
-  );
-
-  // Estratégia 4: DuckDuckGo API JSON (lite, sem HTML parsing)
-  strategies.push(
-    quickFetch(`https://api.duckduckgo.com/?q=${encoded}&format=json&no_html=1&skip_disambig=1`)
-      .then(r => r.json())
-      .then(data => {
-        const hits = [];
-        // Related topics
-        (data.RelatedTopics || []).forEach(t => {
-          if (hits.length >= 6 && !t.FirstURL) return;
-          if (t.FirstURL && t.Text) {
-            let hostname = '';
-            try { hostname = new URL(t.FirstURL).hostname.replace('www.', ''); } catch {}
-            hits.push({ title: t.Text.substring(0, 120), url: t.FirstURL, snippet: '', source: hostname });
-          }
-        });
-        // Abstract
-        if (data.AbstractURL && data.Abstract) {
-          let hostname = '';
-          try { hostname = new URL(data.AbstractURL).hostname.replace('www.', ''); } catch {}
-          hits.unshift({ title: data.Heading || data.Abstract.substring(0, 80), url: data.AbstractURL, snippet: data.Abstract.substring(0, 250), source: hostname });
-        }
-        return hits;
-      })
-      .catch(() => [])
-  );
-
-  // Esperar TODAS as estratégias (timeout global de 25s — AllOrigins /get precisa ~15-20s)
-  try {
-    const allResults = await Promise.race([
-      Promise.allSettled(strategies),
-      new Promise(resolve => setTimeout(() => resolve([]), 25000)), // timeout global
-    ]);
-
-    // Coletar todos os resultados válidos
-    for (const settled of allResults) {
-      if (settled?.status === 'fulfilled' && Array.isArray(settled.value)) {
-        results.push(...settled.value);
-      }
-    }
-  } catch (e) {
-    console.warn('[searchWeb] Erro geral:', e.message);
-  }
-
-  // Se nada funcionou, retornar link para busca manual
-  if (results.length === 0) {
-    return [{
-      title: '⚠️ Busca automática indisponível — clique para buscar manualmente',
-      url: `https://www.google.com/search?q=${encoded}&hl=pt-BR`,
-      snippet: `Nenhum mecanismo de busca respondeu. Clique no link para buscar manualmente.`,
-      source: 'sistema',
-    }];
-  }
-
-  // Deduplificar por URL
-  const seen = new Set();
-  return results.filter(r => {
-    if (!r.url || !r.title) return false;
-    const key = r.url.replace(/https?:\/\/(www\.)?/, '').substring(0, 60);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).slice(0, 8);
+  // Se chegou aqui, APIs foram tentadas mas não retornaram resultados
+  return [];
 }
 
 /* ─── Helper: captura KPIs/stats do DOM da página visível ── */

@@ -858,7 +858,7 @@ export async function runSkill(skillId, context = {}) {
  */
 export async function chatWithAI(userMessage, context = {}, opts = {}) {
   let config = await getAIConfig() || {};
-  const provider = config?.provider || 'gemini';
+  const provider = opts.provider || config?.provider || 'gemini';
 
   // ── LGPD: verificar consentimento e anonimizar PII ──
   let _chatPiiMapping = null;
