@@ -578,8 +578,8 @@ function showNewsletterPrompt(db, taskTypes) {
   const hasNewsletter = taskTypes.some(t => t.id === 'newsletter' || t.name?.toLowerCase() === 'newsletter');
   if (!hasNewsletter) return;
 
-  // Don't show if user already dismissed this session
-  if (sessionStorage.getItem('nl_prompt_dismissed')) return;
+  // Remove any existing prompt before showing a new one
+  document.getElementById('nl-quick-prompt')?.remove();
 
   const prompt = document.createElement('div');
   prompt.id = 'nl-quick-prompt';
@@ -619,14 +619,12 @@ function showNewsletterPrompt(db, taskTypes) {
 
   document.getElementById('nl-quick-yes')?.addEventListener('click', async () => {
     prompt.remove();
-    sessionStorage.setItem('nl_prompt_dismissed', '1');
     // Auto-fill for newsletter
     await prefillNewsletter(db, taskTypes);
   });
 
   document.getElementById('nl-quick-no')?.addEventListener('click', () => {
     prompt.remove();
-    sessionStorage.setItem('nl_prompt_dismissed', '1');
   });
 
   // Auto-dismiss after 15 seconds
@@ -803,17 +801,25 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     }
   });
 
-  // Check if a slot is filled (has a matching task, request, or batch item on same date)
-  const isSlotFilled = (slotTitle, dateISO, dayTasks) => {
+  // Check if a slot is filled — returns { filled, title } with the display title
+  const getSlotFillInfo = (slotTitle, dateISO, dayTasks) => {
     const lower = slotTitle.toLowerCase();
     // Check tasks on this day
-    if (dayTasks?.some(t => t.title?.toLowerCase().includes(lower) || lower.includes(t.title?.toLowerCase()))) return true;
+    const matchedTask = dayTasks?.find(t => t.title?.toLowerCase().includes(lower) || lower.includes(t.title?.toLowerCase()));
+    if (matchedTask) return { filled: true, title: matchedTask.title || slotTitle };
     // Check requests
-    if (requestMap[dateISO]) return true;
+    const rq = requestMap[dateISO];
+    if (rq) return { filled: true, title: rq.title || rq.typeName || slotTitle };
     // Check batch items
-    if (batchMap[dateISO]) return true;
-    return false;
+    const bc = batchMap[dateISO];
+    if (bc) {
+      const batchItem = batchQueue.find(item => item.desiredDate === dateISO);
+      return { filled: true, title: batchItem?.title || slotTitle };
+    }
+    return { filled: false, title: slotTitle };
   };
+  // Backward-compat wrapper
+  const isSlotFilled = (slotTitle, dateISO, dayTasks) => getSlotFillInfo(slotTitle, dateISO, dayTasks).filled;
 
   // Build month grid
   const buildMonth = () => {
@@ -843,25 +849,25 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':hasSlots?'rgba(212,168,67,0.15)':'transparent'};">
         <div style="font-size:${cellFont};font-weight:${isToday?700:400};
           color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</div>
-        ${slots.map(s=>{const maxChars=portalCalExpanded?40:12;const filled=isSlotFilled(s.title,dateISO,tasks);return`<div class="${filled?'':'pcal-slot-click'}" ${filled?'':`data-slot-date="${dateISO}"
+        ${slots.map(s=>{const maxChars=portalCalExpanded?40:12;const fillInfo=getSlotFillInfo(s.title,dateISO,tasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${filled?'':'pcal-slot-click'}" ${filled?'':`data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
           data-slot-area="${esc(s.requestingArea||'')}"`}
           style="font-size:${slotFont};color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};
           ${filled?`background:rgba(34,197,94,0.1);border-radius:2px;padding:${portalCalExpanded?'1px 3px':'0 2px'};`:`border-bottom:1px dashed ${s.color||'var(--brand-gold)'};padding:${portalCalExpanded?'1px 0':'0'};`}
           margin-bottom:${portalCalExpanded?'2px':'1px'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
           cursor:${filled?'default':'pointer'};"
-          title="${filled?'✓ Preenchido':'Clique para adicionar'}: ${esc(s.title)}">${filled?'✓':'◌'} ${s.title.slice(0,maxChars)}${s.title.length>maxChars?'…':''}</div>`;}).join('')}
-        ${tasks.map((t,ti)=>{const maxChars=portalCalExpanded?40:12;return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
+          title="${filled?'✓ Preenchido':'Clique para adicionar'}: ${esc(displayTitle)}">${filled?'✓':'◌'} ${displayTitle.slice(0,maxChars)}${displayTitle.length>maxChars?'…':''}</div>`;}).join('')}
+        ${(()=>{if(hasSlots)return'';return tasks.map((t,ti)=>{const maxChars=portalCalExpanded?40:12;return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
           style="font-size:${slotFont};color:var(--brand-gold);cursor:pointer;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};
           border-radius:2px;transition:background 0.1s;"
-          title="${t.title}${t.sector?' · 🏢 '+t.sector:''}${t.typeName?' · 📋 '+t.typeName:''}${t.requestingArea?' · 📍 '+t.requestingArea:''}">● ${t.title.slice(0,maxChars)}${t.title.length>maxChars?'…':''}${portalCalExpanded&&t.sector?` <span style="font-size:0.5rem;opacity:0.7;">🏢</span>`:''}</div>`;}).join('')}
-        ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div class="pcal-req-click" data-req-date="${dateISO}"
+          title="${t.title}${t.sector?' · 🏢 '+t.sector:''}${t.typeName?' · 📋 '+t.typeName:''}${t.requestingArea?' · 📍 '+t.requestingArea:''}">● ${t.title.slice(0,maxChars)}${t.title.length>maxChars?'…':''}${portalCalExpanded&&t.sector?` <span style="font-size:0.5rem;opacity:0.7;">🏢</span>`:''}</div>`;}).join('');})()}
+        ${(()=>{if(hasSlots)return'';const rq=requestMap[dateISO];if(!rq)return'';return`<div class="pcal-req-click" data-req-date="${dateISO}"
           style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};cursor:pointer;
           padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
           title="${rq.icon} ${rq.label}">${rq.icon} ${portalCalExpanded?rq.label:rq.label.split(' ')[0]}</div>`;})()}
-        ${(()=>{const bc=batchMap[dateISO];if(!bc)return'';return`<div
+        ${(()=>{if(hasSlots)return'';const bc=batchMap[dateISO];if(!bc)return'';return`<div
           style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
           padding:1px 3px;border-radius:3px;margin-top:1px;background:rgba(167,139,250,0.15);color:#A78BFA;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
@@ -896,30 +902,30 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         border:1px solid ${isToday?'var(--brand-gold)':'var(--border-subtle)'};">
         <div style="font-size:${wkFont};color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
           font-weight:${isToday?700:400};margin-bottom:3px;">${PT_DAYS_S[d.getDay()]} ${d.getDate()}</div>
-        ${slots.map(s=>{const filled=isSlotFilled(s.title,dateISO,dayTasks);return`<div class="${filled?'':'pcal-slot-click'}" ${filled?'':`data-slot-date="${dateISO}"
+        ${(()=>{const wkHasSlots=slots.length>0;return slots.map(s=>{const fillInfo=getSlotFillInfo(s.title,dateISO,dayTasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${filled?'':'pcal-slot-click'}" ${filled?'':`data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
           data-slot-area="${esc(s.requestingArea||'')}"`}
           style="font-size:${wkSlotFont};${filled?`border:1px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.1);`:`border:1px dashed ${s.color||'var(--brand-gold)'};`}
           color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:${filled?'default':'pointer'};"
-          title="${filled?'✓ Preenchido':'Clique para adicionar'}: ${esc(s.title)}">
-          ${filled?'✓':'◌'} ${s.title.slice(0,wkMaxChars)}${s.title.length>wkMaxChars?'…':''}</div>`;}).join('')}
-        ${dayTasks.map((t,ti)=>`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
+          title="${filled?'✓ Preenchido':'Clique para adicionar'}: ${esc(displayTitle)}">
+          ${filled?'✓':'◌'} ${displayTitle.slice(0,wkMaxChars)}${displayTitle.length>wkMaxChars?'…':''}</div>`;}).join('')+
+          (!wkHasSlots?dayTasks.map((t,ti)=>`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
           style="font-size:${wkSlotFont};background:rgba(212,168,67,0.12);cursor:pointer;
           color:var(--brand-gold);border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
           title="${t.title}${t.sector?' · 🏢 '+t.sector:''}${t.typeName?' · 📋 '+t.typeName:''}">
-          ● ${t.title.slice(0,wkMaxChars)}${t.title.length>wkMaxChars?'…':''}${portalCalExpanded&&t.sector?` <span style="font-size:0.5rem;opacity:0.7;">🏢</span>`:''}</div>`).join('')}
-        ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div class="pcal-req-click" data-req-date="${dateISO}"
+          ● ${t.title.slice(0,wkMaxChars)}${t.title.length>wkMaxChars?'…':''}${portalCalExpanded&&t.sector?` <span style="font-size:0.5rem;opacity:0.7;">🏢</span>`:''}</div>`).join(''):'')+
+          ((!wkHasSlots&&requestMap[dateISO])?(()=>{const rq=requestMap[dateISO];return`<div class="pcal-req-click" data-req-date="${dateISO}"
           style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};cursor:pointer;
           padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
-          title="${rq.icon} ${rq.label}">${rq.icon} ${rq.label}</div>`;})()}
-        ${(()=>{const bc=batchMap[dateISO];if(!bc)return'';return`<div
+          title="${rq.icon} ${rq.label}">${rq.icon} ${rq.label}</div>`;})():'')+
+          ((!wkHasSlots&&batchMap[dateISO])?(()=>{const bc=batchMap[dateISO];return`<div
           style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
           padding:1px 3px;border-radius:3px;margin-top:1px;background:rgba(167,139,250,0.15);color:#A78BFA;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
-          title="${bc} no lote">✦ ${portalCalExpanded?bc+' no lote':'lote'}</div>`;})()}
+          title="${bc} no lote">✦ ${portalCalExpanded?bc+' no lote':'lote'}</div>`;})():'');})()}
       </div>`;
     }).join('');
   };
@@ -940,12 +946,12 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       ${slots.length?`
         <div style="margin-bottom:10px;">
           <div style="font-size:0.75rem;font-weight:600;color:var(--brand-gold);margin-bottom:6px;">◌ Agenda do dia</div>
-          ${slots.map(s=>{const filled=isSlotFilled(s.title,dateISO,dTasks);return`<div class="${!filled&&clickable?'pcal-slot-click':''}" ${!filled&&clickable?`data-slot-date="${dateISO}"
+          ${slots.map(s=>{const fillInfo=getSlotFillInfo(s.title,dateISO,dTasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${!filled&&clickable?'pcal-slot-click':''}" ${!filled&&clickable?`data-slot-date="${dateISO}"
             data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
             data-slot-area="${esc(s.requestingArea||'')}"`:''}
             style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:${!filled&&clickable?'pointer':'default'};
             ${filled?`border:1.5px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.08);`:`border:1.5px dashed ${s.color||'var(--brand-gold)'};background:${s.color||'var(--brand-gold)'}08;`}">
-            <div style="font-size:0.8125rem;font-weight:500;color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};">${filled?'✓':'◌'} ${s.title}</div>
+            <div style="font-size:0.8125rem;font-weight:500;color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};">${filled?'✓':'◌'} ${esc(displayTitle)}</div>
             ${s.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${s.requestingArea}</div>`:''}
             ${filled?`<div style="font-size:0.625rem;color:var(--color-success);margin-top:2px;">Slot preenchido</div>`
             :clickable?`<div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">Clique para adicionar ao formulário</div>`:''
@@ -953,7 +959,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           </div>`;}).join('')}
         </div>
       `:''}
-      ${dTasks.length?`
+      ${!slots.length&&dTasks.length?`
         <div>
           <div style="font-size:0.75rem;font-weight:600;color:var(--text-primary);margin-bottom:6px;">● Tarefas agendadas</div>
           ${dTasks.map((t,ti)=>`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
@@ -970,7 +976,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           </div>`).join('')}
         </div>
       `:''}
-      ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`
+      ${(()=>{if(slots.length)return'';const rq=requestMap[dateISO];if(!rq)return'';return`
         <div class="pcal-req-click" data-req-date="${dateISO}"
           style="margin-top:10px;padding:8px 10px;border-radius:4px;cursor:pointer;
           background:${rq.color}12;border:1px solid ${rq.color}30;transition:background 0.15s;">
@@ -978,7 +984,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           ${rq.title?`<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${esc(rq.title)}</div>`:''}
           <div style="font-size:0.5625rem;color:var(--text-muted);margin-top:2px;">Clique para ver detalhes</div>
         </div>`;})()}
-      ${(()=>{const bc=batchMap[dateISO];if(!bc)return'';return`
+      ${(()=>{if(slots.length)return'';const bc=batchMap[dateISO];if(!bc)return'';return`
         <div style="margin-top:10px;padding:8px 10px;border-radius:4px;
           background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.25);">
           <div style="font-size:0.8125rem;font-weight:600;color:#A78BFA;">✦ ${bc} demanda${bc>1?'s':''} no lote</div>
@@ -1224,7 +1230,9 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
   const types = window._portalTaskTypes || taskTypes || [];
   const activeType = types.find(t => t.id === portalCalTypeId);
   const isSlot = !!opts.title || !!opts.variationId;
-  const isOOC = opts.outOfCalendar === true;
+  // OOC only applies if the type has calendar slots — otherwise there's no calendar to be "out of"
+  const typeHasSlots = activeType?.scheduleSlots?.length > 0;
+  const isOOC = typeHasSlots && opts.outOfCalendar === true;
 
   // Determine pre-fills (same logic as fillFormFromSlot + prefillNewsletter)
   const preSetor = activeType?.sector || '';
@@ -2113,12 +2121,16 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
 function fillFormFromEmptyDay(dateISO) {
   const dateEl = document.getElementById('p-date');
   if (dateEl) { dateEl.value = dateISO; dateEl.dispatchEvent(new Event('change')); }
-  // Force out-of-calendar ON + lock
-  lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
-  document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'flex');
-  // Show locked banner for out-of-calendar
-  showLockedBanner('locked-ooc-banner', 'out-of-calendar-toggle',
-    'Esta data não está no calendário editorial. "Fora do calendário" foi definido automaticamente.');
+  // Only flag OOC if the current type has calendar slots
+  const types = window._portalTaskTypes || [];
+  const curType = types.find(t => t.id === portalCalTypeId);
+  const hasSlots = curType?.scheduleSlots?.length > 0;
+  if (hasSlots) {
+    lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
+    document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'flex');
+    showLockedBanner('locked-ooc-banner', 'out-of-calendar-toggle',
+      'Esta data não está no calendário editorial. "Fora do calendário" foi definido automaticamente.');
+  }
   // Check urgency by deadline
   checkUrgencyByDeadline(dateISO);
   // Scroll to description
@@ -2170,11 +2182,12 @@ function collectFormData(taskTypes) {
   const typeId      = document.getElementById('p-type')?.value || '';
   const typeData    = taskTypes.find(t => t.id === typeId);
   const varOpt      = document.querySelector('#p-variation option:checked');
+  const hasSlots    = typeData?.scheduleSlots?.length > 0;
   return {
     requestingArea: document.getElementById('p-area')?.value || '',
     sector:         document.getElementById('p-setor')?.value || '',
     typeId:         typeId,
-    typeName:       typeData?.name || typeId || '',
+    typeName:       typeData?.name || '',
     typeIcon:       typeData?.icon || '',
     typeColor:      typeData?.color || '#D4A843',
     autoAccept:     typeData?.autoAccept || false,
@@ -2184,7 +2197,7 @@ function collectFormData(taskTypes) {
     title:          document.getElementById('p-title')?.value?.trim() || '',
     description:    document.getElementById('p-desc')?.value?.trim() || '',
     urgency:        document.getElementById('p-urgency')?.checked || false,
-    outOfCalendar:  document.getElementById('p-out-of-calendar')?.checked || false,
+    outOfCalendar:  hasSlots ? (document.getElementById('p-out-of-calendar')?.checked || false) : false,
     desiredDate:    document.getElementById('p-date')?.value || '',
   };
 }
@@ -2205,6 +2218,8 @@ function addToBatch(taskTypes) {
   }
   resetFormForNextItem();
   renderBatchList(taskTypes);
+  // Re-render calendar immediately so batch items show as filled slots
+  renderPortalCalendar(window._portalDb, taskTypes, null);
   document.getElementById('batch-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
@@ -2491,7 +2506,8 @@ function bindFormEvents(db, taskTypes) {
       typeSel.innerHTML = '<option value="">— Selecione o tipo —</option>' +
         sectorTypes.map(t => `<option value="${t.id}">${t.icon||''} ${esc(t.name)}</option>`).join('');
     }
-    if (typeFG) typeFG.style.display = 'block';
+    // Only show type field if there are types for this sector
+    if (typeFG) typeFG.style.display = sectorTypes.length > 0 ? 'block' : 'none';
 
     // Show nucleos for this sector
     if (nucleoSel && nucleos.length) {
@@ -2670,6 +2686,9 @@ function bindFormEvents(db, taskTypes) {
   document.getElementById('new-request-btn')?.addEventListener('click', () => {
     document.getElementById('success-view')?.classList.remove('visible');
     document.getElementById('form-view').style.display = 'block';
+    // Reset submit button state
+    const submitBtn = document.getElementById('portal-submit-btn');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('loading'); submitBtn.textContent = 'Enviar apenas esta solicitação →'; }
     // Reset form — preserve readonly fields (name, email, user-area)
     const preserve = new Set(['p-name', 'p-email', 'p-user-area']);
     document.querySelectorAll('.form-input,.form-select,.form-textarea').forEach(el => {
@@ -2706,6 +2725,8 @@ function bindFormEvents(db, taskTypes) {
     document.getElementById('fg-nucleo')?.style && (document.getElementById('fg-nucleo').style.display = 'none');
     batchQueue = [];
     currentEditIndex = -1;
+    // Re-show newsletter prompt on every form access
+    showNewsletterPrompt(db, taskTypes);
   });
 }
 
@@ -2750,7 +2771,8 @@ async function handleSubmit(db, taskTypes) {
     const typeId      = document.getElementById('p-type')?.value || '';
     const typeData    = taskTypes.find(t => t.id === typeId);
     const urgency     = document.getElementById('p-urgency')?.checked || false;
-    const outOfCal    = document.getElementById('p-out-of-calendar')?.checked || false;
+    const typeHasSlots = typeData?.scheduleSlots?.length > 0;
+    const outOfCal    = typeHasSlots ? (document.getElementById('p-out-of-calendar')?.checked || false) : false;
     const variationId = document.getElementById('p-variation')?.value || null;
     const varOpt      = document.querySelector('#p-variation option:checked');
     const variationName = varOpt?.textContent?.split('·')[0]?.trim() || '';
@@ -2768,7 +2790,7 @@ async function handleSubmit(db, taskTypes) {
       variationId:    variationId    || null,
       variationName:  variationName  || '',
       typeId:         typeId         || null,
-      typeName:       typeData?.name || typeId || '',
+      typeName:       typeData?.name || '',
       nucleo:         document.getElementById('p-nucleo')?.value                   || '',
       title:          document.getElementById('p-title')?.value?.trim()            || '',
       description:    document.getElementById('p-desc')?.value?.trim()             || '',
