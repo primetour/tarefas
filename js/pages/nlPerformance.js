@@ -190,6 +190,10 @@ export async function renderNlPerformance(container) {
 
     <!-- Tab: Calendário Editorial -->
     <div id="nl-tab-calendar" style="display:none;">
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px;">
+        <button class="btn btn-secondary btn-sm" id="nl-cal-export-xlsx">⬇ XLSX</button>
+        <button class="btn btn-secondary btn-sm" id="nl-cal-export-pdf">⬇ PDF</button>
+      </div>
       <div id="nl-cal-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
         gap:12px;margin-bottom:24px;">
         <div class="card skeleton" style="height:90px;"></div>
@@ -290,6 +294,8 @@ export async function renderNlPerformance(container) {
   // Export buttons
   document.getElementById('nl-export-xlsx')?.addEventListener('click', exportXLSX);
   document.getElementById('nl-export-pdf')?.addEventListener('click',  exportPDF);
+  document.getElementById('nl-cal-export-xlsx')?.addEventListener('click', exportCalXLSX);
+  document.getElementById('nl-cal-export-pdf')?.addEventListener('click',  exportCalPDF);
 
   await loadData(editMode);
 }
@@ -854,10 +860,207 @@ function buBadge(id, name) {
 }
 
 /* ═══════════════════════════════════════════════════════════
+ *  Exportação — Calendário Editorial
+ * ═══════════════════════════════════════════════════════════ */
+
+async function exportCalXLSX() {
+  if (!calDashData) { toast.error('Carregue a aba Calendário primeiro.'); return; }
+  const btn = document.getElementById('nl-cal-export-xlsx');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    if (!window.XLSX) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
+    }
+    const d = calDashData;
+    const wb = window.XLSX.utils.book_new();
+
+    // Sheet 1: KPIs
+    const kpiData = [
+      ['Métrica', 'Valor', 'Detalhe'],
+      ['Cumprimento do Calendário', d.complianceRate + '%', `${d.fulfilledSlots} de ${d.expectedSlots} slots (90 dias)`],
+      ['Total de Solicitações', d.allRequests.length, ''],
+      ['Solicitações Urgentes', d.urgentRequests.length, d.allRequests.length ? Math.round((d.urgentRequests.length/d.allRequests.length)*100) + '% do total' : ''],
+      ['Fora do Calendário', d.outOfCalendar.length, d.allRequests.length ? Math.round((d.outOfCalendar.length/d.allRequests.length)*100) + '% do total' : ''],
+      ['Tempo Médio de Entrega', d.avgDays !== '—' ? d.avgDays + ' dias' : 'Sem dados', `SLA: ${d.slaDays} dias · ${d.countDelivered} entregas`],
+    ];
+    const wsKpi = window.XLSX.utils.aoa_to_sheet(kpiData);
+    wsKpi['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 40 }];
+    window.XLSX.utils.book_append_sheet(wb, wsKpi, 'KPIs');
+
+    // Sheet 2: Top Solicitantes
+    const topData = [['#', 'Solicitante', 'Qtd. Solicitações'], ...d.topRequesters.map(([name, count], i) => [i + 1, name, count])];
+    const wsTop = window.XLSX.utils.aoa_to_sheet(topData);
+    wsTop['!cols'] = [{ wch: 5 }, { wch: 30 }, { wch: 20 }];
+    window.XLSX.utils.book_append_sheet(wb, wsTop, 'Top Solicitantes');
+
+    // Sheet 3: Solicitações
+    const STATUS_LABELS = { pending: 'Aguardando', converted: 'Convertida', rejected: 'Recusada' };
+    const reqHeaders = ['Data', 'Título', 'Solicitante', 'E-mail', 'Status', 'Urgente', 'Fora do Cal.', 'Setor', 'Área'];
+    const reqRows = [...d.allRequests]
+      .sort((a, b) => {
+        const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+        const db2 = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+        return db2 - da;
+      })
+      .map(r => {
+        const created = r.createdAt?.toDate ? r.createdAt.toDate() : new Date(r.createdAt || 0);
+        return [
+          fmt(created), r.title || '—', r.requesterName || '—', r.requesterEmail || '—',
+          STATUS_LABELS[r.status] || r.status || '—',
+          r.urgency ? 'Sim' : 'Não', r.outOfCalendar ? 'Sim' : 'Não',
+          r.sector || '—', r.requestingArea || '—',
+        ];
+      });
+    const wsReq = window.XLSX.utils.aoa_to_sheet([reqHeaders, ...reqRows]);
+    wsReq['!cols'] = [{ wch: 18 }, { wch: 40 }, { wch: 25 }, { wch: 30 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 16 }];
+    window.XLSX.utils.book_append_sheet(wb, wsReq, 'Solicitações');
+
+    // Sheet 4: Tarefas
+    const taskHeaders = ['Título', 'Status', 'Data Entrega', 'Área Solicitante', 'Criação'];
+    const taskRows = d.allTasks.map(t => {
+      const due = t.dueDate?.toDate ? t.dueDate.toDate() : t.startDate?.toDate ? t.startDate.toDate() : null;
+      const created = t.createdAt?.toDate ? t.createdAt.toDate() : null;
+      return [t.title || '—', t.status || '—', due ? fmt(due) : '—', t.requestingArea || '—', created ? fmt(created) : '—'];
+    });
+    const wsTask = window.XLSX.utils.aoa_to_sheet([taskHeaders, ...taskRows]);
+    wsTask['!cols'] = [{ wch: 40 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 18 }];
+    window.XLSX.utils.book_append_sheet(wb, wsTask, 'Tarefas');
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    window.XLSX.writeFile(wb, `primetour_calendario_editorial_${dateStr}.xlsx`);
+    toast.success('Calendário editorial exportado (XLSX).');
+  } catch (e) {
+    toast.error('Erro ao exportar: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ XLSX'; }
+  }
+}
+
+async function exportCalPDF() {
+  if (!calDashData) { toast.error('Carregue a aba Calendário primeiro.'); return; }
+  const btn = document.getElementById('nl-cal-export-pdf');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    if (!window.jspdf) {
+      await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+      await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+    }
+    const d = calDashData;
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const W = doc.internal.pageSize.getWidth();
+    const dateStr = new Date().toLocaleDateString('pt-BR');
+
+    // ── Header ──
+    doc.setFillColor(212, 168, 67);
+    doc.rect(0, 0, W, 3, 'F');
+    doc.setFillColor(36, 35, 98);
+    doc.rect(0, 3, W, 20, 'F');
+    doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
+    doc.text('PRIMETOUR', 14, 14);
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(212, 168, 67);
+    doc.text('Calendário Editorial — Dashboard', 14, 19);
+    doc.setTextColor(200, 200, 200);
+    doc.text(dateStr, W - 14, 19, { align: 'right' });
+
+    // ── KPI boxes ──
+    const kpis = [
+      { label: 'Cumprimento', value: d.complianceRate + '%', color: d.complianceRate >= 80 ? [34, 197, 94] : [239, 68, 68] },
+      { label: 'Solicitações', value: String(d.allRequests.length), color: [56, 189, 248] },
+      { label: 'Urgentes', value: String(d.urgentRequests.length), color: d.urgentRequests.length > 0 ? [239, 68, 68] : [34, 197, 94] },
+      { label: 'Fora Cal.', value: String(d.outOfCalendar.length), color: d.outOfCalendar.length > 0 ? [245, 158, 11] : [34, 197, 94] },
+      { label: 'Tempo Médio', value: d.avgDays !== '—' ? d.avgDays + 'd' : '—', color: d.slaOk ? [34, 197, 94] : [239, 68, 68] },
+    ];
+    let y = 28;
+    const kpiW = (W - 28 - (kpis.length - 1) * 4) / kpis.length;
+    kpis.forEach((k, i) => {
+      const x = 14 + i * (kpiW + 4);
+      doc.setFillColor(...k.color);
+      doc.roundedRect(x, y, kpiW, 16, 2, 2, 'F');
+      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
+      doc.text(k.value, x + kpiW / 2, y + 7, { align: 'center' });
+      doc.setFontSize(6); doc.setFont('helvetica', 'normal');
+      doc.text(k.label, x + kpiW / 2, y + 12.5, { align: 'center' });
+    });
+    y += 22;
+
+    // ── Top Solicitantes (mini table) ──
+    if (d.topRequesters.length) {
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(60, 60, 60);
+      doc.text('Top Solicitantes', 14, y + 4);
+      doc.autoTable({
+        startY: y + 6,
+        head: [['#', 'Solicitante', 'Qtd']],
+        body: d.topRequesters.map(([name, count], i) => [i + 1, name, count]),
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 2 },
+        headStyles: { fillColor: [36, 35, 98], textColor: 255, fontStyle: 'bold' },
+        columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: 60 }, 2: { cellWidth: 15 } },
+        margin: { left: 14 },
+        tableWidth: 83,
+      });
+    }
+
+    // ── Solicitações table ──
+    const STATUS_LABELS = { pending: 'Aguardando', converted: 'Convertida', rejected: 'Recusada' };
+    const sorted = [...d.allRequests].sort((a, b) => {
+      const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+      const db2 = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+      return db2 - da;
+    });
+
+    const tblY = d.topRequesters.length ? (doc.lastAutoTable?.finalY || y + 30) + 6 : y + 2;
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(60, 60, 60);
+    doc.text('Solicitações de Newsletter', 14, tblY);
+    doc.autoTable({
+      startY: tblY + 2,
+      head: [['Data', 'Título', 'Solicitante', 'Status', 'Urg.', 'Fora Cal.']],
+      body: sorted.map(r => {
+        const created = r.createdAt?.toDate ? r.createdAt.toDate() : new Date(r.createdAt || 0);
+        return [
+          fmt(created), (r.title || '—').slice(0, 40), (r.requesterName || '—').slice(0, 25),
+          STATUS_LABELS[r.status] || r.status || '—',
+          r.urgency ? 'Sim' : '', r.outOfCalendar ? 'Sim' : '',
+        ];
+      }),
+      theme: 'striped',
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { fillColor: [36, 35, 98], textColor: 255, fontStyle: 'bold', fontSize: 7 },
+      alternateRowStyles: { fillColor: [245, 245, 250] },
+      columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 60 }, 2: { cellWidth: 40 }, 3: { cellWidth: 22 }, 4: { cellWidth: 12 }, 5: { cellWidth: 16 } },
+      margin: { left: 14, right: 14 },
+    });
+
+    // ── Footer ──
+    const pages = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      const H = doc.internal.pageSize.getHeight();
+      doc.setFillColor(36, 35, 98);
+      doc.rect(0, H - 8, W, 8, 'F');
+      doc.setFontSize(6); doc.setTextColor(160, 160, 160);
+      doc.text(`PRIMETOUR — Calendário Editorial · ${dateStr} · Página ${i}/${pages}`, W / 2, H - 3, { align: 'center' });
+    }
+
+    doc.save(`primetour_calendario_editorial_${new Date().toISOString().slice(0, 10)}.pdf`);
+    toast.success('Calendário editorial exportado (PDF).');
+  } catch (e) {
+    toast.error('Erro ao exportar PDF: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ PDF'; }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
  *  ABA: Calendário Editorial — Dashboard de Newsletter
  * ═══════════════════════════════════════════════════════════ */
 
 let calDashLoaded = false;
+let calDashData = null; // stored for exports
 
 async function loadCalendarDashboard() {
   if (calDashLoaded) return;
@@ -955,6 +1158,13 @@ async function loadCalendarDashboard() {
     });
     const avgDays = countDelivered > 0 ? (totalDays / countDelivered).toFixed(1) : '—';
     const slaOk = countDelivered > 0 && (totalDays / countDelivered) <= slaDays;
+
+    // Store data for exports
+    calDashData = {
+      complianceRate, fulfilledSlots, expectedSlots,
+      allRequests, allTasks, urgentRequests, outOfCalendar,
+      topRequesters, avgDays, slaOk, slaDays, countDelivered,
+    };
 
     // 3. Render KPIs
     const kpis = document.getElementById('nl-cal-kpis');
