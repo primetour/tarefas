@@ -806,17 +806,17 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     const lower = slotTitle.toLowerCase();
     // Check tasks on this day
     const matchedTask = dayTasks?.find(t => t.title?.toLowerCase().includes(lower) || lower.includes(t.title?.toLowerCase()));
-    if (matchedTask) return { filled: true, title: matchedTask.title || slotTitle };
+    if (matchedTask) return { filled: true, title: matchedTask.title || slotTitle, source: 'task', data: matchedTask };
     // Check requests
     const rq = requestMap[dateISO];
-    if (rq) return { filled: true, title: rq.title || rq.typeName || slotTitle };
+    if (rq) return { filled: true, title: rq.title || rq.typeName || slotTitle, source: 'request', data: rq };
     // Check batch items
     const bc = batchMap[dateISO];
     if (bc) {
       const batchItem = batchQueue.find(item => item.desiredDate === dateISO);
-      return { filled: true, title: batchItem?.title || slotTitle };
+      return { filled: true, title: batchItem?.title || slotTitle, source: 'batch', data: batchItem };
     }
-    return { filled: false, title: slotTitle };
+    return { filled: false, title: slotTitle, source: null, data: null };
   };
   // Backward-compat wrapper
   const isSlotFilled = (slotTitle, dateISO, dayTasks) => getSlotFillInfo(slotTitle, dateISO, dayTasks).filled;
@@ -849,14 +849,14 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':hasSlots?'rgba(212,168,67,0.15)':'transparent'};">
         <div style="font-size:${cellFont};font-weight:${isToday?700:400};
           color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</div>
-        ${slots.map(s=>{const maxChars=portalCalExpanded?40:12;const fillInfo=getSlotFillInfo(s.title,dateISO,tasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${filled?'':'pcal-slot-click'}" ${filled?'':`data-slot-date="${dateISO}"
+        ${slots.map(s=>{const maxChars=portalCalExpanded?40:12;const fillInfo=getSlotFillInfo(s.title,dateISO,tasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${filled?'pcal-filled-click':'pcal-slot-click'}" ${filled?`data-req-date="${dateISO}" data-fill-source="${fillInfo.source}"`:`data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
           data-slot-area="${esc(s.requestingArea||'')}"`}
           style="font-size:${slotFont};color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};
           ${filled?`background:rgba(34,197,94,0.1);border-radius:2px;padding:${portalCalExpanded?'1px 3px':'0 2px'};`:`border-bottom:1px dashed ${s.color||'var(--brand-gold)'};padding:${portalCalExpanded?'1px 0':'0'};`}
           margin-bottom:${portalCalExpanded?'2px':'1px'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-          cursor:${filled?'default':'pointer'};"
-          title="${filled?'✓ Preenchido':'Clique para adicionar'}: ${esc(displayTitle)}">${filled?'✓':'◌'} ${displayTitle.slice(0,maxChars)}${displayTitle.length>maxChars?'…':''}</div>`;}).join('')}
+          cursor:pointer;"
+          title="${filled?'✓ Clique para ver/editar':'Clique para adicionar'}: ${esc(displayTitle)}">${filled?'✓':'◌'} ${displayTitle.slice(0,maxChars)}${displayTitle.length>maxChars?'…':''}</div>`;}).join('')}
         ${(()=>{if(hasSlots)return'';return tasks.map((t,ti)=>{const maxChars=portalCalExpanded?40:12;return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
           style="font-size:${slotFont};color:var(--brand-gold);cursor:pointer;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};
@@ -902,13 +902,13 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         border:1px solid ${isToday?'var(--brand-gold)':'var(--border-subtle)'};">
         <div style="font-size:${wkFont};color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
           font-weight:${isToday?700:400};margin-bottom:3px;">${PT_DAYS_S[d.getDay()]} ${d.getDate()}</div>
-        ${(()=>{const wkHasSlots=slots.length>0;return slots.map(s=>{const fillInfo=getSlotFillInfo(s.title,dateISO,dayTasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${filled?'':'pcal-slot-click'}" ${filled?'':`data-slot-date="${dateISO}"
+        ${(()=>{const wkHasSlots=slots.length>0;return slots.map(s=>{const fillInfo=getSlotFillInfo(s.title,dateISO,dayTasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${filled?'pcal-filled-click':'pcal-slot-click'}" ${filled?`data-req-date="${dateISO}" data-fill-source="${fillInfo.source}"`:`data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
           data-slot-area="${esc(s.requestingArea||'')}"`}
           style="font-size:${wkSlotFont};${filled?`border:1px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.1);`:`border:1px dashed ${s.color||'var(--brand-gold)'};`}
           color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:${filled?'default':'pointer'};"
-          title="${filled?'✓ Preenchido':'Clique para adicionar'}: ${esc(displayTitle)}">
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
+          title="${filled?'✓ Clique para ver/editar':'Clique para adicionar'}: ${esc(displayTitle)}">
           ${filled?'✓':'◌'} ${displayTitle.slice(0,wkMaxChars)}${displayTitle.length>wkMaxChars?'…':''}</div>`;}).join('')+
           (!wkHasSlots?dayTasks.map((t,ti)=>`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
           style="font-size:${wkSlotFont};background:rgba(212,168,67,0.12);cursor:pointer;
@@ -946,14 +946,14 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       ${slots.length?`
         <div style="margin-bottom:10px;">
           <div style="font-size:0.75rem;font-weight:600;color:var(--brand-gold);margin-bottom:6px;">◌ Agenda do dia</div>
-          ${slots.map(s=>{const fillInfo=getSlotFillInfo(s.title,dateISO,dTasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${!filled&&clickable?'pcal-slot-click':''}" ${!filled&&clickable?`data-slot-date="${dateISO}"
+          ${slots.map(s=>{const fillInfo=getSlotFillInfo(s.title,dateISO,dTasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${filled?'pcal-filled-click':(!filled&&clickable?'pcal-slot-click':'')}" ${filled?`data-req-date="${dateISO}" data-fill-source="${fillInfo.source}"`:(clickable?`data-slot-date="${dateISO}"
             data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
-            data-slot-area="${esc(s.requestingArea||'')}"`:''}
-            style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:${!filled&&clickable?'pointer':'default'};
+            data-slot-area="${esc(s.requestingArea||'')}"`:'')}
+            style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:${filled||clickable?'pointer':'default'};
             ${filled?`border:1.5px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.08);`:`border:1.5px dashed ${s.color||'var(--brand-gold)'};background:${s.color||'var(--brand-gold)'}08;`}">
             <div style="font-size:0.8125rem;font-weight:500;color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};">${filled?'✓':'◌'} ${esc(displayTitle)}</div>
             ${s.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${s.requestingArea}</div>`:''}
-            ${filled?`<div style="font-size:0.625rem;color:var(--color-success);margin-top:2px;">Slot preenchido</div>`
+            ${filled?`<div style="font-size:0.625rem;color:var(--color-success);margin-top:2px;">Clique para ver/editar</div>`
             :clickable?`<div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">Clique para adicionar ao formulário</div>`:''
             }
           </div>`;}).join('')}
@@ -1161,16 +1161,43 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     });
   });
 
+  // Filled slot clicks → open preview card for editing
+  wrap.querySelectorAll('.pcal-filled-click').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dateISO = el.dataset.reqDate;
+      const source = el.dataset.fillSource;
+      if (!dateISO) return;
+      if (source === 'request') {
+        const rq = requestMap[dateISO];
+        if (rq) showTaskPreviewCard(db, types, { type: 'request', ...rq, dateISO }, el);
+      } else if (source === 'task') {
+        const date = new Date(dateISO + 'T12:00:00');
+        const dayKey = date.getDate();
+        const tasks = taskMap[dayKey] || [];
+        if (tasks.length) showTaskPreviewCard(db, types, { type: 'task', ...tasks[0], dateISO }, el);
+      } else if (source === 'batch') {
+        const batchItem = batchQueue.find(item => item.desiredDate === dateISO);
+        if (batchItem) {
+          alert(`Este slot está no lote atual:\n\n"${batchItem.title || 'Sem título'}"\n\nRemova do lote para liberar o slot.`);
+        }
+      }
+    });
+  });
+
   // Empty day clicks → out-of-calendar mode (or modal if fullscreen)
   wrap.querySelectorAll('.pcal-day-cell').forEach(cell => {
     cell.addEventListener('click', (e) => {
-      if (e.target.closest('.pcal-slot-click')) return; // slot handled above
+      if (e.target.closest('.pcal-slot-click') || e.target.closest('.pcal-filled-click')) return;
       const dateISO = cell.dataset.pcalDate;
       if (!dateISO) return;
       const date  = new Date(dateISO + 'T12:00:00');
       const slots = getSlotsForDate(date);
+      const dayTasks = taskMap[date.getDate()] || [];
+      // Check if all slots are already filled
+      const allSlotsFilled = slots.length > 0 && slots.every(s => isSlotFilled(s.title, dateISO, dayTasks));
       if (portalCalExpanded) {
-        if (slots.length > 0) {
+        if (slots.length > 0 && !allSlotsFilled) {
           openFullscreenFormModal(db, types, {
             dateISO, title: '', variationId: '', area: '', outOfCalendar: false,
           });
@@ -1180,7 +1207,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           });
         }
       } else {
-        if (slots.length > 0) {
+        if (slots.length > 0 && !allSlotsFilled) {
           fillFormFromSlot(dateISO, '', '', '');
         } else {
           fillFormFromEmptyDay(dateISO);
@@ -1241,8 +1268,18 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
 
   // Build variation options from active type
   const variations = activeType?.variations || [];
+  // Match variation by ID first, then fallback to title matching
+  let matchedVarId = opts.variationId || '';
+  if (!matchedVarId && opts.title) {
+    const titleLower = opts.title.trim().toLowerCase();
+    const titleMatch = variations.find(v => {
+      const vName = (v.name || '').toLowerCase();
+      return vName === titleLower || vName.includes(titleLower) || titleLower.includes(vName);
+    });
+    if (titleMatch) matchedVarId = titleMatch.id;
+  }
   const variationOpts = variations.map(v => {
-    const sel = v.id === opts.variationId ? 'selected' : '';
+    const sel = v.id === matchedVarId ? 'selected' : '';
     return `<option value="${v.id}" data-sla="${v.slaDays||2}" ${sel}>${v.name}${v.slaDays ? ' · '+v.slaDays+'d' : ''}</option>`;
   }).join('');
 
@@ -1252,18 +1289,29 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
     ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
     : '';
 
-  // Check urgency 24h rule
-  let isUrgentLocked = false;
-  if (opts.dateISO) {
-    const deadline = new Date(opts.dateISO + 'T23:59:59');
-    isUrgentLocked = ((deadline - new Date()) / 3600000) <= 24;
-  }
-
   // SLA display for selected variation
-  const selectedVar = variations.find(v => v.id === opts.variationId);
+  const selectedVar = variations.find(v => v.id === matchedVarId);
   const slaDisplay = selectedVar?.slaDays != null
     ? (selectedVar.slaDays === 0 ? 'Mesmo dia' : `${selectedVar.slaDays} dia${selectedVar.slaDays!==1?'s':''}`)
     : '';
+
+  // Check urgency: 24h rule OR SLA-based rule
+  let isUrgentLocked = false;
+  let urgentReason = '';
+  if (opts.dateISO) {
+    const deadline = new Date(opts.dateISO + 'T23:59:59');
+    const hoursUntil = (deadline - new Date()) / 3600000;
+    if (hoursUntil <= 24) {
+      isUrgentLocked = true;
+      urgentReason = 'Prazo inferior a 24h. Urgência definida automaticamente.';
+    } else if (selectedVar?.slaDays != null) {
+      const bizDays = countBusinessDays(new Date(), new Date(opts.dateISO + 'T23:59:59'));
+      if (bizDays < selectedVar.slaDays) {
+        isUrgentLocked = true;
+        urgentReason = `Prazo (${bizDays} dia${bizDays!==1?'s':''} útil) inferior ao SLA (${selectedVar.slaDays} dia${selectedVar.slaDays!==1?'s':''}). Urgência definida automaticamente.`;
+      }
+    }
+  }
 
   const overlay = document.createElement('div');
   overlay.id = 'fs-form-modal';
@@ -1380,11 +1428,11 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
             transition:all 0.15s;flex-shrink:0;">✓</div>
           <div>
             <div style="font-size:0.8125rem;font-weight:500;color:var(--text-primary);">
-              ${isUrgentLocked ? '🔒 Urgente (prazo < 24h)' : 'Marcar como urgente'}
+              ${isUrgentLocked ? '🔒 Urgente' : 'Marcar como urgente'}
             </div>
             <div style="font-size:0.6875rem;color:var(--text-muted);">
               ${isUrgentLocked
-                ? 'Prazo inferior a 24h. Urgência definida automaticamente.'
+                ? urgentReason
                 : 'Apenas se há prazo real e inegociável.'}
             </div>
           </div>
@@ -1417,7 +1465,7 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
 
   document.body.appendChild(overlay);
 
-  // ── Variation → SLA update ──
+  // ── Variation → SLA update + urgency re-check ──
   overlay.querySelector('#fs-variation')?.addEventListener('change', (e) => {
     const opt = e.target.selectedOptions[0];
     const days = parseInt(opt?.dataset?.sla);
@@ -1427,6 +1475,38 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
       slaEl.innerHTML = `⏱ SLA: <strong>${days === 0 ? 'Mesmo dia' : days + ' dia' + (days !== 1 ? 's' : '')}</strong>`;
     } else if (slaEl) {
       slaEl.style.display = 'none';
+    }
+    // Re-check urgency based on new SLA
+    if (opts.dateISO && opt?.value && !isNaN(days)) {
+      const deadline = new Date(opts.dateISO + 'T23:59:59');
+      const hoursUntil = (deadline - new Date()) / 3600000;
+      const bizDays = countBusinessDays(new Date(), deadline);
+      const shouldLock = hoursUntil <= 24 || bizDays < days;
+      if (shouldLock && !fsUrgent) {
+        fsUrgent = true;
+        isUrgentLocked = true;
+        const reason = hoursUntil <= 24
+          ? 'Prazo inferior a 24h. Urgência definida automaticamente.'
+          : `Prazo (${bizDays} dia${bizDays!==1?'s':''} útil) inferior ao SLA (${days} dia${days!==1?'s':''}). Urgência definida automaticamente.`;
+        urgDot.style.cssText += 'border-color:#EF4444;background:#EF4444;color:#fff;';
+        urgToggle.style.borderColor = '#EF444440';
+        urgToggle.style.background = '#EF444410';
+        urgToggle.style.cursor = 'not-allowed';
+        urgToggle.style.opacity = '0.85';
+        urgToggle.querySelector('div > div:first-child').textContent = '🔒 Urgente';
+        urgToggle.querySelector('div > div:last-child').textContent = reason;
+      } else if (!shouldLock && isUrgentLocked) {
+        // Was auto-locked but new variation has enough SLA — unlock
+        fsUrgent = false;
+        isUrgentLocked = false;
+        urgDot.style.cssText += 'border-color:var(--border-subtle);background:transparent;color:transparent;';
+        urgToggle.style.borderColor = 'var(--border-subtle)';
+        urgToggle.style.background = 'var(--bg-card)';
+        urgToggle.style.cursor = 'pointer';
+        urgToggle.style.opacity = '1';
+        urgToggle.querySelector('div > div:first-child').textContent = 'Marcar como urgente';
+        urgToggle.querySelector('div > div:last-child').textContent = 'Apenas se há prazo real e inegociável.';
+      }
     }
   });
 
@@ -1538,7 +1618,7 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
         document.getElementById('urgency-alert')?.classList.add('visible');
         if (isUrgentLocked) {
           showLockedBanner('locked-urgency-banner', 'urgency-toggle',
-            'Prazo inferior a 24h. Urgência definida automaticamente.');
+            urgentReason || 'Prazo insuficiente. Urgência definida automaticamente.');
         }
       }
 
@@ -1930,6 +2010,43 @@ async function openEditRequestModal(db, taskTypes, data) {
     }
   });
 
+  // Auto-check urgency when date changes in edit modal
+  overlay.querySelector('#fs-edit-date')?.addEventListener('change', (e) => {
+    const newDate = e.target.value;
+    if (!newDate) return;
+    const deadline = new Date(newDate + 'T23:59:59');
+    const hoursUntil = (deadline - new Date()) / 3600000;
+    // Get SLA from the request's variation
+    const varId = reqData.variationId;
+    const varData = editTypeData?.variations?.find(v => v.id === varId);
+    const slaDays = varData?.slaDays;
+    const bizDays = countBusinessDays(new Date(), deadline);
+    let shouldLock = false;
+    let reason = '';
+    if (hoursUntil <= 24) {
+      shouldLock = true;
+      reason = 'Prazo inferior a 24h.';
+    } else if (slaDays != null && bizDays < slaDays) {
+      shouldLock = true;
+      reason = `Prazo (${bizDays}d útil) < SLA (${slaDays}d).`;
+    }
+    if (shouldLock && !editUrgent) {
+      editUrgent = true;
+      urgDot.style.cssText += 'border-color:#EF4444;background:#EF4444;color:#fff;';
+      urgToggle.style.borderColor = '#EF444440';
+      urgToggle.style.background = '#EF444410';
+      // Show inline message
+      let infoEl = overlay.querySelector('#fs-edit-urgency-info');
+      if (!infoEl) {
+        infoEl = document.createElement('div');
+        infoEl.id = 'fs-edit-urgency-info';
+        infoEl.style.cssText = 'font-size:0.6875rem;color:#F59E0B;margin-top:6px;padding:4px 8px;background:#FEF3C720;border-radius:4px;';
+        urgToggle.parentElement.appendChild(infoEl);
+      }
+      infoEl.textContent = `🔒 ${reason} Urgência definida automaticamente.`;
+    }
+  });
+
   // Close
   const closeEdit = () => overlay.remove();
   overlay.querySelector('#fs-edit-close').addEventListener('click', closeEdit);
@@ -2165,16 +2282,43 @@ function fillFormFromEmptyDay(dateISO) {
   document.getElementById('p-desc')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
+function countBusinessDays(startDate, endDate) {
+  let count = 0;
+  const cur = new Date(startDate);
+  cur.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+  while (cur < end) {
+    cur.setDate(cur.getDate() + 1);
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+}
+
 function checkUrgencyByDeadline(dateISO) {
   if (!dateISO) return;
   const deadline = new Date(dateISO + 'T23:59:59');
   const now = new Date();
   const hoursUntil = (deadline - now) / 3600000;
+  // Check SLA from selected variation
+  const varEl = document.getElementById('p-variation');
+  const varOpt = varEl?.selectedOptions?.[0];
+  const slaDays = parseInt(varOpt?.dataset?.sla);
+  const bizDays = countBusinessDays(now, deadline);
+  let shouldLock = false;
+  let reason = '';
   if (hoursUntil <= 24) {
+    shouldLock = true;
+    reason = 'Prazo inferior a 24h. Urgência definida automaticamente.';
+  } else if (!isNaN(slaDays) && bizDays < slaDays) {
+    shouldLock = true;
+    reason = `Prazo (${bizDays} dia${bizDays!==1?'s':''} útil) inferior ao SLA (${slaDays} dia${slaDays!==1?'s':''}). Urgência definida automaticamente.`;
+  }
+  if (shouldLock) {
     lockToggle('urgency-toggle', 'p-urgency', 'urgency-dot', true);
     document.getElementById('urgency-alert')?.classList.add('visible');
-    showLockedBanner('locked-urgency-banner', 'urgency-toggle',
-      'Prazo inferior a 24h. Urgência definida automaticamente.');
+    showLockedBanner('locked-urgency-banner', 'urgency-toggle', reason);
   } else {
     unlockToggle('urgency-toggle', 'p-urgency', false);
     document.getElementById('locked-urgency-banner')?.remove();
@@ -2634,6 +2778,9 @@ function bindFormEvents(db, taskTypes) {
     } else if (slaBadge) {
       slaBadge.classList.remove('visible');
     }
+    // Re-check urgency with new SLA
+    const dateVal = document.getElementById('p-date')?.value;
+    if (dateVal) checkUrgencyByDeadline(dateVal);
   });
 
   // (urgency, out-of-calendar, and date handlers are defined above with lock support)
