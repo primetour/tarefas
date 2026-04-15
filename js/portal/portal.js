@@ -768,6 +768,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
             id: d.id, description: r.description || '', requesterName: r.requesterName || '',
             requestingArea: r.requestingArea || '', typeName: r.typeName || '',
             urgency: r.urgency || false, outOfCalendar: r.outOfCalendar || false,
+            taskId: r.taskId || null,
             dateISO: iso,
           };
         }
@@ -805,6 +806,12 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     if (item.desiredDate) {
       batchMap[item.desiredDate] = (batchMap[item.desiredDate] || 0) + 1;
     }
+  });
+
+  // Set of task IDs that are linked to converted requests (avoid double-rendering)
+  const convertedTaskIds = new Set();
+  Object.values(requestMap).forEach(rq => {
+    if (rq?.status === 'converted' && rq.taskId) convertedTaskIds.add(rq.taskId);
   });
 
   // Check if a slot is filled — returns { filled, title, source, data }
@@ -864,16 +871,16 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           margin-bottom:${portalCalExpanded?'2px':'1px'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
           cursor:pointer;"
           title="${filled?'✓ Clique para ver/editar':'Clique para adicionar'}: ${esc(displayTitle)}">${filled?'✓':'◌'} ${displayTitle.slice(0,maxChars)}${displayTitle.length>maxChars?'…':''}</div>`;}).join('')}
-        ${(()=>{if(hasSlots)return'';return tasks.map((t,ti)=>{const maxChars=portalCalExpanded?40:12;return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
+        ${(()=>{if(hasSlots)return'';return tasks.map((t,ti)=>{if(convertedTaskIds.has(t.id))return'';const maxChars=portalCalExpanded?40:12;return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
           style="font-size:${slotFont};color:var(--brand-gold);cursor:pointer;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};
           border-radius:2px;transition:background 0.1s;"
           title="${t.title}${t.sector?' · 🏢 '+t.sector:''}${t.typeName?' · 📋 '+t.typeName:''}${t.requestingArea?' · 📍 '+t.requestingArea:''}">● ${t.title.slice(0,maxChars)}${t.title.length>maxChars?'…':''}${portalCalExpanded&&t.sector?` <span style="font-size:0.5rem;opacity:0.7;">🏢</span>`:''}</div>`;}).join('');})()}
-        ${(()=>{if(hasSlots)return'';const rq=requestMap[dateISO];if(!rq)return'';return`<div class="pcal-req-click" data-req-date="${dateISO}"
-          style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};cursor:pointer;
-          padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
-          title="${rq.icon} ${rq.label}">${rq.icon} ${portalCalExpanded?rq.label:rq.label.split(' ')[0]}</div>`;})()}
+        ${(()=>{if(hasSlots)return'';const rq=requestMap[dateISO];if(!rq)return'';const maxChars=portalCalExpanded?40:12;const isConverted=rq.status==='converted';const displayTitle=rq.title||rq.typeName||rq.label;return`<div class="pcal-req-click" data-req-date="${dateISO}"
+          style="font-size:${slotFont};cursor:pointer;
+          ${isConverted?`background:rgba(34,197,94,0.1);color:var(--color-success);border-radius:2px;padding:${portalCalExpanded?'1px 3px':'0 2px'};`:`padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};font-weight:600;`}
+          margin-bottom:${portalCalExpanded?'2px':'1px'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          title="${rq.icon} ${rq.label}: ${esc(displayTitle)}">${isConverted?'✓':rq.icon} ${isConverted?displayTitle.slice(0,maxChars)+(displayTitle.length>maxChars?'…':''):(portalCalExpanded?rq.label:rq.label.split(' ')[0])}</div>`;})()}
         ${(()=>{if(hasSlots)return'';const bc=batchMap[dateISO];if(!bc)return'';return`<div
           style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
           padding:1px 3px;border-radius:3px;margin-top:1px;background:rgba(167,139,250,0.15);color:#A78BFA;
@@ -917,17 +924,17 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
           title="${filled?'✓ Clique para ver/editar':'Clique para adicionar'}: ${esc(displayTitle)}">
           ${filled?'✓':'◌'} ${displayTitle.slice(0,wkMaxChars)}${displayTitle.length>wkMaxChars?'…':''}</div>`;}).join('')+
-          (!wkHasSlots?dayTasks.map((t,ti)=>`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
+          (!wkHasSlots?dayTasks.map((t,ti)=>{if(convertedTaskIds.has(t.id))return'';return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
           style="font-size:${wkSlotFont};background:rgba(212,168,67,0.12);cursor:pointer;
           color:var(--brand-gold);border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
           title="${t.title}${t.sector?' · 🏢 '+t.sector:''}${t.typeName?' · 📋 '+t.typeName:''}">
-          ● ${t.title.slice(0,wkMaxChars)}${t.title.length>wkMaxChars?'…':''}${portalCalExpanded&&t.sector?` <span style="font-size:0.5rem;opacity:0.7;">🏢</span>`:''}</div>`).join(''):'')+
-          ((!wkHasSlots&&requestMap[dateISO])?(()=>{const rq=requestMap[dateISO];return`<div class="pcal-req-click" data-req-date="${dateISO}"
-          style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};cursor:pointer;
-          padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
-          title="${rq.icon} ${rq.label}">${rq.icon} ${rq.label}</div>`;})():'')+
+          ● ${t.title.slice(0,wkMaxChars)}${t.title.length>wkMaxChars?'…':''}${portalCalExpanded&&t.sector?` <span style="font-size:0.5rem;opacity:0.7;">🏢</span>`:''}</div>`;}).join(''):'')+
+          ((!wkHasSlots&&requestMap[dateISO])?(()=>{const rq=requestMap[dateISO];const isConverted=rq.status==='converted';const displayTitle=rq.title||rq.typeName||rq.label;return`<div class="pcal-req-click" data-req-date="${dateISO}"
+          style="font-size:${wkSlotFont};cursor:pointer;
+          ${isConverted?`border:1px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.1);color:var(--color-success);border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};`:`padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};font-weight:600;`}
+          margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          title="${rq.icon} ${rq.label}: ${esc(displayTitle)}">${isConverted?'✓':rq.icon} ${isConverted?displayTitle.slice(0,wkMaxChars)+(displayTitle.length>wkMaxChars?'…':''):rq.label}</div>`;})():'')+
           ((!wkHasSlots&&batchMap[dateISO])?(()=>{const bc=batchMap[dateISO];return`<div
           style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
           padding:1px 3px;border-radius:3px;margin-top:1px;background:rgba(167,139,250,0.15);color:#A78BFA;
@@ -966,10 +973,10 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           </div>`;}).join('')}
         </div>
       `:''}
-      ${!slots.length&&dTasks.length?`
+      ${!slots.length&&dTasks.filter(t=>!convertedTaskIds.has(t.id)).length?`
         <div>
           <div style="font-size:0.75rem;font-weight:600;color:var(--text-primary);margin-bottom:6px;">● Tarefas agendadas</div>
-          ${dTasks.map((t,ti)=>`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
+          ${dTasks.map((t,ti)=>{if(convertedTaskIds.has(t.id))return'';return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
             style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:pointer;
             background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.2);transition:background 0.15s;">
             <div style="font-size:0.8125rem;color:var(--text-primary);">${t.title}</div>
@@ -980,16 +987,17 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
               <span>📅 ${t.dateISO.split('-').reverse().join('/')}</span>
             </div>
             <div style="font-size:0.5625rem;color:var(--text-muted);margin-top:2px;">Clique para ver detalhes</div>
-          </div>`).join('')}
+          </div>`;}).join('')}
         </div>
       `:''}
-      ${(()=>{if(slots.length)return'';const rq=requestMap[dateISO];if(!rq)return'';return`
+      ${(()=>{if(slots.length)return'';const rq=requestMap[dateISO];if(!rq)return'';const isConverted=rq.status==='converted';return`
         <div class="pcal-req-click" data-req-date="${dateISO}"
-          style="margin-top:10px;padding:8px 10px;border-radius:4px;cursor:pointer;
-          background:${rq.color}12;border:1px solid ${rq.color}30;transition:background 0.15s;">
-          <div style="font-size:0.8125rem;font-weight:600;color:${rq.color};">${rq.icon} Sua solicitação: ${rq.label}</div>
-          ${rq.title?`<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${esc(rq.title)}</div>`:''}
-          <div style="font-size:0.5625rem;color:var(--text-muted);margin-top:2px;">Clique para ver detalhes</div>
+          style="margin-top:10px;padding:8px 10px;border-radius:4px;cursor:pointer;transition:background 0.15s;
+          ${isConverted?`background:rgba(34,197,94,0.08);border:1.5px solid rgba(34,197,94,0.4);`:`background:${rq.color}12;border:1px solid ${rq.color}30;`}">
+          <div style="font-size:0.8125rem;font-weight:600;color:${isConverted?'var(--color-success)':rq.color};">${isConverted?'✓':rq.icon} ${isConverted?esc(rq.title||rq.typeName||'Convertida'):'Sua solicitação: '+rq.label}</div>
+          ${!isConverted&&rq.title?`<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${esc(rq.title)}</div>`:''}
+          ${isConverted?`<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">${rq.label}</div>`:''}
+          <div style="font-size:0.5625rem;color:${isConverted?'var(--color-success)':'var(--text-muted)'};margin-top:2px;">Clique para ver/editar</div>
         </div>`;})()}
       ${(()=>{if(slots.length)return'';const bc=batchMap[dateISO];if(!bc)return'';return`
         <div style="margin-top:10px;padding:8px 10px;border-radius:4px;
