@@ -24,7 +24,7 @@ const NAV_GROUPS = [
   {
     label: 'Gestão',
     items: [
-      { route: 'workspaces', icon: '◈',  label: 'Squads / Workspaces',   perm: 'workspace_create', altPerm: 'system_view_all' },
+      { route: 'workspaces', icon: '◈',  label: 'Squads',   perm: 'workspace_create', altPerm: 'system_view_all' },
       { route: 'requests',       icon: '◌',  label: 'Solicitações', perm: 'task_create', badge: true },
       { route: 'notifications', icon: '⊘',  label: 'Notificações', perm: 'dashboard_view', badge: true },
       { route: 'team',       icon: '◎',  label: 'Equipe',       perm: 'task_view_all' },

@@ -277,6 +277,13 @@ export async function createTask(data) {
     periodoRef:           data.periodoRef            || '',
     linkComprovacao:      data.linkComprovacao       || '',
     confirmadaEvidencia:  data.confirmadaEvidencia   || false,
+    // Rastreabilidade de origem (quando a task nasce de uma request)
+    sourceRequestId:      data.sourceRequestId       || null,
+    // Flag de edição pelo solicitante — se a request foi editada antes da triagem,
+    // a task já nasce com o banner para que produção veja a alteração
+    requesterEditFlag:    data.requesterEditFlag    || false,
+    requesterEditAt:      data.requesterEditAt      || null,
+    requesterEditChanges: data.requesterEditChanges  || '',
     createdAt:   serverTimestamp(),
     createdBy:   user.uid,
     updatedAt:   serverTimestamp(),

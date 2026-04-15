@@ -507,6 +507,23 @@ async function openRequestDetail(req) {
           const wsId = document.getElementById('req-workspace')?.value || null;
           const note = document.getElementById('req-internal-note')?.value || '';
           close();
+
+          // If the requester edited this request before we triaged it,
+          // stamp the edit flag onto the task at creation so the production
+          // team sees the banner from day 1.
+          const FIELD_LABELS = {
+            title: 'Título', description: 'Descrição', desiredDate: 'Data',
+            urgency: 'Urgência', outOfCalendar: 'Fora do calendário',
+            variationId: 'Variação', variationName: 'Variação',
+            nucleo: 'Núcleo', sector: 'Setor', requestingArea: 'Área solicitante',
+          };
+          const history = Array.isArray(req.editHistory) ? req.editHistory : [];
+          const hasEdits = history.length > 0;
+          const lastEdit = hasEdits ? history[history.length - 1] : null;
+          const editedFields = lastEdit?.changes
+            ? Object.keys(lastEdit.changes).map(f => FIELD_LABELS[f] || f).join(', ')
+            : '';
+
           openTaskModal({
             typeId: req.typeId || null,
             onSave: async (taskId) => {
@@ -515,6 +532,8 @@ async function openRequestDetail(req) {
                 workspaceId:  wsId,
                 internalNote: note,
               }).catch(() => {});
+              // Flag is persisted on the task by openTaskModal via taskData below;
+              // nothing else to do here.
               toast.success('Solicitação convertida em tarefa!');
             },
             taskData: {
@@ -542,6 +561,13 @@ async function openRequestDetail(req) {
               assignees:      [],
               subtasks:       [],
               comments:       [],
+              sourceRequestId: req.id,
+              // Stamp the edit banner if the requester edited before we triaged
+              ...(hasEdits ? {
+                requesterEditFlag:    true,
+                requesterEditAt:      lastEdit.editedAt?.toDate ? lastEdit.editedAt.toDate() : new Date(lastEdit.editedAt || Date.now()),
+                requesterEditChanges: editedFields,
+              } : {}),
             },
           });
         },

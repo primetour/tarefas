@@ -28,7 +28,7 @@ export async function renderWorkspaces(container) {
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">Squads / Workspaces</h1>
+        <h1 class="page-title">Squads</h1>
         <p class="page-subtitle">Times de trabalho temporários ou permanentes — agrupam pessoas, projetos e tarefas de uma iniciativa</p>
       </div>
       <div class="page-header-actions">
@@ -87,7 +87,7 @@ async function loadWorkspaces() {
     allWorkspaces = allWorkspaces.filter(w => !w.archived);
     renderGrid();
   } catch(e) {
-    toast.error('Erro ao carregar workspaces: ' + e.message);
+    toast.error('Erro ao carregar squads: ' + e.message);
   }
 }
 
@@ -150,10 +150,13 @@ function renderGrid() {
             </div>
           </div>
           <div style="display:flex;gap:4px;">
-            <button class="btn btn-ghost btn-icon btn-sm ws-open-btn" data-id="${ws.id}" title="Abrir workspace do squad">↗</button>
+            <button class="btn btn-ghost btn-icon btn-sm ws-open-btn" data-id="${ws.id}" title="Abrir squad">↗</button>
             ${isAdmin || store.can('system_view_all') ? `
               <button class="btn btn-ghost btn-icon btn-sm ws-edit-btn" data-id="${ws.id}" title="Editar">✎</button>
               <button class="btn btn-ghost btn-icon btn-sm ws-members-btn" data-id="${ws.id}" title="Membros">◉</button>
+              ${store.can('workspace_delete') || store.can('system_view_all') ? `
+                <button class="btn btn-ghost btn-icon btn-sm ws-archive-card-btn" data-id="${ws.id}" title="Arquivar">📥</button>
+              ` : ''}
             ` : ''}
           </div>
         </div>
@@ -202,6 +205,28 @@ function renderGrid() {
   grid.querySelectorAll('.ws-invite-btn').forEach(btn =>
     btn.addEventListener('click', () => openInviteModal(btn.dataset.id))
   );
+  grid.querySelectorAll('.ws-archive-card-btn').forEach(btn =>
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleArchiveWorkspace(allWorkspaces.find(w => w.id === btn.dataset.id));
+    })
+  );
+}
+
+async function handleArchiveWorkspace(ws) {
+  if (!ws) return;
+  const ok = await modal.confirm({
+    title:       'Arquivar squad',
+    message:     `Arquivar o squad "<strong>${esc(ws.name)}</strong>"?<br>As tarefas vinculadas continuarão acessíveis. Você poderá restaurá-lo depois.`,
+    confirmText: 'Arquivar', danger: false, icon: '📥',
+  });
+  if (!ok) return;
+  try {
+    await archiveWorkspace(ws.id);
+    toast.success(`Squad "${ws.name}" arquivado.`);
+    await loadWorkspaces();
+    await loadArchivedWorkspaces();
+  } catch(e) { toast.error(e.message); }
 }
 
 /* ─── Seção Arquivados ──────────────────────────────────── */
@@ -251,14 +276,12 @@ async function loadArchivedWorkspaces() {
           </div>
           <div class="card-body" style="padding-top:0;">
             ${ws.description ? `<p style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">${esc(ws.description)}</p>` : ''}
-            <div style="display:flex;gap:8px;justify-content:flex-end;">
-              <button class="btn btn-secondary btn-sm ws-restore-btn" data-id="${ws.id}">
-                Restaurar
-              </button>
-              <button class="btn btn-ghost btn-sm ws-delete-btn" data-id="${ws.id}"
-                style="color:var(--color-danger);font-size:0.8125rem;" title="Excluir permanentemente">
-                Excluir
-              </button>
+            <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;">
+              <button class="btn btn-secondary btn-sm ws-restore-btn" data-id="${ws.id}">Restaurar</button>
+              ${store.can('workspace_delete') || store.can('system_view_all') ? `
+                <button class="btn btn-ghost btn-icon btn-sm ws-delete-btn" data-id="${ws.id}"
+                  title="Excluir permanentemente" style="color:var(--color-danger);">🗑</button>
+              ` : ''}
             </div>
           </div>
         </div>`;
@@ -269,14 +292,14 @@ async function loadArchivedWorkspaces() {
         const wsId = btn.dataset.id;
         const ws = archived.find(w => w.id === wsId);
         const ok = await modal.confirm({
-          title: 'Restaurar workspace',
+          title: 'Restaurar squad',
           message: `Restaurar <strong>${esc(ws?.name||'')}</strong>? Ele voltará a aparecer para todos os membros.`,
           confirmText: 'Restaurar', icon: '↩',
         });
         if (ok) {
           try {
             await unarchiveWorkspace(wsId);
-            toast.success('Workspace restaurado!');
+            toast.success('Squad restaurado!');
             await loadWorkspaces();
             await loadArchivedWorkspaces();
           } catch(e) { toast.error(e.message); }
@@ -312,7 +335,7 @@ async function loadArchivedWorkspaces() {
         if (ok) {
           try {
             await deleteWorkspace(wsId, { force: true });
-            toast.success('Workspace excluído permanentemente.');
+            toast.success('Squad excluído permanentemente.');
             await loadWorkspaces();
             await loadArchivedWorkspaces();
           } catch(e) { toast.error(e.message); }
@@ -328,7 +351,7 @@ async function loadArchivedWorkspaces() {
 function openWorkspaceModal(ws = null) {
   const isEdit = !!ws;
 
-  const wsModal = modal.open({
+  modal.open({
     title:   isEdit ? `Editar squad — ${ws.name}` : 'Novo Squad',
     size:    'md',
     content: `
@@ -363,7 +386,7 @@ function openWorkspaceModal(ws = null) {
               style="margin-top:2px;accent-color:var(--brand-gold);" />
             <div>
               <div style="font-size:0.875rem;font-weight:500;color:var(--text-secondary);">
-                Workspace multissetor
+                Squad multissetor
                 <span title="Permite convidar usuários de setores diferentes do seu." 
                   style="cursor:help;color:var(--text-muted);font-size:0.75rem;">ℹ</span>
               </div>
@@ -403,13 +426,6 @@ function openWorkspaceModal(ws = null) {
             <input type="hidden" id="ws-color" value="${esc(ws?.color||WORKSPACE_COLORS[0])}" />
           </div>
         </div>
-        ${isEdit && (store.can('system_view_all') || ws?.adminIds?.includes(store.get('currentUser')?.uid)) ? `
-          <div style="padding-top:12px;border-top:1px solid var(--border-subtle);">
-            <button class="btn btn-secondary btn-sm ws-archive-btn" style="color:var(--color-danger);border-color:rgba(239,68,68,0.3);">
-              Arquivar workspace
-            </button>
-          </div>
-        ` : ''}
       </div>
     `,
     footer: [
@@ -437,12 +453,12 @@ function openWorkspaceModal(ws = null) {
           try {
             if (isEdit) {
               await updateWorkspace(ws.id, data);
-              toast.success('Workspace atualizado!');
+              toast.success('Squad atualizado!');
               close();
               await loadWorkspaces();
             } else {
               const newWs = await createWorkspace(data);
-              toast.success(`Workspace "${data.name}" criado! Adicione membros.`);
+              toast.success(`Squad "${data.name}" criado! Adicione membros.`);
               close();
               await loadWorkspaces();
               // Abre modal de convite automaticamente após criar
@@ -479,22 +495,6 @@ function openWorkspaceModal(ws = null) {
         btn.style.borderColor = 'white';
         btn.style.boxShadow   = `0 0 0 2px ${btn.dataset.color}`;
       });
-    });
-    document.querySelector('.ws-archive-btn')?.addEventListener('click', async () => {
-      const ok = await modal.confirm({
-        title:'Arquivar workspace',
-        message:`Arquivar <strong>${esc(ws.name)}</strong>? As tarefas não serão excluídas.`,
-        confirmText:'Arquivar', danger:true, icon:'⚠',
-      });
-      if (ok) {
-        try {
-          await archiveWorkspace(ws.id);
-          wsModal.close();
-          toast.success('Workspace arquivado.');
-          await loadWorkspaces();
-          await loadArchivedWorkspaces();
-        } catch(e) { toast.error(e.message); }
-      }
     });
   }, 50);
 }
@@ -543,7 +543,7 @@ async function openMembersModal(ws) {
                         ${isAdmin ? '↓' : '↑'}
                       </button>
                       <button class="btn btn-ghost btn-icon btn-sm remove-member-btn"
-                        data-uid="${mid}" title="Remover do workspace" style="color:var(--color-danger);">✕</button>
+                        data-uid="${mid}" title="Remover do squad" style="color:var(--color-danger);">✕</button>
                     ` : ''}
                   </div>
                 </div>
@@ -571,7 +571,7 @@ async function openMembersModal(ws) {
         const u = allUsers.find(u => u.id === btn.dataset.uid);
         const ok = await modal.confirm({
           title:'Remover membro',
-          message:`Remover <strong>${esc(u?.name||btn.dataset.uid)}</strong> deste workspace?`,
+          message:`Remover <strong>${esc(u?.name||btn.dataset.uid)}</strong> deste squad?`,
           confirmText:'Remover', danger:true, icon:'✕',
         });
         if (ok) {
@@ -630,7 +630,7 @@ async function openInviteModal(wsId) {
     content: `
       <div style="margin-bottom:16px;">
         <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:12px;line-height:1.5;">
-          Selecione um usuário já cadastrado no sistema para adicionar ao workspace.
+          Selecione um usuário já cadastrado no sistema para adicionar ao squad.
         </p>
         ${nonMembers.length ? `
           <div style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;">
@@ -670,7 +670,7 @@ async function openInviteModal(wsId) {
         const u   = allUsers.find(u => u.id === uid);
         try {
           await addMember(wsId, uid);
-          toast.success(`${u?.name} adicionado ao workspace!`);
+          toast.success(`${u?.name} adicionado ao squad!`);
           document.querySelector('.modal-overlay')?.click();
           await loadWorkspaces();
         } catch(e) { toast.error(e.message); }

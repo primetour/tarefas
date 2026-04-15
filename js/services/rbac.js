@@ -23,12 +23,12 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
-    group: 'Workspaces',
+    group: 'Squads',
     permissions: [
-      { key: 'workspace_create',     label: 'Criar workspaces',                    info: 'Permite criar novos workspaces. Quem cria vira automaticamente admin do workspace.' },
-      { key: 'workspace_edit',       label: 'Editar workspaces que administra',    info: 'Editar nome, descrição, cor e ícone de workspaces onde é admin.' },
-      { key: 'workspace_delete',     label: 'Excluir workspaces que administra',   info: 'Excluir workspaces onde é admin. Atenção: exclui todas as tarefas vinculadas.' },
-      { key: 'workspace_invite',     label: 'Convidar membros para workspaces',    info: 'Enviar convites por e-mail para outros usuários entrarem em workspaces que administra.' },
+      { key: 'workspace_create',     label: 'Criar squads',                    info: 'Permite criar novos squads. Quem cria vira automaticamente admin do squad.' },
+      { key: 'workspace_edit',       label: 'Editar squads que administra',    info: 'Editar nome, descrição, cor e ícone de squads onde é admin.' },
+      { key: 'workspace_delete',     label: 'Excluir squads que administra',   info: 'Excluir squads onde é admin. Atenção: exclui todas as tarefas vinculadas.' },
+      { key: 'workspace_invite',     label: 'Convidar membros para squads',    info: 'Enviar convites por e-mail para outros usuários entrarem em squads que administra.' },
     ],
   },
   {

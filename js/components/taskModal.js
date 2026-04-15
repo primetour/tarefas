@@ -1274,6 +1274,11 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     tags: Array.from(document.querySelectorAll('.tag-chip[data-tag]')).map(el => el.dataset.tag),
     startDate: startVal ? new Date(startVal+'T00:00:00') : null,
     dueDate:   dueVal   ? new Date(dueVal  +'T23:59:59') : null,
+    // Preserve origin/flags from taskData prefill (conversion from request, etc.)
+    sourceRequestId:      task.sourceRequestId      || null,
+    requesterEditFlag:    task.requesterEditFlag    || false,
+    requesterEditAt:      task.requesterEditAt      || null,
+    requesterEditChanges: task.requesterEditChanges || '',
   };
   // Collect nucleos from legacy chips
   data.nucleos = Array.from(document.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);

@@ -2148,8 +2148,28 @@ async function openEditRequestModal(db, taskTypes, data) {
 
       await updateDoc(doc(db, 'requests', data.id), updateData);
 
-      // If request has a linked task, update it too
-      const taskId = reqData.taskId;
+      // If request has a linked task, update it too.
+      // Re-fetch to handle race with autoCreateTask (which writes taskId AFTER addDoc).
+      let taskId = reqData.taskId || null;
+      if (!taskId) {
+        try {
+          const freshSnap = await getDoc(doc(db, 'requests', data.id));
+          if (freshSnap.exists()) taskId = freshSnap.data().taskId || null;
+        } catch {}
+      }
+      // Last-resort: auto-converted requests always link via sourceRequestId.
+      if (!taskId) {
+        try {
+          const { query, where, getDocs, limit: qLimit } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+          const qSnap = await getDocs(query(
+            collection(db, 'tasks'),
+            where('sourceRequestId', '==', data.id),
+            qLimit(1),
+          ));
+          if (!qSnap.empty) taskId = qSnap.docs[0].id;
+        } catch {}
+      }
+      console.log('[PortalEdit] requesterEdit flag → taskId resolved:', taskId, '| request:', data.id);
       if (taskId) {
         const taskUpdate = { updatedAt: serverTimestamp() };
         if (changes.title) taskUpdate.title = newTitle;
