@@ -632,6 +632,9 @@ function showNewsletterPrompt(db, taskTypes) {
 }
 
 async function prefillNewsletter(db, taskTypes) {
+  // Clear any validation errors from previous submission
+  document.querySelectorAll('.has-error').forEach(el => el.classList.remove('has-error'));
+
   // Set setor = Marketing
   const setorEl = document.getElementById('p-setor');
   if (setorEl) {
@@ -639,17 +642,20 @@ async function prefillNewsletter(db, taskTypes) {
     setorEl.dispatchEvent(new Event('change'));
   }
 
-  // Wait for cascade to populate types
-  await new Promise(r => setTimeout(r, 400));
-
-  // Set type = newsletter
+  // Wait for cascade to populate types — poll until type options are ready (max 3s)
+  const nlType = taskTypes.find(t => t.id === 'newsletter' || t.name?.toLowerCase() === 'newsletter');
   const typeEl = document.getElementById('p-type');
-  if (typeEl) {
-    const nlType = taskTypes.find(t => t.id === 'newsletter' || t.name?.toLowerCase() === 'newsletter');
-    if (nlType) {
-      typeEl.value = nlType.id;
-      typeEl.dispatchEvent(new Event('change'));
+  if (typeEl && nlType) {
+    let attempts = 0;
+    while (attempts < 30) {
+      await new Promise(r => setTimeout(r, 100));
+      // Check if the newsletter option exists in the dropdown
+      const hasOpt = Array.from(typeEl.options).some(o => o.value === nlType.id);
+      if (hasOpt) break;
+      attempts++;
     }
+    typeEl.value = nlType.id;
+    typeEl.dispatchEvent(new Event('change'));
   }
 
   // Wait for calendar to render
@@ -801,21 +807,22 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     }
   });
 
-  // Check if a slot is filled — returns { filled, title } with the display title
+  // Check if a slot is filled — returns { filled, title, source, data }
+  // Priority: request first (editable by user), then batch, then task
   const getSlotFillInfo = (slotTitle, dateISO, dayTasks) => {
     const lower = slotTitle.toLowerCase();
-    // Check tasks on this day
-    const matchedTask = dayTasks?.find(t => t.title?.toLowerCase().includes(lower) || lower.includes(t.title?.toLowerCase()));
-    if (matchedTask) return { filled: true, title: matchedTask.title || slotTitle, source: 'task', data: matchedTask };
-    // Check requests
+    // Check requests first (user's own, editable)
     const rq = requestMap[dateISO];
     if (rq) return { filled: true, title: rq.title || rq.typeName || slotTitle, source: 'request', data: rq };
-    // Check batch items
+    // Check batch items (current session, removable)
     const bc = batchMap[dateISO];
     if (bc) {
       const batchItem = batchQueue.find(item => item.desiredDate === dateISO);
       return { filled: true, title: batchItem?.title || slotTitle, source: 'batch', data: batchItem };
     }
+    // Check tasks on this day (read-only view)
+    const matchedTask = dayTasks?.find(t => t.title?.toLowerCase().includes(lower) || lower.includes(t.title?.toLowerCase()));
+    if (matchedTask) return { filled: true, title: matchedTask.title || slotTitle, source: 'task', data: matchedTask };
     return { filled: false, title: slotTitle, source: null, data: null };
   };
   // Backward-compat wrapper
@@ -2864,6 +2871,8 @@ function bindFormEvents(db, taskTypes) {
     // Reset submit button state
     const submitBtn = document.getElementById('portal-submit-btn');
     if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('loading'); submitBtn.textContent = 'Enviar apenas esta solicitação →'; }
+    // Clear validation errors
+    document.querySelectorAll('.has-error').forEach(el => el.classList.remove('has-error'));
     // Reset form — preserve readonly fields (name, email, user-area)
     const preserve = new Set(['p-name', 'p-email', 'p-user-area']);
     document.querySelectorAll('.form-input,.form-select,.form-textarea').forEach(el => {
