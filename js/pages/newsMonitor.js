@@ -5,7 +5,7 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { openTaskModal } from '../components/taskModal.js';
 import {
-  fetchNews, saveNewsItem, deleteNewsItem,
+  fetchNews, saveNewsItem, deleteNewsItem, recordNewsConversion,
   NEWS_CATEGORIES, NEWS_SUBCATEGORIES,
   fetchClippings, saveClipping, deleteClipping, fetchUrlMetadata,
   CLIPPING_MEDIA_TYPES, CLIPPING_CONTENT_TYPES, CLIPPING_SENTIMENTS,
@@ -207,17 +207,86 @@ function renderKpis() {
     return (now - d) < 7*24*3600*1000;
   }).length;
 
-  el.innerHTML = [
-    ['Total',       total,   'var(--text-primary)'],
-    ['Vigentes',    valid,   '#22C55E'],
-    ['Expiradas',   expired, '#EF4444'],
-    ['Últimos 7d',  week,    'var(--brand-gold)'],
-  ].map(([label, val, color]) => `
+  // ─── Métricas de utilização (notícia → tarefa) ─────────────────
+  const withConv = allItems.filter(i => Array.isArray(i.conversions) && i.conversions.length > 0);
+  const convCount = withConv.length;
+  const convRate  = total > 0 ? Math.round((convCount / total) * 100) : 0;
+
+  // Top usuários (pelo total de conversões, não de notícias únicas)
+  const userCount = {};
+  allItems.forEach(item => {
+    (item.conversions || []).forEach(c => {
+      const key = c.userId || c.userName || 'Desconhecido';
+      const label = c.userName || c.userId || 'Desconhecido';
+      if (!userCount[key]) userCount[key] = { label, n: 0 };
+      userCount[key].n += 1;
+    });
+  });
+  const topUsers = Object.values(userCount).sort((a,b) => b.n - a.n).slice(0, 3);
+
+  // Categorias mais publicadas
+  const catCount = {};
+  allItems.forEach(i => {
+    const c = i.category || '—';
+    catCount[c] = (catCount[c] || 0) + 1;
+  });
+  const topCats = Object.entries(catCount).sort((a,b) => b[1] - a[1]).slice(0, 3);
+
+  const simpleCard = (label, val, color) => `
     <div style="padding:12px 18px;background:var(--bg-surface);border:1px solid var(--border-subtle);
       border-radius:var(--radius-md);min-width:110px;text-align:center;">
       <div style="font-size:1.5rem;font-weight:700;color:${color};">${val}</div>
       <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${label}</div>
-    </div>`).join('');
+    </div>`;
+
+  const listCard = (label, rows, emptyMsg) => `
+    <div style="padding:12px 16px;background:var(--bg-surface);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-md);min-width:200px;flex:1;">
+      <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+        color:var(--text-muted);margin-bottom:8px;">${label}</div>
+      ${rows.length
+        ? `<div style="display:flex;flex-direction:column;gap:4px;">
+            ${rows.map(([name, n]) => `
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;
+                font-size:0.8125rem;">
+                <span style="color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;
+                  white-space:nowrap;">${esc(name)}</span>
+                <span style="font-weight:700;color:var(--brand-gold);flex-shrink:0;">${n}</span>
+              </div>`).join('')}
+          </div>`
+        : `<div style="font-size:0.8125rem;color:var(--text-muted);font-style:italic;">${emptyMsg}</div>`}
+    </div>`;
+
+  // Garante que o container empilhe as duas faixas verticalmente
+  el.style.flexDirection = 'column';
+
+  el.innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      ${simpleCard('Total',       total,   'var(--text-primary)')}
+      ${simpleCard('Vigentes',    valid,   '#22C55E')}
+      ${simpleCard('Expiradas',   expired, '#EF4444')}
+      ${simpleCard('Últimos 7d',  week,    'var(--brand-gold)')}
+      <div style="padding:12px 18px;background:var(--bg-surface);border:1px solid var(--border-subtle);
+        border-radius:var(--radius-md);min-width:140px;text-align:center;"
+        title="Percentual de notícias que foram convertidas em tarefa ao menos uma vez">
+        <div style="font-size:1.5rem;font-weight:700;color:#38BDF8;">${convRate}%</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+          Utilização <span style="opacity:.7;">(${convCount}/${total})</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      ${listCard(
+        'Quem mais usa notícias',
+        topUsers.map(u => [u.label, u.n]),
+        'Nenhuma conversão ainda',
+      )}
+      ${listCard(
+        'Categorias mais publicadas',
+        topCats,
+        'Nenhuma categoria',
+      )}
+    </div>`;
 }
 
 function applyClientFilters(items) {
@@ -282,6 +351,23 @@ function renderList() {
               </span>`
             : `<span style="font-size:0.6875rem;color:var(--text-muted);">Sem validade</span>`;
 
+          const convs = Array.isArray(item.conversions) ? item.conversions : [];
+          const convNames = Array.from(new Set(convs.map(c => c.userName || c.userId || 'Desconhecido').filter(Boolean)));
+          const convBadge = convs.length
+            ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <span style="font-size:0.6875rem;padding:2px 8px;border-radius:20px;
+                  background:#38BDF818;color:#38BDF8;border:1px solid #38BDF830;
+                  display:inline-flex;align-items:center;gap:4px;"
+                  title="Esta notícia já foi convertida em tarefa">
+                  ✈ Convertida em tarefa${convs.length>1?` (${convs.length})`:''}
+                </span>
+                <span style="font-size:0.6875rem;color:var(--text-muted);"
+                  title="${esc(convNames.join(', '))}">
+                  por ${convNames.slice(0,2).map(esc).join(', ')}${convNames.length>2?` +${convNames.length-2}`:''}
+                </span>
+              </div>`
+            : '';
+
           return `<tr class="news-row" data-id="${esc(item.id)}"
             style="border-bottom:1px solid var(--border-subtle);transition:background .15s;
             cursor:pointer;"
@@ -298,6 +384,7 @@ function renderList() {
                 style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;
                 display:inline-flex;align-items:center;gap:4px;margin-top:4px;"
                 onclick="event.stopPropagation()">🔗 Ver fonte ↗</a>` : ''}
+              ${convBadge}
             </td>
             <td style="padding:12px 14px;white-space:nowrap;">
               <span style="padding:3px 10px;background:var(--brand-gold)12;
@@ -360,6 +447,7 @@ function renderList() {
       e.stopPropagation();
       const item = allItems.find(i => i.id === btn.dataset.id);
       if (!item) return;
+      const user = store.get('currentUser');
       // Open task modal pre-filled with news content
       openTaskModal({
         taskData: {
@@ -369,8 +457,33 @@ function renderList() {
             item.link ? `\n🔗 Fonte: ${item.link}` : '',
             `\n📰 Categoria: ${item.category || ''} · ${item.subcategory || ''}`,
           ].filter(Boolean).join(''),
+          sourceNewsId: item.id,
         },
-        onSave: () => toast.success('Tarefa criada a partir da notícia!'),
+        onSave: async (taskId) => {
+          if (taskId) {
+            await recordNewsConversion(item.id, {
+              taskId,
+              userId:   user?.uid,
+              userName: user?.name || user?.displayName || user?.email || '',
+            });
+            // Atualiza estado local para refletir o badge imediatamente
+            const localItem = allItems.find(i => i.id === item.id);
+            if (localItem) {
+              localItem.conversions = Array.isArray(localItem.conversions) ? [...localItem.conversions] : [];
+              if (!localItem.conversions.some(c => c.taskId === taskId)) {
+                localItem.conversions.push({
+                  taskId,
+                  userId:   user?.uid || null,
+                  userName: user?.name || user?.displayName || user?.email || '',
+                  at:       new Date(),
+                });
+              }
+              renderKpis();
+              renderList();
+            }
+          }
+          toast.success('Tarefa criada a partir da notícia!');
+        },
       });
     });
   });

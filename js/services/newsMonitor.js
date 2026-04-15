@@ -6,7 +6,7 @@ import { auditLog } from '../auth/audit.js';
 import { store } from '../store.js';
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  query, orderBy, serverTimestamp, where, limit,
+  query, orderBy, serverTimestamp, where, limit, arrayUnion, Timestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const uid = () => store.get('currentUser')?.uid;
@@ -62,6 +62,32 @@ export async function saveNewsItem(id, data) {
 export async function deleteNewsItem(id) {
   await deleteDoc(doc(db, 'news_monitor', id));
   await auditLog('news.delete', 'news_monitor', id, {});
+}
+
+/**
+ * Registra que uma notícia foi convertida em tarefa.
+ * Mantém histórico (array) para permitir múltiplos usuários converterem a mesma notícia.
+ * Idempotente: evita duplicar o mesmo taskId.
+ */
+export async function recordNewsConversion(newsId, { taskId, userId, userName }) {
+  if (!newsId || !taskId) return;
+  try {
+    const ref = doc(db, 'news_monitor', newsId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const existing = Array.isArray(snap.data().conversions) ? snap.data().conversions : [];
+    // Dedup por taskId — se já está registrado, não duplica
+    if (existing.some(c => c.taskId === taskId)) return;
+    const entry = {
+      taskId,
+      userId:   userId || uid() || null,
+      userName: userName || '',
+      at:       Timestamp.now(),
+    };
+    await updateDoc(ref, { conversions: arrayUnion(entry) });
+  } catch (e) {
+    console.warn('[News] recordNewsConversion falhou:', e.message);
+  }
 }
 
 /* ════════════════════════════════════════════════════════════
