@@ -25,6 +25,43 @@
   --font-ui:       'Outfit', system-ui, sans-serif;
 }
 
+/* Light theme */
+[data-theme="light"] {
+  --brand-dark:    #F5F7FA;
+  --bg-card:       #FFFFFF;
+  --bg-surface:    #F0F2F5;
+  --bg-elevated:   #E8EBF0;
+  --border-subtle: rgba(0,0,0,0.1);
+  --text-primary:  #1A202C;
+  --text-secondary:#4A5568;
+  --text-muted:    #718096;
+}
+[data-theme="light"] body {
+  background: #F5F7FA;
+}
+[data-theme="light"] .portal-header {
+  background: rgba(255,255,255,0.85);
+  border-bottom-color: rgba(0,0,0,0.08);
+}
+[data-theme="light"] .portal-submit {
+  color: #fff;
+}
+[data-theme="light"] .portal-submit:hover {
+  color: #fff;
+}
+[data-theme="light"] .batch-count-badge {
+  color: #fff;
+}
+[data-theme="light"] input[type="date"].form-input {
+  color-scheme: light;
+}
+[data-theme="light"] input[type="date"].form-input::-webkit-calendar-picker-indicator {
+  filter: none;
+}
+[data-theme="light"] .form-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%234A5568' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+}
+
 body {
   font-family: var(--font-ui);
   background: var(--brand-dark);
