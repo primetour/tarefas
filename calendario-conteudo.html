@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calendario de Conteudo — PRIMETOUR</title>
+  <meta name="description" content="Calendario de conteudo para redes sociais PRIMETOUR." />
+  <meta name="robots" content="noindex" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- CSP -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src  'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com;
+    style-src   'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src    'self' https://fonts.gstatic.com;
+    img-src     'self' data: blob: https:;
+    connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://www.gstatic.com
+                https://firestore.googleapis.com https://identitytoolkit.googleapis.com
+                https://securetoken.googleapis.com wss://*.firebaseio.com
+                https://login.microsoftonline.com https://login.live.com https://graph.microsoft.com;
+    frame-src   'self' https://*.firebaseapp.com https://login.microsoftonline.com https://login.live.com https://apis.google.com;
+    object-src  'none';
+    base-uri    'self';
+  " />
+
+  <!-- Portal styles -->
+  <link rel="stylesheet" href="css/portal.css" />
+</head>
+<body>
+  <div id="cal-root">
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
+      font-family:'Outfit',sans-serif;background:var(--brand-dark);color:var(--text-secondary);flex-direction:column;gap:16px;">
+      <img src="assets/mandala-branca.png" alt="PRIMETOUR"
+        style="width:36px;height:36px;border-radius:var(--radius-sm);object-fit:contain;" />
+      <div style="font-size:0.9375rem;">Carregando calendario...</div>
+    </div>
+  </div>
+
+  <!-- Apply saved theme before paint -->
+  <script>
+    (function(){var t=localStorage.getItem('portal-theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');})();
+  </script>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import {
+      getFirestore, collection, getDocs, query, onSnapshot,
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import {
+      getAuth, signInWithEmailAndPassword, signInWithPopup, onAuthStateChanged,
+      OAuthProvider,
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+
+    const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    const PT_MONTHS = ['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const PT_DAYS_S = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
+    const STATUS_COLORS = { idea:'#94A3B8', draft:'#38BDF8', review:'#FB923C', approved:'#22C55E', published:'#10B981' };
+    const STATUS_LABELS = { idea:'Ideia', draft:'Rascunho', review:'Revisao', approved:'Aprovado', published:'Publicado' };
+    const TYPE_ICONS = { post:'📸', reel:'🎬', carrossel:'📑', story:'📱', artigo:'📰', newsletter:'✉' };
+    const PLATFORM_LIST = [
+      { value:'instagram', label:'Instagram' }, { value:'facebook', label:'Facebook' },
+      { value:'linkedin', label:'LinkedIn' }, { value:'tiktok', label:'TikTok' },
+      { value:'youtube', label:'YouTube' }, { value:'blog', label:'Blog' },
+      { value:'newsletter', label:'Newsletter' },
+    ];
+    const CATEGORY_LIST = [
+      { value:'destino', label:'Destino' }, { value:'produto', label:'Produto' },
+      { value:'dica_viagem', label:'Dica de Viagem' }, { value:'institucional', label:'Institucional' },
+      { value:'bastidores', label:'Bastidores' }, { value:'engajamento', label:'Engajamento' },
+      { value:'educativo', label:'Educativo' }, { value:'outro', label:'Outro' },
+    ];
+    const ACCOUNTS = [
+      { value:'primetourviagens', label:'@primetourviagens' },
+      { value:'icsbyprimetour', label:'@icsbyprimetour' },
+    ];
+
+    /* ── State ── */
+    let allSlots = [];
+    let calDate = new Date();
+    let activeView = 'month'; // 'month' | 'list'
+    let filters = { account:'', platform:'', category:'', search:'' };
+    let unsubSnapshot = null;
+
+    /* ── Boot ── */
+    async function boot() {
+      const configModule = await import('./js/config.js').catch(() => null);
+      const firebaseConfig = configModule?.firebaseConfig;
+      if (!firebaseConfig) { showMsg('Configuracao nao encontrada.'); return; }
+
+      let app;
+      try {
+        const { getApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+        app = getApp('primetour-main');
+      } catch { app = initializeApp(firebaseConfig, 'primetour-main'); }
+
+      const db = getFirestore(app);
+      const auth = getAuth(app);
+
+      onAuthStateChanged(auth, async (user) => {
+        const root = document.getElementById('cal-root');
+        if (user) {
+          startRealtime(db);
+          renderApp(root);
+        } else {
+          if (unsubSnapshot) { unsubSnapshot(); unsubSnapshot = null; }
+          renderLogin(auth, root);
+        }
+      });
+    }
+
+    function showMsg(msg) {
+      document.getElementById('cal-root').innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;
+        justify-content:center;font-family:'Outfit',sans-serif;color:var(--text-secondary);background:var(--brand-dark);">
+        <p>${esc(msg)}</p></div>`;
+    }
+
+    /* ── Real-time listener ── */
+    function startRealtime(db) {
+      if (unsubSnapshot) unsubSnapshot();
+      const q = query(collection(db, 'content_calendar'));
+      unsubSnapshot = onSnapshot(q, snap => {
+        allSlots = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+        allSlots.sort((a,b) => (a.scheduledDate||'').localeCompare(b.scheduledDate||''));
+        renderCalendar();
+      }, err => {
+        console.warn('Snapshot error:', err);
+      });
+    }
+
+    /* ── Login ── */
+    function renderLogin(auth, root) {
+      root.innerHTML = `
+        <div class="portal-wrap">
+          <header class="portal-header">
+            <div class="portal-brand">
+              <div class="portal-brand-icon">📱</div>
+              <div>
+                <div class="portal-brand-name">PRIMETOUR</div>
+                <div class="portal-brand-sub">Calendario de Conteudo</div>
+              </div>
+            </div>
+          </header>
+          <main class="portal-main">
+            <div class="portal-container" style="max-width:420px;">
+              <div class="portal-card" style="margin-top:40px;">
+                <div class="portal-card-title" style="text-align:center;">Acesse sua conta</div>
+                <p style="font-size:0.8125rem;color:var(--text-muted);text-align:center;margin-bottom:20px;">
+                  Faca login para visualizar o calendario de conteudo.
+                </p>
+                <div class="form-group"><label class="form-label">E-mail</label>
+                  <input type="email" class="form-input" id="login-email" placeholder="seu@email.com" autocomplete="email" /></div>
+                <div class="form-group"><label class="form-label">Senha</label>
+                  <input type="password" class="form-input" id="login-pass" placeholder="Sua senha" autocomplete="current-password" /></div>
+                <div class="alert-banner warning" id="login-error" style="display:none;">
+                  <span style="font-size:1.125rem;flex-shrink:0;">⚠</span>
+                  <span id="login-error-msg"></span>
+                </div>
+                <button class="portal-submit" id="login-btn" style="margin-top:12px;width:100%;">Entrar</button>
+                <div style="display:flex;align-items:center;gap:12px;margin:16px 0;">
+                  <div style="flex:1;height:1px;background:var(--border-subtle);"></div>
+                  <span style="font-size:0.75rem;color:var(--text-muted);">ou</span>
+                  <div style="flex:1;height:1px;background:var(--border-subtle);"></div>
+                </div>
+                <button id="login-sso-btn" style="width:100%;padding:10px 16px;border-radius:6px;
+                  border:1px solid var(--border-subtle);background:var(--bg-surface);color:var(--text-primary);
+                  cursor:pointer;font-family:var(--font-ui);font-size:0.875rem;font-weight:500;
+                  display:flex;align-items:center;justify-content:center;gap:8px;">
+                  <svg width="16" height="16" viewBox="0 0 21 21"><rect width="10" height="10" fill="#f25022"/><rect x="11" width="10" height="10" fill="#7fba00"/><rect y="11" width="10" height="10" fill="#00a4ef"/><rect x="11" y="11" width="10" height="10" fill="#ffb900"/></svg>
+                  Entrar com Microsoft SSO
+                </button>
+                <div style="text-align:center;margin-top:16px;">
+                  <a href="index.html" style="font-size:0.8125rem;color:var(--brand-gold);text-decoration:none;">← Ir para o sistema</a>
+                </div>
+              </div>
+            </div>
+          </main>
+          <footer class="portal-footer">PRIMETOUR &copy; ${new Date().getFullYear()}</footer>
+        </div>`;
+
+      document.getElementById('login-btn')?.addEventListener('click', async () => {
+        const email = document.getElementById('login-email')?.value?.trim();
+        const pass = document.getElementById('login-pass')?.value;
+        if (!email || !pass) { showLoginErr('Preencha e-mail e senha.'); return; }
+        const btn = document.getElementById('login-btn');
+        btn.disabled = true; btn.textContent = 'Entrando...';
+        document.getElementById('login-error').style.display = 'none';
+        try { await signInWithEmailAndPassword(auth, email, pass); }
+        catch(e) {
+          const msgs = { 'auth/user-not-found':'Usuario nao encontrado.', 'auth/wrong-password':'Senha incorreta.',
+            'auth/invalid-credential':'Credenciais invalidas.', 'auth/invalid-email':'E-mail invalido.' };
+          showLoginErr(msgs[e.code] || e.message);
+          btn.disabled = false; btn.textContent = 'Entrar';
+        }
+      });
+
+      document.getElementById('login-sso-btn')?.addEventListener('click', async () => {
+        try {
+          const provider = new OAuthProvider('microsoft.com');
+          provider.setCustomParameters({ tenant: 'primetour.com.br' });
+          await signInWithPopup(auth, provider);
+        } catch(e) { showLoginErr('Erro SSO: ' + e.message); }
+      });
+
+      // Enter key
+      document.getElementById('login-pass')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('login-btn')?.click();
+      });
+    }
+
+    function showLoginErr(msg) {
+      const el = document.getElementById('login-error');
+      const msgEl = document.getElementById('login-error-msg');
+      if (el) el.style.display = 'flex';
+      if (msgEl) msgEl.textContent = msg;
+    }
+
+    /* ── App shell ── */
+    function renderApp(root) {
+      root.innerHTML = `
+        <div class="portal-wrap">
+          <header class="portal-header">
+            <div class="portal-brand">
+              <div class="portal-brand-icon">📱</div>
+              <div>
+                <div class="portal-brand-name">PRIMETOUR</div>
+                <div class="portal-brand-sub">Calendario de Conteudo</div>
+              </div>
+            </div>
+          </header>
+          <main class="portal-main">
+            <div class="portal-container" style="max-width:960px;">
+              <!-- Filters -->
+              <div class="portal-card" style="margin-bottom:16px;">
+                <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+                  <select id="cc-filter-account" class="form-select" style="max-width:180px;font-size:0.8125rem;">
+                    <option value="">Todas as contas</option>
+                    ${ACCOUNTS.map(a => `<option value="${a.value}">${esc(a.label)}</option>`).join('')}
+                  </select>
+                  <select id="cc-filter-platform" class="form-select" style="max-width:160px;font-size:0.8125rem;">
+                    <option value="">Todas plataformas</option>
+                    ${PLATFORM_LIST.map(p => `<option value="${p.value}">${esc(p.label)}</option>`).join('')}
+                  </select>
+                  <select id="cc-filter-category" class="form-select" style="max-width:160px;font-size:0.8125rem;">
+                    <option value="">Todas categorias</option>
+                    ${CATEGORY_LIST.map(c => `<option value="${c.value}">${esc(c.label)}</option>`).join('')}
+                  </select>
+                  <input type="text" id="cc-filter-search" class="form-input" placeholder="Buscar..."
+                    style="max-width:200px;font-size:0.8125rem;" />
+                  <div style="margin-left:auto;display:flex;gap:6px;">
+                    <button class="cc-view-btn" data-view="month" style="padding:4px 12px;border-radius:6px;
+                      border:1px solid var(--border-subtle);background:var(--bg-surface);color:var(--text-primary);
+                      font-size:0.75rem;cursor:pointer;">Mes</button>
+                    <button class="cc-view-btn" data-view="list" style="padding:4px 12px;border-radius:6px;
+                      border:1px solid var(--border-subtle);background:var(--bg-surface);color:var(--text-primary);
+                      font-size:0.75rem;cursor:pointer;">Lista</button>
+                  </div>
+                </div>
+              </div>
+              <!-- Calendar nav -->
+              <div class="portal-card" style="margin-bottom:16px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                  <button id="cc-nav-prev" style="padding:6px 14px;border-radius:6px;border:1px solid var(--border-subtle);
+                    background:var(--bg-surface);color:var(--text-primary);cursor:pointer;font-size:0.875rem;">◄</button>
+                  <div id="cc-nav-label" style="font-size:1.125rem;font-weight:600;color:var(--text-primary);"></div>
+                  <button id="cc-nav-next" style="padding:6px 14px;border-radius:6px;border:1px solid var(--border-subtle);
+                    background:var(--bg-surface);color:var(--text-primary);cursor:pointer;font-size:0.875rem;">►</button>
+                </div>
+              </div>
+              <!-- Body -->
+              <div id="cc-body" class="portal-card"></div>
+            </div>
+          </main>
+          <footer class="portal-footer">PRIMETOUR &copy; ${new Date().getFullYear()}</footer>
+        </div>`;
+
+      // Bind filters
+      document.getElementById('cc-filter-account')?.addEventListener('change', e => { filters.account = e.target.value; renderCalendar(); });
+      document.getElementById('cc-filter-platform')?.addEventListener('change', e => { filters.platform = e.target.value; renderCalendar(); });
+      document.getElementById('cc-filter-category')?.addEventListener('change', e => { filters.category = e.target.value; renderCalendar(); });
+      document.getElementById('cc-filter-search')?.addEventListener('input', e => { filters.search = e.target.value.toLowerCase().trim(); renderCalendar(); });
+
+      // View toggle
+      document.querySelectorAll('.cc-view-btn').forEach(btn => {
+        btn.addEventListener('click', () => { activeView = btn.dataset.view; renderCalendar(); });
+      });
+
+      // Nav
+      document.getElementById('cc-nav-prev')?.addEventListener('click', () => {
+        calDate.setMonth(calDate.getMonth() - 1);
+        renderCalendar();
+      });
+      document.getElementById('cc-nav-next')?.addEventListener('click', () => {
+        calDate.setMonth(calDate.getMonth() + 1);
+        renderCalendar();
+      });
+
+      renderCalendar();
+    }
+
+    /* ── Filter helper ── */
+    function getFilteredSlots() {
+      return allSlots.filter(s => {
+        if (filters.account && s.account !== filters.account) return false;
+        if (filters.platform && s.platform !== filters.platform) return false;
+        if (filters.category && s.category !== filters.category) return false;
+        if (filters.search) {
+          const hay = ((s.title||'')+(s.description||'')+(s.platform||'')+(s.category||'')).toLowerCase();
+          if (!hay.includes(filters.search)) return false;
+        }
+        return true;
+      });
+    }
+
+    /* ── Render calendar ── */
+    function renderCalendar() {
+      const body = document.getElementById('cc-body');
+      const label = document.getElementById('cc-nav-label');
+      if (!body) return;
+
+      const y = calDate.getFullYear(), m = calDate.getMonth();
+      if (label) label.textContent = `${PT_MONTHS[m]} ${y}`;
+
+      // Highlight active view
+      document.querySelectorAll('.cc-view-btn').forEach(b => {
+        b.style.background = b.dataset.view === activeView ? 'var(--brand-gold)' : 'var(--bg-surface)';
+        b.style.color = b.dataset.view === activeView ? '#000' : 'var(--text-primary)';
+      });
+
+      const filtered = getFilteredSlots();
+
+      if (activeView === 'list') {
+        renderList(body, filtered, y, m);
+      } else {
+        renderMonth(body, filtered, y, m);
+      }
+    }
+
+    /* ── Month view ── */
+    function renderMonth(body, slots, y, m) {
+      const firstDay = new Date(y, m, 1).getDay();
+      const dim = new Date(y, m+1, 0).getDate();
+      const today = new Date(); today.setHours(0,0,0,0);
+
+      const slotsForDay = (day) => {
+        const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        return slots.filter(s => s.scheduledDate === iso);
+      };
+
+      let cells = '';
+      // Pad start
+      for (let i = 0; i < (firstDay === 0 ? 6 : firstDay - 1); i++) cells += '<div></div>';
+      for (let d = 1; d <= dim; d++) {
+        const ds = slotsForDay(d);
+        const isToday = d === today.getDate() && m === today.getMonth() && y === today.getFullYear();
+        cells += `<div style="min-height:80px;padding:4px;border-radius:4px;
+          border:1px solid ${isToday ? 'var(--brand-gold)' : ds.length ? 'rgba(212,168,67,0.15)' : 'transparent'};
+          background:${ds.length ? 'rgba(212,168,67,0.04)' : 'transparent'};">
+          <div style="font-size:0.75rem;font-weight:${isToday?700:400};
+            color:${isToday?'var(--brand-gold)':'var(--text-muted)'};">${d}</div>
+          ${ds.map(s => {
+            const sc = STATUS_COLORS[s.status] || '#6B7280';
+            const icon = TYPE_ICONS[s.contentType] || '📄';
+            return `<div class="cc-pub-slot" data-id="${esc(s.id)}" style="font-size:0.625rem;margin-top:2px;padding:1px 3px;
+              border-radius:3px;background:${sc}15;color:${sc};overflow:hidden;text-overflow:ellipsis;
+              white-space:nowrap;cursor:pointer;font-weight:500;" title="${esc(s.title||'')}">${icon} ${esc((s.title||'').slice(0,14))}</div>`;
+          }).join('')}
+        </div>`;
+      }
+
+      body.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:8px;">
+          ${['Seg','Ter','Qua','Qui','Sex','Sab','Dom'].map(d =>
+            `<div style="text-align:center;font-size:0.6875rem;font-weight:600;color:var(--text-muted);padding:4px 0;">${d}</div>`
+          ).join('')}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">${cells}</div>`;
+
+      // Click to expand
+      body.querySelectorAll('.cc-pub-slot').forEach(el => {
+        el.addEventListener('click', () => {
+          const slot = allSlots.find(s => s.id === el.dataset.id);
+          if (slot) showDetail(slot);
+        });
+      });
+    }
+
+    /* ── List view ── */
+    function renderList(body, slots, y, m) {
+      const monthSlots = slots.filter(s => {
+        if (!s.scheduledDate) return false;
+        const dt = new Date(s.scheduledDate);
+        return dt.getFullYear() === y && dt.getMonth() === m;
+      });
+
+      if (!monthSlots.length) {
+        body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:0.875rem;">Nenhum conteudo para este periodo.</div>';
+        return;
+      }
+
+      body.innerHTML = monthSlots.map(s => {
+        const sc = STATUS_COLORS[s.status] || '#6B7280';
+        const icon = TYPE_ICONS[s.contentType] || '📄';
+        const parts = (s.scheduledDate||'').split('-');
+        const dateStr = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : '';
+        const acc = ACCOUNTS.find(a => a.value === s.account);
+        return `<div class="cc-pub-list-item" data-id="${esc(s.id)}" style="padding:12px 16px;border-bottom:1px solid var(--border-subtle);
+          cursor:pointer;transition:background 0.15s;"
+          onmouseover="this.style.background='var(--bg-surface)'" onmouseout="this.style.background='transparent'">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span style="font-size:1rem;">${icon}</span>
+            <span style="font-size:0.875rem;font-weight:600;color:var(--text-primary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.title||'Sem titulo')}</span>
+            <span style="width:8px;height:8px;border-radius:50%;background:${sc};flex-shrink:0;"></span>
+            <span style="font-size:0.75rem;color:${sc};font-weight:500;">${esc(STATUS_LABELS[s.status]||'')}</span>
+          </div>
+          <div style="display:flex;gap:12px;font-size:0.75rem;color:var(--text-muted);">
+            <span>📅 ${dateStr}</span>
+            ${s.platform ? `<span>${esc(s.platform)}</span>` : ''}
+            ${s.category ? `<span>${esc(CATEGORY_LIST.find(c=>c.value===s.category)?.label||s.category)}</span>` : ''}
+            ${acc ? `<span>${esc(acc.label)}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+
+      body.querySelectorAll('.cc-pub-list-item').forEach(el => {
+        el.addEventListener('click', () => {
+          const slot = allSlots.find(s => s.id === el.dataset.id);
+          if (slot) showDetail(slot);
+        });
+      });
+    }
+
+    /* ── Detail overlay ── */
+    function showDetail(slot) {
+      document.getElementById('cc-detail-overlay')?.remove();
+      const sc = STATUS_COLORS[slot.status] || '#6B7280';
+      const icon = TYPE_ICONS[slot.contentType] || '📄';
+      const parts = (slot.scheduledDate||'').split('-');
+      const dateStr = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : 'Sem data';
+      const acc = ACCOUNTS.find(a => a.value === slot.account);
+      const cat = CATEGORY_LIST.find(c => c.value === slot.category);
+
+      const overlay = document.createElement('div');
+      overlay.id = 'cc-detail-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);padding:16px;';
+      overlay.innerHTML = `
+        <div style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:12px;
+          padding:24px;width:100%;max-width:520px;max-height:80vh;overflow-y:auto;
+          box-shadow:0 20px 60px rgba(0,0,0,0.5);font-family:'Outfit',sans-serif;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+            <div style="font-size:1.125rem;font-weight:600;color:var(--text-primary);">${icon} ${esc(slot.title||'Sem titulo')}</div>
+            <button id="cc-detail-close" style="background:none;border:none;color:var(--text-muted);font-size:1.25rem;cursor:pointer;">✕</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;">
+            <div style="padding:8px 12px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-subtle);">
+              <div style="font-size:0.625rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Data</div>
+              <div style="font-size:0.8125rem;color:var(--text-primary);">📅 ${dateStr}</div>
+            </div>
+            <div style="padding:8px 12px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-subtle);">
+              <div style="font-size:0.625rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Status</div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <span style="width:8px;height:8px;border-radius:50%;background:${sc};"></span>
+                <span style="font-size:0.8125rem;color:${sc};font-weight:500;">${esc(STATUS_LABELS[slot.status]||'')}</span>
+              </div>
+            </div>
+            ${slot.platform ? `<div style="padding:8px 12px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-subtle);">
+              <div style="font-size:0.625rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Plataforma</div>
+              <div style="font-size:0.8125rem;color:var(--text-primary);">${esc(slot.platform)}</div>
+            </div>` : ''}
+            ${slot.contentType ? `<div style="padding:8px 12px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-subtle);">
+              <div style="font-size:0.625rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Tipo</div>
+              <div style="font-size:0.8125rem;color:var(--text-primary);">${icon} ${esc(slot.contentType)}</div>
+            </div>` : ''}
+            ${cat ? `<div style="padding:8px 12px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-subtle);">
+              <div style="font-size:0.625rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Categoria</div>
+              <div style="font-size:0.8125rem;color:var(--text-primary);">${esc(cat.label)}</div>
+            </div>` : ''}
+            ${acc ? `<div style="padding:8px 12px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-subtle);">
+              <div style="font-size:0.625rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;">Conta</div>
+              <div style="font-size:0.8125rem;color:var(--text-primary);">${esc(acc.label)}</div>
+            </div>` : ''}
+          </div>
+          ${(slot.description || slot.brief) ? `
+          <div style="margin-bottom:16px;">
+            <div style="font-size:0.6875rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Descricao</div>
+            <div style="font-size:0.8125rem;color:var(--text-primary);line-height:1.6;white-space:pre-wrap;">${esc(slot.description || slot.brief || '')}</div>
+          </div>` : ''}
+        </div>`;
+
+      document.body.appendChild(overlay);
+      overlay.querySelector('#cc-detail-close')?.addEventListener('click', () => overlay.remove());
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    }
+
+    /* ── Start ── */
+    boot();
+  </script>
+</body>
+</html>
