@@ -90,6 +90,26 @@ export async function recordNewsConversion(newsId, { taskId, userId, userName })
   }
 }
 
+/**
+ * Remove uma conversão do histórico quando a tarefa gerada é excluída.
+ * Protege os KPIs contra inflação artificial (erro ou burla).
+ * Idempotente e tolerante a falhas — não bloqueia o delete da task.
+ */
+export async function removeNewsConversion(newsId, taskId) {
+  if (!newsId || !taskId) return;
+  try {
+    const ref = doc(db, 'news_monitor', newsId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return;
+    const existing = Array.isArray(snap.data().conversions) ? snap.data().conversions : [];
+    const filtered = existing.filter(c => c.taskId !== taskId);
+    if (filtered.length === existing.length) return; // nada a remover
+    await updateDoc(ref, { conversions: filtered });
+  } catch (e) {
+    console.warn('[News] removeNewsConversion falhou:', e.message);
+  }
+}
+
 /* ════════════════════════════════════════════════════════════
    Clipping — notícias sobre a empresa na mídia
    ════════════════════════════════════════════════════════════ */

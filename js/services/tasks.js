@@ -452,13 +452,33 @@ export async function toggleTaskComplete(taskId, isDone) {
     updatedBy:   user.uid,
   });
   await auditLog('tasks.complete', 'task', taskId, { done: isDone });
+  if (isDone) playCompletionSound();
 }
 
 /* ─── Excluir tarefa ─────────────────────────────────────── */
 export async function deleteTask(taskId) {
   if (!store.can('task_delete')) throw new Error('Permissão negada.');
+
+  // Se a task veio de uma notícia, limpa o registro de conversão
+  // pra não inflar KPIs de "utilização de notícias" (proteção contra erro
+  // ou burla: criar→deletar em loop pra aumentar números).
+  let sourceNewsId = null;
+  try {
+    const snap = await getDoc(doc(db, 'tasks', taskId));
+    sourceNewsId = snap.exists() ? (snap.data().sourceNewsId || null) : null;
+  } catch (_) { /* segue sem bloquear delete */ }
+
   await deleteDoc(doc(db, 'tasks', taskId));
-  await auditLog('tasks.delete', 'task', taskId, {});
+  await auditLog('tasks.delete', 'task', taskId, { sourceNewsId });
+
+  if (sourceNewsId) {
+    try {
+      const { removeNewsConversion } = await import('./newsMonitor.js');
+      await removeNewsConversion(sourceNewsId, taskId);
+    } catch (e) {
+      console.warn('[Tasks] cleanup de conversão de notícia falhou:', e.message);
+    }
+  }
 }
 
 /* ─── Buscar tarefa ──────────────────────────────────────── */
