@@ -51,23 +51,35 @@ if (typeof window !== 'undefined' && !_audioPrimed) {
 function playCompletionSound() {
   try {
     const ctx = _ensureAudioCtx();
-    if (!ctx) return;
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-    const now = ctx.currentTime;
-    // "Plin" — ascending triad: C6 → E6 → G6
-    [1047, 1319, 1568].forEach((freq, i) => {
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, now + i * 0.1);
-      gain.gain.linearRampToValueAtTime(0.18, now + i * 0.1 + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.35);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(now + i * 0.1);
-      osc.stop(now + i * 0.1 + 0.4);
-    });
-  } catch { /* AudioContext não disponível */ }
+    if (!ctx) { console.warn('[Audio] AudioContext indisponível neste navegador'); return; }
+    const playTones = () => {
+      const now = ctx.currentTime;
+      // "Plin" — ascending triad: C6 → E6 → G6
+      [1047, 1319, 1568].forEach((freq, i) => {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, now + i * 0.1);
+        gain.gain.linearRampToValueAtTime(0.22, now + i * 0.1 + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.35);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now + i * 0.1);
+        osc.stop(now + i * 0.1 + 0.4);
+      });
+      console.log('[Audio] Som de conclusão tocado (state=' + ctx.state + ')');
+    };
+    if (ctx.state === 'suspended') {
+      // Chrome/Safari: resume() é assíncrono — aguarda antes de tocar
+      ctx.resume().then(playTones).catch(err => {
+        console.warn('[Audio] resume() falhou:', err.message);
+      });
+    } else {
+      playTones();
+    }
+  } catch (e) {
+    console.warn('[Audio] Erro ao tocar som:', e.message);
+  }
 }
 
 /* ─── Banner global de edição pelo solicitante ───────────── */
