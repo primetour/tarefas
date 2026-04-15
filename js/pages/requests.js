@@ -134,7 +134,12 @@ function renderList() {
     return;
   }
 
-  list.innerHTML = filtered.map(req => {
+  // Split into active (pending) and resolved (converted, rejected) when showing all
+  const pendingReqs  = filtered.filter(r => r.status === 'pending');
+  const resolvedReqs = filtered.filter(r => r.status !== 'pending');
+  const showSections = !filterStatus && resolvedReqs.length > 0;
+
+  const renderCard = (req) => {
     const statusInfo = REQUEST_STATUS_MAP[req.status] || REQUEST_STATUS_MAP.pending;
     const urgent = req.urgency;
     const outOfCal = req.outOfCalendar;
@@ -163,7 +168,7 @@ function renderList() {
                 ${req.variationName?`<span>🔀 ${esc(req.variationName)}</span>`:''}
                 ${req.requestingArea?`<span>📍 ${esc(req.requestingArea)}</span>`:''}
                 ${req.sector?`<span>🏢 ${esc(req.sector)}</span>`:''}
-                ${req.nucleo?`<span>◈ ${esc(req.nucleo)}</span>`:''}
+                ${req.nucleo?`<span>🎨 ${esc(req.nucleo)}</span>`:''}
               </div>
               <div style="font-size:0.8125rem;color:var(--text-muted);
                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:600px;">
@@ -183,7 +188,55 @@ function renderList() {
         </div>
       </div>
     `;
-  }).join('');
+  };
+
+  if (showSections) {
+    const convertedCount = resolvedReqs.filter(r => r.status === 'converted').length;
+    const rejectedCount  = resolvedReqs.filter(r => r.status === 'rejected').length;
+    const resolvedLabel  = [
+      convertedCount ? `${convertedCount} convertida${convertedCount>1?'s':''}` : '',
+      rejectedCount  ? `${rejectedCount} recusada${rejectedCount>1?'s':''}`    : '',
+    ].filter(Boolean).join(', ');
+
+    list.innerHTML = `
+      ${pendingReqs.length ? `
+        <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;
+          color:var(--text-muted);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border-subtle);">
+          ◌ Pendentes (${pendingReqs.length})
+        </div>
+        ${pendingReqs.map(renderCard).join('')}
+      ` : `
+        <div style="padding:16px;text-align:center;font-size:0.875rem;color:var(--text-muted);margin-bottom:16px;">
+          Nenhuma solicitação pendente.
+        </div>
+      `}
+
+      <div style="margin-top:20px;">
+        <button id="req-toggle-resolved" style="width:100%;padding:10px 16px;border-radius:var(--radius-md);
+          border:1px solid var(--border-subtle);background:var(--bg-surface);color:var(--text-secondary);
+          cursor:pointer;font-family:var(--font-ui);font-size:0.8125rem;font-weight:500;
+          display:flex;align-items:center;justify-content:space-between;transition:all 0.15s;">
+          <span>✓ Resolvidas — ${resolvedLabel}</span>
+          <span id="req-toggle-arrow" style="font-size:0.75rem;transition:transform 0.2s;">▼</span>
+        </button>
+        <div id="req-resolved-list" style="display:none;margin-top:10px;opacity:0.85;">
+          ${resolvedReqs.map(renderCard).join('')}
+        </div>
+      </div>
+    `;
+
+    // Toggle resolved section
+    document.getElementById('req-toggle-resolved')?.addEventListener('click', () => {
+      const resolvedList = document.getElementById('req-resolved-list');
+      const arrow        = document.getElementById('req-toggle-arrow');
+      if (!resolvedList) return;
+      const visible = resolvedList.style.display !== 'none';
+      resolvedList.style.display = visible ? 'none' : 'block';
+      if (arrow) arrow.style.transform = visible ? '' : 'rotate(180deg)';
+    });
+  } else {
+    list.innerHTML = filtered.map(renderCard).join('');
+  }
 
   list.querySelectorAll('.req-card').forEach(card => {
     card.addEventListener('click', () => {
@@ -256,7 +309,7 @@ async function openRequestDetail(req) {
           </div>
           <div>
             <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">Núcleo</div>
-            <div style="font-size:0.875rem;">◈ ${esc(req.nucleo||'—')}</div>
+            <div style="font-size:0.875rem;">🎨 ${esc(req.nucleo||'—')}</div>
           </div>
           ${req.desiredDate?`<div>
             <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">Data desejada</div>
