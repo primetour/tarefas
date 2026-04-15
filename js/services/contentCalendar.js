@@ -45,13 +45,9 @@ export const CONTENT_TYPES = [
 export const SLOT_STATUSES = [
   { value: 'idea',       label: 'Ideia',         color: '#94A3B8' },
   { value: 'draft',      label: 'Rascunho',      color: '#38BDF8' },
-  { value: 'writing',    label: 'Redação',       color: '#A78BFA' },
-  { value: 'design',     label: 'Design',        color: '#F59E0B' },
   { value: 'review',     label: 'Revisão',       color: '#FB923C' },
   { value: 'approved',   label: 'Aprovado',      color: '#22C55E' },
-  { value: 'scheduled',  label: 'Agendado',      color: '#2DD4BF' },
   { value: 'published',  label: 'Publicado',     color: '#10B981' },
-  { value: 'cancelled',  label: 'Cancelado',     color: '#EF4444' },
 ];
 
 export const CATEGORIES = [
@@ -69,22 +65,7 @@ export const CATEGORIES = [
   { value: 'outro',          label: 'Outro'             },
 ];
 
-export const SLOT_TIMES = [
-  { value: '08:00', label: '08:00' },
-  { value: '09:00', label: '09:00' },
-  { value: '10:00', label: '10:00' },
-  { value: '11:00', label: '11:00' },
-  { value: '12:00', label: '12:00' },
-  { value: '13:00', label: '13:00' },
-  { value: '14:00', label: '14:00' },
-  { value: '15:00', label: '15:00' },
-  { value: '16:00', label: '16:00' },
-  { value: '17:00', label: '17:00' },
-  { value: '18:00', label: '18:00' },
-  { value: '19:00', label: '19:00' },
-  { value: '20:00', label: '20:00' },
-  { value: '21:00', label: '21:00' },
-];
+/* SLOT_TIMES removido — não mais usado no formulário */
 
 export const STATUS_MAP   = Object.fromEntries(SLOT_STATUSES.map(s => [s.value, s]));
 export const PLATFORM_MAP = Object.fromEntries(PLATFORMS.map(p => [p.value, p]));
@@ -171,15 +152,15 @@ export async function duplicateSlot(id) {
   const original = await getSlot(id);
   if (!original) throw new Error('Slot não encontrado.');
 
-  const { id: _id, createdAt, createdBy, updatedAt, updatedBy, scheduledDate, scheduledTime, status, performance, linkedPostId, ...rest } = original;
+  const { id: _id, createdAt, createdBy, updatedAt, updatedBy, scheduledDate, status, performance, linkedPostId, taskId, ...rest } = original;
 
   return createSlot({
     ...rest,
-    status: 'draft',
+    status: 'idea',
     scheduledDate: null,
-    scheduledTime: null,
     performance: null,
     linkedPostId: null,
+    taskId: null,
   });
 }
 
@@ -305,8 +286,7 @@ Responda APENAS com um JSON array (sem markdown) no formato:
     "contentType": "reel",
     "category": "destino",
     "scheduledDate": "YYYY-MM-DD",
-    "brief": "Breve descrição do conteúdo e abordagem",
-    "hashtags": ["#hashtag1", "#hashtag2"],
+    "description": "Descrição do conteúdo e abordagem",
     "reasoning": "Por que este conteúdo foi sugerido"
   }
 ]`;
@@ -354,8 +334,7 @@ Responda APENAS com um JSON array (sem markdown) no formato:
       contentType: s.contentType || 'post',
       category: s.category || 'outro',
       scheduledDate: s.scheduledDate || null,
-      brief: s.brief || '',
-      hashtags: Array.isArray(s.hashtags) ? s.hashtags : [],
+      description: s.description || s.brief || '',
       reasoning: s.reasoning || '',
       aiGenerated: true,
       aiSuggestionBasis: 'week-planner',
@@ -367,29 +346,25 @@ Responda APENAS com um JSON array (sem markdown) no formato:
 }
 
 /* ════════════════════════════════════════════════════════════
-   AI — Gerador de legendas / captions
+   AI — Gerador de descrição de conteúdo
    ════════════════════════════════════════════════════════════ */
 
 /**
- * Gera legenda/caption para um conteúdo usando IA.
+ * Gera descrição para um conteúdo usando IA.
  */
-export async function suggestCaption({ title, brief, platform, category, account, userPrompt = '', type = 'caption' }) {
+export async function suggestDescription({ title, description, platform, category, account, userPrompt = '' }) {
   const { chatWithAI } = await import('./ai.js');
 
   const userInstructions = userPrompt?.trim()
     ? `\nINSTRUÇÕES DO USUÁRIO (prioridade máxima — siga fielmente):\n${userPrompt.trim()}\n`
     : '';
 
-  const isBrief = type === 'brief';
-
   const prompt = `Você é um copywriter de redes sociais da agência de viagens PRIMETOUR.
 
-${isBrief
-  ? `Gere um BRIEF (direcionamento criativo) para o seguinte conteúdo. O brief deve orientar quem vai produzir o conteúdo: abordagem, tom, elementos visuais sugeridos, mensagem principal e CTA.`
-  : `Gere uma legenda/caption para o seguinte conteúdo:`}
+Gere uma DESCRIÇÃO completa para o seguinte conteúdo. A descrição deve orientar quem vai produzir: abordagem, tom, elementos visuais sugeridos, mensagem principal, CTA e legenda sugerida.
 ${userInstructions}
 Título: ${title || '(sem título)'}
-${!isBrief && brief ? `Briefing: ${brief}` : ''}
+${description ? `Descrição atual: ${description}` : ''}
 Plataforma: ${platform || 'instagram'}
 Categoria: ${category || 'geral'}
 Conta: ${account || 'PRIMETOUR'}
@@ -397,22 +372,20 @@ Conta: ${account || 'PRIMETOUR'}
 INSTRUÇÕES:
 - Tom profissional mas acessível, convidativo
 - Inclua CTA (call to action) quando apropriado
-- Adapte o comprimento à plataforma (Instagram: até 2200 chars, Twitter: curto, LinkedIn: profissional)
+- Adapte o comprimento à plataforma
 - Inclua emojis relevantes de forma moderada
-- Sugira hashtags relevantes para turismo/viagem
 
 Responda APENAS com um JSON (sem markdown):
 {
-  "text": "A legenda completa aqui",
-  "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3"]
+  "text": "A descrição completa aqui"
 }`;
 
   let result;
   try {
     result = await chatWithAI(prompt, {}, { moduleId: 'content-calendar' });
   } catch (e) {
-    console.error('[ContentCalendar AI] Erro ao gerar caption:', e);
-    throw new Error('Falha ao gerar legenda.');
+    console.error('[ContentCalendar AI] Erro ao gerar descrição:', e);
+    throw new Error('Falha ao gerar descrição.');
   }
 
   const text = result?.text || result?.content || '';
@@ -420,13 +393,9 @@ Responda APENAS com um JSON (sem markdown):
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('JSON não encontrado na resposta.');
     const parsed = JSON.parse(jsonMatch[0]);
-    return {
-      text: parsed.text || '',
-      hashtags: Array.isArray(parsed.hashtags) ? parsed.hashtags : [],
-    };
+    return { text: parsed.text || '' };
   } catch (e) {
-    // Fallback: retornar texto bruto como caption
-    return { text: text.trim(), hashtags: [] };
+    return { text: text.trim() };
   }
 }
 
@@ -470,8 +439,8 @@ export async function getContentCalendarStats({ startDate, endDate, account } = 
     byContentType,
     byCategory,
     published: byStatus.published || 0,
-    scheduled: byStatus.scheduled || 0,
-    inProgress: (byStatus.writing || 0) + (byStatus.design || 0) + (byStatus.review || 0),
-    pending: (byStatus.idea || 0) + (byStatus.draft || 0),
+    approved: byStatus.approved || 0,
+    inProgress: (byStatus.draft || 0) + (byStatus.review || 0),
+    pending: byStatus.idea || 0,
   };
 }
