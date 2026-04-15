@@ -773,6 +773,14 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
   const y = portalCalDate.getFullYear();
   const m = portalCalDate.getMonth();
 
+  // Build batch map — dates that have items in the current batch queue
+  const batchMap = {}; // key=ISO date, value=count of batch items
+  batchQueue.forEach(item => {
+    if (item.desiredDate) {
+      batchMap[item.desiredDate] = (batchMap[item.desiredDate] || 0) + 1;
+    }
+  });
+
   // Build month grid
   const buildMonth = () => {
     const firstDay = new Date(y,m,1).getDay();
@@ -818,6 +826,11 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
           title="${rq.icon} ${rq.label}">${rq.icon} ${portalCalExpanded?rq.label:rq.label.split(' ')[0]}</div>`;})()}
+        ${(()=>{const bc=batchMap[dateISO];if(!bc)return'';return`<div
+          style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
+          padding:1px 3px;border-radius:3px;margin-top:1px;background:rgba(167,139,250,0.15);color:#A78BFA;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
+          title="${bc} no lote">✦ ${portalCalExpanded?bc+' no lote':'lote'}</div>`;})()}
       </div>`;
     }
     return cells;
@@ -866,6 +879,11 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
           title="${rq.icon} ${rq.label}">${rq.icon} ${rq.label}</div>`;})()}
+        ${(()=>{const bc=batchMap[dateISO];if(!bc)return'';return`<div
+          style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
+          padding:1px 3px;border-radius:3px;margin-top:1px;background:rgba(167,139,250,0.15);color:#A78BFA;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
+          title="${bc} no lote">✦ ${portalCalExpanded?bc+' no lote':'lote'}</div>`;})()}
       </div>`;
     }).join('');
   };
@@ -917,7 +935,13 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           ${rq.title?`<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${esc(rq.title)}</div>`:''}
           <div style="font-size:0.5625rem;color:var(--text-muted);margin-top:2px;">Clique para ver detalhes</div>
         </div>`;})()}
-      ${!slots.length&&!dTasks.length&&!requestMap[dateISO]?`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
+      ${(()=>{const bc=batchMap[dateISO];if(!bc)return'';return`
+        <div style="margin-top:10px;padding:8px 10px;border-radius:4px;
+          background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.25);">
+          <div style="font-size:0.8125rem;font-weight:600;color:#A78BFA;">✦ ${bc} demanda${bc>1?'s':''} no lote</div>
+          <div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">Será${bc>1?'ão':''} enviada${bc>1?'s':''} ao submeter o lote</div>
+        </div>`;})()}
+      ${!slots.length&&!dTasks.length&&!requestMap[dateISO]&&!batchMap[dateISO]?`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
         style="font-size:0.875rem;color:var(--text-muted);text-align:center;padding:16px 0;cursor:${clickable?'pointer':'default'};">
         Nenhuma agenda ou tarefa para este dia.${clickable?' Clique para criar demanda fora do calendário.':''}
       </div>`:''}
@@ -1683,6 +1707,16 @@ async function openEditRequestModal(db, taskTypes, data) {
   const dateParts = data.dateISO ? data.dateISO.split('-') : [];
   const dateDisplay = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : '';
 
+  // Resolve tipo de demanda info
+  const types = window._portalTaskTypes || taskTypes || [];
+  const editTypeId = reqData.typeId || data.typeId || '';
+  const editTypeData = types.find(t => t.id === editTypeId);
+  const editTypeName = editTypeData?.name || reqData.typeName || data.typeName || '';
+  const editTypeIcon = editTypeData?.icon || '';
+  const editSector = editTypeData?.sector || reqData.sector || '';
+  const editNucleo = reqData.nucleo || '';
+  const editVariation = reqData.variationName || '';
+
   const overlay = document.createElement('div');
   overlay.id = 'fs-edit-modal';
   overlay.style.cssText = `
@@ -1700,11 +1734,35 @@ async function openEditRequestModal(db, taskTypes, data) {
         <div>
           <div style="font-size:1rem;font-weight:600;color:var(--text-primary);">✏ Editar solicitação</div>
           <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
-            Enviada em ${dateDisplay} · ${esc(data.typeName || '')}
+            Enviada em ${dateDisplay}
           </div>
         </div>
         <button id="fs-edit-close" style="background:none;border:none;font-size:1.25rem;
           color:var(--text-muted);cursor:pointer;padding:4px 8px;">✕</button>
+      </div>
+
+      <!-- Request context (read-only) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
+        ${editTypeName ? `
+        <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.5625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Tipo de demanda</div>
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">${editTypeIcon} ${esc(editTypeName)}</div>
+        </div>` : ''}
+        ${editSector ? `
+        <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.5625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Setor</div>
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">📁 ${esc(editSector)}</div>
+        </div>` : ''}
+        ${editNucleo ? `
+        <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.5625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Núcleo</div>
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">🎨 ${esc(editNucleo)}</div>
+        </div>` : ''}
+        ${editVariation ? `
+        <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.5625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Variação</div>
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">${esc(editVariation)}</div>
+        </div>` : ''}
       </div>
 
       <!-- Warning -->
@@ -2114,24 +2172,42 @@ function renderBatchList(taskTypes) {
   if (count) count.textContent = batchQueue.length;
   if (submitBtn) submitBtn.textContent = 'Enviar ' + batchQueue.length + ' solicitaç' + (batchQueue.length === 1 ? 'ão' : 'ões') + ' →';
 
-  const MONTHS = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
   list.innerHTML = batchQueue.map((item, i) => {
+    // Date in DD/MM/YYYY format
     const dateStr = item.desiredDate
-      ? (() => { const d = new Date(item.desiredDate + 'T12:00:00'); return d.getDate() + ' ' + MONTHS[d.getMonth()]; })()
+      ? (() => { const p = item.desiredDate.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; })()
       : 'Sem data';
     return '<div class="batch-item" style="border-left-color:' + (item.typeColor || 'var(--brand-gold)') + ';">' +
       '<div class="batch-item-body">' +
         '<div class="batch-item-title">' + esc(item.title || 'Sem título') + '</div>' +
-        '<div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">' +
+        '<div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:4px;">' +
           (item.typeIcon ? item.typeIcon + ' ' : '') + esc(item.typeName || 'Sem tipo') +
           (item.variationName ? ' — ' + esc(item.variationName) : '') + '</div>' +
-        '<div class="batch-item-meta">' +
-          esc(item.requestingArea || '') + (item.nucleo ? ' · ' + esc(item.nucleo) : '') + ' · ' + dateStr +
+        // Detail grid
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:4px;font-size:0.625rem;">' +
+          '<div style="padding:3px 6px;border-radius:4px;background:var(--bg-surface);border:1px solid var(--border-subtle);">' +
+            '<span style="color:var(--text-muted);">📅</span> ' + dateStr +
+          '</div>' +
+          (item.sector ? '<div style="padding:3px 6px;border-radius:4px;background:var(--bg-surface);border:1px solid var(--border-subtle);">' +
+            '<span style="color:var(--text-muted);">📁</span> ' + esc(item.sector) +
+          '</div>' : '') +
+          (item.requestingArea ? '<div style="padding:3px 6px;border-radius:4px;background:var(--bg-surface);border:1px solid var(--border-subtle);">' +
+            '<span style="color:var(--text-muted);">📍</span> ' + esc(item.requestingArea) +
+          '</div>' : '') +
+          (item.nucleo ? '<div style="padding:3px 6px;border-radius:4px;background:var(--bg-surface);border:1px solid var(--border-subtle);">' +
+            '<span style="color:var(--text-muted);">🎨</span> ' + esc(item.nucleo) +
+          '</div>' : '') +
         '</div>' +
-        (item.urgency ? '<span style="font-size:0.625rem;background:#EF444420;color:#EF4444;padding:1px 6px;border-radius:8px;font-weight:600;margin-right:4px;">URGENTE</span>' : '') +
-        (item.outOfCalendar ? '<span style="font-size:0.625rem;background:#F59E0B20;color:#F59E0B;padding:1px 6px;border-radius:8px;font-weight:600;">FORA DO CAL.</span>' : '') +
-        '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
-          esc(item.description.slice(0, 60)) + (item.description.length > 60 ? '…' : '') +
+        // Badges
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px;">' +
+          (item.urgency ? '<span style="font-size:0.5625rem;background:#EF444420;color:#EF4444;padding:1px 6px;border-radius:8px;font-weight:600;">🔴 URGENTE</span>' : '') +
+          (item.outOfCalendar ? '<span style="font-size:0.5625rem;background:#F59E0B20;color:#F59E0B;padding:1px 6px;border-radius:8px;font-weight:600;">⚠ FORA DO CAL.</span>' : '') +
+          (item.autoAccept ? '<span style="font-size:0.5625rem;background:#22C55E20;color:#22C55E;padding:1px 6px;border-radius:8px;font-weight:600;">✓ AUTO-ACEITE</span>' : '') +
+        '</div>' +
+        // Description
+        '<div style="font-size:0.6875rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;' +
+          'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.4;">' +
+          esc((item.description || '').slice(0, 120)) + ((item.description || '').length > 120 ? '…' : '') +
         '</div>' +
       '</div>' +
       '<div class="batch-item-actions">' +
