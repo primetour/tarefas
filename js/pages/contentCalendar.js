@@ -7,10 +7,11 @@
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import {
-  PLATFORMS, CONTENT_TYPES, SLOT_STATUSES, CATEGORIES, SLOT_TIMES,
+  PLATFORMS, CONTENT_TYPES, SLOT_STATUSES, CATEGORIES,
   fetchSlots, createSlot, updateSlot, deleteSlot,
-  suggestWeekContent, suggestCaption,
+  suggestWeekContent, suggestDescription,
 } from '../services/contentCalendar.js';
+import { openTaskModal } from '../components/taskModal.js';
 
 const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -23,25 +24,17 @@ const PT_DAYS_S = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'];
 const STATUS_COLORS = {
   idea:      '#94A3B8',
   draft:     '#38BDF8',
-  writing:   '#A78BFA',
-  design:    '#F59E0B',
   review:    '#FB923C',
   approved:  '#22C55E',
-  scheduled: '#2DD4BF',
   published: '#10B981',
-  cancelled: '#EF4444',
 };
 
 const STATUS_LABELS = {
   idea:      'Ideia',
   draft:     'Rascunho',
-  writing:   'Redação',
-  design:    'Design',
   review:    'Revisão',
   approved:  'Aprovado',
-  scheduled: 'Agendado',
   published: 'Publicado',
-  cancelled: 'Cancelado',
 };
 
 const TYPE_ICONS = {
@@ -80,11 +73,7 @@ const CATEGORY_LIST = [
   { value: 'bastidores',    label: 'Bastidores' },
 ];
 
-const SLOT_TIME_LIST = [
-  { value: 'manha', label: 'Manha' },
-  { value: 'tarde', label: 'Tarde' },
-  { value: 'noite', label: 'Noite' },
-];
+/* SLOT_TIME_LIST removido — não mais usado */
 
 const ACCOUNTS = [
   { value: 'primetourviagens',  label: '@primetourviagens' },
@@ -523,8 +512,7 @@ function renderSlotCard(slot, mode) {
 
   // Detailed mode (week view)
   const sd = slot.scheduledDate instanceof Date ? slot.scheduledDate : new Date(slot.scheduledDate);
-  const time = slot.scheduledTime || '';
-  const slotTime = SLOT_TIME_LIST.find(s => s.value === slot.slotTime);
+  const desc = slot.description || slot.brief || '';
 
   return `
     <div class="cc-slot-card" data-slot-id="${esc(slot.id)}"
@@ -538,14 +526,13 @@ function renderSlotCard(slot, mode) {
         <span style="font-size:0.75rem;font-weight:600;color:var(--text-primary,#E8ECF1);
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(title)}</span>
       </div>
-      ${time ? `<div style="font-size:0.6875rem;color:var(--text-muted,#5A6B7A);margin-bottom:2px;">${esc(time)}</div>` : ''}
-      ${slotTime ? `<div style="font-size:0.6875rem;color:var(--text-muted,#5A6B7A);margin-bottom:2px;">${esc(slotTime.label)}</div>` : ''}
       <div style="display:flex;align-items:center;gap:4px;margin-top:4px;">
         <span style="width:6px;height:6px;border-radius:50%;background:${statusColor};flex-shrink:0;"></span>
         <span style="font-size:0.6875rem;color:${statusColor};">${esc(STATUS_LABELS[slot.status] || '')}</span>
+        ${slot.taskId ? '<span style="font-size:0.5625rem;background:rgba(34,197,94,0.15);color:#22C55E;padding:1px 5px;border-radius:4px;margin-left:4px;">Tarefa</span>' : ''}
       </div>
-      ${slot.brief ? `<div style="font-size:0.6875rem;color:var(--text-muted,#5A6B7A);margin-top:4px;
-        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(truncate(slot.brief, 40))}</div>` : ''}
+      ${desc ? `<div style="font-size:0.6875rem;color:var(--text-muted,#5A6B7A);margin-top:4px;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(truncate(desc, 40))}</div>` : ''}
     </div>
   `;
 }
@@ -737,15 +724,9 @@ function openSuggestWeekModal(container) {
             contentType: sug.contentType || 'post',
             account: account,
             scheduledDate: sug.date || sug.scheduledDate,
-            scheduledTime: sug.time || '',
-            slotTime: sug.slotTime || 'manha',
             category: sug.category || 'destinos',
-            status: 'ideia',
-            brief: sug.brief || sug.description || '',
-            caption: sug.caption || '',
-            hashtags: sug.hashtags || '',
-            imageNotes: sug.imageNotes || '',
-            campaign: sug.campaign || '',
+            status: 'idea',
+            description: sug.description || sug.brief || '',
           });
           if (newSlot) { allSlots.push(newSlot); created++; }
         } catch (e) { console.error('Erro ao criar slot sugerido:', e); }
@@ -844,125 +825,53 @@ function openSlotModal(slot, prefillDate) {
           </div>
         </div>
 
-        <!-- Account -->
-        <div style="${fieldGroupStyle}">
-          <label style="${labelStyle}">Conta</label>
-          <select id="cc-f-account" style="${inputStyle}cursor:pointer;">
-            <option value="">Selecionar...</option>
-            ${ACCOUNTS.map(a => `<option value="${a.value}" ${s.account === a.value ? 'selected' : ''}>${esc(a.label)}</option>`).join('')}
-          </select>
-        </div>
-
-        <!-- Row: Date + Time + Slot -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;${fieldGroupStyle}">
+        <!-- Row: Account + Date -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;${fieldGroupStyle}">
+          <div>
+            <label style="${labelStyle}">Conta</label>
+            <select id="cc-f-account" style="${inputStyle}cursor:pointer;">
+              <option value="">Selecionar...</option>
+              ${ACCOUNTS.map(a => `<option value="${a.value}" ${s.account === a.value ? 'selected' : ''}>${esc(a.label)}</option>`).join('')}
+            </select>
+          </div>
           <div>
             <label style="${labelStyle}">Data Agendada</label>
             <input type="date" id="cc-f-date" value="${esc(dateVal)}" style="${inputStyle}" />
           </div>
-          <div>
-            <label style="${labelStyle}">Horario</label>
-            <input type="time" id="cc-f-time" value="${esc(s.scheduledTime || '')}" style="${inputStyle}" />
-          </div>
-          <div>
-            <label style="${labelStyle}">Slot</label>
-            <select id="cc-f-slotTime" style="${inputStyle}cursor:pointer;">
-              <option value="">Selecionar...</option>
-              ${SLOT_TIME_LIST.map(t => `<option value="${t.value}" ${s.slotTime === t.value ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
-            </select>
-          </div>
         </div>
 
-        <!-- Row: Category + Campaign -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;${fieldGroupStyle}">
-          <div>
-            <label style="${labelStyle}">Categoria</label>
-            <select id="cc-f-category" style="${inputStyle}cursor:pointer;">
-              <option value="">Selecionar...</option>
-              ${CATEGORY_LIST.map(c => `<option value="${c.value}" ${s.category === c.value ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
-            </select>
-          </div>
-          <div>
-            <label style="${labelStyle}">Campanha (opcional)</label>
-            <input type="text" id="cc-f-campaign" value="${esc(s.campaign || '')}" placeholder="Nome da campanha"
-              style="${inputStyle}" />
-          </div>
-        </div>
-
-        <!-- Status -->
+        <!-- Category -->
         <div style="${fieldGroupStyle}">
-          <label style="${labelStyle}">Status</label>
-          <select id="cc-f-status" style="${inputStyle}cursor:pointer;">
-            ${Object.entries(STATUS_LABELS).map(([k, v]) => `
-              <option value="${k}" ${(s.status || 'ideia') === k ? 'selected' : ''}
-                style="color:${STATUS_COLORS[k]};">
-                ${esc(v)}
-              </option>
-            `).join('')}
+          <label style="${labelStyle}">Categoria</label>
+          <select id="cc-f-category" style="${inputStyle}cursor:pointer;">
+            <option value="">Selecionar...</option>
+            ${CATEGORY_LIST.map(c => `<option value="${c.value}" ${s.category === c.value ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
           </select>
-          <div id="cc-status-indicator" style="display:flex;align-items:center;gap:6px;margin-top:6px;">
-            <span style="width:8px;height:8px;border-radius:50%;background:${getStatusColor(s.status || 'ideia')};"></span>
-            <span style="font-size:0.75rem;color:${getStatusColor(s.status || 'ideia')};">
-              ${esc(STATUS_LABELS[s.status || 'ideia'])}
-            </span>
-          </div>
         </div>
 
-        <!-- Brief -->
+        <!-- Description (unified brief + caption) -->
         <div style="${fieldGroupStyle}">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-            <label style="${labelStyle}margin-bottom:0;">Brief</label>
-            <button id="cc-ai-brief-toggle" style="padding:3px 10px;border:1px solid var(--brand-gold,#D4A843);
+            <label style="${labelStyle}margin-bottom:0;">Descricao</label>
+            <button id="cc-ai-desc-toggle" style="padding:3px 10px;border:1px solid var(--brand-gold,#D4A843);
               border-radius:6px;background:transparent;color:var(--brand-gold,#D4A843);
               font-size:0.6875rem;cursor:pointer;font-weight:600;transition:opacity 0.15s;">
-              &#9670; IA: Gerar Brief</button>
+              &#9670; IA: Gerar Descricao</button>
           </div>
-          <div id="cc-ai-brief-input" style="display:none;margin-bottom:8px;padding:10px;
+          <div id="cc-ai-desc-input" style="display:none;margin-bottom:8px;padding:10px;
             border:1px solid var(--brand-gold,#D4A843);border-radius:8px;
             background:rgba(212,168,67,0.05);">
-            <input type="text" id="cc-ai-brief-prompt" placeholder="Ex: Foco em experiencias gastronomicas, tom sofisticado..."
+            <input type="text" id="cc-ai-desc-prompt" placeholder="Ex: Foco em experiencias gastronomicas, tom sofisticado..."
               style="${inputStyle}margin-bottom:6px;font-size:0.8125rem;" />
             <div style="display:flex;gap:6px;justify-content:flex-end;">
-              <button id="cc-ai-brief-cancel" style="padding:4px 12px;border:1px solid var(--border-subtle,#1E2D3D);
+              <button id="cc-ai-desc-cancel" style="padding:4px 12px;border:1px solid var(--border-subtle,#1E2D3D);
                 border-radius:6px;background:transparent;color:var(--text-muted);font-size:0.75rem;cursor:pointer;">Cancelar</button>
-              <button id="cc-ai-brief" style="padding:4px 14px;border:none;border-radius:6px;
+              <button id="cc-ai-desc-gen" style="padding:4px 14px;border:none;border-radius:6px;
                 background:var(--brand-gold,#D4A843);color:#000;font-size:0.75rem;font-weight:600;cursor:pointer;">Gerar</button>
             </div>
           </div>
-          <textarea id="cc-f-brief" rows="3" placeholder="Descreva o objetivo e direcionamento do conteudo..."
-            style="${inputStyle}resize:vertical;min-height:70px;">${esc(s.brief || '')}</textarea>
-        </div>
-
-        <!-- Caption -->
-        <div style="${fieldGroupStyle}">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-            <label style="${labelStyle}margin-bottom:0;">Legenda</label>
-            <button id="cc-ai-caption-toggle" style="padding:3px 10px;border:1px solid var(--brand-gold,#D4A843);
-              border-radius:6px;background:transparent;color:var(--brand-gold,#D4A843);
-              font-size:0.6875rem;cursor:pointer;font-weight:600;transition:opacity 0.15s;">
-              &#9670; IA: Gerar Legenda</button>
-          </div>
-          <div id="cc-ai-caption-input" style="display:none;margin-bottom:8px;padding:10px;
-            border:1px solid var(--brand-gold,#D4A843);border-radius:8px;
-            background:rgba(212,168,67,0.05);">
-            <input type="text" id="cc-ai-caption-prompt" placeholder="Ex: Legenda curta e impactante, com CTA para DM..."
-              style="${inputStyle}margin-bottom:6px;font-size:0.8125rem;" />
-            <div style="display:flex;gap:6px;justify-content:flex-end;">
-              <button id="cc-ai-caption-cancel" style="padding:4px 12px;border:1px solid var(--border-subtle,#1E2D3D);
-                border-radius:6px;background:transparent;color:var(--text-muted);font-size:0.75rem;cursor:pointer;">Cancelar</button>
-              <button id="cc-ai-caption" style="padding:4px 14px;border:none;border-radius:6px;
-                background:var(--brand-gold,#D4A843);color:#000;font-size:0.75rem;font-weight:600;cursor:pointer;">Gerar</button>
-            </div>
-          </div>
-          <textarea id="cc-f-caption" rows="4" placeholder="Legenda para a publicacao..."
-            style="${inputStyle}resize:vertical;min-height:90px;">${esc(s.caption || '')}</textarea>
-        </div>
-
-        <!-- Hashtags -->
-        <div style="${fieldGroupStyle}">
-          <label style="${labelStyle}">Hashtags (separadas por virgula)</label>
-          <input type="text" id="cc-f-hashtags" value="${esc(s.hashtags || '')}"
-            placeholder="#primetour, #viagem, #destinos"
-            style="${inputStyle}" />
+          <textarea id="cc-f-description" rows="5" placeholder="Descreva o objetivo, direcionamento, legenda e abordagem do conteudo..."
+            style="${inputStyle}resize:vertical;min-height:100px;">${esc(s.description || s.brief || s.caption || '')}</textarea>
         </div>
 
         <!-- Image Notes -->
@@ -971,17 +880,29 @@ function openSlotModal(slot, prefillDate) {
           <textarea id="cc-f-imageNotes" rows="2" placeholder="Descricao da imagem ou referencia visual..."
             style="${inputStyle}resize:vertical;min-height:50px;">${esc(s.imageNotes || '')}</textarea>
         </div>
+
+        ${!isNew && s.taskId ? `
+        <div style="padding:8px 12px;border-radius:6px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);margin-bottom:14px;">
+          <div style="font-size:0.75rem;color:#22C55E;font-weight:600;">✓ Convertido em tarefa</div>
+        </div>` : ''}
       </div>
 
       <!-- Modal footer -->
       <div style="display:flex;align-items:center;justify-content:${isNew ? 'flex-end' : 'space-between'};
         padding:16px 24px;border-top:1px solid var(--border-subtle,#1E2D3D);">
         ${!isNew ? `
-          <button id="cc-modal-delete" style="padding:8px 18px;border:1px solid #EF4444;border-radius:8px;
-            background:transparent;color:#EF4444;font-size:0.8125rem;font-weight:600;cursor:pointer;
-            transition:all 0.15s;"
-            onmouseover="this.style.background='#EF444415'"
-            onmouseout="this.style.background='transparent'">Excluir</button>
+          <div style="display:flex;gap:8px;">
+            <button id="cc-modal-delete" style="padding:8px 18px;border:1px solid #EF4444;border-radius:8px;
+              background:transparent;color:#EF4444;font-size:0.8125rem;font-weight:600;cursor:pointer;
+              transition:all 0.15s;"
+              onmouseover="this.style.background='#EF444415'"
+              onmouseout="this.style.background='transparent'">Excluir</button>
+            ${!s.taskId ? `<button id="cc-modal-to-task" style="padding:8px 18px;border:1px solid #22C55E;border-radius:8px;
+              background:transparent;color:#22C55E;font-size:0.8125rem;font-weight:600;cursor:pointer;
+              transition:all 0.15s;"
+              onmouseover="this.style.background='#22C55E15'"
+              onmouseout="this.style.background='transparent'">Converter em Tarefa</button>` : ''}
+          </div>
         ` : ''}
         <div style="display:flex;gap:8px;">
           <button id="cc-modal-cancel" style="padding:8px 18px;border:1px solid var(--border-subtle,#1E2D3D);
@@ -1027,46 +948,21 @@ function bindModalEvents() {
   const deleteBtn = document.getElementById('cc-modal-delete');
   if (deleteBtn) deleteBtn.addEventListener('click', handleDelete);
 
-  // Status indicator update
-  const statusSelect = document.getElementById('cc-f-status');
-  if (statusSelect) {
-    statusSelect.addEventListener('change', () => {
-      const indicator = document.getElementById('cc-status-indicator');
-      if (indicator) {
-        const color = getStatusColor(statusSelect.value);
-        indicator.innerHTML = `
-          <span style="width:8px;height:8px;border-radius:50%;background:${color};"></span>
-          <span style="font-size:0.75rem;color:${color};">
-            ${esc(STATUS_LABELS[statusSelect.value] || statusSelect.value)}
-          </span>
-        `;
-      }
-    });
-  }
+  // Convert to task button
+  const toTaskBtn = document.getElementById('cc-modal-to-task');
+  if (toTaskBtn) toTaskBtn.addEventListener('click', handleConvertToTask);
 
-  // AI Brief — toggle input + generate
-  document.getElementById('cc-ai-brief-toggle')?.addEventListener('click', () => {
-    const panel = document.getElementById('cc-ai-brief-input');
+  // AI Description — toggle input + generate
+  document.getElementById('cc-ai-desc-toggle')?.addEventListener('click', () => {
+    const panel = document.getElementById('cc-ai-desc-input');
     if (panel) { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; }
-    document.getElementById('cc-ai-brief-prompt')?.focus();
+    document.getElementById('cc-ai-desc-prompt')?.focus();
   });
-  document.getElementById('cc-ai-brief-cancel')?.addEventListener('click', () => {
-    const panel = document.getElementById('cc-ai-brief-input');
+  document.getElementById('cc-ai-desc-cancel')?.addEventListener('click', () => {
+    const panel = document.getElementById('cc-ai-desc-input');
     if (panel) panel.style.display = 'none';
   });
-  document.getElementById('cc-ai-brief')?.addEventListener('click', handleAIBrief);
-
-  // AI Caption — toggle input + generate
-  document.getElementById('cc-ai-caption-toggle')?.addEventListener('click', () => {
-    const panel = document.getElementById('cc-ai-caption-input');
-    if (panel) { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; }
-    document.getElementById('cc-ai-caption-prompt')?.focus();
-  });
-  document.getElementById('cc-ai-caption-cancel')?.addEventListener('click', () => {
-    const panel = document.getElementById('cc-ai-caption-input');
-    if (panel) panel.style.display = 'none';
-  });
-  document.getElementById('cc-ai-caption')?.addEventListener('click', handleAICaption);
+  document.getElementById('cc-ai-desc-gen')?.addEventListener('click', handleAIDescription);
 
   // Keyboard: Escape to close
   const escHandler = (e) => {
@@ -1097,14 +993,8 @@ function getFormData() {
     contentType:   document.getElementById('cc-f-contentType')?.value || '',
     account:       document.getElementById('cc-f-account')?.value || '',
     scheduledDate: document.getElementById('cc-f-date')?.value || '',
-    scheduledTime: document.getElementById('cc-f-time')?.value || '',
-    slotTime:      document.getElementById('cc-f-slotTime')?.value || '',
     category:      document.getElementById('cc-f-category')?.value || '',
-    campaign:      document.getElementById('cc-f-campaign')?.value?.trim() || '',
-    status:        document.getElementById('cc-f-status')?.value || 'ideia',
-    brief:         document.getElementById('cc-f-brief')?.value?.trim() || '',
-    caption:       document.getElementById('cc-f-caption')?.value?.trim() || '',
-    hashtags:      document.getElementById('cc-f-hashtags')?.value?.trim() || '',
+    description:   document.getElementById('cc-f-description')?.value?.trim() || '',
     imageNotes:    document.getElementById('cc-f-imageNotes')?.value?.trim() || '',
   };
 }
@@ -1128,7 +1018,7 @@ async function handleSave() {
 
   try {
     if (editingSlot) {
-      // Update existing
+      // Update existing — preserve status
       const updated = await updateSlot(editingSlot.id, data);
       const idx = allSlots.findIndex(s => s.id === editingSlot.id);
       if (idx !== -1) {
@@ -1136,10 +1026,11 @@ async function handleSave() {
       }
       toast.success('Slot atualizado com sucesso');
     } else {
-      // Create new
+      // Create new — default status = idea
+      data.status = 'idea';
       const created = await createSlot(data);
       if (created) {
-        allSlots.push(created);
+        allSlots.push({ id: created, ...data });
       } else {
         allSlots.push({ id: 'temp_' + Date.now(), ...data });
       }
@@ -1194,42 +1085,39 @@ async function handleDelete() {
 
 /* ── AI Brief handler ───────────────────────────────────── */
 
-async function handleAIBrief() {
-  const btn = document.getElementById('cc-ai-brief');
-  const textarea = document.getElementById('cc-f-brief');
+async function handleAIDescription() {
+  const btn = document.getElementById('cc-ai-desc-gen');
+  const textarea = document.getElementById('cc-f-description');
   if (!btn || !textarea) return;
 
   const data = getFormData();
-  const userPrompt = document.getElementById('cc-ai-brief-prompt')?.value || '';
+  const userPrompt = document.getElementById('cc-ai-desc-prompt')?.value || '';
   const originalText = btn.innerHTML;
   btn.innerHTML = 'Gerando...';
   btn.disabled = true;
   btn.style.opacity = '0.6';
 
   try {
-    const result = await suggestCaption({
-      type: 'brief',
+    const result = await suggestDescription({
       title: data.title,
+      description: data.description,
       platform: data.platform,
-      contentType: data.contentType,
       category: data.category,
-      campaign: data.campaign,
       account: data.account,
       userPrompt,
     });
 
     if (result && result.text) {
       textarea.value = result.text;
-      toast.success('Brief gerado pela IA');
-      // Fechar painel de input após sucesso
-      const panel = document.getElementById('cc-ai-brief-input');
+      toast.success('Descricao gerada pela IA');
+      const panel = document.getElementById('cc-ai-desc-input');
       if (panel) panel.style.display = 'none';
     } else {
       toast.info('Nenhuma sugestao disponivel');
     }
   } catch (e) {
-    console.error('Erro ao gerar brief:', e);
-    toast.error('Erro ao gerar brief com IA');
+    console.error('Erro ao gerar descricao:', e);
+    toast.error('Erro ao gerar descricao com IA');
   } finally {
     btn.innerHTML = originalText;
     btn.disabled = false;
@@ -1237,47 +1125,42 @@ async function handleAIBrief() {
   }
 }
 
-/* ── AI Caption handler ─────────────────────────────────── */
+/* ── Convert to Task handler ──────────────────────────────── */
 
-async function handleAICaption() {
-  const btn = document.getElementById('cc-ai-caption');
-  const textarea = document.getElementById('cc-f-caption');
-  if (!btn || !textarea) return;
+async function handleConvertToTask() {
+  if (!editingSlot) return;
 
+  const slot = editingSlot;
   const data = getFormData();
-  const userPrompt = document.getElementById('cc-ai-caption-prompt')?.value || '';
-  const originalText = btn.innerHTML;
-  btn.innerHTML = 'Gerando...';
-  btn.disabled = true;
-  btn.style.opacity = '0.6';
 
-  try {
-    const result = await suggestCaption({
-      type: 'caption',
-      title: data.title,
-      platform: data.platform,
-      contentType: data.contentType,
-      category: data.category,
-      campaign: data.campaign,
-      account: data.account,
-      brief: data.brief,
-      userPrompt,
-    });
-
-    if (result && result.text) {
-      textarea.value = result.text;
-      toast.success('Legenda gerada pela IA');
-      const panel = document.getElementById('cc-ai-caption-input');
-      if (panel) panel.style.display = 'none';
-    } else {
-      toast.info('Nenhuma sugestao disponivel');
-    }
-  } catch (e) {
-    console.error('Erro ao gerar legenda:', e);
-    toast.error('Erro ao gerar legenda com IA');
-  } finally {
-    btn.innerHTML = originalText;
-    btn.disabled = false;
-    btn.style.opacity = '1';
+  // Build due date from scheduledDate
+  let dueDate = null;
+  if (data.scheduledDate) {
+    dueDate = new Date(data.scheduledDate + 'T12:00:00');
   }
+
+  closeModal();
+
+  openTaskModal({
+    taskData: {
+      title: data.title || slot.title || '',
+      description: data.description || slot.description || '',
+      sector: 'Marketing',
+      requestingArea: 'Redes Sociais',
+      dueDate,
+      status: 'not_started',
+      tags: ['conteudo', data.platform || '', data.contentType || ''].filter(Boolean),
+    },
+    onSave: async (taskId) => {
+      try {
+        await updateSlot(slot.id, { taskId, status: 'approved' });
+        const idx = allSlots.findIndex(s => s.id === slot.id);
+        if (idx !== -1) { allSlots[idx].taskId = taskId; allSlots[idx].status = 'approved'; }
+        renderCalendarBody();
+        toast.success('Ideia convertida em tarefa!');
+      } catch (e) {
+        console.error('Erro ao vincular tarefa ao slot:', e);
+      }
+    },
+  });
 }
