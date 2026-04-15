@@ -9,7 +9,8 @@ import {
   query, where, orderBy, limit, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import {
-  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+  getAuth, signInWithEmailAndPassword, signInWithPopup, signOut, onAuthStateChanged,
+  OAuthProvider,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
 /* ─── Estado do usuário autenticado ─────────────────────────── */
@@ -57,6 +58,8 @@ async function boot() {
 
       const taskTypes = await loadTaskTypes(db);
       await renderForm(db, taskTypes, auth);
+      // Post-login: show newsletter quick-start prompt
+      showNewsletterPrompt(db, taskTypes);
     } else {
       portalUser = null;
       renderLoginScreen(auth, root);
@@ -100,6 +103,18 @@ function renderLoginScreen(auth, root) {
             </div>
             <button class="portal-submit" id="login-btn" style="margin-top:12px;width:100%;">
               Entrar →
+            </button>
+            <div style="display:flex;align-items:center;gap:12px;margin:16px 0;">
+              <div style="flex:1;height:1px;background:var(--border-subtle);"></div>
+              <span style="font-size:0.75rem;color:var(--text-muted);">ou</span>
+              <div style="flex:1;height:1px;background:var(--border-subtle);"></div>
+            </div>
+            <button id="login-sso-btn" style="width:100%;padding:10px 16px;border-radius:6px;
+              border:1px solid var(--border-subtle);background:var(--bg-surface);color:var(--text-primary);
+              cursor:pointer;font-family:var(--font-ui);font-size:0.875rem;font-weight:500;
+              display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.15s;">
+              <svg width="16" height="16" viewBox="0 0 21 21"><rect width="10" height="10" fill="#f25022"/><rect x="11" width="10" height="10" fill="#7fba00"/><rect y="11" width="10" height="10" fill="#00a4ef"/><rect x="11" y="11" width="10" height="10" fill="#ffb900"/></svg>
+              Entrar com Microsoft SSO
             </button>
             <div style="text-align:center;margin-top:16px;">
               <a href="index.html" style="font-size:0.8125rem;color:var(--brand-gold);text-decoration:none;">
@@ -153,6 +168,60 @@ function renderLoginScreen(auth, root) {
   btnLogin?.addEventListener('click', doLogin);
   passInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
   emailInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') passInput?.focus(); });
+
+  // SSO Microsoft login
+  const ssoBtn = document.getElementById('login-sso-btn');
+  ssoBtn?.addEventListener('click', async () => {
+    ssoBtn.disabled = true;
+    ssoBtn.textContent = 'Conectando ao Microsoft...';
+    errBanner.style.display = 'none';
+    try {
+      const msProvider = new OAuthProvider('microsoft.com');
+      msProvider.setCustomParameters({ tenant: 'primetour.com.br', prompt: 'login', login_hint: '' });
+      msProvider.addScope('user.read');
+      const result = await signInWithPopup(auth, msProvider);
+      const user   = result.user;
+
+      // Validate domain
+      if (user.email && !user.email.toLowerCase().endsWith('@primetour.com.br')) {
+        await signOut(auth);
+        errBanner.style.display = 'flex';
+        errMsg.textContent = 'Apenas e-mails @primetour.com.br são aceitos.';
+        ssoBtn.disabled = false;
+        ssoBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 21 21"><rect width="10" height="10" fill="#f25022"/><rect x="11" width="10" height="10" fill="#7fba00"/><rect y="11" width="10" height="10" fill="#00a4ef"/><rect x="11" y="11" width="10" height="10" fill="#ffb900"/></svg> Entrar com Microsoft SSO';
+        return;
+      }
+
+      // Auto-provision profile if doesn't exist
+      const { doc: docRef, getDoc: getDocFn, setDoc } =
+        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const appDb = getFirestore(auth.app);
+      const profileSnap = await getDocFn(docRef(appDb, 'users', user.uid));
+      if (!profileSnap.exists()) {
+        const displayName = user.displayName || user.email.split('@')[0];
+        const nameParts = displayName.replace(/[._]/g, ' ').split(' ').filter(Boolean);
+        const formattedName = nameParts.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        await setDoc(docRef(appDb, 'users', user.uid), {
+          name: formattedName,
+          email: user.email.toLowerCase(),
+          role: 'member',
+          active: true,
+          department: '',
+          createdAt: new Date(),
+          ssoProvider: 'microsoft',
+        });
+      }
+      // onAuthStateChanged will handle the rest
+    } catch(e) {
+      console.error('SSO portal error:', e);
+      if (e.code !== 'auth/popup-closed-by-user') {
+        errBanner.style.display = 'flex';
+        errMsg.textContent = 'Erro no login SSO: ' + (e.message || e.code || 'Erro desconhecido');
+      }
+      ssoBtn.disabled = false;
+      ssoBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 21 21"><rect width="10" height="10" fill="#f25022"/><rect x="11" width="10" height="10" fill="#7fba00"/><rect y="11" width="10" height="10" fill="#00a4ef"/><rect x="11" y="11" width="10" height="10" fill="#ffb900"/></svg> Entrar com Microsoft SSO';
+    }
+  });
 }
 
 async function loadTaskTypes(db) {
@@ -483,6 +552,94 @@ async function loadCalendarSlots(db, taskTypes=[]) {
   // Calendar widget is rendered after type selection (see bindFormEvents → renderPortalCalendar)
 }
 
+/* ─── Newsletter quick-start prompt ──────────────────────── */
+function showNewsletterPrompt(db, taskTypes) {
+  const hasNewsletter = taskTypes.some(t => t.id === 'newsletter' || t.name?.toLowerCase() === 'newsletter');
+  if (!hasNewsletter) return;
+
+  // Don't show if user already dismissed this session
+  if (sessionStorage.getItem('nl_prompt_dismissed')) return;
+
+  const prompt = document.createElement('div');
+  prompt.id = 'nl-quick-prompt';
+  prompt.style.cssText = `
+    position:fixed;bottom:24px;right:24px;z-index:9999;
+    background:var(--bg-card);border:1px solid rgba(212,168,67,0.3);
+    border-radius:12px;padding:20px;max-width:340px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.3);
+    animation:slideUp 0.3s ease-out;
+    font-family:var(--font-ui);
+  `;
+  prompt.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:12px;">
+      <div style="font-size:1.5rem;flex-shrink:0;">📧</div>
+      <div style="flex:1;">
+        <div style="font-weight:600;color:var(--text-primary);font-size:0.9375rem;margin-bottom:4px;">
+          Solicitação de Newsletter?
+        </div>
+        <p style="font-size:0.8125rem;color:var(--text-muted);line-height:1.5;margin:0 0 12px 0;">
+          Preencha automaticamente os campos para newsletter e vá direto ao calendário editorial.
+        </p>
+        <div style="display:flex;gap:8px;">
+          <button id="nl-quick-yes" style="padding:6px 16px;border-radius:6px;border:none;
+            background:var(--brand-gold);color:#000;font-weight:600;cursor:pointer;font-size:0.8125rem;">
+            Sim, é newsletter
+          </button>
+          <button id="nl-quick-no" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border-subtle);
+            background:transparent;color:var(--text-muted);cursor:pointer;font-size:0.8125rem;">
+            Não
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(prompt);
+
+  document.getElementById('nl-quick-yes')?.addEventListener('click', async () => {
+    prompt.remove();
+    sessionStorage.setItem('nl_prompt_dismissed', '1');
+    // Auto-fill for newsletter
+    await prefillNewsletter(db, taskTypes);
+  });
+
+  document.getElementById('nl-quick-no')?.addEventListener('click', () => {
+    prompt.remove();
+    sessionStorage.setItem('nl_prompt_dismissed', '1');
+  });
+
+  // Auto-dismiss after 15 seconds
+  setTimeout(() => { prompt.remove(); }, 15000);
+}
+
+async function prefillNewsletter(db, taskTypes) {
+  // Set setor = Marketing
+  const setorEl = document.getElementById('p-setor');
+  if (setorEl) {
+    setorEl.value = 'Marketing';
+    setorEl.dispatchEvent(new Event('change'));
+  }
+
+  // Wait for cascade to populate types
+  await new Promise(r => setTimeout(r, 400));
+
+  // Set type = newsletter
+  const typeEl = document.getElementById('p-type');
+  if (typeEl) {
+    const nlType = taskTypes.find(t => t.id === 'newsletter' || t.name?.toLowerCase() === 'newsletter');
+    if (nlType) {
+      typeEl.value = nlType.id;
+      typeEl.dispatchEvent(new Event('change'));
+    }
+  }
+
+  // Wait for calendar to render
+  await new Promise(r => setTimeout(r, 500));
+
+  // Scroll to calendar
+  document.getElementById('portal-calendar-widget')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 /* ─── Batch queue state ──────────────────────────────────── */
 let batchQueue      = [];
 let currentEditIndex = -1;
@@ -622,24 +779,24 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       const dow    = new Date(y,m,d).getDay();
       const isWeekend = dow===0||dow===6;
       const clickable = !isPast && !isWeekend;
-      const cellH = portalCalExpanded ? '100px' : '60px';
-      const cellPad = portalCalExpanded ? '6px' : '3px';
-      const cellFont = portalCalExpanded ? '0.75rem' : '0.6875rem';
-      const slotFont = portalCalExpanded ? '0.6875rem' : '0.5625rem';
+      const cellH = portalCalExpanded ? '120px' : '60px';
+      const cellPad = portalCalExpanded ? '8px' : '3px';
+      const cellFont = portalCalExpanded ? '0.875rem' : '0.6875rem';
+      const slotFont = portalCalExpanded ? '0.8125rem' : '0.5625rem';
       cells+=`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
         style="min-height:${cellH};padding:${cellPad};border-radius:4px;cursor:${clickable?'pointer':'default'};
         background:${hasTasks?'rgba(212,168,67,0.08)':hasSlots?'rgba(212,168,67,0.04)':'transparent'};
         border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':hasSlots?'rgba(212,168,67,0.15)':'transparent'};">
         <div style="font-size:${cellFont};font-weight:${isToday?700:400};
           color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</div>
-        ${slots.map(s=>{const maxChars=portalCalExpanded?22:12;return`<div class="pcal-slot-click" data-slot-date="${dateISO}"
+        ${slots.map(s=>{const maxChars=portalCalExpanded?40:12;return`<div class="pcal-slot-click" data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
           data-slot-area="${esc(s.requestingArea||'')}"
           style="font-size:${slotFont};color:${s.color||'var(--brand-gold)'};
           border-bottom:1px dashed ${s.color||'var(--brand-gold)'};margin-bottom:${portalCalExpanded?'2px':'1px'};
           padding:${portalCalExpanded?'1px 0':0};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
           title="Clique para adicionar: ${esc(s.title)}">◌ ${s.title.slice(0,maxChars)}${s.title.length>maxChars?'…':''}</div>`;}).join('')}
-        ${tasks.map(t=>{const maxChars=portalCalExpanded?22:12;return`<div style="font-size:${slotFont};color:var(--brand-gold);
+        ${tasks.map(t=>{const maxChars=portalCalExpanded?40:12;return`<div style="font-size:${slotFont};color:var(--brand-gold);
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};"
           title="${t.title}${t.requestingArea?' · '+t.requestingArea:''}">● ${t.title.slice(0,maxChars)}${t.title.length>maxChars?'…':''}</div>`;}).join('')}
         ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
@@ -667,10 +824,10 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       const isWeekend= d.getDay()===0||d.getDay()===6;
       const clickable= !isPast && !isWeekend;
       const dateISO  = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-      const wkH = portalCalExpanded ? '120px' : '80px';
-      const wkFont = portalCalExpanded ? '0.75rem' : '0.6875rem';
-      const wkSlotFont = portalCalExpanded ? '0.6875rem' : '0.5625rem';
-      const wkMaxChars = portalCalExpanded ? 22 : 14;
+      const wkH = portalCalExpanded ? '160px' : '80px';
+      const wkFont = portalCalExpanded ? '0.875rem' : '0.6875rem';
+      const wkSlotFont = portalCalExpanded ? '0.8125rem' : '0.5625rem';
+      const wkMaxChars = portalCalExpanded ? 40 : 14;
       return `<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
         style="padding:${portalCalExpanded?'6px':'4px'};min-height:${wkH};border-radius:4px;cursor:${clickable?'pointer':'default'};
         border:1px solid ${isToday?'var(--brand-gold)':'var(--border-subtle)'};">
@@ -762,11 +919,21 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
 
   const wrap = document.createElement('div');
   wrap.id = 'portal-calendar-widget';
-  wrap.style.cssText = 'margin-top:16px;';
+  if (portalCalExpanded) {
+    wrap.style.cssText = `
+      position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;
+      background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;
+      padding:16px;animation:fadeIn 0.2s ease-out;
+    `;
+  } else {
+    wrap.style.cssText = 'margin-top:16px;';
+  }
   wrap.innerHTML = `
     <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
-      border-radius:8px;padding:${portalCalExpanded?'16px':'12px'};font-family:var(--font-ui);
-      transition:all 0.2s ease;">
+      border-radius:8px;padding:${portalCalExpanded?'24px':'12px'};font-family:var(--font-ui);
+      transition:all 0.2s ease;
+      ${portalCalExpanded ? 'width:100%;max-width:1200px;max-height:90vh;overflow-y:auto;box-shadow:0 16px 64px rgba(0,0,0,0.4);' : ''}
+    ">
 
       <!-- Header: type selector + gran switcher + nav -->
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">
@@ -796,12 +963,12 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
             border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;">▶</button>
         </div>
 
-        <!-- Expand/collapse -->
+        <!-- Fullscreen toggle -->
         <button id="pcal-expand" style="padding:3px 8px;border:1px solid var(--border-subtle);
           border-radius:4px;background:${portalCalExpanded?'var(--brand-gold)':'transparent'};
           color:${portalCalExpanded?'#000':'var(--text-muted)'};cursor:pointer;font-size:0.6875rem;"
-          title="${portalCalExpanded?'Reduzir calendário':'Expandir calendário'}">
-          ${portalCalExpanded?'⤡ Reduzir':'⤢ Expandir'}
+          title="${portalCalExpanded?'Sair da tela cheia':'Tela cheia'}">
+          ${portalCalExpanded?'✕ Fechar':'⛶ Tela cheia'}
         </button>
       </div>
 
@@ -863,6 +1030,24 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     renderPortalCalendar(db, types, null);
   });
 
+  // Fullscreen: close on backdrop click or ESC
+  if (portalCalExpanded) {
+    wrap.addEventListener('click', (e) => {
+      if (e.target === wrap) {
+        portalCalExpanded = false;
+        renderPortalCalendar(db, types, null);
+      }
+    });
+    const escHandler = (e) => {
+      if (e.key === 'Escape') {
+        portalCalExpanded = false;
+        renderPortalCalendar(db, types, null);
+        document.removeEventListener('keydown', escHandler);
+      }
+    };
+    document.addEventListener('keydown', escHandler);
+  }
+
   // Slot clicks → pre-fill form from slot data
   wrap.querySelectorAll('.pcal-slot-click').forEach(el => {
     el.addEventListener('click', (e) => {
@@ -910,6 +1095,44 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
     }
   }
 
+  // ── Pre-fill tipo de demanda from the active calendar type ──
+  const typeEl = document.getElementById('p-type');
+  if (typeEl && portalCalTypeId) {
+    typeEl.value = portalCalTypeId;
+    // Don't dispatch change (would re-render calendar), just set value
+  }
+
+  // ── Pre-fill setor from active type's sector ──
+  const types = window._portalTaskTypes || [];
+  const activeType = types.find(t => t.id === portalCalTypeId);
+  if (activeType?.sector) {
+    const setorEl = document.getElementById('p-setor');
+    if (setorEl && setorEl.value !== activeType.sector) {
+      setorEl.value = activeType.sector;
+      // Don't full cascade — just set value, type is already set above
+    }
+  }
+
+  // ── Pre-fill núcleo = "Design" (default for slot-based requests) ──
+  const nucleoSel = document.getElementById('p-nucleo');
+  if (nucleoSel) {
+    // Try to select "Design" or first available option
+    const designOpt = Array.from(nucleoSel.options).find(o =>
+      o.value.toLowerCase().includes('design') || o.textContent.toLowerCase().includes('design')
+    );
+    if (designOpt) {
+      nucleoSel.value = designOpt.value;
+    }
+  }
+
+  // ── Pre-fill título with slot name ──
+  if (title) {
+    const titleEl = document.getElementById('p-title');
+    if (titleEl && !titleEl.value) {
+      titleEl.value = title;
+    }
+  }
+
   // Select variation — try by id first, then match by title/name
   const varSel = document.getElementById('p-variation');
   if (varSel) {
@@ -941,10 +1164,8 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
   document.getElementById('locked-ooc-banner')?.remove();
   // Check urgency by deadline
   checkUrgencyByDeadline(dateISO);
-  // Scroll to variation/title area so user can review pre-filled fields
-  const scrollTarget = document.getElementById('fg-variation')?.style.display !== 'none'
-    ? document.getElementById('fg-variation')
-    : document.getElementById('fg-title');
+  // Scroll to title/description area so user can review pre-filled fields
+  const scrollTarget = document.getElementById('fg-title');
   scrollTarget?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
