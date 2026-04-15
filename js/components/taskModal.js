@@ -341,9 +341,15 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
     const editDate = task.requesterEditAt?.toDate
       ? task.requesterEditAt.toDate().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
       : '';
+    const FIELD_LABELS = {
+      title: 'Título', description: 'Descrição', desiredDate: 'Data',
+      urgency: 'Urgência', outOfCalendar: 'Fora do calendário',
+      variationId: 'Variação', variationName: 'Variação',
+      nucleo: 'Núcleo', sector: 'Setor', requestingArea: 'Área solicitante',
+    };
     const changedFields = (task.requesterEditChanges || '')
       .split(',').map(f => f.trim()).filter(Boolean)
-      .map(f => ({ title:'Título', description:'Descrição', desiredDate:'Data', urgency:'Urgência' }[f] || f))
+      .map(f => FIELD_LABELS[f] || f)
       .join(', ');
     return `
       <div id="tm-requester-edit-banner" style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;
