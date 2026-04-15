@@ -69,6 +69,8 @@ async function boot() {
 
 /* ─── Tela de login ──────────────────────────────────────── */
 function renderLoginScreen(auth, root) {
+  const savedTheme = localStorage.getItem('portal-theme') || 'dark';
+  if (savedTheme === 'light') document.documentElement.setAttribute('data-theme', 'light');
   root.innerHTML = `
     <div class="portal-wrap">
       <header class="portal-header">
@@ -283,6 +285,9 @@ async function renderForm(db, taskTypes, auth) {
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-left:auto;">
           <span style="font-size:0.8125rem;color:var(--text-secondary);">${esc(u.name || u.email)}</span>
+          <button id="portal-theme-btn" title="Alternar tema claro/escuro" style="font-size:1rem;padding:4px 8px;border-radius:4px;
+            border:1px solid var(--border-subtle);background:transparent;color:var(--text-muted);
+            cursor:pointer;line-height:1;">${document.documentElement.getAttribute('data-theme')==='light'?'🌙':'☀️'}</button>
           <a href="index.html" id="portal-go-system" style="font-size:0.75rem;padding:4px 12px;border-radius:4px;
             border:1px solid var(--brand-gold);background:transparent;color:var(--brand-gold);
             cursor:pointer;text-decoration:none;font-weight:500;">Ir para o sistema</a>
@@ -411,7 +416,7 @@ async function renderForm(db, taskTypes, auth) {
               </div>
 
               <!-- Fora do calendário -->
-              <div class="form-group">
+              <div class="form-group" id="fg-out-of-calendar">
                 <label class="urgency-toggle" id="out-of-calendar-toggle">
                   <input type="checkbox" id="p-out-of-calendar" />
                   <div class="urgency-dot" id="out-calendar-dot">✓</div>
@@ -533,6 +538,22 @@ async function renderForm(db, taskTypes, auth) {
       </footer>
     </div>
   `;
+
+  // Theme toggle
+  const savedTheme = localStorage.getItem('portal-theme') || 'dark';
+  if (savedTheme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  const themeBtn = document.getElementById('portal-theme-btn');
+  if (themeBtn) {
+    themeBtn.textContent = savedTheme === 'light' ? '🌙' : '☀️';
+    themeBtn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'light' ? '' : 'light';
+      if (next) document.documentElement.setAttribute('data-theme', 'light');
+      else document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('portal-theme', next || 'dark');
+      themeBtn.textContent = next === 'light' ? '🌙' : '☀️';
+    });
+  }
 
   // Logout button
   document.getElementById('portal-logout-btn')?.addEventListener('click', async () => {
@@ -704,6 +725,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           id:d.id, title:t.title||'', requestingArea:t.requestingArea||'',
           status:t.status||'', description:t.description||'',
           requesterName:t.requesterName||'', typeName:t.typeName||activeType?.name||'',
+          sector:t.sector||activeType?.sector||'',
           urgency:t.urgency||false, outOfCalendar:t.outOfCalendar||false,
           dateISO: dt.toISOString().slice(0,10),
         });
@@ -781,6 +803,18 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     }
   });
 
+  // Check if a slot is filled (has a matching task, request, or batch item on same date)
+  const isSlotFilled = (slotTitle, dateISO, dayTasks) => {
+    const lower = slotTitle.toLowerCase();
+    // Check tasks on this day
+    if (dayTasks?.some(t => t.title?.toLowerCase().includes(lower) || lower.includes(t.title?.toLowerCase()))) return true;
+    // Check requests
+    if (requestMap[dateISO]) return true;
+    // Check batch items
+    if (batchMap[dateISO]) return true;
+    return false;
+  };
+
   // Build month grid
   const buildMonth = () => {
     const firstDay = new Date(y,m,1).getDay();
@@ -809,18 +843,19 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':hasSlots?'rgba(212,168,67,0.15)':'transparent'};">
         <div style="font-size:${cellFont};font-weight:${isToday?700:400};
           color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</div>
-        ${slots.map(s=>{const maxChars=portalCalExpanded?40:12;return`<div class="pcal-slot-click" data-slot-date="${dateISO}"
+        ${slots.map(s=>{const maxChars=portalCalExpanded?40:12;const filled=isSlotFilled(s.title,dateISO,tasks);return`<div class="${filled?'':'pcal-slot-click'}" ${filled?'':`data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
-          data-slot-area="${esc(s.requestingArea||'')}"
-          style="font-size:${slotFont};color:${s.color||'var(--brand-gold)'};
-          border-bottom:1px dashed ${s.color||'var(--brand-gold)'};margin-bottom:${portalCalExpanded?'2px':'1px'};
-          padding:${portalCalExpanded?'1px 0':0};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
-          title="Clique para adicionar: ${esc(s.title)}">◌ ${s.title.slice(0,maxChars)}${s.title.length>maxChars?'…':''}</div>`;}).join('')}
+          data-slot-area="${esc(s.requestingArea||'')}"`}
+          style="font-size:${slotFont};color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};
+          ${filled?`background:rgba(34,197,94,0.1);border-radius:2px;padding:${portalCalExpanded?'1px 3px':'0 2px'};`:`border-bottom:1px dashed ${s.color||'var(--brand-gold)'};padding:${portalCalExpanded?'1px 0':'0'};`}
+          margin-bottom:${portalCalExpanded?'2px':'1px'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+          cursor:${filled?'default':'pointer'};"
+          title="${filled?'✓ Preenchido':'Clique para adicionar'}: ${esc(s.title)}">${filled?'✓':'◌'} ${s.title.slice(0,maxChars)}${s.title.length>maxChars?'…':''}</div>`;}).join('')}
         ${tasks.map((t,ti)=>{const maxChars=portalCalExpanded?40:12;return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
           style="font-size:${slotFont};color:var(--brand-gold);cursor:pointer;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};
           border-radius:2px;transition:background 0.1s;"
-          title="${t.title}${t.requestingArea?' · '+t.requestingArea:''}">● ${t.title.slice(0,maxChars)}${t.title.length>maxChars?'…':''}</div>`;}).join('')}
+          title="${t.title}${t.sector?' · 🏢 '+t.sector:''}${t.typeName?' · 📋 '+t.typeName:''}${t.requestingArea?' · 📍 '+t.requestingArea:''}">● ${t.title.slice(0,maxChars)}${t.title.length>maxChars?'…':''}${portalCalExpanded&&t.sector?` <span style="font-size:0.5rem;opacity:0.7;">🏢</span>`:''}</div>`;}).join('')}
         ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div class="pcal-req-click" data-req-date="${dateISO}"
           style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};cursor:pointer;
           padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
@@ -861,19 +896,20 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         border:1px solid ${isToday?'var(--brand-gold)':'var(--border-subtle)'};">
         <div style="font-size:${wkFont};color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
           font-weight:${isToday?700:400};margin-bottom:3px;">${PT_DAYS_S[d.getDay()]} ${d.getDate()}</div>
-        ${slots.map(s=>`<div class="pcal-slot-click" data-slot-date="${dateISO}"
+        ${slots.map(s=>{const filled=isSlotFilled(s.title,dateISO,dayTasks);return`<div class="${filled?'':'pcal-slot-click'}" ${filled?'':`data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
-          data-slot-area="${esc(s.requestingArea||'')}"
-          style="font-size:${wkSlotFont};border:1px dashed ${s.color||'var(--brand-gold)'};
-          color:${s.color||'var(--brand-gold)'};border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
-          title="Clique para adicionar: ${esc(s.title)}">
-          ◌ ${s.title.slice(0,wkMaxChars)}${s.title.length>wkMaxChars?'…':''}</div>`).join('')}
+          data-slot-area="${esc(s.requestingArea||'')}"`}
+          style="font-size:${wkSlotFont};${filled?`border:1px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.1);`:`border:1px dashed ${s.color||'var(--brand-gold)'};`}
+          color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:${filled?'default':'pointer'};"
+          title="${filled?'✓ Preenchido':'Clique para adicionar'}: ${esc(s.title)}">
+          ${filled?'✓':'◌'} ${s.title.slice(0,wkMaxChars)}${s.title.length>wkMaxChars?'…':''}</div>`;}).join('')}
         ${dayTasks.map((t,ti)=>`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
           style="font-size:${wkSlotFont};background:rgba(212,168,67,0.12);cursor:pointer;
           color:var(--brand-gold);border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.title}">
-          ● ${t.title.slice(0,wkMaxChars)}${t.title.length>wkMaxChars?'…':''}</div>`).join('')}
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+          title="${t.title}${t.sector?' · 🏢 '+t.sector:''}${t.typeName?' · 📋 '+t.typeName:''}">
+          ● ${t.title.slice(0,wkMaxChars)}${t.title.length>wkMaxChars?'…':''}${portalCalExpanded&&t.sector?` <span style="font-size:0.5rem;opacity:0.7;">🏢</span>`:''}</div>`).join('')}
         ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div class="pcal-req-click" data-req-date="${dateISO}"
           style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};cursor:pointer;
           padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
@@ -904,15 +940,17 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       ${slots.length?`
         <div style="margin-bottom:10px;">
           <div style="font-size:0.75rem;font-weight:600;color:var(--brand-gold);margin-bottom:6px;">◌ Agenda do dia</div>
-          ${slots.map(s=>`<div class="${clickable?'pcal-slot-click':''}" ${clickable?`data-slot-date="${dateISO}"
+          ${slots.map(s=>{const filled=isSlotFilled(s.title,dateISO,dTasks);return`<div class="${!filled&&clickable?'pcal-slot-click':''}" ${!filled&&clickable?`data-slot-date="${dateISO}"
             data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
             data-slot-area="${esc(s.requestingArea||'')}"`:''}
-            style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:${clickable?'pointer':'default'};
-            border:1.5px dashed ${s.color||'var(--brand-gold)'};background:${s.color||'var(--brand-gold)'}08;">
-            <div style="font-size:0.8125rem;font-weight:500;color:${s.color||'var(--brand-gold)'};">◌ ${s.title}</div>
+            style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:${!filled&&clickable?'pointer':'default'};
+            ${filled?`border:1.5px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.08);`:`border:1.5px dashed ${s.color||'var(--brand-gold)'};background:${s.color||'var(--brand-gold)'}08;`}">
+            <div style="font-size:0.8125rem;font-weight:500;color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};">${filled?'✓':'◌'} ${s.title}</div>
             ${s.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${s.requestingArea}</div>`:''}
-            ${clickable?`<div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">Clique para adicionar ao formulário</div>`:''}
-          </div>`).join('')}
+            ${filled?`<div style="font-size:0.625rem;color:var(--color-success);margin-top:2px;">Slot preenchido</div>`
+            :clickable?`<div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">Clique para adicionar ao formulário</div>`:''
+            }
+          </div>`;}).join('')}
         </div>
       `:''}
       ${dTasks.length?`
@@ -922,7 +960,12 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
             style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:pointer;
             background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.2);transition:background 0.15s;">
             <div style="font-size:0.8125rem;color:var(--text-primary);">${t.title}</div>
-            ${t.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${t.requestingArea}</div>`:''}
+            <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">
+              ${t.sector?`<span>🏢 ${t.sector}</span>`:''}
+              ${t.typeName?`<span>📋 ${t.typeName}</span>`:''}
+              ${t.requestingArea?`<span>📍 ${t.requestingArea}</span>`:''}
+              <span>📅 ${t.dateISO.split('-').reverse().join('/')}</span>
+            </div>
             <div style="font-size:0.5625rem;color:var(--text-muted);margin-top:2px;">Clique para ver detalhes</div>
           </div>`).join('')}
         </div>
@@ -1521,14 +1564,38 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
   // ── Add to batch ──
   overlay.querySelector('#fs-form-batch').addEventListener('click', () => {
     if (!validateModal()) return;
-    transferToForm();
-    // Wait for cascade then add to batch
-    setTimeout(() => {
-      addToBatch(taskTypes);
-      // Re-render calendar to stay in fullscreen mode
-      renderPortalCalendar(db, taskTypes, null);
-    }, 600);
+    // Collect directly from modal (bypass main form cascade timing issues)
+    const titleVal = overlay.querySelector('#fs-title')?.value?.trim() || '';
+    const descVal  = overlay.querySelector('#fs-desc')?.value?.trim() || '';
+    const varEl    = overlay.querySelector('#fs-variation');
+    const varVal   = varEl?.value || '';
+    const varName  = varEl?.selectedOptions?.[0]?.textContent?.split('·')[0]?.trim() || '';
+    const item = {
+      requestingArea: opts.area || document.getElementById('p-area')?.value || '',
+      sector:         preSetor || document.getElementById('p-setor')?.value || '',
+      typeId:         portalCalTypeId || '',
+      typeName:       activeType?.name || '',
+      typeIcon:       activeType?.icon || '',
+      typeColor:      activeType?.color || '#D4A843',
+      autoAccept:     activeType?.autoAccept || false,
+      variationId:    varVal || opts.variationId || null,
+      variationName:  varName,
+      nucleo:         'Design',
+      title:          titleVal || opts.slotTitle || '',
+      description:    descVal,
+      urgency:        fsUrgent || false,
+      outOfCalendar:  isOOC,
+      desiredDate:    opts.dateISO || '',
+    };
+    if (currentEditIndex >= 0) {
+      batchQueue[currentEditIndex] = item;
+      currentEditIndex = -1;
+    } else {
+      batchQueue.push(item);
+    }
     closeModal();
+    renderBatchList(taskTypes);
+    renderPortalCalendar(db, taskTypes, null);
   });
 
   // Focus title
@@ -2307,11 +2374,11 @@ async function editBatchItem(idx, taskTypes) {
 }
 
 async function handleBatchSubmit(db, taskTypes) {
-  if (!batchQueue.length) return;
+  if (!batchQueue.length) { alert('Nenhuma solicitação no lote.'); return; }
   // Name/email come from authenticated profile
   const name  = portalUser?.name || document.getElementById('p-name')?.value?.trim() || '';
   const email = portalUser?.email || document.getElementById('p-email')?.value?.trim() || '';
-  if (!name || !email) return;
+  if (!name || !email) { alert('Erro: nome ou e-mail não identificados. Faça login novamente.'); return; }
 
   const btn = document.getElementById('batch-submit-btn');
   if (btn) { btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Enviando...'; }
@@ -2470,6 +2537,19 @@ function bindFormEvents(db, taskTypes) {
 
     if (slotsEl) slotsEl.classList.add('visible');
 
+    // Show/hide out-of-calendar toggle based on whether type has schedule slots
+    const oocFG = document.getElementById('fg-out-of-calendar');
+    const typeHasSlots = typeData.scheduleSlots?.length > 0;
+    if (oocFG) {
+      oocFG.style.display = typeHasSlots ? 'block' : 'none';
+      if (!typeHasSlots) {
+        // Uncheck and unlock if type has no slots
+        unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+        document.getElementById('locked-ooc-banner')?.remove();
+        document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'none');
+      }
+    }
+
     // Show calendar widget for this type
     const dbRef  = window._portalDb;
     const types  = window._portalTaskTypes || taskTypes;
@@ -2524,7 +2604,8 @@ function bindFormEvents(db, taskTypes) {
     const types = window._portalTaskTypes || taskTypes;
     const typeId = document.getElementById('p-type')?.value;
     const typeData = types.find(t => t.id === typeId);
-    if (typeData?.scheduleSlots) {
+    const hasSlots = typeData?.scheduleSlots?.length > 0;
+    if (hasSlots) {
       const date = new Date(val + 'T12:00:00');
       const dow = date.getDay();
       const d = date.getDate(), m = date.getMonth(), y = date.getFullYear();
@@ -2546,6 +2627,11 @@ function bindFormEvents(db, taskTypes) {
         document.getElementById('locked-ooc-banner')?.remove();
         document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'none');
       }
+    } else {
+      // Type has no calendar slots — OOC not applicable, hide toggle and unlock
+      unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
+      document.getElementById('locked-ooc-banner')?.remove();
+      document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'none');
     }
     checkUrgencyByDeadline(val);
   });
