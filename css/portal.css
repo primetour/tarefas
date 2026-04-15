@@ -390,6 +390,8 @@ input[type="date"].form-input::-webkit-calendar-picker-indicator:hover {
 }
 
 @keyframes portal-spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn  { from { opacity:0; } to { opacity:1; } }
+@keyframes slideUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
 
 /* ─── Success screen ──────────────────────────────────────── */
 .success-screen {
