@@ -1513,23 +1513,28 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
 
 /* ─── Task/Request preview card (calendar click) ────────────── */
 function showTaskPreviewCard(db, taskTypes, data, anchorEl) {
-  // data: { type: 'task'|'request', title, status, requestingArea, dateISO,
+  // data: { type: 'task'|'request', id, title, status, requestingArea, dateISO,
   //          requesterName, description, urgency, outOfCalendar, typeName }
   document.getElementById('pcal-preview-card')?.remove();
 
   const STATUS_MAP = {
-    pending:   { label: 'Aguardando triagem', color: '#F59E0B', bg: '#FEF3C7' },
-    converted: { label: 'Convertida em tarefa', color: '#22C55E', bg: '#DCFCE7' },
-    rejected:  { label: 'Recusada', color: '#EF4444', bg: '#FEE2E2' },
-    completed: { label: 'Concluída', color: '#22C55E', bg: '#DCFCE7' },
-    done:      { label: 'Concluída', color: '#22C55E', bg: '#DCFCE7' },
+    pending:     { label: 'Aguardando triagem', color: '#F59E0B', bg: '#FEF3C7' },
+    converted:   { label: 'Convertida em tarefa', color: '#22C55E', bg: '#DCFCE7' },
+    rejected:    { label: 'Recusada', color: '#EF4444', bg: '#FEE2E2' },
+    completed:   { label: 'Concluída', color: '#22C55E', bg: '#DCFCE7' },
+    done:        { label: 'Concluída', color: '#22C55E', bg: '#DCFCE7' },
     in_progress: { label: 'Em andamento', color: '#38BDF8', bg: '#DBEAFE' },
-    todo:      { label: 'A fazer', color: '#94A3B8', bg: '#F1F5F9' },
+    todo:        { label: 'A fazer', color: '#94A3B8', bg: '#F1F5F9' },
+    not_started: { label: 'Não iniciada', color: '#94A3B8', bg: '#F1F5F9' },
   };
   const st = STATUS_MAP[data.status] || STATUS_MAP.pending;
 
   const dateParts = data.dateISO ? data.dateISO.split('-') : [];
   const dateDisplay = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : '';
+
+  // Editable: only user's own requests, status pending or converted (not rejected)
+  const isOwnRequest = data.type === 'request' && data.id;
+  const isEditable = isOwnRequest && (data.status === 'pending' || data.status === 'converted');
 
   const card = document.createElement('div');
   card.id = 'pcal-preview-card';
@@ -1540,7 +1545,7 @@ function showTaskPreviewCard(db, taskTypes, data, anchorEl) {
   `;
   card.innerHTML = `
     <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
-      border-radius:12px;padding:20px;width:100%;max-width:420px;
+      border-radius:12px;padding:20px;width:100%;max-width:440px;
       box-shadow:0 16px 48px rgba(0,0,0,0.4);animation:slideUp 0.2s ease-out;font-family:var(--font-ui);">
 
       <!-- Card header -->
@@ -1600,7 +1605,17 @@ function showTaskPreviewCard(db, taskTypes, data, anchorEl) {
         ${esc(data.description).slice(0, 300)}${(data.description || '').length > 300 ? '…' : ''}
       </div>` : ''}
 
-      <div style="text-align:right;">
+      <!-- Edit history (loaded async) -->
+      <div id="pcal-preview-history"></div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        ${isEditable ? `
+        <button id="pcal-preview-edit" style="padding:6px 16px;border-radius:6px;border:none;
+          background:var(--brand-gold);color:#000;font-size:0.8125rem;font-weight:600;cursor:pointer;
+          font-family:var(--font-ui);transition:all 0.15s;">
+          ✏ Editar solicitação
+        </button>` : ''}
         <button id="pcal-preview-close2" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border-subtle);
           background:transparent;color:var(--text-secondary);font-size:0.8125rem;cursor:pointer;
           font-family:var(--font-ui);">Fechar</button>
@@ -1610,12 +1625,275 @@ function showTaskPreviewCard(db, taskTypes, data, anchorEl) {
 
   document.body.appendChild(card);
 
+  // Load edit history if request has it
+  if (data.id && data.type === 'request') {
+    getDoc(doc(db, 'requests', data.id)).then(snap => {
+      if (!snap.exists()) return;
+      const history = snap.data().editHistory || [];
+      if (!history.length) return;
+      const histEl = card.querySelector('#pcal-preview-history');
+      if (!histEl) return;
+      histEl.innerHTML = `
+        <div style="background:#FEF3C710;border:1px solid #F59E0B30;border-radius:8px;
+          padding:10px 12px;margin-bottom:12px;font-size:0.6875rem;">
+          <div style="font-weight:600;color:#F59E0B;margin-bottom:6px;">📝 Histórico de alterações (${history.length})</div>
+          ${history.slice(-3).reverse().map(h => {
+            const dt = h.editedAt?.toDate ? h.editedAt.toDate() : new Date(h.editedAt);
+            const fields = Object.keys(h.changes || {}).map(k => {
+              const labels = { title:'Título', description:'Descrição', desiredDate:'Data', urgency:'Urgência' };
+              return labels[k] || k;
+            }).join(', ');
+            return `<div style="color:var(--text-muted);margin-bottom:3px;padding-left:8px;border-left:2px solid #F59E0B30;">
+              <span style="color:var(--text-secondary);">${dt.toLocaleDateString('pt-BR')} ${dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
+              — Alterou: ${fields}
+            </div>`;
+          }).join('')}
+          ${history.length > 3 ? `<div style="color:var(--text-muted);margin-top:4px;">+ ${history.length - 3} alteraç${history.length-3===1?'ão':'ões'} anteriores</div>` : ''}
+        </div>
+      `;
+    }).catch(() => {});
+  }
+
   const closeCard = () => card.remove();
   card.querySelector('#pcal-preview-close').addEventListener('click', closeCard);
   card.querySelector('#pcal-preview-close2').addEventListener('click', closeCard);
   card.addEventListener('click', (e) => { if (e.target === card) closeCard(); });
   const escCard = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeCard(); document.removeEventListener('keydown', escCard, true); } };
   document.addEventListener('keydown', escCard, true);
+
+  // Edit button
+  card.querySelector('#pcal-preview-edit')?.addEventListener('click', () => {
+    closeCard();
+    openEditRequestModal(db, taskTypes, data);
+  });
+}
+
+/* ─── Edit request modal ─────────────────────────────────────── */
+async function openEditRequestModal(db, taskTypes, data) {
+  // data: { id, title, description, dateISO, urgency, outOfCalendar, status, typeName, ... }
+  document.getElementById('fs-edit-modal')?.remove();
+
+  // Load full request from Firestore
+  let reqData = {};
+  try {
+    const snap = await getDoc(doc(db, 'requests', data.id));
+    if (snap.exists()) reqData = snap.data();
+  } catch(e) { console.warn('Load request error:', e); }
+
+  const dateParts = data.dateISO ? data.dateISO.split('-') : [];
+  const dateDisplay = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : '';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'fs-edit-modal';
+  overlay.style.cssText = `
+    position:fixed;top:0;left:0;right:0;bottom:0;z-index:10002;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(0,0,0,0.5);padding:16px;animation:fadeIn 0.15s ease-out;
+  `;
+  overlay.innerHTML = `
+    <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+      border-radius:12px;padding:24px;width:100%;max-width:520px;max-height:85vh;overflow-y:auto;
+      box-shadow:0 20px 60px rgba(0,0,0,0.5);animation:slideUp 0.2s ease-out;font-family:var(--font-ui);">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <div style="font-size:1rem;font-weight:600;color:var(--text-primary);">✏ Editar solicitação</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+            Enviada em ${dateDisplay} · ${esc(data.typeName || '')}
+          </div>
+        </div>
+        <button id="fs-edit-close" style="background:none;border:none;font-size:1.25rem;
+          color:var(--text-muted);cursor:pointer;padding:4px 8px;">✕</button>
+      </div>
+
+      <!-- Warning -->
+      <div style="background:#FEF3C720;border:1px solid #F59E0B40;border-radius:8px;padding:10px;
+        margin-bottom:16px;font-size:0.75rem;color:#F59E0B;">
+        ⚠ <strong>Atenção:</strong> Alterações serão registradas e notificadas à equipe de produção.
+        ${data.status === 'converted' ? 'Esta solicitação já foi convertida em tarefa — a tarefa também será atualizada.' : ''}
+      </div>
+
+      <!-- Title -->
+      <div style="margin-bottom:12px;">
+        <label style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;display:block;">
+          Título da demanda <span style="color:#EF4444;">*</span>
+        </label>
+        <input type="text" id="fs-edit-title" style="width:100%;padding:8px 12px;border-radius:6px;
+          border:1px solid var(--border-subtle);background:var(--bg-card);color:var(--text-primary);
+          font-size:0.875rem;font-family:var(--font-ui);outline:none;box-sizing:border-box;"
+          value="${esc(reqData.title || data.title || '')}" maxlength="120" />
+      </div>
+
+      <!-- Description -->
+      <div style="margin-bottom:12px;">
+        <label style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;display:block;">
+          Descrição <span style="color:#EF4444;">*</span>
+        </label>
+        <textarea id="fs-edit-desc" rows="4" style="width:100%;padding:8px 12px;border-radius:6px;
+          border:1px solid var(--border-subtle);background:var(--bg-card);color:var(--text-primary);
+          font-size:0.875rem;font-family:var(--font-ui);resize:vertical;outline:none;box-sizing:border-box;"
+        >${esc(reqData.description || data.description || '')}</textarea>
+      </div>
+
+      <!-- Date -->
+      <div style="margin-bottom:12px;">
+        <label style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;display:block;">
+          Data desejada
+        </label>
+        <input type="date" id="fs-edit-date" style="width:100%;padding:8px 12px;border-radius:6px;
+          border:1px solid var(--border-subtle);background:var(--bg-card);color:var(--text-primary);
+          font-size:0.875rem;font-family:var(--font-ui);outline:none;box-sizing:border-box;"
+          value="${data.dateISO || ''}" />
+      </div>
+
+      <!-- Urgency -->
+      <div style="margin-bottom:16px;">
+        <label id="fs-edit-urgency-toggle" style="display:flex;align-items:center;gap:10px;cursor:pointer;
+          padding:8px 12px;border-radius:6px;border:1px solid ${reqData.urgency?'#EF444440':'var(--border-subtle)'};
+          background:${reqData.urgency?'#EF444410':'var(--bg-card)'};transition:all 0.15s;">
+          <div id="fs-edit-urgency-dot" style="width:20px;height:20px;border-radius:50%;
+            border:2px solid ${reqData.urgency?'#EF4444':'var(--border-subtle)'};
+            background:${reqData.urgency?'#EF4444':'transparent'};
+            display:flex;align-items:center;justify-content:center;
+            font-size:0.625rem;color:${reqData.urgency?'#fff':'transparent'};
+            transition:all 0.15s;flex-shrink:0;">✓</div>
+          <div>
+            <div style="font-size:0.8125rem;font-weight:500;color:var(--text-primary);">Marcar como urgente</div>
+          </div>
+        </label>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button id="fs-edit-cancel" style="padding:8px 16px;border-radius:6px;border:1px solid var(--border-subtle);
+          background:transparent;color:var(--text-secondary);font-size:0.8125rem;cursor:pointer;
+          font-family:var(--font-ui);">Cancelar</button>
+        <button id="fs-edit-save" style="padding:8px 20px;border-radius:6px;border:none;
+          background:var(--brand-gold);color:#000;font-weight:600;font-size:0.875rem;cursor:pointer;
+          font-family:var(--font-ui);transition:all 0.15s;">
+          Salvar alterações
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Urgency toggle
+  let editUrgent = !!(reqData.urgency);
+  const urgToggle = overlay.querySelector('#fs-edit-urgency-toggle');
+  const urgDot = overlay.querySelector('#fs-edit-urgency-dot');
+  urgToggle?.addEventListener('click', () => {
+    editUrgent = !editUrgent;
+    if (editUrgent) {
+      urgDot.style.cssText += 'border-color:#EF4444;background:#EF4444;color:#fff;';
+      urgToggle.style.borderColor = '#EF444440';
+      urgToggle.style.background = '#EF444410';
+    } else {
+      urgDot.style.cssText += 'border-color:var(--border-subtle);background:transparent;color:transparent;';
+      urgToggle.style.borderColor = 'var(--border-subtle)';
+      urgToggle.style.background = 'var(--bg-card)';
+    }
+  });
+
+  // Close
+  const closeEdit = () => overlay.remove();
+  overlay.querySelector('#fs-edit-close').addEventListener('click', closeEdit);
+  overlay.querySelector('#fs-edit-cancel').addEventListener('click', closeEdit);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeEdit(); });
+
+  // Save
+  overlay.querySelector('#fs-edit-save').addEventListener('click', async () => {
+    const newTitle = overlay.querySelector('#fs-edit-title')?.value?.trim() || '';
+    const newDesc  = overlay.querySelector('#fs-edit-desc')?.value?.trim() || '';
+    const newDate  = overlay.querySelector('#fs-edit-date')?.value || '';
+
+    if (newTitle.length < 3) { alert('Título precisa ter ao menos 3 caracteres.'); return; }
+    if (newDesc.length < 10) { alert('Descrição precisa ter ao menos 10 caracteres.'); return; }
+
+    const saveBtn = overlay.querySelector('#fs-edit-save');
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando...';
+
+    try {
+      // Detect what changed
+      const changes = {};
+      const oldTitle = reqData.title || '';
+      const oldDesc  = reqData.description || '';
+      const oldDate  = reqData.desiredDate ? (reqData.desiredDate.toDate ? reqData.desiredDate.toDate().toISOString().slice(0,10) : new Date(reqData.desiredDate).toISOString().slice(0,10)) : '';
+      const oldUrgency = !!(reqData.urgency);
+
+      if (newTitle !== oldTitle) changes.title = { from: oldTitle, to: newTitle };
+      if (newDesc !== oldDesc) changes.description = { from: oldDesc.slice(0,80)+'…', to: newDesc.slice(0,80)+'…' };
+      if (newDate !== oldDate) changes.desiredDate = { from: oldDate, to: newDate };
+      if (editUrgent !== oldUrgency) changes.urgency = { from: oldUrgency, to: editUrgent };
+
+      if (!Object.keys(changes).length) {
+        closeEdit();
+        return; // nothing changed
+      }
+
+      // Build edit history entry
+      const editEntry = {
+        editedAt: serverTimestamp(),
+        editedBy: portalUser?.uid || null,
+        editedByName: portalUser?.name || portalUser?.email || '',
+        changes,
+      };
+
+      // Update request
+      const updateData = {
+        title: newTitle,
+        description: newDesc,
+        urgency: editUrgent,
+        updatedAt: serverTimestamp(),
+      };
+      if (newDate) updateData.desiredDate = new Date(newDate + 'T12:00:00');
+
+      // Append to editHistory array
+      const existingHistory = reqData.editHistory || [];
+      updateData.editHistory = [...existingHistory, editEntry];
+
+      await updateDoc(doc(db, 'requests', data.id), updateData);
+
+      // If request has a linked task, update it too
+      const taskId = reqData.taskId;
+      if (taskId) {
+        const taskUpdate = { updatedAt: serverTimestamp() };
+        if (changes.title) taskUpdate.title = newTitle;
+        if (changes.description) taskUpdate.description = newDesc;
+        if (changes.desiredDate && newDate) taskUpdate.dueDate = new Date(newDate + 'T12:00:00');
+        if (changes.urgency) taskUpdate.priority = editUrgent ? 'urgent' : 'medium';
+        // Flag: mark task as having been edited by requester
+        taskUpdate.requesterEditFlag = true;
+        taskUpdate.requesterEditAt = serverTimestamp();
+        taskUpdate.requesterEditChanges = Object.keys(changes).join(', ');
+        try {
+          await updateDoc(doc(db, 'tasks', taskId), taskUpdate);
+        } catch(e) { console.warn('Task update error:', e.message); }
+      }
+
+      closeEdit();
+      // Re-render calendar to reflect changes
+      renderPortalCalendar(db, taskTypes, null);
+
+      // Show success toast (simple inline)
+      const toast = document.createElement('div');
+      toast.style.cssText = `
+        position:fixed;bottom:24px;right:24px;z-index:10003;padding:12px 20px;
+        border-radius:8px;background:#22C55E;color:#fff;font-size:0.875rem;font-weight:600;
+        font-family:var(--font-ui);box-shadow:0 4px 20px rgba(0,0,0,0.3);
+        animation:slideUp 0.2s ease-out;
+      `;
+      toast.textContent = '✓ Solicitação atualizada com sucesso';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 4000);
+
+    } catch(e) {
+      alert('Erro ao salvar: ' + e.message);
+      saveBtn.disabled = false; saveBtn.textContent = 'Salvar alterações';
+    }
+  });
 }
 
 /* ─── Slot/day click helpers ──────────────────────────────── */
