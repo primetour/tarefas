@@ -14,15 +14,49 @@ import { store }    from '../store.js';
 import { auditLog } from '../auth/audit.js';
 
 /* ─── Som de conclusão de tarefa (Web Audio API) ─────────── */
+// Navegadores modernos (Chrome, Safari, Firefox) bloqueiam áudio até o
+// usuário interagir com a página. Pra garantir que o "plin" toque quando
+// a tarefa for concluída, fazemos duas coisas:
+//  1. Primer: no primeiro clique/teclada da sessão, criamos o
+//     AudioContext dentro do gesto do usuário — isso o deixa em estado
+//     "running" permanentemente.
+//  2. resume(): sempre chamamos antes de tocar, caso o contexto tenha
+//     sido suspenso em algum momento.
 let _completionCtx = null;
+let _audioPrimed   = false;
+
+function _ensureAudioCtx() {
+  if (_completionCtx) return _completionCtx;
+  try {
+    _completionCtx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch { /* navegador sem Web Audio */ }
+  return _completionCtx;
+}
+
+if (typeof window !== 'undefined' && !_audioPrimed) {
+  const primer = () => {
+    if (_audioPrimed) return;
+    _audioPrimed = true;
+    const ctx = _ensureAudioCtx();
+    if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+    window.removeEventListener('click',   primer, true);
+    window.removeEventListener('keydown', primer, true);
+    window.removeEventListener('touchstart', primer, true);
+  };
+  window.addEventListener('click',     primer, true);
+  window.addEventListener('keydown',   primer, true);
+  window.addEventListener('touchstart', primer, true);
+}
+
 function playCompletionSound() {
   try {
-    if (!_completionCtx) _completionCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const ctx = _completionCtx;
+    const ctx = _ensureAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     const now = ctx.currentTime;
     // "Plin" — ascending triad: C6 → E6 → G6
     [1047, 1319, 1568].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
+      const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
       osc.frequency.value = freq;
@@ -33,7 +67,7 @@ function playCompletionSound() {
       osc.start(now + i * 0.1);
       osc.stop(now + i * 0.1 + 0.4);
     });
-  } catch { /* AudioContext not available */ }
+  } catch { /* AudioContext não disponível */ }
 }
 
 /* ─── Banner global de edição pelo solicitante ───────────── */
