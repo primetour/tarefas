@@ -37,15 +37,23 @@ function playCompletionSound() {
 }
 
 /* ─── Banner global de edição pelo solicitante ───────────── */
-let _editBannerShownIds = new Set();
+// Key = `${taskId}:${editTimestamp}` so each edit (new timestamp) triggers a fresh banner
+let _editBannerShownKeys = new Set();
 
 function showRequesterEditBanners(tasks) {
-  const edited = tasks.filter(t => t.requesterEditFlag && !_editBannerShownIds.has(t.id));
+  const edited = tasks.filter(t => {
+    if (!t.requesterEditFlag) return false;
+    const ts = t.requesterEditAt?.toMillis ? t.requesterEditAt.toMillis() : 0;
+    const key = `${t.id}:${ts}`;
+    return !_editBannerShownKeys.has(key);
+  });
   if (!edited.length) return;
 
   edited.forEach(t => {
-    _editBannerShownIds.add(t.id);
-    const bannerId = `req-edit-banner-${t.id}`;
+    const ts = t.requesterEditAt?.toMillis ? t.requesterEditAt.toMillis() : 0;
+    const key = `${t.id}:${ts}`;
+    _editBannerShownKeys.add(key);
+    const bannerId = `req-edit-banner-${t.id}-${ts}`;
     if (document.getElementById(bannerId)) return;
 
     const editDate = t.requesterEditAt?.toDate
