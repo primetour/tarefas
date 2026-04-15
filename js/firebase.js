@@ -19,7 +19,8 @@ const secondaryApp = initializeApp(firebaseConfig, 'primetour-secondary');
 export const microsoftProvider = new OAuthProvider('microsoft.com');
 microsoftProvider.setCustomParameters({
   tenant: 'primetour.com.br',     // Restringe ao tenant Microsoft da Primetour
-  // Sem 'prompt' — usa o fluxo padrão do tenant (Authenticator, senha, etc.)
+  prompt: 'login',                // Força login com email/senha (evita PIN do Authenticator)
+  login_hint: '',                 // Não sugere conta anterior
 });
 microsoftProvider.addScope('user.read');
 
