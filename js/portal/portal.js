@@ -1048,7 +1048,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     document.addEventListener('keydown', escHandler);
   }
 
-  // Slot clicks → pre-fill form from slot data
+  // Slot clicks → pre-fill form (or open modal if fullscreen)
   wrap.querySelectorAll('.pcal-slot-click').forEach(el => {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1056,11 +1056,17 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       const title   = el.dataset.slotTitle || '';
       const varId   = el.dataset.slotVariation || '';
       const area    = el.dataset.slotArea || '';
-      fillFormFromSlot(dateISO, title, varId, area);
+      if (portalCalExpanded) {
+        openFullscreenFormModal(db, types, {
+          dateISO, title, variationId: varId, area, outOfCalendar: false,
+        });
+      } else {
+        fillFormFromSlot(dateISO, title, varId, area);
+      }
     });
   });
 
-  // Empty day clicks → out-of-calendar mode
+  // Empty day clicks → out-of-calendar mode (or modal if fullscreen)
   wrap.querySelectorAll('.pcal-day-cell').forEach(cell => {
     cell.addEventListener('click', (e) => {
       if (e.target.closest('.pcal-slot-click')) return; // slot handled above
@@ -1068,17 +1074,282 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       if (!dateISO) return;
       const date  = new Date(dateISO + 'T12:00:00');
       const slots = getSlotsForDate(date);
-      if (slots.length > 0) {
-        // Day has slots but user clicked empty area — just fill date
-        fillFormFromSlot(dateISO, '', '', '');
+      if (portalCalExpanded) {
+        if (slots.length > 0) {
+          openFullscreenFormModal(db, types, {
+            dateISO, title: '', variationId: '', area: '', outOfCalendar: false,
+          });
+        } else {
+          openFullscreenFormModal(db, types, {
+            dateISO, title: '', variationId: '', area: '', outOfCalendar: true,
+          });
+        }
       } else {
-        // No slots → out-of-calendar
-        fillFormFromEmptyDay(dateISO);
+        if (slots.length > 0) {
+          fillFormFromSlot(dateISO, '', '', '');
+        } else {
+          fillFormFromEmptyDay(dateISO);
+        }
       }
     });
   });
 }
 
+
+/* ─── Fullscreen calendar → form modal ────────────────────── */
+function openFullscreenFormModal(db, taskTypes, opts = {}) {
+  // opts: { dateISO, title, variationId, area, outOfCalendar }
+  document.getElementById('fs-form-modal')?.remove();
+
+  const types = window._portalTaskTypes || taskTypes || [];
+  const activeType = types.find(t => t.id === portalCalTypeId);
+  const isSlot = !!opts.title || !!opts.variationId;
+  const isOOC = opts.outOfCalendar === true;
+
+  // Build variation options from active type
+  const variations = activeType?.variations || [];
+  const variationOpts = variations.map(v => {
+    const sel = v.id === opts.variationId ? 'selected' : '';
+    return `<option value="${v.id}" data-sla="${v.slaDays||2}" ${sel}>${v.name}${v.slaDays ? ' · '+v.slaDays+'d' : ''}</option>`;
+  }).join('');
+
+  // Format date for display
+  const dateParts = opts.dateISO ? opts.dateISO.split('-') : [];
+  const dateDisplay = dateParts.length === 3
+    ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
+    : '';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'fs-form-modal';
+  overlay.style.cssText = `
+    position:fixed;top:0;left:0;right:0;bottom:0;z-index:10001;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(0,0,0,0.5);padding:16px;animation:fadeIn 0.15s ease-out;
+  `;
+  overlay.innerHTML = `
+    <div id="fs-form-content" style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+      border-radius:12px;padding:24px;width:100%;max-width:520px;max-height:85vh;overflow-y:auto;
+      box-shadow:0 20px 60px rgba(0,0,0,0.5);animation:slideUp 0.2s ease-out;font-family:var(--font-ui);">
+
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <div style="font-size:1rem;font-weight:600;color:var(--text-primary);">
+            ${isOOC ? '📝 Nova solicitação' : '📅 Solicitação via calendário'}
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+            ${dateDisplay ? `Data: <strong style="color:var(--brand-gold);">${dateDisplay}</strong>` : ''}
+            ${activeType ? ` · ${activeType.icon||''} ${activeType.name}` : ''}
+            ${isOOC ? ' · <span style="color:#F59E0B;">Fora do calendário</span>' : ''}
+          </div>
+        </div>
+        <button id="fs-form-close" style="background:none;border:none;font-size:1.25rem;
+          color:var(--text-muted);cursor:pointer;padding:4px 8px;border-radius:4px;
+          transition:all 0.15s;" title="Fechar">✕</button>
+      </div>
+
+      ${isOOC ? `
+        <div style="background:#FEF3C720;border:1px solid #F59E0B40;border-radius:8px;padding:10px;
+          margin-bottom:16px;font-size:0.75rem;color:#F59E0B;">
+          ⚠ <strong>Fora do calendário</strong> — esta data não possui agenda programada.
+          Demandas fora do calendário podem impactar o planejamento da equipe.
+        </div>
+      ` : ''}
+
+      <!-- Título -->
+      <div style="margin-bottom:12px;">
+        <label style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;display:block;">
+          Título da demanda <span style="color:#EF4444;">*</span>
+        </label>
+        <input type="text" id="fs-title" style="width:100%;padding:8px 12px;border-radius:6px;
+          border:1px solid var(--border-subtle);background:var(--bg-card);color:var(--text-primary);
+          font-size:0.875rem;font-family:var(--font-ui);outline:none;box-sizing:border-box;"
+          value="${esc(opts.title || '')}" placeholder="Ex: Newsletter Maio — Programa ICs" maxlength="120" />
+        <div id="fs-err-title" style="display:none;font-size:0.6875rem;color:#EF4444;margin-top:4px;">
+          Informe um título (mín. 3 caracteres).
+        </div>
+      </div>
+
+      <!-- Descrição -->
+      <div style="margin-bottom:12px;">
+        <label style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;display:block;">
+          Descrição <span style="color:#EF4444;">*</span>
+        </label>
+        <textarea id="fs-desc" rows="3" style="width:100%;padding:8px 12px;border-radius:6px;
+          border:1px solid var(--border-subtle);background:var(--bg-card);color:var(--text-primary);
+          font-size:0.875rem;font-family:var(--font-ui);resize:vertical;outline:none;box-sizing:border-box;"
+          placeholder="Descreva em detalhes o que você precisa..."></textarea>
+        <div id="fs-err-desc" style="display:none;font-size:0.6875rem;color:#EF4444;margin-top:4px;">
+          Descreva sua demanda (mín. 10 caracteres).
+        </div>
+      </div>
+
+      ${variations.length ? `
+      <!-- Variação -->
+      <div style="margin-bottom:12px;">
+        <label style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;display:block;">
+          Variação do material
+        </label>
+        <select id="fs-variation" style="width:100%;padding:8px 12px;border-radius:6px;
+          border:1px solid var(--border-subtle);background:var(--bg-card);color:var(--text-primary);
+          font-size:0.875rem;font-family:var(--font-ui);outline:none;box-sizing:border-box;">
+          <option value="">— Selecione —</option>
+          ${variationOpts}
+        </select>
+      </div>
+      ` : ''}
+
+      <!-- Urgência toggle -->
+      <div style="margin-bottom:16px;">
+        <label id="fs-urgency-toggle" style="display:flex;align-items:center;gap:10px;cursor:pointer;
+          padding:8px 12px;border-radius:6px;border:1px solid var(--border-subtle);
+          background:var(--bg-card);transition:all 0.15s;">
+          <div id="fs-urgency-dot" style="width:20px;height:20px;border-radius:50%;
+            border:2px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;
+            font-size:0.625rem;color:transparent;transition:all 0.15s;flex-shrink:0;">✓</div>
+          <div>
+            <div style="font-size:0.8125rem;font-weight:500;color:var(--text-primary);">Marcar como urgente</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">Apenas se há prazo real e inegociável.</div>
+          </div>
+        </label>
+      </div>
+
+      <!-- Info resumo -->
+      <div style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:8px;
+        padding:10px 12px;margin-bottom:16px;font-size:0.6875rem;color:var(--text-muted);">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          ${activeType?.sector ? `<span>📁 Setor: <strong>${activeType.sector}</strong></span>` : ''}
+          ${activeType ? `<span>📋 Tipo: <strong>${activeType.name}</strong></span>` : ''}
+          <span>👤 ${esc(portalUser?.name || portalUser?.email || '')}</span>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:8px;">
+        <button id="fs-form-submit" style="flex:1;padding:10px 16px;border-radius:6px;border:none;
+          background:var(--brand-gold);color:#000;font-weight:600;font-size:0.875rem;
+          cursor:pointer;font-family:var(--font-ui);transition:all 0.15s;">
+          Enviar solicitação →
+        </button>
+        <button id="fs-form-batch" style="padding:10px 16px;border-radius:6px;
+          border:1px solid var(--border-subtle);background:transparent;color:var(--text-secondary);
+          font-weight:500;font-size:0.8125rem;cursor:pointer;font-family:var(--font-ui);
+          transition:all 0.15s;" title="Adicionar ao lote e continuar selecionando">
+          + Lote
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // ── Urgency toggle ──
+  let fsUrgent = false;
+  const urgToggle = overlay.querySelector('#fs-urgency-toggle');
+  const urgDot = overlay.querySelector('#fs-urgency-dot');
+  // Auto-mark urgent if deadline < 24h
+  if (opts.dateISO) {
+    const deadline = new Date(opts.dateISO + 'T23:59:59');
+    if ((deadline - new Date()) / 3600000 <= 24) {
+      fsUrgent = true;
+      urgDot.style.cssText += 'border-color:#EF4444;background:#EF4444;color:#fff;';
+      urgToggle.style.borderColor = '#EF444440';
+      urgToggle.style.background = '#EF444410';
+    }
+  }
+  urgToggle?.addEventListener('click', () => {
+    fsUrgent = !fsUrgent;
+    if (fsUrgent) {
+      urgDot.style.cssText += 'border-color:#EF4444;background:#EF4444;color:#fff;';
+      urgToggle.style.borderColor = '#EF444440';
+      urgToggle.style.background = '#EF444410';
+    } else {
+      urgDot.style.cssText += 'border-color:var(--border-subtle);background:transparent;color:transparent;';
+      urgToggle.style.borderColor = 'var(--border-subtle)';
+      urgToggle.style.background = 'var(--bg-card)';
+    }
+  });
+
+  // ── Close ──
+  const escFn = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeModal(); } };
+  const closeModal = () => { overlay.remove(); document.removeEventListener('keydown', escFn, true); };
+  overlay.querySelector('#fs-form-close').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  // ESC closes modal (not the fullscreen calendar behind it)
+  document.addEventListener('keydown', escFn, true);
+
+  // ── Validate modal fields ──
+  const validateModal = () => {
+    let ok = true;
+    const titleVal = overlay.querySelector('#fs-title')?.value?.trim() || '';
+    const descVal = overlay.querySelector('#fs-desc')?.value?.trim() || '';
+    const errTitle = overlay.querySelector('#fs-err-title');
+    const errDesc = overlay.querySelector('#fs-err-desc');
+    if (titleVal.length < 3) { errTitle.style.display = 'block'; overlay.querySelector('#fs-title').style.borderColor = '#EF4444'; ok = false; }
+    else { errTitle.style.display = 'none'; overlay.querySelector('#fs-title').style.borderColor = 'var(--border-subtle)'; }
+    if (descVal.length < 10) { errDesc.style.display = 'block'; overlay.querySelector('#fs-desc').style.borderColor = '#EF4444'; ok = false; }
+    else { errDesc.style.display = 'none'; overlay.querySelector('#fs-desc').style.borderColor = 'var(--border-subtle)'; }
+    return ok;
+  };
+
+  // ── Transfer modal data to real form ──
+  const transferToForm = () => {
+    const titleVal = overlay.querySelector('#fs-title')?.value?.trim() || '';
+    const descVal = overlay.querySelector('#fs-desc')?.value?.trim() || '';
+    const varVal = overlay.querySelector('#fs-variation')?.value || '';
+
+    // Fill the real form in the background
+    // 1. Date
+    fillFormFromSlot(opts.dateISO || '', opts.title || '', opts.variationId || '', opts.area || '');
+
+    // 2. Override title and description from modal
+    const titleEl = document.getElementById('p-title');
+    if (titleEl) titleEl.value = titleVal;
+    const descEl = document.getElementById('p-desc');
+    if (descEl) descEl.value = descVal;
+
+    // 3. Override variation if user changed it in modal
+    if (varVal) {
+      const varEl = document.getElementById('p-variation');
+      if (varEl) { varEl.value = varVal; varEl.dispatchEvent(new Event('change')); }
+    }
+
+    // 4. Urgency
+    if (fsUrgent) {
+      lockToggle('urgency-toggle', 'p-urgency', 'urgency-dot', true);
+    }
+
+    // 5. Out of calendar
+    if (isOOC) {
+      lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
+      document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'flex');
+    }
+  };
+
+  // ── Submit single ──
+  overlay.querySelector('#fs-form-submit').addEventListener('click', async () => {
+    if (!validateModal()) return;
+    transferToForm();
+    closeModal();
+    // Close fullscreen calendar
+    portalCalExpanded = false;
+    renderPortalCalendar(db, taskTypes, null);
+    // Submit
+    await handleSubmit(db, taskTypes);
+  });
+
+  // ── Add to batch ──
+  overlay.querySelector('#fs-form-batch').addEventListener('click', () => {
+    if (!validateModal()) return;
+    transferToForm();
+    addToBatch(taskTypes);
+    closeModal();
+    // Stay in fullscreen calendar so user can pick more slots
+  });
+
+  // Focus title
+  setTimeout(() => overlay.querySelector('#fs-title')?.focus(), 100);
+}
 
 /* ─── Slot/day click helpers ──────────────────────────────── */
 function fillFormFromSlot(dateISO, title, variationId, area) {
