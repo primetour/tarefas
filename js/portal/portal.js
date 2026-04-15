@@ -1966,19 +1966,46 @@ async function openEditRequestModal(db, taskTypes, data) {
         return; // nothing changed
       }
 
-      // Build edit history entry
+      // Build edit history entry (use Date instead of serverTimestamp — Firestore forbids serverTimestamp inside arrays)
       const editEntry = {
-        editedAt: serverTimestamp(),
+        editedAt: new Date(),
         editedBy: portalUser?.uid || null,
         editedByName: portalUser?.name || portalUser?.email || '',
         changes,
       };
+
+      // Auto-calculate outOfCalendar when date changes
+      const types = window._portalTaskTypes || taskTypes || [];
+      const editTypeId = reqData.typeId || '';
+      const editTypeData = types.find(t => t.id === editTypeId);
+      const typeHasSlots = editTypeData?.scheduleSlots?.length > 0;
+      let newOutOfCalendar = reqData.outOfCalendar || false;
+      if (typeHasSlots && newDate) {
+        const nd = new Date(newDate + 'T12:00:00');
+        const dow = nd.getDay();
+        const dayOfMonth = nd.getDate();
+        const iso = newDate;
+        const matchesSlot = (editTypeData.scheduleSlots || []).some(s => {
+          if (s.active === false) return false;
+          if (s.recurrence === 'weekly') return s.weekDay === dow;
+          if (s.recurrence === 'monthly_days') return (s.monthDays || []).includes(dayOfMonth);
+          if (s.recurrence === 'custom') return (s.customDates || []).includes(iso);
+          return false;
+        });
+        newOutOfCalendar = !matchesSlot;
+        if (newOutOfCalendar !== (reqData.outOfCalendar || false)) {
+          changes.outOfCalendar = { from: reqData.outOfCalendar || false, to: newOutOfCalendar };
+        }
+      } else if (!typeHasSlots) {
+        newOutOfCalendar = false;
+      }
 
       // Update request
       const updateData = {
         title: newTitle,
         description: newDesc,
         urgency: editUrgent,
+        outOfCalendar: newOutOfCalendar,
         updatedAt: serverTimestamp(),
       };
       if (newDate) updateData.desiredDate = new Date(newDate + 'T12:00:00');
@@ -1997,6 +2024,7 @@ async function openEditRequestModal(db, taskTypes, data) {
         if (changes.description) taskUpdate.description = newDesc;
         if (changes.desiredDate && newDate) taskUpdate.dueDate = new Date(newDate + 'T12:00:00');
         if (changes.urgency) taskUpdate.priority = editUrgent ? 'urgent' : 'medium';
+        if (changes.outOfCalendar) taskUpdate.outOfCalendar = newOutOfCalendar;
         // Flag: mark task as having been edited by requester
         taskUpdate.requesterEditFlag = true;
         taskUpdate.requesterEditAt = serverTimestamp();
