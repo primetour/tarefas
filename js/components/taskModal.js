@@ -335,8 +335,40 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
       }).join('')
     : `<div style="padding:12px;color:var(--text-muted);font-size:0.875rem;">Nenhum usuário ativo.</div>`;
 
+  // Build requester-edit banner if task was modified by the portal user
+  const editBanner = (() => {
+    if (!task.requesterEditFlag) return '';
+    const editDate = task.requesterEditAt?.toDate
+      ? task.requesterEditAt.toDate().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
+      : '';
+    const changedFields = (task.requesterEditChanges || '')
+      .split(',').map(f => f.trim()).filter(Boolean)
+      .map(f => ({ title:'Título', description:'Descrição', desiredDate:'Data', urgency:'Urgência' }[f] || f))
+      .join(', ');
+    return `
+      <div id="tm-requester-edit-banner" style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;
+        padding:10px 14px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px;">
+        <span style="font-size:1.125rem;flex-shrink:0;">📝</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.8125rem;font-weight:600;color:#92400E;">
+            Solicitação alterada pelo solicitante
+          </div>
+          <div style="font-size:0.75rem;color:#92400E;margin-top:2px;">
+            ${changedFields ? 'Campos alterados: <strong>' + changedFields + '</strong>' : 'Verifique os campos atualizados.'}
+            ${editDate ? '<br>Alterado em: ' + editDate : ''}
+          </div>
+          <div style="font-size:0.6875rem;color:#B45309;margin-top:4px;">
+            Confira as informações antes de prosseguir com a produção.
+          </div>
+        </div>
+        <button id="tm-dismiss-edit-banner" style="background:none;border:none;color:#92400E;
+          cursor:pointer;font-size:0.875rem;padding:0 4px;flex-shrink:0;" title="Dispensar">✕</button>
+      </div>`;
+  })();
+
   return `<div class="task-modal-grid">
     <div class="task-modal-main">
+      ${editBanner}
       <input type="text" id="tm-title" class="task-modal-title-input"
         placeholder="Título da tarefa..." value="${esc(task.title)}" maxlength="200" />
       <span class="form-error-msg" id="tm-title-error"></span>
@@ -648,6 +680,21 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
   // when a modal root isn't provided, preserving legacy behavior.
   const root = rootEl || document;
   const qId = (id) => (rootEl ? rootEl.querySelector('#' + id) : document.getElementById(id));
+
+  // Dismiss requester-edit banner + clear flag on task
+  document.getElementById('tm-dismiss-edit-banner')?.addEventListener('click', async () => {
+    document.getElementById('tm-requester-edit-banner')?.remove();
+    if (task.id && task.requesterEditFlag) {
+      try {
+        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { db } = await import('../firebase.js');
+        await updateDoc(doc(db, 'tasks', task.id), {
+          requesterEditFlag: false,
+        });
+      } catch(e) { /* silent */ }
+    }
+  });
+
   // Recorrência (apenas criação)
   if (!isEdit) {
     const recToggle = document.getElementById('tm-recurring-toggle');
