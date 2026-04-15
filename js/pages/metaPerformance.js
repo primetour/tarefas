@@ -92,6 +92,9 @@ export async function renderMetaPerformance(container) {
       </div>
     </div>
 
+    <!-- Token expiration / sync health banner -->
+    <div id="meta-token-banner" style="display:none;margin-bottom:16px;"></div>
+
     <!-- Filters -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center;">
       <select class="filter-select" id="meta-acct-filter" style="min-width:180px;">
@@ -214,14 +217,16 @@ async function loadData(editMode = false) {
     });
 
     const status = document.getElementById('meta-sync-status');
-    if (status && allData.length) {
+    let lastSync = null;
+    if (allData.length) {
       const latest = allData.reduce((a,b) => {
         const at = b.syncedAt?.toDate?.(), aa = a.syncedAt?.toDate?.();
         return at && (!aa || at > aa) ? b : a;
       }, allData[0]);
-      const sd = latest.syncedAt?.toDate?.();
-      if (sd) status.textContent = `Sync: ${fmt({ toDate: () => sd })}`;
+      lastSync = latest.syncedAt?.toDate?.() || null;
+      if (status && lastSync) status.textContent = `Sync: ${fmt({ toDate: () => lastSync })}`;
     }
+    renderTokenBanner(lastSync);
 
     renderTable(editMode);
   } catch(e) {
@@ -229,6 +234,137 @@ async function loadData(editMode = false) {
     const tbody = document.getElementById('meta-tbody');
     if (tbody) tbody.innerHTML = `<tr><td colspan="15" style="padding:40px;text-align:center;
       color:var(--text-muted);">Erro: ${esc(e.message)}</td></tr>`;
+    renderTokenBanner(null);
+  }
+}
+
+/* ─── Token expiration / sync health banner ──────────────
+ * Meta Graph API long-lived access tokens expire every ~60 days.
+ * When META_ACCESS_TOKEN expires, the daily GitHub Actions sync
+ * (.github/workflows/meta-sync.yml) fails silently and data stops
+ * updating. This banner makes the problem visible and gives
+ * step-by-step renewal instructions.
+ *
+ * States:
+ *  • ok      → sync < 2 days old: discreet collapsed info
+ *  • warn    → sync 2-6 days old: amber banner ("sync atrasada")
+ *  • stale   → sync 7+ days old OR no data: red banner
+ *              ("token provavelmente expirou")
+ */
+function renderTokenBanner(lastSync) {
+  const el = document.getElementById('meta-token-banner');
+  if (!el) return;
+  el.style.display = 'block';
+
+  const now = new Date();
+  let state = 'ok';
+  let daysAgo = null;
+  if (!lastSync) {
+    state = 'stale';
+  } else {
+    daysAgo = Math.floor((now - lastSync) / (1000 * 60 * 60 * 24));
+    if (daysAgo >= 7) state = 'stale';
+    else if (daysAgo >= 2) state = 'warn';
+  }
+
+  const COLORS = {
+    ok:    { bg:'rgba(34,197,94,0.06)',  border:'rgba(34,197,94,0.3)',  accent:'#22C55E', icon:'ℹ', title:'Token Meta vence a cada ~60 dias' },
+    warn:  { bg:'rgba(245,158,11,0.08)', border:'rgba(245,158,11,0.4)', accent:'#F59E0B', icon:'⚠', title:'Sincronização atrasada' },
+    stale: { bg:'rgba(239,68,68,0.08)',  border:'rgba(239,68,68,0.5)',  accent:'#EF4444', icon:'🔴', title:'Sincronização parou — token Meta provavelmente expirou' },
+  };
+  const c = COLORS[state];
+
+  const stateMsg = state === 'stale'
+    ? (lastSync
+        ? `Última sincronização há <strong>${daysAgo} dias</strong>. O sync diário (06:00 BRT) não está rodando. Causa mais provável: <code>META_ACCESS_TOKEN</code> expirou.`
+        : `Nenhuma sincronização registrada. O sync diário pode nunca ter rodado ou o token expirou.`)
+    : state === 'warn'
+    ? `Última sincronização há ${daysAgo} dias. Se não atualizar nas próximas 24h, provavelmente é token expirado.`
+    : `Sincronização diária ativa. Se os dados pararem de atualizar, expanda abaixo para instruções de renovação.`;
+
+  const expanded = state !== 'ok';  // always expanded when warn/stale
+
+  el.innerHTML = `
+    <div style="padding:14px 16px;border:1px solid ${c.border};background:${c.bg};border-radius:8px;
+      font-family:var(--font-ui);">
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <div style="font-size:1.25rem;line-height:1;margin-top:1px;">${c.icon}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div style="font-weight:600;color:${c.accent};font-size:0.9375rem;">${c.title}</div>
+            ${state==='ok' ? `<button id="meta-token-toggle" class="btn btn-ghost btn-sm"
+              style="font-size:0.75rem;color:var(--text-muted);">Ver instruções de renovação ▾</button>` : ''}
+          </div>
+          <div style="font-size:0.8125rem;color:var(--text-secondary);margin-top:4px;line-height:1.5;">
+            ${stateMsg}
+          </div>
+          <div id="meta-token-details" style="display:${expanded?'block':'none'};margin-top:12px;
+            padding-top:12px;border-top:1px dashed ${c.border};">
+            <div style="font-size:0.8125rem;color:var(--text-primary);font-weight:600;margin-bottom:8px;">
+              Passos para renovar o token (leva ~5 min):
+            </div>
+            <ol style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.7;margin:0;padding-left:20px;">
+              <li>
+                Acesse o <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener"
+                  style="color:${c.accent};text-decoration:underline;">Graph API Explorer</a>
+                (logado na conta Meta com acesso às páginas de Instagram)
+              </li>
+              <li>
+                Selecione o app <strong>PRIMETOUR</strong> no dropdown "Meta App" e gere um
+                <strong>User Token</strong> com as permissões:
+                <code style="font-size:0.75rem;background:var(--bg-card);padding:1px 4px;border-radius:3px;">
+                  instagram_basic, instagram_manage_insights, pages_show_list, pages_read_engagement
+                </code>
+              </li>
+              <li>
+                Converta o token short-lived em <strong>long-lived</strong> (60 dias) via:
+                <code style="display:block;margin-top:4px;font-size:0.72rem;background:var(--bg-card);
+                  padding:6px 8px;border-radius:4px;white-space:pre-wrap;word-break:break-all;color:var(--text-primary);">GET https://graph.facebook.com/v25.0/oauth/access_token?grant_type=fb_exchange_token&client_id={META_APP_ID}&client_secret={META_APP_SECRET}&fb_exchange_token={SHORT_LIVED_TOKEN}</code>
+              </li>
+              <li>
+                Copie o novo <code>access_token</code> retornado e cole em
+                <a href="https://github.com/primetour/tarefas/settings/secrets/actions/META_ACCESS_TOKEN"
+                  target="_blank" rel="noopener"
+                  style="color:${c.accent};text-decoration:underline;">
+                  GitHub → Secrets → <code>META_ACCESS_TOKEN</code>
+                </a>
+                (clique em "Update secret")
+              </li>
+              <li>
+                Valide: rode o workflow manualmente em
+                <a href="https://github.com/primetour/tarefas/actions/workflows/meta-sync.yml"
+                  target="_blank" rel="noopener"
+                  style="color:${c.accent};text-decoration:underline;">
+                  GitHub Actions → Sync Meta Instagram → Run workflow
+                </a>
+                e confira se conclui com ✓ verde
+              </li>
+              <li>
+                Volte nesta página e confirme que o "Sync:" no canto superior direito
+                mostra a hora atual.
+              </li>
+            </ol>
+            <div style="margin-top:10px;padding:8px 10px;background:var(--bg-card);border-radius:4px;
+              font-size:0.75rem;color:var(--text-muted);line-height:1.5;">
+              💡 <strong>Dica:</strong> anote na sua agenda um lembrete para renovar o token
+              a cada 50 dias (10 dias antes do vencimento). Depois de renovado, o sync diário
+              volta automaticamente sem precisar mexer em mais nada.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Toggle expand/collapse (only in 'ok' state — warn/stale are always expanded)
+  if (state === 'ok') {
+    const toggle  = el.querySelector('#meta-token-toggle');
+    const details = el.querySelector('#meta-token-details');
+    toggle?.addEventListener('click', () => {
+      const open = details.style.display === 'block';
+      details.style.display = open ? 'none' : 'block';
+      toggle.textContent = open ? 'Ver instruções de renovação ▾' : 'Esconder instruções ▴';
+    });
   }
 }
 
