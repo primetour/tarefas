@@ -36,6 +36,79 @@ function playCompletionSound() {
   } catch { /* AudioContext not available */ }
 }
 
+/* ─── Banner global de edição pelo solicitante ───────────── */
+let _editBannerShownIds = new Set();
+
+function showRequesterEditBanners(tasks) {
+  const edited = tasks.filter(t => t.requesterEditFlag && !_editBannerShownIds.has(t.id));
+  if (!edited.length) return;
+
+  edited.forEach(t => {
+    _editBannerShownIds.add(t.id);
+    const bannerId = `req-edit-banner-${t.id}`;
+    if (document.getElementById(bannerId)) return;
+
+    const editDate = t.requesterEditAt?.toDate
+      ? t.requesterEditAt.toDate().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '';
+    const fields = (t.requesterEditChanges || '').split(',').map(f => f.trim()).filter(Boolean).join(', ');
+
+    const banner = document.createElement('div');
+    banner.id = bannerId;
+    banner.style.cssText = `
+      position:fixed;top:12px;right:12px;z-index:10005;max-width:400px;
+      background:#FEF3C7;border:1px solid #F59E0B;border-radius:10px;
+      padding:14px 16px;box-shadow:0 8px 32px rgba(0,0,0,0.15);
+      animation:slideUp 0.3s ease-out;font-family:var(--font-ui);
+    `;
+    banner.innerHTML = `
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <span style="font-size:1.25rem;flex-shrink:0;">📝</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.8125rem;font-weight:700;color:#92400E;">
+            Solicitação alterada pelo solicitante
+          </div>
+          <div style="font-size:0.75rem;color:#92400E;margin-top:3px;line-height:1.5;">
+            <strong>${t.title ? t.title.slice(0, 50) + (t.title.length > 50 ? '…' : '') : 'Tarefa'}</strong>
+            ${fields ? '<br>Campos alterados: <strong>' + fields + '</strong>' : ''}
+            ${editDate ? '<br>Alterado em: ' + editDate : ''}
+          </div>
+          <div style="font-size:0.6875rem;color:#B45309;margin-top:5px;">
+            Confira as informações antes de prosseguir com a produção.
+          </div>
+        </div>
+        <button style="background:none;border:none;color:#92400E;cursor:pointer;
+          font-size:1rem;padding:0 4px;flex-shrink:0;line-height:1;" title="Fechar">✕</button>
+      </div>
+    `;
+    document.body.appendChild(banner);
+
+    // Close button
+    banner.querySelector('button').addEventListener('click', () => {
+      banner.style.animation = 'fadeOut 0.2s ease-out';
+      setTimeout(() => banner.remove(), 200);
+    });
+
+    // Auto-dismiss after 15 seconds
+    setTimeout(() => {
+      if (banner.parentElement) {
+        banner.style.animation = 'fadeOut 0.2s ease-out';
+        setTimeout(() => banner.remove(), 200);
+      }
+    }, 15000);
+  });
+
+  // Stack multiple banners vertically
+  setTimeout(() => {
+    const banners = document.querySelectorAll('[id^="req-edit-banner-"]');
+    let topOffset = 12;
+    banners.forEach(b => {
+      b.style.top = topOffset + 'px';
+      topOffset += b.offsetHeight + 8;
+    });
+  }, 50);
+}
+
 /* ─── Constantes ─────────────────────────────────────────── */
 export const STATUSES = [
   { value: 'not_started', label: 'Não iniciado',   color: '#38BDF8' },
@@ -460,8 +533,12 @@ export async function moveTaskKanban(taskId, newStatus, newOrder) {
     updatedAt: serverTimestamp(),
     updatedBy: user.uid,
   };
-  if (newStatus === 'done') updates.completedAt = serverTimestamp();
-  else updates.completedAt = null;
+  if (newStatus === 'done') {
+    updates.completedAt = serverTimestamp();
+    playCompletionSound();
+  } else {
+    updates.completedAt = null;
+  }
 
   await updateDoc(doc(db, 'tasks', taskId), updates);
 }
