@@ -138,9 +138,10 @@ function renderList() {
   }
 
   // Split into active (pending) and resolved (converted, rejected) when showing all
-  const pendingReqs  = filtered.filter(r => r.status === 'pending');
-  const resolvedReqs = filtered.filter(r => r.status !== 'pending');
-  const showSections = !filterStatus && resolvedReqs.length > 0;
+  const pendingReqs   = filtered.filter(r => r.status === 'pending');
+  const convertedReqs = filtered.filter(r => r.status === 'converted');
+  const rejectedReqs  = filtered.filter(r => r.status === 'rejected');
+  const showSections  = !filterStatus && (convertedReqs.length > 0 || rejectedReqs.length > 0);
 
   const renderCard = (req) => {
     const statusInfo = REQUEST_STATUS_MAP[req.status] || REQUEST_STATUS_MAP.pending;
@@ -194,49 +195,68 @@ function renderList() {
   };
 
   if (showSections) {
-    const convertedCount = resolvedReqs.filter(r => r.status === 'converted').length;
-    const rejectedCount  = resolvedReqs.filter(r => r.status === 'rejected').length;
-    const resolvedLabel  = [
-      convertedCount ? `${convertedCount} convertida${convertedCount>1?'s':''}` : '',
-      rejectedCount  ? `${rejectedCount} recusada${rejectedCount>1?'s':''}`    : '',
-    ].filter(Boolean).join(', ');
+    const convertedInfo = REQUEST_STATUS_MAP.converted || { icon: '✓', color: '#16A34A' };
+    const rejectedInfo  = REQUEST_STATUS_MAP.rejected  || { icon: '✕', color: '#EF4444' };
+
+    const accordionBtn = (id, icon, color, label, count) => `
+      <button id="${id}-toggle" style="width:100%;padding:10px 16px;border-radius:var(--radius-md);
+        border:1px solid var(--border-subtle);background:var(--bg-surface);color:var(--text-secondary);
+        cursor:pointer;font-family:var(--font-ui);font-size:0.8125rem;font-weight:500;
+        display:flex;align-items:center;justify-content:space-between;transition:all 0.15s;
+        border-left:3px solid ${color};">
+        <span><span style="color:${color};">${icon}</span> ${label} (${count})</span>
+        <span id="${id}-arrow" style="font-size:0.75rem;transition:transform 0.2s;">▼</span>
+      </button>
+      <div id="${id}-list" style="display:none;margin-top:10px;opacity:0.85;"></div>
+    `;
 
     list.innerHTML = `
       ${pendingReqs.length ? `
         <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;
           color:var(--text-muted);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border-subtle);">
-          ◌ Pendentes (${pendingReqs.length})
+          ◌ Aguardando triagem (${pendingReqs.length})
         </div>
         ${pendingReqs.map(renderCard).join('')}
       ` : `
         <div style="padding:16px;text-align:center;font-size:0.875rem;color:var(--text-muted);margin-bottom:16px;">
-          Nenhuma solicitação pendente.
+          Nenhuma solicitação aguardando triagem.
         </div>
       `}
 
-      <div style="margin-top:20px;">
-        <button id="req-toggle-resolved" style="width:100%;padding:10px 16px;border-radius:var(--radius-md);
-          border:1px solid var(--border-subtle);background:var(--bg-surface);color:var(--text-secondary);
-          cursor:pointer;font-family:var(--font-ui);font-size:0.8125rem;font-weight:500;
-          display:flex;align-items:center;justify-content:space-between;transition:all 0.15s;">
-          <span>✓ Resolvidas — ${resolvedLabel}</span>
-          <span id="req-toggle-arrow" style="font-size:0.75rem;transition:transform 0.2s;">▼</span>
-        </button>
-        <div id="req-resolved-list" style="display:none;margin-top:10px;opacity:0.85;">
-          ${resolvedReqs.map(renderCard).join('')}
-        </div>
-      </div>
+      ${convertedReqs.length ? `<div style="margin-top:20px;">
+        ${accordionBtn('req-converted', convertedInfo.icon, convertedInfo.color, 'Convertidas', convertedReqs.length)}
+      </div>` : ''}
+
+      ${rejectedReqs.length ? `<div style="margin-top:12px;">
+        ${accordionBtn('req-rejected', rejectedInfo.icon, rejectedInfo.color, 'Recusadas', rejectedReqs.length)}
+      </div>` : ''}
     `;
 
-    // Toggle resolved section
-    document.getElementById('req-toggle-resolved')?.addEventListener('click', () => {
-      const resolvedList = document.getElementById('req-resolved-list');
-      const arrow        = document.getElementById('req-toggle-arrow');
-      if (!resolvedList) return;
-      const visible = resolvedList.style.display !== 'none';
-      resolvedList.style.display = visible ? 'none' : 'block';
-      if (arrow) arrow.style.transform = visible ? '' : 'rotate(180deg)';
-    });
+    // Lazy-fill + toggle for each accordion
+    const wireAccordion = (id, reqs) => {
+      const btn   = document.getElementById(`${id}-toggle`);
+      const panel = document.getElementById(`${id}-list`);
+      const arrow = document.getElementById(`${id}-arrow`);
+      if (!btn || !panel) return;
+      btn.addEventListener('click', () => {
+        const visible = panel.style.display !== 'none';
+        if (!visible && !panel.dataset.filled) {
+          panel.innerHTML = reqs.map(renderCard).join('');
+          panel.dataset.filled = '1';
+          // Rewire card click handlers for new cards
+          panel.querySelectorAll('.req-card').forEach(card => {
+            card.addEventListener('click', () => {
+              const req = allRequests.find(r => r.id === card.dataset.id);
+              if (req) openRequestDetail(req);
+            });
+          });
+        }
+        panel.style.display = visible ? 'none' : 'block';
+        if (arrow) arrow.style.transform = visible ? '' : 'rotate(180deg)';
+      });
+    };
+    wireAccordion('req-converted', convertedReqs);
+    wireAccordion('req-rejected',  rejectedReqs);
   } else {
     list.innerHTML = filtered.map(renderCard).join('');
   }

@@ -186,7 +186,40 @@ function getSlotsForDate(date, typeId = null) {
   return all;
 }
 
-function slotPill(slot, compact=false) {
+/**
+ * Match slot → task on same date.
+ * Rules (OR): title substring match (case-insensitive) OR same typeId + same variationId.
+ */
+function findTaskForSlot(slot, dayTasks) {
+  if (!dayTasks?.length) return null;
+  const slotTitle = (slot.title || '').toLowerCase().trim();
+  return dayTasks.find(t => {
+    const tTitle = (t.title || '').toLowerCase().trim();
+    if (slotTitle && tTitle && (tTitle.includes(slotTitle) || slotTitle.includes(tTitle))) return true;
+    if (slot.taskType?.id && t.typeId === slot.taskType.id && slot.variationId && t.variationId === slot.variationId) return true;
+    return false;
+  }) || null;
+}
+
+function slotPill(slot, compact=false, matchedTask=null) {
+  // Filled (matched to task): single green line with task fields, behaves like task click
+  if (matchedTask) {
+    const done    = matchedTask.status === 'done';
+    const label   = compact
+      ? `${esc(matchedTask.title.slice(0,22))}${matchedTask.title.length>22?'…':''}`
+      : esc(matchedTask.title);
+    return `<div class="cal-task-pill" data-task-id="${matchedTask.id}" draggable="true"
+      style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.4);
+        color:var(--color-success, #16A34A);border-radius:3px;padding:3px 6px;
+        margin-bottom:2px;cursor:pointer;opacity:${done?0.55:1};
+        overflow:hidden;text-overflow:ellipsis;"
+      title="✓ Agenda preenchida: ${esc(matchedTask.title)}">
+      <div style="font-size:0.75rem;line-height:1.3;font-weight:500;
+        ${done?'text-decoration:line-through;':''}">✓ ${label}</div>
+      ${renderCardFields(matchedTask,{compact:true,onlyFields:['requestingArea','taskType','variationName']})}
+    </div>`;
+  }
+  // Empty (no task yet): dotted pill → opens new task modal prefilled from slot
   const color = slot.color || slot.taskType?.color || '#6B7280';
   const label = compact
     ? `${esc(slot.title.slice(0,20))}${slot.title.length>20?'…':''}`
@@ -198,7 +231,7 @@ function slotPill(slot, compact=false) {
       border-radius:3px;padding:2px 5px;font-size:0.6875rem;cursor:pointer;
       margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
       opacity:0.85;"
-    title="Agenda: ${esc(slot.title)}${slot.requestingArea?' · '+slot.requestingArea:''}">
+    title="Agenda vaga: ${esc(slot.title)}${slot.requestingArea?' · '+slot.requestingArea:''}">
     ◌ ${label}
   </div>`;
 }
@@ -311,7 +344,7 @@ function taskPill(task, compact=false) {
       ${done?'text-decoration:line-through;':''}">
       ${esc(task.title.slice(0,compact?24:32))}${task.title.length>(compact?24:32)?'…':''}
     </div>
-    ${renderCardFields(task,{compact:true})}
+    ${renderCardFields(task,{compact:true,onlyFields:['requestingArea','taskType','variationName']})}
   </div>`;
 }
 
@@ -368,14 +401,22 @@ function renderMonth() {
       const slots = cell.cur?getSlotsForDate(new Date(y,m,cell.day), activeView==='pipeline'?pipelineTypeId:null):[];
       const isToday=cell.cur&&today.getDate()===cell.day&&today.getMonth()===m&&today.getFullYear()===y;
       const dateStr=cell.cur?`${y}-${String(m+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}`:'' ;
+      // Match slots to tasks (unify visual)
+      const matchedTaskIds = new Set();
+      const slotRenders = slots.map(s => {
+        const matched = findTaskForSlot(s, tasks);
+        if (matched) matchedTaskIds.add(matched.id);
+        return slotPill(s, true, matched);
+      });
+      const unmatchedTasks = tasks.filter(t => !matchedTaskIds.has(t.id));
       return `<div style="min-height:100px;padding:4px;background:${cell.cur?'var(--bg-card)':'var(--bg-deepest)'};
         cursor:${cell.cur?'pointer':'default'};" data-date="${dateStr}">
         <div style="font-size:0.8125rem;font-weight:${isToday?700:400};
           color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
           ${isToday?'background:var(--brand-gold);color:#000;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;':''};
           margin-bottom:3px;">${cell.day}</div>
-        ${slots.map(s=>slotPill(s,true)).join('')}
-        ${tasks.map(t=>taskPill(t,true)).join('')}
+        ${slotRenders.join('')}
+        ${unmatchedTasks.map(t=>taskPill(t,true)).join('')}
       </div>`;
     }).join('')}
   </div>`;
@@ -432,6 +473,9 @@ function renderWeek() {
 
   const rangeLabel = `${days[0].getDate()} ${PT_MONTHS[days[0].getMonth()].slice(0,3)} — ${days[6].getDate()} ${PT_MONTHS[days[6].getMonth()].slice(0,3)} ${days[6].getFullYear()}`;
 
+  // Track which tasks got absorbed into slot renders, per day index
+  const matchedTaskIdsByDay = [];
+
   el.innerHTML = navBar(rangeLabel) + `
   <div style="display:grid;grid-template-columns:60px repeat(7,1fr);gap:1px;
     background:var(--border-subtle);border:1px solid var(--border-subtle);
@@ -442,23 +486,35 @@ function renderWeek() {
     ${days.map((d,i)=>{
       const isToday = d.getTime()===today.getTime();
       const slots   = getSlotsForDate(d, activeView==='pipeline'?pipelineTypeId:null);
+      const dayTasks = tasksByDay[i] || [];
+      const matchedIds = new Set();
+      const slotRenders = slots.map(s => {
+        const matched = findTaskForSlot(s, dayTasks);
+        if (matched) matchedIds.add(matched.id);
+        return slotPill(s, true, matched);
+      });
+      // Stash matched IDs on the day index so the tasks row below can filter
+      matchedTaskIdsByDay[i] = matchedIds;
       return `<div style="padding:6px 4px;text-align:center;background:${isToday?'rgba(212,168,67,0.12)':'var(--bg-deepest)'};
         border-bottom:2px solid ${isToday?'var(--brand-gold)':'transparent'};">
         <div style="font-size:0.75rem;color:var(--text-muted);">${PT_DAYS_S[d.getDay()]}</div>
         <div style="font-size:1rem;font-weight:${isToday?700:400};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};">${d.getDate()}</div>
-        ${slots.map(s=>slotPill(s,true)).join('')}
+        ${slotRenders.join('')}
       </div>`;
     }).join('')}
 
     <!-- Task rows: all-day section -->
     <div style="padding:4px;font-size:0.625rem;color:var(--text-muted);background:var(--bg-card);
       display:flex;align-items:center;justify-content:center;">tarefas</div>
-    ${tasksByDay.map((tasks,i)=>`
+    ${tasksByDay.map((tasks,i)=>{
+      const matched = matchedTaskIdsByDay[i] || new Set();
+      const unmatched = tasks.filter(t => !matched.has(t.id));
+      return `
       <div style="padding:4px;background:var(--bg-card);min-height:80px;vertical-align:top;">
-        ${tasks.map(t=>taskPill(t,true)).join('')}
-        ${!tasks.length?`<div style="font-size:0.6875rem;color:var(--border-subtle);text-align:center;padding-top:8px;">—</div>`:''}
-      </div>
-    `).join('')}
+        ${unmatched.map(t=>taskPill(t,true)).join('')}
+        ${!unmatched.length?`<div style="font-size:0.6875rem;color:var(--border-subtle);text-align:center;padding-top:8px;">—</div>`:''}
+      </div>`;
+    }).join('')}
   </div>`;
 
   _bindNavWeek(monday);
@@ -536,7 +592,7 @@ function renderDay() {
                     ${done?'text-decoration:line-through;':''}margin-bottom:4px;">
                     ${esc(t.title)}
                   </div>
-                  ${renderCardFields(t,{compact:false})}
+                  ${renderCardFields(t,{compact:false,onlyFields:['requestingArea','taskType','variationName']})}
                 </div>
               </div>`;
             }).join('')

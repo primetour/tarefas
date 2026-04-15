@@ -353,7 +353,7 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
       .join(', ');
     return `
       <div id="tm-requester-edit-banner" style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;
-        padding:10px 14px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px;">
+        padding:12px 14px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px;">
         <span style="font-size:1.125rem;flex-shrink:0;">📝</span>
         <div style="flex:1;min-width:0;">
           <div style="font-size:0.8125rem;font-weight:600;color:#92400E;">
@@ -364,11 +364,14 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
             ${editDate ? '<br>Alterado em: ' + editDate : ''}
           </div>
           <div style="font-size:0.6875rem;color:#B45309;margin-top:4px;">
-            Confira as informações antes de prosseguir com a produção.
+            Confira as informações antes de prosseguir com a produção. Este aviso só desaparece quando você confirmar.
           </div>
+          <button id="tm-dismiss-edit-banner" style="margin-top:10px;padding:6px 14px;border-radius:6px;
+            border:1px solid #F59E0B;background:#F59E0B;color:#fff;font-weight:600;font-size:0.75rem;
+            cursor:pointer;font-family:var(--font-ui);transition:all 0.15s;">
+            ✓ OK, estou ciente
+          </button>
         </div>
-        <button id="tm-dismiss-edit-banner" style="background:none;border:none;color:#92400E;
-          cursor:pointer;font-size:0.875rem;padding:0 4px;flex-shrink:0;" title="Dispensar">✕</button>
       </div>`;
   })();
 
