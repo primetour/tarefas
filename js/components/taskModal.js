@@ -1134,7 +1134,7 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
       const suggested = checkSubtaskAutoAdvance(task);
       if (suggested && statusSelect && statusSelect.value !== 'done' && statusSelect.value !== suggested) {
         statusSelect.value = suggested;
-        const statusLabel = suggested === 'review' ? 'Em Revisao' : 'Em Andamento';
+        const statusLabel = suggested === 'review' ? 'Em Revisão' : 'Em Andamento';
         toast.info(`Todas as subtarefas concluidas — status movido para "${statusLabel}".`);
       }
     } catch (err) { toast.error(err.message); }

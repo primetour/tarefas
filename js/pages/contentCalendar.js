@@ -1005,7 +1005,7 @@ async function handleSave() {
   const data = getFormData();
 
   if (!data.title) {
-    toast.error('Titulo e obrigatorio');
+    toast.error('Titulo e obrigatório');
     return;
   }
 
@@ -1113,7 +1113,7 @@ async function handleAIDescription() {
       const panel = document.getElementById('cc-ai-desc-input');
       if (panel) panel.style.display = 'none';
     } else {
-      toast.info('Nenhuma sugestao disponivel');
+      toast.info('Nenhuma sugestao disponível');
     }
   } catch (e) {
     console.error('Erro ao gerar descricao:', e);

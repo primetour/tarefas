@@ -97,7 +97,7 @@ function parseTimestamp(val) {
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderRoteiroDashboard(container) {
   if (!store.canManageRoteiros()) {
-    container.innerHTML = '<div class="empty-state"><p>Sem permissao.</p></div>';
+    container.innerHTML = '<div class="empty-state"><p>Sem permissão.</p></div>';
     return;
   }
 
@@ -225,7 +225,7 @@ function renderKPIs(roteiros) {
     { value: drafts.toLocaleString('pt-BR'),  label: 'Rascunhos' },
     { value: sent.toLocaleString('pt-BR'),    label: 'Enviados' },
     { value: approved.toLocaleString('pt-BR'), label: 'Aprovados' },
-    { value: convRate + '%',                   label: 'Taxa de Conversao' },
+    { value: convRate + '%',                   label: 'Taxa de Conversão' },
   ];
 
   el.innerHTML = kpis.map(k => `
