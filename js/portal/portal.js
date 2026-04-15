@@ -700,7 +700,13 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         if (dt.getFullYear()!==y||dt.getMonth()!==m) return;
         const k = dt.getDate();
         if (!taskMap[k]) taskMap[k]=[];
-        taskMap[k].push({title:t.title||'',requestingArea:t.requestingArea||'',status:t.status||''});
+        taskMap[k].push({
+          id:d.id, title:t.title||'', requestingArea:t.requestingArea||'',
+          status:t.status||'', description:t.description||'',
+          requesterName:t.requesterName||'', typeName:t.typeName||activeType?.name||'',
+          urgency:t.urgency||false, outOfCalendar:t.outOfCalendar||false,
+          dateISO: dt.toISOString().slice(0,10),
+        });
       });
     } catch(e) { console.warn('portal calendar data error:', e.message); }
     return taskMap;
@@ -731,7 +737,13 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         const info = STATUS_LABELS[r.status] || STATUS_LABELS.pending;
         // Keep the most relevant status per date (converted > pending > rejected)
         if (!requestMap[iso] || r.status === 'converted' || (r.status === 'pending' && requestMap[iso].status === 'rejected')) {
-          requestMap[iso] = { status: r.status, title: r.title || r.typeName || '', ...info };
+          requestMap[iso] = {
+            status: r.status, title: r.title || r.typeName || '', ...info,
+            id: d.id, description: r.description || '', requesterName: r.requesterName || '',
+            requestingArea: r.requestingArea || '', typeName: r.typeName || '',
+            urgency: r.urgency || false, outOfCalendar: r.outOfCalendar || false,
+            dateISO: iso,
+          };
         }
       });
     } catch(e) { /* user may not have requests yet */ }
@@ -796,10 +808,13 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           border-bottom:1px dashed ${s.color||'var(--brand-gold)'};margin-bottom:${portalCalExpanded?'2px':'1px'};
           padding:${portalCalExpanded?'1px 0':0};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
           title="Clique para adicionar: ${esc(s.title)}">◌ ${s.title.slice(0,maxChars)}${s.title.length>maxChars?'…':''}</div>`;}).join('')}
-        ${tasks.map(t=>{const maxChars=portalCalExpanded?40:12;return`<div style="font-size:${slotFont};color:var(--brand-gold);
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};"
+        ${tasks.map((t,ti)=>{const maxChars=portalCalExpanded?40:12;return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
+          style="font-size:${slotFont};color:var(--brand-gold);cursor:pointer;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};
+          border-radius:2px;transition:background 0.1s;"
           title="${t.title}${t.requestingArea?' · '+t.requestingArea:''}">● ${t.title.slice(0,maxChars)}${t.title.length>maxChars?'…':''}</div>`;}).join('')}
-        ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
+        ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div class="pcal-req-click" data-req-date="${dateISO}"
+          style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};cursor:pointer;
           padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
           title="${rq.icon} ${rq.label}">${rq.icon} ${portalCalExpanded?rq.label:rq.label.split(' ')[0]}</div>`;})()}
@@ -841,11 +856,13 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
           title="Clique para adicionar: ${esc(s.title)}">
           ◌ ${s.title.slice(0,wkMaxChars)}${s.title.length>wkMaxChars?'…':''}</div>`).join('')}
-        ${dayTasks.map(t=>`<div style="font-size:${wkSlotFont};background:rgba(212,168,67,0.12);
+        ${dayTasks.map((t,ti)=>`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
+          style="font-size:${wkSlotFont};background:rgba(212,168,67,0.12);cursor:pointer;
           color:var(--brand-gold);border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.title}">
           ● ${t.title.slice(0,wkMaxChars)}${t.title.length>wkMaxChars?'…':''}</div>`).join('')}
-        ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
+        ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`<div class="pcal-req-click" data-req-date="${dateISO}"
+          style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};cursor:pointer;
           padding:1px 3px;border-radius:3px;margin-top:1px;background:${rq.color}18;color:${rq.color};
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
           title="${rq.icon} ${rq.label}">${rq.icon} ${rq.label}</div>`;})()}
@@ -883,17 +900,22 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       ${dTasks.length?`
         <div>
           <div style="font-size:0.75rem;font-weight:600;color:var(--text-primary);margin-bottom:6px;">● Tarefas agendadas</div>
-          ${dTasks.map(t=>`<div style="padding:8px 10px;border-radius:4px;margin-bottom:4px;
-            background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.2);">
+          ${dTasks.map((t,ti)=>`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
+            style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:pointer;
+            background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.2);transition:background 0.15s;">
             <div style="font-size:0.8125rem;color:var(--text-primary);">${t.title}</div>
             ${t.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${t.requestingArea}</div>`:''}
+            <div style="font-size:0.5625rem;color:var(--text-muted);margin-top:2px;">Clique para ver detalhes</div>
           </div>`).join('')}
         </div>
       `:''}
       ${(()=>{const rq=requestMap[dateISO];if(!rq)return'';return`
-        <div style="margin-top:10px;padding:8px 10px;border-radius:4px;background:${rq.color}12;border:1px solid ${rq.color}30;">
+        <div class="pcal-req-click" data-req-date="${dateISO}"
+          style="margin-top:10px;padding:8px 10px;border-radius:4px;cursor:pointer;
+          background:${rq.color}12;border:1px solid ${rq.color}30;transition:background 0.15s;">
           <div style="font-size:0.8125rem;font-weight:600;color:${rq.color};">${rq.icon} Sua solicitação: ${rq.label}</div>
           ${rq.title?`<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${esc(rq.title)}</div>`:''}
+          <div style="font-size:0.5625rem;color:var(--text-muted);margin-top:2px;">Clique para ver detalhes</div>
         </div>`;})()}
       ${!slots.length&&!dTasks.length&&!requestMap[dateISO]?`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
         style="font-size:0.875rem;color:var(--text-muted);text-align:center;padding:16px 0;cursor:${clickable?'pointer':'default'};">
@@ -1093,6 +1115,37 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       }
     });
   });
+
+  // Task clicks → preview card
+  wrap.querySelectorAll('.pcal-task-click').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dateISO = el.dataset.taskDate;
+      const idx = parseInt(el.dataset.taskIdx);
+      // Find the task in taskMap
+      const date = new Date(dateISO + 'T12:00:00');
+      const dayKey = date.getDate();
+      const tasks = taskMap[dayKey] || [];
+      const task = tasks[idx];
+      if (!task) return;
+      showTaskPreviewCard(db, types, {
+        type: 'task', ...task, dateISO,
+      }, el);
+    });
+  });
+
+  // Request badge clicks → preview card
+  wrap.querySelectorAll('.pcal-req-click').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dateISO = el.dataset.reqDate;
+      const rq = requestMap[dateISO];
+      if (!rq) return;
+      showTaskPreviewCard(db, types, {
+        type: 'request', ...rq, dateISO,
+      }, el);
+    });
+  });
 }
 
 
@@ -1105,6 +1158,11 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
   const activeType = types.find(t => t.id === portalCalTypeId);
   const isSlot = !!opts.title || !!opts.variationId;
   const isOOC = opts.outOfCalendar === true;
+
+  // Determine pre-fills (same logic as fillFormFromSlot + prefillNewsletter)
+  const preSetor = activeType?.sector || '';
+  const preTipo  = activeType?.name || '';
+  const preNucleo = 'Design'; // default for slot-based requests
 
   // Build variation options from active type
   const variations = activeType?.variations || [];
@@ -1119,6 +1177,19 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
     ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
     : '';
 
+  // Check urgency 24h rule
+  let isUrgentLocked = false;
+  if (opts.dateISO) {
+    const deadline = new Date(opts.dateISO + 'T23:59:59');
+    isUrgentLocked = ((deadline - new Date()) / 3600000) <= 24;
+  }
+
+  // SLA display for selected variation
+  const selectedVar = variations.find(v => v.id === opts.variationId);
+  const slaDisplay = selectedVar?.slaDays != null
+    ? (selectedVar.slaDays === 0 ? 'Mesmo dia' : `${selectedVar.slaDays} dia${selectedVar.slaDays!==1?'s':''}`)
+    : '';
+
   const overlay = document.createElement('div');
   overlay.id = 'fs-form-modal';
   overlay.style.cssText = `
@@ -1128,7 +1199,7 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
   `;
   overlay.innerHTML = `
     <div id="fs-form-content" style="background:var(--bg-surface);border:1px solid var(--border-subtle);
-      border-radius:12px;padding:24px;width:100%;max-width:520px;max-height:85vh;overflow-y:auto;
+      border-radius:12px;padding:24px;width:100%;max-width:560px;max-height:85vh;overflow-y:auto;
       box-shadow:0 20px 60px rgba(0,0,0,0.5);animation:slideUp 0.2s ease-out;font-family:var(--font-ui);">
 
       <!-- Header -->
@@ -1139,7 +1210,6 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
           </div>
           <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
             ${dateDisplay ? `Data: <strong style="color:var(--brand-gold);">${dateDisplay}</strong>` : ''}
-            ${activeType ? ` · ${activeType.icon||''} ${activeType.name}` : ''}
             ${isOOC ? ' · <span style="color:#F59E0B;">Fora do calendário</span>' : ''}
           </div>
         </div>
@@ -1155,6 +1225,26 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
           Demandas fora do calendário podem impactar o planejamento da equipe.
         </div>
       ` : ''}
+
+      <!-- Pre-filled info (read-only) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
+        <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Setor responsável</div>
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">📁 ${esc(preSetor || '—')}</div>
+        </div>
+        <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Tipo de demanda</div>
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">${activeType?.icon||'📋'} ${esc(preTipo || '—')}</div>
+        </div>
+        <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Núcleo responsável</div>
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">🎨 ${esc(preNucleo)}</div>
+        </div>
+        <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Solicitante</div>
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">👤 ${esc(portalUser?.name || portalUser?.email || '')}</div>
+        </div>
+      </div>
 
       <!-- Título -->
       <div style="margin-bottom:12px;">
@@ -1196,33 +1286,42 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
           <option value="">— Selecione —</option>
           ${variationOpts}
         </select>
+        ${slaDisplay ? `<div id="fs-sla" style="font-size:0.6875rem;color:var(--brand-gold);margin-top:4px;">⏱ SLA: <strong>${slaDisplay}</strong></div>` : '<div id="fs-sla" style="display:none;font-size:0.6875rem;color:var(--brand-gold);margin-top:4px;"></div>'}
       </div>
       ` : ''}
 
       <!-- Urgência toggle -->
       <div style="margin-bottom:16px;">
-        <label id="fs-urgency-toggle" style="display:flex;align-items:center;gap:10px;cursor:pointer;
-          padding:8px 12px;border-radius:6px;border:1px solid var(--border-subtle);
-          background:var(--bg-card);transition:all 0.15s;">
+        <label id="fs-urgency-toggle" style="display:flex;align-items:center;gap:10px;
+          ${isUrgentLocked ? 'cursor:not-allowed;opacity:0.85;' : 'cursor:pointer;'}
+          padding:8px 12px;border-radius:6px;
+          border:1px solid ${isUrgentLocked ? '#EF444440' : 'var(--border-subtle)'};
+          background:${isUrgentLocked ? '#EF444410' : 'var(--bg-card)'};transition:all 0.15s;">
           <div id="fs-urgency-dot" style="width:20px;height:20px;border-radius:50%;
-            border:2px solid var(--border-subtle);display:flex;align-items:center;justify-content:center;
-            font-size:0.625rem;color:transparent;transition:all 0.15s;flex-shrink:0;">✓</div>
+            border:2px solid ${isUrgentLocked ? '#EF4444' : 'var(--border-subtle)'};
+            background:${isUrgentLocked ? '#EF4444' : 'transparent'};
+            display:flex;align-items:center;justify-content:center;
+            font-size:0.625rem;color:${isUrgentLocked ? '#fff' : 'transparent'};
+            transition:all 0.15s;flex-shrink:0;">✓</div>
           <div>
-            <div style="font-size:0.8125rem;font-weight:500;color:var(--text-primary);">Marcar como urgente</div>
-            <div style="font-size:0.6875rem;color:var(--text-muted);">Apenas se há prazo real e inegociável.</div>
+            <div style="font-size:0.8125rem;font-weight:500;color:var(--text-primary);">
+              ${isUrgentLocked ? '🔒 Urgente (prazo < 24h)' : 'Marcar como urgente'}
+            </div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);">
+              ${isUrgentLocked
+                ? 'Prazo inferior a 24h. Urgência definida automaticamente.'
+                : 'Apenas se há prazo real e inegociável.'}
+            </div>
           </div>
         </label>
       </div>
 
-      <!-- Info resumo -->
-      <div style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:8px;
-        padding:10px 12px;margin-bottom:16px;font-size:0.6875rem;color:var(--text-muted);">
-        <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          ${activeType?.sector ? `<span>📁 Setor: <strong>${activeType.sector}</strong></span>` : ''}
-          ${activeType ? `<span>📋 Tipo: <strong>${activeType.name}</strong></span>` : ''}
-          <span>👤 ${esc(portalUser?.name || portalUser?.email || '')}</span>
-        </div>
+      ${activeType?.autoAccept ? `
+      <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);border-radius:8px;
+        padding:10px;margin-bottom:16px;font-size:0.75rem;color:#22C55E;">
+        ✓ <strong>Aceite automático</strong> — esta solicitação será convertida em tarefa imediatamente.
       </div>
+      ` : ''}
 
       <!-- Actions -->
       <div style="display:flex;gap:8px;">
@@ -1243,39 +1342,43 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
 
   document.body.appendChild(overlay);
 
-  // ── Urgency toggle ──
-  let fsUrgent = false;
-  const urgToggle = overlay.querySelector('#fs-urgency-toggle');
-  const urgDot = overlay.querySelector('#fs-urgency-dot');
-  // Auto-mark urgent if deadline < 24h
-  if (opts.dateISO) {
-    const deadline = new Date(opts.dateISO + 'T23:59:59');
-    if ((deadline - new Date()) / 3600000 <= 24) {
-      fsUrgent = true;
-      urgDot.style.cssText += 'border-color:#EF4444;background:#EF4444;color:#fff;';
-      urgToggle.style.borderColor = '#EF444440';
-      urgToggle.style.background = '#EF444410';
-    }
-  }
-  urgToggle?.addEventListener('click', () => {
-    fsUrgent = !fsUrgent;
-    if (fsUrgent) {
-      urgDot.style.cssText += 'border-color:#EF4444;background:#EF4444;color:#fff;';
-      urgToggle.style.borderColor = '#EF444440';
-      urgToggle.style.background = '#EF444410';
-    } else {
-      urgDot.style.cssText += 'border-color:var(--border-subtle);background:transparent;color:transparent;';
-      urgToggle.style.borderColor = 'var(--border-subtle)';
-      urgToggle.style.background = 'var(--bg-card)';
+  // ── Variation → SLA update ──
+  overlay.querySelector('#fs-variation')?.addEventListener('change', (e) => {
+    const opt = e.target.selectedOptions[0];
+    const days = parseInt(opt?.dataset?.sla);
+    const slaEl = overlay.querySelector('#fs-sla');
+    if (slaEl && opt?.value && !isNaN(days)) {
+      slaEl.style.display = 'block';
+      slaEl.innerHTML = `⏱ SLA: <strong>${days === 0 ? 'Mesmo dia' : days + ' dia' + (days !== 1 ? 's' : '')}</strong>`;
+    } else if (slaEl) {
+      slaEl.style.display = 'none';
     }
   });
+
+  // ── Urgency toggle ──
+  let fsUrgent = isUrgentLocked;
+  const urgToggle = overlay.querySelector('#fs-urgency-toggle');
+  const urgDot = overlay.querySelector('#fs-urgency-dot');
+  if (!isUrgentLocked) {
+    urgToggle?.addEventListener('click', () => {
+      fsUrgent = !fsUrgent;
+      if (fsUrgent) {
+        urgDot.style.cssText += 'border-color:#EF4444;background:#EF4444;color:#fff;';
+        urgToggle.style.borderColor = '#EF444440';
+        urgToggle.style.background = '#EF444410';
+      } else {
+        urgDot.style.cssText += 'border-color:var(--border-subtle);background:transparent;color:transparent;';
+        urgToggle.style.borderColor = 'var(--border-subtle)';
+        urgToggle.style.background = 'var(--bg-card)';
+      }
+    });
+  }
 
   // ── Close ──
   const escFn = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeModal(); } };
   const closeModal = () => { overlay.remove(); document.removeEventListener('keydown', escFn, true); };
   overlay.querySelector('#fs-form-close').addEventListener('click', closeModal);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
-  // ESC closes modal (not the fullscreen calendar behind it)
   document.addEventListener('keydown', escFn, true);
 
   // ── Validate modal fields ──
@@ -1298,57 +1401,221 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
     const descVal = overlay.querySelector('#fs-desc')?.value?.trim() || '';
     const varVal = overlay.querySelector('#fs-variation')?.value || '';
 
-    // Fill the real form in the background
+    // Fill the real form fields (same pre-fill logic as fillFormFromSlot)
     // 1. Date
-    fillFormFromSlot(opts.dateISO || '', opts.title || '', opts.variationId || '', opts.area || '');
+    const dateEl = document.getElementById('p-date');
+    if (dateEl) { dateEl.value = opts.dateISO || ''; }
 
-    // 2. Override title and description from modal
-    const titleEl = document.getElementById('p-title');
-    if (titleEl) titleEl.value = titleVal;
-    const descEl = document.getElementById('p-desc');
-    if (descEl) descEl.value = descVal;
-
-    // 3. Override variation if user changed it in modal
-    if (varVal) {
-      const varEl = document.getElementById('p-variation');
-      if (varEl) { varEl.value = varVal; varEl.dispatchEvent(new Event('change')); }
+    // 2. Setor (from active type's sector)
+    if (preSetor) {
+      const setorEl = document.getElementById('p-setor');
+      if (setorEl) {
+        setorEl.value = preSetor;
+        setorEl.dispatchEvent(new Event('change'));
+      }
     }
 
-    // 4. Urgency
-    if (fsUrgent) {
-      lockToggle('urgency-toggle', 'p-urgency', 'urgency-dot', true);
-    }
+    // 3. Wait for cascade then set tipo + nucleo + title + variation
+    setTimeout(() => {
+      // Type
+      if (portalCalTypeId) {
+        const typeEl = document.getElementById('p-type');
+        if (typeEl) typeEl.value = portalCalTypeId;
+      }
 
-    // 5. Out of calendar
-    if (isOOC) {
-      lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
-      document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'flex');
-    }
+      // Núcleo = "Design"
+      const nucleoSel = document.getElementById('p-nucleo');
+      if (nucleoSel) {
+        const designOpt = Array.from(nucleoSel.options).find(o =>
+          o.value.toLowerCase().includes('design') || o.textContent.toLowerCase().includes('design')
+        );
+        if (designOpt) nucleoSel.value = designOpt.value;
+      }
+
+      // Title from modal
+      const titleEl = document.getElementById('p-title');
+      if (titleEl) titleEl.value = titleVal;
+
+      // Description from modal
+      const descEl = document.getElementById('p-desc');
+      if (descEl) descEl.value = descVal;
+
+      // Variation
+      if (varVal || opts.variationId) {
+        const varEl = document.getElementById('p-variation');
+        if (varEl) {
+          varEl.value = varVal || opts.variationId;
+          varEl.dispatchEvent(new Event('change'));
+        }
+      }
+
+      // Area (if slot has one)
+      if (opts.area) {
+        const areaSel = document.getElementById('p-area');
+        if (areaSel) {
+          for (const opt of areaSel.options) { if (opt.value === opts.area) { areaSel.value = opts.area; break; } }
+        }
+      }
+
+      // Urgency
+      if (fsUrgent) {
+        lockToggle('urgency-toggle', 'p-urgency', 'urgency-dot', true);
+        document.getElementById('urgency-alert')?.classList.add('visible');
+        if (isUrgentLocked) {
+          showLockedBanner('locked-urgency-banner', 'urgency-toggle',
+            'Prazo inferior a 24h. Urgência definida automaticamente.');
+        }
+      }
+
+      // Out of calendar
+      if (isOOC) {
+        lockToggle('out-of-calendar-toggle', 'p-out-of-calendar', 'out-calendar-dot', true);
+        document.getElementById('out-calendar-alert')?.style && (document.getElementById('out-calendar-alert').style.display = 'flex');
+        showLockedBanner('locked-ooc-banner', 'out-of-calendar-toggle',
+          'Esta data não está no calendário editorial. "Fora do calendário" foi definido automaticamente.');
+      }
+    }, 500); // wait for setor cascade
   };
 
   // ── Submit single ──
   overlay.querySelector('#fs-form-submit').addEventListener('click', async () => {
     if (!validateModal()) return;
+    const submitBtn = overlay.querySelector('#fs-form-submit');
+    submitBtn.disabled = true; submitBtn.textContent = 'Enviando...';
     transferToForm();
     closeModal();
     // Close fullscreen calendar
     portalCalExpanded = false;
-    renderPortalCalendar(db, taskTypes, null);
-    // Submit
-    await handleSubmit(db, taskTypes);
+    // Wait for cascade to finish then submit
+    setTimeout(async () => {
+      await handleSubmit(db, taskTypes);
+      // After submit, re-render calendar to show new request visually
+      renderPortalCalendar(db, taskTypes, null);
+    }, 600);
   });
 
   // ── Add to batch ──
   overlay.querySelector('#fs-form-batch').addEventListener('click', () => {
     if (!validateModal()) return;
     transferToForm();
-    addToBatch(taskTypes);
+    // Wait for cascade then add to batch
+    setTimeout(() => {
+      addToBatch(taskTypes);
+      // Re-render calendar to stay in fullscreen mode
+      renderPortalCalendar(db, taskTypes, null);
+    }, 600);
     closeModal();
-    // Stay in fullscreen calendar so user can pick more slots
   });
 
   // Focus title
   setTimeout(() => overlay.querySelector('#fs-title')?.focus(), 100);
+}
+
+/* ─── Task/Request preview card (calendar click) ────────────── */
+function showTaskPreviewCard(db, taskTypes, data, anchorEl) {
+  // data: { type: 'task'|'request', title, status, requestingArea, dateISO,
+  //          requesterName, description, urgency, outOfCalendar, typeName }
+  document.getElementById('pcal-preview-card')?.remove();
+
+  const STATUS_MAP = {
+    pending:   { label: 'Aguardando triagem', color: '#F59E0B', bg: '#FEF3C7' },
+    converted: { label: 'Convertida em tarefa', color: '#22C55E', bg: '#DCFCE7' },
+    rejected:  { label: 'Recusada', color: '#EF4444', bg: '#FEE2E2' },
+    completed: { label: 'Concluída', color: '#22C55E', bg: '#DCFCE7' },
+    done:      { label: 'Concluída', color: '#22C55E', bg: '#DCFCE7' },
+    in_progress: { label: 'Em andamento', color: '#38BDF8', bg: '#DBEAFE' },
+    todo:      { label: 'A fazer', color: '#94A3B8', bg: '#F1F5F9' },
+  };
+  const st = STATUS_MAP[data.status] || STATUS_MAP.pending;
+
+  const dateParts = data.dateISO ? data.dateISO.split('-') : [];
+  const dateDisplay = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : '';
+
+  const card = document.createElement('div');
+  card.id = 'pcal-preview-card';
+  card.style.cssText = `
+    position:fixed;top:0;left:0;right:0;bottom:0;z-index:10002;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(0,0,0,0.4);padding:16px;animation:fadeIn 0.15s ease-out;
+  `;
+  card.innerHTML = `
+    <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+      border-radius:12px;padding:20px;width:100%;max-width:420px;
+      box-shadow:0 16px 48px rgba(0,0,0,0.4);animation:slideUp 0.2s ease-out;font-family:var(--font-ui);">
+
+      <!-- Card header -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.625rem;text-transform:uppercase;letter-spacing:0.06em;
+            color:var(--text-muted);margin-bottom:4px;">
+            ${data.type === 'task' ? '● Tarefa agendada' : '◌ Solicitação'}
+          </div>
+          <div style="font-size:1rem;font-weight:600;color:var(--text-primary);
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${esc(data.title || 'Sem título')}
+          </div>
+        </div>
+        <button id="pcal-preview-close" style="background:none;border:none;font-size:1.125rem;
+          color:var(--text-muted);cursor:pointer;padding:2px 6px;margin-left:8px;">✕</button>
+      </div>
+
+      <!-- Status badge -->
+      <div style="margin-bottom:12px;">
+        <span style="display:inline-block;font-size:0.6875rem;font-weight:600;padding:3px 10px;
+          border-radius:20px;background:${st.bg};color:${st.color};border:1px solid ${st.color}30;">
+          ${st.label}
+        </span>
+        ${data.urgency ? '<span style="margin-left:6px;font-size:0.6875rem;color:#EF4444;font-weight:600;">🔴 Urgente</span>' : ''}
+        ${data.outOfCalendar ? '<span style="margin-left:6px;font-size:0.6875rem;color:#F59E0B;font-weight:600;">⚠ Fora do calendário</span>' : ''}
+      </div>
+
+      <!-- Details grid -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:0.75rem;">
+        ${dateDisplay ? `
+        <div style="padding:6px 10px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.5625rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:1px;">Data</div>
+          <div style="color:var(--text-primary);font-weight:500;">${dateDisplay}</div>
+        </div>` : ''}
+        ${data.typeName ? `
+        <div style="padding:6px 10px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.5625rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:1px;">Tipo</div>
+          <div style="color:var(--text-primary);font-weight:500;">${esc(data.typeName)}</div>
+        </div>` : ''}
+        ${data.requestingArea ? `
+        <div style="padding:6px 10px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.5625rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:1px;">Área</div>
+          <div style="color:var(--text-primary);font-weight:500;">${esc(data.requestingArea)}</div>
+        </div>` : ''}
+        ${data.requesterName ? `
+        <div style="padding:6px 10px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
+          <div style="font-size:0.5625rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:1px;">Solicitante</div>
+          <div style="color:var(--text-primary);font-weight:500;">${esc(data.requesterName)}</div>
+        </div>` : ''}
+      </div>
+
+      ${data.description ? `
+      <div style="padding:10px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);
+        font-size:0.8125rem;color:var(--text-secondary);line-height:1.5;margin-bottom:12px;
+        max-height:120px;overflow-y:auto;">
+        ${esc(data.description).slice(0, 300)}${(data.description || '').length > 300 ? '…' : ''}
+      </div>` : ''}
+
+      <div style="text-align:right;">
+        <button id="pcal-preview-close2" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border-subtle);
+          background:transparent;color:var(--text-secondary);font-size:0.8125rem;cursor:pointer;
+          font-family:var(--font-ui);">Fechar</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(card);
+
+  const closeCard = () => card.remove();
+  card.querySelector('#pcal-preview-close').addEventListener('click', closeCard);
+  card.querySelector('#pcal-preview-close2').addEventListener('click', closeCard);
+  card.addEventListener('click', (e) => { if (e.target === card) closeCard(); });
+  const escCard = (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeCard(); document.removeEventListener('keydown', escCard, true); } };
+  document.addEventListener('keydown', escCard, true);
 }
 
 /* ─── Slot/day click helpers ──────────────────────────────── */
