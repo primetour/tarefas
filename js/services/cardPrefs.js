@@ -72,12 +72,16 @@ export function renderCardFields(task, opts = {}) {
   const taskTypes= store.get('taskTypes') || [];
   const nucleos  = store.get('nucleos') || [];
 
-  const { compact = false, skipFields = [] } = opts;
+  const { compact = false, skipFields = [], onlyFields = null } = opts;
   const fontSize = compact ? '0.6875rem' : '0.75rem';
 
   const bits = [];
 
-  prefs.forEach(key => {
+  // When onlyFields is provided, it overrides user prefs entirely —
+  // useful for calendar/preview contexts where we want a fixed minimal set.
+  const activeKeys = onlyFields && onlyFields.length ? onlyFields : prefs;
+
+  activeKeys.forEach(key => {
     if (skipFields.includes(key)) return;
     const fieldDef = CARD_FIELDS.find(f => f.key === key);
     if (!fieldDef) return;

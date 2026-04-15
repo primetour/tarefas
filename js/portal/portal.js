@@ -497,7 +497,7 @@ async function renderForm(db, taskTypes, auth) {
             <!-- Submit buttons -->
             <div style="display:flex;flex-direction:column;gap:8px;">
               <button class="portal-submit" id="portal-add-batch-btn">
-                Adicionar ao lote +
+                Adicionar várias solicitações +
               </button>
               <button class="portal-submit portal-submit-alt" id="portal-submit-btn">
                 Enviar apenas esta solicitação →
@@ -507,7 +507,7 @@ async function renderForm(db, taskTypes, auth) {
             <!-- Batch queue panel -->
             <div class="portal-card batch-panel" id="batch-panel" style="display:none;">
               <div class="portal-card-title" style="display:flex;align-items:center;justify-content:space-between;">
-                <span>Solicitações em lote</span>
+                <span>Várias solicitações</span>
                 <span class="batch-count-badge" id="batch-count">0</span>
               </div>
               <div id="batch-list"></div>
@@ -885,7 +885,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
           padding:1px 3px;border-radius:3px;margin-top:1px;background:rgba(167,139,250,0.15);color:#A78BFA;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
-          title="${bc} no lote">✦ ${portalCalExpanded?bc+' no lote':'lote'}</div>`;})()}
+          title="${bc} solicitaç${bc>1?'ões':'ão'} a enviar">✦ ${portalCalExpanded?bc+' a enviar':'a enviar'}</div>`;})()}
       </div>`;
     }
     return cells;
@@ -939,7 +939,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           style="font-size:${portalCalExpanded?'0.625rem':'0.5rem'};
           padding:1px 3px;border-radius:3px;margin-top:1px;background:rgba(167,139,250,0.15);color:#A78BFA;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;"
-          title="${bc} no lote">✦ ${portalCalExpanded?bc+' no lote':'lote'}</div>`;})():'');})()}
+          title="${bc} solicitaç${bc>1?'ões':'ão'} a enviar">✦ ${portalCalExpanded?bc+' a enviar':'a enviar'}</div>`;})():'');})()}
       </div>`;
     }).join('');
   };
@@ -1002,8 +1002,8 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       ${(()=>{if(slots.length)return'';const bc=batchMap[dateISO];if(!bc)return'';return`
         <div style="margin-top:10px;padding:8px 10px;border-radius:4px;
           background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.25);">
-          <div style="font-size:0.8125rem;font-weight:600;color:#A78BFA;">✦ ${bc} demanda${bc>1?'s':''} no lote</div>
-          <div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">Será${bc>1?'ão':''} enviada${bc>1?'s':''} ao submeter o lote</div>
+          <div style="font-size:0.8125rem;font-weight:600;color:#A78BFA;">✦ ${bc} solicitaç${bc>1?'ões':'ão'} a enviar</div>
+          <div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">Será${bc>1?'ão':''} enviada${bc>1?'s':''} junto com as demais</div>
         </div>`;})()}
       ${!slots.length&&!dTasks.length&&!requestMap[dateISO]&&!batchMap[dateISO]?`<div class="${clickable?'pcal-day-cell':''}" ${clickable?`data-pcal-date="${dateISO}"`:''}
         style="font-size:0.875rem;color:var(--text-muted);text-align:center;padding:16px 0;cursor:${clickable?'pointer':'default'};">
@@ -1194,7 +1194,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       } else if (source === 'batch') {
         const batchItem = batchQueue.find(item => item.desiredDate === dateISO);
         if (batchItem) {
-          alert(`Este slot está no lote atual:\n\n"${batchItem.title || 'Sem título'}"\n\nRemova do lote para liberar o slot.`);
+          alert(`Este slot já está entre as solicitações pendentes de envio:\n\n"${batchItem.title || 'Sem título'}"\n\nRemova da lista para liberar o slot.`);
         }
       }
     });
@@ -1471,8 +1471,8 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
         <button id="fs-form-batch" style="padding:10px 16px;border-radius:6px;
           border:1px solid var(--border-subtle);background:transparent;color:var(--text-secondary);
           font-weight:500;font-size:0.8125rem;cursor:pointer;font-family:var(--font-ui);
-          transition:all 0.15s;" title="Adicionar ao lote e continuar selecionando">
-          + Lote
+          transition:all 0.15s;" title="Adicionar às várias solicitações e continuar selecionando">
+          + Várias
         </button>
       </div>
     </div>
@@ -2406,7 +2406,7 @@ function addToBatch(taskTypes) {
     batchQueue[currentEditIndex] = item;
     currentEditIndex = -1;
     const btn = document.getElementById('portal-add-batch-btn');
-    if (btn) btn.textContent = 'Adicionar ao lote +';
+    if (btn) btn.textContent = 'Adicionar várias solicitações +';
   } else {
     batchQueue.push(item);
   }
@@ -2504,7 +2504,7 @@ function renderBatchList(taskTypes) {
     btn.addEventListener('click', () => {
       const idx = parseInt(btn.dataset.batchRemove);
       batchQueue.splice(idx, 1);
-      if (currentEditIndex === idx) { currentEditIndex = -1; document.getElementById('portal-add-batch-btn').textContent = 'Adicionar ao lote +'; }
+      if (currentEditIndex === idx) { currentEditIndex = -1; document.getElementById('portal-add-batch-btn').textContent = 'Adicionar várias solicitações +'; }
       else if (currentEditIndex > idx) currentEditIndex--;
       renderBatchList(taskTypes);
     });
@@ -2583,7 +2583,7 @@ async function editBatchItem(idx, taskTypes) {
 }
 
 async function handleBatchSubmit(db, taskTypes) {
-  if (!batchQueue.length) { alert('Nenhuma solicitação no lote.'); return; }
+  if (!batchQueue.length) { alert('Nenhuma solicitação adicionada.'); return; }
   // Name/email come from authenticated profile
   const name  = portalUser?.name || document.getElementById('p-name')?.value?.trim() || '';
   const email = portalUser?.email || document.getElementById('p-email')?.value?.trim() || '';
@@ -2641,7 +2641,7 @@ async function handleBatchSubmit(db, taskTypes) {
       requestingArea: batchQueue[0]?.requestingArea || '',
       sector: batchQueue[0]?.sector || '',
       typeName: batchQueue.map(i => i.typeName).filter(Boolean).join(', '),
-      description: total + ' solicitaç' + (total === 1 ? 'ão' : 'ões') + ' em lote',
+      description: total + ' solicitaç' + (total === 1 ? 'ão' : 'ões') + ' em conjunto',
       urgency: batchQueue.some(i => i.urgency),
       outOfCalendar: batchQueue.some(i => i.outOfCalendar),
     }).catch(() => {});

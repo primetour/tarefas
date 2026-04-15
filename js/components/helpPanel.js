@@ -230,7 +230,7 @@ const HELP_CATEGORIES = [
       },
       {
         q: 'Como enviar pesquisas CSAT?',
-        a: 'As pesquisas podem ser enviadas automaticamente (ao concluir tarefas com email de cliente) ou manualmente em lote pela página CSAT. O link de avaliação funciona sem login.',
+        a: 'As pesquisas podem ser enviadas automaticamente (ao concluir tarefas com email de cliente) ou manualmente em conjunto pela página CSAT. O link de avaliação funciona sem login.',
       },
       {
         q: 'Onde vejo os resultados?',

@@ -164,7 +164,7 @@ function renderList() {
                 ${outOfCal?`<span style="font-size:0.6875rem;padding:1px 6px;border-radius:var(--radius-full);
                   background:rgba(56,189,248,0.12);color:#38BDF8;">📅 Fora do calendário</span>`:''}
                 ${req.batchId?`<span style="font-size:0.6875rem;padding:1px 6px;border-radius:var(--radius-full);
-                  background:rgba(167,139,250,0.12);color:#A78BFA;">📦 Lote ${(req.batchIndex||0)+1}/${req.batchTotal||'?'}</span>`:''}
+                  background:rgba(167,139,250,0.12);color:#A78BFA;" title="Solicitação enviada em conjunto com outras">📦 ${(req.batchIndex||0)+1} de ${req.batchTotal||'?'}</span>`:''}
               </div>
               <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:0.8125rem;color:var(--text-secondary);margin-bottom:6px;">
                 ${req.typeName?`<span>📋 ${esc(req.typeName)}</span>`:''}

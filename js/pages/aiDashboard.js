@@ -730,7 +730,7 @@ const ACTION_LABELS = {
   add_subtask:            'Adicionar subtarefa',
   filter_view:            'Filtrar visualização',
   get_task_summary:       'Resumo de tarefas',
-  bulk_update_status:     'Atualizar status em lote',
+  bulk_update_status:     'Atualizar status em conjunto',
   // Kanban
   move_card:              'Mover card no Kanban',
   create_card:            'Criar card no Kanban',
