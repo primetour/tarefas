@@ -103,6 +103,29 @@ export async function renderNlPerformance(container) {
         <h1 class="page-title">Performance de Newsletters</h1>
         <p class="page-subtitle">Dados sincronizados do Salesforce Marketing Cloud</p>
       </div>
+    </div>
+
+    <!-- Tabs -->
+    <div style="display:flex;gap:0;border-bottom:2px solid var(--border-subtle);margin-bottom:20px;">
+      <button class="nl-tab active" data-tab="performance"
+        style="padding:10px 20px;border:none;background:transparent;font-size:0.875rem;font-weight:600;
+        cursor:pointer;border-bottom:2px solid var(--brand-gold);margin-bottom:-2px;
+        color:var(--brand-gold);font-family:var(--font-ui);">
+        📊 Performance
+      </button>
+      <button class="nl-tab" data-tab="calendar"
+        style="padding:10px 20px;border:none;background:transparent;font-size:0.875rem;font-weight:500;
+        cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;
+        color:var(--text-muted);font-family:var(--font-ui);">
+        📅 Calendário Editorial
+      </button>
+    </div>
+
+    <!-- Tab: Performance -->
+    <div id="nl-tab-performance">
+
+    <div class="page-header" style="margin-top:0;">
+      <div class="page-header-left"></div>
       <div class="page-header-actions" style="gap:8px;flex-wrap:wrap;">
         <span id="nl-sync-status" style="font-size:0.75rem;color:var(--text-muted);padding:0 4px;"></span>
         <a href="https://github.com/primetour/tarefas/actions/workflows/mc-sync.yml"
@@ -163,9 +186,65 @@ export async function renderNlPerformance(container) {
         </table>
       </div>
     </div>
+    </div><!-- /nl-tab-performance -->
+
+    <!-- Tab: Calendário Editorial -->
+    <div id="nl-tab-calendar" style="display:none;">
+      <div id="nl-cal-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+        gap:12px;margin-bottom:24px;">
+        <div class="card skeleton" style="height:90px;"></div>
+        <div class="card skeleton" style="height:90px;"></div>
+        <div class="card skeleton" style="height:90px;"></div>
+        <div class="card skeleton" style="height:90px;"></div>
+        <div class="card skeleton" style="height:90px;"></div>
+      </div>
+      <div id="nl-cal-details" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="card" style="padding:16px;">
+          <div style="font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">
+            📅 Cumprimento do Calendário
+          </div>
+          <div id="nl-cal-compliance"></div>
+        </div>
+        <div class="card" style="padding:16px;">
+          <div style="font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">
+            👤 Top Solicitantes
+          </div>
+          <div id="nl-cal-top-requesters"></div>
+        </div>
+      </div>
+      <div class="card" style="padding:16px;margin-top:16px;">
+        <div style="font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">
+          📋 Detalhamento de Solicitações
+        </div>
+        <div id="nl-cal-table"></div>
+      </div>
+    </div><!-- /nl-tab-calendar -->
   `;
 
   let editMode = false;
+
+  // Tab switching
+  container.querySelectorAll('.nl-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      container.querySelectorAll('.nl-tab').forEach(t => {
+        t.style.borderBottomColor = 'transparent';
+        t.style.color = 'var(--text-muted)';
+        t.style.fontWeight = '500';
+        t.classList.remove('active');
+      });
+      tab.style.borderBottomColor = 'var(--brand-gold)';
+      tab.style.color = 'var(--brand-gold)';
+      tab.style.fontWeight = '600';
+      tab.classList.add('active');
+
+      document.getElementById('nl-tab-performance').style.display = tab.dataset.tab === 'performance' ? 'block' : 'none';
+      document.getElementById('nl-tab-calendar').style.display = tab.dataset.tab === 'calendar' ? 'block' : 'none';
+
+      if (tab.dataset.tab === 'calendar') {
+        loadCalendarDashboard();
+      }
+    });
+  });
 
   // Bind filters
   document.getElementById('nl-bu-filter')?.addEventListener('change', e => {
@@ -772,4 +851,246 @@ function buBadge(id, name) {
     background:${c}15;color:${c};border:1px solid ${c}30;white-space:nowrap;">
     ${esc(name || id)}
   </span>`;
+}
+
+/* ═══════════════════════════════════════════════════════════
+ *  ABA: Calendário Editorial — Dashboard de Newsletter
+ * ═══════════════════════════════════════════════════════════ */
+
+let calDashLoaded = false;
+
+async function loadCalendarDashboard() {
+  if (calDashLoaded) return;
+  calDashLoaded = true;
+
+  try {
+    const { where } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+    // 1. Load newsletter tasks (typeId=newsletter or type=newsletter)
+    const [snap1, snap2, reqSnap, typeSnap] = await Promise.all([
+      getDocs(query(collection(db, 'tasks'), where('typeId', '==', 'newsletter'), limit(500))),
+      getDocs(query(collection(db, 'tasks'), where('type', '==', 'newsletter'), limit(500))).catch(() => ({ docs: [] })),
+      getDocs(query(collection(db, 'requests'), where('typeId', '==', 'newsletter'), limit(500))).catch(() => ({ docs: [] })),
+      getDocs(query(collection(db, 'task_types'), limit(50))),
+    ]);
+
+    // Deduplicate tasks
+    const seen = new Set();
+    const allTasks = [];
+    [...snap1.docs, ...snap2.docs].forEach(d => {
+      if (seen.has(d.id)) return;
+      seen.add(d.id);
+      allTasks.push({ id: d.id, ...d.data() });
+    });
+
+    const allRequests = reqSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Get newsletter type with schedule slots
+    const nlType = typeSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .find(t => t.id === 'newsletter' || t.name?.toLowerCase() === 'newsletter');
+    const scheduleSlots = nlType?.scheduleSlots?.filter(s => s.active !== false) || [];
+    const slaDays = nlType?.sla?.days || 2;
+
+    // 2. Calculate metrics
+    const now = new Date();
+    const users = store.get('users') || [];
+
+    // ── Cumprimento do calendário (últimos 90 dias) ──
+    const last90 = new Date(); last90.setDate(last90.getDate() - 90);
+    let expectedSlots = 0;
+    let fulfilledSlots = 0;
+
+    // Count expected slots in last 90 days
+    for (let d = new Date(last90); d <= now; d.setDate(d.getDate() + 1)) {
+      const dow = d.getDay();
+      const dm = d.getDate();
+      const iso = d.toISOString().slice(0, 10);
+      if (dow === 0 || dow === 6) continue;
+      scheduleSlots.forEach(s => {
+        let matches = false;
+        if (s.recurrence === 'weekly' && s.weekDay === dow) matches = true;
+        if (s.recurrence === 'monthly_days' && (s.monthDays || []).includes(dm)) matches = true;
+        if (s.recurrence === 'custom' && (s.customDates || []).includes(iso)) matches = true;
+        if (matches) expectedSlots++;
+      });
+    }
+
+    // Count fulfilled (tasks that exist for those dates)
+    allTasks.forEach(t => {
+      const dd = t.dueDate || t.startDate;
+      if (!dd) return;
+      const d = dd.toDate ? dd.toDate() : new Date(dd);
+      if (d >= last90 && d <= now && t.status !== 'cancelled') fulfilledSlots++;
+    });
+    const complianceRate = expectedSlots > 0 ? Math.round((fulfilledSlots / expectedSlots) * 100) : 0;
+
+    // ── Solicitações urgentes ──
+    const urgentRequests = allRequests.filter(r => r.urgency === true);
+
+    // ── Fora do calendário ──
+    const outOfCalendar = allRequests.filter(r => r.outOfCalendar === true);
+
+    // ── Top solicitantes ──
+    const requesterCounts = {};
+    allRequests.forEach(r => {
+      const name = r.requesterName || r.requesterEmail || 'Desconhecido';
+      requesterCounts[name] = (requesterCounts[name] || 0) + 1;
+    });
+    const topRequesters = Object.entries(requesterCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
+
+    // ── Tempo médio entre solicitação e entrega ──
+    let totalDays = 0;
+    let countDelivered = 0;
+    allTasks.forEach(t => {
+      if (t.status !== 'completed' && t.status !== 'done') return;
+      const created = t.createdAt?.toDate ? t.createdAt.toDate() : null;
+      const completed = t.completedAt?.toDate ? t.completedAt.toDate() : null;
+      if (created && completed) {
+        const diffDays = (completed - created) / (1000 * 60 * 60 * 24);
+        totalDays += diffDays;
+        countDelivered++;
+      }
+    });
+    const avgDays = countDelivered > 0 ? (totalDays / countDelivered).toFixed(1) : '—';
+    const slaOk = countDelivered > 0 && (totalDays / countDelivered) <= slaDays;
+
+    // 3. Render KPIs
+    const kpis = document.getElementById('nl-cal-kpis');
+    if (kpis) {
+      kpis.innerHTML = `
+        ${calStatCard('Cumprimento', complianceRate + '%', '📅',
+          complianceRate >= 80 ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+          complianceRate >= 80 ? '#22C55E' : '#EF4444',
+          `${fulfilledSlots} de ${expectedSlots} slots (90 dias)`)}
+        ${calStatCard('Solicitações', allRequests.length.toString(), '📩',
+          'rgba(56,189,248,0.12)', '#38BDF8', 'Total de solicitações de newsletter')}
+        ${calStatCard('Urgentes', urgentRequests.length.toString(), '🔴',
+          urgentRequests.length > 0 ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.12)',
+          urgentRequests.length > 0 ? '#EF4444' : '#22C55E',
+          `${allRequests.length ? Math.round((urgentRequests.length/allRequests.length)*100) : 0}% do total`)}
+        ${calStatCard('Fora do Calendário', outOfCalendar.length.toString(), '⚠',
+          outOfCalendar.length > 0 ? 'rgba(245,158,11,0.12)' : 'rgba(34,197,94,0.12)',
+          outOfCalendar.length > 0 ? '#F59E0B' : '#22C55E',
+          `${allRequests.length ? Math.round((outOfCalendar.length/allRequests.length)*100) : 0}% do total`)}
+        ${calStatCard('Tempo Médio', avgDays !== '—' ? avgDays + 'd' : '—', '⏱',
+          slaOk ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+          slaOk ? '#22C55E' : '#EF4444',
+          `SLA: ${slaDays} dias úteis${countDelivered ? ' · ' + countDelivered + ' entregas' : ''}`)}
+      `;
+    }
+
+    // 4. Render compliance bar
+    const compEl = document.getElementById('nl-cal-compliance');
+    if (compEl) {
+      const months = {};
+      // Group tasks by month
+      allTasks.forEach(t => {
+        const dd = t.dueDate || t.startDate;
+        if (!dd) return;
+        const d = dd.toDate ? dd.toDate() : new Date(dd);
+        const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        if (!months[key]) months[key] = { total: 0, completed: 0, label: '' };
+        const PT_M = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        months[key].label = PT_M[d.getMonth()] + '/' + d.getFullYear();
+        months[key].total++;
+        if (t.status === 'completed' || t.status === 'done') months[key].completed++;
+      });
+
+      const sortedMonths = Object.entries(months).sort((a, b) => a[0].localeCompare(b[0])).slice(-6);
+      compEl.innerHTML = sortedMonths.length ? sortedMonths.map(([, m]) => {
+        const rate = m.total > 0 ? Math.round((m.completed / m.total) * 100) : 0;
+        return `
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <span style="width:70px;font-size:0.75rem;color:var(--text-muted);">${m.label}</span>
+            <div style="flex:1;height:20px;background:var(--bg-elevated);border-radius:var(--radius-sm);overflow:hidden;">
+              <div style="height:100%;width:${rate}%;background:${rate>=80?'#22C55E':rate>=50?'#F59E0B':'#EF4444'};
+                border-radius:var(--radius-sm);transition:width 0.3s;"></div>
+            </div>
+            <span style="width:40px;text-align:right;font-size:0.8125rem;font-weight:600;color:var(--text-primary);">${rate}%</span>
+          </div>`;
+      }).join('') : '<p style="font-size:0.8125rem;color:var(--text-muted);">Sem dados suficientes.</p>';
+    }
+
+    // 5. Render top requesters
+    const topEl = document.getElementById('nl-cal-top-requesters');
+    if (topEl) {
+      topEl.innerHTML = topRequesters.length ? topRequesters.map(([name, count], i) => {
+        const max = topRequesters[0][1];
+        const pct = Math.round((count / max) * 100);
+        return `
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="width:16px;font-size:0.75rem;color:var(--text-muted);text-align:center;">${i+1}</span>
+            <span style="width:140px;font-size:0.8125rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</span>
+            <div style="flex:1;height:16px;background:var(--bg-elevated);border-radius:var(--radius-sm);overflow:hidden;">
+              <div style="height:100%;width:${pct}%;background:rgba(212,168,67,0.3);border-radius:var(--radius-sm);"></div>
+            </div>
+            <span style="width:30px;text-align:right;font-size:0.8125rem;font-weight:600;color:var(--text-primary);">${count}</span>
+          </div>`;
+      }).join('') : '<p style="font-size:0.8125rem;color:var(--text-muted);">Sem solicitações.</p>';
+    }
+
+    // 6. Render requests table
+    const tableEl = document.getElementById('nl-cal-table');
+    if (tableEl) {
+      const sorted = [...allRequests].sort((a, b) => {
+        const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+        const db2 = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+        return db2 - da;
+      }).slice(0, 50);
+
+      const STATUS_COLORS = { pending: '#F59E0B', converted: '#22C55E', rejected: '#EF4444' };
+      const STATUS_LABELS = { pending: 'Aguardando', converted: 'Convertida', rejected: 'Recusada' };
+
+      tableEl.innerHTML = sorted.length ? `
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:0.8125rem;">
+            <thead>
+              <tr style="background:var(--bg-surface);">
+                <th style="text-align:left;padding:8px 12px;font-size:0.6875rem;font-weight:600;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Data</th>
+                <th style="text-align:left;padding:8px 12px;font-size:0.6875rem;font-weight:600;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Título</th>
+                <th style="text-align:left;padding:8px 12px;font-size:0.6875rem;font-weight:600;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Solicitante</th>
+                <th style="text-align:left;padding:8px 12px;font-size:0.6875rem;font-weight:600;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Status</th>
+                <th style="text-align:center;padding:8px 12px;font-size:0.6875rem;font-weight:600;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Urgente</th>
+                <th style="text-align:center;padding:8px 12px;font-size:0.6875rem;font-weight:600;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Fora Cal.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sorted.map(r => {
+                const created = r.createdAt?.toDate ? r.createdAt.toDate() : new Date(r.createdAt || 0);
+                const stColor = STATUS_COLORS[r.status] || '#6B7280';
+                return `<tr style="border-bottom:1px solid var(--border-subtle);">
+                  <td style="padding:8px 12px;font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">${fmt(created)}</td>
+                  <td style="padding:8px 12px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.title || '—')}</td>
+                  <td style="padding:8px 12px;font-size:0.75rem;color:var(--text-secondary);">${esc(r.requesterName || r.requesterEmail || '—')}</td>
+                  <td style="padding:8px 12px;">
+                    <span style="font-size:0.6875rem;padding:2px 8px;border-radius:var(--radius-full);
+                      background:${stColor}15;color:${stColor};border:1px solid ${stColor}30;">${STATUS_LABELS[r.status] || r.status}</span>
+                  </td>
+                  <td style="padding:8px 12px;text-align:center;">${r.urgency ? '<span style="color:#EF4444;">🔴</span>' : '—'}</td>
+                  <td style="padding:8px 12px;text-align:center;">${r.outOfCalendar ? '<span style="color:#F59E0B;">⚠</span>' : '—'}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : '<p style="font-size:0.8125rem;color:var(--text-muted);padding:16px;">Nenhuma solicitação de newsletter encontrada.</p>';
+    }
+
+  } catch (e) {
+    console.error('Calendar dashboard error:', e);
+    const kpis = document.getElementById('nl-cal-kpis');
+    if (kpis) kpis.innerHTML = `<div class="card" style="grid-column:1/-1;padding:24px;text-align:center;color:var(--text-muted);">
+      Erro ao carregar dados: ${esc(e.message)}</div>`;
+  }
+}
+
+function calStatCard(label, value, icon, bg, color, sub = '') {
+  return `<div class="stat-card">
+    <div class="stat-card-icon" style="background:${bg};color:${color};">${icon}</div>
+    <div class="stat-card-label">${label}</div>
+    <div class="stat-card-value">${value}</div>
+    ${sub ? `<div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">${sub}</div>` : ''}
+  </div>`;
 }
