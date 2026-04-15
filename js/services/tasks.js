@@ -13,6 +13,29 @@ import { db }       from '../firebase.js';
 import { store }    from '../store.js';
 import { auditLog } from '../auth/audit.js';
 
+/* ─── Som de conclusão de tarefa (Web Audio API) ─────────── */
+let _completionCtx = null;
+function playCompletionSound() {
+  try {
+    if (!_completionCtx) _completionCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _completionCtx;
+    const now = ctx.currentTime;
+    // "Plin" — ascending triad: C6 → E6 → G6
+    [1047, 1319, 1568].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + i * 0.1);
+      gain.gain.linearRampToValueAtTime(0.18, now + i * 0.1 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + i * 0.1);
+      osc.stop(now + i * 0.1 + 0.4);
+    });
+  } catch { /* AudioContext not available */ }
+}
+
 /* ─── Constantes ─────────────────────────────────────────── */
 export const STATUSES = [
   { value: 'not_started', label: 'Não iniciado',   color: '#38BDF8' },
@@ -182,9 +205,10 @@ export async function updateTask(taskId, data) {
     }).catch(() => {});
   }
 
-  // Se status mudou para done, salvar data de conclusão
+  // Se status mudou para done, salvar data de conclusão + som de conclusão
   if (data.status === 'done' && data.status !== data._prevStatus) {
     updates.completedAt = serverTimestamp();
+    playCompletionSound();
   } else if (data.status && data.status !== 'done') {
     updates.completedAt = null;
   }
@@ -221,6 +245,25 @@ export async function updateTask(taskId, data) {
         });
       }).catch(() => {});
     }
+  }
+
+  // Auto-send CSAT if task has clientEmail and is being completed
+  if (data.status === 'done' && data.status !== data._prevStatus && data.clientEmail) {
+    import('./csat.js').then(async ({ createCsatSurvey, sendCsatEmail }) => {
+      try {
+        const survey = await createCsatSurvey({
+          taskId,
+          taskTitle: data.title || 'Tarefa',
+          clientEmail: data.clientEmail,
+          clientName: data.clientName || '',
+          projectName: data.projectName || '',
+        });
+        if (survey?.id) {
+          await sendCsatEmail(survey.id).catch(() => {});
+          console.log('[CSAT] Auto-sent for task:', taskId);
+        }
+      } catch (e) { console.warn('[CSAT] Auto-send failed:', e); }
+    }).catch(() => {});
   }
 
   // Notify on status changes
@@ -389,6 +432,10 @@ export function subscribeToTasks(callback, filters = {}) {
       }
 
       if (filters.projectId) tasks = tasks.filter(t => t.projectId === filters.projectId);
+
+      // Check for tasks with requester edit flags → show global banner
+      showRequesterEditBanners(tasks);
+
       callback(tasks);
     }, 300);
   }, (error) => {
