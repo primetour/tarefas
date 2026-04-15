@@ -24,6 +24,9 @@ let suggestTaskFromRequest = async () => null;
 })();
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Firestore IDs are 20-char alphanumeric — don't show these to users
+const isFirestoreId = s => typeof s === 'string' && /^[A-Za-z0-9]{15,30}$/.test(s);
+const safeTypeName = req => isFirestoreId(req.typeName) ? '' : (req.typeName || '');
 
 function fmtDate(ts) {
   if (!ts) return '—';
@@ -443,12 +446,12 @@ async function openRequestDetail(req) {
                 toast.success('Solicitação convertida em tarefa com sugestões da IA!');
               },
               taskData: {
-                title:          suggestion?.title || req.title || `[Solicitação] ${req.typeName||'Demanda'} — ${req.requesterName}`,
+                title:          suggestion?.title || req.title || `[Solicitação] ${safeTypeName(req)||'Demanda'} — ${req.requesterName}`,
                 description:    suggestion?.description || req.description || '',
                 requestingArea: suggestion?.requestingArea || req.requestingArea || '',
                 sector:         req.sector         || '',
                 typeId:         suggestion?.suggestedTypeId || req.typeId || null,
-                type:           req.typeName?.toLowerCase() || '',
+                type:           safeTypeName(req).toLowerCase(),
                 variationId:    req.variationId    || null,
                 variationName:  req.variationName  || '',
                 nucleos:        req.nucleo ? [req.nucleo] : [],
@@ -495,12 +498,12 @@ async function openRequestDetail(req) {
               toast.success('Solicitação convertida em tarefa!');
             },
             taskData: {
-              title:          req.title || `[Solicitação] ${req.typeName||'Demanda'} — ${req.requesterName}`,
+              title:          req.title || `[Solicitação] ${safeTypeName(req)||'Demanda'} — ${req.requesterName}`,
               description:    req.description   || '',
               requestingArea: req.requestingArea || '',
               sector:         req.sector         || '',
               typeId:         req.typeId         || null,
-              type:           req.typeName?.toLowerCase() || '',
+              type:           safeTypeName(req).toLowerCase(),
               variationId:    req.variationId    || null,
               variationName:  req.variationName  || '',
               nucleos:        req.nucleo ? [req.nucleo] : [],
