@@ -49,7 +49,7 @@ ou handoff (venda/transferência) do software.
 
 ## 3. Workflows agendados (GitHub Actions)
 
-Total: **5 workflows**, todos em `.github/workflows/`. Cada um chama um script Node.js em `scripts/`.
+Total: **6 workflows**, todos em `.github/workflows/`. Cada um chama um script Node.js em `scripts/`.
 
 ### 3.1 GA4 → Firestore Sync
 
@@ -176,7 +176,46 @@ Não roda automaticamente.
 
 ---
 
-### 3.5 Seed AI Settings (manual, one-off)
+### 3.5 Archive de tarefas antigas
+
+| Campo | Valor |
+|---|---|
+| **Arquivo** | `.github/workflows/archive-tasks.yml` |
+| **Script** | `scripts/archive-tasks.js` |
+| **Schedule** | Dia 1 de cada mês, 03:00 UTC (00:00 BRT) |
+| **Trigger manual** | Sim (com inputs `days` e `dry_run`) |
+| **Timeout** | 15 min |
+| **API externa** | Nenhuma (só Firestore) |
+
+**Secrets necessários**: `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`
+
+**O que faz**: move tarefas com `status in [done, cancelled]` e `completedAt`
+(ou `updatedAt`) há mais de 365 dias da coleção `tasks` para `tasks_archive`.
+Mantém a lista principal leve sem perder histórico.
+
+**Inputs manuais**:
+- `days` — N dias de retenção (default 365). Use 730 pra manter 2 anos.
+- `dry_run` — `1` só conta, `0` executa.
+
+**Escreve em Firestore**:
+- `tasks_archive/{taskId}` — cópia da tarefa + campo `archivedAt`
+- `tasks_archive_meta/lastSync` — metadados da última execução
+- Apaga da coleção `tasks` no mesmo batch
+
+**Impacto no frontend**:
+- Página de Metas (`goals.js`) já lê `tasks` + `tasks_archive` em união
+  para preservar histórico anual (via `fetchArchivedTasks()` em
+  `services/tasks.js`).
+- Demais páginas (kanban, calendário, lista, dashboards) leem só
+  `tasks` — é o comportamento desejado pra manter performance.
+
+**⚠ Importante**: se você criar nova funcionalidade que precise de
+histórico (ex: relatório de 5 anos), use `fetchArchivedTasks()` em
+paralelo com `fetchTasks()` e una os arrays.
+
+---
+
+### 3.6 Seed AI Settings (manual, one-off)
 
 | Campo | Valor |
 |---|---|
@@ -237,6 +276,7 @@ Mapa inverso: dada uma coleção, qual script/origem a alimenta.
 | `meta_performance`, `meta_accounts` | `meta-sync.js` | Diária |
 | `portal_terms`, `portal_areas` | `portal-seed.js` | Manual |
 | `ai_settings/*` | `ai-settings-seed.js` | Manual |
+| `tasks_archive`, `tasks_archive_meta` | `archive-tasks.js` | Mensal (dia 1) |
 | `tasks`, `requests`, `users`, `taskTypes`, etc. | App (frontend via Firestore SDK) | Tempo real (usuários) |
 
 **Regras de segurança**: `firestore.rules` — controla quem pode ler/escrever

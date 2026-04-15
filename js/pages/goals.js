@@ -12,7 +12,7 @@ import {
   emptyGoal, emptyPilar, emptyMeta, emptyKpi,
   GOAL_SCOPES, GOAL_PRAZO_TYPES,
 } from '../services/goals.js';
-import { NUCLEOS, fetchTasks, updateTask } from '../services/tasks.js';
+import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask } from '../services/tasks.js';
 import { openTaskModal } from '../components/taskModal.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -74,12 +74,16 @@ export async function renderGoals(container) {
 
     <div id="goals-content"></div>`;
 
-  // Load data
-  [allGoals, allUsers, allTasksForGoals] = await Promise.all([
+  // Load data — metas são anuais, então unimos tarefas ativas + arquivadas
+  // para não perder histórico após o archive-tasks mover tarefas antigas.
+  const [goalsRes, activeTasks, archivedTasks] = await Promise.all([
     fetchGoals().catch(()=>[]),
-    Promise.resolve(store.get('users')||[]),
     fetchTasks().catch(()=>[]),
+    fetchArchivedTasks().catch(()=>[]),
   ]);
+  allGoals   = goalsRes;
+  allUsers   = store.get('users') || [];
+  allTasksForGoals = [...activeTasks, ...archivedTasks];
 
   // Wire tabs
   container.querySelectorAll('.goal-tab').forEach(btn => {
@@ -291,11 +295,14 @@ async function renderAvaliacoes(container) {
   }).join('');
 
   // Load evaluations + evidence tasks for each goal
+  // Une ativas + arquivadas para preservar histórico anual das metas.
   for (const goal of publishedGoals) {
-    const [evals, allTasksRaw] = await Promise.all([
+    const [evals, activeT, archivedT] = await Promise.all([
       fetchEvaluations(goal.id).catch(()=>[]),
       fetchTasks().catch(()=>[]),
+      fetchArchivedTasks().catch(()=>[]),
     ]);
+    const allTasksRaw   = [...activeT, ...archivedT];
     const linkedTasks   = allTasksRaw.filter(t => t.goalId === goal.id);
     const evidenceTasks = linkedTasks.filter(t => t.confirmadaEvidencia);
 

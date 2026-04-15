@@ -39,6 +39,48 @@ function initKbFilterState() {
 }
 let activePipelineTypeId = ''; // tipo selecionado na esteira
 
+/* ─── Paginação por coluna ───────────────────────────────── */
+const KANBAN_COL_LIMIT = 200;
+const expandedCols = new Set();  // chaves tipo "kb:done" ou "pipe:type1:__done__"
+
+function renderColumnBody(body, count, colTasks, colKey, cardRenderer, rebindFn) {
+  const total     = colTasks.length;
+  const expanded  = expandedCols.has(colKey);
+  const limit     = (expanded || total <= KANBAN_COL_LIMIT) ? total : KANBAN_COL_LIMIT;
+  const visible   = colTasks.slice(0, limit);
+  const remaining = total - limit;
+
+  let html = visible.map(cardRenderer).join('');
+  if (remaining > 0) {
+    html += `<button class="kb-load-more" data-col-key="${colKey}" style="width:100%;
+      margin-top:8px;padding:8px 12px;border-radius:var(--radius-md);
+      border:1px dashed var(--border-subtle);background:transparent;
+      color:var(--text-muted);cursor:pointer;font-family:var(--font-ui);
+      font-size:0.75rem;font-weight:500;transition:all 0.15s;">
+      ↓ Ver mais ${remaining} tarefa${remaining>1?'s':''}
+    </button>`;
+  } else if (expanded && total > KANBAN_COL_LIMIT) {
+    html += `<button class="kb-load-more" data-col-key="${colKey}" data-collapse="1" style="width:100%;
+      margin-top:8px;padding:8px 12px;border-radius:var(--radius-md);
+      border:1px dashed var(--border-subtle);background:transparent;
+      color:var(--text-muted);cursor:pointer;font-family:var(--font-ui);
+      font-size:0.75rem;font-weight:500;">
+      ↑ Recolher
+    </button>`;
+  }
+
+  body.innerHTML = html;
+  if (count) count.textContent = total;
+  if (typeof rebindFn === 'function') rebindFn(body);
+
+  body.querySelector('.kb-load-more')?.addEventListener('click', e => {
+    const key = e.currentTarget.dataset.colKey;
+    if (e.currentTarget.dataset.collapse) expandedCols.delete(key);
+    else expandedCols.add(key);
+    renderColumnBody(body, count, colTasks, colKey, cardRenderer, rebindFn);
+  });
+}
+
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderKanban(container) {
   try {
@@ -230,11 +272,11 @@ function renderCards(tasks, _ignored = '') {
       });
     }
 
-    body.innerHTML = colTasks.map(t => renderKanbanCard(t)).join('');
-    if (count) count.textContent = colTasks.length;
-
-    // Re-bind drag events
-    body.querySelectorAll('.kanban-card').forEach(card => bindCardDrag(card));
+    renderColumnBody(
+      body, count, colTasks, `kb:${s.value}`,
+      t => renderKanbanCard(t),
+      b => b.querySelectorAll('.kanban-card').forEach(card => bindCardDrag(card)),
+    );
   });
 
   // Bind add buttons
@@ -551,9 +593,11 @@ function renderPipelineCards(tasks) {
       });
     }
 
-    body.innerHTML = colTasks.map(t => renderKanbanCard(t, type)).join('');
-    if (count) count.textContent = colTasks.length;
-    body.querySelectorAll('.kanban-card').forEach(card => bindPipelineCardDrag(card, type));
+    renderColumnBody(
+      body, count, colTasks, `pipe:${type.id}:${col.id}`,
+      t => renderKanbanCard(t, type),
+      b => b.querySelectorAll('.kanban-card').forEach(card => bindPipelineCardDrag(card, type)),
+    );
   });
 
   // Bind add buttons

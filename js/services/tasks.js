@@ -472,6 +472,40 @@ export async function fetchTasks({
   return tasks;
 }
 
+/* ─── Fetch arquivadas ───────────────────────────────────────
+ * Lê da coleção `tasks_archive` (populada por scripts/archive-tasks.js).
+ * Use em páginas que precisam de histórico anual — ex: metas anuais,
+ * dashboards de desempenho passado. Aplica os mesmos filtros de setor
+ * e squad que fetchTasks() para respeitar permissões.
+ * Retorna array vazio se a coleção não existir (coleção só surge na
+ * primeira execução do archive-tasks). */
+export async function fetchArchivedTasks({ limitN = 2000 } = {}) {
+  try {
+    const q = query(collection(db, 'tasks_archive'), limit(limitN));
+    const snap = await getDocs(q);
+    let tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    const currentUid = store.get('currentUser')?.uid;
+    const isAssignee = (t) => currentUid && (t.assignees || []).includes(currentUid);
+    const activeIdsArr = store.getActiveWorkspaceIds();
+    const activeIdsSet = new Set(activeIdsArr ?? []);
+    const isInActiveSquad = (t) => !!t.workspaceId && activeIdsSet.has(t.workspaceId);
+
+    if (activeIdsArr) {
+      tasks = tasks.filter(t => isAssignee(t) || !t.workspaceId || activeIdsSet.has(t.workspaceId));
+    }
+    const visibleSectors = store.getVisibleSectors();
+    if (visibleSectors !== null && visibleSectors.length > 0) {
+      tasks = tasks.filter(t =>
+        isAssignee(t) || isInActiveSquad(t) || !t.sector || visibleSectors.includes(t.sector)
+      );
+    }
+    return tasks;
+  } catch (e) {
+    return [];
+  }
+}
+
 /* ─── Real-time listener ─────────────────────────────────── */
 export function subscribeToTasks(callback, filters = {}) {
   // Otimização: filtrar por workspace no Firestore quando possível

@@ -26,7 +26,8 @@ let filterStatus = '';
 let filterPriority = '';
 let filterProject  = '';
 let filterAssignee = '';
-let filterDatePreset = '';       // '' | 'today' | 'tomorrow' | 'thisWeek' | 'nextWeek' | 'overdue' | 'thisMonth' | 'custom'
+let filterDatePreset = 'last90Days'; // default: mantém lista leve mesmo com milhares de tarefas históricas
+                                     // '' | 'last90Days' | 'today' | 'tomorrow' | 'thisWeek' | 'nextWeek' | 'overdue' | 'thisMonth' | 'noDue' | 'custom'
 let filterDateFrom = '';         // ISO YYYY-MM-DD (para custom)
 let filterDateTo   = '';
 let filterArea     = '';
@@ -117,15 +118,16 @@ export async function renderTasks(container) {
         `).join('')}
       </select>
       <select class="filter-select" id="filter-date-preset" style="${filterVisibility.datePreset?'':'display:none;'}">
-        <option value="">Qualquer prazo</option>
-        <option value="overdue">⚠ Atrasadas</option>
-        <option value="today">Hoje</option>
-        <option value="tomorrow">Amanhã</option>
-        <option value="thisWeek">Esta semana</option>
-        <option value="nextWeek">Próxima semana</option>
-        <option value="thisMonth">Este mês</option>
-        <option value="noDue">Sem prazo</option>
-        <option value="custom">Período customizado…</option>
+        <option value=""            ${filterDatePreset===''?'selected':''}>Qualquer prazo</option>
+        <option value="last90Days"  ${filterDatePreset==='last90Days'?'selected':''}>Últimos 90 dias (padrão)</option>
+        <option value="overdue"     ${filterDatePreset==='overdue'?'selected':''}>⚠ Atrasadas</option>
+        <option value="today"       ${filterDatePreset==='today'?'selected':''}>Hoje</option>
+        <option value="tomorrow"    ${filterDatePreset==='tomorrow'?'selected':''}>Amanhã</option>
+        <option value="thisWeek"    ${filterDatePreset==='thisWeek'?'selected':''}>Esta semana</option>
+        <option value="nextWeek"    ${filterDatePreset==='nextWeek'?'selected':''}>Próxima semana</option>
+        <option value="thisMonth"   ${filterDatePreset==='thisMonth'?'selected':''}>Este mês</option>
+        <option value="noDue"       ${filterDatePreset==='noDue'?'selected':''}>Sem prazo</option>
+        <option value="custom"      ${filterDatePreset==='custom'?'selected':''}>Período customizado…</option>
       </select>
       <select class="filter-select" id="filter-area" style="${filterVisibility.area?'':'display:none;'}">
         <option value="">Todas as áreas</option>
@@ -270,6 +272,17 @@ function applyFilters() {
     };
     if (filterDatePreset === 'noDue') {
       result = result.filter(t => !t.dueDate);
+    } else if (filterDatePreset === 'last90Days') {
+      // Default filter: tasks com atividade recente OU ativas sem prazo longínquo.
+      // Inclui: criadas/atualizadas nos últimos 90 dias, OU ainda não concluídas (sempre relevantes).
+      const cutoff = new Date(today); cutoff.setDate(today.getDate() - 90);
+      result = result.filter(t => {
+        if (t.status !== 'done') return true;
+        const ts = t.updatedAt || t.completedAt || t.createdAt;
+        if (!ts) return true;
+        const d = ts?.toDate ? ts.toDate() : new Date(ts);
+        return d >= cutoff;
+      });
     } else if (filterDatePreset === 'overdue') {
       result = result.filter(t => { const d = getDue(t); return d && d < today && t.status !== 'done'; });
     } else if (filterDatePreset === 'today') {

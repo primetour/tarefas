@@ -1,0 +1,44 @@
+name: Archive old tasks → tasks_archive
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'   # Dia 1 de cada mês às 03:00 UTC (00:00 BRT)
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Arquivar tarefas concluídas há mais de N dias (default 365)'
+        required: false
+        default: '365'
+      dry_run:
+        description: 'Apenas contar (1 = sim, 0 = executa)'
+        required: false
+        default: '0'
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          cd scripts
+          npm init -y 2>/dev/null || true
+          npm install firebase-admin@12
+
+      - name: Run Archive
+        env:
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          ARCHIVE_DAYS:          ${{ github.event.inputs.days || '365' }}
+          DRY_RUN:               ${{ github.event.inputs.dry_run || '0' }}
+        run: node scripts/archive-tasks.js
