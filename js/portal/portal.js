@@ -2152,7 +2152,14 @@ async function openEditRequestModal(db, taskTypes, data) {
         // Flag: mark task as having been edited by requester
         taskUpdate.requesterEditFlag = true;
         taskUpdate.requesterEditAt = serverTimestamp();
-        taskUpdate.requesterEditChanges = Object.keys(changes).join(', ');
+        const FIELD_LABELS = {
+          title: 'Título', description: 'Descrição', desiredDate: 'Data',
+          urgency: 'Urgência', outOfCalendar: 'Fora do calendário',
+          variationId: 'Variação', variationName: 'Variação',
+          nucleo: 'Núcleo', sector: 'Setor', requestingArea: 'Área solicitante',
+        };
+        taskUpdate.requesterEditChanges = Object.keys(changes)
+          .map(f => FIELD_LABELS[f] || f).join(', ');
         try {
           await updateDoc(doc(db, 'tasks', taskId), taskUpdate);
         } catch(e) { console.warn('Task update error:', e.message); }
