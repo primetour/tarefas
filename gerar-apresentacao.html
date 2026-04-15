@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Gerar Apresentacao PRIMETOUR</title>
+<style>
+  body { background:#0A1628; color:#F0F4FF; font-family:'Outfit',system-ui,sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; }
+  .wrap { text-align:center; }
+  h1 { color:#D4A843; font-family:'Cormorant Garamond',serif; font-size:2rem; margin-bottom:8px; }
+  p { color:#8899B8; margin-bottom:24px; }
+  button { background:#D4A843; color:#0A1628; border:none; padding:14px 40px; border-radius:10px; font-size:1rem; font-weight:600; cursor:pointer; }
+  button:hover { background:#E8C272; }
+  #status { margin-top:16px; color:#8899B8; font-size:0.875rem; }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="wrap">
+  <h1>PRIMETOUR</h1>
+  <p>Gerando apresentacao comercial em PDF...</p>
+  <button onclick="gerarPDF()">Gerar PDF</button>
+  <div id="status"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script>
+async function gerarPDF() {
+  const status = document.getElementById('status');
+  status.textContent = 'Gerando PDF... aguarde.';
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+
+  // ── Constantes ──
+  const W = 297, H = 210;
+  const NAVY    = [10, 22, 40];    // #0A1628
+  const GOLD    = [212, 168, 67];  // #D4A843
+  const GOLD_L  = [232, 194, 114]; // #E8C272
+  const WHITE   = [240, 244, 255]; // #F0F4FF
+  const MUTED   = [136, 153, 184]; // #8899B8
+  const SURFACE = [21, 36, 64];    // #152440
+  const CARD    = [26, 43, 68];    // #1A2B44
+  const SUCCESS = [34, 197, 94];
+  const INFO    = [56, 189, 248];
+  const WARNING = [245, 158, 11];
+  const DANGER  = [239, 68, 68];
+  const PURPLE  = [167, 139, 250];
+
+  const ML = 20, MR = 20, MT = 18, MB = 18;
+  const CW = W - ML - MR;
+
+  // ── Helpers ──
+  function bg(color) { doc.setFillColor(...color); doc.rect(0,0,W,H,'F'); }
+  function goldBar(y, w) { doc.setFillColor(...GOLD); doc.rect(ML, y, w||CW, 1,'F'); }
+  function goldBarThin(y, w) { doc.setFillColor(...GOLD); doc.rect(ML, y, w||CW, 0.4,'F'); }
+
+  function title(text, y, size, color) {
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(size||28);
+    doc.setTextColor(...(color||WHITE));
+    doc.text(text, ML, y);
+    return y + size*0.5;
+  }
+
+  function subtitle(text, y, size, color) {
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(size||14);
+    doc.setTextColor(...(color||MUTED));
+    doc.text(text, ML, y);
+    return y + size*0.6;
+  }
+
+  function body(text, y, opts={}) {
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(opts.size||10);
+    doc.setTextColor(...(opts.color||WHITE));
+    const lines = doc.splitTextToSize(text, opts.maxW||CW);
+    doc.text(lines, opts.x||ML, y);
+    return y + lines.length * (opts.size||10)*0.45;
+  }
+
+  function bullet(text, y, opts={}) {
+    const x = opts.x || ML;
+    doc.setFillColor(...(opts.dotColor||GOLD));
+    doc.circle(x+2, y-1.5, 1.2, 'F');
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(opts.size||10);
+    doc.setTextColor(...(opts.color||WHITE));
+    const lines = doc.splitTextToSize(text, (opts.maxW||CW)-8);
+    doc.text(lines, x+7, y);
+    return y + lines.length * (opts.size||10)*0.45 + 2;
+  }
+
+  function kpiCard(x, y, w, h, value, label, color) {
+    doc.setFillColor(...CARD);
+    doc.roundedRect(x, y, w, h, 3, 3, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(22);
+    doc.setTextColor(...(color||GOLD));
+    doc.text(String(value), x+w/2, y+h*0.48, {align:'center'});
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...MUTED);
+    doc.text(label, x+w/2, y+h*0.75, {align:'center'});
+  }
+
+  function slideNumber(n) {
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text(String(n).padStart(2,'0'), W-MR, H-8, {align:'right'});
+    // Gold accent line at bottom
+    doc.setFillColor(...GOLD);
+    doc.rect(ML, H-5, 30, 0.3, 'F');
+  }
+
+  function newSlide() { doc.addPage('a4','landscape'); bg(NAVY); }
+
+  function sectionHeader(icon, titleText, subtitleText, y) {
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(12);
+    doc.setTextColor(...GOLD);
+    doc.text(icon, ML, y);
+    doc.setFontSize(22);
+    doc.setTextColor(...WHITE);
+    doc.text(titleText, ML+10, y);
+    if (subtitleText) {
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(10);
+      doc.setTextColor(...MUTED);
+      doc.text(subtitleText, ML, y+8);
+    }
+    goldBarThin(y+12, CW);
+    return y+18;
+  }
+
+  function moduleCard(x, y, w, h, icon, name, features) {
+    doc.setFillColor(...CARD);
+    doc.roundedRect(x, y, w, h, 3, 3, 'F');
+    // Gold left border
+    doc.setFillColor(...GOLD);
+    doc.rect(x, y+3, 1, h-6, 'F');
+    // Icon + name
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...GOLD);
+    doc.text(icon, x+5, y+8);
+    doc.setTextColor(...WHITE);
+    doc.text(name, x+12, y+8);
+    // Features
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    let fy = y+14;
+    features.forEach(f => {
+      const lines = doc.splitTextToSize('- ' + f, w-12);
+      doc.text(lines, x+6, fy);
+      fy += lines.length * 3.5;
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 1 — CAPA
+  // ═══════════════════════════════════════════════════════════
+  bg(NAVY);
+
+  // Decorative gold geometric elements
+  doc.setDrawColor(...GOLD);
+  doc.setLineWidth(0.3);
+  doc.line(ML, 40, ML+80, 40);
+  doc.line(W-MR-80, 40, W-MR, 40);
+  doc.line(ML, H-40, ML+80, H-40);
+  doc.line(W-MR-80, H-40, W-MR, H-40);
+  // Corner accents
+  doc.line(ML, 38, ML, 42);
+  doc.line(W-MR, 38, W-MR, 42);
+  doc.line(ML, H-42, ML, H-38);
+  doc.line(W-MR, H-42, W-MR, H-38);
+
+  // Diamond symbol
+  doc.setFillColor(...GOLD);
+  const cx = W/2, cy = 65;
+  doc.triangle(cx, cy-8, cx-6, cy, cx+6, cy, 'F');
+  doc.triangle(cx, cy+8, cx-6, cy, cx+6, cy, 'F');
+
+  // Brand name
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(42);
+  doc.setTextColor(...GOLD);
+  doc.text('PRIMETOUR', W/2, 95, {align:'center'});
+
+  // Tagline
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  doc.text('G E S T A O   D E   T A R E F A S', W/2, 103, {align:'center'});
+
+  // Main headline
+  goldBar(112, CW);
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(18);
+  doc.setTextColor(...WHITE);
+  doc.text('Plataforma de Gestao Operacional', W/2, 125, {align:'center'});
+  doc.text('e Inteligencia de Negocios para Turismo', W/2, 133, {align:'center'});
+  goldBar(139, CW);
+
+  // Footer
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  doc.text('Apresentacao Comercial  |  2026', W/2, 165, {align:'center'});
+  doc.text('Confidencial', W/2, 171, {align:'center'});
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 2 — O PROBLEMA
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  let y = sectionHeader('', 'O Problema', 'Por que agencias de turismo perdem tempo e dinheiro com ferramentas fragmentadas', MT+5);
+  slideNumber(2);
+
+  y += 5;
+  const problems = [
+    { icon:'8+', text:'ferramentas diferentes para operar (Asana, Canva, Salesforce, HubSpot, ChatGPT, SurveyMonkey, Power BI, Google Sheets)', color:DANGER },
+    { icon:'72%', text:'do tempo de gestores gasto alternando entre plataformas e reconciliando dados manualmente', color:WARNING },
+    { icon:'R$0', text:'de visibilidade sobre performance real — dados espalhados em silos isolados', color:INFO },
+    { icon:'0', text:'ferramentas de mercado combinam task management + roteiros de viagem + portal de conteudo', color:PURPLE },
+  ];
+
+  problems.forEach((p, i) => {
+    const py = y + i*28;
+    doc.setFillColor(...CARD);
+    doc.roundedRect(ML, py, CW, 24, 3, 3, 'F');
+    doc.setFillColor(...p.color);
+    doc.rect(ML, py+4, 1.5, 16, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(20);
+    doc.setTextColor(...p.color);
+    doc.text(p.icon, ML+10, py+15);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(10);
+    doc.setTextColor(...WHITE);
+    const lines = doc.splitTextToSize(p.text, CW-65);
+    doc.text(lines, ML+45, py+12);
+  });
+
+  // Cost box
+  const costY = y + 120;
+  doc.setFillColor(...SURFACE);
+  doc.roundedRect(ML, costY, CW, 30, 3, 3, 'F');
+  doc.setDrawColor(...GOLD);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(ML, costY, CW, 30, 3, 3, 'S');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(12);
+  doc.setTextColor(...GOLD);
+  doc.text('Custo tipico combinado: US$ 240 - 722 / usuario / mes', W/2, costY+12, {align:'center'});
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  doc.text('Asana + Canva Pro + Salesforce + HubSpot + Power BI + ChatGPT Teams + SurveyMonkey + Google Workspace', W/2, costY+22, {align:'center'});
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 3 — DORES QUE O PRIMETOUR RESOLVE
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'Dores que o PRIMETOUR Resolve', 'Cada modulo foi desenhado para eliminar uma dor real da operacao', MT+5);
+  slideNumber(3);
+
+  y += 3;
+  const dores = [
+    { dor:'Roteiros feitos manualmente em PPT/Word', cura:'Editor de Roteiros com 11 secoes + export PDF profissional automatico', icon:'ROTEIROS', color:GOLD },
+    { dor:'Conteudo de destinos disperso em pastas e emails', cura:'Portal de Dicas centralizado com banco de imagens, versionamento e links rastreaveis', icon:'PORTAL', color:INFO },
+    { dor:'Sem visibilidade da performance de marketing', cura:'Dashboards de Newsletters, Instagram e GA4 com sync automatico diario', icon:'MARKETING', color:SUCCESS },
+    { dor:'Tarefas acompanhadas em planilhas ou WhatsApp', cura:'Kanban, Timeline, Calendario e lista com 7 filtros simultaneos', icon:'TAREFAS', color:WARNING },
+    { dor:'IA usada de forma ad-hoc, sem padronizacao', cura:'Skills de IA customizaveis por modulo, com 5 provedores e controle de custos', icon:'IA', color:PURPLE },
+    { dor:'Feedback e metas sem historico ou estrutura', cura:'Modulos de Feedbacks e Metas com KPIs, avaliacao por gestor e export', icon:'PESSOAS', color:DANGER },
+    { dor:'Cliente nao recebe material profissional', cura:'Paginas publicas (roteiro, dicas, CSAT, solicitacoes) compartilhaveis por link', icon:'PUBLICO', color:INFO },
+    { dor:'Cada marca/BU exige materiais com identidade propria', cura:'Multi-BU nativo: 7 marcas com cores, logos e branding nos exports', icon:'MULTI-BU', color:GOLD },
+  ];
+
+  const doreColW = CW/2 - 4;
+  dores.forEach((d, i) => {
+    const col = i < 4 ? 0 : 1;
+    const row = i % 4;
+    const dx = ML + col*(doreColW+8);
+    const dy = y + row*28;
+
+    doc.setFillColor(...CARD);
+    doc.roundedRect(dx, dy, doreColW, 25, 3, 3, 'F');
+    doc.setFillColor(...d.color);
+    doc.rect(dx, dy+4, 1.5, 17, 'F');
+
+    // Tag
+    doc.setFillColor(...d.color);
+    doc.roundedRect(dx+5, dy+2, 22, 6, 1, 1, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(4.5);
+    doc.setTextColor(10,10,10);
+    doc.text(d.icon, dx+16, dy+6, {align:'center'});
+
+    // Dor (vermelho)
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    doc.setTextColor(239,120,120);
+    doc.text('Dor: ' + d.dor, dx+30, dy+6.5);
+
+    // Cura (verde)
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...SUCCESS);
+    const curaLines = doc.splitTextToSize('Cura: ' + d.cura, doreColW-10);
+    doc.text(curaLines, dx+5, dy+14);
+  });
+
+  // Bottom tagline
+  const tagY = y + 118;
+  doc.setFillColor(...SURFACE);
+  doc.roundedRect(ML, tagY, CW, 16, 3, 3, 'F');
+  doc.setDrawColor(...GOLD);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(ML, tagY, CW, 16, 3, 3, 'S');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...GOLD);
+  doc.text('Resultado: uma plataforma. Zero fragmentacao. Operacao 100% digital.', W/2, tagY+10, {align:'center'});
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 4 — A SOLUCAO
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'A Solucao', 'Uma unica plataforma que substitui 8+ ferramentas', MT+5);
+  slideNumber(4);
+
+  y += 3;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(16);
+  doc.setTextColor(...WHITE);
+  doc.text('PRIMETOUR unifica em um unico ambiente:', ML, y+5);
+
+  const solItems = [
+    'Gestao de tarefas e projetos com Kanban, Gantt, Calendario',
+    'Roteiros de viagem com editor completo e export PDF profissional',
+    'Portal de conteudo multi-marca para clientes (7 BUs)',
+    'Hub de marketing multicanal (Newsletters, Instagram, GA4)',
+    'Inteligencia Artificial generativa com 5 provedores',
+    'Gestao de performance (Metas, Feedbacks, CSAT)',
+    'Analytics e dashboards de produtividade',
+    'Portal publico de solicitacoes + landing pages',
+  ];
+
+  y += 12;
+  solItems.forEach((item, i) => {
+    y = bullet(item, y, { size:10 });
+  });
+
+  // Right side: KPI cards
+  const kx = W/2 + 15;
+  const ky = MT + 45;
+  kpiCard(kx, ky, 55, 30, '58K', 'Linhas de codigo', GOLD);
+  kpiCard(kx+60, ky, 55, 30, '47', 'Modulos', INFO);
+  kpiCard(kx, ky+35, 55, 30, '55+', 'Collections DB', SUCCESS);
+  kpiCard(kx+60, ky+35, 55, 30, '5', 'Provedores IA', PURPLE);
+  kpiCard(kx, ky+70, 55, 30, '8+', 'Integracoes', WARNING);
+  kpiCard(kx+60, ky+70, 55, 30, '36', 'Permissoes RBAC', DANGER);
+
+  // Infra cost
+  doc.setFillColor(...SURFACE);
+  doc.roundedRect(kx, ky+108, 120, 22, 3, 3, 'F');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...SUCCESS);
+  doc.text('Infraestrutura: < R$ 250/mes', kx+60, ky+118, {align:'center'});
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(7);
+  doc.setTextColor(...MUTED);
+  doc.text('Firebase free tier + static hosting', kx+60, ky+125, {align:'center'});
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 5 — MODULOS: TAREFAS E PROJETOS
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'Gestao de Tarefas e Projetos', 'Planeje, execute e acompanhe toda a operacao em um unico lugar', MT+5);
+  slideNumber(5);
+
+  y += 2;
+  const taskFeatures = [
+    { name:'Kanban Board', desc:'Drag-and-drop com swimlanes por status, prioridade ou responsavel' },
+    { name:'Lista + Filtros', desc:'7 filtros simultaneos: projeto, status, prioridade, responsavel, setor, tipo, area' },
+    { name:'Timeline / Gantt', desc:'Visualizacao temporal com dependencias entre tarefas' },
+    { name:'Calendario', desc:'3 modos (mes/semana/dia) + 3 visualizacoes (padrao/esteira/agenda)' },
+    { name:'Subtarefas', desc:'Checklist com progresso percentual e vinculacao hierarquica' },
+    { name:'Campos Dinamicos', desc:'Formularios customizaveis por tipo de tarefa (SLA, etapas, campos extras)' },
+    { name:'Projetos', desc:'Membership, progresso automatico, vinculacao de tarefas, cores e icones' },
+    { name:'Workspaces', desc:'Ambientes isolados com convites por email e permissoes independentes' },
+  ];
+
+  const colW = CW/2 - 3;
+  taskFeatures.forEach((f, i) => {
+    const col = i < 4 ? 0 : 1;
+    const row = i % 4;
+    const fx = ML + col*(colW+6);
+    const fy = y + row*24;
+    doc.setFillColor(...CARD);
+    doc.roundedRect(fx, fy, colW, 21, 2, 2, 'F');
+    doc.setFillColor(...GOLD);
+    doc.rect(fx, fy+3, 1, 15, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...GOLD);
+    doc.text(f.name, fx+5, fy+8);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...MUTED);
+    const lines = doc.splitTextToSize(f.desc, colW-10);
+    doc.text(lines, fx+5, fy+14);
+  });
+
+  // Bottom highlight
+  const bhy = y + 100;
+  doc.setFillColor(...SURFACE);
+  doc.roundedRect(ML, bhy, CW, 18, 3, 3, 'F');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...GOLD);
+  doc.text('+ Import/Export XLSX e PDF  |  + Nova Tarefa com modal completo  |  + Auditoria de todas as acoes', W/2, bhy+11, {align:'center'});
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 6 — MODULOS: ROTEIROS DE VIAGEM
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'Roteiros de Viagem', 'Modulo exclusivo — nenhum concorrente de task management oferece esta funcionalidade', MT+5);
+  slideNumber(6);
+
+  y += 2;
+  // 11 sections grid
+  const sections = [
+    '1. Cliente — Perfil completo (tipo, preferencias, restricoes, perfil economico)',
+    '2. Viagem — Datas, destinos com seletor integrado ao Portal de Dicas',
+    '3. Dia a Dia — Timeline, narrativa imersiva por IA, galeria de imagens',
+    '4. Hoteis — Tabela dinamica (cidade, hotel, quarto, regime, datas)',
+    '5. Valores — Por pessoa/casal, moeda, validade, linhas customizaveis',
+    '6. Opcionais — Servicos extras com preco adulto/crianca',
+    '7. Inclui / Nao Inclui — Listas editaveis com presets',
+    '8. Pagamento — Sinal, parcelas, prazo, observacoes',
+    '9. Cancelamento — Tabela periodo/penalidade',
+    '10. Info Importantes — Passaporte, visto, vacinas, clima, bagagem',
+    '11. Preview & Export — PDF profissional, web link rastreavel',
+  ];
+
+  sections.forEach((s, i) => {
+    const col = i < 6 ? 0 : 1;
+    const row = i < 6 ? i : i-6;
+    const sx = ML + col*(CW/2+2);
+    const sy = y + row*17;
+    doc.setFillColor(...CARD);
+    doc.roundedRect(sx, sy, CW/2-4, 14, 2, 2, 'F');
+    const parts = s.split(' — ');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...GOLD);
+    doc.text(parts[0], sx+4, sy+6);
+    if (parts[1]) {
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(...MUTED);
+      doc.text(parts[1], sx+4, sy+11);
+    }
+  });
+
+  // Pipeline
+  const pipeY = y + 108;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...WHITE);
+  doc.text('Pipeline de Vendas:', ML, pipeY);
+  const statuses = [
+    { label:'Rascunho', color:[136,153,184] },
+    { label:'Em revisao', color:[245,158,11] },
+    { label:'Enviado', color:[56,189,248] },
+    { label:'Aprovado', color:[34,197,94] },
+    { label:'Arquivado', color:[167,139,250] },
+  ];
+  statuses.forEach((s, i) => {
+    const sx = ML + 45 + i*46;
+    doc.setFillColor(...s.color);
+    doc.roundedRect(sx, pipeY-5, 40, 10, 2, 2, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7);
+    doc.setTextColor(255,255,255);
+    doc.text(s.label, sx+20, pipeY+1, {align:'center'});
+    if (i < 4) {
+      doc.setTextColor(...MUTED);
+      doc.text('>', sx+42, pipeY+1);
+    }
+  });
+
+  // Dashboard KPIs
+  const dky = pipeY + 12;
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  doc.text('Dashboard incluso: Total roteiros  |  Taxa de conversao  |  Valor medio  |  Top destinos  |  Evolucao mensal  |  Por consultor', ML, dky);
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 7 — MODULOS: PORTAL DE DICAS
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'Portal de Dicas', 'Plataforma B2B de conteudo personalizado por marca — 7 Business Units', MT+5);
+  slideNumber(7);
+
+  y += 2;
+  const portalFeatures = [
+    'Gerador de materiais personalizados com identidade visual por BU',
+    'Banco de imagens com tagging, busca e organizacao por destino',
+    'Editor WYSIWYG de dicas com versionamento e controle de validade',
+    'Export PDF/PPTX com branding automatico (cores, logos, fontes)',
+    'Web links publicos rastreaveis com termos de uso e analytics',
+    'Import em massa via XLSX com mapeamento automatico de campos',
+    'Dashboard analitico: downloads, destinos mais acessados, uso por consultor',
+  ];
+
+  portalFeatures.forEach(f => {
+    y = bullet(f, y, { size:9.5 });
+    y += 1;
+  });
+
+  // BU grid
+  y += 5;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...GOLD);
+  doc.text('Business Units configuradas:', ML, y);
+  y += 6;
+
+  const bus = ['ICs','BTG Partners','BTG Ultrablue','Centurion','Lazer','Operadora','PTS Bradesco'];
+  bus.forEach((bu, i) => {
+    const bx = ML + i*36;
+    doc.setFillColor(...CARD);
+    doc.roundedRect(bx, y, 33, 14, 2, 2, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7);
+    doc.setTextColor(...WHITE);
+    doc.text(bu, bx+16.5, y+9, {align:'center'});
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 8 — MODULOS: MARKETING + IA
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'Hub de Marketing e Inteligencia Artificial', 'Analytics multicanal + IA generativa com 5 provedores', MT+5);
+  slideNumber(8);
+
+  y += 2;
+  // Left: Marketing
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(12);
+  doc.setTextColor(...WHITE);
+  doc.text('Marketing Multicanal', ML, y+3);
+
+  const mktItems = [
+    { name:'Newsletters', desc:'Sync automatico Salesforce Marketing Cloud — disparos, aberturas, cliques, bounces' },
+    { name:'Instagram', desc:'Meta API — seguidores, alcance, engajamento, top posts' },
+    { name:'Google Analytics 4', desc:'Sessoes, pageviews, fontes, dispositivos, paises (sync diario via GitHub Actions)' },
+    { name:'Landing Pages', desc:'Builder com CMS, links publicos, metricas de visualizacao' },
+    { name:'Editor de Artes', desc:'Canvas com templates, texto, formas, export multi-formato' },
+    { name:'Monitor de Noticias', desc:'Clipping e curadoria com export XLSX/PDF' },
+  ];
+
+  let my = y+10;
+  mktItems.forEach(m => {
+    doc.setFillColor(...CARD);
+    doc.roundedRect(ML, my, CW/2-10, 14, 2, 2, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...GOLD);
+    doc.text(m.name, ML+4, my+5.5);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...MUTED);
+    const lines = doc.splitTextToSize(m.desc, CW/2-20);
+    doc.text(lines, ML+4, my+10);
+    my += 17;
+  });
+
+  // Right: IA
+  const rx = W/2 + 10;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(12);
+  doc.setTextColor(...WHITE);
+  doc.text('Inteligencia Artificial', rx, y+3);
+
+  const providers = [
+    { name:'Google Gemini', tag:'GRATUITO', color:SUCCESS },
+    { name:'Groq (LLaMA 4)', tag:'GRATUITO', color:SUCCESS },
+    { name:'OpenAI (GPT-4o)', tag:'PREMIUM', color:GOLD },
+    { name:'Anthropic (Claude)', tag:'PREMIUM', color:GOLD },
+    { name:'Azure (GPT-4o)', tag:'ENTERPRISE', color:PURPLE },
+  ];
+
+  let iy = y+10;
+  providers.forEach(p => {
+    doc.setFillColor(...CARD);
+    doc.roundedRect(rx, iy, CW/2-10, 12, 2, 2, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(8);
+    doc.setTextColor(...WHITE);
+    doc.text(p.name, rx+4, iy+7.5);
+    doc.setFillColor(...p.color);
+    doc.roundedRect(rx+CW/2-42, iy+2, 28, 8, 2, 2, 'F');
+    doc.setFontSize(5.5);
+    doc.setTextColor(10,10,10);
+    doc.text(p.tag, rx+CW/2-28, iy+7.5, {align:'center'});
+    iy += 15;
+  });
+
+  // AI Features
+  iy += 5;
+  const aiFeats = [
+    'Skills customizaveis por modulo (16 modulos)',
+    'Knowledge Base com docs injetados no contexto',
+    'Dashboard de custos e tokens por provedor',
+    'Output: texto, markdown, JSON, HTML',
+    'Grounding/Web Search (Gemini)',
+  ];
+  aiFeats.forEach(f => {
+    doc.setFillColor(...GOLD);
+    doc.circle(rx+2, iy-1.2, 0.8, 'F');
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text(f, rx+6, iy);
+    iy += 5.5;
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 9 — GESTAO DE PESSOAS
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'Gestao de Pessoas e Performance', 'Equipe, metas, feedbacks e satisfacao do cliente em um unico painel', MT+5);
+  slideNumber(9);
+
+  y += 2;
+  const peopleModules = [
+    { icon:'', name:'Equipe', features:['Disponibilidade mensal por membro','Calendario de ausencias e ferias','Export de dados da equipe','Perfis com avatar e bio'] },
+    { icon:'', name:'Metas por KPI', features:['Pilares com peso e avaliacao','Progresso automatico vinculado a tarefas','Avaliacao por gestor','Export XLS e PDF'] },
+    { icon:'', name:'Feedbacks', features:['Registro estruturado (1:1, rotina, ad-hoc)','Dashboard analitico','Agendamento de sessoes','Import em massa'] },
+    { icon:'', name:'CSAT', features:['Pesquisas via email (EmailJS)','NPS Score automatico','Taxa de resposta em tempo real','Pagina publica por token'] },
+  ];
+
+  const pmW = CW/4 - 4;
+  peopleModules.forEach((m, i) => {
+    moduleCard(ML + i*(pmW+5), y, pmW, 75, m.icon, m.name, m.features);
+  });
+
+  // RBAC Section
+  const ry = y + 85;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...GOLD);
+  doc.text('Controle de Acesso (RBAC)', ML, ry);
+
+  const roles = [
+    { name:'Master', perms:'36/36', color:DANGER },
+    { name:'Admin', perms:'36/36', color:PURPLE },
+    { name:'Manager', perms:'28/36', color:INFO },
+    { name:'Coordinator', perms:'26/36', color:WARNING },
+    { name:'Member', perms:'26/36', color:SUCCESS },
+    { name:'Partner', perms:'9/36', color:MUTED },
+  ];
+
+  roles.forEach((r, i) => {
+    const rx2 = ML + i*43;
+    doc.setFillColor(...CARD);
+    doc.roundedRect(rx2, ry+5, 40, 18, 2, 2, 'F');
+    doc.setFillColor(...r.color);
+    doc.rect(rx2, ry+8, 1, 12, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...WHITE);
+    doc.text(r.name, rx2+5, ry+13);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...MUTED);
+    doc.text(r.perms + ' perms', rx2+5, ry+19);
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 10 — PAGINAS PUBLICAS + ARQUITETURA
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'Paginas Publicas e Arquitetura', 'Alcance externo sem autenticacao + stack moderna de custo zero', MT+5);
+  slideNumber(10);
+
+  y += 2;
+  // Public pages
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...WHITE);
+  doc.text('5 Paginas Publicas (sem login)', ML, y+3);
+  y += 10;
+
+  const publicPages = [
+    { name:'Portal de Solicitacoes', file:'solicitar.html', desc:'Formulario publico para demandas externas — converte em tarefa interna' },
+    { name:'Resposta CSAT', file:'csat-response.html', desc:'Pesquisa de satisfacao via token unico — nota + comentario' },
+    { name:'Visualizador de Dicas', file:'portal-view.html', desc:'Material de destino com branding da BU — compartilhavel por link' },
+    { name:'Roteiro para Cliente', file:'roteiro-view.html', desc:'Roteiro completo com itinerario, hoteis e valores — link rastreavel' },
+    { name:'Landing Pages', file:'lp.html', desc:'Paginas de campanha com metricas de visualizacao' },
+  ];
+
+  publicPages.forEach((p, i) => {
+    const py2 = y + i*16;
+    doc.setFillColor(...CARD);
+    doc.roundedRect(ML, py2, CW/2-5, 14, 2, 2, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(8);
+    doc.setTextColor(...GOLD);
+    doc.text(p.name, ML+4, py2+5.5);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...MUTED);
+    doc.text(p.desc, ML+4, py2+11);
+  });
+
+  // Architecture
+  const ax = W/2 + 10;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...WHITE);
+  doc.text('Arquitetura Tecnica', ax, y-7);
+
+  const techStack = [
+    { layer:'Frontend', tech:'Vanilla JS ES6+ Modules', note:'Zero-framework, zero-build' },
+    { layer:'Backend', tech:'Firebase (Auth + Firestore)', note:'Realtime, serverless' },
+    { layer:'IA', tech:'Multi-provider SDK', note:'5 provedores, hot-swap' },
+    { layer:'Automacao', tech:'GitHub Actions', note:'Syncs diarios GA4/MC/Meta' },
+    { layer:'Exports', tech:'jsPDF + SheetJS', note:'PDF, XLSX, PPTX client-side' },
+    { layer:'Email', tech:'EmailJS + Cloud Functions', note:'CSAT, notificacoes' },
+  ];
+
+  techStack.forEach((t, i) => {
+    const ty = y + i*16;
+    doc.setFillColor(...CARD);
+    doc.roundedRect(ax, ty, CW/2-10, 14, 2, 2, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(7);
+    doc.setTextColor(...GOLD);
+    doc.text(t.layer, ax+4, ty+5);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...WHITE);
+    doc.text(t.tech, ax+30, ty+5);
+    doc.setFontSize(6.5);
+    doc.setTextColor(...MUTED);
+    doc.text(t.note, ax+4, ty+11);
+  });
+
+  // Differentials
+  const dy = y+100;
+  doc.setFillColor(...SURFACE);
+  doc.roundedRect(ax, dy, CW/2-10, 28, 3, 3, 'F');
+  doc.setDrawColor(...GOLD);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(ax, dy, CW/2-10, 28, 3, 3, 'S');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(8);
+  doc.setTextColor(...GOLD);
+  doc.text('Diferenciais de Arquitetura', ax+5, dy+7);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(6.5);
+  doc.setTextColor(...MUTED);
+  doc.text('- Sem lock-in de framework (vida util 10+ anos)', ax+5, dy+13);
+  doc.text('- Load time < 1s (ES modules nativos)', ax+5, dy+18);
+  doc.text('- Infra < R$ 250/mes (Firebase free tier)', ax+5, dy+23);
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 11 — DIFERENCIAIS COMPETITIVOS
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'Diferenciais Competitivos', 'Por que o PRIMETOUR nao tem concorrente direto', MT+5);
+  slideNumber(11);
+
+  y += 5;
+  const diffs = [
+    { title:'Vertical Lock', desc:'Unica plataforma que combina task management + roteiros de viagem + portal de conteudo por BU. Concorrentes genericos (Monday, Asana) nao atendem turismo; concorrentes verticais (Travefy, TravelPerk) nao tem gestao operacional.', color:GOLD },
+    { title:'Multi-AI sem Vendor Lock-in', desc:'5 provedores de IA com troca hot-swap. Provedores gratuitos (Gemini, Groq) para uso diario, premium (OpenAI, Claude) para tarefas complexas. Nenhum concorrente oferece essa flexibilidade.', color:PURPLE },
+    { title:'Multi-BU Nativo', desc:'Identidade visual por marca em TODOS os exports (PDF, PPTX, web links). Necessidade critica de operadoras com multiplas bandeiras — impossivel replicar com ferramentas genericas.', color:INFO },
+    { title:'Custo Operacional Near-Zero', desc:'Firebase free tier + static hosting = infraestrutura < R$ 250/mes para operacao completa com ate 100 usuarios. Sem servidores dedicados, sem DevOps.', color:SUCCESS },
+    { title:'Zero-Framework = Longevidade', desc:'Sem React, Vue ou Angular = sem breaking changes, sem migration debt, sem dependencia de ecossistema terceiro. Vida util estimada de 10+ anos sem rewrite.', color:WARNING },
+  ];
+
+  diffs.forEach((d, i) => {
+    const dy2 = y + i*28;
+    doc.setFillColor(...CARD);
+    doc.roundedRect(ML, dy2, CW, 25, 3, 3, 'F');
+    doc.setFillColor(...d.color);
+    doc.rect(ML, dy2+4, 2, 17, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...d.color);
+    doc.text(d.title, ML+8, dy2+8);
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...MUTED);
+    const lines = doc.splitTextToSize(d.desc, CW-14);
+    doc.text(lines, ML+8, dy2+14);
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 12 — FACT SHEET VISUAL
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'Fact Sheet', 'Numeros do sistema em perspectiva', MT+5);
+  slideNumber(12);
+
+  y += 2;
+  // Big KPIs row
+  const kpis = [
+    { value:'58K', label:'Linhas de Codigo', color:GOLD },
+    { value:'47', label:'Modulos Funcionais', color:INFO },
+    { value:'55+', label:'Collections DB', color:SUCCESS },
+    { value:'24', label:'Servicos Backend', color:PURPLE },
+    { value:'42', label:'Rotas de Navegacao', color:WARNING },
+    { value:'5', label:'Paginas Publicas', color:DANGER },
+  ];
+
+  kpis.forEach((k, i) => {
+    const kw = CW/6 - 3;
+    kpiCard(ML + i*(kw+3.6), y, kw, 32, k.value, k.label, k.color);
+  });
+
+  // Second row
+  y += 38;
+  const kpis2 = [
+    { value:'5', label:'Provedores de IA', color:PURPLE },
+    { value:'20+', label:'Modelos de IA', color:INFO },
+    { value:'8+', label:'APIs Integradas', color:GOLD },
+    { value:'36', label:'Permissoes RBAC', color:SUCCESS },
+    { value:'6', label:'Roles do Sistema', color:WARNING },
+    { value:'7', label:'Business Units', color:DANGER },
+  ];
+
+  kpis2.forEach((k, i) => {
+    const kw = CW/6 - 3;
+    kpiCard(ML + i*(kw+3.6), y, kw, 32, k.value, k.label, k.color);
+  });
+
+  // Integrations bar
+  y += 42;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...GOLD);
+  doc.text('Integracoes:', ML, y);
+  y += 6;
+  const integrations = ['Firebase','Salesforce MC','Meta API','Google Analytics 4','Figma','GitHub','Slack','EmailJS'];
+  integrations.forEach((intg, i) => {
+    const ix = ML + i*32;
+    doc.setFillColor(...CARD);
+    doc.roundedRect(ix, y, 30, 10, 2, 2, 'F');
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6);
+    doc.setTextColor(...WHITE);
+    doc.text(intg, ix+15, y+6.5, {align:'center'});
+  });
+
+  // Exports bar
+  y += 16;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...GOLD);
+  doc.text('Formatos de Export:', ML, y);
+  const exports = ['PDF','XLSX','PPTX','Web Link','Email'];
+  exports.forEach((ex, i) => {
+    const ex2 = ML + 50 + i*28;
+    doc.setFillColor(...SUCCESS);
+    doc.roundedRect(ex2, y-4, 24, 9, 2, 2, 'F');
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(10,10,10);
+    doc.text(ex, ex2+12, y+2, {align:'center'});
+  });
+
+  // Complexity
+  y += 18;
+  doc.setFillColor(...SURFACE);
+  doc.roundedRect(ML, y, CW, 20, 3, 3, 'F');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...GOLD);
+  doc.text('Tempo estimado de desenvolvimento: 2.500 - 4.000 horas', W/2, y+8, {align:'center'});
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUTED);
+  doc.text('Equivalente a 12-18 meses com equipe de 2-3 desenvolvedores senior', W/2, y+15, {align:'center'});
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 13 — VALORACAO
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+  y = sectionHeader('', 'Valoracao de Mercado', 'Estimativa baseada em 4 metodologias complementares', MT+5);
+  slideNumber(13);
+
+  y += 5;
+  // Valuation cards
+  const vals = [
+    { label:'Custo de Reposicao', range:'R$ 350K - R$ 1M', desc:'Reconstruir do zero com equipe qualificada', color:INFO },
+    { label:'Valoracao por Modulo', range:'R$ 820K', desc:'Soma dos 11 modulos precificados individualmente', color:GOLD },
+    { label:'Valor Justo de Mercado', range:'R$ 600K - 900K', desc:'Media ponderada das 4 metodologias', color:SUCCESS },
+    { label:'Potencial SaaS (5-8x ARR)', range:'R$ 2.5M - 4M', desc:'Licenciamento para multiplas agencias', color:PURPLE },
+  ];
+
+  vals.forEach((v, i) => {
+    const vw = CW/4 - 4;
+    const vx = ML + i*(vw+5.3);
+    doc.setFillColor(...CARD);
+    doc.roundedRect(vx, y, vw, 50, 3, 3, 'F');
+    doc.setFillColor(...v.color);
+    doc.rect(vx, y, vw, 2, 'F');
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text(v.label, vx+vw/2, y+12, {align:'center'});
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(14);
+    doc.setTextColor(...v.color);
+    doc.text(v.range, vx+vw/2, y+25, {align:'center'});
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(...MUTED);
+    const lines = doc.splitTextToSize(v.desc, vw-8);
+    doc.text(lines, vx+vw/2, y+35, {align:'center'});
+  });
+
+  // Module breakdown table
+  y += 60;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...GOLD);
+  doc.text('Valoracao por Modulo:', ML, y);
+  y += 5;
+
+  const modules = [
+    { name:'Core (Tarefas, Projetos, Kanban, Calendario, Timeline)', value:'R$ 120.000' },
+    { name:'RBAC + Auditoria + Users', value:'R$ 60.000' },
+    { name:'Portal de Dicas (gerador, editor, imagens, dashboard)', value:'R$ 100.000' },
+    { name:'Roteiros de Viagem (editor, PDF, web links, dashboard)', value:'R$ 120.000' },
+    { name:'Hub Marketing (NL, Meta, GA4, LP, CMS, Artes, News)', value:'R$ 150.000' },
+    { name:'IA Generativa (multi-provider, skills, KB, dashboard)', value:'R$ 80.000' },
+    { name:'Gestao de Pessoas (equipe, metas, feedbacks, CSAT)', value:'R$ 70.000' },
+    { name:'Workspaces + Solicitacoes + Notificacoes + Design System', value:'R$ 120.000' },
+  ];
+
+  modules.forEach((m, i) => {
+    const col = i < 4 ? 0 : 1;
+    const row = i % 4;
+    const mx = ML + col*(CW/2+3);
+    const my2 = y + row*12;
+    doc.setFillColor(...(i%2===0 ? CARD : SURFACE));
+    doc.rect(mx, my2, CW/2-3, 10, 'F');
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...WHITE);
+    doc.text(m.name, mx+3, my2+6.5);
+    doc.setFont('helvetica','bold');
+    doc.setTextColor(...GOLD);
+    doc.text(m.value, mx+CW/2-8, my2+6.5, {align:'right'});
+  });
+
+  // Total
+  y += 52;
+  doc.setFillColor(...SURFACE);
+  doc.roundedRect(ML, y, CW, 14, 2, 2, 'F');
+  doc.setDrawColor(...GOLD);
+  doc.setLineWidth(0.5);
+  doc.roundedRect(ML, y, CW, 14, 2, 2, 'S');
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(11);
+  doc.setTextColor(...GOLD);
+  doc.text('TOTAL: R$ 820.000', W/2, y+9, {align:'center'});
+
+  // ═══════════════════════════════════════════════════════════
+  // SLIDE 14 — CONTRACAPA
+  // ═══════════════════════════════════════════════════════════
+  newSlide();
+
+  // Decorative lines (same as cover)
+  doc.setDrawColor(...GOLD);
+  doc.setLineWidth(0.3);
+  doc.line(ML, 40, ML+80, 40);
+  doc.line(W-MR-80, 40, W-MR, 40);
+  doc.line(ML, H-40, ML+80, H-40);
+  doc.line(W-MR-80, H-40, W-MR, H-40);
+  doc.line(ML, 38, ML, 42);
+  doc.line(W-MR, 38, W-MR, 42);
+  doc.line(ML, H-42, ML, H-38);
+  doc.line(W-MR, H-42, W-MR, H-38);
+
+  // Diamond
+  doc.setFillColor(...GOLD);
+  doc.triangle(cx, 68, cx-6, 76, cx+6, 76, 'F');
+  doc.triangle(cx, 84, cx-6, 76, cx+6, 76, 'F');
+
+  // Brand
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(36);
+  doc.setTextColor(...GOLD);
+  doc.text('PRIMETOUR', W/2, 105, {align:'center'});
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  doc.text('G E S T A O   D E   T A R E F A S', W/2, 113, {align:'center'});
+
+  goldBar(120, CW);
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(12);
+  doc.setTextColor(...WHITE);
+  doc.text('Obrigado.', W/2, 138, {align:'center'});
+
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  doc.text('Plataforma de Gestao Operacional e Inteligencia de Negocios para Turismo', W/2, 150, {align:'center'});
+
+  doc.setFontSize(8);
+  doc.text('Documento confidencial  |  2026', W/2, 165, {align:'center'});
+
+  // ── Save ──
+  doc.save('PRIMETOUR_Apresentacao_Comercial_2026.pdf');
+  status.textContent = 'PDF gerado com sucesso!';
+}
+</script>
+</body>
+</html>

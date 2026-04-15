@@ -393,6 +393,36 @@ export function calcSla(typeId, startDate, variationId = null) {
   };
 }
 
+/* ─── Template de subtarefas por tipo ────────────────────── */
+/**
+ * Returns default subtask list for a given task type.
+ * If the task type has `subtaskTemplate` field, use it.
+ * Otherwise, if it has `steps` (pipeline stages), derive subtasks from steps.
+ */
+export function getSubtaskTemplate(taskType) {
+  if (!taskType) return [];
+
+  // 1. Explicit subtask template
+  if (Array.isArray(taskType.subtaskTemplate) && taskType.subtaskTemplate.length > 0) {
+    return taskType.subtaskTemplate.map(title => ({
+      id:    `sub_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+      title: typeof title === 'string' ? title : title.title || '',
+      done:  false,
+    }));
+  }
+
+  // 2. Derive from steps (pipeline stages)
+  if (Array.isArray(taskType.steps) && taskType.steps.length > 0) {
+    return taskType.steps.map(step => ({
+      id:    `sub_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,
+      title: typeof step === 'string' ? step : step.label || step.name || '',
+      done:  false,
+    }));
+  }
+
+  return [];
+}
+
 /* ─── Carregar tipos no boot ─────────────────────────────── */
 export async function loadTaskTypes() {
   try {

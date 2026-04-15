@@ -1,0 +1,526 @@
+// ============================================================
+// PRIMETOUR — Regras completas do Firestore
+// Cole este conteúdo em:
+// Firebase Console > Firestore Database > Regras
+// ============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Master: isMaster:true OU role == 'master'
+    function isMaster() {
+      return isAuth() && (
+        userDoc().isMaster == true ||
+        userDoc().role     == 'master' ||
+        userDoc().roleId   == 'master'
+      );
+    }
+
+    // Admin: master OU role admin
+    function isAdmin() {
+      return isMaster() || (isAuth() && (
+        userDoc().role   == 'admin' ||
+        userDoc().roleId == 'admin'
+      ));
+    }
+
+    // Manager: admin OU role manager/coordinator
+    function isManager() {
+      return isAdmin() || (isAuth() && (
+        userDoc().role   == 'manager'     ||
+        userDoc().roleId == 'manager'     ||
+        userDoc().role   == 'coordinator' ||
+        userDoc().roleId == 'coordinator'
+      ));
+    }
+
+    // Portal manager: admin OU tem permissão portal_manage no role
+    function isPortalManager() {
+      return isAdmin() || isManager();
+    }
+
+    // ── Usuários ──────────────────────────────────────────────
+    match /users/{userId} {
+      allow read:   if isAuth();
+      // Admin pode criar qualquer usuário; SSO auto-provisioning: próprio UID
+      allow create: if isAdmin() || (isAuth() && request.auth.uid == userId);
+      allow update: if isAdmin() || request.auth.uid == userId;
+      allow delete: if isAdmin();
+    }
+
+    // ── Projetos ──────────────────────────────────────────────
+    match /projects/{projectId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isManager();
+    }
+
+    // ── Tarefas ───────────────────────────────────────────────
+    match /tasks/{taskId} {
+      // Leitura: autenticados lêem tudo; não-auth só lê com status done/in_progress (portal calendar)
+      allow read:   if isAuth()
+                    || resource.data.status in ['done', 'in_progress', 'not_started'];
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth();
+    }
+
+    // ── Templates de tarefas recorrentes ──────────────────────
+    match /recurring_task_templates/{tplId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth() && (isManager() || resource.data.createdBy == request.auth.uid);
+    }
+
+    // ── Logs de auditoria ─────────────────────────────────────
+    match /audit_logs/{logId} {
+      allow read:           if isAdmin();
+      allow create:         if isAuth();
+      allow update, delete: if false;
+    }
+
+    // ── CSAT ──────────────────────────────────────────────────
+    match /csat_surveys/{surveyId} {
+      // Leitura: autenticados + público (cliente externo carrega via token)
+      allow read:           if true;
+      // Criação: apenas usuários autenticados
+      allow create:         if isAuth();
+      // Update: autenticado OU respondente externo (valida que não muda campos críticos)
+      allow update:         if isAuth()
+                            || (
+                              // Respondente externo — só pode preencher resposta, não alterar taskId/token
+                              request.resource.data.taskId == resource.data.taskId
+                              && request.resource.data.token == resource.data.token
+                              && request.resource.data.createdBy == resource.data.createdBy
+                            );
+      allow delete:         if isAdmin();
+    }
+
+    // ── Integrações ───────────────────────────────────────────
+    match /integrations/{intId} {
+      allow read:  if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ── Workspaces ────────────────────────────────────────────
+    match /workspaces/{wsId} {
+      // Leitura: qualquer autenticado (wizard de primeiro acesso precisa listar squads)
+      allow read: if isAuth();
+      allow create: if isManager();
+      allow update: if isAdmin()
+                    || (isAuth() && request.auth.uid in resource.data.adminIds)
+                    // Self-join: permite que o próprio usuário se adicione ao workspace
+                    // (wizard de primeiro acesso — só pode adicionar a si mesmo em members)
+                    || (isAuth()
+                        && request.resource.data.members.hasAll([request.auth.uid])
+                        && request.resource.data.members.hasAll(resource.data.members));
+      allow delete: if isAdmin();
+    }
+
+    match /workspace_invites/{inviteId} {
+      allow read: if isAdmin()
+                  || (isAuth() && resource.data.createdBy == request.auth.uid)
+                  || (isAuth() && resource.data.email == request.auth.token.email);
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // ── Metas v2 ──────────────────────────────────────────────
+    match /goals/{goalId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAdmin()
+                    || (isAuth() && resource.data.gestorId      == request.auth.uid)
+                    || (isAuth() && resource.data.responsavelId == request.auth.uid)
+                    || (isAuth() && resource.data.createdBy     == request.auth.uid);
+      allow delete: if isAdmin()
+                    || (isAuth() && resource.data.createdBy == request.auth.uid);
+    }
+
+    // ── Avaliações de metas ───────────────────────────────────
+    match /goal_evaluations/{evalId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && (isAdmin() || request.resource.data.gestorId == request.auth.uid);
+      allow update: if isAuth() && (isAdmin() || resource.data.gestorId == request.auth.uid);
+      allow delete: if isAuth() && (isAdmin() || resource.data.gestorId == request.auth.uid);
+    }
+
+    // ── Solicitações do portal ────────────────────────────────
+    match /requests/{reqId} {
+      // Criação pública (portal) com validação: deve ter campos obrigatórios
+      allow create:         if true
+                            && request.resource.data.keys().hasAll(['requesterName', 'typeName', 'requestingArea'])
+                            && request.resource.data.requesterName is string
+                            && request.resource.data.requesterName.size() > 0
+                            && request.resource.data.requesterName.size() < 200;
+      allow read, update:   if isAuth();
+      allow delete:         if isAdmin();
+    }
+
+    // ── Ausências / Capacidade ────────────────────────────────
+    match /absences/{absenceId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update, delete: if isAdmin()
+                            || (isAuth() && resource.data.createdBy == request.auth.uid)
+                            || (isAuth() && resource.data.userId    == request.auth.uid);
+    }
+
+    // ── Núcleos (estrutura organizacional) ────────────────────
+    match /nucleos/{nucleoId} {
+      allow read:           if true;  // public — needed for portal de solicitações
+      allow create, update: if isAdmin();
+      allow delete:         if isAdmin();
+    }
+
+    // ── Categorias de tipos de tarefa ─────────────────────────
+    match /task_categories/{catId} {
+      allow read:           if isAuth();
+      allow create, update: if isManager();
+      allow delete:         if isAdmin();
+    }
+
+    // ── Tipos de tarefa ───────────────────────────────────────
+    match /task_types/{typeId} {
+      allow read:           if true;  // public — needed for portal de solicitações
+      allow create, update: if isManager();
+      allow delete:         if isManager();
+    }
+
+    // ── Roles (RBAC) ──────────────────────────────────────────
+    match /roles/{roleId} {
+      allow read:  if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ── Configurações ─────────────────────────────────────────
+    match /settings/{settingId} {
+      allow read:  if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ── Performance de Newsletters (Marketing Cloud) ──────────
+    match /mc_performance/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    // ── Performance Redes Sociais (Meta Instagram) ────────────
+    match /meta_performance/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    match /meta_accounts/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    // ── Performance Google Analytics (GA4) ────────────────────
+    match /ga_daily/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    match /ga_pages/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    match /ga_sources/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    match /ga_devices/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    match /ga_countries/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    match /ga_properties/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    match /ga_totals/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    match /ga_meta/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    // ── Portal de Dicas ───────────────────────────────────────
+    match /portal_areas/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    match /portal_destinations/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    match /portal_tips/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth();
+    }
+
+    match /portal_images/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    match /portal_generations/{docId} {
+      allow read:  if isAuth();
+      allow create: if isAuth();
+      allow update: if false;
+    }
+
+    match /portal_tips_stats/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth();
+    }
+
+    match /portal_downloads/{docId} {
+      allow read:  if isAuth() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow write: if isAuth() && request.auth.uid == docId.split('_')[0];
+    }
+
+    match /portal_terms/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    match /portal_terms_acceptance/{docId} {
+      allow read:  if isAuth();
+      allow create: if isAuth();
+      allow update: if false;
+    }
+
+    match /portal_web_links/{docId} {
+      allow read:   if true;  // public — link holder can read
+      allow create: if isAuth();
+      // Update público: só permite incrementar viewCount, sem alterar token/content
+      allow update: if isAuth()
+                    || (request.resource.data.token == resource.data.token
+                        && request.resource.data.content == resource.data.content);
+      allow delete: if isAuth() && isAdmin();
+    }
+
+    match /ai_settings/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    // ── Hub de Marketing ──────────────────────────────────────
+    match /landing_pages/{docId} {
+      // Público só lê páginas publicadas; autenticados lêem todas
+      allow read:   if isAuth()
+                    || resource.data.status == 'published';
+      allow create: if isAuth() && isPortalManager();
+      allow update: if isAuth() && isPortalManager();
+      allow delete: if isAuth() && isPortalManager();
+    }
+
+    match /news_monitor/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth() && (isAdmin() || resource.data.createdBy == request.auth.uid);
+    }
+
+    match /news_clipping/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth() && (isAdmin() || resource.data.createdBy == request.auth.uid);
+    }
+
+    // ── Feedbacks ──────────────────────────────────────────────
+    match /feedbacks/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth() && (isAdmin() || resource.data.createdBy == request.auth.uid);
+    }
+
+    match /feedback_schedules/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth() && (isAdmin() || resource.data.createdBy == request.auth.uid);
+    }
+
+    match /arts_templates/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    match /arts_categories/{catId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    match /arts_generations/{docId} {
+      allow read:   if isAuth() && isPortalManager();
+      allow create: if isAuth();
+    }
+
+    match /ai_generations/{docId} {
+      allow read:   if isAuth() && isAdmin();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+
+    match /portal_categories/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    // ── Roteiros de Viagem ──────────────────────────────────
+    match /roteiros/{roteiroId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth() && (isAdmin() || resource.data.consultantId == request.auth.uid);
+    }
+
+    match /roteiro_generations/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+
+    match /roteiro_web_links/{token} {
+      allow read:   if true;   // public — link holder can read
+      allow create: if isAuth();
+      // Update público: só permite incrementar viewCount, sem alterar conteúdo
+      allow update: if isAuth()
+                    || (request.resource.data.roteiroId == resource.data.roteiroId
+                        && request.resource.data.createdBy == resource.data.createdBy);
+      allow delete: if isAuth() && isAdmin();
+    }
+
+    // ── Auditoria de Sites (Core Web Vitals + SEO) ───────────
+    match /audit_sites/{siteId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth() && (isAdmin() || resource.data.createdBy == request.auth.uid);
+
+      // Histórico de runs (sub-collection)
+      match /runs/{runId} {
+        allow read:   if isAuth();
+        allow create: if isAuth();
+        allow update: if isAuth();
+        allow delete: if isAuth() && isAdmin();
+      }
+    }
+
+    // ── Notificações ─────────────────────────────────────────
+    match /notifications/{notifId} {
+      // Qualquer autenticado pode criar (notify() roda no contexto do actor)
+      allow create: if isAuth();
+      // Ler, atualizar e deletar apenas as próprias notificações
+      allow read, update, delete: if isAuth()
+        && resource.data.recipientId == request.auth.uid;
+    }
+
+    // ── Configuração do Sistema (AI config, etc.) ──────────────
+    match /system_config/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    // ── AI Skills ────────────────────────────────────────────
+    match /ai_skills/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    // ── AI API Keys (multi-escopo: global, user, nucleo, area) ──
+    match /ai_api_keys/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    // ── AI Knowledge Base ────────────────────────────────────
+    match /ai_knowledge/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    // ── AI Module Hints (prompts customizados por módulo) ───
+    match /ai_module_hints/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    // ── AI Usage Logs ────────────────────────────────────────
+    match /ai_usage_logs/{docId} {
+      allow read:   if isAuth() && isAdmin();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+
+    // ── AI Action Logs (ações executadas pelo assistente) ────
+    match /ai_action_logs/{docId} {
+      allow read:   if isAuth() && isAdmin();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+
+    // ── Calendário de Conteúdo ─────────────────────────────────
+    match /content_calendar/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth() && (isAdmin() || resource.data.createdBy == request.auth.uid);
+    }
+
+    // ── Meta Posts (Instagram posts importados) ─────────────────
+    match /meta_posts/{docId} {
+      allow read:  if isAuth();
+      allow write: if false; // escrita apenas via GitHub Actions
+    }
+
+    // ── AI Automations (tarefas agendadas de IA) ─────────────
+    match /ai_automations/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth() && (isAdmin() || resource.data.createdBy == request.auth.uid);
+    }
+
+    // ── Reset de senha ────────────────────────────────────────
+    match /password_reset_requests/{uid} {
+      allow read, write: if isAdmin();
+    }
+
+    match /password_reset_results/{uid} {
+      allow read:  if isAdmin();
+      allow write: if false;
+    }
+  }
+}
