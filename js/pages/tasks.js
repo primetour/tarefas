@@ -10,6 +10,7 @@ import { fetchProjects } from '../services/projects.js';
 import { openTaskModal, openTaskDoneOverlay } from '../components/taskModal.js';
 import { APP_CONFIG }    from '../config.js';
 import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
+import { createDoc, loadJsPdf, COL, STATUS_STYLE, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -1189,43 +1190,129 @@ async function exportTasksXls() {
   toast.success('XLS exportado.');
 }
 
-async function exportTasksPdf() {
+const exportTasksPdf = withExportGuard(async function exportTasksPdf() {
   if (!filteredTasks.length) { toast.error('Nenhuma tarefa para exportar.'); return; }
-  if (!window.jspdf) {
-    await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
-    await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
-  }
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  await loadJsPdf();
 
-  doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.setTextColor(36, 35, 98);
-  doc.text('PRIMETOUR — Tarefas', 14, 16);
-  doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100);
-  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${filteredTasks.length} tarefas`, 14, 22);
+  const kit = createDoc({ orientation: 'portrait', margin: 14 });
+  const { doc, W, H, M, CW, setFill, setText, setDraw, drawBar, drawChip, wrap } = kit;
 
-  const taskRows = _buildTaskRows().map(r => [
-    r.title.slice(0, 35), r.status, r.priority, r.due, r.project.slice(0, 20),
-    r.assignees.slice(0, 25), r.nucleo.slice(0, 15), r.taskType.slice(0, 15),
-    r.completed, r.goalLinked,
-  ]);
+  // Mapa priority → cor (visual)
+  const PRIO_COL = {
+    urgent: COL.red, high: COL.orange, medium: COL.blue, low: COL.muted,
+  };
 
-  doc.autoTable({
-    startY: 27,
-    head: [['Título', 'Status', 'Prioridade', 'Prazo', 'Projeto', 'Responsáveis', 'Núcleo', 'Tipo', 'Concluída', 'Meta']],
-    body: taskRows,
-    styles: { fontSize: 7, cellPadding: 2 },
-    headStyles: { fillColor: [36, 35, 98], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [248, 247, 244] },
-    columnStyles: {
-      0: { cellWidth: 40 }, 1: { cellWidth: 18 }, 2: { cellWidth: 16 }, 3: { cellWidth: 18 },
-      4: { cellWidth: 25 }, 5: { cellWidth: 30 }, 6: { cellWidth: 20 }, 7: { cellWidth: 20 },
-      8: { cellWidth: 18 }, 9: { cellWidth: 12 },
-    },
+  // ── Capa compacta ───────────────────────────────────────────
+  const total = filteredTasks.length;
+  const byStatus = filteredTasks.reduce((acc, t) => {
+    const key = t.status || 'not_started';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const doneCount = byStatus.done || 0;
+  const progressCount = byStatus.in_progress || 0;
+  const pctDone = total ? Math.round(doneCount * 100 / total) : 0;
+
+  kit.drawCover({
+    title: 'Tarefas',
+    subtitle: 'PRIMETOUR  ·  Visão Operacional',
+    meta: `${total} ${total === 1 ? 'tarefa' : 'tarefas'}  ·  ${new Date().toLocaleDateString('pt-BR')}`,
+    compact: false,
   });
 
+  // ── Strip de estatísticas por status ────────────────────────
+  const statEntries = [
+    { key: 'not_started', label: 'Não iniciadas', col: COL.muted },
+    { key: 'in_progress', label: 'Em andamento', col: COL.blue   },
+    { key: 'paused',      label: 'Pausadas',     col: COL.orange },
+    { key: 'done',        label: 'Concluídas',   col: COL.green  },
+  ];
+  const boxW = (CW - 6) / statEntries.length;
+  statEntries.forEach((s, i) => {
+    const n = byStatus[s.key] || 0;
+    const x = M + i * (boxW + 2);
+    setFill(COL.bg); doc.roundedRect(x, kit.y, boxW, 18, 1.8, 1.8, 'F');
+    setFill(s.col);  doc.rect(x, kit.y, boxW, 1.6, 'F');
+
+    setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+    doc.text(String(n), x + 4, kit.y + 11);
+
+    setText(s.col); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8);
+    doc.text(txt(s.label.toUpperCase()), x + 4, kit.y + 15.5);
+  });
+  kit.addY(22);
+
+  // Progresso agregado
+  setText(COL.muted); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+  doc.text(txt('PROGRESSO GERAL'), M, kit.y);
+  setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+  doc.text(txt(`${pctDone}%`), W - M, kit.y, { align: 'right' });
+  kit.addY(2.5);
+  drawBar(M, kit.y, CW, pctDone, COL.green, 2.2);
+  kit.addY(8);
+
+  // ── Listagem em cards ───────────────────────────────────────
+  const rows = _buildTaskRows();
+  const tasks = filteredTasks;
+
+  tasks.forEach((t, i) => {
+    const r = rows[i];
+    const prioKey = (t.priority || 'medium').toLowerCase();
+    const stKey   = (t.status || 'not_started').toLowerCase();
+    const stStyle = STATUS_STYLE[stKey] || { bg: COL.muted, label: stKey.toUpperCase() };
+    const prioCol = PRIO_COL[prioKey] || COL.muted;
+
+    // Estimativa de altura: título + linha meta + tags
+    const titleLines = wrap(t.title || '(sem título)', CW - 45, 10);
+    const metaLine   = [r.assignees, r.nucleo, r.taskType, r.project].filter(Boolean).join('  ·  ');
+    const metaLines  = wrap(metaLine, CW - 12, 7.8);
+    const cardH = 6 + titleLines.length * 4.2 + metaLines.length * 3.6 + 4;
+
+    kit.ensureSpace(cardH + 3);
+
+    // Card background
+    setFill(COL.white); setDraw(COL.border); doc.setLineWidth(0.2);
+    doc.roundedRect(M, kit.y, CW, cardH, 1.6, 1.6, 'FD');
+    // Barra de prioridade à esquerda
+    setFill(prioCol); doc.rect(M, kit.y, 1.8, cardH, 'F');
+
+    const cardTop = kit.y;
+    kit.addY(4.5);
+
+    // Chip de status
+    const stCh = drawChip(stStyle.label, M + 4, cardTop + 2.2, stStyle.bg, COL.white, 6.5, 2.2, 1.2);
+    // Prazo à direita
+    if (r.due) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.2); setText(COL.muted);
+      doc.text(txt(`PRAZO ${r.due}`), W - M - 2, cardTop + 4.8, { align: 'right' });
+    }
+    // Meta vinculada
+    if (t.goalId) {
+      const gw = drawChip('META', M + 4 + stCh.w + 2, cardTop + 2.2, COL.gold, COL.white, 6.5, 2.2, 1.2);
+      void gw;
+    }
+    kit.addY(3.5);
+
+    // Título
+    setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(titleLines, M + 4, kit.y);
+    kit.addY(titleLines.length * 4.2);
+
+    // Linha meta (responsáveis · núcleo · tipo · projeto)
+    if (metaLines.length) {
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8);
+      doc.text(metaLines, M + 4, kit.y);
+      kit.addY(metaLines.length * 3.6);
+    }
+
+    // Ajusta y ao fim do card (pode ter overflow minor pela estimativa)
+    kit.y = cardTop + cardH + 2;
+  });
+
+  kit.drawFooter('PRIMETOUR  ·  Tarefas');
   doc.save(`primetour_tarefas_${new Date().toISOString().slice(0, 10)}.pdf`);
   toast.success('PDF exportado.');
-}
+});
 
 /* \u2500\u2500\u2500 Cleanup \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 export function destroyTasksPage() {

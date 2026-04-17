@@ -7,6 +7,7 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { fetchAuditLogs, ACTION_LABELS, REVERTIBLE_ACTIONS, auditLog } from '../auth/audit.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -911,30 +912,134 @@ async function exportAuditXls() {
   toast.success(`${filteredLogs.length} registros exportados!`);
 }
 
-async function exportAuditPdf() {
+const exportAuditPdf = withExportGuard(async function exportAuditPdf() {
   if (!filteredLogs.length) { toast.error('Nenhum registro.'); return; }
-  if (!window.jspdf) {
-    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
-    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
-  }
-  const {jsPDF} = window.jspdf;
-  const pdf = new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  await loadJsPdf();
 
-  pdf.setFontSize(14); pdf.setFont('helvetica','bold'); pdf.setTextColor(36,35,98);
-  pdf.text('PRIMETOUR — Auditoria do Sistema', 14, 16);
-  pdf.setFontSize(9); pdf.setFont('helvetica','normal'); pdf.setTextColor(100,100,100);
-  pdf.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${filteredLogs.length} registros`, 14, 22);
+  const kit = createDoc({ orientation: 'portrait', margin: 14 });
+  const { doc, W, M, CW, setFill, setText, setDraw, drawBar, drawChip, wrap } = kit;
 
-  const rows = _auditRows().map(r => [r[0], r[2], r[3], r[4], r[5], r[6], r[8]?.slice(0,12)||'']);
-  pdf.autoTable({
-    startY: 27,
-    head: [['Data/Hora','Descrição','Módulo','Severidade','Usuário','Email','ID']],
-    body: rows,
-    styles: { fontSize: 7, cellPadding: 2 },
-    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [248,247,244] },
+  // Severidade → cor
+  const SEV_COL = {
+    critical: COL.red, high: COL.red,
+    warning:  COL.orange, medium: COL.orange,
+    info:     COL.blue, low: COL.blue,
+    success:  COL.green,
+  };
+
+  // Agregações
+  const bySeverity = {};
+  const byModule = {};
+  filteredLogs.forEach(log => {
+    const sev = getSeverity(log.action);
+    const mod = getModuleInfo(log.action).label;
+    bySeverity[sev] = (bySeverity[sev] || 0) + 1;
+    byModule[mod]   = (byModule[mod]   || 0) + 1;
   });
 
-  pdf.save(`primetour_auditoria_${new Date().toISOString().slice(0,10)}.pdf`);
+  // Período coberto
+  const times = filteredLogs.map(l => toDate(l.timestamp)).filter(Boolean).sort((a,b)=>a-b);
+  const periodo = times.length
+    ? `${times[0].toLocaleDateString('pt-BR')} a ${times[times.length-1].toLocaleDateString('pt-BR')}`
+    : '';
+
+  kit.drawCover({
+    title: 'Auditoria do Sistema',
+    subtitle: 'PRIMETOUR  ·  Trilha de Atividades',
+    meta: `${filteredLogs.length} ${filteredLogs.length === 1 ? 'evento' : 'eventos'}${periodo ? '  ·  ' + periodo : ''}`,
+  });
+
+  // Painel de severidade (blocos coloridos)
+  const sevEntries = Object.entries(bySeverity).sort((a,b) => b[1] - a[1]).slice(0, 4);
+  if (sevEntries.length) {
+    const bw = (CW - 6) / sevEntries.length;
+    sevEntries.forEach(([sev, n], i) => {
+      const x = M + i * (bw + 2);
+      const col = SEV_COL[sev] || COL.muted;
+      setFill(COL.bg); doc.roundedRect(x, kit.y, bw, 18, 1.8, 1.8, 'F');
+      setFill(col);    doc.rect(x, kit.y, bw, 1.6, 'F');
+      setText(COL.text); doc.setFont('helvetica','bold'); doc.setFontSize(15);
+      doc.text(String(n), x + 4, kit.y + 11);
+      setText(col); doc.setFont('helvetica','bold'); doc.setFontSize(6.8);
+      doc.text(txt((SEVERITY_CONFIG[sev]?.label || sev).toUpperCase()), x + 4, kit.y + 15.5);
+    });
+    kit.addY(22);
+  }
+
+  // Top módulos
+  const modEntries = Object.entries(byModule).sort((a,b) => b[1] - a[1]).slice(0, 8);
+  if (modEntries.length) {
+    setText(COL.muted); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.text(txt('TOP MODULOS'), M, kit.y); kit.addY(4);
+    const maxN = modEntries[0][1];
+    modEntries.forEach(([mod, n]) => {
+      setText(COL.text); doc.setFont('helvetica','normal'); doc.setFontSize(8);
+      doc.text(txt(mod).slice(0, 28), M, kit.y);
+      setText(COL.muted); doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+      doc.text(String(n), W - M, kit.y, { align: 'right' });
+      kit.addY(2);
+      drawBar(M, kit.y, CW, Math.round(n * 100 / maxN), COL.brand2, 1.4);
+      kit.addY(4.5);
+    });
+    kit.addY(4);
+  }
+
+  // Lista de eventos (timeline)
+  setText(COL.brand); doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text(txt('Eventos recentes'), M, kit.y);
+  kit.addY(2);
+  setDraw(COL.gold); doc.setLineWidth(0.5); doc.line(M, kit.y, M + 20, kit.y);
+  kit.addY(5);
+
+  filteredLogs.slice(0, 200).forEach(log => {
+    const ts = toDate(log.timestamp);
+    const fmtDt = ts ? ts.toLocaleString('pt-BR', {
+      day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit',
+    }) : '—';
+    const sev = getSeverity(log.action);
+    const sevCol = SEV_COL[sev] || COL.muted;
+    const modInfo = getModuleInfo(log.action);
+    const desc = ACTION_LABELS[log.action] || log.action || '';
+
+    const descLines = wrap(desc, CW - 55, 8.2);
+    const rowH = Math.max(10, descLines.length * 3.5 + 5);
+    kit.ensureSpace(rowH + 1);
+
+    const top = kit.y;
+    // Bolinha severity na margem
+    setFill(sevCol); doc.circle(M + 1.5, top + 2, 1.2, 'F');
+
+    // Linha 1: data + módulo chip
+    setText(COL.muted); doc.setFont('helvetica','normal'); doc.setFontSize(6.8);
+    doc.text(txt(fmtDt), M + 5, top + 2);
+    setText(COL.brand2); doc.setFont('helvetica','bold'); doc.setFontSize(6.8);
+    const dtW = doc.getTextWidth(txt(fmtDt)) + 3;
+    doc.text(txt((modInfo.label || '').toUpperCase()).slice(0, 26), M + 5 + dtW, top + 2);
+
+    // Linha 2: descrição
+    setText(COL.text); doc.setFont('helvetica','normal'); doc.setFontSize(8.2);
+    doc.text(descLines, M + 5, top + 6);
+    kit.addY(rowH);
+
+    // Linha 3 (opcional): usuário à direita
+    if (log.userName || log.userEmail) {
+      setText(COL.soft); doc.setFont('helvetica','italic'); doc.setFontSize(6.5);
+      doc.text(txt([log.userName, log.userEmail].filter(Boolean).join('  ·  ')), W - M, top + 6, { align: 'right' });
+    }
+
+    // Divisória sutil
+    setDraw(COL.border); doc.setLineWidth(0.1);
+    doc.line(M + 5, kit.y - 0.8, W - M, kit.y - 0.8);
+    kit.addY(1);
+  });
+
+  if (filteredLogs.length > 200) {
+    kit.addY(3);
+    setText(COL.muted); doc.setFont('helvetica','italic'); doc.setFontSize(7.5);
+    doc.text(txt(`+ ${filteredLogs.length - 200} eventos adicionais (veja o XLS)`), M, kit.y);
+  }
+
+  kit.drawFooter('PRIMETOUR  ·  Auditoria');
+  doc.save(`primetour_auditoria_${new Date().toISOString().slice(0,10)}.pdf`);
   toast.success('PDF exportado!');
-}
+});

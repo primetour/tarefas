@@ -3,6 +3,7 @@
  * Visão geral completa de conteúdo, imagens, gerações e validade
  */
 import { store }   from '../store.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 import {
   fetchAreas, fetchDestinations, fetchTips, SEGMENTS,
 } from '../services/portal.js';
@@ -776,13 +777,17 @@ function spinner() {
 /* ═══════════════════════════════════════════════════════════════
    PDF Export — Portal de Dicas Dashboard
    ═══════════════════════════════════════════════════════════════ */
-async function exportPortalPdf() {
+const exportPortalPdf = withExportGuard(async function exportPortalPdf() {
   const btn = document.getElementById('dash-export-pdf');
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
   try {
-    if (!window.jspdf) {
-      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
-      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
+    await loadJsPdf();
+    if (!window.jspdf?.jsPDF?.API?.autoTable) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
     }
 
     const range = getDateRange();
@@ -792,19 +797,18 @@ async function exportPortalPdf() {
     const allTips = rawTips;
     const tips    = rawTips.filter(t => inRange(t.createdAt, range) && (!filterUser || t.createdBy === filterUser));
     const gens    = rawGens.filter(g => inRange(g.generatedAt, range) && (!filterUser || g.generatedBy === filterUser));
-    const areas   = rawAreas;
     const dests   = rawDests;
 
     const expired  = allTips.filter(t => hasBadSeg(t, now, null));
-    const expiring = allTips.filter(t => !hasBadSeg(t,now,null) && hasBadSeg(t,now,in30));
-    const healthy  = allTips.filter(t => !hasBadSeg(t,now,null) && !hasBadSeg(t,now,in30));
+    const expiring = allTips.filter(t => !hasBadSeg(t, now, null) && hasBadSeg(t, now, in30));
+    const healthy  = allTips.filter(t => !hasBadSeg(t, now, null) && !hasBadSeg(t, now, in30));
 
-    const totalFilled = allTips.reduce((a,t) => a + SEGMENTS.filter(s => hasContent(t, s.key)).length, 0);
+    const totalFilled = allTips.reduce((a, t) => a + SEGMENTS.filter(s => hasContent(t, s.key)).length, 0);
     const maxFilled   = allTips.length * SEGMENTS.length || 1;
     const coveragePct = pct(totalFilled, maxFilled);
 
     const byFormat = {};
-    gens.forEach(g => { byFormat[g.format] = (byFormat[g.format]||0) + 1; });
+    gens.forEach(g => { byFormat[g.format] = (byFormat[g.format] || 0) + 1; });
 
     const priorityTips = allTips.filter(t => t.priority);
     const tipDestIds   = new Set(allTips.map(t => t.destinationId));
@@ -815,123 +819,122 @@ async function exportPortalPdf() {
       covered: allTips.filter(t => hasContent(t, s.key)).length,
     }));
 
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
-    const W   = doc.internal.pageSize.getWidth();
-    const H   = doc.internal.pageSize.getHeight();
-    const date = now.toLocaleDateString('pt-BR');
-
-    const periodLabel = filterDays === '0' ? 'Todo o período'
+    const periodLabel = filterDays === '0' ? 'Todo o periodo'
       : filterDays === 'custom' ? 'Personalizado'
-      : `Últimos ${filterDays}d`;
+      : `Ultimos ${filterDays}d`;
 
-    // ── Header ──
-    doc.setFillColor(212,168,67);
-    doc.rect(0, 0, W, 3, 'F');
-    doc.setFillColor(36,35,98);
-    doc.rect(0, 3, W, 20, 'F');
-    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-    doc.text('PRIMETOUR', 14, 14);
-    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(212,168,67);
-    doc.text('Dashboard — Portal de Dicas', 14, 19);
-    doc.setTextColor(200,200,200);
-    doc.text(`${periodLabel}  ·  ${date}  ·  ${allTips.length} dicas`, W-14, 19, {align:'right'});
+    const kit = createDoc({ orientation: 'portrait', margin: 14 });
+    const { doc, W, M, CW, setFill, setText } = kit;
 
-    // ── KPIs ──
-    let y = 28;
+    kit.drawCover({
+      title: 'Dashboard — Portal de Dicas',
+      subtitle: 'PRIMETOUR  ·  Content Operations',
+      meta: `${allTips.length} dicas  ·  ${periodLabel}`,
+      compact: true,
+    });
+
+    // ── KPIs (2 linhas de 4) ──
     const kpis = [
-      { label:'Dicas',        value:String(allTips.length),     color:[56,189,248]  },
-      { label:'Prioritárias', value:String(priorityTips.length), color:[212,168,67] },
-      { label:'Cobertura',    value:coveragePct+'%',            color:[96,165,250]  },
-      { label:'Vencidas',     value:String(expired.length),     color: expired.length > 0 ? [239,68,68] : [34,197,94] },
-      { label:'Imagens',      value:String(rawImages.length),   color:[56,189,248]  },
-      { label:'Gerações',     value:String(gens.length),        color:[167,139,250] },
-      { label:'Criadas',      value:String(tips.length),        color:[34,197,94]   },
-      { label:'S/ Dica',      value:String(missingDests.length), color:[239,68,68]  },
+      { label: 'Dicas',        value: String(allTips.length),      col: COL.blue   },
+      { label: 'Prioritarias', value: String(priorityTips.length), col: COL.gold   },
+      { label: 'Cobertura',    value: coveragePct + '%',
+        col: coveragePct >= 75 ? COL.green : coveragePct >= 50 ? COL.orange : COL.red },
+      { label: 'Vencidas',     value: String(expired.length),
+        col: expired.length > 0 ? COL.red : COL.green },
+      { label: 'Imagens',      value: String(rawImages.length),    col: COL.blue   },
+      { label: 'Geracoes',     value: String(gens.length),         col: COL.brand2 },
+      { label: 'Criadas',      value: String(tips.length),         col: COL.green  },
+      { label: 'Sem dica',     value: String(missingDests.length),
+        col: missingDests.length > 0 ? COL.red : COL.green },
     ];
     const cols = 4;
-    const kpiW = (W - 28 - (cols-1)*4) / cols;
-    kpis.forEach((k,i) => {
+    const gap = 3;
+    const kpiW = (CW - gap * (cols - 1)) / cols;
+    const kpiH = 18;
+    let y = kit.y;
+    kpis.forEach((k, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = 14 + col*(kpiW+4);
-      const ky = y + row * 20;
-      doc.setFillColor(...k.color);
-      doc.roundedRect(x, ky, kpiW, 16, 2, 2, 'F');
-      doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-      doc.text(k.value, x+kpiW/2, ky+7, {align:'center'});
-      doc.setFontSize(6); doc.setFont('helvetica','normal');
-      doc.text(k.label, x+kpiW/2, ky+12.5, {align:'center'});
+      const x = M + col * (kpiW + gap);
+      const ky = y + row * (kpiH + 3);
+      setFill(COL.white); doc.roundedRect(x, ky, kpiW, kpiH, 1.5, 1.5, 'F');
+      setFill(k.col);     doc.rect(x, ky, kpiW, 1.4, 'F');
+      setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+      doc.text(txt(k.value), x + kpiW / 2, ky + 10, { align: 'center' });
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+      doc.text(txt(k.label.toUpperCase()), x + kpiW / 2, ky + 15, { align: 'center' });
     });
-    y += Math.ceil(kpis.length / cols) * 20 + 6;
+    kit.y = y + Math.ceil(kpis.length / cols) * (kpiH + 3) + 6;
 
-    // ── Status de Validade ──
-    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
-    doc.text('Status de Validade', 14, y); y += 6;
+    // ── Status de Validade (3 colunas de blocos) ──
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(txt('STATUS DE VALIDADE'), M, kit.y);
+    kit.y += 5;
     const validityItems = [
-      { label:'Vencidas',        count: expired.length,  color:[239,68,68]  },
-      { label:'Vencendo em 30d', count: expiring.length, color:[245,158,11] },
-      { label:'Em dia',          count: healthy.length,  color:[34,197,94]  },
+      { label: 'Vencidas',        count: expired.length,  col: COL.red    },
+      { label: 'Vencendo em 30d', count: expiring.length, col: COL.orange },
+      { label: 'Em dia',          count: healthy.length,  col: COL.green  },
     ];
-    const barW = W - 28;
-    validityItems.forEach(v => {
+    const vY = kit.y;
+    const vW = (CW - gap * 2) / 3;
+    validityItems.forEach((v, i) => {
+      const x = M + i * (vW + gap);
       const p = pct(v.count, allTips.length);
-      doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
-      doc.text(`${v.label}: ${v.count} (${p}%)`, 14, y+3);
-      doc.setFillColor(235,235,235);
-      doc.roundedRect(14, y+5, barW, 4, 1, 1, 'F');
-      if (p > 0) {
-        doc.setFillColor(...v.color);
-        doc.roundedRect(14, y+5, Math.max(barW * p / 100, 2), 4, 1, 1, 'F');
-      }
-      y += 14;
+      setFill(COL.white); doc.roundedRect(x, vY, vW, 20, 1.5, 1.5, 'F');
+      setFill(v.col);     doc.rect(x, vY, vW, 1.4, 'F');
+      setText(v.col);     doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+      doc.text(String(v.count), x + 4, vY + 11);
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+      doc.text(txt(`${p}% do total`), x + 4, vY + 16.5);
+      setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+      doc.text(txt(v.label.toUpperCase()), x + vW - 3, vY + 6, { align: 'right' });
+      kit.drawBar(x + 4, vY + 17.5, vW - 8, p, v.col, 1.2);
     });
-    y += 4;
+    kit.y = vY + 24;
 
-    // ── Cobertura por Segmento ──
-    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
-    doc.text('Cobertura por Segmento', 14, y); y += 6;
+    // ── Cobertura por Segmento (barras horizontais) ──
+    kit.ensureSpace(20);
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(txt('COBERTURA POR SEGMENTO'), M, kit.y);
+    kit.y += 5;
+    const labW = 52;
+    const segBarW = CW - labW - 22;
     segCov.forEach(s => {
       const p = pct(s.covered, allTips.length);
-      const c = p >= 75 ? [34,197,94] : p >= 35 ? [245,158,11] : [239,68,68];
-      doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
-      const lblText = s.label.length > 30 ? s.label.slice(0,28)+'…' : s.label;
-      doc.text(lblText, 14, y+3);
-      doc.text(`${p}%`, W-14, y+3, {align:'right'});
-      doc.setFillColor(235,235,235);
-      doc.roundedRect(60, y+0.5, W-80, 3.5, 1, 1, 'F');
-      if (p > 0) {
-        doc.setFillColor(...c);
-        doc.roundedRect(60, y+0.5, Math.max((W-80)*p/100, 1.5), 3.5, 1, 1, 'F');
-      }
-      y += 7;
-      if (y > H - 30) { addFooter(doc, W, H, 'Portal de Dicas'); doc.addPage(); y = 14; }
+      const c = p >= 75 ? COL.green : p >= 35 ? COL.orange : COL.red;
+      kit.ensureSpace(6);
+      const yy = kit.y;
+      setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+      const lblText = s.label.length > 28 ? s.label.slice(0, 26) + '...' : s.label;
+      doc.text(txt(lblText), M, yy + 3.2);
+      kit.drawBar(M + labW, yy + 1.5, segBarW, p, c, 2.2);
+      setText(c); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+      doc.text(`${p}%`, M + labW + segBarW + 3, yy + 3.4);
+      kit.y += 6;
     });
-    y += 6;
+    kit.y += 4;
 
     // ── Gerações por Formato ──
     if (Object.keys(byFormat).length > 0) {
-      if (y > H - 50) { addFooter(doc, W, H, 'Portal de Dicas'); doc.addPage(); y = 14; }
-      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
-      doc.text('Gerações por Formato', 14, y); y += 6;
-      const totalGens = Object.values(byFormat).reduce((a,b) => a+b, 0);
-      const fmtColors = { docx:[96,165,250], pdf:[239,68,68], pptx:[34,197,94], web:[212,168,67] };
-      Object.entries(byFormat).sort(([,a],[,b]) => b-a).forEach(([fmt, cnt]) => {
+      kit.ensureSpace(20);
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+      doc.text(txt('GERACOES POR FORMATO'), M, kit.y);
+      kit.y += 5;
+      const totalGens = Object.values(byFormat).reduce((a, b) => a + b, 0);
+      const fmtColors = { docx: COL.blue, pdf: COL.red, pptx: COL.green, web: COL.gold };
+      Object.entries(byFormat).sort(([, a], [, b]) => b - a).forEach(([fmt, cnt]) => {
         const p = pct(cnt, totalGens);
-        const c = fmtColors[fmt] || [150,150,150];
-        doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(...c);
-        doc.text(fmt.toUpperCase(), 14, y+3);
-        doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
-        doc.text(String(cnt), W-14, y+3, {align:'right'});
-        doc.setFillColor(235,235,235);
-        doc.roundedRect(40, y+0.5, W-62, 3.5, 1, 1, 'F');
-        if (p > 0) {
-          doc.setFillColor(...c);
-          doc.roundedRect(40, y+0.5, Math.max((W-62)*p/100, 1.5), 3.5, 1, 1, 'F');
-        }
-        y += 9;
+        const c = fmtColors[fmt] || COL.muted;
+        kit.ensureSpace(7);
+        const yy = kit.y;
+        setText(c); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+        doc.text(txt(fmt.toUpperCase()), M, yy + 3.4);
+        kit.drawBar(M + 26, yy + 1.5, CW - 48, p, c, 2.4);
+        setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+        doc.text(`${cnt}  ·  ${p}%`, M + CW, yy + 3.4, { align: 'right' });
+        kit.y += 7;
       });
-      y += 6;
+      kit.y += 4;
     }
 
     // ── Destinos com Dicas Vencidas ──
@@ -945,50 +948,43 @@ async function exportPortalPdf() {
       }).map(s => s.label);
       if (expSegs.length) {
         expiredDetails.push({
-          name: dest ? [dest.city, dest.country].filter(Boolean).join(', ') : '—',
+          name: dest ? [dest.city, dest.country].filter(Boolean).join(', ') : '-',
           segs: expSegs.join(', '),
-          priority: t.priority ? '★' : '',
+          priority: t.priority,
         });
       }
     });
     if (expiredDetails.length > 0) {
-      if (y > H - 40) { addFooter(doc, W, H, 'Portal de Dicas'); doc.addPage(); y = 14; }
-      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
-      doc.text(`Destinos com Dicas Vencidas (${expiredDetails.length})`, 14, y); y += 2;
+      kit.ensureSpace(20);
+      setText(COL.red); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+      doc.text(txt(`DESTINOS COM DICAS VENCIDAS (${expiredDetails.length})`), M, kit.y);
+      kit.y += 4;
       doc.autoTable({
-        startY: y,
-        head: [['★','Destino','Campos Vencidos']],
-        body: expiredDetails.slice(0,20).map(d => [d.priority, d.name, d.segs]),
-        styles: { fontSize:7, cellPadding:2.5 },
-        headStyles: { fillColor:[36,35,98], textColor:255, fontStyle:'bold', fontSize:7 },
-        alternateRowStyles: { fillColor:[248,247,244] },
-        columnStyles: { 0: { cellWidth: 8 } },
+        startY: kit.y,
+        margin: { left: M, right: M, bottom: 14 },
+        head: [['!', 'Destino', 'Campos Vencidos']],
+        body: expiredDetails.slice(0, 30).map(d => [d.priority ? '!' : '', txt(d.name), txt(d.segs)]),
+        styles: { fontSize: 7, cellPadding: 2, textColor: COL.text },
+        headStyles: { fillColor: COL.red, textColor: 255, fontStyle: 'bold', fontSize: 7 },
+        alternateRowStyles: { fillColor: COL.subBg },
+        columnStyles: { 0: { cellWidth: 6, halign: 'center', textColor: COL.red, fontStyle: 'bold' } },
       });
-      y = doc.lastAutoTable.finalY + 6;
+      if (expiredDetails.length > 30) {
+        const fy = doc.lastAutoTable.finalY + 3;
+        setText(COL.muted); doc.setFont('helvetica', 'italic'); doc.setFontSize(7);
+        doc.text(txt(`+ ${expiredDetails.length - 30} destinos adicionais (veja o XLS)`), M, fy);
+      }
     }
 
-    // ── Footer ──
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) addFooter(doc, W, H, 'Portal de Dicas', i, pageCount);
-
-    doc.save(`primetour_portal_dicas_${new Date().toISOString().slice(0,10)}.pdf`);
+    kit.drawFooter('PRIMETOUR  ·  Portal de Dicas');
+    doc.save(`primetour_portal_dicas_${new Date().toISOString().slice(0, 10)}.pdf`);
     import('../components/toast.js').then(m => m.toast.success(`PDF gerado com ${allTips.length} dicas.`));
-  } catch(e) {
+  } catch (e) {
     import('../components/toast.js').then(m => m.toast.error('Erro ao gerar PDF: ' + e.message));
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⬇ PDF'; }
   }
-}
-
-function addFooter(doc, W, H, title, page, total) {
-  if (page && total) doc.setPage(page);
-  const pH = doc.internal.pageSize.getHeight();
-  doc.setFillColor(36,35,98);
-  doc.rect(0, pH-7, W, 7, 'F');
-  doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
-  doc.text(`PRIMETOUR — ${title}`, 14, pH-2.5);
-  if (page && total) doc.text(`Página ${page}/${total}`, W-14, pH-2.5, {align:'right'});
-}
+});
 
 /* ═══════════════════════════════════════════════════════════════
    XLS Export — Portal de Dicas Dashboard

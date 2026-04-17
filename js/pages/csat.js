@@ -14,6 +14,7 @@ import {
 } from '../services/csat.js';
 import { fetchTasks }    from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -701,42 +702,131 @@ async function exportCsatXls() {
 }
 
 /* ─── Export PDF ────────────────────────────────────────── */
-async function exportCsatPdf() {
+const exportCsatPdf = withExportGuard(async function exportCsatPdf() {
   const list = getFiltered();
   if (!list.length) { toast.error('Nenhuma pesquisa para exportar.'); return; }
-  if (!window.jspdf) {
-    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
-    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
-  }
-  const {jsPDF} = window.jspdf;
-  const doc = new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  await loadJsPdf();
 
-  doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(36,35,98);
-  doc.text('PRIMETOUR — Pesquisas CSAT', 14, 16);
-  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
-  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${list.length} pesquisas`, 14, 22);
+  const kit = createDoc({ orientation: 'portrait', margin: 14 });
+  const { doc, W, M, CW, setFill, setText, setDraw, drawBar, drawChip, wrap } = kit;
 
-  const rows = list.map(s => [
-    (s.taskTitle||'').slice(0,30), (s.projectName||'').slice(0,20),
-    (s.clientName||'').slice(0,20), (s.clientEmail||'').slice(0,25),
-    CSAT_STATUS[s.status]?.label||s.status,
-    s.score||'', (s.comment||'').slice(0,30),
-    s.createdAt ? fmtDate(s.createdAt) : '',
-    s.respondedAt ? fmtDate(s.respondedAt) : '',
-  ]);
+  // Métricas agregadas
+  const responded = list.filter(s => s.status === 'responded' || s.respondedAt);
+  const withScore = responded.filter(s => typeof s.score === 'number' && s.score > 0);
+  const avgScore = withScore.length
+    ? withScore.reduce((a, s) => a + Number(s.score), 0) / withScore.length
+    : 0;
+  const respRate = list.length ? Math.round(responded.length * 100 / list.length) : 0;
 
-  doc.autoTable({
-    startY: 27,
-    head: [['Tarefa','Projeto','Cliente','E-mail','Status','Nota','Comentário','Criado','Respondido']],
-    body: rows,
-    styles: { fontSize: 7, cellPadding: 2 },
-    headStyles: { fillColor: [36,35,98], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [248,247,244] },
+  kit.drawCover({
+    title: 'Pesquisas CSAT',
+    subtitle: 'PRIMETOUR  ·  Satisfação do Cliente',
+    meta: `${list.length} ${list.length === 1 ? 'pesquisa' : 'pesquisas'}  ·  ${new Date().toLocaleDateString('pt-BR')}`,
   });
 
+  // Painel de KPIs (3 blocos lado a lado)
+  const kpis = [
+    { label: 'Respostas',    val: `${responded.length}/${list.length}`, col: COL.blue   },
+    { label: 'Taxa resposta',val: `${respRate}%`,                       col: COL.brand2 },
+    { label: 'Nota média',   val: avgScore ? avgScore.toFixed(1) : '—', col: COL.gold   },
+  ];
+  const bw = (CW - 6) / 3;
+  kpis.forEach((k, i) => {
+    const x = M + i * (bw + 3);
+    setFill(COL.bg); doc.roundedRect(x, kit.y, bw, 22, 2, 2, 'F');
+    setFill(k.col);  doc.rect(x, kit.y, bw, 2, 'F');
+    setText(COL.text); doc.setFont('helvetica','bold'); doc.setFontSize(18);
+    doc.text(txt(k.val), x + 5, kit.y + 13);
+    setText(k.col); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.text(txt(k.label.toUpperCase()), x + 5, kit.y + 19);
+  });
+  kit.addY(26);
+
+  // Distribuição de notas (barras horizontais 1..5)
+  if (withScore.length) {
+    setText(COL.muted); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.text(txt('DISTRIBUICAO DE NOTAS'), M, kit.y);
+    kit.addY(4.5);
+    for (let s = 5; s >= 1; s--) {
+      const n = withScore.filter(x => Number(x.score) === s).length;
+      const pct = Math.round(n * 100 / withScore.length);
+      setText(COL.text); doc.setFont('helvetica','bold'); doc.setFontSize(8);
+      doc.text(String(s), M, kit.y);
+      const barX = M + 8;
+      const barW = CW - 40;
+      const col = s >= 4 ? COL.green : s === 3 ? COL.orange : COL.red;
+      drawBar(barX, kit.y - 2.2, barW, pct, col, 3);
+      setText(COL.muted); doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
+      doc.text(txt(`${n}  ·  ${pct}%`), W - M, kit.y, { align: 'right' });
+      kit.addY(5.5);
+    }
+    kit.addY(4);
+  }
+
+  // Lista de respostas (cards)
+  list.forEach((s) => {
+    const stInfo = CSAT_STATUS[s.status] || {};
+    const stBg = s.status === 'responded' ? COL.green
+             : s.status === 'sent'        ? COL.blue
+             : s.status === 'pending'     ? COL.orange
+             : s.status === 'cancelled'   ? COL.red : COL.muted;
+
+    const title = s.taskTitle || '(sem título)';
+    const titleLines = wrap(title, CW - 40, 9.5);
+    const comment = (s.comment || '').trim();
+    const cmtLines = comment ? wrap(comment, CW - 16, 8) : [];
+    const cardH = 11 + titleLines.length * 4 + cmtLines.length * 3.6 + 6;
+
+    kit.ensureSpace(cardH + 3);
+    const top = kit.y;
+    setFill(COL.white); setDraw(COL.border); doc.setLineWidth(0.2);
+    doc.roundedRect(M, top, CW, cardH, 1.8, 1.8, 'FD');
+    // Barra colorida à esquerda pela nota (se houver)
+    const noteCol = typeof s.score === 'number'
+      ? (s.score >= 4 ? COL.green : s.score === 3 ? COL.orange : COL.red)
+      : COL.border;
+    setFill(noteCol); doc.rect(M, top, 2, cardH, 'F');
+
+    // Status chip + data
+    drawChip(stInfo.label || s.status || '—', M + 5, top + 3, stBg, COL.white, 6.5, 2.2, 1.2);
+
+    if (s.respondedAt || s.createdAt) {
+      setText(COL.muted); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+      doc.text(txt(fmtDate(s.respondedAt || s.createdAt)), W - M - 3, top + 6, { align: 'right' });
+    }
+
+    // Nota grande (destaque)
+    if (typeof s.score === 'number' && s.score > 0) {
+      setText(noteCol); doc.setFont('helvetica','bold'); doc.setFontSize(20);
+      doc.text(txt(String(s.score)), W - M - 3, top + cardH - 6, { align: 'right' });
+      setText(COL.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6);
+      doc.text(txt('/ 5'), W - M - 3, top + cardH - 1.8, { align: 'right' });
+    }
+
+    // Título + cliente
+    kit.y = top + 11;
+    setText(COL.text); doc.setFont('helvetica','bold'); doc.setFontSize(9.5);
+    doc.text(titleLines, M + 5, kit.y);
+    kit.addY(titleLines.length * 4);
+
+    const meta = [s.projectName, s.clientName, s.clientEmail].filter(Boolean).join('  ·  ');
+    if (meta) {
+      setText(COL.muted); doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
+      doc.text(txt(meta), M + 5, kit.y);
+      kit.addY(3.5);
+    }
+    if (cmtLines.length) {
+      setText(COL.text); doc.setFont('helvetica','italic'); doc.setFontSize(8);
+      doc.text(cmtLines, M + 5, kit.y);
+      kit.addY(cmtLines.length * 3.6);
+    }
+    kit.y = top + cardH + 2.5;
+  });
+
+  kit.drawFooter('PRIMETOUR  ·  CSAT');
   doc.save(`primetour_csat_${new Date().toISOString().slice(0,10)}.pdf`);
   toast.success('PDF exportado.');
-}
+});
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 function fmtDate(ts) {

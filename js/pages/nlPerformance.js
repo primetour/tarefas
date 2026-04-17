@@ -7,6 +7,7 @@
 import { store }      from '../store.js';
 import { toast }      from '../components/toast.js';
 import { APP_CONFIG } from '../config.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 import {
   collection, getDocs, query, orderBy, limit,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -678,86 +679,130 @@ async function exportXLSX() {
 }
 
 /* ─── Export PDF ──────────────────────────────────────────── */
-async function exportPDF() {
+const exportPDF = withExportGuard(async function exportPDF() {
   const btn = document.getElementById('nl-export-pdf');
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
   try {
-    if (!window.jspdf) {
-      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
-      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
+    await loadJsPdf();
+    if (!window.jspdf?.jsPDF?.API?.autoTable) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
     }
 
-    const rows   = getExportRows();
+    const rows    = getExportRows();
     const visible = rows.filter(r => !hiddenRows.has(r.jobId));
-    const hasBu  = !filterBu;
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-    const W   = doc.internal.pageSize.getWidth();
-    const bu  = filterBu ? (BUS.find(b=>b.id===filterBu)?.name||filterBu) : 'Todas as unidades';
-    const date = new Date().toLocaleDateString('pt-BR');
+    const hasBu   = !filterBu;
+    const bu      = filterBu ? (BUS.find(b => b.id === filterBu)?.name || filterBu) : 'Todas as unidades';
 
-    // ── Header ──
-    doc.setFillColor(212,168,67);
-    doc.rect(0, 0, W, 3, 'F');
-    doc.setFillColor(36,35,98);
-    doc.rect(0, 3, W, 20, 'F');
-    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-    doc.text('PRIMETOUR', 14, 14);
-    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(212,168,67);
-    doc.text('Performance de Newsletters', 14, 19);
-    doc.setTextColor(200,200,200);
-    doc.text(`${bu}  ·  ${date}  ·  ${rows.length} disparos`, W-14, 19, {align:'right'});
+    const kit = createDoc({ orientation: 'landscape', margin: 14 });
+    const { doc, W, M, CW, setFill, setText } = kit;
+
+    kit.drawCover({
+      title: 'Performance de Newsletters',
+      subtitle: 'PRIMETOUR  ·  Locaweb Email Marketing',
+      meta: `${rows.length} disparos  ·  ${bu}`,
+      compact: true,
+    });
 
     // ── KPIs ──
-    const avg = key => { const vals=visible.map(r=>r[key]).filter(v=>v!=null&&!isNaN(v)); return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0; };
-    const sum = key => visible.reduce((a,r) => a+(Number(r[key])||0), 0);
+    const avg = key => {
+      const vals = visible.map(r => r[key]).filter(v => v != null && !isNaN(v));
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    };
+    const sum = key => visible.reduce((a, r) => a + (Number(r[key]) || 0), 0);
+    const openR = avg('openRate');
+    const clickR = avg('clickRate');
+    const deliv = avg('deliveryRate');
     const kpis = [
-      { label:'Disparos',       value:String(visible.length), color:[56,189,248]  },
-      { label:'Enviados',       value:sum('totalSent').toLocaleString('pt-BR'), color:[167,139,250] },
-      { label:'Tx. Abertura',   value:pct(avg('openRate')),   color:[34,197,94]   },
-      { label:'Tx. Cliques',    value:pct(avg('clickRate')),  color:[212,168,67]  },
-      { label:'Tx. Entrega',    value:pct(avg('deliveryRate')),color:[56,189,248] },
+      { label: 'Disparos',     value: String(visible.length),                    col: COL.blue   },
+      { label: 'Enviados',     value: sum('totalSent').toLocaleString('pt-BR'),  col: COL.brand2 },
+      { label: 'Tx. Abertura', value: pct(openR),
+        col: openR >= 20 ? COL.green : openR >= 10 ? COL.orange : COL.red },
+      { label: 'Tx. Cliques',  value: pct(clickR),
+        col: clickR >= 3 ? COL.green : clickR >= 1 ? COL.orange : COL.red },
+      { label: 'Tx. Entrega',  value: pct(deliv),
+        col: deliv >= 95 ? COL.green : deliv >= 85 ? COL.orange : COL.red },
     ];
-    let y = 28;
-    const kpiW = (W - 28 - (kpis.length-1)*4) / kpis.length;
-    kpis.forEach((k,i) => {
-      const x = 14 + i*(kpiW+4);
-      doc.setFillColor(...k.color);
-      doc.roundedRect(x, y, kpiW, 16, 2, 2, 'F');
-      doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-      doc.text(k.value, x+kpiW/2, y+7, {align:'center'});
-      doc.setFontSize(6); doc.setFont('helvetica','normal');
-      doc.text(k.label, x+kpiW/2, y+12.5, {align:'center'});
+    const gap = 3;
+    const kpiW = (CW - gap * (kpis.length - 1)) / kpis.length;
+    const kpiH = 18;
+    let y = kit.y;
+    kpis.forEach((k, i) => {
+      const x = M + i * (kpiW + gap);
+      setFill(COL.white); doc.roundedRect(x, y, kpiW, kpiH, 1.5, 1.5, 'F');
+      setFill(k.col);     doc.rect(x, y, kpiW, 1.4, 'F');
+      setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+      doc.text(txt(k.value), x + kpiW / 2, y + 10, { align: 'center' });
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+      doc.text(txt(k.label.toUpperCase()), x + kpiW / 2, y + 15, { align: 'center' });
     });
-    y += 22;
+    kit.y = y + kpiH + 6;
+
+    // ── Top 5 disparos por abertura ──
+    if (visible.length) {
+      const top = [...visible]
+        .sort((a, b) => (b.openRate || 0) - (a.openRate || 0))
+        .slice(0, Math.min(5, visible.length));
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.text(txt('DESTAQUES POR ABERTURA'), M, kit.y);
+      kit.y += 4;
+      const cardW = (CW - gap * (top.length - 1)) / top.length;
+      const cardH = 30;
+      const cy = kit.y;
+      top.forEach((r, i) => {
+        const x = M + i * (cardW + gap);
+        setFill(COL.subBg); doc.roundedRect(x, cy, cardW, cardH, 1.5, 1.5, 'F');
+        setFill(COL.green); doc.rect(x, cy, cardW, 1.2, 'F');
+        setText(COL.gold); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+        doc.text(txt(`#${i + 1}  ${fmt(r.sentDate)}`), x + 3, cy + 5.5);
+        setText(COL.green); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+        doc.text(txt(pct(r.openRate)), x + cardW - 3, cy + 11, { align: 'right' });
+        setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+        const name = kit.wrap(r.name || '(sem nome)', cardW - 6, 8).slice(0, 2);
+        doc.text(name, x + 3, cy + 13);
+        setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+        const sub = kit.wrap(r.subject || '', cardW - 6, 6.5).slice(0, 1);
+        doc.text(sub, x + 3, cy + 22);
+        doc.text(txt(`env ${num(r.totalSent)}  ·  cl ${pct(r.clickRate)}`), x + 3, cy + cardH - 2);
+      });
+      kit.y = cy + cardH + 6;
+    }
 
     // ── Tabela ──
+    kit.ensureSpace(30);
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(txt('TODOS OS DISPAROS'), M, kit.y);
+    kit.y += 3;
+
     const head = [[
       ...(hasBu ? ['Unidade'] : []),
-      'Data','Nome','Assunto','Enviados','Entrega',
-      'Hard','Soft','Block','Abertura','% Ab.','Cliques','% Cl.','Opt-out',
+      'Data', 'Nome', 'Assunto', 'Enviados', 'Entrega',
+      'Hard', 'Soft', 'Block', 'Abertura', '% Ab.', 'Cliques', '% Cl.', 'Opt-out',
     ]];
     const body = rows.map(r => [
       ...(hasBu ? [r.virtualBuName] : []),
-      fmt(r.sentDate), (r.name||'').slice(0,32), (r.subject||'').slice(0,40),
+      fmt(r.sentDate), txt((r.name || '').slice(0, 32)), txt((r.subject || '').slice(0, 40)),
       num(r.totalSent), pct(r.deliveryRate),
       num(r.hardBounce), num(r.softBounce), num(r.blockBounce),
       num(r.openUnique), pct(r.openRate), num(r.clickUnique), pct(r.clickRate), num(r.optOut),
     ]);
 
     doc.autoTable({
-      head, body, startY: y,
-      styles: { fontSize:7, cellPadding:2.5, overflow:'linebreak' },
-      headStyles: { fillColor:[36,35,98], textColor:255, fontStyle:'bold', fontSize:6.5 },
-      alternateRowStyles: { fillColor:[248,247,244] },
+      head, body, startY: kit.y,
+      margin: { left: M, right: M, bottom: 14 },
+      styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak', textColor: COL.text },
+      headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
+      alternateRowStyles: { fillColor: COL.subBg },
       didParseCell: (data) => {
-        // Colorir taxas
         if (data.section === 'body') {
-          const colIdx = data.column.index - (hasBu?1:0);
-          if ([5,9,10].includes(colIdx)) {
-            const val = parseFloat(String(data.cell.raw).replace('%','').replace(',','.'));
+          const colIdx = data.column.index - (hasBu ? 1 : 0);
+          if ([5, 9, 10].includes(colIdx)) {
+            const val = parseFloat(String(data.cell.raw).replace('%', '').replace(',', '.'));
             if (!isNaN(val)) {
-              data.cell.styles.textColor = val >= 20 ? [34,197,94] : val >= 10 ? [212,168,67] : [239,68,68];
+              data.cell.styles.textColor = val >= 20 ? COL.green : val >= 10 ? COL.orange : COL.red;
               data.cell.styles.fontStyle = 'bold';
             }
           }
@@ -765,26 +810,15 @@ async function exportPDF() {
       },
     });
 
-    // ── Footer ──
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i=1;i<=pageCount;i++) {
-      doc.setPage(i);
-      const pH = doc.internal.pageSize.getHeight();
-      doc.setFillColor(36,35,98);
-      doc.rect(0, pH-7, W, 7, 'F');
-      doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
-      doc.text('PRIMETOUR — Performance de Newsletters', 14, pH-2.5);
-      doc.text(`Página ${i}/${pageCount}`, W-14, pH-2.5, {align:'right'});
-    }
-
-    doc.save(`primetour_newsletters_${new Date().toISOString().slice(0,10)}.pdf`);
+    kit.drawFooter('PRIMETOUR  ·  Performance de Newsletters');
+    doc.save(`primetour_newsletters_${new Date().toISOString().slice(0, 10)}.pdf`);
     toast.success(`PDF gerado com ${rows.length} disparos.`);
-  } catch(e) {
+  } catch (e) {
     toast.error('Erro ao gerar PDF: ' + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⬇ PDF'; }
   }
-}
+});
 
 /* ─── KPI cards ───────────────────────────────────────────── */
 function renderKpis(rows) {
@@ -940,69 +974,77 @@ async function exportCalXLSX() {
   }
 }
 
-async function exportCalPDF() {
+const exportCalPDF = withExportGuard(async function exportCalPDF() {
   if (!calDashData) { toast.error('Carregue a aba Calendário primeiro.'); return; }
   const btn = document.getElementById('nl-cal-export-pdf');
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
   try {
-    if (!window.jspdf) {
-      await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
-      await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+    await loadJsPdf();
+    if (!window.jspdf?.jsPDF?.API?.autoTable) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
     }
     const d = calDashData;
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const W = doc.internal.pageSize.getWidth();
-    const dateStr = new Date().toLocaleDateString('pt-BR');
+    const kit = createDoc({ orientation: 'landscape', margin: 14 });
+    const { doc, W, M, CW, setFill, setText } = kit;
 
-    // ── Header ──
-    doc.setFillColor(212, 168, 67);
-    doc.rect(0, 0, W, 3, 'F');
-    doc.setFillColor(36, 35, 98);
-    doc.rect(0, 3, W, 20, 'F');
-    doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
-    doc.text('PRIMETOUR', 14, 14);
-    doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(212, 168, 67);
-    doc.text('Calendário Editorial — Dashboard', 14, 19);
-    doc.setTextColor(200, 200, 200);
-    doc.text(dateStr, W - 14, 19, { align: 'right' });
-
-    // ── KPI boxes ──
-    const kpis = [
-      { label: 'Cumprimento', value: d.complianceRate + '%', color: d.complianceRate >= 80 ? [34, 197, 94] : [239, 68, 68] },
-      { label: 'Solicitações', value: String(d.allRequests.length), color: [56, 189, 248] },
-      { label: 'Urgentes', value: String(d.urgentRequests.length), color: d.urgentRequests.length > 0 ? [239, 68, 68] : [34, 197, 94] },
-      { label: 'Fora Cal.', value: String(d.outOfCalendar.length), color: d.outOfCalendar.length > 0 ? [245, 158, 11] : [34, 197, 94] },
-      { label: 'Tempo Médio', value: d.avgDays !== '—' ? d.avgDays + 'd' : '—', color: d.slaOk ? [34, 197, 94] : [239, 68, 68] },
-    ];
-    let y = 28;
-    const kpiW = (W - 28 - (kpis.length - 1) * 4) / kpis.length;
-    kpis.forEach((k, i) => {
-      const x = 14 + i * (kpiW + 4);
-      doc.setFillColor(...k.color);
-      doc.roundedRect(x, y, kpiW, 16, 2, 2, 'F');
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
-      doc.text(k.value, x + kpiW / 2, y + 7, { align: 'center' });
-      doc.setFontSize(6); doc.setFont('helvetica', 'normal');
-      doc.text(k.label, x + kpiW / 2, y + 12.5, { align: 'center' });
+    kit.drawCover({
+      title: 'Calendario Editorial — Dashboard',
+      subtitle: 'PRIMETOUR  ·  Newsletter',
+      meta: `${d.allRequests.length} solicitacoes  ·  cumprimento ${d.complianceRate}%`,
+      compact: true,
     });
-    y += 22;
 
-    // ── Top Solicitantes (mini table) ──
+    // ── KPIs ──
+    const complianceCol = d.complianceRate >= 80 ? COL.green : d.complianceRate >= 60 ? COL.orange : COL.red;
+    const urgCol   = d.urgentRequests.length > 0 ? COL.red : COL.green;
+    const foraCol  = d.outOfCalendar.length > 0 ? COL.orange : COL.green;
+    const tempoCol = d.slaOk ? COL.green : COL.red;
+    const kpis = [
+      { label: 'Cumprimento',   value: d.complianceRate + '%',                         col: complianceCol },
+      { label: 'Solicitacoes',  value: String(d.allRequests.length),                   col: COL.blue },
+      { label: 'Urgentes',      value: String(d.urgentRequests.length),                col: urgCol },
+      { label: 'Fora Cal.',     value: String(d.outOfCalendar.length),                 col: foraCol },
+      { label: 'Tempo Medio',   value: d.avgDays !== '—' ? d.avgDays + 'd' : '—',      col: tempoCol },
+    ];
+    const gap = 3;
+    const kpiW = (CW - gap * (kpis.length - 1)) / kpis.length;
+    const kpiH = 18;
+    let y = kit.y;
+    kpis.forEach((k, i) => {
+      const x = M + i * (kpiW + gap);
+      setFill(COL.white); doc.roundedRect(x, y, kpiW, kpiH, 1.5, 1.5, 'F');
+      setFill(k.col);     doc.rect(x, y, kpiW, 1.4, 'F');
+      setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+      doc.text(txt(k.value), x + kpiW / 2, y + 10, { align: 'center' });
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+      doc.text(txt(k.label.toUpperCase()), x + kpiW / 2, y + 15, { align: 'center' });
+    });
+    kit.y = y + kpiH + 6;
+
+    // ── Top solicitantes: barras horizontais ──
     if (d.topRequesters.length) {
-      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(60, 60, 60);
-      doc.text('Top Solicitantes', 14, y + 4);
-      doc.autoTable({
-        startY: y + 6,
-        head: [['#', 'Solicitante', 'Qtd']],
-        body: d.topRequesters.map(([name, count], i) => [i + 1, name, count]),
-        theme: 'grid',
-        styles: { fontSize: 7, cellPadding: 2 },
-        headStyles: { fillColor: [36, 35, 98], textColor: 255, fontStyle: 'bold' },
-        columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: 60 }, 2: { cellWidth: 15 } },
-        margin: { left: 14 },
-        tableWidth: 83,
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.text(txt('TOP SOLICITANTES'), M, kit.y);
+      kit.y += 4;
+      const max = d.topRequesters[0][1] || 1;
+      const rowH = 6;
+      const labW = 60;
+      d.topRequesters.slice(0, 8).forEach(([name, count]) => {
+        const yy = kit.y;
+        setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+        doc.text(txt(String(name).slice(0, 36)), M, yy + 3.5);
+        const barX = M + labW;
+        const barMax = (CW / 2) - labW;
+        kit.drawBar(barX, yy + 2, barMax, (count / max) * 100, COL.brand2, 2.2);
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+        doc.text(txt(String(count)), barX + barMax + 3, yy + 3.8);
+        kit.y += rowH;
       });
+      kit.y += 3;
     }
 
     // ── Solicitações table ──
@@ -1013,39 +1055,50 @@ async function exportCalPDF() {
       return db2 - da;
     });
 
-    const tblY = d.topRequesters.length ? (doc.lastAutoTable?.finalY || y + 30) + 6 : y + 2;
-    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(60, 60, 60);
-    doc.text('Solicitações de Newsletter', 14, tblY);
+    kit.ensureSpace(24);
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(txt('SOLICITACOES DE NEWSLETTER'), M, kit.y);
+    kit.y += 3;
+
     doc.autoTable({
-      startY: tblY + 2,
-      head: [['Data', 'Título', 'Solicitante', 'Status', 'Urg.', 'Fora Cal.']],
+      startY: kit.y,
+      margin: { left: M, right: M, bottom: 14 },
+      head: [['Data', 'Titulo', 'Solicitante', 'Status', 'Urg.', 'Fora Cal.']],
       body: sorted.map(r => {
         const created = r.createdAt?.toDate ? r.createdAt.toDate() : new Date(r.createdAt || 0);
         return [
-          fmt(created), (r.title || '—').slice(0, 40), (r.requesterName || '—').slice(0, 25),
-          STATUS_LABELS[r.status] || r.status || '—',
+          fmt(created),
+          txt((r.title || '-').slice(0, 40)),
+          txt((r.requesterName || '-').slice(0, 25)),
+          STATUS_LABELS[r.status] || r.status || '-',
           r.urgency ? 'Sim' : '', r.outOfCalendar ? 'Sim' : '',
         ];
       }),
-      theme: 'striped',
-      styles: { fontSize: 7, cellPadding: 2 },
-      headStyles: { fillColor: [36, 35, 98], textColor: 255, fontStyle: 'bold', fontSize: 7 },
-      alternateRowStyles: { fillColor: [245, 245, 250] },
-      columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 60 }, 2: { cellWidth: 40 }, 3: { cellWidth: 22 }, 4: { cellWidth: 12 }, 5: { cellWidth: 16 } },
-      margin: { left: 14, right: 14 },
+      styles: { fontSize: 7, cellPadding: 2, textColor: COL.text },
+      headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 7 },
+      alternateRowStyles: { fillColor: COL.subBg },
+      columnStyles: {
+        0: { cellWidth: 25 }, 1: { cellWidth: 80 }, 2: { cellWidth: 45 },
+        3: { cellWidth: 24 }, 4: { cellWidth: 14 }, 5: { cellWidth: 18 },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 3) {
+          const v = String(data.cell.raw).toLowerCase();
+          data.cell.styles.fontStyle = 'bold';
+          if (v.includes('convert')) data.cell.styles.textColor = COL.green;
+          else if (v.includes('recus')) data.cell.styles.textColor = COL.red;
+          else if (v.includes('agua'))  data.cell.styles.textColor = COL.orange;
+        }
+        if (data.section === 'body' && data.column.index === 4 && data.cell.raw === 'Sim') {
+          data.cell.styles.textColor = COL.red; data.cell.styles.fontStyle = 'bold';
+        }
+        if (data.section === 'body' && data.column.index === 5 && data.cell.raw === 'Sim') {
+          data.cell.styles.textColor = COL.orange; data.cell.styles.fontStyle = 'bold';
+        }
+      },
     });
 
-    // ── Footer ──
-    const pages = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pages; i++) {
-      doc.setPage(i);
-      const H = doc.internal.pageSize.getHeight();
-      doc.setFillColor(36, 35, 98);
-      doc.rect(0, H - 8, W, 8, 'F');
-      doc.setFontSize(6); doc.setTextColor(160, 160, 160);
-      doc.text(`PRIMETOUR — Calendário Editorial · ${dateStr} · Página ${i}/${pages}`, W / 2, H - 3, { align: 'center' });
-    }
-
+    kit.drawFooter('PRIMETOUR  ·  Calendario Editorial');
     doc.save(`primetour_calendario_editorial_${new Date().toISOString().slice(0, 10)}.pdf`);
     toast.success('Calendário editorial exportado (PDF).');
   } catch (e) {
@@ -1053,7 +1106,7 @@ async function exportCalPDF() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⬇ PDF'; }
   }
-}
+});
 
 /* ═══════════════════════════════════════════════════════════
  *  ABA: Calendário Editorial — Dashboard de Newsletter

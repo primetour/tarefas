@@ -10,6 +10,7 @@ import {
   fetchClippings, saveClipping, deleteClipping, fetchUrlMetadata,
   CLIPPING_MEDIA_TYPES, CLIPPING_CONTENT_TYPES, CLIPPING_SENTIMENTS,
 } from '../services/newsMonitor.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1175,72 +1176,98 @@ async function exportClipXls() {
 }
 
 /* ─── Clipping Export PDF ─────────────────────────────────── */
-async function exportClipPdf() {
+const exportClipPdf = withExportGuard(async function exportClipPdf() {
   const items = applyClipClientFilters(allClippings);
   if (!items.length) { toast.error('Nenhum item para exportar.'); return; }
-
-  if (!window.jspdf) {
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      s.onload = res; s.onerror = rej; document.head.appendChild(s);
-    });
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
-      s.onload = res; s.onerror = rej; document.head.appendChild(s);
-    });
-  }
+  await loadJsPdf();
 
   const sentLabel = key => CLIPPING_SENTIMENTS.find(s => s.key === key)?.label || key;
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const SENT_COL = {
+    positive: COL.green, positivo: COL.green,
+    neutral:  COL.muted, neutro:   COL.muted,
+    negative: COL.red,   negativo: COL.red,
+    mixed:    COL.orange, misto:   COL.orange,
+  };
+  const sentColor = key => SENT_COL[(key||'').toLowerCase()] || COL.brand2;
 
-  doc.setFontSize(14); doc.setFont('helvetica', 'bold');
-  doc.setTextColor(36, 35, 98);
-  doc.text('PRIMETOUR — Clipping de Imprensa', 14, 16);
-  doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100);
-  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${items.length} itens`, 14, 22);
+  const kit = createDoc({ orientation: 'portrait', margin: 14 });
+  const { doc, W, M, CW, setFill, setText, setDraw, drawBar, drawChip, wrap } = kit;
 
-  // Store links to make them clickable after table is drawn
-  const linkMap = items.map(i => i.link || '');
+  // Agregação por sentimento
+  const bySent = items.reduce((acc, i) => {
+    const k = i.sentiment || 'neutro'; acc[k] = (acc[k] || 0) + 1; return acc;
+  }, {});
 
-  doc.autoTable({
-    startY: 27,
-    head: [['Título', 'Link', 'Veículo', 'Data', 'Mídia', 'Conteúdo', 'Sentimento']],
-    body: items.map(i => [
-      (i.title || '').slice(0, 55),
-      i.link ? 'Abrir matéria' : '—',
-      i.siteName || '',
-      fmt(i.publishedAt),
-      i.mediaType || '',
-      i.contentType || '',
-      sentLabel(i.sentiment),
-    ]),
-    styles: { fontSize: 8, cellPadding: 3 },
-    headStyles: { fillColor: [36, 35, 98], textColor: 255, fontStyle: 'bold' },
-    columnStyles: {
-      0: { cellWidth: 60 }, 1: { cellWidth: 28, textColor: [0, 102, 204] },
-      2: { cellWidth: 30 }, 3: { cellWidth: 20 },
-      4: { cellWidth: 18 }, 5: { cellWidth: 24 }, 6: { cellWidth: 20 },
-    },
-    alternateRowStyles: { fillColor: [248, 247, 244] },
-    didDrawCell: (data) => {
-      // Add clickable link on the "Link" column (index 1), body rows only
-      if (data.section === 'body' && data.column.index === 1 && linkMap[data.row.index]) {
-        doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height,
-          { url: linkMap[data.row.index] });
-      }
-    },
-    didDrawPage: () => {
-      doc.setFontSize(7); doc.setTextColor(180, 180, 180);
-      doc.text(`PRIMETOUR · p.${doc.getNumberOfPages()}`, 285, 205, { align: 'right' });
-    },
+  kit.drawCover({
+    title: 'Clipping de Imprensa',
+    subtitle: 'PRIMETOUR  ·  Menções na Mídia',
+    meta: `${items.length} ${items.length === 1 ? 'matéria' : 'matérias'}  ·  ${new Date().toLocaleDateString('pt-BR')}`,
   });
 
+  // Strip por sentimento
+  const sentEntries = Object.entries(bySent);
+  if (sentEntries.length) {
+    const bw = (CW - (sentEntries.length - 1) * 3) / sentEntries.length;
+    sentEntries.forEach(([k, n], i) => {
+      const x = M + i * (bw + 3);
+      const col = sentColor(k);
+      setFill(COL.bg); doc.roundedRect(x, kit.y, bw, 20, 1.8, 1.8, 'F');
+      setFill(col);    doc.rect(x, kit.y, bw, 1.6, 'F');
+      setText(COL.text); doc.setFont('helvetica','bold'); doc.setFontSize(16);
+      doc.text(String(n), x + 5, kit.y + 12);
+      setText(col); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+      doc.text(txt(sentLabel(k).toUpperCase()), x + 5, kit.y + 17.5);
+    });
+    kit.addY(25);
+  }
+
+  // Cards de matéria
+  items.forEach((i) => {
+    const sCol = sentColor(i.sentiment);
+    const title = i.title || '(sem título)';
+    const titleLines = wrap(title, CW - 12, 10);
+    const meta = [i.siteName, fmt(i.publishedAt), i.mediaType, i.contentType].filter(Boolean).join('  ·  ');
+    const metaLines = meta ? wrap(meta, CW - 12, 7.8) : [];
+    const cardH = 10 + titleLines.length * 4.2 + metaLines.length * 3.6 + 6;
+
+    kit.ensureSpace(cardH + 2.5);
+    const top = kit.y;
+    setFill(COL.white); setDraw(COL.border); doc.setLineWidth(0.2);
+    doc.roundedRect(M, top, CW, cardH, 1.8, 1.8, 'FD');
+    setFill(sCol); doc.rect(M, top, 2, cardH, 'F');
+
+    // Sent chip topo
+    drawChip(sentLabel(i.sentiment), M + 5, top + 3, sCol, COL.white, 6.5, 2.2, 1.2);
+
+    // Link à direita (se houver)
+    if (i.link) {
+      const lbl = 'ABRIR MATERIA';
+      doc.setFont('helvetica','bold'); doc.setFontSize(6.8); setText(COL.blue);
+      const lw = doc.getTextWidth(lbl) + 5;
+      setDraw(COL.blue); doc.setLineWidth(0.3);
+      doc.roundedRect(W - M - lw, top + 3, lw, 4.5, 1, 1, 'S');
+      doc.text(lbl, W - M - lw + 2.5, top + 6.2);
+      doc.link(W - M - lw, top + 3, lw, 4.5, { url: i.link });
+    }
+
+    // Título
+    kit.y = top + 11;
+    setText(COL.text); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+    doc.text(titleLines, M + 5, kit.y);
+    kit.addY(titleLines.length * 4.2);
+
+    // Meta
+    if (metaLines.length) {
+      setText(COL.muted); doc.setFont('helvetica','normal'); doc.setFontSize(7.8);
+      doc.text(metaLines, M + 5, kit.y);
+    }
+    kit.y = top + cardH + 2.5;
+  });
+
+  kit.drawFooter('PRIMETOUR  ·  Clipping');
   doc.save(`primetour_clipping_${new Date().toISOString().slice(0,10)}.pdf`);
   toast.success('PDF exportado.');
-}
+});
 
 /* ─── Export XLS ───────────────────────────────────────────── */
 async function exportXls() {
@@ -1271,55 +1298,89 @@ async function exportXls() {
 }
 
 /* ─── Export PDF ───────────────────────────────────────────── */
-async function exportPdf() {
+const exportPdf = withExportGuard(async function exportPdf() {
   const items = applyClientFilters(allItems);
   if (!items.length) { toast.error('Nenhum item para exportar.'); return; }
+  await loadJsPdf();
 
-  if (!window.jspdf) {
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      s.onload = res; s.onerror = rej; document.head.appendChild(s);
-    });
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
-      s.onload = res; s.onerror = rej; document.head.appendChild(s);
-    });
-  }
+  const kit = createDoc({ orientation: 'portrait', margin: 14 });
+  const { doc, W, M, CW, setFill, setText, setDraw, drawBar, drawChip, wrap } = kit;
 
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-
-  doc.setFontSize(14); doc.setFont('helvetica','bold');
-  doc.setTextColor(36,35,98);
-  doc.text('PRIMETOUR — Monitoramento de Notícias', 14, 16);
-  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
-  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${items.length} itens`, 14, 22);
-
-  doc.autoTable({
-    startY: 27,
-    head: [['Título','Categoria','Subcategoria','Descrição','Publicado','Validade']],
-    body: items.map(i => [
-      (i.title||'').slice(0,50),
-      i.category||'',
-      i.subcategory||'',
-      (i.description||'').slice(0,80),
-      fmt(i.publishedAt),
-      i.expiresAt ? new Date(i.expiresAt).toLocaleDateString('pt-BR') : '—',
-    ]),
-    styles:      { fontSize: 8, cellPadding: 3 },
-    headStyles:  { fillColor: [36,35,98], textColor: 255, fontStyle:'bold' },
-    columnStyles:{ 0:{cellWidth:55}, 1:{cellWidth:28}, 2:{cellWidth:25}, 3:{cellWidth:75}, 4:{cellWidth:22}, 5:{cellWidth:22} },
-    alternateRowStyles: { fillColor: [248,247,244] },
-    didDrawPage: (data) => {
-      doc.setFontSize(7); doc.setTextColor(180,180,180);
-      doc.text(`PRIMETOUR · p.${doc.getNumberOfPages()}`, 285, 205, { align:'right' });
-    },
+  kit.drawCover({
+    title: 'Monitor de Notícias',
+    subtitle: 'PRIMETOUR  ·  Notícias do Setor',
+    meta: `${items.length} ${items.length === 1 ? 'notícia' : 'notícias'}  ·  ${new Date().toLocaleDateString('pt-BR')}`,
   });
 
+  // Agregação por categoria
+  const byCat = items.reduce((acc, i) => {
+    const k = i.category || '—'; acc[k] = (acc[k] || 0) + 1; return acc;
+  }, {});
+  const catEntries = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0, 6);
+  if (catEntries.length) {
+    setText(COL.muted); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.text(txt('POR CATEGORIA'), M, kit.y); kit.addY(4);
+    const maxN = catEntries[0][1];
+    catEntries.forEach(([cat, n]) => {
+      setText(COL.text); doc.setFont('helvetica','normal'); doc.setFontSize(8);
+      doc.text(txt(cat), M, kit.y);
+      setText(COL.muted); doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
+      doc.text(String(n), W - M, kit.y, { align: 'right' });
+      kit.addY(2);
+      drawBar(M, kit.y, CW, Math.round(n * 100 / maxN), COL.brand2, 1.4);
+      kit.addY(4.5);
+    });
+    kit.addY(4);
+  }
+
+  // Cards de notícia
+  items.forEach(i => {
+    const title = i.title || '(sem título)';
+    const desc = (i.description || '').trim();
+    const titleLines = wrap(title, CW - 12, 10);
+    const descLines  = desc ? wrap(desc, CW - 12, 8) : [];
+    const meta = [i.category, i.subcategory, fmt(i.publishedAt)].filter(Boolean).join('  ·  ');
+    const metaLines  = meta ? wrap(meta, CW - 12, 7.5) : [];
+    const cardH = 10 + titleLines.length * 4.2 + descLines.length * 3.6 + metaLines.length * 3.4 + 6;
+
+    kit.ensureSpace(cardH + 2.5);
+    const top = kit.y;
+    setFill(COL.white); setDraw(COL.border); doc.setLineWidth(0.2);
+    doc.roundedRect(M, top, CW, cardH, 1.8, 1.8, 'FD');
+    setFill(COL.brand2); doc.rect(M, top, 2, cardH, 'F');
+
+    // Categoria chip
+    if (i.category) drawChip(i.category, M + 5, top + 3, COL.brand2, COL.white, 6.5, 2.2, 1.2);
+
+    // Validade à direita (se houver)
+    if (i.expiresAt) {
+      const exp = new Date(i.expiresAt);
+      const isSoon = (exp - Date.now()) < 7 * 24 * 3600 * 1000;
+      const valCol = isSoon ? COL.orange : COL.muted;
+      setText(valCol); doc.setFont('helvetica','bold'); doc.setFontSize(6.8);
+      doc.text(txt(`VALIDADE ${exp.toLocaleDateString('pt-BR')}`), W - M - 2, top + 6, { align: 'right' });
+    }
+
+    kit.y = top + 11;
+    setText(COL.text); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+    doc.text(titleLines, M + 5, kit.y);
+    kit.addY(titleLines.length * 4.2);
+
+    if (descLines.length) {
+      setText(COL.text); doc.setFont('helvetica','normal'); doc.setFontSize(8);
+      doc.text(descLines, M + 5, kit.y);
+      kit.addY(descLines.length * 3.6);
+    }
+    if (metaLines.length) {
+      setText(COL.muted); doc.setFont('helvetica','italic'); doc.setFontSize(7.5);
+      doc.text(metaLines, M + 5, kit.y);
+    }
+    kit.y = top + cardH + 2.5;
+  });
+
+  kit.drawFooter('PRIMETOUR  ·  Notícias');
   doc.save(`primetour_noticias_${new Date().toISOString().slice(0,10)}.pdf`);
   toast.success('PDF exportado.');
-}
+});
 
 

@@ -9,6 +9,7 @@ import {
   collection, getDocs, query, orderBy, limit, where, doc, getDoc,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from '../firebase.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 import { CWV_LABELS, CATEGORY_COLORS, GLOSSARY } from '../services/pageSpeed.js';
 import {
   fetchSites, createSite, deleteSite, runAuditAndSave,
@@ -1236,98 +1237,114 @@ async function exportXLSX() {
 }
 
 /* ─── Export PDF ──────────────────────────────────────────── */
-async function exportPDF() {
+const exportPDF = withExportGuard(async function exportPDF() {
   const btn = document.getElementById('ga-export-pdf');
-  if (btn) { btn.disabled=true; btn.textContent='…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
   try {
-    if (!window.jspdf) {
-      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
-      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
+    await loadJsPdf();
+    if (!window.jspdf?.jsPDF?.API?.autoTable) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
     }
 
-    const sorted = [...allData].sort((a,b) => b._date - a._date);
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-    const W   = doc.internal.pageSize.getWidth();
-    const H   = doc.internal.pageSize.getHeight();
-    const date = new Date().toLocaleDateString('pt-BR');
-    const prop = filterProp ? (properties.find(p=>p.id===filterProp)?.label || filterProp) : 'Todas as propriedades';
+    const sorted = [...allData].sort((a, b) => b._date - a._date);
+    const prop   = filterProp ? (properties.find(p => p.id === filterProp)?.label || filterProp) : 'Todas as propriedades';
 
-    // ── Header ──
-    doc.setFillColor(212,168,67);
-    doc.rect(0, 0, W, 3, 'F');
-    doc.setFillColor(36,35,98);
-    doc.rect(0, 3, W, 20, 'F');
-    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-    doc.text('PRIMETOUR', 14, 14);
-    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(212,168,67);
-    doc.text('Performance Google Analytics', 14, 19);
-    doc.setTextColor(200,200,200);
-    doc.text(`${prop}  ·  ${date}  ·  ${sorted.length} dias`, W-14, 19, {align:'right'});
+    const kit = createDoc({ orientation: 'landscape', margin: 14 });
+    const { doc, W, M, CW, setFill, setText } = kit;
+
+    kit.drawCover({
+      title: 'Performance Google Analytics',
+      subtitle: 'PRIMETOUR  ·  GA4',
+      meta: `${sorted.length} dias  ·  ${prop}`,
+      compact: true,
+    });
 
     // ── KPIs ──
-    const pt = periodTotals;
-    const sum = key => allData.reduce((a,r) => a+(Number(r[key])||0), 0);
-    const avg = key => { const vals=allData.map(r=>r[key]).filter(v=>v!=null&&!isNaN(v)); return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0; };
+    const pt  = periodTotals;
+    const sum = key => allData.reduce((a, r) => a + (Number(r[key]) || 0), 0);
+    const avg = key => {
+      const vals = allData.map(r => r[key]).filter(v => v != null && !isNaN(v));
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    };
+    const bounce = (pt?.bounceRate ?? avg('bounceRate')) * 100;
+    const engag  = (pt?.engagementRate ?? avg('engagementRate')) * 100;
     const kpis = [
-      { label:'Usuários',     value:num(pt?.totalUsers ?? pt?.activeUsers ?? sum('activeUsers')), color:[56,189,248]  },
-      { label:'Sessões',      value:num(pt?.sessions ?? sum('sessions')),                      color:[167,139,250] },
-      { label:'Visualizações',value:num(pt?.screenPageViews ?? sum('screenPageViews')),         color:[34,197,94]   },
-      { label:'Tx. Rejeição', value:pct((pt?.bounceRate ?? avg('bounceRate'))*100),             color:[239,68,68]   },
-      { label:'Duração',      value:dur(pt?.avgSessionDuration ?? avg('avgSessionDuration')),   color:[212,168,67]  },
-      { label:'Engajamento',  value:pct((pt?.engagementRate ?? avg('engagementRate'))*100),     color:[56,189,248]  },
+      { label: 'Usuarios',       value: num(pt?.totalUsers ?? pt?.activeUsers ?? sum('activeUsers')), col: COL.blue   },
+      { label: 'Sessoes',        value: num(pt?.sessions ?? sum('sessions')),                         col: COL.brand2 },
+      { label: 'Visualizacoes',  value: num(pt?.screenPageViews ?? sum('screenPageViews')),           col: COL.green  },
+      { label: 'Tx. Rejeicao',   value: pct(bounce),
+        col: bounce > 60 ? COL.red : bounce > 40 ? COL.orange : COL.green },
+      { label: 'Duracao',        value: dur(pt?.avgSessionDuration ?? avg('avgSessionDuration')),     col: COL.gold   },
+      { label: 'Engajamento',    value: pct(engag),
+        col: engag >= 60 ? COL.green : engag >= 40 ? COL.orange : COL.red },
     ];
-    let y = 28;
-    const kpiW = (W - 28 - (kpis.length-1)*3) / kpis.length;
-    kpis.forEach((k,i) => {
-      const x = 14 + i*(kpiW+3);
-      doc.setFillColor(...k.color);
-      doc.roundedRect(x, y, kpiW, 16, 2, 2, 'F');
-      doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-      doc.text(k.value, x+kpiW/2, y+7, {align:'center'});
-      doc.setFontSize(5.5); doc.setFont('helvetica','normal');
-      doc.text(k.label, x+kpiW/2, y+12.5, {align:'center'});
+    const gap = 3;
+    const kpiW = (CW - gap * (kpis.length - 1)) / kpis.length;
+    const kpiH = 18;
+    let y = kit.y;
+    kpis.forEach((k, i) => {
+      const x = M + i * (kpiW + gap);
+      setFill(COL.white); doc.roundedRect(x, y, kpiW, kpiH, 1.5, 1.5, 'F');
+      setFill(k.col);     doc.rect(x, y, kpiW, 1.4, 'F');
+      setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+      doc.text(txt(k.value), x + kpiW / 2, y + 10, { align: 'center' });
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+      doc.text(txt(k.label.toUpperCase()), x + kpiW / 2, y + 15, { align: 'center' });
     });
-    y += 22;
+    kit.y = y + kpiH + 6;
 
     // ── Chart capture ──
     const chartCanvas = document.getElementById('ga-chart-users');
     if (chartCanvas) {
       try {
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+        doc.text(txt('EVOLUCAO DIARIA'), M, kit.y);
+        kit.y += 3;
         const imgData = chartCanvas.toDataURL('image/png');
-        const cw = W - 28;
-        const ch = cw * 0.35;
-        doc.addImage(imgData, 'PNG', 14, y, cw, ch);
-        y += ch + 6;
+        const cw = CW;
+        const ch = cw * 0.32;
+        kit.ensureSpace(ch + 4);
+        doc.addImage(imgData, 'PNG', M, kit.y, cw, ch);
+        kit.y += ch + 6;
       } catch {}
     }
 
     // ── Daily table ──
-    const head = [['Data','Usuários','Novos','Sessões','Views','Rejeição','Duração','Engajamento','Eventos','Conversões']];
+    kit.ensureSpace(30);
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(txt('DETALHE DIARIO'), M, kit.y);
+    kit.y += 3;
+
+    const head = [['Data', 'Usuarios', 'Novos', 'Sessoes', 'Views', 'Rejeicao', 'Duracao', 'Engajamento', 'Eventos', 'Conversoes']];
     const body = sorted.map(r => [
       fmt(r._date), num(r.activeUsers), num(r.newUsers), num(r.sessions),
-      num(r.screenPageViews), pct((r.bounceRate||0)*100), dur(r.avgSessionDuration),
-      pct((r.engagementRate||0)*100), num(r.eventsCount), num(r.conversions),
+      num(r.screenPageViews), pct((r.bounceRate || 0) * 100), dur(r.avgSessionDuration),
+      pct((r.engagementRate || 0) * 100), num(r.eventsCount), num(r.conversions),
     ]);
 
     doc.autoTable({
-      head, body, startY: y,
-      styles: { fontSize:7, cellPadding:2.5, overflow:'linebreak' },
-      headStyles: { fillColor:[36,35,98], textColor:255, fontStyle:'bold', fontSize:6.5 },
-      alternateRowStyles: { fillColor:[248,247,244] },
+      head, body, startY: kit.y,
+      margin: { left: M, right: M, bottom: 14 },
+      styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak', textColor: COL.text },
+      headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
+      alternateRowStyles: { fillColor: COL.subBg },
       didParseCell: (data) => {
         if (data.section === 'body') {
-          if (data.column.index === 5) { // bounce
-            const val = parseFloat(String(data.cell.raw).replace('%','').replace(',','.'));
+          if (data.column.index === 5) {
+            const val = parseFloat(String(data.cell.raw).replace('%', '').replace(',', '.'));
             if (!isNaN(val)) {
-              data.cell.styles.textColor = val > 60 ? [239,68,68] : val > 40 ? [212,168,67] : [34,197,94];
+              data.cell.styles.textColor = val > 60 ? COL.red : val > 40 ? COL.orange : COL.green;
               data.cell.styles.fontStyle = 'bold';
             }
           }
-          if (data.column.index === 7) { // engagement
-            const val = parseFloat(String(data.cell.raw).replace('%','').replace(',','.'));
+          if (data.column.index === 7) {
+            const val = parseFloat(String(data.cell.raw).replace('%', '').replace(',', '.'));
             if (!isNaN(val)) {
-              data.cell.styles.textColor = val >= 60 ? [34,197,94] : val >= 40 ? [212,168,67] : [239,68,68];
+              data.cell.styles.textColor = val >= 60 ? COL.green : val >= 40 ? COL.orange : COL.red;
               data.cell.styles.fontStyle = 'bold';
             }
           }
@@ -1335,23 +1352,15 @@ async function exportPDF() {
       },
     });
 
-    // ── Footer ──
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i=1;i<=pageCount;i++) {
-      doc.setPage(i);
-      const pH = doc.internal.pageSize.getHeight();
-      doc.setFillColor(36,35,98);
-      doc.rect(0, pH-7, W, 7, 'F');
-      doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
-      doc.text('PRIMETOUR — Google Analytics', 14, pH-2.5);
-      doc.text(`Página ${i}/${pageCount}`, W-14, pH-2.5, {align:'right'});
-    }
-
-    doc.save(`primetour_ga_${new Date().toISOString().slice(0,10)}.pdf`);
+    kit.drawFooter('PRIMETOUR  ·  Google Analytics');
+    doc.save(`primetour_ga_${new Date().toISOString().slice(0, 10)}.pdf`);
     toast.success(`PDF gerado com ${sorted.length} dias.`);
-  } catch(e) { toast.error('Erro PDF: '+e.message); }
-  finally { if(btn){btn.disabled=false;btn.textContent='⬇ PDF';} }
-}
+  } catch (e) {
+    toast.error('Erro PDF: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ PDF'; }
+  }
+});
 
 /* ══════════════════════════════════════════════════════════
    CORE WEB VITALS + SEO (PageSpeed Insights API)

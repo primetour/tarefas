@@ -11,6 +11,7 @@ import {
   checkOverdueSchedules, parseImportRow, resolveImportUsers, batchImportFeedbacks,
   FB_CONTEXTS, FB_TYPES, FB_SCHEDULE_FREQUENCIES,
 } from '../services/feedbacks.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1666,56 +1667,126 @@ async function exportFbXls() {
   toast.success('XLS exportado.');
 }
 
-async function exportFbPdf() {
+const exportFbPdf = withExportGuard(async function exportFbPdf() {
   const items = applyClientFilters(allFeedbacks);
   if (!items.length) { toast.error('Nenhum item para exportar.'); return; }
+  await loadJsPdf();
 
-  if (!window.jspdf) {
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      s.onload = res; s.onerror = rej; document.head.appendChild(s);
-    });
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
-      s.onload = res; s.onerror = rej; document.head.appendChild(s);
-    });
-  }
-
+  // Mapa de cores por tipo (positivo/negativo/reconhecimento/alerta etc.)
+  const TYPE_COL = {
+    positivo:       COL.green,
+    positive:       COL.green,
+    reconhecimento: COL.green,
+    negativo:       COL.orange,
+    constructive:   COL.orange,
+    alerta:         COL.red,
+    critico:        COL.red,
+    desenvolvimento:COL.blue,
+    crescimento:    COL.blue,
+  };
   const typeLabel = key => FB_TYPES.find(t => t.key === key)?.label || key;
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const typeColor = key => TYPE_COL[(key||'').toLowerCase()] || COL.brand2;
 
-  doc.setFontSize(14); doc.setFont('helvetica', 'bold');
-  doc.setTextColor(36, 35, 98);
-  doc.text('PRIMETOUR — Relatório de Feedbacks', 14, 16);
-  doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100);
-  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${items.length} feedbacks`, 14, 22);
+  const kit = createDoc({ orientation: 'portrait', margin: 14 });
+  const { doc, W, M, CW, setFill, setText, setDraw, drawBar, drawChip, wrap } = kit;
 
-  doc.autoTable({
-    startY: 27,
-    head: [['Data', 'Gestor', 'Colaborador', 'Tipo', 'Contexto', 'Tema', 'Destaques', 'A desenvolver']],
-    body: items.map(i => [
-      fmt(i.date), userName(i.managerId), userName(i.collaboratorId),
-      typeLabel(i.type), i.context || '', (i.theme || '').slice(0, 40),
-      (i.highlights || []).join('; ').slice(0, 50),
-      (i.improvements || []).join('; ').slice(0, 50),
-    ]),
-    styles: { fontSize: 7, cellPadding: 2.5 },
-    headStyles: { fillColor: [36, 35, 98], textColor: 255, fontStyle: 'bold' },
-    columnStyles: {
-      0: { cellWidth: 18 }, 1: { cellWidth: 30 }, 2: { cellWidth: 30 },
-      3: { cellWidth: 22 }, 4: { cellWidth: 22 }, 5: { cellWidth: 40 },
-      6: { cellWidth: 50 }, 7: { cellWidth: 50 },
-    },
-    alternateRowStyles: { fillColor: [248, 247, 244] },
-    didDrawPage: () => {
-      doc.setFontSize(7); doc.setTextColor(180, 180, 180);
-      doc.text(`PRIMETOUR · p.${doc.getNumberOfPages()}`, 285, 205, { align: 'right' });
-    },
+  // Stats agregadas
+  const byType = items.reduce((acc, i) => {
+    const k = i.type || '—'; acc[k] = (acc[k] || 0) + 1; return acc;
+  }, {});
+
+  kit.drawCover({
+    title: 'Feedbacks',
+    subtitle: 'PRIMETOUR  ·  Registro de Feedbacks',
+    meta: `${items.length} ${items.length === 1 ? 'registro' : 'registros'}  ·  ${new Date().toLocaleDateString('pt-BR')}`,
   });
 
+  // Strip de tipos (chips coloridas com contagem)
+  const typeEntries = Object.entries(byType);
+  if (typeEntries.length) {
+    setText(COL.muted); doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.text(txt('POR TIPO'), M, kit.y); kit.addY(4);
+    let cx = M;
+    typeEntries.forEach(([k, n]) => {
+      const lbl = `${typeLabel(k)}  ${n}`;
+      const ch = drawChip(lbl, cx, kit.y, typeColor(k), COL.white, 7.2, 3, 1.6);
+      cx += ch.w + 3;
+      if (cx > W - M - 40) { kit.addY(ch.h + 1.5); cx = M; }
+    });
+    kit.addY(10);
+  }
+
+  // Cards individuais
+  items.forEach((fb, idx) => {
+    const tpCol = typeColor(fb.type);
+    const mgr = userName(fb.managerId);
+    const col = userName(fb.collaboratorId);
+    const data = fmt(fb.date);
+    const theme = fb.theme || '';
+    const ctx  = fb.context || '';
+    const hi = (fb.highlights || []).filter(Boolean);
+    const imp = (fb.improvements || []).filter(Boolean);
+
+    // Calcula altura estimada
+    const themeLines = theme ? wrap(theme, CW - 16, 9) : [];
+    const hiLines  = hi.length  ? wrap('• ' + hi.join('   • '),  CW - 18, 8) : [];
+    const impLines = imp.length ? wrap('• ' + imp.join('   • '), CW - 18, 8) : [];
+    const cardH = 14 + themeLines.length*4 + (hiLines.length + impLines.length)*3.6 + 10;
+
+    kit.ensureSpace(cardH + 4);
+
+    const top = kit.y;
+    // Card
+    setFill(COL.white); setDraw(COL.border); doc.setLineWidth(0.2);
+    doc.roundedRect(M, top, CW, cardH, 2, 2, 'FD');
+    // Barra colorida lateral
+    setFill(tpCol); doc.rect(M, top, 2, cardH, 'F');
+
+    // Header: data + tipo chip
+    kit.y = top + 5;
+    setText(COL.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6.8);
+    doc.text(txt(String(idx + 1).padStart(2, '0')), M + 5, kit.y);
+    const numW = doc.getTextWidth(String(idx + 1).padStart(2, '0')) + 2;
+    setText(COL.text); doc.setFont('helvetica','bold'); doc.setFontSize(8.2);
+    doc.text(txt(data), M + 5 + numW, kit.y);
+    const dataW = doc.getTextWidth(txt(data)) + 3;
+    drawChip(typeLabel(fb.type), M + 5 + numW + dataW, top + 2.8, tpCol, COL.white, 6.8, 2.4, 1.3);
+
+    // Tema (título grande)
+    kit.y = top + 10;
+    if (themeLines.length) {
+      setText(COL.text); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+      doc.text(themeLines, M + 5, kit.y);
+      kit.addY(themeLines.length * 4);
+    }
+
+    // Gestor → Colaborador (linha)
+    setText(COL.muted); doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
+    const gcLine = `${mgr}  ·  para  ·  ${col}${ctx ? '   ·   ' + ctx : ''}`;
+    doc.text(txt(gcLine), M + 5, kit.y);
+    kit.addY(4);
+
+    // Destaques (verde)
+    if (hiLines.length) {
+      setText(COL.green); doc.setFont('helvetica','bold'); doc.setFontSize(6.5);
+      doc.text(txt('DESTAQUES'), M + 5, kit.y); kit.addY(2.8);
+      setText(COL.text); doc.setFont('helvetica','normal'); doc.setFontSize(8);
+      doc.text(hiLines, M + 7, kit.y);
+      kit.addY(hiLines.length * 3.6 + 1);
+    }
+    // Desenvolver (laranja)
+    if (impLines.length) {
+      setText(COL.orange); doc.setFont('helvetica','bold'); doc.setFontSize(6.5);
+      doc.text(txt('A DESENVOLVER'), M + 5, kit.y); kit.addY(2.8);
+      setText(COL.text); doc.setFont('helvetica','normal'); doc.setFontSize(8);
+      doc.text(impLines, M + 7, kit.y);
+      kit.addY(impLines.length * 3.6 + 1);
+    }
+
+    kit.y = top + cardH + 3;
+  });
+
+  kit.drawFooter('PRIMETOUR  ·  Feedbacks');
   doc.save(`primetour_feedbacks_${new Date().toISOString().slice(0, 10)}.pdf`);
   toast.success('PDF exportado.');
-}
+});

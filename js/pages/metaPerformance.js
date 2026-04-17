@@ -9,6 +9,7 @@ import {
   collection, getDocs, query, orderBy, limit, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from '../firebase.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num  = v => (v != null ? Number(v).toLocaleString('pt-BR') : '—');
@@ -675,85 +676,142 @@ async function exportXLSX() {
 }
 
 /* ─── Export PDF ──────────────────────────────────────────── */
-async function exportPDF() {
+const exportPDF = withExportGuard(async function exportPDF() {
   const btn = document.getElementById('meta-export-pdf');
-  if (btn) { btn.disabled=true; btn.textContent='…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
   try {
-    if (!window.jspdf) {
-      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
-      await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js'; s.onload=res;s.onerror=rej;document.head.appendChild(s); });
+    await loadJsPdf();
+    // autotable só é necessária para a tabela detalhada no final
+    if (!window.jspdf?.jsPDF?.API?.autoTable) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
     }
+
     const rows   = getRows();
     const haAcct = !filterAcct;
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-    const W   = doc.internal.pageSize.getWidth();
-    const acct = filterAcct ? `@${filterAcct}` : 'Todas as contas';
-    const date = new Date().toLocaleDateString('pt-BR');
+    const acct   = filterAcct ? `@${filterAcct}` : 'Todas as contas';
+    const periodLabel = (PERIODS.find(p => p.value === String(filterPeriod))?.label) || '';
 
-    // ── Header ──
-    doc.setFillColor(212,168,67);
-    doc.rect(0, 0, W, 3, 'F');
-    doc.setFillColor(36,35,98);
-    doc.rect(0, 3, W, 20, 'F');
-    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-    doc.text('PRIMETOUR', 14, 14);
-    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(212,168,67);
-    doc.text('Performance Redes Sociais', 14, 19);
-    doc.setTextColor(200,200,200);
-    doc.text(`${acct}  ·  ${date}  ·  ${rows.length} posts`, W-14, 19, {align:'right'});
+    const kit = createDoc({ orientation: 'landscape', margin: 14 });
+    const { doc, W, M, CW, setFill, setText } = kit;
 
-    // ── KPIs ──
-    const avg = key => { const vals=rows.map(r=>r[key]).filter(v=>v!=null&&!isNaN(v)); return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0; };
-    const sumK = key => rows.reduce((a,r)=>a+(Number(r[key])||0), 0);
-    const best = rows.reduce((a,r)=>(r.reach||0)>(a.reach||0)?r:a, rows[0]||{});
-    const kpis = [
-      { label:'Posts',           value:String(rows.length),               color:[56,189,248]  },
-      { label:'Alcance médio',   value:num(Math.round(avg('reach'))),     color:[167,139,250] },
-      { label:'Engaj. médio',    value:pct(avg('engagementRate')),        color:[34,197,94]   },
-      { label:'Curtidas',        value:num(sumK('likes')),                color:[239,68,68]   },
-      { label:'Saves',           value:num(sumK('saved')),                color:[212,168,67]  },
-      { label:'Maior alcance',   value:num(best?.reach||0),              color:[56,189,248]  },
-    ];
-    let y = 28;
-    const kpiW = (W - 28 - (kpis.length-1)*3) / kpis.length;
-    kpis.forEach((k,i) => {
-      const x = 14 + i*(kpiW+3);
-      doc.setFillColor(...k.color);
-      doc.roundedRect(x, y, kpiW, 16, 2, 2, 'F');
-      doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-      doc.text(k.value, x+kpiW/2, y+7, {align:'center'});
-      doc.setFontSize(5.5); doc.setFont('helvetica','normal');
-      doc.text(k.label, x+kpiW/2, y+12.5, {align:'center'});
+    kit.drawCover({
+      title: 'Performance Redes Sociais',
+      subtitle: 'PRIMETOUR  ·  Meta Graph API',
+      meta: `${rows.length} posts  ·  ${periodLabel || 'período'}`,
+      compact: true,
     });
-    y += 22;
 
-    // ── Tabela ──
+    // sub-linha com conta filtrada
+    setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+    doc.text(txt(acct), M, kit.y);
+    kit.addY(6);
+
+    // ── KPIs strip ──
+    const avg = key => {
+      const vals = rows.map(r => r[key]).filter(v => v != null && !isNaN(v));
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    };
+    const sumK = key => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
+    const best = rows.reduce((a, r) => (r.reach || 0) > (a.reach || 0) ? r : a, rows[0] || {});
+
+    const kpis = [
+      { label: 'Posts',          value: String(rows.length),            col: COL.blue  },
+      { label: 'Alcance medio',  value: num(Math.round(avg('reach'))),  col: COL.brand2},
+      { label: 'Engaj. medio',   value: pct(avg('engagementRate')),     col: COL.green },
+      { label: 'Curtidas',       value: num(sumK('likes')),             col: COL.red   },
+      { label: 'Saves',          value: num(sumK('saved')),             col: COL.gold  },
+      { label: 'Maior alcance',  value: num(best?.reach || 0),          col: COL.blue  },
+    ];
+    const gap = 3;
+    const kpiW = (CW - gap * (kpis.length - 1)) / kpis.length;
+    const kpiH = 18;
+    const kpiY = kit.y;
+    kpis.forEach((k, i) => {
+      const x = M + i * (kpiW + gap);
+      setFill(COL.white); doc.roundedRect(x, kpiY, kpiW, kpiH, 1.5, 1.5, 'F');
+      setFill(k.col);     doc.rect(x, kpiY, kpiW, 1.4, 'F');
+      setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+      doc.text(txt(k.value), x + kpiW / 2, kpiY + 10, { align: 'center' });
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+      doc.text(txt(k.label.toUpperCase()), x + kpiW / 2, kpiY + 15, { align: 'center' });
+    });
+    kit.y = kpiY + kpiH + 6;
+
+    // ── TOP 5 posts em cards ──
+    if (rows.length) {
+      const top = [...rows]
+        .sort((a, b) => (b.engagementRate || 0) - (a.engagementRate || 0))
+        .slice(0, 5);
+
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.text(txt('DESTAQUES POR ENGAJAMENTO'), M, kit.y);
+      setText(COL.gold); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+      doc.text(txt('— top 5 posts do período'), M + 62, kit.y);
+      kit.y += 4;
+
+      const cardW = (CW - gap * (top.length - 1)) / top.length;
+      const cardH = 32;
+      const cy = kit.y;
+      top.forEach((r, i) => {
+        const x = M + i * (cardW + gap);
+        setFill(COL.subBg); doc.roundedRect(x, cy, cardW, cardH, 1.5, 1.5, 'F');
+        setFill(COL.gold);  doc.rect(x, cy, cardW, 1.2, 'F');
+
+        // rank
+        setText(COL.gold); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+        doc.text(txt(`#${i + 1}  ${r.mediaType || ''}`.toUpperCase()), x + 3, cy + 5.5);
+        // engajamento %
+        setText(COL.green); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+        doc.text(txt(pct(r.engagementRate)), x + cardW - 3, cy + 11, { align: 'right' });
+        // data
+        setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+        doc.text(txt(fmt(r.postedAt)), x + 3, cy + 11);
+        // legenda
+        setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+        const cap = kit.wrap(r.caption || '(sem legenda)', cardW - 6, 7).slice(0, 3);
+        doc.text(cap, x + 3, cy + 16);
+        // métricas miúdas
+        setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
+        doc.text(txt(`alc ${num(r.reach)}  ·  lk ${num(r.likes)}  ·  cm ${num(r.comments)}`), x + 3, cy + cardH - 2);
+      });
+      kit.y = cy + cardH + 6;
+    }
+
+    // ── Tabela detalhada ──
+    kit.ensureSpace(40);
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(txt('TODOS OS POSTS'), M, kit.y);
+    kit.y += 3;
+
     const head = [[
-      ...(haAcct?['Conta']:[]),
-      'Data','Tipo','Legenda','Alcance','Curtidas','Coment.','Saves','Plays','Engaj.','% Engaj.',
+      ...(haAcct ? ['Conta'] : []),
+      'Data', 'Tipo', 'Legenda', 'Alcance', 'Curtidas', 'Coment.', 'Saves', 'Plays', 'Engaj.', '% Engaj.',
     ]];
     const body = rows.map(r => [
-      ...(haAcct?[`@${r.accountHandle}`]:[]),
-      fmt(r.postedAt), r.mediaType||'—', (r.caption||'').slice(0,50),
+      ...(haAcct ? [`@${r.accountHandle}`] : []),
+      fmt(r.postedAt), r.mediaType || '-', txt((r.caption || '').slice(0, 60)),
       num(r.reach), num(r.likes), num(r.comments),
-      num(r.saved), r.mediaType==='Reel'?num(r.plays):'—',
+      num(r.saved), r.mediaType === 'Reel' ? num(r.plays) : '-',
       num(r.engagement), pct(r.engagementRate),
     ]);
 
     doc.autoTable({
-      head, body, startY: y,
-      styles: { fontSize:7, cellPadding:2.5, overflow:'linebreak' },
-      headStyles: { fillColor:[36,35,98], textColor:255, fontStyle:'bold', fontSize:6.5 },
-      alternateRowStyles: { fillColor:[248,247,244] },
+      head, body, startY: kit.y,
+      margin: { left: M, right: M, bottom: 14 },
+      styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak', textColor: COL.text },
+      headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
+      alternateRowStyles: { fillColor: COL.subBg },
       didParseCell: (data) => {
         if (data.section === 'body') {
-          const colIdx = data.column.index - (haAcct?1:0);
-          // Colorir engajamento
+          const colIdx = data.column.index - (haAcct ? 1 : 0);
           if (colIdx === 9) {
-            const val = parseFloat(String(data.cell.raw).replace('%','').replace(',','.'));
+            const val = parseFloat(String(data.cell.raw).replace('%', '').replace(',', '.'));
             if (!isNaN(val)) {
-              data.cell.styles.textColor = val >= 3 ? [34,197,94] : val >= 1 ? [212,168,67] : [239,68,68];
+              data.cell.styles.textColor = val >= 3 ? COL.green : val >= 1 ? COL.gold : COL.red;
               data.cell.styles.fontStyle = 'bold';
             }
           }
@@ -761,20 +819,12 @@ async function exportPDF() {
       },
     });
 
-    // ── Footer ──
-    const pageCount = doc.internal.getNumberOfPages();
-    for (let i=1;i<=pageCount;i++) {
-      doc.setPage(i);
-      const pH = doc.internal.pageSize.getHeight();
-      doc.setFillColor(36,35,98);
-      doc.rect(0, pH-7, W, 7, 'F');
-      doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
-      doc.text('PRIMETOUR — Performance Redes Sociais', 14, pH-2.5);
-      doc.text(`Página ${i}/${pageCount}`, W-14, pH-2.5, {align:'right'});
-    }
-
-    doc.save(`primetour_instagram_${new Date().toISOString().slice(0,10)}.pdf`);
+    kit.drawFooter('PRIMETOUR  ·  Performance Redes Sociais');
+    doc.save(`primetour_instagram_${new Date().toISOString().slice(0, 10)}.pdf`);
     toast.success(`PDF gerado com ${rows.length} posts.`);
-  } catch(e) { toast.error('Erro PDF: '+e.message); }
-  finally { if(btn){btn.disabled=false;btn.textContent='⬇ PDF';} }
-}
+  } catch (e) {
+    toast.error('Erro PDF: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ PDF'; }
+  }
+});
