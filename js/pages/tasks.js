@@ -82,6 +82,7 @@ export async function renderTasks(container) {
         <button class="btn btn-secondary btn-sm" id="tasks-export-xls">\u2193 XLS</button>
         <button class="btn btn-secondary btn-sm" id="tasks-export-pdf">\u2193 PDF</button>
         <button class="btn btn-secondary btn-sm" id="email-task-btn" title="Criar tarefa a partir de email">📧 Email → Tarefa</button>
+        <a class="btn btn-secondary" id="new-request-btn" href="solicitar.html" target="_blank" rel="noopener" title="Abrir portal de solicitações para pedir uma demanda a outro time">📨 Solicitação</a>
         <button class="btn btn-primary" id="new-task-btn">+ Nova Tarefa</button>
       </div>
     </div>

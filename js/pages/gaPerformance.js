@@ -77,6 +77,24 @@ let filterDays   = '28';
 let sortKey      = 'date';
 let sortDir      = -1;
 let hiddenRows   = new Set();
+
+/* Paginação de tabelas (Páginas/Blog/Origens/Países) */
+const PAGE_SIZE = 50;
+let pagesPage    = 1;
+let blogPage     = 1;
+let sourcesPage  = 1;
+let countriesPage = 1;
+
+/* Blog — padrão configurável via localStorage (string com termos separados por vírgula) */
+const BLOG_PATTERN_KEY = 'ga:blog-pattern';
+const DEFAULT_BLOG_PATTERN = '/blog';
+function getBlogPattern() {
+  try { return (localStorage.getItem(BLOG_PATTERN_KEY) || DEFAULT_BLOG_PATTERN).trim(); }
+  catch { return DEFAULT_BLOG_PATTERN; }
+}
+function setBlogPattern(v) {
+  try { localStorage.setItem(BLOG_PATTERN_KEY, String(v || '').trim()); } catch (_) {}
+}
 let syncMeta     = null;
 let periodTotals = null;
 
@@ -186,6 +204,7 @@ export async function renderGaPerformance(container) {
 
       <!-- Data table -->
       <div class="card" style="padding:0;overflow:hidden;">
+        <div id="ga-table-toolbar"></div>
         <div style="overflow-x:auto;max-height:60vh;overflow-y:auto;">
           <table id="ga-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:0.8125rem;">
             <thead id="ga-thead"></thead>
@@ -196,6 +215,7 @@ export async function renderGaPerformance(container) {
             </tbody>
           </table>
         </div>
+        <div id="ga-pagination"></div>
       </div>
     </div>
 
@@ -561,10 +581,18 @@ function thInfo(label, tip) {
 }
 
 /* ─── Tab-based table rendering ──────────────────────────── */
+let currentTab = 'daily';
 function renderTable(tab = 'daily') {
   const thead = document.getElementById('ga-thead');
   const tbody = document.getElementById('ga-tbody');
   if (!thead || !tbody) return;
+  currentTab = tab;
+
+  // Limpa toolbar/pagination entre abas
+  const toolbar = document.getElementById('ga-table-toolbar');
+  const pager   = document.getElementById('ga-pagination');
+  if (toolbar) toolbar.innerHTML = '';
+  if (pager)   pager.innerHTML   = '';
 
   const thStyle = `padding:10px 12px;font-size:0.6875rem;font-weight:600;text-transform:uppercase;
     letter-spacing:.05em;white-space:nowrap;border-bottom:1px solid var(--border-subtle);
@@ -572,20 +600,104 @@ function renderTable(tab = 'daily') {
 
   if (tab === 'daily')    renderDailyTable(thead, tbody, thStyle);
   if (tab === 'pages')    renderPagesTable(thead, tbody, thStyle);
-  if (tab === 'blog')     renderBlogTable(thead, tbody, thStyle);
+  if (tab === 'blog')     { renderBlogToolbar(); renderBlogTable(thead, tbody, thStyle); }
   if (tab === 'sources')  renderSourcesTable(thead, tbody, thStyle);
   if (tab === 'devices')  renderDevicesTable(thead, tbody, thStyle);
   if (tab === 'countries') renderCountriesTable(thead, tbody, thStyle);
 }
 
+/* Toolbar com input configurável de padrão do blog */
+function renderBlogToolbar() {
+  const el = document.getElementById('ga-table-toolbar');
+  if (!el) return;
+  const current = getBlogPattern();
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+      border-bottom:1px solid var(--border-subtle);background:var(--bg-card);
+      font-size:0.75rem;color:var(--text-muted);flex-wrap:wrap;">
+      <span>Padrão para identificar posts de blog:</span>
+      <input type="text" id="ga-blog-pattern" value="${esc(current)}"
+        placeholder="${DEFAULT_BLOG_PATTERN}"
+        title="Termos separados por vírgula. Match por 'contém' em pagePath ou pageTitle. Ex.: /blog, /post, /noticias"
+        style="flex:1;min-width:180px;max-width:360px;padding:4px 8px;font-size:0.75rem;
+          background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text);" />
+      <button class="btn btn-secondary btn-sm" id="ga-blog-apply">Aplicar</button>
+      <button class="btn btn-ghost btn-sm" id="ga-blog-reset" title="Voltar ao padrão /blog">Reset</button>
+      <span style="margin-left:auto;font-size:0.6875rem;opacity:0.75;">Dica: separe termos com vírgula (/blog, /post, /artigos)</span>
+    </div>
+  `;
+  const input = el.querySelector('#ga-blog-pattern');
+  const apply = () => {
+    setBlogPattern(input.value);
+    blogPage = 1;
+    renderTable('blog');
+  };
+  el.querySelector('#ga-blog-apply').addEventListener('click', apply);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+  el.querySelector('#ga-blog-reset').addEventListener('click', () => {
+    setBlogPattern(DEFAULT_BLOG_PATTERN);
+    blogPage = 1;
+    renderTable('blog');
+  });
+}
+
 /**
  * Classifica uma URL como pertencente ao blog.
- * Heurística: path começa com `/blog` (cobre `/blog`, `/blog/`, `/blog/post-x`).
- * Futuramente pode virar configurável via settings.
+ * Heurística configurável via localStorage (`ga:blog-pattern`). Aceita múltiplos
+ * termos separados por vírgula/ponto-e-vírgula/pipe. Default: `/blog`.
+ * Match é por `includes` em pagePath OU em pageTitle (case-insensitive),
+ * o que tolera URLs com prefixo/domínio ou casos onde o termo aparece no título.
  */
-function isBlogPath(pagePath = '') {
-  const p = String(pagePath || '').toLowerCase();
-  return p.startsWith('/blog');
+function isBlogPath(pagePath = '', pageTitle = '') {
+  const pattern = getBlogPattern().toLowerCase();
+  if (!pattern) return false;
+  const path  = String(pagePath  || '').toLowerCase();
+  const title = String(pageTitle || '').toLowerCase();
+  const terms = pattern.split(/[,;|]/).map(s => s.trim()).filter(Boolean);
+  if (!terms.length) return false;
+  return terms.some(t => path.includes(t) || title.includes(t));
+}
+
+/* Helper de paginação genérica */
+function paginate(list, page, size = PAGE_SIZE) {
+  const total = list.length;
+  const pages = Math.max(1, Math.ceil(total / size));
+  const p = Math.min(Math.max(1, page|0), pages);
+  const start = (p - 1) * size;
+  return { items: list.slice(start, start + size), page: p, pages, total, start, size };
+}
+
+/* Render da barra de paginação — insere em #ga-pagination */
+function renderPaginationBar({ page, pages, total, start, size }, onChange) {
+  const el = document.getElementById('ga-pagination');
+  if (!el) return;
+  if (total <= size) { el.innerHTML = ''; return; }
+  const end = Math.min(start + size, total);
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;
+      padding:10px 14px;border-top:1px solid var(--border-subtle);background:var(--bg-card);
+      font-size:0.75rem;color:var(--text-muted);">
+      <div>Exibindo <strong style="color:var(--text);">${start+1}–${end}</strong> de <strong style="color:var(--text);">${total}</strong></div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="btn btn-ghost btn-sm" data-ga-pg="first" ${page===1?'disabled':''} title="Primeira">«</button>
+        <button class="btn btn-ghost btn-sm" data-ga-pg="prev"  ${page===1?'disabled':''} title="Anterior">‹</button>
+        <span style="padding:0 8px;">Página <strong style="color:var(--text);">${page}</strong> de <strong style="color:var(--text);">${pages}</strong></span>
+        <button class="btn btn-ghost btn-sm" data-ga-pg="next"  ${page===pages?'disabled':''} title="Próxima">›</button>
+        <button class="btn btn-ghost btn-sm" data-ga-pg="last"  ${page===pages?'disabled':''} title="Última">»</button>
+      </div>
+    </div>
+  `;
+  el.querySelectorAll('[data-ga-pg]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const act = btn.dataset.gaPg;
+      let next = page;
+      if (act === 'first') next = 1;
+      else if (act === 'prev')  next = page - 1;
+      else if (act === 'next')  next = page + 1;
+      else if (act === 'last')  next = pages;
+      if (next !== page) onChange(next);
+    });
+  });
 }
 
 function renderDailyTable(thead, tbody, thStyle) {
@@ -638,16 +750,19 @@ function renderPagesTable(thead, tbody, thStyle) {
   </tr>`;
 
   // Exclui blog/* — estão na aba dedicada
-  const pages = allPages.filter(r => !isBlogPath(r.pagePath));
+  const pages = allPages.filter(r => !isBlogPath(r.pagePath, r.pageTitle));
   if (!pages.length) { tbody.innerHTML = emptyRow(6); return; }
 
-  tbody.innerHTML = pages.slice(0,50).map((r,i) => `
+  const pager = paginate(pages, pagesPage);
+  pagesPage = pager.page;
+
+  tbody.innerHTML = pager.items.map((r,i) => `
     <tr style="border-bottom:1px solid var(--border-subtle);"
       onmouseover="this.style.background='var(--bg-surface)'"
       onmouseout="this.style.background=''">
       <td style="padding:8px 12px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
         title="${esc(r.pagePath||r.pageTitle||'')}">
-        <span style="color:var(--text-muted);font-size:0.75rem;margin-right:6px;">${i+1}</span>
+        <span style="color:var(--text-muted);font-size:0.75rem;margin-right:6px;">${pager.start + i + 1}</span>
         ${esc(r.pageTitle || r.pagePath || '—')}</td>
       <td style="padding:8px 12px;text-align:right;font-weight:600;">${num(r.screenPageViews)}</td>
       <td style="padding:8px 12px;text-align:right;">${num(r.activeUsers)}</td>
@@ -656,6 +771,8 @@ function renderPagesTable(thead, tbody, thStyle) {
       <td style="padding:8px 12px;text-align:right;${engColor(r.engagementRate)}">${pct((r.engagementRate||0)*100)}</td>
     </tr>
   `).join('');
+
+  renderPaginationBar(pager, (p) => { pagesPage = p; renderTable('pages'); });
 }
 
 function renderBlogTable(thead, tbody, thStyle) {
@@ -668,22 +785,35 @@ function renderBlogTable(thead, tbody, thStyle) {
     <th style="${thStyle}">${thInfo('Engajamento', 'Sessões engajadas que leram este post.')}</th>
   </tr>`;
 
-  const posts = allPages.filter(r => isBlogPath(r.pagePath));
+  const posts = allPages.filter(r => isBlogPath(r.pagePath, r.pageTitle));
   if (!posts.length) {
+    // Amostra de pagePaths pra ajudar o usuário a calibrar o padrão
+    const sample = allPages.slice(0, 8).map(r => r.pagePath || r.pageTitle || '—').filter(Boolean);
+    const sampleHtml = sample.length
+      ? `<div style="margin-top:14px;padding:10px 14px;background:var(--bg-surface);border-radius:6px;
+           display:inline-block;text-align:left;max-width:520px;font-size:0.6875rem;">
+           <div style="font-weight:600;margin-bottom:6px;color:var(--text);">Exemplos de URLs no período:</div>
+           ${sample.map(p => `<div style="color:var(--text-muted);font-family:monospace;">${esc(p)}</div>`).join('')}
+         </div>`
+      : '';
     tbody.innerHTML = `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
-      Nenhum post de blog encontrado no período selecionado.<br>
-      <span style="font-size:0.6875rem;">Critério: URL iniciando com <code>/blog</code></span>
+      Nenhum post encontrado com o padrão <code>${esc(getBlogPattern())}</code>.<br>
+      <span style="font-size:0.6875rem;">Ajuste o padrão acima (ex.: <code>/blog, /post, /artigos</code>) — match por "contém" em URL ou título.</span>
+      ${sampleHtml}
     </td></tr>`;
     return;
   }
 
-  tbody.innerHTML = posts.slice(0,50).map((r,i) => `
+  const pager = paginate(posts, blogPage);
+  blogPage = pager.page;
+
+  tbody.innerHTML = pager.items.map((r,i) => `
     <tr style="border-bottom:1px solid var(--border-subtle);"
       onmouseover="this.style.background='var(--bg-surface)'"
       onmouseout="this.style.background=''">
       <td style="padding:8px 12px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
         title="${esc(r.pagePath||r.pageTitle||'')}">
-        <span style="color:var(--text-muted);font-size:0.75rem;margin-right:6px;">${i+1}</span>
+        <span style="color:var(--text-muted);font-size:0.75rem;margin-right:6px;">${pager.start + i + 1}</span>
         ${esc(r.pageTitle || r.pagePath || '—')}
         <div style="font-size:0.6875rem;color:var(--text-muted);">${esc(r.pagePath||'')}</div>
       </td>
@@ -694,6 +824,8 @@ function renderBlogTable(thead, tbody, thStyle) {
       <td style="padding:8px 12px;text-align:right;${engColor(r.engagementRate)}">${pct((r.engagementRate||0)*100)}</td>
     </tr>
   `).join('');
+
+  renderPaginationBar(pager, (p) => { blogPage = p; renderTable('blog'); });
 }
 
 function renderSourcesTable(thead, tbody, thStyle) {
@@ -710,7 +842,10 @@ function renderSourcesTable(thead, tbody, thStyle) {
   if (!allSources.length) { tbody.innerHTML = emptyRow(7); return; }
 
   const total = allSources.reduce((a,r) => a + (r.sessions||0), 0) || 1;
-  tbody.innerHTML = allSources.slice(0,30).map(r => {
+  const pager = paginate(allSources, sourcesPage);
+  sourcesPage = pager.page;
+
+  tbody.innerHTML = pager.items.map(r => {
     const p = ((r.sessions||0) / total * 100).toFixed(1);
     return `
     <tr style="border-bottom:1px solid var(--border-subtle);"
@@ -728,6 +863,8 @@ function renderSourcesTable(thead, tbody, thStyle) {
       <td style="padding:8px 12px;text-align:right;font-weight:600;color:var(--brand-gold);">${num(r.conversions)}</td>
     </tr>`;
   }).join('');
+
+  renderPaginationBar(pager, (p) => { sourcesPage = p; renderTable('sources'); });
 }
 
 function renderDevicesTable(thead, tbody, thStyle) {
@@ -782,7 +919,10 @@ function renderCountriesTable(thead, tbody, thStyle) {
   if (!allCountries.length) { tbody.innerHTML = emptyRow(6); return; }
 
   const total = allCountries.reduce((a,r) => a + (r.sessions||0), 0) || 1;
-  tbody.innerHTML = allCountries.slice(0,40).map(r => {
+  const pager = paginate(allCountries, countriesPage);
+  countriesPage = pager.page;
+
+  tbody.innerHTML = pager.items.map(r => {
     const p = ((r.sessions||0) / total * 100);
     return `
     <tr style="border-bottom:1px solid var(--border-subtle);"
@@ -796,6 +936,8 @@ function renderCountriesTable(thead, tbody, thStyle) {
       <td style="padding:8px 12px;text-align:right;${engColor(r.engagementRate)}">${pct((r.engagementRate||0)*100)}</td>
     </tr>`;
   }).join('');
+
+  renderPaginationBar(pager, (p) => { countriesPage = p; renderTable('countries'); });
 }
 
 /* ─── Helpers ─────────────────────────────────────────────── */
@@ -850,7 +992,7 @@ async function exportXLSX() {
     window.XLSX.utils.book_append_sheet(wb, ws1, 'Diário');
 
     // Pages sheet (site — sem blog)
-    const sitePages = allPages.filter(r => !isBlogPath(r.pagePath));
+    const sitePages = allPages.filter(r => !isBlogPath(r.pagePath, r.pageTitle));
     if (sitePages.length) {
       const ws2 = window.XLSX.utils.aoa_to_sheet([
         ['Página','Caminho','Visualizações','Usuários','Duração','Rejeição','Engajamento'],
@@ -860,8 +1002,8 @@ async function exportXLSX() {
       window.XLSX.utils.book_append_sheet(wb, ws2, 'Páginas');
     }
 
-    // Blog sheet (posts — /blog/*)
-    const blogPosts = allPages.filter(r => isBlogPath(r.pagePath));
+    // Blog sheet (posts — padrão configurável)
+    const blogPosts = allPages.filter(r => isBlogPath(r.pagePath, r.pageTitle));
     if (blogPosts.length) {
       const wsB = window.XLSX.utils.aoa_to_sheet([
         ['Post','Caminho','Visualizações','Usuários','Duração','Rejeição','Engajamento'],
