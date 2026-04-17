@@ -585,8 +585,18 @@ function buildGoalFormHTML(draft, users) {
   const gestorUsers = users.filter(isGestorRole);
   const gestorOpts = `<option value="">—</option>` +
     gestorUsers.map(u=>`<option value="${esc(u.id)}" ${draft.gestorId===u.id?'selected':''}>${esc(u.name)}</option>`).join('');
+  // Núcleos vêm da coleção dinâmica (store.get('nucleos')) gerenciada em
+  // Setores e Núcleos. Usar n.name como value garante que o filtro de
+  // responsáveis (que compara com u.nucleo, também nome) bata certo.
+  // Fallback para NUCLEOS fixos só se o store ainda não carregou.
+  const dynNucleos = (store.get('nucleos') || [])
+    .map(n => ({ value: n.name, label: n.name, sector: n.sector }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const nucleoList = dynNucleos.length
+    ? dynNucleos
+    : NUCLEOS.map(n => ({ value: n.label, label: n.label }));
   const nucleoOpts = `<option value="">—</option>` +
-    NUCLEOS.map(n=>`<option value="${esc(n.value)}" ${draft.nucleo===n.value?'selected':''}>${esc(n.label)}</option>`).join('');
+    nucleoList.map(n => `<option value="${esc(n.value)}" ${draft.nucleo===n.value?'selected':''}>${esc(n.label)}${n.sector ? ` (${esc(n.sector)})` : ''}</option>`).join('');
 
   return `<div style="display:flex;flex-direction:column;gap:20px;">
 
@@ -1087,19 +1097,13 @@ async function populateSquadsDropdown(draft) {
       const ws = workspaces.find(w => w.id === id);
       if (!ws) return;
 
-      // Auto-fill núcleo: se o nome do sector do squad bate com um NUCLEOS value/label, usa.
-      // Senão, pega o núcleo do primeiro admin/membro como heurística.
+      // Auto-fill núcleo pelo núcleo do primeiro admin/membro do squad
+      // (squad.sector é um setor, não núcleo — não dá pra inferir núcleo dele).
       let nuc = '';
-      const sectorLower = (ws.sector||'').toLowerCase().trim();
-      const nucleoMatch = NUCLEOS.find(n =>
-        n.value === sectorLower || n.label.toLowerCase() === sectorLower);
-      if (nucleoMatch) nuc = nucleoMatch.value;
-      if (!nuc) {
-        const users = store.get('users')||[];
-        const adminId = (ws.adminIds||[])[0] || (ws.members||[])[0];
-        const u = adminId ? users.find(x => x.id === adminId) : null;
-        nuc = userNucleo(u);
-      }
+      const users = store.get('users')||[];
+      const adminId = (ws.adminIds||[])[0] || (ws.members||[])[0];
+      const u = adminId ? users.find(x => x.id === adminId) : null;
+      nuc = userNucleo(u);
       if (nuc) {
         draft.nucleo = nuc;
         const nEl = document.getElementById('gf-nucleo'); if (nEl) nEl.value = nuc;
