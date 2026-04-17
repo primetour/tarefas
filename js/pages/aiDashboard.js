@@ -1317,8 +1317,11 @@ const exportAiDashboardPdf = withExportGuard(async function exportAiDashboardPdf
         for (let j = 0; j < cols && (i + j) < charts.length; j++) {
           const cx = M + j * (colW + gap);
           const ch = charts[i + j];
-          const h = Math.min(cellH, colW * ch.aspect);
-          doc.addImage(ch.img, 'PNG', cx, rowStart, colW, h);
+          // Preserva aspect ratio do canvas (evita esticar)
+          let w = colW, h = colW * ch.aspect;
+          if (h > cellH) { h = cellH; w = cellH / ch.aspect; }
+          const xOff = cx + (colW - w) / 2;
+          doc.addImage(ch.img, 'PNG', xOff, rowStart, w, h);
         }
         kit.y = rowStart + cellH + 5;
       }

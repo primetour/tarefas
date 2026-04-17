@@ -172,11 +172,18 @@ function dedupePagesByPath(pages) {
   for (const r of pages) {
     const key = normalizePath(r.pagePath);
     if (!key) continue;
+    // Sites WordPress com "latest post no home" retornam pagePath=/ mas
+    // pageTitle dinâmico (ex: título do último post publicado). Isso faz
+    // a home aparecer no ranking com o nome do post atual, confundindo
+    // o leitor. Força título fixo quando o path é a raiz.
+    const isRoot = (key === '/');
+    const titleRaw = isRoot ? 'Home (página inicial)' : r.pageTitle;
     const existing = map.get(key);
     if (!existing) {
       map.set(key, {
         ...r,
         pagePath: key,
+        pageTitle: titleRaw,
         _accViews:    r.screenPageViews || 0,
         _accDuration: (r.avgSessionDuration || 0) * (r.screenPageViews || 0),
         _accBounce:   (r.bounceRate       || 0) * (r.screenPageViews || 0),
@@ -190,8 +197,12 @@ function dedupePagesByPath(pages) {
       existing._accDuration += (r.avgSessionDuration || 0) * w;
       existing._accBounce   += (r.bounceRate       || 0) * w;
       existing._accEng      += (r.engagementRate   || 0) * w;
-      // Mantém o título mais informativo
-      if ((r.pageTitle || '').length > (existing.pageTitle || '').length) existing.pageTitle = r.pageTitle;
+      // Para raiz, título fixo; caso contrário mantém o mais informativo.
+      if (isRoot) {
+        existing.pageTitle = 'Home (página inicial)';
+      } else if ((r.pageTitle || '').length > (existing.pageTitle || '').length) {
+        existing.pageTitle = r.pageTitle;
+      }
     }
   }
   // Finaliza taxas como média ponderada por views

@@ -871,13 +871,16 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
   kit.y = y + kpiH + 6;
 
   // ═════ Gráficos capturados do DOM ═════
+  // IMPORTANTE: os <canvas> vivem como filhos dos widgets, com id="canvas-${widgetId}".
+  // document.getElementById('velocity-chart') retorna o DIV wrapper, não o canvas —
+  // e divs não têm toDataURL(), então a captura falhava silenciosamente.
   const chartIds = [
     'velocity-chart', 'time-type-chart',
     'status-donut', 'priority-donut', 'projects-chart',
   ];
   const charts = {};
   for (const cid of chartIds) {
-    const c = document.getElementById(cid);
+    const c = document.getElementById(`canvas-${cid}`);
     if (c && c.width > 0 && c.height > 0) {
       try { charts[cid] = { img: c.toDataURL('image/png', 0.92), aspect: c.height / c.width }; }
       catch (_) {}
@@ -897,14 +900,15 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
     if (vc) doc.text(txt('CRIADAS vs CONCLUIDAS'), M, kit.y);
     if (tt) doc.text(txt('TEMPO MEDIO POR TIPO'), M + wA + 4, kit.y);
     kit.y += 3;
-    if (vc) {
-      const h = Math.min(rowH, wA * vc.aspect);
-      doc.addImage(vc.img, 'PNG', M, kit.y, wA, h);
-    }
-    if (tt) {
-      const h = Math.min(rowH, wB * tt.aspect);
-      doc.addImage(tt.img, 'PNG', M + wA + 4, kit.y, wB, h);
-    }
+    // fitImage: mantém proporção nativa do canvas (sem esticar)
+    const fitImage = (imgObj, slotX, slotW, slotH) => {
+      let w = slotW, h = slotW * imgObj.aspect;
+      if (h > slotH) { h = slotH; w = slotH / imgObj.aspect; }
+      const xOff = slotX + (slotW - w) / 2;
+      doc.addImage(imgObj.img, 'PNG', xOff, kit.y, w, h);
+    };
+    if (vc) fitImage(vc, M,            wA, rowH);
+    if (tt) fitImage(tt, M + wA + 4,   wB, rowH);
     kit.y += rowH + 5;
   }
 
@@ -926,8 +930,11 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
     kit.y += 3;
     titles.forEach((t, i) => {
       const x = M + i * (colW + gap);
-      const h = Math.min(rowH, colW * t.img.aspect);
-      doc.addImage(t.img.img, 'PNG', x, kit.y, colW, h);
+      // Preserva aspect ratio
+      let w = colW, h = colW * t.img.aspect;
+      if (h > rowH) { h = rowH; w = rowH / t.img.aspect; }
+      const xOff = x + (colW - w) / 2;
+      doc.addImage(t.img.img, 'PNG', xOff, kit.y, w, h);
     });
     kit.y += rowH + 5;
   }
