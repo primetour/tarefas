@@ -1965,7 +1965,7 @@ async function exportGoalsPdf() {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(11); setText(COL.gold);
       doc.text(txt(`${pondP}%`), W - M - 3, y + 6, { align: 'right' });
       drawBar(M + 5, y + pilarH - 2.6, CW - 10, pondP, COL.gold, 1.4);
-      y += pilarH + 2;
+      y += pilarH + 5;  // respiro entre barra e objetivo/próximo bloco
 
       // Objetivo do pilar
       if (pilar.objetivo) {
@@ -1973,7 +1973,7 @@ async function exportGoalsPdf() {
         ensureSpace(oLines.length * 3.6 + 2);
         doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); setText(COL.muted);
         doc.text(oLines, M + 6, y);
-        y += oLines.length * 3.6 + 3;
+        y += oLines.length * 3.6 + 4;
       }
 
       // Metas do pilar (no domínio é só "meta"; não existe "sub-meta")
@@ -1999,14 +1999,14 @@ async function exportGoalsPdf() {
         // % à direita
         doc.setFont('helvetica', 'bold'); doc.setFontSize(10); setText(COL.brand2);
         doc.text(txt(`${pondM}%`), W - M - 1, y, { align: 'right' });
-        y += 2.2;
+        y += 2.5;
         drawBar(M + 10, y, CW - 14, pondM, COL.brand2, 1.2);
-        y += 4;
+        y += 7;  // respiro entre barra e texto abaixo
 
         if (smLines.length > 1) {
           doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); setText(COL.text);
           smLines.slice(1).forEach(l => { doc.text(l, M + 10, y); y += 4; });
-          y += 0.5;
+          y += 1.5;
         }
 
         // Descrição
@@ -2015,7 +2015,7 @@ async function exportGoalsPdf() {
           ensureSpace(dLines.length * 3.6 + 2);
           doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); setText(COL.text);
           doc.text(dLines, M + 10, y);
-          y += dLines.length * 3.6 + 2.5;
+          y += dLines.length * 3.6 + 3;
         }
 
         // Campos (KV compactos indentados)
