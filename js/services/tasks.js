@@ -496,20 +496,13 @@ export async function fetchTasks({
   workspaceIds = null,   // null = usa activeWorkspaces do store
   limitN       = 2000,
 } = {}) {
-  // Otimização: filtrar por workspace no Firestore quando possível.
-  // IMPORTANTE: combinar where('workspaceId') + orderBy('order') exige índice
-  // composto no Firestore. Quando filtramos por workspace, ordenamos client-side
-  // para evitar a dependência de índice e o erro failed-precondition para
-  // usuários cujo único workspace ativo dispara essa combinação.
-  const activeIds = workspaceIds ?? store.getActiveWorkspaceIds();
-  const useWsFilter = activeIds && activeIds.length === 1;
-  const constraints = useWsFilter
-    ? [where('workspaceId', '==', activeIds[0]), limit(limitN)]
-    : [orderBy('order', 'asc'), limit(limitN)];
+  // Estratégia: baixar TODAS as tarefas (até limitN) e filtrar client-side
+  // para garantir que tarefas atribuídas em outros workspaces apareçam.
+  // Ver comentário em subscribeToTasks() para detalhes.
+  const constraints = [orderBy('order', 'asc'), limit(limitN)];
   const q = query(collection(db, 'tasks'), ...constraints);
   const snap = await getDocs(q);
   let tasks  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  if (useWsFilter) tasks.sort((a, b) => (a.order || 0) - (b.order || 0));
 
   // Tarefas atribuídas ao usuário sempre são visíveis, independente de workspace/setor
   const currentUid = store.get('currentUser')?.uid;
@@ -587,17 +580,15 @@ export async function fetchArchivedTasks({ limitN = 2000 } = {}) {
 
 /* ─── Real-time listener ─────────────────────────────────── */
 export function subscribeToTasks(callback, filters = {}) {
-  // Otimização: filtrar por workspace no Firestore quando possível.
-  // Limite alto (2000) pra suportar bases grandes sem perder tarefas;
-  // a UI filtra por data/status no cliente — manter limite baixo
-  // escondia tarefas válidas que estavam na "cauda" da ordenação.
-  // IMPORTANTE: where('workspaceId') + orderBy('order') exige índice
-  // composto. Quando filtramos por workspace, ordenamos client-side.
-  const activeIds = store.getActiveWorkspaceIds();
-  const useWsFilter = activeIds && activeIds.length === 1;
-  const constraints = useWsFilter
-    ? [where('workspaceId', '==', activeIds[0]), limit(2000)]
-    : [orderBy('order', 'asc'), limit(2000)];
+  // Estratégia: baixar TODAS as tarefas (até 2000) e filtrar client-side.
+  // Por quê não filtrar server-side por workspaceId?
+  //   1. Tarefas atribuídas ao usuário em OUTROS workspaces deixariam de
+  //      aparecer (o filtro server-side as exclui antes do client poder
+  //      resgatá-las pelo isAssignee()).
+  //   2. where('workspaceId') + orderBy('order') exige índice composto.
+  // Para bases até ~5k tarefas isso é tranquilo; acima disso, refatorar
+  // para duas queries paralelas (workspaceId OR assignees).
+  const constraints = [orderBy('order', 'asc'), limit(2000)];
   const q = query(collection(db, 'tasks'), ...constraints);
 
   let debounceTimer = null;
@@ -605,7 +596,6 @@ export function subscribeToTasks(callback, filters = {}) {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       let tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (useWsFilter) tasks.sort((a, b) => (a.order || 0) - (b.order || 0));
 
       // Tarefas atribuídas ao usuário sempre são visíveis
       const currentUid = store.get('currentUser')?.uid;

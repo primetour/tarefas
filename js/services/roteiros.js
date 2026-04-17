@@ -173,16 +173,23 @@ export function generateDays(startDate, destinations) {
 /* ─── CRUD ────────────────────────────────────────────────── */
 
 export async function fetchRoteiros(filters = {}) {
-  const constraints = [orderBy('updatedAt', 'desc')];
+  // IMPORTANTE: Combinar where('consultantId') + orderBy('updatedAt')
+  // exige índice composto no Firestore. Para usuários não-manager (que
+  // têm o filtro consultantId aplicado), removemos o orderBy do servidor
+  // e ordenamos client-side, evitando o erro failed-precondition.
+  const isNonManager = !store.canManageRoteiros();
+  const uid = store.get('currentUser')?.uid;
+
+  const constraints = [];
+  if (isNonManager && uid) {
+    constraints.push(where('consultantId', '==', uid));
+    // sem orderBy server-side aqui
+  } else {
+    constraints.push(orderBy('updatedAt', 'desc'));
+  }
 
   if (filters.status) {
     constraints.unshift(where('status', '==', filters.status));
-  }
-
-  // Non-managers only see their own
-  if (!store.canManageRoteiros()) {
-    const uid = store.get('currentUser')?.uid;
-    if (uid) constraints.unshift(where('consultantId', '==', uid));
   }
 
   if (filters.limit) {
@@ -191,7 +198,17 @@ export async function fetchRoteiros(filters = {}) {
 
   const q = query(collection(db, COL), ...constraints);
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Ordena client-side quando o orderBy foi removido para evitar índice
+  if (isNonManager) {
+    items.sort((a, b) => {
+      const ta = a.updatedAt?.toMillis?.() ?? a.updatedAt?.seconds ?? 0;
+      const tb = b.updatedAt?.toMillis?.() ?? b.updatedAt?.seconds ?? 0;
+      return tb - ta;
+    });
+  }
+  return items;
 }
 
 export async function fetchRoteiro(id) {

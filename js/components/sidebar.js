@@ -403,10 +403,15 @@ export class Sidebar {
         const wsId = sub.dataset.squadId;
         const ws   = (store.get('userWorkspaces') || []).find(w => w.id === wsId);
         if (!ws) return;
+        // ORDEM CRÍTICA: navegar PRIMEIRO (muda hash síncrono) e só depois
+        // setar activeWorkspaces. Caso contrário, o subscribe de
+        // activeWorkspaces re-renderiza a rota antiga (dashboard) antes
+        // do navigate disparar — race condition que fazia o 1º clique
+        // não responder.
+        router.navigate(`squad?id=${encodeURIComponent(wsId)}`);
         store.set('activeWorkspaces', [wsId]);
         store.set('currentWorkspace', ws);
         saveWorkspaceSelection([wsId], wsId);
-        router.navigate(`squad?id=${encodeURIComponent(wsId)}`);
         this.closeMobile();
         // Atualiza estado visual (ativo / dot)
         this._rerenderSquadsBlock();
