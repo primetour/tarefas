@@ -31,6 +31,18 @@ const userSetor  = u => u?.sector || '';
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtDate = ts => { if(!ts) return '—'; const d=ts?.toDate?ts.toDate():new Date(ts); return d.toLocaleDateString('pt-BR'); };
 
+/**
+ * Distribui 100 entre N itens usando inteiros, garantindo soma exata = 100.
+ * Ex.: n=3 → [34,33,33]; n=7 → [15,15,14,14,14,14,14]. Evita aritmética em
+ * ponto flutuante que deixaria a soma travada em 99.99 ou 100.01.
+ */
+function distributeEqually(n) {
+  if (!n || n < 1) return [];
+  const base = Math.floor(100 / n);
+  const remainder = 100 - base * n;
+  return Array.from({ length: n }, (_, i) => i < remainder ? base + 1 : base);
+}
+
 /** Lista os nomes dos responsáveis (suporta formato novo e legado). */
 function getResponsavelNames(goal, users) {
   const ids = getResponsavelIds(goal);
@@ -605,7 +617,7 @@ function buildGoalFormHTML(draft, users) {
     <!-- Cabeçalho da meta -->
     <div style="background:var(--bg-surface);border-radius:var(--radius-md);padding:18px 20px;">
       <div style="font-size:0.625rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
-        color:var(--brand-gold);margin-bottom:14px;">Dados da Meta</div>
+        color:var(--brand-gold);margin-bottom:14px;">Dados da Avaliação</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div style="grid-column:span 2;">
           <label style="${LBL}">Nome da meta <span style="font-weight:400;color:var(--text-muted);">(identificação para visualização)</span></label>
@@ -683,8 +695,13 @@ function buildGoalFormHTML(draft, users) {
             ⚠ Ponderação dos pilares ≠ 100%
           </div>
         </div>
-        <button type="button" id="gf-add-pilar" class="btn btn-secondary btn-sm"
-          style="font-size:0.8125rem;">+ Pilar</button>
+        <div style="display:flex;gap:6px;">
+          <button type="button" id="gf-distrib-pilares" class="btn btn-ghost btn-sm"
+            title="Distribuir 100% igualmente entre os pilares"
+            style="font-size:0.75rem;">÷ Distribuir igualmente</button>
+          <button type="button" id="gf-add-pilar" class="btn btn-secondary btn-sm"
+            style="font-size:0.8125rem;">+ Pilar</button>
+        </div>
       </div>
       <div id="gf-pilares"></div>
     </div>
@@ -737,8 +754,13 @@ function renderPilarHTML(pilar, pi) {
             ⚠ soma ≠ 100%
           </span>
         </div>
-        <button type="button" class="gf-add-meta btn btn-ghost btn-sm" data-pi="${pi}"
-          style="font-size:0.75rem;">+ Meta</button>
+        <div style="display:flex;gap:4px;">
+          <button type="button" class="gf-distrib-metas btn btn-ghost btn-sm" data-pi="${pi}"
+            title="Distribuir 100% igualmente entre as metas deste pilar"
+            style="font-size:0.75rem;">÷ Distribuir</button>
+          <button type="button" class="gf-add-meta btn btn-ghost btn-sm" data-pi="${pi}"
+            style="font-size:0.75rem;">+ Meta</button>
+        </div>
       </div>
       <div class="gf-metas-list" data-pi="${pi}">
         ${(pilar.metas||[]).map((meta,mi) => renderMetaHTML(meta,pi,mi)).join('')}
@@ -788,6 +810,12 @@ function renderMetaHTML(meta, pi, mi) {
         <input type="text" class="portal-field gf-meta-criterio" data-pi="${pi}" data-mi="${mi}"
           value="${esc(meta.criterio)}" style="width:100%;font-size:0.8125rem;"
           placeholder="Como será medido o sucesso?">
+      </div>
+      <div style="grid-column:span 2;">
+        <label style="${LBL}">Formato de entrega</label>
+        <input type="text" class="portal-field gf-meta-formato" data-pi="${pi}" data-mi="${mi}"
+          value="${esc(meta.formato)}" style="width:100%;font-size:0.8125rem;"
+          placeholder="Ex: relatório, dashboard, apresentação, planilha">
       </div>
       <div>
         <label style="${LBL}">Prazo</label>
@@ -856,12 +884,26 @@ function renderMetaHTML(meta, pi, mi) {
             ⚠ soma ≠ 100%
           </span>
         </div>
-        <button type="button" class="gf-add-kpi btn btn-ghost btn-sm"
-          data-pi="${pi}" data-mi="${mi}" style="font-size:0.75rem;">+ KPI</button>
+        <div style="display:flex;gap:4px;">
+          <button type="button" class="gf-distrib-kpis btn btn-ghost btn-sm"
+            data-pi="${pi}" data-mi="${mi}"
+            title="Distribuir 100% igualmente entre os KPIs desta meta"
+            style="font-size:0.75rem;">÷ Distribuir</button>
+          <button type="button" class="gf-add-kpi btn btn-ghost btn-sm"
+            data-pi="${pi}" data-mi="${mi}" style="font-size:0.75rem;">+ KPI</button>
+        </div>
       </div>
       <div class="gf-kpis-list" data-pi="${pi}" data-mi="${mi}">
         ${(meta.kpis||[]).map((kpi,ki)=>renderKpiHTML(kpi,pi,mi,ki)).join('')}
       </div>
+    </div>
+
+    <!-- Observações -->
+    <div style="margin-top:12px;">
+      <label style="${LBL}">Observações <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
+      <textarea class="portal-field gf-meta-observacoes" data-pi="${pi}" data-mi="${mi}" rows="2"
+        style="width:100%;font-size:0.8125rem;"
+        placeholder="Notas, contexto, premissas, referências…">${esc(meta.observacoes)}</textarea>
     </div>
   </div>`;
 }
@@ -985,6 +1027,33 @@ function wireGoalForm(draft) {
         rerenderPilares();
       });
     });
+    // Novos campos: formato + observacoes
+    pilaresEl.querySelectorAll('.gf-meta-formato').forEach(el => {
+      el.addEventListener('input', () => { draft.pilares[+el.dataset.pi].metas[+el.dataset.mi].formato=el.value; });
+    });
+    pilaresEl.querySelectorAll('.gf-meta-observacoes').forEach(el => {
+      el.addEventListener('input', () => { draft.pilares[+el.dataset.pi].metas[+el.dataset.mi].observacoes=el.value; });
+    });
+    // Distribuir ponderação igualmente entre metas de um pilar
+    pilaresEl.querySelectorAll('.gf-distrib-metas').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const metas = draft.pilares[+btn.dataset.pi].metas;
+        const vals  = distributeEqually(metas.length);
+        metas.forEach((m, i) => { m.ponderacao = vals[i]; });
+        rerenderPilares();
+        toast.success('Metas distribuídas igualmente.');
+      });
+    });
+    // Distribuir pesos igualmente entre KPIs de uma meta
+    pilaresEl.querySelectorAll('.gf-distrib-kpis').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const kpis = draft.pilares[+btn.dataset.pi].metas[+btn.dataset.mi].kpis;
+        const vals = distributeEqually(kpis.length);
+        kpis.forEach((k, i) => { k.peso = vals[i]; });
+        rerenderPilares();
+        toast.success('KPIs distribuídos igualmente.');
+      });
+    });
     // KPIs
     pilaresEl.querySelectorAll('.gf-add-kpi').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1039,6 +1108,13 @@ function wireGoalForm(draft) {
   document.getElementById('gf-add-pilar')?.addEventListener('click', () => {
     draft.pilares.push(emptyPilar());
     rerenderPilares();
+  });
+  // Distribuir ponderação igualmente entre pilares
+  document.getElementById('gf-distrib-pilares')?.addEventListener('click', () => {
+    const vals = distributeEqually(draft.pilares.length);
+    draft.pilares.forEach((p, i) => { p.ponderacao = vals[i]; });
+    rerenderPilares();
+    toast.success('Pilares distribuídos igualmente.');
   });
 
   // Aplica visibilidade inicial baseada no escopo atual

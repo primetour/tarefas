@@ -219,16 +219,30 @@ body {
 
 /* Date input — make calendar icon white on dark background
  * Applies to ALL date inputs (portal + system), regardless of having
- * the .form-input class. In light theme, rule at top resets to default. */
-input[type="date"] {
+ * the .form-input class. In light theme, rule at top resets to default.
+ * Nota: usamos apenas `color-scheme: dark` (UA nativa já renderiza o ícone
+ * em branco). Combinar com `filter: invert(1)` duplicava a inversão e
+ * deixava o ícone preto. */
+input[type="date"],
+input[type="datetime-local"],
+input[type="time"],
+input[type="month"],
+input[type="week"] {
   color-scheme: dark;
 }
-input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(2);
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="week"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.75;
 }
-input[type="date"]::-webkit-calendar-picker-indicator:hover {
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover,
+input[type="month"]::-webkit-calendar-picker-indicator:hover,
+input[type="week"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
 }
 

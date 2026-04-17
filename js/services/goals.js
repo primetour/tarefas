@@ -83,6 +83,7 @@ export function emptyKpi() {
 export function emptyMeta() {
   return {
     titulo: '', descricao: '', ponderacao: 0,
+    criterio: '', formato: '', observacoes: '',
     prazoTipo: 'monthly', prazoCustomInicio: '', prazoCustomFim: '',
     periodicidadeTipo: 'monthly', recorrenciaAval: false,
     kpis: [emptyKpi()],
