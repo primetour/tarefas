@@ -462,8 +462,9 @@ async function loadData() {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - parseInt(filterDays));
 
-    // Determina o período ativo (pra filtrar server-side nas coleções por período)
-    const SYNCED_PERIODS = ['7d','14d','28d','30d','90d'];
+    // Determina o período ativo (pra filtrar server-side nas coleções por período).
+    // Os buckets são os que o sync grava (BREAKDOWN_PERIODS em scripts/ga-sync.js).
+    const SYNCED_PERIODS = ['7d','14d','28d','30d','90d','365d'];
     let activePeriodKey = filterDays + 'd';
     if (!SYNCED_PERIODS.includes(activePeriodKey)) activePeriodKey = '90d';
 

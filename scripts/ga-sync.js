@@ -172,6 +172,7 @@ const BREAKDOWN_PERIODS = [
   { days: 28,  key: '28d' },
   { days: 30,  key: '30d' },
   { days: 90,  key: '90d' },
+  { days: 365, key: '365d'},
 ];
 
 /* ─── Sync: Top pages ─────────────────────────────────────── */
