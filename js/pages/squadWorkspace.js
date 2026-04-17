@@ -502,10 +502,30 @@ function attachEvents() {
   });
 }
 
+/* ─── Carrega lista de usuários se ainda não estiver no store ─ */
+async function ensureUsersLoaded() {
+  let users = store.get('users');
+  if (Array.isArray(users) && users.length) return users;
+  try {
+    const { collection, getDocs, query, orderBy } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const { db } = await import('../firebase.js');
+    const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
+    users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    store.set('users', users);
+    return users;
+  } catch (e) {
+    console.warn('[squadWorkspace] erro ao carregar users:', e.message);
+    return [];
+  }
+}
+
 /* ─── Modal: Gerenciar Membros do Squad ──────────────────── */
 async function openMembersModal() {
   if (!squad) return;
-  const allUsers = (store.get('users') || []).filter(u => u.active !== false);
+  // Garante que a lista de usuários esteja carregada — sem isso o modal
+  // mostrava UIDs no lugar dos nomes e o seletor "Adicionar membro" sumia.
+  const users = await ensureUsersLoaded();
+  const allUsers = users.filter(u => u.active !== false);
   const memberIds = squad.members || [];
   const currentUid = store.get('currentUser')?.uid;
   const isOwner = uid => uid === squad.createdBy;
@@ -641,7 +661,8 @@ async function openSquadInviteModal() {
   const wsSector = freshWs?.sector || '';
   const isMultiSector = freshWs?.multiSector === true;
 
-  const allUsers = (store.get('users') || []).filter(u => u.active !== false);
+  const users = await ensureUsersLoaded();
+  const allUsers = users.filter(u => u.active !== false);
   const nonMembers = allUsers.filter(u => {
     if (wsMembers.includes(u.id)) return false;
     if (isMultiSector) return true;
