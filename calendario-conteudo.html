@@ -494,7 +494,7 @@
 
       document.body.appendChild(overlay);
       overlay.querySelector('#cc-detail-close')?.addEventListener('click', () => overlay.remove());
-      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      // Sem backdrop-close — apenas o X fecha (comportamento global)
     }
 
     /* ── Start ── */

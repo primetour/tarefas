@@ -691,7 +691,7 @@ function openSuggestWeekModal(container) {
 
   document.getElementById('cc-suggest-close')?.addEventListener('click', () => { overlay.style.display = 'none'; overlay.innerHTML = ''; });
   document.getElementById('cc-suggest-cancel')?.addEventListener('click', () => { overlay.style.display = 'none'; overlay.innerHTML = ''; });
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.style.display = 'none'; overlay.innerHTML = ''; } });
+  // Sem backdrop-close — apenas X / Cancelar (comportamento global)
 
   document.getElementById('cc-suggest-go')?.addEventListener('click', async () => {
     const userPrompt = document.getElementById('cc-suggest-prompt')?.value || '';
@@ -925,12 +925,7 @@ function bindModalEvents() {
   const overlay = document.getElementById('cc-modal-overlay');
   const modal = document.getElementById('cc-modal');
 
-  // Close overlay on backdrop click
-  if (overlay) {
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) closeModal();
-    });
-  }
+  // Nao fecha por clique no backdrop — apenas pelo X (comportamento global)
 
   // Close button
   const closeBtn = document.getElementById('cc-modal-close');
