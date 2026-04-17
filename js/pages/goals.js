@@ -11,12 +11,20 @@ import {
   calcGoalProgress, getPendingPeriods, validateGoalWeights,
   emptyGoal, emptyPilar, emptyMeta, emptyKpi,
   GOAL_SCOPES, GOAL_PRAZO_TYPES,
+  getResponsavelIds,
 } from '../services/goals.js';
 import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask } from '../services/tasks.js';
 import { openTaskModal } from '../components/taskModal.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtDate = ts => { if(!ts) return '—'; const d=ts?.toDate?ts.toDate():new Date(ts); return d.toLocaleDateString('pt-BR'); };
+
+/** Lista os nomes dos responsáveis (suporta formato novo e legado). */
+function getResponsavelNames(goal, users) {
+  const ids = getResponsavelIds(goal);
+  const names = ids.map(id => users.find(u => u.id === id)?.name).filter(Boolean);
+  return names;
+}
 
 let allGoals=[], allUsers=[], allTasksForGoals=[], evaluations=[], activeTab='metas';
 
@@ -138,7 +146,10 @@ function renderGoalsList(container) {
   }
 
   el.innerHTML = goals.map(goal => {
-    const resp  = allUsers.find(u=>u.id===goal.responsavelId);
+    const respNames = getResponsavelNames(goal, allUsers);
+    const respLabel = respNames.length
+      ? (respNames.length <= 2 ? respNames.join(', ') : `${respNames.slice(0,2).join(', ')} +${respNames.length-2}`)
+      : '';
     const gestor = allUsers.find(u=>u.id===goal.gestorId);
     const pilarCount = (goal.pilares||[]).length;
     const metaCount  = (goal.pilares||[]).reduce((s,p)=>s+(p.metas||[]).length,0);
@@ -178,7 +189,7 @@ function renderGoalsList(container) {
               ${pilarCount} pilar${pilarCount!==1?'es':''} · ${metaCount} meta${metaCount!==1?'s':''}
               · <span style="color:var(--color-info);">${linkedTasks.length} tarefa${linkedTasks.length!==1?'s':''}</span>
               (${doneTasks.length} concluída${doneTasks.length!==1?'s':''}, ${confirmedTasks.length} com evidência)
-              ${resp?` · Responsável: <strong style="color:var(--text-secondary);">${esc(resp.name)}</strong>`:''}
+              ${respLabel?` · Responsá${respNames.length>1?'veis':'vel'}: <strong style="color:var(--text-secondary);" title="${esc(respNames.join(', '))}">${esc(respLabel)}</strong>`:''}
               ${gestor?` · Gestor: <strong style="color:var(--text-secondary);">${esc(gestor.name)}</strong>`:''}
               ${goal.inicio?` · ${fmtDate(goal.inicio)}`:''} ${goal.fim?`→ ${fmtDate(goal.fim)}`:''}
             </div>
@@ -268,7 +279,8 @@ async function renderAvaliacoes(container) {
 
   const uid = store.get('currentUser')?.uid;
   el.innerHTML = publishedGoals.map(goal => {
-    const resp   = allUsers.find(u=>u.id===goal.responsavelId);
+    const respNames = getResponsavelNames(goal, allUsers);
+    const respLabel = respNames.length ? respNames.join(', ') : '—';
     const gestor = allUsers.find(u=>u.id===goal.gestorId);
     const isGestor = goal.gestorId===uid || store.isMaster() || store.can('system_manage_roles');
 
@@ -280,7 +292,7 @@ async function renderAvaliacoes(container) {
         <div>
           <div style="font-weight:700;">${esc(goal.nome || goal.objetivoNucleo||(goal.pilares?.[0]?.titulo)||'Meta')}</div>
           <div style="font-size:0.8125rem;color:var(--text-muted);">
-            ${resp?esc(resp.name):'—'} · Gestor: ${gestor?esc(gestor.name):'—'}
+            ${esc(respLabel)} · Gestor: ${gestor?esc(gestor.name):'—'}
           </div>
         </div>
         ${isGestor?`<button class="btn btn-primary btn-sm goal-aval-btn"
@@ -540,8 +552,22 @@ async function openGoalForm(container, goalId) {
 
 function buildGoalFormHTML(draft, users) {
   const LBL = `font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;`;
-  const userOpts = `<option value="">—</option>` +
-    users.map(u=>`<option value="${esc(u.id)}" ${draft.responsavelId===u.id?'selected':''}>${esc(u.name)}</option>`).join('');
+  // Responsáveis: picker de múltiplos
+  const selectedResp = new Set(draft.responsavelIds || []);
+  const respPickerHtml = users.map(u => {
+    const sel = selectedResp.has(u.id);
+    return `<div class="goal-resp-chip assignee-chip ${sel?'member-selected':''}" data-uid="${esc(u.id)}"
+      style="background:${sel?'rgba(212,168,67,0.15)':'var(--bg-elevated)'};
+        border-color:${sel?'rgba(212,168,67,0.4)':'transparent'};
+        cursor:pointer;">
+      <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">
+        ${(u.name||'').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+      </div>
+      ${esc((u.name||'').split(' ')[0])}
+      <span class="goal-resp-check" style="color:var(--brand-gold);font-size:0.75rem;display:${sel?'inline':'none'};">✓</span>
+    </div>`;
+  }).join('');
+
   const gestorOpts = `<option value="">—</option>` +
     users.map(u=>`<option value="${esc(u.id)}" ${draft.gestorId===u.id?'selected':''}>${esc(u.name)}</option>`).join('');
   const nucleoOpts = `<option value="">—</option>` +
@@ -569,9 +595,13 @@ function buildGoalFormHTML(draft, users) {
           <label style="${LBL}">Núcleo</label>
           <select id="gf-nucleo" class="filter-select" style="width:100%;">${nucleoOpts}</select>
         </div>
-        <div>
-          <label style="${LBL}">Responsável</label>
-          <select id="gf-responsavel" class="filter-select" style="width:100%;">${userOpts}</select>
+        <div style="grid-column:span 2;">
+          <label style="${LBL}">Responsável(is) <span style="font-weight:400;color:var(--text-muted);">(clique pra selecionar um ou mais)</span></label>
+          <div id="gf-responsaveis" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;
+            background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+            max-height:180px;overflow-y:auto;">
+            ${respPickerHtml || '<span style="color:var(--text-muted);font-size:0.75rem;">Nenhum usuário disponível.</span>'}
+          </div>
         </div>
         <div>
           <label style="${LBL}">Gestor</label>
@@ -925,15 +955,37 @@ function wireGoalForm(draft) {
     });
   };
 
-  // Header fields
-  document.getElementById('gf-responsavel')?.addEventListener('change', e => {
-    draft.responsavelId = e.target.value;
-    // Auto-fill setor from user
-    const u = (store.get('users')||[]).find(u=>u.id===e.target.value);
-    if (u?.sector||u?.department) {
-      const sEl = document.getElementById('gf-setor');
-      if (sEl) { sEl.value = u.sector||u.department||''; draft.setor = sEl.value; }
-    }
+  // Header fields — picker de responsáveis (múltiplos)
+  if (!Array.isArray(draft.responsavelIds)) {
+    // Migração inline: legado responsavelId → array
+    draft.responsavelIds = draft.responsavelId ? [draft.responsavelId] : [];
+  }
+  // Limpa campo legado pra não gravar de volta no Firestore com ambos
+  delete draft.responsavelId;
+  document.querySelectorAll('#gf-responsaveis [data-uid]').forEach(el => {
+    el.addEventListener('click', () => {
+      const uid = el.dataset.uid;
+      const idx = draft.responsavelIds.indexOf(uid);
+      if (idx > -1) draft.responsavelIds.splice(idx, 1);
+      else draft.responsavelIds.push(uid);
+      const sel = draft.responsavelIds.includes(uid);
+      el.style.background  = sel ? 'rgba(212,168,67,0.15)' : 'var(--bg-elevated)';
+      el.style.borderColor = sel ? 'rgba(212,168,67,0.4)' : 'transparent';
+      el.classList.toggle('member-selected', sel);
+      const check = el.querySelector('.goal-resp-check');
+      if (check) check.style.display = sel ? 'inline' : 'none';
+
+      // Auto-fill setor: se ficou com 1 único responsável, preenche pelo setor dele.
+      // Se tem 0 ou 2+, não mexe pra não sobrescrever.
+      if (draft.responsavelIds.length === 1) {
+        const u = (store.get('users')||[]).find(x => x.id === draft.responsavelIds[0]);
+        const sector = u?.sector || u?.department;
+        if (sector) {
+          const sEl = document.getElementById('gf-setor');
+          if (sEl) { sEl.value = sector; draft.setor = sector; }
+        }
+      }
+    });
   });
   document.getElementById('gf-gestor')?.addEventListener('change', e => { draft.gestorId = e.target.value; });
   document.getElementById('gf-escopo')?.addEventListener('change', e => { draft.escopo = e.target.value; });
@@ -1210,10 +1262,12 @@ async function exportGoalsXls() {
   if (!window.XLSX) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
 
   // Sheet 1 — Metas
-  const rows=[['Escopo','Objetivo','Responsável','Gestor','Setor','Status','Pilares','Metas','Tarefas vinc.','Início','Fim']];
+  const rows=[['Escopo','Objetivo','Responsáveis','Gestor','Setor','Status','Pilares','Metas','Tarefas vinc.','Início','Fim']];
   allGoals.forEach(g => {
-    const resp  = (store.get('users')||[]).find(u=>u.id===g.responsavelId)?.name||'—';
-    const gestor= (store.get('users')||[]).find(u=>u.id===g.gestorId)?.name||'—';
+    const users = store.get('users')||[];
+    const respNames = getResponsavelNames(g, users);
+    const resp  = respNames.length ? respNames.join(', ') : '—';
+    const gestor= users.find(u=>u.id===g.gestorId)?.name||'—';
     const linkedCount = allTasksForGoals.filter(t=>t.goalId===g.id).length;
     rows.push([
       GOAL_SCOPES.find(s=>s.value===g.escopo)?.label||g.escopo||'—',
@@ -1280,8 +1334,10 @@ async function exportGoalsPdf() {
   doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${allGoals.length} metas`,14,22);
   const rows=[];
   allGoals.forEach(g => {
-    const resp=(store.get('users')||[]).find(u=>u.id===g.responsavelId)?.name||'—';
-    const gestor=(store.get('users')||[]).find(u=>u.id===g.gestorId)?.name||'—';
+    const users = store.get('users')||[];
+    const respNames = getResponsavelNames(g, users);
+    const resp = respNames.length ? respNames.join(', ') : '—';
+    const gestor = users.find(u=>u.id===g.gestorId)?.name||'—';
     const linkedCount = allTasksForGoals.filter(t=>t.goalId===g.id).length;
     (g.pilares||[]).forEach((pilar,pi) => {
       (pilar.metas||[]).forEach((meta,mi) => {
@@ -1301,7 +1357,7 @@ async function exportGoalsPdf() {
   });
   doc.autoTable({
     startY:27,
-    head:[['Escopo','Objetivo','Pilar','Meta','Pond.','Critério','Prazo','Responsável','Gestor','Tarefas','Status']],
+    head:[['Escopo','Objetivo','Pilar','Meta','Pond.','Critério','Prazo','Responsáveis','Gestor','Tarefas','Status']],
     body: rows,
     styles:{fontSize:7,cellPadding:2},
     headStyles:{fillColor:[36,35,98],textColor:255,fontStyle:'bold'},

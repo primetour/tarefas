@@ -59,12 +59,22 @@ export function emptyPilar() {
 export function emptyGoal() {
   return {
     titulo: '', descricao: '', escopo: 'individual',
-    responsavelId: '', gestorId: '', nucleo: '',
+    responsavelIds: [], gestorId: '', nucleo: '',
     inicio: '', fim: '',
     periodicidadeAval: 'monthly', recorrenciaAval: false,
     status: 'rascunho',
     pilares: [emptyPilar()],
   };
+}
+
+/**
+ * Normaliza responsáveis de uma meta: aceita formato novo (`responsavelIds[]`)
+ * ou legado (`responsavelId` string). Sempre retorna array de IDs.
+ */
+export function getResponsavelIds(goal = {}) {
+  if (Array.isArray(goal.responsavelIds) && goal.responsavelIds.length) return goal.responsavelIds.filter(Boolean);
+  if (goal.responsavelId) return [goal.responsavelId];
+  return [];
 }
 
 /* ─── Validação de pesos ──────────────────────────────────── */
@@ -205,7 +215,8 @@ export async function publishGoal(id) {
     const snap = await getDoc(doc(db, 'goals', id));
     if (snap.exists()) {
       const goal = snap.data();
-      const recipients = [goal.responsavelId, goal.gestorId].filter(Boolean);
+      const respIds = getResponsavelIds(goal);
+      const recipients = [...respIds, goal.gestorId].filter(Boolean);
       if (recipients.length) {
         import('./notifications.js').then(({ notify }) => {
           notify('goal.published', {
