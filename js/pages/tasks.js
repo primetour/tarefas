@@ -170,6 +170,27 @@ export async function renderTasks(container) {
     </div>
   `;
 
+  // Load users if store is empty (ex: primeiro acesso, aba privativa, refresh em /tasks)
+  // Sem isso, os avatares de responsáveis aparecem vazios nos cards.
+  if (!(store.get('users') || []).length) {
+    try {
+      const { collection, getDocs, query, orderBy } =
+        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('../firebase.js');
+      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
+      store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      // Re-popula o filtro de responsáveis agora que users chegaram
+      const assigneeSel = document.getElementById('filter-assignee');
+      if (assigneeSel) {
+        const cur = assigneeSel.value;
+        assigneeSel.innerHTML = '<option value="">Todos os responsáveis</option>' +
+          (store.get('users') || []).filter(u => u.active).map(u =>
+            `<option value="${u.id}">${esc(u.name)}</option>`).join('');
+        if (cur) assigneeSel.value = cur;
+      }
+    } catch (e) { console.warn('[tasks] users load:', e?.message || e); }
+  }
+
   // Load projects for filter
   try {
     allProjects = await fetchProjects();

@@ -83,11 +83,29 @@ function renderColumnBody(body, count, colTasks, colKey, cardRenderer, rebindFn)
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderKanban(container) {
+  // Load users if store is empty (ex: primeiro acesso, aba privativa, refresh em /kanban)
+  // Sem isso, os avatares de responsáveis aparecem vazios nos cards.
+  const usersNeedLoad = !(store.get('users') || []).length;
+
   try {
-    [allProjects, allTaskTypes] = await Promise.all([
+    const jobs = [
       fetchProjects().catch(()=>[]),
       fetchTaskTypes().catch(()=>[]),
-    ]);
+    ];
+    if (usersNeedLoad) {
+      jobs.push((async () => {
+        try {
+          const { collection, getDocs, query, orderBy } =
+            await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+          const { db } = await import('../firebase.js');
+          const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
+          store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch (e) { console.warn('[kanban] users load:', e?.message || e); }
+      })());
+    }
+    const res = await Promise.all(jobs);
+    allProjects  = res[0];
+    allTaskTypes = res[1];
   } catch(e) {}
 
   // Types with steps only
