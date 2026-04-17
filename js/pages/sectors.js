@@ -75,7 +75,16 @@ export async function renderSectors(container) {
 
 async function load(visibleSectors) {
   try {
-    allNucleos = await fetchNucleos();
+    // A página não é visitada pelo app boot — se o usuário abrir direto aqui
+    // (aba privativa, link direto, primeira navegação) o store de users vem
+    // vazio e a contagem de membros + modal de membros ficam quebrados.
+    // Força o load em paralelo com os núcleos.
+    const needUsers = !(store.get('users') || []).length;
+    const [nuc] = await Promise.all([
+      fetchNucleos(),
+      needUsers ? reloadUsers() : Promise.resolve(),
+    ]);
+    allNucleos = nuc;
     render(visibleSectors);
   } catch(e) {
     toast.error('Erro ao carregar núcleos: ' + e.message);
