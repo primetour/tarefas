@@ -97,6 +97,7 @@ export function emptyGoal() {
   return {
     titulo: '', descricao: '', escopo: 'individual',
     responsavelIds: [], gestorId: '', nucleo: '',
+    squadId: '', setor: '',
     inicio: '', fim: '',
     periodicidadeAval: 'monthly', recorrenciaAval: false,
     status: 'rascunho',

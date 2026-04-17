@@ -14,7 +14,17 @@ import {
   getResponsavelIds,
 } from '../services/goals.js';
 import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask } from '../services/tasks.js';
+import { fetchAllWorkspaces } from '../services/workspaces.js';
 import { openTaskModal } from '../components/taskModal.js';
+
+/** Roles que podem ser gestor de uma meta. Analistas (member) ficam fora. */
+const GESTOR_ROLE_IDS = ['master', 'admin', 'manager', 'coordinator', 'partner'];
+const isGestorRole = u => GESTOR_ROLE_IDS.includes(u?.roleId || u?.role || '');
+
+/** Núcleo de um usuário (users.js salva como department E nucleo). */
+const userNucleo = u => u?.nucleo || u?.department || '';
+/** Setor/área de um usuário (campo DB: sector). Sem fallback para department. */
+const userSetor  = u => u?.sector || '';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtDate = ts => { if(!ts) return '—'; const d=ts?.toDate?ts.toDate():new Date(ts); return d.toLocaleDateString('pt-BR'); };
@@ -583,8 +593,10 @@ function buildGoalFormHTML(draft, users) {
     </div>`;
   }).join('');
 
+  // Gestor: só coordenador/gerente/admin/master/partner (exclui analista/member)
+  const gestorUsers = users.filter(isGestorRole);
   const gestorOpts = `<option value="">—</option>` +
-    users.map(u=>`<option value="${esc(u.id)}" ${draft.gestorId===u.id?'selected':''}>${esc(u.name)}</option>`).join('');
+    gestorUsers.map(u=>`<option value="${esc(u.id)}" ${draft.gestorId===u.id?'selected':''}>${esc(u.name)}</option>`).join('');
   const nucleoOpts = `<option value="">—</option>` +
     NUCLEOS.map(n=>`<option value="${esc(n.value)}" ${draft.nucleo===n.value?'selected':''}>${esc(n.label)}</option>`).join('');
 
@@ -606,6 +618,12 @@ function buildGoalFormHTML(draft, users) {
             ${GOAL_SCOPES.map(s=>`<option value="${s.value}" ${draft.escopo===s.value?'selected':''}>${s.icon} ${s.label}</option>`).join('')}
           </select>
           <div id="gf-escopo-hint" style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;"></div>
+        </div>
+        <div id="gf-squad-wrap" style="display:none;grid-column:span 2;">
+          <label style="${LBL}">Squad <span style="font-weight:400;color:var(--text-muted);">(selecione o squad — núcleo e responsáveis preenchem automaticamente)</span></label>
+          <select id="gf-squad" class="filter-select" style="width:100%;">
+            <option value="">Carregando squads…</option>
+          </select>
         </div>
         <div id="gf-nucleo-wrap">
           <label style="${LBL}">Núcleo</label>
@@ -629,17 +647,12 @@ function buildGoalFormHTML(draft, users) {
         <div>
           <label style="${LBL}">Área / Setor <span style="font-weight:400;color:var(--text-muted);">(automático)</span></label>
           <input type="text" id="gf-setor" class="portal-field" style="width:100%;"
-            value="${esc(draft.setor)}" readonly>
-        </div>
-        <div>
-          <label style="${LBL}">Cargo do responsável</label>
-          <input type="text" id="gf-cargo" class="portal-field" style="width:100%;"
-            value="${esc(draft.cargo||'')}" placeholder="Ex: Coordenador de Marketing">
+            value="${esc(draft.setor||'')}" readonly>
         </div>
         <div style="grid-column:span 2;">
           <label style="${LBL}">Objetivo geral do núcleo / equipe</label>
           <input type="text" id="gf-objetivo" class="portal-field" style="width:100%;"
-            value="${esc(draft.objetivoNucleo)}" placeholder="Descreva o objetivo macro desta meta">
+            value="${esc(draft.objetivoNucleo||'')}" placeholder="Descreva o objetivo macro desta meta">
         </div>
         <div>
           <label style="${LBL}">Data de início</label>
@@ -1014,17 +1027,7 @@ function wireGoalForm(draft) {
       el.classList.toggle('member-selected', sel);
       const check = el.querySelector('.goal-resp-check');
       if (check) check.style.display = sel ? 'inline' : 'none';
-
-      // Auto-fill setor: se ficou com 1 único responsável, preenche pelo setor dele.
-      // Se tem 0 ou 2+, não mexe pra não sobrescrever.
-      if (draft.responsavelIds.length === 1) {
-        const u = (store.get('users')||[]).find(x => x.id === draft.responsavelIds[0]);
-        const sector = u?.sector || u?.department;
-        if (sector) {
-          const sEl = document.getElementById('gf-setor');
-          if (sEl) { sEl.value = sector; draft.setor = sector; }
-        }
-      }
+      refreshAutoFills(draft);
     });
   });
   document.getElementById('gf-gestor')?.addEventListener('change', e => { draft.gestorId = e.target.value; });
@@ -1033,7 +1036,6 @@ function wireGoalForm(draft) {
     applyScopeVisibility(draft);
   });
   document.getElementById('gf-nucleo')?.addEventListener('change', e => { draft.nucleo = e.target.value; });
-  document.getElementById('gf-cargo')?.addEventListener('input', e => { draft.cargo = e.target.value; });
   document.getElementById('gf-nome')?.addEventListener('input', e => { draft.nome = e.target.value; });
   document.getElementById('gf-objetivo')?.addEventListener('input', e => { draft.objetivoNucleo = e.target.value; });
   document.getElementById('gf-inicio')?.addEventListener('input', e => { draft.inicio = e.target.value; });
@@ -1048,8 +1050,102 @@ function wireGoalForm(draft) {
 
   // Aplica visibilidade inicial baseada no escopo atual
   applyScopeVisibility(draft);
+  // Auto-fill inicial (para metas sendo editadas com responsáveis já selecionados)
+  refreshAutoFills(draft);
+  // Carrega squads no dropdown de forma assíncrona (async pra não travar o form)
+  populateSquadsDropdown(draft);
 
   rerenderPilares();
+}
+
+/**
+ * Atualiza campos auto-preenchidos (setor e núcleo) com base nos responsáveis
+ * selecionados. Só age quando faz sentido (1 único responsável), pra não
+ * sobrescrever valores explicitamente escolhidos pelo usuário.
+ */
+function refreshAutoFills(draft) {
+  if (!Array.isArray(draft.responsavelIds) || draft.responsavelIds.length !== 1) return;
+  const u = (store.get('users')||[]).find(x => x.id === draft.responsavelIds[0]);
+  if (!u) return;
+
+  const setor = userSetor(u);
+  if (setor) {
+    const sEl = document.getElementById('gf-setor');
+    if (sEl) { sEl.value = setor; draft.setor = setor; }
+  }
+  // Núcleo só preenche se o campo está visível e vazio (evita sobrescrever escolha manual)
+  const rule = SCOPE_FIELD_RULES[draft.escopo] || SCOPE_FIELD_RULES.individual;
+  if (rule.showNucleo && !draft.nucleo) {
+    const nuc = userNucleo(u);
+    if (nuc) {
+      const nEl = document.getElementById('gf-nucleo');
+      if (nEl) { nEl.value = nuc; draft.nucleo = nuc; }
+    }
+  }
+}
+
+/**
+ * Carrega squads (workspaces) no dropdown de Squad. Ao selecionar um squad,
+ * auto-preenche núcleo, setor e marca os membros como responsáveis.
+ */
+async function populateSquadsDropdown(draft) {
+  const sel = document.getElementById('gf-squad');
+  if (!sel) return;
+  try {
+    const workspaces = (await fetchAllWorkspaces().catch(()=>[]))
+      .filter(w => !w.archived);
+    const opts = workspaces.map(w =>
+      `<option value="${esc(w.id)}" ${draft.squadId===w.id?'selected':''}>${esc(w.name)}${w.sector?` — ${esc(w.sector)}`:''}</option>`
+    ).join('');
+    sel.innerHTML = `<option value="">— Selecione um squad —</option>${opts}`;
+
+    sel.addEventListener('change', e => {
+      const id = e.target.value;
+      draft.squadId = id;
+      if (!id) return;
+      const ws = workspaces.find(w => w.id === id);
+      if (!ws) return;
+
+      // Auto-fill núcleo: se o nome do sector do squad bate com um NUCLEOS value/label, usa.
+      // Senão, pega o núcleo do primeiro admin/membro como heurística.
+      let nuc = '';
+      const sectorLower = (ws.sector||'').toLowerCase().trim();
+      const nucleoMatch = NUCLEOS.find(n =>
+        n.value === sectorLower || n.label.toLowerCase() === sectorLower);
+      if (nucleoMatch) nuc = nucleoMatch.value;
+      if (!nuc) {
+        const users = store.get('users')||[];
+        const adminId = (ws.adminIds||[])[0] || (ws.members||[])[0];
+        const u = adminId ? users.find(x => x.id === adminId) : null;
+        nuc = userNucleo(u);
+      }
+      if (nuc) {
+        draft.nucleo = nuc;
+        const nEl = document.getElementById('gf-nucleo'); if (nEl) nEl.value = nuc;
+      }
+
+      // Auto-fill setor pelo sector do squad
+      if (ws.sector) {
+        draft.setor = ws.sector;
+        const sEl = document.getElementById('gf-setor'); if (sEl) sEl.value = ws.sector;
+      }
+
+      // Auto-preenche responsáveis com os membros do squad (usuário pode ajustar depois)
+      draft.responsavelIds = [...(ws.members || [])];
+      // Repinta o picker pra refletir seleção
+      document.querySelectorAll('#gf-responsaveis [data-uid]').forEach(chip => {
+        const isSel = draft.responsavelIds.includes(chip.dataset.uid);
+        chip.style.background  = isSel ? 'rgba(212,168,67,0.15)' : 'var(--bg-elevated)';
+        chip.style.borderColor = isSel ? 'rgba(212,168,67,0.4)' : 'transparent';
+        chip.classList.toggle('member-selected', isSel);
+        const check = chip.querySelector('.goal-resp-check');
+        if (check) check.style.display = isSel ? 'inline' : 'none';
+      });
+    });
+  } catch(e) {
+    console.warn('[goals] Falha ao carregar squads:', e);
+    sel.innerHTML = `<option value="">— Nenhum squad encontrado —</option>`;
+  }
 }
 
 /**
@@ -1058,12 +1154,18 @@ function wireGoalForm(draft) {
  */
 function applyScopeVisibility(draft) {
   const rule = SCOPE_FIELD_RULES[draft.escopo] || SCOPE_FIELD_RULES.individual;
+  const isSquad = draft.escopo === 'squad';
 
+  const squadWrap  = document.getElementById('gf-squad-wrap');
   const nucleoWrap = document.getElementById('gf-nucleo-wrap');
   const respWrap   = document.getElementById('gf-responsaveis-wrap');
   const hint       = document.getElementById('gf-escopo-hint');
   const respHint   = document.getElementById('gf-resp-hint');
   const respLabel  = document.getElementById('gf-resp-label');
+
+  if (squadWrap) squadWrap.style.display = isSquad ? '' : 'none';
+  // Sai de squad → zera squadId pra não persistir valor órfão
+  if (!isSquad && draft.squadId) draft.squadId = '';
 
   if (nucleoWrap) {
     nucleoWrap.style.display = rule.showNucleo ? '' : 'none';
