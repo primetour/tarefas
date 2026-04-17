@@ -210,12 +210,6 @@ async function syncPages(propertyId) {
   const propNum = propertyId.replace('properties/', '');
   let total = 0;
 
-  // Purga legado ANTES do fetch — roda mesmo se API falhar por quota
-  try {
-    const purged = await cleanupLegacy('ga_pages', propNum, /_page_\d+(_|$)/);
-    if (purged) console.log(`    🧹 ${purged} páginas legadas removidas (formato antigo)`);
-  } catch(e) { console.warn(`    ⚠ Cleanup legado páginas: ${e.message}`); }
-
   for (const p of BREAKDOWN_PERIODS) {
     try {
       const [response] = await analyticsClient.runReport({
@@ -267,11 +261,6 @@ async function syncSources(propertyId) {
   console.log('  🔗 Sync origens...');
   const propNum = propertyId.replace('properties/', '');
   let total = 0;
-
-  try {
-    const purged = await cleanupLegacy('ga_sources', propNum, /_src_\d+(_|$)/);
-    if (purged) console.log(`    🧹 ${purged} origens legadas removidas (formato antigo)`);
-  } catch(e) { console.warn(`    ⚠ Cleanup legado origens: ${e.message}`); }
 
   for (const p of BREAKDOWN_PERIODS) {
     try {
@@ -364,11 +353,6 @@ async function syncCountries(propertyId) {
   console.log('  🌍 Sync países...');
   const propNum = propertyId.replace('properties/', '');
   let total = 0;
-
-  try {
-    const purged = await cleanupLegacy('ga_countries', propNum, /_geo_\d+(_|$)/);
-    if (purged) console.log(`    🧹 ${purged} países legados removidos (formato antigo)`);
-  } catch(e) { console.warn(`    ⚠ Cleanup legado países: ${e.message}`); }
 
   for (const p of BREAKDOWN_PERIODS) {
     try {

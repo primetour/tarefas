@@ -1,0 +1,38 @@
+name: GA Firestore Cleanup (one-shot)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Só listar o que seria removido (true/false)'
+        required: false
+        default: 'false'
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          cd scripts
+          npm init -y 2>/dev/null || true
+          npm install firebase-admin@12
+
+      - name: Run GA Cleanup
+        env:
+          GA_PROPERTY_ID:        ${{ secrets.GA_PROPERTY_ID }}
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          DRY_RUN:               ${{ inputs.dry_run }}
+        run: node scripts/ga-cleanup.js
