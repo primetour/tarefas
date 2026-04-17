@@ -1713,9 +1713,14 @@ async function exportGoalsXls() {
 
 /**
  * Dossier visual das metas — sem tabelas. Um card por meta (goal)
- * com hierarquia Pilar → Sub-meta → KPIs desenhada com blocos,
- * barras de ponderação e chips. Formato A4 retrato, um documento
- * que um gestor imprime e entrega pra revisão.
+ * com hierarquia Pilar > Sub-meta > KPIs desenhada com blocos, barras
+ * de ponderação e chips. Formato A4 retrato, um documento que um gestor
+ * imprime e entrega pra revisão.
+ *
+ * Nota sobre glyphs: jsPDF usa Helvetica WinAnsi por padrão — sem UTF-8
+ * completo. Caracteres como →, ▸, ↳, ✓ viram lixo. Toda string passa por
+ * `txt()` que sanitiza; marcadores decorativos são desenhados com
+ * primitivas (circle/lines/rect) em vez de glyphs.
  */
 async function exportGoalsPdf() {
   if (!allGoals.length) { toast.error('Nenhuma meta.'); return; }
@@ -1724,279 +1729,356 @@ async function exportGoalsPdf() {
   }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const W = 210, H = 297, M = 15, CW = W - M * 2;
+  const W = 210, H = 297, M = 14, CW = W - M * 2;
   const users = store.get('users') || [];
 
   // Paleta
   const COL = {
-    brand:  [36, 35, 98],
-    brand2: [68, 65, 160],
-    gold:   [212, 168, 67],
-    text:   [32, 32, 32],
-    muted:  [128, 128, 128],
-    light:  [248, 247, 244],
-    border: [220, 220, 220],
-    green:  [34, 197, 94],
-    orange: [245, 158, 11],
-    red:    [239, 68, 68],
-    blue:   [59, 130, 246],
-    obsBg:  [255, 251, 235],
+    brand:   [36, 35, 98],
+    brand2:  [82, 79, 180],
+    brandL:  [238, 238, 250],
+    gold:    [212, 168, 67],
+    goldL:   [253, 246, 229],
+    text:    [26, 26, 40],
+    muted:   [120, 120, 135],
+    soft:    [160, 160, 175],
+    bg:      [248, 247, 244],
+    subBg:   [252, 251, 248],
+    track:   [230, 230, 240],
+    border:  [222, 220, 230],
+    green:   [22, 163, 74],
+    orange:  [217, 119, 6],
+    red:     [220, 38, 38],
+    blue:    [37, 99, 235],
+    white:   [255, 255, 255],
   };
-  const STATUS_COL = {
-    ativa: COL.green, publicada: COL.green,
-    rascunho: COL.orange,
-    concluida: COL.blue, concluída: COL.blue,
-    cancelada: COL.red,
+  const STATUS_STYLE = {
+    ativa:      { bg: COL.green,  label: 'ATIVA' },
+    publicada:  { bg: COL.green,  label: 'PUBLICADA' },
+    rascunho:   { bg: COL.orange, label: 'RASCUNHO' },
+    concluida:  { bg: COL.blue,   label: 'CONCLUIDA' },
+    'concluída':{ bg: COL.blue,   label: 'CONCLUIDA' },
+    cancelada:  { bg: COL.red,    label: 'CANCELADA' },
   };
 
+  // Sanitiza chars fora do WinAnsi (Helvetica default do jsPDF).
+  const txt = (s) => String(s ?? '')
+    .replace(/→/g, ' a ')
+    .replace(/←/g, '<-')
+    .replace(/↳/g, '>')
+    .replace(/▸/g, '>')
+    .replace(/✓/g, '')
+    .replace(/…/g, '...')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"');
+
   let y = 0;
+  const setFill = (c) => doc.setFillColor(...c);
+  const setText = (c) => doc.setTextColor(...c);
+  const setDraw = (c) => doc.setDrawColor(...c);
+
   const drawRunningHeader = () => {
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...COL.muted);
-    doc.text('PRIMETOUR · Quadro de Metas', M, 10);
-    doc.setDrawColor(...COL.border); doc.setLineWidth(0.2);
-    doc.line(M, 12, W - M, 12);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); setText(COL.muted);
+    doc.text('PRIMETOUR  ·  Quadro de Metas', M, 9);
+    setDraw(COL.border); doc.setLineWidth(0.15);
+    doc.line(M, 11, W - M, 11);
     y = 17;
   };
   const ensureSpace = (needed) => {
     if (y + needed > H - 14) { doc.addPage(); drawRunningHeader(); }
   };
-  const wrap = (txt, maxW, size) => {
+  const wrap = (s, maxW, size) => {
     doc.setFontSize(size);
-    return doc.splitTextToSize(String(txt || ''), maxW);
+    return doc.splitTextToSize(txt(s), maxW);
   };
-  const drawBar = (x, yy, wMax, pct, fillCol) => {
-    doc.setFillColor(230, 230, 230); doc.rect(x, yy, wMax, 1.8, 'F');
+  const drawBar = (x, yy, wMax, pct, fillCol, h = 1.6) => {
+    setFill(COL.track); doc.rect(x, yy, wMax, h, 'F');
     if (pct > 0) {
-      doc.setFillColor(...fillCol);
-      doc.rect(x, yy, wMax * Math.min(Math.max(pct, 0), 100) / 100, 1.8, 'F');
+      setFill(fillCol);
+      doc.rect(x, yy, wMax * Math.min(Math.max(pct, 0), 100) / 100, h, 'F');
     }
   };
-  const drawKV = (k, v, indent = 0, fs = 8) => {
+  // Pílula colorida (chip). Retorna { w, h }.
+  const drawChip = (label, x, yy, bg, fg = COL.white, fs = 7, padX = 3, padY = 1.6) => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(fs);
+    const w = doc.getTextWidth(txt(label)) + padX * 2;
+    const h = fs * 0.55 + padY * 2;
+    setFill(bg); doc.roundedRect(x, yy, w, h, 1.2, 1.2, 'F');
+    setText(fg); doc.text(txt(label), x + padX, yy + h - padY - 0.4);
+    return { w, h };
+  };
+  const drawKV = (k, v, xStart = M, labelW = 32, indent = 0, fs = 8.5) => {
     if (!v) return;
-    const lines = wrap(v, CW - 32 - indent, fs);
-    ensureSpace(lines.length * 3.6 + 1);
-    doc.setFont('helvetica', 'bold'); doc.setTextColor(...COL.muted); doc.setFontSize(fs - 1);
-    doc.text(k.toUpperCase(), M + indent, y);
-    doc.setFont('helvetica', 'normal'); doc.setTextColor(...COL.text); doc.setFontSize(fs);
-    doc.text(lines, M + 32 + indent, y);
-    y += Math.max(4, lines.length * 3.6);
+    const lines = wrap(v, CW - labelW - indent - 2, fs);
+    ensureSpace(lines.length * 3.8 + 1);
+    doc.setFont('helvetica', 'bold'); setText(COL.muted); doc.setFontSize(fs - 1.5);
+    doc.text(txt(k.toUpperCase()), xStart + indent, y);
+    doc.setFont('helvetica', 'normal'); setText(COL.text); doc.setFontSize(fs);
+    doc.text(lines, xStart + indent + labelW, y);
+    y += Math.max(4, lines.length * 3.8);
   };
 
-  // ── Capa ─────────────────────────────────────────────────
-  doc.setFillColor(...COL.brand); doc.rect(0, 0, W, 70, 'F');
-  doc.setFillColor(...COL.gold); doc.rect(0, 70, W, 2, 'F');
-  doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(28);
-  doc.text('Quadro de Metas', M, 32);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-  doc.text('PRIMETOUR · Gestão de Desempenho', M, 42);
-  doc.setTextColor(...COL.gold); doc.setFontSize(9);
-  doc.text(
-    `${allGoals.length} ${allGoals.length === 1 ? 'meta cadastrada' : 'metas cadastradas'}   ·   Gerado em ${new Date().toLocaleDateString('pt-BR')}`,
-    M, 52
-  );
+  // ── Capa compacta ─────────────────────────────────────────
+  const capaH = 52;
+  setFill(COL.brand); doc.rect(0, 0, W, capaH, 'F');
+  setFill(COL.brand2); doc.rect(0, capaH - 8, W, 8, 'F');
+  setFill(COL.gold); doc.rect(0, capaH, W, 1.6, 'F');
 
-  // Sumário rápido
-  y = 84;
-  doc.setTextColor(...COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-  doc.text('SUMÁRIO', M, y);
-  y += 4;
-  doc.setDrawColor(...COL.gold); doc.setLineWidth(0.4); doc.line(M, y, M + 18, y);
-  y += 5;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...COL.text);
-  allGoals.forEach((g, gi) => {
-    if (y > H - 20) { doc.addPage(); drawRunningHeader(); }
-    const titulo = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || 'Meta sem título';
-    const pilares = (g.pilares || []).length;
-    const metasTotal = (g.pilares || []).reduce((s, p) => s + (p.metas || []).length, 0);
-    const resumo = `${pilares} pilar${pilares !== 1 ? 'es' : ''} · ${metasTotal} sub-meta${metasTotal !== 1 ? 's' : ''}`;
-    const line = `${String(gi + 1).padStart(2, '0')}.  ${titulo}`;
-    const wrapped = wrap(line, CW - 45, 9);
-    doc.setTextColor(...COL.text); doc.setFont('helvetica', 'bold');
-    doc.text(wrapped[0], M, y);
-    doc.setFont('helvetica', 'normal'); doc.setTextColor(...COL.muted); doc.setFontSize(8);
-    doc.text(resumo, W - M, y, { align: 'right' });
-    doc.setFontSize(9);
-    y += 5;
-    if (wrapped.length > 1) {
-      wrapped.slice(1).forEach(l => { doc.text(l, M + 7, y); y += 4; });
-    }
-  });
+  setText(COL.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(22);
+  doc.text(txt('Quadro de Metas'), M, 24);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+  doc.text(txt('PRIMETOUR  ·  Gestão de Desempenho'), M, 32);
+
+  setText(COL.gold); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+  const qtd = `${allGoals.length} ${allGoals.length === 1 ? 'meta' : 'metas'}`;
+  const dataGer = new Date().toLocaleDateString('pt-BR');
+  doc.text(txt(`${qtd}  ·  Gerado em ${dataGer}`), M, 42);
+
+  y = capaH + 10;
+
+  // ── Sumário (somente quando > 1 meta) ────────────────────
+  if (allGoals.length > 1) {
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5);
+    doc.text(txt('SUMARIO'), M, y);
+    y += 2;
+    setDraw(COL.gold); doc.setLineWidth(0.5); doc.line(M, y, M + 20, y);
+    y += 6;
+
+    allGoals.forEach((g, gi) => {
+      if (y > H - 24) { doc.addPage(); drawRunningHeader(); }
+      const titulo = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || 'Meta sem titulo';
+      const pilares = (g.pilares || []).length;
+      const metasTotal = (g.pilares || []).reduce((s, p) => s + (p.metas || []).length, 0);
+      const resumo = `${pilares} pilar${pilares !== 1 ? 'es' : ''}  ·  ${metasTotal} sub-meta${metasTotal !== 1 ? 's' : ''}`;
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); setText(COL.gold);
+      doc.text(String(gi + 1).padStart(2, '0'), M, y);
+
+      setText(COL.text); doc.setFontSize(9.5);
+      const wrapped = wrap(titulo, CW - 60, 9.5);
+      doc.text(wrapped[0], M + 8, y);
+
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); setText(COL.muted);
+      doc.text(txt(resumo), W - M, y, { align: 'right' });
+
+      y += 5;
+      if (wrapped.length > 1) {
+        doc.setFont('helvetica', 'bold'); setText(COL.text); doc.setFontSize(9.5);
+        wrapped.slice(1).forEach(l => { doc.text(l, M + 8, y); y += 4.2; });
+      }
+      setDraw(COL.border); doc.setLineWidth(0.1); doc.line(M, y + 0.6, W - M, y + 0.6);
+      y += 3;
+    });
+  }
 
   // ── Seções por meta ──────────────────────────────────────
   allGoals.forEach((g, gi) => {
     doc.addPage();
     drawRunningHeader();
 
-    const titulo = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || 'Meta sem título';
+    const titulo = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || 'Meta sem titulo';
 
-    // Cartão-cabeçalho da meta
-    doc.setFillColor(...COL.brand); doc.rect(M, y, CW, 14, 'F');
-    doc.setFillColor(...COL.gold); doc.rect(M, y, 3, 14, 'F');
-    doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
-    doc.text(`META ${String(gi + 1).padStart(2, '0')}`, M + 6, y + 5);
-    doc.setFontSize(13);
-    const tLines = wrap(titulo, CW - 50, 13);
-    doc.text(tLines[0], M + 6, y + 11);
-    // Chip de status
-    const statusKey = (g.status || 'rascunho').toLowerCase();
-    const statusLabel = (g.status || 'rascunho').toUpperCase();
-    const scol = STATUS_COL[statusKey] || COL.muted;
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
-    const sw = doc.getTextWidth(statusLabel) + 6;
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(W - M - sw - 4, y + 4, sw, 6, 1.5, 1.5, 'F');
-    doc.setTextColor(...scol);
-    doc.text(statusLabel, W - M - sw - 1, y + 8);
-    y += 18;
+    // Cabeçalho da meta — faixa brand + barra dourada
+    setFill(COL.brand); doc.rect(M, y, CW, 16, 'F');
+    setFill(COL.gold); doc.rect(M, y, 2.5, 16, 'F');
+    setText(COL.goldL); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+    doc.text(txt(`META ${String(gi + 1).padStart(2, '0')}`), M + 5.5, y + 5);
 
-    // Metadados (linhas chave-valor)
+    // Status chip (canto superior direito)
+    const statusRaw = (g.status || 'rascunho').toLowerCase();
+    const stSt = STATUS_STYLE[statusRaw] || { bg: COL.muted, label: statusRaw.toUpperCase() };
+    // Desenha chip manualmente fixando ponta direita
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+    const stLbl = txt(stSt.label);
+    const stW = doc.getTextWidth(stLbl) + 6;
+    const stH = 5;
+    setFill(stSt.bg); doc.roundedRect(W - M - stW - 2, y + 3, stW, stH, 1, 1, 'F');
+    setText(COL.white); doc.text(stLbl, W - M - stW - 2 + 3, y + 3 + stH - 1.3);
+
+    // Título da meta
+    setText(COL.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+    const tLines = wrap(titulo, CW - 10, 13);
+    doc.text(tLines[0], M + 5.5, y + 12.5);
+    y += 20;
+
+    // Metadados (chave-valor compacto, 2 colunas)
     const respNames = getResponsavelNames(g, users);
-    const gestor = users.find(u => u.id === g.gestorId)?.name || '—';
-    const escopo = GOAL_SCOPES.find(s => s.value === g.escopo)?.label || g.escopo || '—';
+    const gestor = users.find(u => u.id === g.gestorId)?.name || '-';
+    const escopo = GOAL_SCOPES.find(s => s.value === g.escopo)?.label || g.escopo || '-';
     const nucleo = g.nucleo || '';
-    const setor = g.setor || '—';
-    const inicio = g.inicio ? fmtDate(g.inicio) : '—';
-    const fim = g.fim ? fmtDate(g.fim) : '—';
+    const setor = g.setor || '-';
+    const inicio = g.inicio ? fmtDate(g.inicio) : '-';
+    const fim = g.fim ? fmtDate(g.fim) : '-';
     const linkedTasks = allTasksForGoals.filter(t => t.goalId === g.id);
 
-    drawKV('Escopo', escopo + (nucleo ? `  ·  ${nucleo}` : ''));
-    drawKV('Setor', setor + (g.tipo ? `  ·  Tipo: ${g.tipo}` : ''));
-    drawKV('Período', `${inicio}   →   ${fim}`);
-    drawKV('Responsáveis', respNames.length ? respNames.join(', ') : '—');
-    drawKV('Gestor', gestor);
-    if (linkedTasks.length) drawKV('Tarefas vinculadas', `${linkedTasks.length}`);
+    drawKV('ESCOPO', escopo + (nucleo ? `  ·  ${nucleo}` : ''), M, 30);
+    drawKV('SETOR', setor + (g.tipo ? `  ·  Tipo: ${g.tipo}` : ''), M, 30);
+    drawKV('PERIODO', `${inicio}  —  ${fim}`, M, 30);
+    drawKV('RESPONSAVEIS', respNames.length ? respNames.join(', ') : '-', M, 30);
+    drawKV('GESTOR', gestor, M, 30);
+    if (linkedTasks.length) drawKV('TAREFAS VINCULADAS', `${linkedTasks.length}`, M, 30);
 
     y += 3;
 
-    // Objetivo geral (se diferente do título)
+    // Objetivo geral (quando diferente do título)
     if (g.objetivoNucleo && g.objetivoNucleo !== titulo) {
-      const oLines = wrap(`" ${g.objetivoNucleo} "`, CW - 8, 9.5);
-      const oH = Math.max(10, oLines.length * 4.2 + 4);
+      const oLines = wrap(g.objetivoNucleo, CW - 10, 9.5);
+      const oH = Math.max(10, oLines.length * 4.2 + 5);
       ensureSpace(oH + 4);
-      doc.setFillColor(...COL.light); doc.rect(M, y, CW, oH, 'F');
-      doc.setDrawColor(...COL.gold); doc.setLineWidth(1.2); doc.line(M, y, M, y + oH);
-      doc.setFont('helvetica', 'italic'); doc.setFontSize(9.5); doc.setTextColor(...COL.text);
-      doc.text(oLines, M + 4, y + 5);
+      setFill(COL.brandL); doc.rect(M, y, CW, oH, 'F');
+      setFill(COL.brand); doc.rect(M, y, 1.8, oH, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); setText(COL.brand);
+      doc.text(txt('OBJETIVO GERAL'), M + 4, y + 3.5);
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(9.5); setText(COL.text);
+      doc.text(oLines, M + 4, y + 7.5);
       y += oH + 4;
     }
 
     // Pilares
     (g.pilares || []).forEach((pilar, pi) => {
-      ensureSpace(24);
+      ensureSpace(28);
 
-      // Pilar header — faixa clara com ponderação + barra
+      // Cartão do pilar
       const pondP = Number(pilar.ponderacao) || 0;
-      doc.setFillColor(...COL.light); doc.rect(M, y, CW, 11, 'F');
-      doc.setFillColor(...COL.brand2); doc.rect(M, y, 2, 11, 'F');
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...COL.brand2);
-      doc.text(`PILAR ${pi + 1}`, M + 4, y + 4);
-      doc.setTextColor(...COL.text); doc.setFontSize(10);
-      doc.text((pilar.titulo || '(sem título)').slice(0, 70), M + 4, y + 8.5);
-      // Pond à direita
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...COL.gold);
-      doc.text(`${pondP}%`, W - M - 4, y + 7, { align: 'right' });
-      drawBar(M + 4, y + 10.2, CW - 8, pondP, COL.gold);
-      y += 15;
+      const pilarH = 14;
+      setFill(COL.brandL); doc.rect(M, y, CW, pilarH, 'F');
+      setFill(COL.brand2); doc.rect(M, y, 2.2, pilarH, 'F');
+
+      // Chip "PILAR N"
+      const pilarChip = drawChip(`PILAR ${pi + 1}`, M + 5, y + 2.2, COL.brand2, COL.white, 6.8, 2.4, 1.3);
+
+      // Título do pilar
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); setText(COL.text);
+      const pondW = 14; // espaço reservado para "100%"
+      const pilarTitleMaxW = CW - (pilarChip.w + 8) - pondW - 6;
+      const pilarTitleLines = wrap(pilar.titulo || '(sem titulo)', pilarTitleMaxW, 10);
+      doc.text(pilarTitleLines[0], M + 5 + pilarChip.w + 3, y + 5.3);
+
+      // Ponderação (canto direito, texto grande + barra fina)
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); setText(COL.gold);
+      doc.text(txt(`${pondP}%`), W - M - 3, y + 6, { align: 'right' });
+      drawBar(M + 5, y + pilarH - 2.6, CW - 10, pondP, COL.gold, 1.4);
+      y += pilarH + 2;
 
       // Objetivo do pilar
       if (pilar.objetivo) {
         const oLines = wrap(pilar.objetivo, CW - 10, 8.5);
         ensureSpace(oLines.length * 3.6 + 2);
-        doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); doc.setTextColor(...COL.muted);
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); setText(COL.muted);
         doc.text(oLines, M + 6, y);
         y += oLines.length * 3.6 + 3;
       }
 
       // Sub-metas
       (pilar.metas || []).forEach((meta, mi) => {
-        ensureSpace(28);
+        ensureSpace(30);
 
-        // Linha divisória
-        doc.setDrawColor(...COL.border); doc.setLineWidth(0.15);
-        doc.line(M + 8, y, W - M, y);
-        y += 3.5;
+        // Divisória sutil acima
+        setDraw(COL.border); doc.setLineWidth(0.12);
+        doc.line(M + 6, y, W - M, y);
+        y += 4;
 
-        // Cabeçalho da sub-meta
+        // Cabeçalho sub-meta: bullet circular + label + título + % direita
         const pondM = Number(meta.ponderacao) || 0;
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...COL.text);
-        const smTitle = meta.titulo || `Meta ${mi + 1}`;
-        const smLines = wrap(`▸ Sub-meta ${mi + 1}:  ${smTitle}`, CW - 28, 9.5);
-        doc.text(smLines[0], M + 6, y);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...COL.brand2);
-        doc.text(`${pondM}%`, W - M - 2, y, { align: 'right' });
-        y += 2;
-        drawBar(M + 8, y, CW - 20, pondM, COL.brand2);
-        y += 4.5;
+        setFill(COL.brand2); doc.circle(M + 7, y - 0.7, 1.2, 'F');
+
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); setText(COL.brand2);
+        const lbl = txt(`SUB-META ${mi + 1}`);
+        doc.text(lbl, M + 10, y - 0.2);
+        const lblW = doc.getTextWidth(lbl);
+
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); setText(COL.text);
+        const smTitleMaxW = CW - (10 - M) - lblW - 20;
+        const smLines = wrap(meta.titulo || `Meta ${mi + 1}`, smTitleMaxW, 9.5);
+        doc.text(smLines[0], M + 10 + lblW + 3, y);
+
+        // % à direita
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10); setText(COL.brand2);
+        doc.text(txt(`${pondM}%`), W - M - 1, y, { align: 'right' });
+        y += 2.2;
+        drawBar(M + 10, y, CW - 14, pondM, COL.brand2, 1.2);
+        y += 4;
+
         if (smLines.length > 1) {
-          doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...COL.text);
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); setText(COL.text);
           smLines.slice(1).forEach(l => { doc.text(l, M + 10, y); y += 4; });
-          y += 1;
+          y += 0.5;
         }
 
         // Descrição
         if (meta.descricao) {
           const dLines = wrap(meta.descricao, CW - 14, 8.5);
-          ensureSpace(dLines.length * 3.5 + 2);
-          doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...COL.text);
-          doc.text(dLines, M + 8, y);
-          y += dLines.length * 3.5 + 2.5;
+          ensureSpace(dLines.length * 3.6 + 2);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); setText(COL.text);
+          doc.text(dLines, M + 10, y);
+          y += dLines.length * 3.6 + 2.5;
         }
 
-        // Campos da sub-meta
+        // Campos (KV compactos indentados)
         const prazoL = GOAL_PRAZO_TYPES.find(p => p.value === meta.prazoTipo)?.label || '';
         const periodL = GOAL_PRAZO_TYPES.find(p => p.value === meta.periodicidadeTipo)?.label || '';
         const prazoStr = [
           prazoL,
           meta.recorrencia ? '(recorrente)' : '',
           meta.prazoTipo === 'custom' && meta.prazoCustomInicio
-            ? `${fmtDate(meta.prazoCustomInicio)} → ${fmtDate(meta.prazoCustomFim || '')}`
+            ? `${fmtDate(meta.prazoCustomInicio)}  —  ${fmtDate(meta.prazoCustomFim || '')}`
             : '',
         ].filter(Boolean).join(' ');
-        drawKV('Critério de medição', meta.criterio || '', 8);
-        drawKV('Formato de entrega',  meta.formato  || '', 8);
-        if (prazoStr) drawKV('Prazo', prazoStr, 8);
-        if (periodL)  drawKV('Periodicidade', periodL + (meta.recorrenciaAval ? '  (avaliação recorrente)' : ''), 8);
+        if (meta.criterio) drawKV('CRITERIO', meta.criterio, M, 30, 10, 8);
+        if (meta.formato)  drawKV('FORMATO',  meta.formato,  M, 30, 10, 8);
+        if (prazoStr)      drawKV('PRAZO', prazoStr, M, 30, 10, 8);
+        if (periodL)       drawKV('PERIODICIDADE', periodL + (meta.recorrenciaAval ? '  (avaliação recorrente)' : ''), M, 30, 10, 8);
 
         // KPIs
         const kpis = meta.kpis || [];
         if (kpis.length) {
-          ensureSpace(6 + kpis.length * 5.5);
-          y += 2;
-          doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...COL.brand2);
-          doc.text('KPIs', M + 8, y);
-          const kLineY = y + 1; doc.setDrawColor(...COL.brand2); doc.setLineWidth(0.3);
-          doc.line(M + 17, kLineY, M + 26, kLineY);
-          y += 4;
+          ensureSpace(8 + kpis.length * 6);
+          y += 1.5;
+
+          // Mini-header KPIs
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(7); setText(COL.gold);
+          doc.text(txt('KPIs'), M + 10, y);
+          setDraw(COL.gold); doc.setLineWidth(0.35);
+          doc.line(M + 18, y - 0.8, M + 26, y - 0.8);
+          y += 3.5;
+
+          const barW = 26;
           kpis.forEach((kpi, ki) => {
             ensureSpace(6);
             const peso = Number(kpi.peso) || 0;
-            // bullet dourado
-            doc.setFillColor(...COL.gold); doc.circle(M + 10, y - 0.8, 0.8, 'F');
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...COL.text);
-            const kLines = wrap(kpi.descricao || `KPI ${ki + 1}`, CW - 48, 8.5);
-            doc.text(kLines, M + 13, y);
-            // Peso à direita
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...COL.gold);
-            doc.text(`${peso}%`, W - M - 2, y, { align: 'right' });
-            // Barra curta abaixo do peso
-            drawBar(W - M - 24, y + 1.2, 22, peso, COL.gold);
-            y += Math.max(5, kLines.length * 3.5) + 1;
+
+            // Bullet dourado
+            setFill(COL.gold); doc.circle(M + 12, y - 0.7, 0.85, 'F');
+
+            // Descrição
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); setText(COL.text);
+            const kMaxW = CW - 16 - barW - 14;
+            const kLines = wrap(kpi.descricao || `KPI ${ki + 1}`, kMaxW, 8.5);
+            doc.text(kLines, M + 15, y);
+
+            // Peso (texto)
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); setText(COL.gold);
+            doc.text(txt(`${peso}%`), W - M - barW - 3, y, { align: 'right' });
+
+            // Barra (na horizontal, à direita do texto de peso)
+            drawBar(W - M - barW - 1, y - 1.4, barW, peso, COL.gold, 1.6);
+
+            y += Math.max(4.8, kLines.length * 3.6) + 1;
           });
           y += 1;
         }
 
-        // Observações — caixa destacada
+        // Observações — caixa dourada suave com barra lateral
         if (meta.observacoes) {
-          const oLines = wrap(meta.observacoes, CW - 18, 8);
-          const hBox = Math.max(8, oLines.length * 3.4 + 5);
+          const oLines = wrap(meta.observacoes, CW - 22, 8);
+          const hBox = Math.max(10, oLines.length * 3.4 + 6);
           ensureSpace(hBox + 3);
-          doc.setFillColor(...COL.obsBg); doc.rect(M + 8, y, CW - 16, hBox, 'F');
-          doc.setDrawColor(...COL.gold); doc.setLineWidth(0.6);
-          doc.line(M + 8, y, M + 8, y + hBox);
-          doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(...COL.gold);
-          doc.text('OBSERVAÇÕES', M + 11, y + 3);
-          doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...COL.text);
-          doc.text(oLines, M + 11, y + 7);
+          setFill(COL.goldL); doc.rect(M + 10, y, CW - 18, hBox, 'F');
+          setFill(COL.gold); doc.rect(M + 10, y, 1.5, hBox, 'F');
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); setText(COL.gold);
+          doc.text(txt('OBSERVACOES'), M + 13, y + 3.2);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(8); setText(COL.text);
+          doc.text(oLines, M + 13, y + 7);
           y += hBox + 3;
         }
 
@@ -2009,51 +2091,57 @@ async function exportGoalsPdf() {
   // ── Apêndice: Tarefas vinculadas ─────────────────────────
   const allLinked = [];
   allGoals.forEach(g => {
-    const metaTit = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || '—';
+    const metaTit = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || '-';
     allTasksForGoals.filter(t => t.goalId === g.id).forEach(t => allLinked.push({ g, metaTit, t }));
   });
 
   if (allLinked.length) {
     doc.addPage();
     drawRunningHeader();
-    doc.setTextColor(...COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-    doc.text('Tarefas vinculadas', M, y);
-    y += 3;
-    doc.setDrawColor(...COL.gold); doc.setLineWidth(0.6); doc.line(M, y, M + 22, y);
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+    doc.text(txt('Tarefas vinculadas'), M, y);
+    y += 2;
+    setDraw(COL.gold); doc.setLineWidth(0.7); doc.line(M, y + 1, M + 24, y + 1);
     y += 6;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...COL.muted);
-    doc.text(`${allLinked.length} ${allLinked.length === 1 ? 'tarefa vinculada' : 'tarefas vinculadas'} às metas acima`, M, y);
-    y += 8;
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); setText(COL.muted);
+    doc.text(txt(`${allLinked.length} ${allLinked.length === 1 ? 'tarefa vinculada' : 'tarefas vinculadas'} as metas acima`), M, y);
+    y += 7;
 
     allLinked.forEach(({ metaTit, t }) => {
-      ensureSpace(14);
-      // Card tarefa
-      doc.setDrawColor(...COL.border); doc.setLineWidth(0.2);
-      doc.roundedRect(M, y, CW, 12, 1.5, 1.5, 'S');
+      ensureSpace(16);
+
+      // Card
+      setDraw(COL.border); doc.setLineWidth(0.2);
+      setFill(COL.white); doc.roundedRect(M, y, CW, 13, 1.6, 1.6, 'FD');
+
       // Status chip
-      const st = t.status === 'done' ? 'CONCLUÍDA' : t.status === 'in_progress' ? 'EM ANDAMENTO' : (t.status || '—').toUpperCase();
-      const stCol = t.status === 'done' ? COL.green : t.status === 'in_progress' ? COL.blue : COL.muted;
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5);
-      const stw = doc.getTextWidth(st) + 5;
-      doc.setFillColor(...stCol); doc.roundedRect(M + 3, y + 2, stw, 4, 1, 1, 'F');
-      doc.setTextColor(255, 255, 255); doc.text(st, M + 5.5, y + 5);
-      // Evidência chip
+      let stLabel, stBg;
+      if (t.status === 'done') { stLabel = 'CONCLUIDA'; stBg = COL.green; }
+      else if (t.status === 'in_progress') { stLabel = 'EM ANDAMENTO'; stBg = COL.blue; }
+      else if (t.status === 'paused') { stLabel = 'PAUSADA'; stBg = COL.orange; }
+      else { stLabel = (t.status || '-').toUpperCase(); stBg = COL.muted; }
+      const sCh = drawChip(stLabel, M + 3, y + 2.2, stBg, COL.white, 6.5, 2.2, 1.2);
+
+      let chipX = M + 3 + sCh.w + 2;
       if (t.confirmadaEvidencia) {
-        doc.setFillColor(...COL.green); doc.roundedRect(M + 5 + stw, y + 2, 14, 4, 1, 1, 'F');
-        doc.setTextColor(255, 255, 255); doc.text('✓ EVID.', M + 6 + stw, y + 5);
+        const eCh = drawChip('EVIDENCIA', chipX, y + 2.2, COL.green, COL.white, 6.5, 2.2, 1.2);
+        chipX += eCh.w + 2;
       }
+
       // Título da tarefa
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...COL.text);
-      doc.text((t.title || '(sem título)').slice(0, 90), M + 3, y + 9.5);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); setText(COL.text);
+      const titleMaxW = CW - 70;
+      doc.text(wrap(t.title || '(sem titulo)', titleMaxW, 9)[0], M + 3, y + 10.5);
+
       // Meta de origem à direita
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...COL.muted);
-      const metaLabel = `↳ ${metaTit}`.slice(0, 50);
-      doc.text(metaLabel, W - M - 3, y + 5, { align: 'right' });
-      // Data concluída
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); setText(COL.muted);
+      doc.text(txt('de: ') + txt(metaTit).slice(0, 50), W - M - 3, y + 5.5, { align: 'right' });
       if (t.completedAt?.toDate) {
-        doc.text(t.completedAt.toDate().toLocaleDateString('pt-BR'), W - M - 3, y + 9.5, { align: 'right' });
+        doc.text(txt('concluida em ') + t.completedAt.toDate().toLocaleDateString('pt-BR'), W - M - 3, y + 10.5, { align: 'right' });
       }
-      y += 14;
+
+      y += 15;
     });
   }
 
@@ -2061,9 +2149,9 @@ async function exportGoalsPdf() {
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    doc.setFontSize(7); doc.setTextColor(...COL.muted); doc.setFont('helvetica', 'normal');
-    doc.text(`Página ${i} de ${pageCount}`, W - M, H - 6, { align: 'right' });
-    doc.text(`PRIMETOUR · Metas · ${new Date().toLocaleDateString('pt-BR')}`, M, H - 6);
+    doc.setFontSize(7); setText(COL.muted); doc.setFont('helvetica', 'normal');
+    doc.text(txt(`Pagina ${i} de ${pageCount}`), W - M, H - 6, { align: 'right' });
+    doc.text(txt(`PRIMETOUR  ·  Metas  ·  ${new Date().toLocaleDateString('pt-BR')}`), M, H - 6);
   }
 
   doc.save(`primetour_metas_${new Date().toISOString().slice(0, 10)}.pdf`);
