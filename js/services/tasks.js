@@ -275,7 +275,11 @@ export async function createTask(data) {
     comments:    [],
     attachments: [],
     order:       data.order       ?? Date.now(),
-    completedAt: null,
+    // Respeita completedAt explícito (ex.: import do Planner com tarefas já concluídas).
+    // Se status=done sem data, usa serverTimestamp; se status≠done, sempre null.
+    completedAt: data.status === 'done'
+      ? (data.completedAt || serverTimestamp())
+      : null,
     // Meta / evidência
     goalId:               data.goalId               || null,
     periodoRef:           data.periodoRef            || '',

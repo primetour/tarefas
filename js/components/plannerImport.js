@@ -323,6 +323,8 @@ function buildEditableTasks() {
     plannerId: (r['Identificação da tarefa'] || '').trim(),
     plannerCreatedBy: (r['Criado por'] || '').trim(),
     plannerCreatedAt: (r['Criado em'] || '').toString(),
+    completedAt: r['Concluído em'] || null,           // data real de conclusão (se status=done)
+    completedBy: (r['Concluída por'] || '').trim(),   // quem marcou como concluída no Planner
   }));
 }
 
@@ -1225,7 +1227,14 @@ function buildPayload(t) {
   let desc = t.description;
   if (t.plannerId) desc += (desc ? '\n\n' : '') + `[Importado do Planner — ID: ${t.plannerId}]`;
 
-  return {
+  // completedAt: usa "Concluído em" do Planner; se ausente mas status=done, fallback p/ dueDate ou hoje.
+  // Sem isso, KPI "Concluídas (período)" no dashboard fica em zero.
+  let completedAt = null;
+  if (t.status === 'done') {
+    completedAt = parseDate(t.completedAt) || parseDate(t.dueDate) || new Date();
+  }
+
+  const payload = {
     title: t.title || 'Sem título',
     description: desc,
     status: t.status,
@@ -1245,8 +1254,11 @@ function buildPayload(t) {
       plannerLabels: t.labels.length ? t.labels : null,
       plannerCreatedBy: t.plannerCreatedBy || null,
       plannerCreatedAt: t.plannerCreatedAt || null,
+      plannerCompletedBy: t.completedBy || null,
     },
   };
+  if (completedAt) payload.completedAt = completedAt;
+  return payload;
 }
 
 function renderImportResults() {
