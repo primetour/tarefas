@@ -524,7 +524,7 @@ export async function fetchTasks({
   status       = null,
   priority     = null,
   workspaceIds = null,   // null = usa activeWorkspaces do store
-  limitN       = 2000,
+  limitN       = 5000,
 } = {}) {
   // Estratégia: baixar TODAS as tarefas (até limitN) e filtrar client-side
   // para garantir que tarefas atribuídas em outros workspaces apareçam.
@@ -581,7 +581,7 @@ export async function fetchTasks({
  * e squad que fetchTasks() para respeitar permissões.
  * Retorna array vazio se a coleção não existir (coleção só surge na
  * primeira execução do archive-tasks). */
-export async function fetchArchivedTasks({ limitN = 2000 } = {}) {
+export async function fetchArchivedTasks({ limitN = 5000 } = {}) {
   try {
     const q = query(collection(db, 'tasks_archive'), limit(limitN));
     const snap = await getDocs(q);
@@ -610,15 +610,15 @@ export async function fetchArchivedTasks({ limitN = 2000 } = {}) {
 
 /* ─── Real-time listener ─────────────────────────────────── */
 export function subscribeToTasks(callback, filters = {}) {
-  // Estratégia: baixar TODAS as tarefas (até 2000) e filtrar client-side.
+  // Estratégia: baixar TODAS as tarefas (até 5000) e filtrar client-side.
   // Por quê não filtrar server-side por workspaceId?
   //   1. Tarefas atribuídas ao usuário em OUTROS workspaces deixariam de
   //      aparecer (o filtro server-side as exclui antes do client poder
   //      resgatá-las pelo isAssignee()).
   //   2. where('workspaceId') + orderBy('order') exige índice composto.
-  // Para bases até ~5k tarefas isso é tranquilo; acima disso, refatorar
+  // Para bases até ~10k tarefas isso ainda é tranquilo; acima disso, refatorar
   // para duas queries paralelas (workspaceId OR assignees).
-  const constraints = [orderBy('order', 'asc'), limit(2000)];
+  const constraints = [orderBy('order', 'asc'), limit(5000)];
   const q = query(collection(db, 'tasks'), ...constraints);
 
   let debounceTimer = null;

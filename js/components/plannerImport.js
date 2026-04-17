@@ -27,6 +27,64 @@ const PRIO_OPTS = [
 
 const SYSTEM_SECTORS = [...REQUESTING_AREAS];
 
+/* ─── Mapeamento bucket → área solicitante ──────────────────
+ * Como 100% das tarefas importadas vêm do plano de Marketing,
+ * o "bucket" do Planner é o setor que SOLICITOU o trabalho.
+ * O setor executor (sector) é sempre 'Marketing'. */
+const BUCKET_TO_AREA = {
+  'social media':                                  'Marketing',
+  'pts/centurion':                                 'PTS Bradesco',
+  'institucional/mkt':                             'Marketing',
+  'institucional':                                 'Marketing',
+  'btg':                                           'BTG',
+  'ics':                                           'Célula ICs',
+  'lazer':                                         'Lazer',
+  'operadora':                                     'Operadora',
+  'diretoria':                                     'Diretoria',
+  'city guides & agendas culturais':               'Marketing',
+  'city guides':                                   'Marketing',
+  'áreas de suporte (rh, qualidade, financeiro)':  'Qualidade',
+  'areas de suporte':                              'Qualidade',
+  'sites & hotsites':                              'TI',
+  'sites':                                         'TI',
+  'eventos':                                       'Eventos',
+  'sustentabilidade':                              'Qualidade',
+  'concierge':                                     'Concierge Bradesco',
+};
+
+/* ─── Mapeamento tag/rótulo → squad executor ────────────────
+ * Cada tag indica qual squad dentro do Marketing executa.
+ * Valores aqui são FRAGMENTOS de nome de squad (lowercase, sem acento)
+ * que serão buscados nos squads reais do usuário. Primeira tag que
+ * resolver para um squad ganha. Ordem do array é prioridade. */
+const TAG_SQUAD_HINTS = {
+  'newsletter':         ['comunic'],
+  'produção de texto':  ['comunic', 'redacao', 'redação'],
+  'revisão':            ['comunic'],
+  'dicas':              ['comunic'],
+  'pautas':             ['comunic'],
+  'releases e notas':   ['comunic', 'pr'],
+  'agendas culturais':  ['comunic'],
+  'cartas':             ['comunic'],
+  'revista':            ['comunic'],
+  'blog':               ['comunic', 'site', 'web'],
+  'material digital':   ['design'],
+  'material gráfico':   ['design'],
+  'branding':           ['design', 'brand'],
+  'apresentação':       ['design'],
+  'vídeo':              ['design', 'audiovisual', 'video'],
+  'site':               ['site', 'web', 'hotsite'],
+  'salesforce':         ['dado', 'bi', 'crm'],
+  'relatório':          ['dado', 'bi', 'analytics'],
+  'estudo':             ['dado', 'pesquisa', 'planejamento'],
+  'ig':                 ['social', 'redes'],
+  'cotação/produção':   ['suprimento', 'operac', 'compra'],
+  'treinamentos':       ['rh', 'treinamento'],
+  'planejamento':       ['planejamento', 'gestão', 'gestao'],
+  'organização':        ['gestão', 'gestao', 'admin'],
+  'kids':               [],
+};
+
 const esc = s => String(s || '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -45,8 +103,13 @@ function resetState() {
     // duplicatas. Tarefas já importadas começam DESmarcadas no step 5.
     existingPlannerIds: new Set(),
     existingPlannerCount: 0,
-    // Squad de destino (B11b — sempre explícito; default '' = sem squad).
+    // Squad de destino DEFAULT (fallback quando nenhuma tag da tarefa
+    // resolve para um squad específico via tagSquadMap).
     targetSquadId: '',
+    // Mapeamento Tag → Squad executor (resolvido a partir das tags do XLSX).
+    plannerLabels: [],          // lista única de tags do arquivo
+    tagSquadMap: {},            // tagName → squadId | ''
+    userSquads: [],             // squads carregados (usados para auto-match)
   };
 }
 
@@ -122,6 +185,7 @@ async function handleFile(file) {
     wiz.rawRows = rows;
     extractPlannerUsers();
     extractBuckets();
+    extractPlannerLabels();
     buildEditableTasks();
     await loadExistingPlannerIds();   // dedup: mapeia plannerIds já no sistema
 
@@ -186,6 +250,59 @@ function extractBuckets() {
   const set = new Set();
   wiz.rawRows.forEach(r => { const b = (r['Nome do Bucket'] || '').trim(); if (b) set.add(b); });
   wiz.plannerBuckets = [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+function extractPlannerLabels() {
+  const set = new Set();
+  wiz.rawRows.forEach(r => {
+    (r['Rótulos'] || '').split(';').map(s => s.trim()).filter(Boolean).forEach(l => set.add(l));
+  });
+  wiz.plannerLabels = [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+/* ─── Carrega squads do usuário (para auto-match tag→squad) ── */
+async function loadUserSquads() {
+  let squads = (store.get('userWorkspaces') || []).filter(w => !w.archived);
+  if (!squads.length) {
+    try {
+      const { collection, getDocs, query } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('../firebase.js');
+      const snap = await getDocs(query(collection(db, 'workspaces')));
+      squads = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(w => !w.archived);
+    } catch (e) {
+      console.warn('[plannerImport] erro ao carregar squads:', e.message);
+      squads = [];
+    }
+  }
+  wiz.userSquads = squads;
+}
+
+/* ─── Tag → squadId via dicionário de hints ───────────────────
+ * Tenta cada hint na ordem; primeiro squad que contiver o fragmento
+ * no nome (case/acento-insensível) ganha. Se a tag não está no
+ * dicionário, tenta o próprio nome da tag como hint. */
+function findBestSquadForTag(tagName, squads) {
+  if (!tagName || !squads.length) return '';
+  const key = norm(tagName);
+  const hints = TAG_SQUAD_HINTS[key] ?? [key];
+  for (const hint of hints) {
+    if (!hint) continue;
+    const m = squads.find(s => norm(s.name || '').includes(hint));
+    if (m) return m.id;
+  }
+  return '';
+}
+
+/* ─── Bucket → requestingArea (área solicitante) ──────────── */
+function findRequestingArea(bucket) {
+  if (!bucket) return '';
+  const key = norm(bucket);
+  if (BUCKET_TO_AREA[key]) return BUCKET_TO_AREA[key];
+  // Fallback: matchar contra REQUESTING_AREAS por substring
+  const m = SYSTEM_SECTORS.find(s => norm(s) === key);
+  if (m) return m;
+  const partial = SYSTEM_SECTORS.find(s => norm(s).includes(key) || key.includes(norm(s)));
+  return partial || '';
 }
 
 function buildEditableTasks() {
@@ -554,68 +671,144 @@ function attachStep3Events() {
    STEP 4 — Bucket → Setor / Tag mapping
    ═══════════════════════════════════════════════════════════ */
 function renderStep4() {
-  const counts = {};
-  wiz.rawRows.forEach(r => { const b = (r['Nome do Bucket'] || '').trim(); if (b) counts[b] = (counts[b] || 0) + 1; });
+  // Contagens
+  const bucketCounts = {};
+  const tagCounts = {};
+  wiz.rawRows.forEach(r => {
+    const b = (r['Nome do Bucket'] || '').trim();
+    if (b) bucketCounts[b] = (bucketCounts[b] || 0) + 1;
+    (r['Rótulos'] || '').split(';').map(s => s.trim()).filter(Boolean).forEach(l => {
+      tagCounts[l] = (tagCounts[l] || 0) + 1;
+    });
+  });
 
-  // Auto-match buckets to sectors on first visit
+  // Auto-match buckets → áreas solicitantes (1ª visita)
   if (!Object.keys(wiz.bucketMap).length) {
     wiz.plannerBuckets.forEach(b => {
-      const match = findBestSectorMatch(b);
-      wiz.bucketMap[b] = match ? { action: 'sector', sector: match.sector } : { action: 'tag' };
+      const area = findRequestingArea(b);
+      wiz.bucketMap[b] = { requestingArea: area || '' };
     });
   }
+
+  // Auto-match tags → squads (1ª visita)
+  if (!Object.keys(wiz.tagSquadMap).length) {
+    wiz.plannerLabels.forEach(t => {
+      wiz.tagSquadMap[t] = findBestSquadForTag(t, wiz.userSquads);
+    });
+  }
+
+  // Estatísticas de cobertura
+  const bucketsMatched = wiz.plannerBuckets.filter(b => wiz.bucketMap[b]?.requestingArea).length;
+  const tagsMatched = wiz.plannerLabels.filter(t => wiz.tagSquadMap[t]).length;
 
   return `<div class="pi-wiz">
     ${stepBar(4)}
     <div class="pi-body">
-      <h3 style="margin:0 0 4px;">Mapeamento de Buckets → Setores</h3>
-      <p class="pi-muted" style="margin:0 0 16px;">
-        Os Buckets do Planner geralmente correspondem a setores/áreas do sistema.
-        O sistema já tentou conectar automaticamente. Revise e ajuste.
+      <h3 style="margin:0 0 4px;">Mapeamento Inteligente</h3>
+      <p class="pi-muted" style="margin:0 0 12px;">
+        Como 100% destas tarefas vêm do plano de <strong>Marketing</strong>, o setor executor é fixo.<br>
+        <strong>Bucket</strong> = setor que solicitou · <strong>Rótulo/Tag</strong> = squad executor (dentro de Marketing).
       </p>
 
-      <div style="overflow-x:auto;">
+      <!-- Resumo de matches -->
+      <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+        <div class="pi-stat-card" style="background:#F0FDF4;border-color:#BBF7D0;color:#16A34A;">
+          <strong>${bucketsMatched}/${wiz.plannerBuckets.length}</strong> buckets → área solicitante
+        </div>
+        <div class="pi-stat-card" style="background:${tagsMatched ? '#F0FDF4' : '#FEF3C7'};
+          border-color:${tagsMatched ? '#BBF7D0' : '#FDE68A'};color:${tagsMatched ? '#16A34A' : '#D97706'};">
+          <strong>${tagsMatched}/${wiz.plannerLabels.length}</strong> tags → squad executor
+        </div>
+        ${!wiz.userSquads.length ? `<div class="pi-stat-card" style="background:#FEF2F2;border-color:#FECACA;color:#EF4444;">
+          ⚠ nenhum squad carregado — ajustar manualmente no step 5
+        </div>` : ''}
+      </div>
+
+      <!-- TABELA 1: Bucket → Área Solicitante -->
+      <h4 style="margin:0 0 6px;font-size:0.875rem;">📥 Buckets → Área Solicitante</h4>
+      <p class="pi-muted" style="margin:0 0 8px;font-size:0.75rem;">
+        Quem pediu o trabalho. Vai para o campo <code>requestingArea</code> da tarefa.
+      </p>
+      <div style="overflow-x:auto;margin-bottom:24px;">
         <table class="pi-table">
           <thead>
             <tr>
               <th>Bucket no Planner</th>
               <th style="text-align:center;">Tarefas</th>
               <th style="text-align:center;">Match</th>
-              <th>Destino no Sistema</th>
+              <th>Área Solicitante</th>
             </tr>
           </thead>
           <tbody>
             ${wiz.plannerBuckets.map(b => {
-              const count = counts[b] || 0;
-              const map = wiz.bucketMap[b] || { action: 'tag' };
-              const isSector = map.action === 'sector' && map.sector;
+              const count = bucketCounts[b] || 0;
+              const area = wiz.bucketMap[b]?.requestingArea || '';
+              const ok = !!area;
               return `<tr>
                 <td><strong>${esc(b)}</strong></td>
                 <td style="text-align:center;">${count}</td>
                 <td style="text-align:center;">
-                  <span class="pi-dot" style="background:${isSector ? '#16A34A20' : map.action === 'tag' ? '#3B82F620' : '#9CA3AF20'};
-                    color:${isSector ? '#16A34A' : map.action === 'tag' ? '#3B82F6' : '#9CA3AF'};">
-                    ${isSector ? '✓' : map.action === 'tag' ? 'T' : '—'}
+                  <span class="pi-dot" style="background:${ok ? '#16A34A20' : '#D9770620'};color:${ok ? '#16A34A' : '#D97706'};">
+                    ${ok ? '✓' : '?'}
                   </span>
                 </td>
                 <td>
-                  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-                    <select class="pi-bucket-action form-input" data-bucket="${esc(b)}"
-                      style="height:32px;font-size:0.8125rem;width:130px;">
-                      <option value="sector" ${map.action === 'sector' ? 'selected' : ''}>Setor</option>
-                      <option value="tag" ${map.action === 'tag' ? 'selected' : ''}>Tag</option>
-                      <option value="ignore" ${map.action === 'ignore' ? 'selected' : ''}>Ignorar</option>
-                    </select>
-                    <select class="pi-bucket-sector form-input" data-bucket="${esc(b)}"
-                      style="height:32px;font-size:0.8125rem;min-width:180px;${map.action !== 'sector' ? 'display:none;' : ''}
-                      border-color:${isSector ? '#16A34A' : '#D97706'};">
-                      <option value="">— Selecionar setor —</option>
-                      ${SYSTEM_SECTORS.map(s => `<option value="${esc(s)}" ${map.sector === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
-                    </select>
-                  </div>
+                  <select class="pi-bucket-area form-input" data-bucket="${esc(b)}"
+                    style="height:32px;font-size:0.8125rem;min-width:200px;
+                    border-color:${ok ? '#16A34A' : '#D97706'};">
+                    <option value="">— Sem área (opcional) —</option>
+                    ${SYSTEM_SECTORS.map(s => `<option value="${esc(s)}" ${area === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+                  </select>
                 </td>
               </tr>`;
             }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- TABELA 2: Tag → Squad Executor -->
+      <h4 style="margin:0 0 6px;font-size:0.875rem;">🎯 Rótulos/Tags → Squad Executor</h4>
+      <p class="pi-muted" style="margin:0 0 8px;font-size:0.75rem;">
+        Qual squad dentro do Marketing executou. Tarefa com várias tags pega o squad da <strong>primeira tag resolvida</strong>.
+        Tarefas sem tag mapeada caem no squad default (definido no step 5).
+      </p>
+      <div style="overflow-x:auto;">
+        <table class="pi-table">
+          <thead>
+            <tr>
+              <th>Tag no Planner</th>
+              <th style="text-align:center;">Ocorrências</th>
+              <th style="text-align:center;">Match</th>
+              <th>Squad no Sistema</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${wiz.plannerLabels.length ? wiz.plannerLabels.map(t => {
+              const count = tagCounts[t] || 0;
+              const squadId = wiz.tagSquadMap[t] || '';
+              const ok = !!squadId;
+              return `<tr>
+                <td><strong>${esc(t)}</strong></td>
+                <td style="text-align:center;">${count}</td>
+                <td style="text-align:center;">
+                  <span class="pi-dot" style="background:${ok ? '#16A34A20' : '#9CA3AF20'};color:${ok ? '#16A34A' : '#9CA3AF'};">
+                    ${ok ? '✓' : '—'}
+                  </span>
+                </td>
+                <td>
+                  <select class="pi-tag-squad form-input" data-tag="${esc(t)}"
+                    style="height:32px;font-size:0.8125rem;min-width:220px;
+                    border-color:${ok ? '#16A34A' : '#D97706'};">
+                    <option value="">— Sem mapeamento —</option>
+                    ${wiz.userSquads.map(s => `<option value="${esc(s.id)}" ${squadId === s.id ? 'selected' : ''}>
+                      ${esc(s.icon || '◈')} ${esc(s.name)}${s.multiSector ? ' · multi' : ''}
+                    </option>`).join('')}
+                  </select>
+                </td>
+              </tr>`;
+            }).join('') : `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">
+              Nenhum rótulo encontrado no arquivo.
+            </td></tr>`}
           </tbody>
         </table>
       </div>
@@ -634,88 +827,39 @@ function renderStep4() {
   </div>`;
 }
 
-function findBestSectorMatch(bucketName) {
-  if (!bucketName) return null;
-  const bn = norm(bucketName);
-
-  // Exact match
-  let m = SYSTEM_SECTORS.find(s => norm(s) === bn);
-  if (m) return { sector: m, confidence: 'exato' };
-
-  // Contains match
-  m = SYSTEM_SECTORS.find(s => norm(s).includes(bn) || bn.includes(norm(s)));
-  if (m) return { sector: m, confidence: 'parcial' };
-
-  // Special mappings
-  const specialMap = {
-    'pts/centurion': 'Centurion',
-    'pts centurion': 'Centurion',
-    'social media': 'Marketing',
-    'redes sociais': 'Marketing',
-    'institucional/mkt': 'Marketing',
-    'institucional': 'Marketing',
-    'ics': 'Célula ICs',
-    'city guides & agendas culturais': 'Marketing',
-    'city guides': 'Marketing',
-    'sites & hotsites': 'TI',
-    'sites': 'TI',
-    'concierge': 'Concierge Bradesco',
-    'areas de suporte': null,
-    'sustentabilidade': 'Qualidade',
-  };
-
-  for (const [key, val] of Object.entries(specialMap)) {
-    if (bn.includes(key) || key.includes(bn)) {
-      if (val) return { sector: val, confidence: 'sugerido' };
-      return null;
-    }
-  }
-
-  return null;
-}
-
 function attachStep4Events() {
   const body = wiz.modalRef?.getBody(); if (!body) return;
 
-  // Action type change (sector/tag/ignore)
-  body.querySelectorAll('.pi-bucket-action').forEach(sel => {
+  // Bucket → área solicitante
+  body.querySelectorAll('.pi-bucket-area').forEach(sel => {
     sel.addEventListener('change', e => {
       const bucket = e.target.dataset.bucket;
-      const action = e.target.value;
-      const sectorSel = e.target.closest('td')?.querySelector('.pi-bucket-sector');
-
-      if (action === 'sector') {
-        if (sectorSel) sectorSel.style.display = '';
-        const prevMap = wiz.bucketMap[bucket];
-        wiz.bucketMap[bucket] = { action: 'sector', sector: prevMap?.sector || '' };
-      } else {
-        if (sectorSel) sectorSel.style.display = 'none';
-        wiz.bucketMap[bucket] = { action };
-      }
-
-      // Update dot
-      const dot = e.target.closest('tr')?.querySelector('.pi-dot');
-      if (dot) {
-        const isSector = action === 'sector' && wiz.bucketMap[bucket]?.sector;
-        dot.style.background = isSector ? '#16A34A20' : action === 'tag' ? '#3B82F620' : '#9CA3AF20';
-        dot.style.color = isSector ? '#16A34A' : action === 'tag' ? '#3B82F6' : '#9CA3AF';
-        dot.textContent = isSector ? '✓' : action === 'tag' ? 'T' : '—';
-      }
-    });
-  });
-
-  // Sector selection
-  body.querySelectorAll('.pi-bucket-sector').forEach(sel => {
-    sel.addEventListener('change', e => {
-      const bucket = e.target.dataset.bucket;
-      wiz.bucketMap[bucket] = { action: 'sector', sector: e.target.value };
+      wiz.bucketMap[bucket] = { requestingArea: e.target.value };
       e.target.style.borderColor = e.target.value ? '#16A34A' : '#D97706';
 
       const dot = e.target.closest('tr')?.querySelector('.pi-dot');
       if (dot) {
-        dot.style.background = e.target.value ? '#16A34A20' : '#D9770620';
-        dot.style.color = e.target.value ? '#16A34A' : '#D97706';
-        dot.textContent = e.target.value ? '✓' : '?';
+        const ok = !!e.target.value;
+        dot.style.background = ok ? '#16A34A20' : '#D9770620';
+        dot.style.color = ok ? '#16A34A' : '#D97706';
+        dot.textContent = ok ? '✓' : '?';
+      }
+    });
+  });
+
+  // Tag → squad
+  body.querySelectorAll('.pi-tag-squad').forEach(sel => {
+    sel.addEventListener('change', e => {
+      const tag = e.target.dataset.tag;
+      wiz.tagSquadMap[tag] = e.target.value;
+      e.target.style.borderColor = e.target.value ? '#16A34A' : '#D97706';
+
+      const dot = e.target.closest('tr')?.querySelector('.pi-dot');
+      if (dot) {
+        const ok = !!e.target.value;
+        dot.style.background = ok ? '#16A34A20' : '#9CA3AF20';
+        dot.style.color = ok ? '#16A34A' : '#9CA3AF';
+        dot.textContent = ok ? '✓' : '—';
       }
     });
   });
@@ -825,7 +969,7 @@ function renderStep5() {
               <th style="min-width:95px;">Status</th>
               <th style="min-width:85px;">Prioridade</th>
               <th style="min-width:130px;">Responsável</th>
-              <th style="min-width:90px;">Setor</th>
+              <th style="min-width:90px;" title="Quem solicitou (bucket → área solicitante)">Solicitante</th>
               <th style="min-width:100px;">Prazo</th>
             </tr>
           </thead>
@@ -871,9 +1015,9 @@ function editRow(t) {
   });
   const hasUnresolved = names.some(r => !r.ok);
 
-  // Sector from bucket mapping
-  const bMap = wiz.bucketMap[t.bucket];
-  const sector = bMap?.action === 'sector' && bMap.sector ? bMap.sector : '';
+  // Sector executor é sempre Marketing (100% das tarefas).
+  // Mostra a área solicitante mapeada (ou bucket bruto como fallback) só p/ visualização.
+  const reqArea = wiz.bucketMap[t.bucket]?.requestingArea || '';
 
   // Overdue check
   const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date();
@@ -903,7 +1047,7 @@ function editRow(t) {
     <td>${names.length ? names.map(r => `<span class="pi-chip" style="--cc:${r.ok ? '#16A34A' : '#D97706'};">
       ${r.ok ? '✓' : '?'} ${esc(r.name.split(' ')[0])}</span>`).join(' ')
       : '<span class="pi-muted" style="font-size:0.7rem;">—</span>'}</td>
-    <td style="font-size:0.75rem;${sector ? 'color:var(--text-primary);font-weight:500;' : 'color:var(--text-muted);'}">${esc(sector || t.bucket)}</td>
+    <td style="font-size:0.75rem;${reqArea ? 'color:var(--text-primary);font-weight:500;' : 'color:var(--text-muted);'}" title="Setor solicitante (bucket: ${esc(t.bucket)})">${esc(reqArea || t.bucket)}</td>
     <td><input type="date" class="pi-iinput pi-ed-d" data-idx="${i}" value="${t.dueDate ? toISO(t.dueDate) : ''}"
       style="font-size:0.75rem;${isOverdue ? 'color:#EF4444;font-weight:600;' : ''}" /></td>
   </tr>`;
@@ -1042,18 +1186,25 @@ function buildPayload(t) {
   const tags = [];
   if (wiz.importTag) tags.push(wiz.importTag);
 
-  // Bucket → tag or sector
-  const bMap = wiz.bucketMap[t.bucket];
-  let sector = null;
-  if (bMap?.action === 'sector' && bMap.sector) {
-    sector = bMap.sector;
-  } else if (bMap?.action === 'tag' && t.bucket) {
-    tags.push(`planner:${t.bucket}`);
-  }
+  // SETOR EXECUTOR: fixo em Marketing (todas as tarefas vêm do plano de Marketing).
+  const sector = 'Marketing';
 
-  // Labels → tags
+  // ÁREA SOLICITANTE: derivada do bucket via wiz.bucketMap.
+  const requestingArea = wiz.bucketMap[t.bucket]?.requestingArea || '';
+
+  // SQUAD EXECUTOR: primeira tag mapeada ganha; fallback no targetSquadId default.
+  let resolvedSquadId = '';
+  for (const lbl of t.labels) {
+    const mapped = wiz.tagSquadMap[lbl];
+    if (mapped) { resolvedSquadId = mapped; break; }
+  }
+  const workspaceId = resolvedSquadId || wiz.targetSquadId || null;
+
+  // Tags = rótulos do Planner + import tag + flags
   t.labels.forEach(l => tags.push(l));
   if (t.isRecurring) tags.push('recorrente-planner');
+  // Marca tarefas onde o squad não pôde ser resolvido pelas tags
+  if (!resolvedSquadId && !wiz.targetSquadId) tags.push('planner-sem-squad');
 
   // Assignees
   const assignees = [];
@@ -1080,18 +1231,18 @@ function buildPayload(t) {
     status: t.status,
     priority: t.priority,
     sector,
+    requestingArea,
     assignees,
     tags,
     startDate: parseDate(t.startDate),
     dueDate: parseDate(t.dueDate),
     subtasks,
-    // B11b: squad de destino EXPLÍCITO. Antes, createTask caía no fallback
-    // store.get('currentWorkspace')?.id, jogando todas as tarefas no squad
-    // ativo do gestor no momento do import.
-    workspaceId: wiz.targetSquadId || null,
+    // B11b: squad de destino EXPLÍCITO (resolvido por tag ou default).
+    workspaceId,
     customFields: {
       plannerId: t.plannerId || null,
       plannerBucket: t.bucket || null,
+      plannerLabels: t.labels.length ? t.labels : null,
       plannerCreatedBy: t.plannerCreatedBy || null,
       plannerCreatedAt: t.plannerCreatedAt || null,
     },
@@ -1188,6 +1339,13 @@ async function goToStep(step) {
       <p class="pi-muted">Carregando usuários do sistema...</p></div></div>`;
     await loadSystemUsers();
     autoMatchUsers();
+  }
+
+  // Step 4 needs squads loaded for tag→squad auto-match
+  if (step === 4) {
+    body.innerHTML = `<div class="pi-wiz">${stepBar(4)}<div class="pi-body" style="text-align:center;padding:40px;">
+      <p class="pi-muted">Carregando squads do sistema...</p></div></div>`;
+    await loadUserSquads();
   }
 
   switch (step) {
