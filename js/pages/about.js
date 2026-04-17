@@ -81,7 +81,7 @@ const CONTENT = {
     </p>
     ${[
       ['#1a2a4a','#a8c4e8','🏢','Setor',        'Quem executa',         'Ex: Marketing, TI, Operadora, Financeiro. Campo <code>sector</code> presente em task_types, nucleos, users e requests.','0'],
-      ['#1a3a2a','#7ecfa8','◈', 'Núcleo',        'Equipe dentro do setor','Ex: Design, Comunicação, Dados, Web. Coleção <code>nucleos</code> com campo <code>sector</code>.','20'],
+      ['#1a3a2a','#7ecfa8','◈', 'Núcleo',        'Equipe dentro do setor','Ex: Design, Comunicação, Dados, Web. Coleção <code>nucleos</code> com campo <code>sector</code>. Um usuário pode pertencer a múltiplos núcleos do seu setor (<code>users.nucleos[]</code>).','20'],
       ['#3a1a2a','#d4a0be','📋','Tipo de tarefa','Define campos e fluxo', 'Ex: Newsletter, Apresentação. Tem <code>sector</code>, <code>nucleos[]</code>, <code>variations[]</code>, <code>steps[]</code>.','40'],
       ['#3a2a1a','#d4c0a0','🔀','Variação',      'Modalidade do entregável','Ex: Revisão de layout, Criação do zero. Array <code>{ id, name, slaDays }</code> dentro do tipo — o SLA vem daqui.','60'],
       ['#2a1a3a','#b0a0d4','✓', 'Tarefa',        'A demanda real',        'Instância criada no sistema com <code>typeId</code>, <code>variationId</code>, <code>sector</code>, <code>dueDate</code> e <code>assignees[]</code>.','80'],
@@ -159,7 +159,7 @@ const CONTENT = {
     ${[
       ['Diretoria',                    'Vê todos os setores, sem restrição.'],
       ['Head',                         'Vê apenas os setores definidos em <code>users.visibleSectors[]</code> — configurado pela Diretoria no perfil do usuário.'],
-      ['Gerente / Coordenador / Analista', 'Vê apenas o setor definido em <code>users.sector</code>. Um campo único, não um array.'],
+      ['Gerente / Coordenador / Analista', 'Vê apenas o setor definido em <code>users.sector</code> (campo único). Dentro do setor, pertence a um ou mais núcleos via <code>users.nucleos[]</code> — usados para filtrar responsáveis em Metas e membros em Setores & Núcleos.'],
     ].map(([role,desc]) => `
       <div style="display:flex;gap:8px;margin-bottom:8px;font-size:0.8125rem;line-height:1.6;">
         <span style="font-weight:600;color:var(--text-primary);min-width:220px;white-space:nowrap;">${role}</span>
@@ -180,7 +180,7 @@ const CONTENT = {
         ['requests',        [['id','pk'],['typeId','fk'],['variationId','new'],['variationName','new'],['sector','new'],['requestingArea',''],['outOfCalendar','new'],['nucleo',''],['status',''],['rejectionNote','new']]],
         ['nucleos',         [['id','pk'],['name',''],['sector','fk'],['active','']]],
         ['task_categories', [['id','pk'],['name',''],['sector','new'],['color, icon','']]],
-        ['users',           [['id','pk'],['role / roleId',''],['sector','fk'],['nucleo','fk'],['visibleSectors[]',''],['prefs.cardFields[]','']]],
+        ['users',           [['id','pk'],['role / roleId',''],['sector','fk'],['nucleos[]','new'],['nucleo','fk'],['visibleSectors[]',''],['prefs.cardFields[]','']]],
       ].map(([col,fields]) => `
         <div style="background:var(--bg-surface);border-radius:var(--radius-md);
           padding:12px 14px;border:1px solid var(--border-subtle);">

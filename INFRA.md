@@ -309,8 +309,8 @@ Mapa inverso: dada uma coleção, qual script/origem a alimenta.
 |---|---|---|
 | `tasks` | Tarefas | Coração do sistema — kanban, calendário, lista |
 | `tasks_archive` | Arquivamento | Read-only no app; escrito pelo cron |
-| `task_types`, `task_categories`, `nucleos`, `sectors` | Configuração de tarefas | Catálogos editáveis por admin |
-| `users`, `user_prefs` | Usuários | Auth + preferências |
+| `task_types`, `task_categories`, `nucleos`, `sectors` | Configuração de tarefas | Catálogos editáveis por admin. `nucleos[].name` é referenciado por `users.nucleos[]` e `goals.nucleo` |
+| `users`, `user_prefs` | Usuários | Auth + preferências. Schema setor/núcleo: ver §5.0 |
 | `roles` | Perfis de acesso | RBAC editável |
 | `workspaces` | Squads | Squads/projetos colaborativos |
 | `projects` | Projetos | Agrupamento de tarefas |
@@ -335,6 +335,57 @@ Mapa inverso: dada uma coleção, qual script/origem a alimenta.
 **Regras de segurança**: `firestore.rules` — controla quem pode ler/escrever
 cada coleção. Todos os scripts usam `firebase-admin` (bypass das rules por
 design — requer service account).
+
+---
+
+## 5.0 Modelo Setor → Núcleo → Usuário
+
+Hierarquia organizacional usada em Tarefas, Metas, Equipe, Capacidade e
+solicitações. **Um setor contém múltiplos núcleos; um usuário pode pertencer
+a múltiplos núcleos (desde que todos sejam do mesmo setor).**
+
+### Campos no documento `users/{uid}`
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `sector` | `string` | Setor do usuário (ex.: "Marketing e Comunicação"). Fonte única; `department` é legado/mirror |
+| `nucleos` | `string[]` | **Canônico.** Núcleos aos quais o usuário pertence (nomes, não slugs). Ex.: `["Design", "Conteúdo"]` |
+| `nucleo` | `string` | **Legado/mirror.** Sempre espelha `nucleos[0]` quando há núcleos. Mantido p/ retrocompat de telas antigas |
+| `department` | `string` | **Legado.** Espelha `sector` quando setor é setado. Evitar novos usos |
+
+### Helpers canônicos (`js/services/sectors.js`)
+
+- `userNucleos(u)` → `string[]` — une `u.nucleos` + `u.nucleo` deduplicado. **Use este sempre ao ler.**
+- `userInNucleo(u, name)` → `boolean` — verifica pertencimento; tolera schema legado
+
+Consumidores: `goals.js`, `sectors.js`, `team.js`, `users.js`, `capacity.js`.
+
+### Escrita (dual-write por retrocompat)
+
+Em `users.js` (cadastro/edição) e `sectors.js` (modal "Membros do núcleo"):
+
+```js
+updateUserProfile(uid, {
+  nucleos: ['Design', 'Conteúdo'],
+  nucleo:  'Design',   // mirror = nucleos[0] || ''
+});
+```
+
+`auth.js::updateUserProfile` inclui `nucleos` e `nucleo` no `adminFields`
+allowlist. O modal de membros de um núcleo opera por **toggle** — adiciona/
+remove apenas aquele núcleo preservando os demais.
+
+### Cascade Setor → Núcleo
+
+O dropdown de núcleo em Usuários e em Metas é filtrado dinamicamente pelo
+setor selecionado, consumindo `store.get('nucleos')` (coleção Firestore,
+não mais constante hardcoded). Mudar o setor limpa a seleção de núcleo.
+
+### Migração
+
+**Sem migração necessária.** Ao editar um usuário pela primeira vez após a
+refatoração, o dual-write preenche `nucleos[]` a partir do `nucleo` legado.
+`userNucleos()` lida com ambos os formatos durante a transição.
 
 ---
 

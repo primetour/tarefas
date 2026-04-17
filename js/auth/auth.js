@@ -378,7 +378,11 @@ export async function createUser({ name, email, password, role, roleId, departme
 
   // Auditoria
   await auditLog(isRecovery ? 'users.recover' : 'users.create', 'user', uid, {
-    name, email, role: role || roleId, department: nucleo || department, isRecovery,
+    name, email,
+    role: role || roleId,
+    sector: (sector || '').trim(),
+    nucleos: userDoc.nucleos,
+    isRecovery,
   });
 
   return { id: uid, ...userDoc };
