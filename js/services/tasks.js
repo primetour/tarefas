@@ -239,8 +239,12 @@ export async function createTask(data) {
 
   const user = store.get('currentUser');
   const workspace = store.get('currentWorkspace');
+  // workspaceId: respeita valor EXPLÍCITO (incluindo null para "sem squad").
+  // Antes, `data.workspaceId || workspace?.id` fazia null cair no fallback —
+  // o que jogava todas as tarefas importadas no squad ativo do gestor (B11b).
+  const wsId = ('workspaceId' in data) ? (data.workspaceId || null) : (workspace?.id || null);
   const taskDoc = {
-    workspaceId:      data.workspaceId || workspace?.id || null,
+    workspaceId:      wsId,
     sector:           data.sector || store.get('userSector') || null,
     title:            data.title?.trim()        || 'Nova Tarefa',
     description:      data.description?.trim()  || '',

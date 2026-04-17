@@ -12,7 +12,7 @@ import {
 import {
   fetchCategories, fetchCategoriesBySector,
   createCategory, updateCategory, deleteCategory,
-  CATEGORY_COLORS,
+  CATEGORY_COLORS, CATEGORY_ICONS,
 } from '../services/taskCategories.js';
 import { loadNucleos } from '../services/sectors.js';
 
@@ -652,22 +652,29 @@ function openTypeModal(type = null) {
       rebuildSlots();
     });
     rebuildSlots();
-    // Inline new category
-    document.getElementById('tt-new-cat-btn')?.addEventListener('click', async () => {
-      const name = prompt('Nome da nova categoria:');
-      if (!name?.trim()) return;
-      try {
-        const sector = document.getElementById('tt-sector')?.value || null;
-        const cat = await createCategory({ name:name.trim(), sector, color:CATEGORY_COLORS[0], icon:'📋' });
-        allCategories.push(cat);
-        const sel = document.getElementById('tt-cat');
-        if (sel) {
+    // Inline new category — abre o editor completo (com ícone + cor)
+    document.getElementById('tt-new-cat-btn')?.addEventListener('click', () => {
+      const sector = document.getElementById('tt-sector')?.value || null;
+      // Pré-popular o setor no editor através de um cat "stub" sem id
+      const stub = { name:'', sector, icon: CATEGORY_ICONS[0], color: CATEGORY_COLORS[0] };
+      // Abrir editor em modo "criar" passando contexto via state inicial
+      openCategoryEditor(null, () => {
+        // Após criar, recarregar e selecionar a última categoria criada
+        const last = allCategories[allCategories.length - 1];
+        const sel  = document.getElementById('tt-cat');
+        if (sel && last) {
           const opt = document.createElement('option');
-          opt.value = `${cat.id}|${cat.name}`; opt.textContent = cat.name; opt.selected = true;
+          opt.value = `${last.id}|${last.name}`;
+          opt.textContent = `${last.icon||''} ${last.name}`;
+          opt.selected = true;
           sel.appendChild(opt);
         }
-        toast.success('Categoria criada!');
-      } catch(e) { toast.error(e.message); }
+      });
+      // Pré-seleciona o setor atual no editor após renderizar
+      setTimeout(() => {
+        const secSel = document.getElementById('cat-edit-sector');
+        if (secSel && stub.sector) secSel.value = stub.sector;
+      }, 80);
     });
   }, 60);
 }
@@ -675,24 +682,27 @@ function openTypeModal(type = null) {
 /* ─── Categories modal ──────────────────────────────────── */
 function openCategoriesModal() {
   const render = () => `
-    <div style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;">
+    <div style="display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto;">
       ${!allCategories.length
         ? `<p style="font-size:0.875rem;color:var(--text-muted);">Nenhuma categoria.</p>`
         : allCategories.map(c => `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;
             border-radius:var(--radius-md);background:var(--bg-surface);border:1px solid var(--border-subtle);">
-            <div style="width:8px;height:8px;border-radius:50%;background:${c.color||'#6B7280'};flex-shrink:0;"></div>
+            <div style="width:30px;height:30px;border-radius:var(--radius-sm);flex-shrink:0;
+              background:${(c.color||'#6B7280')}22;display:flex;align-items:center;justify-content:center;
+              font-size:1rem;border:1px solid ${(c.color||'#6B7280')}55;">${c.icon||'📋'}</div>
             <span style="font-size:0.875rem;flex:1;">${esc(c.name)}</span>
-            <button class="btn btn-ghost btn-icon btn-sm cat-edit" data-id="${c.id}">✎</button>
-            <button class="btn btn-ghost btn-icon btn-sm cat-del" data-id="${c.id}" style="color:var(--color-danger);">✕</button>
+            ${c.sector?`<span style="font-size:0.6875rem;padding:1px 6px;border-radius:var(--radius-full);
+              background:var(--bg-elevated);color:var(--text-muted);">${esc(c.sector)}</span>`:''}
+            <button class="btn btn-ghost btn-icon btn-sm cat-edit" data-id="${c.id}" title="Editar">✎</button>
+            <button class="btn btn-ghost btn-icon btn-sm cat-del" data-id="${c.id}" style="color:var(--color-danger);" title="Excluir">✕</button>
           </div>`).join('')}
     </div>`;
 
   modal.open({
     title:'Gerenciar Categorias', size:'sm',
     content:`
-      <div style="display:flex;gap:8px;margin-bottom:14px;">
-        <input type="text" class="form-input" id="new-cat-nm" placeholder="Nome da categoria" style="flex:1;" maxlength="40"/>
-        <button class="btn btn-primary btn-sm" id="add-cat-btn">+ Criar</button>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+        <button class="btn btn-primary btn-sm" id="add-cat-btn">+ Nova categoria</button>
       </div>
       <div id="cat-list">${render()}</div>`,
     footer:[{label:'Fechar',class:'btn-secondary',closeOnClick:true}],
@@ -705,15 +715,8 @@ function openCategoriesModal() {
       bind(refresh);
     };
     bind(refresh);
-    document.getElementById('add-cat-btn')?.addEventListener('click', async () => {
-      const name = document.getElementById('new-cat-nm')?.value?.trim();
-      if (!name) return;
-      try {
-        const cat = await createCategory({ name, color:CATEGORY_COLORS[0], icon:'📋' });
-        allCategories.push(cat);
-        document.getElementById('new-cat-nm').value = '';
-        refresh(); toast.success('Categoria criada!');
-      } catch(e) { toast.error(e.message); }
+    document.getElementById('add-cat-btn')?.addEventListener('click', () => {
+      openCategoryEditor(null, refresh);
     });
   }, 60);
 
@@ -728,14 +731,173 @@ function openCategoriesModal() {
     });
     document.querySelectorAll('.cat-edit').forEach(btn => {
       btn.addEventListener('click', () => {
-        const cat  = allCategories.find(c=>c.id===btn.dataset.id);
-        if (!cat) return;
-        const name = prompt('Novo nome:', cat.name);
-        if (!name?.trim()) return;
-        updateCategory(cat.id, {name:name.trim()}).then(() => { cat.name=name.trim(); refresh(); }).catch(e=>toast.error(e.message));
+        const cat = allCategories.find(c=>c.id===btn.dataset.id);
+        if (cat) openCategoryEditor(cat, refresh);
       });
     });
   }
+}
+
+/* ─── Category editor (create / edit) ───────────────────── */
+function openCategoryEditor(cat = null, onDone) {
+  const isEdit = !!cat;
+  const state  = {
+    name:   cat?.name   || '',
+    sector: cat?.sector || '',
+    icon:   cat?.icon   || CATEGORY_ICONS[0],
+    color:  cat?.color  || CATEGORY_COLORS[0],
+  };
+
+  modal.open({
+    title:   isEdit ? `Editar — ${cat.name}` : 'Nova Categoria',
+    size:    'md',
+    content: `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <!-- Nome -->
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Nome *</label>
+          <input type="text" class="form-input" id="cat-edit-name" maxlength="40"
+            value="${esc(state.name)}" placeholder="Ex: Identidade Visual" />
+        </div>
+
+        <!-- Setor -->
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Setor
+            <span title="Vincula a categoria a um setor (deixe vazio para global)." style="cursor:help;color:var(--text-muted);font-size:0.75rem;">ℹ</span>
+          </label>
+          <select class="form-select" id="cat-edit-sector">
+            <option value="">— Global (todos os setores) —</option>
+            ${REQUESTING_AREAS.map(a =>
+              `<option value="${a}" ${state.sector===a?'selected':''}>${a}</option>`
+            ).join('')}
+          </select>
+        </div>
+
+        <!-- Cor -->
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Cor</label>
+          <div id="cat-color-picker" style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${CATEGORY_COLORS.map(c => `
+              <div class="cat-color-swatch" data-color="${c}" style="
+                width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;
+                border:3px solid ${state.color===c?'var(--text-primary)':'transparent'};
+                box-shadow:${state.color===c?'0 0 0 1px '+c:'none'};
+                transition:all 0.15s;"></div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Ícone -->
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Ícone</label>
+          <div id="cat-icon-picker" style="display:grid;
+            grid-template-columns:repeat(auto-fill,minmax(36px,1fr));
+            gap:4px;max-height:220px;overflow-y:auto;
+            padding:8px;border:1px solid var(--border-subtle);
+            border-radius:var(--radius-md);background:var(--bg-surface);">
+            ${CATEGORY_ICONS.map(ic => `
+              <button type="button" class="cat-icon-swatch" data-icon="${ic}" style="
+                width:36px;height:36px;display:flex;align-items:center;justify-content:center;
+                font-size:1.125rem;cursor:pointer;border-radius:var(--radius-sm);
+                border:2px solid ${state.icon===ic?state.color:'transparent'};
+                background:${state.icon===ic?(state.color+'22'):'transparent'};
+                transition:all 0.12s;">${ic}</button>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Preview -->
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
+          border-radius:var(--radius-md);background:var(--bg-surface);
+          border:1px solid var(--border-subtle);">
+          <div id="cat-preview-icon" style="width:36px;height:36px;border-radius:var(--radius-sm);
+            background:${state.color}22;display:flex;align-items:center;justify-content:center;
+            font-size:1.125rem;border:1px solid ${state.color}55;">${state.icon}</div>
+          <div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Pré-visualização</div>
+            <div id="cat-preview-name" style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">
+              ${esc(state.name) || '(sem nome)'}
+            </div>
+          </div>
+        </div>
+      </div>
+    `,
+    footer: [
+      { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
+      {
+        label: isEdit ? 'Salvar' : 'Criar categoria',
+        class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const name = document.getElementById('cat-edit-name')?.value?.trim();
+          if (!name) { toast.error('Nome obrigatório.'); return; }
+          const sector = document.getElementById('cat-edit-sector')?.value || null;
+          const data   = { name, sector, icon: state.icon, color: state.color };
+          const btn = document.querySelector('.modal-footer .btn-primary');
+          if (btn) { btn.classList.add('loading'); btn.disabled = true; }
+          try {
+            if (isEdit) {
+              await updateCategory(cat.id, data);
+              Object.assign(cat, data);
+              toast.success('Categoria atualizada!');
+            } else {
+              const created = await createCategory(data);
+              allCategories.push(created);
+              toast.success('Categoria criada!');
+            }
+            close();
+            if (typeof onDone === 'function') onDone();
+          } catch(e) { toast.error(e.message); }
+          finally { if (btn) { btn.classList.remove('loading'); btn.disabled = false; } }
+        },
+      },
+    ],
+  });
+
+  setTimeout(() => {
+    // Color swatches
+    document.querySelectorAll('.cat-color-swatch').forEach(sw => {
+      sw.addEventListener('click', () => {
+        state.color = sw.dataset.color;
+        document.querySelectorAll('.cat-color-swatch').forEach(s => {
+          s.style.borderColor = 'transparent';
+          s.style.boxShadow   = 'none';
+        });
+        sw.style.borderColor = 'var(--text-primary)';
+        sw.style.boxShadow   = `0 0 0 1px ${state.color}`;
+        // Refresh icon swatch active border + preview
+        document.querySelectorAll('.cat-icon-swatch').forEach(b => {
+          if (b.dataset.icon === state.icon) {
+            b.style.borderColor = state.color;
+            b.style.background  = state.color + '22';
+          }
+        });
+        const prev = document.getElementById('cat-preview-icon');
+        if (prev) {
+          prev.style.background  = state.color + '22';
+          prev.style.borderColor = state.color + '55';
+        }
+      });
+    });
+    // Icon swatches
+    document.querySelectorAll('.cat-icon-swatch').forEach(b => {
+      b.addEventListener('click', () => {
+        state.icon = b.dataset.icon;
+        document.querySelectorAll('.cat-icon-swatch').forEach(x => {
+          x.style.borderColor = 'transparent';
+          x.style.background  = 'transparent';
+        });
+        b.style.borderColor = state.color;
+        b.style.background  = state.color + '22';
+        const prev = document.getElementById('cat-preview-icon');
+        if (prev) prev.textContent = state.icon;
+      });
+    });
+    // Live name preview
+    document.getElementById('cat-edit-name')?.addEventListener('input', e => {
+      const prev = document.getElementById('cat-preview-name');
+      if (prev) prev.textContent = e.target.value.trim() || '(sem nome)';
+    });
+  }, 60);
 }
 
 /* ─── Delete type ────────────────────────────────────────── */

@@ -16,7 +16,30 @@ export const CATEGORY_COLORS = [
   '#6366F1','#84CC16','#06B6D4','#6B7280',
 ];
 
-export const CATEGORY_ICONS = ['📋','🎨','📣','📊','🌐','⚙','🤖','📧','📸','🎬','📝','🔗'];
+// Coleção ampliada de ícones (B4) — agrupada por tema:
+// gestão, design, comunicação, dados, web, mídia, eventos, comercial, suporte
+export const CATEGORY_ICONS = [
+  // Gestão & processos
+  '📋','📌','📎','📁','📂','🗂','✅','⏰','📅','🎯','🏁','🧭',
+  // Design & visual
+  '🎨','🖌','🖍','🖼','✏','✒','🖊','📐','📏','✂','🪄','🎭',
+  // Comunicação & conteúdo
+  '📣','📢','💬','🗣','📝','📰','📃','📜','📚','🔖','💡','🧠',
+  // Dados & analytics
+  '📊','📈','📉','🧮','🔍','🧪','🧬','📡','💾','🗃','🗄','🧾',
+  // Web & tecnologia
+  '🌐','🔗','💻','🖥','📱','🖱','⌨','💿','🛰','🧰','🛠','⚙',
+  // Mídia & social
+  '📸','🎬','🎥','📷','🎙','🎧','🎵','🎤','📺','📻','▶','⏯',
+  // Eventos & viagens
+  '✈','🧳','🗺','🏖','🌅','🎟','🎉','🎊','🥂','🏨','🚌','🚆',
+  // Comercial & financeiro
+  '💼','💰','💳','🛒','🛍','🏷','💵','💸','📦','🧾','📑','🔑',
+  // Suporte & relacionamento
+  '🤝','🙋','🧑‍💼','👥','🫂','📞','📧','📨','💌','🤖','🛟','🆘',
+  // Geral / símbolos
+  '⭐','🌟','✨','🔥','⚡','🚀','🏆','🎖','🏅','💎','🎁','🛡',
+];
 
 /* ─── Fetch ───────────────────────────────────────────────── */
 export async function fetchCategories() {

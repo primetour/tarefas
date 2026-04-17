@@ -702,6 +702,10 @@ function renderStep5() {
 
   const filtered = getFilteredTasks();
 
+  // Squad-picker: lista os squads do usuário (gestor) — primeira vez selecionado fica null = sem squad
+  const userWorkspaces = (store.get('userWorkspaces') || []).filter(w => !w.archived);
+  if (typeof wiz.targetSquadId === 'undefined') wiz.targetSquadId = '';   // '' = sem squad
+
   return `<div class="pi-wiz">
     ${stepBar(5)}
     <div class="pi-body">
@@ -709,6 +713,26 @@ function renderStep5() {
       <p class="pi-muted" style="margin:0 0 12px;">
         Edite título, status, prioridade e prazo diretamente na tabela antes de importar.
       </p>
+
+      <!-- Squad de destino (B11b — sempre explícito; antes ia silenciosamente para o currentWorkspace) -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+        padding:10px 12px;margin-bottom:12px;
+        background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;">
+        <label style="font-size:0.8125rem;font-weight:600;white-space:nowrap;">
+          Squad de destino:
+        </label>
+        <select id="pi-target-squad" class="form-input" style="height:32px;font-size:0.8125rem;flex:1;min-width:180px;">
+          <option value="" ${wiz.targetSquadId === '' ? 'selected' : ''}>— Sem squad (visível por setor)</option>
+          ${userWorkspaces.map(w => `
+            <option value="${esc(w.id)}" ${wiz.targetSquadId === w.id ? 'selected' : ''}>
+              ${esc(w.icon || '◈')} ${esc(w.name)}${w.multiSector ? ' · multissetor' : ''}
+            </option>
+          `).join('')}
+        </select>
+        <span style="font-size:0.75rem;color:var(--text-muted);">
+          Aplica-se a todas as ${wiz.selectedRows.size} tarefas selecionadas.
+        </span>
+      </div>
 
       <!-- Summary -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:14px;">
@@ -883,6 +907,11 @@ function attachStep5Events() {
   body.querySelector('#pi-fsearch')?.addEventListener('input', e => {
     clearTimeout(timer); timer = setTimeout(() => { wiz.previewSearch = e.target.value; refreshTable(); }, 250);
   });
+
+  // Squad de destino (B11b)
+  body.querySelector('#pi-target-squad')?.addEventListener('change', e => {
+    wiz.targetSquadId = e.target.value || '';
+  });
 }
 
 function refreshTable() {
@@ -997,6 +1026,10 @@ function buildPayload(t) {
     startDate: parseDate(t.startDate),
     dueDate: parseDate(t.dueDate),
     subtasks,
+    // B11b: squad de destino EXPLÍCITO. Antes, createTask caía no fallback
+    // store.get('currentWorkspace')?.id, jogando todas as tarefas no squad
+    // ativo do gestor no momento do import.
+    workspaceId: wiz.targetSquadId || null,
     customFields: {
       plannerId: t.plannerId || null,
       plannerBucket: t.bucket || null,
