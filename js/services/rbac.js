@@ -285,18 +285,21 @@ export async function initSystemRoles() {
         updatedAt:  serverTimestamp(),
       });
     } else {
-      // Always force-sync ALL system role fields — name, desc, color, permissions
-      // This guarantees Firestore stays in sync with code regardless of when it was last updated
-      await setDoc(ref, {
-        ...snap.data(),
+      // Sync identidade do role (name/desc/color/isSystem) sempre.
+      // Permissões: só sobrescreve se o role NÃO foi customizado pelo admin.
+      // Se `customizedPermissions === true`, preserva as permissões editadas.
+      const data = snap.data() || {};
+      const customized = data.customizedPermissions === true;
+      const update = {
         id:          role.id,
         name:        role.name,
         description: role.description,
         color:       role.color,
         isSystem:    true,
-        permissions: role.permissions,
         updatedAt:   serverTimestamp(),
-      }, { merge: true });
+      };
+      if (!customized) update.permissions = role.permissions;
+      await setDoc(ref, update, { merge: true });
     }
   }
 }
@@ -343,19 +346,59 @@ export async function createRole({ name, description, color, permissions }) {
 }
 
 /* ─── Atualizar role ─────────────────────────────────────── */
+// Para roles de sistema: name/description/color/isSystem ficam intactos
+// (são sempre re-sincronizados pelo código via initSystemRoles); só as
+// PERMISSÕES podem ser ajustadas, e marcamos `customizedPermissions: true`
+// pra impedir que initSystemRoles sobrescreva as escolhas do admin.
 export async function updateRole(roleId, { name, description, color, permissions }) {
   if (!store.can('system_manage_roles')) throw new Error('Permissão negada.');
   const role = await getRole(roleId);
   if (!role) throw new Error('Role não encontrado.');
-  if (role.isSystem) throw new Error('Roles do sistema não podem ser editados.');
 
   const user = store.get('currentUser');
+  const updates = { updatedAt: serverTimestamp(), updatedBy: user.uid };
+
+  if (role.isSystem) {
+    // Apenas permissões editáveis em roles de sistema
+    if (permissions && typeof permissions === 'object') {
+      updates.permissions = permissions;
+      updates.customizedPermissions = true;
+      updates.customizedAt = serverTimestamp();
+      updates.customizedBy = user.uid;
+    } else {
+      throw new Error('Roles de sistema só permitem editar permissões.');
+    }
+  } else {
+    // Roles customizados: tudo editável
+    if (name)        updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (color)       updates.color = color;
+    if (permissions) updates.permissions = permissions;
+  }
+
+  await updateDoc(doc(db, 'roles', roleId), updates);
+  await auditLog('roles.update', 'role', roleId, {
+    name: role.name,
+    isSystem: !!role.isSystem,
+    customized: role.isSystem ? true : undefined,
+  });
+}
+
+/* ─── Resetar permissões de role de sistema ao default ──── */
+export async function resetSystemRolePermissions(roleId) {
+  if (!store.can('system_manage_roles')) throw new Error('Permissão negada.');
+  const sysRole = SYSTEM_ROLES.find(r => r.id === roleId);
+  if (!sysRole) throw new Error('Role de sistema não encontrado.');
+  const user = store.get('currentUser');
   await updateDoc(doc(db, 'roles', roleId), {
-    name, description, color, permissions,
+    permissions: sysRole.permissions,
+    customizedPermissions: false,
+    customizedAt: null,
+    customizedBy: null,
     updatedAt: serverTimestamp(),
     updatedBy: user.uid,
   });
-  await auditLog('roles.update', 'role', roleId, { name });
+  await auditLog('roles.reset', 'role', roleId, { name: sysRole.name });
 }
 
 /* ─── Excluir role ───────────────────────────────────────── */

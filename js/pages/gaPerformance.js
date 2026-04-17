@@ -229,15 +229,53 @@ export async function renderGaPerformance(container) {
       if (cwvView)     cwvView.style.display     = 'none';
       if (evoView)     evoView.style.display     = 'none';
 
+      const loadingHtml = (label) => `
+        <div style="padding:60px 20px;text-align:center;color:var(--text-muted);">
+          <div style="font-size:0.875rem;">${label}</div>
+        </div>`;
+      const errorHtml = (msg, retryId) => `
+        <div class="card" style="padding:30px;text-align:center;">
+          <div style="font-size:2rem;margin-bottom:8px;">⚠</div>
+          <div style="font-size:0.9375rem;font-weight:600;margin-bottom:6px;">Erro ao carregar dados</div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:14px;">${esc(msg || 'Falha desconhecida')}</div>
+          <button class="btn btn-primary btn-sm" id="${retryId}">Tentar novamente</button>
+        </div>`;
+
       if (tab === 'cwv') {
-        if (cwvView) cwvView.style.display = '';
-        if (!cwvLoaded) { cwvLoaded = true; await loadCwvData(); }
+        if (cwvView) {
+          cwvView.style.display = '';
+          if (!cwvLoaded) cwvView.innerHTML = loadingHtml('Carregando Core Web Vitals…');
+        }
+        if (!cwvLoaded) {
+          try {
+            await loadCwvData();
+            cwvLoaded = true;
+          } catch (e) {
+            console.error('[CWV] load failed:', e);
+            if (cwvView) cwvView.innerHTML = errorHtml(e.message, 'cwv-retry-btn');
+            document.getElementById('cwv-retry-btn')?.addEventListener('click', () => {
+              cwvLoaded = false; btn.click();
+            });
+            return;
+          }
+        }
         renderCwvView();
       } else if (tab === 'evolution') {
-        if (evoView) evoView.style.display = '';
-        // Reaproveita cwvSites se já carregados
-        if (!cwvLoaded) { cwvLoaded = true; await loadCwvData(); }
-        if (!evoLoaded) { evoLoaded = true; await loadEvolutionData(); }
+        if (evoView) {
+          evoView.style.display = '';
+          if (!evoLoaded) evoView.innerHTML = loadingHtml('Carregando histórico de auditorias…');
+        }
+        try {
+          if (!cwvLoaded) { await loadCwvData(); cwvLoaded = true; }
+          if (!evoLoaded) { await loadEvolutionData(); evoLoaded = true; }
+        } catch (e) {
+          console.error('[CWV-Evolution] load failed:', e);
+          if (evoView) evoView.innerHTML = errorHtml(e.message, 'evo-retry-btn');
+          document.getElementById('evo-retry-btn')?.addEventListener('click', () => {
+            cwvLoaded = false; evoLoaded = false; btn.click();
+          });
+          return;
+        }
         renderEvolutionView();
       } else {
         if (trafficView) trafficView.style.display = '';
@@ -917,7 +955,9 @@ async function loadCwvData() {
     }
   } catch (e) {
     console.warn('[CWV] load error:', e);
-    toast.error('Erro ao carregar auditorias: ' + e.message);
+    cwvSites = [];
+    cwvLatestRuns = [];
+    throw e; // Re-throw para handler de tab mostrar UI de retry
   }
 }
 
@@ -930,8 +970,8 @@ async function loadEvolutionData() {
     evoAllRuns = await fetchLatestRuns(cwvSelectedId, 200);
   } catch (e) {
     console.warn('[Evo] load error:', e);
-    toast.error('Erro ao carregar histórico: ' + e.message);
     evoAllRuns = [];
+    throw e; // Re-throw para handler de tab mostrar UI de retry
   }
 }
 

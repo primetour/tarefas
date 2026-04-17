@@ -7,7 +7,7 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import {
-  fetchRoles, createRole, updateRole, deleteRole,
+  fetchRoles, createRole, updateRole, deleteRole, resetSystemRolePermissions,
   PERMISSION_CATALOG, SYSTEM_ROLES,
 } from '../services/rbac.js';
 
@@ -184,31 +184,49 @@ function openDetailModal(role) {
 
 /* ─── Modal: criar / editar role ─────────────────────────── */
 function openRoleModal(role = null) {
-  const isEdit = !!role;
+  const isEdit   = !!role;
+  const isSystem = !!role?.isSystem;
+  const customized = role?.customizedPermissions === true;
   const perms  = role?.permissions || {};
+
+  const sysBanner = isSystem ? `
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin-bottom:16px;
+      background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.35);border-radius:var(--radius-md);
+      font-size:0.8125rem;color:var(--text-secondary);line-height:1.5;">
+      <span style="font-size:1rem;">⚙</span>
+      <span>
+        <strong>Role de sistema.</strong> Nome, descrição e cor são gerenciados pelo código.
+        Você pode ajustar apenas as <strong>permissões</strong>.
+        ${customized ? `Este role foi <strong>customizado</strong> — clique em "Restaurar padrão" para voltar às permissões originais.` : ''}
+      </span>
+    </div>
+  ` : '';
 
   modal.open({
     title:   isEdit ? `Editar — ${role.name}` : 'Novo Role',
     size:    'lg',
     content: `
+      ${sysBanner}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
         <div class="form-group" style="grid-column:span 2;">
-          <label class="form-label">Nome do role *</label>
+          <label class="form-label">Nome do role ${isSystem ? '' : '*'}</label>
           <input type="text" class="form-input" id="role-name"
-            value="${esc(role?.name||'')}" placeholder="Ex: Analista de Conteúdo" maxlength="50" />
+            value="${esc(role?.name||'')}" placeholder="Ex: Analista de Conteúdo" maxlength="50"
+            ${isSystem ? 'disabled' : ''} />
           <span class="form-error-msg" id="role-name-error"></span>
         </div>
         <div class="form-group" style="grid-column:span 2;">
           <label class="form-label">Descrição</label>
           <input type="text" class="form-input" id="role-desc"
-            value="${esc(role?.description||'')}" placeholder="Descreva o que esse cargo faz" maxlength="120" />
+            value="${esc(role?.description||'')}" placeholder="Descreva o que esse cargo faz" maxlength="120"
+            ${isSystem ? 'disabled' : ''} />
         </div>
         <div class="form-group">
           <label class="form-label">Cor de identificação</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;${isSystem ? 'opacity:0.5;pointer-events:none;' : ''}">
             ${['#A78BFA','#38BDF8','#22C55E','#F59E0B','#EF4444','#F97316','#EC4899','#06B6D4','#6B7280'].map(c=>`
               <div class="color-swatch-btn" data-color="${c}" style="width:28px;height:28px;border-radius:50%;
-                background:${c};cursor:pointer;border:3px solid ${(role?.color||'#6B7280')===c?'white':'transparent'};
+                background:${c};cursor:${isSystem?'not-allowed':'pointer'};border:3px solid ${(role?.color||'#6B7280')===c?'white':'transparent'};
                 box-shadow:${(role?.color||'#6B7280')===c?'0 0 0 2px '+c:'none'};
                 transition:all 0.15s;"></div>
             `).join('')}
@@ -249,13 +267,31 @@ function openRoleModal(role = null) {
     `,
     footer: [
       { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
+      ...(isSystem && customized ? [{
+        label: '↺ Restaurar padrão',
+        class: 'btn-secondary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const ok = await modal.confirm({
+            title: 'Restaurar permissões padrão',
+            message: `Restaurar as permissões originais do role "<strong>${esc(role.name)}</strong>"? As customizações serão perdidas.`,
+            confirmText: 'Restaurar', danger: false, icon: '↺',
+          });
+          if (!ok) return;
+          try {
+            await resetSystemRolePermissions(role.id);
+            toast.success('Permissões restauradas ao padrão.');
+            close();
+            await loadRoles();
+          } catch (e) { toast.error(e.message); }
+        },
+      }] : []),
       {
         label: isEdit ? 'Salvar' : 'Criar role',
         class: 'btn-primary', closeOnClick: false,
         onClick: async (_, { close }) => {
           const name  = document.getElementById('role-name')?.value?.trim();
           const errEl = document.getElementById('role-name-error');
-          if (!name) { if(errEl) errEl.textContent = 'Nome é obrigatório.'; return; }
+          if (!isSystem && !name) { if(errEl) errEl.textContent = 'Nome é obrigatório.'; return; }
           if(errEl) errEl.textContent = '';
 
           const permissions = {};
@@ -266,15 +302,17 @@ function openRoleModal(role = null) {
           const btn = document.querySelector('.modal-footer .btn-primary');
           if(btn){ btn.classList.add('loading'); btn.disabled=true; }
           try {
-            const data = {
-              name,
-              description: document.getElementById('role-desc')?.value?.trim() || '',
-              color:       document.getElementById('role-color')?.value || '#6B7280',
-              permissions,
-            };
+            const data = isSystem
+              ? { permissions } // sistema: só permissões
+              : {
+                  name,
+                  description: document.getElementById('role-desc')?.value?.trim() || '',
+                  color:       document.getElementById('role-color')?.value || '#6B7280',
+                  permissions,
+                };
             if (isEdit) {
               await updateRole(role.id, data);
-              toast.success('Role atualizado!');
+              toast.success(isSystem ? 'Permissões atualizadas!' : 'Role atualizado!');
             } else {
               await createRole(data);
               toast.success('Role criado!');

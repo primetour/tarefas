@@ -494,7 +494,7 @@ export async function fetchTasks({
   status       = null,
   priority     = null,
   workspaceIds = null,   // null = usa activeWorkspaces do store
-  limitN       = 200,
+  limitN       = 2000,
 } = {}) {
   // Otimização: filtrar por workspace no Firestore quando possível
   const constraints = [orderBy('order', 'asc'), limit(limitN)];
@@ -582,8 +582,11 @@ export async function fetchArchivedTasks({ limitN = 2000 } = {}) {
 
 /* ─── Real-time listener ─────────────────────────────────── */
 export function subscribeToTasks(callback, filters = {}) {
-  // Otimização: filtrar por workspace no Firestore quando possível
-  const constraints = [orderBy('order', 'asc'), limit(200)];
+  // Otimização: filtrar por workspace no Firestore quando possível.
+  // Limite alto (2000) pra suportar bases grandes sem perder tarefas;
+  // a UI filtra por data/status no cliente — manter limite baixo
+  // escondia tarefas válidas que estavam na "cauda" da ordenação.
+  const constraints = [orderBy('order', 'asc'), limit(2000)];
   const activeIds = store.getActiveWorkspaceIds();
   if (activeIds && activeIds.length === 1) {
     constraints.unshift(where('workspaceId', '==', activeIds[0]));
