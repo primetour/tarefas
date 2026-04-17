@@ -13,7 +13,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import {
   fetchNucleos, createNucleo, updateNucleo, deleteNucleo,
-  SECTORS,
+  SECTORS, userNucleos, userInNucleo,
 } from '../services/sectors.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -129,7 +129,7 @@ function render(visibleSectors) {
             <div style="display:flex;flex-wrap:wrap;gap:8px;">
               ${nucleos.map(n => {
                 const members = (store.get('users') || []).filter(u =>
-                  u.nucleo === n.name && u.active !== false
+                  userInNucleo(u, n.name) && u.active !== false
                 );
                 return `
                 <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;
@@ -195,8 +195,10 @@ function openMembersModal(nucleo, visibleSectors) {
     .filter(u => (u.sector || u.department) === nucleo.sector)
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Set mutável de UIDs que o usuário quer deixar no núcleo após salvar
-  const selected = new Set(users.filter(u => u.nucleo === nucleo.name).map(u => u.id));
+  // Set mutável de UIDs que queremos deixar NESTE núcleo após salvar.
+  // Semântica multi: marcar adiciona o núcleo na lista do usuário;
+  // desmarcar remove SÓ este núcleo (não mexe nos outros que ele tem).
+  const selected = new Set(users.filter(u => userInNucleo(u, nucleo.name)).map(u => u.id));
 
   if (!users.length) {
     modal.open({
@@ -215,9 +217,10 @@ function openMembersModal(nucleo, visibleSectors) {
   }
 
   const chipHtml = (u) => {
-    const inNuc    = selected.has(u.id);
-    const otherNuc = u.nucleo && u.nucleo !== nucleo.name;
-    const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    const inNuc     = selected.has(u.id);
+    const allNucs   = userNucleos(u);
+    const otherNucs = allNucs.filter(n => n !== nucleo.name);
+    const initials  = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
     return `
       <label class="nc-member-row" data-uid="${u.id}" style="
         display:flex;align-items:center;gap:10px;padding:8px 12px;
@@ -231,8 +234,8 @@ function openMembersModal(nucleo, visibleSectors) {
         <div style="flex:1;min-width:0;">
           <div style="font-size:0.8125rem;color:var(--text-primary);
             white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(u.name)}</div>
-          ${otherNuc ? `<div style="font-size:0.6875rem;color:var(--text-muted);">
-            Atualmente em: ${esc(u.nucleo)}</div>` : ''}
+          ${otherNucs.length ? `<div style="font-size:0.6875rem;color:var(--text-muted);">
+            Também em: ${esc(otherNucs.join(', '))}</div>` : ''}
         </div>
       </label>
     `;
@@ -247,9 +250,10 @@ function openMembersModal(nucleo, visibleSectors) {
           border-radius:var(--radius-md);padding:10px 14px;
           font-size:0.75rem;color:var(--text-secondary);line-height:1.5;">
           <span>ℹ</span>
-          <span>Um usuário pode estar em apenas um núcleo por vez.
-            Ao marcar aqui, ele é removido do núcleo anterior automaticamente.
-            Apenas usuários do setor <strong>${esc(nucleo.sector)}</strong> aparecem.</span>
+          <span>Um usuário pode participar de vários núcleos.
+            Marcar aqui <strong>adiciona este núcleo</strong> à lista dele;
+            desmarcar <strong>remove apenas este</strong> sem afetar os outros.
+            Só usuários do setor <strong>${esc(nucleo.sector)}</strong> aparecem.</span>
         </div>
         <input type="search" class="form-input" id="nc-members-search"
           placeholder="Buscar usuário..." style="margin:0;" />
@@ -325,16 +329,22 @@ function openMembersModal(nucleo, visibleSectors) {
 }
 
 async function saveMembers(nucleo, users, selectedSet) {
-  // Para cada user, computa o valor-alvo de `nucleo`:
-  //  - Se está no set e ainda não era membro → seta nucleo.name
-  //  - Se NÃO está no set e era membro deste núcleo → limpa (setar '')
-  //  - Se não mudou → pula (evita write desnecessário)
+  // Semântica multi: toggle do núcleo atual DENTRO da lista u.nucleos do
+  // usuário, sem apagar os outros núcleos dele. Back-compat: mantém
+  // u.nucleo = nucleos[0] pra consumidores antigos que leem o escalar.
   const ops = [];
   for (const u of users) {
-    const wasIn = u.nucleo === nucleo.name;
+    const wasIn = userInNucleo(u, nucleo.name);
     const nowIn = selectedSet.has(u.id);
-    if (wasIn && !nowIn) ops.push(updateUserProfile(u.id, { nucleo: '' }));
-    else if (!wasIn && nowIn) ops.push(updateUserProfile(u.id, { nucleo: nucleo.name }));
+    if (wasIn === nowIn) continue; // sem mudança
+    const current = userNucleos(u);
+    const next = nowIn
+      ? (current.includes(nucleo.name) ? current : [...current, nucleo.name])
+      : current.filter(n => n !== nucleo.name);
+    ops.push(updateUserProfile(u.id, {
+      nucleos: next,
+      nucleo:  next[0] || '', // back-compat (campo escalar)
+    }));
   }
   if (!ops.length) return;
   await Promise.all(ops);

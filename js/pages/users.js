@@ -11,6 +11,7 @@ import { db }          from '../firebase.js';
 import { store }       from '../store.js';
 import { createUser, updateUserProfile, deactivateUser, reactivateUser, getErrorMessage } from '../auth/auth.js';
 import { REQUESTING_AREAS } from '../services/tasks.js';
+import { userNucleos } from '../services/sectors.js';
 import { fetchRoles } from '../services/rbac.js';
 import { toast }       from '../components/toast.js';
 import { modal }       from '../components/modal.js';
@@ -297,7 +298,7 @@ function renderTable() {
               Papel ${sortIcon('role')}
             </th>
             <th data-sort="department">
-              Departamento ${sortIcon('department')}
+              Núcleos ${sortIcon('department')}
             </th>
             <th>Status</th>
             <th data-sort="lastLogin">Último acesso ${sortIcon('lastLogin')}</th>
@@ -345,7 +346,7 @@ function renderUserRow(user) {
       <td><span class="badge" style="background:${roleConfig?.color||'#6B7280'}22;color:${roleConfig?.color||'#6B7280'};border:1px solid ${roleConfig?.color||'#6B7280'}44;">
         ${escHtml(roleConfig?.name || roleConfig?.label || user.role || '—')}
       </span></td>
-      <td style="color:var(--text-secondary);">${escHtml(user.department || '—')}</td>
+      <td style="color:var(--text-secondary);">${escHtml(userNucleos(user).join(', ') || user.sector || user.department || '—')}</td>
       <td>
         <span class="badge ${user.active ? 'badge-success' : 'badge-danger'}">
           ${user.active ? '● Ativo' : '● Inativo'}
@@ -456,12 +457,14 @@ function openUserModal(userId = null) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Núcleo</label>
-          <select class="form-select" id="uf-nucleo" size="1">
-            ${renderNucleoOpts(user?.sector || '', user?.nucleo || '')}
-          </select>
+          <label class="form-label">Núcleos <span style="font-weight:400;color:var(--text-muted);">(pode participar de mais de um)</span></label>
+          <div id="uf-nucleos-picker" data-selected="${escHtml(JSON.stringify(userNucleos(user)))}"
+            style="display:flex;flex-wrap:wrap;gap:6px;padding:8px;min-height:40px;
+            border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-elevated);">
+            ${renderNucleoChips(user?.sector || '', userNucleos(user))}
+          </div>
           <span class="form-hint" style="font-size:0.7rem;color:var(--text-muted);">
-            Apenas núcleos do setor selecionado aparecem aqui.
+            Só núcleos do setor selecionado aparecem. Clique para adicionar/remover.
           </span>
         </div>
       </div>
@@ -535,14 +538,14 @@ function openUserModal(userId = null) {
     });
   }, 60);
 
-  // Cascata Setor → Núcleo: quando o setor muda, re-renderiza as opções
-  // de núcleo filtradas por aquele setor e limpa a seleção anterior.
+  // Cascata Setor → Núcleos: quando o setor muda, zera a seleção e re-renderiza
+  // os chips filtrados pelo novo setor. Wire inicial dos chips também aqui.
   setTimeout(() => {
-    const setorSel  = document.getElementById('uf-department');
-    const nucleoSel = document.getElementById('uf-nucleo');
-    if (!setorSel || !nucleoSel) return;
+    const setorSel = document.getElementById('uf-department');
+    if (!setorSel) return;
+    wireNucleoChips(setorSel.value);
     setorSel.addEventListener('change', () => {
-      nucleoSel.innerHTML = renderNucleoOpts(setorSel.value, '');
+      writeSelectedNucleos(setorSel.value, []); // troca de setor → zera núcleos
     });
   }, 60);
 
@@ -560,23 +563,72 @@ function openUserModal(userId = null) {
 }
 
 /**
- * Renderiza as <option> do dropdown de núcleo filtradas pelo setor dado.
- * Setor vazio → só mostra o placeholder, pra forçar escolher setor primeiro.
- * Usa n.name como value (match direto com u.nucleo em todas as telas).
+ * Renderiza os chips multi-select de núcleo, filtrados pelo setor dado.
+ * Setor vazio → mostra placeholder. Os selecionados ficam ativos (border gold).
+ * Ao clicar, alterna o selecionado — a fonte da verdade fica no data-selected
+ * do container (JSON array) pra sobreviver a re-renderizações do picker.
  */
-function renderNucleoOpts(sector, currentNucleo) {
+function renderNucleoChips(sector, selectedNames) {
   const all = store.get('nucleos') || [];
   const list = sector ? all.filter(n => n.sector === sector) : [];
   if (!sector) {
-    return `<option value="">— Selecione o setor primeiro —</option>`;
+    return `<span style="font-size:0.75rem;color:var(--text-muted);padding:4px;">
+      Selecione o setor primeiro.
+    </span>`;
   }
   if (!list.length) {
-    return `<option value="">— Nenhum núcleo cadastrado neste setor —</option>`;
+    return `<span style="font-size:0.75rem;color:var(--text-muted);padding:4px;">
+      Nenhum núcleo cadastrado neste setor.
+    </span>`;
   }
-  return `<option value="">— Sem núcleo —</option>` +
-    list.map(n =>
-      `<option value="${escHtml(n.name)}" ${currentNucleo === n.name ? 'selected' : ''}>${escHtml(n.name)}</option>`
-    ).join('');
+  const sel = new Set(selectedNames || []);
+  return list.map(n => {
+    const isSel = sel.has(n.name);
+    return `<span class="uf-nuc-chip" data-name="${escHtml(n.name)}" style="
+      display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
+      border-radius:var(--radius-full);font-size:0.8125rem;cursor:pointer;
+      border:1px solid ${isSel ? (n.color||'var(--brand-gold)') : 'var(--border-subtle)'};
+      background:${isSel ? (n.color||'#6B7280')+'22' : 'var(--bg-surface)'};
+      color:${isSel ? 'var(--text-primary)' : 'var(--text-secondary)'};
+      transition:all 0.15s;">
+      <span style="width:8px;height:8px;border-radius:50%;background:${n.color||'#6B7280'};"></span>
+      ${escHtml(n.name)}
+      ${isSel ? '<span style="color:var(--brand-gold);">✓</span>' : ''}
+    </span>`;
+  }).join('');
+}
+
+/** Lê os núcleos atualmente selecionados no picker (fonte: data-selected JSON). */
+function readSelectedNucleos() {
+  const picker = document.getElementById('uf-nucleos-picker');
+  if (!picker) return [];
+  try { return JSON.parse(picker.dataset.selected || '[]') || []; }
+  catch { return []; }
+}
+
+/** Atualiza o array de selecionados no data-attribute e re-renderiza chips. */
+function writeSelectedNucleos(sector, selected) {
+  const picker = document.getElementById('uf-nucleos-picker');
+  if (!picker) return;
+  picker.dataset.selected = JSON.stringify(selected);
+  picker.innerHTML = renderNucleoChips(sector, selected);
+  wireNucleoChips(sector);
+}
+
+/** Wire-up dos chips (delega clique → toggle no array). */
+function wireNucleoChips(sector) {
+  const picker = document.getElementById('uf-nucleos-picker');
+  if (!picker) return;
+  picker.querySelectorAll('.uf-nuc-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const name = chip.dataset.name;
+      const current = readSelectedNucleos();
+      const idx = current.indexOf(name);
+      if (idx > -1) current.splice(idx, 1);
+      else current.push(name);
+      writeSelectedNucleos(sector, current);
+    });
+  });
 }
 
 async function handleUserSave(userId, isEdit, closeModal) {
@@ -585,9 +637,11 @@ async function handleUserSave(userId, isEdit, closeModal) {
   const password   = document.getElementById('uf-password')?.value;
   const role       = document.getElementById('uf-role')?.value;
   const department = document.getElementById('uf-department')?.value?.trim();
-  // Núcleo: só o que o usuário escolheu. Nunca cai em setor (isso poluía
-  // u.nucleo com nome de setor e quebrava o filtro de responsáveis em Metas).
-  const nucleo     = document.getElementById('uf-nucleo')?.value?.trim() || '';
+  // Núcleos: multi-select — array de nomes. Back-compat: grava também
+  // u.nucleo = nucleos[0] pra consumidores antigos que ainda leem o campo
+  // escalar (o helper userNucleos unifica os dois na leitura).
+  const nucleos    = readSelectedNucleos();
+  const nucleo     = nucleos[0] || '';
   const active     = document.getElementById('uf-active')?.checked ?? true;
 
   // Validation
@@ -626,10 +680,10 @@ async function handleUserSave(userId, isEdit, closeModal) {
   try {
     if (isEdit) {
       const visibleSectors = Array.from(document.querySelectorAll('.sector-vis-cb:checked')).map(cb => cb.value);
-      await updateUserProfile(userId, { name, role, roleId: role, department: nucleo, nucleo, sector: department, active, visibleSectors });
+      await updateUserProfile(userId, { name, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department, active, visibleSectors });
       toast.success(`Usuário "${name}" atualizado com sucesso!`);
     } else {
-      await createUser({ name, email, password, role, roleId: role, department: nucleo, nucleo, sector: department });
+      await createUser({ name, email, password, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department });
       toast.success(`Usuário "${name}" criado com sucesso!`);
     }
     closeModal();

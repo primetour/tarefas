@@ -11,6 +11,7 @@ import {
   fetchUserAbsences, fetchAllAbsences,
   getTeamAvailability, ABSENCE_TYPES,
 } from '../services/capacity.js';
+import { userNucleos } from '../services/sectors.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -167,7 +168,7 @@ function renderMembers(container) {
             <div style="min-width:0;flex:1;">
               <div style="font-weight:600;color:var(--text-primary);
                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.name)}</div>
-              <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u.nucleo||u.department||u.email||'')}</div>
+              <div style="font-size:0.75rem;color:var(--text-muted);">${esc(userNucleos(u).join(', ') || u.email || '')}</div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">

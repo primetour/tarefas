@@ -307,7 +307,7 @@ export async function fetchUserProfile(uid) {
 }
 
 // ─── Criar usuário (somente admins) ───────────────────────
-export async function createUser({ name, email, password, role, roleId, department = '', nucleo = '', sector = '' }) {
+export async function createUser({ name, email, password, role, roleId, department = '', nucleo = '', nucleos = [], sector = '' }) {
   if (!store.can('system_manage_users')) throw new Error('Permissão negada.');
 
   let uid;
@@ -359,6 +359,9 @@ export async function createUser({ name, email, password, role, roleId, departme
     role:         role || roleId,    // mantido para compatibilidade
     roleId:       roleId || role,    // novo campo RBAC
     nucleo:       (nucleo || department).trim(),
+    nucleos:      Array.isArray(nucleos) && nucleos.length
+                    ? nucleos.map(n => String(n||'').trim()).filter(Boolean)
+                    : ((nucleo || department).trim() ? [(nucleo || department).trim()] : []),
     department:   (nucleo || department).trim(),
     sector:       (sector || '').trim(),
     avatarColor:  avatarColor,
@@ -397,7 +400,7 @@ export async function updateUserProfile(uid, data) {
   ];
   const adminFields = [
     'role', 'roleId', 'active',
-    'nucleo', 'sector', 'visibleSectors',
+    'nucleo', 'nucleos', 'sector', 'visibleSectors',
   ];
 
   const updateData = {};

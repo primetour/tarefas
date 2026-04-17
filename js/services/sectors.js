@@ -131,3 +131,29 @@ export function filterUsersBySector(users) {
     return !userSector || visible.includes(userSector);
   });
 }
+
+/* ─── Núcleos do usuário (multi) ──────────────────────────── */
+/**
+ * Retorna a lista de núcleos em que o usuário participa.
+ *
+ * Schema canônico: u.nucleos: string[]  (array de nomes)
+ * Back-compat:     u.nucleo:  string    (campo legado, usado como fallback)
+ *
+ * Se só o legado existir, empacota em array. Se for string vazia em algum
+ * item, remove. Dedup no final.
+ */
+export function userNucleos(u) {
+  if (!u) return [];
+  const arr = Array.isArray(u.nucleos) ? u.nucleos : [];
+  const legacy = typeof u.nucleo === 'string' && u.nucleo.trim() ? [u.nucleo.trim()] : [];
+  const set = new Set([...arr, ...legacy].map(s => String(s || '').trim()).filter(Boolean));
+  return Array.from(set);
+}
+
+/**
+ * Verifica se o usuário participa do núcleo `name`.
+ */
+export function userInNucleo(u, name) {
+  if (!name) return false;
+  return userNucleos(u).includes(name);
+}

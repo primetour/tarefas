@@ -16,13 +16,15 @@ import {
 import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask } from '../services/tasks.js';
 import { fetchAllWorkspaces } from '../services/workspaces.js';
 import { openTaskModal } from '../components/taskModal.js';
+import { userNucleos, userInNucleo } from '../services/sectors.js';
 
 /** Roles que podem ser gestor de uma meta. Analistas (member) ficam fora. */
 const GESTOR_ROLE_IDS = ['master', 'admin', 'manager', 'coordinator', 'partner'];
 const isGestorRole = u => GESTOR_ROLE_IDS.includes(u?.roleId || u?.role || '');
 
-/** Núcleo de um usuário (users.js salva como department E nucleo). */
-const userNucleo = u => u?.nucleo || u?.department || '';
+/** Núcleos do usuário (multi). Usado pra match. O legado u.nucleo/department
+ *  entra via userNucleos do service pra manter retrocompatibilidade. */
+const userNucleo = u => (userNucleos(u)[0]) || u?.department || '';
 /** Setor/área de um usuário (campo DB: sector). Sem fallback para department. */
 const userSetor  = u => u?.sector || '';
 
@@ -1146,7 +1148,7 @@ function buildRespChipsHTML(users, draft) {
   // - individual/area/global: sem filtro (escopo não é núcleo-específico)
   const shouldFilter = draft.escopo === 'nucleo' && draft.nucleo;
   const list = shouldFilter
-    ? users.filter(u => userNucleo(u) === draft.nucleo)
+    ? users.filter(u => userInNucleo(u, draft.nucleo))
     : users;
 
   if (!list.length) {
@@ -1207,7 +1209,7 @@ function filterRespByNucleo(respIds, nucleo) {
   const users = store.get('users') || [];
   return respIds.filter(id => {
     const u = users.find(x => x.id === id);
-    return u && userNucleo(u) === nucleo;
+    return u && userInNucleo(u, nucleo);
   });
 }
 
