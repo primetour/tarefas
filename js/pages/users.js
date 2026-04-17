@@ -458,11 +458,11 @@ function openUserModal(userId = null) {
         <div class="form-group">
           <label class="form-label">Núcleo</label>
           <select class="form-select" id="uf-nucleo" size="1">
-            <option value="">— Selecione o núcleo —</option>
-            ${(store.get('nucleos')||[]).map(n =>
-              `<option value="${n.name}" ${(user?.nucleo||user?.department||'')=== n.name?'selected':''}>${escHtml(n.name)}${n.sector ? ` (${n.sector})` : ''}</option>`
-            ).join('')}
+            ${renderNucleoOpts(user?.sector || '', user?.nucleo || '')}
           </select>
+          <span class="form-hint" style="font-size:0.7rem;color:var(--text-muted);">
+            Apenas núcleos do setor selecionado aparecem aqui.
+          </span>
         </div>
       </div>
 
@@ -535,6 +535,17 @@ function openUserModal(userId = null) {
     });
   }, 60);
 
+  // Cascata Setor → Núcleo: quando o setor muda, re-renderiza as opções
+  // de núcleo filtradas por aquele setor e limpa a seleção anterior.
+  setTimeout(() => {
+    const setorSel  = document.getElementById('uf-department');
+    const nucleoSel = document.getElementById('uf-nucleo');
+    if (!setorSel || !nucleoSel) return;
+    setorSel.addEventListener('change', () => {
+      nucleoSel.innerHTML = renderNucleoOpts(setorSel.value, '');
+    });
+  }, 60);
+
   // Toggle password visibility
   setTimeout(() => {
     const toggleBtn = document.getElementById('uf-toggle-pw');
@@ -548,13 +559,35 @@ function openUserModal(userId = null) {
   }, 50);
 }
 
+/**
+ * Renderiza as <option> do dropdown de núcleo filtradas pelo setor dado.
+ * Setor vazio → só mostra o placeholder, pra forçar escolher setor primeiro.
+ * Usa n.name como value (match direto com u.nucleo em todas as telas).
+ */
+function renderNucleoOpts(sector, currentNucleo) {
+  const all = store.get('nucleos') || [];
+  const list = sector ? all.filter(n => n.sector === sector) : [];
+  if (!sector) {
+    return `<option value="">— Selecione o setor primeiro —</option>`;
+  }
+  if (!list.length) {
+    return `<option value="">— Nenhum núcleo cadastrado neste setor —</option>`;
+  }
+  return `<option value="">— Sem núcleo —</option>` +
+    list.map(n =>
+      `<option value="${escHtml(n.name)}" ${currentNucleo === n.name ? 'selected' : ''}>${escHtml(n.name)}</option>`
+    ).join('');
+}
+
 async function handleUserSave(userId, isEdit, closeModal) {
   const name       = document.getElementById('uf-name')?.value?.trim();
   const email      = document.getElementById('uf-email')?.value?.trim();
   const password   = document.getElementById('uf-password')?.value;
   const role       = document.getElementById('uf-role')?.value;
   const department = document.getElementById('uf-department')?.value?.trim();
-  const nucleo     = document.getElementById('uf-nucleo')?.value?.trim() || department;
+  // Núcleo: só o que o usuário escolheu. Nunca cai em setor (isso poluía
+  // u.nucleo com nome de setor e quebrava o filtro de responsáveis em Metas).
+  const nucleo     = document.getElementById('uf-nucleo')?.value?.trim() || '';
   const active     = document.getElementById('uf-active')?.checked ?? true;
 
   // Validation
