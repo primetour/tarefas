@@ -10,7 +10,7 @@ import {
   saveEvaluation, fetchEvaluations,
   calcGoalProgress, getPendingPeriods, validateGoalWeights,
   emptyGoal, emptyPilar, emptyMeta, emptyKpi,
-  GOAL_SCOPES, GOAL_PRAZO_TYPES,
+  GOAL_SCOPES, GOAL_PRAZO_TYPES, SCOPE_FIELD_RULES,
   getResponsavelIds,
 } from '../services/goals.js';
 import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask } from '../services/tasks.js';
@@ -530,9 +530,21 @@ async function openGoalForm(container, goalId) {
         onClick: async (_,{close}) => {
           // Read form into draft
           readFormIntoDraft(draft);
+          // Validação mínima obrigatória antes de chamar Firestore
+          const titulo = (draft.nome || draft.objetivoNucleo || '').trim();
+          if (!titulo) { toast.error('Dê um nome ou objetivo à meta.'); return; }
+          if (!draft.pilares?.length) { toast.error('Adicione ao menos 1 pilar.'); return; }
+          // Sanitização: remove valores undefined (Firestore não aceita)
+          if (!Array.isArray(draft.responsavelIds)) draft.responsavelIds = [];
+          draft.responsavelIds = draft.responsavelIds.filter(Boolean);
+          // Campo legado responsavelId: se vier preservado do edit, removemos
+          if ('responsavelId' in draft) delete draft.responsavelId;
+          // Pra uniformidade, garante titulo preenchido
+          if (!draft.titulo) draft.titulo = titulo;
+
           const warnings = validateGoalWeights(draft);
           if (warnings.length) {
-            toast.error('⚠ ' + warnings[0] + (warnings.length>1?` (+${warnings.length-1} mais)`:''));
+            toast.warning('⚠ ' + warnings[0] + (warnings.length>1?` (+${warnings.length-1} mais)`:''));
           }
           try {
             const savedId = await saveGoal(goalId||null, draft);
@@ -541,7 +553,10 @@ async function openGoalForm(container, goalId) {
             close();
             renderGoalsList(container);
             toast.success(goalId?'Meta salva!':'Meta criada!');
-          } catch(e) { toast.error('Erro: '+e.message); }
+          } catch(e) {
+            console.error('[goals] Erro ao salvar meta:', e, { draft });
+            toast.error('Erro ao salvar: '+(e.message||'falha desconhecida'));
+          }
         }
       }
     ],
@@ -585,18 +600,22 @@ function buildGoalFormHTML(draft, users) {
           <input type="text" id="gf-nome" class="portal-field" style="width:100%;"
             value="${esc(draft.nome||'')}" placeholder="Ex: Meta de Produtividade Q1 2026">
         </div>
-        <div>
+        <div style="grid-column:span 2;">
           <label style="${LBL}">Escopo</label>
           <select id="gf-escopo" class="filter-select" style="width:100%;">
             ${GOAL_SCOPES.map(s=>`<option value="${s.value}" ${draft.escopo===s.value?'selected':''}>${s.icon} ${s.label}</option>`).join('')}
           </select>
+          <div id="gf-escopo-hint" style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;"></div>
         </div>
-        <div>
+        <div id="gf-nucleo-wrap">
           <label style="${LBL}">Núcleo</label>
           <select id="gf-nucleo" class="filter-select" style="width:100%;">${nucleoOpts}</select>
         </div>
-        <div style="grid-column:span 2;">
-          <label style="${LBL}">Responsável(is) <span style="font-weight:400;color:var(--text-muted);">(clique pra selecionar um ou mais)</span></label>
+        <div id="gf-responsaveis-wrap" style="grid-column:span 2;">
+          <label style="${LBL}">
+            <span id="gf-resp-label">Responsável(is)</span>
+            <span id="gf-resp-hint" style="font-weight:400;color:var(--text-muted);">(clique pra selecionar um ou mais)</span>
+          </label>
           <div id="gf-responsaveis" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;
             background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:var(--radius-md);
             max-height:180px;overflow-y:auto;">
@@ -675,7 +694,11 @@ function renderPilarHTML(pilar, pi) {
         value="${esc(pilar.titulo)}" placeholder="Título do pilar"
         style="flex:1;font-weight:600;font-size:0.9375rem;">
       <div style="display:flex;align-items:center;gap:6px;">
-        <label style="font-size:0.75rem;color:var(--text-muted);">Ponderação:</label>
+        <label style="font-size:0.75rem;color:var(--text-muted);display:flex;align-items:center;gap:4px;">
+          Ponderação
+          <span title="Peso deste pilar dentro da avaliação final da meta. A soma dos pilares precisa ser 100%."
+            style="cursor:help;color:var(--brand-gold);font-size:0.8125rem;">ⓘ</span>:
+        </label>
         <input type="number" class="portal-field gf-pilar-pond" data-pi="${pi}"
           value="${pilar.ponderacao||0}" min="0" max="100" step="1"
           style="width:65px;font-size:0.875rem;text-align:right;">
@@ -730,6 +753,8 @@ function renderMetaHTML(meta, pi, mi) {
         value="${esc(meta.titulo)}" placeholder="Título da meta"
         style="flex:1;font-size:0.875rem;font-weight:600;">
       <div style="display:flex;align-items:center;gap:5px;">
+        <span title="Peso desta meta dentro do pilar. A soma das metas de um mesmo pilar precisa ser 100%."
+          style="cursor:help;color:var(--brand-gold);font-size:0.75rem;">ⓘ</span>
         <input type="number" class="portal-field gf-meta-pond" data-pi="${pi}" data-mi="${mi}"
           value="${meta.ponderacao||0}" min="0" max="100" step="1"
           style="width:60px;font-size:0.8125rem;text-align:right;">
@@ -762,6 +787,8 @@ function renderMetaHTML(meta, pi, mi) {
             ${meta.recorrencia?'checked':''}
             style="accent-color:var(--brand-gold);">
           Com recorrência
+          <span title="A meta se repete ao longo do intervalo (ex: mensalmente do início ao fim). Caso contrário, é uma meta única no período total."
+            style="cursor:help;color:var(--brand-gold);font-size:0.75rem;">ⓘ</span>
         </label>
       </div>
       <div class="gf-meta-custom-range" data-pi="${pi}" data-mi="${mi}"
@@ -790,7 +817,18 @@ function renderMetaHTML(meta, pi, mi) {
             ${meta.recorrenciaAval?'checked':''}
             style="accent-color:var(--brand-gold);">
           Avaliação recorrente
+          <span title="Gera um período de avaliação a cada ciclo (ex: todo mês). Fica pendente na aba 'Avaliação de Metas' até o gestor registrar. Sem isso, é só uma avaliação única no fim."
+            style="cursor:help;color:var(--brand-gold);font-size:0.75rem;">ⓘ</span>
         </label>
+      </div>
+      <div style="grid-column:span 2;font-size:0.7rem;color:var(--text-muted);
+        background:rgba(212,168,67,0.06);border-left:3px solid var(--brand-gold);
+        padding:8px 10px;border-radius:4px;line-height:1.5;">
+        <strong style="color:var(--text-primary);">ℹ Como funciona a recorrência:</strong>
+        o sistema gera períodos pendentes conforme a periodicidade acima. Eles aparecem na aba
+        <strong>Avaliação de Metas</strong> como cards "aguardando avaliação". O gestor vinculado
+        abre o card e registra os scores dos KPIs para aquele período. Não há e-mail automático —
+        a notificação é a própria pendência visível na aba.
       </div>
     </div>
 
@@ -824,6 +862,8 @@ function renderKpiHTML(kpi, pi, mi, ki) {
     <input type="text" class="portal-field gf-kpi-desc" data-pi="${pi}" data-mi="${mi}" data-ki="${ki}"
       value="${esc(kpi.descricao)}" placeholder="Descrição do KPI"
       style="flex:1;font-size:0.8125rem;">
+    <span title="Peso deste KPI dentro da meta. A soma dos KPIs de uma mesma meta precisa ser 100%."
+      style="cursor:help;color:var(--brand-gold);font-size:0.75rem;">ⓘ</span>
     <input type="number" class="portal-field gf-kpi-peso" data-pi="${pi}" data-mi="${mi}" data-ki="${ki}"
       value="${kpi.peso||0}" min="0" max="100" step="1"
       style="width:60px;font-size:0.8125rem;text-align:right;">
@@ -988,7 +1028,10 @@ function wireGoalForm(draft) {
     });
   });
   document.getElementById('gf-gestor')?.addEventListener('change', e => { draft.gestorId = e.target.value; });
-  document.getElementById('gf-escopo')?.addEventListener('change', e => { draft.escopo = e.target.value; });
+  document.getElementById('gf-escopo')?.addEventListener('change', e => {
+    draft.escopo = e.target.value;
+    applyScopeVisibility(draft);
+  });
   document.getElementById('gf-nucleo')?.addEventListener('change', e => { draft.nucleo = e.target.value; });
   document.getElementById('gf-cargo')?.addEventListener('input', e => { draft.cargo = e.target.value; });
   document.getElementById('gf-nome')?.addEventListener('input', e => { draft.nome = e.target.value; });
@@ -1003,7 +1046,46 @@ function wireGoalForm(draft) {
     rerenderPilares();
   });
 
+  // Aplica visibilidade inicial baseada no escopo atual
+  applyScopeVisibility(draft);
+
   rerenderPilares();
+}
+
+/**
+ * Mostra/oculta campos Núcleo e Responsáveis conforme o escopo.
+ * Quando um campo é ocultado, zeramos o valor pra não contaminar o draft salvo.
+ */
+function applyScopeVisibility(draft) {
+  const rule = SCOPE_FIELD_RULES[draft.escopo] || SCOPE_FIELD_RULES.individual;
+
+  const nucleoWrap = document.getElementById('gf-nucleo-wrap');
+  const respWrap   = document.getElementById('gf-responsaveis-wrap');
+  const hint       = document.getElementById('gf-escopo-hint');
+  const respHint   = document.getElementById('gf-resp-hint');
+  const respLabel  = document.getElementById('gf-resp-label');
+
+  if (nucleoWrap) {
+    nucleoWrap.style.display = rule.showNucleo ? '' : 'none';
+    if (!rule.showNucleo) { draft.nucleo = ''; const s = document.getElementById('gf-nucleo'); if (s) s.value = ''; }
+  }
+  if (respWrap) {
+    respWrap.style.display = rule.showResponsaveis ? '' : 'none';
+    if (!rule.showResponsaveis) draft.responsavelIds = [];
+  }
+  if (hint) hint.textContent = rule.hint || '';
+
+  // Ajusta texto do picker conforme o modo (single / multi / optional)
+  if (respLabel && respHint) {
+    const modeLabels = {
+      single:   { label: 'Responsável',         hint: '(selecione 1 pessoa)' },
+      multi:    { label: 'Responsáveis',        hint: '(selecione 2 ou mais pessoas)' },
+      optional: { label: 'Responsáveis (opcional)', hint: '(opcional — líderes/pontos focais)' },
+    };
+    const ml = modeLabels[rule.respMode] || modeLabels.optional;
+    respLabel.textContent = ml.label;
+    respHint.textContent  = ml.hint;
+  }
 }
 
 function readFormIntoDraft(draft) {

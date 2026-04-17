@@ -939,7 +939,7 @@ function openEditModal(imgId) {
   const close = () => modal.remove();
   document.getElementById('edit-img-close')?.addEventListener('click', close);
   document.getElementById('edit-img-cancel')?.addEventListener('click', close);
-  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  // Backdrop-click não fecha — só X/Cancelar.
 
   document.getElementById('edit-img-type')?.addEventListener('change', e => {
     const desc = IMAGE_TYPES.find(t => t.key === e.target.value)?.desc || '';

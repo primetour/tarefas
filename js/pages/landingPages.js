@@ -207,7 +207,7 @@ function showLayoutPicker(container) {
     </div>`;
 
   document.body.appendChild(modal);
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  // Backdrop-click não fecha — só X/Cancelar.
   document.getElementById('lp-layout-close')?.addEventListener('click', () => modal.remove());
 
   modal.querySelectorAll('.lp-layout-pick').forEach(btn => {
@@ -951,7 +951,7 @@ function showImagePicker() {
     document.getElementById('img-pick-country')?.addEventListener('change', () =>
       renderGrid(document.getElementById('img-pick-search')?.value || ''));
 
-    modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); resolve(null); } });
+    // Backdrop-click não fecha — só X/Cancelar.
     document.getElementById('img-pick-close')?.addEventListener('click', () => { modal.remove(); resolve(null); });
   });
 }
@@ -1050,7 +1050,7 @@ function showTipPicker() {
     document.getElementById('tip-pick-continent')?.addEventListener('change', () =>
       renderList(document.getElementById('tip-pick-search')?.value || ''));
 
-    modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); resolve(null); } });
+    // Backdrop-click não fecha — só X/Cancelar.
     document.getElementById('tip-pick-close')?.addEventListener('click', () => { modal.remove(); resolve(null); });
   });
 }
@@ -1086,7 +1086,7 @@ function showSectionTypePicker(onAdd) {
     </div>`;
 
   document.body.appendChild(modal);
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  // Backdrop-click não fecha — só X/Cancelar.
   document.getElementById('sec-pick-close')?.addEventListener('click', () => modal.remove());
   modal.querySelectorAll('.sec-type-pick').forEach(btn => {
     btn.addEventListener('click', () => {

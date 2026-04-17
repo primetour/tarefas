@@ -583,7 +583,7 @@ function showForm(container, item = null) {
     </div>`;
 
   document.body.appendChild(modal);
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  // Backdrop-click não fecha — só o botão X/Cancelar, para evitar perda acidental de dados.
   document.getElementById('nf-modal-close')?.addEventListener('click',  () => modal.remove());
   document.getElementById('nf-modal-cancel')?.addEventListener('click', () => modal.remove());
 

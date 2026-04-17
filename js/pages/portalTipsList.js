@@ -491,7 +491,7 @@ async function showMaterialsModal(tip, dest) {
     </div>`;
 
   document.body.appendChild(modal);
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  // Backdrop-click não fecha — só X/Cancelar.
   document.getElementById('mat-close')?.addEventListener('click', () => modal.remove());
 
   const listEl = document.getElementById('mat-list');
@@ -864,7 +864,7 @@ async function openGenerationEditor({ tip, dest, area, segments, format, initial
 
   document.getElementById('gfl-close')?.addEventListener('click', () => modal.remove());
   document.getElementById('gfl-cancel')?.addEventListener('click', () => modal.remove());
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  // Backdrop-click não fecha — só X/Cancelar.
 
   document.getElementById('gfl-confirm')?.addEventListener('click', async () => {
     const btn = document.getElementById('gfl-confirm');
@@ -1094,7 +1094,7 @@ async function showRegenEditor({ link, tip, dest }) {
   // ── Wire events ONCE ──────────────────────────────────────
   document.getElementById('regen-close')?.addEventListener('click', () => modal.remove());
   document.getElementById('regen-cancel')?.addEventListener('click', () => modal.remove());
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  // Backdrop-click não fecha — só X/Cancelar.
 
   document.querySelectorAll('.regen-dest-tab').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1448,7 +1448,7 @@ function showPreviewModal(tip, dest) {
     close();
     location.hash = `portal-tip-editor?destId=${encodeURIComponent(tip.destinationId)}`;
   });
-  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  // Backdrop-click não fecha — só X/Cancelar.
 
   // Tab switching
   modal.querySelectorAll('.preview-seg-tab').forEach(tab => {

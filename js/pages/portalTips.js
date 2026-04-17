@@ -885,7 +885,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
   // ── Wire events ONCE ──────────────────────────────────────────
   document.getElementById('gen-close')?.addEventListener('click', () => modal.remove());
   document.getElementById('gen-cancel')?.addEventListener('click', () => modal.remove());
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  // Backdrop-click não fecha — só X/Cancelar.
 
   document.querySelectorAll('.gen-dest-tab').forEach(btn => {
     btn.addEventListener('click', () => {

@@ -26,10 +26,19 @@ class ModalManager {
    * @param {string} options.content     - HTML do corpo
    * @param {string} options.size        - 'sm' | '' | 'lg' | 'xl'
    * @param {Array}  options.footer      - Array de botões { label, class, onClick, closeOnClick }
-   * @param {Function} options.onClose   - Callback ao fechar
-   * @param {boolean} options.closeable  - Pode fechar clicando fora? (default: true)
+   * @param {Function} options.onClose     - Callback ao fechar
+   * @param {boolean} options.closeOnBackdrop - Fecha ao clicar fora? (default: false)
+   * @param {boolean} options.closeOnEsc     - Fecha ao pressionar ESC? (default: false)
+   * @param {boolean} options.closeable    - (DEPRECATED) alias que ativa backdrop+ESC.
+   *                                         Mantido pra compat com chamadas antigas.
    */
-  open({ title, content, size = '', footer = [], onClose, closeable = true } = {}) {
+  open({ title, content, size = '', footer = [], onClose,
+         closeable, closeOnBackdrop, closeOnEsc } = {}) {
+    // Defaults restritivos: só o X fecha. Quem quiser permissivo opta explicitamente.
+    // Se a chamada antiga passar `closeable`, replica para os dois novos flags.
+    if (typeof closeOnBackdrop === 'undefined') closeOnBackdrop = closeable === true;
+    if (typeof closeOnEsc      === 'undefined') closeOnEsc      = closeable === true;
+
     const id = ++this.counter;
     const container = this._getContainer();
 
@@ -60,14 +69,14 @@ class ModalManager {
 
     const close = () => this.close(id);
 
-    // Fechar ao clicar no backdrop
-    if (closeable) {
+    // Fechar ao clicar no backdrop (opt-in)
+    if (closeOnBackdrop) {
       backdrop.addEventListener('click', (e) => {
         if (e.target === backdrop) close();
       });
     }
 
-    // Fechar botão X
+    // Fechar botão X (sempre)
     backdrop.querySelector('.modal-close').addEventListener('click', close);
 
     // Footer buttons
@@ -81,9 +90,9 @@ class ModalManager {
       }
     });
 
-    // ESC para fechar
+    // ESC para fechar (opt-in)
     const handleKeydown = (e) => {
-      if (e.key === 'Escape' && closeable) close();
+      if (e.key === 'Escape' && closeOnEsc) close();
     };
     document.addEventListener('keydown', handleKeydown);
 
@@ -138,6 +147,7 @@ class ModalManager {
       this.open({
         title,
         size: 'sm',
+        closeOnEsc: true,  // confirm: ESC = cancelar (expectativa padrão)
         content: `
           <div class="confirm-dialog">
             <div class="confirm-icon">${icon}</div>
@@ -169,6 +179,7 @@ class ModalManager {
       this.open({
         title,
         size: 'sm',
+        closeOnEsc: true,  // alert: ESC fecha (dialog simples)
         content: `
           <div class="confirm-dialog">
             <div class="confirm-icon">${icon}</div>

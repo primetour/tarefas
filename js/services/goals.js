@@ -12,11 +12,48 @@ import { store }    from '../store.js';
 import { auditLog } from '../auth/audit.js';
 
 /* ─── Constantes ──────────────────────────────────────────── */
+/**
+ * Escopos de uma meta. Cada escopo tem uma hierarquização que controla
+ * quais campos (Núcleo, Responsáveis, Setor) ficam visíveis/obrigatórios
+ * no form — ver SCOPE_FIELD_RULES.
+ */
 export const GOAL_SCOPES = [
   { value: 'individual', label: 'Individual', icon: '◉' },
+  { value: 'squad',      label: 'Squad',      icon: '◊' },
   { value: 'nucleo',     label: 'Núcleo',     icon: '◈' },
   { value: 'area',       label: 'Área/Setor', icon: '◎' },
+  { value: 'global',     label: 'Global',     icon: '✦' },
 ];
+
+/**
+ * Regras por escopo: que campos mostrar no form e em qual modo.
+ *   showNucleo       — exibe o select de Núcleo
+ *   showResponsaveis — exibe o picker de Responsáveis
+ *   respMode         — 'single' (obrigatório 1) | 'multi' (2+) | 'optional' (0+)
+ *   hint             — ajuda contextual mostrada abaixo do escopo
+ */
+export const SCOPE_FIELD_RULES = {
+  individual: {
+    showNucleo: false, showResponsaveis: true,  respMode: 'single',
+    hint: 'Meta atribuída a um único colaborador. Núcleo/Setor são herdados do responsável.',
+  },
+  squad: {
+    showNucleo: true,  showResponsaveis: true,  respMode: 'multi',
+    hint: 'Meta compartilhada por um grupo (2+ pessoas). Selecione os integrantes do squad.',
+  },
+  nucleo: {
+    showNucleo: true,  showResponsaveis: true,  respMode: 'optional',
+    hint: 'Meta do núcleo inteiro. Responsáveis são opcionais (líderes / pontos focais).',
+  },
+  area: {
+    showNucleo: false, showResponsaveis: false, respMode: 'optional',
+    hint: 'Meta da área/setor. Apenas o gestor precisa estar vinculado.',
+  },
+  global: {
+    showNucleo: false, showResponsaveis: false, respMode: 'optional',
+    hint: 'Meta corporativa (empresa toda). Apenas o gestor precisa estar vinculado.',
+  },
+};
 
 export const GOAL_PERIODS = [
   { value: 'monthly',    label: 'Mensal'               },
