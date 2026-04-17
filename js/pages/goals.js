@@ -1620,12 +1620,12 @@ async function exportGoalsXls() {
   });
 
   // ── Sheet 2 — Estrutura detalhada (1 linha por KPI) ──────
-  // Cada linha carrega o contexto completo (Meta → Pilar → Sub-meta → KPI),
+  // Cada linha carrega o contexto completo (Meta → Pilar → Meta do pilar → KPI),
   // facilitando filtrar/pivotar no Excel.
   const detalHead = [
     'Meta', 'Escopo', 'Setor', 'Núcleo', 'Status',
     'Pilar', 'Pond. Pilar (%)', 'Objetivo do pilar',
-    'Sub-meta', 'Pond. Meta (%)',
+    'Meta do pilar', 'Pond. Meta (%)',
     'Descrição', 'Critério de medição', 'Formato de entrega',
     'Prazo', 'Periodicidade', 'Recorrência meta', 'Aval. recorrente',
     'KPI', 'Peso KPI (%)',
@@ -1668,7 +1668,7 @@ async function exportGoalsXls() {
   });
 
   // ── Sheet 3 — Tarefas vinculadas ─────────────────────────
-  const taskHead = ['Meta', 'Pilar', 'Sub-meta', 'Tarefa', 'Status', 'Evidência', 'Período ref.', 'Link comprovação', 'Concluída em'];
+  const taskHead = ['Meta', 'Pilar', 'Meta do pilar', 'Tarefa', 'Status', 'Evidência', 'Período ref.', 'Link comprovação', 'Concluída em'];
   const taskRows = [taskHead];
   allGoals.forEach(g => {
     const metaTit = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || '—';
@@ -1713,7 +1713,7 @@ async function exportGoalsXls() {
 
 /**
  * Dossier visual das metas — sem tabelas. Um card por meta (goal)
- * com hierarquia Pilar > Sub-meta > KPIs desenhada com blocos, barras
+ * com hierarquia Pilar > Meta do pilar > KPIs desenhada com blocos, barras
  * de ponderação e chips. Formato A4 retrato, um documento que um gestor
  * imprime e entrega pra revisão.
  *
@@ -1722,8 +1722,12 @@ async function exportGoalsXls() {
  * `txt()` que sanitiza; marcadores decorativos são desenhados com
  * primitivas (circle/lines/rect) em vez de glyphs.
  */
+let _exportPdfBusy = false;
 async function exportGoalsPdf() {
+  if (_exportPdfBusy) return;               // guard contra duplo clique / double-fire
   if (!allGoals.length) { toast.error('Nenhuma meta.'); return; }
+  _exportPdfBusy = true;
+  try {
   if (!window.jspdf) {
     await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
   }
@@ -1818,26 +1822,28 @@ async function exportGoalsPdf() {
     y += Math.max(4, lines.length * 3.8);
   };
 
-  // ── Capa compacta ─────────────────────────────────────────
-  const capaH = 52;
-  setFill(COL.brand); doc.rect(0, 0, W, capaH, 'F');
-  setFill(COL.brand2); doc.rect(0, capaH - 8, W, 8, 'F');
-  setFill(COL.gold); doc.rect(0, capaH, W, 1.6, 'F');
+  // ── Cabeçalho inicial (compacto) ──────────────────────────
+  // Com 1 meta: header curto + meta inline (sem page em branco).
+  // Com N metas: header + sumário, metas começam em novas páginas.
+  const multi = allGoals.length > 1;
+  const headH = multi ? 46 : 28;
+  setFill(COL.brand); doc.rect(0, 0, W, headH, 'F');
+  setFill(COL.gold); doc.rect(0, headH, W, 1.6, 'F');
 
-  setText(COL.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(22);
-  doc.text(txt('Quadro de Metas'), M, 24);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
-  doc.text(txt('PRIMETOUR  ·  Gestão de Desempenho'), M, 32);
+  setText(COL.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(multi ? 20 : 15);
+  doc.text(txt('Quadro de Metas'), M, multi ? 20 : 14);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(multi ? 9 : 8);
+  doc.text(txt('PRIMETOUR  ·  Gestão de Desempenho'), M, multi ? 28 : 20);
 
   setText(COL.gold); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
   const qtd = `${allGoals.length} ${allGoals.length === 1 ? 'meta' : 'metas'}`;
   const dataGer = new Date().toLocaleDateString('pt-BR');
-  doc.text(txt(`${qtd}  ·  Gerado em ${dataGer}`), M, 42);
+  doc.text(txt(`${qtd}  ·  Gerado em ${dataGer}`), W - M, multi ? 20 : 14, { align: 'right' });
 
-  y = capaH + 10;
+  y = headH + 8;
 
   // ── Sumário (somente quando > 1 meta) ────────────────────
-  if (allGoals.length > 1) {
+  if (multi) {
     setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5);
     doc.text(txt('SUMARIO'), M, y);
     y += 2;
@@ -1849,7 +1855,7 @@ async function exportGoalsPdf() {
       const titulo = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || 'Meta sem titulo';
       const pilares = (g.pilares || []).length;
       const metasTotal = (g.pilares || []).reduce((s, p) => s + (p.metas || []).length, 0);
-      const resumo = `${pilares} pilar${pilares !== 1 ? 'es' : ''}  ·  ${metasTotal} sub-meta${metasTotal !== 1 ? 's' : ''}`;
+      const resumo = `${pilares} pilar${pilares !== 1 ? 'es' : ''}  ·  ${metasTotal} meta${metasTotal !== 1 ? 's' : ''}`;
 
       doc.setFont('helvetica', 'bold'); doc.setFontSize(8); setText(COL.gold);
       doc.text(String(gi + 1).padStart(2, '0'), M, y);
@@ -1873,8 +1879,8 @@ async function exportGoalsPdf() {
 
   // ── Seções por meta ──────────────────────────────────────
   allGoals.forEach((g, gi) => {
-    doc.addPage();
-    drawRunningHeader();
+    // Só quebra página a partir da 2a meta OU se for multi (sumário sempre precede).
+    if (multi || gi > 0) { doc.addPage(); drawRunningHeader(); }
 
     const titulo = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || 'Meta sem titulo';
 
@@ -1901,21 +1907,22 @@ async function exportGoalsPdf() {
     doc.text(tLines[0], M + 5.5, y + 12.5);
     y += 20;
 
-    // Metadados (chave-valor compacto, 2 colunas)
+    // Metadados (chave-valor compacto). Campos vazios são omitidos —
+    // drawKV já trata `''` como no-op.
     const respNames = getResponsavelNames(g, users);
-    const gestor = users.find(u => u.id === g.gestorId)?.name || '-';
-    const escopo = GOAL_SCOPES.find(s => s.value === g.escopo)?.label || g.escopo || '-';
+    const gestor = users.find(u => u.id === g.gestorId)?.name || '';
+    const escopo = GOAL_SCOPES.find(s => s.value === g.escopo)?.label || g.escopo || '';
     const nucleo = g.nucleo || '';
-    const setor = g.setor || '-';
-    const inicio = g.inicio ? fmtDate(g.inicio) : '-';
-    const fim = g.fim ? fmtDate(g.fim) : '-';
+    const setor = g.setor || '';
+    const inicio = g.inicio ? fmtDate(g.inicio) : '';
+    const fim = g.fim ? fmtDate(g.fim) : '';
     const linkedTasks = allTasksForGoals.filter(t => t.goalId === g.id);
 
-    drawKV('ESCOPO', escopo + (nucleo ? `  ·  ${nucleo}` : ''), M, 30);
-    drawKV('SETOR', setor + (g.tipo ? `  ·  Tipo: ${g.tipo}` : ''), M, 30);
-    drawKV('PERIODO', `${inicio}  —  ${fim}`, M, 30);
-    drawKV('RESPONSAVEIS', respNames.length ? respNames.join(', ') : '-', M, 30);
-    drawKV('GESTOR', gestor, M, 30);
+    if (escopo || nucleo) drawKV('ESCOPO', [escopo, nucleo].filter(Boolean).join('  ·  '), M, 30);
+    if (setor || g.tipo)  drawKV('SETOR',  [setor, g.tipo && `Tipo: ${g.tipo}`].filter(Boolean).join('  ·  '), M, 30);
+    if (inicio && fim)    drawKV('PERIODO', `${inicio}  —  ${fim}`, M, 30);
+    if (respNames.length) drawKV('RESPONSAVEIS', respNames.join(', '), M, 30);
+    if (gestor)           drawKV('GESTOR', gestor, M, 30);
     if (linkedTasks.length) drawKV('TAREFAS VINCULADAS', `${linkedTasks.length}`, M, 30);
 
     y += 3;
@@ -1969,7 +1976,7 @@ async function exportGoalsPdf() {
         y += oLines.length * 3.6 + 3;
       }
 
-      // Sub-metas
+      // Metas do pilar (no domínio é só "meta"; não existe "sub-meta")
       (pilar.metas || []).forEach((meta, mi) => {
         ensureSpace(30);
 
@@ -1978,19 +1985,16 @@ async function exportGoalsPdf() {
         doc.line(M + 6, y, W - M, y);
         y += 4;
 
-        // Cabeçalho sub-meta: bullet circular + label + título + % direita
+        // Cabeçalho da meta: número em círculo + título + % direita
         const pondM = Number(meta.ponderacao) || 0;
-        setFill(COL.brand2); doc.circle(M + 7, y - 0.7, 1.2, 'F');
-
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); setText(COL.brand2);
-        const lbl = txt(`SUB-META ${mi + 1}`);
-        doc.text(lbl, M + 10, y - 0.2);
-        const lblW = doc.getTextWidth(lbl);
+        setFill(COL.brand2); doc.circle(M + 7.5, y - 0.7, 2.4, 'F');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); setText(COL.white);
+        doc.text(String(mi + 1), M + 7.5, y + 0.2, { align: 'center' });
 
         doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); setText(COL.text);
-        const smTitleMaxW = CW - (10 - M) - lblW - 20;
+        const smTitleMaxW = CW - 22 - 20; // reserva para círculo + % à direita
         const smLines = wrap(meta.titulo || `Meta ${mi + 1}`, smTitleMaxW, 9.5);
-        doc.text(smLines[0], M + 10 + lblW + 3, y);
+        doc.text(smLines[0], M + 12, y);
 
         // % à direita
         doc.setFont('helvetica', 'bold'); doc.setFontSize(10); setText(COL.brand2);
@@ -2156,4 +2160,5 @@ async function exportGoalsPdf() {
 
   doc.save(`primetour_metas_${new Date().toISOString().slice(0, 10)}.pdf`);
   toast.success('PDF exportado.');
+  } finally { _exportPdfBusy = false; }
 }
