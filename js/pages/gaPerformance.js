@@ -85,15 +85,76 @@ let blogPage     = 1;
 let sourcesPage  = 1;
 let countriesPage = 1;
 
-/* Blog — padrão configurável via localStorage (string com termos separados por vírgula) */
+/* Blog — identifica posts via WordPress REST API (/wp-json/wp/v2/posts).
+   As URLs são flat (primetour.com.br/slug), então heurística de path não serve.
+   Puxamos a lista de slugs publicados e casamos contra pagePath do GA.
+   Cache em localStorage por 1h. Fallback: padrão de URL (legado). */
+const WP_API_BASE = 'https://primetour.com.br/wp-json/wp/v2/posts';
+const WP_CACHE_KEY = 'ga:wp-slugs';
+const WP_CACHE_TTL = 60 * 60 * 1000; // 1h
 const BLOG_PATTERN_KEY = 'ga:blog-pattern';
 const DEFAULT_BLOG_PATTERN = '/blog';
+
+let wpSlugs      = null;              // Set<string> dos slugs carregados
+let wpSlugsMeta  = { fetchedAt: 0, total: 0, error: null, loading: false, fromCache: false };
+
 function getBlogPattern() {
   try { return (localStorage.getItem(BLOG_PATTERN_KEY) || DEFAULT_BLOG_PATTERN).trim(); }
   catch { return DEFAULT_BLOG_PATTERN; }
 }
 function setBlogPattern(v) {
   try { localStorage.setItem(BLOG_PATTERN_KEY, String(v || '').trim()); } catch (_) {}
+}
+
+/**
+ * Carrega slugs do WP REST API (paginado). Usa cache de 1h no localStorage.
+ * Se `force=true`, ignora cache e chama a API.
+ */
+async function loadWpSlugs({ force = false } = {}) {
+  if (wpSlugsMeta.loading) return;
+  wpSlugsMeta.loading = true;
+
+  // Cache
+  if (!force) {
+    try {
+      const cached = JSON.parse(localStorage.getItem(WP_CACHE_KEY) || 'null');
+      if (cached && Array.isArray(cached.slugs) && (Date.now() - cached.fetchedAt) < WP_CACHE_TTL) {
+        wpSlugs = new Set(cached.slugs);
+        wpSlugsMeta = { fetchedAt: cached.fetchedAt, total: cached.slugs.length, error: null, loading: false, fromCache: true };
+        return;
+      }
+    } catch (_) {}
+  }
+
+  // Fetch paginado
+  const slugs = [];
+  let page = 1, totalPages = 1;
+  try {
+    while (page <= totalPages && page <= 50) {
+      const url = `${WP_API_BASE}?per_page=100&_fields=slug&page=${page}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      totalPages = parseInt(res.headers.get('X-WP-TotalPages') || '1', 10);
+      const data = await res.json();
+      slugs.push(...data.map(p => (p.slug || '').toLowerCase()).filter(Boolean));
+      page++;
+    }
+    wpSlugs = new Set(slugs);
+    wpSlugsMeta = { fetchedAt: Date.now(), total: slugs.length, error: null, loading: false, fromCache: false };
+    try { localStorage.setItem(WP_CACHE_KEY, JSON.stringify({ slugs, fetchedAt: wpSlugsMeta.fetchedAt })); } catch (_) {}
+  } catch (e) {
+    wpSlugsMeta = { fetchedAt: Date.now(), total: 0, error: e.message || String(e), loading: false, fromCache: false };
+    wpSlugs = null;
+  }
+}
+
+/** Extrai o primeiro segmento do path como slug candidato. */
+function pathToSlug(pagePath = '') {
+  const p = String(pagePath || '').toLowerCase()
+    .split('?')[0].split('#')[0]
+    .replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!p) return '';
+  return p.split('/')[0];
 }
 let syncMeta     = null;
 let periodTotals = null;
@@ -606,49 +667,95 @@ function renderTable(tab = 'daily') {
   if (tab === 'countries') renderCountriesTable(thead, tbody, thStyle);
 }
 
-/* Toolbar com input configurável de padrão do blog */
+/* Toolbar — status do WP + botão atualizar (+ fallback de padrão textual) */
 function renderBlogToolbar() {
   const el = document.getElementById('ga-table-toolbar');
   if (!el) return;
-  const current = getBlogPattern();
+
+  let statusHtml;
+  if (wpSlugsMeta.loading) {
+    statusHtml = `<span style="color:var(--text-muted);">⟳ Carregando slugs do WordPress…</span>`;
+  } else if (wpSlugsMeta.error) {
+    statusHtml = `<span style="color:#F59E0B;" title="${esc(wpSlugsMeta.error)}">
+      ⚠️ Falha ao ler WP (${esc(wpSlugsMeta.error)}) — usando fallback por padrão de URL</span>`;
+  } else if (wpSlugs && wpSlugs.size) {
+    const fromCache = wpSlugsMeta.fromCache ? ' (do cache)' : '';
+    const when = fmtRelTime(wpSlugsMeta.fetchedAt);
+    statusHtml = `<span style="color:#22C55E;">
+      ✓ ${wpSlugsMeta.total} posts do WordPress${fromCache} · atualizado ${when}</span>`;
+  } else {
+    statusHtml = `<span style="color:var(--text-muted);">Slugs do WP ainda não carregados</span>`;
+  }
+
+  const showPattern = !!wpSlugsMeta.error;
+  const currentPattern = getBlogPattern();
+
   el.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
       border-bottom:1px solid var(--border-subtle);background:var(--bg-card);
       font-size:0.75rem;color:var(--text-muted);flex-wrap:wrap;">
-      <span>Padrão para identificar posts de blog:</span>
-      <input type="text" id="ga-blog-pattern" value="${esc(current)}"
-        placeholder="${DEFAULT_BLOG_PATTERN}"
-        title="Termos separados por vírgula. Match por 'contém' em pagePath ou pageTitle. Ex.: /blog, /post, /noticias"
-        style="flex:1;min-width:180px;max-width:360px;padding:4px 8px;font-size:0.75rem;
-          background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text);" />
-      <button class="btn btn-secondary btn-sm" id="ga-blog-apply">Aplicar</button>
-      <button class="btn btn-ghost btn-sm" id="ga-blog-reset" title="Voltar ao padrão /blog">Reset</button>
-      <span style="margin-left:auto;font-size:0.6875rem;opacity:0.75;">Dica: separe termos com vírgula (/blog, /post, /artigos)</span>
+      ${statusHtml}
+      <button class="btn btn-ghost btn-sm" id="ga-wp-reload" title="Forçar busca dos posts no WordPress (ignora cache)"
+        ${wpSlugsMeta.loading ? 'disabled' : ''}>↻ Atualizar do WP</button>
+      ${showPattern ? `
+        <span style="margin-left:12px;">Fallback por padrão:</span>
+        <input type="text" id="ga-blog-pattern" value="${esc(currentPattern)}"
+          placeholder="${DEFAULT_BLOG_PATTERN}"
+          title="Termos separados por vírgula. Match por 'contém' em pagePath ou pageTitle."
+          style="flex:1;min-width:140px;max-width:280px;padding:4px 8px;font-size:0.75rem;
+            background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text);" />
+        <button class="btn btn-secondary btn-sm" id="ga-blog-apply">Aplicar</button>
+      ` : ''}
+      <span style="margin-left:auto;font-size:0.6875rem;opacity:0.75;">Fonte: /wp-json/wp/v2/posts</span>
     </div>
   `;
-  const input = el.querySelector('#ga-blog-pattern');
-  const apply = () => {
-    setBlogPattern(input.value);
-    blogPage = 1;
-    renderTable('blog');
-  };
-  el.querySelector('#ga-blog-apply').addEventListener('click', apply);
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
-  el.querySelector('#ga-blog-reset').addEventListener('click', () => {
-    setBlogPattern(DEFAULT_BLOG_PATTERN);
+
+  el.querySelector('#ga-wp-reload')?.addEventListener('click', async () => {
+    await loadWpSlugs({ force: true });
     blogPage = 1;
     renderTable('blog');
   });
+
+  if (showPattern) {
+    const input = el.querySelector('#ga-blog-pattern');
+    const apply = () => {
+      setBlogPattern(input.value);
+      blogPage = 1;
+      renderTable('blog');
+    };
+    el.querySelector('#ga-blog-apply').addEventListener('click', apply);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+  }
+}
+
+/** Formata relativo curto (ex.: "há 12 min", "há 2 h") */
+function fmtRelTime(ts) {
+  if (!ts) return '—';
+  const diff = Date.now() - ts;
+  const m = Math.round(diff / 60000);
+  if (m < 1)  return 'agora';
+  if (m < 60) return `há ${m} min`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `há ${h} h`;
+  const d = Math.round(h / 24);
+  return `há ${d} d`;
 }
 
 /**
  * Classifica uma URL como pertencente ao blog.
- * Heurística configurável via localStorage (`ga:blog-pattern`). Aceita múltiplos
- * termos separados por vírgula/ponto-e-vírgula/pipe. Default: `/blog`.
- * Match é por `includes` em pagePath OU em pageTitle (case-insensitive),
- * o que tolera URLs com prefixo/domínio ou casos onde o termo aparece no título.
+ * Modo primário: casa o primeiro segmento do pagePath contra a lista de slugs
+ * publicados no WordPress (carregada via REST API). Cobre URLs flat tipo
+ * `primetour.com.br/nome-do-post`.
+ * Fallback: se o WP falhar (CORS/offline), usa o padrão textual legado.
  */
 function isBlogPath(pagePath = '', pageTitle = '') {
+  // Modo 1: lista de slugs do WP
+  if (wpSlugs && wpSlugs.size) {
+    const slug = pathToSlug(pagePath);
+    if (!slug) return false;
+    return wpSlugs.has(slug);
+  }
+  // Modo 2 (fallback): padrão textual
   const pattern = getBlogPattern().toLowerCase();
   if (!pattern) return false;
   const path  = String(pagePath  || '').toLowerCase();
@@ -785,20 +892,42 @@ function renderBlogTable(thead, tbody, thStyle) {
     <th style="${thStyle}">${thInfo('Engajamento', 'Sessões engajadas que leram este post.')}</th>
   </tr>`;
 
+  // Primeira visita à aba: dispara carregamento do WP e mostra loading
+  if (wpSlugs === null && !wpSlugsMeta.error && !wpSlugsMeta.loading) {
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text-muted);">
+      ⟳ Carregando lista de posts do WordPress…
+    </td></tr>`;
+    loadWpSlugs().then(() => {
+      // Re-renderiza só se ainda estivermos na aba blog
+      if (document.querySelector('.ga-tab.active')?.dataset?.tab === 'blog') {
+        renderTable('blog');
+      }
+    });
+    return;
+  }
+  if (wpSlugsMeta.loading) {
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text-muted);">
+      ⟳ Carregando lista de posts do WordPress…
+    </td></tr>`;
+    return;
+  }
+
   const posts = allPages.filter(r => isBlogPath(r.pagePath, r.pageTitle));
   if (!posts.length) {
-    // Amostra de pagePaths pra ajudar o usuário a calibrar o padrão
     const sample = allPages.slice(0, 8).map(r => r.pagePath || r.pageTitle || '—').filter(Boolean);
     const sampleHtml = sample.length
       ? `<div style="margin-top:14px;padding:10px 14px;background:var(--bg-surface);border-radius:6px;
            display:inline-block;text-align:left;max-width:520px;font-size:0.6875rem;">
-           <div style="font-weight:600;margin-bottom:6px;color:var(--text);">Exemplos de URLs no período:</div>
+           <div style="font-weight:600;margin-bottom:6px;color:var(--text);">Exemplos de URLs do GA no período:</div>
            ${sample.map(p => `<div style="color:var(--text-muted);font-family:monospace;">${esc(p)}</div>`).join('')}
          </div>`
       : '';
+    const modoLabel = wpSlugs && wpSlugs.size
+      ? `${wpSlugsMeta.total} slugs do WordPress carregados, mas nenhum casou com URLs do período.`
+      : `Usando fallback por padrão <code>${esc(getBlogPattern())}</code>.`;
     tbody.innerHTML = `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
-      Nenhum post encontrado com o padrão <code>${esc(getBlogPattern())}</code>.<br>
-      <span style="font-size:0.6875rem;">Ajuste o padrão acima (ex.: <code>/blog, /post, /artigos</code>) — match por "contém" em URL ou título.</span>
+      Nenhum post encontrado.<br>
+      <span style="font-size:0.6875rem;">${modoLabel}</span>
       ${sampleHtml}
     </td></tr>`;
     return;
