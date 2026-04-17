@@ -12,6 +12,7 @@ import {
   suggestWeekContent, suggestDescription,
 } from '../services/contentCalendar.js';
 import { openTaskModal } from '../components/taskModal.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -226,6 +227,14 @@ function renderPage(container) {
             border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);
             font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">
             IA: Sugerir Semana</button>
+          <button id="cc-export-xls" title="Exportar slots em XLSX" style="padding:6px 12px;
+            border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;
+            background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
+            font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">XLS</button>
+          <button id="cc-export-pdf" title="Exportar slots em PDF" style="padding:6px 12px;
+            border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;
+            background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
+            font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">PDF</button>
         </div>
       </div>
 
@@ -617,6 +626,18 @@ function bindHeaderEvents(container) {
   const suggestBtn = document.getElementById('cc-suggest-week');
   if (suggestBtn) {
     suggestBtn.addEventListener('click', () => openSuggestWeekModal(container));
+  }
+
+  // Export XLS
+  const xlsBtn = document.getElementById('cc-export-xls');
+  if (xlsBtn) {
+    xlsBtn.addEventListener('click', () => exportSlotsXls(getExportableSlots()));
+  }
+
+  // Export PDF
+  const pdfBtn = document.getElementById('cc-export-pdf');
+  if (pdfBtn) {
+    pdfBtn.addEventListener('click', () => exportSlotsPdf(getExportableSlots()));
   }
 }
 
@@ -1159,3 +1180,256 @@ async function handleConvertToTask() {
     },
   });
 }
+
+/* ════════════════════════════════════════════════════════════
+   Exportações: XLS e PDF
+   ════════════════════════════════════════════════════════════ */
+
+function getExportableSlots() {
+  // Respeita o filtro de conta + mês/semana visível.
+  // - List/Month view: slots do mês corrente
+  // - Week view: slots da semana corrente
+  const y = currentDate.getFullYear();
+  const m = currentDate.getMonth();
+
+  let list = allSlots.slice();
+  if (activeAccount) list = list.filter(s => s.account === activeAccount);
+
+  if (activeView === 'week') {
+    const ws = startOfWeek(currentDate);
+    const we = endOfWeek(currentDate);
+    list = list.filter(s => {
+      if (!s.scheduledDate) return false;
+      const sd = s.scheduledDate instanceof Date ? s.scheduledDate : new Date(s.scheduledDate);
+      return sd >= ws && sd <= we;
+    });
+  } else {
+    list = list.filter(s => {
+      if (!s.scheduledDate) return false;
+      const sd = s.scheduledDate instanceof Date ? s.scheduledDate : new Date(s.scheduledDate);
+      return sd.getFullYear() === y && sd.getMonth() === m;
+    });
+  }
+
+  // Ordena por data
+  list.sort((a, b) => {
+    const da = a.scheduledDate instanceof Date ? a.scheduledDate : new Date(a.scheduledDate);
+    const db = b.scheduledDate instanceof Date ? b.scheduledDate : new Date(b.scheduledDate);
+    return da - db;
+  });
+
+  return list;
+}
+
+function _periodLabel() {
+  if (activeView === 'week') {
+    const ws = startOfWeek(currentDate);
+    const we = endOfWeek(currentDate);
+    return `${formatDateBR(ws)} a ${formatDateBR(we)}`;
+  }
+  return `${PT_MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+}
+
+function _accountLabel(val) {
+  return ACCOUNTS.find(a => a.value === val)?.label || val || '';
+}
+
+function _platformLabel(val) {
+  return PLATFORM_LIST.find(p => p.value === val)?.label || val || '';
+}
+
+function _typeLabel(val) {
+  return CONTENT_TYPE_LIST.find(t => t.value === val)?.label || val || '';
+}
+
+function _categoryLabel(val) {
+  return CATEGORY_LIST.find(c => c.value === val)?.label || val || '';
+}
+
+function _buildSlotRows(list) {
+  return list.map(s => {
+    const sd = s.scheduledDate instanceof Date ? s.scheduledDate : (s.scheduledDate ? new Date(s.scheduledDate) : null);
+    return {
+      date: sd ? formatDateBR(sd) : '',
+      weekday: sd ? PT_DAYS_S[((sd.getDay() + 6) % 7)] : '',
+      title: s.title || '',
+      status: STATUS_LABELS[s.status] || s.status || '',
+      statusKey: s.status || 'idea',
+      platform: _platformLabel(s.platform),
+      contentType: _typeLabel(s.contentType),
+      category: _categoryLabel(s.category),
+      account: _accountLabel(s.account),
+      description: s.description || '',
+      imageNotes: s.imageNotes || '',
+      hasTask: s.taskId ? 'Sim' : '',
+    };
+  });
+}
+
+async function exportSlotsXls(list) {
+  if (!list?.length) { toast.error('Nenhum slot para exportar.'); return; }
+  if (!window.XLSX) await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = res; s.onerror = rej; document.head.appendChild(s);
+  });
+
+  const headers = ['Data', 'Dia', 'Título', 'Status', 'Plataforma', 'Tipo',
+    'Categoria', 'Conta', 'Descrição', 'Notas de imagem', 'Tarefa'];
+  const rows = _buildSlotRows(list).map(r => [
+    r.date, r.weekday, r.title, r.status, r.platform, r.contentType,
+    r.category, r.account, r.description, r.imageNotes, r.hasTask,
+  ]);
+
+  const wb = window.XLSX.utils.book_new();
+  const ws = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  ws['!cols'] = [11, 5, 32, 11, 12, 11, 13, 22, 50, 30, 7].map(w => ({ wch: w }));
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Calendario');
+  window.XLSX.writeFile(wb, `primetour_calendario_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  toast.success('XLS exportado.');
+}
+
+const exportSlotsPdf = withExportGuard(async function exportSlotsPdf(list) {
+  if (!list?.length) { toast.error('Nenhum slot para exportar.'); return; }
+  await loadJsPdf();
+
+  const kit = createDoc({ orientation: 'portrait', margin: 14 });
+  const { doc, W, H, M, CW, setFill, setText, setDraw, drawChip, wrap } = kit;
+
+  const STATUS_PDF = {
+    idea:      { bg: COL.muted,  label: 'IDEIA' },
+    draft:     { bg: COL.blue,   label: 'RASCUNHO' },
+    review:    { bg: COL.orange, label: 'REVISAO' },
+    approved:  { bg: COL.green,  label: 'APROVADO' },
+    published: { bg: COL.brand2, label: 'PUBLICADO' },
+  };
+
+  const total = list.length;
+  const byStatus = list.reduce((acc, s) => {
+    const k = s.status || 'idea';
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
+
+  kit.drawCover({
+    title: 'Calendário de Conteúdo',
+    subtitle: `PRIMETOUR  ·  ${_periodLabel()}${activeAccount ? '  ·  ' + _accountLabel(activeAccount) : ''}`,
+    meta: `${total} ${total === 1 ? 'slot' : 'slots'}  ·  ${new Date().toLocaleDateString('pt-BR')}`,
+    compact: false,
+  });
+
+  // Strip de estatísticas por status
+  const statEntries = [
+    { key: 'idea',      label: 'Ideia',     col: COL.muted },
+    { key: 'draft',     label: 'Rascunho',  col: COL.blue },
+    { key: 'review',    label: 'Revisão',   col: COL.orange },
+    { key: 'approved',  label: 'Aprovado',  col: COL.green },
+    { key: 'published', label: 'Publicado', col: COL.brand2 },
+  ];
+  const boxW = (CW - 8) / statEntries.length;
+  statEntries.forEach((s, i) => {
+    const n = byStatus[s.key] || 0;
+    const x = M + i * (boxW + 2);
+    setFill(COL.bg); doc.roundedRect(x, kit.y, boxW, 18, 1.8, 1.8, 'F');
+    setFill(s.col);  doc.rect(x, kit.y, boxW, 1.6, 'F');
+
+    setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+    doc.text(String(n), x + 4, kit.y + 11);
+
+    setText(s.col); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.6);
+    doc.text(txt(s.label.toUpperCase()), x + 4, kit.y + 15.5);
+  });
+  kit.addY(24);
+
+  // Cards agrupados por data
+  const rows = _buildSlotRows(list);
+
+  const PAD_L = 4.5;
+  const CHIP_FS = 6.2;
+  const CHIP_H = CHIP_FS * 0.55 + 2;
+  const CHIP_ROW_Y = 2;
+  const TITLE_Y = CHIP_ROW_Y + CHIP_H + 2.6;
+  const TITLE_FS = 9.5;
+  const META_FS = 7.3;
+  const DESC_FS = 7.5;
+
+  let currentDateLabel = '';
+
+  list.forEach((s, i) => {
+    const row = rows[i];
+
+    // Quebra de grupo por data
+    if (row.date && row.date !== currentDateLabel) {
+      currentDateLabel = row.date;
+      kit.ensureSpace(10);
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+      doc.text(txt(`${row.weekday ? row.weekday.toUpperCase() + '  ·  ' : ''}${row.date}`), M, kit.y + 3);
+      setDraw(COL.gold); doc.setLineWidth(0.6);
+      doc.line(M, kit.y + 5, W - M, kit.y + 5);
+      kit.addY(8);
+    }
+
+    const stKey = (s.status || 'idea').toLowerCase();
+    const stStyle = STATUS_PDF[stKey] || { bg: COL.muted, label: stKey.toUpperCase() };
+
+    const titleLines = wrap(row.title || '(sem titulo)', CW - PAD_L * 2, TITLE_FS).slice(0, 2);
+
+    const metaParts = [row.platform, row.contentType, row.category, row.account]
+      .filter(x => x && String(x).trim());
+    const metaStr = metaParts.join(' · ');
+    const metaLines = metaStr ? wrap(metaStr, CW - PAD_L * 2, META_FS).slice(0, 1) : [];
+
+    const descLines = row.description
+      ? wrap(row.description, CW - PAD_L * 2, DESC_FS).slice(0, 3)
+      : [];
+
+    const cardH =
+      TITLE_Y +
+      titleLines.length * (TITLE_FS * 0.42) +
+      (metaLines.length ? 0.8 + metaLines.length * (META_FS * 0.45) : 0) +
+      (descLines.length ? 1.2 + descLines.length * (DESC_FS * 0.48) : 0) +
+      3;
+
+    kit.ensureSpace(cardH + 2);
+
+    setFill(COL.white); setDraw(COL.border); doc.setLineWidth(0.2);
+    doc.roundedRect(M, kit.y, CW, cardH, 1.6, 1.6, 'FD');
+    setFill(stStyle.bg); doc.rect(M, kit.y, 1.8, cardH, 'F');
+
+    const cardTop = kit.y;
+
+    // Status chip + flag "vira tarefa"
+    const stCh = drawChip(stStyle.label, M + PAD_L, cardTop + CHIP_ROW_Y, stStyle.bg, COL.white, CHIP_FS, 2, 1);
+    let chipX = M + PAD_L + stCh.w + 2;
+    if (s.taskId) {
+      const gw = drawChip('TAREFA', chipX, cardTop + CHIP_ROW_Y, COL.gold, COL.white, CHIP_FS, 2, 1);
+      chipX += gw.w + 2;
+    }
+
+    // Título
+    setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(TITLE_FS);
+    doc.text(titleLines, M + PAD_L, cardTop + TITLE_Y);
+
+    // Meta
+    let cursorY = cardTop + TITLE_Y + titleLines.length * (TITLE_FS * 0.42);
+    if (metaLines.length) {
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(META_FS);
+      cursorY += 0.8;
+      doc.text(metaLines, M + PAD_L, cursorY);
+      cursorY += metaLines.length * (META_FS * 0.45);
+    }
+
+    // Descrição
+    if (descLines.length) {
+      setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(DESC_FS);
+      cursorY += 1.2;
+      doc.text(descLines, M + PAD_L, cursorY);
+    }
+
+    kit.y = cardTop + cardH + 1.3;
+  });
+
+  kit.drawFooter('PRIMETOUR  ·  Calendário de Conteúdo');
+  doc.save(`primetour_calendario_${new Date().toISOString().slice(0, 10)}.pdf`);
+  toast.success('PDF exportado.');
+});

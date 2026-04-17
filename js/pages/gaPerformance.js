@@ -1298,15 +1298,19 @@ const exportPDF = withExportGuard(async function exportPDF() {
     kit.y = y + kpiH + 6;
 
     // ── Chart capture ──
+    // Mantém proporção nativa do canvas (evita esticar/distorcer).
     const chartCanvas = document.getElementById('ga-chart-users');
-    if (chartCanvas) {
+    if (chartCanvas && chartCanvas.width > 0 && chartCanvas.height > 0) {
       try {
         setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
         doc.text(txt('EVOLUCAO DIARIA'), M, kit.y);
         kit.y += 3;
         const imgData = chartCanvas.toDataURL('image/png');
+        // Respeita aspect ratio do canvas
+        const aspect = chartCanvas.height / chartCanvas.width;
         const cw = CW;
-        const ch = cw * 0.32;
+        // Limita altura a ~42% da largura para não dominar a página (mesmo se o canvas for muito alto)
+        const ch = Math.min(cw * aspect, cw * 0.42);
         kit.ensureSpace(ch + 4);
         doc.addImage(imgData, 'PNG', M, kit.y, cw, ch);
         kit.y += ch + 6;

@@ -834,113 +834,138 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
   const { start, end } = getPeriodDates(activePeriod());
   const fmtD = d => new Intl.DateTimeFormat('pt-BR').format(d);
 
-  const kit = createDoc({ orientation: 'portrait', margin: 14 });
-  const { doc, W, H, M, CW, setFill, setText } = kit;
+  // landscape oferece colunagem melhor para dashboards
+  const kit = createDoc({ orientation: 'landscape', margin: 14 });
+  const { doc, W, M, CW, setFill, setText } = kit;
 
   kit.drawCover({
     title: 'Relatorio de Produtividade',
     subtitle: 'PRIMETOUR  ·  Gestao de Tarefas',
-    meta: `${fmtD(start)} — ${fmtD(end)}`,
+    meta: `${fmtD(start)} — ${fmtD(end)}  ·  ${metrics.total} tarefas`,
     compact: true,
   });
 
-  // ── KPI Strip ──
+  // ═════ KPI Strip (5 blocos) ═════
   const kpis = [
     { label: 'Total',        value: String(metrics.total),        col: COL.blue   },
     { label: 'Concluidas',   value: String(metrics.doneInPeriod), col: COL.green  },
     { label: 'Em andamento', value: String(metrics.inProgress),   col: COL.brand2 },
-    { label: 'Em atraso',    value: String(metrics.overdue),      col: COL.red    },
+    { label: 'Em atraso',    value: String(metrics.overdue),
+      col: metrics.overdue > 0 ? COL.red : COL.green },
     { label: 'Pontualidade', value: `${metrics.onTimeRate}%`,
       col: metrics.onTimeRate >= 80 ? COL.green : metrics.onTimeRate >= 60 ? COL.orange : COL.red },
   ];
   const gap = 3;
   const kpiW = (CW - gap * (kpis.length - 1)) / kpis.length;
-  const kpiH = 20;
+  const kpiH = 22;
   let y = kit.y;
   kpis.forEach((k, i) => {
     const x = M + i * (kpiW + gap);
-    setFill(COL.white); doc.roundedRect(x, y, kpiW, kpiH, 1.5, 1.5, 'F');
-    setFill(k.col);     doc.rect(x, y, kpiW, 1.4, 'F');
-    setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
-    doc.text(txt(k.value), x + kpiW / 2, y + 11, { align: 'center' });
-    setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
-    doc.text(txt(k.label.toUpperCase()), x + kpiW / 2, y + 16.5, { align: 'center' });
+    setFill(COL.white); doc.roundedRect(x, y, kpiW, kpiH, 1.6, 1.6, 'F');
+    setFill(k.col);     doc.rect(x, y, kpiW, 1.6, 'F');
+    setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+    doc.text(txt(k.value), x + kpiW / 2, y + 12, { align: 'center' });
+    setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+    doc.text(txt(k.label.toUpperCase()), x + kpiW / 2, y + 18, { align: 'center' });
   });
-  kit.y = y + kpiH + 8;
+  kit.y = y + kpiH + 6;
 
-  // ── Gráficos ──
-  const chartIds = ['velocity-chart', 'status-donut', 'priority-donut', 'daily-chart'];
-  const charts = [];
+  // ═════ Gráficos capturados do DOM ═════
+  const chartIds = [
+    'velocity-chart', 'time-type-chart',
+    'status-donut', 'priority-donut', 'projects-chart',
+  ];
+  const charts = {};
   for (const cid of chartIds) {
-    const canvas = document.getElementById(cid);
-    if (canvas) {
-      try { charts.push({ id: cid, img: canvas.toDataURL('image/png', 0.92) }); } catch (_) {}
+    const c = document.getElementById(cid);
+    if (c && c.width > 0 && c.height > 0) {
+      try { charts[cid] = { img: c.toDataURL('image/png', 0.92), aspect: c.height / c.width }; }
+      catch (_) {}
     }
   }
-  const vc = charts.find(c => c.id === 'velocity-chart');
-  if (vc) {
-    kit.ensureSpace(62);
+
+  // Linha A: Velocity (2/3) + Tempo por tipo (1/3)
+  const vc = charts['velocity-chart'];
+  const tt = charts['time-type-chart'];
+  if (vc || tt) {
+    const wA = CW * (2 / 3) - 2;
+    const wB = CW * (1 / 3) - 2;
+    const rowH = 52;
+    kit.ensureSpace(rowH + 8);
     setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-    doc.text(txt('TENDENCIA DE TAREFAS'), M, kit.y);
+    if (vc) doc.text(txt('CRIADAS vs CONCLUIDAS'), M, kit.y);
+    if (tt) doc.text(txt('TEMPO MEDIO POR TIPO'), M + wA + 4, kit.y);
     kit.y += 3;
-    doc.addImage(vc.img, 'PNG', M, kit.y, CW, 55);
-    kit.y += 60;
-  }
-  const sd = charts.find(c => c.id === 'status-donut');
-  const pd = charts.find(c => c.id === 'priority-donut');
-  if (sd || pd) {
-    kit.ensureSpace(58);
-    const halfW = (CW - 4) / 2;
-    if (sd) {
-      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-      doc.text(txt('POR STATUS'), M, kit.y);
-      doc.addImage(sd.img, 'PNG', M, kit.y + 3, halfW, 48);
+    if (vc) {
+      const h = Math.min(rowH, wA * vc.aspect);
+      doc.addImage(vc.img, 'PNG', M, kit.y, wA, h);
     }
-    if (pd) {
-      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-      doc.text(txt('POR PRIORIDADE'), M + halfW + 4, kit.y);
-      doc.addImage(pd.img, 'PNG', M + halfW + 4, kit.y + 3, halfW, 48);
+    if (tt) {
+      const h = Math.min(rowH, wB * tt.aspect);
+      doc.addImage(tt.img, 'PNG', M + wA + 4, kit.y, wB, h);
     }
-    kit.y += 54;
+    kit.y += rowH + 5;
   }
 
-  // ── Distribuição por status (barras) ──
-  kit.ensureSpace(40);
-  setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-  doc.text(txt('DISTRIBUICAO POR STATUS'), M, kit.y);
-  kit.y += 5;
-  const statusDist = getStatusDistribution(metrics.tasks).filter(s => s.count > 0);
-  const maxCount = Math.max(...statusDist.map(s => s.count), 1);
-  const labW = 44;
-  const barMaxW = CW - labW - 22;
-  statusDist.forEach(s => {
-    kit.ensureSpace(8);
-    const yy = kit.y;
-    const hex = s.color || '#6B7280';
-    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-    setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-    doc.text(txt(s.label), M, yy + 3.4);
-    kit.drawBar(M + labW, yy + 1.6, barMaxW, (s.count / maxCount) * 100, [r, g, b], 2.4);
-    setText([r, g, b]); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
-    doc.text(String(s.count), M + labW + barMaxW + 3, yy + 3.6);
-    kit.y += 7;
-  });
+  // Linha B: donut status + donut prioridade + progresso projetos
+  const sd = charts['status-donut'];
+  const pd = charts['priority-donut'];
+  const pj = charts['projects-chart'];
+  if (sd || pd || pj) {
+    const colCount = [sd, pd, pj].filter(Boolean).length;
+    const colW = (CW - gap * (colCount - 1)) / colCount;
+    const rowH = 54;
+    kit.ensureSpace(rowH + 8);
+    const titles = [];
+    if (sd) titles.push({ t: 'POR STATUS', img: sd });
+    if (pd) titles.push({ t: 'POR PRIORIDADE', img: pd });
+    if (pj) titles.push({ t: 'PROGRESSO POR PROJETO', img: pj });
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    titles.forEach((t, i) => doc.text(txt(t.t), M + i * (colW + gap), kit.y));
+    kit.y += 3;
+    titles.forEach((t, i) => {
+      const x = M + i * (colW + gap);
+      const h = Math.min(rowH, colW * t.img.aspect);
+      doc.addImage(t.img.img, 'PNG', x, kit.y, colW, h);
+    });
+    kit.y += rowH + 5;
+  }
 
-  // ── Ranking da equipe ──
-  kit.y += 4;
-  kit.ensureSpace(24);
+  // ═════ Segunda página: Ranking (esquerda) + Distribuição (direita) ═════
+  doc.addPage();
+  kit.y = kit.M + 3;
+  setText(COL.muted); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+  doc.text(txt('PRIMETOUR  ·  Produtividade'), M, 9);
+  kit.setDraw(COL.border); doc.setLineWidth(0.15);
+  doc.line(M, 11, W - M, 11);
+  kit.y = 17;
+
+  const colW = (CW - 6) / 2;
+  const colX1 = M;
+  const colX2 = M + colW + 6;
+  const topY = kit.y;
+
+  // ── Coluna esquerda: Ranking da equipe ─────────────────
   setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-  doc.text(txt('RANKING DA EQUIPE'), M, kit.y);
+  doc.text(txt('RANKING DA EQUIPE'), colX1, topY);
+  setText(COL.gold); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+  doc.text(txt('— por tarefas concluidas'), colX1 + 54, topY);
   const members = getTasksByMember(metrics.tasks);
   doc.autoTable({
-    startY: kit.y + 4,
-    margin: { left: M, right: M, bottom: 14 },
-    head: [['#', 'Membro', 'Concluidas', 'Total', 'Taxa']],
+    startY: topY + 3,
+    margin: { left: colX1, right: W - (colX1 + colW), bottom: 14 },
+    tableWidth: colW,
+    head: [['#', 'Membro', 'Concl.', 'Total', 'Taxa']],
     body: members.map((u, i) => [i + 1, txt(u.name), u.done, u.total, `${u.rate}%`]),
-    styles: { fontSize: 8, cellPadding: 2.8, textColor: COL.text },
+    styles: { fontSize: 8, cellPadding: 2.4, textColor: COL.text },
     headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 7 },
     alternateRowStyles: { fillColor: COL.subBg },
-    columnStyles: { 0: { cellWidth: 8, halign: 'center' }, 4: { halign: 'center' } },
+    columnStyles: {
+      0: { cellWidth: 7, halign: 'center' },
+      2: { cellWidth: 14, halign: 'center' },
+      3: { cellWidth: 14, halign: 'center' },
+      4: { cellWidth: 22, halign: 'center' },
+    },
     didDrawCell: (data) => {
       if (data.section === 'body' && data.column.index === 4) {
         const rate = members[data.row.index]?.rate || 0;
@@ -952,6 +977,99 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
       }
     },
   });
+  const leftFinalY = doc.lastAutoTable.finalY;
+
+  // ── Coluna direita: Distribuição por status + prioridade em barras ──
+  setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+  doc.text(txt('DISTRIBUICAO POR STATUS'), colX2, topY);
+  let yR = topY + 5;
+  const statusDist = getStatusDistribution(metrics.tasks).filter(s => s.count > 0);
+  const maxS = Math.max(...statusDist.map(s => s.count), 1);
+  const labW = 38;
+  const barMaxW = colW - labW - 18;
+  statusDist.forEach(s => {
+    const hex = s.color || '#6B7280';
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    doc.text(txt(s.label), colX2, yR + 3.2);
+    kit.drawBar(colX2 + labW, yR + 1.4, barMaxW, (s.count / maxS) * 100, [r, g, b], 2.4);
+    setText([r, g, b]); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+    doc.text(String(s.count), colX2 + labW + barMaxW + 3, yR + 3.2);
+    yR += 6;
+  });
+
+  yR += 5;
+  setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+  doc.text(txt('DISTRIBUICAO POR PRIORIDADE'), colX2, yR);
+  yR += 5;
+  const prioDist = getPriorityDistribution(metrics.tasks).filter(p => p.count > 0);
+  const maxP = Math.max(...prioDist.map(p => p.count), 1);
+  prioDist.forEach(p => {
+    const hex = p.color || '#6B7280';
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    doc.text(txt(p.label), colX2, yR + 3.2);
+    kit.drawBar(colX2 + labW, yR + 1.4, barMaxW, (p.count / maxP) * 100, [r, g, b], 2.4);
+    setText([r, g, b]); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+    doc.text(String(p.count), colX2 + labW + barMaxW + 3, yR + 3.2);
+    yR += 6;
+  });
+
+  // Avança o cursor para o maior dos dois lados
+  kit.y = Math.max(leftFinalY, yR) + 8;
+
+  // ═════ Próximos vencimentos / Atrasadas ═════
+  const upcoming = (metrics.tasks || [])
+    .filter(t => t.status !== 'done' && t.status !== 'cancelled' && t.dueDate)
+    .map(t => {
+      const d = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+      return { t, d };
+    })
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 10);
+
+  if (upcoming.length) {
+    kit.ensureSpace(28);
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(txt('PROXIMOS VENCIMENTOS'), M, kit.y);
+    setText(COL.gold); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    doc.text(txt('— top 10 em atraso ou proximos'), M + 58, kit.y);
+    kit.y += 3;
+    const users = store.get('users') || [];
+    const now = new Date();
+    doc.autoTable({
+      startY: kit.y,
+      margin: { left: M, right: M, bottom: 14 },
+      head: [['Prazo', 'Status', 'Titulo', 'Responsaveis']],
+      body: upcoming.map(({ t, d }) => {
+        const assigns = (t.assignees || [])
+          .map(uid => users.find(u => u.id === uid)?.name).filter(Boolean).join(', ');
+        const stKey = (t.status || 'not_started').toLowerCase();
+        const stLbl = ({
+          not_started: 'Nao iniciada', in_progress: 'Em andamento',
+          paused: 'Pausada', blocked: 'Bloqueada',
+        })[stKey] || stKey;
+        return [fmtD(d), stLbl, txt(t.title || '-'), txt(assigns || '-')];
+      }),
+      styles: { fontSize: 8, cellPadding: 2.4, textColor: COL.text },
+      headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 7 },
+      alternateRowStyles: { fillColor: COL.subBg },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 26 },
+        3: { cellWidth: 60 },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 0) {
+          const rowDate = upcoming[data.row.index]?.d;
+          if (rowDate && rowDate < now) {
+            data.cell.styles.textColor = COL.red;
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      },
+    });
+  }
 
   kit.drawFooter('PRIMETOUR  ·  Produtividade');
   doc.save(`primetour_dashboard_${new Date().toISOString().slice(0, 10)}.pdf`);

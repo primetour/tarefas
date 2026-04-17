@@ -7,6 +7,7 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiros, deleteRoteiro, duplicateRoteiro, updateRoteiroStatus, generateRoteiroFromPrompt } from '../services/roteiros.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
@@ -89,7 +90,15 @@ export async function renderRoteiros(container) {
           Crie e gerencie roteiros personalizados para seus clientes
         </p>
       </div>
-      <div class="page-actions" style="display:flex;gap:8px;">
+      <div class="page-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" data-action="export-xls" style="gap:6px;"
+          title="Exportar lista de roteiros em XLSX">
+          XLS
+        </button>
+        <button class="btn btn-secondary" data-action="export-pdf-list" style="gap:6px;"
+          title="Exportar lista de roteiros em PDF">
+          PDF
+        </button>
         ${store.canCreateRoteiro() ? `
           <button class="btn btn-secondary" data-action="ai-create" style="gap:6px;"
             title="Criar roteiro completo via IA a partir de uma descrição em texto livre">
@@ -310,6 +319,16 @@ export async function renderRoteiros(container) {
 
     if (action === 'ai-create') {
       openAiCreateModal(container);
+      return;
+    }
+
+    if (action === 'export-xls') {
+      await exportRoteirosXls(getFiltered());
+      return;
+    }
+
+    if (action === 'export-pdf-list') {
+      await exportRoteirosPdf(getFiltered());
       return;
     }
 
@@ -591,3 +610,192 @@ function openAiCreateModal(container) {
     }
   });
 }
+
+/* ════════════════════════════════════════════════════════════
+   Exportações: XLS e PDF (lista de roteiros)
+   ════════════════════════════════════════════════════════════ */
+
+function fmtDateExport(d) {
+  if (!d) return '';
+  try {
+    const dt = d?.toDate ? d.toDate() : new Date(d);
+    if (isNaN(dt?.getTime?.())) return '';
+    return dt.toLocaleDateString('pt-BR');
+  } catch { return ''; }
+}
+
+function _buildRoteiroRows(list) {
+  return list.map(r => {
+    const dests = destinationsText(r.travel);
+    const start = fmtDateExport(r.travel?.startDate);
+    const end = fmtDateExport(r.travel?.endDate);
+    let nights = '';
+    try {
+      if (r.travel?.startDate && r.travel?.endDate) {
+        const s = r.travel.startDate?.toDate ? r.travel.startDate.toDate() : new Date(r.travel.startDate);
+        const e = r.travel.endDate?.toDate ? r.travel.endDate.toDate() : new Date(r.travel.endDate);
+        const diff = Math.round((e - s) / (1000 * 60 * 60 * 24));
+        if (diff >= 0) nights = String(diff);
+      }
+    } catch {}
+    return {
+      title: r.title || '',
+      status: STATUS_LABELS[r.status] || r.status || '',
+      statusKey: r.status || 'draft',
+      clientName: r.client?.name || '',
+      clientType: clientTypeLabel(r.client?.type),
+      destinations: dests,
+      start,
+      end,
+      nights,
+      consultant: r.consultantName || '',
+      updated: fmtDateExport(r.updatedAt),
+      created: fmtDateExport(r.createdAt),
+    };
+  });
+}
+
+async function exportRoteirosXls(list) {
+  if (!list?.length) { toast.error('Nenhum roteiro para exportar.'); return; }
+  if (!window.XLSX) await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = res; s.onerror = rej; document.head.appendChild(s);
+  });
+
+  const headers = ['Título', 'Status', 'Cliente', 'Tipo', 'Destinos',
+    'Início', 'Fim', 'Noites', 'Consultor', 'Criado em', 'Atualizado em'];
+  const rows = _buildRoteiroRows(list).map(r => [
+    r.title, r.status, r.clientName, r.clientType, r.destinations,
+    r.start, r.end, r.nights, r.consultant, r.created, r.updated,
+  ]);
+
+  const wb = window.XLSX.utils.book_new();
+  const ws = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  ws['!cols'] = [30, 12, 22, 10, 32, 11, 11, 7, 20, 12, 12].map(w => ({ wch: w }));
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Roteiros');
+  window.XLSX.writeFile(wb, `primetour_roteiros_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  toast.success('XLS exportado.');
+}
+
+const exportRoteirosPdf = withExportGuard(async function exportRoteirosPdf(list) {
+  if (!list?.length) { toast.error('Nenhum roteiro para exportar.'); return; }
+  await loadJsPdf();
+
+  const kit = createDoc({ orientation: 'portrait', margin: 14 });
+  const { doc, W, H, M, CW, setFill, setText, setDraw, drawBar, drawChip, wrap } = kit;
+
+  const STATUS_PDF = {
+    draft:    { bg: COL.muted,  label: 'RASCUNHO' },
+    review:   { bg: COL.orange, label: 'EM REVISAO' },
+    sent:     { bg: COL.blue,   label: 'ENVIADO' },
+    approved: { bg: COL.green,  label: 'APROVADO' },
+    archived: { bg: COL.soft,   label: 'ARQUIVADO' },
+  };
+
+  const total = list.length;
+  const byStatus = list.reduce((acc, r) => {
+    const k = r.status || 'draft';
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
+
+  kit.drawCover({
+    title: 'Roteiros de Viagem',
+    subtitle: 'PRIMETOUR  ·  Portfólio de Roteiros',
+    meta: `${total} ${total === 1 ? 'roteiro' : 'roteiros'}  ·  ${new Date().toLocaleDateString('pt-BR')}`,
+    compact: false,
+  });
+
+  // Strip de estatísticas por status
+  const statEntries = [
+    { key: 'draft',    label: 'Rascunho',   col: COL.muted },
+    { key: 'review',   label: 'Em revisão', col: COL.orange },
+    { key: 'sent',     label: 'Enviado',    col: COL.blue },
+    { key: 'approved', label: 'Aprovado',   col: COL.green },
+    { key: 'archived', label: 'Arquivado',  col: COL.soft },
+  ];
+  const boxW = (CW - 8) / statEntries.length;
+  statEntries.forEach((s, i) => {
+    const n = byStatus[s.key] || 0;
+    const x = M + i * (boxW + 2);
+    setFill(COL.bg); doc.roundedRect(x, kit.y, boxW, 18, 1.8, 1.8, 'F');
+    setFill(s.col);  doc.rect(x, kit.y, boxW, 1.6, 'F');
+
+    setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+    doc.text(String(n), x + 4, kit.y + 11);
+
+    setText(s.col); doc.setFont('helvetica', 'bold'); doc.setFontSize(6.6);
+    doc.text(txt(s.label.toUpperCase()), x + 4, kit.y + 15.5);
+  });
+  kit.addY(24);
+
+  // Cards por roteiro
+  const rows = _buildRoteiroRows(list);
+
+  const PAD_L = 4.5;
+  const CHIP_FS = 6.2;
+  const CHIP_H = CHIP_FS * 0.55 + 2;
+  const CHIP_ROW_Y = 2;
+  const TITLE_Y = CHIP_ROW_Y + CHIP_H + 2.6;
+  const TITLE_FS = 9.5;
+  const META_FS = 7.3;
+
+  list.forEach((r, i) => {
+    const row = rows[i];
+    const stKey = (r.status || 'draft').toLowerCase();
+    const stStyle = STATUS_PDF[stKey] || { bg: COL.muted, label: stKey.toUpperCase() };
+
+    const title = row.title || '(sem titulo)';
+    const titleLines = wrap(title, CW - PAD_L * 2, TITLE_FS).slice(0, 2);
+
+    const line1 = [row.clientName, row.clientType].filter(Boolean).join(' · ');
+    const line2 = [row.destinations, row.consultant].filter(Boolean).join(' · ');
+    const metaStr = [line1, line2].filter(Boolean).join('  |  ');
+    const metaLines = metaStr
+      ? wrap(metaStr, CW - PAD_L * 2, META_FS).slice(0, 2)
+      : [];
+
+    const cardH =
+      TITLE_Y +
+      titleLines.length * (TITLE_FS * 0.42) +
+      (metaLines.length ? 0.8 + metaLines.length * (META_FS * 0.45) : 0) +
+      2.8;
+
+    kit.ensureSpace(cardH + 2);
+
+    setFill(COL.white); setDraw(COL.border); doc.setLineWidth(0.2);
+    doc.roundedRect(M, kit.y, CW, cardH, 1.6, 1.6, 'FD');
+    setFill(stStyle.bg); doc.rect(M, kit.y, 1.8, cardH, 'F');
+
+    const cardTop = kit.y;
+
+    // Linha superior: status + datas
+    drawChip(stStyle.label, M + PAD_L, cardTop + CHIP_ROW_Y, stStyle.bg, COL.white, CHIP_FS, 2, 1);
+
+    const dateStr = (row.start || row.end)
+      ? `${row.start || '—'} a ${row.end || '—'}${row.nights ? ` · ${row.nights}n` : ''}`
+      : '';
+    if (dateStr) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); setText(COL.muted);
+      doc.text(txt(dateStr), W - M - 2, cardTop + CHIP_ROW_Y + CHIP_H - 1.2, { align: 'right' });
+    }
+
+    // Título
+    setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(TITLE_FS);
+    doc.text(titleLines, M + PAD_L, cardTop + TITLE_Y);
+
+    // Meta (cliente, destinos, consultor)
+    if (metaLines.length) {
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(META_FS);
+      const metaY = cardTop + TITLE_Y + titleLines.length * (TITLE_FS * 0.42) + 0.8;
+      doc.text(metaLines, M + PAD_L, metaY);
+    }
+
+    kit.y = cardTop + cardH + 1.3;
+  });
+
+  kit.drawFooter('PRIMETOUR  ·  Roteiros');
+  doc.save(`primetour_roteiros_${new Date().toISOString().slice(0, 10)}.pdf`);
+  toast.success('PDF exportado.');
+});

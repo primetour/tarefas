@@ -1142,8 +1142,11 @@ function _buildTaskRows() {
   const users = store.get('users') || [];
   return filteredTasks.map(t => {
     const project = allProjects.find(p => p.id === t.projectId);
+    // Resolve UIDs → nome. Ignora UIDs órfãos (usuário saiu da base).
     const assigneeNames = (t.assignees || [])
-      .map(uid => users.find(u => u.id === uid)?.name || uid).join('; ');
+      .map(uid => users.find(u => u.id === uid)?.name)
+      .filter(Boolean)
+      .join(', ');
     const due = fmtDateExport(t.dueDate);
     const created = fmtDateExport(t.createdAt);
     const completed = fmtDateExport(t.completedAt);
@@ -1255,6 +1258,14 @@ const exportTasksPdf = withExportGuard(async function exportTasksPdf() {
   const rows = _buildTaskRows();
   const tasks = filteredTasks;
 
+  const PAD_L = 4.5;          // padding esquerdo interno (depois da barra)
+  const CHIP_FS = 6.2;        // tamanho do chip
+  const CHIP_H = CHIP_FS * 0.55 + 2;    // altura do chip (~5.4mm)
+  const CHIP_ROW_Y = 2;       // offset do chip no card
+  const TITLE_Y = CHIP_ROW_Y + CHIP_H + 2.6;  // título começa abaixo do chip
+  const TITLE_FS = 9.5;
+  const META_FS = 7.3;
+
   tasks.forEach((t, i) => {
     const r = rows[i];
     const prioKey = (t.priority || 'medium').toLowerCase();
@@ -1262,51 +1273,53 @@ const exportTasksPdf = withExportGuard(async function exportTasksPdf() {
     const stStyle = STATUS_STYLE[stKey] || { bg: COL.muted, label: stKey.toUpperCase() };
     const prioCol = PRIO_COL[prioKey] || COL.muted;
 
-    // Estimativa de altura: título + linha meta + tags
-    const titleLines = wrap(t.title || '(sem título)', CW - 45, 10);
-    const metaLine   = [r.assignees, r.nucleo, r.taskType, r.project].filter(Boolean).join('  ·  ');
-    const metaLines  = wrap(metaLine, CW - 12, 7.8);
-    const cardH = 6 + titleLines.length * 4.2 + metaLines.length * 3.6 + 4;
+    // Título: até 2 linhas. Meta: 1 linha.
+    const titleLines = wrap(t.title || '(sem titulo)', CW - PAD_L * 2, TITLE_FS).slice(0, 2);
+    const metaStr    = [r.assignees, r.nucleo, r.taskType, r.project]
+      .filter(s => s && String(s).trim()).join(' · ');
+    const metaLines  = metaStr
+      ? wrap(metaStr, CW - PAD_L * 2, META_FS).slice(0, 1)
+      : [];
 
-    kit.ensureSpace(cardH + 3);
+    const cardH =
+      TITLE_Y +
+      titleLines.length * (TITLE_FS * 0.42) +
+      (metaLines.length ? 0.8 + metaLines.length * (META_FS * 0.45) : 0) +
+      2.5;
 
-    // Card background
+    kit.ensureSpace(cardH + 2);
+
+    // Card
     setFill(COL.white); setDraw(COL.border); doc.setLineWidth(0.2);
     doc.roundedRect(M, kit.y, CW, cardH, 1.6, 1.6, 'FD');
-    // Barra de prioridade à esquerda
     setFill(prioCol); doc.rect(M, kit.y, 1.8, cardH, 'F');
 
     const cardTop = kit.y;
-    kit.addY(4.5);
 
-    // Chip de status
-    const stCh = drawChip(stStyle.label, M + 4, cardTop + 2.2, stStyle.bg, COL.white, 6.5, 2.2, 1.2);
-    // Prazo à direita
-    if (r.due) {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.2); setText(COL.muted);
-      doc.text(txt(`PRAZO ${r.due}`), W - M - 2, cardTop + 4.8, { align: 'right' });
-    }
-    // Meta vinculada
+    // Chip de status + META + prazo (todos na linha superior)
+    const stCh = drawChip(stStyle.label, M + PAD_L, cardTop + CHIP_ROW_Y, stStyle.bg, COL.white, CHIP_FS, 2, 1);
+    let chipX = M + PAD_L + stCh.w + 2;
     if (t.goalId) {
-      const gw = drawChip('META', M + 4 + stCh.w + 2, cardTop + 2.2, COL.gold, COL.white, 6.5, 2.2, 1.2);
-      void gw;
+      const gw = drawChip('META', chipX, cardTop + CHIP_ROW_Y, COL.gold, COL.white, CHIP_FS, 2, 1);
+      chipX += gw.w + 2;
     }
-    kit.addY(3.5);
+    if (r.due) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); setText(COL.muted);
+      doc.text(txt(`PRAZO ${r.due}`), W - M - 2, cardTop + CHIP_ROW_Y + CHIP_H - 1.2, { align: 'right' });
+    }
 
-    // Título
-    setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-    doc.text(titleLines, M + 4, kit.y);
-    kit.addY(titleLines.length * 4.2);
+    // Título (abaixo do chip, sem sobreposição)
+    setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(TITLE_FS);
+    doc.text(titleLines, M + PAD_L, cardTop + TITLE_Y);
 
-    // Linha meta (responsáveis · núcleo · tipo · projeto)
+    // Meta
     if (metaLines.length) {
-      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8);
-      doc.text(metaLines, M + 4, kit.y);
-      kit.addY(metaLines.length * 3.6);
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(META_FS);
+      const metaY = cardTop + TITLE_Y + titleLines.length * (TITLE_FS * 0.42) + 0.8;
+      doc.text(metaLines, M + PAD_L, metaY);
     }
 
-    // Ajusta y ao fim do card (pode ter overflow minor pela estimativa)
-    kit.y = cardTop + cardH + 2;
+    kit.y = cardTop + cardH + 1.3;
   });
 
   kit.drawFooter('PRIMETOUR  ·  Tarefas');

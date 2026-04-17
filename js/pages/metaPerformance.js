@@ -693,7 +693,15 @@ const exportPDF = withExportGuard(async function exportPDF() {
     const rows   = getRows();
     const haAcct = !filterAcct;
     const acct   = filterAcct ? `@${filterAcct}` : 'Todas as contas';
-    const periodLabel = (PERIODS.find(p => p.value === String(filterPeriod))?.label) || '';
+    // filterDays pode ser "30", "7", ... ou "custom:YYYY-MM-DD:YYYY-MM-DD"
+    let periodLabel;
+    if (String(filterDays).startsWith('custom:')) {
+      const [, from, to] = filterDays.split(':');
+      const fmtIso = iso => iso ? new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR') : '';
+      periodLabel = `${fmtIso(from)} — ${fmtIso(to)}`;
+    } else {
+      periodLabel = (PERIODS.find(p => p.value === String(filterDays))?.label) || `Últimos ${filterDays}d`;
+    }
 
     const kit = createDoc({ orientation: 'landscape', margin: 14 });
     const { doc, W, M, CW, setFill, setText } = kit;
