@@ -491,6 +491,32 @@ export async function getTask(taskId) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
+/* ─── Excluir TODAS as tarefas (master-only / danger zone) ──
+ * Apaga em lotes (batches de 400, abaixo do limite de 500 do Firestore).
+ * Não faz backup automático — o usuário deve confirmar que tem backup.
+ * Retorna { total, deleted }.
+ */
+export async function deleteAllTasks(onProgress) {
+  if (!store.isMaster()) throw new Error('Apenas master pode executar esta operação.');
+
+  const snap  = await getDocs(collection(db, 'tasks'));
+  const total = snap.docs.length;
+  let   done  = 0;
+  const BATCH = 400;
+
+  for (let i = 0; i < total; i += BATCH) {
+    const slice = snap.docs.slice(i, i + BATCH);
+    const batch = writeBatch(db);
+    slice.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    done += slice.length;
+    if (typeof onProgress === 'function') onProgress(done, total);
+  }
+
+  await auditLog('tasks.deleteAll', 'tasks', null, { count: done });
+  return { total, deleted: done };
+}
+
 /* ─── Listar tarefas (filtros) ───────────────────────────── */
 export async function fetchTasks({
   projectId    = null,

@@ -61,6 +61,27 @@ export async function renderSettings(container) {
           <button class="btn btn-secondary" id="run-migration-btn">▶ Executar migração de setor e núcleos</button>
         </div>
       </div>
+
+      <div class="card" style="margin-bottom:24px;border:1px solid rgba(239,68,68,.4);">
+        <div class="card-header"><div class="card-title" style="color:var(--color-danger);">⚠ Zona de Perigo</div></div>
+        <div class="card-body">
+          <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:14px;line-height:1.6;">
+            Apaga <strong>permanentemente</strong> todas as tarefas do sistema.
+            Use apenas para resetar o ambiente — <strong>esta ação é irreversível</strong>.
+            Certifique-se de ter um backup antes de continuar.
+          </p>
+          <div id="del-all-progress" style="display:none;margin-bottom:12px;">
+            <div id="del-all-label" style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:6px;">Aguardando...</div>
+            <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
+              <div id="del-all-bar" style="height:100%;background:var(--color-danger);width:0%;transition:width .3s;border-radius:3px;"></div>
+            </div>
+          </div>
+          <button class="btn btn-secondary" id="delete-all-tasks-btn"
+            style="border-color:var(--color-danger);color:var(--color-danger);">
+            ✕ Excluir TODAS as tarefas
+          </button>
+        </div>
+      </div>
     ` : ''}
 
     <div style="display:grid; grid-template-columns:220px 1fr; gap:24px; align-items:flex-start;">
@@ -138,6 +159,37 @@ export async function renderSettings(container) {
       });
       toast.success(`Migração concluída: ${result.migrated} tarefa${result.migrated!==1?'s':''} atualizadas.`);
       if (label) label.textContent = `✓ ${result.migrated} de ${result.total} tarefas atualizadas.`;
+      if (bar)   bar.style.width = '100%';
+    } catch(e) {
+      toast.error('Erro: ' + e.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+    }
+  });
+
+  // Danger zone — deletar TODAS as tarefas (master-only)
+  document.getElementById('delete-all-tasks-btn')?.addEventListener('click', async () => {
+    if (!store.isMaster()) return;
+    if (!confirm('Tem certeza que deseja excluir TODAS as tarefas do sistema?\n\nEsta ação é IRREVERSÍVEL.')) return;
+    const typed = prompt('Digite "EXCLUIR" (em maiúsculas) para confirmar a exclusão de todas as tarefas:');
+    if (typed !== 'EXCLUIR') {
+      toast.info('Operação cancelada.');
+      return;
+    }
+    const btn   = document.getElementById('delete-all-tasks-btn');
+    const prog  = document.getElementById('del-all-progress');
+    const label = document.getElementById('del-all-label');
+    const bar   = document.getElementById('del-all-bar');
+    if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+    if (prog) prog.style.display = 'block';
+    try {
+      const { deleteAllTasks } = await import('../services/tasks.js');
+      const result = await deleteAllTasks((done, total) => {
+        if (label) label.textContent = `Excluindo… ${done} / ${total} tarefas`;
+        if (bar && total) bar.style.width = `${Math.round(done/total*100)}%`;
+      });
+      toast.success(`${result.deleted} tarefa${result.deleted!==1?'s':''} excluída${result.deleted!==1?'s':''}.`);
+      if (label) label.textContent = `✓ ${result.deleted} de ${result.total} tarefas excluídas.`;
       if (bar)   bar.style.width = '100%';
     } catch(e) {
       toast.error('Erro: ' + e.message);
