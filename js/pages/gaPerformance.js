@@ -1317,6 +1317,100 @@ const exportPDF = withExportGuard(async function exportPDF() {
       } catch {}
     }
 
+    // ── Top pages (site sem blog) ──
+    const sitePagesAll = (allPages || []).filter(r => !isBlogPath(r.pagePath, r.pageTitle));
+    const sitePagesTop = [...sitePagesAll]
+      .sort((a, b) => (Number(b.screenPageViews) || 0) - (Number(a.screenPageViews) || 0))
+      .slice(0, 15);
+    if (sitePagesTop.length) {
+      kit.ensureSpace(40);
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.text(txt('PAGINAS MAIS ACESSADAS'), M, kit.y);
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+      doc.text(txt(`  —  top ${sitePagesTop.length} por visualizacoes`), M + 62, kit.y);
+      kit.y += 3;
+      const headPg = [['#', 'Pagina', 'Caminho', 'Views', 'Usuarios', 'Duracao', 'Rejeicao', 'Engajamento']];
+      const bodyPg = sitePagesTop.map((r, i) => [
+        String(i + 1),
+        r.pageTitle || '—',
+        r.pagePath || '—',
+        num(r.screenPageViews),
+        num(r.activeUsers),
+        dur(r.avgSessionDuration),
+        pct((r.bounceRate || 0) * 100),
+        pct((r.engagementRate || 0) * 100),
+      ]);
+      doc.autoTable({
+        head: headPg, body: bodyPg, startY: kit.y,
+        margin: { left: M, right: M, bottom: 14 },
+        styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak', textColor: COL.text },
+        headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
+        alternateRowStyles: { fillColor: COL.subBg },
+        columnStyles: {
+          0: { cellWidth: 8, halign: 'center' },
+          1: { cellWidth: 72 },
+          3: { halign: 'right' },
+          4: { halign: 'right' },
+          5: { halign: 'right' },
+          6: { halign: 'right' },
+          7: { halign: 'right' },
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            if (data.column.index === 6) {
+              const val = parseFloat(String(data.cell.raw).replace('%', '').replace(',', '.'));
+              if (!isNaN(val)) {
+                data.cell.styles.textColor = val > 60 ? COL.red : val > 40 ? COL.orange : COL.green;
+                data.cell.styles.fontStyle = 'bold';
+              }
+            }
+            if (data.column.index === 7) {
+              const val = parseFloat(String(data.cell.raw).replace('%', '').replace(',', '.'));
+              if (!isNaN(val)) {
+                data.cell.styles.textColor = val >= 60 ? COL.green : val >= 40 ? COL.orange : COL.red;
+                data.cell.styles.fontStyle = 'bold';
+              }
+            }
+          }
+        },
+      });
+      kit.y = doc.lastAutoTable.finalY + 8;
+    }
+
+    // ── Top posts blog (se houver) ──
+    const blogTop = (allPages || [])
+      .filter(r => isBlogPath(r.pagePath, r.pageTitle))
+      .sort((a, b) => (Number(b.screenPageViews) || 0) - (Number(a.screenPageViews) || 0))
+      .slice(0, 10);
+    if (blogTop.length) {
+      kit.ensureSpace(30);
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.text(txt('POSTS DO BLOG — MAIS ACESSADOS'), M, kit.y);
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+      doc.text(txt(`  —  top ${blogTop.length}`), M + 80, kit.y);
+      kit.y += 3;
+      doc.autoTable({
+        head: [['#', 'Post', 'Caminho', 'Views', 'Usuarios', 'Duracao']],
+        body: blogTop.map((r, i) => [
+          String(i + 1), r.pageTitle || '—', r.pagePath || '—',
+          num(r.screenPageViews), num(r.activeUsers), dur(r.avgSessionDuration),
+        ]),
+        startY: kit.y,
+        margin: { left: M, right: M, bottom: 14 },
+        styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak', textColor: COL.text },
+        headStyles: { fillColor: COL.brand2, textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
+        alternateRowStyles: { fillColor: COL.subBg },
+        columnStyles: {
+          0: { cellWidth: 8, halign: 'center' },
+          1: { cellWidth: 90 },
+          3: { halign: 'right' },
+          4: { halign: 'right' },
+          5: { halign: 'right' },
+        },
+      });
+      kit.y = doc.lastAutoTable.finalY + 8;
+    }
+
     // ── Daily table ──
     kit.ensureSpace(30);
     setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);

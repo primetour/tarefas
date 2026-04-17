@@ -883,6 +883,7 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
       catch (_) {}
     }
   }
+  const hasAnyChart = Object.keys(charts).length > 0;
 
   // Linha A: Velocity (2/3) + Tempo por tipo (1/3)
   const vc = charts['velocity-chart'];
@@ -929,6 +930,122 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
       doc.addImage(t.img.img, 'PNG', x, kit.y, colW, h);
     });
     kit.y += rowH + 5;
+  }
+
+  // ═════ FALLBACK: sem canvas capturados, desenha gráficos nativos no PDF ═════
+  // Isso garante que a página 1 nunca fica vazia (aba colapsada, chart não renderizado, etc.)
+  if (!hasAnyChart) {
+    const statusDist = getStatusDistribution(metrics.tasks).filter(s => s.count > 0);
+    const prioDist   = getPriorityDistribution(metrics.tasks).filter(p => p.count > 0);
+    const byProject  = getTasksByProject(metrics.tasks, metrics.projects || []);
+
+    const hexToRgb = (hex) => {
+      const h = String(hex || '#6B7280').replace('#', '');
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    };
+
+    const colW = (CW - gap * 2) / 3;
+    const colX = [M, M + colW + gap, M + 2 * (colW + gap)];
+    const rowH = 58;
+    kit.ensureSpace(rowH + 10);
+
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text(txt('POR STATUS'), colX[0], kit.y);
+    doc.text(txt('POR PRIORIDADE'), colX[1], kit.y);
+    doc.text(txt('TOP PROJETOS'), colX[2], kit.y);
+    kit.y += 3;
+
+    // Coluna 1: Status bars
+    const topY = kit.y;
+    const drawDistBars = (list, x, availW) => {
+      if (!list.length) {
+        setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+        doc.text(txt('(sem dados)'), x, topY + 10);
+        return;
+      }
+      const maxC = Math.max(...list.map(d => d.count), 1);
+      const labW = Math.min(28, availW * 0.35);
+      const barMaxW = availW - labW - 14;
+      let yy = topY + 3;
+      list.slice(0, 8).forEach(d => {
+        const rgb = hexToRgb(d.color);
+        setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2);
+        doc.text(txt(d.label), x, yy + 3.2);
+        kit.drawBar(x + labW, yy + 1.6, barMaxW, (d.count / maxC) * 100, rgb, 2.2);
+        setText(rgb); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.2);
+        doc.text(String(d.count), x + labW + barMaxW + 3, yy + 3.2);
+        yy += 6;
+      });
+    };
+
+    drawDistBars(statusDist, colX[0], colW);
+    drawDistBars(prioDist,   colX[1], colW);
+
+    // Coluna 3: Top projetos
+    if (byProject.length) {
+      const top = byProject.slice(0, 7);
+      const maxT = Math.max(...top.map(p => p.total || 0), 1);
+      const labW = Math.min(30, colW * 0.4);
+      const barMaxW = colW - labW - 14;
+      let yy = topY + 3;
+      top.forEach(p => {
+        const pct = p.total ? Math.round((p.done || 0) * 100 / p.total) : 0;
+        const rgb = pct >= 80 ? hexToRgb('#16A34A') : pct >= 50 ? hexToRgb('#D97706') : hexToRgb('#2563EB');
+        const shortName = (p.name || p.project || '—').slice(0, 18);
+        setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2);
+        doc.text(txt(shortName), colX[2], yy + 3.2);
+        kit.drawBar(colX[2] + labW, yy + 1.6, barMaxW, pct, rgb, 2.2);
+        setText(rgb); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.2);
+        doc.text(`${pct}%`, colX[2] + labW + barMaxW + 3, yy + 3.2);
+        yy += 6;
+      });
+    } else {
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      doc.text(txt('(sem projetos)'), colX[2], topY + 10);
+    }
+
+    kit.y = topY + rowH;
+
+    // Linha extra: velocity semanal (criadas vs concluídas)
+    const velocity = getWeeklyVelocity(metrics.tasks, 12) || [];
+    if (velocity.length) {
+      kit.ensureSpace(52);
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.text(txt('CRIADAS vs CONCLUIDAS (12 SEMANAS)'), M, kit.y);
+      kit.y += 3;
+
+      const chartY = kit.y;
+      const chartH = 38;
+      const chartW = CW;
+      setFill(COL.subBg); doc.rect(M, chartY, chartW, chartH, 'F');
+
+      const maxV = Math.max(
+        ...velocity.map(v => Math.max(Number(v.created) || 0, Number(v.done) || 0)),
+        1,
+      );
+      const barGroupW = chartW / velocity.length;
+      const barW = Math.max(2, Math.min(6, barGroupW * 0.35));
+
+      velocity.forEach((v, i) => {
+        const gx = M + i * barGroupW + barGroupW / 2;
+        const xC = gx - barW - 0.4;
+        const xD = gx + 0.4;
+        const hC = ((Number(v.created) || 0) / maxV) * (chartH - 4);
+        const hD = ((Number(v.done) || 0) / maxV) * (chartH - 4);
+        setFill(COL.blue);  doc.rect(xC, chartY + chartH - hC - 2, barW, hC, 'F');
+        setFill(COL.green); doc.rect(xD, chartY + chartH - hD - 2, barW, hD, 'F');
+      });
+
+      // Legenda
+      setFill(COL.blue);  doc.rect(M, chartY + chartH + 2.5, 3, 2.2, 'F');
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+      doc.text(txt('Criadas'), M + 4.5, chartY + chartH + 4.4);
+      setFill(COL.green); doc.rect(M + 22, chartY + chartH + 2.5, 3, 2.2, 'F');
+      doc.text(txt('Concluidas'), M + 26.5, chartY + chartH + 4.4);
+      doc.text(txt(`${velocity.length} semanas`), W - M, chartY + chartH + 4.4, { align: 'right' });
+
+      kit.y = chartY + chartH + 8;
+    }
   }
 
   // ═════ Segunda página: Ranking (esquerda) + Distribuição (direita) ═════

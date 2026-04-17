@@ -1142,16 +1142,24 @@ function _buildTaskRows() {
   const users = store.get('users') || [];
   return filteredTasks.map(t => {
     const project = allProjects.find(p => p.id === t.projectId);
-    // Resolve UIDs → nome. Ignora UIDs órfãos (usuário saiu da base).
+    // Resolve UIDs → nome. Fallback para primeiro nome se user não encontrado.
     const assigneeNames = (t.assignees || [])
-      .map(uid => users.find(u => u.id === uid)?.name)
+      .map(uid => {
+        const u = users.find(u => u.id === uid);
+        return u?.name || u?.displayName || u?.email?.split('@')[0] || '';
+      })
       .filter(Boolean)
       .join(', ');
     const due = fmtDateExport(t.dueDate);
     const created = fmtDateExport(t.createdAt);
     const completed = fmtDateExport(t.completedAt);
-    const nucleo = NUCLEOS?.find(n => n.value === t.nucleo)?.label || t.nucleo || '';
-    const taskType = TASK_TYPES?.find(tt => tt.value === t.taskType)?.label || t.taskType || '';
+    // Núcleos são array (t.nucleos), não string. Tipo fica em t.type.
+    const nucleosArr = Array.isArray(t.nucleos) ? t.nucleos : (t.nucleo ? [t.nucleo] : []);
+    const nucleo = nucleosArr
+      .map(n => NUCLEOS?.find(x => x.value === n)?.label || n)
+      .filter(Boolean)
+      .join(', ');
+    const taskType = TASK_TYPES?.find(tt => tt.value === t.type)?.label || t.type || '';
     return {
       title: t.title || '',
       status: STATUS_MAP[t.status]?.label || t.status || '',
@@ -1258,13 +1266,18 @@ const exportTasksPdf = withExportGuard(async function exportTasksPdf() {
   const rows = _buildTaskRows();
   const tasks = filteredTasks;
 
-  const PAD_L = 4.5;          // padding esquerdo interno (depois da barra)
-  const CHIP_FS = 6.2;        // tamanho do chip
-  const CHIP_H = CHIP_FS * 0.55 + 2;    // altura do chip (~5.4mm)
-  const CHIP_ROW_Y = 2;       // offset do chip no card
-  const TITLE_Y = CHIP_ROW_Y + CHIP_H + 2.6;  // título começa abaixo do chip
+  const PAD_L = 5.5;          // padding esquerdo interno (depois da barra)
+  const PAD_T = 3.5;          // padding superior do card
+  const PAD_B = 3.5;          // padding inferior do card
+  const CHIP_FS = 6.4;
+  const CHIP_H = CHIP_FS * 0.55 + 2.4;   // altura do chip (~6mm)
+  const CHIP_TO_TITLE = 4;    // espaço entre chip e título
+  const TITLE_TO_META = 2.5;  // espaço entre título e meta
   const TITLE_FS = 9.5;
-  const META_FS = 7.3;
+  const META_FS = 7.6;
+  const TITLE_LH = TITLE_FS * 0.45;
+  const META_LH  = META_FS * 0.5;
+  const CARD_GAP = 3.2;       // espaço entre cards
 
   tasks.forEach((t, i) => {
     const r = rows[i];
@@ -1273,53 +1286,55 @@ const exportTasksPdf = withExportGuard(async function exportTasksPdf() {
     const stStyle = STATUS_STYLE[stKey] || { bg: COL.muted, label: stKey.toUpperCase() };
     const prioCol = PRIO_COL[prioKey] || COL.muted;
 
-    // Título: até 2 linhas. Meta: 1 linha.
+    // Título: até 2 linhas. Meta: até 2 linhas (para caber responsáveis + extras).
     const titleLines = wrap(t.title || '(sem titulo)', CW - PAD_L * 2, TITLE_FS).slice(0, 2);
     const metaStr    = [r.assignees, r.nucleo, r.taskType, r.project]
       .filter(s => s && String(s).trim()).join(' · ');
     const metaLines  = metaStr
-      ? wrap(metaStr, CW - PAD_L * 2, META_FS).slice(0, 1)
+      ? wrap(metaStr, CW - PAD_L * 2, META_FS).slice(0, 2)
       : [];
 
-    const cardH =
-      TITLE_Y +
-      titleLines.length * (TITLE_FS * 0.42) +
-      (metaLines.length ? 0.8 + metaLines.length * (META_FS * 0.45) : 0) +
-      2.5;
+    const chipBlockH = CHIP_H;
+    const titleBlockH = titleLines.length * TITLE_LH;
+    const metaBlockH  = metaLines.length ? (TITLE_TO_META + metaLines.length * META_LH) : 0;
 
-    kit.ensureSpace(cardH + 2);
+    const cardH = PAD_T + chipBlockH + CHIP_TO_TITLE + titleBlockH + metaBlockH + PAD_B;
+
+    kit.ensureSpace(cardH + CARD_GAP);
 
     // Card
     setFill(COL.white); setDraw(COL.border); doc.setLineWidth(0.2);
-    doc.roundedRect(M, kit.y, CW, cardH, 1.6, 1.6, 'FD');
+    doc.roundedRect(M, kit.y, CW, cardH, 1.8, 1.8, 'FD');
     setFill(prioCol); doc.rect(M, kit.y, 1.8, cardH, 'F');
 
     const cardTop = kit.y;
 
-    // Chip de status + META + prazo (todos na linha superior)
-    const stCh = drawChip(stStyle.label, M + PAD_L, cardTop + CHIP_ROW_Y, stStyle.bg, COL.white, CHIP_FS, 2, 1);
-    let chipX = M + PAD_L + stCh.w + 2;
+    // Linha superior: chip de status + chip META + prazo
+    const chipY = cardTop + PAD_T;
+    const stCh = drawChip(stStyle.label, M + PAD_L, chipY, stStyle.bg, COL.white, CHIP_FS, 2.2, 1.2);
+    let chipX = M + PAD_L + stCh.w + 2.2;
     if (t.goalId) {
-      const gw = drawChip('META', chipX, cardTop + CHIP_ROW_Y, COL.gold, COL.white, CHIP_FS, 2, 1);
-      chipX += gw.w + 2;
+      const gw = drawChip('META', chipX, chipY, COL.gold, COL.white, CHIP_FS, 2.2, 1.2);
+      chipX += gw.w + 2.2;
     }
     if (r.due) {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); setText(COL.muted);
-      doc.text(txt(`PRAZO ${r.due}`), W - M - 2, cardTop + CHIP_ROW_Y + CHIP_H - 1.2, { align: 'right' });
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); setText(COL.muted);
+      doc.text(txt(`PRAZO ${r.due}`), W - M - 2, chipY + CHIP_H - 1.4, { align: 'right' });
     }
 
-    // Título (abaixo do chip, sem sobreposição)
+    // Título
+    const titleY = chipY + chipBlockH + CHIP_TO_TITLE;
     setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(TITLE_FS);
-    doc.text(titleLines, M + PAD_L, cardTop + TITLE_Y);
+    doc.text(titleLines, M + PAD_L, titleY);
 
-    // Meta
+    // Meta (responsáveis · núcleo · tipo · projeto)
     if (metaLines.length) {
       setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(META_FS);
-      const metaY = cardTop + TITLE_Y + titleLines.length * (TITLE_FS * 0.42) + 0.8;
+      const metaY = titleY + titleBlockH + TITLE_TO_META - 1.2;
       doc.text(metaLines, M + PAD_L, metaY);
     }
 
-    kit.y = cardTop + cardH + 1.3;
+    kit.y = cardTop + cardH + CARD_GAP;
   });
 
   kit.drawFooter('PRIMETOUR  ·  Tarefas');

@@ -1344,14 +1344,22 @@ const exportSlotsPdf = withExportGuard(async function exportSlotsPdf(list) {
   // Cards agrupados por data
   const rows = _buildSlotRows(list);
 
-  const PAD_L = 4.5;
-  const CHIP_FS = 6.2;
-  const CHIP_H = CHIP_FS * 0.55 + 2;
-  const CHIP_ROW_Y = 2;
-  const TITLE_Y = CHIP_ROW_Y + CHIP_H + 2.6;
+  const PAD_L = 5.5;
+  const PAD_T = 3.5;
+  const PAD_B = 3.8;
+  const CHIP_FS = 6.4;
+  const CHIP_H = CHIP_FS * 0.55 + 2.4;
+  const CHIP_TO_TITLE = 4;
+  const TITLE_TO_META = 2.5;
+  const META_TO_DESC = 2.2;
   const TITLE_FS = 9.5;
-  const META_FS = 7.3;
-  const DESC_FS = 7.5;
+  const META_FS = 7.6;
+  const DESC_FS = 7.8;
+  const TITLE_LH = TITLE_FS * 0.45;
+  const META_LH  = META_FS * 0.5;
+  const DESC_LH  = DESC_FS * 0.5;
+  const CARD_GAP = 3;
+  const GROUP_GAP = 4.5;
 
   let currentDateLabel = '';
 
@@ -1361,12 +1369,13 @@ const exportSlotsPdf = withExportGuard(async function exportSlotsPdf(list) {
     // Quebra de grupo por data
     if (row.date && row.date !== currentDateLabel) {
       currentDateLabel = row.date;
-      kit.ensureSpace(10);
+      kit.ensureSpace(12);
+      if (i > 0) kit.addY(GROUP_GAP);
       setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
       doc.text(txt(`${row.weekday ? row.weekday.toUpperCase() + '  ·  ' : ''}${row.date}`), M, kit.y + 3);
       setDraw(COL.gold); doc.setLineWidth(0.6);
       doc.line(M, kit.y + 5, W - M, kit.y + 5);
-      kit.addY(8);
+      kit.addY(9);
     }
 
     const stKey = (s.status || 'idea').toLowerCase();
@@ -1383,50 +1392,52 @@ const exportSlotsPdf = withExportGuard(async function exportSlotsPdf(list) {
       ? wrap(row.description, CW - PAD_L * 2, DESC_FS).slice(0, 3)
       : [];
 
-    const cardH =
-      TITLE_Y +
-      titleLines.length * (TITLE_FS * 0.42) +
-      (metaLines.length ? 0.8 + metaLines.length * (META_FS * 0.45) : 0) +
-      (descLines.length ? 1.2 + descLines.length * (DESC_FS * 0.48) : 0) +
-      3;
+    const chipBlockH = CHIP_H;
+    const titleBlockH = titleLines.length * TITLE_LH;
+    const metaBlockH  = metaLines.length ? (TITLE_TO_META + metaLines.length * META_LH) : 0;
+    const descBlockH  = descLines.length ? (META_TO_DESC + descLines.length * DESC_LH) : 0;
 
-    kit.ensureSpace(cardH + 2);
+    const cardH = PAD_T + chipBlockH + CHIP_TO_TITLE + titleBlockH + metaBlockH + descBlockH + PAD_B;
+
+    kit.ensureSpace(cardH + CARD_GAP);
 
     setFill(COL.white); setDraw(COL.border); doc.setLineWidth(0.2);
-    doc.roundedRect(M, kit.y, CW, cardH, 1.6, 1.6, 'FD');
+    doc.roundedRect(M, kit.y, CW, cardH, 1.8, 1.8, 'FD');
     setFill(stStyle.bg); doc.rect(M, kit.y, 1.8, cardH, 'F');
 
     const cardTop = kit.y;
 
     // Status chip + flag "vira tarefa"
-    const stCh = drawChip(stStyle.label, M + PAD_L, cardTop + CHIP_ROW_Y, stStyle.bg, COL.white, CHIP_FS, 2, 1);
-    let chipX = M + PAD_L + stCh.w + 2;
+    const chipY = cardTop + PAD_T;
+    const stCh = drawChip(stStyle.label, M + PAD_L, chipY, stStyle.bg, COL.white, CHIP_FS, 2.2, 1.2);
+    let chipX = M + PAD_L + stCh.w + 2.2;
     if (s.taskId) {
-      const gw = drawChip('TAREFA', chipX, cardTop + CHIP_ROW_Y, COL.gold, COL.white, CHIP_FS, 2, 1);
-      chipX += gw.w + 2;
+      const gw = drawChip('TAREFA', chipX, chipY, COL.gold, COL.white, CHIP_FS, 2.2, 1.2);
+      chipX += gw.w + 2.2;
     }
 
     // Título
+    const titleY = chipY + chipBlockH + CHIP_TO_TITLE;
     setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(TITLE_FS);
-    doc.text(titleLines, M + PAD_L, cardTop + TITLE_Y);
+    doc.text(titleLines, M + PAD_L, titleY);
 
     // Meta
-    let cursorY = cardTop + TITLE_Y + titleLines.length * (TITLE_FS * 0.42);
+    let cursorY = titleY + titleBlockH;
     if (metaLines.length) {
+      cursorY += TITLE_TO_META - 1.2;
       setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(META_FS);
-      cursorY += 0.8;
       doc.text(metaLines, M + PAD_L, cursorY);
-      cursorY += metaLines.length * (META_FS * 0.45);
+      cursorY += metaLines.length * META_LH;
     }
 
     // Descrição
     if (descLines.length) {
+      cursorY += META_TO_DESC;
       setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(DESC_FS);
-      cursorY += 1.2;
       doc.text(descLines, M + PAD_L, cursorY);
     }
 
-    kit.y = cardTop + cardH + 1.3;
+    kit.y = cardTop + cardH + CARD_GAP;
   });
 
   kit.drawFooter('PRIMETOUR  ·  Calendário de Conteúdo');

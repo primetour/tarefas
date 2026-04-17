@@ -10,6 +10,7 @@ import { db }    from '../firebase.js';
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import { MODULE_REGISTRY, AI_PROVIDERS, AI_MODELS } from '../services/ai.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -70,6 +71,14 @@ export async function renderAiDashboard(container) {
             color:${p===currentPeriod?'var(--bg-dark)':'var(--text-muted)'};font-weight:500;
           ">${{'7d':'7 dias','30d':'30 dias','90d':'90 dias','all':'Tudo'}[p]}</button>
         `).join('')}
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button id="ai-export-xls" class="btn btn-secondary" style="font-size:0.8125rem;padding:6px 14px;">
+          Exportar XLS
+        </button>
+        <button id="ai-export-pdf" class="btn btn-secondary" style="font-size:0.8125rem;padding:6px 14px;">
+          Exportar PDF
+        </button>
       </div>
     </div>
 
@@ -137,6 +146,10 @@ export async function renderAiDashboard(container) {
       processAndRender();
     });
   });
+
+  // Export buttons
+  container.querySelector('#ai-export-xls')?.addEventListener('click', () => exportAiDashboardXls());
+  container.querySelector('#ai-export-pdf')?.addEventListener('click', () => exportAiDashboardPdf());
 
   // Load users for name resolution
   try {
@@ -1029,6 +1042,392 @@ function renderActionSuccessRate(Chart, actions) {
     },
   });
 }
+
+/* ─── Export XLS ─────────────────────────────────────────── */
+async function loadSheetJS() {
+  if (window.XLSX) return;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+const exportAiDashboardXls = withExportGuard(async function exportAiDashboardXls() {
+  try {
+    await loadSheetJS();
+    const logs = filterByPeriod(allLogs);
+    const actions = filterByPeriod(allActionLogs);
+
+    // Helper: user name resolver
+    const userName = (uid) => {
+      if (!uid) return '';
+      const u = allUsers.find(u => u.id === uid);
+      return u?.name || u?.displayName || u?.email?.split('@')[0] || uid;
+    };
+
+    // Resumo
+    const totalCalls = logs.length;
+    const totalIn  = logs.reduce((s, l) => s + (l.inputTokens || 0), 0);
+    const totalOut = logs.reduce((s, l) => s + (l.outputTokens || 0), 0);
+    const cost = estimateCost(logs);
+    const uniqueUsers = new Set(logs.map(l => l.userId).filter(Boolean)).size;
+    const uniqueSkills = new Set(logs.map(l => l.skillId).filter(Boolean)).size;
+
+    const summary = [
+      ['Relatório IA — PRIMETOUR', ''],
+      ['Gerado em', new Date().toLocaleString('pt-BR')],
+      ['Período', ({ '7d':'Últimos 7 dias','30d':'Últimos 30 dias','90d':'Últimos 90 dias','all':'Tudo' })[currentPeriod] || currentPeriod],
+      [],
+      ['KPI', 'Valor'],
+      ['Chamadas', totalCalls],
+      ['Tokens input', totalIn],
+      ['Tokens output', totalOut],
+      ['Tokens totais', totalIn + totalOut],
+      ['Usuários ativos', uniqueUsers],
+      ['Skills distintas', uniqueSkills],
+      ['Custo estimado (R$)', cost.toFixed(2)],
+      [],
+      ['Ações executadas', actions.length],
+      ['Ações com sucesso', actions.filter(a => a.success === true).length],
+      ['Ações com falha', actions.filter(a => a.success === false).length],
+    ];
+    const wb = window.XLSX.utils.book_new();
+    const wsSum = window.XLSX.utils.aoa_to_sheet(summary);
+    wsSum['!cols'] = [{ wch: 28 }, { wch: 22 }];
+    window.XLSX.utils.book_append_sheet(wb, wsSum, 'Resumo');
+
+    // Por módulo
+    const modMap = {};
+    for (const l of logs) {
+      const m = l.module || 'general';
+      if (!modMap[m]) modMap[m] = { calls: 0, inT: 0, outT: 0 };
+      modMap[m].calls++;
+      modMap[m].inT  += l.inputTokens  || 0;
+      modMap[m].outT += l.outputTokens || 0;
+    }
+    const modRows = [['Módulo', 'Chamadas', 'Tokens Input', 'Tokens Output', 'Total']];
+    for (const [m, v] of Object.entries(modMap).sort((a, b) => b[1].calls - a[1].calls)) {
+      modRows.push([MODULE_REGISTRY[m]?.label || m, v.calls, v.inT, v.outT, v.inT + v.outT]);
+    }
+    const wsMod = window.XLSX.utils.aoa_to_sheet(modRows);
+    wsMod['!cols'] = [{ wch: 28 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+    window.XLSX.utils.book_append_sheet(wb, wsMod, 'Por módulo');
+
+    // Por provider / model
+    const provMap = {};
+    for (const l of logs) {
+      const p = l.provider || 'unknown';
+      provMap[p] = (provMap[p] || 0) + 1;
+    }
+    const provRows = [['Provider', 'Chamadas']];
+    for (const [p, v] of Object.entries(provMap).sort((a, b) => b[1] - a[1])) {
+      provRows.push([AI_PROVIDERS.find(x => x.id === p)?.label || p, v]);
+    }
+    window.XLSX.utils.book_append_sheet(wb,
+      window.XLSX.utils.aoa_to_sheet(provRows), 'Por provider');
+
+    const modelMap = {};
+    for (const l of logs) {
+      const m = l.model || 'unknown';
+      modelMap[m] = (modelMap[m] || 0) + 1;
+    }
+    const allModels = Object.values(AI_MODELS).flat();
+    const modelRows = [['Modelo', 'Chamadas']];
+    for (const [m, v] of Object.entries(modelMap).sort((a, b) => b[1] - a[1])) {
+      modelRows.push([allModels.find(x => x.id === m)?.label || m, v]);
+    }
+    window.XLSX.utils.book_append_sheet(wb,
+      window.XLSX.utils.aoa_to_sheet(modelRows), 'Por modelo');
+
+    // Top users
+    const usrMap = {};
+    for (const l of logs) {
+      if (!l.userId) continue;
+      if (!usrMap[l.userId]) usrMap[l.userId] = { calls: 0, tokens: 0 };
+      usrMap[l.userId].calls++;
+      usrMap[l.userId].tokens += (l.inputTokens || 0) + (l.outputTokens || 0);
+    }
+    const usrRows = [['Usuário', 'Chamadas', 'Tokens']];
+    for (const [uid, v] of Object.entries(usrMap).sort((a, b) => b[1].calls - a[1].calls)) {
+      usrRows.push([userName(uid), v.calls, v.tokens]);
+    }
+    const wsUsr = window.XLSX.utils.aoa_to_sheet(usrRows);
+    wsUsr['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 14 }];
+    window.XLSX.utils.book_append_sheet(wb, wsUsr, 'Por usuário');
+
+    // Top skills
+    const skillMap = {};
+    for (const l of logs) {
+      const s = l.skillId || 'general';
+      skillMap[s] = (skillMap[s] || 0) + 1;
+    }
+    const skillRows = [['Skill', 'Chamadas']];
+    for (const [s, v] of Object.entries(skillMap).sort((a, b) => b[1] - a[1])) {
+      skillRows.push([s, v]);
+    }
+    window.XLSX.utils.book_append_sheet(wb,
+      window.XLSX.utils.aoa_to_sheet(skillRows), 'Skills');
+
+    // Ações
+    const actMap = {};
+    for (const a of actions) {
+      const k = a.action || 'unknown';
+      if (!actMap[k]) actMap[k] = { total: 0, ok: 0, fail: 0 };
+      actMap[k].total++;
+      if (a.success === true) actMap[k].ok++;
+      else if (a.success === false) actMap[k].fail++;
+    }
+    const actRows = [['Ação', 'Total', 'Sucesso', 'Falhas', 'Taxa (%)']];
+    for (const [k, v] of Object.entries(actMap).sort((a, b) => b[1].total - a[1].total)) {
+      const rate = v.total ? Math.round(v.ok / v.total * 100) : 0;
+      actRows.push([k, v.total, v.ok, v.fail, rate]);
+    }
+    const wsAct = window.XLSX.utils.aoa_to_sheet(actRows);
+    wsAct['!cols'] = [{ wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
+    window.XLSX.utils.book_append_sheet(wb, wsAct, 'Ações');
+
+    // Logs brutos (limitados)
+    const logRows = [['Data', 'Usuário', 'Módulo', 'Skill', 'Provider', 'Modelo', 'Tokens In', 'Tokens Out']];
+    for (const l of logs.slice(0, 2000)) {
+      logRows.push([
+        l.ts ? l.ts.toLocaleString('pt-BR') : '',
+        userName(l.userId),
+        MODULE_REGISTRY[l.module]?.label || l.module || '',
+        l.skillId || '',
+        AI_PROVIDERS.find(x => x.id === l.provider)?.label || l.provider || '',
+        allModels.find(x => x.id === l.model)?.label || l.model || '',
+        l.inputTokens || 0,
+        l.outputTokens || 0,
+      ]);
+    }
+    const wsLog = window.XLSX.utils.aoa_to_sheet(logRows);
+    wsLog['!cols'] = [{ wch: 18 }, { wch: 24 }, { wch: 18 }, { wch: 22 }, { wch: 14 }, { wch: 22 }, { wch: 10 }, { wch: 10 }];
+    window.XLSX.utils.book_append_sheet(wb, wsLog, 'Logs IA');
+
+    window.XLSX.writeFile(wb, `ai_dashboard_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success('XLS exportado!');
+  } catch (e) {
+    console.error(e);
+    toast.error('Erro ao exportar XLS: ' + e.message);
+  }
+});
+
+/* ─── Export PDF ─────────────────────────────────────────── */
+const exportAiDashboardPdf = withExportGuard(async function exportAiDashboardPdf() {
+  try {
+    await loadJsPdf();
+    if (!window.jspdf?.jsPDF?.API?.autoTable) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
+    }
+
+    const logs = filterByPeriod(allLogs);
+    const actions = filterByPeriod(allActionLogs);
+    const periodLabel = ({ '7d':'Últimos 7 dias','30d':'Últimos 30 dias','90d':'Últimos 90 dias','all':'Tudo' })[currentPeriod] || currentPeriod;
+
+    const totalCalls = logs.length;
+    const totalIn  = logs.reduce((s, l) => s + (l.inputTokens || 0), 0);
+    const totalOut = logs.reduce((s, l) => s + (l.outputTokens || 0), 0);
+    const cost = estimateCost(logs);
+    const uniqueUsers  = new Set(logs.map(l => l.userId).filter(Boolean)).size;
+    const uniqueSkills = new Set(logs.map(l => l.skillId).filter(Boolean)).size;
+
+    const kit = createDoc({ orientation: 'landscape', margin: 14 });
+    const { doc, W, M, CW, setFill, setText } = kit;
+
+    kit.drawCover({
+      title: 'Dashboard IA',
+      subtitle: 'PRIMETOUR  ·  Inteligencia Artificial',
+      meta: `Periodo: ${periodLabel}  ·  ${totalCalls} chamadas  ·  ${actions.length} acoes`,
+      compact: true,
+    });
+
+    // KPI Strip
+    const kpis = [
+      { label: 'Chamadas',      value: totalCalls.toLocaleString('pt-BR'),      col: COL.gold  },
+      { label: 'Tokens IN',     value: formatTokens(totalIn),                    col: COL.blue  },
+      { label: 'Tokens OUT',    value: formatTokens(totalOut),                   col: COL.brand2 },
+      { label: 'Usuarios',      value: uniqueUsers.toLocaleString('pt-BR'),      col: COL.green },
+      { label: 'Skills',        value: uniqueSkills.toLocaleString('pt-BR'),     col: COL.blue  },
+      { label: 'Custo est.',    value: `R$ ${cost.toFixed(2)}`,                  col: COL.orange },
+    ];
+    const gap = 3;
+    const kpiW = (CW - gap * (kpis.length - 1)) / kpis.length;
+    const kpiH = 22;
+    let y = kit.y;
+    kpis.forEach((k, i) => {
+      const x = M + i * (kpiW + gap);
+      setFill(COL.white); doc.roundedRect(x, y, kpiW, kpiH, 1.6, 1.6, 'F');
+      setFill(k.col);     doc.rect(x, y, kpiW, 1.6, 'F');
+      setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+      doc.text(txt(k.value), x + kpiW / 2, y + 12, { align: 'center' });
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+      doc.text(txt(k.label.toUpperCase()), x + kpiW / 2, y + 18, { align: 'center' });
+    });
+    kit.y = y + kpiH + 6;
+
+    // Capturar charts do DOM
+    const chartDefs = [
+      { id: 'ai-calls-day',      title: 'CHAMADAS POR DIA' },
+      { id: 'ai-tokens-day',     title: 'TOKENS POR DIA' },
+      { id: 'ai-by-module',      title: 'USO POR MODULO' },
+      { id: 'ai-by-provider',    title: 'USO POR PROVIDER' },
+      { id: 'ai-by-model',       title: 'USO POR MODELO' },
+      { id: 'ai-top-skills',     title: 'TOP SKILLS' },
+      { id: 'ai-top-users',      title: 'TOP USUARIOS' },
+      { id: 'ai-cost-mod',       title: 'CUSTO POR MODULO' },
+      { id: 'ai-top-actions',    title: 'TOP ACOES' },
+      { id: 'ai-actions-day',    title: 'ACOES POR DIA' },
+      { id: 'ai-actions-module', title: 'ACOES POR MODULO' },
+      { id: 'ai-actions-success',title: 'TAXA DE SUCESSO' },
+    ];
+    const charts = [];
+    for (const def of chartDefs) {
+      const c = document.getElementById(`canvas-${def.id}`);
+      if (c && c.width > 0 && c.height > 0) {
+        try {
+          charts.push({
+            title: def.title,
+            img: c.toDataURL('image/png', 0.92),
+            aspect: c.height / c.width,
+          });
+        } catch (_) {}
+      }
+    }
+
+    if (charts.length) {
+      const cols = 2;
+      const colW = (CW - gap) / cols;
+      const cellH = 56;
+
+      for (let i = 0; i < charts.length; i += cols) {
+        kit.ensureSpace(cellH + 10);
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+        for (let j = 0; j < cols && (i + j) < charts.length; j++) {
+          const cx = M + j * (colW + gap);
+          doc.text(txt(charts[i + j].title), cx, kit.y);
+        }
+        kit.y += 3;
+        const rowStart = kit.y;
+        for (let j = 0; j < cols && (i + j) < charts.length; j++) {
+          const cx = M + j * (colW + gap);
+          const ch = charts[i + j];
+          const h = Math.min(cellH, colW * ch.aspect);
+          doc.addImage(ch.img, 'PNG', cx, rowStart, colW, h);
+        }
+        kit.y = rowStart + cellH + 5;
+      }
+    }
+
+    // ═════ Página de tabelas: Top usuários + Top ações ═════
+    const userName = (uid) => {
+      if (!uid) return '';
+      const u = allUsers.find(u => u.id === uid);
+      return u?.name || u?.displayName || u?.email?.split('@')[0] || uid;
+    };
+
+    const usrMap = {};
+    for (const l of logs) {
+      if (!l.userId) continue;
+      if (!usrMap[l.userId]) usrMap[l.userId] = { calls: 0, tokens: 0 };
+      usrMap[l.userId].calls++;
+      usrMap[l.userId].tokens += (l.inputTokens || 0) + (l.outputTokens || 0);
+    }
+    const topUsers = Object.entries(usrMap).sort((a, b) => b[1].calls - a[1].calls).slice(0, 15);
+
+    const actMap = {};
+    for (const a of actions) {
+      const k = a.action || 'unknown';
+      if (!actMap[k]) actMap[k] = { total: 0, ok: 0, fail: 0 };
+      actMap[k].total++;
+      if (a.success === true) actMap[k].ok++;
+      else if (a.success === false) actMap[k].fail++;
+    }
+    const topActs = Object.entries(actMap).sort((a, b) => b[1].total - a[1].total).slice(0, 15);
+
+    if (topUsers.length || topActs.length) {
+      doc.addPage();
+      kit.y = kit.M + 3;
+      setText(COL.muted); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+      doc.text(txt('PRIMETOUR  ·  Dashboard IA'), M, 9);
+      kit.setDraw(COL.border); doc.setLineWidth(0.15);
+      doc.line(M, 11, W - M, 11);
+      kit.y = 17;
+
+      const colW = (CW - 6) / 2;
+      const colX1 = M;
+      const colX2 = M + colW + 6;
+      const topY = kit.y;
+
+      // Top usuários
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+      doc.text(txt('TOP 15 USUARIOS'), colX1, topY);
+      doc.autoTable({
+        startY: topY + 3,
+        margin: { left: colX1, right: W - (colX1 + colW), bottom: 14 },
+        tableWidth: colW,
+        head: [['#', 'Usuario', 'Chamadas', 'Tokens']],
+        body: topUsers.map(([uid, v], i) => [i + 1, txt(userName(uid)), v.calls, formatTokens(v.tokens)]),
+        styles: { fontSize: 8, cellPadding: 2.4, textColor: COL.text },
+        headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 7 },
+        alternateRowStyles: { fillColor: COL.subBg },
+        columnStyles: {
+          0: { cellWidth: 8, halign: 'center' },
+          2: { cellWidth: 20, halign: 'center' },
+          3: { cellWidth: 22, halign: 'center' },
+        },
+      });
+      const leftFinalY = doc.lastAutoTable.finalY;
+
+      // Top ações
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+      doc.text(txt('TOP 15 ACOES'), colX2, topY);
+      doc.autoTable({
+        startY: topY + 3,
+        margin: { left: colX2, right: M, bottom: 14 },
+        tableWidth: colW,
+        head: [['#', 'Acao', 'Total', 'OK', 'Taxa']],
+        body: topActs.map(([k, v], i) => {
+          const rate = v.total ? Math.round(v.ok / v.total * 100) : 0;
+          return [i + 1, txt(k), v.total, v.ok, `${rate}%`];
+        }),
+        styles: { fontSize: 8, cellPadding: 2.4, textColor: COL.text },
+        headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 7 },
+        alternateRowStyles: { fillColor: COL.subBg },
+        columnStyles: {
+          0: { cellWidth: 8, halign: 'center' },
+          2: { cellWidth: 14, halign: 'center' },
+          3: { cellWidth: 12, halign: 'center' },
+          4: { cellWidth: 16, halign: 'center' },
+        },
+        didDrawCell: (data) => {
+          if (data.section === 'body' && data.column.index === 4) {
+            const row = topActs[data.row.index];
+            const rate = row ? (row[1].total ? row[1].ok / row[1].total * 100 : 0) : 0;
+            const barX = data.cell.x + 1;
+            const barY = data.cell.y + data.cell.height - 2.3;
+            const barW = data.cell.width - 2;
+            setFill(rate >= 80 ? COL.green : rate >= 50 ? COL.orange : COL.red);
+            doc.rect(barX, barY, barW * rate / 100, 1.2, 'F');
+          }
+        },
+      });
+      kit.y = Math.max(leftFinalY, doc.lastAutoTable.finalY) + 8;
+    }
+
+    kit.drawFooter('PRIMETOUR  ·  Dashboard IA');
+    doc.save(`ai_dashboard_${new Date().toISOString().slice(0, 10)}.pdf`);
+    toast.success('PDF exportado!');
+  } catch (e) {
+    console.error(e);
+    toast.error('Erro ao exportar PDF: ' + e.message);
+  }
+});
 
 /* ─── Cleanup ────────────────────────────────────────────── */
 function destroyCharts() {

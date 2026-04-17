@@ -6,6 +6,7 @@
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import { fetchRoteiroStats, fetchGenerations, ROTEIRO_STATUSES } from '../services/roteiros.js';
+import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -124,9 +125,14 @@ export async function renderRoteiroDashboard(container) {
           ">${p.label}</button>
         `).join('')}
       </div>
-      <button id="rd-export-xls" class="btn btn-secondary" style="margin-left:auto;font-size:0.8125rem;padding:6px 14px;">
-        Exportar XLS
-      </button>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button id="rd-export-xls" class="btn btn-secondary" style="font-size:0.8125rem;padding:6px 14px;">
+          Exportar XLS
+        </button>
+        <button id="rd-export-pdf" class="btn btn-secondary" style="font-size:0.8125rem;padding:6px 14px;">
+          Exportar PDF
+        </button>
+      </div>
     </div>
 
     <!-- KPI cards -->
@@ -165,6 +171,8 @@ export async function renderRoteiroDashboard(container) {
 
   // Export XLS
   container.querySelector('#rd-export-xls')?.addEventListener('click', () => exportRoteirosXLS());
+  // Export PDF
+  container.querySelector('#rd-export-pdf')?.addEventListener('click', () => exportRoteiroDashboardPdf());
 
   // Load data
   try {
@@ -765,6 +773,235 @@ async function exportRoteirosXLS() {
     toast.error('Erro ao exportar: ' + e.message);
   }
 }
+
+/* ─── Export PDF ─────────────────────────────────────────── */
+const exportRoteiroDashboardPdf = withExportGuard(async function exportRoteiroDashboardPdf() {
+  try {
+    await loadJsPdf();
+    if (!window.jspdf?.jsPDF?.API?.autoTable) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
+    }
+
+    const roteiros = filterByPeriod(allRoteiros);
+    const fmtD = d => (d ? new Intl.DateTimeFormat('pt-BR').format(d) : '—');
+
+    // KPIs
+    const now = new Date();
+    const thisMonth = roteiros.filter(r => r._ts.getMonth() === now.getMonth() && r._ts.getFullYear() === now.getFullYear()).length;
+    const countByStatus = (k) => roteiros.filter(r => r.status === k).length;
+    const drafts = countByStatus('draft');
+    const sent = countByStatus('sent');
+    const approved = countByStatus('approved');
+    const convRate = sent > 0 ? ((approved / sent) * 100).toFixed(1) : '0.0';
+
+    // Período humano
+    const periodLabel = (PERIODS.find(p => p.key === currentPeriod) || {}).label || '—';
+
+    const kit = createDoc({ orientation: 'landscape', margin: 14 });
+    const { doc, W, M, CW, setFill, setText } = kit;
+
+    kit.drawCover({
+      title: 'Dashboard — Roteiros de Viagem',
+      subtitle: 'PRIMETOUR  ·  Roteiros Premium',
+      meta: `Periodo: ${periodLabel}  ·  ${roteiros.length} roteiros  ·  ${allGenerations.length} geracoes`,
+      compact: true,
+    });
+
+    // KPI strip
+    const kpis = [
+      { label: 'Total',       value: roteiros.length.toLocaleString('pt-BR'), col: COL.blue },
+      { label: 'Este Mes',    value: thisMonth.toLocaleString('pt-BR'),        col: COL.brand2 },
+      { label: 'Rascunhos',   value: drafts.toLocaleString('pt-BR'),           col: COL.orange },
+      { label: 'Enviados',    value: sent.toLocaleString('pt-BR'),             col: COL.blue },
+      { label: 'Aprovados',   value: approved.toLocaleString('pt-BR'),         col: COL.green },
+      { label: 'Taxa Conv.',  value: `${convRate}%`,
+        col: Number(convRate) >= 50 ? COL.green : Number(convRate) >= 25 ? COL.orange : COL.red },
+    ];
+    const gap = 3;
+    const kpiW = (CW - gap * (kpis.length - 1)) / kpis.length;
+    const kpiH = 22;
+    let y = kit.y;
+    kpis.forEach((k, i) => {
+      const x = M + i * (kpiW + gap);
+      setFill(COL.white); doc.roundedRect(x, y, kpiW, kpiH, 1.6, 1.6, 'F');
+      setFill(k.col);     doc.rect(x, y, kpiW, 1.6, 'F');
+      setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+      doc.text(txt(k.value), x + kpiW / 2, y + 12, { align: 'center' });
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+      doc.text(txt(k.label.toUpperCase()), x + kpiW / 2, y + 18, { align: 'center' });
+    });
+    kit.y = y + kpiH + 6;
+
+    // Capturar charts do DOM
+    const chartDefs = [
+      { id: 'rd-evolucao',  title: 'EVOLUCAO MENSAL' },
+      { id: 'rd-pipeline',  title: 'PIPELINE DE STATUS' },
+      { id: 'rd-destinos',  title: 'TOP 10 DESTINOS' },
+      { id: 'rd-clientes',  title: 'PERFIL DE CLIENTES' },
+      { id: 'rd-economico', title: 'PERFIL ECONOMICO' },
+      { id: 'rd-formatos',  title: 'FORMATOS DE EXPORT' },
+      { id: 'rd-consultor', title: 'POR CONSULTOR' },
+      { id: 'rd-moedas',    title: 'MOEDAS' },
+    ];
+    const charts = [];
+    for (const def of chartDefs) {
+      const c = document.getElementById(`canvas-${def.id}`);
+      if (c && c.width > 0 && c.height > 0) {
+        try {
+          charts.push({
+            title: def.title,
+            img: c.toDataURL('image/png', 0.92),
+            aspect: c.height / c.width,
+          });
+        } catch (_) {}
+      }
+    }
+
+    // Grid de charts 2 colunas
+    if (charts.length) {
+      const cols = 2;
+      const colW = (CW - gap) / cols;
+      const cellH = 58;
+
+      for (let i = 0; i < charts.length; i += cols) {
+        kit.ensureSpace(cellH + 10);
+        // Títulos da linha
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+        for (let j = 0; j < cols && (i + j) < charts.length; j++) {
+          const cx = M + j * (colW + gap);
+          doc.text(txt(charts[i + j].title), cx, kit.y);
+        }
+        kit.y += 3;
+
+        // Imagens
+        const rowStart = kit.y;
+        for (let j = 0; j < cols && (i + j) < charts.length; j++) {
+          const cx = M + j * (colW + gap);
+          const ch = charts[i + j];
+          const h = Math.min(cellH, colW * ch.aspect);
+          doc.addImage(ch.img, 'PNG', cx, rowStart, colW, h);
+        }
+        kit.y = rowStart + cellH + 5;
+      }
+    } else {
+      // Fallback nativo: top destinos + por consultor como barras
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+      doc.text(txt('(Graficos nao disponiveis — abra o dashboard no navegador antes de exportar)'), M, kit.y);
+      kit.y += 8;
+
+      const hexToRgb = (hex) => {
+        const h = String(hex || '#6B7280').replace('#', '');
+        return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+      };
+
+      // Top destinos
+      const destMap = {};
+      for (const r of roteiros) {
+        const dests = r.travel?.destinations || [];
+        for (const d of dests) {
+          const name = d.city || d.country || d.name;
+          if (name) destMap[name] = (destMap[name] || 0) + 1;
+        }
+      }
+      const destSorted = Object.entries(destMap).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+      // Por consultor
+      const consultMap = {};
+      for (const r of roteiros) {
+        const name = r.consultantName || 'Desconhecido';
+        consultMap[name] = (consultMap[name] || 0) + 1;
+      }
+      const consultSorted = Object.entries(consultMap).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+      const colW = (CW - gap) / 2;
+      const colX = [M, M + colW + gap];
+      const topY = kit.y;
+
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.text(txt('TOP 10 DESTINOS'), colX[0], topY);
+      doc.text(txt('POR CONSULTOR (TOP 10)'), colX[1], topY);
+      kit.y = topY + 4;
+
+      const drawBars = (data, x, availW, rgb) => {
+        if (!data.length) {
+          setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+          doc.text(txt('(sem dados)'), x, kit.y + 4);
+          return kit.y + 4;
+        }
+        const max = Math.max(...data.map(d => d[1]), 1);
+        const labW = Math.min(46, availW * 0.4);
+        const barMaxW = availW - labW - 14;
+        let yy = kit.y + 3;
+        data.forEach(([n, v]) => {
+          setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2);
+          doc.text(txt(String(n).slice(0, 22)), x, yy + 3.2);
+          kit.drawBar(x + labW, yy + 1.6, barMaxW, (v / max) * 100, rgb, 2.2);
+          setText(rgb); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.2);
+          doc.text(String(v), x + labW + barMaxW + 3, yy + 3.2);
+          yy += 6;
+        });
+        return yy;
+      };
+
+      const yEndLeft  = drawBars(destSorted,    colX[0], colW, hexToRgb('#D4A843'));
+      const yEndRight = drawBars(consultSorted, colX[1], colW, hexToRgb('#38BDF8'));
+      kit.y = Math.max(yEndLeft, yEndRight) + 6;
+    }
+
+    // ═════ Tabela de últimas gerações ═════
+    const gens = allGenerations.slice(0, 25);
+    if (gens.length) {
+      doc.addPage();
+      kit.y = kit.M + 3;
+      setText(COL.muted); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+      doc.text(txt('PRIMETOUR  ·  Roteiros'), M, 9);
+      kit.setDraw(COL.border); doc.setLineWidth(0.15);
+      doc.line(M, 11, W - M, 11);
+      kit.y = 17;
+
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+      doc.text(txt('ULTIMAS GERACOES'), M, kit.y);
+      setText(COL.gold); doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      doc.text(txt(`— ${gens.length} ultimas geradas`), M + 52, kit.y);
+      kit.y += 4;
+
+      doc.autoTable({
+        startY: kit.y,
+        margin: { left: M, right: M, bottom: 14 },
+        head: [['Data', 'Roteiro', 'Formato', 'Consultor']],
+        body: gens.map(g => {
+          const ts = parseTimestamp(g.generatedAt);
+          const dateStr = ts ? ts.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+          return [
+            dateStr,
+            txt(g.roteiroTitle || g.title || '—'),
+            txt((g.format || 'pdf').toUpperCase()),
+            txt(g.consultantName || g.createdByName || '—'),
+          ];
+        }),
+        styles: { fontSize: 8, cellPadding: 2.4, textColor: COL.text },
+        headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+        alternateRowStyles: { fillColor: COL.subBg },
+        columnStyles: {
+          0: { cellWidth: 36 },
+          2: { cellWidth: 20, halign: 'center' },
+          3: { cellWidth: 52 },
+        },
+      });
+    }
+
+    kit.drawFooter('PRIMETOUR  ·  Dashboard Roteiros');
+    doc.save(`roteiros_dashboard_${new Date().toISOString().slice(0, 10)}.pdf`);
+    toast.success('PDF exportado!');
+  } catch (e) {
+    console.error(e);
+    toast.error('Erro ao exportar PDF: ' + e.message);
+  }
+});
 
 /* ─── Cleanup ────────────────────────────────────────────── */
 export function destroyRoteiroDashboard() {
