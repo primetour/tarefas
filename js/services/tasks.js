@@ -496,15 +496,20 @@ export async function fetchTasks({
   workspaceIds = null,   // null = usa activeWorkspaces do store
   limitN       = 2000,
 } = {}) {
-  // Otimização: filtrar por workspace no Firestore quando possível
-  const constraints = [orderBy('order', 'asc'), limit(limitN)];
+  // Otimização: filtrar por workspace no Firestore quando possível.
+  // IMPORTANTE: combinar where('workspaceId') + orderBy('order') exige índice
+  // composto no Firestore. Quando filtramos por workspace, ordenamos client-side
+  // para evitar a dependência de índice e o erro failed-precondition para
+  // usuários cujo único workspace ativo dispara essa combinação.
   const activeIds = workspaceIds ?? store.getActiveWorkspaceIds();
-  if (activeIds && activeIds.length === 1) {
-    constraints.unshift(where('workspaceId', '==', activeIds[0]));
-  }
+  const useWsFilter = activeIds && activeIds.length === 1;
+  const constraints = useWsFilter
+    ? [where('workspaceId', '==', activeIds[0]), limit(limitN)]
+    : [orderBy('order', 'asc'), limit(limitN)];
   const q = query(collection(db, 'tasks'), ...constraints);
   const snap = await getDocs(q);
   let tasks  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (useWsFilter) tasks.sort((a, b) => (a.order || 0) - (b.order || 0));
 
   // Tarefas atribuídas ao usuário sempre são visíveis, independente de workspace/setor
   const currentUid = store.get('currentUser')?.uid;
@@ -586,11 +591,13 @@ export function subscribeToTasks(callback, filters = {}) {
   // Limite alto (2000) pra suportar bases grandes sem perder tarefas;
   // a UI filtra por data/status no cliente — manter limite baixo
   // escondia tarefas válidas que estavam na "cauda" da ordenação.
-  const constraints = [orderBy('order', 'asc'), limit(2000)];
+  // IMPORTANTE: where('workspaceId') + orderBy('order') exige índice
+  // composto. Quando filtramos por workspace, ordenamos client-side.
   const activeIds = store.getActiveWorkspaceIds();
-  if (activeIds && activeIds.length === 1) {
-    constraints.unshift(where('workspaceId', '==', activeIds[0]));
-  }
+  const useWsFilter = activeIds && activeIds.length === 1;
+  const constraints = useWsFilter
+    ? [where('workspaceId', '==', activeIds[0]), limit(2000)]
+    : [orderBy('order', 'asc'), limit(2000)];
   const q = query(collection(db, 'tasks'), ...constraints);
 
   let debounceTimer = null;
@@ -598,6 +605,7 @@ export function subscribeToTasks(callback, filters = {}) {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       let tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (useWsFilter) tasks.sort((a, b) => (a.order || 0) - (b.order || 0));
 
       // Tarefas atribuídas ao usuário sempre são visíveis
       const currentUid = store.get('currentUser')?.uid;
@@ -631,10 +639,12 @@ export function subscribeToTasks(callback, filters = {}) {
       callback(tasks);
     }, 300);
   }, (error) => {
-    // Handle permission errors gracefully — fallback to empty array
+    // Handle errors gracefully — fallback to one-time fetch.
+    // 'failed-precondition' (índice ausente) e 'permission-denied' são
+    // os casos comuns para usuários não-admin. Em ambos, tentamos um
+    // fetch direto que ordena client-side e não exige índice composto.
     console.warn('subscribeToTasks error:', error.code, error.message);
-    if (error.code === 'permission-denied') {
-      // Try a one-time fetch instead
+    if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
       fetchTasks(filters).then(callback).catch(() => callback([]));
     }
   });
