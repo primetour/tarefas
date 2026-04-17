@@ -326,19 +326,27 @@ async function loadData(container) {
       const d = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
       return d >= start;
     });
-    const doneOnTime = done.filter(t => {
-      if (!t.dueDate || !t.completedAt) return false;
+    // Pontualidade: só avaliamos tarefas que TÊM prazo.
+    // Sem dueDate → não-avaliável (não puxa taxa pra baixo, mas é reportado).
+    const doneEvaluable = done.filter(t => t.dueDate && t.completedAt);
+    const doneOnTime = doneEvaluable.filter(t => {
       const due       = t.dueDate?.toDate       ? t.dueDate.toDate()       : new Date(t.dueDate);
       const completed = t.completedAt?.toDate   ? t.completedAt.toDate()   : new Date(t.completedAt);
       return completed <= due;
     });
+    const doneLate       = doneEvaluable.length - doneOnTime.length;
+    const doneNoDueDate  = done.length - doneEvaluable.length;
 
-    m.done         = done.length;
-    m.inProgress   = inProgress.length;
-    m.overdue      = overdue.length;
-    m.doneInPeriod = doneInPeriod.length;
-    m.doneOnTime   = doneOnTime.length;
-    m.onTimeRate   = done.length ? Math.round((doneOnTime.length / done.length) * 100) : 0;
+    m.done           = done.length;
+    m.inProgress     = inProgress.length;
+    m.overdue        = overdue.length;
+    m.doneInPeriod   = doneInPeriod.length;
+    m.doneOnTime     = doneOnTime.length;
+    m.doneLate       = doneLate;
+    m.doneNoDueDate  = doneNoDueDate;
+    m.doneEvaluable  = doneEvaluable.length;
+    // Taxa calculada SÓ sobre avaliáveis — tarefas sem prazo não entram no denominador.
+    m.onTimeRate     = doneEvaluable.length ? Math.round((doneOnTime.length / doneEvaluable.length) * 100) : 0;
 
     metrics = m;
     metrics.surveys = surveys;
@@ -357,8 +365,10 @@ function renderKPIs(m) {
     ${kpiCard('Em Andamento',        m.inProgress,              '▶',  'rgba(56,189,248,0.12)',  'var(--color-info)')}
     ${kpiCard('Concluídas (período)',m.doneInPeriod,             '✓',  'rgba(34,197,94,0.12)',   'var(--color-success)')}
     ${kpiCard('Em Atraso',           m.overdue,                 '⚠',  'rgba(239,68,68,0.12)',   'var(--color-danger)')}
-    ${kpiCard('Entregues no Prazo',  m.onTimeRate + '%',        '🎯', 'rgba(167,139,250,0.12)', 'var(--role-admin)',
-      `${m.doneOnTime} de ${m.done} concluídas`)}
+    ${kpiCard('Pontualidade',        m.onTimeRate + '%',        '🎯', 'rgba(167,139,250,0.12)', 'var(--role-admin)',
+      m.doneEvaluable
+        ? `${m.doneOnTime} no prazo · ${m.doneLate} atrasadas${m.doneNoDueDate ? ` · ${m.doneNoDueDate} sem prazo` : ''}`
+        : (m.doneNoDueDate ? `${m.doneNoDueDate} concluídas sem prazo definido` : 'sem dados'))}
   `;
   // Animate bars
   setTimeout(() => {
@@ -840,7 +850,7 @@ async function exportDashPdf() {
     { label:'Concluídas',       value: String(metrics.doneInPeriod), color:[34,197,94]  },
     { label:'Em andamento',     value: String(metrics.inProgress),   color:[212,168,67] },
     { label:'Em atraso',        value: String(metrics.overdue),      color:[239,68,68]  },
-    { label:'No prazo',         value: `${metrics.onTimeRate}%`,     color:[34,197,94]  },
+    { label:'Pontualidade',     value: `${metrics.onTimeRate}%`,     color:[34,197,94]  },
   ];
   const kpiW = (W - 28 - (kpis.length-1)*4) / kpis.length;
   kpis.forEach((k, i) => {
