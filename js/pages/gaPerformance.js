@@ -156,6 +156,80 @@ function pathToSlug(pagePath = '') {
   if (!p) return '';
   return p.split('/')[0];
 }
+
+/** Normaliza pagePath: strip query/fragment/trailing slash, lowercase. */
+function normalizePath(p) {
+  if (!p) return '';
+  let s = String(p).split('?')[0].split('#')[0].replace(/\/+$/, '').toLowerCase();
+  if (!s) s = '/';
+  return s;
+}
+
+/** Deduplica páginas pelo path normalizado, somando views/users e ponderando taxas. */
+function dedupePagesByPath(pages) {
+  const map = new Map();
+  for (const r of pages) {
+    const key = normalizePath(r.pagePath);
+    if (!key) continue;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, {
+        ...r,
+        pagePath: key,
+        _accViews:    r.screenPageViews || 0,
+        _accDuration: (r.avgSessionDuration || 0) * (r.screenPageViews || 0),
+        _accBounce:   (r.bounceRate       || 0) * (r.screenPageViews || 0),
+        _accEng:      (r.engagementRate   || 0) * (r.screenPageViews || 0),
+      });
+    } else {
+      const w  = r.screenPageViews || 0;
+      existing.screenPageViews = (existing.screenPageViews || 0) + w;
+      existing.activeUsers     = (existing.activeUsers     || 0) + (r.activeUsers || 0);
+      existing._accViews    += w;
+      existing._accDuration += (r.avgSessionDuration || 0) * w;
+      existing._accBounce   += (r.bounceRate       || 0) * w;
+      existing._accEng      += (r.engagementRate   || 0) * w;
+      // Mantém o título mais informativo
+      if ((r.pageTitle || '').length > (existing.pageTitle || '').length) existing.pageTitle = r.pageTitle;
+    }
+  }
+  // Finaliza taxas como média ponderada por views
+  const out = [];
+  for (const r of map.values()) {
+    const v = r._accViews || 1;
+    r.avgSessionDuration = r._accDuration / v;
+    r.bounceRate         = r._accBounce   / v;
+    r.engagementRate     = r._accEng      / v;
+    delete r._accViews; delete r._accDuration; delete r._accBounce; delete r._accEng;
+    out.push(r);
+  }
+  return out.sort((a,b) => (b.screenPageViews||0) - (a.screenPageViews||0));
+}
+
+/** Deduplica países/cidades pelo par (country, city). */
+function dedupeCountriesByLocation(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    const key = `${(r.country||'').toLowerCase()}|${(r.city||'').toLowerCase()}`;
+    const e = map.get(key);
+    if (!e) {
+      map.set(key, { ...r, _accSess: r.sessions || 0, _accEng: (r.engagementRate||0) * (r.sessions||0) });
+    } else {
+      e.sessions    = (e.sessions    || 0) + (r.sessions    || 0);
+      e.activeUsers = (e.activeUsers || 0) + (r.activeUsers || 0);
+      e._accSess += (r.sessions || 0);
+      e._accEng  += (r.engagementRate || 0) * (r.sessions || 0);
+    }
+  }
+  const out = [];
+  for (const r of map.values()) {
+    const s = r._accSess || 1;
+    r.engagementRate = r._accEng / s;
+    delete r._accSess; delete r._accEng;
+    out.push(r);
+  }
+  return out.sort((a,b) => (b.sessions||0) - (a.sessions||0));
+}
 let syncMeta     = null;
 let periodTotals = null;
 
@@ -388,14 +462,21 @@ async function loadData() {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - parseInt(filterDays));
 
+    // Determina o período ativo (pra filtrar server-side nas coleções por período)
+    const SYNCED_PERIODS = ['7d','14d','28d','30d','90d'];
+    let activePeriodKey = filterDays + 'd';
+    if (!SYNCED_PERIODS.includes(activePeriodKey)) activePeriodKey = '90d';
+
     // Load all data collections in parallel
+    // Nota: ga_pages/ga_sources/ga_countries agora filtram por período server-side
+    // (where period == '28d'), evitando o cap de 200 docs ser dividido entre 5 períodos.
     const [dailySnap, totalsSnap, pagesSnap, sourcesSnap, devicesSnap, countriesSnap, metaSnap] = await Promise.all([
       getDocs(query(collection(db, 'ga_daily'), orderBy('date', 'desc'), limit(500))),
       getDocs(collection(db, 'ga_totals')),
-      getDocs(query(collection(db, 'ga_pages'), orderBy('screenPageViews', 'desc'), limit(200))),
-      getDocs(query(collection(db, 'ga_sources'), orderBy('sessions', 'desc'), limit(100))),
-      getDocs(query(collection(db, 'ga_devices'), orderBy('sessions', 'desc'), limit(50))),
-      getDocs(query(collection(db, 'ga_countries'), orderBy('sessions', 'desc'), limit(100))),
+      getDocs(query(collection(db, 'ga_pages'),     where('period', '==', activePeriodKey), limit(5000))),
+      getDocs(query(collection(db, 'ga_sources'),   where('period', '==', activePeriodKey), limit(500))),
+      getDocs(query(collection(db, 'ga_devices'),   where('period', '==', activePeriodKey), limit(50))),
+      getDocs(query(collection(db, 'ga_countries'), where('period', '==', activePeriodKey), limit(500))),
       getDoc(doc(db, 'ga_meta', 'lastSync')).catch(() => null),
     ]);
 
@@ -410,22 +491,17 @@ async function loadData() {
       }
     });
 
-    const SYNCED_PERIODS = ['7d','14d','28d','30d','90d'];
-    const filterByPropAndPeriod = docs => {
+    // O período já veio filtrado no server-side. Só precisa aplicar filtro de propriedade.
+    const filterByProp = docs => {
       let items = docs.map(d => ({ id: d.id, ...d.data() }));
       if (filterProp) items = items.filter(i => i.propertyId === filterProp);
-      // Filter by period field (synced per period: 7d, 14d, 28d, 30d, 90d)
-      let periodKey = filterDays + 'd';
-      // Fallback: if period not synced (e.g. 365d), use 90d
-      if (!SYNCED_PERIODS.includes(periodKey)) periodKey = '90d';
-      items = items.filter(i => i.period === periodKey);
       return items;
     };
 
-    allPages     = filterByPropAndPeriod(pagesSnap.docs);
-    allSources   = filterByPropAndPeriod(sourcesSnap.docs);
-    allDevices   = filterByPropAndPeriod(devicesSnap.docs);
-    allCountries = filterByPropAndPeriod(countriesSnap.docs);
+    allPages     = dedupePagesByPath(filterByProp(pagesSnap.docs));
+    allSources   = filterByProp(sourcesSnap.docs);
+    allDevices   = filterByProp(devicesSnap.docs);
+    allCountries = dedupeCountriesByLocation(filterByProp(countriesSnap.docs));
 
     // Period totals (deduplicated by GA4)
     const allTotals = totalsSnap.docs.map(d => ({ id: d.id, ...d.data() }));

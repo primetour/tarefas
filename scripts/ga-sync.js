@@ -94,6 +94,27 @@ async function batchWrite(collectionName, docs) {
   return total;
 }
 
+/**
+ * Remove docs órfãos: docs do mesmo propertyId+period que NÃO foram atualizados
+ * nesta rodada (IDs fora do validIds). Cobre dois cenários:
+ *  - IDs legados (formato antigo com posição: `_page_${i}_${slug}`)
+ *  - Páginas/origens/países que saíram do top no período corrente
+ * Lê só por propertyId (sem composite index) e filtra period client-side.
+ */
+async function cleanupStale(collectionName, propertyId, period, validIds) {
+  const snap = await db.collection(collectionName)
+    .where('propertyId', '==', propertyId)
+    .get();
+  const toDelete = snap.docs.filter(d => d.data().period === period && !validIds.has(d.id));
+  if (!toDelete.length) return 0;
+  for (let i = 0; i < toDelete.length; i += 450) {
+    const batch = db.batch();
+    toDelete.slice(i, i + 450).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  return toDelete.length;
+}
+
 /* ─── Sync: Daily metrics ─────────────────────────────────── */
 async function syncDaily(propertyId) {
   console.log('  📊 Sync diário...');
@@ -170,14 +191,18 @@ async function syncPages(propertyId) {
           { name: 'averageSessionDuration' }, { name: 'bounceRate' }, { name: 'engagementRate' },
         ],
         orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
-        limit: 100,
+        limit: 1000,
       });
 
-      const docs = (response.rows || []).map((row, i) => {
+      const docs = (response.rows || []).map((row) => {
         const d = row.dimensionValues, m = row.metricValues;
-        const slug = (d[1].value || 'unknown').replace(/[^a-z0-9\-]/gi, '_').slice(0, 60);
+        // Slug estável baseado no pagePath (sem posição). Normaliza / pra __ pra
+        // não quebrar Firestore IDs, limita a 200 chars. Mesma URL → mesmo doc.
+        const raw = (d[1].value || 'unknown').toLowerCase()
+          .split('?')[0].split('#')[0].replace(/\/+$/, '');
+        const slug = raw.replace(/\//g, '__').replace(/[^a-z0-9_\-]/g, '_').slice(0, 200) || 'root';
         return {
-          id:                `${propNum}_${p.key}_page_${i}_${slug}`,
+          id:                `${propNum}_${p.key}_page_${slug}`,
           propertyId:        propNum,
           period:            p.key,
           pageTitle:         d[0].value || '(sem título)',
@@ -191,6 +216,10 @@ async function syncPages(propertyId) {
         };
       });
       total += await batchWrite('ga_pages', docs);
+      // Remove docs órfãos (IDs legados com posição, ou URLs que saíram do top)
+      const validIds = new Set(docs.map(x => x.id));
+      const cleaned = await cleanupStale('ga_pages', propNum, p.key, validIds);
+      if (cleaned) console.log(`    🧹 ${cleaned} páginas órfãs removidas (${p.key})`);
     } catch(e) { console.warn(`    ⚠ Páginas ${p.key}: ${e.message}`); }
   }
   console.log(`    ✅ ${total} páginas sincronizadas`);
@@ -214,17 +243,22 @@ async function syncSources(propertyId) {
           { name: 'bounceRate' }, { name: 'engagementRate' }, { name: 'conversions' },
         ],
         orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
-        limit: 50,
+        limit: 200,
       });
 
-      const docs = (response.rows || []).map((row, i) => {
+      const docs = (response.rows || []).map((row) => {
         const d = row.dimensionValues, m = row.metricValues;
+        const source = d[0].value || '(direct)';
+        const medium = d[1].value || '(none)';
+        // Slug estável (sem posição) a partir de source+medium
+        const slug = `${source}_${medium}`.toLowerCase()
+          .replace(/[^a-z0-9_\-]/g, '_').slice(0, 180) || 'unknown';
         return {
-          id:             `${propNum}_${p.key}_src_${i}`,
+          id:             `${propNum}_${p.key}_src_${slug}`,
           propertyId:     propNum,
           period:         p.key,
-          source:         d[0].value || '(direct)',
-          medium:         d[1].value || '(none)',
+          source,
+          medium,
           sessions:       parseInt(m[0].value) || 0,
           activeUsers:    parseInt(m[1].value) || 0,
           newUsers:       parseInt(m[2].value) || 0,
@@ -235,6 +269,9 @@ async function syncSources(propertyId) {
         };
       });
       total += await batchWrite('ga_sources', docs);
+      const validIds = new Set(docs.map(x => x.id));
+      const cleaned = await cleanupStale('ga_sources', propNum, p.key, validIds);
+      if (cleaned) console.log(`    🧹 ${cleaned} origens órfãs removidas (${p.key})`);
     } catch(e) { console.warn(`    ⚠ Origens ${p.key}: ${e.message}`); }
   }
   console.log(`    ✅ ${total} origens sincronizadas`);
@@ -297,17 +334,21 @@ async function syncCountries(propertyId) {
           { name: 'sessions' }, { name: 'activeUsers' }, { name: 'engagementRate' },
         ],
         orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
-        limit: 50,
+        limit: 300,
       });
 
-      const docs = (response.rows || []).map((row, i) => {
+      const docs = (response.rows || []).map((row) => {
         const d = row.dimensionValues, m = row.metricValues;
+        const country = d[0].value || '(unknown)';
+        const city    = d[1].value || '(unknown)';
+        const slug = `${country}_${city}`.toLowerCase()
+          .replace(/[^a-z0-9_\-]/g, '_').slice(0, 180) || 'unknown';
         return {
-          id:              `${propNum}_${p.key}_geo_${i}`,
+          id:              `${propNum}_${p.key}_geo_${slug}`,
           propertyId:      propNum,
           period:          p.key,
-          country:         d[0].value || '(unknown)',
-          city:            d[1].value || '(unknown)',
+          country,
+          city,
           sessions:        parseInt(m[0].value) || 0,
           activeUsers:     parseInt(m[1].value) || 0,
           engagementRate:  parseFloat(m[2].value) || 0,
@@ -315,6 +356,9 @@ async function syncCountries(propertyId) {
         };
       });
       total += await batchWrite('ga_countries', docs);
+      const validIds = new Set(docs.map(x => x.id));
+      const cleaned = await cleanupStale('ga_countries', propNum, p.key, validIds);
+      if (cleaned) console.log(`    🧹 ${cleaned} países órfãos removidos (${p.key})`);
     } catch(e) { console.warn(`    ⚠ Países ${p.key}: ${e.message}`); }
   }
   console.log(`    ✅ ${total} registros geográficos sincronizados`);
