@@ -19,8 +19,12 @@ let filterUser     = '';
 let filterModule   = '';
 let filterSeverity = '';
 let currentPage    = 1;
-const PAGE_SIZE    = 30;
+const PAGE_SIZE    = 30;       // client-side pagination dentro do que já está carregado
+const SERVER_PAGE  = 100;      // tamanho de cada batch buscado do Firestore
+let lastDoc        = null;     // cursor server-side para "Carregar mais"
+let hasMoreOnServer = false;   // sinaliza se ainda há registros não buscados
 let isLoading      = false;
+let isLoadingMore  = false;
 let expandedLogId  = null;
 
 /* ─── Module + Severity Mapping ──────────────────────────── */
@@ -191,26 +195,42 @@ export async function renderAudit(container) {
 }
 
 /* ─── Load logs ──────────────────────────────────────────── */
-async function loadLogs() {
-  if (isLoading) return;
-  isLoading = true;
+/**
+ * Carrega registros do servidor.
+ * @param {Object} opts
+ * @param {boolean} opts.append - se true, anexa ao set existente (paginação server-side);
+ *                                 se false, substitui (filtro mudou ou refresh).
+ */
+async function loadLogs({ append = false } = {}) {
+  if (isLoading || isLoadingMore) return;
+  if (append) isLoadingMore = true; else isLoading = true;
 
   const refreshBtn = document.getElementById('audit-refresh-btn');
-  if (refreshBtn) { refreshBtn.classList.add('loading'); refreshBtn.disabled = true; }
+  if (refreshBtn && !append) { refreshBtn.classList.add('loading'); refreshBtn.disabled = true; }
 
   try {
     const dateFrom = document.getElementById('audit-filter-date-from')?.value;
     const dateTo   = document.getElementById('audit-filter-date-to')?.value;
 
     const result = await fetchAuditLogs({
-      pageSize:     500,
+      pageSize:     SERVER_PAGE,
+      lastDoc:      append ? lastDoc : null,
       filterAction: filterAction || null,
       filterUser:   filterUser || null,
       startDate:    dateFrom ? new Date(dateFrom) : null,
       endDate:      dateTo ? new Date(dateTo + 'T23:59:59') : null,
     });
 
-    allLogs = result.logs || result;
+    const newLogs = result.logs || [];
+    if (append) {
+      allLogs = allLogs.concat(newLogs);
+    } else {
+      allLogs = newLogs;
+      currentPage = 1;
+    }
+    lastDoc         = result.lastDoc || null;
+    hasMoreOnServer = !!result.hasMore;
+
     applyLocalFilters();
     renderStats();
     renderModuleBreakdown();
@@ -218,7 +238,7 @@ async function loadLogs() {
     console.error('Audit load error:', e);
     toast.error('Erro ao carregar logs: ' + e.message);
     const body = document.getElementById('audit-log-body');
-    if (body) body.innerHTML = `
+    if (body && !append) body.innerHTML = `
       <div class="task-empty">
         <div class="task-empty-icon">⚠</div>
         <div class="task-empty-title">Erro ao carregar logs</div>
@@ -226,6 +246,7 @@ async function loadLogs() {
       </div>`;
   } finally {
     isLoading = false;
+    isLoadingMore = false;
     if (refreshBtn) { refreshBtn.classList.remove('loading'); refreshBtn.disabled = false; }
   }
 }
@@ -255,7 +276,12 @@ function applyLocalFilters() {
   currentPage  = 1;
 
   const label = document.getElementById('audit-count-label');
-  if (label) label.textContent = `${filteredLogs.length} registro${filteredLogs.length !== 1 ? 's' : ''}${allLogs.length !== filteredLogs.length ? ` de ${allLogs.length}` : ''}`;
+  if (label) {
+    let txt = `${filteredLogs.length} registro${filteredLogs.length !== 1 ? 's' : ''}`;
+    if (allLogs.length !== filteredLogs.length) txt += ` de ${allLogs.length} carregados`;
+    if (hasMoreOnServer) txt += ` · há mais no servidor (use "Carregar mais")`;
+    label.textContent = txt;
+  }
 
   renderLogs();
 }
@@ -737,25 +763,40 @@ function renderPagination() {
   const el = document.getElementById('audit-pagination');
   if (!el) return;
   const total = Math.ceil(filteredLogs.length / PAGE_SIZE);
-  if (total <= 1) { el.innerHTML = ''; return; }
+
+  const loadMoreBtn = hasMoreOnServer
+    ? `<button class="btn btn-secondary btn-sm" id="audit-load-more" ${isLoadingMore?'disabled':''}
+         style="min-width:140px;${isLoadingMore?'opacity:.6;':''}">
+         ${isLoadingMore ? '⟳ Carregando…' : `↓ Carregar mais ${SERVER_PAGE}`}
+       </button>`
+    : '';
+
+  if (total <= 1 && !loadMoreBtn) { el.innerHTML = ''; return; }
 
   const pages = [];
-  if (currentPage > 1)     pages.push({ label:'←', page: currentPage - 1 });
-  for (let p = Math.max(1, currentPage-2); p <= Math.min(total, currentPage+2); p++) {
-    pages.push({ label: String(p), page: p, active: p === currentPage });
+  if (total > 1) {
+    if (currentPage > 1)     pages.push({ label:'←', page: currentPage - 1 });
+    for (let p = Math.max(1, currentPage-2); p <= Math.min(total, currentPage+2); p++) {
+      pages.push({ label: String(p), page: p, active: p === currentPage });
+    }
+    if (currentPage < total) pages.push({ label:'→', page: currentPage + 1 });
   }
-  if (currentPage < total) pages.push({ label:'→', page: currentPage + 1 });
+
+  const rangeLabel = total > 1
+    ? `<span style="font-size:0.8125rem; color:var(--text-muted);">
+         ${(currentPage-1)*PAGE_SIZE+1}–${Math.min(currentPage*PAGE_SIZE, filteredLogs.length)} de ${filteredLogs.length}
+       </span>`
+    : '';
 
   el.innerHTML = `
-    <span style="font-size:0.8125rem; color:var(--text-muted);">
-      ${(currentPage-1)*PAGE_SIZE+1}–${Math.min(currentPage*PAGE_SIZE, filteredLogs.length)} de ${filteredLogs.length}
-    </span>
+    ${rangeLabel}
     ${pages.map(p => `
       <button class="btn ${p.active ? 'btn-primary' : 'btn-secondary'} btn-sm" data-page="${p.page}"
         style="min-width:36px;">
         ${p.label}
       </button>
     `).join('')}
+    ${loadMoreBtn}
   `;
 
   el.querySelectorAll('[data-page]').forEach(btn => {
@@ -764,6 +805,10 @@ function renderPagination() {
       renderLogs();
       document.querySelector('.audit-log-header')?.scrollIntoView({ behavior:'smooth', block:'start' });
     });
+  });
+
+  document.getElementById('audit-load-more')?.addEventListener('click', () => {
+    loadLogs({ append: true });
   });
 }
 
@@ -775,10 +820,10 @@ function _bindAuditEvents() {
     timer = setTimeout(() => { searchTerm = e.target.value; applyLocalFilters(); }, 250);
   });
   document.getElementById('audit-filter-action')?.addEventListener('change', e => {
-    filterAction = e.target.value; applyLocalFilters();
+    filterAction = e.target.value; loadLogs();    // server-side
   });
   document.getElementById('audit-filter-user')?.addEventListener('change', e => {
-    filterUser = e.target.value; applyLocalFilters();
+    filterUser = e.target.value; loadLogs();      // server-side
   });
   document.getElementById('audit-filter-module')?.addEventListener('change', e => {
     filterModule = e.target.value; applyLocalFilters();

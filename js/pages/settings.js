@@ -45,23 +45,6 @@ export async function renderSettings(container) {
     </div>
 
     ${store.isMaster() ? `
-      <div class="card" style="margin-bottom:24px;border:1px solid rgba(245,158,11,.3);">
-        <div class="card-header"><div class="card-title">🔧 Migração de dados</div></div>
-        <div class="card-body">
-          <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.6;">
-            Preenche o campo <strong>setor</strong> e migra <strong>núcleos</strong> de nomes para IDs nas tarefas existentes.
-            Execute uma vez após definir os setores nos tipos de tarefa.
-          </p>
-          <div id="mig-progress" style="display:none;margin-bottom:12px;">
-            <div id="mig-label" style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:6px;">Aguardando...</div>
-            <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
-              <div id="mig-bar" style="height:100%;background:var(--brand-gold);width:0%;transition:width .3s;border-radius:3px;"></div>
-            </div>
-          </div>
-          <button class="btn btn-secondary" id="run-migration-btn">▶ Executar migração de setor e núcleos</button>
-        </div>
-      </div>
-
       <div class="card" style="margin-bottom:24px;border:1px solid rgba(239,68,68,.4);">
         <div class="card-header"><div class="card-title" style="color:var(--color-danger);">⚠ Zona de Perigo</div></div>
         <div class="card-body">
@@ -138,34 +121,11 @@ export async function renderSettings(container) {
       if(fn && el) el.innerHTML = fn(settings);
       bindSectionEvents(settings);
       // Carregar seções assíncronas
-      if (item.dataset.section === 'privacy') loadPrivacySection();
+      if (item.dataset.section === 'privacy')      loadPrivacySection();
+      if (item.dataset.section === 'integrations') loadIntegrationsSection(settings);
     });
   });
   bindSectionEvents(settings);
-
-  // Save all
-  // Sector migration
-  document.getElementById('run-migration-btn')?.addEventListener('click', async () => {
-    const btn   = document.getElementById('run-migration-btn');
-    const prog  = document.getElementById('mig-progress');
-    const label = document.getElementById('mig-label');
-    const bar   = document.getElementById('mig-bar');
-    if (btn)  { btn.disabled = true; btn.classList.add('loading'); }
-    if (prog) prog.style.display = 'block';
-    try {
-      const result = await runSectorMigration((done, total) => {
-        if (label) label.textContent = `Migrando… ${done} / ${total} tarefas`;
-        if (bar && total) bar.style.width = `${Math.round(done/total*100)}%`;
-      });
-      toast.success(`Migração concluída: ${result.migrated} tarefa${result.migrated!==1?'s':''} atualizadas.`);
-      if (label) label.textContent = `✓ ${result.migrated} de ${result.total} tarefas atualizadas.`;
-      if (bar)   bar.style.width = '100%';
-    } catch(e) {
-      toast.error('Erro: ' + e.message);
-    } finally {
-      if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
-    }
-  });
 
   // Danger zone — deletar TODAS as tarefas (master-only)
   document.getElementById('delete-all-tasks-btn')?.addEventListener('click', async () => {
@@ -348,14 +308,25 @@ function renderSectionIntegrations(s) {
   const psiKey = s.psiApiKey || '';
   const masked = psiKey ? psiKey.slice(0, 6) + '…' + psiKey.slice(-4) : '';
   return `
+    <div style="margin-bottom:16px;font-size:0.8125rem;color:var(--text-muted);line-height:1.5;">
+      Painel operacional das integrações ativas. Status, última sincronização e onde editar credenciais.
+      Tokens sensíveis (Meta, GA Service Account, MC) ficam em <strong>GitHub Secrets</strong> e não são editáveis aqui.
+    </div>
+
+    <div id="integrations-panel" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-bottom:20px;">
+      <div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:30px;font-size:0.875rem;">
+        ⟳ Carregando status das integrações…
+      </div>
+    </div>
+
+    <!-- PSI: única integração editável inline (key client-side) -->
     <div class="card" style="margin-bottom:20px;">
       <div class="card-header">
-        <div class="card-title">⚡ PageSpeed Insights API</div>
+        <div class="card-title">⚡ PageSpeed Insights API — credenciais</div>
       </div>
       <div class="card-body">
         <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:14px;">
-          Usada pela aba <strong>Core Web Vitals + SEO</strong> dentro de <em>Google Analytics</em>
-          para auditar sites cadastrados. Crie uma key em
+          Crie uma key em
           <a href="https://console.cloud.google.com/apis/library/pagespeedonline.googleapis.com" target="_blank" rel="noopener"
              style="color:var(--brand-gold);text-decoration:underline;">Google Cloud Console → PageSpeed Insights API</a>.
         </p>
@@ -376,12 +347,321 @@ function renderSectionIntegrations(s) {
         <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.5;padding:10px 12px;
           background:var(--bg-surface);border-radius:var(--radius-md);">
           <strong>Segurança:</strong> a key é lida do browser para chamar a PSI API diretamente. Restrinja-a por
-          <em>HTTP referrer</em> no Google Cloud Console com os domínios do sistema para evitar uso indevido.
-          Limite gratuito: 25.000 requests/dia.
+          <em>HTTP referrer</em> no Google Cloud Console com os domínios do sistema. Limite gratuito: 25.000 requests/dia.
         </div>
       </div>
     </div>
   `;
+}
+
+/* ─── Integrations panel: status real-time ───────────────── */
+function _intCard({ icon, name, status, statusLabel, lastSync, schedule, detail, actions = [] }) {
+  const colors = {
+    ok:    { fg: '#22C55E', bg: 'rgba(34,197,94,0.10)' },
+    warn:  { fg: '#F59E0B', bg: 'rgba(245,158,11,0.10)' },
+    err:   { fg: '#EF4444', bg: 'rgba(239,68,68,0.10)' },
+    idle:  { fg: '#94A3B8', bg: 'rgba(148,163,184,0.10)' },
+  };
+  const c = colors[status] || colors.idle;
+  return `
+    <div class="card" style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:0.9375rem;">
+          <span style="font-size:1.1rem;">${icon}</span>
+          <span>${esc(name)}</span>
+        </div>
+        <span style="font-size:0.6875rem;font-weight:600;padding:3px 9px;border-radius:999px;
+          background:${c.bg};color:${c.fg};white-space:nowrap;">
+          ${esc(statusLabel)}
+        </span>
+      </div>
+      ${detail ? `<div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.5;">${detail}</div>` : ''}
+      ${lastSync ? `<div style="font-size:0.6875rem;color:var(--text-muted);">⏱ Última sync: <strong style="color:var(--text-secondary);">${esc(lastSync)}</strong></div>` : ''}
+      ${schedule ? `<div style="font-size:0.6875rem;color:var(--text-muted);">📅 ${esc(schedule)}</div>` : ''}
+      ${actions.length ? `
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
+          ${actions.map(a => `
+            <a href="${esc(a.href)}" ${a.external ? 'target="_blank" rel="noopener"' : ''}
+               style="font-size:0.6875rem;padding:4px 10px;border-radius:6px;
+                 background:var(--bg-elevated);color:var(--text-secondary);text-decoration:none;
+                 border:1px solid var(--border-subtle);">
+              ${esc(a.label)}
+            </a>`).join('')}
+        </div>` : ''}
+    </div>
+  `;
+}
+
+function _fmtRel(date) {
+  if (!date) return null;
+  const d = date?.toDate ? date.toDate() : new Date(date);
+  if (isNaN(d.getTime())) return null;
+  const diffMs = Date.now() - d.getTime();
+  const mins   = Math.floor(diffMs / 60000);
+  const hrs    = Math.floor(mins / 60);
+  const days   = Math.floor(hrs / 24);
+  const fmt    = new Intl.DateTimeFormat('pt-BR', {
+    day:'2-digit', month:'2-digit', year:'numeric',
+    hour:'2-digit', minute:'2-digit',
+  }).format(d);
+  if (mins < 1)   return `${fmt} (agora)`;
+  if (mins < 60)  return `${fmt} (${mins}min atrás)`;
+  if (hrs  < 24)  return `${fmt} (${hrs}h atrás)`;
+  if (days < 30)  return `${fmt} (${days}d atrás)`;
+  return fmt;
+}
+
+async function loadIntegrationsSection(s = {}) {
+  const el = document.getElementById('integrations-panel');
+  if (!el) return;
+
+  // Imports dinâmicos pra não pesar o boot da página
+  const { collection, doc, getDoc, getDocs, query, orderBy, limit } =
+    await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const { db: fdb }          = await import('../firebase.js');
+  const { firebaseConfig, APP_CONFIG } = await import('../config.js');
+
+  // 1. Firebase / Firestore — sempre ✓ se chegou até aqui
+  const firebaseCard = _intCard({
+    icon: '🔥',
+    name: 'Firebase / Firestore',
+    status: 'ok',
+    statusLabel: '✓ Conectado',
+    detail: `Projeto: <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px;">${esc(firebaseConfig.projectId)}</code>`,
+    actions: [
+      { label: '↗ Console Firebase', external: true,
+        href: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/overview` },
+      { label: '↗ Firestore', external: true,
+        href: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore` },
+    ],
+  });
+
+  // 2. Microsoft SSO
+  const ssoCard = _intCard({
+    icon: '🪟',
+    name: 'Microsoft SSO',
+    status: 'ok',
+    statusLabel: '✓ Configurado',
+    detail: `Tenant: <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px;">primetour.com.br</code><br>
+             Provider OAuth Microsoft via Firebase Auth (escopo <code>user.read</code>).`,
+    actions: [
+      { label: '↗ Azure Portal', external: true,
+        href: 'https://portal.azure.com/' },
+      { label: 'Editar: js/firebase.js', external: false, href: '#' },
+    ],
+  });
+
+  // 3. Google Analytics 4
+  let gaCard;
+  try {
+    const snap = await getDoc(doc(fdb, 'ga_meta', 'lastSync'));
+    if (snap.exists()) {
+      const d = snap.data();
+      const when = _fmtRel(d.syncedAt);
+      const ageHrs = d.syncedAt ? (Date.now() - (d.syncedAt.toDate?.() || new Date(d.syncedAt)).getTime()) / 3600000 : null;
+      gaCard = _intCard({
+        icon: '📊',
+        name: 'Google Analytics 4',
+        status: ageHrs == null ? 'idle' : ageHrs > 30 ? 'warn' : 'ok',
+        statusLabel: ageHrs == null ? '— sem registro' : ageHrs > 30 ? '⚠ Atraso' : '✓ Sincronizado',
+        lastSync: when,
+        schedule: 'Diário às 03:00 BRT (06:00 UTC)',
+        detail: `${d.totalDocs || '?'} documentos · ${d.syncDays || '?'} dias por sync · ${(d.properties||[]).length} propriedade(s)`,
+        actions: [
+          { label: '↗ Workflow', external: true, href: 'https://github.com/primetour/tarefas/actions/workflows/ga-sync.yml' },
+        ],
+      });
+    } else {
+      gaCard = _intCard({
+        icon: '📊', name: 'Google Analytics 4',
+        status: 'warn', statusLabel: '⚠ Nunca sincronizou',
+        schedule: 'Diário às 03:00 BRT',
+        actions: [{ label: '↗ Workflow', external: true, href: 'https://github.com/primetour/tarefas/actions/workflows/ga-sync.yml' }],
+      });
+    }
+  } catch(e) {
+    gaCard = _intCard({ icon: '📊', name: 'Google Analytics 4', status: 'err', statusLabel: '✗ Erro', detail: esc(e.message) });
+  }
+
+  // 4. Meta Graph (Instagram / Facebook)
+  let metaCard;
+  try {
+    const accSnap = await getDocs(query(collection(fdb, 'meta_accounts'), orderBy('syncedAt', 'desc'), limit(5)));
+    if (!accSnap.empty) {
+      const accounts = accSnap.docs.map(d => d.data());
+      const latest = accounts[0]?.syncedAt;
+      const when = _fmtRel(latest);
+      const ageHrs = latest ? (Date.now() - (latest.toDate?.() || new Date(latest)).getTime()) / 3600000 : null;
+      metaCard = _intCard({
+        icon: '📸',
+        name: 'Meta Graph (Instagram/Facebook)',
+        status: ageHrs == null ? 'idle' : ageHrs > 30 ? 'warn' : 'ok',
+        statusLabel: ageHrs == null ? '— ' : ageHrs > 30 ? '⚠ Atraso' : '✓ Sincronizado',
+        lastSync: when,
+        schedule: 'Diário às 04:00 BRT (07:00 UTC)',
+        detail: `${accounts.length} conta(s): ${esc(accounts.map(a => '@'+(a.username||a.label||'?')).join(', '))}`,
+        actions: [
+          { label: '↗ Workflow', external: true, href: 'https://github.com/primetour/tarefas/actions/workflows/meta-sync.yml' },
+          { label: '↗ Meta Business', external: true, href: 'https://business.facebook.com/' },
+          { label: '↗ Renovar token (Seed AI)', external: true, href: 'https://github.com/primetour/tarefas/actions/workflows/seed-ai-setting.yml' },
+        ],
+      });
+    } else {
+      metaCard = _intCard({
+        icon: '📸', name: 'Meta Graph (Instagram/Facebook)',
+        status: 'warn', statusLabel: '⚠ Nunca sincronizou',
+        schedule: 'Diário às 04:00 BRT',
+        actions: [{ label: '↗ Workflow', external: true, href: 'https://github.com/primetour/tarefas/actions/workflows/meta-sync.yml' }],
+      });
+    }
+  } catch(e) {
+    metaCard = _intCard({ icon: '📸', name: 'Meta Graph (Instagram/Facebook)', status: 'err', statusLabel: '✗ Erro', detail: esc(e.message) });
+  }
+
+  // 5. SF Marketing Cloud
+  let mcCard;
+  try {
+    const mcSnap = await getDocs(query(collection(fdb, 'mc_performance'), orderBy('syncedAt', 'desc'), limit(1)));
+    const bus = APP_CONFIG.marketingCloud?.businessUnits || [];
+    if (!mcSnap.empty) {
+      const latest = mcSnap.docs[0].data().syncedAt;
+      const when = _fmtRel(latest);
+      const ageHrs = latest ? (Date.now() - (latest.toDate?.() || new Date(latest)).getTime()) / 3600000 : null;
+      mcCard = _intCard({
+        icon: '📧',
+        name: 'SF Marketing Cloud',
+        status: ageHrs == null ? 'idle' : ageHrs > 30 ? 'warn' : 'ok',
+        statusLabel: ageHrs == null ? '— ' : ageHrs > 30 ? '⚠ Atraso' : '✓ Sincronizado',
+        lastSync: when,
+        schedule: 'Diário às 03:00 BRT (06:00 UTC)',
+        detail: `${bus.length} Business Unit(s): ${esc(bus.map(b => b.name).join(', '))}`,
+        actions: [
+          { label: '↗ Workflow', external: true, href: 'https://github.com/primetour/tarefas/actions/workflows/mc-sync.yml' },
+          { label: '↗ MC Setup', external: true, href: 'https://mc.exacttarget.com/' },
+        ],
+      });
+    } else {
+      mcCard = _intCard({
+        icon: '📧', name: 'SF Marketing Cloud',
+        status: 'warn', statusLabel: '⚠ Nunca sincronizou',
+        schedule: 'Diário às 03:00 BRT',
+        detail: `${bus.length} Business Unit(s) configuradas`,
+        actions: [{ label: '↗ Workflow', external: true, href: 'https://github.com/primetour/tarefas/actions/workflows/mc-sync.yml' }],
+      });
+    }
+  } catch(e) {
+    mcCard = _intCard({ icon: '📧', name: 'SF Marketing Cloud', status: 'err', statusLabel: '✗ Erro', detail: esc(e.message) });
+  }
+
+  // 6. Arquivamento de tarefas
+  let archCard;
+  try {
+    const snap = await getDoc(doc(fdb, 'tasks_archive_meta', 'lastSync'));
+    if (snap.exists()) {
+      const d = snap.data();
+      const when = _fmtRel(d.runAt);
+      archCard = _intCard({
+        icon: '📦',
+        name: 'Arquivamento de Tarefas',
+        status: 'ok',
+        statusLabel: '✓ Ativo',
+        lastSync: when,
+        schedule: 'Mensal — dia 1 às 00:00 BRT',
+        detail: `Última execução arquivou ${d.archived || 0} tarefa(s) com mais de ${d.days || 365} dias.`,
+        actions: [
+          { label: '↗ Workflow', external: true, href: 'https://github.com/primetour/tarefas/actions/workflows/archive-tasks.yml' },
+        ],
+      });
+    } else {
+      archCard = _intCard({
+        icon: '📦', name: 'Arquivamento de Tarefas',
+        status: 'idle', statusLabel: '— Aguardando 1ª execução',
+        schedule: 'Mensal — dia 1 às 00:00 BRT',
+        actions: [{ label: '↗ Workflow', external: true, href: 'https://github.com/primetour/tarefas/actions/workflows/archive-tasks.yml' }],
+      });
+    }
+  } catch(e) {
+    archCard = _intCard({ icon: '📦', name: 'Arquivamento de Tarefas', status: 'err', statusLabel: '✗ Erro', detail: esc(e.message) });
+  }
+
+  // 7. PSI (referência cruzada — config completa fica no card editável abaixo)
+  const psiCard = _intCard({
+    icon: '⚡',
+    name: 'PageSpeed Insights',
+    status: s.psiApiKey ? 'ok' : 'warn',
+    statusLabel: s.psiApiKey ? '✓ Key configurada' : '⚠ Sem key',
+    detail: s.psiApiKey ? `Key: <code>${esc(s.psiApiKey.slice(0,6))}…${esc(s.psiApiKey.slice(-4))}</code>` : 'Configure a key no card abaixo.',
+    schedule: 'On-demand (acionada pela aba Core Web Vitals)',
+  });
+
+  // 8. EmailJS (CSAT)
+  const emailJs = APP_CONFIG.emailjs || {};
+  const ejConfigured = emailJs.publicKey && !emailJs.publicKey.startsWith('SEU_');
+  const emailCard = _intCard({
+    icon: '✉',
+    name: 'EmailJS (CSAT)',
+    status: ejConfigured ? 'ok' : 'warn',
+    statusLabel: ejConfigured ? '✓ Configurado' : '⚠ Incompleto',
+    detail: `Service: <code>${esc(emailJs.serviceId || '—')}</code> · Template CSAT: <code>${esc(emailJs.templateCsat || '—')}</code>`,
+    actions: [
+      { label: '↗ Dashboard EmailJS', external: true, href: 'https://dashboard.emailjs.com/' },
+      { label: 'Editar: js/config.js', external: false, href: '#' },
+    ],
+  });
+
+  // 9. Cloud Functions (Firebase)
+  const fnCard = _intCard({
+    icon: '☁',
+    name: 'Cloud Functions',
+    status: 'ok',
+    statusLabel: '✓ Configurado',
+    detail: `<code style="font-size:0.625rem;">sendEmail</code>, <code style="font-size:0.625rem;">syncMarketingCloud</code> em us-central1`,
+    actions: [
+      { label: '↗ Console', external: true,
+        href: `https://console.firebase.google.com/project/${firebaseConfig.projectId}/functions` },
+    ],
+  });
+
+  // 10. GitHub Actions (visão consolidada)
+  const ghCard = _intCard({
+    icon: '🐙',
+    name: 'GitHub Actions',
+    status: 'ok',
+    statusLabel: '✓ 6 workflows',
+    detail: 'archive-tasks · ga-sync · mc-sync · meta-sync · portal-seed · seed-ai-setting',
+    actions: [
+      { label: '↗ Todos os workflows', external: true, href: 'https://github.com/primetour/tarefas/actions' },
+      { label: '↗ Secrets', external: true, href: 'https://github.com/primetour/tarefas/settings/secrets/actions' },
+    ],
+  });
+
+  // 11. Provedores de IA (referência cruzada com Privacidade)
+  let aiCard;
+  try {
+    const { getPrivacyConfig } = await import('../services/aiDataGuard.js');
+    const cfg = await getPrivacyConfig();
+    const allowed = cfg.allowedProviders || [];
+    aiCard = _intCard({
+      icon: '🤖',
+      name: 'Provedores de IA',
+      status: allowed.length ? 'ok' : 'warn',
+      statusLabel: allowed.length ? `✓ ${allowed.length} permitido(s)` : '⚠ Nenhum permitido',
+      detail: allowed.length ? `Habilitados: ${esc(allowed.join(', '))}` : 'Nenhum provedor habilitado — IA está bloqueada.',
+      actions: [
+        { label: 'Configurar em Privacidade →', external: false, href: '#' },
+      ],
+    });
+  } catch(e) {
+    aiCard = _intCard({ icon: '🤖', name: 'Provedores de IA', status: 'idle', statusLabel: '— Não carregado' });
+  }
+
+  el.innerHTML = [
+    firebaseCard, ssoCard,
+    gaCard, metaCard, mcCard,
+    archCard, psiCard,
+    emailCard, fnCard,
+    ghCard, aiCard,
+  ].join('');
 }
 
 function renderSectionPrivacy() {
@@ -917,10 +1197,19 @@ async function exportData(type) {
       ]);
     } else if (type === 'audit') {
       const { fetchAuditLogs } = await import('../auth/audit.js');
-      const result = await fetchAuditLogs({ pageSize:500 });
-      const logs   = result.logs || result;
+      // Paginar até o fim com cap defensivo de 10k registros
+      const PAGE = 500, MAX = 10000;
+      const logs = [];
+      let cursor = null, hasMore = true;
+      while (hasMore && logs.length < MAX) {
+        const res = await fetchAuditLogs({ pageSize: PAGE, lastDoc: cursor });
+        const batch = res.logs || res;
+        logs.push(...batch);
+        cursor  = res.lastDoc || null;
+        hasMore = !!res.hasMore && cursor;
+      }
       headers = ['Data','Ação','Usuário','E-mail','Tipo','ID do recurso'];
-      rows = logs.map(l => [
+      rows = logs.slice(0, MAX).map(l => [
         l.timestamp ? fmtDate(l.timestamp) : '',
         l.action||'', l.userName||'', l.userEmail||'',
         l.entityType||'', l.entityId||'',
@@ -948,113 +1237,3 @@ function fmtDate(ts) {
   return new Intl.DateTimeFormat('pt-BR').format(d);
 }
 
-/* ─── Migration: add sector to tasks without it ─────────── */
-export async function runSectorMigration(onProgress) {
-  const {
-    collection, getDocs, doc, updateDoc, query, where, limit,
-  } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-  const { db }         = await import('../firebase.js');
-  const { fetchTaskTypes } = await import('../services/taskTypes.js');
-
-  // Load task types to map typeId → sector
-  const types    = await fetchTaskTypes().catch(() => []);
-  const typeMap  = Object.fromEntries(types.map(t => [t.id, t.sector || null]));
-
-  // Also clean variation names in task_types (strip legacy '· Nd' suffix)
-  const typesSnap = await getDocs(collection(db, 'task_types'));
-  for (const td of typesSnap.docs) {
-    const data = td.data();
-    if (!data.variations?.length) continue;
-    const cleaned = data.variations.map(v => ({
-      ...v,
-      name: v.name?.replace(/\s*·\s*\d+d\s*$|\s*·\s*mesmo dia\s*$/i, '').trim() || v.name,
-    }));
-    const changed = cleaned.some((v,i) => v.name !== data.variations[i].name);
-    if (changed) {
-      await updateDoc(doc(db, 'task_types', td.id), { variations: cleaned }).catch(()=>{});
-    }
-  }
-
-  // Also clean variationName on existing tasks
-  const tasksWithDotSla = await getDocs(query(collection(db, 'tasks'), limit(2000)));
-  for (const td of tasksWithDotSla.docs) {
-    const data = td.data();
-    if (!data.variationName) continue;
-    const cleaned = data.variationName.replace(/\s*·\s*\d+d\s*$|\s*·\s*mesmo dia\s*$/i, '').trim();
-    if (cleaned !== data.variationName) {
-      await updateDoc(doc(db, 'tasks', td.id), { variationName: cleaned }).catch(()=>{});
-    }
-  }
-
-  // Load nucleos to build name→id map
-  const nucleosSnap = await getDocs(collection(db, 'nucleos')).catch(()=>({docs:[]}));
-  const nucleosByName = {};
-  nucleosSnap.docs.forEach(d => {
-    const n = d.data();
-    nucleosByName[n.name?.toLowerCase()] = d.id;
-  });
-
-  // Map legacy slugs to canonical names for lookup
-  const SLUG_TO_NAME = {
-    'design':        'Design',
-    'comunicacao':   'Comunicação',
-    'redes_sociais': 'Redes Sociais',
-    'dados':         'Dados',
-    'web':           'Web',
-    'sistemas':      'Sistemas',
-    'ia':            'IA',
-  };
-
-  const snap = await getDocs(query(collection(db, 'tasks'), limit(2000)));
-  const toMigrate = snap.docs.filter(d => {
-    const data = d.data();
-    const needsSector = !data.sector && data.typeId && typeMap[data.typeId];
-    const needsNucleos = (data.nucleos||[]).some(n => typeof n === 'string' && !n.match(/^[A-Za-z0-9]{20}$/));
-    return needsSector || needsNucleos;
-  });
-
-  let done = 0;
-  const total = toMigrate.length;
-  onProgress?.(0, total);
-
-  for (const d of toMigrate) {
-    const data   = d.data();
-    const update = {};
-
-    // Migrate sector
-    if (!data.sector && data.typeId && typeMap[data.typeId]) {
-      update.sector = typeMap[data.typeId];
-    }
-
-    // Migrate nucleos: names → Firestore IDs
-    if ((data.nucleos||[]).length) {
-      const migratedNucleos = data.nucleos.map(n => {
-        if (typeof n !== 'string') return n;
-        // Already an ID (20-char Firestore ID) — keep it
-        if (n.match(/^[A-Za-z0-9]{20}$/)) return n;
-        // Try slug→canonical name→Firestore ID
-        const canonicalName = SLUG_TO_NAME[n.toLowerCase()];
-        if (canonicalName) {
-          const byCanonical = nucleosByName[canonicalName.toLowerCase()];
-          if (byCanonical) return byCanonical;
-        }
-        // Try direct name match
-        const byName = nucleosByName[n.toLowerCase()];
-        if (byName) return byName;
-        // Keep as-is (unknown slug — not in Firestore)
-        return n;
-      });
-      if (JSON.stringify(migratedNucleos) !== JSON.stringify(data.nucleos)) {
-        update.nucleos = migratedNucleos;
-      }
-    }
-
-    if (Object.keys(update).length) {
-      await updateDoc(doc(db, 'tasks', d.id), update).catch(() => {});
-    }
-    done++;
-    onProgress?.(done, total);
-  }
-
-  return { migrated: done, total };
-}
