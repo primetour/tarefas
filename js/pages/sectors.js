@@ -6,6 +6,11 @@
 import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
+import { updateUserProfile } from '../auth/auth.js';
+import { db } from '../firebase.js';
+import {
+  collection, getDocs, query, orderBy,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import {
   fetchNucleos, createNucleo, updateNucleo, deleteNucleo,
   SECTORS,
@@ -113,20 +118,27 @@ function render(visibleSectors) {
             </div>
           ` : `
             <div style="display:flex;flex-wrap:wrap;gap:8px;">
-              ${nucleos.map(n => `
+              ${nucleos.map(n => {
+                const members = (store.get('users') || []).filter(u =>
+                  u.nucleo === n.name && u.active !== false
+                );
+                return `
                 <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;
                   border-radius:var(--radius-full);background:${n.color||'#6B7280'}18;
                   border:1px solid ${n.color||'#6B7280'}44;">
                   <div style="width:8px;height:8px;border-radius:50%;background:${n.color||'#6B7280'};flex-shrink:0;"></div>
                   <span style="font-size:0.875rem;color:var(--text-primary);">${esc(n.name)}</span>
+                  <span style="font-size:0.75rem;color:var(--text-muted);">· ${members.length} membro${members.length!==1?'s':''}</span>
                   <div style="display:flex;gap:2px;">
+                    <button class="btn btn-ghost btn-icon" style="width:20px;height:20px;font-size:0.875rem;"
+                      data-nucleo-members="${n.id}" title="Gerenciar membros">◎</button>
                     <button class="btn btn-ghost btn-icon" style="width:20px;height:20px;font-size:0.75rem;"
                       data-nucleo-edit="${n.id}" title="Editar">✎</button>
                     <button class="btn btn-ghost btn-icon" style="width:20px;height:20px;font-size:0.75rem;color:var(--color-danger);"
                       data-nucleo-del="${n.id}" title="Excluir">✕</button>
                   </div>
                 </div>
-              `).join('')}
+              `;}).join('')}
             </div>
           `}
           ${users.length ? `
@@ -156,9 +168,174 @@ function render(visibleSectors) {
       if (n) openNucleoModal(n);
     })
   );
+  grid.querySelectorAll('[data-nucleo-members]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const n = allNucleos.find(x => x.id === btn.dataset.nucleoMembers);
+      if (n) openMembersModal(n, visibleSectors);
+    })
+  );
   grid.querySelectorAll('[data-nucleo-del]').forEach(btn =>
     btn.addEventListener('click', () => confirmDelete(btn.dataset.nucleoDel))
   );
+}
+
+/* ─── Modal: gerenciar membros do núcleo ─────────────────── */
+function openMembersModal(nucleo, visibleSectors) {
+  const users = (store.get('users') || [])
+    .filter(u => u.active !== false)
+    .filter(u => (u.sector || u.department) === nucleo.sector)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Set mutável de UIDs que o usuário quer deixar no núcleo após salvar
+  const selected = new Set(users.filter(u => u.nucleo === nucleo.name).map(u => u.id));
+
+  if (!users.length) {
+    modal.open({
+      title: `Membros — ${nucleo.name}`,
+      size: 'sm',
+      content: `<div class="empty-state" style="min-height:160px;padding:24px;">
+        <div class="empty-state-icon">◈</div>
+        <div class="empty-state-title">Nenhum usuário ativo no setor "${esc(nucleo.sector)}".</div>
+        <div class="empty-state-text" style="margin-top:8px;font-size:0.8125rem;color:var(--text-muted);">
+          Cadastre usuários no setor em Configurações → Usuários antes de atribuí-los ao núcleo.
+        </div>
+      </div>`,
+      footer: [ { label: 'Fechar', class: 'btn-secondary', closeOnClick: true } ],
+    });
+    return;
+  }
+
+  const chipHtml = (u) => {
+    const inNuc    = selected.has(u.id);
+    const otherNuc = u.nucleo && u.nucleo !== nucleo.name;
+    const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    return `
+      <label class="nc-member-row" data-uid="${u.id}" style="
+        display:flex;align-items:center;gap:10px;padding:8px 12px;
+        border:1px solid ${inNuc ? nucleo.color||'#6B7280' : 'var(--border-subtle)'};
+        background:${inNuc ? (nucleo.color||'#6B7280')+'14' : 'var(--bg-surface)'};
+        border-radius:var(--radius-md);cursor:pointer;transition:all 0.15s;">
+        <input type="checkbox" ${inNuc ? 'checked' : ''} data-uid="${u.id}"
+          style="accent-color:${nucleo.color||'#6B7280'};" />
+        <div class="avatar" style="width:28px;height:28px;font-size:0.625rem;
+          background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">${initials}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.8125rem;color:var(--text-primary);
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(u.name)}</div>
+          ${otherNuc ? `<div style="font-size:0.6875rem;color:var(--text-muted);">
+            Atualmente em: ${esc(u.nucleo)}</div>` : ''}
+        </div>
+      </label>
+    `;
+  };
+
+  modal.open({
+    title:   `Membros — ${nucleo.name}`,
+    content: `
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;align-items:flex-start;gap:10px;
+          background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);
+          border-radius:var(--radius-md);padding:10px 14px;
+          font-size:0.75rem;color:var(--text-secondary);line-height:1.5;">
+          <span>ℹ</span>
+          <span>Um usuário pode estar em apenas um núcleo por vez.
+            Ao marcar aqui, ele é removido do núcleo anterior automaticamente.
+            Apenas usuários do setor <strong>${esc(nucleo.sector)}</strong> aparecem.</span>
+        </div>
+        <input type="search" class="form-input" id="nc-members-search"
+          placeholder="Buscar usuário..." style="margin:0;" />
+        <div id="nc-members-list" style="display:flex;flex-direction:column;gap:6px;
+          max-height:360px;overflow-y:auto;padding-right:4px;">
+          ${users.map(chipHtml).join('')}
+        </div>
+        <div id="nc-members-count" style="font-size:0.75rem;color:var(--text-muted);text-align:right;">
+          ${selected.size} selecionado${selected.size!==1?'s':''}
+        </div>
+      </div>
+    `,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+      {
+        label: 'Salvar', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const btn = document.querySelector('.modal-footer .btn-primary');
+          if (btn) { btn.classList.add('loading'); btn.disabled = true; }
+          try {
+            await saveMembers(nucleo, users, selected);
+            toast.success('Membros atualizados!');
+            close();
+            // Recarrega usuários e re-renderiza
+            await reloadUsers();
+            render(visibleSectors);
+          } catch(e) {
+            toast.error('Erro ao salvar: ' + e.message);
+          } finally {
+            if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+          }
+        },
+      },
+    ],
+  });
+
+  // Wire checkbox + search após DOM existir
+  setTimeout(() => {
+    const list  = document.getElementById('nc-members-list');
+    const count = document.getElementById('nc-members-count');
+    const search = document.getElementById('nc-members-search');
+    if (!list) return;
+
+    list.querySelectorAll('.nc-member-row').forEach(row => {
+      row.addEventListener('click', (ev) => {
+        // Se clicou no próprio checkbox, o change dispara normalmente. Aqui tratamos
+        // click na label/linha; evita loop prevenindo default de clicks no input.
+        if (ev.target.tagName === 'INPUT') return;
+        const cb = row.querySelector('input[type="checkbox"]');
+        if (!cb) return;
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      const cb = row.querySelector('input[type="checkbox"]');
+      cb?.addEventListener('change', () => {
+        const uid = cb.dataset.uid;
+        if (cb.checked) selected.add(uid); else selected.delete(uid);
+        row.style.borderColor = cb.checked ? (nucleo.color || '#6B7280') : 'var(--border-subtle)';
+        row.style.background  = cb.checked ? (nucleo.color || '#6B7280') + '14' : 'var(--bg-surface)';
+        if (count) count.textContent =
+          `${selected.size} selecionado${selected.size!==1?'s':''}`;
+      });
+    });
+
+    search?.addEventListener('input', () => {
+      const term = search.value.trim().toLowerCase();
+      list.querySelectorAll('.nc-member-row').forEach(row => {
+        const name = (users.find(u => u.id === row.dataset.uid)?.name || '').toLowerCase();
+        row.style.display = !term || name.includes(term) ? '' : 'none';
+      });
+    });
+  }, 30);
+}
+
+async function saveMembers(nucleo, users, selectedSet) {
+  // Para cada user, computa o valor-alvo de `nucleo`:
+  //  - Se está no set e ainda não era membro → seta nucleo.name
+  //  - Se NÃO está no set e era membro deste núcleo → limpa (setar '')
+  //  - Se não mudou → pula (evita write desnecessário)
+  const ops = [];
+  for (const u of users) {
+    const wasIn = u.nucleo === nucleo.name;
+    const nowIn = selectedSet.has(u.id);
+    if (wasIn && !nowIn) ops.push(updateUserProfile(u.id, { nucleo: '' }));
+    else if (!wasIn && nowIn) ops.push(updateUserProfile(u.id, { nucleo: nucleo.name }));
+  }
+  if (!ops.length) return;
+  await Promise.all(ops);
+}
+
+async function reloadUsers() {
+  try {
+    const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
+    store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  } catch(e) { console.warn('reloadUsers falhou:', e.message); }
 }
 
 /* ─── Modal criar / editar núcleo ────────────────────────── */
