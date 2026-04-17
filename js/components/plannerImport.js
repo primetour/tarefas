@@ -41,6 +41,12 @@ function resetState() {
     selectedRows: new Set(), importTag: 'planner-import',
     importResults: null, modalRef: null,
     previewSearch: '', previewBucket: '', previewStatus: '',
+    // Reimportação: pré-carregamos plannerIds já no sistema para detectar
+    // duplicatas. Tarefas já importadas começam DESmarcadas no step 5.
+    existingPlannerIds: new Set(),
+    existingPlannerCount: 0,
+    // Squad de destino (B11b — sempre explícito; default '' = sem squad).
+    targetSquadId: '',
   };
 }
 
@@ -117,21 +123,54 @@ async function handleFile(file) {
     extractPlannerUsers();
     extractBuckets();
     buildEditableTasks();
+    await loadExistingPlannerIds();   // dedup: mapeia plannerIds já no sistema
 
     const total = rows.length;
     const completed = rows.filter(r => (r['Progresso'] || '') === 'Concluída').length;
+    const dups = wiz.tasks.filter(t => t.plannerId && wiz.existingPlannerIds.has(t.plannerId)).length;
+    wiz.existingPlannerCount = dups;
+    const dupNote = dups
+      ? `<div style="margin-top:6px;font-size:0.75rem;color:#D97706;">
+          ⚠ ${dups} de ${total} já existem no sistema (mesmo plannerId) — virão DESmarcadas na revisão.
+        </div>`
+      : `<div style="margin-top:6px;font-size:0.75rem;color:#16A34A;">
+          ✓ Nenhuma dessas tarefas foi importada antes.
+        </div>`;
     info.innerHTML = `<div style="display:flex;align-items:center;gap:12px;">
       <span style="font-size:1.5rem;">✅</span>
-      <div><strong>${esc(file.name)}</strong>
+      <div style="flex:1;"><strong>${esc(file.name)}</strong>
         <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:2px;">
           ${total} tarefas · ${completed} concluídas · ${wiz.plannerUsers.length} pessoas · ${wiz.plannerBuckets.length} buckets
         </div>
+        ${dupNote}
       </div>
     </div>`;
     updateFooter();
   } catch (e) {
     err.textContent = 'Erro: ' + e.message;
     err.style.display = 'block'; info.style.display = 'none';
+  }
+}
+
+/* ─── Dedup: lê plannerIds já existentes no Firestore ─────── */
+async function loadExistingPlannerIds() {
+  try {
+    const { collection, getDocs, query, where } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const { db } = await import('../firebase.js');
+    // Estratégia: trazer todas as tasks que tenham customFields.plannerId não-null.
+    // Em projetos pequenos é rápido. Para escalar, dá pra trocar por queries em
+    // chunks de 30 IDs (where 'in') usando os plannerIds do arquivo.
+    const q = query(collection(db, 'tasks'), where('customFields.plannerId', '!=', null));
+    const snap = await getDocs(q);
+    wiz.existingPlannerIds = new Set();
+    snap.docs.forEach(d => {
+      const pid = d.data()?.customFields?.plannerId;
+      if (pid) wiz.existingPlannerIds.add(pid);
+    });
+  } catch (e) {
+    // Se a query exigir índice ou falhar, seguimos sem dedup mas avisamos.
+    console.warn('[plannerImport] dedup desativado:', e.message);
+    wiz.existingPlannerIds = new Set();
   }
 }
 
@@ -695,10 +734,14 @@ function renderStep5() {
   const byStatus = { not_started: 0, in_progress: 0, done: 0 };
   tasks.forEach(t => { byStatus[t.status] = (byStatus[t.status] || 0) + 1; });
 
-  // Pre-select non-completed on first visit
+  // Pre-select non-completed AND não-duplicadas no primeiro visit
   if (wiz.selectedRows.size === 0) {
-    tasks.forEach((t, i) => { if (t.status !== 'done') wiz.selectedRows.add(i); });
+    tasks.forEach((t, i) => {
+      const isDup = t.plannerId && wiz.existingPlannerIds.has(t.plannerId);
+      if (t.status !== 'done' && !isDup) wiz.selectedRows.add(i);
+    });
   }
+  const dupCount = tasks.filter(t => t.plannerId && wiz.existingPlannerIds.has(t.plannerId)).length;
 
   const filtered = getFilteredTasks();
 
@@ -741,7 +784,15 @@ function renderStep5() {
         ${sCard(byStatus.in_progress, 'Em andam.', '#FFFBEB', '#FDE68A', '#D97706')}
         ${sCard(byStatus.done, 'Concluídas', '#F0FDF4', '#BBF7D0', '#16A34A')}
         ${sCard(wiz.selectedRows.size, 'Selecionadas', '#F5F3FF', '#DDD6FE', '#7C3AED')}
+        ${dupCount ? sCard(dupCount, 'Já import.', '#FEF2F2', '#FECACA', '#EF4444') : ''}
       </div>
+
+      ${dupCount ? `<div style="padding:8px 12px;margin-bottom:10px;border-radius:6px;
+        background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);
+        font-size:0.75rem;color:#EF4444;">
+        ⚠ <strong>${dupCount}</strong> tarefa(s) já estão no sistema (mesmo plannerId).
+        Vieram desmarcadas — marque manualmente se quiser criar duplicatas.
+      </div>` : ''}
 
       <!-- Filters -->
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center;">
@@ -827,14 +878,22 @@ function editRow(t) {
   // Overdue check
   const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate) < new Date();
 
+  // Duplicate check (já importada antes)
+  const isDup = t.plannerId && wiz.existingPlannerIds.has(t.plannerId);
+
   // Row color
   let rowStyle = '';
   if (!chk) rowStyle = 'opacity:0.4;';
+  else if (isDup) rowStyle = 'background:rgba(239,68,68,0.06);';
   else if (hasUnresolved) rowStyle = 'background:rgba(217,119,6,0.05);';
+
+  const dupBadge = isDup
+    ? `<span class="pi-chip" style="--cc:#EF4444;font-size:0.625rem;margin-left:6px;" title="Já importada anteriormente — marque manualmente para criar duplicata">⚠ já import.</span>`
+    : '';
 
   return `<tr class="pi-erow" data-idx="${i}" style="${rowStyle}">
     <td style="text-align:center;"><input type="checkbox" class="pi-rcb" data-idx="${i}" ${chk ? 'checked' : ''} /></td>
-    <td><input type="text" class="pi-iinput pi-ed-t" data-idx="${i}" value="${esc(t.title)}" style="width:100%;font-weight:600;" /></td>
+    <td><input type="text" class="pi-iinput pi-ed-t" data-idx="${i}" value="${esc(t.title)}" style="width:calc(100% - 90px);font-weight:600;" />${dupBadge}</td>
     <td><select class="pi-isel pi-ed-s" data-idx="${i}" style="color:${st.color};font-weight:600;">
       ${STATUS_OPTS.map(s => `<option value="${s.value}" ${s.value === t.status ? 'selected' : ''} style="color:${s.color};">${s.label}</option>`).join('')}
     </select></td>
