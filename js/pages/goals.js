@@ -1586,142 +1586,486 @@ async function exportGoalsXls() {
   if (!allGoals.length) { toast.error('Nenhuma meta.'); return; }
   if (!window.XLSX) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
 
-  // Sheet 1 — Metas
-  const rows=[['Escopo','Objetivo','Responsáveis','Gestor','Setor','Status','Pilares','Metas','Tarefas vinc.','Início','Fim']];
+  const users = store.get('users') || [];
+
+  // ── Sheet 1 — Resumo (1 linha por meta, alto nível) ──────
+  const resumoHead = [
+    'Meta', 'Escopo', 'Setor', 'Núcleo', 'Status',
+    'Responsáveis', 'Gestor',
+    '# Pilares', '# Metas', '# KPIs', 'Tarefas vinculadas',
+    'Pond. Pilares (soma)', 'Início', 'Fim', 'Tipo',
+  ];
+  const resumoRows = [resumoHead];
   allGoals.forEach(g => {
-    const users = store.get('users')||[];
     const respNames = getResponsavelNames(g, users);
-    const resp  = respNames.length ? respNames.join(', ') : '—';
-    const gestor= users.find(u=>u.id===g.gestorId)?.name||'—';
+    const resp   = respNames.length ? respNames.join(', ') : '—';
+    const gestor = users.find(u=>u.id===g.gestorId)?.name || '—';
     const linkedCount = allTasksForGoals.filter(t=>t.goalId===g.id).length;
-    rows.push([
-      GOAL_SCOPES.find(s=>s.value===g.escopo)?.label||g.escopo||'—',
-      g.objetivoNucleo||g.pilares?.[0]?.titulo||'—', resp, gestor,
-      g.setor||'—', g.status||'—',
-      (g.pilares||[]).length, (g.pilares||[]).reduce((s,p)=>s+(p.metas||[]).length,0),
-      linkedCount, fmtDate(g.inicio), fmtDate(g.fim),
+    const pilares = g.pilares || [];
+    const metasTotal = pilares.reduce((s,p)=>s+(p.metas||[]).length, 0);
+    const kpisTotal  = pilares.reduce((s,p)=>s+(p.metas||[]).reduce((ss,m)=>ss+(m.kpis||[]).length,0),0);
+    const pondSum = pilares.reduce((s,p)=>s+(Number(p.ponderacao)||0),0);
+    resumoRows.push([
+      g.nome || g.objetivoNucleo || pilares[0]?.titulo || '—',
+      GOAL_SCOPES.find(s=>s.value===g.escopo)?.label || g.escopo || '—',
+      g.setor || '—',
+      g.nucleo || '—',
+      g.status || '—',
+      resp, gestor,
+      pilares.length, metasTotal, kpisTotal, linkedCount,
+      `${pondSum}%`,
+      fmtDate(g.inicio), fmtDate(g.fim),
+      g.tipo || '',
     ]);
-    (g.pilares||[]).forEach((pilar,pi) => {
-      (pilar.metas||[]).forEach((meta,mi) => {
-        rows.push(['','','','','',
-          `  Pilar ${pi+1}: ${pilar.titulo||''}`,
-          `  Meta ${mi+1}: ${meta.titulo||''}`,
-          `  Pond: ${meta.ponderacao||0}%`,
-          '', meta.criterio||'',
-          `${meta.prazoTipo||''} ${meta.recorrencia?'(recorrente)':''}`,
-        ]);
+  });
+
+  // ── Sheet 2 — Estrutura detalhada (1 linha por KPI) ──────
+  // Cada linha carrega o contexto completo (Meta → Pilar → Sub-meta → KPI),
+  // facilitando filtrar/pivotar no Excel.
+  const detalHead = [
+    'Meta', 'Escopo', 'Setor', 'Núcleo', 'Status',
+    'Pilar', 'Pond. Pilar (%)', 'Objetivo do pilar',
+    'Sub-meta', 'Pond. Meta (%)',
+    'Descrição', 'Critério de medição', 'Formato de entrega',
+    'Prazo', 'Periodicidade', 'Recorrência meta', 'Aval. recorrente',
+    'KPI', 'Peso KPI (%)',
+    'Observações', 'Responsáveis', 'Gestor',
+  ];
+  const detalRows = [detalHead];
+  allGoals.forEach(g => {
+    const respNames = getResponsavelNames(g, users);
+    const resp   = respNames.length ? respNames.join(', ') : '—';
+    const gestor = users.find(u=>u.id===g.gestorId)?.name || '—';
+    const metaTit = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || '—';
+    const escopo  = GOAL_SCOPES.find(s=>s.value===g.escopo)?.label || g.escopo || '—';
+
+    (g.pilares||[]).forEach((pilar, pi) => {
+      (pilar.metas||[]).forEach((meta, mi) => {
+        const kpis = (meta.kpis||[]).length ? meta.kpis : [null];
+        kpis.forEach((kpi, ki) => {
+          detalRows.push([
+            metaTit, escopo, g.setor||'', g.nucleo||'', g.status||'',
+            pilar.titulo || `Pilar ${pi+1}`,
+            Number(pilar.ponderacao)||0,
+            pilar.objetivo || '',
+            meta.titulo || `Meta ${mi+1}`,
+            Number(meta.ponderacao)||0,
+            meta.descricao || '',
+            meta.criterio || '',
+            meta.formato || '',
+            GOAL_PRAZO_TYPES.find(p=>p.value===meta.prazoTipo)?.label || '',
+            GOAL_PRAZO_TYPES.find(p=>p.value===meta.periodicidadeTipo)?.label || '',
+            meta.recorrencia ? 'Sim' : 'Não',
+            meta.recorrenciaAval ? 'Sim' : 'Não',
+            kpi ? (kpi.descricao || `KPI ${ki+1}`) : '—',
+            kpi ? (Number(kpi.peso)||0) : '',
+            meta.observacoes || '',
+            resp, gestor,
+          ]);
+        });
       });
     });
   });
 
-  // Sheet 2 — Tarefas vinculadas
-  const taskHeaders = ['Meta (objetivo)', 'Tarefa', 'Status', 'Evidência', 'Período ref.', 'Link comprovação', 'Concluída em'];
-  const taskRows = [];
+  // ── Sheet 3 — Tarefas vinculadas ─────────────────────────
+  const taskHead = ['Meta', 'Pilar', 'Sub-meta', 'Tarefa', 'Status', 'Evidência', 'Período ref.', 'Link comprovação', 'Concluída em'];
+  const taskRows = [taskHead];
   allGoals.forEach(g => {
-    const linked = allTasksForGoals.filter(t => t.goalId === g.id);
+    const metaTit = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || '—';
+    const linked  = allTasksForGoals.filter(t => t.goalId === g.id);
     linked.forEach(t => {
       const doneDate = t.completedAt?.toDate ? t.completedAt.toDate().toLocaleDateString('pt-BR') : '';
+      const pilar = g.pilares?.[t.pillarIdx];
+      const meta  = pilar?.metas?.[t.metaIdx];
       taskRows.push([
-        g.objetivoNucleo || g.pilares?.[0]?.titulo || '—',
-        t.title || '', t.status || '',
+        metaTit,
+        pilar?.titulo || '',
+        meta?.titulo || '',
+        t.title || '',
+        t.status === 'done' ? 'Concluída' : t.status === 'in_progress' ? 'Em andamento' : t.status || '',
         t.confirmadaEvidencia ? 'Sim' : 'Não',
-        t.periodoRef || '', t.linkComprovacao || '', doneDate,
+        t.periodoRef || '',
+        t.linkComprovacao || '',
+        doneDate,
       ]);
     });
   });
 
   const wb = window.XLSX.utils.book_new();
-  const ws1 = window.XLSX.utils.aoa_to_sheet(rows);
-  ws1['!cols'] = [15, 40, 20, 20, 15, 12, 8, 8, 8, 12, 12].map(w => ({ wch: w }));
-  window.XLSX.utils.book_append_sheet(wb, ws1, 'Metas');
 
-  const ws2 = window.XLSX.utils.aoa_to_sheet([taskHeaders, ...taskRows]);
-  ws2['!cols'] = [35, 35, 14, 10, 15, 30, 12].map(w => ({ wch: w }));
-  window.XLSX.utils.book_append_sheet(wb, ws2, 'Tarefas vinculadas');
+  const ws1 = window.XLSX.utils.aoa_to_sheet(resumoRows);
+  ws1['!cols'] = [38, 16, 18, 18, 12, 28, 20, 10, 10, 10, 14, 18, 12, 12, 14].map(w => ({ wch: w }));
+  window.XLSX.utils.book_append_sheet(wb, ws1, 'Resumo');
+
+  const ws2 = window.XLSX.utils.aoa_to_sheet(detalRows);
+  ws2['!cols'] = [32, 14, 18, 18, 10, 24, 12, 30, 26, 12, 32, 30, 24, 16, 16, 12, 14, 28, 10, 32, 24, 20].map(w => ({ wch: w }));
+  // Freeze first row + first two columns
+  ws2['!freeze'] = { xSplit: 2, ySplit: 1 };
+  window.XLSX.utils.book_append_sheet(wb, ws2, 'Estrutura detalhada');
+
+  const ws3 = window.XLSX.utils.aoa_to_sheet(taskRows);
+  ws3['!cols'] = [32, 22, 22, 32, 14, 10, 15, 30, 12].map(w => ({ wch: w }));
+  window.XLSX.utils.book_append_sheet(wb, ws3, 'Tarefas vinculadas');
 
   window.XLSX.writeFile(wb, `primetour_metas_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast.success('XLS exportado.');
 }
 
+/**
+ * Dossier visual das metas — sem tabelas. Um card por meta (goal)
+ * com hierarquia Pilar → Sub-meta → KPIs desenhada com blocos,
+ * barras de ponderação e chips. Formato A4 retrato, um documento
+ * que um gestor imprime e entrega pra revisão.
+ */
 async function exportGoalsPdf() {
   if (!allGoals.length) { toast.error('Nenhuma meta.'); return; }
   if (!window.jspdf) {
     await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
-    await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
   }
-  const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const W = 210, H = 297, M = 15, CW = W - M * 2;
+  const users = store.get('users') || [];
 
-  // Page 1 — Metas
-  doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(36,35,98);
-  doc.text('PRIMETOUR — Quadro de Metas',14,16);
-  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(100,100,100);
-  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${allGoals.length} metas`,14,22);
-  const rows=[];
-  allGoals.forEach(g => {
-    const users = store.get('users')||[];
-    const respNames = getResponsavelNames(g, users);
-    const resp = respNames.length ? respNames.join(', ') : '—';
-    const gestor = users.find(u=>u.id===g.gestorId)?.name||'—';
-    const linkedCount = allTasksForGoals.filter(t=>t.goalId===g.id).length;
-    (g.pilares||[]).forEach((pilar,pi) => {
-      (pilar.metas||[]).forEach((meta,mi) => {
-        rows.push([
-          GOAL_SCOPES.find(s=>s.value===g.escopo)?.label||'—',
-          (g.objetivoNucleo||'').slice(0,30),
-          (pilar.titulo||`Pilar ${pi+1}`).slice(0,25),
-          (meta.titulo||`Meta ${mi+1}`).slice(0,30),
-          `${meta.ponderacao||0}%`,
-          meta.criterio?.slice(0,30)||'—',
-          GOAL_PRAZO_TYPES.find(p=>p.value===meta.prazoTipo)?.label||'—',
-          resp.slice(0,15), gestor.slice(0,15),
-          `${linkedCount}`, g.status||'—',
-        ]);
-      });
-    });
-  });
-  doc.autoTable({
-    startY:27,
-    head:[['Escopo','Objetivo','Pilar','Meta','Pond.','Critério','Prazo','Responsáveis','Gestor','Tarefas','Status']],
-    body: rows,
-    styles:{fontSize:7,cellPadding:2},
-    headStyles:{fillColor:[36,35,98],textColor:255,fontStyle:'bold'},
-    alternateRowStyles:{fillColor:[248,247,244]},
-    columnStyles:{0:{cellWidth:16},1:{cellWidth:28},2:{cellWidth:22},3:{cellWidth:28},4:{cellWidth:10},5:{cellWidth:26},6:{cellWidth:16},7:{cellWidth:18},8:{cellWidth:18},9:{cellWidth:12},10:{cellWidth:12}},
+  // Paleta
+  const COL = {
+    brand:  [36, 35, 98],
+    brand2: [68, 65, 160],
+    gold:   [212, 168, 67],
+    text:   [32, 32, 32],
+    muted:  [128, 128, 128],
+    light:  [248, 247, 244],
+    border: [220, 220, 220],
+    green:  [34, 197, 94],
+    orange: [245, 158, 11],
+    red:    [239, 68, 68],
+    blue:   [59, 130, 246],
+    obsBg:  [255, 251, 235],
+  };
+  const STATUS_COL = {
+    ativa: COL.green, publicada: COL.green,
+    rascunho: COL.orange,
+    concluida: COL.blue, concluída: COL.blue,
+    cancelada: COL.red,
+  };
+
+  let y = 0;
+  const drawRunningHeader = () => {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...COL.muted);
+    doc.text('PRIMETOUR · Quadro de Metas', M, 10);
+    doc.setDrawColor(...COL.border); doc.setLineWidth(0.2);
+    doc.line(M, 12, W - M, 12);
+    y = 17;
+  };
+  const ensureSpace = (needed) => {
+    if (y + needed > H - 14) { doc.addPage(); drawRunningHeader(); }
+  };
+  const wrap = (txt, maxW, size) => {
+    doc.setFontSize(size);
+    return doc.splitTextToSize(String(txt || ''), maxW);
+  };
+  const drawBar = (x, yy, wMax, pct, fillCol) => {
+    doc.setFillColor(230, 230, 230); doc.rect(x, yy, wMax, 1.8, 'F');
+    if (pct > 0) {
+      doc.setFillColor(...fillCol);
+      doc.rect(x, yy, wMax * Math.min(Math.max(pct, 0), 100) / 100, 1.8, 'F');
+    }
+  };
+  const drawKV = (k, v, indent = 0, fs = 8) => {
+    if (!v) return;
+    const lines = wrap(v, CW - 32 - indent, fs);
+    ensureSpace(lines.length * 3.6 + 1);
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(...COL.muted); doc.setFontSize(fs - 1);
+    doc.text(k.toUpperCase(), M + indent, y);
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(...COL.text); doc.setFontSize(fs);
+    doc.text(lines, M + 32 + indent, y);
+    y += Math.max(4, lines.length * 3.6);
+  };
+
+  // ── Capa ─────────────────────────────────────────────────
+  doc.setFillColor(...COL.brand); doc.rect(0, 0, W, 70, 'F');
+  doc.setFillColor(...COL.gold); doc.rect(0, 70, W, 2, 'F');
+  doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(28);
+  doc.text('Quadro de Metas', M, 32);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+  doc.text('PRIMETOUR · Gestão de Desempenho', M, 42);
+  doc.setTextColor(...COL.gold); doc.setFontSize(9);
+  doc.text(
+    `${allGoals.length} ${allGoals.length === 1 ? 'meta cadastrada' : 'metas cadastradas'}   ·   Gerado em ${new Date().toLocaleDateString('pt-BR')}`,
+    M, 52
+  );
+
+  // Sumário rápido
+  y = 84;
+  doc.setTextColor(...COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+  doc.text('SUMÁRIO', M, y);
+  y += 4;
+  doc.setDrawColor(...COL.gold); doc.setLineWidth(0.4); doc.line(M, y, M + 18, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...COL.text);
+  allGoals.forEach((g, gi) => {
+    if (y > H - 20) { doc.addPage(); drawRunningHeader(); }
+    const titulo = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || 'Meta sem título';
+    const pilares = (g.pilares || []).length;
+    const metasTotal = (g.pilares || []).reduce((s, p) => s + (p.metas || []).length, 0);
+    const resumo = `${pilares} pilar${pilares !== 1 ? 'es' : ''} · ${metasTotal} sub-meta${metasTotal !== 1 ? 's' : ''}`;
+    const line = `${String(gi + 1).padStart(2, '0')}.  ${titulo}`;
+    const wrapped = wrap(line, CW - 45, 9);
+    doc.setTextColor(...COL.text); doc.setFont('helvetica', 'bold');
+    doc.text(wrapped[0], M, y);
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(...COL.muted); doc.setFontSize(8);
+    doc.text(resumo, W - M, y, { align: 'right' });
+    doc.setFontSize(9);
+    y += 5;
+    if (wrapped.length > 1) {
+      wrapped.slice(1).forEach(l => { doc.text(l, M + 7, y); y += 4; });
+    }
   });
 
-  // Page 2 — Tarefas vinculadas
-  const taskRows = [];
-  allGoals.forEach(g => {
-    const linked = allTasksForGoals.filter(t => t.goalId === g.id);
-    linked.forEach(t => {
-      const doneDate = t.completedAt?.toDate ? t.completedAt.toDate().toLocaleDateString('pt-BR') : '';
-      taskRows.push([
-        (g.objetivoNucleo || '').slice(0, 25),
-        (t.title || '').slice(0, 35),
-        t.status === 'done' ? 'Concluída' : t.status === 'in_progress' ? 'Em andamento' : t.status || '',
-        t.confirmadaEvidencia ? 'Sim' : 'Não',
-        (t.periodoRef || '').slice(0, 15),
-        doneDate,
-      ]);
-    });
-  });
-  if (taskRows.length) {
+  // ── Seções por meta ──────────────────────────────────────
+  allGoals.forEach((g, gi) => {
     doc.addPage();
-    doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(36,35,98);
-    doc.text('PRIMETOUR — Tarefas vinculadas a Metas',14,16);
-    doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(100,100,100);
-    doc.text(`${taskRows.length} tarefas vinculadas`,14,22);
-    doc.autoTable({
-      startY:27,
-      head:[['Meta','Tarefa','Status','Evidência','Período','Concluída']],
-      body: taskRows,
-      styles:{fontSize:7,cellPadding:2},
-      headStyles:{fillColor:[36,35,98],textColor:255,fontStyle:'bold'},
-      alternateRowStyles:{fillColor:[248,247,244]},
+    drawRunningHeader();
+
+    const titulo = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || 'Meta sem título';
+
+    // Cartão-cabeçalho da meta
+    doc.setFillColor(...COL.brand); doc.rect(M, y, CW, 14, 'F');
+    doc.setFillColor(...COL.gold); doc.rect(M, y, 3, 14, 'F');
+    doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+    doc.text(`META ${String(gi + 1).padStart(2, '0')}`, M + 6, y + 5);
+    doc.setFontSize(13);
+    const tLines = wrap(titulo, CW - 50, 13);
+    doc.text(tLines[0], M + 6, y + 11);
+    // Chip de status
+    const statusKey = (g.status || 'rascunho').toLowerCase();
+    const statusLabel = (g.status || 'rascunho').toUpperCase();
+    const scol = STATUS_COL[statusKey] || COL.muted;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+    const sw = doc.getTextWidth(statusLabel) + 6;
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(W - M - sw - 4, y + 4, sw, 6, 1.5, 1.5, 'F');
+    doc.setTextColor(...scol);
+    doc.text(statusLabel, W - M - sw - 1, y + 8);
+    y += 18;
+
+    // Metadados (linhas chave-valor)
+    const respNames = getResponsavelNames(g, users);
+    const gestor = users.find(u => u.id === g.gestorId)?.name || '—';
+    const escopo = GOAL_SCOPES.find(s => s.value === g.escopo)?.label || g.escopo || '—';
+    const nucleo = g.nucleo || '';
+    const setor = g.setor || '—';
+    const inicio = g.inicio ? fmtDate(g.inicio) : '—';
+    const fim = g.fim ? fmtDate(g.fim) : '—';
+    const linkedTasks = allTasksForGoals.filter(t => t.goalId === g.id);
+
+    drawKV('Escopo', escopo + (nucleo ? `  ·  ${nucleo}` : ''));
+    drawKV('Setor', setor + (g.tipo ? `  ·  Tipo: ${g.tipo}` : ''));
+    drawKV('Período', `${inicio}   →   ${fim}`);
+    drawKV('Responsáveis', respNames.length ? respNames.join(', ') : '—');
+    drawKV('Gestor', gestor);
+    if (linkedTasks.length) drawKV('Tarefas vinculadas', `${linkedTasks.length}`);
+
+    y += 3;
+
+    // Objetivo geral (se diferente do título)
+    if (g.objetivoNucleo && g.objetivoNucleo !== titulo) {
+      const oLines = wrap(`" ${g.objetivoNucleo} "`, CW - 8, 9.5);
+      const oH = Math.max(10, oLines.length * 4.2 + 4);
+      ensureSpace(oH + 4);
+      doc.setFillColor(...COL.light); doc.rect(M, y, CW, oH, 'F');
+      doc.setDrawColor(...COL.gold); doc.setLineWidth(1.2); doc.line(M, y, M, y + oH);
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(9.5); doc.setTextColor(...COL.text);
+      doc.text(oLines, M + 4, y + 5);
+      y += oH + 4;
+    }
+
+    // Pilares
+    (g.pilares || []).forEach((pilar, pi) => {
+      ensureSpace(24);
+
+      // Pilar header — faixa clara com ponderação + barra
+      const pondP = Number(pilar.ponderacao) || 0;
+      doc.setFillColor(...COL.light); doc.rect(M, y, CW, 11, 'F');
+      doc.setFillColor(...COL.brand2); doc.rect(M, y, 2, 11, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...COL.brand2);
+      doc.text(`PILAR ${pi + 1}`, M + 4, y + 4);
+      doc.setTextColor(...COL.text); doc.setFontSize(10);
+      doc.text((pilar.titulo || '(sem título)').slice(0, 70), M + 4, y + 8.5);
+      // Pond à direita
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...COL.gold);
+      doc.text(`${pondP}%`, W - M - 4, y + 7, { align: 'right' });
+      drawBar(M + 4, y + 10.2, CW - 8, pondP, COL.gold);
+      y += 15;
+
+      // Objetivo do pilar
+      if (pilar.objetivo) {
+        const oLines = wrap(pilar.objetivo, CW - 10, 8.5);
+        ensureSpace(oLines.length * 3.6 + 2);
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); doc.setTextColor(...COL.muted);
+        doc.text(oLines, M + 6, y);
+        y += oLines.length * 3.6 + 3;
+      }
+
+      // Sub-metas
+      (pilar.metas || []).forEach((meta, mi) => {
+        ensureSpace(28);
+
+        // Linha divisória
+        doc.setDrawColor(...COL.border); doc.setLineWidth(0.15);
+        doc.line(M + 8, y, W - M, y);
+        y += 3.5;
+
+        // Cabeçalho da sub-meta
+        const pondM = Number(meta.ponderacao) || 0;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...COL.text);
+        const smTitle = meta.titulo || `Meta ${mi + 1}`;
+        const smLines = wrap(`▸ Sub-meta ${mi + 1}:  ${smTitle}`, CW - 28, 9.5);
+        doc.text(smLines[0], M + 6, y);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...COL.brand2);
+        doc.text(`${pondM}%`, W - M - 2, y, { align: 'right' });
+        y += 2;
+        drawBar(M + 8, y, CW - 20, pondM, COL.brand2);
+        y += 4.5;
+        if (smLines.length > 1) {
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(...COL.text);
+          smLines.slice(1).forEach(l => { doc.text(l, M + 10, y); y += 4; });
+          y += 1;
+        }
+
+        // Descrição
+        if (meta.descricao) {
+          const dLines = wrap(meta.descricao, CW - 14, 8.5);
+          ensureSpace(dLines.length * 3.5 + 2);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...COL.text);
+          doc.text(dLines, M + 8, y);
+          y += dLines.length * 3.5 + 2.5;
+        }
+
+        // Campos da sub-meta
+        const prazoL = GOAL_PRAZO_TYPES.find(p => p.value === meta.prazoTipo)?.label || '';
+        const periodL = GOAL_PRAZO_TYPES.find(p => p.value === meta.periodicidadeTipo)?.label || '';
+        const prazoStr = [
+          prazoL,
+          meta.recorrencia ? '(recorrente)' : '',
+          meta.prazoTipo === 'custom' && meta.prazoCustomInicio
+            ? `${fmtDate(meta.prazoCustomInicio)} → ${fmtDate(meta.prazoCustomFim || '')}`
+            : '',
+        ].filter(Boolean).join(' ');
+        drawKV('Critério de medição', meta.criterio || '', 8);
+        drawKV('Formato de entrega',  meta.formato  || '', 8);
+        if (prazoStr) drawKV('Prazo', prazoStr, 8);
+        if (periodL)  drawKV('Periodicidade', periodL + (meta.recorrenciaAval ? '  (avaliação recorrente)' : ''), 8);
+
+        // KPIs
+        const kpis = meta.kpis || [];
+        if (kpis.length) {
+          ensureSpace(6 + kpis.length * 5.5);
+          y += 2;
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(...COL.brand2);
+          doc.text('KPIs', M + 8, y);
+          const kLineY = y + 1; doc.setDrawColor(...COL.brand2); doc.setLineWidth(0.3);
+          doc.line(M + 17, kLineY, M + 26, kLineY);
+          y += 4;
+          kpis.forEach((kpi, ki) => {
+            ensureSpace(6);
+            const peso = Number(kpi.peso) || 0;
+            // bullet dourado
+            doc.setFillColor(...COL.gold); doc.circle(M + 10, y - 0.8, 0.8, 'F');
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...COL.text);
+            const kLines = wrap(kpi.descricao || `KPI ${ki + 1}`, CW - 48, 8.5);
+            doc.text(kLines, M + 13, y);
+            // Peso à direita
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...COL.gold);
+            doc.text(`${peso}%`, W - M - 2, y, { align: 'right' });
+            // Barra curta abaixo do peso
+            drawBar(W - M - 24, y + 1.2, 22, peso, COL.gold);
+            y += Math.max(5, kLines.length * 3.5) + 1;
+          });
+          y += 1;
+        }
+
+        // Observações — caixa destacada
+        if (meta.observacoes) {
+          const oLines = wrap(meta.observacoes, CW - 18, 8);
+          const hBox = Math.max(8, oLines.length * 3.4 + 5);
+          ensureSpace(hBox + 3);
+          doc.setFillColor(...COL.obsBg); doc.rect(M + 8, y, CW - 16, hBox, 'F');
+          doc.setDrawColor(...COL.gold); doc.setLineWidth(0.6);
+          doc.line(M + 8, y, M + 8, y + hBox);
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(...COL.gold);
+          doc.text('OBSERVAÇÕES', M + 11, y + 3);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...COL.text);
+          doc.text(oLines, M + 11, y + 7);
+          y += hBox + 3;
+        }
+
+        y += 2;
+      });
+      y += 3;
+    });
+  });
+
+  // ── Apêndice: Tarefas vinculadas ─────────────────────────
+  const allLinked = [];
+  allGoals.forEach(g => {
+    const metaTit = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || '—';
+    allTasksForGoals.filter(t => t.goalId === g.id).forEach(t => allLinked.push({ g, metaTit, t }));
+  });
+
+  if (allLinked.length) {
+    doc.addPage();
+    drawRunningHeader();
+    doc.setTextColor(...COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+    doc.text('Tarefas vinculadas', M, y);
+    y += 3;
+    doc.setDrawColor(...COL.gold); doc.setLineWidth(0.6); doc.line(M, y, M + 22, y);
+    y += 6;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...COL.muted);
+    doc.text(`${allLinked.length} ${allLinked.length === 1 ? 'tarefa vinculada' : 'tarefas vinculadas'} às metas acima`, M, y);
+    y += 8;
+
+    allLinked.forEach(({ metaTit, t }) => {
+      ensureSpace(14);
+      // Card tarefa
+      doc.setDrawColor(...COL.border); doc.setLineWidth(0.2);
+      doc.roundedRect(M, y, CW, 12, 1.5, 1.5, 'S');
+      // Status chip
+      const st = t.status === 'done' ? 'CONCLUÍDA' : t.status === 'in_progress' ? 'EM ANDAMENTO' : (t.status || '—').toUpperCase();
+      const stCol = t.status === 'done' ? COL.green : t.status === 'in_progress' ? COL.blue : COL.muted;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5);
+      const stw = doc.getTextWidth(st) + 5;
+      doc.setFillColor(...stCol); doc.roundedRect(M + 3, y + 2, stw, 4, 1, 1, 'F');
+      doc.setTextColor(255, 255, 255); doc.text(st, M + 5.5, y + 5);
+      // Evidência chip
+      if (t.confirmadaEvidencia) {
+        doc.setFillColor(...COL.green); doc.roundedRect(M + 5 + stw, y + 2, 14, 4, 1, 1, 'F');
+        doc.setTextColor(255, 255, 255); doc.text('✓ EVID.', M + 6 + stw, y + 5);
+      }
+      // Título da tarefa
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...COL.text);
+      doc.text((t.title || '(sem título)').slice(0, 90), M + 3, y + 9.5);
+      // Meta de origem à direita
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...COL.muted);
+      const metaLabel = `↳ ${metaTit}`.slice(0, 50);
+      doc.text(metaLabel, W - M - 3, y + 5, { align: 'right' });
+      // Data concluída
+      if (t.completedAt?.toDate) {
+        doc.text(t.completedAt.toDate().toLocaleDateString('pt-BR'), W - M - 3, y + 9.5, { align: 'right' });
+      }
+      y += 14;
     });
   }
 
-  doc.save(`primetour_metas_${new Date().toISOString().slice(0,10)}.pdf`);
+  // ── Rodapé em todas as páginas ───────────────────────────
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(7); doc.setTextColor(...COL.muted); doc.setFont('helvetica', 'normal');
+    doc.text(`Página ${i} de ${pageCount}`, W - M, H - 6, { align: 'right' });
+    doc.text(`PRIMETOUR · Metas · ${new Date().toLocaleDateString('pt-BR')}`, M, H - 6);
+  }
+
+  doc.save(`primetour_metas_${new Date().toISOString().slice(0, 10)}.pdf`);
   toast.success('PDF exportado.');
 }
