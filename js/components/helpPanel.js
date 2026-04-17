@@ -20,8 +20,12 @@ const HELP_CATEGORIES = [
         a: 'Acesse a tela de login com seu email e senha cadastrados. Se for seu primeiro acesso, você verá um assistente de boas-vindas para configurar seu perfil e workspace.',
       },
       {
-        q: 'O que é um workspace?',
-        a: 'Workspace (ou Squad) é um espaço de trabalho compartilhado pela equipe. Ele agrupa tarefas, projetos e membros de um setor ou time. Você pode participar de vários workspaces simultaneamente.',
+        q: 'O que é um Squad?',
+        a: 'Squad é um espaço de trabalho compartilhado pela equipe. Ele agrupa tarefas, projetos e membros de um setor ou time. Você pode participar de vários squads simultaneamente — alterne entre eles pelo seletor no sidebar. (Squad era anteriormente chamado de "Workspace".)',
+      },
+      {
+        q: 'Como entro em um Squad?',
+        a: 'Apenas administradores e gestores podem adicionar você a um squad. No primeiro acesso você completa apenas os dados básicos (nome e cor do avatar) — seu gestor cuida de incluí-lo nos squads dos quais você participa.',
       },
       {
         q: 'Como altero minha senha?',
@@ -78,6 +82,10 @@ const HELP_CATEGORIES = [
         q: 'Como funciona o Smart Defaults?',
         a: 'Ao criar uma tarefa, o sistema lembra suas escolhas anteriores (projeto, prioridade, tipo) e pré-preenche automaticamente. Você pode alterar a qualquer momento.',
       },
+      {
+        q: 'Como funciona a importação em lote (Planner XLS)?',
+        a: 'Gestores podem importar várias tarefas de uma vez via wizard de 5 etapas: upload do arquivo, mapeamento de colunas, validação, escolha de squad de destino (incluindo "Sem squad" para tarefas só visíveis pelo setor) e revisão final. O squad escolhido vale para todas as tarefas do lote.',
+      },
     ],
   },
   {
@@ -87,7 +95,11 @@ const HELP_CATEGORIES = [
     items: [
       {
         q: 'Como criar um projeto?',
-        a: 'Acesse a página Projetos e clique em "+ Novo Projeto". Defina nome, descrição, cor/ícone, membros e datas. As tarefas podem ser vinculadas a projetos para organização.',
+        a: 'Acesse a página Projetos e clique em "+ Novo Projeto". Defina nome, descrição, cor/ícone, squads vinculados e datas. As tarefas podem ser vinculadas a projetos para organização.',
+      },
+      {
+        q: 'Posso vincular um projeto a mais de um Squad?',
+        a: 'Sim. Ao criar/editar um projeto você seleciona quantos squads quiser pelos chips de seleção múltipla — o projeto fica visível em todos eles. É possível também não vincular a nenhum squad (projeto com membros avulsos).',
       },
       {
         q: 'Como acompanhar o progresso de um projeto?',
@@ -139,19 +151,23 @@ const HELP_CATEGORIES = [
   {
     id: 'workspaces',
     icon: '▤',
-    title: 'Workspaces / Squads',
+    title: 'Squads',
     items: [
       {
-        q: 'Como criar um workspace?',
-        a: 'Administradores e gerentes podem criar workspaces na página Squads. Defina nome, setor vinculado e adicione membros. Cada workspace tem suas próprias tarefas e projetos.',
+        q: 'Como criar um squad?',
+        a: 'Administradores e gerentes podem criar squads na página Squads. Defina nome, ícone, cor e adicione membros. Cada squad tem suas próprias tarefas e projetos.',
       },
       {
-        q: 'Posso participar de mais de um workspace?',
-        a: 'Sim. Você pode pertencer a vários workspaces e alternar entre eles. O workspace ativo aparece no seletor do sidebar.',
+        q: 'Posso participar de mais de um squad?',
+        a: 'Sim. Você pode pertencer a vários squads e alternar entre eles. O squad ativo aparece no seletor do sidebar e filtra tarefas/projetos exibidos.',
       },
       {
-        q: 'Como adicionar membros ao workspace?',
-        a: 'Na página do workspace, use o botão de convidar membros. Você pode buscar por nome ou email de usuários já cadastrados no sistema.',
+        q: 'Como adicionar membros ao squad?',
+        a: 'Apenas administradores do squad (e admins/master do sistema) podem adicionar membros. Na página do squad, use o botão de convidar membros — você pode buscar por nome ou email. A inclusão exibe confirmação com spinner durante a operação.',
+      },
+      {
+        q: 'Como vejo quais squads um usuário participa?',
+        a: 'Na página Usuários, cada linha mostra os badges dos squads em que o usuário está incluído. Apenas admins têm essa visão consolidada.',
       },
     ],
   },
@@ -398,7 +414,7 @@ const HELP_CATEGORIES = [
       },
       {
         q: 'Quais são os papéis (roles) do sistema?',
-        a: 'Master (Diretoria): acesso total. Admin (Head): gerencia usuários e configurações. Manager (Gerente): administra workspaces e equipe. Coordinator (Coordenador): coordena tarefas. Member (Analista): operações básicas. Partner (Parceiro): acesso restrito ao portal.',
+        a: 'Master (Diretoria): acesso total, incluindo zona de perigo. Admin (Head): gerencia usuários, squads e configurações. Manager (Gerente): administra squads e equipe, importa tarefas em lote. Coordinator (Coordenador): coordena tarefas e times. Member (Analista): operações básicas em tarefas e roteiros. Partner (Parceiro): acesso restrito ao portal de dicas.',
       },
       {
         q: 'Como funcionam as permissões?',
@@ -406,7 +422,7 @@ const HELP_CATEGORIES = [
       },
       {
         q: 'O que é a auditoria?',
-        a: 'O módulo de Auditoria registra todas as ações relevantes: criação, edição e exclusão de registros, logins, alterações de permissão. Filtros por usuário, ação e período.',
+        a: 'O módulo de Auditoria registra todas as ações relevantes: criação, edição e exclusão de registros, logins, alterações de permissão e operações em massa (como exclusão total). Filtros por usuário, ação e período.',
       },
       {
         q: 'Como configurar setores e núcleos?',
@@ -415,6 +431,14 @@ const HELP_CATEGORIES = [
       {
         q: 'Como configurar tipos de tarefa?',
         a: 'Na página Tipos de Tarefa, crie tipos com: nome, setor, categoria, variações, campos customizados, pipeline de etapas e SLA. Os tipos determinam o fluxo e as subtasks automáticas.',
+      },
+      {
+        q: 'Como gerenciar categorias de tipos de tarefa?',
+        a: 'Em Tipos de Tarefa, clique em "◈ Categorias". Cada categoria tem nome, setor (ou global), cor e ícone (mais de 100 ícones temáticos disponíveis: gestão, design, comunicação, dados, web, mídia, eventos, comercial, suporte). A pré-visualização mostra como ficará no sistema antes de salvar.',
+      },
+      {
+        q: 'O que é a Zona de Perigo em Configurações?',
+        a: 'Disponível apenas para o papel Master. Permite excluir TODAS as tarefas do sistema de uma vez (operação irreversível). Exige confirmação dupla — clique no botão e digite "EXCLUIR" no prompt para prosseguir. A operação é registrada na auditoria. Use somente para resetar o ambiente após backup.',
       },
     ],
   },
