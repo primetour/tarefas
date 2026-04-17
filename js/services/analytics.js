@@ -95,7 +95,7 @@ export async function getOverviewMetrics(period = '30d') {
     onTimeRate,
     doneOnTime: doneOnTime.length,
     avgCompletionDays: Math.round(avgTime * 10) / 10,
-    activeProjects: projects.filter(p => p.status === 'active').length,
+    activeProjects: projects.filter(p => p.status === 'active' || p.status === 'always_on').length,
     tasks, projects,
   };
 }

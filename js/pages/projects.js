@@ -237,7 +237,9 @@ function renderProjectCard(p) {
 /* ─── Project Modal ─────────────────────────────────────────*/
 export function openProjectModal(project = null, { defaultWorkspaceId = null, onSave = null } = {}) {
   const isEdit = !!project;
-  const users  = (store.get('users')||[]).filter(u=>u.active);
+  // Usa `active !== false` (inclui docs legados sem o campo) — padrão do resto do app.
+  // `u.active` filtrava todos que não têm o campo explicitamente true.
+  const users  = (store.get('users')||[]).filter(u => u.active !== false);
   const userWorkspaces = store.get('userWorkspaces') || [];
   const currentWs      = store.get('currentWorkspace');
 
@@ -392,7 +394,7 @@ export function openProjectModal(project = null, { defaultWorkspaceId = null, on
                 ${(u.name||'').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
               </div>
               ${esc(u.name.split(' ')[0])}
-              ${isMember ? '<span style="color:var(--brand-gold);font-size:0.75rem;">✓</span>' : ''}
+              <span class="member-check" style="color:var(--brand-gold);font-size:0.75rem;display:${isMember?'inline':'none'};">✓</span>
             </div>`;
           }).join('')}
         </div>
@@ -487,8 +489,9 @@ export function openProjectModal(project = null, { defaultWorkspaceId = null, on
         const isSelected = selectedMembers.includes(uid);
         el.style.background    = isSelected?'rgba(212,168,67,0.15)':'var(--bg-elevated)';
         el.style.borderColor   = isSelected?'rgba(212,168,67,0.4)':'transparent';
-        const check = el.querySelector('span:last-child');
-        if (check) check.style.display = isSelected?'':'none';
+        el.classList.toggle('member-selected', isSelected);
+        const check = el.querySelector('.member-check');
+        if (check) check.style.display = isSelected ? 'inline' : 'none';
       });
     });
 

@@ -25,6 +25,7 @@ export const PROJECT_ICONS = [
 export const PROJECT_STATUSES = [
   { value: 'planning',    label: 'Planejamento', color: '#38BDF8' },
   { value: 'active',      label: 'Em andamento', color: '#22C55E' },
+  { value: 'always_on',   label: 'Always On',    color: '#06B6D4' },
   { value: 'on_hold',     label: 'Em pausa',     color: '#F59E0B' },
   { value: 'completed',   label: 'Concluído',    color: '#A78BFA' },
   { value: 'cancelled',   label: 'Cancelado',    color: '#EF4444' },

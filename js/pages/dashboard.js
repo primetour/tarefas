@@ -99,7 +99,7 @@ export async function renderDashboard(container) {
       ${statCard('Tarefas Abertas', openTasks.length, '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)', '#tasks')}
       ${statCard('Em Andamento', inProgress.length, '▶', 'rgba(56,189,248,0.12)', 'var(--role-manager)', '#kanban')}
       ${statCard('Concluídas Hoje', doneToday.length, '✓', 'var(--color-success-bg)', 'var(--color-success)', '#tasks')}
-      ${statCard('Projetos Ativos', projects.filter(p=>p.status==='active').length, '◈', 'rgba(167,139,250,0.12)', 'var(--role-admin)', '#projects')}
+      ${statCard('Projetos Ativos', projects.filter(p=>p.status==='active'||p.status==='always_on').length, '◈', 'rgba(167,139,250,0.12)', 'var(--role-admin)', '#projects')}
     `;
 
     const overdue = myTasks.filter(t => {

@@ -123,7 +123,9 @@ export async function renderGaPerformance(container) {
       <button class="btn btn-ghost btn-sm ga-tab active" data-tab="daily"
         style="font-size:0.8125rem;">📊 Diário</button>
       <button class="btn btn-ghost btn-sm ga-tab" data-tab="pages"
-        style="font-size:0.8125rem;">📄 Páginas</button>
+        style="font-size:0.8125rem;" title="Páginas do site (exclui blog/*)">📄 Páginas</button>
+      <button class="btn btn-ghost btn-sm ga-tab" data-tab="blog"
+        style="font-size:0.8125rem;" title="Posts de blog (caminhos iniciando com /blog)">📝 Blog</button>
       <button class="btn btn-ghost btn-sm ga-tab" data-tab="sources"
         style="font-size:0.8125rem;">🔗 Origens</button>
       <button class="btn btn-ghost btn-sm ga-tab" data-tab="devices"
@@ -570,9 +572,20 @@ function renderTable(tab = 'daily') {
 
   if (tab === 'daily')    renderDailyTable(thead, tbody, thStyle);
   if (tab === 'pages')    renderPagesTable(thead, tbody, thStyle);
+  if (tab === 'blog')     renderBlogTable(thead, tbody, thStyle);
   if (tab === 'sources')  renderSourcesTable(thead, tbody, thStyle);
   if (tab === 'devices')  renderDevicesTable(thead, tbody, thStyle);
   if (tab === 'countries') renderCountriesTable(thead, tbody, thStyle);
+}
+
+/**
+ * Classifica uma URL como pertencente ao blog.
+ * Heurística: path começa com `/blog` (cobre `/blog`, `/blog/`, `/blog/post-x`).
+ * Futuramente pode virar configurável via settings.
+ */
+function isBlogPath(pagePath = '') {
+  const p = String(pagePath || '').toLowerCase();
+  return p.startsWith('/blog');
 }
 
 function renderDailyTable(thead, tbody, thStyle) {
@@ -624,9 +637,11 @@ function renderPagesTable(thead, tbody, thStyle) {
     <th style="${thStyle}">${thInfo('Engajamento', 'Percentual de sessões engajadas que incluíram esta página.')}</th>
   </tr>`;
 
-  if (!allPages.length) { tbody.innerHTML = emptyRow(6); return; }
+  // Exclui blog/* — estão na aba dedicada
+  const pages = allPages.filter(r => !isBlogPath(r.pagePath));
+  if (!pages.length) { tbody.innerHTML = emptyRow(6); return; }
 
-  tbody.innerHTML = allPages.slice(0,50).map((r,i) => `
+  tbody.innerHTML = pages.slice(0,50).map((r,i) => `
     <tr style="border-bottom:1px solid var(--border-subtle);"
       onmouseover="this.style.background='var(--bg-surface)'"
       onmouseout="this.style.background=''">
@@ -634,6 +649,44 @@ function renderPagesTable(thead, tbody, thStyle) {
         title="${esc(r.pagePath||r.pageTitle||'')}">
         <span style="color:var(--text-muted);font-size:0.75rem;margin-right:6px;">${i+1}</span>
         ${esc(r.pageTitle || r.pagePath || '—')}</td>
+      <td style="padding:8px 12px;text-align:right;font-weight:600;">${num(r.screenPageViews)}</td>
+      <td style="padding:8px 12px;text-align:right;">${num(r.activeUsers)}</td>
+      <td style="padding:8px 12px;text-align:right;color:var(--text-muted);">${dur(r.avgSessionDuration)}</td>
+      <td style="padding:8px 12px;text-align:right;${bounceColor(r.bounceRate)}">${pct((r.bounceRate||0)*100)}</td>
+      <td style="padding:8px 12px;text-align:right;${engColor(r.engagementRate)}">${pct((r.engagementRate||0)*100)}</td>
+    </tr>
+  `).join('');
+}
+
+function renderBlogTable(thead, tbody, thStyle) {
+  thead.innerHTML = `<tr style="background:var(--bg-surface);">
+    <th style="${thStyle}">Post</th>
+    <th style="${thStyle}">${thInfo('Visualizações', 'Total de vezes que o post foi carregado.')}</th>
+    <th style="${thStyle}">${thInfo('Usuários', 'Usuários únicos que leram este post no período.')}</th>
+    <th style="${thStyle}">${thInfo('Duração Média', 'Tempo médio de leitura por sessão.')}</th>
+    <th style="${thStyle}">${thInfo('Taxa Rejeição', 'Sessões não engajadas que começaram neste post.')}</th>
+    <th style="${thStyle}">${thInfo('Engajamento', 'Sessões engajadas que leram este post.')}</th>
+  </tr>`;
+
+  const posts = allPages.filter(r => isBlogPath(r.pagePath));
+  if (!posts.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+      Nenhum post de blog encontrado no período selecionado.<br>
+      <span style="font-size:0.6875rem;">Critério: URL iniciando com <code>/blog</code></span>
+    </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = posts.slice(0,50).map((r,i) => `
+    <tr style="border-bottom:1px solid var(--border-subtle);"
+      onmouseover="this.style.background='var(--bg-surface)'"
+      onmouseout="this.style.background=''">
+      <td style="padding:8px 12px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+        title="${esc(r.pagePath||r.pageTitle||'')}">
+        <span style="color:var(--text-muted);font-size:0.75rem;margin-right:6px;">${i+1}</span>
+        ${esc(r.pageTitle || r.pagePath || '—')}
+        <div style="font-size:0.6875rem;color:var(--text-muted);">${esc(r.pagePath||'')}</div>
+      </td>
       <td style="padding:8px 12px;text-align:right;font-weight:600;">${num(r.screenPageViews)}</td>
       <td style="padding:8px 12px;text-align:right;">${num(r.activeUsers)}</td>
       <td style="padding:8px 12px;text-align:right;color:var(--text-muted);">${dur(r.avgSessionDuration)}</td>
@@ -796,14 +849,26 @@ async function exportXLSX() {
     ws1['!cols'] = headers.map((_,i) => ({ wch: i===0?14:16 }));
     window.XLSX.utils.book_append_sheet(wb, ws1, 'Diário');
 
-    // Pages sheet
-    if (allPages.length) {
+    // Pages sheet (site — sem blog)
+    const sitePages = allPages.filter(r => !isBlogPath(r.pagePath));
+    if (sitePages.length) {
       const ws2 = window.XLSX.utils.aoa_to_sheet([
         ['Página','Caminho','Visualizações','Usuários','Duração','Rejeição','Engajamento'],
-        ...allPages.map(r => [r.pageTitle, r.pagePath, r.screenPageViews, r.activeUsers,
+        ...sitePages.map(r => [r.pageTitle, r.pagePath, r.screenPageViews, r.activeUsers,
           r.avgSessionDuration, r.bounceRate, r.engagementRate]),
       ]);
       window.XLSX.utils.book_append_sheet(wb, ws2, 'Páginas');
+    }
+
+    // Blog sheet (posts — /blog/*)
+    const blogPosts = allPages.filter(r => isBlogPath(r.pagePath));
+    if (blogPosts.length) {
+      const wsB = window.XLSX.utils.aoa_to_sheet([
+        ['Post','Caminho','Visualizações','Usuários','Duração','Rejeição','Engajamento'],
+        ...blogPosts.map(r => [r.pageTitle, r.pagePath, r.screenPageViews, r.activeUsers,
+          r.avgSessionDuration, r.bounceRate, r.engagementRate]),
+      ]);
+      window.XLSX.utils.book_append_sheet(wb, wsB, 'Blog');
     }
 
     // Sources sheet
