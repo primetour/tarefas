@@ -509,7 +509,7 @@ async function openMembersModal() {
   const memberIds = squad.members || [];
   const currentUid = store.get('currentUser')?.uid;
   const isOwner = uid => uid === squad.createdBy;
-  const isAdmin = uid => (squad.admins || []).includes(uid);
+  const isAdmin = uid => (squad.adminIds || []).includes(uid);
   const canManage = store.can('workspace_edit') || store.isMaster();
 
   const memberRows = memberIds.map(mid => {
@@ -559,7 +559,7 @@ async function openMembersModal() {
 
   modal.open({
     title: `👥 Membros — ${esc(squad.name)}`,
-    body: `
+    content: `
       <div style="max-height:360px;overflow-y:auto;">
         ${memberRows || '<p style="color:var(--text-muted);font-size:0.875rem;">Nenhum membro.</p>'}
       </div>

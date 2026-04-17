@@ -2776,7 +2776,12 @@ const MODULE_ACTIONS = {
       execute: async (params) => {
         const { fetchUserWorkspaces, fetchAllWorkspaces } = await import('./workspaces.js');
         const user = store.get('currentUser');
-        const workspaces = params?.all
+        // Gate "all=true" path: only users who can view all workspaces (master/admin)
+        // can list every squad. Non-admins always get only their own workspaces,
+        // regardless of what params.all says (defends against prompt-injection
+        // tools coaxing the AI into requesting all=true).
+        const canListAll = store.isMaster() || store.can('system_view_all');
+        const workspaces = (params?.all && canListAll)
           ? await fetchAllWorkspaces()
           : await fetchUserWorkspaces(user?.uid);
         const summary = workspaces.slice(0, 30).map(w => ({
