@@ -577,21 +577,9 @@ async function openGoalForm(container, goalId) {
 
 function buildGoalFormHTML(draft, users) {
   const LBL = `font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;`;
-  // Responsáveis: picker de múltiplos
-  const selectedResp = new Set(draft.responsavelIds || []);
-  const respPickerHtml = users.map(u => {
-    const sel = selectedResp.has(u.id);
-    return `<div class="goal-resp-chip assignee-chip ${sel?'member-selected':''}" data-uid="${esc(u.id)}"
-      style="background:${sel?'rgba(212,168,67,0.15)':'var(--bg-elevated)'};
-        border-color:${sel?'rgba(212,168,67,0.4)':'transparent'};
-        cursor:pointer;">
-      <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">
-        ${(u.name||'').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
-      </div>
-      ${esc((u.name||'').split(' ')[0])}
-      <span class="goal-resp-check" style="color:var(--brand-gold);font-size:0.75rem;display:${sel?'inline':'none'};">✓</span>
-    </div>`;
-  }).join('');
+  // Picker de responsáveis: HTML inicial (será re-renderizado via renderRespPicker
+  // conforme escopo/núcleo mudam; aqui só pintamos o estado inicial)
+  const respPickerHtml = buildRespChipsHTML(users, draft);
 
   // Gestor: só coordenador/gerente/admin/master/partner (exclui analista/member)
   const gestorUsers = users.filter(isGestorRole);
@@ -1015,27 +1003,20 @@ function wireGoalForm(draft) {
   }
   // Limpa campo legado pra não gravar de volta no Firestore com ambos
   delete draft.responsavelId;
-  document.querySelectorAll('#gf-responsaveis [data-uid]').forEach(el => {
-    el.addEventListener('click', () => {
-      const uid = el.dataset.uid;
-      const idx = draft.responsavelIds.indexOf(uid);
-      if (idx > -1) draft.responsavelIds.splice(idx, 1);
-      else draft.responsavelIds.push(uid);
-      const sel = draft.responsavelIds.includes(uid);
-      el.style.background  = sel ? 'rgba(212,168,67,0.15)' : 'var(--bg-elevated)';
-      el.style.borderColor = sel ? 'rgba(212,168,67,0.4)' : 'transparent';
-      el.classList.toggle('member-selected', sel);
-      const check = el.querySelector('.goal-resp-check');
-      if (check) check.style.display = sel ? 'inline' : 'none';
-      refreshAutoFills(draft);
-    });
-  });
+  // Renderização inicial (garante filtragem coerente com escopo/núcleo atuais)
+  renderRespPicker(draft);
   document.getElementById('gf-gestor')?.addEventListener('change', e => { draft.gestorId = e.target.value; });
   document.getElementById('gf-escopo')?.addEventListener('change', e => {
     draft.escopo = e.target.value;
     applyScopeVisibility(draft);
+    renderRespPicker(draft);
   });
-  document.getElementById('gf-nucleo')?.addEventListener('change', e => { draft.nucleo = e.target.value; });
+  document.getElementById('gf-nucleo')?.addEventListener('change', e => {
+    draft.nucleo = e.target.value;
+    // Remove responsáveis que não pertencem mais ao núcleo filtrado
+    draft.responsavelIds = filterRespByNucleo(draft.responsavelIds, draft.nucleo);
+    renderRespPicker(draft);
+  });
   document.getElementById('gf-nome')?.addEventListener('input', e => { draft.nome = e.target.value; });
   document.getElementById('gf-objetivo')?.addEventListener('input', e => { draft.objetivoNucleo = e.target.value; });
   document.getElementById('gf-inicio')?.addEventListener('input', e => { draft.inicio = e.target.value; });
@@ -1146,6 +1127,84 @@ async function populateSquadsDropdown(draft) {
     console.warn('[goals] Falha ao carregar squads:', e);
     sel.innerHTML = `<option value="">— Nenhum squad encontrado —</option>`;
   }
+}
+
+/**
+ * Gera HTML dos chips do picker de responsáveis.
+ * Aplica filtro por núcleo quando `draft.nucleo` está setado e o escopo
+ * atual define responsáveis limitados ao núcleo (nucleo/area/global).
+ */
+function buildRespChipsHTML(users, draft) {
+  const selected = new Set(draft.responsavelIds || []);
+  // Filtra por núcleo somente quando faz sentido pelo escopo:
+  // - nucleo: só pessoas daquele núcleo
+  // - squad: mantém full (squad dropdown cuida do auto-preenchimento)
+  // - individual/area/global: sem filtro (escopo não é núcleo-específico)
+  const shouldFilter = draft.escopo === 'nucleo' && draft.nucleo;
+  const list = shouldFilter
+    ? users.filter(u => userNucleo(u) === draft.nucleo)
+    : users;
+
+  if (!list.length) {
+    return `<span style="color:var(--text-muted);font-size:0.75rem;">
+      ${shouldFilter ? 'Nenhum usuário neste núcleo.' : 'Nenhum usuário disponível.'}
+    </span>`;
+  }
+
+  return list.map(u => {
+    const sel = selected.has(u.id);
+    return `<div class="goal-resp-chip assignee-chip ${sel?'member-selected':''}" data-uid="${esc(u.id)}"
+      style="background:${sel?'rgba(212,168,67,0.15)':'var(--bg-elevated)'};
+        border-color:${sel?'rgba(212,168,67,0.4)':'transparent'};
+        cursor:pointer;">
+      <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">
+        ${(u.name||'').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+      </div>
+      ${esc((u.name||'').split(' ')[0])}
+      <span class="goal-resp-check" style="color:var(--brand-gold);font-size:0.75rem;display:${sel?'inline':'none'};">✓</span>
+    </div>`;
+  }).join('');
+}
+
+/**
+ * Re-renderiza o picker de responsáveis (ao mudar escopo/núcleo) e
+ * re-vincula os cliques de seleção.
+ */
+function renderRespPicker(draft) {
+  const container = document.getElementById('gf-responsaveis');
+  if (!container) return;
+  const users = store.get('users') || [];
+  container.innerHTML = buildRespChipsHTML(users, draft);
+  container.querySelectorAll('[data-uid]').forEach(el => {
+    el.addEventListener('click', () => {
+      const uid = el.dataset.uid;
+      const idx = draft.responsavelIds.indexOf(uid);
+      if (idx > -1) draft.responsavelIds.splice(idx, 1);
+      else draft.responsavelIds.push(uid);
+      const sel = draft.responsavelIds.includes(uid);
+      el.style.background  = sel ? 'rgba(212,168,67,0.15)' : 'var(--bg-elevated)';
+      el.style.borderColor = sel ? 'rgba(212,168,67,0.4)' : 'transparent';
+      el.classList.toggle('member-selected', sel);
+      const check = el.querySelector('.goal-resp-check');
+      if (check) check.style.display = sel ? 'inline' : 'none';
+      refreshAutoFills(draft);
+    });
+  });
+}
+
+/**
+ * Remove IDs de responsáveis que não pertencem mais ao núcleo selecionado.
+ * Usado quando o usuário troca de núcleo e os responsáveis anteriores deixam
+ * de pertencer ao núcleo filtrado.
+ */
+function filterRespByNucleo(respIds, nucleo) {
+  if (!Array.isArray(respIds) || !respIds.length) return [];
+  if (!nucleo) return respIds;
+  const users = store.get('users') || [];
+  return respIds.filter(id => {
+    const u = users.find(x => x.id === id);
+    return u && userNucleo(u) === nucleo;
+  });
 }
 
 /**
