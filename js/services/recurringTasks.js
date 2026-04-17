@@ -89,7 +89,14 @@ export async function getTemplate(id) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
+// Gates: criar/editar exige task_create; excluir exige task_delete OU ser
+// o próprio criador. Master sempre pode tudo.
+function _canManageRecurring() {
+  return store.isMaster() || store.can('task_create');
+}
+
 export async function createTemplate(data) {
+  if (!_canManageRecurring()) throw new Error('Permissão negada: você não pode criar tarefas recorrentes.');
   const user = store.get('currentUser');
   const profile = store.get('userProfile') || {};
   const ref = await addDoc(collection(db, COL), {
@@ -105,10 +112,17 @@ export async function createTemplate(data) {
 }
 
 export async function updateTemplate(id, patch) {
+  if (!_canManageRecurring()) throw new Error('Permissão negada: você não pode editar tarefas recorrentes.');
   await updateDoc(doc(db, COL, id), { ...patch, updatedAt: serverTimestamp() });
 }
 
 export async function deleteTemplate(id) {
+  const tpl = await getTemplate(id);
+  const uid = store.get('currentUser')?.uid;
+  const isOwner = tpl && tpl.createdBy === uid;
+  if (!store.isMaster() && !store.can('task_delete') && !isOwner) {
+    throw new Error('Permissão negada: você não pode excluir esta recorrência.');
+  }
   await deleteDoc(doc(db, COL, id));
 }
 

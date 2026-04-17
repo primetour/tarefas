@@ -13,6 +13,15 @@ import {
 
 const uid = () => store.get('currentUser')?.uid;
 
+/* ─── Permission helpers ──────────────────────────────────── */
+function _canCreateFeedback() {
+  return store.isMaster() || store.can('feedback_create');
+}
+function _canDeleteFeedback() {
+  // Apenas master ou quem tem feedback_create (gestor)
+  return store.isMaster() || store.can('feedback_create');
+}
+
 /* ─── Constantes ──────────────────────────────────────────── */
 
 export const FB_CONTEXTS = ['Rotina', 'Situação pontual', 'Avaliação'];
@@ -46,6 +55,9 @@ export async function fetchFeedback(id) {
 }
 
 export async function saveFeedback(id, data) {
+  if (!_canCreateFeedback()) {
+    throw new Error('Permissão negada: você não pode registrar feedbacks.');
+  }
   const ref = id ? doc(db, 'feedbacks', id) : doc(collection(db, 'feedbacks'));
   await setDoc(ref, {
     ...data,
@@ -59,6 +71,9 @@ export async function saveFeedback(id, data) {
 }
 
 export async function deleteFeedback(id) {
+  if (!_canDeleteFeedback()) {
+    throw new Error('Permissão negada: você não pode excluir feedbacks.');
+  }
   await deleteDoc(doc(db, 'feedbacks', id));
   await auditLog('feedback.delete', 'feedbacks', id, {});
 }

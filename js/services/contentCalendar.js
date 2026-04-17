@@ -115,6 +115,9 @@ export async function getSlot(id) {
  * Criar novo slot.
  */
 export async function createSlot(data) {
+  if (!store.canCreateContentCalendar()) {
+    throw new Error('Permissão negada: você não pode criar conteúdo no calendário.');
+  }
   const ref = await addDoc(collection(db, COL), {
     ...data,
     createdAt: serverTimestamp(),
@@ -126,21 +129,37 @@ export async function createSlot(data) {
 }
 
 /**
- * Atualizar slot existente.
+ * Atualizar slot existente — dono pode editar; gestores podem editar todos.
  */
 export async function updateSlot(id, data) {
+  const me = uid();
+  const existing = await getSlot(id).catch(() => null);
+  const isOwner = existing && existing.createdBy === me;
+  if (!store.canManageContentCalendar() && !isOwner && !store.canCreateContentCalendar()) {
+    throw new Error('Permissão negada: você não pode editar este conteúdo.');
+  }
+  // Quem só tem create (não manage) e não é dono: bloqueia
+  if (!store.canManageContentCalendar() && !isOwner) {
+    throw new Error('Permissão negada: você só pode editar conteúdos que você criou.');
+  }
   await updateDoc(doc(db, COL, id), {
     ...data,
     updatedAt: serverTimestamp(),
-    updatedBy: uid(),
+    updatedBy: me,
   });
   return id;
 }
 
 /**
- * Excluir slot.
+ * Excluir slot — dono ou manager.
  */
 export async function deleteSlot(id) {
+  const me = uid();
+  const existing = await getSlot(id).catch(() => null);
+  const isOwner = existing && existing.createdBy === me;
+  if (!store.canManageContentCalendar() && !isOwner) {
+    throw new Error('Permissão negada: você não pode excluir este conteúdo.');
+  }
   await deleteDoc(doc(db, COL, id));
   return id;
 }
@@ -149,6 +168,9 @@ export async function deleteSlot(id) {
  * Duplicar slot — copia tudo exceto status (vira draft) e scheduledDate.
  */
 export async function duplicateSlot(id) {
+  if (!store.canCreateContentCalendar()) {
+    throw new Error('Permissão negada: você não pode duplicar conteúdos.');
+  }
   const original = await getSlot(id);
   if (!original) throw new Error('Slot não encontrado.');
 

@@ -205,6 +205,12 @@ export async function saveRoteiro(id, data) {
   const now = serverTimestamp();
 
   if (id) {
+    // Editar: dono pode sempre; gerentes podem editar todos
+    const existing = await fetchRoteiro(id).catch(() => null);
+    const isOwner = existing && existing.consultantId === uid;
+    if (!store.canManageRoteiros() && !isOwner) {
+      throw new Error('Permissão negada: você não pode editar este roteiro.');
+    }
     await updateDoc(doc(db, COL, id), {
       ...data,
       updatedAt: now,
@@ -212,6 +218,9 @@ export async function saveRoteiro(id, data) {
     });
     return id;
   } else {
+    if (!store.canCreateRoteiro()) {
+      throw new Error('Permissão negada: você não pode criar roteiros.');
+    }
     const ref = await addDoc(collection(db, COL), {
       ...data,
       createdAt: now,
@@ -224,10 +233,23 @@ export async function saveRoteiro(id, data) {
 }
 
 export async function deleteRoteiro(id) {
+  const uid = store.get('currentUser')?.uid || '';
+  const existing = await fetchRoteiro(id).catch(() => null);
+  const isOwner = existing && existing.consultantId === uid;
+  if (!store.canManageRoteiros() && !isOwner) {
+    throw new Error('Permissão negada: você não pode excluir este roteiro.');
+  }
   await deleteDoc(doc(db, COL, id));
 }
 
 export async function updateRoteiroStatus(id, status) {
+  const uid = store.get('currentUser')?.uid || '';
+  const existing = await fetchRoteiro(id).catch(() => null);
+  const isOwner = existing && existing.consultantId === uid;
+  if (!store.canManageRoteiros() && !isOwner) {
+    throw new Error('Permissão negada: você não pode alterar o status deste roteiro.');
+  }
+
   const extra = {};
   if (status === 'sent') extra.sentAt = serverTimestamp();
   if (status === 'archived') extra.archivedAt = serverTimestamp();
@@ -236,12 +258,15 @@ export async function updateRoteiroStatus(id, status) {
     status,
     ...extra,
     updatedAt: serverTimestamp(),
-    updatedBy: store.get('currentUser')?.uid || '',
+    updatedBy: uid,
   });
 }
 
 /* ─── Duplicar roteiro ────────────────────────────────────── */
 export async function duplicateRoteiro(id) {
+  if (!store.canCreateRoteiro()) {
+    throw new Error('Permissão negada: você não pode duplicar roteiros.');
+  }
   const original = await fetchRoteiro(id);
   delete original.id;
   const profile = store.get('userProfile');
