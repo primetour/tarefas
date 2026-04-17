@@ -115,6 +115,35 @@ async function cleanupStale(collectionName, propertyId, period, validIds) {
   return toDelete.length;
 }
 
+/**
+ * Purga docs legados (formato antigo baseado em posição) independente do sync da API.
+ * Precisa rodar MESMO quando a quota do GA está esgotada — caso contrário o lixo
+ * continua acumulando e deturpa o frontend (períodos curtos com mais URLs que longos).
+ *
+ * - ga_pages:     IDs tipo `_page_${digito}_${slug}` → novo usa `_page_${slug}`
+ * - ga_sources:   IDs tipo `_src_${digito}_${slug}`  → novo usa `_src_${slug}`
+ * - ga_countries: IDs tipo `_geo_${digito}_${slug}`  → novo usa `_geo_${slug}`
+ *
+ * Também remove docs sem o campo `period` (órfãos de versões antigas).
+ */
+async function cleanupLegacy(collectionName, propertyId, legacyRegex) {
+  const snap = await db.collection(collectionName)
+    .where('propertyId', '==', propertyId)
+    .get();
+  const toDelete = snap.docs.filter(d => {
+    const id = d.id;
+    const data = d.data();
+    return legacyRegex.test(id) || !data.period;
+  });
+  if (!toDelete.length) return 0;
+  for (let i = 0; i < toDelete.length; i += 450) {
+    const batch = db.batch();
+    toDelete.slice(i, i + 450).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  return toDelete.length;
+}
+
 /* ─── Sync: Daily metrics ─────────────────────────────────── */
 async function syncDaily(propertyId) {
   console.log('  📊 Sync diário...');
@@ -181,6 +210,12 @@ async function syncPages(propertyId) {
   const propNum = propertyId.replace('properties/', '');
   let total = 0;
 
+  // Purga legado ANTES do fetch — roda mesmo se API falhar por quota
+  try {
+    const purged = await cleanupLegacy('ga_pages', propNum, /_page_\d+(_|$)/);
+    if (purged) console.log(`    🧹 ${purged} páginas legadas removidas (formato antigo)`);
+  } catch(e) { console.warn(`    ⚠ Cleanup legado páginas: ${e.message}`); }
+
   for (const p of BREAKDOWN_PERIODS) {
     try {
       const [response] = await analyticsClient.runReport({
@@ -232,6 +267,11 @@ async function syncSources(propertyId) {
   console.log('  🔗 Sync origens...');
   const propNum = propertyId.replace('properties/', '');
   let total = 0;
+
+  try {
+    const purged = await cleanupLegacy('ga_sources', propNum, /_src_\d+(_|$)/);
+    if (purged) console.log(`    🧹 ${purged} origens legadas removidas (formato antigo)`);
+  } catch(e) { console.warn(`    ⚠ Cleanup legado origens: ${e.message}`); }
 
   for (const p of BREAKDOWN_PERIODS) {
     try {
@@ -324,6 +364,11 @@ async function syncCountries(propertyId) {
   console.log('  🌍 Sync países...');
   const propNum = propertyId.replace('properties/', '');
   let total = 0;
+
+  try {
+    const purged = await cleanupLegacy('ga_countries', propNum, /_geo_\d+(_|$)/);
+    if (purged) console.log(`    🧹 ${purged} países legados removidos (formato antigo)`);
+  } catch(e) { console.warn(`    ⚠ Cleanup legado países: ${e.message}`); }
 
   for (const p of BREAKDOWN_PERIODS) {
     try {
