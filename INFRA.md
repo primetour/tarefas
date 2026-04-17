@@ -21,11 +21,16 @@ ou handoff (venda/transferência) do software.
                           │                                                │
                   ┌───────────────┐                              ┌──────────────────┐
                   │ GitHub Actions│─── fetch ───▶ APIs externas  │ APIs externas:   │
-                  │  (5 workflows)│                              │ • GA4            │
+                  │  (6 workflows)│                              │ • GA4            │
                   └───────────────┘                              │ • Meta Graph     │
                                                                  │ • Marketing Cloud│
+                                                                 │ • PSI (on-demand)│
+                                                                 │ • IA providers   │
                                                                  └──────────────────┘
 ```
+
+> **Painel operacional ao vivo**: Configurações → Integrações mostra status, última sync e
+> links pros workflows em tempo real (lê `*_meta/lastSync` de cada integração).
 
 **Fluxo do usuário final**: passa só por Cloudflare e Firestore. GitHub não serve conteúdo pra usuários.
 
@@ -44,6 +49,24 @@ ou handoff (venda/transferência) do software.
 | **CDN Firebase SDK** | gstatic.com | SDK Firebase carregado via CDN | 🟢 Alta — troca URL |
 
 **Config Firebase**: `js/config.js` — `firebaseConfig` com `apiKey` pública (segura por design; proteção real fica nas Firestore Rules em `firestore.rules`).
+
+---
+
+## 2.1 Páginas públicas (sem login do app)
+
+Além do app principal (`index.html`, com login obrigatório), o sistema serve algumas páginas standalone para
+audiências externas ou usos específicos:
+
+| Arquivo | Acesso | Função |
+|---|---|---|
+| `index.html` | Login obrigatório | App principal — todas as páginas internas |
+| `solicitar.html` | Login Microsoft (qualquer usuário Primetour) | Portal público de solicitações |
+| `portal-view.html` | Sem login | Visualização read-only de portal de dicas |
+| `roteiro-view.html` | Sem login | Visualização read-only de roteiro gerado |
+| `calendario-conteudo.html` | Login Microsoft | Calendário de conteúdo read-only com filtros real-time |
+| `csat-response.html` | Token na URL | Resposta de pesquisa CSAT (sem login) |
+| `gerar-apresentacao.html` | Login obrigatório | Editor de apresentações (LP) |
+| `lp.html` | Sem login | Landing pages publicadas |
 
 ---
 
@@ -269,6 +292,8 @@ Não estão no código nem em `.env` local.
 
 Mapa inverso: dada uma coleção, qual script/origem a alimenta.
 
+### Escritas por workflows (cron)
+
 | Coleção | Origem | Frequência |
 |---|---|---|
 | `ga_daily`, `ga_pages`, `ga_sources`, `ga_devices`, `ga_countries`, `ga_properties`, `ga_meta` | `ga-sync.js` | Diária |
@@ -277,7 +302,35 @@ Mapa inverso: dada uma coleção, qual script/origem a alimenta.
 | `portal_terms`, `portal_areas` | `portal-seed.js` | Manual |
 | `ai_settings/*` | `ai-settings-seed.js` | Manual |
 | `tasks_archive`, `tasks_archive_meta` | `archive-tasks.js` | Mensal (dia 1) |
-| `tasks`, `requests`, `users`, `taskTypes`, etc. | App (frontend via Firestore SDK) | Tempo real (usuários) |
+
+### Escritas pelo app (frontend via Firestore SDK)
+
+| Coleção | Módulo | Notas |
+|---|---|---|
+| `tasks` | Tarefas | Coração do sistema — kanban, calendário, lista |
+| `tasks_archive` | Arquivamento | Read-only no app; escrito pelo cron |
+| `task_types`, `task_categories`, `nucleos`, `sectors` | Configuração de tarefas | Catálogos editáveis por admin |
+| `users`, `user_prefs` | Usuários | Auth + preferências |
+| `roles` | Perfis de acesso | RBAC editável |
+| `workspaces` | Squads | Squads/projetos colaborativos |
+| `projects` | Projetos | Agrupamento de tarefas |
+| `requests` | Solicitações | Portal `solicitar.html` + módulo interno |
+| `goals` | Metas | OKRs e tracking |
+| `news_monitor`, `news_clipping` | Notícias / Clipping | Curadoria + conversão em tarefa |
+| `csat_surveys`, `csat_responses` | CSAT | Pesquisas de satisfação |
+| `feedbacks` | Feedbacks | 1:1, performance, etc. |
+| `roteiros` | Roteiros | Gerador IA de roteiros de viagem |
+| `portal_destinations`, `portal_tips`, `portal_images` | Portal de Dicas | CMS interno |
+| `content_calendar` | Calendário de Conteúdo | Planejamento de posts redes sociais |
+| `landing_pages` | Landing Pages | Editor de LPs |
+| `arts` | Artes | Editor de assets gráficos |
+| `recurring_tasks` | Tarefas recorrentes | Templates que geram tasks periodicamente |
+| `notifications`, `notification_prefs` | Notificações | Sistema interno + agendamento |
+| `sla_alerts`, `daily_summary`, `stale_task_nudge` | Alertas/automações | Triggers de IA |
+| `audit_logs` | Auditoria | Log imutável de ações (append-only) |
+| `settings/global` | Configurações | Doc único com config do sistema |
+| `meta_posts` | Calendário (lookup) | Cache de posts Meta para sugestões IA |
+| `roteiro_view_logs` | Roteiros | Tracking de visualizações públicas |
 
 **Regras de segurança**: `firestore.rules` — controla quem pode ler/escrever
 cada coleção. Todos os scripts usam `firebase-admin` (bypass das rules por
@@ -285,11 +338,49 @@ design — requer service account).
 
 ---
 
+## 5.1 Provedores de IA
+
+Configurados via `js/services/aiDataGuard.js` + Configurações → Privacidade e IA:
+
+| Provedor | SDK / endpoint | Onde a key vive |
+|---|---|---|
+| Google Gemini | REST `generativelanguage.googleapis.com` | `ai_settings/providers.gemini.apiKey` (Firestore) |
+| Groq | REST `api.groq.com` | `ai_settings/providers.groq.apiKey` |
+| OpenAI | REST `api.openai.com` | `ai_settings/providers.openai.apiKey` |
+| Anthropic | REST `api.anthropic.com` | `ai_settings/providers.anthropic.apiKey` |
+| Azure OpenAI | REST custom endpoint | `ai_settings/providers.azure.{apiKey,endpoint,deployment}` |
+| Local (Ollama) | HTTP local — `localhost:11434` | sem key (instalação local do usuário) |
+
+A camada `aiDataGuard` garante:
+- Anonimização de PII (e-mails, telefones, CPFs) por módulo, antes de enviar pra qualquer LLM externo.
+- Lista de providers permitidos (admin define quais podem ser chamados).
+- Consentimento + versão (forçar re-aceite quando muda).
+- Retenção configurável dos logs de uso (30/60/90/180/365 dias).
+- Modo `localPreferred` — força Ollama em módulos com dados sensíveis.
+
+Configurar em: **Configurações → Privacidade e IA**.
+
+---
+
+## 5.2 Cloud Functions (Firebase)
+
+Hospedadas em `us-central1-gestor-de-tarefas-primetour.cloudfunctions.net`:
+
+| Function | URL | Propósito |
+|---|---|---|
+| `sendEmail` | `/sendEmail` | Envio transacional via Gmail (CSAT, notificações) |
+| `syncMarketingCloud` | `/syncMarketingCloud` | Sync on-demand de MC (alternativo ao cron diário) |
+
+Código das functions vive **fora deste repositório** (Firebase project separado). Credenciais MC ficam só
+nas Cloud Functions, nunca no frontend.
+
+---
+
 ## 6. Notas de migração
 
 Se no futuro você quiser sair de qualquer peça do stack:
 
-### Sair do GitHub Actions (cron dos 5 workflows)
+### Sair do GitHub Actions (cron dos 6 workflows)
 
 **Dificuldade**: 🟢 Baixa.
 Os scripts em `scripts/*.js` são Node.js puro. Rodam em qualquer lugar.
@@ -384,4 +475,4 @@ Volume atual (~200-400 usuários):
 
 ---
 
-_Última atualização: 2026-04-15_
+_Última atualização: 2026-04-17_
