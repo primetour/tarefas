@@ -84,7 +84,36 @@ export async function renderProjects(container) {
 
 async function loadData() {
   try {
-    [allProjects, allTasks] = await Promise.all([fetchProjects(), fetchTasks()]);
+    // Garante que users + workspaces estejam no store (usados no modal de
+    // edição e nos cards). Se a pessoa entra direto em /#projects sem passar
+    // antes pela Equipe/Squads, o store fica vazio e o picker de membros some.
+    const needsUsers      = !(store.get('users') || []).length;
+    const needsWorkspaces = !(store.get('userWorkspaces') || []).length;
+
+    const tasks = [fetchProjects(), fetchTasks()];
+    if (needsUsers || needsWorkspaces) {
+      tasks.push((async () => {
+        const { collection, getDocs, query, orderBy } =
+          await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { db } = await import('../firebase.js');
+        if (needsUsers) {
+          try {
+            const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
+            store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          } catch(e) { console.warn('[projects] users:', e.message); }
+        }
+        if (needsWorkspaces) {
+          try {
+            const snap = await getDocs(query(collection(db, 'workspaces'), orderBy('createdAt', 'asc')));
+            store.set('userWorkspaces', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          } catch(e) { console.warn('[projects] workspaces:', e.message); }
+        }
+      })());
+    }
+
+    const [projects, tasksRes] = await Promise.all(tasks);
+    allProjects = projects;
+    allTasks    = tasksRes;
     renderList();
     loadArchivedProjects();
   } catch(e) {
@@ -235,8 +264,19 @@ function renderProjectCard(p) {
 }
 
 /* ─── Project Modal ─────────────────────────────────────────*/
-export function openProjectModal(project = null, { defaultWorkspaceId = null, onSave = null } = {}) {
+export async function openProjectModal(project = null, { defaultWorkspaceId = null, onSave = null } = {}) {
   const isEdit = !!project;
+  // Garante que users estejam carregados antes de montar o modal.
+  // (Se o page load não rodou ou ainda está em curso, puxamos aqui.)
+  if (!(store.get('users') || []).length) {
+    try {
+      const { collection, getDocs, query, orderBy } =
+        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('../firebase.js');
+      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
+      store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch(e) { console.warn('[openProjectModal] users:', e.message); }
+  }
   // Usa `active !== false` (inclui docs legados sem o campo) — padrão do resto do app.
   // `u.active` filtrava todos que não têm o campo explicitamente true.
   const users  = (store.get('users')||[]).filter(u => u.active !== false);
