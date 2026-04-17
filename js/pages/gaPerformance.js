@@ -86,6 +86,9 @@ let blogPage     = 1;
 let sourcesPage  = 1;
 let countriesPage = 1;
 
+/* Busca (fuzzy) na aba Páginas — casa todos os tokens contra título + path normalizados */
+let pagesSearch = '';
+
 /* Blog — identifica posts via WordPress REST API (/wp-json/wp/v2/posts).
    As URLs são flat (primetour.com.br/slug), então heurística de path não serve.
    Puxamos a lista de slugs publicados e casamos contra pagePath do GA.
@@ -749,11 +752,75 @@ function renderTable(tab = 'daily') {
     color:var(--text-muted);cursor:pointer;`;
 
   if (tab === 'daily')    renderDailyTable(thead, tbody, thStyle);
-  if (tab === 'pages')    renderPagesTable(thead, tbody, thStyle);
+  if (tab === 'pages')    { renderPagesToolbar(); renderPagesTable(thead, tbody, thStyle); }
   if (tab === 'blog')     { renderBlogToolbar(); renderBlogTable(thead, tbody, thStyle); }
   if (tab === 'sources')  renderSourcesTable(thead, tbody, thStyle);
   if (tab === 'devices')  renderDevicesTable(thead, tbody, thStyle);
   if (tab === 'countries') renderCountriesTable(thead, tbody, thStyle);
+}
+
+/* Normaliza string p/ busca: minúsculo e sem acentos */
+function normalizeForSearch(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+/* Toolbar da aba Páginas — campo de busca por aproximação (título + URL) */
+function renderPagesToolbar() {
+  const el = document.getElementById('ga-table-toolbar');
+  if (!el) return;
+
+  const val = pagesSearch || '';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+      border-bottom:1px solid var(--border-subtle);background:var(--bg-card);
+      font-size:0.75rem;color:var(--text-muted);flex-wrap:wrap;">
+      <span>🔎 Buscar:</span>
+      <input type="text" id="ga-pages-search" value="${esc(val)}"
+        placeholder="Ex.: destinos europa, /blog, home…"
+        title="Busca por aproximação em todas as páginas (título e URL). Cada palavra digitada precisa estar contida no resultado."
+        style="flex:1;min-width:180px;max-width:420px;padding:6px 10px;font-size:0.8125rem;
+          background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text);" />
+      ${val ? `<button class="btn btn-ghost btn-sm" id="ga-pages-clear" title="Limpar busca">✕ limpar</button>` : ''}
+      <span id="ga-pages-search-count" style="margin-left:auto;font-size:0.6875rem;opacity:0.75;"></span>
+    </div>
+  `;
+
+  const input = el.querySelector('#ga-pages-search');
+  if (input) {
+    // Debounce simples para evitar re-render a cada tecla
+    let t = null;
+    input.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        pagesSearch = input.value;
+        pagesPage = 1;
+        renderTable('pages');
+        // Mantém foco no campo após o re-render
+        const again = document.getElementById('ga-pages-search');
+        if (again) {
+          again.focus();
+          const len = again.value.length;
+          again.setSelectionRange(len, len);
+        }
+      }, 180);
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        pagesSearch = '';
+        pagesPage = 1;
+        renderTable('pages');
+      }
+    });
+  }
+
+  el.querySelector('#ga-pages-clear')?.addEventListener('click', () => {
+    pagesSearch = '';
+    pagesPage = 1;
+    renderTable('pages');
+  });
 }
 
 /* Toolbar — status do WP + botão atualizar (+ fallback de padrão textual) */
@@ -946,8 +1013,38 @@ function renderPagesTable(thead, tbody, thStyle) {
   </tr>`;
 
   // Exclui blog/* — estão na aba dedicada
-  const pages = allPages.filter(r => !isBlogPath(r.pagePath, r.pageTitle));
-  if (!pages.length) { tbody.innerHTML = emptyRow(6); return; }
+  let pages = allPages.filter(r => !isBlogPath(r.pagePath, r.pageTitle));
+  const totalBeforeSearch = pages.length;
+
+  // Busca por aproximação: todos os tokens (separados por espaço) precisam aparecer
+  // no texto combinado (título + path), case/accent-insensitive.
+  const q = (pagesSearch || '').trim();
+  if (q) {
+    const tokens = normalizeForSearch(q).split(/\s+/).filter(Boolean);
+    if (tokens.length) {
+      pages = pages.filter(r => {
+        const hay = normalizeForSearch(`${r.pageTitle || ''} ${r.pagePath || ''}`);
+        return tokens.every(t => hay.includes(t));
+      });
+    }
+  }
+
+  // Atualiza contador no toolbar (se presente)
+  const countEl = document.getElementById('ga-pages-search-count');
+  if (countEl) {
+    countEl.textContent = q
+      ? `${pages.length} de ${totalBeforeSearch} páginas`
+      : `${totalBeforeSearch} páginas`;
+  }
+
+  if (!pages.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text-muted);">
+      ${q ? `Nenhuma página encontrada para “${esc(q)}”.` : '—'}
+    </td></tr>`;
+    const pager2 = document.getElementById('ga-pagination');
+    if (pager2) pager2.innerHTML = '';
+    return;
+  }
 
   const pager = paginate(pages, pagesPage);
   pagesPage = pager.page;
