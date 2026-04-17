@@ -116,16 +116,14 @@ service cloud.firestore {
 
     // ── Workspaces ────────────────────────────────────────────
     match /workspaces/{wsId} {
-      // Leitura: qualquer autenticado (wizard de primeiro acesso precisa listar squads)
+      // Leitura: qualquer autenticado (a sidebar lista squads para navegação;
+      // a UI filtra exibição por membership, mas a leitura é aberta).
       allow read: if isAuth();
       allow create: if isManager();
+      // Update: somente admin do sistema ou admin do workspace.
+      // Self-join foi removido — squads são atribuídos pelo gestor.
       allow update: if isAdmin()
-                    || (isAuth() && request.auth.uid in resource.data.adminIds)
-                    // Self-join: permite que o próprio usuário se adicione ao workspace
-                    // (wizard de primeiro acesso — só pode adicionar a si mesmo em members)
-                    || (isAuth()
-                        && request.resource.data.members.hasAll([request.auth.uid])
-                        && request.resource.data.members.hasAll(resource.data.members));
+                    || (isAuth() && request.auth.uid in resource.data.adminIds);
       allow delete: if isAdmin();
     }
 

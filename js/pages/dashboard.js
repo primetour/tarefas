@@ -188,13 +188,13 @@ export async function renderDashboard(container) {
 
       <!-- Right column -->
       <div style="display:flex;flex-direction:column;gap:16px;">
-        <!-- Workspaces -->
+        <!-- Squads -->
         ${(() => {
           const workspaces = store.get('userWorkspaces') || [];
           if (!workspaces.length) return '';
           return `<div class="card">
             <div class="card-header">
-              <div class="card-title">◈ Meus Workspaces</div>
+              <div class="card-title">◈ Meus Squads</div>
               <a href="#workspaces" class="btn btn-ghost btn-sm">Ver →</a>
             </div>
             <div class="card-body" style="padding:8px 16px;display:flex;flex-direction:column;gap:8px;">

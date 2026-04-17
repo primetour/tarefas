@@ -7,7 +7,7 @@
 import { store }  from '../store.js';
 import { router } from '../router.js';
 import { toast }  from '../components/toast.js';
-import { fetchProjects, PROJECT_STATUS_MAP } from '../services/projects.js';
+import { fetchProjects, PROJECT_STATUS_MAP, projectIncludesSquad } from '../services/projects.js';
 import {
   fetchTasks, toggleTaskComplete, getTask,
   STATUS_MAP, PRIORITY_MAP,
@@ -75,7 +75,7 @@ function parseSquadIdFromHash() {
 async function loadData() {
   try {
     const [projs, tasks] = await Promise.all([fetchProjects(), fetchTasks()]);
-    allProjects = projs.filter(p => p.workspaceId === squadId);
+    allProjects = projs.filter(p => projectIncludesSquad(p, squadId));
     allTasks    = tasks.filter(t => t.workspaceId === squadId);
   } catch (e) {
     console.error('[squadWorkspace] loadData', e);
@@ -571,16 +571,29 @@ async function openMembersModal() {
   // Bind eventos após render
   setTimeout(() => {
     // Adicionar membro
-    document.getElementById('sw-add-member-btn')?.addEventListener('click', async () => {
+    document.getElementById('sw-add-member-btn')?.addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget;
+      if (btn.dataset.busy === '1') return;
       const sel = document.getElementById('sw-add-member-select');
       const uid = sel?.value;
       if (!uid) return;
+      btn.dataset.busy = '1';
+      const prevText = btn.textContent;
+      btn.classList.add('loading');
+      btn.disabled = true;
+      btn.textContent = 'Adicionando…';
       try {
         await addMember(squad.id, uid);
         toast.success('Membro adicionado.');
         document.querySelector('.modal-overlay')?.click();
         await reload();
-      } catch (e) { toast.error(e.message); }
+      } catch (e) {
+        toast.error(e.message);
+        btn.classList.remove('loading');
+        btn.disabled = false;
+        btn.textContent = prevText;
+        btn.dataset.busy = '0';
+      }
     });
 
     // Remover membro
@@ -681,14 +694,28 @@ async function openSquadInviteModal() {
   setTimeout(() => {
     document.querySelectorAll('.sw-add-invite').forEach(item => {
       item.addEventListener('click', async () => {
+        if (item.dataset.busy === '1') return;   // evita duplo-clique
+        item.dataset.busy = '1';
         const uid = item.dataset.uid;
         const u = allUsers.find(x => x.id === uid);
+        // feedback visual imediato
+        const prevHtml = item.innerHTML;
+        item.style.opacity = '0.6';
+        item.style.pointerEvents = 'none';
+        item.innerHTML = `<span class="spinner-inline"></span>
+          <span style="margin-left:8px;color:var(--text-secondary);">Adicionando…</span>`;
         try {
           await addMember(squad.id, uid);
           toast.success(`${esc(u?.name)} adicionado ao squad!`);
           document.querySelector('.modal-overlay')?.click();
           await reload();
-        } catch(e) { toast.error(e.message); }
+        } catch(e) {
+          toast.error(e.message);
+          item.innerHTML = prevHtml;
+          item.style.opacity = '';
+          item.style.pointerEvents = '';
+          item.dataset.busy = '0';
+        }
       });
     });
   }, 50);

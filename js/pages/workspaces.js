@@ -666,14 +666,27 @@ async function openInviteModal(wsId) {
   setTimeout(() => {
     document.querySelectorAll('.add-user-to-ws').forEach(item => {
       item.addEventListener('click', async () => {
+        if (item.dataset.busy === '1') return;
+        item.dataset.busy = '1';
         const uid = item.dataset.uid;
         const u   = allUsers.find(u => u.id === uid);
+        const prevHtml = item.innerHTML;
+        item.style.opacity = '0.6';
+        item.style.pointerEvents = 'none';
+        item.innerHTML = `<span class="spinner-inline"></span>
+          <span style="margin-left:8px;color:var(--text-secondary);">Adicionando…</span>`;
         try {
           await addMember(wsId, uid);
           toast.success(`${u?.name} adicionado ao squad!`);
           document.querySelector('.modal-overlay')?.click();
           await loadWorkspaces();
-        } catch(e) { toast.error(e.message); }
+        } catch(e) {
+          toast.error(e.message);
+          item.innerHTML = prevHtml;
+          item.style.opacity = '';
+          item.style.pointerEvents = '';
+          item.dataset.busy = '0';
+        }
       });
     });
   }, 50);

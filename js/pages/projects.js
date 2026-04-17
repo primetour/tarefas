@@ -150,7 +150,13 @@ function renderProjectCard(p) {
   const status    = PROJECT_STATUS_MAP[p.status] || { label: p.status, color: '#6B7280' };
   const users     = store.get('users') || [];
   const workspaces = store.get('userWorkspaces') || [];
-  const ws        = p.workspaceId ? workspaces.find(w => w.id === p.workspaceId) : null;
+  // Multi-squad: lê do array novo (workspaceIds[]) ou cai no campo legado.
+  const projWsIds = Array.isArray(p.workspaceIds) && p.workspaceIds.length
+    ? p.workspaceIds
+    : (p.workspaceId ? [p.workspaceId] : []);
+  const projSquads = projWsIds
+    .map(id => workspaces.find(w => w.id === id))
+    .filter(Boolean);
   const members   = (p.members||[]).slice(0,4).map(uid => {
     const u = users.find(u=>u.id===uid);
     if (!u) return '';
@@ -185,13 +191,17 @@ function renderProjectCard(p) {
         </div>
 
         <div class="project-card-name">${esc(p.name)}</div>
-        ${ws ? `
-          <div style="display:inline-flex;align-items:center;gap:6px;font-size:0.6875rem;
-            padding:2px 8px;border-radius:var(--radius-full);
-            background:${esc(ws.color||'#D4A843')}14;color:${esc(ws.color||'#D4A843')};
-            border:1px solid ${esc(ws.color||'#D4A843')}30;margin-bottom:6px;">
-            <span>${esc(ws.icon||'◈')}</span>
-            <span>${esc(ws.name)}</span>
+        ${projSquads.length ? `
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">
+            ${projSquads.map(ws => `
+              <span style="display:inline-flex;align-items:center;gap:6px;font-size:0.6875rem;
+                padding:2px 8px;border-radius:var(--radius-full);
+                background:${esc(ws.color||'#D4A843')}14;color:${esc(ws.color||'#D4A843')};
+                border:1px solid ${esc(ws.color||'#D4A843')}30;">
+                <span>${esc(ws.icon||'◈')}</span>
+                <span>${esc(ws.name)}</span>
+              </span>
+            `).join('')}
           </div>
         ` : ''}
         ${p.description ? `<div class="project-card-desc">${esc(p.description)}</div>` : ''}
@@ -234,7 +244,15 @@ export function openProjectModal(project = null, { defaultWorkspaceId = null, on
   let selectedColor = project?.color || PROJECT_COLORS[0];
   let selectedIcon  = project?.icon  || '📦';
   let selectedMembers = project?.members || [store.get('currentUser')?.uid].filter(Boolean);
-  let selectedWorkspaceId = project?.workspaceId ?? defaultWorkspaceId ?? currentWs?.id ?? '';
+  // Multi-squad (B5p): array de squad IDs. Lê do projeto existente
+  // (workspaceIds[] novo OU workspaceId legado) ou usa default.
+  const projSquadIds = Array.isArray(project?.workspaceIds) && project.workspaceIds.length
+    ? project.workspaceIds
+    : (project?.workspaceId ? [project.workspaceId] : null);
+  const initialSquadIds = projSquadIds
+    ?? (defaultWorkspaceId ? [defaultWorkspaceId]
+        : (currentWs?.id ? [currentWs.id] : []));
+  const selectedSquadIds = new Set(initialSquadIds);
 
   const content = `
     <form id="proj-form" novalidate>
@@ -301,27 +319,41 @@ export function openProjectModal(project = null, { defaultWorkspaceId = null, on
         </div>
       </div>
 
-      <!-- Squad / Workspace -->
+      <!-- Squads (multi) -->
       <div class="form-group">
         <label class="form-label">
-          Squad / Workspace
+          Squads
           <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;margin-left:6px;">
-            — onde este projeto será agrupado
+            — vincule a um ou mais squads, ou deixe sem squad (visível apenas por setor)
           </span>
         </label>
-        <select class="form-select" id="pf-workspace" ${userWorkspaces.length === 0 ? 'disabled' : ''}>
-          <option value="" ${!selectedWorkspaceId ? 'selected' : ''}>— Sem squad (visível apenas por setor)</option>
-          ${userWorkspaces.map(ws => `
-            <option value="${ws.id}" ${selectedWorkspaceId === ws.id ? 'selected' : ''}>
-              ${esc(ws.icon || '◈')} ${esc(ws.name)}${ws.multiSector ? ' (multissetor)' : ''}
-            </option>
-          `).join('')}
-        </select>
-        ${userWorkspaces.length === 0
-          ? `<small style="display:block;margin-top:4px;font-size:0.75rem;color:var(--text-muted);">
-              Você ainda não faz parte de nenhum squad. Vá em <strong>Squads / Workspaces</strong> para criar ou peça acesso ao gestor.
-            </small>`
-          : ''}
+        ${userWorkspaces.length > 0 ? `
+          <div id="pf-squads" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;
+            background:var(--bg-surface);border:1px solid var(--border-default);
+            border-radius:var(--radius-md);">
+            ${userWorkspaces.map(ws => {
+              const on = selectedSquadIds.has(ws.id);
+              return `<div class="squad-chip" data-squad-id="${ws.id}"
+                style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;
+                  border-radius:var(--radius-full);font-size:0.8125rem;cursor:pointer;
+                  background:${on ? esc(ws.color||'#D4A843')+'24' : 'var(--bg-elevated)'};
+                  color:${on ? esc(ws.color||'#D4A843') : 'var(--text-secondary)'};
+                  border:1px solid ${on ? esc(ws.color||'#D4A843')+'60' : 'transparent'};
+                  transition:all var(--transition-fast);">
+                <span>${esc(ws.icon || '◈')}</span>
+                <span>${esc(ws.name)}${ws.multiSector ? ' · multissetor' : ''}</span>
+                ${on ? '<span style="font-size:0.75rem;">✓</span>' : ''}
+              </div>`;
+            }).join('')}
+          </div>
+          <small style="display:block;margin-top:4px;font-size:0.75rem;color:var(--text-muted);">
+            Sem nenhum selecionado, o projeto fica disponível apenas pelo seu setor.
+          </small>
+        ` : `
+          <small style="display:block;margin-top:4px;font-size:0.75rem;color:var(--text-muted);">
+            Você ainda não faz parte de nenhum squad. Vá em <strong>Squads</strong> para criar ou peça acesso ao gestor.
+          </small>
+        `}
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
@@ -387,17 +419,18 @@ export function openProjectModal(project = null, { defaultWorkspaceId = null, on
           const btn = document.querySelector('.modal-footer .btn-primary');
           if(btn){ btn.classList.add('loading'); btn.disabled=true; }
           try {
-            const wsId = document.getElementById('pf-workspace')?.value || '';
+            const wsIds = [...selectedSquadIds].filter(Boolean);
             const data = {
               name,
-              description: document.getElementById('pf-desc')?.value?.trim()||'',
-              color:       selectedColor,
-              icon:        selectedIcon,
-              status:      document.getElementById('pf-status')?.value||'planning',
-              members:     selectedMembers,
-              startDate:   document.getElementById('pf-start')?.value || null,
-              endDate:     document.getElementById('pf-end')?.value   || null,
-              workspaceId: wsId || null,
+              description:  document.getElementById('pf-desc')?.value?.trim()||'',
+              color:        selectedColor,
+              icon:         selectedIcon,
+              status:       document.getElementById('pf-status')?.value||'planning',
+              members:      selectedMembers,
+              startDate:    document.getElementById('pf-start')?.value || null,
+              endDate:      document.getElementById('pf-end')?.value   || null,
+              workspaceIds: wsIds,                 // canônico (B5p multi-squad)
+              workspaceId:  wsIds[0] || null,      // espelho legacy
             };
             if (isEdit) await updateProject(project.id, data);
             else        await createProject(data);
@@ -456,6 +489,34 @@ export function openProjectModal(project = null, { defaultWorkspaceId = null, on
         el.style.borderColor   = isSelected?'rgba(212,168,67,0.4)':'transparent';
         const check = el.querySelector('span:last-child');
         if (check) check.style.display = isSelected?'':'none';
+      });
+    });
+
+    // Squads multi-select toggle (B5p)
+    document.querySelectorAll('#pf-squads [data-squad-id]').forEach(el => {
+      el.addEventListener('click', () => {
+        const sid = el.dataset.squadId;
+        const ws  = userWorkspaces.find(w => w.id === sid);
+        const color = ws?.color || '#D4A843';
+        if (selectedSquadIds.has(sid)) {
+          selectedSquadIds.delete(sid);
+          el.style.background = 'var(--bg-elevated)';
+          el.style.color      = 'var(--text-secondary)';
+          el.style.borderColor= 'transparent';
+          const check = el.querySelector('span:last-child');
+          if (check && check.textContent === '✓') check.remove();
+        } else {
+          selectedSquadIds.add(sid);
+          el.style.background = `${color}24`;
+          el.style.color      = color;
+          el.style.borderColor= `${color}60`;
+          if (!el.querySelector('span:last-child') || el.querySelector('span:last-child').textContent !== '✓') {
+            const check = document.createElement('span');
+            check.style.fontSize = '0.75rem';
+            check.textContent = '✓';
+            el.appendChild(check);
+          }
+        }
       });
     });
   }, 60);

@@ -1018,3 +1018,18 @@ textarea.portal-field { resize: vertical; }
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: var(--radius-lg);
 }
+
+/* Spinner inline genérico (B2 — feedback de adicionar membro) */
+@keyframes spin-inline {
+  to { transform: rotate(360deg); }
+}
+.spinner-inline {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--brand-gold);
+  border-radius: 50%;
+  animation: spin-inline 0.7s linear infinite;
+  vertical-align: middle;
+}

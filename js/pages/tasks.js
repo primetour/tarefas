@@ -662,7 +662,7 @@ function openFilterConfigModal() {
     { key: 'status',     label: 'Status' },
     { key: 'priority',   label: 'Prioridade' },
     { key: 'project',    label: 'Projeto' },
-    { key: 'squad',      label: 'Squad / Workspace' },
+    { key: 'squad',      label: 'Squad' },
     { key: 'assignee',   label: 'Responsável' },
     { key: 'datePreset', label: 'Prazo (hoje, semana, mês…)' },
     { key: 'area',       label: 'Área solicitante' },

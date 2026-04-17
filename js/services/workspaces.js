@@ -189,15 +189,16 @@ export async function deleteWorkspace(wsId, { force = false } = {}) {
 }
 
 /* ─── Adicionar membro ───────────────────────────────────── */
-export async function addMember(wsId, uid, { selfJoin = false } = {}) {
+export async function addMember(wsId, uid /* , opts */) {
+  // Nota: o parâmetro selfJoin foi removido — atribuição de squads
+  // agora é exclusiva de admins/gestores. O wizard de primeiro acesso
+  // não permite mais auto-vínculo (B12).
   const user = store.get('currentUser');
   const ws   = await getWorkspace(wsId);
   if (!ws) throw new Error('Workspace não encontrado.');
 
   const isWsAdmin = ws.adminIds?.includes(user.uid);
-  // selfJoin: permite que o próprio usuário se adicione (wizard de primeiro acesso)
-  const isSelfJoin = selfJoin && uid === user.uid;
-  if (!store.can('system_view_all') && !isWsAdmin && !isSelfJoin) throw new Error('Permissão negada.');
+  if (!store.can('system_view_all') && !isWsAdmin) throw new Error('Permissão negada.');
 
   // Evita notificar se o usuário já era membro
   const wasMember = Array.isArray(ws.members) && ws.members.includes(uid);

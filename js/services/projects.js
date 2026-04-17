@@ -33,14 +33,42 @@ export const PROJECT_STATUS_MAP = Object.fromEntries(
   PROJECT_STATUSES.map(s => [s.value, s])
 );
 
+/* ─── Helpers de squad (B5p — multi-squad) ──────────────────
+ * O modelo passou de `workspaceId: string|null` para
+ * `workspaceIds: string[]`. Mantemos `workspaceId` como campo
+ * espelho (primeiro item) para retrocompatibilidade — código
+ * legado lê workspaceId; filtros/escritas novas usam workspaceIds.
+ */
+export function getProjectSquadIds(p) {
+  if (Array.isArray(p?.workspaceIds) && p.workspaceIds.length) return p.workspaceIds;
+  return p?.workspaceId ? [p.workspaceId] : [];
+}
+export function projectIncludesSquad(p, squadId) {
+  if (!squadId) return false;
+  return getProjectSquadIds(p).includes(squadId);
+}
+export function projectMatchesAnySquad(p, squadIds) {
+  if (!Array.isArray(squadIds) || !squadIds.length) return false;
+  const ids = getProjectSquadIds(p);
+  if (!ids.length) return false;
+  return ids.some(id => squadIds.includes(id));
+}
+
 /* ─── Criar projeto ──────────────────────────────────────── */
 export async function createProject(data) {
   if (!store.can('project_create')) throw new Error('Permissão negada.');
   const user      = store.get('currentUser');
   const workspace = store.get('currentWorkspace');
 
+  // Normaliza squads: aceita workspaceIds[] (novo) ou workspaceId (legado).
+  // Sempre grava ambos: workspaceIds[] (canônico) + workspaceId (espelho).
+  const wsIds = Array.isArray(data.workspaceIds)
+    ? data.workspaceIds.filter(Boolean)
+    : (data.workspaceId ? [data.workspaceId] : (workspace?.id ? [workspace.id] : []));
+
   const projectDoc = {
-    workspaceId: data.workspaceId || workspace?.id || null,
+    workspaceIds: wsIds,
+    workspaceId: wsIds[0] || null,           // espelho p/ filtros legados
     sector:      data.sector || store.get('userSector') || null,
     name:        data.name?.trim() || 'Novo Projeto',
     description: data.description?.trim() || '',
@@ -92,8 +120,15 @@ export async function updateProject(projectId, data) {
     if (snap.exists()) prevData = snap.data();
   } catch (_) {}
 
+  // Mantém workspaceId espelhado quando workspaceIds[] for atualizado.
+  const patch = { ...data };
+  if (Array.isArray(data.workspaceIds)) {
+    patch.workspaceIds = data.workspaceIds.filter(Boolean);
+    patch.workspaceId  = patch.workspaceIds[0] || null;
+  }
+
   await updateDoc(doc(db, 'projects', projectId), {
-    ...data, updatedAt: serverTimestamp(), updatedBy: user.uid,
+    ...patch, updatedAt: serverTimestamp(), updatedBy: user.uid,
   });
   await auditLog('projects.update', 'project', projectId, { fields: Object.keys(data) });
   store.invalidateCache('projects');
@@ -221,16 +256,21 @@ export async function fetchProjects({ includeArchived = false, workspaceIds = nu
   const snap = await getDocs(q);
   let all    = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  // Filtro por workspace (squad) — documentos sem workspaceId visíveis para todos
+  // Filtro por squad — projetos sem squad visíveis para todos pelo setor.
+  // Suporta multi-squad (B5p): basta interseção entre squads do projeto e ativos.
   const activeIdsArr = workspaceIds ?? store.getActiveWorkspaceIds();
   const activeIdsSet = new Set(activeIdsArr ?? []);
-  const isInActiveSquad = (p) => !!p.workspaceId && activeIdsSet.has(p.workspaceId);
+  const isInActiveSquad = (p) => projectMatchesAnySquad(p, [...activeIdsSet]);
 
   if (activeIdsArr) {
-    all = all.filter(p => !p.workspaceId || activeIdsSet.has(p.workspaceId));
+    all = all.filter(p => {
+      const ids = getProjectSquadIds(p);
+      if (!ids.length) return true;                    // sem squad: visível
+      return ids.some(id => activeIdsSet.has(id));     // qualquer squad ativo
+    });
   }
 
-  // Filtro por setor — ser membro do squad ativo sobrescreve (squad multissetor)
+  // Filtro por setor — pertencer a um squad ativo sobrescreve (squad multissetor)
   const visibleSectors = store.get('visibleSectors') || [];
   if (!store.isMaster() && visibleSectors.length > 0) {
     all = all.filter(p =>
@@ -250,13 +290,17 @@ export function subscribeToProjects(callback) {
   return onSnapshot(q, (snap) => {
     let all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    // Filtro por workspace (squad)
+    // Filtro por squad (multi)
     const activeIdsArr = store.getActiveWorkspaceIds();
     const activeIdsSet = new Set(activeIdsArr ?? []);
-    const isInActiveSquad = (p) => !!p.workspaceId && activeIdsSet.has(p.workspaceId);
+    const isInActiveSquad = (p) => projectMatchesAnySquad(p, [...activeIdsSet]);
 
     if (activeIdsArr) {
-      all = all.filter(p => !p.workspaceId || activeIdsSet.has(p.workspaceId));
+      all = all.filter(p => {
+        const ids = getProjectSquadIds(p);
+        if (!ids.length) return true;
+        return ids.some(id => activeIdsSet.has(id));
+      });
     }
 
     // Filtro por setor — squad ativo sobrescreve

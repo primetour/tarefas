@@ -184,22 +184,16 @@ async function renderFirstLoginWizard(root) {
   const profile = store.get('userProfile');
   const userName = profile?.name || 'Usuário';
 
-  // Carregar setores e squads disponíveis
+  // Carregar setores disponíveis (squads NÃO são auto-atribuídos —
+  // gestores adicionam o usuário aos squads pela tela de Squads)
   const { REQUESTING_AREAS } = await import('./services/tasks.js');
-  const { fetchAllWorkspaces, addMember, loadUserWorkspaces } = await import('./services/workspaces.js');
+  const { loadUserWorkspaces } = await import('./services/workspaces.js');
   const { updateUserProfile } = await import('./auth/auth.js');
-
-  let allWorkspaces = [];
-  try { allWorkspaces = await fetchAllWorkspaces(); } catch(_) {}
-  const activeWorkspaces = allWorkspaces.filter(w => !w.archived);
 
   // Pré-preencher setor se o admin já definiu
   let selectedSector = profile?.sector || profile?.department || '';
-  let selectedSquads = new Set();
 
   const render = () => {
-    const sectorSquads = activeWorkspaces.filter(w => !w.sector || w.sector === selectedSector || w.multiSector);
-
     root.innerHTML = `
       <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
         background:var(--bg-dark);font-family:var(--font-ui);">
@@ -234,36 +228,13 @@ async function renderFirstLoginWizard(root) {
               </select>
             </div>
 
-            <!-- Passo 2: Squads -->
-            <div style="margin-bottom:24px;${!selectedSector ? 'opacity:0.4;pointer-events:none;' : ''}">
-              <label style="display:block;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
-                text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">
-                2. Participa de algum squad? <span style="font-weight:400;text-transform:none;">(opcional)</span>
-              </label>
-              ${sectorSquads.length ? `
-                <div style="display:flex;flex-direction:column;gap:8px;">
-                  ${sectorSquads.map(w => `
-                    <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;
-                      background:${selectedSquads.has(w.id) ? 'rgba(212,168,67,0.1)' : 'var(--bg-elevated)'};
-                      border:1px solid ${selectedSquads.has(w.id) ? 'var(--brand-gold)' : 'var(--border-default)'};
-                      border-radius:var(--radius-md);cursor:pointer;transition:all 0.15s;">
-                      <input type="checkbox" value="${w.id}" class="wiz-squad-check"
-                        ${selectedSquads.has(w.id) ? 'checked' : ''}
-                        style="accent-color:var(--brand-gold);width:16px;height:16px;" />
-                      <div>
-                        <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">
-                          ${w.icon || '◈'} ${w.name}
-                        </div>
-                        ${w.description ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${w.description}</div>` : ''}
-                      </div>
-                    </label>
-                  `).join('')}
-                </div>
-              ` : `
-                <p style="font-size:0.8125rem;color:var(--text-muted);padding:12px 0;">
-                  ${selectedSector ? 'Nenhum squad disponível para este setor.' : 'Selecione um setor primeiro.'}
-                </p>
-              `}
+            <!-- Aviso sobre squads -->
+            <div style="margin-bottom:24px;padding:12px 14px;background:var(--bg-elevated);
+              border:1px solid var(--border-default);border-radius:var(--radius-md);">
+              <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin:0;">
+                <strong style="color:var(--text-primary);">Squads:</strong> seu gestor irá adicionar você aos
+                squads dos quais participa. Se necessário, fale com a liderança do seu setor.
+              </p>
             </div>
 
             <!-- Botão -->
@@ -287,16 +258,7 @@ async function renderFirstLoginWizard(root) {
     // ─── Events ───
     document.getElementById('wiz-sector')?.addEventListener('change', (e) => {
       selectedSector = e.target.value;
-      selectedSquads.clear();
       render();
-    });
-
-    document.querySelectorAll('.wiz-squad-check').forEach(cb => {
-      cb.addEventListener('change', () => {
-        if (cb.checked) selectedSquads.add(cb.value);
-        else selectedSquads.delete(cb.value);
-        render();
-      });
     });
 
     document.getElementById('wiz-submit')?.addEventListener('click', async () => {
@@ -315,19 +277,13 @@ async function renderFirstLoginWizard(root) {
           firstLogin: false,
         });
 
-        // 2. Adicionar aos squads selecionados
-        for (const wsId of selectedSquads) {
-          try { await addMember(wsId, uid, { selfJoin: true }); } catch(e) {
-            console.warn('[Wizard] Erro ao adicionar ao squad:', wsId, e.message);
-          }
-        }
-
-        // 3. Recarregar workspaces e setor no store
+        // 2. Recarregar workspaces e setor no store
+        // (squads são atribuídos pelo gestor — não há self-join no wizard)
         store.set('userSector', selectedSector);
         store.set('visibleSectors', [selectedSector]);
         await loadUserWorkspaces().catch(() => {});
 
-        // 4. Atualizar perfil no store
+        // 3. Atualizar perfil no store
         const updatedProfile = { ...store.get('userProfile'), sector: selectedSector, department: selectedSector, firstLogin: false };
         store.set('userProfile', updatedProfile);
 
