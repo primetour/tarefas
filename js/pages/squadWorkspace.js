@@ -534,28 +534,39 @@ async function openMembersModal() {
 
   const memberRows = memberIds.map(mid => {
     const u = allUsers.find(x => x.id === mid);
-    const name = u?.name || u?.displayName || mid;
-    const color = u?.avatarColor || '#3B82F6';
-    const initials = (name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    // Membros "órfãos": estão em squad.members mas o doc users/<uid> não
+    // existe mais (usuário removido, ou inserção manual com UID inválido).
+    // Mostrar como "Usuário removido" + UID truncado, com botão para limpar.
+    const isOrphan = !u;
+    const name = u?.name || u?.displayName || (isOrphan ? 'Usuário removido' : mid);
+    const subText = isOrphan
+      ? `UID órfão: ${mid.slice(0, 12)}…`
+      : (u?.email || '');
+    const color = isOrphan ? '#9CA3AF' : (u?.avatarColor || '#3B82F6');
+    const initials = isOrphan ? '?' : (name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
     const ownerBadge = isOwner(mid)
       ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:99px;background:rgba(212,168,67,0.12);color:var(--brand-gold);">Dono</span>`
       : isAdmin(mid)
         ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:99px;background:rgba(56,189,248,0.12);color:#38BDF8;">Admin</span>`
         : '';
+    const orphanBadge = isOrphan
+      ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:99px;background:rgba(239,68,68,0.12);color:#EF4444;">órfão</span>`
+      : '';
     const actions = canManage && !isOwner(mid)
-      ? `<button class="btn btn-ghost btn-icon btn-sm sw-toggle-admin" data-uid="${mid}" data-admin="${isAdmin(mid)}" title="${isAdmin(mid) ? 'Rebaixar' : 'Promover a admin'}">
+      ? `${!isOrphan ? `<button class="btn btn-ghost btn-icon btn-sm sw-toggle-admin" data-uid="${mid}" data-admin="${isAdmin(mid)}" title="${isAdmin(mid) ? 'Rebaixar' : 'Promover a admin'}">
            ${isAdmin(mid) ? '↓' : '↑'}
-         </button>
-         <button class="btn btn-ghost btn-icon btn-sm sw-remove-member" data-uid="${mid}" title="Remover" style="color:var(--color-danger);">✕</button>`
+         </button>` : ''}
+         <button class="btn btn-ghost btn-icon btn-sm sw-remove-member" data-uid="${mid}" title="${isOrphan ? 'Remover UID órfão' : 'Remover membro'}" style="color:var(--color-danger);">✕</button>`
       : '';
     return `
-      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle);">
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle);${isOrphan ? 'opacity:0.7;' : ''}">
         <div class="avatar avatar-sm" style="background:${color};">${initials}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${esc(name)}</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u?.email || '')}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">${esc(subText)}</div>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
+          ${orphanBadge}
           ${ownerBadge}
           ${actions}
         </div>
