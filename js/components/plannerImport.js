@@ -110,6 +110,11 @@ function resetState() {
     plannerLabels: [],          // lista única de tags do arquivo
     tagSquadMap: {},            // tagName → squadId | ''
     userSquads: [],             // squads carregados (usados para auto-match)
+    // Projeto de destino DEFAULT (aplicado a todas as tarefas importadas).
+    // Sem isso, tarefas vindas do Planner nascem sem projectId e o campo
+    // "Projeto" aparece vazio no card/modal da tarefa.
+    targetProjectId: '',
+    userProjects: [],           // projetos carregados p/ o dropdown do step 5
   };
 }
 
@@ -275,6 +280,20 @@ async function loadUserSquads() {
     }
   }
   wiz.userSquads = squads;
+}
+
+/* ─── Carrega projetos ativos (p/ dropdown "Projeto de destino" no step 5) ── */
+async function loadUserProjects() {
+  try {
+    const { fetchProjects } = await import('../services/projects.js');
+    const list = await fetchProjects().catch(() => []);
+    wiz.userProjects = (list || [])
+      .filter(p => !p.archived && p.status !== 'archived')
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+  } catch (e) {
+    console.warn('[plannerImport] erro ao carregar projetos:', e.message);
+    wiz.userProjects = [];
+  }
 }
 
 /* ─── Tag → squadId via dicionário de hints ───────────────────
@@ -903,24 +922,41 @@ function renderStep5() {
         Edite título, status, prioridade e prazo diretamente na tabela antes de importar.
       </p>
 
-      <!-- Squad de destino (B11b — sempre explícito; antes ia silenciosamente para o currentWorkspace) -->
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-        padding:10px 12px;margin-bottom:12px;
-        background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;">
-        <label style="font-size:0.8125rem;font-weight:600;white-space:nowrap;">
-          Squad de destino:
-        </label>
-        <select id="pi-target-squad" class="form-input" style="height:32px;font-size:0.8125rem;flex:1;min-width:180px;">
-          <option value="" ${wiz.targetSquadId === '' ? 'selected' : ''}>— Sem squad (visível por setor)</option>
-          ${userWorkspaces.map(w => `
-            <option value="${esc(w.id)}" ${wiz.targetSquadId === w.id ? 'selected' : ''}>
-              ${esc(w.icon || '◈')} ${esc(w.name)}${w.multiSector ? ' · multissetor' : ''}
-            </option>
-          `).join('')}
-        </select>
-        <span style="font-size:0.75rem;color:var(--text-muted);">
-          Aplica-se a todas as ${wiz.selectedRows.size} tarefas selecionadas.
-        </span>
+      <!-- Squad + Projeto de destino (aplicados a todas as tarefas selecionadas) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+          padding:10px 12px;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;">
+          <label style="font-size:0.8125rem;font-weight:600;white-space:nowrap;">
+            Squad de destino:
+          </label>
+          <select id="pi-target-squad" class="form-input" style="height:32px;font-size:0.8125rem;flex:1;min-width:140px;">
+            <option value="" ${wiz.targetSquadId === '' ? 'selected' : ''}>— Sem squad (visível por setor)</option>
+            ${userWorkspaces.map(w => `
+              <option value="${esc(w.id)}" ${wiz.targetSquadId === w.id ? 'selected' : ''}>
+                ${esc(w.icon || '◈')} ${esc(w.name)}${w.multiSector ? ' · multissetor' : ''}
+              </option>
+            `).join('')}
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+          padding:10px 12px;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;">
+          <label style="font-size:0.8125rem;font-weight:600;white-space:nowrap;">
+            Projeto de destino:
+          </label>
+          <select id="pi-target-project" class="form-input" style="height:32px;font-size:0.8125rem;flex:1;min-width:140px;"
+            title="Todas as tarefas selecionadas serão vinculadas a este projeto. Deixe em branco se preferir atribuir manualmente depois.">
+            <option value="" ${wiz.targetProjectId === '' ? 'selected' : ''}>— Sem projeto —</option>
+            ${wiz.userProjects.map(p => `
+              <option value="${esc(p.id)}" ${wiz.targetProjectId === p.id ? 'selected' : ''}>
+                ${esc(p.icon || '📦')} ${esc(p.name)}
+              </option>
+            `).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin:-6px 0 12px;">
+        ↑ Squad e Projeto aplicam-se a todas as <strong>${wiz.selectedRows.size}</strong> tarefas selecionadas.
+        ${!wiz.userProjects.length ? '<span style="color:#D97706;">· ⚠ Nenhum projeto encontrado — crie em Projetos e volte.</span>' : ''}
       </div>
 
       <!-- Summary -->
@@ -1117,6 +1153,11 @@ function attachStep5Events() {
   body.querySelector('#pi-target-squad')?.addEventListener('change', e => {
     wiz.targetSquadId = e.target.value || '';
   });
+
+  // Projeto de destino (aplicado a todas as tarefas importadas)
+  body.querySelector('#pi-target-project')?.addEventListener('change', e => {
+    wiz.targetProjectId = e.target.value || '';
+  });
 }
 
 function refreshTable() {
@@ -1248,6 +1289,9 @@ function buildPayload(t) {
     subtasks,
     // B11b: squad de destino EXPLÍCITO (resolvido por tag ou default).
     workspaceId,
+    // Projeto de destino (default aplicado no step 5). Sem isso o campo
+    // "Projeto" nasce vazio no card da tarefa após a importação.
+    projectId: wiz.targetProjectId || null,
     customFields: {
       plannerId: t.plannerId || null,
       plannerBucket: t.bucket || null,
@@ -1358,6 +1402,14 @@ async function goToStep(step) {
     body.innerHTML = `<div class="pi-wiz">${stepBar(4)}<div class="pi-body" style="text-align:center;padding:40px;">
       <p class="pi-muted">Carregando squads do sistema...</p></div></div>`;
     await loadUserSquads();
+    // Carrega projetos em paralelo para disponibilizar no step 5
+    loadUserProjects().catch(() => {});
+  }
+
+  // Step 5 precisa garantir que projetos estão carregados (fallback caso
+  // o usuário pule direto ou a carga do step 4 tenha falhado)
+  if (step === 5 && !wiz.userProjects.length) {
+    await loadUserProjects();
   }
 
   switch (step) {

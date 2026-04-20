@@ -242,34 +242,132 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         }
       }, 100);
 
-      // Populate meta selector async — show individual metas (not goals)
-      import('../services/goals.js').then(({ fetchGoals }) => {
-        return fetchGoals();
-      }).then(goals => {
+      // Populate meta selector async — agrupa por escopo e mostra cartão de contexto
+      import('../services/goals.js').then(({ fetchGoals, GOAL_SCOPES, getResponsavelIds }) => {
+        return Promise.all([fetchGoals(), Promise.resolve({ GOAL_SCOPES, getResponsavelIds })]);
+      }).then(([goals, { GOAL_SCOPES, getResponsavelIds }]) => {
         let available = goals.filter(g => g.status === 'publicada');
         if (!available.length) available = goals.filter(g => g.status !== 'encerrada');
         const sel = document.getElementById('tm-goal');
+        const info = document.getElementById('tm-goal-info');
         if (!sel) return;
 
-        // Build flat meta list
-        const opts = [];
+        // Metadados p/ cartão de contexto — indexados pelo value "goalId:pi:mi"
+        const metaIndex = {};
+        // Agrupa opções por escopo → optgroups com ícone no label
+        const byScope = {}; // { escopo: [ '<option>…</option>', … ] }
+        let selectedValue = '';
+
+        const scopeOrder = GOAL_SCOPES.map(s => s.value);
+        const scopeMap   = Object.fromEntries(GOAL_SCOPES.map(s => [s.value, s]));
+        const nucleoMap  = { design:'Design', comunicacao:'Comunicação', redes_sociais:'Redes Sociais',
+                             dados:'Dados', web:'Web', sistemas:'Sistemas', ia:'IA' };
+        const workspaces = store.get('userWorkspaces') || [];
+
         available.forEach(g => {
+          const escopo = g.escopo || 'individual';
           const goalName = g.nome || g.objetivoNucleo || g.titulo || 'Meta';
+          const respIds = getResponsavelIds(g);
+
           (g.pilares || []).forEach((pilar, pi) => {
             (pilar.metas || []).forEach((meta, mi) => {
               const val = `${g.id}:${pi}:${mi}`;
               const metaName = meta.titulo || `Meta ${mi + 1}`;
               const pilarName = pilar.titulo || `Pilar ${pi + 1}`;
-              // Check if this task is linked to this specific meta
               const isSelected = task.goalId === g.id &&
                 (task.goalMetaRef === `${pi}:${mi}` || (!task.goalMetaRef && pi === 0 && mi === 0));
-              opts.push(`<option value="${val}" ${isSelected ? 'selected' : ''}>${metaName} — Pilar: ${pilarName} (${goalName})</option>`);
+              if (isSelected) selectedValue = val;
+
+              metaIndex[val] = {
+                escopo, goalName, metaName, pilarName,
+                responsavelIds: respIds,
+                squadId:        g.squadId || '',
+                nucleo:         g.nucleo  || '',
+                setor:          g.setor   || '',
+              };
+
+              (byScope[escopo] = byScope[escopo] || []).push(
+                `<option value="${val}" ${isSelected ? 'selected' : ''}>${esc(metaName)} — ${esc(pilarName)} (${esc(goalName)})</option>`
+              );
             });
           });
         });
 
-        sel.innerHTML = '<option value="">Sem meta vinculada</option>' + opts.join('');
-      }).catch(() => {});
+        const groupsHtml = scopeOrder
+          .filter(s => byScope[s] && byScope[s].length)
+          .map(s => {
+            const sc = scopeMap[s] || { icon:'•', label:s };
+            return `<optgroup label="${sc.icon} ${sc.label}">${byScope[s].join('')}</optgroup>`;
+          }).join('');
+
+        sel.innerHTML = '<option value="">Sem meta vinculada</option>' + groupsHtml;
+
+        // Renderiza cartão de contexto — identidade varia por escopo:
+        //  individual → responsável (pessoa vinculada à tarefa quando possível)
+        //  squad      → nome do squad
+        //  nucleo     → núcleo
+        //  area       → setor
+        //  global     → "Meta corporativa"
+        const renderInfo = (value) => {
+          if (!info) return;
+          if (!value || !metaIndex[value]) { info.style.display = 'none'; info.innerHTML = ''; return; }
+          const m = metaIndex[value];
+          const sc = scopeMap[m.escopo] || { icon:'•', label:m.escopo };
+
+          // Resolve "identidade" contextual
+          let identityIcon = '', identityLabel = '', identityValue = '—';
+          if (m.escopo === 'individual') {
+            identityIcon = '👤'; identityLabel = 'Responsável';
+            // Preferência: se a tarefa tem assignee que também é responsável da meta, mostra esse.
+            const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
+            let pickId = taskAssignees.find(uid => m.responsavelIds.includes(uid)) || m.responsavelIds[0] || '';
+            const u = users.find(x => x.id === pickId);
+            identityValue = u ? u.name : (m.responsavelIds.length ? '(usuário não encontrado)' : '—');
+          } else if (m.escopo === 'squad') {
+            identityIcon = '◊'; identityLabel = 'Squad';
+            const ws = workspaces.find(w => w.id === m.squadId);
+            identityValue = ws ? `${ws.icon || ''} ${ws.name}`.trim() : (m.squadId ? '(squad não visível)' : '—');
+          } else if (m.escopo === 'nucleo') {
+            identityIcon = '◈'; identityLabel = 'Núcleo';
+            identityValue = nucleoMap[m.nucleo] || m.nucleo || '—';
+          } else if (m.escopo === 'area') {
+            identityIcon = '◎'; identityLabel = 'Setor';
+            identityValue = m.setor || '—';
+          } else if (m.escopo === 'global') {
+            identityIcon = '✦'; identityLabel = 'Alcance';
+            identityValue = 'Meta corporativa (empresa toda)';
+          }
+
+          info.style.display = 'block';
+          info.innerHTML = `
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
+              <span style="padding:2px 7px;border-radius:999px;font-size:0.6875rem;font-weight:600;
+                background:var(--brand-gold)22;color:var(--brand-gold);border:1px solid var(--brand-gold)44;">
+                ${sc.icon} ${esc(sc.label)}
+              </span>
+              <span style="color:var(--text-muted);font-size:0.6875rem;">${esc(m.goalName)}</span>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <div style="flex:1;min-width:120px;">
+                <div style="color:var(--text-muted);font-size:0.625rem;text-transform:uppercase;letter-spacing:.03em;">
+                  ${identityIcon} ${esc(identityLabel)}
+                </div>
+                <div style="font-weight:600;color:var(--text-primary);">${esc(identityValue)}</div>
+              </div>
+              <div style="flex:1;min-width:120px;">
+                <div style="color:var(--text-muted);font-size:0.625rem;text-transform:uppercase;letter-spacing:.03em;">
+                  🎯 Meta / Pilar
+                </div>
+                <div style="color:var(--text-secondary);">
+                  <strong>${esc(m.metaName)}</strong> · ${esc(m.pilarName)}
+                </div>
+              </div>
+            </div>`;
+        };
+
+        renderInfo(selectedValue);
+        sel.addEventListener('change', (e) => renderInfo(e.target.value));
+      }).catch((e) => { console.warn('[taskModal] meta populate:', e?.message || e); });
     });
   });
 }
@@ -634,8 +732,12 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         <div class="task-detail-label">Meta vinculada</div>
         <select class="form-select" id="tm-goal" style="padding:8px 32px 8px 12px;">
           <option value="">Sem meta vinculada</option>
-          <!-- populated async -->
+          <!-- populated async, agrupado por escopo -->
         </select>
+        <!-- Cartão com contexto da meta (escopo + identidade) -->
+        <div id="tm-goal-info" style="margin-top:6px;display:none;
+          padding:8px 10px;border-radius:6px;font-size:0.75rem;line-height:1.35;
+          background:var(--bg-surface);border:1px solid var(--border-subtle);"></div>
       </div>
       <div class="task-detail-field">
         <div class="task-detail-label">Responsáveis</div>
