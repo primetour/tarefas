@@ -161,6 +161,9 @@ export async function renderTasks(container) {
       <button class="btn btn-ghost btn-sm" id="filter-date-clear">Limpar</button>
     </div>
 
+    <!-- Banner: auto-reparo de tarefas Planner sem projeto (para admin/manager) -->
+    <div id="tasks-orphans-banner" style="display:none;margin-bottom:12px;"></div>
+
     <!-- Task list container -->
     <div id="tasks-container">
       <div class="task-empty">
@@ -248,6 +251,100 @@ function _subscribeToTasks() {
     allTasks = tasks;
     _populateTagFilter();
     applyFilters();
+    renderPlannerOrphansBanner();
+  });
+}
+
+/* ─── Auto-reparo: tarefas do Planner sem projectId ─────────────────
+ * Detecta tarefas que vieram do Planner (customFields.plannerId OU
+ * tag 'planner-import' como fallback) e estão sem projeto atribuído.
+ * Mostra um banner acima da lista com dropdown de projeto e 1 botão
+ * para atribuir em massa. Fica visível apenas para quem pode criar
+ * tarefas (admin/master/manager) — para users comuns não faz sentido. */
+function renderPlannerOrphansBanner() {
+  const banner = document.getElementById('tasks-orphans-banner');
+  if (!banner) return;
+
+  // Só admin/manager (quem gerencia projetos) vê o auto-reparo
+  const canRepair = store.isMaster()
+    || store.can('system_manage_roles')
+    || store.can('projects_manage')
+    || store.can('task_create');
+  if (!canRepair) { banner.style.display = 'none'; return; }
+
+  const orphans = (allTasks || []).filter(t => {
+    if (t.archived) return false;
+    if (t.projectId) return false;
+    const fromPlanner =
+      (t.customFields && t.customFields.plannerId) ||
+      (Array.isArray(t.tags) && t.tags.includes('planner-import'));
+    return !!fromPlanner;
+  });
+
+  if (!orphans.length) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+
+  banner.style.display = 'block';
+  banner.innerHTML = `
+    <div style="padding:12px 16px;border-radius:10px;
+      background:linear-gradient(135deg, rgba(59,130,246,0.08), rgba(168,85,247,0.08));
+      border:1px solid rgba(59,130,246,0.35);
+      display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+      <div style="flex:1;min-width:260px;">
+        <div style="font-weight:700;color:#3B82F6;margin-bottom:3px;">
+          🩹 ${orphans.length} tarefa(s) do Planner sem projeto
+        </div>
+        <div style="font-size:0.8125rem;color:var(--text-muted);line-height:1.4;">
+          Essas tarefas foram importadas antes do campo <strong>Projeto</strong> existir na importação.
+          Escolha um projeto e preencha todas de uma vez.
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="tasks-orphans-project" class="form-input" style="height:34px;font-size:0.8125rem;min-width:180px;">
+          <option value="">— Escolher projeto —</option>
+          ${allProjects
+            .filter(p => !p.archived && p.status !== 'archived')
+            .sort((a,b) => (a.name||'').localeCompare(b.name||'', 'pt-BR'))
+            .map(p => `<option value="${esc(p.id)}">${esc(p.icon || '📦')} ${esc(p.name)}</option>`)
+            .join('')}
+        </select>
+        <button type="button" id="tasks-orphans-apply" class="btn btn-primary btn-sm" disabled
+          style="white-space:nowrap;">Atribuir a ${orphans.length}</button>
+        <button type="button" id="tasks-orphans-dismiss" class="btn btn-ghost btn-sm"
+          title="Ocultar até próxima recarga">✕</button>
+      </div>
+    </div>
+  `;
+
+  const sel = banner.querySelector('#tasks-orphans-project');
+  const btn = banner.querySelector('#tasks-orphans-apply');
+  const dismiss = banner.querySelector('#tasks-orphans-dismiss');
+  sel.addEventListener('change', () => { btn.disabled = !sel.value; });
+  dismiss.addEventListener('click', () => { banner.style.display = 'none'; });
+  btn.addEventListener('click', async () => {
+    const projectId = sel.value;
+    if (!projectId) return;
+    const proj = allProjects.find(p => p.id === projectId);
+    const ok = await modal.confirm({
+      title: 'Atribuir projeto às tarefas do Planner',
+      message: `Atribuir <strong>${esc(proj?.name || '—')}</strong> a <strong>${orphans.length}</strong> tarefa(s)?<br>
+        <span style="font-size:0.8125rem;color:var(--text-muted);">
+          Nenhum outro campo é alterado.
+        </span>`,
+      confirmText: `Atribuir ${orphans.length}`,
+      icon: '🩹',
+    });
+    if (!ok) return;
+
+    btn.disabled = true; sel.disabled = true;
+    let done = 0, fail = 0;
+    for (const t of orphans) {
+      try { await updateTask(t.id, { projectId }); done++; }
+      catch (e) { fail++; console.warn('[tasks] orphan fix:', t.id, e?.message); }
+      btn.textContent = `Atribuindo… ${done + fail}/${orphans.length}`;
+    }
+    if (fail) toast.warning(`${done} atualizadas · ${fail} falharam. Veja o console.`);
+    else       toast.success(`${done} tarefa(s) agora estão no projeto "${proj?.name}".`);
+    // O subscribeToTasks vai re-renderizar o banner automaticamente com a nova contagem
   });
 }
 

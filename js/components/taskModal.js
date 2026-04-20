@@ -249,6 +249,58 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         let available = goals.filter(g => g.status === 'publicada');
         if (!available.length) available = goals.filter(g => g.status !== 'encerrada');
 
+        // ─── Filtro hierárquico ────────────────────────────────────────
+        // Master/diretoria/roles com system_view_all veem tudo. Demais
+        // veem apenas metas coerentes com seu escopo de atuação:
+        //   • global          → sempre visível (meta da empresa toda)
+        //   • area            → apenas se o setor da meta estiver nos visibleSectors
+        //   • nucleo          → se o núcleo da meta estiver em u.nucleos[] OU
+        //                       se o setor estiver nos visibleSectors
+        //   • squad           → apenas squads aos quais o usuário pertence
+        //   • individual      → responsável é o próprio usuário, é um dos
+        //                       assignees DESTA tarefa, ou o setor do responsável
+        //                       está nos meus visibleSectors
+        const seeAllGoals   = store.isMaster() || store.can('system_view_all');
+        const visibleSetores = store.getVisibleSectors();          // null = ver tudo
+        const myUid         = store.get('currentUser')?.uid || '';
+        const myProfile     = store.get('userProfile') || {};
+        const myNucleos     = Array.isArray(myProfile.nucleos) && myProfile.nucleos.length
+                                ? myProfile.nucleos
+                                : (myProfile.nucleo ? [myProfile.nucleo] : []);
+        const myWorkspaceIds = new Set(
+          (store.get('userWorkspaces') || []).map(w => w.id));
+        const usersRef      = store.get('users') || [];
+        const userSector    = (id) => (usersRef.find(u => u.id === id) || {}).sector || '';
+
+        if (!seeAllGoals && Array.isArray(visibleSetores)) {
+          const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
+          available = available.filter(g => {
+            const escopo = g.escopo || 'individual';
+            if (escopo === 'global') return true;
+            if (escopo === 'area') {
+              return !g.setor || visibleSetores.includes(g.setor);
+            }
+            if (escopo === 'nucleo') {
+              const byNucleo = g.nucleo && myNucleos.includes(g.nucleo);
+              const bySetor  = g.setor  && visibleSetores.includes(g.setor);
+              return byNucleo || bySetor;
+            }
+            if (escopo === 'squad') {
+              return !g.squadId || myWorkspaceIds.has(g.squadId);
+            }
+            if (escopo === 'individual') {
+              const respIds = getResponsavelIds(g);
+              if (respIds.includes(myUid) || g.gestorId === myUid) return true;
+              if (respIds.some(r => taskAssignees.includes(r))) return true;
+              // Responsável do meu setor → coordenador vê metas individuais
+              // de toda a sua equipe.
+              if (respIds.some(r => visibleSetores.includes(userSector(r)))) return true;
+              return false;
+            }
+            return false;
+          });
+        }
+
         const sel     = document.getElementById('tm-goal');
         const info    = document.getElementById('tm-goal-info');
         const btn     = document.getElementById('tm-goal-btn');
