@@ -583,7 +583,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
         // ─── Abre modal dedicado para escolha da meta ─────────────
         const openMetaModal = () => {
-          const totalMetas = Object.values(byScope).reduce((n, arr) => n + arr.length, 0);
+          const totalMetas = Object.values(bySector).reduce((n, arr) => n + arr.length, 0);
           const ref = modal.open({
             title: `🎯 Vincular meta (${totalMetas})`,
             size: 'lg',
