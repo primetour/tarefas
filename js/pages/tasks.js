@@ -258,21 +258,14 @@ function _subscribeToTasks() {
 /* ─── Auto-reparo: tarefas do Planner sem projectId ─────────────────
  * Detecta tarefas que vieram do Planner (customFields.plannerId OU
  * tag 'planner-import' como fallback) e estão sem projeto atribuído.
- * Mostra um banner acima da lista com dropdown de projeto e 1 botão
- * para atribuir em massa. Fica visível apenas para quem pode criar
- * tarefas (admin/master/manager) — para users comuns não faz sentido. */
-function renderPlannerOrphansBanner() {
-  const banner = document.getElementById('tasks-orphans-banner');
-  if (!banner) return;
+ * Mostra um banner acima da lista com CTA "Atribuir projetos" que
+ * abre um modal com uma linha por tarefa (cada tarefa recebe seu
+ * projeto individualmente, já que pertencem a projetos diferentes).
+ * Fica visível apenas para quem pode criar/gerenciar tarefas. */
 
-  // Só admin/manager (quem gerencia projetos) vê o auto-reparo
-  const canRepair = store.isMaster()
-    || store.can('system_manage_roles')
-    || store.can('projects_manage')
-    || store.can('task_create');
-  if (!canRepair) { banner.style.display = 'none'; return; }
-
-  const orphans = (allTasks || []).filter(t => {
+/** Detecta quais tarefas são órfãs do Planner (sem projeto). */
+function getPlannerOrphans() {
+  return (allTasks || []).filter(t => {
     if (t.archived) return false;
     if (t.projectId) return false;
     const fromPlanner =
@@ -280,7 +273,47 @@ function renderPlannerOrphansBanner() {
       (Array.isArray(t.tags) && t.tags.includes('planner-import'));
     return !!fromPlanner;
   });
+}
 
+/** Normaliza string p/ matching fuzzy (sem acento, lower, trim). */
+function _norm(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim();
+}
+
+/** Sugere projectId baseado em bucket/tags da tarefa vs. projetos ativos. */
+function suggestProjectForOrphan(task, projects) {
+  const hints = [];
+  const bucket = task?.customFields?.plannerBucket;
+  if (bucket) hints.push(_norm(bucket));
+  (task.tags || []).forEach(t => {
+    if (t && t !== 'planner-import') hints.push(_norm(t));
+  });
+  if (!hints.length) return '';
+
+  for (const p of projects) {
+    const pn = _norm(p.name);
+    if (!pn) continue;
+    for (const h of hints) {
+      if (!h) continue;
+      if (pn === h || pn.includes(h) || h.includes(pn)) return p.id;
+    }
+  }
+  return '';
+}
+
+function renderPlannerOrphansBanner() {
+  const banner = document.getElementById('tasks-orphans-banner');
+  if (!banner) return;
+
+  const canRepair = store.isMaster()
+    || store.can('system_manage_roles')
+    || store.can('projects_manage')
+    || store.can('task_create');
+  if (!canRepair) { banner.style.display = 'none'; return; }
+
+  const orphans = getPlannerOrphans();
   if (!orphans.length) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
 
   banner.style.display = 'block';
@@ -294,58 +327,275 @@ function renderPlannerOrphansBanner() {
           🩹 ${orphans.length} tarefa(s) do Planner sem projeto
         </div>
         <div style="font-size:0.8125rem;color:var(--text-muted);line-height:1.4;">
-          Essas tarefas foram importadas antes do campo <strong>Projeto</strong> existir na importação.
-          Escolha um projeto e preencha todas de uma vez.
+          Cada tarefa pode pertencer a um projeto diferente. Abra o painel de atribuição
+          para definir o projeto <strong>individualmente</strong> (com sugestões automáticas pelo bucket/tags).
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <select id="tasks-orphans-project" class="form-input" style="height:34px;font-size:0.8125rem;min-width:180px;">
-          <option value="">— Escolher projeto —</option>
-          ${allProjects
-            .filter(p => !p.archived && p.status !== 'archived')
-            .sort((a,b) => (a.name||'').localeCompare(b.name||'', 'pt-BR'))
-            .map(p => `<option value="${esc(p.id)}">${esc(p.icon || '📦')} ${esc(p.name)}</option>`)
-            .join('')}
-        </select>
-        <button type="button" id="tasks-orphans-apply" class="btn btn-primary btn-sm" disabled
-          style="white-space:nowrap;">Atribuir a ${orphans.length}</button>
+        <button type="button" id="tasks-orphans-open" class="btn btn-primary btn-sm"
+          style="white-space:nowrap;">Atribuir projetos…</button>
         <button type="button" id="tasks-orphans-dismiss" class="btn btn-ghost btn-sm"
           title="Ocultar até próxima recarga">✕</button>
       </div>
     </div>
   `;
 
-  const sel = banner.querySelector('#tasks-orphans-project');
-  const btn = banner.querySelector('#tasks-orphans-apply');
-  const dismiss = banner.querySelector('#tasks-orphans-dismiss');
-  sel.addEventListener('change', () => { btn.disabled = !sel.value; });
-  dismiss.addEventListener('click', () => { banner.style.display = 'none'; });
-  btn.addEventListener('click', async () => {
-    const projectId = sel.value;
-    if (!projectId) return;
-    const proj = allProjects.find(p => p.id === projectId);
-    const ok = await modal.confirm({
-      title: 'Atribuir projeto às tarefas do Planner',
-      message: `Atribuir <strong>${esc(proj?.name || '—')}</strong> a <strong>${orphans.length}</strong> tarefa(s)?<br>
-        <span style="font-size:0.8125rem;color:var(--text-muted);">
-          Nenhum outro campo é alterado.
-        </span>`,
-      confirmText: `Atribuir ${orphans.length}`,
-      icon: '🩹',
-    });
-    if (!ok) return;
+  banner.querySelector('#tasks-orphans-dismiss')
+    ?.addEventListener('click', () => { banner.style.display = 'none'; });
+  banner.querySelector('#tasks-orphans-open')
+    ?.addEventListener('click', () => openPlannerOrphansModal());
+}
 
-    btn.disabled = true; sel.disabled = true;
-    let done = 0, fail = 0;
-    for (const t of orphans) {
-      try { await updateTask(t.id, { projectId }); done++; }
-      catch (e) { fail++; console.warn('[tasks] orphan fix:', t.id, e?.message); }
-      btn.textContent = `Atribuindo… ${done + fail}/${orphans.length}`;
-    }
-    if (fail) toast.warning(`${done} atualizadas · ${fail} falharam. Veja o console.`);
-    else       toast.success(`${done} tarefa(s) agora estão no projeto "${proj?.name}".`);
-    // O subscribeToTasks vai re-renderizar o banner automaticamente com a nova contagem
+/** Abre modal com uma linha por tarefa órfã, cada uma com seu próprio dropdown. */
+function openPlannerOrphansModal() {
+  const orphans = getPlannerOrphans();
+  if (!orphans.length) {
+    toast.info('Nenhuma tarefa do Planner sem projeto no momento.');
+    return;
+  }
+  const projects = allProjects
+    .filter(p => !p.archived && p.status !== 'archived')
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pt-BR'));
+
+  if (!projects.length) {
+    toast.warning('Nenhum projeto ativo cadastrado. Crie um projeto antes de atribuir.');
+    return;
+  }
+
+  const users = store.get('users') || [];
+
+  // Estado: tarefa.id → projectId selecionado (inicial = sugestão automática)
+  const selection = new Map();
+  const suggested = new Map();
+  orphans.forEach(t => {
+    const sug = suggestProjectForOrphan(t, projects);
+    suggested.set(t.id, sug);
+    selection.set(t.id, sug);
   });
+
+  const projectOptions = projects
+    .map(p => `<option value="${esc(p.id)}">${esc(p.icon || '📦')} ${esc(p.name)}</option>`)
+    .join('');
+
+  const rowHtml = (t) => {
+    const sugId   = suggested.get(t.id) || '';
+    const curId   = selection.get(t.id) || '';
+    const bucket  = t?.customFields?.plannerBucket || '';
+    const tagsArr = (t.tags || []).filter(x => x && x !== 'planner-import');
+    const assigneesArr = Array.isArray(t.assignees)
+      ? t.assignees
+      : (typeof t.assignees === 'string' && t.assignees ? [t.assignees] : []);
+    const assignees = assigneesArr.slice(0, 3).map(uid => {
+      const u = users.find(u => u.id === uid);
+      if (!u) return '';
+      const initial = (u.name || '?').charAt(0).toUpperCase();
+      return `<span title="${esc(u.name)}"
+        style="display:inline-flex;align-items:center;justify-content:center;
+          width:22px;height:22px;border-radius:50%;
+          background:${u.avatarColor || '#3B82F6'};color:#fff;font-size:0.7rem;
+          font-weight:700;margin-left:-4px;border:2px solid var(--bg-card);">${esc(initial)}</span>`;
+    }).join('');
+    const extra = assigneesArr.length > 3
+      ? `<span style="font-size:0.7rem;color:var(--text-muted);margin-left:4px;">+${assigneesArr.length - 3}</span>`
+      : '';
+
+    const hints = [
+      bucket ? `<span style="background:var(--bg-subtle);padding:2px 8px;border-radius:99px;font-size:0.7rem;color:var(--text-muted);">📁 ${esc(bucket)}</span>` : '',
+      ...tagsArr.slice(0, 3).map(tag =>
+        `<span style="background:var(--bg-subtle);padding:2px 8px;border-radius:99px;font-size:0.7rem;color:var(--text-muted);">#${esc(tag)}</span>`),
+    ].filter(Boolean).join(' ');
+
+    return `
+      <tr data-task-id="${esc(t.id)}" style="border-top:1px solid var(--border-subtle);">
+        <td style="padding:10px 12px;vertical-align:top;">
+          <div style="font-weight:600;font-size:0.875rem;margin-bottom:4px;line-height:1.3;">
+            ${esc(t.title || '(sem título)')}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+            ${hints || '<span style="font-size:0.7rem;color:var(--text-muted);font-style:italic;">sem bucket/tags</span>'}
+          </div>
+        </td>
+        <td style="padding:10px 12px;vertical-align:top;white-space:nowrap;">
+          <div style="display:flex;align-items:center;">
+            ${assignees || '<span style="font-size:0.75rem;color:var(--text-muted);">—</span>'}${extra}
+          </div>
+        </td>
+        <td style="padding:10px 12px;vertical-align:top;min-width:240px;">
+          <select class="form-input orphan-project-select" data-task-id="${esc(t.id)}"
+            style="height:34px;font-size:0.8125rem;width:100%;">
+            <option value="">— Escolher projeto —</option>
+            ${projectOptions}
+          </select>
+          ${sugId ? `
+            <div style="font-size:0.7rem;color:#3B82F6;margin-top:4px;display:flex;align-items:center;gap:4px;">
+              ✨ Sugerido pelo bucket/tag
+            </div>` : ''}
+        </td>
+      </tr>
+    `;
+  };
+
+  const suggestedCount = [...suggested.values()].filter(Boolean).length;
+
+  const content = `
+    <div style="display:flex;flex-direction:column;gap:14px;min-height:0;">
+      <div style="padding:10px 14px;border-radius:8px;background:var(--bg-subtle);
+        font-size:0.8125rem;color:var(--text-muted);line-height:1.5;">
+        <strong style="color:var(--text-default);">${orphans.length}</strong> tarefa(s) sem projeto.
+        <strong style="color:#3B82F6;">${suggestedCount}</strong> já têm sugestão automática pelo bucket/tags.
+        Revise linha por linha e salve quando estiver pronto.
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+        padding:10px 12px;border-radius:8px;border:1px dashed var(--border-default);">
+        <span style="font-size:0.8125rem;color:var(--text-muted);">Atalho:</span>
+        <select id="orphans-bulk-project" class="form-input"
+          style="height:32px;font-size:0.8125rem;min-width:200px;">
+          <option value="">— projeto —</option>
+          ${projectOptions}
+        </select>
+        <button type="button" id="orphans-bulk-apply-all" class="btn btn-secondary btn-sm"
+          style="height:32px;padding:0 12px;font-size:0.8125rem;">Aplicar a todas</button>
+        <button type="button" id="orphans-bulk-apply-empty" class="btn btn-secondary btn-sm"
+          style="height:32px;padding:0 12px;font-size:0.8125rem;">Aplicar apenas às vazias</button>
+        <button type="button" id="orphans-restore-suggested" class="btn btn-ghost btn-sm"
+          style="height:32px;padding:0 12px;font-size:0.8125rem;">↺ Restaurar sugestões</button>
+      </div>
+
+      <div style="overflow:auto;max-height:55vh;border:1px solid var(--border-subtle);
+        border-radius:8px;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+          <thead style="position:sticky;top:0;background:var(--bg-card);z-index:1;">
+            <tr style="border-bottom:1px solid var(--border-default);">
+              <th style="text-align:left;padding:10px 12px;font-size:0.75rem;
+                text-transform:uppercase;letter-spacing:0.03em;color:var(--text-muted);">Tarefa</th>
+              <th style="text-align:left;padding:10px 12px;font-size:0.75rem;
+                text-transform:uppercase;letter-spacing:0.03em;color:var(--text-muted);width:90px;">Equipe</th>
+              <th style="text-align:left;padding:10px 12px;font-size:0.75rem;
+                text-transform:uppercase;letter-spacing:0.03em;color:var(--text-muted);">Projeto</th>
+            </tr>
+          </thead>
+          <tbody id="orphans-tbody">
+            ${orphans.map(rowHtml).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;
+        padding-top:12px;border-top:1px solid var(--border-subtle);">
+        <span id="orphans-pending-count" style="font-size:0.8125rem;color:var(--text-muted);"></span>
+        <div style="display:flex;gap:8px;">
+          <button type="button" id="orphans-cancel" class="btn btn-ghost">Cancelar</button>
+          <button type="button" id="orphans-save" class="btn btn-primary" disabled>Salvar alterações</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const m = modal.open({
+    size: 'lg',
+    title: '🩹 Atribuir projetos — tarefas do Planner',
+    content,
+    closeable: true,
+  });
+
+  const body = m.getBody();
+
+  const updateFooter = () => {
+    let pending = 0, changed = 0;
+    orphans.forEach(t => {
+      const val = selection.get(t.id) || '';
+      if (val) changed++; else pending++;
+    });
+    const pendingEl = body.parentElement?.querySelector('#orphans-pending-count')
+      || document.getElementById('orphans-pending-count');
+    if (pendingEl) {
+      pendingEl.textContent = changed
+        ? `${changed} pronto(s) para salvar · ${pending} sem projeto`
+        : `Nenhum projeto selecionado ainda`;
+    }
+    const saveBtn = document.getElementById('orphans-save');
+    if (saveBtn) {
+      saveBtn.disabled = changed === 0;
+      saveBtn.textContent = changed
+        ? `Salvar ${changed} atribuição(ões)`
+        : 'Salvar alterações';
+    }
+  };
+
+  // Aplica selections iniciais nos <select>
+  body.querySelectorAll('.orphan-project-select').forEach(sel => {
+    const id = sel.getAttribute('data-task-id');
+    const cur = selection.get(id) || '';
+    if (cur) sel.value = cur;
+  });
+
+  body.addEventListener('change', (ev) => {
+    const sel = ev.target.closest('.orphan-project-select');
+    if (!sel) return;
+    selection.set(sel.getAttribute('data-task-id'), sel.value || '');
+    updateFooter();
+  });
+
+  const applyBulk = (mode) => {
+    const bulkSel = document.getElementById('orphans-bulk-project');
+    const pid = bulkSel?.value || '';
+    if (!pid) { toast.warning('Escolha um projeto no atalho primeiro.'); return; }
+    body.querySelectorAll('.orphan-project-select').forEach(sel => {
+      const id = sel.getAttribute('data-task-id');
+      const cur = selection.get(id) || '';
+      if (mode === 'empty' && cur) return;
+      selection.set(id, pid);
+      sel.value = pid;
+    });
+    updateFooter();
+  };
+
+  document.getElementById('orphans-bulk-apply-all')
+    ?.addEventListener('click', () => applyBulk('all'));
+  document.getElementById('orphans-bulk-apply-empty')
+    ?.addEventListener('click', () => applyBulk('empty'));
+  document.getElementById('orphans-restore-suggested')
+    ?.addEventListener('click', () => {
+      body.querySelectorAll('.orphan-project-select').forEach(sel => {
+        const id = sel.getAttribute('data-task-id');
+        const sug = suggested.get(id) || '';
+        selection.set(id, sug);
+        sel.value = sug;
+      });
+      updateFooter();
+    });
+
+  document.getElementById('orphans-cancel')
+    ?.addEventListener('click', () => m.close());
+
+  document.getElementById('orphans-save')
+    ?.addEventListener('click', async () => {
+      const saveBtn = document.getElementById('orphans-save');
+      const toSave = orphans.filter(t => selection.get(t.id));
+      if (!toSave.length) return;
+
+      // Valida se ao menos um projeto ainda existe
+      const invalid = toSave.find(t => !projects.some(p => p.id === selection.get(t.id)));
+      if (invalid) { toast.error('Um dos projetos escolhidos não é mais válido.'); return; }
+
+      saveBtn.disabled = true;
+      const originalTxt = saveBtn.textContent;
+      let done = 0, fail = 0;
+      for (const t of toSave) {
+        const pid = selection.get(t.id);
+        try { await updateTask(t.id, { projectId: pid }); done++; }
+        catch (e) { fail++; console.warn('[tasks] orphan fix:', t.id, e?.message); }
+        saveBtn.textContent = `Salvando… ${done + fail}/${toSave.length}`;
+      }
+      saveBtn.textContent = originalTxt;
+      if (fail) toast.warning(`${done} atualizadas · ${fail} falharam. Veja o console.`);
+      else       toast.success(`${done} tarefa(s) atribuídas aos seus projetos.`);
+      m.close();
+      // O subscribeToTasks re-renderiza o banner automaticamente.
+    });
+
+  updateFooter();
 }
 
 function _populateTagFilter() {

@@ -321,9 +321,34 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                              dados:'Dados', web:'Web', sistemas:'Sistemas', ia:'IA' };
         const workspaces = store.get('userWorkspaces') || [];
 
-        // Monta índice + lista agrupada
+        // Helper: deriva o setor da meta — primário para agrupamento no popup.
+        //   area    → g.setor
+        //   nucleo  → g.setor
+        //   squad   → setor do workspace (se único)
+        //   individual → setor do primeiro responsável (via users)
+        //   global  → '__global__' (separado no topo)
+        const deriveSetor = (g) => {
+          const escopo = g.escopo || 'individual';
+          if (escopo === 'global') return '__global__';
+          if (escopo === 'area' || escopo === 'nucleo') return g.setor || '';
+          if (escopo === 'squad') {
+            const ws = workspaces.find(w => w.id === g.squadId);
+            return ws?.sector || g.setor || '';
+          }
+          if (escopo === 'individual') {
+            const respIds = getResponsavelIds(g);
+            for (const id of respIds) {
+              const u = usersRef.find(u => u.id === id);
+              if (u?.sector) return u.sector;
+            }
+            return g.setor || '';
+          }
+          return g.setor || '';
+        };
+
+        // Monta índice + lista agrupada por SETOR (primário) + scope como chip
         const metaIndex = {};
-        const byScope = {}; // { escopo: [ {val, metaName, pilarName, goalName, norm}, … ] }
+        const bySector  = {}; // { setor: [ {val, …, escopo} ] }
         let selectedValue = '';
         const selOpts = ['<option value="">Sem meta vinculada</option>'];
 
@@ -331,6 +356,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           const escopo = g.escopo || 'individual';
           const goalName = g.nome || g.objetivoNucleo || g.titulo || 'Meta';
           const respIds = getResponsavelIds(g);
+          const derivedSetor = deriveSetor(g);
 
           (g.pilares || []).forEach((pilar, pi) => {
             (pilar.metas || []).forEach((meta, mi) => {
@@ -347,20 +373,49 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                 squadId:        g.squadId || '',
                 nucleo:         g.nucleo  || '',
                 setor:          g.setor   || '',
+                derivedSetor,
               };
 
-              const normStr = (`${metaName} ${pilarName} ${goalName}`)
+              const normStr = (`${metaName} ${pilarName} ${goalName} ${derivedSetor}`)
                 .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-              (byScope[escopo] = byScope[escopo] || []).push(
-                { val, metaName, pilarName, goalName, norm: normStr, selected: isSelected });
+              const bucket = derivedSetor || '__unknown__';
+              (bySector[bucket] = bySector[bucket] || []).push(
+                { val, metaName, pilarName, goalName, norm: normStr, escopo, selected: isSelected });
               selOpts.push(`<option value="${val}"${isSelected ? ' selected' : ''}>${esc(metaName)}</option>`);
             });
           });
         });
 
+        // Ordem de apresentação dos setores: Globais no topo, setores do
+        // usuário (visibleSectors) a seguir em ordem alfabética, depois os
+        // demais, por último 'Sem setor' (quando existir).
+        const sectorKeys = Object.keys(bySector);
+        const priority = new Set(Array.isArray(visibleSetores) ? visibleSetores : []);
+        const sectorOrder = sectorKeys.sort((a, b) => {
+          if (a === '__global__') return -1;
+          if (b === '__global__') return 1;
+          if (a === '__unknown__') return 1;
+          if (b === '__unknown__') return -1;
+          const pa = priority.has(a), pb = priority.has(b);
+          if (pa !== pb) return pa ? -1 : 1;
+          return a.localeCompare(b, 'pt-BR');
+        });
+        const sectorTitle = (key) => {
+          if (key === '__global__') return 'Globais · corporativas';
+          if (key === '__unknown__') return 'Sem setor definido';
+          return key;
+        };
+        const sectorIcon = (key) => {
+          if (key === '__global__') return '✦';
+          if (key === '__unknown__') return '∅';
+          return '▣';
+        };
+
         sel.innerHTML = selOpts.join('');
 
-        // ─── Renderiza a lista dentro do modal (agrupada + filtrada por busca) ──
+        // ─── Renderiza a lista dentro do modal ──
+        // Agrupamento primário por SETOR (Globais no topo, depois setores do
+        // usuário, depois demais). Escopo vira chip de cor em cada item.
         const buildListHtml = (query = '') => {
           const q = (query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
           const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
@@ -375,24 +430,28 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             </button>`;
 
           let totalShown = 0;
-          scopeOrder.forEach(s => {
-            const items = (byScope[s] || []).filter(it =>
+          sectorOrder.forEach(sectorKey => {
+            const items = (bySector[sectorKey] || []).filter(it =>
               !tokens.length || tokens.every(t => it.norm.includes(t)));
             if (!items.length) return;
             totalShown += items.length;
-            const sc = scopeMap[s] || { icon:'•', label:s };
-            const color = scopeColor[s] || '#9CA3AF';
+
+            const isGlobal = sectorKey === '__global__';
+            const headerColor = isGlobal ? scopeColor.global : 'var(--text-muted)';
             html += `
-              <div style="padding:10px 12px 4px;margin-top:8px;
+              <div style="padding:10px 12px 6px;margin-top:8px;
                 display:flex;align-items:center;gap:8px;
                 font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-                color:${color};border-top:1px solid var(--border-subtle);">
-                <span style="font-size:1rem;line-height:1;">${sc.icon}</span>
-                <span>${esc(sc.label)}</span>
+                color:${headerColor};border-top:1px solid var(--border-subtle);">
+                <span style="font-size:0.875rem;line-height:1;">${sectorIcon(sectorKey)}</span>
+                <span>${esc(sectorTitle(sectorKey))}</span>
                 <span style="color:var(--text-muted);font-weight:500;letter-spacing:0;">· ${items.length}</span>
               </div>`;
+
             items.forEach(it => {
               const isSel = it.val === selectedValue;
+              const sc    = scopeMap[it.escopo] || { icon:'•', label: it.escopo };
+              const color = scopeColor[it.escopo] || '#9CA3AF';
               html += `
                 <button type="button" class="tm-goal-item" data-value="${esc(it.val)}"
                   style="width:100%;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin:3px 0;
@@ -404,8 +463,13 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                   <span style="flex:1;min-width:0;">
                     <div style="font-size:0.875rem;color:var(--text-primary);font-weight:500;
                       white-space:normal;line-height:1.35;">${esc(it.metaName)}</div>
-                    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;line-height:1.25;">
-                      ${esc(it.pilarName)} · ${esc(it.goalName)}
+                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;
+                      font-size:0.75rem;color:var(--text-muted);margin-top:4px;line-height:1.25;">
+                      <span style="padding:1px 7px;border-radius:999px;font-size:0.6875rem;font-weight:600;
+                        background:${color}22;color:${color};border:1px solid ${color}44;">
+                        ${sc.icon} ${esc(sc.label)}
+                      </span>
+                      <span>${esc(it.pilarName)} · ${esc(it.goalName)}</span>
                     </div>
                   </span>
                   ${isSel ? `<span style="color:${color};font-weight:700;">✓</span>` : ''}
@@ -481,25 +545,40 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             </div>`;
         };
 
-        // Atualiza label do botão com base na seleção
+        // Atualiza estado visual do botão — estado vazio (dashed, call-to-action)
+        // vs. preenchido (borda sólida + fundo leve da cor do escopo).
+        const btnIcon   = document.getElementById('tm-goal-btn-icon');
+        const btnAction = document.getElementById('tm-goal-btn-action');
         const refreshBtnLabel = () => {
           const v = sel.value;
           if (!v || !metaIndex[v]) {
-            btnLbl.textContent = 'Sem meta vinculada';
-            btnLbl.style.color = 'var(--text-muted)';
+            btn.classList.add('tm-goal-empty');
+            btn.classList.remove('tm-goal-filled');
+            btn.style.background = 'transparent';
+            btn.style.border = '1.5px dashed var(--border-default)';
+            btn.style.color = 'var(--text-muted)';
+            if (btnIcon) btnIcon.textContent = '🎯';
+            if (btnLbl)  btnLbl.textContent = 'Vincular meta…';
+            if (btnAction) { btnAction.textContent = 'Escolher'; btnAction.style.color = 'var(--text-muted)'; }
             return;
           }
           const m = metaIndex[v];
           const sc = scopeMap[m.escopo] || { icon:'•', label:m.escopo };
           const color = scopeColor[m.escopo] || '#9CA3AF';
-          btnLbl.style.color = 'var(--text-primary)';
-          btnLbl.innerHTML = `
-            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
-              background:${color};margin-right:6px;vertical-align:middle;"></span>
-            <span>${esc(m.metaName)}</span>
-            <span style="color:var(--text-muted);font-size:0.75rem;margin-left:6px;">
-              ${sc.icon} ${esc(sc.label)}
-            </span>`;
+          btn.classList.remove('tm-goal-empty');
+          btn.classList.add('tm-goal-filled');
+          btn.style.background = color + '14';
+          btn.style.border = '1.5px solid ' + color + '66';
+          btn.style.color = 'var(--text-primary)';
+          if (btnIcon) btnIcon.textContent = sc.icon || '🎯';
+          if (btnLbl) {
+            btnLbl.innerHTML = `
+              <span style="color:var(--text-primary);font-weight:600;">${esc(m.metaName)}</span>
+              <span style="color:var(--text-muted);font-size:0.75rem;margin-left:6px;font-weight:500;">
+                · ${esc(sc.label)}
+              </span>`;
+          }
+          if (btnAction) { btnAction.textContent = 'Alterar'; btnAction.style.color = color; }
         };
 
         // ─── Abre modal dedicado para escolha da meta ─────────────
@@ -933,15 +1012,18 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         <select id="tm-goal" style="display:none;">
           <option value="">Sem meta vinculada</option>
         </select>
-        <!-- Botão compacto que abre um modal dedicado para escolher a meta -->
-        <button type="button" id="tm-goal-btn"
-          style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
-            padding:8px 12px;border-radius:var(--radius-md);
-            background:var(--bg-elevated);border:1px solid var(--border-default);
-            color:var(--text-primary);font-size:0.875rem;cursor:pointer;text-align:left;">
-          <span id="tm-goal-btn-label" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-            color:var(--text-muted);">Sem meta vinculada</span>
-          <span style="opacity:0.6;font-size:0.75rem;">⇱</span>
+        <!-- Trigger: cara de botão de ação (não de campo). Muda de estilo
+             quando há meta vinculada (borda sólida + fundo leve da cor do escopo). -->
+        <button type="button" id="tm-goal-btn" class="tm-goal-trigger tm-goal-empty"
+          style="width:100%;display:flex;align-items:center;gap:10px;
+            padding:10px 14px;border-radius:var(--radius-md);cursor:pointer;text-align:left;
+            font-size:0.875rem;font-weight:500;transition:all .15s ease;
+            background:transparent;border:1.5px dashed var(--border-default);color:var(--text-muted);">
+          <span id="tm-goal-btn-icon" style="font-size:1rem;flex-shrink:0;">🎯</span>
+          <span id="tm-goal-btn-label" style="flex:1;overflow:hidden;text-overflow:ellipsis;
+            white-space:nowrap;">Vincular meta…</span>
+          <span id="tm-goal-btn-action" style="font-size:0.6875rem;font-weight:700;
+            letter-spacing:.05em;text-transform:uppercase;opacity:0.7;">Escolher</span>
         </button>
         <!-- Cartão com contexto da meta (escopo + identidade) -->
         <div id="tm-goal-info" style="margin-top:6px;display:none;
