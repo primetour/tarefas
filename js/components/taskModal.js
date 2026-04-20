@@ -346,17 +346,37 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           return g.setor || '';
         };
 
-        // Monta índice + lista agrupada por SETOR (primário) + scope como chip
+        // Monta índice + árvore agrupada por SETOR → NOME DA META → itens
+        // Cada "item" é uma meta-avaliável (g.pilares[].metas[]) — esse é o
+        // nível realmente selecionável ao vincular à tarefa.
         const metaIndex = {};
-        const bySector  = {}; // { setor: [ {val, …, escopo} ] }
+        const bySector  = {}; // { setor: { goalId: { goal, items: [...] } } }
         let selectedValue = '';
         const selOpts = ['<option value="">Sem meta vinculada</option>'];
+
+        // Valores distintos p/ alimentar os filtros do popup
+        const respSet  = new Map();   // id → name
+        const gestorSet = new Map();  // id → name
+        const squadSet = new Map();   // id → {name,icon}
 
         available.forEach(g => {
           const escopo = g.escopo || 'individual';
           const goalName = g.nome || g.objetivoNucleo || g.titulo || 'Meta';
           const respIds = getResponsavelIds(g);
           const derivedSetor = deriveSetor(g);
+
+          respIds.forEach(id => {
+            const u = usersRef.find(x => x.id === id);
+            if (u) respSet.set(id, u.name);
+          });
+          if (g.gestorId) {
+            const u = usersRef.find(x => x.id === g.gestorId);
+            if (u) gestorSet.set(g.gestorId, u.name);
+          }
+          if (g.squadId) {
+            const ws = workspaces.find(w => w.id === g.squadId);
+            if (ws) squadSet.set(g.squadId, { name: ws.name, icon: ws.icon || '◊' });
+          }
 
           (g.pilares || []).forEach((pilar, pi) => {
             (pilar.metas || []).forEach((meta, mi) => {
@@ -370,6 +390,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
               metaIndex[val] = {
                 escopo, goalName, metaName, pilarName,
                 responsavelIds: respIds,
+                gestorId:       g.gestorId || '',
                 squadId:        g.squadId || '',
                 nucleo:         g.nucleo  || '',
                 setor:          g.setor   || '',
@@ -378,9 +399,24 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
               const normStr = (`${metaName} ${pilarName} ${goalName} ${derivedSetor}`)
                 .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-              const bucket = derivedSetor || '__unknown__';
-              (bySector[bucket] = bySector[bucket] || []).push(
-                { val, metaName, pilarName, goalName, norm: normStr, escopo, selected: isSelected });
+              const sectorKey = derivedSetor || '__unknown__';
+
+              const sectorBucket = (bySector[sectorKey] = bySector[sectorKey] || {});
+              const goalBucket = (sectorBucket[g.id] = sectorBucket[g.id] || {
+                goalId: g.id, goalName, escopo,
+                gestorId: g.gestorId || '',
+                squadId:  g.squadId || '',
+                responsavelIds: respIds,
+                items: [],
+              });
+              goalBucket.items.push({
+                val, metaName, pilarName, goalName, norm: normStr,
+                escopo, selected: isSelected,
+                responsavelIds: respIds,
+                gestorId: g.gestorId || '',
+                squadId:  g.squadId || '',
+              });
+
               selOpts.push(`<option value="${val}"${isSelected ? ' selected' : ''}>${esc(metaName)}</option>`);
             });
           });
@@ -413,9 +449,20 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
         sel.innerHTML = selOpts.join('');
 
-        // ─── Renderiza a lista dentro do modal ──
-        // Agrupamento primário por SETOR (Globais no topo, depois setores do
-        // usuário, depois demais). Escopo vira chip de cor em cada item.
+        // Filtros do popup (aplicados em buildListHtml). Inicialmente vazios.
+        const popupFilters = { escopo: '', resp: '', gestor: '', squad: '' };
+
+        // ─── Renderiza a árvore dentro do modal ─────────────────────
+        // Hierarquia: SETOR → NOME DA META → itens avaliáveis (pilar/meta).
+        // Filtros de busca textual + dropdowns de escopo/responsável/gestor/squad.
+        const passesFilters = (it, goalBucket) => {
+          if (popupFilters.escopo && it.escopo !== popupFilters.escopo) return false;
+          if (popupFilters.resp && !(goalBucket.responsavelIds || []).includes(popupFilters.resp)) return false;
+          if (popupFilters.gestor && goalBucket.gestorId !== popupFilters.gestor) return false;
+          if (popupFilters.squad && goalBucket.squadId !== popupFilters.squad) return false;
+          return true;
+        };
+
         const buildListHtml = (query = '') => {
           const q = (query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
           const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
@@ -430,11 +477,24 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             </button>`;
 
           let totalShown = 0;
+
           sectorOrder.forEach(sectorKey => {
-            const items = (bySector[sectorKey] || []).filter(it =>
-              !tokens.length || tokens.every(t => it.norm.includes(t)));
-            if (!items.length) return;
-            totalShown += items.length;
+            const goalsMap = bySector[sectorKey] || {};
+            // ordena goals pelo nome
+            const goalBuckets = Object.values(goalsMap).sort((a, b) =>
+              (a.goalName || '').localeCompare(b.goalName || '', 'pt-BR'));
+
+            // Aplica filtros + busca por item
+            const goalsWithMatches = goalBuckets.map(gb => {
+              const items = gb.items.filter(it =>
+                passesFilters(it, gb) &&
+                (!tokens.length || tokens.every(t => it.norm.includes(t))));
+              return { ...gb, items };
+            }).filter(gb => gb.items.length);
+
+            if (!goalsWithMatches.length) return;
+            const sectorTotal = goalsWithMatches.reduce((n, gb) => n + gb.items.length, 0);
+            totalShown += sectorTotal;
 
             const isGlobal = sectorKey === '__global__';
             const headerColor = isGlobal ? scopeColor.global : 'var(--text-muted)';
@@ -445,41 +505,57 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                 color:${headerColor};border-top:1px solid var(--border-subtle);">
                 <span style="font-size:0.875rem;line-height:1;">${sectorIcon(sectorKey)}</span>
                 <span>${esc(sectorTitle(sectorKey))}</span>
-                <span style="color:var(--text-muted);font-weight:500;letter-spacing:0;">· ${items.length}</span>
+                <span style="color:var(--text-muted);font-weight:500;letter-spacing:0;">· ${sectorTotal}</span>
               </div>`;
 
-            items.forEach(it => {
-              const isSel = it.val === selectedValue;
-              const sc    = scopeMap[it.escopo] || { icon:'•', label: it.escopo };
-              const color = scopeColor[it.escopo] || '#9CA3AF';
+            goalsWithMatches.forEach(gb => {
+              const gColor = scopeColor[gb.escopo] || '#9CA3AF';
+              const gSc    = scopeMap[gb.escopo] || { icon:'•', label: gb.escopo };
               html += `
-                <button type="button" class="tm-goal-item" data-value="${esc(it.val)}"
-                  style="width:100%;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin:3px 0;
-                    background:${isSel ? color + '18' : 'var(--bg-elevated)'};
-                    border:1px solid ${isSel ? color + '66' : 'var(--border-subtle)'};
-                    border-radius:8px;cursor:pointer;text-align:left;transition:background .1s;">
-                  <span style="display:inline-block;width:10px;height:10px;border-radius:50%;
-                    background:${color};margin-top:6px;flex-shrink:0;"></span>
-                  <span style="flex:1;min-width:0;">
-                    <div style="font-size:0.875rem;color:var(--text-primary);font-weight:500;
-                      white-space:normal;line-height:1.35;">${esc(it.metaName)}</div>
-                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;
-                      font-size:0.75rem;color:var(--text-muted);margin-top:4px;line-height:1.25;">
-                      <span style="padding:1px 7px;border-radius:999px;font-size:0.6875rem;font-weight:600;
-                        background:${color}22;color:${color};border:1px solid ${color}44;">
-                        ${sc.icon} ${esc(sc.label)}
-                      </span>
-                      <span>${esc(it.pilarName)} · ${esc(it.goalName)}</span>
-                    </div>
+                <div style="margin:6px 0 2px;padding:6px 10px;display:flex;align-items:center;gap:8px;
+                  background:${gColor}0f;border-left:3px solid ${gColor};border-radius:4px;">
+                  <span style="font-size:0.8125rem;font-weight:700;color:var(--text-primary);">
+                    📌 ${esc(gb.goalName)}
                   </span>
-                  ${isSel ? `<span style="color:${color};font-weight:700;">✓</span>` : ''}
-                </button>`;
+                  <span style="padding:1px 7px;border-radius:999px;font-size:0.6875rem;font-weight:600;
+                    background:${gColor}22;color:${gColor};border:1px solid ${gColor}44;">
+                    ${gSc.icon} ${esc(gSc.label)}
+                  </span>
+                  <span style="color:var(--text-muted);font-size:0.6875rem;margin-left:auto;">
+                    ${gb.items.length} ${gb.items.length === 1 ? 'meta' : 'metas'}
+                  </span>
+                </div>`;
+
+              gb.items.forEach(it => {
+                const isSel = it.val === selectedValue;
+                const color = scopeColor[it.escopo] || '#9CA3AF';
+                html += `
+                  <button type="button" class="tm-goal-item" data-value="${esc(it.val)}"
+                    style="width:calc(100% - 14px);margin-left:14px;display:flex;align-items:flex-start;gap:10px;padding:9px 12px;margin-top:3px;margin-bottom:3px;
+                      background:${isSel ? color + '18' : 'var(--bg-elevated)'};
+                      border:1px solid ${isSel ? color + '66' : 'var(--border-subtle)'};
+                      border-radius:8px;cursor:pointer;text-align:left;transition:background .1s;">
+                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+                      background:${color};margin-top:6px;flex-shrink:0;"></span>
+                    <span style="flex:1;min-width:0;">
+                      <div style="font-size:0.875rem;color:var(--text-primary);font-weight:500;
+                        white-space:normal;line-height:1.35;">${esc(it.metaName)}</div>
+                      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;line-height:1.25;">
+                        ${esc(it.pilarName)}
+                      </div>
+                    </span>
+                    ${isSel ? `<span style="color:${color};font-weight:700;">✓</span>` : ''}
+                  </button>`;
+              });
             });
           });
 
-          if (!totalShown && q) {
+          const hasFilterActive = q || popupFilters.escopo || popupFilters.resp || popupFilters.gestor || popupFilters.squad;
+          if (!totalShown && hasFilterActive) {
             html += `<div style="padding:28px;text-align:center;color:var(--text-muted);font-size:0.875rem;">
-              Nenhuma meta encontrada para "${esc(query)}"</div>`;
+              Nenhuma meta encontrada com os filtros atuais
+              <div style="margin-top:6px;font-size:0.75rem;">Limpe os filtros ou ajuste a busca.</div>
+            </div>`;
           } else if (!totalShown) {
             html += `<div style="padding:28px;text-align:center;color:var(--text-muted);font-size:0.875rem;">
               Nenhuma meta publicada disponível</div>`;
@@ -583,7 +659,26 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
         // ─── Abre modal dedicado para escolha da meta ─────────────
         const openMetaModal = () => {
-          const totalMetas = Object.values(bySector).reduce((n, arr) => n + arr.length, 0);
+          const totalMetas = Object.values(bySector).reduce((acc, goalsMap) =>
+            acc + Object.values(goalsMap).reduce((n, gb) => n + gb.items.length, 0), 0);
+
+          // Listas ordenadas p/ os dropdowns de filtro
+          const respOpts = [...respSet.entries()]
+            .sort((a, b) => (a[1] || '').localeCompare(b[1] || '', 'pt-BR'))
+            .map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('');
+          const gestorOpts = [...gestorSet.entries()]
+            .sort((a, b) => (a[1] || '').localeCompare(b[1] || '', 'pt-BR'))
+            .map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('');
+          const squadOpts = [...squadSet.entries()]
+            .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || '', 'pt-BR'))
+            .map(([id, ws]) => `<option value="${esc(id)}">${esc((ws.icon || '◊') + ' ' + ws.name)}</option>`).join('');
+          const scopeOpts = GOAL_SCOPES
+            .map(s => `<option value="${s.value}">${s.icon} ${esc(s.label)}</option>`).join('');
+
+          const selectCss = `padding:7px 10px;font-size:0.8125rem;background:var(--bg-elevated);
+            border:1px solid var(--border-default);border-radius:7px;color:var(--text-primary);
+            outline:none;min-width:130px;height:34px;`;
+
           const ref = modal.open({
             title: `🎯 Vincular meta (${totalMetas})`,
             size: 'lg',
@@ -591,10 +686,28 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             content: `
               <div style="display:flex;flex-direction:column;gap:10px;min-height:400px;max-height:70vh;">
                 <input type="text" id="tm-goal-modal-search"
-                  placeholder="Buscar meta, pilar ou plano…"
+                  placeholder="Buscar por nome da meta, pilar, plano ou setor…"
                   style="width:100%;padding:10px 14px;font-size:0.9375rem;
                     background:var(--bg-elevated);border:1px solid var(--border-default);
                     border-radius:8px;color:var(--text-primary);outline:none;" />
+
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                  <select id="tm-goal-fil-escopo" style="${selectCss}">
+                    <option value="">Todos os escopos</option>${scopeOpts}
+                  </select>
+                  <select id="tm-goal-fil-resp" style="${selectCss}" ${respSet.size ? '' : 'disabled'}>
+                    <option value="">Todos os responsáveis</option>${respOpts}
+                  </select>
+                  <select id="tm-goal-fil-gestor" style="${selectCss}" ${gestorSet.size ? '' : 'disabled'}>
+                    <option value="">Todos os gestores</option>${gestorOpts}
+                  </select>
+                  <select id="tm-goal-fil-squad" style="${selectCss}" ${squadSet.size ? '' : 'disabled'}>
+                    <option value="">Todos os squads</option>${squadOpts}
+                  </select>
+                  <button type="button" id="tm-goal-fil-clear" class="btn btn-ghost btn-sm"
+                    style="height:34px;padding:0 12px;font-size:0.75rem;">↺ Limpar</button>
+                </div>
+
                 <div id="tm-goal-modal-list" style="flex:1;overflow-y:auto;padding:4px 2px 8px;">
                   ${buildListHtml('')}
                 </div>
@@ -604,21 +717,42 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             ],
           });
 
-          const bodyEl = ref.getBody();
+          const bodyEl   = ref.getBody();
           const searchEl = bodyEl.querySelector('#tm-goal-modal-search');
           const listEl   = bodyEl.querySelector('#tm-goal-modal-list');
+          const escFil   = bodyEl.querySelector('#tm-goal-fil-escopo');
+          const respFil  = bodyEl.querySelector('#tm-goal-fil-resp');
+          const gestFil  = bodyEl.querySelector('#tm-goal-fil-gestor');
+          const sqFil    = bodyEl.querySelector('#tm-goal-fil-squad');
+          const clearBtn = bodyEl.querySelector('#tm-goal-fil-clear');
 
           // Foca a busca automaticamente
           setTimeout(() => searchEl?.focus(), 50);
 
-          searchEl?.addEventListener('input', () => {
-            listEl.innerHTML = buildListHtml(searchEl.value);
-          });
+          const refreshList = () => {
+            listEl.innerHTML = buildListHtml(searchEl?.value || '');
+          };
+
+          searchEl?.addEventListener('input', refreshList);
           searchEl?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
               const first = listEl.querySelector('.tm-goal-item[data-value]:not([data-value=""])');
               if (first) first.click();
             }
+          });
+
+          escFil?.addEventListener('change', () => { popupFilters.escopo = escFil.value; refreshList(); });
+          respFil?.addEventListener('change', () => { popupFilters.resp   = respFil.value; refreshList(); });
+          gestFil?.addEventListener('change', () => { popupFilters.gestor = gestFil.value; refreshList(); });
+          sqFil?.addEventListener('change',   () => { popupFilters.squad  = sqFil.value;   refreshList(); });
+          clearBtn?.addEventListener('click', () => {
+            popupFilters.escopo = popupFilters.resp = popupFilters.gestor = popupFilters.squad = '';
+            if (escFil)  escFil.value  = '';
+            if (respFil) respFil.value = '';
+            if (gestFil) gestFil.value = '';
+            if (sqFil)   sqFil.value   = '';
+            if (searchEl) searchEl.value = '';
+            refreshList();
           });
 
           // Seleção por clique em qualquer item da lista
