@@ -452,6 +452,24 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         // Filtros do popup (aplicados em buildListHtml). Inicialmente vazios.
         const popupFilters = { escopo: '', resp: '', gestor: '', squad: '' };
 
+        // Estado do acordeão (sessão do popup). true = colapsado.
+        // Default: setor do usuário expandido; demais colapsados.
+        //   Se houver busca ou filtro ativo, força expandir tudo
+        //   dentro do buildListHtml (não altera o estado base).
+        const sectorCollapsed = {};  // { sectorKey: true/false }
+        const goalCollapsed   = {};  // { sectorKey + '::' + goalId: true/false }
+        sectorKeys.forEach(k => {
+          // Expande globais e setores prioritários (do próprio usuário) por padrão.
+          const isPriority = priority.has(k) || k === '__global__';
+          sectorCollapsed[k] = !isPriority;
+        });
+        // Goals: todos começam expandidos; o usuário colapsa se quiser.
+        sectorKeys.forEach(sk => {
+          Object.keys(bySector[sk] || {}).forEach(gid => {
+            goalCollapsed[sk + '::' + gid] = false;
+          });
+        });
+
         // ─── Renderiza a árvore dentro do modal ─────────────────────
         // Hierarquia: SETOR → NOME DA META → itens avaliáveis (pilar/meta).
         // Filtros de busca textual + dropdowns de escopo/responsável/gestor/squad.
@@ -467,6 +485,11 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           const q = (query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
           const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
 
+          // Quando há busca/filtro, força expandir tudo p/ resultados visíveis.
+          const hasActiveQuery = !!q
+            || !!popupFilters.escopo || !!popupFilters.resp
+            || !!popupFilters.gestor || !!popupFilters.squad;
+
           let html = `
             <button type="button" class="tm-goal-item" data-value=""
               style="width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:4px;
@@ -480,11 +503,9 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
           sectorOrder.forEach(sectorKey => {
             const goalsMap = bySector[sectorKey] || {};
-            // ordena goals pelo nome
             const goalBuckets = Object.values(goalsMap).sort((a, b) =>
               (a.goalName || '').localeCompare(b.goalName || '', 'pt-BR'));
 
-            // Aplica filtros + busca por item
             const goalsWithMatches = goalBuckets.map(gb => {
               const items = gb.items.filter(it =>
                 passesFilters(it, gb) &&
@@ -498,22 +519,37 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
             const isGlobal = sectorKey === '__global__';
             const headerColor = isGlobal ? scopeColor.global : 'var(--text-muted)';
+            const sectorIsCollapsed = hasActiveQuery ? false : !!sectorCollapsed[sectorKey];
+            const sectorChevron = sectorIsCollapsed ? '▸' : '▾';
+
             html += `
-              <div style="padding:10px 12px 6px;margin-top:8px;
-                display:flex;align-items:center;gap:8px;
-                font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-                color:${headerColor};border-top:1px solid var(--border-subtle);">
+              <button type="button" class="tm-goal-sector-header" data-sector="${esc(sectorKey)}"
+                style="width:100%;text-align:left;cursor:pointer;background:transparent;
+                  padding:10px 12px 6px;margin-top:8px;border:none;border-top:1px solid var(--border-subtle);
+                  display:flex;align-items:center;gap:8px;
+                  font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+                  color:${headerColor};">
+                <span style="font-size:0.75rem;line-height:1;width:10px;color:var(--text-muted);">${sectorChevron}</span>
                 <span style="font-size:0.875rem;line-height:1;">${sectorIcon(sectorKey)}</span>
                 <span>${esc(sectorTitle(sectorKey))}</span>
                 <span style="color:var(--text-muted);font-weight:500;letter-spacing:0;">· ${sectorTotal}</span>
-              </div>`;
+              </button>`;
+
+            if (sectorIsCollapsed) return;
 
             goalsWithMatches.forEach(gb => {
               const gColor = scopeColor[gb.escopo] || '#9CA3AF';
               const gSc    = scopeMap[gb.escopo] || { icon:'•', label: gb.escopo };
+              const goalKey = sectorKey + '::' + gb.goalId;
+              const goalIsCollapsed = hasActiveQuery ? false : !!goalCollapsed[goalKey];
+              const goalChevron = goalIsCollapsed ? '▸' : '▾';
+
               html += `
-                <div style="margin:6px 0 2px;padding:6px 10px;display:flex;align-items:center;gap:8px;
-                  background:${gColor}0f;border-left:3px solid ${gColor};border-radius:4px;">
+                <button type="button" class="tm-goal-goal-header" data-goal="${esc(goalKey)}"
+                  style="width:100%;text-align:left;cursor:pointer;
+                    margin:6px 0 2px;padding:6px 10px;display:flex;align-items:center;gap:8px;
+                    background:${gColor}0f;border:none;border-left:3px solid ${gColor};border-radius:4px;">
+                  <span style="font-size:0.75rem;line-height:1;width:10px;color:${gColor};">${goalChevron}</span>
                   <span style="font-size:0.8125rem;font-weight:700;color:var(--text-primary);">
                     📌 ${esc(gb.goalName)}
                   </span>
@@ -524,7 +560,9 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                   <span style="color:var(--text-muted);font-size:0.6875rem;margin-left:auto;">
                     ${gb.items.length} ${gb.items.length === 1 ? 'meta' : 'metas'}
                   </span>
-                </div>`;
+                </button>`;
+
+              if (goalIsCollapsed) return;
 
               gb.items.forEach(it => {
                 const isSel = it.val === selectedValue;
@@ -706,6 +744,12 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                   </select>
                   <button type="button" id="tm-goal-fil-clear" class="btn btn-ghost btn-sm"
                     style="height:34px;padding:0 12px;font-size:0.75rem;">↺ Limpar</button>
+                  <span style="margin-left:auto;display:flex;gap:4px;">
+                    <button type="button" id="tm-goal-expand-all" class="btn btn-ghost btn-sm"
+                      style="height:34px;padding:0 10px;font-size:0.75rem;" title="Expandir tudo">▾ Expandir</button>
+                    <button type="button" id="tm-goal-collapse-all" class="btn btn-ghost btn-sm"
+                      style="height:34px;padding:0 10px;font-size:0.75rem;" title="Colapsar tudo">▸ Colapsar</button>
+                  </span>
                 </div>
 
                 <div id="tm-goal-modal-list" style="flex:1;overflow-y:auto;padding:4px 2px 8px;">
@@ -725,6 +769,8 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           const gestFil  = bodyEl.querySelector('#tm-goal-fil-gestor');
           const sqFil    = bodyEl.querySelector('#tm-goal-fil-squad');
           const clearBtn = bodyEl.querySelector('#tm-goal-fil-clear');
+          const expAllBtn = bodyEl.querySelector('#tm-goal-expand-all');
+          const colAllBtn = bodyEl.querySelector('#tm-goal-collapse-all');
 
           // Foca a busca automaticamente
           setTimeout(() => searchEl?.focus(), 50);
@@ -755,8 +801,41 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             refreshList();
           });
 
-          // Seleção por clique em qualquer item da lista
+          // Expand/collapse global
+          expAllBtn?.addEventListener('click', () => {
+            Object.keys(sectorCollapsed).forEach(k => sectorCollapsed[k] = false);
+            Object.keys(goalCollapsed).forEach(k => goalCollapsed[k] = false);
+            refreshList();
+          });
+          colAllBtn?.addEventListener('click', () => {
+            Object.keys(sectorCollapsed).forEach(k => sectorCollapsed[k] = true);
+            Object.keys(goalCollapsed).forEach(k => goalCollapsed[k] = true);
+            refreshList();
+          });
+
+          // Delegação: clique em headers (acordeão) e em itens (selecionar)
           listEl.addEventListener('click', (e) => {
+            // Cabeçalho de setor
+            const sectorHeader = e.target.closest('.tm-goal-sector-header');
+            if (sectorHeader) {
+              const k = sectorHeader.getAttribute('data-sector');
+              if (k != null) {
+                sectorCollapsed[k] = !sectorCollapsed[k];
+                refreshList();
+              }
+              return;
+            }
+            // Cabeçalho de meta (nome do plano)
+            const goalHeader = e.target.closest('.tm-goal-goal-header');
+            if (goalHeader) {
+              const k = goalHeader.getAttribute('data-goal');
+              if (k != null) {
+                goalCollapsed[k] = !goalCollapsed[k];
+                refreshList();
+              }
+              return;
+            }
+            // Item selecionável
             const item = e.target.closest('.tm-goal-item');
             if (!item) return;
             const v = item.dataset.value || '';
