@@ -242,27 +242,41 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         }
       }, 100);
 
-      // Populate meta selector async — agrupa por escopo e mostra cartão de contexto
+      // Populate meta picker custom (searchable, grouped by scope, com cartão de contexto)
       import('../services/goals.js').then(({ fetchGoals, GOAL_SCOPES, getResponsavelIds }) => {
         return Promise.all([fetchGoals(), Promise.resolve({ GOAL_SCOPES, getResponsavelIds })]);
       }).then(([goals, { GOAL_SCOPES, getResponsavelIds }]) => {
         let available = goals.filter(g => g.status === 'publicada');
         if (!available.length) available = goals.filter(g => g.status !== 'encerrada');
-        const sel = document.getElementById('tm-goal');
-        const info = document.getElementById('tm-goal-info');
-        if (!sel) return;
 
-        // Metadados p/ cartão de contexto — indexados pelo value "goalId:pi:mi"
-        const metaIndex = {};
-        // Agrupa opções por escopo → optgroups com ícone no label
-        const byScope = {}; // { escopo: [ '<option>…</option>', … ] }
-        let selectedValue = '';
+        const sel     = document.getElementById('tm-goal');
+        const info    = document.getElementById('tm-goal-info');
+        const btn     = document.getElementById('tm-goal-btn');
+        const btnLbl  = document.getElementById('tm-goal-btn-label');
+        const pop     = document.getElementById('tm-goal-popover');
+        const search  = document.getElementById('tm-goal-search');
+        const listEl  = document.getElementById('tm-goal-list');
+        if (!sel || !btn || !pop || !listEl) return;
 
+        // Paleta fixa por escopo — mantém visual leve e diferenciado
         const scopeOrder = GOAL_SCOPES.map(s => s.value);
         const scopeMap   = Object.fromEntries(GOAL_SCOPES.map(s => [s.value, s]));
+        const scopeColor = {
+          individual: '#60A5FA',   // azul
+          squad:      '#A78BFA',   // roxo
+          nucleo:     '#34D399',   // verde
+          area:       '#FBBF24',   // âmbar
+          global:     '#F472B6',   // rosa
+        };
         const nucleoMap  = { design:'Design', comunicacao:'Comunicação', redes_sociais:'Redes Sociais',
                              dados:'Dados', web:'Web', sistemas:'Sistemas', ia:'IA' };
         const workspaces = store.get('userWorkspaces') || [];
+
+        // Monta índice + lista agrupada
+        const metaIndex = {};
+        const byScope = {}; // { escopo: [ {val, metaName, pilarName, goalName, norm}, … ] }
+        let selectedValue = '';
+        const selOpts = ['<option value="">Sem meta vinculada</option>'];
 
         available.forEach(g => {
           const escopo = g.escopo || 'individual';
@@ -286,39 +300,90 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                 setor:          g.setor   || '',
               };
 
+              const normStr = (`${metaName} ${pilarName} ${goalName}`)
+                .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
               (byScope[escopo] = byScope[escopo] || []).push(
-                `<option value="${val}" ${isSelected ? 'selected' : ''}>${esc(metaName)} — ${esc(pilarName)} (${esc(goalName)})</option>`
-              );
+                { val, metaName, pilarName, goalName, norm: normStr, selected: isSelected });
+              selOpts.push(`<option value="${val}"${isSelected ? ' selected' : ''}>${esc(metaName)}</option>`);
             });
           });
         });
 
-        const groupsHtml = scopeOrder
-          .filter(s => byScope[s] && byScope[s].length)
-          .map(s => {
+        sel.innerHTML = selOpts.join('');
+
+        // ─── Renderiza a lista custom (com filtro de busca opcional) ────
+        const renderList = (query = '') => {
+          const q = (query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+          const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
+
+          let html = `
+            <button type="button" class="tm-goal-item" data-value=""
+              style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:4px;
+                background:transparent;border:1px solid transparent;border-radius:6px;cursor:pointer;
+                color:var(--text-muted);font-size:0.8125rem;text-align:left;">
+              <span style="font-size:0.875rem;">✕</span>
+              <span>Sem meta vinculada</span>
+            </button>`;
+
+          let totalShown = 0;
+          scopeOrder.forEach(s => {
+            const items = (byScope[s] || []).filter(it =>
+              !tokens.length || tokens.every(t => it.norm.includes(t)));
+            if (!items.length) return;
+            totalShown += items.length;
             const sc = scopeMap[s] || { icon:'•', label:s };
-            return `<optgroup label="${sc.icon} ${sc.label}">${byScope[s].join('')}</optgroup>`;
-          }).join('');
+            const color = scopeColor[s] || '#9CA3AF';
+            html += `
+              <div style="padding:6px 10px 2px;margin-top:6px;
+                display:flex;align-items:center;gap:6px;
+                font-size:0.625rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+                color:${color};border-top:1px solid var(--border-subtle);">
+                <span style="font-size:0.9rem;line-height:1;">${sc.icon}</span>
+                <span>${esc(sc.label)}</span>
+                <span style="color:var(--text-muted);font-weight:500;letter-spacing:0;">· ${items.length}</span>
+              </div>`;
+            items.forEach(it => {
+              const isSel = it.val === selectedValue;
+              html += `
+                <button type="button" class="tm-goal-item" data-value="${esc(it.val)}"
+                  style="width:100%;display:flex;align-items:flex-start;gap:8px;padding:7px 10px;margin:2px 0;
+                    background:${isSel ? color + '15' : 'transparent'};
+                    border:1px solid ${isSel ? color + '55' : 'transparent'};
+                    border-radius:6px;cursor:pointer;text-align:left;transition:background .1s;">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+                    background:${color};margin-top:5px;flex-shrink:0;"></span>
+                  <span style="flex:1;min-width:0;">
+                    <div style="font-size:0.8125rem;color:var(--text-primary);font-weight:500;
+                      white-space:normal;line-height:1.3;">${esc(it.metaName)}</div>
+                    <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;line-height:1.2;">
+                      ${esc(it.pilarName)} · ${esc(it.goalName)}
+                    </div>
+                  </span>
+                </button>`;
+            });
+          });
 
-        sel.innerHTML = '<option value="">Sem meta vinculada</option>' + groupsHtml;
+          if (!totalShown && q) {
+            html += `<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+              Nenhuma meta encontrada para "${esc(query)}"</div>`;
+          } else if (!totalShown) {
+            html += `<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+              Nenhuma meta publicada disponível</div>`;
+          }
+          listEl.innerHTML = html;
+        };
 
-        // Renderiza cartão de contexto — identidade varia por escopo:
-        //  individual → responsável (pessoa vinculada à tarefa quando possível)
-        //  squad      → nome do squad
-        //  nucleo     → núcleo
-        //  area       → setor
-        //  global     → "Meta corporativa"
+        // Cartão de contexto — identidade varia por escopo
         const renderInfo = (value) => {
           if (!info) return;
           if (!value || !metaIndex[value]) { info.style.display = 'none'; info.innerHTML = ''; return; }
           const m = metaIndex[value];
           const sc = scopeMap[m.escopo] || { icon:'•', label:m.escopo };
+          const color = scopeColor[m.escopo] || '#9CA3AF';
 
-          // Resolve "identidade" contextual
           let identityIcon = '', identityLabel = '', identityValue = '—';
           if (m.escopo === 'individual') {
             identityIcon = '👤'; identityLabel = 'Responsável';
-            // Preferência: se a tarefa tem assignee que também é responsável da meta, mostra esse.
             const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
             let pickId = taskAssignees.find(uid => m.responsavelIds.includes(uid)) || m.responsavelIds[0] || '';
             const u = users.find(x => x.id === pickId);
@@ -339,10 +404,11 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           }
 
           info.style.display = 'block';
+          info.style.borderLeft = `3px solid ${color}`;
           info.innerHTML = `
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
               <span style="padding:2px 7px;border-radius:999px;font-size:0.6875rem;font-weight:600;
-                background:var(--brand-gold)22;color:var(--brand-gold);border:1px solid var(--brand-gold)44;">
+                background:${color}22;color:${color};border:1px solid ${color}44;">
                 ${sc.icon} ${esc(sc.label)}
               </span>
               <span style="color:var(--text-muted);font-size:0.6875rem;">${esc(m.goalName)}</span>
@@ -365,8 +431,70 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             </div>`;
         };
 
+        // Atualiza label do botão com base na seleção
+        const refreshBtnLabel = () => {
+          const v = sel.value;
+          if (!v || !metaIndex[v]) {
+            btnLbl.textContent = 'Sem meta vinculada';
+            btnLbl.style.color = 'var(--text-muted)';
+            return;
+          }
+          const m = metaIndex[v];
+          const sc = scopeMap[m.escopo] || { icon:'•', label:m.escopo };
+          const color = scopeColor[m.escopo] || '#9CA3AF';
+          btnLbl.style.color = 'var(--text-primary)';
+          btnLbl.innerHTML = `
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+              background:${color};margin-right:6px;vertical-align:middle;"></span>
+            <span>${esc(m.metaName)}</span>
+            <span style="color:var(--text-muted);font-size:0.75rem;margin-left:6px;">
+              ${sc.icon} ${esc(sc.label)}
+            </span>`;
+        };
+
+        // ─── Abre/fecha popover ────────────────────────────────
+        const openPopover = () => {
+          pop.style.display = 'flex';
+          renderList(search.value);
+          setTimeout(() => search?.focus(), 0);
+        };
+        const closePopover = () => { pop.style.display = 'none'; };
+
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (pop.style.display === 'none' || !pop.style.display) openPopover();
+          else closePopover();
+        });
+        search.addEventListener('input', () => renderList(search.value));
+        search.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') { closePopover(); btn.focus(); }
+          if (e.key === 'Enter') {
+            const first = listEl.querySelector('.tm-goal-item[data-value]:not([data-value=""])');
+            if (first) first.click();
+          }
+        });
+        listEl.addEventListener('click', (e) => {
+          const item = e.target.closest('.tm-goal-item');
+          if (!item) return;
+          const v = item.dataset.value || '';
+          sel.value = v;
+          selectedValue = v;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          refreshBtnLabel();
+          renderInfo(v);
+          closePopover();
+        });
+        // Fecha popover em clique fora
+        document.addEventListener('click', (e) => {
+          if (pop.style.display === 'none') return;
+          if (pop.contains(e.target) || btn.contains(e.target)) return;
+          closePopover();
+        });
+
+        // Estado inicial
+        refreshBtnLabel();
         renderInfo(selectedValue);
-        sel.addEventListener('change', (e) => renderInfo(e.target.value));
+        sel.addEventListener('change', () => { refreshBtnLabel(); renderInfo(sel.value); });
       }).catch((e) => { console.warn('[taskModal] meta populate:', e?.message || e); });
     });
   });
@@ -730,10 +858,39 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
       </div>
       <div class="task-detail-field">
         <div class="task-detail-label">Meta vinculada</div>
-        <select class="form-select" id="tm-goal" style="padding:8px 32px 8px 12px;">
+        <!-- Select escondido: mantém o contrato do save (#tm-goal.value) -->
+        <select id="tm-goal" style="display:none;">
           <option value="">Sem meta vinculada</option>
-          <!-- populated async, agrupado por escopo -->
         </select>
+        <!-- Picker visual (botão + popover com busca e lista agrupada) -->
+        <div id="tm-goal-picker" style="position:relative;">
+          <button type="button" id="tm-goal-btn" class="tm-goal-btn"
+            style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
+              padding:8px 12px;border-radius:var(--radius-md);
+              background:var(--bg-elevated);border:1px solid var(--border-default);
+              color:var(--text-primary);font-size:0.875rem;cursor:pointer;text-align:left;">
+            <span id="tm-goal-btn-label" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+              color:var(--text-muted);">Sem meta vinculada</span>
+            <span id="tm-goal-btn-chev" style="opacity:0.6;font-size:0.7rem;">▾</span>
+          </button>
+          <div id="tm-goal-popover" style="display:none;flex-direction:column;
+            position:absolute;z-index:50;top:calc(100% + 4px);left:0;right:0;max-height:360px;
+            background:var(--bg-card);border:1px solid var(--border-default);
+            border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,0.35);
+            overflow:hidden;">
+            <div style="padding:8px;border-bottom:1px solid var(--border-subtle);">
+              <input type="text" id="tm-goal-search" placeholder="Buscar meta, pilar ou plano…"
+                style="width:100%;padding:6px 10px;font-size:0.8125rem;
+                  background:var(--bg-elevated);border:1px solid var(--border-subtle);
+                  border-radius:6px;color:var(--text-primary);outline:none;" />
+            </div>
+            <div id="tm-goal-list" style="overflow-y:auto;max-height:300px;padding:4px;">
+              <div style="padding:14px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+                Carregando metas…
+              </div>
+            </div>
+          </div>
+        </div>
         <!-- Cartão com contexto da meta (escopo + identidade) -->
         <div id="tm-goal-info" style="margin-top:6px;display:none;
           padding:8px 10px;border-radius:6px;font-size:0.75rem;line-height:1.35;

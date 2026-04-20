@@ -7,7 +7,7 @@
 import { store } from '../store.js';
 import { modal } from './modal.js';
 import { toast } from './toast.js';
-import { createTask, REQUESTING_AREAS } from '../services/tasks.js';
+import { createTask, updateTask, REQUESTING_AREAS } from '../services/tasks.js';
 
 /* ─── Constants ──────────────────────────────────────────── */
 const PROGRESS_MAP = { 'Não iniciado': 'not_started', 'Em andamento': 'in_progress', 'Concluída': 'done' };
@@ -102,6 +102,7 @@ function resetState() {
     // Reimportação: pré-carregamos plannerIds já no sistema para detectar
     // duplicatas. Tarefas já importadas começam DESmarcadas no step 5.
     existingPlannerIds: new Set(),
+    existingPlannerMap: new Map(),  // plannerId → {taskId, currentProjectId, currentWorkspaceId}
     existingPlannerCount: 0,
     // Squad de destino DEFAULT (fallback quando nenhuma tag da tarefa
     // resolve para um squad específico via tagSquadMap).
@@ -227,19 +228,29 @@ async function loadExistingPlannerIds() {
     const { collection, getDocs, query, where } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
     const { db } = await import('../firebase.js');
     // Estratégia: trazer todas as tasks que tenham customFields.plannerId não-null.
-    // Em projetos pequenos é rápido. Para escalar, dá pra trocar por queries em
-    // chunks de 30 IDs (where 'in') usando os plannerIds do arquivo.
+    // Além do Set para dedup, guardamos também um Map (plannerId → taskDocId)
+    // para permitir sincronizar projectId/squad em tarefas já importadas.
     const q = query(collection(db, 'tasks'), where('customFields.plannerId', '!=', null));
     const snap = await getDocs(q);
     wiz.existingPlannerIds = new Set();
+    wiz.existingPlannerMap = new Map();
     snap.docs.forEach(d => {
-      const pid = d.data()?.customFields?.plannerId;
-      if (pid) wiz.existingPlannerIds.add(pid);
+      const data = d.data() || {};
+      const pid = data?.customFields?.plannerId;
+      if (pid) {
+        wiz.existingPlannerIds.add(pid);
+        wiz.existingPlannerMap.set(pid, {
+          taskId: d.id,
+          currentProjectId:   data.projectId || null,
+          currentWorkspaceId: data.workspaceId || null,
+        });
+      }
     });
   } catch (e) {
     // Se a query exigir índice ou falhar, seguimos sem dedup mas avisamos.
     console.warn('[plannerImport] dedup desativado:', e.message);
     wiz.existingPlannerIds = new Set();
+    wiz.existingPlannerMap = new Map();
   }
 }
 
@@ -974,6 +985,24 @@ function renderStep5() {
         font-size:0.75rem;color:#EF4444;">
         ⚠ <strong>${dupCount}</strong> tarefa(s) já estão no sistema (mesmo plannerId).
         Vieram desmarcadas — marque manualmente se quiser criar duplicatas.
+      </div>
+      <!-- Sync: atualizar Projeto/Squad das tarefas JÁ IMPORTADAS em vez de duplicar -->
+      <div style="padding:10px 12px;margin-bottom:10px;border-radius:8px;
+        background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.25);
+        display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:1;min-width:240px;font-size:0.8125rem;line-height:1.4;color:var(--text-primary);">
+          <strong style="color:#3B82F6;">🔄 Sincronizar tarefas já importadas</strong><br>
+          <span style="color:var(--text-muted);font-size:0.75rem;">
+            Aplica o <strong>Projeto</strong> e <strong>Squad</strong> selecionados acima nas
+            <strong>${dupCount}</strong> tarefa(s) já no sistema. Nenhuma nova tarefa é criada.
+            Útil para preencher projeto de importações antigas.
+          </span>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" id="pi-sync-existing"
+          ${(!wiz.targetProjectId && !wiz.targetSquadId) ? 'disabled title="Selecione um Projeto e/ou Squad acima primeiro"' : ''}
+          style="white-space:nowrap;">
+          Sincronizar ${dupCount}
+        </button>
       </div>` : ''}
 
       <!-- Filters -->
@@ -1157,7 +1186,82 @@ function attachStep5Events() {
   // Projeto de destino (aplicado a todas as tarefas importadas)
   body.querySelector('#pi-target-project')?.addEventListener('change', e => {
     wiz.targetProjectId = e.target.value || '';
+    // Re-habilita/desabilita o botão de sync conforme as seleções
+    const btn = body.querySelector('#pi-sync-existing');
+    if (btn) btn.disabled = !wiz.targetProjectId && !wiz.targetSquadId;
   });
+  body.querySelector('#pi-target-squad')?.addEventListener('change', () => {
+    const btn = body.querySelector('#pi-sync-existing');
+    if (btn) btn.disabled = !wiz.targetProjectId && !wiz.targetSquadId;
+  });
+
+  // Sync: aplica projectId/workspaceId nas tarefas já importadas (mesmo plannerId)
+  body.querySelector('#pi-sync-existing')?.addEventListener('click', () => syncExistingTasks());
+}
+
+/* ─── Sincroniza projeto/squad em tarefas já importadas do Planner ─── */
+async function syncExistingTasks() {
+  if (!wiz.targetProjectId && !wiz.targetSquadId) {
+    toast.warning('Selecione um Projeto e/ou Squad acima antes de sincronizar.');
+    return;
+  }
+
+  // Cruza plannerIds do arquivo com os já existentes no sistema
+  const filePlannerIds = new Set(wiz.tasks.map(t => t.plannerId).filter(Boolean));
+  const targets = [];
+  for (const pid of filePlannerIds) {
+    const entry = wiz.existingPlannerMap.get(pid);
+    if (entry) targets.push(entry);
+  }
+  if (!targets.length) { toast.warning('Nenhuma tarefa já importada encontrada para sincronizar.'); return; }
+
+  const parts = [];
+  if (wiz.targetProjectId) {
+    const p = wiz.userProjects.find(pr => pr.id === wiz.targetProjectId);
+    parts.push(`projeto <strong>${esc(p?.name || '—')}</strong>`);
+  }
+  if (wiz.targetSquadId) {
+    const ws = (store.get('userWorkspaces') || []).find(w => w.id === wiz.targetSquadId);
+    parts.push(`squad <strong>${esc(ws?.name || '—')}</strong>`);
+  }
+
+  const ok = await modal.confirm({
+    title: 'Sincronizar tarefas já importadas',
+    message: `Aplicar ${parts.join(' e ')} em <strong>${targets.length}</strong>
+      tarefa(s) já importada(s) do Planner?<br>
+      <span style="font-size:0.8125rem;color:var(--text-muted);">
+        Outros campos (título, responsáveis, status, prazos) não serão alterados.
+      </span>`,
+    confirmText: `Sincronizar ${targets.length}`,
+    icon: '🔄',
+  });
+  if (!ok) return;
+
+  const body = wiz.modalRef?.getBody(); if (!body) return;
+  const btn = body.querySelector('#pi-sync-existing');
+  if (btn) { btn.disabled = true; btn.textContent = `Sincronizando… 0/${targets.length}`; }
+
+  let done = 0, fail = 0;
+  for (const t of targets) {
+    const patch = {};
+    if (wiz.targetProjectId) patch.projectId = wiz.targetProjectId;
+    if (wiz.targetSquadId)   patch.workspaceId = wiz.targetSquadId;
+    try {
+      await updateTask(t.taskId, patch);
+      done++;
+    } catch (e) {
+      fail++;
+      console.warn('[plannerImport] sync falha:', t.taskId, e?.message);
+    }
+    if (btn) btn.textContent = `Sincronizando… ${done + fail}/${targets.length}`;
+  }
+
+  if (btn) { btn.textContent = `Sincronizar ${targets.length}`; btn.disabled = false; }
+  if (fail) {
+    toast.warning(`Sincronização: ${done} OK, ${fail} falharam. Veja o console.`);
+  } else {
+    toast.success(`${done} tarefa(s) sincronizada(s) com sucesso.`);
+  }
 }
 
 function refreshTable() {
