@@ -253,10 +253,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         const info    = document.getElementById('tm-goal-info');
         const btn     = document.getElementById('tm-goal-btn');
         const btnLbl  = document.getElementById('tm-goal-btn-label');
-        const pop     = document.getElementById('tm-goal-popover');
-        const search  = document.getElementById('tm-goal-search');
-        const listEl  = document.getElementById('tm-goal-list');
-        if (!sel || !btn || !pop || !listEl) return;
+        if (!sel || !btn) return;
 
         // Paleta fixa por escopo — mantém visual leve e diferenciado
         const scopeOrder = GOAL_SCOPES.map(s => s.value);
@@ -311,17 +308,17 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
         sel.innerHTML = selOpts.join('');
 
-        // ─── Renderiza a lista custom (com filtro de busca opcional) ────
-        const renderList = (query = '') => {
+        // ─── Renderiza a lista dentro do modal (agrupada + filtrada por busca) ──
+        const buildListHtml = (query = '') => {
           const q = (query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
           const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
 
           let html = `
             <button type="button" class="tm-goal-item" data-value=""
-              style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:4px;
-                background:transparent;border:1px solid transparent;border-radius:6px;cursor:pointer;
-                color:var(--text-muted);font-size:0.8125rem;text-align:left;">
-              <span style="font-size:0.875rem;">✕</span>
+              style="width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:4px;
+                background:transparent;border:1px solid var(--border-subtle);border-radius:8px;cursor:pointer;
+                color:var(--text-muted);font-size:0.875rem;text-align:left;">
+              <span style="font-size:1rem;">✕</span>
               <span>Sem meta vinculada</span>
             </button>`;
 
@@ -334,11 +331,11 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             const sc = scopeMap[s] || { icon:'•', label:s };
             const color = scopeColor[s] || '#9CA3AF';
             html += `
-              <div style="padding:6px 10px 2px;margin-top:6px;
-                display:flex;align-items:center;gap:6px;
-                font-size:0.625rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+              <div style="padding:10px 12px 4px;margin-top:8px;
+                display:flex;align-items:center;gap:8px;
+                font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
                 color:${color};border-top:1px solid var(--border-subtle);">
-                <span style="font-size:0.9rem;line-height:1;">${sc.icon}</span>
+                <span style="font-size:1rem;line-height:1;">${sc.icon}</span>
                 <span>${esc(sc.label)}</span>
                 <span style="color:var(--text-muted);font-weight:500;letter-spacing:0;">· ${items.length}</span>
               </div>`;
@@ -346,31 +343,32 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
               const isSel = it.val === selectedValue;
               html += `
                 <button type="button" class="tm-goal-item" data-value="${esc(it.val)}"
-                  style="width:100%;display:flex;align-items:flex-start;gap:8px;padding:7px 10px;margin:2px 0;
-                    background:${isSel ? color + '15' : 'transparent'};
-                    border:1px solid ${isSel ? color + '55' : 'transparent'};
-                    border-radius:6px;cursor:pointer;text-align:left;transition:background .1s;">
-                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
-                    background:${color};margin-top:5px;flex-shrink:0;"></span>
+                  style="width:100%;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin:3px 0;
+                    background:${isSel ? color + '18' : 'var(--bg-elevated)'};
+                    border:1px solid ${isSel ? color + '66' : 'var(--border-subtle)'};
+                    border-radius:8px;cursor:pointer;text-align:left;transition:background .1s;">
+                  <span style="display:inline-block;width:10px;height:10px;border-radius:50%;
+                    background:${color};margin-top:6px;flex-shrink:0;"></span>
                   <span style="flex:1;min-width:0;">
-                    <div style="font-size:0.8125rem;color:var(--text-primary);font-weight:500;
-                      white-space:normal;line-height:1.3;">${esc(it.metaName)}</div>
-                    <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;line-height:1.2;">
+                    <div style="font-size:0.875rem;color:var(--text-primary);font-weight:500;
+                      white-space:normal;line-height:1.35;">${esc(it.metaName)}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;line-height:1.25;">
                       ${esc(it.pilarName)} · ${esc(it.goalName)}
                     </div>
                   </span>
+                  ${isSel ? `<span style="color:${color};font-weight:700;">✓</span>` : ''}
                 </button>`;
             });
           });
 
           if (!totalShown && q) {
-            html += `<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+            html += `<div style="padding:28px;text-align:center;color:var(--text-muted);font-size:0.875rem;">
               Nenhuma meta encontrada para "${esc(query)}"</div>`;
           } else if (!totalShown) {
-            html += `<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+            html += `<div style="padding:28px;text-align:center;color:var(--text-muted);font-size:0.875rem;">
               Nenhuma meta publicada disponível</div>`;
           }
-          listEl.innerHTML = html;
+          return html;
         };
 
         // Cartão de contexto — identidade varia por escopo
@@ -452,43 +450,64 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             </span>`;
         };
 
-        // ─── Abre/fecha popover ────────────────────────────────
-        const openPopover = () => {
-          pop.style.display = 'flex';
-          renderList(search.value);
-          setTimeout(() => search?.focus(), 0);
+        // ─── Abre modal dedicado para escolha da meta ─────────────
+        const openMetaModal = () => {
+          const totalMetas = Object.values(byScope).reduce((n, arr) => n + arr.length, 0);
+          const ref = modal.open({
+            title: `🎯 Vincular meta (${totalMetas})`,
+            size: 'lg',
+            closeable: true,
+            content: `
+              <div style="display:flex;flex-direction:column;gap:10px;min-height:400px;max-height:70vh;">
+                <input type="text" id="tm-goal-modal-search"
+                  placeholder="Buscar meta, pilar ou plano…"
+                  style="width:100%;padding:10px 14px;font-size:0.9375rem;
+                    background:var(--bg-elevated);border:1px solid var(--border-default);
+                    border-radius:8px;color:var(--text-primary);outline:none;" />
+                <div id="tm-goal-modal-list" style="flex:1;overflow-y:auto;padding:4px 2px 8px;">
+                  ${buildListHtml('')}
+                </div>
+              </div>`,
+            footer: [
+              { label: 'Fechar', class: 'btn-secondary', closeOnClick: true },
+            ],
+          });
+
+          const bodyEl = ref.getBody();
+          const searchEl = bodyEl.querySelector('#tm-goal-modal-search');
+          const listEl   = bodyEl.querySelector('#tm-goal-modal-list');
+
+          // Foca a busca automaticamente
+          setTimeout(() => searchEl?.focus(), 50);
+
+          searchEl?.addEventListener('input', () => {
+            listEl.innerHTML = buildListHtml(searchEl.value);
+          });
+          searchEl?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              const first = listEl.querySelector('.tm-goal-item[data-value]:not([data-value=""])');
+              if (first) first.click();
+            }
+          });
+
+          // Seleção por clique em qualquer item da lista
+          listEl.addEventListener('click', (e) => {
+            const item = e.target.closest('.tm-goal-item');
+            if (!item) return;
+            const v = item.dataset.value || '';
+            sel.value = v;
+            selectedValue = v;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            refreshBtnLabel();
+            renderInfo(v);
+            ref.close();
+          });
         };
-        const closePopover = () => { pop.style.display = 'none'; };
 
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (pop.style.display === 'none' || !pop.style.display) openPopover();
-          else closePopover();
-        });
-        search.addEventListener('input', () => renderList(search.value));
-        search.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape') { closePopover(); btn.focus(); }
-          if (e.key === 'Enter') {
-            const first = listEl.querySelector('.tm-goal-item[data-value]:not([data-value=""])');
-            if (first) first.click();
-          }
-        });
-        listEl.addEventListener('click', (e) => {
-          const item = e.target.closest('.tm-goal-item');
-          if (!item) return;
-          const v = item.dataset.value || '';
-          sel.value = v;
-          selectedValue = v;
-          sel.dispatchEvent(new Event('change', { bubbles: true }));
-          refreshBtnLabel();
-          renderInfo(v);
-          closePopover();
-        });
-        // Fecha popover em clique fora
-        document.addEventListener('click', (e) => {
-          if (pop.style.display === 'none') return;
-          if (pop.contains(e.target) || btn.contains(e.target)) return;
-          closePopover();
+          e.preventDefault();
+          openMetaModal();
         });
 
         // Estado inicial
@@ -862,35 +881,16 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         <select id="tm-goal" style="display:none;">
           <option value="">Sem meta vinculada</option>
         </select>
-        <!-- Picker visual (botão + popover com busca e lista agrupada) -->
-        <div id="tm-goal-picker" style="position:relative;">
-          <button type="button" id="tm-goal-btn" class="tm-goal-btn"
-            style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
-              padding:8px 12px;border-radius:var(--radius-md);
-              background:var(--bg-elevated);border:1px solid var(--border-default);
-              color:var(--text-primary);font-size:0.875rem;cursor:pointer;text-align:left;">
-            <span id="tm-goal-btn-label" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-              color:var(--text-muted);">Sem meta vinculada</span>
-            <span id="tm-goal-btn-chev" style="opacity:0.6;font-size:0.7rem;">▾</span>
-          </button>
-          <div id="tm-goal-popover" style="display:none;flex-direction:column;
-            position:absolute;z-index:50;top:calc(100% + 4px);left:0;right:0;max-height:360px;
-            background:var(--bg-card);border:1px solid var(--border-default);
-            border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,0.35);
-            overflow:hidden;">
-            <div style="padding:8px;border-bottom:1px solid var(--border-subtle);">
-              <input type="text" id="tm-goal-search" placeholder="Buscar meta, pilar ou plano…"
-                style="width:100%;padding:6px 10px;font-size:0.8125rem;
-                  background:var(--bg-elevated);border:1px solid var(--border-subtle);
-                  border-radius:6px;color:var(--text-primary);outline:none;" />
-            </div>
-            <div id="tm-goal-list" style="overflow-y:auto;max-height:300px;padding:4px;">
-              <div style="padding:14px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
-                Carregando metas…
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- Botão compacto que abre um modal dedicado para escolher a meta -->
+        <button type="button" id="tm-goal-btn"
+          style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
+            padding:8px 12px;border-radius:var(--radius-md);
+            background:var(--bg-elevated);border:1px solid var(--border-default);
+            color:var(--text-primary);font-size:0.875rem;cursor:pointer;text-align:left;">
+          <span id="tm-goal-btn-label" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+            color:var(--text-muted);">Sem meta vinculada</span>
+          <span style="opacity:0.6;font-size:0.75rem;">⇱</span>
+        </button>
         <!-- Cartão com contexto da meta (escopo + identidade) -->
         <div id="tm-goal-info" style="margin-top:6px;display:none;
           padding:8px 10px;border-radius:6px;font-size:0.75rem;line-height:1.35;

@@ -116,6 +116,10 @@ function resetState() {
     // "Projeto" aparece vazio no card/modal da tarefa.
     targetProjectId: '',
     userProjects: [],           // projetos carregados p/ o dropdown do step 5
+    // Auto-reparo: tarefas do Planner (customFields.plannerId set) que estão
+    // sem projectId. Detectadas em background ao abrir o wizard; a UI no
+    // step 1 oferece um "Atribuir projeto a todas" em 2 cliques.
+    orphanTasks: [],
   };
 }
 
@@ -131,6 +135,141 @@ export function openPlannerImportWizard() {
   });
   wiz.modalRef = ref;
   attachStep1Events();
+  // Em paralelo: detecta tarefas órfãs (plannerId sem projectId) e injeta
+  // um card de auto-reparo no topo do step 1, sem exigir upload do XLSX.
+  detectPlannerOrphans().then(renderOrphansCard).catch(() => {});
+}
+
+/* ─── Auto-reparo: tarefas já importadas do Planner SEM projeto ─── */
+async function detectPlannerOrphans() {
+  try {
+    const { collection, getDocs, query, where } =
+      await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const { db } = await import('../firebase.js');
+    const q = query(collection(db, 'tasks'), where('customFields.plannerId', '!=', null));
+    const snap = await getDocs(q);
+    const orphans = [];
+    snap.docs.forEach(d => {
+      const data = d.data() || {};
+      if (!data.projectId) {
+        orphans.push({
+          taskId: d.id,
+          title: data.title || '(sem título)',
+          workspaceId: data.workspaceId || null,
+        });
+      }
+    });
+    wiz.orphanTasks = orphans;
+    // Também garante que projetos estão prontos p/ o seletor
+    if (!wiz.userProjects.length) await loadUserProjects();
+    return orphans;
+  } catch (e) {
+    console.warn('[plannerImport] detectOrphans falhou:', e?.message);
+    wiz.orphanTasks = [];
+    return [];
+  }
+}
+
+function renderOrphansCard(orphans) {
+  if (!orphans || !orphans.length) return;
+  const body = wiz.modalRef?.getBody(); if (!body) return;
+  // Só injeta no step 1 (file upload). Nos demais steps não polui a UI.
+  if (wiz.step !== 1) return;
+  // Evita duplicar
+  if (body.querySelector('#pi-orphans-card')) return;
+
+  const card = document.createElement('div');
+  card.id = 'pi-orphans-card';
+  card.style.cssText = `
+    margin:0 0 16px;padding:14px 16px;border-radius:10px;
+    background:linear-gradient(135deg, rgba(59,130,246,0.08), rgba(168,85,247,0.08));
+    border:1px solid rgba(59,130,246,0.35);
+    display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;
+  `;
+  card.innerHTML = `
+    <div style="flex:1;min-width:260px;">
+      <div style="font-weight:700;color:#3B82F6;margin-bottom:4px;">
+        🩹 ${orphans.length} tarefa(s) do Planner sem projeto
+      </div>
+      <div style="font-size:0.8125rem;color:var(--text-muted);line-height:1.4;">
+        Essas tarefas foram importadas antes do campo "Projeto" existir na importação.
+        Escolha um projeto abaixo e corrija todas de uma vez — sem precisar reupar o XLSX.
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:260px;">
+      <select id="pi-orphans-project" class="form-input" style="height:34px;font-size:0.8125rem;min-width:180px;">
+        <option value="">— Escolher projeto —</option>
+        ${wiz.userProjects.map(p => `
+          <option value="${esc(p.id)}">${esc(p.icon || '📦')} ${esc(p.name)}</option>
+        `).join('')}
+      </select>
+      <button type="button" id="pi-orphans-apply" class="btn btn-primary btn-sm" disabled
+        style="white-space:nowrap;">Atribuir a ${orphans.length}</button>
+    </div>
+  `;
+
+  // Insere ANTES do dropzone
+  const dropzone = body.querySelector('#pi-drop');
+  dropzone?.parentNode?.insertBefore(card, dropzone);
+
+  const sel = card.querySelector('#pi-orphans-project');
+  const btn = card.querySelector('#pi-orphans-apply');
+  sel.addEventListener('change', () => { btn.disabled = !sel.value; });
+  btn.addEventListener('click', () => applyOrphansFix(sel.value, card));
+}
+
+async function applyOrphansFix(projectId, cardEl) {
+  if (!projectId) return;
+  const orphans = wiz.orphanTasks || [];
+  if (!orphans.length) return;
+
+  const proj = wiz.userProjects.find(p => p.id === projectId);
+  const ok = await modal.confirm({
+    title: 'Atribuir projeto a tarefas órfãs',
+    message: `Atribuir o projeto <strong>${esc(proj?.name || '—')}</strong> a
+      <strong>${orphans.length}</strong> tarefa(s) importada(s) do Planner?<br>
+      <span style="font-size:0.8125rem;color:var(--text-muted);">
+        Nenhum outro campo é alterado. Isso preenche só o campo "Projeto".
+      </span>`,
+    confirmText: `Atribuir ${orphans.length}`,
+    icon: '🩹',
+  });
+  if (!ok) return;
+
+  const btn = cardEl.querySelector('#pi-orphans-apply');
+  const sel = cardEl.querySelector('#pi-orphans-project');
+  if (btn) btn.disabled = true;
+  if (sel) sel.disabled = true;
+
+  let done = 0, fail = 0;
+  for (const t of orphans) {
+    try {
+      await updateTask(t.taskId, { projectId });
+      done++;
+    } catch (e) {
+      fail++;
+      console.warn('[plannerImport] orphan fix falha:', t.taskId, e?.message);
+    }
+    if (btn) btn.textContent = `Atribuindo… ${done + fail}/${orphans.length}`;
+  }
+
+  // Atualiza estado + UI
+  wiz.orphanTasks = [];
+  if (fail) {
+    toast.warning(`${done} atualizadas · ${fail} falharam. Veja o console.`);
+    cardEl.remove();
+  } else {
+    toast.success(`${done} tarefa(s) do Planner agora estão no projeto "${proj?.name}".`);
+    // Substitui card por mensagem de sucesso
+    cardEl.innerHTML = `
+      <div style="flex:1;color:#16A34A;font-weight:600;">
+        ✓ ${done} tarefa(s) atribuída(s) ao projeto "${esc(proj?.name || '')}" com sucesso.
+      </div>
+    `;
+    cardEl.style.background = 'rgba(22,163,74,0.08)';
+    cardEl.style.borderColor = 'rgba(22,163,74,0.35)';
+    setTimeout(() => cardEl.remove(), 4000);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
