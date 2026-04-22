@@ -385,6 +385,12 @@ export async function createUser({ name, email, password, role, roleId, departme
     isRecovery,
   });
 
+  // Invalida cache de users para que admin veja novo user na próxima leitura
+  try {
+    const { invalidateUsersCache } = await import('../services/users.js');
+    invalidateUsersCache();
+  } catch {}
+
   return { id: uid, ...userDoc };
 }
 
@@ -426,6 +432,11 @@ export async function updateUserProfile(uid, data) {
   }
 
   await auditLog('users.update', 'user', uid, updateData);
+
+  try {
+    const { invalidateUsersCache } = await import('../services/users.js');
+    invalidateUsersCache();
+  } catch {}
 }
 
 // ─── Alterar senha ────────────────────────────────────────
@@ -454,6 +465,11 @@ export async function deactivateUser(uid) {
   });
 
   await auditLog('users.deactivate', 'user', uid, {});
+
+  try {
+    const { invalidateUsersCache } = await import('../services/users.js');
+    invalidateUsersCache();
+  } catch {}
 }
 
 // ─── Reativar usuário ─────────────────────────────────────
@@ -467,6 +483,11 @@ export async function reactivateUser(uid) {
   });
 
   await auditLog('users.reactivate', 'user', uid, {});
+
+  try {
+    const { invalidateUsersCache } = await import('../services/users.js');
+    invalidateUsersCache();
+  } catch {}
 }
 
 // ─── Helpers ──────────────────────────────────────────────

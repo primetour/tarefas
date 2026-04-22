@@ -3,11 +3,6 @@
  * Gestão completa de usuários (CRUD)
  */
 
-import {
-  collection, getDocs, query, orderBy,
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-
-import { db }          from '../firebase.js';
 import { store }       from '../store.js';
 import { createUser, updateUserProfile, deactivateUser, reactivateUser, getErrorMessage } from '../auth/auth.js';
 import { REQUESTING_AREAS } from '../services/tasks.js';
@@ -160,11 +155,14 @@ export async function renderUsers(container) {
 
 async function loadUsers() {
   try {
-    const [snap, roles] = await Promise.all([
-      getDocs(query(collection(db, 'users'), orderBy('name', 'asc'))),
+    const { fetchUsers, invalidateUsersCache } = await import('../services/users.js');
+    // Página de admin: invalida cache para garantir lista fresca após CRUD
+    invalidateUsersCache();
+    const [list, roles] = await Promise.all([
+      fetchUsers({ force: true }),
       fetchRoles().catch(() => []),
     ]);
-    users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    users = list;
 
     // Merge SYSTEM_ROLES as fallback so new roles appear even before Firestore sync
     const { SYSTEM_ROLES } = await import('../services/rbac.js');

@@ -46,9 +46,8 @@ export async function renderPortalDashboard(container) {
   let users = (store.get('users') || []).filter(u => u.active !== false);
   if (!users.length) {
     try {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const allUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      store.set('users', allUsers);
+      const { fetchUsers } = await import('../services/users.js');
+      const allUsers = await fetchUsers();
       users = allUsers.filter(u => u.active !== false);
     } catch { /* ignore */ }
   }

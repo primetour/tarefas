@@ -41,14 +41,28 @@ export const AUTOMATION_TYPES = [
     desc: 'Analisa tarefas pendentes e gera resumos/alertas via IA.' },
 ];
 
+/* ─── Cache ──────────────────────────────────────────────── */
+// Automações mudam raramente (admin edita esporadicamente). Cache de 15min
+// + invalidação em create/update/delete elimina re-leituras durante ticks
+// frequentes do scheduler (CHECK_INTERVAL 5min × 24h = 288 chamadas/dia).
+const CACHE_TTL = 15 * 60 * 1000;
+let _cache = null;       // { ts, items }
+
+export function invalidateAutomationsCache() { _cache = null; }
+
 /* ─── CRUD ──────────────────────────────────────────────── */
 
 /**
- * Listar todas as automações
+ * Listar todas as automações (cacheado)
  */
-export async function fetchAutomations() {
+export async function fetchAutomations({ force = false } = {}) {
+  if (!force && _cache && (Date.now() - _cache.ts) < CACHE_TTL) {
+    return _cache.items;
+  }
   const snap = await getDocs(query(collection(db, COL), orderBy('createdAt', 'desc')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  _cache = { ts: Date.now(), items };
+  return items;
 }
 
 /**
@@ -106,6 +120,7 @@ export async function createAutomation(data) {
   };
 
   const ref = await addDoc(collection(db, COL), docData);
+  invalidateAutomationsCache();
   return ref.id;
 }
 
@@ -119,6 +134,7 @@ export async function updateAutomation(id, data) {
   delete updates.createdAt;
   delete updates.createdBy;
   await updateDoc(doc(db, COL, id), updates);
+  invalidateAutomationsCache();
 }
 
 /**
@@ -126,6 +142,7 @@ export async function updateAutomation(id, data) {
  */
 export async function deleteAutomation(id) {
   await deleteDoc(doc(db, COL, id));
+  invalidateAutomationsCache();
 }
 
 /**
@@ -148,8 +165,8 @@ export async function logAutomationRun(id, success, result = '') {
 
 /* ─── Scheduler (client-side) ───────────────────────────── */
 
-let _automationInterval = null;
-const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos
+let _stopFn = null;
+const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos (alinhado com janela de ±5min do shouldRunNow)
 const DEDUP_KEY = 'pt_automation_dedup';
 
 function getDedupMap() {
@@ -314,25 +331,28 @@ async function checkAndRunAutomations() {
 }
 
 /**
- * Inicia o scheduler de automações
+ * Inicia o scheduler de automações.
+ * - Pausa quando aba está hidden (Page Visibility API)
+ * - Reusa fetchAutomations() cacheado (TTL 15min) para reduzir reads
  */
-export function startAutomationScheduler() {
+export async function startAutomationScheduler() {
   stopAutomationScheduler();
-  // Primeira verificação após 30s
+  const { startPolling } = await import('./pollScheduler.js');
+  // Primeira verificação após 30s para não atrasar o boot
   setTimeout(() => {
-    checkAndRunAutomations().catch(() => {});
+    _stopFn = startPolling(() => checkAndRunAutomations(), {
+      intervalMs:      CHECK_INTERVAL,
+      immediate:       true,
+      pauseWhenHidden: true,
+      runOnVisible:    true,
+      label:           'aiAutomations',
+    });
   }, 30_000);
-  _automationInterval = setInterval(() => {
-    checkAndRunAutomations().catch(() => {});
-  }, CHECK_INTERVAL);
 }
 
 /**
  * Para o scheduler
  */
 export function stopAutomationScheduler() {
-  if (_automationInterval) {
-    clearInterval(_automationInterval);
-    _automationInterval = null;
-  }
+  if (_stopFn) { _stopFn(); _stopFn = null; }
 }

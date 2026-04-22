@@ -153,8 +153,8 @@ export async function renderAiDashboard(container) {
 
   // Load users for name resolution
   try {
-    const snap = await getDocs(collection(db, 'users'));
-    allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const { fetchUsers } = await import('../services/users.js');
+    allUsers = await fetchUsers();
   } catch { allUsers = []; }
 
   await loadLogs();

@@ -596,12 +596,8 @@ async function openInviteModal(wsId) {
   let allUsers = store.get('users') || [];
   if (!allUsers.length) {
     try {
-      const { collection, getDocs, query, orderBy } =
-        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-      const { db } = await import('../firebase.js');
-      const snap = await getDocs(query(collection(db,'users'), orderBy('name','asc')));
-      allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      store.set('users', allUsers);
+      const { fetchUsers } = await import('../services/users.js');
+      allUsers = await fetchUsers();
     } catch(e) { console.warn('users load error:', e.message); }
   }
 

@@ -6,6 +6,7 @@
 import {
   collection, doc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, orderBy, where, limit, serverTimestamp, onSnapshot,
+  getCountFromServer,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }       from '../firebase.js';
 import { store }    from '../store.js';
@@ -62,11 +63,11 @@ export async function createRequest({
   // Notify admins/managers about new request
   try {
     const { notify } = await import('./notifications.js');
-    // Get admin/manager users to notify
-    const usersSnap = await getDocs(query(collection(db, 'users'), where('active', '==', true), limit(500)));
-    const admins = usersSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(u => u.active !== false && (u.isMaster || u.roleId === 'admin' || u.roleId === 'head'))
+    const { fetchUsers } = await import('./users.js');
+    // Get admin/manager users to notify (cache 5min — economiza reads em alta concorrência)
+    const allUsers = await fetchUsers({ active: true });
+    const admins = allUsers
+      .filter(u => u.isMaster || u.roleId === 'admin' || u.roleId === 'head')
       .map(u => u.id);
     if (admins.length) {
       notify('request.created', {
@@ -144,14 +145,27 @@ export async function deleteRequest(reqId) {
   await auditLog('requests.delete', 'request', reqId, {});
 }
 
-/* ─── Contar pendentes (para badge) ─────────────────────── */
+/* ─── Contar pendentes (para badge) ─────────────────────────
+ * Usa aggregation getCountFromServer: conta no servidor sem baixar docs.
+ * Cobra apenas 1 read independentemente do total (ou 0 quando bate cache).
+ * Antes (getDocs com limit 99): até 99 reads por chamada.
+ */
 export async function countPendingRequests() {
-  const snap = await getDocs(query(
-    collection(db, 'requests'),
-    where('status', '==', 'pending'),
-    limit(99),
-  ));
-  return snap.size;
+  try {
+    const agg = await getCountFromServer(query(
+      collection(db, 'requests'),
+      where('status', '==', 'pending'),
+    ));
+    return agg.data().count;
+  } catch (e) {
+    // Fallback (ex.: navegador sem suporte ao aggregation): query leve
+    const snap = await getDocs(query(
+      collection(db, 'requests'),
+      where('status', '==', 'pending'),
+      limit(99),
+    ));
+    return snap.size;
+  }
 }
 
 /* ─── Notificar solicitante sobre recusa ─────────────────── */

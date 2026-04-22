@@ -191,10 +191,9 @@ export async function saveTip(id, data) {
   // Notify team about new tip creation
   if (isNew) {
     try {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      const portalUsers = usersSnap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(u => u.active !== false && (u.isMaster || u.roleId === 'admin' || u.roleId === 'head'))
+      const { fetchUsers } = await import('./users.js');
+      const portalUsers = (await fetchUsers({ active: true }))
+        .filter(u => u.isMaster || u.roleId === 'admin' || u.roleId === 'head')
         .map(u => u.id);
       if (portalUsers.length) {
         import('./notifications.js').then(({ notify }) => {

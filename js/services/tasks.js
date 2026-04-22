@@ -300,6 +300,7 @@ export async function createTask(data) {
   };
 
   const ref = await addDoc(collection(db, 'tasks'), taskDoc);
+  invalidateTasksCache();
   await auditLog('tasks.create', 'task', ref.id, { title: taskDoc.title });
 
   // Notify assignees
@@ -358,6 +359,7 @@ export async function updateTask(taskId, data) {
   delete updates._prevStatus;
 
   await updateDoc(doc(db, 'tasks', taskId), updates);
+  invalidateTasksCache();
   await auditLog('tasks.update', 'task', taskId, { fields: Object.keys(data) });
 
   // Notify newly-added / removed assignees (diff prev vs new)
@@ -459,6 +461,7 @@ export async function toggleTaskComplete(taskId, isDone) {
     updatedAt:   serverTimestamp(),
     updatedBy:   user.uid,
   });
+  invalidateTasksCache();
   await auditLog('tasks.complete', 'task', taskId, { done: isDone });
   if (isDone) playCompletionSound();
 }
@@ -477,6 +480,7 @@ export async function deleteTask(taskId) {
   } catch (_) { /* segue sem bloquear delete */ }
 
   await deleteDoc(doc(db, 'tasks', taskId));
+  invalidateTasksCache();
   await auditLog('tasks.delete', 'task', taskId, { sourceNewsId });
 
   if (sourceNewsId) {
@@ -517,8 +521,39 @@ export async function deleteAllTasks(onProgress) {
     if (typeof onProgress === 'function') onProgress(done, total);
   }
 
+  invalidateTasksCache();
   await auditLog('tasks.deleteAll', 'tasks', null, { count: done });
   return { total, deleted: done };
+}
+
+/* ─── Cache do snapshot bruto de tasks ─────────────────────
+ * Páginas (dashboard, profile, capacity, csat, goals, calendar,
+ * portalDashboard, etc.) chamam fetchTasks() repetidamente em poucos
+ * segundos durante navegação. Sem cache: cada chamada baixa até 5000 docs.
+ * Com cache TTL de 90s + invalidação em mutations, navegação repetida
+ * dentro da janela serve do cache local (0 reads).
+ *
+ * Cuidado: cacheamos só o array bruto (snap.docs). Os filtros por user/
+ * setor/squad rodam SEMPRE no resultado cacheado — assim, mudanças de
+ * contexto (workspace ativo, setor visível) refletem imediatamente sem
+ * precisar refetchar.
+ */
+const _tasksRawCache = new Map(); // key=limitN -> { ts, items }
+const TASKS_RAW_TTL  = 90 * 1000;
+
+export function invalidateTasksCache() {
+  _tasksRawCache.clear();
+}
+
+async function _getRawTasks(limitN) {
+  const cached = _tasksRawCache.get(limitN);
+  if (cached && (Date.now() - cached.ts) < TASKS_RAW_TTL) return cached.items;
+  const constraints = [orderBy('order', 'asc'), limit(limitN)];
+  const q = query(collection(db, 'tasks'), ...constraints);
+  const snap = await getDocs(q);
+  const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  _tasksRawCache.set(limitN, { ts: Date.now(), items });
+  return items;
 }
 
 /* ─── Listar tarefas (filtros) ───────────────────────────── */
@@ -529,14 +564,13 @@ export async function fetchTasks({
   priority     = null,
   workspaceIds = null,   // null = usa activeWorkspaces do store
   limitN       = 5000,
+  force        = false,
 } = {}) {
   // Estratégia: baixar TODAS as tarefas (até limitN) e filtrar client-side
   // para garantir que tarefas atribuídas em outros workspaces apareçam.
   // Ver comentário em subscribeToTasks() para detalhes.
-  const constraints = [orderBy('order', 'asc'), limit(limitN)];
-  const q = query(collection(db, 'tasks'), ...constraints);
-  const snap = await getDocs(q);
-  let tasks  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (force) _tasksRawCache.delete(limitN);
+  let tasks = await _getRawTasks(limitN);
 
   // Tarefas atribuídas ao usuário sempre são visíveis, independente de workspace/setor
   const currentUid = store.get('currentUser')?.uid;
@@ -630,6 +664,9 @@ export function subscribeToTasks(callback, filters = {}) {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       let tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Aproveita o snapshot do listener para popular o cache do fetchTasks,
+      // evitando getDocs redundante quando outras páginas pedem a mesma coleção.
+      _tasksRawCache.set(5000, { ts: Date.now(), items: tasks });
 
       // Tarefas atribuídas ao usuário sempre são visíveis
       const currentUid = store.get('currentUser')?.uid;
@@ -694,6 +731,7 @@ export async function moveTaskKanban(taskId, newStatus, newOrder) {
   }
 
   await updateDoc(doc(db, 'tasks', taskId), updates);
+  invalidateTasksCache();
 }
 
 /* ─── Adicionar subtarefa ────────────────────────────────── */

@@ -34,11 +34,8 @@ export async function renderTeam(container) {
   // Garantir que users estejam carregados no store
   if (!(store.get('users') || []).length) {
     try {
-      const { collection, getDocs, query, orderBy } =
-        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-      const { db } = await import('../firebase.js');
-      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
-      store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { fetchUsers } = await import('../services/users.js');
+      await fetchUsers();
     } catch(e) { console.warn('Erro ao carregar usuários:', e.message); }
   }
 
@@ -386,12 +383,8 @@ async function openAbsenceModal(absence = null) {
   // Se store de users estiver vazio, carregar do Firestore
   if (!users.length) {
     try {
-      const { collection, getDocs, query, orderBy } =
-        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-      const { db } = await import('../firebase.js');
-      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
-      const all  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      store.set('users', all);
+      const { fetchUsers } = await import('../services/users.js');
+      const all = await fetchUsers();
       users = all.filter(u => u.active !== false);
     } catch(e) { console.warn('Erro ao carregar usuários:', e.message); }
   }

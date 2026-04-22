@@ -507,11 +507,8 @@ async function ensureUsersLoaded() {
   let users = store.get('users');
   if (Array.isArray(users) && users.length) return users;
   try {
-    const { collection, getDocs, query, orderBy } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    const { db } = await import('../firebase.js');
-    const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
-    users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    store.set('users', users);
+    const { fetchUsers } = await import('../services/users.js');
+    users = await fetchUsers();
     return users;
   } catch (e) {
     console.warn('[squadWorkspace] erro ao carregar users:', e.message);

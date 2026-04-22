@@ -533,14 +533,9 @@ async function openGoalForm(container, goalId) {
   let users = allUsers.length ? allUsers : (store.get('users')||[]);
   if (!users.length) {
     try {
-      const { getDocs, collection, query, orderBy } = await import(
-        'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
-      );
-      const { db } = await import('../firebase.js');
-      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
-      users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const { fetchUsers } = await import('../services/users.js');
+      users = await fetchUsers();
       allUsers = users;
-      store.set('users', users);
     } catch(e) { console.warn('users fetch failed:', e.message); }
   }
 

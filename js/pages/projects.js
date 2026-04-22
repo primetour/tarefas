@@ -93,17 +93,17 @@ async function loadData() {
     const tasks = [fetchProjects(), fetchTasks()];
     if (needsUsers || needsWorkspaces) {
       tasks.push((async () => {
-        const { collection, getDocs, query, orderBy } =
-          await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        const { db } = await import('../firebase.js');
         if (needsUsers) {
           try {
-            const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
-            store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            const { fetchUsers } = await import('../services/users.js');
+            await fetchUsers();
           } catch(e) { console.warn('[projects] users:', e.message); }
         }
         if (needsWorkspaces) {
           try {
+            const { collection, getDocs, query, orderBy } =
+              await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const { db } = await import('../firebase.js');
             const snap = await getDocs(query(collection(db, 'workspaces'), orderBy('createdAt', 'asc')));
             store.set('userWorkspaces', snap.docs.map(d => ({ id: d.id, ...d.data() })));
           } catch(e) { console.warn('[projects] workspaces:', e.message); }
@@ -270,11 +270,8 @@ export async function openProjectModal(project = null, { defaultWorkspaceId = nu
   // (Se o page load não rodou ou ainda está em curso, puxamos aqui.)
   if (!(store.get('users') || []).length) {
     try {
-      const { collection, getDocs, query, orderBy } =
-        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-      const { db } = await import('../firebase.js');
-      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
-      store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { fetchUsers } = await import('../services/users.js');
+      await fetchUsers();
     } catch(e) { console.warn('[openProjectModal] users:', e.message); }
   }
   // Usa `active !== false` (inclui docs legados sem o campo) — padrão do resto do app.

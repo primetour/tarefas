@@ -328,17 +328,14 @@ export async function generateLgpdReport() {
     byModule[m] = (byModule[m] || 0) + 1;
   });
 
-  // Status de consentimento dos usuários
-  const usersSnap = await getDocs(query(
-    collection(db, 'users'),
-    where('active', '==', true),
-    limit(500),
-  ));
+  // Status de consentimento dos usuários (cache 5min)
+  const { fetchUsers } = await import('./users.js');
+  const activeUsers = await fetchUsers({ active: true });
 
   let consented = 0;
   let notConsented = 0;
-  usersSnap.docs.forEach(d => {
-    const consent = d.data()?.aiConsent;
+  activeUsers.forEach(u => {
+    const consent = u.aiConsent;
     if (consent?.accepted && consent?.version === config.consentVersion) consented++;
     else notConsented++;
   });

@@ -99,11 +99,8 @@ export function destroyFeedbacks() { /* cleanup if needed */ }
 
 async function ensureUsers() {
   if (!(store.get('users') || []).length) {
-    const { collection: coll, getDocs: gd, query: q, orderBy: ob } =
-      await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-    const { db } = await import('../firebase.js');
-    const snap = await gd(q(coll(db, 'users'), ob('name', 'asc')));
-    store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const { fetchUsers } = await import('../services/users.js');
+    await fetchUsers();
   }
   _users = store.get('users') || [];
 }

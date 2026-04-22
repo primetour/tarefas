@@ -7,10 +7,6 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { updateUserProfile } from '../auth/auth.js';
-import { db } from '../firebase.js';
-import {
-  collection, getDocs, query, orderBy,
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import {
   fetchNucleos, createNucleo, updateNucleo, deleteNucleo,
   SECTORS, userNucleos, userInNucleo,
@@ -352,8 +348,9 @@ async function saveMembers(nucleo, users, selectedSet) {
 
 async function reloadUsers() {
   try {
-    const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
-    store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const { fetchUsers, invalidateUsersCache } = await import('../services/users.js');
+    invalidateUsersCache();
+    await fetchUsers({ force: true });
   } catch(e) { console.warn('reloadUsers falhou:', e.message); }
 }
 

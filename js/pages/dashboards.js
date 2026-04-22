@@ -17,10 +17,6 @@ import {
 } from '../services/analytics.js';
 import { fetchSurveys } from '../services/csat.js';
 import { REQUESTING_AREAS } from '../components/filterBar.js';
-import {
-  collection, getDocs,
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { db } from '../firebase.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -75,9 +71,8 @@ export async function renderDashboards(container) {
   let users = (store.get('users') || []).filter(u => u.active !== false);
   if (!users.length) {
     try {
-      const snap = await getDocs(collection(db, 'users'));
-      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      store.set('users', all);
+      const { fetchUsers } = await import('../services/users.js');
+      const all = await fetchUsers();
       users = all.filter(u => u.active !== false);
     } catch { /* ignore */ }
   }

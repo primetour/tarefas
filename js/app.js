@@ -447,7 +447,10 @@ function setupRouter() {
   });
 
   // Re-render páginas de dados ao trocar workspace ativo
-  // Poll pending requests count for badge (every 60s)
+  // Poll pending requests count for badge.
+  //   Antes: setInterval 60s + getDocs(limit 99)  →  até 99×60×24 = 142k reads/user/dia
+  //   Agora: 5min + getCountFromServer (1 read) + pausa quando aba escondida
+  //          →  ~12×8h ativas = 96 reads/user/dia
   async function updateRequestsBadge() {
     try {
       const { countPendingRequests } = await import('./services/requests.js');
@@ -456,8 +459,14 @@ function setupRouter() {
       updateSidebarBadge(count);
     } catch(e) {}
   }
-  updateRequestsBadge();
-  setInterval(updateRequestsBadge, 60000);
+  import('./services/pollScheduler.js').then(({ startPolling }) => {
+    startPolling(updateRequestsBadge, {
+      intervalMs:      5 * 60 * 1000,
+      immediate:       true,
+      pauseWhenHidden: true,
+      label:           'requestsBadge',
+    });
+  });
 
   store.subscribe('activeWorkspaces', () => {
     const route = router.getCurrentRoute();

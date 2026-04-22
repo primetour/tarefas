@@ -1,22 +1,27 @@
 /**
  * PRIMETOUR — Notification Scheduler
- * Verifica periodicamente tarefas atrasadas e com prazo próximo
- * Roda client-side com dedup via localStorage
+ * Verifica periodicamente tarefas atrasadas e com prazo próximo.
+ * Roda client-side com dedup via localStorage.
+ *
+ * Otimizações de leituras (free tier):
+ *   - Reusa o cache do fetchTasks() em vez de disparar getDocs próprio.
+ *     Quando subscribeToTasks() está ativo, o cache já está populado
+ *     pelo onSnapshot — checkDeadlines() não cobra read nenhum.
+ *   - Pausa quando a aba está hidden (Page Visibility API via pollScheduler).
+ *   - Tick a cada 1h em vez de 30min — janelas de 48h tornam isso suficiente.
  */
 
-import { db }    from '../firebase.js';
-import { store } from '../store.js';
-import {
-  collection, getDocs, query, where,
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { store }       from '../store.js';
+import { fetchTasks }  from './tasks.js';
+import { startPolling } from './pollScheduler.js';
 
 /* ─── Config ─────────────────────────────────────────────── */
-const CHECK_INTERVAL   = 30 * 60 * 1000; // 30 minutos
+const CHECK_INTERVAL    = 60 * 60 * 1000; // 1 hora
 const APPROACHING_HOURS = 48;             // notificar 48h antes do prazo
 const DEDUP_KEY         = 'pt_notif_dedup';
 const DEDUP_TTL         = 24 * 60 * 60 * 1000; // 24h — não re-notificar no mesmo dia
 
-let _intervalId = null;
+let _stopFn = null;
 
 /* ─── Dedup helpers (localStorage) ───────────────────────── */
 function getDedupMap() {
@@ -25,7 +30,6 @@ function getDedupMap() {
     if (!raw) return {};
     const map = JSON.parse(raw);
     const now = Date.now();
-    // Limpar entradas expiradas
     for (const key of Object.keys(map)) {
       if (now - map[key] > DEDUP_TTL) delete map[key];
     }
@@ -49,40 +53,39 @@ async function checkDeadlines() {
   const currentUser = store.get('currentUser');
   if (!currentUser?.uid) return;
 
-  // Buscar tarefas ativas (não concluídas/canceladas) com dueDate
-  const activeStatuses = ['not_started', 'in_progress', 'review', 'rework'];
-  let tasks = [];
+  const activeSet = new Set(['not_started', 'in_progress', 'review', 'rework']);
 
-  // Firestore 'in' query limited to 10 values — activeStatuses has 4, so it's fine
+  // Reusa o cache de fetchTasks (TTL 90s + populado pelo onSnapshot do tasks/kanban).
+  // Isso elimina o getDocs paralelo que essa função fazia antes.
+  let tasks = [];
   try {
-    const snap = await getDocs(
-      query(collection(db, 'tasks'), where('status', 'in', activeStatuses))
-    );
-    tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    tasks = await fetchTasks();
   } catch (e) {
-    console.warn('[NotifScheduler] Erro ao buscar tarefas:', e);
+    console.warn('[NotifScheduler] Erro ao buscar tarefas:', e?.message || e);
     return;
   }
 
-  // Filtrar apenas tarefas com dueDate
+  // Filtra status localmente (sem custo de read extra)
+  tasks = tasks.filter(t => activeSet.has(t.status) && t.dueDate);
+
   const now = new Date();
   const { notify } = await import('./notifications.js');
 
   for (const task of tasks) {
-    if (!task.dueDate) continue;
-
     const due = task.dueDate?.toDate?.() || new Date(task.dueDate);
     if (isNaN(due.getTime())) continue;
 
     const hoursUntilDue = (due - now) / (1000 * 60 * 60);
     const assignees = Array.isArray(task.assignedTo) ? task.assignedTo
                     : task.assignedTo ? [task.assignedTo] : [];
-    const recipients = [...new Set([task.createdBy, ...assignees].filter(Boolean))];
+    // Compat com o modelo atual (assignees), mantendo retrocompat
+    const assigneesArr = Array.isArray(task.assignees) ? task.assignees : assignees;
+    const recipients = [...new Set([task.createdBy, ...assigneesArr].filter(Boolean))];
     if (!recipients.length) continue;
 
     const taskTitle = task.title || 'Tarefa sem título';
 
-    // 1) Tarefa atrasada (prazo já passou)
+    // 1) Tarefa atrasada
     if (hoursUntilDue < 0) {
       const dedupKey = `overdue_${task.id}_${now.toISOString().slice(0, 10)}`;
       if (!wasNotified(dedupKey)) {
@@ -100,7 +103,7 @@ async function checkDeadlines() {
         markNotified(dedupKey);
       }
     }
-    // 2) Prazo próximo (dentro de APPROACHING_HOURS)
+    // 2) Prazo próximo
     else if (hoursUntilDue <= APPROACHING_HOURS && hoursUntilDue > 0) {
       const dedupKey = `approaching_${task.id}_${now.toISOString().slice(0, 10)}`;
       if (!wasNotified(dedupKey)) {
@@ -126,24 +129,21 @@ async function checkDeadlines() {
 
 /* ─── Lifecycle ──────────────────────────────────────────── */
 
-/**
- * Inicia o scheduler. Roda a primeira verificação após 10s (para não bloquear login)
- * e depois a cada CHECK_INTERVAL.
- */
 export function startScheduler() {
   stopScheduler();
-  // Primeira verificação com delay para não impactar o carregamento
+  // Delay inicial de 10s para não disputar com o boot do app.
+  // O startPolling cuidará dos ticks subsequentes (com pausa em aba hidden).
   setTimeout(() => {
-    checkDeadlines().catch(e => console.warn('[NotifScheduler]', e));
+    _stopFn = startPolling(checkDeadlines, {
+      intervalMs:      CHECK_INTERVAL,
+      immediate:       true,
+      pauseWhenHidden: true,
+      runOnVisible:    true,
+      label:           'notifScheduler',
+    });
   }, 10_000);
-  _intervalId = setInterval(() => {
-    checkDeadlines().catch(e => console.warn('[NotifScheduler]', e));
-  }, CHECK_INTERVAL);
 }
 
 export function stopScheduler() {
-  if (_intervalId) {
-    clearInterval(_intervalId);
-    _intervalId = null;
-  }
+  if (_stopFn) { _stopFn(); _stopFn = null; }
 }

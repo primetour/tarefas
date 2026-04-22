@@ -95,11 +95,8 @@ export async function renderKanban(container) {
     if (usersNeedLoad) {
       jobs.push((async () => {
         try {
-          const { collection, getDocs, query, orderBy } =
-            await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-          const { db } = await import('../firebase.js');
-          const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
-          store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          const { fetchUsers } = await import('../services/users.js');
+          await fetchUsers();
         } catch (e) { console.warn('[kanban] users load:', e?.message || e); }
       })());
     }

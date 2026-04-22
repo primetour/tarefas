@@ -177,11 +177,8 @@ export async function renderTasks(container) {
   // Sem isso, os avatares de responsáveis aparecem vazios nos cards.
   if (!(store.get('users') || []).length) {
     try {
-      const { collection, getDocs, query, orderBy } =
-        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-      const { db } = await import('../firebase.js');
-      const snap = await getDocs(query(collection(db, 'users'), orderBy('name', 'asc')));
-      store.set('users', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { fetchUsers } = await import('../services/users.js');
+      await fetchUsers();
       // Re-popula o filtro de responsáveis agora que users chegaram
       const assigneeSel = document.getElementById('filter-assignee');
       if (assigneeSel) {
