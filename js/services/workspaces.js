@@ -156,7 +156,8 @@ export async function checkWorkspaceDependencies(wsId) {
 
   // Dentre as tarefas, quantas são evidência de meta?
   taskSnap.docs.forEach(d => {
-    if (d.data().goalId) deps.goalEvidence++;
+    const td = d.data();
+    if (td.goalId || (Array.isArray(td.metaLinks) && td.metaLinks.length)) deps.goalEvidence++;
   });
 
   deps.total = deps.projects + deps.tasks;

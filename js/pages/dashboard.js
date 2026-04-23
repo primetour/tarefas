@@ -246,7 +246,11 @@ export async function renderDashboard(container) {
               ${myGoals.slice(0,3).map(g => {
                 const pct = g.target > 0 ? Math.min(100, Math.round((g.current||0)/g.target*100)) : g.progress||0;
                 const color = pct>=100?'#22C55E':pct>=60?'#F59E0B':'#38BDF8';
-                const gTasks = tasks.filter(t => t.goalId === g.id);
+                const gTasks = tasks.filter(t => {
+                  if (t.goalId === g.id) return true;
+                  if (Array.isArray(t.metaLinks)) return t.metaLinks.some(l => l && l.goalId === g.id);
+                  return false;
+                });
                 const gDone  = gTasks.filter(t => t.status === 'done').length;
                 return `<div>
                   <div style="display:flex;justify-content:space-between;margin-bottom:3px;">

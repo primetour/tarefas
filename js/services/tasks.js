@@ -12,6 +12,7 @@ import {
 import { db }       from '../firebase.js';
 import { store }    from '../store.js';
 import { auditLog } from '../auth/audit.js';
+import { syncLegacyFields, migrateLegacyToMetaLinks } from './metaLinks.js';
 
 /* ─── Som de conclusão de tarefa (Web Audio API) ─────────── */
 // Navegadores modernos (Chrome, Safari, Firefox) bloqueiam áudio até o
@@ -280,8 +281,11 @@ export async function createTask(data) {
     completedAt: data.status === 'done'
       ? (data.completedAt || serverTimestamp())
       : null,
-    // Meta / evidência
+    // Meta / evidência — modelo novo: metaLinks[] (vários por task, vários por user)
+    // Mantemos goalId/goalMetaRef sincronizados com o PRIMEIRO link (back-compat).
+    metaLinks:            [],
     goalId:               data.goalId               || null,
+    goalMetaRef:          data.goalMetaRef          || null,
     periodoRef:           data.periodoRef            || '',
     linkComprovacao:      data.linkComprovacao       || '',
     confirmadaEvidencia:  data.confirmadaEvidencia   || false,
@@ -298,6 +302,23 @@ export async function createTask(data) {
     updatedAt:   serverTimestamp(),
     updatedBy:   user.uid,
   };
+
+  // Normaliza metaLinks: aceita formato novo (data.metaLinks) ou migra
+  // automaticamente de goalId/goalMetaRef + assignees (formato legado).
+  // syncLegacyFields garante que goalId/goalMetaRef refletem o 1º link.
+  {
+    const incoming = Array.isArray(data.metaLinks) && data.metaLinks.length
+      ? data.metaLinks
+      : migrateLegacyToMetaLinks({
+          goalId:      data.goalId,
+          goalMetaRef: data.goalMetaRef,
+          assignees:   taskDoc.assignees,
+        });
+    const normalized = syncLegacyFields({ metaLinks: incoming });
+    taskDoc.metaLinks   = normalized.metaLinks;
+    taskDoc.goalId      = normalized.goalId;
+    taskDoc.goalMetaRef = normalized.goalMetaRef;
+  }
 
   const ref = await addDoc(collection(db, 'tasks'), taskDoc);
   invalidateTasksCache();
@@ -340,6 +361,25 @@ export async function updateTask(taskId, data) {
     throw new Error('Você não tem permissão para concluir tarefas. Peça a um coordenador para homologar.');
   }
   const updates = { ...data, updatedAt: serverTimestamp(), updatedBy: user.uid };
+
+  // Se a chamada toca em metaLinks (formato novo) OU goalId/goalMetaRef
+  // (formato legado), normaliza tudo e re-sincroniza os campos legados.
+  if ('metaLinks' in data || 'goalId' in data || 'goalMetaRef' in data) {
+    const baseAssignees = Array.isArray(data.assignees)
+      ? data.assignees
+      : (Array.isArray(prevData?.assignees) ? prevData.assignees : []);
+    const incoming = Array.isArray(data.metaLinks)
+      ? data.metaLinks
+      : migrateLegacyToMetaLinks({
+          goalId:      'goalId'      in data ? data.goalId      : prevData?.goalId,
+          goalMetaRef: 'goalMetaRef' in data ? data.goalMetaRef : prevData?.goalMetaRef,
+          assignees:   baseAssignees,
+        });
+    const normalized = syncLegacyFields({ metaLinks: incoming });
+    updates.metaLinks   = normalized.metaLinks;
+    updates.goalId      = normalized.goalId;
+    updates.goalMetaRef = normalized.goalMetaRef;
+  }
 
   // Se status mudou para rework, registrar no audit log
   if (data.status === 'rework' && data._prevStatus && data.status !== data._prevStatus) {

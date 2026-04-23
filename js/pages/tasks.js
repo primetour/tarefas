@@ -1538,7 +1538,7 @@ function _buildTaskRows() {
       taskType,
       tags: (t.tags || []).join('; '),
       clientEmail: t.clientEmail || '',
-      goalLinked: t.goalId ? 'Sim' : 'Não',
+      goalLinked: (t.goalId || (Array.isArray(t.metaLinks) && t.metaLinks.length)) ? 'Sim' : 'Não',
     };
   });
 }
@@ -1678,7 +1678,7 @@ const exportTasksPdf = withExportGuard(async function exportTasksPdf() {
     const chipY = cardTop + PAD_T;
     const stCh = drawChip(stStyle.label, M + PAD_L, chipY, stStyle.bg, COL.white, CHIP_FS, 2.2, 1.2);
     let chipX = M + PAD_L + stCh.w + 2.2;
-    if (t.goalId) {
+    if (t.goalId || (Array.isArray(t.metaLinks) && t.metaLinks.length)) {
       const gw = drawChip('META', chipX, chipY, COL.gold, COL.white, CHIP_FS, 2.2, 1.2);
       chipX += gw.w + 2.2;
     }

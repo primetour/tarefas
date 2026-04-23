@@ -204,7 +204,8 @@ export async function checkProjectDependencies(projectId) {
 
   // Dentre as tarefas, quantas são evidência de meta?
   taskSnap.docs.forEach(d => {
-    if (d.data().goalId) deps.goalEvidence++;
+    const td = d.data();
+    if (td.goalId || (Array.isArray(td.metaLinks) && td.metaLinks.length)) deps.goalEvidence++;
   });
 
   // Pesquisas CSAT vinculadas

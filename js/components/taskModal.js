@@ -131,6 +131,8 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     typeId: typeId || null,
     customFields: {},
     goalId: null,
+    goalMetaRef: null,
+    metaLinks: [],
     ...(td || {}),
     // Always sanitize arrays regardless of source
     tags:         Array.isArray(td?.tags)        ? td.tags        : [],
@@ -138,10 +140,27 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     subtasks:     Array.isArray(td?.subtasks)     ? td.subtasks    : [],
     comments:     Array.isArray(td?.comments)     ? td.comments    : [],
     nucleos:      Array.isArray(td?.nucleos)      ? td.nucleos     : [],
+    metaLinks:    Array.isArray(td?.metaLinks)   ? td.metaLinks   : [],
     customFields: td?.customFields || {},
   });
 
   let task = sanitize(taskData);
+
+  // Migra legado (goalId + goalMetaRef) → metaLinks expandido por todos os assignees.
+  // Idempotente: se já tem metaLinks, mantém.
+  try {
+    const { migrateLegacyToMetaLinks, normalizeMetaLinks } = await import('../services/metaLinks.js');
+    const existing = normalizeMetaLinks(task.metaLinks);
+    if (!existing.length) {
+      task.metaLinks = migrateLegacyToMetaLinks({
+        goalId: task.goalId,
+        goalMetaRef: task.goalMetaRef,
+        assignees: task.assignees,
+      });
+    } else {
+      task.metaLinks = existing;
+    }
+  } catch (e) { console.warn('metaLinks migrate:', e?.message || e); }
 
   const isPrefill = !!(taskData && !taskData.id); // has data but no Firestore id
 
@@ -239,9 +258,16 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
       }, 100);
 
       // Populate meta picker custom (searchable, grouped by scope, com cartão de contexto)
-      import('../services/goals.js').then(({ fetchGoals, GOAL_SCOPES, getResponsavelIds }) => {
-        return Promise.all([fetchGoals(), Promise.resolve({ GOAL_SCOPES, getResponsavelIds })]);
-      }).then(([goals, { GOAL_SCOPES, getResponsavelIds }]) => {
+      Promise.all([
+        import('../services/goals.js'),
+        import('../services/metaLinks.js'),
+      ]).then(([goalsMod, metaLinksHelper]) => {
+        const { fetchGoals, GOAL_SCOPES, getResponsavelIds } = goalsMod;
+        return Promise.all([
+          fetchGoals(),
+          Promise.resolve({ GOAL_SCOPES, getResponsavelIds, metaLinksHelper }),
+        ]);
+      }).then(([goals, { GOAL_SCOPES, getResponsavelIds, metaLinksHelper }]) => {
         let available = goals.filter(g => g.status === 'publicada');
         if (!available.length) available = goals.filter(g => g.status !== 'encerrada');
 
@@ -303,6 +329,35 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         const btnLbl  = document.getElementById('tm-goal-btn-label');
         if (!sel || !btn) return;
 
+        // ── Estado de seleção MULTI por responsável ──────────────
+        // Source of truth: task.metaLinks (mutado em-place pelo picker).
+        // O #tm-goal hidden vira "primeiro link" por back-compat.
+        // Garante que task.metaLinks já está normalizado (sanitize fez a migração).
+        if (!Array.isArray(task.metaLinks)) task.metaLinks = [];
+
+        const linkKey = (l) => `${l.userId}::${l.goalId}::${l.metaRef}`;
+        const hasLink = (uid, gid, mref) => task.metaLinks.some(l =>
+          l.userId === uid && l.goalId === gid && l.metaRef === mref);
+        const addLink = (uid, gid, mref) => {
+          if (hasLink(uid, gid, mref)) return false;
+          task.metaLinks.push({ userId: uid, goalId: gid, metaRef: mref });
+          return true;
+        };
+        const removeLink = (uid, gid, mref) => {
+          const before = task.metaLinks.length;
+          task.metaLinks = task.metaLinks.filter(l =>
+            !(l.userId === uid && l.goalId === gid && l.metaRef === mref));
+          return task.metaLinks.length !== before;
+        };
+        const syncHiddenSelect = () => {
+          const first = task.metaLinks[0];
+          sel.innerHTML = first
+            ? `<option value="${first.goalId}:${first.metaRef}" selected>(metaLinks)</option>`
+            : '<option value="">Sem meta vinculada</option>';
+          sel.value = first ? `${first.goalId}:${first.metaRef}` : '';
+        };
+
+
         // Paleta fixa por escopo — mantém visual leve e diferenciado
         const scopeOrder = GOAL_SCOPES.map(s => s.value);
         const scopeMap   = Object.fromEntries(GOAL_SCOPES.map(s => [s.value, s]));
@@ -342,13 +397,11 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           return g.setor || '';
         };
 
-        // Monta índice + árvore agrupada por SETOR → NOME DA META → itens
-        // Cada "item" é uma meta-avaliável (g.pilares[].metas[]) — esse é o
-        // nível realmente selecionável ao vincular à tarefa.
+        // Monta índice + árvore agrupada por SETOR → GOAL → PILAR → metas
+        // Cada "item" é uma meta-avaliável (g.pilares[].metas[]).
+        // Selecão é MULTI: cada par (responsável,meta) entra em task.metaLinks.
         const metaIndex = {};
-        const bySector  = {}; // { setor: { goalId: { goal, items: [...] } } }
-        let selectedValue = '';
-        const selOpts = ['<option value="">Sem meta vinculada</option>'];
+        const bySector  = {}; // { setor: { goalId: { goal, pilares: { pIdx: { pilarName, items[] } } } } }
 
         // Valores distintos p/ alimentar os filtros do popup
         const respSet  = new Map();   // id → name
@@ -376,14 +429,13 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
           (g.pilares || []).forEach((pilar, pi) => {
             (pilar.metas || []).forEach((meta, mi) => {
-              const val = `${g.id}:${pi}:${mi}`;
+              const metaRef = `${pi}:${mi}`;
+              const val = `${g.id}:${metaRef}`;            // chave estável p/ index
               const metaName = meta.titulo || `Meta ${mi + 1}`;
               const pilarName = pilar.titulo || `Pilar ${pi + 1}`;
-              const isSelected = task.goalId === g.id &&
-                (task.goalMetaRef === `${pi}:${mi}` || (!task.goalMetaRef && pi === 0 && mi === 0));
-              if (isSelected) selectedValue = val;
 
               metaIndex[val] = {
+                goalId: g.id, pilarIdx: pi, metaIdx: mi, metaRef,
                 escopo, goalName, metaName, pilarName,
                 responsavelIds: respIds,
                 gestorId:       g.gestorId || '',
@@ -403,17 +455,18 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                 gestorId: g.gestorId || '',
                 squadId:  g.squadId || '',
                 responsavelIds: respIds,
-                items: [],
+                pilares: {},        // pilarIdx → { pilarName, items[] }
               });
-              goalBucket.items.push({
-                val, metaName, pilarName, goalName, norm: normStr,
-                escopo, selected: isSelected,
+              const pilarBucket = (goalBucket.pilares[pi] = goalBucket.pilares[pi] || {
+                pilarIdx: pi, pilarName, items: [],
+              });
+              pilarBucket.items.push({
+                val, goalId: g.id, pilarIdx: pi, metaIdx: mi, metaRef,
+                metaName, pilarName, goalName, norm: normStr, escopo,
                 responsavelIds: respIds,
                 gestorId: g.gestorId || '',
                 squadId:  g.squadId || '',
               });
-
-              selOpts.push(`<option value="${val}"${isSelected ? ' selected' : ''}>${esc(metaName)}</option>`);
             });
           });
         });
@@ -443,32 +496,31 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           return '▣';
         };
 
-        sel.innerHTML = selOpts.join('');
+        syncHiddenSelect();
 
         // Filtros do popup (aplicados em buildListHtml). Inicialmente vazios.
         const popupFilters = { escopo: '', resp: '', gestor: '', squad: '' };
 
-        // Estado do acordeão (sessão do popup). true = colapsado.
-        // Default: setor do usuário expandido; demais colapsados.
-        //   Se houver busca ou filtro ativo, força expandir tudo
-        //   dentro do buildListHtml (não altera o estado base).
+        // Estado do acordeão
         const sectorCollapsed = {};  // { sectorKey: true/false }
         const goalCollapsed   = {};  // { sectorKey + '::' + goalId: true/false }
         sectorKeys.forEach(k => {
-          // Expande globais e setores prioritários (do próprio usuário) por padrão.
           const isPriority = priority.has(k) || k === '__global__';
           sectorCollapsed[k] = !isPriority;
         });
-        // Goals: todos começam expandidos; o usuário colapsa se quiser.
         sectorKeys.forEach(sk => {
           Object.keys(bySector[sk] || {}).forEach(gid => {
             goalCollapsed[sk + '::' + gid] = false;
           });
         });
 
-        // ─── Renderiza a árvore dentro do modal ─────────────────────
-        // Hierarquia: SETOR → NOME DA META → itens avaliáveis (pilar/meta).
-        // Filtros de busca textual + dropdowns de escopo/responsável/gestor/squad.
+        // ─── Aba ativa do picker (responsável atualmente sendo editado) ───
+        // assigneeIds vem de task.assignees; se vazio, exibe aba "Tarefa"
+        // (vincula com userId='__task__' como placeholder não-individual).
+        const SCOPE_USER = '__task__';
+        const taskAssignees = () => Array.isArray(task.assignees) ? task.assignees : [];
+        let activeUserId = '';   // '' = sem aba ainda; será definido ao abrir o modal
+
         const passesFilters = (it, goalBucket) => {
           if (popupFilters.escopo && it.escopo !== popupFilters.escopo) return false;
           if (popupFilters.resp && !(goalBucket.responsavelIds || []).includes(popupFilters.resp)) return false;
@@ -477,24 +529,19 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           return true;
         };
 
+        // ─── Renderiza a árvore (aba do responsável activeUserId) ────
+        // Hierarquia: SETOR → GOAL → PILAR → metas (multi-toggle).
         const buildListHtml = (query = '') => {
           const q = (query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
           const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
 
-          // Quando há busca/filtro, força expandir tudo p/ resultados visíveis.
           const hasActiveQuery = !!q
             || !!popupFilters.escopo || !!popupFilters.resp
             || !!popupFilters.gestor || !!popupFilters.squad;
 
-          let html = `
-            <button type="button" class="tm-goal-item" data-value=""
-              style="width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:4px;
-                background:transparent;border:1px solid var(--border-subtle);border-radius:8px;cursor:pointer;
-                color:var(--text-muted);font-size:0.875rem;text-align:left;">
-              <span style="font-size:1rem;">✕</span>
-              <span>Sem meta vinculada</span>
-            </button>`;
+          const uid = activeUserId || SCOPE_USER;
 
+          let html = '';
           let totalShown = 0;
 
           sectorOrder.forEach(sectorKey => {
@@ -503,14 +550,19 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
               (a.goalName || '').localeCompare(b.goalName || '', 'pt-BR'));
 
             const goalsWithMatches = goalBuckets.map(gb => {
-              const items = gb.items.filter(it =>
-                passesFilters(it, gb) &&
-                (!tokens.length || tokens.every(t => it.norm.includes(t))));
-              return { ...gb, items };
-            }).filter(gb => gb.items.length);
+              const pilares = Object.values(gb.pilares).map(pb => {
+                const items = pb.items.filter(it =>
+                  passesFilters(it, gb) &&
+                  (!tokens.length || tokens.every(t => it.norm.includes(t))));
+                return { ...pb, items };
+              }).filter(pb => pb.items.length)
+                .sort((a, b) => a.pilarIdx - b.pilarIdx);
+              return { ...gb, pilaresFiltered: pilares };
+            }).filter(gb => gb.pilaresFiltered.length);
 
             if (!goalsWithMatches.length) return;
-            const sectorTotal = goalsWithMatches.reduce((n, gb) => n + gb.items.length, 0);
+            const sectorTotal = goalsWithMatches.reduce((n, gb) =>
+              n + gb.pilaresFiltered.reduce((m, p) => m + p.items.length, 0), 0);
             totalShown += sectorTotal;
 
             const isGlobal = sectorKey === '__global__';
@@ -540,6 +592,8 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
               const goalIsCollapsed = hasActiveQuery ? false : !!goalCollapsed[goalKey];
               const goalChevron = goalIsCollapsed ? '▸' : '▾';
 
+              const goalTotal = gb.pilaresFiltered.reduce((n, p) => n + p.items.length, 0);
+
               html += `
                 <button type="button" class="tm-goal-goal-header" data-goal="${esc(goalKey)}"
                   style="width:100%;text-align:left;cursor:pointer;
@@ -554,32 +608,60 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                     ${gSc.icon} ${esc(gSc.label)}
                   </span>
                   <span style="color:var(--text-muted);font-size:0.6875rem;margin-left:auto;">
-                    ${gb.items.length} ${gb.items.length === 1 ? 'meta' : 'metas'}
+                    ${goalTotal} ${goalTotal === 1 ? 'meta' : 'metas'}
                   </span>
                 </button>`;
 
               if (goalIsCollapsed) return;
 
-              gb.items.forEach(it => {
-                const isSel = it.val === selectedValue;
-                const color = scopeColor[it.escopo] || '#9CA3AF';
+              gb.pilaresFiltered.forEach(pb => {
+                const allChecked = pb.items.every(it => hasLink(uid, it.goalId, it.metaRef));
+                const someChecked = pb.items.some(it => hasLink(uid, it.goalId, it.metaRef));
+                const pilarBtnLbl = allChecked ? '✓ Pilar inteiro' : (someChecked ? '◐ Marcar pilar' : '+ Pilar inteiro');
+
                 html += `
-                  <button type="button" class="tm-goal-item" data-value="${esc(it.val)}"
-                    style="width:calc(100% - 14px);margin-left:14px;display:flex;align-items:flex-start;gap:10px;padding:9px 12px;margin-top:3px;margin-bottom:3px;
-                      background:${isSel ? color + '18' : 'var(--bg-elevated)'};
-                      border:1px solid ${isSel ? color + '66' : 'var(--border-subtle)'};
-                      border-radius:8px;cursor:pointer;text-align:left;transition:background .1s;">
-                    <span style="display:inline-block;width:8px;height:8px;border-radius:50%;
-                      background:${color};margin-top:6px;flex-shrink:0;"></span>
-                    <span style="flex:1;min-width:0;">
-                      <div style="font-size:0.875rem;color:var(--text-primary);font-weight:500;
-                        white-space:normal;line-height:1.35;">${esc(it.metaName)}</div>
-                      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;line-height:1.25;">
-                        ${esc(it.pilarName)}
-                      </div>
+                  <div style="margin:4px 0 2px 14px;display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:0.75rem;color:var(--text-muted);font-weight:600;flex:1;">
+                      📂 ${esc(pb.pilarName)}
+                      <span style="color:var(--text-muted);font-weight:400;font-size:0.6875rem;">
+                        · ${pb.items.length} ${pb.items.length === 1 ? 'meta' : 'metas'}
+                      </span>
                     </span>
-                    ${isSel ? `<span style="color:${color};font-weight:700;">✓</span>` : ''}
-                  </button>`;
+                    <button type="button" class="tm-goal-pilar-bulk"
+                      data-goal-id="${esc(gb.goalId)}" data-pilar-idx="${pb.pilarIdx}"
+                      style="font-size:0.6875rem;padding:3px 9px;border-radius:6px;cursor:pointer;
+                        background:${allChecked ? gColor + '22' : 'var(--bg-elevated)'};
+                        border:1px solid ${allChecked ? gColor + '66' : 'var(--border-subtle)'};
+                        color:${allChecked ? gColor : 'var(--text-muted)'};font-weight:600;">
+                      ${pilarBtnLbl}
+                    </button>
+                  </div>`;
+
+                pb.items.forEach(it => {
+                  const isSel = hasLink(uid, it.goalId, it.metaRef);
+                  const color = scopeColor[it.escopo] || '#9CA3AF';
+                  html += `
+                    <button type="button" class="tm-goal-item"
+                      data-goal-id="${esc(it.goalId)}" data-meta-ref="${esc(it.metaRef)}"
+                      data-val="${esc(it.val)}"
+                      style="width:calc(100% - 28px);margin-left:28px;display:flex;align-items:flex-start;gap:10px;
+                        padding:8px 10px;margin-top:3px;margin-bottom:3px;
+                        background:${isSel ? color + '18' : 'var(--bg-elevated)'};
+                        border:1px solid ${isSel ? color + '66' : 'var(--border-subtle)'};
+                        border-radius:8px;cursor:pointer;text-align:left;transition:background .1s;">
+                      <span style="display:inline-flex;align-items:center;justify-content:center;
+                        width:16px;height:16px;border-radius:4px;flex-shrink:0;margin-top:2px;
+                        background:${isSel ? color : 'transparent'};
+                        border:1.5px solid ${isSel ? color : 'var(--border-default)'};
+                        color:#fff;font-size:0.6875rem;font-weight:900;">
+                        ${isSel ? '✓' : ''}
+                      </span>
+                      <span style="flex:1;min-width:0;">
+                        <div style="font-size:0.8125rem;color:var(--text-primary);font-weight:500;
+                          white-space:normal;line-height:1.35;">${esc(it.metaName)}</div>
+                      </span>
+                    </button>`;
+                });
               });
             });
           });
@@ -597,104 +679,131 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           return html;
         };
 
-        // Cartão de contexto — identidade varia por escopo
-        const renderInfo = (value) => {
+        // Cartão de contexto + lista de metas vinculadas (resumo)
+        const renderInfo = () => {
           if (!info) return;
-          if (!value || !metaIndex[value]) { info.style.display = 'none'; info.innerHTML = ''; return; }
-          const m = metaIndex[value];
-          const sc = scopeMap[m.escopo] || { icon:'•', label:m.escopo };
-          const color = scopeColor[m.escopo] || '#9CA3AF';
+          const links = task.metaLinks || [];
+          if (!links.length) { info.style.display = 'none'; info.innerHTML = ''; return; }
 
-          let identityIcon = '', identityLabel = '', identityValue = '—';
-          if (m.escopo === 'individual') {
-            identityIcon = '👤'; identityLabel = 'Responsável';
-            const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
-            let pickId = taskAssignees.find(uid => m.responsavelIds.includes(uid)) || m.responsavelIds[0] || '';
-            const u = users.find(x => x.id === pickId);
-            identityValue = u ? u.name : (m.responsavelIds.length ? '(usuário não encontrado)' : '—');
-          } else if (m.escopo === 'squad') {
-            identityIcon = '◊'; identityLabel = 'Squad';
-            const ws = workspaces.find(w => w.id === m.squadId);
-            identityValue = ws ? `${ws.icon || ''} ${ws.name}`.trim() : (m.squadId ? '(squad não visível)' : '—');
-          } else if (m.escopo === 'nucleo') {
-            identityIcon = '◈'; identityLabel = 'Núcleo';
-            identityValue = nucleoMap[m.nucleo] || m.nucleo || '—';
-          } else if (m.escopo === 'area') {
-            identityIcon = '◎'; identityLabel = 'Setor';
-            identityValue = m.setor || '—';
-          } else if (m.escopo === 'global') {
-            identityIcon = '✦'; identityLabel = 'Alcance';
-            identityValue = 'Meta corporativa (empresa toda)';
+          // Agrupa por (goalId+metaRef) para mostrar quantos responsáveis em cada
+          const grouped = new Map();
+          for (const l of links) {
+            const k = `${l.goalId}:${l.metaRef}`;
+            if (!grouped.has(k)) grouped.set(k, { meta: metaIndex[k], users: [] });
+            grouped.get(k).users.push(l.userId);
           }
 
+          const cards = [...grouped.values()].map(({ meta, users: uids }) => {
+            if (!meta) return '';
+            const sc = scopeMap[meta.escopo] || { icon:'•', label: meta.escopo };
+            const color = scopeColor[meta.escopo] || '#9CA3AF';
+            const userNames = uids
+              .filter(uid => uid !== SCOPE_USER)
+              .map(uid => (users.find(u => u.id === uid) || {}).name || '?')
+              .join(', ');
+            return `
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;
+                background:${color}10;border-left:2px solid ${color};margin-bottom:4px;font-size:0.75rem;">
+                <span style="color:${color};font-weight:700;">${sc.icon}</span>
+                <span style="flex:1;color:var(--text-primary);">
+                  <strong>${esc(meta.metaName)}</strong>
+                  <span style="color:var(--text-muted);">· ${esc(meta.pilarName)}</span>
+                </span>
+                ${userNames
+                  ? `<span style="color:var(--text-muted);font-size:0.6875rem;">👤 ${esc(userNames)}</span>`
+                  : ''}
+              </div>`;
+          }).join('');
+
           info.style.display = 'block';
-          info.style.borderLeft = `3px solid ${color}`;
+          info.style.borderLeft = `none`;
           info.innerHTML = `
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
-              <span style="padding:2px 7px;border-radius:999px;font-size:0.6875rem;font-weight:600;
-                background:${color}22;color:${color};border:1px solid ${color}44;">
-                ${sc.icon} ${esc(sc.label)}
-              </span>
-              <span style="color:var(--text-muted);font-size:0.6875rem;">${esc(m.goalName)}</span>
+            <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;
+              letter-spacing:.05em;font-weight:700;margin-bottom:4px;">
+              ${links.length} vínculo${links.length === 1 ? '' : 's'} de meta
             </div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;">
-              <div style="flex:1;min-width:120px;">
-                <div style="color:var(--text-muted);font-size:0.625rem;text-transform:uppercase;letter-spacing:.03em;">
-                  ${identityIcon} ${esc(identityLabel)}
-                </div>
-                <div style="font-weight:600;color:var(--text-primary);">${esc(identityValue)}</div>
-              </div>
-              <div style="flex:1;min-width:120px;">
-                <div style="color:var(--text-muted);font-size:0.625rem;text-transform:uppercase;letter-spacing:.03em;">
-                  🎯 Meta / Pilar
-                </div>
-                <div style="color:var(--text-secondary);">
-                  <strong>${esc(m.metaName)}</strong> · ${esc(m.pilarName)}
-                </div>
-              </div>
-            </div>`;
+            ${cards}`;
         };
 
-        // Atualiza estado visual do botão — estado vazio (dashed, call-to-action)
-        // vs. preenchido (borda sólida + fundo leve da cor do escopo).
+        // Atualiza estado visual do botão trigger
         const btnIcon   = document.getElementById('tm-goal-btn-icon');
         const btnAction = document.getElementById('tm-goal-btn-action');
         const refreshBtnLabel = () => {
-          const v = sel.value;
-          if (!v || !metaIndex[v]) {
+          const links = task.metaLinks || [];
+          if (!links.length) {
             btn.classList.add('tm-goal-empty');
             btn.classList.remove('tm-goal-filled');
             btn.style.background = 'transparent';
             btn.style.border = '1.5px dashed var(--border-default)';
             btn.style.color = 'var(--text-muted)';
             if (btnIcon) btnIcon.textContent = '🎯';
-            if (btnLbl)  btnLbl.textContent = 'Vincular meta…';
+            if (btnLbl)  btnLbl.textContent = 'Vincular meta(s)…';
             if (btnAction) { btnAction.textContent = 'Escolher'; btnAction.style.color = 'var(--text-muted)'; }
             return;
           }
-          const m = metaIndex[v];
-          const sc = scopeMap[m.escopo] || { icon:'•', label:m.escopo };
-          const color = scopeColor[m.escopo] || '#9CA3AF';
+          // Agrega por meta para o resumo do botão
+          const distinctMetas = new Set(links.map(l => `${l.goalId}:${l.metaRef}`));
+          const firstMeta = metaIndex[links[0].goalId + ':' + links[0].metaRef];
+          const color = firstMeta ? (scopeColor[firstMeta.escopo] || '#60A5FA') : '#60A5FA';
           btn.classList.remove('tm-goal-empty');
           btn.classList.add('tm-goal-filled');
           btn.style.background = color + '14';
           btn.style.border = '1.5px solid ' + color + '66';
           btn.style.color = 'var(--text-primary)';
-          if (btnIcon) btnIcon.textContent = sc.icon || '🎯';
+          if (btnIcon) btnIcon.textContent = '🎯';
           if (btnLbl) {
             btnLbl.innerHTML = `
-              <span style="color:var(--text-primary);font-weight:600;">${esc(m.metaName)}</span>
+              <span style="color:var(--text-primary);font-weight:600;">
+                ${distinctMetas.size} meta${distinctMetas.size === 1 ? '' : 's'} vinculada${distinctMetas.size === 1 ? '' : 's'}
+              </span>
               <span style="color:var(--text-muted);font-size:0.75rem;margin-left:6px;font-weight:500;">
-                · ${esc(sc.label)}
+                · ${links.length} vínculo${links.length === 1 ? '' : 's'}
               </span>`;
           }
-          if (btnAction) { btnAction.textContent = 'Alterar'; btnAction.style.color = color; }
+          if (btnAction) { btnAction.textContent = 'Editar'; btnAction.style.color = color; }
+          syncHiddenSelect();
         };
 
-        // ─── Abre modal dedicado para escolha da meta ─────────────
+        // Constrói tabs de responsáveis
+        const buildTabs = () => {
+          const ids = taskAssignees();
+          const tabs = ids.length
+            ? ids.map(uid => {
+                const u = users.find(x => x.id === uid);
+                return { id: uid, label: u ? u.name : '(usuário)' };
+              })
+            : [{ id: SCOPE_USER, label: 'Tarefa (sem responsável)' }];
+
+          // Default: ativa o primeiro
+          if (!activeUserId || !tabs.some(t => t.id === activeUserId)) {
+            activeUserId = tabs[0].id;
+          }
+
+          return tabs.map(t => {
+            const isActive = t.id === activeUserId;
+            const count = (task.metaLinks || []).filter(l => l.userId === t.id).length;
+            return `
+              <button type="button" class="tm-goal-tab" data-uid="${esc(t.id)}"
+                style="padding:6px 12px;border-radius:8px;cursor:pointer;font-size:0.8125rem;
+                  background:${isActive ? 'var(--accent-primary)' : 'var(--bg-elevated)'};
+                  border:1px solid ${isActive ? 'var(--accent-primary)' : 'var(--border-subtle)'};
+                  color:${isActive ? '#fff' : 'var(--text-secondary)'};font-weight:${isActive ? '600' : '500'};
+                  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
+                👤 ${esc(t.label)}
+                ${count
+                  ? `<span style="background:${isActive ? 'rgba(255,255,255,0.25)' : 'var(--accent-primary)22'};
+                      color:${isActive ? '#fff' : 'var(--accent-primary)'};padding:1px 7px;border-radius:999px;
+                      font-size:0.6875rem;font-weight:700;">${count}</span>`
+                  : ''}
+              </button>`;
+          }).join('');
+        };
+
+        // ─── Abre modal dedicado para escolha das metas ─────────────
         const openMetaModal = () => {
           const totalMetas = Object.values(bySector).reduce((acc, goalsMap) =>
-            acc + Object.values(goalsMap).reduce((n, gb) => n + gb.items.length, 0), 0);
+            acc + Object.values(goalsMap).reduce((n, gb) =>
+              n + Object.values(gb.pilares).reduce((m, p) => m + p.items.length, 0), 0), 0);
 
           // Listas ordenadas p/ os dropdowns de filtro
           const respOpts = [...respSet.entries()]
@@ -713,12 +822,28 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             border:1px solid var(--border-default);border-radius:7px;color:var(--text-primary);
             outline:none;min-width:130px;height:34px;`;
 
+          // Define aba inicial: usa o primeiro assignee se houver
+          if (!activeUserId) {
+            const ids = taskAssignees();
+            activeUserId = ids[0] || SCOPE_USER;
+          }
+
           const ref = modal.open({
-            title: `🎯 Vincular meta (${totalMetas})`,
+            title: `🎯 Vincular metas (${totalMetas} disponíveis)`,
             size: 'lg',
             closeable: true,
             content: `
               <div style="display:flex;flex-direction:column;gap:10px;min-height:400px;max-height:70vh;">
+                <div id="tm-goal-tabs" style="display:flex;gap:6px;flex-wrap:wrap;
+                  padding:4px 0 8px;border-bottom:1px solid var(--border-subtle);">
+                  ${buildTabs()}
+                </div>
+
+                <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.4;">
+                  Marque as metas que este responsável irá evidenciar com a tarefa.
+                  Use <strong>"+ Pilar inteiro"</strong> para selecionar um pilar inteiro de uma vez.
+                </div>
+
                 <input type="text" id="tm-goal-modal-search"
                   placeholder="Buscar por nome da meta, pilar, plano ou setor…"
                   style="width:100%;padding:10px 14px;font-size:0.9375rem;
@@ -751,13 +876,26 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                 <div id="tm-goal-modal-list" style="flex:1;overflow-y:auto;padding:4px 2px 8px;">
                   ${buildListHtml('')}
                 </div>
+
+                <div style="display:flex;justify-content:space-between;align-items:center;
+                  padding:8px 0 0;border-top:1px solid var(--border-subtle);">
+                  <button type="button" id="tm-goal-clear-user" class="btn btn-ghost btn-sm"
+                    style="font-size:0.75rem;color:var(--text-muted);">
+                    🗑 Limpar metas deste responsável
+                  </button>
+                  <button type="button" id="tm-goal-clear-all" class="btn btn-ghost btn-sm"
+                    style="font-size:0.75rem;color:var(--text-muted);">
+                    Limpar TODAS
+                  </button>
+                </div>
               </div>`,
             footer: [
-              { label: 'Fechar', class: 'btn-secondary', closeOnClick: true },
+              { label: 'Concluir', class: 'btn-primary', closeOnClick: true },
             ],
           });
 
           const bodyEl   = ref.getBody();
+          const tabsEl   = bodyEl.querySelector('#tm-goal-tabs');
           const searchEl = bodyEl.querySelector('#tm-goal-modal-search');
           const listEl   = bodyEl.querySelector('#tm-goal-modal-list');
           const escFil   = bodyEl.querySelector('#tm-goal-fil-escopo');
@@ -767,18 +905,22 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           const clearBtn = bodyEl.querySelector('#tm-goal-fil-clear');
           const expAllBtn = bodyEl.querySelector('#tm-goal-expand-all');
           const colAllBtn = bodyEl.querySelector('#tm-goal-collapse-all');
+          const clearUserBtn = bodyEl.querySelector('#tm-goal-clear-user');
+          const clearAllBtn  = bodyEl.querySelector('#tm-goal-clear-all');
 
-          // Foca a busca automaticamente
           setTimeout(() => searchEl?.focus(), 50);
 
           const refreshList = () => {
             listEl.innerHTML = buildListHtml(searchEl?.value || '');
           };
+          const refreshTabs = () => {
+            tabsEl.innerHTML = buildTabs();
+          };
 
           searchEl?.addEventListener('input', refreshList);
           searchEl?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-              const first = listEl.querySelector('.tm-goal-item[data-value]:not([data-value=""])');
+              const first = listEl.querySelector('.tm-goal-item');
               if (first) first.click();
             }
           });
@@ -797,7 +939,6 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             refreshList();
           });
 
-          // Expand/collapse global
           expAllBtn?.addEventListener('click', () => {
             Object.keys(sectorCollapsed).forEach(k => sectorCollapsed[k] = false);
             Object.keys(goalCollapsed).forEach(k => goalCollapsed[k] = false);
@@ -809,40 +950,97 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             refreshList();
           });
 
-          // Delegação: clique em headers (acordeão) e em itens (selecionar)
+          clearUserBtn?.addEventListener('click', () => {
+            const uid = activeUserId;
+            task.metaLinks = task.metaLinks.filter(l => l.userId !== uid);
+            _isDirty = true;
+            refreshList();
+            refreshTabs();
+            refreshBtnLabel();
+            renderInfo();
+          });
+          clearAllBtn?.addEventListener('click', () => {
+            if (!task.metaLinks.length) return;
+            if (!confirm('Remover todas as vinculações de meta desta tarefa?')) return;
+            task.metaLinks = [];
+            _isDirty = true;
+            refreshList();
+            refreshTabs();
+            refreshBtnLabel();
+            renderInfo();
+          });
+
+          // Tabs (delegação)
+          tabsEl.addEventListener('click', (e) => {
+            const tab = e.target.closest('.tm-goal-tab');
+            if (!tab) return;
+            const uid = tab.getAttribute('data-uid');
+            if (!uid) return;
+            activeUserId = uid;
+            refreshTabs();
+            refreshList();
+          });
+
+          // Lista (delegação)
           listEl.addEventListener('click', (e) => {
-            // Cabeçalho de setor
             const sectorHeader = e.target.closest('.tm-goal-sector-header');
             if (sectorHeader) {
               const k = sectorHeader.getAttribute('data-sector');
-              if (k != null) {
-                sectorCollapsed[k] = !sectorCollapsed[k];
-                refreshList();
-              }
+              if (k != null) { sectorCollapsed[k] = !sectorCollapsed[k]; refreshList(); }
               return;
             }
-            // Cabeçalho de meta (nome do plano)
             const goalHeader = e.target.closest('.tm-goal-goal-header');
             if (goalHeader) {
               const k = goalHeader.getAttribute('data-goal');
-              if (k != null) {
-                goalCollapsed[k] = !goalCollapsed[k];
-                refreshList();
-              }
+              if (k != null) { goalCollapsed[k] = !goalCollapsed[k]; refreshList(); }
               return;
             }
-            // Item selecionável
+            // Pilar bulk
+            const pilarBtn = e.target.closest('.tm-goal-pilar-bulk');
+            if (pilarBtn) {
+              const gid = pilarBtn.getAttribute('data-goal-id');
+              const pIdx = parseInt(pilarBtn.getAttribute('data-pilar-idx'), 10);
+              const pb = bySector[derivedSetorOfGoal(gid) || '__unknown__']?.[gid]?.pilares?.[pIdx];
+              if (!pb) return;
+              const uid = activeUserId || SCOPE_USER;
+              const allChecked = pb.items.every(it => hasLink(uid, it.goalId, it.metaRef));
+              if (allChecked) {
+                // toggle off all
+                pb.items.forEach(it => removeLink(uid, it.goalId, it.metaRef));
+              } else {
+                // add missing
+                pb.items.forEach(it => addLink(uid, it.goalId, it.metaRef));
+              }
+              _isDirty = true;
+              refreshList();
+              refreshTabs();
+              refreshBtnLabel();
+              renderInfo();
+              return;
+            }
+            // Item meta (toggle)
             const item = e.target.closest('.tm-goal-item');
             if (!item) return;
-            const v = item.dataset.value || '';
-            sel.value = v;
-            selectedValue = v;
-            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            const gid = item.getAttribute('data-goal-id');
+            const mref = item.getAttribute('data-meta-ref');
+            if (!gid || !mref) return;
+            const uid = activeUserId || SCOPE_USER;
+            if (hasLink(uid, gid, mref)) removeLink(uid, gid, mref);
+            else addLink(uid, gid, mref);
+            _isDirty = true;
+            refreshList();
+            refreshTabs();
             refreshBtnLabel();
-            renderInfo(v);
-            ref.close();
+            renderInfo();
           });
         };
+
+        // Helper p/ encontrar setor de um goalId (usado no pilar-bulk)
+        const _goalSectorIndex = {};
+        Object.keys(bySector).forEach(sk => {
+          Object.keys(bySector[sk] || {}).forEach(gid => { _goalSectorIndex[gid] = sk; });
+        });
+        function derivedSetorOfGoal(gid) { return _goalSectorIndex[gid] || ''; }
 
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -852,8 +1050,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
         // Estado inicial
         refreshBtnLabel();
-        renderInfo(selectedValue);
-        sel.addEventListener('change', () => { refreshBtnLabel(); renderInfo(sel.value); });
+        renderInfo();
       }).catch((e) => { console.warn('[taskModal] meta populate:', e?.message || e); });
     });
   });
@@ -1847,8 +2044,9 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     title,
     subtasks:     Array.isArray(task.subtasks) ? task.subtasks : [],
     description:  $('tm-desc')?.value?.trim()||'',
-    goalId:       ($('tm-goal')?.value || '').split(':')[0] || null,
-    goalMetaRef:  ($('tm-goal')?.value || '').includes(':') ? ($('tm-goal').value.split(':').slice(1).join(':')) : null,
+    // metaLinks é a única fonte de verdade — tasks.js sincroniza goalId/goalMetaRef
+    // a partir do primeiro link via syncLegacyFields().
+    metaLinks:    Array.isArray(task.metaLinks) ? task.metaLinks : [],
     status:       $('tm-status')?.value||'not_started',
     priority:     $('tm-priority')?.value||'medium',
     projectId:    $('tm-project')?.value||null,
@@ -2409,17 +2607,27 @@ function showEvidenceModal(taskId, taskData) {
   const hasMetaRef = !!taskData.goalId && taskData.goalMetaRef;
   const hasMetas   = metaOptions.length > 0;
 
-  // Find pre-selected meta if task already linked
+  // Modelo novo: se task.metaLinks tem itens, evidenciamos TODOS de uma vez.
+  // Modelo antigo (legado): pre-seleciona via goalId/goalMetaRef.
+  const taskMetaLinks = Array.isArray(taskData.metaLinks) ? taskData.metaLinks : [];
+  const hasMetaLinks  = taskMetaLinks.length > 0;
+
+  // Find pre-selected meta if task already linked (legado)
   let preselectedValue = '';
-  if (hasMetaRef) {
-    preselectedValue = `${taskData.goalId}:${taskData.goalMetaRef}`;
-  } else if (taskData.goalId) {
-    // Legacy: linked to goal but no specific meta — select first meta of that goal
-    const first = metaOptions.find(m => m.goalId === taskData.goalId);
-    if (first) preselectedValue = first.value;
+  if (!hasMetaLinks) {
+    if (hasMetaRef) {
+      preselectedValue = `${taskData.goalId}:${taskData.goalMetaRef}`;
+    } else if (taskData.goalId) {
+      const first = metaOptions.find(m => m.goalId === taskData.goalId);
+      if (first) preselectedValue = first.value;
+    }
+  } else {
+    // Pega o primeiro link p/ derivar períodos disponíveis
+    const first = taskMetaLinks[0];
+    preselectedValue = `${first.goalId}:${first.metaRef}`;
   }
 
-  // Load periods for pre-selected goal
+  // Load periods for pre-selected goal (usado tanto p/ legado quanto multi)
   if (preselectedValue) {
     const sel = metaOptions.find(m => m.value === preselectedValue);
     if (sel) {
@@ -2483,38 +2691,57 @@ function showEvidenceModal(taskId, taskData) {
               <div>
                 <div style="font-weight:600;font-size:0.875rem;">🎯 Evidência de meta</div>
                 <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
-                  ${activeMeta
-                    ? `Meta: <strong>${esc2(activeMeta.metaName)}</strong> (Pilar: ${esc2(activeMeta.pilarName)})`
-                    : hasMetas
-                      ? 'Selecione a meta do pilar à qual esta tarefa é evidência'
-                      : 'Nenhuma meta publicada no sistema'}
+                  ${hasMetaLinks
+                    ? `Esta tarefa evidencia <strong>${taskMetaLinks.length}</strong> vínculo${taskMetaLinks.length === 1 ? '' : 's'} de meta`
+                    : activeMeta
+                      ? `Meta: <strong>${esc2(activeMeta.metaName)}</strong> (Pilar: ${esc2(activeMeta.pilarName)})`
+                      : hasMetas
+                        ? 'Selecione a meta do pilar à qual esta tarefa é evidência'
+                        : 'Nenhuma meta publicada no sistema'}
                 </div>
               </div>
-              ${hasMetas ? `
+              ${(hasMetas || hasMetaLinks) ? `
                 <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex-shrink:0;">
-                  <input type="checkbox" id="dc-meta-check" ${activeMeta ? 'checked' : ''}
+                  <input type="checkbox" id="dc-meta-check" ${(activeMeta || hasMetaLinks) ? 'checked' : ''}
                     style="width:16px;height:16px;cursor:pointer;">
                   <span style="font-size:0.8125rem;font-weight:500;">Registrar</span>
                 </label>` : ''}
             </div>
-            ${hasMetas ? `
+            ${(hasMetas || hasMetaLinks) ? `
             <div id="dc-meta-body" style="padding:12px 16px;flex-direction:column;gap:10px;
-              display:${activeMeta ? 'flex' : 'none'};">
-              <div>
-                <label style="${LBL2}">Meta do pilar</label>
-                <select id="dc-meta-sel" class="filter-select" style="${F2}">
-                  <option value="">— Selecione a meta —</option>
-                  ${metaOptions.map(m => `<option value="${esc2(m.value)}"
-                    ${m.value === activeMetaValue ? 'selected' : ''}>
-                    ${esc2(m.metaName)} — Pilar: ${esc2(m.pilarName)} (${esc2(m.goalName)})
-                  </option>`).join('')}
-                </select>
-              </div>
-              <div id="dc-pilar-info" style="display:${activeMeta ? 'block' : 'none'};
-                background:var(--bg-hover);border-radius:var(--radius-sm);padding:8px 12px;
-                font-size:0.75rem;color:var(--text-muted);">
-                ${activeMeta ? `<strong>Pilar:</strong> ${esc2(activeMeta.pilarName)} · <strong>Meta geral:</strong> ${esc2(activeMeta.goalName)}` : ''}
-              </div>
+              display:${(activeMeta || hasMetaLinks) ? 'flex' : 'none'};">
+              ${hasMetaLinks ? `
+                <div style="background:var(--bg-hover);border-radius:var(--radius-sm);padding:10px 12px;
+                  font-size:0.75rem;color:var(--text-muted);">
+                  <div style="font-weight:600;color:var(--text-secondary);margin-bottom:6px;">
+                    Vínculos que serão registrados como evidência:
+                  </div>
+                  ${taskMetaLinks.map(l => {
+                    const m = metaOptions.find(mo => mo.goalId === l.goalId && mo.value === `${l.goalId}:${l.metaRef}`);
+                    if (!m) return `<div style="margin:2px 0;">• (meta ${esc2(l.goalId)})</div>`;
+                    return `<div style="margin:2px 0;">
+                      • <strong>${esc2(m.metaName)}</strong>
+                      <span style="color:var(--text-muted);">· ${esc2(m.pilarName)}</span>
+                    </div>`;
+                  }).join('')}
+                </div>
+              ` : `
+                <div>
+                  <label style="${LBL2}">Meta do pilar</label>
+                  <select id="dc-meta-sel" class="filter-select" style="${F2}">
+                    <option value="">— Selecione a meta —</option>
+                    ${metaOptions.map(m => `<option value="${esc2(m.value)}"
+                      ${m.value === activeMetaValue ? 'selected' : ''}>
+                      ${esc2(m.metaName)} — Pilar: ${esc2(m.pilarName)} (${esc2(m.goalName)})
+                    </option>`).join('')}
+                  </select>
+                </div>
+                <div id="dc-pilar-info" style="display:${activeMeta ? 'block' : 'none'};
+                  background:var(--bg-hover);border-radius:var(--radius-sm);padding:8px 12px;
+                  font-size:0.75rem;color:var(--text-muted);">
+                  ${activeMeta ? `<strong>Pilar:</strong> ${esc2(activeMeta.pilarName)} · <strong>Meta geral:</strong> ${esc2(activeMeta.goalName)}` : ''}
+                </div>
+              `}
               <div>
                 <label style="${LBL2}">Período de referência</label>
                 <select id="dc-periodo-sel" class="filter-select" style="${F2}">
@@ -2602,14 +2829,29 @@ function showEvidenceModal(taskId, taskData) {
 
       // Update task
       const updates = {};
-      if (regMeta && selMeta) {
-        updates.goalId = selMeta.goalId;
-        updates.goalMetaRef = `${selMeta.pilarIdx}:${selMeta.metaIdx}`;
-        updates.goalMetaName = selMeta.metaName;
-        updates.goalPilarName = selMeta.pilarName;
-        updates.periodoRef = periodoRef || '';
-        updates.linkComprovacao = link;
-        updates.confirmadaEvidencia = true;
+      if (regMeta) {
+        if (hasMetaLinks) {
+          // Modelo novo: todos os metaLinks já estão salvos. Só registramos
+          // a evidência (período + link + flag), que vale para todos.
+          updates.periodoRef = periodoRef || '';
+          updates.linkComprovacao = link;
+          updates.confirmadaEvidencia = true;
+        } else if (selMeta) {
+          // Legado: cria 1 link e deixa tasks.js sincronizar goalId/goalMetaRef.
+          // Atribui aos assignees existentes (ou gestor se não houver).
+          const assigneesArr = Array.isArray(taskData.assignees) ? taskData.assignees : [];
+          const recipients = assigneesArr.length
+            ? assigneesArr
+            : (taskData.createdBy ? [taskData.createdBy] : []);
+          updates.metaLinks = recipients.map(uid => ({
+            userId: uid,
+            goalId: selMeta.goalId,
+            metaRef: `${selMeta.pilarIdx}:${selMeta.metaIdx}`,
+          }));
+          updates.periodoRef = periodoRef || '';
+          updates.linkComprovacao = link;
+          updates.confirmadaEvidencia = true;
+        }
       }
       if (sendCsat && csatEmail) updates.clientEmail = csatEmail;
 
@@ -2659,7 +2901,7 @@ function showEvidenceModal(taskId, taskData) {
 export async function openTaskDoneOverlay(taskId, taskData) {
   // Check if there's anything worth asking about
   const hasCsat  = !!taskData?.clientEmail;
-  const hasGoalId = !!taskData?.goalId;
+  const hasGoalId = !!taskData?.goalId || (Array.isArray(taskData?.metaLinks) && taskData.metaLinks.length > 0);
 
   let hasGoals = false;
   try {

@@ -178,7 +178,14 @@ function renderGoalsList(container) {
     const pilarCount = (goal.pilares||[]).length;
     const metaCount  = (goal.pilares||[]).reduce((s,p)=>s+(p.metas||[]).length,0);
     const warnings   = validateGoalWeights(goal);
-    const linkedTasks    = allTasksForGoals.filter(t => t.goalId === goal.id);
+    // Back-compat: aceita o legado (t.goalId) e o modelo novo (t.metaLinks[].goalId)
+    const linkedTasks    = allTasksForGoals.filter(t => {
+      if (t.goalId === goal.id) return true;
+      if (Array.isArray(t.metaLinks)) {
+        return t.metaLinks.some(l => l && l.goalId === goal.id);
+      }
+      return false;
+    });
     const confirmedTasks = linkedTasks.filter(t => t.confirmadaEvidencia);
     const doneTasks      = linkedTasks.filter(t => t.status === 'done');
     const statusColors = { rascunho:'#6B7280', publicada:'#22C55E', encerrada:'#A78BFA' };
