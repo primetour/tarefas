@@ -96,6 +96,16 @@ export function renderFilterBar(opts = {}) {
       </select>
     ` : ''}
 
+    ${show.includes('meta') ? `
+      <select class="filter-select" data-filter="meta"
+        title="Filtrar por vínculo com Meta"
+        style="min-width:160px;border-color:${state.meta?'var(--brand-gold)':''};">
+        <option value="">Todas (c/ ou s/ meta)</option>
+        <option value="with"    ${state.meta==='with'   ?'selected':''}>🎯 Com meta vinculada</option>
+        <option value="without" ${state.meta==='without'?'selected':''}>○ Sem meta vinculada</option>
+      </select>
+    ` : ''}
+
     ${hasFilters ? `
       <button class="btn btn-ghost btn-sm filter-clear-btn"
         style="color:var(--text-muted);font-size:0.75rem;white-space:nowrap;">
@@ -134,6 +144,14 @@ export function buildFilterFn(state = {}) {
     if (state.project  && task.projectId       !== state.project)                 return false;
     if (state.area     && task.requestingArea  !== state.area)                    return false;
     if (state.assignee && !(task.assignees||[]).includes(state.assignee))         return false;
+    // Meta vinculada: tarefa "tem meta" se tem metaLinks[] preenchido OU
+    // goalId legado (back-compat para tarefas anteriores ao multi-link).
+    if (state.meta) {
+      const hasMeta = (Array.isArray(task.metaLinks) && task.metaLinks.length > 0)
+                   || !!task.goalId;
+      if (state.meta === 'with'    && !hasMeta) return false;
+      if (state.meta === 'without' &&  hasMeta) return false;
+    }
     return true;
   };
 }

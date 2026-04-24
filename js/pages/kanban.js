@@ -245,8 +245,8 @@ function _renderKbFilters(container) {
   if (!wrap) return;
   // Pipeline view already has type selector in header
   const show = activeView === 'kanban'
-    ? ['sector','type','project','area','assignee']
-    : ['sector','area','assignee'];
+    ? ['sector','type','project','area','assignee','meta']
+    : ['sector','area','assignee','meta'];
   wrap.innerHTML = renderFilterBar({
     show, state: kbFilterState,
     taskTypes: allTaskTypes,

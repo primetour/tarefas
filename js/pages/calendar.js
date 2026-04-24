@@ -134,7 +134,7 @@ function renderFilters() {
   const projects  = store.get('projects') || [];
   const taskTypes = store.get('taskTypes') || [];
   wrap.innerHTML = renderFilterBar({
-    show: ['sector','type','project','area','assignee'],
+    show: ['sector','type','project','area','assignee','meta'],
     state: calFilterState,
     taskTypes, projects,
     users: store.get('users') || [],

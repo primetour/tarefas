@@ -94,7 +94,7 @@ function _renderTlFilters() {
     !t.sector || userSectors === null || userSectors.includes(t.sector)
   );
   wrap.innerHTML = renderFilterBar({
-    show: ['sector','type','area'],
+    show: ['sector','type','area','meta'],
     state: tlFilterState,
     taskTypes: tlTaskTypes,
     projects:  allProjects,
