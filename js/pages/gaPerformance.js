@@ -37,6 +37,47 @@ const fmtShort = ts => {
   return new Intl.DateTimeFormat('pt-BR', { day:'2-digit', month:'2-digit' }).format(d);
 };
 
+/* ─── Cache localStorage ──────────────────────────────────
+ * Os dados de GA são sincronizados 1x/dia via cron (scripts/ga-sync.js).
+ * Não tem sentido recarregar do Firestore a cada navegação para a página
+ * (cada load = ~6 queries × até 5000 docs). Cacheia por 1h em localStorage.
+ *
+ * Key: ga:cache:v1:<period>:<prop>
+ * Stale-while-revalidate: usa cache se < TTL_MS, senão refetch.
+ * Botão "Atualizar" pode chamar loadData(true) pra forçar refetch.
+ */
+const GA_CACHE_PREFIX = 'ga:cache:v1';
+const GA_CACHE_TTL_MS = 60 * 60 * 1000; // 1h
+
+function _gaCacheKey(period, prop) {
+  return `${GA_CACHE_PREFIX}:${period || 'all'}:${prop || 'all'}`;
+}
+function _gaCacheGet(period, prop) {
+  try {
+    const raw = localStorage.getItem(_gaCacheKey(period, prop));
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj?.ts || (Date.now() - obj.ts) > GA_CACHE_TTL_MS) return null;
+    return obj.payload || null;
+  } catch { return null; }
+}
+function _gaCacheSet(period, prop, payload) {
+  try {
+    localStorage.setItem(_gaCacheKey(period, prop), JSON.stringify({ ts: Date.now(), payload }));
+  } catch (e) {
+    // QuotaExceeded: limpa caches antigos e tenta de novo
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith(GA_CACHE_PREFIX)).forEach(k => localStorage.removeItem(k));
+      localStorage.setItem(_gaCacheKey(period, prop), JSON.stringify({ ts: Date.now(), payload }));
+    } catch {}
+  }
+}
+function _gaCacheClear() {
+  try {
+    Object.keys(localStorage).filter(k => k.startsWith(GA_CACHE_PREFIX)).forEach(k => localStorage.removeItem(k));
+  } catch {}
+}
+
 /* ─── Config ──────────────────────────────────────────────── */
 const PROPERTIES = [
   { id: '',  label: 'Todas as propriedades' },
@@ -468,7 +509,7 @@ async function loadProperties() {
 }
 
 /* ─── Load from Firestore ─────────────────────────────────── */
-async function loadData() {
+async function loadData(forceRefresh = false) {
   const tbody = document.getElementById('ga-tbody');
   if (tbody) tbody.innerHTML = `<tr><td colspan="12" style="padding:40px;text-align:center;
     color:var(--text-muted);">Carregando…</td></tr>`;
@@ -483,23 +524,67 @@ async function loadData() {
     let activePeriodKey = filterDays + 'd';
     if (!SYNCED_PERIODS.includes(activePeriodKey)) activePeriodKey = '90d';
 
-    // Load all data collections in parallel
-    // Nota: ga_pages/ga_sources/ga_countries agora filtram por período server-side
-    // (where period == '28d'), evitando o cap de 200 docs ser dividido entre 5 períodos.
-    const [dailySnap, totalsSnap, pagesSnap, sourcesSnap, devicesSnap, countriesSnap, metaSnap] = await Promise.all([
-      getDocs(query(collection(db, 'ga_daily'), orderBy('date', 'desc'), limit(500))),
-      getDocs(collection(db, 'ga_totals')),
-      getDocs(query(collection(db, 'ga_pages'),     where('period', '==', activePeriodKey), limit(5000))),
-      getDocs(query(collection(db, 'ga_sources'),   where('period', '==', activePeriodKey), limit(500))),
-      getDocs(query(collection(db, 'ga_devices'),   where('period', '==', activePeriodKey), limit(50))),
-      getDocs(query(collection(db, 'ga_countries'), where('period', '==', activePeriodKey), limit(500))),
-      getDoc(doc(db, 'ga_meta', 'lastSync')).catch(() => null),
-    ]);
+    // Cache localStorage: dados de GA são sincronizados 1x/dia.
+    // TTL de 1h corta ~95% dos reads em navegação repetida.
+    const cached = forceRefresh ? null : _gaCacheGet(activePeriodKey, filterProp);
+    let payload;
+
+    if (cached) {
+      payload = cached;
+      const status = document.getElementById('ga-sync-status');
+      if (status) {
+        const ageMin = Math.round((Date.now() - cached._ts) / 60000);
+        const baseTxt = cached.syncedAtIso
+          ? `Sync: ${fmt({ toDate: () => new Date(cached.syncedAtIso) })}`
+          : '';
+        status.textContent = `${baseTxt}${baseTxt?' · ':''}Cache ${ageMin}min`;
+      }
+    } else {
+      // Load all data collections in parallel
+      // ga_pages/ga_sources/ga_countries filtram por período server-side
+      // (where period == '28d'), evitando o cap de 200 docs ser dividido entre 5 períodos.
+      const [dailySnap, totalsSnap, pagesSnap, sourcesSnap, devicesSnap, countriesSnap, metaSnap] = await Promise.all([
+        getDocs(query(collection(db, 'ga_daily'), orderBy('date', 'desc'), limit(500))),
+        getDocs(collection(db, 'ga_totals')),
+        getDocs(query(collection(db, 'ga_pages'),     where('period', '==', activePeriodKey), limit(5000))),
+        getDocs(query(collection(db, 'ga_sources'),   where('period', '==', activePeriodKey), limit(500))),
+        getDocs(query(collection(db, 'ga_devices'),   where('period', '==', activePeriodKey), limit(50))),
+        getDocs(query(collection(db, 'ga_countries'), where('period', '==', activePeriodKey), limit(500))),
+        getDoc(doc(db, 'ga_meta', 'lastSync')).catch(() => null),
+      ]);
+
+      // Serializa para cache (Timestamp → ISO string)
+      const _serDoc = d => {
+        const obj = { id: d.id, ...d.data() };
+        if (obj.date?.toDate) obj.date = obj.date.toDate().toISOString();
+        return obj;
+      };
+      payload = {
+        _ts: Date.now(),
+        daily:     dailySnap.docs.map(_serDoc),
+        totals:    totalsSnap.docs.map(_serDoc),
+        pages:     pagesSnap.docs.map(_serDoc),
+        sources:   sourcesSnap.docs.map(_serDoc),
+        devices:   devicesSnap.docs.map(_serDoc),
+        countries: countriesSnap.docs.map(_serDoc),
+        syncedAtIso: metaSnap?.exists?.()
+          ? (metaSnap.data().syncedAt?.toDate?.() || new Date(metaSnap.data().syncedAt || Date.now())).toISOString()
+          : null,
+      };
+      _gaCacheSet(activePeriodKey, filterProp, payload);
+
+      if (payload.syncedAtIso) {
+        syncMeta = { syncedAt: new Date(payload.syncedAtIso) };
+        const status = document.getElementById('ga-sync-status');
+        if (status) {
+          status.textContent = `Sync: ${fmt({ toDate: () => new Date(payload.syncedAtIso) })}`;
+        }
+      }
+    }
 
     allData = [];
-    dailySnap.forEach(d => {
-      const data = { id: d.id, ...d.data() };
-      const dt   = data.date?.toDate?.() || (data.date ? new Date(data.date) : null);
+    payload.daily.forEach(data => {
+      const dt = data.date ? new Date(data.date) : null;
       if (dt && dt >= cutoff) {
         if (!filterProp || data.propertyId === filterProp) {
           allData.push({ ...data, _date: dt });
@@ -507,34 +592,18 @@ async function loadData() {
       }
     });
 
-    // O período já veio filtrado no server-side. Só precisa aplicar filtro de propriedade.
-    const filterByProp = docs => {
-      let items = docs.map(d => ({ id: d.id, ...d.data() }));
-      if (filterProp) items = items.filter(i => i.propertyId === filterProp);
-      return items;
-    };
+    const filterByProp = items => filterProp ? items.filter(i => i.propertyId === filterProp) : items;
 
-    allPages     = dedupePagesByPath(filterByProp(pagesSnap.docs));
-    allSources   = filterByProp(sourcesSnap.docs);
-    allDevices   = filterByProp(devicesSnap.docs);
-    allCountries = dedupeCountriesByLocation(filterByProp(countriesSnap.docs));
+    allPages     = dedupePagesByPath(filterByProp(payload.pages));
+    allSources   = filterByProp(payload.sources);
+    allDevices   = filterByProp(payload.devices);
+    allCountries = dedupeCountriesByLocation(filterByProp(payload.countries));
 
     // Period totals (deduplicated by GA4)
-    const allTotals = totalsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const periodKey = filterDays + 'd';
-    periodTotals = allTotals.find(t =>
+    periodTotals = payload.totals.find(t =>
       t.period === periodKey && (!filterProp || t.propertyId === filterProp)
     ) || null;
-
-    // Sync status
-    if (metaSnap?.exists?.()) {
-      syncMeta = metaSnap.data();
-      const status = document.getElementById('ga-sync-status');
-      if (status && syncMeta?.syncedAt) {
-        const sd = syncMeta.syncedAt?.toDate?.() || new Date(syncMeta.syncedAt);
-        status.textContent = `Sync: ${fmt({ toDate: () => sd })}`;
-      }
-    }
 
     renderKpis();
     renderCharts();
@@ -552,6 +621,9 @@ async function loadData() {
       color:var(--text-muted);">Erro: ${esc(e.message)}</td></tr>`;
   }
 }
+
+/* Expor para botão "Atualizar" se existir na UI */
+export function refreshGaData() { _gaCacheClear(); return loadData(true); }
 
 /* ─── KPI cards ───────────────────────────────────────────── */
 function renderKpis() {

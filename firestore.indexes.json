@@ -1,0 +1,77 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "ga_pages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "period",     "order": "ASCENDING" },
+        { "fieldPath": "propertyId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ga_pages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "propertyId", "order": "ASCENDING" },
+        { "fieldPath": "period",     "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ga_sources",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "period",     "order": "ASCENDING" },
+        { "fieldPath": "propertyId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ga_sources",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "propertyId", "order": "ASCENDING" },
+        { "fieldPath": "period",     "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ga_devices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "period",     "order": "ASCENDING" },
+        { "fieldPath": "propertyId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ga_devices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "propertyId", "order": "ASCENDING" },
+        { "fieldPath": "period",     "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ga_countries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "period",     "order": "ASCENDING" },
+        { "fieldPath": "propertyId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ga_countries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "propertyId", "order": "ASCENDING" },
+        { "fieldPath": "period",     "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ga_daily",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "propertyId", "order": "ASCENDING" },
+        { "fieldPath": "date",       "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

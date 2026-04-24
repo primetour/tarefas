@@ -539,6 +539,51 @@ export async function getTask(taskId) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
+/* ─── Bulk update (writeBatch) ─────────────────────────────
+ * Atualiza N tarefas em lotes de 400 (limite do Firestore = 500/batch).
+ * Cada item: { id, data }. Não roda migrateLegacyToMetaLinks/syncLegacyFields
+ * — use apenas para campos simples (projectId, sector, etc.). Para fields
+ * que tocam metaLinks/goalId, use updateTask por item.
+ *
+ * Retorna { total, updated, failed }.
+ *
+ * IMPORTANTE: como não passa por updateTask, não faz checagem de permissão
+ * por documento — chame apenas em fluxos onde a permissão já foi validada
+ * no nível da página (ex.: bulk-orphan-fix, só visível pra admin/master).
+ */
+export async function bulkUpdateTasks(items, onProgress) {
+  const user = store.get('currentUser');
+  if (!user?.uid) throw new Error('Usuário não autenticado.');
+  if (!Array.isArray(items) || !items.length) return { total: 0, updated: 0, failed: 0 };
+
+  const total = items.length;
+  let   updated = 0;
+  let   failed  = 0;
+  const BATCH = 400;
+
+  for (let i = 0; i < total; i += BATCH) {
+    const slice = items.slice(i, i + BATCH);
+    const batch = writeBatch(db);
+    slice.forEach(({ id, data }) => {
+      if (!id || !data) return;
+      const updates = { ...data, updatedAt: serverTimestamp(), updatedBy: user.uid };
+      batch.update(doc(db, 'tasks', id), updates);
+    });
+    try {
+      await batch.commit();
+      updated += slice.length;
+    } catch (e) {
+      console.warn('[bulkUpdateTasks] batch falhou:', e?.message);
+      failed += slice.length;
+    }
+    if (typeof onProgress === 'function') onProgress(updated + failed, total);
+  }
+
+  invalidateTasksCache();
+  await auditLog('tasks.bulkUpdate', 'tasks', null, { count: updated, failed }).catch(() => {});
+  return { total, updated, failed };
+}
+
 /* ─── Excluir TODAS as tarefas (master-only / danger zone) ──
  * Apaga em lotes (batches de 400, abaixo do limite de 500 do Firestore).
  * Não faz backup automático — o usuário deve confirmar que tem backup.

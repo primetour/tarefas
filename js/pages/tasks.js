@@ -3,6 +3,7 @@ import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import {
   fetchTasks, subscribeToTasks, toggleTaskComplete, getTask, updateTask,
+  bulkUpdateTasks,
   STATUSES, PRIORITIES, STATUS_MAP, PRIORITY_MAP,
   TASK_TYPES, NEWSLETTER_STATUSES, NUCLEOS, REQUESTING_AREAS,
 } from '../services/tasks.js';
@@ -578,16 +579,22 @@ function openPlannerOrphansModal() {
 
       saveBtn.disabled = true;
       const originalTxt = saveBtn.textContent;
-      let done = 0, fail = 0;
-      for (const t of toSave) {
-        const pid = selection.get(t.id);
-        try { await updateTask(t.id, { projectId: pid }); done++; }
-        catch (e) { fail++; console.warn('[tasks] orphan fix:', t.id, e?.message); }
-        saveBtn.textContent = `Salvando… ${done + fail}/${toSave.length}`;
+      saveBtn.textContent = `Salvando ${toSave.length} tarefas…`;
+
+      // writeBatch: 1 round-trip por lote de 400 (vs N round-trips sequenciais)
+      const items = toSave.map(t => ({ id: t.id, data: { projectId: selection.get(t.id) } }));
+      try {
+        const { updated, failed } = await bulkUpdateTasks(items, (n, total) => {
+          saveBtn.textContent = `Salvando… ${n}/${total}`;
+        });
+        saveBtn.textContent = originalTxt;
+        if (failed) toast.warning(`${updated} atualizadas · ${failed} falharam. Veja o console.`);
+        else        toast.success(`${updated} tarefa(s) atribuídas aos seus projetos.`);
+      } catch (e) {
+        console.warn('[tasks] bulk orphan fix falhou:', e?.message);
+        saveBtn.textContent = originalTxt;
+        toast.error('Falha no salvamento em lote: ' + (e?.message || ''));
       }
-      saveBtn.textContent = originalTxt;
-      if (fail) toast.warning(`${done} atualizadas · ${fail} falharam. Veja o console.`);
-      else       toast.success(`${done} tarefa(s) atribuídas aos seus projetos.`);
       m.close();
       // O subscribeToTasks re-renderiza o banner automaticamente.
     });

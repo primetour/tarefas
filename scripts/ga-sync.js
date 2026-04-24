@@ -99,13 +99,17 @@ async function batchWrite(collectionName, docs) {
  * nesta rodada (IDs fora do validIds). Cobre dois cenários:
  *  - IDs legados (formato antigo com posição: `_page_${i}_${slug}`)
  *  - Páginas/origens/países que saíram do top no período corrente
- * Lê só por propertyId (sem composite index) e filtra period client-side.
+ *
+ * Filtra propertyId+period server-side (composite index em
+ * firestore.indexes.json). Reduz reads de "tudo do property" para "só do
+ * período corrente" — relevante quando o sync roda 6× ao dia × 5 períodos.
  */
 async function cleanupStale(collectionName, propertyId, period, validIds) {
   const snap = await db.collection(collectionName)
     .where('propertyId', '==', propertyId)
+    .where('period',     '==', period)
     .get();
-  const toDelete = snap.docs.filter(d => d.data().period === period && !validIds.has(d.id));
+  const toDelete = snap.docs.filter(d => !validIds.has(d.id));
   if (!toDelete.length) return 0;
   for (let i = 0; i < toDelete.length; i += 450) {
     const batch = db.batch();

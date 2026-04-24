@@ -17,6 +17,7 @@ import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask } from '../services
 import { fetchAllWorkspaces } from '../services/workspaces.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { userNucleos, userInNucleo } from '../services/sectors.js';
+import { tasksLinkedToGoal } from '../services/metaLinks.js';
 
 /** Roles que podem ser gestor de uma meta. Analistas (member) ficam fora. */
 const GESTOR_ROLE_IDS = ['master', 'admin', 'manager', 'coordinator', 'partner'];
@@ -346,7 +347,7 @@ async function renderAvaliacoes(container) {
       fetchArchivedTasks().catch(()=>[]),
     ]);
     const allTasksRaw   = [...activeT, ...archivedT];
-    const linkedTasks   = allTasksRaw.filter(t => t.goalId === goal.id);
+    const linkedTasks   = tasksLinkedToGoal(allTasksRaw, goal.id);
     const evidenceTasks = linkedTasks.filter(t => t.confirmadaEvidencia);
 
     const evalEl = document.getElementById(`goal-evals-${goal.id}`);
@@ -506,10 +507,23 @@ async function renderAvaliacoes(container) {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const taskId = btn.dataset.taskId;
-        const taskTitle = allTasksRaw.find(t=>t.id===taskId)?.title || 'esta tarefa';
+        const t = allTasksRaw.find(x => x.id === taskId);
+        const taskTitle = t?.title || 'esta tarefa';
+        const targetGoalId = goal.id;
         if (!confirm(`Desvincular "${taskTitle}" desta meta?`)) return;
         try {
-          await updateTask(taskId, { goalId: null, confirmadaEvidencia: false, periodoRef: '', linkComprovacao: '' });
+          // Filtra metaLinks: remove links que apontam pra ESTA goal,
+          // preserva os de outras. Se a task só usava o legado goalId,
+          // também o limpa.
+          const prevLinks = Array.isArray(t?.metaLinks) ? t.metaLinks : [];
+          const remainingLinks = prevLinks.filter(l => l && l.goalId !== targetGoalId);
+          const payload = {
+            metaLinks: remainingLinks,
+            confirmadaEvidencia: false,
+            periodoRef: '',
+            linkComprovacao: '',
+          };
+          await updateTask(taskId, payload);
           toast.success('Tarefa desvinculada.');
           renderAvaliacoes(container);
         } catch(err) { toast.error('Erro ao desvincular: ' + err.message); }
@@ -1343,9 +1357,16 @@ function openLinkTaskToGoalModal(goalId, allTasks, container) {
   const goal = allGoals.find(g => g.id === goalId);
   if (!goal) return;
 
-  // Tasks not yet linked to this goal
-  const unlinked = allTasks.filter(t => t.goalId !== goalId && !['cancelled'].includes(t.status));
-  const linked   = allTasks.filter(t => t.goalId === goalId);
+  // Tasks not yet linked to this goal — back-compat: legacy goalId OU novo metaLinks[]
+  const isLinkedToGoal = (t) => {
+    if (t.goalId === goalId) return true;
+    if (Array.isArray(t.metaLinks)) {
+      return t.metaLinks.some(l => l && l.goalId === goalId);
+    }
+    return false;
+  };
+  const linked   = allTasks.filter(isLinkedToGoal);
+  const unlinked = allTasks.filter(t => !isLinkedToGoal(t) && !['cancelled'].includes(t.status));
   let search = '';
 
   const renderList = () => {
@@ -1397,9 +1418,27 @@ function openLinkTaskToGoalModal(goalId, allTasks, container) {
           const checked = document.querySelectorAll('.link-task-check:checked');
           if (!checked.length) { toast.warning('Selecione ao menos uma tarefa.'); return; }
           try {
-            const ops = Array.from(checked).map(cb =>
-              updateTask(cb.dataset.taskId, { goalId, confirmadaEvidencia: true })
-            );
+            // metaRef padrão: primeira meta do primeiro pilar do goal.
+            // Sem isso, updateTask nuliza goalId via syncLegacyFields.
+            const defaultMetaRef = '0:0';
+            const currentUid = store.get('currentUser')?.uid;
+            const ops = Array.from(checked).map(cb => {
+              const tid = cb.dataset.taskId;
+              const t = allTasks.find(x => x.id === tid);
+              const assignees = Array.isArray(t?.assignees) ? t.assignees.filter(Boolean) : [];
+              // Quem recebe o link: assignees da task; se vazio, usa o usuário atual
+              const linkUsers = assignees.length ? assignees : (currentUid ? [currentUid] : []);
+              // Preserva metaLinks pré-existentes para outras goals
+              const prevLinks = Array.isArray(t?.metaLinks) ? t.metaLinks : [];
+              // Evita duplicar links (mesmo userId+goalId+metaRef)
+              const newLinks = linkUsers
+                .map(uid => ({ userId: uid, goalId, metaRef: defaultMetaRef }))
+                .filter(nl => !prevLinks.some(pl =>
+                  pl?.userId === nl.userId && pl?.goalId === nl.goalId && pl?.metaRef === nl.metaRef
+                ));
+              const merged = [...prevLinks, ...newLinks];
+              return updateTask(tid, { metaLinks: merged, confirmadaEvidencia: true });
+            });
             await Promise.all(ops);
             toast.success(`${checked.length} tarefa(s) vinculada(s)!`);
             close();
@@ -1602,7 +1641,7 @@ async function exportGoalsXls() {
     const respNames = getResponsavelNames(g, users);
     const resp   = respNames.length ? respNames.join(', ') : '—';
     const gestor = users.find(u=>u.id===g.gestorId)?.name || '—';
-    const linkedCount = allTasksForGoals.filter(t=>t.goalId===g.id).length;
+    const linkedCount = tasksLinkedToGoal(allTasksForGoals, g.id).length;
     const pilares = g.pilares || [];
     const metasTotal = pilares.reduce((s,p)=>s+(p.metas||[]).length, 0);
     const kpisTotal  = pilares.reduce((s,p)=>s+(p.metas||[]).reduce((ss,m)=>ss+(m.kpis||[]).length,0),0);
@@ -1674,7 +1713,7 @@ async function exportGoalsXls() {
   const taskRows = [taskHead];
   allGoals.forEach(g => {
     const metaTit = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || '—';
-    const linked  = allTasksForGoals.filter(t => t.goalId === g.id);
+    const linked  = tasksLinkedToGoal(allTasksForGoals, g.id);
     linked.forEach(t => {
       const doneDate = t.completedAt?.toDate ? t.completedAt.toDate().toLocaleDateString('pt-BR') : '';
       const pilar = g.pilares?.[t.pillarIdx];
@@ -1918,7 +1957,7 @@ async function exportGoalsPdf() {
     const setor = g.setor || '';
     const inicio = g.inicio ? fmtDate(g.inicio) : '';
     const fim = g.fim ? fmtDate(g.fim) : '';
-    const linkedTasks = allTasksForGoals.filter(t => t.goalId === g.id);
+    const linkedTasks = tasksLinkedToGoal(allTasksForGoals, g.id);
 
     if (escopo || nucleo) drawKV('ESCOPO', [escopo, nucleo].filter(Boolean).join('  ·  '), M, 30);
     if (setor || g.tipo)  drawKV('SETOR',  [setor, g.tipo && `Tipo: ${g.tipo}`].filter(Boolean).join('  ·  '), M, 30);
@@ -2098,7 +2137,7 @@ async function exportGoalsPdf() {
   const allLinked = [];
   allGoals.forEach(g => {
     const metaTit = g.nome || g.objetivoNucleo || g.pilares?.[0]?.titulo || '-';
-    allTasksForGoals.filter(t => t.goalId === g.id).forEach(t => allLinked.push({ g, metaTit, t }));
+    tasksLinkedToGoal(allTasksForGoals, g.id).forEach(t => allLinked.push({ g, metaTit, t }));
   });
 
   if (allLinked.length) {
