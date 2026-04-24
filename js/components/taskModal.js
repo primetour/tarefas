@@ -1076,9 +1076,28 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
     `<option value="${x[valKey]}" ${cur===x[valKey]?'selected':''}>${esc(x[labelKey])}</option>`
   ).join('');
 
+  // Projeto: NÃO filtramos por sector aqui porque fetchProjects() já restringe
+  // o que o usuário pode ver (visibleSectors + squads ativos). O filtro extra
+  // por sector exato quebrava casos como tarefas importadas do Planner
+  // (sector='Marketing' fixo) quando o projeto desejado tinha outro sector
+  // ou quando todos os projetos do usuário estavam em sectors distintos.
+  // Mantemos a tarefa atualmente vinculada SEMPRE listada (mesmo se filtros
+  // mudarem e ela ficar fora do conjunto), pra não "perder" o vínculo no UI.
+  const seenIds = new Set();
+  const projectList = [];
+  projects.forEach(p => {
+    if (!p?.id || seenIds.has(p.id)) return;
+    seenIds.add(p.id);
+    projectList.push(p);
+  });
+  // Garante que o projeto vinculado apareça na lista (mesmo se ele não está
+  // no fetchProjects por arquivamento ou filtro de squad/setor inacessível).
+  if (task.projectId && !seenIds.has(task.projectId)) {
+    const fallback = { id: task.projectId, name: '(projeto vinculado)', icon: '🔒' };
+    projectList.unshift(fallback);
+  }
   const projectOpts = `<option value="">— Sem projeto —</option>` +
-    projects
-      .filter(p => !p.sector || !taskSector || p.sector === taskSector)
+    projectList
       .map(p => `<option value="${p.id}" ${task.projectId===p.id?'selected':''}>${esc(p.icon||'')} ${esc(p.name)}</option>`).join('');
 
   const areaOpts = `<option value="">— Selecione —</option>` +
