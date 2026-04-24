@@ -35,12 +35,14 @@ let filterDateTo   = '';
 let filterArea     = '';
 let filterTag      = '';
 let filterSquad    = '';   // workspaceId | '' (todos)
+let filterMeta     = '';   // '' | 'with' | 'without' — vínculo com meta (metaLinks[] ou goalId legado)
 
 // Visibilidade de filtros (persistida no localStorage por usuário)
 const FILTER_VISIBILITY_KEY = 'tasks.filterVisibility.v1';
 const DEFAULT_FILTER_VISIBILITY = {
   status: true, priority: true, project: true, assignee: true,
   datePreset: true, squad: true, area: false, tag: false,
+  meta: true,
 };
 let filterVisibility = { ...DEFAULT_FILTER_VISIBILITY };
 function loadFilterVisibility() {
@@ -138,6 +140,12 @@ export async function renderTasks(container) {
       </select>
       <select class="filter-select" id="filter-tag" style="${filterVisibility.tag?'':'display:none;'}">
         <option value="">Todas as tags</option>
+      </select>
+      <select class="filter-select" id="filter-meta" style="${filterVisibility.meta?'':'display:none;'}"
+        title="Filtrar por vínculo com Meta">
+        <option value=""        ${filterMeta===''       ?'selected':''}>Todas (c/ ou s/ meta)</option>
+        <option value="with"    ${filterMeta==='with'   ?'selected':''}>🎯 Com meta vinculada</option>
+        <option value="without" ${filterMeta==='without'?'selected':''}>○ Sem meta vinculada</option>
       </select>
       <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
         <label style="font-size:0.8125rem; color:var(--text-muted);">Agrupar:</label>
@@ -629,6 +637,13 @@ function applyFilters() {
   if (filterAssignee) result = result.filter(t => t.assignees?.includes(filterAssignee));
   if (filterArea)     result = result.filter(t => t.requestingArea === filterArea);
   if (filterTag)      result = result.filter(t => (t.tags || []).includes(filterTag));
+  if (filterMeta) {
+    // "Tem meta" se metaLinks[] preenchido OU goalId legado (back-compat).
+    result = result.filter(t => {
+      const hasMeta = (Array.isArray(t.metaLinks) && t.metaLinks.length > 0) || !!t.goalId;
+      return filterMeta === 'with' ? hasMeta : !hasMeta;
+    });
+  }
   if (filterSquad === '__none__') {
     result = result.filter(t => !t.workspaceId);
   } else if (filterSquad) {
@@ -1008,6 +1023,7 @@ function _attachPageEvents() {
   document.getElementById('filter-assignee')?.addEventListener('change', e => { filterAssignee = e.target.value; applyFilters(); });
   document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
   document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; applyFilters(); });
+  document.getElementById('filter-meta')?.addEventListener('change', e => { filterMeta = e.target.value; applyFilters(); });
   document.getElementById('filter-date-preset')?.addEventListener('change', e => {
     filterDatePreset = e.target.value;
     const customBar = document.getElementById('filter-date-custom');
@@ -1041,6 +1057,7 @@ function openFilterConfigModal() {
     { key: 'datePreset', label: 'Prazo (hoje, semana, mês…)' },
     { key: 'area',       label: 'Área solicitante' },
     { key: 'tag',        label: 'Tag' },
+    { key: 'meta',       label: 'Meta vinculada (com / sem)' },
   ];
   const content = `
     <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:12px;">
