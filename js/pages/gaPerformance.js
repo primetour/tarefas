@@ -37,46 +37,76 @@ const fmtShort = ts => {
   return new Intl.DateTimeFormat('pt-BR', { day:'2-digit', month:'2-digit' }).format(d);
 };
 
-/* ─── Cache localStorage ──────────────────────────────────
- * Os dados de GA são sincronizados 1x/dia via cron (scripts/ga-sync.js).
- * Não tem sentido recarregar do Firestore a cada navegação para a página
- * (cada load = ~6 queries × até 5000 docs). Cacheia por 1h em localStorage.
+/* ─── Cache localStorage (sync-aware, v2) ──────────────────
+ * Os dados de GA são sincronizados 1x/dia via cron (scripts/ga-sync.js),
+ * que grava ga_meta/lastSync.syncedAt no fim. O cache é versionado pela
+ * timestamp desse sync — uma nova execução do cron invalida automaticamente
+ * todos os caches sem precisar de TTL.
  *
- * Key: ga:cache:v1:<period>:<prop>
- * Stale-while-revalidate: usa cache se < TTL_MS, senão refetch.
- * Botão "Atualizar" pode chamar loadData(true) pra forçar refetch.
+ * Custo: 1 read em ga_meta/lastSync por loadData (cache HIT) em vez de
+ * 6 reads × milhares de docs nas coleções ga_*.
+ *
+ * Key: ga:cache:v2:<period>:<prop>:<syncTs>
+ *   - syncTs = ms desde epoch do último sync (do ga_meta/lastSync.syncedAt)
+ *   - Se a doc não existir ou for ilegível, cai num TTL de 24h como fallback.
+ *
+ * Quando salva, remove entradas antigas do MESMO (period, prop) — pra não
+ * acumular caches de syncs anteriores no localStorage.
  */
-const GA_CACHE_PREFIX = 'ga:cache:v1';
-const GA_CACHE_TTL_MS = 60 * 60 * 1000; // 1h
+const GA_CACHE_PREFIX     = 'ga:cache:v2';
+const GA_CACHE_PREFIX_OLD = 'ga:cache:v1'; // limpar resíduos da versão antiga
+const GA_FALLBACK_TTL_MS  = 24 * 60 * 60 * 1000; // 24h se ga_meta indisponível
 
-function _gaCacheKey(period, prop) {
-  return `${GA_CACHE_PREFIX}:${period || 'all'}:${prop || 'all'}`;
+function _gaCacheKey(period, prop, syncTs) {
+  return `${GA_CACHE_PREFIX}:${period || 'all'}:${prop || 'all'}:${syncTs || 0}`;
 }
-function _gaCacheGet(period, prop) {
+function _gaCachePrefixForPair(period, prop) {
+  return `${GA_CACHE_PREFIX}:${period || 'all'}:${prop || 'all'}:`;
+}
+function _gaCacheGet(period, prop, syncTs) {
   try {
-    const raw = localStorage.getItem(_gaCacheKey(period, prop));
+    const raw = localStorage.getItem(_gaCacheKey(period, prop, syncTs));
     if (!raw) return null;
     const obj = JSON.parse(raw);
-    if (!obj?.ts || (Date.now() - obj.ts) > GA_CACHE_TTL_MS) return null;
-    return obj.payload || null;
+    if (!obj?.payload) return null;
+    // Sem syncTs (fallback): aplica TTL de 24h
+    if (!syncTs && obj.ts && (Date.now() - obj.ts) > GA_FALLBACK_TTL_MS) return null;
+    return obj.payload;
   } catch { return null; }
 }
-function _gaCacheSet(period, prop, payload) {
+function _gaCacheSet(period, prop, syncTs, payload) {
+  // Limpa entradas antigas do mesmo (period, prop) — quando o sync rodou de novo,
+  // o syncTs muda e a chave antiga vira lixo no localStorage.
   try {
-    localStorage.setItem(_gaCacheKey(period, prop), JSON.stringify({ ts: Date.now(), payload }));
+    const keepKey = _gaCacheKey(period, prop, syncTs);
+    const samePairPrefix = _gaCachePrefixForPair(period, prop);
+    Object.keys(localStorage)
+      .filter(k => k.startsWith(samePairPrefix) && k !== keepKey)
+      .forEach(k => localStorage.removeItem(k));
+  } catch {}
+  try {
+    localStorage.setItem(_gaCacheKey(period, prop, syncTs), JSON.stringify({ ts: Date.now(), payload }));
   } catch (e) {
-    // QuotaExceeded: limpa caches antigos e tenta de novo
+    // QuotaExceeded: limpa todos os caches GA e tenta de novo
     try {
-      Object.keys(localStorage).filter(k => k.startsWith(GA_CACHE_PREFIX)).forEach(k => localStorage.removeItem(k));
-      localStorage.setItem(_gaCacheKey(period, prop), JSON.stringify({ ts: Date.now(), payload }));
+      _gaCacheClear();
+      localStorage.setItem(_gaCacheKey(period, prop, syncTs), JSON.stringify({ ts: Date.now(), payload }));
     } catch {}
   }
 }
 function _gaCacheClear() {
   try {
-    Object.keys(localStorage).filter(k => k.startsWith(GA_CACHE_PREFIX)).forEach(k => localStorage.removeItem(k));
+    Object.keys(localStorage)
+      .filter(k => k.startsWith(GA_CACHE_PREFIX) || k.startsWith(GA_CACHE_PREFIX_OLD))
+      .forEach(k => localStorage.removeItem(k));
   } catch {}
 }
+// Limpa resíduos da versão antiga do cache uma única vez ao carregar o módulo
+try {
+  Object.keys(localStorage)
+    .filter(k => k.startsWith(GA_CACHE_PREFIX_OLD))
+    .forEach(k => localStorage.removeItem(k));
+} catch {}
 
 /* ─── Config ──────────────────────────────────────────────── */
 const PROPERTIES = [
@@ -524,33 +554,42 @@ async function loadData(forceRefresh = false) {
     let activePeriodKey = filterDays + 'd';
     if (!SYNCED_PERIODS.includes(activePeriodKey)) activePeriodKey = '90d';
 
-    // Cache localStorage: dados de GA são sincronizados 1x/dia.
-    // TTL de 1h corta ~95% dos reads em navegação repetida.
-    const cached = forceRefresh ? null : _gaCacheGet(activePeriodKey, filterProp);
+    // Cache sync-aware: 1 read em ga_meta/lastSync para descobrir o syncTs corrente.
+    // Se a syncTs bater com a do cache, retornamos do localStorage sem ler nenhuma
+    // outra coleção. Se for nova (ou se não houver cache), refetcha tudo.
+    let metaSnap = null;
+    if (!forceRefresh) {
+      try { metaSnap = await getDoc(doc(db, 'ga_meta', 'lastSync')); } catch { metaSnap = null; }
+    }
+    const syncTs = metaSnap?.exists?.()
+      ? (metaSnap.data().syncedAt?.toDate?.()?.getTime?.()
+        || new Date(metaSnap.data().syncedAt || 0).getTime()
+        || 0)
+      : 0;
+
+    const cached = forceRefresh ? null : _gaCacheGet(activePeriodKey, filterProp, syncTs);
     let payload;
 
     if (cached) {
       payload = cached;
       const status = document.getElementById('ga-sync-status');
       if (status) {
-        const ageMin = Math.round((Date.now() - cached._ts) / 60000);
         const baseTxt = cached.syncedAtIso
           ? `Sync: ${fmt({ toDate: () => new Date(cached.syncedAtIso) })}`
           : '';
-        status.textContent = `${baseTxt}${baseTxt?' · ':''}Cache ${ageMin}min`;
+        status.textContent = `${baseTxt}${baseTxt?' · ':''}Cache atual`;
       }
     } else {
       // Load all data collections in parallel
       // ga_pages/ga_sources/ga_countries filtram por período server-side
       // (where period == '28d'), evitando o cap de 200 docs ser dividido entre 5 períodos.
-      const [dailySnap, totalsSnap, pagesSnap, sourcesSnap, devicesSnap, countriesSnap, metaSnap] = await Promise.all([
+      const [dailySnap, totalsSnap, pagesSnap, sourcesSnap, devicesSnap, countriesSnap] = await Promise.all([
         getDocs(query(collection(db, 'ga_daily'), orderBy('date', 'desc'), limit(500))),
         getDocs(collection(db, 'ga_totals')),
         getDocs(query(collection(db, 'ga_pages'),     where('period', '==', activePeriodKey), limit(5000))),
         getDocs(query(collection(db, 'ga_sources'),   where('period', '==', activePeriodKey), limit(500))),
         getDocs(query(collection(db, 'ga_devices'),   where('period', '==', activePeriodKey), limit(50))),
         getDocs(query(collection(db, 'ga_countries'), where('period', '==', activePeriodKey), limit(500))),
-        getDoc(doc(db, 'ga_meta', 'lastSync')).catch(() => null),
       ]);
 
       // Serializa para cache (Timestamp → ISO string)
@@ -567,11 +606,9 @@ async function loadData(forceRefresh = false) {
         sources:   sourcesSnap.docs.map(_serDoc),
         devices:   devicesSnap.docs.map(_serDoc),
         countries: countriesSnap.docs.map(_serDoc),
-        syncedAtIso: metaSnap?.exists?.()
-          ? (metaSnap.data().syncedAt?.toDate?.() || new Date(metaSnap.data().syncedAt || Date.now())).toISOString()
-          : null,
+        syncedAtIso: syncTs ? new Date(syncTs).toISOString() : null,
       };
-      _gaCacheSet(activePeriodKey, filterProp, payload);
+      _gaCacheSet(activePeriodKey, filterProp, syncTs, payload);
 
       if (payload.syncedAtIso) {
         syncMeta = { syncedAt: new Date(payload.syncedAtIso) };
