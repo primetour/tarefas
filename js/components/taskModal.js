@@ -148,15 +148,26 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
   // Migra legado (goalId + goalMetaRef) → metaLinks expandido por todos os assignees.
   // Idempotente: se já tem metaLinks, mantém.
+  //
+  // GUARDA: se a tarefa tem goalId legado mas a migração FALHOU (faltava
+  // goalMetaRef ou assignees), marcamos `_legacyPreserve = true`. Ao salvar,
+  // se essa flag estiver ativa E o picker não foi tocado, omitimos metaLinks
+  // do payload pra NÃO disparar syncLegacyFields() que zeraria o goalId.
+  // (Bug histórico: editar título de tarefa legada apagava o vínculo.)
   try {
     const { migrateLegacyToMetaLinks, normalizeMetaLinks } = await import('../services/metaLinks.js');
     const existing = normalizeMetaLinks(task.metaLinks);
     if (!existing.length) {
-      task.metaLinks = migrateLegacyToMetaLinks({
+      const migrated = migrateLegacyToMetaLinks({
         goalId: task.goalId,
         goalMetaRef: task.goalMetaRef,
         assignees: task.assignees,
       });
+      task.metaLinks = migrated;
+      // Sinal de legacy órfão: goalId existe mas não foi migrável
+      if (!migrated.length && task.goalId) {
+        task._legacyPreserve = true;
+      }
     } else {
       task.metaLinks = existing;
     }
@@ -341,12 +352,14 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         const addLink = (uid, gid, mref) => {
           if (hasLink(uid, gid, mref)) return false;
           task.metaLinks.push({ userId: uid, goalId: gid, metaRef: mref });
+          task._legacyPreserve = false; // user tocou no picker → não preservar legacy órfão
           return true;
         };
         const removeLink = (uid, gid, mref) => {
           const before = task.metaLinks.length;
           task.metaLinks = task.metaLinks.filter(l =>
             !(l.userId === uid && l.goalId === gid && l.metaRef === mref));
+          if (task.metaLinks.length !== before) task._legacyPreserve = false;
           return task.metaLinks.length !== before;
         };
         const syncHiddenSelect = () => {
@@ -953,6 +966,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           clearUserBtn?.addEventListener('click', () => {
             const uid = activeUserId;
             task.metaLinks = task.metaLinks.filter(l => l.userId !== uid);
+            task._legacyPreserve = false;
             _isDirty = true;
             refreshList();
             refreshTabs();
@@ -963,6 +977,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             if (!task.metaLinks.length) return;
             if (!confirm('Remover todas as vinculações de meta desta tarefa?')) return;
             task.metaLinks = [];
+            task._legacyPreserve = false;
             _isDirty = true;
             refreshList();
             refreshTabs();
@@ -2046,7 +2061,14 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
     description:  $('tm-desc')?.value?.trim()||'',
     // metaLinks é a única fonte de verdade — tasks.js sincroniza goalId/goalMetaRef
     // a partir do primeiro link via syncLegacyFields().
-    metaLinks:    Array.isArray(task.metaLinks) ? task.metaLinks : [],
+    //
+    // GUARDA: se a tarefa é legacy órfão (goalId sem goalMetaRef OU sem assignees)
+    // e o picker NÃO foi tocado, NÃO enviamos metaLinks — caso contrário
+    // syncLegacyFields zeraria o goalId silenciosamente. Preserva o vínculo
+    // legacy até que alguém o edite de fato no picker.
+    ...(task._legacyPreserve
+      ? {}
+      : { metaLinks: Array.isArray(task.metaLinks) ? task.metaLinks : [] }),
     status:       $('tm-status')?.value||'not_started',
     priority:     $('tm-priority')?.value||'medium',
     projectId:    $('tm-project')?.value||null,
