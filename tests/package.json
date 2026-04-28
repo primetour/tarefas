@@ -1,0 +1,9 @@
+{
+  "name": "primetour-pdf-tests",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "jspdf": "^2.5.1"
+  }
+}

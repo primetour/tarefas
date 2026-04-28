@@ -1,14 +1,28 @@
 /**
  * PRIMETOUR — Portal de Dicas: Motor de Geração
  * Converte dados de dica + área em .docx, .pdf, .pptx ou link web
+ *
+ * Os imports de Firebase/portal/store são LAZY (dynamic await import dentro
+ * das funções que precisam) pra permitir que generatePDF seja importável e
+ * testável em Node (harness em tests/) sem trigger do firebase top-level.
  */
 
-import { SEGMENTS, MONTHS, recordGeneration, registerDownload, fetchImages } from './portal.js';
-import { store } from '../store.js';
-import { db } from '../firebase.js';
-import {
-  doc, collection, setDoc, getDoc, serverTimestamp,
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+// SEGMENTS inline (cópia da fonte em portal.js) — evita import circular
+// com módulo que carrega firebase. Se mudar lá, sincronizar aqui.
+const SEGMENTS = [
+  { key: 'informacoes_gerais',  label: 'Informações Gerais',                    mode: 'special_info' },
+  { key: 'bairros',             label: 'Bairros',                               mode: 'simple_list'  },
+  { key: 'atracoes',            label: 'Atrações',                              mode: 'place_list'   },
+  { key: 'atracoes_criancas',   label: 'Atrações para Crianças',                mode: 'place_list'   },
+  { key: 'restaurantes',        label: 'Restaurantes',                          mode: 'place_list'   },
+  { key: 'vida_noturna',        label: 'Vida Noturna',                          mode: 'place_list'   },
+  { key: 'espetaculos',         label: 'Casas de Espetáculos, Teatros e Cia.',  mode: 'place_list'   },
+  { key: 'compras',             label: 'Compras',                               mode: 'place_list'   },
+  { key: 'arredores',           label: 'Arredores',                             mode: 'simple_list'  },
+  { key: 'highlights',          label: 'Highlights',                            mode: 'place_list'   },
+  { key: 'agenda_cultural',     label: 'Agenda Cultural',                       mode: 'agenda'       },
+];
+const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -19,12 +33,225 @@ const esc = s => String(s||'').replace(/[&<>"']/g, c =>
  * ("diver sas", "Da niel", "K yoto"). Aplica em qualquer string
  * antes de mandar pro renderer. Idempotente.
  */
-const INVISIBLE_RE = /[­​‌‍⁠﻿]/g;
+// Cobertura ampla: soft-hyphen, zero-width, BiDi marks, line/paragraph
+// separators, word-joiner, BOM, embedding/override, isolate.
+const INVISIBLE_RE = /[\u00AD\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g;
+// Vários espaços tipográficos (NBSP, en/em quad, hair space, etc.)
+const SPACE_LIKE_RE = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 const cleanText = s => String(s ?? '')
   .replace(INVISIBLE_RE, '')
-  .replace(/ /g, ' ')        // NBSP → espaço normal
-  .replace(/[ \t]+\n/g, '\n')     // trim trailing espaços antes de \n
-  .replace(/\n{3,}/g, '\n\n');    // colapsa múltiplas quebras
+  .replace(SPACE_LIKE_RE, ' ')
+  .replace(/[ \t]+\n/g, '\n')
+  .replace(/\n{3,}/g, '\n\n');
+export { cleanText };
+
+/* ─── Poppins font loader ──────────────────────────────
+ * Substitui Helvetica por Poppins (Regular + Bold + Italic). 1× por
+ * sessão via jsDelivr → injeta na VFS do doc.
+ */
+let _poppinsCache = null;
+const POPPINS_URLS = {
+  regular: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Regular.ttf',
+  bold:    'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Bold.ttf',
+  italic:  'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Italic.ttf',
+};
+async function _fetchAsBase64(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Font fetch failed ${res.status}: ${url}`);
+  const buf = await res.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let bin = ''; const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return (typeof btoa === 'function' ? btoa(bin) : Buffer.from(bin, 'binary').toString('base64'));
+}
+export async function loadPoppinsOnDoc(doc) {
+  if (!_poppinsCache) {
+    const [regular, bold, italic] = await Promise.all([
+      _fetchAsBase64(POPPINS_URLS.regular),
+      _fetchAsBase64(POPPINS_URLS.bold),
+      _fetchAsBase64(POPPINS_URLS.italic),
+    ]);
+    _poppinsCache = { regular, bold, italic };
+  }
+  doc.addFileToVFS('Poppins-Regular.ttf', _poppinsCache.regular);
+  doc.addFont('Poppins-Regular.ttf', 'Poppins', 'normal');
+  doc.addFileToVFS('Poppins-Bold.ttf', _poppinsCache.bold);
+  doc.addFont('Poppins-Bold.ttf', 'Poppins', 'bold');
+  doc.addFileToVFS('Poppins-Italic.ttf', _poppinsCache.italic);
+  doc.addFont('Poppins-Italic.ttf', 'Poppins', 'italic');
+  doc.setFont('Poppins', 'normal');
+}
+
+/* ─── Parser de DESCRIÇÃO ──────────────────────────────────
+ * Conteúdo legado tem CLIMA e REPRESENTAÇÃO BRASILEIRA colados como
+ * texto cru dentro de info.descricao. Resultado: visual feio + duplica
+ * com a seção própria de REPRESENTAÇÃO. Esta função:
+ *   1. Extrai bloco CLIMA → { maxByMonth[12], minByMonth[12] }
+ *   2. Remove "REPRESENTAÇÃO BRASILEIRA ..." se já houver objeto rep
+ *   3. Devolve descrição "limpa" + dados estruturados pro renderer
+ */
+const MONTH_TOKEN_RE = /(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\s*(-?\d+)\s*°?\s*c?/gi;
+const MONTH_INDEX = { jan:0,fev:1,mar:2,abr:3,mai:4,jun:5,jul:6,ago:7,set:8,out:9,nov:10,dez:11 };
+export function parseDescricao(rawText, hasRepresentacaoObj = false) {
+  let txt = String(rawText || '');
+  let climate = null;
+
+  // CLIMA: pega bloco "CLIMA — TEMPERATURA ANUAL" até próxima quebra dupla
+  const climaRe = /\n*\s*CLIMA[\s\S]*?(?=\n\n|REPRESENTA[ÇC][ÃA]O|$)/i;
+  const climaMatch = txt.match(climaRe);
+  if (climaMatch) {
+    const block = climaMatch[0];
+    const maxLine = (block.match(/m[áa]x[^:]*:([^]*?)(?=\n[Mm]in|$)/i)||[])[1] || '';
+    const minLine = (block.match(/m[íi]n[^:]*:([^]*?)$/i)||[])[1] || '';
+    const parseLine = (line) => {
+      const out = Array(12).fill(null);
+      let m; const re = new RegExp(MONTH_TOKEN_RE.source, 'gi');
+      while ((m = re.exec(line)) !== null) {
+        const idx = MONTH_INDEX[m[1].toLowerCase()];
+        if (idx !== undefined) out[idx] = parseInt(m[2], 10);
+      }
+      return out;
+    };
+    const max = parseLine(maxLine), min = parseLine(minLine);
+    if (max.some(v=>v!==null) || min.some(v=>v!==null)) {
+      climate = { max, min };
+      txt = txt.replace(climaMatch[0], '\n').trim();
+    }
+  }
+
+  // REPRESENTAÇÃO BRASILEIRA: remover bloco se já temos o objeto separado
+  if (hasRepresentacaoObj) {
+    txt = txt.replace(/\n*\s*REPRESENTA[ÇC][ÃA]O\s+BRASILEIRA[\s\S]*$/i, '').trim();
+  }
+
+  return { descricao: txt, climate };
+}
+
+/* ─── Ícones vetoriais simples (sem fonte de ícones) ─────────
+ * Helvetica/Poppins não tem glyphs Unicode pra ícones; desenhar com
+ * primitivas (line/circle/rect) é resoluton-independent e leve.
+ * Cada ícone fica num quadrado de SIZE mm centralizado em (x,y).
+ */
+export function drawIcon(doc, kind, x, y, size, color) {
+  const cx = x + size/2, cy = y + size/2;
+  const [r,g,b] = color;
+  doc.setDrawColor(r,g,b); doc.setFillColor(r,g,b);
+  doc.setLineWidth(Math.max(0.5, size * 0.09));
+  switch (kind) {
+    case 'people': // 2 cabeças (maiores) + ombros conectados em arco
+      doc.circle(cx - size*0.22, cy - size*0.12, size*0.14, 'F');
+      doc.circle(cx + size*0.22, cy - size*0.12, size*0.14, 'F');
+      // ombros como arcos achatados
+      doc.setFillColor(r,g,b);
+      doc.ellipse(cx - size*0.22, cy + size*0.30, size*0.18, size*0.10, 'F');
+      doc.ellipse(cx + size*0.22, cy + size*0.30, size*0.18, size*0.10, 'F');
+      break;
+    case 'currency': // cifrão $ em fonte grande, na cor do ícone
+      doc.setFontSize(size * 3.2);
+      doc.setTextColor(r,g,b);
+      doc.text('$', cx, cy + size*0.38, {align:'center'});
+      break;
+    case 'language': // globo: círculo + meridiano vertical + 2 paralelos
+      doc.setLineWidth(size * 0.07);
+      doc.circle(cx, cy, size*0.38, 'S');
+      // meridiano (oval estreito)
+      doc.ellipse(cx, cy, size*0.13, size*0.38, 'S');
+      // 2 paralelos
+      doc.line(cx - size*0.36, cy - size*0.14, cx + size*0.36, cy - size*0.14);
+      doc.line(cx - size*0.36, cy + size*0.14, cx + size*0.36, cy + size*0.14);
+      break;
+    case 'religion': // cruz com proporção mais clara
+      doc.setLineWidth(size*0.13);
+      doc.line(cx, cy - size*0.38, cx, cy + size*0.38);
+      doc.line(cx - size*0.22, cy - size*0.10, cx + size*0.22, cy - size*0.10);
+      break;
+    case 'clock': // círculo grosso + 2 ponteiros
+      doc.setLineWidth(size*0.08);
+      doc.circle(cx, cy, size*0.38, 'S');
+      doc.setLineWidth(size*0.07);
+      doc.line(cx, cy, cx, cy - size*0.26);     // ponteiro vertical (hora)
+      doc.line(cx, cy, cx + size*0.20, cy);     // ponteiro horizontal (min)
+      // ponto central
+      doc.circle(cx, cy, size*0.04, 'F');
+      break;
+    case 'voltage': { // raio: 6 vértices, polígono fechado
+      // Coordenadas do raio em forma de "Z" estilizado
+      const pts = [
+        [cx + size*0.08, cy - size*0.38],   // topo
+        [cx - size*0.20, cy + size*0.04],   // esquerda
+        [cx - size*0.02, cy + size*0.04],   // meio-esq
+        [cx - size*0.08, cy + size*0.38],   // base
+        [cx + size*0.20, cy - size*0.04],   // direita
+        [cx + size*0.02, cy - size*0.04],   // meio-dir
+      ];
+      doc.setFillColor(r,g,b);
+      // Desenha como triangulações (jsPDF não tem polygon, usar lines)
+      // Stroke simples contornando os 6 pontos
+      doc.setLineWidth(size*0.08);
+      for (let i=0; i<pts.length; i++) {
+        const a = pts[i], b2 = pts[(i+1) % pts.length];
+        doc.line(a[0], a[1], b2[0], b2[1]);
+      }
+      break;
+    }
+    case 'phone': { // handset clássico (linha curva)
+      doc.setLineWidth(size*0.13);
+      // Forma de C girado: 2 segmentos de linha + 1 arco
+      // Topo do handset (ear piece)
+      doc.line(cx - size*0.32, cy - size*0.25, cx - size*0.10, cy - size*0.32);
+      // diagonal central
+      doc.line(cx - size*0.10, cy - size*0.32, cx + size*0.32, cy + size*0.10);
+      // base (mouth piece)
+      doc.line(cx + size*0.32, cy + size*0.10, cx + size*0.25, cy + size*0.32);
+      break;
+    }
+    case 'pin': // marcador de mapa
+      doc.setLineWidth(size*0.08);
+      doc.circle(cx, cy - size*0.08, size*0.20, 'S');
+      doc.line(cx, cy + size*0.12, cx, cy + size*0.34);
+      break;
+    default:
+      doc.circle(cx, cy, size*0.30, 'S');
+  }
+}
+
+/* ─── Logo composite (browser) ──────────────────────────
+ * jsPDF + 'FAST' converte PNG pra JPEG, perdendo alpha → área
+ * transparente vira preta. Solucão: composite em canvas em alta
+ * resolucão (~300dpi) pintado com a cor de fundo correta. Alpha-blend
+ * no canvas, resultado vira JPEG sólido — sem card branco visível.
+ * Em Node (harness), retorna a dataURL original pra teste de layout.
+ */
+export async function compositeLogoOnBackground({ logoDataUrl, bgColorHex, finalWmm, finalHmm, padPct = 0.10 }) {
+  if (typeof Image === 'undefined' || typeof document === 'undefined') {
+    return logoDataUrl;
+  }
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = reject;
+    im.src = logoDataUrl;
+  });
+  // 1mm ≈ 11.81px @ 300dpi
+  const wPx = Math.max(64, Math.round(finalWmm * 11.81));
+  const hPx = Math.max(64, Math.round(finalHmm * 11.81));
+  const canvas = document.createElement('canvas');
+  canvas.width = wPx; canvas.height = hPx;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = bgColorHex;
+  ctx.fillRect(0, 0, wPx, hPx);
+  const ratio = img.naturalWidth / Math.max(img.naturalHeight, 1);
+  const usableW = wPx * (1 - padPct * 2);
+  const usableH = hPx * (1 - padPct * 2);
+  let lw = usableW, lh = lw / ratio;
+  if (lh > usableH) { lh = usableH; lw = lh * ratio; }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, (wPx - lw) / 2, (hPx - lh) / 2, lw, lh);
+  return canvas.toDataURL('image/jpeg', 0.95);
+}
 
 /* ─── CDN libraries ───────────────────────────────────────── */
 async function loadDocx() {
@@ -62,20 +289,16 @@ function loadScript(src) {
 export async function generateTip({ tip, area, dest, segments, format, extraTips = [], imagesOverride = {}, clientName = '' }) {
   const allTips  = [{ tip, dest }, ...extraTips];
   const areaName = area?.name || 'PRIMETOUR';
-  // Paleta default neutra (cinzas — sem dourado/azul) — pode ser sobrescrita
-  // por area.colors definidas pelo usuário no editor de Áreas do Portal.
   const colors   = {
-    primary:   area?.colors?.primary   || '#475569', // slate-600
-    secondary: area?.colors?.secondary || '#1F2937', // gray-800
+    primary:   area?.colors?.primary   || '#475569',
+    secondary: area?.colors?.secondary || '#1F2937',
   };
   const filename = buildFilename(allTips, format);
 
-  // Resolve images for every format (not just web)
   const imagesByDest = {};
   for (const { dest: d } of allTips) {
     if (d?.id) {
       imagesByDest[d.id] = await resolveImages(d);
-      // Apply manual overrides
       const overrides = imagesOverride[d.id] || {};
       if (Object.keys(overrides).length) {
         const ov = [];
@@ -98,6 +321,17 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
     case 'web':  return generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride, clientName });
     default:     throw new Error(`Formato desconhecido: ${format}`);
   }
+}
+
+/* Função pública chamável diretamente (harness de teste).
+ * Aceita injeção de deps para rodar fora do browser:
+ *   - _jsPDFCtor:  construtor jsPDF (no browser cai pro window.jspdf)
+ *   - _imgFetcher: alternativa ao imgToBase64 (no Node, mock local)
+ *   - _fontLoader: alternativa ao loadPoppinsOnDoc (no Node, no-op)
+ *   - _saveOverride: callback (blob, filename) → void; no Node grava em disco
+ */
+export async function generatePdfStandalone(opts) {
+  return generatePDF(opts);
 }
 
 function buildFilename(allTips, format) {
@@ -132,25 +366,26 @@ function destLabel(dest) {
 function pickImg(item, idx, imgs, segKey) {
   if (!imgs) return null;
   const overrides = imgs._overrides || {};
-  const ovKey = segKey;
-  if (ovKey && overrides[ovKey]) {
-    const ov = overrides[ovKey][idx] || overrides[ovKey][String(idx)];
+  if (segKey && overrides[segKey]) {
+    const ov = overrides[segKey][idx] || overrides[segKey][String(idx)];
     if (ov?.url) return ov.url;
   }
   const gallery = imgs.gallery || [];
   const title   = (item?.titulo || item?.title || '').toLowerCase().trim();
+  if (!title) return null;
   // placeName exact
   let m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
-  // placeName partial
-  if (!m) m = gallery.find(g => g.placeName &&
+  // placeName partial — exige >= 6 chars de overlap, evita matches espúrios
+  if (!m) m = gallery.find(g => g.placeName && g.placeName.length >= 6 &&
     (title.includes(g.placeName.toLowerCase()) || g.placeName.toLowerCase().includes(title.slice(0,15))));
-  // name/tag keywords
+  // name/tag keywords — exige palavras com >=4 chars
   if (!m) {
     const words = title.split(/\s+/).filter(w => w.length > 3);
     m = gallery.find(g => words.some(w => g.name?.toLowerCase().includes(w)));
   }
-  // cyclic fallback
-  if (!m) m = gallery[idx % Math.max(gallery.length, 1)];
+  // SEM fallback cíclico — antes pegava gallery[idx % N], gerando looping
+  // visual ruim (5 fotos rotativas em 30 itens). Agora se não há match
+  // explícito, retorna null e o renderer omite a imagem.
   return m?.url || null;
 }
 
@@ -309,22 +544,41 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
 }
 
 /* ─── PDF ─────────────────────────────────────────────────── */
-async function generatePDF({ allTips, segments, areaName, area, colors, filename, imagesByDest = {} }) {
-  await loadJsPDF();
-  const {jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+async function generatePDF({
+  allTips, segments, areaName, area, colors, filename, imagesByDest = {},
+  // Injeções pra harness/teste — em browser usam os defaults
+  _jsPDFCtor    = null,
+  _imgFetcher   = imgToBase64,
+  _fontLoader   = loadPoppinsOnDoc,
+  _compositeLogo = compositeLogoOnBackground,
+  _saveOverride = null,
+}={}) {
+  let JsPDFCtor = _jsPDFCtor;
+  if (!JsPDFCtor) {
+    await loadJsPDF();
+    JsPDFCtor = window.jspdf.jsPDF;
+  }
+  const doc=new JsPDFCtor({orientation:'portrait',unit:'mm',format:'a4'});
+
+  // Carrega Poppins (substitui Helvetica). Se falhar (offline), segue helvetica.
+  const FONT_OK = await _fontLoader(doc).then(()=>true).catch((e)=>{
+    console.warn('[portalPdf] Poppins não carregada, usando helvetica:', e?.message); return false;
+  });
+  const FONT = FONT_OK ? 'Poppins' : 'helvetica';
+  const setF = (style='normal') => doc.setFont(FONT, style);
+
   const primary=colors.primary||'#475569', second=colors.secondary||'#1F2937';
   const PAGE_W=210,MARGIN=16,CONTENT=210-16*2;
   let y=MARGIN;
   const pR=hexToR(primary),pG=hexToG(primary),pB=hexToB(primary);
   const sR=hexToR(second), sG=hexToG(second), sB=hexToB(second);
 
-  // Pré-carrega logo principal (capa, fundo escuro) + alt (rodapé, fundo claro)
-  // Cada um tem dimensões reais pra calcular aspect-ratio sem distorcer.
+  // Pré-carrega logo + dimensões reais (pra aspect-ratio)
   const loadLogoMeta = async (url) => {
     if (!url) return null;
-    const b64 = await imgToBase64(url);
+    const b64 = await _imgFetcher(url);
     if (!b64) return null;
+    if (typeof Image === 'undefined') return { dataUrl: b64, w: 400, h: 120 };
     try {
       const dims = await new Promise((resolve, reject) => {
         const im = new Image();
@@ -333,254 +587,456 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
         im.src = b64;
       });
       return { dataUrl: b64, ...dims };
-    } catch { return { dataUrl: b64, w: 200, h: 60 }; }
+    } catch { return { dataUrl: b64, w: 400, h: 120 }; }
   };
-  const logoMeta    = await loadLogoMeta(area?.logoUrl);
-  // logoUrlAlt: variante p/ fundo claro (rodapé, miolo). Se não existir,
-  // cai pra logoUrl + white card (mesma estratégia da capa).
-  const logoAltMeta = await loadLogoMeta(area?.logoUrlAlt) || logoMeta;
+  const logoMeta = await loadLogoMeta(area?.logoUrl);
+  // Pré-composita logo: capa (fundo secondary) + rodapé (fundo branco).
+  // Sem card branco visível — composite resolve transparência.
+  let logoCoverDataUrl  = null;
+  let logoFooterDataUrl = null;
+  if (logoMeta) {
+    // Capa: até 80mm × 45mm visualmente; o composite gera asset 300dpi
+    logoCoverDataUrl  = await _compositeLogo({
+      logoDataUrl: logoMeta.dataUrl, bgColorHex: second,
+      finalWmm: 80, finalHmm: 45, padPct: 0.05,
+    }).catch(() => logoMeta.dataUrl);
+    // Rodapé: mais discreto, fundo branco da página
+    logoFooterDataUrl = await _compositeLogo({
+      logoDataUrl: logoMeta.dataUrl, bgColorHex: '#FFFFFF',
+      finalWmm: 30, finalHmm: 8, padPct: 0.05,
+    }).catch(() => logoMeta.dataUrl);
+  }
 
   const addPage=()=>{doc.addPage();y=MARGIN;addFooter();};
-  const checkPage=(n=10)=>{if(y+n>280)addPage();};
+  const checkPage=(n=10)=>{if(y+n>275)addPage();};
+  // Rodapé: logo composite (sem card branco) — fundo branco da página
+  // já é a cor de composite. Texto ABAIXO do logo, com altura segura.
   const addFooter=()=>{
     const pg=doc.getNumberOfPages(); doc.setPage(pg);
-    doc.setDrawColor(pR,pG,pB); doc.setLineWidth(0.3);
-    doc.line(MARGIN,283,PAGE_W-MARGIN,283);
-    // Logo centralizado, altura ~10mm. Se for o mesmo logo da capa
-    // (sem variante p/ fundo claro), envolvemos em white card discreto.
-    let footerTextY = 292;
-    if (logoAltMeta) {
-      const LOGO_H = 9;
-      const LOGO_W = Math.min(40, LOGO_H * (logoAltMeta.w / Math.max(logoAltMeta.h, 1)));
-      const lx = (PAGE_W - LOGO_W) / 2;
-      const ly = 285;
-      // White card só quando o logo do rodapé é o MESMO da capa (=
-      // não há variante específica). Quando há variante, assumimos que
-      // o cliente desenhou um logo já pensado pra fundo claro.
-      const needsCard = !area?.logoUrlAlt;
-      if (needsCard) {
-        doc.setFillColor(255,255,255);
-        doc.roundedRect(lx-2, ly-1, LOGO_W+4, LOGO_H+2, 1, 1, 'F');
-      }
+    doc.setDrawColor(220,220,220); doc.setLineWidth(0.2);
+    doc.line(MARGIN, 280, PAGE_W-MARGIN, 280);
+    if (logoFooterDataUrl) {
+      const LOGO_W=24, LOGO_H=7;
+      const lx=(PAGE_W-LOGO_W)/2, ly=282.5;
       try {
-        doc.addImage(logoAltMeta.dataUrl, 'PNG', lx, ly, LOGO_W, LOGO_H, undefined, 'FAST');
-      } catch (e) { /* fallback silencioso */ }
-      footerTextY = ly + LOGO_H + 4;
+        doc.addImage(logoFooterDataUrl, 'JPEG', lx, ly, LOGO_W, LOGO_H, undefined, 'FAST');
+      } catch (e) { /* silencioso */ }
     }
-    doc.setFontSize(7); doc.setTextColor(160,160,160);
-    const footerLine = logoAltMeta
-      ? `Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`
-      : `${cleanText(areaName).toUpperCase()}  ·  Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`;
-    doc.text(footerLine, PAGE_W/2, footerTextY, {align:'center'});
+    doc.setFontSize(7); setF('normal'); doc.setTextColor(140,140,140);
+    doc.text(
+      `Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`,
+      PAGE_W/2, 293, { align:'center' }
+    );
   };
 
-  // Cover — fundo na cor secundária, logo no centro
+  // ── COVER ───────────────────────────────────────────────────────
   doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
-  let coverCursorY = 100;
-  if (logoMeta) {
-    const MAX_W = 90, MAX_H = 50;
-    const ratio = logoMeta.w / Math.max(logoMeta.h, 1);
-    let lw = MAX_W, lh = lw / ratio;
-    if (lh > MAX_H) { lh = MAX_H; lw = lh * ratio; }
-    const lx = (PAGE_W - lw) / 2;
-    const ly = coverCursorY - lh / 2;
-    // White card por trás do logo: PNGs transparentes em fundo escuro saem
-    // como "borrão preto" no jsPDF (composite alpha incompleto). Com fundo
-    // branco com padding, qualquer logo (transparente ou não) renderiza ok.
-    const PAD = 6;
-    doc.setFillColor(255,255,255);
-    doc.roundedRect(lx - PAD, ly - PAD, lw + PAD*2, lh + PAD*2, 3, 3, 'F');
+  if (logoCoverDataUrl) {
+    // Logo composite ocupa o centro da capa, sem card branco visível.
+    // Composite já garantiu fundo sólido na cor secundária.
+    const MAX_W=80, MAX_H=45;
+    const ratio = logoMeta ? (logoMeta.w / Math.max(logoMeta.h, 1)) : (16/9);
+    let lw=MAX_W, lh=lw/ratio;
+    if (lh > MAX_H) { lh=MAX_H; lw=lh*ratio; }
+    const lx=(PAGE_W - lw)/2;
+    const ly=100;
     try {
-      doc.addImage(logoMeta.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'FAST');
-    } catch (e) { /* segue sem logo */ }
-    coverCursorY = ly + lh + PAD + 18;
+      doc.addImage(logoCoverDataUrl, 'JPEG', lx, ly, lw, lh, undefined, 'SLOW');
+    } catch(e) { /* segue sem logo */ }
   } else {
     // Sem logo: nome da área em destaque
-    doc.setFillColor(pR,pG,pB); doc.rect(MARGIN,108,CONTENT,0.8,'F');
-    doc.setFontSize(28);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
-    doc.text(cleanText(areaName).toUpperCase(),PAGE_W/2,100,{align:'center',charSpace:3});
-    coverCursorY = 122;
+    doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, 108, CONTENT, 0.8, 'F');
+    doc.setFontSize(28); setF('bold'); doc.setTextColor(255,255,255);
+    doc.text(cleanText(areaName).toUpperCase(), PAGE_W/2, 100, {align:'center', charSpace:3});
   }
-  // Linha fina + destinos + data
-  doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, coverCursorY, CONTENT, 0.5, 'F');
-  let dY = coverCursorY + 14;
-  for(const{dest}of allTips){
-    doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
-    doc.text(cleanText(destLabel(dest)),PAGE_W/2,dY,{align:'center'});dY+=10;
+  // Linha + destinos + data (sempre embaixo do logo)
+  const coverDivY = 162;
+  doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, coverDivY, CONTENT, 0.5, 'F');
+  let dY = coverDivY + 16;
+  for (const { dest } of allTips) {
+    doc.setFontSize(14); setF('bold'); doc.setTextColor(255,255,255);
+    doc.text(cleanText(destLabel(dest)), PAGE_W/2, dY, {align:'center'});
+    dY += 10;
   }
-  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(pR,pG,pB);
-  doc.text(new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'}),PAGE_W/2,dY+10,{align:'center'});
-  doc.addPage();y=MARGIN;addFooter();
+  // Data: BRANCO (alto contraste sobre navy/cinza-escuro)
+  doc.setFontSize(9); setF('normal'); doc.setTextColor(255,255,255);
+  doc.text(new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'}),
+    PAGE_W/2, dY+10, {align:'center'});
+  doc.addPage(); y=MARGIN; addFooter();
+
+  // ── CAPAS DE SEÇÃO (apenas pros 4 principais) + TOC ─────────────
+  // Pros 4 segmentos "principais", inserimos uma página-divisória antes do
+  // conteúdo. Os demais segmentos vão inline normal. O TOC é construído
+  // ao final num re-pass: anotamos as páginas conforme renderiza.
+  const COVER_SEGMENTS = new Set(['highlights','arredores','agenda_cultural','compras']);
+  const tocEntries = []; // { title, pageNum }
+
+  // RESERVA página em branco pro TOC (será preenchida no fim)
+  // Inserida APÓS o hero do primeiro destino se houver, ou após capa.
+  let tocPageIdx = null;
 
   for(const{tip,dest}of allTips){
     const imgs=imagesByDest[dest?.id]||{};
 
-    // Hero image page — limpa, sem overlay/gradient. Imagem ocupa o topo,
-    // título do destino sai em texto sólido sobre fundo branco abaixo.
-    // Antes ficava uma "faixa estranha" navy translúcida cortando a foto.
-    const heroB64=await imgToBase64(imgs.hero);
-    if(heroB64){
+    // ── HERO ──────────────────────────────────────────────────────
+    const heroB64 = await _imgFetcher(imgs.hero);
+    if (heroB64) {
       doc.setFillColor(255,255,255); doc.rect(0,0,PAGE_W,297,'F');
-      try{doc.addImage(heroB64,'JPEG',0,0,PAGE_W,200,undefined,'FAST');}catch(e){}
-      // Barra de cor primária + título sólido sobre fundo branco
-      doc.setFillColor(pR,pG,pB); doc.rect(MARGIN,220,40,0.8,'F');
-      doc.setFontSize(22); doc.setFont('helvetica','bold'); doc.setTextColor(sR,sG,sB);
-      doc.text(cleanText(destLabel(dest)),MARGIN,235);
-      doc.addPage();y=MARGIN;addFooter();
+      let heroH = 180;
+      if (typeof Image !== 'undefined') {
+        try {
+          heroH = await new Promise((resolve) => {
+            const im = new Image();
+            im.onload  = () => resolve(Math.min(220, PAGE_W * (im.naturalHeight / Math.max(im.naturalWidth,1))));
+            im.onerror = () => resolve(180);
+            im.src = heroB64;
+          });
+        } catch { heroH = 180; }
+      }
+      try { doc.addImage(heroB64, 'JPEG', 0, 0, PAGE_W, heroH, undefined, 'SLOW'); } catch(e) {}
+      const titleY = heroH + 25;
+      doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, titleY-10, 40, 0.8, 'F');
+      doc.setFontSize(22); setF('bold'); doc.setTextColor(sR,sG,sB);
+      doc.text(cleanText(destLabel(dest)), MARGIN, titleY);
+      doc.addPage(); y=MARGIN; addFooter();
     }
 
-    // Destination heading
-    checkPage(24);
-    doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(sR,sG,sB);
-    doc.text(cleanText(destLabel(dest)).toUpperCase(),MARGIN,y);y+=2;
-    doc.setFillColor(pR,pG,pB);doc.rect(MARGIN,y,CONTENT,0.6,'F');y+=8;
+    // RESERVA página do TOC (1ª iteração só)
+    if (tocPageIdx === null) {
+      tocPageIdx = doc.getNumberOfPages();
+      // Mantém esta página em branco — preenchida no fim
+      doc.addPage(); y=MARGIN; addFooter();
+    }
 
-    const content=buildContent(tip,segments);
-    for(const{segDef,data}of content){
+    // ── DESTINATION HEADING ───────────────────────────────────────
+    checkPage(24);
+    doc.setFontSize(16); setF('bold'); doc.setTextColor(sR,sG,sB);
+    doc.text(cleanText(destLabel(dest)).toUpperCase(), MARGIN, y); y+=2;
+    doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, y, CONTENT, 0.6, 'F'); y+=8;
+
+    const content = buildContent(tip, segments);
+    for (let segIdx=0; segIdx<content.length; segIdx++) {
+      const { segDef, data } = content[segIdx];
+
+      // CAPA DE SEÇÃO pros 4 principais
+      if (COVER_SEGMENTS.has(segDef.key)) {
+        doc.addPage();
+        // Fundo na cor secundária ocupando toda página
+        doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
+        // Numeração discreta no topo
+        doc.setFontSize(8); setF('normal'); doc.setTextColor(180,180,180);
+        const num = String(segIdx+1).padStart(2,'0');
+        doc.text(`CAPÍTULO ${num}`, PAGE_W/2, 90, {align:'center', charSpace:3});
+        // Linha + nome do segmento gigante
+        doc.setFillColor(pR,pG,pB); doc.rect(PAGE_W/2-30, 105, 60, 0.6, 'F');
+        doc.setFontSize(28); setF('bold'); doc.setTextColor(255,255,255);
+        doc.text(cleanText(segDef.label).toUpperCase(), PAGE_W/2, 130, {align:'center', charSpace:2});
+        // Subtitle do destino
+        doc.setFontSize(10); setF('normal'); doc.setTextColor(pR,pG,pB);
+        doc.text(cleanText(destLabel(dest)).toUpperCase(), PAGE_W/2, 145, {align:'center', charSpace:2});
+        // Anota TOC (depois desta capa)
+        tocEntries.push({ title: segDef.label, pageNum: doc.getNumberOfPages() });
+        doc.addPage(); y=MARGIN; addFooter();
+      } else {
+        // Segmento inline — anota TOC no início
+        tocEntries.push({ title: segDef.label, pageNum: doc.getNumberOfPages() });
+      }
+
       checkPage(18);
-      // Segment heading
-      doc.setFillColor(pR,pG,pB);doc.rect(MARGIN,y-4,2.5,8,'F');
-      doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
-      doc.text(cleanText(segDef.label).toUpperCase(),MARGIN+5,y,{charSpace:1});y+=9;
+      // Segment heading (sempre, capa ou inline)
+      doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, y-4, 2.5, 8, 'F');
+      doc.setFontSize(10); setF('bold'); doc.setTextColor(pR,pG,pB);
+      doc.text(cleanText(segDef.label).toUpperCase(), MARGIN+5, y, {charSpace:1}); y+=9;
       doc.setTextColor(40,40,40);
 
-      if(segDef.mode==='special_info'){
-        const inf=data.info||{};
-        const pairs=[['Descrição',inf.descricao],['Dica',inf.dica],['População',inf.populacao],
-          ['Moeda',inf.moeda],['Língua',inf.lingua],['Religião',inf.religiao],
-          ['Fuso',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h`:''],
-          ['Voltagem',inf.voltagem],['DDD',inf.ddd]].filter(([,v])=>v);
-        const cW=(CONTENT-4)/2;
-        // Cells crescem dinamicamente conforme o texto wrappa.
-        // Antes, slice(0,45) cortava no meio da palavra ("...que nos f").
-        const TXT_FONT=8, LINE_H=4, PAD_TOP=3, PAD_BOT=3, LABEL_H=5;
-        for(let i=0;i<pairs.length;i+=2){
-          const left=pairs[i],right=pairs[i+1];
-          // Mede ambos lados ANTES de desenhar pra altura comum
-          doc.setFontSize(TXT_FONT); doc.setFont('helvetica','normal');
-          const lLines=doc.splitTextToSize(cleanText(left[1]), cW-4);
-          const rLines=right ? doc.splitTextToSize(cleanText(right[1]), cW-4) : [];
-          const cellH=Math.max(lLines.length, rLines.length)*LINE_H + LABEL_H + PAD_TOP + PAD_BOT;
-          checkPage(cellH+2);
+      if (segDef.mode === 'special_info') {
+        const inf = data.info || {};
+        const rep = inf.representacao || {};
+        // Parser: separa CLIMA + remove REPRESENTAÇÃO duplicada do descricao
+        const { descricao: descClean, climate } = parseDescricao(inf.descricao, !!rep.nome);
 
-          // Esquerda
-          doc.setFillColor(248,247,244); doc.rect(MARGIN, y-PAD_TOP, cW, cellH, 'F');
-          doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.setTextColor(pR,pG,pB);
-          doc.text(cleanText(left[0]).toUpperCase(), MARGIN+2, y, {charSpace:0.8});
-          doc.setFontSize(TXT_FONT); doc.setFont('helvetica','normal'); doc.setTextColor(sR,sG,sB);
-          doc.text(lLines, MARGIN+2, y+LABEL_H);
-
-          // Direita
-          if(right){
-            doc.setFillColor(248,247,244); doc.rect(MARGIN+cW+4, y-PAD_TOP, cW, cellH, 'F');
-            doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.setTextColor(pR,pG,pB);
-            doc.text(cleanText(right[0]).toUpperCase(), MARGIN+cW+6, y, {charSpace:0.8});
-            doc.setFontSize(TXT_FONT); doc.setFont('helvetica','normal'); doc.setTextColor(sR,sG,sB);
-            doc.text(rLines, MARGIN+cW+6, y+LABEL_H);
-          }
-          y += cellH + 2;
+        // ── DESCRIÇÃO em largura total ──────────────────────────────
+        if (descClean) {
+          checkPage(8);
+          doc.setFontSize(6); setF('bold'); doc.setTextColor(pR,pG,pB);
+          doc.text('DESCRIÇÃO', MARGIN, y, {charSpace:0.8}); y+=5;
+          doc.setFontSize(9); setF('normal'); doc.setTextColor(60,60,60);
+          const lines = doc.splitTextToSize(cleanText(descClean), CONTENT);
+          checkPage(lines.length*4.5+2);
+          doc.text(lines, MARGIN, y); y+=lines.length*4.5+5;
         }
-        const rep=inf.representacao||{};
-        if(rep.nome){
-          checkPage(20);
-          doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
-          doc.text('REPRESENTAÇÃO BRASILEIRA',MARGIN+2,y,{charSpace:0.8});y+=5;
-          for(const[l,v]of[['Nome',rep.nome],['Endereço',rep.endereco],['Telefone',rep.telefone]].filter(([,v])=>v)){
-            doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(sR,sG,sB);
-            doc.text(`${l}:`, MARGIN+2, y);
-            // Padding fixo de ~2mm em vez de getTextWidth(`${l}: `)
-            // (jsPDF descarta trailing whitespace ao medir, fazendo
-            // "Endereço:East 41st" colar sem espaço).
+
+        // ── DICA em callout ─────────────────────────────────────────
+        if (inf.dica) {
+          doc.setFontSize(9); setF('normal');
+          const dicaLines = doc.splitTextToSize(cleanText(inf.dica), CONTENT-10);
+          const calloutH = dicaLines.length*4.5 + 8;
+          checkPage(calloutH+2);
+          doc.setFillColor(248,247,244); doc.rect(MARGIN, y, CONTENT, calloutH, 'F');
+          doc.setFillColor(pR,pG,pB);    doc.rect(MARGIN, y, 1.5, calloutH, 'F');
+          doc.setFontSize(6); setF('bold'); doc.setTextColor(pR,pG,pB);
+          doc.text('DICA', MARGIN+5, y+5, {charSpace:0.8});
+          doc.setFontSize(9); setF('normal'); doc.setTextColor(60,60,60);
+          doc.text(dicaLines, MARGIN+5, y+11);
+          y += calloutH + 6;
+        }
+
+        // ── CHIPS HORIZONTAIS com ícones (substitui grid 2-col cinza) ─
+        const chips = [
+          ['people',   'POPULAÇÃO', inf.populacao],
+          ['currency', 'MOEDA',     inf.moeda],
+          ['language', 'LÍNGUA',    inf.lingua],
+          ['religion', 'RELIGIÃO',  inf.religiao],
+          ['clock',    'FUSO',      (inf.fusoSinal&&inf.fusoHoras)?`${inf.fusoSinal}${inf.fusoHoras}h`:''],
+          ['voltage',  'VOLTAGEM',  inf.voltagem],
+          ['phone',    'DDD',       inf.ddd],
+        ].filter(([,,v])=>v);
+        if (chips.length) {
+          // 4 chips por linha (cada chip ~44mm de largura)
+          const COLS=4, GAP=3, CHIP_H=18;
+          const chipW=(CONTENT - GAP*(COLS-1))/COLS;
+          const ICON=8;
+          for (let i=0; i<chips.length; i++) {
+            const col = i % COLS, row = Math.floor(i / COLS);
+            if (col === 0) checkPage(CHIP_H+2);
+            const cx = MARGIN + col*(chipW+GAP);
+            const cy = y + row*(CHIP_H+GAP);
+            // Card sutil
+            doc.setFillColor(252,252,251); doc.rect(cx, cy, chipW, CHIP_H, 'F');
+            doc.setDrawColor(225,225,222); doc.setLineWidth(0.2); doc.rect(cx, cy, chipW, CHIP_H, 'S');
+            // Ícone à esquerda
+            drawIcon(doc, chips[i][0], cx+3, cy+(CHIP_H-ICON)/2, ICON, [pR,pG,pB]);
+            // Label + valor à direita do ícone
+            doc.setFontSize(6); setF('bold'); doc.setTextColor(pR,pG,pB);
+            doc.text(chips[i][1], cx+ICON+6, cy+6, {charSpace:0.7});
+            doc.setFontSize(9); setF('bold'); doc.setTextColor(sR,sG,sB);
+            const vLines = doc.splitTextToSize(cleanText(String(chips[i][2])), chipW-ICON-9);
+            doc.text(vLines.slice(0,2), cx+ICON+6, cy+12);
+          }
+          const totalRows = Math.ceil(chips.length/COLS);
+          y += totalRows*(CHIP_H+GAP) + 2;
+        }
+
+        // ── CLIMA: grid 12 meses (se conseguimos parsear) ───────────
+        if (climate && (climate.max.some(v=>v!==null) || climate.min.some(v=>v!==null))) {
+          checkPage(38);
+          doc.setFontSize(6); setF('bold'); doc.setTextColor(pR,pG,pB);
+          doc.text('CLIMA — TEMPERATURA ANUAL (MÉDIAS)', MARGIN, y, {charSpace:0.8}); y+=5;
+          const COLS=12, GAP=1;
+          const colW=(CONTENT - GAP*(COLS-1))/COLS;
+          const ROW_H=22;
+          // Range pra colorir intensidade (só max)
+          const allTemps = [...climate.max, ...climate.min].filter(v=>v!==null);
+          const tMin=Math.min(...allTemps), tMax=Math.max(...allTemps);
+          const tRange=Math.max(tMax-tMin, 1);
+          for (let m=0; m<12; m++) {
+            const cx = MARGIN + m*(colW+GAP);
+            // Cor de fundo proporcional ao max do mês (azul frio → cinza quente)
+            const v = climate.max[m];
+            let bgR=245,bgG=246,bgB=247;
+            if (v !== null) {
+              const t = (v - tMin) / tRange; // 0..1
+              // Interpola: azul clarinho (220,235,245) → bege quente (250,235,215)
+              bgR = Math.round(220 + (250-220)*t);
+              bgG = Math.round(235 + (235-235)*t);
+              bgB = Math.round(245 + (215-245)*t);
+            }
+            doc.setFillColor(bgR,bgG,bgB); doc.rect(cx, y, colW, ROW_H, 'F');
+            // Mês
+            doc.setFontSize(6); setF('bold'); doc.setTextColor(pR,pG,pB);
+            doc.text(MONTHS[m].toUpperCase(), cx+colW/2, y+4, {align:'center', charSpace:0.5});
+            // Max
+            doc.setFontSize(8); setF('bold'); doc.setTextColor(sR,sG,sB);
+            doc.text(climate.max[m]!==null?`${climate.max[m]}°`:'—', cx+colW/2, y+11, {align:'center'});
+            // Min
+            doc.setFontSize(7); setF('normal'); doc.setTextColor(120,120,120);
+            doc.text(climate.min[m]!==null?`${climate.min[m]}°`:'—', cx+colW/2, y+17, {align:'center'});
+          }
+          // Legenda discreta
+          y += ROW_H + 3;
+          doc.setFontSize(6); setF('italic'); doc.setTextColor(140,140,140);
+          doc.text('Linha superior: máx · Linha inferior: mín', MARGIN, y); y+=5;
+        }
+
+        // ── REPRESENTAÇÃO BRASILEIRA (estruturada, dedup já feito) ──
+        if (rep.nome) {
+          checkPage(24);
+          doc.setFontSize(6); setF('bold'); doc.setTextColor(pR,pG,pB);
+          doc.text('REPRESENTAÇÃO BRASILEIRA', MARGIN, y, {charSpace:0.8}); y+=5;
+          for (const [l,v] of [['Nome',rep.nome],['Endereço',rep.endereco],['Telefone',rep.telefone],['Site',rep.link]].filter(([,v])=>v)) {
+            doc.setFontSize(8); setF('bold'); doc.setTextColor(sR,sG,sB);
+            doc.text(`${l}:`, MARGIN, y);
             const labelW = doc.getTextWidth(`${l}:`) + 2;
-            doc.setFont('helvetica','normal'); doc.setTextColor(70,70,80);
-            doc.text(cleanText(v), MARGIN+2+labelW, y); y+=5;
+            setF('normal'); doc.setTextColor(70,70,80);
+            doc.text(cleanText(v), MARGIN+labelW, y); y+=5;
           }
+          y+=2;
         }
-      } else if(segDef.mode==='simple_list'){
-        for(const item of(data.items||[])){
-          checkPage(12);
-          doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(sR,sG,sB);
-          doc.setFillColor(pR,pG,pB);doc.circle(MARGIN+1.5,y-1,1,'F');
+      } else if (segDef.mode === 'simple_list') {
+        // simple_list AGORA suporta imagem via overrides (Bairros/Arredores).
+        for (let itemIdx=0; itemIdx<(data.items||[]).length; itemIdx++) {
+          const item = data.items[itemIdx];
+          const imgUrl = pickImg({ titulo: item.title, title: item.title }, itemIdx, imgs, segDef.key);
+          const imgB64 = await _imgFetcher(imgUrl);
+          const IMG_W=42, IMG_H=28;
+          const textW = imgB64 ? CONTENT-IMG_W-4 : CONTENT-8;
+          checkPage(imgB64 ? IMG_H+4 : 14);
+
+          const blockStartY = y;
+          doc.setFontSize(9); setF('bold'); doc.setTextColor(sR,sG,sB);
+          doc.setFillColor(pR,pG,pB); doc.circle(MARGIN+1.5, y-1, 1, 'F');
           doc.text(cleanText(item.title||''), MARGIN+5, y); y+=5;
-          if(item.description){doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(70,70,80);
-            const lines=doc.splitTextToSize(cleanText(item.description), CONTENT-8); checkPage(lines.length*4+2);
-            doc.text(lines,MARGIN+8,y);y+=lines.length*4+2;}
+          if (item.description) {
+            setF('normal'); doc.setFontSize(8); doc.setTextColor(70,70,80);
+            const lines = doc.splitTextToSize(cleanText(item.description), textW-4);
+            checkPage(lines.length*4+2); doc.text(lines, MARGIN+8, y); y+=lines.length*4+2;
+          }
+          if (imgB64) {
+            const imgX = MARGIN + textW + 4;
+            const imgY = blockStartY - 4;
+            try { doc.addImage(imgB64, 'JPEG', imgX, imgY, IMG_W, IMG_H, undefined, 'FAST'); } catch(e) {}
+            // SEM borda azul.
+            if (y < imgY+IMG_H+2) y = imgY+IMG_H+2;
+          }
         }
         y+=4;
       } else {
-        if(data.themeDesc){doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(100,100,100);
-          const lines=doc.splitTextToSize(cleanText(data.themeDesc), CONTENT); doc.text(lines,MARGIN,y); y+=lines.length*4+4;}
+        if (data.themeDesc) {
+          setF('italic'); doc.setFontSize(8); doc.setTextColor(100,100,100);
+          const lines = doc.splitTextToSize(cleanText(data.themeDesc), CONTENT);
+          doc.text(lines, MARGIN, y); y+=lines.length*4+4;
+        }
 
-        // Agrupamento por categoria: subtitle só aparece UMA vez por grupo,
-        // estilizado como subheading (não mais minúscula sobre cada item).
-        // Antes "EDIFÍCIOS E CONSTRUÇÕES URBANAS" repetia em cada bullet.
         let lastCategoria = null;
-        for(let itemIdx=0;itemIdx<(data.items||[]).length;itemIdx++){
-          const item=data.items[itemIdx];
-          if(!item.titulo)continue;
+        for (let itemIdx=0; itemIdx<(data.items||[]).length; itemIdx++) {
+          const item = data.items[itemIdx];
+          if (!item.titulo) continue;
 
           const catNorm = cleanText(item.categoria || '').trim();
           if (catNorm && catNorm !== lastCategoria) {
             checkPage(14);
-            // Subtitle de categoria: pill colorida + texto, separa visualmente
             doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, y-2, 1.5, 5, 'F');
-            doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(pR,pG,pB);
+            doc.setFontSize(8); setF('bold'); doc.setTextColor(pR,pG,pB);
             doc.text(catNorm.toUpperCase(), MARGIN+4, y+2, {charSpace:1.2});
             y += 8;
             lastCategoria = catNorm;
           }
 
-          // Try to embed image — up to 55mm wide on the right
-          const imgUrl=pickImg(item,itemIdx,imgs,segDef.key);
-          const imgB64=await imgToBase64(imgUrl);
+          const imgUrl = pickImg(item, itemIdx, imgs, segDef.key);
+          const imgB64 = await _imgFetcher(imgUrl);
           const IMG_W=55, IMG_H=38;
-          const textW=imgB64 ? CONTENT-IMG_W-4 : CONTENT;
-          checkPage(imgB64?IMG_H+6:22);
+          const textW = imgB64 ? CONTENT-IMG_W-4 : CONTENT;
+          checkPage(imgB64 ? IMG_H+6 : 22);
 
-          const blockStartY=y;
-          // Título: wrap dinâmico (antes ficava cortado na borda da página
-          // — ex.: "CHELSEA PIERS SPORTS AND" com "ENTERTAINMENT COMPLEX"
-          // emendado no parágrafo da descrição).
-          doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(sR,sG,sB);
-          const titleLines=doc.splitTextToSize(cleanText(item.titulo), textW-4);
+          const blockStartY = y;
+          setF('bold'); doc.setFontSize(10); doc.setTextColor(sR,sG,sB);
+          const titleLines = doc.splitTextToSize(cleanText(item.titulo), textW-4);
           checkPage(titleLines.length*5+2);
           doc.text(titleLines, MARGIN+2, y); y+=titleLines.length*5;
-          if(item.descricao){doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(70,70,80);
-            const lines=doc.splitTextToSize(cleanText(item.descricao), textW-4);
-            checkPage(lines.length*4+2);doc.text(lines,MARGIN+2,y);y+=lines.length*4+2;}
-          // Sem emoji: helvetica não suporta glyphs Unicode emoji e
-          // antes renderizava lixo "Ø=ÜÍ Ø=ÜP Ø<ß" no PDF. Usamos labels textuais.
-          const det=[item.endereco&&`End. ${cleanText(item.endereco)}`, item.telefone&&`Tel. ${cleanText(item.telefone)}`].filter(Boolean);
-          if(det.length){doc.setFontSize(7.5); doc.setTextColor(130,130,130);
-            const detLines=doc.splitTextToSize(det.join('   ·   '), textW-4);
-            checkPage(detLines.length*4+1); doc.text(detLines, MARGIN+2, y); y+=detLines.length*4;}
-          if(item.site){doc.setFontSize(7.5); doc.setTextColor(pR,pG,pB);
-            doc.textWithLink('Link: '+cleanText(item.site), MARGIN+2, y, {url:item.site}); y+=4;}
-          if(item.observacoes){doc.setFontSize(7.5); doc.setTextColor(160,160,160); doc.setFont('helvetica','italic');
-            const obsLines=doc.splitTextToSize('Obs. '+cleanText(item.observacoes), textW-4);
-            checkPage(obsLines.length*4+1); doc.text(obsLines, MARGIN+2, y); y+=obsLines.length*4;}
-
-          // Place image to the right of the block
-          if(imgB64){
-            const imgX=MARGIN+textW+2;
-            const imgY=blockStartY-4;
-            try{doc.addImage(imgB64,'JPEG',imgX,imgY,IMG_W,IMG_H,undefined,'FAST');}catch(e){}
-            // Gold border
-            doc.setDrawColor(pR,pG,pB);doc.setLineWidth(0.4);
-            doc.rect(imgX,imgY,IMG_W,IMG_H);
-            if(y < imgY+IMG_H+2) y=imgY+IMG_H+2;
+          if (item.descricao) {
+            setF('normal'); doc.setFontSize(8); doc.setTextColor(70,70,80);
+            const lines = doc.splitTextToSize(cleanText(item.descricao), textW-4);
+            checkPage(lines.length*4+2); doc.text(lines, MARGIN+2, y); y+=lines.length*4+2;
+          }
+          const det = [
+            item.endereco && `End. ${cleanText(item.endereco)}`,
+            item.telefone && `Tel. ${cleanText(item.telefone)}`,
+          ].filter(Boolean);
+          if (det.length) {
+            doc.setFontSize(7.5); doc.setTextColor(130,130,130);
+            const detLines = doc.splitTextToSize(det.join('   ·   '), textW-4);
+            checkPage(detLines.length*4+1); doc.text(detLines, MARGIN+2, y); y+=detLines.length*4;
+          }
+          // Link: pill clicável com seta. Largura calculada via texto.
+          if (item.site) {
+            const linkText = 'Visitar site';
+            doc.setFontSize(8); setF('bold');
+            const txtW = doc.getTextWidth(linkText) + 8; // padding interno
+            const pillW = txtW + 5; // espaço pra seta
+            const pillH = 5.5;
+            doc.setFillColor(pR,pG,pB);
+            doc.roundedRect(MARGIN+2, y-3.8, pillW, pillH, 1.2, 1.2, 'F');
+            doc.setTextColor(255,255,255);
+            doc.text(linkText, MARGIN+2+4, y);
+            // Setinha "↗" desenhada com 3 linhas (helvetica não tem o glyph)
+            const ax = MARGIN+2 + pillW - 3.5, ay = y-1.2;
+            doc.setDrawColor(255,255,255); doc.setLineWidth(0.4);
+            doc.line(ax-1.4, ay+1.4, ax+1.0, ay-1.0);    // diagonal
+            doc.line(ax+1.0, ay-1.0, ax-0.4, ay-1.0);    // topo da ponta
+            doc.line(ax+1.0, ay-1.0, ax+1.0, ay+0.4);    // lado da ponta
+            // Hyperlink invisível cobrindo a pill
+            try { doc.link(MARGIN+2, y-3.8, pillW, pillH, { url: item.site }); } catch(e) {}
+            y += 6;
+          }
+          if (item.observacoes) {
+            doc.setFontSize(7.5); doc.setTextColor(160,160,160); setF('italic');
+            const obsLines = doc.splitTextToSize('Obs. '+cleanText(item.observacoes), textW-4);
+            checkPage(obsLines.length*4+1); doc.text(obsLines, MARGIN+2, y); y+=obsLines.length*4;
           }
 
-          doc.setDrawColor(235,235,235);doc.setLineWidth(0.2);
-          doc.line(MARGIN+2,y,MARGIN+CONTENT-2,y);y+=4;
+          if (imgB64) {
+            const imgX = MARGIN + textW + 2;
+            const imgY = blockStartY - 4;
+            try { doc.addImage(imgB64, 'JPEG', imgX, imgY, IMG_W, IMG_H, undefined, 'FAST'); } catch(e) {}
+            // SEM borda azul ao redor da foto.
+            if (y < imgY+IMG_H+2) y = imgY+IMG_H+2;
+          }
+
+          doc.setDrawColor(235,235,235); doc.setLineWidth(0.2);
+          doc.line(MARGIN+2, y, MARGIN+CONTENT-2, y); y+=4;
         }
       }
       y+=4;
     }
-    doc.addPage();y=MARGIN;addFooter();
+    doc.addPage(); y=MARGIN; addFooter();
   }
-  const pgCount=doc.getNumberOfPages();if(pgCount>1)doc.deletePage(pgCount);
-  doc.save(filename);
+
+  // ── RENDER TOC na página reservada ─────────────────────────────
+  // Volta na página guardada e desenha o sumário completo.
+  if (tocPageIdx !== null && tocEntries.length) {
+    doc.setPage(tocPageIdx);
+    let ty = MARGIN + 8;
+    doc.setFontSize(18); setF('bold'); doc.setTextColor(sR,sG,sB);
+    doc.text('SUMÁRIO', MARGIN, ty); ty+=4;
+    doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, ty, 30, 0.6, 'F'); ty+=10;
+    // Lista de entradas com leader dots
+    doc.setFontSize(10); setF('normal');
+    for (const entry of tocEntries) {
+      const title = cleanText(entry.title);
+      const pageStr = String(entry.pageNum);
+      doc.setTextColor(50,50,50); setF('normal');
+      doc.text(title, MARGIN, ty);
+      doc.setTextColor(pR,pG,pB); setF('bold');
+      doc.text(pageStr, PAGE_W-MARGIN, ty, {align:'right'});
+      // Leader dots no meio
+      doc.setFontSize(10); setF('normal'); doc.setTextColor(200,200,200);
+      const titleW = doc.getTextWidth(title);
+      const pageW  = doc.getTextWidth(pageStr);
+      const dotsStart = MARGIN + titleW + 2;
+      const dotsEnd   = PAGE_W - MARGIN - pageW - 2;
+      const dotsAvail = dotsEnd - dotsStart;
+      const dotW = doc.getTextWidth(' . ');
+      const dotsCount = Math.max(0, Math.floor(dotsAvail / dotW));
+      if (dotsCount > 0) {
+        doc.text(' . '.repeat(dotsCount), dotsStart, ty);
+      }
+      // Hyperlink interno (clica e vai pra página)
+      try { doc.link(MARGIN, ty-4, PAGE_W-2*MARGIN, 6, { pageNumber: entry.pageNum }); } catch(e){}
+      ty += 8;
+      if (ty > 270) break; // segurança: TOC cabe em 1 página
+    }
+  }
+
+  const pgCount = doc.getNumberOfPages();
+  if (pgCount > 1) doc.deletePage(pgCount);
+
+  if (_saveOverride) {
+    // Harness: callback recebe blob (ou Buffer) + filename
+    const blob = doc.output('arraybuffer');
+    await _saveOverride(blob, filename);
+  } else {
+    doc.save(filename);
+  }
   return { filename };
 }
 
@@ -722,6 +1178,7 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
 async function resolveImages(dest) {
   if (!dest) return { hero: null, gallery: [], banners: {} };
   try {
+    const { fetchImages } = await import('./portal.js');
     const imgs = await fetchImages({
       continent: dest.continent,
       country:   dest.country,
@@ -743,7 +1200,11 @@ async function resolveImages(dest) {
 }
 
 async function generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride = {}, clientName = '' }) {
-  // Gera token amigável (slug) baseado em cliente + destino + mês/ano
+  // Lazy imports — só carrega firebase quando função é efetivamente chamada
+  const { doc, collection, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const { db }    = await import('../firebase.js');
+  const { store } = await import('../store.js');
+
   const token  = await buildUniqueWebLinkSlug({ clientName, allTips });
   const ref    = doc(collection(db, 'portal_web_links'), token);
 
@@ -855,6 +1316,8 @@ function buildSlugCandidates({ clientName, allTips }) {
 }
 
 async function slugExists(token) {
+  const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const { db } = await import('../firebase.js');
   try {
     const snap = await getDoc(doc(db, 'portal_web_links', token));
     return snap.exists();

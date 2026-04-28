@@ -194,21 +194,14 @@ function showAreaModal(area, areas = []) {
             Deixe vazio para área independente. Áreas da mesma categoria são agrupadas no portal.
           </div>
         </div>
-        <!-- Logo principal (capa do PDF, contextos com fundo escuro) -->
+        <!-- Logo (capa + rodapé do PDF). PNG transparente é compositado em
+             alta resolução sobre a cor de fundo correta — sem card branco. -->
         ${logoBlock({
           slot: 'main',
-          label: 'Logo principal',
-          hint:  'Usado na capa do PDF (fundo escuro). PNG transparente é envolvido por um card branco automaticamente.',
+          label: 'Logo',
+          hint:  'Aparece na capa (fundo escuro) e no rodapé (fundo claro) do PDF. PNG transparente é renderizado em alta qualidade — sem card visível.',
           previewBg: '#1F2937',
           currentUrl: area?.logoUrl,
-        })}
-        <!-- Logo secundário (rodapé, fundo claro) — opcional -->
-        ${logoBlock({
-          slot: 'alt',
-          label: 'Logo secundário (fundo claro) — opcional',
-          hint:  'Usado no rodapé do PDF (fundo claro). Se não enviar, usamos o principal envolvido em card branco.',
-          previewBg: '#F8FAFC',
-          currentUrl: area?.logoUrlAlt,
         })}
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
@@ -303,8 +296,7 @@ function showAreaModal(area, areas = []) {
     });
     fileInput?.addEventListener('change', (e) => handleFile(e.target.files?.[0]));
   };
-  setupLogoSlot('main', '#1F2937');   // contexto fundo escuro (capa)
-  setupLogoSlot('alt',  '#F8FAFC');   // contexto fundo claro (rodapé)
+  setupLogoSlot('main', '#1F2937');   // único slot — composite no PDF resolve fundo claro/escuro
 
   // ── Color picker ↔ hex input bidirecional ──────────────────────
   const wireColor = (field) => {
@@ -341,7 +333,7 @@ function showAreaModal(area, areas = []) {
         name,
         category:    document.getElementById('area-category')?.value?.trim() || '',
         logoUrl:     document.getElementById('area-logo-main')?.value?.trim() || null,
-        logoUrlAlt:  document.getElementById('area-logo-alt')?.value?.trim()  || null,
+        // logoUrlAlt removido — composite no canvas resolve fundo escuro/claro
         description: document.getElementById('area-desc')?.value?.trim() || '',
         colors: {
           primary:   document.getElementById('area-color-primary')?.value,
