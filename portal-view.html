@@ -22,21 +22,33 @@
 <body>
 <div id="loading"><div class="spinner-ring"></div><div class="brand">CITY GUIDES</div></div>
 
-<!-- Topbar fixo com hambúrguer (mobile) + título + logo da área -->
+<!-- Topbar: logo (clicável → topo) à esquerda · título à direita -->
 <header class="site-header" id="site-header" style="display:none;">
-  <button class="menu-toggle" id="menu-toggle" aria-label="Abrir menu">
-    <span class="material-symbols-outlined">menu</span>
-  </button>
+  <a href="#" class="header-home" id="header-home" aria-label="Voltar ao topo">
+    <img id="area-logo" alt="" style="display:none;">
+    <span class="home-fallback" id="header-fallback">CITY GUIDES</span>
+  </a>
   <div class="header-title">
     <span class="header-brand">City Guides</span>
     <span class="header-dest" id="header-dest"></span>
   </div>
+  <button class="header-action" id="search-toggle" aria-label="Buscar">
+    <span class="material-symbols-outlined">search</span>
+  </button>
   <button class="fav-filter-toggle" id="fav-filter" aria-label="Mostrar só favoritos" style="display:none;">
     <span class="material-symbols-outlined">favorite</span>
     <span class="fav-count" id="fav-count">0</span>
   </button>
-  <img id="area-logo" class="header-area-logo" style="display:none;" alt="">
 </header>
+
+<!-- Search bar (toggle pelo ícone 🔍 no header) -->
+<div class="search-bar" id="search-bar">
+  <input type="search" class="search-input" id="search-input"
+    placeholder="Buscar atrações, restaurantes, bairros…" autocomplete="off">
+  <button class="search-clear" id="search-clear" aria-label="Fechar busca">
+    <span class="material-symbols-outlined">close</span>
+  </button>
+</div>
 
 <!-- Side menu (mobile) — overlay + drawer -->
 <div class="side-menu-overlay" id="side-menu-overlay"></div>
@@ -125,8 +137,12 @@ const db=getFirestore(app);
   // em css/portal-tokens.css.
   applyPortalTheme({ colors: data.colors || {} });
   if(data.areaLogoUrl){
-    const img=document.getElementById('area-logo');img.src=data.areaLogoUrl;img.style.display='block';
-    const fImg=document.getElementById('footer-logo');fImg.src=data.areaLogoUrl;fImg.style.display='block';
+    const img=document.getElementById('area-logo');
+    img.src=data.areaLogoUrl;
+    img.style.display='block';
+    document.getElementById('header-fallback').style.display='none';
+    const fImg=document.getElementById('footer-logo');
+    fImg.src=data.areaLogoUrl;fImg.style.display='block';
   }
 
   const allTips=data.tipData||[];
@@ -134,16 +150,21 @@ const db=getFirestore(app);
   const imagesByDest=data.imagesByDest||{};
   const activeSegs=segments.filter(k=>allTips.some(({tip})=>{const seg=tip?.segments?.[k];if(!seg)return false;if(seg.info&&Object.values(seg.info).some(v=>v&&String(v).trim()))return true;return Array.isArray(seg.items)&&seg.items.length>0;}));
 
-  // Side menu (hambúrguer mobile + sidebar scrollspy desktop)
-  // hasMap: se algum tip tem items com _geo, mostra entrada "Mapa"
+  // Bottom-nav fixo permanente (acesso rápido às seções)
   const hasMap = allTips.some(({ tip }) =>
     tip?.segments && Object.values(tip.segments).some(s =>
       Array.isArray(s?.items) && s.items.some(i => i?._geo?.lat)));
-  populateSideMenu(activeSegs, hasMap);
-  wireSideMenu();
+  populateBottomNav(activeSegs, hasMap);
   wireScrollEffects();
   wireFavButtons();
   wireFavFilter();
+  wireSearch();
+  wireCardExpand();
+  // Logo do header também leva pro topo
+  document.getElementById('header-home')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
 
   document.getElementById('site-header').style.display='flex';
   document.getElementById('site-footer').style.display='block';
@@ -154,7 +175,7 @@ const db=getFirestore(app);
   // Tag cards favoritados + atualiza UI do filtro
   setTimeout(() => { tagFavedCards(); updateFavFilterUI(); }, 50);
 
-  // Scrollspy: marca o item ativo no side-menu conforme rola
+  // Scrollspy: marca o item ativo no bottom-nav conforme rola
   setTimeout(() => {
     const items = document.querySelectorAll('[id^="seg-"]');
     if (!items.length) return;
@@ -162,7 +183,7 @@ const db=getFirestore(app);
       entries.forEach(e => {
         if (e.isIntersecting) {
           const id = e.target.id.replace('seg-', '');
-          document.querySelectorAll('#side-menu-list a').forEach(a =>
+          document.querySelectorAll('#bottom-nav a').forEach(a =>
             a.classList.toggle('active', a.getAttribute('href') === `#seg-${id}`));
         }
       });
@@ -173,53 +194,102 @@ const db=getFirestore(app);
   const loading=document.getElementById('loading');loading.style.opacity='0';setTimeout(()=>loading.style.display='none',500);
 })();
 
-/* ─── Side menu (hambúrguer mobile + scrollspy sidebar desktop) ─── */
-function populateSideMenu(activeSegs, hasMap = false){
-  const list = document.getElementById('side-menu-list');
-  if (!list) return;
-  // Item "Mapa" entra primeiro quando há items geocodados (visualmente
-  // útil pro usuário que quer ver tudo geograficamente antes de explorar)
-  const mapEntry = hasMap ? `<li><a href="#seg-map">
+/* ─── Bottom nav fixo + Search bar + Card expand ─────────────── */
+function populateBottomNav(activeSegs, hasMap = false){
+  const nav = document.getElementById('bottom-nav');
+  if (!nav) return;
+  nav.style.display = 'flex';
+  const mapEntry = hasMap ? `<a href="#seg-map">
     <span class="material-symbols-outlined">map</span>Mapa
-  </a></li>` : '';
-  list.innerHTML = mapEntry + activeSegs.map((k, i) => {
+  </a>` : '';
+  nav.innerHTML = mapEntry + activeSegs.map((k, i) => {
     const seg = SEGMENTS.find(s => s.key === k);
     const icon = seg?.icon || 'arrow_forward';
-    return `<li><a href="#seg-${k}"${(i===0&&!hasMap)?' class="active"':''}>
+    return `<a href="#seg-${k}"${(i===0&&!hasMap)?' class="active"':''}>
       <span class="material-symbols-outlined">${icon}</span>
       ${esc(seg?.label || k)}
-    </a></li>`;
+    </a>`;
   }).join('');
-  // Click fecha o menu (mobile) e faz smooth scroll
-  list.querySelectorAll('a').forEach(a => {
+  // Smooth scroll quando clica
+  nav.querySelectorAll('a').forEach(a => {
     a.addEventListener('click', (e) => {
       const id = a.getAttribute('href').slice(1);
       const target = document.getElementById(id);
       if (target) {
         e.preventDefault();
         target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        closeSideMenu();
         history.replaceState(null, '', a.getAttribute('href'));
       }
     });
   });
 }
-function openSideMenu(){
-  document.getElementById('side-menu')?.classList.add('open');
-  document.getElementById('side-menu-overlay')?.classList.add('open');
-  document.body.style.overflow = 'hidden';
+
+function wireSearch(){
+  const toggle = document.getElementById('search-toggle');
+  const bar    = document.getElementById('search-bar');
+  const input  = document.getElementById('search-input');
+  const clear  = document.getElementById('search-clear');
+  if (!toggle || !bar || !input) return;
+  toggle.addEventListener('click', () => {
+    const open = !bar.classList.contains('open');
+    bar.classList.toggle('open', open);
+    toggle.classList.toggle('active', open);
+    if (open) setTimeout(() => input.focus(), 100);
+  });
+  clear?.addEventListener('click', () => {
+    input.value = '';
+    bar.classList.remove('open');
+    toggle.classList.remove('active');
+    applySearchFilter('');
+  });
+  let timer;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => applySearchFilter(input.value.trim().toLowerCase()), 150);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && bar.classList.contains('open')) {
+      input.value = '';
+      bar.classList.remove('open');
+      toggle.classList.remove('active');
+      applySearchFilter('');
+    }
+  });
 }
-function closeSideMenu(){
-  document.getElementById('side-menu')?.classList.remove('open');
-  document.getElementById('side-menu-overlay')?.classList.remove('open');
-  document.body.style.overflow = '';
+function applySearchFilter(query) {
+  if (!query) {
+    document.body.classList.remove('search-active', 'no-results');
+    document.querySelectorAll('.search-match,.has-search-match')
+      .forEach(el => el.classList.remove('search-match', 'has-search-match'));
+    return;
+  }
+  document.body.classList.add('search-active');
+  let totalMatch = 0;
+  document.querySelectorAll('[id^="seg-"]').forEach(seg => {
+    let segMatch = 0;
+    seg.querySelectorAll('.place-card, .simple-item').forEach(card => {
+      const text = card.textContent.toLowerCase();
+      const match = text.includes(query);
+      card.classList.toggle('search-match', match);
+      if (match) { segMatch++; totalMatch++; }
+    });
+    seg.classList.toggle('has-search-match', segMatch > 0);
+  });
+  document.body.classList.toggle('no-results', totalMatch === 0);
 }
-function wireSideMenu(){
-  document.getElementById('menu-toggle')?.addEventListener('click', openSideMenu);
-  document.getElementById('side-menu-close')?.addEventListener('click', closeSideMenu);
-  document.getElementById('side-menu-overlay')?.addEventListener('click', closeSideMenu);
-  // ESC fecha
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSideMenu(); });
+
+function wireCardExpand(){
+  // Click no botão "ver mais / ver menos" expande/colapsa o card
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.place-card-toggle');
+    if (!btn) return;
+    e.preventDefault();
+    const card = btn.closest('.place-card');
+    if (!card) return;
+    const isExp = card.classList.toggle('expanded');
+    const label = btn.querySelector('.toggle-label');
+    if (label) label.textContent = isExp ? 'Ver menos' : 'Ver mais';
+  });
 }
 
 /* ─── Favoritos: estrela em cada card + filtro no header ───── */
@@ -359,14 +429,8 @@ const lightbox = {
 };
 lightbox.init();
 
-// Delegação: qualquer click em foto abre o lightbox
-document.addEventListener('click', (e) => {
-  const img = e.target.closest('.hero-card img, .bento-card img, .place-card-img img');
-  if (img) {
-    e.preventDefault();
-    lightbox.collectAndOpen(img);
-  }
-});
+// Lightbox desativado por preferência do usuário — funcionalidade
+// mantida no código pra reativação fácil se desejado no futuro.
 
 /* ─── Scroll effects: topbar shadow + parallax leve no hero ──── */
 function wireScrollEffects(){
@@ -411,10 +475,10 @@ function renderSingle(container,tip,dest,segments,activeSegs,imgs,pad){
   ${heroImg?`<img class="hero-img" src="${esc(heroImg)}" alt="${esc(city)}" onerror="this.style.display='none'">`:`<div class="hero-placeholder" style="background:linear-gradient(135deg,${navy} 0%,${shade(navy,-20)} 100%);"></div>`}
   <div class="hero-gradient"></div>
   <div class="hero-content">
-    <span class="hero-label">Portal de Dicas · PRIMETOUR</span>
+    <span class="hero-label">City Guides</span>
     <h1 class="hero-title">${esc(city)}</h1>
     ${country&&country!==city?`<p class="hero-subtitle">${esc(country)}</p>`:''}
-    <button class="hero-cta" onclick="document.querySelector('[id^=seg-]')?.scrollIntoView({behavior:'smooth'})">descobrir o destino</button>
+    <button class="hero-cta" onclick="document.querySelector('[id^=seg-]')?.scrollIntoView({behavior:'smooth'})">descobrir</button>
   </div>
 </section>
 <div class="content-wrap">
@@ -504,26 +568,101 @@ function segHead(sd){return `<div class="seg-heading"><div class="seg-heading-ba
 
 function renderSeg(sd,data,imgs){
   if(sd.key==='informacoes_gerais')return renderInfo(sd,data);
-  if(sd.key==='bairros'||sd.key==='arredores')return renderSimple(sd,data);
+  if(sd.key==='bairros'||sd.key==='arredores')return renderSimple(sd,data,imgs);
   return renderPlaces(sd,data,imgs,sd.key==='agenda_cultural');
 }
 
 function renderInfo(sd,data){
   const inf=data.info||{};
-  const fields=[['Descrição',inf.descricao],['Dica',inf.dica],['População',inf.populacao],['Moeda',inf.moeda],['Língua oficial',inf.lingua],['Religião',inf.religiao],['Fuso horário',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h de Brasília`:''],['Voltagem',inf.voltagem],['DDD',inf.ddd]].filter(([,v])=>v);
-  if(!fields.length&&!inf.clima)return '';
-  const cli=inf.clima||{};const hasC=MONTHS.some((_,i)=>cli[`max_${i}`]||cli[`min_${i}`]);
+  const cli=inf.clima||{};
+  const hasC=MONTHS.some((_,i)=>cli[`max_${i}`]||cli[`min_${i}`]);
   const rep=inf.representacao||{};
-  return `${segHead(sd)}<div class="info-grid">${fields.map(([l,v])=>`<div class="info-cell"><div class="info-cell-label">${esc(l)}</div><div class="info-cell-value">${esc(v)}</div></div>`).join('')}</div>${hasC?`<div class="clima-wrap"><table class="clima-table"><thead><tr><th>°C</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}</tr></thead><tbody><tr class="clima-max"><td>Máx ↑</td>${MONTHS.map((_,i)=>`<td>${cli[`max_${i}`]??'—'}</td>`).join('')}</tr><tr class="clima-min"><td>Mín ↓</td>${MONTHS.map((_,i)=>`<td>${cli[`min_${i}`]??'—'}</td>`).join('')}</tr></tbody></table></div>`:''}${rep.nome?`<div class="rep-block"><div class="rep-title">Representação Brasileira</div>${rep.nome?`<div class="rep-row"><strong>Nome:</strong> ${esc(rep.nome)}</div>`:''}${rep.endereco?`<div class="rep-row"><strong>Endereço:</strong> ${esc(rep.endereco)}</div>`:''}${rep.telefone?`<div class="rep-row"><strong>Telefone:</strong> ${esc(rep.telefone)}</div>`:''}${rep.link?`<div class="rep-row"><strong>Site:</strong> <a href="${esc(normalizeUrl(rep.link))}" target="_blank" rel="noopener noreferrer">${esc(rep.link)}</a></div>`:''}</div>`:''}`;
+  if(!inf.descricao&&!inf.dica&&!inf.populacao&&!inf.moeda&&!inf.lingua&&!hasC&&!rep.nome)return '';
+
+  // Chips com ícones em flow (não mais grid 5 col)
+  const chips = [
+    ['groups',     'População',  inf.populacao],
+    ['payments',   'Moeda',      inf.moeda],
+    ['language',   'Língua',     inf.lingua],
+    ['church',     'Religião',   inf.religiao],
+    ['schedule',   'Fuso',       inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h de Brasília`:''],
+    ['bolt',       'Voltagem',   inf.voltagem],
+    ['call',       'DDD',        inf.ddd],
+  ].filter(([,,v])=>v);
+
+  return `${segHead(sd)}
+    ${inf.descricao ? `<p class="info-description">${esc(inf.descricao)}</p>` : ''}
+    ${inf.dica ? `<div class="info-dica">
+      <span class="material-symbols-outlined">lightbulb</span>
+      <div class="info-dica-text">
+        <span class="info-dica-label">Dica do concierge</span>
+        ${esc(inf.dica)}
+      </div>
+    </div>` : ''}
+    ${chips.length ? `<div class="info-chips">${chips.map(([icon,l,v])=>`
+      <div class="info-chip">
+        <span class="material-symbols-outlined">${icon}</span>
+        <span class="info-chip-label">${esc(l)}</span>
+        <span class="info-chip-value">${esc(v)}</span>
+      </div>`).join('')}</div>` : ''}
+    ${hasC ? `<div class="clima-wrap"><table class="clima-table"><thead><tr><th>°C</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}</tr></thead><tbody><tr class="clima-max"><td>Máx ↑</td>${MONTHS.map((_,i)=>`<td>${cli[`max_${i}`]??'—'}</td>`).join('')}</tr><tr class="clima-min"><td>Mín ↓</td>${MONTHS.map((_,i)=>`<td>${cli[`min_${i}`]??'—'}</td>`).join('')}</tr></tbody></table></div>` : ''}
+    ${rep.nome ? `<div class="rep-block">
+      <div class="rep-title">Representação Brasileira</div>
+      <div class="rep-row"><strong>Nome:</strong> ${esc(rep.nome)}</div>
+      ${rep.endereco ? `<div class="rep-row"><strong>Endereço:</strong> ${esc(rep.endereco)}</div>` : ''}
+      ${rep.telefone ? `<div class="rep-row"><strong>Telefone:</strong> ${esc(rep.telefone)}</div>` : ''}
+      ${rep.link ? `<div class="rep-row"><strong>Site:</strong> <a href="${esc(normalizeUrl(rep.link))}" target="_blank" rel="noopener noreferrer">${esc(rep.link)}</a></div>` : ''}
+    </div>` : ''}`;
 }
 
-function renderSimple(sd,data){
+function renderSimple(sd,data,imgs){
   const items=(data.items||[]).filter(i=>i.title);if(!items.length)return '';
-  return `${segHead(sd)}<div class="simple-list">${items.map(item=>`<div class="simple-item" style="position:relative;">
-    <div style="position:absolute;top:var(--portal-space-4);right:0;">${favBtnHtml({titulo:item.title})}</div>
-    <div class="simple-item-title">${esc(item.title)}</div>
-    ${item.description?`<div class="simple-item-desc">${esc(item.description)}</div>`:''}
-  </div>`).join('')}</div>`;
+  const overrides = imgs?._overrides || {};
+  const gallery = imgs?.gallery || [];
+  const usedUrls = new Set();
+  const pickSimpleImg = (item, idx) => {
+    // 1. Override explícito por idx
+    if (overrides[sd.key]) {
+      const ov = overrides[sd.key][idx] || overrides[sd.key][String(idx)];
+      if (ov?.url) return ov.url;
+    }
+    // 2. Match por placeName na galeria
+    const title = (item.title || '').toLowerCase().trim();
+    if (!title) return null;
+    let m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
+    if (!m) m = gallery.find(g => g.placeName && g.placeName.length >= 5 &&
+      (title.includes(g.placeName.toLowerCase()) || g.placeName.toLowerCase().includes(title.slice(0,12))));
+    if (m?.url) usedUrls.add(m.url);
+    return m?.url || null;
+  };
+  // Se algum item tem foto, usa cards-grid (foto + texto). Senão, lista simples.
+  const itemImgs = items.map((it, i) => pickSimpleImg(it, i));
+  const anyHasImg = itemImgs.some(Boolean);
+
+  if (!anyHasImg) {
+    return `${segHead(sd)}<div class="simple-list">${items.map((item,i)=>`<div class="simple-item" style="position:relative;">
+      <div style="position:absolute;top:var(--portal-space-4);right:0;">${favBtnHtml({titulo:item.title})}</div>
+      <div class="simple-item-title">${esc(item.title)}</div>
+      ${item.description?`<div class="simple-item-desc">${esc(item.description)}</div>`:''}
+    </div>`).join('')}</div>`;
+  }
+  // Layout com fotos: cards uniformes (mesmo do place_list)
+  return `${segHead(sd)}<div class="cards-grid">${items.map((item,i) => {
+    const img = itemImgs[i];
+    const isDescLong = item.description && item.description.length > 120;
+    return `<div class="place-card">
+      ${favBtnHtml({titulo:item.title})}
+      <div class="place-card-img">${img
+        ? `<img src="${esc(img)}" alt="${esc(item.title)}" loading="lazy">`
+        : `<div class="place-card-placeholder"><span style="font-size:.5rem;letter-spacing:.3em;font-weight:600;text-transform:uppercase;color:var(--portal-text-muted);">${esc(item.title||'')}</span></div>`}
+      </div>
+      <div class="place-card-body">
+        <div class="place-card-title">${esc(item.title)}</div>
+        ${item.description?`<div class="place-card-desc">${esc(item.description)}</div>`:''}
+        ${isDescLong?`<button class="place-card-toggle" type="button"><span class="toggle-label">Ver mais</span></button>`:''}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function renderPlaces(sd,data,imgs,isAgenda){
@@ -590,6 +729,10 @@ function renderPlaces(sd,data,imgs,isAgenda){
     const detailsParts = [];
     if (item.endereco) detailsParts.push(`<span>📍 ${esc(item.endereco)}</span>`);
     if (item.telefone) detailsParts.push(`<span>📞 ${esc(item.telefone)}</span>`);
+    // Descrição truncada por CSS line-clamp; toggle aparece SÓ se a
+    // descrição for relativamente longa (>120 chars) ou houver observações
+    const isDescLong = item.descricao && item.descricao.length > 120;
+    const hasExtra   = isDescLong || item.observacoes;
     return `<div class="place-card">
       ${favBtnHtml(item)}
       <div class="place-card-img">${img
@@ -602,9 +745,10 @@ function renderPlaces(sd,data,imgs,isAgenda){
           ? `<div style="font-size:var(--portal-fs-xs);color:var(--portal-primary);font-weight:600;">◷ ${item.periodoIndeterminado?'Tempo indeterminado':esc(item.periodo||'')}</div>`
           : ''}
         ${item.descricao?`<div class="place-card-desc">${esc(item.descricao)}</div>`:''}
+        ${item.observacoes?`<div class="place-card-extra place-card-obs">💡 ${esc(item.observacoes)}</div>`:''}
         ${detailsParts.length?`<div class="place-card-details">${detailsParts.join('')}</div>`:''}
         ${hasSite(item)?`<a class="pill-link" href="${esc(normalizeUrl(item.site))}" target="_blank" rel="noopener noreferrer">Visitar site</a>`:''}
-        ${item.observacoes?`<div class="place-card-obs">💡 ${esc(item.observacoes)}</div>`:''}
+        ${hasExtra?`<button class="place-card-toggle" type="button"><span class="toggle-label">Ver mais</span></button>`:''}
       </div>
     </div>`;
   };
@@ -614,11 +758,11 @@ function renderPlaces(sd,data,imgs,isAgenda){
   const themeHtml=data.themeDesc?`<p style="padding:0 32px 24px;font-size:.875rem;color:var(--muted);font-style:italic;line-height:1.7;">${esc(data.themeDesc)}</p>`:'';
   const agendaHtml=isAgenda&&data.periodoAgenda?`<div class="agenda-period">📅 ${esc(data.periodoAgenda)}</div>`:'';
 
-  let itemsHtml='';
-  if(items.length===0)itemsHtml='';
-  else if(items.length===1)itemsHtml=heroCard(items[0],0,sd);
-  else if(items.length===2)itemsHtml=heroCard(items[0],0,sd)+`<div class="cards-grid" style="margin-top:1px;">${card(items[1],1,sd)}</div>`;
-  else itemsHtml=heroCard(items[0],0,sd)+`<div class="bento-grid" style="margin-top:1px;">${items.slice(1,3).map((item,i)=>{const img=getImg(item,i+1,sd);return `<div class="bento-card">${favBtnHtml(item)}<div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy}dd,${shade(navy,-15)});"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle" style="font-size:.5rem;">${esc(item.categoria)}</div>`:''}<div class="card-title" style="font-size:1.375rem;">${esc(item.titulo)}</div></div></div>`;}).join('')}</div>${items.length>3?`<div class="cards-grid" style="margin-top:1px;">${items.slice(3).map((item,i)=>card(item,i+3,sd)).join('')}</div>`:''}`;
+  // Cards UNIFORMES — sem destaque hero/bento, todos iguais (preferência do user).
+  // Layout em grid responsivo, fácil de escanear e expandir.
+  const itemsHtml = items.length
+    ? `<div class="cards-grid">${items.map((item, i) => card(item, i, sd)).join('')}</div>`
+    : '';
 
   return `${segHead(sd)}${themeHtml}${agendaHtml}${itemsHtml}`;
 }
