@@ -302,7 +302,7 @@ function loadScript(src) {
  * @param {string[]} params.destIds  — for combined destinations
  * @returns {object} { url?, filename? }
  */
-export async function generateTip({ tip, area, dest, segments, format, extraTips = [], imagesOverride = {}, clientName = '' }) {
+export async function generateTip({ tip, area, dest, segments, format, extraTips = [], imagesOverride = {}, heroImageOverride = {}, clientName = '' }) {
   const allTips  = [{ tip, dest }, ...extraTips];
   const areaName = area?.name || 'PRIMETOUR';
   const colors   = {
@@ -315,6 +315,12 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
   for (const { dest: d } of allTips) {
     if (d?.id) {
       imagesByDest[d.id] = await resolveImages(d);
+      // Override de FOTO DE CAPA (hero) por destino — feature de UX
+      // que permite escolher na hora de gerar, sem mexer no banco.
+      const heroOv = heroImageOverride[d.id];
+      if (heroOv?.url) {
+        imagesByDest[d.id].hero = heroOv.url;
+      }
       const overrides = imagesOverride[d.id] || {};
       if (Object.keys(overrides).length) {
         const ov = [];
@@ -334,7 +340,7 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
     case 'docx': return generateDocx({ allTips, segments, areaName, area, colors, filename, imagesByDest });
     case 'pdf':  return generatePDF({ allTips, segments, areaName, area, colors, filename, imagesByDest });
     case 'pptx': return generatePptx({ allTips, segments, areaName, area, colors, filename, imagesByDest });
-    case 'web':  return generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride, clientName });
+    case 'web':  return generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride, heroImageOverride, clientName });
     default:     throw new Error(`Formato desconhecido: ${format}`);
   }
 }
@@ -1296,7 +1302,7 @@ async function resolveImages(dest) {
   } catch { return { hero: null, gallery: [], banners: {} }; }
 }
 
-async function generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride = {}, clientName = '' }) {
+async function generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride = {}, heroImageOverride = {}, clientName = '' }) {
   // Lazy imports — só carrega firebase quando função é efetivamente chamada
   const { doc, collection, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
   const { db }    = await import('../firebase.js');
@@ -1310,6 +1316,12 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
   for (const { dest } of allTips) {
     if (dest?.id) {
       imagesByDest[dest.id] = await resolveImages(dest);
+
+      // Hero override (foto de capa escolhida pelo usuário no editor)
+      const heroOv = heroImageOverride[dest.id];
+      if (heroOv?.url) {
+        imagesByDest[dest.id].hero = heroOv.url;
+      }
 
       // Apply manual image overrides from the generation editor
       // imagesOverride format: { [destId]: { [segKey]: { [itemIdx]: { url, name } } } }

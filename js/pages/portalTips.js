@@ -737,11 +737,16 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
     })
   );
 
-  const selectedImages = {};  // { [destId]: { [segKey]: { [idx]: { url, name } } } }
+  const selectedImages     = {};  // { [destId]: { [segKey]: { [idx]: { url, name } } } }
+  const selectedHeroImages = {};  // { [destId]: { url, name } } — foto de capa por destino
+
+  // Pseudo-segmento __hero aparece SEMPRE no topo da lista — permite
+  // escolher a imagem que vai aparecer logo após a capa do material.
+  const HERO_SEG_KEY = '__hero';
 
   // Mutable state — never re-declared
   let curDestIdx   = 0;
-  let curSegKey    = activeSeg[0] || '';
+  let curSegKey    = HERO_SEG_KEY; // começa no seletor de capa
 
   // ── Build static shell (rendered once, never replaced) ──────
   const modal = document.createElement('div');
@@ -823,8 +828,24 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
 
   // ── Helpers to update dynamic zones ──────────────────────────
   const refreshSegList = () => {
-    const { tip: wTip } = workingTips[curDestIdx];
-    document.getElementById('gen-seg-list').innerHTML = activeSeg.map(k => {
+    const { tip: wTip, dest: wDest } = workingTips[curDestIdx];
+    const destId = wDest?.id || curDestIdx;
+    // Pseudo-segmento __hero (foto de capa) sempre no topo
+    const isHeroActive = curSegKey === HERO_SEG_KEY;
+    const heroPicked = !!selectedHeroImages[destId]?.url;
+    const heroBtn = `<button class="gen-seg-btn" data-seg="${HERO_SEG_KEY}"
+      style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+      padding:12px 14px;border:none;
+      background:${isHeroActive?'var(--brand-gold)10':'transparent'};
+      border-left:3px solid ${isHeroActive?'var(--brand-gold)':'transparent'};
+      border-bottom:1px solid var(--border-subtle);
+      cursor:pointer;transition:all .15s;font-size:0.8125rem;">
+      <span style="font-size:1rem;">📷</span>
+      <span style="flex:1;color:${isHeroActive?'var(--brand-gold)':'var(--text-secondary)'};font-weight:600;">
+        Foto de capa</span>
+      ${heroPicked?`<span style="width:6px;height:6px;border-radius:50%;background:#22C55E;flex-shrink:0;"></span>`:''}
+    </button>`;
+    document.getElementById('gen-seg-list').innerHTML = heroBtn + activeSeg.map(k => {
       const seg = SEGMENTS.find(s => s.key === k);
       const segData = wTip?.segments?.[k];
       const hasContent = segData && (
@@ -862,11 +883,85 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
     const segImgs  = selectedImages[destId]?.[curSegKey] || {};
 
     const panel = document.getElementById('gen-right-panel');
-    if (panel) {
-      panel.innerHTML = renderSegEditor(wTip, curSegKey, destImgs, segImgs, destId);
-      panel._refreshRef = { refreshRightPanel };
+    if (!panel) return;
+
+    // PSEUDO-SEGMENTO: foto de capa do destino
+    if (curSegKey === HERO_SEG_KEY) {
+      const currentHero = selectedHeroImages[destId];
+      const galleryImgs = (destImgs?.gallery || []).filter(g => g.url && !g._override);
+      // imagem hero "automática" (resolveImages decide) — pra mostrar como default
+      const autoHero   = destImgs?.hero || null;
+      panel.innerHTML = `
+        <div style="margin-bottom:16px;">
+          <div style="font-weight:700;font-size:0.9375rem;margin-bottom:4px;">
+            📷 Foto de capa do destino
+          </div>
+          <div style="font-size:0.8125rem;color:var(--text-muted);">
+            Aparece logo após a capa do material. Escolha entre as imagens da galeria
+            ou mantenha a automática (selecionada do banco como destaque).
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;">
+          <!-- Opção AUTO -->
+          <button class="gen-hero-pick" data-hero-url=""
+            style="position:relative;aspect-ratio:4/3;border:2px solid ${!currentHero ? 'var(--brand-gold)' : 'var(--border-subtle)'};
+              background:var(--bg-surface);border-radius:var(--radius-md);overflow:hidden;
+              cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;
+              gap:6px;padding:10px;text-align:center;">
+            ${autoHero ? `<img src="${esc(autoHero)}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.4;">` : ''}
+            <span style="position:relative;font-size:1.2rem;">✨</span>
+            <span style="position:relative;font-size:0.75rem;font-weight:600;color:var(--text-primary);">
+              Automática
+            </span>
+            <span style="position:relative;font-size:0.6875rem;color:var(--text-muted);">
+              Escolhida pelo sistema
+            </span>
+            ${!currentHero ? `<span style="position:absolute;top:6px;right:6px;background:var(--brand-gold);
+              color:#fff;font-size:0.625rem;padding:2px 6px;border-radius:var(--radius-full);font-weight:700;">SELECIONADA</span>` : ''}
+          </button>
+
+          ${galleryImgs.map(g => {
+            const isPicked = currentHero?.url === g.url;
+            return `<button class="gen-hero-pick" data-hero-url="${esc(g.url)}" data-hero-name="${esc(g.name||g.placeName||'')}"
+              style="position:relative;aspect-ratio:4/3;border:2px solid ${isPicked ? 'var(--brand-gold)' : 'var(--border-subtle)'};
+                background:var(--bg-surface);border-radius:var(--radius-md);overflow:hidden;
+                cursor:pointer;padding:0;">
+              <img src="${esc(g.url)}" style="width:100%;height:100%;object-fit:cover;display:block;">
+              ${g.placeName ? `<div style="position:absolute;bottom:0;left:0;right:0;
+                background:linear-gradient(transparent, rgba(0,0,0,0.7));color:#fff;
+                font-size:0.6875rem;padding:14px 6px 4px;text-align:left;
+                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                ${esc(g.placeName)}</div>` : ''}
+              ${isPicked ? `<span style="position:absolute;top:6px;right:6px;background:var(--brand-gold);
+                color:#fff;font-size:0.625rem;padding:2px 6px;border-radius:var(--radius-full);font-weight:700;">SELECIONADA</span>` : ''}
+            </button>`;
+          }).join('')}
+        </div>
+
+        ${galleryImgs.length === 0 ? `<div style="margin-top:16px;padding:14px;
+          background:var(--bg-surface);border:1px dashed var(--border-subtle);
+          border-radius:var(--radius-md);text-align:center;font-size:0.8125rem;color:var(--text-muted);">
+          Nenhuma imagem cadastrada para este destino. Cadastre em Portal → Imagens.
+        </div>` : ''}
+      `;
+
+      // Wire clicks
+      panel.querySelectorAll('.gen-hero-pick').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const url  = btn.dataset.heroUrl || '';
+          const name = btn.dataset.heroName || '';
+          if (url) selectedHeroImages[destId] = { url, name };
+          else     delete selectedHeroImages[destId];
+          refreshSegList();
+          refreshRightPanel();
+        });
+      });
+      return;
     }
 
+    panel.innerHTML = renderSegEditor(wTip, curSegKey, destImgs, segImgs, destId);
+    panel._refreshRef = { refreshRightPanel };
     wireSegEditor(wTip, curSegKey, destImgs, destId, selectedImages, workingTips, curDestIdx);
   };
 
@@ -906,7 +1001,8 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
         dest:           workingTips[0].dest,
         area, segments, format,
         extraTips:      workingTips.slice(1),
-        imagesOverride: selectedImages,
+        imagesOverride:    selectedImages,
+        heroImageOverride: selectedHeroImages,
         clientName,
       });
       await recordGeneration({
