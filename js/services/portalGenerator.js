@@ -69,6 +69,15 @@ export async function loadPoppinsOnDoc(doc) {
   console.info('[portalPdf] Poppins ativa:', Object.keys(fontList.Poppins).join(','));
 }
 
+/* ─── Helper: site válido? ─────────────────────────────────
+ * Retorna true só se o item.site existe E não é apenas whitespace.
+ * Usado pra controlar se a pill "Visitar site" aparece.
+ */
+function hasValidSite(item) {
+  if (!item || !item.site) return false;
+  return String(item.site).trim().length > 0;
+}
+
 /* ─── Parser de DESCRIÇÃO ──────────────────────────────────
  * Conteúdo legado tem CLIMA e REPRESENTAÇÃO BRASILEIRA colados como
  * texto cru dentro de info.descricao. Resultado: visual feio + duplica
@@ -559,7 +568,7 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
           if(item.descricao) children.push(new Paragraph({children:[new TextRun({text:item.descricao,size:18,color:'474650'})],spacing:{after:80}}));
           const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
           if(det.length) children.push(new Paragraph({children:[new TextRun({text:det.join('   '),size:16,color:'888888'})],spacing:{after:60}}));
-          if(item.site) children.push(new Paragraph({children:[new TextRun({text:'🌐 ',size:16}),new ExternalHyperlink({link:item.site,children:[new TextRun({text:item.site,size:16,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
+          if(hasValidSite(item)) children.push(new Paragraph({children:[new TextRun({text:'🌐 ',size:16}),new ExternalHyperlink({link:String(item.site).trim(),children:[new TextRun({text:String(item.site).trim(),size:16,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
           if(item.observacoes) children.push(new Paragraph({children:[new TextRun({text:`💡 ${item.observacoes}`,size:16,italics:true,color:'AAAAAA'})],spacing:{after:80}}));
           children.push(new Paragraph({border:{bottom:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'}},spacing:{after:80}}));
         }
@@ -724,16 +733,47 @@ async function generatePDF({
   const tocPageIdx = doc.getNumberOfPages(); // página atual = pag 2 (vazia, reservada)
   doc.addPage(); y=MARGIN; addFooter();      // pula pra pag 3 (conteúdo)
 
+  // Estimador de altura do bloco INFO GERAIS — usado pra dimensionar
+  // o hero dinamicamente. Mede tudo (descrição, dica, chips, clima,
+  // representação) usando o próprio doc.splitTextToSize com as fontes
+  // que serão usadas. Retorna altura em mm.
+  const estimateInfoGeraisH = (info, hasClimate, hasRep) => {
+    if (!info) return 0;
+    const descClean = info._descClean ?? cleanText(info.descricao || '');
+    let h = 14; // segment heading "INFORMAÇÕES GERAIS" + margin
+    // DESCRIÇÃO
+    if (descClean) {
+      doc.setFontSize(9); setF('normal');
+      const lines = doc.splitTextToSize(descClean, CONTENT);
+      h += 5 + lines.length * 4.5 + 5;
+    }
+    // DICA (callout)
+    if (info.dica) {
+      doc.setFontSize(9); setF('normal');
+      const dicaLines = doc.splitTextToSize(cleanText(info.dica), CONTENT - 10);
+      h += dicaLines.length * 4.5 + 8 + 6;
+    }
+    // CHIPS (4 por linha, 18mm + 3mm gap)
+    const chipsCount = ['populacao','moeda','lingua','religiao','fuso','voltagem','ddd']
+      .filter(k => k === 'fuso' ? info.fusoSinal && info.fusoHoras : info[k]).length;
+    if (chipsCount) h += Math.ceil(chipsCount / 4) * (18 + 3) + 2;
+    // CLIMA grid (22mm) + label (5) + legenda (5)
+    if (hasClimate) h += 5 + 22 + 3 + 5;
+    // REPRESENTAÇÃO (label + até 4 linhas)
+    if (hasRep) h += 5 + 4 * 5 + 2;
+    return h;
+  };
+
   for(const{tip,dest}of allTips){
     const imgs=imagesByDest[dest?.id]||{};
 
-    // ── HERO + INFO GERAIS combinados na MESMA página ────────────
-    // Hero ocupa o topo (altura reduzida pra deixar espaço pro info).
-    // Sem título grande no meio (era ruído visual).
+    // ── HERO DINÂMICO baseado no conteúdo de INFO GERAIS ─────────
+    // Calcula altura necessária pro INFO antes de desenhar o hero.
+    // Hero recebe o espaço RESTANTE da página (com mínimo de 50mm e
+    // máximo de 130mm pra não ficar minúsculo nem dominante demais).
     const heroB64 = await _imgFetcher(imgs.hero);
     let heroH = 0;
     if (heroB64) {
-      // Hero menor pra caber INFO GERAIS na mesma página: max 110mm
       let imgRatio = 16/9;
       if (typeof Image !== 'undefined') {
         try {
@@ -745,11 +785,23 @@ async function generatePDF({
           });
         } catch { imgRatio = 16/9; }
       }
-      heroH = Math.min(110, PAGE_W / imgRatio);
+      // Estima INFO GERAIS pra calcular hero
+      const infoSeg = (tip?.segments?.informacoes_gerais?.info) || null;
+      const repObj  = infoSeg?.representacao || {};
+      const parsed  = infoSeg ? parseDescricao(infoSeg.descricao, !!repObj.nome) : { descricao: '', climate: null };
+      const infoEst = infoSeg ? {
+        ...infoSeg,
+        _descClean: parsed.descricao,
+      } : null;
+      const infoH = estimateInfoGeraisH(infoEst, !!parsed.climate, !!repObj.nome);
+      // Espaço útil = página total - rodapé - margem extra de segurança
+      const PAGE_USABLE = 297 - 17 - 5; // 17mm rodapé, 5mm safety
+      const heroByImg   = PAGE_W / imgRatio;          // se não houvesse limite
+      const heroByFit   = PAGE_USABLE - infoH - 6;    // 6mm gap entre hero e info
+      heroH = Math.max(50, Math.min(130, heroByImg, heroByFit));
       try { doc.addImage(heroB64, 'JPEG', 0, 0, PAGE_W, heroH, undefined, 'SLOW'); } catch(e) {}
-      y = heroH + 8;
+      y = heroH + 6;
     }
-    // (sem destination heading separado — combinamos com info gerais)
 
     const content = buildContent(tip, segments);
     for (let segIdx=0; segIdx<content.length; segIdx++) {
@@ -769,17 +821,16 @@ async function generatePDF({
         doc.setFontSize(11); setF('normal'); doc.setTextColor(220,220,220);
         const subLines = doc.splitTextToSize(cleanText(destLabel(dest)), CONTENT);
         doc.text(subLines, PAGE_W/2, 162, {align:'center'});
-        // Logo no rodapé MAIOR (~70mm, próximo do tamanho da capa principal
-        // mas não tão dominante). Usa logoCover (já compositado em fundo
-        // secondary) reaproveitado, mas escalado pra largura menor.
+        // Logo no rodapé das capas internas — reduzido 20% (era 70mm,
+        // agora 56mm) e deslocado mais pra baixo (margem inferior 12mm
+        // em vez de 22mm).
         if (logoSectionCover) {
-          // Escala respeitando aspect ratio
           const ratio = logoSectionCover.widthMm / Math.max(logoSectionCover.heightMm, 1);
-          const targetW = 70, targetH = targetW / ratio;
+          const targetW = 56;
           const lw = Math.min(targetW, 90);
           const lh = lw / ratio;
           try {
-            doc.addImage(logoSectionCover.dataUrl, 'PNG', (PAGE_W-lw)/2, 297-lh-22, lw, lh, undefined, 'NONE');
+            doc.addImage(logoSectionCover.dataUrl, 'PNG', (PAGE_W-lw)/2, 297-lh-12, lw, lh, undefined, 'NONE');
           } catch (e) {}
         }
         // Conteúdo real na próxima página
@@ -1022,7 +1073,7 @@ async function generatePDF({
             titleLines.length*TITLE_LH +
             (descLines.length ? descLines.length*DESC_LH + 2 : 0) +
             (detLines.length  ? detLines.length*DET_LH        : 0) +
-            (item.site        ? PILL_H + PILL_GAP             : 0) +
+            (hasValidSite(item)? PILL_H + PILL_GAP             : 0) +
             (obsLines.length  ? obsLines.length*OBS_LH        : 0);
           const blockH = Math.max(textBlockH, imgB64 ? IMG_H : 0) + 6;
           // Se não couber na página atual, pula pra próxima ANTES do título
@@ -1042,8 +1093,9 @@ async function generatePDF({
             doc.setFontSize(7.5); doc.setTextColor(130,130,130);
             doc.text(detLines, MARGIN+2, y); y+=detLines.length*DET_LH;
           }
-          // Link pill
-          if (item.site) {
+          // Link pill — só se site cadastrado de verdade (não vazio/whitespace)
+          if (hasValidSite(item)) {
+            const siteUrl = String(item.site).trim();
             const linkText = 'Visitar site';
             doc.setFontSize(8); setF('bold');
             const padX = 5, arrowW = 5.5, gap = 3;
@@ -1061,7 +1113,7 @@ async function generatePDF({
             doc.line(ax-1.6, ay+1.6, ax+1.2, ay-1.2);
             doc.line(ax+1.2, ay-1.2, ax-0.4, ay-1.2);
             doc.line(ax+1.2, ay-1.2, ax+1.2, ay+0.4);
-            try { doc.link(pillX, pillY, pillW, PILL_H, { url: item.site }); } catch(e) {}
+            try { doc.link(pillX, pillY, pillW, PILL_H, { url: siteUrl }); } catch(e) {}
             y += PILL_H + PILL_GAP;
           }
           // Obs
