@@ -13,120 +13,43 @@
        Aliases legados (--gold, --navy, etc.) ficam definidos aqui também
        enquanto o CSS abaixo usa os nomes antigos — Fase B troca tudo. -->
   <link rel="stylesheet" href="css/portal-tokens.css">
-  <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Poppins',sans-serif;background:var(--white);color:var(--navy);min-height:100vh;overflow-x:hidden}
-#loading{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;z-index:9999;transition:opacity .5s}
-#loading .brand{color:var(--gold);font-size:1.25rem;letter-spacing:.3em;font-weight:300}
-.spinner-ring{width:40px;height:40px;border:2px solid rgba(212,175,55,.2);border-top-color:var(--gold);border-radius:50%;animation:spin .9s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.site-header{position:fixed;top:0;width:100%;z-index:100;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:rgba(255,255,255,.9);backdrop-filter:blur(12px);border-bottom:1px solid rgba(229,231,235,.5)}
-.header-logo{font-size:.75rem;letter-spacing:.35em;font-weight:600;color:var(--navy)}
-.header-dest{font-size:.6875rem;letter-spacing:.15em;font-weight:500;color:var(--muted);text-transform:uppercase}
-.header-area-logo{height:26px;object-fit:contain}
-.hero{position:relative;width:100%;height:70svh;min-height:400px;max-height:600px;overflow:hidden;margin-top:64px}
-.hero-img{width:100%;height:100%;object-fit:cover;transform-origin:center;animation:heroZoom 12s ease-out forwards}
-@keyframes heroZoom{from{transform:scale(1.08)}to{transform:scale(1)}}
-.hero-gradient{position:absolute;inset:0;background:linear-gradient(to top,rgba(36,35,98,.85) 0%,rgba(36,35,98,.2) 50%,transparent 100%)}
-.hero-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
-.hero-content{position:absolute;bottom:0;left:0;right:0;padding:32px 32px}
-.hero-label{font-size:.625rem;letter-spacing:.4em;font-weight:500;color:rgba(212,175,55,.9);text-transform:uppercase;margin-bottom:14px;display:block}
-.hero-title{font-size:clamp(2rem,6vw,3.25rem);font-weight:600;color:#fff;line-height:1.15;letter-spacing:-.01em}
-.hero-subtitle{font-size:.875rem;color:rgba(255,255,255,.7);margin-top:8px;font-weight:300;letter-spacing:.05em}
-.hero-cta{display:inline-block;margin-top:28px;padding:14px 32px;background:var(--gold);color:#fff;font-size:.625rem;letter-spacing:.25em;font-weight:600;text-transform:uppercase;text-decoration:none;transition:filter .2s,transform .1s;cursor:pointer;border:none;font-family:'Poppins',sans-serif}
-.hero-cta:hover{filter:brightness(1.1)}
-.hero-cta:active{transform:scale(.97)}
-.content-wrap{max-width:1200px;margin:0 auto}
-.section-label{font-size:.625rem;letter-spacing:.3em;font-weight:500;color:var(--gold);text-transform:uppercase;display:block;margin-bottom:6px}
-.section-title{font-size:1.625rem;font-weight:600;color:var(--navy);line-height:1.2}
-.cat-scroller{display:flex;overflow-x:auto;gap:28px;padding:4px 32px 16px;scrollbar-width:none}
-.cat-scroller::-webkit-scrollbar{display:none}
-.cat-btn{flex:none;display:flex;flex-direction:column;align-items:center;gap:10px;background:none;border:none;cursor:pointer;transition:all .25s}
-.cat-icon{width:60px;height:60px;border-radius:50%;background:var(--light);display:flex;align-items:center;justify-content:center;border:1px solid var(--border);transition:all .25s}
-.cat-btn:hover .cat-icon,.cat-btn.active .cat-icon{background:rgba(36,35,98,.06);border-color:var(--gold)}
-.cat-icon .material-symbols-outlined{font-size:22px;color:var(--navy)}
-.cat-label{font-size:.5625rem;letter-spacing:.15em;font-weight:500;text-transform:uppercase;color:var(--muted);transition:color .25s;white-space:nowrap}
-.cat-btn:hover .cat-label,.cat-btn.active .cat-label{color:var(--gold)}
-.page-section{padding:64px 0}
-.section-header{padding:0 32px;margin-bottom:32px}
-.info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1px;background:var(--border);margin:0 32px}
-.info-cell{background:var(--white);padding:20px}
-.info-cell-label{font-size:.5625rem;letter-spacing:.2em;font-weight:600;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
-.info-cell-value{font-size:.9375rem;font-weight:500;color:var(--navy);line-height:1.4}
-.clima-wrap{overflow-x:auto;margin:24px 32px 0}
-.clima-table{width:100%;border-collapse:collapse;font-size:.8125rem}
-.clima-table th{padding:8px 10px;font-size:.5625rem;letter-spacing:.15em;font-weight:600;text-transform:uppercase;color:var(--muted);background:var(--light);border-bottom:1px solid var(--border);text-align:center}
-.clima-table th:first-child{text-align:left}
-.clima-table td{padding:8px 10px;text-align:center;border-bottom:1px solid var(--border)}
-.clima-table td:first-child{text-align:left;font-weight:600;font-size:.75rem}
-.clima-max{color:#C2440A}.clima-min{color:#1D5FA6}
-.rep-block{margin:24px 32px 0;padding:20px 24px;background:var(--light);border-left:3px solid var(--gold)}
-.rep-title{font-size:.5625rem;letter-spacing:.25em;font-weight:700;text-transform:uppercase;color:var(--gold);margin-bottom:12px}
-.rep-row{font-size:.875rem;margin-bottom:6px;color:var(--muted)}
-.rep-row strong{color:var(--navy)}.rep-row a{color:var(--gold);text-decoration:none}
-.hero-card{position:relative;overflow:hidden;aspect-ratio:16/9;width:100%;cursor:pointer;max-height:400px}
-.hero-card img{width:100%;height:100%;object-fit:cover;transition:transform .7s ease}
-.hero-card:hover img{transform:scale(1.06)}
-.card-gradient{position:absolute;inset:0;background:linear-gradient(to top,rgba(36,35,98,.88) 0%,transparent 55%)}
-.card-content{position:absolute;bottom:20px;left:24px;right:24px}
-.card-supertitle{font-size:.5625rem;letter-spacing:.4em;font-weight:500;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
-.card-title{font-size:1.375rem;font-weight:600;color:#fff;line-height:1.2}
-.card-underline{height:1px;width:36px;background:var(--gold);margin-top:14px;transform:scaleX(0);transform-origin:left;transition:transform .5s}
-.hero-card:hover .card-underline{transform:scaleX(1)}
-.cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1px;background:var(--border);margin:0 32px}
-.place-card{background:var(--white)}
-.place-card-img{position:relative;aspect-ratio:16/10;overflow:hidden;max-height:220px}
-.place-card-img img{width:100%;height:100%;object-fit:cover;transition:transform .6s}
-.place-card:hover .place-card-img img{transform:scale(1.05)}
-.place-card-placeholder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;aspect-ratio:16/10;max-height:220px}
-.place-card-body{padding:20px}
-.place-cat-label{font-size:.5rem;letter-spacing:.25em;font-weight:700;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
-.place-card-title{font-size:1rem;font-weight:600;color:var(--navy);margin-bottom:8px;line-height:1.3}
-.place-card-desc{font-size:.8125rem;color:var(--muted);line-height:1.6;margin-bottom:12px}
-.place-card-details{display:flex;flex-wrap:wrap;gap:10px;font-size:.75rem;color:var(--muted)}
-.place-card-details a{color:var(--gold);text-decoration:none}
-.place-card-obs{margin-top:10px;font-size:.75rem;color:var(--muted);font-style:italic;border-top:1px solid var(--border);padding-top:10px}
-.bento-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border)}
-.bento-card{position:relative;overflow:hidden;aspect-ratio:4/3}
-.bento-card img{width:100%;height:100%;object-fit:cover;transition:transform .7s}
-.bento-card:hover img{transform:scale(1.07)}
-.simple-list{margin:0 32px}
-.simple-item{padding:20px 0;border-bottom:1px solid var(--border)}
-.simple-item:last-child{border-bottom:none}
-.simple-item-title{font-size:.9375rem;font-weight:600;color:var(--navy);margin-bottom:6px}
-.simple-item-desc{font-size:.8125rem;color:var(--muted);line-height:1.6}
-.agenda-period{display:inline-flex;align-items:center;gap:8px;margin:0 32px 20px;font-size:.75rem;color:var(--gold);font-weight:500;letter-spacing:.05em}
-.agenda-period::before{content:'';width:20px;height:1px;background:var(--gold)}
-.seg-heading{display:flex;align-items:center;gap:14px;padding:0 32px;margin-bottom:28px}
-.seg-heading-bar{width:3px;height:28px;background:var(--gold);flex-shrink:0}
-.seg-heading-text{font-size:1rem;font-weight:600;color:var(--navy);letter-spacing:.02em}
-.bottom-nav{position:fixed;bottom:0;left:0;width:100%;z-index:100;display:flex;overflow-x:auto;gap:0;padding:0 24px;background:rgba(255,255,255,.95);backdrop-filter:blur(10px);border-top:1px solid var(--border);scrollbar-width:none}
-.bottom-nav::-webkit-scrollbar{display:none}
-.bottom-nav a{flex:none;padding:18px 16px;font-size:.625rem;letter-spacing:.18em;font-weight:600;text-transform:uppercase;text-decoration:none;color:var(--muted);white-space:nowrap;border-bottom:2px solid transparent;transition:all .2s}
-.bottom-nav a.active,.bottom-nav a:hover{color:var(--navy);border-bottom-color:var(--gold)}
-.dest-tabs{display:flex;overflow-x:auto;gap:0;border-bottom:1px solid var(--border);padding:0 32px;scrollbar-width:none}
-.dest-tabs::-webkit-scrollbar{display:none}
-.dest-tab{flex:none;padding:16px 20px;font-size:.75rem;letter-spacing:.12em;font-weight:600;text-transform:uppercase;background:none;border:none;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all .2s;margin-bottom:-1px;font-family:'Poppins',sans-serif}
-.dest-tab.active{color:var(--navy);border-bottom-color:var(--gold)}
-.site-footer{background:var(--navy);padding:40px 32px;text-align:center;margin-bottom:64px}
-.footer-brand{color:var(--gold);font-size:.75rem;letter-spacing:.3em;font-weight:600}
-.footer-sub{color:rgba(255,255,255,.4);font-size:.6875rem;margin-top:8px}
-.error-state{min-height:80vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:40px;text-align:center;color:var(--muted)}
-.error-state h2{color:var(--gold);font-size:1.25rem;font-weight:600}
-@media(max-width:600px){.hero{height:55svh;min-height:320px;max-height:450px}.hero-content{padding:24px 20px}.hero-title{font-size:clamp(1.75rem,5vw,2.5rem)}.hero-card{aspect-ratio:16/10;max-height:280px}.bento-card{aspect-ratio:1/1}.cards-grid{margin:0;grid-template-columns:1fr}.place-card-img{max-height:180px}.info-grid{margin:0}.simple-list{margin:0 20px}.section-header{padding:0 20px}.seg-heading{padding:0 20px}.cat-scroller{padding:4px 20px 16px}.rep-block{margin:24px 20px 0}.clima-wrap{margin:24px 20px 0}.agenda-period{margin:0 20px 20px}.page-section{padding:40px 0}}
-  </style>
+  <link rel="stylesheet" href="css/portal-view.css">
 </head>
 <body>
-<div id="loading"><div class="spinner-ring"></div><div class="brand">PRIMETOUR</div></div>
+<div id="loading"><div class="spinner-ring"></div><div class="brand">CITY GUIDES</div></div>
+
+<!-- Topbar fixo com hambúrguer (mobile) + título + logo da área -->
 <header class="site-header" id="site-header" style="display:none;">
-  <span class="header-logo">PRIMETOUR</span>
-  <span class="header-dest" id="header-dest"></span>
+  <button class="menu-toggle" id="menu-toggle" aria-label="Abrir menu">
+    <span class="material-symbols-outlined">menu</span>
+  </button>
+  <div class="header-title">
+    <span class="header-brand">City Guides</span>
+    <span class="header-dest" id="header-dest"></span>
+  </div>
   <img id="area-logo" class="header-area-logo" style="display:none;" alt="">
 </header>
+
+<!-- Side menu (mobile) — overlay + drawer -->
+<div class="side-menu-overlay" id="side-menu-overlay"></div>
+<aside class="side-menu" id="side-menu" aria-label="Menu de navegação">
+  <div class="side-menu-header">
+    <span class="side-menu-title">Seções</span>
+    <button class="side-menu-close" id="side-menu-close" aria-label="Fechar menu">
+      <span class="material-symbols-outlined">close</span>
+    </button>
+  </div>
+  <ul class="side-menu-list" id="side-menu-list"></ul>
+</aside>
+
+<!-- Bottom-nav antigo mantido como fallback (escondido por CSS) -->
 <nav class="bottom-nav" id="bottom-nav" style="display:none;"></nav>
+
 <div id="app"></div>
+
 <footer class="site-footer" id="site-footer" style="display:none;">
-  <div class="footer-brand">PORTAL DE DICAS · PRIMETOUR</div>
+  <img id="footer-logo" class="footer-logo" style="display:none;" alt="">
+  <div class="footer-brand">CITY GUIDES</div>
   <div class="footer-sub" id="footer-date"></div>
 </footer>
 
@@ -153,6 +76,9 @@ const SEGMENTS=[
 
 const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const shade=(hex,amt)=>{const n=parseInt(hex.replace('#',''),16);const r=Math.min(255,Math.max(0,(n>>16)+amt));const g=Math.min(255,Math.max(0,((n>>8)&0xff)+amt));const b=Math.min(255,Math.max(0,(n&0xff)+amt));return '#'+((r<<16)|(g<<8)|b).toString(16).padStart(6,'0')};
+// Normaliza URL: adiciona https:// se não tiver protocolo (mesmo helper do PDF)
+const normalizeUrl=u=>{const s=String(u||'').trim();if(!s)return '';return /^[a-z][a-z0-9+.-]*:/i.test(s)?s:'https://'+s;};
+const hasSite=item=>item&&item.site&&String(item.site).trim().length>0;
 
 const app=initializeApp(firebaseConfig,'portal-view');
 const db=getFirestore(app);
@@ -174,29 +100,113 @@ const db=getFirestore(app);
   // aliases legados (--gold/--navy) são derivados automaticamente
   // em css/portal-tokens.css.
   applyPortalTheme({ colors: data.colors || {} });
-  if(data.areaLogoUrl){const img=document.getElementById('area-logo');img.src=data.areaLogoUrl;img.style.display='block';}
+  if(data.areaLogoUrl){
+    const img=document.getElementById('area-logo');img.src=data.areaLogoUrl;img.style.display='block';
+    const fImg=document.getElementById('footer-logo');fImg.src=data.areaLogoUrl;fImg.style.display='block';
+  }
 
   const allTips=data.tipData||[];
   const segments=data.segments||[];
   const imagesByDest=data.imagesByDest||{};
   const activeSegs=segments.filter(k=>allTips.some(({tip})=>{const seg=tip?.segments?.[k];if(!seg)return false;if(seg.info&&Object.values(seg.info).some(v=>v&&String(v).trim()))return true;return Array.isArray(seg.items)&&seg.items.length>0;}));
 
-  const nav=document.getElementById('bottom-nav');
-  if(activeSegs.length>1){
-    nav.style.display='flex';
-    activeSegs.forEach((k,i)=>{const seg=SEGMENTS.find(s=>s.key===k);const a=document.createElement('a');a.href=`#seg-${k}`;a.textContent=seg?.label||k;if(i===0)a.className='active';nav.appendChild(a);});
-  }
+  // Side menu (hambúrguer mobile + sidebar scrollspy desktop)
+  populateSideMenu(activeSegs);
+  wireSideMenu();
+  wireScrollEffects();
+
   document.getElementById('site-header').style.display='flex';
   document.getElementById('site-footer').style.display='block';
 
   if(allTips.length>1){renderMulti(appEl,allTips,segments,activeSegs,imagesByDest);}
   else{const{tip,dest}=allTips[0]||{};renderSingle(appEl,tip,dest,segments,activeSegs,imagesByDest[dest?.id]||{},true);}
 
-  new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){const id=e.target.id.replace('seg-','');nav.querySelectorAll('a').forEach(a=>a.classList.toggle('active',a.getAttribute('href')===`#seg-${id}`));}});},{threshold:0.3}).observe=function(el){document.querySelectorAll('[id^="seg-"]').forEach(el=>this.observe(el));};
-  setTimeout(()=>{const io=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting){const id=e.target.id.replace('seg-','');nav.querySelectorAll('a').forEach(a=>a.classList.toggle('active',a.getAttribute('href')===`#seg-${id}`));}});},{threshold:0.25});document.querySelectorAll('[id^="seg-"]').forEach(el=>io.observe(el));},500);
+  // Scrollspy: marca o item ativo no side-menu conforme rola
+  setTimeout(() => {
+    const items = document.querySelectorAll('[id^="seg-"]');
+    if (!items.length) return;
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          const id = e.target.id.replace('seg-', '');
+          document.querySelectorAll('#side-menu-list a').forEach(a =>
+            a.classList.toggle('active', a.getAttribute('href') === `#seg-${id}`));
+        }
+      });
+    }, { threshold: 0.25, rootMargin: '-80px 0px -50% 0px' });
+    items.forEach(el => io.observe(el));
+  }, 400);
 
   const loading=document.getElementById('loading');loading.style.opacity='0';setTimeout(()=>loading.style.display='none',500);
 })();
+
+/* ─── Side menu (hambúrguer mobile + scrollspy sidebar desktop) ─── */
+function populateSideMenu(activeSegs){
+  const list = document.getElementById('side-menu-list');
+  if (!list) return;
+  list.innerHTML = activeSegs.map((k, i) => {
+    const seg = SEGMENTS.find(s => s.key === k);
+    const icon = seg?.icon || 'arrow_forward';
+    return `<li><a href="#seg-${k}"${i===0?' class="active"':''}>
+      <span class="material-symbols-outlined">${icon}</span>
+      ${esc(seg?.label || k)}
+    </a></li>`;
+  }).join('');
+  // Click fecha o menu (mobile) e faz smooth scroll
+  list.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', (e) => {
+      const id = a.getAttribute('href').slice(1);
+      const target = document.getElementById(id);
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        closeSideMenu();
+        history.replaceState(null, '', a.getAttribute('href'));
+      }
+    });
+  });
+}
+function openSideMenu(){
+  document.getElementById('side-menu')?.classList.add('open');
+  document.getElementById('side-menu-overlay')?.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeSideMenu(){
+  document.getElementById('side-menu')?.classList.remove('open');
+  document.getElementById('side-menu-overlay')?.classList.remove('open');
+  document.body.style.overflow = '';
+}
+function wireSideMenu(){
+  document.getElementById('menu-toggle')?.addEventListener('click', openSideMenu);
+  document.getElementById('side-menu-close')?.addEventListener('click', closeSideMenu);
+  document.getElementById('side-menu-overlay')?.addEventListener('click', closeSideMenu);
+  // ESC fecha
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSideMenu(); });
+}
+
+/* ─── Scroll effects: topbar shadow + parallax leve no hero ──── */
+function wireScrollEffects(){
+  const header = document.getElementById('site-header');
+  const onScroll = () => {
+    const y = window.scrollY || window.pageYOffset;
+    // Topbar ganha sombra/borda quando rola
+    if (header) header.classList.toggle('scrolled', y > 8);
+    // Parallax: hero img move 35% mais devagar que o scroll
+    const heroImg = document.querySelector('.hero-img');
+    if (heroImg && y < window.innerHeight) {
+      heroImg.style.transform = `translateY(${y * 0.35}px)`;
+    }
+  };
+  // requestAnimationFrame pra performance
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (!ticking) {
+      window.requestAnimationFrame(() => { onScroll(); ticking = false; });
+      ticking = true;
+    }
+  }, { passive: true });
+  onScroll();
+}
 
 function renderMulti(container,allTips,segments,activeSegs,imagesByDest){
   const fd=allTips[0]?.dest;document.getElementById('header-dest').textContent=[fd?.city,fd?.country].filter(Boolean).join(', ');
@@ -243,7 +253,7 @@ function renderInfo(sd,data){
   if(!fields.length&&!inf.clima)return '';
   const cli=inf.clima||{};const hasC=MONTHS.some((_,i)=>cli[`max_${i}`]||cli[`min_${i}`]);
   const rep=inf.representacao||{};
-  return `${segHead(sd)}<div class="info-grid">${fields.map(([l,v])=>`<div class="info-cell"><div class="info-cell-label">${esc(l)}</div><div class="info-cell-value">${esc(v)}</div></div>`).join('')}</div>${hasC?`<div class="clima-wrap"><table class="clima-table"><thead><tr><th>°C</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}</tr></thead><tbody><tr class="clima-max"><td>Máx ↑</td>${MONTHS.map((_,i)=>`<td>${cli[`max_${i}`]??'—'}</td>`).join('')}</tr><tr class="clima-min"><td>Mín ↓</td>${MONTHS.map((_,i)=>`<td>${cli[`min_${i}`]??'—'}</td>`).join('')}</tr></tbody></table></div>`:''}${rep.nome?`<div class="rep-block"><div class="rep-title">Representação Brasileira</div>${rep.nome?`<div class="rep-row"><strong>Nome:</strong> ${esc(rep.nome)}</div>`:''}${rep.endereco?`<div class="rep-row"><strong>Endereço:</strong> ${esc(rep.endereco)}</div>`:''}${rep.telefone?`<div class="rep-row"><strong>Telefone:</strong> ${esc(rep.telefone)}</div>`:''}${rep.link?`<div class="rep-row"><strong>Site:</strong> <a href="${esc(rep.link)}" target="_blank">${esc(rep.link)}</a></div>`:''}</div>`:''}`;
+  return `${segHead(sd)}<div class="info-grid">${fields.map(([l,v])=>`<div class="info-cell"><div class="info-cell-label">${esc(l)}</div><div class="info-cell-value">${esc(v)}</div></div>`).join('')}</div>${hasC?`<div class="clima-wrap"><table class="clima-table"><thead><tr><th>°C</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}</tr></thead><tbody><tr class="clima-max"><td>Máx ↑</td>${MONTHS.map((_,i)=>`<td>${cli[`max_${i}`]??'—'}</td>`).join('')}</tr><tr class="clima-min"><td>Mín ↓</td>${MONTHS.map((_,i)=>`<td>${cli[`min_${i}`]??'—'}</td>`).join('')}</tr></tbody></table></div>`:''}${rep.nome?`<div class="rep-block"><div class="rep-title">Representação Brasileira</div>${rep.nome?`<div class="rep-row"><strong>Nome:</strong> ${esc(rep.nome)}</div>`:''}${rep.endereco?`<div class="rep-row"><strong>Endereço:</strong> ${esc(rep.endereco)}</div>`:''}${rep.telefone?`<div class="rep-row"><strong>Telefone:</strong> ${esc(rep.telefone)}</div>`:''}${rep.link?`<div class="rep-row"><strong>Site:</strong> <a href="${esc(normalizeUrl(rep.link))}" target="_blank" rel="noopener noreferrer">${esc(rep.link)}</a></div>`:''}</div>`:''}`;
 }
 
 function renderSimple(sd,data){
@@ -310,7 +320,28 @@ function renderPlaces(sd,data,imgs,isAgenda){
 
   const ph=(lbl)=>`<div class="place-card-placeholder" style="background:linear-gradient(135deg,${navy}18 0%,${gold}22 100%);"><span style="font-size:.5rem;letter-spacing:.3em;font-weight:600;text-transform:uppercase;color:${navy};opacity:.4;">${esc(lbl||'')}</span></div>`;
 
-  const card=(item,idx,segDef=null)=>{const img=getImg(item,idx,segDef);return `<div class="place-card"><div class="place-card-img">${img?`<img src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy"><div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(36,35,98,.12),transparent);pointer-events:none;"></div>`:ph(item.titulo)}</div><div class="place-card-body">${item.categoria?`<div class="place-cat-label">${esc(item.categoria)}</div>`:''}<div class="place-card-title">${esc(item.titulo)}</div>${isAgenda&&(item.periodo||item.periodoIndeterminado)?`<div style="font-size:.75rem;color:var(--gold);margin-bottom:8px;font-weight:500;">◷ ${item.periodoIndeterminado?'Tempo indeterminado':esc(item.periodo||'')}</div>`:''}${item.descricao?`<div class="place-card-desc">${esc(item.descricao)}</div>`:''}<div class="place-card-details">${item.endereco?`<span>📍 ${esc(item.endereco)}</span>`:''}${item.telefone?`<span>📞 ${esc(item.telefone)}</span>`:''}${item.site?`<a href="${esc(item.site)}" target="_blank" rel="noopener">🌐 Site oficial</a>`:''}</div>${item.observacoes?`<div class="place-card-obs">💡 ${esc(item.observacoes)}</div>`:''}</div></div>`;};
+  const card=(item,idx,segDef=null)=>{
+    const img=getImg(item,idx,segDef);
+    const detailsParts = [];
+    if (item.endereco) detailsParts.push(`<span>📍 ${esc(item.endereco)}</span>`);
+    if (item.telefone) detailsParts.push(`<span>📞 ${esc(item.telefone)}</span>`);
+    return `<div class="place-card">
+      <div class="place-card-img">${img
+        ? `<img src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`
+        : ph(item.titulo)}</div>
+      <div class="place-card-body">
+        ${item.categoria?`<div class="place-cat-label">${esc(item.categoria)}</div>`:''}
+        <div class="place-card-title">${esc(item.titulo)}</div>
+        ${isAgenda&&(item.periodo||item.periodoIndeterminado)
+          ? `<div style="font-size:var(--portal-fs-xs);color:var(--portal-primary);font-weight:600;">◷ ${item.periodoIndeterminado?'Tempo indeterminado':esc(item.periodo||'')}</div>`
+          : ''}
+        ${item.descricao?`<div class="place-card-desc">${esc(item.descricao)}</div>`:''}
+        ${detailsParts.length?`<div class="place-card-details">${detailsParts.join('')}</div>`:''}
+        ${hasSite(item)?`<a class="pill-link" href="${esc(normalizeUrl(item.site))}" target="_blank" rel="noopener noreferrer">Visitar site</a>`:''}
+        ${item.observacoes?`<div class="place-card-obs">💡 ${esc(item.observacoes)}</div>`:''}
+      </div>
+    </div>`;
+  };
 
   const heroCard=(item,idx,segDef=null)=>{const img=getImg(item,idx,segDef);return `<div class="hero-card"><div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy} 0%,${shade(navy,-20)} 100%);"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle">${esc(item.categoria)}</div>`:''}<div class="card-title">${esc(item.titulo)}</div><div class="card-underline"></div></div></div>`;};
 

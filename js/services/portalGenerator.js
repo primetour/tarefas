@@ -259,6 +259,47 @@ export function drawIcon(doc, kind, x, y, size, color) {
  * no canvas, resultado vira JPEG sólido — sem card branco visível.
  * Em Node (harness), retorna a dataURL original pra teste de layout.
  */
+/* ─── Cover crop (browser) ─────────────────────────────────
+ * Recebe dataURL de uma imagem e retorna outra com tamanho EXATO
+ * (em px @300dpi pra mm alvo) usando "cover fit" — preenche toda
+ * a área alvo cortando o excesso centralizado, sem distorção.
+ *
+ * Usado pro hero do PDF: foto sempre full width, mesmo quando a
+ * altura disponível é diferente do aspect ratio original.
+ *
+ * Em Node (harness), retorna a dataURL original.
+ */
+export async function coverCropImage({ dataUrl, finalWmm, finalHmm, dpi = 300 }) {
+  if (typeof Image === 'undefined' || typeof document === 'undefined') {
+    return dataUrl;
+  }
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload  = () => resolve(im);
+    im.onerror = reject;
+    im.src = dataUrl;
+  });
+  // mm → px (1mm = dpi/25.4 px; @300dpi ≈ 11.81)
+  const pxPerMm = dpi / 25.4;
+  const wPx = Math.max(64, Math.round(finalWmm * pxPerMm));
+  const hPx = Math.max(64, Math.round(finalHmm * pxPerMm));
+  const canvas = document.createElement('canvas');
+  canvas.width = wPx; canvas.height = hPx;
+  const ctx = canvas.getContext('2d');
+  // Calcula scale pra cover (preencher) e crop centralizado
+  const scaleW = wPx / Math.max(img.naturalWidth, 1);
+  const scaleH = hPx / Math.max(img.naturalHeight, 1);
+  const scale = Math.max(scaleW, scaleH);
+  const drawW = img.naturalWidth * scale;
+  const drawH = img.naturalHeight * scale;
+  const dx = (wPx - drawW) / 2;
+  const dy = (hPx - drawH) / 2;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, dx, dy, drawW, drawH);
+  return canvas.toDataURL('image/jpeg', 0.92);
+}
+
 /**
  * Compositа logo em canvas e retorna dataURL PNG + dimensões reais.
  * O canvas é dimensionado pelo aspect ratio NATURAL do logo (não pelo
@@ -821,20 +862,23 @@ async function generatePDF({
       const infoH = estimateInfoGeraisH(infoEst, !!parsed.climate, !!repObj.nome);
       // Espaço útil = página total - rodapé - margem extra de segurança
       const PAGE_USABLE = 297 - 17 - 5;
-      const heroByImg   = PAGE_W / imgRatio;         // altura natural se hero ocupar largura toda
-      const heroByFit   = PAGE_USABLE - infoH - 14;  // 14mm gap maior entre hero e info
+      const heroByImg   = PAGE_W / imgRatio;
+      const heroByFit   = PAGE_USABLE - infoH - 14;
       heroH = Math.max(50, Math.min(130, heroByImg, heroByFit));
-      // PRESERVA aspect ratio: se a altura disponível é menor que a natural,
-      // REDUZ a largura proporcionalmente em vez de esticar a imagem.
-      // Resultado: foto bem proporcional, centralizada, com margem nas laterais.
-      let heroW = PAGE_W;
-      if (heroH < heroByImg) {
-        // hero cortada na altura → ajusta largura mantendo proporção
-        heroW = Math.min(PAGE_W, heroH * imgRatio);
+      // FULL WIDTH sempre — cover crop centraliza e corta o excesso
+      // sem distorcer. Resultado: foto edge-to-edge na largura, com
+      // altura proporcional ao volume de texto da info gerais.
+      let imgForPdf = heroB64;
+      if (heroH !== heroByImg) {
+        // Só crop se a altura final for diferente da natural
+        try {
+          imgForPdf = await coverCropImage({
+            dataUrl: heroB64, finalWmm: PAGE_W, finalHmm: heroH,
+          });
+        } catch (e) { /* fallback original */ }
       }
-      const heroX = (PAGE_W - heroW) / 2;
-      try { doc.addImage(heroB64, 'JPEG', heroX, 0, heroW, heroH, undefined, 'SLOW'); } catch(e) {}
-      y = heroH + 14; // gap maior antes do título "INFORMAÇÕES GERAIS"
+      try { doc.addImage(imgForPdf, 'JPEG', 0, 0, PAGE_W, heroH, undefined, 'SLOW'); } catch(e) {}
+      y = heroH + 14;
     }
 
     const content = buildContent(tip, segments);
