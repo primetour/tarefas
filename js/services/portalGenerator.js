@@ -49,70 +49,24 @@ export { cleanText };
  * Substitui Helvetica por Poppins (Regular + Bold + Italic). 1× por
  * sessão via jsDelivr → injeta na VFS do doc.
  */
-let _poppinsCache = null;
-// Múltiplas URLs candidatas — algumas falham por CORS/404 dependendo do
-// browser. Tenta em ordem até uma funcionar. Mais resiliente que single CDN.
-const POPPINS_SOURCES = [
-  // jsDelivr → unpkg gh raw (bypass cache)
-  {
-    regular: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Regular.ttf',
-    bold:    'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Bold.ttf',
-    italic:  'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Italic.ttf',
-  },
-  // Fallback: github raw via codetabs (CORS proxy genérico)
-  {
-    regular: 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Regular.ttf',
-    bold:    'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Bold.ttf',
-    italic:  'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Italic.ttf',
-  },
-];
-async function _fetchAsBase64(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const buf = await res.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  let bin = ''; const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-  }
-  return (typeof btoa === 'function' ? btoa(bin) : Buffer.from(bin, 'binary').toString('base64'));
-}
-async function _tryFetchSource(src) {
-  const [regular, bold, italic] = await Promise.all([
-    _fetchAsBase64(src.regular),
-    _fetchAsBase64(src.bold),
-    _fetchAsBase64(src.italic),
-  ]);
-  return { regular, bold, italic };
-}
+// Poppins agora vem EMBEDADA no bundle (base64 em portalFonts.js) — sem
+// dependência de CDN externa. Tamanho extra do bundle: ~500KB. Vale a
+// pena pra garantir consistência tipográfica em qualquer ambiente.
+import {
+  POPPINS_REGULAR_B64, POPPINS_BOLD_B64, POPPINS_ITALIC_B64,
+} from './portalFonts.js';
+
 export async function loadPoppinsOnDoc(doc) {
-  if (!_poppinsCache) {
-    let lastErr = null;
-    for (const src of POPPINS_SOURCES) {
-      try {
-        _poppinsCache = await _tryFetchSource(src);
-        console.info('[portalPdf] Poppins carregada de', src.regular);
-        break;
-      } catch (e) {
-        lastErr = e;
-        console.warn('[portalPdf] Source falhou:', src.regular, '-', e.message);
-      }
-    }
-    if (!_poppinsCache) throw lastErr || new Error('Todas as fontes falharam');
-  }
-  doc.addFileToVFS('Poppins-Regular.ttf', _poppinsCache.regular);
+  doc.addFileToVFS('Poppins-Regular.ttf', POPPINS_REGULAR_B64);
   doc.addFont('Poppins-Regular.ttf', 'Poppins', 'normal');
-  doc.addFileToVFS('Poppins-Bold.ttf', _poppinsCache.bold);
+  doc.addFileToVFS('Poppins-Bold.ttf', POPPINS_BOLD_B64);
   doc.addFont('Poppins-Bold.ttf', 'Poppins', 'bold');
-  doc.addFileToVFS('Poppins-Italic.ttf', _poppinsCache.italic);
+  doc.addFileToVFS('Poppins-Italic.ttf', POPPINS_ITALIC_B64);
   doc.addFont('Poppins-Italic.ttf', 'Poppins', 'italic');
   doc.setFont('Poppins', 'normal');
-  // Sanity check: verifica se a fonte foi de fato registrada
   const fontList = doc.getFontList ? doc.getFontList() : {};
-  if (!fontList.Poppins) {
-    throw new Error('Poppins não foi registrada no doc.getFontList()');
-  }
-  console.info('[portalPdf] Poppins ativa no doc:', Object.keys(fontList.Poppins));
+  if (!fontList.Poppins) throw new Error('Poppins não registrou no doc.getFontList()');
+  console.info('[portalPdf] Poppins ativa:', Object.keys(fontList.Poppins).join(','));
 }
 
 /* ─── Parser de DESCRIÇÃO ──────────────────────────────────
@@ -242,15 +196,17 @@ export function drawIcon(doc, kind, x, y, size, color) {
       }
       break;
     }
-    case 'phone': { // handset clássico (linha curva)
-      doc.setLineWidth(size*0.13);
-      // Forma de C girado: 2 segmentos de linha + 1 arco
-      // Topo do handset (ear piece)
-      doc.line(cx - size*0.32, cy - size*0.25, cx - size*0.10, cy - size*0.32);
-      // diagonal central
-      doc.line(cx - size*0.10, cy - size*0.32, cx + size*0.32, cy + size*0.10);
-      // base (mouth piece)
-      doc.line(cx + size*0.32, cy + size*0.10, cx + size*0.25, cy + size*0.32);
+    case 'phone': { // handset clássico — formato preenchido reconhecível
+      // Desenha um handset estilizado: 2 capsulas (ouvido/boca) + corpo
+      // diagonal grosso, todo preenchido
+      doc.setFillColor(r,g,b); doc.setDrawColor(r,g,b);
+      // Cápsula superior (parte do ouvido)
+      doc.ellipse(cx - size*0.22, cy - size*0.22, size*0.13, size*0.09, 'F');
+      // Cápsula inferior (parte da boca)
+      doc.ellipse(cx + size*0.22, cy + size*0.22, size*0.13, size*0.09, 'F');
+      // Corpo diagonal conectando as cápsulas (linha grossa)
+      doc.setLineWidth(size*0.16);
+      doc.line(cx - size*0.18, cy - size*0.18, cx + size*0.18, cy + size*0.18);
       break;
     }
     case 'pin': // marcador de mapa
@@ -270,9 +226,21 @@ export function drawIcon(doc, kind, x, y, size, color) {
  * no canvas, resultado vira JPEG sólido — sem card branco visível.
  * Em Node (harness), retorna a dataURL original pra teste de layout.
  */
-export async function compositeLogoOnBackground({ logoDataUrl, bgColorHex, finalWmm, finalHmm, padPct = 0.10 }) {
+/**
+ * Compositа logo em canvas e retorna dataURL PNG + dimensões reais.
+ * O canvas é dimensionado pelo aspect ratio NATURAL do logo (não pelo
+ * bounds fixo) — assim o resultado fica do mesmo tamanho que o logo
+ * original, sem áreas de fundo "vazias" ao redor que pareciam "card".
+ *
+ * @returns { dataUrl, widthMm, heightMm } — usar widthMm/heightMm direto no addImage
+ */
+export async function compositeLogoOnBackground({ logoDataUrl, bgColorHex, maxWmm, maxHmm, padPct = 0.04 }) {
+  // Defaults backward-compat: aceita finalWmm/finalHmm também
+  maxWmm = maxWmm ?? arguments[0]?.finalWmm ?? 80;
+  maxHmm = maxHmm ?? arguments[0]?.finalHmm ?? 45;
   if (typeof Image === 'undefined' || typeof document === 'undefined') {
-    return logoDataUrl;
+    // Node/harness — sem composite real, retorna dataURL + dims máximas
+    return { dataUrl: logoDataUrl, widthMm: maxWmm, heightMm: maxHmm };
   }
   const img = await new Promise((resolve, reject) => {
     const im = new Image();
@@ -280,25 +248,25 @@ export async function compositeLogoOnBackground({ logoDataUrl, bgColorHex, final
     im.onerror = reject;
     im.src = logoDataUrl;
   });
-  // 1mm ≈ 11.81px @ 300dpi
-  const wPx = Math.max(64, Math.round(finalWmm * 11.81));
-  const hPx = Math.max(64, Math.round(finalHmm * 11.81));
+  const naturalRatio = img.naturalWidth / Math.max(img.naturalHeight, 1);
+  // Calcula dimensões finais respeitando aspect ratio + bounds máximos
+  let finalWmm = maxWmm, finalHmm = finalWmm / naturalRatio;
+  if (finalHmm > maxHmm) { finalHmm = maxHmm; finalWmm = finalHmm * naturalRatio; }
+  // Canvas em pixels (300dpi → 1mm ≈ 11.81px)
+  const wPx = Math.max(96, Math.round(finalWmm * 11.81));
+  const hPx = Math.max(96, Math.round(finalHmm * 11.81));
   const canvas = document.createElement('canvas');
   canvas.width = wPx; canvas.height = hPx;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = bgColorHex;
   ctx.fillRect(0, 0, wPx, hPx);
-  const ratio = img.naturalWidth / Math.max(img.naturalHeight, 1);
-  const usableW = wPx * (1 - padPct * 2);
-  const usableH = hPx * (1 - padPct * 2);
-  let lw = usableW, lh = lw / ratio;
-  if (lh > usableH) { lh = usableH; lw = lh * ratio; }
+  // Logo preenche o canvas inteiro (com pad interno minimo)
+  const drawW = wPx * (1 - padPct * 2);
+  const drawH = hPx * (1 - padPct * 2);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, (wPx - lw) / 2, (hPx - lh) / 2, lw, lh);
-  // PNG (lossless) — JPEG distorcia ligeiramente a cor de fundo, fazendo
-  // o composite ficar visível como "card" sutil sobre a capa monocromática.
-  return canvas.toDataURL('image/png');
+  ctx.drawImage(img, padPct * wPx, padPct * hPx, drawW, drawH);
+  return { dataUrl: canvas.toDataURL('image/png'), widthMm: finalWmm, heightMm: finalHmm };
 }
 
 /* ─── CDN libraries ───────────────────────────────────────── */
@@ -404,8 +372,10 @@ function buildContent(tip, segments) {
   return segs;
 }
 
+// Label de destino: cidade + país. SEM continente (era ruído visual,
+// "América do Norte" não agrega informação útil pro cliente).
 function destLabel(dest) {
-  return [dest?.city, dest?.country, dest?.continent].filter(Boolean).join(', ');
+  return [dest?.city, dest?.country].filter(Boolean).join(', ');
 }
 
 /* ─── DOCX ────────────────────────────────────────────────── */
@@ -416,40 +386,31 @@ function pickImg(item, idx, imgs, segKey) {
   const overrides = imgs._overrides || {};
   const title = (item?.titulo || item?.title || '').toLowerCase().trim();
 
-  // OVERRIDES: tenta 3 estratégias em ordem
-  // 1. match por idx exato (caminho original)
-  // 2. match por título (caso a lista de items tenha sido reordenada)
-  // 3. match por placeName parcial dentro dos overrides
+  // ESTRATÉGIA CONSERVADORA: só retorna foto se houver match EXPLÍCITO.
+  // Antes a galeria automática "casava por keyword" e mostrava fotos
+  // aleatórias (ex: foto de Central Park aparecia em Restaurantes).
+  // Agora: 1) override explícito por idx, 2) override por título exato,
+  // 3) gallery match por placeName EXATO. Sem mais matching por keyword.
+
+  // (1) Override por idx
   if (segKey && overrides[segKey]) {
     const segOv = overrides[segKey];
-    // (1) idx
     const ovByIdx = segOv[idx] || segOv[String(idx)];
     if (ovByIdx?.url) return ovByIdx.url;
-    // (2) por título (override pode ter campo `name` ou `placeName`)
-    if (title) {
+    // (2) Override por título: só match exato ou containment forte
+    if (title && title.length >= 4) {
       for (const k of Object.keys(segOv)) {
         const o = segOv[k];
         const oName = (o?.name || o?.placeName || '').toLowerCase().trim();
-        if (oName && (oName === title || oName.includes(title.slice(0,12)) || title.includes(oName.slice(0,12)))) {
-          if (o.url) return o.url;
-        }
+        if (!oName || oName.length < 4) continue;
+        if (oName === title) return o.url || null;
       }
     }
   }
+  // (3) Gallery: APENAS placeName EXATO (não mais partial/keywords)
   const gallery = imgs.gallery || [];
-  if (!title) return null;
-  // placeName exact
-  let m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
-  // placeName partial — exige >= 6 chars de overlap
-  if (!m) m = gallery.find(g => g.placeName && g.placeName.length >= 6 &&
-    (title.includes(g.placeName.toLowerCase()) || g.placeName.toLowerCase().includes(title.slice(0,15))));
-  // name/tag keywords — exige palavras com >=4 chars
-  if (!m) {
-    const words = title.split(/\s+/).filter(w => w.length > 3);
-    m = gallery.find(g => words.some(w => g.name?.toLowerCase().includes(w)));
-  }
-  // SEM fallback cíclico (antes pegava gallery[idx % N], gerando looping
-  // visual ruim de 5 fotos rotativas em 30 itens).
+  if (!title || title.length < 4) return null;
+  const m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
   return m?.url || null;
 }
 
@@ -660,22 +621,29 @@ async function generatePDF({
   const logoMeta    = await loadLogoMeta(area?.logoUrl);
   const logoAltMeta = await loadLogoMeta(area?.logoUrlAlt);
 
-  let logoCoverDataUrl  = null;
-  let logoFooterDataUrl = null;
+  // Composite retorna { dataUrl, widthMm, heightMm } com aspect ratio real.
+  // Capa: logo bem maior (até 130×80mm), centralizado.
+  // Rodapé: discreto (~30×10mm). Capa de seção: maior que rodapé (~50×16mm).
+  let logoCover  = null;   // { dataUrl, widthMm, heightMm }
+  let logoFooter = null;
+  let logoSectionCover = null; // logo branco pra rodapé das capas internas
   if (logoMeta) {
-    logoCoverDataUrl = await _compositeLogo({
+    logoCover = await _compositeLogo({
       logoDataUrl: logoMeta.dataUrl, bgColorHex: second,
-      finalWmm: 80, finalHmm: 45, padPct: 0.05,
-    }).catch(() => logoMeta.dataUrl);
+      maxWmm: 130, maxHmm: 80, padPct: 0.02,
+    }).catch(() => ({ dataUrl: logoMeta.dataUrl, widthMm: 80, heightMm: 45 }));
+    // Versão branca pra rodapé das capas de seção (fundo escuro)
+    logoSectionCover = await _compositeLogo({
+      logoDataUrl: logoMeta.dataUrl, bgColorHex: second,
+      maxWmm: 50, maxHmm: 16, padPct: 0.04,
+    }).catch(() => ({ dataUrl: logoMeta.dataUrl, widthMm: 50, heightMm: 16 }));
   }
-  // Rodapé: prefere logoAlt (designed pra fundo claro). Se não houver,
-  // usa o principal compositado em branco (funciona pra logos coloridos).
   const footerSourceMeta = logoAltMeta || logoMeta;
   if (footerSourceMeta) {
-    logoFooterDataUrl = await _compositeLogo({
+    logoFooter = await _compositeLogo({
       logoDataUrl: footerSourceMeta.dataUrl, bgColorHex: '#FFFFFF',
-      finalWmm: 30, finalHmm: 8, padPct: 0.05,
-    }).catch(() => footerSourceMeta.dataUrl);
+      maxWmm: 30, maxHmm: 10, padPct: 0.04,
+    }).catch(() => ({ dataUrl: footerSourceMeta.dataUrl, widthMm: 30, heightMm: 10 }));
   }
 
   const addPage=()=>{doc.addPage();y=MARGIN;addFooter();};
@@ -686,34 +654,30 @@ async function generatePDF({
     const pg=doc.getNumberOfPages(); doc.setPage(pg);
     doc.setDrawColor(220,220,220); doc.setLineWidth(0.2);
     doc.line(MARGIN, 280, PAGE_W-MARGIN, 280);
-    if (logoFooterDataUrl) {
-      const LOGO_W=24, LOGO_H=7;
-      const lx=(PAGE_W-LOGO_W)/2, ly=282.5;
+    if (logoFooter) {
+      const lw = logoFooter.widthMm, lh = logoFooter.heightMm;
+      const lx = (PAGE_W-lw)/2, ly = 282.5;
       try {
-        // PNG lossless — preserva cor exata do fundo, sem "card" visível
-        doc.addImage(logoFooterDataUrl, 'PNG', lx, ly, LOGO_W, LOGO_H, undefined, 'NONE');
+        doc.addImage(logoFooter.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
       } catch (e) { /* silencioso */ }
     }
     doc.setFontSize(7); setF('normal'); doc.setTextColor(140,140,140);
     doc.text(
-      `Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`,
+      `City Guides  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`,
       PAGE_W/2, 293, { align:'center' }
     );
   };
 
   // ── COVER ───────────────────────────────────────────────────────
   doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
-  if (logoCoverDataUrl) {
-    // Logo composite ocupa o centro da capa, sem card branco visível.
-    // Composite já garantiu fundo sólido na cor secundária.
-    const MAX_W=80, MAX_H=45;
-    const ratio = logoMeta ? (logoMeta.w / Math.max(logoMeta.h, 1)) : (16/9);
-    let lw=MAX_W, lh=lw/ratio;
-    if (lh > MAX_H) { lh=MAX_H; lw=lh*ratio; }
-    const lx=(PAGE_W - lw)/2;
-    const ly=100;
+  if (logoCover) {
+    // Logo já vem com aspect ratio correto e dimensões em mm.
+    // Centralizado na metade superior da página.
+    const lw = logoCover.widthMm, lh = logoCover.heightMm;
+    const lx = (PAGE_W - lw) / 2;
+    const ly = 75; // posição vertical do logo na capa
     try {
-      doc.addImage(logoCoverDataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
+      doc.addImage(logoCover.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
     } catch(e) { /* segue sem logo */ }
   } else {
     // Sem logo: nome da área em destaque
@@ -740,9 +704,15 @@ async function generatePDF({
   // Pros 4 segmentos "principais", inserimos uma página-divisória antes do
   // conteúdo. Os demais segmentos vão inline normal. O TOC é construído
   // ao final num re-pass: anotamos as páginas conforme renderiza.
-  const COVER_SEGMENTS = new Set(['highlights','arredores','agenda_cultural','compras']);
+  // Critério de capa: TODOS os segmentos de conteúdo (não apenas 4).
+  // Informações Gerais é técnica (não tem capa). Os demais ganham capa
+  // pra dar respiro visual + sensação de "capítulo" por temática.
+  const COVER_SEGMENTS = new Set([
+    'bairros','atracoes','atracoes_criancas','restaurantes','vida_noturna',
+    'espetaculos','compras','arredores','highlights','agenda_cultural',
+  ]);
   const tocEntries = []; // { title, pageNum }
-  let coverChapterNum = 0; // numera só os COVER segments (1..N)
+  let coverChapterNum = 0;
 
   // RESERVA página em branco pro TOC (será preenchida no fim)
   // Inserida APÓS o hero do primeiro destino se houver, ou após capa.
@@ -791,31 +761,36 @@ async function generatePDF({
     for (let segIdx=0; segIdx<content.length; segIdx++) {
       const { segDef, data } = content[segIdx];
 
-      // CAPA DE SEÇÃO pros 4 principais
+      // CAPA DE SEÇÃO
       if (COVER_SEGMENTS.has(segDef.key)) {
         coverChapterNum += 1;
         doc.addPage();
-        // Fundo na cor secundária ocupando toda página
         doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
-        // Numeração discreta no topo (só conta caps de COVER, não índice geral)
+        // Numeração discreta no topo
         doc.setFontSize(8); setF('normal'); doc.setTextColor(180,180,180);
         const num = String(coverChapterNum).padStart(2,'0');
-        doc.text(`CAPÍTULO ${num}`, PAGE_W/2, 100, {align:'center', charSpace:3});
-        // Linha + nome do segmento gigante (centralizada por geometria)
+        doc.text(`CAPÍTULO ${num}`, PAGE_W/2, 105, {align:'center', charSpace:3});
+        // Linha decorativa
         const lineW = 60;
-        doc.setFillColor(pR,pG,pB); doc.rect((PAGE_W-lineW)/2, 115, lineW, 0.6, 'F');
+        doc.setFillColor(pR,pG,pB); doc.rect((PAGE_W-lineW)/2, 120, lineW, 0.6, 'F');
+        // Nome do segmento gigante
         doc.setFontSize(28); setF('bold'); doc.setTextColor(255,255,255);
-        doc.text(cleanText(segDef.label).toUpperCase(), PAGE_W/2, 138, {align:'center'});
-        // Subtitle do destino — SEM charSpace pra não estourar a margem.
-        // Wrap manual se necessário (cabe em 1 linha pra strings normais).
+        doc.text(cleanText(segDef.label).toUpperCase(), PAGE_W/2, 145, {align:'center'});
+        // Subtitle do destino — sem charSpace, com wrap
         doc.setFontSize(11); setF('normal'); doc.setTextColor(220,220,220);
         const subLines = doc.splitTextToSize(cleanText(destLabel(dest)), CONTENT);
-        doc.text(subLines, PAGE_W/2, 152, {align:'center'});
-        // Anota TOC apontando pra página DEPOIS da capa (conteúdo real)
+        doc.text(subLines, PAGE_W/2, 158, {align:'center'});
+        // Logo branco no rodapé da capa (sem texto auxiliar — visual limpo)
+        if (logoSectionCover) {
+          const lw = logoSectionCover.widthMm, lh = logoSectionCover.heightMm;
+          try {
+            doc.addImage(logoSectionCover.dataUrl, 'PNG', (PAGE_W-lw)/2, 270, lw, lh, undefined, 'NONE');
+          } catch (e) {}
+        }
+        // Conteúdo real na próxima página
         doc.addPage(); y=MARGIN; addFooter();
         tocEntries.push({ title: segDef.label, pageNum: doc.getNumberOfPages() });
       } else {
-        // Segmento inline — anota TOC no início
         tocEntries.push({ title: segDef.label, pageNum: doc.getNumberOfPages() });
       }
 
@@ -949,37 +924,53 @@ async function generatePDF({
           }
           y+=2;
         }
-        // INFORMAÇÕES GERAIS sempre fica sozinha na página — quebra antes
-        // do próximo segmento pra dar respiro visual e não emendar com Bairros.
-        doc.addPage(); y=MARGIN; addFooter();
+        // INFO GERAIS já fica sozinha porque o próximo segmento (Bairros)
+        // tem capa que abre nova página. Sem addPage explícito aqui pra
+        // não gerar página em branco.
       } else if (segDef.mode === 'simple_list') {
-        // simple_list AGORA suporta imagem via overrides (Bairros/Arredores).
+        // simple_list (Bairros, Arredores) — texto + foto opcional à direita.
+        // Layout: calcula altura de TEXTO e FOTO, usa max(...) como altura
+        // do bloco, pra não ter sobreposição nem espaço sobrando entre items.
+        const IMG_W = 50, IMG_H = 35;
         for (let itemIdx=0; itemIdx<(data.items||[]).length; itemIdx++) {
           const item = data.items[itemIdx];
           const imgUrl = pickImg({ titulo: item.title, title: item.title }, itemIdx, imgs, segDef.key);
           const imgB64 = await _imgFetcher(imgUrl);
-          const IMG_W=42, IMG_H=28;
-          const textW = imgB64 ? CONTENT-IMG_W-4 : CONTENT-8;
-          checkPage(imgB64 ? IMG_H+4 : 14);
+          const textW = imgB64 ? CONTENT - IMG_W - 6 : CONTENT - 8;
+
+          // Pre-calcula altura do bloco texto pra alinhar com foto
+          setF('bold'); doc.setFontSize(10);
+          const titleLines = doc.splitTextToSize(cleanText(item.title||''), textW - 4);
+          let descLines = [];
+          if (item.description) {
+            setF('normal'); doc.setFontSize(8.5);
+            descLines = doc.splitTextToSize(cleanText(item.description), textW - 4);
+          }
+          const TITLE_LH=5.2, DESC_LH=4.2, GAP_TITLE_DESC=1;
+          const textH = titleLines.length*TITLE_LH + (descLines.length ? GAP_TITLE_DESC + descLines.length*DESC_LH : 0);
+          const blockH = Math.max(textH, imgB64 ? IMG_H : 0) + 4;
+          checkPage(blockH + 2);
 
           const blockStartY = y;
-          doc.setFontSize(9); setF('bold'); doc.setTextColor(sR,sG,sB);
-          doc.setFillColor(pR,pG,pB); doc.circle(MARGIN+1.5, y-1, 1, 'F');
-          doc.text(cleanText(item.title||''), MARGIN+5, y); y+=5;
-          if (item.description) {
-            setF('normal'); doc.setFontSize(8); doc.setTextColor(70,70,80);
-            const lines = doc.splitTextToSize(cleanText(item.description), textW-4);
-            checkPage(lines.length*4+2); doc.text(lines, MARGIN+8, y); y+=lines.length*4+2;
+          // Bullet decorativo
+          doc.setFillColor(pR,pG,pB); doc.circle(MARGIN+1.6, y+1.5, 1.2, 'F');
+          // Título
+          setF('bold'); doc.setFontSize(10); doc.setTextColor(sR,sG,sB);
+          doc.text(titleLines, MARGIN+5, y+3);
+          // Descrição
+          if (descLines.length) {
+            setF('normal'); doc.setFontSize(8.5); doc.setTextColor(70,70,80);
+            doc.text(descLines, MARGIN+5, y + titleLines.length*TITLE_LH + 3 + GAP_TITLE_DESC + 2);
           }
+          // Foto à direita (top alinhado com o bullet)
           if (imgB64) {
-            const imgX = MARGIN + textW + 4;
-            const imgY = blockStartY - 4;
+            const imgX = MARGIN + textW + 6;
+            const imgY = blockStartY;
             try { doc.addImage(imgB64, 'JPEG', imgX, imgY, IMG_W, IMG_H, undefined, 'FAST'); } catch(e) {}
-            // SEM borda azul.
-            if (y < imgY+IMG_H+2) y = imgY+IMG_H+2;
           }
+          y = blockStartY + blockH + 2;
         }
-        y+=4;
+        y+=2;
       } else {
         if (data.themeDesc) {
           setF('italic'); doc.setFontSize(8); doc.setTextColor(100,100,100);
@@ -1050,7 +1041,7 @@ async function generatePDF({
             doc.line(ax+1.2, ay-1.2, ax-0.4, ay-1.2);   // topo da seta
             doc.line(ax+1.2, ay-1.2, ax+1.2, ay+0.4);   // lado da seta
             try { doc.link(pillX, pillY, pillW, pillH, { url: item.site }); } catch(e) {}
-            y += pillH + 2; // gap externo após pill
+            y += pillH + 5; // gap externo balanceado (mais respiro inferior)
           }
           if (item.observacoes) {
             doc.setFontSize(7.5); doc.setTextColor(160,160,160); setF('italic');
