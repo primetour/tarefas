@@ -31,6 +31,10 @@
     <span class="header-brand">City Guides</span>
     <span class="header-dest" id="header-dest"></span>
   </div>
+  <button class="fav-filter-toggle" id="fav-filter" aria-label="Mostrar só favoritos" style="display:none;">
+    <span class="material-symbols-outlined">favorite</span>
+    <span class="fav-count" id="fav-count">0</span>
+  </button>
   <img id="area-logo" class="header-area-logo" style="display:none;" alt="">
 </header>
 
@@ -138,12 +142,17 @@ const db=getFirestore(app);
   populateSideMenu(activeSegs, hasMap);
   wireSideMenu();
   wireScrollEffects();
+  wireFavButtons();
+  wireFavFilter();
 
   document.getElementById('site-header').style.display='flex';
   document.getElementById('site-footer').style.display='block';
 
   if(allTips.length>1){renderMulti(appEl,allTips,segments,activeSegs,imagesByDest);}
   else{const{tip,dest}=allTips[0]||{};renderSingle(appEl,tip,dest,segments,activeSegs,imagesByDest[dest?.id]||{},true);}
+
+  // Tag cards favoritados + atualiza UI do filtro
+  setTimeout(() => { tagFavedCards(); updateFavFilterUI(); }, 50);
 
   // Scrollspy: marca o item ativo no side-menu conforme rola
   setTimeout(() => {
@@ -211,6 +220,81 @@ function wireSideMenu(){
   document.getElementById('side-menu-overlay')?.addEventListener('click', closeSideMenu);
   // ESC fecha
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSideMenu(); });
+}
+
+/* ─── Favoritos: estrela em cada card + filtro no header ───── */
+const favs = {
+  token: window.location.hash.slice(1) || 'default',
+  storageKey() { return `primetour-favs:${this.token}`; },
+  load() {
+    try { return new Set(JSON.parse(localStorage.getItem(this.storageKey()) || '[]')); }
+    catch { return new Set(); }
+  },
+  save(set) {
+    try { localStorage.setItem(this.storageKey(), JSON.stringify([...set])); }
+    catch {}
+  },
+  // Identificador estável de um item: title (mais consistente que index)
+  idOf(item) { return (item.titulo || item.title || '').trim().toLowerCase(); },
+  isFaved(item) { return this.load().has(this.idOf(item)); },
+  toggle(item) {
+    const set = this.load();
+    const id = this.idOf(item);
+    if (set.has(id)) set.delete(id); else set.add(id);
+    this.save(set);
+    return set.has(id);
+  },
+  count() { return this.load().size; },
+};
+function favBtnHtml(item) {
+  const isFav = favs.isFaved(item);
+  const id = esc(favs.idOf(item));
+  return `<button class="fav-btn${isFav ? ' faved' : ''}" data-fav-id="${id}"
+    aria-label="${isFav ? 'Remover dos favoritos' : 'Marcar como favorito'}">
+    <span class="material-symbols-outlined">favorite</span>
+  </button>`;
+}
+function wireFavButtons() {
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.fav-btn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = btn.dataset.favId;
+    if (!id) return;
+    const set = favs.load();
+    if (set.has(id)) { set.delete(id); btn.classList.remove('faved'); }
+    else { set.add(id); btn.classList.add('faved'); }
+    favs.save(set);
+    // Marca/desmarca o card pai pra filtro funcionar
+    const card = btn.closest('.place-card, .hero-card, .bento-card, .simple-item');
+    if (card) card.classList.toggle('is-fav', set.has(id));
+    updateFavFilterUI();
+  });
+}
+function updateFavFilterUI() {
+  const count = favs.count();
+  const toggle = document.getElementById('fav-filter');
+  const counter = document.getElementById('fav-count');
+  if (counter) counter.textContent = count;
+  if (toggle) toggle.style.display = count > 0 || document.body.classList.contains('show-favs-only') ? 'inline-flex' : 'none';
+}
+function wireFavFilter() {
+  const toggle = document.getElementById('fav-filter');
+  if (!toggle) return;
+  toggle.addEventListener('click', () => {
+    document.body.classList.toggle('show-favs-only');
+    toggle.classList.toggle('active');
+  });
+}
+// Aplica .is-fav nos cards após render (pra filtro funcionar)
+function tagFavedCards() {
+  document.querySelectorAll('.fav-btn[data-fav-id]').forEach(btn => {
+    if (btn.classList.contains('faved')) {
+      const card = btn.closest('.place-card, .hero-card, .bento-card, .simple-item');
+      if (card) card.classList.add('is-fav');
+    }
+  });
 }
 
 /* ─── Lightbox: zoom de fotos com nav setas/teclado/swipe ──── */
@@ -435,7 +519,11 @@ function renderInfo(sd,data){
 
 function renderSimple(sd,data){
   const items=(data.items||[]).filter(i=>i.title);if(!items.length)return '';
-  return `${segHead(sd)}<div class="simple-list">${items.map(item=>`<div class="simple-item"><div class="simple-item-title">${esc(item.title)}</div>${item.description?`<div class="simple-item-desc">${esc(item.description)}</div>`:''}</div>`).join('')}</div>`;
+  return `${segHead(sd)}<div class="simple-list">${items.map(item=>`<div class="simple-item" style="position:relative;">
+    <div style="position:absolute;top:var(--portal-space-4);right:0;">${favBtnHtml({titulo:item.title})}</div>
+    <div class="simple-item-title">${esc(item.title)}</div>
+    ${item.description?`<div class="simple-item-desc">${esc(item.description)}</div>`:''}
+  </div>`).join('')}</div>`;
 }
 
 function renderPlaces(sd,data,imgs,isAgenda){
@@ -503,6 +591,7 @@ function renderPlaces(sd,data,imgs,isAgenda){
     if (item.endereco) detailsParts.push(`<span>📍 ${esc(item.endereco)}</span>`);
     if (item.telefone) detailsParts.push(`<span>📞 ${esc(item.telefone)}</span>`);
     return `<div class="place-card">
+      ${favBtnHtml(item)}
       <div class="place-card-img">${img
         ? `<img src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`
         : ph(item.titulo)}</div>
@@ -520,7 +609,7 @@ function renderPlaces(sd,data,imgs,isAgenda){
     </div>`;
   };
 
-  const heroCard=(item,idx,segDef=null)=>{const img=getImg(item,idx,segDef);return `<div class="hero-card"><div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy} 0%,${shade(navy,-20)} 100%);"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle">${esc(item.categoria)}</div>`:''}<div class="card-title">${esc(item.titulo)}</div><div class="card-underline"></div></div></div>`;};
+  const heroCard=(item,idx,segDef=null)=>{const img=getImg(item,idx,segDef);return `<div class="hero-card">${favBtnHtml(item)}<div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy} 0%,${shade(navy,-20)} 100%);"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle">${esc(item.categoria)}</div>`:''}<div class="card-title">${esc(item.titulo)}</div><div class="card-underline"></div></div></div>`;};
 
   const themeHtml=data.themeDesc?`<p style="padding:0 32px 24px;font-size:.875rem;color:var(--muted);font-style:italic;line-height:1.7;">${esc(data.themeDesc)}</p>`:'';
   const agendaHtml=isAgenda&&data.periodoAgenda?`<div class="agenda-period">📅 ${esc(data.periodoAgenda)}</div>`:'';
@@ -529,7 +618,7 @@ function renderPlaces(sd,data,imgs,isAgenda){
   if(items.length===0)itemsHtml='';
   else if(items.length===1)itemsHtml=heroCard(items[0],0,sd);
   else if(items.length===2)itemsHtml=heroCard(items[0],0,sd)+`<div class="cards-grid" style="margin-top:1px;">${card(items[1],1,sd)}</div>`;
-  else itemsHtml=heroCard(items[0],0,sd)+`<div class="bento-grid" style="margin-top:1px;">${items.slice(1,3).map((item,i)=>{const img=getImg(item,i+1,sd);return `<div class="bento-card"><div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy}dd,${shade(navy,-15)});"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle" style="font-size:.5rem;">${esc(item.categoria)}</div>`:''}<div class="card-title" style="font-size:1.375rem;">${esc(item.titulo)}</div></div></div>`;}).join('')}</div>${items.length>3?`<div class="cards-grid" style="margin-top:1px;">${items.slice(3).map((item,i)=>card(item,i+3,sd)).join('')}</div>`:''}`;
+  else itemsHtml=heroCard(items[0],0,sd)+`<div class="bento-grid" style="margin-top:1px;">${items.slice(1,3).map((item,i)=>{const img=getImg(item,i+1,sd);return `<div class="bento-card">${favBtnHtml(item)}<div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy}dd,${shade(navy,-15)});"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle" style="font-size:.5rem;">${esc(item.categoria)}</div>`:''}<div class="card-title" style="font-size:1.375rem;">${esc(item.titulo)}</div></div></div>`;}).join('')}</div>${items.length>3?`<div class="cards-grid" style="margin-top:1px;">${items.slice(3).map((item,i)=>card(item,i+3,sd)).join('')}</div>`:''}`;
 
   return `${segHead(sd)}${themeHtml}${agendaHtml}${itemsHtml}`;
 }
