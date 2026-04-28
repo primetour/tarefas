@@ -50,14 +50,25 @@ export { cleanText };
  * sessão via jsDelivr → injeta na VFS do doc.
  */
 let _poppinsCache = null;
-const POPPINS_URLS = {
-  regular: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Regular.ttf',
-  bold:    'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Bold.ttf',
-  italic:  'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Italic.ttf',
-};
+// Múltiplas URLs candidatas — algumas falham por CORS/404 dependendo do
+// browser. Tenta em ordem até uma funcionar. Mais resiliente que single CDN.
+const POPPINS_SOURCES = [
+  // jsDelivr → unpkg gh raw (bypass cache)
+  {
+    regular: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Regular.ttf',
+    bold:    'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Bold.ttf',
+    italic:  'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/poppins/Poppins-Italic.ttf',
+  },
+  // Fallback: github raw via codetabs (CORS proxy genérico)
+  {
+    regular: 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Regular.ttf',
+    bold:    'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Bold.ttf',
+    italic:  'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Italic.ttf',
+  },
+];
 async function _fetchAsBase64(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`Font fetch failed ${res.status}: ${url}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const buf = await res.arrayBuffer();
   const bytes = new Uint8Array(buf);
   let bin = ''; const CHUNK = 0x8000;
@@ -66,14 +77,28 @@ async function _fetchAsBase64(url) {
   }
   return (typeof btoa === 'function' ? btoa(bin) : Buffer.from(bin, 'binary').toString('base64'));
 }
+async function _tryFetchSource(src) {
+  const [regular, bold, italic] = await Promise.all([
+    _fetchAsBase64(src.regular),
+    _fetchAsBase64(src.bold),
+    _fetchAsBase64(src.italic),
+  ]);
+  return { regular, bold, italic };
+}
 export async function loadPoppinsOnDoc(doc) {
   if (!_poppinsCache) {
-    const [regular, bold, italic] = await Promise.all([
-      _fetchAsBase64(POPPINS_URLS.regular),
-      _fetchAsBase64(POPPINS_URLS.bold),
-      _fetchAsBase64(POPPINS_URLS.italic),
-    ]);
-    _poppinsCache = { regular, bold, italic };
+    let lastErr = null;
+    for (const src of POPPINS_SOURCES) {
+      try {
+        _poppinsCache = await _tryFetchSource(src);
+        console.info('[portalPdf] Poppins carregada de', src.regular);
+        break;
+      } catch (e) {
+        lastErr = e;
+        console.warn('[portalPdf] Source falhou:', src.regular, '-', e.message);
+      }
+    }
+    if (!_poppinsCache) throw lastErr || new Error('Todas as fontes falharam');
   }
   doc.addFileToVFS('Poppins-Regular.ttf', _poppinsCache.regular);
   doc.addFont('Poppins-Regular.ttf', 'Poppins', 'normal');
@@ -82,6 +107,12 @@ export async function loadPoppinsOnDoc(doc) {
   doc.addFileToVFS('Poppins-Italic.ttf', _poppinsCache.italic);
   doc.addFont('Poppins-Italic.ttf', 'Poppins', 'italic');
   doc.setFont('Poppins', 'normal');
+  // Sanity check: verifica se a fonte foi de fato registrada
+  const fontList = doc.getFontList ? doc.getFontList() : {};
+  if (!fontList.Poppins) {
+    throw new Error('Poppins não foi registrada no doc.getFontList()');
+  }
+  console.info('[portalPdf] Poppins ativa no doc:', Object.keys(fontList.Poppins));
 }
 
 /* ─── Parser de DESCRIÇÃO ──────────────────────────────────
@@ -92,22 +123,37 @@ export async function loadPoppinsOnDoc(doc) {
  *   2. Remove "REPRESENTAÇÃO BRASILEIRA ..." se já houver objeto rep
  *   3. Devolve descrição "limpa" + dados estruturados pro renderer
  */
-const MONTH_TOKEN_RE = /(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\s*(-?\d+)\s*°?\s*c?/gi;
+const MONTH_TOKEN_RE = /(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\D{0,3}(-?\d+)/gi;
 const MONTH_INDEX = { jan:0,fev:1,mar:2,abr:3,mai:4,jun:5,jul:6,ago:7,set:8,out:9,nov:10,dez:11 };
 export function parseDescricao(rawText, hasRepresentacaoObj = false) {
   let txt = String(rawText || '');
   let climate = null;
 
-  // CLIMA: pega bloco "CLIMA — TEMPERATURA ANUAL" até próxima quebra dupla
+  // CLIMA: capturar bloco até quebra dupla, "REPRESENTAÇÃO" ou fim
   const climaRe = /\n*\s*CLIMA[\s\S]*?(?=\n\n|REPRESENTA[ÇC][ÃA]O|$)/i;
   const climaMatch = txt.match(climaRe);
   if (climaMatch) {
     const block = climaMatch[0];
-    const maxLine = (block.match(/m[áa]x[^:]*:([^]*?)(?=\n[Mm]in|$)/i)||[])[1] || '';
-    const minLine = (block.match(/m[íi]n[^:]*:([^]*?)$/i)||[])[1] || '';
+    // Estratégia robusta: itera linha-por-linha procurando "Máx" e "Mín"
+    // (admite quebra de linha OU separadores diferentes entre Max e Min).
+    const lines = block.split(/[\n\r]+/);
+    let maxLine = '', minLine = '';
+    for (const ln of lines) {
+      if (/m[áa]x/i.test(ln) && !maxLine) maxLine = ln;
+      else if (/m[íi]n/i.test(ln) && !minLine) minLine = ln;
+    }
+    // Fallback: se Max e Min estão na MESMA linha (sem \n entre), tenta
+    // separar pela primeira ocorrência de "Mín:" no texto.
+    if (maxLine && !minLine && /m[íi]n[^:]*:/i.test(maxLine)) {
+      const parts = maxLine.split(/m[íi]n[^:]*:/i);
+      maxLine = parts[0];
+      minLine = 'Min: ' + (parts[1] || '');
+    }
     const parseLine = (line) => {
       const out = Array(12).fill(null);
-      let m; const re = new RegExp(MONTH_TOKEN_RE.source, 'gi');
+      // Reset regex state pra não vazar entre chamadas (RE com flag /g)
+      const re = new RegExp(MONTH_TOKEN_RE.source, 'gi');
+      let m;
       while ((m = re.exec(line)) !== null) {
         const idx = MONTH_INDEX[m[1].toLowerCase()];
         if (idx !== undefined) out[idx] = parseInt(m[2], 10);
@@ -250,7 +296,9 @@ export async function compositeLogoOnBackground({ logoDataUrl, bgColorHex, final
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, (wPx - lw) / 2, (hPx - lh) / 2, lw, lh);
-  return canvas.toDataURL('image/jpeg', 0.95);
+  // PNG (lossless) — JPEG distorcia ligeiramente a cor de fundo, fazendo
+  // o composite ficar visível como "card" sutil sobre a capa monocromática.
+  return canvas.toDataURL('image/png');
 }
 
 /* ─── CDN libraries ───────────────────────────────────────── */
@@ -366,16 +414,33 @@ function destLabel(dest) {
 function pickImg(item, idx, imgs, segKey) {
   if (!imgs) return null;
   const overrides = imgs._overrides || {};
+  const title = (item?.titulo || item?.title || '').toLowerCase().trim();
+
+  // OVERRIDES: tenta 3 estratégias em ordem
+  // 1. match por idx exato (caminho original)
+  // 2. match por título (caso a lista de items tenha sido reordenada)
+  // 3. match por placeName parcial dentro dos overrides
   if (segKey && overrides[segKey]) {
-    const ov = overrides[segKey][idx] || overrides[segKey][String(idx)];
-    if (ov?.url) return ov.url;
+    const segOv = overrides[segKey];
+    // (1) idx
+    const ovByIdx = segOv[idx] || segOv[String(idx)];
+    if (ovByIdx?.url) return ovByIdx.url;
+    // (2) por título (override pode ter campo `name` ou `placeName`)
+    if (title) {
+      for (const k of Object.keys(segOv)) {
+        const o = segOv[k];
+        const oName = (o?.name || o?.placeName || '').toLowerCase().trim();
+        if (oName && (oName === title || oName.includes(title.slice(0,12)) || title.includes(oName.slice(0,12)))) {
+          if (o.url) return o.url;
+        }
+      }
+    }
   }
   const gallery = imgs.gallery || [];
-  const title   = (item?.titulo || item?.title || '').toLowerCase().trim();
   if (!title) return null;
   // placeName exact
   let m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
-  // placeName partial — exige >= 6 chars de overlap, evita matches espúrios
+  // placeName partial — exige >= 6 chars de overlap
   if (!m) m = gallery.find(g => g.placeName && g.placeName.length >= 6 &&
     (title.includes(g.placeName.toLowerCase()) || g.placeName.toLowerCase().includes(title.slice(0,15))));
   // name/tag keywords — exige palavras com >=4 chars
@@ -383,9 +448,8 @@ function pickImg(item, idx, imgs, segKey) {
     const words = title.split(/\s+/).filter(w => w.length > 3);
     m = gallery.find(g => words.some(w => g.name?.toLowerCase().includes(w)));
   }
-  // SEM fallback cíclico — antes pegava gallery[idx % N], gerando looping
-  // visual ruim (5 fotos rotativas em 30 itens). Agora se não há match
-  // explícito, retorna null e o renderer omite a imagem.
+  // SEM fallback cíclico (antes pegava gallery[idx % N], gerando looping
+  // visual ruim de 5 fotos rotativas em 30 itens).
   return m?.url || null;
 }
 
@@ -589,22 +653,29 @@ async function generatePDF({
       return { dataUrl: b64, ...dims };
     } catch { return { dataUrl: b64, w: 400, h: 120 }; }
   };
-  const logoMeta = await loadLogoMeta(area?.logoUrl);
-  // Pré-composita logo: capa (fundo secondary) + rodapé (fundo branco).
-  // Sem card branco visível — composite resolve transparência.
+  // Carrega logo principal (capa, fundo escuro) + logo alternativo
+  // (rodapé, fundo claro). Composite resolve TRANSPARÊNCIA (PNG → fundo
+  // sólido), mas NÃO resolve "logo branco em fundo branco" — pra isso
+  // precisa o cliente enviar versão escura via area.logoUrlAlt.
+  const logoMeta    = await loadLogoMeta(area?.logoUrl);
+  const logoAltMeta = await loadLogoMeta(area?.logoUrlAlt);
+
   let logoCoverDataUrl  = null;
   let logoFooterDataUrl = null;
   if (logoMeta) {
-    // Capa: até 80mm × 45mm visualmente; o composite gera asset 300dpi
-    logoCoverDataUrl  = await _compositeLogo({
+    logoCoverDataUrl = await _compositeLogo({
       logoDataUrl: logoMeta.dataUrl, bgColorHex: second,
       finalWmm: 80, finalHmm: 45, padPct: 0.05,
     }).catch(() => logoMeta.dataUrl);
-    // Rodapé: mais discreto, fundo branco da página
+  }
+  // Rodapé: prefere logoAlt (designed pra fundo claro). Se não houver,
+  // usa o principal compositado em branco (funciona pra logos coloridos).
+  const footerSourceMeta = logoAltMeta || logoMeta;
+  if (footerSourceMeta) {
     logoFooterDataUrl = await _compositeLogo({
-      logoDataUrl: logoMeta.dataUrl, bgColorHex: '#FFFFFF',
+      logoDataUrl: footerSourceMeta.dataUrl, bgColorHex: '#FFFFFF',
       finalWmm: 30, finalHmm: 8, padPct: 0.05,
-    }).catch(() => logoMeta.dataUrl);
+    }).catch(() => footerSourceMeta.dataUrl);
   }
 
   const addPage=()=>{doc.addPage();y=MARGIN;addFooter();};
@@ -619,7 +690,8 @@ async function generatePDF({
       const LOGO_W=24, LOGO_H=7;
       const lx=(PAGE_W-LOGO_W)/2, ly=282.5;
       try {
-        doc.addImage(logoFooterDataUrl, 'JPEG', lx, ly, LOGO_W, LOGO_H, undefined, 'FAST');
+        // PNG lossless — preserva cor exata do fundo, sem "card" visível
+        doc.addImage(logoFooterDataUrl, 'PNG', lx, ly, LOGO_W, LOGO_H, undefined, 'NONE');
       } catch (e) { /* silencioso */ }
     }
     doc.setFontSize(7); setF('normal'); doc.setTextColor(140,140,140);
@@ -641,7 +713,7 @@ async function generatePDF({
     const lx=(PAGE_W - lw)/2;
     const ly=100;
     try {
-      doc.addImage(logoCoverDataUrl, 'JPEG', lx, ly, lw, lh, undefined, 'SLOW');
+      doc.addImage(logoCoverDataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
     } catch(e) { /* segue sem logo */ }
   } else {
     // Sem logo: nome da área em destaque
@@ -670,6 +742,7 @@ async function generatePDF({
   // ao final num re-pass: anotamos as páginas conforme renderiza.
   const COVER_SEGMENTS = new Set(['highlights','arredores','agenda_cultural','compras']);
   const tocEntries = []; // { title, pageNum }
+  let coverChapterNum = 0; // numera só os COVER segments (1..N)
 
   // RESERVA página em branco pro TOC (será preenchida no fim)
   // Inserida APÓS o hero do primeiro destino se houver, ou após capa.
@@ -720,23 +793,27 @@ async function generatePDF({
 
       // CAPA DE SEÇÃO pros 4 principais
       if (COVER_SEGMENTS.has(segDef.key)) {
+        coverChapterNum += 1;
         doc.addPage();
         // Fundo na cor secundária ocupando toda página
         doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
-        // Numeração discreta no topo
+        // Numeração discreta no topo (só conta caps de COVER, não índice geral)
         doc.setFontSize(8); setF('normal'); doc.setTextColor(180,180,180);
-        const num = String(segIdx+1).padStart(2,'0');
-        doc.text(`CAPÍTULO ${num}`, PAGE_W/2, 90, {align:'center', charSpace:3});
-        // Linha + nome do segmento gigante
-        doc.setFillColor(pR,pG,pB); doc.rect(PAGE_W/2-30, 105, 60, 0.6, 'F');
+        const num = String(coverChapterNum).padStart(2,'0');
+        doc.text(`CAPÍTULO ${num}`, PAGE_W/2, 100, {align:'center', charSpace:3});
+        // Linha + nome do segmento gigante (centralizada por geometria)
+        const lineW = 60;
+        doc.setFillColor(pR,pG,pB); doc.rect((PAGE_W-lineW)/2, 115, lineW, 0.6, 'F');
         doc.setFontSize(28); setF('bold'); doc.setTextColor(255,255,255);
-        doc.text(cleanText(segDef.label).toUpperCase(), PAGE_W/2, 130, {align:'center', charSpace:2});
-        // Subtitle do destino
-        doc.setFontSize(10); setF('normal'); doc.setTextColor(pR,pG,pB);
-        doc.text(cleanText(destLabel(dest)).toUpperCase(), PAGE_W/2, 145, {align:'center', charSpace:2});
-        // Anota TOC (depois desta capa)
-        tocEntries.push({ title: segDef.label, pageNum: doc.getNumberOfPages() });
+        doc.text(cleanText(segDef.label).toUpperCase(), PAGE_W/2, 138, {align:'center'});
+        // Subtitle do destino — SEM charSpace pra não estourar a margem.
+        // Wrap manual se necessário (cabe em 1 linha pra strings normais).
+        doc.setFontSize(11); setF('normal'); doc.setTextColor(220,220,220);
+        const subLines = doc.splitTextToSize(cleanText(destLabel(dest)), CONTENT);
+        doc.text(subLines, PAGE_W/2, 152, {align:'center'});
+        // Anota TOC apontando pra página DEPOIS da capa (conteúdo real)
         doc.addPage(); y=MARGIN; addFooter();
+        tocEntries.push({ title: segDef.label, pageNum: doc.getNumberOfPages() });
       } else {
         // Segmento inline — anota TOC no início
         tocEntries.push({ title: segDef.label, pageNum: doc.getNumberOfPages() });
@@ -872,6 +949,9 @@ async function generatePDF({
           }
           y+=2;
         }
+        // INFORMAÇÕES GERAIS sempre fica sozinha na página — quebra antes
+        // do próximo segmento pra dar respiro visual e não emendar com Bairros.
+        doc.addPage(); y=MARGIN; addFooter();
       } else if (segDef.mode === 'simple_list') {
         // simple_list AGORA suporta imagem via overrides (Bairros/Arredores).
         for (let itemIdx=0; itemIdx<(data.items||[]).length; itemIdx++) {
@@ -947,26 +1027,30 @@ async function generatePDF({
             const detLines = doc.splitTextToSize(det.join('   ·   '), textW-4);
             checkPage(detLines.length*4+1); doc.text(detLines, MARGIN+2, y); y+=detLines.length*4;
           }
-          // Link: pill clicável com seta. Largura calculada via texto.
+          // Link: pill clicável com seta. Padding interno e externo balanceados.
           if (item.site) {
             const linkText = 'Visitar site';
             doc.setFontSize(8); setF('bold');
-            const txtW = doc.getTextWidth(linkText) + 8; // padding interno
-            const pillW = txtW + 5; // espaço pra seta
-            const pillH = 5.5;
+            const padX = 5, arrowW = 5.5, gap = 3;
+            const txtW = doc.getTextWidth(linkText);
+            const pillW = padX + txtW + gap + arrowW + padX;
+            const pillH = 6.5;
+            const pillX = MARGIN+2;
+            const pillY = y;       // pill começa em y, não y-3.8
             doc.setFillColor(pR,pG,pB);
-            doc.roundedRect(MARGIN+2, y-3.8, pillW, pillH, 1.2, 1.2, 'F');
+            doc.roundedRect(pillX, pillY, pillW, pillH, 1.5, 1.5, 'F');
             doc.setTextColor(255,255,255);
-            doc.text(linkText, MARGIN+2+4, y);
-            // Setinha "↗" desenhada com 3 linhas (helvetica não tem o glyph)
-            const ax = MARGIN+2 + pillW - 3.5, ay = y-1.2;
-            doc.setDrawColor(255,255,255); doc.setLineWidth(0.4);
-            doc.line(ax-1.4, ay+1.4, ax+1.0, ay-1.0);    // diagonal
-            doc.line(ax+1.0, ay-1.0, ax-0.4, ay-1.0);    // topo da ponta
-            doc.line(ax+1.0, ay-1.0, ax+1.0, ay+0.4);    // lado da ponta
-            // Hyperlink invisível cobrindo a pill
-            try { doc.link(MARGIN+2, y-3.8, pillW, pillH, { url: item.site }); } catch(e) {}
-            y += 6;
+            // baseline: pillY + (pillH/2) + ajusteFonte
+            doc.text(linkText, pillX + padX, pillY + pillH/2 + 1.5);
+            // Setinha "↗" — desenhada com 3 linhas
+            const ax = pillX + padX + txtW + gap + arrowW/2;
+            const ay = pillY + pillH/2;
+            doc.setDrawColor(255,255,255); doc.setLineWidth(0.5);
+            doc.line(ax-1.6, ay+1.6, ax+1.2, ay-1.2);   // diagonal
+            doc.line(ax+1.2, ay-1.2, ax-0.4, ay-1.2);   // topo da seta
+            doc.line(ax+1.2, ay-1.2, ax+1.2, ay+0.4);   // lado da seta
+            try { doc.link(pillX, pillY, pillW, pillH, { url: item.site }); } catch(e) {}
+            y += pillH + 2; // gap externo após pill
           }
           if (item.observacoes) {
             doc.setFontSize(7.5); doc.setTextColor(160,160,160); setF('italic');
