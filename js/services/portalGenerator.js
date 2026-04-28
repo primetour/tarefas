@@ -632,11 +632,12 @@ async function generatePDF({
       logoDataUrl: logoMeta.dataUrl, bgColorHex: second,
       maxWmm: 130, maxHmm: 80, padPct: 0.02,
     }).catch(() => ({ dataUrl: logoMeta.dataUrl, widthMm: 80, heightMm: 45 }));
-    // Versão branca pra rodapé das capas de seção (fundo escuro)
+    // Versão pra rodapé das capas de seção (fundo escuro). Maior que
+    // o rodapé tradicional, próximo do tamanho da capa principal.
     logoSectionCover = await _compositeLogo({
       logoDataUrl: logoMeta.dataUrl, bgColorHex: second,
-      maxWmm: 50, maxHmm: 16, padPct: 0.04,
-    }).catch(() => ({ dataUrl: logoMeta.dataUrl, widthMm: 50, heightMm: 16 }));
+      maxWmm: 90, maxHmm: 50, padPct: 0.03,
+    }).catch(() => ({ dataUrl: logoMeta.dataUrl, widthMm: 90, heightMm: 50 }));
   }
   const footerSourceMeta = logoAltMeta || logoMeta;
   if (footerSourceMeta) {
@@ -668,36 +669,34 @@ async function generatePDF({
     );
   };
 
-  // ── COVER ───────────────────────────────────────────────────────
-  doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
-  if (logoCover) {
-    // Logo já vem com aspect ratio correto e dimensões em mm.
-    // Centralizado na metade superior da página.
-    const lw = logoCover.widthMm, lh = logoCover.heightMm;
-    const lx = (PAGE_W - lw) / 2;
-    const ly = 75; // posição vertical do logo na capa
-    try {
-      doc.addImage(logoCover.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
-    } catch(e) { /* segue sem logo */ }
-  } else {
-    // Sem logo: nome da área em destaque
-    doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, 108, CONTENT, 0.8, 'F');
-    doc.setFontSize(28); setF('bold'); doc.setTextColor(255,255,255);
-    doc.text(cleanText(areaName).toUpperCase(), PAGE_W/2, 100, {align:'center', charSpace:3});
-  }
-  // Linha + destinos + data (sempre embaixo do logo)
-  const coverDivY = 162;
-  doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, coverDivY, CONTENT, 0.5, 'F');
-  let dY = coverDivY + 16;
-  for (const { dest } of allTips) {
-    doc.setFontSize(14); setF('bold'); doc.setTextColor(255,255,255);
-    doc.text(cleanText(destLabel(dest)), PAGE_W/2, dY, {align:'center'});
-    dY += 10;
-  }
-  // Data: BRANCO (alto contraste sobre navy/cinza-escuro)
-  doc.setFontSize(9); setF('normal'); doc.setTextColor(255,255,255);
-  doc.text(new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'}),
-    PAGE_W/2, dY+10, {align:'center'});
+  // ── COVER (extraído em função pra reuso na última página) ───────
+  const drawCover = () => {
+    doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
+    if (logoCover) {
+      const lw = logoCover.widthMm, lh = logoCover.heightMm;
+      const lx = (PAGE_W - lw) / 2;
+      const ly = 75;
+      try {
+        doc.addImage(logoCover.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
+      } catch(e) {}
+    } else {
+      doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, 108, CONTENT, 0.8, 'F');
+      doc.setFontSize(28); setF('bold'); doc.setTextColor(255,255,255);
+      doc.text(cleanText(areaName).toUpperCase(), PAGE_W/2, 100, {align:'center', charSpace:3});
+    }
+    const coverDivY = 162;
+    doc.setFillColor(255,255,255); doc.rect(MARGIN, coverDivY, CONTENT, 0.5, 'F');
+    let dY = coverDivY + 16;
+    for (const { dest } of allTips) {
+      doc.setFontSize(14); setF('bold'); doc.setTextColor(255,255,255);
+      doc.text(cleanText(destLabel(dest)), PAGE_W/2, dY, {align:'center'});
+      dY += 10;
+    }
+    doc.setFontSize(9); setF('normal'); doc.setTextColor(255,255,255);
+    doc.text(new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'}),
+      PAGE_W/2, dY+10, {align:'center'});
+  };
+  drawCover();
   doc.addPage(); y=MARGIN; addFooter();
 
   // ── CAPAS DE SEÇÃO (apenas pros 4 principais) + TOC ─────────────
@@ -714,77 +713,67 @@ async function generatePDF({
   const tocEntries = []; // { title, pageNum }
   let coverChapterNum = 0;
 
-  // RESERVA página em branco pro TOC (será preenchida no fim)
-  // Inserida APÓS o hero do primeiro destino se houver, ou após capa.
-  let tocPageIdx = null;
+  // RESERVA página do SUMÁRIO em pag 2 (logo após a capa, antes de tudo)
+  // Será preenchida no fim do render quando todas as páginas forem conhecidas.
+  const tocPageIdx = doc.getNumberOfPages(); // página atual = pag 2 (vazia, reservada)
+  doc.addPage(); y=MARGIN; addFooter();      // pula pra pag 3 (conteúdo)
 
   for(const{tip,dest}of allTips){
     const imgs=imagesByDest[dest?.id]||{};
 
-    // ── HERO ──────────────────────────────────────────────────────
+    // ── HERO + INFO GERAIS combinados na MESMA página ────────────
+    // Hero ocupa o topo (altura reduzida pra deixar espaço pro info).
+    // Sem título grande no meio (era ruído visual).
     const heroB64 = await _imgFetcher(imgs.hero);
+    let heroH = 0;
     if (heroB64) {
-      doc.setFillColor(255,255,255); doc.rect(0,0,PAGE_W,297,'F');
-      let heroH = 180;
+      // Hero menor pra caber INFO GERAIS na mesma página: max 110mm
+      let imgRatio = 16/9;
       if (typeof Image !== 'undefined') {
         try {
-          heroH = await new Promise((resolve) => {
+          imgRatio = await new Promise((resolve) => {
             const im = new Image();
-            im.onload  = () => resolve(Math.min(220, PAGE_W * (im.naturalHeight / Math.max(im.naturalWidth,1))));
-            im.onerror = () => resolve(180);
+            im.onload  = () => resolve(im.naturalWidth / Math.max(im.naturalHeight,1));
+            im.onerror = () => resolve(16/9);
             im.src = heroB64;
           });
-        } catch { heroH = 180; }
+        } catch { imgRatio = 16/9; }
       }
+      heroH = Math.min(110, PAGE_W / imgRatio);
       try { doc.addImage(heroB64, 'JPEG', 0, 0, PAGE_W, heroH, undefined, 'SLOW'); } catch(e) {}
-      const titleY = heroH + 25;
-      doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, titleY-10, 40, 0.8, 'F');
-      doc.setFontSize(22); setF('bold'); doc.setTextColor(sR,sG,sB);
-      doc.text(cleanText(destLabel(dest)), MARGIN, titleY);
-      doc.addPage(); y=MARGIN; addFooter();
+      y = heroH + 8;
     }
-
-    // RESERVA página do TOC (1ª iteração só)
-    if (tocPageIdx === null) {
-      tocPageIdx = doc.getNumberOfPages();
-      // Mantém esta página em branco — preenchida no fim
-      doc.addPage(); y=MARGIN; addFooter();
-    }
-
-    // ── DESTINATION HEADING ───────────────────────────────────────
-    checkPage(24);
-    doc.setFontSize(16); setF('bold'); doc.setTextColor(sR,sG,sB);
-    doc.text(cleanText(destLabel(dest)).toUpperCase(), MARGIN, y); y+=2;
-    doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, y, CONTENT, 0.6, 'F'); y+=8;
+    // (sem destination heading separado — combinamos com info gerais)
 
     const content = buildContent(tip, segments);
     for (let segIdx=0; segIdx<content.length; segIdx++) {
       const { segDef, data } = content[segIdx];
 
-      // CAPA DE SEÇÃO
+      // CAPA DE SEÇÃO — sem "CAPÍTULO XX" (era ruído visual)
       if (COVER_SEGMENTS.has(segDef.key)) {
-        coverChapterNum += 1;
         doc.addPage();
         doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
-        // Numeração discreta no topo
-        doc.setFontSize(8); setF('normal'); doc.setTextColor(180,180,180);
-        const num = String(coverChapterNum).padStart(2,'0');
-        doc.text(`CAPÍTULO ${num}`, PAGE_W/2, 105, {align:'center', charSpace:3});
-        // Linha decorativa
+        // Linha decorativa em BRANCO (era na cor primária — invisível)
         const lineW = 60;
-        doc.setFillColor(pR,pG,pB); doc.rect((PAGE_W-lineW)/2, 120, lineW, 0.6, 'F');
+        doc.setFillColor(255,255,255); doc.rect((PAGE_W-lineW)/2, 130, lineW, 0.6, 'F');
         // Nome do segmento gigante
         doc.setFontSize(28); setF('bold'); doc.setTextColor(255,255,255);
-        doc.text(cleanText(segDef.label).toUpperCase(), PAGE_W/2, 145, {align:'center'});
-        // Subtitle do destino — sem charSpace, com wrap
+        doc.text(cleanText(segDef.label).toUpperCase(), PAGE_W/2, 150, {align:'center'});
+        // Subtitle do destino
         doc.setFontSize(11); setF('normal'); doc.setTextColor(220,220,220);
         const subLines = doc.splitTextToSize(cleanText(destLabel(dest)), CONTENT);
-        doc.text(subLines, PAGE_W/2, 158, {align:'center'});
-        // Logo branco no rodapé da capa (sem texto auxiliar — visual limpo)
+        doc.text(subLines, PAGE_W/2, 162, {align:'center'});
+        // Logo no rodapé MAIOR (~70mm, próximo do tamanho da capa principal
+        // mas não tão dominante). Usa logoCover (já compositado em fundo
+        // secondary) reaproveitado, mas escalado pra largura menor.
         if (logoSectionCover) {
-          const lw = logoSectionCover.widthMm, lh = logoSectionCover.heightMm;
+          // Escala respeitando aspect ratio
+          const ratio = logoSectionCover.widthMm / Math.max(logoSectionCover.heightMm, 1);
+          const targetW = 70, targetH = targetW / ratio;
+          const lw = Math.min(targetW, 90);
+          const lh = lw / ratio;
           try {
-            doc.addImage(logoSectionCover.dataUrl, 'PNG', (PAGE_W-lw)/2, 270, lw, lh, undefined, 'NONE');
+            doc.addImage(logoSectionCover.dataUrl, 'PNG', (PAGE_W-lw)/2, 297-lh-22, lw, lh, undefined, 'NONE');
           } catch (e) {}
         }
         // Conteúdo real na próxima página
@@ -997,66 +986,91 @@ async function generatePDF({
           const imgB64 = await _imgFetcher(imgUrl);
           const IMG_W=55, IMG_H=38;
           const textW = imgB64 ? CONTENT-IMG_W-4 : CONTENT;
-          checkPage(imgB64 ? IMG_H+6 : 22);
 
-          const blockStartY = y;
-          setF('bold'); doc.setFontSize(10); doc.setTextColor(sR,sG,sB);
+          // PRÉ-CÁLCULO da altura total do bloco-item — evita orphan title
+          // (título sozinho no fim de uma página, texto na próxima).
+          // Mede tudo ANTES de pintar e força addPage se não couber.
+          setF('bold'); doc.setFontSize(10);
           const titleLines = doc.splitTextToSize(cleanText(item.titulo), textW-4);
-          checkPage(titleLines.length*5+2);
-          doc.text(titleLines, MARGIN+2, y); y+=titleLines.length*5;
+          let descLines = [];
           if (item.descricao) {
-            setF('normal'); doc.setFontSize(8); doc.setTextColor(70,70,80);
-            const lines = doc.splitTextToSize(cleanText(item.descricao), textW-4);
-            checkPage(lines.length*4+2); doc.text(lines, MARGIN+2, y); y+=lines.length*4+2;
+            setF('normal'); doc.setFontSize(8);
+            descLines = doc.splitTextToSize(cleanText(item.descricao), textW-4);
           }
           const det = [
             item.endereco && `End. ${cleanText(item.endereco)}`,
             item.telefone && `Tel. ${cleanText(item.telefone)}`,
           ].filter(Boolean);
+          let detLines = [];
           if (det.length) {
-            doc.setFontSize(7.5); doc.setTextColor(130,130,130);
-            const detLines = doc.splitTextToSize(det.join('   ·   '), textW-4);
-            checkPage(detLines.length*4+1); doc.text(detLines, MARGIN+2, y); y+=detLines.length*4;
+            doc.setFontSize(7.5);
+            detLines = doc.splitTextToSize(det.join('   ·   '), textW-4);
           }
-          // Link: pill clicável com seta. Padding interno e externo balanceados.
+          let obsLines = [];
+          if (item.observacoes) {
+            doc.setFontSize(7.5);
+            obsLines = doc.splitTextToSize('Obs. '+cleanText(item.observacoes), textW-4);
+          }
+          const TITLE_LH=5, DESC_LH=4, DET_LH=4, OBS_LH=4, PILL_H=6.5, PILL_GAP=5;
+          const textBlockH =
+            titleLines.length*TITLE_LH +
+            (descLines.length ? descLines.length*DESC_LH + 2 : 0) +
+            (detLines.length  ? detLines.length*DET_LH        : 0) +
+            (item.site        ? PILL_H + PILL_GAP             : 0) +
+            (obsLines.length  ? obsLines.length*OBS_LH        : 0);
+          const blockH = Math.max(textBlockH, imgB64 ? IMG_H : 0) + 6;
+          // Se não couber na página atual, pula pra próxima ANTES do título
+          if (y + blockH > 275) { addPage(); }
+
+          const blockStartY = y;
+          // Título
+          setF('bold'); doc.setFontSize(10); doc.setTextColor(sR,sG,sB);
+          doc.text(titleLines, MARGIN+2, y); y+=titleLines.length*TITLE_LH;
+          // Descrição
+          if (descLines.length) {
+            setF('normal'); doc.setFontSize(8); doc.setTextColor(70,70,80);
+            doc.text(descLines, MARGIN+2, y); y+=descLines.length*DESC_LH+2;
+          }
+          // End/Tel
+          if (detLines.length) {
+            doc.setFontSize(7.5); doc.setTextColor(130,130,130);
+            doc.text(detLines, MARGIN+2, y); y+=detLines.length*DET_LH;
+          }
+          // Link pill
           if (item.site) {
             const linkText = 'Visitar site';
             doc.setFontSize(8); setF('bold');
             const padX = 5, arrowW = 5.5, gap = 3;
             const txtW = doc.getTextWidth(linkText);
             const pillW = padX + txtW + gap + arrowW + padX;
-            const pillH = 6.5;
             const pillX = MARGIN+2;
-            const pillY = y;       // pill começa em y, não y-3.8
+            const pillY = y;
             doc.setFillColor(pR,pG,pB);
-            doc.roundedRect(pillX, pillY, pillW, pillH, 1.5, 1.5, 'F');
+            doc.roundedRect(pillX, pillY, pillW, PILL_H, 1.5, 1.5, 'F');
             doc.setTextColor(255,255,255);
-            // baseline: pillY + (pillH/2) + ajusteFonte
-            doc.text(linkText, pillX + padX, pillY + pillH/2 + 1.5);
-            // Setinha "↗" — desenhada com 3 linhas
+            doc.text(linkText, pillX + padX, pillY + PILL_H/2 + 1.5);
             const ax = pillX + padX + txtW + gap + arrowW/2;
-            const ay = pillY + pillH/2;
+            const ay = pillY + PILL_H/2;
             doc.setDrawColor(255,255,255); doc.setLineWidth(0.5);
-            doc.line(ax-1.6, ay+1.6, ax+1.2, ay-1.2);   // diagonal
-            doc.line(ax+1.2, ay-1.2, ax-0.4, ay-1.2);   // topo da seta
-            doc.line(ax+1.2, ay-1.2, ax+1.2, ay+0.4);   // lado da seta
-            try { doc.link(pillX, pillY, pillW, pillH, { url: item.site }); } catch(e) {}
-            y += pillH + 5; // gap externo balanceado (mais respiro inferior)
+            doc.line(ax-1.6, ay+1.6, ax+1.2, ay-1.2);
+            doc.line(ax+1.2, ay-1.2, ax-0.4, ay-1.2);
+            doc.line(ax+1.2, ay-1.2, ax+1.2, ay+0.4);
+            try { doc.link(pillX, pillY, pillW, PILL_H, { url: item.site }); } catch(e) {}
+            y += PILL_H + PILL_GAP;
           }
-          if (item.observacoes) {
+          // Obs
+          if (obsLines.length) {
             doc.setFontSize(7.5); doc.setTextColor(160,160,160); setF('italic');
-            const obsLines = doc.splitTextToSize('Obs. '+cleanText(item.observacoes), textW-4);
-            checkPage(obsLines.length*4+1); doc.text(obsLines, MARGIN+2, y); y+=obsLines.length*4;
+            doc.text(obsLines, MARGIN+2, y); y+=obsLines.length*OBS_LH;
           }
-
+          // Foto à direita do bloco
           if (imgB64) {
             const imgX = MARGIN + textW + 2;
             const imgY = blockStartY - 4;
             try { doc.addImage(imgB64, 'JPEG', imgX, imgY, IMG_W, IMG_H, undefined, 'FAST'); } catch(e) {}
-            // SEM borda azul ao redor da foto.
             if (y < imgY+IMG_H+2) y = imgY+IMG_H+2;
           }
-
+          // Linha divisória discreta
           doc.setDrawColor(235,235,235); doc.setLineWidth(0.2);
           doc.line(MARGIN+2, y, MARGIN+CONTENT-2, y); y+=4;
         }
@@ -1102,8 +1116,16 @@ async function generatePDF({
     }
   }
 
-  const pgCount = doc.getNumberOfPages();
-  if (pgCount > 1) doc.deletePage(pgCount);
+  // Remove página em branco no final (vinda do addPage do último loop)
+  const pgCountBeforeBack = doc.getNumberOfPages();
+  if (pgCountBeforeBack > 1) {
+    // Verifica se a última página é branca: se tiver só o footer, deleta
+    doc.deletePage(pgCountBeforeBack);
+  }
+
+  // Última página: REPETE a capa (acabamento estilo livro/revista)
+  doc.addPage();
+  drawCover();
 
   if (_saveOverride) {
     // Harness: callback recebe blob (ou Buffer) + filename
