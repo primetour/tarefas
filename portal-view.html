@@ -45,6 +45,22 @@
 <!-- Bottom-nav antigo mantido como fallback (escondido por CSS) -->
 <nav class="bottom-nav" id="bottom-nav" style="display:none;"></nav>
 
+<!-- Lightbox: overlay full-screen ao clicar em qualquer foto -->
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-hidden="true">
+  <span class="lightbox-counter" id="lightbox-counter"></span>
+  <button class="lightbox-btn lightbox-close" id="lightbox-close" aria-label="Fechar">
+    <span class="material-symbols-outlined">close</span>
+  </button>
+  <button class="lightbox-btn lightbox-prev" id="lightbox-prev" aria-label="Anterior">
+    <span class="material-symbols-outlined">chevron_left</span>
+  </button>
+  <img class="lightbox-img" id="lightbox-img" alt="">
+  <button class="lightbox-btn lightbox-next" id="lightbox-next" aria-label="Próxima">
+    <span class="material-symbols-outlined">chevron_right</span>
+  </button>
+  <span class="lightbox-caption" id="lightbox-caption"></span>
+</div>
+
 <div id="app"></div>
 
 <footer class="site-footer" id="site-footer" style="display:none;">
@@ -183,6 +199,77 @@ function wireSideMenu(){
   // ESC fecha
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSideMenu(); });
 }
+
+/* ─── Lightbox: zoom de fotos com nav setas/teclado/swipe ──── */
+const lightbox = {
+  imgs: [],     // [{ url, caption }]
+  index: 0,
+  init() {
+    const el = document.getElementById('lightbox');
+    if (!el) return;
+    document.getElementById('lightbox-close')?.addEventListener('click', () => this.close());
+    document.getElementById('lightbox-prev')?.addEventListener('click', (e) => { e.stopPropagation(); this.go(-1); });
+    document.getElementById('lightbox-next')?.addEventListener('click', (e) => { e.stopPropagation(); this.go(1); });
+    el.addEventListener('click', (e) => { if (e.target === el) this.close(); }); // click fora fecha
+    document.addEventListener('keydown', (e) => {
+      if (!el.classList.contains('open')) return;
+      if (e.key === 'Escape')      this.close();
+      if (e.key === 'ArrowLeft')   this.go(-1);
+      if (e.key === 'ArrowRight')  this.go(1);
+    });
+    // Touch swipe (mobile)
+    let touchX = 0;
+    el.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+    el.addEventListener('touchend', (e) => {
+      const dx = (e.changedTouches[0]?.clientX || 0) - touchX;
+      if (Math.abs(dx) > 50) this.go(dx > 0 ? -1 : 1);
+    }, { passive: true });
+  },
+  // Coleta todas as fotos da página e abre na clicada
+  collectAndOpen(srcEl) {
+    const all = [...document.querySelectorAll(
+      '.hero-card img, .bento-card img, .place-card-img img'
+    )].filter(im => im.src);
+    this.imgs = all.map(im => ({
+      url: im.src,
+      caption: im.alt || im.closest('.place-card,.hero-card,.bento-card')
+        ?.querySelector('.place-card-title, .card-title')?.textContent || '',
+    }));
+    const i = all.indexOf(srcEl);
+    this.index = i >= 0 ? i : 0;
+    this.show();
+  },
+  show() {
+    const cur = this.imgs[this.index];
+    if (!cur) return;
+    document.getElementById('lightbox-img').src = cur.url;
+    document.getElementById('lightbox-caption').textContent = cur.caption || '';
+    document.getElementById('lightbox-counter').textContent = `${this.index + 1} / ${this.imgs.length}`;
+    document.getElementById('lightbox').classList.add('open');
+    document.getElementById('lightbox').setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  },
+  go(delta) {
+    if (!this.imgs.length) return;
+    this.index = (this.index + delta + this.imgs.length) % this.imgs.length;
+    this.show();
+  },
+  close() {
+    document.getElementById('lightbox')?.classList.remove('open');
+    document.getElementById('lightbox')?.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  },
+};
+lightbox.init();
+
+// Delegação: qualquer click em foto abre o lightbox
+document.addEventListener('click', (e) => {
+  const img = e.target.closest('.hero-card img, .bento-card img, .place-card-img img');
+  if (img) {
+    e.preventDefault();
+    lightbox.collectAndOpen(img);
+  }
+});
 
 /* ─── Scroll effects: topbar shadow + parallax leve no hero ──── */
 function wireScrollEffects(){
