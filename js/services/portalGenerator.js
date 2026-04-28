@@ -7,6 +7,10 @@
  * testável em Node (harness em tests/) sem trigger do firebase top-level.
  */
 
+// Tokens compartilhados com o portal web — defaults de cor, fontes etc.
+// Importa só o que é puro (sem firebase). Mantém identidade unificada.
+import { DEFAULT_COLORS as PORTAL_DEFAULT_COLORS, getPortalColors } from './portalTokens.js';
+
 // SEGMENTS inline (cópia da fonte em portal.js) — evita import circular
 // com módulo que carrega firebase. Se mudar lá, sincronizar aqui.
 const SEGMENTS = [
@@ -315,8 +319,9 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
   const allTips  = [{ tip, dest }, ...extraTips];
   const areaName = area?.name || 'PRIMETOUR';
   const colors   = {
-    primary:   area?.colors?.primary   || '#475569',
-    secondary: area?.colors?.secondary || '#1F2937',
+    // Defaults centralizados em portalTokens.js (compartilhado com o web)
+    primary:   area?.colors?.primary   || PORTAL_DEFAULT_COLORS.primary,
+    secondary: area?.colors?.secondary || PORTAL_DEFAULT_COLORS.secondary,
   };
   const filename = buildFilename(allTips, format);
 
@@ -477,8 +482,8 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
 
   // Vars mantêm os nomes legados (gold/navy) por compatibilidade com o
   // restante do generator, mas defaults agora são cinzas neutros — sem dourado.
-  const gold = (colors.primary   || '#475569').replace('#','');
-  const navy = (colors.secondary || '#1F2937').replace('#','');
+  const gold = (colors.primary   || PORTAL_DEFAULT_COLORS.primary).replace('#','');
+  const navy = (colors.secondary || PORTAL_DEFAULT_COLORS.secondary).replace('#','');
   const children = [];
   const date = new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long',day:'numeric'});
 
@@ -607,7 +612,7 @@ async function generatePDF({
   const FONT = FONT_OK ? 'Poppins' : 'helvetica';
   const setF = (style='normal') => doc.setFont(FONT, style);
 
-  const primary=colors.primary||'#475569', second=colors.secondary||'#1F2937';
+  const primary=colors.primary||PORTAL_DEFAULT_COLORS.primary, second=colors.secondary||PORTAL_DEFAULT_COLORS.secondary;
   const PAGE_W=210,MARGIN=16,CONTENT=210-16*2;
   let y=MARGIN;
   const pR=hexToR(primary),pG=hexToG(primary),pB=hexToB(primary);
@@ -1199,8 +1204,8 @@ async function generatePDF({
 async function generatePptx({ allTips, segments, areaName, area, colors, filename, imagesByDest = {} }) {
   await loadPptxGenJS();
   const pptx   = new window.PptxGenJS();
-  const primary= colors.primary   || '#475569';
-  const bgColor= colors.secondary || '#1F2937';
+  const primary= colors.primary   || PORTAL_DEFAULT_COLORS.primary;
+  const bgColor= colors.secondary || PORTAL_DEFAULT_COLORS.secondary;
   const pHex   = primary.replace('#','');
   const bgHex  = bgColor.replace('#','');
   const W=13.33, H=7.5;

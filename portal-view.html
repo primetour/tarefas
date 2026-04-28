@@ -9,8 +9,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@300,0&display=swap" rel="stylesheet">
+  <!-- Tokens compartilhados (Fase A): paleta da área, tipografia, espaçamento.
+       Aliases legados (--gold, --navy, etc.) ficam definidos aqui também
+       enquanto o CSS abaixo usa os nomes antigos — Fase B troca tudo. -->
+  <link rel="stylesheet" href="css/portal-tokens.css">
   <style>
-:root{--gold:#D4AF37;--navy:#242362;--light:#F8F7F4;--muted:#474650;--border:#E5E7EB;--white:#ffffff}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Poppins',sans-serif;background:var(--white);color:var(--navy);min-height:100vh;overflow-x:hidden}
 #loading{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:20px;z-index:9999;transition:opacity .5s}
@@ -130,7 +133,8 @@ body{font-family:'Poppins',sans-serif;background:var(--white);color:var(--navy);
 <script type="module">
 import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getFirestore, doc, getDoc, updateDoc, increment } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { firebaseConfig } from './js/config.js';
+import { firebaseConfig }   from './js/config.js';
+import { applyPortalTheme } from './js/services/portalTokens.js';
 
 const MONTHS=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const SEGMENTS=[
@@ -165,11 +169,11 @@ const db=getFirestore(app);
   const data=snap.data();
   updateDoc(doc(db,'portal_web_links',token),{views:increment(1)}).catch(()=>{});
 
-  const colors=data.colors||{};
-  const primary=colors.primary||'#D4AF37';
-  const secondary=colors.secondary||'#242362';
-  document.documentElement.style.setProperty('--gold',primary);
-  document.documentElement.style.setProperty('--navy',secondary);
+  // Tokens compartilhados com o PDF: cores da área aplicadas via
+  // CSS variables (`--portal-primary`, `--portal-secondary`) — os
+  // aliases legados (--gold/--navy) são derivados automaticamente
+  // em css/portal-tokens.css.
+  applyPortalTheme({ colors: data.colors || {} });
   if(data.areaLogoUrl){const img=document.getElementById('area-logo');img.src=data.areaLogoUrl;img.style.display='block';}
 
   const allTips=data.tipData||[];

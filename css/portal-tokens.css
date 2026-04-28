@@ -1,0 +1,161 @@
+/**
+ * PRIMETOUR — Portal de Dicas / City Guides
+ * Design tokens compartilhados: web (link) + PDF (export).
+ *
+ * Arquivo de INFRAESTRUTURA. As variáveis abaixo são consumidas tanto
+ * pelo portal-view.html (link web) quanto pelos exports (PDF lê via
+ * portalTokens.js). Trocar a cor da área propaga em todos os formatos.
+ *
+ * Nomenclatura: prefixo `--portal-*` pra evitar colisão com tokens
+ * globais do app principal.
+ */
+
+:root {
+  /* ─── Paleta da ÁREA (sobrescrita em runtime via area.colors) ─── */
+  --portal-primary:    #475569;  /* slate-600 fallback */
+  --portal-primary-rgb: 71, 85, 105;
+  --portal-secondary:  #1F2937;  /* gray-800 fallback */
+  --portal-secondary-rgb: 31, 41, 55;
+  --portal-on-primary:   #FFFFFF;
+  --portal-on-secondary: #FFFFFF;
+
+  /* ─── Paleta neutra (não muda por área) ─────────────────────── */
+  --portal-text:       #1F2937;
+  --portal-text-muted: #64748B;
+  --portal-text-soft:  #94A3B8;
+  --portal-bg:         #FFFFFF;
+  --portal-surface:    #F8FAFC;
+  --portal-surface-2:  #F1F5F9;
+  --portal-border:     #E5E7EB;
+  --portal-border-soft:#F1F5F9;
+  --portal-success:    #16A34A;
+  --portal-danger:     #DC2626;
+
+  /* ─── Tipografia ──────────────────────────────────────────────
+   * Poppins é a fonte oficial (carregada via <link> no html).
+   * Fallback system-ui pra performance no first paint. */
+  --portal-font: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Escala em rem: cresce com o html font-size do user (acessibilidade) */
+  --portal-fs-2xs:  0.625rem;   /* 10px — kicker labels */
+  --portal-fs-xs:   0.75rem;    /* 12px — captions */
+  --portal-fs-sm:   0.875rem;   /* 14px — secondary text */
+  --portal-fs-base: 1rem;       /* 16px — body */
+  --portal-fs-md:   1.125rem;   /* 18px */
+  --portal-fs-lg:   1.375rem;   /* 22px — card titles */
+  --portal-fs-xl:   1.625rem;   /* 26px — section titles */
+  --portal-fs-2xl:  2rem;       /* 32px — section covers */
+  --portal-fs-hero: clamp(2rem, 6vw, 3.5rem); /* responsivo */
+
+  --portal-fw-light:   300;
+  --portal-fw-regular: 400;
+  --portal-fw-medium:  500;
+  --portal-fw-semi:    600;
+  --portal-fw-bold:    700;
+
+  --portal-lh-tight:   1.15;
+  --portal-lh-snug:    1.35;
+  --portal-lh-normal:  1.55;
+  --portal-lh-relaxed: 1.7;
+
+  --portal-ls-tight:  -0.01em;
+  --portal-ls-normal:  0;
+  --portal-ls-wide:    0.05em;
+  --portal-ls-wider:   0.15em;
+  --portal-ls-kicker:  0.3em;   /* label minúsculas SPACED */
+
+  /* ─── Espaçamento (escala 4px) ─────────────────────────────── */
+  --portal-space-1:  0.25rem;   /* 4 */
+  --portal-space-2:  0.5rem;    /* 8 */
+  --portal-space-3:  0.75rem;   /* 12 */
+  --portal-space-4:  1rem;      /* 16 */
+  --portal-space-5:  1.25rem;   /* 20 */
+  --portal-space-6:  1.5rem;    /* 24 */
+  --portal-space-8:  2rem;      /* 32 */
+  --portal-space-10: 2.5rem;    /* 40 */
+  --portal-space-12: 3rem;      /* 48 */
+  --portal-space-16: 4rem;      /* 64 */
+  --portal-space-20: 5rem;      /* 80 */
+
+  /* ─── Layout / containers ─────────────────────────────────── */
+  --portal-content-max: 1200px;
+  --portal-content-pad-x: var(--portal-space-8);
+  --portal-content-pad-x-mobile: var(--portal-space-4);
+  --portal-toc-width: 240px;
+
+  /* ─── Border radius ───────────────────────────────────────── */
+  --portal-radius-sm:  4px;
+  --portal-radius-md:  8px;
+  --portal-radius-lg:  16px;
+  --portal-radius-xl:  24px;
+  --portal-radius-pill: 999px;
+
+  /* ─── Shadows ─────────────────────────────────────────────── */
+  --portal-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --portal-shadow-md: 0 4px 16px rgba(15, 23, 42, 0.10);
+  --portal-shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.16);
+  --portal-shadow-xl: 0 24px 48px rgba(15, 23, 42, 0.22);
+
+  /* ─── Transitions ─────────────────────────────────────────── */
+  --portal-trans-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --portal-trans:      0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --portal-trans-slow: 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ─── Z-index semântico ──────────────────────────────────── */
+  --portal-z-base:    0;
+  --portal-z-content: 1;
+  --portal-z-sticky:  50;     /* topbar, scrollspy */
+  --portal-z-overlay: 100;    /* dim background */
+  --portal-z-modal:   200;    /* lightbox, dialogs */
+  --portal-z-toast:   300;    /* notificações */
+
+  /* ─── Breakpoints (referência — usar em @media) ─────────────
+   * Mobile-first: estilos default são pra mobile.
+   *   sm:  640px   ─ tablet portrait
+   *   md:  768px   ─ tablet landscape
+   *   lg: 1024px   ─ desktop pequeno
+   *   xl: 1280px   ─ desktop padrão
+   * (CSS vars não funcionam dentro de @media; mantém pra documentação) */
+
+  /* ─── Aliases legados (compatibilidade — REMOVER em Fase B) ──
+   * Os nomes antigos (`--gold`, `--navy`, etc.) usados no
+   * portal-view.html original. Apontam pros novos tokens pra que
+   * a página atual continue funcionando enquanto migramos. */
+  --gold:   var(--portal-primary);
+  --navy:   var(--portal-secondary);
+  --light:  var(--portal-surface);
+  --muted:  var(--portal-text-muted);
+  --border: var(--portal-border);
+  --white:  var(--portal-bg);
+}
+
+/* ─── Modo escuro (futuro — Fase C, item 7 do roadmap) ───────
+ * Já deixamos a estrutura preparada. O <html data-theme="dark"> ativa.
+ * Por padrão o portal opera em "light" (definido acima).
+ */
+:root[data-theme="dark"] {
+  --portal-text:       #F1F5F9;
+  --portal-text-muted: #94A3B8;
+  --portal-text-soft:  #64748B;
+  --portal-bg:         #0F172A;
+  --portal-surface:    #1E293B;
+  --portal-surface-2:  #334155;
+  --portal-border:     #334155;
+  --portal-border-soft:#1E293B;
+}
+
+/* ─── Reduced motion: respeita preferência do user ────────────
+ * Usuários que ativam "reduce motion" no SO veem transições mais
+ * sutis. Animações principais (parallax, hero zoom) são suprimidas.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --portal-trans-fast: 0.01s;
+    --portal-trans:      0.01s;
+    --portal-trans-slow: 0.01s;
+  }
+  * {
+    animation-duration: 0.01s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01s !important;
+  }
+}
