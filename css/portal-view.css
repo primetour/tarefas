@@ -76,6 +76,8 @@ a { color: inherit; text-decoration: none; }
   z-index: var(--portal-z-sticky);
   display: flex; align-items: center; gap: var(--portal-space-3);
   transition: background var(--portal-trans), border-color var(--portal-trans);
+  /* Permite logo "transbordar" verticalmente sem aumentar altura visual */
+  overflow: visible;
 }
 .site-header.scrolled {
   background: rgba(255,255,255,0.96);
@@ -85,15 +87,18 @@ a { color: inherit; text-decoration: none; }
 /* Logo da área à ESQUERDA, clicável (home) */
 .header-home {
   display: flex; align-items: center; justify-content: center;
-  height: 44px; padding: 0 var(--portal-space-2);
+  height: 56px; padding: 0 var(--portal-space-2);
   background: none; border: none; cursor: pointer;
   text-decoration: none;
   border-radius: var(--portal-radius-md);
   transition: background var(--portal-trans-fast);
   flex-shrink: 0;
+  /* Logo "transborda" do header (overflow visible no .site-header)
+     pra ficar maior sem aumentar a altura do topbar (64px). */
+  margin-top: -4px; margin-bottom: -4px;
 }
 .header-home:hover { background: var(--portal-surface); }
-.header-home img { height: 32px; max-width: 140px; object-fit: contain; display: block; }
+.header-home img { height: 56px; max-width: 220px; object-fit: contain; display: block; }
 .header-home .home-fallback {
   font-size: var(--portal-fs-2xs);
   letter-spacing: var(--portal-ls-kicker);
@@ -945,7 +950,7 @@ body { padding-bottom: 64px; }
 .site-footer {
   background: var(--portal-secondary);
   color: #fff;
-  padding: var(--portal-space-6) var(--portal-content-pad-x-mobile);
+  padding: var(--portal-space-8) var(--portal-content-pad-x-mobile);
   text-align: center;
   margin-top: var(--portal-space-12);
   display: flex;
@@ -953,20 +958,17 @@ body { padding-bottom: 64px; }
   align-items: center;
   justify-content: center;
   gap: var(--portal-space-3);
-  min-height: 100px;
+  min-height: 160px;
 }
 .footer-logo {
-  max-width: 220px;
-  max-height: 64px;
+  max-width: 360px;
+  max-height: 110px;
   height: auto;
   width: auto;
   object-fit: contain;
+  margin: 0 auto;
 }
-.footer-sub {
-  font-size: var(--portal-fs-xs);
-  color: rgba(255,255,255,0.55);
-  letter-spacing: var(--portal-ls-wide);
-}
+.footer-sub { display: none; }
 
 /* ─── 12.3 Favoritos (botão coração + filtro) ─────────────── */
 .fav-btn {

@@ -314,21 +314,34 @@ export async function updateWebLink(token, updates) {
 
 /**
  * Apaga um material gerado (web link ou generation registrada).
- * Restrito a admin/diretoria — verificado via store.canManagePortal()
- * (que já permite roles master/admin/manager).
+ * Pode deletar quem:
+ *   - É o autor do material (createdBy.uid === currentUser.uid)
+ *   - Tem permissão portal_manage (master, admin, owner do workspace)
  *
  * @param {string} kind  — 'web' (portal_web_links) | 'generation' (portal_generations)
  * @param {string} id    — token do link ou docId da generation
  */
 export async function deletePortalMaterial(kind, id) {
-  if (!store.canManagePortal()) throw new Error('Permissão negada — apenas diretoria/admin.');
   if (!id) throw new Error('ID obrigatório.');
   const col = kind === 'web' ? 'portal_web_links'
             : kind === 'generation' ? 'portal_generations'
             : null;
   if (!col) throw new Error('Tipo inválido: use "web" ou "generation".');
-  await deleteDoc(doc(db, col, id));
-  await auditLog?.('portal.material.delete', col, id, { kind });
+
+  // Lê o doc pra checar autoria — autor pode deletar próprio material
+  const ref     = doc(db, col, id);
+  const snap    = await getDoc(ref);
+  const data    = snap.exists() ? snap.data() : null;
+  const myUid   = store.get('currentUser')?.uid || null;
+  // web links salvam createdBy.uid, generations salvam generatedBy (string)
+  const ownerId = data?.createdBy?.uid || data?.generatedBy || null;
+  const isOwner = myUid && ownerId && myUid === ownerId;
+  const canMgr  = store.canManagePortal();
+  if (!canMgr && !isOwner) {
+    throw new Error('Permissão negada — só o autor ou admin pode excluir.');
+  }
+  await deleteDoc(ref);
+  await auditLog?.('portal.material.delete', col, id, { kind, asAuthor: !canMgr && isOwner });
 }
 
 // Stub do auditLog se não estiver importado (não-fatal)

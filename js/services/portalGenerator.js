@@ -550,8 +550,20 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
 
   // Use shared fetchImgData (CORS-safe, returns arrayBuffer + mimeType)
 
-  // Cover
-  children.push(new Paragraph({children:[new TextRun({text:areaName.toUpperCase(),bold:true,size:52,color:gold,characterSpacing:200})],alignment:AlignmentType.CENTER,spacing:{before:2400,after:160}}));
+  // Cover — logo (se houver) + nome da área + destinos + data
+  // Padrão alinhado com o PDF: logo grande no topo, depois título.
+  const coverLogoData = await fetchImgData(area?.logoUrl);
+  if (coverLogoData?.arrayBuffer) {
+    try {
+      children.push(new Paragraph({
+        children:[new ImageRun({data:coverLogoData.arrayBuffer,
+          transformation:{width:280,height:140},type:coverLogoData.ext})],
+        alignment:AlignmentType.CENTER,
+        spacing:{before:1800,after:200},
+      }));
+    } catch(e) { console.warn('DOCX cover logo skip:', e.message); }
+  }
+  children.push(new Paragraph({children:[new TextRun({text:areaName.toUpperCase(),bold:true,size:52,color:gold,characterSpacing:200})],alignment:AlignmentType.CENTER,spacing:{before:coverLogoData?.arrayBuffer?0:2400,after:160}}));
   children.push(new Paragraph({children:[new TextRun({text:'PORTAL DE DICAS',size:18,color:'888888',characterSpacing:300})],alignment:AlignmentType.CENTER,spacing:{after:600}}));
   for(const{dest}of allTips) children.push(new Paragraph({children:[new TextRun({text:destLabel(dest),bold:true,size:28,color:navy})],alignment:AlignmentType.CENTER,spacing:{after:120}}));
   children.push(new Paragraph({children:[new TextRun({text:'─────────────────────────',color:gold,size:16})],alignment:AlignmentType.CENTER,spacing:{before:400,after:200}}));
@@ -584,7 +596,10 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
 
       if(segDef.mode==='special_info'){
         const inf=data.info||{};
-        const fields=[['Descrição',inf.descricao],['Dica',inf.dica],['População',inf.populacao],['Moeda',inf.moeda],['Língua oficial',inf.lingua],['Religião',inf.religiao],['Fuso horário',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h de Brasília`:''],['Voltagem',inf.voltagem],['DDD',inf.ddd]].filter(([,v])=>v);
+        // Limpa CLIMA + REPRESENTAÇÃO da descrição (renderizadas como blocos próprios)
+        const repObj=inf.representacao||{};
+        const { descricao: descClean, climate } = parseDescricao(inf.descricao, !!repObj.nome);
+        const fields=[['Descrição',descClean],['Dica',inf.dica],['População',inf.populacao],['Moeda',inf.moeda],['Língua oficial',inf.lingua],['Religião',inf.religiao],['Fuso horário',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h de Brasília`:''],['Voltagem',inf.voltagem],['DDD',inf.ddd]].filter(([,v])=>v);
         if(fields.length){
           const rows=[];
           for(let i=0;i<fields.length;i+=2){
@@ -592,6 +607,26 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
             rows.push(new TableRow({children:[...pair,...(pair.length<2?[null]:[])].map(f=>f?new TableCell({width:{size:4500,type:WidthType.DXA},borders:{top:{style:BorderStyle.NONE},bottom:{style:BorderStyle.SINGLE,size:4,color:'EEEEEE'},left:{style:BorderStyle.NONE},right:{style:BorderStyle.NONE}},children:[new Paragraph({children:[new TextRun({text:f[0].toUpperCase(),size:14,color:gold,bold:true,characterSpacing:150})],spacing:{after:20}}),new Paragraph({children:[new TextRun({text:f[1],size:18,color:navy})],spacing:{after:80}})]}):new TableCell({width:{size:4500,type:WidthType.DXA},borders:{top:{style:BorderStyle.NONE},bottom:{style:BorderStyle.NONE},left:{style:BorderStyle.NONE},right:{style:BorderStyle.NONE}},children:[]}))}));
           }
           children.push(new Table({rows,width:{size:9000,type:WidthType.DXA}}));
+          children.push(new Paragraph({spacing:{after:160}}));
+        }
+        // CLIMA — tabela 13 col (°C + 12 meses) com linhas Máx/Mín
+        // Aceita formato web (cli.max_0..max_11) ou parsed (climate.max[])
+        const cli = inf.clima || {};
+        const monthsArr = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        const maxArr = climate?.max || monthsArr.map((_,i)=>cli[`max_${i}`] ?? null);
+        const minArr = climate?.min || monthsArr.map((_,i)=>cli[`min_${i}`] ?? null);
+        const hasClimate = maxArr.some(v=>v!=null) || minArr.some(v=>v!=null);
+        if (hasClimate) {
+          children.push(new Paragraph({children:[new TextRun({text:'CLIMA',size:14,bold:true,color:gold,characterSpacing:200})],spacing:{before:240,after:60}}));
+          const climaCell = (txt, bold=false) => new TableCell({
+            width:{size:660,type:WidthType.DXA},
+            borders:{top:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'},bottom:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'},left:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'},right:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'}},
+            children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:String(txt),size:14,bold,color:bold?gold:'474650'})]})],
+          });
+          const headerRow = new TableRow({children:[climaCell('°C',true), ...monthsArr.map(m=>climaCell(m,true))]});
+          const maxRow    = new TableRow({children:[climaCell('Máx ↑',true), ...maxArr.map(v=>climaCell(v??'—'))]});
+          const minRow    = new TableRow({children:[climaCell('Mín ↓',true), ...minArr.map(v=>climaCell(v??'—'))]});
+          children.push(new Table({rows:[headerRow, maxRow, minRow], width:{size:9240,type:WidthType.DXA}}));
           children.push(new Paragraph({spacing:{after:160}}));
         }
         const rep=inf.representacao||{};
@@ -1285,12 +1320,20 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
   const date=new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'});
   pptx.layout='LAYOUT_WIDE'; pptx.author='PRIMETOUR Portal de Dicas';
 
-  // Cover
+  // Cover — logo (se houver) no topo + título + destinos + data
+  // Padrão alinhado com PDF: logo destacado, depois nome da área.
+  const coverLogoData = await fetchImgData(area?.logoUrl);
   const cover=pptx.addSlide(); cover.background={color:bgHex};
+  if (coverLogoData?.dataUrl) {
+    try {
+      cover.addImage({ data: coverLogoData.dataUrl, x: W/2-2, y: 0.7, w: 4, h: 1.4,
+        sizing:{type:'contain',w:4,h:1.4} });
+    } catch(e) { console.warn('PPTX cover logo:', e.message); }
+  }
   cover.addShape(pptx.ShapeType.rect,{x:1.5,y:3.55,w:W-3,h:0.04,fill:{color:pHex},line:{type:'none'}});
-  cover.addText('PORTAL DE DICAS',{x:0.5,y:1.7,w:W-1,h:0.4,fontSize:10,color:'AAAAAA',align:'center',charSpacing:3});
-  cover.addText(areaName.toUpperCase(),{x:0.5,y:2.2,w:W-1,h:1.1,fontSize:38,bold:true,color:pHex,align:'center',charSpacing:4});
-  cover.addText(allTips.map(({dest})=>destLabel(dest)).join('  ·  '),{x:0.5,y:3.8,w:W-1,h:0.6,fontSize:16,bold:true,color:'FFFFFF',align:'center'});
+  cover.addText('PORTAL DE DICAS',{x:0.5,y:2.3,w:W-1,h:0.4,fontSize:10,color:'AAAAAA',align:'center',charSpacing:3});
+  cover.addText(areaName.toUpperCase(),{x:0.5,y:2.7,w:W-1,h:0.9,fontSize:32,bold:true,color:pHex,align:'center',charSpacing:4});
+  cover.addText(allTips.map(({dest})=>destLabel(dest)).join('  ·  '),{x:0.5,y:3.9,w:W-1,h:0.6,fontSize:16,bold:true,color:'FFFFFF',align:'center'});
   cover.addText(date,{x:0.5,y:H-0.6,w:W-1,h:0.35,fontSize:9,color:pHex,align:'center'});
 
   for (const { tip, dest } of allTips) {
@@ -1327,7 +1370,10 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
 
       if (segDef.mode==='special_info') {
         const inf=data.info||{};
-        const pairs=[['Descrição',inf.descricao],['Moeda',inf.moeda],['Língua',inf.lingua],
+        // Limpa CLIMA + REPRESENTAÇÃO da descrição (renderizadas como blocos próprios)
+        const repObj=inf.representacao||{};
+        const { descricao: descClean, climate } = parseDescricao(inf.descricao, !!repObj.nome);
+        const pairs=[['Descrição',descClean],['Moeda',inf.moeda],['Língua',inf.lingua],
           ['Fuso',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h`:''],
           ['Voltagem',inf.voltagem],['DDD',inf.ddd],['Religião',inf.religiao],['População',inf.populacao]].filter(([,v])=>v);
         const cW=3.0,cH=1.4,gX=0.12,gY=0.12,sX=0.3,sY=0.9;
@@ -1337,6 +1383,53 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
           slide.addText(l.toUpperCase(),{x:x+0.1,y:y+0.12,w:cW-0.2,h:0.28,fontSize:6,bold:true,color:pHex,charSpacing:1});
           slide.addText(String(v).slice(0,60),{x:x+0.1,y:y+0.42,w:cW-0.2,h:0.88,fontSize:9,color:bgHex,wrap:true,valign:'top'});
         });
+
+        // Slide adicional pra CLIMA + REPRESENTAÇÃO (se houver dados)
+        const cli = inf.clima || {};
+        const monthsArr = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        const maxArr = climate?.max || monthsArr.map((_,i)=>cli[`max_${i}`] ?? null);
+        const minArr = climate?.min || monthsArr.map((_,i)=>cli[`min_${i}`] ?? null);
+        const hasClimate = maxArr.some(v=>v!=null) || minArr.some(v=>v!=null);
+        const rep = inf.representacao||{};
+        if (hasClimate || rep.nome) {
+          const ex = pptx.addSlide(); ex.background={color:'FFFFFF'};
+          ex.addShape(pptx.ShapeType.rect,{x:0,y:0,w:W,h:0.72,fill:{color:bgHex},line:{type:'none'}});
+          ex.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.08,h:0.72,fill:{color:pHex},line:{type:'none'}});
+          ex.addText('INFORMAÇÕES — CLIMA & REPRESENTAÇÃO',{x:0.25,y:0.08,w:8.5,h:0.56,fontSize:13,bold:true,color:'FFFFFF',charSpacing:2});
+          ex.addText(label,{x:8.5,y:0.08,w:4.5,h:0.56,fontSize:9,color:pHex,align:'right'});
+          ex.addShape(pptx.ShapeType.rect,{x:0,y:H-0.3,w:W,h:0.3,fill:{color:'F8F7F4'},line:{type:'none'}});
+          ex.addText(`PRIMETOUR  ·  Portal de Dicas  ·  ${date}`,{x:0.3,y:H-0.25,w:W-0.6,h:0.22,fontSize:7,color:'AAAAAA',align:'center'});
+          let yy = 1.0;
+          if (hasClimate) {
+            ex.addText('CLIMA',{x:0.3,y:yy,w:4,h:0.3,fontSize:11,bold:true,color:pHex,charSpacing:2});
+            yy += 0.36;
+            // Tabela 13 colunas (label + 12 meses)
+            const tableData = [
+              [{text:'°C',options:{bold:true,color:pHex,fill:{color:'F8F7F4'}}}, ...monthsArr.map(m=>({text:m,options:{bold:true,color:pHex,fill:{color:'F8F7F4'}}}))],
+              [{text:'Máx ↑',options:{bold:true,color:bgHex}}, ...maxArr.map(v=>({text:String(v??'—'),options:{color:'474650'}}))],
+              [{text:'Mín ↓',options:{bold:true,color:bgHex}}, ...minArr.map(v=>({text:String(v??'—'),options:{color:'474650'}}))],
+            ];
+            ex.addTable(tableData,{x:0.3,y:yy,w:W-0.6,fontSize:9,align:'center',
+              border:{type:'solid',pt:0.5,color:'EEEEEE'}});
+            yy += 1.6;
+          }
+          if (rep.nome) {
+            ex.addText('REPRESENTAÇÃO BRASILEIRA',{x:0.3,y:yy,w:6,h:0.3,fontSize:11,bold:true,color:pHex,charSpacing:2});
+            yy += 0.36;
+            const lines = [
+              ['Nome:',rep.nome],['Endereço:',rep.endereco],
+              ['Telefone:',rep.telefone],['Site:',rep.link],
+            ].filter(([,v])=>v);
+            lines.forEach(([l,v])=>{
+              ex.addText([
+                {text:l+' ',options:{bold:true,color:bgHex,fontSize:10}},
+                {text:String(v),options:{color:'474650',fontSize:10,
+                  hyperlink: l==='Site:' ? {url:normalizeUrl(v)} : undefined}},
+              ],{x:0.3,y:yy,w:W-0.6,h:0.3});
+              yy += 0.32;
+            });
+          }
+        }
 
       } else if (segDef.mode==='simple_list') {
         const items=(data.items||[]).slice(0,10);

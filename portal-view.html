@@ -85,7 +85,6 @@
 
 <footer class="site-footer" id="site-footer" style="display:none;">
   <img id="footer-logo" class="footer-logo" style="display:none;" alt="">
-  <div class="footer-sub" id="footer-date"></div>
 </footer>
 
 <script type="module">
@@ -122,7 +121,6 @@ const db=getFirestore(app);
   const token=window.location.hash.slice(1);
   window.__portalToken = token;
   const appEl=document.getElementById('app');
-  document.getElementById('footer-date').textContent=new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'});
   if(!token){showErr('Link inválido','Este link não contém um token de acesso.');return;}
   let snap;
   try{snap=await getDoc(doc(db,'portal_web_links',token));}
@@ -629,12 +627,28 @@ function renderSeg(sd,data,imgs){
   return renderPlaces(sd,data,imgs,sd.key==='agenda_cultural');
 }
 
+// Limpa CLIMA e REPRESENTAÇÃO BRASILEIRA de descrições legadas
+// (eram colados como texto cru). Os blocos estruturados rendem
+// abaixo, então no texto seria duplicado.
+function cleanInfoDescricao(raw, hasRepObj) {
+  let txt = String(raw || '');
+  // Remove bloco CLIMA até quebra dupla, "REPRESENTAÇÃO" ou fim
+  txt = txt.replace(/\n*\s*CLIMA[\s\S]*?(?=\n\n|REPRESENTA[ÇC][ÃA]O|$)/i, '\n').trim();
+  if (hasRepObj) {
+    txt = txt.replace(/\n*\s*REPRESENTA[ÇC][ÃA]O\s+BRASILEIRA[\s\S]*$/i, '').trim();
+  }
+  return txt;
+}
+
 function renderInfo(sd,data){
   const inf=data.info||{};
   const cli=inf.clima||{};
   const hasC=MONTHS.some((_,i)=>cli[`max_${i}`]||cli[`min_${i}`]);
   const rep=inf.representacao||{};
-  if(!inf.descricao&&!inf.dica&&!inf.populacao&&!inf.moeda&&!inf.lingua&&!hasC&&!rep.nome)return '';
+  // Descrição limpa: sem CLIMA/REPRESENTAÇÃO duplicados (eles renderizam
+  // como blocos próprios abaixo). Aceita dados legados com texto cru.
+  const descClean = cleanInfoDescricao(inf.descricao, !!rep.nome);
+  if(!descClean&&!inf.dica&&!inf.populacao&&!inf.moeda&&!inf.lingua&&!hasC&&!rep.nome)return '';
 
   // Chips com ícones em flow (não mais grid 5 col)
   const chips = [
@@ -648,7 +662,7 @@ function renderInfo(sd,data){
   ].filter(([,,v])=>v);
 
   return `${segHead(sd)}
-    ${inf.descricao ? `<p class="info-description">${esc(inf.descricao)}</p>` : ''}
+    ${descClean ? `<p class="info-description">${esc(descClean)}</p>` : ''}
     ${inf.dica ? `<div class="info-dica">
       <span class="material-symbols-outlined">lightbulb</span>
       <div class="info-dica-text">

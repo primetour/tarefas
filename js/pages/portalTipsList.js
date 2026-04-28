@@ -548,7 +548,7 @@ async function showMaterialsModal(tip, dest) {
             style="font-size:0.75rem;color:var(--text-muted);">✎ Editar</button>
           <button class="btn btn-primary btn-sm mat-derive-btn" data-token="${esc(token)}"
             style="font-size:0.75rem;">+ Formato</button>
-          ${(window.__store_canManagePortal||(()=>true))() ? `
+          ${(store.canManagePortal() || link?.createdBy?.uid === store.get('currentUser')?.uid) ? `
           <button class="btn btn-ghost btn-sm mat-del-btn" data-kind="web" data-id="${esc(token)}"
             title="Excluir material" style="font-size:0.75rem;color:#EF4444;">🗑</button>
           ` : ''}
@@ -577,7 +577,7 @@ async function showMaterialsModal(tip, dest) {
         <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm mat-regen-btn" data-format="${esc(fmt)}"
             style="font-size:0.75rem;color:var(--brand-gold);">↓ Baixar</button>
-          ${(window.__store_canManagePortal||(()=>true))() ? `
+          ${(store.canManagePortal() || gen?.generatedBy === store.get('currentUser')?.uid) ? `
           <button class="btn btn-ghost btn-sm mat-del-btn" data-kind="generation" data-id="${esc(gen.id)}"
             title="Excluir material" style="font-size:0.75rem;color:#EF4444;">🗑</button>
           ` : ''}
