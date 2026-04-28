@@ -258,11 +258,12 @@
   --text-secondary: #475569;  /* slate-600 */
   --text-muted:     #64748B;  /* slate-500 */
   --text-inverse:   #FFFFFF;  /* sobre azul escuro */
-  --text-gold:      #2563EB;  /* azul como "gold" */
-  /* Brand cores: azul royal */
-  --brand-gold:       #2563EB; /* blue-600 */
-  --brand-gold-light: #3B82F6; /* blue-500 */
-  --brand-gold-dark:  #1D4ED8; /* blue-700 */
+  --text-gold:      #1F2937;  /* mesma família do sidebar pra coerência */
+  /* Brand: usa o MESMO tom do sidebar (gray-800) pra botões/highlights —
+   * escala consistente sem cor "pulando". Hover/active escurece um pouco. */
+  --brand-gold:       #1F2937; /* mesmo do sidebar — botões primary */
+  --brand-gold-light: #374151; /* gray-700 */
+  --brand-gold-dark:  #111827; /* gray-900 */
   /* Shadows suaves (paleta clara) */
   --shadow-sm: 0 1px 3px rgba(15,23,42,0.06);
   --shadow-md: 0 4px 16px rgba(15,23,42,0.08);

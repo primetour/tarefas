@@ -69,8 +69,8 @@
 }
 
 .sidebar-brand-icon {
-  width: 36px;
-  height: 36px;
+  width: 56px;
+  height: 56px;
   background: transparent;
   border-radius: var(--radius-sm);
   display: flex;
@@ -78,7 +78,18 @@
   justify-content: center;
   font-size: 1.1rem;
   flex-shrink: 0;
-  
+}
+.sidebar.collapsed .sidebar-brand-icon {
+  width: 36px;
+  height: 36px;
+}
+/* Em paletas CLARAS (sidebar branco), inverte a mandala-branca padrão
+ * pra ela ficar visível (escura) sobre o fundo branco. Só afeta o
+ * FALLBACK — quando o user upload um logo customizado, a sidebar.js
+ * já escolhe a versão apropriada (light/dark). */
+:root[data-palette="platinum"] .sidebar-brand-icon img,
+:root[data-palette="sand"] .sidebar-brand-icon img {
+  filter: brightness(0) saturate(0) invert(20%);
 }
 
 .sidebar-brand-text {

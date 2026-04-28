@@ -32,13 +32,17 @@ function _buildPaletteCards(currentPalette) {
       '<span style="width:18px;height:18px;border-radius:50%;background:' + c +
       ';border:1px solid rgba(128,128,128,0.3);display:inline-block;"></span>'
     ).join('');
+    // Check com CLASSE específica `.palette-check` — o seletor antigo
+    // (`span[style*="margin-left:auto"]`) falhava em alguns navegadores
+    // porque o style normalizado mudava de ordem, fazendo o querySelector
+    // não achar o ✓ existente — resultado: ✓ duplicado a cada click.
     return '<div class="palette-card' + (active ? ' selected' : '') + '" data-palette-id="' + p.id + '"' +
       ' style="padding:14px;border-radius:var(--radius-md);border:2px solid ' +
       (active ? 'var(--brand-gold)' : 'var(--border-subtle)') +
       ';background:var(--bg-surface);cursor:pointer;transition:all 0.2s;">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
       '<div style="display:flex;gap:4px;">' + swatches + '</div>' +
-      (active ? '<span style="margin-left:auto;color:var(--brand-gold);font-weight:700;">✓</span>' : '') +
+      (active ? '<span class="palette-check" style="margin-left:auto;color:var(--brand-gold);font-weight:700;">✓</span>' : '') +
       '</div>' +
       '<div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);">' + esc(p.label) + '</div>' +
       '<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">' + esc(p.desc) + '</div>' +
@@ -450,25 +454,30 @@ function _bindProfileEvents(profile) {
   document.querySelectorAll('#palette-chooser .palette-card').forEach(card => {
     card.addEventListener('click', () => {
       _selectedPalette = card.dataset.paletteId;
-      // Apply immediately for live preview
       document.documentElement.dataset.palette = _selectedPalette;
       localStorage.setItem('primetour-palette', _selectedPalette);
-      // Update selected state
+      // Re-render: limpa TODOS os checks antes (single source of truth) e
+      // adiciona apenas no card ativo. Evita ✓ duplicados por clicks repetidos.
       document.querySelectorAll('#palette-chooser .palette-card').forEach(c => {
         const isActive = c.dataset.paletteId === _selectedPalette;
         c.classList.toggle('selected', isActive);
         c.style.borderColor = isActive ? 'var(--brand-gold)' : 'var(--border-subtle)';
-        const check = c.querySelector('span[style*="margin-left:auto"]');
-        if (isActive && !check) {
+        // Remove TODOS os checks dessa card (defensivo contra duplicados existentes)
+        c.querySelectorAll('.palette-check').forEach(el => el.remove());
+        if (isActive) {
           const firstRow = c.querySelector('div');
           const s = document.createElement('span');
+          s.className = 'palette-check';
           s.style.cssText = 'margin-left:auto;color:var(--brand-gold);font-weight:700;';
           s.textContent = '✓';
           firstRow.appendChild(s);
-        } else if (!isActive && check) {
-          check.remove();
         }
       });
+      // Re-renderiza sidebar quando muda paleta (logo claro/escuro pode mudar)
+      import('../components/sidebar.js').then(({ renderSidebar }) => {
+        const el = document.querySelector('.sidebar');
+        if (el && renderSidebar) renderSidebar(el);
+      }).catch(()=>{});
     });
   });
 
@@ -533,7 +542,7 @@ function _bindProfileEvents(profile) {
 function openColorPicker(profile) {
   let selectedColor = profile.avatarColor || '#3B82F6';
 
-  modal.open({
+  const ref = modal.open({
     title: 'Escolher cor do avatar',
     size:  'sm',
     content: `
@@ -579,19 +588,21 @@ function openColorPicker(profile) {
         }
       }
     ],
-    onOpen: () => {
-      setTimeout(() => {
-        document.querySelectorAll('#color-swatch-grid [data-color]').forEach(el => {
-          el.addEventListener('click', () => {
-            selectedColor = el.dataset.color;
-            document.querySelectorAll('#color-swatch-grid [data-color]').forEach(e => {
-              e.classList.toggle('selected', e.dataset.color === selectedColor);
-            });
-            const preview = document.getElementById('color-preview');
-            if(preview) preview.style.background = selectedColor;
-          });
+  });
+
+  // Modal não tem callback onOpen — bindamos os clicks após open() retornar.
+  // requestAnimationFrame garante que o DOM já foi inserido antes do bind.
+  requestAnimationFrame(() => {
+    const body = ref?.getBody?.() || document;
+    body.querySelectorAll('#color-swatch-grid [data-color]').forEach(el => {
+      el.addEventListener('click', () => {
+        selectedColor = el.dataset.color;
+        body.querySelectorAll('#color-swatch-grid [data-color]').forEach(e => {
+          e.classList.toggle('selected', e.dataset.color === selectedColor);
         });
-      }, 60);
-    },
+        const preview = body.querySelector('#color-preview');
+        if (preview) preview.style.background = selectedColor;
+      });
+    });
   });
 }
