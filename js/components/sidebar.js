@@ -11,7 +11,7 @@ import { saveWorkspaceSelection } from '../services/workspaces.js';
 // ─── Definição de navegação ───────────────────────────────
 const NAV_GROUPS = [
   {
-    label: 'Principal',
+    label: 'Tarefas e Projetos',
     items: [
       { route: 'dashboard',  icon: '⊞',  label: 'Painel',      perm: 'dashboard_view' },
       { route: 'tasks',      icon: '✓',  label: 'Tarefas',     perm: 'task_create' },
@@ -22,7 +22,7 @@ const NAV_GROUPS = [
     ]
   },
   {
-    label: 'Gestão',
+    label: 'Gestão de Equipe',
     items: [
       { route: 'workspaces', icon: '◈',  label: 'Squads',   perm: 'workspace_create', altPerm: 'system_view_all' },
       { route: 'requests',       icon: '◌',  label: 'Solicitações', perm: 'task_create', badge: true },

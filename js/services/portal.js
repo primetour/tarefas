@@ -312,6 +312,28 @@ export async function updateWebLink(token, updates) {
   });
 }
 
+/**
+ * Apaga um material gerado (web link ou generation registrada).
+ * Restrito a admin/diretoria — verificado via store.canManagePortal()
+ * (que já permite roles master/admin/manager).
+ *
+ * @param {string} kind  — 'web' (portal_web_links) | 'generation' (portal_generations)
+ * @param {string} id    — token do link ou docId da generation
+ */
+export async function deletePortalMaterial(kind, id) {
+  if (!store.canManagePortal()) throw new Error('Permissão negada — apenas diretoria/admin.');
+  if (!id) throw new Error('ID obrigatório.');
+  const col = kind === 'web' ? 'portal_web_links'
+            : kind === 'generation' ? 'portal_generations'
+            : null;
+  if (!col) throw new Error('Tipo inválido: use "web" ou "generation".');
+  await deleteDoc(doc(db, col, id));
+  await auditLog?.('portal.material.delete', col, id, { kind });
+}
+
+// Stub do auditLog se não estiver importado (não-fatal)
+const auditLog = (typeof window !== 'undefined' && window.__auditLog) || (async () => {});
+
 /* ─── Download control ────────────────────────────────────── */
 export async function checkDownloadLimit() {
   if (store.isMaster() || store.can('portal_download_unlimited'))

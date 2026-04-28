@@ -5,8 +5,9 @@
 import { store }   from '../store.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 import {
-  fetchAreas, fetchDestinations, fetchTips, SEGMENTS,
+  fetchAreas, fetchDestinations, fetchTips, SEGMENTS, deletePortalMaterial,
 } from '../services/portal.js';
+import { toast } from '../components/toast.js';
 import {
   collection, getDocs, query, orderBy, limit, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -114,6 +115,25 @@ export async function renderPortalDashboard(container) {
   document.getElementById('dash-refresh')?.addEventListener('click', () => loadAll());
   document.getElementById('dash-export-pdf')?.addEventListener('click', () => exportPortalPdf());
   document.getElementById('dash-export-xls')?.addEventListener('click', () => exportPortalXls());
+
+  // Delete de materiais — restrito a admin/diretoria via canManagePortal()
+  // (validação dupla: backend em deletePortalMaterial + auditLog).
+  container.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.portal-mat-del');
+    if (!btn) return;
+    const kind = btn.dataset.kind;
+    const id   = btn.dataset.id;
+    if (!confirm('Excluir este material? Esta ação não pode ser desfeita.')) return;
+    btn.disabled = true; btn.textContent = '⏳';
+    try {
+      await deletePortalMaterial(kind, id);
+      toast.success('Material excluído.');
+      loadAll(); // re-render
+    } catch (err) {
+      toast.error('Erro: ' + (err?.message || err));
+      btn.disabled = false; btn.textContent = '🗑';
+    }
+  });
 
   await loadAll();
 }
@@ -670,9 +690,14 @@ function renderDash() {
                 ${(l.tipData||[]).length} destino${(l.tipData||[]).length!==1?'s':''}</td>
               <td style="padding:8px 12px;font-weight:600;">${l.views||0}</td>
               <td style="padding:8px 12px;color:var(--text-muted);">${fmtDate(l.createdAt)}</td>
-              <td style="padding:8px 12px;">
+              <td style="padding:8px 12px;display:flex;gap:6px;align-items:center;">
                 <a href="${buildViewUrl(l.token)}" target="_blank"
-                  style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;">↗</a>
+                  title="Abrir link"
+                  style="font-size:0.875rem;color:var(--brand-blue,#3B82F6);text-decoration:none;">↗</a>
+                <button class="portal-mat-del" data-kind="web" data-id="${esc(l.token)}"
+                  title="Excluir material"
+                  style="background:none;border:none;cursor:pointer;font-size:0.875rem;
+                    color:#EF4444;padding:2px 6px;border-radius:3px;">🗑</button>
               </td>
             </tr>`).join('')}
         </tbody>
