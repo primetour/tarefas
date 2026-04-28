@@ -62,7 +62,12 @@ function loadScript(src) {
 export async function generateTip({ tip, area, dest, segments, format, extraTips = [], imagesOverride = {}, clientName = '' }) {
   const allTips  = [{ tip, dest }, ...extraTips];
   const areaName = area?.name || 'PRIMETOUR';
-  const colors   = area?.colors || { primary: '#D4A843', secondary: '#1A1A2E' };
+  // Paleta default neutra (cinzas — sem dourado/azul) — pode ser sobrescrita
+  // por area.colors definidas pelo usuário no editor de Áreas do Portal.
+  const colors   = {
+    primary:   area?.colors?.primary   || '#475569', // slate-600
+    secondary: area?.colors?.secondary || '#1F2937', // gray-800
+  };
   const filename = buildFilename(allTips, format);
 
   // Resolve images for every format (not just web)
@@ -195,8 +200,10 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
     ExternalHyperlink, BorderStyle, Table, TableRow, TableCell,
     WidthType, PageBreak, ImageRun } = window.docx;
 
-  const gold = (colors.primary   || '#D4AF37').replace('#','');
-  const navy = (colors.secondary || '#242362').replace('#','');
+  // Vars mantêm os nomes legados (gold/navy) por compatibilidade com o
+  // restante do generator, mas defaults agora são cinzas neutros — sem dourado.
+  const gold = (colors.primary   || '#475569').replace('#','');
+  const navy = (colors.secondary || '#1F2937').replace('#','');
   const children = [];
   const date = new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long',day:'numeric'});
 
@@ -306,30 +313,80 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
   await loadJsPDF();
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const primary=colors.primary||'#D4AF37', second=colors.secondary||'#242362';
+  const primary=colors.primary||'#475569', second=colors.secondary||'#1F2937';
   const PAGE_W=210,MARGIN=16,CONTENT=210-16*2;
   let y=MARGIN;
   const pR=hexToR(primary),pG=hexToG(primary),pB=hexToB(primary);
   const sR=hexToR(second), sG=hexToG(second), sB=hexToB(second);
+
+  // Pré-carrega logo da área (1x). Usado tanto na capa quanto no rodapé.
+  // Tem dimensões reais pra calcular aspect-ratio e não distorcer.
+  let logoMeta = null; // { dataUrl, w, h }
+  if (area?.logoUrl) {
+    const b64 = await imgToBase64(area.logoUrl);
+    if (b64) {
+      try {
+        const dims = await new Promise((resolve, reject) => {
+          const im = new Image();
+          im.onload  = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+          im.onerror = () => reject();
+          im.src = b64;
+        });
+        logoMeta = { dataUrl: b64, ...dims };
+      } catch { logoMeta = { dataUrl: b64, w: 200, h: 60 }; }
+    }
+  }
 
   const addPage=()=>{doc.addPage();y=MARGIN;addFooter();};
   const checkPage=(n=10)=>{if(y+n>282)addPage();};
   const addFooter=()=>{
     const pg=doc.getNumberOfPages(); doc.setPage(pg);
     doc.setDrawColor(pR,pG,pB); doc.setLineWidth(0.3);
-    doc.line(MARGIN,288,PAGE_W-MARGIN,288);
+    doc.line(MARGIN,285,PAGE_W-MARGIN,285);
+    // Logo centralizado (se houver), altura máxima 6mm pro rodapé
+    let footerTextY = 290;
+    if (logoMeta) {
+      const LOGO_H = 6;
+      const LOGO_W = Math.min(40, LOGO_H * (logoMeta.w / Math.max(logoMeta.h, 1)));
+      try {
+        doc.addImage(logoMeta.dataUrl, 'PNG', (PAGE_W - LOGO_W) / 2, 287, LOGO_W, LOGO_H, undefined, 'FAST');
+      } catch (e) { /* fallback silencioso */ }
+      footerTextY = 287 + LOGO_H + 3;
+    }
     doc.setFontSize(7); doc.setTextColor(180,180,180);
-    doc.text(`${cleanText(areaName).toUpperCase()}  ·  Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`,PAGE_W/2,293,{align:'center'});
+    const footerLine = logoMeta
+      ? `Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`
+      : `${cleanText(areaName).toUpperCase()}  ·  Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`;
+    doc.text(footerLine, PAGE_W/2, footerTextY, {align:'center'});
   };
 
   // Cover
   doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
-  doc.setFillColor(pR,pG,pB); doc.rect(MARGIN,108,CONTENT,0.8,'F');
-  doc.setFontSize(28);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
-  doc.text(cleanText(areaName).toUpperCase(),PAGE_W/2,100,{align:'center',charSpace:3});
-  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(255,255,255);
-  doc.text('PORTAL DE DICAS',PAGE_W/2,91,{align:'center',charSpace:2});
-  let dY=124;
+  // Logo grande na capa: até 60mm de largura, máx 40mm de altura, centralizado.
+  // Quando há logo, suprimimos o nome-da-área grande (logo já cumpre a função).
+  let coverCursorY = 80;
+  if (logoMeta) {
+    const MAX_W = 70, MAX_H = 40;
+    const ratio = logoMeta.w / Math.max(logoMeta.h, 1);
+    let lw = MAX_W, lh = lw / ratio;
+    if (lh > MAX_H) { lh = MAX_H; lw = lh * ratio; }
+    try {
+      doc.addImage(logoMeta.dataUrl, 'PNG', (PAGE_W - lw) / 2, coverCursorY - lh / 2 + 8, lw, lh, undefined, 'FAST');
+    } catch (e) { /* segue sem logo */ }
+    coverCursorY = coverCursorY + 40;
+    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(255,255,255);
+    doc.text('PORTAL DE DICAS', PAGE_W/2, coverCursorY, {align:'center', charSpace:2});
+  } else {
+    // Sem logo: layout original com nome da área em destaque
+    doc.setFillColor(pR,pG,pB); doc.rect(MARGIN,108,CONTENT,0.8,'F');
+    doc.setFontSize(28);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
+    doc.text(cleanText(areaName).toUpperCase(),PAGE_W/2,100,{align:'center',charSpace:3});
+    doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(255,255,255);
+    doc.text('PORTAL DE DICAS',PAGE_W/2,91,{align:'center',charSpace:2});
+    coverCursorY = 116;
+  }
+  doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, coverCursorY + 8, CONTENT, 0.6, 'F');
+  let dY = coverCursorY + 24;
   for(const{dest}of allTips){
     doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
     doc.text(cleanText(destLabel(dest)),PAGE_W/2,dY,{align:'center'});dY+=10;
@@ -498,8 +555,8 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
 async function generatePptx({ allTips, segments, areaName, area, colors, filename, imagesByDest = {} }) {
   await loadPptxGenJS();
   const pptx   = new window.PptxGenJS();
-  const primary= colors.primary   || '#D4AF37';
-  const bgColor= colors.secondary || '#242362';
+  const primary= colors.primary   || '#475569';
+  const bgColor= colors.secondary || '#1F2937';
   const pHex   = primary.replace('#','');
   const bgHex  = bgColor.replace('#','');
   const W=13.33, H=7.5;

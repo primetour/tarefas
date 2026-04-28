@@ -4,7 +4,7 @@
  */
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
-import { fetchAreas, saveArea, deleteArea } from '../services/portal.js';
+import { fetchAreas, saveArea, deleteArea, convertToWebp, uploadImageToR2 } from '../services/portal.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -69,7 +69,7 @@ async function loadAreas() {
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         ${a.logoUrl
           ? `<img src="${esc(a.logoUrl)}" style="height:36px;object-fit:contain;" alt="${esc(a.name)}">`
-          : `<div style="width:36px;height:36px;border-radius:var(--radius-md);background:var(--brand-gold)22;
+          : `<div style="width:36px;height:36px;border-radius:var(--radius-md);background:#475569;color:#fff;
               display:flex;align-items:center;justify-content:center;font-size:1rem;">◈</div>`}
         <div>
           <div style="font-weight:700;font-size:0.9375rem;">${esc(a.name)}</div>
@@ -141,12 +141,31 @@ function showAreaModal(area, areas = []) {
         </div>
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
-            Logo (URL Cloudflare)
+            Logo
           </label>
-          <input type="url" id="area-logo" class="filter-select" style="width:100%;"
-            placeholder="https://pub-xxx.r2.dev/logos/nome.webp"
-            value="${esc(area?.logoUrl || '')}">
-          <div id="area-logo-preview" style="margin-top:8px;"></div>
+          <!-- Dropzone: arraste/clique para upload (converte pra .webp e envia
+               pro bucket R2 em pasta "logos/"). Mantém também o input URL
+               como fallback caso já haja um logo hospedado externamente. -->
+          <div id="area-logo-drop"
+            style="border:1.5px dashed var(--border-default);border-radius:var(--radius-md);
+              padding:16px;text-align:center;cursor:pointer;font-size:0.8125rem;
+              color:var(--text-muted);background:var(--bg-surface);
+              transition:border-color .15s, background .15s;">
+            <span id="area-logo-drop-label">📁 Clique ou arraste uma imagem (PNG/JPG/SVG)</span>
+            <input type="file" id="area-logo-file" accept="image/*" style="display:none;">
+          </div>
+          <div id="area-logo-progress" style="display:none;margin-top:6px;font-size:0.75rem;color:var(--text-muted);"></div>
+          <details style="margin-top:8px;">
+            <summary style="font-size:0.75rem;color:var(--text-muted);cursor:pointer;">URL manual (avançado)</summary>
+            <input type="url" id="area-logo" class="filter-select" style="width:100%;margin-top:6px;"
+              placeholder="https://pub-xxx.r2.dev/logos/nome.webp"
+              value="${esc(area?.logoUrl || '')}">
+          </details>
+          <div id="area-logo-preview" style="margin-top:8px;">
+            ${area?.logoUrl ? `<img src="${esc(area.logoUrl)}" style="max-height:60px;object-fit:contain;
+              padding:6px 10px;background:#fff;border-radius:var(--radius-sm);
+              border:1px solid var(--border-subtle);">` : ''}
+          </div>
         </div>
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
@@ -155,12 +174,12 @@ function showAreaModal(area, areas = []) {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div>
               <label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Cor primária</label>
-              <input type="color" id="area-color-primary" value="${area?.colors?.primary || '#D4A843'}"
+              <input type="color" id="area-color-primary" value="${area?.colors?.primary || '#475569'}"
                 style="width:100%;height:36px;border-radius:var(--radius-sm);cursor:pointer;">
             </div>
             <div>
               <label style="font-size:0.75rem;color:var(--text-muted);display:block;margin-bottom:4px;">Cor secundária</label>
-              <input type="color" id="area-color-secondary" value="${area?.colors?.secondary || '#1A1A2E'}"
+              <input type="color" id="area-color-secondary" value="${area?.colors?.secondary || '#1F2937'}"
                 style="width:100%;height:36px;border-radius:var(--radius-sm);cursor:pointer;">
             </div>
           </div>
@@ -183,14 +202,77 @@ function showAreaModal(area, areas = []) {
     </div>
   `;
 
-  // Logo preview
+  // Logo preview a partir da URL manual (fallback avançado)
   document.getElementById('area-logo')?.addEventListener('input', e => {
     const preview = document.getElementById('area-logo-preview');
     if (preview && e.target.value) {
-      preview.innerHTML = `<img src="${esc(e.target.value)}" style="max-height:40px;object-fit:contain;"
-        onerror="this.style.display='none'">`;
+      preview.innerHTML = `<img src="${esc(e.target.value)}" style="max-height:60px;object-fit:contain;
+        padding:6px 10px;background:#fff;border-radius:var(--radius-sm);
+        border:1px solid var(--border-subtle);" onerror="this.style.display='none'">`;
     }
   });
+
+  // ── Dropzone de upload de logo ───────────────────────────────
+  const drop      = document.getElementById('area-logo-drop');
+  const fileInput = document.getElementById('area-logo-file');
+  const progress  = document.getElementById('area-logo-progress');
+  const dropLabel = document.getElementById('area-logo-drop-label');
+
+  const setDropHover = (on) => {
+    if (!drop) return;
+    drop.style.borderColor = on ? 'var(--brand-blue, #3B82F6)' : 'var(--border-default)';
+    drop.style.background  = on ? 'rgba(59,130,246,0.05)'      : 'var(--bg-surface)';
+  };
+
+  // slugify simples para nome de arquivo previsível
+  const slugForFile = (s) => String(s || 'logo').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'logo';
+
+  const handleLogoFile = async (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Selecione um arquivo de imagem.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Arquivo maior que 5MB. Reduza antes de enviar.');
+      return;
+    }
+    progress.style.display = 'block';
+    progress.textContent   = 'Convertendo para WebP…';
+    try {
+      // qualidade alta (0.95) — logo precisa nitidez
+      const { blob } = await convertToWebp(file, 0.95);
+      progress.textContent = 'Enviando para Cloudflare R2…';
+      const areaSlug = slugForFile(document.getElementById('area-name')?.value || area?.name);
+      const path     = `logos/${areaSlug}-${Date.now()}.webp`;
+      const url      = await uploadImageToR2(blob, path);
+      // Grava URL no input manual + atualiza preview
+      const urlInput = document.getElementById('area-logo');
+      if (urlInput) urlInput.value = url;
+      const preview = document.getElementById('area-logo-preview');
+      if (preview)  preview.innerHTML = `<img src="${esc(url)}" style="max-height:60px;object-fit:contain;
+        padding:6px 10px;background:#fff;border-radius:var(--radius-sm);
+        border:1px solid var(--border-subtle);">`;
+      progress.textContent = '✓ Upload concluído. Salve a área para confirmar.';
+      progress.style.color = '#16A34A';
+      if (dropLabel) dropLabel.textContent = '📁 Trocar logo (clique ou arraste)';
+    } catch (e) {
+      console.error('[portalAreas] upload logo:', e);
+      progress.textContent = '✗ Falha no upload: ' + (e?.message || e);
+      progress.style.color = '#EF4444';
+    }
+  };
+
+  drop?.addEventListener('click', () => fileInput?.click());
+  drop?.addEventListener('dragover',  (e) => { e.preventDefault(); setDropHover(true);  });
+  drop?.addEventListener('dragleave', (e) => { e.preventDefault(); setDropHover(false); });
+  drop?.addEventListener('drop', (e) => {
+    e.preventDefault(); setDropHover(false);
+    const f = e.dataTransfer?.files?.[0]; if (f) handleLogoFile(f);
+  });
+  fileInput?.addEventListener('change', (e) => handleLogoFile(e.target.files?.[0]));
 
   const close = () => { modal.style.display = 'none'; modal.innerHTML = ''; };
   document.getElementById('area-modal-close')?.addEventListener('click', close);
