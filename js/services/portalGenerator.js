@@ -82,6 +82,16 @@ function hasValidSite(item) {
   return String(item.site).trim().length > 0;
 }
 
+/* Normaliza URL: adiciona https:// se não tiver protocolo.
+ * Sem isso, doc.link() do jsPDF cria a annotation mas o PDF reader
+ * não sabe como tratar — link aparece visualmente mas não abre. */
+function normalizeUrl(raw) {
+  let u = String(raw || '').trim();
+  if (!u) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return u; // já tem protocolo (http, https, mailto, tel)
+  return 'https://' + u;
+}
+
 /* ─── Parser de DESCRIÇÃO ──────────────────────────────────
  * Conteúdo legado tem CLIMA e REPRESENTAÇÃO BRASILEIRA colados como
  * texto cru dentro de info.descricao. Resultado: visual feio + duplica
@@ -209,17 +219,27 @@ export function drawIcon(doc, kind, x, y, size, color) {
       }
       break;
     }
-    case 'phone': { // handset clássico — formato preenchido reconhecível
-      // Desenha um handset estilizado: 2 capsulas (ouvido/boca) + corpo
-      // diagonal grosso, todo preenchido
+    case 'phone': { // smartphone moderno: retângulo arredondado + tela + botão home
       doc.setFillColor(r,g,b); doc.setDrawColor(r,g,b);
-      // Cápsula superior (parte do ouvido)
-      doc.ellipse(cx - size*0.22, cy - size*0.22, size*0.13, size*0.09, 'F');
-      // Cápsula inferior (parte da boca)
-      doc.ellipse(cx + size*0.22, cy + size*0.22, size*0.13, size*0.09, 'F');
-      // Corpo diagonal conectando as cápsulas (linha grossa)
-      doc.setLineWidth(size*0.16);
-      doc.line(cx - size*0.18, cy - size*0.18, cx + size*0.18, cy + size*0.18);
+      // Corpo do telefone (retângulo arredondado vertical)
+      const w = size * 0.45;
+      const h = size * 0.72;
+      const x = cx - w/2;
+      const y = cy - h/2;
+      doc.setLineWidth(size * 0.06);
+      doc.roundedRect(x, y, w, h, size*0.06, size*0.06, 'S');
+      // Tela (retângulo interno menor)
+      const sx = x + size*0.05;
+      const sy = y + size*0.10;
+      const sw = w - size*0.10;
+      const sh = h - size*0.20;
+      doc.setLineWidth(size * 0.03);
+      doc.rect(sx, sy, sw, sh, 'S');
+      // Speaker no topo (linha curta)
+      doc.setLineWidth(size * 0.05);
+      doc.line(cx - size*0.08, y + size*0.05, cx + size*0.08, y + size*0.05);
+      // Botão home (círculo pequeno na base)
+      doc.circle(cx, y + h - size*0.05, size*0.03, 'S');
       break;
     }
     case 'pin': // marcador de mapa
@@ -537,7 +557,7 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         if(rep.nome){
           children.push(new Paragraph({children:[new TextRun({text:'REPRESENTAÇÃO BRASILEIRA',size:14,bold:true,color:gold,characterSpacing:200})],spacing:{before:200,after:60}}));
           for(const[l,v]of[['Nome',rep.nome],['Endereço',rep.endereco],['Telefone',rep.telefone],['Site',rep.link]].filter(([,v])=>v)){
-            if(l==='Site') children.push(new Paragraph({children:[new TextRun({text:`${l}: `,bold:true,size:18,color:navy}),new ExternalHyperlink({link:v,children:[new TextRun({text:v,size:18,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
+            if(l==='Site') children.push(new Paragraph({children:[new TextRun({text:`${l}: `,bold:true,size:18,color:navy}),new ExternalHyperlink({link:normalizeUrl(v),children:[new TextRun({text:normalizeUrl(v),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
             else children.push(new Paragraph({children:[new TextRun({text:`${l}: `,bold:true,size:18,color:navy}),new TextRun({text:v,size:18,color:'474650'})],spacing:{after:60}}));
           }
         }
@@ -573,7 +593,7 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
           if(item.descricao) children.push(new Paragraph({children:[new TextRun({text:item.descricao,size:18,color:'474650'})],spacing:{after:80}}));
           const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
           if(det.length) children.push(new Paragraph({children:[new TextRun({text:det.join('   '),size:16,color:'888888'})],spacing:{after:60}}));
-          if(hasValidSite(item)) children.push(new Paragraph({children:[new TextRun({text:'🌐 ',size:16}),new ExternalHyperlink({link:String(item.site).trim(),children:[new TextRun({text:String(item.site).trim(),size:16,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
+          if(hasValidSite(item)) children.push(new Paragraph({children:[new TextRun({text:'🌐 ',size:16}),new ExternalHyperlink({link:normalizeUrl(item.site),children:[new TextRun({text:normalizeUrl(item.site),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
           if(item.observacoes) children.push(new Paragraph({children:[new TextRun({text:`💡 ${item.observacoes}`,size:16,italics:true,color:'AAAAAA'})],spacing:{after:80}}));
           children.push(new Paragraph({border:{bottom:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'}},spacing:{after:80}}));
         }
@@ -800,12 +820,21 @@ async function generatePDF({
       } : null;
       const infoH = estimateInfoGeraisH(infoEst, !!parsed.climate, !!repObj.nome);
       // Espaço útil = página total - rodapé - margem extra de segurança
-      const PAGE_USABLE = 297 - 17 - 5; // 17mm rodapé, 5mm safety
-      const heroByImg   = PAGE_W / imgRatio;          // se não houvesse limite
-      const heroByFit   = PAGE_USABLE - infoH - 6;    // 6mm gap entre hero e info
+      const PAGE_USABLE = 297 - 17 - 5;
+      const heroByImg   = PAGE_W / imgRatio;         // altura natural se hero ocupar largura toda
+      const heroByFit   = PAGE_USABLE - infoH - 14;  // 14mm gap maior entre hero e info
       heroH = Math.max(50, Math.min(130, heroByImg, heroByFit));
-      try { doc.addImage(heroB64, 'JPEG', 0, 0, PAGE_W, heroH, undefined, 'SLOW'); } catch(e) {}
-      y = heroH + 6;
+      // PRESERVA aspect ratio: se a altura disponível é menor que a natural,
+      // REDUZ a largura proporcionalmente em vez de esticar a imagem.
+      // Resultado: foto bem proporcional, centralizada, com margem nas laterais.
+      let heroW = PAGE_W;
+      if (heroH < heroByImg) {
+        // hero cortada na altura → ajusta largura mantendo proporção
+        heroW = Math.min(PAGE_W, heroH * imgRatio);
+      }
+      const heroX = (PAGE_W - heroW) / 2;
+      try { doc.addImage(heroB64, 'JPEG', heroX, 0, heroW, heroH, undefined, 'SLOW'); } catch(e) {}
+      y = heroH + 14; // gap maior antes do título "INFORMAÇÕES GERAIS"
     }
 
     const content = buildContent(tip, segments);
@@ -1100,7 +1129,7 @@ async function generatePDF({
           }
           // Link pill — só se site cadastrado de verdade (não vazio/whitespace)
           if (hasValidSite(item)) {
-            const siteUrl = String(item.site).trim();
+            const siteUrl = normalizeUrl(item.site);
             const linkText = 'Visitar site';
             doc.setFontSize(8); setF('bold');
             const padX = 5, arrowW = 5.5, gap = 3;
@@ -1317,7 +1346,7 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
           }
           const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
           if(det.length) slide.addText(det.join('  '),{x:x+0.1,y:sY+cH-0.7,w:cW-0.2,h:0.35,fontSize:7,color:'888888',wrap:true});
-          if(item.site) slide.addText(item.site,{x:x+0.1,y:sY+cH-0.38,w:cW-0.2,h:0.28,fontSize:7,color:pHex,hyperlink:{url:item.site}});
+          if(hasValidSite(item)) slide.addText(item.site,{x:x+0.1,y:sY+cH-0.38,w:cW-0.2,h:0.28,fontSize:7,color:pHex,hyperlink:{url:normalizeUrl(item.site)}});
         }));
         if((data.items||[]).length>4) slide.addText(`+ ${data.items.length-4} itens adicionais`,
           {x:0.3,y:H-0.45,w:W-0.6,h:0.25,fontSize:8,italic:true,color:'AAAAAA',align:'center'});

@@ -888,9 +888,18 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
     // PSEUDO-SEGMENTO: foto de capa do destino
     if (curSegKey === HERO_SEG_KEY) {
       const currentHero = selectedHeroImages[destId];
-      const galleryImgs = (destImgs?.gallery || []).filter(g => g.url && !g._override);
-      // imagem hero "automática" (resolveImages decide) — pra mostrar como default
-      const autoHero   = destImgs?.hero || null;
+      // destImgs aqui é o ARRAY plano de portal_images (não tem .gallery/.hero).
+      // Filtra todas as imagens com URL — destaque, banner, galeria — todas
+      // viáveis como capa. Ordena: 'destaque' primeiro, 'banner', 'galeria'.
+      const TYPE_ORDER = { destaque: 0, banner: 1, galeria: 2 };
+      const galleryImgs = (Array.isArray(destImgs) ? destImgs : [])
+        .filter(g => g?.url)
+        .sort((a,b) => (TYPE_ORDER[a.type]??9) - (TYPE_ORDER[b.type]??9));
+      // Hero "automática" = primeira destaque (segue mesmo critério do resolveImages do generator)
+      const autoHero = galleryImgs.find(g => g.type === 'destaque')?.url
+                    || galleryImgs.find(g => g.type === 'banner')?.url
+                    || galleryImgs[0]?.url
+                    || null;
       panel.innerHTML = `
         <div style="margin-bottom:16px;">
           <div style="font-weight:700;font-size:0.9375rem;margin-bottom:4px;">
