@@ -188,6 +188,13 @@ export async function saveTip(id, data) {
     ...(isNew ? { createdAt: serverTimestamp(), createdBy: uid() } : {}),
   }, { merge: true });
 
+  // Geocoding em background — NÃO bloqueia o save (operação pode levar
+  // 30s+ pra dicas com muitos items). Roda em segundo plano e atualiza
+  // o doc com items._geo quando termina.
+  // Política Nominatim: 1 req/seg → max 60 endereços por minuto.
+  geocodeAndUpdate(ref.id, data).catch(err =>
+    console.warn('[saveTip] geocoding falhou:', err?.message));
+
   // Notify team about new tip creation
   if (isNew) {
     try {
@@ -211,6 +218,35 @@ export async function saveTip(id, data) {
   }
 
   return ref.id;
+}
+
+/**
+ * Geocoda items da dica e atualiza o doc com items._geo.
+ * Roda em background após saveTip — não bloqueia a UI.
+ * Idempotente: items que já têm _geo são pulados.
+ *
+ * Pode ser chamado avulso pra geocodar dicas legadas:
+ *   import { geocodeAndUpdate } from './portal.js';
+ *   await geocodeAndUpdate(tipId);
+ */
+export async function geocodeAndUpdate(tipId, dataIn) {
+  let data = dataIn;
+  if (!data) {
+    const snap = await getDoc(doc(db, 'portal_tips', tipId));
+    if (!snap.exists()) return;
+    data = snap.data();
+  }
+  if (!data?.segments) return;
+  const { geocodeTipItems } = await import('./geocoding.js');
+  const updated = await geocodeTipItems({ segments: data.segments }, {
+    city: data.city || '', country: data.country || '',
+  });
+  // Patch parcial: sobrescreve só segments — não toca em outros campos
+  await setDoc(doc(db, 'portal_tips', tipId), {
+    segments: updated.segments,
+    geocodedAt: serverTimestamp(),
+  }, { merge: true });
+  console.info(`[geocoding] tip ${tipId} atualizado`);
 }
 
 export async function deleteTip(id) {
