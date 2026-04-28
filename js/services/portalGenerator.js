@@ -13,6 +13,19 @@ import {
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/* ─── Text sanitizer ───────────────────────────────────────────
+ * Remove invisíveis/zero-width que entram via copy-paste do Word/Docs e
+ * fazem o jsPDF inserir espaços espúrios no meio das palavras
+ * ("diver sas", "Da niel", "K yoto"). Aplica em qualquer string
+ * antes de mandar pro renderer. Idempotente.
+ */
+const INVISIBLE_RE = /[­​‌‍⁠﻿]/g;
+const cleanText = s => String(s ?? '')
+  .replace(INVISIBLE_RE, '')
+  .replace(/ /g, ' ')        // NBSP → espaço normal
+  .replace(/[ \t]+\n/g, '\n')     // trim trailing espaços antes de \n
+  .replace(/\n{3,}/g, '\n\n');    // colapsa múltiplas quebras
+
 /* ─── CDN libraries ───────────────────────────────────────── */
 async function loadDocx() {
   if (window.docx) return;
@@ -306,20 +319,20 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
     doc.setDrawColor(pR,pG,pB); doc.setLineWidth(0.3);
     doc.line(MARGIN,288,PAGE_W-MARGIN,288);
     doc.setFontSize(7); doc.setTextColor(180,180,180);
-    doc.text(`${areaName.toUpperCase()}  ·  Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`,PAGE_W/2,293,{align:'center'});
+    doc.text(`${cleanText(areaName).toUpperCase()}  ·  Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`,PAGE_W/2,293,{align:'center'});
   };
 
   // Cover
   doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
   doc.setFillColor(pR,pG,pB); doc.rect(MARGIN,108,CONTENT,0.8,'F');
   doc.setFontSize(28);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
-  doc.text(areaName.toUpperCase(),PAGE_W/2,100,{align:'center',charSpace:3});
+  doc.text(cleanText(areaName).toUpperCase(),PAGE_W/2,100,{align:'center',charSpace:3});
   doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(255,255,255);
   doc.text('PORTAL DE DICAS',PAGE_W/2,91,{align:'center',charSpace:2});
   let dY=124;
   for(const{dest}of allTips){
     doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
-    doc.text(destLabel(dest),PAGE_W/2,dY,{align:'center'});dY+=10;
+    doc.text(cleanText(destLabel(dest)),PAGE_W/2,dY,{align:'center'});dY+=10;
   }
   doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(pR,pG,pB);
   doc.text(new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'}),PAGE_W/2,dY+14,{align:'center'});
@@ -339,14 +352,14 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
       // Gold bar
       doc.setFillColor(pR,pG,pB); doc.rect(MARGIN,210,40,0.8,'F');
       doc.setFontSize(24);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
-      doc.text(destLabel(dest),MARGIN,225);
+      doc.text(cleanText(destLabel(dest)),MARGIN,225);
       doc.addPage();y=MARGIN;addFooter();
     }
 
     // Destination heading
     checkPage(24);
     doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(sR,sG,sB);
-    doc.text(destLabel(dest).toUpperCase(),MARGIN,y);y+=2;
+    doc.text(cleanText(destLabel(dest)).toUpperCase(),MARGIN,y);y+=2;
     doc.setFillColor(pR,pG,pB);doc.rect(MARGIN,y,CONTENT,0.6,'F');y+=8;
 
     const content=buildContent(tip,segments);
@@ -355,7 +368,7 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
       // Segment heading
       doc.setFillColor(pR,pG,pB);doc.rect(MARGIN,y-4,2.5,8,'F');
       doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
-      doc.text(segDef.label.toUpperCase(),MARGIN+5,y,{charSpace:1});y+=9;
+      doc.text(cleanText(segDef.label).toUpperCase(),MARGIN+5,y,{charSpace:1});y+=9;
       doc.setTextColor(40,40,40);
 
       if(segDef.mode==='special_info'){
@@ -365,22 +378,34 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
           ['Fuso',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h`:''],
           ['Voltagem',inf.voltagem],['DDD',inf.ddd]].filter(([,v])=>v);
         const cW=(CONTENT-4)/2;
+        // Cells crescem dinamicamente conforme o texto wrappa.
+        // Antes, slice(0,45) cortava no meio da palavra ("...que nos f").
+        const TXT_FONT=8, LINE_H=4, PAD_TOP=3, PAD_BOT=3, LABEL_H=5;
         for(let i=0;i<pairs.length;i+=2){
-          checkPage(14);
           const left=pairs[i],right=pairs[i+1];
-          doc.setFillColor(248,247,244);doc.rect(MARGIN,y-3,cW,11,'F');
-          doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
-          doc.text(left[0].toUpperCase(),MARGIN+2,y,{charSpace:0.8});
-          doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(sR,sG,sB);
-          doc.text(String(left[1]).slice(0,45),MARGIN+2,y+4.5);
+          // Mede ambos lados ANTES de desenhar pra altura comum
+          doc.setFontSize(TXT_FONT); doc.setFont('helvetica','normal');
+          const lLines=doc.splitTextToSize(cleanText(left[1]), cW-4);
+          const rLines=right ? doc.splitTextToSize(cleanText(right[1]), cW-4) : [];
+          const cellH=Math.max(lLines.length, rLines.length)*LINE_H + LABEL_H + PAD_TOP + PAD_BOT;
+          checkPage(cellH+2);
+
+          // Esquerda
+          doc.setFillColor(248,247,244); doc.rect(MARGIN, y-PAD_TOP, cW, cellH, 'F');
+          doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.setTextColor(pR,pG,pB);
+          doc.text(cleanText(left[0]).toUpperCase(), MARGIN+2, y, {charSpace:0.8});
+          doc.setFontSize(TXT_FONT); doc.setFont('helvetica','normal'); doc.setTextColor(sR,sG,sB);
+          doc.text(lLines, MARGIN+2, y+LABEL_H);
+
+          // Direita
           if(right){
-            doc.setFillColor(248,247,244);doc.rect(MARGIN+cW+4,y-3,cW,11,'F');
-            doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
-            doc.text(right[0].toUpperCase(),MARGIN+cW+6,y,{charSpace:0.8});
-            doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(sR,sG,sB);
-            doc.text(String(right[1]).slice(0,45),MARGIN+cW+6,y+4.5);
+            doc.setFillColor(248,247,244); doc.rect(MARGIN+cW+4, y-PAD_TOP, cW, cellH, 'F');
+            doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.setTextColor(pR,pG,pB);
+            doc.text(cleanText(right[0]).toUpperCase(), MARGIN+cW+6, y, {charSpace:0.8});
+            doc.setFontSize(TXT_FONT); doc.setFont('helvetica','normal'); doc.setTextColor(sR,sG,sB);
+            doc.text(rLines, MARGIN+cW+6, y+LABEL_H);
           }
-          y+=13;
+          y += cellH + 2;
         }
         const rep=inf.representacao||{};
         if(rep.nome){
@@ -391,7 +416,7 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
             doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(sR,sG,sB);
             doc.text(`${l}: `,MARGIN+2,y);
             doc.setFont('helvetica','normal');doc.setTextColor(70,70,80);
-            doc.text(v,MARGIN+2+doc.getTextWidth(`${l}: `),y);y+=5;
+            doc.text(cleanText(v), MARGIN+2+doc.getTextWidth(`${l}: `), y); y+=5;
           }
         }
       } else if(segDef.mode==='simple_list'){
@@ -399,15 +424,15 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
           checkPage(12);
           doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(sR,sG,sB);
           doc.setFillColor(pR,pG,pB);doc.circle(MARGIN+1.5,y-1,1,'F');
-          doc.text(item.title||'',MARGIN+5,y);y+=5;
+          doc.text(cleanText(item.title||''), MARGIN+5, y); y+=5;
           if(item.description){doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(70,70,80);
-            const lines=doc.splitTextToSize(item.description,CONTENT-8);checkPage(lines.length*4+2);
+            const lines=doc.splitTextToSize(cleanText(item.description), CONTENT-8); checkPage(lines.length*4+2);
             doc.text(lines,MARGIN+8,y);y+=lines.length*4+2;}
         }
         y+=4;
       } else {
         if(data.themeDesc){doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(100,100,100);
-          const lines=doc.splitTextToSize(data.themeDesc,CONTENT);doc.text(lines,MARGIN,y);y+=lines.length*4+4;}
+          const lines=doc.splitTextToSize(cleanText(data.themeDesc), CONTENT); doc.text(lines,MARGIN,y); y+=lines.length*4+4;}
 
         for(let itemIdx=0;itemIdx<(data.items||[]).length;itemIdx++){
           const item=data.items[itemIdx];
@@ -422,17 +447,28 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
 
           const blockStartY=y;
           if(item.categoria){doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
-            doc.text(item.categoria.toUpperCase(),MARGIN+2,y,{charSpace:0.8});y+=4;}
-          doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(sR,sG,sB);
-          doc.text(item.titulo,MARGIN+2,y);y+=5;
+            doc.text(cleanText(item.categoria).toUpperCase(), MARGIN+2, y, {charSpace:0.8}); y+=4;}
+          // Título: wrap dinâmico (antes ficava cortado na borda da página
+          // — ex.: "CHELSEA PIERS SPORTS AND" com "ENTERTAINMENT COMPLEX"
+          // emendado no parágrafo da descrição).
+          doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(sR,sG,sB);
+          const titleLines=doc.splitTextToSize(cleanText(item.titulo), textW-4);
+          checkPage(titleLines.length*5+2);
+          doc.text(titleLines, MARGIN+2, y); y+=titleLines.length*5;
           if(item.descricao){doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(70,70,80);
-            const lines=doc.splitTextToSize(item.descricao,textW-4);
+            const lines=doc.splitTextToSize(cleanText(item.descricao), textW-4);
             checkPage(lines.length*4+2);doc.text(lines,MARGIN+2,y);y+=lines.length*4+2;}
-          const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
-          if(det.length){doc.setFontSize(7.5);doc.setTextColor(130,130,130);doc.text(det.join('   '),MARGIN+2,y);y+=4;}
-          if(item.site){doc.setFontSize(7.5);doc.setTextColor(pR,pG,pB);doc.textWithLink('🌐 '+item.site,MARGIN+2,y,{url:item.site});y+=4;}
-          if(item.observacoes){doc.setFontSize(7.5);doc.setTextColor(160,160,160);doc.setFont('helvetica','italic');
-            doc.text(`💡 ${item.observacoes}`,MARGIN+2,y);y+=4;}
+          // Sem emoji: helvetica não suporta glyphs Unicode emoji e
+          // antes renderizava lixo "Ø=ÜÍ Ø=ÜP Ø<ß" no PDF. Usamos labels textuais.
+          const det=[item.endereco&&`End. ${cleanText(item.endereco)}`, item.telefone&&`Tel. ${cleanText(item.telefone)}`].filter(Boolean);
+          if(det.length){doc.setFontSize(7.5); doc.setTextColor(130,130,130);
+            const detLines=doc.splitTextToSize(det.join('   ·   '), textW-4);
+            checkPage(detLines.length*4+1); doc.text(detLines, MARGIN+2, y); y+=detLines.length*4;}
+          if(item.site){doc.setFontSize(7.5); doc.setTextColor(pR,pG,pB);
+            doc.textWithLink('Web '+cleanText(item.site), MARGIN+2, y, {url:item.site}); y+=4;}
+          if(item.observacoes){doc.setFontSize(7.5); doc.setTextColor(160,160,160); doc.setFont('helvetica','italic');
+            const obsLines=doc.splitTextToSize('Obs. '+cleanText(item.observacoes), textW-4);
+            checkPage(obsLines.length*4+1); doc.text(obsLines, MARGIN+2, y); y+=obsLines.length*4;}
 
           // Place image to the right of the block
           if(imgB64){
