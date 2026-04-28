@@ -319,97 +319,113 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
   const pR=hexToR(primary),pG=hexToG(primary),pB=hexToB(primary);
   const sR=hexToR(second), sG=hexToG(second), sB=hexToB(second);
 
-  // Pré-carrega logo da área (1x). Usado tanto na capa quanto no rodapé.
-  // Tem dimensões reais pra calcular aspect-ratio e não distorcer.
-  let logoMeta = null; // { dataUrl, w, h }
-  if (area?.logoUrl) {
-    const b64 = await imgToBase64(area.logoUrl);
-    if (b64) {
-      try {
-        const dims = await new Promise((resolve, reject) => {
-          const im = new Image();
-          im.onload  = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
-          im.onerror = () => reject();
-          im.src = b64;
-        });
-        logoMeta = { dataUrl: b64, ...dims };
-      } catch { logoMeta = { dataUrl: b64, w: 200, h: 60 }; }
-    }
-  }
+  // Pré-carrega logo principal (capa, fundo escuro) + alt (rodapé, fundo claro)
+  // Cada um tem dimensões reais pra calcular aspect-ratio sem distorcer.
+  const loadLogoMeta = async (url) => {
+    if (!url) return null;
+    const b64 = await imgToBase64(url);
+    if (!b64) return null;
+    try {
+      const dims = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.onload  = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+        im.onerror = () => reject();
+        im.src = b64;
+      });
+      return { dataUrl: b64, ...dims };
+    } catch { return { dataUrl: b64, w: 200, h: 60 }; }
+  };
+  const logoMeta    = await loadLogoMeta(area?.logoUrl);
+  // logoUrlAlt: variante p/ fundo claro (rodapé, miolo). Se não existir,
+  // cai pra logoUrl + white card (mesma estratégia da capa).
+  const logoAltMeta = await loadLogoMeta(area?.logoUrlAlt) || logoMeta;
 
   const addPage=()=>{doc.addPage();y=MARGIN;addFooter();};
-  const checkPage=(n=10)=>{if(y+n>282)addPage();};
+  const checkPage=(n=10)=>{if(y+n>280)addPage();};
   const addFooter=()=>{
     const pg=doc.getNumberOfPages(); doc.setPage(pg);
     doc.setDrawColor(pR,pG,pB); doc.setLineWidth(0.3);
-    doc.line(MARGIN,285,PAGE_W-MARGIN,285);
-    // Logo centralizado (se houver), altura máxima 6mm pro rodapé
-    let footerTextY = 290;
-    if (logoMeta) {
-      const LOGO_H = 6;
-      const LOGO_W = Math.min(40, LOGO_H * (logoMeta.w / Math.max(logoMeta.h, 1)));
+    doc.line(MARGIN,283,PAGE_W-MARGIN,283);
+    // Logo centralizado, altura ~10mm. Se for o mesmo logo da capa
+    // (sem variante p/ fundo claro), envolvemos em white card discreto.
+    let footerTextY = 292;
+    if (logoAltMeta) {
+      const LOGO_H = 9;
+      const LOGO_W = Math.min(40, LOGO_H * (logoAltMeta.w / Math.max(logoAltMeta.h, 1)));
+      const lx = (PAGE_W - LOGO_W) / 2;
+      const ly = 285;
+      // White card só quando o logo do rodapé é o MESMO da capa (=
+      // não há variante específica). Quando há variante, assumimos que
+      // o cliente desenhou um logo já pensado pra fundo claro.
+      const needsCard = !area?.logoUrlAlt;
+      if (needsCard) {
+        doc.setFillColor(255,255,255);
+        doc.roundedRect(lx-2, ly-1, LOGO_W+4, LOGO_H+2, 1, 1, 'F');
+      }
       try {
-        doc.addImage(logoMeta.dataUrl, 'PNG', (PAGE_W - LOGO_W) / 2, 287, LOGO_W, LOGO_H, undefined, 'FAST');
+        doc.addImage(logoAltMeta.dataUrl, 'PNG', lx, ly, LOGO_W, LOGO_H, undefined, 'FAST');
       } catch (e) { /* fallback silencioso */ }
-      footerTextY = 287 + LOGO_H + 3;
+      footerTextY = ly + LOGO_H + 4;
     }
-    doc.setFontSize(7); doc.setTextColor(180,180,180);
-    const footerLine = logoMeta
+    doc.setFontSize(7); doc.setTextColor(160,160,160);
+    const footerLine = logoAltMeta
       ? `Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`
       : `${cleanText(areaName).toUpperCase()}  ·  Portal de Dicas  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`;
     doc.text(footerLine, PAGE_W/2, footerTextY, {align:'center'});
   };
 
-  // Cover
+  // Cover — fundo na cor secundária, logo no centro
   doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
-  // Logo grande na capa: até 60mm de largura, máx 40mm de altura, centralizado.
-  // Quando há logo, suprimimos o nome-da-área grande (logo já cumpre a função).
-  let coverCursorY = 80;
+  let coverCursorY = 100;
   if (logoMeta) {
-    const MAX_W = 70, MAX_H = 40;
+    const MAX_W = 90, MAX_H = 50;
     const ratio = logoMeta.w / Math.max(logoMeta.h, 1);
     let lw = MAX_W, lh = lw / ratio;
     if (lh > MAX_H) { lh = MAX_H; lw = lh * ratio; }
+    const lx = (PAGE_W - lw) / 2;
+    const ly = coverCursorY - lh / 2;
+    // White card por trás do logo: PNGs transparentes em fundo escuro saem
+    // como "borrão preto" no jsPDF (composite alpha incompleto). Com fundo
+    // branco com padding, qualquer logo (transparente ou não) renderiza ok.
+    const PAD = 6;
+    doc.setFillColor(255,255,255);
+    doc.roundedRect(lx - PAD, ly - PAD, lw + PAD*2, lh + PAD*2, 3, 3, 'F');
     try {
-      doc.addImage(logoMeta.dataUrl, 'PNG', (PAGE_W - lw) / 2, coverCursorY - lh / 2 + 8, lw, lh, undefined, 'FAST');
+      doc.addImage(logoMeta.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'FAST');
     } catch (e) { /* segue sem logo */ }
-    coverCursorY = coverCursorY + 40;
-    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(255,255,255);
-    doc.text('PORTAL DE DICAS', PAGE_W/2, coverCursorY, {align:'center', charSpace:2});
+    coverCursorY = ly + lh + PAD + 18;
   } else {
-    // Sem logo: layout original com nome da área em destaque
+    // Sem logo: nome da área em destaque
     doc.setFillColor(pR,pG,pB); doc.rect(MARGIN,108,CONTENT,0.8,'F');
     doc.setFontSize(28);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
     doc.text(cleanText(areaName).toUpperCase(),PAGE_W/2,100,{align:'center',charSpace:3});
-    doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(255,255,255);
-    doc.text('PORTAL DE DICAS',PAGE_W/2,91,{align:'center',charSpace:2});
-    coverCursorY = 116;
+    coverCursorY = 122;
   }
-  doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, coverCursorY + 8, CONTENT, 0.6, 'F');
-  let dY = coverCursorY + 24;
+  // Linha fina + destinos + data
+  doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, coverCursorY, CONTENT, 0.5, 'F');
+  let dY = coverCursorY + 14;
   for(const{dest}of allTips){
     doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
     doc.text(cleanText(destLabel(dest)),PAGE_W/2,dY,{align:'center'});dY+=10;
   }
-  doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(pR,pG,pB);
-  doc.text(new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'}),PAGE_W/2,dY+14,{align:'center'});
+  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(pR,pG,pB);
+  doc.text(new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'}),PAGE_W/2,dY+10,{align:'center'});
   doc.addPage();y=MARGIN;addFooter();
 
   for(const{tip,dest}of allTips){
     const imgs=imagesByDest[dest?.id]||{};
 
-    // Hero image page if available
+    // Hero image page — limpa, sem overlay/gradient. Imagem ocupa o topo,
+    // título do destino sai em texto sólido sobre fundo branco abaixo.
+    // Antes ficava uma "faixa estranha" navy translúcida cortando a foto.
     const heroB64=await imgToBase64(imgs.hero);
     if(heroB64){
-      doc.setFillColor(sR,sG,sB); doc.rect(0,0,PAGE_W,297,'F');
-      try{doc.addImage(heroB64,'JPEG',0,0,PAGE_W,180,undefined,'FAST');}catch(e){}
-      // Dark gradient overlay at bottom
-      doc.setFillColor(sR,sG,sB); doc.setGState(doc.GState({opacity:.75}));
-      doc.rect(0,155,PAGE_W,142,'F'); doc.setGState(doc.GState({opacity:1}));
-      // Gold bar
-      doc.setFillColor(pR,pG,pB); doc.rect(MARGIN,210,40,0.8,'F');
-      doc.setFontSize(24);doc.setFont('helvetica','bold');doc.setTextColor(255,255,255);
-      doc.text(cleanText(destLabel(dest)),MARGIN,225);
+      doc.setFillColor(255,255,255); doc.rect(0,0,PAGE_W,297,'F');
+      try{doc.addImage(heroB64,'JPEG',0,0,PAGE_W,200,undefined,'FAST');}catch(e){}
+      // Barra de cor primária + título sólido sobre fundo branco
+      doc.setFillColor(pR,pG,pB); doc.rect(MARGIN,220,40,0.8,'F');
+      doc.setFontSize(22); doc.setFont('helvetica','bold'); doc.setTextColor(sR,sG,sB);
+      doc.text(cleanText(destLabel(dest)),MARGIN,235);
       doc.addPage();y=MARGIN;addFooter();
     }
 
@@ -471,9 +487,13 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
           doc.text('REPRESENTAÇÃO BRASILEIRA',MARGIN+2,y,{charSpace:0.8});y+=5;
           for(const[l,v]of[['Nome',rep.nome],['Endereço',rep.endereco],['Telefone',rep.telefone]].filter(([,v])=>v)){
             doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(sR,sG,sB);
-            doc.text(`${l}: `,MARGIN+2,y);
-            doc.setFont('helvetica','normal');doc.setTextColor(70,70,80);
-            doc.text(cleanText(v), MARGIN+2+doc.getTextWidth(`${l}: `), y); y+=5;
+            doc.text(`${l}:`, MARGIN+2, y);
+            // Padding fixo de ~2mm em vez de getTextWidth(`${l}: `)
+            // (jsPDF descarta trailing whitespace ao medir, fazendo
+            // "Endereço:East 41st" colar sem espaço).
+            const labelW = doc.getTextWidth(`${l}:`) + 2;
+            doc.setFont('helvetica','normal'); doc.setTextColor(70,70,80);
+            doc.text(cleanText(v), MARGIN+2+labelW, y); y+=5;
           }
         }
       } else if(segDef.mode==='simple_list'){
@@ -491,9 +511,24 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
         if(data.themeDesc){doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(100,100,100);
           const lines=doc.splitTextToSize(cleanText(data.themeDesc), CONTENT); doc.text(lines,MARGIN,y); y+=lines.length*4+4;}
 
+        // Agrupamento por categoria: subtitle só aparece UMA vez por grupo,
+        // estilizado como subheading (não mais minúscula sobre cada item).
+        // Antes "EDIFÍCIOS E CONSTRUÇÕES URBANAS" repetia em cada bullet.
+        let lastCategoria = null;
         for(let itemIdx=0;itemIdx<(data.items||[]).length;itemIdx++){
           const item=data.items[itemIdx];
           if(!item.titulo)continue;
+
+          const catNorm = cleanText(item.categoria || '').trim();
+          if (catNorm && catNorm !== lastCategoria) {
+            checkPage(14);
+            // Subtitle de categoria: pill colorida + texto, separa visualmente
+            doc.setFillColor(pR,pG,pB); doc.rect(MARGIN, y-2, 1.5, 5, 'F');
+            doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(pR,pG,pB);
+            doc.text(catNorm.toUpperCase(), MARGIN+4, y+2, {charSpace:1.2});
+            y += 8;
+            lastCategoria = catNorm;
+          }
 
           // Try to embed image — up to 55mm wide on the right
           const imgUrl=pickImg(item,itemIdx,imgs,segDef.key);
@@ -503,8 +538,6 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
           checkPage(imgB64?IMG_H+6:22);
 
           const blockStartY=y;
-          if(item.categoria){doc.setFontSize(6);doc.setFont('helvetica','bold');doc.setTextColor(pR,pG,pB);
-            doc.text(cleanText(item.categoria).toUpperCase(), MARGIN+2, y, {charSpace:0.8}); y+=4;}
           // Título: wrap dinâmico (antes ficava cortado na borda da página
           // — ex.: "CHELSEA PIERS SPORTS AND" com "ENTERTAINMENT COMPLEX"
           // emendado no parágrafo da descrição).
@@ -522,7 +555,7 @@ async function generatePDF({ allTips, segments, areaName, area, colors, filename
             const detLines=doc.splitTextToSize(det.join('   ·   '), textW-4);
             checkPage(detLines.length*4+1); doc.text(detLines, MARGIN+2, y); y+=detLines.length*4;}
           if(item.site){doc.setFontSize(7.5); doc.setTextColor(pR,pG,pB);
-            doc.textWithLink('Web '+cleanText(item.site), MARGIN+2, y, {url:item.site}); y+=4;}
+            doc.textWithLink('Link: '+cleanText(item.site), MARGIN+2, y, {url:item.site}); y+=4;}
           if(item.observacoes){doc.setFontSize(7.5); doc.setTextColor(160,160,160); doc.setFont('helvetica','italic');
             const obsLines=doc.splitTextToSize('Obs. '+cleanText(item.observacoes), textW-4);
             checkPage(obsLines.length*4+1); doc.text(obsLines, MARGIN+2, y); y+=obsLines.length*4;}

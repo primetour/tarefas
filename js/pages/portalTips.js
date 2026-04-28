@@ -360,11 +360,10 @@ function renderAreaPicker(grid, areas, activeCategoryFilter) {
     }).join('')}
     ${standaloneAreas.map(a => `
       <button class="portal-area-btn portal-area-cat" data-id="${a.id}" data-name="${esc(a.name)}">
-        ${a.logoUrl
-          ? `<img src="${esc(a.logoUrl)}" style="height:26px;object-fit:contain;" alt="${esc(a.name)}">`
-          : `<span style="font-size:0.8125rem;font-weight:600;">${esc(a.name)}</span>`
-        }
-        <span style="font-size:0.6875rem;color:var(--text-muted);">${esc(a.name)}</span>
+        <!-- Sempre exibir o nome — logo aqui ficava invisível quando era PNG
+             transparente sobre o fundo escuro do botão. -->
+        <span style="font-size:0.8125rem;font-weight:600;">${esc(a.name)}</span>
+        ${a.category ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${esc(a.category)}</span>` : ''}
       </button>
     `).join('')}
   `;
@@ -387,13 +386,10 @@ function renderAreaPicker(grid, areas, activeCategoryFilter) {
 }
 
 function areaItemRow(a) {
+  // Bullet só decorativo, sem logo (logos transparentes ficavam invisíveis aqui).
+  // O nome é a fonte de verdade da identificação visual.
   return `<button class="portal-area-item" data-id="${a.id}" data-name="${esc(a.name)}">
-    ${a.logoUrl
-      ? `<img src="${esc(a.logoUrl)}" style="height:20px;object-fit:contain;flex-shrink:0;" alt="">`
-      : `<span style="width:20px;height:20px;border-radius:var(--radius-sm);
-          background:var(--brand-gold)20;display:inline-flex;align-items:center;
-          justify-content:center;font-size:0.625rem;flex-shrink:0;">◈</span>`
-    }
+    <span style="width:8px;height:8px;border-radius:50%;background:#475569;flex-shrink:0;"></span>
     <span style="flex:1;text-align:left;font-size:0.875rem;">${esc(a.name)}</span>
   </button>`;
 }
