@@ -219,14 +219,30 @@ export class Sidebar {
     };
     const roleLabel = roleDoc?.name || APP_CONFIG.roles[role]?.label || ROLE_FALLBACKS[role] || role;
 
+    // Logo do app: lê do localStorage (setado em Configurações).
+    // Detecta paleta atual: paletas claras usam logoDark, escuras usam
+    // logoLight. Fallback pra mandala-branca se não houver custom.
+    const palette = document.documentElement.getAttribute('data-palette') || 'midnight';
+    const lightPalettes = new Set(['platinum','sand','portal']);
+    const isLightSidebar = palette === 'platinum' || palette === 'sand';
+    const customLight = localStorage.getItem('app-logo-light') || '';
+    const customDark  = localStorage.getItem('app-logo-dark')  || '';
+    const logoUrl = isLightSidebar
+      ? (customDark || customLight || 'assets/mandala-branca.png')
+      : (customLight || customDark || 'assets/mandala-branca.png');
+    const hasCustom = !!(customLight || customDark);
+
     const html = `
       <div class="sidebar-brand">
-        <img src="assets/mandala-branca.png" alt="PRIMETOUR"
-        style="width:36px;height:36px;border-radius:var(--radius-sm);object-fit:contain;flex-shrink:0;" />
-        <div class="sidebar-brand-text">
-          <span class="sidebar-brand-name">PRIMETOUR</span>
-          <span class="sidebar-brand-sub">Gestão de Tarefas</span>
-        </div>
+        ${hasCustom
+          ? `<img src="${logoUrl}" alt="Logo"
+              style="height:32px;max-width:140px;object-fit:contain;flex:1;min-width:0;" />`
+          : `<img src="${logoUrl}" alt="PRIMETOUR"
+              style="width:36px;height:36px;border-radius:var(--radius-sm);object-fit:contain;flex-shrink:0;" />
+            <div class="sidebar-brand-text">
+              <span class="sidebar-brand-name">PRIMETOUR</span>
+              <span class="sidebar-brand-sub">Gestão de Tarefas</span>
+            </div>`}
         <button class="sidebar-toggle" id="sidebar-toggle-btn" aria-label="Recolher menu">
           ◀
         </button>

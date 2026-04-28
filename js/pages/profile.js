@@ -22,6 +22,7 @@ const PROFILE_PALETTES = [
   { id:'sunset',    label:'Warm Sunset',     desc:'Laranja quente e acolhedor', colors:['#1A0F0A','#FF6B35','#2D1810','#FFAB91'] },
   { id:'rose',      label:'Rose',            desc:'Rosa vibrante e moderno',  colors:['#1A0A14','#E91E63','#2D1520','#F48FB1'] },
   { id:'sand',      label:'Sand',            desc:'Claro com tons quentes',   colors:['#FAF6F1','#8B6914','#E8E0D4','#5D4E37'] },
+  { id:'portal',    label:'Portal',          desc:'Azul royal · branco · cinza (estilo City Guides)', colors:['#1F2937','#2563EB','#FFFFFF','#64748B'] },
 ];
 
 function _buildPaletteCards(currentPalette) {
@@ -246,6 +247,49 @@ export async function renderProfile(container) {
             </div>
           </div>
         </div>
+
+        <!-- Logo do sistema (sidebar) — variando por paleta clara/escura -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Logo do sistema</div>
+            <div class="card-subtitle">URLs dos logos exibidos na sidebar. O sistema escolhe
+              automaticamente conforme a paleta (claro/escuro).</div>
+          </div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:14px;">
+            <div>
+              <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
+                Logo claro (pra fundos escuros — sidebar Midnight/Charcoal/Portal)
+              </label>
+              <input type="url" id="app-logo-light" class="form-input" style="width:100%;"
+                placeholder="https://pub-xxx.r2.dev/logos/primetour-branca.webp"
+                value="${esc(localStorage.getItem('app-logo-light') || '')}">
+              <div style="margin-top:6px;height:48px;display:flex;align-items:center;
+                background:#1F2937;border-radius:6px;padding:0 12px;">
+                <img id="app-logo-light-preview" alt="" style="height:32px;max-width:140px;object-fit:contain;
+                  display:${localStorage.getItem('app-logo-light')?'block':'none'};"
+                  src="${esc(localStorage.getItem('app-logo-light') || '')}">
+              </div>
+            </div>
+            <div>
+              <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
+                Logo escuro (pra fundos claros — sidebar Platinum/Sand)
+              </label>
+              <input type="url" id="app-logo-dark" class="form-input" style="width:100%;"
+                placeholder="https://pub-xxx.r2.dev/logos/primetour-azul.webp"
+                value="${esc(localStorage.getItem('app-logo-dark') || '')}">
+              <div style="margin-top:6px;height:48px;display:flex;align-items:center;
+                background:#FFFFFF;border:1px solid var(--border-default);border-radius:6px;padding:0 12px;">
+                <img id="app-logo-dark-preview" alt="" style="height:32px;max-width:140px;object-fit:contain;
+                  display:${localStorage.getItem('app-logo-dark')?'block':'none'};"
+                  src="${esc(localStorage.getItem('app-logo-dark') || '')}">
+              </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+              <button class="btn btn-secondary btn-sm" id="app-logo-clear">Limpar</button>
+              <button class="btn btn-primary btn-sm" id="app-logo-save">Salvar logos</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -450,6 +494,38 @@ function _bindProfileEvents(profile) {
   // Avatar color picker
   document.getElementById('avatar-color-btn')?.addEventListener('click', () => {
     openColorPicker(profile);
+  });
+
+  // Logo do sistema (sidebar) — preview em tempo real + save em localStorage.
+  // Re-renderiza a sidebar inteira após salvar pra refletir o novo logo.
+  ['light','dark'].forEach(kind => {
+    const input = document.getElementById(`app-logo-${kind}`);
+    const preview = document.getElementById(`app-logo-${kind}-preview`);
+    input?.addEventListener('input', () => {
+      const url = input.value.trim();
+      if (preview) {
+        preview.src = url;
+        preview.style.display = url ? 'block' : 'none';
+      }
+    });
+  });
+  document.getElementById('app-logo-save')?.addEventListener('click', () => {
+    const light = document.getElementById('app-logo-light')?.value?.trim() || '';
+    const dark  = document.getElementById('app-logo-dark')?.value?.trim()  || '';
+    if (light) localStorage.setItem('app-logo-light', light); else localStorage.removeItem('app-logo-light');
+    if (dark)  localStorage.setItem('app-logo-dark',  dark);  else localStorage.removeItem('app-logo-dark');
+    toast.success('Logo salvo. Sidebar atualizada.');
+    // Re-renderiza sidebar pra aplicar novo logo
+    import('../components/sidebar.js').then(({ renderSidebar }) => {
+      const el = document.querySelector('.sidebar');
+      if (el && renderSidebar) renderSidebar(el);
+    }).catch(() => location.reload());
+  });
+  document.getElementById('app-logo-clear')?.addEventListener('click', () => {
+    if (!confirm('Remover os logos customizados e voltar pro padrão?')) return;
+    localStorage.removeItem('app-logo-light');
+    localStorage.removeItem('app-logo-dark');
+    location.reload();
   });
 }
 

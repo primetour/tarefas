@@ -237,6 +237,62 @@
   --shadow-gold: 0 0 30px rgba(244,63,94,0.20);
 }
 
+/* ── Portal (azul/branco/cinza — inspirada no City Guides) ─
+ * Sidebar/header em azul escuro com texto branco, miolo branco,
+ * detalhes cinza. Mesmo "tom de voz visual" do PDF e do link web. */
+:root[data-palette="portal"] {
+  /* Backgrounds: miolo claro (área de trabalho), sidebar/elevated escura */
+  --bg-deepest:   #1F2937;  /* gray-800 — sidebar fundo */
+  --bg-dark:      #FFFFFF;  /* main bg — área de trabalho clara */
+  --bg-medium:    #F8FAFC;  /* slate-50 — surface clara */
+  --bg-surface:   #F1F5F9;  /* slate-100 — surface mais marcada */
+  --bg-elevated:  #FFFFFF;  /* cards */
+  --bg-card:      #FFFFFF;
+  --bg-hover:     #F1F5F9;
+  /* Bordas em cinza claro (detalhes) */
+  --border-subtle:  rgba(15,23,42,0.06);
+  --border-default: rgba(15,23,42,0.12);
+  --border-accent:  rgba(59,130,246,0.35);
+  /* Texto: escuro pra contraste sobre fundo claro */
+  --text-primary:   #1F2937;  /* gray-800 */
+  --text-secondary: #475569;  /* slate-600 */
+  --text-muted:     #64748B;  /* slate-500 */
+  --text-inverse:   #FFFFFF;  /* sobre azul escuro */
+  --text-gold:      #2563EB;  /* azul como "gold" */
+  /* Brand cores: azul royal */
+  --brand-gold:       #2563EB; /* blue-600 */
+  --brand-gold-light: #3B82F6; /* blue-500 */
+  --brand-gold-dark:  #1D4ED8; /* blue-700 */
+  /* Shadows suaves (paleta clara) */
+  --shadow-sm: 0 1px 3px rgba(15,23,42,0.06);
+  --shadow-md: 0 4px 16px rgba(15,23,42,0.08);
+  --shadow-lg: 0 8px 32px rgba(15,23,42,0.10);
+  --shadow-xl: 0 16px 64px rgba(15,23,42,0.14);
+  --shadow-gold: 0 0 30px rgba(37,99,235,0.18);
+  --color-success-bg: rgba(34,197,94,0.10);
+  --color-warning-bg: rgba(245,158,11,0.10);
+  --color-danger-bg:  rgba(239,68,68,0.10);
+  --color-info-bg:    rgba(59,130,246,0.10);
+}
+/* Sidebar herda do --bg-deepest (azul escuro) — texto branco automático */
+:root[data-palette="portal"] .sidebar,
+:root[data-palette="portal"] .sidebar-brand-name,
+:root[data-palette="portal"] .sidebar-brand-sub,
+:root[data-palette="portal"] .sidebar-nav a,
+:root[data-palette="portal"] .sidebar-nav-group-label,
+:root[data-palette="portal"] .sidebar-user-name,
+:root[data-palette="portal"] .sidebar-user-role {
+  color: #FFFFFF !important;
+}
+:root[data-palette="portal"] .sidebar-nav-group-label {
+  color: rgba(255,255,255,0.6) !important;
+}
+:root[data-palette="portal"] .sidebar-nav a:hover,
+:root[data-palette="portal"] .sidebar-nav a.active {
+  background: rgba(255,255,255,0.10);
+  color: #FFFFFF !important;
+}
+
 /* ── Sand (light warm) ───────────────────────────────────── */
 :root[data-palette="sand"] {
   --bg-deepest:  #F5F0E8; --bg-dark: #FAF7F2; --bg-medium: #F0EBE0;

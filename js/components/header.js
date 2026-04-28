@@ -41,6 +41,7 @@ const PALETTES = [
   { id:'sunset',    label:'Warm Sunset',     colors:['#271510','#FF6B35','#452B1E'] },
   { id:'rose',      label:'Rose',            colors:['#260E18','#E91E63','#451D2E'] },
   { id:'sand',      label:'Sand',            colors:['#FAF7F2','#8B6914','#E8E0D2'] },
+  { id:'portal',    label:'Portal (azul/branco)', colors:['#1F2937','#2563EB','#FFFFFF'] },
 ];
 
 const FONTS = [
