@@ -945,25 +945,26 @@ body { padding-bottom: 64px; }
 .site-footer {
   background: var(--portal-secondary);
   color: #fff;
-  padding: var(--portal-space-10) var(--portal-content-pad-x-mobile);
+  padding: var(--portal-space-6) var(--portal-content-pad-x-mobile);
   text-align: center;
   margin-top: var(--portal-space-12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--portal-space-3);
+  min-height: 100px;
 }
 .footer-logo {
-  max-width: 140px; height: auto;
-  margin: 0 auto var(--portal-space-4);
-}
-.footer-brand {
-  font-size: var(--portal-fs-xs);
-  letter-spacing: var(--portal-ls-kicker);
-  font-weight: var(--portal-fw-semi);
-  color: var(--portal-on-secondary);
-  text-transform: uppercase;
+  max-width: 220px;
+  max-height: 64px;
+  height: auto;
+  width: auto;
+  object-fit: contain;
 }
 .footer-sub {
-  margin-top: var(--portal-space-2);
   font-size: var(--portal-fs-xs);
-  color: rgba(255,255,255,0.5);
+  color: rgba(255,255,255,0.55);
   letter-spacing: var(--portal-ls-wide);
 }
 

@@ -1493,7 +1493,8 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
       tipData:      allTips.map(({ tip, dest }) => ({ tip, dest })),
       segments,
       areaName,
-      areaLogoUrl:  area?.logoUrl || null,
+      areaLogoUrl:    area?.logoUrl    || null,
+      areaLogoUrlAlt: area?.logoUrlAlt || null,
       colors,
       imagesByDest,
       createdBy: {

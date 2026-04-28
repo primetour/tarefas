@@ -33,13 +33,29 @@
 }
 
 .sidebar-brand {
-  padding: var(--space-5) var(--space-4);
+  padding: var(--space-4);
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 68px;
+  min-height: 80px;        /* +12px pra acomodar logo maior */
   border-bottom: 1px solid var(--border-subtle);
   position: relative;
+  overflow: hidden;
+}
+/* Logo customizado (img direta, sem brand-icon/brand-text) — ocupa
+ * o espaço disponível mantendo aspect ratio. Reduz proporcionalmente
+ * quando a sidebar está colapsada. */
+.sidebar-brand > img {
+  height: auto;
+  max-height: 56px;        /* sidebar normal: até 56px */
+  max-width: calc(100% - 50px);  /* deixa espaço pro toggle button */
+  object-fit: contain;
+  flex: 1;
+  min-width: 0;
+}
+.sidebar.collapsed .sidebar-brand > img {
+  max-height: 36px;        /* sidebar colapsada: 36px */
+  max-width: 100%;
 }
 
 .sidebar-brand::after {

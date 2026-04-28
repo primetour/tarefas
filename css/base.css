@@ -276,22 +276,53 @@
 }
 /* Sidebar herda do --bg-deepest (azul escuro) — texto branco automático */
 :root[data-palette="portal"] .sidebar,
+:root[data-palette="portal"] .sidebar * {
+  color: #FFFFFF;
+}
 :root[data-palette="portal"] .sidebar-brand-name,
-:root[data-palette="portal"] .sidebar-brand-sub,
-:root[data-palette="portal"] .sidebar-nav a,
-:root[data-palette="portal"] .sidebar-nav-group-label,
-:root[data-palette="portal"] .sidebar-user-name,
-:root[data-palette="portal"] .sidebar-user-role {
+:root[data-palette="portal"] .sidebar-brand-sub {
   color: #FFFFFF !important;
 }
+:root[data-palette="portal"] .sidebar-nav a {
+  color: rgba(255,255,255,0.85) !important;
+}
 :root[data-palette="portal"] .sidebar-nav-group-label {
-  color: rgba(255,255,255,0.6) !important;
+  color: rgba(255,255,255,0.55) !important;
 }
 :root[data-palette="portal"] .sidebar-nav a:hover,
 :root[data-palette="portal"] .sidebar-nav a.active {
-  background: rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.12);
   color: #FFFFFF !important;
 }
+:root[data-palette="portal"] .sidebar-toggle {
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.20);
+  color: #FFFFFF;
+}
+:root[data-palette="portal"] .sidebar-user {
+  border-top-color: rgba(255,255,255,0.10);
+}
+:root[data-palette="portal"] .sidebar-user-name { color: #FFFFFF !important; }
+:root[data-palette="portal"] .sidebar-user-role { color: rgba(255,255,255,0.65) !important; }
+/* Botões primários: brand-blue com texto BRANCO (era preto/escuro
+ * herdando text-primary do paletas claras) */
+:root[data-palette="portal"] .btn-primary,
+:root[data-palette="portal"] .btn-gold {
+  color: #FFFFFF !important;
+  background: var(--brand-gold);
+  border-color: var(--brand-gold);
+}
+:root[data-palette="portal"] .btn-primary:hover,
+:root[data-palette="portal"] .btn-gold:hover {
+  background: var(--brand-gold-dark);
+  border-color: var(--brand-gold-dark);
+}
+:root[data-palette="portal"] .btn-secondary {
+  background: var(--bg-surface);
+  color: var(--text-primary) !important;
+  border-color: var(--border-default);
+}
+:root[data-palette="portal"] .btn-danger { color: #FFFFFF !important; }
 
 /* ── Sand (light warm) ───────────────────────────────────── */
 :root[data-palette="sand"] {

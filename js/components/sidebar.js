@@ -219,11 +219,11 @@ export class Sidebar {
     };
     const roleLabel = roleDoc?.name || APP_CONFIG.roles[role]?.label || ROLE_FALLBACKS[role] || role;
 
-    // Logo do app: lê do localStorage (setado em Configurações).
-    // Detecta paleta atual: paletas claras usam logoDark, escuras usam
-    // logoLight. Fallback pra mandala-branca se não houver custom.
+    // Logo do app: 2 URLs em localStorage (logo-light pra fundos escuros
+    // como Midnight/Charcoal/Ocean/Royal/Sunset/Rose/Portal-sidebar; logo-dark
+    // pra fundos claros como Platinum/Sand). Sidebar usa o apropriado.
+    // Tamanho/responsividade controlados pelo CSS (.sidebar-brand > img).
     const palette = document.documentElement.getAttribute('data-palette') || 'midnight';
-    const lightPalettes = new Set(['platinum','sand','portal']);
     const isLightSidebar = palette === 'platinum' || palette === 'sand';
     const customLight = localStorage.getItem('app-logo-light') || '';
     const customDark  = localStorage.getItem('app-logo-dark')  || '';
@@ -235,10 +235,8 @@ export class Sidebar {
     const html = `
       <div class="sidebar-brand">
         ${hasCustom
-          ? `<img src="${logoUrl}" alt="Logo"
-              style="height:32px;max-width:140px;object-fit:contain;flex:1;min-width:0;" />`
-          : `<img src="${logoUrl}" alt="PRIMETOUR"
-              style="width:36px;height:36px;border-radius:var(--radius-sm);object-fit:contain;flex-shrink:0;" />
+          ? `<img src="${logoUrl}" alt="Logo">`
+          : `<div class="sidebar-brand-icon"><img src="${logoUrl}" alt="" style="width:100%;height:100%;object-fit:contain;"></div>
             <div class="sidebar-brand-text">
               <span class="sidebar-brand-name">PRIMETOUR</span>
               <span class="sidebar-brand-sub">Gestão de Tarefas</span>

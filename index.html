@@ -59,11 +59,31 @@
 
   <!-- Loading Screen (removida após auth check) -->
   <div id="loading-screen" class="loading-screen">
-    <div class="loading-logo">
-      <img src="assets/mandala-branca.png" alt="PRIMETOUR"
+    <div class="loading-logo" id="loading-logo-wrapper">
+      <img src="assets/mandala-branca.png" alt="PRIMETOUR" id="loading-logo-img"
         style="width:48px;height:48px;object-fit:contain;" />
-      <span class="loading-logo-text">PRIMETOUR</span>
+      <span class="loading-logo-text" id="loading-logo-text">PRIMETOUR</span>
     </div>
+    <script>
+      // Aplica logo customizado no loading (se houver). Loading tem fundo
+      // escuro → usa app-logo-light. Roda inline pra não ter flash.
+      (function() {
+        try {
+          var custom = localStorage.getItem('app-logo-light');
+          if (custom) {
+            var img = document.getElementById('loading-logo-img');
+            var txt = document.getElementById('loading-logo-text');
+            if (img) {
+              img.src = custom;
+              img.style.width = 'auto';
+              img.style.height = '52px';
+              img.style.maxWidth = '240px';
+            }
+            if (txt) txt.style.display = 'none';
+          }
+        } catch (e) {}
+      })();
+    </script>
     <div class="loading-bar">
       <div class="loading-bar-fill"></div>
     </div>

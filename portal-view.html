@@ -85,7 +85,6 @@
 
 <footer class="site-footer" id="site-footer" style="display:none;">
   <img id="footer-logo" class="footer-logo" style="display:none;" alt="">
-  <div class="footer-brand">CITY GUIDES</div>
   <div class="footer-sub" id="footer-date"></div>
 </footer>
 
@@ -121,6 +120,7 @@ const db=getFirestore(app);
 
 (async()=>{
   const token=window.location.hash.slice(1);
+  window.__portalToken = token;
   const appEl=document.getElementById('app');
   document.getElementById('footer-date').textContent=new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'});
   if(!token){showErr('Link inválido','Este link não contém um token de acesso.');return;}
@@ -136,13 +136,19 @@ const db=getFirestore(app);
   // aliases legados (--gold/--navy) são derivados automaticamente
   // em css/portal-tokens.css.
   applyPortalTheme({ colors: data.colors || {} });
-  if(data.areaLogoUrl){
-    const img=document.getElementById('area-logo');
-    img.src=data.areaLogoUrl;
-    img.style.display='block';
-    document.getElementById('header-fallback').style.display='none';
-    const fImg=document.getElementById('footer-logo');
-    fImg.src=data.areaLogoUrl;fImg.style.display='block';
+  // Logo: header tem fundo BRANCO → usa logoUrlAlt (versão escura/colorida).
+  //       footer tem fundo ESCURO → usa logoUrl (versão branca).
+  // Se só houver um dos dois, usa o disponível em ambos os lugares.
+  if (data.areaLogoUrl || data.areaLogoUrlAlt) {
+    const headerLogo = data.areaLogoUrlAlt || data.areaLogoUrl;
+    const footerLogo = data.areaLogoUrl    || data.areaLogoUrlAlt;
+    const img = document.getElementById('area-logo');
+    img.src = headerLogo;
+    img.style.display = 'block';
+    document.getElementById('header-fallback').style.display = 'none';
+    const fImg = document.getElementById('footer-logo');
+    fImg.src = footerLogo;
+    fImg.style.display = 'block';
   }
 
   const allTips=data.tipData||[];
@@ -160,10 +166,33 @@ const db=getFirestore(app);
   wireFavFilter();
   wireSearch();
   wireCardExpand();
-  // Logo do header também leva pro topo
+  // Logo do header → topo (smooth scroll) + atualiza URL pra remover hash
+  // de seção (ex: #seg-bairros) sem perder o token. Mantém só #<token>.
   document.getElementById('header-home')?.addEventListener('click', (e) => {
     e.preventDefault();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Restaura hash original (token do link), removendo qualquer ?seg-X
+    const baseHash = '#' + (window.__portalToken || window.location.hash.slice(1).split('?')[0]);
+    history.replaceState(null, '', window.location.pathname + baseHash);
+    // Tira o ".active" de todas as entradas do bottom-nav
+    document.querySelectorAll('#bottom-nav a').forEach(a => a.classList.remove('active'));
+  });
+  // Cards: "Ver no mapa" centraliza + abre popup do pin correspondente
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.card-map-btn');
+    if (!btn) return;
+    e.preventDefault();
+    const title = btn.dataset.itemTitle;
+    const pin = window.__portalMapPins?.[title];
+    const map = window.__portalMap;
+    if (!pin || !map) return;
+    // Scroll até a seção do mapa, depois centraliza + abre popup
+    const mapSec = document.getElementById('seg-map');
+    if (mapSec) mapSec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => {
+      map.setView([pin.lat, pin.lng], 16, { animate: true });
+      pin.marker.openPopup();
+    }, 600);
   });
 
   document.getElementById('site-header').style.display='flex';
@@ -256,7 +285,14 @@ function wireSearch(){
     }
   });
 }
-function applySearchFilter(query) {
+// Normaliza pra busca: lowercase + remove acentos/diacríticos
+const normSearch = s => String(s||'')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[̀-ͯ]/g, '');
+
+function applySearchFilter(rawQuery) {
+  const query = normSearch(rawQuery);
   if (!query) {
     document.body.classList.remove('search-active', 'no-results');
     document.querySelectorAll('.search-match,.has-search-match')
@@ -264,12 +300,19 @@ function applySearchFilter(query) {
     return;
   }
   document.body.classList.add('search-active');
+  // Busca por aproximação: TODAS as palavras (>=2 chars) precisam aparecer
+  // em algum lugar do card. Acentos ignorados. Substring match.
+  const words = query.split(/\s+/).filter(w => w.length >= 2);
+  if (!words.length) {
+    document.body.classList.remove('search-active', 'no-results');
+    return;
+  }
   let totalMatch = 0;
   document.querySelectorAll('[id^="seg-"]').forEach(seg => {
     let segMatch = 0;
     seg.querySelectorAll('.place-card, .simple-item').forEach(card => {
-      const text = card.textContent.toLowerCase();
-      const match = text.includes(query);
+      const text = normSearch(card.textContent);
+      const match = words.every(w => text.includes(w));
       card.classList.toggle('search-match', match);
       if (match) { segMatch++; totalMatch++; }
     });
@@ -556,8 +599,22 @@ async function mountMap(tip, dest) {
     const m = L.marker([it._geo.lat, it._geo.lng], { icon }).addTo(map);
     const cat = it.categoria ? `<div class="map-popup-cat">${esc(it.categoria)}</div>` : '';
     const addr = it.endereco ? `<div class="map-popup-addr">${esc(it.endereco)}</div>` : '';
-    m.bindPopup(`${cat}<div class="map-popup-title">${esc(it.titulo)}</div>${addr}`);
+    // Botão "Abrir no Google Maps" — leva pra route com origem da localização do user
+    const gmUrl = `https://www.google.com/maps/dir/?api=1&destination=${it._geo.lat},${it._geo.lng}`;
+    const gmBtn = `<a href="${gmUrl}" target="_blank" rel="noopener noreferrer"
+      style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;
+        padding:6px 12px;background:var(--portal-primary);color:#fff;
+        border-radius:999px;font-size:12px;font-weight:600;text-decoration:none;
+        font-family:var(--portal-font);">
+      <span style="font-size:14px;">↗</span> Abrir no Google Maps
+    </a>`;
+    m.bindPopup(`${cat}<div class="map-popup-title">${esc(it.titulo)}</div>${addr}${gmBtn}`);
+    // Salva index do pin pra navegar pelo botão "Ver no mapa" do card
+    window.__portalMapPins = window.__portalMapPins || {};
+    const itemId = String(it.titulo || '').toLowerCase().trim();
+    if (itemId) window.__portalMapPins[itemId] = { marker: m, lat: it._geo.lat, lng: it._geo.lng };
   });
+  window.__portalMap = map; // exposto pra "Ver no mapa" centralizar+abrir popup
   // Zoom-on-click reativa scrollwheel
   container.addEventListener('click', () => {
     map.scrollWheelZoom.enable();
@@ -689,35 +746,11 @@ function renderPlaces(sd,data,imgs,isAgenda){
       if (ov?.url) return ov.url;
     }
 
-    // Priority 1: exact placeName match
-    let m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
-
-    // Priority 2: placeName partial match (title contains placeName or vice versa)
-    if (!m) m = gallery.find(g => g.placeName &&
-      (title.includes(g.placeName.toLowerCase()) || g.placeName.toLowerCase().includes(title.slice(0,15)))
-    );
-
-    // Priority 3: name/tag matches title keywords
-    if (!m) {
-      const words = title.split(/\s+/).filter(w => w.length > 3);
-      m = gallery.find(g =>
-        words.some(w => g.name?.toLowerCase().includes(w)) ||
-        g.tags?.some(t => words.some(w => t.toLowerCase().includes(w)))
-      );
-    }
-
-    // Priority 4: tag matches segment category
-    if (!m) m = gallery.find(g =>
-      !usedImgUrls.has(g.url) &&
-      g.tags?.some(t => cat.includes(t.toLowerCase()) || t.toLowerCase().includes(cat.slice(0,6)))
-    );
-
-    // Priority 5: cyclic fallback — prefer unused images
-    if (!m) {
-      const unused = gallery.filter(g => !usedImgUrls.has(g.url));
-      m = unused.length ? unused[idx % unused.length] : gallery[idx % Math.max(gallery.length,1)];
-    }
-
+    // Único matching automático aceito: placeName EXATO (sem partial,
+    // sem keywords, sem tags). Resto é SÓ via override explícito do
+    // editor de geração. Critério estrito porque o matching frouxo
+    // estava replicando fotos em items que o user não pediu.
+    const m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
     if (m?.url) usedImgUrls.add(m.url);
     return m?.url || null;
   };
@@ -727,7 +760,18 @@ function renderPlaces(sd,data,imgs,isAgenda){
   const card=(item,idx,segDef=null)=>{
     const img=getImg(item,idx,segDef);
     const detailsParts = [];
-    if (item.endereco) detailsParts.push(`<span>📍 ${esc(item.endereco)}</span>`);
+    if (item.endereco) {
+      // Se item tem _geo, adiciona botão "Ver no mapa" inline com o endereço
+      const mapBtn = item._geo?.lat
+        ? `<button class="card-map-btn" data-item-title="${esc((item.titulo||'').toLowerCase().trim())}"
+            title="Ver no mapa" type="button"
+            style="background:none;border:none;cursor:pointer;padding:0 4px;
+              color:var(--portal-primary);font-size:14px;vertical-align:middle;">
+            <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;">map</span>
+          </button>`
+        : '';
+      detailsParts.push(`<span>📍 ${esc(item.endereco)}${mapBtn}</span>`);
+    }
     if (item.telefone) detailsParts.push(`<span>📞 ${esc(item.telefone)}</span>`);
     // Descrição truncada por CSS line-clamp; toggle aparece SÓ se a
     // descrição for relativamente longa (>120 chars) ou houver observações

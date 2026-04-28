@@ -15,11 +15,21 @@ export function renderLogin(container) {
         <div class="auth-visual-grid"></div>
         
         <div class="auth-brand">
-          <div class="auth-brand-logo">
-            <img src="assets/mandala-branca.png" alt="PRIMETOUR"
-            style="width:36px;height:36px;border-radius:var(--radius-sm);object-fit:contain;" />
-            <span class="auth-brand-name">PRIMETOUR</span>
-          </div>
+          ${(() => {
+            // Login tem fundo escuro à esquerda → usa app-logo-light
+            const custom = (typeof localStorage !== 'undefined' && localStorage.getItem('app-logo-light')) || '';
+            if (custom) {
+              return `<div class="auth-brand-logo">
+                <img src="${custom}" alt="Logo"
+                  style="height:56px;max-width:260px;object-fit:contain;display:block;" />
+              </div>`;
+            }
+            return `<div class="auth-brand-logo">
+              <img src="assets/mandala-branca.png" alt="PRIMETOUR"
+                style="width:36px;height:36px;border-radius:var(--radius-sm);object-fit:contain;" />
+              <span class="auth-brand-name">PRIMETOUR</span>
+            </div>`;
+          })()}
           <p class="auth-brand-tagline">Plataforma de Gestão de Tarefas</p>
         </div>
 

@@ -9,6 +9,7 @@ import {
   fetchTips, fetchDestinations, fetchAreas, deleteTip, toggleTipPriority,
   fetchWebLinksByTip, updateWebLink, fetchImages,
   fetchGenerationsByTip, recordGeneration, registerDownload,
+  deletePortalMaterial,
   SEGMENTS, GENERATION_FORMATS,
 } from '../services/portal.js';
 import { generateTip } from '../services/portalGenerator.js';
@@ -540,13 +541,17 @@ async function showMaterialsModal(tip, dest) {
           </div>
           ${formatPicker('')}
         </div>
-        <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;">
+        <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;flex-wrap:wrap;">
           <a href="${esc(webUrl)}" target="_blank" class="btn btn-ghost btn-sm"
             style="font-size:0.75rem;text-decoration:none;">🔗 Abrir</a>
           <button class="btn btn-ghost btn-sm mat-edit-btn" data-token="${esc(token)}"
             style="font-size:0.75rem;color:var(--text-muted);">✎ Editar</button>
           <button class="btn btn-primary btn-sm mat-derive-btn" data-token="${esc(token)}"
             style="font-size:0.75rem;">+ Formato</button>
+          ${(window.__store_canManagePortal||(()=>true))() ? `
+          <button class="btn btn-ghost btn-sm mat-del-btn" data-kind="web" data-id="${esc(token)}"
+            title="Excluir material" style="font-size:0.75rem;color:#EF4444;">🗑</button>
+          ` : ''}
         </div>
       </div>
     </div>`;
@@ -569,9 +574,13 @@ async function showMaterialsModal(tip, dest) {
             Documentos baixados não ficam armazenados — use "↓ Baixar" para regerar
           </div>
         </div>
-        <div style="display:flex;gap:6px;flex-shrink:0;">
+        <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm mat-regen-btn" data-format="${esc(fmt)}"
             style="font-size:0.75rem;color:var(--brand-gold);">↓ Baixar</button>
+          ${(window.__store_canManagePortal||(()=>true))() ? `
+          <button class="btn btn-ghost btn-sm mat-del-btn" data-kind="generation" data-id="${esc(gen.id)}"
+            title="Excluir material" style="font-size:0.75rem;color:#EF4444;">🗑</button>
+          ` : ''}
         </div>
       </div>
     </div>`;
@@ -734,6 +743,26 @@ async function showMaterialsModal(tip, dest) {
         toast.error('Erro: ' + e.message);
       } finally {
         btn.disabled = false; btn.textContent = '↓ Baixar';
+      }
+    });
+  });
+
+  // Botões de delete (admin/diretoria/manager) — restrição feita em
+  // deletePortalMaterial via canManagePortal()
+  listEl.querySelectorAll('.mat-del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const kind = btn.dataset.kind;
+      const id   = btn.dataset.id;
+      if (!confirm('Excluir este material? Esta ação não pode ser desfeita.')) return;
+      btn.disabled = true; btn.textContent = '⏳';
+      try {
+        await deletePortalMaterial(kind, id);
+        toast.success('Material excluído.');
+        // Re-render do modal: remove a card visualmente
+        btn.closest('.mat-card')?.remove();
+      } catch(e) {
+        toast.error('Erro: ' + (e?.message || e));
+        btn.disabled = false; btn.textContent = '🗑';
       }
     });
   });
