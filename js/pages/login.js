@@ -16,16 +16,18 @@ export function renderLogin(container) {
         
         <div class="auth-brand">
           ${(() => {
-            // Login tem fundo escuro à esquerda → usa app-logo-light
-            // Prefere cropped (sem bordas transparentes), senão original,
-            // senão default hardcoded (URL no R2 — sempre disponível).
-            const DEFAULT_LIGHT = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
-            const custom = (typeof localStorage !== 'undefined' && (
-              localStorage.getItem('app-logo-light-cropped')
-              || localStorage.getItem('app-logo-light')
-            )) || DEFAULT_LIGHT;
+            // Login: mesma lógica do sidebar — paleta clara (platinum/sand)
+            // → logo dark/navy. Outras paletas → logo light/branco.
+            const palette = document.documentElement.getAttribute('data-palette') || 'midnight';
+            const useDarkLogo = ['platinum','sand'].includes(palette);
+            const DEFAULT_LIGHT_LOGO = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
+            const DEFAULT_DARK_LOGO  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
+            const ls = (k) => (typeof localStorage !== 'undefined' && localStorage.getItem(k)) || '';
+            const logoUrl = useDarkLogo
+              ? (ls('app-logo-dark-cropped')  || ls('app-logo-dark')  || DEFAULT_DARK_LOGO)
+              : (ls('app-logo-light-cropped') || ls('app-logo-light') || DEFAULT_LIGHT_LOGO);
             return `<div class="auth-brand-logo">
-              <img src="${custom}" alt="Logo"
+              <img src="${logoUrl}" alt="Logo"
                 style="height:140px;max-width:520px;object-fit:contain;display:block;" />
             </div>`;
           })()}

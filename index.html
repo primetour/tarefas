@@ -80,21 +80,24 @@
       <span class="loading-logo-text" id="loading-logo-text">PRIMETOUR</span>
     </div>
     <script>
-      // Aplica logo no loading splash. Loading tem fundo escuro → usa
-      // app-logo-light. Prefere cropped (sem bordas transparentes), senão
-      // original em cache, senão default hardcoded (URL R2). Roda inline
-      // pra não ter flash. Sempre exibe o logo do PRIMETOUR — nunca a
-      // mandala genérica.
+      // Aplica logo no loading splash. Mapping EXPLÍCITO por paleta:
+      //  - platinum/sand → logo dark (lazer-alt) sobre fundo claro
+      //  - demais paletas → logo light (lazer) sobre fundo escuro
+      // Prefere cropped → original → default hardcoded. Roda inline
+      // pra não ter flash. Splash bg também muda com paleta via CSS.
       (function() {
         try {
           var DEFAULT_LIGHT = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
-          var custom = localStorage.getItem('app-logo-light-cropped')
-                    || localStorage.getItem('app-logo-light')
-                    || DEFAULT_LIGHT;
+          var DEFAULT_DARK  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
+          var palette = document.documentElement.getAttribute('data-palette') || 'midnight';
+          var useDark = (palette === 'platinum' || palette === 'sand');
+          var url = useDark
+            ? (localStorage.getItem('app-logo-dark-cropped')  || localStorage.getItem('app-logo-dark')  || DEFAULT_DARK)
+            : (localStorage.getItem('app-logo-light-cropped') || localStorage.getItem('app-logo-light') || DEFAULT_LIGHT);
           var img = document.getElementById('loading-logo-img');
           var txt = document.getElementById('loading-logo-text');
           if (img) {
-            img.src = custom;
+            img.src = url;
             img.style.width = 'auto';
             img.style.height = '120px';
             img.style.maxWidth = '480px';
@@ -124,7 +127,7 @@
        v= bumpa em commits que tocam código crítico (sidebar/branding)
        pra forçar refetch — GitHub Pages serve com max-age=600 e
        browsers cacheiam módulos por URL. -->
-  <script type="module" src="js/app.js?v=20260429a"></script>
+  <script type="module" src="js/app.js?v=20260429b"></script>
 
 </body>
 </html>

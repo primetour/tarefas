@@ -219,47 +219,36 @@ export class Sidebar {
     };
     const roleLabel = roleDoc?.name || APP_CONFIG.roles[role]?.label || ROLE_FALLBACKS[role] || role;
 
-    // Logo do app: 2 URLs em localStorage (logo-light pra fundos escuros
-    // como Midnight/Charcoal/Ocean/Royal/Sunset/Rose/Portal-sidebar; logo-dark
-    // pra fundos claros como Platinum/Sand). Sidebar usa o apropriado.
-    // Prefere a versão CROPPED (sem bordas transparentes — fica maior visualmente).
-    // Cai pro original se cropped ainda não existir, depois pros defaults
-    // (DEFAULT_LOGO_LIGHT/DARK no branding service) — garante que SEMPRE
-    // apareça um logo, mesmo em sessões novas/aba privativa.
+    // ── Logo do sidebar: mapping EXPLÍCITO por paleta ──────────
+    // PALETAS COM SIDEBAR ESCURA (usa logo BRANCO/light):
+    //   midnight, charcoal, ocean, forest, royal, sunset, rose, portal
+    // PALETAS COM SIDEBAR CLARA (usa logo NAVY/dark):
+    //   platinum, sand
+    // Sem fallback complexo, sem CSS filter. Mapping direto.
     const palette = document.documentElement.getAttribute('data-palette') || 'midnight';
-    const isLightSidebar = palette === 'platinum' || palette === 'sand';
-    const DEFAULT_LIGHT = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
-    const DEFAULT_DARK  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
+    const LIGHT_PALETTES = ['platinum', 'sand'];  // sidebars com fundo CLARO
+    const useDarkLogo = LIGHT_PALETTES.includes(palette);
+
+    // URLs default hardcoded — garante que SEMPRE apareça mesmo sem
+    // localStorage/Firestore configurado.
+    const DEFAULT_LIGHT_LOGO = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
+    const DEFAULT_DARK_LOGO  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
+
+    // Override custom (admin pode subir outras URLs no Firestore).
+    // Prefere cropped (sem padding transparente — visual maior).
     const customLight = localStorage.getItem('app-logo-light-cropped')
-                     || localStorage.getItem('app-logo-light') || DEFAULT_LIGHT;
+                     || localStorage.getItem('app-logo-light')
+                     || DEFAULT_LIGHT_LOGO;
     const customDark  = localStorage.getItem('app-logo-dark-cropped')
-                     || localStorage.getItem('app-logo-dark')  || DEFAULT_DARK;
-    // Escolhe a versão "certa" pra paleta atual.
-    // Se o user só tem 1 versão upada e ela é a errada pra paleta, marca
-    // pra inverter via CSS filter (data-logo-tone="invert"). Logo padrão
-    // (mandala-branca) é branco → invert sempre que paleta clara.
-    let logoUrl, needsInvert = false;
-    if (isLightSidebar) {
-      if (customDark)       { logoUrl = customDark;  needsInvert = false; }
-      else if (customLight) { logoUrl = customLight; needsInvert = true;  } // light upado em paleta clara → inverte
-      else                  { logoUrl = 'assets/mandala-branca.png'; needsInvert = true; } // default branco em paleta clara
-    } else {
-      if (customLight)      { logoUrl = customLight; needsInvert = false; }
-      else if (customDark)  { logoUrl = customDark;  needsInvert = false; } // dark em paleta escura — pode ficar discreto mas não inverte
-      else                  { logoUrl = 'assets/mandala-branca.png'; needsInvert = false; }
-    }
-    const hasCustom = !!(customLight || customDark);
-    const toneAttr = needsInvert ? ' data-logo-tone="invert"' : '';
+                     || localStorage.getItem('app-logo-dark')
+                     || DEFAULT_DARK_LOGO;
+
+    // Escolha FINAL (sem fallbacks cruzados — cada paleta tem SEU logo)
+    const logoUrl = useDarkLogo ? customDark : customLight;
 
     const html = `
-      <div class="sidebar-brand"${toneAttr}>
-        ${hasCustom
-          ? `<img src="${logoUrl}" alt="Logo">`
-          : `<div class="sidebar-brand-icon"><img src="${logoUrl}" alt="" style="width:100%;height:100%;object-fit:contain;"></div>
-            <div class="sidebar-brand-text">
-              <span class="sidebar-brand-name">PRIMETOUR</span>
-              <span class="sidebar-brand-sub">Gestão de Tarefas</span>
-            </div>`}
+      <div class="sidebar-brand">
+        <img src="${logoUrl}" alt="Logo">
         <button class="sidebar-toggle" id="sidebar-toggle-btn" aria-label="Recolher menu">
           ◀
         </button>
