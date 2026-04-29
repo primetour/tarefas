@@ -17,19 +17,16 @@ export function renderLogin(container) {
         <div class="auth-brand">
           ${(() => {
             // Login tem fundo escuro à esquerda → usa app-logo-light
-            const custom = (typeof localStorage !== 'undefined' && localStorage.getItem('app-logo-light')) || '';
-            if (custom) {
-              // 200% maior que antes (56 → 112) — qualidade preservada por
-              // object-fit:contain (depende da resolução do arquivo origem)
-              return `<div class="auth-brand-logo">
-                <img src="${custom}" alt="Logo"
-                  style="height:112px;max-width:480px;object-fit:contain;display:block;" />
-              </div>`;
-            }
+            // Prefere cropped (sem bordas transparentes), senão original,
+            // senão default hardcoded (URL no R2 — sempre disponível).
+            const DEFAULT_LIGHT = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
+            const custom = (typeof localStorage !== 'undefined' && (
+              localStorage.getItem('app-logo-light-cropped')
+              || localStorage.getItem('app-logo-light')
+            )) || DEFAULT_LIGHT;
             return `<div class="auth-brand-logo">
-              <img src="assets/mandala-branca.png" alt="PRIMETOUR"
-                style="width:128px;height:128px;border-radius:var(--radius-sm);object-fit:contain;" />
-              <span class="auth-brand-name" style="font-size:2.2rem;letter-spacing:0.08em;">PRIMETOUR</span>
+              <img src="${custom}" alt="Logo"
+                style="height:140px;max-width:520px;object-fit:contain;display:block;" />
             </div>`;
           })()}
           <p class="auth-brand-tagline">Plataforma de Gestão de Tarefas</p>

@@ -210,6 +210,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── Branding global (logos do app) ────────────────────────
+    // Leitura PÚBLICA — necessária pro splash/login mostrarem o
+    // logo antes do auth completar. Só URLs (sem dados sensíveis).
+    match /app_branding/{docId} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
     // ── Performance de Newsletters (Marketing Cloud) ──────────
     match /mc_performance/{docId} {
       allow read:  if isAuth();

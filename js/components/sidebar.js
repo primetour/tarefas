@@ -222,11 +222,18 @@ export class Sidebar {
     // Logo do app: 2 URLs em localStorage (logo-light pra fundos escuros
     // como Midnight/Charcoal/Ocean/Royal/Sunset/Rose/Portal-sidebar; logo-dark
     // pra fundos claros como Platinum/Sand). Sidebar usa o apropriado.
-    // Tamanho/responsividade controlados pelo CSS (.sidebar-brand > img).
+    // Prefere a versão CROPPED (sem bordas transparentes — fica maior visualmente).
+    // Cai pro original se cropped ainda não existir, depois pros defaults
+    // (DEFAULT_LOGO_LIGHT/DARK no branding service) — garante que SEMPRE
+    // apareça um logo, mesmo em sessões novas/aba privativa.
     const palette = document.documentElement.getAttribute('data-palette') || 'midnight';
     const isLightSidebar = palette === 'platinum' || palette === 'sand';
-    const customLight = localStorage.getItem('app-logo-light') || '';
-    const customDark  = localStorage.getItem('app-logo-dark')  || '';
+    const DEFAULT_LIGHT = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
+    const DEFAULT_DARK  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
+    const customLight = localStorage.getItem('app-logo-light-cropped')
+                     || localStorage.getItem('app-logo-light') || DEFAULT_LIGHT;
+    const customDark  = localStorage.getItem('app-logo-dark-cropped')
+                     || localStorage.getItem('app-logo-dark')  || DEFAULT_DARK;
     // Escolhe a versão "certa" pra paleta atual.
     // Se o user só tem 1 versão upada e ela é a errada pra paleta, marca
     // pra inverter via CSS filter (data-logo-tone="invert"). Logo padrão

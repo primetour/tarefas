@@ -65,22 +65,26 @@
       <span class="loading-logo-text" id="loading-logo-text">PRIMETOUR</span>
     </div>
     <script>
-      // Aplica logo customizado no loading (se houver). Loading tem fundo
-      // escuro → usa app-logo-light. Roda inline pra não ter flash.
+      // Aplica logo no loading splash. Loading tem fundo escuro → usa
+      // app-logo-light. Prefere cropped (sem bordas transparentes), senão
+      // original em cache, senão default hardcoded (URL R2). Roda inline
+      // pra não ter flash. Sempre exibe o logo do PRIMETOUR — nunca a
+      // mandala genérica.
       (function() {
         try {
-          var custom = localStorage.getItem('app-logo-light');
-          if (custom) {
-            var img = document.getElementById('loading-logo-img');
-            var txt = document.getElementById('loading-logo-text');
-            if (img) {
-              img.src = custom;
-              img.style.width = 'auto';
-              img.style.height = '94px';   /* 180% maior (era 52px) */
-              img.style.maxWidth = '430px';
-            }
-            if (txt) txt.style.display = 'none';
+          var DEFAULT_LIGHT = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
+          var custom = localStorage.getItem('app-logo-light-cropped')
+                    || localStorage.getItem('app-logo-light')
+                    || DEFAULT_LIGHT;
+          var img = document.getElementById('loading-logo-img');
+          var txt = document.getElementById('loading-logo-text');
+          if (img) {
+            img.src = custom;
+            img.style.width = 'auto';
+            img.style.height = '120px';
+            img.style.maxWidth = '480px';
           }
+          if (txt) txt.style.display = 'none';
         } catch (e) {}
       })();
     </script>
