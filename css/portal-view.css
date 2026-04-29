@@ -950,7 +950,7 @@ body { padding-bottom: 64px; }
 .site-footer {
   background: var(--portal-secondary);
   color: #fff;
-  padding: var(--portal-space-8) var(--portal-content-pad-x-mobile);
+  padding: var(--portal-space-10) var(--portal-content-pad-x-mobile);
   text-align: center;
   margin-top: var(--portal-space-12);
   display: flex;
@@ -958,17 +958,25 @@ body { padding-bottom: 64px; }
   align-items: center;
   justify-content: center;
   gap: var(--portal-space-3);
-  min-height: 160px;
+  min-height: 280px;
 }
+/* Logo +100% (era 360×110, agora 720×220).
+ * min(90vw, 720px) garante que não estoure em mobile pequeno. */
 .footer-logo {
-  max-width: 360px;
-  max-height: 110px;
+  max-width: min(90vw, 720px);
+  max-height: 220px;
   height: auto;
   width: auto;
   object-fit: contain;
   margin: 0 auto;
 }
 .footer-sub { display: none; }
+
+/* Loading splash logo (mostrado antes da data carregar — usa a
+ * mandala padrão que é branca, fundo já é escuro) */
+#loading .loading-logo-img {
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.25));
+}
 
 /* ─── 12.3 Favoritos (botão coração + filtro) ─────────────── */
 .fav-btn {
@@ -1049,6 +1057,12 @@ body.show-favs-only .fav-empty-state.has-no-favs { display: block; }
   overflow: hidden;
   border: 1px solid var(--portal-border);
   background: var(--portal-surface);
+  /* Isola stacking context — Leaflet usa z-index até ~700 nas suas
+   * panes (markers/popups). Sem isolation, esses z-index escapam pro
+   * stacking context raiz e cobrem topbar/bottom-nav (que usam ~50). */
+  position: relative;
+  isolation: isolate;
+  z-index: 0;
 }
 .map-container .leaflet-container { font-family: var(--portal-font); }
 /* Popup customizado: usa tokens da paleta */

@@ -11,6 +11,7 @@ import { toast }            from './components/toast.js';
 import { Sidebar }          from './components/sidebar.js';
 import { Header }           from './components/header.js';
 import { subscribeNotifications, cleanupExpired } from './services/notifications.js';
+import { syncBrandingToCache }                    from './services/branding.js';
 import { startScheduler, stopScheduler }          from './services/notificationScheduler.js';
 import { checkAndPlaySound, resetSoundCounter }   from './components/notificationPanel.js';
 
@@ -75,6 +76,10 @@ async function init() {
   if (!root) return;
 
   let authResolved = false;
+
+  // Sincroniza branding (logos) do Firestore pra cache local — faz isso
+  // em paralelo, sem bloquear o auth (cache antigo serve até completar)
+  syncBrandingToCache().catch(e => console.warn('[App] branding sync:', e?.message));
 
   // Aguarda estado de auth antes de qualquer render
   initAuthObserver(() => {

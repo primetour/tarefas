@@ -247,9 +247,12 @@ export async function renderProfile(container) {
         <!-- Logo do sistema (sidebar) — variando por paleta clara/escura -->
         <div class="card">
           <div class="card-header">
-            <div class="card-title">Logo do sistema</div>
-            <div class="card-subtitle">URLs dos logos exibidos na sidebar. O sistema escolhe
-              automaticamente conforme a paleta (claro/escuro).</div>
+            <div class="card-title">Logo do sistema · <span style="font-size:0.7rem;
+              padding:2px 8px;background:var(--brand-gold);color:#FFF;border-radius:10px;
+              font-weight:600;letter-spacing:.05em;text-transform:uppercase;">global</span></div>
+            <div class="card-subtitle">URLs dos logos exibidos na sidebar, login e splash.
+              <strong>Aplica para TODOS os usuários do sistema</strong> — somente administradores
+              podem alterar. O sistema escolhe automaticamente conforme a paleta (claro/escuro).</div>
           </div>
           <div class="card-body" style="display:flex;flex-direction:column;gap:14px;">
             <div>
@@ -505,23 +508,33 @@ function _bindProfileEvents(profile) {
       }
     });
   });
-  document.getElementById('app-logo-save')?.addEventListener('click', () => {
+  document.getElementById('app-logo-save')?.addEventListener('click', async () => {
     const light = document.getElementById('app-logo-light')?.value?.trim() || '';
     const dark  = document.getElementById('app-logo-dark')?.value?.trim()  || '';
-    if (light) localStorage.setItem('app-logo-light', light); else localStorage.removeItem('app-logo-light');
-    if (dark)  localStorage.setItem('app-logo-dark',  dark);  else localStorage.removeItem('app-logo-dark');
-    toast.success('Logo salvo. Sidebar atualizada.');
-    // Re-renderiza sidebar pra aplicar novo logo
-    import('../components/sidebar.js').then(({ renderSidebar }) => {
-      const el = document.querySelector('.sidebar');
-      if (el && renderSidebar) renderSidebar(el);
-    }).catch(() => location.reload());
+    const btn = document.getElementById('app-logo-save');
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+    try {
+      // Salva no Firestore (global pra todos os usuários) — service também
+      // atualiza o cache em localStorage pra render imediato sem reload
+      const { saveBranding } = await import('../services/branding.js');
+      await saveBranding({ logoLight: light, logoDark: dark });
+      toast.success('Logo salvo globalmente. Todos os usuários verão na próxima carga.');
+      // Re-renderiza sidebar local imediatamente
+      location.reload();
+    } catch(e) {
+      toast.error(e?.message || 'Erro ao salvar logo.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Salvar Logo'; }
+    }
   });
-  document.getElementById('app-logo-clear')?.addEventListener('click', () => {
-    if (!confirm('Remover os logos customizados e voltar pro padrão?')) return;
-    localStorage.removeItem('app-logo-light');
-    localStorage.removeItem('app-logo-dark');
-    location.reload();
+  document.getElementById('app-logo-clear')?.addEventListener('click', async () => {
+    if (!confirm('Remover os logos customizados (todos os usuários voltam pro padrão)?')) return;
+    try {
+      const { saveBranding } = await import('../services/branding.js');
+      await saveBranding({ logoLight: '', logoDark: '' });
+      location.reload();
+    } catch(e) {
+      toast.error(e?.message || 'Erro ao remover logo.');
+    }
   });
 }
 

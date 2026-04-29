@@ -518,7 +518,25 @@ async function fetchImgData(url) {
       r.readAsDataURL(blob);
     });
     // ArrayBuffer for DOCX
-    const arrayBuffer = await blob.arrayBuffer();
+    let arrayBuffer = await blob.arrayBuffer();
+    // WebP não é suportado pelo docx ImageRun. Converte pra PNG via canvas
+    // antes de devolver — o DOCX usa o arrayBuffer convertido (PNG real),
+    // PDF/PPTX continuam com o dataUrl original que aceitam webp.
+    if (mime === 'image/webp' && typeof Image !== 'undefined' && typeof document !== 'undefined') {
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const im = new Image();
+          im.onload = () => resolve(im);
+          im.onerror = reject;
+          im.src = dataUrl;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        const pngBlob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        if (pngBlob) arrayBuffer = await pngBlob.arrayBuffer();
+      } catch(e) { console.warn('[portalGen] webp→png conversion failed:', e?.message); }
+    }
     return { dataUrl, mimeType: mime, ext, arrayBuffer };
   } catch { return null; }
 }
@@ -638,23 +656,53 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
           }
         }
       } else if(segDef.mode==='simple_list'){
-        for(const item of(data.items||[])){
-          if(!item.title)continue;
+        // Dedupe por título (data legada vinda de import PDF pode ter
+        // duplicatas que causariam todos os bairros aparecerem 2x)
+        const seenTitles = new Set();
+        const uniqueItems = (data.items||[]).filter(it => {
+          if (!it.title) return false;
+          const k = it.title.trim().toLowerCase();
+          if (seenTitles.has(k)) return false;
+          seenTitles.add(k);
+          return true;
+        });
+        for(const item of uniqueItems){
           children.push(new Paragraph({children:[new TextRun({text:item.title,bold:true,size:20,color:navy})],spacing:{before:160,after:40},bullet:{level:0}}));
           if(item.description) children.push(new Paragraph({children:[new TextRun({text:item.description,size:18,color:'474650'})],spacing:{after:80},indent:{left:360}}));
         }
       } else {
         if(data.themeDesc) children.push(new Paragraph({children:[new TextRun({text:data.themeDesc,size:18,italics:true,color:'474650'})],spacing:{after:160}}));
 
-        for(let itemIdx=0;itemIdx<(data.items||[]).length;itemIdx++){
-          const item=data.items[itemIdx];
-          if(!item.titulo)continue;
+        // Dedupe + ordena por categoria pra agrupar (heading da categoria
+        // só uma vez por grupo, não em cada item)
+        const seenItemTitles = new Set();
+        const uniqueItems = (data.items||[]).filter(it => {
+          if (!it.titulo) return false;
+          const k = it.titulo.trim().toLowerCase();
+          if (seenItemTitles.has(k)) return false;
+          seenItemTitles.add(k);
+          return true;
+        });
+        // Estável: ordena por (categoria, índice original)
+        const indexed = uniqueItems.map((it,i)=>({it,i}));
+        indexed.sort((a,b)=>{
+          const ca=(a.it.categoria||'').toLowerCase();
+          const cb=(b.it.categoria||'').toLowerCase();
+          return ca.localeCompare(cb) || a.i - b.i;
+        });
+        let lastCategoria = null;
 
+        for(const {it: item, i: itemIdx} of indexed){
           // Image
           const imgUrl=pickImg(item,itemIdx,imgs,segDef.key);
           const imgData=await fetchImgData(imgUrl);
 
-          if(item.categoria) children.push(new Paragraph({children:[new TextRun({text:item.categoria.toUpperCase(),size:13,color:gold,bold:true,characterSpacing:200})],spacing:{before:240,after:20}}));
+          // Categoria heading SÓ quando muda (agrupa)
+          const cat = (item.categoria||'').trim();
+          if(cat && cat !== lastCategoria){
+            children.push(new Paragraph({children:[new TextRun({text:cat.toUpperCase(),size:13,color:gold,bold:true,characterSpacing:200})],spacing:{before:240,after:20}}));
+            lastCategoria = cat;
+          }
           children.push(new Paragraph({children:[new TextRun({text:item.titulo,bold:true,size:22,color:navy})],spacing:{after:imgData?.arrayBuffer?80:60}}));
 
           if(imgData?.arrayBuffer){
@@ -1357,16 +1405,21 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
 
     const content = buildContent(tip, segments);
 
+    // Helper: cria slide com header e footer padronizados (reuso entre
+    // segmentos e entre páginas paginadas do mesmo segmento)
+    const buildSegmentSlide = (titleText, subtitle = '') => {
+      const sl = pptx.addSlide(); sl.background={color:'FFFFFF'};
+      sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:W,h:0.72,fill:{color:bgHex},line:{type:'none'}});
+      sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.08,h:0.72,fill:{color:pHex},line:{type:'none'}});
+      sl.addText(titleText,{x:0.25,y:0.08,w:8,h:0.56,fontSize:13,bold:true,color:'FFFFFF',charSpacing:2});
+      sl.addText(subtitle || label,{x:8.5,y:0.08,w:4.5,h:0.56,fontSize:9,color:pHex,align:'right'});
+      sl.addShape(pptx.ShapeType.rect,{x:0,y:H-0.3,w:W,h:0.3,fill:{color:'F8F7F4'},line:{type:'none'}});
+      sl.addText(`PRIMETOUR  ·  Portal de Dicas  ·  ${date}`,{x:0.3,y:H-0.25,w:W-0.6,h:0.22,fontSize:7,color:'AAAAAA',align:'center'});
+      return sl;
+    };
+
     for (const { segDef, data } of content) {
-      const slide=pptx.addSlide(); slide.background={color:'FFFFFF'};
-      // Header bar
-      slide.addShape(pptx.ShapeType.rect,{x:0,y:0,w:W,h:0.72,fill:{color:bgHex},line:{type:'none'}});
-      slide.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.08,h:0.72,fill:{color:pHex},line:{type:'none'}});
-      slide.addText(segDef.label.toUpperCase(),{x:0.25,y:0.08,w:8,h:0.56,fontSize:13,bold:true,color:'FFFFFF',charSpacing:2});
-      slide.addText(label,{x:8.5,y:0.08,w:4.5,h:0.56,fontSize:9,color:pHex,align:'right'});
-      // Footer
-      slide.addShape(pptx.ShapeType.rect,{x:0,y:H-0.3,w:W,h:0.3,fill:{color:'F8F7F4'},line:{type:'none'}});
-      slide.addText(`PRIMETOUR  ·  Portal de Dicas  ·  ${date}`,{x:0.3,y:H-0.25,w:W-0.6,h:0.22,fontSize:7,color:'AAAAAA',align:'center'});
+      const slide = buildSegmentSlide(segDef.label.toUpperCase());
 
       if (segDef.mode==='special_info') {
         const inf=data.info||{};
@@ -1432,61 +1485,90 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
         }
 
       } else if (segDef.mode==='simple_list') {
-        const items=(data.items||[]).slice(0,10);
+        // Dedupe por título (data legada pode trazer duplicatas)
+        const seenT = new Set();
+        const items = (data.items||[]).filter(it => {
+          if (!it.title) return false;
+          const k = it.title.trim().toLowerCase();
+          if (seenT.has(k)) return false;
+          seenT.add(k); return true;
+        }).slice(0,10);
         slide.addText(items.map(i=>({text:`${i.title||''}${i.description?'\n'+i.description.slice(0,80):''}`,
           options:{bullet:{type:'bullet'},fontSize:10,color:'333333',paraSpaceAfter:6}})),
           {x:0.3,y:0.9,w:W-0.6,h:H-1.4});
 
       } else {
-        const items=(data.items||[]).slice(0,4);
-        if(data.themeDesc) slide.addText(data.themeDesc.slice(0,180),
-          {x:0.3,y:0.85,w:W-0.6,h:0.45,fontSize:8,italic:true,color:'888888'});
+        // place_list: dedupe + ordena por categoria + pagina (4 itens/slide)
+        const seenT2 = new Set();
+        const allItems = (data.items||[]).filter(it => {
+          if (!it.titulo) return false;
+          const k = it.titulo.trim().toLowerCase();
+          if (seenT2.has(k)) return false;
+          seenT2.add(k); return true;
+        });
+        const indexed = allItems.map((it,i)=>({it,origIdx:i}));
+        indexed.sort((a,b)=>{
+          const ca=(a.it.categoria||'').toLowerCase();
+          const cb=(b.it.categoria||'').toLowerCase();
+          return ca.localeCompare(cb) || a.origIdx - b.origIdx;
+        });
 
-        const sY=data.themeDesc?1.38:0.88;
-        const cols=items.length<=2?2:4;
-        const cW=items.length<=2?(W-0.8)/2:(W-0.8)/4;
-        const cH=H-sY-0.4;
+        const PER_PAGE = 4;
+        const totalPages = Math.max(1, Math.ceil(indexed.length / PER_PAGE));
 
-        await Promise.all(items.map(async (item,i) => {
-          const x=0.3+i*(cW+0.08);
-          const imgUrl = pickImg(item, i, imgs, segDef.key);
-          const imgDataP = await fetchImgData(imgUrl);
-          const imgB64 = imgDataP?.dataUrl || null;
+        for (let pg = 0; pg < totalPages; pg++) {
+          const pageSlide = pg === 0 ? slide : buildSegmentSlide(
+            segDef.label.toUpperCase(),
+            `${label}  ·  pág. ${pg+1}/${totalPages}`,
+          );
+          const pageItems = indexed.slice(pg*PER_PAGE, (pg+1)*PER_PAGE);
 
-          if (imgB64) {
-            // Image fills top ~55% of card
-            const imgH = cH * 0.52;
-            slide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:cH,fill:{color:'FFFFFF'},line:{color:'E5E7EB',width:0.5}});
-            try { slide.addImage({ data: imgB64, x, y:sY, w:cW, h:imgH,
-              sizing:{type:'cover',w:cW,h:imgH} }); } catch(e) { console.warn('PPTX item img:', e.message); }
-            // Gold top accent
-            slide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:0.05,fill:{color:pHex},line:{type:'none'}});
-            const tY = sY + imgH + 0.1;
-            if(item.categoria) slide.addText(item.categoria.toUpperCase(),
-              {x:x+0.1,y:tY,w:cW-0.2,h:0.25,fontSize:5.5,bold:true,color:pHex,charSpacing:1});
-            slide.addText(item.titulo,{x:x+0.1,y:tY+(item.categoria?0.27:0),w:cW-0.2,h:0.5,
-              fontSize:cols===2?11:9.5,bold:true,color:bgHex,wrap:true});
-            if(item.descricao){
-              const dY=tY+(item.categoria?0.27:0)+0.52;
-              slide.addText(item.descricao.slice(0,cols===2?130:70),
-                {x:x+0.1,y:dY,w:cW-0.2,h:sY+cH-dY-0.35,fontSize:cols===2?8:7,color:'555555',wrap:true,valign:'top'});
-            }
-          } else {
-            // No image — text-only card
-            slide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:cH,fill:{color:'F8F7F4'},line:{color:'E5E7EB',width:0.5}});
-            slide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:0.06,fill:{color:pHex},line:{type:'none'}});
-            let iy=sY+0.16;
-            if(item.categoria){slide.addText(item.categoria.toUpperCase(),{x:x+0.1,y:iy,w:cW-0.2,h:0.28,fontSize:6,bold:true,color:pHex,charSpacing:1});iy+=0.3;}
-            slide.addText(item.titulo,{x:x+0.1,y:iy,w:cW-0.2,h:0.6,fontSize:cols===2?12:10,bold:true,color:bgHex,wrap:true});iy+=0.65;
-            if(item.descricao) slide.addText(item.descricao.slice(0,cols===2?200:100),
-              {x:x+0.1,y:iy,w:cW-0.2,h:cH-iy+sY-0.3,fontSize:cols===2?9:8,color:'555555',wrap:true,valign:'top'});
+          // Themedesc só na primeira página
+          if (pg === 0 && data.themeDesc) {
+            pageSlide.addText(String(data.themeDesc).slice(0,180),
+              {x:0.3,y:0.85,w:W-0.6,h:0.45,fontSize:8,italic:true,color:'888888'});
           }
-          const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
-          if(det.length) slide.addText(det.join('  '),{x:x+0.1,y:sY+cH-0.7,w:cW-0.2,h:0.35,fontSize:7,color:'888888',wrap:true});
-          if(hasValidSite(item)) slide.addText(item.site,{x:x+0.1,y:sY+cH-0.38,w:cW-0.2,h:0.28,fontSize:7,color:pHex,hyperlink:{url:normalizeUrl(item.site)}});
-        }));
-        if((data.items||[]).length>4) slide.addText(`+ ${data.items.length-4} itens adicionais`,
-          {x:0.3,y:H-0.45,w:W-0.6,h:0.25,fontSize:8,italic:true,color:'AAAAAA',align:'center'});
+          const sY = (pg === 0 && data.themeDesc) ? 1.38 : 0.88;
+          const cols = pageItems.length<=2 ? 2 : 4;
+          const cW = pageItems.length<=2 ? (W-0.8)/2 : (W-0.8)/4;
+          const cH = H - sY - 0.4;
+
+          await Promise.all(pageItems.map(async ({it: item, origIdx}, i) => {
+            const x=0.3+i*(cW+0.08);
+            const imgUrl = pickImg(item, origIdx, imgs, segDef.key);
+            const imgDataP = await fetchImgData(imgUrl);
+            const imgB64 = imgDataP?.dataUrl || null;
+
+            if (imgB64) {
+              const imgH = cH * 0.52;
+              pageSlide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:cH,fill:{color:'FFFFFF'},line:{color:'E5E7EB',width:0.5}});
+              try { pageSlide.addImage({ data: imgB64, x, y:sY, w:cW, h:imgH,
+                sizing:{type:'cover',w:cW,h:imgH} }); } catch(e) { console.warn('PPTX item img:', e.message); }
+              pageSlide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:0.05,fill:{color:pHex},line:{type:'none'}});
+              const tY = sY + imgH + 0.1;
+              if(item.categoria) pageSlide.addText(item.categoria.toUpperCase(),
+                {x:x+0.1,y:tY,w:cW-0.2,h:0.25,fontSize:5.5,bold:true,color:pHex,charSpacing:1});
+              pageSlide.addText(item.titulo,{x:x+0.1,y:tY+(item.categoria?0.27:0),w:cW-0.2,h:0.5,
+                fontSize:cols===2?11:9.5,bold:true,color:bgHex,wrap:true});
+              if(item.descricao){
+                const dY=tY+(item.categoria?0.27:0)+0.52;
+                pageSlide.addText(item.descricao.slice(0,cols===2?130:70),
+                  {x:x+0.1,y:dY,w:cW-0.2,h:sY+cH-dY-0.35,fontSize:cols===2?8:7,color:'555555',wrap:true,valign:'top'});
+              }
+            } else {
+              pageSlide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:cH,fill:{color:'F8F7F4'},line:{color:'E5E7EB',width:0.5}});
+              pageSlide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:0.06,fill:{color:pHex},line:{type:'none'}});
+              let iy=sY+0.16;
+              if(item.categoria){pageSlide.addText(item.categoria.toUpperCase(),{x:x+0.1,y:iy,w:cW-0.2,h:0.28,fontSize:6,bold:true,color:pHex,charSpacing:1});iy+=0.3;}
+              pageSlide.addText(item.titulo,{x:x+0.1,y:iy,w:cW-0.2,h:0.6,fontSize:cols===2?12:10,bold:true,color:bgHex,wrap:true});iy+=0.65;
+              if(item.descricao) pageSlide.addText(item.descricao.slice(0,cols===2?200:100),
+                {x:x+0.1,y:iy,w:cW-0.2,h:cH-iy+sY-0.3,fontSize:cols===2?9:8,color:'555555',wrap:true,valign:'top'});
+            }
+            const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
+            if(det.length) pageSlide.addText(det.join('  '),{x:x+0.1,y:sY+cH-0.7,w:cW-0.2,h:0.35,fontSize:7,color:'888888',wrap:true});
+            if(hasValidSite(item)) pageSlide.addText(item.site,{x:x+0.1,y:sY+cH-0.38,w:cW-0.2,h:0.28,fontSize:7,color:pHex,hyperlink:{url:normalizeUrl(item.site)}});
+          }));
+        }
       }
     }
   }
