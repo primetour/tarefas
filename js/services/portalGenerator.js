@@ -519,9 +519,13 @@ async function fetchImgData(url) {
     });
     // ArrayBuffer for DOCX
     let arrayBuffer = await blob.arrayBuffer();
-    // WebP não é suportado pelo docx ImageRun. Converte pra PNG via canvas
-    // antes de devolver — o DOCX usa o arrayBuffer convertido (PNG real),
-    // PDF/PPTX continuam com o dataUrl original que aceitam webp.
+    let outDataUrl  = dataUrl;
+    let outExt      = ext;
+    let outMime     = mime;
+    // WebP não é suportado por docx ImageRun NEM por pptxgenjs. Converte
+    // pra PNG via canvas antes de devolver — tanto arrayBuffer (DOCX) quanto
+    // dataUrl (PDF/PPTX) usam a versão PNG. PDF do jsPDF aceita webp mas
+    // como já normalizamos, mantém consistente.
     if (mime === 'image/webp' && typeof Image !== 'undefined' && typeof document !== 'undefined') {
       try {
         const img = await new Promise((resolve, reject) => {
@@ -534,10 +538,15 @@ async function fetchImgData(url) {
         canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
         canvas.getContext('2d').drawImage(img, 0, 0);
         const pngBlob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-        if (pngBlob) arrayBuffer = await pngBlob.arrayBuffer();
+        if (pngBlob) {
+          arrayBuffer = await pngBlob.arrayBuffer();
+          outDataUrl  = canvas.toDataURL('image/png');
+          outExt      = 'png';
+          outMime     = 'image/png';
+        }
       } catch(e) { console.warn('[portalGen] webp→png conversion failed:', e?.message); }
     }
-    return { dataUrl, mimeType: mime, ext, arrayBuffer };
+    return { dataUrl: outDataUrl, mimeType: outMime, ext: outExt, arrayBuffer };
   } catch { return null; }
 }
 
@@ -617,15 +626,55 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         // Limpa CLIMA + REPRESENTAÇÃO da descrição (renderizadas como blocos próprios)
         const repObj=inf.representacao||{};
         const { descricao: descClean, climate } = parseDescricao(inf.descricao, !!repObj.nome);
-        const fields=[['Descrição',descClean],['Dica',inf.dica],['População',inf.populacao],['Moeda',inf.moeda],['Língua oficial',inf.lingua],['Religião',inf.religiao],['Fuso horário',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h de Brasília`:''],['Voltagem',inf.voltagem],['DDD',inf.ddd]].filter(([,v])=>v);
-        if(fields.length){
-          const rows=[];
-          for(let i=0;i<fields.length;i+=2){
-            const pair=fields.slice(i,i+2);
-            rows.push(new TableRow({children:[...pair,...(pair.length<2?[null]:[])].map(f=>f?new TableCell({width:{size:4500,type:WidthType.DXA},borders:{top:{style:BorderStyle.NONE},bottom:{style:BorderStyle.SINGLE,size:4,color:'EEEEEE'},left:{style:BorderStyle.NONE},right:{style:BorderStyle.NONE}},children:[new Paragraph({children:[new TextRun({text:f[0].toUpperCase(),size:14,color:gold,bold:true,characterSpacing:150})],spacing:{after:20}}),new Paragraph({children:[new TextRun({text:f[1],size:18,color:navy})],spacing:{after:80}})]}):new TableCell({width:{size:4500,type:WidthType.DXA},borders:{top:{style:BorderStyle.NONE},bottom:{style:BorderStyle.NONE},left:{style:BorderStyle.NONE},right:{style:BorderStyle.NONE}},children:[]}))}));
+
+        // ── DESCRIÇÃO em parágrafo (largura total) ──
+        if (descClean) {
+          children.push(new Paragraph({
+            children:[new TextRun({text:'DESCRIÇÃO',size:13,bold:true,color:gold,characterSpacing:200})],
+            spacing:{before:80,after:60},
+          }));
+          children.push(new Paragraph({
+            children:[new TextRun({text:descClean,size:20,color:'474650'})],
+            spacing:{after:200},
+          }));
+        }
+        // ── DICA em callout (texto destacado) ──
+        if (inf.dica) {
+          children.push(new Paragraph({
+            children:[new TextRun({text:'DICA DO CONCIERGE',size:13,bold:true,color:gold,characterSpacing:200})],
+            spacing:{before:160,after:60},
+          }));
+          children.push(new Paragraph({
+            children:[new TextRun({text:inf.dica,size:20,italics:true,color:'474650'})],
+            spacing:{after:200},
+            indent:{left:200},
+          }));
+        }
+        // ── DADOS BÁSICOS em flow (label: value, um por linha) ──
+        const dataRows = [
+          ['População',  inf.populacao],
+          ['Moeda',      inf.moeda],
+          ['Língua oficial', inf.lingua],
+          ['Religião',   inf.religiao],
+          ['Fuso horário', inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h de Brasília`:''],
+          ['Voltagem',   inf.voltagem],
+          ['DDD',        inf.ddd],
+        ].filter(([,v])=>v);
+        if (dataRows.length) {
+          children.push(new Paragraph({
+            children:[new TextRun({text:'DADOS BÁSICOS',size:13,bold:true,color:gold,characterSpacing:200})],
+            spacing:{before:160,after:80},
+          }));
+          for (const [label, value] of dataRows) {
+            children.push(new Paragraph({
+              children:[
+                new TextRun({text:label+': ',size:20,bold:true,color:navy}),
+                new TextRun({text:String(value),size:20,color:'474650'}),
+              ],
+              spacing:{after:80},
+            }));
           }
-          children.push(new Table({rows,width:{size:9000,type:WidthType.DXA}}));
-          children.push(new Paragraph({spacing:{after:160}}));
+          children.push(new Paragraph({spacing:{after:120}}));
         }
         // CLIMA — tabela 13 col (°C + 12 meses) com linhas Máx/Mín
         // Aceita formato web (cli.max_0..max_11) ou parsed (climate.max[])
@@ -726,7 +775,16 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
     children.push(new Paragraph({children:[new PageBreak()]}));
   }
 
-  const doc = new Document({sections:[{properties:{},children}]});
+  // Document com Poppins como fonte padrão pra TODOS os runs (sem
+  // precisar passar `font: 'Poppins'` em cada TextRun individualmente)
+  const doc = new Document({
+    styles: {
+      default: {
+        document: { run: { font: 'Poppins' } },
+      },
+    },
+    sections:[{properties:{},children}],
+  });
   const blob = await Packer.toBlob(doc);
   triggerDownload(blob, filename, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   return { filename };
@@ -1368,53 +1426,123 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
   const date=new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'});
   pptx.layout='LAYOUT_WIDE'; pptx.author='PRIMETOUR Portal de Dicas';
 
-  // Cover — logo (se houver) no topo + título + destinos + data
-  // Padrão alinhado com PDF: logo destacado, depois nome da área.
+  // Fonte padrão Poppins (com fallback Arial). Helpers garantem que
+  // toda chamada de addText use a fonte correta sem precisar repetir.
+  const FONT = 'Poppins';
+  const FONT_FALLBACK = 'Arial';
+  const F = (extra={}) => ({ fontFace: `${FONT}, ${FONT_FALLBACK}, sans-serif`, ...extra });
+
+  // ── COVER (espelhada do PDF) ────────────────────────────────
+  // bg = secondary (escuro). Logo grande no centro (compositado com
+  // bg pra resolver transparência). Texto BRANCO em cima (não primary
+  // sobre bg — antes ficava azul sobre azul, invisível).
   const coverLogoData = await fetchImgData(area?.logoUrl);
-  const cover=pptx.addSlide(); cover.background={color:bgHex};
+  let coverLogoComposite = null;
   if (coverLogoData?.dataUrl) {
     try {
-      cover.addImage({ data: coverLogoData.dataUrl, x: W/2-2, y: 0.7, w: 4, h: 1.4,
-        sizing:{type:'contain',w:4,h:1.4} });
-    } catch(e) { console.warn('PPTX cover logo:', e.message); }
+      const r = await compositeLogoOnBackground({
+        logoDataUrl: coverLogoData.dataUrl, bgColorHex: bgColor,
+        maxWmm: 130, maxHmm: 80, padPct: 0.02,
+      });
+      // Converte mm→inch (1 inch = 25.4mm) pra PPTX
+      coverLogoComposite = {
+        dataUrl: r.dataUrl,
+        wIn: r.widthMm / 25.4,
+        hIn: r.heightMm / 25.4,
+      };
+    } catch(e) { console.warn('[PPTX] composite cover logo failed:', e?.message); }
   }
-  cover.addShape(pptx.ShapeType.rect,{x:1.5,y:3.55,w:W-3,h:0.04,fill:{color:pHex},line:{type:'none'}});
-  cover.addText('PORTAL DE DICAS',{x:0.5,y:2.3,w:W-1,h:0.4,fontSize:10,color:'AAAAAA',align:'center',charSpacing:3});
-  cover.addText(areaName.toUpperCase(),{x:0.5,y:2.7,w:W-1,h:0.9,fontSize:32,bold:true,color:pHex,align:'center',charSpacing:4});
-  cover.addText(allTips.map(({dest})=>destLabel(dest)).join('  ·  '),{x:0.5,y:3.9,w:W-1,h:0.6,fontSize:16,bold:true,color:'FFFFFF',align:'center'});
-  cover.addText(date,{x:0.5,y:H-0.6,w:W-1,h:0.35,fontSize:9,color:pHex,align:'center'});
+  const cover = pptx.addSlide(); cover.background={color:bgHex};
+  if (coverLogoComposite) {
+    const lw = Math.min(coverLogoComposite.wIn, 6);
+    const lh = lw * (coverLogoComposite.hIn / coverLogoComposite.wIn);
+    try {
+      cover.addImage({ data: coverLogoComposite.dataUrl,
+        x: (W - lw)/2, y: 1.2, w: lw, h: lh });
+    } catch(e) { console.warn('[PPTX] cover logo skip:', e.message); }
+  }
+  // Linha divisória branca
+  cover.addShape(pptx.ShapeType.rect,{x:(W-3)/2,y:4.5,w:3,h:0.03,fill:{color:'FFFFFF'},line:{type:'none'}});
+  cover.addText('PORTAL DE DICAS', {
+    x:0.5, y:4.8, w:W-1, h:0.35,
+    ...F({fontSize:10, color:'FFFFFF', align:'center', charSpacing:6, transparency:30}),
+  });
+  cover.addText(String(areaName||'').toUpperCase(), {
+    x:0.5, y:5.15, w:W-1, h:0.7,
+    ...F({fontSize:24, bold:true, color:'FFFFFF', align:'center', charSpacing:4}),
+  });
+  // Destinos (até 4 inline, mais que isso vira lista vertical)
+  const destLines = allTips.map(({dest})=>destLabel(dest));
+  if (destLines.length <= 4) {
+    cover.addText(destLines.join('  ·  '), {
+      x:0.5, y:5.95, w:W-1, h:0.5,
+      ...F({fontSize:14, color:'FFFFFF', align:'center'}),
+    });
+  } else {
+    cover.addText(destLines.map(d=>({text:d, options:{breakLine:true}})), {
+      x:0.5, y:5.85, w:W-1, h:1.0,
+      ...F({fontSize:12, color:'FFFFFF', align:'center'}),
+    });
+  }
+  cover.addText(date, {
+    x:0.5, y:H-0.5, w:W-1, h:0.3,
+    ...F({fontSize:9, color:'FFFFFF', align:'center', transparency:50}),
+  });
 
   for (const { tip, dest } of allTips) {
     const label = destLabel(dest);
     const imgs  = imagesByDest[dest?.id] || {};
     const [city] = label.split(',');
 
-    // Destination slide — with hero image if available
+    // ── DESTINATION INTRO (hero full bleed + cidade gigante) ─────
     const heroUrl = imgs.hero;
     const heroImgData = await fetchImgData(heroUrl);
-    const ds=pptx.addSlide(); ds.background={color:bgHex};
+    const ds = pptx.addSlide(); ds.background={color:bgHex};
     if (heroImgData?.dataUrl) {
-      try { ds.addImage({ data: heroImgData.dataUrl, x:0, y:0, w:W, h:H,
-        sizing:{type:'cover',w:W,h:H} }); } catch(e) { console.warn('PPTX hero img:', e.message); }
-      ds.addShape(pptx.ShapeType.rect,{x:0,y:H*0.5,w:W,h:H*0.5,fill:{color:bgHex,transparency:35},line:{type:'none'}});
+      try {
+        ds.addImage({ data: heroImgData.dataUrl, x:0, y:0, w:W, h:H,
+          sizing:{type:'cover', w:W, h:H} });
+      } catch(e) { console.warn('[PPTX] hero img:', e.message); }
+      // Gradient overlay (preto na parte de baixo) pra texto ficar legível
+      ds.addShape(pptx.ShapeType.rect,{
+        x:0, y:H*0.45, w:W, h:H*0.55,
+        fill:{color:'000000', transparency:30}, line:{type:'none'},
+      });
     }
-    ds.addShape(pptx.ShapeType.rect,{x:0,y:H-1.6,w:0.08,h:1.2,fill:{color:pHex},line:{type:'none'}});
-    ds.addText(city.trim(),{x:0.22,y:H-1.6,w:W-0.5,h:0.9,fontSize:42,bold:true,color:'FFFFFF',charSpacing:1});
-    if (label.includes(',')) ds.addText(label.split(',').slice(1).join(',').trim().toUpperCase(),
-      {x:0.22,y:H-0.75,w:W-0.5,h:0.4,fontSize:10,color:pHex,charSpacing:3});
+    // Faixa primary fina à esquerda + nome cidade BRANCO grande
+    ds.addShape(pptx.ShapeType.rect,{x:0.5,y:H-2.4,w:0.06,h:1.6,fill:{color:pHex},line:{type:'none'}});
+    ds.addText(String(city||'').trim(), {
+      x:0.7, y:H-2.4, w:W-1.2, h:1.2,
+      ...F({fontSize:54, bold:true, color:'FFFFFF', charSpacing:1}),
+    });
+    if (label.includes(',')) {
+      const sub = label.split(',').slice(1).join(',').trim().toUpperCase();
+      ds.addText(sub, {
+        x:0.7, y:H-1.1, w:W-1.2, h:0.45,
+        ...F({fontSize:12, color:'FFFFFF', charSpacing:4, transparency:20}),
+      });
+    }
 
     const content = buildContent(tip, segments);
 
-    // Helper: cria slide com header e footer padronizados (reuso entre
-    // segmentos e entre páginas paginadas do mesmo segmento)
+    // Helper: cria slide com header/footer padronizados
     const buildSegmentSlide = (titleText, subtitle = '') => {
       const sl = pptx.addSlide(); sl.background={color:'FFFFFF'};
       sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:W,h:0.72,fill:{color:bgHex},line:{type:'none'}});
       sl.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.08,h:0.72,fill:{color:pHex},line:{type:'none'}});
-      sl.addText(titleText,{x:0.25,y:0.08,w:8,h:0.56,fontSize:13,bold:true,color:'FFFFFF',charSpacing:2});
-      sl.addText(subtitle || label,{x:8.5,y:0.08,w:4.5,h:0.56,fontSize:9,color:pHex,align:'right'});
+      sl.addText(titleText, {
+        x:0.25, y:0.08, w:8, h:0.56,
+        ...F({fontSize:13, bold:true, color:'FFFFFF', charSpacing:2}),
+      });
+      sl.addText(subtitle || label, {
+        x:8.5, y:0.08, w:4.5, h:0.56,
+        ...F({fontSize:9, color:'FFFFFF', align:'right', transparency:30}),
+      });
       sl.addShape(pptx.ShapeType.rect,{x:0,y:H-0.3,w:W,h:0.3,fill:{color:'F8F7F4'},line:{type:'none'}});
-      sl.addText(`PRIMETOUR  ·  Portal de Dicas  ·  ${date}`,{x:0.3,y:H-0.25,w:W-0.6,h:0.22,fontSize:7,color:'AAAAAA',align:'center'});
+      sl.addText(`PRIMETOUR  ·  Portal de Dicas  ·  ${date}`, {
+        x:0.3, y:H-0.25, w:W-0.6, h:0.22,
+        ...F({fontSize:7, color:'AAAAAA', align:'center'}),
+      });
       return sl;
     };
 
@@ -1422,80 +1550,158 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
       const slide = buildSegmentSlide(segDef.label.toUpperCase());
 
       if (segDef.mode==='special_info') {
+        // Layout linear (sem cards) — mesmo padrão visual do PDF
         const inf=data.info||{};
-        // Limpa CLIMA + REPRESENTAÇÃO da descrição (renderizadas como blocos próprios)
         const repObj=inf.representacao||{};
         const { descricao: descClean, climate } = parseDescricao(inf.descricao, !!repObj.nome);
-        const pairs=[['Descrição',descClean],['Moeda',inf.moeda],['Língua',inf.lingua],
-          ['Fuso',inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h`:''],
-          ['Voltagem',inf.voltagem],['DDD',inf.ddd],['Religião',inf.religiao],['População',inf.populacao]].filter(([,v])=>v);
-        const cW=3.0,cH=1.4,gX=0.12,gY=0.12,sX=0.3,sY=0.9;
-        pairs.slice(0,8).forEach(([l,v],i)=>{
-          const col=i%4,row=Math.floor(i/4),x=sX+col*(cW+gX),y=sY+row*(cH+gY);
-          slide.addShape(pptx.ShapeType.rect,{x,y,w:cW,h:cH,fill:{color:'F8F7F4'},line:{color:'EEEEEE',width:0.5}});
-          slide.addText(l.toUpperCase(),{x:x+0.1,y:y+0.12,w:cW-0.2,h:0.28,fontSize:6,bold:true,color:pHex,charSpacing:1});
-          slide.addText(String(v).slice(0,60),{x:x+0.1,y:y+0.42,w:cW-0.2,h:0.88,fontSize:9,color:bgHex,wrap:true,valign:'top'});
-        });
+        let yy = 0.95;
+        const LEFT = 0.4, COLW = W - 0.8;
 
-        // Slide adicional pra CLIMA + REPRESENTAÇÃO (se houver dados)
+        // ── DESCRIÇÃO em parágrafo
+        if (descClean) {
+          slide.addText('DESCRIÇÃO', {
+            x:LEFT, y:yy, w:COLW, h:0.3,
+            ...F({fontSize:10, bold:true, color:pHex, charSpacing:2}),
+          });
+          yy += 0.32;
+          slide.addText(String(descClean), {
+            x:LEFT, y:yy, w:COLW, h:1.6,
+            ...F({fontSize:11, color:'474650', valign:'top'}),
+          });
+          yy += 1.7;
+        }
+        // ── DICA callout
+        if (inf.dica) {
+          slide.addShape(pptx.ShapeType.rect,{x:LEFT, y:yy, w:COLW, h:0.7,
+            fill:{color:'F8F7F4'}, line:{color:pHex, width:0.5}});
+          slide.addShape(pptx.ShapeType.rect,{x:LEFT, y:yy, w:0.06, h:0.7,
+            fill:{color:pHex}, line:{type:'none'}});
+          slide.addText([
+            {text:'DICA DO CONCIERGE  ', options:F({bold:true,color:pHex,fontSize:9,charSpacing:2})},
+            {text:String(inf.dica), options:F({color:'474650',fontSize:10,italic:true})},
+          ], {x:LEFT+0.12, y:yy+0.05, w:COLW-0.2, h:0.6});
+          yy += 0.85;
+        }
+
+        // ── DADOS BÁSICOS em flow horizontal (label · value · sep)
+        const dataPairs = [
+          ['População',  inf.populacao],
+          ['Moeda',      inf.moeda],
+          ['Língua',     inf.lingua],
+          ['Religião',   inf.religiao],
+          ['Fuso',       inf.fusoSinal&&inf.fusoHoras?`${inf.fusoSinal}${inf.fusoHoras}h de Brasília`:''],
+          ['Voltagem',   inf.voltagem],
+          ['DDD',        inf.ddd],
+        ].filter(([,v])=>v);
+        if (dataPairs.length) {
+          slide.addText('DADOS BÁSICOS', {
+            x:LEFT, y:yy, w:COLW, h:0.3,
+            ...F({fontSize:10, bold:true, color:pHex, charSpacing:2}),
+          });
+          yy += 0.32;
+          // Render como linhas (cada par numa linha) — leitura fácil
+          dataPairs.forEach(([l,v]) => {
+            slide.addText([
+              {text:l+': ', options:F({bold:true,color:bgHex,fontSize:10})},
+              {text:String(v), options:F({color:'474650',fontSize:10})},
+            ], {x:LEFT, y:yy, w:COLW, h:0.28});
+            yy += 0.28;
+          });
+          yy += 0.15;
+        }
+
+        // ── CLIMA + REPRESENTAÇÃO podem ir num 2º slide se não couber
         const cli = inf.clima || {};
         const monthsArr = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
         const maxArr = climate?.max || monthsArr.map((_,i)=>cli[`max_${i}`] ?? null);
         const minArr = climate?.min || monthsArr.map((_,i)=>cli[`min_${i}`] ?? null);
         const hasClimate = maxArr.some(v=>v!=null) || minArr.some(v=>v!=null);
         const rep = inf.representacao||{};
-        if (hasClimate || rep.nome) {
-          const ex = pptx.addSlide(); ex.background={color:'FFFFFF'};
-          ex.addShape(pptx.ShapeType.rect,{x:0,y:0,w:W,h:0.72,fill:{color:bgHex},line:{type:'none'}});
-          ex.addShape(pptx.ShapeType.rect,{x:0,y:0,w:0.08,h:0.72,fill:{color:pHex},line:{type:'none'}});
-          ex.addText('INFORMAÇÕES — CLIMA & REPRESENTAÇÃO',{x:0.25,y:0.08,w:8.5,h:0.56,fontSize:13,bold:true,color:'FFFFFF',charSpacing:2});
-          ex.addText(label,{x:8.5,y:0.08,w:4.5,h:0.56,fontSize:9,color:pHex,align:'right'});
-          ex.addShape(pptx.ShapeType.rect,{x:0,y:H-0.3,w:W,h:0.3,fill:{color:'F8F7F4'},line:{type:'none'}});
-          ex.addText(`PRIMETOUR  ·  Portal de Dicas  ·  ${date}`,{x:0.3,y:H-0.25,w:W-0.6,h:0.22,fontSize:7,color:'AAAAAA',align:'center'});
-          let yy = 1.0;
-          if (hasClimate) {
-            ex.addText('CLIMA',{x:0.3,y:yy,w:4,h:0.3,fontSize:11,bold:true,color:pHex,charSpacing:2});
-            yy += 0.36;
-            // Tabela 13 colunas (label + 12 meses)
-            const tableData = [
-              [{text:'°C',options:{bold:true,color:pHex,fill:{color:'F8F7F4'}}}, ...monthsArr.map(m=>({text:m,options:{bold:true,color:pHex,fill:{color:'F8F7F4'}}}))],
-              [{text:'Máx ↑',options:{bold:true,color:bgHex}}, ...maxArr.map(v=>({text:String(v??'—'),options:{color:'474650'}}))],
-              [{text:'Mín ↓',options:{bold:true,color:bgHex}}, ...minArr.map(v=>({text:String(v??'—'),options:{color:'474650'}}))],
-            ];
-            ex.addTable(tableData,{x:0.3,y:yy,w:W-0.6,fontSize:9,align:'center',
-              border:{type:'solid',pt:0.5,color:'EEEEEE'}});
-            yy += 1.6;
-          }
-          if (rep.nome) {
-            ex.addText('REPRESENTAÇÃO BRASILEIRA',{x:0.3,y:yy,w:6,h:0.3,fontSize:11,bold:true,color:pHex,charSpacing:2});
-            yy += 0.36;
-            const lines = [
-              ['Nome:',rep.nome],['Endereço:',rep.endereco],
-              ['Telefone:',rep.telefone],['Site:',rep.link],
-            ].filter(([,v])=>v);
-            lines.forEach(([l,v])=>{
-              ex.addText([
-                {text:l+' ',options:{bold:true,color:bgHex,fontSize:10}},
-                {text:String(v),options:{color:'474650',fontSize:10,
-                  hyperlink: l==='Site:' ? {url:normalizeUrl(v)} : undefined}},
-              ],{x:0.3,y:yy,w:W-0.6,h:0.3});
-              yy += 0.32;
-            });
-          }
+
+        // Se passou de y=6.0 já é hora de novo slide pra clima/rep
+        let target = slide;
+        if (yy > 5.8 && (hasClimate || rep.nome)) {
+          target = buildSegmentSlide(segDef.label.toUpperCase() + ' — CLIMA & REPRESENTAÇÃO');
+          yy = 0.95;
+        }
+        if (hasClimate) {
+          target.addText('CLIMA', {
+            x:LEFT, y:yy, w:COLW, h:0.3,
+            ...F({fontSize:10, bold:true, color:pHex, charSpacing:2}),
+          });
+          yy += 0.32;
+          const tableData = [
+            [{text:'°C', options:F({bold:true, color:pHex, fill:{color:'F8F7F4'}})},
+              ...monthsArr.map(m=>({text:m, options:F({bold:true, color:pHex, fill:{color:'F8F7F4'}})}))],
+            [{text:'Máx ↑', options:F({bold:true, color:bgHex})},
+              ...maxArr.map(v=>({text:String(v??'—'), options:F({color:'474650'})}))],
+            [{text:'Mín ↓', options:F({bold:true, color:bgHex})},
+              ...minArr.map(v=>({text:String(v??'—'), options:F({color:'474650'})}))],
+          ];
+          target.addTable(tableData, {
+            x:LEFT, y:yy, w:COLW,
+            ...F({fontSize:9, align:'center'}),
+            border:{type:'solid', pt:0.5, color:'EEEEEE'},
+          });
+          yy += 1.4;
+        }
+        if (rep.nome) {
+          target.addText('REPRESENTAÇÃO BRASILEIRA', {
+            x:LEFT, y:yy, w:COLW, h:0.3,
+            ...F({fontSize:10, bold:true, color:pHex, charSpacing:2}),
+          });
+          yy += 0.32;
+          const lines = [
+            ['Nome:',rep.nome],['Endereço:',rep.endereco],
+            ['Telefone:',rep.telefone],['Site:',rep.link],
+          ].filter(([,v])=>v);
+          lines.forEach(([l,v])=>{
+            target.addText([
+              {text:l+' ', options:F({bold:true,color:bgHex,fontSize:10})},
+              {text:String(v), options:F({color:'474650',fontSize:10,
+                hyperlink: l==='Site:' ? {url:normalizeUrl(v)} : undefined})},
+            ], {x:LEFT, y:yy, w:COLW, h:0.3});
+            yy += 0.3;
+          });
         }
 
       } else if (segDef.mode==='simple_list') {
-        // Dedupe por título (data legada pode trazer duplicatas)
+        // Dedupe + paginar (8 itens/slide pra não cortar texto)
         const seenT = new Set();
-        const items = (data.items||[]).filter(it => {
+        const allItems = (data.items||[]).filter(it => {
           if (!it.title) return false;
           const k = it.title.trim().toLowerCase();
           if (seenT.has(k)) return false;
           seenT.add(k); return true;
-        }).slice(0,10);
-        slide.addText(items.map(i=>({text:`${i.title||''}${i.description?'\n'+i.description.slice(0,80):''}`,
-          options:{bullet:{type:'bullet'},fontSize:10,color:'333333',paraSpaceAfter:6}})),
-          {x:0.3,y:0.9,w:W-0.6,h:H-1.4});
+        });
+        const PER_PAGE_LIST = 8;
+        const totalPagesL = Math.max(1, Math.ceil(allItems.length / PER_PAGE_LIST));
+        for (let pg = 0; pg < totalPagesL; pg++) {
+          const pageSlide = pg === 0 ? slide : buildSegmentSlide(
+            segDef.label.toUpperCase(),
+            `${label}  ·  pág. ${pg+1}/${totalPagesL}`,
+          );
+          const pageItems = allItems.slice(pg*PER_PAGE_LIST, (pg+1)*PER_PAGE_LIST);
+          // Lista com title bold + descrição abaixo, em parágrafos
+          const textBlocks = [];
+          pageItems.forEach((it, idx) => {
+            textBlocks.push({
+              text: String(it.title||''),
+              options: F({bold:true, fontSize:13, color:bgHex,
+                paraSpaceBefore: idx===0?0:8, paraSpaceAfter:2}),
+            });
+            if (it.description) {
+              textBlocks.push({
+                text: String(it.description),
+                options: F({fontSize:10, color:'555555', paraSpaceAfter:4}),
+              });
+            }
+          });
+          pageSlide.addText(textBlocks, {
+            x:0.4, y:0.9, w:W-0.8, h:H-1.4,
+            ...F({valign:'top'}),
+          });
+        }
 
       } else {
         // place_list: dedupe + ordena por categoria + pagina (4 itens/slide)
@@ -1526,12 +1732,13 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
           // Themedesc só na primeira página
           if (pg === 0 && data.themeDesc) {
             pageSlide.addText(String(data.themeDesc).slice(0,180),
-              {x:0.3,y:0.85,w:W-0.6,h:0.45,fontSize:8,italic:true,color:'888888'});
+              {x:0.3,y:0.85,w:W-0.6,h:0.45,
+                ...F({fontSize:9, italic:true, color:'888888'})});
           }
           const sY = (pg === 0 && data.themeDesc) ? 1.38 : 0.88;
           const cols = pageItems.length<=2 ? 2 : 4;
           const cW = pageItems.length<=2 ? (W-0.8)/2 : (W-0.8)/4;
-          const cH = H - sY - 0.4;
+          const cH = H - sY - 0.5;
 
           await Promise.all(pageItems.map(async ({it: item, origIdx}, i) => {
             const x=0.3+i*(cW+0.08);
@@ -1540,33 +1747,73 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
             const imgB64 = imgDataP?.dataUrl || null;
 
             if (imgB64) {
-              const imgH = cH * 0.52;
-              pageSlide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:cH,fill:{color:'FFFFFF'},line:{color:'E5E7EB',width:0.5}});
-              try { pageSlide.addImage({ data: imgB64, x, y:sY, w:cW, h:imgH,
-                sizing:{type:'cover',w:cW,h:imgH} }); } catch(e) { console.warn('PPTX item img:', e.message); }
-              pageSlide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:0.05,fill:{color:pHex},line:{type:'none'}});
-              const tY = sY + imgH + 0.1;
-              if(item.categoria) pageSlide.addText(item.categoria.toUpperCase(),
-                {x:x+0.1,y:tY,w:cW-0.2,h:0.25,fontSize:5.5,bold:true,color:pHex,charSpacing:1});
-              pageSlide.addText(item.titulo,{x:x+0.1,y:tY+(item.categoria?0.27:0),w:cW-0.2,h:0.5,
-                fontSize:cols===2?11:9.5,bold:true,color:bgHex,wrap:true});
-              if(item.descricao){
-                const dY=tY+(item.categoria?0.27:0)+0.52;
-                pageSlide.addText(item.descricao.slice(0,cols===2?130:70),
-                  {x:x+0.1,y:dY,w:cW-0.2,h:sY+cH-dY-0.35,fontSize:cols===2?8:7,color:'555555',wrap:true,valign:'top'});
+              const imgH = cH * 0.45;
+              pageSlide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:cH,
+                fill:{color:'FFFFFF'}, line:{color:'E5E7EB',width:0.5}});
+              try {
+                pageSlide.addImage({ data: imgB64, x, y:sY, w:cW, h:imgH,
+                  sizing:{type:'cover', w:cW, h:imgH} });
+              } catch(e) { console.warn('[PPTX] item img:', e.message); }
+              // Faixa de cor primary no topo
+              pageSlide.addShape(pptx.ShapeType.rect,{x, y:sY, w:cW, h:0.05,
+                fill:{color:pHex}, line:{type:'none'}});
+              const tY = sY + imgH + 0.12;
+              if (item.categoria) {
+                pageSlide.addText(String(item.categoria).toUpperCase(), {
+                  x:x+0.1, y:tY, w:cW-0.2, h:0.25,
+                  ...F({fontSize:6.5, bold:true, color:pHex, charSpacing:1}),
+                });
+              }
+              pageSlide.addText(String(item.titulo), {
+                x:x+0.1, y:tY+(item.categoria?0.26:0), w:cW-0.2, h:0.5,
+                ...F({fontSize:cols===2?12:10, bold:true, color:bgHex, valign:'top'}),
+              });
+              if (item.descricao) {
+                const dY = tY + (item.categoria?0.26:0) + 0.5;
+                pageSlide.addText(String(item.descricao), {
+                  x:x+0.1, y:dY, w:cW-0.2, h:sY+cH-dY-0.45,
+                  ...F({fontSize:cols===2?9:8, color:'555555', valign:'top', shrinkText:true}),
+                });
               }
             } else {
-              pageSlide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:cH,fill:{color:'F8F7F4'},line:{color:'E5E7EB',width:0.5}});
-              pageSlide.addShape(pptx.ShapeType.rect,{x,y:sY,w:cW,h:0.06,fill:{color:pHex},line:{type:'none'}});
-              let iy=sY+0.16;
-              if(item.categoria){pageSlide.addText(item.categoria.toUpperCase(),{x:x+0.1,y:iy,w:cW-0.2,h:0.28,fontSize:6,bold:true,color:pHex,charSpacing:1});iy+=0.3;}
-              pageSlide.addText(item.titulo,{x:x+0.1,y:iy,w:cW-0.2,h:0.6,fontSize:cols===2?12:10,bold:true,color:bgHex,wrap:true});iy+=0.65;
-              if(item.descricao) pageSlide.addText(item.descricao.slice(0,cols===2?200:100),
-                {x:x+0.1,y:iy,w:cW-0.2,h:cH-iy+sY-0.3,fontSize:cols===2?9:8,color:'555555',wrap:true,valign:'top'});
+              pageSlide.addShape(pptx.ShapeType.rect,{x, y:sY, w:cW, h:cH,
+                fill:{color:'F8F7F4'}, line:{color:'E5E7EB', width:0.5}});
+              pageSlide.addShape(pptx.ShapeType.rect,{x, y:sY, w:cW, h:0.06,
+                fill:{color:pHex}, line:{type:'none'}});
+              let iy=sY+0.18;
+              if (item.categoria) {
+                pageSlide.addText(String(item.categoria).toUpperCase(), {
+                  x:x+0.1, y:iy, w:cW-0.2, h:0.28,
+                  ...F({fontSize:7, bold:true, color:pHex, charSpacing:1}),
+                });
+                iy += 0.32;
+              }
+              pageSlide.addText(String(item.titulo), {
+                x:x+0.1, y:iy, w:cW-0.2, h:0.6,
+                ...F({fontSize:cols===2?12:10, bold:true, color:bgHex, valign:'top'}),
+              });
+              iy += 0.7;
+              if (item.descricao) {
+                pageSlide.addText(String(item.descricao), {
+                  x:x+0.1, y:iy, w:cW-0.2, h:cH-iy+sY-0.4,
+                  ...F({fontSize:cols===2?10:9, color:'555555', valign:'top', shrinkText:true}),
+                });
+              }
             }
-            const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
-            if(det.length) pageSlide.addText(det.join('  '),{x:x+0.1,y:sY+cH-0.7,w:cW-0.2,h:0.35,fontSize:7,color:'888888',wrap:true});
-            if(hasValidSite(item)) pageSlide.addText(item.site,{x:x+0.1,y:sY+cH-0.38,w:cW-0.2,h:0.28,fontSize:7,color:pHex,hyperlink:{url:normalizeUrl(item.site)}});
+            // Endereço/telefone na base do card
+            const det=[item.endereco&&`📍 ${item.endereco}`, item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
+            if (det.length) {
+              pageSlide.addText(det.join('  '), {
+                x:x+0.1, y:sY+cH-0.4, w:cW-0.2, h:0.28,
+                ...F({fontSize:7.5, color:'888888'}),
+              });
+            }
+            if (hasValidSite(item)) {
+              pageSlide.addText(String(item.site), {
+                x:x+0.1, y:sY+cH-0.18, w:cW-0.2, h:0.18,
+                ...F({fontSize:7, color:pHex, hyperlink:{url:normalizeUrl(item.site)}}),
+              });
+            }
           }));
         }
       }
