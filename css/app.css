@@ -33,31 +33,31 @@
 }
 
 .sidebar-brand {
-  padding: var(--space-4);
+  /* Padding vertical 0 + horizontal var(--space-3) — libera espaço
+   * MÁXIMO pra imagem dentro do container sem aumentar a área (min-height). */
+  padding: 0 var(--space-3);
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 124px;       /* acomoda logo 180% maior (~100px) */
+  min-height: 124px;       /* área destinada permanece a mesma */
   border-bottom: 1px solid var(--border-subtle);
   position: relative;
   overflow: hidden;
 }
-/* Logo customizado (img direta, sem brand-icon/brand-text) — ocupa
- * o espaço disponível mantendo aspect ratio. Reduz proporcionalmente
- * quando a sidebar está colapsada.
- * 180% maior que o anterior (56 → 100px). Aspect ratio preservado
- * via object-fit:contain — não há perda de qualidade desde que o
- * arquivo original tenha resolução suficiente. */
+/* Logo customizado (img direta, sem brand-icon/brand-text) — preenche
+ * praticamente toda a altura do container (124px) deixando apenas 4px
+ * de respiro. max-width estreito (35px reservado pro toggle button)
+ * pra logo poder expandir bem na largura. */
 .sidebar-brand > img {
   height: auto;
-  max-height: 100px;       /* sidebar normal: 180% maior (era 56px) */
-  max-width: calc(100% - 50px);  /* deixa espaço pro toggle button */
+  max-height: 120px;       /* basicamente preenche os 124px do container */
+  max-width: calc(100% - 35px);
   object-fit: contain;
   flex: 1;
   min-width: 0;
 }
 .sidebar.collapsed .sidebar-brand > img {
-  max-height: 65px;        /* sidebar colapsada: 180% maior (era 36px) */
+  max-height: 75px;        /* colapsada: aumenta proporcionalmente */
   max-width: 100%;
 }
 
@@ -72,8 +72,8 @@
 }
 
 .sidebar-brand-icon {
-  width: 100px;            /* 180% maior (era 56px) */
-  height: 100px;
+  width: 120px;            /* preenche o container (124px) */
+  height: 120px;
   background: transparent;
   border-radius: var(--radius-sm);
   display: flex;
@@ -83,8 +83,8 @@
   flex-shrink: 0;
 }
 .sidebar.collapsed .sidebar-brand-icon {
-  width: 65px;
-  height: 65px;
+  width: 75px;
+  height: 75px;
 }
 /* Inversão de tom: sidebar.js seta data-logo-tone="invert" no
  * .sidebar-brand quando o logo escolhido é claro mas a paleta é
