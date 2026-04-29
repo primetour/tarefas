@@ -590,11 +590,11 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
       }));
     } catch(e) { console.warn('DOCX cover logo skip:', e.message); }
   }
-  children.push(new Paragraph({children:[new TextRun({text:areaName.toUpperCase(),bold:true,size:52,color:gold,characterSpacing:200})],alignment:AlignmentType.CENTER,spacing:{before:coverLogoData?.arrayBuffer?0:2400,after:160}}));
-  children.push(new Paragraph({children:[new TextRun({text:'PORTAL DE DICAS',size:18,color:'888888',characterSpacing:300})],alignment:AlignmentType.CENTER,spacing:{after:600}}));
-  for(const{dest}of allTips) children.push(new Paragraph({children:[new TextRun({text:destLabel(dest),bold:true,size:28,color:navy})],alignment:AlignmentType.CENTER,spacing:{after:120}}));
-  children.push(new Paragraph({children:[new TextRun({text:'─────────────────────────',color:gold,size:16})],alignment:AlignmentType.CENTER,spacing:{before:400,after:200}}));
-  children.push(new Paragraph({children:[new TextRun({text:date,size:16,color:'AAAAAA'})],alignment:AlignmentType.CENTER}));
+  children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:areaName.toUpperCase(),bold:true,size:52,color:gold,characterSpacing:200})],alignment:AlignmentType.CENTER,spacing:{before:coverLogoData?.arrayBuffer?0:2400,after:160}}));
+  children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:'PORTAL DE DICAS',size:18,color:'888888',characterSpacing:300})],alignment:AlignmentType.CENTER,spacing:{after:600}}));
+  for(const{dest}of allTips) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:destLabel(dest),bold:true,size:28,color:navy})],alignment:AlignmentType.CENTER,spacing:{after:120}}));
+  children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:'─────────────────────────',color:gold,size:16})],alignment:AlignmentType.CENTER,spacing:{before:400,after:200}}));
+  children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:date,size:16,color:'AAAAAA'})],alignment:AlignmentType.CENTER}));
   children.push(new Paragraph({children:[new PageBreak()]}));
 
   for(const{tip,dest}of allTips){
@@ -613,13 +613,14 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
       } catch(e) { console.warn('Hero image skip:', e.message); }
     }
 
-    children.push(new Paragraph({children:[new TextRun({text:label.toUpperCase(),bold:true,size:32,color:navy,characterSpacing:120})],spacing:{before:heroData?.arrayBuffer?100:400,after:80},border:{bottom:{style:BorderStyle.SINGLE,size:12,color:gold}}}));
+    children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:label.toUpperCase(),bold:true,size:32,color:navy,characterSpacing:120})],spacing:{before:heroData?.arrayBuffer?100:400,after:80},border:{bottom:{style:BorderStyle.SINGLE,size:12,color:gold}}}));
     children.push(new Paragraph({spacing:{after:200}}));
 
     const content=buildContent(tip,segments);
     for(const{segDef,data}of content){
-      children.push(new Paragraph({children:[new TextRun({text:segDef.label.toUpperCase(),bold:true,size:16,color:gold,characterSpacing:250})],spacing:{before:360,after:40},border:{left:{style:BorderStyle.SINGLE,size:18,color:gold}},indent:{left:120}}));
-      children.push(new Paragraph({spacing:{after:100}}));
+      // Heading do segmento — respiro generoso antes (separa do bloco anterior)
+      children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:segDef.label.toUpperCase(),bold:true,size:16,color:gold,characterSpacing:250})],spacing:{before:600,after:120},border:{left:{style:BorderStyle.SINGLE,size:18,color:gold}},indent:{left:120}}));
+      children.push(new Paragraph({spacing:{after:200}}));
 
       if(segDef.mode==='special_info'){
         const inf=data.info||{};
@@ -630,23 +631,23 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         // ── DESCRIÇÃO em parágrafo (largura total) ──
         if (descClean) {
           children.push(new Paragraph({
-            children:[new TextRun({text:'DESCRIÇÃO',size:13,bold:true,color:gold,characterSpacing:200})],
-            spacing:{before:80,after:60},
+            children:[new TextRun({font:'Poppins',text:'DESCRIÇÃO',size:13,bold:true,color:gold,characterSpacing:200})],
+            spacing:{before:120,after:120},
           }));
           children.push(new Paragraph({
-            children:[new TextRun({text:descClean,size:20,color:'474650'})],
-            spacing:{after:200},
+            children:[new TextRun({font:'Poppins',text:descClean,size:20,color:'474650'})],
+            spacing:{after:400, line:320},
           }));
         }
         // ── DICA em callout (texto destacado) ──
         if (inf.dica) {
           children.push(new Paragraph({
-            children:[new TextRun({text:'DICA DO CONCIERGE',size:13,bold:true,color:gold,characterSpacing:200})],
-            spacing:{before:160,after:60},
+            children:[new TextRun({font:'Poppins',text:'DICA DO CONCIERGE',size:13,bold:true,color:gold,characterSpacing:200})],
+            spacing:{before:300,after:120},
           }));
           children.push(new Paragraph({
-            children:[new TextRun({text:inf.dica,size:20,italics:true,color:'474650'})],
-            spacing:{after:200},
+            children:[new TextRun({font:'Poppins',text:inf.dica,size:20,italics:true,color:'474650'})],
+            spacing:{after:400, line:320},
             indent:{left:200},
           }));
         }
@@ -662,19 +663,19 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         ].filter(([,v])=>v);
         if (dataRows.length) {
           children.push(new Paragraph({
-            children:[new TextRun({text:'DADOS BÁSICOS',size:13,bold:true,color:gold,characterSpacing:200})],
-            spacing:{before:160,after:80},
+            children:[new TextRun({font:'Poppins',text:'DADOS BÁSICOS',size:13,bold:true,color:gold,characterSpacing:200})],
+            spacing:{before:300,after:160},
           }));
           for (const [label, value] of dataRows) {
             children.push(new Paragraph({
               children:[
-                new TextRun({text:label+': ',size:20,bold:true,color:navy}),
-                new TextRun({text:String(value),size:20,color:'474650'}),
+                new TextRun({font:'Poppins',text:label+': ',size:20,bold:true,color:navy}),
+                new TextRun({font:'Poppins',text:String(value),size:20,color:'474650'}),
               ],
-              spacing:{after:80},
+              spacing:{after:120},
             }));
           }
-          children.push(new Paragraph({spacing:{after:120}}));
+          children.push(new Paragraph({spacing:{after:240}}));
         }
         // CLIMA — tabela 13 col (°C + 12 meses) com linhas Máx/Mín
         // Aceita formato web (cli.max_0..max_11) ou parsed (climate.max[])
@@ -684,24 +685,24 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         const minArr = climate?.min || monthsArr.map((_,i)=>cli[`min_${i}`] ?? null);
         const hasClimate = maxArr.some(v=>v!=null) || minArr.some(v=>v!=null);
         if (hasClimate) {
-          children.push(new Paragraph({children:[new TextRun({text:'CLIMA',size:14,bold:true,color:gold,characterSpacing:200})],spacing:{before:240,after:60}}));
+          children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:'CLIMA',size:13,bold:true,color:gold,characterSpacing:200})],spacing:{before:400,after:160}}));
           const climaCell = (txt, bold=false) => new TableCell({
             width:{size:660,type:WidthType.DXA},
             borders:{top:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'},bottom:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'},left:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'},right:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'}},
-            children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:String(txt),size:14,bold,color:bold?gold:'474650'})]})],
+            children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({font:'Poppins',text:String(txt),size:14,bold,color:bold?gold:'474650'})]})],
           });
           const headerRow = new TableRow({children:[climaCell('°C',true), ...monthsArr.map(m=>climaCell(m,true))]});
           const maxRow    = new TableRow({children:[climaCell('Máx ↑',true), ...maxArr.map(v=>climaCell(v??'—'))]});
           const minRow    = new TableRow({children:[climaCell('Mín ↓',true), ...minArr.map(v=>climaCell(v??'—'))]});
           children.push(new Table({rows:[headerRow, maxRow, minRow], width:{size:9240,type:WidthType.DXA}}));
-          children.push(new Paragraph({spacing:{after:160}}));
+          children.push(new Paragraph({spacing:{after:300}}));
         }
         const rep=inf.representacao||{};
         if(rep.nome){
-          children.push(new Paragraph({children:[new TextRun({text:'REPRESENTAÇÃO BRASILEIRA',size:14,bold:true,color:gold,characterSpacing:200})],spacing:{before:200,after:60}}));
+          children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:'REPRESENTAÇÃO BRASILEIRA',size:13,bold:true,color:gold,characterSpacing:200})],spacing:{before:400,after:160}}));
           for(const[l,v]of[['Nome',rep.nome],['Endereço',rep.endereco],['Telefone',rep.telefone],['Site',rep.link]].filter(([,v])=>v)){
-            if(l==='Site') children.push(new Paragraph({children:[new TextRun({text:`${l}: `,bold:true,size:18,color:navy}),new ExternalHyperlink({link:normalizeUrl(v),children:[new TextRun({text:normalizeUrl(v),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
-            else children.push(new Paragraph({children:[new TextRun({text:`${l}: `,bold:true,size:18,color:navy}),new TextRun({text:v,size:18,color:'474650'})],spacing:{after:60}}));
+            if(l==='Site') children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:`${l}: `,bold:true,size:18,color:navy}),new ExternalHyperlink({link:normalizeUrl(v),children:[new TextRun({font:'Poppins',text:normalizeUrl(v),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:120}}));
+            else children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:`${l}: `,bold:true,size:18,color:navy}),new TextRun({font:'Poppins',text:v,size:18,color:'474650'})],spacing:{after:120}}));
           }
         }
       } else if(segDef.mode==='simple_list'){
@@ -716,11 +717,11 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
           return true;
         });
         for(const item of uniqueItems){
-          children.push(new Paragraph({children:[new TextRun({text:item.title,bold:true,size:20,color:navy})],spacing:{before:160,after:40},bullet:{level:0}}));
-          if(item.description) children.push(new Paragraph({children:[new TextRun({text:item.description,size:18,color:'474650'})],spacing:{after:80},indent:{left:360}}));
+          children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:item.title,bold:true,size:22,color:navy})],spacing:{before:360,after:120}}));
+          if(item.description) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:item.description,size:20,color:'474650'})],spacing:{after:240, line:320}}));
         }
       } else {
-        if(data.themeDesc) children.push(new Paragraph({children:[new TextRun({text:data.themeDesc,size:18,italics:true,color:'474650'})],spacing:{after:160}}));
+        if(data.themeDesc) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:data.themeDesc,size:18,italics:true,color:'474650'})],spacing:{after:160}}));
 
         // Dedupe + ordena por categoria pra agrupar (heading da categoria
         // só uma vez por grupo, não em cada item)
@@ -749,10 +750,10 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
           // Categoria heading SÓ quando muda (agrupa)
           const cat = (item.categoria||'').trim();
           if(cat && cat !== lastCategoria){
-            children.push(new Paragraph({children:[new TextRun({text:cat.toUpperCase(),size:13,color:gold,bold:true,characterSpacing:200})],spacing:{before:240,after:20}}));
+            children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:cat.toUpperCase(),size:13,color:gold,bold:true,characterSpacing:200})],spacing:{before:240,after:20}}));
             lastCategoria = cat;
           }
-          children.push(new Paragraph({children:[new TextRun({text:item.titulo,bold:true,size:22,color:navy})],spacing:{after:imgData?.arrayBuffer?80:60}}));
+          children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:item.titulo,bold:true,size:22,color:navy})],spacing:{after:imgData?.arrayBuffer?80:60}}));
 
           if(imgData?.arrayBuffer){
             try {
@@ -763,11 +764,11 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
             } catch(e) { console.warn('Item image skip:', e.message); }
           }
 
-          if(item.descricao) children.push(new Paragraph({children:[new TextRun({text:item.descricao,size:18,color:'474650'})],spacing:{after:80}}));
+          if(item.descricao) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:item.descricao,size:18,color:'474650'})],spacing:{after:80}}));
           const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
-          if(det.length) children.push(new Paragraph({children:[new TextRun({text:det.join('   '),size:16,color:'888888'})],spacing:{after:60}}));
-          if(hasValidSite(item)) children.push(new Paragraph({children:[new TextRun({text:'🌐 ',size:16}),new ExternalHyperlink({link:normalizeUrl(item.site),children:[new TextRun({text:normalizeUrl(item.site),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
-          if(item.observacoes) children.push(new Paragraph({children:[new TextRun({text:`💡 ${item.observacoes}`,size:16,italics:true,color:'AAAAAA'})],spacing:{after:80}}));
+          if(det.length) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:det.join('   '),size:16,color:'888888'})],spacing:{after:60}}));
+          if(hasValidSite(item)) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:'🌐 ',size:16}),new ExternalHyperlink({link:normalizeUrl(item.site),children:[new TextRun({font:'Poppins',text:normalizeUrl(item.site),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
+          if(item.observacoes) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:`💡 ${item.observacoes}`,size:16,italics:true,color:'AAAAAA'})],spacing:{after:80}}));
           children.push(new Paragraph({border:{bottom:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'}},spacing:{after:80}}));
         }
       }
@@ -1453,40 +1454,35 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
     } catch(e) { console.warn('[PPTX] composite cover logo failed:', e?.message); }
   }
   const cover = pptx.addSlide(); cover.background={color:bgHex};
+  // Logo grande centralizado (ocupa metade superior da capa)
   if (coverLogoComposite) {
-    const lw = Math.min(coverLogoComposite.wIn, 6);
-    const lh = lw * (coverLogoComposite.hIn / coverLogoComposite.wIn);
+    const aspect = coverLogoComposite.wIn / coverLogoComposite.hIn;
+    const maxW = 7, maxH = 3.5;
+    let lw = maxW, lh = lw / aspect;
+    if (lh > maxH) { lh = maxH; lw = lh * aspect; }
     try {
       cover.addImage({ data: coverLogoComposite.dataUrl,
-        x: (W - lw)/2, y: 1.2, w: lw, h: lh });
+        x: (W - lw)/2, y: 1.6, w: lw, h: lh });
     } catch(e) { console.warn('[PPTX] cover logo skip:', e.message); }
   }
-  // Linha divisória branca
-  cover.addShape(pptx.ShapeType.rect,{x:(W-3)/2,y:4.5,w:3,h:0.03,fill:{color:'FFFFFF'},line:{type:'none'}});
-  cover.addText('PORTAL DE DICAS', {
-    x:0.5, y:4.8, w:W-1, h:0.35,
-    ...F({fontSize:10, color:'FFFFFF', align:'center', charSpacing:6, transparency:30}),
-  });
-  cover.addText(String(areaName||'').toUpperCase(), {
-    x:0.5, y:5.15, w:W-1, h:0.7,
-    ...F({fontSize:24, bold:true, color:'FFFFFF', align:'center', charSpacing:4}),
-  });
-  // Destinos (até 4 inline, mais que isso vira lista vertical)
+  // Linha divisória branca discreta abaixo do logo
+  cover.addShape(pptx.ShapeType.rect,{x:(W-3)/2,y:5.4,w:3,h:0.02,fill:{color:'FFFFFF'},line:{type:'none'}});
+  // Destinos centralizados (sem "PORTAL DE DICAS" nem nome da área)
   const destLines = allTips.map(({dest})=>destLabel(dest));
   if (destLines.length <= 4) {
     cover.addText(destLines.join('  ·  '), {
-      x:0.5, y:5.95, w:W-1, h:0.5,
-      ...F({fontSize:14, color:'FFFFFF', align:'center'}),
+      x:0.5, y:5.7, w:W-1, h:0.5,
+      ...F({fontSize:16, bold:true, color:'FFFFFF', align:'center', charSpacing:2}),
     });
   } else {
     cover.addText(destLines.map(d=>({text:d, options:{breakLine:true}})), {
-      x:0.5, y:5.85, w:W-1, h:1.0,
-      ...F({fontSize:12, color:'FFFFFF', align:'center'}),
+      x:0.5, y:5.6, w:W-1, h:1.2,
+      ...F({fontSize:13, bold:true, color:'FFFFFF', align:'center'}),
     });
   }
   cover.addText(date, {
     x:0.5, y:H-0.5, w:W-1, h:0.3,
-    ...F({fontSize:9, color:'FFFFFF', align:'center', transparency:50}),
+    ...F({fontSize:9, color:'FFFFFF', align:'center', transparency:60}),
   });
 
   for (const { tip, dest } of allTips) {
@@ -1503,23 +1499,25 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
         ds.addImage({ data: heroImgData.dataUrl, x:0, y:0, w:W, h:H,
           sizing:{type:'cover', w:W, h:H} });
       } catch(e) { console.warn('[PPTX] hero img:', e.message); }
-      // Gradient overlay (preto na parte de baixo) pra texto ficar legível
+      // Faixa sólida preta inferior (com transparência leve) — texto fica
+      // legível sem "efeito gradient feio" da metade do slide. Ocupa só
+      // altura do bloco de texto (1.4in), não metade do slide.
       ds.addShape(pptx.ShapeType.rect,{
-        x:0, y:H*0.45, w:W, h:H*0.55,
-        fill:{color:'000000', transparency:30}, line:{type:'none'},
+        x:0, y:H-1.6, w:W, h:1.6,
+        fill:{color:'000000', transparency:55}, line:{type:'none'},
       });
     }
     // Faixa primary fina à esquerda + nome cidade BRANCO grande
-    ds.addShape(pptx.ShapeType.rect,{x:0.5,y:H-2.4,w:0.06,h:1.6,fill:{color:pHex},line:{type:'none'}});
+    ds.addShape(pptx.ShapeType.rect,{x:0.5,y:H-1.4,w:0.06,h:1.0,fill:{color:pHex},line:{type:'none'}});
     ds.addText(String(city||'').trim(), {
-      x:0.7, y:H-2.4, w:W-1.2, h:1.2,
-      ...F({fontSize:54, bold:true, color:'FFFFFF', charSpacing:1}),
+      x:0.7, y:H-1.4, w:W-1.2, h:0.85,
+      ...F({fontSize:46, bold:true, color:'FFFFFF', charSpacing:1, valign:'top'}),
     });
     if (label.includes(',')) {
       const sub = label.split(',').slice(1).join(',').trim().toUpperCase();
       ds.addText(sub, {
-        x:0.7, y:H-1.1, w:W-1.2, h:0.45,
-        ...F({fontSize:12, color:'FFFFFF', charSpacing:4, transparency:20}),
+        x:0.7, y:H-0.55, w:W-1.2, h:0.35,
+        ...F({fontSize:12, color:'FFFFFF', charSpacing:4, transparency:25}),
       });
     }
 
@@ -1666,7 +1664,8 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
         }
 
       } else if (segDef.mode==='simple_list') {
-        // Dedupe + paginar (8 itens/slide pra não cortar texto)
+        // Bairros/Arredores: 3 itens por slide (texto + foto à esquerda)
+        // pra ter respiro entre cards. Foto vem da galeria via pickImg.
         const seenT = new Set();
         const allItems = (data.items||[]).filter(it => {
           if (!it.title) return false;
@@ -1674,7 +1673,7 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
           if (seenT.has(k)) return false;
           seenT.add(k); return true;
         });
-        const PER_PAGE_LIST = 8;
+        const PER_PAGE_LIST = 3;
         const totalPagesL = Math.max(1, Math.ceil(allItems.length / PER_PAGE_LIST));
         for (let pg = 0; pg < totalPagesL; pg++) {
           const pageSlide = pg === 0 ? slide : buildSegmentSlide(
@@ -1682,25 +1681,57 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
             `${label}  ·  pág. ${pg+1}/${totalPagesL}`,
           );
           const pageItems = allItems.slice(pg*PER_PAGE_LIST, (pg+1)*PER_PAGE_LIST);
-          // Lista com title bold + descrição abaixo, em parágrafos
-          const textBlocks = [];
-          pageItems.forEach((it, idx) => {
-            textBlocks.push({
-              text: String(it.title||''),
-              options: F({bold:true, fontSize:13, color:bgHex,
-                paraSpaceBefore: idx===0?0:8, paraSpaceAfter:2}),
-            });
-            if (it.description) {
-              textBlocks.push({
-                text: String(it.description),
-                options: F({fontSize:10, color:'555555', paraSpaceAfter:4}),
+
+          // Cada item ocupa um "card horizontal": foto à esquerda + texto à direita
+          // 3 itens cabem em altura ~5.7" (de y=0.9 até y=6.6, deixando 0.9" de footer)
+          const ITEM_TOP = 0.95;
+          const ITEM_GAP = 0.25;
+          const AVAIL_H  = H - ITEM_TOP - 0.45 - (pageItems.length-1) * ITEM_GAP;
+          const ITEM_H   = AVAIL_H / pageItems.length;
+          const IMG_W    = 3.0;
+          const TXT_X    = 0.4 + IMG_W + 0.25;
+          const TXT_W    = W - TXT_X - 0.4;
+
+          await Promise.all(pageItems.map(async (it, i) => {
+            const yTop = ITEM_TOP + i * (ITEM_H + ITEM_GAP);
+            // Tenta foto pelo título do bairro (placeName na galeria)
+            const imgUrl = pickImg(
+              { titulo: it.title, title: it.title }, i + pg*PER_PAGE_LIST, imgs, segDef.key,
+            );
+            const imgDataP = imgUrl ? await fetchImgData(imgUrl) : null;
+            const imgB64 = imgDataP?.dataUrl || null;
+
+            if (imgB64) {
+              try {
+                pageSlide.addImage({ data: imgB64, x:0.4, y:yTop,
+                  w:IMG_W, h:ITEM_H, sizing:{type:'cover', w:IMG_W, h:ITEM_H} });
+              } catch(e) { console.warn('[PPTX] bairro img:', e.message); }
+            } else {
+              // Placeholder cinza com título do bairro
+              pageSlide.addShape(pptx.ShapeType.rect,{x:0.4, y:yTop, w:IMG_W, h:ITEM_H,
+                fill:{color:'F1F5F9'}, line:{color:'E5E7EB', width:0.5}});
+              pageSlide.addText(String(it.title||'').toUpperCase(), {
+                x:0.4, y:yTop+ITEM_H/2-0.2, w:IMG_W, h:0.4,
+                ...F({fontSize:9, color:'AAAAAA', align:'center', charSpacing:2}),
               });
             }
-          });
-          pageSlide.addText(textBlocks, {
-            x:0.4, y:0.9, w:W-0.8, h:H-1.4,
-            ...F({valign:'top'}),
-          });
+            // Faixa de cor primary acima da foto
+            pageSlide.addShape(pptx.ShapeType.rect,{x:0.4, y:yTop, w:IMG_W, h:0.06,
+              fill:{color:pHex}, line:{type:'none'}});
+
+            // Bloco de texto à direita
+            pageSlide.addText(String(it.title||''), {
+              x:TXT_X, y:yTop, w:TXT_W, h:0.5,
+              ...F({fontSize:18, bold:true, color:bgHex, valign:'top'}),
+            });
+            if (it.description) {
+              pageSlide.addText(String(it.description), {
+                x:TXT_X, y:yTop+0.55, w:TXT_W, h:ITEM_H-0.55,
+                ...F({fontSize:10.5, color:'474650', valign:'top', shrinkText:true,
+                  paraSpaceAfter:6}),
+              });
+            }
+          }));
         }
 
       } else {
