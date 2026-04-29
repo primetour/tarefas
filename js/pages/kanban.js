@@ -134,13 +134,13 @@ export async function renderKanban(container) {
           <button class="view-switch-btn ${activeView==='kanban'?'active':''}" data-view="kanban"
             style="padding:6px 14px;border:none;cursor:pointer;font-size:0.8125rem;
             background:${activeView==='kanban'?'var(--brand-gold)':'var(--bg-surface)'};
-            color:${activeView==='kanban'?'#000':'var(--text-secondary)'};transition:all 0.15s;">
+            color:${activeView==='kanban'?'#FFFFFF':'var(--text-secondary)'};transition:all 0.15s;">
             ▤ Kanban
           </button>
           <button class="view-switch-btn ${activeView==='pipeline'?'active':''}" data-view="pipeline"
             style="padding:6px 14px;border:none;cursor:pointer;font-size:0.8125rem;
             background:${activeView==='pipeline'?'var(--brand-gold)':'var(--bg-surface)'};
-            color:${activeView==='pipeline'?'#000':'var(--text-secondary)'};transition:all 0.15s;">
+            color:${activeView==='pipeline'?'#FFFFFF':'var(--text-secondary)'};transition:all 0.15s;">
             ▶ Esteira
           </button>
         </div>

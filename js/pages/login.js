@@ -19,15 +19,17 @@ export function renderLogin(container) {
             // Login tem fundo escuro à esquerda → usa app-logo-light
             const custom = (typeof localStorage !== 'undefined' && localStorage.getItem('app-logo-light')) || '';
             if (custom) {
+              // 200% maior que antes (56 → 112) — qualidade preservada por
+              // object-fit:contain (depende da resolução do arquivo origem)
               return `<div class="auth-brand-logo">
                 <img src="${custom}" alt="Logo"
-                  style="height:56px;max-width:260px;object-fit:contain;display:block;" />
+                  style="height:112px;max-width:480px;object-fit:contain;display:block;" />
               </div>`;
             }
             return `<div class="auth-brand-logo">
               <img src="assets/mandala-branca.png" alt="PRIMETOUR"
-                style="width:64px;height:64px;border-radius:var(--radius-sm);object-fit:contain;" />
-              <span class="auth-brand-name" style="font-size:1.6rem;letter-spacing:0.08em;">PRIMETOUR</span>
+                style="width:128px;height:128px;border-radius:var(--radius-sm);object-fit:contain;" />
+              <span class="auth-brand-name" style="font-size:2.2rem;letter-spacing:0.08em;">PRIMETOUR</span>
             </div>`;
           })()}
           <p class="auth-brand-tagline">Plataforma de Gestão de Tarefas</p>

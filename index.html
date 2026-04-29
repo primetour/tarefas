@@ -61,7 +61,7 @@
   <div id="loading-screen" class="loading-screen">
     <div class="loading-logo" id="loading-logo-wrapper">
       <img src="assets/mandala-branca.png" alt="PRIMETOUR" id="loading-logo-img"
-        style="width:72px;height:72px;object-fit:contain;" />
+        style="width:130px;height:130px;object-fit:contain;" />
       <span class="loading-logo-text" id="loading-logo-text">PRIMETOUR</span>
     </div>
     <script>
@@ -76,8 +76,8 @@
             if (img) {
               img.src = custom;
               img.style.width = 'auto';
-              img.style.height = '52px';
-              img.style.maxWidth = '240px';
+              img.style.height = '94px';   /* 180% maior (era 52px) */
+              img.style.maxWidth = '430px';
             }
             if (txt) txt.style.display = 'none';
           }

@@ -194,7 +194,7 @@ function renderPage(container) {
             ${[['month', 'Mes'], ['week', 'Semana'], ['list', 'Lista']].map(([v, l]) => `
               <button data-view="${v}" style="padding:6px 14px;border:none;cursor:pointer;font-size:0.8125rem;
                 background:${activeView === v ? 'var(--brand-gold,#D4A843)' : 'var(--bg-surface,#16202C)'};
-                color:${activeView === v ? '#000' : 'var(--text-muted,#5A6B7A)'};
+                color:${activeView === v ? '#FFFFFF' : 'var(--text-muted,#5A6B7A)'};
                 transition:all 0.15s;font-weight:${activeView === v ? '600' : '400'};">${l}</button>
             `).join('')}
           </div>
@@ -221,7 +221,7 @@ function renderPage(container) {
 
           <!-- Action buttons -->
           <button id="cc-new-slot" style="padding:6px 16px;border:none;border-radius:8px;
-            background:var(--brand-gold,#D4A843);color:#000;font-size:0.8125rem;font-weight:600;
+            background:var(--brand-gold,#D4A843);color:#FFFFFF;font-size:0.8125rem;font-weight:600;
             cursor:pointer;transition:opacity 0.15s;">+ Novo Slot</button>
           <button id="cc-suggest-week" style="padding:6px 16px;border:1px solid var(--brand-gold,#D4A843);
             border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);
@@ -705,7 +705,7 @@ function openSuggestWeekModal(container) {
           border-radius:8px;background:transparent;color:var(--text-secondary,#A0AEC0);font-size:0.8125rem;
           cursor:pointer;">Cancelar</button>
         <button id="cc-suggest-go" style="padding:8px 22px;border:none;border-radius:8px;
-          background:var(--brand-gold,#D4A843);color:#000;font-size:0.8125rem;font-weight:600;
+          background:var(--brand-gold,#D4A843);color:#FFFFFF;font-size:0.8125rem;font-weight:600;
           cursor:pointer;">Gerar Sugestoes</button>
       </div>
     </div>`;
@@ -888,7 +888,7 @@ function openSlotModal(slot, prefillDate) {
               <button id="cc-ai-desc-cancel" style="padding:4px 12px;border:1px solid var(--border-subtle,#1E2D3D);
                 border-radius:6px;background:transparent;color:var(--text-muted);font-size:0.75rem;cursor:pointer;">Cancelar</button>
               <button id="cc-ai-desc-gen" style="padding:4px 14px;border:none;border-radius:6px;
-                background:var(--brand-gold,#D4A843);color:#000;font-size:0.75rem;font-weight:600;cursor:pointer;">Gerar</button>
+                background:var(--brand-gold,#D4A843);color:#FFFFFF;font-size:0.75rem;font-weight:600;cursor:pointer;">Gerar</button>
             </div>
           </div>
           <textarea id="cc-f-description" rows="5" placeholder="Descreva o objetivo, direcionamento, legenda e abordagem do conteudo..."
@@ -930,7 +930,7 @@ function openSlotModal(slot, prefillDate) {
             border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
             font-size:0.8125rem;cursor:pointer;transition:all 0.15s;">Cancelar</button>
           <button id="cc-modal-save" style="padding:8px 24px;border:none;border-radius:8px;
-            background:var(--brand-gold,#D4A843);color:#000;font-size:0.8125rem;font-weight:600;
+            background:var(--brand-gold,#D4A843);color:#FFFFFF;font-size:0.8125rem;font-weight:600;
             cursor:pointer;transition:opacity 0.15s;">Salvar</button>
         </div>
       </div>

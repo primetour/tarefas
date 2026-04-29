@@ -50,13 +50,6 @@ function _buildPaletteCards(currentPalette) {
   }).join('');
 }
 
-const AVATAR_COLORS = [
-  '#D4A843','#38BDF8','#22C55E','#A78BFA',
-  '#F97316','#EC4899','#06B6D4','#EF4444',
-  '#6366F1','#14B8A6','#F59E0B','#84CC16',
-  '#8B5CF6','#3B82F6','#10B981','#F43F5E',
-];
-
 function getInitials(name) {
   return (name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
 }
@@ -91,7 +84,6 @@ export async function renderProfile(container) {
             style="width:80px; height:80px; font-size:1.75rem; background:${profile.avatarColor||'#3B82F6'};">
             ${getInitials(profile.name)}
           </div>
-          <div class="profile-avatar-edit" id="avatar-color-btn" title="Trocar cor">✎</div>
         </div>
         <div class="profile-name">${esc(profile.name)}</div>
         <div class="profile-email">${esc(profile.email)}</div>
@@ -500,11 +492,6 @@ function _bindProfileEvents(profile) {
     finally { if(btn) { btn.classList.remove('loading'); btn.disabled=false; } }
   });
 
-  // Avatar color picker
-  document.getElementById('avatar-color-btn')?.addEventListener('click', () => {
-    openColorPicker(profile);
-  });
-
   // Logo do sistema (sidebar) — preview em tempo real + save em localStorage.
   // Re-renderiza a sidebar inteira após salvar pra refletir o novo logo.
   ['light','dark'].forEach(kind => {
@@ -538,71 +525,5 @@ function _bindProfileEvents(profile) {
   });
 }
 
-/* ─── Color picker modal ─────────────────────────────────── */
-function openColorPicker(profile) {
-  let selectedColor = profile.avatarColor || '#3B82F6';
-
-  const ref = modal.open({
-    title: 'Escolher cor do avatar',
-    size:  'sm',
-    content: `
-      <p class="text-sm text-muted mb-4">Escolha uma cor para seu avatar:</p>
-      <div class="color-swatch-grid" id="color-swatch-grid">
-        ${AVATAR_COLORS.map(c => `
-          <div class="color-swatch ${c===selectedColor?'selected':''}"
-            data-color="${c}" style="background:${c};"
-            title="${c}">
-          </div>
-        `).join('')}
-      </div>
-      <div style="margin-top:20px; display:flex; align-items:center; gap:12px;">
-        <div id="color-preview" style="
-          width:48px; height:48px; border-radius:50%;
-          background:${selectedColor};
-          display:flex; align-items:center; justify-content:center;
-          font-size:1.25rem; font-weight:700; color:white;
-        ">${getInitials(profile.name)}</div>
-        <span style="font-size:0.875rem; color:var(--text-secondary);">Prévia do avatar</span>
-      </div>
-    `,
-    footer: [
-      { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
-      {
-        label:'Salvar cor', class:'btn-primary', closeOnClick:false,
-        onClick: async (_, { close }) => {
-          const btn = document.querySelector('.modal-footer .btn-primary');
-          if(btn){ btn.classList.add('loading'); btn.disabled=true; }
-          try {
-            await updateUserProfile(store.get('currentUser').uid, { avatarColor: selectedColor });
-            // Update all avatars on screen
-            document.querySelectorAll('.avatar[style*="background"]').forEach(el => {
-              if (el.textContent.trim() === getInitials(profile.name)) {
-                el.style.background = selectedColor;
-              }
-            });
-            document.getElementById('profile-avatar-big').style.background = selectedColor;
-            toast.success('Cor do avatar atualizada!');
-            close();
-          } catch(e) { toast.error(e.message); }
-          finally { if(btn){ btn.classList.remove('loading'); btn.disabled=false; } }
-        }
-      }
-    ],
-  });
-
-  // Modal não tem callback onOpen — bindamos os clicks após open() retornar.
-  // requestAnimationFrame garante que o DOM já foi inserido antes do bind.
-  requestAnimationFrame(() => {
-    const body = ref?.getBody?.() || document;
-    body.querySelectorAll('#color-swatch-grid [data-color]').forEach(el => {
-      el.addEventListener('click', () => {
-        selectedColor = el.dataset.color;
-        body.querySelectorAll('#color-swatch-grid [data-color]').forEach(e => {
-          e.classList.toggle('selected', e.dataset.color === selectedColor);
-        });
-        const preview = body.querySelector('#color-preview');
-        if (preview) preview.style.background = selectedColor;
-      });
-    });
-  });
-}
+/* Color picker do avatar removido — cor do avatar agora é fixa
+ * (definida pelo perfil/sistema, não mais editável pelo usuário). */

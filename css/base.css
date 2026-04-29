@@ -295,6 +295,22 @@
   background: rgba(255,255,255,0.12);
   color: #FFFFFF !important;
 }
+/* nav-item (componente real do sidebar) — hover/active no Portal:
+ * fundo escuro com transparência (não usa --bg-hover que é claro
+ * neste tema, deixaria texto branco invisível) */
+:root[data-palette="portal"] .nav-item:hover {
+  background: rgba(255,255,255,0.10) !important;
+  color: #FFFFFF !important;
+}
+:root[data-palette="portal"] .nav-item.active {
+  background: rgba(255,255,255,0.16) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255,255,255,0.20) !important;
+}
+:root[data-palette="portal"] .nav-item.active .nav-icon,
+:root[data-palette="portal"] .nav-item:hover .nav-icon {
+  color: #FFFFFF !important;
+}
 :root[data-palette="portal"] .sidebar-toggle {
   background: rgba(255,255,255,0.10);
   border-color: rgba(255,255,255,0.20);

@@ -227,13 +227,25 @@ export class Sidebar {
     const isLightSidebar = palette === 'platinum' || palette === 'sand';
     const customLight = localStorage.getItem('app-logo-light') || '';
     const customDark  = localStorage.getItem('app-logo-dark')  || '';
-    const logoUrl = isLightSidebar
-      ? (customDark || customLight || 'assets/mandala-branca.png')
-      : (customLight || customDark || 'assets/mandala-branca.png');
+    // Escolhe a versão "certa" pra paleta atual.
+    // Se o user só tem 1 versão upada e ela é a errada pra paleta, marca
+    // pra inverter via CSS filter (data-logo-tone="invert"). Logo padrão
+    // (mandala-branca) é branco → invert sempre que paleta clara.
+    let logoUrl, needsInvert = false;
+    if (isLightSidebar) {
+      if (customDark)       { logoUrl = customDark;  needsInvert = false; }
+      else if (customLight) { logoUrl = customLight; needsInvert = true;  } // light upado em paleta clara → inverte
+      else                  { logoUrl = 'assets/mandala-branca.png'; needsInvert = true; } // default branco em paleta clara
+    } else {
+      if (customLight)      { logoUrl = customLight; needsInvert = false; }
+      else if (customDark)  { logoUrl = customDark;  needsInvert = false; } // dark em paleta escura — pode ficar discreto mas não inverte
+      else                  { logoUrl = 'assets/mandala-branca.png'; needsInvert = false; }
+    }
     const hasCustom = !!(customLight || customDark);
+    const toneAttr = needsInvert ? ' data-logo-tone="invert"' : '';
 
     const html = `
-      <div class="sidebar-brand">
+      <div class="sidebar-brand"${toneAttr}>
         ${hasCustom
           ? `<img src="${logoUrl}" alt="Logo">`
           : `<div class="sidebar-brand-icon"><img src="${logoUrl}" alt="" style="width:100%;height:100%;object-fit:contain;"></div>

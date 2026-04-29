@@ -70,7 +70,7 @@ export async function renderCalendar(container) {
           ${[['month','Mês'],['week','Semana'],['day','Dia']].map(([g,l])=>`
             <button class="gran-btn" data-gran="${g}" style="padding:6px 12px;border:none;cursor:pointer;font-size:0.8125rem;
               background:${activeGran===g?'var(--brand-gold)':'var(--bg-surface)'};
-              color:${activeGran===g?'#000':'var(--text-secondary)'};transition:all 0.15s;">${l}</button>
+              color:${activeGran===g?'#FFFFFF':'var(--text-secondary)'};transition:all 0.15s;">${l}</button>
           `).join('')}
         </div>
 
@@ -79,7 +79,7 @@ export async function renderCalendar(container) {
           ${[['standard','◷ Padrão'],['pipeline','▶ Esteira'],['agenda','◌ Agenda']].map(([v,l])=>`
             <button class="view-switch-btn" data-view="${v}" style="padding:6px 12px;border:none;cursor:pointer;font-size:0.8125rem;
               background:${activeView===v?'var(--brand-gold)':'var(--bg-surface)'};
-              color:${activeView===v?'#000':'var(--text-secondary)'};transition:all 0.15s;">${l}</button>
+              color:${activeView===v?'#FFFFFF':'var(--text-secondary)'};transition:all 0.15s;">${l}</button>
           `).join('')}
         </div>
 

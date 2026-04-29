@@ -37,24 +37,27 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 80px;        /* +12px pra acomodar logo maior */
+  min-height: 124px;       /* acomoda logo 180% maior (~100px) */
   border-bottom: 1px solid var(--border-subtle);
   position: relative;
   overflow: hidden;
 }
 /* Logo customizado (img direta, sem brand-icon/brand-text) — ocupa
  * o espaço disponível mantendo aspect ratio. Reduz proporcionalmente
- * quando a sidebar está colapsada. */
+ * quando a sidebar está colapsada.
+ * 180% maior que o anterior (56 → 100px). Aspect ratio preservado
+ * via object-fit:contain — não há perda de qualidade desde que o
+ * arquivo original tenha resolução suficiente. */
 .sidebar-brand > img {
   height: auto;
-  max-height: 56px;        /* sidebar normal: até 56px */
+  max-height: 100px;       /* sidebar normal: 180% maior (era 56px) */
   max-width: calc(100% - 50px);  /* deixa espaço pro toggle button */
   object-fit: contain;
   flex: 1;
   min-width: 0;
 }
 .sidebar.collapsed .sidebar-brand > img {
-  max-height: 36px;        /* sidebar colapsada: 36px */
+  max-height: 65px;        /* sidebar colapsada: 180% maior (era 36px) */
   max-width: 100%;
 }
 
@@ -69,8 +72,8 @@
 }
 
 .sidebar-brand-icon {
-  width: 56px;
-  height: 56px;
+  width: 100px;            /* 180% maior (era 56px) */
+  height: 100px;
   background: transparent;
   border-radius: var(--radius-sm);
   display: flex;
@@ -80,16 +83,15 @@
   flex-shrink: 0;
 }
 .sidebar.collapsed .sidebar-brand-icon {
-  width: 36px;
-  height: 36px;
+  width: 65px;
+  height: 65px;
 }
-/* Em paletas CLARAS (sidebar branco), inverte a mandala-branca padrão
- * pra ela ficar visível (escura) sobre o fundo branco. Só afeta o
- * FALLBACK — quando o user upload um logo customizado, a sidebar.js
- * já escolhe a versão apropriada (light/dark). */
-:root[data-palette="platinum"] .sidebar-brand-icon img,
-:root[data-palette="sand"] .sidebar-brand-icon img {
-  filter: brightness(0) saturate(0) invert(20%);
+/* Inversão de tom: sidebar.js seta data-logo-tone="invert" no
+ * .sidebar-brand quando o logo escolhido é claro mas a paleta é
+ * clara (= ficaria invisível). O filter força o logo pra escuro.
+ * Quando user upload uma versão dark explícita, NÃO inverte. */
+.sidebar-brand[data-logo-tone="invert"] img {
+  filter: brightness(0) saturate(0) invert(15%);
 }
 
 .sidebar-brand-text {
