@@ -109,17 +109,42 @@ function writeCache({ logoLight, logoDark }) {
  * grande. Esta função desenha a imagem num canvas, escaneia os pixels
  * pra achar o bounding box do conteúdo (alpha > threshold) e crop
  * exato. Retorna data URL PNG do recorte.
+ *
+ * IMPORTANTE: R2 não serve CORS pra <img crossOrigin="anonymous">,
+ * então carregamos via worker proxy (mesmo que o portal usa pra
+ * fotos) e convertemos pra data URL antes de drawImage. Assim o
+ * canvas não fica "tainted" e getImageData funciona.
  */
+const R2_PROXY_URL = 'https://primetour-images.rene-castro.workers.dev';
+
+async function urlToDataUrlViaProxy(url) {
+  try {
+    const proxy = `${R2_PROXY_URL}?url=${encodeURIComponent(url)}`;
+    const res = await fetch(proxy);
+    if (!res.ok) return url;
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    });
+  } catch { return url; }
+}
+
 export async function cropTransparent(url, { alphaThreshold = 16, padding = 2 } = {}) {
   if (!url) return null;
   if (typeof Image === 'undefined' || typeof document === 'undefined') return null;
-  // Carrega imagem (com CORS — R2 deve servir Access-Control-Allow-Origin)
+  // Se for URL externa, busca via proxy pra evitar CORS taint
+  const isExternal = /^https?:\/\//i.test(url) && !url.startsWith(window.location.origin);
+  const isDataUrl  = url.startsWith('data:');
+  const srcForImg  = (isExternal && !isDataUrl) ? await urlToDataUrlViaProxy(url) : url;
+
   const img = await new Promise((resolve, reject) => {
     const im = new Image();
-    im.crossOrigin = 'anonymous';
     im.onload = () => resolve(im);
-    im.onerror = () => reject(new Error('img load failed: ' + url));
-    im.src = url;
+    im.onerror = () => reject(new Error('img load failed: ' + srcForImg.slice(0,60)));
+    im.src = srcForImg;
   });
   const w = img.naturalWidth, h = img.naturalHeight;
   if (!w || !h) return null;
@@ -133,8 +158,7 @@ export async function cropTransparent(url, { alphaThreshold = 16, padding = 2 } 
   try {
     imgData = ctx.getImageData(0, 0, w, h);
   } catch(e) {
-    // CORS — sem permissão de ler pixels (servidor sem CORS)
-    console.warn('[branding] crop: CORS blocked, returning original:', e?.message);
+    console.warn('[branding] crop: getImageData blocked, returning original:', e?.message);
     return url;
   }
   const data = imgData.data;
