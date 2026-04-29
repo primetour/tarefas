@@ -224,27 +224,16 @@ export class Sidebar {
     //   midnight, charcoal, ocean, forest, royal, sunset, rose, portal
     // PALETAS COM SIDEBAR CLARA (usa logo NAVY/dark):
     //   platinum, sand
-    // Sem fallback complexo, sem CSS filter. Mapping direto.
+    // SEMPRE usa as URLs hardcoded direto. Sem cropped, sem fallback
+    // cruzado, sem dependência de Firestore/localStorage. Garantia
+    // 100% determinística — qualquer paleta puxa o logo correto.
     const palette = document.documentElement.getAttribute('data-palette') || 'midnight';
-    const LIGHT_PALETTES = ['platinum', 'sand'];  // sidebars com fundo CLARO
+    const LIGHT_PALETTES = ['platinum', 'sand'];
     const useDarkLogo = LIGHT_PALETTES.includes(palette);
 
-    // URLs default hardcoded — garante que SEMPRE apareça mesmo sem
-    // localStorage/Firestore configurado.
-    const DEFAULT_LIGHT_LOGO = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
-    const DEFAULT_DARK_LOGO  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
-
-    // Override custom (admin pode subir outras URLs no Firestore).
-    // Prefere cropped (sem padding transparente — visual maior).
-    const customLight = localStorage.getItem('app-logo-light-cropped')
-                     || localStorage.getItem('app-logo-light')
-                     || DEFAULT_LIGHT_LOGO;
-    const customDark  = localStorage.getItem('app-logo-dark-cropped')
-                     || localStorage.getItem('app-logo-dark')
-                     || DEFAULT_DARK_LOGO;
-
-    // Escolha FINAL (sem fallbacks cruzados — cada paleta tem SEU logo)
-    const logoUrl = useDarkLogo ? customDark : customLight;
+    const LIGHT_LOGO = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
+    const DARK_LOGO  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
+    const logoUrl = useDarkLogo ? DARK_LOGO : LIGHT_LOGO;
 
     const html = `
       <div class="sidebar-brand">

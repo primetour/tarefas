@@ -8,19 +8,15 @@
     document.documentElement.dataset.palette=p;
     if(f&&f!=='outfit') document.documentElement.dataset.font=f;
   })();
-  // Bootstrap dos logos no localStorage (defaults). Garante que mesmo
-  // que o sidebar.js carregado seja uma versão antiga sem fallback pros
-  // defaults hardcoded, ainda assim ele encontra URLs em localStorage
-  // pra usar — ESPECIALMENTE app-logo-dark (logo pra fundo claro), que
-  // antes podia estar vazio e fazer sidebar.js cair no light=branco em
-  // paletas claras como sand/platinum. Branding service sobreescreve
-  // depois com o que estiver no Firestore.
+  // Limpa qualquer cropped legacy do localStorage (versões antigas
+  // do sidebar.js cropavam erradamente em alguns browsers e o cropped
+  // ficava cacheado servindo a imagem errada). Sidebar agora usa
+  // URLs diretas hardcoded — nada mais é lido de localStorage.
   (function(){
     try {
-      var DEFAULT_LIGHT = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
-      var DEFAULT_DARK  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
-      if (!localStorage.getItem('app-logo-light')) localStorage.setItem('app-logo-light', DEFAULT_LIGHT);
-      if (!localStorage.getItem('app-logo-dark'))  localStorage.setItem('app-logo-dark',  DEFAULT_DARK);
+      ['app-logo-light-cropped','app-logo-dark-cropped'].forEach(function(k){
+        localStorage.removeItem(k);
+      });
     } catch(e) {}
   })();
 </script>
@@ -80,20 +76,16 @@
       <span class="loading-logo-text" id="loading-logo-text">PRIMETOUR</span>
     </div>
     <script>
-      // Aplica logo no loading splash. Mapping EXPLÍCITO por paleta:
-      //  - platinum/sand → logo dark (lazer-alt) sobre fundo claro
-      //  - demais paletas → logo light (lazer) sobre fundo escuro
-      // Prefere cropped → original → default hardcoded. Roda inline
-      // pra não ter flash. Splash bg também muda com paleta via CSS.
+      // Aplica logo no loading splash. Mapping EXPLÍCITO por paleta.
+      // SEM cropped, SEM localStorage — URLs diretas hardcoded.
+      // Garantia 100% determinística independente de cache do browser.
       (function() {
         try {
-          var DEFAULT_LIGHT = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
-          var DEFAULT_DARK  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
+          var LIGHT_LOGO = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
+          var DARK_LOGO  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
           var palette = document.documentElement.getAttribute('data-palette') || 'midnight';
           var useDark = (palette === 'platinum' || palette === 'sand');
-          var url = useDark
-            ? (localStorage.getItem('app-logo-dark-cropped')  || localStorage.getItem('app-logo-dark')  || DEFAULT_DARK)
-            : (localStorage.getItem('app-logo-light-cropped') || localStorage.getItem('app-logo-light') || DEFAULT_LIGHT);
+          var url = useDark ? DARK_LOGO : LIGHT_LOGO;
           var img = document.getElementById('loading-logo-img');
           var txt = document.getElementById('loading-logo-text');
           if (img) {
@@ -127,7 +119,7 @@
        v= bumpa em commits que tocam código crítico (sidebar/branding)
        pra forçar refetch — GitHub Pages serve com max-age=600 e
        browsers cacheiam módulos por URL. -->
-  <script type="module" src="js/app.js?v=20260429b"></script>
+  <script type="module" src="js/app.js?v=20260429c"></script>
 
 </body>
 </html>
