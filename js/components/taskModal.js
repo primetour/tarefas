@@ -1546,6 +1546,15 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
         <div class="task-detail-label">Prazo de entrega</div>
         <input type="date" class="form-input" id="tm-due" style="padding:8px 12px;"
           value="${toInputDate(task.dueDate)}" />
+        <!-- Banners auto-acionados pelas regras de SLA / calendário -->
+        <div id="tm-sla-warn" style="display:none;margin-top:6px;padding:8px 10px;
+          background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);
+          border-radius:var(--radius-sm);font-size:0.75rem;color:#EF4444;">
+        </div>
+        <div id="tm-ooc-warn" style="display:none;margin-top:6px;padding:8px 10px;
+          background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);
+          border-radius:var(--radius-sm);font-size:0.75rem;color:#F59E0B;">
+        </div>
       </div>
       <div class="task-detail-field">
         <div class="task-detail-label">Tags</div>
@@ -1722,7 +1731,108 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
       slaEl.style.display = 'none';
       slaEl.innerHTML = '';
     }
+    enforceCalendarRules();   // re-checa data atual contra novo SLA
   });
+
+  // ── Validação de SLA + calendário (auto-marca urgência / fora calendário) ──
+  // Lógica: quando o user muda manualmente o due, verifica:
+  //  1. Se existe variation com slaDays e data manual < hoje + SLA úteis →
+  //     força priority = 'urgent' + banner explicativo
+  //  2. Se o tipo tem scheduleSlots e a data não casa com nenhum slot ativo →
+  //     força customFields.outOfCalendar = true + banner
+  function enforceCalendarRules() {
+    const dueEl    = document.getElementById('tm-due');
+    const dueVal   = dueEl?.value;
+    const slaWarn  = document.getElementById('tm-sla-warn');
+    const oocWarn  = document.getElementById('tm-ooc-warn');
+    if (!dueEl || !dueVal) {
+      if (slaWarn) slaWarn.style.display = 'none';
+      if (oocWarn) oocWarn.style.display = 'none';
+      return;
+    }
+    const due = new Date(dueVal + 'T12:00:00');
+
+    // 1) SLA da variação
+    const varSel = document.getElementById('tm-variation');
+    const varOpt = varSel?.selectedOptions?.[0];
+    const days   = parseInt(varOpt?.dataset?.sla);
+    if (varOpt?.value && !isNaN(days)) {
+      // Calcula data mínima respeitando SLA (dias úteis a partir de hoje)
+      const minDue = new Date(); minDue.setHours(0,0,0,0);
+      let biz = days;
+      while (biz > 0) {
+        minDue.setDate(minDue.getDate() + 1);
+        const dow = minDue.getDay();
+        if (dow !== 0 && dow !== 6) biz--;
+      }
+      if (due < minDue) {
+        // Força urgência
+        const prioEl = document.getElementById('tm-priority');
+        if (prioEl && prioEl.value !== 'urgent') prioEl.value = 'urgent';
+        if (slaWarn) {
+          const fmt = d => d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+          slaWarn.style.display = 'block';
+          slaWarn.innerHTML = `<strong>⚠ Prazo abaixo do SLA</strong> — variação exige
+            <strong>${days} dia${days!==1?'s':''} úteis</strong> (mínimo
+            ${fmt(minDue)}). Prioridade marcada como <strong>URGENTE</strong>
+            automaticamente.`;
+        }
+      } else if (slaWarn) {
+        slaWarn.style.display = 'none';
+      }
+    } else if (slaWarn) {
+      slaWarn.style.display = 'none';
+    }
+
+    // 2) Slots do tipo (busca dinâmica pra refletir mudança de tipo)
+    const typeIdNow = document.getElementById('tm-type-id')?.value || '';
+    const typeDocNow = typeIdNow
+      ? (store.get('taskTypes') || []).find(t => t.id === typeIdNow)
+      : null;
+    const slots = typeDocNow?.scheduleSlots || [];
+    const oocCb = document.getElementById('cf-outOfCalendar');
+    if (slots.length > 0) {
+      const dow = due.getDay();
+      const dayOfMonth = due.getDate();
+      const matchesSlot = slots.some(s => {
+        if (s.active === false) return false;
+        if (s.recurrence === 'weekly')        return s.weekDay === dow;
+        if (s.recurrence === 'monthly_days')  return (s.monthDays || []).includes(dayOfMonth);
+        if (s.recurrence === 'custom')        return (s.customDates || []).includes(dueVal);
+        return false;
+      });
+      if (!matchesSlot) {
+        // Marca outOfCalendar
+        if (oocCb && !oocCb.checked) oocCb.checked = true;
+        if (oocWarn) {
+          oocWarn.style.display = 'block';
+          oocWarn.innerHTML = `<strong>⚠ Fora do calendário editorial</strong> —
+            esta data não corresponde a nenhum slot pré-definido do tipo
+            "<strong>${esc(typeDocNow?.name||'')}</strong>". Marcada como
+            <strong>fora do calendário</strong> automaticamente (não pode ser
+            desmarcada).`;
+        }
+        // Trava o checkbox pro user não desfazer
+        if (oocCb) oocCb.disabled = true;
+      } else {
+        if (oocCb) {
+          oocCb.disabled = false;
+          // Não desmarca se user já marcou manualmente, mas remove banner
+        }
+        if (oocWarn) oocWarn.style.display = 'none';
+      }
+    } else {
+      if (oocCb) oocCb.disabled = false;
+      if (oocWarn) oocWarn.style.display = 'none';
+    }
+  }
+  document.getElementById('tm-due')?.addEventListener('change', enforceCalendarRules);
+  document.getElementById('tm-type-id')?.addEventListener('change', () => {
+    // Aguarda o renderTypeFields rodar antes de checar (cria o cf-outOfCalendar)
+    setTimeout(enforceCalendarRules, 100);
+  });
+  // Estado inicial (caso edição de tarefa já exista com data)
+  setTimeout(enforceCalendarRules, 200);
 
   // Assignees
   document.getElementById('assignee-add-btn')?.addEventListener('click', (e) => {
