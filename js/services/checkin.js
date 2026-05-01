@@ -40,12 +40,15 @@ export const DEFAULT_AREAS = [
   { name: 'Salao',   displayName: 'Salão',   baias: 3, assentosPorFileira: 6, capacity: 36 },
   { name: 'Gouvea',  displayName: 'Gouvêa',  baias: 2, assentosPorFileira: 6, capacity: 24 },
 ];
+/* Defaults usam nomes que JÁ estão cadastrados em REQUESTING_AREAS (tasks.js).
+ * Admin pode editar livremente na aba Administração — qualquer setor
+ * fora do cadastro fica marcado "fora do cadastro" no select. */
 export const DEFAULT_SECTOR_RULES = [
-  { sector: 'PTS',         slots: 15, dias: 'Seg a Sex' },
-  { sector: 'Marketing',   slots: 10, dias: 'Ter, Qui'  },
-  { sector: 'TI',          slots: 20, dias: 'Seg a Sex' },
-  { sector: 'Financeiro',  slots: 8,  dias: 'Seg, Qua'  },
-  { sector: 'RH',          slots: 5,  dias: 'Sex'        },
+  { sector: 'PTS Bradesco', slots: 15, dias: 'Seg a Sex' },
+  { sector: 'Marketing',    slots: 10, dias: 'Ter, Qui'  },
+  { sector: 'TI',           slots: 20, dias: 'Seg a Sex' },
+  { sector: 'Financeiro',   slots: 8,  dias: 'Seg, Qua'  },
+  { sector: 'C&P',          slots: 5,  dias: 'Sex'        },
 ];
 
 /* ─── Helpers ─────────────────────────────────────────────── */

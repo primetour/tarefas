@@ -11,6 +11,7 @@
 import { store }   from '../store.js';
 import { toast }   from '../components/toast.js';
 import { modal }   from '../components/modal.js';
+import { REQUESTING_AREAS } from '../services/tasks.js';
 import {
   DEFAULT_AREAS, DEFAULT_SECTOR_RULES,
   fetchCheckinConfig, saveCheckinConfig,
@@ -862,8 +863,8 @@ async function renderAdminTab(container) {
           <div>
             <div class="card-title">🏢 Regras por setor</div>
             <div class="card-subtitle">
-              Capacidade máxima de reservas por dia + dias permitidos
-              (formato: "Seg a Sex", "Ter, Qui", "Sex").
+              Capacidade máxima de reservas por dia + dias permitidos.
+              <strong>Setor</strong> vem dos cadastros do sistema (não é texto livre).
             </div>
           </div>
           <button class="btn btn-secondary btn-sm" id="adm-add-sector">+ Novo setor</button>
@@ -877,18 +878,45 @@ async function renderAdminTab(container) {
               <th></th>
             </tr></thead>
             <tbody id="adm-sectors-tbody">
-              ${draftSectors.map((s, i) => `<tr>
-                <td><input type="text" class="form-input adm-s-name" data-i="${i}"
-                  value="${esc(s.sector)}" style="font-size:0.8125rem;" /></td>
-                <td style="text-align:right;width:120px;">
-                  <input type="number" class="form-input adm-s-slots" data-i="${i}" min="0" max="200"
-                    value="${s.slots}" style="text-align:right;width:80px;" />
-                </td>
-                <td><input type="text" class="form-input adm-s-dias" data-i="${i}"
-                  value="${esc(s.dias)}" style="font-size:0.8125rem;"
-                  placeholder='Ex: "Seg a Sex" / "Ter, Qui" / "Sex"' /></td>
-                <td><button class="btn btn-ghost btn-icon btn-sm adm-s-del" data-i="${i}" title="Excluir">✕</button></td>
-              </tr>`).join('')}
+              ${draftSectors.map((s, i) => {
+                // Setor inválido (não está mais nos cadastros): mantém a chave mas marca
+                const isOrphan = !REQUESTING_AREAS.includes(s.sector);
+                // Outros setores já usados (pra desabilitar duplicatas no select)
+                const usedElsewhere = draftSectors
+                  .filter((_, j) => j !== i)
+                  .map(x => x.sector);
+                return `<tr>
+                  <td>
+                    <select class="form-select adm-s-name" data-i="${i}" style="font-size:0.8125rem;">
+                      ${REQUESTING_AREAS.map(area => `
+                        <option value="${esc(area)}"
+                          ${area === s.sector ? 'selected' : ''}
+                          ${usedElsewhere.includes(area) ? 'disabled' : ''}>
+                          ${esc(area)}${usedElsewhere.includes(area) ? ' (já usado)' : ''}
+                        </option>`).join('')}
+                      ${isOrphan ? `<option value="${esc(s.sector)}" selected>⚠ ${esc(s.sector)} (fora do cadastro)</option>` : ''}
+                    </select>
+                  </td>
+                  <td style="text-align:right;width:120px;">
+                    <input type="number" class="form-input adm-s-slots" data-i="${i}" min="0" max="200"
+                      value="${s.slots}" style="text-align:right;width:80px;" />
+                  </td>
+                  <td>
+                    <select class="form-select adm-s-dias-quick" data-i="${i}" style="font-size:0.8125rem;width:auto;display:inline-block;margin-right:6px;">
+                      <option value="">— preset —</option>
+                      <option value="Seg a Sex">Seg a Sex (semana toda)</option>
+                      <option value="Seg, Ter, Qua, Qui, Sex">Cada dia da semana</option>
+                      <option value="Seg, Qua, Sex">Alternados (Seg/Qua/Sex)</option>
+                      <option value="Ter, Qui">Apenas Ter, Qui</option>
+                      <option value="Sex">Apenas Sex</option>
+                    </select>
+                    <input type="text" class="form-input adm-s-dias" data-i="${i}"
+                      value="${esc(s.dias)}" style="font-size:0.8125rem;width:calc(100% - 130px);display:inline-block;"
+                      placeholder='Ex: "Seg a Sex" / "Ter, Qui"' />
+                  </td>
+                  <td><button class="btn btn-ghost btn-icon btn-sm adm-s-del" data-i="${i}" title="Excluir">✕</button></td>
+                </tr>`;
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -925,9 +953,22 @@ async function renderAdminTab(container) {
     container.querySelectorAll('.adm-s-name, .adm-s-slots, .adm-s-dias')
       .forEach(inp => inp.addEventListener('change', (e) => {
         const i = parseInt(e.target.dataset.i);
-        if (e.target.classList.contains('adm-s-name'))  draftSectors[i].sector = e.target.value.trim();
+        if (e.target.classList.contains('adm-s-name')) {
+          draftSectors[i].sector = e.target.value.trim();
+          render(); // re-render pra atualizar disabled dos outros selects
+          return;
+        }
         if (e.target.classList.contains('adm-s-slots')) draftSectors[i].slots  = parseInt(e.target.value) || 0;
         if (e.target.classList.contains('adm-s-dias'))  draftSectors[i].dias   = e.target.value.trim();
+      }));
+    // Preset de dias: ao escolher, copia pro input texto
+    container.querySelectorAll('.adm-s-dias-quick').forEach(sel =>
+      sel.addEventListener('change', (e) => {
+        const i = parseInt(e.target.dataset.i);
+        const v = e.target.value;
+        if (!v) return;
+        draftSectors[i].dias = v;
+        render();
       }));
     container.querySelectorAll('.adm-s-del').forEach(btn =>
       btn.addEventListener('click', () => {
@@ -936,7 +977,14 @@ async function renderAdminTab(container) {
         render();
       }));
     container.querySelector('#adm-add-sector')?.addEventListener('click', () => {
-      draftSectors.push({ sector: 'Novo setor', slots: 5, dias: 'Seg a Sex' });
+      // Pega primeiro setor cadastrado que ainda não está em uso
+      const used = draftSectors.map(s => s.sector);
+      const available = REQUESTING_AREAS.find(a => !used.includes(a));
+      if (!available) {
+        toast.warning('Todos os setores cadastrados já estão configurados.');
+        return;
+      }
+      draftSectors.push({ sector: available, slots: 5, dias: 'Seg a Sex' });
       render();
     });
     container.querySelector('#adm-reset')?.addEventListener('click', () => {
