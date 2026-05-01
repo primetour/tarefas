@@ -44,7 +44,7 @@ export async function getBranding() {
 
 /* ─── Salva branding (admin/master only) ───────────────────── */
 export async function saveBranding({ logoLight, logoDark }) {
-  if (!store.isMaster() && !store.can('system_manage_settings')) {
+  if (!store.isMaster() && !store.can('branding_manage') && !store.can('system_manage_settings')) {
     throw new Error('Permissão negada — apenas administradores podem alterar o logo do sistema.');
   }
   await setDoc(BRANDING_REF(), {

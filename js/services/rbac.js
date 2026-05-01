@@ -121,6 +121,32 @@ export const PERMISSION_CATALOG = [
       { key: 'site_audit_manage', label: 'Executar e gerenciar auditorias', info: 'Cadastrar sites, disparar auditorias via PageSpeed Insights API e remover sites/histórico.' },
     ],
   },
+  {
+    group: 'Solicitações',
+    permissions: [
+      { key: 'requests_manage',   label: 'Triagem de solicitações',         info: 'Aprovar, recusar e converter solicitações em tarefas. Reservado a coordenadores+.' },
+    ],
+  },
+  {
+    group: 'Equipe e Ausências',
+    permissions: [
+      { key: 'absence_view_team',   label: 'Ver ausências da equipe',       info: 'Ver calendário de ausências e disponibilidade dos colegas. Sem essa permissão, só vê as próprias.' },
+      { key: 'absence_manage_team', label: 'Gerenciar ausências da equipe', info: 'Registrar, editar e excluir ausências de outros usuários. Reservado a gestores.' },
+    ],
+  },
+  {
+    group: 'Identidade Visual',
+    permissions: [
+      { key: 'branding_manage',   label: 'Gerenciar logo do sistema',       info: 'Trocar o logo global aplicado em sidebar, login, splash e outros pontos institucionais.' },
+    ],
+  },
+  {
+    group: 'IA e Automações',
+    permissions: [
+      { key: 'ai_skills_manage',  label: 'Gerenciar IA Skills',             info: 'Criar, editar e excluir skills (instruções) usadas pelo agente de IA.' },
+      { key: 'ai_dashboard_view', label: 'Ver dashboard de IA',             info: 'Acesso ao painel de uso, custo e qualidade do agente de IA.' },
+    ],
+  },
 ];
 
 /* ─── Roles padrão do sistema ────────────────────────────── */
@@ -160,6 +186,10 @@ export const SYSTEM_ROLES = [
       roteiro_access: true, roteiro_create: true, roteiro_manage: true,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true,
       site_audit_view: true, site_audit_manage: true,
+      requests_manage: true,
+      absence_view_team: true, absence_manage_team: true,
+      branding_manage: true,
+      ai_skills_manage: true, ai_dashboard_view: true,
     },
   },
   {
@@ -187,6 +217,10 @@ export const SYSTEM_ROLES = [
       roteiro_access: true, roteiro_create: true, roteiro_manage: true,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true,
       site_audit_view: true, site_audit_manage: true,
+      requests_manage: true,
+      absence_view_team: true, absence_manage_team: true,
+      branding_manage: false,
+      ai_skills_manage: false, ai_dashboard_view: true,
     },
   },
   {
@@ -214,6 +248,10 @@ export const SYSTEM_ROLES = [
       roteiro_access: true, roteiro_create: true, roteiro_manage: false,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false,
       site_audit_view: true, site_audit_manage: false,
+      requests_manage: true,
+      absence_view_team: true, absence_manage_team: false,
+      branding_manage: false,
+      ai_skills_manage: false, ai_dashboard_view: false,
     },
   },
   {
@@ -242,6 +280,10 @@ export const SYSTEM_ROLES = [
       roteiro_access: false, roteiro_create: false, roteiro_manage: false,
       content_calendar_view: false, content_calendar_create: false, content_calendar_manage: false,
       site_audit_view: false, site_audit_manage: false,
+      requests_manage: false,
+      absence_view_team: false, absence_manage_team: false,
+      branding_manage: false,
+      ai_skills_manage: false, ai_dashboard_view: false,
     },
   },
   {
@@ -269,6 +311,10 @@ export const SYSTEM_ROLES = [
       roteiro_access: true, roteiro_create: true, roteiro_manage: false,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false,
       site_audit_view: true, site_audit_manage: false,
+      requests_manage: false,
+      absence_view_team: false, absence_manage_team: false,
+      branding_manage: false,
+      ai_skills_manage: false, ai_dashboard_view: false,
     },
   },
 ];

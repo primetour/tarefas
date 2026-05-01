@@ -10,6 +10,7 @@ import { openTaskModal } from '../components/taskModal.js';
 import { toast }         from '../components/toast.js';
 import { countPendingRequests } from '../services/requests.js';
 import { fetchGoals }    from '../services/goals.js';
+import { fetchUserAbsences, fetchAllAbsences, ABSENCE_TYPES } from '../services/capacity.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -68,11 +69,18 @@ export async function renderDashboard(container) {
   const dashSectorFilter = document.getElementById('dash-sector-filter')?.value || null;
 
   try {
-    const [tasks, projects, pendingReqs, myGoals] = await Promise.all([
+    // Período pra ausências: hoje até +30 dias (próximas) e equipe hoje
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const in30Days = new Date(todayStart); in30Days.setDate(in30Days.getDate()+30);
+    const isManager = store.can('system_manage_users') || store.can('workspace_create');
+
+    const [tasks, projects, pendingReqs, myGoals, myAbsences, allAbsences] = await Promise.all([
       fetchTasks().catch(() => []),
       fetchProjects().catch(() => []),
       countPendingRequests().catch(() => 0),
       fetchGoals({ type: 'personal' }).catch(() => []),
+      fetchUserAbsences(uid).catch(() => []),
+      isManager ? fetchAllAbsences({ startDate: todayStart, endDate: in30Days }).catch(() => []) : Promise.resolve([]),
     ]);
 
     // Guard: user navigated away during async fetch — container no longer in DOM
@@ -82,11 +90,14 @@ export async function renderDashboard(container) {
     const sectorSel = document.getElementById('dash-sector-filter')?.value || null;
     const visibleTasks = sectorSel ? tasks.filter(t => !t.sector || t.sector === sectorSel) : tasks;
 
-    const myTasks    = visibleTasks.filter(t => t.assignees?.includes(uid));
-    const openTasks  = visibleTasks.filter(t => !['done','cancelled'].includes(t.status));
-    const inProgress = visibleTasks.filter(t => t.status === 'in_progress');
-    const now        = new Date();
-    const doneToday  = tasks.filter(t => {
+    const myTasks       = visibleTasks.filter(t => t.assignees?.includes(uid));
+    const myObserving   = visibleTasks.filter(t => (t.observers||[]).includes(uid) && !(t.assignees||[]).includes(uid));
+    const myActive      = myTasks.filter(t => !['done','cancelled'].includes(t.status));
+    const myPartnerships = myActive.filter(t => t.isPartnership);
+    const openTasks     = visibleTasks.filter(t => !['done','cancelled'].includes(t.status));
+    const inProgress    = visibleTasks.filter(t => t.status === 'in_progress');
+    const now           = new Date();
+    const doneToday     = tasks.filter(t => {
       if (!t.completedAt) return false;
       const d = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
       return d.toDateString() === now.toDateString();
@@ -96,9 +107,11 @@ export async function renderDashboard(container) {
     const $stats = document.getElementById('dash-stats');
     if (!$stats) return; // user navigated away
     $stats.innerHTML = `
-      ${statCard('Tarefas Abertas', openTasks.length, '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)', '#tasks')}
+      ${statCard('Minhas Abertas', myActive.length, '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)', '#tasks')}
       ${statCard('Em Andamento', inProgress.length, '▶', 'rgba(56,189,248,0.12)', 'var(--role-manager)', '#kanban')}
       ${statCard('Concluídas Hoje', doneToday.length, '✓', 'var(--color-success-bg)', 'var(--color-success)', '#tasks')}
+      ${statCard('Observando', myObserving.length, '🔭', 'rgba(56,189,248,0.10)', 'var(--color-info,#38BDF8)', '#tasks')}
+      ${myPartnerships.length ? statCard('Parcerias ativas', myPartnerships.length, '🤝', 'rgba(212,168,67,0.10)', 'var(--brand-gold)', '#tasks') : ''}
       ${statCard('Projetos Ativos', projects.filter(p=>p.status==='active'||p.status==='always_on').length, '◈', 'rgba(167,139,250,0.12)', 'var(--role-admin)', '#projects')}
     `;
 
@@ -123,10 +136,11 @@ export async function renderDashboard(container) {
         </div>
         <div style="padding:0 16px 8px;">
           ${(() => {
-            const myActive = myTasks.filter(t => !['done','cancelled'].includes(t.status));
-            const myDone   = myTasks.filter(t => t.status === 'done');
+            // myActive já calculado acima — reusa
+            const myDone = myTasks.filter(t => t.status === 'done');
+            const observingActive = myObserving.filter(t => !['done','cancelled'].includes(t.status));
 
-            if (!myTasks.length) return `<div class="empty-state" style="padding:24px;"><div class="empty-state-icon">🎉</div>
+            if (!myTasks.length && !observingActive.length) return `<div class="empty-state" style="padding:24px;"><div class="empty-state-icon">🎉</div>
                 <div class="empty-state-title">Nenhuma tarefa atribuída a você</div></div>`;
 
             const renderRow = (t) => {
@@ -181,6 +195,26 @@ export async function renderDashboard(container) {
                 </div>`;
             }
 
+            // Seção Estou observando (colapsável) — tarefas onde sou observer
+            // mas não responsável (não conta em produtividade)
+            if (observingActive.length) {
+              html += `
+                <div style="border-top:1px solid var(--border-subtle);margin-top:8px;padding-top:8px;">
+                  <button id="dash-toggle-obs" style="display:flex;align-items:center;gap:6px;width:100%;
+                    background:none;border:none;cursor:pointer;padding:4px 0;
+                    font-size:0.8125rem;font-weight:600;color:var(--text-muted);">
+                    <span id="dash-obs-arrow" style="transition:transform 0.2s;font-size:0.75rem;">▸</span>
+                    🔭 Estou observando (${observingActive.length})
+                    <span style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;margin-left:4px;">— não conta em metas</span>
+                  </button>
+                  <div id="dash-obs-list" style="display:none;">
+                    ${observingActive.slice(0, 5).map(renderRow).join('')}
+                    ${observingActive.length > 5 ? `<div style="padding:6px 0;text-align:center;">
+                      <a href="#tasks" style="font-size:0.8125rem;color:var(--brand-gold);">+${observingActive.length-5} mais</a></div>` : ''}
+                  </div>
+                </div>`;
+            }
+
             return html;
           })()}
         </div>
@@ -216,6 +250,72 @@ export async function renderDashboard(container) {
             </div>
           </div>`;
         })()}
+
+        <!-- Próxima ausência (minha) -->
+        ${(() => {
+          // Filtra ausências futuras minhas
+          const futureMine = (myAbsences || [])
+            .map(a => ({
+              ...a,
+              _start: a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate),
+              _end:   a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate),
+            }))
+            .filter(a => a._end >= now)
+            .sort((a, b) => a._start - b._start);
+          if (!futureMine.length) return '';
+          const next = futureMine[0];
+          const td   = ABSENCE_TYPES.find(t => t.value === next.type) || ABSENCE_TYPES[5];
+          const fmtD = d => d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+          const fmtT = d => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+          const partialBadge = next.partial
+            ? `<span style="font-size:0.6875rem;margin-left:6px;color:var(--text-muted);">parcial ${fmtT(next._start)}-${fmtT(next._end)}</span>`
+            : '';
+          const isStarted = next._start <= now;
+          return `<div class="card">
+            <div class="card-header">
+              <div class="card-title" style="color:${td.color};">${td.icon} ${isStarted?'Ausente agora':'Próxima ausência'}</div>
+              <a href="#team" class="btn btn-ghost btn-sm">Ver →</a>
+            </div>
+            <div class="card-body" style="padding:12px 16px;">
+              <div style="font-size:0.875rem;color:var(--text-primary);">
+                <strong>${esc(td.label)}</strong> ${partialBadge}
+              </div>
+              <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;">
+                ${fmtD(next._start)}${next.partial ? '' : ' a ' + fmtD(next._end)}
+              </div>
+              ${futureMine.length > 1 ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:6px;">+${futureMine.length-1} agendada${futureMine.length-1!==1?'s':''}</div>` : ''}
+            </div>
+          </div>`;
+        })()}
+
+        <!-- Equipe ausente hoje (gestor) -->
+        ${isManager && allAbsences?.length ? (() => {
+          const todayMs = now.getTime();
+          const absentNow = allAbsences.filter(a => {
+            const s = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
+            const e = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
+            return s.getTime() <= todayMs && todayMs <= e.getTime();
+          });
+          if (!absentNow.length) return '';
+          const users = store.get('users') || [];
+          const peopleNames = absentNow.map(a => {
+            const u = users.find(x => x.id === a.userId);
+            const td = ABSENCE_TYPES.find(t => t.value === a.type);
+            return `${u?.name?.split(' ')[0] || a.userId} (${td?.icon || '◌'})`;
+          }).join(', ');
+          return `<div class="card" style="border:1px solid rgba(239,68,68,0.2);">
+            <div class="card-header">
+              <div class="card-title" style="color:#EF4444;">⚠ Equipe ausente hoje</div>
+              <a href="#team" class="btn btn-ghost btn-sm">Ver →</a>
+            </div>
+            <div class="card-body" style="padding:12px 16px;">
+              <div style="font-size:1.5rem;font-weight:700;color:#EF4444;">${absentNow.length}</div>
+              <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;line-height:1.4;">
+                ${esc(peopleNames)}
+              </div>
+            </div>
+          </div>`;
+        })() : ''}
 
         <!-- Pending requests (manager+) -->
         ${pendingReqs > 0 && (store.can('workspace_create') || store.can('system_manage_users')) ? `
@@ -336,6 +436,16 @@ export async function renderDashboard(container) {
     document.getElementById('dash-toggle-done')?.addEventListener('click', () => {
       const list  = document.getElementById('dash-done-list');
       const arrow = document.getElementById('dash-done-arrow');
+      if (!list) return;
+      const show = list.style.display === 'none';
+      list.style.display = show ? 'block' : 'none';
+      if (arrow) arrow.style.transform = show ? 'rotate(90deg)' : '';
+    });
+
+    // Toggle observando
+    document.getElementById('dash-toggle-obs')?.addEventListener('click', () => {
+      const list  = document.getElementById('dash-obs-list');
+      const arrow = document.getElementById('dash-obs-arrow');
       if (!list) return;
       const show = list.style.display === 'none';
       list.style.display = show ? 'block' : 'none';
