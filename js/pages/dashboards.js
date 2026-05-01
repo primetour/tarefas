@@ -515,18 +515,23 @@ function renderAllCharts(Chart, m) {
     items: byMember.slice(0, 8),
   });
 
-  /* 6b — Productivity by task type (4-col) */
+  /* 6b — Productivity by task type (4-col) — inclui volume de parcerias */
   const byType = getProductivityByType(tasks);
   renderLeaderboard('bottom-grid', 'type-board', 'col-span-4', {
     title: '◇ Ranking por Tipo de Tarefa',
-    subtitle: 'Concluídas vs total no período',
-    items: byType.slice(0, 8).map(t => ({
-      name: `${t.icon} ${t.name}`,
-      avatarColor: t.color,
-      done: t.done,
-      total: t.total,
-      rate: t.rate,
-    })),
+    subtitle: 'Concluídas + 🤝 parcerias no período',
+    items: byType.slice(0, 8).map(t => {
+      const parcSuffix = t.partnerships > 0
+        ? ` · 🤝 ${t.partnerships} parc. (${t.partnershipRate}%)`
+        : '';
+      return {
+        name: `${t.icon} ${t.name}${parcSuffix}`,
+        avatarColor: t.color,
+        done: t.done,
+        total: t.total,
+        rate: t.rate,
+      };
+    }),
   });
 
   /* 7 — Upcoming deadlines (4-col) */

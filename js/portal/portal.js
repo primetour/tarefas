@@ -415,6 +415,23 @@ async function renderForm(db, taskTypes, auth) {
                 </div>
               </div>
 
+              <!-- Envolve parceria -->
+              <div class="form-group" id="fg-partnership">
+                <label class="urgency-toggle" id="partnership-toggle">
+                  <input type="checkbox" id="p-partnership" />
+                  <div class="urgency-dot" id="partnership-dot">✓</div>
+                  <div>
+                    <div style="font-size:0.9375rem;color:var(--text-primary);font-weight:500;">
+                      🤝 Envolve parceria
+                    </div>
+                    <div style="font-size:0.8125rem;color:var(--text-muted);">
+                      Marque quando esta demanda é devolutiva de pacote de divulgação
+                      vendido para empresa parceira.
+                    </div>
+                  </div>
+                </label>
+              </div>
+
               <!-- Fora do calendário -->
               <div class="form-group" id="fg-out-of-calendar">
                 <label class="urgency-toggle" id="out-of-calendar-toggle">
@@ -1688,6 +1705,7 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
       description:    descVal,
       urgency:        fsUrgent || false,
       outOfCalendar:  isOOC,
+      isPartnership:  document.getElementById('p-partnership')?.checked || false,
       desiredDate:    opts.dateISO || '',
     };
     if (currentEditIndex >= 0) {
@@ -2412,6 +2430,7 @@ function collectFormData(taskTypes) {
     description:    document.getElementById('p-desc')?.value?.trim() || '',
     urgency:        document.getElementById('p-urgency')?.checked || false,
     outOfCalendar:  hasSlots ? (document.getElementById('p-out-of-calendar')?.checked || false) : false,
+    isPartnership:  document.getElementById('p-partnership')?.checked || false,
     desiredDate:    document.getElementById('p-date')?.value || '',
   };
 }

@@ -253,6 +253,8 @@ export async function createTask(data) {
     priority:         data.priority             || 'medium',
     projectId:        data.projectId            || null,
     assignees:        data.assignees            || [],
+    observers:        Array.isArray(data.observers) ? data.observers : [],
+    isPartnership:    !!data.isPartnership,
     tags:             data.tags                 || [],
     startDate:        data.startDate            || null,
     dueDate:          data.dueDate              || null,
@@ -337,6 +339,19 @@ export async function createTask(data) {
         priority: taskDoc.priority === 'urgent' ? 'high' : 'normal',
       });
     }).catch(e => console.warn('[Notify] task.assigned error:', e));
+  }
+
+  // Notify observers (acompanham, mas não são responsáveis)
+  if (taskDoc.observers?.length) {
+    import('./notifications.js').then(({ notify }) => {
+      return notify('task.observing', {
+        entityType: 'task', entityId: ref.id,
+        recipientIds: taskDoc.observers,
+        title: 'Você está acompanhando uma tarefa',
+        body: `"${taskDoc.title}" foi criada — você está como observador`,
+        route: 'tasks',
+      });
+    }).catch(() => {});
   }
 
   return { id: ref.id, ...taskDoc };
@@ -451,15 +466,26 @@ export async function updateTask(taskId, data) {
     }).catch(() => {});
   }
 
-  // Notify on status changes
+  // Notify on status changes (assignees + observers + creator)
   if (data.status && data.status !== data._prevStatus) {
+    // Observadores acompanham TODAS as mudanças de status (criador + assignees + observers)
+    const observers = Array.isArray(data.observers)
+      ? data.observers
+      : (Array.isArray(prevData?.observers) ? prevData.observers : []);
+    const assignees = Array.isArray(data.assignees)
+      ? data.assignees
+      : (Array.isArray(prevData?.assignees) ? prevData.assignees : []);
+    const creator   = data.createdBy || prevData?.createdBy;
+
     import('./notifications.js').then(({ notify }) => {
+      // Une todos sem duplicatas
+      const allRecipients = (...lists) =>
+        Array.from(new Set(lists.flat().filter(Boolean)));
+
       if (data.status === 'done') {
-        // Notify creator that task is done
-        const recipients = [data.createdBy, ...(data.assignees || [])].filter(Boolean);
         notify('task.completed', {
           entityType: 'task', entityId: taskId,
-          recipientIds: recipients,
+          recipientIds: allRecipients(creator, assignees, observers),
           title: 'Tarefa concluída',
           body: `"${data.title || 'Tarefa'}" foi concluída`,
           route: 'tasks',
@@ -467,18 +493,19 @@ export async function updateTask(taskId, data) {
       } else if (data.status === 'rework') {
         notify('task.rework', {
           entityType: 'task', entityId: taskId,
-          recipientIds: data.assignees || [],
+          recipientIds: allRecipients(assignees, observers),
           title: 'Tarefa devolvida para retrabalho',
           body: `"${data.title || 'Tarefa'}" precisa de ajustes`,
           route: 'tasks',
           priority: 'high',
         });
       } else {
-        // Generic status change → notify creator
-        if (data.createdBy) {
+        // Generic status change → notifica criador + observadores
+        const recipients = allRecipients(creator, observers);
+        if (recipients.length) {
           notify('task.status_changed', {
             entityType: 'task', entityId: taskId,
-            recipientIds: [data.createdBy],
+            recipientIds: recipients,
             title: 'Status alterado',
             body: `"${data.title || 'Tarefa'}" mudou para ${data.status}`,
             route: 'tasks',
@@ -486,6 +513,23 @@ export async function updateTask(taskId, data) {
         }
       }
     }).catch(() => {});
+  }
+
+  // Notifica observers adicionados/removidos (diff)
+  if (Array.isArray(data.observers) && prevData) {
+    const prevObs = Array.isArray(prevData.observers) ? prevData.observers : [];
+    const addedObs = data.observers.filter(uid => uid && !prevObs.includes(uid));
+    if (addedObs.length) {
+      import('./notifications.js').then(({ notify }) => {
+        notify('task.observing', {
+          entityType: 'task', entityId: taskId,
+          recipientIds: addedObs,
+          title: 'Você está acompanhando uma tarefa',
+          body: `Você foi adicionado como observador em "${data.title || prevData.title || 'Tarefa'}"`,
+          route: 'tasks',
+        });
+      }).catch(() => {});
+    }
   }
 }
 

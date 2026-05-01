@@ -123,10 +123,11 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   // Sanitize taskData — ensure arrays are always arrays
   const sanitize = (td) => ({
     title:'', description:'', status, priority:'medium',
-    projectId: projectId||null, assignees:[], tags:[],
+    projectId: projectId||null, assignees:[], observers:[], tags:[],
     startDate:null, dueDate:null, subtasks:[], comments:[],
     type:'', newsletterStatus:'', requestingArea:'', clientEmail:'',
     nucleos:[], outOfCalendar:false, deliveryLink:'',
+    isPartnership: false,
     workspaceId: store.get('currentWorkspace')?.id || null,
     typeId: typeId || null,
     customFields: {},
@@ -137,6 +138,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     // Always sanitize arrays regardless of source
     tags:         Array.isArray(td?.tags)        ? td.tags        : [],
     assignees:    Array.isArray(td?.assignees)    ? td.assignees   : [],
+    observers:    Array.isArray(td?.observers)    ? td.observers   : [],
     subtasks:     Array.isArray(td?.subtasks)     ? td.subtasks    : [],
     comments:     Array.isArray(td?.comments)     ? td.comments    : [],
     nucleos:      Array.isArray(td?.nucleos)      ? td.nucleos     : [],
@@ -194,6 +196,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
   let currentTags      = [...(task.tags||[])];
   let currentAssignees = [...(task.assignees||[])];
+  let currentObservers = [...(task.observers||[])];
 
   // ── Auto-assign self for NEW tasks ──
   if (!isEdit && !isPrefill && currentAssignees.length === 0) {
@@ -212,7 +215,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   const m = modal.open({
     title: modalTitle,
     size: 'xl',
-    content: buildHTML(task, users, projects, currentTags, currentAssignees, isEdit, currentTaskType,
+    content: buildHTML(task, users, projects, currentTags, currentAssignees, currentObservers, isEdit, currentTaskType,
       task.sector || currentTaskType?.sector || store.get('userSector') || null, allAbsences),
     footer: [
       ...(isEdit && store.can('task_delete') ? [{
@@ -234,7 +237,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         onClick: async (_,{close}) => {
           const modalEl = document.querySelector('.modal-body') || document.querySelector('.modal') || document;
           _bypassDirtyCheck = true;
-          await handleSave(task, currentTags, currentAssignees, isEdit, close, onSave, modalEl);
+          await handleSave(task, currentTags, currentAssignees, currentObservers, isEdit, close, onSave, modalEl);
         } },
     ],
   });
@@ -257,7 +260,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   // Bind events after next paint — use requestAnimationFrame for reliability
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      bindEvents(task, users, currentTags, currentAssignees, isEdit, allAbsences, m.getElement());
+      bindEvents(task, users, currentTags, currentAssignees, currentObservers, isEdit, allAbsences, m.getElement());
 
       // Track dirty state for cancel confirmation
       setTimeout(() => {
@@ -1071,7 +1074,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   });
 }
 
-function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = null, taskSector = null, absences = []) {
+function buildHTML(task, users, projects, tags, assignees, observers, isEdit, taskType = null, taskSector = null, absences = []) {
   const opt = (arr, valKey, labelKey, cur) => arr.map(x =>
     `<option value="${x[valKey]}" ${cur===x[valKey]?'selected':''}>${esc(x[labelKey])}</option>`
   ).join('');
@@ -1124,6 +1127,16 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
     return `<div class="assignee-chip" data-uid="${uid}" ${absence?'style="border-color:#EF4444;background:#EF444410;"':''}>
       <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${getInitials(u.name)}</div>
       ${esc(u.name.split(' ')[0])}${absIcon}<span style="font-size:0.7rem;opacity:0.6;">✕</span></div>`;
+  }).join('');
+
+  // Observadores: mesmo visual dos chips de assignees mas sem alerta
+  // de ausência (observador não trabalha na tarefa, só acompanha).
+  const observerChips = (observers || []).map(uid => {
+    const u = activeUsers.find(u=>u.id===uid);
+    if (!u) return '';
+    return `<div class="assignee-chip observer-chip" data-obs-uid="${uid}">
+      <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${getInitials(u.name)}</div>
+      ${esc(u.name.split(' ')[0])}<span style="font-size:0.7rem;opacity:0.6;">✕</span></div>`;
   }).join('');
 
   const userListHTML = activeUsers.length
@@ -1483,6 +1496,48 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
         </div>
       </div>
       <div class="task-detail-field">
+        <div class="task-detail-label" style="display:flex;align-items:center;gap:6px;">
+          Observadores
+          <span title="Acompanham a tarefa por notificações, mas NÃO são responsáveis (não conta em metas/produtividade)"
+            style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;
+            padding:1px 6px;background:var(--bg-surface);border-radius:8px;cursor:help;">
+            ?
+          </span>
+        </div>
+        <div class="assignee-picker" id="observer-picker">
+          ${observerChips}
+          <button class="assignee-add-btn" id="observer-add-btn" title="Adicionar observador">+</button>
+        </div>
+        <div id="observer-dropdown" style="display:none;margin-top:6px;">
+          <div style="background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);max-height:200px;overflow-y:auto;">
+            ${activeUsers.length
+              ? activeUsers.map(u => `
+                <div class="dropdown-item" data-add-obs-uid="${u.id}"
+                  style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 12px;">
+                  <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">${getInitials(u.name)}</div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:0.875rem;color:var(--text-primary);">${esc(u.name)}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u.department||u.role||'')}</div>
+                  </div>
+                </div>`).join('')
+              : `<div style="padding:12px;color:var(--text-muted);font-size:0.875rem;">Nenhum usuário ativo.</div>`}
+          </div>
+        </div>
+      </div>
+      <div class="task-detail-field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;
+          padding:8px 10px;background:var(--bg-surface);border-radius:var(--radius-sm);
+          font-size:0.875rem;color:var(--text-primary);user-select:none;">
+          <input type="checkbox" id="tm-partnership" ${task.isPartnership?'checked':''}
+            style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-gold);" />
+          <span style="flex:1;">🤝 Envolve parceria
+            <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;display:block;margin-top:1px;">
+              Tarefa é devolutiva de pacote de divulgação vendido pra empresa parceira
+            </span>
+          </span>
+        </label>
+      </div>
+      <div class="task-detail-field">
         <div class="task-detail-label">Data de início</div>
         <input type="date" class="form-input" id="tm-start" style="padding:8px 12px;"
           value="${toInputDate(task.startDate)}" />
@@ -1517,7 +1572,7 @@ function buildHTML(task, users, projects, tags, assignees, isEdit, taskType = nu
   </div>`;
 }
 
-function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences = [], rootEl = null) {
+function bindEvents(task, users, currentTags, currentAssignees, currentObservers, isEdit, absences = [], rootEl = null) {
   // Scope used for subtask (and other) DOM queries. Falls back to `document`
   // when a modal root isn't provided, preserving legacy behavior.
   const root = rootEl || document;
@@ -1712,6 +1767,41 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
     if (chip){const uid=chip.dataset.uid;const i=currentAssignees.indexOf(uid);if(i>-1)currentAssignees.splice(i,1);chip.remove();}
   });
   document.addEventListener('click', () => { const dd=document.getElementById('assignee-dropdown'); if(dd)dd.style.display='none'; });
+
+  // Observadores — mesma lógica dos assignees, sem checagem de ausência
+  document.getElementById('observer-add-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dd = document.getElementById('observer-dropdown');
+    if (dd) dd.style.display = dd.style.display==='none' ? 'block' : 'none';
+  });
+  document.getElementById('observer-dropdown')?.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-add-obs-uid]');
+    if (!item) return;
+    const uid = item.dataset.addObsUid;
+    if (!currentObservers.includes(uid)) {
+      currentObservers.push(uid);
+      const u = users.find(x => x.id === uid);
+      if (u) {
+        const el = document.createElement('div');
+        el.className = 'assignee-chip observer-chip';
+        el.dataset.obsUid = uid;
+        el.innerHTML = `<div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${getInitials(u.name)}</div>${esc(u.name.split(' ')[0])}<span style="font-size:0.7rem;opacity:0.6;">✕</span>`;
+        const btn = document.getElementById('observer-add-btn');
+        document.getElementById('observer-picker')?.insertBefore(el, btn);
+      }
+    }
+    document.getElementById('observer-dropdown').style.display = 'none';
+  });
+  document.getElementById('observer-picker')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.assignee-chip[data-obs-uid]');
+    if (chip) {
+      const uid = chip.dataset.obsUid;
+      const i = currentObservers.indexOf(uid);
+      if (i > -1) currentObservers.splice(i, 1);
+      chip.remove();
+    }
+  });
+  document.addEventListener('click', () => { const dd=document.getElementById('observer-dropdown'); if(dd)dd.style.display='none'; });
 
   // Quando datas mudam, atualizar indicadores de ausência no dropdown
   const updateAbsenceIndicators = () => {
@@ -2041,7 +2131,7 @@ function bindEvents(task, users, currentTags, currentAssignees, isEdit, absences
   setupMentionAutocomplete();
 }
 
-async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=document) {
+async function handleSave(task, tags, assignees, observers, isEdit, close, onSave, ctx=document) {
   // Use getElementById directly — modal fields can be anywhere in the DOM
   const $ = id => document.getElementById(id) || ctx?.querySelector?.('#' + id);
 
@@ -2112,6 +2202,8 @@ async function handleSave(task, tags, assignees, isEdit, close, onSave, ctx=docu
       return task.workspaceId || store.get('currentWorkspace')?.id || null;
     })(),
     assignees,
+    observers,
+    isPartnership: !!$('tm-partnership')?.checked,
     tags: Array.from(document.querySelectorAll('.tag-chip[data-tag]')).map(el => el.dataset.tag),
     startDate: startVal ? new Date(startVal+'T00:00:00') : null,
     dueDate:   dueVal   ? new Date(dueVal  +'T23:59:59') : null,

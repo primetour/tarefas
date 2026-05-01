@@ -476,6 +476,7 @@ async function openRequestDetail(req) {
                 variationName:  req.variationName  || '',
                 nucleos:        req.nucleo ? [req.nucleo] : [],
                 outOfCalendar:  req.outOfCalendar  || false,
+                isPartnership:  req.isPartnership  || false,
                 customFields: {
                   outOfCalendar:   req.outOfCalendar || false,
                   variationId:     req.variationId   || null,
@@ -547,6 +548,7 @@ async function openRequestDetail(req) {
               variationName:  req.variationName  || '',
               nucleos:        req.nucleo ? [req.nucleo] : [],
               outOfCalendar:  req.outOfCalendar  || false,
+                isPartnership:  req.isPartnership  || false,
               customFields: {
                 outOfCalendar:   req.outOfCalendar || false,
                 variationId:     req.variationId   || null,

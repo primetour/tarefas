@@ -32,6 +32,7 @@ export async function createRequest({
   variationId, variationName,
   outOfCalendar,
   description, urgency,
+  isPartnership,
   desiredDate,
 }) {
   const reqDoc = {
@@ -45,6 +46,7 @@ export async function createRequest({
     variationId:    variationId   || null,
     variationName:  variationName || '',
     outOfCalendar:  outOfCalendar === true,
+    isPartnership:  isPartnership === true,
     description:    description.trim(),
     urgency:        urgency === true,
     desiredDate:    desiredDate ? new Date(desiredDate) : null,

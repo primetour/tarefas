@@ -251,16 +251,17 @@ export function getTimePerTaskByType(tasks) {
 }
 
 /* ─── Ranking de produtividade por tipo de tarefa ─────────
- * Agrupa por taskTypeId (campo `typeId` na task), calcula concluídas
- * e total + taxa. Útil pra ver quais tipos de tarefa rodam melhor. */
+ * Agrupa por taskTypeId (campo `typeId` na task), calcula concluídas,
+ * total, taxa, e VOLUME DE PARCERIAS (isPartnership=true). */
 export function getProductivityByType(tasks) {
   const taskTypes = store.get('taskTypes') || [];
   const byType = {};
   tasks.forEach(t => {
     const typeId = t.typeId || '__none__';
-    if (!byType[typeId]) byType[typeId] = { total: 0, done: 0 };
+    if (!byType[typeId]) byType[typeId] = { total: 0, done: 0, partnerships: 0 };
     byType[typeId].total++;
     if (t.status === 'done') byType[typeId].done++;
+    if (t.isPartnership)     byType[typeId].partnerships++;
   });
   return Object.entries(byType)
     .map(([typeId, data]) => {
@@ -272,6 +273,9 @@ export function getProductivityByType(tasks) {
         color: td?.color || '#6B7280',
         ...data,
         rate: data.total ? Math.round(data.done / data.total * 100) : 0,
+        partnershipRate: data.total
+          ? Math.round(data.partnerships / data.total * 100)
+          : 0,
       };
     })
     .filter(t => t.total > 0)
