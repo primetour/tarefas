@@ -724,7 +724,8 @@ async function renderReportTab(container) {
   let totalDeclined = 0;
   all.forEach(r => {
     const k = r.userId;
-    if (!byUser[k]) byUser[k] = { name: r.userName, sector: r.sector, days: 0, totalHours: 0, complete: 0, declined: 0 };
+    if (!byUser[k]) byUser[k] = { name: r.userName, sector: r.sector, days: 0, totalHours: 0, complete: 0, declined: 0, records: [] };
+    byUser[k].records.push(r);
     if (r.declined && !r.in) {
       byUser[k].declined += 1;
       totalDeclined += 1;
@@ -740,6 +741,18 @@ async function renderReportTab(container) {
     completion: d.days ? Math.round(d.complete / d.days * 100) : 0,
   })).sort((a,b) => b.totalHours - a.totalHours);
 
+  // Helper: duração do almoço em minutos
+  const lunchMinutes = (rec) => {
+    const tsToDate = (v) => v?.toDate ? v.toDate() : (v ? new Date(v) : null);
+    const lo = tsToDate(rec.lunchOut), li = tsToDate(rec.lunchIn);
+    if (!lo || !li) return 0;
+    return Math.max(0, (li - lo) / 60000);
+  };
+  const fmtMins = (m) => {
+    const h = Math.floor(m / 60), mm = Math.round(m % 60);
+    return h > 0 ? `${h}h${String(mm).padStart(2,'0')}` : `${mm}min`;
+  };
+
   container.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;font-size:0.875rem;color:var(--text-muted);">
       <span>Período: últimos 30 dias</span>
@@ -749,10 +762,12 @@ async function renderReportTab(container) {
       <span>${rows.length} colaboradores</span>
       ${totalDeclined ? `<span>·</span><span style="color:#F59E0B;">⚠ ${totalDeclined} recusas de ponto</span>` : ''}
     </div>
-    <div class="card">
+
+    <!-- RESUMO POR COLABORADOR (agregado) -->
+    <div class="card" style="margin-bottom:24px;">
       <div class="card-header">
-        <div class="card-title">📊 Resumo de ponto por colaborador</div>
-        <button class="btn btn-secondary btn-sm" id="ck-export-csv">↓ Exportar CSV</button>
+        <div class="card-title">📊 Resumo por colaborador</div>
+        <button class="btn btn-secondary btn-sm" id="ck-export-csv">↓ Exportar CSV (resumo)</button>
       </div>
       <div class="card-body" style="padding:0;">
         ${rows.length ? `<table class="data-table" style="width:100%;">
@@ -763,8 +778,9 @@ async function renderReportTab(container) {
             <th style="text-align:right;">Média/dia</th>
             <th style="text-align:right;">Completos</th>
             <th style="text-align:right;">Recusas</th>
+            <th></th>
           </tr></thead>
-          <tbody>${rows.map(r => `<tr>
+          <tbody>${rows.map(r => `<tr class="ck-row" data-uid="${r.uid}" style="cursor:pointer;">
             <td><strong>${esc(r.name)}</strong></td>
             <td>${esc(r.sector)}</td>
             <td style="text-align:right;">${r.days}</td>
@@ -772,26 +788,137 @@ async function renderReportTab(container) {
             <td style="text-align:right;">${r.avgHours.toFixed(2)}h</td>
             <td style="text-align:right;">${r.completion}%</td>
             <td style="text-align:right;${r.declined>0?'color:#F59E0B;font-weight:600;':''}">${r.declined||'—'}</td>
+            <td style="text-align:right;font-size:0.6875rem;color:var(--text-muted);">▾ detalhes</td>
           </tr>`).join('')}</tbody>
         </table>` : `<div class="empty-state" style="padding:32px;">
           <div class="empty-state-title">Nenhum registro de ponto no período.</div>
         </div>`}
       </div>
     </div>
+
+    <!-- DETALHAMENTO POR DIA (todos os registros, ordenado por data desc) -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📅 Detalhamento dia a dia</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select class="filter-select" id="ck-detail-user" style="font-size:0.8125rem;">
+            <option value="">— Todos colaboradores —</option>
+            ${rows.map(r => `<option value="${esc(r.uid)}">${esc(r.name)}</option>`).join('')}
+          </select>
+          <button class="btn btn-secondary btn-sm" id="ck-export-detail-csv">↓ Exportar CSV (detalhado)</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <table class="data-table" style="width:100%;">
+          <thead><tr>
+            <th>Data</th><th>Colaborador</th><th>Setor</th>
+            <th>Entrada</th><th>Almoço (saída)</th><th>Almoço (volta)</th>
+            <th style="text-align:right;">Tempo almoço</th>
+            <th>Saída</th>
+            <th style="text-align:right;">Horas trab.</th>
+          </tr></thead>
+          <tbody id="ck-detail-tbody">
+            ${renderDetailRows(all, lunchMinutes, fmtMins)}
+          </tbody>
+        </table>
+      </div>
+    </div>
   `;
 
+  // Filtro por colaborador no detalhamento
+  document.getElementById('ck-detail-user')?.addEventListener('change', (e) => {
+    const uid = e.target.value;
+    const filtered = uid ? all.filter(r => r.userId === uid) : all;
+    document.getElementById('ck-detail-tbody').innerHTML = renderDetailRows(filtered, lunchMinutes, fmtMins);
+  });
+
+  // Click numa linha do resumo → filtra detalhamento + scroll
+  container.querySelectorAll('.ck-row').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const sel = document.getElementById('ck-detail-user');
+      if (sel) {
+        sel.value = tr.dataset.uid;
+        sel.dispatchEvent(new Event('change'));
+        document.getElementById('ck-detail-tbody').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
+  // Export CSV resumo
   document.getElementById('ck-export-csv')?.addEventListener('click', () => {
     const csv = [
       'colaborador;setor;dias;total_horas;media_horas_dia;dias_completos_pct;recusas',
       ...rows.map(r => `${r.name};${r.sector};${r.days};${r.totalHours.toFixed(2)};${r.avgHours.toFixed(2)};${r.completion}%;${r.declined||0}`),
     ].join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    download(csv, `ponto_resumo_${todayISO()}.csv`);
+  });
+  // Export CSV detalhado
+  document.getElementById('ck-export-detail-csv')?.addEventListener('click', () => {
+    const sortedAll = [...all].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const csv = [
+      'data;colaborador;setor;entrada;almoco_saida;almoco_volta;tempo_almoco_min;saida;horas_trabalhadas',
+      ...sortedAll.map(r => {
+        if (r.declined && !r.in) {
+          return `${r.date};${r.name||r.userName||''};${r.sector||''};RECUSOU;;;0;;0`;
+        }
+        const lm = lunchMinutes(r);
+        return [
+          r.date,
+          r.userName||'',
+          r.sector||'',
+          fmtTS(r.in),
+          fmtTS(r.lunchOut),
+          fmtTS(r.lunchIn),
+          Math.round(lm),
+          fmtTS(r.out),
+          calcWorkedHours(r).toFixed(2),
+        ].join(';');
+      }),
+    ].join('\n');
+    download(csv, `ponto_detalhado_${todayISO()}.csv`);
+  });
+
+  function download(content, filename) {
+    const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    a.href = url; a.download = `ponto_${todayISO()}.csv`;
+    a.href = url; a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-  });
+  }
+}
+
+function renderDetailRows(records, lunchMinutes, fmtMins) {
+  const sorted = [...records].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  if (!sorted.length) {
+    return `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted);">Sem registros.</td></tr>`;
+  }
+  return sorted.map(r => {
+    if (r.declined && !r.in) {
+      return `<tr style="opacity:0.55;">
+        <td>${fmtDate(r.date)}</td>
+        <td><strong>${esc(r.userName||'')}</strong></td>
+        <td>${esc(r.sector||'')}</td>
+        <td colspan="5" style="font-style:italic;color:#F59E0B;">⚠ Optou por não registrar${r.declineReason?': '+esc(r.declineReason):''}</td>
+        <td style="text-align:right;">—</td>
+      </tr>`;
+    }
+    const lm = lunchMinutes(r);
+    const incomplete = !(r.in && r.out);
+    return `<tr ${incomplete?'style="background:rgba(245,158,11,0.04);"':''}>
+      <td>${fmtDate(r.date)}</td>
+      <td><strong>${esc(r.userName||'')}</strong></td>
+      <td>${esc(r.sector||'')}</td>
+      <td>${fmtTS(r.in)}</td>
+      <td>${fmtTS(r.lunchOut)}</td>
+      <td>${fmtTS(r.lunchIn)}</td>
+      <td style="text-align:right;color:${lm>0?'var(--text-secondary)':'var(--text-muted)'};">${lm>0?fmtMins(lm):'—'}</td>
+      <td>${fmtTS(r.out)}</td>
+      <td style="text-align:right;font-weight:600;color:var(--brand-gold);">
+        ${calcWorkedHours(r).toFixed(2)}h${incomplete?' <span title="Registro incompleto" style="color:#F59E0B;">⚠</span>':''}
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 function weekdayLabel(iso) {
