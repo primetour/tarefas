@@ -273,7 +273,37 @@ export class Sidebar {
     this.overlay.addEventListener('click', () => this.closeMobile());
 
     this._attachEvents();
+    this._watchPaletteChange();
     return this.el;
+  }
+
+  _watchPaletteChange() {
+    // Observa mudanças em <html data-palette>. Quando user troca paleta
+    // em runtime (settings/profile), re-aplica o logo correto sem
+    // precisar re-renderizar a sidebar inteira.
+    if (this._paletteObserver) this._paletteObserver.disconnect();
+    const LIGHT_PALETTES = ['platinum', 'sand'];
+    const LIGHT_LOGO = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
+    const DARK_LOGO  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
+    const updateLogo = () => {
+      const palette = document.documentElement.getAttribute('data-palette') || 'midnight';
+      const useDark = LIGHT_PALETTES.includes(palette);
+      const url = useDark ? DARK_LOGO : LIGHT_LOGO;
+      const img = this.el?.querySelector('.sidebar-brand > img');
+      if (img && img.src !== url) img.src = url;
+    };
+    this._paletteObserver = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === 'attributes' && m.attributeName === 'data-palette') {
+          updateLogo();
+          break;
+        }
+      }
+    });
+    this._paletteObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-palette'],
+    });
   }
 
   _attachEvents() {
@@ -505,6 +535,7 @@ export class Sidebar {
   destroy() {
     this._unsubRoute?.();
     this._unsubWs?.();
+    this._paletteObserver?.disconnect();
     this.el?.remove();
     this.overlay?.remove();
   }
