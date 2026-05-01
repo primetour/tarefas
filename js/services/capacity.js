@@ -27,7 +27,7 @@ export async function createAbsence({ userId, type, startDate, endDate, note = '
   const isSelf      = userId === currentUser.uid;
 
   // Qualquer usuário pode registrar a própria ausência; gestores podem registrar de outros
-  if (!isSelf && !store.can('system_manage_users')) {
+  if (!isSelf && !(store.can('absence_manage_team') || store.can('system_manage_users'))) {
     throw new Error('Permissão negada. Você só pode registrar suas próprias ausências.');
   }
 

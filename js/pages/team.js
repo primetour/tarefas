@@ -41,7 +41,7 @@ export async function renderTeam(container) {
 
   const users      = store.get('users') || [];
   const workspaces = store.get('userWorkspaces') || [];
-  const canViewAll = store.can('system_manage_users') || store.can('system_view_all');
+  const canViewAll = store.can('absence_manage_team') || store.can('system_manage_users') || store.can('system_view_all');
 
   container.innerHTML = `
     <div class="page-header">
@@ -269,7 +269,7 @@ function absenceTable(absences, uid, showActions) {
       const endDisplay = isPartial
         ? `<span style="color:var(--text-muted);font-size:0.75rem;">${fmtH(a.endDate)}</span>`
         : fmtDate(a.endDate);
-      const canEdit = a.createdBy === uid || store.can('system_manage_users');
+      const canEdit = a.createdBy === uid || store.can('absence_manage_team') || store.can('system_manage_users');
       return `<tr>
         <td><span style="display:inline-flex;align-items:center;gap:6px;">
           <span>${typeDef.icon}</span>
@@ -414,7 +414,7 @@ async function openAbsenceModal(absence = null) {
   }
 
   const uid     = store.get('currentUser').uid;
-  const canMgr  = store.can('system_manage_users');
+  const canMgr  = store.can('absence_manage_team') || store.can('system_manage_users');
 
   // Pre-extrai horários se ausência existente já é parcial
   const initialPartial = !!absence?.partial;
@@ -426,6 +426,7 @@ async function openAbsenceModal(absence = null) {
   modal.open({
     title:   isEdit ? 'Editar ausência' : 'Registrar ausência',
     size:    'sm',
+    dedupeKey: isEdit ? `absence:${absence.id}` : 'absence:new',
     content: `
       <div style="display:flex;flex-direction:column;gap:14px;">
         ${canMgr ? `

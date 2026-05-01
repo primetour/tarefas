@@ -212,9 +212,13 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   let _isDirty = false;
   let _bypassDirtyCheck = false;
 
+  // Dedupe: 1 modal por taskId (ou 1 modal de "criar nova")
+  const dedupeKey = isEdit && task.id ? `task-modal:${task.id}` : `task-modal:new`;
+
   const m = modal.open({
     title: modalTitle,
     size: 'xl',
+    dedupeKey,
     content: buildHTML(task, users, projects, currentTags, currentAssignees, currentObservers, isEdit, currentTaskType,
       task.sector || currentTaskType?.sector || store.get('userSector') || null, allAbsences),
     footer: [
@@ -241,6 +245,10 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         } },
     ],
   });
+
+  // Se já havia esse modal aberto (dedupe), não re-binda eventos —
+  // o existente continua válido. Apenas devolve o handle.
+  if (m.isExisting) return m;
 
   // Intercept all close paths (X button, backdrop, ESC) with dirty check
   // by monkey-patching modal.close for this modal's ID

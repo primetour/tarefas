@@ -33,11 +33,29 @@ class ModalManager {
    *                                         Mantido pra compat com chamadas antigas.
    */
   open({ title, content, size = '', footer = [], onClose,
-         closeable, closeOnBackdrop, closeOnEsc } = {}) {
+         closeable, closeOnBackdrop, closeOnEsc, dedupeKey } = {}) {
     // Defaults restritivos: só o X fecha. Quem quiser permissivo opta explicitamente.
     // Se a chamada antiga passar `closeable`, replica para os dois novos flags.
     if (typeof closeOnBackdrop === 'undefined') closeOnBackdrop = closeable === true;
     if (typeof closeOnEsc      === 'undefined') closeOnEsc      = closeable === true;
+
+    // Dedupe: se já existe modal aberto com mesmo key, retorna o existente.
+    // Resolve o bug de duplicação por double-click em internet lenta:
+    // user clica em "Abrir tarefa", async demora, clica de novo → 2 modais.
+    if (dedupeKey) {
+      const existing = this.stack.find(m => m.dedupeKey === dedupeKey);
+      if (existing) {
+        // Traz o existente pra frente (foco visual)
+        existing.backdrop.style.zIndex = (parseInt(existing.backdrop.style.zIndex || '0') || 0) + 10;
+        return {
+          id: existing.id,
+          close: () => this.close(existing.id),
+          getBody: () => existing.backdrop.querySelector('.modal-body'),
+          getElement: () => existing.backdrop,
+          isExisting: true,
+        };
+      }
+    }
 
     const id = ++this.counter;
     const container = this._getContainer();
@@ -97,7 +115,7 @@ class ModalManager {
     document.addEventListener('keydown', handleKeydown);
 
     container.appendChild(backdrop);
-    this.stack.push({ id, backdrop, onClose, handleKeydown });
+    this.stack.push({ id, backdrop, onClose, handleKeydown, dedupeKey });
     document.body.style.overflow = 'hidden';
 
     return {

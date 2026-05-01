@@ -33,7 +33,7 @@ let activeTab    = 'mine'; // 'mine' | 'team'
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderCapacity(container) {
-  const canViewAll = store.can('system_manage_users') || store.can('system_view_all');
+  const canViewAll = store.can('absence_manage_team') || store.can('system_manage_users') || store.can('system_view_all');
 
   container.innerHTML = `
     <div class="page-header">
@@ -178,7 +178,7 @@ function renderAbsenceTable(absences, uid, showActions) {
             const start   = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
             const end     = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
             const days    = Math.ceil((end - start) / (1000*60*60*24)) + 1;
-            const canEdit = a.createdBy === uid || store.can('system_manage_users');
+            const canEdit = a.createdBy === uid || store.can('absence_manage_team') || store.can('system_manage_users');
             return `
               <tr>
                 <td>
@@ -350,7 +350,7 @@ function openAbsenceModal(absence = null) {
   const isEdit  = !!absence;
   const users   = store.get('users') || [];
   const uid     = store.get('currentUser').uid;
-  const canManageOthers = store.can('system_manage_users');
+  const canManageOthers = store.can('absence_manage_team') || store.can('system_manage_users');
 
   modal.open({
     title:   isEdit ? 'Editar ausência' : 'Registrar ausência',
