@@ -252,18 +252,34 @@ function absenceTable(absences, uid, showActions) {
       const typeDef = ABSENCE_TYPES.find(t => t.value === a.type) || ABSENCE_TYPES[5];
       const start   = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
       const end     = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
-      const days    = Math.ceil((end - start) / (1000*60*60*24)) + 1;
+      const isPartial = !!a.partial;
+      // Duração: dias inteiros OU horas (parcial)
+      let durationLabel;
+      if (isPartial) {
+        const hrs = Math.max(0, Math.round(((end - start) / 3600000) * 10) / 10);
+        durationLabel = `${hrs}h`;
+      } else {
+        const days = Math.ceil((end - start) / 86400000) + 1;
+        durationLabel = `${days} dia${days!==1?'s':''}`;
+      }
+      const fmtH = (d) => formatTimePart(d);
+      const startDisplay = isPartial
+        ? `${fmtDate(a.startDate)} <span style="color:var(--text-muted);font-size:0.75rem;">${fmtH(a.startDate)}</span>`
+        : fmtDate(a.startDate);
+      const endDisplay = isPartial
+        ? `<span style="color:var(--text-muted);font-size:0.75rem;">${fmtH(a.endDate)}</span>`
+        : fmtDate(a.endDate);
       const canEdit = a.createdBy === uid || store.can('system_manage_users');
       return `<tr>
         <td><span style="display:inline-flex;align-items:center;gap:6px;">
           <span>${typeDef.icon}</span>
           <span class="badge" style="background:${typeDef.color}22;color:${typeDef.color};border:1px solid ${typeDef.color}44;">
-            ${typeDef.label}
+            ${typeDef.label}${isPartial ? ' · parcial' : ''}
           </span>
         </span></td>
-        <td>${fmtDate(a.startDate)}</td>
-        <td>${fmtDate(a.endDate)}</td>
-        <td style="color:var(--text-muted);">${days} dia${days!==1?'s':''}</td>
+        <td>${startDisplay}</td>
+        <td>${endDisplay}</td>
+        <td style="color:var(--text-muted);">${durationLabel}</td>
         <td style="color:var(--text-muted);font-size:0.8125rem;">${esc(a.note||'—')}</td>
         ${showActions && canEdit ? `<td class="col-actions"><div class="actions-group">
           <button class="btn btn-ghost btn-icon btn-sm absence-edit-btn" data-id="${a.id}" title="Editar">✎</button>
@@ -392,6 +408,13 @@ async function openAbsenceModal(absence = null) {
   const uid     = store.get('currentUser').uid;
   const canMgr  = store.can('system_manage_users');
 
+  // Pre-extrai horários se ausência existente já é parcial
+  const initialPartial = !!absence?.partial;
+  const initialStartTime = initialPartial && absence?.startDate
+    ? formatTimePart(absence.startDate) : '09:00';
+  const initialEndTime = initialPartial && absence?.endDate
+    ? formatTimePart(absence.endDate) : '18:00';
+
   modal.open({
     title:   isEdit ? 'Editar ausência' : 'Registrar ausência',
     size:    'sm',
@@ -410,14 +433,32 @@ async function openAbsenceModal(absence = null) {
             ${ABSENCE_TYPES.map(t => `<option value="${t.value}" ${absence?.type===t.value?'selected':''}>${t.icon} ${t.label}</option>`).join('')}
           </select>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;
+          font-size:0.875rem;color:var(--text-primary);user-select:none;
+          padding:8px 10px;background:var(--bg-surface);border-radius:var(--radius-sm);">
+          <input type="checkbox" id="ab-partial" ${initialPartial ? 'checked' : ''}
+            style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-gold);" />
+          Ausência parcial (por horas, não dia inteiro)
+        </label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group">
             <label class="form-label">Início *</label>
             <input type="date" class="form-input" id="ab-start" value="${absence ? toISO(absence.startDate) : ''}" />
           </div>
-          <div class="form-group">
+          <div class="form-group" id="ab-end-group">
             <label class="form-label">Fim *</label>
             <input type="date" class="form-input" id="ab-end" value="${absence ? toISO(absence.endDate) : ''}" />
+          </div>
+        </div>
+        <div id="ab-time-group" style="display:${initialPartial?'grid':'none'};
+          grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label class="form-label">Hora início *</label>
+            <input type="time" class="form-input" id="ab-start-time" value="${initialStartTime}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Hora fim *</label>
+            <input type="time" class="form-input" id="ab-end-time" value="${initialEndTime}" />
           </div>
         </div>
         <div class="form-group">
@@ -434,18 +475,30 @@ async function openAbsenceModal(absence = null) {
         class: 'btn-primary', closeOnClick: false,
         onClick: async (_, { close }) => {
           const startVal = document.getElementById('ab-start')?.value;
-          const endVal   = document.getElementById('ab-end')?.value;
-          if (!startVal || !endVal) { toast.warning('Datas são obrigatórias.'); return; }
+          let endVal     = document.getElementById('ab-end')?.value;
+          const isPartial = document.getElementById('ab-partial')?.checked;
+          if (!startVal) { toast.warning('Data de início é obrigatória.'); return; }
+          // Em parcial: força end = start (mesmo dia, intervalo é só de horas)
+          if (isPartial) endVal = startVal;
+          else if (!endVal) { toast.warning('Data de fim é obrigatória.'); return; }
           const userId   = document.getElementById('ab-user')?.value || uid;
           const btn = document.querySelector('.modal-footer .btn-primary');
           if(btn){ btn.classList.add('loading'); btn.disabled=true; }
           try {
+            const startTime = isPartial ? (document.getElementById('ab-start-time')?.value || '09:00') : '00:00';
+            const endTime   = isPartial ? (document.getElementById('ab-end-time')?.value   || '18:00') : '23:59';
             const data = {
               type:      document.getElementById('ab-type')?.value,
               note:      document.getElementById('ab-note')?.value?.trim() || '',
-              startDate: new Date(startVal + 'T00:00:00'),
-              endDate:   new Date(endVal   + 'T23:59:59'),
+              startDate: new Date(startVal + 'T' + startTime + ':00'),
+              endDate:   new Date(endVal   + 'T' + endTime   + ':59'),
+              partial:   isPartial,
             };
+            if (isPartial && data.endDate <= data.startDate) {
+              toast.warning('Hora de fim deve ser depois da hora de início.');
+              if(btn){ btn.classList.remove('loading'); btn.disabled=false; }
+              return;
+            }
             if (isEdit) await updateAbsence(absence.id, data);
             else        await createAbsence({ userId, ...data });
             toast.success(isEdit ? 'Ausência atualizada.' : 'Ausência registrada.');
@@ -457,6 +510,29 @@ async function openAbsenceModal(absence = null) {
       },
     ],
   });
+
+  // Toggle visual: parcial → mostra time inputs e esconde campo "Fim"
+  setTimeout(() => {
+    const cb = document.getElementById('ab-partial');
+    const timeGroup = document.getElementById('ab-time-group');
+    const endGroup  = document.getElementById('ab-end-group');
+    cb?.addEventListener('change', () => {
+      const on = cb.checked;
+      if (timeGroup) timeGroup.style.display = on ? 'grid' : 'none';
+      if (endGroup)  endGroup.style.display  = on ? 'none' : '';
+    });
+    // Estado inicial: se partial já marcado ao abrir
+    if (cb?.checked && endGroup) endGroup.style.display = 'none';
+  }, 50);
+}
+
+// Helper: formata Date|Timestamp pra "HH:MM" (input type=time)
+function formatTimePart(d) {
+  const dt = d?.toDate ? d.toDate() : (d instanceof Date ? d : new Date(d));
+  if (isNaN(dt)) return '09:00';
+  const hh = String(dt.getHours()).padStart(2, '0');
+  const mm = String(dt.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
 }
 
 async function confirmDeleteAbsence(id) {

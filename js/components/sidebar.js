@@ -34,18 +34,6 @@ const NAV_GROUPS = [
     ]
   },
   {
-    label: 'Análise de Dados',
-    items: [
-      { route: 'dashboards',          icon: '◫', label: 'Produtividade',       perm: 'analytics_view',  altPerm: 'dashboard_view' },
-      { route: 'nl-performance',      icon: '◈', label: 'Newsletters',         perm: 'analytics_view' },
-      { route: 'meta-performance',    icon: '◈', label: 'Instagram',            perm: 'analytics_view' },
-      { route: 'ga-performance',      icon: '◈', label: 'Google Analytics',    perm: 'analytics_view' },
-      { route: 'portal-dashboard',    icon: '◈', label: 'Portal de Dicas',     perm: 'portal_manage' },
-      { route: 'roteiro-dashboard', icon: '✈', label: 'Roteiros',            perm: 'roteiro_manage' },
-      { route: 'ai-dashboard',       icon: '◈', label: 'Inteligência Artificial', perm: 'system_manage_settings' },
-    ]
-  },
-  {
     label: 'Serviços',
     items: [
       { route: 'content-calendar',     icon: '📱', label: 'Calendário de Conteúdo', perm: 'content_calendar_view' },
@@ -57,6 +45,18 @@ const NAV_GROUPS = [
       { route: 'arts-editor',         icon: '▣', label: 'Editor de Artes',      perm: 'portal_manage'  },
       { route: 'news-monitor',        icon: '◉', label: 'Notícias',              perm: 'dashboard_view' },
       { route: 'ai-automations',     icon: '◎', label: 'Automações IA',         perm: 'dashboard_view' },
+    ]
+  },
+  {
+    label: 'Análise de Dados',
+    items: [
+      { route: 'dashboards',          icon: '◫', label: 'Produtividade',       perm: 'analytics_view',  altPerm: 'dashboard_view' },
+      { route: 'nl-performance',      icon: '◈', label: 'Newsletters',         perm: 'analytics_view' },
+      { route: 'meta-performance',    icon: '◈', label: 'Instagram',            perm: 'analytics_view' },
+      { route: 'ga-performance',      icon: '◈', label: 'Google Analytics',    perm: 'analytics_view' },
+      { route: 'portal-dashboard',    icon: '◈', label: 'Portal de Dicas',     perm: 'portal_manage' },
+      { route: 'roteiro-dashboard', icon: '✈', label: 'Roteiros',            perm: 'roteiro_manage' },
+      { route: 'ai-dashboard',       icon: '◈', label: 'Inteligência Artificial', perm: 'system_manage_settings' },
     ]
   },
   {

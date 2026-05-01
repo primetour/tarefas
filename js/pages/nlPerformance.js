@@ -833,12 +833,19 @@ function renderKpis(rows) {
   };
   const sum = key => visible.reduce((a,r) => a + (Number(r[key])||0), 0);
 
+  // Taxa de opt-out: total descadastros / total enviado no período
+  const totalSent = sum('totalSent');
+  const totalOptOut = sum('optOut');
+  const optOutRate = totalSent > 0 ? (totalOptOut / totalSent) * 100 : null;
+
   const kpis = [
     { label: 'Disparos',         value: visible.length.toLocaleString('pt-BR'), sub: 'no período' },
-    { label: 'Enviados total',   value: sum('totalSent').toLocaleString('pt-BR'), sub: 'emails' },
+    { label: 'Enviados total',   value: totalSent.toLocaleString('pt-BR'), sub: 'emails' },
     { label: 'Taxa de abertura', value: pct(avg('openRate')),    sub: 'média única' },
     { label: 'Taxa de cliques',  value: pct(avg('clickRate')),   sub: 'média única' },
     { label: 'Taxa de entrega',  value: pct(avg('deliveryRate')), sub: 'média' },
+    { label: 'Taxa de opt-out',  value: pct(optOutRate),
+      sub: `${totalOptOut.toLocaleString('pt-BR')} / ${totalSent.toLocaleString('pt-BR')} enviados` },
   ];
 
   el.innerHTML = kpis.map(k => `
