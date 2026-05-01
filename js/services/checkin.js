@@ -78,14 +78,17 @@ export async function fetchReservations({ from, to } = {}) {
   // Default: últimos 30 dias até +14 (janela de operação)
   const fromDate = from || (() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().slice(0,10); })();
   const toDate   = to   || (() => { const d = new Date(); d.setDate(d.getDate()+14); return d.toISOString().slice(0,10); })();
+  // Sem range query no servidor (range em data + orderBy exige índice
+  // composto). Filtra/ordena no client com limit alto suficiente.
   const snap = await getDocs(query(
     collection(db, 'desk_reservations'),
     where('data', '>=', fromDate),
     where('data', '<=', toDate),
-    orderBy('data', 'desc'),
     limit(500),
   ));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  rows.sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+  return rows;
 }
 export async function createReservation({ data, sector, area, fileira, assento, userName }) {
   // Sandbox guard
@@ -157,16 +160,18 @@ export async function fetchTimeClockRange({ userId, from, to }) {
   const cu = store.get('currentUser');
   const ownOnly = !store.isMaster() && !store.can('absence_manage_team') && !store.can('system_manage_users');
   const targetUid = ownOnly ? cu?.uid : (userId || cu?.uid);
+  // Sem orderBy no servidor pra evitar exigir índice composto.
+  // Como o limit é 200 e ordena no client, performance ok.
   let q = query(
     collection(db, 'time_clock'),
     where('userId', '==', targetUid),
-    orderBy('date', 'desc'),
     limit(200),
   );
   const snap = await getDocs(q);
   let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   if (from) rows = rows.filter(r => r.date >= from);
   if (to)   rows = rows.filter(r => r.date <= to);
+  rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   return rows;
 }
 
@@ -175,11 +180,12 @@ export async function fetchAllTimeClock({ from, to }) {
   if (!store.isMaster() && !store.can('absence_manage_team') && !store.can('system_manage_users')) {
     throw new Error('Permissão negada — apenas gestores.');
   }
-  let q = query(collection(db, 'time_clock'), orderBy('date', 'desc'), limit(2000));
+  let q = query(collection(db, 'time_clock'), limit(2000));
   const snap = await getDocs(q);
   let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   if (from) rows = rows.filter(r => r.date >= from);
   if (to)   rows = rows.filter(r => r.date <= to);
+  rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   return rows;
 }
 
