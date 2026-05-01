@@ -407,6 +407,7 @@ export async function updateUserProfile(uid, data) {
   const allowedFields = [
     'name', 'department', 'phone', 'jobTitle', 'bio',
     'avatarColor', 'prefs', 'firstLogin',
+    'admissionDate', 'hireDate',  // data de admissão pra cálculo de férias
   ];
   const adminFields = [
     'role', 'roleId', 'active',

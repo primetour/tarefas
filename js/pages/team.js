@@ -11,6 +11,14 @@ import {
   fetchUserAbsences, fetchAllAbsences,
   getTeamAvailability, ABSENCE_TYPES,
 } from '../services/capacity.js';
+import {
+  syncVacationPeriods, fetchVacationPeriods, fetchVacationRequests,
+  subscribeVacationRequests, createVacationRequest,
+  approveVacationRequest, rejectVacationRequest, cancelVacationRequest,
+  computeBalance,
+  VACATION_DAYS_PER_PERIOD, MIN_FRACTION_DAYS, MIN_LARGE_FRACTION,
+  MAX_FRACTIONS, MAX_ABONO_DAYS,
+} from '../services/vacation.js';
 import { userNucleos } from '../services/sectors.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -56,10 +64,11 @@ export async function renderTeam(container) {
     </div>
 
     <!-- Tabs -->
-    <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border-subtle);">
+    <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border-subtle);overflow-x:auto;">
       ${[
         { id:'capacity', label:'Disponibilidade',   icon:'◐' },
         { id:'mine',     label:'Minhas ausências',  icon:'◌' },
+        { id:'vacations', label:'Férias',           icon:'🏖' },
         { id:'members',  label:'Membros',           icon:'◉' },
       ].map(t => `
         <button class="team-tab-btn" data-tab="${t.id}"
@@ -104,6 +113,8 @@ async function loadTab() {
     else if (activeTab === 'mine') {
       allAbsences = await fetchUserAbsences(uid);
       renderMyAbsences(el);
+    } else if (activeTab === 'vacations') {
+      await renderVacationsTab(el);
     } else {
       allAbsences = await fetchAllAbsences();
       await renderTeamAvailability(el);
@@ -704,4 +715,371 @@ function exportPDF() {
   if (!win) { toast.error('Permita pop-ups para exportar PDF.'); return; }
   win.document.write(html);
   win.document.close();
+}
+
+/* ═══════════════════════════════════════════════════════════
+ * Tab: FÉRIAS (Benner-style)
+ *  - Próprio: períodos aquisitivos + saldo + nova solicitação +
+ *    histórico de solicitações
+ *  - Gestor: lista todos os colaboradores com saldo + aprovar/rejeitar
+ * ═══════════════════════════════════════════════════════════ */
+let _unsubVacations = null;
+
+async function renderVacationsTab(container) {
+  if (_unsubVacations) { _unsubVacations(); _unsubVacations = null; }
+  const cu = store.get('currentUser');
+  const profile = store.get('userProfile') || {};
+  const isMgr = store.can('absence_manage_team') || store.can('system_manage_users') || store.isMaster();
+
+  // Acha admissionDate do usuário (campo opcional no doc users)
+  const myUser = (store.get('users') || []).find(u => u.id === cu.uid) || {};
+  const admDate = profile.admissionDate || profile.hireDate || myUser.admissionDate || myUser.hireDate;
+
+  if (!admDate) {
+    // Fluxo de cadastro: usuário sem admissão informa pra calcular
+    container.innerHTML = `
+      <div class="card" style="padding:32px;text-align:center;max-width:540px;margin:24px auto;">
+        <div style="font-size:3rem;margin-bottom:12px;">🏖</div>
+        <h3 style="margin:0 0 8px;color:var(--text-primary);">Informe sua data de admissão</h3>
+        <p style="color:var(--text-muted);font-size:0.875rem;margin-bottom:18px;line-height:1.5;">
+          Pra calcular seu saldo de férias (períodos aquisitivos),
+          precisamos saber a data em que você foi admitido(a) na empresa.
+        </p>
+        <div class="form-group" style="text-align:left;">
+          <label class="form-label">Data de admissão</label>
+          <input type="date" class="form-input" id="adm-date-input" max="${new Date().toISOString().slice(0,10)}" />
+        </div>
+        <button class="btn btn-primary" id="adm-date-save">💾 Salvar</button>
+      </div>
+    `;
+    document.getElementById('adm-date-save')?.addEventListener('click', async () => {
+      const v = document.getElementById('adm-date-input').value;
+      if (!v) return toast.error('Informe a data.');
+      try {
+        const { updateUserProfile } = await import('../auth/auth.js');
+        await updateUserProfile(cu.uid, { admissionDate: v });
+        toast.success('Data salva! Calculando saldo...');
+        loadTab();
+      } catch (e) { toast.error(e.message); }
+    });
+    return;
+  }
+
+  // Sincroniza períodos aquisitivos
+  let periods = [];
+  try {
+    periods = await syncVacationPeriods(cu.uid, admDate);
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--color-danger);padding:24px;">Erro ao calcular períodos: ${esc(e.message)}</p>`;
+    return;
+  }
+
+  paint();
+  // Real-time pra solicitações
+  _unsubVacations = subscribeVacationRequests(() => paint());
+
+  async function paint() {
+    const requests = await fetchVacationRequests(isMgr ? null : cu.uid);
+    const myRequests = requests.filter(r => r.userId === cu.uid);
+    const balance = computeBalance(periods, myRequests);
+
+    const pendingOthers = isMgr ? requests.filter(r => r.status === 'pending') : [];
+
+    container.innerHTML = `
+      <!-- Header com saldo -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px;">
+        <div class="card" style="padding:14px 16px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.3);">
+          <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Disponível</div>
+          <div style="font-size:1.75rem;font-weight:700;color:#22C55E;">${balance.available}</div>
+          <div style="font-size:0.6875rem;color:var(--text-muted);">dias para usar</div>
+        </div>
+        <div class="card" style="padding:14px 16px;">
+          <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Total adquirido</div>
+          <div style="font-size:1.75rem;font-weight:700;color:var(--text-primary);">${balance.entitled}</div>
+          <div style="font-size:0.6875rem;color:var(--text-muted);">dias (não expirados)</div>
+        </div>
+        <div class="card" style="padding:14px 16px;">
+          <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Já gozado</div>
+          <div style="font-size:1.75rem;font-weight:700;color:var(--text-secondary);">${balance.used}</div>
+          <div style="font-size:0.6875rem;color:var(--text-muted);">dias usufruídos</div>
+        </div>
+        ${balance.abono > 0 ? `<div class="card" style="padding:14px 16px;">
+          <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Abono pago</div>
+          <div style="font-size:1.75rem;font-weight:700;color:#A78BFA;">${balance.abono}</div>
+          <div style="font-size:0.6875rem;color:var(--text-muted);">dias convertidos em $</div>
+        </div>`:''}
+        ${balance.pending > 0 ? `<div class="card" style="padding:14px 16px;background:rgba(245,158,11,0.06);">
+          <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;">Em aprovação</div>
+          <div style="font-size:1.75rem;font-weight:700;color:#F59E0B;">${balance.pending}</div>
+          <div style="font-size:0.6875rem;color:var(--text-muted);">dias aguardando</div>
+        </div>`:''}
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+        <button class="btn btn-primary" id="vac-new" ${balance.available <= 0 ? 'disabled' : ''}>
+          + Solicitar férias
+        </button>
+      </div>
+
+      <!-- Períodos aquisitivos -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <div class="card-title">📅 Períodos aquisitivos</div>
+          <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
+            Admissão: ${fmtDate(new Date(admDate))} · Cada período = 12 meses, 30 dias de direito
+          </div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <table class="data-table" style="width:100%;font-size:0.8125rem;">
+            <thead><tr>
+              <th>Período</th><th>Status</th>
+              <th style="text-align:right;">Dias</th>
+              <th style="text-align:right;">Usados</th>
+              <th style="text-align:right;">Abono</th>
+              <th style="text-align:right;">Saldo</th>
+              <th>Limite p/ usar</th>
+            </tr></thead>
+            <tbody>${periods.map(p => {
+              const ps = p.periodStart?.toDate ? p.periodStart.toDate() : new Date(p.periodStart);
+              const pe = p.periodEnd?.toDate ? p.periodEnd.toDate() : new Date(p.periodEnd);
+              const dl = p.deadlineAt?.toDate ? p.deadlineAt.toDate() : new Date(p.deadlineAt);
+              const saldo = (p.entitledDays||0) - (p.daysUsed||0) - (p.abonoDays||0);
+              const statusBadge = {
+                inProgress: '<span style="color:#38BDF8;">⏳ Em aquisição</span>',
+                available:  '<span style="color:#22C55E;font-weight:600;">✅ Disponível</span>',
+                expired:    '<span style="color:#EF4444;">❌ Expirado</span>',
+              }[p.status] || p.status;
+              return `<tr ${p.status==='expired'?'style="opacity:0.55;"':''}>
+                <td>${fmtDate(ps)} → ${fmtDate(pe)}</td>
+                <td>${statusBadge}</td>
+                <td style="text-align:right;">${p.entitledDays||0}</td>
+                <td style="text-align:right;">${p.daysUsed||0}</td>
+                <td style="text-align:right;color:#A78BFA;">${p.abonoDays||0}</td>
+                <td style="text-align:right;font-weight:600;color:${saldo>0?'#22C55E':'var(--text-muted)'};">${saldo}</td>
+                <td style="font-size:0.75rem;color:${p.status==='expired'?'#EF4444':'var(--text-muted)'};">${fmtDate(dl)}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Minhas solicitações -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <div class="card-title">📝 Minhas solicitações de férias</div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          ${!myRequests.length ? `<div class="empty-state" style="padding:24px;">
+            <div class="empty-state-title" style="font-size:0.875rem;">Nenhuma solicitação até agora.</div>
+          </div>` : `<table class="data-table" style="width:100%;font-size:0.8125rem;">
+            <thead><tr>
+              <th>Período</th><th>Dias</th><th>Abono</th>
+              <th>Status</th><th>Decisão</th><th></th>
+            </tr></thead>
+            <tbody>${myRequests.map(r => {
+              const sd = r.startDate?.toDate ? r.startDate.toDate() : new Date(r.startDate);
+              const ed = r.endDate?.toDate ? r.endDate.toDate() : new Date(r.endDate);
+              const status = {
+                pending:  '<span style="color:#F59E0B;font-weight:600;">⏳ Pendente</span>',
+                approved: '<span style="color:#22C55E;font-weight:600;">✅ Aprovado</span>',
+                rejected: '<span style="color:#EF4444;font-weight:600;">❌ Rejeitado</span>',
+              }[r.status] || r.status;
+              const decision = r.decidedByName
+                ? `por <strong>${esc(r.decidedByName)}</strong>${r.decideReason?': "'+esc(r.decideReason)+'"':''}`
+                : '—';
+              return `<tr>
+                <td>${fmtDate(sd)} → ${fmtDate(ed)}</td>
+                <td><strong>${r.days}d</strong></td>
+                <td>${r.abonoDays||0}d</td>
+                <td>${status}</td>
+                <td style="font-size:0.75rem;color:var(--text-muted);">${decision}</td>
+                <td style="text-align:right;">
+                  ${r.status==='pending' ? `<button class="btn btn-ghost btn-sm vac-cancel" data-id="${r.id}">✕ Cancelar</button>` : ''}
+                </td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>`}
+        </div>
+      </div>
+
+      ${isMgr ? `
+        <!-- Aprovações pendentes -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">✋ Solicitações pendentes da equipe
+              ${pendingOthers.length ? `<span style="background:#EF4444;color:white;border-radius:10px;padding:1px 8px;font-size:0.6875rem;margin-left:6px;">${pendingOthers.length}</span>` : ''}
+            </div>
+          </div>
+          <div class="card-body" style="padding:0;">
+            ${!pendingOthers.length ? `<div class="empty-state" style="padding:24px;">
+              <div class="empty-state-title" style="font-size:0.875rem;">Nenhuma solicitação pendente.</div>
+            </div>` : `<table class="data-table" style="width:100%;font-size:0.8125rem;">
+              <thead><tr>
+                <th>Colaborador</th><th>Setor</th><th>Período</th>
+                <th>Dias</th><th>Abono</th><th>Justificativa</th>
+                <th style="text-align:right;">Ações</th>
+              </tr></thead>
+              <tbody>${pendingOthers.filter(r=>r.userId !== cu.uid).map(r => {
+                const sd = r.startDate?.toDate ? r.startDate.toDate() : new Date(r.startDate);
+                const ed = r.endDate?.toDate ? r.endDate.toDate() : new Date(r.endDate);
+                return `<tr>
+                  <td><strong>${esc(r.userName)}</strong></td>
+                  <td>${esc(r.sector||'')}</td>
+                  <td>${fmtDate(sd)} → ${fmtDate(ed)}</td>
+                  <td>${r.days}d</td>
+                  <td>${r.abonoDays||0}d</td>
+                  <td style="max-width:240px;font-size:0.75rem;">${esc(r.reason||'')}</td>
+                  <td style="text-align:right;white-space:nowrap;">
+                    <button class="btn btn-primary btn-sm vac-appr-ok" data-id="${r.id}">✓ Aprovar</button>
+                    <button class="btn btn-secondary btn-sm vac-appr-no" data-id="${r.id}">✗ Rejeitar</button>
+                  </td>
+                </tr>`;
+              }).join('')}</tbody>
+            </table>`}
+          </div>
+        </div>
+      ` : ''}
+    `;
+
+    // Bindings
+    document.getElementById('vac-new')?.addEventListener('click', () => {
+      openVacationRequestModal({ periods, balance });
+    });
+    container.querySelectorAll('.vac-cancel').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Cancelar esta solicitação?')) return;
+        try {
+          await cancelVacationRequest(btn.dataset.id);
+          toast.success('Solicitação cancelada.');
+        } catch (e) { toast.error(e.message); }
+      });
+    });
+    container.querySelectorAll('.vac-appr-ok').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const reason = prompt('Comentário da aprovação (opcional):') ?? null;
+        if (reason === null) return;
+        btn.disabled = true; btn.textContent = '⏳';
+        try {
+          await approveVacationRequest(btn.dataset.id, reason);
+          toast.success('Férias aprovadas e adicionadas ao calendário.');
+        } catch (e) { toast.error(e.message); btn.disabled = false; btn.textContent = '✓ Aprovar'; }
+      });
+    });
+    container.querySelectorAll('.vac-appr-no').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const reason = prompt('Motivo da rejeição (obrigatório):');
+        if (!reason || reason.trim().length < 3) return toast.error('Motivo obrigatório.');
+        btn.disabled = true; btn.textContent = '⏳';
+        try {
+          await rejectVacationRequest(btn.dataset.id, reason.trim());
+          toast.success('Solicitação rejeitada.');
+        } catch (e) { toast.error(e.message); btn.disabled = false; btn.textContent = '✗ Rejeitar'; }
+      });
+    });
+  }
+}
+
+function openVacationRequestModal({ periods, balance }) {
+  const usable = periods.filter(p => p.status !== 'expired' && (p.entitledDays - p.daysUsed - p.abonoDays) > 0);
+  if (!usable.length) {
+    toast.warning('Você não tem saldo de férias disponível.');
+    return;
+  }
+  const today = new Date().toISOString().slice(0,10);
+
+  modal.open({
+    title: '🏖 Solicitar férias',
+    size: 'md',
+    dedupeKey: 'vac-request',
+    content: `
+      <div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">
+        Saldo disponível: <strong style="color:#22C55E;">${balance.available} dias</strong>.
+        Mínimo por fração: ${MIN_FRACTION_DAYS} dias. Pode dividir em até ${MAX_FRACTIONS} períodos
+        (sendo 1 com no mínimo ${MIN_LARGE_FRACTION} dias). Abono pecuniário: até ${MAX_ABONO_DAYS} dias.
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Período aquisitivo</label>
+        <select class="form-select" id="vac-period">
+          ${usable.map(p => {
+            const ps = p.periodStart?.toDate ? p.periodStart.toDate() : new Date(p.periodStart);
+            const pe = p.periodEnd?.toDate ? p.periodEnd.toDate() : new Date(p.periodEnd);
+            const saldo = (p.entitledDays||0) - (p.daysUsed||0) - (p.abonoDays||0);
+            return `<option value="${p.id}">
+              ${fmtDate(ps)} → ${fmtDate(pe)} · ${saldo} dias disponíveis
+            </option>`;
+          }).join('')}
+        </select>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Início</label>
+          <input type="date" class="form-input" id="vac-start" min="${today}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fim</label>
+          <input type="date" class="form-input" id="vac-end" min="${today}" />
+        </div>
+      </div>
+
+      <div id="vac-days-info" style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:12px;"></div>
+
+      <div class="form-group">
+        <label class="form-label">Abono pecuniário (dias convertidos em $)</label>
+        <input type="number" class="form-input" id="vac-abono" min="0" max="${MAX_ABONO_DAYS}" value="0" />
+        <small style="color:var(--text-muted);font-size:0.6875rem;">
+          Até ${MAX_ABONO_DAYS} dias podem ser convertidos em remuneração ao invés de descanso.
+        </small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Justificativa / Observações</label>
+        <textarea class="form-textarea" id="vac-reason" rows="2" maxlength="500"
+          placeholder="Ex: viagem de família planejada"></textarea>
+      </div>
+    `,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary' },
+      {
+        label: '📨 Enviar solicitação', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const periodId = document.getElementById('vac-period').value;
+          const start    = document.getElementById('vac-start').value;
+          const end      = document.getElementById('vac-end').value;
+          const abono    = parseInt(document.getElementById('vac-abono').value) || 0;
+          const reason   = document.getElementById('vac-reason').value.trim();
+          if (!start || !end) return toast.error('Informe início e fim.');
+          try {
+            await createVacationRequest({ periodId, startDate: start, endDate: end, abonoDays: abono, reason });
+            toast.success('Solicitação enviada! Aguarde aprovação do gestor.');
+            close();
+            loadTab();
+          } catch (e) { toast.error(e.message); }
+        },
+      },
+    ],
+  });
+
+  // Cálculo de dias dinâmico
+  const updateDaysInfo = () => {
+    const s = document.getElementById('vac-start').value;
+    const e = document.getElementById('vac-end').value;
+    const ab = parseInt(document.getElementById('vac-abono').value) || 0;
+    const info = document.getElementById('vac-days-info');
+    if (!s || !e || !info) return;
+    const sd = new Date(s), ed = new Date(e);
+    if (ed < sd) { info.innerHTML = '<span style="color:#EF4444;">⚠ Fim deve ser após o início.</span>'; return; }
+    const days = Math.round((ed - sd) / 86400000) + 1;
+    const total = days + ab;
+    const status = days >= MIN_FRACTION_DAYS
+      ? (days >= MIN_LARGE_FRACTION ? '✅ Período válido (>= 14 dias).' : `⚠ Período < ${MIN_LARGE_FRACTION} dias — só permitido se outro período for >= ${MIN_LARGE_FRACTION}.`)
+      : `❌ Mínimo ${MIN_FRACTION_DAYS} dias.`;
+    info.innerHTML = `📅 <strong>${days}</strong> dias de descanso${ab?` + <strong>${ab}</strong> dias de abono = <strong>${total}</strong> dias do saldo`:''}. ${status}`;
+  };
+  setTimeout(() => {
+    document.getElementById('vac-start')?.addEventListener('change', updateDaysInfo);
+    document.getElementById('vac-end')?.addEventListener('change', updateDaysInfo);
+    document.getElementById('vac-abono')?.addEventListener('input', updateDaysInfo);
+  }, 80);
 }
