@@ -21,7 +21,7 @@
  */
 import {
   collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
-  getDoc, getDocs, query, where, orderBy, serverTimestamp, limit,
+  getDoc, getDocs, query, where, orderBy, serverTimestamp, limit, onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -34,9 +34,11 @@ import { store } from '../store.js';
  *  Gouvea:  2 baias × 12 = 24
  *  TOTAL = 108 assentos */
 export const DEFAULT_AREAS = [
-  { name: 'Aquario', baias: 4, assentosPorFileira: 6, capacity: 48 },
-  { name: 'Salao',   baias: 3, assentosPorFileira: 6, capacity: 36 },
-  { name: 'Gouvea',  baias: 2, assentosPorFileira: 6, capacity: 24 },
+  // `name` é a chave técnica (sem acento, usada no DB e em comparações).
+  // `displayName` é como aparece na UI (com acentuação correta).
+  { name: 'Aquario', displayName: 'Aquário', baias: 4, assentosPorFileira: 6, capacity: 48 },
+  { name: 'Salao',   displayName: 'Salão',   baias: 3, assentosPorFileira: 6, capacity: 36 },
+  { name: 'Gouvea',  displayName: 'Gouvêa',  baias: 2, assentosPorFileira: 6, capacity: 24 },
 ];
 export const DEFAULT_SECTOR_RULES = [
   { sector: 'PTS',         slots: 15, dias: 'Seg a Sex' },
@@ -95,6 +97,38 @@ export async function fetchReservations({ from, to } = {}) {
   const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   rows.sort((a, b) => (b.data || '').localeCompare(a.data || ''));
   return rows;
+}
+
+/* ─── Real-time: assina mudanças nas reservas ────────────────
+ * Retorna função de cancelamento (chamada quando der unmount).
+ * Anti-corrida por lugares: cada reserva criada por outro user
+ * dispara este callback em < 1s, atualizando o mapa instantâneo. */
+export function subscribeReservations({ from, to } = {}, callback) {
+  const fromDate = from || (() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().slice(0,10); })();
+  const toDate   = to   || (() => { const d = new Date(); d.setDate(d.getDate()+14); return d.toISOString().slice(0,10); })();
+  const q = query(
+    collection(db, 'desk_reservations'),
+    where('data', '>=', fromDate),
+    where('data', '<=', toDate),
+    limit(500),
+  );
+  return onSnapshot(q, (snap) => {
+    const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    rows.sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+    callback(rows);
+  }, (err) => {
+    console.warn('[checkin] subscribe error:', err?.message);
+  });
+}
+
+/* ─── Real-time: assina meu time_clock do dia atual ──────── */
+export function subscribeMyTimeClock(callback) {
+  const cu = store.get('currentUser');
+  if (!cu?.uid) return () => {};
+  const id = timeClockId(cu.uid, todayISO());
+  return onSnapshot(doc(db, 'time_clock', id), (snap) => {
+    callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+  });
 }
 export async function createReservation({ data, sector, area, baia, fileira, assento, userName }) {
   // Sandbox guard

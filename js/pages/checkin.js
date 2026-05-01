@@ -13,8 +13,9 @@ import { toast }   from '../components/toast.js';
 import { modal }   from '../components/modal.js';
 import {
   DEFAULT_AREAS, DEFAULT_SECTOR_RULES,
-  fetchCheckinConfig,
-  fetchReservations, createReservation, deleteReservation, performCheckin,
+  fetchCheckinConfig, saveCheckinConfig,
+  fetchReservations, subscribeReservations,
+  createReservation, deleteReservation, performCheckin,
   fetchMyTimeClock, fetchTimeClockRange, fetchAllTimeClock, clockEvent, calcWorkedHours,
   declineTimeClock, runSpeedTest,
 } from '../services/checkin.js';
@@ -43,6 +44,7 @@ let activeTab = 'map';
 let _config   = null;
 let _reservations = [];
 let _selectedDate = todayISO();
+let _unsubscribeReservations = null;   // Cleanup do real-time listener
 
 export async function renderCheckin(container) {
   const isAdmin = store.isMaster() || store.can('system_manage_users');
@@ -59,7 +61,8 @@ export async function renderCheckin(container) {
         { id:'map',     label:'Mapa de Estações', icon:'📋' },
         { id:'checkin', label:'Check-in',         icon:'✅' },
         { id:'clock',   label:'Ponto',            icon:'⏱' },
-        ...(isAdmin ? [{ id:'report', label:'Relatório', icon:'📊' }] : []),
+        ...(isAdmin ? [{ id:'report', label:'Relatório',     icon:'📊' }] : []),
+        ...(isAdmin ? [{ id:'admin',  label:'Administração', icon:'⚙'  }] : []),
       ].map(t => `
         <button class="checkin-tab-btn" data-tab="${t.id}" style="padding:8px 18px;border:none;
           background:none;cursor:pointer;font-size:0.875rem;
@@ -94,12 +97,15 @@ export async function renderCheckin(container) {
 async function loadTab() {
   const el = document.getElementById('checkin-content');
   if (!el) return;
+  // Cleanup do listener anterior (evita updates fantasmas após trocar aba)
+  if (_unsubscribeReservations) { _unsubscribeReservations(); _unsubscribeReservations = null; }
   el.innerHTML = '<div class="chart-loading"><div class="chart-loading-spinner"></div></div>';
   try {
     if (activeTab === 'map')         await renderMap(el);
     else if (activeTab === 'checkin') await renderCheckinTab(el);
     else if (activeTab === 'clock')  await renderClockTab(el);
     else if (activeTab === 'report') await renderReportTab(el);
+    else if (activeTab === 'admin')  await renderAdminTab(el);
   } catch (e) {
     el.innerHTML = `<p style="color:var(--color-danger);padding:24px;">Erro: ${esc(e.message)}</p>`;
   }
@@ -112,6 +118,7 @@ async function loadTab() {
  *         frente-a-frente, com gap visual entre baias)
  * ═══════════════════════════════════════════════════════════ */
 async function renderMap(container) {
+  // Carga inicial — depois subscribe pra real-time
   _reservations = await fetchReservations();
   const today = todayISO();
   if (!_selectedDate || _selectedDate < today) _selectedDate = today;
@@ -233,7 +240,7 @@ async function renderMap(container) {
                         : status === 'checkedin' ? '#22C55E' : '#EF4444';
             const title = reserva
               ? `${reserva.userName} · ${reserva.sector}${reserva.checkinAt?' · ✅ Check-in feito':''}`
-              : `Livre — Baia ${baia} ${fileira}${assento} (clique pra reservar)`;
+              : `Livre — ${area.displayName || area.name} · Baia ${baia} ${fileira}${assento} (clique pra reservar)`;
             seats.push(`<button class="ck-seat" data-area="${esc(area.name)}"
               data-baia="${baia}" data-fileira="${fileira}" data-assento="${assento}"
               data-status="${status}" data-rid="${reserva?.id||''}" data-mine="${isMine?'1':'0'}"
@@ -265,7 +272,7 @@ async function renderMap(container) {
 
       return `<div class="card" style="padding:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-          <div style="font-weight:700;font-size:1rem;">${esc(area.name)}</div>
+          <div style="font-weight:700;font-size:1rem;">${esc(area.displayName || area.name)}</div>
           <div style="font-size:0.8125rem;color:${colorPct};font-weight:600;">
             ${used}/${area.capacity} (${pct}%)
           </div>
@@ -293,6 +300,17 @@ async function renderMap(container) {
   });
 
   drawAll();
+
+  // ── REAL-TIME: assina mudanças nas reservas ───────────────
+  // Toda criação/edição/cancelamento por outro user dispara aqui
+  // em < 1s e re-desenha mapa + cards. Anti-corrida por lugares.
+  _unsubscribeReservations = subscribeReservations({}, (rows) => {
+    _reservations = rows;
+    // Só redesenha se a aba Mapa ainda está visível
+    if (activeTab === 'map' && document.getElementById('ck-area-grid')) {
+      drawAll();
+    }
+  });
 }
 
 function parseAllowedDow(rule) {
@@ -315,6 +333,8 @@ function parseAllowedDow(rule) {
 function openReserveModal(area, baia, fileira, assento, date) {
   const profile = store.get('userProfile') || {};
   const sectors = (_config?.sectorRules || []).map(r => r.sector);
+  const areaCfg = (_config?.areas || []).find(a => a.name === area);
+  const areaDisplay = areaCfg?.displayName || area;
 
   modal.open({
     title: 'Reservar estação',
@@ -323,7 +343,7 @@ function openReserveModal(area, baia, fileira, assento, date) {
     content: `
       <div style="display:flex;flex-direction:column;gap:12px;">
         <div style="padding:10px 12px;background:var(--bg-surface);border-radius:6px;font-size:0.875rem;">
-          <strong>${esc(area)} · Baia ${baia} · Fileira ${fileira} · Assento ${assento}</strong><br>
+          <strong>${esc(areaDisplay)} · Baia ${baia} · Fileira ${fileira} · Assento ${assento}</strong><br>
           <span style="color:var(--text-muted);font-size:0.75rem;">Data: ${fmtDate(date)}</span>
         </div>
         <div class="form-group">
@@ -776,4 +796,173 @@ async function renderReportTab(container) {
 function weekdayLabel(iso) {
   const d = new Date(iso + 'T12:00:00');
   return ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.getDay()];
+}
+
+/* ═══════════════════════════════════════════════════════════
+ * 5. ADMINISTRAÇÃO (admin/master only)
+ * Editar áreas (capacidade, baias, assentos) + regras por setor
+ * ═══════════════════════════════════════════════════════════ */
+async function renderAdminTab(container) {
+  // Estado local da edição (clones do _config, salvos no botão final)
+  const draftAreas   = JSON.parse(JSON.stringify(_config.areas || []));
+  const draftSectors = JSON.parse(JSON.stringify(_config.sectorRules || []));
+
+  function render() {
+    container.innerHTML = `
+      <div style="margin-bottom:16px;font-size:0.875rem;color:var(--text-muted);">
+        Configure áreas físicas (Aquário/Salão/...) e regras de capacidade por setor.
+        Mudanças afetam imediatamente todos os usuários (real-time).
+      </div>
+
+      <!-- ÁREAS FÍSICAS -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🗺 Áreas físicas</div>
+            <div class="card-subtitle">Cada área tem N baias × 2 fileiras (frente/fundo) × 6 assentos.</div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="adm-add-area">+ Nova área</button>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <table class="data-table" style="width:100%;">
+            <thead><tr>
+              <th>Chave (DB)</th><th>Nome (UI)</th>
+              <th style="text-align:right;">Baias</th>
+              <th style="text-align:right;">Assentos/fileira</th>
+              <th style="text-align:right;">Capacidade</th>
+              <th></th>
+            </tr></thead>
+            <tbody id="adm-areas-tbody">
+              ${draftAreas.map((a, i) => `<tr>
+                <td><input type="text" class="form-input adm-a-name" data-i="${i}"
+                  value="${esc(a.name)}" style="font-family:var(--font-mono,monospace);font-size:0.8125rem;" /></td>
+                <td><input type="text" class="form-input adm-a-disp" data-i="${i}"
+                  value="${esc(a.displayName || a.name)}" style="font-size:0.8125rem;" /></td>
+                <td style="text-align:right;width:80px;">
+                  <input type="number" class="form-input adm-a-baias" data-i="${i}" min="1" max="20"
+                    value="${a.baias}" style="text-align:right;width:60px;" />
+                </td>
+                <td style="text-align:right;width:120px;">
+                  <input type="number" class="form-input adm-a-spf" data-i="${i}" min="1" max="20"
+                    value="${a.assentosPorFileira}" style="text-align:right;width:60px;" />
+                </td>
+                <td style="text-align:right;width:80px;font-weight:600;color:var(--brand-gold);">
+                  ${(a.baias || 0) * 2 * (a.assentosPorFileira || 0)}
+                </td>
+                <td><button class="btn btn-ghost btn-icon btn-sm adm-a-del" data-i="${i}" title="Excluir">✕</button></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- REGRAS DE SETOR -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🏢 Regras por setor</div>
+            <div class="card-subtitle">
+              Capacidade máxima de reservas por dia + dias permitidos
+              (formato: "Seg a Sex", "Ter, Qui", "Sex").
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="adm-add-sector">+ Novo setor</button>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <table class="data-table" style="width:100%;">
+            <thead><tr>
+              <th>Setor</th>
+              <th style="text-align:right;">Slots/dia</th>
+              <th>Dias permitidos</th>
+              <th></th>
+            </tr></thead>
+            <tbody id="adm-sectors-tbody">
+              ${draftSectors.map((s, i) => `<tr>
+                <td><input type="text" class="form-input adm-s-name" data-i="${i}"
+                  value="${esc(s.sector)}" style="font-size:0.8125rem;" /></td>
+                <td style="text-align:right;width:120px;">
+                  <input type="number" class="form-input adm-s-slots" data-i="${i}" min="0" max="200"
+                    value="${s.slots}" style="text-align:right;width:80px;" />
+                </td>
+                <td><input type="text" class="form-input adm-s-dias" data-i="${i}"
+                  value="${esc(s.dias)}" style="font-size:0.8125rem;"
+                  placeholder='Ex: "Seg a Sex" / "Ter, Qui" / "Sex"' /></td>
+                <td><button class="btn btn-ghost btn-icon btn-sm adm-s-del" data-i="${i}" title="Excluir">✕</button></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-secondary" id="adm-reset">Restaurar padrão</button>
+        <button class="btn btn-primary" id="adm-save">💾 Salvar configuração</button>
+      </div>
+    `;
+
+    // Bindings
+    container.querySelectorAll('.adm-a-name, .adm-a-disp, .adm-a-baias, .adm-a-spf')
+      .forEach(inp => inp.addEventListener('change', (e) => {
+        const i = parseInt(e.target.dataset.i);
+        if (e.target.classList.contains('adm-a-name'))  draftAreas[i].name = e.target.value.trim();
+        if (e.target.classList.contains('adm-a-disp'))  draftAreas[i].displayName = e.target.value.trim();
+        if (e.target.classList.contains('adm-a-baias')) draftAreas[i].baias = parseInt(e.target.value) || 0;
+        if (e.target.classList.contains('adm-a-spf'))   draftAreas[i].assentosPorFileira = parseInt(e.target.value) || 0;
+        // Recalc capacity
+        draftAreas[i].capacity = (draftAreas[i].baias || 0) * 2 * (draftAreas[i].assentosPorFileira || 0);
+        render();
+      }));
+    container.querySelectorAll('.adm-a-del').forEach(btn =>
+      btn.addEventListener('click', () => {
+        if (!confirm('Excluir esta área? Reservas existentes não serão afetadas.')) return;
+        draftAreas.splice(parseInt(btn.dataset.i), 1);
+        render();
+      }));
+    container.querySelector('#adm-add-area')?.addEventListener('click', () => {
+      draftAreas.push({ name: 'NovaArea', displayName: 'Nova Área', baias: 1, assentosPorFileira: 6, capacity: 12 });
+      render();
+    });
+    container.querySelectorAll('.adm-s-name, .adm-s-slots, .adm-s-dias')
+      .forEach(inp => inp.addEventListener('change', (e) => {
+        const i = parseInt(e.target.dataset.i);
+        if (e.target.classList.contains('adm-s-name'))  draftSectors[i].sector = e.target.value.trim();
+        if (e.target.classList.contains('adm-s-slots')) draftSectors[i].slots  = parseInt(e.target.value) || 0;
+        if (e.target.classList.contains('adm-s-dias'))  draftSectors[i].dias   = e.target.value.trim();
+      }));
+    container.querySelectorAll('.adm-s-del').forEach(btn =>
+      btn.addEventListener('click', () => {
+        if (!confirm('Excluir este setor?')) return;
+        draftSectors.splice(parseInt(btn.dataset.i), 1);
+        render();
+      }));
+    container.querySelector('#adm-add-sector')?.addEventListener('click', () => {
+      draftSectors.push({ sector: 'Novo setor', slots: 5, dias: 'Seg a Sex' });
+      render();
+    });
+    container.querySelector('#adm-reset')?.addEventListener('click', () => {
+      if (!confirm('Restaurar configuração padrão? Suas alterações em rascunho serão perdidas.')) return;
+      draftAreas.length   = 0; DEFAULT_AREAS.forEach(a => draftAreas.push({...a}));
+      draftSectors.length = 0; DEFAULT_SECTOR_RULES.forEach(s => draftSectors.push({...s}));
+      render();
+    });
+    container.querySelector('#adm-save')?.addEventListener('click', async () => {
+      const btn = container.querySelector('#adm-save');
+      btn.disabled = true; btn.textContent = '💾 Salvando...';
+      try {
+        // Recalc capacity em todas
+        draftAreas.forEach(a => {
+          a.capacity = (a.baias || 0) * 2 * (a.assentosPorFileira || 0);
+        });
+        await saveCheckinConfig({ areas: draftAreas, sectorRules: draftSectors });
+        _config = { areas: draftAreas, sectorRules: draftSectors };
+        toast.success('Configuração salva! Mudanças refletem em todos os usuários em real-time.');
+        btn.disabled = false; btn.textContent = '💾 Salvar configuração';
+      } catch (e) {
+        toast.error(e.message);
+        btn.disabled = false; btn.textContent = '💾 Salvar configuração';
+      }
+    });
+  }
+
+  render();
 }
