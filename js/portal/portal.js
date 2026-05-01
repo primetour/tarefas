@@ -2912,6 +2912,16 @@ function bindFormEvents(db, taskTypes) {
     if (alert) alert.style.display = cb.checked ? 'flex' : 'none';
   });
 
+  // Partnership toggle — checkbox é hidden via .urgency-toggle CSS,
+  // precisa do click handler pra alternar checked + classe visual
+  document.getElementById('partnership-toggle')?.addEventListener('click', () => {
+    const toggle = document.getElementById('partnership-toggle');
+    const cb = document.getElementById('p-partnership');
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    toggle?.classList.toggle('active', cb.checked);
+  });
+
   // Batch: add to batch
   document.getElementById('portal-add-batch-btn')?.addEventListener('click', () => addToBatch(taskTypes));
   // Batch: submit all
@@ -2947,6 +2957,9 @@ function bindFormEvents(db, taskTypes) {
     }
     document.getElementById('p-urgency').checked = false;
     document.getElementById('p-out-of-calendar').checked = false;
+    const partCb = document.getElementById('p-partnership');
+    if (partCb) partCb.checked = false;
+    document.getElementById('partnership-toggle')?.classList.remove('active');
     unlockToggle('urgency-toggle', 'p-urgency', false);
     unlockToggle('out-of-calendar-toggle', 'p-out-of-calendar', false);
     document.getElementById('urgency-alert')?.classList.remove('visible');
