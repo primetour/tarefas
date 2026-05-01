@@ -1,20 +1,22 @@
 /**
- * PRIMETOUR — Check-in (migração de minhamesa + ponto eletrônico)
+ * PRIMETOUR — Check-in (migração completa de minhamesa + ponto eletrônico)
  *
  * 4 abas:
- *  - Mapa de estações (visualizar + reservar)
- *  - Check-in (validação de itens da estação reservada)
- *  - Ponto (registro de jornada: entrada / almoço / saída)
- *  - Relatório (admin only — visão consolidada)
+ *  - Mapa de Estações: cards de setor (capacidade) + grid por área com
+ *    baias visuais (2 fileiras frente-a-frente de 6 assentos)
+ *  - Check-in: itens da estação + speedtest OBRIGATÓRIO
+ *  - Ponto: registro de jornada com timer
+ *  - Relatório (admin)
  */
 import { store }   from '../store.js';
 import { toast }   from '../components/toast.js';
 import { modal }   from '../components/modal.js';
 import {
   DEFAULT_AREAS, DEFAULT_SECTOR_RULES,
-  fetchCheckinConfig, saveCheckinConfig,
+  fetchCheckinConfig,
   fetchReservations, createReservation, deleteReservation, performCheckin,
   fetchMyTimeClock, fetchTimeClockRange, fetchAllTimeClock, clockEvent, calcWorkedHours,
+  declineTimeClock, runSpeedTest,
 } from '../services/checkin.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -30,25 +32,33 @@ const fmtDate = (s) => {
   return `${d}/${m}/${y}`;
 };
 
-let activeTab = 'map';   // 'map' | 'checkin' | 'clock' | 'report'
+const TIPO_LABELS = {
+  'desktop-cabo':  '🖥️ Desktop · Cabo',
+  'desktop-wifi':  '💻 Desktop · Wi-Fi',
+  'celular-wifi':  '📱 Celular · Wi-Fi',
+  'celular-dados': '📱 Celular · Dados móveis',
+};
+
+let activeTab = 'map';
 let _config   = null;
 let _reservations = [];
+let _selectedDate = todayISO();
 
 export async function renderCheckin(container) {
   const isAdmin = store.isMaster() || store.can('system_manage_users');
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">✅ Check In</h1>
+        <h1 class="page-title">⏱ Check In</h1>
         <p class="page-subtitle">Reserva de estação · check-in · registro de ponto</p>
       </div>
     </div>
 
     <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border-subtle);overflow-x:auto;">
       ${[
-        { id:'map',     label:'Mapa de Estações',  icon:'📋' },
-        { id:'checkin', label:'Check-in',          icon:'✅' },
-        { id:'clock',   label:'Ponto',             icon:'⏱' },
+        { id:'map',     label:'Mapa de Estações', icon:'📋' },
+        { id:'checkin', label:'Check-in',         icon:'✅' },
+        { id:'clock',   label:'Ponto',            icon:'⏱' },
         ...(isAdmin ? [{ id:'report', label:'Relatório', icon:'📊' }] : []),
       ].map(t => `
         <button class="checkin-tab-btn" data-tab="${t.id}" style="padding:8px 18px;border:none;
@@ -77,9 +87,7 @@ export async function renderCheckin(container) {
     });
   });
 
-  // Pré-carrega config (compartilhada entre abas)
   _config = await fetchCheckinConfig().catch(() => ({ areas: DEFAULT_AREAS, sectorRules: DEFAULT_SECTOR_RULES }));
-
   loadTab();
 }
 
@@ -99,13 +107,15 @@ async function loadTab() {
 
 /* ═══════════════════════════════════════════════════════════
  * 1. MAPA DE ESTAÇÕES
+ * Layout: cards de setor (capacidade/dia + dias permitidos)
+ *         seguido do grid de áreas com baias (2 fileiras de 6
+ *         frente-a-frente, com gap visual entre baias)
  * ═══════════════════════════════════════════════════════════ */
 async function renderMap(container) {
   _reservations = await fetchReservations();
   const today = todayISO();
-  const myUid = store.get('currentUser')?.uid;
+  if (!_selectedDate || _selectedDate < today) _selectedDate = today;
 
-  // Date selector — janela de 14 dias a partir de hoje
   const datesAvail = (() => {
     const arr = [];
     for (let i = 0; i < 14; i++) {
@@ -115,9 +125,8 @@ async function renderMap(container) {
     return arr;
   })();
 
-  let selectedDate = today;
   function dateOpts() {
-    return datesAvail.map(d => `<option value="${d}" ${d===selectedDate?'selected':''}>${fmtDate(d)} · ${weekdayLabel(d)}</option>`).join('');
+    return datesAvail.map(d => `<option value="${d}" ${d===_selectedDate?'selected':''}>${fmtDate(d)} · ${weekdayLabel(d)}</option>`).join('');
   }
 
   container.innerHTML = `
@@ -126,65 +135,142 @@ async function renderMap(container) {
       <select class="filter-select" id="ck-date-sel">${dateOpts()}</select>
       <span id="ck-occupy-badge" style="font-size:0.75rem;color:var(--text-muted);"></span>
     </div>
-    <div id="ck-area-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;"></div>
+
+    <!-- CARDS DE SETOR (regras + ocupação no dia selecionado) -->
+    <div style="margin-bottom:14px;font-size:0.75rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.06em;color:var(--text-muted);">
+      Capacidade por setor
+    </div>
+    <div id="ck-sector-cards" style="display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:24px;"></div>
+
+    <!-- GRID DE ÁREAS COM BAIAS -->
+    <div style="margin-bottom:14px;font-size:0.75rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.06em;color:var(--text-muted);">
+      Mapa de assentos
+    </div>
+    <div id="ck-area-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px;"></div>
+
+    <div style="margin-top:16px;font-size:0.6875rem;color:var(--text-muted);
+      display:flex;gap:14px;flex-wrap:wrap;align-items:center;">
+      <span>Legenda:</span>
+      <span style="display:inline-flex;align-items:center;gap:4px;">
+        <span style="width:12px;height:12px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:2px;"></span>livre
+      </span>
+      <span style="display:inline-flex;align-items:center;gap:4px;">
+        <span style="width:12px;height:12px;background:#EF444444;border:1px solid #EF4444;border-radius:2px;"></span>ocupado
+      </span>
+      <span style="display:inline-flex;align-items:center;gap:4px;">
+        <span style="width:12px;height:12px;background:#22C55E44;border:1px solid #22C55E;border-radius:2px;"></span>check-in
+      </span>
+      <span style="display:inline-flex;align-items:center;gap:4px;">
+        <span style="width:12px;height:12px;border:2px solid var(--brand-gold);border-radius:2px;"></span>seu
+      </span>
+    </div>
   `;
 
   document.getElementById('ck-date-sel').addEventListener('change', (e) => {
-    selectedDate = e.target.value;
-    drawAreas();
+    _selectedDate = e.target.value;
+    drawAll();
   });
 
+  function drawAll() {
+    drawSectorCards();
+    drawAreas();
+  }
+
+  function drawSectorCards() {
+    const dayRes = _reservations.filter(r => r.data === _selectedDate);
+    const cards = document.getElementById('ck-sector-cards');
+    if (!cards) return;
+    const dow = new Date(_selectedDate + 'T12:00:00').getDay();  // 0=dom..6=sab
+    cards.innerHTML = (_config.sectorRules || []).map(rule => {
+      const used = dayRes.filter(r => r.sector === rule.sector).length;
+      const free = Math.max(0, rule.slots - used);
+      const pct  = rule.slots ? Math.round((used / rule.slots) * 100) : 0;
+      const color = pct >= 100 ? '#EF4444' : pct >= 70 ? '#F59E0B' : '#22C55E';
+      const allowedDow = parseAllowedDow(rule.dias);
+      const dayAllowed = !allowedDow.length || allowedDow.includes(dow);
+      return `<div class="card" style="padding:10px 12px;
+        ${!dayAllowed?'opacity:0.55;':''}border-left:3px solid ${color};">
+        <div style="font-weight:600;font-size:0.875rem;">${esc(rule.sector)}</div>
+        <div style="font-size:1.25rem;font-weight:700;color:${color};margin:4px 0;">
+          ${used}/${rule.slots}
+        </div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">${free} livre${free!==1?'s':''}</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">📅 ${esc(rule.dias)}</div>
+        ${!dayAllowed?'<div style="font-size:0.625rem;color:#F59E0B;margin-top:3px;">⚠ não recomendado neste dia</div>':''}
+      </div>`;
+    }).join('');
+  }
+
   function drawAreas() {
-    const dayRes = _reservations.filter(r => r.data === selectedDate);
-    const grid = document.getElementById('ck-area-grid');
+    const dayRes = _reservations.filter(r => r.data === _selectedDate);
+    const myUid  = store.get('currentUser')?.uid;
+    const grid   = document.getElementById('ck-area-grid');
     if (!grid) return;
     grid.innerHTML = _config.areas.map(area => {
       const used = dayRes.filter(r => r.area === area.name).length;
       const pct  = Math.round((used / area.capacity) * 100);
-      const seats = [];
-      for (let f = 1; f <= area.fileiras; f++) {
-        for (let s = 1; s <= area.assentosPorFileira; s++) {
-          const reserva = dayRes.find(r => r.area === area.name && r.fileira === f && r.assento === s);
-          const status = reserva
-            ? (reserva.checkinAt ? 'checkedin' : 'occupied')
-            : 'available';
-          const isMine = reserva && reserva.userId === myUid;
-          const bg = status === 'available' ? 'var(--bg-surface)'
-                   : status === 'checkedin' ? '#22C55E22' : '#EF444422';
-          const color = status === 'available' ? 'var(--text-secondary)'
-                      : status === 'checkedin' ? '#22C55E' : '#EF4444';
-          const title = reserva
-            ? `${reserva.userName} · ${reserva.sector}${reserva.checkinAt?' · ✅ Check-in feito':''}`
-            : 'Livre — clique pra reservar';
-          seats.push(`<button class="ck-seat" data-area="${esc(area.name)}" data-fileira="${f}" data-assento="${s}"
-            data-status="${status}" data-rid="${reserva?.id||''}" data-mine="${isMine?'1':'0'}"
-            title="${esc(title)}"
-            style="width:28px;height:28px;font-size:0.6875rem;border-radius:4px;border:1px solid var(--border-subtle);
-              background:${bg};color:${color};cursor:${status==='available'?'pointer':'help'};
-              ${isMine?'box-shadow:0 0 0 2px var(--brand-gold);font-weight:700;':''}">
-            ${s}</button>`);
-        }
-      }
-      const seatsRows = [];
-      for (let f = 1; f <= area.fileiras; f++) {
-        const start = (f-1) * area.assentosPorFileira;
-        const end   = f * area.assentosPorFileira;
-        seatsRows.push(`<div style="display:flex;gap:4px;margin-bottom:4px;">
-          <div style="font-size:0.6875rem;color:var(--text-muted);width:24px;text-align:right;padding-right:4px;">${f}:</div>
-          <div style="display:flex;gap:3px;flex-wrap:wrap;">${seats.slice(start, end).join('')}</div>
+      const colorPct = pct >= 90 ? '#EF4444' : pct >= 60 ? '#F59E0B' : '#22C55E';
+
+      // Renderiza N baias, cada baia = 2 fileiras (A frente, B fundo) × 6 assentos
+      const baiasHtml = [];
+      for (let baia = 1; baia <= area.baias; baia++) {
+        const fileirasHtml = ['A', 'B'].map(fileira => {
+          const seats = [];
+          for (let assento = 1; assento <= area.assentosPorFileira; assento++) {
+            const reserva = dayRes.find(r =>
+              r.area === area.name && r.baia === baia
+              && r.fileira === fileira && r.assento === assento);
+            const status = reserva
+              ? (reserva.checkinAt ? 'checkedin' : 'occupied')
+              : 'available';
+            const isMine = reserva && reserva.userId === myUid;
+            const bg = status === 'available' ? 'var(--bg-surface)'
+                     : status === 'checkedin' ? '#22C55E44' : '#EF444444';
+            const color = status === 'available' ? 'var(--text-secondary)'
+                        : status === 'checkedin' ? '#22C55E' : '#EF4444';
+            const title = reserva
+              ? `${reserva.userName} · ${reserva.sector}${reserva.checkinAt?' · ✅ Check-in feito':''}`
+              : `Livre — Baia ${baia} ${fileira}${assento} (clique pra reservar)`;
+            seats.push(`<button class="ck-seat" data-area="${esc(area.name)}"
+              data-baia="${baia}" data-fileira="${fileira}" data-assento="${assento}"
+              data-status="${status}" data-rid="${reserva?.id||''}" data-mine="${isMine?'1':'0'}"
+              title="${esc(title)}"
+              style="width:32px;height:32px;font-size:0.75rem;border-radius:4px;
+                border:1px solid ${color === 'var(--text-secondary)' ? 'var(--border-subtle)' : color};
+                background:${bg};color:${color};
+                cursor:${status==='available'?'pointer':'help'};
+                ${isMine?'box-shadow:0 0 0 2px var(--brand-gold);font-weight:700;':''}
+                font-family:var(--font-mono,monospace);">
+                ${assento}</button>`);
+          }
+          return `<div style="display:flex;gap:4px;align-items:center;">
+            <div style="font-size:0.6875rem;color:var(--text-muted);width:14px;text-align:right;">
+              ${fileira}
+            </div>
+            <div style="display:flex;gap:4px;">${seats.join('')}</div>
+          </div>`;
+        }).join('<div style="height:6px;"></div>');
+        baiasHtml.push(`<div style="background:rgba(255,255,255,0.02);border:1px dashed var(--border-subtle);
+          border-radius:6px;padding:10px 12px;margin-bottom:14px;">
+          <div style="font-size:0.6875rem;font-weight:700;color:var(--text-muted);
+            text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
+            Baia ${baia}
+          </div>
+          ${fileirasHtml}
         </div>`);
       }
-      return `<div class="card" style="padding:14px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div style="font-weight:600;">${esc(area.name)}</div>
-          <div style="font-size:0.75rem;color:${pct>=90?'#EF4444':pct>=60?'#F59E0B':'#22C55E'};font-weight:600;">
+
+      return `<div class="card" style="padding:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <div style="font-weight:700;font-size:1rem;">${esc(area.name)}</div>
+          <div style="font-size:0.8125rem;color:${colorPct};font-weight:600;">
             ${used}/${area.capacity} (${pct}%)
           </div>
         </div>
-        <div style="margin-bottom:8px;">${seatsRows.join('')}</div>
-        <div style="font-size:0.6875rem;color:var(--text-muted);display:flex;gap:10px;">
-          <span>🟢 livre</span><span>🔴 ocupado</span><span>✅ check-in</span>
-        </div>
+        ${baiasHtml.join('')}
       </div>`;
     }).join('');
 
@@ -193,28 +279,51 @@ async function renderMap(container) {
     document.getElementById('ck-occupy-badge').textContent = `${dayRes.length}/${total} ocupação geral (${totalPct}%)`;
   }
 
-  // Click em assento livre → modal de reserva
+  // Click em assento livre
   container.addEventListener('click', (e) => {
     const seat = e.target.closest('.ck-seat[data-status="available"]');
     if (!seat) return;
-    openReserveModal(seat.dataset.area, parseInt(seat.dataset.fileira), parseInt(seat.dataset.assento), selectedDate);
+    openReserveModal(
+      seat.dataset.area,
+      parseInt(seat.dataset.baia),
+      seat.dataset.fileira,
+      parseInt(seat.dataset.assento),
+      _selectedDate,
+    );
   });
 
-  drawAreas();
+  drawAll();
 }
 
-function openReserveModal(area, fileira, assento, date) {
-  const profile  = store.get('userProfile') || {};
-  const sectors  = (_config?.sectorRules || []).map(r => r.sector);
+function parseAllowedDow(rule) {
+  // Converte "Seg a Sex" / "Ter, Qui" / "Sex" pra array de dow (0..6)
+  if (!rule) return [];
+  const map = { 'Dom':0,'Seg':1,'Ter':2,'Qua':3,'Qui':4,'Sex':5,'Sáb':6,'Sab':6 };
+  if (/a/i.test(rule)) {
+    // "Seg a Sex" → 1..5
+    const m = rule.match(/(\w+)\s+a\s+(\w+)/i);
+    if (m) {
+      const a = map[m[1].slice(0,3)], b = map[m[2].slice(0,3)];
+      const out = [];
+      for (let d = a; d <= b; d++) out.push(d);
+      return out;
+    }
+  }
+  return rule.split(',').map(s => map[s.trim().slice(0,3)]).filter(v => v != null);
+}
+
+function openReserveModal(area, baia, fileira, assento, date) {
+  const profile = store.get('userProfile') || {};
+  const sectors = (_config?.sectorRules || []).map(r => r.sector);
 
   modal.open({
-    title: `Reservar estação`,
+    title: 'Reservar estação',
     size: 'sm',
-    dedupeKey: `reserve:${date}:${area}:${fileira}:${assento}`,
+    dedupeKey: `reserve:${date}:${area}:${baia}:${fileira}:${assento}`,
     content: `
       <div style="display:flex;flex-direction:column;gap:12px;">
         <div style="padding:10px 12px;background:var(--bg-surface);border-radius:6px;font-size:0.875rem;">
-          <strong>${esc(area)} · Fileira ${fileira} · Assento ${assento}</strong><br>
+          <strong>${esc(area)} · Baia ${baia} · Fileira ${fileira} · Assento ${assento}</strong><br>
           <span style="color:var(--text-muted);font-size:0.75rem;">Data: ${fmtDate(date)}</span>
         </div>
         <div class="form-group">
@@ -241,10 +350,9 @@ function openReserveModal(area, fileira, assento, date) {
           if (!name)   return toast.warning('Informe o nome.');
           if (!sector) return toast.warning('Selecione o setor.');
           try {
-            await createReservation({ data: date, sector, area, fileira, assento, userName: name });
+            await createReservation({ data: date, sector, area, baia, fileira, assento, userName: name });
             toast.success('Reserva confirmada!');
             close();
-            // Re-render mapa
             const root = document.getElementById('checkin-content');
             if (root) renderMap(root);
           } catch (e) { toast.error(e.message); }
@@ -255,7 +363,7 @@ function openReserveModal(area, fileira, assento, date) {
 }
 
 /* ═══════════════════════════════════════════════════════════
- * 2. CHECK-IN (verifica reserva + itens + speedtest)
+ * 2. CHECK-IN
  * ═══════════════════════════════════════════════════════════ */
 async function renderCheckinTab(container) {
   const today = todayISO();
@@ -285,7 +393,7 @@ async function renderCheckinTab(container) {
       <div style="flex:1;min-width:0;">
         <div style="font-weight:600;font-size:0.9375rem;">${esc(r.userName)}</div>
         <div style="font-size:0.75rem;color:var(--text-muted);">
-          ${esc(r.sector)} · ${esc(r.area)} · F${r.fileira} P${r.assento}
+          ${esc(r.sector)} · ${esc(r.area)} · Baia ${r.baia} · ${r.fileira}${r.assento}
         </div>
       </div>
       ${done
@@ -326,61 +434,88 @@ function openCheckinFormModal(reservationId) {
     { key: 'cadeira',     label: '🪑 Cadeira' },
   ];
 
+  // State local do modal pra speedtest (obrigatório)
+  let speedDone = false;
+  let speedData = { download: null, upload: null, tipo: null };
+
   modal.open({
     title: 'Confirmar check-in',
     size: 'md',
     dedupeKey: `checkin:${reservationId}`,
     content: `
-      <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;flex-direction:column;gap:16px;">
         <div style="padding:10px 12px;background:var(--bg-surface);border-radius:6px;font-size:0.8125rem;">
           <strong>${esc(r.userName)}</strong> · ${esc(r.sector)}<br>
-          ${esc(r.area)} · F${r.fileira} P${r.assento}
+          ${esc(r.area)} · Baia ${r.baia} · Fileira ${r.fileira} · Assento ${r.assento}
         </div>
-        <div style="font-weight:600;font-size:0.875rem;">Itens da estação</div>
-        ${items.map(i => `
-          <div class="form-group" style="border:1px solid var(--border-subtle);
-            border-radius:6px;padding:10px;background:var(--bg-elevated);">
-            <div style="font-size:0.875rem;margin-bottom:8px;">${i.label}</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.8125rem;">
-                <input type="radio" name="ck-${i.key}" value="ok" /> ✅ Funcionando
-              </label>
-              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.8125rem;">
-                <input type="radio" name="ck-${i.key}" value="fail" /> ❌ Com defeito
-              </label>
+
+        <!-- Itens da estação -->
+        <div>
+          <div style="font-weight:600;font-size:0.875rem;margin-bottom:8px;">
+            ① Itens da estação
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            ${items.map(i => `
+              <div style="border:1px solid var(--border-subtle);border-radius:6px;padding:10px;
+                background:var(--bg-elevated);">
+                <div style="font-size:0.875rem;margin-bottom:6px;">${i.label}</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.8125rem;">
+                    <input type="radio" name="ck-${i.key}" value="ok" /> ✅ Funcionando
+                  </label>
+                  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.8125rem;">
+                    <input type="radio" name="ck-${i.key}" value="fail" /> ❌ Com defeito
+                  </label>
+                </div>
+                <textarea id="ck-${i.key}-note" placeholder="Descreva o defeito..." class="form-input"
+                  style="display:none;margin-top:6px;font-size:0.8125rem;min-height:50px;"></textarea>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- Speedtest OBRIGATÓRIO -->
+        <div>
+          <div style="font-weight:600;font-size:0.875rem;margin-bottom:8px;">
+            ② Análise da internet
+            <span style="font-size:0.75rem;color:var(--color-danger);font-weight:400;">(obrigatório)</span>
+          </div>
+          <div style="border:1px solid var(--border-subtle);border-radius:6px;padding:12px;
+            background:var(--bg-elevated);">
+            <button class="btn btn-primary" id="ck-speedtest-btn" style="width:100%;margin-bottom:10px;">
+              🚀 Iniciar teste de velocidade
+            </button>
+            <div id="ck-speedtest-results" style="display:none;">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+                <div style="text-align:center;padding:8px;background:var(--bg-surface);border-radius:4px;">
+                  <div style="font-size:0.6875rem;color:var(--text-muted);">⬇ Download</div>
+                  <div style="font-size:1.125rem;font-weight:700;color:var(--brand-gold);" id="ck-st-dl">—</div>
+                  <div style="font-size:0.625rem;color:var(--text-muted);">Mbps</div>
+                </div>
+                <div style="text-align:center;padding:8px;background:var(--bg-surface);border-radius:4px;">
+                  <div style="font-size:0.6875rem;color:var(--text-muted);">⬆ Upload</div>
+                  <div style="font-size:1.125rem;font-weight:700;color:var(--brand-gold);" id="ck-st-ul">—</div>
+                  <div style="font-size:0.625rem;color:var(--text-muted);">Mbps</div>
+                </div>
+              </div>
+              <label style="font-size:0.75rem;color:var(--text-muted);">Tipo de conexão (auto-detectado, ajuste se necessário)</label>
+              <select class="form-select" id="ck-st-tipo" style="margin-top:4px;">
+                <option value="desktop-cabo">🖥️ Desktop · Cabo de Rede</option>
+                <option value="desktop-wifi">💻 Desktop · Wi-Fi</option>
+                <option value="celular-wifi">📱 Celular · Wi-Fi</option>
+                <option value="celular-dados">📱 Celular · Dados móveis</option>
+              </select>
             </div>
-            <textarea id="ck-${i.key}-note" placeholder="Descreva o defeito..." class="form-input"
-              style="display:none;margin-top:8px;font-size:0.8125rem;min-height:60px;"></textarea>
           </div>
-        `).join('')}
-        <div style="font-weight:600;font-size:0.875rem;">Conexão de internet (opcional)</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <div class="form-group">
-            <label class="form-label" style="font-size:0.75rem;">Download (Mbps)</label>
-            <input type="number" step="0.1" class="form-input" id="ck-dl" />
-          </div>
-          <div class="form-group">
-            <label class="form-label" style="font-size:0.75rem;">Upload (Mbps)</label>
-            <input type="number" step="0.1" class="form-input" id="ck-ul" />
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label" style="font-size:0.75rem;">Tipo de conexão</label>
-          <select class="form-select" id="ck-tipo">
-            <option value="">— Não testado —</option>
-            <option value="desktop-cabo">🖥 Desktop · Cabo</option>
-            <option value="desktop-wifi">💻 Desktop · Wi-Fi</option>
-            <option value="celular-wifi">📱 Celular · Wi-Fi</option>
-            <option value="celular-dados">📱 Celular · Dados</option>
-          </select>
         </div>
       </div>
     `,
     footer: [
       { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
       {
-        label: '✅ Confirmar', class: 'btn-primary', closeOnClick: false,
+        label: '✅ Confirmar check-in', class: 'btn-primary', closeOnClick: false,
         onClick: async (_, { close }) => {
+          // Validação 1: itens
           const itemsData = {};
           for (const i of items) {
             const v = document.querySelector(`input[name="ck-${i.key}"]:checked`)?.value;
@@ -390,10 +525,15 @@ function openCheckinFormModal(reservationId) {
               defeito: v === 'fail' ? document.getElementById(`ck-${i.key}-note`)?.value?.trim() || '' : '',
             };
           }
+          // Validação 2: speedtest obrigatório
+          if (!speedDone) {
+            return toast.warning('Rode o teste de velocidade antes de confirmar.');
+          }
+          const tipo = document.getElementById('ck-st-tipo')?.value;
           const speedtest = {
-            download: document.getElementById('ck-dl')?.value || null,
-            upload:   document.getElementById('ck-ul')?.value || null,
-            tipo:     document.getElementById('ck-tipo')?.value || null,
+            download: speedData.download,
+            upload:   speedData.upload,
+            tipo:     TIPO_LABELS[tipo] || tipo,
           };
           try {
             await performCheckin(reservationId, { items: itemsData, speedtest });
@@ -407,8 +547,8 @@ function openCheckinFormModal(reservationId) {
     ],
   });
 
-  // Defeito toggle
   setTimeout(() => {
+    // Defeito toggle
     items.forEach(i => {
       document.querySelectorAll(`input[name="ck-${i.key}"]`).forEach(input => {
         input.addEventListener('change', () => {
@@ -417,11 +557,34 @@ function openCheckinFormModal(reservationId) {
         });
       });
     });
+    // Speedtest button
+    document.getElementById('ck-speedtest-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('ck-speedtest-btn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Testando download...';
+      try {
+        // Roda em duas fases pra mostrar progresso
+        const r = await runSpeedTest();
+        speedData = { download: r.download, upload: r.upload, tipo: r.tipo };
+        document.getElementById('ck-st-dl').textContent = r.download;
+        document.getElementById('ck-st-ul').textContent = r.upload;
+        const tipoSel = document.getElementById('ck-st-tipo');
+        if (tipoSel) tipoSel.value = r.tipo;
+        document.getElementById('ck-speedtest-results').style.display = 'block';
+        btn.textContent = '✅ Teste concluído (rodar de novo)';
+        btn.disabled = false;
+        speedDone = true;
+      } catch (e) {
+        btn.textContent = '⚠ Erro — tentar de novo';
+        btn.disabled = false;
+        toast.error('Erro no teste: ' + e.message);
+      }
+    });
   }, 100);
 }
 
 /* ═══════════════════════════════════════════════════════════
- * 3. PONTO (clock in/out)
+ * 3. PONTO
  * ═══════════════════════════════════════════════════════════ */
 async function renderClockTab(container) {
   const today  = todayISO();
@@ -435,6 +598,8 @@ async function renderClockTab(container) {
     { key: 'out',      label: 'Saída',           icon: '🌇', desc: 'fim do expediente' },
   ];
 
+  const declined = my?.declined && !my?.in;
+
   const cardOf = (ev) => {
     const has = my && my[ev.key];
     return `<div class="card" style="padding:14px;display:flex;align-items:center;gap:12px;
@@ -446,13 +611,23 @@ async function renderClockTab(container) {
       </div>
       ${has
         ? `<span style="font-weight:700;color:#22C55E;font-size:1rem;">${fmtTS(my[ev.key])}</span>`
-        : `<button class="btn btn-primary btn-sm ck-clock-btn" data-evt="${ev.key}">Registrar</button>`}
+        : declined
+          ? `<span style="font-size:0.6875rem;color:#F59E0B;">não registra hoje</span>`
+          : `<button class="btn btn-primary btn-sm ck-clock-btn" data-evt="${ev.key}">Registrar</button>`}
     </div>`;
   };
 
-  const worked = my ? calcWorkedHours(my).toFixed(2) : '0.00';
+  const worked = my && !declined ? calcWorkedHours(my).toFixed(2) : '0.00';
 
   container.innerHTML = `
+    ${declined ? `<div class="card" style="padding:12px 16px;margin-bottom:14px;
+      background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.4);">
+      <div style="font-weight:600;color:#F59E0B;">⚠ Você optou por não registrar ponto hoje</div>
+      ${my.declineReason ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;">"${esc(my.declineReason)}"</div>` : ''}
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;">
+        Esta decisão fica registrada no relatório.
+      </div>
+    </div>` : ''}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:24px;">
       ${events.map(cardOf).join('')}
     </div>
@@ -471,14 +646,23 @@ async function renderClockTab(container) {
       <div class="card-body" style="padding:0;">
         ${recent.length ? `<table class="data-table" style="width:100%;">
           <thead><tr><th>Data</th><th>Entrada</th><th>Almoço (saída)</th><th>Almoço (volta)</th><th>Saída</th><th>Horas</th></tr></thead>
-          <tbody>${recent.map(r => `<tr>
-            <td>${fmtDate(r.date)}</td>
-            <td>${fmtTS(r.in)}</td>
-            <td>${fmtTS(r.lunchOut)}</td>
-            <td>${fmtTS(r.lunchIn)}</td>
-            <td>${fmtTS(r.out)}</td>
-            <td><strong>${calcWorkedHours(r).toFixed(2)}h</strong></td>
-          </tr>`).join('')}</tbody>
+          <tbody>${recent.map(r => {
+            if (r.declined && !r.in) {
+              return `<tr style="opacity:0.55;">
+                <td>${fmtDate(r.date)}</td>
+                <td colspan="4" style="font-style:italic;color:#F59E0B;">⚠ Optou por não registrar</td>
+                <td>—</td>
+              </tr>`;
+            }
+            return `<tr>
+              <td>${fmtDate(r.date)}</td>
+              <td>${fmtTS(r.in)}</td>
+              <td>${fmtTS(r.lunchOut)}</td>
+              <td>${fmtTS(r.lunchIn)}</td>
+              <td>${fmtTS(r.out)}</td>
+              <td><strong>${calcWorkedHours(r).toFixed(2)}h</strong></td>
+            </tr>`;
+          }).join('')}</tbody>
         </table>` : `<div class="empty-state" style="padding:24px;">
           <div class="empty-state-title" style="font-size:0.875rem;">Sem registros nos últimos 7 dias.</div>
         </div>`}
@@ -493,6 +677,8 @@ async function renderClockTab(container) {
         await clockEvent(btn.dataset.evt);
         toast.success('Registrado!');
         renderClockTab(container);
+        // Atualiza header timer
+        if (window.__updateClockTimer) window.__updateClockTimer();
       } catch (e) {
         toast.error(e.message);
         btn.disabled = false; btn.textContent = 'Registrar';
@@ -507,20 +693,24 @@ function weekAgo() {
 }
 
 /* ═══════════════════════════════════════════════════════════
- * 4. RELATÓRIO (admin only)
+ * 4. RELATÓRIO
  * ═══════════════════════════════════════════════════════════ */
 async function renderReportTab(container) {
   const monthAgo = (() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().slice(0,10); })();
   const all = await fetchAllTimeClock({ from: monthAgo, to: todayISO() });
 
-  // Agrupa por usuário
   const byUser = {};
+  let totalDeclined = 0;
   all.forEach(r => {
     const k = r.userId;
-    if (!byUser[k]) byUser[k] = { name: r.userName, sector: r.sector, days: 0, totalHours: 0, complete: 0 };
+    if (!byUser[k]) byUser[k] = { name: r.userName, sector: r.sector, days: 0, totalHours: 0, complete: 0, declined: 0 };
+    if (r.declined && !r.in) {
+      byUser[k].declined += 1;
+      totalDeclined += 1;
+      return;
+    }
     byUser[k].days += 1;
-    const h = calcWorkedHours(r);
-    byUser[k].totalHours += h;
+    byUser[k].totalHours += calcWorkedHours(r);
     if (r.in && r.out) byUser[k].complete += 1;
   });
   const rows = Object.entries(byUser).map(([uid, d]) => ({
@@ -530,8 +720,13 @@ async function renderReportTab(container) {
   })).sort((a,b) => b.totalHours - a.totalHours);
 
   container.innerHTML = `
-    <div style="margin-bottom:16px;font-size:0.875rem;color:var(--text-muted);">
-      Período: últimos 30 dias · ${all.length} registros · ${rows.length} colaboradores
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;font-size:0.875rem;color:var(--text-muted);">
+      <span>Período: últimos 30 dias</span>
+      <span>·</span>
+      <span>${all.length} registros</span>
+      <span>·</span>
+      <span>${rows.length} colaboradores</span>
+      ${totalDeclined ? `<span>·</span><span style="color:#F59E0B;">⚠ ${totalDeclined} recusas de ponto</span>` : ''}
     </div>
     <div class="card">
       <div class="card-header">
@@ -546,6 +741,7 @@ async function renderReportTab(container) {
             <th style="text-align:right;">Total horas</th>
             <th style="text-align:right;">Média/dia</th>
             <th style="text-align:right;">Completos</th>
+            <th style="text-align:right;">Recusas</th>
           </tr></thead>
           <tbody>${rows.map(r => `<tr>
             <td><strong>${esc(r.name)}</strong></td>
@@ -554,6 +750,7 @@ async function renderReportTab(container) {
             <td style="text-align:right;color:var(--brand-gold);font-weight:600;">${r.totalHours.toFixed(1)}h</td>
             <td style="text-align:right;">${r.avgHours.toFixed(2)}h</td>
             <td style="text-align:right;">${r.completion}%</td>
+            <td style="text-align:right;${r.declined>0?'color:#F59E0B;font-weight:600;':''}">${r.declined||'—'}</td>
           </tr>`).join('')}</tbody>
         </table>` : `<div class="empty-state" style="padding:32px;">
           <div class="empty-state-title">Nenhum registro de ponto no período.</div>
@@ -564,8 +761,8 @@ async function renderReportTab(container) {
 
   document.getElementById('ck-export-csv')?.addEventListener('click', () => {
     const csv = [
-      'colaborador;setor;dias;total_horas;media_horas_dia;dias_completos_pct',
-      ...rows.map(r => `${r.name};${r.sector};${r.days};${r.totalHours.toFixed(2)};${r.avgHours.toFixed(2)};${r.completion}%`),
+      'colaborador;setor;dias;total_horas;media_horas_dia;dias_completos_pct;recusas',
+      ...rows.map(r => `${r.name};${r.sector};${r.days};${r.totalHours.toFixed(2)};${r.avgHours.toFixed(2)};${r.completion}%;${r.declined||0}`),
     ].join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);

@@ -26,11 +26,17 @@ import {
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
 
-/* ─── Defaults (vêm do app legacy minhamesa) ─────────────── */
+/* ─── Defaults (vêm do app legacy minhamesa) ─────────────────
+ * Cada área tem N baias. Cada baia tem 2 fileiras (frente A / fundo B)
+ * de 6 assentos cada (numerados 1-6). Total por baia = 12 assentos.
+ *  Aquario: 4 baias × 12 = 48
+ *  Salao:   3 baias × 12 = 36
+ *  Gouvea:  2 baias × 12 = 24
+ *  TOTAL = 108 assentos */
 export const DEFAULT_AREAS = [
-  { name: 'Aquario', capacity: 48, fileiras: 4, assentosPorFileira: 12 },
-  { name: 'Salao',   capacity: 36, fileiras: 3, assentosPorFileira: 12 },
-  { name: 'Gouvea',  capacity: 24, fileiras: 2, assentosPorFileira: 12 },
+  { name: 'Aquario', baias: 4, assentosPorFileira: 6, capacity: 48 },
+  { name: 'Salao',   baias: 3, assentosPorFileira: 6, capacity: 36 },
+  { name: 'Gouvea',  baias: 2, assentosPorFileira: 6, capacity: 24 },
 ];
 export const DEFAULT_SECTOR_RULES = [
   { sector: 'PTS',         slots: 15, dias: 'Seg a Sex' },
@@ -90,22 +96,24 @@ export async function fetchReservations({ from, to } = {}) {
   rows.sort((a, b) => (b.data || '').localeCompare(a.data || ''));
   return rows;
 }
-export async function createReservation({ data, sector, area, fileira, assento, userName }) {
+export async function createReservation({ data, sector, area, baia, fileira, assento, userName }) {
   // Sandbox guard
   const { sandboxGuard } = await import('./sandbox.js');
   if (sandboxGuard('reservar estação')) return { id: '__sandbox', data };
 
   const cu = store.get('currentUser');
-  // Checa duplicata: mesma data + mesmo seat OR mesma data + mesmo user
+  // Checa duplicata: mesma data + (área+baia+fileira+assento)
   const dupSeat = await getDocs(query(
     collection(db, 'desk_reservations'),
     where('data', '==', data),
     where('area', '==', area),
+    where('baia', '==', baia),
     where('fileira', '==', fileira),
     where('assento', '==', assento),
     limit(1),
   ));
   if (!dupSeat.empty) throw new Error('Estação já reservada nesta data.');
+  // Checa duplicata: usuário já tem reserva nesta data
   const dupUser = await getDocs(query(
     collection(db, 'desk_reservations'),
     where('data', '==', data),
@@ -113,10 +121,25 @@ export async function createReservation({ data, sector, area, fileira, assento, 
     limit(1),
   ));
   if (!dupUser.empty) throw new Error('Você já tem uma reserva nesta data.');
+  // Checa regra de setor (capacidade do dia)
+  if (sector) {
+    const cfg = await fetchCheckinConfig();
+    const rule = (cfg.sectorRules || []).find(r => r.sector === sector);
+    if (rule?.slots) {
+      const sectorReservations = await getDocs(query(
+        collection(db, 'desk_reservations'),
+        where('data', '==', data),
+        where('sector', '==', sector),
+      ));
+      if (sectorReservations.size >= rule.slots) {
+        throw new Error(`Setor ${sector} atingiu o limite (${rule.slots} estações) nesta data.`);
+      }
+    }
+  }
 
   const docRef = await addDoc(collection(db, 'desk_reservations'), {
-    data, sector, area, fileira, assento,
-    userName,                       // pode ser email da minhamesa OU nome
+    data, sector, area, baia, fileira, assento,
+    userName,
     userId:    cu?.uid || null,
     checkinAt: null,
     items:     {},
@@ -218,6 +241,87 @@ export async function clockEvent(eventType /* 'in' | 'lunchOut' | 'lunchIn' | 'o
     });
   }
   return { date, eventType };
+}
+
+/* ─── Recusar registro de ponto (decisão consciente) ──────
+ * Grava no doc do dia que o usuário recusou bater ponto.
+ * Aparece no relatório como "ausente por escolha". */
+export async function declineTimeClock(reason = '') {
+  const { sandboxGuard } = await import('./sandbox.js');
+  if (sandboxGuard('recusar ponto')) return;
+  const cu = store.get('currentUser');
+  if (!cu?.uid) throw new Error('Não autenticado.');
+  const date = todayISO();
+  const id   = timeClockId(cu.uid, date);
+  const ref  = doc(db, 'time_clock', id);
+  const snap = await getDoc(ref);
+  if (snap.exists() && snap.data().in) {
+    throw new Error('Já existe registro de ponto hoje.');
+  }
+  await setDoc(ref, {
+    userId:    cu.uid,
+    userName:  store.get('userProfile')?.name || cu.uid,
+    sector:    store.get('userProfile')?.sector || store.get('userProfile')?.department || '',
+    date,
+    declined:  true,
+    declineReason: reason || null,
+    declinedAt: serverTimestamp(),
+    createdAt:  serverTimestamp(),
+  }, { merge: true });
+}
+
+/* ─── Speedtest (Cloudflare CDN, mesma lógica do minhamesa) ──
+ * Retorna { download: 'X.XX' Mbps, upload: 'X.XX' Mbps, tipo: 'desktop-cabo'|... }
+ * Se falhar, devolve 'Erro' nos campos correspondentes. */
+export async function runSpeedTest() {
+  const result = { download: 'N/A', upload: 'N/A', tipo: detectConnectionType() };
+
+  // Download — 6 streams paralelos de 5MB
+  try {
+    const STREAMS = 6, SIZE = 5_000_000, ts = Date.now();
+    const start = performance.now();
+    const blobs = await Promise.all(
+      Array.from({ length: STREAMS }, (_, i) =>
+        fetch(`https://speed.cloudflare.com/__down?bytes=${SIZE}&r=${ts}${i}`,
+          { cache: 'no-store' })
+          .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+      )
+    );
+    const elapsed = (performance.now() - start) / 1000;
+    const totalBytes = blobs.reduce((s, b) => s + b.size, 0);
+    result.download = ((totalBytes * 8) / elapsed / 1e6).toFixed(2);
+  } catch (e) { result.download = 'Erro'; }
+
+  // Upload — 4 streams paralelos de 8MB
+  try {
+    const STREAMS = 4, SIZE = 8_000_000, ts = Date.now();
+    const start = performance.now();
+    await Promise.all(
+      Array.from({ length: STREAMS }, (_, i) => {
+        const fd = new FormData();
+        fd.append('d', new Blob([new Uint8Array(SIZE)]));
+        return fetch(`https://speed.cloudflare.com/__up?r=${ts}${i}`, {
+          method: 'POST', body: fd, mode: 'no-cors', cache: 'no-store',
+        });
+      })
+    );
+    const elapsed = (performance.now() - start) / 1000;
+    result.upload = ((STREAMS * SIZE * 8) / elapsed / 1e6).toFixed(2);
+  } catch (e) { result.upload = 'Erro'; }
+
+  return result;
+}
+
+function detectConnectionType() {
+  const ua = navigator.userAgent;
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  if (isMobile) {
+    if (navigator.connection?.type === 'cellular') return 'celular-dados';
+    return 'celular-wifi';
+  }
+  if (navigator.connection?.type === 'ethernet') return 'desktop-cabo';
+  if (navigator.connection?.type === 'wifi')     return 'desktop-wifi';
+  return 'desktop-cabo';  // assume cabo no desktop como default
 }
 
 /* ─── Cálculo de horas trabalhadas (a partir do registro) ─ */

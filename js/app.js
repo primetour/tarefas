@@ -13,6 +13,7 @@ import { Header }           from './components/header.js';
 import { subscribeNotifications, cleanupExpired } from './services/notifications.js';
 import { syncBrandingToCache }                    from './services/branding.js';
 import { injectSandboxBanner }                    from './services/sandbox.js';
+import { injectClockTimer, maybeShowClockStartPrompt } from './components/clockTimer.js';
 import { startScheduler, stopScheduler }          from './services/notificationScheduler.js';
 import { checkAndPlaySound, resetSoundCounter }   from './components/notificationPanel.js';
 
@@ -86,6 +87,9 @@ async function init() {
   // visível só quando localStorage.primetour_sandbox === '1'
   injectSandboxBanner();
 
+  // Injeta timer de ponto (analista) — invisível até user bater entrada
+  injectClockTimer();
+
   // Aguarda estado de auth antes de qualquer render
   initAuthObserver(() => {
     if (authResolved) return;
@@ -144,6 +148,9 @@ function renderApp(root) {
   }
 
   mountShell(root);
+
+  // Pop-up de início de ponto (somente analista, uma vez por sessão)
+  setTimeout(() => maybeShowClockStartPrompt().catch(()=>{}), 1500);
 }
 
 /* ─── Tela: sem workspace ────────────────────────────────── */
