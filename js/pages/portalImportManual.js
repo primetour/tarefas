@@ -27,7 +27,7 @@ export async function renderPortalImportManual(container) {
       <!-- Visão geral -->
       <div class="card" style="padding:28px;">
         <h2 style="font-size:1rem;font-weight:700;margin:0 0 12px;display:flex;align-items:center;gap:8px;">
-          <span style="background:var(--brand-gold);color:#000;width:24px;height:24px;border-radius:50%;
+          <span style="background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);width:24px;height:24px;border-radius:50%;
             display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;
             flex-shrink:0;">1</span>
           Visão Geral
@@ -49,7 +49,7 @@ export async function renderPortalImportManual(container) {
       <!-- Estrutura do arquivo -->
       <div class="card" style="padding:28px;">
         <h2 style="font-size:1rem;font-weight:700;margin:0 0 16px;display:flex;align-items:center;gap:8px;">
-          <span style="background:var(--brand-gold);color:#000;width:24px;height:24px;border-radius:50%;
+          <span style="background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);width:24px;height:24px;border-radius:50%;
             display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;
             flex-shrink:0;">2</span>
           Estrutura da Planilha
@@ -127,7 +127,7 @@ export async function renderPortalImportManual(container) {
       <!-- Regras importantes -->
       <div class="card" style="padding:28px;">
         <h2 style="font-size:1rem;font-weight:700;margin:0 0 16px;display:flex;align-items:center;gap:8px;">
-          <span style="background:var(--brand-gold);color:#000;width:24px;height:24px;border-radius:50%;
+          <span style="background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);width:24px;height:24px;border-radius:50%;
             display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;
             flex-shrink:0;">3</span>
           Regras e Dicas
@@ -154,7 +154,7 @@ export async function renderPortalImportManual(container) {
       <!-- Passo a passo -->
       <div class="card" style="padding:28px;">
         <h2 style="font-size:1rem;font-weight:700;margin:0 0 16px;display:flex;align-items:center;gap:8px;">
-          <span style="background:var(--brand-gold);color:#000;width:24px;height:24px;border-radius:50%;
+          <span style="background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);width:24px;height:24px;border-radius:50%;
             display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;
             flex-shrink:0;">4</span>
           Passo a Passo

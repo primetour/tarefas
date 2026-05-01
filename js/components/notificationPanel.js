@@ -164,7 +164,7 @@ function buildPanelHTML() {
         ${CATEGORIES.map(c => `
           <button class="notif-cat-btn btn btn-ghost btn-sm" data-cat="${c.key}"
             style="font-size:0.6875rem;flex-shrink:0;padding:4px 10px;
-            ${_activeFilter === c.key ? 'background:var(--brand-gold)15;color:var(--brand-gold);font-weight:700;' : 'color:var(--text-muted);'}">
+            ${_activeFilter === c.key ? 'background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);font-weight:700;' : 'color:var(--text-muted);'}">
             ${esc(c.label)}
           </button>`).join('')}
         <button class="btn btn-ghost btn-sm" id="notif-toggle-unread"

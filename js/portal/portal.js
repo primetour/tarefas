@@ -603,7 +603,7 @@ function showNewsletterPrompt(db, taskTypes) {
         </p>
         <div style="display:flex;gap:8px;">
           <button id="nl-quick-yes" style="padding:6px 16px;border-radius:6px;border:none;
-            background:var(--brand-gold);color:#000;font-weight:600;cursor:pointer;font-size:0.8125rem;">
+            background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);font-weight:600;cursor:pointer;font-size:0.8125rem;">
             Sim, é newsletter
           </button>
           <button id="nl-quick-no" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border-subtle);
@@ -1464,7 +1464,7 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
       <!-- Actions -->
       <div style="display:flex;gap:8px;">
         <button id="fs-form-submit" style="flex:1;padding:10px 16px;border-radius:6px;border:none;
-          background:var(--brand-gold);color:#000;font-weight:600;font-size:0.875rem;
+          background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);font-weight:600;font-size:0.875rem;
           cursor:pointer;font-family:var(--font-ui);transition:all 0.15s;">
           Enviar solicitação →
         </button>
@@ -1806,7 +1806,7 @@ function showTaskPreviewCard(db, taskTypes, data, anchorEl) {
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         ${isEditable ? `
         <button id="pcal-preview-edit" style="padding:6px 16px;border-radius:6px;border:none;
-          background:var(--brand-gold);color:#000;font-size:0.8125rem;font-weight:600;cursor:pointer;
+          background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);font-size:0.8125rem;font-weight:600;cursor:pointer;
           font-family:var(--font-ui);transition:all 0.15s;">
           ✏ Editar solicitação
         </button>` : ''}
@@ -1998,7 +1998,7 @@ async function openEditRequestModal(db, taskTypes, data) {
           background:transparent;color:var(--text-secondary);font-size:0.8125rem;cursor:pointer;
           font-family:var(--font-ui);">Cancelar</button>
         <button id="fs-edit-save" style="padding:8px 20px;border-radius:6px;border:none;
-          background:var(--brand-gold);color:#000;font-weight:600;font-size:0.875rem;cursor:pointer;
+          background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);font-weight:600;font-size:0.875rem;cursor:pointer;
           font-family:var(--font-ui);transition:all 0.15s;">
           Salvar alterações
         </button>

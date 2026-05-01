@@ -55,7 +55,7 @@ export function openCardPrefsModal(onSave) {
                 border:2px solid ${active?'var(--brand-gold)':'var(--border-subtle)'};
                 background:${active?'var(--brand-gold)':'transparent'};
                 display:flex;align-items:center;justify-content:center;
-                font-size:0.625rem;color:#000;transition:all 0.15s;">
+                font-size:0.625rem;color:var(--text-inverse,#FFFFFF);transition:all 0.15s;">
                 ${active?'✓':''}
               </div>
             </label>

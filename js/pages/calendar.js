@@ -413,7 +413,7 @@ function renderMonth() {
         cursor:${cell.cur?'pointer':'default'};" data-date="${dateStr}">
         <div style="font-size:0.8125rem;font-weight:${isToday?700:400};
           color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
-          ${isToday?'background:var(--brand-gold);color:#000;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;':''};
+          ${isToday?'background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;':''};
           margin-bottom:3px;">${cell.day}</div>
         ${slotRenders.join('')}
         ${unmatchedTasks.map(t=>taskPill(t,true)).join('')}

@@ -828,8 +828,12 @@ const HELP_STYLES = `
   line-height: 1.6;
 }
 .help-highlight {
-  background: var(--brand-gold, #D4A843);
-  color: var(--bg-primary, #0A1628);
+  /* Marca-texto amarelo translúcido — funciona em paleta clara OU
+   * escura porque o amarelo se destaca em ambas. Texto usa --text-primary
+   * que já adapta automaticamente. Antes era brand-gold/bg-primary
+   * que ficava preto-no-preto em algumas paletas. */
+  background: rgba(255, 215, 0, 0.45);
+  color: var(--text-primary);
   padding: 0 2px; border-radius: 2px;
   font-weight: 600;
 }

@@ -891,13 +891,13 @@ function openBulkCsatModal() {
               value="${esc(email)}" placeholder="email@cliente.com"
               ${hasSurvey ? 'disabled' : ''}
               style="flex:1;font-size:0.75rem;padding:4px 8px;border:1px solid var(--border-subtle);
-                border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);
+                border-radius:var(--radius-sm);background:var(--bg-surface);color:var(--text-primary);
                 ${!email && !hasSurvey ? 'border-color:#F59E0B;' : ''}">
             <input type="text" class="bulk-name-input" data-task-id="${esc(t.id)}"
               value="${esc(taskNames[t.id] || '')}" placeholder="Nome do cliente"
               ${hasSurvey ? 'disabled' : ''}
               style="width:140px;font-size:0.75rem;padding:4px 8px;border:1px solid var(--border-subtle);
-                border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);">
+                border-radius:var(--radius-sm);background:var(--bg-surface);color:var(--text-primary);">
           </div>
         </div>
       </div>`;
@@ -1214,12 +1214,12 @@ function openAutoCsatModal() {
                         <input type="email" class="auto-email-input" data-task-id="${esc(t.id)}"
                           value="${esc(email)}" placeholder="email@cliente.com"
                           style="flex:1;font-size:0.75rem;padding:4px 8px;border:1px solid var(--border-subtle);
-                            border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);
+                            border-radius:var(--radius-sm);background:var(--bg-surface);color:var(--text-primary);
                             ${!email ? 'border-color:#F59E0B;' : ''}">
                         <input type="text" class="auto-name-input" data-task-id="${esc(t.id)}"
                           value="${esc(autoNames[t.id] || '')}" placeholder="Nome"
                           style="width:120px;font-size:0.75rem;padding:4px 8px;border:1px solid var(--border-subtle);
-                            border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);">
+                            border-radius:var(--radius-sm);background:var(--bg-surface);color:var(--text-primary);">
                       </div>
                     </div>
                   </div>`;
