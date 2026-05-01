@@ -2912,14 +2912,14 @@ function bindFormEvents(db, taskTypes) {
     if (alert) alert.style.display = cb.checked ? 'flex' : 'none';
   });
 
-  // Partnership toggle — checkbox é hidden via .urgency-toggle CSS,
-  // precisa do click handler pra alternar checked + classe visual
-  document.getElementById('partnership-toggle')?.addEventListener('click', () => {
+  // Partnership toggle — usa o evento 'change' do checkbox interno
+  // (não 'click' no label, porque o input dentro do label faz o
+  // handler rodar 2x: 1× pelo click do label + 1× pelo bubble do
+  // synthetic click do input → resultado: !cb.checked alterna 2x e
+  // anula visualmente apesar de ainda alterar o checked).
+  document.getElementById('p-partnership')?.addEventListener('change', (e) => {
     const toggle = document.getElementById('partnership-toggle');
-    const cb = document.getElementById('p-partnership');
-    if (!cb) return;
-    cb.checked = !cb.checked;
-    toggle?.classList.toggle('active', cb.checked);
+    toggle?.classList.toggle('active', e.target.checked);
   });
 
   // Batch: add to batch
