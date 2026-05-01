@@ -218,6 +218,49 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── Check-in: Reservas de estação ─────────────────────────
+    // Qualquer usuário autenticado pode ler (visualizar mapa).
+    // Cria a própria reserva (createdBy = auth.uid). Atualizar/excluir:
+    // dono da reserva ou admin (gestores podem corrigir/cancelar).
+    match /desk_reservations/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && request.resource.data.createdBy == request.auth.uid;
+      allow update: if isAuth() && (
+                        resource.data.createdBy == request.auth.uid
+                        || isAdmin()
+                        || isManager()
+                      );
+      allow delete: if isAuth() && (
+                        resource.data.createdBy == request.auth.uid
+                        || isAdmin()
+                      );
+    }
+
+    // ── Check-in: Config (áreas + regras de setor) ────────────
+    // Leitura pra todos autenticados (precisa carregar mapa/dropdowns);
+    // escrita só admin (config global do escritório).
+    match /desk_config/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ── Ponto eletrônico (jornada) ────────────────────────────
+    // Doc por usuário+data. Cada user só vê e edita o próprio.
+    // Admin/gestor pode ler tudo (relatório).
+    match /time_clock/{docId} {
+      allow read:   if isAuth() && (
+                        resource.data.userId == request.auth.uid
+                        || isAdmin()
+                        || isManager()
+                      );
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuth() && (
+                        resource.data.userId == request.auth.uid
+                        || isAdmin()
+                      );
+      allow delete: if isAdmin();
+    }
+
     // ── Performance de Newsletters (Marketing Cloud) ──────────
     match /mc_performance/{docId} {
       allow read:  if isAuth();

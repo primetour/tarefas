@@ -389,6 +389,7 @@ function setupRouter() {
   if (!content) return;
 
   router.register({
+    'check-in':     async () => { const { renderCheckin } = await import('./pages/checkin.js'); await renderCheckin(content); },
     'dashboard':    async () => { await renderDashboard(content); },
     'users':        async () => { await renderUsers(content); },
     'tasks':        async () => { destroyKanban(); await renderTasks(content); },
@@ -484,6 +485,7 @@ function setupRouter() {
       'tasks':     () => { destroyTasksPage(); import('./pages/tasks.js').then(m => m.renderTasks(content)); },
       'projects':  () => import('./pages/projects.js').then(m => m.renderProjects(content)),
       'kanban':    () => { destroyKanban(); import('./pages/kanban.js').then(m => m.renderKanban(content)); },
+      'check-in':  () => import('./pages/checkin.js').then(m => m.renderCheckin(content)),
       'dashboard': () => import('./pages/dashboard.js').then(m => m.renderDashboard(content)),
       'dashboards':() => { destroyDashboards(); import('./pages/dashboards.js').then(m => m.renderDashboards(content)); },
       'csat':      () => { destroyCsat(); import('./pages/csat.js').then(m => m.renderCsat(content)); },
