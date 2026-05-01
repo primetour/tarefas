@@ -22,6 +22,7 @@
 import {
   collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
   getDoc, getDocs, query, where, orderBy, serverTimestamp, limit, onSnapshot,
+  Timestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -371,4 +372,429 @@ export function calcWorkedHours(rec) {
   const tLO = ts(rec.lunchOut), tLI = ts(rec.lunchIn);
   if (tLO && tLI) totalMs -= (tLI - tLO);
   return Math.max(0, totalMs) / 3600000; // horas
+}
+
+/* ═════════════════════════════════════════════════════════════
+ * EDIÇÃO / EXCLUSÃO DE PONTO (admin / gestor)
+ * ═════════════════════════════════════════════════════════════
+ * Padrão Benner RH: gestor pode corrigir registro de qualquer
+ * colaborador (esquece de bater, esquece almoço etc). Cada
+ * alteração gera entry no time_clock_audit (rastreabilidade).
+ */
+function canManageTimeClocks() {
+  return store.isMaster()
+      || store.can('system_manage_users')
+      || store.can('absence_manage_team');
+}
+
+/**
+ * Combina date (YYYY-MM-DD) + horário (HH:MM ou HH:MM:SS) em Date local.
+ * Devolve null se valor vazio. */
+export function combineDateTime(dateISO, timeStr) {
+  if (!timeStr) return null;
+  const [h, m, s = '0'] = String(timeStr).split(':');
+  const [y, mo, d] = String(dateISO).split('-').map(Number);
+  return new Date(y, mo - 1, d, parseInt(h)||0, parseInt(m)||0, parseInt(s)||0);
+}
+
+/**
+ * Cria registro de ponto manualmente (admin lança um ponto que
+ * não foi batido). Útil para colaborador esqueceu o dia inteiro.
+ *  fields = { in, lunchOut, lunchIn, out } // valores HH:MM ou null */
+export async function adminCreateTimeClock({ userId, userName, sector, date, fields, note }) {
+  const { sandboxGuard } = await import('./sandbox.js');
+  if (sandboxGuard('criar registro de ponto')) return;
+  if (!canManageTimeClocks()) throw new Error('Permissão negada — apenas gestores.');
+  if (!userId || !date) throw new Error('userId e date são obrigatórios.');
+
+  const id  = timeClockId(userId, date);
+  const ref = doc(db, 'time_clock', id);
+  const snap = await getDoc(ref);
+  if (snap.exists() && (snap.data().in || snap.data().out)) {
+    throw new Error('Já existe registro nesta data. Use editar.');
+  }
+  const cu = store.get('currentUser');
+  const payload = {
+    userId, userName: userName || '', sector: sector || '',
+    date,
+    createdAt: serverTimestamp(),
+    createdBy: cu?.uid || null,
+    manual: true,
+    manualNote: note || '',
+  };
+  ['in','lunchOut','lunchIn','out'].forEach(k => {
+    const t = combineDateTime(date, fields?.[k]);
+    if (t) payload[k] = Timestamp.fromDate(t);
+  });
+  await setDoc(ref, payload, { merge: true });
+
+  await addDoc(collection(db, 'time_clock_audit'), {
+    recordId: id, userId, date,
+    action: 'create',
+    actorId: cu?.uid || null,
+    actorName: store.get('userProfile')?.name || cu?.uid || '',
+    after: { ...fields },
+    note: note || '',
+    at: serverTimestamp(),
+  });
+  return { id };
+}
+
+/**
+ * Edita registro existente. Admin/gestor altera horários de in/lunchOut/lunchIn/out.
+ *  fields = { in?, lunchOut?, lunchIn?, out? } strings HH:MM ou null pra apagar */
+export async function adminUpdateTimeClock({ recordId, date, fields, note }) {
+  const { sandboxGuard } = await import('./sandbox.js');
+  if (sandboxGuard('editar registro de ponto')) return;
+  if (!canManageTimeClocks()) throw new Error('Permissão negada — apenas gestores.');
+
+  const ref = doc(db, 'time_clock', recordId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Registro não encontrado.');
+  const before = snap.data();
+
+  const update = {
+    updatedAt: serverTimestamp(),
+    updatedBy: store.get('currentUser')?.uid || null,
+    manual: true,
+    manualNote: note || before.manualNote || '',
+  };
+  ['in','lunchOut','lunchIn','out'].forEach(k => {
+    if (fields && (k in fields)) {
+      const v = fields[k];
+      if (v === '' || v === null) update[k] = null;
+      else {
+        const t = combineDateTime(date || before.date, v);
+        if (t) update[k] = Timestamp.fromDate(t);
+      }
+    }
+  });
+  await updateDoc(ref, update);
+
+  const beforeFmt = {};
+  ['in','lunchOut','lunchIn','out'].forEach(k => {
+    const v = before[k];
+    if (v) {
+      const d = v.toDate ? v.toDate() : new Date(v);
+      beforeFmt[k] = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    }
+  });
+  const cu = store.get('currentUser');
+  await addDoc(collection(db, 'time_clock_audit'), {
+    recordId, userId: before.userId, date: before.date,
+    action: 'update',
+    actorId: cu?.uid || null,
+    actorName: store.get('userProfile')?.name || cu?.uid || '',
+    before: beforeFmt,
+    after: { ...fields },
+    note: note || '',
+    at: serverTimestamp(),
+  });
+}
+
+/** Exclui registro (admin only). */
+export async function adminDeleteTimeClock(recordId) {
+  const { sandboxGuard } = await import('./sandbox.js');
+  if (sandboxGuard('excluir registro de ponto')) return;
+  if (!store.isMaster() && !store.can('system_manage_users')) {
+    throw new Error('Permissão negada — apenas admin.');
+  }
+  const ref = doc(db, 'time_clock', recordId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Registro não encontrado.');
+  const before = snap.data();
+
+  await deleteDoc(ref);
+  const cu = store.get('currentUser');
+  await addDoc(collection(db, 'time_clock_audit'), {
+    recordId, userId: before.userId, date: before.date,
+    action: 'delete',
+    actorId: cu?.uid || null,
+    actorName: store.get('userProfile')?.name || cu?.uid || '',
+    before,
+    at: serverTimestamp(),
+  });
+}
+
+/** Busca histórico de auditoria de um registro específico. */
+export async function fetchTimeClockAudit(recordId) {
+  const snap = await getDocs(query(
+    collection(db, 'time_clock_audit'),
+    where('recordId', '==', recordId),
+    limit(50),
+  ));
+  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  rows.sort((a, b) => {
+    const ta = a.at?.toDate ? a.at.toDate().getTime() : 0;
+    const tb = b.at?.toDate ? b.at.toDate().getTime() : 0;
+    return tb - ta;
+  });
+  return rows;
+}
+
+/* ═════════════════════════════════════════════════════════════
+ * SOLICITAÇÕES DE CORREÇÃO (collection: time_clock_requests)
+ * ═════════════════════════════════════════════════════════════
+ * Quando o colaborador esquece, ele pede ao superior:
+ *   { userId, userName, sector, date, proposed: {in, lunchOut, lunchIn, out},
+ *     reason, status: 'pending'|'approved'|'rejected',
+ *     createdAt, decidedAt, decidedBy, decideReason }
+ */
+export async function requestTimeClockCorrection({ date, proposed, reason }) {
+  const { sandboxGuard } = await import('./sandbox.js');
+  if (sandboxGuard('solicitar correção de ponto')) return { id: '__sandbox' };
+  const cu = store.get('currentUser');
+  if (!cu?.uid) throw new Error('Não autenticado.');
+  if (!date) throw new Error('Data é obrigatória.');
+  if (!reason || reason.trim().length < 5) throw new Error('Justificativa obrigatória (mínimo 5 caracteres).');
+
+  // Bloqueia duplicatas pendentes pra mesma data
+  const dup = await getDocs(query(
+    collection(db, 'time_clock_requests'),
+    where('userId', '==', cu.uid),
+    where('date',   '==', date),
+    where('status', '==', 'pending'),
+    limit(1),
+  ));
+  if (!dup.empty) {
+    throw new Error('Já existe uma solicitação pendente para esta data.');
+  }
+  const profile = store.get('userProfile') || {};
+  const ref = await addDoc(collection(db, 'time_clock_requests'), {
+    userId:    cu.uid,
+    userName:  profile.name || cu.uid,
+    sector:    profile.sector || profile.department || '',
+    date,
+    proposed:  proposed || {},
+    reason:    reason.trim(),
+    status:    'pending',
+    createdAt: serverTimestamp(),
+  });
+  return { id: ref.id };
+}
+
+/** Lista correções (admin/gestor → todas; user comum → próprias). */
+export async function fetchTimeClockRequests({ status = null, mineOnly = false } = {}) {
+  const cu = store.get('currentUser');
+  const isMgr = canManageTimeClocks();
+  const restrict = mineOnly || !isMgr;
+  let q;
+  if (restrict) {
+    q = query(collection(db, 'time_clock_requests'),
+      where('userId', '==', cu?.uid || '__none__'),
+      limit(200));
+  } else {
+    q = query(collection(db, 'time_clock_requests'), limit(500));
+  }
+  const snap = await getDocs(q);
+  let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (status) rows = rows.filter(r => r.status === status);
+  rows.sort((a, b) => {
+    const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+    const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+    return tb - ta;
+  });
+  return rows;
+}
+
+/** Real-time pra aba Aprovações do gestor. */
+export function subscribeTimeClockRequests(callback, { status = 'pending' } = {}) {
+  const isMgr = canManageTimeClocks();
+  const cu = store.get('currentUser');
+  let q;
+  if (!isMgr) {
+    q = query(collection(db, 'time_clock_requests'),
+      where('userId', '==', cu?.uid || '__none__'),
+      limit(200));
+  } else {
+    q = query(collection(db, 'time_clock_requests'), limit(500));
+  }
+  return onSnapshot(q, (snap) => {
+    let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (status) rows = rows.filter(r => r.status === status);
+    rows.sort((a, b) => {
+      const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+      const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+      return tb - ta;
+    });
+    callback(rows);
+  }, (err) => console.warn('[checkin] subscribe req error:', err?.message));
+}
+
+/** Aprova solicitação: aplica fields no time_clock e marca request. */
+export async function approveTimeClockRequest(requestId, decideReason = '') {
+  const { sandboxGuard } = await import('./sandbox.js');
+  if (sandboxGuard('aprovar correção')) return;
+  if (!canManageTimeClocks()) throw new Error('Permissão negada — apenas gestores.');
+
+  const reqRef  = doc(db, 'time_clock_requests', requestId);
+  const reqSnap = await getDoc(reqRef);
+  if (!reqSnap.exists()) throw new Error('Solicitação não encontrada.');
+  const req = reqSnap.data();
+  if (req.status !== 'pending') throw new Error('Solicitação já foi processada.');
+
+  // Aplica no time_clock
+  const recId = timeClockId(req.userId, req.date);
+  const tcRef = doc(db, 'time_clock', recId);
+  const tcSnap = await getDoc(tcRef);
+
+  const update = {};
+  ['in','lunchOut','lunchIn','out'].forEach(k => {
+    const v = req.proposed?.[k];
+    if (v === '' || v === null || v === undefined) return;
+    const t = combineDateTime(req.date, v);
+    if (t) update[k] = Timestamp.fromDate(t);
+  });
+
+  if (tcSnap.exists()) {
+    await updateDoc(tcRef, {
+      ...update,
+      manual: true,
+      manualNote: `Correção aprovada (${decideReason || 'sem comentário'})`,
+      updatedAt: serverTimestamp(),
+      updatedBy: store.get('currentUser')?.uid || null,
+    });
+  } else {
+    await setDoc(tcRef, {
+      userId:   req.userId,
+      userName: req.userName,
+      sector:   req.sector,
+      date:     req.date,
+      manual:   true,
+      manualNote: `Correção aprovada (${decideReason || 'sem comentário'})`,
+      createdAt: serverTimestamp(),
+      ...update,
+    });
+  }
+
+  const cu = store.get('currentUser');
+  await updateDoc(reqRef, {
+    status: 'approved',
+    decidedAt: serverTimestamp(),
+    decidedBy: cu?.uid || null,
+    decidedByName: store.get('userProfile')?.name || cu?.uid || '',
+    decideReason: decideReason || '',
+  });
+  await addDoc(collection(db, 'time_clock_audit'), {
+    recordId: recId,
+    userId:   req.userId,
+    date:     req.date,
+    action:   'approve_request',
+    requestId,
+    actorId:  cu?.uid || null,
+    actorName: store.get('userProfile')?.name || cu?.uid || '',
+    after:    req.proposed,
+    note:     decideReason || '',
+    at:       serverTimestamp(),
+  });
+}
+
+/** Rejeita solicitação. */
+export async function rejectTimeClockRequest(requestId, decideReason = '') {
+  const { sandboxGuard } = await import('./sandbox.js');
+  if (sandboxGuard('rejeitar correção')) return;
+  if (!canManageTimeClocks()) throw new Error('Permissão negada — apenas gestores.');
+  if (!decideReason || decideReason.trim().length < 3) {
+    throw new Error('Justifique a rejeição (mínimo 3 caracteres).');
+  }
+  const cu = store.get('currentUser');
+  await updateDoc(doc(db, 'time_clock_requests', requestId), {
+    status: 'rejected',
+    decidedAt: serverTimestamp(),
+    decidedBy: cu?.uid || null,
+    decidedByName: store.get('userProfile')?.name || cu?.uid || '',
+    decideReason: decideReason.trim(),
+  });
+}
+
+/* ═════════════════════════════════════════════════════════════
+ * BANCO DE HORAS / JORNADA ESPERADA
+ * ═════════════════════════════════════════════════════════════
+ * Para cada dia útil (seg-sex), o colaborador deve trabalhar X horas.
+ * Saldo = sum(workedHours) - sum(expectedHours) ao longo do período.
+ * Configurável via desk_config.workdayHours (default 8h).
+ */
+export const DEFAULT_WORKDAY_HOURS = 8;
+
+export function isBusinessDay(dateISO) {
+  const d = new Date(dateISO + 'T12:00:00');
+  const dow = d.getDay();
+  return dow !== 0 && dow !== 6;
+}
+
+/**
+ * Calcula banco de horas a partir de um array de records (time_clock).
+ *  records: [{ date, in, out, lunchOut, lunchIn, declined? }]
+ *  expectedPerDay: jornada padrão em horas (default 8)
+ *  Retorna {
+ *    daysWorked, daysExpected, totalWorked, totalExpected,
+ *    balance,  // saldo positivo = hora extra; negativo = a compensar
+ *    avgPerDay,
+ *    overtimeDays, // dias com mais que jornada
+ *    deficitDays,  // dias com menos que jornada (excluindo declined)
+ *  } */
+export function calcBancoHoras(records, expectedPerDay = DEFAULT_WORKDAY_HOURS) {
+  let totalWorked = 0, daysWorked = 0;
+  let overtime = 0, deficit = 0;
+  // Considera apenas dias úteis presentes nos records (não conta finais de semana)
+  // E dias que o usuário NÃO recusou ponto.
+  const businessRecords = records.filter(r => isBusinessDay(r.date) && !r.declined);
+  businessRecords.forEach(r => {
+    const w = calcWorkedHours(r);
+    if (w > 0) {
+      daysWorked++;
+      totalWorked += w;
+      if (w > expectedPerDay + 0.05) overtime++;
+      else if (w < expectedPerDay - 0.05) deficit++;
+    } else if (r.in && !r.out) {
+      // Dia incompleto — conta como deficit
+      deficit++;
+    }
+  });
+  const totalExpected = daysWorked * expectedPerDay;
+  return {
+    daysWorked,
+    totalWorked,
+    totalExpected,
+    balance: totalWorked - totalExpected,
+    avgPerDay: daysWorked ? totalWorked / daysWorked : 0,
+    overtimeDays: overtime,
+    deficitDays:  deficit,
+    expectedPerDay,
+  };
+}
+
+/**
+ * Para o relatório espelho de ponto: gera linha pra cada dia útil
+ * num intervalo, mesmo que sem registro. */
+export function buildEspelhoPonto(records, fromISO, toISO, expectedPerDay = DEFAULT_WORKDAY_HOURS) {
+  const byDate = {};
+  records.forEach(r => { byDate[r.date] = r; });
+  const rows = [];
+  const start = new Date(fromISO + 'T12:00:00');
+  const end   = new Date(toISO   + 'T12:00:00');
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const iso = d.toISOString().slice(0, 10);
+    const dow = d.getDay();
+    const isWeekend = (dow === 0 || dow === 6);
+    const r = byDate[iso] || null;
+    const worked = r ? calcWorkedHours(r) : 0;
+    const expected = isWeekend ? 0 : expectedPerDay;
+    const status = isWeekend ? 'weekend'
+      : r?.declined          ? 'declined'
+      : !r                   ? 'absent'
+      : (r.in && r.out)      ? (worked >= expected ? 'complete' : 'short')
+      : (r.in && !r.out)     ? 'incomplete'
+      : 'incomplete';
+    rows.push({
+      date: iso,
+      record: r,
+      worked,
+      expected,
+      balance: worked - expected,
+      status,
+      isWeekend,
+    });
+  }
+  return rows;
 }

@@ -246,8 +246,79 @@ service cloud.firestore {
 
     // ── Ponto eletrônico (jornada) ────────────────────────────
     // Doc por usuário+data. Cada user só vê e edita o próprio.
-    // Admin/gestor pode ler tudo (relatório).
+    // Admin/gestor pode ler tudo (relatório) e corrigir registros.
     match /time_clock/{docId} {
+      allow read:   if isAuth() && (
+                        resource.data.userId == request.auth.uid
+                        || isAdmin()
+                        || isManager()
+                      );
+      // Admin pode lançar ponto de qualquer um (manual entry); user só o próprio
+      allow create: if isAuth() && (
+                        request.resource.data.userId == request.auth.uid
+                        || isAdmin()
+                        || isManager()
+                      );
+      allow update: if isAuth() && (
+                        resource.data.userId == request.auth.uid
+                        || isAdmin()
+                        || isManager()
+                      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Auditoria de ponto (cada edição/exclusão gera entry) ──
+    // Append-only: ninguém edita/exclui logs. Admin/gestor lê tudo;
+    // colaborador lê os próprios pra ver histórico de correções.
+    match /time_clock_audit/{logId} {
+      allow read:   if isAuth() && (
+                        resource.data.userId == request.auth.uid
+                        || isAdmin()
+                        || isManager()
+                      );
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+
+    // ── Solicitações de correção de ponto ────────────────────
+    // Colaborador cria pra própria data; gestor aprova/rejeita.
+    match /time_clock_requests/{reqId} {
+      allow read:   if isAuth() && (
+                        resource.data.userId == request.auth.uid
+                        || isAdmin()
+                        || isManager()
+                      );
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.status == 'pending';
+      // Update: gestor (decidir) ou dono (cancelar enquanto pendente)
+      allow update: if isAuth() && (
+                        isAdmin()
+                        || isManager()
+                        || (resource.data.userId == request.auth.uid
+                            && resource.data.status == 'pending')
+                      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Férias (período aquisitivo + solicitações) ───────────
+    // Período aquisitivo é gerado automaticamente / lido por colaborador.
+    // Solicitações: colaborador cria; gestor aprova; admin gerencia.
+    match /vacation_periods/{periodId} {
+      allow read:   if isAuth() && (
+                        resource.data.userId == request.auth.uid
+                        || isAdmin()
+                        || isManager()
+                      );
+      allow create: if isAuth() && (
+                        request.resource.data.userId == request.auth.uid
+                        || isAdmin()
+                        || isManager()
+                      );
+      allow update: if isAdmin() || isManager();
+      allow delete: if isAdmin();
+    }
+
+    match /vacation_requests/{reqId} {
       allow read:   if isAuth() && (
                         resource.data.userId == request.auth.uid
                         || isAdmin()
@@ -255,8 +326,10 @@ service cloud.firestore {
                       );
       allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
       allow update: if isAuth() && (
-                        resource.data.userId == request.auth.uid
-                        || isAdmin()
+                        isAdmin()
+                        || isManager()
+                        || (resource.data.userId == request.auth.uid
+                            && resource.data.status == 'pending')
                       );
       allow delete: if isAdmin();
     }

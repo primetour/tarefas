@@ -13,12 +13,16 @@ import { toast }   from '../components/toast.js';
 import { modal }   from '../components/modal.js';
 import { REQUESTING_AREAS } from '../services/tasks.js';
 import {
-  DEFAULT_AREAS, DEFAULT_SECTOR_RULES,
+  DEFAULT_AREAS, DEFAULT_SECTOR_RULES, DEFAULT_WORKDAY_HOURS,
   fetchCheckinConfig, saveCheckinConfig,
   fetchReservations, subscribeReservations,
   createReservation, deleteReservation, performCheckin,
   fetchMyTimeClock, fetchTimeClockRange, fetchAllTimeClock, clockEvent, calcWorkedHours,
   declineTimeClock, runSpeedTest,
+  adminCreateTimeClock, adminUpdateTimeClock, adminDeleteTimeClock, fetchTimeClockAudit,
+  requestTimeClockCorrection, fetchTimeClockRequests, subscribeTimeClockRequests,
+  approveTimeClockRequest, rejectTimeClockRequest,
+  calcBancoHoras, buildEspelhoPonto, isBusinessDay,
 } from '../services/checkin.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -48,7 +52,16 @@ let _selectedDate = todayISO();
 let _unsubscribeReservations = null;   // Cleanup do real-time listener
 
 export async function renderCheckin(container) {
-  const isAdmin = store.isMaster() || store.can('system_manage_users');
+  const isAdmin   = store.isMaster() || store.can('system_manage_users');
+  const isManager = isAdmin || store.can('absence_manage_team');
+  // Conta solicitações pendentes pra mostrar badge na aba (gestor/admin)
+  let pendingCount = 0;
+  if (isManager) {
+    try {
+      const pending = await fetchTimeClockRequests({ status: 'pending' });
+      pendingCount = pending.length;
+    } catch {}
+  }
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
@@ -62,15 +75,16 @@ export async function renderCheckin(container) {
         { id:'map',     label:'Mapa de Estações', icon:'📋' },
         { id:'checkin', label:'Check-in',         icon:'✅' },
         { id:'clock',   label:'Ponto',            icon:'⏱' },
-        ...(isAdmin ? [{ id:'report', label:'Relatório',     icon:'📊' }] : []),
-        ...(isAdmin ? [{ id:'admin',  label:'Administração', icon:'⚙'  }] : []),
+        ...(isManager ? [{ id:'approvals', label:'Aprovações', icon:'✋', badge: pendingCount }] : []),
+        ...(isAdmin   ? [{ id:'report', label:'Relatório',     icon:'📊' }] : []),
+        ...(isAdmin   ? [{ id:'admin',  label:'Administração', icon:'⚙'  }] : []),
       ].map(t => `
         <button class="checkin-tab-btn" data-tab="${t.id}" style="padding:8px 18px;border:none;
           background:none;cursor:pointer;font-size:0.875rem;
           color:${activeTab===t.id?'var(--brand-gold)':'var(--text-muted)'};
           border-bottom:2px solid ${activeTab===t.id?'var(--brand-gold)':'transparent'};
           transition:all .15s;white-space:nowrap;">
-          ${t.icon} ${t.label}
+          ${t.icon} ${t.label}${t.badge ? ` <span style="background:#EF4444;color:white;border-radius:10px;padding:1px 7px;font-size:0.6875rem;margin-left:4px;">${t.badge}</span>` : ''}
         </button>
       `).join('')}
     </div>
@@ -103,10 +117,11 @@ async function loadTab() {
   el.innerHTML = '<div class="chart-loading"><div class="chart-loading-spinner"></div></div>';
   try {
     if (activeTab === 'map')         await renderMap(el);
-    else if (activeTab === 'checkin') await renderCheckinTab(el);
-    else if (activeTab === 'clock')  await renderClockTab(el);
-    else if (activeTab === 'report') await renderReportTab(el);
-    else if (activeTab === 'admin')  await renderAdminTab(el);
+    else if (activeTab === 'checkin')   await renderCheckinTab(el);
+    else if (activeTab === 'clock')     await renderClockTab(el);
+    else if (activeTab === 'approvals') await renderApprovalsTab(el);
+    else if (activeTab === 'report')    await renderReportTab(el);
+    else if (activeTab === 'admin')     await renderAdminTab(el);
   } catch (e) {
     el.innerHTML = `<p style="color:var(--color-danger);padding:24px;">Erro: ${esc(e.message)}</p>`;
   }
@@ -611,6 +626,10 @@ async function renderClockTab(container) {
   const today  = todayISO();
   const my     = await fetchMyTimeClock(today);
   const recent = await fetchTimeClockRange({ from: weekAgo(), to: today });
+  // Pra banco de horas (mês corrente)
+  const monthStart = (() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); })();
+  const monthRecords = await fetchTimeClockRange({ from: monthStart, to: today });
+  const banco = calcBancoHoras(monthRecords, DEFAULT_WORKDAY_HOURS);
 
   const events = [
     { key: 'in',       label: 'Entrada',         icon: '🌅', desc: 'início do expediente' },
@@ -652,44 +671,50 @@ async function renderClockTab(container) {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:24px;">
       ${events.map(cardOf).join('')}
     </div>
-    <div class="card" style="padding:14px 16px;margin-bottom:24px;
-      background:rgba(212,168,67,0.06);border:1px solid rgba(212,168,67,0.25);">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-size:0.875rem;color:var(--text-secondary);">Horas trabalhadas hoje</span>
-        <span style="font-size:1.5rem;font-weight:700;color:var(--brand-gold);">${worked}h</span>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:24px;">
+      <div class="card" style="padding:14px 16px;
+        background:rgba(212,168,67,0.06);border:1px solid rgba(212,168,67,0.25);">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Hoje</div>
+        <div style="font-size:1.5rem;font-weight:700;color:var(--brand-gold);margin-top:2px;">${worked}h</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">trabalhadas</div>
+      </div>
+      <div class="card" style="padding:14px 16px;">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Mês corrente</div>
+        <div style="font-size:1.5rem;font-weight:700;color:var(--text-primary);margin-top:2px;">${banco.totalWorked.toFixed(1)}h</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">${banco.daysWorked} dias · esperado ${banco.totalExpected.toFixed(0)}h</div>
+      </div>
+      <div class="card" style="padding:14px 16px;
+        background:${banco.balance>=0?'rgba(34,197,94,0.06)':'rgba(239,68,68,0.06)'};
+        border:1px solid ${banco.balance>=0?'rgba(34,197,94,0.3)':'rgba(239,68,68,0.3)'};">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Banco de horas</div>
+        <div style="font-size:1.5rem;font-weight:700;color:${banco.balance>=0?'#22C55E':'#EF4444'};margin-top:2px;">
+          ${banco.balance>=0?'+':''}${banco.balance.toFixed(2)}h
+        </div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">
+          ${banco.balance>=0?'crédito (hora extra)':'débito (a compensar)'}
+        </div>
+      </div>
+      <div class="card" style="padding:14px 16px;">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Jornada padrão</div>
+        <div style="font-size:1.5rem;font-weight:700;color:var(--text-primary);margin-top:2px;">${DEFAULT_WORKDAY_HOURS}h/dia</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">${banco.overtimeDays} HE · ${banco.deficitDays} déficit</div>
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" style="margin-bottom:24px;">
       <div class="card-header">
         <div class="card-title">Últimos 7 dias</div>
+        <button class="btn btn-secondary btn-sm" id="ck-req-correction-new">+ Solicitar correção</button>
       </div>
       <div class="card-body" style="padding:0;">
-        ${recent.length ? `<table class="data-table" style="width:100%;">
-          <thead><tr><th>Data</th><th>Entrada</th><th>Almoço (saída)</th><th>Almoço (volta)</th><th>Saída</th><th>Horas</th></tr></thead>
-          <tbody>${recent.map(r => {
-            if (r.declined && !r.in) {
-              return `<tr style="opacity:0.55;">
-                <td>${fmtDate(r.date)}</td>
-                <td colspan="4" style="font-style:italic;color:#F59E0B;">⚠ Optou por não registrar</td>
-                <td>—</td>
-              </tr>`;
-            }
-            return `<tr>
-              <td>${fmtDate(r.date)}</td>
-              <td>${fmtTS(r.in)}</td>
-              <td>${fmtTS(r.lunchOut)}</td>
-              <td>${fmtTS(r.lunchIn)}</td>
-              <td>${fmtTS(r.out)}</td>
-              <td><strong>${calcWorkedHours(r).toFixed(2)}h</strong></td>
-            </tr>`;
-          }).join('')}</tbody>
-        </table>` : `<div class="empty-state" style="padding:24px;">
-          <div class="empty-state-title" style="font-size:0.875rem;">Sem registros nos últimos 7 dias.</div>
-        </div>`}
+        ${renderClockHistory(recent)}
       </div>
     </div>
+
+    ${renderMyCorrections()}
   `;
+  // Async — minhas correções (real-time)
+  loadMyCorrections();
 
   container.querySelectorAll('.ck-clock-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -706,6 +731,194 @@ async function renderClockTab(container) {
       }
     });
   });
+
+  // Botão novo: solicitar correção (escolhe data primeiro)
+  document.getElementById('ck-req-correction-new')?.addEventListener('click', () => {
+    openCorrectionRequestModal({});
+  });
+  // Botões "solicitar correção" inline em cada linha do histórico
+  container.querySelectorAll('.ck-req-fix').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const date = btn.dataset.date;
+      const found = recent.find(r => r.date === date);
+      openCorrectionRequestModal({
+        date,
+        current: found ? extractTimes(found) : null,
+      });
+    });
+  });
+}
+
+/* Helper: pega in/lunchOut/lunchIn/out como HH:MM (ou '') */
+function extractTimes(rec) {
+  const fmt = (v) => {
+    if (!v) return '';
+    const d = v.toDate ? v.toDate() : new Date(v);
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  };
+  return {
+    in:       fmt(rec?.in),
+    lunchOut: fmt(rec?.lunchOut),
+    lunchIn:  fmt(rec?.lunchIn),
+    out:      fmt(rec?.out),
+  };
+}
+
+/* Renderiza tabela de últimos 7 dias com botões de correção */
+function renderClockHistory(recent) {
+  if (!recent.length) return `<div class="empty-state" style="padding:24px;">
+    <div class="empty-state-title" style="font-size:0.875rem;">Sem registros nos últimos 7 dias.</div>
+  </div>`;
+  return `<table class="data-table" style="width:100%;">
+    <thead><tr><th>Data</th><th>Entrada</th><th>Almoço (saída)</th><th>Almoço (volta)</th><th>Saída</th><th>Horas</th><th></th></tr></thead>
+    <tbody>${recent.map(r => {
+      if (r.declined && !r.in) {
+        return `<tr style="opacity:0.55;">
+          <td>${fmtDate(r.date)}</td>
+          <td colspan="4" style="font-style:italic;color:#F59E0B;">⚠ Optou por não registrar</td>
+          <td>—</td>
+          <td><button class="btn btn-ghost btn-sm ck-req-fix" data-date="${r.date}" title="Solicitar correção">✎</button></td>
+        </tr>`;
+      }
+      const incomplete = !(r.in && r.out);
+      return `<tr ${incomplete?'style="background:rgba(245,158,11,0.04);"':''}>
+        <td>${fmtDate(r.date)}</td>
+        <td>${fmtTS(r.in)}</td>
+        <td>${fmtTS(r.lunchOut)}</td>
+        <td>${fmtTS(r.lunchIn)}</td>
+        <td>${fmtTS(r.out)}</td>
+        <td><strong>${calcWorkedHours(r).toFixed(2)}h</strong>${incomplete?' <span title="Incompleto" style="color:#F59E0B;">⚠</span>':''}</td>
+        <td><button class="btn btn-ghost btn-sm ck-req-fix" data-date="${r.date}" title="Solicitar correção">✎</button></td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+/* Render placeholder pra "Minhas correções" — preenchido async */
+function renderMyCorrections() {
+  return `<div class="card" id="ck-my-corrections-card">
+    <div class="card-header">
+      <div class="card-title">📝 Minhas solicitações de correção</div>
+    </div>
+    <div class="card-body" id="ck-my-corrections-body">
+      <div style="text-align:center;color:var(--text-muted);padding:16px;font-size:0.8125rem;">Carregando...</div>
+    </div>
+  </div>`;
+}
+
+async function loadMyCorrections() {
+  try {
+    const rows = await fetchTimeClockRequests({ mineOnly: true });
+    const body = document.getElementById('ck-my-corrections-body');
+    if (!body) return;
+    if (!rows.length) {
+      body.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:16px;font-size:0.8125rem;">
+        Nenhuma solicitação de correção até agora.
+      </div>`;
+      return;
+    }
+    body.style.padding = '0';
+    body.innerHTML = `<table class="data-table" style="width:100%;">
+      <thead><tr><th>Data</th><th>Status</th><th>Pedido em</th><th>Motivo</th><th>Decisão</th></tr></thead>
+      <tbody>${rows.map(r => {
+        const statusLabel = {
+          pending:  '<span style="color:#F59E0B;font-weight:600;">⏳ Pendente</span>',
+          approved: '<span style="color:#22C55E;font-weight:600;">✅ Aprovado</span>',
+          rejected: '<span style="color:#EF4444;font-weight:600;">❌ Rejeitado</span>',
+        }[r.status] || r.status;
+        const created = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString('pt-BR') : '—';
+        const decision = r.decidedByName
+          ? `por <strong>${esc(r.decidedByName)}</strong>${r.decideReason?': "'+esc(r.decideReason)+'"':''}`
+          : '—';
+        return `<tr>
+          <td>${fmtDate(r.date)}</td>
+          <td>${statusLabel}</td>
+          <td style="font-size:0.75rem;color:var(--text-muted);">${created}</td>
+          <td style="font-size:0.8125rem;">${esc(r.reason||'')}</td>
+          <td style="font-size:0.75rem;color:var(--text-muted);">${decision}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  } catch (e) {
+    const body = document.getElementById('ck-my-corrections-body');
+    if (body) body.innerHTML = `<div style="color:var(--color-danger);padding:12px;font-size:0.8125rem;">Erro ao carregar: ${esc(e.message)}</div>`;
+  }
+}
+
+/* Modal: usuário solicita correção (data + horários propostos + motivo) */
+function openCorrectionRequestModal({ date = '', current = null }) {
+  const today = todayISO();
+  // Default: dias úteis da última semana — limita pra não pedir correção de meses atrás
+  const c = current || { in: '', lunchOut: '', lunchIn: '', out: '' };
+  modal.open({
+    title: '✎ Solicitar correção de ponto',
+    size: 'md',
+    dedupeKey: 'tc-correction:' + (date || 'new'),
+    content: `
+      <div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">
+        Preencha os horários corretos. Sua solicitação vai pra fila de aprovação
+        do gestor (admin/coordenador/diretoria).
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data</label>
+        <input type="date" class="form-input" id="tc-corr-date" value="${esc(date)}" max="${today}" />
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Entrada</label>
+          <input type="time" class="form-input" id="tc-corr-in" value="${esc(c.in)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Almoço (saída)</label>
+          <input type="time" class="form-input" id="tc-corr-lo" value="${esc(c.lunchOut)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Almoço (volta)</label>
+          <input type="time" class="form-input" id="tc-corr-li" value="${esc(c.lunchIn)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Saída</label>
+          <input type="time" class="form-input" id="tc-corr-out" value="${esc(c.out)}" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Motivo / Justificativa <span style="color:var(--color-danger);">*</span></label>
+        <textarea class="form-textarea" id="tc-corr-reason" rows="3" maxlength="500"
+          placeholder="Ex: esqueci de bater entrada hoje; cheguei às 9h."></textarea>
+      </div>
+    `,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary' },
+      {
+        label: '📨 Enviar', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const dateV = document.getElementById('tc-corr-date').value;
+          const reason = document.getElementById('tc-corr-reason').value.trim();
+          const proposed = {
+            in:       document.getElementById('tc-corr-in').value || null,
+            lunchOut: document.getElementById('tc-corr-lo').value || null,
+            lunchIn:  document.getElementById('tc-corr-li').value || null,
+            out:      document.getElementById('tc-corr-out').value || null,
+          };
+          if (!dateV)  return toast.error('Informe a data.');
+          if (!reason) return toast.error('Justifique a correção.');
+          if (!proposed.in && !proposed.lunchOut && !proposed.lunchIn && !proposed.out) {
+            return toast.error('Preencha pelo menos um horário.');
+          }
+          try {
+            await requestTimeClockCorrection({ date: dateV, proposed, reason });
+            toast.success('Solicitação enviada! O gestor será notificado.');
+            close();
+            // Recarrega lista pra refletir
+            const root = document.getElementById('checkin-content');
+            if (root && activeTab === 'clock') renderClockTab(root);
+          } catch (e) {
+            toast.error(e.message);
+          }
+        },
+      },
+    ],
+  });
 }
 
 function weekAgo() {
@@ -718,7 +931,8 @@ function weekAgo() {
  * ═══════════════════════════════════════════════════════════ */
 async function renderReportTab(container) {
   const monthAgo = (() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().slice(0,10); })();
-  const all = await fetchAllTimeClock({ from: monthAgo, to: todayISO() });
+  const today = todayISO();
+  const all = await fetchAllTimeClock({ from: monthAgo, to: today });
 
   const byUser = {};
   let totalDeclined = 0;
@@ -735,11 +949,17 @@ async function renderReportTab(container) {
     byUser[k].totalHours += calcWorkedHours(r);
     if (r.in && r.out) byUser[k].complete += 1;
   });
-  const rows = Object.entries(byUser).map(([uid, d]) => ({
-    uid, ...d,
-    avgHours: d.days ? d.totalHours / d.days : 0,
-    completion: d.days ? Math.round(d.complete / d.days * 100) : 0,
-  })).sort((a,b) => b.totalHours - a.totalHours);
+  const rows = Object.entries(byUser).map(([uid, d]) => {
+    const banco = calcBancoHoras(d.records, DEFAULT_WORKDAY_HOURS);
+    return {
+      uid, ...d,
+      avgHours: d.days ? d.totalHours / d.days : 0,
+      completion: d.days ? Math.round(d.complete / d.days * 100) : 0,
+      balance: banco.balance,
+      overtimeDays: banco.overtimeDays,
+      deficitDays:  banco.deficitDays,
+    };
+  }).sort((a,b) => b.totalHours - a.totalHours);
 
   // Helper: duração do almoço em minutos
   const lunchMinutes = (rec) => {
@@ -776,6 +996,8 @@ async function renderReportTab(container) {
             <th style="text-align:right;">Dias</th>
             <th style="text-align:right;">Total horas</th>
             <th style="text-align:right;">Média/dia</th>
+            <th style="text-align:right;" title="Saldo banco de horas (jornada ${DEFAULT_WORKDAY_HOURS}h)">Banco</th>
+            <th style="text-align:right;">HE/Déficit</th>
             <th style="text-align:right;">Completos</th>
             <th style="text-align:right;">Recusas</th>
             <th></th>
@@ -786,9 +1008,16 @@ async function renderReportTab(container) {
             <td style="text-align:right;">${r.days}</td>
             <td style="text-align:right;color:var(--brand-gold);font-weight:600;">${r.totalHours.toFixed(1)}h</td>
             <td style="text-align:right;">${r.avgHours.toFixed(2)}h</td>
+            <td style="text-align:right;font-weight:600;color:${r.balance>=0?'#22C55E':'#EF4444'};">
+              ${r.balance>=0?'+':''}${r.balance.toFixed(1)}h
+            </td>
+            <td style="text-align:right;font-size:0.75rem;">
+              <span style="color:#22C55E;">${r.overtimeDays}</span> /
+              <span style="color:#EF4444;">${r.deficitDays}</span>
+            </td>
             <td style="text-align:right;">${r.completion}%</td>
             <td style="text-align:right;${r.declined>0?'color:#F59E0B;font-weight:600;':''}">${r.declined||'—'}</td>
-            <td style="text-align:right;font-size:0.6875rem;color:var(--text-muted);">▾ detalhes</td>
+            <td style="text-align:right;font-size:0.6875rem;color:var(--text-muted);">▾ espelho</td>
           </tr>`).join('')}</tbody>
         </table>` : `<div class="empty-state" style="padding:32px;">
           <div class="empty-state-title">Nenhum registro de ponto no período.</div>
@@ -816,6 +1045,7 @@ async function renderReportTab(container) {
             <th style="text-align:right;">Tempo almoço</th>
             <th>Saída</th>
             <th style="text-align:right;">Horas trab.</th>
+            <th style="text-align:right;">Ações</th>
           </tr></thead>
           <tbody id="ck-detail-tbody">
             ${renderDetailRows(all, lunchMinutes, fmtMins)}
@@ -830,17 +1060,33 @@ async function renderReportTab(container) {
     const uid = e.target.value;
     const filtered = uid ? all.filter(r => r.userId === uid) : all;
     document.getElementById('ck-detail-tbody').innerHTML = renderDetailRows(filtered, lunchMinutes, fmtMins);
+    bindEditButtons();
   });
 
-  // Click numa linha do resumo → filtra detalhamento + scroll
+  // Botões editar/excluir nas linhas do detalhamento
+  function bindEditButtons() {
+    container.querySelectorAll('.tc-edit').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        const rec = all.find(x => x.id === id);
+        if (!rec) return;
+        openTimeClockEditorModal({
+          record: rec,
+          onSaved: () => renderReportTab(container),
+        });
+      });
+    });
+  }
+  bindEditButtons();
+
+  // Click numa linha do resumo → abre Espelho de Ponto profissional
   container.querySelectorAll('.ck-row').forEach(tr => {
     tr.addEventListener('click', () => {
-      const sel = document.getElementById('ck-detail-user');
-      if (sel) {
-        sel.value = tr.dataset.uid;
-        sel.dispatchEvent(new Event('change'));
-        document.getElementById('ck-detail-tbody').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+      const uid = tr.dataset.uid;
+      const u = byUser[uid];
+      if (!u) return;
+      openEspelhoPontoModal({ uid, user: u, fromISO: monthAgo, toISO: today });
     });
   });
 
@@ -891,9 +1137,10 @@ async function renderReportTab(container) {
 function renderDetailRows(records, lunchMinutes, fmtMins) {
   const sorted = [...records].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   if (!sorted.length) {
-    return `<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted);">Sem registros.</td></tr>`;
+    return `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-muted);">Sem registros.</td></tr>`;
   }
   return sorted.map(r => {
+    const manual = r.manual ? ' <span title="Registro manual/corrigido" style="color:#A78BFA;">✎</span>' : '';
     if (r.declined && !r.in) {
       return `<tr style="opacity:0.55;">
         <td>${fmtDate(r.date)}</td>
@@ -901,13 +1148,16 @@ function renderDetailRows(records, lunchMinutes, fmtMins) {
         <td>${esc(r.sector||'')}</td>
         <td colspan="5" style="font-style:italic;color:#F59E0B;">⚠ Optou por não registrar${r.declineReason?': '+esc(r.declineReason):''}</td>
         <td style="text-align:right;">—</td>
+        <td style="text-align:right;">
+          <button class="btn btn-ghost btn-sm tc-edit" data-id="${r.id}" title="Editar">✎</button>
+        </td>
       </tr>`;
     }
     const lm = lunchMinutes(r);
     const incomplete = !(r.in && r.out);
-    return `<tr ${incomplete?'style="background:rgba(245,158,11,0.04);"':''}>
+    return `<tr ${incomplete?'style="background:rgba(245,158,11,0.04);"':''} data-id="${r.id}">
       <td>${fmtDate(r.date)}</td>
-      <td><strong>${esc(r.userName||'')}</strong></td>
+      <td><strong>${esc(r.userName||'')}</strong>${manual}</td>
       <td>${esc(r.sector||'')}</td>
       <td>${fmtTS(r.in)}</td>
       <td>${fmtTS(r.lunchOut)}</td>
@@ -916,6 +1166,9 @@ function renderDetailRows(records, lunchMinutes, fmtMins) {
       <td>${fmtTS(r.out)}</td>
       <td style="text-align:right;font-weight:600;color:var(--brand-gold);">
         ${calcWorkedHours(r).toFixed(2)}h${incomplete?' <span title="Registro incompleto" style="color:#F59E0B;">⚠</span>':''}
+      </td>
+      <td style="text-align:right;">
+        <button class="btn btn-ghost btn-sm tc-edit" data-id="${r.id}" title="Editar/Excluir">✎</button>
       </td>
     </tr>`;
   }).join('');
@@ -1140,4 +1393,453 @@ async function renderAdminTab(container) {
   }
 
   render();
+}
+
+/* ═══════════════════════════════════════════════════════════
+ * 6. APROVAÇÕES (gestor / admin)
+ * Lista solicitações de correção pendentes em real-time + histórico.
+ * ═══════════════════════════════════════════════════════════ */
+let _unsubApprovals = null;
+async function renderApprovalsTab(container) {
+  if (_unsubApprovals) { _unsubApprovals(); _unsubApprovals = null; }
+  let activeFilter = 'pending';
+
+  function paint(rows) {
+    const counts = {
+      pending:  rows.filter(r => r.status === 'pending').length,
+      approved: rows.filter(r => r.status === 'approved').length,
+      rejected: rows.filter(r => r.status === 'rejected').length,
+    };
+    const filtered = rows.filter(r => r.status === activeFilter);
+
+    container.innerHTML = `
+      <div style="margin-bottom:16px;font-size:0.875rem;color:var(--text-muted);">
+        Solicitações de correção de ponto enviadas pelos colaboradores. Real-time.
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        ${[
+          { id:'pending',  label:'Pendentes', icon:'⏳', color:'#F59E0B' },
+          { id:'approved', label:'Aprovadas', icon:'✅', color:'#22C55E' },
+          { id:'rejected', label:'Rejeitadas', icon:'❌', color:'#EF4444' },
+        ].map(f => `
+          <button class="btn btn-sm ${activeFilter===f.id?'btn-primary':'btn-secondary'}" data-filter="${f.id}">
+            ${f.icon} ${f.label} <span style="margin-left:6px;background:${activeFilter===f.id?'rgba(255,255,255,0.25)':'var(--bg-surface)'};
+              padding:1px 8px;border-radius:10px;font-size:0.75rem;">${counts[f.id]}</span>
+          </button>
+        `).join('')}
+      </div>
+
+      <div class="card">
+        <div class="card-body" style="padding:0;">
+          ${!filtered.length ? `<div class="empty-state" style="padding:32px;">
+              <div class="empty-state-title">Nenhuma solicitação ${activeFilter==='pending'?'pendente':activeFilter==='approved'?'aprovada':'rejeitada'}.</div>
+            </div>`
+          : `<table class="data-table" style="width:100%;">
+            <thead><tr>
+              <th>Colaborador</th><th>Setor</th><th>Data</th>
+              <th>Horários propostos</th><th>Motivo</th><th>Quando pediu</th>
+              ${activeFilter==='pending' ? '<th style="text-align:right;">Ações</th>' : '<th>Decisão</th>'}
+            </tr></thead>
+            <tbody>${filtered.map(r => {
+              const proposed = r.proposed || {};
+              const tags = [
+                proposed.in       ? `E:${esc(proposed.in)}` : '',
+                proposed.lunchOut ? `AS:${esc(proposed.lunchOut)}` : '',
+                proposed.lunchIn  ? `AV:${esc(proposed.lunchIn)}` : '',
+                proposed.out      ? `S:${esc(proposed.out)}` : '',
+              ].filter(Boolean).join(' · ');
+              const created = r.createdAt?.toDate
+                ? r.createdAt.toDate().toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' })
+                : '—';
+              const decided = r.decidedAt?.toDate ? r.decidedAt.toDate().toLocaleString('pt-BR') : '—';
+              return `<tr>
+                <td><strong>${esc(r.userName||'')}</strong></td>
+                <td>${esc(r.sector||'')}</td>
+                <td>${fmtDate(r.date)}</td>
+                <td style="font-family:var(--font-mono,monospace);font-size:0.75rem;">${tags||'—'}</td>
+                <td style="font-size:0.8125rem;max-width:240px;">${esc(r.reason||'')}</td>
+                <td style="font-size:0.75rem;color:var(--text-muted);">${created}</td>
+                ${activeFilter==='pending' ? `<td style="text-align:right;white-space:nowrap;">
+                  <button class="btn btn-primary btn-sm appr-approve" data-id="${r.id}">✓ Aprovar</button>
+                  <button class="btn btn-secondary btn-sm appr-reject" data-id="${r.id}">✗ Rejeitar</button>
+                </td>`
+                : `<td style="font-size:0.75rem;color:var(--text-muted);">
+                  ${decided} · ${esc(r.decidedByName||'')}
+                  ${r.decideReason ? '<br><em>"'+esc(r.decideReason)+'"</em>' : ''}
+                </td>`}
+              </tr>`;
+            }).join('')}</tbody>
+          </table>`}
+        </div>
+      </div>
+    `;
+
+    container.querySelectorAll('[data-filter]').forEach(btn =>
+      btn.addEventListener('click', () => {
+        activeFilter = btn.dataset.filter;
+        paint(rows);
+      }));
+    container.querySelectorAll('.appr-approve').forEach(btn =>
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const rec = rows.find(r => r.id === id);
+        const reason = prompt(`Aprovar solicitação de ${rec?.userName||''}?\n(comentário opcional)`) ?? null;
+        if (reason === null) return;
+        btn.disabled = true; btn.textContent = '⏳';
+        try {
+          await approveTimeClockRequest(id, reason);
+          toast.success('Solicitação aprovada e ponto corrigido.');
+        } catch (e) {
+          toast.error(e.message);
+          btn.disabled = false; btn.textContent = '✓ Aprovar';
+        }
+      }));
+    container.querySelectorAll('.appr-reject').forEach(btn =>
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const reason = prompt('Motivo da rejeição (obrigatório):');
+        if (!reason || reason.trim().length < 3) return toast.error('Motivo é obrigatório.');
+        btn.disabled = true; btn.textContent = '⏳';
+        try {
+          await rejectTimeClockRequest(id, reason.trim());
+          toast.success('Solicitação rejeitada.');
+        } catch (e) {
+          toast.error(e.message);
+          btn.disabled = false; btn.textContent = '✗ Rejeitar';
+        }
+      }));
+  }
+
+  // Carga inicial + subscribe pra atualização real-time
+  // O subscribe filtra status='pending' por padrão; precisamos de tudo
+  // pra alternar abas. Faço dois subscribes distintos? Não — um sem filtro:
+  _unsubApprovals = subscribeTimeClockRequests(paint, { status: null });
+}
+
+/* ═══════════════════════════════════════════════════════════
+ * EDIÇÃO/EXCLUSÃO DE PONTO (admin) — modal acessível do Relatório
+ * ═══════════════════════════════════════════════════════════ */
+function openTimeClockEditorModal({ record, onSaved }) {
+  const c = record ? extractTimes(record) : { in:'', lunchOut:'', lunchIn:'', out:'' };
+  const date = record?.date || todayISO();
+  const userName = record?.userName || '';
+
+  modal.open({
+    title: `✎ Editar ponto — ${esc(userName)} · ${fmtDate(date)}`,
+    size: 'md',
+    dedupeKey: 'tc-edit:' + (record?.id || 'new'),
+    content: `
+      <div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">
+        Edite os horários abaixo. Cada alteração fica registrada na auditoria.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Entrada</label>
+          <input type="time" class="form-input" id="tc-edit-in" value="${esc(c.in)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Almoço (saída)</label>
+          <input type="time" class="form-input" id="tc-edit-lo" value="${esc(c.lunchOut)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Almoço (volta)</label>
+          <input type="time" class="form-input" id="tc-edit-li" value="${esc(c.lunchIn)}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Saída</label>
+          <input type="time" class="form-input" id="tc-edit-out" value="${esc(c.out)}" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Anotação (opcional)</label>
+        <input type="text" class="form-input" id="tc-edit-note" maxlength="200" placeholder="Ex: justificativa da correção" />
+      </div>
+    `,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary' },
+      ...(record ? [{
+        label: '🗑 Excluir', class: 'btn-danger', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          if (!confirm('Excluir este registro permanentemente?')) return;
+          try {
+            await adminDeleteTimeClock(record.id);
+            toast.success('Registro excluído.');
+            close();
+            onSaved?.();
+          } catch (e) { toast.error(e.message); }
+        },
+      }] : []),
+      {
+        label: '💾 Salvar', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const fields = {
+            in:       document.getElementById('tc-edit-in').value || null,
+            lunchOut: document.getElementById('tc-edit-lo').value || null,
+            lunchIn:  document.getElementById('tc-edit-li').value || null,
+            out:      document.getElementById('tc-edit-out').value || null,
+          };
+          const note = document.getElementById('tc-edit-note').value.trim();
+          try {
+            if (record) {
+              await adminUpdateTimeClock({ recordId: record.id, date, fields, note });
+              toast.success('Registro atualizado.');
+            } else {
+              throw new Error('Criação manual ainda não implementada neste modal.');
+            }
+            close();
+            onSaved?.();
+          } catch (e) { toast.error(e.message); }
+        },
+      },
+    ],
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+ * ESPELHO DE PONTO PROFISSIONAL
+ * Formato folha de pagamento (Benner-style):
+ *  Linha por dia útil + sábado/domingo, exibindo:
+ *    Data | Dia | Entrada | Almoço-saída | Almoço-volta | Saída |
+ *    Trabalhadas | Esperadas | Saldo | Status
+ *  + Cabeçalho com Total HE / Déficit / Banco / Recusas
+ *  + Botão exportar CSV / imprimir
+ * ═══════════════════════════════════════════════════════════ */
+function openEspelhoPontoModal({ uid, user, fromISO, toISO }) {
+  const espelho = buildEspelhoPonto(user.records, fromISO, toISO, DEFAULT_WORKDAY_HOURS);
+  const banco = calcBancoHoras(user.records, DEFAULT_WORKDAY_HOURS);
+
+  const dowLabel = (iso) => {
+    const d = new Date(iso + 'T12:00:00');
+    return ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][d.getDay()];
+  };
+  const statusBadge = (s) => {
+    const map = {
+      complete:   { bg:'rgba(34,197,94,0.15)',  fg:'#22C55E', label:'OK' },
+      short:      { bg:'rgba(245,158,11,0.15)', fg:'#F59E0B', label:'Insuf.' },
+      incomplete: { bg:'rgba(239,68,68,0.15)',  fg:'#EF4444', label:'Incompl.' },
+      absent:     { bg:'rgba(107,114,128,0.15)', fg:'#6B7280', label:'Ausente' },
+      declined:   { bg:'rgba(245,158,11,0.15)', fg:'#F59E0B', label:'Recusou' },
+      weekend:    { bg:'rgba(56,189,248,0.10)', fg:'#38BDF8', label:'F.D.S.' },
+    };
+    const v = map[s] || map.absent;
+    return `<span style="background:${v.bg};color:${v.fg};padding:1px 8px;border-radius:10px;font-size:0.6875rem;font-weight:600;">${v.label}</span>`;
+  };
+
+  modal.open({
+    title: `📄 Espelho de Ponto — ${esc(user.name)}`,
+    size: 'xl',
+    dedupeKey: 'espelho:' + uid,
+    content: `
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;
+        font-size:0.8125rem;color:var(--text-muted);">
+        <div><strong>Colaborador:</strong> ${esc(user.name)} · ${esc(user.sector||'—')}</div>
+        <div><strong>Período:</strong> ${fmtDate(fromISO)} a ${fmtDate(toISO)} · Jornada padrão: ${DEFAULT_WORKDAY_HOURS}h/dia</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;">
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;">Trabalhadas</div>
+          <div style="font-size:1.25rem;font-weight:700;color:var(--brand-gold);">${banco.totalWorked.toFixed(1)}h</div>
+        </div>
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;">Esperadas</div>
+          <div style="font-size:1.25rem;font-weight:700;color:var(--text-primary);">${banco.totalExpected.toFixed(1)}h</div>
+        </div>
+        <div class="card" style="padding:10px;text-align:center;
+          background:${banco.balance>=0?'rgba(34,197,94,0.06)':'rgba(239,68,68,0.06)'};
+          border:1px solid ${banco.balance>=0?'rgba(34,197,94,0.3)':'rgba(239,68,68,0.3)'};">
+          <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;">Saldo</div>
+          <div style="font-size:1.25rem;font-weight:700;color:${banco.balance>=0?'#22C55E':'#EF4444'};">
+            ${banco.balance>=0?'+':''}${banco.balance.toFixed(2)}h
+          </div>
+        </div>
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;">Hora Extra</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#22C55E;">${banco.overtimeDays}</div>
+          <div style="font-size:0.625rem;color:var(--text-muted);">dias</div>
+        </div>
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;">Déficit</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#EF4444;">${banco.deficitDays}</div>
+          <div style="font-size:0.625rem;color:var(--text-muted);">dias</div>
+        </div>
+        <div class="card" style="padding:10px;text-align:center;">
+          <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;">Recusas</div>
+          <div style="font-size:1.25rem;font-weight:700;color:#F59E0B;">${user.declined||0}</div>
+        </div>
+      </div>
+
+      <div style="max-height:55vh;overflow:auto;border:1px solid var(--border-subtle);border-radius:6px;">
+        <table class="data-table" style="width:100%;font-size:0.8125rem;">
+          <thead style="position:sticky;top:0;background:var(--bg-surface);z-index:1;">
+            <tr>
+              <th>Data</th><th>Dia</th>
+              <th>Entrada</th><th>Alm. saída</th><th>Alm. volta</th><th>Saída</th>
+              <th style="text-align:right;">Trab.</th>
+              <th style="text-align:right;">Esp.</th>
+              <th style="text-align:right;">Saldo</th>
+              <th>Status</th>
+              <th style="text-align:right;">Ações</th>
+            </tr>
+          </thead>
+          <tbody>${espelho.map(row => {
+            const r = row.record;
+            const dow = dowLabel(row.date);
+            const bg = row.isWeekend ? 'background:rgba(56,189,248,0.04);'
+              : row.status==='absent' ? 'background:rgba(239,68,68,0.04);'
+              : '';
+            const balanceColor = row.balance >= 0 ? '#22C55E' : '#EF4444';
+            return `<tr style="${bg}">
+              <td>${fmtDate(row.date)}</td>
+              <td style="font-size:0.75rem;color:var(--text-muted);">${dow}</td>
+              <td>${r ? fmtTS(r.in) : '—'}</td>
+              <td>${r ? fmtTS(r.lunchOut) : '—'}</td>
+              <td>${r ? fmtTS(r.lunchIn) : '—'}</td>
+              <td>${r ? fmtTS(r.out) : '—'}</td>
+              <td style="text-align:right;font-weight:600;color:var(--brand-gold);">${row.worked > 0 ? row.worked.toFixed(2) + 'h' : '—'}</td>
+              <td style="text-align:right;color:var(--text-muted);">${row.expected > 0 ? row.expected.toFixed(0) + 'h' : '—'}</td>
+              <td style="text-align:right;font-weight:600;color:${row.expected>0?balanceColor:'var(--text-muted)'};">
+                ${row.expected>0 ? (row.balance>=0?'+':'') + row.balance.toFixed(2) + 'h' : '—'}
+              </td>
+              <td>${statusBadge(row.status)}</td>
+              <td style="text-align:right;">
+                ${r ? `<button class="btn btn-ghost btn-sm esp-edit" data-id="${r.id}" title="Editar">✎</button>` : ''}
+                ${!r && !row.isWeekend ? `<button class="btn btn-ghost btn-sm esp-create" data-date="${row.date}" title="Lançar manualmente">+</button>` : ''}
+              </td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+        <button class="btn btn-secondary btn-sm" id="esp-export-csv">↓ Exportar CSV</button>
+        <button class="btn btn-secondary btn-sm" id="esp-print">🖨 Imprimir</button>
+      </div>
+    `,
+    footer: [
+      { label: 'Fechar', class: 'btn-primary' },
+    ],
+  });
+
+  // Bindings (after modal injects DOM)
+  setTimeout(() => {
+    document.querySelectorAll('.esp-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const rec = user.records.find(x => x.id === id);
+        if (!rec) return;
+        openTimeClockEditorModal({
+          record: rec,
+          onSaved: () => {
+            // Recarrega: fechar modal atual e reabrir
+            modal.close();
+            const root = document.getElementById('checkin-content');
+            if (root) renderReportTab(root);
+          },
+        });
+      });
+    });
+    document.querySelectorAll('.esp-create').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dateV = btn.dataset.date;
+        openManualEntryModal({
+          userId: uid,
+          userName: user.name,
+          sector: user.sector,
+          date: dateV,
+          onSaved: () => {
+            modal.close();
+            const root = document.getElementById('checkin-content');
+            if (root) renderReportTab(root);
+          },
+        });
+      });
+    });
+
+    document.getElementById('esp-export-csv')?.addEventListener('click', () => {
+      const csv = [
+        'data;dia;entrada;almoco_saida;almoco_volta;saida;trabalhadas;esperadas;saldo;status',
+        ...espelho.map(row => {
+          const r = row.record;
+          return [
+            row.date,
+            dowLabel(row.date),
+            r ? fmtTS(r.in) : '',
+            r ? fmtTS(r.lunchOut) : '',
+            r ? fmtTS(r.lunchIn) : '',
+            r ? fmtTS(r.out) : '',
+            row.worked.toFixed(2),
+            row.expected.toFixed(0),
+            row.balance.toFixed(2),
+            row.status,
+          ].join(';');
+        }),
+      ].join('\n');
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `espelho_${user.name.replace(/\s+/g,'_')}_${fromISO}_${toISO}.csv`;
+      a.click(); URL.revokeObjectURL(url);
+    });
+    document.getElementById('esp-print')?.addEventListener('click', () => window.print());
+  }, 80);
+}
+
+/* Modal: lançar ponto manualmente (admin) numa data sem registro */
+function openManualEntryModal({ userId, userName, sector, date, onSaved }) {
+  modal.open({
+    title: `+ Lançar ponto manualmente — ${esc(userName)} · ${fmtDate(date)}`,
+    size: 'md',
+    dedupeKey: 'tc-manual:' + userId + ':' + date,
+    content: `
+      <div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">
+        Lance os horários do dia. Esta ação fica registrada na auditoria como
+        criação manual pelo gestor.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label class="form-label">Entrada</label>
+          <input type="time" class="form-input" id="tc-man-in" value="09:00" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Almoço (saída)</label>
+          <input type="time" class="form-input" id="tc-man-lo" value="12:00" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Almoço (volta)</label>
+          <input type="time" class="form-input" id="tc-man-li" value="13:00" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Saída</label>
+          <input type="time" class="form-input" id="tc-man-out" value="18:00" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Justificativa</label>
+        <input type="text" class="form-input" id="tc-man-note" maxlength="200" placeholder="Ex: colaborador esqueceu de bater o dia inteiro" />
+      </div>
+    `,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary' },
+      {
+        label: '💾 Lançar', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const fields = {
+            in:       document.getElementById('tc-man-in').value || null,
+            lunchOut: document.getElementById('tc-man-lo').value || null,
+            lunchIn:  document.getElementById('tc-man-li').value || null,
+            out:      document.getElementById('tc-man-out').value || null,
+          };
+          const note = document.getElementById('tc-man-note').value.trim();
+          try {
+            await adminCreateTimeClock({ userId, userName, sector, date, fields, note });
+            toast.success('Ponto lançado.');
+            close();
+            onSaved?.();
+          } catch (e) { toast.error(e.message); }
+        },
+      },
+    ],
+  });
 }
