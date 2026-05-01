@@ -18,7 +18,7 @@ import {
   computeBalance,
   VACATION_DAYS_PER_PERIOD, MIN_FRACTION_DAYS, MIN_LARGE_FRACTION,
   MAX_FRACTIONS, MAX_ABONO_DAYS,
-} from '../services/vacation.js';
+} from '../services/vacation.js?v=20260501k';
 import { userNucleos } from '../services/sectors.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

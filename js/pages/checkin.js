@@ -23,7 +23,7 @@ import {
   requestTimeClockCorrection, fetchTimeClockRequests, subscribeTimeClockRequests,
   approveTimeClockRequest, rejectTimeClockRequest,
   calcBancoHoras, buildEspelhoPonto, isBusinessDay,
-} from '../services/checkin.js';
+} from '../services/checkin.js?v=20260501k';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const todayISO = () => { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); };
