@@ -618,7 +618,11 @@ export function subscribeTimeClockRequests(callback, { status = 'pending' } = {}
       return tb - ta;
     });
     callback(rows);
-  }, (err) => console.warn('[checkin] subscribe req error:', err?.message));
+  }, (err) => {
+    console.warn('[checkin] subscribe req error:', err?.message);
+    // Notifica o callback com array vazio + erro pra UI poder mostrar fallback
+    callback([], err);
+  });
 }
 
 /** Aprova solicitação: aplica fields no time_clock e marca request. */

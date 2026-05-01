@@ -23,7 +23,7 @@ import {
   requestTimeClockCorrection, fetchTimeClockRequests, subscribeTimeClockRequests,
   approveTimeClockRequest, rejectTimeClockRequest,
   calcBancoHoras, buildEspelhoPonto, isBusinessDay,
-} from '../services/checkin.js?v=20260501k';
+} from '../services/checkin.js?v=20260501m';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const todayISO = () => { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); };
@@ -1404,7 +1404,24 @@ async function renderApprovalsTab(container) {
   if (_unsubApprovals) { _unsubApprovals(); _unsubApprovals = null; }
   let activeFilter = 'pending';
 
-  function paint(rows) {
+  function paint(rows, err) {
+    if (err) {
+      container.innerHTML = `
+        <div class="card" style="padding:24px;text-align:center;border:1px solid rgba(239,68,68,0.4);background:rgba(239,68,68,0.04);">
+          <div style="font-size:2rem;margin-bottom:8px;">⚠</div>
+          <h3 style="margin:0 0 8px;color:#EF4444;">Permissão negada / regras não publicadas</h3>
+          <p style="font-size:0.8125rem;color:var(--text-muted);max-width:520px;margin:0 auto;line-height:1.6;">
+            Esta aba precisa que as <strong>regras do Firestore</strong> sejam atualizadas
+            no Firebase. As coleções novas (<code>time_clock_requests</code> /
+            <code>time_clock_audit</code> / <code>vacation_*</code>) ainda não estão
+            liberadas em produção. Publique <code>firestore.rules</code> via
+            <code>firebase deploy --only firestore:rules</code> ou cole o conteúdo
+            do arquivo no Firebase Console.
+          </p>
+        </div>
+      `;
+      return;
+    }
     const counts = {
       pending:  rows.filter(r => r.status === 'pending').length,
       approved: rows.filter(r => r.status === 'approved').length,
