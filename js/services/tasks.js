@@ -226,6 +226,11 @@ export const PRIORITY_MAP  = Object.fromEntries(PRIORITIES.map(p => [p.value, p]
 /* ─── Criar tarefa ───────────────────────────────────────── */
 export async function createTask(data) {
   if (!store.can('task_create')) throw new Error('Permissão negada.');
+  // Sandbox: simula sucesso sem persistir no Firestore
+  const { sandboxGuard } = await import('./sandbox.js');
+  if (sandboxGuard('criar tarefa')) {
+    return { id: '__sandbox_' + Date.now(), ...data };
+  }
   // Validar regras de negócio do tipo de tarefa
   if (data.typeId) {
     const { validateTaskTypeRules, calcSla } = await import('./taskTypes.js');
@@ -360,6 +365,9 @@ export async function createTask(data) {
 /* ─── Atualizar tarefa ───────────────────────────────────── */
 export async function updateTask(taskId, data) {
   const user = store.get('currentUser');
+  // Sandbox: simula sucesso sem persistir
+  const { sandboxGuard } = await import('./sandbox.js');
+  if (sandboxGuard('editar tarefa')) return;
   // Captura o snapshot prévio — usado tanto para permissão quanto para diff de assignees
   let prevSnap = null;
   try { prevSnap = await getDoc(doc(db, 'tasks', taskId)); } catch (_) {}
@@ -553,6 +561,8 @@ export async function toggleTaskComplete(taskId, isDone) {
 /* ─── Excluir tarefa ─────────────────────────────────────── */
 export async function deleteTask(taskId) {
   if (!store.can('task_delete')) throw new Error('Permissão negada.');
+  const { sandboxGuard } = await import('./sandbox.js');
+  if (sandboxGuard('excluir tarefa')) return;
 
   // Se a task veio de uma notícia, limpa o registro de conversão
   // pra não inflar KPIs de "utilização de notícias" (proteção contra erro

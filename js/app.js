@@ -12,6 +12,7 @@ import { Sidebar }          from './components/sidebar.js';
 import { Header }           from './components/header.js';
 import { subscribeNotifications, cleanupExpired } from './services/notifications.js';
 import { syncBrandingToCache }                    from './services/branding.js';
+import { injectSandboxBanner }                    from './services/sandbox.js';
 import { startScheduler, stopScheduler }          from './services/notificationScheduler.js';
 import { checkAndPlaySound, resetSoundCounter }   from './components/notificationPanel.js';
 
@@ -80,6 +81,10 @@ async function init() {
   // Sincroniza branding (logos) do Firestore pra cache local — faz isso
   // em paralelo, sem bloquear o auth (cache antigo serve até completar)
   syncBrandingToCache().catch(e => console.warn('[App] branding sync:', e?.message));
+
+  // Injeta banner de Modo Teste (sandbox) — invisível por padrão,
+  // visível só quando localStorage.primetour_sandbox === '1'
+  injectSandboxBanner();
 
   // Aguarda estado de auth antes de qualquer render
   initAuthObserver(() => {

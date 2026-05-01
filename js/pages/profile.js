@@ -289,6 +289,36 @@ export async function renderProfile(container) {
             </div>
           </div>
         </div>
+
+        ${store.isMaster() ? `
+        <!-- Modo Teste (sandbox) — APENAS PARA DIRETORIA -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🧪 Modo Teste · <span style="font-size:0.7rem;
+              padding:2px 8px;background:#F59E0B;color:#FFF;border-radius:10px;
+              font-weight:600;letter-spacing:.05em;text-transform:uppercase;">diretoria</span></div>
+            <div class="card-subtitle">
+              Permite explorar funcionalidades (criar tarefas, mexer em projetos, etc) <strong>sem
+              salvar nada no banco</strong>. Útil pra demos e treinamento. Ao ativar, um banner
+              vermelho fica fixo no topo do app indicando que está em modo teste.
+            </div>
+          </div>
+          <div class="card-body">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;
+              padding:10px 12px;background:var(--bg-surface);border-radius:var(--radius-sm);">
+              <input type="checkbox" id="sandbox-toggle"
+                ${(typeof localStorage !== 'undefined' && localStorage.getItem('primetour_sandbox') === '1') ? 'checked' : ''}
+                style="width:18px;height:18px;cursor:pointer;accent-color:#F59E0B;" />
+              <span style="flex:1;">
+                <div style="font-weight:600;font-size:0.875rem;">Ativar modo teste</div>
+                <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+                  As ações de criar/editar/excluir tarefas mostrarão toast "não foi salvo" em vez de gravar.
+                </div>
+              </span>
+            </label>
+          </div>
+        </div>
+        ` : ''}
       </div>
     </div>
   `;
@@ -534,6 +564,22 @@ function _bindProfileEvents(profile) {
       location.reload();
     } catch(e) {
       toast.error(e?.message || 'Erro ao remover logo.');
+    }
+  });
+
+  // Sandbox toggle (apenas master)
+  document.getElementById('sandbox-toggle')?.addEventListener('change', async (e) => {
+    const { setSandboxOn } = await import('../services/sandbox.js');
+    const ok = setSandboxOn(e.target.checked);
+    if (!ok) {
+      e.target.checked = false;
+      toast.error('Apenas diretoria pode ativar o modo teste.');
+      return;
+    }
+    if (e.target.checked) {
+      toast.warning('🧪 Modo teste ATIVADO. Banner aparecerá no topo. Recarregue se necessário.');
+    } else {
+      toast.success('Modo teste desativado.');
     }
   });
 }
