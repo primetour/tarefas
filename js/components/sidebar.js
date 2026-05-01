@@ -13,7 +13,7 @@ const NAV_GROUPS = [
   {
     label: 'Tarefas e Projetos',
     items: [
-      { route: 'dashboard',  icon: '⊞',  label: 'Painel',      perm: 'dashboard_view' },
+      { route: 'dashboard',  icon: '⊞',  label: 'Meu Painel',  perm: 'dashboard_view' },
       { route: 'tasks',      icon: '✓',  label: 'Tarefas',     perm: 'task_create' },
       { route: 'projects',   icon: '◈',  label: 'Projetos',    perm: 'task_create',       altPerm: 'project_create' },
       { route: 'kanban',     icon: '▤',  label: 'Steps',       perm: 'task_create' },
@@ -37,13 +37,13 @@ const NAV_GROUPS = [
     label: 'Serviços',
     items: [
       { route: 'content-calendar',     icon: '📱', label: 'Calendário de Conteúdo', perm: 'content_calendar_view' },
-      { route: 'roteiros',            icon: '✈', label: 'Roteiros de Viagem',  perm: 'roteiro_access' },
+      { route: 'roteiros',            icon: '✈', label: 'Gerador de Roteiros', perm: 'roteiro_access' },
       { route: 'portal-tips',         icon: '✈', label: 'Portal de Dicas',     perm: 'portal_access'  },
       { route: 'portal-images',       icon: '▨', label: 'Banco de Imagens',     perm: 'portal_manage'  },
       { route: 'landing-pages',       icon: '◱', label: 'Landing Pages',        perm: 'portal_manage'  },
       { route: 'cms',                 icon: '◫', label: 'CMS / Site',           perm: 'portal_manage'  },
       { route: 'arts-editor',         icon: '▣', label: 'Editor de Artes',      perm: 'portal_manage'  },
-      { route: 'news-monitor',        icon: '◉', label: 'Notícias',              perm: 'dashboard_view' },
+      { route: 'news-monitor',        icon: '◉', label: 'Pautas e Clipping',    perm: 'dashboard_view' },
       { route: 'ai-automations',     icon: '◎', label: 'Automações IA',         perm: 'dashboard_view' },
     ]
   },

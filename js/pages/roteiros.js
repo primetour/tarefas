@@ -84,7 +84,7 @@ export async function renderRoteiros(container) {
     <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
       <div>
         <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);margin:0;">
-          Roteiros de Viagem
+          Gerador de Roteiros
         </h1>
         <p style="color:var(--text-muted);font-size:0.875rem;margin:4px 0 0;">
           Crie e gerencie roteiros personalizados para seus clientes

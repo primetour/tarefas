@@ -359,13 +359,21 @@ async function renderTeamAvailability(container) {
                       return dd>=s && dd<=e;
                     });
                     const td = ab ? (ABSENCE_TYPES.find(t=>t.value===ab.type)||ABSENCE_TYPES[5]) : null;
+                    // Indica se ausência é parcial (icon + tooltip diferenciado)
+                    const isPartial = !!ab?.partial;
+                    const tooltip = ab
+                      ? (isPartial
+                          ? `${td.label} · parcial (${formatTimePart(ab.startDate)}-${formatTimePart(ab.endDate)})`
+                          : td.label)
+                      : (isWe ? 'Fim de semana' : 'Disponível');
                     return `<td style="padding:2px 1px;text-align:center;">
                       <div style="width:22px;height:22px;border-radius:3px;margin:0 auto;
                         display:flex;align-items:center;justify-content:center;font-size:0.625rem;
-                        background:${ab?td.color+'33':isWe?'var(--bg-elevated)':'transparent'};
+                        background:${ab?(isPartial?td.color+'1A':td.color+'33'):isWe?'var(--bg-elevated)':'transparent'};
                         color:${ab?td.color:'var(--text-muted)'};
-                        border:1px solid ${ab?td.color+'55':'transparent'};"
-                        title="${ab?td.label:isWe?'Fim de semana':'Disponível'}">
+                        border:1px solid ${ab?td.color+'55':'transparent'};
+                        ${isPartial ? 'background-image:linear-gradient(135deg,'+td.color+'33 50%,transparent 50%);' : ''}"
+                        title="${esc(tooltip)}">
                         ${ab?td.icon:isWe?'—':''}
                       </div>
                     </td>`;

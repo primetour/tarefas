@@ -250,6 +250,34 @@ export function getTimePerTaskByType(tasks) {
     .sort((a, b) => b.count - a.count);
 }
 
+/* ─── Ranking de produtividade por tipo de tarefa ─────────
+ * Agrupa por taskTypeId (campo `typeId` na task), calcula concluídas
+ * e total + taxa. Útil pra ver quais tipos de tarefa rodam melhor. */
+export function getProductivityByType(tasks) {
+  const taskTypes = store.get('taskTypes') || [];
+  const byType = {};
+  tasks.forEach(t => {
+    const typeId = t.typeId || '__none__';
+    if (!byType[typeId]) byType[typeId] = { total: 0, done: 0 };
+    byType[typeId].total++;
+    if (t.status === 'done') byType[typeId].done++;
+  });
+  return Object.entries(byType)
+    .map(([typeId, data]) => {
+      const td = taskTypes.find(x => x.id === typeId);
+      return {
+        typeId,
+        name:  td?.name || (typeId === '__none__' ? 'Sem tipo' : typeId),
+        icon:  td?.icon || '◇',
+        color: td?.color || '#6B7280',
+        ...data,
+        rate: data.total ? Math.round(data.done / data.total * 100) : 0,
+      };
+    })
+    .filter(t => t.total > 0)
+    .sort((a, b) => b.done - a.done);
+}
+
 /* ─── Heatmap de atividade (365 dias) ────────────────────── */
 export function getActivityHeatmap(tasks) {
   const map = {};

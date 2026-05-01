@@ -122,7 +122,7 @@ export async function renderKanban(container) {
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title" id="kanban-page-title">
-          ${activeView === 'pipeline' ? 'Esteira de Produção' : 'Kanban'}
+          ${activeView === 'pipeline' ? 'Esteira de Produção' : 'Steps'}
         </h1>
         <p class="page-subtitle">
           ${activeView === 'pipeline' ? 'Fluxo de produção por tipo de tarefa' : 'Visualização de tarefas por status'}

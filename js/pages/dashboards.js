@@ -14,6 +14,7 @@ import {
   getTimePerTaskByType, getPeriodDates,
   getCsatGeneral, getCsatByArea, getPerformanceByNucleo,
   getReworkRate, getNewslettersOutOfCalendar,
+  getProductivityByType,
 } from '../services/analytics.js';
 import { fetchSurveys } from '../services/csat.js';
 import { REQUESTING_AREAS } from '../components/filterBar.js';
@@ -181,12 +182,15 @@ export async function renderDashboards(container) {
       </div>
     </div>
 
-    <!-- Bottom row -->
+    <!-- Bottom row (3 widgets: Equipe / Tipo / Próximas) -->
     <div class="dashboard-grid" id="bottom-grid">
-      <div class="dash-widget col-span-6" style="min-height:280px;">
+      <div class="dash-widget col-span-4" style="min-height:280px;">
         <div class="chart-loading"><div class="chart-loading-spinner"></div></div>
       </div>
-      <div class="dash-widget col-span-6" style="min-height:280px;">
+      <div class="dash-widget col-span-4" style="min-height:280px;">
+        <div class="chart-loading"><div class="chart-loading-spinner"></div></div>
+      </div>
+      <div class="dash-widget col-span-4" style="min-height:280px;">
         <div class="chart-loading"><div class="chart-loading-spinner"></div></div>
       </div>
     </div>
@@ -503,16 +507,30 @@ function renderAllCharts(Chart, m) {
     emptyWidget('charts-grid', 'projects-chart', 'col-span-4', '📦 Progresso por Projeto', 200);
   }
 
-  /* 6 — Member leaderboard (6-col) */
+  /* 6 — Member leaderboard (4-col) */
   const byMember = getTasksByMember(tasks);
-  renderLeaderboard('bottom-grid', 'member-board', 'col-span-6', {
+  renderLeaderboard('bottom-grid', 'member-board', 'col-span-4', {
     title: '🏆 Ranking da Equipe',
     subtitle: 'Por tarefas concluídas no período',
     items: byMember.slice(0, 8),
   });
 
-  /* 7 — Upcoming deadlines (6-col) */
-  renderUpcoming('bottom-grid', 'upcoming-widget', 'col-span-6', tasks);
+  /* 6b — Productivity by task type (4-col) */
+  const byType = getProductivityByType(tasks);
+  renderLeaderboard('bottom-grid', 'type-board', 'col-span-4', {
+    title: '◇ Ranking por Tipo de Tarefa',
+    subtitle: 'Concluídas vs total no período',
+    items: byType.slice(0, 8).map(t => ({
+      name: `${t.icon} ${t.name}`,
+      avatarColor: t.color,
+      done: t.done,
+      total: t.total,
+      rate: t.rate,
+    })),
+  });
+
+  /* 7 — Upcoming deadlines (4-col) */
+  renderUpcoming('bottom-grid', 'upcoming-widget', 'col-span-4', tasks);
 
   /* 8 — Activity heatmap */
   renderHeatmap('heatmap-widget', tasks);

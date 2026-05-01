@@ -182,10 +182,10 @@ function renderPage(container) {
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
         <div>
           <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0 0 4px 0;">
-            📱 Calendario de Conteudo
+            📱 Calendário de Conteúdo
           </h1>
           <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0;">
-            Planejamento e gestao de publicacoes
+            Planejamento e gestão de publicações
           </p>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
