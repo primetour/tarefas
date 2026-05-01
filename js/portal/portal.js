@@ -2150,11 +2150,34 @@ async function openEditRequestModal(db, taskTypes, data) {
         newOutOfCalendar = false;
       }
 
+      // Auto-FORÇA urgência se nova data manual viola SLA da variação
+      // (governança: requester não pode burlar o prazo mínimo de produção)
+      let finalUrgent = editUrgent;
+      const variation = (editTypeData?.variations || []).find(v => v.id === reqData.variationId);
+      const slaDays = variation?.slaDays;
+      if (newDate && slaDays != null && !isNaN(slaDays)) {
+        const today = new Date(); today.setHours(0,0,0,0);
+        const dueD = new Date(newDate + 'T12:00:00');
+        let bizCount = 0;
+        const cur = new Date(today);
+        while (cur < dueD) {
+          cur.setDate(cur.getDate() + 1);
+          const d = cur.getDay();
+          if (d !== 0 && d !== 6) bizCount++;
+        }
+        if (bizCount < slaDays) {
+          finalUrgent = true;
+          if (!editUrgent) {
+            changes.urgency = { from: oldUrgency, to: true, _forcedBy: 'sla' };
+          }
+        }
+      }
+
       // Update request
       const updateData = {
         title: newTitle,
         description: newDesc,
-        urgency: editUrgent,
+        urgency: finalUrgent,
         outOfCalendar: newOutOfCalendar,
         updatedAt: serverTimestamp(),
       };
