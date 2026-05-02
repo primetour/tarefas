@@ -75,6 +75,48 @@ async function checkRateLimit(uid, key, maxCalls, windowSec) {
 }
 
 /**
+ * Rate limit per-IP (defesa contra DDoS antes mesmo de auth).
+ * Usado em endpoints que recebem trafego potencialmente abusivo.
+ * Chave separada de checkRateLimit (que é per-uid).
+ */
+async function checkRateLimitIP(request, key, maxCalls, windowSec) {
+  const ip = request.rawRequest?.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
+          || request.rawRequest?.ip
+          || 'unknown';
+  if (ip === 'unknown') return;  // sem IP, nao limita (cron interno)
+  // Sanitiza IP pra path Firestore (substitui : e . - IPv6 + IPv4)
+  const safeIp = ip.replace(/[.:]/g, '_').slice(0, 60);
+  const ref = db.doc(`rate_limits_ip/${safeIp}__${key}`);
+  const now = Date.now();
+  const cutoff = now - (windowSec * 1000);
+  try {
+    const snap = await ref.get();
+    let calls = snap.exists ? (snap.data().calls || []) : [];
+    calls = calls.filter(t => t > cutoff);
+    if (calls.length >= maxCalls) {
+      // Audita potencial abuse
+      try {
+        await db.collection('audit_logs').add({
+          action: 'security.ip_rate_limit_hit',
+          ip, key, maxCalls, windowSec,
+          callsInWindow: calls.length,
+          timestamp: FieldValue.serverTimestamp(),
+          severity: 'warning',
+        });
+      } catch {}
+      throw new HttpsError('resource-exhausted',
+        `Muitas requisicoes deste IP. Aguarde ${windowSec}s.`);
+    }
+    calls.push(now);
+    await ref.set({ calls, ip, updatedAt: FieldValue.serverTimestamp() });
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    // Falhas de DB nao devem bloquear (fail-open)
+    console.warn('[rate-ip] check failed (fail-open):', e?.message);
+  }
+}
+
+/**
  * Verifica cap de custo diário do agente (em USD).
  */
 async function checkDailyCost(uid, agentId, capUsd) {
@@ -124,6 +166,8 @@ export const callLLM = onCall({
     throw new HttpsError('invalid-argument', 'userMessage obrigatório.');
   }
 
+  // ── Rate limit por IP (200 req / 60s) — defesa DDoS antes mesmo de auth ──
+  await checkRateLimitIP(request, 'callLLM', 200, 60);
   // ── Rate limit por user (60 req / 60s) ──
   await checkRateLimit(uid, 'callLLM', 60, 60);
   // ── Cap de custo por agente ──
@@ -268,7 +312,8 @@ export const getR2UploadUrl = onCall({
   if (!ALLOWED_PREFIXES.some(p => path.startsWith(p))) {
     throw new HttpsError('permission-denied', `Path "${path}" fora das pastas permitidas.`);
   }
-  // Rate limit upload
+  // Rate limit por IP + por user
+  await checkRateLimitIP(request, 'uploadR2', 100, 60);
   await checkRateLimit(auth.uid, 'uploadR2', 30, 60);
   // Retorna token efêmero (vamos passar pra um Worker que valida)
   // Por enquanto: retorna o token do secret (Sprint 2 vai trocar por JWT real)
@@ -293,6 +338,7 @@ export const getSharePointToken = onCall({
     // Permite a qualquer auth user pq agentes precisam ler. Mas loga.
     // Decisão futura: filtrar por permission `ai_use`.
   }
+  await checkRateLimitIP(request, 'spToken', 60, 60);
   await checkRateLimit(auth.uid, 'spToken', 30, 60);
   const tid = SHAREPOINT_TENANT_ID.value();
   const cid = SHAREPOINT_CLIENT_ID.value();
@@ -626,4 +672,97 @@ export const dailySecurityDigest = onSchedule({
   }
 
   console.log('[digest] done', { riskScore, severity, ...stats });
+});
+
+/* ═════════════════════════════════════════════════════════
+ * weeklySecretsAudit — Lembra admin a rotacionar secrets
+ *
+ * SOC 2 CC6.1 + ISO 27001 A.5.17: senhas/keys devem rotacionar
+ * periodicamente (recomendado 90d).
+ *
+ * Roda toda segunda 09h BRT. Verifica idade de cada secret no
+ * Secret Manager e alerta se algum > 90d. Posta no Slack se webhook
+ * configurado, e SEMPRE grava em audit_logs.
+ * ═════════════════════════════════════════════════════════ */
+export const weeklySecretsAudit = onSchedule({
+  schedule: '0 12 * * 1',   // segunda 09h BRT
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 120,
+  memory: '256MiB',
+  secrets: [SIEM_SLACK_WEBHOOK],
+}, async () => {
+  const projectId = 'gestor-de-tarefas-primetour';
+  const auth = new GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+  });
+  const client = await auth.getClient();
+  const accessToken = await client.getAccessToken();
+
+  // Lista todas versions ativas dos secrets gerenciados
+  const SECRETS_TO_AUDIT = [
+    'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'GROQ_API_KEY',
+    'R2_UPLOAD_TOKEN', 'SHAREPOINT_CLIENT_SECRET', 'GITHUB_PAT',
+  ];
+  const stale = []; // > 90d
+  const aging = []; // 60-90d
+  const fresh = []; // < 60d
+
+  for (const name of SECRETS_TO_AUDIT) {
+    try {
+      const url = `https://secretmanager.googleapis.com/v1/projects/${projectId}/secrets/${name}/versions/latest`;
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${accessToken.token}` },
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const created = new Date(data.createTime);
+      const ageDays = Math.floor((Date.now() - created.getTime()) / 86400000);
+      const entry = { name, ageDays, version: data.name.split('/').pop() };
+      if (ageDays > 90) stale.push(entry);
+      else if (ageDays > 60) aging.push(entry);
+      else fresh.push(entry);
+    } catch (e) {
+      console.warn(`[secrets-audit] ${name} failed:`, e?.message);
+    }
+  }
+
+  const severity = stale.length > 0 ? 'warning' : 'info';
+
+  await db.collection('audit_logs').add({
+    action: 'system.secrets_audit',
+    target: 'all_managed_secrets',
+    stats: {
+      stale: stale.length, aging: aging.length, fresh: fresh.length,
+      staleNames: stale.map(s => s.name),
+    },
+    timestamp: FieldValue.serverTimestamp(),
+    severity,
+  });
+
+  // Slack alert apenas se houver stale
+  const webhook = SIEM_SLACK_WEBHOOK.value();
+  if (stale.length && webhook && webhook.startsWith('https://') && !webhook.includes('not-configured')) {
+    const lines = [
+      `*PRIMETOUR · Secrets Rotation Alert* (${stale.length} stale)`,
+      `Os seguintes secrets passaram dos 90 dias e precisam rotacionar:`,
+    ];
+    stale.forEach(s => lines.push(`  • *${s.name}* — ${s.ageDays}d (v${s.version})`));
+    lines.push(``);
+    lines.push(`*Como rotacionar*:`);
+    lines.push(`1. Gerar nova key no provider (Anthropic/OpenAI/etc)`);
+    lines.push(`2. \`firebase functions:secrets:set <NAME>\``);
+    lines.push(`3. \`firebase deploy --only functions\``);
+    lines.push(`4. Revogar key antiga no provider`);
+
+    try {
+      await fetch(webhook, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: lines.join('\n') }),
+      });
+    } catch (e) {
+      console.error('[secrets-audit] slack failed:', e?.message);
+    }
+  }
+
+  console.log('[secrets-audit] done', { stale: stale.length, aging: aging.length, fresh: fresh.length });
 });

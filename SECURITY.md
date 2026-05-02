@@ -1,13 +1,33 @@
 # PRIMETOUR — Segurança & Compliance
 
 > Política de segurança, runbook e checklist de compliance.
-> Atualizado em: 2026-05-02 · Quick Wins fase aplicada.
+> Atualizado em: 2026-05-02 · Sprint 5 concluído.
+
+![Sprint 1](https://img.shields.io/badge/Sprint%201-Cloud%20Functions-brightgreen)
+![Sprint 2](https://img.shields.io/badge/Sprint%202-SSO%20%2B%20App%20Check%20%2B%20Backup-brightgreen)
+![Sprint 3](https://img.shields.io/badge/Sprint%203-SIEM%20%2B%20Threat%20Model-brightgreen)
+![Sprint 4](https://img.shields.io/badge/Sprint%204-Cloudflare%20Pages%20Ready-yellow)
+![Sprint 5](https://img.shields.io/badge/Sprint%205-Hardening%20Final-brightgreen)
+![LGPD](https://img.shields.io/badge/LGPD-Compliant-green)
+![SOC 2](https://img.shields.io/badge/SOC%202-Ready-blue)
+![ISO 27001](https://img.shields.io/badge/ISO%2027001-Mapped-blue)
+![PITR](https://img.shields.io/badge/PITR-7%20days-brightgreen)
+![App Check](https://img.shields.io/badge/App%20Check-Monitor%20Mode-yellow)
 
 ## 🛡 Postura de Segurança
 
-**Tier**: Beta hardening (Sprint 1 em execução)
-**Compliance alvo**: LGPD ✓ · SOC 2 Type II (em construção) · ISO 27001 (planejado)
+**Tier**: Production hardened (5 sprints concluídos)
+**Compliance alvo**: LGPD ✓ · SOC 2 Type II (artefatos prontos) · ISO 27001 (mapeado)
 **Cliente alvo**: Bradesco, BTG, corporate enterprise
+
+## 📚 Documentação relacionada
+
+- [`THREAT-MODEL.md`](./THREAT-MODEL.md) — STRIDE + OWASP API Top 10
+- [`DATA-FLOW.md`](./DATA-FLOW.md) — Inventário PII + base legal LGPD
+- [`INCIDENT-RESPONSE.md`](./INCIDENT-RESPONSE.md) — Runbook P0–P3 + ANPD
+- [`ACCESS-CONTROL.md`](./ACCESS-CONTROL.md) — Matriz RBAC + scopes
+- [`MIGRATION-CLOUDFLARE.md`](./MIGRATION-CLOUDFLARE.md) — Plano de migração CF Pages
+- [`tests/README-rules-tests.md`](./tests/README-rules-tests.md) — Testes regressão de rules
 
 ---
 
@@ -143,8 +163,43 @@ Coletar e revisar mensalmente:
 
 ---
 
+## 🔐 Sprints 4 + 5 — Hardening Final (2026-05-02)
+
+### Sprint 4 — Cloudflare Pages prep ✅
+- `_headers` com CSP via response header (substitui meta-CSP modificável via DevTools)
+- HSTS `max-age=31536000; includeSubDomains; preload` ready
+- COOP/CORP/X-Frame-Options + cache control granular
+- `_redirects` SPA fallback + atalhos amigáveis
+- `MIGRATION-CLOUDFLARE.md` passo a passo (10 etapas + checklist + rollback)
+
+### Sprint 5 — Production Hardening ✅
+- **PITR Firestore** habilitado (recovery até 7 dias atrás, granularidade minuto)
+- **Delete protection** ativo (impede `gcloud firestore databases delete`)
+- **Rate limit per-IP** em `callLLM` (200/min), `getR2UploadUrl` (100/min), `getSharePointToken` (60/min)
+- `audit_logs` registra `security.ip_rate_limit_hit` quando IP atinge limite
+- `weeklySecretsAudit` Cloud Function — segunda 09h BRT, alerta secrets >90d
+- Firestore Rules denial em `rate_limits/*` e `rate_limits_ip/*` (server-only)
+- Tests `tests/firestore-rules.test.mjs` cobrindo 12 vetores de attack
+
+## 📋 Cloud Functions deployadas (10)
+
+| Função | Tipo | Schedule | Função |
+|--------|------|----------|--------|
+| `callLLM` | onCall | - | Proxy LLM unificado |
+| `getR2UploadUrl` | onCall | - | Upload R2 (path whitelist) |
+| `getSharePointToken` | onCall | - | client_credentials Azure AD |
+| `getGitHubFile` | onCall | - | Read GitHub com PAT |
+| `logUserLogin` | onCall | - | Audit IP+UA login |
+| `eraseUserDataServer` | onCall | - | LGPD Art. 18 VI erasure |
+| `dailyBackup` | onSchedule | 03h BRT | Snapshot Firestore→GCS |
+| `dailySecurityDigest` | onSchedule | 09h BRT | SIEM lite + Slack |
+| `weeklySecretsAudit` | onSchedule | seg 09h BRT | Alerta secrets >90d |
+
+---
+
 ## Contatos
 
-- **DPO**: (a definir)
-- **Security Lead**: (a definir)
+- **DPO** (LGPD Art. 41): Rene Castro — rene.castro@primetour.com.br
+- **Incident Commander**: Rene Castro
+- **Security Disclosure**: ver [`/.well-known/security.txt`](./.well-known/security.txt)
 - **Incident Response**: (a definir, on-call rotation)

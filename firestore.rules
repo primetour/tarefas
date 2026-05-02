@@ -588,6 +588,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Rate limit counters (per-IP, per-user) — server-only ───
+    // Coleção atualizada APENAS por Cloud Functions via Admin SDK.
+    // Client nunca lê/escreve (atacante poderia limpar contador).
+    match /rate_limits/{docId} {
+      allow read, write: if false;
+    }
+    match /rate_limits_ip/{docId} {
+      allow read, write: if false;
+    }
+
     // ── AI Skills ────────────────────────────────────────────
     match /ai_skills/{docId} {
       allow read:  if isAuth();
