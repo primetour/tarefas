@@ -395,6 +395,8 @@ function mountShell(root) {
     startScheduler();
     // Start AI automations scheduler
     import('./services/aiAutomations.js').then(m => m.startAutomationScheduler()).catch(() => {});
+    // Novo scheduler de agents (Fase 5) — coexiste com o legado até cleanup
+    import('./services/agentScheduler.js?v=20260501t').then(m => m.startAgentScheduler()).catch(() => {});
   }
 }
 
@@ -427,9 +429,7 @@ function setupRouter() {
     'notifications': async () => { destroyNotifications(); await renderNotifications(content); },
     'roles':        async () => { await renderRoles(content); },
     'settings':     async () => { await renderSettings(content); },
-    'ai-skills':    async () => { await renderAiSkills(content); },
-    'ai-dashboard': async () => { destroyAiDashboard(); await renderAiDashboard(content); },
-    'ai-automations': async () => { const { renderAiAutomations } = await import('./pages/aiAutomations.js'); await renderAiAutomations(content); },
+    // ai-skills, ai-dashboard, ai-automations: redirecionados pro IA Hub abaixo
     'roteiros':         async () => { await renderRoteiros(content); },
     'roteiro-editor':   async () => { destroyRoteiroEditor(); await renderRoteiroEditor(content); },
     'roteiro-dashboard': async () => { destroyRoteiroDashboard(); await renderRoteiroDashboard(content); },
@@ -437,6 +437,10 @@ function setupRouter() {
     'about':        async () => { await renderAbout(content); },
     'help':         async () => { const { renderHelp } = await import('./pages/help.js?v=20260501r'); await renderHelp(content); },
     'ai-hub':       async () => { const { renderAiHub } = await import('./pages/aiHub.js?v=20260501t'); await renderAiHub(content); },
+    // Redirects de URLs legadas para o IA Hub (mantém links antigos funcionando)
+    'ai-skills':       async () => { location.hash = '#ai-hub'; },
+    'ai-automations':  async () => { location.hash = '#ai-hub'; },
+    'ai-dashboard':    async () => { location.hash = '#ai-hub'; },
     'nl-performance':       async () => { await renderNlPerformance(content); },
     'meta-performance':     async () => { await renderMetaPerformance(content); },
     'ga-performance':       async () => { await renderGaPerformance(content); },

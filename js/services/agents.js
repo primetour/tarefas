@@ -472,15 +472,153 @@ export async function purgeLegacyCollections({ confirmText } = {}) {
 }
 
 /* ═══════════════════════════════════════════════════════════
+ * KNOWLEDGE LOADERS (R2 / SharePoint / URL)
+ *
+ * Cada source.type tem um loader que retorna texto bruto pra entrar
+ * no prompt. Caches simples por sessão pra evitar re-fetch.
+ * ═══════════════════════════════════════════════════════════ */
+const _kbCache = new Map(); // key → { ts, text }
+const KB_CACHE_TTL = 10 * 60 * 1000; // 10min
+
+async function _fetchUrl(url) {
+  const key = 'url:' + url;
+  const c = _kbCache.get(key);
+  if (c && (Date.now() - c.ts) < KB_CACHE_TTL) return c.text;
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    // Sanitiza HTML (extrai só texto visível, simplificado)
+    const stripped = text
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 8000);
+    _kbCache.set(key, { ts: Date.now(), text: stripped });
+    return stripped;
+  } catch (e) {
+    return `[Erro ao buscar ${url}: ${e.message}]`;
+  }
+}
+
+async function _fetchR2(path) {
+  // R2 path = caminho dentro do bucket público (ex: 'docs/sla.txt')
+  const url = `https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/${path.replace(/^\//, '')}`;
+  return _fetchUrl(url);
+}
+
+async function _fetchSharePoint(source) {
+  // SharePoint via Graph API: requer access token Microsoft do SSO
+  // que está em store.get('msAccessToken') (a setar em auth.js)
+  const token = store.get('msAccessToken');
+  if (!token) return `[SharePoint: token Microsoft não disponível — refaça login com SSO]`;
+  if (!source.siteId || !source.libraryId) return `[SharePoint: siteId/libraryId não configurados]`;
+  try {
+    // Lista arquivos da pasta
+    const url = `https://graph.microsoft.com/v1.0/sites/${source.siteId}/drives/${source.libraryId}/root:/${encodeURIComponent(source.folder||'')}:/children`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Graph HTTP ${res.status}`);
+    const data = await res.json();
+    const files = (data.value || []).filter(f => f.file && /\.(txt|md|json|csv)$/i.test(f.name)).slice(0, 5);
+    let combined = '';
+    for (const f of files) {
+      const r = await fetch(f['@microsoft.graph.downloadUrl']);
+      const t = await r.text();
+      combined += `\n--- ${f.name} ---\n${t.slice(0, 4000)}\n`;
+    }
+    return combined.trim() || '[SharePoint: pasta vazia ou sem arquivos textuais]';
+  } catch (e) {
+    return `[SharePoint erro: ${e.message}]`;
+  }
+}
+
+/**
+ * Carrega todas as fontes externas de conhecimento do agente
+ * Retorna string consolidada pra colocar no system prompt
+ */
+export async function loadAgentKnowledge(agent) {
+  const parts = [];
+  // Knowledge interno (Firestore ai_knowledge)
+  if (agent.knowledgeIds?.length) {
+    const ai = await import('./ai.js');
+    const docs = await ai.loadKnowledgeContents(agent.knowledgeIds);
+    docs.forEach(d => parts.push(`### ${d.title}\n${d.content}`));
+  }
+  // Fontes externas
+  const sources = agent.knowledgeSources || [];
+  for (const s of sources) {
+    try {
+      let text = '';
+      if (s.type === 'url')        text = await _fetchUrl(s.url);
+      else if (s.type === 'r2')    text = await _fetchR2(s.path);
+      else if (s.type === 'sharepoint') text = await _fetchSharePoint(s);
+      if (text) parts.push(`### ${s.type}: ${s.url || s.path || s.folder}\n${text}`);
+    } catch (e) {
+      parts.push(`### ${s.type}: erro\n${e.message}`);
+    }
+  }
+  return parts.length ? '\n\n=== BASE DE CONHECIMENTO ===\n' + parts.join('\n\n') : '';
+}
+
+/* ═══════════════════════════════════════════════════════════
  * EXECUÇÃO DE AGENTE
  * Reusa toda a infra do services/ai.js (chatWithAI, callXxx providers,
  * loadKnowledgeContents, anonimização LGPD) — apenas adiciona overlay
  * de configurações do agente.
  * ═══════════════════════════════════════════════════════════ */
+/* Rate limit local (LocalStorage por agente — janela deslizante) */
+function _checkRateLimit(agent) {
+  const lim = agent.limits?.rateLimit;
+  if (!lim?.max || !lim?.window) return;
+  const key = 'agent-rate:' + agent.id;
+  const now = Date.now();
+  let arr = [];
+  try { arr = JSON.parse(localStorage.getItem(key) || '[]'); } catch {}
+  const cutoff = now - (lim.window * 1000);
+  arr = arr.filter(t => t > cutoff);
+  if (arr.length >= lim.max) {
+    throw new Error(`Rate limit: máximo ${lim.max} chamadas a cada ${lim.window}s. Aguarde.`);
+  }
+  arr.push(now);
+  try { localStorage.setItem(key, JSON.stringify(arr)); } catch {}
+}
+
+/* Cost cap diário */
+async function _checkDailyCost(agent) {
+  const cap = agent.limits?.maxCostPerDayUsd;
+  if (!cap) return;
+  const { collection, getDocs, query, where, Timestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const today = new Date(); today.setHours(0,0,0,0);
+  try {
+    const snap = await getDocs(query(collection(db, 'ai_usage_logs'),
+      where('agentId', '==', agent.id),
+      where('timestamp', '>=', Timestamp.fromDate(today)),
+    ));
+    let cost = 0;
+    snap.docs.forEach(d => {
+      const l = d.data();
+      // Usa estimativa conservadora ($1/$3 per 1M se não souber)
+      cost += ((l.inputTokens||0) * 1 + (l.outputTokens||0) * 3) / 1_000_000;
+    });
+    if (cost >= cap) {
+      throw new Error(`Limite diário atingido ($${cost.toFixed(2)}/$${cap}). Reset à meia-noite.`);
+    }
+  } catch (e) {
+    if (e.message.startsWith('Limite diário')) throw e;
+    /* não bloqueia se falhar a leitura do log */
+  }
+}
+
 export async function runAgent(agentId, userInput, context = {}) {
   const agent = await getAgent(agentId);
   if (!agent) throw new Error('Agente não encontrado.');
   if (!agent.active) throw new Error('Agente está pausado.');
+
+  // Limites operacionais (Fase 7)
+  _checkRateLimit(agent);
+  await _checkDailyCost(agent);
 
   const ai = await import('./ai.js');
 
@@ -494,14 +632,9 @@ export async function runAgent(agentId, userInput, context = {}) {
     });
   }
 
-  // Carrega knowledge interno
-  if (agent.knowledgeIds?.length) {
-    const docs = await ai.loadKnowledgeContents(agent.knowledgeIds);
-    if (docs.length) {
-      systemParts.push('\n=== BASE DE CONHECIMENTO ===');
-      docs.forEach(d => systemParts.push(`### ${d.title}\n${d.content}`));
-    }
-  }
+  // Carrega TODA base de conhecimento (interno + R2 + SharePoint + URLs)
+  const knowledgeText = await loadAgentKnowledge(agent);
+  if (knowledgeText) systemParts.push(knowledgeText);
 
   // Valida que existe API key (chatWithAI faz a resolução completa,
   // mas pré-valida pra falhar rápido com mensagem clara)

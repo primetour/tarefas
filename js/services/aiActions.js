@@ -3415,3 +3415,62 @@ export async function executeAction(moduleId, actionName, params = {}) {
     return { success: false, message: msg };
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+ * DYNAMIC TOOL DISCOVERY (Fase 6 — IA Hub)
+ *
+ * Expõe catálogo completo de tools disponíveis (por módulo + globais)
+ * pra UI de configuração de Agent permitir escolher quais ferramentas
+ * o agente pode usar. Quando enabledTools está vazio (ou toolsMode='auto'),
+ * libera todas; senão filtra.
+ * ═══════════════════════════════════════════════════════════ */
+export function listAllTools() {
+  const out = {
+    global: GLOBAL_ACTIONS.map(a => ({
+      name: a.name, description: a.description,
+      params: Object.keys(a.params || {}),
+      module: 'global',
+    })),
+    byModule: {},
+  };
+  Object.keys(MODULE_ACTIONS).forEach(modId => {
+    out.byModule[modId] = MODULE_ACTIONS[modId].map(a => ({
+      name: a.name, description: a.description,
+      params: Object.keys(a.params || {}),
+      module: modId,
+    }));
+  });
+  return out;
+}
+
+/**
+ * Retorna apenas as tools habilitadas pra um agente específico.
+ * Se toolsMode='auto' ou enabledTools vazio, devolve tudo do módulo.
+ */
+export function getActionsForAgent(agent) {
+  const all = getActionsForModule(agent.module || 'general');
+  if (agent.toolsMode === 'auto' || !agent.enabledTools?.length) return all;
+  return all.filter(a => agent.enabledTools.includes(a.name));
+}
+
+/**
+ * Versão de formatActionsForPrompt que respeita o filtro do agent.
+ */
+export function formatActionsForAgent(agent) {
+  const actions = getActionsForAgent(agent);
+  if (!actions.length) return '';
+  const lines = actions.map(a => {
+    const paramKeys = Object.keys(a.params || {});
+    const required = paramKeys.filter(k => (a.params[k] || '').includes('obrigatório'));
+    const optional = paramKeys.filter(k => !(a.params[k] || '').includes('obrigatório'));
+    let sig = `• ${a.name}(${required.join(', ')}${optional.length ? ` [,${optional.join(',')}]` : ''})`;
+    sig += ` — ${a.description}`;
+    return sig;
+  });
+  return `
+=== AÇÕES DISPONÍVEIS PARA ESTE AGENTE ===
+Formato: <<<ACTION>>>{"action":"nome","params":{...}}<<<END_ACTION>>>
+Ações:
+${lines.join('\n')}
+=== FIM ===`;
+}

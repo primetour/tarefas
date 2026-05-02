@@ -201,6 +201,12 @@ async function openAgentEditor(agentId) {
   // Knowledge disponível
   const allKnowledge = await fetchKnowledge().catch(() => []);
 
+  // Tool catalog (descoberta dinâmica — Fase 6)
+  try {
+    const aiActions = await import('../services/aiActions.js');
+    window.__toolCatalogCache = aiActions.listAllTools();
+  } catch {}
+
   let activeSubTab = 'identity';
 
   modal.open({
@@ -299,6 +305,24 @@ async function openAgentEditor(agentId) {
     bindAvatarUpload(agent);
     bindKnowledgeAdd(agent);
     bindAllowedSitesEditor(agent);
+    bindToolToggles(agent);
+  }
+
+  function bindToolToggles(a) {
+    document.getElementById('a-tools-mode')?.addEventListener('change', (e) => {
+      a.toolsMode = e.target.value;
+      renderSubTab();  // re-renderiza pra habilitar/desabilitar checkboxes
+    });
+    document.querySelectorAll('.a-tool-toggle').forEach(cb =>
+      cb.addEventListener('change', (e) => {
+        a.enabledTools = a.enabledTools || [];
+        const name = cb.dataset.name;
+        if (e.target.checked) {
+          if (!a.enabledTools.includes(name)) a.enabledTools.push(name);
+        } else {
+          a.enabledTools = a.enabledTools.filter(x => x !== name);
+        }
+      }));
   }
 
   function applyFormToAgent() {
@@ -569,6 +593,35 @@ function subTabKnowledge(a, allKnowledge) {
 }
 
 function subTabTools(a) {
+  // Descoberta dinâmica de tools (Fase 6)
+  let toolCatalog = { global: [], byModule: {} };
+  try {
+    // Lazy import síncrono não funciona; fazemos placeholder e binding async em renderSubTab
+    const sync = window.__toolCatalogCache;
+    if (sync) toolCatalog = sync;
+  } catch {}
+
+  const moduleTools = toolCatalog.byModule[a.module] || [];
+  const enabledSet = new Set(a.enabledTools || []);
+  const showList = a.toolsMode === 'manual';
+
+  const renderToolList = (tools, label) => `
+    <div style="margin-top:12px;">
+      <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;margin-bottom:6px;">${label} (${tools.length})</div>
+      <div style="max-height:200px;overflow:auto;border:1px solid var(--border-subtle);border-radius:6px;padding:8px;">
+        ${!tools.length ? '<p style="font-size:0.75rem;color:var(--text-muted);">Nenhuma tool disponível neste módulo.</p>'
+          : tools.map(t => `
+            <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.8125rem;">
+              <input type="checkbox" class="a-tool-toggle" data-name="${esc(t.name)}"
+                ${enabledSet.has(t.name) ? 'checked' : ''} ${a.toolsMode!=='manual'?'disabled':''} />
+              <code style="font-family:var(--font-mono,monospace);font-size:0.75rem;">${esc(t.name)}</code>
+              <span style="color:var(--text-muted);font-size:0.75rem;">${esc(t.description||'')}</span>
+            </label>
+          `).join('')}
+      </div>
+    </div>
+  `;
+
   return `
     <h3 style="margin:0 0 12px;font-size:1.0625rem;">Ferramentas (Tools)</h3>
     <div class="form-group">
@@ -577,11 +630,12 @@ function subTabTools(a) {
         <option value="auto"   ${a.toolsMode==='auto'?'selected':''}>Auto (todas as tools do módulo)</option>
         <option value="manual" ${a.toolsMode==='manual'?'selected':''}>Manual (selecionar específicas)</option>
       </select>
-      <small style="color:var(--text-muted);font-size:0.6875rem;">
-        Lista detalhada virá na Fase 6 (descoberta dinâmica). Por ora, "auto" libera tudo do módulo.
-      </small>
     </div>
-    <div class="form-group">
+    <div id="a-tools-catalog">
+      ${renderToolList(moduleTools, `Tools do módulo ${a.module}`)}
+      ${renderToolList(toolCatalog.global, 'Tools globais')}
+    </div>
+    <div class="form-group" style="margin-top:16px;">
       <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg-surface);border-radius:6px;">
         <input type="checkbox" id="a-allow-web" ${a.allowWebSearch?'checked':''} />
         <div>
@@ -800,41 +854,310 @@ function renderApiKeysTab(container) {
   `;
 }
 
-function renderKnowledgeTab(container) {
+async function renderKnowledgeTab(container) {
+  let docs = await fetchKnowledge().catch(() => []);
+
+  function paint() {
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <p style="color:var(--text-muted);font-size:0.8125rem;margin:0;">
+          ${docs.length} documento(s). Agentes referenciam estes docs em "Editor → Conhecimento".
+        </p>
+        <div style="display:flex;gap:8px;">
+          <input type="file" id="kb-upload" accept=".md,.txt,.json,.csv" multiple style="display:none;" />
+          <button class="btn btn-secondary btn-sm" id="kb-upload-btn">📎 Upload .md/.txt</button>
+          <button class="btn btn-primary btn-sm" id="kb-new">+ Novo doc</button>
+        </div>
+      </div>
+
+      ${!docs.length ? `<div class="empty-state" style="min-height:30vh;">
+        <div class="empty-state-icon">📚</div>
+        <div class="empty-state-title">Sem documentos ainda</div>
+        <p class="text-sm text-muted">Crie um doc novo, faça upload de .md ou cole conteúdo.</p>
+      </div>`
+      : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">
+        ${docs.map(d => `<div class="card" style="padding:14px;">
+          <div style="display:flex;align-items:start;gap:8px;margin-bottom:8px;">
+            <div style="font-size:1.25rem;">${d.type==='url'?'🔗':'📄'}</div>
+            <div style="flex:1;min-width:0;">
+              <strong style="font-size:0.9375rem;display:block;">${esc(d.title||'Sem título')}</strong>
+              <small style="color:var(--text-muted);font-size:0.6875rem;">${d.charCount||0} chars · ${esc(d.folder||'sem pasta')}</small>
+            </div>
+          </div>
+          <p style="font-size:0.75rem;color:var(--text-secondary);line-height:1.5;
+            margin:0 0 10px;max-height:60px;overflow:hidden;
+            display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;">
+            ${esc((d.content || d.sourceUrl || '').slice(0, 200))}
+          </p>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-secondary btn-sm" data-act="kb-edit" data-id="${d.id}">✎</button>
+            <button class="btn btn-ghost btn-sm" data-act="kb-del" data-id="${d.id}" style="color:#EF4444;">🗑</button>
+          </div>
+        </div>`).join('')}
+      </div>`}
+    `;
+
+    container.querySelectorAll('[data-act="kb-edit"]').forEach(b =>
+      b.addEventListener('click', () => openKnowledgeEditor(docs.find(x => x.id === b.dataset.id))));
+    container.querySelectorAll('[data-act="kb-del"]').forEach(b =>
+      b.addEventListener('click', async () => {
+        if (!confirm('Excluir este doc? Agentes que o referenciam vão perdê-lo.')) return;
+        try { await deleteKnowledgeDoc(b.dataset.id); docs = await fetchKnowledge(); paint(); toast.success('Excluído.'); }
+        catch (e) { toast.error(e.message); }
+      }));
+    document.getElementById('kb-new')?.addEventListener('click', () => openKnowledgeEditor(null));
+    document.getElementById('kb-upload-btn')?.addEventListener('click', () => document.getElementById('kb-upload').click());
+    document.getElementById('kb-upload')?.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || []);
+      for (const f of files) {
+        try {
+          const text = await f.text();
+          await createKnowledgeDoc({
+            title: f.name.replace(/\.[^.]+$/, ''),
+            content: text,
+            type: 'text',
+            folder: 'Uploads',
+          });
+        } catch (err) { toast.error(`${f.name}: ${err.message}`); }
+      }
+      docs = await fetchKnowledge(); paint();
+      toast.success(`${files.length} arquivo(s) importado(s).`);
+    });
+  }
+
+  function openKnowledgeEditor(doc) {
+    const isNew = !doc;
+    const d = doc || { title: '', content: '', folder: '', type: 'text', sourceUrl: '' };
+    modal.open({
+      title: isNew ? '+ Novo documento' : '✎ Editar documento',
+      size: 'lg',
+      dedupeKey: 'kb:' + (doc?.id || 'new'),
+      content: `
+        <div class="form-group">
+          <label class="form-label">Título</label>
+          <input type="text" id="kb-f-title" class="form-input" value="${esc(d.title)}" placeholder="Ex: SLA por tipo de tarefa" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label class="form-label">Pasta (organização)</label>
+            <input type="text" id="kb-f-folder" class="form-input" value="${esc(d.folder)}" placeholder="Ex: Procedimentos" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tipo</label>
+            <select id="kb-f-type" class="form-select">
+              <option value="text" ${d.type==='text'?'selected':''}>Texto</option>
+              <option value="url"  ${d.type==='url'?'selected':''}>URL (snapshot)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" id="kb-url-group" style="${d.type==='url'?'':'display:none;'}">
+          <label class="form-label">URL fonte</label>
+          <input type="url" id="kb-f-url" class="form-input" value="${esc(d.sourceUrl)}" placeholder="https://..." />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Conteúdo (markdown ou texto)</label>
+          <textarea id="kb-f-content" class="form-textarea" rows="12" style="font-family:var(--font-mono,monospace);font-size:0.8125rem;">${esc(d.content)}</textarea>
+        </div>
+      `,
+      footer: [
+        { label: 'Cancelar', class: 'btn-secondary' },
+        { label: '💾 Salvar', class: 'btn-primary', closeOnClick: false, onClick: async (_, { close }) => {
+          const data = {
+            title: document.getElementById('kb-f-title').value,
+            content: document.getElementById('kb-f-content').value,
+            folder: document.getElementById('kb-f-folder').value,
+            type: document.getElementById('kb-f-type').value,
+            sourceUrl: document.getElementById('kb-f-url').value,
+          };
+          if (!data.title.trim()) return toast.error('Defina um título.');
+          try {
+            if (isNew) await createKnowledgeDoc(data);
+            else await updateKnowledgeDoc(doc.id, data);
+            toast.success('Salvo.');
+            close();
+            docs = await fetchKnowledge(); paint();
+          } catch (e) { toast.error(e.message); }
+        }},
+      ],
+    });
+    setTimeout(() => {
+      document.getElementById('kb-f-type')?.addEventListener('change', (e) => {
+        document.getElementById('kb-url-group').style.display = e.target.value === 'url' ? 'block' : 'none';
+      });
+    }, 60);
+  }
+
+  paint();
+}
+
+async function renderLogsTab(container) {
+  // Lê últimos 200 logs com filtro por agente
+  const { collection, getDocs, query, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const { db } = await import('../firebase.js');
+  let agents = await fetchAgents();
+  let logs = [];
+  try {
+    const snap = await getDocs(query(collection(db, 'ai_usage_logs'), limit(500)));
+    logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    logs.sort((a, b) => {
+      const ta = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : 0;
+      const tb = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : 0;
+      return tb - ta;
+    });
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--color-danger);padding:24px;">Erro: ${esc(e.message)}</p>`;
+    return;
+  }
+  let filterAgent = '';
+  function paint() {
+    const filtered = filterAgent ? logs.filter(l => l.agentId === filterAgent) : logs;
+    container.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+        <label style="font-size:0.8125rem;color:var(--text-secondary);">Filtrar por agente:</label>
+        <select class="form-select" id="logs-filter" style="width:auto;font-size:0.8125rem;">
+          <option value="">Todos (${logs.length})</option>
+          ${agents.map(a => `<option value="${esc(a.id)}" ${a.id===filterAgent?'selected':''}>${esc(a.name)}</option>`).join('')}
+        </select>
+        <span style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);">${filtered.length} entradas</span>
+      </div>
+      <div class="card" style="padding:0;">
+        <table class="data-table" style="width:100%;font-size:0.8125rem;">
+          <thead><tr>
+            <th>Quando</th><th>Agente</th><th>Provider</th>
+            <th style="text-align:right;">In</th><th style="text-align:right;">Out</th>
+            <th style="text-align:right;">≈ USD</th><th>Origem</th>
+          </tr></thead>
+          <tbody>${!filtered.length ? '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-muted);">Sem logs.</td></tr>'
+            : filtered.slice(0, 200).map(l => {
+              const cost = estimateCost(l.provider, l.model, l.inputTokens, l.outputTokens);
+              const ts = l.timestamp?.toDate ? l.timestamp.toDate().toLocaleString('pt-BR') : '—';
+              return `<tr>
+                <td style="font-size:0.75rem;">${ts}</td>
+                <td>${esc(l.agentName || l.skillName || '—')}</td>
+                <td>${esc(l.provider||'')} · ${esc((l.model||'').slice(0,20))}</td>
+                <td style="text-align:right;">${l.inputTokens||0}</td>
+                <td style="text-align:right;">${l.outputTokens||0}</td>
+                <td style="text-align:right;color:${cost>0.01?'#F59E0B':'var(--text-muted)'};">$${cost.toFixed(4)}</td>
+                <td style="font-size:0.6875rem;color:var(--text-muted);">${esc(l.source||'app')}</td>
+              </tr>`;
+            }).join('')}</tbody>
+        </table>
+      </div>
+    `;
+    document.getElementById('logs-filter')?.addEventListener('change', (e) => {
+      filterAgent = e.target.value; paint();
+    });
+  }
+  paint();
+}
+
+async function renderCostsTab(container) {
+  const { collection, getDocs, query, where, limit, Timestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const { db } = await import('../firebase.js');
+  // Últimos 30 dias
+  const since = new Date(); since.setDate(since.getDate() - 30);
+  let logs = [];
+  try {
+    const snap = await getDocs(query(collection(db, 'ai_usage_logs'),
+      where('timestamp', '>=', Timestamp.fromDate(since)),
+      limit(2000)));
+    logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--color-danger);padding:24px;">Erro: ${esc(e.message)}</p>`;
+    return;
+  }
+
+  let totalCost = 0, totalIn = 0, totalOut = 0;
+  const byAgent = new Map();
+  const byProvider = new Map();
+  const byDay = new Map();
+  logs.forEach(l => {
+    const cost = estimateCost(l.provider, l.model, l.inputTokens, l.outputTokens);
+    totalCost += cost; totalIn += l.inputTokens||0; totalOut += l.outputTokens||0;
+    const aKey = l.agentName || l.skillName || '—';
+    if (!byAgent.has(aKey)) byAgent.set(aKey, { calls:0, cost:0, inT:0, outT:0 });
+    const a = byAgent.get(aKey); a.calls++; a.cost += cost; a.inT += l.inputTokens||0; a.outT += l.outputTokens||0;
+    const pKey = l.provider || '—';
+    if (!byProvider.has(pKey)) byProvider.set(pKey, { calls:0, cost:0 });
+    const p = byProvider.get(pKey); p.calls++; p.cost += cost;
+    const day = l.timestamp?.toDate ? l.timestamp.toDate().toISOString().slice(0,10) : '?';
+    if (!byDay.has(day)) byDay.set(day, { calls:0, cost:0 });
+    const d = byDay.get(day); d.calls++; d.cost += cost;
+  });
+
+  const topAgents = [...byAgent.entries()].sort((a,b) => b[1].cost - a[1].cost).slice(0,10);
+  const days = [...byDay.entries()].sort((a,b) => a[0].localeCompare(b[0]));
+  const maxDayCost = Math.max(0.001, ...days.map(d => d[1].cost));
+
   container.innerHTML = `
-    <div class="card" style="padding:20px;">
-      <h3 style="margin:0 0 8px;">📚 Base de Conhecimento</h3>
-      <p style="color:var(--text-muted);font-size:0.875rem;line-height:1.6;">
-        Cadastro de docs (texto, URL, .md, R2, SharePoint) — em construção (Fase 4).
-        Por enquanto, use <a href="#ai-skills">IA Skills antiga → Base de Conhecimento</a>.
-        Os agentes já podem referenciar docs daquela aba (no editor → Conhecimento).
-      </p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;">
+      ${[
+        { l: 'Custo total (30d)', v: '$ ' + totalCost.toFixed(2), c: totalCost>1 ? '#F59E0B':'#22C55E' },
+        { l: 'Chamadas', v: logs.length, c: '#3B82F6' },
+        { l: 'Tokens entrada', v: totalIn.toLocaleString('pt-BR'), c: '#A78BFA' },
+        { l: 'Tokens saída', v: totalOut.toLocaleString('pt-BR'), c: '#A78BFA' },
+        { l: 'Agentes ativos', v: byAgent.size, c: '#06B6D4' },
+      ].map(c => `<div class="card" style="padding:14px;border-left:3px solid ${c.c};">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;">${c.l}</div>
+        <div style="font-size:1.5rem;font-weight:700;color:${c.c};margin-top:4px;">${c.v}</div>
+      </div>`).join('')}
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header"><div class="card-title">📊 Custo diário (últimos 30d)</div></div>
+      <div class="card-body" style="padding:16px;">
+        <div style="display:flex;align-items:flex-end;gap:3px;height:140px;">
+          ${days.map(([day, d]) => {
+            const h = (d.cost / maxDayCost) * 100;
+            return `<div title="${esc(day)}: $${d.cost.toFixed(3)} (${d.calls} calls)"
+              style="flex:1;background:linear-gradient(to top,#2563EB,#60A5FA);height:${h}%;min-height:2px;border-radius:2px 2px 0 0;"></div>`;
+          }).join('')}
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:0.6875rem;color:var(--text-muted);margin-top:6px;">
+          <span>${days[0]?.[0] || ''}</span><span>${days[days.length-1]?.[0] || ''}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">🏆 Top agentes por custo</div></div>
+      <div class="card-body" style="padding:0;">
+        <table class="data-table" style="width:100%;font-size:0.8125rem;">
+          <thead><tr><th>Agente</th><th style="text-align:right;">Calls</th><th style="text-align:right;">Tokens In/Out</th><th style="text-align:right;">≈ USD</th></tr></thead>
+          <tbody>${topAgents.map(([name, a]) => `<tr>
+            <td><strong>${esc(name)}</strong></td>
+            <td style="text-align:right;">${a.calls}</td>
+            <td style="text-align:right;">${a.inT.toLocaleString('pt-BR')} / ${a.outT.toLocaleString('pt-BR')}</td>
+            <td style="text-align:right;color:${a.cost>0.5?'#F59E0B':'var(--text-secondary)'};font-weight:600;">$${a.cost.toFixed(3)}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
     </div>
   `;
 }
 
-function renderLogsTab(container) {
-  container.innerHTML = `
-    <div class="card" style="padding:20px;">
-      <h3 style="margin:0 0 8px;">⌚ Logs</h3>
-      <p style="color:var(--text-muted);font-size:0.875rem;line-height:1.6;">
-        Histórico por agente — em construção (Fase 7).
-        Hoje os logs vão pra collection <code>ai_usage_logs</code> com campo <code>agentId</code>.
-      </p>
-    </div>
-  `;
-}
-
-function renderCostsTab(container) {
-  container.innerHTML = `
-    <div class="card" style="padding:20px;">
-      <h3 style="margin:0 0 8px;">$ Custos</h3>
-      <p style="color:var(--text-muted);font-size:0.875rem;line-height:1.6;">
-        Dashboard de uso (tokens, USD estimado, top agentes) — em construção (Fase 7).
-        Por enquanto: <a href="#ai-dashboard">Dashboard IA antigo</a>.
-      </p>
-    </div>
-  `;
+/* Estimativa simplificada de custo USD (preço por 1M tokens) */
+function estimateCost(provider, model, inT, outT) {
+  const PRICES = {
+    // Anthropic (USD per 1M tokens)
+    'claude-opus-4-6':   { in: 15,    out: 75 },
+    'claude-sonnet-4-6': { in: 3,     out: 15 },
+    'claude-haiku-4-5':  { in: 0.80,  out: 4 },
+    // OpenAI
+    'gpt-4o':            { in: 2.50,  out: 10 },
+    'gpt-4o-mini':       { in: 0.15,  out: 0.60 },
+    'gpt-4.1':           { in: 2.00,  out: 8 },
+    'gpt-4.1-mini':      { in: 0.40,  out: 1.60 },
+    'o4-mini':           { in: 1.10,  out: 4.40 },
+    // Gemini (grátis dentro de quota)
+    'gemini-2.5-flash':  { in: 0,     out: 0 },
+    'gemini-2.5-pro':    { in: 0,     out: 0 },
+    // Groq (grátis)
+    'llama-3.3-70b-versatile': { in: 0, out: 0 },
+    'llama-3.1-8b-instant':    { in: 0, out: 0 },
+  };
+  const p = PRICES[model] || { in: 1, out: 3 }; // default conservador
+  return ((inT||0) * p.in + (outT||0) * p.out) / 1_000_000;
 }
 
 /* ═══════════════════════════════════════════════════════════

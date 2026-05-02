@@ -45,7 +45,7 @@ const NAV_GROUPS = [
       { route: 'cms',                 icon: '◫', label: 'CMS / Site',           perm: 'portal_manage'  },
       { route: 'arts-editor',         icon: '▣', label: 'Editor de Artes',      perm: 'portal_manage'  },
       { route: 'news-monitor',        icon: '◉', label: 'Pautas e Clipping',    perm: 'dashboard_view' },
-      { route: 'ai-automations',     icon: '◎', label: 'Automações IA',         perm: 'dashboard_view' },
+      // 'ai-automations' DEPRECADO em favor do IA Hub (triggers.schedule do agente).
     ]
   },
   {
@@ -57,7 +57,7 @@ const NAV_GROUPS = [
       { route: 'ga-performance',      icon: '◈', label: 'Google Analytics',    perm: 'analytics_view' },
       { route: 'portal-dashboard',    icon: '◈', label: 'Portal de Dicas',     perm: 'portal_manage' },
       { route: 'roteiro-dashboard', icon: '✈', label: 'Roteiros',            perm: 'roteiro_manage' },
-      { route: 'ai-dashboard',       icon: '◈', label: 'Inteligência Artificial', perm: 'system_manage_settings' },
+      // 'ai-dashboard' agora dentro do IA Hub (aba Custos)
     ]
   },
   {
@@ -68,7 +68,7 @@ const NAV_GROUPS = [
       { route: 'task-types', icon: '▣',  label: 'Tipos de Tarefa',   perm: 'task_type_create', altPerm: 'system_manage_users' },
       { route: 'roles',      icon: '◈',  label: 'Roles e Acesso',    perm: 'system_manage_roles', altPerm: 'system_manage_users' },
       { route: 'ai-hub',          icon: '◈',  label: 'IA Hub',             perm: 'system_manage_settings' },
-      { route: 'ai-skills',       icon: '◈',  label: 'IA Skills (legado)', perm: 'system_manage_settings' },
+      // 'ai-skills' DEPRECADO em favor do IA Hub. Skills migradas viram agents.
       { route: 'audit',      icon: '◌',  label: 'Auditoria',         perm: 'system_manage_settings' },
       { route: 'settings',   icon: '⚙',  label: 'Configurações',     perm: 'system_manage_settings' },
       { route: 'about',      icon: '◎',  label: 'Sobre o sistema',   perm: 'system_manage_users' },

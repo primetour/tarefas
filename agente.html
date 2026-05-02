@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0A1628" />
+  <meta name="robots" content="noindex" />
+  <title>Agente IA · PRIMETOUR</title>
+
+  <!-- CSP -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src  'self' 'unsafe-inline' https://www.gstatic.com https://cdn.jsdelivr.net;
+    style-src   'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src    'self' https://fonts.gstatic.com;
+    img-src     'self' data: blob: https:;
+    media-src   'self' blob:;
+    connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://www.gstatic.com
+                https://firestore.googleapis.com https://identitytoolkit.googleapis.com
+                https://securetoken.googleapis.com
+                https://api.groq.com https://api.openai.com https://api.anthropic.com
+                https://generativelanguage.googleapis.com
+                https://primetour-images.rene-castro.workers.dev
+                https://login.microsoftonline.com https://login.live.com https://graph.microsoft.com
+                https://speed.cloudflare.com;
+    frame-src   'self' https://*.firebaseapp.com https://login.microsoftonline.com https://login.live.com;
+    object-src  'none';
+    base-uri    'self';
+  " />
+
+  <link rel="icon" type="image/png" href="assets/mandala-branca.png" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/auth.css" />
+
+  <style>
+    body { background: var(--bg-dark); color: var(--text-primary); margin: 0;
+           font-family: var(--font-sans, system-ui); overflow: hidden; }
+    .agc-shell {
+      display: grid; grid-template-rows: auto 1fr auto; height: 100vh;
+      max-width: 920px; margin: 0 auto;
+    }
+    .agc-header {
+      padding: 14px 20px; border-bottom: 1px solid var(--border-subtle);
+      display: flex; align-items: center; gap: 12px;
+      background: var(--bg-elevated);
+    }
+    .agc-avatar { width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+      background: var(--bg-surface); display: flex; align-items: center; justify-content: center; font-size: 1.25rem;
+      flex-shrink: 0; border: 2px solid var(--brand-gold); }
+    .agc-name { font-weight: 700; font-size: 1.0625rem; color: var(--text-primary); }
+    .agc-meta { font-size: 0.6875rem; color: var(--text-muted); }
+    .agc-body {
+      overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px;
+      background: var(--bg-dark);
+    }
+    .agc-msg { max-width: 78%; padding: 12px 14px; border-radius: 12px;
+      font-size: 0.9375rem; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
+    .agc-msg-user { background: linear-gradient(135deg, #2563EB, #1E40AF); color: white;
+      align-self: flex-end; border-bottom-right-radius: 4px; }
+    .agc-msg-assistant { background: var(--bg-elevated); color: var(--text-primary);
+      align-self: flex-start; border: 1px solid var(--border-subtle); border-bottom-left-radius: 4px; }
+    .agc-msg-loading { color: var(--text-muted); font-style: italic; align-self: flex-start; }
+    .agc-msg-attach {
+      background: var(--bg-surface); padding: 6px 10px; border-radius: 6px; font-size: 0.75rem;
+      display: inline-flex; align-items: center; gap: 6px; margin: 4px 0;
+    }
+    .agc-footer {
+      padding: 12px 16px; border-top: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+    }
+    .agc-attached {
+      display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;
+    }
+    .agc-attached-chip {
+      background: var(--bg-surface); padding: 4px 10px; border-radius: 12px; font-size: 0.75rem;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .agc-attached-chip button {
+      background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 1rem; padding: 0;
+    }
+    .agc-input-row {
+      display: flex; gap: 8px; align-items: flex-end;
+    }
+    .agc-input {
+      flex: 1; padding: 12px 14px; border-radius: 10px;
+      border: 1px solid var(--border-default); background: var(--bg-surface);
+      color: var(--text-primary); font-family: inherit; font-size: 0.9375rem;
+      resize: none; min-height: 44px; max-height: 200px; line-height: 1.5;
+    }
+    .agc-input:focus { outline: none; border-color: #2563EB; }
+    .agc-icon-btn {
+      background: var(--bg-surface); border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      padding: 10px 12px; border-radius: 10px; cursor: pointer;
+      font-size: 1.125rem; transition: all 0.15s;
+    }
+    .agc-icon-btn:hover { background: var(--bg-hover); }
+    .agc-icon-btn.recording { background: #EF4444; color: white; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 50% { opacity: 0.6; } }
+    .agc-send {
+      background: #2563EB; color: white; border: none; border-radius: 10px;
+      padding: 10px 18px; cursor: pointer; font-weight: 600; font-size: 0.9375rem;
+    }
+    .agc-send:disabled { opacity: 0.5; cursor: not-allowed; }
+    .agc-empty { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+    .agc-empty-icon { font-size: 3rem; margin-bottom: 12px; opacity: 0.7; }
+    .agc-error { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.4);
+      color: #EF4444; padding: 16px; border-radius: 8px; margin: 16px; }
+    @media (max-width: 600px) {
+      .agc-msg { max-width: 92%; font-size: 0.875rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="agc-shell">
+  <header class="agc-header" id="agc-header" style="display:none;">
+    <div class="agc-avatar" id="agc-avatar">◈</div>
+    <div style="flex:1;min-width:0;">
+      <div class="agc-name" id="agc-name">—</div>
+      <div class="agc-meta" id="agc-meta">—</div>
+    </div>
+    <button class="agc-icon-btn" id="agc-clear" title="Limpar conversa">↺</button>
+  </header>
+
+  <div class="agc-body" id="agc-body">
+    <div class="agc-empty">
+      <div class="agc-empty-icon">⏳</div>
+      <div>Carregando agente...</div>
+    </div>
+  </div>
+
+  <footer class="agc-footer" id="agc-footer" style="display:none;">
+    <div class="agc-attached" id="agc-attached"></div>
+    <div class="agc-input-row">
+      <button class="agc-icon-btn" id="agc-attach-btn" title="Anexar arquivo">📎</button>
+      <input type="file" id="agc-file-input" accept="image/*,.pdf,.txt,.md,.json,.csv" multiple style="display:none;" />
+      <button class="agc-icon-btn" id="agc-mic-btn" title="Falar (segure)">🎙</button>
+      <textarea class="agc-input" id="agc-input" rows="1" placeholder="Digite uma mensagem... (Enter envia · Shift+Enter quebra linha)"></textarea>
+      <button class="agc-send" id="agc-send">Enviar</button>
+    </div>
+  </footer>
+</div>
+
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+  import { getAuth, signInWithEmailAndPassword, signInWithPopup, OAuthProvider, onAuthStateChanged }
+    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+  import { getFirestore, doc, getDoc, getDocs, query, where, collection, limit, addDoc, serverTimestamp }
+    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+  // Config Firebase (mesma do index.html / js/config.js)
+  const firebaseConfig = {
+    apiKey: "AIzaSyB9DUjqmEIcMIcb5RumidSVXSxF4CO_Ii8",
+    authDomain: "gestor-de-tarefas-primetour.firebaseapp.com",
+    projectId: "gestor-de-tarefas-primetour",
+    storageBucket: "gestor-de-tarefas-primetour.firebasestorage.app",
+    messagingSenderId: "1083421353313",
+    appId: "1:1083421353313:web:f9656ce6ae0fc4ca24d120",
+  };
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+
+  /* ─── Estado ─── */
+  let agent = null;
+  let history = []; // [{role, text}]
+  let pendingFiles = []; // [{name, type, content}]
+  let recording = false;
+  let recognition = null;
+
+  const params = new URLSearchParams(location.search);
+  const slug   = params.get('slug') || '';
+  const agentId = params.get('id') || '';
+
+  /* ─── Boot ─── */
+  if (!slug && !agentId) {
+    showError('Link inválido — informe ?slug=meu-agente ou ?id=xxx na URL.');
+  } else {
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        renderLogin();
+        return;
+      }
+      try {
+        agent = await loadAgent();
+        if (!agent) {
+          showError('Agente não encontrado ou não está disponível como chat público.');
+          return;
+        }
+        if (!agent.active) {
+          showError('Este agente está pausado.');
+          return;
+        }
+        if (!agent.triggers?.publicChat?.enabled) {
+          showError('Este agente não está disponível para chat público.');
+          return;
+        }
+        renderChat();
+      } catch (e) {
+        showError('Erro: ' + e.message);
+      }
+    });
+  }
+
+  /* ─── Loading ─── */
+  async function loadAgent() {
+    if (agentId) {
+      const snap = await getDoc(doc(db, 'ai_agents', agentId));
+      return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+    }
+    if (slug) {
+      const snap = await getDocs(query(
+        collection(db, 'ai_agents'),
+        where('triggers.publicChat.slug', '==', slug),
+        limit(1),
+      ));
+      if (snap.empty) return null;
+      return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    }
+    return null;
+  }
+
+  function showError(msg) {
+    document.getElementById('agc-body').innerHTML = `<div class="agc-error">${escape(msg)}</div>`;
+  }
+
+  function escape(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  /* ─── Login UI ─── */
+  function renderLogin() {
+    document.getElementById('agc-body').innerHTML = `
+      <div class="agc-empty">
+        <div class="agc-empty-icon">🔒</div>
+        <h3>Faça login para conversar</h3>
+        <p style="font-size:0.875rem;margin-bottom:24px;">Use sua conta corporativa @primetour.com.br ou e-mail/senha.</p>
+        <button class="agc-send" id="login-ms" style="margin-bottom:10px;">Entrar com Microsoft</button>
+        <details style="text-align:left;max-width:320px;margin:18px auto 0;">
+          <summary style="cursor:pointer;font-size:0.8125rem;color:var(--text-muted);">Entrar com e-mail</summary>
+          <input id="login-email" type="email" placeholder="seu@email.com" class="agc-input" style="margin:8px 0;" />
+          <input id="login-pwd"   type="password" placeholder="senha" class="agc-input" style="margin:0 0 8px;" />
+          <button class="agc-send" id="login-pwd-btn" style="width:100%;">Entrar</button>
+          <div id="login-err" style="color:#EF4444;font-size:0.75rem;margin-top:8px;"></div>
+        </details>
+      </div>
+    `;
+    document.getElementById('login-ms').addEventListener('click', async () => {
+      try {
+        const provider = new OAuthProvider('microsoft.com');
+        provider.setCustomParameters({ tenant: 'common' });
+        await signInWithPopup(auth, provider);
+      } catch (e) { document.getElementById('login-err').textContent = e.message; }
+    });
+    document.getElementById('login-pwd-btn').addEventListener('click', async () => {
+      const email = document.getElementById('login-email').value.trim();
+      const pwd   = document.getElementById('login-pwd').value;
+      try {
+        await signInWithEmailAndPassword(auth, email, pwd);
+      } catch (e) { document.getElementById('login-err').textContent = e.message; }
+    });
+  }
+
+  /* ─── Chat UI ─── */
+  function renderChat() {
+    const header = document.getElementById('agc-header');
+    const footer = document.getElementById('agc-footer');
+    const body   = document.getElementById('agc-body');
+    header.style.display = 'flex';
+    footer.style.display = 'block';
+
+    const avatar = document.getElementById('agc-avatar');
+    if (agent.avatarUrl) {
+      avatar.outerHTML = `<img class="agc-avatar" src="${escape(agent.avatarUrl)}" alt="" />`;
+    } else {
+      avatar.textContent = agent.icon || '◈';
+    }
+    document.getElementById('agc-name').textContent = agent.name;
+    document.getElementById('agc-meta').textContent = `${agent.provider} · ${agent.model}${agent.description ? ' · ' + agent.description : ''}`;
+
+    body.innerHTML = `
+      <div class="agc-empty">
+        <div class="agc-empty-icon">${escape(agent.icon || '◈')}</div>
+        <h3>${escape(agent.name)}</h3>
+        <p style="font-size:0.875rem;">${escape(agent.description || 'Comece uma conversa abaixo.')}</p>
+      </div>
+    `;
+
+    bindControls();
+  }
+
+  function bindControls() {
+    const input = document.getElementById('agc-input');
+    const send  = document.getElementById('agc-send');
+    const attachBtn = document.getElementById('agc-attach-btn');
+    const fileInput = document.getElementById('agc-file-input');
+    const micBtn = document.getElementById('agc-mic-btn');
+    const clearBtn = document.getElementById('agc-clear');
+
+    send.addEventListener('click', sendMessage);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(200, input.scrollHeight) + 'px';
+    });
+
+    attachBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', handleFiles);
+
+    micBtn.addEventListener('click', toggleVoice);
+
+    clearBtn.addEventListener('click', () => {
+      if (confirm('Limpar a conversa?')) {
+        history = [];
+        renderChat();
+      }
+    });
+  }
+
+  /* ─── Files (upload + parse texto) ─── */
+  async function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
+    for (const f of files) {
+      if (f.size > 4 * 1024 * 1024) {
+        alert(`${f.name}: arquivo muito grande (máx 4MB).`);
+        continue;
+      }
+      const isText = f.type.startsWith('text/') || /\.(md|txt|json|csv)$/i.test(f.name);
+      const isImage = f.type.startsWith('image/');
+      let content = '';
+      if (isText) {
+        content = await f.text();
+        if (content.length > 30000) content = content.slice(0, 30000) + '\n[... truncado ...]';
+      } else if (isImage) {
+        // Imagem: converte pra base64 (apenas declaração — modelo de visão futuro)
+        content = `[arquivo binário: ${f.type}, ${(f.size/1024).toFixed(1)} KB]`;
+      } else {
+        content = `[arquivo: ${f.type}, ${(f.size/1024).toFixed(1)} KB]`;
+      }
+      pendingFiles.push({ name: f.name, type: f.type, content });
+    }
+    e.target.value = '';
+    renderAttachedChips();
+  }
+
+  function renderAttachedChips() {
+    const wrap = document.getElementById('agc-attached');
+    wrap.innerHTML = pendingFiles.map((f, i) =>
+      `<span class="agc-attached-chip">📎 ${escape(f.name)} <button data-i="${i}" title="Remover">×</button></span>`
+    ).join('');
+    wrap.querySelectorAll('button').forEach(b =>
+      b.addEventListener('click', () => {
+        pendingFiles.splice(parseInt(b.dataset.i), 1);
+        renderAttachedChips();
+      }));
+  }
+
+  /* ─── Voice (Web Speech API) ─── */
+  function toggleVoice() {
+    const btn = document.getElementById('agc-mic-btn');
+    if (recording) {
+      try { recognition?.stop(); } catch {}
+      recording = false;
+      btn.classList.remove('recording');
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      alert('Reconhecimento de voz não suportado neste navegador. Use Chrome ou Edge.');
+      return;
+    }
+    recognition = new SR();
+    recognition.lang = 'pt-BR';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (e) => {
+      const input = document.getElementById('agc-input');
+      let final = '', interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += t; else interim += t;
+      }
+      input.value = (input.value.replace(/⏳.*$/, '') + final + (interim ? ' ⏳' + interim : '')).trim();
+    };
+    recognition.onerror = (e) => {
+      console.warn('voice err:', e);
+      recording = false;
+      btn.classList.remove('recording');
+    };
+    recognition.onend = () => {
+      recording = false;
+      btn.classList.remove('recording');
+      const input = document.getElementById('agc-input');
+      input.value = input.value.replace(/⏳.*$/, '').trim();
+    };
+    recognition.start();
+    recording = true;
+    btn.classList.add('recording');
+  }
+
+  /* ─── Envio (chama Cloud Function ou direto a IA via runAgent client) ─── */
+  async function sendMessage() {
+    const input = document.getElementById('agc-input');
+    const send  = document.getElementById('agc-send');
+    let text = input.value.replace(/⏳.*$/, '').trim();
+    if (!text && !pendingFiles.length) return;
+
+    // Anexa conteúdo de arquivos no texto
+    let augmented = text;
+    if (pendingFiles.length) {
+      augmented += '\n\n=== ARQUIVOS ANEXADOS ===\n';
+      pendingFiles.forEach(f => {
+        augmented += `\n--- ${f.name} (${f.type}) ---\n${f.content}\n`;
+      });
+    }
+
+    appendMsg('user', text + (pendingFiles.length ? `\n\n📎 ${pendingFiles.length} arquivo(s) anexado(s)` : ''));
+    input.value = '';
+    input.style.height = 'auto';
+    pendingFiles = [];
+    renderAttachedChips();
+    send.disabled = true;
+    const loading = appendMsg('loading', '⏳ ' + (agent.name) + ' está pensando...');
+
+    try {
+      // Carrega services dinamicamente (compartilha módulos do app principal)
+      const aiModule = await import('./js/services/ai.js');
+      const provider = agent.provider;
+      const resolved = await aiModule.resolveApiKey(provider);
+      if (!resolved?.apiKey && provider !== 'local') {
+        throw new Error(`API Key não configurada para ${provider}.`);
+      }
+      // Constrói system prompt completo (incluindo knowledge interno se houver)
+      let systemPrompt = agent.systemPrompt || '';
+      if (agent.knowledgeIds?.length) {
+        const docs = await aiModule.loadKnowledgeContents(agent.knowledgeIds);
+        if (docs.length) {
+          systemPrompt += '\n\n=== BASE DE CONHECIMENTO ===\n';
+          docs.forEach(d => systemPrompt += `### ${d.title}\n${d.content}\n\n`);
+        }
+      }
+      const result = await aiModule.chatWithAI(augmented, {}, {
+        moduleId: agent.module || 'general',
+        provider: agent.provider, model: agent.model,
+        maxTokens: agent.limits?.maxTokensPerRun || 2048,
+        temperature: agent.limits?.temperature ?? 0.3,
+        systemPromptOverride: systemPrompt,
+        history,
+      });
+      loading.remove();
+      appendMsg('assistant', result.text || '(resposta vazia)');
+      history.push({ role: 'user', text: augmented });
+      history.push({ role: 'assistant', text: result.text });
+
+      // Log
+      try {
+        await addDoc(collection(db, 'ai_usage_logs'), {
+          agentId: agent.id, agentName: agent.name,
+          module: agent.module, provider: agent.provider, model: agent.model,
+          inputTokens: result.inputTokens || 0, outputTokens: result.outputTokens || 0,
+          userId: auth.currentUser?.uid || null,
+          source: 'public-chat',
+          timestamp: serverTimestamp(),
+        });
+      } catch {}
+    } catch (e) {
+      loading.remove();
+      appendMsg('assistant', '❌ Erro: ' + e.message);
+    } finally {
+      send.disabled = false;
+      input.focus();
+    }
+  }
+
+  function appendMsg(role, text) {
+    const body = document.getElementById('agc-body');
+    // Remove empty placeholder
+    body.querySelector('.agc-empty')?.remove();
+    const div = document.createElement('div');
+    div.className = `agc-msg agc-msg-${role}`;
+    div.textContent = text;
+    body.appendChild(div);
+    body.scrollTop = body.scrollHeight;
+    return div;
+  }
+</script>
+
+</body>
+</html>
