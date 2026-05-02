@@ -347,6 +347,42 @@ function endTour(state, completed) {
   if (completed && state.onComplete) state.onComplete();
   if (!completed && state.onSkip)    state.onSkip();
   if (_activeTour === state) _activeTour = null;
+  // Mostra tela de parabéns quando concluído (não quando pulou)
+  if (completed) showCompletionModal(state);
+}
+
+function showCompletionModal(state) {
+  const back = document.createElement('div');
+  back.className = 'tour-welcome-backdrop';
+  back.style.zIndex = '99998';
+  back.innerHTML = `
+    <div class="tour-welcome-modal" role="dialog" style="border-top:4px solid #22C55E;">
+      <div class="tour-welcome-icon" style="font-size:3.5rem;">🎉</div>
+      <h2 class="tour-welcome-title" style="color:#22C55E;">Parabéns, tour concluído!</h2>
+      <p class="tour-welcome-body">
+        Você completou <strong>${state.title}</strong>.
+        Lembre que pode refazer este e outros tours a qualquer momento na página
+        <strong>Ajuda</strong> (menu lateral).
+      </p>
+      <div class="tour-welcome-actions">
+        <button class="tour-btn tour-btn-primary" data-act="ok">Beleza!</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(back);
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    back.remove();
+    window.removeEventListener('keydown', onKey);
+  };
+  back.querySelector('[data-act="ok"]').addEventListener('click', close);
+  back.addEventListener('click', (e) => { if (e.target === back) close(); });
+  const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') close(); };
+  window.addEventListener('keydown', onKey);
+  // Auto-fechar em 4s caso o user não interaja
+  setTimeout(close, 4000);
 }
 
 function wait(ms) { return new Promise(r => setTimeout(r, ms)); }

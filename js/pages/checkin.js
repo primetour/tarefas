@@ -23,7 +23,7 @@ import {
   requestTimeClockCorrection, fetchTimeClockRequests, subscribeTimeClockRequests,
   approveTimeClockRequest, rejectTimeClockRequest,
   calcBancoHoras, buildEspelhoPonto, isBusinessDay,
-} from '../services/checkin.js?v=20260501o';
+} from '../services/checkin.js?v=20260501s';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const todayISO = () => { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); };
@@ -77,6 +77,7 @@ export async function renderCheckin(container) {
         { id:'clock',   label:'Ponto',            icon:'⏱' },
         ...(isManager ? [{ id:'approvals', label:'Aprovações', icon:'✋', badge: pendingCount }] : []),
         ...(isAdmin   ? [{ id:'report', label:'Relatório',     icon:'📊' }] : []),
+        ...(isAdmin   ? [{ id:'office', label:'Estrutura do Escritório', icon:'🏢' }] : []),
         ...(isAdmin   ? [{ id:'admin',  label:'Administração', icon:'⚙'  }] : []),
       ].map(t => `
         <button class="checkin-tab-btn" data-tab="${t.id}" style="padding:8px 18px;border:none;
@@ -121,6 +122,7 @@ async function loadTab() {
     else if (activeTab === 'clock')     await renderClockTab(el);
     else if (activeTab === 'approvals') await renderApprovalsTab(el);
     else if (activeTab === 'report')    await renderReportTab(el);
+    else if (activeTab === 'office')    await renderOfficeTab(el);
     else if (activeTab === 'admin')     await renderAdminTab(el);
   } catch (e) {
     el.innerHTML = `<p style="color:var(--color-danger);padding:24px;">Erro: ${esc(e.message)}</p>`;
@@ -159,6 +161,13 @@ async function renderMap(container) {
       <span id="ck-occupy-badge" style="font-size:0.75rem;color:var(--text-muted);"></span>
     </div>
 
+    <!-- GRID DE ÁREAS COM BAIAS (vem PRIMEIRO — visualização principal) -->
+    <div style="margin-bottom:14px;font-size:0.75rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.06em;color:var(--text-muted);">
+      Mapa de assentos
+    </div>
+    <div id="ck-area-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px;margin-bottom:32px;"></div>
+
     <!-- CARDS DE SETOR (regras + ocupação no dia selecionado) -->
     <div style="margin-bottom:14px;font-size:0.75rem;font-weight:700;text-transform:uppercase;
       letter-spacing:.06em;color:var(--text-muted);">
@@ -166,13 +175,6 @@ async function renderMap(container) {
     </div>
     <div id="ck-sector-cards" style="display:grid;
       grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:24px;"></div>
-
-    <!-- GRID DE ÁREAS COM BAIAS -->
-    <div style="margin-bottom:14px;font-size:0.75rem;font-weight:700;text-transform:uppercase;
-      letter-spacing:.06em;color:var(--text-muted);">
-      Mapa de assentos
-    </div>
-    <div id="ck-area-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:24px;"></div>
 
     <div style="margin-top:16px;font-size:0.6875rem;color:var(--text-muted);
       display:flex;gap:14px;flex-wrap:wrap;align-items:center;">
@@ -1905,4 +1907,363 @@ function openManualEntryModal({ userId, userName, sector, date, onSaved }) {
       },
     ],
   });
+}
+
+/* ═══════════════════════════════════════════════════════════
+ * 7. ESTRUTURA DO ESCRITÓRIO — Dashboard analítico
+ *
+ * Cruzamento Reservas (desk_reservations) × Ponto (time_clock):
+ *  - Taxa de ocupação por área/baia/assento (heatmap)
+ *  - Reservas vs comparecimento real (cruza com check-in + ponto)
+ *  - Por colaborador: dias reservados, comparecimento, lugares preferidos
+ *  - Por setor: ocupação x slots disponíveis
+ *  - Speedtest médio
+ * ═══════════════════════════════════════════════════════════ */
+async function renderOfficeTab(container) {
+  // Período padrão: últimos 30 dias
+  let _from = (() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().slice(0,10); })();
+  let _to   = todayISO();
+
+  paint();
+
+  async function paint() {
+    container.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <label style="font-size:0.8125rem;color:var(--text-secondary);">De:</label>
+        <input type="date" class="form-input" id="off-from" value="${_from}" style="width:auto;font-size:0.8125rem;" />
+        <label style="font-size:0.8125rem;color:var(--text-secondary);">até</label>
+        <input type="date" class="form-input" id="off-to" value="${_to}" style="width:auto;font-size:0.8125rem;" />
+        <button class="btn btn-secondary btn-sm" id="off-apply">Aplicar período</button>
+        <button class="btn btn-ghost btn-sm" id="off-30d">Últimos 30d</button>
+        <button class="btn btn-ghost btn-sm" id="off-90d">Últimos 90d</button>
+        <span style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);" id="off-count">Carregando...</span>
+      </div>
+      <div id="off-content">
+        <div class="chart-loading"><div class="chart-loading-spinner"></div></div>
+      </div>
+    `;
+    document.getElementById('off-apply')?.addEventListener('click', () => {
+      _from = document.getElementById('off-from').value;
+      _to   = document.getElementById('off-to').value;
+      paint();
+    });
+    document.getElementById('off-30d')?.addEventListener('click', () => {
+      const d = new Date(); d.setDate(d.getDate()-30);
+      _from = d.toISOString().slice(0,10); _to = todayISO();
+      paint();
+    });
+    document.getElementById('off-90d')?.addEventListener('click', () => {
+      const d = new Date(); d.setDate(d.getDate()-90);
+      _from = d.toISOString().slice(0,10); _to = todayISO();
+      paint();
+    });
+
+    try {
+      const [reservations, clocks] = await Promise.all([
+        fetchReservations({ from: _from, to: _to, limitN: 5000 }),
+        fetchAllTimeClock({ from: _from, to: _to }),
+      ]);
+      drawDashboard(reservations, clocks);
+    } catch (e) {
+      document.getElementById('off-content').innerHTML =
+        `<div style="color:var(--color-danger);padding:24px;">Erro: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function drawDashboard(reservations, clocks) {
+    document.getElementById('off-count').textContent =
+      `${reservations.length} reservas · ${clocks.length} pontos · período ${fmtDate(_from)} → ${fmtDate(_to)}`;
+
+    /* ─── Stats agregados ─── */
+    const checkedIn   = reservations.filter(r => r.checkinAt).length;
+    const noShow      = reservations.length - checkedIn;
+    const checkinRate = reservations.length ? Math.round(checkedIn / reservations.length * 100) : 0;
+
+    // Cruza ponto+reserva: dias em que o user reservou E bateu ponto
+    const clocksByKey = new Map();
+    clocks.forEach(c => clocksByKey.set(`${c.userId}_${c.date}`, c));
+    let withPonto = 0;
+    reservations.forEach(r => {
+      if (r.userId && clocksByKey.has(`${r.userId}_${r.data}`)) withPonto++;
+    });
+
+    // Speedtest médio (download/upload em Mbps)
+    const sp = reservations
+      .map(r => r.speedtest)
+      .filter(s => s && parseFloat(s.download) > 0);
+    const avgDl = sp.length ? (sp.reduce((s, x) => s + parseFloat(x.download||0), 0) / sp.length) : 0;
+    const avgUl = sp.length ? (sp.reduce((s, x) => s + parseFloat(x.upload||0), 0) / sp.length)   : 0;
+
+    // Capacidade total por dia (das áreas)
+    const totalCapacity = (_config.areas || []).reduce((s, a) => s + (a.capacity || 0), 0);
+    // Dias úteis no período (seg-sex)
+    let businessDays = 0;
+    const dStart = new Date(_from + 'T12:00:00'), dEnd = new Date(_to + 'T12:00:00');
+    for (let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate()+1)) {
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) businessDays++;
+    }
+    const totalSeats = totalCapacity * businessDays;
+    const occupancyPct = totalSeats ? Math.round(reservations.length / totalSeats * 100) : 0;
+
+    /* ─── Por usuário (presença) ─── */
+    const byUser = new Map();
+    reservations.forEach(r => {
+      const k = r.userId || r.userName || 'anon';
+      if (!byUser.has(k)) byUser.set(k, {
+        userId: r.userId, name: r.userName || '—', sector: r.sector || '—',
+        reserved: 0, checkedIn: 0, withPonto: 0,
+        seats: new Map(), areas: new Map(),
+      });
+      const u = byUser.get(k);
+      u.reserved++;
+      if (r.checkinAt) u.checkedIn++;
+      if (r.userId && clocksByKey.has(`${r.userId}_${r.data}`)) u.withPonto++;
+      const seatKey = `${r.area}/${r.baia}-${r.fileira}${r.assento}`;
+      u.seats.set(seatKey, (u.seats.get(seatKey) || 0) + 1);
+      u.areas.set(r.area, (u.areas.get(r.area) || 0) + 1);
+    });
+    const userRows = [...byUser.values()].map(u => {
+      // Preferência: lugar e área mais usados
+      const topSeat = [...u.seats.entries()].sort((a,b) => b[1]-a[1])[0];
+      const topArea = [...u.areas.entries()].sort((a,b) => b[1]-a[1])[0];
+      return {
+        ...u,
+        favSeat:    topSeat ? topSeat[0] : '—',
+        favSeatN:   topSeat ? topSeat[1] : 0,
+        favArea:    topArea ? topArea[0] : '—',
+        attendance: u.reserved ? Math.round(u.checkedIn / u.reserved * 100) : 0,
+      };
+    }).sort((a,b) => b.reserved - a.reserved);
+
+    /* ─── Por setor ─── */
+    const bySector = new Map();
+    reservations.forEach(r => {
+      const s = r.sector || '—';
+      if (!bySector.has(s)) bySector.set(s, { reserved: 0, checkedIn: 0, days: new Set() });
+      const x = bySector.get(s);
+      x.reserved++;
+      if (r.checkinAt) x.checkedIn++;
+      x.days.add(r.data);
+    });
+    const sectorRows = [...bySector.entries()].map(([sector, x]) => {
+      const rule = (_config.sectorRules || []).find(r => r.sector === sector);
+      const slotsPerDay = rule?.slots || 0;
+      const totalSlots = slotsPerDay * businessDays;
+      return {
+        sector,
+        reserved: x.reserved,
+        checkedIn: x.checkedIn,
+        attendance: x.reserved ? Math.round(x.checkedIn / x.reserved * 100) : 0,
+        slotsPerDay,
+        utilization: totalSlots ? Math.round(x.reserved / totalSlots * 100) : 0,
+      };
+    }).sort((a,b) => b.reserved - a.reserved);
+
+    /* ─── Por área (heatmap de assentos) ─── */
+    const byArea = {};
+    (_config.areas || []).forEach(area => {
+      byArea[area.name] = {
+        area,
+        seatCounts: {}, // key: "baia-fileira-assento" → count
+        totalReservations: 0,
+        totalCheckins:     0,
+      };
+    });
+    reservations.forEach(r => {
+      if (!byArea[r.area]) return;
+      const k = `${r.baia}-${r.fileira}-${r.assento}`;
+      byArea[r.area].seatCounts[k] = (byArea[r.area].seatCounts[k] || 0) + 1;
+      byArea[r.area].totalReservations++;
+      if (r.checkinAt) byArea[r.area].totalCheckins++;
+    });
+
+    /* ─── HTML ─── */
+    const cards = [
+      { l: 'Reservas',           v: reservations.length, c: '#3B82F6' },
+      { l: 'Check-ins',          v: checkedIn,           c: '#22C55E' },
+      { l: 'Não compareceram',   v: noShow,              c: '#F59E0B' },
+      { l: 'Taxa comparecimento',v: `${checkinRate}%`,   c: checkinRate>=70?'#22C55E':checkinRate>=40?'#F59E0B':'#EF4444' },
+      { l: 'Presença confirmada (ponto+reserva)', v: withPonto, c: '#10B981',
+        sub: reservations.length ? `${Math.round(withPonto/reservations.length*100)}% das reservas` : '' },
+      { l: 'Taxa ocupação (geral)', v: `${occupancyPct}%`, c: '#A78BFA',
+        sub: `${reservations.length}/${totalSeats} assentos·dias` },
+      { l: 'Speedtest médio ⬇',  v: `${avgDl.toFixed(1)} Mbps`, c: '#06B6D4' },
+      { l: 'Speedtest médio ⬆',  v: `${avgUl.toFixed(1)} Mbps`, c: '#06B6D4' },
+    ];
+
+    document.getElementById('off-content').innerHTML = `
+      <!-- KPIs -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;">
+        ${cards.map(c => `<div class="card" style="padding:14px;border-left:3px solid ${c.c};">
+          <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">${c.l}</div>
+          <div style="font-size:1.5rem;font-weight:700;color:${c.c};margin:4px 0;">${c.v}</div>
+          ${c.sub ? `<div style="font-size:0.6875rem;color:var(--text-muted);">${esc(c.sub)}</div>` : ''}
+        </div>`).join('')}
+      </div>
+
+      <!-- HEATMAP DE ASSENTOS POR ÁREA -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🗺 Heatmap de ocupação por assento</div>
+            <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
+              Cor mais escura = assento mais reservado no período. Clique pra ver detalhes.
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          ${(_config.areas || []).map(area => renderHeatmapArea(byArea[area.name])).join('')}
+        </div>
+      </div>
+
+      <!-- POR SETOR -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <div class="card-title">🏢 Ocupação por setor</div>
+          <button class="btn btn-secondary btn-sm" id="off-export-sector">↓ CSV</button>
+        </div>
+        <div class="card-body" style="padding:0;">
+          ${!sectorRows.length ? `<div class="empty-state" style="padding:24px;">
+            <div class="empty-state-title" style="font-size:0.875rem;">Sem reservas no período.</div>
+          </div>` : `<table class="data-table" style="width:100%;">
+            <thead><tr>
+              <th>Setor</th>
+              <th style="text-align:right;">Reservas</th>
+              <th style="text-align:right;">Check-ins</th>
+              <th style="text-align:right;">Comparecimento</th>
+              <th style="text-align:right;">Slots/dia</th>
+              <th style="text-align:right;">Utilização</th>
+            </tr></thead>
+            <tbody>${sectorRows.map(s => {
+              const attColor = s.attendance>=80?'#22C55E':s.attendance>=50?'#F59E0B':'#EF4444';
+              const utilColor = s.utilization>=80?'#EF4444':s.utilization>=50?'#F59E0B':'#22C55E';
+              return `<tr>
+                <td><strong>${esc(s.sector)}</strong></td>
+                <td style="text-align:right;">${s.reserved}</td>
+                <td style="text-align:right;">${s.checkedIn}</td>
+                <td style="text-align:right;color:${attColor};font-weight:600;">${s.attendance}%</td>
+                <td style="text-align:right;color:var(--text-muted);">${s.slotsPerDay||'—'}</td>
+                <td style="text-align:right;color:${utilColor};font-weight:600;">${s.utilization}%</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>`}
+        </div>
+      </div>
+
+      <!-- POR COLABORADOR (PRESENÇA COMPLETA) -->
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">👥 Presença por colaborador</div>
+            <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
+              Cruza reservas, check-ins e ponto. Lugar preferido = assento mais usado no período.
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="off-export-user">↓ CSV</button>
+        </div>
+        <div class="card-body" style="padding:0;">
+          ${!userRows.length ? `<div class="empty-state" style="padding:24px;">
+            <div class="empty-state-title" style="font-size:0.875rem;">Sem reservas no período.</div>
+          </div>` : `<table class="data-table" style="width:100%;">
+            <thead><tr>
+              <th>Colaborador</th><th>Setor</th>
+              <th style="text-align:right;">Reservas</th>
+              <th style="text-align:right;">Check-ins</th>
+              <th style="text-align:right;">+ Ponto</th>
+              <th style="text-align:right;">Compareciento</th>
+              <th>Lugar preferido</th>
+              <th>Área favorita</th>
+            </tr></thead>
+            <tbody>${userRows.map(u => {
+              const attColor = u.attendance>=80?'#22C55E':u.attendance>=50?'#F59E0B':'#EF4444';
+              return `<tr>
+                <td><strong>${esc(u.name)}</strong></td>
+                <td>${esc(u.sector)}</td>
+                <td style="text-align:right;">${u.reserved}</td>
+                <td style="text-align:right;">${u.checkedIn}</td>
+                <td style="text-align:right;">${u.withPonto}</td>
+                <td style="text-align:right;color:${attColor};font-weight:600;">${u.attendance}%</td>
+                <td style="font-family:var(--font-mono,monospace);font-size:0.75rem;">
+                  ${esc(u.favSeat)} <span style="color:var(--text-muted);">(${u.favSeatN}x)</span>
+                </td>
+                <td>${esc(u.favArea)}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>`}
+        </div>
+      </div>
+    `;
+
+    // Bindings export CSV
+    document.getElementById('off-export-sector')?.addEventListener('click', () => {
+      const csv = ['setor;reservas;checkins;comparecimento_pct;slots_dia;utilizacao_pct',
+        ...sectorRows.map(s => `${s.sector};${s.reserved};${s.checkedIn};${s.attendance};${s.slotsPerDay};${s.utilization}`)
+      ].join('\n');
+      downloadCsv(csv, `ocupacao_setor_${_from}_${_to}.csv`);
+    });
+    document.getElementById('off-export-user')?.addEventListener('click', () => {
+      const csv = ['colaborador;setor;reservas;checkins;com_ponto;comparecimento_pct;lugar_preferido;area_favorita',
+        ...userRows.map(u => `${u.name};${u.sector};${u.reserved};${u.checkedIn};${u.withPonto};${u.attendance};${u.favSeat};${u.favArea}`)
+      ].join('\n');
+      downloadCsv(csv, `presenca_colaboradores_${_from}_${_to}.csv`);
+    });
+  }
+
+  function renderHeatmapArea(areaData) {
+    if (!areaData) return '';
+    const { area, seatCounts, totalReservations, totalCheckins } = areaData;
+    const max = Math.max(1, ...Object.values(seatCounts));
+    const heatColor = (count) => {
+      if (!count) return 'background:var(--bg-surface);color:var(--text-muted);';
+      const intensity = count / max;  // 0..1
+      // Gradiente azul → vermelho conforme intensidade
+      const r = Math.round(59  + (239-59)  * intensity);
+      const g = Math.round(130 + (68-130)  * intensity);
+      const b = Math.round(246 + (68-246)  * intensity);
+      return `background:rgba(${r},${g},${b},${0.15+intensity*0.55});color:${intensity>0.55?'#FFFFFF':'var(--text-primary)'};font-weight:${intensity>0.5?'700':'500'};`;
+    };
+
+    return `
+      <div style="margin-bottom:24px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+          <div style="font-weight:600;font-size:0.9375rem;">${esc(area.displayName || area.name)}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">
+            ${totalReservations} reservas · ${totalCheckins} check-ins
+          </div>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;">
+          ${Array.from({length: area.baias}, (_, b) => `
+            <div style="border:1px dashed var(--border-subtle);border-radius:6px;padding:8px;">
+              <div style="font-size:0.625rem;color:var(--text-muted);margin-bottom:4px;text-align:center;">
+                Baia ${b+1}
+              </div>
+              ${['A','B'].map(fil => `
+                <div style="display:flex;gap:3px;margin-bottom:3px;">
+                  ${Array.from({length: area.assentosPorFileira}, (_, s) => {
+                    const k = `${b+1}-${fil}-${s+1}`;
+                    const c = seatCounts[k] || 0;
+                    return `<div title="Baia ${b+1} · ${fil}${s+1}: ${c} reservas"
+                      style="${heatColor(c)}width:28px;height:28px;border:1px solid var(--border-subtle);border-radius:3px;
+                      display:flex;align-items:center;justify-content:center;font-size:0.625rem;">
+                      ${c||''}
+                    </div>`;
+                  }).join('')}
+                </div>
+              `).join('')}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function downloadCsv(content, filename) {
+    const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 }

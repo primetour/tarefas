@@ -109,7 +109,7 @@ export async function saveCheckinConfig({ areas, sectorRules }) {
 }
 
 /* ─── Reservas ───────────────────────────────────────────── */
-export async function fetchReservations({ from, to } = {}) {
+export async function fetchReservations({ from, to, limitN = 500 } = {}) {
   // Default: últimos 30 dias até +14 (janela de operação)
   const fromDate = from || (() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().slice(0,10); })();
   const toDate   = to   || (() => { const d = new Date(); d.setDate(d.getDate()+14); return d.toISOString().slice(0,10); })();
@@ -119,7 +119,7 @@ export async function fetchReservations({ from, to } = {}) {
     collection(db, 'desk_reservations'),
     where('data', '>=', fromDate),
     where('data', '<=', toDate),
-    limit(500),
+    limit(limitN),
   ));
   const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   rows.sort((a, b) => (b.data || '').localeCompare(a.data || ''));
