@@ -15,7 +15,7 @@ import { startTour } from '../components/tour.js';
 export const TOURS = [
   {
     id: 'welcome',
-    title: 'Bem-vindo ao PRIMETOUR',
+    title: 'Bem-vindo ao Gestor PRIMETOUR',
     icon: '🎉',
     duration: '2 min',
     description: 'Conheça as áreas principais do sistema.',

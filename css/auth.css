@@ -209,6 +209,7 @@
 
 .auth-form-header {
   margin-bottom: var(--space-8);
+  text-align: center;
 }
 
 .auth-form-title {

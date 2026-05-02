@@ -44,29 +44,6 @@ export async function renderSettings(container) {
       </div>
     </div>
 
-    ${store.isMaster() ? `
-      <div class="card" style="margin-bottom:24px;border:1px solid rgba(239,68,68,.4);">
-        <div class="card-header"><div class="card-title" style="color:var(--color-danger);">⚠ Zona de Perigo</div></div>
-        <div class="card-body">
-          <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:14px;line-height:1.6;">
-            Apaga <strong>permanentemente</strong> todas as tarefas do sistema.
-            Use apenas para resetar o ambiente — <strong>esta ação é irreversível</strong>.
-            Certifique-se de ter um backup antes de continuar.
-          </p>
-          <div id="del-all-progress" style="display:none;margin-bottom:12px;">
-            <div id="del-all-label" style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:6px;">Aguardando...</div>
-            <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
-              <div id="del-all-bar" style="height:100%;background:var(--color-danger);width:0%;transition:width .3s;border-radius:3px;"></div>
-            </div>
-          </div>
-          <button class="btn btn-secondary" id="delete-all-tasks-btn"
-            style="border-color:var(--color-danger);color:var(--color-danger);">
-            ✕ Excluir TODAS as tarefas
-          </button>
-        </div>
-      </div>
-    ` : ''}
-
     <div style="display:grid; grid-template-columns:220px 1fr; gap:24px; align-items:flex-start;">
       <!-- Sidebar nav -->
       <div class="card" style="position:sticky; top:80px; padding:8px;">
@@ -93,6 +70,29 @@ export async function renderSettings(container) {
         ${renderSectionGeneral(settings)}
       </div>
     </div>
+
+    ${store.isMaster() ? `
+      <div class="card" style="margin-top:32px;border:1px solid rgba(239,68,68,.4);">
+        <div class="card-header"><div class="card-title" style="color:var(--color-danger);">⚠ Zona de Perigo</div></div>
+        <div class="card-body">
+          <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:14px;line-height:1.6;">
+            Apaga <strong>permanentemente</strong> todas as tarefas do sistema.
+            Use apenas para resetar o ambiente — <strong>esta ação é irreversível</strong>.
+            Certifique-se de ter um backup antes de continuar.
+          </p>
+          <div id="del-all-progress" style="display:none;margin-bottom:12px;">
+            <div id="del-all-label" style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:6px;">Aguardando...</div>
+            <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
+              <div id="del-all-bar" style="height:100%;background:var(--color-danger);width:0%;transition:width .3s;border-radius:3px;"></div>
+            </div>
+          </div>
+          <button class="btn btn-secondary" id="delete-all-tasks-btn"
+            style="border-color:var(--color-danger);color:var(--color-danger);">
+            ✕ Excluir TODAS as tarefas
+          </button>
+        </div>
+      </div>
+    ` : ''}
   `;
 
   // Nav
