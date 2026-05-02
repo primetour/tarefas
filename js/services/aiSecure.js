@@ -77,26 +77,13 @@ export async function getGitHubFileSecure({ repo, path = '', branch = 'main' }) 
 }
 
 /**
- * Detecta se Cloud Functions estão deployed (probe).
- * Usado pra fallback automático ao client SDK direto durante a migração.
+ * Detecta se Cloud Functions estão deployed.
+ * Sprint 1 done: functions estão em produção. Default = true.
+ * Override via localStorage('disable-cf') = '1' pra forçar legacy em casos de debug.
  */
-let _functionsAvailable = null;
 export async function areFunctionsAvailable() {
-  if (_functionsAvailable !== null) return _functionsAvailable;
   try {
-    // Fazer chamada inválida mas que NÃO custe nada — o erro vem antes do LLM call
-    await callable('callLLM', { /* sem userMessage = HttpsError invalid-argument = function existe */ });
-    _functionsAvailable = true;
-  } catch (e) {
-    // Se erro for "invalid-argument" → função existe e respondeu
-    if (/invalid-argument|userMessage/i.test(e.message)) {
-      _functionsAvailable = true;
-    } else if (/not-found|NOT_FOUND|deadline|404/i.test(e.message)) {
-      _functionsAvailable = false;
-    } else {
-      // Erro de auth ou rede — assume que functions estão lá
-      _functionsAvailable = true;
-    }
-  }
-  return _functionsAvailable;
+    if (localStorage.getItem('disable-cf') === '1') return false;
+  } catch {}
+  return true;
 }
