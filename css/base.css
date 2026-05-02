@@ -341,6 +341,53 @@
 }
 :root[data-palette="portal"] .btn-danger { color: #FFFFFF !important; }
 
+/* Login/Auth screen — painel esquerdo é DARK (var(--bg-deepest))
+ * mas as cores de texto da paleta portal são DARK pra fundos claros.
+ * Forçamos branco/branco-translúcido sobre o painel escuro. */
+:root[data-palette="portal"] .auth-visual,
+:root[data-palette="portal"] .auth-visual * {
+  color: #FFFFFF;
+}
+:root[data-palette="portal"] .auth-visual .auth-brand-name,
+:root[data-palette="portal"] .auth-visual .auth-visual-title {
+  color: #FFFFFF !important;
+}
+:root[data-palette="portal"] .auth-visual .auth-visual-title span {
+  color: #93C5FD !important; /* azul claro como destaque */
+}
+:root[data-palette="portal"] .auth-visual .auth-brand-tagline,
+:root[data-palette="portal"] .auth-visual .auth-visual-desc,
+:root[data-palette="portal"] .auth-visual .auth-feature {
+  color: rgba(255,255,255,0.78) !important;
+}
+:root[data-palette="portal"] .auth-visual .auth-feature-dot {
+  background: rgba(147,197,253,0.7) !important;
+}
+:root[data-palette="portal"] .auth-visual .auth-visual-footer {
+  color: rgba(255,255,255,0.50) !important;
+}
+:root[data-palette="portal"] .auth-deco-card {
+  background: rgba(255,255,255,0.08) !important;
+  border-color: rgba(255,255,255,0.18) !important;
+  color: rgba(255,255,255,0.90) !important;
+}
+:root[data-palette="portal"] .auth-deco-card strong {
+  color: #FFFFFF !important;
+}
+/* Botão "Faça seu pedido aqui" / qualquer link CTA dentro do painel
+ * escuro — borda + texto claro. */
+:root[data-palette="portal"] .auth-visual a,
+:root[data-palette="portal"] .auth-visual .btn-secondary {
+  color: #FFFFFF !important;
+  border-color: rgba(255,255,255,0.30) !important;
+  background: rgba(255,255,255,0.06) !important;
+}
+:root[data-palette="portal"] .auth-visual a:hover,
+:root[data-palette="portal"] .auth-visual .btn-secondary:hover {
+  background: rgba(255,255,255,0.12) !important;
+  border-color: rgba(255,255,255,0.45) !important;
+}
+
 /* ── Sand (light warm) ───────────────────────────────────── */
 :root[data-palette="sand"] {
   --bg-deepest:  #F5F0E8; --bg-dark: #FAF7F2; --bg-medium: #F0EBE0;
