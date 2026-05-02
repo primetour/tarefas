@@ -388,6 +388,21 @@
   border-color: rgba(255,255,255,0.45) !important;
 }
 
+/* Loading screen no portal: bg-deepest dark + brand-gold dark = barra
+ * invisível. Força a barra com gradiente azul portal pra ficar visível. */
+:root[data-palette="portal"] .loading-bar {
+  background: rgba(255,255,255,0.10) !important;
+}
+:root[data-palette="portal"] .loading-bar-fill {
+  background: linear-gradient(90deg, #1E40AF, #2563EB, #60A5FA) !important;
+}
+:root[data-palette="portal"] .loading-logo-text {
+  color: #FFFFFF !important;
+}
+:root[data-palette="portal"] .loading-logo-icon {
+  color: #60A5FA !important;
+}
+
 /* ── Sand (light warm) ───────────────────────────────────── */
 :root[data-palette="sand"] {
   --bg-deepest:  #F5F0E8; --bg-dark: #FAF7F2; --bg-medium: #F0EBE0;
