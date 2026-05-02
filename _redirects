@@ -1,0 +1,21 @@
+# PRIMETOUR — Cloudflare Pages redirects
+# https://developers.cloudflare.com/pages/configuration/redirects/
+
+# ─── Atalhos amigáveis ──────────────────────────────────────
+/login         /index.html              200
+/painel        /index.html              200
+/tarefas       /index.html              200
+
+# ─── Páginas públicas ───────────────────────────────────────
+/agente        /agente.html             200
+/calendario    /calendario-conteudo.html 200
+/solicitar     /solicitar.html          200
+/roteiro       /roteiro-view.html       200
+/portal        /portal-view.html        200
+/csat          /csat-response.html      200
+
+# ─── Health check ────────────────────────────────────────────
+/healthz       /index.html              200
+
+# ─── 404 fallback (SPA-like nunca, só real 404) ─────────────
+# (Cloudflare Pages serve /404.html automaticamente)

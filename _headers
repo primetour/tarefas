@@ -1,30 +1,82 @@
-# PRIMETOUR Security Headers
-# Formato: Cloudflare Pages (_headers) e Netlify
-# GitHub Pages NÃO suporta headers custom — preparado pra migração
+# PRIMETOUR — Security Headers (Cloudflare Pages format)
+# Aplica-se quando deployado via Cloudflare Pages OU Netlify.
+# GitHub Pages NÃO suporta — por isso a migração na Sprint 4.
+#
+# Cada path-pattern abaixo herda do anterior + adiciona/sobrescreve.
 
+# ─────────────────────────────────────────────────────────────
+# DEFAULT: aplica em TUDO
+# ─────────────────────────────────────────────────────────────
 /*
+  # Bloqueia MIME-sniffing (mitigação XSS via misinterpretation)
   X-Content-Type-Options: nosniff
+
+  # Bloqueia <iframe> de outros domínios (clickjacking)
   X-Frame-Options: SAMEORIGIN
+
+  # Força HTTPS por 1 ano + inclui subdomínios + preload list
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+
+  # Não envia Referer pra origens diferentes (privacidade)
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(self), geolocation=(self), interest-cohort=()
+
+  # Desabilita APIs sensíveis por default
+  Permissions-Policy: camera=(), microphone=(self), geolocation=(self), interest-cohort=(), payment=(), usb=(), serial=()
+
+  # Legacy XSS filter (browsers modernos ignoram, mas IE/Safari antigo respeita)
   X-XSS-Protection: 1; mode=block
+
+  # Isola contexto da janela (mitiga Spectre + XS-Leaks)
   Cross-Origin-Opener-Policy: same-origin
+
+  # Bloqueia recursos de outras origens carregarem nosso conteúdo
   Cross-Origin-Resource-Policy: same-site
 
-# CSP é mantida no <meta> de cada HTML pra granularidade
+  # CSP via response header (substitui meta-CSP do index.html — mais robusto, não pode ser modificada via DevTools)
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com https://www.googletagmanager.com https://cdn.jsdelivr.net https://cdn.chart.js https://cdnjs.cloudflare.com https://apis.google.com https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://www.gstatic.com https://www.google.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.groq.com https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://api.github.com https://hooks.slack.com wss://*.firebaseio.com https://google.serper.dev https://*.cse.google.com https://primetour-images.rene-castro.workers.dev https://api.emailjs.com https://primetour.com.br https://www.primetour.com.br https://login.microsoftonline.com https://login.live.com https://graph.microsoft.com https://nominatim.openstreetmap.org https://speed.cloudflare.com https://oauth2.googleapis.com https://content.googleapis.com https://www.googleapis.com; frame-src 'self' https://*.firebaseapp.com https://login.microsoftonline.com https://login.live.com https://apis.google.com https://accounts.google.com https://content.googleapis.com https://www.google.com https://recaptcha.google.com; object-src 'none'; base-uri 'self'; form-action 'self' https://login.microsoftonline.com; frame-ancestors 'self';
 
+# ─────────────────────────────────────────────────────────────
+# AGENTE PÚBLICO: pode ser embedável (iframe externo) — exceção controlada
+# ─────────────────────────────────────────────────────────────
 /agente.html
-  X-Frame-Options: SAMEORIGIN
-  # Mas como é embedável via iframe (publicChat), removemos via Cloudflare Page Rule
-  # Permissions-Policy: microphone=*  (precisa pra Web Speech API em iframe)
+  # Permite embed em iframes de domínios da Primetour
+  X-Frame-Options: ALLOW-FROM https://primetour.com.br
+  Content-Security-Policy-Report-Only: frame-ancestors 'self' https://primetour.com.br https://*.primetour.com.br;
 
-# Cache estático
+# ─────────────────────────────────────────────────────────────
+# PORTAIS PÚBLICOS (sem app)
+# ─────────────────────────────────────────────────────────────
+/lp.html
+  # LP é pública, removemos COOP/CORP pra permitir embedável em redes sociais
+  Cross-Origin-Opener-Policy: unsafe-none
+  Cross-Origin-Resource-Policy: cross-origin
+
+/portal-view.html
+  Cross-Origin-Opener-Policy: unsafe-none
+
+/roteiro-view.html
+  Cross-Origin-Opener-Policy: unsafe-none
+
+# ─────────────────────────────────────────────────────────────
+# ARQUIVOS WELL-KNOWN
+# ─────────────────────────────────────────────────────────────
+/.well-known/*
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=86400
+
+# ─────────────────────────────────────────────────────────────
+# CACHE — assets versionados imutáveis
+# ─────────────────────────────────────────────────────────────
 /assets/*
-  Cache-Control: public, max-age=86400, immutable
+  Cache-Control: public, max-age=31536000, immutable
 
+# CSS/JS bumpados via ?v= - cache curto (browser revalida quando version muda)
 /css/*
-  Cache-Control: public, max-age=600
+  Cache-Control: public, max-age=600, must-revalidate
 
 /js/*
-  Cache-Control: public, max-age=600
+  Cache-Control: public, max-age=600, must-revalidate
+
+# HTML nunca cacheia muito - SPA depende disso pra deploys
+/*.html
+  Cache-Control: public, max-age=60, must-revalidate
