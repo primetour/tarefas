@@ -6,7 +6,7 @@
 
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, serverTimestamp,
+  query, where, orderBy, serverTimestamp, Timestamp, setDoc,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -1474,6 +1474,9 @@ function mockResponse(skill, prompt) {
 /* ─── Log de uso ─────────────────────────────────────────── */
 async function logUsage(skill, result) {
   const user = store.get('currentUser');
+  // TTL: 90 dias (LGPD minimização — Firestore TTL policy auto-deleta)
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 90);
   await addDoc(collection(db, 'ai_usage_logs'), {
     skillId:        skill.id,
     skillName:      skill.name,
@@ -1489,5 +1492,6 @@ async function logUsage(skill, result) {
     piiAnonymized:  result.piiAnonymized || false,
     consentVersion: result.consentVersion || null,
     timestamp:      serverTimestamp(),
+    expiresAt:      Timestamp.fromDate(expiresAt),  // ← TTL Firestore
   });
 }

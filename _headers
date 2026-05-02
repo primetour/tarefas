@@ -1,0 +1,30 @@
+# PRIMETOUR Security Headers
+# Formato: Cloudflare Pages (_headers) e Netlify
+# GitHub Pages NÃO suporta headers custom — preparado pra migração
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(self), geolocation=(self), interest-cohort=()
+  X-XSS-Protection: 1; mode=block
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-site
+
+# CSP é mantida no <meta> de cada HTML pra granularidade
+
+/agente.html
+  X-Frame-Options: SAMEORIGIN
+  # Mas como é embedável via iframe (publicChat), removemos via Cloudflare Page Rule
+  # Permissions-Policy: microphone=*  (precisa pra Web Speech API em iframe)
+
+# Cache estático
+/assets/*
+  Cache-Control: public, max-age=86400, immutable
+
+/css/*
+  Cache-Control: public, max-age=600
+
+/js/*
+  Cache-Control: public, max-age=600

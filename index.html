@@ -26,6 +26,14 @@
   <meta name="description" content="PRIMETOUR — Plataforma de Gestão de Tarefas e Projetos" />
   <meta name="theme-color" content="#0A1628" />
 
+  <!-- ═══ SECURITY HEADERS (mitigações XSS/clickjacking/leak) ═══
+       Equivalente meta HTTP — alguns só funcionam via response header
+       (X-Frame-Options, Strict-Transport-Security). Quando migrar pra
+       Cloudflare Pages (Sprint 4), adicionar via _headers file. -->
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <meta name="permissions-policy" content="camera=(), microphone=(self), geolocation=(self), interest-cohort=()" />
+
   <!-- CSP — Content Security Policy -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'self';
@@ -121,7 +129,7 @@
        v= bumpa em commits que tocam código crítico (sidebar/branding)
        pra forçar refetch — GitHub Pages serve com max-age=600 e
        browsers cacheiam módulos por URL. -->
-  <script type="module" src="js/app.js?v=20260501ee"></script>
+  <script type="module" src="js/app.js?v=20260501ff"></script>
 
 </body>
 </html>

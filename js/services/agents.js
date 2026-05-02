@@ -794,14 +794,32 @@ async function _fetchR2(path) {
   return _fetchUrl(url);
 }
 
-/* App-only token cache pra SharePoint (service-level, não por usuário) */
+/* App-only token cache pra SharePoint (service-level, não por usuário)
+ * SECURITY: client SDK NÃO consegue ler clientSecret (system_secrets é
+ * read:false). Cloud Function `getSharePointToken` (Sprint 1) faz a
+ * troca client_credentials e retorna apenas o access_token.
+ * Por enquanto, mantém fallback de leitura de system_config/sharepoint-app
+ * (legacy) — admin migra manualmente quando Cloud Function for deployed. */
 let _spAppToken = null; // { token, expiresAt }
 async function _getSharePointAppToken() {
   if (_spAppToken && Date.now() < _spAppToken.expiresAt) return _spAppToken.token;
-  // Lê credenciais do system_config/sharepoint-app
+  // Tenta Cloud Function primeiro (segura)
+  try {
+    const { getFunctions, httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+    const fn = httpsCallable(getFunctions(), 'getSharePointToken');
+    const result = await fn();
+    if (result?.data?.access_token) {
+      _spAppToken = { token: result.data.access_token, expiresAt: Date.now() + (result.data.expires_in - 300) * 1000 };
+      return _spAppToken.token;
+    }
+  } catch (e) {
+    /* Cloud Function não disponível ainda — fallback legacy */
+    console.warn('[sharepoint] Cloud Function indisponível, usando fallback Firestore (INSEGURO):', e?.message);
+  }
+  // FALLBACK LEGADO (será removido na Sprint 1) — lê do system_config
   const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
   const cfgSnap = await getDoc(doc(db, 'system_config', 'sharepoint-app'));
-  if (!cfgSnap.exists()) throw new Error('SharePoint app não configurado');
+  if (!cfgSnap.exists()) throw new Error('SharePoint app não configurado (admin precisa configurar em IA Hub > Conexões)');
   const cfg = cfgSnap.data();
   if (!cfg.tenantId || !cfg.clientId || !cfg.clientSecret) {
     throw new Error('Credenciais incompletas: precisa tenantId+clientId+clientSecret');
@@ -1143,9 +1161,11 @@ export async function runAgent(agentId, userInput, context = {}) {
     skipLog: true,
   });
 
-  // Log com agentId
+  // Log com agentId (TTL 90 dias via Firestore policy)
   try {
     const cu = store.get('currentUser');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 90);
     await addDoc(collection(db, 'ai_usage_logs'), {
       agentId, agentName: agent.name,
       module: agent.module,
@@ -1155,6 +1175,7 @@ export async function runAgent(agentId, userInput, context = {}) {
       outputTokens: result.outputTokens || 0,
       userId:       cu?.uid || null,
       timestamp:    serverTimestamp(),
+      expiresAt:    Timestamp.fromDate(expiresAt),
     });
   } catch (e) { console.warn('[agents] log err:', e?.message); }
 

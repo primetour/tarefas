@@ -23,8 +23,8 @@ const PII_PATTERNS = [
   { type: 'passport', regex: /[A-Z]{2}\d{6,7}/g },
 ];
 
-/* Módulos que SEMPRE anonimizam (contêm PII de clientes) */
-const SENSITIVE_MODULES = ['roteiros', 'feedbacks', 'csat'];
+/* Módulos que SEMPRE anonimizam (contêm PII de clientes/funcionários) — fail-safe */
+const SENSITIVE_MODULES = ['roteiros', 'feedbacks', 'csat', 'tasks', 'requests', 'capacity', 'check-in'];
 
 /* ─── Cache ─────────────────────────────────────────────────── */
 let _privacyCache = null;
@@ -35,14 +35,21 @@ const CACHE_TTL = 5 * 60_000; // 5 min
 const PRIVACY_DOC = 'system_config/ai-privacy';
 
 const DEFAULT_PRIVACY = {
-  anonymizePii: true,
-  anonymizeModules: ['roteiros', 'feedbacks', 'csat'],
-  consentRequired: true,
-  consentVersion: '1.0',
+  anonymizePii: true,                 // ON por default
+  // Lista expandida — todos os módulos com risco de PII
+  anonymizeModules: [
+    'roteiros', 'feedbacks', 'csat', 'tasks', 'requests',
+    'capacity', 'check-in', 'team', 'workspaces', 'general',
+    'content-calendar',
+  ],
+  consentRequired: true,              // Bloqueia se user não aceitou
+  consentVersion: '1.1',              // Bump quando termos mudarem
   dataRetentionDays: 90,
   allowedProviders: ['gemini', 'groq', 'openai', 'anthropic', 'azure', 'local'],
   localPreferred: false,
   showDisclaimer: true,
+  // Novo: bloqueia providers fora da União Europeia/Brasil pra dados sensíveis
+  strictRegions: false,                // Ativar = LGPD-strict mode
 
   providerInfo: {
     gemini:    { gdpr: true,  lgpd: false, region: 'US',     note: 'Free tier pode usar dados para treinamento' },

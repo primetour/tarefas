@@ -569,10 +569,23 @@ service cloud.firestore {
         && resource.data.recipientId == request.auth.uid;
     }
 
-    // ── Configuração do Sistema (AI config, etc.) ──────────────
+    // ── Configuração do Sistema (AI config — keys LLM) ─────────
+    // SECURITY: leitura ainda permitida pra auth pq chatWithAI/runAgent
+    // chamam getAIConfig() do client. Sprint 1 migra pra Cloud Function
+    // (callLLM proxy) → depois muda pra `read: if isAdmin()`.
+    // Por ora, escrita restrita admin (já estava) + auditoria.
     match /system_config/{docId} {
       allow read:  if isAuth();
       allow write: if isAuth() && isAdmin();
+    }
+
+    // ── Segredos do sistema (SEM acesso client-side, só Admin SDK) ──
+    // ZERO trust: nenhum cliente lê/escreve. Cloud Functions com
+    // service account acessam via Admin SDK.
+    // Aqui ficam: SharePoint clientSecret, GitHub PAT, tokens MS app-only,
+    // qualquer credencial sensível.
+    match /system_secrets/{docId} {
+      allow read, write: if false;
     }
 
     // ── AI Skills ────────────────────────────────────────────
@@ -582,14 +595,26 @@ service cloud.firestore {
     }
 
     // ── AI API Keys (multi-escopo: global, user, nucleo, area) ──
+    // SECURITY (Sprint 1): leitura permitida pq client lê via resolveApiKey.
+    // Migração pra Cloud Function callLLM em curso → depois lockdown.
     match /ai_api_keys/{docId} {
       allow read:  if isAuth();
       allow write: if isAuth() && isAdmin();
     }
 
     // ── AI Knowledge Base ────────────────────────────────────
+    // SECURITY: documentos corporativos. Por padrão público a auth users,
+    // mas se doc tiver `visibility: 'restricted'` exige role match.
+    // Classificação obrigatória futura: Public/Internal/Confidential/Restricted
     match /ai_knowledge/{docId} {
-      allow read:  if isAuth();
+      allow read:  if isAuth() && (
+                      !('visibility' in resource.data)
+                      || resource.data.visibility == 'public'
+                      || resource.data.visibility == 'internal'
+                      || isAdmin()
+                      || (resource.data.visibility == 'sector'
+                          && resource.data.sector in (userDoc().visibleSectors || []))
+                    );
       allow write: if isAuth() && isAdmin();
     }
 
