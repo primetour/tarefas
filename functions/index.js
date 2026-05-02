@@ -134,7 +134,9 @@ export const callLLM = onCall({
     groq:      GROQ_API_KEY.value(),
   };
   const apiKey = KEYS[provider];
-  if (!apiKey) throw new HttpsError('failed-precondition', `Key ${provider} não configurada server-side.`);
+  if (!apiKey || apiKey === 'not-configured-yet') {
+    throw new HttpsError('failed-precondition', `Key ${provider} não configurada. Admin precisa rodar: firebase functions:secrets:set ${provider.toUpperCase()}_API_KEY`);
+  }
 
   // ── Chama o provider ──
   let result;
@@ -292,7 +294,9 @@ export const getSharePointToken = onCall({
   const tid = SHAREPOINT_TENANT_ID.value();
   const cid = SHAREPOINT_CLIENT_ID.value();
   const sec = SHAREPOINT_CLIENT_SECRET.value();
-  if (!tid || !cid || !sec) throw new HttpsError('failed-precondition', 'SharePoint app não configurado');
+  if (!tid || !cid || !sec || tid === 'not-configured-yet' || cid === 'not-configured-yet' || sec === 'not-configured-yet') {
+    throw new HttpsError('failed-precondition', 'SharePoint app não configurado. Admin precisa setar SHAREPOINT_TENANT_ID, _CLIENT_ID, _CLIENT_SECRET via firebase functions:secrets:set');
+  }
   const url = `https://login.microsoftonline.com/${tid}/oauth2/v2.0/token`;
   const body = new URLSearchParams({
     client_id: cid, client_secret: sec,

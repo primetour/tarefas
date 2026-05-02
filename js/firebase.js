@@ -66,4 +66,5 @@ try {
 }
 export const db = _db;
 
+export { app };
 export default app;
