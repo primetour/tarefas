@@ -145,6 +145,26 @@ export const PERMISSION_CATALOG = [
     permissions: [
       { key: 'ai_skills_manage',  label: 'Gerenciar IA Skills',             info: 'Criar, editar e excluir skills (instruções) usadas pelo agente de IA.' },
       { key: 'ai_dashboard_view', label: 'Ver dashboard de IA',             info: 'Acesso ao painel de uso, custo e qualidade do agente de IA.' },
+      { key: 'ai_keys_manage',    label: 'Gerenciar API keys de IA',        info: 'Configurar provedores LLM (Anthropic/OpenAI/Gemini/Groq). Keys ficam server-side via Secret Manager — esta permissão controla quem pode rotacionar via UI.' },
+    ],
+  },
+  {
+    group: 'Segurança e Auditoria',
+    permissions: [
+      { key: 'audit_logs_view',      label: 'Ver logs de auditoria',         info: 'Acesso a audit_logs (TTL 180 dias) — login, mudanças de role, deletes, eventos de segurança.' },
+      { key: 'security_digest_view', label: 'Ver digest de segurança',       info: 'Receber e visualizar relatório SIEM diário (anomalias, IPs suspeitos, custo IA, eventos críticos).' },
+      { key: 'security_alerts_receive', label: 'Receber alertas de segurança', info: 'Notificações automáticas de novo IP suspeito no próprio login, secret expirando, backup falhou.' },
+      { key: 'secrets_audit_view',   label: 'Ver auditoria de secrets',      info: 'Acesso ao relatório semanal de rotação de API keys (alerta secrets >90 dias).' },
+    ],
+  },
+  {
+    group: 'LGPD e Privacidade',
+    permissions: [
+      { key: 'lgpd_export_own',      label: 'Exportar próprios dados (LGPD Art. 18 V)', info: 'Direito de portabilidade — gera arquivo JSON com todos os dados pessoais do próprio usuário.' },
+      { key: 'lgpd_erasure_own',     label: 'Solicitar exclusão dos próprios dados (LGPD Art. 18 VI)', info: 'Hard delete de dados não obrigatórios + anonimização do resto. Preserva CLT (5 anos).' },
+      { key: 'lgpd_export_others',   label: 'Exportar dados de outros (DPO)',    info: 'Apenas DPO/admin — atender solicitações de titulares por dados de outros usuários.' },
+      { key: 'lgpd_erasure_others',  label: 'Eliminar dados de outros (DPO)',    info: 'Apenas DPO/admin — executar eraseUserDataServer pra outros uids. Sempre auditado.' },
+      { key: 'privacy_consent_manage', label: 'Gerenciar consents de IA do próprio usuário', info: 'Toggle on/off em "Privacidade e IA" — anonimização, salvamento de chat, etc.' },
     ],
   },
 ];
@@ -189,7 +209,14 @@ export const SYSTEM_ROLES = [
       requests_manage: true,
       absence_view_team: true, absence_manage_team: true,
       branding_manage: true,
-      ai_skills_manage: true, ai_dashboard_view: true,
+      ai_skills_manage: true, ai_dashboard_view: true, ai_keys_manage: true,
+      // Segurança: Head tem acesso quase total (mas master pode revogar)
+      audit_logs_view: true, security_digest_view: true,
+      security_alerts_receive: true, secrets_audit_view: true,
+      // LGPD: Head é o DPO operacional — pode atender solicitações
+      lgpd_export_own: true, lgpd_erasure_own: true,
+      lgpd_export_others: true, lgpd_erasure_others: true,
+      privacy_consent_manage: true,
     },
   },
   {
@@ -220,7 +247,14 @@ export const SYSTEM_ROLES = [
       requests_manage: true,
       absence_view_team: true, absence_manage_team: true,
       branding_manage: false,
-      ai_skills_manage: false, ai_dashboard_view: true,
+      ai_skills_manage: false, ai_dashboard_view: true, ai_keys_manage: false,
+      // Segurança: Gerente vê audit logs do squad + recebe alertas
+      audit_logs_view: true, security_digest_view: false,
+      security_alerts_receive: true, secrets_audit_view: false,
+      // LGPD: Gerente exporta apenas próprios dados
+      lgpd_export_own: true, lgpd_erasure_own: true,
+      lgpd_export_others: false, lgpd_erasure_others: false,
+      privacy_consent_manage: true,
     },
   },
   {
@@ -251,7 +285,14 @@ export const SYSTEM_ROLES = [
       requests_manage: true,
       absence_view_team: true, absence_manage_team: false,
       branding_manage: false,
-      ai_skills_manage: false, ai_dashboard_view: false,
+      ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
+      // Segurança: Coordenador recebe alertas mas não vê logs
+      audit_logs_view: false, security_digest_view: false,
+      security_alerts_receive: true, secrets_audit_view: false,
+      // LGPD: básico de auto-serviço
+      lgpd_export_own: true, lgpd_erasure_own: true,
+      lgpd_export_others: false, lgpd_erasure_others: false,
+      privacy_consent_manage: true,
     },
   },
   {
@@ -283,7 +324,14 @@ export const SYSTEM_ROLES = [
       requests_manage: false,
       absence_view_team: false, absence_manage_team: false,
       branding_manage: false,
-      ai_skills_manage: false, ai_dashboard_view: false,
+      ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
+      // Parceiros (externos) não recebem alertas internos
+      audit_logs_view: false, security_digest_view: false,
+      security_alerts_receive: false, secrets_audit_view: false,
+      // LGPD: parceiros têm direito de auto-serviço por exigência legal
+      lgpd_export_own: true, lgpd_erasure_own: true,
+      lgpd_export_others: false, lgpd_erasure_others: false,
+      privacy_consent_manage: true,
     },
   },
   {
@@ -314,7 +362,13 @@ export const SYSTEM_ROLES = [
       requests_manage: false,
       absence_view_team: false, absence_manage_team: false,
       branding_manage: false,
-      ai_skills_manage: false, ai_dashboard_view: false,
+      ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
+      // Analista: alertas no próprio login + auto-serviço LGPD
+      audit_logs_view: false, security_digest_view: false,
+      security_alerts_receive: true, secrets_audit_view: false,
+      lgpd_export_own: true, lgpd_erasure_own: true,
+      lgpd_export_others: false, lgpd_erasure_others: false,
+      privacy_consent_manage: true,
     },
   },
 ];

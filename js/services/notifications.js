@@ -44,13 +44,15 @@ const TYPE_TO_USER_PREF = {
 
 /* ─── Category icons ──────────────────────────────────────── */
 export const NOTIF_ICONS = {
-  task:    '📋',
-  project: '📊',
-  csat:    '💬',
-  request: '📩',
-  goal:    '🎯',
-  portal:  '🌍',
-  system:  '🔔',
+  task:     '📋',
+  project:  '📊',
+  csat:     '💬',
+  request:  '📩',
+  goal:     '🎯',
+  portal:   '🌍',
+  system:   '🔔',
+  security: '🛡',
+  lgpd:     '🔐',
 };
 
 /* ─── Notification type labels ────────────────────────────── */
@@ -82,7 +84,35 @@ export const NOTIF_TYPE_LABELS = {
   'feedback.created':         'Novo feedback',
   'feedback.schedule_due':    'Feedback pendente',
   'system.mention':           'Menção',
+  // ─── Segurança (Sprints 1-5) ────────────────────────────────
+  'security.suspicious_login': 'Novo IP detectado no seu login',
+  'security.rate_limit_hit':   'Muitas requisições do seu IP',
+  'security.backup_completed': 'Backup diário concluído',
+  'security.backup_failed':    'Falha no backup diário',
+  'security.digest_critical':  'Digest de segurança CRÍTICO',
+  'security.digest_warning':   'Digest de segurança com alertas',
+  'security.secret_stale':     'API key precisa ser rotacionada',
+  // ─── LGPD ────────────────────────────────────────────────────
+  'lgpd.export_ready':         'Exportação dos seus dados pronta',
+  'lgpd.erasure_completed':    'Seus dados foram apagados (LGPD)',
+  'lgpd.consent_updated':      'Suas preferências de privacidade foram atualizadas',
 };
+
+/* ─── Tipos que vão pra recipients fixos (admin/master) ───── */
+// Notificações de SEGURANÇA SISTÊMICA (não pessoal) sempre vão pra:
+//   - todos com role master
+//   - todos com permissão security_alerts_receive
+// Use isSystemSecurityType() pra checar.
+export const SYSTEM_SECURITY_TYPES = new Set([
+  'security.backup_failed',
+  'security.digest_critical',
+  'security.digest_warning',
+  'security.secret_stale',
+]);
+
+export function isSystemSecurityType(type) {
+  return SYSTEM_SECURITY_TYPES.has(type);
+}
 
 /* ════════════════════════════════════════════════════════════
    notify() — Central gateway
