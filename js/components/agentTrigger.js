@@ -18,7 +18,7 @@
  */
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
-import { fetchAgentsForModule, runAgent } from '../services/agents.js?v=20260501v';
+import { fetchAgentsForModule, runAgent } from '../services/agents.js?v=20260501w';
 
 const ROUTE_TO_MODULE = {
   'tasks': 'tasks', 'kanban': 'kanban', 'calendar': 'calendar', 'timeline': 'tasks',
@@ -58,13 +58,15 @@ function isAgentVisible(agent) {
 /* ─── Mount ────────────────────────────────────────────── */
 let _mountedRoute = null;
 let _mountedAgents = [];
+let _mountId = 0;       // race guard — só o ÚLTIMO call ganha
 
 export async function mountAgentsForRoute(route) {
-  // Limpa botões antigos
-  document.querySelectorAll('.agent-trigger-btn').forEach(b => b.remove());
   // Fecha painel anterior se rota mudou
   if (_mountedRoute && _mountedRoute !== route) closeAgentPanel();
   _mountedRoute = route;
+  // Race guard: cada call recebe id único; ao terminar fetch só renderiza
+  // se ainda for o último call (evita 4 botoes em paralelo)
+  const myId = ++_mountId;
 
   const moduleId = ROUTE_TO_MODULE[route] || 'general';
   let agents = [];
@@ -74,11 +76,18 @@ export async function mountAgentsForRoute(route) {
     console.warn('[agentTrigger] fetch err:', e?.message);
     return;
   }
+  // Se houve outra chamada mais recente, abandona esta
+  if (myId !== _mountId) return;
+
   agents = agents.filter(a => a.triggers?.button?.enabled && isAgentVisible(a));
   _mountedAgents = agents;
+
+  // Limpa AGORA (depois do await, antes do append) — só os botões antigos
+  document.querySelectorAll('.agent-trigger-btn').forEach(b => b.remove());
+
   if (!agents.length) return;
 
-  // Encontra o container do header — tenta page-header-actions, senão cria flutuante
+  // Encontra o container do header
   const headerActions = document.querySelector('.page-header-actions');
   if (headerActions) {
     agents.forEach(agent => {
@@ -86,7 +95,6 @@ export async function mountAgentsForRoute(route) {
       headerActions.insertBefore(btn, headerActions.firstChild);
     });
   } else {
-    // Fallback: agrupa numa pílula flutuante no canto top-right da page-header
     const pageHeader = document.querySelector('.page-header');
     if (pageHeader) {
       const grp = document.createElement('div');

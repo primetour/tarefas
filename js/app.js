@@ -548,7 +548,7 @@ function setupRouter() {
     // ── Monta botões de agentes IA no header da página ──
     setTimeout(async () => {
       try {
-        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501v');
+        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501w');
         await mountAgentsForRoute(route);
       } catch (e) { console.warn('[agents] mount err:', e?.message); }
     }, 600); // delay pra header já ter renderizado
