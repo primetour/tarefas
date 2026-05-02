@@ -19,10 +19,12 @@
  *   firebase functions:secrets:set GITHUB_PAT
  */
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onSchedule }         from 'firebase-functions/v2/scheduler';
 import { defineSecret }       from 'firebase-functions/params';
 import { initializeApp }      from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth }            from 'firebase-admin/auth';
+import { GoogleAuth }         from 'google-auth-library';
 
 initializeApp();
 const db = getFirestore();
@@ -441,4 +443,47 @@ export const getGitHubFile = onCall({
     return { type: 'file', text: t.slice(0, 12000), name: data.name };
   }
   return { type: 'unknown', text: '' };
+});
+
+/* ═════════════════════════════════════════════════════════
+ * dailyBackup — exporta Firestore pra Cloud Storage diariamente
+ * Compliance: SOC2 + ISO 27001 exigem backup automatizado.
+ * Roda 03:00 BRT (06:00 UTC).
+ * ═════════════════════════════════════════════════════════ */
+export const dailyBackup = onSchedule({
+  schedule: '0 6 * * *',  // 03h BRT (UTC-3) = 06h UTC
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540,
+  memory: '512MiB',
+}, async () => {
+  const projectId = 'gestor-de-tarefas-primetour';
+  const bucket = `${projectId}-backups`;
+  const today = new Date().toISOString().slice(0, 10);
+  const outputUriPrefix = `gs://${bucket}/firestore/${today}`;
+
+  // Usa auth metadata da função pra chamar Firestore Admin API
+  const auth = new GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/datastore', 'https://www.googleapis.com/auth/cloud-platform'],
+  });
+  const client = await auth.getClient();
+  const accessToken = await client.getAccessToken();
+
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default):exportDocuments`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${accessToken.token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ outputUriPrefix }),
+  });
+
+  const result = await res.json();
+  // Audita o backup
+  await db.collection('audit_logs').add({
+    action: 'system.daily_backup',
+    target: outputUriPrefix,
+    status: res.ok ? 'started' : 'failed',
+    response: JSON.stringify(result).slice(0, 500),
+    timestamp: FieldValue.serverTimestamp(),
+    severity: res.ok ? 'info' : 'critical',
+  });
+  console.log('[backup]', res.status, result);
 });

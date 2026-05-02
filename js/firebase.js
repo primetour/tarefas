@@ -68,3 +68,28 @@ export const db = _db;
 
 export { app };
 export default app;
+
+/* ─── App Check (mitigação de abuse de SDKs) ────────────────
+ * Exige reCAPTCHA Enterprise key configurada no Firebase Console:
+ * https://console.firebase.google.com/project/_/appcheck
+ *
+ * Após admin configurar, descomenta o bloco e seta o site key abaixo.
+ * Apps Check valida que o request VEM do app oficial (não de Postman/curl).
+ * ALTERNATIVA pra dev: Debug Token (mostrar no console) */
+async function setupAppCheck() {
+  const ENABLED = false;  // ← admin troca pra true após configurar
+  const SITE_KEY = 'YOUR_RECAPTCHA_ENTERPRISE_SITE_KEY';
+  if (!ENABLED) return;
+  try {
+    const { initializeAppCheck, ReCaptchaEnterpriseProvider } =
+      await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
+    initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider(SITE_KEY),
+      isTokenAutoRefreshEnabled: true,
+    });
+    console.log('[App Check] enabled');
+  } catch (e) {
+    console.warn('[App Check] setup failed:', e?.message);
+  }
+}
+setupAppCheck();
