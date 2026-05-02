@@ -92,31 +92,29 @@ export function renderLogin(container) {
           <!-- Alert de erro/sucesso -->
           <div id="auth-alert" style="display:none;"></div>
 
-          <!-- SSO Microsoft (PRINCIPAL) -->
+          <!-- SSO Microsoft (único método público) -->
           <button type="button" class="btn-auth-microsoft" id="btn-microsoft-sso"
-            style="width:100%;font-size:1.0625rem;padding:14px;">
-            <svg width="20" height="20" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+            style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;
+            padding:14px 16px;font-size:1rem;font-weight:600;border:1px solid var(--border-default);
+            background:var(--bg-elevated);color:var(--text-primary);border-radius:var(--radius-md);
+            cursor:pointer;transition:all 0.2s;">
+            <svg width="20" height="20" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;">
               <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
               <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
               <rect x="1" y="11" width="9" height="9" fill="#00A4EF"/>
               <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
             </svg>
-            Entrar com Microsoft
-            <span class="btn-auth-microsoft-domain">@primetour.com.br</span>
+            <span>Entrar com Microsoft</span>
+            <span style="color:var(--text-muted);font-weight:400;font-size:0.8125rem;">@primetour.com.br</span>
           </button>
 
-          <p class="text-center mt-3" style="color:var(--text-muted);font-size:0.8125rem;line-height:1.6;">
-            🔒 SSO obrigatório · MFA enforced via Azure AD<br>
-            Apenas contas <strong>@primetour.com.br</strong> autorizadas
-          </p>
-
-          <!-- Login email/senha — DESABILITADO por segurança (Sprint 2 hardening) -->
-          <!-- Pra reativar em emergencia: localStorage.setItem('emergency-pwd-login','1') -->
-          <details id="emergency-login-wrap" style="display:none;margin-top:24px;
-            border:1px solid rgba(245,158,11,0.4);border-radius:6px;padding:10px;
-            background:rgba(245,158,11,0.04);">
-            <summary style="cursor:pointer;font-size:0.75rem;color:#F59E0B;font-weight:600;">
-              ⚠ Login emergencial (admin only)
+          <!-- Login email/senha emergencial (escondido por padrão).
+               Pra reativar: localStorage.setItem('emergency-pwd-login','1') + reload -->
+          <details id="emergency-login-wrap" style="display:none;margin-top:20px;
+            border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:12px;
+            background:var(--bg-surface);">
+            <summary style="cursor:pointer;font-size:0.75rem;color:var(--text-muted);">
+              Login emergencial (admin)
             </summary>
             <form id="login-form" novalidate style="margin-top:12px;">
               <div class="form-group">
@@ -127,19 +125,20 @@ export function renderLogin(container) {
                 <input type="password" id="login-password" class="form-input"
                   placeholder="senha" autocomplete="current-password" required />
               </div>
-              <button type="submit" class="btn-auth-submit" id="login-submit">Entrar (legado)</button>
-              <a href="#" class="auth-forgot-link" id="forgot-link" style="font-size:0.75rem;margin-top:8px;display:inline-block;">Esqueceu a senha?</a>
+              <button type="submit" class="btn-auth-submit" id="login-submit"
+                style="width:100%;">Entrar</button>
+              <a href="#" class="auth-forgot-link" id="forgot-link"
+                style="font-size:0.75rem;margin-top:8px;display:inline-block;">Esqueceu a senha?</a>
               <span class="form-error-msg" id="email-error"></span>
               <span class="form-error-msg" id="password-error"></span>
               <button type="button" id="toggle-password" style="display:none;"></button>
             </form>
           </details>
 
-          <p class="text-center mt-6 text-xs" style="color:var(--text-muted);">
-            Não possui acesso? Solicite ao administrador do sistema.
+          <p style="text-align:center;margin-top:24px;font-size:0.75rem;color:var(--text-muted);">
+            Não possui acesso? Solicite ao administrador.
           </p>
           <script>
-            // Mostra opção emergencial só se admin tiver setado a flag
             if (localStorage.getItem('emergency-pwd-login') === '1') {
               document.getElementById('emergency-login-wrap').style.display = 'block';
             }
