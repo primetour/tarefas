@@ -270,7 +270,9 @@
     messagingSenderId: "1083421353313",
     appId: "1:1083421353313:web:f9656ce6ae0fc4ca24d120",
   };
-  const app = initializeApp(firebaseConfig);
+  // Usa MESMO nome do app principal pra compartilhar auth state via IndexedDB
+  // (login no app principal = logado aqui sem re-autenticar)
+  const app = initializeApp(firebaseConfig, 'primetour-main');
   const auth = getAuth(app);
   const db   = getFirestore(app);
 
