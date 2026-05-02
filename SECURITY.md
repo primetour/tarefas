@@ -39,23 +39,29 @@
 
 ---
 
-## 🚨 Sprint 1 — Em execução
+## 🚨 Sprint 1 — DEPLOYADO em produção (2026-05-02)
 
-### Cloud Functions (CRÍTICO)
-- [ ] `callLLM()` — proxy provider, mantém API keys server-side
-- [ ] `uploadR2()` — upload assinado (substitui token hardcoded)
-- [ ] `getSharePointToken()` — client_credentials flow, secret no env
-- [ ] `rateLimit()` — atomic counter Firestore
+### Cloud Functions ✅
+- [x] `callLLM()` — proxy provider, keys 100% Secret Manager. Validado live: "ok" em 1.4s, `secured:true`
+- [x] `getR2UploadUrl()` — token Secret Manager + path whitelist
+- [x] `getSharePointToken()` — client_credentials flow, secret env
+- [x] `getGitHubFile()` — PAT env, repos públicos OK sem token
 
-### Rotação obrigatória de chaves comprometidas
-- [ ] Anthropic: gerar nova key + revogar atual
-- [ ] OpenAI: idem
-- [ ] Gemini: idem
-- [ ] Groq: idem
-- [ ] R2 Worker token: regenerar
-- [ ] SharePoint client secret: regenerar no Azure Portal
+### Lockdown Firestore Rules ✅
+- [x] `system_config/{*}` — `read,write: if isAdmin()` (era auth)
+- [x] `ai_api_keys/{*}` — `read,write: if isAdmin()` (era auth)
+- [x] `system_secrets/{*}` — `if false` (zero-trust)
+- [x] `ai_knowledge` — visibility-based (public/internal/sector/restricted)
 
-### Hardening Auth
+### Pendentes Sprint 1.5 (rotação)
+- [ ] Anthropic: gerar nova key + revogar atual (placeholder atual)
+- [ ] OpenAI: idem (placeholder atual)
+- [ ] **Gemini**: revogar `AIza...UFrtDM` (vazou no chat) + nova
+- [ ] **Groq**: revogar `gsk_...XgE` (vazou no chat) + nova
+- [ ] R2 Worker token: regenerar token, atualizar Worker + secret
+- [ ] SharePoint: criar app registration + setar 3 secrets
+
+### Hardening Auth (Sprint 2)
 - [ ] Forçar SSO Microsoft (desabilitar email/senha)
 - [ ] MFA enforcement no Azure AD Conditional Access
 - [ ] Allowlist explícita (sem auto-provisioning livre)
