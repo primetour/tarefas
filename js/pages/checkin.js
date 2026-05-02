@@ -23,7 +23,7 @@ import {
   requestTimeClockCorrection, fetchTimeClockRequests, subscribeTimeClockRequests,
   approveTimeClockRequest, rejectTimeClockRequest,
   calcBancoHoras, buildEspelhoPonto, isBusinessDay,
-} from '../services/checkin.js?v=20260501n';
+} from '../services/checkin.js?v=20260501o';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const todayISO = () => { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); };
@@ -1080,6 +1080,24 @@ async function renderReportTab(container) {
         });
       });
     });
+    container.querySelectorAll('.tc-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        const rec = all.find(x => x.id === id);
+        if (!rec) return;
+        if (!confirm(`Excluir o registro de ${rec.userName||''} de ${fmtDate(rec.date)}?\n\nEsta ação grava entry na auditoria mas remove o registro permanentemente.`)) return;
+        btn.disabled = true; btn.textContent = '⏳';
+        try {
+          await adminDeleteTimeClock(id);
+          toast.success('Registro excluído.');
+          renderReportTab(container);
+        } catch (err) {
+          toast.error(err.message);
+          btn.disabled = false; btn.textContent = '🗑';
+        }
+      });
+    });
   }
   bindEditButtons();
 
@@ -1142,6 +1160,10 @@ function renderDetailRows(records, lunchMinutes, fmtMins) {
   if (!sorted.length) {
     return `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-muted);">Sem registros.</td></tr>`;
   }
+  const actionBtns = (id) => `
+    <button class="btn btn-ghost btn-sm tc-edit"   data-id="${id}" title="Editar registro">✎</button>
+    <button class="btn btn-ghost btn-sm tc-delete" data-id="${id}" title="Excluir registro" style="color:#EF4444;">🗑</button>
+  `;
   return sorted.map(r => {
     const manual = r.manual ? ' <span title="Registro manual/corrigido" style="color:#A78BFA;">✎</span>' : '';
     if (r.declined && !r.in) {
@@ -1151,9 +1173,7 @@ function renderDetailRows(records, lunchMinutes, fmtMins) {
         <td>${esc(r.sector||'')}</td>
         <td colspan="5" style="font-style:italic;color:#F59E0B;">⚠ Optou por não registrar${r.declineReason?': '+esc(r.declineReason):''}</td>
         <td style="text-align:right;">—</td>
-        <td style="text-align:right;">
-          <button class="btn btn-ghost btn-sm tc-edit" data-id="${r.id}" title="Editar">✎</button>
-        </td>
+        <td style="text-align:right;white-space:nowrap;">${actionBtns(r.id)}</td>
       </tr>`;
     }
     const lm = lunchMinutes(r);
@@ -1170,9 +1190,7 @@ function renderDetailRows(records, lunchMinutes, fmtMins) {
       <td style="text-align:right;font-weight:600;color:var(--brand-gold);">
         ${calcWorkedHours(r).toFixed(2)}h${incomplete?' <span title="Registro incompleto" style="color:#F59E0B;">⚠</span>':''}
       </td>
-      <td style="text-align:right;">
-        <button class="btn btn-ghost btn-sm tc-edit" data-id="${r.id}" title="Editar/Excluir">✎</button>
-      </td>
+      <td style="text-align:right;white-space:nowrap;">${actionBtns(r.id)}</td>
     </tr>`;
   }).join('');
 }

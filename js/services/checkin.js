@@ -42,14 +42,28 @@ export const DEFAULT_AREAS = [
   { name: 'Gouvea',  displayName: 'Gouvêa',  baias: 2, assentosPorFileira: 6, capacity: 24 },
 ];
 /* Defaults usam nomes que JÁ estão cadastrados em REQUESTING_AREAS (tasks.js).
+ * Vêm da migração do minhamesa (Google Sheets cadastrado pela operação).
  * Admin pode editar livremente na aba Administração — qualquer setor
  * fora do cadastro fica marcado "fora do cadastro" no select. */
 export const DEFAULT_SECTOR_RULES = [
-  { sector: 'PTS Bradesco', slots: 15, dias: 'Seg a Sex' },
-  { sector: 'Marketing',    slots: 10, dias: 'Ter, Qui'  },
-  { sector: 'TI',           slots: 20, dias: 'Seg a Sex' },
-  { sector: 'Financeiro',   slots: 8,  dias: 'Seg, Qua'  },
-  { sector: 'C&P',          slots: 5,  dias: 'Sex'        },
+  { sector: 'BTG',                slots: 31, dias: 'Seg, Ter'              },
+  { sector: 'C&P',                slots: 6,  dias: 'Seg, Ter'              },
+  { sector: 'Célula ICs',         slots: 9,  dias: 'Qua, Qui'              },
+  { sector: 'Centurion',          slots: 20, dias: 'Seg, Ter, Qui, Sex'    },
+  { sector: 'CEP',                slots: 3,  dias: 'Qua, Qui'              },
+  { sector: 'Concierge Bradesco', slots: 17, dias: 'Qua, Qui'              },
+  { sector: 'Contabilidade',      slots: 5,  dias: ''                       },
+  { sector: 'Eventos',            slots: 6,  dias: 'Ter, Qui'              },
+  { sector: 'Financeiro',         slots: 10, dias: 'Seg a Sex'             },
+  { sector: 'Lazer',              slots: 11, dias: 'Qua, Qui'              },
+  { sector: 'Marketing',          slots: 17, dias: 'Qua, Qui'              },
+  { sector: 'Operadora',          slots: 15, dias: 'Seg, Ter'              },
+  { sector: 'Programa ICs',       slots: 3,  dias: ''                       },
+  { sector: 'Projetos',           slots: 1,  dias: ''                       },
+  { sector: 'PTS Bradesco',       slots: 20, dias: 'Qua, Qui'              },
+  { sector: 'Qualidade',          slots: 7,  dias: 'Seg, Ter'              },
+  { sector: 'Suppliers',          slots: 2,  dias: 'Ter, Qua'              },
+  { sector: 'TI',                 slots: 5,  dias: 'Seg a Sex'             },
 ];
 
 /* ─── Helpers ─────────────────────────────────────────────── */
@@ -66,9 +80,18 @@ export async function fetchCheckinConfig() {
     const snap = await getDoc(doc(db, 'desk_config', 'global'));
     if (snap.exists()) {
       const d = snap.data();
+      const savedRules = d.sectorRules || [];
+      // Auto-merge: se faltam setores nos defaults (migração do minhamesa
+      // trouxe 18 setores; saved config pode estar com versão antiga de 5),
+      // adiciona os faltantes preservando as customizações já salvas.
+      const savedNames = new Set(savedRules.map(r => r.sector));
+      const merged = [...savedRules];
+      for (const def of DEFAULT_SECTOR_RULES) {
+        if (!savedNames.has(def.sector)) merged.push({ ...def });
+      }
       return {
-        areas:        d.areas        || DEFAULT_AREAS,
-        sectorRules:  d.sectorRules  || DEFAULT_SECTOR_RULES,
+        areas:        d.areas || DEFAULT_AREAS,
+        sectorRules:  merged.length ? merged : DEFAULT_SECTOR_RULES,
       };
     }
   } catch {}
