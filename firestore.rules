@@ -570,12 +570,12 @@ service cloud.firestore {
     }
 
     // ── Configuração do Sistema (AI config — keys LLM) ─────────
-    // SECURITY: leitura ainda permitida pra auth pq chatWithAI/runAgent
-    // chamam getAIConfig() do client. Sprint 1 migra pra Cloud Function
-    // (callLLM proxy) → depois muda pra `read: if isAdmin()`.
-    // Por ora, escrita restrita admin (já estava) + auditoria.
+    // SECURITY (Sprint 1 done): Cloud Functions deployed (callLLM, etc.)
+    // mantêm keys em Secret Manager. Client NÃO precisa mais ler keys.
+    // Apenas admin lê configs gerais (preferences) — keys vão direto pra
+    // Functions via env via defineSecret.
     match /system_config/{docId} {
-      allow read:  if isAuth();
+      allow read:  if isAuth() && isAdmin();
       allow write: if isAuth() && isAdmin();
     }
 
@@ -595,10 +595,10 @@ service cloud.firestore {
     }
 
     // ── AI API Keys (multi-escopo: global, user, nucleo, area) ──
-    // SECURITY (Sprint 1): leitura permitida pq client lê via resolveApiKey.
-    // Migração pra Cloud Function callLLM em curso → depois lockdown.
+    // SECURITY (Sprint 1 done): callLLM Cloud Function lê via Admin SDK.
+    // Client SDK não precisa mais. Keys em Secret Manager (zero exposure).
     match /ai_api_keys/{docId} {
-      allow read:  if isAuth();
+      allow read:  if isAuth() && isAdmin();
       allow write: if isAuth() && isAdmin();
     }
 
