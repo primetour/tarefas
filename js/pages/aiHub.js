@@ -20,7 +20,7 @@ import {
   deleteAgent, toggleAgent, uploadAgentAvatar, runAgent,
   migrateLegacyToAgents, purgeLegacyCollections,
   AGENT_DEFAULTS,
-} from '../services/agents.js?v=20260501aa';
+} from '../services/agents.js?v=20260501cc';
 import {
   AI_PROVIDERS, AI_MODELS, getModelsForProvider, MODULE_REGISTRY,
   fetchKnowledge, createKnowledgeDoc, updateKnowledgeDoc, deleteKnowledgeDoc,
