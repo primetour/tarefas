@@ -322,12 +322,14 @@ async function openAgentEditor(agentId) {
   function bindSiteEditor(a) {
     a.site = a.site || {};
     document.getElementById('a-site-prompt-add')?.addEventListener('click', () => {
+      applyFormToAgent();  // preserva campos digitados antes de re-render
       a.site.suggestedPrompts = a.site.suggestedPrompts || [];
       a.site.suggestedPrompts.push('');
       renderSubTab();
     });
     document.querySelectorAll('.a-site-prompt-del').forEach(btn =>
       btn.addEventListener('click', () => {
+        applyFormToAgent();
         a.site.suggestedPrompts.splice(parseInt(btn.dataset.i), 1);
         renderSubTab();
       }));
@@ -354,12 +356,14 @@ async function openAgentEditor(agentId) {
 
   function bindFewShotEditor(a) {
     document.getElementById('a-fs-add')?.addEventListener('click', () => {
+      applyFormToAgent();
       a.fewShotExamples = a.fewShotExamples || [];
       a.fewShotExamples.push({ input: '', output: '' });
       renderSubTab();
     });
     document.querySelectorAll('.a-fs-del').forEach(btn =>
       btn.addEventListener('click', () => {
+        applyFormToAgent();
         a.fewShotExamples.splice(parseInt(btn.dataset.i), 1);
         renderSubTab();
       }));
@@ -480,12 +484,14 @@ async function openAgentEditor(agentId) {
 
   function bindKnowledgeAdd(a) {
     document.getElementById('a-kb-add-source')?.addEventListener('click', () => {
+      applyFormToAgent();
       a.knowledgeSources = a.knowledgeSources || [];
       a.knowledgeSources.push({ type: 'url', url: '' });
       renderSubTab();
     });
     document.querySelectorAll('.a-kb-source-remove').forEach(btn =>
       btn.addEventListener('click', () => {
+        applyFormToAgent();
         const i = parseInt(btn.dataset.i);
         a.knowledgeSources.splice(i, 1);
         renderSubTab();
