@@ -1,0 +1,21 @@
+Contact: mailto:rene.castro@primetour.com.br
+Expires: 2027-12-31T23:59:59.000Z
+Preferred-Languages: pt-BR, en
+Canonical: https://primetour.github.io/tarefas/.well-known/security.txt
+Policy: https://primetour.github.io/tarefas/SECURITY.md
+Acknowledgments: https://github.com/primetour/tarefas/blob/main/SECURITY.md
+
+# Responsible Disclosure
+# Por favor reporte vulnerabilidades em privado via email acima.
+# Tempo de resposta: ate 72h.
+# Premiamos relatos validos com agradecimento publico no SECURITY.md.
+#
+# Escopo:
+#   - https://primetour.github.io/tarefas (web app)
+#   - https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net/* (API)
+#   - Configuracoes de Firestore Security Rules
+#
+# Fora de escopo:
+#   - Ataques de DoS volumetricos
+#   - Engenharia social contra colaboradores
+#   - Spam/phishing por email

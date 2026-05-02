@@ -39,6 +39,7 @@ const SHAREPOINT_TENANT_ID     = defineSecret('SHAREPOINT_TENANT_ID');
 const SHAREPOINT_CLIENT_ID     = defineSecret('SHAREPOINT_CLIENT_ID');
 const SHAREPOINT_CLIENT_SECRET = defineSecret('SHAREPOINT_CLIENT_SECRET');
 const GITHUB_PAT        = defineSecret('GITHUB_PAT');
+const SIEM_SLACK_WEBHOOK = defineSecret('SIEM_SLACK_WEBHOOK');  // optional - if not set, digest only logs
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 function requireAuth(request) {
@@ -486,4 +487,143 @@ export const dailyBackup = onSchedule({
     severity: res.ok ? 'info' : 'critical',
   });
   console.log('[backup]', res.status, result);
+});
+
+/* ═════════════════════════════════════════════════════════
+ * dailySecurityDigest — SIEM lite
+ * Roda 09h BRT diariamente. Varre logs das ultimas 24h e:
+ *   - Conta logins, suspicious_new_ip, custos IA por user
+ *   - Detecta anomalias: >5 logins falhos mesmo IP, custo IA >$20/dia/user,
+ *     novo IP em conta admin, deletes em massa
+ *   - Posta digest em Slack webhook (se SIEM_SLACK_WEBHOOK configurado)
+ *   - Sempre grava resumo em audit_logs como evidencia auditavel (SOC2/ISO 27001)
+ * ═════════════════════════════════════════════════════════ */
+export const dailySecurityDigest = onSchedule({
+  schedule: '0 12 * * *',  // 09h BRT
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 300,
+  memory: '512MiB',
+  secrets: [SIEM_SLACK_WEBHOOK],
+}, async () => {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const stats = {
+    logins: 0,
+    suspiciousNewIp: [],
+    rateLimitHits: 0,
+    aiCostHigh: [],
+    aiCostTotal: 0,
+    bulkDeletes: 0,
+    failedFunctions: 0,
+    criticalEvents: [],
+  };
+
+  // 1. Audit logs ultimas 24h
+  try {
+    const auditSnap = await db.collection('audit_logs')
+      .where('timestamp', '>=', since)
+      .limit(5000).get();
+
+    auditSnap.forEach(d => {
+      const x = d.data();
+      const action = x.action || '';
+      if (action === 'auth.login') stats.logins++;
+      if (action === 'auth.suspicious_new_ip') {
+        stats.suspiciousNewIp.push({
+          email: x.userEmail || x.userId, newIp: x.newIp,
+        });
+      }
+      if (action === 'system.daily_backup' && x.status === 'failed') {
+        stats.criticalEvents.push(`backup_failed: ${x.target}`);
+      }
+      if (x.severity === 'critical') {
+        stats.criticalEvents.push(`${action}: ${x.target || ''}`);
+      }
+      // Rate limit + bulk delete heuristics
+      if (action.includes('rate_limit')) stats.rateLimitHits++;
+      if (action === 'tasks.delete_all' || action === 'system.delete_all_tasks') stats.bulkDeletes++;
+    });
+  } catch (e) {
+    console.error('[digest] audit query failed:', e?.message);
+  }
+
+  // 2. Custo IA ultimas 24h (ai_usage_logs)
+  try {
+    const usageSnap = await db.collection('ai_usage_logs')
+      .where('timestamp', '>=', since)
+      .limit(10000).get();
+
+    const byUser = {};
+    usageSnap.forEach(d => {
+      const x = d.data();
+      const uid = x.userId || 'anon';
+      const cost = Number(x.totalCostUsd || x.costUsd || 0);
+      stats.aiCostTotal += cost;
+      byUser[uid] = (byUser[uid] || 0) + cost;
+    });
+    Object.entries(byUser).forEach(([uid, cost]) => {
+      if (cost > 20) stats.aiCostHigh.push({ uid, cost: cost.toFixed(2) });
+    });
+  } catch (e) {
+    console.error('[digest] usage query failed:', e?.message);
+  }
+
+  // 3. Score de risco
+  let riskScore = 0;
+  if (stats.suspiciousNewIp.length > 0) riskScore += 1 * stats.suspiciousNewIp.length;
+  if (stats.aiCostHigh.length > 0)      riskScore += 2 * stats.aiCostHigh.length;
+  if (stats.bulkDeletes > 0)            riskScore += 3 * stats.bulkDeletes;
+  if (stats.criticalEvents.length > 0)  riskScore += 5 * stats.criticalEvents.length;
+  const severity = riskScore >= 5 ? 'critical' : riskScore >= 2 ? 'warning' : 'info';
+
+  // 4. Grava digest em audit_logs (evidencia auditavel)
+  await db.collection('audit_logs').add({
+    action: 'system.security_digest',
+    target: 'last_24h',
+    stats: {
+      logins: stats.logins,
+      suspiciousNewIp: stats.suspiciousNewIp.length,
+      aiCostTotalUsd: Number(stats.aiCostTotal.toFixed(4)),
+      aiCostHighUsers: stats.aiCostHigh.length,
+      criticalEvents: stats.criticalEvents.length,
+      bulkDeletes: stats.bulkDeletes,
+      riskScore,
+    },
+    timestamp: FieldValue.serverTimestamp(),
+    severity,
+  });
+
+  // 5. Slack webhook (opcional)
+  const webhook = SIEM_SLACK_WEBHOOK.value();
+  if (webhook && webhook.startsWith('https://') && !webhook.includes('not-configured')) {
+    const lines = [
+      `*PRIMETOUR · Security Digest 24h* (risk=${riskScore} | ${severity.toUpperCase()})`,
+      `> Logins: ${stats.logins} | IP novo: ${stats.suspiciousNewIp.length} | Custo IA: $${stats.aiCostTotal.toFixed(2)} | Bulk deletes: ${stats.bulkDeletes}`,
+    ];
+    if (stats.suspiciousNewIp.length) {
+      lines.push(`*Logins de IP novo:*`);
+      stats.suspiciousNewIp.slice(0, 5).forEach(i =>
+        lines.push(`  • ${i.email} de ${i.newIp}`));
+    }
+    if (stats.aiCostHigh.length) {
+      lines.push(`*Usuarios com custo IA > $20/dia:*`);
+      stats.aiCostHigh.slice(0, 5).forEach(u =>
+        lines.push(`  • ${u.uid}: $${u.cost}`));
+    }
+    if (stats.criticalEvents.length) {
+      lines.push(`*Eventos criticos:*`);
+      stats.criticalEvents.slice(0, 5).forEach(e => lines.push(`  • ${e}`));
+    }
+
+    try {
+      await fetch(webhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: lines.join('\n') }),
+      });
+    } catch (e) {
+      console.error('[digest] slack post failed:', e?.message);
+    }
+  }
+
+  console.log('[digest] done', { riskScore, severity, ...stats });
 });
