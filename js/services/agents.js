@@ -644,6 +644,7 @@ export async function runAgent(agentId, userInput, context = {}) {
   }
 
   // Reusa chatWithAI passando systemPrompt explícito
+  // skipLog: true — agente loga abaixo com agentId, evita duplicar
   const result = await ai.chatWithAI(userInput, context, {
     moduleId: agent.module,
     provider: agent.provider,
@@ -653,6 +654,7 @@ export async function runAgent(agentId, userInput, context = {}) {
     systemPromptOverride: systemParts.join('\n\n'),
     webSearch: agent.allowWebSearch,
     allowedSites: agent.allowedSites,
+    skipLog: true,
   });
 
   // Log com agentId

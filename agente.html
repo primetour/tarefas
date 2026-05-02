@@ -451,6 +451,7 @@
         temperature: agent.limits?.temperature ?? 0.3,
         systemPromptOverride: systemPrompt,
         history,
+        skipLog: true, // agente.html loga manualmente abaixo
       });
       loading.remove();
       appendMsg('assistant', result.text || '(resposta vazia)');

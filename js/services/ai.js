@@ -1137,12 +1137,14 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
     } catch { /* fallback */ }
   }
 
-  // Log silencioso + LGPD metadata
-  logUsage({ id: 'chat', name: 'Chat Livre', module: opts.moduleId || 'general' }, {
-    ...result, provider,
-    keyScope: resolved.resolvedFrom, keyScopeLabel: resolved.label,
-    piiAnonymized: _chatPiiAnonymized, consentVersion: _chatConsentVersion,
-  }).catch(() => {});
+  // Log silencioso + LGPD metadata. Suprimido se opts.skipLog (caller já loga)
+  if (!opts.skipLog) {
+    logUsage({ id: 'chat', name: 'Chat Livre', module: opts.moduleId || 'general' }, {
+      ...result, provider,
+      keyScope: resolved.resolvedFrom, keyScopeLabel: resolved.label,
+      piiAnonymized: _chatPiiAnonymized, consentVersion: _chatConsentVersion,
+    }).catch(() => {});
+  }
 
   return { text: chatFinalText, model: result.model, provider, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
 }
