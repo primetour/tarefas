@@ -436,6 +436,7 @@ function setupRouter() {
     'integrations': async () => { await renderIntegrations(content); },
     'about':        async () => { await renderAbout(content); },
     'help':         async () => { const { renderHelp } = await import('./pages/help.js?v=20260501r'); await renderHelp(content); },
+    'ai-hub':       async () => { const { renderAiHub } = await import('./pages/aiHub.js?v=20260501t'); await renderAiHub(content); },
     'nl-performance':       async () => { await renderNlPerformance(content); },
     'meta-performance':     async () => { await renderMetaPerformance(content); },
     'ga-performance':       async () => { await renderGaPerformance(content); },

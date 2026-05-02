@@ -1043,10 +1043,19 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
   const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
   const tomorrowStr = new Date(today.getTime() + 86400000).toISOString().split('T')[0];
   const todayBR = today.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const systemParts = [
-    `Assistente IA PRIMETOUR — módulo "${moduleLabel}". Hoje: ${todayStr} (${todayBR}). Amanhã: ${tomorrowStr}.`,
-    `Responda em pt-BR, conciso (1-2 frases + ação). SEMPRE execute ações, NUNCA diga "eu faria". NUNCA invente IDs — use APENAS IDs do histórico (>>> ID_CRIADO="xxx" <<<). Se não souber o ID, faça list_ primeiro. NUNCA preencha params opcionais com valores inventados — omita-os. Formato OBRIGATÓRIO: <<<ACTION>>>{"action":"x","params":{}}<<<END_ACTION>>> — SEMPRE feche com <<<END_ACTION>>>. Pode usar MÚLTIPLOS blocos <<<ACTION>>> na mesma resposta para executar várias ações de uma vez.`,
-  ];
+  const systemParts = [];
+  if (opts.systemPromptOverride) {
+    // Agente: prompt customizado SUBSTITUI a intro padrão (mas mantém
+    // contexto de data + formato de actions abaixo)
+    systemParts.push(opts.systemPromptOverride);
+    systemParts.push(`Hoje: ${todayStr} (${todayBR}). Amanhã: ${tomorrowStr}.`);
+    systemParts.push(`Formato de ações (quando usar tools): <<<ACTION>>>{"action":"x","params":{}}<<<END_ACTION>>>. NUNCA invente IDs — use APENAS IDs do histórico ou faça list_ primeiro.`);
+  } else {
+    systemParts.push(
+      `Assistente IA PRIMETOUR — módulo "${moduleLabel}". Hoje: ${todayStr} (${todayBR}). Amanhã: ${tomorrowStr}.`,
+      `Responda em pt-BR, conciso (1-2 frases + ação). SEMPRE execute ações, NUNCA diga "eu faria". NUNCA invente IDs — use APENAS IDs do histórico (>>> ID_CRIADO="xxx" <<<). Se não souber o ID, faça list_ primeiro. NUNCA preencha params opcionais com valores inventados — omita-os. Formato OBRIGATÓRIO: <<<ACTION>>>{"action":"x","params":{}}<<<END_ACTION>>> — SEMPRE feche com <<<END_ACTION>>>. Pode usar MÚLTIPLOS blocos <<<ACTION>>> na mesma resposta para executar várias ações de uma vez.`,
+    );
+  }
 
   // Orientações específicas por módulo — carregadas do Firestore com fallback para DEFAULT_MODULE_HINTS.
   // Gerenciadas pela aba "Prompts por Módulo" na página IA Skills.

@@ -606,6 +606,27 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── AI Agents (IA Hub - novo modelo unificado) ──────────
+    // Leitura: todos autenticados (botões na página dependem)
+    // Escrita: admin/master only
+    match /ai_agents/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
+    // Backups imutáveis da migração legado → agents
+    // Append-only via service; admin pode ler pra restaurar
+    match /ai_skills_archive/{docId} {
+      allow read:   if isAuth() && isAdmin();
+      allow create: if isAuth() && isAdmin();
+      allow update, delete: if false;
+    }
+    match /ai_automations_archive/{docId} {
+      allow read:   if isAuth() && isAdmin();
+      allow create: if isAuth() && isAdmin();
+      allow update, delete: if false;
+    }
+
     // ── AI Action Logs (ações executadas pelo assistente) ────
     match /ai_action_logs/{docId} {
       allow read:   if isAuth() && isAdmin();
