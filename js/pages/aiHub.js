@@ -20,7 +20,7 @@ import {
   deleteAgent, toggleAgent, uploadAgentAvatar, runAgent,
   migrateLegacyToAgents, purgeLegacyCollections,
   AGENT_DEFAULTS,
-} from '../services/agents.js?v=20260501z';
+} from '../services/agents.js?v=20260501aa';
 import {
   AI_PROVIDERS, AI_MODELS, getModelsForProvider, MODULE_REGISTRY,
   fetchKnowledge, createKnowledgeDoc, updateKnowledgeDoc, deleteKnowledgeDoc,
@@ -232,6 +232,7 @@ async function openAgentEditor(agentId) {
             { id:'tools',     label:'Tools',       icon:'⚙' },
             { id:'limits',    label:'Limites',     icon:'⏱' },
             { id:'triggers',  label:'Triggers',    icon:'⚡' },
+            { id:'site',      label:'Site público',icon:'🌐' },
             { id:'visibility',label:'Visibilidade',icon:'◎' },
           ].map(st => `
             <button class="agent-subtab" data-subtab="${st.id}" style="display:block;width:100%;text-align:left;
@@ -305,6 +306,7 @@ async function openAgentEditor(agentId) {
     else if (activeSubTab === 'tools')  el.innerHTML = subTabTools(agent);
     else if (activeSubTab === 'limits') el.innerHTML = subTabLimits(agent);
     else if (activeSubTab === 'triggers') el.innerHTML = subTabTriggers(agent);
+    else if (activeSubTab === 'site') el.innerHTML = subTabSite(agent);
     else if (activeSubTab === 'visibility') el.innerHTML = subTabVisibility(agent);
 
     // Bind specifics
@@ -314,6 +316,40 @@ async function openAgentEditor(agentId) {
     bindAllowedSitesEditor(agent);
     bindToolToggles(agent);
     bindFewShotEditor(agent);
+    bindSiteEditor(agent);
+  }
+
+  function bindSiteEditor(a) {
+    a.site = a.site || {};
+    document.getElementById('a-site-prompt-add')?.addEventListener('click', () => {
+      a.site.suggestedPrompts = a.site.suggestedPrompts || [];
+      a.site.suggestedPrompts.push('');
+      renderSubTab();
+    });
+    document.querySelectorAll('.a-site-prompt-del').forEach(btn =>
+      btn.addEventListener('click', () => {
+        a.site.suggestedPrompts.splice(parseInt(btn.dataset.i), 1);
+        renderSubTab();
+      }));
+    document.querySelectorAll('.a-site-prompt-input').forEach(inp =>
+      inp.addEventListener('input', (e) => {
+        a.site.suggestedPrompts[parseInt(inp.dataset.i)] = e.target.value;
+      }));
+    document.getElementById('a-site-copy-url')?.addEventListener('click', () => {
+      const slug = a.triggers?.publicChat?.slug || '';
+      const url = slug
+        ? `${location.origin}/tarefas/agente.html?slug=${encodeURIComponent(slug)}`
+        : `${location.origin}/tarefas/agente.html?id=${a.id}`;
+      navigator.clipboard?.writeText(url).then(() => toast.success('URL copiada.'));
+    });
+    document.getElementById('a-site-copy-embed')?.addEventListener('click', () => {
+      const slug = a.triggers?.publicChat?.slug || '';
+      const url = slug
+        ? `${location.origin}/tarefas/agente.html?slug=${encodeURIComponent(slug)}`
+        : `${location.origin}/tarefas/agente.html?id=${a.id}`;
+      const code = `<iframe src="${url}" width="100%" height="700" frameborder="0" allow="microphone"></iframe>`;
+      navigator.clipboard?.writeText(code).then(() => toast.success('Embed copiado.'));
+    });
   }
 
   function bindFewShotEditor(a) {
@@ -401,6 +437,15 @@ async function openAgentEditor(agentId) {
 
     if ($('a-vis-mode')) agent.visibility.mode = v('a-vis-mode', agent.visibility.mode);
     if ($('a-vis-value')) agent.visibility.value = v('a-vis-value', agent.visibility.value);
+
+    // Site público
+    agent.site = agent.site || {};
+    if ($('a-site-welcome'))  agent.site.welcomeMessage = v('a-site-welcome', agent.site.welcomeMessage);
+    if ($('a-site-tagline'))  agent.site.tagline        = v('a-site-tagline', agent.site.tagline);
+    if ($('a-site-color'))    agent.site.brandColor     = v('a-site-color', agent.site.brandColor);
+    if ($('a-site-footer'))   agent.site.footerText     = v('a-site-footer', agent.site.footerText);
+    if ($('a-site-show-avatar'))  agent.site.showAvatar  = c('a-site-show-avatar');
+    if ($('a-site-show-branding'))agent.site.showBranding = c('a-site-show-branding');
   }
 
   function bindModelDropdown() {
@@ -880,6 +925,100 @@ function subTabTriggers(a) {
       <small style="color:var(--text-muted);font-size:0.6875rem;display:block;margin-top:6px;">
         Disponibiliza o agente como chat livre num link compartilhável (Fase 3).
       </small>
+    </div>
+  `;
+}
+
+function subTabSite(a) {
+  const s = a.site || {};
+  const prompts = s.suggestedPrompts || [];
+  const slug = a.triggers?.publicChat?.slug || '';
+  const publicUrl = slug
+    ? `${location.origin}/tarefas/agente.html?slug=${encodeURIComponent(slug)}`
+    : `${location.origin}/tarefas/agente.html?id=${a.id || '<id>'}`;
+  const embedCode = `<iframe src="${publicUrl}" width="100%" height="700" frameborder="0" allow="microphone"></iframe>`;
+
+  const isPublicEnabled = a.triggers?.publicChat?.enabled;
+
+  return `
+    <h3 style="margin:0 0 12px;font-size:1.0625rem;">Site público do agente</h3>
+    <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 14px;">
+      Cada agente pode ter uma página pública em formato microsite (hero + descrição +
+      prompts sugeridos + chat). Ative em <strong>Triggers → Página de chat pública</strong>
+      e configure aqui a aparência/conteúdo.
+    </p>
+
+    ${!isPublicEnabled ? `
+      <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);
+        padding:12px;border-radius:6px;margin-bottom:14px;font-size:0.8125rem;color:var(--text-secondary);">
+        ⚠ <strong>Página pública desabilitada.</strong>
+        Vá em <strong>Triggers</strong>, marque "🌐 Página de chat pública" e defina um slug.
+      </div>
+    ` : `
+      <div style="background:var(--bg-surface);padding:12px;border-radius:6px;margin-bottom:14px;font-size:0.8125rem;">
+        <div style="font-weight:600;margin-bottom:6px;">🔗 URL do site:</div>
+        <code style="font-size:0.75rem;word-break:break-all;color:var(--brand-gold);">${esc(publicUrl)}</code>
+        <div style="margin-top:8px;display:flex;gap:6px;">
+          <a href="${esc(publicUrl)}" target="_blank" class="btn btn-primary btn-sm">⤢ Abrir</a>
+          <button class="btn btn-secondary btn-sm" id="a-site-copy-url">📋 Copiar URL</button>
+          <button class="btn btn-secondary btn-sm" id="a-site-copy-embed">&lt;&gt; Copiar embed</button>
+        </div>
+      </div>
+    `}
+
+    <div class="form-group">
+      <label class="form-label">Mensagem de boas-vindas (mostrada no topo do chat)</label>
+      <textarea id="a-site-welcome" class="form-textarea" rows="2"
+        placeholder="Ex: Olá! Sou ${esc(a.name||'o agente')}. Posso te ajudar a planejar viagens, criar conteúdo etc.">${esc(s.welcomeMessage||'')}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Tagline (subtítulo do hero)</label>
+      <input type="text" id="a-site-tagline" class="form-input" value="${esc(s.tagline||'')}"
+        placeholder="Ex: Seu assistente de viagens 24/7" />
+    </div>
+
+    <h4 style="font-size:0.875rem;margin:18px 0 8px;display:flex;justify-content:space-between;align-items:center;">
+      Prompts sugeridos (botões clicáveis)
+      <button class="btn btn-secondary btn-sm" id="a-site-prompt-add">+ Adicionar</button>
+    </h4>
+    <p style="font-size:0.6875rem;color:var(--text-muted);margin:0 0 8px;">
+      Aparecem como botões abaixo da descrição. Click do user envia o prompt automaticamente.
+    </p>
+    <div id="a-site-prompts" style="display:flex;flex-direction:column;gap:6px;">
+      ${prompts.length === 0 ? '<p style="font-size:0.75rem;color:var(--text-muted);text-align:center;padding:10px;border:1px dashed var(--border-subtle);border-radius:6px;">Nenhum prompt sugerido. Click + Adicionar.</p>'
+        : prompts.map((p, i) => `
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input type="text" class="form-input a-site-prompt-input" data-i="${i}"
+              value="${esc(p)}" placeholder="Ex: Como cancelar minha reserva?" style="flex:1;font-size:0.8125rem;" />
+            <button class="btn btn-ghost btn-sm a-site-prompt-del" data-i="${i}" style="color:#EF4444;">✕</button>
+          </div>
+        `).join('')}
+    </div>
+
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:12px;margin-top:18px;">
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">Cor primária</label>
+        <input type="color" id="a-site-color" class="form-input" value="${esc(s.brandColor||'#2563EB')}"
+          style="height:42px;cursor:pointer;" />
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">Texto do rodapé</label>
+        <input type="text" id="a-site-footer" class="form-input" value="${esc(s.footerText||'Powered by PRIMETOUR')}" />
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:14px;">
+      <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg-surface);border-radius:6px;">
+        <input type="checkbox" id="a-site-show-avatar" ${s.showAvatar!==false?'checked':''} />
+        <span>Mostrar avatar no hero</span>
+      </label>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg-surface);border-radius:6px;">
+        <input type="checkbox" id="a-site-show-branding" ${s.showBranding!==false?'checked':''} />
+        <span>Mostrar branding "Powered by PRIMETOUR" no rodapé</span>
+      </label>
     </div>
   `;
 }

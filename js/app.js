@@ -392,7 +392,7 @@ function mountShell(root) {
     // Start deadline check scheduler
     startScheduler();
     // Scheduler de agents (Fase 5 IA Hub) — substitui aiAutomations legado
-    import('./services/agentScheduler.js?v=20260501z').then(m => m.startAgentScheduler()).catch(() => {});
+    import('./services/agentScheduler.js?v=20260501aa').then(m => m.startAgentScheduler()).catch(() => {});
   }
 }
 
@@ -544,7 +544,7 @@ function setupRouter() {
     // ── Monta botões de agentes IA no header da página ──
     setTimeout(async () => {
       try {
-        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501z');
+        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501aa');
         await mountAgentsForRoute(route);
       } catch (e) { console.warn('[agents] mount err:', e?.message); }
     }, 600); // delay pra header já ter renderizado

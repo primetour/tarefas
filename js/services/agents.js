@@ -114,6 +114,16 @@ export const AGENT_DEFAULTS = {
     publicChat:{ enabled: false, slug: '' },
   },
   visibility: { mode: 'all', value: '' },
+  // Site público (microsite) — ativo quando triggers.publicChat.enabled
+  site: {
+    welcomeMessage: '',           // mensagem inicial mostrada antes do chat
+    suggestedPrompts: [],         // ["Como faço X?", "Me ajude com Y"]
+    brandColor: '#2563EB',        // cor primária (botões, accent)
+    tagline: '',                  // subtítulo no hero
+    footerText: 'Powered by PRIMETOUR',
+    showAvatar: true,
+    showBranding: true,
+  },
 };
 
 /* ─── R2 (avatar upload) ────────────────────────────────── */
