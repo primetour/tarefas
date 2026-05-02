@@ -71,6 +71,7 @@ const NAV_GROUPS = [
       { route: 'audit',      icon: '◌',  label: 'Auditoria',         perm: 'system_manage_settings' },
       { route: 'settings',   icon: '⚙',  label: 'Configurações',     perm: 'system_manage_settings' },
       { route: 'about',      icon: '◎',  label: 'Sobre o sistema',   perm: 'system_manage_users' },
+      { route: 'help',       icon: '?',  label: 'Ajuda',             perm: null }, // todos
     ]
   }
 ];

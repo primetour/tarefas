@@ -408,6 +408,7 @@ export async function updateUserProfile(uid, data) {
     'name', 'department', 'phone', 'jobTitle', 'bio',
     'avatarColor', 'prefs', 'firstLogin',
     'admissionDate', 'hireDate',  // data de admissão pra cálculo de férias
+    'toursCompleted',             // tours guiados que o user já fez
   ];
   const adminFields = [
     'role', 'roleId', 'active',

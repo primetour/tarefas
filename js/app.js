@@ -151,6 +151,14 @@ function renderApp(root) {
 
   // Pop-up de início de ponto (somente analista, uma vez por sessão)
   setTimeout(() => maybeShowClockStartPrompt().catch(()=>{}), 1500);
+
+  // Tour de boas-vindas (se ainda não fez)
+  setTimeout(async () => {
+    try {
+      const { maybeStartWelcomeTour } = await import('./services/tours.js?v=20260501r');
+      maybeStartWelcomeTour();
+    } catch {}
+  }, 2200);
 }
 
 /* ─── Tela: sem workspace ────────────────────────────────── */
@@ -427,6 +435,7 @@ function setupRouter() {
     'roteiro-dashboard': async () => { destroyRoteiroDashboard(); await renderRoteiroDashboard(content); },
     'integrations': async () => { await renderIntegrations(content); },
     'about':        async () => { await renderAbout(content); },
+    'help':         async () => { const { renderHelp } = await import('./pages/help.js?v=20260501r'); await renderHelp(content); },
     'nl-performance':       async () => { await renderNlPerformance(content); },
     'meta-performance':     async () => { await renderMetaPerformance(content); },
     'ga-performance':       async () => { await renderGaPerformance(content); },
@@ -524,6 +533,12 @@ function setupRouter() {
   router.afterNavigation(async (route) => {
     header?.update?.();
     sidebar?.setActive?.(route);
+
+    // ── Auto-trigger de tour por módulo (só na 1ª visita) ──
+    try {
+      const { maybeStartModuleTour } = await import('./services/tours.js?v=20260501r');
+      maybeStartModuleTour(route);
+    } catch {}
 
     // ── Auto-mount AI Panel ──────────────────────────────────
     // Mapa: rota do sistema → moduleId do MODULE_REGISTRY (ai.js)
