@@ -990,6 +990,52 @@ export async function runSkill(skillId, context = {}) {
  * @param {Object} [opts] — { moduleId, history[] }
  */
 export async function chatWithAI(userMessage, context = {}, opts = {}) {
+  // ── SECURITY: Tenta Cloud Function PRIMEIRO (keys server-side) ──
+  // Se não estiver deployed/disponível, fallback ao client legado.
+  // Sprint 1: ambos coexistem. Sprint 2: remove fallback legado.
+  if (!opts.skipSecure) {
+    try {
+      const { callLLMSecure, areFunctionsAvailable } = await import('./aiSecure.js');
+      const available = await areFunctionsAvailable();
+      if (available) {
+        // Pré-validação consentimento + anonimização (mesmo via secure)
+        const { checkConsent, shouldAnonymize, anonymizeContext, anonymizeText }
+          = await import('./aiDataGuard.js');
+        const consent = await checkConsent();
+        if (!consent.consented) throw new Error('AI_CONSENT_REQUIRED');
+        const moduleId = opts.moduleId || 'general';
+        let safeMsg = userMessage;
+        let safeCtx = context;
+        if (await shouldAnonymize(moduleId)) {
+          safeMsg = anonymizeText(userMessage).anonymized;
+          safeCtx = anonymizeContext(context, moduleId).anonymized;
+        }
+        const systemFinal = opts.systemPromptOverride
+          || `Assistente IA PRIMETOUR — módulo ${moduleId}. Responda em pt-BR, conciso.`
+            + (Object.keys(safeCtx || {}).length ? `\n\nCONTEXTO: ${JSON.stringify(safeCtx)}` : '');
+        const result = await callLLMSecure({
+          provider: opts.provider || 'gemini',
+          model: opts.model,
+          systemPrompt: systemFinal,
+          userMessage: safeMsg,
+          history: opts.history || [],
+          maxTokens: opts.maxTokens || 2048,
+          temperature: opts.temperature ?? 0.3,
+          agentId: opts.agentId, agentName: opts.agentName,
+          agentDailyCapUsd: opts.agentDailyCapUsd || 5,
+          module: moduleId,
+          source: opts.source || 'chatWithAI',
+        });
+        return { ...result, isMock: false, secured: true };
+      }
+    } catch (e) {
+      if (e.message === 'AI_CONSENT_REQUIRED') throw e;
+      // Outros erros → tenta legacy fallback
+      console.warn('[ai] Cloud Function falhou, fallback legacy:', e.message);
+    }
+  }
+
+  // ─── LEGACY (será removido na Sprint 2) ───
   let config = await getAIConfig() || {};
   const provider = opts.provider || config?.provider || 'gemini';
 
