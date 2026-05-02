@@ -20,7 +20,7 @@ import {
   deleteAgent, toggleAgent, uploadAgentAvatar, runAgent,
   migrateLegacyToAgents, purgeLegacyCollections,
   AGENT_DEFAULTS,
-} from '../services/agents.js?v=20260501y';
+} from '../services/agents.js?v=20260501z';
 import {
   AI_PROVIDERS, AI_MODELS, getModelsForProvider, MODULE_REGISTRY,
   fetchKnowledge, createKnowledgeDoc, updateKnowledgeDoc, deleteKnowledgeDoc,
@@ -57,6 +57,7 @@ export async function renderAiHub(container) {
       ${[
         { id:'agents',     label:'Agentes',      icon:'◈' },
         { id:'apikeys',    label:'API Keys',     icon:'⚿' },
+        { id:'connections',label:'Conexões',     icon:'🔌' },
         { id:'knowledge',  label:'Conhecimento', icon:'📚' },
         { id:'logs',       label:'Logs',         icon:'⌚' },
         { id:'costs',      label:'Custos',       icon:'$' },
@@ -99,6 +100,7 @@ function loadTab() {
   el.innerHTML = '<div class="chart-loading"><div class="chart-loading-spinner"></div></div>';
   if (_activeTab === 'agents')         renderAgentsTab(el);
   else if (_activeTab === 'apikeys')   renderApiKeysTab(el);
+  else if (_activeTab === 'connections') renderConnectionsTab(el);
   else if (_activeTab === 'knowledge') renderKnowledgeTab(el);
   else if (_activeTab === 'logs')      renderLogsTab(el);
   else if (_activeTab === 'costs')     renderCostsTab(el);
@@ -465,6 +467,64 @@ async function openAgentEditor(agentId) {
           a.knowledgeIds = a.knowledgeIds.filter(x => x !== id);
         }
       }));
+    // Google Drive Picker (lista pasta raiz e copia ID)
+    document.querySelectorAll('.a-kb-gdrive-pick').forEach(btn =>
+      btn.addEventListener('click', async () => {
+        try {
+          const gd = await import('../services/googleDrive.js');
+          if (!gd.isGoogleConnected()) {
+            await gd.signInWithGoogle();
+          }
+          const files = await gd.listDriveFiles('root', { limit: 50 });
+          // Modal simples de seleção
+          const folders = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+          const docs = files.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
+          const html = `
+            <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 12px;">
+              Click numa pasta ou arquivo pra usar como knowledge source. Ou cole o ID manualmente.
+            </p>
+            ${folders.length ? `<h4 style="font-size:0.75rem;margin:0 0 6px;">📁 PASTAS</h4>
+              <div style="max-height:200px;overflow:auto;">${folders.map(f => `
+                <div class="gd-pick-item" data-id="${esc(f.id)}" data-name="${esc(f.name)}" data-folder="1"
+                  style="padding:6px 10px;cursor:pointer;border-radius:4px;font-size:0.8125rem;"
+                  onmouseover="this.style.background='var(--bg-surface)'"
+                  onmouseout="this.style.background=''">📁 ${esc(f.name)}</div>
+              `).join('')}</div>` : ''}
+            ${docs.length ? `<h4 style="font-size:0.75rem;margin:14px 0 6px;">📄 ARQUIVOS</h4>
+              <div style="max-height:200px;overflow:auto;">${docs.slice(0,30).map(f => `
+                <div class="gd-pick-item" data-id="${esc(f.id)}" data-name="${esc(f.name)}" data-mime="${esc(f.mimeType)}"
+                  style="padding:6px 10px;cursor:pointer;border-radius:4px;font-size:0.8125rem;"
+                  onmouseover="this.style.background='var(--bg-surface)'"
+                  onmouseout="this.style.background=''">📄 ${esc(f.name)} <small style="color:var(--text-muted);">(${f.mimeType.split('.').pop()})</small></div>
+              `).join('')}</div>` : ''}
+          `;
+          modal.open({
+            title: '📁 Escolher do Google Drive',
+            size: 'md',
+            content: html,
+            footer: [{ label: 'Fechar', class: 'btn-secondary' }],
+          });
+          setTimeout(() => {
+            document.querySelectorAll('.gd-pick-item').forEach(el =>
+              el.addEventListener('click', () => {
+                const i = parseInt(btn.dataset.i);
+                if (el.dataset.folder) {
+                  a.knowledgeSources[i].folderId = el.dataset.id;
+                  a.knowledgeSources[i].fileName = el.dataset.name;
+                  delete a.knowledgeSources[i].fileId;
+                } else {
+                  a.knowledgeSources[i].fileId = el.dataset.id;
+                  a.knowledgeSources[i].fileName = el.dataset.name;
+                  a.knowledgeSources[i].mimeType = el.dataset.mime;
+                  delete a.knowledgeSources[i].folderId;
+                }
+                modal.close();
+                renderSubTab();
+                toast.success(`Selecionado: ${el.dataset.name}`);
+              }));
+          }, 80);
+        } catch (e) { toast.error(e.message); }
+      }));
   }
 
   function bindAllowedSitesEditor(a) {
@@ -642,13 +702,23 @@ function subTabKnowledge(a, allKnowledge) {
               <option value="url"        ${s.type==='url'?'selected':''}>🔗 URL</option>
               <option value="r2"         ${s.type==='r2'?'selected':''}>☁ R2 path</option>
               <option value="sharepoint" ${s.type==='sharepoint'?'selected':''}>Ⓜ SharePoint</option>
+              <option value="gdrive"     ${s.type==='gdrive'?'selected':''}>📁 Google Drive</option>
             </select>
             ${s.type === 'url' ? `<input type="url" class="a-kb-source-input form-input" data-i="${i}" data-field="url"
               value="${esc(s.url||'')}" placeholder="https://..." style="flex:1;font-size:0.8125rem;" />`
             : s.type === 'r2' ? `<input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="path"
               value="${esc(s.path||'')}" placeholder="docs/sla/" style="flex:1;font-size:0.8125rem;" />`
-            : `<input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="folder"
-              value="${esc(s.folder||'')}" placeholder="Procedimentos > Marketing" style="flex:1;font-size:0.8125rem;" />`}
+            : s.type === 'gdrive' ? `<input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="folderId"
+                value="${esc(s.folderId || s.fileId || '')}" placeholder="ID da pasta ou arquivo (do Drive URL)" style="flex:1;font-size:0.8125rem;font-family:monospace;" />
+              <button class="btn btn-secondary btn-sm a-kb-gdrive-pick" data-i="${i}" title="Escolher do Drive" style="font-size:0.75rem;">📁 Picker</button>`
+            : `<div style="display:flex;flex-direction:column;gap:4px;flex:1;">
+                <input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="siteId"
+                  value="${esc(s.siteId||'')}" placeholder="Site ID (Graph)" style="font-size:0.75rem;font-family:monospace;" />
+                <input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="driveId"
+                  value="${esc(s.driveId||'')}" placeholder="Drive ID" style="font-size:0.75rem;font-family:monospace;" />
+                <input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="folderPath"
+                  value="${esc(s.folderPath||s.folder||'')}" placeholder="Caminho da pasta (opcional)" style="font-size:0.75rem;" />
+              </div>`}
             <button class="btn btn-ghost btn-sm a-kb-source-remove" data-i="${i}" title="Remover">✕</button>
           </div>
         `).join('')}
@@ -1488,4 +1558,192 @@ function renderMigrationTab(container) {
       purgeBtn.disabled = false; purgeBtn.textContent = '🗑 Apagar legado';
     }
   });
+}
+
+/* ═══════════════════════════════════════════════════════════
+ * TAB: CONEXÕES (Microsoft 365 / Google Drive / outros)
+ * ═══════════════════════════════════════════════════════════ */
+async function renderConnectionsTab(container) {
+  const { store } = await import('../store.js');
+  const gd = await import('../services/googleDrive.js');
+
+  function paint() {
+    const msToken    = store.get('msAccessToken');
+    const msExpires  = store.get('msAccessTokenExpiresAt') || 0;
+    const msActive   = msToken && Date.now() < msExpires;
+    const msExpiresIn = msActive ? Math.round((msExpires - Date.now()) / 60000) : 0;
+
+    const gToken = gd.getStoredGoogleToken();
+    const gActive = !!gToken;
+    const clientId = gd.getGoogleClientId();
+    const hasGoogleClientId = clientId && !clientId.includes('PLACEHOLDER');
+
+    container.innerHTML = `
+      <p style="color:var(--text-muted);font-size:0.8125rem;margin-bottom:16px;">
+        Plataformas externas que os agentes podem ler como base de conhecimento.
+        Tokens vivem na sessão (sobrevivem reload, expiram em logout).
+      </p>
+
+      <!-- Microsoft 365 / SharePoint / OneDrive -->
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Ⓜ Microsoft 365 (SharePoint + OneDrive)</div>
+            <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
+              Token capturado automaticamente quando você loga via SSO Microsoft.
+            </div>
+          </div>
+          ${msActive
+            ? `<span style="font-size:0.8125rem;color:#22C55E;font-weight:600;">✓ Conectado · expira em ${msExpiresIn}min</span>`
+            : `<span style="font-size:0.8125rem;color:#F59E0B;font-weight:600;">⚠ Não conectado</span>`}
+        </div>
+        <div class="card-body">
+          ${msActive ? `
+            <p style="font-size:0.8125rem;color:var(--text-secondary);margin:0 0 12px;">
+              Os agentes podem ler:
+              SharePoint sites · OneDrive · pastas e arquivos (.txt, .md, .json, .csv, .html).
+            </p>
+            <button class="btn btn-secondary btn-sm" id="ms-test">▶ Testar acesso (lista sites)</button>
+            <div id="ms-test-result" style="margin-top:10px;"></div>
+          ` : `
+            <p style="font-size:0.8125rem;color:var(--text-secondary);margin:0 0 12px;">
+              Faça <strong>logout e login novamente</strong> com SSO Microsoft pra capturar permissões
+              <code>Files.Read.All</code> e <code>Sites.Read.All</code>.
+              Se já estiver logado mas não tiver token, é porque foi antes da atualização.
+            </p>
+          `}
+        </div>
+      </div>
+
+      <!-- Google Drive -->
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📁 Google Drive</div>
+            <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
+              Conexão OAuth2 com sua conta Google. Suporta Docs, Sheets, Slides, txt, md.
+            </div>
+          </div>
+          ${gActive
+            ? `<span style="font-size:0.8125rem;color:#22C55E;font-weight:600;">✓ Conectado</span>`
+            : `<span style="font-size:0.8125rem;color:#9CA3AF;font-weight:600;">— Não conectado</span>`}
+        </div>
+        <div class="card-body">
+          ${!hasGoogleClientId ? `
+            <div style="background:rgba(245,158,11,0.08);padding:12px;border-radius:6px;margin-bottom:12px;font-size:0.8125rem;">
+              <strong>⚠ Configuração necessária:</strong> admin precisa criar um
+              <strong>OAuth Client ID</strong> no Google Cloud Console:
+              <ol style="margin:8px 0 0 20px;line-height:1.6;">
+                <li>Acesse <a href="https://console.cloud.google.com/apis/credentials" target="_blank">console.cloud.google.com/apis/credentials</a></li>
+                <li>Habilite <strong>Google Drive API</strong> no projeto</li>
+                <li>Criar Credentials → OAuth Client ID → Web application</li>
+                <li>Authorized JS origins: <code>https://primetour.github.io</code></li>
+                <li>Cole o Client ID abaixo:</li>
+              </ol>
+              <div style="display:flex;gap:6px;margin-top:10px;">
+                <input type="text" id="gd-client-id" class="form-input" placeholder="123456-xxx.apps.googleusercontent.com" style="flex:1;font-size:0.75rem;font-family:monospace;" />
+                <button class="btn btn-primary btn-sm" id="gd-save-id">Salvar</button>
+              </div>
+            </div>
+          ` : `
+            <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 8px;">
+              Client ID: <code style="font-size:0.6875rem;">${esc(clientId.split('-')[0])}-...</code>
+              <button class="btn btn-ghost btn-sm" id="gd-change-id" style="font-size:0.75rem;margin-left:6px;">trocar</button>
+            </p>
+          `}
+          <div style="display:flex;gap:6px;">
+            ${gActive ? `
+              <button class="btn btn-secondary btn-sm" id="gd-test">▶ Testar (lista pasta raiz)</button>
+              <button class="btn btn-ghost btn-sm" id="gd-disconnect" style="color:#EF4444;">✕ Desconectar</button>
+            ` : `
+              <button class="btn btn-primary btn-sm" id="gd-connect" ${!hasGoogleClientId?'disabled':''}>🔐 Conectar Google</button>
+            `}
+          </div>
+          <div id="gd-test-result" style="margin-top:10px;"></div>
+        </div>
+      </div>
+
+      <!-- Próximas (placeholder informativo) -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🚧 Em planejamento</div>
+        </div>
+        <div class="card-body">
+          <ul style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.8;margin:0;padding-left:20px;">
+            <li><strong>Notion</strong> — via Integration API (token de Integração interna)</li>
+            <li><strong>Dropbox</strong> — OAuth2</li>
+            <li><strong>Confluence</strong> — API key + space</li>
+            <li><strong>GitHub</strong> — leitura de READMEs/docs de repos</li>
+            <li><strong>Webhook genérico</strong> — qualquer endpoint REST que retorne texto/JSON</li>
+          </ul>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:10px 0 0;">
+            Dá pra adicionar qualquer fonte custom usando o tipo <strong>URL</strong> em Knowledge Sources do agente
+            (busca conteúdo via fetch + strip HTML).
+          </p>
+        </div>
+      </div>
+    `;
+
+    // Bindings
+    document.getElementById('ms-test')?.addEventListener('click', async () => {
+      const out = document.getElementById('ms-test-result');
+      out.innerHTML = '<small style="color:var(--text-muted);">⏳ Listando sites...</small>';
+      try {
+        const r = await fetch('https://graph.microsoft.com/v1.0/sites?search=*&$top=10',
+          { headers: { Authorization: `Bearer ${msToken}` } });
+        if (!r.ok) throw new Error(`Graph ${r.status}`);
+        const data = await r.json();
+        const sites = data.value || [];
+        out.innerHTML = `<div style="background:var(--bg-surface);padding:10px;border-radius:6px;font-size:0.75rem;">
+          <strong>${sites.length} site(s) encontrado(s):</strong>
+          <ul style="margin:6px 0 0 18px;">${sites.slice(0,10).map(s => `<li>${esc(s.displayName||s.name||s.id)} <code style="font-size:0.6875rem;color:var(--text-muted);">${esc((s.id||'').slice(0,30))}...</code></li>`).join('')}</ul>
+        </div>`;
+      } catch (e) {
+        out.innerHTML = `<small style="color:#EF4444;">Erro: ${esc(e.message)}</small>`;
+      }
+    });
+
+    document.getElementById('gd-save-id')?.addEventListener('click', () => {
+      try {
+        const id = document.getElementById('gd-client-id').value.trim();
+        gd.setGoogleClientId(id);
+        toast.success('Client ID salvo. Recarregue pra usar.');
+        setTimeout(paint, 600);
+      } catch (e) { toast.error(e.message); }
+    });
+    document.getElementById('gd-change-id')?.addEventListener('click', () => {
+      if (!confirm('Trocar Client ID? Você precisará reconectar.')) return;
+      try { localStorage.removeItem('google-client-id'); } catch {}
+      gd.clearGoogleToken();
+      paint();
+    });
+    document.getElementById('gd-connect')?.addEventListener('click', async () => {
+      try {
+        await gd.signInWithGoogle();
+        toast.success('Google Drive conectado.');
+        paint();
+      } catch (e) { toast.error(e.message); }
+    });
+    document.getElementById('gd-disconnect')?.addEventListener('click', () => {
+      gd.clearGoogleToken();
+      toast.info('Desconectado.');
+      paint();
+    });
+    document.getElementById('gd-test')?.addEventListener('click', async () => {
+      const out = document.getElementById('gd-test-result');
+      out.innerHTML = '<small style="color:var(--text-muted);">⏳ Listando arquivos...</small>';
+      try {
+        const files = await gd.listDriveFiles('root', { limit: 10 });
+        const info = await gd.getUserInfo();
+        out.innerHTML = `<div style="background:var(--bg-surface);padding:10px;border-radius:6px;font-size:0.75rem;">
+          <strong>Conta:</strong> ${esc(info?.email || '?')}<br>
+          <strong>${files.length} arquivo(s) na raiz:</strong>
+          <ul style="margin:6px 0 0 18px;">${files.slice(0,10).map(f => `<li>${esc(f.name)} <small style="color:var(--text-muted);">(${esc(f.mimeType.split('.').pop())})</small></li>`).join('')}</ul>
+        </div>`;
+      } catch (e) {
+        out.innerHTML = `<small style="color:#EF4444;">Erro: ${esc(e.message)}</small>`;
+      }
+    });
+  }
+  paint();
 }

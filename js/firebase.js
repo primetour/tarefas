@@ -38,6 +38,9 @@ microsoftProvider.setCustomParameters({
   login_hint: '',                 // Não sugere conta anterior
 });
 microsoftProvider.addScope('user.read');
+// Scopes adicionais pra IA Hub poder ler conhecimento do SharePoint/OneDrive
+microsoftProvider.addScope('Files.Read.All');
+microsoftProvider.addScope('Sites.Read.All');
 
 // ─── Serviços exportados ───────────────────────────────────
 export const auth          = getAuth(app);

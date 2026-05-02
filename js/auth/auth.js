@@ -45,6 +45,19 @@ export function initAuthObserver(onReady) {
     if (!readyCalled) { readyCalled = true; onReady && onReady(); }
   };
 
+  // Restaura access token Microsoft (SharePoint/OneDrive) do sessionStorage
+  try {
+    const t = sessionStorage.getItem('ms-access-token');
+    const exp = parseInt(sessionStorage.getItem('ms-token-expires') || '0');
+    if (t && exp && Date.now() < exp) {
+      store.set('msAccessToken', t);
+      store.set('msAccessTokenExpiresAt', exp);
+    } else if (t) {
+      sessionStorage.removeItem('ms-access-token');
+      sessionStorage.removeItem('ms-token-expires');
+    }
+  } catch {}
+
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       try {
@@ -252,6 +265,22 @@ export async function signInWithMicrosoft() {
       await firebaseSignOut(auth);
       throw new Error('SSO restrito a contas @primetour.com.br');
     }
+
+    // Captura access token Microsoft pra usar em SharePoint/OneDrive
+    // (precisa pra IA Hub agentes lerem knowledge desses serviços)
+    try {
+      const credential = OAuthProvider.credentialFromResult(result);
+      const accessToken = credential?.accessToken;
+      if (accessToken) {
+        store.set('msAccessToken', accessToken);
+        // Persiste em sessionStorage pra não perder ao recarregar
+        try { sessionStorage.setItem('ms-access-token', accessToken); } catch {}
+        // Salva expiração (~1h) pra refresh proativo
+        const expiresAt = Date.now() + 50 * 60 * 1000;
+        store.set('msAccessTokenExpiresAt', expiresAt);
+        try { sessionStorage.setItem('ms-token-expires', String(expiresAt)); } catch {}
+      }
+    } catch (e) { console.warn('[auth] MS token capture err:', e?.message); }
 
     // O initAuthObserver cuida do resto (auto-provisioning + carregamento de perfil)
     return result.user;

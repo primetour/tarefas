@@ -532,27 +532,81 @@ async function _fetchR2(path) {
 }
 
 async function _fetchSharePoint(source) {
-  // SharePoint via Graph API: requer access token Microsoft do SSO
-  // que está em store.get('msAccessToken') (a setar em auth.js)
+  // SharePoint/OneDrive via Graph API. Token capturado pelo SSO Microsoft
+  // (auth.js → signInWithMicrosoft com scopes Files.Read.All + Sites.Read.All)
   const token = store.get('msAccessToken');
-  if (!token) return `[SharePoint: token Microsoft não disponível — refaça login com SSO]`;
-  if (!source.siteId || !source.libraryId) return `[SharePoint: siteId/libraryId não configurados]`;
+  if (!token) return `[SharePoint: token Microsoft não disponível — faça logout/login com SSO Microsoft pra capturar permissões]`;
+
   try {
-    // Lista arquivos da pasta
-    const url = `https://graph.microsoft.com/v1.0/sites/${source.siteId}/drives/${source.libraryId}/root:/${encodeURIComponent(source.folder||'')}:/children`;
+    let url;
+    if (source.fileId) {
+      // Arquivo único (preferido — mais rápido que listar pasta)
+      url = `https://graph.microsoft.com/v1.0/drives/${source.driveId}/items/${source.fileId}/content`;
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) throw new Error(`Graph ${r.status}`);
+      const t = await r.text();
+      return `--- ${source.fileName || source.fileId} ---\n${t.slice(0, 12000)}`;
+    } else if (source.siteId && source.driveId && source.folderPath) {
+      // Lista pasta
+      url = `https://graph.microsoft.com/v1.0/sites/${source.siteId}/drives/${source.driveId}/root:/${encodeURIComponent(source.folderPath)}:/children`;
+    } else if (source.driveId && source.folderPath) {
+      // OneDrive pessoal
+      url = `https://graph.microsoft.com/v1.0/drives/${source.driveId}/root:/${encodeURIComponent(source.folderPath)}:/children`;
+    } else {
+      return `[SharePoint: configure siteId+driveId+folderPath ou fileId]`;
+    }
+
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) throw new Error(`Graph HTTP ${res.status}`);
+    if (res.status === 401) return `[SharePoint: token expirado — faça login novamente]`;
+    if (!res.ok) throw new Error(`Graph ${res.status}`);
     const data = await res.json();
-    const files = (data.value || []).filter(f => f.file && /\.(txt|md|json|csv)$/i.test(f.name)).slice(0, 5);
+    const files = (data.value || []).filter(f => f.file && /\.(txt|md|json|csv|html)$/i.test(f.name)).slice(0, 5);
+    if (!files.length) return `[SharePoint: pasta sem arquivos textuais — suporta .txt, .md, .json, .csv, .html]`;
     let combined = '';
     for (const f of files) {
-      const r = await fetch(f['@microsoft.graph.downloadUrl']);
-      const t = await r.text();
-      combined += `\n--- ${f.name} ---\n${t.slice(0, 4000)}\n`;
+      try {
+        const r = await fetch(f['@microsoft.graph.downloadUrl']);
+        const t = await r.text();
+        combined += `\n--- ${f.name} ---\n${t.slice(0, 4000)}\n`;
+      } catch {}
     }
-    return combined.trim() || '[SharePoint: pasta vazia ou sem arquivos textuais]';
+    return combined.trim();
   } catch (e) {
     return `[SharePoint erro: ${e.message}]`;
+  }
+}
+
+async function _fetchGoogleDrive(source) {
+  // Google Drive via Drive API v3. Token via OAuth Google Identity Services
+  // (services/googleDrive.js → signInWithGoogle).
+  try {
+    const gd = await import('./googleDrive.js');
+    if (!gd.isGoogleConnected()) {
+      return `[Google Drive: não conectado — vá em IA Hub → Conexões e clique "Conectar Google"]`;
+    }
+    if (source.fileId) {
+      const text = await gd.downloadDriveFileContent({ id: source.fileId, mimeType: source.mimeType });
+      return `--- ${source.fileName || source.fileId} ---\n${text}`;
+    } else if (source.folderId) {
+      const files = await gd.listDriveFiles(source.folderId, { limit: 5 });
+      const textual = files.filter(f =>
+        /\.(txt|md|json|csv|html)$/i.test(f.name) ||
+        f.mimeType === 'application/vnd.google-apps.document' ||
+        f.mimeType === 'application/vnd.google-apps.spreadsheet'
+      ).slice(0, 5);
+      if (!textual.length) return `[Google Drive: pasta sem arquivos textuais ou Docs/Sheets]`;
+      let combined = '';
+      for (const f of textual) {
+        try {
+          const t = await gd.downloadDriveFileContent(f);
+          combined += `\n--- ${f.name} ---\n${t.slice(0, 4000)}\n`;
+        } catch {}
+      }
+      return combined.trim();
+    }
+    return `[Google Drive: configure fileId ou folderId na fonte]`;
+  } catch (e) {
+    return `[Google Drive erro: ${e.message}]`;
   }
 }
 
@@ -573,10 +627,12 @@ export async function loadAgentKnowledge(agent) {
   for (const s of sources) {
     try {
       let text = '';
-      if (s.type === 'url')        text = await _fetchUrl(s.url);
-      else if (s.type === 'r2')    text = await _fetchR2(s.path);
+      if (s.type === 'url')             text = await _fetchUrl(s.url);
+      else if (s.type === 'r2')         text = await _fetchR2(s.path);
       else if (s.type === 'sharepoint') text = await _fetchSharePoint(s);
-      if (text) parts.push(`### ${s.type}: ${s.url || s.path || s.folder}\n${text}`);
+      else if (s.type === 'gdrive')     text = await _fetchGoogleDrive(s);
+      const label = s.url || s.path || s.folder || s.folderPath || s.fileName || s.fileId || '';
+      if (text) parts.push(`### ${s.type}: ${label}\n${text}`);
     } catch (e) {
       parts.push(`### ${s.type}: erro\n${e.message}`);
     }
