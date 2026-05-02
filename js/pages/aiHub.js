@@ -21,7 +21,7 @@ import {
   migrateLegacyToAgents, purgeLegacyCollections,
   seedDefaultAgents, SYSTEM_SEED_AGENTS,
   AGENT_DEFAULTS,
-} from '../services/agents.js?v=20260501qq';
+} from '../services/agents.js?v=20260501rr';
 import {
   AI_PROVIDERS, AI_MODELS, getModelsForProvider, MODULE_REGISTRY,
   fetchKnowledge, createKnowledgeDoc, updateKnowledgeDoc, deleteKnowledgeDoc,
