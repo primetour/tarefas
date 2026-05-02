@@ -311,6 +311,103 @@ export const getSharePointToken = onCall({
 });
 
 /* ═════════════════════════════════════════════════════════
+ * logUserLogin — auditoria server-side com IP/UA
+ * Chamada após login bem-sucedido. Cria entry em audit_logs.
+ * ═════════════════════════════════════════════════════════ */
+export const logUserLogin = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  maxInstances: 50,
+}, async (request) => {
+  const auth = requireAuth(request);
+  const { provider, userAgent } = request.data || {};
+
+  // IP vem do header (Cloud Functions Gen 2 inclui X-Forwarded-For)
+  const ip = request.rawRequest?.headers?.['x-forwarded-for']?.split(',')[0]?.trim()
+          || request.rawRequest?.ip
+          || 'unknown';
+
+  // TTL 180 dias (SOC2 mínimo)
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 180);
+
+  await db.collection('audit_logs').add({
+    action: 'auth.login',
+    entity: 'session',
+    userId: auth.uid,
+    userEmail: auth.token.email || null,
+    provider: provider || 'unknown',
+    ip, userAgent: (userAgent || '').slice(0, 200),
+    timestamp: FieldValue.serverTimestamp(),
+    expiresAt,
+    severity: 'info',
+  });
+
+  // Detecta padrão suspeito: IP novo pra esse user
+  try {
+    const recent = await db.collection('audit_logs')
+      .where('userId', '==', auth.uid)
+      .where('action', '==', 'auth.login')
+      .orderBy('timestamp', 'desc').limit(20).get();
+    const knownIps = new Set();
+    recent.forEach(d => { const i = d.data().ip; if (i && i !== 'unknown') knownIps.add(i); });
+    if (knownIps.size > 1 && !knownIps.has(ip) && knownIps.size < 5) {
+      // Login de IP novo (e o user só tem ~poucos IPs conhecidos)
+      await db.collection('audit_logs').add({
+        action: 'auth.suspicious_new_ip',
+        userId: auth.uid, userEmail: auth.token.email || null,
+        newIp: ip, knownIpsCount: knownIps.size,
+        timestamp: FieldValue.serverTimestamp(),
+        expiresAt, severity: 'warning',
+      });
+    }
+  } catch {}
+
+  return { ok: true };
+});
+
+/* ═════════════════════════════════════════════════════════
+ * eraseUserData — LGPD endpoint server-side
+ * ═════════════════════════════════════════════════════════ */
+export const eraseUserDataServer = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  maxInstances: 5,
+  timeoutSeconds: 540,
+}, async (request) => {
+  const auth = requireAuth(request);
+  const { uid: targetUid, reason, dryRun } = request.data || {};
+  if (!targetUid) throw new HttpsError('invalid-argument', 'uid obrigatório');
+  const isSelf = auth.uid === targetUid;
+  const adminFlag = await isAdmin(auth.uid);
+  if (!isSelf && !adminFlag) throw new HttpsError('permission-denied', 'Só admin ou próprio user.');
+  if (!isSelf && (!reason || reason.length < 10)) {
+    throw new HttpsError('invalid-argument', 'Justificativa obrigatória (mín 10 chars).');
+  }
+  // Audita ANTES de apagar
+  await db.collection('audit_logs').add({
+    action: 'lgpd.erase_user_data.started',
+    userId: auth.uid, targetUid,
+    isSelf, reason: reason || 'self-deletion',
+    dryRun: !!dryRun,
+    timestamp: FieldValue.serverTimestamp(),
+    severity: 'critical',
+  });
+  // Delegação: chama o endpoint client lgpd.js (que tem a lógica de cascade)
+  // Server-side: aqui delete user doc principal
+  if (!dryRun) {
+    await db.doc(`users/${targetUid}`).update({
+      active: false,
+      deletedAt: FieldValue.serverTimestamp(),
+      deletedBy: auth.uid,
+      deletedReason: reason || 'Auto-exclusão LGPD',
+      name: '[Usuário removido]',
+      email: `removed-${targetUid}@deleted.invalid`,
+      phone: '',
+    });
+  }
+  return { ok: true, dryRun: !!dryRun };
+});
+
+/* ═════════════════════════════════════════════════════════
  * getGitHubFile — lê arquivo/pasta com PAT do env
  * ═════════════════════════════════════════════════════════ */
 export const getGitHubFile = onCall({

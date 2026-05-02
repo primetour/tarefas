@@ -208,6 +208,18 @@ export function initAuthObserver(onReady) {
           email:    profile.email,
         }).catch(() => {});
 
+        // Server-side audit (com IP/UA, detecção de IP novo)
+        // Não bloqueia o login — fire and forget
+        (async () => {
+          try {
+            const { app } = await import('../firebase.js');
+            const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+            const fn = fb.httpsCallable(fb.getFunctions(app, 'us-central1'), 'logUserLogin');
+            const provider = firebaseUser.providerData?.[0]?.providerId || 'unknown';
+            await fn({ provider, userAgent: navigator.userAgent });
+          } catch {}
+        })();
+
         // ─── Automation services (lazy, non-blocking) ───
         Promise.resolve().then(async () => {
           const [

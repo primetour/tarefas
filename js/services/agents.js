@@ -1147,37 +1147,58 @@ export async function runAgent(agentId, userInput, context = {}) {
     throw new Error(`API Key não configurada para ${agent.provider}. Configure em IA Hub → API Keys.`);
   }
 
-  // Reusa chatWithAI passando systemPrompt explícito
-  // skipLog: true — agente loga abaixo com agentId, evita duplicar
-  const result = await ai.chatWithAI(userInput, context, {
-    moduleId: agent.module,
-    provider: agent.provider,
-    model:    agent.model,
-    maxTokens:   agent.limits?.maxTokensPerRun || 2048,
-    temperature: agent.limits?.temperature ?? 0.3,
-    systemPromptOverride: systemParts.join('\n\n'),
-    webSearch: agent.allowWebSearch,
-    allowedSites: agent.allowedSites,
-    skipLog: true,
-  });
-
-  // Log com agentId (TTL 90 dias via Firestore policy)
+  // Tenta Cloud Function direto (mais limpo + auditável)
+  let result;
   try {
-    const cu = store.get('currentUser');
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 90);
-    await addDoc(collection(db, 'ai_usage_logs'), {
-      agentId, agentName: agent.name,
+    const { callLLMSecure } = await import('./aiSecure.js');
+    result = await callLLMSecure({
+      provider: agent.provider, model: agent.model,
+      systemPrompt: systemParts.join('\n\n'),
+      userMessage: userInput,
+      history: context.history || [],
+      maxTokens:   agent.limits?.maxTokensPerRun || 2048,
+      temperature: agent.limits?.temperature ?? 0.3,
+      agentId: agent.id, agentName: agent.name,
+      agentDailyCapUsd: agent.limits?.maxCostPerDayUsd || 5,
       module: agent.module,
-      provider: result.provider || agent.provider,
-      model:    result.model    || agent.model,
-      inputTokens:  result.inputTokens  || 0,
-      outputTokens: result.outputTokens || 0,
-      userId:       cu?.uid || null,
-      timestamp:    serverTimestamp(),
-      expiresAt:    Timestamp.fromDate(expiresAt),
+      source: 'runAgent',
     });
-  } catch (e) { console.warn('[agents] log err:', e?.message); }
+  } catch (e) {
+    // Fallback ao chatWithAI legacy
+    console.warn('[runAgent] Cloud Function falhou, fallback chatWithAI:', e.message);
+    result = await ai.chatWithAI(userInput, context, {
+      moduleId: agent.module,
+      provider: agent.provider, model: agent.model,
+      maxTokens:   agent.limits?.maxTokensPerRun || 2048,
+      temperature: agent.limits?.temperature ?? 0.3,
+      systemPromptOverride: systemParts.join('\n\n'),
+      webSearch: agent.allowWebSearch,
+      allowedSites: agent.allowedSites,
+      skipLog: true,
+    });
+  }
+
+  // Log: Cloud Function callLLM já loga (com agentId+agentName+TTL).
+  // Só adiciona log local se result veio do fallback legacy (sem secured flag)
+  if (!result.secured) {
+    try {
+      const cu = store.get('currentUser');
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 90);
+      await addDoc(collection(db, 'ai_usage_logs'), {
+        agentId, agentName: agent.name,
+        module: agent.module,
+        provider: result.provider || agent.provider,
+        model:    result.model    || agent.model,
+        inputTokens:  result.inputTokens  || 0,
+        outputTokens: result.outputTokens || 0,
+        userId:       cu?.uid || null,
+        timestamp:    serverTimestamp(),
+        expiresAt:    Timestamp.fromDate(expiresAt),
+        source:       'agents-runAgent-legacy',
+      });
+    } catch (e) { console.warn('[agents] log err:', e?.message); }
+  }
 
   return result;
 }

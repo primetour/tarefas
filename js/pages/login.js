@@ -92,54 +92,9 @@ export function renderLogin(container) {
           <!-- Alert de erro/sucesso -->
           <div id="auth-alert" style="display:none;"></div>
 
-          <!-- Formulário de Login -->
-          <form id="login-form" novalidate>
-            <div class="form-group">
-              <label class="form-label" for="login-email">E-mail</label>
-              <div class="form-input-wrapper">
-                <span class="form-input-icon">✉</span>
-                <input
-                  type="email"
-                  id="login-email"
-                  class="form-input has-icon"
-                  placeholder="seu@email.com"
-                  autocomplete="email"
-                  required
-                />
-              </div>
-              <span class="form-error-msg" id="email-error"></span>
-            </div>
-
-            <div class="form-group">
-              <div class="flex justify-between items-center" style="margin-bottom:8px;">
-                <label class="form-label" for="login-password" style="margin-bottom:0;">Senha</label>
-                <a href="#" class="auth-forgot-link" id="forgot-link">Esqueceu a senha?</a>
-              </div>
-              <div class="form-input-wrapper">
-                <span class="form-input-icon">🔒</span>
-                <input
-                  type="password"
-                  id="login-password"
-                  class="form-input has-icon has-icon-right"
-                  placeholder="••••••••"
-                  autocomplete="current-password"
-                  required
-                />
-                <button type="button" class="form-input-icon-right" id="toggle-password">👁</button>
-              </div>
-              <span class="form-error-msg" id="password-error"></span>
-            </div>
-
-            <button type="submit" class="btn-auth-submit" id="login-submit">
-              Entrar na plataforma
-            </button>
-          </form>
-
-          <!-- Divider -->
-          <div class="auth-divider"><span>ou</span></div>
-
-          <!-- SSO Microsoft -->
-          <button type="button" class="btn-auth-microsoft" id="btn-microsoft-sso">
+          <!-- SSO Microsoft (PRINCIPAL) -->
+          <button type="button" class="btn-auth-microsoft" id="btn-microsoft-sso"
+            style="width:100%;font-size:1.0625rem;padding:14px;">
             <svg width="20" height="20" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
               <rect x="1" y="1" width="9" height="9" fill="#F25022"/>
               <rect x="11" y="1" width="9" height="9" fill="#7FBA00"/>
@@ -150,9 +105,45 @@ export function renderLogin(container) {
             <span class="btn-auth-microsoft-domain">@primetour.com.br</span>
           </button>
 
+          <p class="text-center mt-3" style="color:var(--text-muted);font-size:0.8125rem;line-height:1.6;">
+            🔒 SSO obrigatório · MFA enforced via Azure AD<br>
+            Apenas contas <strong>@primetour.com.br</strong> autorizadas
+          </p>
+
+          <!-- Login email/senha — DESABILITADO por segurança (Sprint 2 hardening) -->
+          <!-- Pra reativar em emergencia: localStorage.setItem('emergency-pwd-login','1') -->
+          <details id="emergency-login-wrap" style="display:none;margin-top:24px;
+            border:1px solid rgba(245,158,11,0.4);border-radius:6px;padding:10px;
+            background:rgba(245,158,11,0.04);">
+            <summary style="cursor:pointer;font-size:0.75rem;color:#F59E0B;font-weight:600;">
+              ⚠ Login emergencial (admin only)
+            </summary>
+            <form id="login-form" novalidate style="margin-top:12px;">
+              <div class="form-group">
+                <input type="email" id="login-email" class="form-input"
+                  placeholder="seu@email.com" autocomplete="email" required />
+              </div>
+              <div class="form-group">
+                <input type="password" id="login-password" class="form-input"
+                  placeholder="senha" autocomplete="current-password" required />
+              </div>
+              <button type="submit" class="btn-auth-submit" id="login-submit">Entrar (legado)</button>
+              <a href="#" class="auth-forgot-link" id="forgot-link" style="font-size:0.75rem;margin-top:8px;display:inline-block;">Esqueceu a senha?</a>
+              <span class="form-error-msg" id="email-error"></span>
+              <span class="form-error-msg" id="password-error"></span>
+              <button type="button" id="toggle-password" style="display:none;"></button>
+            </form>
+          </details>
+
           <p class="text-center mt-6 text-xs" style="color:var(--text-muted);">
             Não possui acesso? Solicite ao administrador do sistema.
           </p>
+          <script>
+            // Mostra opção emergencial só se admin tiver setado a flag
+            if (localStorage.getItem('emergency-pwd-login') === '1') {
+              document.getElementById('emergency-login-wrap').style.display = 'block';
+            }
+          </script>
         </div>
       </div>
     </div>

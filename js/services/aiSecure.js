@@ -47,12 +47,13 @@ export async function callLLMSecure({
   agentId = null, agentName = null, agentDailyCapUsd = 5,
   module = 'general', source = 'cloud-function',
 }) {
-  return await callable('callLLM', {
+  const result = await callable('callLLM', {
     provider, model, systemPrompt, userMessage, history,
     maxTokens, temperature,
     agentId, agentName, agentDailyCapUsd,
     module, source,
   });
+  return { ...result, secured: true };
 }
 
 /**
