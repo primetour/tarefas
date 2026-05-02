@@ -541,61 +541,30 @@ function setupRouter() {
       maybeStartModuleTour(route);
     } catch {}
 
-    // ── Auto-mount AI Panel ──────────────────────────────────
-    // Mapa: rota do sistema → moduleId do MODULE_REGISTRY (ai.js)
-    // Se a rota estiver aqui e houver skills ativas para o módulo,
-    // o painel de IA aparece automaticamente. Senão, nada acontece.
-    const ROUTE_TO_MODULE = {
-      'tasks':              'tasks',
-      'kanban':             'kanban',
-      'calendar':           'calendar',
-      'timeline':           'tasks',
-      'projects':           'projects',
-      'dashboard':          'dashboards',
-      'dashboards':         'dashboards',
-      'portal-tips':        'portal-tips',
-      'portal-tip-editor':  'portal-tips',
-      'portal-tips-list':   'portal-tips',
-      'portal-dashboard':   'portal-tips',
-      'portal-areas':       'portal-tips',
-      'portal-destinations':'portal-tips',
-      'portal-images':      'portal-tips',
-      'portal-import':      'portal-tips',
-      'portal-import-manual':'portal-tips',
-      'roteiros':           'roteiros',
-      'roteiro-editor':     'roteiros',
-      'roteiro-dashboard':  'roteiros',
-      'feedbacks':          'feedbacks',
-      'goals':              'goals',
-      'csat':               'csat',
-      'requests':           'requests',
-      'news-monitor':       'news-monitor',
-      'content-calendar':   'content-calendar',
-      'nl-performance':     'content',
-      'meta-performance':   'content',
-      'ga-performance':     'content',
-      'landing-pages':      'landing-pages',
-      'cms':                'cms',
-      'arts-editor':        'arts-editor',
-      'team':               'general',
-      'capacity':           'capacity',
-      'workspaces':         'workspaces',
-      'settings':           'general',
-      'users':              'general',
-      'roles':              'general',
-      'sectors':            'sectors',
-      'audit':              'general',
-      'integrations':       'general',
-      'notifications':      'general',
-      'task-types':         'task-types',
-      'task-categories':    'task-categories',
-      'ai-dashboard':       'general',
-    };
+    // ── Monta botões de agentes IA no header da página ──
+    setTimeout(async () => {
+      try {
+        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501t');
+        await mountAgentsForRoute(route);
+      } catch (e) { console.warn('[agents] mount err:', e?.message); }
+    }, 600); // delay pra header já ter renderizado
 
-    const moduleId = ROUTE_TO_MODULE[route];
+    // ── FAB IA (legado) — DESABILITADO em favor dos botões por agente ──
+    // Mantido como flag pra reativar se preciso (set para true)
+    const ENABLE_LEGACY_AI_FAB = false;
+    if (!ENABLE_LEGACY_AI_FAB) return;
+
+    // [Bloco abaixo só executa se ENABLE_LEGACY_AI_FAB = true]
+    const ROUTE_TO_MODULE_LEGACY = {
+      'tasks': 'tasks', 'kanban': 'kanban', 'calendar': 'calendar', 'timeline': 'tasks',
+      'projects': 'projects', 'dashboard': 'dashboards', 'dashboards': 'dashboards',
+      'portal-tips': 'portal-tips',
+      'roteiros': 'roteiros',
+    };
+    const moduleId = ROUTE_TO_MODULE_LEGACY[route];
     if (!moduleId || !content) return;
 
-    // Esperar o DOM do módulo renderizar (pequeno delay para async renders)
+    // [Antigo: mount FAB — agora desabilitado por flag acima]
     setTimeout(async () => {
       try {
         // Criar container flutuante para o painel de IA (canto inferior direito)
