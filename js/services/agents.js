@@ -207,8 +207,25 @@ export async function fetchAgentBySlug(slug) {
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
+async function _validateSlugUnique(slug, excludeId = null) {
+  if (!slug) return;
+  const snap = await getDocs(query(
+    collection(db, AGENTS_COL),
+    where('triggers.publicChat.slug', '==', slug),
+    limit(2),
+  ));
+  const conflict = snap.docs.find(d => d.id !== excludeId);
+  if (conflict) {
+    throw new Error(`Slug "${slug}" já está em uso por outro agente. Escolha outro.`);
+  }
+}
+
 export async function createAgent(data) {
   const payload = normalizeAgent(data);
+  // Valida slug único se publicChat habilitado
+  if (payload.triggers?.publicChat?.enabled && payload.triggers?.publicChat?.slug) {
+    await _validateSlugUnique(payload.triggers.publicChat.slug);
+  }
   const cu = store.get('currentUser');
   const ref = await addDoc(collection(db, AGENTS_COL), {
     ...payload,
@@ -225,6 +242,11 @@ export async function updateAgent(id, patch) {
   // Deep-merge no client antes de gravar (Firestore updateDoc é shallow)
   const current = await getAgent(id);
   const merged  = deepMerge(current || AGENT_DEFAULTS, patch);
+  // Valida slug único se publicChat habilitado e mudou
+  if (merged.triggers?.publicChat?.enabled && merged.triggers?.publicChat?.slug
+      && merged.triggers.publicChat.slug !== current?.triggers?.publicChat?.slug) {
+    await _validateSlugUnique(merged.triggers.publicChat.slug, id);
+  }
   // Remove campos meta antes de gravar
   delete merged.id;
   delete merged.createdAt;
@@ -635,6 +657,30 @@ export async function runAgent(agentId, userInput, context = {}) {
   // Carrega TODA base de conhecimento (interno + R2 + SharePoint + URLs)
   const knowledgeText = await loadAgentKnowledge(agent);
   if (knowledgeText) systemParts.push(knowledgeText);
+
+  // Tools filtradas pelo agente (substituí o catalogo padrão se manual)
+  if (agent.toolsMode === 'manual' && agent.enabledTools?.length) {
+    try {
+      const aiActions = await import('./aiActions.js');
+      const toolPrompt = aiActions.formatActionsForAgent(agent);
+      if (toolPrompt) systemParts.push(toolPrompt);
+    } catch {}
+  }
+
+  // Web search (busca prévia + injeta resultado no contexto)
+  if (agent.allowWebSearch && userInput?.length > 8) {
+    try {
+      const aiActions = await import('./aiActions.js');
+      // Tenta inferir query da mensagem; senão usa a própria mensagem
+      const sites = (agent.allowedSites || []).filter(Boolean);
+      const results = await aiActions.searchWeb(userInput.slice(0, 200), sites);
+      if (Array.isArray(results) && results.length) {
+        const top = results.slice(0, 5)
+          .map(r => `• ${r.title} — ${r.snippet || ''}\n  ${r.url}`).join('\n');
+        systemParts.push(`\n=== BUSCA WEB (resultados recentes) ===\n${top}\n`);
+      }
+    } catch (e) { console.warn('[agents] web search err:', e?.message); }
+  }
 
   // Valida que existe API key (chatWithAI faz a resolução completa,
   // mas pré-valida pra falhar rápido com mensagem clara)

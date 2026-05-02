@@ -20,7 +20,7 @@ import {
   deleteAgent, toggleAgent, uploadAgentAvatar, runAgent,
   migrateLegacyToAgents, purgeLegacyCollections,
   AGENT_DEFAULTS,
-} from '../services/agents.js?v=20260501x';
+} from '../services/agents.js?v=20260501y';
 import {
   AI_PROVIDERS, AI_MODELS, getModelsForProvider, MODULE_REGISTRY,
   fetchKnowledge, createKnowledgeDoc, updateKnowledgeDoc, deleteKnowledgeDoc,
@@ -207,6 +207,11 @@ async function openAgentEditor(agentId) {
     window.__toolCatalogCache = aiActions.listAllTools();
   } catch {}
 
+  // Cache de chaves escopadas (pra dropdown de Origem da API Key)
+  try {
+    window.__scopedKeysCache = await listAllScopedConfigs();
+  } catch { window.__scopedKeysCache = []; }
+
   let activeSubTab = 'identity';
 
   modal.open({
@@ -306,6 +311,25 @@ async function openAgentEditor(agentId) {
     bindKnowledgeAdd(agent);
     bindAllowedSitesEditor(agent);
     bindToolToggles(agent);
+    bindFewShotEditor(agent);
+  }
+
+  function bindFewShotEditor(a) {
+    document.getElementById('a-fs-add')?.addEventListener('click', () => {
+      a.fewShotExamples = a.fewShotExamples || [];
+      a.fewShotExamples.push({ input: '', output: '' });
+      renderSubTab();
+    });
+    document.querySelectorAll('.a-fs-del').forEach(btn =>
+      btn.addEventListener('click', () => {
+        a.fewShotExamples.splice(parseInt(btn.dataset.i), 1);
+        renderSubTab();
+      }));
+    document.querySelectorAll('.a-fs-input').forEach(ta =>
+      ta.addEventListener('change', (e) => {
+        const i = parseInt(ta.dataset.i);
+        a.fewShotExamples[i][ta.dataset.field] = e.target.value;
+      }));
   }
 
   function bindToolToggles(a) {
@@ -338,6 +362,16 @@ async function openAgentEditor(agentId) {
 
     if ($('a-provider')) agent.provider = v('a-provider', agent.provider);
     if ($('a-model'))    agent.model    = v('a-model', agent.model);
+    if ($('a-apikey-ref')) {
+      const refVal = v('a-apikey-ref', 'auto');
+      if (refVal === 'auto') {
+        agent.apiKeyRef = { scope: 'auto', scopeId: null, scopeLabel: 'Auto' };
+      } else if (refVal.startsWith('scoped:')) {
+        const id = refVal.slice(7);
+        const k = (window.__scopedKeysCache||[]).find(x => x.id === id);
+        if (k) agent.apiKeyRef = { scope: k.scope, scopeId: k.id, scopeLabel: k.scopeLabel || k.scopeId };
+      }
+    }
 
     if ($('a-system-prompt')) agent.systemPrompt  = v('a-system-prompt', agent.systemPrompt);
     if ($('a-output-format')) agent.outputFormat  = v('a-output-format', agent.outputFormat);
@@ -493,6 +527,8 @@ function subTabIdentity(a) {
 
 function subTabModel(a) {
   const models = getModelsForProvider(a.provider);
+  const scopedKeys = window.__scopedKeysCache || [];
+  const ref = a.apiKeyRef || { scope: 'global' };
   return `
     <h3 style="margin:0 0 12px;font-size:1.0625rem;">Modelo de IA</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -511,22 +547,27 @@ function subTabModel(a) {
       </div>
     </div>
     <div class="form-group">
-      <label class="form-label">API Key</label>
-      <div style="padding:12px;background:var(--bg-surface);border-radius:6px;font-size:0.8125rem;color:var(--text-secondary);">
-        Usa a chave configurada em <strong>API Keys</strong> (resolução automática:
-        usuário → núcleo → setor → workspace → global).
-        ${a.apiKeyRef?.scope==='global' ? '' : `<br><small>Override: ${esc(a.apiKeyRef?.scopeLabel||'')}</small>`}
-      </div>
+      <label class="form-label">Origem da API Key</label>
+      <select id="a-apikey-ref" class="form-select">
+        <option value="auto" ${ref.scope==='global'||ref.scope==='auto'?'selected':''}>🌐 Cascata automática (user → núcleo → setor → global)</option>
+        ${scopedKeys.map(k => `<option value="scoped:${esc(k.id)}" ${ref.scopeId===k.id?'selected':''}>
+          🎯 ${esc(k.scope)} · ${esc(k.scopeLabel || k.scopeId)}
+        </option>`).join('')}
+      </select>
+      <small style="color:var(--text-muted);font-size:0.6875rem;">
+        ${scopedKeys.length ? scopedKeys.length + ' chave(s) escopada(s) disponível(eis). Configure em IA Hub → API Keys.' : 'Sem chaves escopadas. Configure em IA Hub → API Keys pra forçar escopo.'}
+      </small>
     </div>
   `;
 }
 
 function subTabPrompt(a) {
+  const examples = a.fewShotExamples || [];
   return `
     <h3 style="margin:0 0 12px;font-size:1.0625rem;">Prompt e Personalidade</h3>
     <div class="form-group">
       <label class="form-label">Prompt do sistema <span style="color:#EF4444;">*</span></label>
-      <textarea id="a-system-prompt" class="form-textarea" rows="14"
+      <textarea id="a-system-prompt" class="form-textarea" rows="10"
         placeholder="Você é um assistente especialista em [área]. Sua missão é..."
         style="font-family:var(--font-mono,monospace);font-size:0.8125rem;line-height:1.6;">${esc(a.systemPrompt||'')}</textarea>
       <small style="color:var(--text-muted);font-size:0.6875rem;">
@@ -541,6 +582,29 @@ function subTabPrompt(a) {
         <option value="json"     ${a.outputFormat==='json'?'selected':''}>JSON estruturado</option>
         <option value="html"     ${a.outputFormat==='html'?'selected':''}>HTML</option>
       </select>
+    </div>
+
+    <h4 style="font-size:0.875rem;margin:18px 0 8px;display:flex;justify-content:space-between;align-items:center;">
+      Exemplos few-shot (opcional)
+      <button class="btn btn-secondary btn-sm" id="a-fs-add">+ Adicionar exemplo</button>
+    </h4>
+    <p style="font-size:0.6875rem;color:var(--text-muted);margin:0 0 8px;">
+      Pares pergunta→resposta que ensinam o agente o estilo desejado. Bom pra padronizar formato.
+    </p>
+    <div id="a-fs-list" style="display:flex;flex-direction:column;gap:8px;">
+      ${!examples.length ? '<p style="font-size:0.75rem;color:var(--text-muted);text-align:center;padding:12px;border:1px dashed var(--border-subtle);border-radius:6px;">Nenhum exemplo. Click + Adicionar pra criar.</p>'
+        : examples.map((ex, i) => `
+          <div style="border:1px solid var(--border-subtle);border-radius:6px;padding:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <small style="color:var(--text-muted);font-weight:600;">EXEMPLO ${i+1}</small>
+              <button class="btn btn-ghost btn-sm a-fs-del" data-i="${i}" style="color:#EF4444;">✕</button>
+            </div>
+            <textarea class="form-textarea a-fs-input" data-i="${i}" data-field="input" rows="2"
+              placeholder="Mensagem do usuário" style="font-size:0.75rem;margin-bottom:4px;">${esc(ex.input||'')}</textarea>
+            <textarea class="form-textarea a-fs-input" data-i="${i}" data-field="output" rows="3"
+              placeholder="Resposta ideal do agente" style="font-size:0.75rem;">${esc(ex.output||'')}</textarea>
+          </div>
+        `).join('')}
     </div>
   `;
 }
@@ -841,17 +905,195 @@ async function openAgentRunModal(agentId, agentObj = null) {
  * TABS RÁPIDAS (versão inicial — placeholders informativos)
  * Cada uma vai ser expandida em fases posteriores
  * ═══════════════════════════════════════════════════════════ */
-function renderApiKeysTab(container) {
-  container.innerHTML = `
-    <div class="card" style="padding:20px;">
-      <h3 style="margin:0 0 8px;">⚿ API Keys</h3>
-      <p style="color:var(--text-muted);font-size:0.875rem;line-height:1.6;margin-bottom:14px;">
-        Gerenciamento de chaves por escopo (global / workspace / setor / usuário) — em construção.
-        Por enquanto, configure em <a href="#ai-skills">IA Skills antiga → Configurar API</a>.
-        A migração para esta aba virá na Fase 7.
+async function renderApiKeysTab(container) {
+  const ai = await import('../services/ai.js');
+  let global = null, scoped = [];
+  try {
+    global = await ai.getAIConfig() || {};
+    scoped = await ai.listAllScopedConfigs();
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--color-danger);padding:24px;">Erro: ${esc(e.message)}</p>`;
+    return;
+  }
+
+  const maskKey = (k) => {
+    if (!k) return '—';
+    if (k.length <= 12) return '••••••';
+    return k.slice(0, 4) + '••••••••' + k.slice(-4);
+  };
+  const providerStatus = (cfg, provider) => {
+    const k = cfg?.[provider + 'ApiKey'];
+    return k ? { has: true, masked: maskKey(k), len: k.length } : { has: false };
+  };
+  const providers = ai.AI_PROVIDERS;
+
+  function paint() {
+    container.innerHTML = `
+      <p style="color:var(--text-muted);font-size:0.8125rem;margin-bottom:16px;">
+        Chaves usadas pelos agentes. Resolução em cascata:
+        <strong>Usuário → Núcleo → Setor → Workspace → Global</strong>.
       </p>
-    </div>
-  `;
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header">
+          <div class="card-title">🌐 Global (fallback padrão)</div>
+          <button class="btn btn-secondary btn-sm" id="ak-edit-global">✎ Editar</button>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <table class="data-table" style="width:100%;font-size:0.8125rem;">
+            <thead><tr><th>Provider</th><th>Status</th><th>Chave (mascarada)</th><th style="text-align:right;">Tamanho</th></tr></thead>
+            <tbody>${providers.map(p => {
+              const s = providerStatus(global, p.id);
+              return `<tr style="${s.has?'':'opacity:0.55;'}">
+                <td><strong>${esc(p.icon)} ${esc(p.label)}</strong></td>
+                <td>${s.has ? '<span style="color:#22C55E;">✓ Configurada</span>' : '<span style="color:#9CA3AF;">— Vazia</span>'}</td>
+                <td style="font-family:var(--font-mono,monospace);">${esc(s.masked || '—')}</td>
+                <td style="text-align:right;">${s.len ? s.len + ' chars' : '—'}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🎯 Chaves por escopo</div>
+            <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
+              ${scoped.length} configuração(ões). Override por usuário/núcleo/setor/workspace.
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="ak-new-scoped">+ Nova escopada</button>
+        </div>
+        <div class="card-body" style="padding:0;">
+          ${!scoped.length ? '<div class="empty-state" style="padding:24px;"><div class="empty-state-title" style="font-size:0.875rem;">Sem chaves escopadas. Todos usam a global.</div></div>'
+            : `<table class="data-table" style="width:100%;font-size:0.8125rem;">
+              <thead><tr>
+                <th>Escopo</th><th>Identificador</th><th>Providers</th>
+                <th>Status</th><th style="text-align:right;">Ações</th>
+              </tr></thead>
+              <tbody>${scoped.map(s => {
+                const provs = providers.filter(p => s[p.id + 'ApiKey']).map(p => p.label);
+                return `<tr>
+                  <td><strong>${esc(s.scope)}</strong></td>
+                  <td>${esc(s.scopeLabel || s.scopeId || '—')}</td>
+                  <td style="font-size:0.75rem;">${provs.length ? provs.join(', ') : '—'}</td>
+                  <td>${s.active === false ? '<span style="color:#F59E0B;">⏸ Pausada</span>' : '<span style="color:#22C55E;">✓ Ativa</span>'}</td>
+                  <td style="text-align:right;white-space:nowrap;">
+                    <button class="btn btn-secondary btn-sm" data-act="ak-edit" data-id="${s.id}">✎</button>
+                    <button class="btn btn-ghost btn-sm" data-act="ak-del" data-id="${s.id}" style="color:#EF4444;">🗑</button>
+                  </td>
+                </tr>`;
+              }).join('')}</tbody>
+            </table>`}
+        </div>
+      </div>
+    `;
+
+    document.getElementById('ak-edit-global')?.addEventListener('click', () => openKeyEditor(null, global, false, true));
+    document.getElementById('ak-new-scoped')?.addEventListener('click', () => openKeyEditor(null, null, true));
+    container.querySelectorAll('[data-act="ak-edit"]').forEach(b =>
+      b.addEventListener('click', () => openKeyEditor(b.dataset.id, scoped.find(s => s.id === b.dataset.id))));
+    container.querySelectorAll('[data-act="ak-del"]').forEach(b =>
+      b.addEventListener('click', async () => {
+        if (!confirm('Excluir esta configuração de chave? Agentes usando este escopo passarão a usar o fallback.')) return;
+        try {
+          await ai.deleteScopedApiConfig(b.dataset.id);
+          toast.success('Excluída.');
+          scoped = await ai.listAllScopedConfigs();
+          paint();
+        } catch (e) { toast.error(e.message); }
+      }));
+  }
+
+  function openKeyEditor(scopedId, data, isNewScoped = false, isGlobal = false) {
+    const d = data || {};
+    modal.open({
+      title: isGlobal ? '✎ Editar chaves globais' : (scopedId ? '✎ Editar chave escopada' : '+ Nova chave escopada'),
+      size: 'lg',
+      dedupeKey: 'ak-edit:' + (scopedId || (isGlobal ? 'global' : 'new')),
+      content: `
+        ${!isGlobal ? `
+          <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;margin-bottom:16px;">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Escopo</label>
+              <select id="ak-scope" class="form-select">
+                <option value="user"      ${d.scope==='user'?'selected':''}>Usuário</option>
+                <option value="nucleo"    ${d.scope==='nucleo'?'selected':''}>Núcleo</option>
+                <option value="area"      ${d.scope==='area'?'selected':''}>Área/Setor</option>
+                <option value="workspace" ${d.scope==='workspace'?'selected':''}>Workspace</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Identificador (uid, nome de núcleo, setor, etc.)</label>
+              <input type="text" id="ak-scope-id" class="form-input" value="${esc(d.scopeId||'')}" placeholder="Ex: Marketing" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rótulo descritivo</label>
+            <input type="text" id="ak-scope-label" class="form-input" value="${esc(d.scopeLabel||'')}" placeholder="Ex: Time de Marketing" />
+          </div>
+          <hr style="border-color:var(--border-subtle);margin:16px 0;" />
+        ` : ''}
+
+        ${providers.map(p => `
+          <div class="form-group">
+            <label class="form-label">${esc(p.icon)} ${esc(p.label)}${p.signupUrl ? ` <a href="${esc(p.signupUrl)}" target="_blank" style="font-weight:400;font-size:0.75rem;">obter chave →</a>` : ''}</label>
+            <input type="password" id="ak-${p.id}" class="form-input" value="${esc(d[p.id+'ApiKey']||'')}"
+              placeholder="${p.id === 'local' ? 'Endpoint, ex: http://localhost:11434' : 'sk-... / AIza... / gsk_...'}"
+              style="font-family:var(--font-mono,monospace);font-size:0.8125rem;" autocomplete="new-password" />
+          </div>
+        `).join('')}
+
+        <div class="form-group">
+          <label class="form-label">⚙ Endpoint local (Ollama)</label>
+          <input type="text" id="ak-local" class="form-input" value="${esc(d.localEndpoint||'')}" placeholder="http://localhost:11434" />
+        </div>
+
+        ${!isGlobal ? `
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px;padding:10px;background:var(--bg-surface);border-radius:6px;">
+              <input type="checkbox" id="ak-active" ${d.active!==false?'checked':''} />
+              <strong>Configuração ativa</strong>
+            </label>
+          </div>
+        ` : ''}
+      `,
+      footer: [
+        { label: 'Cancelar', class: 'btn-secondary' },
+        { label: '💾 Salvar', class: 'btn-primary', closeOnClick: false, onClick: async (_, { close }) => {
+          const payload = {};
+          providers.forEach(p => {
+            const v = document.getElementById('ak-' + p.id)?.value || '';
+            if (v) payload[p.id + 'ApiKey'] = v;
+          });
+          const localEp = document.getElementById('ak-local')?.value || '';
+          if (localEp) payload.localEndpoint = localEp;
+
+          try {
+            if (isGlobal) {
+              await ai.saveAIConfig(payload);
+              toast.success('Chaves globais atualizadas.');
+              global = await ai.getAIConfig() || {};
+            } else {
+              const scope     = document.getElementById('ak-scope').value;
+              const scopeId   = document.getElementById('ak-scope-id').value.trim();
+              const scopeLabel = document.getElementById('ak-scope-label').value.trim() || scopeId;
+              const active    = document.getElementById('ak-active')?.checked !== false;
+              if (!scopeId) return toast.error('Informe o identificador do escopo.');
+              await ai.saveScopedApiConfig(scope, scopeId, scopeLabel, { ...payload, active });
+              toast.success('Chave escopada salva.');
+              scoped = await ai.listAllScopedConfigs();
+            }
+            close();
+            paint();
+          } catch (e) { toast.error(e.message); }
+        }},
+      ],
+    });
+  }
+
+  paint();
 }
 
 async function renderKnowledgeTab(container) {

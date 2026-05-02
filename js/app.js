@@ -58,13 +58,11 @@ import { renderPortalImportManual }       from './pages/portalImportManual.js';
 import { renderLandingPages }             from './pages/landingPages.js';
 import { renderCms }                      from './pages/cms.js';
 import { renderArtsEditor }              from './pages/artsEditor.js';
-import { renderAiSkills }               from './pages/aiSkills.js';
-import { renderAiDashboard, destroyAiDashboard } from './pages/aiDashboard.js';
+// renderAiSkills + renderAiDashboard + mountAiPanel removidos (FAB desabilitado, rotas redirecionam pra #ai-hub)
 import { renderRoteiros }               from './pages/roteiros.js';
 import { renderRoteiroEditor, destroyRoteiroEditor } from './pages/roteiroEditor.js';
 import { renderRoteiroDashboard, destroyRoteiroDashboard } from './pages/roteiroDashboard.js';
 import { renderContentCalendar }         from './pages/contentCalendar.js';
-import { mountAiPanel } from './components/aiPanel.js';
 // newsMonitor carregado dinamicamente para evitar bloqueio pré-login
 
 // ─── Instâncias globais ───────────────────────────────────
@@ -393,10 +391,8 @@ function mountShell(root) {
     cleanupExpired(currentUser.uid).catch(() => {});
     // Start deadline check scheduler
     startScheduler();
-    // Start AI automations scheduler
-    import('./services/aiAutomations.js').then(m => m.startAutomationScheduler()).catch(() => {});
-    // Novo scheduler de agents (Fase 5) — coexiste com o legado até cleanup
-    import('./services/agentScheduler.js?v=20260501v').then(m => m.startAgentScheduler()).catch(() => {});
+    // Scheduler de agents (Fase 5 IA Hub) — substitui aiAutomations legado
+    import('./services/agentScheduler.js?v=20260501y').then(m => m.startAgentScheduler()).catch(() => {});
   }
 }
 
@@ -548,83 +544,12 @@ function setupRouter() {
     // ── Monta botões de agentes IA no header da página ──
     setTimeout(async () => {
       try {
-        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501x');
+        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501y');
         await mountAgentsForRoute(route);
       } catch (e) { console.warn('[agents] mount err:', e?.message); }
     }, 600); // delay pra header já ter renderizado
 
-    // ── FAB IA (legado) — DESABILITADO em favor dos botões por agente ──
-    // Mantido como flag pra reativar se preciso (set para true)
-    const ENABLE_LEGACY_AI_FAB = false;
-    if (!ENABLE_LEGACY_AI_FAB) return;
-
-    // [Bloco abaixo só executa se ENABLE_LEGACY_AI_FAB = true]
-    const ROUTE_TO_MODULE_LEGACY = {
-      'tasks': 'tasks', 'kanban': 'kanban', 'calendar': 'calendar', 'timeline': 'tasks',
-      'projects': 'projects', 'dashboard': 'dashboards', 'dashboards': 'dashboards',
-      'portal-tips': 'portal-tips',
-      'roteiros': 'roteiros',
-    };
-    const moduleId = ROUTE_TO_MODULE_LEGACY[route];
-    if (!moduleId || !content) return;
-
-    // [Antigo: mount FAB — agora desabilitado por flag acima]
-    setTimeout(async () => {
-      try {
-        // Criar container flutuante para o painel de IA (canto inferior direito)
-        if (document.getElementById('ai-panel-auto')) return; // já montado
-        const aiDiv = document.createElement('div');
-        aiDiv.id = 'ai-panel-auto';
-        aiDiv.style.cssText = `
-          position:fixed;bottom:24px;right:24px;z-index:9999;
-        `;
-
-        // Append no body (é fixed, não precisa estar no fluxo do page-content)
-        document.body.appendChild(aiDiv);
-
-        // Montar — se não houver skills E não houver ações, nada aparece
-        await mountAiPanel(aiDiv, moduleId, () => {
-          // Captura contexto dinâmico da página visível
-          const ctx = {
-            currentRoute: route,
-            moduleId,
-            sector:  store.get('userSector') || '',
-            user:    store.get('currentUser')?.email || '',
-            pageTitle: content.querySelector('.page-title')?.textContent || '',
-            pageSubtitle: content.querySelector('.page-subtitle,.page-header p')?.textContent || '',
-          };
-
-          // Capturar stats/contadores visíveis
-          const statsEls = content.querySelectorAll('.stat-card-value,.kpi-value,.rd-kpi-value');
-          if (statsEls.length) {
-            ctx.visibleStats = [...statsEls].slice(0, 10).map(el => ({
-              label: el.closest('.stat-card,.kpi-card,.rd-kpi-card')?.querySelector('.stat-card-label,.kpi-label,.rd-kpi-label,small')?.textContent || '',
-              value: el.textContent?.trim() || '',
-            })).filter(s => s.value);
-          }
-
-          // Capturar filtros ativos
-          const filters = content.querySelectorAll('select.filter-select, select[id*="filter"]');
-          if (filters.length) {
-            ctx.activeFilters = [...filters].map(s => ({
-              name: s.id || s.name || '',
-              value: s.options[s.selectedIndex]?.textContent || '',
-            })).filter(f => f.value && !f.value.startsWith('Todos'));
-          }
-
-          // Capturar dados de tabelas/listas (primeiras linhas)
-          const rows = content.querySelectorAll('tr, .task-row, .card-item, .kanban-card');
-          if (rows.length) {
-            ctx.visibleItems = Math.min(rows.length, 50);
-          }
-
-          return ctx;
-        });
-
-        // Se o painel não renderizou nada (sem skills/config), remover
-        if (!aiDiv.innerHTML.trim()) aiDiv.remove();
-      } catch (e) { /* silencioso */ }
-    }, 150);
+    // FAB legado removido — substituído por botões por agente (Fase 2 IA Hub)
   });
 
   router.init();
@@ -672,8 +597,8 @@ function destroyShell() {
   header  = null;
   // Stop deadline scheduler
   stopScheduler();
-  // Stop AI automations scheduler
-  import('./services/aiAutomations.js').then(m => m.stopAutomationScheduler()).catch(() => {});
+  // Stop agent scheduler
+  import('./services/agentScheduler.js').then(m => m.stopAgentScheduler()).catch(() => {});
   // Cleanup notification listener
   if (_unsubNotifications) {
     _unsubNotifications();

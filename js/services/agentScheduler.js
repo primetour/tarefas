@@ -5,7 +5,7 @@
  * decide quais devem rodar AGORA (preset ou cron) e executa.
  * Dedup pra não rodar 2× na mesma janela em abas paralelas.
  */
-import { fetchAgents, runAgent } from './agents.js?v=20260501x';
+import { fetchAgents, runAgent } from './agents.js?v=20260501y';
 import { store } from '../store.js';
 
 const CHECK_INTERVAL = 5 * 60 * 1000; // 5min
@@ -52,16 +52,36 @@ function markRun(key) {
   setDedupMap(m);
 }
 
+/* ─── Helper: "agora" no timezone do agente ──────────────── */
+function getNowInTz(timezone) {
+  if (!timezone) return new Date();
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(new Date()).reduce((acc, p) => {
+      if (p.type !== 'literal') acc[p.type] = parseInt(p.value);
+      return acc;
+    }, {});
+    return new Date(parts.year, parts.month-1, parts.day, parts.hour, parts.minute, parts.second);
+  } catch {
+    return new Date();
+  }
+}
+
 /* ─── Lógica de "deve rodar agora?" ─────────────────────── */
 function shouldRun(agent) {
   const s = agent.triggers?.schedule;
   if (!s?.enabled) return false;
-  const now = new Date();
+  const now = getNowInTz(s.timezone || 'America/Sao_Paulo');
   const hour = now.getHours();
   const minute = now.getMinutes();
 
   if (s.mode === 'cron') {
-    return matchesCron(s.cron, now);
+    return matchesCron(s.cron, now);  // now já está no TZ do agente
   }
 
   // Presets

@@ -18,7 +18,7 @@
  */
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
-import { fetchAgentsForModule, runAgent } from '../services/agents.js?v=20260501x';
+import { fetchAgentsForModule, runAgent } from '../services/agents.js?v=20260501y';
 
 const ROUTE_TO_MODULE = {
   'tasks': 'tasks', 'kanban': 'kanban', 'calendar': 'calendar', 'timeline': 'tasks',
@@ -37,12 +37,13 @@ const ROUTE_TO_MODULE = {
   'ai-hub': 'general',
 };
 
-/* ─── Visibilidade (RBAC) ──────────────────────────────── */
+/* ─── Visibilidade (RBAC completo) ──────────────────────── */
 function isAgentVisible(agent) {
   if (!agent.active) return false;
   const v = agent.visibility || { mode: 'all' };
+  if (store.isMaster()) return true; // master vê tudo
   if (v.mode === 'all') return true;
-  if (v.mode === 'admin') return store.isMaster() || store.can('system_manage_users');
+  if (v.mode === 'admin') return store.can('system_manage_users');
   if (v.mode === 'sector') {
     const userSector = store.get('userSector') || '';
     const visible = (store.get('visibleSectors') || []).concat(userSector);
@@ -51,6 +52,10 @@ function isAgentVisible(agent) {
   if (v.mode === 'role') {
     const profile = store.get('userProfile') || {};
     return (profile.role === v.value || profile.roleId === v.value);
+  }
+  if (v.mode === 'workspace') {
+    const workspaces = store.get('userWorkspaces') || [];
+    return workspaces.some(w => w.id === v.value || w.name === v.value);
   }
   return false;
 }
