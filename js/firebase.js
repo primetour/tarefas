@@ -38,9 +38,13 @@ microsoftProvider.setCustomParameters({
   login_hint: '',                 // Não sugere conta anterior
 });
 microsoftProvider.addScope('user.read');
-// Scopes adicionais pra IA Hub poder ler conhecimento do SharePoint/OneDrive
-microsoftProvider.addScope('Files.Read.All');
-microsoftProvider.addScope('Sites.Read.All');
+// IMPORTANTE: scopes Files.Read.All e Sites.Read.All foram REMOVIDOS porque
+// exigem "admin consent" no Azure AD (bloqueia login pra usuario comum).
+// Se precisar ler SharePoint via IA Hub, fazer via:
+//   - Consent admin global em portal.azure.com (uma vez, p/ tenant inteiro)
+//   - OU incremental consent (re-auth so quando acessar feature SharePoint)
+//   - OU client_credentials flow no Cloud Function (server-side, ja temos
+//     getSharePointToken pronto pra isso).
 
 // ─── Serviços exportados ───────────────────────────────────
 export const auth          = getAuth(app);
