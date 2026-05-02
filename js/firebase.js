@@ -76,20 +76,35 @@ export default app;
  * Após admin configurar, descomenta o bloco e seta o site key abaixo.
  * Apps Check valida que o request VEM do app oficial (não de Postman/curl).
  * ALTERNATIVA pra dev: Debug Token (mostrar no console) */
+/**
+ * App Check ativo via reCAPTCHA Enterprise.
+ * Em localhost/dev: ativa debug token automaticamente (printa UUID no console;
+ * admin precisa adicionar em Firebase Console → App Check → Manage Debug Tokens).
+ * Em prod (primetour.github.io etc): valida via reCAPTCHA real.
+ */
+export let appCheckInstance = null;
 async function setupAppCheck() {
-  const ENABLED = false;  // ← admin troca pra true após configurar
-  const SITE_KEY = 'YOUR_RECAPTCHA_ENTERPRISE_SITE_KEY';
+  const ENABLED  = true;
+  const SITE_KEY = '6Lc38dUsAAAAAH8i5bE1P_gxOfrudZwHnRFGVUNJ';
+  const isLocal  = ['localhost', '127.0.0.1', ''].includes(location.hostname);
+
+  // Em dev, habilita debug token ANTES de initializeAppCheck
+  if (isLocal && !self.FIREBASE_APPCHECK_DEBUG_TOKEN) {
+    self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    console.warn('[App Check] DEBUG mode ativo. Copia o UUID do console e adiciona em Firebase Console → App Check → Manage Debug Tokens.');
+  }
+
   if (!ENABLED) return;
   try {
     const { initializeAppCheck, ReCaptchaEnterpriseProvider } =
       await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
-    initializeAppCheck(app, {
+    appCheckInstance = initializeAppCheck(app, {
       provider: new ReCaptchaEnterpriseProvider(SITE_KEY),
       isTokenAutoRefreshEnabled: true,
     });
-    console.log('[App Check] enabled');
+    console.log('[App Check] enabled (provider=reCAPTCHA Enterprise)');
   } catch (e) {
-    console.warn('[App Check] setup failed:', e?.message);
+    console.warn('[App Check] setup failed:', e?.message || e);
   }
 }
 setupAppCheck();
