@@ -236,7 +236,7 @@ export async function renderProfile(container) {
           </div>
           <div class="card-body">
             <div id="palette-chooser" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px;">
-              ${_buildPaletteCards(profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'midnight')}
+              ${_buildPaletteCards(profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'portal')}
             </div>
             <div style="display:flex; justify-content:flex-end; margin-top:16px;">
               <button class="btn btn-primary btn-sm" id="prefs-save-btn">Salvar preferências</button>
@@ -475,7 +475,7 @@ function _bindProfileEvents(profile) {
   });
 
   // Palette chooser click events
-  let _selectedPalette = profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'midnight';
+  let _selectedPalette = profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'portal';
   document.querySelectorAll('#palette-chooser .palette-card').forEach(card => {
     card.addEventListener('click', () => {
       _selectedPalette = card.dataset.paletteId;

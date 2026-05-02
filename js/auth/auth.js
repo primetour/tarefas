@@ -168,7 +168,7 @@ export function initAuthObserver(onReady) {
         ]).catch(() => {});
 
         // Aplicar paleta de cores do perfil do usuário
-        const savedPalette = profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'midnight';
+        const savedPalette = profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'portal';
         document.documentElement.dataset.palette = savedPalette;
         localStorage.setItem('primetour-palette', savedPalette);
 

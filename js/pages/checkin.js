@@ -23,7 +23,7 @@ import {
   requestTimeClockCorrection, fetchTimeClockRequests, subscribeTimeClockRequests,
   approveTimeClockRequest, rejectTimeClockRequest,
   calcBancoHoras, buildEspelhoPonto, isBusinessDay,
-} from '../services/checkin.js?v=20260501m';
+} from '../services/checkin.js?v=20260501n';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const todayISO = () => { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10); };
@@ -65,7 +65,7 @@ export async function renderCheckin(container) {
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">⏱ Check In</h1>
+        <h1 class="page-title">⏱ Check-in</h1>
         <p class="page-subtitle">Reserva de estação · check-in · registro de ponto</p>
       </div>
     </div>
@@ -694,10 +694,13 @@ async function renderClockTab(container) {
           ${banco.balance>=0?'crédito (hora extra)':'débito (a compensar)'}
         </div>
       </div>
-      <div class="card" style="padding:14px 16px;">
-        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Jornada padrão</div>
+      <div class="card" style="padding:14px 16px;" title="Jornada padrão de trabalho. HE = Hora Extra (dias com mais que ${DEFAULT_WORKDAY_HOURS}h trabalhadas). Déficit = dias com menos que ${DEFAULT_WORKDAY_HOURS}h ou registro incompleto.">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Jornada padrão <span style="cursor:help;opacity:0.6;">ⓘ</span></div>
         <div style="font-size:1.5rem;font-weight:700;color:var(--text-primary);margin-top:2px;">${DEFAULT_WORKDAY_HOURS}h/dia</div>
-        <div style="font-size:0.6875rem;color:var(--text-muted);">${banco.overtimeDays} HE · ${banco.deficitDays} déficit</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">
+          <span title="Hora Extra: dias com mais que ${DEFAULT_WORKDAY_HOURS}h trabalhadas">${banco.overtimeDays} HE</span> ·
+          <span title="Déficit: dias com menos que ${DEFAULT_WORKDAY_HOURS}h ou incompletos">${banco.deficitDays} déficit</span>
+        </div>
       </div>
     </div>
 
@@ -996,8 +999,8 @@ async function renderReportTab(container) {
             <th style="text-align:right;">Dias</th>
             <th style="text-align:right;">Total horas</th>
             <th style="text-align:right;">Média/dia</th>
-            <th style="text-align:right;" title="Saldo banco de horas (jornada ${DEFAULT_WORKDAY_HOURS}h)">Banco</th>
-            <th style="text-align:right;">HE/Déficit</th>
+            <th style="text-align:right;" title="Saldo do banco de horas: total trabalhado − jornada esperada. Positivo = crédito (hora extra). Negativo = a compensar.">Banco ⓘ</th>
+            <th style="text-align:right;" title="HE = Hora Extra (dias com mais que ${DEFAULT_WORKDAY_HOURS}h). Déficit = dias com menos que ${DEFAULT_WORKDAY_HOURS}h ou incompletos.">HE/Déficit ⓘ</th>
             <th style="text-align:right;">Completos</th>
             <th style="text-align:right;">Recusas</th>
             <th></th>
@@ -1183,6 +1186,27 @@ function weekdayLabel(iso) {
  * 5. ADMINISTRAÇÃO (admin/master only)
  * Editar áreas (capacidade, baias, assentos) + regras por setor
  * ═══════════════════════════════════════════════════════════ */
+/* Helpers de dias-da-semana pra config de setor.
+ *  - DOW_ALL_WEEKDAYS = 'Seg, Ter, Qua, Qui, Sex' canônico
+ *  - "Seg a Sex" é tratado como todos os 5 dias úteis */
+const DOW_ORDER = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+function diasToArray(dias) {
+  if (!dias) return [];
+  if (/^Seg a Sex$/i.test(dias.trim())) return ['Seg','Ter','Qua','Qui','Sex'];
+  return dias.split(',').map(s => s.trim()).filter(Boolean);
+}
+function isDowSelected(dias, dow) {
+  return diasToArray(dias).includes(dow);
+}
+function arrayToDias(arr) {
+  // Reordena pela DOW_ORDER e formata "Seg a Sex" se for exatamente isso
+  const sorted = DOW_ORDER.filter(d => arr.includes(d));
+  if (sorted.length === 5 && sorted.every((d, i) => d === ['Seg','Ter','Qua','Qui','Sex'][i])) {
+    return 'Seg a Sex';
+  }
+  return sorted.join(', ');
+}
+
 async function renderAdminTab(container) {
   // Estado local da edição (clones do _config, salvos no botão final)
   const draftAreas   = JSON.parse(JSON.stringify(_config.areas || []));
@@ -1282,17 +1306,19 @@ async function renderAdminTab(container) {
                       value="${s.slots}" style="text-align:right;width:80px;" />
                   </td>
                   <td>
-                    <select class="form-select adm-s-dias-quick" data-i="${i}" style="font-size:0.8125rem;width:auto;display:inline-block;margin-right:6px;">
-                      <option value="">— preset —</option>
-                      <option value="Seg a Sex">Seg a Sex (semana toda)</option>
-                      <option value="Seg, Ter, Qua, Qui, Sex">Cada dia da semana</option>
-                      <option value="Seg, Qua, Sex">Alternados (Seg/Qua/Sex)</option>
-                      <option value="Ter, Qui">Apenas Ter, Qui</option>
-                      <option value="Sex">Apenas Sex</option>
-                    </select>
-                    <input type="text" class="form-input adm-s-dias" data-i="${i}"
-                      value="${esc(s.dias)}" style="font-size:0.8125rem;width:calc(100% - 130px);display:inline-block;"
-                      placeholder='Ex: "Seg a Sex" / "Ter, Qui"' />
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                      ${['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(dow => {
+                        // 'dias' pode ser string "Seg, Ter" OU "Seg a Sex" (= todos úteis) — normaliza
+                        const sel = isDowSelected(s.dias, dow);
+                        return `<button type="button" class="adm-s-dow-chip" data-i="${i}" data-dow="${dow}"
+                          style="padding:4px 10px;border-radius:14px;font-size:0.75rem;cursor:pointer;
+                          border:1px solid ${sel?'var(--brand-gold)':'var(--border-subtle)'};
+                          background:${sel?'var(--brand-gold)':'transparent'};
+                          color:${sel?'var(--bg-primary,#0A1628)':'var(--text-secondary)'};
+                          font-weight:${sel?'700':'500'};">${dow}</button>`;
+                      }).join('')}
+                    </div>
+                    <input type="hidden" class="adm-s-dias" data-i="${i}" value="${esc(s.dias)}" />
                   </td>
                   <td><button class="btn btn-ghost btn-icon btn-sm adm-s-del" data-i="${i}" title="Excluir">✕</button></td>
                 </tr>`;
@@ -1341,13 +1367,15 @@ async function renderAdminTab(container) {
         if (e.target.classList.contains('adm-s-slots')) draftSectors[i].slots  = parseInt(e.target.value) || 0;
         if (e.target.classList.contains('adm-s-dias'))  draftSectors[i].dias   = e.target.value.trim();
       }));
-    // Preset de dias: ao escolher, copia pro input texto
-    container.querySelectorAll('.adm-s-dias-quick').forEach(sel =>
-      sel.addEventListener('change', (e) => {
-        const i = parseInt(e.target.dataset.i);
-        const v = e.target.value;
-        if (!v) return;
-        draftSectors[i].dias = v;
+    // Chips de dia-da-semana: clica pra alternar
+    container.querySelectorAll('.adm-s-dow-chip').forEach(btn =>
+      btn.addEventListener('click', (e) => {
+        const i = parseInt(btn.dataset.i);
+        const dow = btn.dataset.dow;
+        const arr = diasToArray(draftSectors[i].dias || '');
+        const idx = arr.indexOf(dow);
+        if (idx >= 0) arr.splice(idx, 1); else arr.push(dow);
+        draftSectors[i].dias = arrayToDias(arr);
         render();
       }));
     container.querySelectorAll('.adm-s-del').forEach(btn =>

@@ -13,7 +13,7 @@ const NAV_GROUPS = [
   {
     label: 'Tarefas e Projetos',
     items: [
-      { route: 'check-in',   icon: '⏱',  label: 'Check In',     perm: 'dashboard_view' },
+      { route: 'check-in',   icon: '⏱',  label: 'Check-in',     perm: 'dashboard_view' },
       { route: 'dashboard',  icon: '⊞',  label: 'Meu Painel',  perm: 'dashboard_view' },
       { route: 'tasks',      icon: '✓',  label: 'Tarefas',     perm: 'task_create' },
       { route: 'projects',   icon: '◈',  label: 'Projetos',    perm: 'task_create',       altPerm: 'project_create' },

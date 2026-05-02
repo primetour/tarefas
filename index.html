@@ -3,7 +3,7 @@
 <script>
   // Aplica paleta e fonte salvas antes do render para evitar flash
   (function(){
-    var p=localStorage.getItem('primetour-palette')||'midnight';
+    var p=localStorage.getItem('primetour-palette')||'portal';
     var f=localStorage.getItem('primetour-font')||'';
     document.documentElement.dataset.palette=p;
     if(f&&f!=='outfit') document.documentElement.dataset.font=f;
@@ -43,7 +43,8 @@
                 https://api.emailjs.com
                 https://primetour.com.br https://www.primetour.com.br
                 https://login.microsoftonline.com https://login.live.com https://graph.microsoft.com
-                https://nominatim.openstreetmap.org;
+                https://nominatim.openstreetmap.org
+                https://speed.cloudflare.com;
     frame-src   'self' https://*.firebaseapp.com https://login.microsoftonline.com https://login.live.com https://apis.google.com;
     object-src  'none';
     base-uri    'self';
@@ -119,7 +120,7 @@
        v= bumpa em commits que tocam código crítico (sidebar/branding)
        pra forçar refetch — GitHub Pages serve com max-age=600 e
        browsers cacheiam módulos por URL. -->
-  <script type="module" src="js/app.js?v=20260501m"></script>
+  <script type="module" src="js/app.js?v=20260501n"></script>
 
 </body>
 </html>
