@@ -456,6 +456,259 @@ export async function migrateLegacyToAgents() {
   return report;
 }
 
+/* ═══════════════════════════════════════════════════════════
+ * SEED — Agentes pré-configurados que espelham as features inline
+ * de IA já existentes no sistema (Roteiros, Portal, Calendário).
+ *
+ * Idempotente: não cria se já existe agente com mesmo migratedFrom.systemSeed.
+ * ═══════════════════════════════════════════════════════════ */
+export const SYSTEM_SEED_AGENTS = [
+  {
+    seedId: 'roteiro-generator',
+    name: 'Roteiro de Viagem (gerador)',
+    icon: '✈',
+    avatarUrl: '',
+    description: 'Gera roteiros de viagem completos a partir de uma descrição (destino + perfil + dias).',
+    module: 'roteiros',
+    provider: 'gemini',
+    model:    'gemini-2.5-pro',
+    systemPrompt: `Você é o assistente especialista em roteiros de viagem de LUXO da PRIMETOUR.
+
+Sua missão: gerar roteiros completos a partir de uma descrição do cliente, incluindo:
+- Hotéis premium (5 estrelas, boutique luxury)
+- Experiências exclusivas (gastronomia, cultura, aventura)
+- Logística (transfers, voos, transferências privativas)
+- Dia-a-dia detalhado com timing realista
+
+ESTILO:
+- Linguagem sofisticada porém acessível, em português brasileiro
+- Seções claras: Visão Geral, Hotéis, Dia 1, Dia 2, ...
+- Sempre inclua URLs reais quando souber
+- Personalize tom conforme perfil (lua de mel, família, executivo, casal jovem)
+
+NUNCA invente nomes de hotéis ou restaurantes que não existem. Se não souber, sugira "verificar opções premium em [destino]".`,
+    outputFormat: 'markdown',
+    allowWebSearch: true,
+    allowedSites: [],
+    limits: { maxTokensPerRun: 4096, temperature: 0.7, maxCostPerDayUsd: 5, rateLimit: { window: 60, max: 5 }, timeoutMs: 60000 },
+    triggers: {
+      button: { enabled: true, label: '✈ Gerar Roteiro', position: 'header' },
+      context: { enabled: false, label: '' },
+      schedule: { enabled: false, mode: 'preset', preset: 'daily' },
+      publicChat: { enabled: false, slug: '' },
+    },
+    visibility: { mode: 'all', value: '' },
+    site: {
+      welcomeMessage: 'Descreva o roteiro que você quer e eu monto pra você.',
+      suggestedPrompts: [
+        'Roteiro de 7 dias em Bariloche pra casal em julho',
+        'Lua de mel Maldivas 10 dias, all-inclusive',
+        'Família com 2 filhos pequenos em Orlando 8 dias',
+      ],
+      brandColor: '#0EA5E9', tagline: 'Roteiros de luxo personalizados em segundos',
+      footerText: 'PRIMETOUR · Roteiros sob medida',
+      showAvatar: true, showBranding: true,
+    },
+  },
+  {
+    seedId: 'portal-tip-updater',
+    name: 'Portal de Dicas (atualizador)',
+    icon: '✈',
+    avatarUrl: '',
+    description: 'Atualiza dicas vencidas do Portal com pesquisa web fresca + reescrita.',
+    module: 'portal-tips',
+    provider: 'gemini',
+    model:    'gemini-2.5-flash',
+    systemPrompt: `Você é o curador do Portal de Dicas de viagem da PRIMETOUR.
+
+Tarefa: atualizar conteúdo vencido mantendo o formato e tom originais.
+
+REGRAS:
+- Português brasileiro, tom prático e conciso
+- Mantenha a estrutura/formato exato do conteúdo original
+- Use a pesquisa web fornecida pra trazer dados atuais (preços, horários, links)
+- Se a pesquisa não mencionar algo do conteúdo original, mantenha o original
+- Cite fonte (link) quando pegar dados externos`,
+    outputFormat: 'markdown',
+    allowWebSearch: true,
+    limits: { maxTokensPerRun: 2048, temperature: 0.3, maxCostPerDayUsd: 3, rateLimit: { window: 60, max: 10 }, timeoutMs: 30000 },
+    triggers: {
+      button: { enabled: false, label: '', position: 'header' },
+      context: { enabled: false, label: '' },
+      schedule: { enabled: false, mode: 'preset', preset: 'daily' },
+      publicChat: { enabled: false, slug: '' },
+    },
+    visibility: { mode: 'admin', value: '' },
+    site: {
+      welcomeMessage: '', suggestedPrompts: [],
+      brandColor: '#10B981', tagline: 'Atualização de dicas com pesquisa web',
+      footerText: 'PRIMETOUR · Portal de Dicas',
+      showAvatar: true, showBranding: true,
+    },
+  },
+  {
+    seedId: 'content-week-planner',
+    name: 'Calendário Semanal (planejador)',
+    icon: '📱',
+    avatarUrl: '',
+    description: 'Sugere ideias de conteúdo semanal pras redes sociais (Instagram/Facebook).',
+    module: 'content-calendar',
+    provider: 'gemini',
+    model:    'gemini-2.5-flash',
+    systemPrompt: `Você é estrategista de conteúdo digital para a PRIMETOUR (agência de viagens de luxo).
+
+Sua missão: sugerir ideias de posts semanais pras contas de Instagram/Facebook.
+
+CONTEXTO PRIMETOUR:
+- 2 contas: @primetourviagens (luxury) e @icsbyprimetour (corporate/Bradesco)
+- Público @primetourviagens: viajantes de alto poder aquisitivo, casais, lua-de-mel, famílias
+- Público @icsbyprimetour: clientes Bradesco, conteúdo institucional + dicas premium
+- Tom: aspiracional, sofisticado, prático
+
+FORMATO DE SAÍDA (JSON):
+{
+  "posts": [
+    { "date": "YYYY-MM-DD", "platform": "Instagram", "type": "Carrossel|Reels|Foto",
+      "title": "...", "brief": "...", "hashtags": "..." }
+  ]
+}
+
+Use sempre português brasileiro. Diversifique tipos de post. Considere datas comemorativas e sazonalidade.`,
+    outputFormat: 'json',
+    allowWebSearch: false,
+    limits: { maxTokensPerRun: 3072, temperature: 0.6, maxCostPerDayUsd: 3, rateLimit: { window: 60, max: 5 }, timeoutMs: 30000 },
+    triggers: {
+      button: { enabled: true, label: '📱 Sugerir Semana', position: 'header' },
+      context: { enabled: false, label: '' },
+      schedule: { enabled: false, mode: 'preset', preset: 'weekly', hour: 9, weekday: 1 },
+      publicChat: { enabled: false, slug: '' },
+    },
+    visibility: { mode: 'all', value: '' },
+    site: {
+      welcomeMessage: 'Diga período + conta + tema e eu sugiro a semana.',
+      suggestedPrompts: [
+        'Próximas 2 semanas, @primetourviagens, foco em Bariloche',
+        'Junho inteiro, @icsbyprimetour, datas comemorativas',
+      ],
+      brandColor: '#EC4899', tagline: 'Planejamento de conteúdo automatizado',
+      footerText: 'PRIMETOUR · Marketing',
+      showAvatar: true, showBranding: true,
+    },
+  },
+  {
+    seedId: 'content-caption',
+    name: 'Legenda de Post (copywriter)',
+    icon: '✎',
+    avatarUrl: '',
+    description: 'Gera legenda completa pra um post das redes sociais (com hashtags + CTA).',
+    module: 'content-calendar',
+    provider: 'gemini',
+    model:    'gemini-2.5-flash',
+    systemPrompt: `Você é copywriter de redes sociais da PRIMETOUR (agência de viagens de luxo).
+
+Tarefa: escrever legenda completa pra um post a partir do brief, incluindo:
+- Hook (primeira linha que para o scroll)
+- Corpo (2-4 parágrafos curtos)
+- CTA claro
+- Hashtags otimizadas (15-20)
+
+ESTILO:
+- Português brasileiro
+- Tom aspiracional mas acessível
+- Use emojis com moderação (1-2 por parágrafo)
+- Evite clichês de venda; foque em emoção e benefício
+
+Adapte o tom à conta (@primetourviagens = luxo / @icsbyprimetour = institucional Bradesco).`,
+    outputFormat: 'markdown',
+    allowWebSearch: false,
+    limits: { maxTokensPerRun: 1024, temperature: 0.7, maxCostPerDayUsd: 2, rateLimit: { window: 60, max: 20 }, timeoutMs: 20000 },
+    triggers: {
+      button: { enabled: false, label: '', position: 'header' },
+      context: { enabled: false, label: '' },
+      schedule: { enabled: false, mode: 'preset', preset: 'daily' },
+      publicChat: { enabled: false, slug: '' },
+    },
+    visibility: { mode: 'all', value: '' },
+    site: {
+      welcomeMessage: '', suggestedPrompts: [],
+      brandColor: '#A855F7', tagline: 'Legendas que vendem sem parecer venda',
+      footerText: 'PRIMETOUR · Marketing',
+      showAvatar: true, showBranding: true,
+    },
+  },
+  {
+    seedId: 'task-triage',
+    name: 'Triagem de Tarefas',
+    icon: '✓',
+    avatarUrl: '',
+    description: 'Analisa lista de tarefas e sugere priorização + alertas (atrasos, sobrecarga).',
+    module: 'tasks',
+    provider: 'gemini',
+    model:    'gemini-2.5-flash',
+    systemPrompt: `Você é o gestor de triagem de tarefas da PRIMETOUR.
+
+Tarefa: analisar a lista de tarefas fornecida no contexto e gerar:
+1. RANKING de prioridade (com critérios: SLA vencido, urgência, dependências)
+2. ALERTAS (sobrecarga de pessoa específica, atrasos críticos)
+3. SUGESTÕES (redistribuição, dúvidas pra esclarecer)
+
+FORMATO:
+- Markdown com seções claras
+- Português brasileiro, conciso
+- Cite IDs/nomes específicos quando relevante
+- Não invente dados — use APENAS o contexto fornecido`,
+    outputFormat: 'markdown',
+    allowWebSearch: false,
+    limits: { maxTokensPerRun: 2048, temperature: 0.3, maxCostPerDayUsd: 2, rateLimit: { window: 60, max: 15 }, timeoutMs: 30000 },
+    triggers: {
+      button: { enabled: true, label: '✓ Triar Tarefas', position: 'header' },
+      context: { enabled: false, label: '' },
+      schedule: { enabled: true, mode: 'preset', preset: 'daily', hour: 9, minute: 0 },
+      publicChat: { enabled: false, slug: '' },
+    },
+    visibility: { mode: 'all', value: '' },
+    site: {
+      welcomeMessage: 'Cole a lista (ou peça resumo do dia) e eu trago.',
+      suggestedPrompts: [
+        'Quais tarefas devo priorizar hoje?',
+        'Tem alguém sobrecarregado?',
+        'Quais SLAs estouraram?',
+      ],
+      brandColor: '#F59E0B', tagline: 'Priorização inteligente do seu backlog',
+      footerText: 'PRIMETOUR · Produtividade',
+      showAvatar: true, showBranding: true,
+    },
+  },
+];
+
+export async function seedDefaultAgents() {
+  if (!store.isMaster() && !store.can('system_manage_settings')) {
+    throw new Error('Permissão negada — apenas admin/master.');
+  }
+  const report = { created: 0, skipped: 0, errors: [] };
+  for (const seed of SYSTEM_SEED_AGENTS) {
+    try {
+      // Check idempotência
+      const existing = await getDocs(query(
+        collection(db, AGENTS_COL),
+        where('migratedFrom.systemSeed', '==', seed.seedId),
+        limit(1),
+      ));
+      if (!existing.empty) { report.skipped++; continue; }
+      // Cria com migratedFrom marcador
+      const { seedId, ...agentData } = seed;
+      await createAgent({
+        ...agentData,
+        migratedFrom: { source: 'system-seed', sourceId: seedId, systemSeed: seedId, migratedAt: new Date().toISOString() },
+      });
+      report.created++;
+    } catch (e) {
+      report.errors.push(`${seed.seedId}: ${e.message}`);
+    }
+  }
+  return report;
+}
+
 /**
  * Apaga collections antigas APÓS migração + arquivamento confirmados.
  * Só o admin master pode chamar. Verifica que existe backup antes de apagar.

@@ -19,8 +19,9 @@ import {
   fetchAgents, subscribeAgents, getAgent, createAgent, updateAgent,
   deleteAgent, toggleAgent, uploadAgentAvatar, runAgent,
   migrateLegacyToAgents, purgeLegacyCollections,
+  seedDefaultAgents, SYSTEM_SEED_AGENTS,
   AGENT_DEFAULTS,
-} from '../services/agents.js?v=20260501cc';
+} from '../services/agents.js?v=20260501ee';
 import {
   AI_PROVIDERS, AI_MODELS, getModelsForProvider, MODULE_REGISTRY,
   fetchKnowledge, createKnowledgeDoc, updateKnowledgeDoc, deleteKnowledgeDoc,
@@ -1644,6 +1645,24 @@ function estimateCost(provider, model, inT, outT) {
  * ═══════════════════════════════════════════════════════════ */
 function renderMigrationTab(container) {
   container.innerHTML = `
+    <!-- Seed agentes do sistema -->
+    <div class="card" style="padding:20px;margin-bottom:16px;border:1px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.04);">
+      <h3 style="margin:0 0 12px;">🌱 Criar agentes pré-configurados do sistema</h3>
+      <p style="font-size:0.875rem;color:var(--text-secondary);line-height:1.6;margin-bottom:14px;">
+        O sistema já tinha funcionalidades de IA embutidas em várias páginas (Roteiros, Portal de
+        Dicas, Calendário de Conteúdo, Tarefas). Estes <strong>${SYSTEM_SEED_AGENTS.length} agentes-seed</strong>
+        replicam essas features no Hub pra você ver/editar/personalizar pelos prompts.
+      </p>
+      <ul style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.7;margin:0 0 14px 20px;">
+        ${SYSTEM_SEED_AGENTS.map(s => `<li><strong>${esc(s.icon)} ${esc(s.name)}</strong> — ${esc(s.description)}</li>`).join('')}
+      </ul>
+      <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:14px;">
+        ✓ Idempotente — clicar várias vezes não duplica.
+      </p>
+      <button class="btn btn-primary" id="seed-run">🌱 Criar agentes do sistema</button>
+      <div id="seed-result" style="display:none;margin-top:14px;"></div>
+    </div>
+
     <div class="card" style="padding:20px;margin-bottom:16px;">
       <h3 style="margin:0 0 12px;">↻ Migrar legado para Agentes</h3>
       <p style="font-size:0.875rem;color:var(--text-secondary);line-height:1.6;margin-bottom:16px;">
@@ -1676,6 +1695,31 @@ function renderMigrationTab(container) {
       <div id="mig-purge-result" style="display:none;margin-top:14px;"></div>
     </div>
   `;
+
+  document.getElementById('seed-run')?.addEventListener('click', async () => {
+    const btn = document.getElementById('seed-run');
+    btn.disabled = true; btn.textContent = '⏳ Criando...';
+    try {
+      const report = await seedDefaultAgents();
+      const out = document.getElementById('seed-result');
+      out.style.display = 'block';
+      out.innerHTML = `
+        <div style="background:var(--bg-surface);padding:12px;border-radius:6px;font-size:0.8125rem;line-height:1.6;">
+          <strong>Resultado:</strong>
+          <ul style="margin:6px 0 0 20px;">
+            <li>Criados: <strong>${report.created}</strong></li>
+            <li>Pulados (já existiam): <strong>${report.skipped}</strong></li>
+            ${report.errors.length ? `<li style="color:#EF4444;">Erros:<pre style="font-size:0.75rem;">${esc(report.errors.join('\n'))}</pre></li>` : ''}
+          </ul>
+          ${report.created ? '<p style="color:#22C55E;margin-top:8px;">✓ Vá pra aba Agentes pra ver/editar.</p>' : ''}
+        </div>
+      `;
+      btn.disabled = false; btn.textContent = '🌱 Criar agentes do sistema';
+    } catch (e) {
+      toast.error(e.message);
+      btn.disabled = false; btn.textContent = '🌱 Criar agentes do sistema';
+    }
+  });
 
   document.getElementById('mig-run')?.addEventListener('click', async () => {
     const btn = document.getElementById('mig-run');
