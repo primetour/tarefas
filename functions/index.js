@@ -122,10 +122,21 @@ async function checkRateLimitIP(request, key, maxCalls, windowSec) {
 async function checkDailyCost(uid, agentId, capUsd) {
   if (!capUsd || !agentId) return;
   const today = new Date(); today.setHours(0,0,0,0);
-  const snap = await db.collection('ai_usage_logs')
-    .where('agentId', '==', agentId)
-    .where('timestamp', '>=', today)
-    .get();
+  let snap;
+  try {
+    snap = await db.collection('ai_usage_logs')
+      .where('agentId', '==', agentId)
+      .where('timestamp', '>=', today)
+      .get();
+  } catch (e) {
+    // Se o index ainda nao foi criado (FAILED_PRECONDITION code 9), fail-open
+    // ao inves de bloquear todos os usuarios. Loga pra alerta.
+    if (e?.code === 9 || /FAILED_PRECONDITION|requires an index/i.test(e?.message || '')) {
+      console.warn('[checkDailyCost] index missing, fail-open:', e?.message?.slice(0, 200));
+      return;
+    }
+    throw e;
+  }
   let cost = 0;
   snap.forEach(d => {
     const l = d.data();
