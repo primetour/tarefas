@@ -541,11 +541,57 @@ async function _fetchR2(path) {
   return _fetchUrl(url);
 }
 
+/* App-only token cache pra SharePoint (service-level, não por usuário) */
+let _spAppToken = null; // { token, expiresAt }
+async function _getSharePointAppToken() {
+  if (_spAppToken && Date.now() < _spAppToken.expiresAt) return _spAppToken.token;
+  // Lê credenciais do system_config/sharepoint-app
+  const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const cfgSnap = await getDoc(doc(db, 'system_config', 'sharepoint-app'));
+  if (!cfgSnap.exists()) throw new Error('SharePoint app não configurado');
+  const cfg = cfgSnap.data();
+  if (!cfg.tenantId || !cfg.clientId || !cfg.clientSecret) {
+    throw new Error('Credenciais incompletas: precisa tenantId+clientId+clientSecret');
+  }
+  // OAuth2 client_credentials flow
+  const url = `https://login.microsoftonline.com/${cfg.tenantId}/oauth2/v2.0/token`;
+  const body = new URLSearchParams({
+    client_id: cfg.clientId,
+    client_secret: cfg.clientSecret,
+    scope: 'https://graph.microsoft.com/.default',
+    grant_type: 'client_credentials',
+  });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`MS auth ${res.status}: ${txt.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  _spAppToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + (data.expires_in - 300) * 1000, // -5min margem
+  };
+  return _spAppToken.token;
+}
+
 async function _fetchSharePoint(source) {
-  // SharePoint/OneDrive via Graph API. Token capturado pelo SSO Microsoft
-  // (auth.js → signInWithMicrosoft com scopes Files.Read.All + Sites.Read.All)
-  const token = store.get('msAccessToken');
-  if (!token) return `[SharePoint: token Microsoft não disponível — faça logout/login com SSO Microsoft pra capturar permissões]`;
+  // SharePoint via Graph API com app-only auth (service-level)
+  // Cai no token do USER se app credentials não configuradas (fallback retrocompatível)
+  let token;
+  try {
+    token = await _getSharePointAppToken();
+  } catch (e) {
+    // Fallback: tenta token do user (SSO)
+    const userToken = store.get('msAccessToken');
+    if (!userToken) {
+      return `[SharePoint: ${e.message}. Configure em IA Hub → Conexões.]`;
+    }
+    token = userToken;
+  }
 
   try {
     let url;
@@ -583,6 +629,79 @@ async function _fetchSharePoint(source) {
     return combined.trim();
   } catch (e) {
     return `[SharePoint erro: ${e.message}]`;
+  }
+}
+
+async function _fetchGitHub(source) {
+  // Source: { type:'github', repo:'owner/repo', path:'docs/', branch:'main', token? }
+  if (!source.repo) return `[GitHub: configure repo (owner/name)]`;
+  const branch = source.branch || 'main';
+  const path = (source.path || '').replace(/^\/+|\/+$/g, '');
+  const headers = {};
+  // Token opcional pra repos privados (lê de system_config/github)
+  if (source.token) {
+    headers.Authorization = `Bearer ${source.token}`;
+  } else {
+    try {
+      const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const cfgSnap = await getDoc(doc(db, 'system_config', 'github'));
+      if (cfgSnap.exists() && cfgSnap.data().token) {
+        headers.Authorization = `Bearer ${cfgSnap.data().token}`;
+      }
+    } catch {}
+  }
+  try {
+    // Lista conteúdo (pasta) ou pega raw (arquivo único)
+    const url = `https://api.github.com/repos/${source.repo}/contents/${path}?ref=${branch}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      // Pasta — pega até 5 arquivos textuais
+      const files = data.filter(f => f.type === 'file' && /\.(md|txt|json|yml|yaml|csv|html)$/i.test(f.name)).slice(0, 5);
+      let combined = '';
+      for (const f of files) {
+        try {
+          const r = await fetch(f.download_url);
+          const t = await r.text();
+          combined += `\n--- ${f.name} ---\n${t.slice(0, 4000)}\n`;
+        } catch {}
+      }
+      return combined.trim() || `[GitHub: nenhum arquivo .md/.txt/.json em ${source.repo}/${path}]`;
+    } else if (data.type === 'file') {
+      // Arquivo único
+      const r = await fetch(data.download_url);
+      const t = await r.text();
+      return `--- ${data.name} ---\n${t.slice(0, 12000)}`;
+    }
+    return `[GitHub: caminho não é arquivo nem pasta]`;
+  } catch (e) {
+    return `[GitHub erro: ${e.message}]`;
+  }
+}
+
+async function _fetchWebhook(source) {
+  // Source: { type:'webhook', url, method:'GET'|'POST', headers:{}, body:'' }
+  if (!source.url) return `[Webhook: configure url]`;
+  const method = (source.method || 'GET').toUpperCase();
+  const headers = source.headers || {};
+  const init = { method, headers };
+  if (method === 'POST' && source.body) {
+    init.body = source.body;
+    if (!headers['Content-Type']) init.headers['Content-Type'] = 'application/json';
+  }
+  try {
+    const res = await fetch(source.url, init);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const ct = res.headers.get('content-type') || '';
+    let text = await res.text();
+    // Se JSON, tenta formatar
+    if (ct.includes('json')) {
+      try { text = JSON.stringify(JSON.parse(text), null, 2); } catch {}
+    }
+    return text.length > 12000 ? text.slice(0, 12000) + '\n[... truncado ...]' : text;
+  } catch (e) {
+    return `[Webhook erro: ${e.message}]`;
   }
 }
 
@@ -641,7 +760,9 @@ export async function loadAgentKnowledge(agent) {
       else if (s.type === 'r2')         text = await _fetchR2(s.path);
       else if (s.type === 'sharepoint') text = await _fetchSharePoint(s);
       else if (s.type === 'gdrive')     text = await _fetchGoogleDrive(s);
-      const label = s.url || s.path || s.folder || s.folderPath || s.fileName || s.fileId || '';
+      else if (s.type === 'github')     text = await _fetchGitHub(s);
+      else if (s.type === 'webhook')    text = await _fetchWebhook(s);
+      const label = s.url || s.path || s.folder || s.folderPath || s.fileName || s.fileId || s.repo || '';
       if (text) parts.push(`### ${s.type}: ${label}\n${text}`);
     } catch (e) {
       parts.push(`### ${s.type}: erro\n${e.message}`);

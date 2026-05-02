@@ -41,8 +41,8 @@ export const MODULE_REGISTRY = {
 
 /* ─── Providers de IA ────────────────────────────────────── */
 export const AI_PROVIDERS = [
-  { id: 'gemini',     label: 'Google Gemini (grátis)',        icon: '◈', free: true,  configFields: ['apiKey'],                     signupUrl: 'https://aistudio.google.com/apikey' },
-  { id: 'groq',       label: 'Groq (grátis)',                icon: '▤', free: true,  configFields: ['apiKey'],                     signupUrl: 'https://console.groq.com/keys' },
+  { id: 'gemini',     label: 'Google Gemini',                icon: '◈', free: true,  configFields: ['apiKey'],                     signupUrl: 'https://aistudio.google.com/apikey' },
+  { id: 'groq',       label: 'Groq',                         icon: '▤', free: true,  configFields: ['apiKey'],                     signupUrl: 'https://console.groq.com/keys' },
   { id: 'openai',     label: 'OpenAI (ChatGPT)',              icon: '◎', free: false, configFields: ['apiKey'] },
   { id: 'anthropic',  label: 'Anthropic (Claude)',            icon: '◈', free: false, configFields: ['apiKey'] },
   { id: 'azure',      label: 'Microsoft Azure / Foundry',    icon: '◫', free: false, configFields: ['apiKey','azureEndpoint'] },

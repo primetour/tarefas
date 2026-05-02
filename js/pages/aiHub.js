@@ -749,11 +749,13 @@ function subTabKnowledge(a, allKnowledge) {
       ${sources.length === 0 ? '<p style="font-size:0.75rem;color:var(--text-muted);">Nenhuma fonte externa.</p>'
         : sources.map((s, i) => `
           <div style="display:flex;gap:6px;align-items:center;padding:8px;border:1px solid var(--border-subtle);border-radius:6px;">
-            <select class="a-kb-source-type form-select" data-i="${i}" style="width:130px;font-size:0.75rem;">
+            <select class="a-kb-source-type form-select" data-i="${i}" style="width:140px;font-size:0.75rem;">
               <option value="url"        ${s.type==='url'?'selected':''}>🔗 URL</option>
               <option value="r2"         ${s.type==='r2'?'selected':''}>☁ R2 path</option>
               <option value="sharepoint" ${s.type==='sharepoint'?'selected':''}>Ⓜ SharePoint</option>
               <option value="gdrive"     ${s.type==='gdrive'?'selected':''}>📁 Google Drive</option>
+              <option value="github"     ${s.type==='github'?'selected':''}>💻 GitHub</option>
+              <option value="webhook"    ${s.type==='webhook'?'selected':''}>🪝 Webhook</option>
             </select>
             ${s.type === 'url' ? `<input type="url" class="a-kb-source-input form-input" data-i="${i}" data-field="url"
               value="${esc(s.url||'')}" placeholder="https://..." style="flex:1;font-size:0.8125rem;" />`
@@ -762,6 +764,26 @@ function subTabKnowledge(a, allKnowledge) {
             : s.type === 'gdrive' ? `<input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="folderId"
                 value="${esc(s.folderId || s.fileId || '')}" placeholder="ID da pasta ou arquivo (do Drive URL)" style="flex:1;font-size:0.8125rem;font-family:monospace;" />
               <button class="btn btn-secondary btn-sm a-kb-gdrive-pick" data-i="${i}" title="Escolher do Drive" style="font-size:0.75rem;">📁 Picker</button>`
+            : s.type === 'github' ? `<div style="display:flex;flex-direction:column;gap:4px;flex:1;">
+                <input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="repo"
+                  value="${esc(s.repo||'')}" placeholder="owner/repo (ex: primetour/tarefas)" style="font-size:0.75rem;font-family:monospace;" />
+                <div style="display:flex;gap:4px;">
+                  <input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="path"
+                    value="${esc(s.path||'')}" placeholder="path (ex: docs/) — vazio = raiz" style="font-size:0.75rem;flex:1;" />
+                  <input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="branch"
+                    value="${esc(s.branch||'main')}" placeholder="branch" style="font-size:0.75rem;width:80px;" />
+                </div>
+              </div>`
+            : s.type === 'webhook' ? `<div style="display:flex;flex-direction:column;gap:4px;flex:1;">
+                <div style="display:flex;gap:4px;">
+                  <select class="a-kb-source-input form-select" data-i="${i}" data-field="method" style="font-size:0.75rem;width:80px;">
+                    <option value="GET"  ${s.method==='GET'||!s.method?'selected':''}>GET</option>
+                    <option value="POST" ${s.method==='POST'?'selected':''}>POST</option>
+                  </select>
+                  <input type="url" class="a-kb-source-input form-input" data-i="${i}" data-field="url"
+                    value="${esc(s.url||'')}" placeholder="https://api.exemplo.com/data" style="font-size:0.75rem;flex:1;" />
+                </div>
+              </div>`
             : `<div style="display:flex;flex-direction:column;gap:4px;flex:1;">
                 <input type="text" class="a-kb-source-input form-input" data-i="${i}" data-field="siteId"
                   value="${esc(s.siteId||'')}" placeholder="Site ID (Graph)" style="font-size:0.75rem;font-family:monospace;" />
@@ -1729,34 +1751,34 @@ async function renderConnectionsTab(container) {
         Tokens vivem na sessão (sobrevivem reload, expiram em logout).
       </p>
 
-      <!-- Microsoft 365 / SharePoint / OneDrive -->
+      <!-- Microsoft 365 / SharePoint (App-only — nivel sistema) -->
       <div class="card" style="margin-bottom:16px;">
         <div class="card-header">
           <div>
-            <div class="card-title">Ⓜ Microsoft 365 (SharePoint + OneDrive)</div>
+            <div class="card-title">Ⓜ Microsoft 365 / SharePoint</div>
             <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
-              Token capturado automaticamente quando você loga via SSO Microsoft.
+              <strong>Conexão de sistema</strong> (app-only). Independe do usuário logado.
             </div>
           </div>
-          ${msActive
-            ? `<span style="font-size:0.8125rem;color:#22C55E;font-weight:600;">✓ Conectado · expira em ${msExpiresIn}min</span>`
-            : `<span style="font-size:0.8125rem;color:#F59E0B;font-weight:600;">⚠ Não conectado</span>`}
+          <button class="btn btn-secondary btn-sm" id="sp-config">⚙ Configurar app</button>
         </div>
         <div class="card-body">
-          ${msActive ? `
-            <p style="font-size:0.8125rem;color:var(--text-secondary);margin:0 0 12px;">
-              Os agentes podem ler:
-              SharePoint sites · OneDrive · pastas e arquivos (.txt, .md, .json, .csv, .html).
-            </p>
-            <button class="btn btn-secondary btn-sm" id="ms-test">▶ Testar acesso (lista sites)</button>
-            <div id="ms-test-result" style="margin-top:10px;"></div>
-          ` : `
-            <p style="font-size:0.8125rem;color:var(--text-secondary);margin:0 0 12px;">
-              Faça <strong>logout e login novamente</strong> com SSO Microsoft pra capturar permissões
-              <code>Files.Read.All</code> e <code>Sites.Read.All</code>.
-              Se já estiver logado mas não tiver token, é porque foi antes da atualização.
-            </p>
-          `}
+          <p style="font-size:0.8125rem;color:var(--text-secondary);margin:0 0 12px;line-height:1.6;">
+            A IA é serviço do sistema, não do usuário. Você precisa criar UMA app registration no
+            Azure AD e dar permissão a pastas/sites específicos. Depois, todos os agentes acessam
+            essas pastas (independente de quem está logado).
+          </p>
+          <div style="background:var(--bg-surface);padding:12px;border-radius:6px;font-size:0.75rem;line-height:1.6;">
+            <strong>Setup (5min, admin Azure):</strong>
+            <ol style="margin:6px 0 0 18px;">
+              <li>Vá em <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">portal.azure.com → App registrations</a></li>
+              <li>+ New registration · "PRIMETOUR IA Hub" · single tenant</li>
+              <li>API permissions → Microsoft Graph → <strong>Application permissions</strong> → <code>Sites.Selected</code> ou <code>Sites.Read.All</code> · Grant admin consent</li>
+              <li>Certificates & secrets → New client secret · copia o valor</li>
+              <li>Anote: <code>Tenant ID</code>, <code>Client ID</code>, <code>Client Secret</code></li>
+              <li>Click "⚙ Configurar app" acima e cole as 3 strings</li>
+            </ol>
+          </div>
         </div>
       </div>
 
@@ -1808,44 +1830,152 @@ async function renderConnectionsTab(container) {
         </div>
       </div>
 
-      <!-- Próximas (placeholder informativo) -->
-      <div class="card">
+      <!-- GitHub -->
+      <div class="card" style="margin-bottom:16px;">
         <div class="card-header">
-          <div class="card-title">🚧 Em planejamento</div>
+          <div>
+            <div class="card-title">💻 GitHub</div>
+            <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
+              Lê READMEs, docs (.md/.txt/.json/.yml) de repositórios públicos ou privados.
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm" id="gh-config">⚙ Token PAT (repos privados)</button>
         </div>
         <div class="card-body">
-          <ul style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.8;margin:0;padding-left:20px;">
-            <li><strong>Notion</strong> — via Integration API (token de Integração interna)</li>
-            <li><strong>Dropbox</strong> — OAuth2</li>
-            <li><strong>Confluence</strong> — API key + space</li>
-            <li><strong>GitHub</strong> — leitura de READMEs/docs de repos</li>
-            <li><strong>Webhook genérico</strong> — qualquer endpoint REST que retorne texto/JSON</li>
-          </ul>
-          <p style="font-size:0.75rem;color:var(--text-muted);margin:10px 0 0;">
-            Dá pra adicionar qualquer fonte custom usando o tipo <strong>URL</strong> em Knowledge Sources do agente
-            (busca conteúdo via fetch + strip HTML).
+          <p style="font-size:0.8125rem;color:var(--text-secondary);margin:0 0 8px;">
+            Repos <strong>públicos</strong> funcionam sem configuração. Pra <strong>privados</strong>,
+            cole um Personal Access Token (PAT) com escopo <code>repo</code>.
+          </p>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0;">
+            Como agente: tipo <strong>github</strong> · campos <code>repo</code> (owner/name),
+            <code>path</code>, <code>branch</code>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Webhook -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🪝 Webhook genérico</div>
+            <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
+              Qualquer endpoint REST que retorne texto/JSON. Usa fetch direto (CORS aplica).
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <p style="font-size:0.8125rem;color:var(--text-secondary);margin:0;line-height:1.6;">
+            Suporta GET ou POST com headers + body customizáveis. JSON é auto-formatado.
+            Limite: 12KB por resposta. Configurado direto no agente (Knowledge Sources → tipo
+            <strong>webhook</strong>).
           </p>
         </div>
       </div>
     `;
 
-    // Bindings
-    document.getElementById('ms-test')?.addEventListener('click', async () => {
-      const out = document.getElementById('ms-test-result');
-      out.innerHTML = '<small style="color:var(--text-muted);">⏳ Listando sites...</small>';
-      try {
-        const r = await fetch('https://graph.microsoft.com/v1.0/sites?search=*&$top=10',
-          { headers: { Authorization: `Bearer ${msToken}` } });
-        if (!r.ok) throw new Error(`Graph ${r.status}`);
-        const data = await r.json();
-        const sites = data.value || [];
-        out.innerHTML = `<div style="background:var(--bg-surface);padding:10px;border-radius:6px;font-size:0.75rem;">
-          <strong>${sites.length} site(s) encontrado(s):</strong>
-          <ul style="margin:6px 0 0 18px;">${sites.slice(0,10).map(s => `<li>${esc(s.displayName||s.name||s.id)} <code style="font-size:0.6875rem;color:var(--text-muted);">${esc((s.id||'').slice(0,30))}...</code></li>`).join('')}</ul>
-        </div>`;
-      } catch (e) {
-        out.innerHTML = `<small style="color:#EF4444;">Erro: ${esc(e.message)}</small>`;
-      }
+    // SharePoint app config (system-level)
+    document.getElementById('sp-config')?.addEventListener('click', async () => {
+      const { doc, getDoc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('../firebase.js');
+      const cfgSnap = await getDoc(doc(db, 'system_config', 'sharepoint-app'));
+      const cfg = cfgSnap.exists() ? cfgSnap.data() : {};
+      modal.open({
+        title: '⚙ Microsoft 365 — App Credentials',
+        size: 'md',
+        dedupeKey: 'sp-config',
+        content: `
+          <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 14px;">
+            Credenciais da App Registration do Azure AD. Salvas em <code>system_config/sharepoint-app</code>.
+          </p>
+          <div class="form-group">
+            <label class="form-label">Tenant ID</label>
+            <input type="text" id="sp-tid" class="form-input" value="${esc(cfg.tenantId||'')}" placeholder="00000000-0000-0000-0000-000000000000" style="font-family:monospace;font-size:0.8125rem;" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Client ID (Application ID)</label>
+            <input type="text" id="sp-cid" class="form-input" value="${esc(cfg.clientId||'')}" placeholder="00000000-0000-0000-0000-000000000000" style="font-family:monospace;font-size:0.8125rem;" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Client Secret (valor)</label>
+            <input type="password" id="sp-sec" class="form-input" value="${esc(cfg.clientSecret||'')}" placeholder="copie o VALUE (não o ID) do secret recém criado" style="font-family:monospace;font-size:0.8125rem;" autocomplete="new-password" />
+            <small style="color:var(--text-muted);font-size:0.6875rem;">Visível apenas na criação. Se perdeu, gere outro.</small>
+          </div>
+          <div id="sp-test-result" style="margin-top:10px;"></div>
+        `,
+        footer: [
+          { label: 'Cancelar', class: 'btn-secondary' },
+          { label: '▶ Testar conexão', class: 'btn-secondary', closeOnClick: false, onClick: async () => {
+            const out = document.getElementById('sp-test-result');
+            out.innerHTML = '<small style="color:var(--text-muted);">⏳ Obtendo token...</small>';
+            try {
+              const tid = document.getElementById('sp-tid').value.trim();
+              const cid = document.getElementById('sp-cid').value.trim();
+              const sec = document.getElementById('sp-sec').value;
+              const url = `https://login.microsoftonline.com/${tid}/oauth2/v2.0/token`;
+              const body = new URLSearchParams({ client_id: cid, client_secret: sec, scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials' });
+              const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+              if (!r.ok) { const t = await r.text(); throw new Error(`${r.status}: ${t.slice(0,150)}`); }
+              const data = await r.json();
+              out.innerHTML = `<div style="background:rgba(34,197,94,0.08);padding:10px;border-radius:6px;font-size:0.75rem;color:#22C55E;">
+                ✓ Token obtido (expira em ${data.expires_in}s)
+              </div>`;
+            } catch (e) { out.innerHTML = `<small style="color:#EF4444;">Erro: ${esc(e.message)}</small>`; }
+          }},
+          { label: '💾 Salvar', class: 'btn-primary', closeOnClick: false, onClick: async (_, { close }) => {
+            const tid = document.getElementById('sp-tid').value.trim();
+            const cid = document.getElementById('sp-cid').value.trim();
+            const sec = document.getElementById('sp-sec').value;
+            if (!tid || !cid || !sec) return toast.error('Preencha os 3 campos.');
+            try {
+              await setDoc(doc(db, 'system_config', 'sharepoint-app'), {
+                tenantId: tid, clientId: cid, clientSecret: sec,
+                updatedAt: serverTimestamp(),
+                updatedBy: store.get('currentUser')?.uid || null,
+              });
+              toast.success('Credenciais salvas.');
+              close(); paint();
+            } catch (e) { toast.error(e.message); }
+          }},
+        ],
+      });
+    });
+
+    // GitHub PAT (token de leitura)
+    document.getElementById('gh-config')?.addEventListener('click', async () => {
+      const { doc, getDoc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('../firebase.js');
+      const cfgSnap = await getDoc(doc(db, 'system_config', 'github'));
+      const cfg = cfgSnap.exists() ? cfgSnap.data() : {};
+      modal.open({
+        title: '⚙ GitHub Personal Access Token',
+        size: 'md',
+        dedupeKey: 'gh-config',
+        content: `
+          <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 14px;">
+            PAT com escopo <code>repo</code> (read). Crie em <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a>.
+            Salvo em <code>system_config/github</code>.
+          </p>
+          <div class="form-group">
+            <label class="form-label">Token</label>
+            <input type="password" id="gh-token" class="form-input" value="${esc(cfg.token||'')}" placeholder="ghp_..." style="font-family:monospace;font-size:0.8125rem;" autocomplete="new-password" />
+          </div>
+        `,
+        footer: [
+          { label: 'Cancelar', class: 'btn-secondary' },
+          { label: '💾 Salvar', class: 'btn-primary', closeOnClick: false, onClick: async (_, { close }) => {
+            const token = document.getElementById('gh-token').value.trim();
+            try {
+              await setDoc(doc(db, 'system_config', 'github'), {
+                token,
+                updatedAt: serverTimestamp(),
+                updatedBy: store.get('currentUser')?.uid || null,
+              });
+              toast.success('Token salvo.');
+              close();
+            } catch (e) { toast.error(e.message); }
+          }},
+        ],
+      });
     });
 
     document.getElementById('gd-save-id')?.addEventListener('click', () => {
