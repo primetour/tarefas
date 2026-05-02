@@ -396,7 +396,7 @@ function mountShell(root) {
     // Start AI automations scheduler
     import('./services/aiAutomations.js').then(m => m.startAutomationScheduler()).catch(() => {});
     // Novo scheduler de agents (Fase 5) — coexiste com o legado até cleanup
-    import('./services/agentScheduler.js?v=20260501t').then(m => m.startAgentScheduler()).catch(() => {});
+    import('./services/agentScheduler.js?v=20260501v').then(m => m.startAgentScheduler()).catch(() => {});
   }
 }
 
@@ -436,7 +436,7 @@ function setupRouter() {
     'integrations': async () => { await renderIntegrations(content); },
     'about':        async () => { await renderAbout(content); },
     'help':         async () => { const { renderHelp } = await import('./pages/help.js?v=20260501r'); await renderHelp(content); },
-    'ai-hub':       async () => { const { renderAiHub } = await import('./pages/aiHub.js?v=20260501t'); await renderAiHub(content); },
+    'ai-hub':       async () => { const { renderAiHub } = await import('./pages/aiHub.js?v=20260501v'); await renderAiHub(content); },
     // Redirects de URLs legadas para o IA Hub (mantém links antigos funcionando)
     'ai-skills':       async () => { location.hash = '#ai-hub'; },
     'ai-automations':  async () => { location.hash = '#ai-hub'; },
@@ -548,7 +548,7 @@ function setupRouter() {
     // ── Monta botões de agentes IA no header da página ──
     setTimeout(async () => {
       try {
-        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501t');
+        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501v');
         await mountAgentsForRoute(route);
       } catch (e) { console.warn('[agents] mount err:', e?.message); }
     }, 600); // delay pra header já ter renderizado
