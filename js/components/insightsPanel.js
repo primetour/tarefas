@@ -45,7 +45,88 @@ import {
   suggestInsightsViaAi,
   insightCoversPeriod, formatInsightPeriod, formatDataSnapshot,
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
-} from '../services/insights.js?v=20260503rr2';
+} from '../services/insights.js?v=20260503ss1';
+import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260503ss1';
+
+/** Mapa global de widgetLabels passado pelo dashboards.js — usado no export PDF/XLSX
+ * pra mostrar nome legível do widget. Set/get via janela compartilhada. */
+function getWidgetLabels(dashboard) {
+  return window.__INSIGHT_WIDGET_LABELS?.[dashboard] || {};
+}
+
+/** Abre um insight em PDF ou XLSX (chamado pelos botões 📤). */
+async function exportSingleInsight(insight, format, dashboard) {
+  const widgetLabels = getWidgetLabels(dashboard);
+  try {
+    if (format === 'pdf') {
+      await exportInsightToPdf(insight, { widgetLabels });
+      toast.success('PDF exportado.');
+    } else if (format === 'xlsx') {
+      await exportInsightToXlsx(insight, { widgetLabels });
+      toast.success('XLSX exportado.');
+    }
+  } catch (e) {
+    console.error('[insightExport]', e);
+    toast.error('Erro ao exportar: ' + (e.message || ''));
+  }
+}
+
+/** Abre mini-menu pop-up perto do botão pra escolher PDF/XLSX. */
+function openExportMenu(anchorBtn, insight, dashboard) {
+  // Remove menu anterior se existir
+  document.querySelectorAll('.ip-export-menu').forEach(el => el.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'ip-export-menu';
+  menu.style.cssText = `
+    position:fixed;z-index:2500;background:var(--bg-card);
+    border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+    box-shadow:0 8px 24px rgba(0,0,0,.4);padding:4px;min-width:160px;
+    display:flex;flex-direction:column;
+  `;
+  menu.innerHTML = `
+    <button class="ip-export-opt" data-fmt="pdf"
+      style="border:none;background:none;cursor:pointer;padding:8px 12px;
+      text-align:left;font-size:0.8125rem;color:var(--text-primary);
+      display:flex;align-items:center;gap:8px;border-radius:4px;">
+      📄 Exportar como PDF
+    </button>
+    <button class="ip-export-opt" data-fmt="xlsx"
+      style="border:none;background:none;cursor:pointer;padding:8px 12px;
+      text-align:left;font-size:0.8125rem;color:var(--text-primary);
+      display:flex;align-items:center;gap:8px;border-radius:4px;">
+      📊 Exportar como XLSX
+    </button>
+  `;
+
+  // Posiciona próximo ao botão
+  const r = anchorBtn.getBoundingClientRect();
+  menu.style.left = Math.max(8, Math.min(window.innerWidth - 168, r.left)) + 'px';
+  menu.style.top  = Math.min(window.innerHeight - 100, r.bottom + 4) + 'px';
+
+  document.body.appendChild(menu);
+
+  // Hover effect
+  menu.querySelectorAll('.ip-export-opt').forEach(b => {
+    b.addEventListener('mouseenter', () => b.style.background = 'var(--bg-elevated)');
+    b.addEventListener('mouseleave', () => b.style.background = 'none');
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const fmt = b.dataset.fmt;
+      menu.remove();
+      await exportSingleInsight(insight, fmt, dashboard);
+    });
+  });
+
+  // Fecha ao clicar fora
+  const onOutside = (e) => {
+    if (!menu.contains(e.target) && e.target !== anchorBtn) {
+      menu.remove();
+      document.removeEventListener('click', onOutside);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', onOutside), 50);
+}
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -240,6 +321,11 @@ export async function mountInsightsPanel(opts) {
       closePopover();
       handleAiSuggest();
     });
+    bindPopoverItemActions(pop, closePopover);
+  }
+
+  /** Bind dos botões edit/del/export em um popover. Reutilizável após re-render. */
+  function bindPopoverItemActions(pop, closePopover) {
     pop.querySelectorAll('[data-act="ip-edit"]').forEach(b => {
       b.addEventListener('click', () => {
         const ins = insights.find(x => x.id === b.dataset.id);
@@ -255,37 +341,23 @@ export async function mountInsightsPanel(opts) {
           await deleteInsight(b.dataset.id);
           toast.success('Removido.');
           await refresh();
-          // Re-render popover content
           pop.querySelector('#ip-pop-list').innerHTML = renderListCompact();
-          rebindPopoverList(pop, closePopover);
+          bindPopoverItemActions(pop, closePopover);
           container.dispatchEvent(new CustomEvent('insights:changed'));
         } catch (e) { toast.error('Erro: ' + (e.message || '')); }
+      });
+    });
+    pop.querySelectorAll('[data-act="ip-export"]').forEach(b => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ins = insights.find(x => x.id === b.dataset.id);
+        if (ins) openExportMenu(b, ins, dashboard);
       });
     });
   }
 
   function rebindPopoverList(pop, closePopover) {
-    pop.querySelectorAll('[data-act="ip-edit"]').forEach(b => {
-      b.addEventListener('click', () => {
-        const ins = insights.find(x => x.id === b.dataset.id);
-        closePopover();
-        if (ins) openForm(ins);
-      });
-    });
-    pop.querySelectorAll('[data-act="ip-del"]').forEach(b => {
-      b.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!confirm('Remover este insight?')) return;
-        try {
-          await deleteInsight(b.dataset.id);
-          toast.success('Removido.');
-          await refresh();
-          pop.querySelector('#ip-pop-list').innerHTML = renderListCompact();
-          rebindPopoverList(pop, closePopover);
-          container.dispatchEvent(new CustomEvent('insights:changed'));
-        } catch (e) { toast.error('Erro: ' + (e.message || '')); }
-      });
-    });
+    bindPopoverItemActions(pop, closePopover);
   }
 
   function renderListCompact() {
@@ -342,6 +414,8 @@ export async function mountInsightsPanel(opts) {
             </div>
           </div>
           <div style="display:flex;gap:2px;flex-shrink:0;">
+            <button data-act="ip-export" data-id="${esc(ins.id)}"
+              style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 5px;font-size:0.75rem;" title="Exportar este insight (PDF ou XLSX)">📤</button>
             <button data-act="ip-edit" data-id="${esc(ins.id)}"
               style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 5px;font-size:0.75rem;" title="Editar">✎</button>
             <button data-act="ip-del" data-id="${esc(ins.id)}"
@@ -500,6 +574,7 @@ export async function mountInsightsPanel(opts) {
             </div>
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0;">
+            <button class="btn btn-ghost btn-sm" data-act="ip-export" data-id="${esc(ins.id)}" title="Exportar este insight (PDF ou XLSX)">📤</button>
             <button class="btn btn-ghost btn-sm" data-act="ip-edit" data-id="${esc(ins.id)}" title="Editar">✎</button>
             <button class="btn btn-ghost btn-sm" data-act="ip-del" data-id="${esc(ins.id)}" title="Remover" style="color:var(--color-danger);">✕</button>
           </div>
@@ -515,11 +590,18 @@ export async function mountInsightsPanel(opts) {
       onlyCurrentPeriod = e.target.checked;
       const list = container.querySelector('#ip-list');
       if (list) list.innerHTML = renderList();
-      // Re-bind delete/edit buttons after re-render
+      // Re-bind delete/edit/export buttons after re-render
       container.querySelectorAll('[data-act="ip-edit"]').forEach(b => {
         b.addEventListener('click', () => {
           const ins = insights.find(x => x.id === b.dataset.id);
           if (ins) openForm(ins);
+        });
+      });
+      container.querySelectorAll('[data-act="ip-export"]').forEach(b => {
+        b.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const ins = insights.find(x => x.id === b.dataset.id);
+          if (ins) openExportMenu(b, ins, dashboard);
         });
       });
       container.querySelectorAll('[data-act="ip-del"]').forEach(b => {
@@ -549,6 +631,13 @@ export async function mountInsightsPanel(opts) {
           await refresh();
           container.dispatchEvent(new CustomEvent('insights:changed'));
         } catch (e) { toast.error('Erro: ' + (e.message || '')); }
+      });
+    });
+    container.querySelectorAll('[data-act="ip-export"]').forEach(b => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ins = insights.find(x => x.id === b.dataset.id);
+        if (ins) openExportMenu(b, ins, dashboard);
       });
     });
   }

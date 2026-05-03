@@ -7,8 +7,8 @@ import { store }    from '../store.js';
 import { toast }    from '../components/toast.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
-import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503rr2';
-import { fetchInsights, insightsToPdfRows, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } from '../services/insights.js?v=20260503rr2';
+import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503ss1';
+import { fetchInsights, insightsToPdfRows, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } from '../services/insights.js?v=20260503ss1';
 import {
   getOverviewMetrics, getTasksByDay, getStatusDistribution,
   getPriorityDistribution, getTasksByMember, getTasksByProject,
@@ -621,7 +621,17 @@ const PRODUTIVIDADE_WIDGETS = [
   { widgetId: 'r3-nucleo',         indexKey: 'nucleo',            label: '◈ Performance por Núcleo',  snapshot: (m) => ({ nucleo: getPerformanceByNucleo(m.tasks) }) },
 ];
 
+// Publica widgetLabels no window pra insightsPanel achar quando exporta
+// insights individuais (PDF/XLSX precisam do label legível do widget).
+function publishWidgetLabels() {
+  window.__INSIGHT_WIDGET_LABELS = window.__INSIGHT_WIDGET_LABELS || {};
+  window.__INSIGHT_WIDGET_LABELS['produtividade'] = Object.fromEntries(
+    PRODUTIVIDADE_WIDGETS.map(w => [w.indexKey, w.label])
+  );
+}
+
 async function attachWidgetInsights(m, period, periodLabel, filtersSnapshot) {
+  publishWidgetLabels();
   // PARALELO: cada mount tem fetchInsights interno — fazendo sequencial leva
   // 14×Firestore round-trips em sequência, podendo passar de 30s e estourar
   // timeout do CDP/browser. Promise.allSettled paraleliza tudo + isola erros.
