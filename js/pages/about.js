@@ -772,13 +772,166 @@ const CONTENT = {
     </div>
 
     <div style="background:rgba(212,168,67,.07);border-left:3px solid var(--brand-gold);
-      border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;">
+      border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;margin-bottom:32px;">
       <p style="font-size:0.8125rem;font-weight:600;color:var(--brand-gold);margin-bottom:4px">DPO — Data Protection Officer</p>
       <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin:0">
         Encarregado pelo tratamento de dados pessoais (LGPD Art. 41):
         <strong>Rene Castro</strong> — <code style="font-size:0.75rem;background:var(--bg-elevated);padding:1px 6px;border-radius:4px;">rene.castro@primetour.com.br</code>.
         Solicitações de titulares (acesso, correção, eliminação) respondidas em até 15 dias úteis.
       </p>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         CONFIDENCIALIDADE NA IA HUB — explicacao corporativa
+         ═══════════════════════════════════════════════════════ -->
+    <h3 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 6px;">
+      🤖 Confidencialidade na IA Hub
+    </h3>
+    <p style="font-size:0.8125rem;color:var(--text-muted);line-height:1.6;margin-bottom:16px;">
+      <strong>Pergunta corporativa frequente:</strong> "Os dados ficam no servidor de vocês ou vão pra OpenAI?"
+      Resposta direta: o modelo de IA <strong>roda no servidor do provider</strong>, mas o dado que sai
+      do PRIMETOUR é <strong>anonimizado antes</strong> e a inferência é <strong>contratualmente isolada</strong> (DPA + no-train).
+    </p>
+
+    <!-- Diagrama de fluxo -->
+    <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-md);padding:18px;margin-bottom:20px;font-family:monospace;
+      font-size:0.7188rem;line-height:1.55;color:var(--text-secondary);overflow-x:auto;">
+<pre style="margin:0;white-space:pre;color:var(--text-secondary);">
+┌─────────────┐                                ┌──────────────────┐
+│   Browser   │                                │  Provider LLM    │
+│   usuário   │   <span style="color:#EF4444;">❌ NUNCA conecta direto</span>     │  (Anthropic /    │
+│             │ ──────────────────────────────→│   OpenAI /       │
+└─────────────┘                                │   Gemini / Groq) │
+       │                                       └──────────────────┘
+       │ HTTPS + JWT                                    ▲
+       ▼                                                │
+┌─────────────────┐    ┌──────────────────┐             │
+│   Firebase      │ ──→│ <span style="color:#22C55E;">aiDataGuard.js</span>   │             │
+│ Cloud Functions │    │ ANONIMIZA PII:   │             │
+│   (callLLM)     │    │  email→&lt;EMAIL_1&gt;│             │
+│                 │    │  CPF →&lt;CPF_1&gt;   │             │
+│ • valida auth   │    │  CNPJ→&lt;CNPJ_1&gt;  │             │
+│ • rate limit    │    │  fone→&lt;PHONE_1&gt; │             │
+│ • cost cap      │    └──────────────────┘             │
+│ • App Check     │            │                        │
+└─────────────────┘            ▼                        │
+                       ┌──────────────────┐             │
+                       │  Cloud Function  │── <span style="color:#22C55E;">TLS 1.3</span> ─→
+                       │     callLLM      │  (anonimo)
+                       └──────────────────┘
+</pre>
+    </div>
+
+    <!-- Pontos chave -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px;">
+      ${[
+        ['🛡','Modelo NÃO roda na nossa infra','Inferência acontece no servidor do provider — nossa responsabilidade é controlar O QUE sai daqui (anonimização) e VALIDAR contratualmente o que ele faz (DPA + no-train).'],
+        ['🔒','PII anonimizado server-side','Antes da chamada sair, aiDataGuard.js troca emails/CPF/CNPJ/telefones por placeholders. Em 11 módulos sensíveis, default ON.'],
+        ['🚫','Browser nunca chama LLM direto','Navegador → Firebase Cloud Function → Provider. Keys de IA ficam no Secret Manager (server). Cliente nunca vê API key.'],
+        ['🤝','DPA assinado com cada provider','Anthropic, OpenAI, Google, Groq todos com Data Processing Agreement B2B — proibe uso pra treinamento.'],
+        ['📜','Logs de uso com TTL','ai_usage_logs (90d) + ai_chat_history (90d, opt-out via toggle). Sempre incluem userId mas conteúdo já está anonimizado.'],
+        ['💰','Cost cap diário por agente','Se um agente custar &gt; limite/dia, callLLM recusa. Defesa contra bill bomb (LLM abuse).'],
+      ].map(([icon,t,d]) => `
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+          border-radius:var(--radius-md);padding:12px;">
+          <div style="font-size:1.125rem;margin-bottom:6px;">${icon}</div>
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin-bottom:3px;">${esc(t)}</div>
+          <div style="font-size:0.7188rem;color:var(--text-muted);line-height:1.55;">${d}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    <!-- Tabela de garantias por provider -->
+    <h3 style="font-size:0.9375rem;font-weight:600;color:var(--text-primary);margin:0 0 8px;">Garantias contratuais por provider (DPA ativo)</h3>
+    <div style="overflow:auto;margin-bottom:20px;">
+      <table style="width:100%;border-collapse:collapse;font-size:0.8125rem;">
+        <thead><tr style="background:var(--bg-surface);">
+          <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--text-secondary);">Provider</th>
+          <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--text-secondary);">Sem treino?</th>
+          <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--text-secondary);">Retenção</th>
+          <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--text-secondary);">Localização</th>
+        </tr></thead>
+        <tbody>
+          ${[
+            ['Anthropic (Claude)','✓ default API','Zero retenção (modo padrão)','EUA (data residency EU disponível)'],
+            ['OpenAI API','✓ default desde mar/2023','30d abuse monitoring (zerável via config)','EUA'],
+            ['Google Gemini API','✓ paid tier (Vertex)','Não treina (paid tier)','EUA / EU (configurável)'],
+            ['Groq','✓ no-train policy','Mínima (inferência apenas)','EUA'],
+          ].map(([p,t,r,l]) => `
+            <tr style="border-bottom:1px solid var(--border-subtle);">
+              <td style="padding:9px 12px;color:var(--text-primary);font-weight:500;">${esc(p)}</td>
+              <td style="padding:9px 12px;color:#22C55E;font-weight:600;">${esc(t)}</td>
+              <td style="padding:9px 12px;color:var(--text-muted);">${esc(r)}</td>
+              <td style="padding:9px 12px;color:var(--text-muted);">${esc(l)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Opções enterprise pra clientes paranoicos -->
+    <h3 style="font-size:0.9375rem;font-weight:600;color:var(--text-primary);margin:0 0 8px;">Opções enterprise (para clientes Bradesco/BTG-grade)</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-bottom:20px;">
+      ${[
+        ['🔵 Azure OpenAI','Migrar callLLM pra usar endpoint Azure', 'Dado fica no <strong>tenant Azure da Primetour</strong> — mesmo M365'],
+        ['🟧 AWS Bedrock','Substituir Anthropic direct por Bedrock SDK', 'Dado nunca sai da <strong>VPC AWS</strong> contratada'],
+        ['🟢 Vertex AI (GCP)','Já usamos GCP — só trocar endpoint','Mesmo projeto GCP do Firebase, <strong>sem cross-cloud</strong>'],
+        ['🟣 Self-hosted','Llama 3 / Mistral em Cloud Run com GPU OU on-premise','<strong>Zero dado sai da Primetour</strong>. Custo: R$2-8k/mês GPU'],
+      ].map(([t,h,d]) => `
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:12px;">
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin-bottom:4px;">${t}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.5;margin-bottom:6px;">${esc(h)}</div>
+          <div style="font-size:0.7188rem;color:var(--text-secondary);line-height:1.5;">${d}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div style="background:rgba(34,197,94,.07);border-left:3px solid #22C55E;
+      border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;margin-bottom:32px;">
+      <p style="font-size:0.8125rem;font-weight:600;color:#22C55E;margin-bottom:4px">📞 Resposta padrão pra time de segurança corporativo</p>
+      <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin:0;font-style:italic;">
+        "Os dados saem da nossa infra <strong>anonimizados</strong> (emails/CPFs/CNPJs trocados por placeholders)
+        via <strong>TLS 1.3</strong>. O provider executa a inferência no servidor dele e devolve a resposta —
+        sem armazenar pra treino (DPA assinado), retenção máxima 30d (zerável). Logs internos com TTL 90d
+        anônimos por default. Usuário tem opt-out completo via Configurações → Privacidade e IA.
+        Para clientes que exigem isolamento total, oferecemos <strong>Azure OpenAI no tenant Primetour</strong>
+        ou <strong>Llama 3 self-hosted</strong> com zero exposição externa."
+      </p>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         DOCUMENTACAO TECNICA CLICAVEL
+         ═══════════════════════════════════════════════════════ -->
+    <h3 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 6px;">
+      📚 Documentação técnica completa
+    </h3>
+    <p style="font-size:0.8125rem;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">
+      Documentos versionados — clique pra abrir em página dedicada (auth obrigatória, formatado, sem ir ao GitHub).
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">
+      ${[
+        ['🛡','Política de Segurança',          'security',     'Postura, sprints completos, métricas'],
+        ['🎯','Modelo de Ameaças (STRIDE)',     'threat-model', 'Vetores STRIDE + OWASP API Top 10 + action items'],
+        ['🚨','Resposta a Incidentes',          'incident',     'Runbook P0–P3, comunicação ANPD &lt;72h, recovery'],
+        ['🔑','Controle de Acesso (RBAC)',      'access',       'Matriz roles × permissions, lifecycle, MFA'],
+        ['🔐','Fluxo de Dados & PII',           'data-flow',    'Inventário PII, fluxos, base legal LGPD'],
+        ['⚙','Infraestrutura',                 'infra',        'Stack, recovery, custos'],
+        ['☁','Migração Cloudflare',            'cloudflare',   'Plano de migração GH Pages → CF Pages'],
+        ['📄','Fact Sheet (executivo)',         'fact-sheet',   'Resumo 1-página pra apresentar a clientes'],
+      ].map(([icon,title,id,desc]) => `
+        <a href="docs.html?doc=${id}" target="_blank"
+          style="display:flex;gap:12px;align-items:flex-start;padding:14px;
+          background:var(--bg-surface);border:1px solid var(--border-subtle);
+          border-radius:var(--radius-md);text-decoration:none;transition:all .15s;">
+          <div style="font-size:1.5rem;flex-shrink:0;">${icon}</div>
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);margin-bottom:3px;">${esc(title)}</div>
+            <div style="font-size:0.7188rem;color:var(--text-muted);line-height:1.5;">${desc}</div>
+          </div>
+          <div style="font-size:0.875rem;color:var(--text-muted);flex-shrink:0;">→</div>
+        </a>
+      `).join('')}
     </div>`,
 };
 

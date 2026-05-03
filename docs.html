@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="PRIMETOUR — Documentação técnica de Segurança e Privacidade" />
+  <meta name="robots" content="noindex" />
+
+  <!-- Security headers -->
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+
+  <!-- CSP — autoriza marked.js do jsdelivr -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src  'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://apis.google.com https://accounts.google.com;
+    style-src   'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src    'self' https://fonts.gstatic.com;
+    img-src     'self' data: https:;
+    connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://primetour.github.io;
+    frame-src   'self' https://*.firebaseapp.com;
+    object-src  'none';
+    base-uri    'self';
+  " />
+
+  <title>PRIMETOUR · Documentação Técnica</title>
+  <link rel="icon" type="image/png" href="assets/mandala-branca.png" />
+
+  <link rel="stylesheet" href="css/base.css" />
+
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+      background: var(--bg-base, #0A1628);
+      color: var(--text-primary, #E2E8F0);
+      min-height: 100vh;
+    }
+    .docs-layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      min-height: 100vh;
+    }
+    .docs-sidebar {
+      background: var(--bg-surface, #0F1B30);
+      border-right: 1px solid var(--border-subtle, #1F2937);
+      padding: 24px 20px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    .docs-sidebar h1 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin: 0 0 4px;
+      color: var(--text-primary, #E2E8F0);
+    }
+    .docs-sidebar .subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted, #64748B);
+      margin-bottom: 24px;
+    }
+    .docs-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .docs-nav a {
+      display: block;
+      padding: 10px 12px;
+      font-size: 0.8125rem;
+      color: var(--text-secondary, #94A3B8);
+      text-decoration: none;
+      border-radius: 6px;
+      transition: all .15s;
+      cursor: pointer;
+    }
+    .docs-nav a:hover {
+      background: rgba(212,168,67,0.06);
+      color: var(--text-primary, #E2E8F0);
+    }
+    .docs-nav a.active {
+      background: rgba(212,168,67,0.12);
+      color: var(--brand-gold, #D4A843);
+      font-weight: 600;
+    }
+    .docs-nav .nav-icon { display: inline-block; width: 18px; }
+
+    .docs-content {
+      padding: 40px 60px;
+      max-width: 920px;
+    }
+    .docs-content .breadcrumb {
+      font-size: 0.75rem;
+      color: var(--text-muted, #64748B);
+      margin-bottom: 16px;
+    }
+    .docs-content .breadcrumb a {
+      color: var(--brand-gold, #D4A843);
+      text-decoration: none;
+    }
+    .docs-content .loading {
+      padding: 80px 20px;
+      text-align: center;
+      color: var(--text-muted, #64748B);
+    }
+
+    /* Markdown */
+    .md-body { font-size: 0.9375rem; line-height: 1.7; color: var(--text-secondary, #94A3B8); }
+    .md-body h1 { font-size: 2rem; font-weight: 700; color: var(--text-primary, #E2E8F0); margin: 0 0 16px; }
+    .md-body h2 { font-size: 1.5rem; font-weight: 600; color: var(--text-primary, #E2E8F0); margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle, #1F2937); }
+    .md-body h3 { font-size: 1.125rem; font-weight: 600; color: var(--text-primary, #E2E8F0); margin: 24px 0 10px; }
+    .md-body h4 { font-size: 1rem; font-weight: 600; color: var(--text-primary, #E2E8F0); margin: 18px 0 8px; }
+    .md-body p, .md-body ul, .md-body ol { margin: 0 0 14px; }
+    .md-body ul, .md-body ol { padding-left: 24px; }
+    .md-body li { margin-bottom: 4px; }
+    .md-body a { color: var(--brand-gold, #D4A843); }
+    .md-body code { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 0.85em; background: var(--bg-elevated, #1E293B); padding: 2px 6px; border-radius: 4px; color: var(--brand-gold, #D4A843); }
+    .md-body pre { background: var(--bg-elevated, #1E293B); border: 1px solid var(--border-subtle, #1F2937); border-radius: 6px; padding: 14px 16px; overflow-x: auto; margin: 0 0 16px; }
+    .md-body pre code { background: transparent; padding: 0; color: var(--text-primary, #E2E8F0); }
+    .md-body blockquote { border-left: 4px solid var(--brand-gold, #D4A843); padding: 8px 16px; margin: 0 0 16px; background: rgba(212,168,67,0.05); color: var(--text-secondary, #94A3B8); border-radius: 0 6px 6px 0; }
+    .md-body table { border-collapse: collapse; width: 100%; margin: 0 0 16px; font-size: 0.875rem; }
+    .md-body th, .md-body td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border-subtle, #1F2937); }
+    .md-body th { background: var(--bg-elevated, #1E293B); font-weight: 600; color: var(--text-primary, #E2E8F0); }
+    .md-body hr { border: 0; border-top: 1px solid var(--border-subtle, #1F2937); margin: 24px 0; }
+    .md-body img { max-width: 100%; border-radius: 6px; }
+
+    .docs-footer {
+      margin-top: 60px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border-subtle, #1F2937);
+      font-size: 0.75rem;
+      color: var(--text-muted, #64748B);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .docs-footer a {
+      color: var(--brand-gold, #D4A843);
+      text-decoration: none;
+    }
+
+    .auth-gate {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      flex-direction: column;
+      gap: 12px;
+      padding: 20px;
+      text-align: center;
+    }
+    .auth-gate h2 { margin: 0; font-size: 1.25rem; color: var(--text-primary, #E2E8F0); }
+    .auth-gate p { color: var(--text-muted, #64748B); font-size: 0.875rem; }
+    .auth-gate .btn {
+      margin-top: 12px;
+      background: var(--brand-gold, #D4A843);
+      color: #0A1628;
+      padding: 10px 20px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    @media (max-width: 768px) {
+      .docs-layout { grid-template-columns: 1fr; }
+      .docs-sidebar { position: relative; height: auto; }
+      .docs-content { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"><div class="auth-gate"><h2>Carregando…</h2></div></div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import { firebaseConfig } from './js/config.js';
+
+    // ─── Lista de docs disponíveis ──────────────────────────
+    const DOCS = [
+      { id: 'security',     icon: '🛡', file: 'SECURITY.md',            title: 'Política de Segurança',     section: 'Segurança' },
+      { id: 'threat-model', icon: '🎯', file: 'THREAT-MODEL.md',        title: 'Modelo de Ameaças (STRIDE)',section: 'Segurança' },
+      { id: 'incident',     icon: '🚨', file: 'INCIDENT-RESPONSE.md',   title: 'Resposta a Incidentes',     section: 'Segurança' },
+      { id: 'access',       icon: '🔑', file: 'ACCESS-CONTROL.md',      title: 'Controle de Acesso (RBAC)', section: 'Segurança' },
+      { id: 'data-flow',    icon: '🔐', file: 'DATA-FLOW.md',           title: 'Fluxo de Dados & PII',      section: 'Privacidade' },
+      { id: 'infra',        icon: '⚙', file: 'INFRA.md',               title: 'Infraestrutura',            section: 'Operação' },
+      { id: 'cloudflare',   icon: '☁',  file: 'MIGRATION-CLOUDFLARE.md',title: 'Migração Cloudflare',       section: 'Operação' },
+      { id: 'fact-sheet',   icon: '📄', file: 'FACT_SHEET.md',          title: 'Fact Sheet (executivo)',    section: 'Geral' },
+    ];
+
+    // ─── Init Firebase Auth ─────────────────────────────────
+    const app = initializeApp(firebaseConfig, 'primetour-docs');
+    const auth = getAuth(app);
+
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        document.getElementById('root').innerHTML = `
+          <div class="auth-gate">
+            <h2>🔒 Acesso restrito</h2>
+            <p>Esta documentação é interna. Faça login no PRIMETOUR primeiro.</p>
+            <a class="btn" href="/tarefas/">Ir para o sistema</a>
+          </div>`;
+        return;
+      }
+      // Validar email do tenant Primetour
+      if (!user.email || !user.email.toLowerCase().endsWith('@primetour.com.br')) {
+        document.getElementById('root').innerHTML = `
+          <div class="auth-gate">
+            <h2>🚫 Acesso negado</h2>
+            <p>Sua conta (${user.email}) não pertence ao tenant Primetour.</p>
+            <a class="btn" href="/tarefas/">Voltar</a>
+          </div>`;
+        return;
+      }
+      await render();
+    });
+
+    // ─── Render ────────────────────────────────────────────
+    async function render() {
+      const params = new URLSearchParams(location.search);
+      const requestedId = params.get('doc') || 'security';
+      const doc = DOCS.find(d => d.id === requestedId) || DOCS[0];
+
+      // Group docs by section
+      const sections = {};
+      DOCS.forEach(d => {
+        if (!sections[d.section]) sections[d.section] = [];
+        sections[d.section].push(d);
+      });
+
+      document.getElementById('root').innerHTML = `
+        <div class="docs-layout">
+          <aside class="docs-sidebar">
+            <h1>📚 Docs Técnicos</h1>
+            <p class="subtitle">PRIMETOUR — Segurança & Operação</p>
+            <nav class="docs-nav">
+              ${Object.entries(sections).map(([section, items]) => `
+                <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+                  letter-spacing:.06em;color:#64748B;padding:14px 12px 6px;">${section}</div>
+                ${items.map(d => `
+                  <a href="?doc=${d.id}" class="${d.id === doc.id ? 'active' : ''}">
+                    <span class="nav-icon">${d.icon}</span> ${d.title}
+                  </a>
+                `).join('')}
+              `).join('')}
+            </nav>
+          </aside>
+          <main class="docs-content">
+            <div class="breadcrumb">
+              <a href="/tarefas/">PRIMETOUR</a> ·
+              <a href="?">Docs Técnicos</a> ·
+              <span>${doc.title}</span>
+            </div>
+            <div class="md-body" id="md-output">
+              <div class="loading">Carregando ${doc.file}…</div>
+            </div>
+            <div class="docs-footer">
+              <span>Documentação interna · não distribuir externamente</span>
+              <span>
+                <a href="/tarefas/${doc.file}" target="_blank">📄 Raw markdown</a>
+                &nbsp;·&nbsp;
+                <a href="/tarefas/">← Voltar ao sistema</a>
+              </span>
+            </div>
+          </main>
+        </div>
+      `;
+
+      // Carregar e renderizar markdown
+      try {
+        // marked.js dinâmico
+        if (!window.marked) {
+          await loadScript('https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js');
+        }
+        const res = await fetch(`/tarefas/${doc.file}?cb=${Date.now()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const md = await res.text();
+        // Configura marked seguro
+        marked.setOptions({ gfm: true, breaks: true });
+        const html = marked.parse(md);
+        document.getElementById('md-output').innerHTML = html;
+      } catch (e) {
+        document.getElementById('md-output').innerHTML = `
+          <div class="loading">
+            <strong>Erro ao carregar:</strong> ${e.message}<br>
+            <a href="/tarefas/${doc.file}" target="_blank" style="color:#D4A843;">Abrir markdown raw</a>
+          </div>`;
+      }
+    }
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src; s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+  </script>
+</body>
+</html>
