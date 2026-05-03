@@ -295,7 +295,7 @@ const CONTENT = {
         </tr></thead>
         <tbody>
           ${[
-            ['callLLM','onCall','—','Proxy unificado pra todos LLMs com rate limit + cost cap'],
+            ['callLLM','onCall','—','Proxy unificado pra todos LLMs com rate limit + cost cap + prompt caching'],
             ['getR2UploadUrl','onCall','—','Upload assinado R2 com path whitelist + traversal block'],
             ['getSharePointToken','onCall','—','Token Microsoft Graph (client_credentials)'],
             ['getGitHubFile','onCall','—','Read GitHub repos com PAT server-side'],
@@ -346,8 +346,9 @@ const CONTENT = {
     <h3 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 8px;">Documentação técnica detalhada</h3>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">
       ${[
-        ['🗂','Modelo de Dados (Firestore)', 'data-model', '36 collections, campos, PK/FK, TTL, índices'],
-        ['⚙','Infraestrutura completa',     'infra',      'Stack, deploy, monitoring, custos detalhados'],
+        ['🗂','Modelo de Dados (Firestore)', 'data-model',   '36 collections, campos, PK/FK, TTL, índices'],
+        ['⚙','Infraestrutura completa',     'infra',        'Stack, deploy, monitoring, custos detalhados'],
+        ['💾','Prompt Caching (IA)',         'prompt-cache', 'Anthropic + OpenAI cache, economia 47-90% input'],
         ['☁','Migração Cloudflare',         'cloudflare', 'Plano de migração GH Pages → CF Pages'],
       ].map(([icon,title,id,desc]) => `
         <a href="docs.html?doc=${id}"
