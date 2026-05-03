@@ -1597,15 +1597,16 @@ async function renderSoVTab(container) {
 function renderSoVKpis(sov) {
   const own = sov.find(b => b.isOwn) || { sov: 0, sovWeighted: 0, mentions: 0, nss: 0 };
   const totalMentions = sov.reduce((s, b) => s + b.mentions, 0);
-  const top = sov[0] || { name: '—', sovWeighted: 0 };
-  const isOwnTop = top.isOwn;
+  const hasData = totalMentions > 0;
+  // Líder = marca com mais menções (mas só se houver dados)
+  const top = hasData ? sov.find(b => b.mentions > 0) : null;
 
   const kpis = [
-    { label: 'SoV próprio (ponderado)', value: own.sovWeighted.toFixed(1) + '%', color: '#D4A843' },
-    { label: 'SoV simples', value: own.sov.toFixed(1) + '%', color: '#A78BFA' },
+    { label: 'SoV próprio (ponderado)', value: hasData ? own.sovWeighted.toFixed(1) + '%' : '—', color: '#D4A843' },
+    { label: 'SoV simples', value: hasData ? own.sov.toFixed(1) + '%' : '—', color: '#A78BFA' },
     { label: 'Menções no período', value: own.mentions, color: '#22C55E' },
-    { label: 'Net Sentiment Score', value: own.nss.toFixed(0), color: own.nss >= 0 ? '#22C55E' : '#EF4444' },
-    { label: 'Líder do período', value: top.name, color: isOwnTop ? '#22C55E' : '#F97316', sub: top.sovWeighted.toFixed(1) + '%' },
+    { label: 'Net Sentiment Score', value: hasData ? own.nss.toFixed(0) : '—', color: own.nss >= 0 ? '#22C55E' : '#EF4444' },
+    { label: 'Líder do período', value: top ? top.name : '—', color: top?.isOwn ? '#22C55E' : '#F97316', sub: top ? top.sovWeighted.toFixed(1) + '%' : 'sem dados' },
     { label: 'Total geral menções', value: totalMentions, color: '#94A3B8' },
   ];
   document.getElementById('sov-kpis').innerHTML = kpis.map(k => `
