@@ -540,6 +540,33 @@ service cloud.firestore {
         && (resource.data.createdBy.uid == request.auth.uid || isAdmin());
     }
 
+    // ── Revista Luxury Travel (CMS) ───────────────────────────
+    // Edições: leitura pública (auth), escrita admin OU permission luxury_travel_manage.
+    function canManageLuxuryTravel() {
+      return isAdmin() || (isAuth() && (
+        userDoc().permissions != null &&
+        userDoc().permissions.luxury_travel_manage == true
+      ));
+    }
+    match /luxury_travel_editions/{docId} {
+      allow read:   if isAuth();
+      allow create: if canManageLuxuryTravel();
+      allow update: if canManageLuxuryTravel();
+      allow delete: if canManageLuxuryTravel();
+    }
+    match /luxury_travel_fonts/{docId} {
+      allow read:   if isAuth();
+      allow create: if canManageLuxuryTravel();
+      allow update: if canManageLuxuryTravel();
+      allow delete: if canManageLuxuryTravel();
+    }
+    match /luxury_travel_settings/{docId} {
+      allow read:   if isAuth();
+      allow create: if canManageLuxuryTravel();
+      allow update: if canManageLuxuryTravel();
+      allow delete: if canManageLuxuryTravel();
+    }
+
     // ── Feedbacks ──────────────────────────────────────────────
     match /feedbacks/{docId} {
       allow read:   if isAuth();

@@ -170,6 +170,8 @@ class Store {
   canCreateContentCalendar() { return this.isMaster() || this.can('content_calendar_create'); }
   canManageContentCalendar() { return this.isMaster() || this.can('content_calendar_manage'); }
 
+  canManageLuxuryTravel() { return this.isMaster() || this.can('luxury_travel_manage'); }
+
   /**
    * getVisibleSectors()
    * Returns:

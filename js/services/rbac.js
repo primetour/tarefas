@@ -149,6 +149,12 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
+    group: 'Revista Luxury Travel',
+    permissions: [
+      { key: 'luxury_travel_manage', label: 'Administrar Revista Luxury Travel', info: 'Criar/editar edições, fazer upload de PDFs (PT/EN), gerenciar fontes customizadas, regenerar QR codes e configurações da revista.' },
+    ],
+  },
+  {
     group: 'Segurança e Auditoria',
     permissions: [
       { key: 'audit_logs_view',      label: 'Ver logs de auditoria',         info: 'Acesso a audit_logs (TTL 180 dias) — login, mudanças de role, deletes, eventos de segurança.' },
@@ -210,6 +216,7 @@ export const SYSTEM_ROLES = [
       absence_view_team: true, absence_manage_team: true,
       branding_manage: true,
       ai_skills_manage: true, ai_dashboard_view: true, ai_keys_manage: true,
+      luxury_travel_manage: true,
       // Segurança: Head tem acesso quase total (mas master pode revogar)
       audit_logs_view: true, security_digest_view: true,
       security_alerts_receive: true, secrets_audit_view: true,
@@ -248,6 +255,7 @@ export const SYSTEM_ROLES = [
       absence_view_team: true, absence_manage_team: true,
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: true, ai_keys_manage: false,
+      luxury_travel_manage: false,
       // Segurança: Gerente vê audit logs do squad + recebe alertas
       audit_logs_view: true, security_digest_view: false,
       security_alerts_receive: true, secrets_audit_view: false,
@@ -286,6 +294,7 @@ export const SYSTEM_ROLES = [
       absence_view_team: true, absence_manage_team: false,
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
+      luxury_travel_manage: false,
       // Segurança: Coordenador recebe alertas mas não vê logs
       audit_logs_view: false, security_digest_view: false,
       security_alerts_receive: true, secrets_audit_view: false,
@@ -325,6 +334,7 @@ export const SYSTEM_ROLES = [
       absence_view_team: false, absence_manage_team: false,
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
+      luxury_travel_manage: false,
       // Parceiros (externos) não recebem alertas internos
       audit_logs_view: false, security_digest_view: false,
       security_alerts_receive: false, secrets_audit_view: false,
@@ -363,6 +373,7 @@ export const SYSTEM_ROLES = [
       absence_view_team: false, absence_manage_team: false,
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
+      luxury_travel_manage: false,
       // Analista: alertas no próprio login + auto-serviço LGPD
       audit_logs_view: false, security_digest_view: false,
       security_alerts_receive: true, secrets_audit_view: false,
