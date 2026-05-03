@@ -87,6 +87,35 @@ async function fetchImgData(url) {
   } catch { return null; }
 }
 
+/** Converte qualquer dataURL (incluindo WebP) pra PNG limpo PRESERVANDO ALPHA.
+ *  jsPDF não lê WebP nativo e addImage('PNG','FAST') costuma virar JPEG opaco.
+ *  Solução: drawImage num canvas (transparente por default) → toDataURL('image/png')
+ *  garante PNG com canal alpha real, que jsPDF respeita com mode='SLOW'.
+ *  Retorna { dataUrl, naturalW, naturalH } ou null em ambiente sem canvas.
+ */
+async function pngWithAlpha(dataUrl) {
+  if (typeof Image === 'undefined' || typeof document === 'undefined') return null;
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = reject;
+    im.src = dataUrl;
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d');
+  // Não pinta fundo — canvas começa transparente (rgba 0,0,0,0)
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0);
+  return {
+    dataUrl: canvas.toDataURL('image/png'),
+    naturalW: img.naturalWidth,
+    naturalH: img.naturalHeight,
+  };
+}
+
 /* ═══════════════════════════════════════════════════════════════
    IMAGES — Banco portal_images + auto-fetch via Cloud Function
    (Unsplash + Wikipedia fallback)
@@ -332,41 +361,29 @@ function addSectionTitle(doc, y, title, primary, secondary) {
   return y + 18;
 }
 
-/** Footer com logo (opcional) + nome da área + paginação.
- *  Padrão visual igual ao portal de dicas: linha cinza, logo composite
- *  centralizado (sem card branco) e texto pequeno abaixo.
+/** Footer minimalista: logo opcional + paginação. SEM data, SEM nome da BU
+ *  (são infos internas/técnicas que poluem documento de cliente).
  */
 function addFooter(doc, areaName, pageNum, totalPages, primary, logoFooter = null) {
-  const [r, g, b] = hexToRgb(primary);
-
-  // Linha separadora
+  // Linha separadora discreta
   doc.setDrawColor(220, 220, 220);
   doc.setLineWidth(0.2);
-  doc.line(MARGIN, PAGE_H - 17, PAGE_W - MARGIN, PAGE_H - 17);
+  doc.line(MARGIN, PAGE_H - 16, PAGE_W - MARGIN, PAGE_H - 16);
 
-  // Logo centralizado (se a area tem)
+  // Logo centralizado (se a area tem) — fica como brand mark sutil
   if (logoFooter) {
     const lw = logoFooter.widthMm, lh = logoFooter.heightMm;
-    const lx = (PAGE_W - lw) / 2, ly = PAGE_H - 14.5;
+    const lx = (PAGE_W - lw) / 2, ly = PAGE_H - 13;
     try {
       doc.addImage(logoFooter.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
     } catch (e) { /* silencioso */ }
-  } else {
-    // Fallback: nome da BU em primary
-    doc.setFontSize(9);
-    doc.setFont('Poppins', 'bold');
-    doc.setTextColor(r, g, b);
-    doc.text(areaName, PAGE_W / 2, PAGE_H - 11, { align: 'center' });
   }
 
-  // Texto: data + paginação
-  doc.setFontSize(7);
+  // Apenas paginação, no canto direito, discreta
+  doc.setFontSize(8);
   doc.setFont('Poppins', 'normal');
-  doc.setTextColor(140, 140, 140);
-  doc.text(
-    `${areaName}  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pageNum}/${totalPages}`,
-    PAGE_W / 2, PAGE_H - 4, { align: 'center' }
-  );
+  doc.setTextColor(150, 150, 150);
+  doc.text(`${pageNum} / ${totalPages}`, PAGE_W - MARGIN, PAGE_H - 6, { align: 'right' });
 }
 
 /** Gold separator line */
@@ -399,29 +416,38 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   try { await loadPoppinsOnDoc(doc); }
   catch (e) { console.warn('[roteiroGenerator] Poppins falhou, usando Helvetica:', e.message); }
 
-  const primary = area?.colors?.primary || '#D4A843';
-  const secondary = area?.colors?.secondary || '#1A1A2E';
+  // Cores neutras como default (não amarelo). Ouro só se a área pedir.
+  const primary = area?.colors?.primary || '#475569';   // slate-600 (cinza)
+  const secondary = area?.colors?.secondary || '#0F172A'; // slate-900
   const accent = area?.colors?.accent || primary;
-  const buName = area?.name || 'Primetour';
+  // Branding externo: sempre "PRIMETOUR" (sem nome interno da BU "Lazer", "Corporate" etc).
+  // O logo da área é o que diferencia visualmente.
+  const buName = 'PRIMETOUR';
 
   // Resolve imagens (banco → Unsplash → Wikipedia) — não-blocker
   let images = { heroUrl: null, byCity: {}, byHotel: {} };
   try { images = await enrichRoteiroImages(roteiro); }
   catch (e) { console.warn('[roteiroGenerator] enrichRoteiroImages falhou:', e.message); }
 
-  // Logos da área — composite resolve transparência (PNG → JPEG sólido).
-  // logoUrl: versão pra fundo escuro (capa).
-  // logoUrlAlt: versão pra fundo claro (rodapé). Se vazio, cai em logoUrl.
-  let logoCover = null;   // { dataUrl, widthMm, heightMm }
+  // Logos da área:
+  //   - logoCover: PNG transparente convertido via canvas pra preservar alpha.
+  //     Necessário pq jsPDF não lê WebP, e addImage('PNG','FAST') vira JPEG.
+  //     Aqui draw num canvas vazio (transparente) e exporta PNG → alpha real.
+  //   - logoFooter: composite (fundo branco) pra rodapé sobre página branca.
+  let logoCoverPng = null;
   let logoFooter = null;
   if (area?.logoUrl) {
     try {
       const logoData = await fetchImgData(area.logoUrl);
       if (logoData) {
-        logoCover = await compositeLogoOnBackground({
-          logoDataUrl: logoData, bgColorHex: secondary,
-          maxWmm: 90, maxHmm: 50, padPct: 0.03,
-        }).catch(() => null);
+        const cleaned = await pngWithAlpha(logoData).catch(() => null);
+        if (cleaned) {
+          const ratio = cleaned.naturalW / Math.max(cleaned.naturalH, 1);
+          const maxW = 70, maxH = 25;
+          let w = maxW, h = w / ratio;
+          if (h > maxH) { h = maxH; w = h * ratio; }
+          logoCoverPng = { dataUrl: cleaned.dataUrl, widthMm: w, heightMm: h };
+        }
       }
     } catch (e) { /* silencioso */ }
   }
@@ -439,7 +465,7 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   }
 
   /* ─── PAGE 1: COVER ──────────────────────────────────────── */
-  await buildCoverPage(doc, roteiro, buName, primary, secondary, images.heroUrl, logoCover);
+  await buildCoverPage(doc, roteiro, buName, primary, secondary, images.heroUrl, logoCoverPng);
 
   /* ─── PAGES 2+: DAY BY DAY ───────────────────────────────── */
   if (roteiro.days?.length) {
@@ -585,31 +611,26 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
     }
   }
 
-  // Top gold accent line
-  doc.setFillColor(pr, pg, pb);
-  doc.rect(30, 40, PAGE_W - 60, 0.8, 'F');
+  // Top accent line — branco (capa sobre fundo escuro)
+  doc.setFillColor(255, 255, 255);
+  doc.rect(30, 40, PAGE_W - 60, 0.6, 'F');
 
-  // Logo da área no topo (compacto, no header bem acima dos destinos)
-  // Limita altura pra não sobrepor o título "PARIS | ROMA"
-  let nextY = 70; // padrão se não houver logo
+  // Logo da área no topo. PNG nativo com transparência preservada
+  // (mode='SLOW' faz jsPDF processar com alpha; 'FAST' converteria pra JPEG).
+  let nextY = 70;
   if (logoCover) {
-    // Reduz pro tamanho de header (max 22mm de altura)
-    const maxH = 22;
-    const ratio = logoCover.widthMm / Math.max(logoCover.heightMm, 1);
-    let lh = Math.min(logoCover.heightMm, maxH);
-    let lw = lh * ratio;
-    // Limite de largura também
-    if (lw > 70) { lw = 70; lh = lw / ratio; }
+    const lw = logoCover.widthMm, lh = logoCover.heightMm;
     const lx = (PAGE_W - lw) / 2, ly = 48;
     try {
-      doc.addImage(logoCover.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
-      nextY = ly + lh + 18; // empurra destinos abaixo do logo
+      doc.addImage(logoCover.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'SLOW');
+      nextY = ly + lh + 18;
     } catch (e) { /* fallback */ }
   } else {
+    // Fallback: nome PRIMETOUR em texto
     doc.setFont('Poppins', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(pr, pg, pb);
-    doc.text(buName.toUpperCase(), PAGE_W / 2, 52, { align: 'center', charSpace: 3 });
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text(buName, PAGE_W / 2, 52, { align: 'center', charSpace: 3 });
     nextY = 80;
   }
 
@@ -628,28 +649,33 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
     destY += 10;
   }
 
+  // Cover usa BRANCO pra texto de accent (não primary), pq cores escuras
+  // como cinza/cinza-slate ficam invisíveis sobre dark navy + hero overlay.
+  // O ouro/amarelo de uma BU de luxo seria o único caso que funcionaria
+  // como primary direto, mas pra ser consistente: cover = branco sempre.
+
   // Subtitle: ROTEIRO DE VIAGEM
   doc.setFont('Poppins', 'bold');
   doc.setFontSize(14);
-  doc.setTextColor(pr, pg, pb);
+  doc.setTextColor(255, 255, 255);
   doc.text('ROTEIRO DE VIAGEM', PAGE_W / 2, destY + 8, { align: 'center', charSpace: 3 });
 
-  // Thin separator
-  doc.setFillColor(pr, pg, pb);
+  // Thin separator branco
+  doc.setFillColor(255, 255, 255);
   doc.rect(70, destY + 14, PAGE_W - 140, 0.4, 'F');
 
-  // Duration badge
+  // Duration badge — borda + texto branco
   const nights = roteiro.travel?.nights || destinations.reduce((s, d) => s + (d.nights || 0), 0);
   const badgeText = `${nights} NOITE${nights !== 1 ? 'S' : ''}`;
   const badgeY = destY + 26;
 
   doc.setFont('Poppins', 'normal');
   doc.setFontSize(11);
-  doc.setTextColor(pr, pg, pb);
+  doc.setTextColor(255, 255, 255);
 
   const badgeW = Math.min(doc.getTextWidth(badgeText) + 24, CONTENT_W);
   const badgeX = (PAGE_W - badgeW) / 2;
-  doc.setDrawColor(pr, pg, pb);
+  doc.setDrawColor(255, 255, 255);
   doc.setLineWidth(0.4);
   doc.roundedRect(badgeX, badgeY - 6, badgeW, 12, 2, 2, 'S');
   doc.text(badgeText, PAGE_W / 2, badgeY + 2, { align: 'center' });
@@ -663,9 +689,9 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
     doc.text(dateStr, PAGE_W / 2, badgeY + 20, { align: 'center' });
   }
 
-  // Bottom gold line
-  doc.setFillColor(pr, pg, pb);
-  doc.rect(30, PAGE_H - 60, PAGE_W - 60, 0.8, 'F');
+  // Bottom accent line — branco (capa sobre fundo escuro)
+  doc.setFillColor(255, 255, 255);
+  doc.rect(30, PAGE_H - 60, PAGE_W - 60, 0.6, 'F');
 
   // Client name
   if (roteiro.client?.name) {
@@ -706,11 +732,17 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
   y += 4;
 
   // Pré-fetch das imagens das cidades como dataURL (paralelo, não-blocker)
+  // Cover-crop pra dimensão final do banner (CONTENT_W-14 × 28mm) — sem distorção.
+  const dayBannerW = CONTENT_W - 14, dayBannerH = 28;
   const cityImageData = {};
   await Promise.allSettled(
     Object.entries(byCity).map(async ([key, url]) => {
-      const data = await fetchImgData(url);
-      if (data) cityImageData[key] = data;
+      const raw = await fetchImgData(url);
+      if (!raw) return;
+      const fitted = await coverCropImage({
+        dataUrl: raw, finalWmm: dayBannerW, finalHmm: dayBannerH,
+      }).catch(() => raw);
+      cityImageData[key] = fitted;
     })
   );
 
@@ -886,10 +918,14 @@ async function buildHotelsSection(doc, roteiro, primary, secondary, byHotel = {}
     for (let k = 0; k < hotelsWithImg.length; k++) {
       const x = MARGIN + k * (thumbW + gap);
       const item = hotelsWithImg[k];
-      const imgData = await fetchImgData(item.url);
-      if (imgData) {
+      const raw = await fetchImgData(item.url);
+      if (raw) {
+        // Cover-crop pra preencher o thumb sem distorção
+        const fitted = await coverCropImage({
+          dataUrl: raw, finalWmm: thumbW, finalHmm: thumbH,
+        }).catch(() => raw);
         try {
-          doc.addImage(imgData, 'JPEG', x, y, thumbW, thumbH, undefined, 'FAST');
+          doc.addImage(fitted, 'JPEG', x, y, thumbW, thumbH, undefined, 'FAST');
         } catch (e) { /* ignore */ }
       }
       // Legenda
