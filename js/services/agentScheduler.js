@@ -5,7 +5,7 @@
  * decide quais devem rodar AGORA (preset ou cron) e executa.
  * Dedup pra não rodar 2× na mesma janela em abas paralelas.
  */
-import { fetchAgents, runAgent } from './agents.js?v=20260501ss';
+import { fetchAgents, runAgent } from './agents.js?v=20260501tt';
 import { store } from '../store.js';
 
 const CHECK_INTERVAL = 5 * 60 * 1000; // 5min

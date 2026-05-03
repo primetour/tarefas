@@ -37,9 +37,31 @@ export async function renderAbout(container) {
 /* ─── helpers ──────────────────────────────────────────────── */
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/** Renderiza um card de coleção pra Modelo de dados */
+function renderCol([col, fields]) {
+  return `
+    <div style="background:var(--bg-surface);border-radius:var(--radius-md);
+      padding:12px 14px;border:1px solid var(--border-subtle);">
+      <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);
+        margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border-subtle);">${esc(col)}</div>
+      ${fields.map(([f,tag]) => `
+        <div style="font-size:0.75rem;color:var(--text-secondary);padding:4px 0;
+          border-bottom:1px solid var(--border-subtle);display:flex;
+          justify-content:space-between;align-items:center;gap:6px;">
+          <code style="font-size:0.6875rem">${esc(f)}</code>
+          ${tag==='pk'  ? '<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;font-weight:700;background:rgba(56,189,248,.15);color:#7DD3FC">PK</span>'  :
+            tag==='fk'  ? '<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;font-weight:700;background:rgba(245,158,11,.15);color:#FCD34D">FK</span>'  :
+            tag==='new' ? '<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;font-weight:700;background:rgba(34,197,94,.15);color:#86EFAC">novo</span>' :
+            tag==='TTL' ? '<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;font-weight:700;background:rgba(239,68,68,.15);color:#FCA5A5">TTL</span>' : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 const TABS = [
   { id:'pilares',     label:'Pilares'            },
-  { id:'hierarquia',  label:'Hierarquia org.'    },
+  { id:'hierarquia',  label:'Hierarquia'         },
   { id:'roles',       label:'Papéis'             },
   { id:'dados',       label:'Modelo de dados'    },
   { id:'modulos',     label:'Módulos'            },
@@ -52,28 +74,54 @@ const TABS = [
 const CONTENT = {
 
   pilares: () => `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:24px;">
+    <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:20px;line-height:1.6;">
+      O PRIMETOUR é construído sobre 6 pilares que se reforçam mutuamente.
+      Cada um cobre uma dimensão crítica da operação corporativa.
+    </p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:24px;">
       ${[
-        ['🏛','Hierarquia organizacional','Setor → Núcleo → Tipo → Variação → Tarefa'],
-        ['👥','Papéis e permissões',      'Diretoria → Head → Gerente → Coordenador → Analista'],
-        ['🔭','Visibilidade de dados',    'O que cada papel vê, por setor e workspace'],
+        ['🏛','Hierarquia organizacional','Setor → Núcleo → Tipo → Variação → Tarefa. Toda visibilidade parte daqui.'],
+        ['👥','Papéis e permissões',      '6 níveis (Diretoria → Head → Gerente → Coord → Analista → Parceiro) com 70+ permissões granulares.'],
+        ['🔭','Visibilidade de dados',    'Scopes own/sector/squad/all aplicados em dupla camada (client UX + server rules).'],
+        ['🤖','IA Hub corporativo',       'Agentes especializados com PII anonimizado, knowledge SharePoint, multi-provider (Anthropic/OpenAI/Gemini/Groq).'],
+        ['🛡','Segurança em camadas',     'Defense-in-depth: TLS, App Check, SSO+MFA, RBAC, Firestore Rules, rate limit, SIEM diário.'],
+        ['🔐','Privacidade by design',    'LGPD completo: 9 direitos do titular, anonimização automática, audit trail imutável, DPO designado.'],
       ].map(([icon,name,desc]) => `
         <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
           border-radius:var(--radius-md);padding:16px;">
-          <div style="font-size:1.25rem;margin-bottom:8px">${icon}</div>
-          <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);margin-bottom:4px">${name}</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.5">${desc}</div>
+          <div style="font-size:1.5rem;margin-bottom:8px">${icon}</div>
+          <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);margin-bottom:6px">${name}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.55">${desc}</div>
         </div>
       `).join('')}
     </div>
 
     <div style="background:rgba(212,168,67,.07);border-left:3px solid var(--brand-gold);
-      border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;">
-      <p style="font-size:0.875rem;font-weight:600;color:var(--brand-gold);margin-bottom:4px">Regra de ouro</p>
+      border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;margin-bottom:14px;">
+      <p style="font-size:0.875rem;font-weight:600;color:var(--brand-gold);margin-bottom:4px">Regra de ouro #1 — Setor é entrada</p>
       <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin:0">
         <strong>Setor</strong> é o ponto de entrada em todos os módulos. Antes de exibir tipos de tarefa,
         núcleos, categorias ou tarefas, o sistema parte do setor do usuário logado —
         ou de um filtro de setor explícito na interface.
+      </p>
+    </div>
+
+    <div style="background:rgba(34,197,94,.07);border-left:3px solid #22C55E;
+      border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;margin-bottom:14px;">
+      <p style="font-size:0.875rem;font-weight:600;color:#22C55E;margin-bottom:4px">Regra de ouro #2 — Server-side é fonte da verdade</p>
+      <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin:0">
+        Toda checagem de permissão acontece <strong>duas vezes</strong>: no cliente (pra UX, esconder botões)
+        e no servidor (Firestore Rules + Cloud Functions). Atacante que driblar o cliente esbarra na rule server-side.
+      </p>
+    </div>
+
+    <div style="background:rgba(59,130,246,.07);border-left:3px solid #3B82F6;
+      border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;">
+      <p style="font-size:0.875rem;font-weight:600;color:#3B82F6;margin-bottom:4px">Regra de ouro #3 — Audit tudo</p>
+      <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin:0">
+        Todo evento crítico (login, role change, delete, export LGPD) é gravado em <code>audit_logs</code>
+        append-only com IP+UA capturado server-side. TTL 180 dias. Imutável (não pode ser editado).
       </p>
     </div>`,
 
@@ -127,128 +175,266 @@ const CONTENT = {
 
   roles: () => `
     <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:20px;line-height:1.6">
-      Cinco papéis definem o que cada usuário pode ver e fazer no sistema.
-      A visibilidade de setor é herdada automaticamente do perfil do usuário.
+      Seis papéis com permissões granulares. Diretoria tem acesso total + zona de perigo.
+      Head atua como DPO operacional (LGPD). Parceiros são externos com acesso restrito.
     </p>
+
     <div style="overflow-x:auto;margin-bottom:24px;">
       <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
         <thead>
           <tr style="background:var(--bg-surface);">
-            ${['Papel','Setores visíveis','Módulos admin','Tarefas','Tipos de tarefa','Solicitações'].map(h=>
-              `<th style="text-align:left;padding:9px 12px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">${h}</th>`
-            ).join('')}
-          </tr>
-        </thead>
-        <tbody>
-          ${[
-            ['Diretoria',    '#22C55E','Todos',                               '#22C55E','Todos',                     '#22C55E','Ver/editar tudo',              '#22C55E','Criar/editar/excluir',     '#22C55E','Ver/converter/recusar'],
-            ['Head',         '#F59E0B','Definido pela Diretoria',              '#F59E0B','Usuários, Setores, Tipos',   '#F59E0B','Ver/editar nos seus setores',  '#22C55E','Criar/editar nos seus setores','#22C55E','Ver/converter/recusar'],
-            ['Gerente',      '#F59E0B','Setor do usuário',                    '#F59E0B','Criar tipos',                '#F59E0B','Ver workspace, editar seu setor','#F59E0B','Criar no seu setor',      '#22C55E','Ver/converter/recusar'],
-            ['Coordenador',  '#F59E0B','Setor do usuário',                    '#6B7280','Nenhum',                     '#F59E0B','Ver seu setor/núcleo',          '#6B7280','Só visualizar',             '#F59E0B','Ver do seu setor'],
-            ['Analista',     '#F59E0B','Setor do usuário',                    '#6B7280','Nenhum',                     '#F59E0B','Criar + ver workspace',          '#6B7280','Só visualizar',             '#6B7280','Não acessa'],
-          ].map((r,ri) => `
-            <tr style="border-bottom:1px solid var(--border-subtle);">
-              <td style="padding:9px 12px;font-weight:600;color:var(--text-primary);">${r[0]}</td>
-              ${[[r[1],r[2]],[r[3],r[4]],[r[5],r[6]],[r[7],r[8]],[r[9],r[10]]].map(([c,v])=>
-                `<td style="padding:9px 12px;color:${c};">${v}</td>`
-              ).join('')}
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-    <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-      color:var(--text-muted);margin-bottom:10px;">Regras de visibilidade por setor</div>
-    ${[
-      ['Diretoria',                    'Vê todos os setores, sem restrição.'],
-      ['Head',                         'Vê apenas os setores definidos em <code>users.visibleSectors[]</code> — configurado pela Diretoria no perfil do usuário.'],
-      ['Gerente / Coordenador / Analista', 'Vê apenas o setor definido em <code>users.sector</code> (campo único). Dentro do setor, pertence a um ou mais núcleos via <code>users.nucleos[]</code> — usados para filtrar responsáveis em Metas e membros em Setores & Núcleos.'],
-    ].map(([role,desc]) => `
-      <div style="display:flex;gap:8px;margin-bottom:8px;font-size:0.8125rem;line-height:1.6;">
-        <span style="font-weight:600;color:var(--text-primary);min-width:220px;white-space:nowrap;">${role}</span>
-        <span style="color:var(--text-muted);">${desc}</span>
-      </div>
-    `).join('')}`,
-
-  dados: () => `
-    <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:20px;line-height:1.6">
-      Coleções principais no Firestore e seus campos chave.
-      Campos marcados com <span style="font-size:0.625rem;padding:1px 6px;border-radius:3px;font-weight:600;background:rgba(34,197,94,.15);color:#86EFAC;">novo</span>
-      foram adicionados nas melhorias recentes.
-    </p>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
-      ${[
-        ['task_types',      [['id','pk'],['name',''],['sector','new'],['nucleos[]','fk'],['categoryId','fk'],['variations[]','new'],['scheduleSlots[]','new'],['steps[]',''],['deliveryStandard','new']]],
-        ['tasks',           [['id','pk'],['typeId','fk'],['variationId','new'],['variationName','new'],['sector','new'],['nucleos[]','fk'],['requestingArea',''],['outOfCalendar','new'],['status, priority',''],['assignees[]','fk'],['workspaceId','fk']]],
-        ['requests',        [['id','pk'],['typeId','fk'],['variationId','new'],['variationName','new'],['sector','new'],['requestingArea',''],['outOfCalendar','new'],['nucleo',''],['status',''],['rejectionNote','new']]],
-        ['nucleos',         [['id','pk'],['name',''],['sector','fk'],['active','']]],
-        ['task_categories', [['id','pk'],['name',''],['sector','new'],['color, icon','']]],
-        ['users',           [['id','pk'],['role / roleId',''],['sector','fk'],['nucleos[]','new'],['nucleo','fk'],['visibleSectors[]',''],['prefs.cardFields[]','']]],
-      ].map(([col,fields]) => `
-        <div style="background:var(--bg-surface);border-radius:var(--radius-md);
-          padding:12px 14px;border:1px solid var(--border-subtle);">
-          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);
-            margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border-subtle);">${col}</div>
-          ${fields.map(([f,tag]) => `
-            <div style="font-size:0.75rem;color:var(--text-secondary);padding:4px 0;
-              border-bottom:1px solid var(--border-subtle);display:flex;
-              justify-content:space-between;align-items:center;">
-              <code style="font-size:0.6875rem">${f}</code>
-              ${tag==='pk'  ? '<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;font-weight:700;background:rgba(56,189,248,.15);color:#7DD3FC">PK</span>'  :
-                tag==='fk'  ? '<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;font-weight:700;background:rgba(245,158,11,.15);color:#FCD34D">FK</span>'  :
-                tag==='new' ? '<span style="font-size:.6rem;padding:1px 5px;border-radius:3px;font-weight:700;background:rgba(34,197,94,.15);color:#86EFAC">novo</span>' : ''}
-            </div>
-          `).join('')}
-        </div>
-      `).join('')}
-    </div>`,
-
-  modulos: () => `
-    <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:20px;line-height:1.6">
-      Como a hierarquia de setor e tipo de tarefa se aplica em cada módulo do sistema.
-    </p>
-    <div style="overflow-x:auto;">
-      <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
-        <thead>
-          <tr style="background:var(--bg-surface);">
-            ${['Módulo','Filtro de setor','Filtro de tipo','Filtros adicionais','Visibilidade por papel'].map(h=>
+            ${['Papel','Operação','Pessoas','Análise','IA Hub','Segurança','LGPD'].map(h=>
               `<th style="text-align:left;padding:9px 12px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);white-space:nowrap;">${h}</th>`
             ).join('')}
           </tr>
         </thead>
         <tbody>
           ${[
-            ['Tarefas (lista)',       '✓ Automático pelo setor do usuário',  '✓ Disponível',              'Área, responsável, status, projeto, meta'],
-            ['Steps / Kanban',        '◐ Via filtro combinado',              '✓ Seletor na esteira',      'Área, responsável, projeto'],
-            ['Calendário',            '◐ Via filtro combinado',              '✓ Seletor na esteira',      'Área, responsável, projeto'],
-            ['Timeline',              '◐ Via filtro combinado',              '◐ Via filtro combinado',    'Área, projeto'],
-            ['Metas',                 '✓ Por setor/núcleo',                  '—',                         'Busca, status, exportação XLS/PDF'],
-            ['Portal de Dicas',       '✓ Campo obrigatório',                 '✓ Filtrado pelo setor',     'Variação, área solicitante, materiais por formato'],
-            ['Banco de Imagens',      '— (global)',                           '—',                         'Continente, país, cidade, tipo, tags, placeName'],
-            ['Landing Pages',         '— (global)',                           '—',                         'Layout, seções configuráveis, link público'],
-            ['CMS / Site',            '— (global)',                           '—',                         'Páginas, blog, SEO — via Cloudflare Workers'],
-            ['Editor de Artes',       '— (global)',                           '—',                         'Templates por BU/categoria, canvas Fabric.js, export PNG/JPG'],
-            ['Monitoramento de Notícias','— (global)',                        '—',                         'Categoria, subcategoria, validade, exportação XLS/PDF, ✈ Tarefa'],
-            ['Newsletters (dashboard)','— (global)',                          '—',                         'Período (incluindo personalizado), por BU'],
-            ['Produtividade (dashboard)','✓ Pelo setor do usuário',           '—',                         'Período (incluindo personalizado)'],
-            ['Solicitações',          '◐ Via filtro de status',              '◐ Via filtro de tipo',      'Status'],
-            ['Tipos de tarefa',       '✓ Campo setor no builder',            '— (é o próprio objeto)',    'Agrupado por categoria'],
-            ['Setores e Núcleos',     '✓ Gerencia os setores',              '—',                         '—'],
-            ['Roles e Acesso',        '— (global)',                           '—',                         'Permissões editáveis por role, excluir usuário'],
-            ['Log de Auditoria',      '— (global)',                           '—',                         'Todos os módulos, detalhes de exclusão de tarefa'],
-          ].map(([mod,...rest]) => `
+            // [Papel, [op, color], [pessoas], [análise], [IA], [segurança], [LGPD]]
+            ['Diretoria',    '#EF4444',
+              ['#22C55E','Todos os setores + zona de perigo'],
+              ['#22C55E','Tudo + roles + audit'],
+              ['#22C55E','Todos dashboards'],
+              ['#22C55E','Skills + keys + dashboard'],
+              ['#22C55E','Audit + digest + secrets + alertas'],
+              ['#22C55E','DPO total (own + others)'],
+            ],
+            ['Head',         '#A78BFA',
+              ['#22C55E','Setores definidos pela Diretoria'],
+              ['#22C55E','Usuários, configs, branding'],
+              ['#22C55E','Todos dashboards'],
+              ['#22C55E','Skills + keys + dashboard'],
+              ['#22C55E','Audit + digest + secrets + alertas'],
+              ['#22C55E','DPO operacional (own + others)'],
+            ],
+            ['Gerente',      '#38BDF8',
+              ['#F59E0B','Setor do usuário'],
+              ['#F59E0B','Squad + ausências do time'],
+              ['#22C55E','Dashboards + analytics'],
+              ['#6B7280','Apenas dashboard'],
+              ['#F59E0B','Audit logs do squad + alertas'],
+              ['#F59E0B','Próprios dados'],
+            ],
+            ['Coordenador',  '#F97316',
+              ['#F59E0B','Setor + núcleo do usuário'],
+              ['#6B7280','Sem permissão'],
+              ['#F59E0B','Ver dashboards'],
+              ['#6B7280','Sem acesso'],
+              ['#F59E0B','Apenas alertas próprios'],
+              ['#F59E0B','Próprios dados'],
+            ],
+            ['Analista',     '#22C55E',
+              ['#F59E0B','Setor do usuário'],
+              ['#6B7280','Sem permissão'],
+              ['#6B7280','Painel pessoal apenas'],
+              ['#6B7280','Sem acesso'],
+              ['#F59E0B','Apenas alertas próprios'],
+              ['#F59E0B','Próprios dados'],
+            ],
+            ['Parceiro',     '#D4A843',
+              ['#6B7280','Apenas Portal de Dicas'],
+              ['#6B7280','Sem acesso'],
+              ['#6B7280','Sem acesso'],
+              ['#6B7280','Sem acesso'],
+              ['#6B7280','Sem alertas internos'],
+              ['#F59E0B','Próprios dados (LGPD)'],
+            ],
+          ].map(r => `
             <tr style="border-bottom:1px solid var(--border-subtle);">
-              <td style="padding:9px 12px;font-weight:600;color:var(--text-primary);white-space:nowrap;">${mod}</td>
-              ${rest.map(v => `<td style="padding:9px 12px;color:var(--text-secondary);line-height:1.4;">${v}</td>`).join('')}
-              <td style="padding:9px 12px;color:var(--text-muted);">Baseada no setor do usuário</td>
+              <td style="padding:9px 12px;font-weight:600;color:${r[1]};">${r[0]}</td>
+              ${r.slice(2).map(([c,v]) => `<td style="padding:9px 12px;color:${c};line-height:1.4;">${v}</td>`).join('')}
             </tr>
           `).join('')}
         </tbody>
       </table>
     </div>
+
+    <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+      color:var(--text-muted);margin-bottom:10px;">Regras de visibilidade por setor</div>
+    ${[
+      ['Diretoria',                    'Vê todos os setores, sem restrição. Único papel com acesso à "Zona de Perigo" (delete all tasks).'],
+      ['Head',                         'Vê apenas os setores definidos em <code>users.visibleSectors[]</code> — configurado pela Diretoria no perfil do usuário. Atua como <strong>DPO</strong> (Encarregado LGPD) — pode atender solicitações de outros titulares.'],
+      ['Gerente',                      'Vê apenas o setor definido em <code>users.sector</code>. Pode ver audit logs e receber alertas do squad.'],
+      ['Coordenador / Analista',       'Vê apenas o setor definido em <code>users.sector</code>. Recebe alertas de segurança apenas sobre o próprio login (novo IP, etc).'],
+      ['Parceiro',                     'Externo — acesso só ao Portal de Dicas. Sem alertas internos, mas tem direito LGPD de auto-serviço (export/erasure dos próprios dados, exigido por lei).'],
+    ].map(([role,desc]) => `
+      <div style="display:flex;gap:8px;margin-bottom:8px;font-size:0.8125rem;line-height:1.6;">
+        <span style="font-weight:600;color:var(--text-primary);min-width:160px;white-space:nowrap;">${role}</span>
+        <span style="color:var(--text-muted);">${desc}</span>
+      </div>
+    `).join('')}
+
+    <div style="margin-top:20px;background:rgba(59,130,246,.07);border-left:3px solid #3B82F6;
+      border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;">
+      <p style="font-size:0.8125rem;font-weight:600;color:#3B82F6;margin-bottom:4px">Customização de permissões</p>
+      <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin:0">
+        Diretoria pode editar permissões de qualquer papel em <strong>Configurações → Roles</strong>.
+        O sistema marca como <code>customizedPermissions: true</code> e preserva as edições mesmo após updates do código.
+      </p>
+    </div>`,
+
+  dados: () => `
+    <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:20px;line-height:1.6">
+      Coleções principais no Firestore.
+      <span style="font-size:0.625rem;padding:1px 6px;border-radius:3px;font-weight:600;background:rgba(56,189,248,.15);color:#7DD3FC">PK</span> chave primária ·
+      <span style="font-size:0.625rem;padding:1px 6px;border-radius:3px;font-weight:600;background:rgba(245,158,11,.15);color:#FCD34D">FK</span> foreign key ·
+      <span style="font-size:0.625rem;padding:1px 6px;border-radius:3px;font-weight:600;background:rgba(34,197,94,.15);color:#86EFAC">novo</span> Sprint 1-5 ·
+      <span style="font-size:0.625rem;padding:1px 6px;border-radius:3px;font-weight:600;background:rgba(239,68,68,.15);color:#FCA5A5">TTL</span> expira automaticamente
+    </p>
+
+    <h3 style="font-size:0.875rem;font-weight:700;color:var(--text-secondary);margin:0 0 10px;
+      text-transform:uppercase;letter-spacing:.06em;">Operação</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:24px;">
+      ${[
+        ['tasks',           [['id','pk'],['typeId','fk'],['variationId','new'],['sector','new'],['nucleos[]','fk'],['status',''],['assignees[]','fk'],['workspaceId','fk']]],
+        ['task_types',      [['id','pk'],['name',''],['sector','new'],['nucleos[]','fk'],['variations[]','new'],['scheduleSlots[]','new'],['steps[]',''],['deliveryStandard','new']]],
+        ['requests',        [['id','pk'],['typeId','fk'],['variationId','new'],['sector','new'],['requestingArea',''],['outOfCalendar','new'],['status',''],['rejectionNote','new']]],
+        ['nucleos',         [['id','pk'],['name',''],['sector','fk'],['active','']]],
+        ['task_categories', [['id','pk'],['name',''],['sector','new'],['color, icon','']]],
+        ['users',           [['id','pk'],['role / roleId',''],['sector','fk'],['nucleos[]','new'],['visibleSectors[]',''],['privacy{}','new']]],
+      ].map(col => renderCol(col)).join('')}
+    </div>
+
+    <h3 style="font-size:0.875rem;font-weight:700;color:var(--text-secondary);margin:0 0 10px;
+      text-transform:uppercase;letter-spacing:.06em;">IA Hub</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:24px;">
+      ${[
+        ['ai_agents',       [['id','pk'],['name',''],['provider','new'],['model','new'],['systemPrompt',''],['skills[]',''],['limits.maxCostPerDayUsd','new']]],
+        ['ai_skills',       [['id','pk'],['name',''],['instructions',''],['module','']]],
+        ['ai_knowledge',    [['id','pk'],['title',''],['source','new'],['sector','fk'],['visibility','new']]],
+        ['ai_chat_history', [['id','pk'],['userId','fk'],['agentId','fk'],['messages[]',''],['expiresAt','TTL']]],
+        ['ai_usage_logs',   [['id','pk'],['userId','fk'],['agentId','fk'],['inputTokens',''],['outputTokens',''],['totalCostUsd','new'],['expiresAt','TTL']]],
+        ['ai_api_keys',     [['provider','pk'],['(somente admin lê)','new']]],
+      ].map(col => renderCol(col)).join('')}
+    </div>
+
+    <h3 style="font-size:0.875rem;font-weight:700;color:var(--text-secondary);margin:0 0 10px;
+      text-transform:uppercase;letter-spacing:.06em;">Segurança & Auditoria</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:24px;">
+      ${[
+        ['audit_logs',       [['id','pk'],['action','new'],['userId','fk'],['ip','new'],['userAgent','new'],['severity','new'],['expiresAt','TTL']]],
+        ['rate_limits',      [['uid__key','pk'],['calls[]','new'],['(server-only)','new']]],
+        ['rate_limits_ip',   [['ip__key','pk'],['calls[]','new'],['(server-only)','new']]],
+        ['system_secrets',   [['(deny all read)','new'],['(server SDK only)','new']]],
+        ['system_config',    [['id','pk'],['(admin only)','new']]],
+        ['lgpd_requests',    [['id','pk'],['userId','fk'],['type','new'],['status','new'],['fulfilledAt','new']]],
+      ].map(col => renderCol(col)).join('')}
+    </div>
+
+    <h3 style="font-size:0.875rem;font-weight:700;color:var(--text-secondary);margin:0 0 10px;
+      text-transform:uppercase;letter-spacing:.06em;">CLT & Pessoas</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:24px;">
+      ${[
+        ['time_clock',       [['id','pk'],['userId','fk'],['punches[]',''],['date','']]],
+        ['time_clock_audit', [['id','pk'],['userId','fk'],['action',''],['(append-only 5 anos)','']]],
+        ['vacations',        [['id','pk'],['userId','fk'],['startDate',''],['days',''],['status','']]],
+        ['absences',         [['id','pk'],['userId','fk'],['startDate',''],['endDate',''],['type','']]],
+        ['feedbacks',        [['id','pk'],['fromUid','fk'],['toUid','fk'],['kudos | concern','']]],
+        ['goals',            [['id','pk'],['userId','fk'],['kpis[]',''],['status','']]],
+      ].map(col => renderCol(col)).join('')}
+    </div>
+
+    <h3 style="font-size:0.875rem;font-weight:700;color:var(--text-secondary);margin:0 0 10px;
+      text-transform:uppercase;letter-spacing:.06em;">Marketing & Conteúdo</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:24px;">
+      ${[
+        ['content_calendar', [['id','pk'],['title',''],['platform','new'],['scheduledDate',''],['description','new'],['status','']]],
+        ['portal_tips',      [['id','pk'],['destino','fk'],['format',''],['materials[]','']]],
+        ['portal_images',    [['id','pk'],['url',''],['country','fk'],['tags[]','']]],
+        ['roteiros',         [['id','pk'],['userId','fk'],['cliente',''],['destinos[]','']]],
+        ['landing_pages',    [['id','pk'],['slug',''],['sections[]',''],['publishedAt','']]],
+        ['cms_pages',        [['id','pk'],['path',''],['html',''],['seo','']]],
+      ].map(col => renderCol(col)).join('')}
+    </div>`,
+
+  modulos: () => `
+    <p style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:20px;line-height:1.6">
+      Como a hierarquia de setor e tipo de tarefa se aplica em cada módulo do sistema.
+      Agrupados por área de operação.
+    </p>
+
+    ${[
+      ['Tarefas e Projetos', [
+        ['Meu Painel',              '✓ Setor do usuário',     '—',                         'Tarefas atribuídas, ausências, próximas reuniões'],
+        ['Tarefas (lista)',         '✓ Automático',           '✓ Disponível',              'Área, responsável, status, projeto, meta'],
+        ['Steps / Kanban',          '◐ Filtro combinado',     '✓ Seletor na esteira',      'Área, responsável, projeto'],
+        ['Calendário',              '◐ Filtro combinado',     '✓ Seletor na esteira',      'Área, responsável, projeto, mês/semana'],
+        ['Timeline',                '◐ Filtro combinado',     '◐ Filtro combinado',        'Área, projeto, gantt'],
+        ['Projetos',                '✓ Por setor',            '—',                         'Tarefas vinculadas, progresso, milestones'],
+      ]],
+      ['IA Hub (novo)', [
+        ['Conversa com Agentes',    '— (global)',             '—',                         'Multi-provider (Anthropic/OpenAI/Gemini/Groq), PII anonimizado'],
+        ['Skills (instruções)',     '— (global)',             '—',                         'Biblioteca compartilhada, versioning'],
+        ['Knowledge SharePoint',    '✓ Por setor (visibility)','—',                        'Cache Firestore, sync via getSharePointToken'],
+        ['Automações',              '— (global)',             '—',                         'Triggers (cron, evento), workflow steps'],
+        ['Dashboard de IA',         '— (global)',             '—',                         'Custo por agente/usuário, tokens, qualidade'],
+      ]],
+      ['Equipe e CLT', [
+        ['Check-in (ponto)',        '— (próprio)',            '—',                         'Banco de horas CLT, espelho, correção via gestor'],
+        ['Reservas de mesa',        '— (próprio)',            '—',                         '1 reserva/dia, mapa visual'],
+        ['Equipe / Ausências',      '✓ Setor do usuário',     '—',                         'Calendário compartilhado, conflitos'],
+        ['Férias (CLT)',            '— (próprio)',            '—',                         'Períodos aquisitivos, fracionamento, abono'],
+        ['Feedbacks',               '✓ Por setor',            '—',                         'Kudos / concerns, ciclo de avaliação'],
+        ['Metas (KPIs)',            '✓ Por setor/núcleo',     '—',                         'Status, exportação XLS/PDF'],
+      ]],
+      ['Marketing e Conteúdo', [
+        ['Calendário de Conteúdo',  '✓ Por conta',            '—',                         'IG/FB, slot mês/semana, IA gera descrição'],
+        ['Roteiros de Viagem',      '— (próprio + admin)',    '—',                         'Cliente, destinos, IA Hub gera sugestões'],
+        ['Portal de Dicas',         '✓ Campo obrigatório',    '✓ Filtrado pelo setor',     'Variação, área, materiais por formato'],
+        ['Banco de Imagens',        '— (global)',             '—',                         'Continente, país, cidade, tipo, tags'],
+        ['Landing Pages',           '— (global)',             '—',                         'Layout, seções, link público'],
+        ['CMS / Site',              '— (global)',             '—',                         'Páginas, blog, SEO via Cloudflare Workers'],
+        ['Editor de Artes',         '— (global)',             '—',                         'Templates por BU, canvas, export PNG/JPG'],
+        ['Pautas e Clipping',       '— (global)',             '—',                         'Categoria, validade, ✈ Tarefa, exportação'],
+      ]],
+      ['Análise', [
+        ['Newsletters',             '— (global)',             '—',                         'Período custom, por BU'],
+        ['Instagram (Meta)',        '— (global)',             '—',                         'Engajamento, alcance, top posts'],
+        ['Produtividade',           '✓ Setor do usuário',     '—',                         'SLA, throughput, gargalos'],
+        ['Auditoria de Sites',      '— (global)',             '—',                         'PageSpeed Insights, Core Web Vitals'],
+        ['CSAT',                    '— (global)',             '—',                         'NPS por tarefa, gestor, área'],
+      ]],
+      ['Solicitações', [
+        ['Solicitações (interno)',  '◐ Por status',           '◐ Por tipo',                'Triagem (master+coord), conversão em tarefa'],
+        ['Portal público',          '✓ Sem auth',             '✓ Por setor',               'solicitar.html — formulário externo'],
+      ]],
+      ['Sistema', [
+        ['Configurações',           '— (global)',             '—',                         'Geral, tarefas, notificações, integrações, privacidade, dados'],
+        ['Tipos de tarefa',         '✓ Builder por setor',    '— (é o objeto)',            'Agrupado por categoria, variations, SLA'],
+        ['Setores e Núcleos',       '✓ Gerencia setores',     '—',                         'Hierarquia de visibilidade'],
+        ['Roles e Permissões',      '— (global)',             '—',                         '6 roles, 70+ permissions editáveis'],
+        ['Log de Auditoria',        '— (global)',             '—',                         'audit_logs com TTL 180d, severity classification'],
+        ['Sobre o Sistema',         '— (global)',             '—',                         '8 abas: Pilares, Hierarquia, Papéis, Dados, Módulos, Infra, Segurança, LGPD'],
+        ['Ajuda',                   '— (global)',             '—',                         'Tours, atalhos, FAQ, docs técnica'],
+      ]],
+    ].map(([group, rows]) => `
+      <h3 style="font-size:0.875rem;font-weight:700;color:var(--text-secondary);margin:18px 0 10px;
+        text-transform:uppercase;letter-spacing:.06em;">${esc(group)}</h3>
+      <div style="overflow-x:auto;margin-bottom:14px;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
+          <thead>
+            <tr style="background:var(--bg-surface);">
+              ${['Módulo','Filtro de setor','Filtro de tipo','Filtros adicionais'].map(h =>
+                `<th style="text-align:left;padding:9px 12px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);white-space:nowrap;">${h}</th>`
+              ).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(([mod, ...rest]) => `
+              <tr style="border-bottom:1px solid var(--border-subtle);">
+                <td style="padding:9px 12px;font-weight:600;color:var(--text-primary);white-space:nowrap;">${esc(mod)}</td>
+                ${rest.map(v => `<td style="padding:9px 12px;color:var(--text-secondary);line-height:1.4;">${esc(v)}</td>`).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `).join('')}
+
     <div style="margin-top:16px;font-size:0.75rem;color:var(--text-muted);display:flex;gap:16px;">
       <span>✓ Implementado</span>
       <span>◐ Parcialmente implementado</span>
+      <span>— Não aplica</span>
     </div>`,
 
   /* ═══════════════════════════════════════════════════════

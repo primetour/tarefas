@@ -153,7 +153,7 @@ function renderApp(root) {
   // Tour de boas-vindas (se ainda não fez)
   setTimeout(async () => {
     try {
-      const { maybeStartWelcomeTour } = await import('./services/tours.js?v=20260501ss');
+      const { maybeStartWelcomeTour } = await import('./services/tours.js?v=20260501tt');
       maybeStartWelcomeTour();
     } catch {}
   }, 2200);
@@ -392,7 +392,7 @@ function mountShell(root) {
     // Start deadline check scheduler
     startScheduler();
     // Scheduler de agents (Fase 5 IA Hub) — substitui aiAutomations legado
-    import('./services/agentScheduler.js?v=20260501ss').then(m => m.startAgentScheduler()).catch(() => {});
+    import('./services/agentScheduler.js?v=20260501tt').then(m => m.startAgentScheduler()).catch(() => {});
   }
 }
 
@@ -431,8 +431,8 @@ function setupRouter() {
     'roteiro-dashboard': async () => { destroyRoteiroDashboard(); await renderRoteiroDashboard(content); },
     'integrations': async () => { await renderIntegrations(content); },
     'about':        async () => { await renderAbout(content); },
-    'help':         async () => { const { renderHelp } = await import('./pages/help.js?v=20260501ss'); await renderHelp(content); },
-    'ai-hub':       async () => { const { renderAiHub } = await import('./pages/aiHub.js?v=20260501ss'); await renderAiHub(content); },
+    'help':         async () => { const { renderHelp } = await import('./pages/help.js?v=20260501tt'); await renderHelp(content); },
+    'ai-hub':       async () => { const { renderAiHub } = await import('./pages/aiHub.js?v=20260501tt'); await renderAiHub(content); },
     // Redirects de URLs legadas para o IA Hub (mantém links antigos funcionando)
     'ai-skills':       async () => { location.hash = '#ai-hub'; },
     'ai-automations':  async () => { location.hash = '#ai-hub'; },
@@ -537,14 +537,14 @@ function setupRouter() {
 
     // ── Auto-trigger de tour por módulo (só na 1ª visita) ──
     try {
-      const { maybeStartModuleTour } = await import('./services/tours.js?v=20260501ss');
+      const { maybeStartModuleTour } = await import('./services/tours.js?v=20260501tt');
       maybeStartModuleTour(route);
     } catch {}
 
     // ── Monta botões de agentes IA no header da página ──
     setTimeout(async () => {
       try {
-        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501ss');
+        const { mountAgentsForRoute } = await import('./components/agentTrigger.js?v=20260501tt');
         await mountAgentsForRoute(route);
       } catch (e) { console.warn('[agents] mount err:', e?.message); }
     }, 600); // delay pra header já ter renderizado
