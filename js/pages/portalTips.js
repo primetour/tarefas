@@ -13,7 +13,7 @@ import {
   SEGMENTS, GENERATION_FORMATS,
 } from '../services/portal.js';
 import { generateTip } from '../services/portalGenerator.js';
-import { detectBankClient, showBankGuardModal, listBankClients } from '../services/bankClientGuard.js';
+import { detectBankContext, showBankGuardModal, listBankClients } from '../services/bankClientGuard.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -819,7 +819,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
               ${listBankClients().map(b => `<option value="${esc(b)}">`).join('')}
             </datalist>
             <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
-              ⚠ Para clientes de bancos parceiros (PTS / BTG Partners / BTG UltraBlue / Centurion),
+              ⚠ Para áreas/clientes de bancos parceiros (PTS / BTG Partners / BTG UltraBlue / Centurion),
               o sistema recomendará PDF por questões contratuais.
             </div>
           </div>
@@ -1013,13 +1013,14 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
 
     const clientName = document.getElementById('gen-client-name')?.value?.trim() || '';
 
-    // ═══ BANK CLIENT GUARD ═══
-    // Cliente de banco parceiro + formato web → alerta contratual
-    const bank = detectBankClient(clientName);
+    // ═══ BANK GUARD ═══
+    // Detecta por ÁREA (primário, mais confiável) OU nome do cliente (fallback)
+    // Se for banco parceiro + formato web → alerta contratual
+    const bank = detectBankContext({ clientName, area });
     if (bank && format === 'web') {
       showBankGuardModal({
         bankName:     bank.name,
-        clientName,
+        clientName:   bank.source === 'area' ? `Área: ${area?.name || area?.id}` : clientName,
         module:       'Portal de Dicas',
         contractNote: bank.contractNote,
         onChoosePdf:  () => doGenerate('pdf', clientName),

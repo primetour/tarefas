@@ -58,6 +58,40 @@ export function listBankClients() {
 }
 
 /**
+ * Detecta se a ÁREA do Portal de Dicas refere-se a um banco parceiro.
+ * Use quando o user seleciona uma área (não digita o nome do cliente).
+ * Mais confiavel que detectBankClient porque areas tem nomes consistentes.
+ *
+ * Detecta variacoes: "PTS", "PTS Bradesco", "Bradesco PTS", etc.
+ *
+ * @param {Object|string} area - { id, name } ou string com o nome
+ * @returns {{name: string, contractNote: string} | null}
+ */
+export function detectBankArea(area) {
+  if (!area) return null;
+  const name = typeof area === 'string' ? area : (area.name || area.label || area.id || '');
+  if (!name) return null;
+  // Reusa os mesmos patterns — funciona pra "PTS Bradesco", "BTG Partners",
+  // "BTG UltraBlue", "Centurion Black" etc.
+  return detectBankClient(name);
+}
+
+/**
+ * Helper combinado: detecta cliente OU área.
+ * Prioriza area se ambos baterem (mais confiavel).
+ *
+ * @param {Object} ctx - { clientName?: string, area?: Object|string }
+ * @returns {{ source: 'area'|'client', name: string, contractNote: string } | null}
+ */
+export function detectBankContext({ clientName, area }) {
+  const byArea = detectBankArea(area);
+  if (byArea) return { source: 'area', ...byArea };
+  const byClient = detectBankClient(clientName);
+  if (byClient) return { source: 'client', ...byClient };
+  return null;
+}
+
+/**
  * Modal de confirmação. Usuário escolhe entre PDF (recomendado),
  * gerar link mesmo assim, ou cancelar.
  *
@@ -108,17 +142,24 @@ export function showBankGuardModal({ bankName, clientName, module, contractNote,
       </div>
 
       <div style="padding:14px 22px;border-top:1px solid var(--border-subtle);
-        background:var(--bg-surface);display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-secondary btn-sm" id="bg-cancel" style="flex:1;min-width:90px;">
-          Cancelar
-        </button>
-        <button class="btn btn-secondary btn-sm" id="bg-force-link" style="flex:1;min-width:130px;
-          color:#F59E0B;border-color:rgba(245,158,11,0.4);">
-          ⚠ Gerar link assim mesmo
-        </button>
-        <button class="btn btn-primary btn-sm" id="bg-pdf" style="flex:2;min-width:160px;font-weight:600;">
+        background:var(--bg-surface);display:flex;flex-direction:column;gap:8px;">
+        <!-- Botão primário: PDF (largura total, destaque) -->
+        <button class="btn btn-primary" id="bg-pdf"
+          style="width:100%;padding:12px;font-weight:600;font-size:0.875rem;">
           📄 Gerar PDF (recomendado)
         </button>
+        <!-- Linha secundária: 2 botões lado a lado -->
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" id="bg-cancel"
+            style="flex:1;padding:8px 14px;font-size:0.8125rem;">
+            Cancelar
+          </button>
+          <button class="btn btn-secondary btn-sm" id="bg-force-link"
+            style="flex:2;padding:8px 14px;font-size:0.8125rem;
+            color:#F59E0B;border-color:rgba(245,158,11,0.4);">
+            ⚠ Gerar link mesmo assim
+          </button>
+        </div>
       </div>
     </div>
   `;

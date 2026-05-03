@@ -9,7 +9,7 @@ const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiro, saveRoteiro } from '../services/roteiros.js';
 import { generateRoteiroForExport } from '../services/roteiroGenerator.js';
 import { fetchDestinations, fetchAreas } from '../services/portal.js';
-import { detectBankClient, showBankGuardModal } from '../services/bankClientGuard.js';
+import { detectBankContext, showBankGuardModal } from '../services/bankClientGuard.js';
 
 /* ─── State ───────────────────────────────────────────────── */
 let currentRoteiro = null;
@@ -1334,7 +1334,7 @@ function handleEditorClick(e) {
       const clientName = currentRoteiro?.client?.name || '';
 
       // Bank guard \u2014 se cliente \u00e9 de banco parceiro, mostrar alerta antes
-      const bank = detectBankClient(clientName);
+      const bank = detectBankContext({ clientName });
       if (bank) {
         showBankGuardModal({
           bankName:     bank.name,
