@@ -20,7 +20,7 @@ import { toast } from '../components/toast.js';
 import {
   fetchEditions, fetchSettings, generateQrDataUrl, generateQrPng,
   formatBytes, seedFromGithubEditions,
-} from '../services/luxuryTravel.js?v=20260503aaa1';
+} from '../services/luxuryTravel.js?v=20260503bbb1';
 
 const esc = s => String(s || '').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
