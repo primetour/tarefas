@@ -26,7 +26,7 @@ import { renderKanban, destroyKanban } from './pages/kanban.js';
 import { renderCalendar }    from './pages/calendar.js';
 import { renderTimeline }    from './pages/timeline.js';
 import { renderPlaceholder }  from './pages/placeholder.js';
-import { renderDashboards, destroyDashboards } from './pages/dashboards.js?v=20260503ww1';
+import { renderDashboards, destroyDashboards } from './pages/dashboards.js?v=20260503xx1';
 import { renderAudit }       from './pages/audit.js';
 import { renderProfile }     from './pages/profile.js';
 import { renderRoles }       from './pages/roles.js';
@@ -43,14 +43,14 @@ import { renderCsat, destroyCsat }      from './pages/csat.js';
 import { renderIntegrations }             from './pages/integrations.js';
 import { renderSettings }                 from './pages/settings.js';
 import { renderAbout }                    from './pages/about.js';
-import { renderNlPerformance }            from './pages/nlPerformance.js?v=20260503ww1';
+import { renderNlPerformance }            from './pages/nlPerformance.js?v=20260503xx1';
 import { renderMetaPerformance }          from './pages/metaPerformance.js';
 import { renderGaPerformance }            from './pages/gaPerformance.js';
 import { renderPortalTips }               from './pages/portalTips.js';
 import { renderPortalAreas }              from './pages/portalAreas.js';
 import { renderPortalDestinations }       from './pages/portalDestinations.js';
 import { renderPortalImages }             from './pages/portalImages.js';
-import { renderPortalDashboard }          from './pages/portalDashboard.js';
+import { renderPortalDashboard }          from './pages/portalDashboard.js?v=20260503xx1';
 import { renderPortalTipEditor }          from './pages/portalTipEditor.js';
 import { renderPortalImport }             from './pages/portalImport.js';
 import { renderPortalTipsList }           from './pages/portalTipsList.js';
@@ -61,7 +61,7 @@ import { renderArtsEditor }              from './pages/artsEditor.js';
 // renderAiSkills + renderAiDashboard + mountAiPanel removidos (FAB desabilitado, rotas redirecionam pra #ai-hub)
 import { renderRoteiros }               from './pages/roteiros.js';
 import { renderRoteiroEditor, destroyRoteiroEditor } from './pages/roteiroEditor.js';
-import { renderRoteiroDashboard, destroyRoteiroDashboard } from './pages/roteiroDashboard.js?v=20260503ww1';
+import { renderRoteiroDashboard, destroyRoteiroDashboard } from './pages/roteiroDashboard.js?v=20260503xx1';
 import { renderContentCalendar }         from './pages/contentCalendar.js';
 // newsMonitor carregado dinamicamente para evitar bloqueio pré-login
 
@@ -504,7 +504,7 @@ function setupRouter() {
       'kanban':    () => { destroyKanban(); import('./pages/kanban.js').then(m => m.renderKanban(content)); },
       'check-in':  () => import('./pages/checkin.js').then(m => m.renderCheckin(content)),
       'dashboard': () => import('./pages/dashboard.js').then(m => m.renderDashboard(content)),
-      'dashboards':() => { destroyDashboards(); import('./pages/dashboards.js?v=20260503ww1').then(m => m.renderDashboards(content)); },
+      'dashboards':() => { destroyDashboards(); import('./pages/dashboards.js?v=20260503xx1').then(m => m.renderDashboards(content)); },
       'csat':      () => { destroyCsat(); import('./pages/csat.js').then(m => m.renderCsat(content)); },
       'squad':     () => import('./pages/squadWorkspace.js').then(m => m.renderSquadWorkspace(content)),
     };

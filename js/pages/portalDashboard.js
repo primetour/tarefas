@@ -363,7 +363,13 @@ function renderDash() {
     </div>
 
     <!-- KPIs row 1 -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:12px;margin-bottom:24px;">
+    <div id="dash-kpis-block" style="margin-bottom:24px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">📊 Indicadores</h3>
+        <span class="widget-insights-slot" data-widget-id="dash-kpis-block"></span>
+      </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:12px;">
       ${kpi('Dicas Cadastradas',  allTips.length,   '✈', null, '',
             'Total de dicas cadastradas no sistema, independente do filtro de período.')}
       ${kpi('Criadas no Período', tips.length,      '📝', null, '',
@@ -385,19 +391,26 @@ function renderDash() {
       ${kpi('Links Web',          links.length,      '🔗', null, '',
             'Links web criados para compartilhamento de dicas de viagem com clientes. Cada link é acessível sem login.')}
     </div>
+    </div><!-- /dash-kpis-block -->
 
     <!-- Row: Validade + Cobertura por Segmento -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
-      <div class="card" style="padding:20px;">
-        <div style="${SECTION_HEAD}">Status de Validade</div>
+      <div id="dash-validade" class="card" style="padding:20px;">
+        <div style="${SECTION_HEAD};display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="flex:1;min-width:0;">Status de Validade</span>
+          <span class="widget-insights-slot" data-widget-id="dash-validade"></span>
+        </div>
         <div style="display:flex;flex-direction:column;gap:10px;">
           ${vRow('Vencidas',        expired.length,  allTips.length, '#EF4444')}
           ${vRow('Vencendo em 30d', expiring.length, allTips.length, '#F59E0B')}
           ${vRow('Em dia',          healthy.length,  allTips.length, '#22C55E')}
         </div>
       </div>
-      <div class="card" style="padding:20px;">
-        <div style="${SECTION_HEAD}">Cobertura por Segmento</div>
+      <div id="dash-cobertura" class="card" style="padding:20px;">
+        <div style="${SECTION_HEAD};display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="flex:1;min-width:0;">Cobertura por Segmento</span>
+          <span class="widget-insights-slot" data-widget-id="dash-cobertura"></span>
+        </div>
         <div style="display:flex;flex-direction:column;gap:5px;max-height:240px;overflow-y:auto;">
           ${segCov.map(s => segBar(s.label, s.covered, allTips.length)).join('')}
         </div>
@@ -463,10 +476,13 @@ function renderDash() {
 
     <!-- Row: Gerações Total/Mês + Top 10 dicas mais geradas -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
-      <div class="card" style="padding:20px;">
-        <div style="${SECTION_HEAD}">Gerações por Mês
-          <span style="font-weight:400;color:var(--text-muted);margin-left:6px;">
-            Total: ${gens.length}</span>
+      <div id="dash-geracoes-mes" class="card" style="padding:20px;">
+        <div style="${SECTION_HEAD};display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="flex:1;min-width:0;">Gerações por Mês
+            <span style="font-weight:400;color:var(--text-muted);margin-left:6px;">
+              Total: ${gens.length}</span>
+          </span>
+          <span class="widget-insights-slot" data-widget-id="dash-geracoes-mes"></span>
         </div>
         ${Object.keys(gensByMonth).length === 0
           ? `<div style="color:var(--text-muted);font-size:0.8125rem;padding:20px 0;text-align:center;">
@@ -487,8 +503,11 @@ function renderDash() {
           </div>`}
       </div>
 
-      <div class="card" style="padding:20px;">
-        <div style="${SECTION_HEAD}">Top 10 Dicas Mais Geradas</div>
+      <div id="dash-top-dicas" class="card" style="padding:20px;">
+        <div style="${SECTION_HEAD};display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="flex:1;min-width:0;">Top 10 Dicas Mais Geradas</span>
+          <span class="widget-insights-slot" data-widget-id="dash-top-dicas"></span>
+        </div>
         ${topGenDests.length === 0
           ? `<div style="color:var(--text-muted);font-size:0.8125rem;padding:20px 0;text-align:center;">
               Nenhuma geração registrada.</div>`
@@ -683,7 +702,15 @@ function renderDash() {
         </tbody>
       </table>
     </div>` : ''}
+
+    <!-- Análise Geral do Portal -->
+    <div id="dash-portal-insights-section" style="margin-top:24px;"></div>
   `;
+
+  // Setup insights na primeira render (idempotente)
+  if (!pdInsightsMounted) {
+    setTimeout(() => setupPdInsights(), 500);
+  }
 }
 
 /* ─── Helpers ────────────────────────────────────────────── */
@@ -980,6 +1007,52 @@ const exportPortalPdf = withExportGuard(async function exportPortalPdf() {
       }
     }
 
+    // Insights & Observações — agrupado por widget
+    try {
+      const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
+        await import('../services/insights.js?v=20260503uu1');
+      const insights = await fetchInsights({ dashboard: 'portal', max: 200 });
+      if (insights.length) {
+        const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.portal || {};
+        const groups = groupInsightsByIndex(insights, widgetLabels);
+        kit.ensureSpace(40);
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text(txt('INSIGHTS & OBSERVACOES'), M, kit.y);
+        kit.y += 5;
+        const stripEmoji = s => String(s ?? '')
+          .replace(/[\u{1F300}-\u{1FFFF}]/gu, '').replace(/[\u{2400}-\u{27BF}]/gu, '')
+          .replace(/[\u{2000}-\u{206F}]/gu, '').trim();
+        const safe = s => txt(stripEmoji(s));
+        groups.forEach((group) => {
+          kit.ensureSpace(20);
+          setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+          doc.text(safe(`${group.groupLabel} (${group.items.length})`), M, kit.y);
+          kit.y += 3;
+          doc.autoTable({
+            startY: kit.y, margin: { left: M, right: M },
+            head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Dados', 'Periodo', 'Origem', 'Por']],
+            body: group.items.map(ins => [
+              ins.type || 'neutral', ins.impact || 'medium',
+              safe(ins.title || ''), safe(ins.observation || ''),
+              safe(formatDataSnapshot(ins.dataSnapshot) || '-'),
+              safe(formatInsightPeriod(ins) || '-'),
+              ins.source === 'ai-generated' ? 'IA' : ins.source === 'ai-edited' ? 'IA edit.' : 'Manual',
+              safe((ins.createdBy?.name || '-')),
+            ]),
+            styles: { fontSize: 6, cellPadding: 1.8, overflow: 'linebreak' },
+            headStyles: { fillColor: [26,42,74], textColor: 255, fontStyle: 'bold', fontSize: 6 },
+            columnStyles: {
+              0:{cellWidth:14}, 1:{cellWidth:11}, 2:{cellWidth:36},
+              3:{cellWidth:48}, 4:{cellWidth:48}, 5:{cellWidth:24},
+              6:{cellWidth:13}, 7:{cellWidth:24},
+            },
+            didDrawPage: (data) => { kit.y = data.cursor.y; },
+          });
+          kit.y = doc.lastAutoTable.finalY + 5;
+        });
+      }
+    } catch (e) { console.warn('insights pd pdf:', e); }
+
     kit.drawFooter('PRIMETOUR  ·  Portal de Dicas');
     doc.save(`primetour_portal_dicas_${new Date().toISOString().slice(0, 10)}.pdf`);
     import('../components/toast.js').then(m => m.toast.success(`PDF gerado com ${allTips.length} dicas.`));
@@ -1140,4 +1213,133 @@ async function exportPortalXls() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⬇ XLS'; }
   }
+}
+
+/* ════════════════════════════════════════════════════════════
+   INSIGHTS & OBSERVAÇÕES — Setup do Portal Dashboard
+   ════════════════════════════════════════════════════════════ */
+
+let pdInsightsMounted = false;
+
+/** Período visualizado a partir de filterDays. */
+function computePdPeriod() {
+  const range = getDateRange();
+  return {
+    start: range.from,
+    end:   range.to || new Date(),
+    label: filterDays === '0' ? 'Todo o período'
+      : filterDays === 'custom' ? 'Período customizado'
+      : `Últimos ${filterDays} dias`,
+  };
+}
+
+/** Snapshots por widget — fns leves que recomputam só os dados necessários. */
+function pdSnapshotKpis() {
+  const range = getDateRange();
+  const tips = rawTips.filter(t => inRange(t.createdAt, range) && (!filterUser || t.createdBy === filterUser));
+  const gens = rawGens.filter(g => inRange(g.generatedAt, range) && (!filterUser || g.generatedBy === filterUser));
+  const links = rawLinks.filter(l => inRange(l.createdAt, range));
+  const now = new Date();
+  const expired = rawTips.filter(t => hasBadSeg(t, now, null));
+  const totalFilled = rawTips.reduce((a,t) => a + SEGMENTS.filter(s => hasContent(t, s.key)).length, 0);
+  const maxFilled = rawTips.length * SEGMENTS.length || 1;
+  return {
+    dicasCadastradas: rawTips.length,
+    dicasNoPeriodo: tips.length,
+    geracoes: gens.length,
+    linksWeb: links.length,
+    imagens: rawImages.length,
+    coberturaSegmentos: ((totalFilled / maxFilled) * 100).toFixed(1) + '%',
+    vencidas: expired.length,
+    prioritarias: rawTips.filter(t => t.priority).length,
+  };
+}
+
+function pdSnapshotValidade() {
+  const now = new Date();
+  const in30 = new Date(+now + 30 * 86400_000);
+  const expired  = rawTips.filter(t => hasBadSeg(t, now, null));
+  const expiring = rawTips.filter(t => !hasBadSeg(t,now,null) && hasBadSeg(t,now,in30));
+  const healthy  = rawTips.filter(t => !hasBadSeg(t,now,null) && !hasBadSeg(t,now,in30));
+  return {
+    vencidas: expired.length,
+    vencendoEm30d: expiring.length,
+    emDia: healthy.length,
+    totalDicas: rawTips.length,
+  };
+}
+
+function pdSnapshotCobertura() {
+  const segCov = SEGMENTS.map(s => ({
+    label: s.label,
+    count: rawTips.filter(t => hasContent(t, s.key)).length,
+    total: rawTips.length,
+    rate: rawTips.length > 0 ? Math.round((rawTips.filter(t => hasContent(t, s.key)).length / rawTips.length) * 100) : 0,
+  }));
+  return { coberturaPorSegmento: segCov };
+}
+
+function pdSnapshotGeracoesMes() {
+  const range = getDateRange();
+  const gens = rawGens.filter(g => inRange(g.generatedAt, range) && (!filterUser || g.generatedBy === filterUser));
+  const monthMap = {};
+  gens.forEach(g => {
+    const d = tsToDate(g.generatedAt);
+    if (!d) return;
+    const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    monthMap[k] = (monthMap[k] || 0) + 1;
+  });
+  return {
+    totalGeracoes: gens.length,
+    geracoesPorMes: Object.entries(monthMap).map(([label, count]) => ({ label, count })),
+  };
+}
+
+function pdSnapshotTopDicas() {
+  const range = getDateRange();
+  const gens = rawGens.filter(g => inRange(g.generatedAt, range) && (!filterUser || g.generatedBy === filterUser));
+  const counts = {};
+  gens.forEach(g => (g.destinationIds || []).forEach(did => { counts[did] = (counts[did] || 0) + 1; }));
+  const top = Object.entries(counts).sort(([,a],[,b]) => b-a).slice(0, 10).map(([did, count]) => {
+    const dest = rawDests.find(d => d.id === did);
+    return { label: dest ? [dest.city, dest.country].filter(Boolean).join(', ') : did, count };
+  });
+  return { top10DicasGeradas: top, totalGeracoes: gens.length };
+}
+
+function pdSnapshotGeneral() {
+  return {
+    ...pdSnapshotKpis(),
+    ...pdSnapshotValidade(),
+    geracoesUltimosMeses: pdSnapshotGeracoesMes().geracoesPorMes.slice(-6),
+    top5DicasMaisGeradas: pdSnapshotTopDicas().top10DicasGeradas.slice(0, 5),
+  };
+}
+
+const PD_WIDGETS = [
+  { widgetId: 'dash-kpis-block',   indexKey: 'kpis',         label: '📊 Indicadores',          snapshot: pdSnapshotKpis },
+  { widgetId: 'dash-validade',     indexKey: 'validade',     label: '⚠ Status de Validade',   snapshot: pdSnapshotValidade },
+  { widgetId: 'dash-cobertura',    indexKey: 'cobertura',    label: '📋 Cobertura por Segmento', snapshot: pdSnapshotCobertura },
+  { widgetId: 'dash-geracoes-mes', indexKey: 'geracoesMes',  label: '⚡ Gerações por Mês',     snapshot: pdSnapshotGeracoesMes },
+  { widgetId: 'dash-top-dicas',    indexKey: 'topDicas',     label: '🏆 Top 10 Dicas Geradas', snapshot: pdSnapshotTopDicas },
+];
+
+async function setupPdInsights() {
+  if (pdInsightsMounted) return;
+  pdInsightsMounted = true;
+  try {
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const period = computePdPeriod();
+    await setupDashboardInsights({
+      dashboard: 'portal',
+      widgets: PD_WIDGETS,
+      metrics: null,
+      periodFrom: period.start, periodTo: period.end,
+      periodLabel: period.label,
+      filters: { user: filterUser, days: filterDays, periodLabel: period.label },
+      generalPanelContainerId: 'dash-portal-insights-section',
+      buildGeneralSnapshot: pdSnapshotGeneral,
+      enableAi: true,
+    });
+  } catch (e) { console.warn('[pd] insights setup:', e); }
 }
