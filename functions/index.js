@@ -231,6 +231,18 @@ export const callLLM = onCall({
     throw new HttpsError('internal', `Provider error: ${e.message}`);
   }
 
+  // ── Calculo de economia por prompt caching (estimativa) ──
+  // Multiplicadores aproximados (preco / 1M tokens):
+  //   Anthropic Sonnet 4: input $3, cache read $0.30 (90% desconto), cache write $3.75 (1.25x)
+  //   OpenAI gpt-4o:      input $2.50, cached $1.25 (50% desconto)
+  // Para nao depender de tabela hardcoded por modelo, usamos o desconto
+  // medio: cache read = 80% economia ($0.20 por $1.00 normal).
+  const cacheCreationTokens = result.cacheCreationTokens || 0;
+  const cacheReadTokens     = result.cacheReadTokens || 0;
+  // Economia em tokens: cache hit cobra so ~10-50% do input normal.
+  // Conservadoramente, cada token cached economiza 0.7x (70% desconto medio).
+  const tokensSaved = cacheReadTokens * 0.7;
+
   // ── Log de uso (com TTL 90d) ──
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 90);
@@ -239,34 +251,53 @@ export const callLLM = onCall({
     agentId, agentName: data.agentName || null,
     module: data.module || 'general',
     provider, model: result.model || model,
-    inputTokens: result.inputTokens || 0,
-    outputTokens: result.outputTokens || 0,
+    inputTokens:           result.inputTokens || 0,
+    outputTokens:          result.outputTokens || 0,
+    cacheCreationTokens,        // novo: tokens escritos no cache (custa 1.25x)
+    cacheReadTokens,            // novo: tokens lidos do cache (custa 0.1-0.5x)
+    tokensSaved:           Math.round(tokensSaved),  // estimativa de economia
+    cacheHit:              cacheReadTokens > 0,      // bool: usou cache?
     timestamp: FieldValue.serverTimestamp(),
     expiresAt,
     source: data.source || 'cloud-function',
   });
 
   return {
-    text: result.text,
-    model: result.model || model,
-    inputTokens: result.inputTokens || 0,
-    outputTokens: result.outputTokens || 0,
+    text:                result.text,
+    model:               result.model || model,
+    inputTokens:         result.inputTokens || 0,
+    outputTokens:        result.outputTokens || 0,
+    cacheCreationTokens,
+    cacheReadTokens,
+    cacheHit:            cacheReadTokens > 0,
   };
 });
 
 /* ─── Provider callers (sem ai.js exposure) ──────────────── */
 async function callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature }) {
   const messages = [...history.map(h => ({ role: h.role, content: h.text })), { role: 'user', content: userMessage }];
+
+  // PROMPT CACHING: cacheia system prompt se >= 1024 chars (~aprox 1024 tokens minimo Anthropic)
+  // Custo: write 1.25x normal, read 0.1x normal (90% desconto). Vale se prompt repete.
+  // TTL default ephemeral = 5min. Renovado a cada hit.
+  const useCache = systemPrompt && systemPrompt.length >= 1024;
+  const systemField = useCache
+    ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
+    : systemPrompt;
+
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: model || 'claude-sonnet-4-6', system: systemPrompt, messages, max_tokens: maxTokens, temperature }),
+    body: JSON.stringify({ model: model || 'claude-sonnet-4-6', system: systemField, messages, max_tokens: maxTokens, temperature }),
   });
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
   const d = await res.json();
   return {
     text: d.content?.[0]?.text || '', model: d.model,
-    inputTokens: d.usage?.input_tokens || 0, outputTokens: d.usage?.output_tokens || 0,
+    inputTokens:           d.usage?.input_tokens || 0,
+    outputTokens:          d.usage?.output_tokens || 0,
+    cacheCreationTokens:   d.usage?.cache_creation_input_tokens || 0,
+    cacheReadTokens:       d.usage?.cache_read_input_tokens || 0,
   };
 }
 async function callOpenAI(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature }) {
@@ -284,7 +315,12 @@ async function callOpenAI(apiKey, { model, systemPrompt, userMessage, history, m
   const d = await res.json();
   return {
     text: d.choices?.[0]?.message?.content || '', model: d.model,
-    inputTokens: d.usage?.prompt_tokens || 0, outputTokens: d.usage?.completion_tokens || 0,
+    inputTokens:     d.usage?.prompt_tokens || 0,
+    outputTokens:    d.usage?.completion_tokens || 0,
+    // PROMPT CACHING: gpt-4o-2024-12-17+ cacheia automaticamente prompts > 1024 tokens.
+    // Sem código adicional necessário — só extrair `cached_tokens` do response.
+    // Desconto: 50% no input dos tokens cached.
+    cacheReadTokens: d.usage?.prompt_tokens_details?.cached_tokens || 0,
   };
 }
 async function callGemini(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature }) {
@@ -603,6 +639,9 @@ export const dailySecurityDigest = onSchedule({
     rateLimitHits: 0,
     aiCostHigh: [],
     aiCostTotal: 0,
+    aiCacheHits: 0,
+    aiTokensSaved: 0,
+    aiSavingsUsd: 0,
     bulkDeletes: 0,
     failedFunctions: 0,
     criticalEvents: [],
@@ -637,20 +676,29 @@ export const dailySecurityDigest = onSchedule({
     console.error('[digest] audit query failed:', e?.message);
   }
 
-  // 2. Custo IA ultimas 24h (ai_usage_logs)
+  // 2. Custo IA ultimas 24h (ai_usage_logs) + Prompt Caching savings
   try {
     const usageSnap = await db.collection('ai_usage_logs')
       .where('timestamp', '>=', since)
       .limit(10000).get();
 
     const byUser = {};
+    let totalCacheHits = 0;
+    let totalTokensSaved = 0;
     usageSnap.forEach(d => {
       const x = d.data();
       const uid = x.userId || 'anon';
       const cost = Number(x.totalCostUsd || x.costUsd || 0);
       stats.aiCostTotal += cost;
       byUser[uid] = (byUser[uid] || 0) + cost;
+      if (x.cacheHit) totalCacheHits++;
+      totalTokensSaved += Number(x.tokensSaved || 0);
     });
+    stats.aiCacheHits = totalCacheHits;
+    stats.aiTokensSaved = totalTokensSaved;
+    // Estimativa USD economizado: $3/1M tokens medio (Sonnet/4o)
+    stats.aiSavingsUsd = +(totalTokensSaved / 1_000_000 * 3).toFixed(4);
+
     Object.entries(byUser).forEach(([uid, cost]) => {
       if (cost > 20) stats.aiCostHigh.push({ uid, cost: cost.toFixed(2) });
     });
@@ -675,6 +723,9 @@ export const dailySecurityDigest = onSchedule({
       suspiciousNewIp: stats.suspiciousNewIp.length,
       aiCostTotalUsd: Number(stats.aiCostTotal.toFixed(4)),
       aiCostHighUsers: stats.aiCostHigh.length,
+      aiCacheHits: stats.aiCacheHits,
+      aiTokensSaved: stats.aiTokensSaved,
+      aiSavingsUsd: stats.aiSavingsUsd,
       criticalEvents: stats.criticalEvents.length,
       bulkDeletes: stats.bulkDeletes,
       riskScore,
@@ -689,6 +740,7 @@ export const dailySecurityDigest = onSchedule({
     const lines = [
       `*PRIMETOUR · Security Digest 24h* (risk=${riskScore} | ${severity.toUpperCase()})`,
       `> Logins: ${stats.logins} | IP novo: ${stats.suspiciousNewIp.length} | Custo IA: $${stats.aiCostTotal.toFixed(2)} | Bulk deletes: ${stats.bulkDeletes}`,
+      `> 💾 Prompt Caching: ${stats.aiCacheHits} hits · ${stats.aiTokensSaved.toLocaleString('pt-BR')} tokens economizados (~$${stats.aiSavingsUsd.toFixed(4)})`,
     ];
     if (stats.suspiciousNewIp.length) {
       lines.push(`*Logins de IP novo:*`);
