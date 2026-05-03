@@ -7,6 +7,8 @@ import { store }    from '../store.js';
 import { toast }    from '../components/toast.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
+import { mountInsightsPanel } from '../components/insightsPanel.js';
+import { fetchInsights, insightsToPdfRows, insightsToXlsxRows } from '../services/insights.js';
 import {
   getOverviewMetrics, getTasksByDay, getStatusDistribution,
   getPriorityDistribution, getTasksByMember, getTasksByProject,
@@ -220,6 +222,9 @@ export async function renderDashboards(container) {
         <div class="chart-loading"><div class="chart-loading-spinner"></div></div>
       </div>
     </div>
+
+    <!-- Insights & Observações (componente reutilizavel) -->
+    <div id="dash-insights-section" style="margin-top:24px;"></div>
   `;
 
   // Period buttons
@@ -547,6 +552,21 @@ function renderAllCharts(Chart, m) {
   try { renderNewslettersWidget(tasks); }          catch(e){ console.warn('R3 newsletters:', e); }
   try { renderCsatByAreaWidget(tasks, surveys); }  catch(e){ console.warn('R3 CSAT area:', e); }
   try { renderNucleoWidget(tasks); }               catch(e){ console.warn('R3 nucleo:', e); }
+
+  /* Insights & Observações (componente reutilizavel) */
+  try {
+    const { start, end } = getPeriodDates(activePeriod());
+    const section = document.getElementById('dash-insights-section');
+    if (section) {
+      await mountInsightsPanel({
+        container: section,
+        dashboard: 'produtividade',
+        periodFrom: start, periodTo: end,
+        filters: { user: filterUser, nucleo: filterNucleo, sector: filterSector, period: currentPeriod },
+        enableAi: true,
+      });
+    }
+  } catch(e) { console.warn('insightsPanel:', e); }
 }
 
 /* ─── Line chart ─────────────────────────────────────────── */
@@ -833,6 +853,17 @@ async function exportDashXls() {
   const ws3 = window.XLSX.utils.aoa_to_sheet(teamRows);
   ws3['!cols'] = [{ wch: 25 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
   window.XLSX.utils.book_append_sheet(wb, ws3, 'Equipe');
+
+  // Sheet 4 — Insights & Observações (manuais + IA)
+  try {
+    const insights = await fetchInsights({ dashboard: 'produtividade', periodFrom: start, periodTo: end });
+    if (insights.length) {
+      const insRows = insightsToXlsxRows(insights);
+      const ws4 = window.XLSX.utils.json_to_sheet(insRows);
+      ws4['!cols'] = [{wch:14},{wch:10},{wch:50},{wch:60},{wch:60},{wch:25},{wch:10},{wch:20},{wch:18}];
+      window.XLSX.utils.book_append_sheet(wb, ws4, 'Insights');
+    }
+  } catch (e) { console.warn('insights xlsx:', e); }
 
   window.XLSX.writeFile(wb, `primetour_dashboard_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast.success('XLS exportado!');
@@ -1212,6 +1243,39 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
       },
     });
   }
+
+  // ═════ Insights & Observacoes ═════
+  // Painel manual + IA do componente reutilizavel
+  try {
+    const insights = await fetchInsights({ dashboard: 'produtividade', periodFrom: start, periodTo: end });
+    if (insights.length) {
+      kit.ensureSpace(40);
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+      doc.text(txt('INSIGHTS & OBSERVACOES'), M, kit.y);
+      kit.y += 5;
+
+      doc.autoTable({
+        startY: kit.y, margin: { left: M, right: M },
+        head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Recomendacao', 'Por']],
+        body: insights.map(ins => [
+          (ins.type || 'neutral'),
+          (ins.impact || 'medium'),
+          ins.title || '',
+          ins.observation || '',
+          ins.recommendation || '',
+          ins.createdBy?.name || '—',
+        ]),
+        styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+        headStyles: { fillColor: [26, 42, 74], textColor: 255, fontStyle: 'bold', fontSize: 7 },
+        columnStyles: {
+          0: { cellWidth: 18 }, 1: { cellWidth: 14 }, 2: { cellWidth: 50 },
+          3: { cellWidth: 70 }, 4: { cellWidth: 70 }, 5: { cellWidth: 30 },
+        },
+        didDrawPage: (data) => { kit.y = data.cursor.y; },
+      });
+      kit.y = doc.lastAutoTable.finalY + 6;
+    }
+  } catch (e) { console.warn('insights pdf:', e); }
 
   kit.drawFooter('PRIMETOUR  ·  Produtividade');
   doc.save(`primetour_dashboard_${new Date().toISOString().slice(0, 10)}.pdf`);

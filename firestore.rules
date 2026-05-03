@@ -519,6 +519,23 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Dashboard Insights ───────────────────────────────────
+    // Observações estruturadas em qualquer dashboard analítico.
+    // Qualquer auth user pode criar/ler. Editar/remover só autor ou admin.
+    match /dashboard_insights/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.createdBy.uid == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.dashboard is string;
+      allow update: if isAuth()
+        && (resource.data.createdBy.uid == request.auth.uid || isAdmin())
+        && request.resource.data.dashboard == resource.data.dashboard
+        && request.resource.data.createdBy.uid == resource.data.createdBy.uid;
+      allow delete: if isAuth()
+        && (resource.data.createdBy.uid == request.auth.uid || isAdmin());
+    }
+
     // ── Feedbacks ──────────────────────────────────────────────
     match /feedbacks/{docId} {
       allow read:   if isAuth();
