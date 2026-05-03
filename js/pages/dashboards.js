@@ -1372,11 +1372,21 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
       doc.text(txt(`${insights.length} insights no historico, agrupados por widget`), M, kit.y);
       kit.y += 5;
 
+      // Helper local: remove emojis (jsPDF default font usa WinAnsi/CP1252,
+      // emojis viram caixas. txt() já trata setas e marcadores; aqui só
+      // tira chars fora do BMP/emojis.
+      const stripEmoji = s => String(s ?? '')
+        .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')   // emoticons + symbols + pictographs
+        .replace(/[\u{2600}-\u{27BF}]/gu, '')      // misc symbols + dingbats
+        .replace(/[\u{1F000}-\u{1F9FF}]/gu, '')    // mahjong, dominoes, playing cards
+        .trim();
+      const safe = s => txt(stripEmoji(s));
+
       // Renderiza um sub-bloco por grupo (widget ou geral)
       groups.forEach((group, gi) => {
         kit.ensureSpace(20);
         setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
-        doc.text(txt(`${group.groupLabel} (${group.items.length})`), M, kit.y);
+        doc.text(safe(`${group.groupLabel} (${group.items.length})`), M, kit.y);
         kit.y += 3;
 
         doc.autoTable({
@@ -1385,14 +1395,14 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
           body: group.items.map(ins => [
             ins.type || 'neutral',
             ins.impact || 'medium',
-            ins.title || '',
-            ins.observation || '',
-            ins.recommendation || '',
-            formatInsightPeriod(ins) || '—',
+            safe(ins.title || ''),
+            safe(ins.observation || ''),
+            safe(ins.recommendation || ''),
+            safe(formatInsightPeriod(ins) || '-'),
             ins.source === 'ai-generated' ? 'IA'
               : ins.source === 'ai-edited' ? 'IA edit.'
               : 'Manual',
-            (ins.createdBy?.name || '—') + ' · ' + (ins.createdAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || ''),
+            safe((ins.createdBy?.name || '-') + ' · ' + (ins.createdAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '')),
           ]),
           styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak' },
           headStyles: { fillColor: [26, 42, 74], textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
