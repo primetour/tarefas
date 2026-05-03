@@ -123,28 +123,51 @@ export async function renderMetaPerformance(container) {
       </div>
     </div>
 
-    <!-- KPI cards -->
-    <div id="meta-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));
-      gap:12px;margin-bottom:24px;">
-      ${[0,1,2,3,4,5].map(()=>`<div class="card skeleton" style="height:80px;"></div>`).join('')}
+    <!-- KPI cards (com slot insights) -->
+    <div id="meta-kpis-block" style="margin-bottom:24px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">📊 Indicadores</h3>
+        <span class="widget-insights-slot" data-widget-id="meta-kpis-block"></span>
+      </div>
+      <div id="meta-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px;">
+        ${[0,1,2,3,4,5].map(()=>`<div class="card skeleton" style="height:80px;"></div>`).join('')}
+      </div>
     </div>
 
     <!-- Top posts -->
-    <div id="meta-top" style="margin-bottom:24px;"></div>
+    <div id="meta-top-block" style="margin-bottom:24px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">🏆 Top Posts</h3>
+        <span class="widget-insights-slot" data-widget-id="meta-top-block"></span>
+      </div>
+      <div id="meta-top"></div>
+    </div>
 
     <!-- Full table -->
-    <div class="card" style="padding:0;overflow:hidden;">
-      <div style="overflow-x:auto;max-height:65vh;overflow-y:auto;">
-        <table id="meta-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:0.8125rem;">
-          <thead id="meta-thead"></thead>
-          <tbody id="meta-tbody">
-            <tr><td colspan="15" style="padding:40px;text-align:center;color:var(--text-muted);">
-              Carregando…
-            </td></tr>
-          </tbody>
-        </table>
+    <div id="meta-table-block">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">📋 Tabela de Posts</h3>
+        <span class="widget-insights-slot" data-widget-id="meta-table-block"></span>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div style="overflow-x:auto;max-height:65vh;overflow-y:auto;">
+          <table id="meta-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:0.8125rem;">
+            <thead id="meta-thead"></thead>
+            <tbody id="meta-tbody">
+              <tr><td colspan="15" style="padding:40px;text-align:center;color:var(--text-muted);">
+                Carregando…
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
+
+    <!-- Análise Geral -->
+    <div id="meta-insights-section" style="margin-top:24px;"></div>
   `;
 
   let editMode = false;
@@ -386,6 +409,11 @@ function getRows(includeHidden = false) {
 
 /* ─── Render table ────────────────────────────────────────── */
 function renderTable(editMode = false) {
+  // Setup insights na primeira render (idempotente)
+  if (allData?.length && !metaInsightsMounted) {
+    setTimeout(() => setupMetaInsights(), 500);
+  }
+
   const allRows     = getRows(true);
   const visibleRows = allRows.filter(r => !hiddenRows.has(r.mediaId));
 
@@ -669,6 +697,20 @@ async function exportXLSX() {
     ws['!cols'] = headers.map((_,i) => ({ wch: i<4?24:14 }));
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, ws, 'Instagram');
+
+    // Sheet "Insights"
+    try {
+      const { fetchInsights, insightsToXlsxRows } = await import('../services/insights.js?v=20260503uu1');
+      const insights = await fetchInsights({ dashboard: 'meta', max: 200 });
+      if (insights.length) {
+        const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.meta || {};
+        const insRows = insightsToXlsxRows(insights, widgetLabels);
+        const wsIns = window.XLSX.utils.json_to_sheet(insRows);
+        wsIns['!cols'] = [{wch:30},{wch:14},{wch:10},{wch:50},{wch:60},{wch:60},{wch:50},{wch:25},{wch:12},{wch:24},{wch:20},{wch:18}];
+        window.XLSX.utils.book_append_sheet(wb, wsIns, 'Insights');
+      }
+    } catch (e) { console.warn('insights meta xlsx:', e); }
+
     window.XLSX.writeFile(wb, `primetour_instagram_${new Date().toISOString().slice(0,10)}.xlsx`);
     toast.success(`${rows.length} posts exportados.`);
   } catch(e) { toast.error('Erro XLSX: '+e.message); }
@@ -828,6 +870,52 @@ const exportPDF = withExportGuard(async function exportPDF() {
     });
 
     kit.drawFooter('PRIMETOUR  ·  Performance Redes Sociais');
+    // Insights & Observações — agrupado por widget
+    try {
+      const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
+        await import('../services/insights.js?v=20260503uu1');
+      const insights = await fetchInsights({ dashboard: 'meta', max: 200 });
+      if (insights.length) {
+        const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.meta || {};
+        const groups = groupInsightsByIndex(insights, widgetLabels);
+        kit.ensureSpace(40);
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text(txt('INSIGHTS & OBSERVACOES'), M, kit.y);
+        kit.y += 5;
+        const stripEmoji = s => String(s ?? '')
+          .replace(/[\u{1F300}-\u{1FFFF}]/gu, '').replace(/[\u{2400}-\u{27BF}]/gu, '')
+          .replace(/[\u{2000}-\u{206F}]/gu, '').trim();
+        const safe = s => txt(stripEmoji(s));
+        groups.forEach((group) => {
+          kit.ensureSpace(20);
+          setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+          doc.text(safe(`${group.groupLabel} (${group.items.length})`), M, kit.y);
+          kit.y += 3;
+          doc.autoTable({
+            startY: kit.y, margin: { left: M, right: M },
+            head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Dados', 'Periodo', 'Origem', 'Por']],
+            body: group.items.map(ins => [
+              ins.type || 'neutral', ins.impact || 'medium',
+              safe(ins.title || ''), safe(ins.observation || ''),
+              safe(formatDataSnapshot(ins.dataSnapshot) || '-'),
+              safe(formatInsightPeriod(ins) || '-'),
+              ins.source === 'ai-generated' ? 'IA' : ins.source === 'ai-edited' ? 'IA edit.' : 'Manual',
+              safe((ins.createdBy?.name || '-')),
+            ]),
+            styles: { fontSize: 6, cellPadding: 1.8, overflow: 'linebreak' },
+            headStyles: { fillColor: [26,42,74], textColor: 255, fontStyle: 'bold', fontSize: 6 },
+            columnStyles: {
+              0:{cellWidth:14}, 1:{cellWidth:11}, 2:{cellWidth:36},
+              3:{cellWidth:48}, 4:{cellWidth:48}, 5:{cellWidth:24},
+              6:{cellWidth:13}, 7:{cellWidth:24},
+            },
+            didDrawPage: (data) => { kit.y = data.cursor.y; },
+          });
+          kit.y = doc.lastAutoTable.finalY + 5;
+        });
+      }
+    } catch (e) { console.warn('insights meta pdf:', e); }
+
     doc.save(`primetour_instagram_${new Date().toISOString().slice(0, 10)}.pdf`);
     toast.success(`PDF gerado com ${rows.length} posts.`);
   } catch (e) {
@@ -836,3 +924,94 @@ const exportPDF = withExportGuard(async function exportPDF() {
     if (btn) { btn.disabled = false; btn.textContent = '⬇ PDF'; }
   }
 });
+
+/* ════════════════════════════════════════════════════════════
+   INSIGHTS & OBSERVAÇÕES — Setup do Meta Performance
+   ════════════════════════════════════════════════════════════ */
+
+let metaInsightsMounted = false;
+
+function computeMetaPeriod() {
+  if (String(filterDays).startsWith('custom:')) {
+    const [, from, to] = filterDays.split(':');
+    return {
+      start: from ? new Date(from + 'T12:00:00') : null,
+      end:   to   ? new Date(to + 'T12:00:00')   : null,
+      label: `${from} → ${to}`,
+    };
+  }
+  const days = parseInt(filterDays) || 30;
+  const end = new Date(); const start = new Date(); start.setDate(start.getDate() - days);
+  return { start, end, label: `Últimos ${days} dias` };
+}
+
+function metaSnapshotKpis() {
+  const rows = getRows().filter(r => !hiddenRows.has(r.mediaId));
+  if (!rows.length) return { posts: 0 };
+  const sum = (k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+  const avg = (k) => rows.length ? sum(k) / rows.length : 0;
+  return {
+    posts: rows.length,
+    alcanceTotal: sum('reach'),
+    curtidasTotais: sum('likes'),
+    comentariosTotais: sum('comments'),
+    engajamentoMedio: avg('engagement').toFixed(1),
+    taxaEngajamentoMedia: avg('engagementRate').toFixed(2) + '%',
+    seguidoresGanhos: sum('follows'),
+  };
+}
+
+function metaSnapshotTopPosts() {
+  const rows = getRows().filter(r => !hiddenRows.has(r.mediaId));
+  const top = [...rows]
+    .sort((a, b) => (b.engagement || 0) - (a.engagement || 0))
+    .slice(0, 10)
+    .map(r => ({
+      label: (r.caption || 'sem legenda').slice(0, 60),
+      engagement: r.engagement,
+      reach: r.reach,
+      likes: r.likes,
+    }));
+  return { topPosts: top };
+}
+
+function metaSnapshotTable() {
+  const rows = getRows().filter(r => !hiddenRows.has(r.mediaId));
+  return {
+    totalPosts: rows.length,
+    porTipo: ['IMAGE', 'VIDEO', 'CAROUSEL_ALBUM', 'REEL'].reduce((acc, t) => {
+      acc[t] = rows.filter(r => r.mediaType === t).length;
+      return acc;
+    }, {}),
+  };
+}
+
+function metaSnapshotGeneral() {
+  return { ...metaSnapshotKpis(), ...metaSnapshotTopPosts(), ...metaSnapshotTable() };
+}
+
+const META_WIDGETS = [
+  { widgetId: 'meta-kpis-block',  indexKey: 'kpis',     label: '📊 Indicadores',     snapshot: metaSnapshotKpis },
+  { widgetId: 'meta-top-block',   indexKey: 'topPosts', label: '🏆 Top Posts',        snapshot: metaSnapshotTopPosts },
+  { widgetId: 'meta-table-block', indexKey: 'tabela',   label: '📋 Tabela de Posts', snapshot: metaSnapshotTable },
+];
+
+async function setupMetaInsights() {
+  if (metaInsightsMounted) return;
+  metaInsightsMounted = true;
+  try {
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const period = computeMetaPeriod();
+    await setupDashboardInsights({
+      dashboard: 'meta',
+      widgets: META_WIDGETS,
+      metrics: null,
+      periodFrom: period.start, periodTo: period.end,
+      periodLabel: period.label,
+      filters: { acct: filterAcct, type: filterType, days: filterDays, periodLabel: period.label },
+      generalPanelContainerId: 'meta-insights-section',
+      buildGeneralSnapshot: metaSnapshotGeneral,
+      enableAi: true,
+    });
+  } catch (e) { console.warn('[meta] insights setup:', e); }
+}

@@ -399,24 +399,36 @@ export async function renderGaPerformance(container) {
         </div>
       </div>
 
-      <!-- KPI cards -->
-      <div id="ga-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));
-        gap:12px;margin-bottom:24px;">
-        ${[0,1,2,3,4,5].map(()=>`<div class="card skeleton" style="height:80px;"></div>`).join('')}
+      <!-- KPI cards (com slot insights) -->
+      <div id="ga-kpis-block" style="margin-bottom:24px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+            text-transform:uppercase;letter-spacing:0.06em;">📊 Indicadores</h3>
+          <span class="widget-insights-slot" data-widget-id="ga-kpis-block"></span>
+        </div>
+        <div id="ga-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px;">
+          ${[0,1,2,3,4,5].map(()=>`<div class="card skeleton" style="height:80px;"></div>`).join('')}
+        </div>
       </div>
 
       <!-- Charts row -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
-        <div class="card" style="padding:20px;">
+        <div id="ga-chart-users-card" class="card" style="padding:20px;">
           <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
-            color:var(--text-muted);margin-bottom:12px;">Usuários & Sessões (diário)</div>
+            color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="flex:1;min-width:0;">Usuários & Sessões (diário)</span>
+            <span class="widget-insights-slot" data-widget-id="ga-chart-users-card"></span>
+          </div>
           <div style="position:relative;height:220px;">
             <canvas id="ga-chart-users"></canvas>
           </div>
         </div>
-        <div class="card" style="padding:20px;">
+        <div id="ga-chart-rates-card" class="card" style="padding:20px;">
           <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
-            color:var(--text-muted);margin-bottom:12px;">Taxa de Engajamento & Rejeição</div>
+            color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="flex:1;min-width:0;">Taxa de Engajamento & Rejeição</span>
+            <span class="widget-insights-slot" data-widget-id="ga-chart-rates-card"></span>
+          </div>
           <div style="position:relative;height:220px;">
             <canvas id="ga-chart-rates"></canvas>
           </div>
@@ -424,20 +436,30 @@ export async function renderGaPerformance(container) {
       </div>
 
       <!-- Data table -->
-      <div class="card" style="padding:0;overflow:hidden;">
-        <div id="ga-table-toolbar"></div>
-        <div style="overflow-x:auto;max-height:60vh;overflow-y:auto;">
-          <table id="ga-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:0.8125rem;">
-            <thead id="ga-thead"></thead>
-            <tbody id="ga-tbody">
-              <tr><td colspan="12" style="padding:40px;text-align:center;color:var(--text-muted);">
-                Carregando…
-              </td></tr>
-            </tbody>
-          </table>
+      <div id="ga-table-block">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+            text-transform:uppercase;letter-spacing:0.06em;">📋 Tabela de Páginas</h3>
+          <span class="widget-insights-slot" data-widget-id="ga-table-block"></span>
         </div>
-        <div id="ga-pagination"></div>
+        <div class="card" style="padding:0;overflow:hidden;">
+          <div id="ga-table-toolbar"></div>
+          <div style="overflow-x:auto;max-height:60vh;overflow-y:auto;">
+            <table id="ga-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:0.8125rem;">
+              <thead id="ga-thead"></thead>
+              <tbody id="ga-tbody">
+                <tr><td colspan="12" style="padding:40px;text-align:center;color:var(--text-muted);">
+                  Carregando…
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="ga-pagination"></div>
+        </div>
       </div>
+
+      <!-- Análise Geral -->
+      <div id="ga-insights-section" style="margin-top:24px;"></div>
     </div>
 
     <!-- ═══ CWV view ═══ -->
@@ -650,6 +672,11 @@ async function loadData(forceRefresh = false) {
 
     const count = document.getElementById('ga-count');
     if (count) count.textContent = `${allData.length} dias`;
+
+    // Setup insights na primeira render (idempotente)
+    if (allData?.length && !gaInsightsMounted) {
+      setTimeout(() => setupGaInsights(), 500);
+    }
 
   } catch(e) {
     console.error('ga-performance load error:', e);
@@ -1447,6 +1474,19 @@ async function exportXLSX() {
       window.XLSX.utils.book_append_sheet(wb, ws3, 'Origens');
     }
 
+    // Sheet "Insights"
+    try {
+      const { fetchInsights, insightsToXlsxRows } = await import('../services/insights.js?v=20260503uu1');
+      const insights = await fetchInsights({ dashboard: 'ga', max: 200 });
+      if (insights.length) {
+        const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.ga || {};
+        const insRows = insightsToXlsxRows(insights, widgetLabels);
+        const wsIns = window.XLSX.utils.json_to_sheet(insRows);
+        wsIns['!cols'] = [{wch:30},{wch:14},{wch:10},{wch:50},{wch:60},{wch:60},{wch:50},{wch:25},{wch:12},{wch:24},{wch:20},{wch:18}];
+        window.XLSX.utils.book_append_sheet(wb, wsIns, 'Insights');
+      }
+    } catch (e) { console.warn('insights ga xlsx:', e); }
+
     window.XLSX.writeFile(wb, `primetour_ga_${new Date().toISOString().slice(0,10)}.xlsx`);
     toast.success(`${sorted.length} dias exportados.`);
   } catch(e) { toast.error('Erro XLSX: '+e.message); }
@@ -1666,6 +1706,52 @@ const exportPDF = withExportGuard(async function exportPDF() {
         }
       },
     });
+
+    // Insights & Observações — agrupado por widget
+    try {
+      const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
+        await import('../services/insights.js?v=20260503uu1');
+      const insights = await fetchInsights({ dashboard: 'ga', max: 200 });
+      if (insights.length) {
+        const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.ga || {};
+        const groups = groupInsightsByIndex(insights, widgetLabels);
+        kit.ensureSpace(40);
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text(txt('INSIGHTS & OBSERVACOES'), M, kit.y);
+        kit.y += 5;
+        const stripEmoji = s => String(s ?? '')
+          .replace(/[\u{1F300}-\u{1FFFF}]/gu, '').replace(/[\u{2400}-\u{27BF}]/gu, '')
+          .replace(/[\u{2000}-\u{206F}]/gu, '').trim();
+        const safe = s => txt(stripEmoji(s));
+        groups.forEach((group) => {
+          kit.ensureSpace(20);
+          setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+          doc.text(safe(`${group.groupLabel} (${group.items.length})`), M, kit.y);
+          kit.y += 3;
+          doc.autoTable({
+            startY: kit.y, margin: { left: M, right: M },
+            head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Dados', 'Periodo', 'Origem', 'Por']],
+            body: group.items.map(ins => [
+              ins.type || 'neutral', ins.impact || 'medium',
+              safe(ins.title || ''), safe(ins.observation || ''),
+              safe(formatDataSnapshot(ins.dataSnapshot) || '-'),
+              safe(formatInsightPeriod(ins) || '-'),
+              ins.source === 'ai-generated' ? 'IA' : ins.source === 'ai-edited' ? 'IA edit.' : 'Manual',
+              safe((ins.createdBy?.name || '-')),
+            ]),
+            styles: { fontSize: 6, cellPadding: 1.8, overflow: 'linebreak' },
+            headStyles: { fillColor: [26,42,74], textColor: 255, fontStyle: 'bold', fontSize: 6 },
+            columnStyles: {
+              0:{cellWidth:14}, 1:{cellWidth:11}, 2:{cellWidth:36},
+              3:{cellWidth:48}, 4:{cellWidth:48}, 5:{cellWidth:24},
+              6:{cellWidth:13}, 7:{cellWidth:24},
+            },
+            didDrawPage: (data) => { kit.y = data.cursor.y; },
+          });
+          kit.y = doc.lastAutoTable.finalY + 5;
+        });
+      }
+    } catch (e) { console.warn('insights ga pdf:', e); }
 
     kit.drawFooter('PRIMETOUR  ·  Google Analytics');
     doc.save(`primetour_ga_${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -3092,4 +3178,93 @@ async function openAddSiteDialog() {
       });
     }, 50);
   });
+}
+
+/* ════════════════════════════════════════════════════════════
+   INSIGHTS & OBSERVAÇÕES — Setup do GA Performance
+   ════════════════════════════════════════════════════════════ */
+
+let gaInsightsMounted = false;
+
+function computeGaPeriod() {
+  const days = parseInt(filterDays) || 28;
+  const end = new Date(); const start = new Date(); start.setDate(start.getDate() - days);
+  return { start, end, label: `Últimos ${days} dias` };
+}
+
+function gaSnapshotKpis() {
+  if (!periodTotals) return { kpis: 'sem dados' };
+  return {
+    sessions: periodTotals.sessions,
+    users: periodTotals.users,
+    newUsers: periodTotals.newUsers,
+    pageViews: periodTotals.pageViews,
+    avgSessionDuration: periodTotals.avgSessionDuration,
+    bounceRate: periodTotals.bounceRate,
+    engagementRate: periodTotals.engagementRate,
+  };
+}
+
+function gaSnapshotChartUsers() {
+  const last = (allData || []).slice(-14);
+  return {
+    daily: last.map(d => ({ label: d.date, count: d.users })),
+    sessions7d: last.slice(-7).reduce((a, d) => a + (d.sessions || 0), 0),
+  };
+}
+
+function gaSnapshotChartRates() {
+  const last = (allData || []).slice(-14);
+  if (!last.length) return {};
+  const avg = (k) => last.reduce((a,d) => a + (d[k] || 0), 0) / last.length;
+  return {
+    engagementRateMedio: avg('engagementRate').toFixed(2) + '%',
+    bounceRateMedio: avg('bounceRate').toFixed(2) + '%',
+  };
+}
+
+function gaSnapshotTable() {
+  const sample = (allPages || []).slice(0, 10).map(p => ({
+    label: p.pageTitle || p.pagePath || '—',
+    sessions: p.sessions,
+    bounceRate: p.bounceRate,
+    avgDuration: p.avgSessionDuration,
+  }));
+  return { totalPaginas: (allPages || []).length, top10Paginas: sample };
+}
+
+function gaSnapshotGeneral() {
+  return {
+    ...gaSnapshotKpis(),
+    ...gaSnapshotChartUsers(),
+    ...gaSnapshotChartRates(),
+    ...gaSnapshotTable(),
+  };
+}
+
+const GA_WIDGETS = [
+  { widgetId: 'ga-kpis-block',         indexKey: 'kpis',         label: '📊 Indicadores',                   snapshot: gaSnapshotKpis },
+  { widgetId: 'ga-chart-users-card',   indexKey: 'chartUsers',   label: '👥 Usuários & Sessões',            snapshot: gaSnapshotChartUsers },
+  { widgetId: 'ga-chart-rates-card',   indexKey: 'chartRates',   label: '📈 Taxa de Engajamento & Rejeição', snapshot: gaSnapshotChartRates },
+  { widgetId: 'ga-table-block',        indexKey: 'tabela',       label: '📋 Tabela de Páginas',             snapshot: gaSnapshotTable },
+];
+
+async function setupGaInsights() {
+  if (gaInsightsMounted) return;
+  gaInsightsMounted = true;
+  try {
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const period = computeGaPeriod();
+    await setupDashboardInsights({
+      dashboard: 'ga',
+      widgets: GA_WIDGETS,
+      metrics: null,
+      periodFrom: period.start, periodTo: period.end,
+      periodLabel: period.label,
+      filters: { property: filterProp, days: filterDays, periodLabel: period.label },
+      generalPanelContainerId: 'ga-insights-section',
+      buildGeneralSnapshot: gaSnapshotGeneral,
+      enableAi: true,
+    });
+  } catch (e) { console.warn('[ga] insights setup:', e); }
 }
