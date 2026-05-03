@@ -490,8 +490,21 @@ export async function regenerateHomeQr() {
    SEED — importa editions.json do GitHub na primeira load
    ════════════════════════════════════════════════════════════ */
 
-/** Idempotente: só cria edições que não existem ainda. */
+// Lock global pra evitar race quando 2 chamadas paralelas tentam seedar
+// (página pública + admin abrindo simultaneamente).
+let _seedLock = null;
+
+/** Idempotente: só cria edições que não existem ainda.
+ * Lock evita duplicatas em chamadas paralelas.
+ */
 export async function seedFromGithubEditions() {
+  // Se já tem seed em andamento, espera ele terminar e retorna mesmo resultado
+  if (_seedLock) return _seedLock;
+  _seedLock = _seedFromGithubEditionsImpl().finally(() => { _seedLock = null; });
+  return _seedLock;
+}
+
+async function _seedFromGithubEditionsImpl() {
   let editionsJson;
   try {
     const res = await fetch(`https://raw.githubusercontent.com/${GH_REPO}/main/editions.json`);

@@ -23,7 +23,7 @@ import {
   fetchSettings, updateSettings, regenerateHomeQr,
   generateQrDataUrl, formatBytes,
   LUXURY_TRAVEL_GH_REPO, LUXURY_TRAVEL_GH_BASE,
-} from '../services/luxuryTravel.js?v=20260503bbb1';
+} from '../services/luxuryTravel.js?v=20260503bbb2';
 
 const esc = s => String(s || '').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
