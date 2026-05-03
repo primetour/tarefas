@@ -20,7 +20,7 @@
 import {
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
   formatInsightPeriod, formatDataSnapshot,
-} from './insights.js?v=20260503tt1';
+} from './insights.js?v=20260503tt2';
 
 const fmtDate = ts => {
   if (!ts) return '—';
@@ -65,7 +65,16 @@ const breakdownValue = (item) => {
     const done = 'done' in item ? `${item.done}/` : '';
     return `${done}${item.total}`;
   }
-  return '—';
+  // Fallback genérico: pega TODAS as métricas numéricas restantes do item
+  // (ex: { done, created, ...} → "done: 12 · created: 14")
+  const numerics = Object.entries(item)
+    .filter(([k, v]) =>
+      typeof v === 'number' &&
+      !['id'].includes(k) &&
+      !TECHNICAL_KEYS.has(k))
+    .map(([k, v]) => `${k}: ${Number.isInteger(v) ? v : v.toFixed(2)}`);
+  if (numerics.length) return numerics.join(' · ');
+  return '-';
 };
 
 /** Achata snapshot em pares Indicador/Valor pra display em tabela.
@@ -153,6 +162,7 @@ const stripEmoji = s => String(s ?? '')
   // Substitutions ANTES da remoção (preserva semântica)
   .replace(/→/g, ' a ').replace(/←/g, '<-').replace(/↔/g, '<->').replace(/↳/g, '>')
   .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/…/g, '...')
+  .replace(/[—–]/g, '-')   // em-dash + en-dash (estavam em General Punctuation U+2000-206F removido)
   .replace(/●/g, '.').replace(/○/g, 'o').replace(/■/g, '#').replace(/□/g, '[]')
   .replace(/▸/g, '>').replace(/◂/g, '<').replace(/▴/g, '^').replace(/▾/g, 'v')
   // Remove ranges não-Latin-1
