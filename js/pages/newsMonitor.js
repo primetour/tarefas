@@ -9,6 +9,8 @@ import {
   NEWS_CATEGORIES, NEWS_SUBCATEGORIES,
   fetchClippings, saveClipping, deleteClipping, fetchUrlMetadata,
   CLIPPING_MEDIA_TYPES, CLIPPING_CONTENT_TYPES, CLIPPING_SENTIMENTS,
+  BRAND_TIERS, fetchTrackedBrands, saveTrackedBrand, deleteTrackedBrand,
+  calculateSoV, calculateSoVByMonth,
 } from '../services/newsMonitor.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
@@ -56,6 +58,12 @@ export async function renderNewsMonitor(container) {
         border-bottom:2px solid transparent;margin-bottom:-2px;">
         📎 Clipping
       </button>
+      <button class="news-tab" data-tab="sov"
+        style="padding:10px 24px;font-size:0.875rem;font-weight:600;border:none;cursor:pointer;
+        background:transparent;color:var(--text-muted);
+        border-bottom:2px solid transparent;margin-bottom:-2px;">
+        📊 Share of Voice
+      </button>
     </div>
 
     <!-- Tab content -->
@@ -80,8 +88,10 @@ export async function renderNewsMonitor(container) {
 async function renderActiveTab(container) {
   if (activeTab === 'noticias') {
     await renderNoticiasTab(container);
-  } else {
+  } else if (activeTab === 'clipping') {
     await renderClippingTab(container);
+  } else if (activeTab === 'sov') {
+    await renderSoVTab(container);
   }
 }
 
@@ -931,8 +941,10 @@ function renderClipList() {
 }
 
 /* ─── Clipping form modal ─────────────────────────────────── */
-function showClipForm(container, item = null) {
+async function showClipForm(container, item = null) {
   const isEdit = !!item?.id;
+  // Carrega marcas trackadas (auto-seed na 1ª chamada)
+  const brands = await fetchTrackedBrands().catch(() => []);
   const m = document.createElement('div');
   m.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
     display:flex;align-items:center;justify-content:center;padding:20px;`;
@@ -1025,10 +1037,54 @@ function showClipForm(container, item = null) {
           </div>
         </div>
 
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;">
+          <div>
+            <label style="${LBL}">Veículo / Fonte <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
+            <input id="cf-site" type="text" class="portal-field" style="width:100%;"
+              value="${esc(item?.siteName || '')}" placeholder="Ex: Folha de S.Paulo, G1, Valor…">
+          </div>
+          <div>
+            <label style="${LBL}">Tier do veículo <span style="font-weight:400;color:var(--text-muted);" title="Peso pra Share of Voice ponderado por alcance">(?)</span></label>
+            <select id="cf-tier" class="filter-select" style="width:100%;">
+              ${BRAND_TIERS.map(t =>
+                `<option value="${t.tier}" ${(item?.veiculoTier || 'B') === t.tier ? 'selected' : ''}>${esc(t.tier)} — ${t.weight.toFixed(1)}x</option>`
+              ).join('')}
+            </select>
+          </div>
+        </div>
+
+        <!-- Multi-select de marcas mencionadas (Share of Voice) -->
         <div>
-          <label style="${LBL}">Veículo / Fonte <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
-          <input id="cf-site" type="text" class="portal-field" style="width:100%;"
-            value="${esc(item?.siteName || '')}" placeholder="Ex: Folha de S.Paulo, G1, Valor Econômico…">
+          <label style="${LBL}">
+            Marcas mencionadas na matéria *
+            <span style="font-weight:400;color:var(--text-muted);">(uma matéria pode citar várias)</span>
+          </label>
+          <div id="cf-brands-list" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;
+            background:var(--bg-surface);border:1px solid var(--border-default);border-radius:6px;
+            min-height:50px;">
+            ${brands.length === 0 ? `
+              <span style="font-size:0.75rem;color:var(--text-muted);">
+                Nenhuma marca cadastrada. Auto-seed acontece na primeira abertura.
+              </span>
+            ` : brands.map(b => {
+              const sel = (item?.brandsMentioned || []).includes(b.name);
+              const cor = b.color || '#94A3B8';
+              return `<label style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;
+                background:${sel ? cor + '22' : 'var(--bg-elevated)'};
+                border:1px solid ${sel ? cor : 'var(--border-subtle)'};
+                border-radius:var(--radius-full);font-size:0.75rem;cursor:pointer;
+                ${b.isOwn ? 'font-weight:600;' : ''}">
+                <input type="checkbox" name="cf-brand" value="${esc(b.name)}"
+                  ${sel ? 'checked' : ''} style="margin:0;">
+                <span style="color:${sel ? cor : 'var(--text-secondary)'};">
+                  ${b.isOwn ? '★ ' : ''}${esc(b.name)}
+                </span>
+              </label>`;
+            }).join('')}
+          </div>
+          <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+            ★ marca própria · selecione todas as marcas citadas pra calcular Share of Voice corretamente
+          </div>
         </div>
 
       </div>
@@ -1046,6 +1102,25 @@ function showClipForm(container, item = null) {
   m.addEventListener('click', e => { if (e.target === m) m.remove(); });
   document.getElementById('cf-modal-close')?.addEventListener('click', () => m.remove());
   document.getElementById('cf-modal-cancel')?.addEventListener('click', () => m.remove());
+
+  // Toggle visual nas chips de marca quando checkbox muda
+  document.getElementById('cf-brands-list')?.querySelectorAll('input[name="cf-brand"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const lbl = cb.closest('label');
+      const brandName = cb.value;
+      const brand = brands.find(b => b.name === brandName);
+      const cor = brand?.color || '#94A3B8';
+      if (cb.checked) {
+        lbl.style.background = cor + '22';
+        lbl.style.borderColor = cor;
+        lbl.querySelector('span:last-child').style.color = cor;
+      } else {
+        lbl.style.background = 'var(--bg-elevated)';
+        lbl.style.borderColor = 'var(--border-subtle)';
+        lbl.querySelector('span:last-child').style.color = 'var(--text-secondary)';
+      }
+    });
+  });
 
   // Auto-fetch metadata from URL
   document.getElementById('cf-fetch-meta')?.addEventListener('click', async () => {
@@ -1101,11 +1176,18 @@ function showClipForm(container, item = null) {
     const contentType = document.getElementById('cf-m-content')?.value;
     const sentiment = document.getElementById('cf-m-sentiment')?.value;
 
+    // Coleta marcas mencionadas (multi-select)
+    const brandsMentioned = [...document.querySelectorAll('input[name="cf-brand"]:checked')]
+      .map(x => x.value);
+
     if (!link)        { toast.error('Insira o link da matéria.'); return; }
     if (!title)       { toast.error('Preencha o título.'); return; }
     if (!mediaType)   { toast.error('Selecione o tipo de mídia.'); return; }
     if (!contentType) { toast.error('Selecione o tipo de conteúdo.'); return; }
     if (!sentiment)   { toast.error('Selecione a análise de sentimento.'); return; }
+    if (brandsMentioned.length === 0) {
+      toast.error('Selecione pelo menos uma marca mencionada.'); return;
+    }
 
     btn.disabled = true; btn.textContent = '⏳';
     try {
@@ -1118,6 +1200,8 @@ function showClipForm(container, item = null) {
         contentType,
         sentiment,
         siteName:    document.getElementById('cf-site')?.value?.trim() || '',
+        veiculoTier: document.getElementById('cf-tier')?.value || 'B',
+        brandsMentioned,
       };
       const savedId = await saveClipping(item?.id || null, data);
       const idx = allClippings.findIndex(i => i.id === (item?.id || savedId));
@@ -1382,5 +1466,364 @@ const exportPdf = withExportGuard(async function exportPdf() {
   doc.save(`primetour_noticias_${new Date().toISOString().slice(0,10)}.pdf`);
   toast.success('PDF exportado.');
 });
+
+/* ════════════════════════════════════════════════════════════
+   Tab: Share of Voice
+   ──────────────────────────────────────────────────────────
+   4 visualizacoes: Donut por marca, Linha evolucao 6 meses,
+   Sentiment stacked bar, Tabela ranking com NSS.
+   ════════════════════════════════════════════════════════════ */
+
+let sovChart1, sovChart2, sovChart3;
+let sovPeriod = 30;     // ultimos N dias
+
+async function loadChartJS() {
+  if (window.Chart) return window.Chart;
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+    s.onload  = () => resolve(window.Chart);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function renderSoVTab(container) {
+  const actions = document.getElementById('news-header-actions');
+  if (actions) actions.innerHTML = `
+    <button class="btn btn-secondary btn-sm" id="sov-manage-brands">⚙ Gerenciar marcas</button>`;
+
+  const tabContent = container.querySelector('#news-tab-content');
+  tabContent.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+      <div>
+        <h2 style="font-size:1.125rem;font-weight:600;margin:0 0 4px;">📊 Share of Voice</h2>
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0;">
+          % de presença na mídia da PRIMETOUR vs concorrentes — ponderado por sentimento e alcance.
+        </p>
+      </div>
+      <div style="display:flex;gap:6px;">
+        ${[7, 30, 90, 180, 365].map(d => `
+          <button class="btn btn-${sovPeriod === d ? 'primary' : 'secondary'} btn-sm"
+            data-period="${d}" data-act="sov-period">${d}d</button>
+        `).join('')}
+      </div>
+    </div>
+
+    <div id="sov-loading" style="text-align:center;padding:40px;color:var(--text-muted);">
+      Carregando dados…
+    </div>
+    <div id="sov-content" style="display:none;">
+      <!-- KPIs -->
+      <div id="sov-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+        gap:10px;margin-bottom:20px;"></div>
+
+      <!-- Charts row 1 -->
+      <div style="display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:16px;">
+        <div class="card" style="padding:16px;">
+          <div style="font-size:0.875rem;font-weight:600;margin-bottom:10px;">
+            🥧 SoV ponderado (período)
+          </div>
+          <div style="position:relative;height:280px;">
+            <canvas id="sov-donut"></canvas>
+          </div>
+        </div>
+        <div class="card" style="padding:16px;">
+          <div style="font-size:0.875rem;font-weight:600;margin-bottom:10px;">
+            📈 Evolução SoV — últimos 6 meses
+          </div>
+          <div style="position:relative;height:280px;">
+            <canvas id="sov-line"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts row 2: Sentiment stacked -->
+      <div class="card" style="padding:16px;margin-bottom:16px;">
+        <div style="font-size:0.875rem;font-weight:600;margin-bottom:10px;">
+          😊 Distribuição de sentimento por marca
+        </div>
+        <div style="position:relative;height:240px;">
+          <canvas id="sov-sentiment"></canvas>
+        </div>
+      </div>
+
+      <!-- Ranking table -->
+      <div class="card" style="padding:16px;">
+        <div style="font-size:0.875rem;font-weight:600;margin-bottom:10px;">
+          🏆 Ranking detalhado
+        </div>
+        <div id="sov-table-wrap" style="overflow-x:auto;"></div>
+      </div>
+    </div>
+  `;
+
+  // Bind period buttons
+  tabContent.querySelectorAll('[data-act="sov-period"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      sovPeriod = +btn.dataset.period;
+      renderSoVTab(container);
+    });
+  });
+
+  document.getElementById('sov-manage-brands')?.addEventListener('click', () => showBrandManager());
+
+  // Load data + render
+  try {
+    await loadChartJS();
+    const [clippings, brands] = await Promise.all([
+      fetchClippings().catch(() => []),
+      fetchTrackedBrands().catch(() => []),
+    ]);
+    const from = new Date(); from.setDate(from.getDate() - sovPeriod);
+    const sov = calculateSoV(clippings, brands, { from, to: new Date() });
+    const sovByMonth = calculateSoVByMonth(clippings, brands, { months: 6 });
+
+    document.getElementById('sov-loading').style.display = 'none';
+    document.getElementById('sov-content').style.display = 'block';
+
+    renderSoVKpis(sov);
+    renderSoVDonut(sov);
+    renderSoVLine(sovByMonth, brands);
+    renderSoVSentiment(sov);
+    renderSoVTable(sov);
+  } catch (e) {
+    console.error('[SoV] failed:', e);
+    document.getElementById('sov-loading').innerHTML = `
+      <span style="color:var(--color-danger);">Erro ao carregar: ${esc(e.message)}</span>`;
+  }
+}
+
+function renderSoVKpis(sov) {
+  const own = sov.find(b => b.isOwn) || { sov: 0, sovWeighted: 0, mentions: 0, nss: 0 };
+  const totalMentions = sov.reduce((s, b) => s + b.mentions, 0);
+  const top = sov[0] || { name: '—', sovWeighted: 0 };
+  const isOwnTop = top.isOwn;
+
+  const kpis = [
+    { label: 'SoV próprio (ponderado)', value: own.sovWeighted.toFixed(1) + '%', color: '#D4A843' },
+    { label: 'SoV simples', value: own.sov.toFixed(1) + '%', color: '#A78BFA' },
+    { label: 'Menções no período', value: own.mentions, color: '#22C55E' },
+    { label: 'Net Sentiment Score', value: own.nss.toFixed(0), color: own.nss >= 0 ? '#22C55E' : '#EF4444' },
+    { label: 'Líder do período', value: top.name, color: isOwnTop ? '#22C55E' : '#F97316', sub: top.sovWeighted.toFixed(1) + '%' },
+    { label: 'Total geral menções', value: totalMentions, color: '#94A3B8' },
+  ];
+  document.getElementById('sov-kpis').innerHTML = kpis.map(k => `
+    <div class="card" style="padding:12px;">
+      <div style="font-size:0.6875rem;font-weight:600;color:var(--text-muted);
+        text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${esc(k.label)}</div>
+      <div style="font-size:1.375rem;font-weight:700;color:${k.color};">${esc(String(k.value))}</div>
+      ${k.sub ? `<div style="font-size:0.75rem;color:var(--text-muted);">${esc(k.sub)}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function renderSoVDonut(sov) {
+  if (sovChart1) sovChart1.destroy();
+  const data = sov.filter(b => b.weighted > 0);
+  if (!data.length) {
+    document.getElementById('sov-donut').parentElement.innerHTML =
+      '<div style="text-align:center;padding:60px;color:var(--text-muted);">Sem dados no período.</div>';
+    return;
+  }
+  const ctx = document.getElementById('sov-donut').getContext('2d');
+  sovChart1 = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: data.map(b => b.name),
+      datasets: [{
+        data: data.map(b => b.sovWeighted.toFixed(2)),
+        backgroundColor: data.map(b => b.color),
+        borderWidth: 2, borderColor: '#0A1628',
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: '#94A3B8', font: { size: 11 } } },
+        tooltip: { callbacks: { label: c => `${c.label}: ${c.parsed}%` } },
+      },
+    },
+  });
+}
+
+function renderSoVLine(monthly, brands) {
+  if (sovChart2) sovChart2.destroy();
+  const ctx = document.getElementById('sov-line').getContext('2d');
+  // Pega top 5 brands (mais menções no período total)
+  const totalsBrand = {};
+  monthly.forEach(m => m.sov.forEach(b => {
+    totalsBrand[b.name] = (totalsBrand[b.name] || 0) + b.mentions;
+  }));
+  const top5 = Object.entries(totalsBrand)
+    .sort((a, b) => b[1] - a[1]).slice(0, 5).map(x => x[0]);
+  const datasets = top5.map(name => {
+    const brand = brands.find(b => b.name === name);
+    return {
+      label: name,
+      data: monthly.map(m => {
+        const b = m.sov.find(x => x.name === name);
+        return b ? +b.sovWeighted.toFixed(2) : 0;
+      }),
+      borderColor: brand?.color || '#94A3B8',
+      backgroundColor: (brand?.color || '#94A3B8') + '22',
+      tension: 0.3,
+      borderWidth: brand?.isOwn ? 3 : 2,
+    };
+  });
+  sovChart2 = new Chart(ctx, {
+    type: 'line',
+    data: { labels: monthly.map(m => m.month), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#94A3B8', font: { size: 11 } } } },
+      scales: {
+        y: { ticks: { color: '#94A3B8', callback: v => v + '%' }, grid: { color: '#1F2937' } },
+        x: { ticks: { color: '#94A3B8' }, grid: { color: '#1F2937' } },
+      },
+    },
+  });
+}
+
+function renderSoVSentiment(sov) {
+  if (sovChart3) sovChart3.destroy();
+  const data = sov.filter(b => b.mentions > 0);
+  if (!data.length) return;
+  const ctx = document.getElementById('sov-sentiment').getContext('2d');
+  sovChart3 = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(b => b.name),
+      datasets: [
+        { label: 'Positivo', data: data.map(b => b.sentiments.positive), backgroundColor: '#22C55E' },
+        { label: 'Neutro',   data: data.map(b => b.sentiments.neutral),  backgroundColor: '#F59E0B' },
+        { label: 'Negativo', data: data.map(b => b.sentiments.negative), backgroundColor: '#EF4444' },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#94A3B8' } } },
+      scales: {
+        y: { stacked: true, ticks: { color: '#94A3B8' }, grid: { color: '#1F2937' } },
+        x: { stacked: true, ticks: { color: '#94A3B8' }, grid: { color: '#1F2937' } },
+      },
+    },
+  });
+}
+
+function renderSoVTable(sov) {
+  const wrap = document.getElementById('sov-table-wrap');
+  if (!sov.length || sov.every(b => b.mentions === 0)) {
+    wrap.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);">Sem menções cadastradas no período.</div>';
+    return;
+  }
+  wrap.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:0.8125rem;">
+      <thead>
+        <tr style="background:var(--bg-surface);">
+          <th style="text-align:left;padding:10px 12px;color:var(--text-muted);font-weight:600;">#</th>
+          <th style="text-align:left;padding:10px 12px;color:var(--text-muted);font-weight:600;">Marca</th>
+          <th style="text-align:right;padding:10px 12px;color:var(--text-muted);font-weight:600;">Menções</th>
+          <th style="text-align:right;padding:10px 12px;color:var(--text-muted);font-weight:600;" title="Share of Voice simples (volume)">SoV</th>
+          <th style="text-align:right;padding:10px 12px;color:var(--text-muted);font-weight:600;" title="SoV ponderado por sentimento e alcance">SoV ponderado</th>
+          <th style="text-align:right;padding:10px 12px;color:var(--text-muted);font-weight:600;" title="Net Sentiment Score: -100 a +100">NSS</th>
+          <th style="text-align:center;padding:10px 12px;color:var(--text-muted);font-weight:600;">😊 / 😐 / 😞</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sov.map((b, i) => `
+          <tr style="border-bottom:1px solid var(--border-subtle);">
+            <td style="padding:10px 12px;color:var(--text-muted);">${i + 1}</td>
+            <td style="padding:10px 12px;">
+              <span style="display:inline-flex;align-items:center;gap:8px;font-weight:${b.isOwn ? '700' : '500'};
+                color:${b.isOwn ? b.color : 'var(--text-primary)'};">
+                <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${b.color};"></span>
+                ${b.isOwn ? '★ ' : ''}${esc(b.name)}
+              </span>
+            </td>
+            <td style="text-align:right;padding:10px 12px;color:var(--text-secondary);">${b.mentions}</td>
+            <td style="text-align:right;padding:10px 12px;color:var(--text-secondary);">${b.sov.toFixed(1)}%</td>
+            <td style="text-align:right;padding:10px 12px;color:${b.color};font-weight:600;">${b.sovWeighted.toFixed(1)}%</td>
+            <td style="text-align:right;padding:10px 12px;color:${b.nss >= 0 ? '#22C55E' : '#EF4444'};font-weight:600;">
+              ${b.nss > 0 ? '+' : ''}${b.nss.toFixed(0)}
+            </td>
+            <td style="text-align:center;padding:10px 12px;color:var(--text-muted);font-size:0.75rem;">
+              <span style="color:#22C55E;">${b.sentiments.positive}</span> /
+              <span style="color:#F59E0B;">${b.sentiments.neutral}</span> /
+              <span style="color:#EF4444;">${b.sentiments.negative}</span>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+/* ─── Modal: Gerenciar marcas ───────────────────────────── */
+async function showBrandManager() {
+  const brands = await fetchTrackedBrands().catch(() => []);
+  const m = document.createElement('div');
+  m.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
+    display:flex;align-items:center;justify-content:center;padding:20px;`;
+  m.innerHTML = `
+    <div class="card" style="width:100%;max-width:640px;max-height:85vh;
+      padding:0;overflow:hidden;display:flex;flex-direction:column;">
+      <div style="padding:16px 22px;background:var(--bg-surface);
+        border-bottom:1px solid var(--border-subtle);
+        display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-weight:700;font-size:1rem;">⚙ Marcas trackadas (Share of Voice)</div>
+        <button id="bm-close" style="border:none;background:none;cursor:pointer;font-size:1.25rem;color:var(--text-muted);">✕</button>
+      </div>
+      <div style="overflow-y:auto;flex:1;padding:18px 22px;">
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 14px;">
+          Marcas que aparecem como opção no cadastro de clipping. ★ = marca própria.
+        </p>
+        <div id="bm-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">
+          ${brands.map(b => `
+            <div style="display:flex;align-items:center;gap:10px;padding:10px;
+              background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;">
+              <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${b.color};"></span>
+              <span style="flex:1;font-weight:${b.isOwn ? '700' : '500'};color:var(--text-primary);">
+                ${b.isOwn ? '★ ' : ''}${esc(b.name)}
+              </span>
+              ${!b.isOwn ? `<button class="btn btn-ghost btn-sm" data-act="bm-del" data-id="${esc(b.id)}" data-name="${esc(b.name)}" title="Remover">✕</button>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div style="border-top:1px solid var(--border-subtle);padding-top:14px;">
+          <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">+ Adicionar nova marca trackada</label>
+          <div style="display:flex;gap:8px;">
+            <input id="bm-new-name" type="text" class="portal-field" placeholder="Nome da marca" style="flex:1;">
+            <input id="bm-new-color" type="color" value="#94A3B8" style="width:48px;height:36px;border:1px solid var(--border-subtle);border-radius:4px;">
+            <button class="btn btn-primary btn-sm" id="bm-add">Adicionar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+  document.getElementById('bm-close')?.addEventListener('click', () => m.remove());
+
+  m.querySelectorAll('[data-act="bm-del"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm(`Remover marca "${btn.dataset.name}"?\nClippings antigos não são afetados.`)) return;
+      await deleteTrackedBrand(btn.dataset.id);
+      m.remove();
+      showBrandManager();
+    });
+  });
+
+  document.getElementById('bm-add')?.addEventListener('click', async () => {
+    const name = document.getElementById('bm-new-name').value.trim();
+    const color = document.getElementById('bm-new-color').value;
+    if (!name) { toast.error('Informe o nome da marca.'); return; }
+    if (brands.some(b => b.name === name)) { toast.error('Marca já existe.'); return; }
+    await saveTrackedBrand(null, { name, color, isOwn: false, active: true });
+    m.remove();
+    toast.success(`Marca "${name}" adicionada.`);
+    showBrandManager();
+  });
+}
 
 

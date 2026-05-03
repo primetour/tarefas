@@ -499,6 +499,16 @@ service cloud.firestore {
       allow delete: if isAuth() && (isAdmin() || resource.data.createdBy == request.auth.uid);
     }
 
+    // ── Marcas trackadas (Share of Voice) ─────────────────────
+    // Auto-seed: qualquer auth user pode criar/ler (precisa pra primeira abertura).
+    // Delete restrito a admin pra evitar perda acidental.
+    match /tracked_brands/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAuth() && isAdmin();
+    }
+
     // ── Feedbacks ──────────────────────────────────────────────
     match /feedbacks/{docId} {
       allow read:   if isAuth();
