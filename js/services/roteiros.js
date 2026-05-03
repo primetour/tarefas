@@ -138,6 +138,17 @@ export function emptyRoteiro() {
       flights: '',
       customFields: [],
     },
+
+    /* Imagens — racional do Portal de Dicas:
+     *   - hero: imagem da capa (auto se vazio)
+     *   - overrides: { 'city_<slug>': url, 'hotel_<idx>': url, hero: url }
+     *     User escolhe manualmente no editor; vence sempre sobre auto-fetch.
+     *   - Auto-fetch (Unsplash → Wikipedia) só pra slots SEM override.
+     */
+    images: {
+      hero: null,
+      overrides: {},
+    },
   };
 }
 

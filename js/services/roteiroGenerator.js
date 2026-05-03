@@ -6,7 +6,7 @@
 
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
-import { fetchAreas } from './portal.js';
+import { fetchAreas, fetchImages } from './portal.js';
 import { recordGeneration as logGeneration } from './roteiros.js';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -56,6 +56,153 @@ async function fetchImgData(url) {
     });
     return dataUrl;
   } catch { return null; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   IMAGES — Banco portal_images + auto-fetch via Cloud Function
+   (Unsplash + Wikipedia fallback)
+   ═══════════════════════════════════════════════════════════════ */
+
+/** Normaliza nome de cidade/país pra chave de cache. */
+function normKey(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** Busca imagem no banco portal_images por cidade/país. Match flexível.
+ * Retorna URL da PRIMEIRA imagem que bater (ordem: cidade exata, país, gallery genérica).
+ */
+function pickFromBank(allImages, { city, country }) {
+  if (!allImages?.length) return null;
+  const cN = normKey(city); const pN = normKey(country);
+  // Prioridade 1: city + country match
+  let match = allImages.find(img =>
+    cN && pN && normKey(img.city) === cN && normKey(img.country) === pN);
+  if (match) return match.url;
+  // Prioridade 2: só city
+  match = allImages.find(img => cN && normKey(img.city) === cN);
+  if (match) return match.url;
+  // Prioridade 3: só country (genérica do país)
+  match = allImages.find(img => pN && normKey(img.country) === pN && !img.city);
+  if (match) return match.url;
+  return null;
+}
+
+/** Cache simples de fetchDestinationPhoto durante uma geração. */
+const _photoCache = new Map();
+let _fnPhotoPromise = null;
+
+async function getPhotoFn() {
+  if (_fnPhotoPromise) return _fnPhotoPromise;
+  _fnPhotoPromise = (async () => {
+    const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+    const { app } = await import('../firebase.js');
+    return httpsCallable(getFunctions(app, 'us-central1'), 'fetchDestinationPhoto');
+  })();
+  return _fnPhotoPromise;
+}
+
+/** Busca foto auto via Cloud Function (Unsplash → Wikipedia fallback). Cached. */
+async function fetchAutoPhoto(query) {
+  if (!query) return null;
+  const k = query.toLowerCase().trim();
+  if (_photoCache.has(k)) return _photoCache.get(k);
+  try {
+    const fn = await getPhotoFn();
+    const r = await fn({ query });
+    const url = r?.data?.url || null;
+    _photoCache.set(k, url);
+    return url;
+  } catch (e) {
+    console.warn('[roteiroImages] fetchAutoPhoto falhou:', query, e.message);
+    _photoCache.set(k, null);
+    return null;
+  }
+}
+
+/** Resolve imagem pra um destino (city + country).
+ * Ordem: override manual → banco portal_images → Unsplash/Wikipedia.
+ * @param {Object} dest - { city, country }
+ * @param {string|null} override - URL salva manualmente pelo user (vence tudo)
+ * @param {Array} bankImages - resultado de fetchImages() (cache na sessão)
+ * @returns {Promise<string|null>}
+ */
+export async function resolveDestinationImage(dest, override, bankImages) {
+  if (override) return override;
+  const fromBank = pickFromBank(bankImages, dest || {});
+  if (fromBank) return fromBank;
+  const q = [dest?.city, dest?.country].filter(Boolean).join(' ');
+  if (!q) return null;
+  return await fetchAutoPhoto(q);
+}
+
+/** Enriquece roteiro com imagens pra capa, dias e hotéis.
+ * Lê roteiro.images.overrides (manuais) e popula:
+ *   - heroUrl: capa (1ª destinação ou override)
+ *   - byDayCity: { 'Paris': url } — uma por cidade visitada
+ *   - byHotel: { idx: url } — opcional por hotel
+ * Não persiste — só retorna pra usar no PDF/PPTX/DOCX.
+ *
+ * @param {Object} roteiro
+ * @returns {Promise<{ heroUrl, byCity: Object, byHotel: Object }>}
+ */
+export async function enrichRoteiroImages(roteiro) {
+  const overrides = roteiro?.images?.overrides || {};
+  const out = { heroUrl: null, byCity: {}, byHotel: {} };
+
+  // Carrega banco de imagens uma vez
+  let bankImages = [];
+  try { bankImages = await fetchImages({}); }
+  catch (e) { console.warn('[roteiroImages] fetchImages falhou:', e.message); }
+
+  // 1) Hero — primeira destinação (ou override hero)
+  const heroOverride = overrides.hero || roteiro?.images?.hero;
+  const firstDest = roteiro?.travel?.destinations?.[0];
+  if (heroOverride) {
+    out.heroUrl = heroOverride;
+  } else if (firstDest) {
+    out.heroUrl = await resolveDestinationImage(firstDest, null, bankImages);
+  }
+
+  // 2) Por cidade — coleta cidades únicas do itinerário (days + destinations)
+  const cities = new Map(); // key: cityName, value: {city, country}
+  (roteiro?.travel?.destinations || []).forEach(d => {
+    if (d.city) cities.set(normKey(d.city), { city: d.city, country: d.country });
+  });
+  (roteiro?.days || []).forEach(d => {
+    if (d.city && !cities.has(normKey(d.city))) {
+      cities.set(normKey(d.city), { city: d.city, country: '' });
+    }
+  });
+
+  await Promise.allSettled(
+    Array.from(cities.entries()).map(async ([key, dest]) => {
+      const ovKey = `city_${key}`;
+      const override = overrides[ovKey];
+      const url = await resolveDestinationImage(dest, override, bankImages);
+      if (url) out.byCity[key] = url;
+    })
+  );
+
+  // 3) Por hotel (opcional) — usa city + hotelName
+  await Promise.allSettled(
+    (roteiro?.hotels || []).map(async (h, idx) => {
+      const ovKey = `hotel_${idx}`;
+      const override = overrides[ovKey];
+      if (override) { out.byHotel[idx] = override; return; }
+      // Tenta banco por city
+      const fromBank = pickFromBank(bankImages, { city: h.city, country: '' });
+      if (fromBank) { out.byHotel[idx] = fromBank; return; }
+      // Auto-fetch hotel-specific
+      const q = h.hotelName ? `${h.hotelName} ${h.city || ''}`.trim() : h.city;
+      if (q) {
+        const url = await fetchAutoPhoto(q);
+        if (url) out.byHotel[idx] = url;
+      }
+    })
+  );
+
+  return out;
 }
 
 /** Format date "YYYY-MM-DD" to "dd/MM" */
@@ -197,13 +344,18 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   const accent = area?.colors?.accent || primary;
   const buName = area?.name || 'Primetour';
 
+  // Resolve imagens (banco → Unsplash → Wikipedia) — não-blocker
+  let images = { heroUrl: null, byCity: {}, byHotel: {} };
+  try { images = await enrichRoteiroImages(roteiro); }
+  catch (e) { console.warn('[roteiroGenerator] enrichRoteiroImages falhou:', e.message); }
+
   /* ─── PAGE 1: COVER ──────────────────────────────────────── */
-  buildCoverPage(doc, roteiro, buName, primary, secondary);
+  await buildCoverPage(doc, roteiro, buName, primary, secondary, images.heroUrl);
 
   /* ─── PAGES 2+: DAY BY DAY ───────────────────────────────── */
   if (roteiro.days?.length) {
     doc.addPage();
-    buildDayByDayPages(doc, roteiro, primary, secondary, accent);
+    await buildDayByDayPages(doc, roteiro, primary, secondary, accent, images.byCity);
   }
 
   /* ─── HOTELS TABLE ───────────────────────────────────────── */
@@ -311,13 +463,31 @@ export async function generateRoteiroForExport(roteiro, areaId) {
    ═══════════════════════════════════════════════════════════════ */
 
 /* ─── Cover Page ──────────────────────────────────────────── */
-function buildCoverPage(doc, roteiro, buName, primary, secondary) {
+async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImage) {
   const [pr, pg, pb] = hexToRgb(primary);
   const [sr, sg, sb] = hexToRgb(secondary);
 
-  // Full navy/secondary background
+  // Full navy/secondary background (fallback se sem hero)
   doc.setFillColor(sr, sg, sb);
   doc.rect(0, 0, PAGE_W, PAGE_H, 'F');
+
+  // Hero image (full bleed) com overlay escuro pra legibilidade do texto
+  if (heroImage) {
+    try {
+      const imgData = await fetchImgData(heroImage);
+      if (imgData) {
+        doc.addImage(imgData, 'JPEG', 0, 0, PAGE_W, PAGE_H, undefined, 'FAST');
+        // Overlay gradiente escuro (top transparent → bottom 70% opaque) simulado
+        // jsPDF não tem gradient nativo — usamos retângulos sobrepostos com alpha
+        doc.setGState(new doc.GState({ opacity: 0.55 }));
+        doc.setFillColor(sr, sg, sb);
+        doc.rect(0, 0, PAGE_W, PAGE_H, 'F');
+        doc.setGState(new doc.GState({ opacity: 1 }));
+      }
+    } catch (e) {
+      console.warn('[roteiroGenerator] hero image falhou:', e.message);
+    }
+  }
 
   // Top gold accent line
   doc.setFillColor(pr, pg, pb);
@@ -410,7 +580,7 @@ function buildCoverPage(doc, roteiro, buName, primary, secondary) {
 }
 
 /* ─── Day by Day ──────────────────────────────────────────── */
-function buildDayByDayPages(doc, roteiro, primary, secondary, accent) {
+async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCity = {}) {
   const [pr, pg, pb] = hexToRgb(primary);
   const [sr, sg, sb] = hexToRgb(secondary);
   const [ar, ag, ab] = hexToRgb(accent);
@@ -421,15 +591,28 @@ function buildDayByDayPages(doc, roteiro, primary, secondary, accent) {
   y = addSectionTitle(doc, y, 'ROTEIRO DIA A DIA', primary, secondary);
   y += 4;
 
+  // Pré-fetch das imagens das cidades como dataURL (paralelo, não-blocker)
+  const cityImageData = {};
+  await Promise.allSettled(
+    Object.entries(byCity).map(async ([key, url]) => {
+      const data = await fetchImgData(url);
+      if (data) cityImageData[key] = data;
+    })
+  );
+
   for (let i = 0; i < roteiro.days.length; i++) {
     const day = roteiro.days[i];
+    const cityKey = day.city
+      ? day.city.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      : '';
+    const dayImageData = cityImageData[cityKey] || null;
 
-    // Estimate space: header + city + narrative + overnight + padding
+    // Estimate space: header + city + image + narrative + overnight + padding
     const narrativeLines = day.narrative
       ? doc.splitTextToSize(day.narrative, CONTENT_W - 15).length
       : 0;
-    const neededSpace = 20 + (narrativeLines * 5) + 15;
-    y = checkPageBreak(doc, y, Math.min(neededSpace, 60));
+    const neededSpace = 20 + (narrativeLines * 5) + (dayImageData ? 32 : 0) + 15;
+    y = checkPageBreak(doc, y, Math.min(neededSpace, 80));
 
     // Day number circle
     doc.setFillColor(pr, pg, pb);
@@ -463,6 +646,23 @@ function buildDayByDayPages(doc, roteiro, primary, secondary, accent) {
       doc.setTextColor(ar, ag, ab);
       doc.text(day.city.toUpperCase(), MARGIN + 14, y + 3, { charSpace: 1.5 });
       y += 8;
+    }
+
+    // Imagem do dia (banner full-width, ~28mm altura) — visual divider
+    if (dayImageData) {
+      try {
+        const imgX = MARGIN + 14;
+        const imgW = CONTENT_W - 14;
+        const imgH = 28;
+        // Borda sutil
+        doc.setDrawColor(220, 220, 220);
+        doc.setLineWidth(0.2);
+        doc.rect(imgX - 0.3, y - 0.3, imgW + 0.6, imgH + 0.6);
+        doc.addImage(dayImageData, 'JPEG', imgX, y, imgW, imgH, undefined, 'FAST');
+        y += imgH + 4;
+      } catch (e) {
+        console.warn('[roteiroGenerator] day image render falhou:', e.message);
+      }
     }
 
     // Title (if different from city)
