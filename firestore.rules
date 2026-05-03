@@ -54,7 +54,16 @@ service cloud.firestore {
       allow read:   if isAuth();
       // Admin pode criar qualquer usuário; SSO auto-provisioning: próprio UID
       allow create: if isAdmin() || (isAuth() && request.auth.uid == userId);
-      allow update: if isAdmin() || request.auth.uid == userId;
+      // CRITICAL FIX (pentest 2026-05-03): self-update NAO pode tocar
+      // campos sensiveis (role/isMaster/roleId/visibleSectors/permissions/active).
+      // Antes: rule permitia member auto-escalar pra master.
+      // Agora: admin pode tudo; user pode atualizar proprio profile MENOS
+      // os campos sensiveis listados.
+      allow update: if isAdmin() || (
+        request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['role','isMaster','roleId','visibleSectors','permissions','active','sector','nucleos','nucleo'])
+      );
       allow delete: if isAdmin();
     }
 
@@ -85,9 +94,20 @@ service cloud.firestore {
     }
 
     // ── Logs de auditoria ─────────────────────────────────────
+    // CRITICAL FIX (pentest 2026-05-03): client NAO pode injetar audit logs.
+    // Antes: allow create: if isAuth() — qualquer auth user injetava logs falsos
+    // pra esconder rastro ou bloatar coleção.
+    // Agora: client CRIA logs apenas com action whitelisted (eventos do client
+    // que nao tem origem server, ex: 'page.viewed') E os campos obrigatorios.
+    // Logs de seguranca (auth.login, security.*, lgpd.*, system.*) sao gerados
+    // server-side via Cloud Functions (Admin SDK bypassa rules).
     match /audit_logs/{logId} {
-      allow read:           if isAdmin();
-      allow create:         if isAuth();
+      allow read:   if isAdmin();
+      allow create: if isAuth() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.action is string &&
+        request.resource.data.action.matches('^(client|page|user)[.][a-z_]+$') &&
+        !request.resource.data.action.matches('^(auth|security|lgpd|system)[.].*$');
       allow update, delete: if false;
     }
 
