@@ -18,7 +18,7 @@
  *   firebase functions:secrets:set SHAREPOINT_CLIENT_SECRET
  *   firebase functions:secrets:set GITHUB_PAT
  */
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule }         from 'firebase-functions/v2/scheduler';
 import { defineSecret }       from 'firebase-functions/params';
 import { initializeApp }      from 'firebase-admin/app';
@@ -40,6 +40,7 @@ const SHAREPOINT_CLIENT_ID     = defineSecret('SHAREPOINT_CLIENT_ID');
 const SHAREPOINT_CLIENT_SECRET = defineSecret('SHAREPOINT_CLIENT_SECRET');
 const GITHUB_PAT        = defineSecret('GITHUB_PAT');
 const SIEM_SLACK_WEBHOOK = defineSecret('SIEM_SLACK_WEBHOOK');  // optional - if not set, digest only logs
+const UNSPLASH_ACCESS_KEY = defineSecret('UNSPLASH_ACCESS_KEY');  // optional - fallback Wikipedia se nao setado
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 function requireAuth(request) {
@@ -810,3 +811,236 @@ export const weeklySecretsAudit = onSchedule({
 
   console.log('[secrets-audit] done', { stale: stale.length, aging: aging.length, fresh: fresh.length });
 });
+
+/* ═════════════════════════════════════════════════════════
+ * fetchDestinationPhoto — Unsplash com fallback Wikipedia
+ *
+ * Busca foto representativa de um destino pelo nome.
+ * Cacheia URL no doc do destination pra nao refetchar.
+ *
+ * Provider order:
+ *   1. Unsplash (se UNSPLASH_ACCESS_KEY configurado) — fotos curadas
+ *   2. Wikipedia REST API — sempre disponivel, sem key
+ *
+ * Returns: { url, source, attribution }
+ * ═════════════════════════════════════════════════════════ */
+export const fetchDestinationPhoto = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  secrets: [UNSPLASH_ACCESS_KEY],
+  maxInstances: 20,
+  timeoutSeconds: 30,
+}, async (request) => {
+  const auth = requireAuth(request);
+  const { destinationId, query, force } = request.data || {};
+  if (!query || typeof query !== 'string') {
+    throw new HttpsError('invalid-argument', 'query (nome do destino) obrigatorio.');
+  }
+
+  // Cache check (skip se force=true)
+  if (destinationId && !force) {
+    const ref = db.doc(`destinations/${destinationId}`);
+    const snap = await ref.get();
+    if (snap.exists) {
+      const d = snap.data();
+      if (d.defaultPhotoUrl && d.defaultPhotoSource) {
+        return {
+          url: d.defaultPhotoUrl,
+          source: d.defaultPhotoSource,
+          attribution: d.defaultPhotoAttribution || '',
+          cached: true,
+        };
+      }
+    }
+  }
+
+  await checkRateLimit(auth.uid, 'fetchPhoto', 30, 60);
+
+  // 1. Try Unsplash if key configured
+  const unsplashKey = UNSPLASH_ACCESS_KEY.value();
+  if (unsplashKey && unsplashKey.length > 10 && !unsplashKey.includes('not-configured')) {
+    try {
+      const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=1&orientation=landscape&content_filter=high`;
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Client-ID ${unsplashKey}`, 'Accept-Version': 'v1' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const photo = data.results?.[0];
+        if (photo) {
+          const result = {
+            url: photo.urls.regular,
+            source: 'unsplash',
+            attribution: `Foto por ${photo.user.name} (Unsplash)`,
+            attributionUrl: photo.user.links.html + '?utm_source=primetour&utm_medium=referral',
+          };
+          await saveDestinationPhoto(destinationId, result);
+          return result;
+        }
+      } else {
+        console.warn('[fetchPhoto] Unsplash failed:', res.status);
+      }
+    } catch (e) {
+      console.warn('[fetchPhoto] Unsplash error:', e?.message);
+    }
+  }
+
+  // 2. Fallback: Wikipedia REST API
+  try {
+    // Try pt-BR first, fallback en
+    for (const lang of ['pt', 'en']) {
+      const wikiUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
+      const res = await fetch(wikiUrl);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const thumb = data.thumbnail?.source || data.originalimage?.source;
+      if (thumb) {
+        // Use originalimage if available (higher resolution), else thumbnail
+        const photo = data.originalimage?.source || thumb;
+        const result = {
+          url: photo,
+          source: 'wikipedia',
+          attribution: `Foto via Wikipedia (${lang}) — ${data.title}`,
+          attributionUrl: data.content_urls?.desktop?.page || '',
+        };
+        await saveDestinationPhoto(destinationId, result);
+        return result;
+      }
+    }
+  } catch (e) {
+    console.warn('[fetchPhoto] Wikipedia error:', e?.message);
+  }
+
+  throw new HttpsError('not-found', 'Nenhuma foto encontrada para "' + query + '".');
+});
+
+async function saveDestinationPhoto(destinationId, result) {
+  if (!destinationId) return;
+  try {
+    await db.doc(`destinations/${destinationId}`).set({
+      defaultPhotoUrl:         result.url,
+      defaultPhotoSource:      result.source,
+      defaultPhotoAttribution: result.attribution,
+      defaultPhotoAttributionUrl: result.attributionUrl || '',
+      defaultPhotoFetchedAt:   FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } catch (e) {
+    console.warn('[fetchPhoto] cache save failed:', e?.message);
+  }
+}
+
+/* ═════════════════════════════════════════════════════════
+ * previewLink — HTTP function pra OG meta dinamica
+ *
+ * URL: https://us-central1-PROJECT.cloudfunctions.net/previewLink?t=TOKEN
+ *
+ * Quando usuario compartilha esta URL:
+ *   - Crawler (Slackbot, WhatsApp, FB, etc.) vê HTML com og:image, og:title
+ *     (foto do destino + nome do cliente/destino)
+ *   - User real recebe redirect via JS pra portal-view.html#token
+ *
+ * Lê portal_web_links/{token} e renderiza HTML mínimo.
+ * ═════════════════════════════════════════════════════════ */
+export const previewLink = onRequest({
+  cors: true,
+  maxInstances: 50,
+  timeoutSeconds: 15,
+  memory: '256MiB',
+}, async (req, res) => {
+  const token = req.query.t;
+  if (!token || typeof token !== 'string' || token.length > 100) {
+    res.status(400).send('Token invalido.');
+    return;
+  }
+  // Sanitize: tokens slug-like apenas
+  if (!/^[a-z0-9-]+$/i.test(token)) {
+    res.status(400).send('Token invalido.');
+    return;
+  }
+
+  let linkData;
+  try {
+    const snap = await db.doc(`portal_web_links/${token}`).get();
+    if (!snap.exists) {
+      res.status(404).send('Link nao encontrado.');
+      return;
+    }
+    linkData = snap.data();
+  } catch (e) {
+    res.status(500).send('Erro ao carregar link.');
+    return;
+  }
+
+  // Resolve OG image: 1) hero do primeiro destino, 2) defaultPhotoUrl,
+  // 3) logo da area, 4) logo PRIMETOUR fallback
+  const firstDestId = linkData.allTips?.[0]?.destId;
+  const firstHero = firstDestId && linkData.imagesByDest?.[firstDestId]?.hero;
+  const fallbackPhoto = await getFirstDestPhoto(firstDestId);
+  const ogImage = firstHero
+    || fallbackPhoto
+    || linkData.areaLogoUrl
+    || 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
+
+  const firstDest = linkData.tipData?.[0]?.dest || {};
+  const destName = firstDest.city || firstDest.country || linkData.areaName || 'Dicas de Viagem';
+  const clientName = linkData.allTips?.length ? '' : '';   // (token slug ja contem clientName)
+  const ogTitle = `${destName} · ${linkData.areaName || 'PRIMETOUR'}`;
+  const ogDesc = `Material de viagem personalizado preparado pela ${linkData.areaName || 'PRIMETOUR'}.`;
+
+  // Final URL pra redirect
+  const finalUrl = `https://primetour.github.io/tarefas/portal-view.html#${token}`;
+
+  // HTML com og: meta + redirect
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(ogTitle)}</title>
+<meta name="description" content="${escapeHtml(ogDesc)}">
+
+<!-- Open Graph (Facebook, WhatsApp, LinkedIn, Slack, Telegram) -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="${escapeHtml(finalUrl)}">
+<meta property="og:title" content="${escapeHtml(ogTitle)}">
+<meta property="og:description" content="${escapeHtml(ogDesc)}">
+<meta property="og:image" content="${escapeHtml(ogImage)}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:site_name" content="Gestor PRIMETOUR — Portal de Dicas">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeHtml(ogTitle)}">
+<meta name="twitter:description" content="${escapeHtml(ogDesc)}">
+<meta name="twitter:image" content="${escapeHtml(ogImage)}">
+
+<!-- Redirect (browsers reais) -->
+<meta http-equiv="refresh" content="0; url=${escapeHtml(finalUrl)}">
+<link rel="canonical" href="${escapeHtml(finalUrl)}">
+<style>body{font-family:system-ui;text-align:center;padding:60px 20px;background:#0A1628;color:#E2E8F0;}
+a{color:#D4A843;}</style>
+</head>
+<body>
+<p>Carregando material de viagem...</p>
+<p>Se nao redirecionar automaticamente, <a href="${escapeHtml(finalUrl)}">clique aqui</a>.</p>
+<script>window.location.replace(${JSON.stringify(finalUrl)});</script>
+</body>
+</html>`;
+
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.status(200).send(html);
+});
+
+async function getFirstDestPhoto(destId) {
+  if (!destId) return null;
+  try {
+    const snap = await db.doc(`destinations/${destId}`).get();
+    return snap.exists ? snap.data().defaultPhotoUrl : null;
+  } catch { return null; }
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}

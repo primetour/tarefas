@@ -1963,9 +1963,18 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
     throw e;
   }
 
+  // URL final: usa previewLink Cloud Function pra que crawlers (WhatsApp, Slack,
+  // Facebook, LinkedIn, Telegram) vejam OG meta correto (foto do destino + titulo)
+  // antes de redirecionar pra portal-view real. URL antiga continua funcionando.
   const baseUrl = window.location.origin + window.location.pathname.replace(/index\.html$/, '');
-  const url     = `${baseUrl}portal-view.html#${token}`;
-  return { url, token };
+  const directUrl  = `${baseUrl}portal-view.html#${token}`;
+  const previewUrl = `https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net/previewLink?t=${encodeURIComponent(token)}`;
+
+  return {
+    url:        previewUrl,    // URL pra compartilhar (com OG meta dinamica)
+    directUrl,                  // URL direta (legacy / debug)
+    token,
+  };
 }
 
 function generateToken() {
