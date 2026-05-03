@@ -169,24 +169,40 @@ export async function renderNlPerformance(container) {
     </div>
 
     <!-- KPI cards -->
-    <div id="nl-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
-      gap:12px;margin-bottom:24px;">
-      ${[0,1,2,3,4].map(()=>`<div class="card skeleton" style="height:80px;"></div>`).join('')}
+    <div id="nl-kpis-block" style="margin-bottom:24px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">📊 Indicadores</h3>
+        <span class="widget-insights-slot" data-widget-id="nl-kpis-block"></span>
+      </div>
+      <div id="nl-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
+        ${[0,1,2,3,4].map(()=>`<div class="card skeleton" style="height:80px;"></div>`).join('')}
+      </div>
     </div>
 
     <!-- Table with sticky first 2 cols -->
-    <div class="card" style="padding:0;overflow:hidden;">
-      <div id="nl-table-wrap" style="overflow-x:auto;max-height:72vh;overflow-y:auto;">
-        <table id="nl-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:0.8125rem;">
-          <thead id="nl-thead"></thead>
-          <tbody id="nl-tbody">
-            <tr><td colspan="14" style="padding:40px;text-align:center;color:var(--text-muted);">
-              Carregando dados…
-            </td></tr>
-          </tbody>
-        </table>
+    <div id="nl-table-block">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">📋 Disparos</h3>
+        <span class="widget-insights-slot" data-widget-id="nl-table-block"></span>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div id="nl-table-wrap" style="overflow-x:auto;max-height:72vh;overflow-y:auto;">
+          <table id="nl-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:0.8125rem;">
+            <thead id="nl-thead"></thead>
+            <tbody id="nl-tbody">
+              <tr><td colspan="14" style="padding:40px;text-align:center;color:var(--text-muted);">
+                Carregando dados…
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
+
+    <!-- Análise Geral do tab Performance -->
+    <div id="nl-perf-insights-section" style="margin-top:24px;"></div>
     </div><!-- /nl-tab-performance -->
 
     <!-- Tab: Calendário Editorial -->
@@ -195,34 +211,53 @@ export async function renderNlPerformance(container) {
         <button class="btn btn-secondary btn-sm" id="nl-cal-export-xlsx">⬇ XLSX</button>
         <button class="btn btn-secondary btn-sm" id="nl-cal-export-pdf">⬇ PDF</button>
       </div>
-      <div id="nl-cal-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
-        gap:12px;margin-bottom:24px;">
-        <div class="card skeleton" style="height:90px;"></div>
-        <div class="card skeleton" style="height:90px;"></div>
-        <div class="card skeleton" style="height:90px;"></div>
-        <div class="card skeleton" style="height:90px;"></div>
-        <div class="card skeleton" style="height:90px;"></div>
+      <!-- KPIs com slot de insights -->
+      <div id="nl-cal-kpis-block" style="margin-bottom:24px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+            text-transform:uppercase;letter-spacing:0.06em;">📊 Indicadores do Calendário</h3>
+          <span class="widget-insights-slot" data-widget-id="nl-cal-kpis-block"></span>
+        </div>
+        <div id="nl-cal-kpis" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;">
+          <div class="card skeleton" style="height:90px;"></div>
+          <div class="card skeleton" style="height:90px;"></div>
+          <div class="card skeleton" style="height:90px;"></div>
+          <div class="card skeleton" style="height:90px;"></div>
+          <div class="card skeleton" style="height:90px;"></div>
+        </div>
       </div>
       <div id="nl-cal-details" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <div class="card" style="padding:16px;">
-          <div style="font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">
-            📅 Cumprimento do Calendário
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            <div style="flex:1;font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">
+              📅 Cumprimento do Calendário
+            </div>
+            <span class="widget-insights-slot" data-widget-id="nl-cal-compliance-card"></span>
           </div>
           <div id="nl-cal-compliance"></div>
         </div>
         <div class="card" style="padding:16px;">
-          <div style="font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">
-            👤 Top Solicitantes
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            <div style="flex:1;font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">
+              👤 Top Solicitantes
+            </div>
+            <span class="widget-insights-slot" data-widget-id="nl-cal-top-requesters-card"></span>
           </div>
           <div id="nl-cal-top-requesters"></div>
         </div>
       </div>
       <div class="card" style="padding:16px;margin-top:16px;">
-        <div style="font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">
-          📋 Detalhamento de Solicitações
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <div style="flex:1;font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">
+            📋 Detalhamento de Solicitações
+          </div>
+          <span class="widget-insights-slot" data-widget-id="nl-cal-table-card"></span>
         </div>
         <div id="nl-cal-table"></div>
       </div>
+
+      <!-- Análise Geral do tab Calendar -->
+      <div id="nl-cal-insights-section" style="margin-top:24px;"></div>
     </div><!-- /nl-tab-calendar -->
   `;
 
@@ -437,6 +472,11 @@ function mergeWaves(rows) {
 
 /* ─── Render table ────────────────────────────────────────── */
 function renderTable(editMode = false) {
+  // Setup insights na primeira vez que dados estão prontos
+  if (allData?.length && !nlPerfInsightsMounted) {
+    setTimeout(() => setupNlPerformanceInsights(), 500);
+  }
+
   let rows = allData;
   if (filterBu) rows = rows.filter(r => r.virtualBuId === filterBu);
 
@@ -668,6 +708,19 @@ async function exportXLSX() {
       ({ wch: i < 4 ? 28 : 16 })
     );
 
+    // Sheet "Insights" — histórico completo de observações no dashboard NL
+    try {
+      const { fetchInsights, insightsToXlsxRows } = await import('../services/insights.js?v=20260503uu1');
+      const insights = await fetchInsights({ dashboard: 'nl', max: 200 });
+      if (insights.length) {
+        const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.nl || {};
+        const insRows = insightsToXlsxRows(insights, widgetLabels);
+        const wsIns = window.XLSX.utils.json_to_sheet(insRows);
+        wsIns['!cols'] = [{wch:30},{wch:14},{wch:10},{wch:50},{wch:60},{wch:60},{wch:50},{wch:25},{wch:12},{wch:24},{wch:20},{wch:18}];
+        window.XLSX.utils.book_append_sheet(wb, wsIns, 'Insights');
+      }
+    } catch (e) { console.warn('insights nl xlsx:', e); }
+
     const date = new Date().toISOString().slice(0,10);
     window.XLSX.writeFile(wb, `primetour_newsletters_${date}.xlsx`);
     toast.success(`${rows.length} disparos exportados.`);
@@ -809,6 +862,59 @@ const exportPDF = withExportGuard(async function exportPDF() {
         }
       },
     });
+
+    // Insights & Observações — agrupados por widget (Performance tab)
+    try {
+      const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
+        await import('../services/insights.js?v=20260503uu1');
+      const insights = await fetchInsights({ dashboard: 'nl', max: 200 });
+      if (insights.length) {
+        const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.nl || {};
+        const groups = groupInsightsByIndex(insights, widgetLabels);
+        // M já vem do kit destructure no início da função
+        kit.ensureSpace(40);
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text(txt('INSIGHTS & OBSERVACOES'), M, kit.y);
+        kit.y += 4;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+        setText(COL.muted);
+        doc.text(txt(`${insights.length} insights no historico`), M, kit.y);
+        kit.y += 5;
+
+        const stripEmoji = s => String(s ?? '')
+          .replace(/[\u{1F300}-\u{1FFFF}]/gu, '').replace(/[\u{2400}-\u{27BF}]/gu, '')
+          .replace(/[\u{2000}-\u{206F}]/gu, '').trim();
+        const safe = s => txt(stripEmoji(s));
+
+        groups.forEach((group) => {
+          kit.ensureSpace(20);
+          setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+          doc.text(safe(`${group.groupLabel} (${group.items.length})`), M, kit.y);
+          kit.y += 3;
+          doc.autoTable({
+            startY: kit.y, margin: { left: M, right: M },
+            head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Dados', 'Periodo', 'Origem', 'Por']],
+            body: group.items.map(ins => [
+              ins.type || 'neutral', ins.impact || 'medium',
+              safe(ins.title || ''), safe(ins.observation || ''),
+              safe(formatDataSnapshot(ins.dataSnapshot) || '-'),
+              safe(formatInsightPeriod(ins) || '-'),
+              ins.source === 'ai-generated' ? 'IA' : ins.source === 'ai-edited' ? 'IA edit.' : 'Manual',
+              safe((ins.createdBy?.name || '-')),
+            ]),
+            styles: { fontSize: 6, cellPadding: 1.8, overflow: 'linebreak' },
+            headStyles: { fillColor: [26,42,74], textColor: 255, fontStyle: 'bold', fontSize: 6 },
+            columnStyles: {
+              0:{cellWidth:14}, 1:{cellWidth:11}, 2:{cellWidth:36},
+              3:{cellWidth:48}, 4:{cellWidth:48}, 5:{cellWidth:24},
+              6:{cellWidth:13}, 7:{cellWidth:24},
+            },
+            didDrawPage: (data) => { kit.y = data.cursor.y; },
+          });
+          kit.y = doc.lastAutoTable.finalY + 5;
+        });
+      }
+    } catch (e) { console.warn('insights nl pdf:', e); }
 
     kit.drawFooter('PRIMETOUR  ·  Performance de Newsletters');
     doc.save(`primetour_newsletters_${new Date().toISOString().slice(0, 10)}.pdf`);
@@ -1105,6 +1211,52 @@ const exportCalPDF = withExportGuard(async function exportCalPDF() {
       },
     });
 
+    // Insights & Observações (mesmo bloco do Performance — dashboard='nl' compartilha)
+    try {
+      const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
+        await import('../services/insights.js?v=20260503uu1');
+      const insights = await fetchInsights({ dashboard: 'nl', max: 200 });
+      if (insights.length) {
+        const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.nl || {};
+        const groups = groupInsightsByIndex(insights, widgetLabels);
+        kit.ensureSpace(40);
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text(txt('INSIGHTS & OBSERVACOES'), M, kit.y);
+        kit.y += 5;
+        const stripEmoji = s => String(s ?? '')
+          .replace(/[\u{1F300}-\u{1FFFF}]/gu, '').replace(/[\u{2400}-\u{27BF}]/gu, '')
+          .replace(/[\u{2000}-\u{206F}]/gu, '').trim();
+        const safe = s => txt(stripEmoji(s));
+        groups.forEach((group) => {
+          kit.ensureSpace(20);
+          setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+          doc.text(safe(`${group.groupLabel} (${group.items.length})`), M, kit.y);
+          kit.y += 3;
+          doc.autoTable({
+            startY: kit.y, margin: { left: M, right: M },
+            head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Dados', 'Periodo', 'Origem', 'Por']],
+            body: group.items.map(ins => [
+              ins.type || 'neutral', ins.impact || 'medium',
+              safe(ins.title || ''), safe(ins.observation || ''),
+              safe(formatDataSnapshot(ins.dataSnapshot) || '-'),
+              safe(formatInsightPeriod(ins) || '-'),
+              ins.source === 'ai-generated' ? 'IA' : ins.source === 'ai-edited' ? 'IA edit.' : 'Manual',
+              safe((ins.createdBy?.name || '-')),
+            ]),
+            styles: { fontSize: 6, cellPadding: 1.8, overflow: 'linebreak' },
+            headStyles: { fillColor: [26,42,74], textColor: 255, fontStyle: 'bold', fontSize: 6 },
+            columnStyles: {
+              0:{cellWidth:14}, 1:{cellWidth:11}, 2:{cellWidth:36},
+              3:{cellWidth:48}, 4:{cellWidth:48}, 5:{cellWidth:24},
+              6:{cellWidth:13}, 7:{cellWidth:24},
+            },
+            didDrawPage: (data) => { kit.y = data.cursor.y; },
+          });
+          kit.y = doc.lastAutoTable.finalY + 5;
+        });
+      }
+    } catch (e) { console.warn('insights nl-cal pdf:', e); }
+
     kit.drawFooter('PRIMETOUR  ·  Calendario Editorial');
     doc.save(`primetour_calendario_editorial_${new Date().toISOString().slice(0, 10)}.pdf`);
     toast.success('Calendário editorial exportado (PDF).');
@@ -1354,6 +1506,9 @@ async function loadCalendarDashboard() {
     if (kpis) kpis.innerHTML = `<div class="card" style="grid-column:1/-1;padding:24px;text-align:center;color:var(--text-muted);">
       Erro ao carregar dados: ${esc(e.message)}</div>`;
   }
+
+  // Setup insights da aba Calendar (idempotente — só monta uma vez)
+  if (calDashData) setTimeout(() => setupNlCalendarInsights(), 500);
 }
 
 function calStatCard(label, value, icon, bg, color, sub = '') {
@@ -1363,4 +1518,197 @@ function calStatCard(label, value, icon, bg, color, sub = '') {
     <div class="stat-card-value">${value}</div>
     ${sub ? `<div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">${sub}</div>` : ''}
   </div>`;
+}
+
+/* ════════════════════════════════════════════════════════════
+   INSIGHTS & OBSERVAÇÕES — Setup por tab
+   ════════════════════════════════════════════════════════════ */
+
+let nlPerfInsightsMounted = false;
+let nlCalInsightsMounted = false;
+
+/** Computa período visualizado a partir do filterDays atual.
+ * filterDays pode ser '7'|'30'|'90'|'180'|'365' OU 'custom:from:to'.
+ */
+function computeNlPeriod() {
+  if (String(filterDays).startsWith('custom:')) {
+    const [, from, to] = filterDays.split(':');
+    return {
+      start: from ? new Date(from + 'T12:00:00') : null,
+      end:   to   ? new Date(to   + 'T12:00:00') : null,
+      label: `${from} → ${to}`,
+    };
+  }
+  const days = parseInt(filterDays) || 30;
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  return { start, end, label: `Últimos ${days} dias` };
+}
+
+/** Snapshot resumido dos KPIs da aba Performance (a partir de allData filtered). */
+function buildNlKpisSnapshot() {
+  let rows = allData;
+  if (filterBu) rows = rows.filter(r => r.virtualBuId === filterBu);
+  rows = mergeWaves(rows).filter(r => !hiddenRows.has(r.jobId));
+  if (!rows.length) return { kpis: 'sem dados no período' };
+
+  const avg = (key) => {
+    const vals = rows.map(r => r[key]).filter(v => v != null && !isNaN(v));
+    return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : null;
+  };
+  const sum = (key) => rows.reduce((a,r) => a + (Number(r[key])||0), 0);
+  const totalSent = sum('totalSent');
+  const totalOptOut = sum('optOut');
+
+  return {
+    disparos: rows.length,
+    enviadosTotal: totalSent,
+    taxaAberturaMedia: avg('openRate')?.toFixed(1) ?? null,
+    taxaCliquesMedia: avg('clickRate')?.toFixed(1) ?? null,
+    taxaEntregaMedia: avg('deliveryRate')?.toFixed(1) ?? null,
+    taxaOptOut: totalSent > 0 ? ((totalOptOut / totalSent) * 100).toFixed(2) : null,
+    optOutTotal: totalOptOut,
+    bu: filterBu || 'Todas',
+  };
+}
+
+/** Snapshot da tabela: top 10 disparos por openRate. */
+function buildNlTableSnapshot() {
+  let rows = allData;
+  if (filterBu) rows = rows.filter(r => r.virtualBuId === filterBu);
+  rows = mergeWaves(rows).filter(r => !hiddenRows.has(r.jobId));
+  const top = [...rows]
+    .filter(r => r.openRate != null)
+    .sort((a, b) => (b.openRate || 0) - (a.openRate || 0))
+    .slice(0, 10)
+    .map(r => ({
+      label: (r.title || 'sem nome').slice(0, 50),
+      sent: r.totalSent,
+      openRate: r.openRate?.toFixed(1),
+      clickRate: r.clickRate?.toFixed(1),
+    }));
+  return { totalDisparos: rows.length, top10PorAbertura: top };
+}
+
+/** Snapshot agregado pra IA gerar análise geral do tab Performance. */
+function buildNlPerfGeneralSnapshot() {
+  return {
+    ...buildNlKpisSnapshot(),
+    ...buildNlTableSnapshot(),
+  };
+}
+
+/** Setup dos insights na aba Performance (idempotente). */
+async function setupNlPerformanceInsights() {
+  if (nlPerfInsightsMounted) return;
+  nlPerfInsightsMounted = true;
+  try {
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const period = computeNlPeriod();
+    const filters = { bu: filterBu, days: filterDays, periodLabel: period.label };
+
+    await setupDashboardInsights({
+      dashboard: 'nl',
+      widgets: [
+        { widgetId: 'nl-kpis-block',  indexKey: 'kpis',  label: '📊 KPIs do período',
+          snapshot: () => buildNlKpisSnapshot() },
+        { widgetId: 'nl-table-block', indexKey: 'tabela', label: '📋 Tabela de disparos',
+          snapshot: () => buildNlTableSnapshot() },
+      ],
+      metrics: null,
+      periodFrom: period.start, periodTo: period.end,
+      periodLabel: period.label,
+      filters,
+      generalPanelContainerId: 'nl-perf-insights-section',
+      buildGeneralSnapshot: () => buildNlPerfGeneralSnapshot(),
+      enableAi: true,
+    });
+  } catch (e) { console.warn('[nl] perf insights setup:', e); }
+}
+
+/** Snapshot dos KPIs da aba Calendar (de calDashData populado por loadCalendarDashboard). */
+function buildNlCalKpisSnapshot() {
+  if (!calDashData) return { kpis: 'sem dados — aba Calendário não carregada' };
+  return {
+    complianceRate: calDashData.complianceRate,
+    expectedSlots: calDashData.expectedSlots,
+    fulfilledSlots: calDashData.fulfilledSlots,
+    urgentRequests: calDashData.urgentRequests?.length || 0,
+    outOfCalendar: calDashData.outOfCalendar?.length || 0,
+    avgDays: calDashData.avgDays,
+    slaOk: calDashData.slaOk,
+    slaDays: calDashData.slaDays,
+  };
+}
+
+function buildNlCalComplianceSnapshot() {
+  if (!calDashData) return {};
+  return {
+    complianceRate: calDashData.complianceRate,
+    expectedSlots: calDashData.expectedSlots,
+    fulfilledSlots: calDashData.fulfilledSlots,
+    gap: (calDashData.expectedSlots || 0) - (calDashData.fulfilledSlots || 0),
+  };
+}
+
+function buildNlCalRequestersSnapshot() {
+  if (!calDashData?.topRequesters) return {};
+  return {
+    topRequesters: calDashData.topRequesters.map(([name, count]) => ({ label: name, count })),
+  };
+}
+
+function buildNlCalTableSnapshot() {
+  if (!calDashData?.allRequests) return {};
+  const reqs = calDashData.allRequests || [];
+  return {
+    totalRequests: reqs.length,
+    urgentes: reqs.filter(r => r.urgency).length,
+    foraDoCalendario: reqs.filter(r => r.outOfCalendar).length,
+  };
+}
+
+function buildNlCalGeneralSnapshot() {
+  return {
+    ...buildNlCalKpisSnapshot(),
+    ...buildNlCalComplianceSnapshot(),
+    ...buildNlCalRequestersSnapshot(),
+    ...buildNlCalTableSnapshot(),
+  };
+}
+
+/** Setup dos insights na aba Calendar (idempotente, chamado após loadCalendarDashboard). */
+async function setupNlCalendarInsights() {
+  if (nlCalInsightsMounted) return;
+  nlCalInsightsMounted = true;
+  try {
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    // Calendar usa janela fixa de 90 dias (ver loadCalendarDashboard)
+    const end = new Date();
+    const start = new Date(); start.setDate(start.getDate() - 90);
+    const period = { start, end, label: 'Últimos 90 dias' };
+    const filters = { scope: 'calendar', windowDays: 90 };
+
+    await setupDashboardInsights({
+      dashboard: 'nl',
+      widgets: [
+        { widgetId: 'nl-cal-kpis-block',           indexKey: 'calKpis',        label: '📊 KPIs do calendário',
+          snapshot: () => buildNlCalKpisSnapshot() },
+        { widgetId: 'nl-cal-compliance-card',      indexKey: 'compliance',     label: '📅 Cumprimento do calendário',
+          snapshot: () => buildNlCalComplianceSnapshot() },
+        { widgetId: 'nl-cal-top-requesters-card',  indexKey: 'topRequesters',  label: '👤 Top solicitantes',
+          snapshot: () => buildNlCalRequestersSnapshot() },
+        { widgetId: 'nl-cal-table-card',           indexKey: 'requestsTable',  label: '📋 Detalhamento de solicitações',
+          snapshot: () => buildNlCalTableSnapshot() },
+      ],
+      metrics: null,
+      periodFrom: start, periodTo: end,
+      periodLabel: period.label,
+      filters,
+      generalPanelContainerId: 'nl-cal-insights-section',
+      buildGeneralSnapshot: () => buildNlCalGeneralSnapshot(),
+      enableAi: true,
+    });
+  } catch (e) { console.warn('[nl] cal insights setup:', e); }
 }
