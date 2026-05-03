@@ -8,6 +8,14 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import { fetchAreas, fetchImages } from './portal.js';
 import { recordGeneration as logGeneration } from './roteiros.js';
+// Reuso de helpers do gerador do Portal de Dicas — fontes, composite logo,
+// cover crop e sanitizer (mesmo padrão visual e tratamento de imagens).
+import {
+  loadPoppinsOnDoc,
+  compositeLogoOnBackground,
+  coverCropImage,
+  cleanText,
+} from './portalGenerator.js';
 
 /* ═══════════════════════════════════════════════════════════════
    CDN LOADERS
@@ -311,7 +319,7 @@ function addSectionTitle(doc, y, title, primary, secondary) {
   doc.rect(MARGIN, y, 3, 10, 'F');
 
   // Title text 14pt
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Poppins', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(sr, sg, sb);
   doc.text(title, MARGIN + 8, y + 7.5);
@@ -324,14 +332,41 @@ function addSectionTitle(doc, y, title, primary, secondary) {
   return y + 18;
 }
 
-/** Footer: area name + page number */
-function addFooter(doc, areaName, pageNum, totalPages, primary) {
+/** Footer com logo (opcional) + nome da área + paginação.
+ *  Padrão visual igual ao portal de dicas: linha cinza, logo composite
+ *  centralizado (sem card branco) e texto pequeno abaixo.
+ */
+function addFooter(doc, areaName, pageNum, totalPages, primary, logoFooter = null) {
   const [r, g, b] = hexToRgb(primary);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(r, g, b);
-  doc.text(areaName, MARGIN, PAGE_H - 8);
-  doc.text(`${pageNum} / ${totalPages}`, PAGE_W - MARGIN, PAGE_H - 8, { align: 'right' });
+
+  // Linha separadora
+  doc.setDrawColor(220, 220, 220);
+  doc.setLineWidth(0.2);
+  doc.line(MARGIN, PAGE_H - 17, PAGE_W - MARGIN, PAGE_H - 17);
+
+  // Logo centralizado (se a area tem)
+  if (logoFooter) {
+    const lw = logoFooter.widthMm, lh = logoFooter.heightMm;
+    const lx = (PAGE_W - lw) / 2, ly = PAGE_H - 14.5;
+    try {
+      doc.addImage(logoFooter.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
+    } catch (e) { /* silencioso */ }
+  } else {
+    // Fallback: nome da BU em primary
+    doc.setFontSize(9);
+    doc.setFont('Poppins', 'bold');
+    doc.setTextColor(r, g, b);
+    doc.text(areaName, PAGE_W / 2, PAGE_H - 11, { align: 'center' });
+  }
+
+  // Texto: data + paginação
+  doc.setFontSize(7);
+  doc.setFont('Poppins', 'normal');
+  doc.setTextColor(140, 140, 140);
+  doc.text(
+    `${areaName}  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pageNum}/${totalPages}`,
+    PAGE_W / 2, PAGE_H - 4, { align: 'center' }
+  );
 }
 
 /** Gold separator line */
@@ -360,6 +395,10 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
+  // Carrega Poppins (mesma do portal de dicas) — sem isso jsPDF cai em Helvetica
+  try { await loadPoppinsOnDoc(doc); }
+  catch (e) { console.warn('[roteiroGenerator] Poppins falhou, usando Helvetica:', e.message); }
+
   const primary = area?.colors?.primary || '#D4A843';
   const secondary = area?.colors?.secondary || '#1A1A2E';
   const accent = area?.colors?.accent || primary;
@@ -370,8 +409,37 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   try { images = await enrichRoteiroImages(roteiro); }
   catch (e) { console.warn('[roteiroGenerator] enrichRoteiroImages falhou:', e.message); }
 
+  // Logos da área — composite resolve transparência (PNG → JPEG sólido).
+  // logoUrl: versão pra fundo escuro (capa).
+  // logoUrlAlt: versão pra fundo claro (rodapé). Se vazio, cai em logoUrl.
+  let logoCover = null;   // { dataUrl, widthMm, heightMm }
+  let logoFooter = null;
+  if (area?.logoUrl) {
+    try {
+      const logoData = await fetchImgData(area.logoUrl);
+      if (logoData) {
+        logoCover = await compositeLogoOnBackground({
+          logoDataUrl: logoData, bgColorHex: secondary,
+          maxWmm: 90, maxHmm: 50, padPct: 0.03,
+        }).catch(() => null);
+      }
+    } catch (e) { /* silencioso */ }
+  }
+  const footerLogoSrc = area?.logoUrlAlt || area?.logoUrl;
+  if (footerLogoSrc) {
+    try {
+      const footerData = await fetchImgData(footerLogoSrc);
+      if (footerData) {
+        logoFooter = await compositeLogoOnBackground({
+          logoDataUrl: footerData, bgColorHex: '#FFFFFF',
+          maxWmm: 30, maxHmm: 10, padPct: 0.04,
+        }).catch(() => null);
+      }
+    } catch (e) { /* silencioso */ }
+  }
+
   /* ─── PAGE 1: COVER ──────────────────────────────────────── */
-  await buildCoverPage(doc, roteiro, buName, primary, secondary, images.heroUrl);
+  await buildCoverPage(doc, roteiro, buName, primary, secondary, images.heroUrl, logoCover);
 
   /* ─── PAGES 2+: DAY BY DAY ───────────────────────────────── */
   if (roteiro.days?.length) {
@@ -422,7 +490,7 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   const totalPages = doc.internal.getNumberOfPages();
   for (let i = 2; i <= totalPages - 1; i++) {
     doc.setPage(i);
-    addFooter(doc, buName, i - 1, totalPages - 2, primary);
+    addFooter(doc, buName, i - 1, totalPages - 2, primary, logoFooter);
   }
 
   /* ─── SAVE & LOG ─────────────────────────────────────────── */
@@ -488,7 +556,7 @@ export async function generateRoteiroForExport(roteiro, areaId, format = 'pdf') 
    ═══════════════════════════════════════════════════════════════ */
 
 /* ─── Cover Page ──────────────────────────────────────────── */
-async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImage) {
+async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImage, logoCover = null) {
   const [pr, pg, pb] = hexToRgb(primary);
   const [sr, sg, sb] = hexToRgb(secondary);
 
@@ -496,14 +564,17 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
   doc.setFillColor(sr, sg, sb);
   doc.rect(0, 0, PAGE_W, PAGE_H, 'F');
 
-  // Hero image (full bleed) com overlay escuro pra legibilidade do texto
+  // Hero image (full bleed cover-cropped) + overlay pra legibilidade
   if (heroImage) {
     try {
-      const imgData = await fetchImgData(heroImage);
-      if (imgData) {
-        doc.addImage(imgData, 'JPEG', 0, 0, PAGE_W, PAGE_H, undefined, 'FAST');
-        // Overlay gradiente escuro (top transparent → bottom 70% opaque) simulado
-        // jsPDF não tem gradient nativo — usamos retângulos sobrepostos com alpha
+      const rawData = await fetchImgData(heroImage);
+      if (rawData) {
+        // Cover-crop pra evitar distorção/aspect-ratio errado (mesma técnica do portal)
+        const fitData = await coverCropImage({
+          dataUrl: rawData, finalWmm: PAGE_W, finalHmm: PAGE_H,
+        }).catch(() => rawData);
+        doc.addImage(fitData, 'JPEG', 0, 0, PAGE_W, PAGE_H, undefined, 'FAST');
+        // Overlay escuro semi-transparente
         doc.setGState(new doc.GState({ opacity: 0.55 }));
         doc.setFillColor(sr, sg, sb);
         doc.rect(0, 0, PAGE_W, PAGE_H, 'F');
@@ -518,29 +589,47 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
   doc.setFillColor(pr, pg, pb);
   doc.rect(30, 40, PAGE_W - 60, 0.8, 'F');
 
-  // BU name (10pt, spaced)
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(pr, pg, pb);
-  doc.text(buName.toUpperCase(), PAGE_W / 2, 52, { align: 'center', charSpace: 3 });
+  // Logo da área no topo (compacto, no header bem acima dos destinos)
+  // Limita altura pra não sobrepor o título "PARIS | ROMA"
+  let nextY = 70; // padrão se não houver logo
+  if (logoCover) {
+    // Reduz pro tamanho de header (max 22mm de altura)
+    const maxH = 22;
+    const ratio = logoCover.widthMm / Math.max(logoCover.heightMm, 1);
+    let lh = Math.min(logoCover.heightMm, maxH);
+    let lw = lh * ratio;
+    // Limite de largura também
+    if (lw > 70) { lw = 70; lh = lw / ratio; }
+    const lx = (PAGE_W - lw) / 2, ly = 48;
+    try {
+      doc.addImage(logoCover.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
+      nextY = ly + lh + 18; // empurra destinos abaixo do logo
+    } catch (e) { /* fallback */ }
+  } else {
+    doc.setFont('Poppins', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(pr, pg, pb);
+    doc.text(buName.toUpperCase(), PAGE_W / 2, 52, { align: 'center', charSpace: 3 });
+    nextY = 80;
+  }
 
   // Destination names (18pt, white, large)
   const destinations = roteiro.travel?.destinations || [];
   const destNames = destinations.map(d => d.city || d.country).filter(Boolean);
   const destText = destNames.join('  |  ').toUpperCase();
 
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Poppins', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(255, 255, 255);
   const destLines = doc.splitTextToSize(destText, CONTENT_W + 20);
-  let destY = 80;
+  let destY = nextY;
   for (const line of destLines) {
     doc.text(line, PAGE_W / 2, destY, { align: 'center' });
     destY += 10;
   }
 
   // Subtitle: ROTEIRO DE VIAGEM
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Poppins', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(pr, pg, pb);
   doc.text('ROTEIRO DE VIAGEM', PAGE_W / 2, destY + 8, { align: 'center', charSpace: 3 });
@@ -554,7 +643,7 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
   const badgeText = `${nights} NOITE${nights !== 1 ? 'S' : ''}`;
   const badgeY = destY + 26;
 
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('Poppins', 'normal');
   doc.setFontSize(11);
   doc.setTextColor(pr, pg, pb);
 
@@ -567,7 +656,7 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
 
   // Date range
   if (roteiro.travel?.startDate && roteiro.travel?.endDate) {
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('Poppins', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(180, 180, 180);
     const dateStr = `${fmtDateFull(roteiro.travel.startDate)}  a  ${fmtDateFull(roteiro.travel.endDate)}`;
@@ -580,7 +669,7 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
 
   // Client name
   if (roteiro.client?.name) {
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('Poppins', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(200, 200, 200);
     doc.text(`Preparado para ${roteiro.client.name}`, PAGE_W / 2, PAGE_H - 48, { align: 'center' });
@@ -597,7 +686,7 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
 
   // Title at very bottom
   if (roteiro.title) {
-    doc.setFont('helvetica', 'italic');
+    doc.setFont('Poppins', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
     doc.text(roteiro.title, PAGE_W / 2, PAGE_H - 20, { align: 'center' });
@@ -642,13 +731,13 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
     // Day number circle
     doc.setFillColor(pr, pg, pb);
     doc.circle(MARGIN + 5, y + 4, 5, 'F');
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('Poppins', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(sr, sg, sb);
     doc.text(String(day.dayNumber || i + 1), MARGIN + 5, y + 5.5, { align: 'center' });
 
     // "DIA X -- date" header
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('Poppins', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(sr, sg, sb);
     const dayLabel = `DIA ${day.dayNumber || i + 1}`;
@@ -656,7 +745,7 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
     doc.text(dayLabel, labelX, y + 5.5);
 
     if (day.date) {
-      doc.setFont('helvetica', 'normal');
+      doc.setFont('Poppins', 'normal');
       doc.setFontSize(9);
       doc.setTextColor(130, 130, 130);
       doc.text(`\u2014 ${fmtDateBR(day.date)}`, labelX + doc.getTextWidth(dayLabel) + 3, y + 5.5);
@@ -666,7 +755,7 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
 
     // City in accent color
     if (day.city) {
-      doc.setFont('helvetica', 'bold');
+      doc.setFont('Poppins', 'bold');
       doc.setFontSize(10);
       doc.setTextColor(ar, ag, ab);
       doc.text(day.city.toUpperCase(), MARGIN + 14, y + 3, { charSpace: 1.5 });
@@ -692,7 +781,7 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
 
     // Title (if different from city)
     if (day.title && day.title !== day.city) {
-      doc.setFont('helvetica', 'italic');
+      doc.setFont('Poppins', 'italic');
       doc.setFontSize(9);
       doc.setTextColor(sr, sg, sb);
       const titleLines = doc.splitTextToSize(day.title, CONTENT_W - 15);
@@ -702,7 +791,7 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
 
     // Narrative text (10pt, justified feel)
     if (day.narrative) {
-      doc.setFont('helvetica', 'normal');
+      doc.setFont('Poppins', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(60, 60, 60);
       const lines = doc.splitTextToSize(day.narrative, CONTENT_W - 15);
@@ -734,7 +823,7 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
         y = checkPageBreak(doc, y, 10);
 
         if (act.time) {
-          doc.setFont('helvetica', 'bold');
+          doc.setFont('Poppins', 'bold');
           doc.setFontSize(8);
           doc.setTextColor(pr, pg, pb);
           doc.text(act.time, MARGIN + 14, y + 3);
@@ -742,7 +831,7 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
 
         const descX = act.time ? MARGIN + 28 : MARGIN + 14;
         const descW = CONTENT_W - (descX - MARGIN);
-        doc.setFont('helvetica', 'normal');
+        doc.setFont('Poppins', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(60, 60, 60);
         const actLines = doc.splitTextToSize(act.description || act.text || '', descW);
@@ -754,7 +843,7 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
     // Overnight city
     if (day.overnightCity) {
       y = checkPageBreak(doc, y, 10);
-      doc.setFont('helvetica', 'italic');
+      doc.setFont('Poppins', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(pr, pg, pb);
       doc.text(`Pernoite: ${day.overnightCity}`, MARGIN + 14, y + 3);
@@ -804,7 +893,7 @@ async function buildHotelsSection(doc, roteiro, primary, secondary, byHotel = {}
         } catch (e) { /* ignore */ }
       }
       // Legenda
-      doc.setFont('helvetica', 'bold');
+      doc.setFont('Poppins', 'bold');
       doc.setFontSize(7);
       doc.setTextColor(80, 80, 80);
       const cap = (item.h.hotelName || item.h.city || '').slice(0, 30);
@@ -930,7 +1019,7 @@ function buildPricingSection(doc, roteiro, primary, secondary) {
   // Disclaimer (8pt, muted)
   if (pricing.disclaimer) {
     y = checkPageBreak(doc, y, 25);
-    doc.setFont('helvetica', 'italic');
+    doc.setFont('Poppins', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(120, 120, 120);
     const disclaimerLines = doc.splitTextToSize(pricing.disclaimer, CONTENT_W);
@@ -1006,6 +1095,21 @@ function buildIncludesExcludes(doc, roteiro, primary, secondary) {
     y = MARGIN;
   }
 
+  // Helpers locais \u2014 Poppins n\u00E3o tem \u2713/\u2715, ent\u00E3o desenhamos com shapes
+  const drawCheck = (cx, cy) => {
+    doc.setDrawColor(34, 139, 34);
+    doc.setLineWidth(0.6);
+    // V invertido representando check
+    doc.line(cx - 1.5, cy + 0.2, cx - 0.3, cy + 1.4);
+    doc.line(cx - 0.3, cy + 1.4, cx + 1.8, cy - 1.2);
+  };
+  const drawCross = (cx, cy) => {
+    doc.setDrawColor(200, 60, 60);
+    doc.setLineWidth(0.6);
+    doc.line(cx - 1.5, cy - 1.2, cx + 1.5, cy + 1.2);
+    doc.line(cx - 1.5, cy + 1.2, cx + 1.5, cy - 1.2);
+  };
+
   // INCLUDES
   if (roteiro.includes?.length) {
     y = addSectionTitle(doc, y, 'O ROTEIRO INCLUI', primary, secondary);
@@ -1013,11 +1117,8 @@ function buildIncludesExcludes(doc, roteiro, primary, secondary) {
 
     for (const item of roteiro.includes) {
       y = checkPageBreak(doc, y, 8);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.setTextColor(34, 139, 34);
-      doc.text('\u2713', MARGIN + 3, y + 3);
-      doc.setFont('helvetica', 'normal');
+      drawCheck(MARGIN + 3, y + 2);
+      doc.setFont('Poppins', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(50, 50, 50);
       const lines = doc.splitTextToSize(item, CONTENT_W - 12);
@@ -1035,11 +1136,8 @@ function buildIncludesExcludes(doc, roteiro, primary, secondary) {
 
     for (const item of roteiro.excludes) {
       y = checkPageBreak(doc, y, 8);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.setTextColor(200, 60, 60);
-      doc.text('\u2715', MARGIN + 3, y + 3);
-      doc.setFont('helvetica', 'normal');
+      drawCross(MARGIN + 3, y + 2);
+      doc.setFont('Poppins', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(50, 50, 50);
       const lines = doc.splitTextToSize(item, CONTENT_W - 12);
@@ -1047,6 +1145,9 @@ function buildIncludesExcludes(doc, roteiro, primary, secondary) {
       y += lines.length * 4.5 + 2;
     }
   }
+
+  // Anchor pra pr\u00F3xima se\u00E7\u00E3o saber onde paramos
+  doc.lastAutoTable = { finalY: y };
 }
 
 /* ─── Payment Terms ───────────────────────────────────────── */
@@ -1074,18 +1175,21 @@ function buildPaymentSection(doc, roteiro, primary, secondary) {
   for (const entry of entries) {
     y = checkPageBreak(doc, y, 15);
 
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('Poppins', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(sr, sg, sb);
     doc.text(entry.label + ':', MARGIN + 3, y + 3);
 
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('Poppins', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(60, 60, 60);
     const lines = doc.splitTextToSize(entry.value, CONTENT_W - 48);
     doc.text(lines, MARGIN + 45, y + 3);
     y += Math.max(lines.length * 4.5, 6) + 3;
   }
+
+  // Anchor pra próxima seção saber onde paramos
+  doc.lastAutoTable = { finalY: y };
 }
 
 /* ─── Cancellation Policy ─────────────────────────────────── */
@@ -1183,14 +1287,14 @@ function buildImportantInfoSection(doc, roteiro, primary, secondary) {
     y = checkPageBreak(doc, y, 20);
 
     // Sub-label (8pt, primary color)
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('Poppins', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(pr, pg, pb);
     doc.text(section.label, MARGIN + 3, y + 3, { charSpace: 0.8 });
     y += 7;
 
     // Content (10pt body)
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('Poppins', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(60, 60, 60);
     const lines = doc.splitTextToSize(section.value, CONTENT_W - 6);
@@ -1215,6 +1319,9 @@ function buildImportantInfoSection(doc, roteiro, primary, secondary) {
     }
     y += 5;
   }
+
+  // Anchor pra próxima seção (closing page) saber onde paramos
+  doc.lastAutoTable = { finalY: y };
 }
 
 /* ─── Closing Page ────────────────────────────────────────── */
@@ -1233,19 +1340,19 @@ function buildClosingPage(doc, roteiro, buName, primary, secondary) {
   doc.rect(50, PAGE_H / 2 - 25, PAGE_W - 100, 0.6, 'F');
 
   // BU Name (18pt)
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('Poppins', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(pr, pg, pb);
   doc.text(buName.toUpperCase(), PAGE_W / 2, PAGE_H / 2 - 5, { align: 'center', charSpace: 4 });
 
   // "Boa viagem!" message
-  doc.setFont('helvetica', 'italic');
+  doc.setFont('Poppins', 'italic');
   doc.setFontSize(14);
   doc.setTextColor(255, 255, 255);
   doc.text('Boa viagem!', PAGE_W / 2, PAGE_H / 2 + 10, { align: 'center' });
 
   // Tagline
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('Poppins', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(180, 180, 180);
   doc.text('Experi\u00EAncias exclusivas de viagem', PAGE_W / 2, PAGE_H / 2 + 20, { align: 'center' });
@@ -1257,7 +1364,7 @@ function buildClosingPage(doc, roteiro, buName, primary, secondary) {
   // Contact info if available
   const contact = roteiro.contact || roteiro.client?.agentEmail;
   if (contact) {
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('Poppins', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(140, 140, 140);
     doc.text(contact, PAGE_W / 2, PAGE_H / 2 + 42, { align: 'center' });
