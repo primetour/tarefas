@@ -36,18 +36,59 @@
       color: var(--text-primary, #E2E8F0);
       min-height: 100vh;
     }
+    /* ─── Header sticky com botao Voltar bem visivel ─── */
+    .docs-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 24px;
+      background: var(--bg-surface, #0F1B30);
+      border-bottom: 1px solid var(--border-subtle, #1F2937);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(8px);
+    }
+    .docs-topbar .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--bg-base, #0A1628);
+      background: var(--brand-gold, #D4A843);
+      border-radius: 6px;
+      text-decoration: none;
+      transition: all .15s;
+    }
+    .docs-topbar .back-btn:hover {
+      filter: brightness(1.1);
+      transform: translateX(-2px);
+    }
+    .docs-topbar .topbar-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-primary, #E2E8F0);
+    }
+    .docs-topbar .topbar-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted, #64748B);
+    }
+
     .docs-layout {
       display: grid;
       grid-template-columns: 280px 1fr;
-      min-height: 100vh;
+      min-height: calc(100vh - 60px);
     }
     .docs-sidebar {
       background: var(--bg-surface, #0F1B30);
       border-right: 1px solid var(--border-subtle, #1F2937);
       padding: 24px 20px;
       position: sticky;
-      top: 0;
-      height: 100vh;
+      top: 60px;
+      height: calc(100vh - 60px);
       overflow-y: auto;
     }
     .docs-sidebar h1 {
@@ -247,6 +288,17 @@
       });
 
       document.getElementById('root').innerHTML = `
+        <header class="docs-topbar">
+          <a href="/tarefas/" class="back-btn">← Voltar ao PRIMETOUR</a>
+          <div style="display:flex;align-items:center;gap:14px;flex:1;justify-content:center;min-width:0;">
+            <span class="topbar-title">📚 Docs Técnicos</span>
+            <span class="topbar-meta">·</span>
+            <span class="topbar-meta">${doc.title}</span>
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted, #64748B);">
+            🔒 Acesso interno
+          </div>
+        </header>
         <div class="docs-layout">
           <aside class="docs-sidebar">
             <h1>📚 Docs Técnicos</h1>
@@ -264,18 +316,13 @@
             </nav>
           </aside>
           <main class="docs-content">
-            <div class="breadcrumb">
-              <a href="/tarefas/">PRIMETOUR</a> ·
-              <a href="?">Docs Técnicos</a> ·
-              <span>${doc.title}</span>
-            </div>
             <div class="md-body" id="md-output">
               <div class="loading">Carregando ${doc.file}…</div>
             </div>
             <div class="docs-footer">
               <span>Documentação interna · não distribuir externamente</span>
               <span>
-                <a href="/tarefas/${doc.file}" target="_blank">📄 Raw markdown</a>
+                <a href="/tarefas/${doc.file}" target="_blank">📄 Markdown raw</a>
                 &nbsp;·&nbsp;
                 <a href="/tarefas/">← Voltar ao sistema</a>
               </span>

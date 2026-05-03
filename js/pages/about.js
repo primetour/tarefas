@@ -920,7 +920,7 @@ const CONTENT = {
         ['☁','Migração Cloudflare',            'cloudflare',   'Plano de migração GH Pages → CF Pages'],
         ['📄','Fact Sheet (executivo)',         'fact-sheet',   'Resumo 1-página pra apresentar a clientes'],
       ].map(([icon,title,id,desc]) => `
-        <a href="docs.html?doc=${id}" target="_blank"
+        <a href="docs.html?doc=${id}"
           style="display:flex;gap:12px;align-items:flex-start;padding:14px;
           background:var(--bg-surface);border:1px solid var(--border-subtle);
           border-radius:var(--radius-md);text-decoration:none;transition:all .15s;">

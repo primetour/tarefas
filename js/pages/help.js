@@ -9,7 +9,7 @@
  *   5. Links úteis
  */
 import { store } from '../store.js';
-import { TOURS, hasDoneTour, runTour, resetTour, resetAllTours } from '../services/tours.js?v=20260501vv';
+import { TOURS, hasDoneTour, runTour, resetTour, resetAllTours } from '../services/tours.js?v=20260501ww';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -396,11 +396,24 @@ export async function renderHelp(container) {
             `).join('')}
           </div>
           ${(store.isMaster() || store.can('system_manage_users')) ? `
-            <div style="margin-top:14px;padding:10px 14px;background:rgba(212,168,67,.07);
-              border-left:3px solid var(--brand-gold);border-radius:0 6px 6px 0;font-size:0.8125rem;
-              color:var(--text-secondary);line-height:1.6;">
-              <strong>Documentação técnica completa</strong> em
-              <a href="#about" style="color:var(--brand-gold);">Sobre o Sistema → ⚙ Infraestrutura / 🛡 Segurança / 🔐 Privacidade & LGPD</a>.
+            <div style="margin-top:14px;padding:12px 14px;background:rgba(212,168,67,.07);
+              border-left:3px solid var(--brand-gold);border-radius:0 6px 6px 0;">
+              <div style="font-size:0.875rem;font-weight:600;color:var(--brand-gold);margin-bottom:6px;">
+                📚 Documentação técnica completa
+              </div>
+              <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin-bottom:10px;">
+                Pra time de TI/segurança/compliance — 8 documentos versionados:
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <a href="docs.html?doc=security"     class="btn btn-secondary btn-sm">🛡 Segurança</a>
+                <a href="docs.html?doc=threat-model" class="btn btn-secondary btn-sm">🎯 Modelo de Ameaças</a>
+                <a href="docs.html?doc=incident"     class="btn btn-secondary btn-sm">🚨 Resposta a Incidentes</a>
+                <a href="docs.html?doc=access"       class="btn btn-secondary btn-sm">🔑 RBAC</a>
+                <a href="docs.html?doc=data-flow"    class="btn btn-secondary btn-sm">🔐 Fluxo de Dados</a>
+                <a href="docs.html?doc=infra"        class="btn btn-secondary btn-sm">⚙ Infraestrutura</a>
+                <a href="docs.html?doc=fact-sheet"   class="btn btn-secondary btn-sm">📄 Fact Sheet</a>
+                <a href="docs.html"                  class="btn btn-primary btn-sm">📚 Ver todos →</a>
+              </div>
             </div>
           ` : ''}
         </div>
