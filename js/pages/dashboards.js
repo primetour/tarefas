@@ -7,8 +7,8 @@ import { store }    from '../store.js';
 import { toast }    from '../components/toast.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
-import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503pp1';
-import { fetchInsights, insightsToPdfRows, insightsToXlsxRows } from '../services/insights.js?v=20260503pp1';
+import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503pp2';
+import { fetchInsights, insightsToPdfRows, insightsToXlsxRows } from '../services/insights.js?v=20260503pp2';
 import {
   getOverviewMetrics, getTasksByDay, getStatusDistribution,
   getPriorityDistribution, getTasksByMember, getTasksByProject,
