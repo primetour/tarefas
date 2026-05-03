@@ -313,15 +313,31 @@ export async function createInsight(data) {
 /** Atualiza insight existente.
  * Quando user edita insight com source='ai-generated', o caller deve setar
  * source: 'ai-edited' e aiOriginal: <payload original> pra preservar audit trail.
+ *
+ * IMUTÁVEIS após criação (NUNCA atualizam): dataSnapshot, chartImage, createdBy,
+ * createdAt — são fotos históricas. Editar deve criar novo insight.
  */
 export async function updateInsight(id, patch) {
   if (!id) throw new Error('id obrigatório');
-  const allowed = ['title','observation','recommendation','type','impact','tags','source','indexKey','aiOriginal'];
+  // Permite editar: conteúdo (título, obs, rec, tipo, impacto, tags), período coberto,
+  // filtros snapshot, indexKey, source/aiOriginal (para edição de IA-generated).
+  const allowed = [
+    'title','observation','recommendation','type','impact','tags',
+    'source','indexKey','aiOriginal',
+    'periodFrom','periodTo','filters',
+  ];
   const updates = { updatedAt: serverTimestamp() };
   for (const k of allowed) if (patch[k] !== undefined) updates[k] = patch[k];
   if (typeof updates.title === 'string')          updates.title = updates.title.trim().slice(0, 200);
   if (typeof updates.observation === 'string')    updates.observation = updates.observation.trim().slice(0, 4000);
   if (typeof updates.recommendation === 'string') updates.recommendation = updates.recommendation.trim().slice(0, 4000);
+  // Datas: aceita Date OR null (pra "sem período"). Garante tipo Date pra Firestore.
+  if (updates.periodFrom !== undefined) {
+    updates.periodFrom = updates.periodFrom ? new Date(updates.periodFrom) : null;
+  }
+  if (updates.periodTo !== undefined) {
+    updates.periodTo = updates.periodTo ? new Date(updates.periodTo) : null;
+  }
   await updateDoc(doc(db, 'dashboard_insights', id), updates);
   await auditLog('insight.update', 'dashboard_insights', id, {});
 }
@@ -482,44 +498,6 @@ export function groupInsightsByIndex(insights, widgetLabels = {}) {
   }));
   widgetGroups.sort((a, b) => a.groupLabel.localeCompare(b.groupLabel));
   return ordered.concat(widgetGroups);
-}
-
-/** Formata insights pra texto em PDF (linhas legíveis), agrupados por widget.
- * @param {Array} insights
- * @param {Object} widgetLabels - mapa indexKey -> label legível (ex: { sla90: 'SLA 90%' })
- */
-export function insightsToPdfRows(insights, widgetLabels = {}) {
-  if (!insights?.length) return [];
-  const groups = groupInsightsByIndex(insights, widgetLabels);
-  const rows = [];
-  let n = 0;
-  groups.forEach((group, gi) => {
-    rows.push({
-      label: (gi > 0 ? '\n' : '') + `▸ ${group.groupLabel} (${group.items.length})`,
-      value: '',
-      isGroupHeader: true,
-    });
-    group.items.forEach(ins => {
-      n++;
-      const type = INSIGHT_TYPES.find(t => t.key === ins.type) || INSIGHT_TYPES[4];
-      const sourceLabel = ins.source === 'ai-generated' ? '🤖 IA'
-        : ins.source === 'ai-edited' ? '🤖✎ IA editada'
-        : '👤 Manual';
-      rows.push({
-        label: `${n}. ${type.icon} ${ins.title}`,
-        value: '',
-        isHeader: true,
-      });
-      if (ins.observation) rows.push({ label: '   Observação', value: ins.observation });
-      if (ins.recommendation) rows.push({ label: '   Recomendação', value: ins.recommendation });
-      rows.push({ label: '   Impacto', value: IMPACT_LEVELS.find(x => x.key === ins.impact)?.label || '—' });
-      const periodCovered = formatInsightPeriod(ins);
-      if (periodCovered) rows.push({ label: '   Período coberto', value: periodCovered });
-      rows.push({ label: '   Origem', value: sourceLabel });
-      rows.push({ label: '   Escrito por', value: `${ins.createdBy?.name || '—'} em ${formatDate(ins.createdAt)}` });
-    });
-  });
-  return rows;
 }
 
 /** Formata insights pra linhas de XLSX, com colunas Widget + Período Coberto + Source + Dados observados.

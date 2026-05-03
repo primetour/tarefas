@@ -7,8 +7,9 @@ import { store }    from '../store.js';
 import { toast }    from '../components/toast.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
-import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503tt2';
-import { fetchInsights, insightsToPdfRows, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } from '../services/insights.js?v=20260503tt2';
+// Insights & Observações: 14 widgets ganham popover compacto + painel geral no fim.
+// Setup via helper genérico em insightWidgets.js (importado dinamicamente no IIFE).
+import { fetchInsights, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } from '../services/insights.js?v=20260503uu1';
 import {
   getOverviewMetrics, getTasksByDay, getStatusDistribution,
   getPriorityDistribution, getTasksByMember, getTasksByProject,
@@ -556,13 +557,11 @@ function renderAllCharts(Chart, m) {
   try { renderCsatByAreaWidget(tasks, surveys); }  catch(e){ console.warn('R3 CSAT area:', e); }
   try { renderNucleoWidget(tasks); }               catch(e){ console.warn('R3 nucleo:', e); }
 
-  /* Insights & Observações (componente reutilizavel) — 2 camadas:
-     1) Por widget: cada widget tem botão compacto (popover) ancorado a um indexKey
-     2) Geral: painel grande no fim do dashboard com análises que cruzam índices
-
+  /* Insights & Observações — usa helper genérico setupDashboardInsights.
      IIFE async pra nao precisar tornar renderAllCharts async (multiplos callers). */
   (async () => {
     try {
+      const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
       const { start, end } = getPeriodDates(activePeriod());
       const periodLabel = ({
         '7d': 'Últimos 7 dias', '30d': 'Últimos 30 dias',
@@ -574,24 +573,18 @@ function renderAllCharts(Chart, m) {
         period: currentPeriod, periodLabel,
       };
 
-      await attachWidgetInsights(m, { start, end }, periodLabel, filtersSnapshot);
-
-      // Painel geral (apenas insights NÃO ancorados a widget — análises de panorama)
-      const section = document.getElementById('dash-insights-section');
-      if (section) {
-        await mountInsightsPanel({
-          container: section,
-          dashboard: 'produtividade',
-          mode: 'panel',
-          indexKey: 'general',                  // só pega insights gerais (indexKey null)
-          periodFrom: start, periodTo: end,
-          periodLabel,
-          filters: filtersSnapshot,
-          enableAi: true,
-          getSnapshot: () => buildDashboardSnapshot(m, currentPeriod),
-        });
-      }
-    } catch(e) { console.warn('insightsPanel:', e); }
+      await setupDashboardInsights({
+        dashboard: 'produtividade',
+        widgets: PRODUTIVIDADE_WIDGETS,
+        metrics: m,
+        periodFrom: start, periodTo: end,
+        periodLabel,
+        filters: filtersSnapshot,
+        generalPanelContainerId: 'dash-insights-section',
+        buildGeneralSnapshot: () => buildDashboardSnapshot(m, currentPeriod),
+        enableAi: true,
+      });
+    } catch(e) { console.warn('insightsPanel setup:', e); }
   })();
 }
 
@@ -620,44 +613,6 @@ const PRODUTIVIDADE_WIDGETS = [
   { widgetId: 'r3-csat-area',      indexKey: 'csatByArea',        label: '★ CSAT por Área',           snapshot: (m) => ({ csatByArea: getCsatByArea(m.surveys || [], m.tasks) }) },
   { widgetId: 'r3-nucleo',         indexKey: 'nucleo',            label: '◈ Performance por Núcleo',  snapshot: (m) => ({ nucleo: getPerformanceByNucleo(m.tasks) }) },
 ];
-
-// Publica widgetLabels no window pra insightsPanel achar quando exporta
-// insights individuais (PDF/XLSX precisam do label legível do widget).
-function publishWidgetLabels() {
-  window.__INSIGHT_WIDGET_LABELS = window.__INSIGHT_WIDGET_LABELS || {};
-  window.__INSIGHT_WIDGET_LABELS['produtividade'] = Object.fromEntries(
-    PRODUTIVIDADE_WIDGETS.map(w => [w.indexKey, w.label])
-  );
-}
-
-async function attachWidgetInsights(m, period, periodLabel, filtersSnapshot) {
-  publishWidgetLabels();
-  // PARALELO: cada mount tem fetchInsights interno — fazendo sequencial leva
-  // 14×Firestore round-trips em sequência, podendo passar de 30s e estourar
-  // timeout do CDP/browser. Promise.allSettled paraleliza tudo + isola erros.
-  const tasks = PRODUTIVIDADE_WIDGETS.map(w => {
-    const widget = document.getElementById(w.widgetId);
-    if (!widget) return Promise.resolve({ widget: w.widgetId, skipped: 'no element' });
-    const slot = widget.querySelector('.widget-insights-slot');
-    if (!slot) return Promise.resolve({ widget: w.widgetId, skipped: 'no slot' });
-    return mountInsightsPanel({
-      container: slot,
-      dashboard: 'produtividade',
-      mode: 'widget',
-      indexKey: w.indexKey,
-      indexLabel: w.label,
-      periodFrom: period.start, periodTo: period.end,
-      periodLabel,
-      filters: filtersSnapshot,
-      enableAi: true,
-      getSnapshot: () => w.snapshot(m),
-    }).catch(e => ({ widget: w.widgetId, error: e?.message }));
-  });
-  const results = await Promise.allSettled(tasks);
-  const failed = results.filter(r => r.status === 'rejected' || r.value?.error)
-    .map(r => r.reason?.message || r.value?.error);
-  if (failed.length) console.warn('[attachWidgetInsights] falhas:', failed);
-}
 
 /** Snapshot agregado de TODO o dashboard pra IA gerar análise geral. */
 function buildDashboardSnapshot(m, period) {

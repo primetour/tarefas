@@ -20,7 +20,7 @@
 import {
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
   formatInsightPeriod, formatDataSnapshot,
-} from './insights.js?v=20260503tt2';
+} from './insights.js?v=20260503uu1';
 
 const fmtDate = ts => {
   if (!ts) return '—';
@@ -290,11 +290,13 @@ export async function exportInsightToPdf(insight, opts = {}) {
       y += 3;
       // Detecta formato real (JPEG ou PNG) pra passar a addImage
       const fmt = insight.chartImage.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
-      // Calcula dimensões via Image (await pra ter w/h reais)
+      // Calcula dimensões via Image (await pra ter w/h reais).
+      // Timeout 5s pra evitar PDF travado se data URL malformada.
       const img = await new Promise((res, rej) => {
         const i = new Image();
-        i.onload = () => res(i);
-        i.onerror = rej;
+        const timer = setTimeout(() => rej(new Error('Image load timeout (5s)')), 5000);
+        i.onload = () => { clearTimeout(timer); res(i); };
+        i.onerror = (e) => { clearTimeout(timer); rej(new Error('Image load error')); };
         i.src = insight.chartImage;
       });
       const imgMaxW = W - M * 2;

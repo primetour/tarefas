@@ -45,8 +45,8 @@ import {
   suggestInsightsViaAi,
   insightCoversPeriod, formatInsightPeriod, formatDataSnapshot,
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
-} from '../services/insights.js?v=20260503tt2';
-import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260503tt2';
+} from '../services/insights.js?v=20260503uu1';
+import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260503uu1';
 
 /** Mapa global de widgetLabels passado pelo dashboards.js — usado no export PDF/XLSX
  * pra mostrar nome legível do widget. Set/get via janela compartilhada. */
@@ -424,6 +424,13 @@ export async function mountInsightsPanel(opts) {
               <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.45;
                 white-space:pre-wrap;margin-bottom:3px;">${esc(ins.observation.slice(0, 220))}${ins.observation.length > 220 ? '…' : ''}</div>
             ` : ''}
+            ${ins.recommendation ? `
+              <div style="font-size:0.7rem;color:var(--text-secondary);background:rgba(34,197,94,.07);
+                border-left:2px solid #22C55E;padding:4px 8px;border-radius:0 3px 3px 0;margin-bottom:3px;
+                line-height:1.45;white-space:pre-wrap;">
+                <strong style="color:#22C55E;">→ </strong>${esc(ins.recommendation.slice(0, 180))}${ins.recommendation.length > 180 ? '…' : ''}
+              </div>
+            ` : ''}
             ${snapshotText ? `
               <div style="font-size:0.65rem;color:var(--text-muted);background:var(--bg-elevated);
                 padding:4px 6px;border-radius:3px;margin-bottom:3px;font-family:monospace;
@@ -435,6 +442,7 @@ export async function mountInsightsPanel(opts) {
               <span style="color:${impact.color};">●</span> ${esc(impact.label)} ·
               ${periodCovered ? `📅 ${esc(periodCovered)} · ` : ''}
               <em>escrito ${fmtDate(ins.createdAt)} por ${esc(ins.createdBy?.name || '—')}</em>
+              ${(ins.tags || []).length ? ` · ${ins.tags.slice(0, 3).map(t => `<span style="background:var(--bg-elevated);padding:0px 4px;border-radius:2px;">${esc(t)}</span>`).join(' ')}${ins.tags.length > 3 ? ` +${ins.tags.length - 3}` : ''}` : ''}
             </div>
           </div>
           <div style="display:flex;gap:2px;flex-shrink:0;">
@@ -545,12 +553,15 @@ export async function mountInsightsPanel(opts) {
                 background:${impact.color}22;color:${impact.color};">
                 Impacto ${esc(impact.label)}
               </span>
-              ${ins.indexKey ? `
+              ${ins.indexKey ? (() => {
+                // Resolve label legível via window.__INSIGHT_WIDGET_LABELS — fallback pra chave técnica
+                const lbl = window.__INSIGHT_WIDGET_LABELS?.[dashboard]?.[ins.indexKey] || ins.indexKey;
+                return `
                 <span style="font-size:0.6875rem;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);
                   background:rgba(148,163,184,.15);color:var(--text-muted);" title="Ancorado ao widget">
-                  📍 ${esc(ins.indexKey)}
-                </span>
-              ` : ''}
+                  📍 ${esc(lbl)}
+                </span>`;
+              })() : ''}
               ${ins.source === 'ai-generated' ? `
                 <span style="font-size:0.6875rem;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);
                   background:rgba(167,139,250,.15);color:#A78BFA;">🤖 IA</span>
@@ -859,22 +870,23 @@ export async function mountInsightsPanel(opts) {
     const snapshotPreview = initialSnapshot ? formatDataSnapshot(initialSnapshot) : null;
 
     // Captura imagem do canvas do widget (se houver) pra embed no PDF.
-    // IMPORTANTE: redimensiona pra max 800px de largura. PNG nao comprimido
-    // em PDF expande pra raw RGB (W×H×4 bytes). Canvas Chart.js retina é
-    // ~1400x1460 → 8MB de RGB. Redimensionado a 800x~830 → ~2.6MB raw,
-    // ainda mais que ideal mas funcional. Compression FAST no addImage
-    // ajuda no PDF final.
+    // Widgets DOM-based (heatmap, leaderboards) não têm canvas — chartImage fica null
+    // e UI mostra aviso amigável "Este widget não gera gráfico — só dados".
     let initialChartImage = existing?.chartImage || null;
-    if (!initialChartImage && !isEdit && targetIndexKey) {
+    let widgetHasCanvas = false;
+    if (!isEdit && targetIndexKey) {
       try {
         const slot = container.querySelector('[data-widget-id]') || container;
         const widgetId = slot.dataset?.widgetId;
         const widgetEl = widgetId ? document.getElementById(widgetId) : container.closest('.dash-widget');
         const canvas = widgetEl?.querySelector('canvas');
         if (canvas && canvas.width > 0 && canvas.height > 0) {
-          initialChartImage = downsizeCanvas(canvas, 800);
-          if (initialChartImage && initialChartImage.length > 350_000) {
-            console.warn('[insightsPanel] canvas resized image >350KB:', initialChartImage.length);
+          widgetHasCanvas = true;
+          if (!initialChartImage) {
+            initialChartImage = downsizeCanvas(canvas, 800);
+            if (initialChartImage && initialChartImage.length > 350_000) {
+              console.warn('[insightsPanel] canvas resized image >350KB:', initialChartImage.length);
+            }
           }
         }
       } catch (e) {
@@ -974,16 +986,19 @@ export async function mountInsightsPanel(opts) {
               line-height:1.5;background:var(--bg-elevated);padding:8px 10px;border-radius:4px;
               max-height:90px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;">${esc(snapshotPreview)}</div>
             <div style="font-size:0.65rem;color:var(--text-muted);margin-top:4px;font-style:italic;">
-              ${initialSnapshot._source === 'ai-suggestion'
+              ${initialSnapshot?._source === 'ai-suggestion'
                 ? 'Capturado pela IA quando gerou esta sugestão.'
                 : 'Capturado do widget no momento de criação.'}
-              ${initialSnapshot.capturedAt ? ' · ' + new Date(initialSnapshot.capturedAt).toLocaleString('pt-BR') : ''}
+              ${initialSnapshot?.capturedAt ? ' · ' + new Date(initialSnapshot.capturedAt).toLocaleString('pt-BR') : ''}
+              ${widgetHasCanvas && initialChartImage ? ' · Imagem do gráfico será incluída no PDF.' : ''}
+              ${!widgetHasCanvas && targetIndexKey ? ' · Este widget não gera gráfico — apenas dados serão exportados.' : ''}
             </div>
           </div>
           ` : (!isEdit && targetIndexKey ? `
           <div style="background:var(--bg-surface);border:1px dashed var(--border-subtle);
             padding:8px 12px;border-radius:var(--radius-sm);font-size:0.7rem;color:var(--text-muted);">
-            ⓘ Sem dados pra capturar deste widget no momento. Insight será salvo sem snapshot.
+            ⓘ Sem dados pra capturar deste widget no momento.
+            ${!widgetHasCanvas ? 'Este widget não gera gráfico — insight ficará só com texto.' : 'Insight será salvo sem snapshot.'}
           </div>
           ` : '')}
 
