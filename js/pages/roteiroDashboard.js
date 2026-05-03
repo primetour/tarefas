@@ -135,21 +135,34 @@ export async function renderRoteiroDashboard(container) {
       </div>
     </div>
 
-    <!-- KPI cards -->
-    <div id="rd-kpis" class="rd-kpi-grid">
-      ${Array(6).fill('<div class="rd-kpi-card skeleton" style="height:80px;"></div>').join('')}
+    <!-- KPI cards (com slot de insights) -->
+    <div id="rd-kpis-block" style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">📊 Indicadores</h3>
+        <span class="widget-insights-slot" data-widget-id="rd-kpis-block"></span>
+      </div>
+      <div id="rd-kpis" class="rd-kpi-grid">
+        ${Array(6).fill('<div class="rd-kpi-card skeleton" style="height:80px;"></div>').join('')}
+      </div>
     </div>
 
-    <!-- Charts -->
+    <!-- Charts (cada chart-card tem seu próprio slot via createChartCard) -->
     <div id="rd-charts" class="rd-charts-grid">
       ${Array(8).fill('<div class="rd-chart-card skeleton" style="height:300px;"></div>').join('')}
     </div>
 
     <!-- Generations table -->
     <div id="rd-gen-table" class="rd-chart-card" style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:16px;">
-      <div class="rd-chart-title">Ultimas Geracoes</div>
+      <div class="rd-chart-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="flex:1;min-width:0;">Últimas Gerações</span>
+        <span class="widget-insights-slot" data-widget-id="rd-gen-table"></span>
+      </div>
       <div class="skeleton" style="height:200px;"></div>
     </div>
+
+    <!-- Análise Geral -->
+    <div id="rd-insights-section" style="margin-top:24px;"></div>
   `;
 
   // Period button handlers
@@ -206,6 +219,11 @@ async function processAndRender() {
   renderKPIs(roteiros);
   renderCharts(Chart, roteiros);
   renderGenerationsTable();
+
+  // Setup insights na primeira render (idempotente)
+  if (allRoteiros.length && !rdInsightsMounted) {
+    setTimeout(() => setupRdInsights(), 500);
+  }
 }
 
 /* ─── KPI cards ──────────────────────────────────────────── */
@@ -266,7 +284,10 @@ function createChartCard(parent, id, title, height = 280) {
   card.className = 'rd-chart-card';
   card.id = id;
   card.innerHTML = `
-    <div class="rd-chart-title">${title}</div>
+    <div class="rd-chart-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="flex:1;min-width:0;">${title}</span>
+      <span class="widget-insights-slot" data-widget-id="${id}"></span>
+    </div>
     <div style="height:${height}px;position:relative;">
       <canvas id="canvas-${id}"></canvas>
     </div>
@@ -767,6 +788,19 @@ async function exportRoteirosXLS() {
     const ws2 = XLSX.utils.json_to_sheet(genRows);
     XLSX.utils.book_append_sheet(wb, ws2, 'Geracoes');
 
+    // Sheet "Insights" — histórico completo de observações
+    try {
+      const { fetchInsights, insightsToXlsxRows } = await import('../services/insights.js?v=20260503uu1');
+      const insights = await fetchInsights({ dashboard: 'roteiro', max: 200 });
+      if (insights.length) {
+        const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.roteiro || {};
+        const insRows = insightsToXlsxRows(insights, widgetLabels);
+        const wsIns = XLSX.utils.json_to_sheet(insRows);
+        wsIns['!cols'] = [{wch:30},{wch:14},{wch:10},{wch:50},{wch:60},{wch:60},{wch:50},{wch:25},{wch:12},{wch:24},{wch:20},{wch:18}];
+        XLSX.utils.book_append_sheet(wb, wsIns, 'Insights');
+      }
+    } catch (e) { console.warn('insights rd xlsx:', e); }
+
     XLSX.writeFile(wb, `roteiros_dashboard_${new Date().toISOString().split('T')[0]}.xlsx`);
     toast.success('XLS exportado!');
   } catch (e) {
@@ -996,6 +1030,52 @@ const exportRoteiroDashboardPdf = withExportGuard(async function exportRoteiroDa
       });
     }
 
+    // Insights & Observações — agrupado por widget
+    try {
+      const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
+        await import('../services/insights.js?v=20260503uu1');
+      const insights = await fetchInsights({ dashboard: 'roteiro', max: 200 });
+      if (insights.length) {
+        const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.roteiro || {};
+        const groups = groupInsightsByIndex(insights, widgetLabels);
+        kit.ensureSpace(40);
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+        doc.text(txt('INSIGHTS & OBSERVACOES'), M, kit.y);
+        kit.y += 5;
+        const stripEmoji = s => String(s ?? '')
+          .replace(/[\u{1F300}-\u{1FFFF}]/gu, '').replace(/[\u{2400}-\u{27BF}]/gu, '')
+          .replace(/[\u{2000}-\u{206F}]/gu, '').trim();
+        const safe = s => txt(stripEmoji(s));
+        groups.forEach((group) => {
+          kit.ensureSpace(20);
+          setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+          doc.text(safe(`${group.groupLabel} (${group.items.length})`), M, kit.y);
+          kit.y += 3;
+          doc.autoTable({
+            startY: kit.y, margin: { left: M, right: M },
+            head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Dados', 'Periodo', 'Origem', 'Por']],
+            body: group.items.map(ins => [
+              ins.type || 'neutral', ins.impact || 'medium',
+              safe(ins.title || ''), safe(ins.observation || ''),
+              safe(formatDataSnapshot(ins.dataSnapshot) || '-'),
+              safe(formatInsightPeriod(ins) || '-'),
+              ins.source === 'ai-generated' ? 'IA' : ins.source === 'ai-edited' ? 'IA edit.' : 'Manual',
+              safe((ins.createdBy?.name || '-')),
+            ]),
+            styles: { fontSize: 6, cellPadding: 1.8, overflow: 'linebreak' },
+            headStyles: { fillColor: [26,42,74], textColor: 255, fontStyle: 'bold', fontSize: 6 },
+            columnStyles: {
+              0:{cellWidth:14}, 1:{cellWidth:11}, 2:{cellWidth:36},
+              3:{cellWidth:48}, 4:{cellWidth:48}, 5:{cellWidth:24},
+              6:{cellWidth:13}, 7:{cellWidth:24},
+            },
+            didDrawPage: (data) => { kit.y = data.cursor.y; },
+          });
+          kit.y = doc.lastAutoTable.finalY + 5;
+        });
+      }
+    } catch (e) { console.warn('insights rd pdf:', e); }
+
     kit.drawFooter('PRIMETOUR  ·  Dashboard Roteiros');
     doc.save(`roteiros_dashboard_${new Date().toISOString().slice(0, 10)}.pdf`);
     toast.success('PDF exportado!');
@@ -1005,7 +1085,146 @@ const exportRoteiroDashboardPdf = withExportGuard(async function exportRoteiroDa
   }
 });
 
+/* ════════════════════════════════════════════════════════════
+   INSIGHTS & OBSERVAÇÕES — Setup do dashboard de Roteiros
+   ════════════════════════════════════════════════════════════ */
+
+let rdInsightsMounted = false;
+
+/** Período visualizado a partir de currentPeriod ('7d'|'30d'|'90d'|'all'...). */
+function computeRdPeriod() {
+  const periodDef = PERIODS.find(p => p.key === currentPeriod);
+  if (!periodDef || currentPeriod === 'all') {
+    return { start: null, end: new Date(), label: periodDef?.label || 'Todo o período' };
+  }
+  const days = periodDef.days || 30;
+  const end = new Date();
+  const start = new Date(); start.setDate(start.getDate() - days);
+  return { start, end, label: periodDef.label };
+}
+
+/** Helpers de agregação reutilizando a lógica das funções render*. */
+function rdCountByStatus(roteiros) {
+  return ['draft', 'sent', 'approved', 'rejected'].reduce((acc, s) => {
+    acc[s] = roteiros.filter(r => r.status === s).length;
+    return acc;
+  }, {});
+}
+
+function rdTopBy(roteiros, field, n = 10) {
+  const counts = {};
+  roteiros.forEach(r => {
+    const v = r[field];
+    if (v) counts[v] = (counts[v] || 0) + 1;
+  });
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1]).slice(0, n)
+    .map(([label, count]) => ({ label, count }));
+}
+
+/** Snapshots por widget (consume allRoteiros + filterByPeriod). */
+function rdSnapshotKpis() {
+  const r = filterByPeriod(allRoteiros);
+  const status = rdCountByStatus(r);
+  const total = r.length;
+  const conv = status.sent > 0 ? ((status.approved / status.sent) * 100).toFixed(1) : '0.0';
+  return { total, drafts: status.draft, sent: status.sent, approved: status.approved, rejected: status.rejected, taxaConversao: conv + '%' };
+}
+function rdSnapshotEvolucao() {
+  const r = filterByPeriod(allRoteiros);
+  const monthMap = {};
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    monthMap[`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`] = 0;
+  }
+  r.forEach(rt => {
+    const k = `${rt._ts.getFullYear()}-${String(rt._ts.getMonth()+1).padStart(2,'0')}`;
+    if (k in monthMap) monthMap[k]++;
+  });
+  return { evolucaoMensal: Object.entries(monthMap).map(([label, count]) => ({ label, count })) };
+}
+function rdSnapshotPipeline() {
+  return { pipeline: rdSnapshotKpis() };
+}
+function rdSnapshotDestinos() {
+  return { topDestinos: rdTopBy(filterByPeriod(allRoteiros), 'destino', 10) };
+}
+function rdSnapshotClientes() {
+  return { perfilClientes: rdTopBy(filterByPeriod(allRoteiros), 'perfilCliente', 10) };
+}
+function rdSnapshotEconomico() {
+  return { perfilEconomico: rdTopBy(filterByPeriod(allRoteiros), 'perfilEconomico', 10) };
+}
+function rdSnapshotFormatos() {
+  // Generations table tem formatos
+  const formats = {};
+  allGenerations.forEach(g => {
+    (g.formats || []).forEach(f => { formats[f] = (formats[f] || 0) + 1; });
+  });
+  return { formatosExport: Object.entries(formats).map(([label, count]) => ({ label, count })) };
+}
+function rdSnapshotConsultor() {
+  return { porConsultor: rdTopBy(filterByPeriod(allRoteiros), 'consultorName', 10) };
+}
+function rdSnapshotMoedas() {
+  return { moedas: rdTopBy(filterByPeriod(allRoteiros), 'moeda', 6) };
+}
+function rdSnapshotGenerationsTable() {
+  const recent = allGenerations.slice(0, 10).map(g => ({
+    label: g.title || g.destino || 'sem título',
+    perfil: g.perfilCliente,
+    consultor: g.consultorName,
+    formats: (g.formats || []).join(','),
+  }));
+  return { ultimasGeracoes: recent, totalGeracoes: allGenerations.length };
+}
+function rdSnapshotGeneral() {
+  return {
+    ...rdSnapshotKpis(),
+    ...rdSnapshotEvolucao(),
+    ...rdSnapshotDestinos(),
+    ...rdSnapshotClientes(),
+    ...rdSnapshotConsultor(),
+    totalGeracoes: allGenerations.length,
+  };
+}
+
+const RD_WIDGETS = [
+  { widgetId: 'rd-kpis-block', indexKey: 'kpis',         label: '📊 Indicadores',           snapshot: rdSnapshotKpis },
+  { widgetId: 'rd-evolucao',   indexKey: 'evolucao',     label: '📈 Evolução Mensal',       snapshot: rdSnapshotEvolucao },
+  { widgetId: 'rd-pipeline',   indexKey: 'pipeline',     label: '◎ Pipeline de Status',     snapshot: rdSnapshotPipeline },
+  { widgetId: 'rd-destinos',   indexKey: 'destinos',     label: '✈ Top 10 Destinos',        snapshot: rdSnapshotDestinos },
+  { widgetId: 'rd-clientes',   indexKey: 'clientes',     label: '👤 Perfil de Clientes',    snapshot: rdSnapshotClientes },
+  { widgetId: 'rd-economico',  indexKey: 'economico',    label: '💰 Perfil Econômico',      snapshot: rdSnapshotEconomico },
+  { widgetId: 'rd-formatos',   indexKey: 'formatos',     label: '📁 Formatos de Export',    snapshot: rdSnapshotFormatos },
+  { widgetId: 'rd-consultor',  indexKey: 'consultor',    label: '🤝 Por Consultor',         snapshot: rdSnapshotConsultor },
+  { widgetId: 'rd-moedas',     indexKey: 'moedas',       label: '💱 Moedas',                snapshot: rdSnapshotMoedas },
+  { widgetId: 'rd-gen-table',  indexKey: 'generations',  label: '📋 Últimas Gerações',      snapshot: rdSnapshotGenerationsTable },
+];
+
+async function setupRdInsights() {
+  if (rdInsightsMounted) return;
+  rdInsightsMounted = true;
+  try {
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const period = computeRdPeriod();
+    await setupDashboardInsights({
+      dashboard: 'roteiro',
+      widgets: RD_WIDGETS,
+      metrics: null,
+      periodFrom: period.start, periodTo: period.end,
+      periodLabel: period.label,
+      filters: { period: currentPeriod, periodLabel: period.label },
+      generalPanelContainerId: 'rd-insights-section',
+      buildGeneralSnapshot: rdSnapshotGeneral,
+      enableAi: true,
+    });
+  } catch (e) { console.warn('[rd] insights setup:', e); }
+}
+
 /* ─── Cleanup ────────────────────────────────────────────── */
 export function destroyRoteiroDashboard() {
   destroyCharts();
+  rdInsightsMounted = false;
 }
