@@ -9,6 +9,7 @@ const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiro, saveRoteiro } from '../services/roteiros.js';
 import { generateRoteiroForExport } from '../services/roteiroGenerator.js';
 import { fetchDestinations, fetchAreas } from '../services/portal.js';
+import { detectBankClient, showBankGuardModal } from '../services/bankClientGuard.js';
 
 /* ─── State ───────────────────────────────────────────────── */
 let currentRoteiro = null;
@@ -1326,9 +1327,35 @@ function handleEditorClick(e) {
       showToast('Exporta\u00e7\u00e3o PPTX dispon\u00edvel em breve.', 'info');
       break;
 
-    case 'gen-link':
+    case 'gen-link': {
+      // Coleta nome do cliente do form atual
+      const formData = collectFormData();
+      if (formData) currentRoteiro = formData;
+      const clientName = currentRoteiro?.client?.name || '';
+
+      // Bank guard \u2014 se cliente \u00e9 de banco parceiro, mostrar alerta antes
+      const bank = detectBankClient(clientName);
+      if (bank) {
+        showBankGuardModal({
+          bankName:     bank.name,
+          clientName,
+          module:       'Roteiros de Viagem',
+          contractNote: bank.contractNote,
+          onChoosePdf:  async () => {
+            // Aciona o botão Exportar PDF (fluxo já existente)
+            const pdfBtn = document.querySelector('[data-action="export-pdf"]');
+            if (pdfBtn) pdfBtn.click();
+            else showToast('Botão "Exportar PDF" não encontrado. Tente manualmente.', 'warning');
+          },
+          onForceLink:  () => {
+            showToast('Gera\u00e7\u00e3o de link web dispon\u00edvel em breve. (Por ora, use Exportar PDF.)', 'info');
+          },
+        });
+        break;
+      }
       showToast('Gera\u00e7\u00e3o de link web dispon\u00edvel em breve.', 'info');
       break;
+    }
   }
 }
 

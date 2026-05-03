@@ -13,6 +13,7 @@ import {
   SEGMENTS, GENERATION_FORMATS,
 } from '../services/portal.js';
 import { generateTip } from '../services/portalGenerator.js';
+import { detectBankClient, showBankGuardModal, listBankClients } from '../services/bankClientGuard.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -810,9 +811,17 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
               Nome do cliente <span style="font-weight:400;">(opcional — usado na URL amigável)</span>
             </label>
             <input type="text" id="gen-client-name" placeholder="ex.: João e Maria"
+              list="gen-bank-suggestions"
               style="width:100%;padding:8px 10px;font-size:0.8125rem;
               background:var(--bg-base);border:1px solid var(--border-subtle);
               border-radius:var(--radius-sm);">
+            <datalist id="gen-bank-suggestions">
+              ${listBankClients().map(b => `<option value="${esc(b)}">`).join('')}
+            </datalist>
+            <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+              ⚠ Para clientes de bancos parceiros (PTS / BTG Partners / BTG UltraBlue / Centurion),
+              o sistema recomendará PDF por questões contratuais.
+            </div>
           </div>
         ` : ''}
         <div style="display:flex;gap:10px;">
@@ -1001,14 +1010,36 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
   document.getElementById('gen-confirm')?.addEventListener('click', async () => {
     const btn = document.getElementById('gen-confirm');
     if (!btn || btn.disabled) return;
+
+    const clientName = document.getElementById('gen-client-name')?.value?.trim() || '';
+
+    // ═══ BANK CLIENT GUARD ═══
+    // Cliente de banco parceiro + formato web → alerta contratual
+    const bank = detectBankClient(clientName);
+    if (bank && format === 'web') {
+      showBankGuardModal({
+        bankName:     bank.name,
+        clientName,
+        module:       'Portal de Dicas',
+        contractNote: bank.contractNote,
+        onChoosePdf:  () => doGenerate('pdf', clientName),
+        onForceLink:  () => doGenerate('web', clientName),
+      });
+      return;
+    }
+    await doGenerate(format, clientName);
+  });
+
+  async function doGenerate(actualFormat, clientName) {
+    const btn = document.getElementById('gen-confirm');
     btn.disabled = true;
     btn.textContent = '⏳ Gerando…';
     try {
-      const clientName = document.getElementById('gen-client-name')?.value?.trim() || '';
       const result = await generateTip({
         tip:            workingTips[0].tip,
         dest:           workingTips[0].dest,
-        area, segments, format,
+        area, segments,
+        format:         actualFormat,    // pode ter sido alterado pelo bank guard
         extraTips:      workingTips.slice(1),
         imagesOverride:    selectedImages,
         heroImageOverride: selectedHeroImages,
@@ -1017,7 +1048,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
       await recordGeneration({
         areaId:         area?.id  || null,
         tipId:          tip?.id   || null,
-        format, segments,
+        format: actualFormat, segments,
         destinationIds: allTips.map(({ dest: d }) => d?.id).filter(Boolean),
         status:         'done',
         ...(result.url   ? { webUrl: result.url }     : {}),
@@ -1025,7 +1056,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
       });
       await registerDownload();
       modal.remove();
-      if (format === 'web' && result.url) showWebLinkResult(result.url);
+      if (actualFormat === 'web' && result.url) showWebLinkResult(result.url);
       else toast.success('Material gerado e download iniciado!');
     } catch(e) {
       console.error('[PRIMETOUR] Erro ao gerar material:', e);
@@ -1033,7 +1064,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
       btn.disabled   = false;
       btn.textContent = `✈ Gerar ${fmtLabel}`;
     }
-  });
+  }
 
   // Initial render
   refreshSegList();
