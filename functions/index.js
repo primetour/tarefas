@@ -336,6 +336,21 @@ export const getR2UploadUrl = onCall({
   const auth = requireAuth(request);
   const { path } = request.data || {};
   if (!path || typeof path !== 'string') throw new HttpsError('invalid-argument', 'path obrigatório');
+
+  // SECURITY FIX (pentest 2026-05-03): rejeita path traversal.
+  // Antes: 'logos/../../../secret.txt' passava no startsWith('logos/').
+  if (path.includes('..') || path.includes('//') || path.includes('\\') || path.startsWith('/')) {
+    throw new HttpsError('permission-denied', 'Path invalido (traversal/absoluto bloqueado).');
+  }
+  // Caracteres permitidos: letras, números, _, -, ., /, ()
+  if (!/^[a-zA-Z0-9_./()-]+$/.test(path)) {
+    throw new HttpsError('invalid-argument', 'Path com caracteres invalidos.');
+  }
+  // Tamanho razoavel
+  if (path.length > 200) {
+    throw new HttpsError('invalid-argument', 'Path muito longo.');
+  }
+
   // Validação: path precisa começar com pasta whitelisted
   const ALLOWED_PREFIXES = ['agents/', 'logos/', 'portal/', 'tasks/'];
   if (!ALLOWED_PREFIXES.some(p => path.startsWith(p))) {

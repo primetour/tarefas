@@ -581,9 +581,22 @@ service cloud.firestore {
     }
 
     // ── Notificações ─────────────────────────────────────────
+    // SECURITY FIX (pentest 2026-05-03): notif spam — qualquer auth user
+    // criava notifs pra qualquer recipientId. Atacante podia floodar inbox.
+    //
+    // Agora: client só cria notifs onde:
+    //   1. actorId == request.auth.uid (impede impersonation)
+    //   2. type whitelist: prefixos client.*, mention.* permitidos
+    //   3. Notifs sistemicas (security.*, lgpd.*, system.*, secrets.*)
+    //      apenas via Cloud Functions (Admin SDK bypassa rules)
+    //
+    // Self-notification permitida (recipientId == uid) pra UX local.
     match /notifications/{notifId} {
-      // Qualquer autenticado pode criar (notify() roda no contexto do actor)
-      allow create: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.type is string
+        && request.resource.data.type.matches('^(client|mention|task|project|squad|csat|request|goal|portal|feedback|subtask)[.][a-z_]+$')
+        && !request.resource.data.type.matches('^(security|lgpd|system|auth|secrets)[.].*$');
       // Ler, atualizar e deletar apenas as próprias notificações
       allow read, update, delete: if isAuth()
         && resource.data.recipientId == request.auth.uid;
