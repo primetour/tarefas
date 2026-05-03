@@ -20,7 +20,7 @@
 import {
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
   formatInsightPeriod, formatDataSnapshot,
-} from './insights.js?v=20260503ss2';
+} from './insights.js?v=20260503tt1';
 
 const fmtDate = ts => {
   if (!ts) return '—';
@@ -278,28 +278,29 @@ export async function exportInsightToPdf(insight, opts = {}) {
       doc.setTextColor(...BRAND); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
       doc.text('GRAFICO  (foto do widget no momento da analise)', M, y);
       y += 3;
-      // Calcula tamanho proporcional pra caber em ~80mm de altura, full width
+      // Detecta formato real (JPEG ou PNG) pra passar a addImage
+      const fmt = insight.chartImage.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
+      // Calcula dimensões via Image (await pra ter w/h reais)
+      const img = await new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = rej;
+        i.src = insight.chartImage;
+      });
       const imgMaxW = W - M * 2;
-      const imgMaxH = 75;
-      // Pega dimensões reais via Image temporária (síncrono via base64)
-      const img = new Image();
-      img.src = insight.chartImage;
-      // Como base64, propriedades width/height ficam disponíveis sincronamente
-      // após setar src? Não — precisa await onload. Vamos usar ratio fixo 16:9
-      // se não conseguir.
-      let imgW = imgMaxW;
-      let imgH = imgMaxH;
-      if (img.width > 0 && img.height > 0) {
-        const ratio = img.width / img.height;
-        if (ratio > imgMaxW / imgMaxH) {
-          imgW = imgMaxW;
-          imgH = imgMaxW / ratio;
-        } else {
-          imgH = imgMaxH;
-          imgW = imgMaxH * ratio;
-        }
+      const imgMaxH = 80;
+      const ratio = img.width / img.height;
+      let imgW, imgH;
+      if (ratio > imgMaxW / imgMaxH) {
+        imgW = imgMaxW;
+        imgH = imgMaxW / ratio;
+      } else {
+        imgH = imgMaxH;
+        imgW = imgMaxH * ratio;
       }
-      doc.addImage(insight.chartImage, 'PNG', M, y, imgW, imgH);
+      // Compressão FAST: usa zlib comprimido (vs raw uncompressed default).
+      // Pra JPEG é ignorado (já vem comprimido); pra PNG reduz drasticamente.
+      doc.addImage(insight.chartImage, fmt, M, y, imgW, imgH, undefined, 'FAST');
       y += imgH + 5;
     } catch (e) {
       console.warn('[exportInsightToPdf] addImage falhou:', e.message);

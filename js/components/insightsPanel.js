@@ -45,8 +45,8 @@ import {
   suggestInsightsViaAi,
   insightCoversPeriod, formatInsightPeriod, formatDataSnapshot,
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
-} from '../services/insights.js?v=20260503ss2';
-import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260503ss2';
+} from '../services/insights.js?v=20260503tt1';
+import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260503tt1';
 
 /** Mapa global de widgetLabels passado pelo dashboards.js — usado no export PDF/XLSX
  * pra mostrar nome legível do widget. Set/get via janela compartilhada. */
@@ -130,6 +130,30 @@ function openExportMenu(anchorBtn, insight, dashboard) {
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/** Redimensiona canvas pra largura máxima e devolve dataURL JPEG (mais compacto que PNG).
+ * JPEG quality 0.85 + max 800px → ~50-150KB.
+ * jsPDF embed JPEG mantém compressão original (não vira raw RGB como PNG).
+ */
+function downsizeCanvas(srcCanvas, maxWidth = 800) {
+  const ratio = srcCanvas.width / srcCanvas.height;
+  const w = Math.min(srcCanvas.width, maxWidth);
+  const h = Math.round(w / ratio);
+  if (w === srcCanvas.width && h === srcCanvas.height) {
+    // Mesmo tamanho — tenta toDataURL JPEG direto
+    try { return srcCanvas.toDataURL('image/jpeg', 0.85); }
+    catch { return srcCanvas.toDataURL('image/png'); }
+  }
+  // Fundo branco (Chart.js usa transparência, JPEG não suporta)
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(srcCanvas, 0, 0, w, h);
+  try { return c.toDataURL('image/jpeg', 0.85); }
+  catch { return c.toDataURL('image/png'); }
+}
 
 const fmtDate = ts => {
   if (!ts) return '—';
@@ -835,7 +859,11 @@ export async function mountInsightsPanel(opts) {
     const snapshotPreview = initialSnapshot ? formatDataSnapshot(initialSnapshot) : null;
 
     // Captura imagem do canvas do widget (se houver) pra embed no PDF.
-    // Procura o widget pelo data-widget-id do slot (renderWidget mode).
+    // IMPORTANTE: redimensiona pra max 800px de largura. PNG nao comprimido
+    // em PDF expande pra raw RGB (W×H×4 bytes). Canvas Chart.js retina é
+    // ~1400x1460 → 8MB de RGB. Redimensionado a 800x~830 → ~2.6MB raw,
+    // ainda mais que ideal mas funcional. Compression FAST no addImage
+    // ajuda no PDF final.
     let initialChartImage = existing?.chartImage || null;
     if (!initialChartImage && !isEdit && targetIndexKey) {
       try {
@@ -844,11 +872,9 @@ export async function mountInsightsPanel(opts) {
         const widgetEl = widgetId ? document.getElementById(widgetId) : container.closest('.dash-widget');
         const canvas = widgetEl?.querySelector('canvas');
         if (canvas && canvas.width > 0 && canvas.height > 0) {
-          // Limita tamanho máximo (~250KB base64). Canvas 600x400 PNG ~80KB.
-          initialChartImage = canvas.toDataURL('image/png');
-          if (initialChartImage.length > 350_000) {
-            console.warn('[insightsPanel] canvas image >350KB, omitindo');
-            initialChartImage = null;
+          initialChartImage = downsizeCanvas(canvas, 800);
+          if (initialChartImage && initialChartImage.length > 350_000) {
+            console.warn('[insightsPanel] canvas resized image >350KB:', initialChartImage.length);
           }
         }
       } catch (e) {
