@@ -78,12 +78,14 @@ export async function fetchInsights({ dashboard, periodFrom, periodTo, max = 50 
   const snap = await getDocs(q);
   let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   // Filtro client-side por período (Firestore composite index seria overkill)
+  // BUG FIX: docs recém-criados podem ter createdAt=null (serverTimestamp pending).
+  // Tratar null como "agora" pra incluir, em vez de excluir (Date(0) = 1970).
   if (periodFrom) items = items.filter(i => {
-    const t = i.createdAt?.toDate?.() || new Date(0);
+    const t = i.createdAt?.toDate?.() || new Date();
     return t >= periodFrom;
   });
   if (periodTo) items = items.filter(i => {
-    const t = i.createdAt?.toDate?.() || new Date(0);
+    const t = i.createdAt?.toDate?.() || new Date();
     return t <= periodTo;
   });
   return items;
