@@ -831,13 +831,16 @@ export const fetchDestinationPhoto = onCall({
   timeoutSeconds: 30,
 }, async (request) => {
   const auth = requireAuth(request);
-  const { destinationId, query, force } = request.data || {};
+  const { destinationId, query, force, count = 1 } = request.data || {};
   if (!query || typeof query !== 'string') {
     throw new HttpsError('invalid-argument', 'query (nome do destino) obrigatorio.');
   }
+  // Limit count: 1-10 (Unsplash retorna ate 30/page mas 5-10 cobre o uso real)
+  const wantCount = Math.min(Math.max(parseInt(count) || 1, 1), 10);
 
   // ─── Cache 1: por destinationId (cache "rico" do destino) ───
-  if (destinationId && !force) {
+  // So usado quando count=1 (cache do destino retorna foto unica)
+  if (wantCount === 1 && destinationId && !force) {
     const ref = db.doc(`destinations/${destinationId}`);
     const snap = await ref.get();
     if (snap.exists) {
@@ -854,8 +857,6 @@ export const fetchDestinationPhoto = onCall({
   }
 
   // ─── Cache 2: por hash da query (compartilhado entre todas geracoes) ───
-  // TTL 90 dias. Reduz drasticamente chamadas pra Unsplash.
-  // Ex: "Torre Eiffel Paris" buscada 1x, todos os links subsequentes usam cache.
   const queryKey = normalizeQuery(query);
   if (!force) {
     const cacheRef = db.doc(`photo_cache/${queryKey}`);
@@ -863,14 +864,26 @@ export const fetchDestinationPhoto = onCall({
     if (cacheSnap.exists) {
       const c = cacheSnap.data();
       const ageMs = Date.now() - (c.fetchedAt?.toMillis?.() || 0);
-      const TTL_MS = 90 * 24 * 60 * 60 * 1000;  // 90 dias
-      if (ageMs < TTL_MS && c.url) {
-        const result = {
-          url: c.url, source: c.source, attribution: c.attribution || '',
-          attributionUrl: c.attributionUrl || '', cached: true,
-        };
-        if (destinationId) await saveDestinationPhoto(destinationId, result);
-        return result;
+      const TTL_MS = 90 * 24 * 60 * 60 * 1000;
+      if (ageMs < TTL_MS) {
+        // Backward compat: cache antigo so tem .url; novo tem .urls[]
+        const cachedUrls = Array.isArray(c.urls) ? c.urls : (c.url ? [c.url] : []);
+        if (cachedUrls.length > 0 && (wantCount === 1 || cachedUrls.length >= wantCount)) {
+          if (wantCount > 1) {
+            return {
+              urls: cachedUrls.slice(0, wantCount),
+              sources: c.sources || cachedUrls.map(() => c.source),
+              attributions: c.attributions || cachedUrls.map(() => c.attribution || ''),
+              cached: true,
+            };
+          }
+          const result = {
+            url: cachedUrls[0], source: c.source, attribution: c.attribution || '',
+            attributionUrl: c.attributionUrl || '', cached: true,
+          };
+          if (destinationId) await saveDestinationPhoto(destinationId, result);
+          return result;
+        }
       }
     }
   }
@@ -893,13 +906,15 @@ export const fetchDestinationPhoto = onCall({
   const unsplashKey = UNSPLASH_ACCESS_KEY.value();
   if (!skipUnsplash && unsplashKey && unsplashKey.length > 10 && !unsplashKey.includes('not-configured')) {
     try {
-      const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=1&orientation=landscape&content_filter=high`;
+      // per_page sempre busca 5 (cobre cycling) mesmo se o cliente pediu 1.
+      // Custa o mesmo de 1 e enche o cache pra reuso futuro.
+      const perPage = Math.max(wantCount, 5);
+      const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=${perPage}&orientation=landscape&content_filter=high`;
       const res = await fetch(url, {
         headers: { 'Authorization': `Client-ID ${unsplashKey}`, 'Accept-Version': 'v1' },
       });
       const remaining = parseInt(res.headers.get('X-Ratelimit-Remaining') || '999', 10);
       if (res.status === 403 || remaining <= 5) {
-        // Rate limit hit (ou prestes a hit) - acionar cooldown global 60min
         await db.doc('system_state/unsplash_cooldown').set({
           hitAt: FieldValue.serverTimestamp(),
           lastQuery: query.slice(0, 80),
@@ -915,15 +930,25 @@ export const fetchDestinationPhoto = onCall({
         });
       } else if (res.ok) {
         const data = await res.json();
-        const photo = data.results?.[0];
-        if (photo) {
+        const photos = data.results || [];
+        if (photos.length > 0) {
+          const urls = photos.map(p => p.urls.regular);
+          const sources = photos.map(() => 'unsplash');
+          const attributions = photos.map(p => `Foto por ${p.user.name} (Unsplash)`);
+          const attributionUrls = photos.map(p => p.user.links.html + '?utm_source=primetour&utm_medium=referral');
+
+          // Cache global multi-foto
+          await saveCacheMulti(queryKey, urls, sources, attributions, attributionUrls);
+
+          if (wantCount > 1) {
+            return { urls: urls.slice(0, wantCount), sources, attributions, cached: false };
+          }
+          // Single result (compat)
           const result = {
-            url: photo.urls.regular,
-            source: 'unsplash',
-            attribution: `Foto por ${photo.user.name} (Unsplash)`,
-            attributionUrl: photo.user.links.html + '?utm_source=primetour&utm_medium=referral',
+            url: urls[0], source: 'unsplash',
+            attribution: attributions[0], attributionUrl: attributionUrls[0],
           };
-          await saveCacheAndDestination(queryKey, destinationId, result);
+          if (destinationId) await saveDestinationPhoto(destinationId, result);
           return result;
         }
       }
@@ -932,7 +957,7 @@ export const fetchDestinationPhoto = onCall({
     }
   }
 
-  // 2. Fallback: Wikipedia REST API
+  // 2. Fallback: Wikipedia REST API (single foto disponivel)
   try {
     for (const lang of ['pt', 'en']) {
       const wikiUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
@@ -949,6 +974,15 @@ export const fetchDestinationPhoto = onCall({
           attributionUrl: data.content_urls?.desktop?.page || '',
         };
         await saveCacheAndDestination(queryKey, destinationId, result);
+        // Se cliente pediu count>1, retorna array (so 1 foto Wikipedia disponivel)
+        if (wantCount > 1) {
+          return {
+            urls:         [result.url],
+            sources:      ['wikipedia'],
+            attributions: [result.attribution],
+            cached:       false,
+          };
+        }
         return result;
       }
     }
@@ -969,22 +1003,31 @@ function normalizeQuery(q) {
   return norm || 'empty';
 }
 
-/** Salva no cache global + opcionalmente no destination */
+/** Salva no cache global + opcionalmente no destination (compat 1 foto) */
 async function saveCacheAndDestination(queryKey, destinationId, result) {
-  // Cache global (todas geracoes se beneficiam)
+  await saveCacheMulti(queryKey, [result.url], [result.source], [result.attribution || ''], [result.attributionUrl || '']);
+  if (destinationId) await saveDestinationPhoto(destinationId, result);
+}
+
+/** Salva múltiplas fotos no cache global (top N do Unsplash) */
+async function saveCacheMulti(queryKey, urls, sources, attributions, attributionUrls) {
+  if (!urls?.length) return;
   try {
     await db.doc(`photo_cache/${queryKey}`).set({
-      url:             result.url,
-      source:          result.source,
-      attribution:     result.attribution || '',
-      attributionUrl:  result.attributionUrl || '',
-      fetchedAt:       FieldValue.serverTimestamp(),
+      url:              urls[0],                       // backward compat (campo legacy)
+      source:           sources[0],                    // idem
+      attribution:      attributions[0] || '',         // idem
+      attributionUrl:   attributionUrls[0] || '',      // idem
+      urls,                                            // novo: array completo
+      sources,
+      attributions,
+      attributionUrls,
+      count:            urls.length,
+      fetchedAt:        FieldValue.serverTimestamp(),
     });
   } catch (e) {
-    console.warn('[fetchPhoto] cache global save failed:', e?.message);
+    console.warn('[fetchPhoto] cache multi save failed:', e?.message);
   }
-  // Cache no destino (mais rico, com mais campos)
-  if (destinationId) await saveDestinationPhoto(destinationId, result);
 }
 
 async function saveDestinationPhoto(destinationId, result) {

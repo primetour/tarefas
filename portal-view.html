@@ -752,31 +752,26 @@ function renderPlaces(sd,data,imgs,isAgenda){
   // Track which gallery images have been used so we don't repeat
   const usedImgUrls = new Set();
 
-  const getImg=(item,idx,segDef=null)=>{
+  // Retorna { url, isFallback } pra que o card saiba mostrar badge "Foto ilustrativa"
+  // quando a foto não é do lugar específico (foi fallback genérico do segmento).
+  const getImgInfo=(item,idx,segDef=null)=>{
     const title = (item.titulo||'').toLowerCase().trim();
-    const cat   = (item.categoria||'').toLowerCase();
-
-    // Priority 0: manual override from generation editor
-    // Firestore stores numeric keys as strings, so check both
     const ovKey = segDef?.key;
     if (ovKey && overrides[ovKey]) {
       const ov = overrides[ovKey][idx] || overrides[ovKey][String(idx)];
-      if (ov?.url) return ov.url;
+      if (ov?.url) return { url: ov.url, isFallback: false };
     }
-
-    // Único matching automático aceito: placeName EXATO (sem partial,
-    // sem keywords, sem tags). Resto é SÓ via override explícito do
-    // editor de geração. Critério estrito porque o matching frouxo
-    // estava replicando fotos em items que o user não pediu.
     const m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
     if (m?.url) usedImgUrls.add(m.url);
-    return m?.url || null;
+    return { url: m?.url || null, isFallback: !!m?._photoFallback };
   };
+  const getImg=(item,idx,segDef=null)=>getImgInfo(item,idx,segDef).url;
 
   const ph=(lbl)=>`<div class="place-card-placeholder" style="background:linear-gradient(135deg,${navy}18 0%,${gold}22 100%);"><span style="font-size:.5rem;letter-spacing:.3em;font-weight:600;text-transform:uppercase;color:${navy};opacity:.4;">${esc(lbl||'')}</span></div>`;
 
   const card=(item,idx,segDef=null)=>{
-    const img=getImg(item,idx,segDef);
+    const imgInfo=getImgInfo(item,idx,segDef);
+    const img=imgInfo.url;
     const detailsParts = [];
     if (item.endereco) {
       // Se item tem _geo, adiciona botão "Ver no mapa" inline com o endereço
@@ -797,8 +792,15 @@ function renderPlaces(sd,data,imgs,isAgenda){
     const hasExtra   = isDescLong || item.observacoes;
     return `<div class="place-card">
       ${favBtnHtml(item)}
-      <div class="place-card-img">${img
-        ? `<img src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`
+      <div class="place-card-img" style="position:relative;">${img
+        ? `<img src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">${imgInfo.isFallback ? `
+          <span class="card-illustrative-badge" title="Imagem ilustrativa — não é foto específica do local"
+            style="position:absolute;top:8px;right:8px;font-size:0.5625rem;font-weight:600;
+            text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;
+            background:rgba(0,0,0,0.55);color:#fff;border-radius:99px;
+            backdrop-filter:blur(4px);pointer-events:none;">
+            ⓘ ilustrativa
+          </span>` : ''}`
         : ph(item.titulo)}</div>
       <div class="place-card-body">
         ${item.categoria?`<div class="place-cat-label">${esc(item.categoria)}</div>`:''}
