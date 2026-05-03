@@ -2,7 +2,7 @@
  * Bank Client Guard
  *
  * Detecta se o nome do cliente refere-se a um banco parceiro
- * (PTS, BTG Partners, BTG UltraBlue, Centurion) e exibe modal
+ * (PTS, BTG Partners, BTG Ultrablue, Centurion) e exibe modal
  * de confirmação antes de gerar link público — recomenda PDF
  * por questões contratuais.
  *
@@ -29,10 +29,10 @@
  * Patterns são case-insensitive e detectam variações comuns.
  */
 const BANK_PATTERNS = [
-  { name: 'PTS',           regex: /\bpts\b/i,                                          contractNote: 'Programa Pravaler/PTS exige material em formato fechado (PDF).' },
-  { name: 'BTG Partners',  regex: /\bbtg\s*partners?\b/i,                              contractNote: 'BTG Partners exige material em PDF para controle de distribuição.' },
-  { name: 'BTG UltraBlue', regex: /\bbtg\s*ultra\s*blue\b|\bultrablue\b|\bultra\s*blue\b/i, contractNote: 'BTG UltraBlue exige PDF para tracking exclusivo do programa.' },
-  { name: 'Centurion',     regex: /\bcenturion\b/i,                                    contractNote: 'American Express Centurion exige PDF assinado para clientes Black Card.' },
+  { name: 'PTS (Bradesco)', regex: /\bpts\b/i,                                              contractNote: 'Material para clientes PTS (Bradesco) deve ser entregue em PDF por questões contratuais.' },
+  { name: 'BTG Partners',   regex: /\bbtg\s*partners?\b/i,                                  contractNote: 'Material para clientes BTG Partners deve ser entregue em PDF por questões contratuais.' },
+  { name: 'BTG Ultrablue',  regex: /\bbtg\s*ultra\s*blue\b|\bultrablue\b|\bultra\s*blue\b/i, contractNote: 'Material para clientes BTG Ultrablue deve ser entregue em PDF por questões contratuais.' },
+  { name: 'Centurion',      regex: /\bcenturion\b/i,                                        contractNote: 'Material para clientes Centurion deve ser entregue em PDF por questões contratuais.' },
 ];
 
 /**
@@ -72,7 +72,7 @@ export function detectBankArea(area) {
   const name = typeof area === 'string' ? area : (area.name || area.label || area.id || '');
   if (!name) return null;
   // Reusa os mesmos patterns — funciona pra "PTS Bradesco", "BTG Partners",
-  // "BTG UltraBlue", "Centurion Black" etc.
+  // "BTG Ultrablue", "Centurion Black" etc.
   return detectBankClient(name);
 }
 

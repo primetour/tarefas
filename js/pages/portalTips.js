@@ -819,7 +819,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
               ${listBankClients().map(b => `<option value="${esc(b)}">`).join('')}
             </datalist>
             <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
-              ⚠ Para áreas/clientes de bancos parceiros (PTS / BTG Partners / BTG UltraBlue / Centurion),
+              ⚠ Para áreas/clientes de bancos parceiros (PTS / BTG Partners / BTG Ultrablue / Centurion),
               o sistema recomendará PDF por questões contratuais.
             </div>
           </div>
