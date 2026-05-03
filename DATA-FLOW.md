@@ -1,4 +1,4 @@
-# PRIMETOUR — Data Flow & PII Inventory
+# Gestor PRIMETOUR — Data Flow & PII Inventory
 
 > Atualizado: 2026-05-02
 > Compliance: LGPD Art. 37 (registro de operações), SOC 2 CC6.1, ISO 27001 A.5.34

@@ -1,4 +1,4 @@
-# PRIMETOUR — Infraestrutura
+# Gestor PRIMETOUR — Infraestrutura
 
 Mapa completo de todas as peças que compõem o sistema em produção. Use este
 documento para: onboarding, auditoria de custos, planejamento de migração,

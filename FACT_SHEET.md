@@ -1,4 +1,4 @@
-# PRIMETOUR — Fact Sheet Comercial
+# Gestor PRIMETOUR — Fact Sheet Comercial
 
 **Plataforma de Gestao Operacional e Inteligencia de Negocios para Turismo**
 

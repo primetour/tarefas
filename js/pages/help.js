@@ -9,7 +9,7 @@
  *   5. Links úteis
  */
 import { store } from '../store.js';
-import { TOURS, hasDoneTour, runTour, resetTour, resetAllTours } from '../services/tours.js?v=20260501xx';
+import { TOURS, hasDoneTour, runTour, resetTour, resetAllTours } from '../services/tours.js?v=20260501yy';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -41,7 +41,7 @@ const FAQS = [
   },
   {
     q: 'O que é o "App Check" que aparece no console do navegador?',
-    a: 'Validação automática que confirma que sua sessão veio do app oficial PRIMETOUR (não de scripts/Postman/curl). Usa reCAPTCHA Enterprise invisível. Token JWT renovado automaticamente. <strong>Sem ação sua</strong>.',
+    a: 'Validação automática que confirma que sua sessão veio do app oficial Gestor PRIMETOUR (não de scripts/Postman/curl). Usa reCAPTCHA Enterprise invisível. Token JWT renovado automaticamente. <strong>Sem ação sua</strong>.',
     tags: 'appcheck recaptcha bot validacao',
     category: 'segurança',
   },

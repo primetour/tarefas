@@ -1,4 +1,4 @@
-# PRIMETOUR — Modelo de Dados (Firestore)
+# Gestor PRIMETOUR — Modelo de Dados (Firestore)
 
 > Atualizado: 2026-05-03
 > Compliance: SOC 2 CC8.1 (Change Management), ISO 27001 A.5.34

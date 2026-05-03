@@ -1,4 +1,4 @@
-# PRIMETOUR — Segurança & Compliance
+# Gestor PRIMETOUR — Segurança & Compliance
 
 > Política de segurança, runbook e checklist de compliance.
 > Atualizado em: 2026-05-02 · Sprint 5 concluído.

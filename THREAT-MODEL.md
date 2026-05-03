@@ -1,4 +1,4 @@
-# PRIMETOUR — Threat Model (STRIDE)
+# Gestor PRIMETOUR — Threat Model (STRIDE)
 
 > Atualizado: 2026-05-02
 > Owner: Rene Castro (rene.castro@primetour.com.br)

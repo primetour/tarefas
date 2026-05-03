@@ -1,4 +1,4 @@
-# PRIMETOUR — Migração GitHub Pages → Cloudflare Pages
+# Gestor PRIMETOUR — Migração GitHub Pages → Cloudflare Pages
 
 > Status: pendente execução manual
 > Tempo estimado: 30 min admin + 10 min DNS propagation

@@ -61,7 +61,7 @@ const CONTENT = {
    * 🏛 ESTRUTURA — pilares + hierarquia + papéis
    * ═══════════════════════════════════════════════════════ */
   estrutura: () => `
-    <h3 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 8px;">Os 6 pilares do PRIMETOUR</h3>
+    <h3 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 8px;">Os 6 pilares do Gestor PRIMETOUR</h3>
     <p style="font-size:0.8125rem;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">
       Cada pilar cobre uma dimensão crítica da operação corporativa. Juntos formam o produto.
     </p>
@@ -405,7 +405,7 @@ const CONTENT = {
         ['🤖','IA com PII anonimizado','Emails/CPF/CNPJ trocados por placeholders'],
         ['💾','Backup + PITR','03h BRT GCS + recovery 7d granular'],
         ['📋','Audit logs imutáveis','IP+UA por 180d, append-only'],
-        ['✅','LGPD completo','Art. 18 todos: acesso, correção, eliminação'],
+        ['✅','LGPD escopo total','12 artigos atendidos (Art. 6, 7, 9, 18, 33, 37, 41, 46, 48, 50)'],
         ['👤','DPO designado','Rene Castro · 15 dias úteis SLA'],
       ].map(([icon,t,d]) => `
         <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
@@ -417,13 +417,60 @@ const CONTENT = {
       `).join('')}
     </div>
 
+    <!-- ═══ COMPLIANCE LGPD — escopo completo (mais que Art. 18) ═══ -->
+    <h3 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 6px;">
+      📜 Compliance LGPD — escopo completo
+    </h3>
+    <p style="font-size:0.8125rem;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">
+      A LGPD <strong>não se resume ao Art. 18</strong> (direitos do titular). Atendemos toda a cadeia de obrigações
+      legais — princípios, bases legais, segurança, governança, incidentes e transferência internacional.
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-bottom:24px;">
+      ${[
+        ['Art. 6',  '10 Princípios',         'Finalidade, adequação, necessidade, livre acesso, qualidade, transparência, segurança, prevenção, não-discriminação, responsabilização.'],
+        ['Art. 7',  '10 Bases legais',       'Consentimento, contrato, obrigação legal, política pública, estudos, exercício de direitos, proteção da vida, saúde, legítimo interesse, proteção ao crédito.'],
+        ['Art. 8',  'Consentimento',         'Forma específica + destacada. Versionado em users.privacy.consentVersion (atualmente v1.1).'],
+        ['Art. 9',  'Direito de informação', 'Política de privacidade clara + acessível em "Sobre o Sistema". Linguagem não-técnica, no idioma do titular.'],
+        ['Art. 18', '9 Direitos do titular', 'Confirmação, acesso, correção, anonimização, portabilidade, eliminação, info compartilhamento, revogação consent. SLA 15 dias úteis.'],
+        ['Art. 22', 'Operadores', 'Listamos todos operadores (Google, Microsoft, Anthropic, OpenAI, Cloudflare) com DPA assinado.'],
+        ['Art. 33', 'Transferência internacional', 'EUA + Multi via cláusulas-padrão dos provedores. Documentado em DATA-FLOW.md.'],
+        ['Art. 37', 'Registro de operações',  'Inventário PII por collection com finalidade, retenção e base legal — em DATA-FLOW.md.'],
+        ['Art. 41', 'DPO/Encarregado',        '<strong>Rene Castro</strong> · rene.castro@primetour.com.br · responde em até 15 dias úteis.'],
+        ['Art. 46', 'Medidas técnicas + administrativas', 'TLS 1.3, MFA, RBAC, Firestore Rules, criptografia em repouso (GCP), audit logs imutáveis, treinamento equipe, política interna.'],
+        ['Art. 48', 'Comunicação de incidente', 'Runbook com SLA <strong>72h pra ANPD</strong> + comunicação titulares. Detalhado em INCIDENT-RESPONSE.md.'],
+        ['Art. 50', 'Programa de governança',  'Políticas, treinamentos, revisão trimestral, pentest interno, monitoramento contínuo (SIEM).'],
+      ].map(([artigo, nome, desc]) => `
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+          border-radius:var(--radius-md);padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;gap:6px;">
+            <span style="font-size:0.6875rem;font-weight:700;color:var(--brand-gold);
+              padding:2px 7px;background:rgba(212,168,67,.12);border-radius:var(--radius-full);
+              white-space:nowrap;">${esc(artigo)}</span>
+            <span style="font-size:0.6875rem;color:#22C55E;font-weight:600;">✓</span>
+          </div>
+          <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin-bottom:4px;">${esc(nome)}</div>
+          <div style="font-size:0.7188rem;color:var(--text-muted);line-height:1.5;">${desc}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div style="background:rgba(34,197,94,.07);border-left:3px solid #22C55E;
+      border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;margin-bottom:24px;">
+      <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin:0;">
+        Detalhes completos de cada artigo, inventário PII e bases legais por collection em
+        <a href="docs.html?doc=data-flow" style="color:var(--brand-gold);">📚 Fluxo de Dados & PII</a>.
+        Runbook de resposta a incidentes (Art. 48) em
+        <a href="docs.html?doc=incident" style="color:var(--brand-gold);">📚 Resposta a Incidentes</a>.
+      </p>
+    </div>
+
     <!-- ═══ CONFIDENCIALIDADE NA IA HUB (diferencial corporativo) ═══ -->
     <h3 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 6px;">
       🤖 Confidencialidade na IA Hub
     </h3>
     <p style="font-size:0.8125rem;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">
       <strong>Pergunta corporativa frequente:</strong> "Os dados ficam no servidor de vocês ou vão pra OpenAI?"
-      Resposta: o modelo roda no servidor do provider, mas o dado sai do PRIMETOUR
+      Resposta: o modelo roda no servidor do provider, mas o dado sai do Gestor PRIMETOUR
       <strong>anonimizado</strong> e a inferência é <strong>contratualmente isolada</strong> (DPA + no-train).
     </p>
 
@@ -545,7 +592,7 @@ function buildDoc(wrap) {
   header.style.cssText = 'margin-bottom:1.5rem;';
   header.innerHTML = `
     <h2 style="font-size:1.125rem;font-weight:600;color:var(--text-primary);margin-bottom:4px;">
-      PRIMETOUR — Mapa de Arquitetura
+      Gestor PRIMETOUR — Mapa de Arquitetura
     </h2>
     <p style="font-size:0.8125rem;color:var(--text-muted);">
       Estrutura organizacional, módulos, stack técnico e segurança.

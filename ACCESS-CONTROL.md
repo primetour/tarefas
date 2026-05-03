@@ -1,4 +1,4 @@
-# PRIMETOUR — Access Control Matrix
+# Gestor PRIMETOUR — Access Control Matrix
 
 > Atualizado: 2026-05-02
 > Compliance: SOC 2 CC6.1/CC6.3, ISO 27001 A.8.2/A.8.3, LGPD Art. 6 (princípio da finalidade)

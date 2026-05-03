@@ -1,4 +1,4 @@
-# PRIMETOUR — Incident Response Runbook
+# Gestor PRIMETOUR — Incident Response Runbook
 
 > Atualizado: 2026-05-02
 > Compliance: LGPD Art. 48, SOC 2 CC7.4, ISO 27001 A.5.24/A.5.26
