@@ -76,16 +76,31 @@ export const IMPACT_LEVELS = [
    ════════════════════════════════════════════════════════════ */
 
 /** Lista insights com filtros opcionais.
+ *
+ * IMPORTANTE — conceito de histórico:
+ * Cada insight tem 2 datas distintas:
+ *   - createdAt: quando o insight foi ESCRITO (audit, imutável)
+ *   - periodFrom/periodTo: o PERÍODO DE DADOS que o insight analisou
+ *
+ * Por padrão, traz TODOS os insights do dashboard/widget (histórico completo),
+ * ordenados por createdAt desc (mais recente primeiro). Insights antigos sobre
+ * o mesmo widget continuam visíveis como contexto histórico.
+ *
+ * Pra filtrar só os que cobrem um período específico, passe periodOverlap=true
+ * junto com periodFrom/periodTo. Filtra por intersecção de períodos cobertos
+ * (não por createdAt) — semântica correta de "insights aplicáveis ao período".
+ *
  * @param {Object} opts
  * @param {string} opts.dashboard - chave do dashboard
- * @param {string|null} opts.indexKey - se passado, filtra apenas insights desse índice.
- *   Use 'general' (literal) pra pegar SÓ os gerais (indexKey null/vazio).
- *   Use undefined (não passar) pra pegar TODOS (gerais + por índice).
- * @param {Date} opts.periodFrom
- * @param {Date} opts.periodTo
+ * @param {string|null} opts.indexKey - 'general' = só gerais; string = só desse índice;
+ *   undefined = todos (gerais + por índice)
+ * @param {Date} [opts.periodFrom] - usado com periodOverlap=true
+ * @param {Date} [opts.periodTo]   - usado com periodOverlap=true
+ * @param {boolean} [opts.periodOverlap=false] - quando true, filtra por intersecção
+ *   de períodos cobertos (insight.periodFrom..periodTo intersecta com filtro)
  * @param {number} opts.max
  */
-export async function fetchInsights({ dashboard, indexKey, periodFrom, periodTo, max = 50 } = {}) {
+export async function fetchInsights({ dashboard, indexKey, periodFrom, periodTo, periodOverlap = false, max = 50 } = {}) {
   let q = query(collection(db, 'dashboard_insights'), orderBy('createdAt', 'desc'), limit(max));
   if (dashboard) q = query(q, where('dashboard', '==', dashboard));
   const snap = await getDocs(q);
@@ -98,18 +113,45 @@ export async function fetchInsights({ dashboard, indexKey, periodFrom, periodTo,
     items = items.filter(i => i.indexKey === indexKey);
   }
 
-  // Filtro client-side por período (Firestore composite index seria overkill)
-  // BUG FIX: docs recém-criados podem ter createdAt=null (serverTimestamp pending).
-  // Tratar null como "agora" pra incluir, em vez de excluir (Date(0) = 1970).
-  if (periodFrom) items = items.filter(i => {
-    const t = i.createdAt?.toDate?.() || new Date();
-    return t >= periodFrom;
-  });
-  if (periodTo) items = items.filter(i => {
-    const t = i.createdAt?.toDate?.() || new Date();
-    return t <= periodTo;
-  });
+  // Filtro opcional por intersecção de período coberto (semantica correta).
+  // Insight cobre [iFrom..iTo]. Filtro pede [periodFrom..periodTo].
+  // Intersecta se: iTo >= periodFrom E iFrom <= periodTo.
+  // Insights sem período definido (legacy/manual sem datas) sempre passam.
+  if (periodOverlap && (periodFrom || periodTo)) {
+    items = items.filter(i => {
+      const iFrom = i.periodFrom?.toDate?.() || (i.periodFrom ? new Date(i.periodFrom) : null);
+      const iTo   = i.periodTo?.toDate?.()   || (i.periodTo   ? new Date(i.periodTo)   : null);
+      if (!iFrom && !iTo) return true; // sem período = sempre relevante
+      if (periodFrom && iTo   && iTo   < periodFrom) return false; // insight termina antes do filtro
+      if (periodTo   && iFrom && iFrom > periodTo)   return false; // insight começa depois do filtro
+      return true;
+    });
+  }
+
   return items;
+}
+
+/** Determina se um insight cobre o período atual visualizado.
+ * Usado pela UI pra marcar insights como "atuais" vs "históricos".
+ */
+export function insightCoversPeriod(insight, periodFrom, periodTo) {
+  const iFrom = insight.periodFrom?.toDate?.() || (insight.periodFrom ? new Date(insight.periodFrom) : null);
+  const iTo   = insight.periodTo?.toDate?.()   || (insight.periodTo   ? new Date(insight.periodTo)   : null);
+  if (!iFrom && !iTo) return false;
+  if (periodFrom && iTo   && iTo   < periodFrom) return false;
+  if (periodTo   && iFrom && iFrom > periodTo)   return false;
+  return true;
+}
+
+/** Formata período coberto pra string legível. */
+export function formatInsightPeriod(insight) {
+  const iFrom = insight.periodFrom?.toDate?.() || (insight.periodFrom ? new Date(insight.periodFrom) : null);
+  const iTo   = insight.periodTo?.toDate?.()   || (insight.periodTo   ? new Date(insight.periodTo)   : null);
+  if (!iFrom && !iTo) return null;
+  const fmt = d => d ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : '?';
+  if (iFrom && iTo) return `${fmt(iFrom)} → ${fmt(iTo)}`;
+  if (iFrom) return `desde ${fmt(iFrom)}`;
+  return `até ${fmt(iTo)}`;
 }
 
 /** Cria insight. Retorna id. */
@@ -276,38 +318,92 @@ export async function suggestInsightsViaAi(ctx) {
    Helpers de exportação (chamados pelos exportPDF/XLSX dos dashboards)
    ════════════════════════════════════════════════════════════ */
 
-/** Formata insights pra texto em PDF (linhas legíveis). */
-export function insightsToPdfRows(insights) {
-  if (!insights?.length) return [];
-  const rows = [];
-  insights.forEach((ins, i) => {
-    const type = INSIGHT_TYPES.find(t => t.key === ins.type) || INSIGHT_TYPES[4];
-    rows.push({
-      label: `${i + 1}. ${type.icon} ${ins.title}`,
-      value: '',
-      isHeader: true,
+/** Agrupa insights por indexKey (gerais primeiro, depois por widget).
+ * Retorna [{ groupKey, groupLabel, items }]
+ */
+export function groupInsightsByIndex(insights, widgetLabels = {}) {
+  const groups = new Map();
+  insights.forEach(ins => {
+    const key = ins.indexKey || '__general__';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(ins);
+  });
+  // Ordena: gerais primeiro, depois por label do widget alfabético
+  const ordered = [];
+  if (groups.has('__general__')) {
+    ordered.push({
+      groupKey: 'general',
+      groupLabel: 'Análise Geral do Dashboard',
+      items: groups.get('__general__'),
     });
-    if (ins.observation) rows.push({ label: '   Observação', value: ins.observation });
-    if (ins.recommendation) rows.push({ label: '   Recomendação', value: ins.recommendation });
-    rows.push({ label: '   Impacto', value: (IMPACT_LEVELS.find(x => x.key === ins.impact)?.label || '—') });
-    rows.push({ label: '   Por', value: `${ins.createdBy?.name || '—'} · ${formatDate(ins.createdAt)}` });
+    groups.delete('__general__');
+  }
+  const widgetGroups = Array.from(groups.entries()).map(([key, items]) => ({
+    groupKey: key,
+    groupLabel: widgetLabels[key] || `Widget: ${key}`,
+    items,
+  }));
+  widgetGroups.sort((a, b) => a.groupLabel.localeCompare(b.groupLabel));
+  return ordered.concat(widgetGroups);
+}
+
+/** Formata insights pra texto em PDF (linhas legíveis), agrupados por widget.
+ * @param {Array} insights
+ * @param {Object} widgetLabels - mapa indexKey -> label legível (ex: { sla90: 'SLA 90%' })
+ */
+export function insightsToPdfRows(insights, widgetLabels = {}) {
+  if (!insights?.length) return [];
+  const groups = groupInsightsByIndex(insights, widgetLabels);
+  const rows = [];
+  let n = 0;
+  groups.forEach((group, gi) => {
+    rows.push({
+      label: (gi > 0 ? '\n' : '') + `▸ ${group.groupLabel} (${group.items.length})`,
+      value: '',
+      isGroupHeader: true,
+    });
+    group.items.forEach(ins => {
+      n++;
+      const type = INSIGHT_TYPES.find(t => t.key === ins.type) || INSIGHT_TYPES[4];
+      const sourceLabel = ins.source === 'ai-generated' ? '🤖 IA'
+        : ins.source === 'ai-edited' ? '🤖✎ IA editada'
+        : '👤 Manual';
+      rows.push({
+        label: `${n}. ${type.icon} ${ins.title}`,
+        value: '',
+        isHeader: true,
+      });
+      if (ins.observation) rows.push({ label: '   Observação', value: ins.observation });
+      if (ins.recommendation) rows.push({ label: '   Recomendação', value: ins.recommendation });
+      rows.push({ label: '   Impacto', value: IMPACT_LEVELS.find(x => x.key === ins.impact)?.label || '—' });
+      const periodCovered = formatInsightPeriod(ins);
+      if (periodCovered) rows.push({ label: '   Período coberto', value: periodCovered });
+      rows.push({ label: '   Origem', value: sourceLabel });
+      rows.push({ label: '   Escrito por', value: `${ins.createdBy?.name || '—'} em ${formatDate(ins.createdAt)}` });
+    });
   });
   return rows;
 }
 
-/** Formata insights pra linhas de XLSX. */
-export function insightsToXlsxRows(insights) {
+/** Formata insights pra linhas de XLSX, com colunas Widget + Período Coberto + Source.
+ * @param {Array} insights
+ * @param {Object} widgetLabels - mapa indexKey -> label legível
+ */
+export function insightsToXlsxRows(insights, widgetLabels = {}) {
   if (!insights?.length) return [];
+  const sourceLabel = (s) => s === 'ai-generated' ? 'IA' : s === 'ai-edited' ? 'IA editada' : 'Manual';
   return insights.map(ins => ({
-    'Tipo':           INSIGHT_TYPES.find(t => t.key === ins.type)?.label || '—',
-    'Impacto':        IMPACT_LEVELS.find(x => x.key === ins.impact)?.label || '—',
-    'Título':         ins.title,
-    'Observação':     ins.observation || '',
-    'Recomendação':   ins.recommendation || '',
-    'Tags':           (ins.tags || []).join(', '),
-    'Origem':         ins.source === 'manual' ? 'Manual' : 'IA',
-    'Autor':          ins.createdBy?.name || '—',
-    'Data':           formatDate(ins.createdAt),
+    'Widget':           ins.indexKey ? (widgetLabels[ins.indexKey] || ins.indexKey) : '— Geral —',
+    'Tipo':             INSIGHT_TYPES.find(t => t.key === ins.type)?.label || '—',
+    'Impacto':          IMPACT_LEVELS.find(x => x.key === ins.impact)?.label || '—',
+    'Título':           ins.title,
+    'Observação':       ins.observation || '',
+    'Recomendação':     ins.recommendation || '',
+    'Tags':             (ins.tags || []).join(', '),
+    'Origem':           sourceLabel(ins.source),
+    'Período coberto':  formatInsightPeriod(ins) || '—',
+    'Autor':            ins.createdBy?.name || '—',
+    'Escrito em':       formatDate(ins.createdAt),
   }));
 }
 

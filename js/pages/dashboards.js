@@ -7,8 +7,8 @@ import { store }    from '../store.js';
 import { toast }    from '../components/toast.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
-import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503pp2';
-import { fetchInsights, insightsToPdfRows, insightsToXlsxRows } from '../services/insights.js?v=20260503pp2';
+import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503qq1';
+import { fetchInsights, insightsToPdfRows, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod } from '../services/insights.js?v=20260503qq1';
 import {
   getOverviewMetrics, getTasksByDay, getStatusDistribution,
   getPriorityDistribution, getTasksByMember, getTasksByProject,
@@ -961,12 +961,16 @@ async function exportDashXls() {
   window.XLSX.utils.book_append_sheet(wb, ws3, 'Equipe');
 
   // Sheet 4 — Insights & Observações (manuais + IA)
+  // Traz HISTÓRICO COMPLETO do dashboard (sem filtro de período no fetch).
+  // Cada insight tem o periodCovered preservado pra contexto.
   try {
-    const insights = await fetchInsights({ dashboard: 'produtividade', periodFrom: start, periodTo: end });
+    const insights = await fetchInsights({ dashboard: 'produtividade', max: 200 });
     if (insights.length) {
-      const insRows = insightsToXlsxRows(insights);
+      const widgetLabels = Object.fromEntries(PRODUTIVIDADE_WIDGETS.map(w => [w.indexKey, w.label]));
+      const insRows = insightsToXlsxRows(insights, widgetLabels);
       const ws4 = window.XLSX.utils.json_to_sheet(insRows);
-      ws4['!cols'] = [{wch:14},{wch:10},{wch:50},{wch:60},{wch:60},{wch:25},{wch:10},{wch:20},{wch:18}];
+      // 11 colunas: Widget, Tipo, Impacto, Título, Observação, Recomendação, Tags, Origem, Período coberto, Autor, Escrito em
+      ws4['!cols'] = [{wch:30},{wch:14},{wch:10},{wch:50},{wch:60},{wch:60},{wch:25},{wch:12},{wch:24},{wch:20},{wch:18}];
       window.XLSX.utils.book_append_sheet(wb, ws4, 'Insights');
     }
   } catch (e) { console.warn('insights xlsx:', e); }
@@ -1351,35 +1355,56 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
   }
 
   // ═════ Insights & Observacoes ═════
-  // Painel manual + IA do componente reutilizavel
+  // Histórico completo (manual + IA), AGRUPADO por widget (gerais primeiro).
+  // Cada insight mostra período coberto + origem (Manual/IA/IA editada).
   try {
-    const insights = await fetchInsights({ dashboard: 'produtividade', periodFrom: start, periodTo: end });
+    const insights = await fetchInsights({ dashboard: 'produtividade', max: 200 });
     if (insights.length) {
+      const widgetLabels = Object.fromEntries(PRODUTIVIDADE_WIDGETS.map(w => [w.indexKey, w.label]));
+      const groups = groupInsightsByIndex(insights, widgetLabels);
+
       kit.ensureSpace(40);
       setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
       doc.text(txt('INSIGHTS & OBSERVACOES'), M, kit.y);
+      kit.y += 4;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+      setText(COL.muted);
+      doc.text(txt(`${insights.length} insights no historico, agrupados por widget`), M, kit.y);
       kit.y += 5;
 
-      doc.autoTable({
-        startY: kit.y, margin: { left: M, right: M },
-        head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Recomendacao', 'Por']],
-        body: insights.map(ins => [
-          (ins.type || 'neutral'),
-          (ins.impact || 'medium'),
-          ins.title || '',
-          ins.observation || '',
-          ins.recommendation || '',
-          ins.createdBy?.name || '—',
-        ]),
-        styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-        headStyles: { fillColor: [26, 42, 74], textColor: 255, fontStyle: 'bold', fontSize: 7 },
-        columnStyles: {
-          0: { cellWidth: 18 }, 1: { cellWidth: 14 }, 2: { cellWidth: 50 },
-          3: { cellWidth: 70 }, 4: { cellWidth: 70 }, 5: { cellWidth: 30 },
-        },
-        didDrawPage: (data) => { kit.y = data.cursor.y; },
+      // Renderiza um sub-bloco por grupo (widget ou geral)
+      groups.forEach((group, gi) => {
+        kit.ensureSpace(20);
+        setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+        doc.text(txt(`${group.groupLabel} (${group.items.length})`), M, kit.y);
+        kit.y += 3;
+
+        doc.autoTable({
+          startY: kit.y, margin: { left: M, right: M },
+          head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Recomendacao', 'Periodo', 'Origem', 'Por']],
+          body: group.items.map(ins => [
+            ins.type || 'neutral',
+            ins.impact || 'medium',
+            ins.title || '',
+            ins.observation || '',
+            ins.recommendation || '',
+            formatInsightPeriod(ins) || '—',
+            ins.source === 'ai-generated' ? 'IA'
+              : ins.source === 'ai-edited' ? 'IA edit.'
+              : 'Manual',
+            (ins.createdBy?.name || '—') + ' · ' + (ins.createdAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || ''),
+          ]),
+          styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak' },
+          headStyles: { fillColor: [26, 42, 74], textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
+          columnStyles: {
+            0: { cellWidth: 16 }, 1: { cellWidth: 12 }, 2: { cellWidth: 40 },
+            3: { cellWidth: 50 }, 4: { cellWidth: 50 }, 5: { cellWidth: 26 },
+            6: { cellWidth: 14 }, 7: { cellWidth: 30 },
+          },
+          didDrawPage: (data) => { kit.y = data.cursor.y; },
+        });
+        kit.y = doc.lastAutoTable.finalY + 5;
       });
-      kit.y = doc.lastAutoTable.finalY + 6;
     }
   } catch (e) { console.warn('insights pdf:', e); }
 

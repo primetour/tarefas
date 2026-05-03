@@ -43,8 +43,9 @@ import { toast } from './toast.js';
 import {
   fetchInsights, createInsight, updateInsight, deleteInsight,
   suggestInsightsViaAi,
+  insightCoversPeriod, formatInsightPeriod,
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
-} from '../services/insights.js?v=20260503pp2';
+} from '../services/insights.js?v=20260503qq1';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -76,6 +77,7 @@ export async function mountInsightsPanel(opts) {
   const dashInfo = DASHBOARDS[dashboard] || { label: dashboard, icon: '📊' };
   let insights = [];
   let popoverOpen = false;
+  let onlyCurrentPeriod = false; // toggle do filtro "só período atual"
 
   // Filtro de fetch: widget mode pega só o indexKey específico,
   // panel mode com indexKey='general' pega só os gerais,
@@ -84,16 +86,30 @@ export async function mountInsightsPanel(opts) {
 
   async function refresh() {
     try {
+      // Traz histórico completo (sem filtro de período). UI faz o filtro
+      // de "atual vs histórico" client-side baseado em periodOverlap.
       insights = await fetchInsights({
         dashboard,
         indexKey: fetchIndexKey || undefined,
-        periodFrom, periodTo, max: 50,
+        max: 100,
       });
     } catch (e) {
       console.error('[insightsPanel] fetch failed:', e);
       insights = [];
     }
     render();
+  }
+
+  /** Lista efetivamente exibida (aplicando toggle "só período atual" se ativo). */
+  function visibleInsights() {
+    if (!onlyCurrentPeriod) return insights;
+    return insights.filter(i => insightCoversPeriod(i, periodFrom, periodTo));
+  }
+
+  /** Conta quantos insights cobrem o período atual. */
+  function countCurrent() {
+    if (!periodFrom && !periodTo) return insights.length;
+    return insights.filter(i => insightCoversPeriod(i, periodFrom, periodTo)).length;
   }
 
   function render() {
@@ -103,20 +119,30 @@ export async function mountInsightsPanel(opts) {
 
   /* ════════════════════════════════════════════════
      WIDGET MODE — botão compacto com contador
+     Label didático: "+ insights" (vazio) / "N insights" (com contagem)
      ════════════════════════════════════════════════ */
   function renderWidget() {
-    const count = insights.length;
+    const total   = insights.length;
+    const current = countCurrent();
+    const hasCurrent = current > 0;
+    const label = total === 0
+      ? '+ insights'
+      : `${total} insight${total !== 1 ? 's' : ''}`;
+    const tooltipParts = [`Insights${indexLabel ? ' · ' + indexLabel : ''}`];
+    if (total > 0) tooltipParts.push(`${total} no histórico`);
+    if (hasCurrent && (periodFrom || periodTo)) tooltipParts.push(`${current} cobre(m) período atual`);
+
     container.innerHTML = `
       <button class="ip-widget-btn" id="ip-widget-trigger"
-        title="Insights deste índice${indexLabel ? ': ' + indexLabel : ''}"
+        title="${esc(tooltipParts.join(' · '))}"
         style="display:inline-flex;align-items:center;gap:5px;
-        padding:3px 9px;border-radius:var(--radius-full);
-        background:${count ? 'rgba(59,130,246,.12)' : 'var(--bg-elevated)'};
-        border:1px solid ${count ? 'rgba(59,130,246,.3)' : 'var(--border-subtle)'};
-        color:${count ? '#3B82F6' : 'var(--text-muted)'};
+        padding:3px 10px;border-radius:var(--radius-full);
+        background:${total ? 'rgba(59,130,246,.12)' : 'var(--bg-elevated)'};
+        border:1px solid ${total ? 'rgba(59,130,246,.3)' : 'var(--border-subtle)'};
+        color:${total ? '#3B82F6' : 'var(--text-muted)'};
         font-size:0.7rem;font-weight:600;cursor:pointer;
-        transition:all .15s;">
-        💡 ${count > 0 ? count : '+'}${enableAi ? ' · 🤖' : ''}
+        transition:all .15s;white-space:nowrap;">
+        💡 ${esc(label)}
       </button>
     `;
     container.querySelector('#ip-widget-trigger')?.addEventListener('click', (e) => {
@@ -144,15 +170,30 @@ export async function mountInsightsPanel(opts) {
     pop.style.left = left + 'px';
     pop.style.top  = top  + 'px';
 
+    const total = insights.length;
+    const current = countCurrent();
+    const showFilter = (periodFrom || periodTo) && total > 0;
+
     pop.innerHTML = `
       <div style="padding:12px 16px;background:var(--bg-surface);
         border-bottom:1px solid var(--border-subtle);
-        display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">
-          💡 Insights ${indexLabel ? '· ' + esc(indexLabel) : ''}
+        display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">
+            💡 Insights ${indexLabel ? '· ' + esc(indexLabel) : ''}
+          </div>
+          <button id="ip-pop-close" style="border:none;background:none;cursor:pointer;
+            font-size:1rem;color:var(--text-muted);padding:4px 8px;">✕</button>
         </div>
-        <button id="ip-pop-close" style="border:none;background:none;cursor:pointer;
-          font-size:1rem;color:var(--text-muted);padding:4px 8px;">✕</button>
+        <div style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span>${total} no histórico${current !== total && (periodFrom || periodTo) ? ` · ${current} cobre(m) período atual` : ''}</span>
+          ${showFilter ? `
+            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:0.7rem;">
+              <input type="checkbox" id="ip-pop-only-current" ${onlyCurrentPeriod ? 'checked' : ''} style="width:13px;height:13px;cursor:pointer;">
+              Só período atual
+            </label>
+          ` : ''}
+        </div>
       </div>
       <div id="ip-pop-list" style="flex:1;overflow-y:auto;padding:10px;">
         ${renderListCompact()}
@@ -170,6 +211,13 @@ export async function mountInsightsPanel(opts) {
       </div>
     `;
     document.body.appendChild(pop);
+
+    // Toggle filtro "só período atual"
+    pop.querySelector('#ip-pop-only-current')?.addEventListener('change', (e) => {
+      onlyCurrentPeriod = e.target.checked;
+      pop.querySelector('#ip-pop-list').innerHTML = renderListCompact();
+      rebindPopoverList(pop, closePopover);
+    });
 
     // Fecha ao clicar fora
     const onClickOutside = (e) => {
@@ -241,37 +289,48 @@ export async function mountInsightsPanel(opts) {
   }
 
   function renderListCompact() {
-    if (!insights.length) {
+    const visible = visibleInsights();
+    if (!visible.length) {
+      const allEmpty = insights.length === 0;
       return `
         <div style="text-align:center;padding:20px 12px;color:var(--text-muted);">
           <div style="font-size:1.5rem;margin-bottom:6px;opacity:.4;">💡</div>
-          <div style="font-size:0.75rem;">Nenhum insight ainda.</div>
+          <div style="font-size:0.75rem;">${
+            allEmpty
+              ? 'Nenhum insight ainda.'
+              : 'Nenhum insight cobre o período atual. Desmarque o filtro pra ver histórico.'
+          }</div>
         </div>
       `;
     }
-    return `<div style="display:flex;flex-direction:column;gap:6px;">${insights.map(renderItemCompact).join('')}</div>`;
+    return `<div style="display:flex;flex-direction:column;gap:6px;">${visible.map(renderItemCompact).join('')}</div>`;
   }
 
   function renderItemCompact(ins) {
     const type = INSIGHT_TYPES.find(t => t.key === ins.type) || INSIGHT_TYPES[4];
     const impact = IMPACT_LEVELS.find(x => x.key === ins.impact) || IMPACT_LEVELS[1];
+    const isCurrent = (periodFrom || periodTo) ? insightCoversPeriod(ins, periodFrom, periodTo) : true;
+    const periodCovered = formatInsightPeriod(ins);
+    const opacity = isCurrent ? '1' : '0.7';
     return `
       <div style="background:var(--bg-surface);border-left:3px solid ${type.color};
-        padding:8px 10px;border-radius:var(--radius-sm);">
+        padding:8px 10px;border-radius:var(--radius-sm);opacity:${opacity};">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;font-size:0.8125rem;color:var(--text-primary);margin-bottom:3px;">
               ${type.icon} ${esc(ins.title)}
-              ${ins.source === 'ai-generated' ? '<span style="color:#A78BFA;font-size:0.65rem;">🤖</span>' : ''}
-              ${ins.source === 'ai-edited' ? '<span style="color:#A78BFA;font-size:0.65rem;">🤖✎</span>' : ''}
+              ${ins.source === 'ai-generated' ? '<span style="color:#A78BFA;font-size:0.65rem;" title="Gerado por IA">🤖</span>' : ''}
+              ${ins.source === 'ai-edited' ? '<span style="color:#A78BFA;font-size:0.65rem;" title="IA editada por humano">🤖✎</span>' : ''}
+              ${isCurrent && (periodFrom || periodTo) ? '<span style="background:rgba(34,197,94,.15);color:#22C55E;font-size:0.6rem;padding:1px 5px;border-radius:8px;font-weight:700;" title="Cobre o período atual">●&nbsp;atual</span>' : ''}
             </div>
             ${ins.observation ? `
               <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.45;
                 white-space:pre-wrap;margin-bottom:3px;">${esc(ins.observation.slice(0, 220))}${ins.observation.length > 220 ? '…' : ''}</div>
             ` : ''}
-            <div style="font-size:0.65rem;color:var(--text-muted);">
+            <div style="font-size:0.65rem;color:var(--text-muted);line-height:1.5;">
               <span style="color:${impact.color};">●</span> ${esc(impact.label)} ·
-              ${esc(ins.createdBy?.name || '—')} · ${fmtDate(ins.createdAt)}
+              ${periodCovered ? `📅 ${esc(periodCovered)} · ` : ''}
+              <em>escrito ${fmtDate(ins.createdAt)} por ${esc(ins.createdBy?.name || '—')}</em>
             </div>
           </div>
           <div style="display:flex;gap:2px;flex-shrink:0;">
@@ -293,22 +352,32 @@ export async function mountInsightsPanel(opts) {
     const headerLabel = isGeneral
       ? 'Análise Geral do Dashboard'
       : (indexKey ? `Insights · ${indexLabel || indexKey}` : 'Insights & Observações');
+    const total = insights.length;
+    const current = countCurrent();
+    const showFilter = (periodFrom || periodTo) && total > 0;
 
     container.innerHTML = `
       <div class="card" style="padding:18px 20px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
-          <div>
+          <div style="flex:1;min-width:200px;">
             <h3 style="margin:0;font-size:1rem;font-weight:600;color:var(--text-primary);">
               💡 ${esc(headerLabel)}
             </h3>
-            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
-              ${insights.length} ${insights.length === 1 ? 'insight registrado' : 'insights registrados'} ·
-              ${dashInfo.icon} ${esc(dashInfo.label)}
-              ${periodFrom ? ' · ' + fmtDate(periodFrom) : ''}${periodTo ? ' → ' + fmtDate(periodTo) : ''}
-              ${isGeneral ? ' · <em>análises que cruzam múltiplos índices</em>' : ''}
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <span>${total} ${total === 1 ? 'insight no histórico' : 'insights no histórico'}${showFilter && current !== total ? ` · ${current} cobre(m) período atual` : ''}</span>
+              <span>·</span>
+              <span>${dashInfo.icon} ${esc(dashInfo.label)}</span>
+              ${periodFrom || periodTo ? `<span>·</span><span>${periodFrom ? fmtDate(periodFrom) : ''}${periodTo ? ' → ' + fmtDate(periodTo) : ''}</span>` : ''}
+              ${showFilter ? `
+                <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:0.7rem;background:var(--bg-elevated);padding:2px 8px;border-radius:var(--radius-full);">
+                  <input type="checkbox" id="ip-only-current" ${onlyCurrentPeriod ? 'checked' : ''} style="width:13px;height:13px;cursor:pointer;">
+                  Só período atual
+                </label>
+              ` : ''}
+              ${isGeneral ? '<span>·</span><em>análises que cruzam múltiplos índices</em>' : ''}
             </div>
           </div>
-          <div style="display:flex;gap:6px;">
+          <div style="display:flex;gap:6px;flex-shrink:0;">
             ${enableAi ? `
               <button class="btn btn-secondary btn-sm" id="ip-suggest-ai" title="IA analisa o dashboard e sugere insights">
                 🤖 Sugerir via IA
@@ -327,27 +396,38 @@ export async function mountInsightsPanel(opts) {
   }
 
   function renderList() {
-    if (!insights.length) {
+    const visible = visibleInsights();
+    if (!visible.length) {
+      const allEmpty = insights.length === 0;
       return `
         <div style="text-align:center;padding:30px 20px;color:var(--text-muted);
           background:var(--bg-surface);border:1px dashed var(--border-subtle);border-radius:var(--radius-md);">
           <div style="font-size:1.75rem;margin-bottom:8px;opacity:.5;">💡</div>
-          <div style="font-size:0.875rem;margin-bottom:4px;">Nenhum insight registrado ainda.</div>
-          <div style="font-size:0.75rem;">
-            Adicione observações sobre os dados — exportadas em PDF/XLSX junto com as métricas.
-          </div>
+          <div style="font-size:0.875rem;margin-bottom:4px;">${
+            allEmpty
+              ? 'Nenhum insight registrado ainda.'
+              : 'Nenhum insight cobre o período atual.'
+          }</div>
+          <div style="font-size:0.75rem;">${
+            allEmpty
+              ? 'Adicione observações sobre os dados — exportadas em PDF/XLSX junto com as métricas.'
+              : 'Desmarque "Só período atual" pra ver os ' + insights.length + ' insights do histórico.'
+          }</div>
         </div>
       `;
     }
-    return `<div style="display:flex;flex-direction:column;gap:10px;">${insights.map(renderItem).join('')}</div>`;
+    return `<div style="display:flex;flex-direction:column;gap:10px;">${visible.map(renderItem).join('')}</div>`;
   }
 
   function renderItem(ins) {
     const type = INSIGHT_TYPES.find(t => t.key === ins.type) || INSIGHT_TYPES[4];
     const impact = IMPACT_LEVELS.find(x => x.key === ins.impact) || IMPACT_LEVELS[1];
+    const isCurrent = (periodFrom || periodTo) ? insightCoversPeriod(ins, periodFrom, periodTo) : true;
+    const periodCovered = formatInsightPeriod(ins);
+    const opacity = isCurrent ? '1' : '0.7';
     return `
       <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
-        border-left:3px solid ${type.color};border-radius:var(--radius-md);padding:14px 16px;">
+        border-left:3px solid ${type.color};border-radius:var(--radius-md);padding:14px 16px;opacity:${opacity};">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
@@ -361,7 +441,7 @@ export async function mountInsightsPanel(opts) {
               </span>
               ${ins.indexKey ? `
                 <span style="font-size:0.6875rem;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);
-                  background:rgba(148,163,184,.15);color:var(--text-muted);">
+                  background:rgba(148,163,184,.15);color:var(--text-muted);" title="Ancorado ao widget">
                   📍 ${esc(ins.indexKey)}
                 </span>
               ` : ''}
@@ -372,6 +452,12 @@ export async function mountInsightsPanel(opts) {
               ${ins.source === 'ai-edited' ? `
                 <span style="font-size:0.6875rem;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);
                   background:rgba(167,139,250,.15);color:#A78BFA;">🤖✎ IA editada</span>
+              ` : ''}
+              ${isCurrent && (periodFrom || periodTo) ? `
+                <span style="font-size:0.6875rem;font-weight:700;padding:2px 8px;border-radius:var(--radius-full);
+                  background:rgba(34,197,94,.15);color:#22C55E;" title="Cobre o período atual visualizado">
+                  ● atual
+                </span>
               ` : ''}
             </div>
             <div style="font-size:0.9375rem;font-weight:600;color:var(--text-primary);margin-bottom:6px;">
@@ -388,8 +474,9 @@ export async function mountInsightsPanel(opts) {
                 <strong style="color:#22C55E;">Recomendação:</strong> ${esc(ins.recommendation)}
               </div>
             ` : ''}
-            <div style="font-size:0.6875rem;color:var(--text-muted);">
-              ${esc(ins.createdBy?.name || '—')} · ${fmtDate(ins.createdAt)}
+            <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.6;">
+              ${periodCovered ? `📅 <strong>Análise de ${esc(periodCovered)}</strong> · ` : ''}
+              <em>escrito ${fmtDate(ins.createdAt)} por ${esc(ins.createdBy?.name || '—')}</em>
               ${(ins.tags || []).length ? ` · ${ins.tags.map(t => `<span style="background:var(--bg-elevated);padding:1px 6px;border-radius:3px;">${esc(t)}</span>`).join(' ')}` : ''}
             </div>
           </div>
@@ -405,6 +492,29 @@ export async function mountInsightsPanel(opts) {
   function bindPanelEvents() {
     container.querySelector('#ip-add')?.addEventListener('click', () => openForm());
     container.querySelector('#ip-suggest-ai')?.addEventListener('click', handleAiSuggest);
+    container.querySelector('#ip-only-current')?.addEventListener('change', (e) => {
+      onlyCurrentPeriod = e.target.checked;
+      const list = container.querySelector('#ip-list');
+      if (list) list.innerHTML = renderList();
+      // Re-bind delete/edit buttons after re-render
+      container.querySelectorAll('[data-act="ip-edit"]').forEach(b => {
+        b.addEventListener('click', () => {
+          const ins = insights.find(x => x.id === b.dataset.id);
+          if (ins) openForm(ins);
+        });
+      });
+      container.querySelectorAll('[data-act="ip-del"]').forEach(b => {
+        b.addEventListener('click', async () => {
+          if (!confirm('Remover este insight?')) return;
+          try {
+            await deleteInsight(b.dataset.id);
+            toast.success('Insight removido.');
+            await refresh();
+            container.dispatchEvent(new CustomEvent('insights:changed'));
+          } catch (e) { toast.error('Erro: ' + (e.message || '')); }
+        });
+      });
+    });
     container.querySelectorAll('[data-act="ip-edit"]').forEach(b => {
       b.addEventListener('click', () => {
         const ins = insights.find(x => x.id === b.dataset.id);
