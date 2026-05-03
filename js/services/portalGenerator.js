@@ -1897,9 +1897,23 @@ async function enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments) {
   const { app } = await import('../firebase.js');
   const fnPhoto = httpsCallable(getFunctions(app, 'us-central1'), 'fetchDestinationPhoto');
 
+  // Mapping seg → query genérica fallback (quando item específico não acha foto)
+  const SEG_GENERIC = {
+    bairros:           'neighborhood street',
+    atracoes:          'tourist attraction',
+    atracoes_criancas: 'family attraction',
+    restaurantes:      'restaurant interior',
+    vida_noturna:      'nightlife bar',
+    espetaculos:       'theater performance',
+    compras:           'shopping street',
+    arredores:         'countryside',
+    highlights:        'landmark',
+    agenda_cultural:   'cultural event',
+  };
+
   // Coleta itens que precisam de foto
   const tasks = [];
-  const MAX_ITEMS = 80;  // safety: limita por geração pra não explodir tempo/custo
+  const MAX_ITEMS = 80;
 
   for (const { tip, dest } of allTips) {
     if (!dest?.id) continue;
@@ -1924,8 +1938,11 @@ async function enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments) {
         const t = item.titulo.toLowerCase().trim();
         if (haveByTitle.has(t)) continue;
 
-        const query = cityCtx ? `${item.titulo} ${cityCtx}` : item.titulo;
-        tasks.push({ destId: dest.id, titulo: item.titulo, query });
+        const querySpecific = cityCtx ? `${item.titulo} ${cityCtx}` : item.titulo;
+        const queryGeneric  = SEG_GENERIC[segKey]
+          ? `${SEG_GENERIC[segKey]} ${cityCtx}`.trim()
+          : cityCtx;
+        tasks.push({ destId: dest.id, titulo: item.titulo, segKey, querySpecific, queryGeneric });
       }
       if (tasks.length >= MAX_ITEMS) break;
     }
@@ -1933,35 +1950,71 @@ async function enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments) {
   }
 
   if (!tasks.length) return;
-  console.log(`[autoPhotos] Buscando ${tasks.length} fotos via Unsplash/Wikipedia…`);
+  console.log(`[autoPhotos] Buscando ${tasks.length} fotos (Unsplash → Wikipedia → fallback genérico)…`);
 
-  // Executa em batches de 8 paralelo pra respeitar rate limit
+  // Stage 1: query específica em batches de 8 paralelo
   const BATCH = 8;
-  let added = 0;
+  const fallbackNeeded = [];
+  let addedSpecific = 0;
   for (let i = 0; i < tasks.length; i += BATCH) {
     const batch = tasks.slice(i, i + BATCH);
     const results = await Promise.allSettled(
       batch.map(t =>
-        fnPhoto({ query: t.query }).then(r => ({ ...t, photo: r.data })).catch(err => ({ ...t, err: err.message }))
+        fnPhoto({ query: t.querySpecific }).then(r => ({ ...t, photo: r.data })).catch(() => ({ ...t, err: true }))
       )
     );
     for (const res of results) {
-      if (res.status !== 'fulfilled' || res.value.err || !res.value.photo?.url) continue;
-      const { destId, titulo, photo } = res.value;
-      imagesByDest[destId].gallery.push({
-        url:              photo.url,
-        placeName:        titulo,
-        name:             titulo,
+      const v = res.value;
+      if (res.status !== 'fulfilled' || v.err || !v.photo?.url) {
+        fallbackNeeded.push(v);
+        continue;
+      }
+      imagesByDest[v.destId].gallery.push({
+        url:              v.photo.url,
+        placeName:        v.titulo,
+        name:             v.titulo,
         tags:             [],
         _autoFetched:     true,
-        _photoSource:     photo.source,
-        _attribution:     photo.attribution || '',
-        _attributionUrl:  photo.attributionUrl || '',
+        _photoSource:     v.photo.source,
+        _attribution:     v.photo.attribution || '',
+        _attributionUrl:  v.photo.attributionUrl || '',
       });
-      added++;
+      addedSpecific++;
     }
   }
-  console.log(`[autoPhotos] ${added}/${tasks.length} fotos adicionadas ao gallery.`);
+
+  // Stage 2: pra itens que não acharam, query genérica do segmento+cidade
+  // (não é foto exata do lugar, mas é foto contextualizada — melhor que placeholder)
+  let addedGeneric = 0;
+  if (fallbackNeeded.length > 0) {
+    console.log(`[autoPhotos] ${fallbackNeeded.length} sem foto específica → tentando fallback genérico…`);
+    for (let i = 0; i < fallbackNeeded.length; i += BATCH) {
+      const batch = fallbackNeeded.slice(i, i + BATCH);
+      const results = await Promise.allSettled(
+        batch.map(t =>
+          fnPhoto({ query: t.queryGeneric }).then(r => ({ ...t, photo: r.data })).catch(() => ({ ...t, err: true }))
+        )
+      );
+      for (const res of results) {
+        const v = res.value;
+        if (res.status !== 'fulfilled' || v.err || !v.photo?.url) continue;
+        imagesByDest[v.destId].gallery.push({
+          url:              v.photo.url,
+          placeName:        v.titulo,
+          name:             v.titulo,
+          tags:             [],
+          _autoFetched:     true,
+          _photoSource:     v.photo.source,
+          _photoFallback:   true,
+          _attribution:     v.photo.attribution || '',
+          _attributionUrl:  v.photo.attributionUrl || '',
+        });
+        addedGeneric++;
+      }
+    }
+  }
+  const totalAdded = addedSpecific + addedGeneric;
+  console.log(`[autoPhotos] ${totalAdded}/${tasks.length} fotos no gallery (${addedSpecific} específicas + ${addedGeneric} genéricas).`);
 }
 
 async function generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride = {}, heroImageOverride = {}, clientName = '' }) {
