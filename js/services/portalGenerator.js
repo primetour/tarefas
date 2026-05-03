@@ -1885,6 +1885,85 @@ async function resolveImages(dest) {
   } catch { return { hero: null, gallery: [], banners: {} }; }
 }
 
+/**
+ * Enriquece imagesByDest.gallery buscando foto Unsplash pra cada item
+ * dos segmentos cujo placeName ainda não existe na galeria. Concorrência
+ * limitada a 8 chamadas paralelas pra não estourar rate limit.
+ *
+ * Mutates imagesByDest in place.
+ */
+async function enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments) {
+  const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+  const { app } = await import('../firebase.js');
+  const fnPhoto = httpsCallable(getFunctions(app, 'us-central1'), 'fetchDestinationPhoto');
+
+  // Coleta itens que precisam de foto
+  const tasks = [];
+  const MAX_ITEMS = 80;  // safety: limita por geração pra não explodir tempo/custo
+
+  for (const { tip, dest } of allTips) {
+    if (!dest?.id) continue;
+    const imgs = imagesByDest[dest.id];
+    if (!imgs) continue;
+    if (!imgs.gallery) imgs.gallery = [];
+
+    const haveByTitle = new Set(
+      imgs.gallery
+        .filter(g => g.placeName && !g.placeName.startsWith('__override_'))
+        .map(g => g.placeName.toLowerCase().trim())
+    );
+    const cityCtx = dest.city || dest.country || '';
+
+    for (const segKey of segments) {
+      const data = tip?.segments?.[segKey];
+      if (!data?.items) continue;
+
+      for (const item of data.items) {
+        if (tasks.length >= MAX_ITEMS) break;
+        if (!item?.titulo) continue;
+        const t = item.titulo.toLowerCase().trim();
+        if (haveByTitle.has(t)) continue;
+
+        const query = cityCtx ? `${item.titulo} ${cityCtx}` : item.titulo;
+        tasks.push({ destId: dest.id, titulo: item.titulo, query });
+      }
+      if (tasks.length >= MAX_ITEMS) break;
+    }
+    if (tasks.length >= MAX_ITEMS) break;
+  }
+
+  if (!tasks.length) return;
+  console.log(`[autoPhotos] Buscando ${tasks.length} fotos via Unsplash/Wikipedia…`);
+
+  // Executa em batches de 8 paralelo pra respeitar rate limit
+  const BATCH = 8;
+  let added = 0;
+  for (let i = 0; i < tasks.length; i += BATCH) {
+    const batch = tasks.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(t =>
+        fnPhoto({ query: t.query }).then(r => ({ ...t, photo: r.data })).catch(err => ({ ...t, err: err.message }))
+      )
+    );
+    for (const res of results) {
+      if (res.status !== 'fulfilled' || res.value.err || !res.value.photo?.url) continue;
+      const { destId, titulo, photo } = res.value;
+      imagesByDest[destId].gallery.push({
+        url:              photo.url,
+        placeName:        titulo,
+        name:             titulo,
+        tags:             [],
+        _autoFetched:     true,
+        _photoSource:     photo.source,
+        _attribution:     photo.attribution || '',
+        _attributionUrl:  photo.attributionUrl || '',
+      });
+      added++;
+    }
+  }
+  console.log(`[autoPhotos] ${added}/${tasks.length} fotos adicionadas ao gallery.`);
+}
+
 async function generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride = {}, heroImageOverride = {}, clientName = '' }) {
   // Lazy imports — só carrega firebase quando função é efetivamente chamada
   const { doc, collection, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
@@ -1934,6 +2013,15 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
       }
     }
   }
+
+  // ═══ ENRIQUECIMENTO AUTOMATICO COM UNSPLASH ═══
+  // Pra cada item dos segmentos selecionados que NAO tem imagem,
+  // busca foto via Cloud Function fetchDestinationPhoto (Unsplash + fallback Wikipedia).
+  // Adiciona ao gallery com placeName=titulo pra que portal-view/PDF/PPTX
+  // peguem automaticamente.
+  await enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments).catch(e => {
+    console.warn('[PRIMETOUR] enrichGallery falhou (nao-blocker):', e.message);
+  });
 
   const profile = store.get('userProfile') || {};
   const uid     = store.get('currentUser')?.uid || null;
