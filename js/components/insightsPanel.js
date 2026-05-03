@@ -44,7 +44,7 @@ import {
   fetchInsights, createInsight, updateInsight, deleteInsight,
   suggestInsightsViaAi,
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
-} from '../services/insights.js';
+} from '../services/insights.js?v=20260503pp1';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
