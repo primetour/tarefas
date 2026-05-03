@@ -227,7 +227,7 @@ export async function renderNlPerformance(container) {
         </div>
       </div>
       <div id="nl-cal-details" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-        <div class="card" style="padding:16px;">
+        <div id="nl-cal-compliance-card" class="card" style="padding:16px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
             <div style="flex:1;font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">
               📅 Cumprimento do Calendário
@@ -236,7 +236,7 @@ export async function renderNlPerformance(container) {
           </div>
           <div id="nl-cal-compliance"></div>
         </div>
-        <div class="card" style="padding:16px;">
+        <div id="nl-cal-top-requesters-card" class="card" style="padding:16px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
             <div style="flex:1;font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">
               👤 Top Solicitantes
@@ -246,7 +246,7 @@ export async function renderNlPerformance(container) {
           <div id="nl-cal-top-requesters"></div>
         </div>
       </div>
-      <div class="card" style="padding:16px;margin-top:16px;">
+      <div id="nl-cal-table-card" class="card" style="padding:16px;margin-top:16px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
           <div style="flex:1;font-size:0.6875rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">
             📋 Detalhamento de Solicitações
