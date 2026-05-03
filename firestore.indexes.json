@@ -223,6 +223,20 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "dashboard_insights",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "dashboard",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []
