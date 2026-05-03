@@ -553,20 +553,23 @@ function renderAllCharts(Chart, m) {
   try { renderCsatByAreaWidget(tasks, surveys); }  catch(e){ console.warn('R3 CSAT area:', e); }
   try { renderNucleoWidget(tasks); }               catch(e){ console.warn('R3 nucleo:', e); }
 
-  /* Insights & Observações (componente reutilizavel) */
-  try {
-    const { start, end } = getPeriodDates(activePeriod());
-    const section = document.getElementById('dash-insights-section');
-    if (section) {
-      await mountInsightsPanel({
-        container: section,
-        dashboard: 'produtividade',
-        periodFrom: start, periodTo: end,
-        filters: { user: filterUser, nucleo: filterNucleo, sector: filterSector, period: currentPeriod },
-        enableAi: true,
-      });
-    }
-  } catch(e) { console.warn('insightsPanel:', e); }
+  /* Insights & Observações (componente reutilizavel)
+     IIFE async pra nao precisar tornar renderAllCharts async (multiplos callers). */
+  (async () => {
+    try {
+      const { start, end } = getPeriodDates(activePeriod());
+      const section = document.getElementById('dash-insights-section');
+      if (section) {
+        await mountInsightsPanel({
+          container: section,
+          dashboard: 'produtividade',
+          periodFrom: start, periodTo: end,
+          filters: { user: filterUser, nucleo: filterNucleo, sector: filterSector, period: currentPeriod },
+          enableAi: true,
+        });
+      }
+    } catch(e) { console.warn('insightsPanel:', e); }
+  })();
 }
 
 /* ─── Line chart ─────────────────────────────────────────── */
