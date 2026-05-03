@@ -192,25 +192,40 @@
     ];
 
     // ─── Init Firebase Auth ─────────────────────────────────
-    const app = initializeApp(firebaseConfig, 'primetour-docs');
+    // CRITICAL: usar mesmo app name 'primetour-main' que o app principal
+    // pra COMPARTILHAR sessao via IndexedDB (escopo por app name).
+    // Antes: 'primetour-docs' criava sessao separada → login restrito eterno.
+    const app = initializeApp(firebaseConfig, 'primetour-main');
     const auth = getAuth(app);
 
-    onAuthStateChanged(auth, async (user) => {
-      if (!user) {
+    // Aguarda Firebase Auth restaurar sessao do IndexedDB (assincrono).
+    // onAuthStateChanged dispara primeiro com null antes de hidratar.
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
         document.getElementById('root').innerHTML = `
           <div class="auth-gate">
             <h2>🔒 Acesso restrito</h2>
-            <p>Esta documentação é interna. Faça login no PRIMETOUR primeiro.</p>
+            <p>Esta documentação é interna.</p>
+            <p style="font-size:0.75rem;">Você precisa estar logado em <code>primetour.github.io/tarefas</code> nesta mesma janela do navegador.</p>
             <a class="btn" href="/tarefas/">Ir para o sistema</a>
           </div>`;
-        return;
       }
+    }, 4000);
+
+    onAuthStateChanged(auth, async (user) => {
+      if (resolved) return;        // ja fechou (timeout ou login)
+      if (!user) return;           // ainda hidratando, espera proximo evento ou timeout
+      resolved = true;
+      clearTimeout(timeout);
+
       // Validar email do tenant Primetour
       if (!user.email || !user.email.toLowerCase().endsWith('@primetour.com.br')) {
         document.getElementById('root').innerHTML = `
           <div class="auth-gate">
             <h2>🚫 Acesso negado</h2>
-            <p>Sua conta (${user.email}) não pertence ao tenant Primetour.</p>
+            <p>Sua conta (${user.email || 'sem email'}) não pertence ao tenant Primetour.</p>
             <a class="btn" href="/tarefas/">Voltar</a>
           </div>`;
         return;
