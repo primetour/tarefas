@@ -509,6 +509,16 @@ service cloud.firestore {
       allow delete: if isAuth() && isAdmin();
     }
 
+    // ── Photo cache (Unsplash/Wikipedia) — server-only ────────
+    // Cache de fotos por query hash. Escrita via Cloud Function (Admin SDK).
+    // Leitura proibida do client — evita disclosure dos atributos cache+rate-limit state.
+    match /photo_cache/{docId} {
+      allow read, write: if false;
+    }
+    match /system_state/{docId} {
+      allow read, write: if false;
+    }
+
     // ── Feedbacks ──────────────────────────────────────────────
     match /feedbacks/{docId} {
       allow read:   if isAuth();

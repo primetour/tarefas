@@ -836,7 +836,7 @@ export const fetchDestinationPhoto = onCall({
     throw new HttpsError('invalid-argument', 'query (nome do destino) obrigatorio.');
   }
 
-  // Cache check (skip se force=true)
+  // ─── Cache 1: por destinationId (cache "rico" do destino) ───
   if (destinationId && !force) {
     const ref = db.doc(`destinations/${destinationId}`);
     const snap = await ref.get();
@@ -853,17 +853,67 @@ export const fetchDestinationPhoto = onCall({
     }
   }
 
-  await checkRateLimit(auth.uid, 'fetchPhoto', 30, 60);
+  // ─── Cache 2: por hash da query (compartilhado entre todas geracoes) ───
+  // TTL 90 dias. Reduz drasticamente chamadas pra Unsplash.
+  // Ex: "Torre Eiffel Paris" buscada 1x, todos os links subsequentes usam cache.
+  const queryKey = normalizeQuery(query);
+  if (!force) {
+    const cacheRef = db.doc(`photo_cache/${queryKey}`);
+    const cacheSnap = await cacheRef.get();
+    if (cacheSnap.exists) {
+      const c = cacheSnap.data();
+      const ageMs = Date.now() - (c.fetchedAt?.toMillis?.() || 0);
+      const TTL_MS = 90 * 24 * 60 * 60 * 1000;  // 90 dias
+      if (ageMs < TTL_MS && c.url) {
+        const result = {
+          url: c.url, source: c.source, attribution: c.attribution || '',
+          attributionUrl: c.attributionUrl || '', cached: true,
+        };
+        if (destinationId) await saveDestinationPhoto(destinationId, result);
+        return result;
+      }
+    }
+  }
 
-  // 1. Try Unsplash if key configured
+  await checkRateLimit(auth.uid, 'fetchPhoto', 60, 60);
+
+  // ─── Cooldown global: se Unsplash deu rate-limit recente, pula direto pra Wikipedia ───
+  let skipUnsplash = false;
+  try {
+    const cdRef = db.doc('system_state/unsplash_cooldown');
+    const cdSnap = await cdRef.get();
+    if (cdSnap.exists) {
+      const cd = cdSnap.data();
+      const ageMs = Date.now() - (cd.hitAt?.toMillis?.() || 0);
+      if (ageMs < 60 * 60 * 1000) skipUnsplash = true;  // cooldown 60min
+    }
+  } catch {}
+
+  // 1. Try Unsplash if key configured + nao em cooldown
   const unsplashKey = UNSPLASH_ACCESS_KEY.value();
-  if (unsplashKey && unsplashKey.length > 10 && !unsplashKey.includes('not-configured')) {
+  if (!skipUnsplash && unsplashKey && unsplashKey.length > 10 && !unsplashKey.includes('not-configured')) {
     try {
       const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=1&orientation=landscape&content_filter=high`;
       const res = await fetch(url, {
         headers: { 'Authorization': `Client-ID ${unsplashKey}`, 'Accept-Version': 'v1' },
       });
-      if (res.ok) {
+      const remaining = parseInt(res.headers.get('X-Ratelimit-Remaining') || '999', 10);
+      if (res.status === 403 || remaining <= 5) {
+        // Rate limit hit (ou prestes a hit) - acionar cooldown global 60min
+        await db.doc('system_state/unsplash_cooldown').set({
+          hitAt: FieldValue.serverTimestamp(),
+          lastQuery: query.slice(0, 80),
+          remaining,
+        });
+        console.warn('[fetchPhoto] Unsplash rate limit (status='+res.status+', remaining='+remaining+'). Cooldown 60min ativado.');
+        await db.collection('audit_logs').add({
+          action: 'security.unsplash_rate_limit_hit',
+          severity: 'warning',
+          query: query.slice(0, 80),
+          remaining,
+          timestamp: FieldValue.serverTimestamp(),
+        });
+      } else if (res.ok) {
         const data = await res.json();
         const photo = data.results?.[0];
         if (photo) {
@@ -873,11 +923,9 @@ export const fetchDestinationPhoto = onCall({
             attribution: `Foto por ${photo.user.name} (Unsplash)`,
             attributionUrl: photo.user.links.html + '?utm_source=primetour&utm_medium=referral',
           };
-          await saveDestinationPhoto(destinationId, result);
+          await saveCacheAndDestination(queryKey, destinationId, result);
           return result;
         }
-      } else {
-        console.warn('[fetchPhoto] Unsplash failed:', res.status);
       }
     } catch (e) {
       console.warn('[fetchPhoto] Unsplash error:', e?.message);
@@ -886,7 +934,6 @@ export const fetchDestinationPhoto = onCall({
 
   // 2. Fallback: Wikipedia REST API
   try {
-    // Try pt-BR first, fallback en
     for (const lang of ['pt', 'en']) {
       const wikiUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
       const res = await fetch(wikiUrl);
@@ -894,7 +941,6 @@ export const fetchDestinationPhoto = onCall({
       const data = await res.json();
       const thumb = data.thumbnail?.source || data.originalimage?.source;
       if (thumb) {
-        // Use originalimage if available (higher resolution), else thumbnail
         const photo = data.originalimage?.source || thumb;
         const result = {
           url: photo,
@@ -902,7 +948,7 @@ export const fetchDestinationPhoto = onCall({
           attribution: `Foto via Wikipedia (${lang}) — ${data.title}`,
           attributionUrl: data.content_urls?.desktop?.page || '',
         };
-        await saveDestinationPhoto(destinationId, result);
+        await saveCacheAndDestination(queryKey, destinationId, result);
         return result;
       }
     }
@@ -912,6 +958,34 @@ export const fetchDestinationPhoto = onCall({
 
   throw new HttpsError('not-found', 'Nenhuma foto encontrada para "' + query + '".');
 });
+
+/** Normaliza query pra cache key (remove acentos, lowercase, hash curto) */
+function normalizeQuery(q) {
+  const norm = String(q || '').toLowerCase().trim()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return norm || 'empty';
+}
+
+/** Salva no cache global + opcionalmente no destination */
+async function saveCacheAndDestination(queryKey, destinationId, result) {
+  // Cache global (todas geracoes se beneficiam)
+  try {
+    await db.doc(`photo_cache/${queryKey}`).set({
+      url:             result.url,
+      source:          result.source,
+      attribution:     result.attribution || '',
+      attributionUrl:  result.attributionUrl || '',
+      fetchedAt:       FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    console.warn('[fetchPhoto] cache global save failed:', e?.message);
+  }
+  // Cache no destino (mais rico, com mais campos)
+  if (destinationId) await saveDestinationPhoto(destinationId, result);
+}
 
 async function saveDestinationPhoto(destinationId, result) {
   if (!destinationId) return;
