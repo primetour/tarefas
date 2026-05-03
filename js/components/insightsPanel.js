@@ -43,9 +43,9 @@ import { toast } from './toast.js';
 import {
   fetchInsights, createInsight, updateInsight, deleteInsight,
   suggestInsightsViaAi,
-  insightCoversPeriod, formatInsightPeriod,
+  insightCoversPeriod, formatInsightPeriod, formatDataSnapshot,
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
-} from '../services/insights.js?v=20260503qq1';
+} from '../services/insights.js?v=20260503rr1';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -311,6 +311,7 @@ export async function mountInsightsPanel(opts) {
     const impact = IMPACT_LEVELS.find(x => x.key === ins.impact) || IMPACT_LEVELS[1];
     const isCurrent = (periodFrom || periodTo) ? insightCoversPeriod(ins, periodFrom, periodTo) : true;
     const periodCovered = formatInsightPeriod(ins);
+    const snapshotText = formatDataSnapshot(ins.dataSnapshot);
     const opacity = isCurrent ? '1' : '0.7';
     return `
       <div style="background:var(--bg-surface);border-left:3px solid ${type.color};
@@ -326,6 +327,13 @@ export async function mountInsightsPanel(opts) {
             ${ins.observation ? `
               <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.45;
                 white-space:pre-wrap;margin-bottom:3px;">${esc(ins.observation.slice(0, 220))}${ins.observation.length > 220 ? '…' : ''}</div>
+            ` : ''}
+            ${snapshotText ? `
+              <div style="font-size:0.65rem;color:var(--text-muted);background:var(--bg-elevated);
+                padding:4px 6px;border-radius:3px;margin-bottom:3px;font-family:monospace;
+                line-height:1.4;" title="Foto dos dados que motivaram este insight (imutável)">
+                📊 ${esc(snapshotText.slice(0, 180))}${snapshotText.length > 180 ? '…' : ''}
+              </div>
             ` : ''}
             <div style="font-size:0.65rem;color:var(--text-muted);line-height:1.5;">
               <span style="color:${impact.color};">●</span> ${esc(impact.label)} ·
@@ -474,6 +482,17 @@ export async function mountInsightsPanel(opts) {
                 <strong style="color:#22C55E;">Recomendação:</strong> ${esc(ins.recommendation)}
               </div>
             ` : ''}
+            ${(() => {
+              const snap = formatDataSnapshot(ins.dataSnapshot);
+              return snap ? `
+                <div style="background:rgba(59,130,246,.06);border-left:2px solid #3B82F6;
+                  padding:8px 12px;border-radius:0 4px 4px 0;font-size:0.75rem;color:var(--text-secondary);
+                  line-height:1.5;margin-bottom:6px;font-family:monospace;word-break:break-word;"
+                  title="Foto dos dados que motivaram este insight (imutável)">
+                  <strong style="color:#3B82F6;">📊 Dados observados:</strong> ${esc(snap)}
+                </div>
+              ` : '';
+            })()}
             <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.6;">
               ${periodCovered ? `📅 <strong>Análise de ${esc(periodCovered)}</strong> · ` : ''}
               <em>escrito ${fmtDate(ins.createdAt)} por ${esc(ins.createdBy?.name || '—')}</em>
@@ -642,6 +661,7 @@ export async function mountInsightsPanel(opts) {
           title, observation, recommendation, type, impact,
           source: wasEdited ? 'ai-edited' : 'ai-generated',
           aiOriginal: original.aiOriginal,
+          dataSnapshot: original.dataSnapshot, // foto dos dados que IA analisou (preservada)
           periodFrom, periodTo, filters,
           tags: ['IA'],
         });
@@ -693,21 +713,43 @@ export async function mountInsightsPanel(opts) {
 
   /* ════════════════════════════════════════════════
      FORM — criar/editar manual
+     Campos visíveis e editáveis:
+       - Período da análise (DD/MM/YYYY → DD/MM/YYYY)
+       - Checkbox "Sem período específico"
+       - Viewer readonly do snapshot dos dados (auto-capturado ou IA)
      ════════════════════════════════════════════════ */
   function openForm(existing = null) {
     const isEdit = !!existing?.id;
     const isAiSourced = existing?.source === 'ai-generated' || existing?.source === 'ai-edited';
-    // Quando editando insight com indexKey já definido, mantém. Quando criando do widget mode,
-    // usa o indexKey do mount. Quando criando do panel geral, deixa null.
     const targetIndexKey = isEdit
       ? (existing.indexKey || null)
       : (indexKey === 'general' ? null : indexKey || null);
+
+    // Período: edit usa o que já tem; novo pré-preenche com filtro do dash
+    const initFrom = existing?.periodFrom?.toDate?.() || (existing?.periodFrom ? new Date(existing.periodFrom) : periodFrom);
+    const initTo   = existing?.periodTo?.toDate?.()   || (existing?.periodTo   ? new Date(existing.periodTo)   : periodTo);
+    const dateToInput = d => d ? d.toISOString().slice(0, 10) : '';
+    const initFromStr = dateToInput(initFrom);
+    const initToStr   = dateToInput(initTo);
+    const noPeriodInit = isEdit && !existing.periodFrom && !existing.periodTo;
+
+    // Snapshot: edit usa o salvo; novo captura do widget agora (manual) — se não houver ainda
+    let initialSnapshot = existing?.dataSnapshot || null;
+    if (!initialSnapshot && !isEdit && typeof getSnapshot === 'function') {
+      try {
+        const snap = getSnapshot() || {};
+        initialSnapshot = { ...snap, capturedAt: new Date().toISOString(), _source: 'manual-capture' };
+      } catch (e) {
+        console.warn('[insightsPanel] getSnapshot falhou no openForm:', e.message);
+      }
+    }
+    const snapshotPreview = initialSnapshot ? formatDataSnapshot(initialSnapshot) : null;
 
     const m = document.createElement('div');
     m.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
       display:flex;align-items:center;justify-content:center;padding:20px;`;
     m.innerHTML = `
-      <div class="card" style="width:100%;max-width:560px;max-height:90vh;
+      <div class="card" style="width:100%;max-width:620px;max-height:92vh;
         padding:0;overflow:hidden;display:flex;flex-direction:column;">
         <div style="padding:16px 22px;background:var(--bg-surface);
           border-bottom:1px solid var(--border-subtle);
@@ -724,6 +766,7 @@ export async function mountInsightsPanel(opts) {
             <div style="background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.3);
               padding:8px 12px;border-radius:var(--radius-sm);font-size:0.75rem;color:var(--text-secondary);">
               🤖 Insight gerado por IA. Edições serão marcadas como "ai-edited" mantendo o original em audit trail.
+              ${initialSnapshot ? '<br><strong>Dados observados</strong> (abaixo) ficam preservados imutáveis — são a foto do que a IA analisou.' : ''}
             </div>
           ` : ''}
 
@@ -749,6 +792,28 @@ export async function mountInsightsPanel(opts) {
             </div>
           </div>
 
+          <!-- ═══ PERÍODO DA ANÁLISE (visível e editável) ═══ -->
+          <div style="background:rgba(59,130,246,.05);border:1px solid rgba(59,130,246,.2);
+            padding:10px 12px;border-radius:var(--radius-sm);">
+            <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:6px;color:var(--text-primary);">
+              📅 Período da análise <span style="font-weight:400;color:var(--text-muted);">— qual janela de dados este insight cobre</span>
+            </label>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+              <input type="date" id="ipf-period-from" class="portal-field" style="flex:1;min-width:130px;font-size:0.8125rem;"
+                value="${initFromStr}" ${noPeriodInit ? 'disabled' : ''}>
+              <span style="color:var(--text-muted);">→</span>
+              <input type="date" id="ipf-period-to" class="portal-field" style="flex:1;min-width:130px;font-size:0.8125rem;"
+                value="${initToStr}" ${noPeriodInit ? 'disabled' : ''}>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.7rem;color:var(--text-muted);cursor:pointer;">
+              <input type="checkbox" id="ipf-no-period" ${noPeriodInit ? 'checked' : ''} style="cursor:pointer;">
+              Sem período específico (insight permanente / não temporal)
+            </label>
+            ${!isEdit ? `<div style="font-size:0.65rem;color:var(--text-muted);margin-top:6px;font-style:italic;">
+              Pré-preenchido com filtro atual do dashboard. Ajuste pra refletir o que você está analisando.
+            </div>` : ''}
+          </div>
+
           <div>
             <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Observação (o que aconteceu) *</label>
             <textarea id="ipf-obs" class="portal-field" rows="4" maxlength="4000"
@@ -760,6 +825,30 @@ export async function mountInsightsPanel(opts) {
             <textarea id="ipf-rec" class="portal-field" rows="3" maxlength="4000"
               placeholder="Ação sugerida para corrigir/explorar este achado..." style="width:100%;resize:vertical;">${esc(existing?.recommendation || '')}</textarea>
           </div>
+
+          <!-- ═══ DADOS OBSERVADOS (snapshot, readonly) ═══ -->
+          ${snapshotPreview ? `
+          <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+            padding:10px 12px;border-radius:var(--radius-sm);">
+            <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:6px;color:var(--text-primary);">
+              📊 Dados observados <span style="font-weight:400;color:var(--text-muted);">— foto histórica, imutável</span>
+            </label>
+            <div style="font-size:0.75rem;color:var(--text-secondary);font-family:monospace;
+              line-height:1.5;background:var(--bg-elevated);padding:8px 10px;border-radius:4px;
+              max-height:90px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;">${esc(snapshotPreview)}</div>
+            <div style="font-size:0.65rem;color:var(--text-muted);margin-top:4px;font-style:italic;">
+              ${initialSnapshot._source === 'ai-suggestion'
+                ? 'Capturado pela IA quando gerou esta sugestão.'
+                : 'Capturado do widget no momento de criação.'}
+              ${initialSnapshot.capturedAt ? ' · ' + new Date(initialSnapshot.capturedAt).toLocaleString('pt-BR') : ''}
+            </div>
+          </div>
+          ` : (!isEdit && targetIndexKey ? `
+          <div style="background:var(--bg-surface);border:1px dashed var(--border-subtle);
+            padding:8px 12px;border-radius:var(--radius-sm);font-size:0.7rem;color:var(--text-muted);">
+            ⓘ Sem dados pra capturar deste widget no momento. Insight será salvo sem snapshot.
+          </div>
+          ` : '')}
 
           <div>
             <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Tags <span style="font-weight:400;color:var(--text-muted);">separadas por vírgula, opcional</span></label>
@@ -783,9 +872,30 @@ export async function mountInsightsPanel(opts) {
     document.getElementById('ipf-close')?.addEventListener('click', () => m.remove());
     document.getElementById('ipf-cancel')?.addEventListener('click', () => m.remove());
 
+    // Toggle "Sem período específico" — desabilita inputs de data
+    document.getElementById('ipf-no-period')?.addEventListener('change', (e) => {
+      const disabled = e.target.checked;
+      document.getElementById('ipf-period-from').disabled = disabled;
+      document.getElementById('ipf-period-to').disabled = disabled;
+      if (disabled) {
+        document.getElementById('ipf-period-from').value = '';
+        document.getElementById('ipf-period-to').value = '';
+      }
+    });
+
     document.getElementById('ipf-save')?.addEventListener('click', async () => {
       const title = document.getElementById('ipf-title').value.trim();
       if (!title) { toast.error('Título obrigatório.'); return; }
+
+      const noPeriod = document.getElementById('ipf-no-period').checked;
+      const periodFromVal = noPeriod ? null : document.getElementById('ipf-period-from').value;
+      const periodToVal   = noPeriod ? null : document.getElementById('ipf-period-to').value;
+
+      // Validação: se tem from + to, from <= to
+      if (periodFromVal && periodToVal && new Date(periodFromVal) > new Date(periodToVal)) {
+        toast.error('Data inicial não pode ser posterior à final.');
+        return;
+      }
 
       const data = {
         dashboard,
@@ -796,8 +906,16 @@ export async function mountInsightsPanel(opts) {
         type:           document.getElementById('ipf-type').value,
         impact:         document.getElementById('ipf-impact').value,
         tags:           document.getElementById('ipf-tags').value.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10),
-        periodFrom, periodTo, filters,
+        periodFrom:     periodFromVal ? new Date(periodFromVal) : null,
+        periodTo:       periodToVal   ? new Date(periodToVal)   : null,
+        filters,
       };
+
+      // dataSnapshot: imutável após criação (preservado no edit)
+      if (!isEdit) {
+        data.dataSnapshot = initialSnapshot;
+      }
+      // No edit, NÃO sobrescreve dataSnapshot — foto histórica preservada
 
       // Se editando insight ai-generated, vira ai-edited
       if (isEdit && isAiSourced && existing.source === 'ai-generated') {

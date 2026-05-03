@@ -20,13 +20,19 @@
  *   recommendation — ação proposta (opcional)
  *   type           — positive | negative | neutral | warning | opportunity
  *   impact         — low | medium | high
- *   periodFrom     — Date inicio do período coberto
- *   periodTo       — Date fim do período
+ *   periodFrom     — Date inicio do período coberto (editável pelo user no form)
+ *   periodTo       — Date fim do período (editável pelo user no form)
  *   filters        — snapshot dos filtros (opcional)
  *   tags           — string[]
  *   source         — manual | ai-generated | ai-edited
  *   aiOriginal     — { title, observation, ... } — payload original da IA (audit trail
  *                    quando humano edita sugestão ai-generated → vira ai-edited)
+ *   dataSnapshot   — IMUTÁVEL após criação. Foto dos dados que motivaram o insight:
+ *                    { values, breakdown, capturedAt, raw? }
+ *                    Pra IA: vem do ctx.snapshot enviado pro LLM.
+ *                    Pra manual: capturado do getSnapshot() do widget no submit.
+ *                    Permite ler o insight meses depois e entender o número que
+ *                    o autor estava olhando — independente do dado atual.
  *   createdBy      — uid + name
  *   createdAt      — Timestamp
  *   updatedAt      — Timestamp
@@ -143,6 +149,72 @@ export function insightCoversPeriod(insight, periodFrom, periodTo) {
   return true;
 }
 
+/** Sanitiza dataSnapshot pra Firestore: limita tamanho, remove valores não-serializáveis.
+ * Retorna null se vazio/inválido.
+ */
+function sanitizeDataSnapshot(snap) {
+  if (!snap || typeof snap !== 'object') return null;
+  // Remove undefined/functions/refs circulares serializando+parseando
+  let cleaned;
+  try {
+    cleaned = JSON.parse(JSON.stringify(snap));
+  } catch {
+    return null;
+  }
+  if (!cleaned || typeof cleaned !== 'object') return null;
+  // Adiciona capturedAt se não vier
+  if (!cleaned.capturedAt) cleaned.capturedAt = new Date().toISOString();
+  // Limita tamanho: 4KB serializado. Se exceder, mantém só values + capturedAt.
+  const serialized = JSON.stringify(cleaned);
+  if (serialized.length > 4096) {
+    return {
+      values: cleaned.values || cleaned,
+      capturedAt: cleaned.capturedAt,
+      _truncated: true,
+      _originalSize: serialized.length,
+    };
+  }
+  return cleaned;
+}
+
+/** Formata dataSnapshot pra string legível compacta (uma linha).
+ * Usado em export PDF/XLSX e tooltip.
+ * Ex: { values: { atual: 72, anterior: 89 }, breakdown: { Mkt: 58 } }
+ *  → "atual: 72 · anterior: 89 · Mkt: 58"
+ */
+export function formatDataSnapshot(snap) {
+  if (!snap || typeof snap !== 'object') return null;
+  const parts = [];
+  const flatten = (obj, prefix = '') => {
+    if (!obj || typeof obj !== 'object') return;
+    Object.entries(obj).forEach(([k, v]) => {
+      if (k === 'capturedAt' || k.startsWith('_')) return;
+      const label = prefix ? `${prefix}.${k}` : k;
+      if (v == null) return;
+      if (typeof v === 'object' && !Array.isArray(v)) {
+        flatten(v, label);
+      } else if (Array.isArray(v)) {
+        // Arrays de objetos viram contagem; arrays simples viram join
+        if (v.length === 0) return;
+        if (typeof v[0] === 'object') {
+          parts.push(`${label}: ${v.length} itens`);
+        } else {
+          parts.push(`${label}: [${v.slice(0, 5).join(', ')}${v.length > 5 ? '...' : ''}]`);
+        }
+      } else {
+        // Formata números com 1 casa se decimal
+        const val = (typeof v === 'number' && !Number.isInteger(v))
+          ? v.toFixed(1)
+          : String(v).slice(0, 50);
+        parts.push(`${label}: ${val}`);
+      }
+    });
+  };
+  flatten(snap);
+  if (snap._truncated) parts.push('… (truncado)');
+  return parts.join(' · ').slice(0, 500) || null;
+}
+
 /** Formata período coberto pra string legível. */
 export function formatInsightPeriod(insight) {
   const iFrom = insight.periodFrom?.toDate?.() || (insight.periodFrom ? new Date(insight.periodFrom) : null);
@@ -173,6 +245,7 @@ export async function createInsight(data) {
     tags:           Array.isArray(data.tags) ? data.tags.slice(0, 10) : [],
     source:         data.source || 'manual',
     aiOriginal:     data.aiOriginal || null,  // payload original quando vem da IA (audit trail)
+    dataSnapshot:   sanitizeDataSnapshot(data.dataSnapshot), // foto dos dados motivadores
     createdBy:      { uid: uid(), name: userName() },
     createdAt:      serverTimestamp(),
     updatedAt:      serverTimestamp(),
@@ -292,6 +365,14 @@ export async function suggestInsightsViaAi(ctx) {
   }
 
   // 5) Sanitiza cada sugestão pra estrutura esperada
+  // dataSnapshot: o snapshot ENVIADO ao LLM é preservado em cada sugestão.
+  // Permite ao user ver depois exatamente quais dados a IA estava olhando.
+  const snapshotForRecord = {
+    ...(ctx.snapshot || {}),
+    capturedAt: new Date().toISOString(),
+    _source: 'ai-suggestion',
+  };
+
   return suggestions.map(s => ({
     title:          String(s.title || '').slice(0, 200),
     observation:    String(s.observation || '').slice(0, 4000),
@@ -300,6 +381,7 @@ export async function suggestInsightsViaAi(ctx) {
     impact:         ['high','medium','low'].includes(s.impact) ? s.impact : 'medium',
     indexKey:       s.indexKey || ctx.indexKey || null,
     source:         'ai-generated',
+    dataSnapshot:   snapshotForRecord,
     // Guarda payload original pra audit trail caso humano edite depois
     aiOriginal:     {
       title:          s.title || '',
@@ -385,7 +467,7 @@ export function insightsToPdfRows(insights, widgetLabels = {}) {
   return rows;
 }
 
-/** Formata insights pra linhas de XLSX, com colunas Widget + Período Coberto + Source.
+/** Formata insights pra linhas de XLSX, com colunas Widget + Período Coberto + Source + Dados observados.
  * @param {Array} insights
  * @param {Object} widgetLabels - mapa indexKey -> label legível
  */
@@ -393,17 +475,18 @@ export function insightsToXlsxRows(insights, widgetLabels = {}) {
   if (!insights?.length) return [];
   const sourceLabel = (s) => s === 'ai-generated' ? 'IA' : s === 'ai-edited' ? 'IA editada' : 'Manual';
   return insights.map(ins => ({
-    'Widget':           ins.indexKey ? (widgetLabels[ins.indexKey] || ins.indexKey) : '— Geral —',
-    'Tipo':             INSIGHT_TYPES.find(t => t.key === ins.type)?.label || '—',
-    'Impacto':          IMPACT_LEVELS.find(x => x.key === ins.impact)?.label || '—',
-    'Título':           ins.title,
-    'Observação':       ins.observation || '',
-    'Recomendação':     ins.recommendation || '',
-    'Tags':             (ins.tags || []).join(', '),
-    'Origem':           sourceLabel(ins.source),
-    'Período coberto':  formatInsightPeriod(ins) || '—',
-    'Autor':            ins.createdBy?.name || '—',
-    'Escrito em':       formatDate(ins.createdAt),
+    'Widget':            ins.indexKey ? (widgetLabels[ins.indexKey] || ins.indexKey) : '— Geral —',
+    'Tipo':              INSIGHT_TYPES.find(t => t.key === ins.type)?.label || '—',
+    'Impacto':           IMPACT_LEVELS.find(x => x.key === ins.impact)?.label || '—',
+    'Título':            ins.title,
+    'Observação':        ins.observation || '',
+    'Recomendação':      ins.recommendation || '',
+    'Dados observados':  formatDataSnapshot(ins.dataSnapshot) || '—',
+    'Tags':              (ins.tags || []).join(', '),
+    'Origem':            sourceLabel(ins.source),
+    'Período coberto':   formatInsightPeriod(ins) || '—',
+    'Autor':             ins.createdBy?.name || '—',
+    'Escrito em':        formatDate(ins.createdAt),
   }));
 }
 

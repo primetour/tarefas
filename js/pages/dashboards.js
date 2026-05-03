@@ -7,8 +7,8 @@ import { store }    from '../store.js';
 import { toast }    from '../components/toast.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
-import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503qq1';
-import { fetchInsights, insightsToPdfRows, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod } from '../services/insights.js?v=20260503qq1';
+import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503rr1';
+import { fetchInsights, insightsToPdfRows, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } from '../services/insights.js?v=20260503rr1';
 import {
   getOverviewMetrics, getTasksByDay, getStatusDistribution,
   getPriorityDistribution, getTasksByMember, getTasksByProject,
@@ -969,8 +969,8 @@ async function exportDashXls() {
       const widgetLabels = Object.fromEntries(PRODUTIVIDADE_WIDGETS.map(w => [w.indexKey, w.label]));
       const insRows = insightsToXlsxRows(insights, widgetLabels);
       const ws4 = window.XLSX.utils.json_to_sheet(insRows);
-      // 11 colunas: Widget, Tipo, Impacto, Título, Observação, Recomendação, Tags, Origem, Período coberto, Autor, Escrito em
-      ws4['!cols'] = [{wch:30},{wch:14},{wch:10},{wch:50},{wch:60},{wch:60},{wch:25},{wch:12},{wch:24},{wch:20},{wch:18}];
+      // 12 colunas: Widget, Tipo, Impacto, Título, Observação, Recomendação, Dados observados, Tags, Origem, Período coberto, Autor, Escrito em
+      ws4['!cols'] = [{wch:30},{wch:14},{wch:10},{wch:50},{wch:60},{wch:60},{wch:50},{wch:25},{wch:12},{wch:24},{wch:20},{wch:18}];
       window.XLSX.utils.book_append_sheet(wb, ws4, 'Insights');
     }
   } catch (e) { console.warn('insights xlsx:', e); }
@@ -1391,12 +1391,13 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
 
         doc.autoTable({
           startY: kit.y, margin: { left: M, right: M },
-          head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Recomendacao', 'Periodo', 'Origem', 'Por']],
+          head: [['Tipo', 'Impacto', 'Titulo', 'Observacao', 'Dados observados', 'Recomendacao', 'Periodo', 'Origem', 'Por']],
           body: group.items.map(ins => [
             ins.type || 'neutral',
             ins.impact || 'medium',
             safe(ins.title || ''),
             safe(ins.observation || ''),
+            safe(formatDataSnapshot(ins.dataSnapshot) || '-'),
             safe(ins.recommendation || ''),
             safe(formatInsightPeriod(ins) || '-'),
             ins.source === 'ai-generated' ? 'IA'
@@ -1404,12 +1405,12 @@ const exportDashPdf = withExportGuard(async function exportDashPdf() {
               : 'Manual',
             safe((ins.createdBy?.name || '-') + ' · ' + (ins.createdAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '')),
           ]),
-          styles: { fontSize: 6.5, cellPadding: 2, overflow: 'linebreak' },
-          headStyles: { fillColor: [26, 42, 74], textColor: 255, fontStyle: 'bold', fontSize: 6.5 },
+          styles: { fontSize: 6, cellPadding: 1.8, overflow: 'linebreak' },
+          headStyles: { fillColor: [26, 42, 74], textColor: 255, fontStyle: 'bold', fontSize: 6 },
           columnStyles: {
-            0: { cellWidth: 16 }, 1: { cellWidth: 12 }, 2: { cellWidth: 40 },
-            3: { cellWidth: 50 }, 4: { cellWidth: 50 }, 5: { cellWidth: 26 },
-            6: { cellWidth: 14 }, 7: { cellWidth: 30 },
+            0: { cellWidth: 14 }, 1: { cellWidth: 11 }, 2: { cellWidth: 32 },
+            3: { cellWidth: 42 }, 4: { cellWidth: 42 }, 5: { cellWidth: 42 },
+            6: { cellWidth: 22 }, 7: { cellWidth: 13 }, 8: { cellWidth: 26 },
           },
           didDrawPage: (data) => { kit.y = data.cursor.y; },
         });
