@@ -418,7 +418,10 @@ function emptyWidget(gridId, id, colClass, title, height = 200) {
   wrap.id = id;
   wrap.style.minHeight = height + 'px';
   wrap.innerHTML = `
-    <div class="widget-header"><div class="widget-title">${title}</div></div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;">
+      <div class="widget-title" style="flex:1;">${title}</div>
+      <span class="widget-insights-slot" data-widget-id="${id}"></span>
+    </div>
     <div class="widget-body" style="display:flex;align-items:center;justify-content:center;height:${height}px;">
       <div style="text-align:center;color:var(--text-muted);">
         <div style="font-size:2rem;margin-bottom:8px;opacity:0.3;">📊</div>
@@ -553,23 +556,120 @@ function renderAllCharts(Chart, m) {
   try { renderCsatByAreaWidget(tasks, surveys); }  catch(e){ console.warn('R3 CSAT area:', e); }
   try { renderNucleoWidget(tasks); }               catch(e){ console.warn('R3 nucleo:', e); }
 
-  /* Insights & Observações (componente reutilizavel)
+  /* Insights & Observações (componente reutilizavel) — 2 camadas:
+     1) Por widget: cada widget tem botão compacto (popover) ancorado a um indexKey
+     2) Geral: painel grande no fim do dashboard com análises que cruzam índices
+
      IIFE async pra nao precisar tornar renderAllCharts async (multiplos callers). */
   (async () => {
     try {
       const { start, end } = getPeriodDates(activePeriod());
+      const periodLabel = ({
+        '7d': 'Últimos 7 dias', '30d': 'Últimos 30 dias',
+        '90d': 'Últimos 90 dias', '12m': '12 meses',
+        'custom': 'Período customizado',
+      })[currentPeriod] || currentPeriod;
+      const filtersSnapshot = {
+        user: filterUser, nucleo: filterNucleo, sector: filterSector,
+        period: currentPeriod, periodLabel,
+      };
+
+      await attachWidgetInsights(m, { start, end }, periodLabel, filtersSnapshot);
+
+      // Painel geral (apenas insights NÃO ancorados a widget — análises de panorama)
       const section = document.getElementById('dash-insights-section');
       if (section) {
         await mountInsightsPanel({
           container: section,
           dashboard: 'produtividade',
+          mode: 'panel',
+          indexKey: 'general',                  // só pega insights gerais (indexKey null)
           periodFrom: start, periodTo: end,
-          filters: { user: filterUser, nucleo: filterNucleo, sector: filterSector, period: currentPeriod },
+          periodLabel,
+          filters: filtersSnapshot,
           enableAi: true,
+          getSnapshot: () => buildDashboardSnapshot(m, currentPeriod),
         });
       }
     } catch(e) { console.warn('insightsPanel:', e); }
   })();
+}
+
+/* ─── Mapa de widgets → indexKey + label + snapshot fn ────────────────────
+   Cada entrada define: o ID do widget no DOM, a label exibida no popover,
+   e uma função que devolve o snapshot enviado pra IA quando user pede sugestão.
+*/
+const PRODUTIVIDADE_WIDGETS = [
+  { widgetId: 'velocity-chart',    indexKey: 'velocity',          label: '📈 Criadas vs Concluídas', snapshot: (m) => ({ weeklyVelocity: getWeeklyVelocity(m.tasks, 12) }) },
+  { widgetId: 'time-type-chart',   indexKey: 'timeByType',        label: '⏱ Tempo por Tipo',         snapshot: (m) => ({ timeByType: getTimePerTaskByType(m.tasks) }) },
+  { widgetId: 'status-donut',      indexKey: 'statusDistribution',label: '◎ Status das Tarefas',     snapshot: (m) => ({ statusDistribution: getStatusDistribution(m.tasks) }) },
+  { widgetId: 'priority-donut',    indexKey: 'priorityDistribution', label: '▲ Prioridade das Tarefas', snapshot: (m) => ({ priorityDistribution: getPriorityDistribution(m.tasks) }) },
+  { widgetId: 'projects-chart',    indexKey: 'projectProgress',   label: '📦 Progresso por Projeto', snapshot: (m) => ({ projectProgress: getTasksByProject(m.tasks, m.projects).slice(0, 12) }) },
+  { widgetId: 'member-board',      indexKey: 'memberRanking',     label: '🏆 Ranking da Equipe',     snapshot: (m) => ({ memberRanking: getTasksByMember(m.tasks).slice(0, 15) }) },
+  { widgetId: 'type-board',        indexKey: 'typeRanking',       label: '◇ Ranking por Tipo',       snapshot: (m) => ({ typeRanking: getProductivityByType(m.tasks).slice(0, 15) }) },
+  { widgetId: 'upcoming-widget',   indexKey: 'upcomingDeadlines', label: '⏰ Prazos Próximos',       snapshot: (m) => ({ upcomingDeadlines: getUpcomingDeadlines(m.tasks, 7).map(t => ({ id: t.id, title: t.title, dueDate: t.dueDate?.toDate?.()?.toISOString?.() || null, priority: t.priority })) }) },
+  { widgetId: 'heatmap-widget',    indexKey: 'activityHeatmap',   label: '🔥 Atividade 12 meses',    snapshot: (m) => {
+      const h = getActivityHeatmap(m.tasks);
+      const total = Object.values(h).reduce((a,b)=>a+b,0);
+      const days  = Object.keys(h).length;
+      return { activityHeatmap: { totalActions: total, activeDays: days, max: Math.max(...Object.values(h), 0) } };
+    } },
+  { widgetId: 'r3-csat-general',   indexKey: 'csatGeneral',       label: '★ CSAT Geral',             snapshot: (m) => ({ csatGeneral: getCsatGeneral(m.surveys || []) }) },
+  { widgetId: 'r3-rework',         indexKey: 'rework',            label: '✓ Sem Retrabalho',          snapshot: (m) => ({ rework: getReworkRate(m.tasks) }) },
+  { widgetId: 'r3-newsletters',    indexKey: 'newsletters',       label: '📧 Newsletters',            snapshot: (m) => ({ newsletters: getNewslettersOutOfCalendar(m.tasks, activePeriod()) }) },
+  { widgetId: 'r3-csat-area',      indexKey: 'csatByArea',        label: '★ CSAT por Área',           snapshot: (m) => ({ csatByArea: getCsatByArea(m.surveys || [], m.tasks) }) },
+  { widgetId: 'r3-nucleo',         indexKey: 'nucleo',            label: '◈ Performance por Núcleo',  snapshot: (m) => ({ nucleo: getPerformanceByNucleo(m.tasks) }) },
+];
+
+async function attachWidgetInsights(m, period, periodLabel, filtersSnapshot) {
+  for (const w of PRODUTIVIDADE_WIDGETS) {
+    const widget = document.getElementById(w.widgetId);
+    if (!widget) continue;
+    const slot = widget.querySelector('.widget-insights-slot');
+    if (!slot) continue;
+    try {
+      await mountInsightsPanel({
+        container: slot,
+        dashboard: 'produtividade',
+        mode: 'widget',
+        indexKey: w.indexKey,
+        indexLabel: w.label,
+        periodFrom: period.start, periodTo: period.end,
+        periodLabel,
+        filters: filtersSnapshot,
+        enableAi: true,
+        getSnapshot: () => w.snapshot(m),
+      });
+    } catch (e) {
+      console.warn(`[insights:widget:${w.widgetId}]`, e?.message);
+    }
+  }
+}
+
+/** Snapshot agregado de TODO o dashboard pra IA gerar análise geral. */
+function buildDashboardSnapshot(m, period) {
+  const status = getStatusDistribution(m.tasks);
+  const total  = m.tasks.length;
+  const done   = status.find(s => s.key === 'completed' || /completad/i.test(s.label || ''))?.count || 0;
+  return {
+    period,
+    totals: {
+      tarefas: total,
+      concluidas: done,
+      taxaConclusao: total ? Math.round((done / total) * 100) : 0,
+    },
+    statusDistribution: status,
+    priorityDistribution: getPriorityDistribution(m.tasks),
+    weeklyVelocity: getWeeklyVelocity(m.tasks, 12).slice(-6),
+    csatGeneral: getCsatGeneral(m.surveys || []),
+    rework: getReworkRate(m.tasks),
+    newsletters: getNewslettersOutOfCalendar(m.tasks, period),
+    csatByArea: getCsatByArea(m.surveys || [], m.tasks).slice(0, 8),
+    nucleo: getPerformanceByNucleo(m.tasks),
+    memberRankingTop5: getTasksByMember(m.tasks).slice(0, 5),
+    typeRankingTop5:   getProductivityByType(m.tasks).slice(0, 5),
+    projectProgressTop10: getTasksByProject(m.tasks, m.projects).slice(0, 10),
+  };
 }
 
 /* ─── Line chart ─────────────────────────────────────────── */
@@ -683,9 +783,10 @@ function renderLeaderboard(gridId, id, colClass, opts) {
   const rankLabels = ['', '🥇','🥈','🥉'];
 
   wrap.innerHTML = `
-    <div class="widget-header">
-      <div class="widget-title">${opts.title}</div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="widget-title" style="flex:1;min-width:0;">${opts.title}</div>
       ${opts.subtitle ? `<span style="font-size:0.75rem;color:var(--text-muted);">${opts.subtitle}</span>` : ''}
+      <span class="widget-insights-slot" data-widget-id="${id}"></span>
     </div>
     <div class="widget-body" style="padding:0 18px;">
       ${opts.items.length === 0
@@ -727,9 +828,10 @@ function renderUpcoming(gridId, id, colClass, tasks) {
   }};
 
   wrap.innerHTML = `
-    <div class="widget-header">
-      <div class="widget-title">⏰ Prazos Próximos (7 dias)</div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="widget-title" style="flex:1;min-width:0;">⏰ Prazos Próximos (7 dias)</div>
       <span class="badge ${upcoming.length>0?'badge-warning':'badge-neutral'}">${upcoming.length}</span>
+      <span class="widget-insights-slot" data-widget-id="${id}"></span>
     </div>
     <div class="widget-body" style="padding:0 18px; overflow-y:auto; max-height:220px;">
       ${upcoming.length === 0
@@ -786,8 +888,8 @@ function renderHeatmap(widgetId, tasks) {
   const padding  = Array(firstDay).fill(null);
 
   widget.innerHTML = `
-    <div class="widget-header">
-      <div class="widget-title">🔥 Atividade — últimos 12 meses</div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="widget-title" style="flex:1;min-width:0;">🔥 Atividade — últimos 12 meses</div>
       <div style="display:flex;align-items:center;gap:6px;font-size:0.75rem;color:var(--text-muted);">
         Menos
         ${[0,1,2,3,4].map(l=>`<div style="width:12px;height:12px;border-radius:2px;background:${
@@ -798,6 +900,7 @@ function renderHeatmap(widgetId, tasks) {
         };"></div>`).join('')}
         Mais
       </div>
+      <span class="widget-insights-slot" data-widget-id="${widgetId}"></span>
     </div>
     <div class="widget-body" style="overflow-x:auto; padding:12px 18px;">
       <div style="display:flex; gap:3px; align-items:flex-start;">
@@ -1296,9 +1399,10 @@ function createWidget(gridId, id, colClass, title, subtitle, height) {
   wrap.id = id;
   wrap.style.minHeight = height + 'px';
   wrap.innerHTML = `
-    <div class="widget-header">
-      <div class="widget-title">${title}</div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="widget-title" style="flex:1;min-width:0;">${title}</div>
       ${subtitle ? `<span style="font-size:0.75rem;color:var(--text-muted);">${subtitle}</span>` : ''}
+      <span class="widget-insights-slot" data-widget-id="${id}"></span>
     </div>
     <div class="widget-body">
       <div class="chart-container" style="height:${height}px;">
@@ -1331,9 +1435,10 @@ function renderCsatGeneral(tasks, surveys) {
   const scoreColor = m.avg >= 4 ? 'var(--color-success)' : m.avg >= 3 ? 'var(--color-warning)' : m.avg > 0 ? 'var(--color-danger)' : 'var(--text-muted)';
 
   el.innerHTML = `
-    <div class="widget-header">
-      <div class="widget-title">★ CSAT Geral</div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="widget-title" style="flex:1;min-width:0;">★ CSAT Geral</div>
       <span style="font-size:0.75rem;color:var(--text-muted);">Satisfação do cliente</span>
+      <span class="widget-insights-slot" data-widget-id="r3-csat-general"></span>
     </div>
     <div class="widget-body" style="padding:16px 18px;">
       ${!m.total ? `
@@ -1376,8 +1481,9 @@ function renderReworkWidget(tasks) {
   const color = r.noReworkRate >= 80 ? 'var(--color-success)' : r.noReworkRate >= 60 ? 'var(--color-warning)' : 'var(--color-danger)';
 
   el.innerHTML = `
-    <div class="widget-header">
-      <div class="widget-title">✓ Tarefas sem Retrabalho</div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="widget-title" style="flex:1;min-width:0;">✓ Tarefas sem Retrabalho</div>
+      <span class="widget-insights-slot" data-widget-id="r3-rework"></span>
     </div>
     <div class="widget-body" style="padding:16px 18px;">
       ${!r.total ? `
@@ -1411,8 +1517,9 @@ function renderNewslettersWidget(tasks) {
   const color = n.outOfCalendarPct === 0 ? 'var(--color-success)' : n.outOfCalendarPct < 20 ? 'var(--color-warning)' : 'var(--color-danger)';
 
   el.innerHTML = `
-    <div class="widget-header">
-      <div class="widget-title">📧 Newsletters fora do calendário</div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="widget-title" style="flex:1;min-width:0;">📧 Newsletters fora do calendário</div>
+      <span class="widget-insights-slot" data-widget-id="r3-newsletters"></span>
     </div>
     <div class="widget-body" style="padding:16px 18px;">
       ${!n.total ? `
@@ -1445,9 +1552,10 @@ function renderCsatByAreaWidget(tasks, surveys) {
   const data = getCsatByArea(surveys, tasks).filter(d => d.total > 0);
 
   el.innerHTML = `
-    <div class="widget-header">
-      <div class="widget-title">★ CSAT por Área</div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="widget-title" style="flex:1;min-width:0;">★ CSAT por Área</div>
       <span style="font-size:0.75rem;color:var(--text-muted);">Média de score · tarefas · % respostas</span>
+      <span class="widget-insights-slot" data-widget-id="r3-csat-area"></span>
     </div>
     <div class="widget-body" style="padding:0 18px 12px;">
       ${!data.length ? `
@@ -1481,9 +1589,10 @@ function renderNucleoWidget(tasks) {
   const data = getPerformanceByNucleo(tasks);
 
   el.innerHTML = `
-    <div class="widget-header">
-      <div class="widget-title">◈ Performance por Núcleo</div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="widget-title" style="flex:1;min-width:0;">◈ Performance por Núcleo</div>
       <span style="font-size:0.75rem;color:var(--text-muted);">Tarefas concluídas</span>
+      <span class="widget-insights-slot" data-widget-id="r3-nucleo"></span>
     </div>
     <div class="widget-body" style="padding:0 18px 12px;">
       ${!data.length ? `
@@ -1521,7 +1630,10 @@ function renderTimeByTypeChart(Chart, gridId, id, colClass, data) {
 
   if (!data.length) {
     wrap.innerHTML = `
-      <div class="widget-header"><div class="widget-title">⏱ Tempo por Tarefa / Tipo</div></div>
+      <div class="widget-header" style="display:flex;align-items:center;gap:8px;">
+        <div class="widget-title" style="flex:1;">⏱ Tempo por Tarefa / Tipo</div>
+        <span class="widget-insights-slot" data-widget-id="${id}"></span>
+      </div>
       <div class="widget-body"><div class="empty-state" style="padding:24px;">
         <div class="empty-state-icon">⏱</div>
         <div class="empty-state-title" style="font-size:0.875rem;">Nenhuma tarefa concluída com datas registradas</div>
@@ -1530,9 +1642,10 @@ function renderTimeByTypeChart(Chart, gridId, id, colClass, data) {
   }
 
   wrap.innerHTML = `
-    <div class="widget-header">
-      <div class="widget-title">⏱ Tempo por Tarefa / Tipo</div>
+    <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div class="widget-title" style="flex:1;min-width:0;">⏱ Tempo por Tarefa / Tipo</div>
       <span style="font-size:0.75rem;color:var(--text-muted);">Média de dias até conclusão</span>
+      <span class="widget-insights-slot" data-widget-id="${id}"></span>
     </div>
     <div class="widget-body" style="padding:0 18px 12px;">
       ${data.map(d => `

@@ -1,21 +1,42 @@
 /**
  * PRIMETOUR — Insights Panel Component
  *
- * Painel reutilizável pra qualquer dashboard. Lista insights existentes,
- * permite adicionar/editar/remover, e oferece botão pra IA sugerir.
+ * Reutilizável em qualquer dashboard, em 2 modos:
  *
- * Uso:
- *   import { mountInsightsPanel } from '../components/insightsPanel.js';
+ * 1) PANEL (default): card grande com header + lista + botões.
+ *    Usado pra "Análise Geral" no fim do dashboard.
  *
+ * 2) WIDGET: botão compacto com badge contador (ex: "💬 3 🤖").
+ *    Usado em cada gráfico/KPI individual. Abre popover ao clicar.
+ *
+ * Ambos compartilham o mesmo form de criar/editar e o mesmo preview de IA.
+ *
+ * Uso panel:
  *   mountInsightsPanel({
- *     container,                       // HTMLElement onde renderizar
- *     dashboard: 'produtividade',      // chave do dashboard (ver DASHBOARDS)
- *     periodFrom, periodTo,            // Date instances (do filtro do dash)
- *     filters: {...},                  // snapshot dos filtros aplicados
- *     enableAi: true,                  // mostra botão IA (placeholder por ora)
+ *     container,
+ *     dashboard: 'produtividade',
+ *     mode: 'panel',                  // ou omitido (default)
+ *     indexKey: 'general',            // só insights gerais (não ancorados)
+ *     periodFrom, periodTo, filters,
+ *     enableAi: true,
+ *     getSnapshot: () => ({...}),     // função que devolve dados pro IA
+ *   });
+ *
+ * Uso widget:
+ *   mountInsightsPanel({
+ *     container,                       // ideal: header do widget
+ *     dashboard: 'produtividade',
+ *     mode: 'widget',
+ *     indexKey: 'sla90',
+ *     indexLabel: 'SLA 90%',
+ *     periodFrom, periodTo, filters,
+ *     enableAi: true,
+ *     getSnapshot: () => ({ value: 87, prev: 95, breakdown: {...} }),
  *   });
  *
  * Dispara evento custom 'insights:changed' no container quando muda.
+ *
+ * API retornada: { refresh(), open() }
  */
 
 import { toast } from './toast.js';
@@ -35,18 +56,39 @@ const fmtDate = ts => {
 };
 
 export async function mountInsightsPanel(opts) {
-  const { container, dashboard, periodFrom, periodTo, filters, enableAi = true } = opts;
+  const {
+    container,
+    dashboard,
+    mode = 'panel',                  // 'panel' | 'widget'
+    indexKey = null,                 // null = todos; 'general' = só gerais; string = só desse índice
+    indexLabel = '',                 // label do widget (mostrado no form)
+    periodFrom, periodTo, filters,
+    periodLabel = '',
+    enableAi = true,
+    getSnapshot = null,              // function que retorna snapshot pra IA
+  } = opts;
+
   if (!container || !dashboard) {
     console.warn('[insightsPanel] container e dashboard obrigatórios');
-    return;
+    return null;
   }
 
   const dashInfo = DASHBOARDS[dashboard] || { label: dashboard, icon: '📊' };
   let insights = [];
+  let popoverOpen = false;
+
+  // Filtro de fetch: widget mode pega só o indexKey específico,
+  // panel mode com indexKey='general' pega só os gerais,
+  // panel mode sem indexKey (null) pega TODOS.
+  const fetchIndexKey = mode === 'widget' ? indexKey : indexKey;
 
   async function refresh() {
     try {
-      insights = await fetchInsights({ dashboard, periodFrom, periodTo, max: 50 });
+      insights = await fetchInsights({
+        dashboard,
+        indexKey: fetchIndexKey || undefined,
+        periodFrom, periodTo, max: 50,
+      });
     } catch (e) {
       console.error('[insightsPanel] fetch failed:', e);
       insights = [];
@@ -55,22 +97,220 @@ export async function mountInsightsPanel(opts) {
   }
 
   function render() {
+    if (mode === 'widget') renderWidget();
+    else renderPanel();
+  }
+
+  /* ════════════════════════════════════════════════
+     WIDGET MODE — botão compacto com contador
+     ════════════════════════════════════════════════ */
+  function renderWidget() {
+    const count = insights.length;
+    container.innerHTML = `
+      <button class="ip-widget-btn" id="ip-widget-trigger"
+        title="Insights deste índice${indexLabel ? ': ' + indexLabel : ''}"
+        style="display:inline-flex;align-items:center;gap:5px;
+        padding:3px 9px;border-radius:var(--radius-full);
+        background:${count ? 'rgba(59,130,246,.12)' : 'var(--bg-elevated)'};
+        border:1px solid ${count ? 'rgba(59,130,246,.3)' : 'var(--border-subtle)'};
+        color:${count ? '#3B82F6' : 'var(--text-muted)'};
+        font-size:0.7rem;font-weight:600;cursor:pointer;
+        transition:all .15s;">
+        💡 ${count > 0 ? count : '+'}${enableAi ? ' · 🤖' : ''}
+      </button>
+    `;
+    container.querySelector('#ip-widget-trigger')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openPopover(e.currentTarget);
+    });
+  }
+
+  function openPopover(anchor) {
+    if (popoverOpen) return;
+    popoverOpen = true;
+
+    const pop = document.createElement('div');
+    pop.className = 'ip-popover';
+    pop.style.cssText = `
+      position:fixed;z-index:1500;width:380px;max-width:92vw;max-height:520px;
+      background:var(--bg-card);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-lg);box-shadow:0 16px 48px rgba(0,0,0,.4);
+      display:flex;flex-direction:column;overflow:hidden;
+    `;
+    // Posição: abaixo do anchor, alinhado à direita
+    const r = anchor.getBoundingClientRect();
+    const left = Math.max(8, Math.min(window.innerWidth - 388, r.right - 380));
+    const top  = Math.min(window.innerHeight - 540, r.bottom + 6);
+    pop.style.left = left + 'px';
+    pop.style.top  = top  + 'px';
+
+    pop.innerHTML = `
+      <div style="padding:12px 16px;background:var(--bg-surface);
+        border-bottom:1px solid var(--border-subtle);
+        display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">
+          💡 Insights ${indexLabel ? '· ' + esc(indexLabel) : ''}
+        </div>
+        <button id="ip-pop-close" style="border:none;background:none;cursor:pointer;
+          font-size:1rem;color:var(--text-muted);padding:4px 8px;">✕</button>
+      </div>
+      <div id="ip-pop-list" style="flex:1;overflow-y:auto;padding:10px;">
+        ${renderListCompact()}
+      </div>
+      <div style="padding:10px;border-top:1px solid var(--border-subtle);
+        background:var(--bg-surface);display:flex;gap:6px;">
+        ${enableAi ? `
+          <button class="btn btn-secondary btn-sm" id="ip-pop-ai" style="flex:1;font-size:0.75rem;">
+            🤖 Sugerir via IA
+          </button>
+        ` : ''}
+        <button class="btn btn-primary btn-sm" id="ip-pop-add" style="flex:1;font-size:0.75rem;">
+          + Adicionar
+        </button>
+      </div>
+    `;
+    document.body.appendChild(pop);
+
+    // Fecha ao clicar fora
+    const onClickOutside = (e) => {
+      if (!pop.contains(e.target) && e.target !== anchor) closePopover();
+    };
+    setTimeout(() => document.addEventListener('click', onClickOutside), 50);
+
+    function closePopover() {
+      pop.remove();
+      document.removeEventListener('click', onClickOutside);
+      popoverOpen = false;
+    }
+
+    pop.querySelector('#ip-pop-close')?.addEventListener('click', closePopover);
+    pop.querySelector('#ip-pop-add')?.addEventListener('click', () => {
+      closePopover();
+      openForm();
+    });
+    pop.querySelector('#ip-pop-ai')?.addEventListener('click', () => {
+      closePopover();
+      handleAiSuggest();
+    });
+    pop.querySelectorAll('[data-act="ip-edit"]').forEach(b => {
+      b.addEventListener('click', () => {
+        const ins = insights.find(x => x.id === b.dataset.id);
+        closePopover();
+        if (ins) openForm(ins);
+      });
+    });
+    pop.querySelectorAll('[data-act="ip-del"]').forEach(b => {
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('Remover este insight?')) return;
+        try {
+          await deleteInsight(b.dataset.id);
+          toast.success('Removido.');
+          await refresh();
+          // Re-render popover content
+          pop.querySelector('#ip-pop-list').innerHTML = renderListCompact();
+          rebindPopoverList(pop, closePopover);
+          container.dispatchEvent(new CustomEvent('insights:changed'));
+        } catch (e) { toast.error('Erro: ' + (e.message || '')); }
+      });
+    });
+  }
+
+  function rebindPopoverList(pop, closePopover) {
+    pop.querySelectorAll('[data-act="ip-edit"]').forEach(b => {
+      b.addEventListener('click', () => {
+        const ins = insights.find(x => x.id === b.dataset.id);
+        closePopover();
+        if (ins) openForm(ins);
+      });
+    });
+    pop.querySelectorAll('[data-act="ip-del"]').forEach(b => {
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('Remover este insight?')) return;
+        try {
+          await deleteInsight(b.dataset.id);
+          toast.success('Removido.');
+          await refresh();
+          pop.querySelector('#ip-pop-list').innerHTML = renderListCompact();
+          rebindPopoverList(pop, closePopover);
+          container.dispatchEvent(new CustomEvent('insights:changed'));
+        } catch (e) { toast.error('Erro: ' + (e.message || '')); }
+      });
+    });
+  }
+
+  function renderListCompact() {
+    if (!insights.length) {
+      return `
+        <div style="text-align:center;padding:20px 12px;color:var(--text-muted);">
+          <div style="font-size:1.5rem;margin-bottom:6px;opacity:.4;">💡</div>
+          <div style="font-size:0.75rem;">Nenhum insight ainda.</div>
+        </div>
+      `;
+    }
+    return `<div style="display:flex;flex-direction:column;gap:6px;">${insights.map(renderItemCompact).join('')}</div>`;
+  }
+
+  function renderItemCompact(ins) {
+    const type = INSIGHT_TYPES.find(t => t.key === ins.type) || INSIGHT_TYPES[4];
+    const impact = IMPACT_LEVELS.find(x => x.key === ins.impact) || IMPACT_LEVELS[1];
+    return `
+      <div style="background:var(--bg-surface);border-left:3px solid ${type.color};
+        padding:8px 10px;border-radius:var(--radius-sm);">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:0.8125rem;color:var(--text-primary);margin-bottom:3px;">
+              ${type.icon} ${esc(ins.title)}
+              ${ins.source === 'ai-generated' ? '<span style="color:#A78BFA;font-size:0.65rem;">🤖</span>' : ''}
+              ${ins.source === 'ai-edited' ? '<span style="color:#A78BFA;font-size:0.65rem;">🤖✎</span>' : ''}
+            </div>
+            ${ins.observation ? `
+              <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.45;
+                white-space:pre-wrap;margin-bottom:3px;">${esc(ins.observation.slice(0, 220))}${ins.observation.length > 220 ? '…' : ''}</div>
+            ` : ''}
+            <div style="font-size:0.65rem;color:var(--text-muted);">
+              <span style="color:${impact.color};">●</span> ${esc(impact.label)} ·
+              ${esc(ins.createdBy?.name || '—')} · ${fmtDate(ins.createdAt)}
+            </div>
+          </div>
+          <div style="display:flex;gap:2px;flex-shrink:0;">
+            <button data-act="ip-edit" data-id="${esc(ins.id)}"
+              style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 5px;font-size:0.75rem;" title="Editar">✎</button>
+            <button data-act="ip-del" data-id="${esc(ins.id)}"
+              style="border:none;background:none;cursor:pointer;color:var(--color-danger);padding:3px 5px;font-size:0.75rem;" title="Remover">✕</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /* ════════════════════════════════════════════════
+     PANEL MODE — card completo (modo original)
+     ════════════════════════════════════════════════ */
+  function renderPanel() {
+    const isGeneral = indexKey === 'general';
+    const headerLabel = isGeneral
+      ? 'Análise Geral do Dashboard'
+      : (indexKey ? `Insights · ${indexLabel || indexKey}` : 'Insights & Observações');
+
     container.innerHTML = `
       <div class="card" style="padding:18px 20px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
           <div>
             <h3 style="margin:0;font-size:1rem;font-weight:600;color:var(--text-primary);">
-              💡 Insights & Observações
+              💡 ${esc(headerLabel)}
             </h3>
             <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
               ${insights.length} ${insights.length === 1 ? 'insight registrado' : 'insights registrados'} ·
-              ${dashInfo.icon} ${dashInfo.label}
+              ${dashInfo.icon} ${esc(dashInfo.label)}
               ${periodFrom ? ' · ' + fmtDate(periodFrom) : ''}${periodTo ? ' → ' + fmtDate(periodTo) : ''}
+              ${isGeneral ? ' · <em>análises que cruzam múltiplos índices</em>' : ''}
             </div>
           </div>
           <div style="display:flex;gap:6px;">
             ${enableAi ? `
-              <button class="btn btn-secondary btn-sm" id="ip-suggest-ai" title="Pedir IA pra sugerir insights baseado nos dados">
+              <button class="btn btn-secondary btn-sm" id="ip-suggest-ai" title="IA analisa o dashboard e sugere insights">
                 🤖 Sugerir via IA
               </button>
             ` : ''}
@@ -83,7 +323,7 @@ export async function mountInsightsPanel(opts) {
         </div>
       </div>
     `;
-    bindEvents();
+    bindPanelEvents();
   }
 
   function renderList() {
@@ -119,9 +359,19 @@ export async function mountInsightsPanel(opts) {
                 background:${impact.color}22;color:${impact.color};">
                 Impacto ${esc(impact.label)}
               </span>
+              ${ins.indexKey ? `
+                <span style="font-size:0.6875rem;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);
+                  background:rgba(148,163,184,.15);color:var(--text-muted);">
+                  📍 ${esc(ins.indexKey)}
+                </span>
+              ` : ''}
               ${ins.source === 'ai-generated' ? `
                 <span style="font-size:0.6875rem;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);
                   background:rgba(167,139,250,.15);color:#A78BFA;">🤖 IA</span>
+              ` : ''}
+              ${ins.source === 'ai-edited' ? `
+                <span style="font-size:0.6875rem;font-weight:600;padding:2px 8px;border-radius:var(--radius-full);
+                  background:rgba(167,139,250,.15);color:#A78BFA;">🤖✎ IA editada</span>
               ` : ''}
             </div>
             <div style="font-size:0.9375rem;font-weight:600;color:var(--text-primary);margin-bottom:6px;">
@@ -152,23 +402,9 @@ export async function mountInsightsPanel(opts) {
     `;
   }
 
-  function bindEvents() {
+  function bindPanelEvents() {
     container.querySelector('#ip-add')?.addEventListener('click', () => openForm());
-    container.querySelector('#ip-suggest-ai')?.addEventListener('click', async () => {
-      try {
-        const suggestions = await suggestInsightsViaAi({ dashboard, periodFrom, periodTo, filters });
-        if (!suggestions || !suggestions.length) {
-          toast.info('IA de insights ainda não configurada para este dashboard. Adicione manualmente.');
-          return;
-        }
-        toast.success(`${suggestions.length} sugestões geradas pela IA.`);
-        await refresh();
-        container.dispatchEvent(new CustomEvent('insights:changed'));
-      } catch (e) {
-        console.error('[insightsPanel] AI suggest failed:', e);
-        toast.error('Erro ao chamar IA: ' + (e.message || ''));
-      }
-    });
+    container.querySelector('#ip-suggest-ai')?.addEventListener('click', handleAiSuggest);
     container.querySelectorAll('[data-act="ip-edit"]').forEach(b => {
       b.addEventListener('click', () => {
         const ins = insights.find(x => x.id === b.dataset.id);
@@ -188,8 +424,175 @@ export async function mountInsightsPanel(opts) {
     });
   }
 
+  /* ════════════════════════════════════════════════
+     IA — sugerir e mostrar preview com aprovação
+     ════════════════════════════════════════════════ */
+  async function handleAiSuggest() {
+    const snapshot = typeof getSnapshot === 'function' ? (getSnapshot() || {}) : {};
+    if (!Object.keys(snapshot).length) {
+      toast.warning('Sem dados de snapshot pra mandar pra IA. Configure getSnapshot.');
+      return;
+    }
+
+    // Loading toast (id manual pra remover quando terminar)
+    const loadingId = toast.info('🤖 IA analisando dados, aguarde...');
+
+    let suggestions;
+    try {
+      suggestions = await suggestInsightsViaAi({
+        dashboard,
+        indexKey: indexKey === 'general' ? null : indexKey,
+        scope: indexKey && indexKey !== 'general' ? 'widget' : 'dashboard',
+        periodFrom, periodTo, periodLabel,
+        snapshot, filters,
+      });
+    } catch (e) {
+      console.error('[insightsPanel] AI suggest failed:', e);
+      toast.remove(loadingId);
+      toast.error('IA falhou: ' + (e.message || ''));
+      return;
+    }
+    toast.remove(loadingId);
+
+    if (suggestions === null) {
+      toast.warning('Agente "bi-insights-analyst" não foi seedado no IA Hub. Vá em IA Hub e clique em "Seed agentes".');
+      return;
+    }
+
+    if (!suggestions.length) {
+      toast.info('IA não identificou achados relevantes nos dados desse período.');
+      return;
+    }
+
+    openAiPreviewModal(suggestions);
+  }
+
+  function openAiPreviewModal(suggestions) {
+    const m = document.createElement('div');
+    m.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
+      display:flex;align-items:center;justify-content:center;padding:20px;`;
+    m.innerHTML = `
+      <div class="card" style="width:100%;max-width:720px;max-height:90vh;
+        padding:0;overflow:hidden;display:flex;flex-direction:column;">
+        <div style="padding:16px 22px;background:var(--bg-surface);
+          border-bottom:1px solid var(--border-subtle);">
+          <div style="font-weight:700;font-size:1rem;color:var(--text-primary);margin-bottom:4px;">
+            🤖 Sugestões da IA · ${dashInfo.icon} ${esc(dashInfo.label)}
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">
+            ${suggestions.length} ${suggestions.length === 1 ? 'sugestão' : 'sugestões'}.
+            Marque as que quer salvar. Pode editar antes de salvar.
+          </div>
+        </div>
+
+        <div id="ip-aip-list" style="flex:1;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:10px;">
+          ${suggestions.map((s, i) => renderAiPreviewCard(s, i)).join('')}
+        </div>
+
+        <div style="padding:14px 22px;border-top:1px solid var(--border-subtle);
+          background:var(--bg-surface);display:flex;gap:10px;">
+          <button class="btn btn-secondary" id="ip-aip-cancel" style="flex:1;">Descartar todas</button>
+          <button class="btn btn-primary" id="ip-aip-save" style="flex:2;font-weight:600;">
+            💾 Salvar selecionadas
+          </button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(m);
+    m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+    document.getElementById('ip-aip-cancel')?.addEventListener('click', () => m.remove());
+
+    document.getElementById('ip-aip-save')?.addEventListener('click', async () => {
+      const cards = m.querySelectorAll('[data-aip-card]');
+      const toSave = [];
+      cards.forEach(card => {
+        const checked = card.querySelector('[data-aip-check]').checked;
+        if (!checked) return;
+        const i = parseInt(card.dataset.aipCard, 10);
+        const original = suggestions[i];
+        // Pega valores possivelmente editados
+        const title = card.querySelector('[data-aip-title]').value.trim();
+        const observation = card.querySelector('[data-aip-obs]').value.trim();
+        const recommendation = card.querySelector('[data-aip-rec]').value.trim();
+        const type = card.querySelector('[data-aip-type]').value;
+        const impact = card.querySelector('[data-aip-impact]').value;
+
+        // Detecta se houve edição vs original da IA
+        const wasEdited = (
+          title !== original.title ||
+          observation !== original.observation ||
+          recommendation !== original.recommendation ||
+          type !== original.type ||
+          impact !== original.impact
+        );
+
+        toSave.push({
+          dashboard,
+          indexKey: original.indexKey || (indexKey === 'general' ? null : indexKey),
+          title, observation, recommendation, type, impact,
+          source: wasEdited ? 'ai-edited' : 'ai-generated',
+          aiOriginal: original.aiOriginal,
+          periodFrom, periodTo, filters,
+          tags: ['IA'],
+        });
+      });
+
+      if (!toSave.length) {
+        toast.warning('Nenhuma selecionada.');
+        return;
+      }
+
+      try {
+        for (const s of toSave) await createInsight(s);
+        toast.success(`${toSave.length} ${toSave.length === 1 ? 'insight salvo' : 'insights salvos'}.`);
+        m.remove();
+        await refresh();
+        container.dispatchEvent(new CustomEvent('insights:changed'));
+      } catch (e) {
+        toast.error('Erro ao salvar: ' + (e.message || ''));
+      }
+    });
+  }
+
+  function renderAiPreviewCard(s, i) {
+    return `
+      <div data-aip-card="${i}" style="background:var(--bg-surface);
+        border:1px solid var(--border-subtle);border-left:3px solid #A78BFA;
+        border-radius:var(--radius-md);padding:12px 14px;">
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;">
+          <input type="checkbox" data-aip-check checked
+            style="margin-top:6px;width:16px;height:16px;cursor:pointer;">
+          <input type="text" data-aip-title value="${esc(s.title)}" maxlength="200"
+            class="portal-field" style="flex:1;font-weight:600;font-size:0.875rem;">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+          <select data-aip-type class="filter-select" style="font-size:0.75rem;">
+            ${INSIGHT_TYPES.map(t => `<option value="${t.key}" ${s.type === t.key ? 'selected' : ''}>${t.icon} ${esc(t.label)}</option>`).join('')}
+          </select>
+          <select data-aip-impact class="filter-select" style="font-size:0.75rem;">
+            ${IMPACT_LEVELS.map(x => `<option value="${x.key}" ${s.impact === x.key ? 'selected' : ''}>Impacto ${esc(x.label)}</option>`).join('')}
+          </select>
+        </div>
+        <textarea data-aip-obs rows="3" maxlength="4000" placeholder="Observação"
+          class="portal-field" style="width:100%;resize:vertical;font-size:0.8125rem;margin-bottom:6px;">${esc(s.observation || '')}</textarea>
+        <textarea data-aip-rec rows="2" maxlength="4000" placeholder="Recomendação (opcional)"
+          class="portal-field" style="width:100%;resize:vertical;font-size:0.8125rem;">${esc(s.recommendation || '')}</textarea>
+      </div>
+    `;
+  }
+
+  /* ════════════════════════════════════════════════
+     FORM — criar/editar manual
+     ════════════════════════════════════════════════ */
   function openForm(existing = null) {
     const isEdit = !!existing?.id;
+    const isAiSourced = existing?.source === 'ai-generated' || existing?.source === 'ai-edited';
+    // Quando editando insight com indexKey já definido, mantém. Quando criando do widget mode,
+    // usa o indexKey do mount. Quando criando do panel geral, deixa null.
+    const targetIndexKey = isEdit
+      ? (existing.indexKey || null)
+      : (indexKey === 'general' ? null : indexKey || null);
+
     const m = document.createElement('div');
     m.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
       display:flex;align-items:center;justify-content:center;padding:20px;`;
@@ -201,11 +604,19 @@ export async function mountInsightsPanel(opts) {
           display:flex;justify-content:space-between;align-items:center;">
           <div style="font-weight:700;font-size:1rem;">
             💡 ${isEdit ? 'Editar' : 'Novo'} insight · ${dashInfo.icon} ${esc(dashInfo.label)}
+            ${targetIndexKey ? `<span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">📍 ${esc(indexLabel || targetIndexKey)}</span>` : ''}
           </div>
           <button id="ipf-close" style="border:none;background:none;cursor:pointer;font-size:1.25rem;color:var(--text-muted);">✕</button>
         </div>
 
         <div style="overflow-y:auto;flex:1;padding:18px 22px;display:flex;flex-direction:column;gap:14px;">
+          ${isAiSourced ? `
+            <div style="background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.3);
+              padding:8px 12px;border-radius:var(--radius-sm);font-size:0.75rem;color:var(--text-secondary);">
+              🤖 Insight gerado por IA. Edições serão marcadas como "ai-edited" mantendo o original em audit trail.
+            </div>
+          ` : ''}
+
           <div>
             <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Título *</label>
             <input id="ipf-title" type="text" class="portal-field" style="width:100%;"
@@ -265,8 +676,10 @@ export async function mountInsightsPanel(opts) {
     document.getElementById('ipf-save')?.addEventListener('click', async () => {
       const title = document.getElementById('ipf-title').value.trim();
       if (!title) { toast.error('Título obrigatório.'); return; }
+
       const data = {
         dashboard,
+        indexKey: targetIndexKey,
         title,
         observation:    document.getElementById('ipf-obs').value.trim(),
         recommendation: document.getElementById('ipf-rec').value.trim(),
@@ -275,6 +688,17 @@ export async function mountInsightsPanel(opts) {
         tags:           document.getElementById('ipf-tags').value.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10),
         periodFrom, periodTo, filters,
       };
+
+      // Se editando insight ai-generated, vira ai-edited
+      if (isEdit && isAiSourced && existing.source === 'ai-generated') {
+        data.source = 'ai-edited';
+        data.aiOriginal = existing.aiOriginal || {
+          title: existing.title, observation: existing.observation,
+          recommendation: existing.recommendation, type: existing.type, impact: existing.impact,
+          generatedAt: null, agentId: null, agentName: 'unknown',
+        };
+      }
+
       try {
         if (isEdit) await updateInsight(existing.id, data);
         else await createInsight(data);
@@ -289,6 +713,14 @@ export async function mountInsightsPanel(opts) {
   }
 
   await refresh();
-  // API pública: re-render manual
-  return { refresh };
+  return {
+    refresh,
+    open: () => {
+      // No modo widget, abre popover programaticamente
+      if (mode === 'widget') {
+        const trigger = container.querySelector('#ip-widget-trigger');
+        if (trigger) openPopover(trigger);
+      }
+    },
+  };
 }
