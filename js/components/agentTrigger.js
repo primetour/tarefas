@@ -18,7 +18,7 @@
  */
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
-import { fetchAgentsForModule, runAgent } from '../services/agents.js?v=20260501tt';
+import { fetchAgentsForModule, runAgent } from '../services/agents.js?v=20260501uu';
 
 const ROUTE_TO_MODULE = {
   'tasks': 'tasks', 'kanban': 'kanban', 'calendar': 'calendar', 'timeline': 'tasks',

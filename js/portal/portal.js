@@ -1845,16 +1845,20 @@ function showTaskPreviewCard(db, taskTypes, data, anchorEl) {
       if (!history.length) return;
       const histEl = card.querySelector('#pcal-preview-history');
       if (!histEl) return;
+      // SECURITY FIX (pentest 2026-05-03): keys de h.changes vinham do Firestore
+      // sem escape. Atacante poderia injetar payload XSS no nome do campo.
+      // Agora: filter pra labels conhecidas + esc() em fallback.
+      const escHtml = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       histEl.innerHTML = `
         <div style="background:#FEF3C710;border:1px solid #F59E0B30;border-radius:8px;
           padding:10px 12px;margin-bottom:12px;font-size:0.6875rem;">
           <div style="font-weight:600;color:#F59E0B;margin-bottom:6px;">📝 Histórico de alterações (${history.length})</div>
           ${history.slice(-3).reverse().map(h => {
             const dt = h.editedAt?.toDate ? h.editedAt.toDate() : new Date(h.editedAt);
-            const fields = Object.keys(h.changes || {}).map(k => {
-              const labels = { title:'Título', description:'Descrição', desiredDate:'Data', urgency:'Urgência' };
-              return labels[k] || k;
-            }).join(', ');
+            const labels = { title:'Título', description:'Descrição', desiredDate:'Data', urgency:'Urgência' };
+            const fields = Object.keys(h.changes || {})
+              .map(k => labels[k] || escHtml(k))   // escape de fallback
+              .join(', ');
             return `<div style="color:var(--text-muted);margin-bottom:3px;padding-left:8px;border-left:2px solid #F59E0B30;">
               <span style="color:var(--text-secondary);">${dt.toLocaleDateString('pt-BR')} ${dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
               — Alterou: ${fields}

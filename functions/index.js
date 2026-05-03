@@ -56,22 +56,31 @@ async function isAdmin(uid) {
 }
 
 /**
- * Rate limit atomic via Firestore.
+ * Rate limit atomic via Firestore TRANSACTION.
  * Janela deslizante por user.
+ *
+ * SECURITY FIX (pentest 2026-05-03): versão antiga era get-then-set
+ * (read+write nao atomico). Pentest disparou 50 reqs paralelas e TODAS
+ * passaram (limit era 30). Race condition TOCTOU classico.
+ *
+ * Agora usa runTransaction — Firestore garante linearizabilidade:
+ * leitura e escrita atomicas por documento.
  */
 async function checkRateLimit(uid, key, maxCalls, windowSec) {
   const ref = db.doc(`rate_limits/${uid}__${key}`);
   const now = Date.now();
   const cutoff = now - (windowSec * 1000);
-  const snap = await ref.get();
-  let calls = snap.exists ? (snap.data().calls || []) : [];
-  calls = calls.filter(t => t > cutoff);
-  if (calls.length >= maxCalls) {
-    throw new HttpsError('resource-exhausted',
-      `Rate limit: máximo ${maxCalls} chamadas a cada ${windowSec}s. Aguarde.`);
-  }
-  calls.push(now);
-  await ref.set({ calls, updatedAt: FieldValue.serverTimestamp() });
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    let calls = snap.exists ? (snap.data().calls || []) : [];
+    calls = calls.filter(t => t > cutoff);
+    if (calls.length >= maxCalls) {
+      throw new HttpsError('resource-exhausted',
+        `Rate limit: máximo ${maxCalls} chamadas a cada ${windowSec}s. Aguarde.`);
+    }
+    calls.push(now);
+    tx.set(ref, { calls, updatedAt: FieldValue.serverTimestamp() });
+  });
 }
 
 /**
@@ -90,16 +99,27 @@ async function checkRateLimitIP(request, key, maxCalls, windowSec) {
   const now = Date.now();
   const cutoff = now - (windowSec * 1000);
   try {
-    const snap = await ref.get();
-    let calls = snap.exists ? (snap.data().calls || []) : [];
-    calls = calls.filter(t => t > cutoff);
-    if (calls.length >= maxCalls) {
-      // Audita potencial abuse
+    let blocked = false;
+    let blockedCount = 0;
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      let calls = snap.exists ? (snap.data().calls || []) : [];
+      calls = calls.filter(t => t > cutoff);
+      if (calls.length >= maxCalls) {
+        blocked = true;
+        blockedCount = calls.length;
+        return;
+      }
+      calls.push(now);
+      tx.set(ref, { calls, ip, updatedAt: FieldValue.serverTimestamp() });
+    });
+    if (blocked) {
+      // Audita potencial abuse (fora da transaction)
       try {
         await db.collection('audit_logs').add({
           action: 'security.ip_rate_limit_hit',
           ip, key, maxCalls, windowSec,
-          callsInWindow: calls.length,
+          callsInWindow: blockedCount,
           timestamp: FieldValue.serverTimestamp(),
           severity: 'warning',
         });
@@ -107,8 +127,6 @@ async function checkRateLimitIP(request, key, maxCalls, windowSec) {
       throw new HttpsError('resource-exhausted',
         `Muitas requisicoes deste IP. Aguarde ${windowSec}s.`);
     }
-    calls.push(now);
-    await ref.set({ calls, ip, updatedAt: FieldValue.serverTimestamp() });
   } catch (e) {
     if (e instanceof HttpsError) throw e;
     // Falhas de DB nao devem bloquear (fail-open)
