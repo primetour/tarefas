@@ -686,8 +686,8 @@ FORMATO:
     avatarUrl: '',
     description: 'Analista sênior de BI que lê snapshots de qualquer dashboard (ou índice/widget específico) e gera insights estruturados — observação, recomendação, tipo, impacto. Usado por todos os dashboards.',
     module: 'general',
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-5',
+    provider: 'gemini',
+    model: 'gemini-2.5-pro',
     systemPrompt: `Você é Analista Sênior de Business Intelligence da PRIMETOUR (operadora de viagens de luxo).
 
 Sua missão: ao receber um snapshot de dados de um dashboard (ou de um índice/widget específico), gerar 1 a 5 INSIGHTS estruturados que ajudem a operação a tomar decisão. Não descreva o óbvio — analise, contextualize, recomende.
