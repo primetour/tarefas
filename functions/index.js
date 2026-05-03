@@ -913,8 +913,12 @@ export const fetchDestinationPhoto = onCall({
       const res = await fetch(url, {
         headers: { 'Authorization': `Client-ID ${unsplashKey}`, 'Accept-Version': 'v1' },
       });
-      const remaining = parseInt(res.headers.get('X-Ratelimit-Remaining') || '999', 10);
-      if (res.status === 403 || remaining <= 5) {
+      const remainingHeader = res.headers.get('X-Ratelimit-Remaining');
+      const remaining = remainingHeader ? parseInt(remainingHeader, 10) : -1;
+      // Só ativa cooldown em RATE LIMIT real, não em 403 por outras causas (key inválida).
+      // Detecção: presença do header X-Ratelimit-* + (remaining<=5 OU response body inclui "rate limit").
+      const isRateLimit = remaining >= 0 && (remaining <= 5 || (res.status === 403 && remaining === 0));
+      if (isRateLimit) {
         await db.doc('system_state/unsplash_cooldown').set({
           hitAt: FieldValue.serverTimestamp(),
           lastQuery: query.slice(0, 80),
@@ -928,6 +932,10 @@ export const fetchDestinationPhoto = onCall({
           remaining,
           timestamp: FieldValue.serverTimestamp(),
         });
+      } else if (res.status === 403 || res.status === 401) {
+        // 403/401 SEM header rate limit = key inválida/revogada — NÃO ativar cooldown.
+        // Só loga e cai pra Wikipedia.
+        console.warn('[fetchPhoto] Unsplash auth failed (status='+res.status+') — chave inválida? Falling back to Wikipedia.');
       } else if (res.ok) {
         const data = await res.json();
         const photos = data.results || [];
@@ -995,8 +1003,10 @@ export const fetchDestinationPhoto = onCall({
 
 /** Normaliza query pra cache key (remove acentos, lowercase, hash curto) */
 function normalizeQuery(q) {
+  // BUG FIX: usar escape unicode em vez de caracteres combining literais
+  // (range ̀-ͯ = Combining Diacritical Marks)
   const norm = String(q || '').toLowerCase().trim()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 80);

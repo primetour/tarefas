@@ -1947,16 +1947,19 @@ async function enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments) {
 
       data.items.forEach((item, itemIdx) => {
         if (tasks.length >= MAX_ITEMS) return;
-        if (!item?.titulo) return;
-        const t = item.titulo.toLowerCase().trim();
+        // BUG FIX: simple_list segments (bairros, arredores) usam .title (sem 'u')
+        // enquanto place_list usa .titulo. Suportar ambos.
+        const titulo = item?.titulo || item?.title;
+        if (!titulo) return;
+        const t = titulo.toLowerCase().trim();
         if (haveByTitle.has(t)) return;          // já tem foto na gallery cadastrada
         if (hasOverride(segKey, itemIdx)) return; // user escolheu manualmente — pula
 
-        const querySpecific = cityCtx ? `${item.titulo} ${cityCtx}` : item.titulo;
+        const querySpecific = cityCtx ? `${titulo} ${cityCtx}` : titulo;
         const queryGeneric  = SEG_GENERIC[segKey]
           ? `${SEG_GENERIC[segKey]} ${cityCtx}`.trim()
           : cityCtx;
-        tasks.push({ destId: dest.id, titulo: item.titulo, segKey, querySpecific, queryGeneric });
+        tasks.push({ destId: dest.id, titulo, segKey, querySpecific, queryGeneric });
       });
       if (tasks.length >= MAX_ITEMS) break;
     }

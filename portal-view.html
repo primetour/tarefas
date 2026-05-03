@@ -695,23 +695,26 @@ function renderSimple(sd,data,imgs){
   const overrides = imgs?._overrides || {};
   const gallery = imgs?.gallery || [];
   const usedUrls = new Set();
-  const pickSimpleImg = (item, idx) => {
-    // 1. Override explícito por idx
+  // BUG FIX: retornar { url, isFallback } pra que cards mostrem badge "ilustrativa"
+  // quando foto vier do fallback genérico (consistente com renderPlaces).
+  const pickSimpleImgInfo = (item, idx) => {
+    // 1. Override explícito por idx (sempre vence — sem badge)
     if (overrides[sd.key]) {
       const ov = overrides[sd.key][idx] || overrides[sd.key][String(idx)];
-      if (ov?.url) return ov.url;
+      if (ov?.url) return { url: ov.url, isFallback: false };
     }
     // 2. Match por placeName na galeria
     const title = (item.title || '').toLowerCase().trim();
-    if (!title) return null;
+    if (!title) return { url: null, isFallback: false };
     let m = gallery.find(g => g.placeName && g.placeName.toLowerCase().trim() === title);
     if (!m) m = gallery.find(g => g.placeName && g.placeName.length >= 5 &&
       (title.includes(g.placeName.toLowerCase()) || g.placeName.toLowerCase().includes(title.slice(0,12))));
     if (m?.url) usedUrls.add(m.url);
-    return m?.url || null;
+    return { url: m?.url || null, isFallback: !!m?._photoFallback };
   };
   // Se algum item tem foto, usa cards-grid (foto + texto). Senão, lista simples.
-  const itemImgs = items.map((it, i) => pickSimpleImg(it, i));
+  const itemImgInfos = items.map((it, i) => pickSimpleImgInfo(it, i));
+  const itemImgs = itemImgInfos.map(info => info.url);
   const anyHasImg = itemImgs.some(Boolean);
 
   if (!anyHasImg) {
@@ -723,12 +726,20 @@ function renderSimple(sd,data,imgs){
   }
   // Layout com fotos: cards uniformes (mesmo do place_list)
   return `${segHead(sd)}<div class="cards-grid">${items.map((item,i) => {
-    const img = itemImgs[i];
+    const imgInfo = itemImgInfos[i];
+    const img = imgInfo.url;
     const isDescLong = item.description && item.description.length > 120;
     return `<div class="place-card">
       ${favBtnHtml({titulo:item.title})}
-      <div class="place-card-img">${img
-        ? `<img src="${esc(img)}" alt="${esc(item.title)}" loading="lazy">`
+      <div class="place-card-img" style="position:relative;">${img
+        ? `<img src="${esc(img)}" alt="${esc(item.title)}" loading="lazy">${imgInfo.isFallback ? `
+          <span class="card-illustrative-badge" title="Imagem ilustrativa — não é foto específica do local"
+            style="position:absolute;top:8px;right:8px;font-size:0.5625rem;font-weight:600;
+            text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;
+            background:rgba(0,0,0,0.55);color:#fff;border-radius:99px;
+            backdrop-filter:blur(4px);pointer-events:none;">
+            ⓘ ilustrativa
+          </span>` : ''}`
         : `<div class="place-card-placeholder"><span style="font-size:.5rem;letter-spacing:.3em;font-weight:600;text-transform:uppercase;color:var(--portal-text-muted);">${esc(item.title||'')}</span></div>`}
       </div>
       <div class="place-card-body">

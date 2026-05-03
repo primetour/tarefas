@@ -9,7 +9,7 @@
  *   5. Links úteis
  */
 import { store } from '../store.js';
-import { TOURS, hasDoneTour, runTour, resetTour, resetAllTours } from '../services/tours.js?v=20260501jj2';
+import { TOURS, hasDoneTour, runTour, resetTour, resetAllTours } from '../services/tours.js?v=20260501kk2';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
