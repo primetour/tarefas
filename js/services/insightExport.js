@@ -20,7 +20,7 @@
 import {
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
   formatInsightPeriod, formatDataSnapshot,
-} from './insights.js?v=20260503ss1';
+} from './insights.js?v=20260503ss2';
 
 const fmtDate = ts => {
   if (!ts) return '—';
@@ -36,35 +36,69 @@ const sourceLabelPlain = (s) => s === 'ai-generated' ? 'IA'
   : s === 'ai-edited' ? 'IA editada'
   : 'Manual';
 
-/** Achata snapshot em pares chave: valor pra display em tabela. */
+// Chaves técnicas escondidas em export legível
+const TECHNICAL_KEYS = new Set(['color','colors','icon','value','key','id','href','url','avatarColor','colorClass','badgeClass']);
+
+const isBreakdownArray = (arr) => {
+  if (!Array.isArray(arr) || arr.length === 0) return false;
+  const f = arr[0];
+  if (!f || typeof f !== 'object') return false;
+  const hasLabel = 'label' in f || 'name' in f || 'area' in f;
+  const hasMetric = 'count' in f || 'rate' in f || 'avg' in f || 'total' in f || 'done' in f;
+  return hasLabel && hasMetric;
+};
+
+const breakdownLabel = (item) => item.label || item.name || item.area || 'item';
+const breakdownValue = (item) => {
+  if ('avg' in item && item.avg != null) {
+    const others = [];
+    if ('responseRate' in item) others.push(`${item.responseRate}%`);
+    if ('total' in item) others.push(`n=${item.total}`);
+    return `${item.avg}${others.length ? ' (' + others.join(', ') + ')' : ''}`;
+  }
+  if ('rate' in item && item.rate != null) {
+    const extras = ('done' in item && 'total' in item) ? ` (${item.done}/${item.total})` : '';
+    return `${item.rate}%${extras}`;
+  }
+  if ('count' in item && item.count != null) return String(item.count);
+  if ('total' in item) {
+    const done = 'done' in item ? `${item.done}/` : '';
+    return `${done}${item.total}`;
+  }
+  return '—';
+};
+
+/** Achata snapshot em pares Indicador/Valor pra display em tabela.
+ * SMART: arrays de breakdown viram linhas humanas ("Em Andamento" → "41")
+ * ao invés de "statusDistribution[0]" → "label: ..., count: ..., color: #..."
+ * Esconde chaves técnicas (color, icon, value, etc.)
+ */
 function snapshotToRows(snap) {
   if (!snap || typeof snap !== 'object') return [];
   const rows = [];
+
   const flatten = (obj, prefix = '') => {
     if (!obj || typeof obj !== 'object') return;
     Object.entries(obj).forEach(([k, v]) => {
-      if (k === 'capturedAt' || k.startsWith('_')) return;
-      const label = prefix ? `${prefix}.${k}` : k;
+      if (TECHNICAL_KEYS.has(k) || k === 'capturedAt' || k.startsWith('_')) return;
+      const label = prefix ? `${prefix} · ${k}` : k;
       if (v == null) {
         rows.push({ chave: label, valor: '—' });
-      } else if (typeof v === 'object' && !Array.isArray(v)) {
-        flatten(v, label);
       } else if (Array.isArray(v)) {
-        if (v.length === 0) {
-          rows.push({ chave: label, valor: '[]' });
-        } else if (typeof v[0] === 'object') {
-          // Array de objetos: serializa cada um
-          v.slice(0, 20).forEach((item, i) => {
-            const inner = Object.entries(item)
-              .filter(([key]) => !key.startsWith('_'))
-              .map(([key, val]) => `${key}: ${typeof val === 'number' && !Number.isInteger(val) ? val.toFixed(2) : val}`)
-              .join(', ');
-            rows.push({ chave: `${label}[${i}]`, valor: inner });
+        if (v.length === 0) return;
+        if (isBreakdownArray(v)) {
+          // Cada item vira UMA linha: chave=label do item, valor=métrica formatada
+          v.slice(0, 30).forEach(item => {
+            rows.push({ chave: `${label} · ${breakdownLabel(item)}`, valor: breakdownValue(item) });
           });
-          if (v.length > 20) rows.push({ chave: `${label}[…]`, valor: `+${v.length - 20} itens` });
+          if (v.length > 30) rows.push({ chave: `${label}`, valor: `(+${v.length - 30} itens)` });
+        } else if (typeof v[0] === 'object') {
+          rows.push({ chave: label, valor: `${v.length} itens` });
         } else {
           rows.push({ chave: label, valor: v.join(', ') });
         }
+      } else if (typeof v === 'object') {
+        flatten(v, label);
       } else {
         const val = (typeof v === 'number' && !Number.isInteger(v))
           ? v.toFixed(2)
@@ -111,14 +145,25 @@ async function loadJsPdf() {
   return window.jspdf;
 }
 
+// Remove TUDO que está fora de Latin-1 (CP1252) que jsPDF default não renderiza.
+// Cobre: emojis, geometric shapes (◎ ◇ ◈ ▲ ●), arrows, dingbats, box-drawing,
+// block elements, miscellaneous symbols, supplemental arrows, etc.
+// Preserva acentos latinos comuns (á é í ó ú ã ç).
 const stripEmoji = s => String(s ?? '')
-  .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
-  .replace(/[\u{2600}-\u{27BF}]/gu, '')
-  .replace(/[\u{1F000}-\u{1F9FF}]/gu, '')
-  .replace(/→/g, ' a ')
-  .replace(/●/g, '.')
-  .replace(/[‘’]/g, "'")
-  .replace(/[“”]/g, '"')
+  // Substitutions ANTES da remoção (preserva semântica)
+  .replace(/→/g, ' a ').replace(/←/g, '<-').replace(/↔/g, '<->').replace(/↳/g, '>')
+  .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/…/g, '...')
+  .replace(/●/g, '.').replace(/○/g, 'o').replace(/■/g, '#').replace(/□/g, '[]')
+  .replace(/▸/g, '>').replace(/◂/g, '<').replace(/▴/g, '^').replace(/▾/g, 'v')
+  // Remove ranges não-Latin-1
+  .replace(/[\u{2000}-\u{206F}]/gu, '')   // General Punctuation
+  .replace(/[\u{2200}-\u{22FF}]/gu, '')   // Mathematical Operators
+  .replace(/[\u{2300}-\u{23FF}]/gu, '')   // Misc Technical
+  .replace(/[\u{2400}-\u{27BF}]/gu, '')   // Box Drawing, Block, Geometric Shapes, Misc Symbols, Dingbats
+  .replace(/[\u{2900}-\u{29FF}]/gu, '')   // Supplemental Arrows-B / Math
+  .replace(/[\u{2B00}-\u{2BFF}]/gu, '')   // Misc Symbols and Arrows
+  .replace(/[\u{1F000}-\u{1FFFF}]/gu, '') // Emojis (todos)
+  .replace(/\s+/g, ' ')
   .trim();
 
 /**
@@ -227,6 +272,43 @@ export async function exportInsightToPdf(insight, opts = {}) {
   doc.text(periodCovered ? stripEmoji(periodCovered) : 'Sem periodo especifico (insight permanente)', M, y);
   y += 6;
 
+  // ═══ GRÁFICO (imagem do canvas, se capturado) ═══
+  if (insight.chartImage && insight.chartImage.startsWith('data:image/')) {
+    try {
+      doc.setTextColor(...BRAND); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+      doc.text('GRAFICO  (foto do widget no momento da analise)', M, y);
+      y += 3;
+      // Calcula tamanho proporcional pra caber em ~80mm de altura, full width
+      const imgMaxW = W - M * 2;
+      const imgMaxH = 75;
+      // Pega dimensões reais via Image temporária (síncrono via base64)
+      const img = new Image();
+      img.src = insight.chartImage;
+      // Como base64, propriedades width/height ficam disponíveis sincronamente
+      // após setar src? Não — precisa await onload. Vamos usar ratio fixo 16:9
+      // se não conseguir.
+      let imgW = imgMaxW;
+      let imgH = imgMaxH;
+      if (img.width > 0 && img.height > 0) {
+        const ratio = img.width / img.height;
+        if (ratio > imgMaxW / imgMaxH) {
+          imgW = imgMaxW;
+          imgH = imgMaxW / ratio;
+        } else {
+          imgH = imgMaxH;
+          imgW = imgMaxH * ratio;
+        }
+      }
+      doc.addImage(insight.chartImage, 'PNG', M, y, imgW, imgH);
+      y += imgH + 5;
+    } catch (e) {
+      console.warn('[exportInsightToPdf] addImage falhou:', e.message);
+      doc.setTextColor(...MUTED); doc.setFontSize(7); doc.setFont('helvetica', 'italic');
+      doc.text('(Imagem do grafico nao pode ser renderizada neste PDF)', M, y);
+      y += 5;
+    }
+  }
+
   // ═══ DADOS OBSERVADOS (snapshot) ═══
   if (insight.dataSnapshot) {
     const snapRows = snapshotToRows(insight.dataSnapshot);
@@ -239,11 +321,11 @@ export async function exportInsightToPdf(insight, opts = {}) {
         margin: { left: M, right: M },
         head: [['Indicador', 'Valor']],
         body: snapRows.slice(0, 30).map(r => [stripEmoji(r.chave), stripEmoji(String(r.valor).slice(0, 100))]),
-        styles: { fontSize: 7.5, cellPadding: 1.8, overflow: 'linebreak' },
-        headStyles: { fillColor: BRAND, textColor: 255, fontStyle: 'bold', fontSize: 7.5 },
+        styles: { fontSize: 8, cellPadding: 1.8, overflow: 'linebreak' },
+        headStyles: { fillColor: BRAND, textColor: 255, fontStyle: 'bold', fontSize: 8 },
         columnStyles: {
-          0: { cellWidth: 60, fontStyle: 'bold', textColor: BRAND },
-          1: { cellWidth: W - M * 2 - 60, font: 'courier' },
+          0: { cellWidth: 80, fontStyle: 'bold', textColor: BRAND },
+          1: { cellWidth: W - M * 2 - 80 },
         },
         didDrawPage: (data) => { y = data.cursor.y; },
       });
@@ -256,11 +338,11 @@ export async function exportInsightToPdf(insight, opts = {}) {
       // Captured at
       if (insight.dataSnapshot.capturedAt) {
         doc.setTextColor(...MUTED); doc.setFontSize(7); doc.setFont('helvetica', 'italic');
-        doc.text(`Capturado em ${new Date(insight.dataSnapshot.capturedAt).toLocaleString('pt-BR')}`, M, y);
+        doc.text(`Dados capturados em ${new Date(insight.dataSnapshot.capturedAt).toLocaleString('pt-BR')}`, M, y);
         y += 5;
       }
     }
-  } else {
+  } else if (!insight.chartImage) {
     doc.setTextColor(...MUTED); doc.setFontSize(8); doc.setFont('helvetica', 'italic');
     doc.text('Sem snapshot de dados associado a este insight.', M, y);
     y += 5;

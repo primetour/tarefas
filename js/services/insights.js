@@ -177,42 +177,96 @@ function sanitizeDataSnapshot(snap) {
   return cleaned;
 }
 
+/** Chaves técnicas que não devem aparecer em output legível pro usuário.
+ * São identificadores internos (cor de UI, slug do status, etc.) que poluem
+ * sem agregar informação analítica.
+ */
+const TECHNICAL_KEYS = new Set([
+  'color', 'colors', 'icon', 'value', 'key', 'id', 'href', 'url',
+  'avatarColor', 'colorClass', 'badgeClass',
+]);
+
+/** Detecta se um array de objetos é um "breakdown" — itens com {label,count}
+ * ou similar — pra renderizar de forma amigável.
+ */
+function isBreakdownArray(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return false;
+  const first = arr[0];
+  if (!first || typeof first !== 'object') return false;
+  const hasLabel = 'label' in first || 'name' in first || 'area' in first;
+  const hasMetric = 'count' in first || 'rate' in first || 'avg' in first
+    || 'total' in first || 'done' in first || 'value' in first;
+  return hasLabel && hasMetric;
+}
+
+/** Renderiza item de breakdown pra string ("Em Andamento: 41" ou "Marketing: 87%"). */
+function renderBreakdownItem(item) {
+  const label = item.label || item.name || item.area || 'item';
+  // Prioriza métricas em ordem: avg, rate, count, total, done
+  if ('avg' in item && item.avg != null) {
+    const others = [];
+    if ('responseRate' in item) others.push(`${item.responseRate}%`);
+    if ('total' in item) others.push(`n=${item.total}`);
+    return `${label}: ${item.avg}${others.length ? ' (' + others.join(', ') + ')' : ''}`;
+  }
+  if ('rate' in item && item.rate != null) {
+    const extras = ('done' in item && 'total' in item) ? ` (${item.done}/${item.total})` : '';
+    return `${label}: ${item.rate}%${extras}`;
+  }
+  if ('count' in item && item.count != null) return `${label}: ${item.count}`;
+  if ('total' in item) {
+    const done = 'done' in item ? `${item.done}/` : '';
+    return `${label}: ${done}${item.total}`;
+  }
+  return label;
+}
+
 /** Formata dataSnapshot pra string legível compacta (uma linha).
+ * SMART: detecta arrays de objetos com {label, count} e renderiza como
+ * "Em Andamento: 41 · Concluída: 823" ao invés de "statusDistribution[0]: ...".
+ * Esconde chaves técnicas (color, value, icon).
+ *
  * Usado em export PDF/XLSX e tooltip.
- * Ex: { values: { atual: 72, anterior: 89 }, breakdown: { Mkt: 58 } }
- *  → "atual: 72 · anterior: 89 · Mkt: 58"
  */
 export function formatDataSnapshot(snap) {
   if (!snap || typeof snap !== 'object') return null;
   const parts = [];
-  const flatten = (obj, prefix = '') => {
-    if (!obj || typeof obj !== 'object') return;
-    Object.entries(obj).forEach(([k, v]) => {
-      if (k === 'capturedAt' || k.startsWith('_')) return;
-      const label = prefix ? `${prefix}.${k}` : k;
-      if (v == null) return;
-      if (typeof v === 'object' && !Array.isArray(v)) {
-        flatten(v, label);
-      } else if (Array.isArray(v)) {
-        // Arrays de objetos viram contagem; arrays simples viram join
-        if (v.length === 0) return;
-        if (typeof v[0] === 'object') {
-          parts.push(`${label}: ${v.length} itens`);
-        } else {
-          parts.push(`${label}: [${v.slice(0, 5).join(', ')}${v.length > 5 ? '...' : ''}]`);
-        }
+
+  const renderValue = (v, label) => {
+    if (v == null) return;
+    if (Array.isArray(v)) {
+      if (v.length === 0) return;
+      if (isBreakdownArray(v)) {
+        // "label: a:1 · b:2 · c:3" — limita a 8 itens
+        const items = v.slice(0, 8).map(renderBreakdownItem).join(' · ');
+        const more = v.length > 8 ? ` +${v.length - 8}` : '';
+        parts.push(`${label}: ${items}${more}`);
+      } else if (typeof v[0] === 'object') {
+        // Array de objetos não-breakdown: mostra contagem
+        parts.push(`${label}: ${v.length} itens`);
       } else {
-        // Formata números com 1 casa se decimal
-        const val = (typeof v === 'number' && !Number.isInteger(v))
-          ? v.toFixed(1)
-          : String(v).slice(0, 50);
-        parts.push(`${label}: ${val}`);
+        // Array simples
+        parts.push(`${label}: [${v.slice(0, 5).join(', ')}${v.length > 5 ? '…' : ''}]`);
       }
-    });
+    } else if (typeof v === 'object') {
+      // Objeto aninhado: flatten recursivo
+      Object.entries(v).forEach(([k, val]) => {
+        if (TECHNICAL_KEYS.has(k) || k === 'capturedAt' || k.startsWith('_')) return;
+        renderValue(val, label ? `${label}.${k}` : k);
+      });
+    } else {
+      const formatted = (typeof v === 'number' && !Number.isInteger(v)) ? v.toFixed(1) : String(v).slice(0, 60);
+      parts.push(`${label}: ${formatted}`);
+    }
   };
-  flatten(snap);
+
+  Object.entries(snap).forEach(([k, v]) => {
+    if (TECHNICAL_KEYS.has(k) || k === 'capturedAt' || k.startsWith('_')) return;
+    renderValue(v, k);
+  });
+
   if (snap._truncated) parts.push('… (truncado)');
-  return parts.join(' · ').slice(0, 500) || null;
+  return parts.join(' · ').slice(0, 600) || null;
 }
 
 /** Formata período coberto pra string legível. */
@@ -246,6 +300,7 @@ export async function createInsight(data) {
     source:         data.source || 'manual',
     aiOriginal:     data.aiOriginal || null,  // payload original quando vem da IA (audit trail)
     dataSnapshot:   sanitizeDataSnapshot(data.dataSnapshot), // foto dos dados motivadores
+    chartImage:     (typeof data.chartImage === 'string' && data.chartImage.startsWith('data:image/')) ? data.chartImage : null, // PNG base64 do canvas (imutavel)
     createdBy:      { uid: uid(), name: userName() },
     createdAt:      serverTimestamp(),
     updatedAt:      serverTimestamp(),

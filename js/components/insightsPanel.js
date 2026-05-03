@@ -45,8 +45,8 @@ import {
   suggestInsightsViaAi,
   insightCoversPeriod, formatInsightPeriod, formatDataSnapshot,
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
-} from '../services/insights.js?v=20260503ss1';
-import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260503ss1';
+} from '../services/insights.js?v=20260503ss2';
+import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260503ss2';
 
 /** Mapa global de widgetLabels passado pelo dashboards.js — usado no export PDF/XLSX
  * pra mostrar nome legível do widget. Set/get via janela compartilhada. */
@@ -834,6 +834,28 @@ export async function mountInsightsPanel(opts) {
     }
     const snapshotPreview = initialSnapshot ? formatDataSnapshot(initialSnapshot) : null;
 
+    // Captura imagem do canvas do widget (se houver) pra embed no PDF.
+    // Procura o widget pelo data-widget-id do slot (renderWidget mode).
+    let initialChartImage = existing?.chartImage || null;
+    if (!initialChartImage && !isEdit && targetIndexKey) {
+      try {
+        const slot = container.querySelector('[data-widget-id]') || container;
+        const widgetId = slot.dataset?.widgetId;
+        const widgetEl = widgetId ? document.getElementById(widgetId) : container.closest('.dash-widget');
+        const canvas = widgetEl?.querySelector('canvas');
+        if (canvas && canvas.width > 0 && canvas.height > 0) {
+          // Limita tamanho máximo (~250KB base64). Canvas 600x400 PNG ~80KB.
+          initialChartImage = canvas.toDataURL('image/png');
+          if (initialChartImage.length > 350_000) {
+            console.warn('[insightsPanel] canvas image >350KB, omitindo');
+            initialChartImage = null;
+          }
+        }
+      } catch (e) {
+        console.warn('[insightsPanel] captura canvas falhou:', e.message);
+      }
+    }
+
     const m = document.createElement('div');
     m.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
       display:flex;align-items:center;justify-content:center;padding:20px;`;
@@ -980,8 +1002,19 @@ export async function mountInsightsPanel(opts) {
       const periodFromVal = noPeriod ? null : document.getElementById('ipf-period-from').value;
       const periodToVal   = noPeriod ? null : document.getElementById('ipf-period-to').value;
 
+      // Parse date local (YYYY-MM-DD ao meio-dia local pra evitar shift de timezone).
+      // new Date('2026-03-01') é interpretado como UTC midnight, vira "28 fev 21:00"
+      // em UTC-3. Construir com noon local resolve.
+      const parseLocalDate = (s) => {
+        if (!s) return null;
+        const [y, mo, d] = s.split('-').map(Number);
+        return new Date(y, mo - 1, d, 12, 0, 0);
+      };
+      const periodFromDate = parseLocalDate(periodFromVal);
+      const periodToDate   = parseLocalDate(periodToVal);
+
       // Validação: se tem from + to, from <= to
-      if (periodFromVal && periodToVal && new Date(periodFromVal) > new Date(periodToVal)) {
+      if (periodFromDate && periodToDate && periodFromDate > periodToDate) {
         toast.error('Data inicial não pode ser posterior à final.');
         return;
       }
@@ -995,16 +1028,17 @@ export async function mountInsightsPanel(opts) {
         type:           document.getElementById('ipf-type').value,
         impact:         document.getElementById('ipf-impact').value,
         tags:           document.getElementById('ipf-tags').value.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10),
-        periodFrom:     periodFromVal ? new Date(periodFromVal) : null,
-        periodTo:       periodToVal   ? new Date(periodToVal)   : null,
+        periodFrom:     periodFromDate,
+        periodTo:       periodToDate,
         filters,
       };
 
-      // dataSnapshot: imutável após criação (preservado no edit)
+      // dataSnapshot + chartImage: imutáveis após criação (preservados no edit)
       if (!isEdit) {
         data.dataSnapshot = initialSnapshot;
+        if (initialChartImage) data.chartImage = initialChartImage;
       }
-      // No edit, NÃO sobrescreve dataSnapshot — foto histórica preservada
+      // No edit, NÃO sobrescreve dataSnapshot/chartImage — fotos históricas preservadas
 
       // Se editando insight ai-generated, vira ai-edited
       if (isEdit && isAiSourced && existing.source === 'ai-generated') {
