@@ -7,8 +7,8 @@ import { store }    from '../store.js';
 import { toast }    from '../components/toast.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
-import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503rr1';
-import { fetchInsights, insightsToPdfRows, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } from '../services/insights.js?v=20260503rr1';
+import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503rr2';
+import { fetchInsights, insightsToPdfRows, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } from '../services/insights.js?v=20260503rr2';
 import {
   getOverviewMetrics, getTasksByDay, getStatusDistribution,
   getPriorityDistribution, getTasksByMember, getTasksByProject,
@@ -622,28 +622,31 @@ const PRODUTIVIDADE_WIDGETS = [
 ];
 
 async function attachWidgetInsights(m, period, periodLabel, filtersSnapshot) {
-  for (const w of PRODUTIVIDADE_WIDGETS) {
+  // PARALELO: cada mount tem fetchInsights interno — fazendo sequencial leva
+  // 14×Firestore round-trips em sequência, podendo passar de 30s e estourar
+  // timeout do CDP/browser. Promise.allSettled paraleliza tudo + isola erros.
+  const tasks = PRODUTIVIDADE_WIDGETS.map(w => {
     const widget = document.getElementById(w.widgetId);
-    if (!widget) continue;
+    if (!widget) return Promise.resolve({ widget: w.widgetId, skipped: 'no element' });
     const slot = widget.querySelector('.widget-insights-slot');
-    if (!slot) continue;
-    try {
-      await mountInsightsPanel({
-        container: slot,
-        dashboard: 'produtividade',
-        mode: 'widget',
-        indexKey: w.indexKey,
-        indexLabel: w.label,
-        periodFrom: period.start, periodTo: period.end,
-        periodLabel,
-        filters: filtersSnapshot,
-        enableAi: true,
-        getSnapshot: () => w.snapshot(m),
-      });
-    } catch (e) {
-      console.warn(`[insights:widget:${w.widgetId}]`, e?.message);
-    }
-  }
+    if (!slot) return Promise.resolve({ widget: w.widgetId, skipped: 'no slot' });
+    return mountInsightsPanel({
+      container: slot,
+      dashboard: 'produtividade',
+      mode: 'widget',
+      indexKey: w.indexKey,
+      indexLabel: w.label,
+      periodFrom: period.start, periodTo: period.end,
+      periodLabel,
+      filters: filtersSnapshot,
+      enableAi: true,
+      getSnapshot: () => w.snapshot(m),
+    }).catch(e => ({ widget: w.widgetId, error: e?.message }));
+  });
+  const results = await Promise.allSettled(tasks);
+  const failed = results.filter(r => r.status === 'rejected' || r.value?.error)
+    .map(r => r.reason?.message || r.value?.error);
+  if (failed.length) console.warn('[attachWidgetInsights] falhas:', failed);
 }
 
 /** Snapshot agregado de TODO o dashboard pra IA gerar análise geral. */

@@ -45,7 +45,7 @@ import {
   suggestInsightsViaAi,
   insightCoversPeriod, formatInsightPeriod, formatDataSnapshot,
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
-} from '../services/insights.js?v=20260503rr1';
+} from '../services/insights.js?v=20260503rr2';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
