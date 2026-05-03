@@ -673,8 +673,8 @@ async function loadData(forceRefresh = false) {
     const count = document.getElementById('ga-count');
     if (count) count.textContent = `${allData.length} dias`;
 
-    // Setup insights na primeira render (idempotente)
-    if (allData?.length && !gaInsightsMounted) {
+    // Setup insights (idempotente via DOM check no próprio setup)
+    if (allData?.length) {
       setTimeout(() => setupGaInsights(), 500);
     }
 
@@ -3183,8 +3183,7 @@ async function openAddSiteDialog() {
 /* ════════════════════════════════════════════════════════════
    INSIGHTS & OBSERVAÇÕES — Setup do GA Performance
    ════════════════════════════════════════════════════════════ */
-
-let gaInsightsMounted = false;
+// Idempotência via DOM check (flag boolean falha em re-renders entre navegações).
 
 function computeGaPeriod() {
   const days = parseInt(filterDays) || 28;
@@ -3250,8 +3249,8 @@ const GA_WIDGETS = [
 ];
 
 async function setupGaInsights() {
-  if (gaInsightsMounted) return;
-  gaInsightsMounted = true;
+  // Idempotência: se já tem botão no slot, está mountado nesta sessão de DOM
+  if (document.querySelector('#ga-kpis-block .ip-widget-btn')) return;
   try {
     const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
     const period = computeGaPeriod();

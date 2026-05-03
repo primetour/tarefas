@@ -410,7 +410,7 @@ function getRows(includeHidden = false) {
 /* ─── Render table ────────────────────────────────────────── */
 function renderTable(editMode = false) {
   // Setup insights na primeira render (idempotente)
-  if (allData?.length && !metaInsightsMounted) {
+  if (allData?.length) {
     setTimeout(() => setupMetaInsights(), 500);
   }
 
@@ -929,7 +929,7 @@ const exportPDF = withExportGuard(async function exportPDF() {
    INSIGHTS & OBSERVAÇÕES — Setup do Meta Performance
    ════════════════════════════════════════════════════════════ */
 
-let metaInsightsMounted = false;
+// Idempotência via DOM check (flag boolean falha em re-renders entre navegações).
 
 function computeMetaPeriod() {
   if (String(filterDays).startsWith('custom:')) {
@@ -997,8 +997,7 @@ const META_WIDGETS = [
 ];
 
 async function setupMetaInsights() {
-  if (metaInsightsMounted) return;
-  metaInsightsMounted = true;
+  if (document.querySelector('#meta-kpis-block .ip-widget-btn')) return;
   try {
     const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
     const period = computeMetaPeriod();

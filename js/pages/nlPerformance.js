@@ -473,7 +473,7 @@ function mergeWaves(rows) {
 /* ─── Render table ────────────────────────────────────────── */
 function renderTable(editMode = false) {
   // Setup insights na primeira vez que dados estão prontos
-  if (allData?.length && !nlPerfInsightsMounted) {
+  if (allData?.length) {
     setTimeout(() => setupNlPerformanceInsights(), 500);
   }
 
@@ -1524,8 +1524,7 @@ function calStatCard(label, value, icon, bg, color, sub = '') {
    INSIGHTS & OBSERVAÇÕES — Setup por tab
    ════════════════════════════════════════════════════════════ */
 
-let nlPerfInsightsMounted = false;
-let nlCalInsightsMounted = false;
+// Idempotência via DOM check (flag boolean falha em re-renders entre navegações).
 
 /** Computa período visualizado a partir do filterDays atual.
  * filterDays pode ser '7'|'30'|'90'|'180'|'365' OU 'custom:from:to'.
@@ -1601,8 +1600,7 @@ function buildNlPerfGeneralSnapshot() {
 
 /** Setup dos insights na aba Performance (idempotente). */
 async function setupNlPerformanceInsights() {
-  if (nlPerfInsightsMounted) return;
-  nlPerfInsightsMounted = true;
+  if (document.querySelector('#nl-kpis-block .ip-widget-btn')) return;
   try {
     const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
     const period = computeNlPeriod();
@@ -1680,8 +1678,7 @@ function buildNlCalGeneralSnapshot() {
 
 /** Setup dos insights na aba Calendar (idempotente, chamado após loadCalendarDashboard). */
 async function setupNlCalendarInsights() {
-  if (nlCalInsightsMounted) return;
-  nlCalInsightsMounted = true;
+  if (document.querySelector('#nl-cal-kpis-block .ip-widget-btn')) return;
   try {
     const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
     // Calendar usa janela fixa de 90 dias (ver loadCalendarDashboard)

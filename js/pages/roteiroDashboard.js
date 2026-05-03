@@ -221,7 +221,7 @@ async function processAndRender() {
   renderGenerationsTable();
 
   // Setup insights na primeira render (idempotente)
-  if (allRoteiros.length && !rdInsightsMounted) {
+  if (allRoteiros.length) {
     setTimeout(() => setupRdInsights(), 500);
   }
 }
@@ -1089,7 +1089,7 @@ const exportRoteiroDashboardPdf = withExportGuard(async function exportRoteiroDa
    INSIGHTS & OBSERVAÇÕES — Setup do dashboard de Roteiros
    ════════════════════════════════════════════════════════════ */
 
-let rdInsightsMounted = false;
+// Idempotência via DOM check (flag boolean falha em re-renders entre navegações).
 
 /** Período visualizado a partir de currentPeriod ('7d'|'30d'|'90d'|'all'...). */
 function computeRdPeriod() {
@@ -1204,8 +1204,7 @@ const RD_WIDGETS = [
 ];
 
 async function setupRdInsights() {
-  if (rdInsightsMounted) return;
-  rdInsightsMounted = true;
+  if (document.querySelector('#rd-kpis-block .ip-widget-btn')) return;
   try {
     const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
     const period = computeRdPeriod();
@@ -1226,5 +1225,5 @@ async function setupRdInsights() {
 /* ─── Cleanup ────────────────────────────────────────────── */
 export function destroyRoteiroDashboard() {
   destroyCharts();
-  rdInsightsMounted = false;
+  // Insights se re-mountam automaticamente via DOM check no setupRdInsights
 }

@@ -708,9 +708,7 @@ function renderDash() {
   `;
 
   // Setup insights na primeira render (idempotente)
-  if (!pdInsightsMounted) {
-    setTimeout(() => setupPdInsights(), 500);
-  }
+  setTimeout(() => setupPdInsights(), 500);
 }
 
 /* ─── Helpers ────────────────────────────────────────────── */
@@ -1219,7 +1217,7 @@ async function exportPortalXls() {
    INSIGHTS & OBSERVAÇÕES — Setup do Portal Dashboard
    ════════════════════════════════════════════════════════════ */
 
-let pdInsightsMounted = false;
+// Idempotência via DOM check (flag boolean falha em re-renders entre navegações).
 
 /** Período visualizado a partir de filterDays. */
 function computePdPeriod() {
@@ -1325,8 +1323,7 @@ const PD_WIDGETS = [
 ];
 
 async function setupPdInsights() {
-  if (pdInsightsMounted) return;
-  pdInsightsMounted = true;
+  if (document.querySelector('#dash-kpis-block .ip-widget-btn')) return;
   try {
     const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
     const period = computePdPeriod();
