@@ -7,8 +7,8 @@ import { store }  from '../store.js';
 import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiro, saveRoteiro } from '../services/roteiros.js';
-import { generateRoteiroForExport } from '../services/roteiroGenerator.js';
-import { fetchDestinations, fetchAreas } from '../services/portal.js';
+import { generateRoteiroForExport, resolveDestinationImage } from '../services/roteiroGenerator.js';
+import { fetchDestinations, fetchAreas, fetchImages } from '../services/portal.js';
 import { detectBankContext, showBankGuardModal } from '../services/bankClientGuard.js';
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -53,6 +53,7 @@ const SECTIONS = [
   { icon: '\u{1F4B3}', label: 'Pagamento' },
   { icon: '\u274C',    label: 'Cancelamento' },
   { icon: '\u2139',    label: 'Informa\u00e7\u00f5es Importantes' },
+  { icon: '\u{1F5BC}', label: 'Imagens' },
   { icon: '\u{1F4C4}', label: 'Preview & Export' },
 ];
 
@@ -205,6 +206,94 @@ const EDITOR_CSS = `
 .re-autosave {
   font-size: 0.75rem; color: var(--text-muted); margin-left: 8px;
 }
+/* ─── Imagens section ─────────────────────────────────────── */
+.re-img-group { margin-bottom: 22px; }
+.re-img-group-title {
+  font-size: 0.8125rem; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin: 0 0 8px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle, #333);
+}
+.re-img-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px; border-radius: 8px;
+  background: var(--bg-surface, #1a1a1a);
+  margin-bottom: 6px;
+}
+.re-img-thumb {
+  width: 88px; height: 56px; border-radius: 6px; overflow: hidden;
+  background: var(--bg-dark, #0c1926); flex: 0 0 88px;
+  display: flex; align-items: center; justify-content: center;
+}
+.re-img-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.re-img-auto {
+  font-size: 0.65rem; font-weight: 700; color: var(--text-muted);
+  letter-spacing: 0.08em;
+}
+.re-img-meta { flex: 1; min-width: 0; }
+.re-img-name {
+  font-size: 0.875rem; font-weight: 600; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.re-img-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+.re-img-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.re-img-actions .re-add-btn,
+.re-img-actions .re-remove-btn { margin: 0; padding: 6px 12px; font-size: 0.75rem; }
+.re-img-empty {
+  padding: 14px; text-align: center; font-size: 0.8125rem;
+  color: var(--text-muted); background: var(--bg-surface, #1a1a1a);
+  border-radius: 8px;
+}
+
+/* ─── Modal seletor de imagem ─────────────────────────────── */
+.re-img-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9000; padding: 20px;
+}
+.re-img-modal {
+  background: var(--bg-card, #161e2d); border-radius: 12px;
+  width: 100%; max-width: 720px; max-height: 90vh;
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border-subtle, #333);
+}
+.re-img-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border-subtle, #333);
+}
+.re-img-modal-title { font-size: 0.9375rem; font-weight: 700; color: var(--text-primary); }
+.re-img-modal-close {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 1.5rem; cursor: pointer; padding: 0 6px;
+}
+.re-img-modal-tabs {
+  display: flex; padding: 0 18px; gap: 4px;
+  border-bottom: 1px solid var(--border-subtle, #333);
+}
+.re-img-tab {
+  background: none; border: none; color: var(--text-muted);
+  padding: 10px 14px; cursor: pointer; font-size: 0.8125rem;
+  border-bottom: 2px solid transparent; font-weight: 600;
+}
+.re-img-tab.active { color: var(--text-primary); border-bottom-color: var(--brand-blue, #3B82F6); }
+.re-img-modal-body { padding: 16px 18px; overflow-y: auto; flex: 1; }
+.re-img-tab-pane { display: none; }
+.re-img-tab-pane.active { display: block; }
+.re-img-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.re-img-card {
+  cursor: pointer; border-radius: 6px; overflow: hidden;
+  background: var(--bg-dark, #0c1926); transition: transform 0.15s, box-shadow 0.15s;
+}
+.re-img-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+.re-img-card img { width: 100%; height: 100px; object-fit: cover; display: block; }
+.re-img-card-label {
+  font-size: 0.6875rem; padding: 4px 6px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 @media (max-width: 768px) {
   .re-layout { grid-template-columns: 1fr; }
   .re-sidebar { position: static; display: flex; flex-wrap: wrap; gap: 4px; }
@@ -229,7 +318,8 @@ function renderSectionContent(index) {
     case 7:  return renderPagamentoSection();
     case 8:  return renderCancelamentoSection();
     case 9:  return renderInfoSection();
-    case 10: return renderPreviewSection();
+    case 10: return renderImagensSection();
+    case 11: return renderPreviewSection();
     default: return '';
   }
 }
@@ -712,7 +802,297 @@ function renderInfoSection() {
   `;
 }
 
-/* ── 10: Preview & Export ────────────────────────────────── */
+/* ── 10: Imagens (capa, cidades, hotéis) ─────────────────── */
+
+/** Slug helper — mesma lógica de roteiroGenerator.normKey */
+function _normKey(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** Cache de banco de imagens carregado on-demand para o modal */
+let _bankImagesCache = null;
+async function _ensureBankImages() {
+  if (_bankImagesCache) return _bankImagesCache;
+  try { _bankImagesCache = await fetchImages({}); }
+  catch (e) { _bankImagesCache = []; }
+  return _bankImagesCache;
+}
+
+/** Extrai cidades únicas (destinations + days) com cidade+país */
+function _collectCities() {
+  const cities = new Map(); // key: slug, value: {city, country}
+  (currentRoteiro?.travel?.destinations || []).forEach(d => {
+    if (d.city) cities.set(_normKey(d.city), { city: d.city, country: d.country || '' });
+  });
+  (currentRoteiro?.days || []).forEach(d => {
+    if (d.city && !cities.has(_normKey(d.city))) {
+      cities.set(_normKey(d.city), { city: d.city, country: '' });
+    }
+  });
+  return Array.from(cities.entries()).map(([key, v]) => ({ key, ...v }));
+}
+
+function renderImagensSection() {
+  // Garante estrutura
+  if (!currentRoteiro.images) currentRoteiro.images = { hero: null, overrides: {} };
+  if (!currentRoteiro.images.overrides) currentRoteiro.images.overrides = {};
+
+  const overrides = currentRoteiro.images.overrides;
+  const heroOverride = overrides.hero || currentRoteiro.images.hero || '';
+  const cities = _collectCities();
+  const hotels = currentRoteiro.hotels || [];
+
+  const heroLabel = heroOverride ? 'Personalizada' : 'Auto (1ª destinação)';
+
+  const heroRow = `
+    <div class="re-img-row" data-img-target="hero">
+      <div class="re-img-thumb">
+        ${heroOverride
+          ? `<img src="${esc(heroOverride)}" alt="hero" />`
+          : `<span class="re-img-auto">AUTO</span>`}
+      </div>
+      <div class="re-img-meta">
+        <div class="re-img-name">Capa do Roteiro</div>
+        <div class="re-img-sub">${heroLabel}</div>
+      </div>
+      <div class="re-img-actions">
+        <button class="re-add-btn" data-action="img-pick" data-img-key="hero" data-img-q="${esc((currentRoteiro.travel?.destinations?.[0]?.city || '') + ' ' + (currentRoteiro.travel?.destinations?.[0]?.country || ''))}">Trocar</button>
+        ${heroOverride ? `<button class="re-remove-btn" data-action="img-clear" data-img-key="hero">Limpar</button>` : ''}
+      </div>
+    </div>`;
+
+  const cityRows = cities.length ? cities.map(c => {
+    const ovKey = `city_${c.key}`;
+    const url = overrides[ovKey] || '';
+    const label = c.country ? `${c.city}, ${c.country}` : c.city;
+    const q = `${c.city} ${c.country || ''}`.trim();
+    return `
+      <div class="re-img-row" data-img-target="${esc(ovKey)}">
+        <div class="re-img-thumb">
+          ${url
+            ? `<img src="${esc(url)}" alt="${esc(c.city)}" />`
+            : `<span class="re-img-auto">AUTO</span>`}
+        </div>
+        <div class="re-img-meta">
+          <div class="re-img-name">${esc(label)}</div>
+          <div class="re-img-sub">${url ? 'Personalizada' : 'Auto (banco → Unsplash)'}</div>
+        </div>
+        <div class="re-img-actions">
+          <button class="re-add-btn" data-action="img-pick" data-img-key="${esc(ovKey)}" data-img-q="${esc(q)}">Trocar</button>
+          ${url ? `<button class="re-remove-btn" data-action="img-clear" data-img-key="${esc(ovKey)}">Limpar</button>` : ''}
+        </div>
+      </div>`;
+  }).join('') : `<div class="re-img-empty">Nenhuma cidade ainda — adicione destinos na seção Viagem.</div>`;
+
+  const hotelRows = hotels.length ? hotels.map((h, i) => {
+    const ovKey = `hotel_${i}`;
+    const url = overrides[ovKey] || '';
+    const label = h.hotelName ? `${h.hotelName}${h.city ? ' — ' + h.city : ''}` : (h.city || `Hotel ${i+1}`);
+    const q = h.hotelName ? `${h.hotelName} ${h.city || ''}`.trim() : (h.city || '');
+    return `
+      <div class="re-img-row" data-img-target="${esc(ovKey)}">
+        <div class="re-img-thumb">
+          ${url
+            ? `<img src="${esc(url)}" alt="${esc(h.hotelName||h.city||'')}" />`
+            : `<span class="re-img-auto">AUTO</span>`}
+        </div>
+        <div class="re-img-meta">
+          <div class="re-img-name">${esc(label)}</div>
+          <div class="re-img-sub">${url ? 'Personalizada' : 'Auto'}</div>
+        </div>
+        <div class="re-img-actions">
+          <button class="re-add-btn" data-action="img-pick" data-img-key="${esc(ovKey)}" data-img-q="${esc(q)}">Trocar</button>
+          ${url ? `<button class="re-remove-btn" data-action="img-clear" data-img-key="${esc(ovKey)}">Limpar</button>` : ''}
+        </div>
+      </div>`;
+  }).join('') : `<div class="re-img-empty">Nenhum hotel adicionado — vá em Hotéis.</div>`;
+
+  return `
+    <div class="re-section-title">Imagens</div>
+    <p style="font-size:0.8125rem;color:var(--text-muted);margin:-4px 0 14px;line-height:1.5;">
+      A geração de PDF/PPTX usa, em ordem: imagem manual → banco do Portal → Unsplash → Wikipedia.
+      Marque "Trocar" para escolher manualmente; senão fica automática.
+    </p>
+
+    <div class="re-img-group">
+      <div class="re-img-group-title">Capa</div>
+      ${heroRow}
+    </div>
+
+    <div class="re-img-group">
+      <div class="re-img-group-title">Cidades do roteiro (${cities.length})</div>
+      ${cityRows}
+    </div>
+
+    <div class="re-img-group">
+      <div class="re-img-group-title">Hotéis (${hotels.length})</div>
+      ${hotelRows}
+    </div>
+  `;
+}
+
+/** Modal de seleção de imagem — 3 abas: Banco / Online / URL */
+async function openImagePickerModal({ imgKey, query }) {
+  // Garante container modal
+  const modal = document.createElement('div');
+  modal.className = 're-img-modal-overlay';
+  modal.innerHTML = `
+    <div class="re-img-modal">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">Escolher imagem · <span style="color:var(--text-muted);font-weight:400;">${esc(imgKey)}</span></div>
+        <button class="re-img-modal-close" type="button" aria-label="Fechar">&times;</button>
+      </div>
+      <div class="re-img-modal-tabs">
+        <button class="re-img-tab active" data-tab="bank">Banco do Portal</button>
+        <button class="re-img-tab" data-tab="online">Buscar online</button>
+        <button class="re-img-tab" data-tab="url">URL direta</button>
+      </div>
+
+      <div class="re-img-modal-body">
+        <!-- Tab: Banco -->
+        <div class="re-img-tab-pane active" data-pane="bank">
+          <input class="re-input" type="text" id="re-img-bank-q" placeholder="Filtrar (cidade, país, tag…)"
+            value="${esc(query || '')}" style="margin-bottom:10px;" />
+          <div id="re-img-bank-grid" class="re-img-grid">
+            <div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:20px;">Carregando banco…</div>
+          </div>
+        </div>
+
+        <!-- Tab: Online -->
+        <div class="re-img-tab-pane" data-pane="online">
+          <div style="display:flex;gap:8px;margin-bottom:10px;">
+            <input class="re-input" type="text" id="re-img-online-q" placeholder="Ex: Eiffel Tower Paris"
+              value="${esc(query || '')}" style="flex:1;" />
+            <button class="re-add-btn" type="button" id="re-img-online-fetch" style="margin-top:0;">Buscar</button>
+          </div>
+          <div id="re-img-online-result" style="text-align:center;color:var(--text-muted);padding:20px;font-size:0.8125rem;">
+            Clique em "Buscar" para procurar no Unsplash + Wikipedia.
+          </div>
+        </div>
+
+        <!-- Tab: URL -->
+        <div class="re-img-tab-pane" data-pane="url">
+          <label class="re-label">URL pública da imagem (https://…)</label>
+          <input class="re-input" type="url" id="re-img-url-input" placeholder="https://…/foto.jpg" />
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button class="re-add-btn" type="button" id="re-img-url-apply" style="margin-top:0;">Aplicar</button>
+          </div>
+          <div id="re-img-url-preview" style="margin-top:14px;"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // Helpers internos
+  const closeModal = () => modal.remove();
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+  modal.querySelector('.re-img-modal-close').addEventListener('click', closeModal);
+
+  // Tabs
+  modal.querySelectorAll('.re-img-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modal.querySelectorAll('.re-img-tab').forEach(b => b.classList.toggle('active', b === btn));
+      modal.querySelectorAll('.re-img-tab-pane').forEach(p =>
+        p.classList.toggle('active', p.dataset.pane === btn.dataset.tab));
+    });
+  });
+
+  function applyImage(url) {
+    if (!url) return;
+    if (!currentRoteiro.images) currentRoteiro.images = { hero: null, overrides: {} };
+    if (!currentRoteiro.images.overrides) currentRoteiro.images.overrides = {};
+    currentRoteiro.images.overrides[imgKey] = url;
+    if (imgKey === 'hero') currentRoteiro.images.hero = url;
+    markDirty();
+    closeModal();
+    // Re-render para refletir thumbnail
+    const content = document.getElementById('re-content-area');
+    if (content) content.innerHTML = renderImagensSection();
+    showToast('Imagem aplicada.', 'success');
+  }
+
+  // ── Tab: Banco ─────────────────────────────────────────
+  const bankInput = modal.querySelector('#re-img-bank-q');
+  const bankGrid  = modal.querySelector('#re-img-bank-grid');
+  const renderBankGrid = (filter) => {
+    const f = (filter || '').toLowerCase().trim();
+    const all = _bankImagesCache || [];
+    const matched = !f ? all : all.filter(img => {
+      const hay = [img.city, img.country, img.continent, img.name, img.placeName, ...(img.tags||[])]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(f);
+    });
+    if (!matched.length) {
+      bankGrid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:20px;font-size:0.8125rem;">Nenhuma imagem no banco. Suba imagens no Portal de Dicas → Imagens.</div>`;
+      return;
+    }
+    bankGrid.innerHTML = matched.slice(0, 60).map(img => `
+      <div class="re-img-card" data-pick-url="${esc(img.url)}">
+        <img src="${esc(img.url)}" loading="lazy" alt="${esc(img.placeName || img.city || '')}" />
+        <div class="re-img-card-label">${esc(img.placeName || img.city || img.country || '')}</div>
+      </div>
+    `).join('');
+    bankGrid.querySelectorAll('[data-pick-url]').forEach(el => {
+      el.addEventListener('click', () => applyImage(el.dataset.pickUrl));
+    });
+  };
+
+  await _ensureBankImages();
+  renderBankGrid(bankInput.value);
+  bankInput.addEventListener('input', (e) => renderBankGrid(e.target.value));
+
+  // ── Tab: Online ────────────────────────────────────────
+  const onlineQ      = modal.querySelector('#re-img-online-q');
+  const onlineFetch  = modal.querySelector('#re-img-online-fetch');
+  const onlineResult = modal.querySelector('#re-img-online-result');
+  onlineFetch.addEventListener('click', async () => {
+    const q = (onlineQ.value || '').trim();
+    if (!q) { onlineResult.textContent = 'Digite algo para buscar.'; return; }
+    onlineResult.textContent = 'Buscando…';
+    try {
+      const url = await resolveDestinationImage({ city: q, country: '' }, null, []);
+      if (!url) {
+        onlineResult.textContent = 'Nada encontrado para essa busca.';
+        return;
+      }
+      onlineResult.innerHTML = `
+        <img src="${esc(url)}" alt="" style="max-width:100%;max-height:300px;border-radius:8px;display:block;margin:0 auto 10px;" />
+        <button class="re-add-btn" type="button" id="re-img-online-apply" style="margin-top:0;">Usar esta imagem</button>
+      `;
+      modal.querySelector('#re-img-online-apply').addEventListener('click', () => applyImage(url));
+    } catch (e) {
+      onlineResult.textContent = 'Erro: ' + (e.message || 'busca falhou');
+    }
+  });
+
+  // ── Tab: URL ───────────────────────────────────────────
+  const urlInput   = modal.querySelector('#re-img-url-input');
+  const urlApply   = modal.querySelector('#re-img-url-apply');
+  const urlPreview = modal.querySelector('#re-img-url-preview');
+  urlInput.addEventListener('input', () => {
+    const v = urlInput.value.trim();
+    if (/^https?:\/\//.test(v)) {
+      urlPreview.innerHTML = `<img src="${esc(v)}" alt="" style="max-width:100%;max-height:260px;border-radius:8px;display:block;" onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'Imagem não pôde ser carregada.',style:'color:var(--text-muted);font-size:0.8125rem;'}))" />`;
+    } else {
+      urlPreview.innerHTML = '';
+    }
+  });
+  urlApply.addEventListener('click', () => {
+    const v = urlInput.value.trim();
+    if (!/^https?:\/\//.test(v)) {
+      showToast('URL inválida.', 'error');
+      return;
+    }
+    applyImage(v);
+  });
+}
+
+/* ── 11: Preview & Export ────────────────────────────────── */
 function renderPreviewSection() {
   const areaOptions = allAreas.map(a =>
     `<option value="${esc(a.id)}" ${currentRoteiro.areaId === a.id ? 'selected' : ''}>${esc(a.name)}</option>`
@@ -1298,6 +1678,29 @@ function handleEditorClick(e) {
       markDirty();
       break;
 
+    /* ── Imagens ─────────────────────────────────────────────── */
+    case 'img-pick': {
+      const imgKey = target.dataset.imgKey;
+      const query  = target.dataset.imgQ || '';
+      if (!imgKey) break;
+      openImagePickerModal({ imgKey, query }).catch(err =>
+        showToast('Erro ao abrir seletor: ' + err.message, 'error'));
+      break;
+    }
+
+    case 'img-clear': {
+      const imgKey = target.dataset.imgKey;
+      if (!imgKey) break;
+      if (!currentRoteiro.images) currentRoteiro.images = { hero: null, overrides: {} };
+      if (!currentRoteiro.images.overrides) currentRoteiro.images.overrides = {};
+      delete currentRoteiro.images.overrides[imgKey];
+      if (imgKey === 'hero') currentRoteiro.images.hero = null;
+      markDirty();
+      switchSection(10);
+      showToast('Imagem removida (volta para automática).', 'success');
+      break;
+    }
+
     /* ── Export ────────────────────────────────────────────── */
     case 'export-pdf': {
       const formData = collectFormData();
@@ -1323,9 +1726,24 @@ function handleEditorClick(e) {
       break;
     }
 
-    case 'export-pptx':
-      showToast('Exporta\u00e7\u00e3o PPTX dispon\u00edvel em breve.', 'info');
+    case 'export-pptx': {
+      const formData = collectFormData();
+      if (formData) currentRoteiro = formData;
+      if (!(currentRoteiro?.days || []).length) {
+        showToast('Adicione pelo menos um dia antes de exportar.', 'warning');
+        break;
+      }
+      (async () => {
+        try {
+          if (isDirty || !currentRoteiro.id) await handleSave();
+          const areaId = document.getElementById('re-area-select')?.value || '';
+          await generateRoteiroForExport(currentRoteiro, areaId, 'pptx');
+        } catch (err) {
+          showToast('Erro ao gerar PPTX: ' + err.message, 'error');
+        }
+      })();
       break;
+    }
 
     case 'gen-link': {
       // Coleta nome do cliente do form atual
@@ -1523,6 +1941,8 @@ export async function renderRoteiroEditor(container) {
     currentRoteiro.cancellation = currentRoteiro.cancellation || [];
     currentRoteiro.importantInfo = currentRoteiro.importantInfo || {};
     currentRoteiro.importantInfo.customFields = currentRoteiro.importantInfo.customFields || [];
+    currentRoteiro.images = currentRoteiro.images || { hero: null, overrides: {} };
+    currentRoteiro.images.overrides = currentRoteiro.images.overrides || {};
 
     const isAiGenerated = currentRoteiro.aiGenerated === true;
     const pageTitle = roteiroId ? 'Editar Roteiro' : (isAiGenerated ? 'Roteiro Gerado por IA' : 'Novo Roteiro');

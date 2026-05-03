@@ -39,22 +39,43 @@ async function loadPptxGenJS() {
    ═══════════════════════════════════════════════════════════════ */
 
 const R2_PROXY = 'https://primetour-images.rene-castro.workers.dev';
+const R2_ORIGIN = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev';
 
-/** Fetch image via CORS-safe proxy, return base64 dataUrl */
+/** Fetch image como base64 dataUrl.
+ *  - URLs do R2 da Primetour: vai via worker proxy (precisa pra CORS)
+ *  - URLs externas com CORS aberto (Wikimedia/Unsplash): fetch direto
+ *  - Tenta direto primeiro; se falhar, cai no proxy
+ */
 async function fetchImgData(url) {
   if (!url) return null;
-  try {
-    const proxyUrl = `${R2_PROXY}?url=${encodeURIComponent(url)}`;
-    const res = await fetch(proxyUrl);
+  const tryFetch = async (u) => {
+    const res = await fetch(u);
     if (!res.ok) return null;
     const blob = await res.blob();
-    const dataUrl = await new Promise((resolve) => {
+    return await new Promise((resolve) => {
       const r = new FileReader();
       r.onload = () => resolve(r.result);
       r.onerror = () => resolve(null);
       r.readAsDataURL(blob);
     });
-    return dataUrl;
+  };
+
+  // 1) Se for R2, usa proxy direto (sabemos que worker aceita)
+  if (url.startsWith(R2_ORIGIN)) {
+    try {
+      return await tryFetch(`${R2_PROXY}?url=${encodeURIComponent(url)}`);
+    } catch { return null; }
+  }
+
+  // 2) Externo: tenta direto (Wikimedia/Unsplash têm CORS aberto)
+  try {
+    const direct = await tryFetch(url);
+    if (direct) return direct;
+  } catch { /* fallthrough */ }
+
+  // 3) Último recurso: proxy (pode falhar com 403 pra domínios não-whitelisted)
+  try {
+    return await tryFetch(`${R2_PROXY}?url=${encodeURIComponent(url)}`);
   } catch { return null; }
 }
 
@@ -361,7 +382,7 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   /* ─── HOTELS TABLE ───────────────────────────────────────── */
   if (roteiro.hotels?.length) {
     doc.addPage();
-    buildHotelsSection(doc, roteiro, primary, secondary);
+    await buildHotelsSection(doc, roteiro, primary, secondary, images.byHotel);
   }
 
   /* ─── PRICING ────────────────────────────────────────────── */
@@ -437,23 +458,27 @@ export async function generateRoteiroPDF(roteiro, area = null) {
  * @param {object} roteiro - Full roteiro object
  * @param {string} areaId - Portal area ID to fetch branding from
  */
-export async function generateRoteiroForExport(roteiro, areaId) {
+export async function generateRoteiroForExport(roteiro, areaId, format = 'pdf') {
   try {
     let area = null;
     if (areaId) {
       const areas = await fetchAreas();
       area = areas.find(a => a.id === areaId) || null;
     }
-    const result = await generateRoteiroPDF(roteiro, area);
 
-    toast.success(`PDF gerado: ${result.filename}`);
+    let result;
+    if (format === 'pptx') {
+      result = await generateRoteiroPPTX(roteiro, area);
+      toast.success(`PPTX gerado: ${result.filename}`);
+    } else {
+      result = await generateRoteiroPDF(roteiro, area);
+      toast.success(`PDF gerado: ${result.filename}`);
+    }
 
     return result;
   } catch (err) {
     console.error('[roteiroGenerator] Export failed:', err);
-
-    toast.error('Erro ao gerar PDF do roteiro.');
-
+    toast.error(`Erro ao gerar ${format.toUpperCase()} do roteiro.`);
     throw err;
   }
 }
@@ -748,13 +773,45 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
 }
 
 /* ─── Hotels Table ────────────────────────────────────────── */
-function buildHotelsSection(doc, roteiro, primary, secondary) {
+async function buildHotelsSection(doc, roteiro, primary, secondary, byHotel = {}) {
   const [pr, pg, pb] = hexToRgb(primary);
   const [sr, sg, sb] = hexToRgb(secondary);
 
   let y = MARGIN;
   y = addSectionTitle(doc, y, 'HOSPEDAGEM', primary, secondary);
   y += 2;
+
+  // Faixa de thumbnails — até 4 hotéis com imagem, lado a lado
+  const hotelsWithImg = roteiro.hotels
+    .map((h, i) => ({ h, i, url: byHotel?.[i] }))
+    .filter(x => x.url)
+    .slice(0, 4);
+
+  if (hotelsWithImg.length) {
+    const usableW = PAGE_W - 2 * MARGIN;
+    const gap = 3;
+    const thumbW = (usableW - gap * (hotelsWithImg.length - 1)) / hotelsWithImg.length;
+    const thumbH = 32; // mm
+    const captionH = 6;
+
+    for (let k = 0; k < hotelsWithImg.length; k++) {
+      const x = MARGIN + k * (thumbW + gap);
+      const item = hotelsWithImg[k];
+      const imgData = await fetchImgData(item.url);
+      if (imgData) {
+        try {
+          doc.addImage(imgData, 'JPEG', x, y, thumbW, thumbH, undefined, 'FAST');
+        } catch (e) { /* ignore */ }
+      }
+      // Legenda
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(80, 80, 80);
+      const cap = (item.h.hotelName || item.h.city || '').slice(0, 30);
+      doc.text(cap, x + thumbW / 2, y + thumbH + 4, { align: 'center', maxWidth: thumbW });
+    }
+    y += thumbH + captionH + 4;
+  }
 
   const tableBody = roteiro.hotels.map(h => {
     const period = [h.checkIn, h.checkOut].filter(Boolean).map(fmtDateBR).join(' a ');
@@ -1228,9 +1285,33 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
 
   const W = 10, H = 5.625;
 
+  // ─── Resolve imagens (hero + por cidade + por hotel) ──────
+  let images = { heroUrl: null, byCity: {}, byHotel: {} };
+  try { images = await enrichRoteiroImages(roteiro); }
+  catch (e) { console.warn('[roteiroGenerator PPTX] enrichRoteiroImages falhou:', e.message); }
+
+  // Pre-fetch base64 das imagens que vamos usar
+  const heroData = images.heroUrl ? await fetchImgData(images.heroUrl) : null;
+  const cityData = {};
+  await Promise.allSettled(Object.entries(images.byCity).map(async ([k, url]) => {
+    const d = await fetchImgData(url);
+    if (d) cityData[k] = d;
+  }));
+  const hotelData = {};
+  await Promise.allSettled(Object.entries(images.byHotel).map(async ([k, url]) => {
+    const d = await fetchImgData(url);
+    if (d) hotelData[k] = d;
+  }));
+
   // ─── Slide 1: Cover ───────────────────────────────────────
   const cover = pptx.addSlide();
   cover.background = { color: secondary.replace('#', '') };
+
+  // Hero como fundo (se houver), com overlay escuro p/ legibilidade
+  if (heroData) {
+    cover.addImage({ data: heroData, x: 0, y: 0, w: W, h: H, sizing: { type: 'cover', w: W, h: H } });
+    cover.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: H, fill: { color: secondary.replace('#', ''), transparency: 50 } });
+  }
 
   cover.addShape(pptx.ShapeType.rect, { x: 1, y: 1.2, w: W - 2, h: 0.02, fill: { color: primary.replace('#', '') } });
   cover.addText(buName.toUpperCase(), { x: 0, y: 1.4, w: W, h: 0.4, align: 'center', fontSize: 10, color: primary.replace('#', ''), charSpacing: 4 });
@@ -1257,6 +1338,11 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
       const d = days[i + j];
       const yBase = 0.8 + j * 2.3;
 
+      // Imagem da cidade (à direita) — encolhe o texto p/ caber
+      const cityKey = normKey(d.city);
+      const cityImg = cityData[cityKey];
+      const textW = cityImg ? 6.0 : 8.5;
+
       slide.addShape(pptx.ShapeType.ellipse, { x: 0.4, y: yBase, w: 0.45, h: 0.45, fill: { color: primary.replace('#', '') } });
       slide.addText(`${d.dayNumber || i + j + 1}`, { x: 0.4, y: yBase, w: 0.45, h: 0.45, align: 'center', valign: 'middle', fontSize: 12, bold: true, color: secondary.replace('#', '') });
 
@@ -1264,16 +1350,20 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
       slide.addText(`${dateText} - ${d.city || ''}`, { x: 1, y: yBase, w: 3, h: 0.35, fontSize: 11, bold: true, color: secondary.replace('#', '') });
 
       if (d.title) {
-        slide.addText(d.title, { x: 1, y: yBase + 0.3, w: 8.5, h: 0.3, fontSize: 10, bold: true, color: '333333' });
+        slide.addText(d.title, { x: 1, y: yBase + 0.3, w: textW, h: 0.3, fontSize: 10, bold: true, color: '333333' });
       }
 
       const narrative = (d.narrative || '').substring(0, 500);
       if (narrative) {
-        slide.addText(narrative, { x: 1, y: yBase + 0.6, w: 8.5, h: 1.5, fontSize: 8.5, color: '555555', valign: 'top', wrap: true });
+        slide.addText(narrative, { x: 1, y: yBase + 0.6, w: textW, h: 1.5, fontSize: 8.5, color: '555555', valign: 'top', wrap: true });
       }
 
       if (d.overnightCity) {
         slide.addText(`Noite: ${d.overnightCity}`, { x: 1, y: yBase + 2.0, w: 4, h: 0.25, fontSize: 8, italic: true, color: primary.replace('#', '') });
+      }
+
+      if (cityImg) {
+        slide.addImage({ data: cityImg, x: 7.3, y: yBase, w: 2.4, h: 2.0, sizing: { type: 'cover', w: 2.4, h: 2.0 } });
       }
     }
   }
@@ -1285,6 +1375,27 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
     hSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary.replace('#', '') } });
     hSlide.addText('HOSPEDAGEM', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: primary.replace('#', '') });
 
+    // Faixa de thumbnails — até 4 hotéis com imagem
+    const hotelsWithImg = roteiro.hotels
+      .map((h, idx) => ({ h, idx, data: hotelData[idx] }))
+      .filter(x => x.data)
+      .slice(0, 4);
+    let tableY = 0.8;
+    if (hotelsWithImg.length) {
+      const totalW = W - 1;
+      const gap = 0.12;
+      const tw = (totalW - gap * (hotelsWithImg.length - 1)) / hotelsWithImg.length;
+      const th = 1.4;
+      hotelsWithImg.forEach((item, k) => {
+        const x = 0.5 + k * (tw + gap);
+        hSlide.addImage({ data: item.data, x, y: 0.8, w: tw, h: th, sizing: { type: 'cover', w: tw, h: th } });
+        hSlide.addText(item.h.hotelName || item.h.city || '', {
+          x, y: 0.8 + th + 0.05, w: tw, h: 0.25, fontSize: 8, bold: true, color: '333333', align: 'center',
+        });
+      });
+      tableY = 0.8 + th + 0.4;
+    }
+
     const rows = [
       [{ text: 'Cidade', options: { bold: true, color: 'FFFFFF', fill: { color: secondary.replace('#', '') } } },
        { text: 'Hotel', options: { bold: true, color: 'FFFFFF', fill: { color: secondary.replace('#', '') } } },
@@ -1295,7 +1406,7 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
     roteiro.hotels.forEach(h => {
       rows.push([h.city || '', h.hotelName || '', h.roomType || '', h.regime || '', String(h.nights || '')]);
     });
-    hSlide.addTable(rows, { x: 0.5, y: 0.8, w: W - 1, fontSize: 9, border: { pt: 0.5, color: 'CCCCCC' }, colW: [1.8, 2.5, 2, 1.5, 1] });
+    hSlide.addTable(rows, { x: 0.5, y: tableY, w: W - 1, fontSize: 9, border: { pt: 0.5, color: 'CCCCCC' }, colW: [1.8, 2.5, 2, 1.5, 1] });
   }
 
   // ─── Pricing slide ─────────────────────────────────────────
