@@ -13,6 +13,8 @@
  *
  * Schema collection `dashboard_insights/{id}`:
  *   dashboard      — chave do dashboard (produtividade, ga, nl, meta, portal, roteiro)
+ *   indexKey       — chave do índice/widget ancorado (ex: 'sla90', 'topPages').
+ *                    null/vazio = insight geral do dashboard (não ancorado a widget)
  *   title          — headline curto (max ~80 chars)
  *   observation    — o achado (texto livre)
  *   recommendation — ação proposta (opcional)
@@ -23,6 +25,8 @@
  *   filters        — snapshot dos filtros (opcional)
  *   tags           — string[]
  *   source         — manual | ai-generated | ai-edited
+ *   aiOriginal     — { title, observation, ... } — payload original da IA (audit trail
+ *                    quando humano edita sugestão ai-generated → vira ai-edited)
  *   createdBy      — uid + name
  *   createdAt      — Timestamp
  *   updatedAt      — Timestamp
@@ -71,12 +75,29 @@ export const IMPACT_LEVELS = [
    CRUD
    ════════════════════════════════════════════════════════════ */
 
-/** Lista insights com filtros opcionais. */
-export async function fetchInsights({ dashboard, periodFrom, periodTo, max = 50 } = {}) {
+/** Lista insights com filtros opcionais.
+ * @param {Object} opts
+ * @param {string} opts.dashboard - chave do dashboard
+ * @param {string|null} opts.indexKey - se passado, filtra apenas insights desse índice.
+ *   Use 'general' (literal) pra pegar SÓ os gerais (indexKey null/vazio).
+ *   Use undefined (não passar) pra pegar TODOS (gerais + por índice).
+ * @param {Date} opts.periodFrom
+ * @param {Date} opts.periodTo
+ * @param {number} opts.max
+ */
+export async function fetchInsights({ dashboard, indexKey, periodFrom, periodTo, max = 50 } = {}) {
   let q = query(collection(db, 'dashboard_insights'), orderBy('createdAt', 'desc'), limit(max));
   if (dashboard) q = query(q, where('dashboard', '==', dashboard));
   const snap = await getDocs(q);
   let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Filtro client-side por indexKey
+  if (indexKey === 'general') {
+    items = items.filter(i => !i.indexKey);
+  } else if (indexKey) {
+    items = items.filter(i => i.indexKey === indexKey);
+  }
+
   // Filtro client-side por período (Firestore composite index seria overkill)
   // BUG FIX: docs recém-criados podem ter createdAt=null (serverTimestamp pending).
   // Tratar null como "agora" pra incluir, em vez de excluir (Date(0) = 1970).
@@ -98,6 +119,7 @@ export async function createInsight(data) {
   const ref = doc(collection(db, 'dashboard_insights'));
   const payload = {
     dashboard:      data.dashboard,
+    indexKey:       data.indexKey || null,  // ancorado a widget específico ou null = geral
     title:          String(data.title).trim().slice(0, 200),
     observation:    String(data.observation || '').trim().slice(0, 4000),
     recommendation: String(data.recommendation || '').trim().slice(0, 4000),
@@ -108,6 +130,7 @@ export async function createInsight(data) {
     filters:        data.filters || null,
     tags:           Array.isArray(data.tags) ? data.tags.slice(0, 10) : [],
     source:         data.source || 'manual',
+    aiOriginal:     data.aiOriginal || null,  // payload original quando vem da IA (audit trail)
     createdBy:      { uid: uid(), name: userName() },
     createdAt:      serverTimestamp(),
     updatedAt:      serverTimestamp(),
@@ -117,10 +140,13 @@ export async function createInsight(data) {
   return ref.id;
 }
 
-/** Atualiza insight existente. */
+/** Atualiza insight existente.
+ * Quando user edita insight com source='ai-generated', o caller deve setar
+ * source: 'ai-edited' e aiOriginal: <payload original> pra preservar audit trail.
+ */
 export async function updateInsight(id, patch) {
   if (!id) throw new Error('id obrigatório');
-  const allowed = ['title','observation','recommendation','type','impact','tags','source'];
+  const allowed = ['title','observation','recommendation','type','impact','tags','source','indexKey','aiOriginal'];
   const updates = { updatedAt: serverTimestamp() };
   for (const k of allowed) if (patch[k] !== undefined) updates[k] = patch[k];
   if (typeof updates.title === 'string')          updates.title = updates.title.trim().slice(0, 200);
@@ -141,35 +167,109 @@ export async function deleteInsight(id) {
    ════════════════════════════════════════════════════════════ */
 
 /**
- * Sugere insights via IA baseado no contexto do dashboard.
+ * Sugere insights via IA chamando o agente bi-insights-analyst do IA Hub.
  *
- * Hoje retorna null (não implementado). Quando agente IA Hub
- * for criado e mapeado em ai_skills, este método chamará
- * callLLMSecure com agentId='dashboard-insights-{dashboard}'
- * e parseará a resposta em estrutura {title, observation, ...}.
+ * Fluxo:
+ * 1. Localiza o agente registrado em ai_agents (seedId='bi-insights-analyst')
+ * 2. Monta payload JSON estruturado: { dashboard, scope, indexKey, period, snapshot, filters }
+ * 3. Chama runAgent(agentId, jsonPayload) — usa system prompt cacheado do agente
+ * 4. Parseia a resposta JSON e devolve array de insights NÃO PERSISTIDOS
+ *    (caller decide salvar via createInsight com source='ai-generated')
  *
- * Por agora, estrutura está pronta — UI mostra botão "Sugerir via IA"
- * que aciona este método. Se retornar null, mostra mensagem
- * "IA não configurada". Quando habilitado, sugestões viram
- * insights com source='ai-generated'.
+ * Se o agente não foi seedado ainda (Hub vazio), retorna null e UI
+ * mostra "Agente bi-insights-analyst não configurado. Vá em IA Hub → Seed".
  *
- * @param {Object} ctx - { dashboard, periodFrom, periodTo, filters, snapshot }
- *   snapshot: dados resumidos do dashboard (ex: { totalTasks: 250, sla90: 87 })
- * @returns {Array<insight>|null}
+ * @param {Object} ctx
+ * @param {string} ctx.dashboard           — chave do dashboard (obrigatório)
+ * @param {string|null} ctx.indexKey       — chave do widget; null = análise geral
+ * @param {string} ctx.scope               — 'widget' | 'dashboard' | 'cross-dashboard'
+ * @param {Date}   ctx.periodFrom
+ * @param {Date}   ctx.periodTo
+ * @param {string} ctx.periodLabel         — ex: "Últimos 30 dias"
+ * @param {Object} ctx.snapshot            — dados resumidos do dashboard/widget
+ * @param {Object} ctx.filters             — snapshot dos filtros aplicados
+ * @param {Object} [ctx.previousPeriod]    — opcional, comparação
+ * @returns {Promise<Array<insight>|null>}
  */
 export async function suggestInsightsViaAi(ctx) {
-  // PLACEHOLDER — não implementa IA por enquanto.
-  // Quando ativar:
-  //   const { callLLMSecure } = await import('./aiSecure.js');
-  //   const prompt = buildPromptFromContext(ctx);
-  //   const r = await callLLMSecure({
-  //     agentId: `dashboard-insights-${ctx.dashboard}`,
-  //     systemPrompt: 'Você analisa dashboards e gera insights estruturados em JSON...',
-  //     userMessage: prompt,
-  //     module: 'insights', source: 'dashboard-insights',
-  //   });
-  //   return parseInsightsFromAiResponse(r.text);
-  return null;
+  if (!ctx?.dashboard) throw new Error('dashboard obrigatório');
+  const scope = ctx.scope || (ctx.indexKey ? 'widget' : 'dashboard');
+
+  // 1) Localiza o agente seedado
+  const { fetchAgents } = await import('./agents.js');
+  const agents = await fetchAgents();
+  const agent = agents.find(a =>
+    a.migratedFrom?.systemSeed === 'bi-insights-analyst' && a.active
+  );
+  if (!agent) {
+    console.warn('[insights] Agente bi-insights-analyst não encontrado. Rode seed em IA Hub.');
+    return null;
+  }
+
+  // 2) Monta payload
+  const payload = {
+    dashboard: ctx.dashboard,
+    scope,
+    indexKey: ctx.indexKey || null,
+    period: {
+      from:  ctx.periodFrom?.toISOString?.() || null,
+      to:    ctx.periodTo?.toISOString?.()   || null,
+      label: ctx.periodLabel || null,
+    },
+    snapshot: ctx.snapshot || {},
+    filters:  ctx.filters  || {},
+    ...(ctx.previousPeriod ? { previousPeriod: ctx.previousPeriod } : {}),
+  };
+
+  // 3) Chama runAgent (usa Cloud Function callLLM, que tem cache + audit + rate limit)
+  let raw;
+  try {
+    const { runAgent } = await import('./agents.js');
+    const result = await runAgent(agent.id, JSON.stringify(payload, null, 2), {
+      moduleId: 'insights',
+      source: `dashboard-insights-${ctx.dashboard}`,
+    });
+    raw = result?.text || result?.content || '';
+  } catch (e) {
+    console.error('[insights] runAgent falhou:', e.message);
+    throw new Error(`IA falhou: ${e.message}`);
+  }
+
+  // 4) Parseia resposta (espera array JSON; tolera fences ```json se LLM escapar)
+  let suggestions = [];
+  try {
+    const cleaned = String(raw)
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*$/g, '')
+      .trim();
+    suggestions = JSON.parse(cleaned);
+    if (!Array.isArray(suggestions)) suggestions = [];
+  } catch (e) {
+    console.warn('[insights] Resposta IA não é JSON válido:', raw.slice(0, 200));
+    return [];
+  }
+
+  // 5) Sanitiza cada sugestão pra estrutura esperada
+  return suggestions.map(s => ({
+    title:          String(s.title || '').slice(0, 200),
+    observation:    String(s.observation || '').slice(0, 4000),
+    recommendation: String(s.recommendation || '').slice(0, 4000),
+    type:           ['positive','negative','warning','opportunity','neutral'].includes(s.type) ? s.type : 'neutral',
+    impact:         ['high','medium','low'].includes(s.impact) ? s.impact : 'medium',
+    indexKey:       s.indexKey || ctx.indexKey || null,
+    source:         'ai-generated',
+    // Guarda payload original pra audit trail caso humano edite depois
+    aiOriginal:     {
+      title:          s.title || '',
+      observation:    s.observation || '',
+      recommendation: s.recommendation || '',
+      type:           s.type || 'neutral',
+      impact:         s.impact || 'medium',
+      generatedAt:    new Date().toISOString(),
+      agentId:        agent.id,
+      agentName:      agent.name,
+    },
+  })).filter(s => s.title); // descarta sugestões sem título
 }
 
 /* ════════════════════════════════════════════════════════════

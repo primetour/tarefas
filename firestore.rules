@@ -522,6 +522,10 @@ service cloud.firestore {
     // ── Dashboard Insights ───────────────────────────────────
     // Observações estruturadas em qualquer dashboard analítico.
     // Qualquer auth user pode criar/ler. Editar/remover só autor ou admin.
+    // Campos adicionais permitidos (sem validação de schema estrito):
+    //   - indexKey:   chave do widget ancorado (null = insight geral do dash)
+    //   - source:     manual | ai-generated | ai-edited
+    //   - aiOriginal: payload original da IA (audit trail quando humano edita)
     match /dashboard_insights/{docId} {
       allow read:   if isAuth();
       allow create: if isAuth()
