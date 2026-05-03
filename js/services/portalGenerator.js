@@ -1921,29 +1921,43 @@ async function enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments) {
     if (!imgs) continue;
     if (!imgs.gallery) imgs.gallery = [];
 
+    // Itens já com foto na gallery (cadastro manual em "Banco de Imagens")
     const haveByTitle = new Set(
       imgs.gallery
         .filter(g => g.placeName && !g.placeName.startsWith('__override_'))
         .map(g => g.placeName.toLowerCase().trim())
     );
+
+    // Itens que têm OVERRIDE manual selecionado no editor de geração.
+    // Override vence sempre na renderização — não desperdiçar chamada Unsplash aqui.
+    // Override schema: imagesByDest[destId]._overrides[segKey][itemIdx] = { url, name }
+    const overrideKeys = imgs._overrides || {};
+    const hasOverride = (segKey, itemIdx) => {
+      const seg = overrideKeys[segKey];
+      if (!seg) return false;
+      const o = seg[itemIdx] || seg[String(itemIdx)];
+      return !!(o && o.url);
+    };
+
     const cityCtx = dest.city || dest.country || '';
 
     for (const segKey of segments) {
       const data = tip?.segments?.[segKey];
       if (!data?.items) continue;
 
-      for (const item of data.items) {
-        if (tasks.length >= MAX_ITEMS) break;
-        if (!item?.titulo) continue;
+      data.items.forEach((item, itemIdx) => {
+        if (tasks.length >= MAX_ITEMS) return;
+        if (!item?.titulo) return;
         const t = item.titulo.toLowerCase().trim();
-        if (haveByTitle.has(t)) continue;
+        if (haveByTitle.has(t)) return;          // já tem foto na gallery cadastrada
+        if (hasOverride(segKey, itemIdx)) return; // user escolheu manualmente — pula
 
         const querySpecific = cityCtx ? `${item.titulo} ${cityCtx}` : item.titulo;
         const queryGeneric  = SEG_GENERIC[segKey]
           ? `${SEG_GENERIC[segKey]} ${cityCtx}`.trim()
           : cityCtx;
         tasks.push({ destId: dest.id, titulo: item.titulo, segKey, querySpecific, queryGeneric });
-      }
+      });
       if (tasks.length >= MAX_ITEMS) break;
     }
     if (tasks.length >= MAX_ITEMS) break;
