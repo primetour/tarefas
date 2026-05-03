@@ -20,6 +20,7 @@ const CATEGORY_LABELS = {
   crm:           { label:'CRM',           icon:'☁'  },
   communication: { label:'Comunicação',   icon:'💬' },
   development:   { label:'Dev',           icon:'🐙' },
+  media:         { label:'Mídia & Fotos', icon:'📸' },
   custom:        { label:'Personalizado', icon:'⚡' },
 };
 
@@ -32,6 +33,8 @@ const FEATURE_LABELS = {
   export_tasks:       'Exportar tarefas',
   link_cases:         'Vincular Cases',
   link_opportunities: 'Vincular Oportunidades',
+  auto_photo_destination: 'Foto automática por destino',
+  og_image_generation:    'Imagem OG pra compartilhamento',
   auto_tasks:         'Tarefas automáticas',
   notify_complete:    'Notif. conclusão',
   notify_overdue:     'Notif. atraso',
@@ -154,10 +157,14 @@ function renderGrid() {
 
   grid.innerHTML = filtered.map(def => {
     const saved     = savedIntegrations[def.id];
-    const connected = saved?.enabled === true;
+    // Server-managed integrations sao sempre "conectadas" (chave em Secret Manager)
+    const isServerManaged = def.serverManaged === true;
+    const connected = isServerManaged || saved?.enabled === true;
     const hasError  = saved?.lastTestOk === false;
     const status    = connected ? (hasError ? 'error' : 'connected') : 'disconnected';
-    const statusLabel = { connected:'Conectada', error:'Erro', disconnected:'Não configurada' }[status];
+    const statusLabel = isServerManaged
+      ? 'Configurada (server-side)'
+      : { connected:'Conectada', error:'Erro', disconnected:'Não configurada' }[status];
     const dotClass  = { connected:'status-connected', error:'status-error', disconnected:'status-disconnected' }[status];
 
     return `
@@ -173,11 +180,17 @@ function renderGrid() {
               ${CATEGORY_LABELS[def.category]?.icon || ''} ${CATEGORY_LABELS[def.category]?.label || def.category}
             </div>
           </div>
-          ${connected ? `
+          ${connected && !isServerManaged ? `
             <label class="toggle-switch" style="flex-shrink:0;" title="${connected?'Desabilitar':'Habilitar'}">
               <input type="checkbox" class="int-toggle" data-id="${def.id}" ${connected?'checked':''} />
               <span class="toggle-slider"></span>
             </label>
+          ` : ''}
+          ${isServerManaged ? `
+            <span title="Chave server-side via Secret Manager — não exposta no client"
+              style="flex-shrink:0;font-size:0.625rem;font-weight:700;padding:3px 8px;
+              border-radius:var(--radius-full);background:rgba(34,197,94,.15);
+              color:#22C55E;letter-spacing:.04em;">🔒 SERVER</span>
           ` : ''}
         </div>
 
@@ -201,7 +214,11 @@ function renderGrid() {
                 Docs ↗
               </a>
             ` : ''}
-            ${connected ? `
+            ${isServerManaged ? `
+              <button class="btn btn-secondary btn-sm int-config-btn" data-id="${def.id}">
+                Detalhes
+              </button>
+            ` : connected ? `
               <button class="btn btn-secondary btn-sm int-config-btn" data-id="${def.id}">Configurar</button>
               <button class="btn btn-ghost btn-sm int-delete-btn" data-id="${def.id}"
                 style="color:var(--color-danger);" title="Remover">✕</button>
@@ -258,6 +275,60 @@ function openConfigModal(integrationId) {
   if (!def) return;
   const saved  = savedIntegrations[integrationId];
   const config = saved?.rawConfig || {};
+
+  // Server-managed: modal info-only sem campos editaveis
+  if (def.serverManaged) {
+    modal.open({
+      title: `${def.name} — Configurada server-side`,
+      size:  'md',
+      content: `
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;
+          padding-bottom:16px; border-bottom:1px solid var(--border-subtle);">
+          <div style="width:40px;height:40px;border-radius:var(--radius-md);
+            background:${def.color}18;color:${def.color};display:flex;
+            align-items:center;justify-content:center;font-size:1.25rem;">${def.icon}</div>
+          <div>
+            <div style="font-weight:600;color:var(--text-primary);">${def.name}</div>
+            <div style="font-size:0.8125rem;color:#22C55E;">🔒 Chave em Secret Manager</div>
+          </div>
+          ${def.docsUrl ? `
+            <a href="${def.docsUrl}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="margin-left:auto;">
+              Documentação ↗
+            </a>` : ''}
+        </div>
+
+        <p style="font-size:0.875rem;color:var(--text-secondary);line-height:1.6;margin-bottom:14px;">
+          ${esc(def.description)}
+        </p>
+
+        <div style="background:rgba(34,197,94,.07);border-left:3px solid #22C55E;
+          border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;margin-bottom:14px;">
+          <div style="font-size:0.8125rem;font-weight:600;color:#22C55E;margin-bottom:4px;">
+            ✓ Por que é server-managed?
+          </div>
+          <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.55;">
+            A chave fica em <strong>Firebase Secret Manager</strong> e nunca é enviada ao navegador.
+            Cloud Functions acessam server-side. Isso evita exposição via DevTools, prints,
+            ou vazamento por screenshot. Compliance SOC 2 CC6.1 + ISO 27001 A.5.17.
+          </div>
+        </div>
+
+        <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.6;">
+          <strong>Funcionalidades habilitadas:</strong><br>
+          ${(def.features || []).map(f => '• ' + (FEATURE_LABELS[f] || f)).join('<br>')}
+        </div>
+
+        <div style="margin-top:18px;padding:10px 14px;background:var(--bg-surface);
+          border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+          font-size:0.7188rem;color:var(--text-muted);font-family:monospace;">
+          <strong style="color:var(--text-secondary);">Pra rotacionar a chave</strong> (admin terminal):<br>
+          firebase functions:secrets:set ${def.secretName || 'SECRET_NAME'} --project=gestor-de-tarefas-primetour
+        </div>
+      `,
+      buttons: [{ label: 'Fechar', variant: 'secondary', onClick: () => modal.close() }],
+    });
+    return;
+  }
 
   modal.open({
     title: `Configurar ${def.name}`,

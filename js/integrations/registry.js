@@ -125,6 +125,25 @@ export const INTEGRATION_CATALOG = [
     ],
     features: ['events'],
   },
+  {
+    id:          'unsplash',
+    name:        'Unsplash',
+    icon:        '📸',
+    category:    'media',
+    description: 'Busca automática de fotos profissionais para destinos do Portal de Dicas e cards de compartilhamento (OG image). Fallback Wikipedia se Unsplash falhar.',
+    docsUrl:     'https://unsplash.com/developers',
+    color:       '#000000',
+    authType:    'token',
+    // SECURITY: a Access Key fica em Firebase Secret Manager (server-side).
+    // Esta UI apenas mostra status — chave NUNCA fica no client/Firestore.
+    serverManaged: true,
+    secretName:    'UNSPLASH_ACCESS_KEY',
+    fields: [
+      { key:'_status', label:'Status', type:'readonly',
+        hint:'Configurada via Firebase Secret Manager. Para rotacionar: terminal → firebase functions:secrets:set UNSPLASH_ACCESS_KEY' },
+    ],
+    features: ['auto_photo_destination','og_image_generation'],
+  },
 ];
 
 /* ─── Salvar configuração de integração ───────────────────── */
