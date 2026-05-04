@@ -160,22 +160,118 @@ async function getPhotoFn() {
   return _fnPhotoPromise;
 }
 
-/** Busca foto auto via Cloud Function (Unsplash → Wikipedia fallback). Cached. */
+/** Mapa PT→EN das principais cidades/países que costumam falhar no Unsplash
+ *  por causa de acentos / nomes localizados. Não é exaustivo (impossível
+ *  cobrir o mundo todo), mas pega os destinos mais comuns que escapam.
+ */
+const PT_TO_EN_MAP = {
+  // Cidades
+  'tóquio': 'Tokyo', 'toquio': 'Tokyo',
+  'kioto': 'Kyoto', 'quioto': 'Kyoto',
+  'osaka': 'Osaka',
+  'pequim': 'Beijing', 'xangai': 'Shanghai', 'hong kong': 'Hong Kong',
+  'cingapura': 'Singapore', 'singapura': 'Singapore',
+  'nova york': 'New York', 'nova iorque': 'New York',
+  'los angeles': 'Los Angeles', 'são francisco': 'San Francisco',
+  'cidade do méxico': 'Mexico City', 'cidade do mexico': 'Mexico City',
+  'havana': 'Havana', 'cidade do cabo': 'Cape Town',
+  'londres': 'London', 'paris': 'Paris', 'roma': 'Rome', 'milão': 'Milan',
+  'florença': 'Florence', 'veneza': 'Venice', 'nápoles': 'Naples',
+  'madri': 'Madrid', 'madrid': 'Madrid', 'barcelona': 'Barcelona',
+  'lisboa': 'Lisbon', 'porto': 'Porto', 'sevilha': 'Seville',
+  'atenas': 'Athens', 'istambul': 'Istanbul', 'jerusalém': 'Jerusalem',
+  'cairo': 'Cairo', 'marrakech': 'Marrakech', 'marraquexe': 'Marrakech',
+  'dubai': 'Dubai', 'abu dhabi': 'Abu Dhabi', 'doha': 'Doha',
+  'moscou': 'Moscow', 'são petersburgo': 'Saint Petersburg',
+  'genebra': 'Geneva', 'zurique': 'Zurich', 'praga': 'Prague',
+  'viena': 'Vienna', 'budapeste': 'Budapest', 'cracóvia': 'Krakow',
+  'estocolmo': 'Stockholm', 'copenhague': 'Copenhagen', 'oslo': 'Oslo',
+  'helsinque': 'Helsinki', 'reykjavík': 'Reykjavik', 'reykjavik': 'Reykjavik',
+  'munique': 'Munich', 'berlim': 'Berlin', 'colônia': 'Cologne',
+  'amsterdã': 'Amsterdam', 'haia': 'The Hague', 'bruxelas': 'Brussels',
+  'sidney': 'Sydney', 'sydney': 'Sydney', 'melbourne': 'Melbourne',
+  'wellington': 'Wellington', 'auckland': 'Auckland',
+  // Países
+  'frança': 'France', 'inglaterra': 'England', 'reino unido': 'United Kingdom',
+  'alemanha': 'Germany', 'itália': 'Italy', 'espanha': 'Spain',
+  'portugal': 'Portugal', 'grécia': 'Greece', 'turquia': 'Turkey',
+  'japão': 'Japan', 'china': 'China', 'coreia do sul': 'South Korea',
+  'tailândia': 'Thailand', 'vietnã': 'Vietnam', 'indonésia': 'Indonesia',
+  'índia': 'India', 'maldivas': 'Maldives',
+  'estados unidos': 'United States', 'eua': 'USA', 'canadá': 'Canada',
+  'méxico': 'Mexico', 'argentina': 'Argentina', 'chile': 'Chile',
+  'peru': 'Peru', 'colômbia': 'Colombia', 'uruguai': 'Uruguay',
+  'áfrica do sul': 'South Africa', 'marrocos': 'Morocco', 'egito': 'Egypt',
+  'austrália': 'Australia', 'nova zelândia': 'New Zealand',
+  'noruega': 'Norway', 'suécia': 'Sweden', 'dinamarca': 'Denmark',
+  'finlândia': 'Finland', 'islândia': 'Iceland',
+  'rússia': 'Russia', 'polônia': 'Poland', 'república tcheca': 'Czech Republic',
+  'hungria': 'Hungary', 'áustria': 'Austria', 'suíça': 'Switzerland',
+  'países baixos': 'Netherlands', 'holanda': 'Netherlands',
+  'bélgica': 'Belgium', 'irlanda': 'Ireland', 'escócia': 'Scotland',
+};
+
+/** Traduz query de PT pra EN aplicando o mapa palavra-por-palavra (token).
+ *  Retorna null se nada mudou (não vale fazer 2ª tentativa idêntica).
+ */
+function translateToEnglish(query) {
+  if (!query) return null;
+  const tokens = query.toLowerCase().split(/\s+/);
+  let changed = false;
+  const out = [];
+  // Tenta multi-palavra primeiro (ex: "nova york")
+  let i = 0;
+  while (i < tokens.length) {
+    const two = tokens.slice(i, i + 2).join(' ');
+    if (PT_TO_EN_MAP[two]) {
+      out.push(PT_TO_EN_MAP[two]); i += 2; changed = true; continue;
+    }
+    const one = tokens[i];
+    if (PT_TO_EN_MAP[one]) {
+      out.push(PT_TO_EN_MAP[one]); changed = true;
+    } else {
+      out.push(tokens[i]);
+    }
+    i++;
+  }
+  return changed ? out.join(' ') : null;
+}
+
+/** Busca foto auto via Cloud Function (Unsplash → Wikipedia fallback). Cached.
+ *  Tenta na ordem: query original → tradução EN → null.
+ *  PT-BR costuma falhar no Unsplash (que indexa em EN), então a 2ª tentativa
+ *  pega muitos casos como "Tóquio" → "Tokyo".
+ */
 async function fetchAutoPhoto(query) {
   if (!query) return null;
   const k = query.toLowerCase().trim();
   if (_photoCache.has(k)) return _photoCache.get(k);
-  try {
-    const fn = await getPhotoFn();
-    const r = await fn({ query });
-    const url = r?.data?.url || null;
-    _photoCache.set(k, url);
-    return url;
-  } catch (e) {
-    console.warn('[roteiroImages] fetchAutoPhoto falhou:', query, e.message);
-    _photoCache.set(k, null);
-    return null;
+
+  const tryQuery = async (q) => {
+    try {
+      const fn = await getPhotoFn();
+      const r = await fn({ query: q });
+      return r?.data?.url || null;
+    } catch (e) {
+      console.warn('[roteiroImages] fetchAutoPhoto falhou:', q, e.message);
+      return null;
+    }
+  };
+
+  // 1ª tentativa: query original
+  let url = await tryQuery(query);
+
+  // 2ª tentativa: tradução EN se a 1ª veio vazia
+  if (!url) {
+    const en = translateToEnglish(query);
+    if (en && en.toLowerCase() !== query.toLowerCase()) {
+      console.info('[roteiroImages] retry em EN:', query, '→', en);
+      url = await tryQuery(en);
+    }
   }
+
+  _photoCache.set(k, url);
+  return url;
 }
 
 /** Resolve imagem pra um destino (city + country).

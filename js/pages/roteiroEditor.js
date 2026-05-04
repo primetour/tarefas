@@ -1713,16 +1713,23 @@ function handleEditorClick(e) {
         showToast('Adicione pelo menos um dia antes de exportar.', 'warning');
         break;
       }
-      (async () => {
-        try {
-          // Sempre salvar antes de exportar (garante ID no Firestore)
-          if (isDirty || !currentRoteiro.id) await handleSave();
-          const areaId = document.getElementById('re-area-select')?.value || '';
-          await generateRoteiroForExport(currentRoteiro, areaId);
-        } catch (err) {
-          showToast('Erro ao gerar PDF: ' + err.message, 'error');
+      // \u00c1rea obrigat\u00f3ria: sem ela o doc sai sem logo, sem cores certas, sem branding.
+      {
+        const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
+        if (!areaId) {
+          showToast('Selecione uma \u00c1rea (BU) antes de exportar.', 'warning');
+          switchSection(11); // Preview & Export
+          break;
         }
-      })();
+        (async () => {
+          try {
+            if (isDirty || !currentRoteiro.id) await handleSave();
+            await generateRoteiroForExport(currentRoteiro, areaId);
+          } catch (err) {
+            showToast('Erro ao gerar PDF: ' + err.message, 'error');
+          }
+        })();
+      }
       break;
     }
 
@@ -1733,15 +1740,22 @@ function handleEditorClick(e) {
         showToast('Adicione pelo menos um dia antes de exportar.', 'warning');
         break;
       }
-      (async () => {
-        try {
-          if (isDirty || !currentRoteiro.id) await handleSave();
-          const areaId = document.getElementById('re-area-select')?.value || '';
-          await generateRoteiroForExport(currentRoteiro, areaId, 'pptx');
-        } catch (err) {
-          showToast('Erro ao gerar PPTX: ' + err.message, 'error');
+      {
+        const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
+        if (!areaId) {
+          showToast('Selecione uma \u00c1rea (BU) antes de exportar.', 'warning');
+          switchSection(11);
+          break;
         }
-      })();
+        (async () => {
+          try {
+            if (isDirty || !currentRoteiro.id) await handleSave();
+            await generateRoteiroForExport(currentRoteiro, areaId, 'pptx');
+          } catch (err) {
+            showToast('Erro ao gerar PPTX: ' + err.message, 'error');
+          }
+        })();
+      }
       break;
     }
 
