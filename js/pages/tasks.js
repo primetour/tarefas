@@ -479,8 +479,8 @@ function openPlannerOrphansModal() {
           </div>
         </td>
         <td style="padding:10px 12px;vertical-align:top;min-width:240px;">
-          <select class="form-input orphan-project-select" data-task-id="${esc(t.id)}"
-            style="height:34px;font-size:0.8125rem;width:100%;">
+          <select class="form-select orphan-project-select" data-task-id="${esc(t.id)}"
+            style="font-size:0.8125rem;padding:8px 32px 8px 12px;width:100%;">
             <option value="">— Escolher projeto —</option>
             ${projectOptions}
           </select>
@@ -507,17 +507,17 @@ function openPlannerOrphansModal() {
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;
         padding:10px 12px;border-radius:8px;border:1px dashed var(--border-default);">
         <span style="font-size:0.8125rem;color:var(--text-muted);">Atalho:</span>
-        <select id="orphans-bulk-project" class="form-input"
-          style="height:32px;font-size:0.8125rem;min-width:200px;">
+        <select id="orphans-bulk-project" class="form-select"
+          style="font-size:0.8125rem;padding:8px 32px 8px 12px;min-width:220px;">
           <option value="">— projeto —</option>
           ${projectOptions}
         </select>
         <button type="button" id="orphans-bulk-apply-all" class="btn btn-secondary btn-sm"
-          style="height:32px;padding:0 12px;font-size:0.8125rem;">Aplicar a todas</button>
+          style="font-size:0.8125rem;">Aplicar a todas</button>
         <button type="button" id="orphans-bulk-apply-empty" class="btn btn-secondary btn-sm"
-          style="height:32px;padding:0 12px;font-size:0.8125rem;">Aplicar apenas às vazias</button>
+          style="font-size:0.8125rem;">Aplicar apenas às vazias</button>
         <button type="button" id="orphans-restore-suggested" class="btn btn-ghost btn-sm"
-          style="height:32px;padding:0 12px;font-size:0.8125rem;">↺ Restaurar sugestões</button>
+          style="font-size:0.8125rem;">↺ Restaurar sugestões</button>
       </div>
 
       <div style="overflow:auto;max-height:55vh;border:1px solid var(--border-subtle);
