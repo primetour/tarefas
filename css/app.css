@@ -238,7 +238,18 @@
   justify-content: center;
   flex-shrink: 0;
   font-size: 1rem;
+  /* Ícones agora são SVG inline (Lucide-style). currentColor herda do
+     .nav-item, então a cor segue o estado (default → hover → .active).
+     Mantemos font-size pra fallback de Unicode ainda renderizar OK. */
+  color: currentColor;
   transition: transform var(--transition-fast);
+}
+.nav-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  /* Sem transform direto no SVG — o scale do hover roda no .nav-icon
+     pai (já existente), evitando blur por sub-pixel. */
 }
 
 .nav-item:hover .nav-icon { transform: scale(1.1); }
