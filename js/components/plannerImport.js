@@ -1046,11 +1046,17 @@ function renderStep5() {
   const byStatus = { not_started: 0, in_progress: 0, done: 0 };
   tasks.forEach(t => { byStatus[t.status] = (byStatus[t.status] || 0) + 1; });
 
-  // Pre-select non-completed AND não-duplicadas no primeiro visit
+  // Pre-select non-completed AND não-duplicadas no primeiro visit.
+  // EXCEÇÃO: se TODAS as tarefas estão concluídas (caso "importação de
+  // histórico antigo do Planner"), pre-seleciona todas as não-duplicadas.
+  // Antes ficavam todas desmarcadas e o user via "Importar 0 tarefas",
+  // pensando que importação estava quebrada.
   if (wiz.selectedRows.size === 0) {
+    const allDone = tasks.every(t => t.status === 'done');
     tasks.forEach((t, i) => {
       const isDup = t.plannerId && wiz.existingPlannerIds.has(t.plannerId);
-      if (t.status !== 'done' && !isDup) wiz.selectedRows.add(i);
+      if (isDup) return;
+      if (allDone || t.status !== 'done') wiz.selectedRows.add(i);
     });
   }
   const dupCount = tasks.filter(t => t.plannerId && wiz.existingPlannerIds.has(t.plannerId)).length;
@@ -1183,6 +1189,13 @@ function renderStep5() {
         ${filtered.length} de ${total} tarefas
         · <strong style="color:#7C3AED;">${wiz.selectedRows.size} para importar</strong>
       </div>
+      ${wiz.selectedRows.size === 0 ? `
+        <div style="margin-top:10px;padding:10px 12px;border-radius:8px;
+          background:#FEF3C7;border:1px solid #FCD34D;font-size:0.8125rem;color:#92400E;">
+          ⚠ <strong>Nenhuma tarefa selecionada.</strong> Use os botões "Todas" / "Concluídas"
+          acima pra escolher quais importar (tarefas concluídas e duplicadas vêm desmarcadas
+          por padrão — clique em "Todas" se quiser importar mesmo assim).
+        </div>` : ''}
     </div>
   </div>`;
 }
