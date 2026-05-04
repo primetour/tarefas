@@ -210,6 +210,19 @@ export function initAuthObserver(onReady) {
                 await deleteDoc(oldDoc.ref).catch(() => {});
               }
 
+              // Auto-sync núcleos → squads pro UID novo. Cobre o caso em que
+              // o user foi pré-cadastrado com núcleos mas o sync no createUser
+              // (fluxo SSO) usou pendingId. Agora reaplica pro UID definitivo.
+              const userNucleos = Array.isArray(newProfile.nucleos) ? newProfile.nucleos : [];
+              if (userNucleos.length > 0) {
+                try {
+                  const { syncUserNucleosToSquads } = await import('../services/workspaces.js');
+                  await syncUserNucleosToSquads(newUid, userNucleos);
+                } catch (e) {
+                  console.warn('[SSO auto-provision] sync nucleos→squads falhou:', e.message);
+                }
+              }
+
               const consolidationInfo = preExistingDocs.length > 0
                 ? `(consolidado de ${preExistingDocs.length} doc(s) antigo(s): ${preExistingDocs.map(d=>d.id.slice(0,12)).join(', ')})`
                 : '(novo, defaults)';
@@ -611,6 +624,18 @@ export async function createUser({ name, email, password, role, roleId, departme
     };
     await setDoc(doc(db, 'users', docKey), pendingDoc);
 
+    // Auto-sync núcleos → squads (ADD em squads com mesmo nome)
+    // Vide services/workspaces.js syncUserNucleosToSquads pro detalhe.
+    try {
+      const { syncUserNucleosToSquads } = await import('../services/workspaces.js');
+      const sync = await syncUserNucleosToSquads(docKey, pendingDoc.nucleos);
+      if (sync.addedToSquads.length) {
+        toast.success(`Vinculado a ${sync.addedToSquads.length} squad(s): ${sync.addedToSquads.join(', ')}`);
+      }
+    } catch (e) {
+      console.warn('[createUser SSO] sync nucleos→squads falhou:', e.message);
+    }
+
     await auditLog('users.create', 'user', docKey, {
       name, email: cleanEmail, role: role || roleId,
       sector: (sector || '').trim(), nucleos: pendingDoc.nucleos,
@@ -662,6 +687,17 @@ export async function createUser({ name, email, password, role, roleId, departme
   const userDoc = { ...baseDoc, id: uid };
   await setDoc(doc(db, 'users', uid), userDoc);
 
+  // Auto-sync núcleos → squads (mesmo princípio do fluxo SSO)
+  try {
+    const { syncUserNucleosToSquads } = await import('../services/workspaces.js');
+    const sync = await syncUserNucleosToSquads(uid, userDoc.nucleos);
+    if (sync.addedToSquads.length) {
+      toast.success(`Vinculado a ${sync.addedToSquads.length} squad(s): ${sync.addedToSquads.join(', ')}`);
+    }
+  } catch (e) {
+    console.warn('[createUser non-SSO] sync nucleos→squads falhou:', e.message);
+  }
+
   await auditLog(isRecovery ? 'users.recover' : 'users.create', 'user', uid, {
     name, email: cleanEmail,
     role: role || roleId,
@@ -709,6 +745,20 @@ export async function updateUserProfile(uid, data) {
   updateData.updatedAt = serverTimestamp();
   updateData.updatedBy = currentUser.uid;
 
+  // ── Captura núcleos prévios pra fazer diff (sync nucleos→squads) ──
+  // Sem isso, sync sincronizaria todos os núcleos toda vez (idempotente
+  // mas custoso). Diff garante que só os núcleos NOVOS disparam vincu-
+  // lação no squad correspondente.
+  let previousNucleos = [];
+  try {
+    const prevSnap = await getDoc(doc(db, 'users', uid));
+    if (prevSnap.exists()) {
+      previousNucleos = Array.isArray(prevSnap.data().nucleos)
+        ? prevSnap.data().nucleos
+        : (prevSnap.data().nucleo ? [prevSnap.data().nucleo] : []);
+    }
+  } catch {}
+
   // Update com fallback robusto: se o doc com `uid` não existe (caso comum
   // após migração SSO — UI tinha pending_email_dot_dot stale enquanto o
   // doc real foi consolidado pra UID novo), procura por email e tenta de
@@ -746,6 +796,21 @@ export async function updateUserProfile(uid, data) {
   if (isOwner) {
     const updated = { ...store.get('userProfile'), ...updateData };
     store.set('userProfile', updated);
+  }
+
+  // Auto-sync núcleos → squads (só dos núcleos NOVOS adicionados).
+  // Remoção de núcleo NÃO remove do squad (admin decide explicitamente).
+  if (Array.isArray(updateData.nucleos) && store.can('system_manage_users')) {
+    try {
+      const { syncUserNucleosToSquads } = await import('../services/workspaces.js');
+      const sync = await syncUserNucleosToSquads(actualDocId, updateData.nucleos, { previousNucleos });
+      if (sync.addedToSquads.length) {
+        const { toast } = await import('../components/toast.js');
+        toast.info(`Auto-vinculado a ${sync.addedToSquads.length} squad(s): ${sync.addedToSquads.join(', ')}`);
+      }
+    } catch (e) {
+      console.warn('[updateUserProfile] sync nucleos→squads falhou:', e.message);
+    }
   }
 
   await auditLog('users.update', 'user', actualDocId, updateData);

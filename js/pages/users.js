@@ -96,15 +96,29 @@ export async function renderUsers(container) {
       </div>
     </div>
 
-    <!-- Banner: como funciona o login (resposta única ao "Novo Usuário") -->
+    <!-- Banner: como funciona o login + setor/núcleos/squads -->
     <details style="margin-bottom:20px;border:1px solid var(--border-subtle);
       border-radius:var(--radius-md);background:var(--bg-surface);">
       <summary style="cursor:pointer;padding:12px 16px;font-size:0.875rem;
         font-weight:500;color:var(--text-primary);user-select:none;">
-        ℹ Como funciona o login no PRIMETOUR? (clique para expandir)
+        ℹ Como funciona login + setor/núcleos/squads? (clique para expandir)
       </summary>
       <div style="padding:0 16px 16px;font-size:0.8125rem;line-height:1.6;color:var(--text-secondary);">
-        <p style="margin-top:8px;"><strong style="color:var(--text-primary);">3 modos de entrada:</strong></p>
+        <p style="margin-top:8px;"><strong style="color:var(--text-primary);">Setor → Núcleo → Squad:</strong></p>
+        <ul style="margin:8px 0 12px;padding-left:20px;">
+          <li><strong>Setor</strong>: macro-área (Marketing, RH, TI). Usado pra filtros gerais.</li>
+          <li><strong>Núcleo</strong>: subdivisão dentro do setor (Design, Conteúdo, Redes Sociais). Define a qual time o usuário pertence.</li>
+          <li><strong>Squad</strong>: workspace de trabalho onde tarefas/projetos são organizados. <em>Frequentemente espelha o nome do núcleo.</em></li>
+        </ul>
+        <p style="margin-top:8px;color:var(--text-secondary);">
+          <strong style="color:#22C55E;">✓ Sincronização automática:</strong>
+          Ao atribuir um núcleo a um user, o sistema procura uma squad com o
+          mesmo nome (case-insensitive) e vincula automaticamente. Sem
+          retrabalho manual em 2 telas. (<em>Remoção de núcleo NÃO
+          remove do squad — admin decide explicitamente.</em>)
+        </p>
+        <hr style="margin:14px 0;border:none;border-top:1px solid var(--border-subtle);">
+        <p style="margin-top:8px;"><strong style="color:var(--text-primary);">3 modos de login:</strong></p>
         <ol style="margin:8px 0 0;padding-left:20px;">
           <li style="margin-bottom:8px;"><strong>SSO Microsoft (padrão)</strong> — emails dos
             domínios <code>@primetour.com.br</code>, <code>@primetravel.tur.br</code>,
@@ -142,8 +156,13 @@ export async function renderUsers(container) {
          migração SSO sem o swap de members). -->
     <div id="orphan-repair-banner" style="display:none;"></div>
 
-    <!-- Botão admin: auditar e migrar todos os SSO bloqueados -->
-    <div style="margin-bottom:20px;text-align:right;">
+    <!-- Botões admin: ferramentas de manutenção -->
+    <div style="margin-bottom:20px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+      <button id="sync-nucleos-squads-btn" class="btn btn-ghost btn-sm"
+        style="font-size:0.75rem;color:var(--text-muted);"
+        title="Para cada user, vincula em squads com mesmo nome dos seus núcleos. Resolve a desconexão histórica entre núcleos e squads.">
+        🔗 Sincronizar núcleos → squads
+      </button>
       <button id="audit-migrate-sso-btn" class="btn btn-ghost btn-sm"
         style="font-size:0.75rem;color:var(--text-muted);"
         title="Varre todos users SSO e migra automaticamente quem ainda tem credencial Auth email/senha (causa do bug 'senha incorreta no SSO')">
@@ -1093,6 +1112,63 @@ function openResetPasswordModal(uid, user) {
 function _attachPageEvents() {
   // New user button
   document.getElementById('new-user-btn')?.addEventListener('click', () => openUserModal());
+
+  // Sync retroativo de núcleos → squads
+  // Para cada user com núcleos definidos, vincula em squads com mesmo nome.
+  // Idempotente: roda quantas vezes quiser.
+  document.getElementById('sync-nucleos-squads-btn')?.addEventListener('click', async () => {
+    const ok = await modal.confirm({
+      title:   'Sincronizar núcleos → squads',
+      message: `<div style="font-size:0.875rem;line-height:1.5;">
+        <p>Pra cada usuário com núcleos definidos, vou procurar squads com
+        o <strong>mesmo nome</strong> e vincular o usuário automaticamente.</p>
+        <p style="margin-top:8px;color:var(--text-muted);">Operação safe:
+        só ADICIONA vínculos. Nunca remove ninguém de squad.</p>
+        <p style="margin-top:8px;color:var(--text-muted);font-size:0.75rem;">
+        A partir de agora, atribuir um núcleo a um user vai vincular
+        automaticamente. Este botão é só pra reparar o estado histórico.</p>
+      </div>`,
+      confirmText: 'Sincronizar agora',
+      icon: '🔗',
+    });
+    if (!ok) return;
+
+    const btn = document.getElementById('sync-nucleos-squads-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⟳ Sincronizando...'; }
+
+    try {
+      const { syncUserNucleosToSquads } = await import('../services/workspaces.js');
+      let totalAdded = 0;
+      let usersAffected = 0;
+      const summary = [];
+
+      for (const u of users) {
+        const userNucleos = Array.isArray(u.nucleos) && u.nucleos.length
+          ? u.nucleos
+          : (u.nucleo ? [u.nucleo] : []);
+        if (!userNucleos.length) continue;
+        const sync = await syncUserNucleosToSquads(u.id, userNucleos);
+        if (sync.addedToSquads.length) {
+          totalAdded += sync.addedToSquads.length;
+          usersAffected++;
+          summary.push({ user: u.name, addedTo: sync.addedToSquads });
+        }
+      }
+
+      if (totalAdded === 0) {
+        toast.info('Tudo já está sincronizado — nenhuma mudança necessária.');
+      } else {
+        toast.success(`✓ ${totalAdded} vínculos criados em ${usersAffected} usuários.`);
+      }
+      console.table(summary);
+      await loadUsers();
+    } catch (err) {
+      console.error('Sync nucleos→squads failed:', err);
+      toast.error('Falha: ' + (err.message || 'erro desconhecido'));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🔗 Sincronizar núcleos → squads'; }
+    }
+  });
 
   // Auditar e migrar SSO (varre todos users SSO com credencial Auth password
   // e migra automaticamente, evitando o bug "senha incorreta no SSO")

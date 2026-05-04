@@ -415,3 +415,78 @@ export function saveWorkspaceSelection(activeIds, currentId) {
   localStorage.setItem(`ws_active_${uid}`, JSON.stringify(activeIds));
   if (currentId) localStorage.setItem(`ws_current_${uid}`, currentId);
 }
+
+/* ─── Sync núcleos → squads (auto-vínculo por nome) ──────── */
+/**
+ * Quando um usuário é atribuído a núcleos, automaticamente o vincula
+ * aos squads com mesmo nome (case-insensitive). Resolve a desconexão
+ * histórica entre as duas estruturas — antes admin precisava fazer
+ * manual em 2 telas (Usuários → núcleos + Squads → adicionar membro).
+ *
+ * COMPORTAMENTO:
+ *   - ADD-only: se nucleos novos têm squads correspondentes, adiciona.
+ *   - NÃO REMOVE: se um núcleo é removido, NÃO remove do squad
+ *     (admin pode ter razões pra manter; remoção é explícita em Squads).
+ *
+ * @param {string} userId - ID do user no Firestore (pode ser UID Auth ou pendingId)
+ * @param {string[]} nucleos - array de nomes de núcleos atuais do user
+ * @param {object} [opts]
+ * @param {string[]} [opts.previousNucleos] - se passado, só sync diff (otimização)
+ * @returns {Promise<{ addedToSquads: string[], skipped: string[] }>}
+ */
+export async function syncUserNucleosToSquads(userId, nucleos, opts = {}) {
+  if (!userId || !Array.isArray(nucleos) || nucleos.length === 0) {
+    return { addedToSquads: [], skipped: [] };
+  }
+
+  // Diff: só sincroniza núcleos NOVOS (não os que já estavam)
+  const previous = Array.isArray(opts.previousNucleos) ? opts.previousNucleos : [];
+  const newNucleos = nucleos.filter(n => !previous.includes(n));
+  if (newNucleos.length === 0) return { addedToSquads: [], skipped: [] };
+
+  // Carrega todos workspaces (cache 60s seria ideal, mas list é pequena)
+  let workspaces;
+  try {
+    const snap = await getDocs(collection(db, 'workspaces'));
+    workspaces = snap.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
+  } catch (e) {
+    console.warn('[sync nucleos→squads] falhou ao listar workspaces:', e.message);
+    return { addedToSquads: [], skipped: [] };
+  }
+
+  const addedToSquads = [];
+  const skipped = [];
+
+  for (const nucleoName of newNucleos) {
+    const slug = String(nucleoName || '').trim().toLowerCase();
+    if (!slug) continue;
+
+    // Match case-insensitive por nome do squad
+    const match = workspaces.find(ws =>
+      String(ws.name || '').trim().toLowerCase() === slug && !ws.archived
+    );
+
+    if (!match) {
+      skipped.push({ nucleo: nucleoName, reason: 'sem squad com mesmo nome' });
+      continue;
+    }
+
+    // Já é member?
+    if ((match.members || []).includes(userId)) {
+      skipped.push({ nucleo: nucleoName, reason: 'já é member do squad' });
+      continue;
+    }
+
+    try {
+      await updateDoc(match.ref, {
+        members: arrayUnion(userId),
+        updatedAt: serverTimestamp(),
+      });
+      addedToSquads.push(match.name);
+    } catch (e) {
+      skipped.push({ nucleo: nucleoName, reason: `erro: ${e.message}` });
+    }
+  }
+
+  return { addedToSquads, skipped };
+}
