@@ -934,6 +934,50 @@ export const migrateUserUidGlobal = onCall({
     report.migrations.push(summary);
   }
 
+  // ── 3. Tratamento ESPECIAL de campos nested (não cobertos por where) ──
+  // tasks.metaLinks[].userId é o caso clássico: array de objetos onde o
+  // userId está dentro do obj. Firestore não permite query/index disso,
+  // então temos que ler TODOS os tasks e fazer map em memória.
+  // Mesma lógica para tasks_archive.
+  const NESTED_COLLECTIONS = [
+    { col: 'tasks',         field: 'metaLinks', subField: 'userId' },
+    { col: 'tasks_archive', field: 'metaLinks', subField: 'userId' },
+  ];
+  const legacyToCurrent = {};
+  migrationPairs.forEach(p => { legacyToCurrent[p.legacyUid] = p.currentUid; });
+  const allLegacyUids = new Set(Object.keys(legacyToCurrent));
+
+  let nestedTouched = 0;
+  for (const { col, field, subField } of NESTED_COLLECTIONS) {
+    try {
+      const snap = await db.collection(col).get();
+      for (const docSnap of snap.docs) {
+        const arr = docSnap.data()[field];
+        if (!Array.isArray(arr)) continue;
+        let dirty = false;
+        const newArr = arr.map(item => {
+          if (item && typeof item === 'object' && allLegacyUids.has(item[subField])) {
+            dirty = true;
+            return { ...item, [subField]: legacyToCurrent[item[subField]] };
+          }
+          return item;
+        });
+        if (dirty) {
+          try {
+            await docSnap.ref.update({ [field]: newArr });
+            nestedTouched++;
+          } catch (e) {
+            report.errors.push({ collection: col, field: `${field}[].${subField}`, docId: docSnap.id, error: e.message });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[migrateGlobal] nested ${col}.${field}.${subField} skip: ${e.message}`);
+    }
+  }
+  report.totalDocsTouched += nestedTouched;
+  report.nestedDocsTouched = nestedTouched;
+
   // Audit log
   await db.collection('audit_logs').add({
     action: 'system.migrate_user_uid_global',
