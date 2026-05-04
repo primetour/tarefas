@@ -185,6 +185,12 @@ let activePipelineTypeId = ''; // tipo selecionado na esteira
 
 /* ─── Paginação por coluna ───────────────────────────────── */
 const KANBAN_COL_LIMIT = 200;
+// Limite inicial pra seção de "Finalizadas" dentro de cada coluna em
+// groupBy != 'status'. Sem isso, expandir a seção pode criar scroll interno
+// gigante na coluna (14k+ px se houver 80+ tasks concluídas), quebrando UX
+// — user perde referência horizontal das outras colunas. Botão "Ver mais"
+// expande paginadamente.
+const KANBAN_FINALIZED_INITIAL = 10;
 const expandedCols = new Set();  // chaves tipo "kb:done" ou "pipe:type1:__done__"
 
 function renderColumnBody(body, count, colTasks, colKey, cardRenderer, rebindFn) {
@@ -277,16 +283,28 @@ function renderColumnBodyWithFinalized(body, count, activeTasks, finalizedTasks,
       color:var(--text-muted);font-style:italic;">Sem tarefas ativas</div>`;
   }
 
-  // Seção de finalizadas (concluídas + canceladas), default colapsada
+  // Seção de finalizadas (concluídas + canceladas), default colapsada.
+  // Paginação interna evita scroll gigante na coluna ao expandir.
   if (finalizedTasks.length > 0) {
     const finalKey = `${colKey}:final`;
+    const finalAllKey = `${colKey}:final-all`;
     const finalExpanded = expandedCols.has(finalKey);
+    const showAllFinal = expandedCols.has(finalAllKey);
     const doneCount = finalizedTasks.filter(t => t.status === 'done').length;
     const cancelledCount = finalizedTasks.filter(t => t.status === 'cancelled').length;
     const labelParts = [];
     if (doneCount > 0)      labelParts.push(`${doneCount} conclu${doneCount>1?'ídas':'ída'}`);
     if (cancelledCount > 0) labelParts.push(`${cancelledCount} cancel${cancelledCount>1?'adas':'ada'}`);
     const sectionLabel = labelParts.join(' · ');
+
+    // Mostra primeiras N (KANBAN_FINALIZED_INITIAL=10); botão "ver mais"
+    // expande todas. Limita scroll vertical interno da coluna a um valor
+    // gerenciável (sem isso, 80+ tarefas concluídas estendiam a coluna pra
+    // 14k+ px e o user perdia referência das outras colunas).
+    const finalVisible = showAllFinal
+      ? finalizedTasks
+      : finalizedTasks.slice(0, KANBAN_FINALIZED_INITIAL);
+    const finalRemaining = finalizedTasks.length - finalVisible.length;
 
     html += `<div style="margin-top:14px;padding-top:10px;
       border-top:1px dashed var(--border-subtle);">
@@ -301,7 +319,24 @@ function renderColumnBodyWithFinalized(body, count, activeTasks, finalizedTasks,
       </button>
       <div class="kb-finalized-body" style="${finalExpanded?'':'display:none;'}margin-top:6px;
         opacity:0.7;">
-        ${finalizedTasks.map(cardRenderer).join('')}
+        ${finalVisible.map(cardRenderer).join('')}
+        ${finalRemaining > 0 ? `
+          <button class="kb-finalized-more" data-final-all-key="${esc(finalAllKey)}" style="
+            width:100%;margin-top:6px;padding:6px 10px;border-radius:var(--radius-md);
+            border:1px dashed var(--border-subtle);background:transparent;
+            color:var(--text-muted);cursor:pointer;font-family:var(--font-ui);
+            font-size:0.7rem;font-weight:500;">
+            ↓ Ver mais ${finalRemaining} finalizada${finalRemaining>1?'s':''}
+          </button>
+        ` : (showAllFinal && finalizedTasks.length > KANBAN_FINALIZED_INITIAL ? `
+          <button class="kb-finalized-more" data-final-all-key="${esc(finalAllKey)}" data-collapse="1" style="
+            width:100%;margin-top:6px;padding:6px 10px;border-radius:var(--radius-md);
+            border:1px dashed var(--border-subtle);background:transparent;
+            color:var(--text-muted);cursor:pointer;font-family:var(--font-ui);
+            font-size:0.7rem;font-weight:500;">
+            ↑ Recolher
+          </button>
+        ` : '')}
       </div>
     </div>`;
   }
@@ -319,6 +354,12 @@ function renderColumnBodyWithFinalized(body, count, activeTasks, finalizedTasks,
   body.querySelector('.kb-finalized-toggle')?.addEventListener('click', e => {
     const key = e.currentTarget.dataset.finalKey;
     if (expandedCols.has(key)) expandedCols.delete(key);
+    else expandedCols.add(key);
+    renderColumnBodyWithFinalized(body, count, activeTasks, finalizedTasks, colKey, cardRenderer, rebindFn);
+  });
+  body.querySelector('.kb-finalized-more')?.addEventListener('click', e => {
+    const key = e.currentTarget.dataset.finalAllKey;
+    if (e.currentTarget.dataset.collapse) expandedCols.delete(key);
     else expandedCols.add(key);
     renderColumnBodyWithFinalized(body, count, activeTasks, finalizedTasks, colKey, cardRenderer, rebindFn);
   });
