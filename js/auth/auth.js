@@ -99,16 +99,24 @@ export function initAuthObserver(onReady) {
             // detectamos esse doc por email, copiamos role/setor/núcleos
             // pré-configurados, criamos o doc final keyed pelo UID do Firebase
             // Auth e apagamos o pendente.
+            //
+            // BUG FIX (04/05/26): a versão antiga usava
+            //   where('email', '==', X) + where('pendingSso', '==', true)
+            // que exige um composite index que NUNCA foi criado no Firestore.
+            // Resultado: query falhava silenciosamente → mergedFromPending=null
+            // → todos os pending users (9) viravam member padrão sem setor.
+            // Gabrielle (master) ficou presa em "sem workspace" por isso.
+            // Solução: query single-field + filter client-side. Idempotente e
+            // sem dependência de index management.
             let mergedFromPending = null;
             try {
               const pendQ = query(
                 collection(db, 'users'),
                 where('email', '==', email),
-                where('pendingSso', '==', true),
               );
               const pendSnap = await getDocs(pendQ);
-              if (!pendSnap.empty) {
-                const pendingDoc = pendSnap.docs[0];
+              const pendingDoc = pendSnap.docs.find(d => d.data().pendingSso === true);
+              if (pendingDoc) {
                 mergedFromPending = { id: pendingDoc.id, ...pendingDoc.data() };
               }
             } catch (lookupErr) {
