@@ -492,7 +492,7 @@ NUNCA invente nomes de hotéis ou restaurantes que não existem. Se não souber,
     allowedSites: [],
     limits: { maxTokensPerRun: 4096, temperature: 0.7, maxCostPerDayUsd: 5, rateLimit: { window: 60, max: 5 }, timeoutMs: 60000 },
     triggers: {
-      button: { enabled: true, label: '✈ Gerar Roteiro', position: 'header' },
+      button: { enabled: true, label: 'Gerar Roteiro', position: 'header' },
       context: { enabled: false, label: '' },
       schedule: { enabled: false, mode: 'preset', preset: 'daily' },
       publicChat: { enabled: false, slug: '' },
@@ -578,7 +578,7 @@ Use sempre português brasileiro. Diversifique tipos de post. Considere datas co
     allowWebSearch: false,
     limits: { maxTokensPerRun: 3072, temperature: 0.6, maxCostPerDayUsd: 3, rateLimit: { window: 60, max: 5 }, timeoutMs: 30000 },
     triggers: {
-      button: { enabled: true, label: '📱 Sugerir Semana', position: 'header' },
+      button: { enabled: true, label: 'Sugerir Semana', position: 'header' },
       context: { enabled: false, label: '' },
       schedule: { enabled: false, mode: 'preset', preset: 'weekly', hour: 9, weekday: 1 },
       publicChat: { enabled: false, slug: '' },
@@ -661,7 +661,7 @@ FORMATO:
     allowWebSearch: false,
     limits: { maxTokensPerRun: 2048, temperature: 0.3, maxCostPerDayUsd: 2, rateLimit: { window: 60, max: 15 }, timeoutMs: 30000 },
     triggers: {
-      button: { enabled: true, label: '✓ Triar Tarefas', position: 'header' },
+      button: { enabled: true, label: 'Triar Tarefas', position: 'header' },
       context: { enabled: false, label: '' },
       schedule: { enabled: true, mode: 'preset', preset: 'daily', hour: 9, minute: 0 },
       publicChat: { enabled: false, slug: '' },
@@ -805,7 +805,7 @@ QUANTIDADE
       timeoutMs: 45000,
     },
     triggers: {
-      button: { enabled: false, label: '🤖 Sugerir Insights', position: 'header' },
+      button: { enabled: false, label: 'Sugerir Insights', position: 'header' },
       context: { enabled: false, label: '' },
       schedule: { enabled: false, mode: 'preset', preset: 'daily' },
       publicChat: { enabled: false, slug: '' },
