@@ -226,12 +226,16 @@ export async function renderUsers(container) {
 async function loadUsers() {
   try {
     const { fetchUsers, invalidateUsersCache } = await import('../services/users.js');
+    const { fetchAllWorkspaces } = await import('../services/workspaces.js');
     // Página de admin: invalida cache para garantir lista fresca após CRUD
     invalidateUsersCache();
-    const [list, roles] = await Promise.all([
+    const [list, roles, workspaces] = await Promise.all([
       fetchUsers({ force: true }),
       fetchRoles().catch(() => []),
+      fetchAllWorkspaces().catch(() => []),
     ]);
+    // Disponibiliza pra renderUserRow (tabela) e pro picker (modal)
+    store.set('allWorkspaces', workspaces);
     users = list;
 
     // Merge SYSTEM_ROLES as fallback so new roles appear even before Firestore sync
@@ -579,7 +583,7 @@ function renderTable() {
               Papel ${sortIcon('role')}
             </th>
             <th data-sort="department">
-              Núcleos ${sortIcon('department')}
+              Squads ${sortIcon('department')}
             </th>
             <th>Status</th>
             <th data-sort="lastLogin">Último acesso ${sortIcon('lastLogin')}</th>
@@ -644,7 +648,16 @@ function renderUserRow(user) {
       <td><span class="badge" style="background:${roleConfig?.color||'#6B7280'}22;color:${roleConfig?.color||'#6B7280'};border:1px solid ${roleConfig?.color||'#6B7280'}44;">
         ${escHtml(roleConfig?.name || roleConfig?.label || user.role || '—')}
       </span></td>
-      <td style="color:var(--text-secondary);">${escHtml(userNucleos(user).join(', ') || user.sector || user.department || '—')}</td>
+      <td style="color:var(--text-secondary);">${(() => {
+        // Squads do usuário (fonte de verdade: workspace.members[]).
+        // Fallback: user.nucleos[] (espelho legado) ou setor.
+        const allWs = store.get('allWorkspaces') || store.get('userWorkspaces') || [];
+        const squadNames = allWs
+          .filter(ws => (ws.members || []).includes(user.id))
+          .map(ws => ws.name);
+        if (squadNames.length) return escHtml(squadNames.join(', '));
+        return escHtml(userNucleos(user).join(', ') || user.sector || user.department || '—');
+      })()}</td>
       <td>
         <span class="badge ${user.active ? 'badge-success' : 'badge-danger'}">
           ${user.active ? '● Ativo' : '● Inativo'}
@@ -778,14 +791,15 @@ function openUserModal(userId = null) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Núcleos <span style="font-weight:400;color:var(--text-muted);">(pode participar de mais de um)</span></label>
-          <div id="uf-nucleos-picker" data-selected="${escHtml(JSON.stringify(userNucleos(user)))}"
+          <label class="form-label">Squads <span style="font-weight:400;color:var(--text-muted);">(pode participar de mais de um)</span></label>
+          <div id="uf-squads-picker" data-selected="${escHtml(JSON.stringify(_userSquadIds(user)))}"
             style="display:flex;flex-wrap:wrap;gap:6px;padding:8px;min-height:40px;
             border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-elevated);">
-            ${renderNucleoChips(user?.sector || '', userNucleos(user))}
+            <span style="font-size:0.75rem;color:var(--text-muted);padding:4px;">Carregando squads…</span>
           </div>
           <span class="form-hint" style="font-size:0.7rem;color:var(--text-muted);">
-            Só núcleos do setor selecionado aparecem. Clique para adicionar/remover.
+            Clique para adicionar/remover o usuário do squad. Para criar um squad
+            novo, vá em <a href="#workspaces" style="color:var(--brand-gold);">Squads</a>.
           </span>
         </div>
       </div>
@@ -859,15 +873,11 @@ function openUserModal(userId = null) {
     });
   }, 60);
 
-  // Cascata Setor → Núcleos: quando o setor muda, zera a seleção e re-renderiza
-  // os chips filtrados pelo novo setor. Wire inicial dos chips também aqui.
+  // Carrega TODOS os workspaces e popula o picker de squads do form.
+  // Não há mais cascata setor→núcleo: o admin escolhe diretamente em qual(is)
+  // squad(s) o user vai entrar, independente do setor.
   setTimeout(() => {
-    const setorSel = document.getElementById('uf-department');
-    if (!setorSel) return;
-    wireNucleoChips(setorSel.value);
-    setorSel.addEventListener('change', () => {
-      writeSelectedNucleos(setorSel.value, []); // troca de setor → zera núcleos
-    });
+    _loadAllWorkspacesAndPopulate();
   }, 60);
 
   // Toggle password visibility
@@ -908,73 +918,102 @@ function openUserModal(userId = null) {
   }, 50);
 }
 
-/**
- * Renderiza os chips multi-select de núcleo, filtrados pelo setor dado.
- * Setor vazio → mostra placeholder. Os selecionados ficam ativos (border gold).
- * Ao clicar, alterna o selecionado — a fonte da verdade fica no data-selected
- * do container (JSON array) pra sobreviver a re-renderizações do picker.
- */
-function renderNucleoChips(sector, selectedNames) {
-  const all = store.get('nucleos') || [];
-  const list = sector ? all.filter(n => n.sector === sector) : [];
-  if (!sector) {
+// ─── PICKER DE SQUADS (substituiu o picker de núcleos) ─────
+// Decisão de arquitetura: NÃO existe mais o conceito separado de "núcleo".
+// O usuário pertence a SQUADS (workspaces). Cada squad é uma equipe com
+// nome próprio, que pode (ou não) coincidir com nome de setor.
+//
+// Fonte de verdade: workspace.members[] (UID em array do squad).
+// Backward compat: continuamos gravando user.nucleos[] = nomes dos squads
+// pra não quebrar reports/queries antigas (tasks.nucleos é coisa separada,
+// é taxonomia de tarefa, não membership de user).
+
+/** IDs dos squads do user atual (lido do store de workspaces). */
+function _userSquadIds(user) {
+  if (!user?.id) return [];
+  const all = store.get('allWorkspaces') || store.get('userWorkspaces') || [];
+  return all.filter(ws => (ws.members || []).includes(user.id)).map(ws => ws.id);
+}
+
+/** Renderiza os chips de SQUADS disponíveis (todos workspaces ativos). */
+function renderSquadChips(selectedIds) {
+  const all = (store.get('allWorkspaces') || store.get('userWorkspaces') || [])
+    .filter(ws => !ws.archived);
+  if (!all.length) {
     return `<span style="font-size:0.75rem;color:var(--text-muted);padding:4px;">
-      Selecione o setor primeiro.
+      Nenhum squad cadastrado. Vá em <a href="#workspaces" style="color:var(--brand-gold);">Squads</a> pra criar.
     </span>`;
   }
-  if (!list.length) {
-    return `<span style="font-size:0.75rem;color:var(--text-muted);padding:4px;">
-      Nenhum núcleo cadastrado neste setor.
-    </span>`;
-  }
-  const sel = new Set(selectedNames || []);
-  return list.map(n => {
-    const isSel = sel.has(n.name);
-    return `<span class="uf-nuc-chip" data-name="${escHtml(n.name)}" style="
+  const sel = new Set(selectedIds || []);
+  return all.map(ws => {
+    const isSel = sel.has(ws.id);
+    const color = ws.color || '#6B7280';
+    return `<span class="uf-squad-chip" data-id="${escHtml(ws.id)}" style="
       display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
       border-radius:var(--radius-full);font-size:0.8125rem;cursor:pointer;
-      border:1px solid ${isSel ? (n.color||'var(--brand-gold)') : 'var(--border-subtle)'};
-      background:${isSel ? (n.color||'#6B7280')+'22' : 'var(--bg-surface)'};
+      border:1px solid ${isSel ? color : 'var(--border-subtle)'};
+      background:${isSel ? color+'22' : 'var(--bg-surface)'};
       color:${isSel ? 'var(--text-primary)' : 'var(--text-secondary)'};
       transition:all 0.15s;">
-      <span style="width:8px;height:8px;border-radius:50%;background:${n.color||'#6B7280'};"></span>
-      ${escHtml(n.name)}
+      <span style="width:8px;height:8px;border-radius:50%;background:${color};"></span>
+      ${escHtml(ws.name)}
       ${isSel ? '<span style="color:var(--brand-gold);">✓</span>' : ''}
     </span>`;
   }).join('');
 }
 
-/** Lê os núcleos atualmente selecionados no picker (fonte: data-selected JSON). */
-function readSelectedNucleos() {
-  const picker = document.getElementById('uf-nucleos-picker');
+/** Lê os squad IDs selecionados no picker (data-selected JSON). */
+function readSelectedSquadIds() {
+  const picker = document.getElementById('uf-squads-picker');
   if (!picker) return [];
   try { return JSON.parse(picker.dataset.selected || '[]') || []; }
   catch { return []; }
 }
 
-/** Atualiza o array de selecionados no data-attribute e re-renderiza chips. */
-function writeSelectedNucleos(sector, selected) {
-  const picker = document.getElementById('uf-nucleos-picker');
+/** Re-renderiza o picker depois de toggle. */
+function writeSelectedSquadIds(selected) {
+  const picker = document.getElementById('uf-squads-picker');
   if (!picker) return;
   picker.dataset.selected = JSON.stringify(selected);
-  picker.innerHTML = renderNucleoChips(sector, selected);
-  wireNucleoChips(sector);
+  picker.innerHTML = renderSquadChips(selected);
+  wireSquadChips();
 }
 
-/** Wire-up dos chips (delega clique → toggle no array). */
-function wireNucleoChips(sector) {
-  const picker = document.getElementById('uf-nucleos-picker');
+/** Wire-up dos chips de squad (toggle on click). */
+function wireSquadChips() {
+  const picker = document.getElementById('uf-squads-picker');
   if (!picker) return;
-  picker.querySelectorAll('.uf-nuc-chip').forEach(chip => {
+  picker.querySelectorAll('.uf-squad-chip').forEach(chip => {
     chip.addEventListener('click', () => {
-      const name = chip.dataset.name;
-      const current = readSelectedNucleos();
-      const idx = current.indexOf(name);
+      const id = chip.dataset.id;
+      const current = readSelectedSquadIds();
+      const idx = current.indexOf(id);
       if (idx > -1) current.splice(idx, 1);
-      else current.push(name);
-      writeSelectedNucleos(sector, current);
+      else current.push(id);
+      writeSelectedSquadIds(current);
     });
   });
+}
+
+/**
+ * Carrega TODOS os workspaces (não só os do user atual) e popula o picker.
+ * Necessário porque admin pode atribuir QUALQUER squad ao user sendo
+ * editado, mesmo que ele próprio não seja membro desses squads.
+ */
+async function _loadAllWorkspacesAndPopulate() {
+  try {
+    const { fetchAllWorkspaces } = await import('../services/workspaces.js');
+    const all = await fetchAllWorkspaces();
+    store.set('allWorkspaces', all);
+
+    const picker = document.getElementById('uf-squads-picker');
+    if (!picker) return;
+    const selected = readSelectedSquadIds();
+    picker.innerHTML = renderSquadChips(selected);
+    wireSquadChips();
+  } catch (e) {
+    console.warn('[users] falha ao carregar workspaces pro picker:', e?.message);
+  }
 }
 
 async function handleUserSave(userId, isEdit, closeModal) {
@@ -983,12 +1022,20 @@ async function handleUserSave(userId, isEdit, closeModal) {
   const password   = document.getElementById('uf-password')?.value;
   const role       = document.getElementById('uf-role')?.value;
   const department = document.getElementById('uf-department')?.value?.trim();
-  // Núcleos: multi-select — array de nomes. Back-compat: grava também
-  // u.nucleo = nucleos[0] pra consumidores antigos que ainda leem o campo
-  // escalar (o helper userNucleos unifica os dois na leitura).
-  const nucleos    = readSelectedNucleos();
-  const nucleo     = nucleos[0] || '';
-  const active     = document.getElementById('uf-active')?.checked ?? true;
+
+  // Squads: a fonte de verdade agora é workspace.members[]. O picker dá
+  // os IDs de squad selecionados. Vamos:
+  //   1. Resolver IDs → nomes (pra manter user.nucleos[] como espelho
+  //      backward-compatible com tasks/dashboards que ainda leem isso).
+  //   2. No save, fazer diff entre squads atuais e selecionados, e
+  //      atualizar workspace.members[] em batch.
+  const allWs       = store.get('allWorkspaces') || store.get('userWorkspaces') || [];
+  const selectedIds = readSelectedSquadIds();
+  const nucleos     = selectedIds
+    .map(id => allWs.find(w => w.id === id)?.name)
+    .filter(Boolean);
+  const nucleo      = nucleos[0] || '';
+  const active      = document.getElementById('uf-active')?.checked ?? true;
 
   // Validation
   let valid = true;
@@ -1027,14 +1074,54 @@ async function handleUserSave(userId, isEdit, closeModal) {
   }
 
   try {
+    let savedUserId = userId;
     if (isEdit) {
       const visibleSectors = Array.from(document.querySelectorAll('.sector-vis-cb:checked')).map(cb => cb.value);
       await updateUserProfile(userId, { name, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department, active, visibleSectors });
       toast.success(`Usuário "${name}" atualizado com sucesso!`);
     } else {
-      await createUser({ name, email, password, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department });
+      const created = await createUser({ name, email, password, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department });
+      savedUserId = created?.id || savedUserId;
       toast.success(`Usuário "${name}" criado com sucesso!`);
     }
+
+    // ── Diff de squads: atualiza workspace.members[] direto ──
+    // Em edit: compara IDs anteriores (o user vinha com squadIds da
+    // abertura do modal) com os IDs selecionados. Adições/remoções
+    // viram arrayUnion/arrayRemove em workspace.members.
+    // Em create: tudo é "novo" — todos os IDs selecionados viram
+    // arrayUnion no workspace correspondente.
+    try {
+      const { arrayUnion, arrayRemove, doc: fbDoc, updateDoc } =
+        await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('../firebase.js');
+
+      const previousIds = isEdit
+        ? allWs.filter(w => (w.members || []).includes(userId)).map(w => w.id)
+        : [];
+      const toAdd    = selectedIds.filter(id => !previousIds.includes(id));
+      const toRemove = previousIds.filter(id => !selectedIds.includes(id));
+
+      await Promise.all([
+        ...toAdd.map(id =>
+          updateDoc(fbDoc(db, 'workspaces', id), { members: arrayUnion(savedUserId) })
+            .catch(e => console.warn(`[squads add ${id}]`, e?.message))
+        ),
+        ...toRemove.map(id =>
+          updateDoc(fbDoc(db, 'workspaces', id), { members: arrayRemove(userId) })
+            .catch(e => console.warn(`[squads remove ${id}]`, e?.message))
+        ),
+      ]);
+      if (toAdd.length || toRemove.length) {
+        const parts = [];
+        if (toAdd.length)    parts.push(`+${toAdd.length} squad${toAdd.length>1?'s':''}`);
+        if (toRemove.length) parts.push(`-${toRemove.length} squad${toRemove.length>1?'s':''}`);
+        toast.info(`Squads atualizadas: ${parts.join(' · ')}`);
+      }
+    } catch (e) {
+      console.warn('[users] squads update failed:', e?.message);
+    }
+
     closeModal();
     await loadUsers();
   } catch (err) {
