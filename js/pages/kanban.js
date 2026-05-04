@@ -28,7 +28,7 @@ let dragTask     = null;
 let dragOriginCol = null;
 let optimisticTasks = [];
 let activeView   = 'kanban';   // 'kanban' | 'pipeline'
-let kbFilterState = { sector: null, type: null, project: null, area: null, assignee: null };
+let kbFilterState = { sector: null, type: null, project: null, area: null, assignee: null, status: null };
 
 /* ─── Group-By: agrupar colunas do Steps por outro campo ──────
  * Default = 'status' (comportamento original). Mudando, recalcula colunas.
@@ -222,6 +222,105 @@ function renderColumnBody(body, count, colTasks, colKey, cardRenderer, rebindFn)
     if (e.currentTarget.dataset.collapse) expandedCols.delete(key);
     else expandedCols.add(key);
     renderColumnBody(body, count, colTasks, colKey, cardRenderer, rebindFn);
+  });
+}
+
+/**
+ * renderColumnBodyWithFinalized
+ * Variação de renderColumnBody usada quando groupBy != 'status'. Tarefas
+ * concluídas/canceladas precisam aparecer ao final, em uma seção visualmente
+ * separada (collapsable com contador) — sem misturar com as ativas.
+ *
+ * Layout resultante:
+ *   <ativas> (cards normais, paginação herdada)
+ *   ─── separador ───
+ *   ▾ Concluídas (N)
+ *     <finalizadas> (cards finais, expandable; default colapsado)
+ *
+ * Count da coluna inclui ativas + finalizadas (total real).
+ */
+function renderColumnBodyWithFinalized(body, count, activeTasks, finalizedTasks, colKey, cardRenderer, rebindFn) {
+  const total = activeTasks.length + finalizedTasks.length;
+
+  // Renderiza ativas usando a paginação padrão
+  const activeColKey = `${colKey}:active`;
+  const expanded = expandedCols.has(activeColKey);
+  const limit = (expanded || activeTasks.length <= KANBAN_COL_LIMIT) ? activeTasks.length : KANBAN_COL_LIMIT;
+  const visible = activeTasks.slice(0, limit);
+  const remaining = activeTasks.length - limit;
+
+  let html = visible.map(cardRenderer).join('');
+  if (remaining > 0) {
+    html += `<button class="kb-load-more" data-col-key="${esc(activeColKey)}" style="width:100%;
+      margin-top:8px;padding:8px 12px;border-radius:var(--radius-md);
+      border:1px dashed var(--border-subtle);background:transparent;
+      color:var(--text-muted);cursor:pointer;font-family:var(--font-ui);
+      font-size:0.75rem;font-weight:500;transition:all 0.15s;">
+      ↓ Ver mais ${remaining} ativa${remaining>1?'s':''}
+    </button>`;
+  } else if (expanded && activeTasks.length > KANBAN_COL_LIMIT) {
+    html += `<button class="kb-load-more" data-col-key="${esc(activeColKey)}" data-collapse="1" style="width:100%;
+      margin-top:8px;padding:8px 12px;border-radius:var(--radius-md);
+      border:1px dashed var(--border-subtle);background:transparent;
+      color:var(--text-muted);cursor:pointer;font-family:var(--font-ui);
+      font-size:0.75rem;font-weight:500;">
+      ↑ Recolher
+    </button>`;
+  }
+
+  // Mensagem quando coluna fica vazia (só finalizadas, ou nada)
+  if (activeTasks.length === 0 && finalizedTasks.length === 0) {
+    html += `<div style="padding:14px 8px;text-align:center;font-size:0.75rem;
+      color:var(--text-muted);font-style:italic;">Sem tarefas</div>`;
+  } else if (activeTasks.length === 0) {
+    html += `<div style="padding:10px 8px;text-align:center;font-size:0.75rem;
+      color:var(--text-muted);font-style:italic;">Sem tarefas ativas</div>`;
+  }
+
+  // Seção de finalizadas (concluídas + canceladas), default colapsada
+  if (finalizedTasks.length > 0) {
+    const finalKey = `${colKey}:final`;
+    const finalExpanded = expandedCols.has(finalKey);
+    const doneCount = finalizedTasks.filter(t => t.status === 'done').length;
+    const cancelledCount = finalizedTasks.filter(t => t.status === 'cancelled').length;
+    const labelParts = [];
+    if (doneCount > 0)      labelParts.push(`${doneCount} conclu${doneCount>1?'ídas':'ída'}`);
+    if (cancelledCount > 0) labelParts.push(`${cancelledCount} cancel${cancelledCount>1?'adas':'ada'}`);
+    const sectionLabel = labelParts.join(' · ');
+
+    html += `<div style="margin-top:14px;padding-top:10px;
+      border-top:1px dashed var(--border-subtle);">
+      <button class="kb-finalized-toggle" data-final-key="${esc(finalKey)}" style="
+        width:100%;display:flex;align-items:center;justify-content:space-between;
+        background:transparent;border:none;cursor:pointer;padding:6px 4px;
+        font-family:var(--font-ui);font-size:0.75rem;color:var(--text-muted);
+        font-weight:600;text-transform:uppercase;letter-spacing:0.05em;
+        transition:color 0.15s;">
+        <span>${finalExpanded?'▾':'▸'} Finalizadas (${finalizedTasks.length})</span>
+        <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted);font-size:0.6875rem;">${esc(sectionLabel)}</span>
+      </button>
+      <div class="kb-finalized-body" style="${finalExpanded?'':'display:none;'}margin-top:6px;
+        opacity:0.7;">
+        ${finalizedTasks.map(cardRenderer).join('')}
+      </div>
+    </div>`;
+  }
+
+  body.innerHTML = html;
+  if (count) count.textContent = total;
+  if (typeof rebindFn === 'function') rebindFn(body);
+
+  body.querySelector('.kb-load-more')?.addEventListener('click', e => {
+    const key = e.currentTarget.dataset.colKey;
+    if (e.currentTarget.dataset.collapse) expandedCols.delete(key);
+    else expandedCols.add(key);
+    renderColumnBodyWithFinalized(body, count, activeTasks, finalizedTasks, colKey, cardRenderer, rebindFn);
+  });
+  body.querySelector('.kb-finalized-toggle')?.addEventListener('click', e => {
+    const key = e.currentTarget.dataset.finalKey;
+    if (expandedCols.has(key)) expandedCols.delete(key);
+    else expandedCols.add(key);
+    renderColumnBodyWithFinalized(body, count, activeTasks, finalizedTasks, colKey, cardRenderer, rebindFn);
   });
 }
 
@@ -426,9 +525,14 @@ function _renderKbFilters(container) {
   const wrap = document.getElementById('kb-filter-bar');
   if (!wrap) return;
   // Pipeline view already has type selector in header
+  // Em groupBy='status' o filtro 'status' é redundante (cada coluna já é um
+  // status), então o omitimos. Em outros groupBy é útil pra ver, ex, só
+  // tarefas "em andamento" agrupadas por área.
   const show = activeView === 'kanban'
-    ? ['sector','type','project','area','assignee','meta']
-    : ['sector','area','assignee','meta'];
+    ? (groupBy === 'status'
+        ? ['sector','type','project','area','assignee','meta']
+        : ['sector','type','project','area','assignee','status','meta'])
+    : ['sector','area','assignee','status','meta'];
   wrap.innerHTML = renderFilterBar({
     show, state: kbFilterState,
     taskTypes: allTaskTypes,
@@ -493,6 +597,30 @@ function renderCards(tasks, _ignored = '') {
         const bTime = b.completedAt?.toDate?.() || b.completedAt || b.updatedAt?.toDate?.() || b.updatedAt || 0;
         return (new Date(aTime)) - (new Date(bTime));
       });
+    }
+
+    // Em groupBy != 'status', cada coluna pode misturar tarefas ativas e
+    // concluídas/canceladas. UX pede separação visual: ativas no topo,
+    // concluídas no final dentro de uma seção colapsada com cabeçalho.
+    // Em status mode (default), a separação já é inerente — cada coluna É
+    // um status, então pula esse caminho.
+    if (groupBy !== 'status') {
+      const isFinalized = (t) => t.status === 'done' || t.status === 'cancelled';
+      const active = colTasks.filter(t => !isFinalized(t));
+      const finalized = colTasks
+        .filter(isFinalized)
+        .sort((a, b) => {
+          const aTime = a.completedAt?.toDate?.() || a.completedAt || a.updatedAt?.toDate?.() || a.updatedAt || 0;
+          const bTime = b.completedAt?.toDate?.() || b.completedAt || b.updatedAt?.toDate?.() || b.updatedAt || 0;
+          return (new Date(bTime)) - (new Date(aTime)); // mais recentes no topo da seção
+        });
+
+      renderColumnBodyWithFinalized(
+        body, count, active, finalized, `kb:${g.value}`,
+        t => renderKanbanCard(t),
+        b => b.querySelectorAll('.kanban-card').forEach(card => bindCardDrag(card)),
+      );
+      return;
     }
 
     renderColumnBody(

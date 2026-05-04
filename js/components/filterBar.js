@@ -8,6 +8,17 @@ import { store } from '../store.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+// Statuses suportados pelo filtro. Espelha STATUSES de services/tasks.js
+// (não importa de lá pra evitar dependência cíclica em renderFilterBar).
+const STATUS_OPTIONS = [
+  { value: 'not_started', label: 'Não iniciado' },
+  { value: 'in_progress', label: 'Em Andamento' },
+  { value: 'review',      label: 'Em Revisão'   },
+  { value: 'rework',      label: 'Retrabalho'   },
+  { value: 'done',        label: 'Concluída'    },
+  { value: 'cancelled',   label: 'Cancelada'    },
+];
+
 export const REQUESTING_AREAS = [
   'BTG','C&P','Célula ICs','Centurion','CEP','Concierge Bradesco',
   'Contabilidade','Diretoria','Eventos','Financeiro','Lazer','Marketing',
@@ -96,6 +107,15 @@ export function renderFilterBar(opts = {}) {
       </select>
     ` : ''}
 
+    ${show.includes('status') ? `
+      <select class="filter-select" data-filter="status"
+        title="Filtrar por status"
+        style="min-width:150px;border-color:${state.status?'var(--brand-gold)':''};">
+        <option value="">Todos os status</option>
+        ${STATUS_OPTIONS.map(s=>`<option value="${esc(s.value)}" ${state.status===s.value?'selected':''}>${esc(s.label)}</option>`).join('')}
+      </select>
+    ` : ''}
+
     ${show.includes('meta') ? `
       <select class="filter-select" data-filter="meta"
         title="Filtrar por vínculo com Meta"
@@ -144,6 +164,7 @@ export function buildFilterFn(state = {}) {
     if (state.project  && task.projectId       !== state.project)                 return false;
     if (state.area     && task.requestingArea  !== state.area)                    return false;
     if (state.assignee && !(task.assignees||[]).includes(state.assignee))         return false;
+    if (state.status   && task.status          !== state.status)                  return false;
     // Meta vinculada: tarefa "tem meta" se tem metaLinks[] preenchido OU
     // goalId legado (back-compat para tarefas anteriores ao multi-link).
     if (state.meta) {
