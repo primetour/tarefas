@@ -20,8 +20,15 @@ import {
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
 
-const HEARTBEAT_INTERVAL_MS = 30 * 1000; // 30s
-const ONLINE_THRESHOLD_MS   = 90 * 1000; // 1m30s — 3 heartbeats missed = offline
+// Intervalos otimizados pra free tier:
+// - Heartbeat 2min = 720 writes/user/dia (vs 2880 em 30s = 4x menos)
+// - Threshold 6min = 3 heartbeats missed = offline
+// Custo pra 200 users: ~144k writes/dia. Ainda alto mas viável no Blaze.
+// Plano definitivo: migrar pra Firebase Realtime Database (RTDB), que tem
+// onDisconnect() nativo e não consome quota Firestore. Requer habilitar
+// RTDB no Firebase Console (1 click). Ver TODO no commit message.
+const HEARTBEAT_INTERVAL_MS = 2 * 60 * 1000;  // 2 min
+const ONLINE_THRESHOLD_MS   = 6 * 60 * 1000;  // 6 min
 
 let _heartbeatTimer = null;
 let _presenceUnsub  = null;

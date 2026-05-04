@@ -9,6 +9,7 @@ import { modal }  from '../components/modal.js';
 import { fetchAuditLogs, ACTION_LABELS, REVERTIBLE_ACTIONS, auditLog } from '../auth/audit.js';
 import { fetchUsers } from '../services/users.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
+import { renderPageSizePicker, wirePageSizePicker, getPageSize } from '../components/pageSize.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -21,7 +22,10 @@ let filterUser     = '';
 let filterModule   = '';
 let filterSeverity = '';
 let currentPage    = 1;
-const PAGE_SIZE    = 30;       // client-side pagination dentro do que já está carregado
+// PAGE_SIZE é dinâmico: lido do localStorage (componente pageSize.js).
+// User escolhe 10/20/50/100 e a preferência persiste entre sessões.
+const _pgScope = 'audit';
+const getCurrentPageSize = () => getPageSize(_pgScope);
 const SERVER_PAGE  = 100;      // tamanho de cada batch buscado do Firestore
 let lastDoc        = null;     // cursor server-side para "Carregar mais"
 let hasMoreOnServer = false;   // sinaliza se ainda há registros não buscados
@@ -345,6 +349,7 @@ function renderLogs() {
   const body = document.getElementById('audit-log-body');
   if (!body) return;
 
+  const PAGE_SIZE = getCurrentPageSize();
   const start = (currentPage - 1) * PAGE_SIZE;
   const page  = filteredLogs.slice(start, start + PAGE_SIZE);
 
@@ -894,6 +899,7 @@ function renderModuleBreakdown() {
 function renderPagination() {
   const el = document.getElementById('audit-pagination');
   if (!el) return;
+  const PAGE_SIZE = getCurrentPageSize();
   const total = Math.ceil(filteredLogs.length / PAGE_SIZE);
 
   const loadMoreBtn = hasMoreOnServer
@@ -903,7 +909,10 @@ function renderPagination() {
        </button>`
     : '';
 
-  if (total <= 1 && !loadMoreBtn) { el.innerHTML = ''; return; }
+  // Picker de itens por página (sempre visível, mesmo com 1 página)
+  const sizePicker = renderPageSizePicker({ scope: _pgScope, label: 'Por página:' });
+
+  if (total <= 1 && !loadMoreBtn && filteredLogs.length === 0) { el.innerHTML = ''; return; }
 
   const pages = [];
   if (total > 1) {
@@ -914,22 +923,33 @@ function renderPagination() {
     if (currentPage < total) pages.push({ label:'→', page: currentPage + 1 });
   }
 
-  const rangeLabel = total > 1
+  const rangeLabel = total >= 1
     ? `<span style="font-size:0.8125rem; color:var(--text-muted);">
-         ${(currentPage-1)*PAGE_SIZE+1}–${Math.min(currentPage*PAGE_SIZE, filteredLogs.length)} de ${filteredLogs.length}
+         ${filteredLogs.length === 0 ? '0' : (currentPage-1)*PAGE_SIZE+1}–${Math.min(currentPage*PAGE_SIZE, filteredLogs.length)} de ${filteredLogs.length}
        </span>`
     : '';
 
   el.innerHTML = `
-    ${rangeLabel}
-    ${pages.map(p => `
-      <button class="btn ${p.active ? 'btn-primary' : 'btn-secondary'} btn-sm" data-page="${p.page}"
-        style="min-width:36px;">
-        ${p.label}
-      </button>
-    `).join('')}
-    ${loadMoreBtn}
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;flex:1;">
+      ${sizePicker}
+      <div style="display:flex;align-items:center;gap:8px;flex:1;justify-content:center;">
+        ${rangeLabel}
+        ${pages.map(p => `
+          <button class="btn ${p.active ? 'btn-primary' : 'btn-secondary'} btn-sm" data-page="${p.page}"
+            style="min-width:36px;">
+            ${p.label}
+          </button>
+        `).join('')}
+      </div>
+      ${loadMoreBtn}
+    </div>
   `;
+
+  // Wire do dropdown de itens por página: ao mudar, volta pra página 1 e re-renderiza
+  wirePageSizePicker(_pgScope, () => {
+    currentPage = 1;
+    renderLogs();
+  });
 
   el.querySelectorAll('[data-page]').forEach(btn => {
     btn.addEventListener('click', () => {
