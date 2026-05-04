@@ -248,16 +248,22 @@ export async function runDueRecurrenceGeneration({ force = false } = {}) {
 
         let lastCreatedFor = template.lastGeneratedFor || null;
         for (const occISO of dates) {
-          // ── IDEMPOTÊNCIA REAL: evita duplicação por race condition ──
-          // Antes do fix de mai/2026: 2 abas/users podiam ler lastGeneratedFor=null
-          // simultaneamente, ambos computavam mesmas datas, ambos criavam tasks →
-          // duplicação. Agora: ANTES de criar, query Firestore. Se já existe
-          // task com (templateId, occISO), pula. Idempotente independente de
-          // quantas execuções concorrentes rodem.
+          // ── IDEMPOTÊNCIA HARD via ID DETERMINÍSTICO ──
+          // Antes (mai/2026): 2 abas/users podiam ler lastGeneratedFor=null
+          // simultaneamente, ambos computavam mesmas datas, ambos criavam tasks
+          // → DUPLICAÇÃO. Cooldown intra-session protegia, mas cross-session
+          // (multi-aba/user) não.
+          // Agora: ID da task = `rec_${tplId}_${occISO}` (determinístico).
+          // 2 sessions concorrentes que tentem criar a mesma instância acabam
+          // no MESMO doc — Firestore garante uniqueness por docId. Não
+          // duplica nem sobrescreve dados existentes (createTask faz getDoc
+          // antes de setDoc; se existir, retorna o existente).
+          // Quick check pra otimizar: se já existe, pula sem chamar createTask
+          // (evita audit log redundante)
+          const detId = `rec_${template.id}_${occISO}`;
           const exists = await instanceAlreadyExists(template.id, occISO);
           if (exists) {
             report.alreadyExists++;
-            // Atualiza lastGeneratedFor mesmo assim — ocorrência foi processada
             if (!lastCreatedFor || occISO > lastCreatedFor) lastCreatedFor = occISO;
             continue;
           }
@@ -265,7 +271,6 @@ export async function runDueRecurrenceGeneration({ force = false } = {}) {
           const occDate = fromISO(occISO);
           const dueDate = addDays(occDate, Number(template.dueOffsetDays) || 0);
           const base = template.taskData || {};
-          // Garante arrays defensivos
           const task = {
             ...base,
             title:        base.title || 'Tarefa recorrente',
@@ -277,6 +282,7 @@ export async function runDueRecurrenceGeneration({ force = false } = {}) {
             startDate:    occDate,
             recurringFromTemplateId: template.id,
             recurringOccurrence: occISO,
+            _deterministicId: detId,  // garantia hard de idempotência
           };
           try {
             await createTask(task);

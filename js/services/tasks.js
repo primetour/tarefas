@@ -4,7 +4,7 @@
  */
 
 import {
-  collection, doc, addDoc, updateDoc, deleteDoc,
+  collection, doc, addDoc, setDoc, updateDoc, deleteDoc,
   getDoc, getDocs, query, where, orderBy, limit,
   onSnapshot, serverTimestamp, arrayUnion, arrayRemove,
   writeBatch, increment,
@@ -327,7 +327,26 @@ export async function createTask(data) {
     taskDoc.goalMetaRef = normalized.goalMetaRef;
   }
 
-  const ref = await addDoc(collection(db, 'tasks'), taskDoc);
+  // Suporte a ID determinístico (usado por recurring tasks pra garantir
+  // idempotência hard: 2 sessions concorrentes acabam num único doc, com
+  // setDoc sobrescrevendo ao invés de duplicar — conteúdo é idêntico
+  // porque vem do mesmo template). Se _deterministicId não for passado,
+  // mantém comportamento original (addDoc com id auto-gerado).
+  let ref;
+  if (data._deterministicId) {
+    const detId = String(data._deterministicId);
+    const detRef = doc(db, 'tasks', detId);
+    // Idempotência: se já existe, retorna sem sobrescrever (preserva edits
+    // posteriores do user — ex: subtarefas adicionadas, status mudado).
+    const existing = await getDoc(detRef).catch(() => null);
+    if (existing?.exists?.()) {
+      return { id: existing.id, ...existing.data() };
+    }
+    await setDoc(detRef, taskDoc);
+    ref = { id: detId };
+  } else {
+    ref = await addDoc(collection(db, 'tasks'), taskDoc);
+  }
   invalidateTasksCache();
   await auditLog('tasks.create', 'task', ref.id, { title: taskDoc.title });
 
