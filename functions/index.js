@@ -711,6 +711,10 @@ export const migrateUserUidGlobal = onCall({
   const adminFlag = await isAdmin(auth.uid);
   if (!adminFlag) throw new HttpsError('permission-denied', 'Só admin.');
 
+  // dryRun (default false): calcula pares e conta docs que SERIAM tocados,
+  // sem fazer nenhum write. Útil pra validar antes de aplicar em produção.
+  const dryRun = request.data?.dryRun === true;
+
   // Mapa: collection name → array de campos a migrar
   // Tipo do campo: 'string' (single uid) ou 'array' (array de uids)
   const COLLECTION_FIELD_MAP = {
@@ -837,13 +841,24 @@ export const migrateUserUidGlobal = onCall({
   };
 
   // ── 1. Coletar todos os pares (legacyUid → currentUid) a migrar ──
-  // Estratégia: cruzar audit_logs (action=users.create entityId=legacy)
-  // com users atuais (lookup por email).
+  // 3 fontes de detecção:
+  //   A) audit_logs com action=users.create (cruzando entityId/targetUid com email)
+  //   B) users.legacyUid setado explicitamente (de migrateUserToSso ou manual)
+  //   C) Slug pending_<email> derivado: detecta refs órfãs em tasks/etc para
+  //      users que tinham doc pré-cadastrado (pendingSso) e logaram via SSO,
+  //      criando UID real, mas as refs em tasks/projetos não foram migradas
+  //      (o consolidation antigo só re-bindava workspaces.members).
   const usersSnap = await db.collection('users').get();
   const emailToCurrent = {};
+  // Real-wins-over-pending: se 2 docs têm mesmo email (pending + real durante
+  // janela de transição), o doc real ganha. Sem isso, ordem de iteração não
+  // determinística poderia eleger o pending como currentUid (= bug).
   usersSnap.docs.forEach(d => {
     const email = (d.data().email || '').toLowerCase();
-    if (email) emailToCurrent[email] = { id: d.id, legacyUid: d.data().legacyUid || null };
+    if (!email) return;
+    const isPending = d.id.startsWith('pending_');
+    if (emailToCurrent[email] && isPending) return; // não sobrescreve real com pending
+    emailToCurrent[email] = { id: d.id, legacyUid: d.data().legacyUid || null };
   });
 
   const auditSnap = await db.collection('audit_logs')
@@ -851,8 +866,9 @@ export const migrateUserUidGlobal = onCall({
     .limit(1000)
     .get();
 
-  const migrationPairs = []; // [{ legacyUid, currentUid, email }]
+  const migrationPairs = []; // [{ legacyUid, currentUid, email, source }]
   const seen = new Set();
+  // Fonte A: audit_logs
   auditSnap.docs.forEach(d => {
     const data = d.data();
     const email = (data.details?.email || data.targetEmail || '').toLowerCase();
@@ -863,32 +879,53 @@ export const migrateUserUidGlobal = onCall({
     const key = `${legacyUid}->${current.id}`;
     if (seen.has(key)) return;
     seen.add(key);
-    migrationPairs.push({ legacyUid, currentUid: current.id, email });
+    migrationPairs.push({ legacyUid, currentUid: current.id, email, source: 'audit_log' });
   });
 
-  // Adiciona pares de users com legacyUid setado (de migrações via migrateUserToSso)
+  // Fonte B: users.legacyUid (de migrações via migrateUserToSso ou manual)
   usersSnap.docs.forEach(d => {
     const u = d.data();
     if (u.legacyUid && u.legacyUid !== d.id) {
       const key = `${u.legacyUid}->${d.id}`;
       if (!seen.has(key)) {
         seen.add(key);
-        migrationPairs.push({ legacyUid: u.legacyUid, currentUid: d.id, email: u.email });
+        migrationPairs.push({ legacyUid: u.legacyUid, currentUid: d.id, email: u.email, source: 'legacyUid_field' });
       }
     }
   });
 
+  // Fonte C: slug pending_<email> automático
+  // Pra cada user com ID real (não pending_), gera o slug que teria sido usado
+  // como ID temporário pré-cadastro e adiciona como par candidato.
+  // Idempotência: se não houver nenhuma referência com esse slug em lugar
+  // algum, simplesmente nada migra (queries retornam 0 docs).
+  // Regra do slug: precisa bater com o que auth.js usa em pre-cadastro:
+  //   `pending_${email.toLowerCase().replace(/[@.]/g, '_')}`
+  usersSnap.docs.forEach(d => {
+    if (d.id.startsWith('pending_')) return; // só users já consolidados
+    const email = (d.data().email || '').toLowerCase();
+    if (!email) return;
+    const candidateLegacy = `pending_${email.replace(/[@.]/g, '_')}`;
+    if (candidateLegacy === d.id) return; // segurança extra
+    const key = `${candidateLegacy}->${d.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    migrationPairs.push({ legacyUid: candidateLegacy, currentUid: d.id, email, source: 'pending_slug' });
+  });
+
   // ── 2. Pra cada par, varre coleções e faz swap ──
   const report = {
+    dryRun,
     pairsScanned: migrationPairs.length,
+    pairsBySource: migrationPairs.reduce((acc, p) => { acc[p.source] = (acc[p.source]||0)+1; return acc; }, {}),
     migrations: [],
     errors: [],
     totalDocsTouched: 0,
   };
 
   for (const pair of migrationPairs) {
-    const { legacyUid, currentUid, email } = pair;
-    const summary = { email, legacyUid: legacyUid.slice(0,8), currentUid: currentUid.slice(0,8), perCollection: {} };
+    const { legacyUid, currentUid, email, source } = pair;
+    const summary = { email, source, legacyUid: legacyUid.slice(0,12), currentUid: currentUid.slice(0,8), perCollection: {} };
 
     for (const [colName, fields] of Object.entries(COLLECTION_FIELD_MAP)) {
       let touchedInColl = 0;
@@ -912,11 +949,13 @@ export const migrateUserUidGlobal = onCall({
 
           for (const doc of snap.docs) {
             try {
-              if (type === 'array') {
-                await doc.ref.update({ [field]: FieldValue.arrayRemove(legacyUid) });
-                await doc.ref.update({ [field]: FieldValue.arrayUnion(currentUid) });
-              } else {
-                await doc.ref.update({ [field]: currentUid });
+              if (!dryRun) {
+                if (type === 'array') {
+                  await doc.ref.update({ [field]: FieldValue.arrayRemove(legacyUid) });
+                  await doc.ref.update({ [field]: FieldValue.arrayUnion(currentUid) });
+                } else {
+                  await doc.ref.update({ [field]: currentUid });
+                }
               }
               touchedInColl++;
             } catch (e) {
@@ -970,7 +1009,7 @@ export const migrateUserUidGlobal = onCall({
         });
         if (dirty) {
           try {
-            await docSnap.ref.update({ [field]: newArr });
+            if (!dryRun) await docSnap.ref.update({ [field]: newArr });
             nestedTouched++;
           } catch (e) {
             report.errors.push({ collection: col, field: `${field}[].${subField}`, docId: docSnap.id, error: e.message });
@@ -984,16 +1023,19 @@ export const migrateUserUidGlobal = onCall({
   report.totalDocsTouched += nestedTouched;
   report.nestedDocsTouched = nestedTouched;
 
-  // Audit log
-  await db.collection('audit_logs').add({
-    action: 'system.migrate_user_uid_global',
-    userId: auth.uid,
-    pairsScanned: report.pairsScanned,
-    totalDocsTouched: report.totalDocsTouched,
-    errorCount: report.errors.length,
-    timestamp: FieldValue.serverTimestamp(),
-    severity: 'critical',
-  });
+  // Audit log (não loga em dryRun pra não poluir logs com simulações)
+  if (!dryRun) {
+    await db.collection('audit_logs').add({
+      action: 'system.migrate_user_uid_global',
+      userId: auth.uid,
+      pairsScanned: report.pairsScanned,
+      pairsBySource: report.pairsBySource,
+      totalDocsTouched: report.totalDocsTouched,
+      errorCount: report.errors.length,
+      timestamp: FieldValue.serverTimestamp(),
+      severity: 'critical',
+    });
+  }
 
   return report;
 });
