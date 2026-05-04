@@ -608,6 +608,7 @@ const CONTENT = {
       text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Desenvolvimento</h4>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-bottom:24px;">
       ${[
+        ['🚀','Onboarding (dev novo)', 'onboarding',  'Setup em ~15 min: pré-requisitos, clonar, rodar local, deploy, comandos úteis'],
         ['🏗','Arquitetura',          'architecture', 'Decisões, camadas, fluxos, padrões, segurança em 5 camadas, débitos'],
         ['🤝','Convenções e Workflow', 'contributing','Naming, async patterns, error handling, XSS, logging, Conventional Commits'],
         ['⚡','Performance & Custos', 'performance', 'Otimizações, free tier, listeners, estimativas por volume, roadmap'],

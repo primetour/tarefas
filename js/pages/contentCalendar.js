@@ -266,8 +266,9 @@ function renderPage(container) {
           font-size:0.75rem;cursor:pointer;">
           <option value="">Todos status</option>
           <option value="idea">Ideia</option>
+          <option value="draft">Rascunho</option>
+          <option value="review">Revisão</option>
           <option value="approved">Aprovado</option>
-          <option value="scheduled">Agendado</option>
           <option value="published">Publicado</option>
         </select>
         <select id="cc-filter-platform" style="padding:5px 10px;border:1px solid var(--border-subtle,#1E2D3D);

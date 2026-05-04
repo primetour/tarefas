@@ -10,13 +10,14 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 
 | Metrica | Valor |
 |---------|-------|
-| Linhas de codigo | ~69.000 |
-| Modulos funcionais | 68 paginas / 45 servicos / 13 componentes |
+| Linhas de codigo (JS) | ~110.000 |
+| Modulos funcionais | 55 paginas / 62 servicos / 19 componentes |
+| Cloud Functions | 17 (callLLM, sendCsatEmail, pruneOldAuditLogs, dailyBackup, dailySecurityDigest, weeklySecretsAudit, etc.) |
 | Collections Firestore | 42+ |
 | Permissoes RBAC | 50+ granulares em 12 grupos |
-| Paginas publicas | 5 (portal, CSAT, roteiros, solicitacoes, landing pages) |
+| Paginas publicas | 6 (portal, CSAT, roteiros, solicitacoes, landing pages, calendario de conteudo) |
 | Provedores de IA | 6 (Gemini, Groq, OpenAI, Anthropic Claude, Azure, Local/Ollama) |
-| Modelos de IA | 22+ (Gemini 2.5, Llama 4, GPT-4.1, Claude Opus 4.6, etc.) |
+| Modelos de IA | 22+ (Gemini 2.5, Llama 4, GPT-4.1, Claude Opus 4.7, Sonnet 4.6, etc.) |
 | Acoes IA executaveis | 60+ integradas a todos os modulos |
 | Module Hints IA | 24 modulos com prompts customizaveis |
 | Integracao externa | 10+ (Firebase, Salesforce MC, Meta, GA4, Figma, GitHub, Slack, EmailJS, Serper.dev, Cloudflare R2) |
@@ -35,7 +36,8 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 | Automacao | GitHub Actions (syncs diarios GA4, Marketing Cloud, Meta) + AI Automations |
 | Exports | jsPDF + AutoTable, SheetJS (XLSX), PptxGenJS |
 | File Parser | PDF.js, Mammoth (DOCX), SheetJS — processamento client-side |
-| Email | EmailJS + Cloud Functions |
+| Email | Cloud Function `sendCsatEmail` (proxy server-side EmailJS, secrets via Secret Manager) |
+| Seguranca server-side | App Check (reCAPTCHA Enterprise), Firebase Secret Manager, audit_logs com TTL 90 dias |
 | CDN/Imagens | Cloudflare R2 + Workers (proxy de imagens) |
 | Hospedagem | Firebase Hosting / GitHub Pages / qualquer CDN estatico |
 
@@ -95,7 +97,7 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 - **Dashboard analitico** — downloads, destinos mais acessados, uso por consultor
 
 ### 3.4 Hub de Marketing Multicanal
-- **Calendario de Conteudo** — planejamento editorial com visualizacao Mes/Semana/Lista, 10 plataformas, 10 tipos de conteudo, workflow de 9 etapas (ideia → publicado), sugestao IA de conteudo semanal e captions
+- **Calendario de Conteudo** — planejamento editorial com visualizacao Mes/Semana/Lista, 10 plataformas, 10 tipos de conteudo, workflow de 5 etapas (ideia → rascunho → revisao → aprovado → publicado), sugestao IA de conteudo semanal, geracao de descricao via IA, conversao direta de ideia em tarefa, pagina publica `calendario-conteudo.html` (read-only com filtros real-time)
 - **Newsletters (Salesforce Marketing Cloud)** — sync automatico de metricas: disparos, entregas, aberturas, cliques, bounces
 - **Instagram (Meta API)** — seguidores, alcance, engajamento, top posts
 - **Google Analytics 4** — sessoes, pageviews, fontes de trafego, dispositivos, paises, paginas mais visitadas
@@ -105,7 +107,7 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 
 ### 3.5 Inteligencia Artificial Generativa
 - **6 provedores** configurados: Google Gemini (free), Groq (free), OpenAI, Anthropic Claude, Microsoft Azure, Local/Ollama
-- **22+ modelos** disponiveis: Gemini 2.5 Flash/Pro, Llama 4 Scout/Maverick, GPT-4.1, Claude Opus 4.6/Sonnet 4.6, Qwen 3, etc.
+- **22+ modelos** disponiveis: Gemini 2.5 Flash/Pro, Llama 4 Scout/Maverick, GPT-4.1, Claude Opus 4.7/Sonnet 4.6, Qwen 3, etc.
 - **60+ acoes executaveis** — IA cria tarefas, roteiros, dicas, feedbacks, metas diretamente no sistema via blocos <<<ACTION>>>
 - **24 module hints** — prompts customizaveis por modulo com UI de edicao, preview e reset (Firestore-backed com cache de 5 min)
 - **Skills customizaveis** — admins criam prompts reutilizaveis por modulo
@@ -123,26 +125,29 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 - **Equipe** — disponibilidade mensal, calendario de ausencias (ferias, licenca, folga, atestado), visualizacao de capacidade
 - **Metas por pilar** — KPIs com peso, avaliacao por gestor, progresso automatico, key results
 - **Feedbacks** — registro estruturado (1:1, rotina, ad-hoc), dashboard, importacao, agendamento de ciclos, suporte audio/texto
-- **CSAT** — pesquisas de satisfacao com envio por email (EmailJS + Cloud Functions), NPS Score, taxa de resposta, workflow (pending → sent → responded → expired)
+- **CSAT** — pesquisas de satisfacao com envio por email via Cloud Function `sendCsatEmail` (proxy server-side EmailJS, secrets em Secret Manager), NPS Score, taxa de resposta, workflow (pending → sent → responded → expired)
 - **Perfis de usuario** com bio, avatar, preferencias
 
 ### 3.7 Administracao e Compliance
 - **RBAC granular** — 50+ permissoes em 12 grupos (sistema, workspace, tipos de tarefa, tarefas, projetos, dashboards, CSAT, metas, feedback, portal, roteiros, conteudo)
 - **6 roles** hierarquicos: Master, Admin, Manager, Coordinator, Partner, Member
-- **Auditoria completa** — log imutavel de todas as acoes do sistema
+- **Auditoria completa** — log append-only de todas as acoes do sistema, com TTL de 90 dias (cron `pruneOldAuditLogs`); preserva `severity:critical`, `lgpd.*` e `security.*` mesmo apos retencao
+- **App Check** ativo — reCAPTCHA Enterprise bloqueia uso do SDK fora do dominio autorizado
+- **Backups diarios automaticos** — Cloud Function `dailyBackup` (cron 03:00 BRT), `dailySecurityDigest` (Slack 09:00 BRT), `weeklySecretsAudit` (cron domingo)
 - **Setores e nucleos** — estrutura organizacional configuravel
 - **Tipos de tarefa** — templates com campos customizados, SLA, categorias, variacoes
 - **Configuracoes globais** — nome, notificacoes, migracoes de dados
-- **Microsoft SSO** — auto-provisioning para @primetour.com.br
+- **Microsoft SSO** — auto-provisioning multi-dominio (@primetour.com.br, @primetravel.tur.br, @primetouroperator.com.br)
 - **Reset de senha** seguro via Firebase Auth
 - **LGPD nativo** — Data Guard com anonimizacao, consentimento, retencao de dados
 
-### 3.8 Paginas Publicas (Sem Autenticacao)
+### 3.8 Paginas Publicas (Sem Autenticacao Restrita)
 - **Portal de Solicitacoes** (`solicitar.html`) — formulario publico para demandas externas
 - **Resposta CSAT** (`csat-response.html`) — pesquisa de satisfacao via token
 - **Visualizador de Dicas** (`portal-view.html`) — material de destino com branding
 - **Visualizador de Roteiros** (`roteiro-view.html`) — roteiro completo para o cliente
 - **Landing Pages** (`lp.html`) — paginas de campanha com metricas
+- **Calendario de Conteudo** (`calendario-conteudo.html`) — visualizacao read-only do calendario editorial com filtros (conta, plataforma, categoria, busca) e atualizacao em tempo real (`onSnapshot`); exige login mas qualquer usuario autenticado acessa
 
 ---
 
@@ -193,12 +198,13 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 
 ## 5. Metricas de Complexidade
 
-| Indicador | Valor (abr/2026) | Valor anterior (abr/2026) | Delta |
+| Indicador | Valor (mai/2026) | Valor anterior (abr/2026) | Delta |
 |-----------|-------------------|---------------------------|-------|
-| Linhas de codigo JS | ~69.000 | ~58.000 | +19% |
-| Paginas/telas funcionais | 68 | 47 | +45% |
-| Servicos backend | 45 | 24 | +88% |
-| Componentes reutilizaveis | 13 | 10 | +30% |
+| Linhas de codigo JS (total) | ~110.000 | ~69.000 | +59% |
+| Paginas/telas funcionais | 55 | 68 (contagem revista) | (consolidado) |
+| Servicos backend | 62 | 45 | +38% |
+| Componentes reutilizaveis | 19 | 13 | +46% |
+| Cloud Functions | 17 | 8 (estimado) | +112% |
 | Collections Firestore | 42+ | 55+ | (consolidado) |
 | Permissoes RBAC | 50+ | 36 | +39% |
 | Provedores de IA | 6 | 5 | +1 (Local/Ollama) |
@@ -209,34 +215,49 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 | Data Guard LGPD | Completo | Parcial | NOVO |
 | File Parser (client-side) | 7 formatos | 0 | NOVO |
 | Web Search IA | Serper.dev + Google CSE | 0 | NOVO |
-| Integrações externas | 10+ APIs | 8+ | +25% |
-| Paginas publicas | 5 | 5 | = |
-| Tempo estimado de desenvolvimento | 3.500-5.500 horas | 2.500-4.000h | +40% |
+| Integracoes externas | 10+ APIs | 8+ | +25% |
+| Paginas publicas | 6 | 5 | +1 (calendario) |
+| Hardening de seguranca | Sprint 1+4+5 deployado (mai/2026) | parcial | NOVO |
+| App Check | reCAPTCHA Enterprise ativo | 0 | NOVO |
+| Audit log retention | TTL 90 dias com preservacao critical/lgpd/security | append-only sem TTL | NOVO |
+| Tempo estimado de desenvolvimento | 4.500-7.000 horas | 3.500-5.500h | +28% |
+
+### 5.1 Performance & Custo (wins de mai/2026)
+
+| Otimizacao | Antes | Depois | Ganho |
+|---|---|---|---|
+| Heartbeat presence | 30s (2.880 writes/user/dia) | 2 min (720 writes/user/dia) | -75% writes |
+| Cache `fetchUsers` | TTL 60s | TTL 5 min | -80% reads |
+| Audit sampling em tasks | log em qualquer mudanca | skip em mudancas triviais | -40% audit writes |
+| Lazy load `taskTypes` | carrega no boot | carrega on-demand | -50 reads/login |
+| Paginacao configuravel | hardcoded | `js/components/pageSize.js` (10/20/50/100) | UX + custo |
+| TTL audit_logs | sem expiracao | 90 dias com cron `pruneOldAuditLogs` | bounded storage |
 
 ---
 
-## 6. Valoracao de Mercado (Atualizada — 13/04/2026)
+## 6. Valoracao de Mercado (Atualizada — 04/05/2026)
 
 ### 6.1 Metodologia
 
-A valoracao considera 4 abordagens complementares, atualizadas com o crescimento significativo da plataforma desde a avaliacao anterior (04/04/2026).
+A valoracao considera 4 abordagens complementares, atualizadas com o crescimento da plataforma desde a avaliacao anterior (13/04/2026). Os incrementos de maio/2026 sao majoritariamente de hardening (seguranca, performance, governanca) e expansao operacional (calendario publico, docs tecnicos formais), nao de novos modulos comerciais — mas elevam a maturidade enterprise da plataforma.
 
 #### A) Custo de Reposicao (Cost-to-Recreate)
 
 Premissas atualizadas:
-- ~69.000 linhas de codigo funcional, testado e integrado (+19% vs anterior)
+- ~110.000 linhas de codigo JS (incluindo functions e ferramental), com ~80-90k de codigo de produto funcional, testado e integrado
 - Complexidade elevada: IA multi-provider com fallback, LGPD/Data Guard, web search, 60+ acoes executaveis, file parser multi-formato, automacoes programaveis
-- 68 paginas funcionais (+45%) e 45 servicos (+88%)
+- 55 paginas funcionais, 62 servicos, 19 componentes, 17 Cloud Functions
+- Hardening enterprise: App Check (reCAPTCHA Enterprise), Secret Manager, audit_logs com TTL, backups diarios, security digest, secrets audit
 - Taxa media: R$ 150-250/hora (Brasil) / $80-150/hora (internacional)
 - Produtividade: 15-25 loc production-ready por hora
 
 | Cenario | Horas estimadas | Custo (BRL) | Custo (USD) |
 |---------|----------------|-------------|-------------|
-| Conservador (dev senior BR, 25 loc/h) | 2.760h | R$ 414.000 | $72.000 |
-| Realista (equipe mista, 20 loc/h) | 3.450h | R$ 690.000 | $120.000 |
-| Completo (equipe int'l, design+QA+AI) | 5.500h | R$ 1.375.000 | $240.000 |
+| Conservador (dev senior BR, 25 loc/h em ~80k linhas produto) | 3.200h | R$ 480.000 | $84.000 |
+| Realista (equipe mista, 20 loc/h + hardening + functions) | 4.500h | R$ 900.000 | $156.000 |
+| Completo (equipe int'l, design+QA+AI+SecOps) | 7.000h | R$ 1.750.000 | $305.000 |
 
-**Custo de reposicao estimado: R$ 690.000 - R$ 1.375.000**
+**Custo de reposicao estimado: R$ 900.000 - R$ 1.750.000**
 
 > Nota: o cenario "Completo" agora inclui expertise em IA generativa (prompt engineering, multi-provider, Data Guard LGPD), que exige profissionais especializados com taxa mais alta.
 
@@ -262,22 +283,23 @@ Para uma base de 50 usuarios:
 
 #### C) Valoracao por Modulo (Asset-Based)
 
-| Modulo | Valor anterior | Valor atualizado | Delta |
+| Modulo | Valor abr/2026 | Valor mai/2026 | Delta |
 |--------|---------------|-----------------|-------|
-| Core (tarefas, projetos, kanban, calendario, timeline, recorrentes) | R$ 120.000 | R$ 140.000 | +17% |
-| RBAC + Auditoria + Users + SSO | R$ 60.000 | R$ 75.000 | +25% |
-| Portal de Dicas (hub unificado, gerador, editor, banco imagens, dashboard) | R$ 100.000 | R$ 110.000 | +10% |
-| Roteiros de Viagem (IA generativa, web search, narrativas, PDF, fontes, dashboard) | R$ 120.000 | R$ 200.000 | +67% |
-| Hub Marketing (Newsletters, Meta, GA4, Landing Pages, CMS, Artes, News) | R$ 150.000 | R$ 170.000 | +13% |
-| Calendario de Conteudo (10 plataformas, 9 etapas, sugestao IA) | — | R$ 80.000 | NOVO |
-| IA Generativa (6 providers, 60+ acoes, 24 hints, skills, automacoes, web search, file parser) | R$ 80.000 | R$ 180.000 | +125% |
-| Data Guard LGPD (anonimizacao, consent, retencao, provider filtering) | — | R$ 50.000 | NOVO |
-| Gestao de Pessoas (equipe, metas, feedbacks, CSAT, capacidade) | R$ 70.000 | R$ 80.000 | +14% |
-| Workspaces + Solicitacoes + Notificacoes + SLA Alerts | R$ 40.000 | R$ 50.000 | +25% |
-| Paginas publicas (5 viewers/portais) | R$ 30.000 | R$ 35.000 | +17% |
-| Automacoes (GitHub Actions, AI Automations, daily summary, nudge) | R$ 20.000 | R$ 45.000 | +125% |
-| Design System (CSS, componentes, responsivo, dark theme) | R$ 30.000 | R$ 35.000 | +17% |
-| **Total** | **R$ 820.000** | **R$ 1.250.000** | **+52%** |
+| Core (tarefas, projetos, kanban, calendario, timeline, recorrentes) | R$ 140.000 | R$ 145.000 | +4% |
+| RBAC + Auditoria + Users + SSO multi-dominio + App Check + Secret Manager + audit TTL | R$ 75.000 | R$ 120.000 | +60% |
+| Portal de Dicas (hub unificado, gerador, editor, banco imagens, dashboard) | R$ 110.000 | R$ 110.000 | = |
+| Roteiros de Viagem (IA generativa, web search, narrativas, PDF, fontes, dashboard) | R$ 200.000 | R$ 200.000 | = |
+| Hub Marketing (Newsletters, Meta, GA4, Landing Pages, CMS, Artes, News) | R$ 170.000 | R$ 170.000 | = |
+| Calendario de Conteudo (10 plataformas, 5 etapas, sugestao IA, conversao em tarefa, pagina publica read-only) | R$ 80.000 | R$ 95.000 | +19% |
+| IA Generativa (6 providers, 60+ acoes, 24 hints, skills, automacoes, web search, file parser) | R$ 180.000 | R$ 180.000 | = |
+| Data Guard LGPD (anonimizacao, consent, retencao, provider filtering) | R$ 50.000 | R$ 55.000 | +10% |
+| Gestao de Pessoas (equipe, metas, feedbacks, CSAT via Cloud Function, capacidade) | R$ 80.000 | R$ 85.000 | +6% |
+| Workspaces + Solicitacoes + Notificacoes + SLA Alerts | R$ 50.000 | R$ 50.000 | = |
+| Paginas publicas (6 viewers/portais — incluindo calendario read-only com real-time) | R$ 35.000 | R$ 45.000 | +29% |
+| Automacoes (GitHub Actions, AI Automations, daily summary, nudge, dailyBackup, dailySecurityDigest, weeklySecretsAudit, pruneOldAuditLogs) | R$ 45.000 | R$ 70.000 | +56% |
+| Design System (CSS, componentes, responsivo, dark theme) | R$ 35.000 | R$ 35.000 | = |
+| Documentacao tecnica formal (Onboarding, Architecture, Contributing, Performance, Security pentest) | — | R$ 30.000 | NOVO |
+| **Total** | **R$ 1.250.000** | **R$ 1.390.000** | **+11%** |
 
 #### D) Valor Estrategico (Strategic Value)
 
@@ -295,21 +317,22 @@ Fatores que amplificam o valor alem do codigo:
 
 ### 6.2 Faixa de Valoracao Consolidada
 
-| Cenario | Valor (BRL) | Valor (USD) | Variacao vs anterior |
+| Cenario | Valor (BRL) | Valor (USD) | Variacao vs 13/04 |
 |---------|-------------|-------------|---------------------|
-| Piso (custo de reposicao conservador) | R$ 415.000 | $72.000 | +19% |
-| Base (custo realista + IP) | R$ 750.000 | $130.000 | +25% |
-| Medio (valoracao por modulo) | R$ 1.250.000 | $218.000 | +52% |
-| Teto (estrategico + IA + dados + compliance) | R$ 1.800.000 | $315.000 | +50% |
+| Piso (custo de reposicao conservador) | R$ 480.000 | $84.000 | +16% |
+| Base (custo realista + IP + hardening) | R$ 900.000 | $156.000 | +20% |
+| Medio (valoracao por modulo) | R$ 1.390.000 | $242.000 | +11% |
+| Teto (estrategico + IA + dados + compliance + hardening enterprise) | R$ 2.000.000 | $350.000 | +11% |
 
-### **Valor justo de mercado estimado: R$ 900.000 - R$ 1.400.000**
+### **Valor justo de mercado estimado: R$ 1.000.000 - R$ 1.550.000**
 
-> **Evolucao**: De R$ 600k-900k (04/04) para R$ 900k-1.4M (13/04) — **aumento de 50-56%** em 9 dias, impulsionado principalmente por:
-> 1. IA generativa de roteiros com web search (+67% no modulo)
-> 2. Camada completa de IA (6 providers, 60+ acoes, 24 hints, automacoes, Data Guard) — modulo mais que dobrou (+125%)
-> 3. Calendario de Conteudo completo (modulo novo: +R$ 80k)
-> 4. LGPD Data Guard (modulo novo: +R$ 50k)
-> 5. Automacoes IA programaveis (+125%)
+> **Evolucao mai/2026**: De R$ 900k-1.4M (13/04) para R$ 1.0M-1.55M (04/05) — **aumento de 11%** em 21 dias. Diferentemente da escalada de abril (que veio de novos modulos comerciais), os ganhos de maio sao de **maturidade enterprise**:
+> 1. Hardening de seguranca: Sprint 1+4+5 deployado, App Check, Secret Manager para todas as keys, multi-dominio SSO
+> 2. Governanca de dados: audit_logs com TTL 90d (compliance LGPD/SOX), backups diarios, secrets audit semanal
+> 3. Performance wins: heartbeat -75% writes, audit sampling -40% writes, cache fetchUsers 5x mais longo
+> 4. Pagina publica do calendario editorial (read-only com real-time)
+> 5. Documentacao tecnica formal (Onboarding, Architecture, Contributing, Performance) + audit pentest 2026-05-03
+> 6. Reducao de divida tecnica: helpers consolidados (escape.js, logger.js), CSAT migrado pra Cloud Function (eliminou secrets no client)
 
 > **Nota sobre SaaS**: Esses valores consideram o software como ativo de propriedade intelectual (IP asset). Em um cenario de licenciamento SaaS para multiplas agencias, o valor potencial e significativamente maior:
 > - Base conservadora: 30 agencias × 20 usuarios × R$ 149/user/mes = ARR R$ 1.07M
@@ -329,7 +352,7 @@ Fatores que amplificam o valor alem do codigo:
 | **Web Search IA** | Roteiros enriquecidos com pesquisa real-time em fontes de turismo luxury via Serper.dev |
 | **Zero-Framework** | Sem dependencia de React/Vue = sem breaking changes, sem migration debt, vida util de 10+ anos |
 | **Multi-BU** | Identidade visual por marca em todos os exports — necessidade critica de operadoras multi-bandeira |
-| **Custo operacional** | Firebase free tier + static hosting = infraestrutura < R$ 250/mes para operacao completa |
+| **Custo operacional** | Firebase Spark (free tier) + GitHub Pages estatico + Cloudflare R2 — infra ainda dentro do free tier ate ~50 usuarios ativos diarios; migracao para Blaze ~$5-60/mes para volumes maiores |
 | **24 Module Hints** | Cada modulo tem prompt IA customizavel pela UI — ajuste fino sem codigo |
 | **Dados proprietarios** | 42+ collections com inteligencia operacional acumulada — impossivel de replicar |
 
@@ -349,5 +372,5 @@ Fatores que amplificam o valor alem do codigo:
 
 ---
 
-*Documento atualizado em 13/04/2026 com base na analise completa do codebase V11.*
-*~69.000 linhas de codigo | 68 modulos | 45 servicos | 42+ collections | 10+ integracoes | 6 provedores de IA | 22+ modelos | 60+ acoes IA | 24 module hints | LGPD nativo*
+*Documento atualizado em 04/05/2026 com base na analise completa do codebase V11 + sprints de hardening de seguranca de maio/2026.*
+*~110.000 linhas JS | 55 paginas | 62 servicos | 19 componentes | 17 Cloud Functions | 42+ collections | 10+ integracoes | 6 provedores de IA | 22+ modelos | 60+ acoes IA | 24 module hints | LGPD nativo | App Check + Secret Manager | audit pentest 2026-05-03*

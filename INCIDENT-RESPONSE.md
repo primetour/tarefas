@@ -1,15 +1,17 @@
 # Gestor PRIMETOUR — Incident Response Runbook
 
-> Atualizado: 2026-05-02
+> Atualizado: 2026-05-04
 > Compliance: LGPD Art. 48, SOC 2 CC7.4, ISO 27001 A.5.24/A.5.26
 
 ## Contatos
 
 | Papel | Nome | Email | Telefone |
 |-------|------|-------|----------|
-| **Incident Commander** | Rene Castro | rene.castro@primetour.com.br | (11) ###-#### |
-| **DPO (LGPD)** | Rene Castro (acumulado) | rene.castro@primetour.com.br | (11) ###-#### |
-| **Diretoria** | Carolina Aliasse | carolina@primetour.com.br | - |
+| **Incident Commander** | Rene Castro | rene.castro@primetour.com.br | (11) 3178-4760 |
+| **DPO (LGPD)** | Rene Castro (acumulado) | rene.castro@primetour.com.br | (11) 3178-4760 |
+| **Diretoria** | Álvaro Maradei | alvaro.maradei@primetour.com.br | (11) 3178-4760 |
+| **Diretoria** | Maurice Padovani | maurice.padovani@primetour.com.br | (11) 3178-4760 |
+| **Diretoria** | Marina Gouvêa | marina.gouvea@primetour.com.br | (11) 3178-4760 |
 
 **Comunicação ANPD (LGPD Art. 48)**: comunicacao@anpd.gov.br
 **Microsoft 365 Admin**: portal.azure.com → tenant primetour.com.br
