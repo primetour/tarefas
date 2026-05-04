@@ -1427,9 +1427,11 @@ function buildClosingPage(doc, roteiro, buName, primary, secondary, logoCoverPng
 export async function generateRoteiroPPTX(roteiro, area = null) {
   await loadPptxGenJS();
 
-  const primary = area?.colors?.primary || '#D4A843';
-  const secondary = area?.colors?.secondary || '#1A1A2E';
-  const buName = area?.name || 'Primetour';
+  // Cores neutras default (cinza/azul-escuro, não amarelo)
+  const primary = (area?.colors?.primary || '#475569').replace('#', '');
+  const secondary = (area?.colors?.secondary || '#0F172A').replace('#', '');
+  // Branding externo: sempre PRIMETOUR (não exibe nome interno da BU "Lazer")
+  const buName = 'PRIMETOUR';
 
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';
@@ -1438,45 +1440,110 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
 
   const W = 10, H = 5.625;
 
-  // ─── Resolve imagens (hero + por cidade + por hotel) ──────
+  // ─── Resolve imagens (hero + cidades + hotéis) ────────────
   let images = { heroUrl: null, byCity: {}, byHotel: {} };
   try { images = await enrichRoteiroImages(roteiro); }
   catch (e) { console.warn('[roteiroGenerator PPTX] enrichRoteiroImages falhou:', e.message); }
 
-  // Pre-fetch base64 das imagens que vamos usar
-  const heroData = images.heroUrl ? await fetchImgData(images.heroUrl) : null;
+  // Pre-fetch base64 + cover-crop pra dimensões finais (sem distorção)
+  // PPTX usa polegadas; conversão pra mm via × 25.4
+  const heroDataRaw = images.heroUrl ? await fetchImgData(images.heroUrl) : null;
+  const heroData = heroDataRaw
+    ? await coverCropImage({ dataUrl: heroDataRaw, finalWmm: W * 25.4, finalHmm: H * 25.4 }).catch(() => heroDataRaw)
+    : null;
   const cityData = {};
   await Promise.allSettled(Object.entries(images.byCity).map(async ([k, url]) => {
-    const d = await fetchImgData(url);
-    if (d) cityData[k] = d;
+    const raw = await fetchImgData(url);
+    if (!raw) return;
+    // Tamanho usado no card de dia: 2.4 × 2.0 inches
+    const fitted = await coverCropImage({ dataUrl: raw, finalWmm: 2.4 * 25.4, finalHmm: 2.0 * 25.4 }).catch(() => raw);
+    cityData[k] = fitted;
   }));
   const hotelData = {};
   await Promise.allSettled(Object.entries(images.byHotel).map(async ([k, url]) => {
-    const d = await fetchImgData(url);
-    if (d) hotelData[k] = d;
+    const raw = await fetchImgData(url);
+    if (!raw) return;
+    // Hotel thumb varia por num de hotéis, mas ~2.1 × 1.4 in
+    const fitted = await coverCropImage({ dataUrl: raw, finalWmm: 2.1 * 25.4, finalHmm: 1.4 * 25.4 }).catch(() => raw);
+    hotelData[k] = fitted;
   }));
+
+  // Logo da área convertido pra PNG limpo com alpha (sem fundo "card")
+  let logoCleanData = null, logoRatio = 3;
+  if (area?.logoUrl) {
+    try {
+      const raw = await fetchImgData(area.logoUrl);
+      if (raw) {
+        const cleaned = await pngWithAlpha(raw).catch(() => null);
+        if (cleaned) {
+          logoCleanData = cleaned.dataUrl;
+          logoRatio = cleaned.naturalW / Math.max(cleaned.naturalH, 1);
+        }
+      }
+    } catch (e) { /* silencioso */ }
+  }
 
   // ─── Slide 1: Cover ───────────────────────────────────────
   const cover = pptx.addSlide();
-  cover.background = { color: secondary.replace('#', '') };
+  cover.background = { color: secondary };
 
-  // Hero como fundo (se houver), com overlay escuro p/ legibilidade
+  // Hero full-bleed com cover-crop nativo + overlay escuro
   if (heroData) {
     cover.addImage({ data: heroData, x: 0, y: 0, w: W, h: H, sizing: { type: 'cover', w: W, h: H } });
-    cover.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: H, fill: { color: secondary.replace('#', ''), transparency: 50 } });
+    cover.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: H, fill: { color: secondary, transparency: 50 } });
   }
 
-  cover.addShape(pptx.ShapeType.rect, { x: 1, y: 1.2, w: W - 2, h: 0.02, fill: { color: primary.replace('#', '') } });
-  cover.addText(buName.toUpperCase(), { x: 0, y: 1.4, w: W, h: 0.4, align: 'center', fontSize: 10, color: primary.replace('#', ''), charSpacing: 4 });
-  cover.addText('ROTEIRO', { x: 0, y: 2, w: W, h: 0.7, align: 'center', fontSize: 36, bold: true, color: primary.replace('#', ''), charSpacing: 5 });
+  // Linhas brancas (não primary cinza — invisível sobre dark)
+  cover.addShape(pptx.ShapeType.rect, { x: 1, y: 1.0, w: W - 2, h: 0.02, fill: { color: 'FFFFFF' } });
+
+  // Logo grande centralizado (substitui "PRIMETOUR" texto)
+  if (logoCleanData) {
+    const logoH = 1.4;  // inches
+    const logoW = logoH * logoRatio;
+    const logoX = (W - logoW) / 2;
+    cover.addImage({ data: logoCleanData, x: logoX, y: 1.2, w: logoW, h: logoH });
+  } else {
+    cover.addText(buName, { x: 0, y: 1.4, w: W, h: 0.6, align: 'center', fontSize: 28, bold: true, color: 'FFFFFF' });
+  }
 
   const destNames = (roteiro.travel?.destinations || []).map(d => d.city || d.country).filter(Boolean);
-  cover.addText(destNames.join('  |  ').toUpperCase(), { x: 0.5, y: 2.8, w: W - 1, h: 0.5, align: 'center', fontSize: 18, bold: true, color: 'FFFFFF' });
+  cover.addText(destNames.join('  |  ').toUpperCase(), {
+    x: 0.5, y: 2.9, w: W - 1, h: 0.5, align: 'center', fontSize: 22, bold: true, color: 'FFFFFF',
+  });
+
+  cover.addText('ROTEIRO DE VIAGEM', {
+    x: 0, y: 3.5, w: W, h: 0.35, align: 'center', fontSize: 13, bold: true, color: 'FFFFFF',
+  });
 
   const nights = roteiro.travel?.nights || roteiro.days?.length || 0;
-  cover.addText(`${nights} NOITES | ${destNames.join(' e ')}`, { x: 0, y: 3.5, w: W, h: 0.35, align: 'center', fontSize: 11, color: primary.replace('#', '') });
+  cover.addText(`${nights} NOITE${nights !== 1 ? 'S' : ''}`, {
+    x: 0, y: 3.9, w: W, h: 0.35, align: 'center', fontSize: 12, color: 'FFFFFF',
+  });
 
-  cover.addShape(pptx.ShapeType.rect, { x: 1, y: 4.2, w: W - 2, h: 0.02, fill: { color: primary.replace('#', '') } });
+  // Datas
+  if (roteiro.travel?.startDate && roteiro.travel?.endDate) {
+    cover.addText(`${fmtDateFull(roteiro.travel.startDate)}  a  ${fmtDateFull(roteiro.travel.endDate)}`, {
+      x: 0, y: 4.3, w: W, h: 0.3, align: 'center', fontSize: 11, color: 'F5F5F5',
+    });
+  }
+
+  // Linha branca inferior
+  cover.addShape(pptx.ShapeType.rect, { x: 1, y: 4.7, w: W - 2, h: 0.02, fill: { color: 'FFFFFF' } });
+
+  // Cliente + pax na parte inferior
+  if (roteiro.client?.name) {
+    cover.addText(`Preparado para ${roteiro.client.name}`, {
+      x: 0, y: 4.85, w: W, h: 0.3, align: 'center', fontSize: 11, bold: true, color: 'FFFFFF',
+    });
+    const paxParts = [];
+    if (roteiro.client.adults) paxParts.push(`${roteiro.client.adults} adulto${roteiro.client.adults > 1 ? 's' : ''}`);
+    if (roteiro.client.children) paxParts.push(`${roteiro.client.children} criança${roteiro.client.children > 1 ? 's' : ''}`);
+    if (paxParts.length) {
+      cover.addText(paxParts.join(' + '), {
+        x: 0, y: 5.15, w: W, h: 0.25, align: 'center', fontSize: 10, color: 'E6E6E6',
+      });
+    }
+  }
 
   // ─── Day-by-day slides ─────────────────────────────────────
   const days = roteiro.days || [];
@@ -1484,8 +1551,8 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
     const slide = pptx.addSlide();
     slide.background = { color: 'FFFFFF' };
 
-    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary.replace('#', '') } });
-    slide.addText('ROTEIRO SUGERIDO', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: primary.replace('#', '') });
+    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
+    slide.addText('ROTEIRO SUGERIDO', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: 'FFFFFF' });
 
     for (let j = 0; j < 2 && (i + j) < days.length; j++) {
       const d = days[i + j];
@@ -1496,11 +1563,12 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
       const cityImg = cityData[cityKey];
       const textW = cityImg ? 6.0 : 8.5;
 
-      slide.addShape(pptx.ShapeType.ellipse, { x: 0.4, y: yBase, w: 0.45, h: 0.45, fill: { color: primary.replace('#', '') } });
-      slide.addText(`${d.dayNumber || i + j + 1}`, { x: 0.4, y: yBase, w: 0.45, h: 0.45, align: 'center', valign: 'middle', fontSize: 12, bold: true, color: secondary.replace('#', '') });
+      // Bolinha do dia: fill primary, número BRANCO (max contraste)
+      slide.addShape(pptx.ShapeType.ellipse, { x: 0.4, y: yBase, w: 0.45, h: 0.45, fill: { color: primary } });
+      slide.addText(`${d.dayNumber || i + j + 1}`, { x: 0.4, y: yBase, w: 0.45, h: 0.45, align: 'center', valign: 'middle', fontSize: 12, bold: true, color: 'FFFFFF' });
 
       const dateText = d.date ? fmtDateBR(d.date) : '';
-      slide.addText(`${dateText} - ${d.city || ''}`, { x: 1, y: yBase, w: 3, h: 0.35, fontSize: 11, bold: true, color: secondary.replace('#', '') });
+      slide.addText(`${dateText} - ${d.city || ''}`, { x: 1, y: yBase, w: 3, h: 0.35, fontSize: 11, bold: true, color: secondary });
 
       if (d.title) {
         slide.addText(d.title, { x: 1, y: yBase + 0.3, w: textW, h: 0.3, fontSize: 10, bold: true, color: '333333' });
@@ -1512,7 +1580,7 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
       }
 
       if (d.overnightCity) {
-        slide.addText(`Noite: ${d.overnightCity}`, { x: 1, y: yBase + 2.0, w: 4, h: 0.25, fontSize: 8, italic: true, color: primary.replace('#', '') });
+        slide.addText(`Noite: ${d.overnightCity}`, { x: 1, y: yBase + 2.0, w: 4, h: 0.25, fontSize: 8, italic: true, color: primary });
       }
 
       if (cityImg) {
@@ -1525,8 +1593,8 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
   if (roteiro.hotels?.length) {
     const hSlide = pptx.addSlide();
     hSlide.background = { color: 'FFFFFF' };
-    hSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary.replace('#', '') } });
-    hSlide.addText('HOSPEDAGEM', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: primary.replace('#', '') });
+    hSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
+    hSlide.addText('HOSPEDAGEM', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: 'FFFFFF' });
 
     // Faixa de thumbnails — até 4 hotéis com imagem
     const hotelsWithImg = roteiro.hotels
@@ -1550,11 +1618,11 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
     }
 
     const rows = [
-      [{ text: 'Cidade', options: { bold: true, color: 'FFFFFF', fill: { color: secondary.replace('#', '') } } },
-       { text: 'Hotel', options: { bold: true, color: 'FFFFFF', fill: { color: secondary.replace('#', '') } } },
-       { text: 'Quarto', options: { bold: true, color: 'FFFFFF', fill: { color: secondary.replace('#', '') } } },
-       { text: 'Regime', options: { bold: true, color: 'FFFFFF', fill: { color: secondary.replace('#', '') } } },
-       { text: 'Noites', options: { bold: true, color: 'FFFFFF', fill: { color: secondary.replace('#', '') } } }],
+      [{ text: 'Cidade', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+       { text: 'Hotel', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+       { text: 'Quarto', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+       { text: 'Regime', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+       { text: 'Noites', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } }],
     ];
     roteiro.hotels.forEach(h => {
       rows.push([h.city || '', h.hotelName || '', h.roomType || '', h.regime || '', String(h.nights || '')]);
@@ -1566,17 +1634,17 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
   if (roteiro.pricing?.perPerson || roteiro.pricing?.perCouple) {
     const pSlide = pptx.addSlide();
     pSlide.background = { color: 'FFFFFF' };
-    pSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary.replace('#', '') } });
-    pSlide.addText('VALORES', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: primary.replace('#', '') });
+    pSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
+    pSlide.addText('VALORES', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: 'FFFFFF' });
 
     let yP = 1;
     const cur = roteiro.pricing.currency || 'USD';
     if (roteiro.pricing.perCouple) {
-      pSlide.addText(`DUPLO: ${formatCurrency(roteiro.pricing.perCouple, cur)}`, { x: 1, y: yP, w: 8, h: 0.5, fontSize: 20, bold: true, color: secondary.replace('#', '') });
+      pSlide.addText(`DUPLO: ${formatCurrency(roteiro.pricing.perCouple, cur)}`, { x: 1, y: yP, w: 8, h: 0.5, fontSize: 20, bold: true, color: secondary });
       yP += 0.6;
     }
     if (roteiro.pricing.perPerson) {
-      pSlide.addText(`POR PESSOA: ${formatCurrency(roteiro.pricing.perPerson, cur)}`, { x: 1, y: yP, w: 8, h: 0.5, fontSize: 20, bold: true, color: secondary.replace('#', '') });
+      pSlide.addText(`POR PESSOA: ${formatCurrency(roteiro.pricing.perPerson, cur)}`, { x: 1, y: yP, w: 8, h: 0.5, fontSize: 20, bold: true, color: secondary });
       yP += 0.6;
     }
     if (roteiro.pricing.disclaimer) {
@@ -1588,8 +1656,8 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
   if (roteiro.includes?.length || roteiro.excludes?.length) {
     const ieSlide = pptx.addSlide();
     ieSlide.background = { color: 'FFFFFF' };
-    ieSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary.replace('#', '') } });
-    ieSlide.addText('INCLUI / N\u00C3O INCLUI', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: primary.replace('#', '') });
+    ieSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
+    ieSlide.addText('INCLUI / N\u00C3O INCLUI', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: 'FFFFFF' });
 
     if (roteiro.includes?.length) {
       ieSlide.addText('INCLUI:', { x: 0.5, y: 0.8, w: 4.5, h: 0.35, fontSize: 11, bold: true, color: '22C55E' });
@@ -1605,11 +1673,31 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
 
   // ─── Closing slide ─────────────────────────────────────────
   const closing = pptx.addSlide();
-  closing.background = { color: secondary.replace('#', '') };
-  closing.addShape(pptx.ShapeType.rect, { x: 2, y: 2.2, w: W - 4, h: 0.02, fill: { color: primary.replace('#', '') } });
-  closing.addText(buName.toUpperCase(), { x: 0, y: 2.4, w: W, h: 0.6, align: 'center', fontSize: 24, bold: true, color: primary.replace('#', ''), charSpacing: 4 });
-  closing.addText('Experi\u00EAncias exclusivas de viagem', { x: 0, y: 3, w: W, h: 0.4, align: 'center', fontSize: 10, color: 'AAAAAA' });
-  closing.addShape(pptx.ShapeType.rect, { x: 2, y: 3.5, w: W - 4, h: 0.02, fill: { color: primary.replace('#', '') } });
+  closing.background = { color: secondary };
+  // Linhas brancas (n\u00E3o primary cinza \u2014 invis\u00EDvel em fundo escuro)
+  closing.addShape(pptx.ShapeType.rect, { x: 2, y: 1.8, w: W - 4, h: 0.02, fill: { color: 'FFFFFF' } });
+
+  // Logo grande no centro (substitui texto "PRIMETOUR")
+  if (logoCleanData) {
+    const logoH = 1.5;
+    const logoW = logoH * logoRatio;
+    const logoX = (W - logoW) / 2;
+    closing.addImage({ data: logoCleanData, x: logoX, y: 2.0, w: logoW, h: logoH });
+  } else {
+    closing.addText(buName, {
+      x: 0, y: 2.2, w: W, h: 0.6, align: 'center', fontSize: 28, bold: true, color: 'FFFFFF',
+    });
+  }
+
+  closing.addText('Boa viagem!', {
+    x: 0, y: 3.7, w: W, h: 0.4, align: 'center', fontSize: 16, italic: true, color: 'FFFFFF',
+  });
+  closing.addText('Experi\u00EAncias exclusivas de viagem', {
+    x: 0, y: 4.1, w: W, h: 0.35, align: 'center', fontSize: 11, color: 'E6E6E6',
+  });
+
+  // Linha branca inferior
+  closing.addShape(pptx.ShapeType.rect, { x: 2, y: 4.6, w: W - 4, h: 0.02, fill: { color: 'FFFFFF' } });
 
   // ─── Save & record ─────────────────────────────────────────
   const filename = `roteiro_${sanitize(roteiro.title || 'viagem')}.pptx`;
