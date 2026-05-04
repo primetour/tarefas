@@ -153,38 +153,57 @@ export function renderExportMenu({ formats = [], action = 'export' } = {}) {
 }
 
 /**
- * Ativa o split-button + overflow menu (event delegation).
- * Chamar UMA vez após renderizar o header.
+ * Ativa o split-button + overflow menu.
+ *
+ * Refactor v2: handler INLINE no próprio trigger (.onclick) em vez de
+ * event delegation. Delegation falhou em produção quando algum handler
+ * intermediário (capture phase) chamava stopPropagation, impedindo o
+ * bubble de chegar ao listener no container/document. Inline garante
+ * que o trigger SEMPRE responde ao click próprio.
+ *
+ * Idempotente: pode ser chamado múltiplas vezes (sobrescreve onclick).
+ *
+ * @param {HTMLElement|Document} root - escopo de busca dos triggers (default: document)
  */
-export function wireUiKitMenus(container) {
-  // Toggle ao clicar no trigger
-  container.addEventListener('click', (e) => {
-    const trigger = e.target.closest('[data-export-trigger], [data-overflow-trigger]');
-    if (trigger) {
+export function wireUiKitMenus(root = document) {
+  const triggers = root.querySelectorAll('[data-export-trigger], [data-overflow-trigger]');
+  triggers.forEach(trigger => {
+    trigger.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       const wrap = trigger.parentElement;
-      const menu = wrap.querySelector('.uikit-export-menu, .uikit-overflow-menu');
+      const menu = wrap?.querySelector('.uikit-export-menu, .uikit-overflow-menu');
       if (!menu) return;
       const isOpen = menu.style.display === 'block';
-      // Fecha todos primeiro
-      container.querySelectorAll('.uikit-export-menu, .uikit-overflow-menu').forEach(m => m.style.display = 'none');
+      // Fecha TODOS os menus (em qualquer lugar do DOM) primeiro
+      document.querySelectorAll('.uikit-export-menu, .uikit-overflow-menu').forEach(m => m.style.display = 'none');
       if (!isOpen) menu.style.display = 'block';
-      e.stopPropagation();
-      return;
-    }
-    // Click em item de menu fecha o dropdown
-    const item = e.target.closest('.uikit-export-item, .uikit-overflow-item');
-    if (item) {
+    };
+  });
+
+  // Items de menu: ao clicar, fecha o dropdown (mas deixa propagar pro
+  // handler de data-action da página)
+  const items = root.querySelectorAll('.uikit-export-item, .uikit-overflow-item');
+  items.forEach(item => {
+    // Não usa onclick aqui — page handler precisa receber o click via bubble.
+    // Em vez disso, addEventListener com cleanup via flag.
+    if (item._uiKitWired) return;
+    item._uiKitWired = true;
+    item.addEventListener('click', () => {
       const menu = item.closest('.uikit-export-menu, .uikit-overflow-menu');
       if (menu) menu.style.display = 'none';
-      // Não cancela propagação — page.js handler ainda processa o data-action
-    }
+    });
   });
-  // Click fora fecha menus
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.uikit-export-wrap, .uikit-overflow-wrap')) {
-      container.querySelectorAll('.uikit-export-menu, .uikit-overflow-menu').forEach(m => m.style.display = 'none');
-    }
-  });
+
+  // Click fora fecha menus — único handler global, instalado uma vez
+  if (!document._uiKitOutsideHandler) {
+    document._uiKitOutsideHandler = true;
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.uikit-export-wrap, .uikit-overflow-wrap')) {
+        document.querySelectorAll('.uikit-export-menu, .uikit-overflow-menu').forEach(m => m.style.display = 'none');
+      }
+    });
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════

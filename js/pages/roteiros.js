@@ -477,10 +477,17 @@ export async function renderRoteiros(container) {
     `;
   }
 
-  /* ── Event delegation ── */
+  /* ── Event delegation ──
+     SCOPE: o handler só processa clicks DENTRO do container da página de
+     Roteiros. Sem isso, ações genéricas como data-action="edit" capturariam
+     clicks de outras páginas (ex: row em Users com data-action="edit"
+     navegava pra #roteiro-editor?id=undefined).
+     */
   container.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
+    // Garante que o botão pertence ao container atual de Roteiros
+    if (!container.contains(btn)) return;
 
     const action = btn.dataset.action;
     const id = btn.dataset.id;
@@ -506,7 +513,12 @@ export async function renderRoteiros(container) {
       return;
     }
 
+    // edit/duplicate/archive/restore/delete: só processa se for botão dentro
+    // da tabela de Roteiros (evita colisão com outras páginas que usam mesmos data-actions)
+    if (!btn.closest('.rt-table-el')) return;
+
     if (action === 'edit') {
+      if (!id) return;   // guard contra id=undefined
       location.hash = `#roteiro-editor?id=${id}`;
       return;
     }

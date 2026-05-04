@@ -1864,9 +1864,16 @@ export async function renderRoteiroEditor(container) {
     return;
   }
 
-  // Parse ID from hash
+  // Parse ID from hash. Trata 'undefined'/'null' (strings) como sem ID
+  // pra cobrir caso navegação acionada por bug em outra página
+  // (ex: handler genérico data-action="edit" navegou pra ?id=undefined).
   const idMatch = location.hash.match(/[?&]id=([^&]+)/);
-  const roteiroId = idMatch ? idMatch[1] : null;
+  let roteiroId = idMatch ? idMatch[1] : null;
+  if (roteiroId === 'undefined' || roteiroId === 'null' || roteiroId === '') {
+    // Limpa hash inválido + redireciona pra listagem sem mostrar erro
+    location.hash = '#roteiros';
+    return;
+  }
   const isAiCreate = location.hash.includes('ai=1');
 
   // Show loading

@@ -87,9 +87,30 @@ export async function renderDashboards(container) {
         <h1 class="page-title">Dashboards</h1>
         <p class="page-subtitle">Métricas e análises do time</p>
       </div>
-      <div class="page-header-actions">
-        <button class="btn btn-secondary btn-sm" id="dash-export-xls">↓ XLS</button>
-        <button class="btn btn-secondary btn-sm" id="dash-export-pdf">↓ PDF</button>
+      <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <!-- Split-button Export -->
+        <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+          <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
+            style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
+            <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+          </button>
+          <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+            background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+            min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+            <button class="uikit-export-item" id="dash-export-xls"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
+            </button>
+            <button class="uikit-export-item" id="dash-export-pdf"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
+            </button>
+          </div>
+        </div>
         <button class="btn btn-primary" id="dash-new-task">+ Nova Tarefa</button>
       </div>
     </div>
@@ -287,6 +308,7 @@ export async function renderDashboards(container) {
   );
   document.getElementById('dash-export-xls')?.addEventListener('click', () => exportDashXls());
   document.getElementById('dash-export-pdf')?.addEventListener('click', () => exportDashPdf());
+  import('../components/uiKit.js').then(m => m.wireUiKitMenus(container));
 
   await loadData(container);
 }

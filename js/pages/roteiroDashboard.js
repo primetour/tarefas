@@ -126,12 +126,29 @@ export async function renderRoteiroDashboard(container) {
         `).join('')}
       </div>
       <div style="margin-left:auto;display:flex;gap:8px;">
-        <button id="rd-export-xls" class="btn btn-secondary" style="font-size:0.8125rem;padding:6px 14px;">
-          Exportar XLS
-        </button>
-        <button id="rd-export-pdf" class="btn btn-secondary" style="font-size:0.8125rem;padding:6px 14px;">
-          Exportar PDF
-        </button>
+        <!-- Split-button Export -->
+        <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+          <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
+            style="display:flex;align-items:center;gap:6px;padding:6px 14px;font-size:0.8125rem;">
+            <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+          </button>
+          <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+            background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+            min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+            <button class="uikit-export-item" id="rd-export-xls"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
+            </button>
+            <button class="uikit-export-item" id="rd-export-pdf"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -186,6 +203,22 @@ export async function renderRoteiroDashboard(container) {
   container.querySelector('#rd-export-xls')?.addEventListener('click', () => exportRoteirosXLS());
   // Export PDF
   container.querySelector('#rd-export-pdf')?.addEventListener('click', () => exportRoteiroDashboardPdf());
+
+  // Ativa split-button Export
+  import('../components/uiKit.js').then(m => m.wireUiKitMenus(container));
+
+  // Remove qualquer botão de agent injetado (ex: "Gerar Roteiro") — dashboard
+  // é só visualização, ações de criação ficam na página /roteiros.
+  const detachAgentBtn = () => {
+    document.querySelectorAll('.agent-trigger-btn').forEach(b => {
+      const txt = (b.textContent || '') + ' ' + (b.title || '');
+      if (/roteiro/i.test(txt)) b.remove();
+    });
+  };
+  detachAgentBtn();
+  const obs = new MutationObserver(detachAgentBtn);
+  obs.observe(container.querySelector('.page-header') || container, { childList: true, subtree: true });
+  container._agentDetachObs = obs;
 
   // Load data
   try {

@@ -119,27 +119,71 @@ async function loadAreas() {
     ...categories.map(cat => ({ cat, items: areas.filter(a => a.category === cat) })),
   ];
 
-  const renderCard = a => `
-    <div class="card" style="padding:20px;position:relative;">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-        ${a.logoUrl
-          ? `<img src="${esc(a.logoUrl)}" style="height:36px;object-fit:contain;" alt="${esc(a.name)}">`
-          : `<div style="width:36px;height:36px;border-radius:var(--radius-md);background:#475569;color:#fff;
-              display:flex;align-items:center;justify-content:center;font-size:1rem;">◈</div>`}
-        <div>
-          <div style="font-weight:700;font-size:0.9375rem;">${esc(a.name)}</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);">
-            ${(a.templates||[]).length} template${(a.templates||[]).length !== 1 ? 's' : ''}
+  // Renderiza cor como swatch redondo com hex pequeno
+  const colorSwatch = (hex, label) => hex ? `
+    <div style="display:flex;align-items:center;gap:6px;font-size:0.7rem;color:var(--text-muted);">
+      <div style="width:18px;height:18px;border-radius:50%;background:${esc(hex)};
+        border:1px solid rgba(0,0,0,0.1);box-shadow:0 1px 2px rgba(0,0,0,0.08);"></div>
+      <span style="font-family:monospace;">${esc(hex)}</span>
+    </div>` : '';
+
+  const renderCard = a => {
+    const hasLogo    = !!a.logoUrl;
+    const hasLogoAlt = !!a.logoUrlAlt;
+    const primary    = a.colors?.primary || '';
+    const secondary  = a.colors?.secondary || '';
+
+    // Banner com gradient das cores da BU (preview visual)
+    const banner = (primary || secondary)
+      ? `background:linear-gradient(135deg, ${esc(primary || secondary)}, ${esc(secondary || primary)});`
+      : `background:linear-gradient(135deg, #475569, #1e293b);`;
+
+    return `
+    <div class="card" style="padding:0;position:relative;overflow:hidden;border:1px solid var(--border-subtle);">
+      <!-- Banner com cores da BU + logo overlay -->
+      <div style="${banner}height:90px;position:relative;display:flex;align-items:center;justify-content:center;">
+        ${hasLogo
+          ? `<img src="${esc(a.logoUrl)}" style="max-height:50px;max-width:80%;object-fit:contain;
+              filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3));" alt="${esc(a.name)}">`
+          : `<div style="color:rgba(255,255,255,0.7);font-size:1.5rem;font-weight:700;">${esc(a.name)}</div>`}
+      </div>
+      <div style="padding:16px;">
+        <div style="font-weight:700;font-size:0.9375rem;color:var(--text-primary);margin-bottom:10px;">
+          ${esc(a.name)}
+        </div>
+        <!-- Status visual: logo principal + alt + paleta -->
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+          <div style="display:flex;align-items:center;gap:6px;font-size:0.75rem;">
+            <span style="color:${hasLogo ? '#16A34A' : '#9CA3AF'};">${hasLogo ? '✓' : '○'}</span>
+            <span style="color:${hasLogo ? 'var(--text-primary)' : 'var(--text-muted)'};">
+              Logo principal ${hasLogo ? 'OK' : 'pendente'}
+            </span>
           </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:0.75rem;">
+            <span style="color:${hasLogoAlt ? '#16A34A' : '#9CA3AF'};">${hasLogoAlt ? '✓' : '○'}</span>
+            <span style="color:${hasLogoAlt ? 'var(--text-primary)' : 'var(--text-muted)'};">
+              Logo alternativo ${hasLogoAlt ? 'OK' : 'pendente'}
+            </span>
+          </div>
+          ${primary || secondary ? `
+            <div style="display:flex;gap:14px;margin-top:4px;">
+              ${colorSwatch(primary, 'primary')}
+              ${colorSwatch(secondary, 'secondary')}
+            </div>` : `
+            <div style="font-size:0.7rem;color:var(--text-muted);font-style:italic;">
+              Sem paleta de cores configurada
+            </div>`}
+        </div>
+        ${a.description ? `<p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 12px;
+          line-height:1.4;">${esc(a.description)}</p>` : ''}
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" data-edit="${a.id}" style="flex:1;">Editar</button>
+          <button class="btn btn-ghost btn-sm" data-delete="${a.id}"
+            style="color:#EF4444;">Excluir</button>
         </div>
       </div>
-      ${a.description ? `<p style="font-size:0.8125rem;color:var(--text-secondary);margin:0 0 12px;">${esc(a.description)}</p>` : ''}
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-ghost btn-sm" data-edit="${a.id}" style="flex:1;">Editar</button>
-        <button class="btn btn-ghost btn-sm" data-delete="${a.id}"
-          style="color:#EF4444;">Excluir</button>
-      </div>
     </div>`;
+  };
 
   grid.innerHTML = grouped.map(({ cat, items }) => `
     ${cat ? `<div style="grid-column:1/-1;margin-top:8px;">

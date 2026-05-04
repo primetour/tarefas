@@ -121,10 +121,31 @@ export async function renderAudit(container) {
         <h1 class="page-title">Auditoria do Sistema</h1>
         <p class="page-subtitle" id="audit-count-label">Carregando registros...</p>
       </div>
-      <div class="page-header-actions">
+      <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button class="btn btn-secondary btn-sm" id="audit-refresh-btn">↺ Atualizar</button>
-        <button class="btn btn-secondary btn-sm" id="audit-export-xls">↓ XLS</button>
-        <button class="btn btn-secondary btn-sm" id="audit-export-pdf">↓ PDF</button>
+        <!-- Split-button Export -->
+        <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+          <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
+            style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
+            <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+          </button>
+          <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+            background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+            min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+            <button class="uikit-export-item" id="audit-export-xls"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
+            </button>
+            <button class="uikit-export-item" id="audit-export-pdf"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -837,6 +858,7 @@ function _bindAuditEvents() {
   document.getElementById('audit-refresh-btn')?.addEventListener('click', () => loadLogs());
   document.getElementById('audit-export-xls')?.addEventListener('click', exportAuditXls);
   document.getElementById('audit-export-pdf')?.addEventListener('click', exportAuditPdf);
+  import('../components/uiKit.js').then(m => m.wireUiKitMenus(document));
   document.getElementById('audit-clear-filters')?.addEventListener('click', () => {
     searchTerm = ''; filterAction = ''; filterUser = ''; filterModule = ''; filterSeverity = '';
     document.getElementById('audit-search').value = '';
