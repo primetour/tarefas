@@ -574,6 +574,48 @@ export const migrateUserToSso = onCall({
     }
   }
 
+  // CRÍTICO: antes de apagar do Auth, capturamos o legacyUid pra fazer
+  // o swap em workspaces.members + workspaces.adminIds. Sem isso, o user
+  // entra via SSO mas as squads perdem a referência (orphan UID nos arrays)
+  // e ele cai na tela "sem workspace". Bug reportado em produção 04/05/26.
+  const legacyUid = authUser?.uid || null;
+
+  // Determina o pendingId logo (usado em vários pontos)
+  const pendingId = `pending_${cleanEmail.replace(/[@.]/g, '_')}`;
+
+  // ── Swap em workspaces: troca legacyUid por pendingId em members/adminIds ──
+  // Isso "preserva o vínculo" durante a janela em que o user está pending.
+  // Quando ele logar via SSO, o auto-provision faz outra rodada
+  // (pendingId → newUid). Assim o squad nunca fica órfão.
+  let workspacesPatched = 0;
+  if (legacyUid) {
+    try {
+      const wsSnap = await db.collection('workspaces')
+        .where('members', 'array-contains', legacyUid)
+        .get();
+      const updates = wsSnap.docs.map(async (wsDoc) => {
+        const data = wsDoc.data();
+        const patch = {
+          members: FieldValue.arrayUnion(pendingId),
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        // arrayRemove vem em chamada separada (FieldValue.arrayRemove + arrayUnion
+        // do mesmo elemento na mesma op pode ser ambíguo)
+        await wsDoc.ref.update({ members: FieldValue.arrayRemove(legacyUid) });
+        await wsDoc.ref.update(patch);
+        // adminIds idem
+        if ((data.adminIds || []).includes(legacyUid)) {
+          await wsDoc.ref.update({ adminIds: FieldValue.arrayRemove(legacyUid) });
+          await wsDoc.ref.update({ adminIds: FieldValue.arrayUnion(pendingId) });
+        }
+      });
+      await Promise.all(updates);
+      workspacesPatched = wsSnap.size;
+    } catch (wsErr) {
+      console.warn('[migrateUserToSso] workspace patch falhou:', wsErr.message);
+    }
+  }
+
   // Apaga user do Auth (libera o email pra SSO claim)
   if (authUser) {
     try {
@@ -586,12 +628,12 @@ export const migrateUserToSso = onCall({
   // Garante que o doc Firestore esteja em estado "pendente SSO"
   // (preserva role/setor/núcleos pré-configurados)
   if (firestoreDoc) {
-    const pendingId = `pending_${cleanEmail.replace(/[@.]/g, '_')}`;
     const newDoc = {
       ...firestoreDoc,
       id: pendingId,
       email: cleanEmail,
       pendingSso: true,
+      legacyUid: legacyUid, // Preservar pra auditoria + reparos retroativos
       authProvider: 'microsoft.com',
       migratedToSsoAt: FieldValue.serverTimestamp(),
       migratedToSsoBy: auth.uid,
@@ -610,6 +652,9 @@ export const migrateUserToSso = onCall({
     userId: auth.uid,
     targetEmail: cleanEmail,
     deletedAuth: !!authUser,
+    legacyUid,
+    pendingId,
+    workspacesPatched,
     timestamp: FieldValue.serverTimestamp(),
     severity: 'warning',
   });
@@ -618,7 +663,113 @@ export const migrateUserToSso = onCall({
     ok: true,
     deletedFromAuth: !!authUser,
     pendingDocCreated: !!firestoreDoc,
-    message: `${cleanEmail} pronto para SSO. Próximo login Microsoft criará a conta.`,
+    workspacesPatched,
+    message: `${cleanEmail} pronto para SSO. ${workspacesPatched} squads atualizadas.`,
+  };
+});
+
+/* ═════════════════════════════════════════════════════════
+ * repairOrphanSquadMembers — backfill pra usuários migrados ANTES do
+ * fix de workspaces.members estar no migrateUserToSso.
+ *
+ * Como funciona:
+ *  1. Lê audit_logs com action='users.create' → mapa email → oldUid.
+ *  2. Lê todos users com pendingSso=true (sem legacyUid setado).
+ *  3. Pra cada pending, descobre oldUid pelo email no mapa.
+ *  4. Atualiza workspaces que continham oldUid: arrayRemove(oldUid)
+ *     + arrayUnion(pendingId) em members + adminIds.
+ *  5. Backfill o legacyUid no doc pending (pra futuras consolidações).
+ *  6. Retorna relatório completo.
+ *
+ * Chamado pelo botão "Reparar membros órfãos" na UI Users (admin only).
+ * ═════════════════════════════════════════════════════════ */
+export const repairOrphanSquadMembers = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  maxInstances: 3,
+  timeoutSeconds: 120,
+}, async (request) => {
+  const auth = requireAuth(request);
+  const adminFlag = await isAdmin(auth.uid);
+  if (!adminFlag) throw new HttpsError('permission-denied', 'Só admin.');
+
+  // 1. Constrói mapa email → oldUid via audit_logs.
+  const auditSnap = await db.collection('audit_logs')
+    .where('action', '==', 'users.create')
+    .limit(500)
+    .get();
+  const emailToOldUid = {};
+  auditSnap.docs.forEach(d => {
+    const data = d.data();
+    const email = (data.details?.email || data.targetEmail || '').toLowerCase();
+    const oldUid = data.entityId || data.targetUid;
+    if (email && oldUid && !emailToOldUid[email]) {
+      emailToOldUid[email] = oldUid;
+    }
+  });
+
+  // 2. Pega usuários pending sem legacyUid setado (precisam reparo)
+  const pendingSnap = await db.collection('users')
+    .where('pendingSso', '==', true)
+    .get();
+
+  const report = [];
+  let totalPatched = 0;
+
+  for (const pendDoc of pendingSnap.docs) {
+    const pend = pendDoc.data();
+    const email = (pend.email || '').toLowerCase();
+    const pendingId = pendDoc.id;
+    const knownLegacy = pend.legacyUid;
+    const lookupLegacy = emailToOldUid[email];
+    const legacyUid = knownLegacy || lookupLegacy;
+
+    if (!legacyUid) {
+      report.push({ email, pendingId, status: 'sem_oldUid_no_audit', patched: 0 });
+      continue;
+    }
+
+    // 3. Procura workspaces com legacyUid e faz swap
+    let patched = 0;
+    try {
+      const wsSnap = await db.collection('workspaces')
+        .where('members', 'array-contains', legacyUid)
+        .get();
+      for (const wsDoc of wsSnap.docs) {
+        const data = wsDoc.data();
+        await wsDoc.ref.update({ members: FieldValue.arrayRemove(legacyUid) });
+        await wsDoc.ref.update({ members: FieldValue.arrayUnion(pendingId) });
+        if ((data.adminIds || []).includes(legacyUid)) {
+          await wsDoc.ref.update({ adminIds: FieldValue.arrayRemove(legacyUid) });
+          await wsDoc.ref.update({ adminIds: FieldValue.arrayUnion(pendingId) });
+        }
+        patched++;
+      }
+      // Backfill legacyUid no doc pending pra futuras consolidações
+      if (!knownLegacy) {
+        await pendDoc.ref.update({ legacyUid });
+      }
+      totalPatched += patched;
+      report.push({ email, pendingId, legacyUid, status: 'ok', patched });
+    } catch (e) {
+      report.push({ email, pendingId, legacyUid, status: 'error', error: e.message });
+    }
+  }
+
+  // Audit
+  await db.collection('audit_logs').add({
+    action: 'system.repair_orphan_squad_members',
+    userId: auth.uid,
+    totalPatched,
+    pendingUsersScanned: pendingSnap.size,
+    timestamp: FieldValue.serverTimestamp(),
+    severity: 'warning',
+  });
+
+  return {
+    ok: true,
+    totalPatched,
+    pendingUsersScanned: pendingSnap.size,
+    report,
   };
 });
 

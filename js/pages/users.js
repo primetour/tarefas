@@ -137,6 +137,11 @@ export async function renderUsers(container) {
          Renderizado em loadUsers() depois que sabemos a contagem real. -->
     <div id="sso-migrate-banner" style="display:none;"></div>
 
+    <!-- Banner de "membros órfãos em squads": aparece quando há pendingSso
+         users + squads com members UIDs deletados (efeito colateral da
+         migração SSO sem o swap de members). -->
+    <div id="orphan-repair-banner" style="display:none;"></div>
+
     <!-- Stats -->
     <div id="users-stats" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px;">
       <div class="stat-card skeleton" style="height:96px;"></div>
@@ -210,6 +215,7 @@ async function loadUsers() {
     store.set('roles', merged);
     renderStats();
     renderSsoMigrateBanner();
+    renderOrphanRepairBanner().catch(e => console.warn('[Users] orphan banner:', e?.message));
     applyFilters();
     // Rebuild role filter with dynamic roles after load
     const filterRoleEl = document.getElementById('filter-role');
@@ -221,6 +227,98 @@ async function loadUsers() {
     console.error('Load users error:', err);
     toast.error('Erro ao carregar usuários: ' + err.message);
   }
+}
+
+/**
+ * Banner de "membros órfãos em squads".
+ * Detecta usuários pendingSso que estão atribuídos a squads via UID antigo
+ * (legacy) que foi deletado na migração. Sem isso, o user entra mas vê tela
+ * "sem workspace". Bug reportado em produção 04/05/26.
+ *
+ * Detecção: usuários pendingSso que NÃO aparecem em nenhum workspace
+ * members. Se há ≥1 pending nessa situação E há squads com orphan members
+ * (UIDs que não correspondem a nenhum user atual), oferecemos o reparo.
+ */
+async function renderOrphanRepairBanner() {
+  const banner = document.getElementById('orphan-repair-banner');
+  if (!banner) return;
+
+  // Lookup paralelo: workspaces atuais + users já carregados em `users`.
+  const { fetchAllWorkspaces } = await import('../services/workspaces.js');
+  let workspaces = [];
+  try { workspaces = await fetchAllWorkspaces(); } catch { return; }
+
+  const validUids = new Set(users.map(u => u.id));
+  const orphanUidCount = workspaces.reduce((sum, ws) => {
+    return sum + (ws.members || []).filter(uid => !validUids.has(uid)).length;
+  }, 0);
+  const pendingSsoCount = users.filter(u => u.pendingSso === true).length;
+
+  // Só mostrar banner se há tanto orphans quanto pending users.
+  // (Orphans sem pending pode ser user deletado intencionalmente.)
+  if (orphanUidCount === 0 || pendingSsoCount === 0) {
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    return;
+  }
+
+  banner.style.display = 'block';
+  banner.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:14px;
+      background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.35);
+      border-radius:var(--radius-md);padding:14px 18px;margin-bottom:24px;
+      font-size:0.875rem;line-height:1.5;color:var(--text-primary);">
+      <span style="font-size:1.4rem;flex-shrink:0;line-height:1;">⚠</span>
+      <div style="flex:1;min-width:0;">
+        <strong style="color:#EF4444;">${orphanUidCount} membros órfãos em ${workspaces.filter(ws => (ws.members||[]).some(u=>!validUids.has(u))).length} squads</strong>
+        <p style="margin:6px 0 0;color:var(--text-secondary);font-size:0.8125rem;">
+          Após a migração SSO, os squads ficaram com referências de UIDs antigos
+          (deletados). Resultado: usuários migrados entram via Microsoft mas caem
+          na tela <em>"sem workspace"</em> porque os squads não os reconhecem.
+          Posso reparar automaticamente cruzando com os audit logs.
+        </p>
+        <button class="btn btn-warning btn-sm" id="repair-orphans-btn"
+          style="margin-top:10px;background:#EF4444;color:#fff;border:none;">
+          ⚙ Reparar membros órfãos
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('repair-orphans-btn')?.addEventListener('click', async () => {
+    const ok = await modal.confirm({
+      title:   'Reparar membros órfãos das squads',
+      message: `<div style="font-size:0.875rem;line-height:1.5;">
+        <p>Vou cruzar os audit logs (action=users.create) com os UIDs órfãos
+        nos squads pra restabelecer os vínculos.</p>
+        <p style="margin-top:8px;color:var(--text-muted);">Operação safe: só
+        substitui UIDs antigos por UIDs novos (pendingId), não remove ninguém
+        intencionalmente.</p>
+      </div>`,
+      confirmText: 'Reparar',
+      icon: '⚙',
+    });
+    if (!ok) return;
+
+    const btn = document.getElementById('repair-orphans-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⟳ Reparando...'; }
+
+    try {
+      const { app } = await import('../firebase.js');
+      const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+      const fn = fb.httpsCallable(fb.getFunctions(app, 'us-central1'), 'repairOrphanSquadMembers');
+      const result = await fn({});
+      const r = result.data || {};
+      const okCount = (r.report || []).filter(x => x.status === 'ok').length;
+      const failCount = (r.report || []).filter(x => x.status !== 'ok').length;
+      toast.success(`✓ ${r.totalPatched} vínculos reparados em ${okCount} usuários${failCount ? ` · ${failCount} sem oldUid no audit` : ''}.`);
+      console.table(r.report);
+      await loadUsers();
+    } catch (err) {
+      console.error('repairOrphanSquadMembers failed:', err);
+      toast.error('Falha no reparo: ' + (err.message || 'erro desconhecido'));
+    }
+  });
 }
 
 /**

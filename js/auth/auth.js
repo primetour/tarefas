@@ -143,6 +143,38 @@ export function initAuthObserver(onReady) {
 
             try {
               await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
+
+              // ── Re-bind workspaces e tasks: pendingId → newUid ──
+              // O migrateUserToSso/createUser deixaram o pendingId nos arrays
+              // members/adminIds das squads que o admin já tinha atribuído.
+              // Aqui consolidamos: troca o pendingId pelo UID definitivo do
+              // Firebase Auth. Sem isso, o user entra mas a tela de Squads
+              // não mostra os squads dele e cai em "sem workspace".
+              if (mergedFromPending?.id) {
+                const pendingId = mergedFromPending.id;
+                const newUid    = firebaseUser.uid;
+                try {
+                  const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                  const wsQ = query(collection(db, 'workspaces'),
+                    where('members', 'array-contains', pendingId));
+                  const wsSnap = await getDocs(wsQ);
+                  await Promise.all(wsSnap.docs.map(async (wsDoc) => {
+                    const data = wsDoc.data();
+                    await updateDoc(wsDoc.ref, { members: fb.arrayRemove(pendingId) });
+                    await updateDoc(wsDoc.ref, { members: fb.arrayUnion(newUid) });
+                    if ((data.adminIds || []).includes(pendingId)) {
+                      await updateDoc(wsDoc.ref, { adminIds: fb.arrayRemove(pendingId) });
+                      await updateDoc(wsDoc.ref, { adminIds: fb.arrayUnion(newUid) });
+                    }
+                  }));
+                  if (wsSnap.size > 0) {
+                    console.log(`[SSO] Re-vinculou ${wsSnap.size} squads de ${pendingId} → ${newUid}`);
+                  }
+                } catch (rebindErr) {
+                  console.warn('[SSO] Re-bind de squads falhou:', rebindErr.message);
+                }
+              }
+
               // Apaga o stub pendente (já consolidado no UID definitivo)
               if (mergedFromPending?.id) {
                 await deleteDoc(doc(db, 'users', mergedFromPending.id)).catch(() => {});
