@@ -123,9 +123,32 @@ async function renderListTab(container) {
   const actions = document.getElementById('fb-header-actions');
   const canCreate = store.isMaster() || store.can('feedback_create');
   if (actions) actions.innerHTML = `
-    <button class="btn btn-secondary btn-sm" id="fb-export-xls">↓ XLS</button>
-    <button class="btn btn-secondary btn-sm" id="fb-export-pdf">↓ PDF</button>
+    <!-- Split-button Export -->
+    <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+      <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
+        style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
+        <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+      </button>
+      <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+        background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+        min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+        <button class="uikit-export-item" id="fb-export-xls"
+          style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+          background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+          border-radius:6px;font-family:inherit;">
+          <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
+        </button>
+        <button class="uikit-export-item" id="fb-export-pdf"
+          style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+          background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+          border-radius:6px;font-family:inherit;">
+          <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
+        </button>
+      </div>
+    </div>
     ${canCreate ? `<button class="btn btn-primary btn-sm" id="fb-new-btn">+ Novo feedback</button>` : ''}`;
+  // Ativa dropdown
+  import('../components/uiKit.js').then(m => m.wireUiKitMenus(container));
 
   const tabContent = document.getElementById('fb-tab-content');
   if (!tabContent) return;

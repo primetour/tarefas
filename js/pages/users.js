@@ -45,6 +45,7 @@ const PER_PAGE   = APP_CONFIG.itemsPerPage;
 let searchTerm   = '';
 let filterRole   = '';
 let filterStatus = '';
+let filterSector = '';   // GAP fix
 let sortField    = 'name';
 let sortDir      = 'asc';
 
@@ -68,10 +69,24 @@ export async function renderUsers(container) {
         <h1 class="page-title">Gestão de Usuários</h1>
         <p class="page-subtitle">Gerencie os membros da equipe PRIMETOUR</p>
       </div>
-      <div class="page-header-actions">
-        <button class="btn btn-secondary" id="export-users-btn">
-          ↓ Exportar
-        </button>
+      <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <!-- Split-button Export — antes só "Exportar" genérico, agora especifica formato -->
+        <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+          <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
+            style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
+            <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+          </button>
+          <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+            background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+            min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+            <button class="uikit-export-item" id="export-users-btn"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
+            </button>
+          </div>
+        </div>
         <button class="btn btn-primary" id="new-user-btn">
           + Novo Usuário
         </button>
@@ -129,6 +144,10 @@ export async function renderUsers(container) {
           ${availableRoles.map(r =>
             `<option value="${r.id}">${r.name}</option>`
           ).join('')}
+        </select>
+        <!-- GAP fix: filtro por SETOR (era impossível agrupar usuários por área) -->
+        <select class="filter-select" id="filter-sector">
+          <option value="">Todos os setores</option>
         </select>
         <select class="filter-select" id="filter-status">
           <option value="">Todos os status</option>
@@ -238,6 +257,7 @@ function applyFilters() {
   }
 
   if (filterRole)   result = result.filter(u => (u.roleId||u.role) === filterRole);
+  if (filterSector) result = result.filter(u => u.sector === filterSector);
   if (filterStatus === 'active')   result = result.filter(u => u.active);
   if (filterStatus === 'inactive') result = result.filter(u => !u.active);
 
@@ -784,10 +804,27 @@ function _attachPageEvents() {
     applyFilters();
   });
 
+  document.getElementById('filter-sector')?.addEventListener('change', (e) => {
+    filterSector = e.target.value;
+    applyFilters();
+  });
+
   document.getElementById('filter-status')?.addEventListener('change', (e) => {
     filterStatus = e.target.value;
     applyFilters();
   });
+
+  // Popula dropdown de setor com os setores únicos vistos nos usuários
+  // (GAP fix: filtro por setor estava ausente, embora o dado fosse exibido).
+  const sectorSet = new Set(users.map(u => u.sector).filter(Boolean));
+  const sectorEl = document.getElementById('filter-sector');
+  if (sectorEl && sectorSet.size) {
+    sectorEl.innerHTML = `<option value="">Todos os setores</option>` +
+      [...sectorSet].sort().map(s => `<option value="${s}">${s}</option>`).join('');
+  }
+
+  // Ativa dropdown do split-button Export
+  import('../components/uiKit.js').then(m => m.wireUiKitMenus(document.body));
 }
 
 function _attachTableEvents() {
