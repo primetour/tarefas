@@ -29,8 +29,8 @@ let filterStatus = '';
 let filterPriority = '';
 let filterProject  = '';
 let filterAssignee = '';
-let filterDatePreset = 'last90Days'; // default: mantém lista leve mesmo com milhares de tarefas históricas
-                                     // '' | 'last90Days' | 'today' | 'tomorrow' | 'thisWeek' | 'nextWeek' | 'overdue' | 'thisMonth' | 'noDue' | 'custom'
+let filterDatePreset = 'last30Days'; // default: mantém lista leve mesmo com milhares de tarefas históricas
+                                     // '' | 'last30Days' | 'last90Days' | 'today' | 'tomorrow' | 'thisWeek' | 'nextWeek' | 'overdue' | 'thisMonth' | 'noDue' | 'custom'
 let filterDateFrom = '';         // ISO YYYY-MM-DD (para custom)
 let filterDateTo   = '';
 let filterArea     = '';
@@ -175,7 +175,8 @@ export async function renderTasks(container) {
       </select>
       <select class="filter-select" id="filter-date-preset" style="${filterVisibility.datePreset?'':'display:none;'}">
         <option value=""            ${filterDatePreset===''?'selected':''}>Qualquer prazo</option>
-        <option value="last90Days"  ${filterDatePreset==='last90Days'?'selected':''}>Últimos 90 dias (padrão)</option>
+        <option value="last30Days"  ${filterDatePreset==='last30Days'?'selected':''}>Últimos 30 dias (padrão)</option>
+        <option value="last90Days"  ${filterDatePreset==='last90Days'?'selected':''}>Últimos 90 dias</option>
         <option value="overdue"     ${filterDatePreset==='overdue'?'selected':''}>⚠ Atrasadas</option>
         <option value="today"       ${filterDatePreset==='today'?'selected':''}>Hoje</option>
         <option value="tomorrow"    ${filterDatePreset==='tomorrow'?'selected':''}>Amanhã</option>
@@ -712,10 +713,11 @@ function applyFilters() {
     };
     if (filterDatePreset === 'noDue') {
       result = result.filter(t => !t.dueDate);
-    } else if (filterDatePreset === 'last90Days') {
+    } else if (filterDatePreset === 'last30Days' || filterDatePreset === 'last90Days') {
       // Default filter: tasks com atividade recente OU ativas sem prazo longínquo.
-      // Inclui: criadas/atualizadas nos últimos 90 dias, OU ainda não concluídas (sempre relevantes).
-      const cutoff = new Date(today); cutoff.setDate(today.getDate() - 90);
+      // Inclui: ainda não concluídas (sempre relevantes) OU concluídas no período.
+      const days = filterDatePreset === 'last30Days' ? 30 : 90;
+      const cutoff = new Date(today); cutoff.setDate(today.getDate() - days);
       result = result.filter(t => {
         if (t.status !== 'done') return true;
         const ts = t.updatedAt || t.completedAt || t.createdAt;
