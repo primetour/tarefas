@@ -52,6 +52,14 @@ import { auditLog } from './audit.js';
 // aplicavam no próximo login.
 let _userProfileUnsub = null;
 
+// Listener tempo-real da coleção INTEIRA de users.
+// Solução global pro problema "users.find(u => u.id === uid) retorna
+// undefined em várias páginas porque o cache estava expirado/incompleto".
+// Com snapshot live, store.users sempre tem TODOS os 16 users
+// (incluindo pendingSso). Toda página que faz lookup por uid passa a
+// achar. Substitui ~50 patches manuais espalhados pelo código.
+let _allUsersUnsub = null;
+
 export function initAuthObserver(onReady) {
   let readyCalled = false;
   const callReady = () => {
@@ -289,6 +297,28 @@ export function initAuthObserver(onReady) {
           || SYSTEM_ROLES.find(r => r.id === 'member');
         store.loadPermissions(finalRole);
 
+        // ── Listener tempo-real da coleção users (snapshot global) ──
+        // Sem isso, várias páginas faziam users.find(u => u.id === uid)
+        // e o cache podia estar expirado/incompleto → "(usuário)" em UI.
+        // Com snapshot live, store.users SEMPRE tem todos os users e
+        // qualquer find() funciona em qualquer página.
+        if (_allUsersUnsub) { try { _allUsersUnsub(); } catch {} }
+        _allUsersUnsub = onSnapshot(
+          collection(db, 'users'),
+          (snap) => {
+            const users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            store.set('users', users);
+            // Invalida cache do resolver pra próximas resoluções pegarem
+            // dados atualizados (ex: admin renomeou user, todos veem na hora)
+            import('../services/userResolver.js')
+              .then(m => m.invalidateResolverCache?.())
+              .catch(() => {});
+          },
+          (err) => {
+            console.warn('[Auth] users snapshot listener err:', err.message);
+          }
+        );
+
         // ── Listener tempo-real do próprio perfil ──
         // Sem isto: mudança de role pelo admin só vale no próximo login (F5).
         // Com isto: quando admin promove/rebaixa, o user vê a UI se reconfigurar
@@ -439,10 +469,14 @@ export function initAuthObserver(onReady) {
         store.set('authLoading', false);
       }
     } else {
-      // Cleanup do listener de profile real-time pra não vazar memória/quota
+      // Cleanup dos listeners real-time pra não vazar memória/quota
       if (_userProfileUnsub) {
         try { _userProfileUnsub(); } catch {}
         _userProfileUnsub = null;
+      }
+      if (_allUsersUnsub) {
+        try { _allUsersUnsub(); } catch {}
+        _allUsersUnsub = null;
       }
       store.set('currentUser',     null);
       store.set('userProfile',     null);

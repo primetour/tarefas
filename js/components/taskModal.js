@@ -810,17 +810,20 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           return tabs.map(t => {
             const isActive = t.id === activeUserId;
             const count = (task.metaLinks || []).filter(l => l.userId === t.id).length;
+            // BUG fix: a paleta 'platinum' não define --accent-primary →
+            // tab ativa ficava com fundo transparente + texto branco =
+            // invisível. Trocado por --brand-gold que existe em todas as paletas.
             return `
               <button type="button" class="tm-goal-tab" data-uid="${esc(t.id)}"
                 style="padding:6px 12px;border-radius:8px;cursor:pointer;font-size:0.8125rem;
-                  background:${isActive ? 'var(--accent-primary)' : 'var(--bg-elevated)'};
-                  border:1px solid ${isActive ? 'var(--accent-primary)' : 'var(--border-subtle)'};
+                  background:${isActive ? 'var(--brand-gold)' : 'var(--bg-elevated)'};
+                  border:1px solid ${isActive ? 'var(--brand-gold)' : 'var(--border-subtle)'};
                   color:${isActive ? '#fff' : 'var(--text-secondary)'};font-weight:${isActive ? '600' : '500'};
                   display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
                 👤 ${esc(t.label)}
                 ${count
-                  ? `<span style="background:${isActive ? 'rgba(255,255,255,0.25)' : 'var(--accent-primary)22'};
-                      color:${isActive ? '#fff' : 'var(--accent-primary)'};padding:1px 7px;border-radius:999px;
+                  ? `<span style="background:${isActive ? 'rgba(255,255,255,0.25)' : 'rgba(212,168,67,0.15)'};
+                      color:${isActive ? '#fff' : 'var(--brand-gold)'};padding:1px 7px;border-radius:999px;
                       font-size:0.6875rem;font-weight:700;">${count}</span>`
                   : ''}
               </button>`;
