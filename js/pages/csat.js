@@ -23,6 +23,9 @@ let allTasks     = [];
 let allProjects  = [];
 let filterStatus = 'all';
 let searchTerm   = '';
+let filterProjectId = '';   // GAP fix: filtro por projeto
+let periodKey = 'all';      // 7d/30d/90d/12m/all/custom — filtra por sentAt
+let periodFrom = null, periodTo = null;
 let unsubscribe  = null;
 
 /* ─── Render ─────────────────────────────────────────────── */
@@ -33,12 +36,48 @@ export async function renderCsat(container) {
         <h1 class="page-title">CSAT</h1>
         <p class="page-subtitle">Pesquisas de satisfação do cliente</p>
       </div>
-      <div class="page-header-actions" style="gap:8px;">
-        <button class="btn btn-secondary btn-sm" id="csat-export-xls">↓ XLS</button>
-        <button class="btn btn-secondary btn-sm" id="csat-export-pdf">↓ PDF</button>
+      <div class="page-header-actions" style="gap:8px;display:flex;align-items:center;flex-wrap:wrap;">
+        <!-- Split-button Export -->
+        <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+          <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
+            style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
+            <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+          </button>
+          <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+            background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+            min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+            <button class="uikit-export-item" id="csat-export-xls"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
+            </button>
+            <button class="uikit-export-item" id="csat-export-pdf"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
+            </button>
+          </div>
+        </div>
         ${store.can('csat_send') ? `
-          <button class="btn btn-secondary btn-sm" id="csat-auto-btn" title="Enviar pendentes do período">⏱ Automático</button>
-          <button class="btn btn-secondary" id="csat-bulk-btn">📨 Envio em massa</button>
+          <!-- Overflow: Auto + Massa -->
+          <div class="uikit-overflow-wrap" style="position:relative;display:inline-block;">
+            <button class="btn btn-secondary uikit-overflow-trigger" data-overflow-trigger="1"
+              title="Mais ações" style="padding:6px 10px;">⋮</button>
+            <div class="uikit-overflow-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+              background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+              min-width:220px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+              <button class="uikit-overflow-item" id="csat-auto-btn" title="Enviar pendentes do período"
+                style="display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;
+                border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);border-radius:6px;
+                font-family:inherit;">⏱ Automático (período)</button>
+              <button class="uikit-overflow-item" id="csat-bulk-btn"
+                style="display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;
+                border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);border-radius:6px;
+                font-family:inherit;">📨 Envio em massa</button>
+            </div>
+          </div>
           <button class="btn btn-primary" id="csat-new-btn">+ Nova Pesquisa</button>
         ` : ''}
       </div>
@@ -49,26 +88,37 @@ export async function renderCsat(container) {
       ${[0,1,2,3,4].map(()=>'<div class="stat-card skeleton" style="height:90px;"></div>').join('')}
     </div>
 
-    <!-- Toolbar -->
-    <div class="toolbar" style="margin-bottom:16px;">
-      <div class="toolbar-search">
-        <span class="toolbar-search-icon">🔍</span>
-        <input type="text" class="toolbar-search-input" id="csat-search"
-          placeholder="Buscar por tarefa, cliente, e-mail..." />
-      </div>
-      <div class="csat-status-filter" id="csat-status-filter">
-        ${['all','pending','sent','responded','expired','cancelled'].map(s => `
-          <span class="csat-status-pill ${s==='all'?'active':''}" data-status="${s}">
-            ${ s==='all' ? 'Todas' : CSAT_STATUS[s]?.label || s }
-          </span>
-        `).join('')}
-      </div>
-      <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
-        <label style="font-size:0.8125rem; color:var(--text-muted);">Visualizar:</label>
-        <div class="view-toggle">
-          <button class="view-btn active" data-view="cards">⊞ Cards</button>
-          <button class="view-btn" data-view="table">☰ Tabela</button>
+    <!-- Toolbar (filtros + período + projeto + view toggle) -->
+    <div style="margin-bottom:16px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+        <div class="csat-status-filter" id="csat-status-filter" style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${['all','pending','sent','responded','expired','cancelled'].map(s => `
+            <span class="csat-status-pill ${s==='all'?'active':''}" data-status="${s}">
+              ${ s==='all' ? 'Todas' : CSAT_STATUS[s]?.label || s }
+            </span>
+          `).join('')}
         </div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+          <label style="font-size:0.8125rem;color:var(--text-muted);">Visualizar:</label>
+          <div class="view-toggle">
+            <button class="view-btn active" data-view="cards">⊞ Cards</button>
+            <button class="view-btn" data-view="table">☰ Tabela</button>
+          </div>
+        </div>
+      </div>
+      <!-- Period pills (GAP fix: filtro por data envio) -->
+      <div id="csat-period-pills-mount" style="margin-bottom:10px;"></div>
+      <!-- Search + projeto -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <div class="toolbar-search" style="flex:1;min-width:240px;max-width:340px;">
+          <span class="toolbar-search-icon">🔍</span>
+          <input type="text" class="toolbar-search-input" id="csat-search"
+            placeholder="Buscar por tarefa, cliente, e-mail..." />
+        </div>
+        <select id="csat-project-filter" class="form-input"
+          style="height:34px;font-size:0.8125rem;min-width:200px;max-width:280px;">
+          <option value="">— Todos projetos —</option>
+        </select>
       </div>
     </div>
 
@@ -89,10 +139,32 @@ export async function renderCsat(container) {
   document.getElementById('csat-export-xls')?.addEventListener('click', exportCsatXls);
   document.getElementById('csat-export-pdf')?.addEventListener('click', exportCsatPdf);
 
+  // Ativa dropdowns do header (export menu + overflow ⋮)
+  const { wireUiKitMenus, renderPeriodPills, wirePeriodPills } = await import('../components/uiKit.js');
+  wireUiKitMenus(container);
+
+  // Period pills (GAP fix: filtro por data envio)
+  const periodMount = document.getElementById('csat-period-pills-mount');
+  if (periodMount) {
+    periodMount.innerHTML = renderPeriodPills({ active: 'all' });
+    wirePeriodPills(container, (key, range) => {
+      periodKey = key;
+      periodFrom = range.from;
+      periodTo = range.to;
+      applyFilters();
+    });
+  }
+
   let timer;
   document.getElementById('csat-search')?.addEventListener('input', e => {
     clearTimeout(timer);
     timer = setTimeout(() => { searchTerm = e.target.value; applyFilters(); }, 250);
+  });
+
+  // Project filter (GAP fix)
+  document.getElementById('csat-project-filter')?.addEventListener('change', e => {
+    filterProjectId = e.target.value;
+    applyFilters();
   });
 
   document.querySelectorAll('[data-status]').forEach(el => {
@@ -118,6 +190,13 @@ export async function renderCsat(container) {
       fetchTasks().catch(() => []),
       fetchProjects().catch(() => []),
     ]);
+    // Popula dropdown de projetos (GAP fix: filtro por projeto)
+    const projSel = document.getElementById('csat-project-filter');
+    if (projSel && allProjects?.length) {
+      projSel.innerHTML = `<option value="">— Todos projetos —</option>` +
+        [...allProjects].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+          .map(p => `<option value="${p.id}">${p.name || p.id}</option>`).join('');
+    }
   } catch(e) {}
 
   // Real-time surveys — cleanup defensivo: se já existe um unsub do render
@@ -182,6 +261,17 @@ function applyFilters() {
 function getFiltered() {
   let list = [...allSurveys];
   if (filterStatus !== 'all') list = list.filter(s => s.status === filterStatus);
+  if (filterProjectId)        list = list.filter(s => s.projectId === filterProjectId);
+  if (periodKey !== 'all' && periodFrom) {
+    list = list.filter(s => {
+      const sd = s.sentAt || s.createdAt;
+      if (!sd) return false;
+      const dt = sd?.toDate ? sd.toDate() : new Date(sd);
+      if (periodFrom && dt < periodFrom) return false;
+      if (periodTo && dt > periodTo) return false;
+      return true;
+    });
+  }
   if (searchTerm) {
     const q = searchTerm.toLowerCase();
     list = list.filter(s =>
