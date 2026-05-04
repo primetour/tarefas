@@ -101,8 +101,28 @@ async function renderActiveTab(container) {
 async function renderNoticiasTab(container) {
   const actions = document.getElementById('news-header-actions');
   if (actions) actions.innerHTML = `
-    <button class="btn btn-secondary btn-sm" id="news-export-xls">↓ XLS</button>
-    <button class="btn btn-secondary btn-sm" id="news-export-pdf">↓ PDF</button>
+    <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+      <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
+        style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
+        <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+      </button>
+      <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+        background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+        min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+        <button class="uikit-export-item" id="news-export-xls"
+          style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+          background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+          border-radius:6px;font-family:inherit;">
+          <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
+        </button>
+        <button class="uikit-export-item" id="news-export-pdf"
+          style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+          background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+          border-radius:6px;font-family:inherit;">
+          <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
+        </button>
+      </div>
+    </div>
     <button class="btn btn-primary btn-sm"   id="news-new-btn">+ Nova notícia</button>`;
 
   const tabContent = document.getElementById('news-tab-content');
@@ -193,6 +213,8 @@ async function renderNoticiasTab(container) {
   document.getElementById('news-new-btn')?.addEventListener('click', () => showForm(container));
   document.getElementById('news-export-xls')?.addEventListener('click', () => exportXls());
   document.getElementById('news-export-pdf')?.addEventListener('click', () => exportPdf());
+  // Ativa dropdowns do split-button Export
+  import('../components/uiKit.js').then(m => m.wireUiKitMenus(container));
 
   await loadData(container);
 }
@@ -641,8 +663,28 @@ function showForm(container, item = null) {
 async function renderClippingTab(container) {
   const actions = document.getElementById('news-header-actions');
   if (actions) actions.innerHTML = `
-    <button class="btn btn-secondary btn-sm" id="clip-export-xls">↓ XLS</button>
-    <button class="btn btn-secondary btn-sm" id="clip-export-pdf">↓ PDF</button>
+    <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+      <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
+        style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
+        <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+      </button>
+      <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+        background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+        min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+        <button class="uikit-export-item" id="clip-export-xls"
+          style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+          background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+          border-radius:6px;font-family:inherit;">
+          <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
+        </button>
+        <button class="uikit-export-item" id="clip-export-pdf"
+          style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+          background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+          border-radius:6px;font-family:inherit;">
+          <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
+        </button>
+      </div>
+    </div>
     <button class="btn btn-primary btn-sm"   id="clip-new-btn">+ Novo clipping</button>`;
 
   const tabContent = document.getElementById('news-tab-content');
@@ -783,6 +825,7 @@ async function renderClippingTab(container) {
   document.getElementById('clip-new-btn')?.addEventListener('click', () => showClipForm(container));
   document.getElementById('clip-export-xls')?.addEventListener('click', () => exportClipXls());
   document.getElementById('clip-export-pdf')?.addEventListener('click', () => exportClipPdf());
+  import('../components/uiKit.js').then(m => m.wireUiKitMenus(container));
 
   // Load data
   applyPeriod('30d');
