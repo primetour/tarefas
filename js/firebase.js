@@ -21,7 +21,6 @@ import {
   CACHE_SIZE_UNLIMITED,
   getFirestore,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { getDatabase } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig }      from './config.js';
 
 // ─── Instância principal ───────────────────────────────────
@@ -75,11 +74,6 @@ try {
   _db = getFirestore(app);
 }
 export const db = _db;
-
-// Realtime Database — usado pra presence (online users) com onDisconnect()
-// nativo. Free tier separado do Firestore: 100 conexões simultâneas + 1GB
-// storage + 10GB transferência/mês. Não conta nas quotas do Firestore.
-export const rtdb = getDatabase(app);
 
 export { app };
 export default app;

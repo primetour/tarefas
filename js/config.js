@@ -16,8 +16,6 @@
 export const firebaseConfig = {
   apiKey: "AIzaSyB9DUjqmEIcMIcb5RumidSVXSxF4CO_Ii8",
   authDomain: "gestor-de-tarefas-primetour.firebaseapp.com",
-  // Realtime Database em us-central1 (instance default no projeto)
-  databaseURL: "https://gestor-de-tarefas-primetour-default-rtdb.firebaseio.com",
   projectId: "gestor-de-tarefas-primetour",
   storageBucket: "gestor-de-tarefas-primetour.firebasestorage.app",
   messagingSenderId: "1083421353313",
