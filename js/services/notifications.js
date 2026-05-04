@@ -44,15 +44,22 @@ const TYPE_TO_USER_PREF = {
 
 /* ─── Category icons ──────────────────────────────────────── */
 export const NOTIF_ICONS = {
-  task:     '📋',
-  project:  '📊',
-  csat:     '💬',
-  request:  '📩',
-  goal:     '🎯',
-  portal:   '🌍',
-  system:   '🔔',
-  security: '🛡',
-  lgpd:     '🔐',
+  task:              '📋',
+  project:           '📊',
+  csat:              '💬',
+  request:           '📩',
+  goal:              '🎯',
+  portal:            '🌍',
+  portal_areas:      '◑',
+  portal_images:     '▨',
+  roteiro:           '✈',
+  content_calendar:  '📱',
+  luxury_travel:     '📖',
+  agent:             '◈',
+  feedback:          '✎',
+  system:            '🔔',
+  security:          '🛡',
+  lgpd:              '🔐',
 };
 
 /* ─── Notification type labels ────────────────────────────── */
@@ -84,6 +91,28 @@ export const NOTIF_TYPE_LABELS = {
   'feedback.created':         'Novo feedback',
   'feedback.schedule_due':    'Feedback pendente',
   'system.mention':           'Menção',
+  // ─── Roteiros de Viagem ────────────────────────────────────
+  'roteiro.created':           'Novo roteiro criado',
+  'roteiro.assigned':          'Roteiro atribuído a você',
+  'roteiro.status_change':     'Status do roteiro alterado',
+  'roteiro.exported':          'Roteiro exportado (PDF/PPTX)',
+  'roteiro.ai_generated':      'Roteiro gerado por IA',
+  // ─── Calendário de Conteúdo ────────────────────────────────
+  'content_calendar.slot_created':  'Novo slot de conteúdo',
+  'content_calendar.scheduled':     'Conteúdo agendado',
+  'content_calendar.published':     'Conteúdo publicado',
+  'content_calendar.ai_suggested':  'IA sugeriu conteúdo da semana',
+  // ─── Revista Luxury Travel ─────────────────────────────────
+  'luxury_travel.edition_published':'Nova edição da Luxury Travel',
+  'luxury_travel.qr_generated':     'QR Code da revista gerado',
+  // ─── Templates de Áreas ────────────────────────────────────
+  'portal_areas.updated':      'Template de área atualizado',
+  // ─── Banco de Imagens ──────────────────────────────────────
+  'portal_images.upload_failed':'Falha no upload de imagem',
+  'portal_images.auto_synced': 'Imagens auto-sincronizadas (Unsplash/Wikipedia)',
+  // ─── IA Hub / Agentes ──────────────────────────────────────
+  'agent.suggestion_ready':    'Sugestão de agente IA pronta',
+  'agent.run_failed':          'Falha na execução do agente IA',
   // ─── Segurança (Sprints 1-5) ────────────────────────────────
   'security.suspicious_login': 'Novo IP detectado no seu login',
   'security.rate_limit_hit':   'Muitas requisições do seu IP',

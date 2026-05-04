@@ -402,12 +402,14 @@ async function sendDigestEmail(group, surveyIds) {
   const origin   = APP_CONFIG.csat.baseUrl || window.location.origin;
   const basePath = window.location.pathname.replace(/\/[^/]*$/, '');
 
-  // Carrega os surveys criados para montar a lista
-  const surveys = [];
-  for (const id of surveyIds) {
-    const snap = await getDoc(doc(db, 'csat_surveys', id));
-    if (snap.exists()) surveys.push({ id: snap.id, ...snap.data() });
-  }
+  // Carrega os surveys criados em PARALELO (era sequencial → 1 read por survey,
+  // viranva N requests serializados em digests com 10+ surveys).
+  const surveysSnaps = await Promise.all(
+    surveyIds.map(id => getDoc(doc(db, 'csat_surveys', id)))
+  );
+  const surveys = surveysSnaps
+    .filter(snap => snap.exists())
+    .map(snap => ({ id: snap.id, ...snap.data() }));
 
   // URL digest: page shows all surveys for this client
   const digestToken = surveys[0]?.token || '';

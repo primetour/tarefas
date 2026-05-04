@@ -2432,7 +2432,7 @@ function showLockedBanner(id, afterId, message) {
   banner.id = id;
   banner.className = 'alert-banner info visible';
   banner.style.cssText = 'margin-top:8px;';
-  banner.innerHTML = '<span style="font-size:1.125rem;flex-shrink:0;">🔒</span><span>' + message + '</span>';
+  banner.innerHTML = '<span style="font-size:1.125rem;flex-shrink:0;">🔒</span><span>' + esc(message) + '</span>';
   document.getElementById(afterId)?.after(banner);
 }
 
@@ -2519,11 +2519,14 @@ function renderBatchList(taskTypes) {
     const dateStr = item.desiredDate
       ? (() => { const p = item.desiredDate.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; })()
       : 'Sem data';
-    return '<div class="batch-item" style="border-left-color:' + (item.typeColor || 'var(--brand-gold)') + ';">' +
+    // Sanitiza color (só hex válido) e icon (escape HTML) — evita CSS/HTML injection
+    const safeColor = /^#[0-9a-fA-F]{3,8}$|^var\(--[a-z0-9-]+\)$/.test(item.typeColor || '')
+      ? item.typeColor : 'var(--brand-gold)';
+    return '<div class="batch-item" style="border-left-color:' + safeColor + ';">' +
       '<div class="batch-item-body">' +
         '<div class="batch-item-title">' + esc(item.title || 'Sem título') + '</div>' +
         '<div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:4px;">' +
-          (item.typeIcon ? item.typeIcon + ' ' : '') + esc(item.typeName || 'Sem tipo') +
+          (item.typeIcon ? esc(item.typeIcon) + ' ' : '') + esc(item.typeName || 'Sem tipo') +
           (item.variationName ? ' — ' + esc(item.variationName) : '') + '</div>' +
         // Detail grid
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:4px;font-size:0.625rem;">' +

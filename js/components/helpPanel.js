@@ -307,15 +307,31 @@ const HELP_CATEGORIES = [
     items: [
       {
         q: 'O que é o módulo de Roteiros?',
-        a: 'Permite criar roteiros de viagem completos e personalizados para clientes. Inclui: perfil do cliente, day-by-day narrativo, hotéis, valores, opcionais, políticas e informações práticas.',
+        a: 'Permite criar roteiros de viagem completos e personalizados para clientes. Inclui: perfil do cliente, day-by-day narrativo, hotéis, valores, opcionais, políticas, informações práticas e galeria de imagens.',
       },
       {
         q: 'Como criar um roteiro?',
-        a: 'Acesse "Roteiros de Viagem" e clique em "+ Novo Roteiro". O editor tem 11 seções: Cliente, Viagem, Dia a dia, Hotéis, Valores, Opcionais, Inclui/Não inclui, Pagamento, Cancelamento, Info Importantes e Preview.',
+        a: 'Acesse "Roteiros de Viagem" e clique em "+ Novo Roteiro". O editor tem 12 seções: Cliente, Viagem, Dia a dia, Hotéis, Valores, Opcionais, Inclui/Não inclui, Pagamento, Cancelamento, Info Importantes, Imagens e Preview & Export.',
       },
       {
-        q: 'Posso exportar o roteiro como PDF?',
-        a: 'Sim. Na seção "Preview & Export", selecione a área/BU (para aplicar a identidade visual) e clique em "Exportar PDF". O documento gerado tem layout profissional com capa, day-by-day e tabelas.',
+        q: 'Como funciona a seção "Imagens"?',
+        a: 'Mostra automaticamente: capa do roteiro, uma imagem por cidade visitada e uma por hotel cadastrado. Cada uma vem AUTO (banco de imagens do Portal → Unsplash → Wikipedia, com fallback PT→EN). Botão "Trocar" abre modal com 3 abas: Banco do Portal, Buscar online e URL direta. Imagens manuais sobrepõem o auto-fetch.',
+      },
+      {
+        q: 'Como criar um roteiro com IA?',
+        a: 'Clique em "◈ Criar com IA" no header da listagem. Descreva o que quer (ex: "Lua de mel 10 dias em Maldivas, all-inclusive"). A IA gera draft completo (cliente, dia-a-dia, hotéis reais, info LGPD) usando o agent "Roteiro de Viagem" do IA Hub — você pode editar prompt/modelo do agent lá pra customizar o estilo.',
+      },
+      {
+        q: 'Por que área (BU) é obrigatória pra exportar?',
+        a: 'A área define cores (primary/secondary) e logo aplicados na capa, footer e contracapa do PDF/PPTX. Sem ela, o documento sai sem branding. Selecione na seção "Preview & Export" antes de exportar.',
+      },
+      {
+        q: 'Posso exportar como PDF e PPTX?',
+        a: 'Sim. Na seção "Preview & Export" selecione a área e clique em "Exportar PDF" ou "Exportar PPTX". Ambos vêm com hero na capa (cover-cropped sem distorção), banner por dia, thumbs dos hotéis na hospedagem, footer minimalista e contracapa com logo.',
+      },
+      {
+        q: 'A listagem tem busca, filtros e paginação?',
+        a: 'Sim. Tabela densa com 50 linhas/página. Filtros: status (pills), área (BU), consultor (admin), busca por cliente/título/destino. Sort por qualquer coluna (click no header). Mobile colapsa em cards.',
       },
       {
         q: 'O roteiro tem auto-save?',
@@ -324,6 +340,59 @@ const HELP_CATEGORIES = [
       {
         q: 'Quais status um roteiro pode ter?',
         a: 'Rascunho → Em revisão → Enviado → Aprovado → Arquivado. O status pode ser alterado pela listagem ou pelo editor.',
+      },
+    ],
+  },
+  {
+    id: 'content-calendar',
+    icon: '📱',
+    title: 'Calendário de Conteúdo',
+    items: [
+      {
+        q: 'O que é o Calendário de Conteúdo?',
+        a: 'Painel pra planejar publicações de redes sociais (Instagram, Facebook, etc) por conta. Visualizações: mês, semana e lista. Cada slot vira um card com data, plataforma, descrição e imagem.',
+      },
+      {
+        q: 'Como a IA ajuda no planejamento?',
+        a: 'Clique em "Sugerir Semana" — a IA propõe slots da semana inteira baseada na conta selecionada e tendências. Você pode editar/remover/aprovar individualmente. A IA também gera descrição/legenda quando você cria um slot manualmente.',
+      },
+    ],
+  },
+  {
+    id: 'templates-areas',
+    icon: '◑',
+    title: 'Templates de Áreas (BUs)',
+    items: [
+      {
+        q: 'O que são Templates de Áreas?',
+        a: 'Cada BU (Lazer, BTG Partners, Centurion, etc) tem suas cores e logo. O template é aplicado automaticamente em PDFs/PPTXs gerados pelo Roteiros e Portal de Dicas — single source of truth.',
+      },
+      {
+        q: 'O que cada template define?',
+        a: 'Cor primary, cor secondary, logoUrl (versão pra fundo escuro/capa) e logoUrlAlt (versão pra fundo claro/footer). Em ambientes onde o logo tem alpha (PNG), o sistema preserva transparência via canvas pra evitar "card" sólido ao redor.',
+      },
+      {
+        q: 'Quem pode editar templates?',
+        a: 'Permissão "Gerenciar templates de áreas" (portal_areas_manage). Por padrão: master, admin e manager. Coordinator/member só visualizam (pra selecionar ao gerar materiais).',
+      },
+    ],
+  },
+  {
+    id: 'luxury-travel',
+    icon: '📖',
+    title: 'Revista Luxury Travel',
+    items: [
+      {
+        q: 'O que é a Revista Luxury Travel?',
+        a: 'Revista semestral da PRIMETOUR. O sistema oferece: catálogo de edições, upload de PDFs (PT/EN), QR codes (por edição + da home), fontes customizadas e configurações. O flipbook continua hospedado em GitHub Pages.',
+      },
+      {
+        q: 'Como faço upload de uma nova edição?',
+        a: 'Em "Revista Luxury Travel" → admin → Edições → Nova. Upload do PDF gera capa automática (extração da página 1) ou você sobe manualmente. Pode ter PT e EN separados. Short URL automática (luxury-travel-NN).',
+      },
+      {
+        q: 'Como regenerar QR Codes?',
+        a: 'Em cada edição há botão "Regenerar QR". O QR aponta pro link público da edição. Há também QR da home (todas edições).',
       },
     ],
   },

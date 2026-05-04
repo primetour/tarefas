@@ -26,11 +26,14 @@ export const ACTION_LABELS = {
   'auth.login_failed':       'Falha no login',
   'auth.sso_failed':         'Falha no SSO',
   'auth.reset_pw':           'Redefinição de senha solicitada',
+  'auth.suspicious_login':   'Login suspeito (IP novo / device incomum)',
   // Usuários
   'users.create':            'Usuário criado',
   'users.recover':           'Usuário recuperado',
   'users.sso_auto_provision':'Usuário criado via SSO',
   'users.update':            'Usuário atualizado',
+  'users.role_changed':      'Role do usuário alterada',
+  'users.permission_changed':'Permissão individual alterada',
   'users.deactivate':        'Usuário desativado',
   'users.reactivate':        'Usuário reativado',
   'users.delete':            'Usuário excluído',
@@ -97,6 +100,53 @@ export const ACTION_LABELS = {
   'portal.tip_update':       'Dica atualizada',
   'portal.tip_delete':       'Dica excluída',
   'portal.generate':         'Material gerado',
+  'portal.export_pdf':       'Material exportado (PDF)',
+  'portal.export_pptx':      'Material exportado (PPTX)',
+  'portal.export_docx':      'Material exportado (DOCX)',
+  // Templates de Áreas (BUs)
+  'portal_areas.create':     'Área/BU criada',
+  'portal_areas.update':     'Área/BU atualizada (cores, logo, template)',
+  'portal_areas.delete':     'Área/BU excluída',
+  // Banco de Imagens
+  'portal_images.upload':    'Imagem enviada ao banco',
+  'portal_images.update':    'Metadados de imagem atualizados',
+  'portal_images.delete':    'Imagem removida do banco',
+  'portal_images.autosync':  'Auto-fetch imagem (Unsplash/Wikipedia)',
+  // Roteiros de Viagem
+  'roteiro.create':          'Roteiro criado',
+  'roteiro.update':          'Roteiro atualizado',
+  'roteiro.delete':          'Roteiro excluído',
+  'roteiro.duplicate':       'Roteiro duplicado',
+  'roteiro.archive':         'Roteiro arquivado',
+  'roteiro.restore':         'Roteiro restaurado',
+  'roteiro.status_change':   'Status de roteiro alterado',
+  'roteiro.export_pdf':      'Roteiro exportado (PDF)',
+  'roteiro.export_pptx':     'Roteiro exportado (PPTX)',
+  'roteiro.ai_generate':     'Roteiro gerado por IA',
+  'roteiro.images_change':   'Imagens do roteiro alteradas',
+  // Calendário de Conteúdo
+  'content_calendar.slot_created':  'Slot de conteúdo criado',
+  'content_calendar.slot_updated':  'Slot de conteúdo atualizado',
+  'content_calendar.slot_deleted':  'Slot de conteúdo excluído',
+  'content_calendar.ai_suggested':  'IA sugeriu conteúdo',
+  'content_calendar.scheduled':     'Conteúdo agendado',
+  'content_calendar.published':     'Conteúdo publicado',
+  // Revista Luxury Travel
+  'luxury_travel.edition_create':   'Edição da revista criada',
+  'luxury_travel.edition_update':   'Edição da revista atualizada',
+  'luxury_travel.edition_delete':   'Edição da revista excluída',
+  'luxury_travel.pdf_upload':       'PDF da revista enviado',
+  'luxury_travel.qr_regenerate':    'QR Code regenerado',
+  'luxury_travel.font_upload':      'Fonte customizada enviada',
+  'luxury_travel.settings_update':  'Configurações da revista atualizadas',
+  // IA Hub / Agentes
+  'agent.create':            'Agente IA criado',
+  'agent.update':            'Agente IA atualizado (prompt/modelo/limits)',
+  'agent.delete':            'Agente IA excluído',
+  'agent.toggle':            'Agente IA ativado/desativado',
+  'agent.run':               'Agente IA executado',
+  'agent.knowledge_upload':  'Conhecimento do agente atualizado',
+  'agent.api_key_rotated':   'API key de provider rotacionada',
   // Tipos de Tarefa
   'task_types.create':       'Tipo de tarefa criado',
   'task_types.update':       'Tipo de tarefa atualizado',
@@ -114,13 +164,84 @@ export const ACTION_LABELS = {
   'integrations.enable':     'Integração ativada',
   'integrations.disable':    'Integração desativada',
   'integrations.delete':     'Integração excluída',
-  // Site Audits
+  // Site Audits (Core Web Vitals)
   'site_audits.create_site': 'Site cadastrado para auditoria',
   'site_audits.delete_site': 'Site removido da auditoria',
   'site_audits.run':         'Auditoria de site executada',
-  // Configurações
+  // LGPD
+  'lgpd.export_request':     'Exportação LGPD solicitada',
+  'lgpd.export_ready':       'Exportação LGPD concluída',
+  'lgpd.erasure_request':    'Apagamento LGPD solicitado',
+  'lgpd.erasure_completed':  'Apagamento LGPD concluído',
+  'lgpd.consent_updated':    'Consentimento LGPD atualizado',
+  // Configurações & Branding
   'settings.update':         'Configurações atualizadas',
+  'branding.logo_change':    'Logo do sistema alterado',
 };
+
+// ─── Severidade da ação (info|warn|critical) ──────────────
+// Crítico: deletes, mudanças de role/perm, exports, falhas de auth, LGPD.
+// Warning: changes em seeds, reativação, falhas leves.
+// Info: criações/updates rotineiros.
+export const ACTION_SEVERITY = {
+  // Critical (segurança/dados sensíveis)
+  'auth.login_failed': 'critical',
+  'auth.sso_failed':   'critical',
+  'auth.suspicious_login': 'critical',
+  'users.delete':      'critical',
+  'users.role_changed': 'critical',
+  'users.permission_changed': 'critical',
+  'roles.delete':      'critical',
+  'roles.update':      'critical',
+  'tasks.delete':      'critical',
+  'projects.delete':   'critical',
+  'workspaces.delete': 'critical',
+  'csat.delete':       'critical',
+  'goals.delete':      'critical',
+  'feedback.delete':   'critical',
+  'lp.delete':         'critical',
+  'news.delete':       'critical',
+  'clipping.delete':   'critical',
+  'portal.tip_delete': 'critical',
+  'portal_areas.delete': 'critical',
+  'portal_images.delete': 'critical',
+  'roteiro.delete':    'critical',
+  'content_calendar.slot_deleted': 'critical',
+  'luxury_travel.edition_delete':  'critical',
+  'agent.delete':      'critical',
+  'agent.api_key_rotated': 'critical',
+  'integrations.delete': 'critical',
+  'site_audits.delete_site': 'critical',
+  'lgpd.export_request': 'critical',
+  'lgpd.export_ready':   'critical',
+  'lgpd.erasure_request':'critical',
+  'lgpd.erasure_completed':'critical',
+  'lgpd.consent_updated':'critical',
+  'branding.logo_change': 'critical',
+  // Warning
+  'users.deactivate':  'warn',
+  'users.reactivate':  'warn',
+  'tasks.rework':      'warn',
+  'projects.archive':  'warn',
+  'workspaces.archive':'warn',
+  'workspaces.remove_member': 'warn',
+  'workspaces.demote_admin':  'warn',
+  'roteiro.archive':   'warn',
+  'agent.toggle':      'warn',
+  'integrations.disable': 'warn',
+  // Default = 'info' pra todo o resto
+};
+
+// ─── Módulo da ação (pra agrupar/filtrar) ─────────────────
+// Derivado do prefix da action (auth., users., tasks., etc.)
+export function moduleFromAction(action) {
+  if (!action) return 'unknown';
+  return action.split('.')[0];
+}
+
+export function severityFromAction(action) {
+  return ACTION_SEVERITY[action] || 'info';
+}
 
 // ─── Mapa de ações reversíveis ────────────────────────────
 export const REVERTIBLE_ACTIONS = {
@@ -175,20 +296,38 @@ export async function auditLog(action, entity, entityId, details = {}) {
 }
 
 /**
- * Busca logs de auditoria com filtros e paginação
+ * Busca logs de auditoria com filtros e paginação.
+ *
+ * Filtros server-side (Firestore where):
+ *   - filterUser, filterAction, startDate, endDate
+ *
+ * Filtros client-side (post-fetch — Firestore não suporta `in` ilimitado):
+ *   - filterModule  ('roteiro', 'portal', 'agent', 'auth', etc — prefix da action)
+ *   - filterSeverity ('info' | 'warn' | 'critical')
+ *
+ * Como o Firestore limita combinações de where + orderBy, módulo e severidade
+ * são aplicados em memória após o fetch. Pra catalogos com muito histórico,
+ * use também filterAction (server-side) pra reduzir o payload.
  */
 export async function fetchAuditLogs({
   pageSize   = 50,
   lastDoc    = null,
   filterUser = null,
   filterAction = null,
+  filterModule = null,
+  filterSeverity = null,
   startDate  = null,
   endDate    = null,
 } = {}) {
+  // Quando há filtros client-side, fazemos over-fetch (3× pageSize) pra
+  // garantir que após filtrar ainda temos páginas razoáveis.
+  const hasClientFilters = !!(filterModule || filterSeverity);
+  const fetchLimit = hasClientFilters ? Math.min(pageSize * 3, 300) : pageSize;
+
   let q = query(
     collection(db, 'audit_logs'),
     orderBy('timestamp', 'desc'),
-    limit(pageSize)
+    limit(fetchLimit)
   );
 
   if (filterUser)   q = query(q, where('userId', '==', filterUser));
@@ -198,9 +337,32 @@ export async function fetchAuditLogs({
   if (lastDoc)      q = query(q, startAfter(lastDoc));
 
   const snap = await getDocs(q);
+  let logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Client-side filters
+  if (filterModule) {
+    logs = logs.filter(l => moduleFromAction(l.action) === filterModule);
+  }
+  if (filterSeverity) {
+    logs = logs.filter(l => severityFromAction(l.action) === filterSeverity);
+  }
+
+  // Pagination cursor sempre vem do último doc do snap original (não filtrado),
+  // senão pulamos páginas. Trade-off: com filtros muito restritivos pode haver
+  // gap entre lastDoc e logs.length === pageSize.
   return {
-    logs:    snap.docs.map(d => ({ id: d.id, ...d.data() })),
+    logs:    logs.slice(0, pageSize),
     lastDoc: snap.docs[snap.docs.length - 1] || null,
-    hasMore: snap.docs.length === pageSize,
+    hasMore: snap.docs.length === fetchLimit,
   };
+}
+
+/**
+ * Lista de módulos catalogados (pra popular dropdown de filtro).
+ * Derivada das ACTION_LABELS — sempre em sync.
+ */
+export function listAuditModules() {
+  const set = new Set();
+  Object.keys(ACTION_LABELS).forEach(action => set.add(moduleFromAction(action)));
+  return Array.from(set).sort();
 }
