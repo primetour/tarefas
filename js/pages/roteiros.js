@@ -131,7 +131,7 @@ export async function renderRoteiros(container) {
       <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center;">
         <input type="text" id="rt-search" class="form-input" placeholder="Buscar cliente, título ou destino..."
           style="min-width:240px;max-width:280px;height:34px;font-size:0.8125rem;" />
-        <select id="rt-area" class="form-input" style="max-width:160px;height:34px;font-size:0.8125rem;">
+        <select id="rt-area" class="form-input" style="min-width:180px;max-width:240px;height:34px;font-size:0.8125rem;">
           <option value="">Todas áreas</option>
         </select>
         <select id="rt-consultant" class="form-input" style="max-width:200px;height:34px;font-size:0.8125rem;display:none;">
@@ -168,10 +168,14 @@ export async function renderRoteiros(container) {
         background:var(--brand-blue, #3B82F6);color:#fff;border-color:var(--brand-blue, #3B82F6);
       }
 
-      /* Tabela densa */
-      .rt-table-el { width:100%; min-width:1080px; border-collapse:collapse; font-size:0.8125rem; }
+      /* Tabela densa — table-layout fixed garante que widths declarados
+         na <th> são respeitados (sem squeeze de coluna por content) */
+      .rt-table-el {
+        width:100%; min-width:980px; border-collapse:collapse;
+        font-size:0.8125rem; table-layout:fixed;
+      }
       .rt-table-el thead th {
-        text-align:left; padding:10px 12px;
+        text-align:left; padding:10px 8px;
         background:var(--bg-surface, #f8fafc);
         color:var(--text-muted, #6B7280);
         font-weight:600; font-size:0.6875rem;
@@ -190,8 +194,11 @@ export async function renderRoteiros(container) {
       }
       .rt-table-el tbody tr:hover { background:var(--bg-hover, rgba(59,130,246,0.04)); }
       .rt-table-el tbody td {
-        padding:10px 12px; vertical-align:middle;
+        padding:10px 8px; vertical-align:middle;
         color:var(--text-primary);
+      }
+      .rt-table-el tbody td.ellipsis {
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
       }
       .rt-table-el tbody td.muted { color:var(--text-muted); font-size:0.75rem; }
       .rt-table-el tbody td.title-cell {
@@ -405,17 +412,17 @@ export async function renderRoteiros(container) {
       return `
         <tr data-id="${idEsc}">
           <td style="white-space:nowrap;">${statusBadge(r.status)}</td>
-          <td class="title-cell">
+          <td class="title-cell ellipsis">
             <a href="#roteiro-editor?id=${idEsc}" data-action="edit" data-id="${idEsc}"
               title="${esc(r.title || 'Sem título')}">${esc(r.title || 'Sem título')}</a>
           </td>
-          <td>
+          <td class="ellipsis">
             <span style="font-weight:500;">${esc(clientName)}</span>
             <span class="rt-client-badge">${esc(clientTypeLabel(clientType))}</span>
           </td>
-          <td class="dest-cell" title="${esc(dests)}">${esc(dests)}</td>
+          <td class="dest-cell ellipsis" title="${esc(dests)}">${esc(dests)}</td>
           <td style="white-space:nowrap;font-size:0.75rem;color:var(--text-muted);">${esc(period)}</td>
-          <td style="font-size:0.8125rem;">${esc(r.consultantName || '—')}</td>
+          <td class="ellipsis" style="font-size:0.8125rem;">${esc(r.consultantName || '—')}</td>
           <td class="muted" style="white-space:nowrap;">${esc(timeAgo(r.updatedAt))}</td>
           <td>
             <div class="rt-actions">
@@ -434,14 +441,14 @@ export async function renderRoteiros(container) {
       <table class="rt-table-el">
         <thead>
           <tr>
-            <th style="width:90px;">Status</th>
-            ${sortable('title', 'Roteiro', 'style="min-width:200px;"')}
-            ${sortable('client', 'Cliente', 'style="min-width:140px;"')}
-            ${sortable('destinos', 'Destinos', 'style="min-width:160px;"')}
-            ${sortable('period', 'Período', 'style="width:170px;"')}
-            ${sortable('consultant', 'Consultor', 'style="width:120px;"')}
-            ${sortable('updatedAt', 'Atualizado', 'style="width:90px;"')}
-            <th style="text-align:right;width:170px;">Ações</th>
+            <th style="width:88px;">Status</th>
+            ${sortable('title', 'Roteiro', 'style="width:auto;"')}
+            ${sortable('client', 'Cliente', 'style="width:140px;"')}
+            ${sortable('destinos', 'Destinos', 'style="width:160px;"')}
+            ${sortable('period', 'Período', 'style="width:160px;"')}
+            ${sortable('consultant', 'Consultor', 'style="width:110px;"')}
+            ${sortable('updatedAt', 'Atualizado', 'style="width:84px;"')}
+            <th style="text-align:right;width:140px;">Ações</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -599,24 +606,27 @@ export async function renderRoteiros(container) {
   /* ── Init ── */
   await loadData();
 
-  // Remove botão de agent injetado no header (a UI dedicada "Criar com IA"
-  // chama o mesmo agent — botão duplicado polui o header). Roda 2x pra pegar
-  // race com mountAgentsForRoute que pode injetar após o render.
-  const detachAgentBtn = () => {
-    container.querySelectorAll('.agent-trigger-btn[data-agent-id]').forEach(b => {
-      // Só remove agents do módulo roteiros (preserva botões de outros módulos)
-      const id = b.dataset.agentId || '';
-      if (/roteiro/i.test(b.textContent || '') || /roteiro/i.test(b.title || '')) {
-        b.remove();
-      }
+  // Remove qualquer botão de agent de roteiros injetado no header — a UI
+  // dedicada "Criar com IA" chama o mesmo agent, botão duplicado polui.
+  // mountAgentsForRoute pode injetar a qualquer momento (após Firestore
+  // fetch), então usamos MutationObserver pra pegar mesmo quando aparece
+  // depois do render inicial.
+  const detachRoteiroAgentBtn = () => {
+    document.querySelectorAll('.agent-trigger-btn').forEach(b => {
+      const txt = (b.textContent || '') + ' ' + (b.title || '');
+      if (/roteiro/i.test(txt)) b.remove();
     });
-    // Limpa group container vazio
-    container.querySelectorAll('.agent-trigger-group').forEach(g => {
+    document.querySelectorAll('.agent-trigger-group').forEach(g => {
       if (!g.children.length) g.remove();
     });
   };
-  detachAgentBtn();
-  setTimeout(detachAgentBtn, 500);
+  detachRoteiroAgentBtn();
+  // Observer no header pra remover assim que aparecer
+  const headerEl = container.querySelector('.page-header') || container;
+  const obs = new MutationObserver(detachRoteiroAgentBtn);
+  obs.observe(headerEl, { childList: true, subtree: true });
+  // Auto-disconnect ao trocar de página (defensive — evita observer leak)
+  container._agentDetachObs = obs;
 }
 
 /* ════════════════════════════════════════════════════════════
