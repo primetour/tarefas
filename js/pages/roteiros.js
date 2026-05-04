@@ -9,6 +9,7 @@ const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiros, deleteRoteiro, duplicateRoteiro, updateRoteiroStatus, generateRoteiroFromPrompt } from '../services/roteiros.js';
 import { fetchAreas } from '../services/portal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
+import { renderPageHeader, renderFilterBar, wireUiKitMenus, wirePeriodPills, PERIOD_PRESETS } from '../components/uiKit.js';
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
@@ -81,70 +82,38 @@ export async function renderRoteiros(container) {
   let searchTerm = '';
   let selectedConsultant = '';
   let selectedAreaId = '';
+  let selectedDestino = '';     // GAP fix: filtro por destino (city ou country)
+  let selectedClientType = '';  // GAP fix: filtro por tipo de cliente
+  let periodKey = 'all';        // 7d/30d/90d/12m/all/custom — filtra por travel.startDate
+  let periodFrom = null;
+  let periodTo = null;
   let sortKey = 'updatedAt';   // 'updatedAt' | 'client' | 'destinos' | 'period' | 'consultant' | 'title'
   let sortDir = 'desc';        // 'asc' | 'desc'
   let currentPage = 1;
   const PAGE_SIZE = 50;
 
-  /* ── Initial HTML ── */
+  /* ── Initial HTML usando uiKit ── */
+  const canCreate = store.canCreateRoteiro();
   container.innerHTML = `
-    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
-      <div>
-        <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary);margin:0;">
-          Gerador de Roteiros
-        </h1>
-        <p style="color:var(--text-muted);font-size:0.875rem;margin:4px 0 0;">
-          Crie e gerencie roteiros personalizados para seus clientes
-        </p>
-      </div>
-      <div class="page-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-secondary" data-action="export-xls" style="gap:6px;"
-          title="Exportar lista de roteiros em XLSX">
-          XLS
-        </button>
-        <button class="btn btn-secondary" data-action="export-pdf-list" style="gap:6px;"
-          title="Exportar lista de roteiros em PDF">
-          PDF
-        </button>
-        ${store.canCreateRoteiro() ? `
-          <button class="btn btn-secondary" data-action="ai-create" style="gap:6px;"
-            title="Criar roteiro completo via IA a partir de uma descrição em texto livre">
-            ◈ Criar com IA
-          </button>
-          <button class="btn btn-primary" data-action="new-roteiro" style="gap:6px;">
-            + Novo Roteiro
-          </button>
-        ` : ''}
-      </div>
-    </div>
+    ${renderPageHeader({
+      title: 'Gerador de Roteiros',
+      subtitle: 'Crie e gerencie roteiros personalizados para seus clientes',
+      primary: canCreate ? { label: '+ Novo Roteiro', action: 'new-roteiro' } : null,
+      secondary: canCreate ? [
+        { label: 'Criar com IA', icon: '◈', action: 'ai-create',
+          title: 'Criar roteiro completo via IA a partir de uma descrição em texto livre' },
+      ] : [],
+      export: { formats: ['xls', 'pdf'], action: 'export-list' },
+    })}
 
-    <!-- Filters bar -->
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
-      <div class="rt-pills" style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="rt-pill active" data-status="">Todos</button>
-        <button class="rt-pill" data-status="draft">Rascunho</button>
-        <button class="rt-pill" data-status="review">Em revisão</button>
-        <button class="rt-pill" data-status="sent">Enviado</button>
-        <button class="rt-pill" data-status="approved">Aprovado</button>
-        <button class="rt-pill" data-status="archived">Arquivado</button>
-      </div>
-      <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center;">
-        <input type="text" id="rt-search" class="form-input" placeholder="Buscar cliente, título ou destino..."
-          style="min-width:240px;max-width:280px;height:34px;font-size:0.8125rem;" />
-        <select id="rt-area" class="form-input" style="min-width:180px;max-width:240px;height:34px;font-size:0.8125rem;">
-          <option value="">Todas áreas</option>
-        </select>
-        <select id="rt-consultant" class="form-input" style="max-width:200px;height:34px;font-size:0.8125rem;display:none;">
-          <option value="">Todos consultores</option>
-        </select>
-      </div>
-    </div>
+    <div id="rt-filters-mount"></div>
 
-    <!-- Result count + pagination top -->
-    <div id="rt-meta" style="display:flex;justify-content:space-between;align-items:center;
-      font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;">
-      <span id="rt-count">—</span>
-      <div id="rt-pagination" style="display:flex;gap:6px;align-items:center;"></div>
+    <!-- Tabela densa (desktop) — em mobile vira lista compacta via CSS -->
+    <div id="rt-table-wrap" style="background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);
+      border-radius:10px;overflow-x:auto;">
+      <div id="rt-table">
+        <div style="padding:40px;text-align:center;color:var(--text-muted);">Carregando...</div>
+      </div>
     </div>
 
     <!-- Tabela densa (desktop) — em mobile vira lista compacta via CSS.
@@ -263,8 +232,7 @@ export async function renderRoteiros(container) {
       ]);
       allRoteiros = roteiros;
       allAreas = areas;
-      populateConsultantFilter();
-      populateAreaFilter();
+      renderFilters();
       renderTable();
     } catch (err) {
       const tableEl = document.getElementById('rt-table');
@@ -275,29 +243,69 @@ export async function renderRoteiros(container) {
     }
   }
 
-  function populateAreaFilter() {
-    const select = document.getElementById('rt-area');
-    if (!select || !allAreas?.length) return;
-    select.innerHTML = `<option value="">Todas áreas</option>` +
-      allAreas.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
-  }
+  /* Re-renderiza a barra de filtros (precisa rodar após loadData pra ter
+     dropdowns com áreas/consultores/destinos populados). Mantém valores
+     do state global ao re-renderizar. */
+  function renderFilters() {
+    const mount = document.getElementById('rt-filters-mount');
+    if (!mount) return;
 
-  function populateConsultantFilter() {
-    const select = document.getElementById('rt-consultant');
-    if (!select) return;
-    if (!store.canManageRoteiros()) { select.style.display = 'none'; return; }
+    // Áreas (sempre que houver)
+    const areaOptions = (allAreas || []).map(a => ({ value: a.id, label: a.name }));
 
-    const consultants = [...new Map(
+    // Consultores únicos (admin only)
+    const consultantOptions = store.canManageRoteiros() ? [...new Map(
       allRoteiros
         .filter(r => r.consultantId && r.consultantName)
         .map(r => [r.consultantId, r.consultantName])
-    ).entries()];
+    ).entries()].map(([id, name]) => ({ value: id, label: name })) : [];
 
-    if (consultants.length > 0) {
-      select.style.display = '';
-      select.innerHTML = `<option value="">Todos consultores</option>` +
-        consultants.map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('');
+    // Destinos únicos derivados das próprias roteiros (city ou country)
+    // GAP fix: filtrar por destino estava ausente, embora os dados estivessem visíveis.
+    const destSet = new Set();
+    allRoteiros.forEach(r => {
+      (r.travel?.destinations || []).forEach(d => {
+        if (d.city)    destSet.add(d.city);
+        if (d.country) destSet.add(d.country);
+      });
+    });
+    const destOptions = [...destSet].sort().map(d => ({ value: d, label: d }));
+
+    const clientTypeOptions = [
+      { value: 'individual', label: 'Individual' },
+      { value: 'couple',     label: 'Casal' },
+      { value: 'family',     label: 'Família' },
+      { value: 'group',      label: 'Grupo' },
+    ];
+
+    // Status pills
+    const statusPills = [
+      { value: '',         label: 'Todos' },
+      { value: 'draft',    label: 'Rascunho' },
+      { value: 'review',   label: 'Em revisão' },
+      { value: 'sent',     label: 'Enviado' },
+      { value: 'approved', label: 'Aprovado' },
+      { value: 'archived', label: 'Arquivado' },
+    ];
+
+    const selects = [
+      { id: 'rt-area',        label: '— Todas áreas —',     options: areaOptions,        value: selectedAreaId },
+      { id: 'rt-destino',     label: '— Todos destinos —',  options: destOptions,        value: selectedDestino },
+      { id: 'rt-clienttype',  label: '— Todo tipo —',        options: clientTypeOptions,  value: selectedClientType },
+    ];
+    if (consultantOptions.length) {
+      selects.push({ id: 'rt-consultant', label: '— Todos consultores —', options: consultantOptions, value: selectedConsultant });
     }
+
+    mount.innerHTML = renderFilterBar({
+      statusPills,
+      activeStatus,
+      search: { id: 'rt-search', placeholder: 'Buscar cliente, título ou destino...', value: searchTerm },
+      selects,
+      periodPills: { active: periodKey },
+      metaText: '',  // populated pelo renderTable
+      paginationHTML: '',
+    });
   }
 
   /* Filtros + ordenação aplicados */
@@ -307,6 +315,21 @@ export async function renderRoteiros(container) {
     if (activeStatus)        filtered = filtered.filter(r => r.status === activeStatus);
     if (selectedConsultant)  filtered = filtered.filter(r => r.consultantId === selectedConsultant);
     if (selectedAreaId)      filtered = filtered.filter(r => r.areaId === selectedAreaId);
+    if (selectedDestino)     filtered = filtered.filter(r =>
+      (r.travel?.destinations || []).some(d => d.city === selectedDestino || d.country === selectedDestino)
+    );
+    if (selectedClientType)  filtered = filtered.filter(r => r.client?.type === selectedClientType);
+    if (periodKey !== 'all' && periodFrom) {
+      // Filtra por travel.startDate dentro do range
+      filtered = filtered.filter(r => {
+        const sd = r.travel?.startDate;
+        if (!sd) return false;
+        const dt = new Date(sd);
+        if (periodFrom && dt < periodFrom) return false;
+        if (periodTo && dt > periodTo) return false;
+        return true;
+      });
+    }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(r =>
@@ -343,11 +366,28 @@ export async function renderRoteiros(container) {
     return filtered;
   }
 
+  /* Atualiza meta+paginação dentro do filter bar (ele é re-renderizado a cada query) */
+  function updateMetaRow(total, startIdx, endIdx, totalPages) {
+    const metaEl = document.querySelector('.uikit-meta-row > span');
+    const pagEl  = document.querySelector('.uikit-meta-row > div');
+    if (metaEl) {
+      metaEl.textContent = total
+        ? `${total} roteiro${total !== 1 ? 's' : ''}` +
+          (totalPages > 1 ? ` · mostrando ${startIdx + 1}–${endIdx}` : '')
+        : '';
+    }
+    if (pagEl) {
+      pagEl.innerHTML = totalPages > 1 ? `
+        <button class="rt-pg-btn" data-pg="prev" ${currentPage === 1 ? 'disabled' : ''}>‹ Anterior</button>
+        <span style="padding:0 6px;">Pág ${currentPage} de ${totalPages}</span>
+        <button class="rt-pg-btn" data-pg="next" ${currentPage === totalPages ? 'disabled' : ''}>Próxima ›</button>
+      ` : '';
+    }
+  }
+
   /* ── Render: tabela densa com paginação ── */
   function renderTable() {
     const tableEl = document.getElementById('rt-table');
-    const countEl = document.getElementById('rt-count');
-    const pgEl    = document.getElementById('rt-pagination');
     if (!tableEl) return;
 
     const filtered = getFiltered();
@@ -367,8 +407,7 @@ export async function renderRoteiros(container) {
             <button class="btn btn-primary" data-action="new-roteiro" style="margin-top:16px;">+ Criar primeiro roteiro</button>
           ` : ''}
         </div>`;
-      if (countEl) countEl.textContent = '';
-      if (pgEl)    pgEl.innerHTML = '';
+      updateMetaRow(0, 0, 0, 1);
       return;
     }
 
@@ -379,17 +418,7 @@ export async function renderRoteiros(container) {
     const endIdx   = Math.min(startIdx + PAGE_SIZE, total);
     const slice    = filtered.slice(startIdx, endIdx);
 
-    if (countEl) {
-      countEl.textContent = `${total} roteiro${total !== 1 ? 's' : ''}` +
-        (totalPages > 1 ? ` · mostrando ${startIdx + 1}–${endIdx}` : '');
-    }
-    if (pgEl) {
-      pgEl.innerHTML = totalPages > 1 ? `
-        <button class="rt-pg-btn" data-pg="prev" ${currentPage === 1 ? 'disabled' : ''}>‹ Anterior</button>
-        <span style="padding:0 6px;">Pág ${currentPage} de ${totalPages}</span>
-        <button class="rt-pg-btn" data-pg="next" ${currentPage === totalPages ? 'disabled' : ''}>Próxima ›</button>
-      ` : '';
-    }
+    updateMetaRow(total, startIdx, endIdx, totalPages);
 
     // Headers (com sort)
     const sortArrow = (key) => sortKey === key
@@ -474,12 +503,13 @@ export async function renderRoteiros(container) {
       return;
     }
 
-    if (action === 'export-xls') {
+    // Export handlers — uiKit ExportMenu dispara export-list-xls / export-list-pdf
+    if (action === 'export-xls' || action === 'export-list-xls') {
       await exportRoteirosXls(getFiltered());
       return;
     }
 
-    if (action === 'export-pdf-list') {
+    if (action === 'export-pdf-list' || action === 'export-list-pdf') {
       await exportRoteirosPdf(getFiltered());
       return;
     }
@@ -540,14 +570,14 @@ export async function renderRoteiros(container) {
     }
   });
 
-  /* ── Status pills ── */
+  /* ── Filter bar interactions ── */
   container.addEventListener('click', (e) => {
-    const pill = e.target.closest('.rt-pill');
-    if (pill) {
-      container.querySelectorAll('.rt-pill').forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      activeStatus = pill.dataset.status;
+    // Status pills (uiKit class)
+    const statusPill = e.target.closest('.uikit-status-pill');
+    if (statusPill) {
+      activeStatus = statusPill.dataset.filterStatus || '';
       currentPage = 1;
+      renderFilters();   // re-render pra atualizar visual da pill ativa
       renderTable();
       return;
     }
@@ -573,35 +603,33 @@ export async function renderRoteiros(container) {
     }
   });
 
-  /* ── Search ── */
-  const searchInput = document.getElementById('rt-search');
-  if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
+  // Search + selects via event delegation no container (filter bar é re-renderizado)
+  container.addEventListener('input', (e) => {
+    if (e.target.id === 'rt-search') {
       searchTerm = e.target.value;
       currentPage = 1;
       renderTable();
-    });
-  }
+    }
+  });
+  container.addEventListener('change', (e) => {
+    const id = e.target.id;
+    if (id === 'rt-area')        { selectedAreaId = e.target.value;     currentPage = 1; renderTable(); }
+    else if (id === 'rt-destino')    { selectedDestino = e.target.value;    currentPage = 1; renderTable(); }
+    else if (id === 'rt-clienttype') { selectedClientType = e.target.value; currentPage = 1; renderTable(); }
+    else if (id === 'rt-consultant') { selectedConsultant = e.target.value; currentPage = 1; renderTable(); }
+  });
 
-  /* ── Area filter ── */
-  const areaSelect = document.getElementById('rt-area');
-  if (areaSelect) {
-    areaSelect.addEventListener('change', (e) => {
-      selectedAreaId = e.target.value;
-      currentPage = 1;
-      renderTable();
-    });
-  }
+  // Period pills wire (uiKit)
+  wirePeriodPills(container, (key, range) => {
+    periodKey = key;
+    periodFrom = range.from;
+    periodTo = range.to;
+    currentPage = 1;
+    renderTable();
+  });
 
-  /* ── Consultant filter ── */
-  const consultantSelect = document.getElementById('rt-consultant');
-  if (consultantSelect) {
-    consultantSelect.addEventListener('change', (e) => {
-      selectedConsultant = e.target.value;
-      currentPage = 1;
-      renderTable();
-    });
-  }
+  // Ativa dropdowns do header (export menu + overflow)
+  wireUiKitMenus(container);
 
   /* ── Init ── */
   await loadData();
