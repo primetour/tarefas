@@ -2344,9 +2344,56 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
   try {
     let savedTask;
     if(isEdit){
-      await updateTask(task.id,data);
-      toast.success('Tarefa atualizada!');
-      savedTask = { id: task.id, ...data };
+      // Stale detection: passa o updatedAt que carregamos ao abrir o modal.
+      // Se outro user editou no meio tempo (5 users hoje, 200 amanhã), o
+      // updateTask aborta com STALE_DATA em vez de sobrescrever cegamente.
+      try {
+        await updateTask(task.id, data, { expectedUpdatedAt: task.updatedAt });
+        toast.success('Tarefa atualizada!');
+        savedTask = { id: task.id, ...data };
+      } catch (saveErr) {
+        if (saveErr.code === 'STALE_DATA') {
+          // Outro user editou. Pergunta o que fazer em vez de assumir.
+          const editorName = (() => {
+            const editorUid = saveErr.staleInfo?.updatedBy;
+            if (!editorUid) return 'outra pessoa';
+            const u = (store.get('users')||[]).find(x => x.id === editorUid);
+            return u?.name || 'outra pessoa';
+          })();
+          const { modal } = await import('./modal.js');
+          const choice = await modal.confirm({
+            title: '⚠ Conflito de edição',
+            message: `<div style="font-size:0.875rem;line-height:1.5;">
+              <p><strong>${editorName}</strong> atualizou esta tarefa enquanto você
+              estava editando. Suas mudanças <strong>ainda não foram salvas</strong>.</p>
+              <p style="margin-top:8px;color:var(--text-muted);">
+                <strong>Recarregar:</strong> descarta suas mudanças e abre a versão atual.<br>
+                <strong>Forçar salvar:</strong> sobrescreve as mudanças de ${editorName}.
+              </p>
+            </div>`,
+            confirmText: 'Forçar salvar',
+            cancelText:  'Recarregar',
+            danger: true,
+            icon: '⚠',
+          });
+          if (choice) {
+            // Forçar: re-chama sem expectedUpdatedAt
+            if(btn){btn.classList.remove('loading');btn.disabled=false;}
+            await updateTask(task.id, data);
+            toast.success('Tarefa salva (sobrescrita).');
+            savedTask = { id: task.id, ...data };
+          } else {
+            // Recarregar: fecha modal, próxima abertura traz versão fresh
+            toast.info('Modal fechado. Reabra a tarefa pra ver a versão atualizada.');
+            if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+            const closeBtn = document.querySelector('.modal .modal-close, [data-modal-close]');
+            if (closeBtn) closeBtn.click();
+            return;
+          }
+        } else {
+          throw saveErr;
+        }
+      }
     } else if (isRecurring) {
       // Criar template de recorrência em vez de tarefa pontual
       const { createTemplate, runDueRecurrenceGeneration } = await import('../services/recurringTasks.js');

@@ -29,6 +29,7 @@ import {
   where,
   collection,
   serverTimestamp,
+  onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 import { auth, secondaryAuth, db, microsoftProvider } from '../firebase.js';
@@ -44,6 +45,13 @@ import { APP_CONFIG, ALLOWED_SSO_DOMAINS, isAllowedSSODomain } from '../config.j
 import { auditLog } from './audit.js';
 
 // ─── Observer de estado de autenticação ───────────────────
+
+// Listener tempo-real do doc do user logado.
+// Quando admin muda role/setor/permissões/active do user, isso propaga
+// na hora pra todas as abas abertas (sem F5). Antes, mudanças só
+// aplicavam no próximo login.
+let _userProfileUnsub = null;
+
 export function initAuthObserver(onReady) {
   let readyCalled = false;
   const callReady = () => {
@@ -203,6 +211,67 @@ export function initAuthObserver(onReady) {
           || SYSTEM_ROLES.find(r => r.id === 'member');
         store.loadPermissions(finalRole);
 
+        // ── Listener tempo-real do próprio perfil ──
+        // Sem isto: mudança de role pelo admin só vale no próximo login (F5).
+        // Com isto: quando admin promove/rebaixa, o user vê a UI se reconfigurar
+        // imediatamente (toast + recarrega permissões).
+        if (_userProfileUnsub) { try { _userProfileUnsub(); } catch {} }
+        let lastKnownRoleId = profile.roleId || profile.role;
+        let lastKnownActive = profile.active !== false;
+        _userProfileUnsub = onSnapshot(
+          doc(db, 'users', firebaseUser.uid),
+          async (snap) => {
+            if (!snap.exists()) return;
+            const fresh = { id: snap.id, ...snap.data() };
+
+            // Conta foi desativada enquanto user estava logado → forçar logout.
+            if (fresh.active === false && lastKnownActive === true) {
+              toast.error('Sua conta foi desativada pelo administrador.');
+              await signOut().catch(() => {});
+              return;
+            }
+            lastKnownActive = fresh.active !== false;
+
+            // Sempre atualiza o profile no store (sector/núcleos/visibleSectors
+            // mudam com frequência e a UI lê do store).
+            store.set('userProfile', fresh);
+
+            // Re-aplicar setor/visibleSectors caso admin tenha alterado
+            const userSector = fresh.sector || fresh.department
+              || (fresh.visibleSectors?.length === 1 ? fresh.visibleSectors[0] : null)
+              || null;
+            store.set('userSector', userSector);
+            const newVisibleSectors = Array.isArray(fresh.visibleSectors) && fresh.visibleSectors.length > 0
+              ? fresh.visibleSectors
+              : (userSector ? [userSector] : []);
+            store.set('visibleSectors', newVisibleSectors);
+
+            // Role mudou? Recarrega permissões + avisa o usuário.
+            const newRoleId = fresh.roleId || fresh.role;
+            if (newRoleId && newRoleId !== lastKnownRoleId) {
+              try {
+                const newRoleDoc = await getRole(newRoleId).catch(() => null);
+                const finalNewRole = newRoleDoc
+                  || SYSTEM_ROLES.find(r => r.id === newRoleId)
+                  || SYSTEM_ROLES.find(r => r.id === 'member');
+                store.loadPermissions(finalNewRole);
+                toast.info(`Sua role foi atualizada para: ${finalNewRole.name || newRoleId}`);
+                // Re-render sidebar pra refletir items que viraram visíveis/ocultos
+                document.dispatchEvent(new CustomEvent('user:role-changed', {
+                  detail: { newRole: finalNewRole },
+                }));
+              } catch (e) {
+                console.warn('Falha ao recarregar permissões:', e);
+              }
+              lastKnownRoleId = newRoleId;
+            }
+          },
+          (err) => {
+            // Listener falhou — não fatal, user continua com permissões antigas até F5
+            console.warn('[Auth] userProfile snapshot listener err:', err.message);
+          }
+        );
+
         // Definir setor do usuário no store
         const userSector = profile.sector || profile.department
           || (profile.visibleSectors?.length === 1 ? profile.visibleSectors[0] : null)
@@ -292,6 +361,11 @@ export function initAuthObserver(onReady) {
         store.set('authLoading', false);
       }
     } else {
+      // Cleanup do listener de profile real-time pra não vazar memória/quota
+      if (_userProfileUnsub) {
+        try { _userProfileUnsub(); } catch {}
+        _userProfileUnsub = null;
+      }
       store.set('currentUser',     null);
       store.set('userProfile',     null);
       store.set('isAuthenticated', false);

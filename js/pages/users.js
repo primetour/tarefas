@@ -87,37 +87,50 @@ export async function renderUsers(container) {
             </button>
           </div>
         </div>
-        <button class="btn btn-primary" id="new-user-btn">
+        <button class="btn btn-primary" id="new-user-btn"
+          title="Pré-cadastra usuário com role/setor. Se for email SSO, ativa
+            automaticamente no 1º login Microsoft. Se for email externo,
+            cria conta com senha temporária.">
           + Novo Usuário
         </button>
       </div>
     </div>
 
-    <!-- Banner: redefinição de senha -->
-    <div style="
-      display:flex; align-items:flex-start; gap:12px;
-      background:rgba(212,168,67,0.08);
-      border:1px solid rgba(212,168,67,0.3);
-      border-radius:var(--radius-md);
-      padding:12px 16px;
-      margin-bottom:24px;
-      font-size:0.8125rem;
-      line-height:1.6;
-      color:var(--text-secondary);
-    ">
-      <span style="font-size:1.1rem; flex-shrink:0; margin-top:1px;">🔑</span>
-      <div>
-        <strong style="color:var(--text-primary);">Redefinição de senha</strong>
-        — Para trocar a senha de um usuário, acesse o
-        <a href="https://console.firebase.google.com/project/gestor-de-tarefas-primetour/authentication/users"
-          target="_blank" rel="noopener"
-          style="color:var(--brand-gold); text-decoration:underline;">
-          Firebase Console → Authentication → Users
-        </a>,
-        localize o usuário, clique em <strong>⋮ → Edit user</strong>
-        e defina a nova senha diretamente. O botão 🔑 na tabela abre este guia rápido.
+    <!-- Banner: como funciona o login (resposta única ao "Novo Usuário") -->
+    <details style="margin-bottom:20px;border:1px solid var(--border-subtle);
+      border-radius:var(--radius-md);background:var(--bg-surface);">
+      <summary style="cursor:pointer;padding:12px 16px;font-size:0.875rem;
+        font-weight:500;color:var(--text-primary);user-select:none;">
+        ℹ Como funciona o login no PRIMETOUR? (clique para expandir)
+      </summary>
+      <div style="padding:0 16px 16px;font-size:0.8125rem;line-height:1.6;color:var(--text-secondary);">
+        <p style="margin-top:8px;"><strong style="color:var(--text-primary);">3 modos de entrada:</strong></p>
+        <ol style="margin:8px 0 0;padding-left:20px;">
+          <li style="margin-bottom:8px;"><strong>SSO Microsoft (padrão)</strong> — emails dos
+            domínios <code>@primetour.com.br</code>, <code>@primetravel.tur.br</code>,
+            <code>@primetouroperator.com.br</code>. Usuário clica em
+            <em>"Entrar com Microsoft"</em> e a conta é ativada automaticamente.
+            Pré-cadastrar aqui (botão "Novo Usuário") só serve pra <strong>definir
+            role/setor antes</strong> do 1º login — não cria credencial Auth.</li>
+          <li style="margin-bottom:8px;"><strong>Email/senha (externos)</strong> — clientes,
+            freelancers, parceiros sem Microsoft. Ao cadastrar com email <strong>fora dos
+            domínios SSO</strong>, o sistema pede uma senha temporária.</li>
+          <li style="margin-bottom:8px;"><strong>Login emergencial (admin)</strong> —
+            escondido por padrão. Pra ativar, abra DevTools no console e rode:
+            <code style="background:var(--bg-elevated);padding:2px 6px;border-radius:4px;font-size:0.75rem;">
+              localStorage.setItem('emergency-pwd-login','1')
+            </code>, recarregue. Aparece formulário escondido pra
+            <code>admin@primetour.com.br</code> e similares.</li>
+        </ol>
+        <p style="margin-top:12px;color:var(--text-muted);">
+          <strong>Reset de senha</strong> (só usuários não-SSO):
+          <a href="https://console.firebase.google.com/project/gestor-de-tarefas-primetour/authentication/users"
+            target="_blank" rel="noopener"
+            style="color:var(--brand-gold); text-decoration:underline;">Firebase Console</a>
+          → localize → ⋮ → Edit user. O botão 🔑 na tabela abre este guia.
+        </p>
       </div>
-    </div>
+    </details>
 
     <!-- Banner de migração SSO em massa: aparece apenas quando há usuários
          presos no bug antigo (criados pelo admin com senha em domínio SSO).

@@ -363,7 +363,18 @@ export async function createTask(data) {
 }
 
 /* ─── Atualizar tarefa ───────────────────────────────────── */
-export async function updateTask(taskId, data) {
+/**
+ * @param {string} taskId
+ * @param {object} data - campos a atualizar
+ * @param {object} [opts]
+ * @param {Date|number|object} [opts.expectedUpdatedAt] - se fornecido,
+ *   compara com o updatedAt atual no Firestore. Se diferente, lança
+ *   um erro com code='STALE_DATA' contendo o updatedBy + diff hint.
+ *   Usado pelo TaskModal pra detectar edição concorrente: se A abriu
+ *   o modal e B salvou antes, A não sobrescreve cegamente — recebe
+ *   stale e pode decidir se recarrega ou força.
+ */
+export async function updateTask(taskId, data, opts = {}) {
   const user = store.get('currentUser');
   // Sandbox: simula sucesso sem persistir
   const { sandboxGuard } = await import('./sandbox.js');
@@ -372,6 +383,29 @@ export async function updateTask(taskId, data) {
   let prevSnap = null;
   try { prevSnap = await getDoc(doc(db, 'tasks', taskId)); } catch (_) {}
   const prevData = prevSnap?.exists() ? prevSnap.data() : null;
+
+  // ── Stale detection: se chamador passou expectedUpdatedAt e o doc
+  //    foi alterado por outro user no meio tempo, abortar pra evitar
+  //    sobrescrita cega. Cliente decide: descartar / recarregar / forçar.
+  if (opts.expectedUpdatedAt && prevData?.updatedAt) {
+    const expected = opts.expectedUpdatedAt?.toMillis?.()
+      ?? opts.expectedUpdatedAt?.getTime?.()
+      ?? Number(opts.expectedUpdatedAt);
+    const actual = prevData.updatedAt?.toMillis?.()
+      ?? prevData.updatedAt?.getTime?.()
+      ?? Number(prevData.updatedAt);
+    // Tolerância de 100ms p/ evitar falso positivo de relógio.
+    if (actual && expected && actual - expected > 100) {
+      const err = new Error('Esta tarefa foi atualizada por outra pessoa enquanto você editava.');
+      err.code = 'STALE_DATA';
+      err.staleInfo = {
+        updatedBy: prevData.updatedBy,
+        updatedAt: prevData.updatedAt,
+        currentData: prevData,
+      };
+      throw err;
+    }
+  }
 
   // Permitir edição se tem permissão global OU é o criador da tarefa
   if (!store.can('task_edit_any')) {

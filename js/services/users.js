@@ -25,7 +25,13 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const CACHE_KEY = 'usersAll';
-const CACHE_TTL = 5 * 60 * 1000; // 5 min — usuários mudam pouco
+// 60s: ajuste pra concorrência. Antes eram 5min mas com vários usuários
+// editando em tempo real (5 hoje, 200 em breve) precisamos propagar
+// mudanças de nome/setor/role mais rápido pra evitar UI stale. Roles do
+// próprio user logado já têm onSnapshot dedicado em auth.js — esse cache
+// é só pra LISTAR users (dropdowns de @mention, lookup de avatar/email
+// na auditoria, etc).
+const CACHE_TTL = 60 * 1000;
 
 /**
  * Busca usuários (com cache). Retorna array já ordenado por nome.
