@@ -93,35 +93,49 @@ export function initAuthObserver(onReady) {
               ? rawName.split('.').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
               : rawName;
 
-            // ── 1) Tenta consolidar doc PENDENTE pré-cadastrado pelo admin ──
-            // Quando admin cria usuário SSO via UI, o doc é gravado com
-            // pendingSso: true e ID temporário (pending_email_dot_dot). Aqui
-            // detectamos esse doc por email, copiamos role/setor/núcleos
-            // pré-configurados, criamos o doc final keyed pelo UID do Firebase
-            // Auth e apagamos o pendente.
+            // ── 1) Lookup de doc(s) pré-existente(s) pelo email ──
+            // 3 cenários cobertos:
+            //   A. Pending pré-cadastrado pelo admin (pendingSso:true + ID
+            //      temporário pending_email_dot_dot). Auto-provision deve
+            //      consolidar role/setor/núcleos no UID definitivo.
+            //   B. Doc CONSOLIDADO ANTERIOR (mesmo email, UID diferente do
+            //      atual): user já entrou via SSO antes, recebeu UID X,
+            //      depois algum motivo (logout + login fresh, troca de Auth
+            //      provider, migração) gerou UID Y. Sem hardening, criaríamos
+            //      um SEGUNDO doc com defaults — duplicate. Resultado em prod:
+            //      Renê tinha 2 docs (okSsyu*-5squads e OvnFxqa*-0squads).
+            //   C. Múltiplos docs (defesa em profundidade): se houver lixo
+            //      acumulado de migrações anteriores, escolhemos o melhor e
+            //      apagamos os outros no final.
             //
-            // BUG FIX (04/05/26): a versão antiga usava
-            //   where('email', '==', X) + where('pendingSso', '==', true)
-            // que exige um composite index que NUNCA foi criado no Firestore.
-            // Resultado: query falhava silenciosamente → mergedFromPending=null
-            // → todos os pending users (9) viravam member padrão sem setor.
-            // Gabrielle (master) ficou presa em "sem workspace" por isso.
-            // Solução: query single-field + filter client-side. Idempotente e
-            // sem dependência de index management.
-            let mergedFromPending = null;
+            // Prioridade pra mergear:
+            //   1. pendingSso=true (pré-cadastro com role definida pelo admin)
+            //   2. Maior lastLogin (doc mais ativo, pode ter squads/edits)
+            //   3. Sem critério → primeiro encontrado
+            let preExistingDocs = [];
+            let preExistingMain = null;
             try {
-              const pendQ = query(
-                collection(db, 'users'),
-                where('email', '==', email),
-              );
-              const pendSnap = await getDocs(pendQ);
-              const pendingDoc = pendSnap.docs.find(d => d.data().pendingSso === true);
-              if (pendingDoc) {
-                mergedFromPending = { id: pendingDoc.id, ...pendingDoc.data() };
+              const altQ = query(collection(db, 'users'), where('email', '==', email));
+              const altSnap = await getDocs(altQ);
+              preExistingDocs = altSnap.docs
+                .map(d => ({ ref: d.ref, id: d.id, ...d.data() }))
+                .filter(d => d.id !== firebaseUser.uid); // ignora o doc próprio (caso já exista)
+              if (preExistingDocs.length) {
+                const pendingMatch = preExistingDocs.find(d => d.pendingSso === true);
+                if (pendingMatch) {
+                  preExistingMain = pendingMatch;
+                } else {
+                  // Sem pending — pega o mais recente (provavelmente consolidado anterior)
+                  preExistingMain = preExistingDocs.sort((a, b) =>
+                    (b.lastLogin?.toMillis?.() || 0) - (a.lastLogin?.toMillis?.() || 0)
+                  )[0];
+                }
               }
             } catch (lookupErr) {
-              console.warn('[SSO] Falha ao buscar doc pendente:', lookupErr.message);
+              console.warn('[SSO] Falha ao buscar doc pré-existente:', lookupErr.message);
             }
+            // Alias pra manter compat com código abaixo
+            const mergedFromPending = preExistingMain;
 
             // ── 2) Monta o perfil final ──
             //   - Se existe doc pendente → usa role/setor/núcleos pré-cadastrados.
@@ -152,43 +166,54 @@ export function initAuthObserver(onReady) {
             try {
               await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
 
-              // ── Re-bind workspaces e tasks: pendingId → newUid ──
-              // O migrateUserToSso/createUser deixaram o pendingId nos arrays
-              // members/adminIds das squads que o admin já tinha atribuído.
-              // Aqui consolidamos: troca o pendingId pelo UID definitivo do
-              // Firebase Auth. Sem isso, o user entra mas a tela de Squads
-              // não mostra os squads dele e cai em "sem workspace".
-              if (mergedFromPending?.id) {
-                const pendingId = mergedFromPending.id;
-                const newUid    = firebaseUser.uid;
+              // ── Re-bind workspaces e tasks: oldId(s) → newUid ──
+              // Cobre TODOS os docs antigos do mesmo email (não só o pending).
+              // Antes só re-bindava o pendingId; bug: se admin consolidou
+              // manualmente um doc anterior + user logou de novo, ficavam 2
+              // docs E o squad apontava pro doc errado. Solução: pra cada doc
+              // antigo encontrado (preExistingDocs), faz swap pro newUid em
+              // todas as referências (members + adminIds).
+              const newUid = firebaseUser.uid;
+              const allOldIds = preExistingDocs.map(d => d.id);
+              if (allOldIds.length > 0) {
                 try {
                   const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                  const wsQ = query(collection(db, 'workspaces'),
-                    where('members', 'array-contains', pendingId));
-                  const wsSnap = await getDocs(wsQ);
-                  await Promise.all(wsSnap.docs.map(async (wsDoc) => {
-                    const data = wsDoc.data();
-                    await updateDoc(wsDoc.ref, { members: fb.arrayRemove(pendingId) });
-                    await updateDoc(wsDoc.ref, { members: fb.arrayUnion(newUid) });
-                    if ((data.adminIds || []).includes(pendingId)) {
-                      await updateDoc(wsDoc.ref, { adminIds: fb.arrayRemove(pendingId) });
-                      await updateDoc(wsDoc.ref, { adminIds: fb.arrayUnion(newUid) });
+                  for (const oldId of allOldIds) {
+                    const wsQ = query(collection(db, 'workspaces'),
+                      where('members', 'array-contains', oldId));
+                    const wsSnap = await getDocs(wsQ);
+                    await Promise.all(wsSnap.docs.map(async (wsDoc) => {
+                      const data = wsDoc.data();
+                      await updateDoc(wsDoc.ref, { members: fb.arrayRemove(oldId) });
+                      if (!(data.members || []).includes(newUid)) {
+                        await updateDoc(wsDoc.ref, { members: fb.arrayUnion(newUid) });
+                      }
+                      if ((data.adminIds || []).includes(oldId)) {
+                        await updateDoc(wsDoc.ref, { adminIds: fb.arrayRemove(oldId) });
+                        if (!(data.adminIds || []).includes(newUid)) {
+                          await updateDoc(wsDoc.ref, { adminIds: fb.arrayUnion(newUid) });
+                        }
+                      }
+                    }));
+                    if (wsSnap.size > 0) {
+                      console.log(`[SSO] Re-vinculou ${wsSnap.size} squads de ${oldId} → ${newUid}`);
                     }
-                  }));
-                  if (wsSnap.size > 0) {
-                    console.log(`[SSO] Re-vinculou ${wsSnap.size} squads de ${pendingId} → ${newUid}`);
                   }
                 } catch (rebindErr) {
                   console.warn('[SSO] Re-bind de squads falhou:', rebindErr.message);
                 }
               }
 
-              // Apaga o stub pendente (já consolidado no UID definitivo)
-              if (mergedFromPending?.id) {
-                await deleteDoc(doc(db, 'users', mergedFromPending.id)).catch(() => {});
+              // Apaga TODOS os docs antigos (não só o pending). Idempotente:
+              // se algum already deletado, .catch() suprime.
+              for (const oldDoc of preExistingDocs) {
+                await deleteDoc(oldDoc.ref).catch(() => {});
               }
-              console.log('[SSO] Perfil criado com sucesso:', formattedName, email,
-                mergedFromPending ? '(consolidado de pré-cadastro admin)' : '(novo, defaults)');
+
+              const consolidationInfo = preExistingDocs.length > 0
+                ? `(consolidado de ${preExistingDocs.length} doc(s) antigo(s): ${preExistingDocs.map(d=>d.id.slice(0,12)).join(', ')})`
+                : '(novo, defaults)';
+              console.log('[SSO] Perfil criado com sucesso:', formattedName, email, consolidationInfo);
             } catch (writeErr) {
               console.error('[SSO] Erro ao criar perfil no Firestore:', writeErr);
               toast.error('Erro ao criar perfil. Verifique as regras do Firestore (users create).');
