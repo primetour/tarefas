@@ -12,6 +12,7 @@ import { openTaskModal, openTaskDoneOverlay } from '../components/taskModal.js';
 import { APP_CONFIG }    from '../config.js';
 import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
 import { createDoc, loadJsPdf, COL, STATUS_STYLE, txt, withExportGuard } from '../components/pdfKit.js';
+import { wireUiKitMenus } from '../components/uiKit.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -82,11 +83,52 @@ export async function renderTasks(container) {
         <p class="page-subtitle" id="tasks-count-label">Carregando...</p>
       </div>
       <div class="page-header-actions">
-        <button class="btn btn-secondary btn-sm" id="tasks-import-btn">\u2191 Importar</button>
-        <button class="btn btn-secondary btn-sm" id="tasks-export-xls">\u2193 XLS</button>
-        <button class="btn btn-secondary btn-sm" id="tasks-export-pdf">\u2193 PDF</button>
-        <button class="btn btn-secondary btn-sm" id="email-task-btn" title="Criar tarefa a partir de email">📧 Email → Tarefa</button>
-        <a class="btn btn-secondary" id="new-request-btn" href="solicitar.html" target="_blank" rel="noopener" title="Abrir portal de solicitações para pedir uma demanda a outro time">📨 Solicitação</a>
+        <!-- Split-button Export consolida XLS/PDF -->
+        <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+          <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
+            style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
+            <span>\u2193</span><span>Exportar</span><span style="font-size:0.6em;">\u25be</span>
+          </button>
+          <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+            background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+            min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+            <button class="uikit-export-item" id="tasks-export-xls"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">\u2193</span><span>Excel (.xlsx)</span>
+            </button>
+            <button class="uikit-export-item" id="tasks-export-pdf"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">\u2193</span><span>PDF</span>
+            </button>
+          </div>
+        </div>
+        <!-- Overflow menu agrupa Importar / Email-task / Solicita\u00e7\u00e3o -->
+        <div class="uikit-overflow-wrap" style="position:relative;display:inline-block;">
+          <button class="btn btn-secondary uikit-overflow-trigger" data-overflow-trigger="1"
+            title="Mais a\u00e7\u00f5es" style="padding:6px 10px;">\u22ee</button>
+          <div class="uikit-overflow-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+            background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;
+            min-width:220px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;padding:4px;">
+            <button class="uikit-overflow-item" id="tasks-import-btn"
+              style="display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;
+              border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);border-radius:6px;
+              font-family:inherit;">\u2191 Importar do Planner</button>
+            <button class="uikit-overflow-item" id="email-task-btn"
+              title="Criar tarefa a partir de email"
+              style="display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;
+              border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);border-radius:6px;
+              font-family:inherit;">📧 Email → Tarefa</button>
+            <a class="uikit-overflow-item" id="new-request-btn" href="solicitar.html" target="_blank" rel="noopener"
+              title="Abrir portal de solicitações para pedir uma demanda a outro time"
+              style="display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;
+              border:none;cursor:pointer;font-size:0.875rem;color:var(--text-primary);border-radius:6px;
+              font-family:inherit;text-decoration:none;">📨 Solicitação externa</a>
+          </div>
+        </div>
         <button class="btn btn-primary" id="new-task-btn">+ Nova Tarefa</button>
       </div>
     </div>
@@ -1007,6 +1049,9 @@ function _attachPageEvents() {
   if (xlsBtn) xlsBtn.onclick = exportTasksXls;
   const pdfBtn = document.getElementById('tasks-export-pdf');
   if (pdfBtn) pdfBtn.onclick = exportTasksPdf;
+
+  // Ativa dropdowns do header (export menu + overflow ⋮)
+  wireUiKitMenus(container);
 
   // Search
   let timer;
