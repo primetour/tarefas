@@ -21,8 +21,13 @@ import {
 import {
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
+  query,
+  where,
+  collection,
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -80,31 +85,62 @@ export function initAuthObserver(onReady) {
               ? rawName.split('.').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
               : rawName;
 
-            // Criar perfil automaticamente com role 'member'
+            // ── 1) Tenta consolidar doc PENDENTE pré-cadastrado pelo admin ──
+            // Quando admin cria usuário SSO via UI, o doc é gravado com
+            // pendingSso: true e ID temporário (pending_email_dot_dot). Aqui
+            // detectamos esse doc por email, copiamos role/setor/núcleos
+            // pré-configurados, criamos o doc final keyed pelo UID do Firebase
+            // Auth e apagamos o pendente.
+            let mergedFromPending = null;
+            try {
+              const pendQ = query(
+                collection(db, 'users'),
+                where('email', '==', email),
+                where('pendingSso', '==', true),
+              );
+              const pendSnap = await getDocs(pendQ);
+              if (!pendSnap.empty) {
+                const pendingDoc = pendSnap.docs[0];
+                mergedFromPending = { id: pendingDoc.id, ...pendingDoc.data() };
+              }
+            } catch (lookupErr) {
+              console.warn('[SSO] Falha ao buscar doc pendente:', lookupErr.message);
+            }
+
+            // ── 2) Monta o perfil final ──
+            //   - Se existe doc pendente → usa role/setor/núcleos pré-cadastrados.
+            //   - Caso contrário → defaults (role 'member', sem setor).
             const colorIdx = Math.floor(Math.random() * APP_CONFIG.avatarColors.length);
             const newProfile = {
               id:          firebaseUser.uid,
-              name:        formattedName,
+              name:        mergedFromPending?.name || formattedName,
               email:       email,
               phone:       msProvider?.phoneNumber || '',
-              role:        'member',
-              roleId:      'member',
-              nucleo:      '',
-              department:  '',
-              sector:      '',
-              avatarColor: APP_CONFIG.avatarColors[colorIdx],
+              role:        mergedFromPending?.role   || 'member',
+              roleId:      mergedFromPending?.roleId || mergedFromPending?.role || 'member',
+              nucleo:      mergedFromPending?.nucleo || '',
+              nucleos:     mergedFromPending?.nucleos || [],
+              department:  mergedFromPending?.department || '',
+              sector:      mergedFromPending?.sector || '',
+              visibleSectors: mergedFromPending?.visibleSectors || [],
+              avatarColor: mergedFromPending?.avatarColor || APP_CONFIG.avatarColors[colorIdx],
               active:      true,
               firstLogin:  true,
               deletedAt:   null,
               deletedBy:   null,
-              createdAt:   serverTimestamp(),
-              createdBy:   'sso-microsoft',
+              createdAt:   mergedFromPending?.createdAt || serverTimestamp(),
+              createdBy:   mergedFromPending?.createdBy || 'sso-microsoft',
               lastLogin:   serverTimestamp(),
             };
 
             try {
               await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
-              console.log('[SSO] Perfil criado com sucesso:', formattedName, email);
+              // Apaga o stub pendente (já consolidado no UID definitivo)
+              if (mergedFromPending?.id) {
+                await deleteDoc(doc(db, 'users', mergedFromPending.id)).catch(() => {});
+              }
+              console.log('[SSO] Perfil criado com sucesso:', formattedName, email,
+                mergedFromPending ? '(consolidado de pré-cadastro admin)' : '(novo, defaults)');
             } catch (writeErr) {
               console.error('[SSO] Erro ao criar perfil no Firestore:', writeErr);
               toast.error('Erro ao criar perfil. Verifique as regras do Firestore (users create).');
@@ -118,10 +154,16 @@ export function initAuthObserver(onReady) {
 
             // Audit log
             auditLog('users.sso_auto_provision', 'user', firebaseUser.uid, {
-              name: formattedName, email, provider: 'microsoft.com',
+              name: newProfile.name, email,
+              provider: 'microsoft.com',
+              consolidatedFromPending: !!mergedFromPending,
+              role: newProfile.role,
             }).catch(() => {});
 
-            toast.success(`Bem-vindo(a), ${formattedName}! Sua conta foi criada automaticamente via SSO Microsoft.`);
+            const welcome = mergedFromPending
+              ? `Bem-vindo(a), ${newProfile.name}! Sua conta foi ativada com a role ${newProfile.role}.`
+              : `Bem-vindo(a), ${newProfile.name}! Sua conta foi criada automaticamente via SSO Microsoft.`;
+            toast.success(welcome);
           } else {
             await signOut().catch(() => {});
             toast.error('Perfil não encontrado. Contate o administrador.');
@@ -350,55 +392,46 @@ export async function fetchUserProfile(uid) {
 }
 
 // ─── Criar usuário (somente admins) ───────────────────────
+/**
+ * Cria um usuário no sistema.
+ *
+ * COMPORTAMENTO POR DOMÍNIO:
+ *
+ * 1) Email em domínio SSO autorizado (@primetour.com.br, @primetravel.tur.br,
+ *    @primetouroperator.com.br):
+ *    NÃO cria credencial Firebase Auth (email/senha). Cria apenas um doc
+ *    Firestore "pendente" (flag pendingSso: true) com a role/setor/núcleos
+ *    pré-configurados pelo admin. Quando o usuário entrar pela primeira vez
+ *    via Microsoft SSO, o auto-provision em initAuthObserver consolida esse
+ *    doc no UID definitivo do Firebase Auth (ver mergePendingSsoProfile).
+ *
+ *    Por que? Antes esta função criava credencial email/senha mesmo p/ users
+ *    SSO. Resultado: Firebase Auth registrava o email, e na hora do SSO ele
+ *    detectava colisão (auth/account-exists-with-different-credential) e
+ *    forçava a tela de "Vincular conta Microsoft" pedindo a senha original
+ *    — que o usuário nunca soube. Era exatamente o "senha incorreta no SSO"
+ *    reportado pelos usuários.
+ *
+ * 2) Email em domínio externo (cliente, freelancer, etc):
+ *    Mantém o fluxo legado — cria credencial email/senha + doc Firestore com
+ *    UID gerado pelo Auth.
+ *
+ * @param {object} args - dados do usuário
+ * @param {string} args.password - obrigatório só para domínios não-SSO
+ */
 export async function createUser({ name, email, password, role, roleId, department = '', nucleo = '', nucleos = [], sector = '' }) {
   if (!store.can('system_manage_users')) throw new Error('Permissão negada.');
 
-  let uid;
-  let isRecovery = false;
+  const cleanEmail = email.trim().toLowerCase();
+  const isSsoUser = isAllowedSSODomain(cleanEmail);
 
-  try {
-    // Tenta criar no Firebase Auth via instância secundária
-    const credential = await createUserWithEmailAndPassword(
-      secondaryAuth, email.trim(), password
-    );
-    uid = credential.user.uid;
-
-    // Atualizar displayName no Auth
-    await updateProfile(credential.user, { displayName: name }).catch(() => {});
-
-    // Deslogar instância secundária imediatamente
-    await firebaseSignOut(secondaryAuth);
-
-  } catch (authErr) {
-    // Se e-mail já existe no Auth, tenta fazer login para recuperar o UID
-    if (authErr.code === 'auth/email-already-in-use') {
-      try {
-        const cred = await signInWithEmailAndPassword(secondaryAuth, email.trim(), password);
-        uid = cred.user.uid;
-        await updateProfile(cred.user, { displayName: name }).catch(() => {});
-        await firebaseSignOut(secondaryAuth);
-        isRecovery = true;
-      } catch (loginErr) {
-        // Senha diferente ou conta desabilitada — não consegue recuperar
-        await firebaseSignOut(secondaryAuth).catch(() => {});
-        throw new Error(
-          'Não foi possível criar a conta. Verifique os dados ou contate o administrador.'
-        );
-      }
-    } else {
-      throw authErr;
-    }
-  }
-
-  // Gerar cor de avatar
+  // Gerar cor de avatar (compartilhado entre os dois fluxos)
   const colorIdx = Math.floor(Math.random() * APP_CONFIG.avatarColors.length);
   const avatarColor = APP_CONFIG.avatarColors[colorIdx];
 
-  // Criar/recriar documento no Firestore
-  const userDoc = {
-    id:           uid,
+  const baseDoc = {
     name:         name.trim(),
-    email:        email.trim().toLowerCase(),
+    email:        cleanEmail,
     role:         role || roleId,    // mantido para compatibilidade
     roleId:       roleId || role,    // novo campo RBAC
     nucleo:       (nucleo || department).trim(),
@@ -417,24 +450,93 @@ export async function createUser({ name, email, password, role, roleId, departme
     lastLogin:    null,
   };
 
+  // ── FLUXO SSO: cria só o doc pendente (sem Auth credential) ──
+  if (isSsoUser) {
+    // Verifica se já existe outro doc (pendente ou consolidado) com o mesmo email
+    // pra evitar duplicações silenciosas.
+    const { getDocs, query, where, collection: col } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const dupQ = query(col(db, 'users'), where('email', '==', cleanEmail));
+    const dupSnap = await getDocs(dupQ);
+    if (!dupSnap.empty) {
+      throw new Error(`Já existe um usuário cadastrado com ${cleanEmail}.`);
+    }
+
+    // Doc keyed pelo email-slug pra ser idempotente e fácil de querelar.
+    // (Firestore aceita "/" no doc ID? Não — então sanitiza @ e . pra _)
+    const docKey = `pending_${cleanEmail.replace(/[@.]/g, '_')}`;
+    const pendingDoc = {
+      ...baseDoc,
+      id:         docKey,
+      pendingSso: true,
+      authProvider: 'microsoft.com',
+    };
+    await setDoc(doc(db, 'users', docKey), pendingDoc);
+
+    await auditLog('users.create', 'user', docKey, {
+      name, email: cleanEmail, role: role || roleId,
+      sector: (sector || '').trim(), nucleos: pendingDoc.nucleos,
+      pendingSso: true,
+    });
+
+    try {
+      const { invalidateUsersCache } = await import('../services/users.js');
+      invalidateUsersCache();
+    } catch {}
+
+    return pendingDoc;
+  }
+
+  // ── FLUXO NÃO-SSO (legado): cria Auth credential + doc com UID do Auth ──
+  if (!password || password.length < 6) {
+    throw new Error('Senha de no mínimo 6 caracteres é obrigatória para usuários externos (não SSO).');
+  }
+
+  let uid;
+  let isRecovery = false;
+
+  try {
+    const credential = await createUserWithEmailAndPassword(
+      secondaryAuth, cleanEmail, password
+    );
+    uid = credential.user.uid;
+    await updateProfile(credential.user, { displayName: name }).catch(() => {});
+    await firebaseSignOut(secondaryAuth);
+  } catch (authErr) {
+    if (authErr.code === 'auth/email-already-in-use') {
+      try {
+        const cred = await signInWithEmailAndPassword(secondaryAuth, cleanEmail, password);
+        uid = cred.user.uid;
+        await updateProfile(cred.user, { displayName: name }).catch(() => {});
+        await firebaseSignOut(secondaryAuth);
+        isRecovery = true;
+      } catch (loginErr) {
+        await firebaseSignOut(secondaryAuth).catch(() => {});
+        throw new Error(
+          'Não foi possível criar a conta. Verifique os dados ou contate o administrador.'
+        );
+      }
+    } else {
+      throw authErr;
+    }
+  }
+
+  const userDoc = { ...baseDoc, id: uid };
   await setDoc(doc(db, 'users', uid), userDoc);
 
-  // Auditoria
   await auditLog(isRecovery ? 'users.recover' : 'users.create', 'user', uid, {
-    name, email,
+    name, email: cleanEmail,
     role: role || roleId,
     sector: (sector || '').trim(),
     nucleos: userDoc.nucleos,
     isRecovery,
   });
 
-  // Invalida cache de users para que admin veja novo user na próxima leitura
   try {
     const { invalidateUsersCache } = await import('../services/users.js');
     invalidateUsersCache();
   } catch {}
 
-  return { id: uid, ...userDoc };
+  return userDoc;
 }
 
 // ─── Atualizar perfil ─────────────────────────────────────

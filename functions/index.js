@@ -498,6 +498,130 @@ export const logUserLogin = onCall({
 /* ═════════════════════════════════════════════════════════
  * eraseUserData — LGPD endpoint server-side
  * ═════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════
+ * migrateUserToSso — apaga credencial Auth de user pré-cadastrado
+ * pra liberar SSO Microsoft.
+ *
+ * CONTEXTO DO BUG: usuários SSO eram cadastrados pelo admin com senha
+ * temporária via createUser (auth.js antigo). Isso registrava o email
+ * no Firebase Auth com provider 'password'. Quando o user tentava SSO
+ * Microsoft, o Firebase detectava colisão e jogava
+ * 'auth/account-exists-with-different-credential', forçando a tela de
+ * "vincular conta" que pedia a senha original — que o user não sabia.
+ *
+ * ESTA FUNCTION:
+ *   1. Recebe { email } e valida que o admin chamador é mesmo admin.
+ *   2. Apaga o user do Firebase Auth (deleteUser) — libera o email.
+ *   3. Atualiza o doc Firestore correspondente:
+ *      - Move pra um doc novo keyed por pending_email (igual createUser
+ *        SSO faz hoje).
+ *      - Marca pendingSso: true.
+ *   4. Próxima vez que o user clicar "Entrar com Microsoft", o
+ *      auto-provision em initAuthObserver detecta o doc pendente,
+ *      consolida no UID definitivo do Firebase Auth e apaga o stub.
+ *
+ * PRESERVA: name, role, sector, núcleos, lastLogin, createdBy.
+ * APAGA: nada do Firestore (só do Auth).
+ * ═════════════════════════════════════════════════════════ */
+export const migrateUserToSso = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  maxInstances: 5,
+}, async (request) => {
+  const auth = requireAuth(request);
+  const adminFlag = await isAdmin(auth.uid);
+  if (!adminFlag) throw new HttpsError('permission-denied', 'Só admin pode migrar usuários para SSO.');
+
+  const { email } = request.data || {};
+  if (!email || typeof email !== 'string') {
+    throw new HttpsError('invalid-argument', 'email obrigatório');
+  }
+  const cleanEmail = email.trim().toLowerCase();
+
+  // Valida domínio SSO (não faz sentido migrar email externo p/ SSO)
+  const SSO_DOMAINS = ['primetour.com.br', 'primetravel.tur.br', 'primetouroperator.com.br'];
+  const isSsoDomain = SSO_DOMAINS.some(d => cleanEmail.endsWith('@' + d));
+  if (!isSsoDomain) {
+    throw new HttpsError('invalid-argument',
+      `Email ${cleanEmail} não é de domínio SSO autorizado.`);
+  }
+
+  // Busca user no Firebase Auth pelo email
+  let authUser = null;
+  try {
+    authUser = await getAuth().getUserByEmail(cleanEmail);
+  } catch (e) {
+    // Se não tem credencial Auth, já está OK pra SSO — só precisamos
+    // garantir que o doc Firestore esteja em estado "pendente".
+    if (e.code !== 'auth/user-not-found') throw new HttpsError('internal', e.message);
+  }
+
+  // Localiza doc Firestore atual (pode ser keyed por UID ou pending_)
+  let firestoreDoc = null;
+  let firestoreId = null;
+  if (authUser) {
+    const byUid = await db.doc(`users/${authUser.uid}`).get();
+    if (byUid.exists) {
+      firestoreDoc = byUid.data();
+      firestoreId = byUid.id;
+    }
+  }
+  if (!firestoreDoc) {
+    // Tenta achar por email (caso o doc tenha UID diferente do Auth — recovery scenario)
+    const q = await db.collection('users').where('email', '==', cleanEmail).limit(1).get();
+    if (!q.empty) {
+      firestoreDoc = q.docs[0].data();
+      firestoreId = q.docs[0].id;
+    }
+  }
+
+  // Apaga user do Auth (libera o email pra SSO claim)
+  if (authUser) {
+    try {
+      await getAuth().deleteUser(authUser.uid);
+    } catch (e) {
+      throw new HttpsError('internal', `Falha ao apagar user do Auth: ${e.message}`);
+    }
+  }
+
+  // Garante que o doc Firestore esteja em estado "pendente SSO"
+  // (preserva role/setor/núcleos pré-configurados)
+  if (firestoreDoc) {
+    const pendingId = `pending_${cleanEmail.replace(/[@.]/g, '_')}`;
+    const newDoc = {
+      ...firestoreDoc,
+      id: pendingId,
+      email: cleanEmail,
+      pendingSso: true,
+      authProvider: 'microsoft.com',
+      migratedToSsoAt: FieldValue.serverTimestamp(),
+      migratedToSsoBy: auth.uid,
+    };
+    // Cria novo doc com ID pendente
+    await db.doc(`users/${pendingId}`).set(newDoc);
+    // Apaga o doc antigo (se ID era diferente do pending)
+    if (firestoreId && firestoreId !== pendingId) {
+      await db.doc(`users/${firestoreId}`).delete();
+    }
+  }
+
+  // Audit log
+  await db.collection('audit_logs').add({
+    action: 'users.migrate_to_sso',
+    userId: auth.uid,
+    targetEmail: cleanEmail,
+    deletedAuth: !!authUser,
+    timestamp: FieldValue.serverTimestamp(),
+    severity: 'warning',
+  });
+
+  return {
+    ok: true,
+    deletedFromAuth: !!authUser,
+    pendingDocCreated: !!firestoreDoc,
+    message: `${cleanEmail} pronto para SSO. Próximo login Microsoft criará a conta.`,
+  };
+});
+
 export const eraseUserDataServer = onCall({
   cors: ['https://primetour.github.io', 'http://localhost:5000'],
   maxInstances: 5,

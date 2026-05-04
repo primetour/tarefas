@@ -327,23 +327,57 @@ export function renderLogin(container) {
         </button>
       </form>
 
-      <button type="button" id="link-cancel" class="btn-auth-microsoft" style="margin-top:12px;">
+      <button type="button" id="link-forgot-pw" class="btn-auth-microsoft"
+        style="margin-top:12px;background:transparent;border-color:var(--border-subtle);color:var(--text-secondary);">
+        ✉ Não sei a senha — enviar link de recuperação
+      </button>
+
+      <button type="button" id="link-cancel" class="btn-auth-microsoft" style="margin-top:8px;">
         ← Voltar ao login
       </button>
 
       <p class="text-center mt-6 text-xs" style="color:var(--text-muted);">
-        Após vincular, você poderá entrar via Microsoft nas próximas vezes sem precisar de senha.
+        Sua conta foi pré-cadastrada com senha temporária pelo administrador.
+        Se você não recebeu a senha, use "recuperar" acima e o sistema enviará
+        um link por email pra você definir uma nova.
       </p>
     `;
 
-    const linkForm     = document.getElementById('link-form');
-    const linkPwInput  = document.getElementById('link-password');
-    const linkSubmit   = document.getElementById('link-submit');
-    const linkAlert    = document.getElementById('link-alert');
-    const linkCancel   = document.getElementById('link-cancel');
+    const linkForm      = document.getElementById('link-form');
+    const linkPwInput   = document.getElementById('link-password');
+    const linkSubmit    = document.getElementById('link-submit');
+    const linkAlert     = document.getElementById('link-alert');
+    const linkCancel    = document.getElementById('link-cancel');
+    const linkForgotPw  = document.getElementById('link-forgot-pw');
 
     // Voltar ao login normal
     linkCancel.addEventListener('click', () => renderLogin(container));
+
+    // Esqueci a senha — envia email de reset
+    // Importante pra usuários SSO que foram cadastrados com senha temporária
+    // antes do fix do bug. Sem isto, eles ficam presos: SSO bloqueado por
+    // existir credencial email/senha + senha desconhecida → loop infinito.
+    linkForgotPw.addEventListener('click', async () => {
+      linkForgotPw.disabled = true;
+      linkForgotPw.style.opacity = '0.5';
+      try {
+        await resetPassword(email);
+        linkAlert.style.display = 'flex';
+        linkAlert.className = 'auth-alert success';
+        linkAlert.innerHTML = `<span>✓</span><span>
+          Link de recuperação enviado para <strong>${email}</strong>.
+          Verifique sua caixa de entrada (e o spam).
+          Após redefinir, volte aqui e use a nova senha pra vincular.
+        </span>`;
+      } catch (err) {
+        linkAlert.style.display = 'flex';
+        linkAlert.className = 'auth-alert error';
+        linkAlert.innerHTML = `<span>✕</span><span>${getErrorMessage(err.code) || err.message}</span>`;
+      } finally {
+        linkForgotPw.disabled = false;
+        linkForgotPw.style.opacity = '';
+      }
+    });
 
     // Focus na senha
     setTimeout(() => linkPwInput.focus(), 200);

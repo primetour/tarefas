@@ -10,7 +10,7 @@ import { userNucleos } from '../services/sectors.js';
 import { fetchRoles } from '../services/rbac.js';
 import { toast }       from '../components/toast.js';
 import { modal }       from '../components/modal.js';
-import { APP_CONFIG }  from '../config.js';
+import { APP_CONFIG, isAllowedSSODomain, ALLOWED_SSO_DOMAINS }  from '../config.js';
 
 // ─── Roles (carregado dinamicamente) ────────────────────────
 let availableRoles = [];
@@ -119,6 +119,11 @@ export async function renderUsers(container) {
       </div>
     </div>
 
+    <!-- Banner de migração SSO em massa: aparece apenas quando há usuários
+         presos no bug antigo (criados pelo admin com senha em domínio SSO).
+         Renderizado em loadUsers() depois que sabemos a contagem real. -->
+    <div id="sso-migrate-banner" style="display:none;"></div>
+
     <!-- Stats -->
     <div id="users-stats" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px;">
       <div class="stat-card skeleton" style="height:96px;"></div>
@@ -191,6 +196,7 @@ async function loadUsers() {
     store.set('users', users);
     store.set('roles', merged);
     renderStats();
+    renderSsoMigrateBanner();
     applyFilters();
     // Rebuild role filter with dynamic roles after load
     const filterRoleEl = document.getElementById('filter-role');
@@ -202,6 +208,124 @@ async function loadUsers() {
     console.error('Load users error:', err);
     toast.error('Erro ao carregar usuários: ' + err.message);
   }
+}
+
+/**
+ * Banner de migração SSO em massa.
+ * Aparece SÓ quando há usuários presos no bug antigo:
+ *   - email é de domínio SSO autorizado
+ *   - foi criado pelo admin (createdBy != 'sso-microsoft')
+ *   - nunca logou (lastLogin == null)
+ *   - não está em estado pendente já (pendingSso !== true)
+ * Esses são exatamente os usuários que tentam SSO Microsoft e batem
+ * em "senha incorreta" porque o Firebase Auth tem credencial email/senha
+ * registrada com a senha temporária definida pelo admin.
+ */
+function renderSsoMigrateBanner() {
+  const banner = document.getElementById('sso-migrate-banner');
+  if (!banner) return;
+
+  const blocked = users.filter(u =>
+    isAllowedSSODomain(u.email)
+    && u.createdBy && u.createdBy !== 'sso-microsoft'
+    && !u.lastLogin
+    && !u.pendingSso
+  );
+
+  if (!blocked.length) {
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    return;
+  }
+
+  banner.style.display = 'block';
+  banner.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:14px;
+      background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.35);
+      border-radius:var(--radius-md);padding:14px 18px;margin-bottom:24px;
+      font-size:0.875rem;line-height:1.5;color:var(--text-primary);">
+      <span style="font-size:1.4rem;flex-shrink:0;line-height:1;">⚠</span>
+      <div style="flex:1;min-width:0;">
+        <strong style="color:#F59E0B;">${blocked.length} usuário${blocked.length>1?'s':''} preso${blocked.length>1?'s':''} no bug SSO antigo</strong>
+        <p style="margin:6px 0 0;color:var(--text-secondary);font-size:0.8125rem;">
+          Esses foram cadastrados com senha temporária quando o SSO ainda
+          não estava funcionando direito. Hoje, ao clicar em "Entrar com
+          Microsoft", o sistema diz <em>"senha incorreta"</em> porque a
+          credencial de senha bloqueia o SSO. Posso liberar todos de uma vez
+          — o perfil (role, setor, núcleos) é preservado.
+        </p>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-warning btn-sm" id="bulk-migrate-sso-btn"
+            style="background:#F59E0B;color:#fff;border:none;">
+            ⇄ Liberar SSO de todos os ${blocked.length}
+          </button>
+          <button class="btn btn-ghost btn-sm" id="show-blocked-list-btn"
+            style="font-size:0.75rem;">
+            Ver lista
+          </button>
+        </div>
+        <div id="blocked-list" style="display:none;margin-top:12px;padding:10px;
+          background:var(--bg-surface);border-radius:var(--radius-sm);
+          font-size:0.75rem;color:var(--text-muted);max-height:160px;overflow:auto;">
+          ${blocked.map(u => `<div>• ${escHtml(u.name)} <span style="opacity:0.6;">${escHtml(u.email)}</span></div>`).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('show-blocked-list-btn')?.addEventListener('click', () => {
+    const list = document.getElementById('blocked-list');
+    if (list) list.style.display = list.style.display === 'none' ? 'block' : 'none';
+  });
+
+  document.getElementById('bulk-migrate-sso-btn')?.addEventListener('click', async () => {
+    const ok = await modal.confirm({
+      title:   `Liberar SSO de ${blocked.length} usuários`,
+      message: `<div style="font-size:0.875rem;line-height:1.5;">
+        <p>Vou apagar a credencial email/senha de <strong>${blocked.length} usuários</strong>
+        no Firebase Auth. Os perfis (role, setor, núcleos) serão preservados.</p>
+        <p style="margin-top:8px;color:var(--text-muted);">A lista:</p>
+        <ul style="margin:6px 0 0;padding-left:20px;font-size:0.75rem;color:var(--text-muted);max-height:200px;overflow:auto;">
+          ${blocked.map(u => `<li>${escHtml(u.name)} (${escHtml(u.email)})</li>`).join('')}
+        </ul>
+      </div>`,
+      confirmText: 'Liberar todos',
+      danger: false,
+      icon: '⇄',
+    });
+    if (!ok) return;
+
+    const btn = document.getElementById('bulk-migrate-sso-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⟳ Migrando...'; }
+
+    try {
+      const { app } = await import('../firebase.js');
+      const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+      const fn = fb.httpsCallable(fb.getFunctions(app, 'us-central1'), 'migrateUserToSso');
+
+      let succeeded = 0;
+      let failed = 0;
+      // Sequencial pra não estourar o quota do Auth Admin SDK
+      for (const u of blocked) {
+        try {
+          await fn({ email: u.email });
+          succeeded++;
+        } catch (e) {
+          console.error(`Falha em ${u.email}:`, e);
+          failed++;
+        }
+      }
+
+      if (failed === 0) {
+        toast.success(`✓ ${succeeded} usuários migrados! Eles já podem entrar via Microsoft.`);
+      } else {
+        toast.warning(`${succeeded} OK · ${failed} falhas — veja o console.`);
+      }
+      await loadUsers();
+    } catch (err) {
+      toast.error('Falha na migração em massa: ' + err.message);
+    }
+  });
 }
 
 function renderStats() {
@@ -347,6 +471,18 @@ function renderUserRow(user) {
     ? formatDate(user.lastLogin.toDate())
     : 'Nunca';
 
+  // Detecta usuário "preso" no bug SSO antigo:
+  //   - email é de domínio SSO autorizado
+  //   - foi criado pelo admin (createdBy != 'sso-microsoft')
+  //   - NUNCA logou (sintoma claro: tentou SSO e foi bloqueado pela credencial)
+  const isSsoBlocked = isAllowedSSODomain(user.email)
+    && user.createdBy && user.createdBy !== 'sso-microsoft'
+    && !user.lastLogin
+    && !user.pendingSso;
+
+  // Pendente de primeiro login SSO (já criado corretamente, esperando user)
+  const isPendingSso = user.pendingSso === true;
+
   return `
     <tr data-user-id="${user.id}">
       <td>
@@ -356,7 +492,12 @@ function renderUserRow(user) {
           </div>
           <div>
             <div style="font-weight:500; color:var(--text-primary);">${escHtml(user.name)}</div>
-            
+            ${isSsoBlocked ? `<div style="font-size:0.6875rem;color:#F59E0B;margin-top:2px;">
+              ⚠ SSO bloqueado · clique em ⇄ para liberar
+            </div>` : ''}
+            ${isPendingSso ? `<div style="font-size:0.6875rem;color:#22C55E;margin-top:2px;">
+              ⏳ Aguardando 1º login Microsoft
+            </div>` : ''}
           </div>
         </div>
       </td>
@@ -373,12 +514,19 @@ function renderUserRow(user) {
       <td style="color:var(--text-muted); font-size:0.8125rem;">${lastLogin}</td>
       <td class="col-actions">
         <div class="actions-group">
+          ${isSsoBlocked ? `
+            <button class="btn btn-ghost btn-icon btn-sm" data-action="migrate-sso" data-uid="${user.id}"
+              data-email="${escHtml(user.email)}" title="Liberar SSO Microsoft (apaga senha legada)"
+              style="color:#F59E0B;">⇄</button>
+          ` : ''}
           <button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-uid="${user.id}" title="Editar">
             ✎
           </button>
-          <button class="btn btn-ghost btn-icon btn-sm" data-action="reset-password" data-uid="${user.id}" title="Redefinir senha">
-            🔑
-          </button>
+          ${!isPendingSso && !isSsoBlocked ? `
+            <button class="btn btn-ghost btn-icon btn-sm" data-action="reset-password" data-uid="${user.id}" title="Redefinir senha">
+              🔑
+            </button>
+          ` : ''}
           ${user.active
             ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="deactivate" data-uid="${user.id}" title="Desativar">⊘</button>`
             : `<button class="btn btn-success btn-icon btn-sm" data-action="activate" data-uid="${user.id}" title="Reativar">✓</button>`
@@ -439,12 +587,28 @@ function openUserModal(userId = null) {
       </div>
 
       ${!isEdit ? `
-        <div class="form-group">
+        <!-- Aviso SSO: aparece quando o email digitado é de domínio corporativo.
+             Some quando é email externo (cliente/freela) — daí mostra senha. -->
+        <div id="uf-sso-banner" style="display:none;margin-bottom:12px;padding:12px 14px;
+          border-radius:var(--radius-md);background:rgba(34,197,94,0.08);
+          border:1px solid rgba(34,197,94,0.25);font-size:0.8125rem;color:var(--text-primary);">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.1em;">🔒</span>
+            <strong>Conta SSO Microsoft</strong>
+          </div>
+          <p style="margin:6px 0 0;color:var(--text-secondary);font-size:0.75rem;line-height:1.4;">
+            Esse email pertence a um domínio corporativo. <strong>Não precisa criar senha</strong> —
+            o usuário entrará pela primeira vez clicando em <em>"Entrar com Microsoft"</em> e a conta
+            será ativada automaticamente com a role e setor que você definir aqui.
+          </p>
+        </div>
+
+        <div class="form-group" id="uf-password-group">
           <label class="form-label">Senha temporária *</label>
           <div class="form-input-wrapper">
             <input type="password" class="form-input has-icon-right" id="uf-password"
               placeholder="Mínimo 6 caracteres"
-              required minlength="6"
+              minlength="6"
             />
             <button type="button" class="form-input-icon-right" id="uf-toggle-pw">👁</button>
           </div>
@@ -577,6 +741,31 @@ function openUserModal(userId = null) {
         toggleBtn.textContent = pwInput.type === 'text' ? '🙈' : '👁';
       });
     }
+
+    // Detector dinâmico de domínio SSO no campo email.
+    // Se o email digitado é de domínio corporativo → esconde o campo senha
+    // e mostra o banner explicando que o user entrará via Microsoft. Isso
+    // evita o bug "senha incorreta no SSO" reportado pelos usuários, que
+    // era causado pela criação de credencial email/senha pra usuários SSO.
+    const emailInput = document.getElementById('uf-email');
+    const ssoBanner  = document.getElementById('uf-sso-banner');
+    const pwGroup    = document.getElementById('uf-password-group');
+    if (emailInput && ssoBanner && pwGroup) {
+      const updateSsoVisibility = () => {
+        const isSso = isAllowedSSODomain(emailInput.value);
+        ssoBanner.style.display = isSso ? 'block' : 'none';
+        pwGroup.style.display   = isSso ? 'none'  : 'block';
+        // Tira required do password quando é SSO pra não bloquear submit
+        const pw = document.getElementById('uf-password');
+        if (pw) {
+          if (isSso) pw.removeAttribute('required');
+          else       pw.setAttribute('required', '');
+        }
+      };
+      emailInput.addEventListener('input', updateSsoVisibility);
+      // Também roda na carga (caso o admin cole um email no input já populado)
+      updateSsoVisibility();
+    }
   }, 50);
 }
 
@@ -682,7 +871,10 @@ async function handleUserSave(userId, isEdit, closeModal) {
   if (!isEdit && (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
     setErr('uf-email-error', 'E-mail inválido.');
   }
-  if (!isEdit && (!password || password.length < 6)) {
+  // Senha só é obrigatória quando NÃO é domínio SSO (usuários externos).
+  // SSO entram sem senha — Auth credential é criado automaticamente no 1º login Microsoft.
+  const requiresPassword = !isEdit && email && !isAllowedSSODomain(email);
+  if (requiresPassword && (!password || password.length < 6)) {
     setErr('uf-password-error', 'Senha deve ter ao menos 6 caracteres.');
   }
 
@@ -857,6 +1049,44 @@ function _attachTableEvents() {
         case 'reset-password':
           openResetPasswordModal(uid, user);
           break;
+        case 'migrate-sso': {
+          // Libera SSO Microsoft pra usuários antigos criados com senha.
+          // Vide functions/index.js → migrateUserToSso pro detalhe completo.
+          const email = btn.dataset.email || user.email;
+          const ok = await modal.confirm({
+            title:   'Liberar SSO Microsoft',
+            message: `<div style="font-size:0.875rem;line-height:1.5;">
+              <p>Vou apagar a credencial de <strong>email/senha</strong> de
+              <strong>${escHtml(email)}</strong> no Firebase Auth.</p>
+              <p style="margin-top:8px;color:var(--text-muted);">O perfil
+              (role, setor, núcleos) será preservado. Quando ${escHtml(user.name)}
+              clicar em <em>"Entrar com Microsoft"</em>, a conta será ativada
+              automaticamente.</p>
+              <p style="margin-top:8px;font-size:0.75rem;color:var(--text-muted);">
+              Esta operação resolve o erro <em>"senha incorreta"</em> reportado
+              por usuários que tentavam SSO em contas pré-cadastradas com senha.</p>
+            </div>`,
+            confirmText: 'Liberar SSO',
+            danger: false,
+            icon: '⇄',
+          });
+          if (!ok) return;
+
+          try {
+            const { app } = await import('../firebase.js');
+            const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+            const fn = fb.httpsCallable(fb.getFunctions(app, 'us-central1'), 'migrateUserToSso');
+            const result = await fn({ email });
+            const r = result.data || {};
+            toast.success(r.message || `${email} pronto para SSO!`);
+            await loadUsers();
+          } catch (err) {
+            console.error('migrateUserToSso failed:', err);
+            const msg = err.message?.replace(/^FirebaseError:\s*/, '') || 'Falha ao liberar SSO.';
+            toast.error(msg);
+          }
+          break;
+        }
         case 'deactivate':
           if (await modal.confirm({
             title:       'Desativar usuário',
