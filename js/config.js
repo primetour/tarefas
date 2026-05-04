@@ -22,6 +22,26 @@ export const firebaseConfig = {
   appId: "1:1083421353313:web:f9656ce6ae0fc4ca24d120"
 };
 
+// ─── SSO — domínios corporativos aceitos ────────────────────
+// Qualquer e-mail terminando em um destes domínios pode logar via
+// SSO Microsoft (auto-provisioning ativo na 1ª entrada).
+// Adicionar novo domínio aqui propaga p/ login + portal + docs.
+export const ALLOWED_SSO_DOMAINS = [
+  'primetour.com.br',
+  'primetravel.tur.br',
+  'primetouroperator.com.br',
+];
+
+/**
+ * @param {string} email
+ * @returns {boolean} true se o email pertence a um domínio SSO autorizado
+ */
+export function isAllowedSSODomain(email) {
+  if (!email || typeof email !== 'string') return false;
+  const e = email.toLowerCase().trim();
+  return ALLOWED_SSO_DOMAINS.some(d => e.endsWith('@' + d));
+}
+
 /**
  * Regras do Firestore (cole no Console do Firebase):
  *

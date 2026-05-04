@@ -343,7 +343,9 @@
       <div class="login-wrap">
         <div style="font-size:2.5rem;margin-bottom:12px;">🔒</div>
         <h2>Faça login para conversar</h2>
-        <p>Use sua conta corporativa @primetour.com.br</p>
+        <p>Use sua conta corporativa Primetour<br>
+          <span style="font-size:0.75rem;color:var(--text-muted);">@primetour.com.br · @primetravel.tur.br · @primetouroperator.com.br</span>
+        </p>
         <button class="send-btn" id="login-ms" style="width:100%;margin-bottom:12px;">Entrar com Microsoft</button>
         <details style="text-align:left;">
           <summary style="cursor:pointer;font-size:0.8125rem;color:var(--text-muted);text-align:center;">Ou entrar com e-mail/senha</summary>
@@ -357,7 +359,7 @@
     document.getElementById('login-ms').addEventListener('click', async () => {
       try {
         const provider = new OAuthProvider('microsoft.com');
-        provider.setCustomParameters({ tenant: 'common' });
+        provider.setCustomParameters({ tenant: 'organizations', prompt: 'login' });
         await signInWithPopup(auth, provider);
       } catch (e) {
         document.getElementById('login-err').textContent = e.message;

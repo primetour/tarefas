@@ -225,7 +225,7 @@
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
     import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-    import { firebaseConfig } from './js/config.js';
+    import { firebaseConfig, isAllowedSSODomain } from './js/config.js';
 
     // ─── Lista de docs disponíveis ──────────────────────────
     const DOCS = [
@@ -270,12 +270,12 @@
       resolved = true;
       clearTimeout(timeout);
 
-      // Validar email do tenant Primetour
-      if (!user.email || !user.email.toLowerCase().endsWith('@primetour.com.br')) {
+      // Validar email pertencente aos domínios SSO autorizados
+      if (!isAllowedSSODomain(user.email)) {
         document.getElementById('root').innerHTML = `
           <div class="auth-gate">
             <h2>🚫 Acesso negado</h2>
-            <p>Sua conta (${user.email || 'sem email'}) não pertence ao tenant Primetour.</p>
+            <p>Sua conta (${user.email || 'sem email'}) não pertence aos domínios autorizados da Primetour.</p>
             <a class="btn" href="/tarefas/">Voltar</a>
           </div>`;
         return;

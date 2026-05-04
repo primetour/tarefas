@@ -17,9 +17,20 @@ import {
 let portalUser = null; // { uid, name, email, department }
 
 /* ─── Bootstrap ───────────────────────────────────────────── */
+// Cache da lista de domínios SSO autorizados (carregada dinamicamente)
+let ALLOWED_SSO_DOMAINS = ['primetour.com.br'];
+function isAllowedSSODomain(email) {
+  if (!email) return false;
+  const e = email.toLowerCase().trim();
+  return ALLOWED_SSO_DOMAINS.some(d => e.endsWith('@' + d));
+}
+
 async function boot() {
   const configModule = await import('../config.js').catch(() => null);
   const firebaseConfig = configModule?.firebaseConfig;
+  if (Array.isArray(configModule?.ALLOWED_SSO_DOMAINS)) {
+    ALLOWED_SSO_DOMAINS = configModule.ALLOWED_SSO_DOMAINS;
+  }
   if (!firebaseConfig) {
     showError('Configuração do sistema não encontrada.');
     return;
@@ -179,16 +190,17 @@ function renderLoginScreen(auth, root) {
     errBanner.style.display = 'none';
     try {
       const msProvider = new OAuthProvider('microsoft.com');
-      msProvider.setCustomParameters({ tenant: 'primetour.com.br', prompt: 'login', login_hint: '' });
+      msProvider.setCustomParameters({ tenant: 'organizations', prompt: 'login', login_hint: '' });
       msProvider.addScope('user.read');
       const result = await signInWithPopup(auth, msProvider);
       const user   = result.user;
 
       // Validate domain
-      if (user.email && !user.email.toLowerCase().endsWith('@primetour.com.br')) {
+      if (user.email && !isAllowedSSODomain(user.email)) {
         await signOut(auth);
         errBanner.style.display = 'flex';
-        errMsg.textContent = 'Apenas e-mails @primetour.com.br são aceitos.';
+        const allowed = ALLOWED_SSO_DOMAINS.map(d => '@' + d).join(', ');
+        errMsg.textContent = `Apenas e-mails dos domínios autorizados são aceitos: ${allowed}.`;
         ssoBtn.disabled = false;
         ssoBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 21 21"><rect width="10" height="10" fill="#f25022"/><rect x="11" width="10" height="10" fill="#7fba00"/><rect y="11" width="10" height="10" fill="#00a4ef"/><rect x="11" y="11" width="10" height="10" fill="#ffb900"/></svg> Entrar com Microsoft SSO';
         return;

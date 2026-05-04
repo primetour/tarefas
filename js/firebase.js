@@ -31,9 +31,14 @@ const app = initializeApp(firebaseConfig, 'primetour-main');
 const secondaryApp = initializeApp(firebaseConfig, 'primetour-secondary');
 
 // ─── Microsoft SSO Provider ───────────────────────────────
+// `tenant: 'organizations'` aceita qualquer Azure AD (work/school) e bloqueia
+// contas pessoais (consumers). A restrição por domínio (@primetour.com.br,
+// @primetravel.tur.br, @primetouroperator.com.br) é feita em auth.js via
+// ALLOWED_SSO_DOMAINS — assim qualquer um dos 3 tenants/domínios da Primetour
+// consegue logar mesmo quando estão em organizações Azure separadas.
 export const microsoftProvider = new OAuthProvider('microsoft.com');
 microsoftProvider.setCustomParameters({
-  tenant: 'primetour.com.br',     // Restringe ao tenant Microsoft da Primetour
+  tenant: 'organizations',        // Aceita qualquer tenant corporativo Azure AD
   prompt: 'login',                // Força login com email/senha (evita PIN do Authenticator)
   login_hint: '',                 // Não sugere conta anterior
 });

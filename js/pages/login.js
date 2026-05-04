@@ -6,6 +6,7 @@
 import { signIn, signInWithMicrosoft, linkMicrosoftToExistingAccount, resetPassword, getErrorMessage } from '../auth/auth.js';
 import { toast } from '../components/toast.js';
 import { auditLog } from '../auth/audit.js';
+import { ALLOWED_SSO_DOMAINS } from '../config.js';
 
 export function renderLogin(container) {
   container.innerHTML = `
@@ -105,8 +106,13 @@ export function renderLogin(container) {
               <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
             </svg>
             <span>Entrar com Microsoft</span>
-            <span style="color:var(--text-muted);font-weight:400;font-size:0.8125rem;">@primetour.com.br</span>
           </button>
+
+          <!-- Lista dos domínios SSO autorizados -->
+          <p style="text-align:center;margin-top:10px;font-size:0.75rem;color:var(--text-muted);line-height:1.5;">
+            E-mails aceitos:<br>
+            ${ALLOWED_SSO_DOMAINS.map(d => `<span style="color:var(--text-primary);font-weight:500;">@${d}</span>`).join(' · ')}
+          </p>
 
           <!-- Login email/senha emergencial (escondido por padrão).
                Pra reativar: localStorage.setItem('emergency-pwd-login','1') + reload -->

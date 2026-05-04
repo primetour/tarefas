@@ -35,7 +35,7 @@ import { loadCardPrefs }               from '../services/cardPrefs.js';
 import { initSystemTaskTypes, loadTaskTypes } from '../services/taskTypes.js';
 import { store }   from '../store.js';
 import { toast }   from '../components/toast.js';
-import { APP_CONFIG } from '../config.js';
+import { APP_CONFIG, ALLOWED_SSO_DOMAINS, isAllowedSSODomain } from '../config.js';
 import { auditLog } from './audit.js';
 
 // ─── Observer de estado de autenticação ───────────────────
@@ -63,10 +63,10 @@ export function initAuthObserver(onReady) {
       try {
         let profile = await fetchUserProfile(firebaseUser.uid);
 
-        // ── Auto-provisioning SSO Microsoft (@primetour.com.br) ──
+        // ── Auto-provisioning SSO Microsoft (domínios corporativos) ──
         if (!profile) {
           const email = (firebaseUser.email || '').toLowerCase();
-          const isSSOPrimetour = email.endsWith('@primetour.com.br')
+          const isSSOPrimetour = isAllowedSSODomain(email)
             && firebaseUser.providerData?.some(p => p.providerId === 'microsoft.com');
 
           if (isSSOPrimetour) {
@@ -272,10 +272,12 @@ export async function signInWithMicrosoft() {
     const result = await signInWithPopup(auth, microsoftProvider);
     const email  = (result.user.email || '').toLowerCase();
 
-    // Dupla validação de domínio (segurança — tenant param já restringe)
-    if (!email.endsWith('@primetour.com.br')) {
+    // Dupla validação de domínio (segurança — tenant é 'organizations',
+    // então a única barreira de domínio é esta verificação no app).
+    if (!isAllowedSSODomain(email)) {
       await firebaseSignOut(auth);
-      throw new Error('SSO restrito a contas @primetour.com.br');
+      const allowed = ALLOWED_SSO_DOMAINS.map(d => '@' + d).join(', ');
+      throw new Error(`SSO restrito aos domínios: ${allowed}`);
     }
 
     // Captura access token Microsoft pra usar em SharePoint/OneDrive

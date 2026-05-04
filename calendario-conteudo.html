@@ -202,7 +202,7 @@
       document.getElementById('login-sso-btn')?.addEventListener('click', async () => {
         try {
           const provider = new OAuthProvider('microsoft.com');
-          provider.setCustomParameters({ tenant: 'primetour.com.br' });
+          provider.setCustomParameters({ tenant: 'organizations', prompt: 'login' });
           await signInWithPopup(auth, provider);
         } catch(e) { showLoginErr('Erro SSO: ' + e.message); }
       });
