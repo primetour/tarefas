@@ -686,73 +686,102 @@ export const migrateUserToSso = onCall({
 export const repairOrphanSquadMembers = onCall({
   cors: ['https://primetour.github.io', 'http://localhost:5000'],
   maxInstances: 3,
-  timeoutSeconds: 120,
+  timeoutSeconds: 180,
 }, async (request) => {
   const auth = requireAuth(request);
   const adminFlag = await isAdmin(auth.uid);
   if (!adminFlag) throw new HttpsError('permission-denied', 'Só admin.');
 
-  // 1. Constrói mapa email → oldUid via audit_logs.
+  // ─── ESTRATÉGIA REVISADA ──────────────────────────────────
+  // V1 só lidava com pendingSso users. Mas usuários já consolidados
+  // (que migraram E entraram via SSO) também ficam com squads
+  // referenciando uid ANTIGO. Detectado em prod: Renê (unDExA) e Rafaela
+  // (UWY3xa) eram members de squads via uid antigo, mesmo já tendo
+  // entrado via SSO com uid novo.
+  //
+  // V2: varre TODOS os squads, identifica UIDs órfãos (não correspondem
+  // a nenhum users/{id} atual), mapeia cada órfão pro email via audit
+  // logs, e procura o user atual por email pra fazer o swap.
+  // ──────────────────────────────────────────────────────────
+
+  // 1. Snapshot de todos os users (validUids + email → currentUid)
+  const usersSnap = await db.collection('users').get();
+  const validUids = new Set();
+  const emailToCurrentUid = {};
+  usersSnap.docs.forEach(d => {
+    validUids.add(d.id);
+    const email = (d.data().email || '').toLowerCase();
+    if (email) emailToCurrentUid[email] = d.id;
+  });
+
+  // 2. Audit logs: mapa oldUid → email (todos os users.create)
   const auditSnap = await db.collection('audit_logs')
     .where('action', '==', 'users.create')
-    .limit(500)
+    .limit(1000)
     .get();
-  const emailToOldUid = {};
+  const oldUidToEmail = {};
   auditSnap.docs.forEach(d => {
     const data = d.data();
     const email = (data.details?.email || data.targetEmail || '').toLowerCase();
     const oldUid = data.entityId || data.targetUid;
-    if (email && oldUid && !emailToOldUid[email]) {
-      emailToOldUid[email] = oldUid;
-    }
+    if (email && oldUid) oldUidToEmail[oldUid] = email;
   });
 
-  // 2. Pega usuários pending sem legacyUid setado (precisam reparo)
-  const pendingSnap = await db.collection('users')
-    .where('pendingSso', '==', true)
-    .get();
-
+  // 3. Varre workspaces, identifica órfãos, faz swap
+  const wsSnap = await db.collection('workspaces').get();
   const report = [];
   let totalPatched = 0;
+  let workspacesPatched = 0;
 
-  for (const pendDoc of pendingSnap.docs) {
-    const pend = pendDoc.data();
-    const email = (pend.email || '').toLowerCase();
-    const pendingId = pendDoc.id;
-    const knownLegacy = pend.legacyUid;
-    const lookupLegacy = emailToOldUid[email];
-    const legacyUid = knownLegacy || lookupLegacy;
+  for (const wsDoc of wsSnap.docs) {
+    const data = wsDoc.data();
+    const members = data.members || [];
+    const adminIds = data.adminIds || [];
+    const orphanMembers = members.filter(uid => !validUids.has(uid));
+    const orphanAdmins  = adminIds.filter(uid => !validUids.has(uid));
+    const allOrphans = [...new Set([...orphanMembers, ...orphanAdmins])];
 
-    if (!legacyUid) {
-      report.push({ email, pendingId, status: 'sem_oldUid_no_audit', patched: 0 });
-      continue;
-    }
+    if (!allOrphans.length) continue;
 
-    // 3. Procura workspaces com legacyUid e faz swap
-    let patched = 0;
-    try {
-      const wsSnap = await db.collection('workspaces')
-        .where('members', 'array-contains', legacyUid)
-        .get();
-      for (const wsDoc of wsSnap.docs) {
-        const data = wsDoc.data();
-        await wsDoc.ref.update({ members: FieldValue.arrayRemove(legacyUid) });
-        await wsDoc.ref.update({ members: FieldValue.arrayUnion(pendingId) });
-        if ((data.adminIds || []).includes(legacyUid)) {
-          await wsDoc.ref.update({ adminIds: FieldValue.arrayRemove(legacyUid) });
-          await wsDoc.ref.update({ adminIds: FieldValue.arrayUnion(pendingId) });
+    let wsPatched = 0;
+    for (const orphanUid of allOrphans) {
+      const email = oldUidToEmail[orphanUid];
+      if (!email) {
+        report.push({
+          workspace: data.name, orphanUid, status: 'sem_email_no_audit',
+        });
+        continue;
+      }
+      const currentUid = emailToCurrentUid[email];
+      if (!currentUid) {
+        report.push({
+          workspace: data.name, orphanUid, email, status: 'user_atual_nao_encontrado',
+        });
+        continue;
+      }
+      if (currentUid === orphanUid) continue; // já está OK
+
+      try {
+        if (orphanMembers.includes(orphanUid)) {
+          await wsDoc.ref.update({ members: FieldValue.arrayRemove(orphanUid) });
+          await wsDoc.ref.update({ members: FieldValue.arrayUnion(currentUid) });
         }
-        patched++;
+        if (orphanAdmins.includes(orphanUid)) {
+          await wsDoc.ref.update({ adminIds: FieldValue.arrayRemove(orphanUid) });
+          await wsDoc.ref.update({ adminIds: FieldValue.arrayUnion(currentUid) });
+        }
+        wsPatched++;
+        totalPatched++;
+        report.push({
+          workspace: data.name, orphanUid, email, currentUid, status: 'ok',
+        });
+      } catch (e) {
+        report.push({
+          workspace: data.name, orphanUid, email, status: 'error', error: e.message,
+        });
       }
-      // Backfill legacyUid no doc pending pra futuras consolidações
-      if (!knownLegacy) {
-        await pendDoc.ref.update({ legacyUid });
-      }
-      totalPatched += patched;
-      report.push({ email, pendingId, legacyUid, status: 'ok', patched });
-    } catch (e) {
-      report.push({ email, pendingId, legacyUid, status: 'error', error: e.message });
     }
+    if (wsPatched > 0) workspacesPatched++;
   }
 
   // Audit
@@ -760,7 +789,8 @@ export const repairOrphanSquadMembers = onCall({
     action: 'system.repair_orphan_squad_members',
     userId: auth.uid,
     totalPatched,
-    pendingUsersScanned: pendingSnap.size,
+    workspacesPatched,
+    workspacesScanned: wsSnap.size,
     timestamp: FieldValue.serverTimestamp(),
     severity: 'warning',
   });
@@ -768,7 +798,8 @@ export const repairOrphanSquadMembers = onCall({
   return {
     ok: true,
     totalPatched,
-    pendingUsersScanned: pendingSnap.size,
+    workspacesPatched,
+    workspacesScanned: wsSnap.size,
     report,
   };
 });
