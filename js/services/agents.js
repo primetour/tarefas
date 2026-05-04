@@ -492,7 +492,9 @@ NUNCA invente nomes de hotéis ou restaurantes que não existem. Se não souber,
     allowedSites: [],
     limits: { maxTokensPerRun: 4096, temperature: 0.7, maxCostPerDayUsd: 5, rateLimit: { window: 60, max: 5 }, timeoutMs: 60000 },
     triggers: {
-      button: { enabled: true, label: 'Gerar Roteiro', position: 'header' },
+      // Botão desabilitado: a página de Roteiros tem UI dedicada "Criar com IA"
+      // que invoca este mesmo agent. Evita botão duplicado no header.
+      button: { enabled: false, label: 'Gerar Roteiro', position: 'header' },
       context: { enabled: false, label: '' },
       schedule: { enabled: false, mode: 'preset', preset: 'daily' },
       publicChat: { enabled: false, slug: '' },

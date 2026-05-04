@@ -598,6 +598,25 @@ export async function renderRoteiros(container) {
 
   /* ── Init ── */
   await loadData();
+
+  // Remove botão de agent injetado no header (a UI dedicada "Criar com IA"
+  // chama o mesmo agent — botão duplicado polui o header). Roda 2x pra pegar
+  // race com mountAgentsForRoute que pode injetar após o render.
+  const detachAgentBtn = () => {
+    container.querySelectorAll('.agent-trigger-btn[data-agent-id]').forEach(b => {
+      // Só remove agents do módulo roteiros (preserva botões de outros módulos)
+      const id = b.dataset.agentId || '';
+      if (/roteiro/i.test(b.textContent || '') || /roteiro/i.test(b.title || '')) {
+        b.remove();
+      }
+    });
+    // Limpa group container vazio
+    container.querySelectorAll('.agent-trigger-group').forEach(g => {
+      if (!g.children.length) g.remove();
+    });
+  };
+  detachAgentBtn();
+  setTimeout(detachAgentBtn, 500);
 }
 
 /* ════════════════════════════════════════════════════════════

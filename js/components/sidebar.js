@@ -40,6 +40,7 @@ const NAV_GROUPS = [
       { route: 'content-calendar',     icon: '📱', label: 'Calendário de Conteúdo', perm: 'content_calendar_view' },
       { route: 'roteiros',            icon: '✈', label: 'Gerador de Roteiros', perm: 'roteiro_access' },
       { route: 'portal-tips',         icon: '✈', label: 'Portal de Dicas',     perm: 'portal_access'  },
+      { route: 'portal-areas',        icon: '◑', label: 'Áreas / BUs',          perm: 'portal_manage'  },
       { route: 'portal-images',       icon: '▨', label: 'Banco de Imagens',     perm: 'portal_manage'  },
       { route: 'landing-pages',       icon: '◱', label: 'Landing Pages',        perm: 'portal_manage'  },
       { route: 'cms',                 icon: '◫', label: 'CMS / Site',           perm: 'portal_manage'  },
