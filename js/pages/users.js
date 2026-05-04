@@ -158,6 +158,11 @@ export async function renderUsers(container) {
 
     <!-- Botões admin: ferramentas de manutenção -->
     <div style="margin-bottom:20px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+      <button id="migrate-uid-global-btn" class="btn btn-ghost btn-sm"
+        style="font-size:0.75rem;color:var(--text-muted);"
+        title="Migra UIDs antigos de users (de antes do SSO) em TODAS as coleções: tasks, projetos, metas, notificações, CSAT, etc. Resolve o bug '(usuário)' aparecer em vários lugares. Idempotente.">
+        🌐 Migrar UIDs globalmente
+      </button>
       <button id="sync-nucleos-squads-btn" class="btn btn-ghost btn-sm"
         style="font-size:0.75rem;color:var(--text-muted);"
         title="Para cada user, vincula em squads com mesmo nome dos seus núcleos. Resolve a desconexão histórica entre núcleos e squads.">
@@ -1199,6 +1204,60 @@ function openResetPasswordModal(uid, user) {
 function _attachPageEvents() {
   // New user button
   document.getElementById('new-user-btn')?.addEventListener('click', () => openUserModal());
+
+  // Migração global de UIDs em todas as coleções
+  // Solução sistêmica pro bug "(usuário)" aparecer em metas, tasks, etc:
+  // varre TODAS as coleções (tasks, projects, goals, notifications, etc)
+  // e troca legacyUid → currentUid de uma vez. Idempotente.
+  document.getElementById('migrate-uid-global-btn')?.addEventListener('click', async () => {
+    const ok = await modal.confirm({
+      title:   'Migração global de UIDs',
+      message: `<div style="font-size:0.875rem;line-height:1.5;">
+        <p>Vou varrer <strong>TODAS as coleções</strong> do sistema (tasks,
+        projetos, metas, notificações, CSAT, feedback, etc — ~30 coleções)
+        e trocar UIDs antigos pelos UIDs atuais dos usuários.</p>
+        <p style="margin-top:8px;color:var(--text-muted);">Isso resolve
+        bugs onde "<em>(usuário)</em>" aparece em vez do nome — causados por
+        users que migraram de Auth password pra SSO Microsoft mantendo refs
+        ao UID antigo nas tarefas/metas que ele criou.</p>
+        <p style="margin-top:8px;color:var(--text-muted);font-size:0.75rem;">
+        Operação pode levar ~30s e tocar centenas de docs. Idempotente:
+        rodar de novo não causa efeito colateral.</p>
+      </div>`,
+      confirmText: 'Migrar agora',
+      icon: '🌐',
+    });
+    if (!ok) return;
+
+    const btn = document.getElementById('migrate-uid-global-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⟳ Migrando (até 30s)…'; }
+
+    try {
+      const { app } = await import('../firebase.js');
+      const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+      const fn = fb.httpsCallable(fb.getFunctions(app, 'us-central1'), 'migrateUserUidGlobal');
+      const result = await fn({});
+      const r = result.data || {};
+      const msg = `${r.pairsScanned || 0} usuários migrados · ${r.totalDocsTouched || 0} documentos atualizados`;
+      if (r.errors?.length) {
+        toast.warning(`${msg} · ${r.errors.length} erros (veja console)`);
+      } else {
+        toast.success(`✓ ${msg}`);
+      }
+      console.table(r.migrations);
+      // Limpa cache do resolver pra próximas resoluções pegarem dados atualizados
+      try {
+        const { invalidateResolverCache } = await import('../services/userResolver.js');
+        invalidateResolverCache();
+      } catch {}
+      await loadUsers();
+    } catch (err) {
+      console.error('migrateUserUidGlobal failed:', err);
+      toast.error('Falha: ' + (err.message || 'erro desconhecido'));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🌐 Migrar UIDs globalmente'; }
+    }
+  });
 
   // Sync retroativo de núcleos → squads
   // Para cada user com núcleos definidos, vincula em squads com mesmo nome.

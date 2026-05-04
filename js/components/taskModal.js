@@ -15,6 +15,7 @@ import {
 } from '../services/tasks.js';
 import { fetchProjects }  from '../services/projects.js';
 import { getTaskType } from '../services/taskTypes.js';
+import { resolveUserName, resolveUserSync } from '../services/userResolver.js';
 /* getSubtaskTemplate: lazy-loaded (may not exist in older deployments) */
 let getSubtaskTemplate = () => [];
 let _ttLoaded = false;
@@ -793,8 +794,11 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           const ids = taskAssignees();
           const tabs = ids.length
             ? ids.map(uid => {
+                // resolveUserName cobre: cache local, store, pending_* (deriva
+                // email do slug), email-lookup. Nunca retorna "(usuário)" cru.
                 const u = users.find(x => x.id === uid);
-                return { id: uid, label: u ? u.name : '(usuário)' };
+                const label = u?.name || resolveUserName(uid);
+                return { id: uid, label };
               })
             : [{ id: SCOPE_USER, label: 'Tarefa (sem responsável)' }];
 

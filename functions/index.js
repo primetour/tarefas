@@ -669,6 +669,286 @@ export const migrateUserToSso = onCall({
 });
 
 /* ═════════════════════════════════════════════════════════
+ * migrateUserUidGlobal — migração SISTÊMICA de UID antigo → UID novo
+ * em TODAS as coleções que referenciam users.
+ *
+ * MOTIVAÇÃO: cada user que migrava de Auth password → SSO recebia novo
+ * UID. Patches anteriores cuidaram só de workspace.members + adminIds.
+ * Mas o sistema referencia user UID em ~50 outros campos (task.assignees,
+ * task.createdBy, goal.metaLinks, notification.recipientId, etc).
+ *
+ * Cenário típico: Renê tinha UID `unDExA*` (Auth password). Migrou pra
+ * SSO, recebeu `OvnFxqaU*`. Tasks criadas antes têm createdBy=unDExA*
+ * → admin abre task, vê "(usuário)" como criador → bug.
+ *
+ * Esta function:
+ *   1. Detecta automaticamente users que tiveram migração (têm
+ *      legacyUid setado OR aparecem em audit_logs.users.create)
+ *   2. Pra cada (legacyUid, currentUid):
+ *      - Varre TODAS as 50+ coleções+campos da matriz abaixo
+ *      - Faz arrayRemove(legacyUid) + arrayUnion(currentUid) em arrays
+ *      - Faz update de strings (createdBy, updatedBy, etc)
+ *   3. Bulk pra performance: usa BatchedWrite quando possível
+ *   4. Idempotente: rodar várias vezes não causa side-effect (lookup
+ *      seguro, swap só se ainda referencia o legacyUid)
+ *   5. Retorna relatório completo
+ *
+ * SEGURANÇA: só admin pode chamar. Audit log com severity critical.
+ * ═════════════════════════════════════════════════════════ */
+export const migrateUserUidGlobal = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  maxInstances: 1, // proteção: roda 1 por vez (writes em massa)
+  timeoutSeconds: 540,
+  memory: '512MiB',
+}, async (request) => {
+  const auth = requireAuth(request);
+  const adminFlag = await isAdmin(auth.uid);
+  if (!adminFlag) throw new HttpsError('permission-denied', 'Só admin.');
+
+  // Mapa: collection name → array de campos a migrar
+  // Tipo do campo: 'string' (single uid) ou 'array' (array de uids)
+  const COLLECTION_FIELD_MAP = {
+    workspaces: [
+      { field: 'members', type: 'array' },
+      { field: 'adminIds', type: 'array' },
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+      { field: 'ownerId', type: 'string' },
+    ],
+    workspace_invites: [
+      { field: 'createdBy', type: 'string' },
+    ],
+    tasks: [
+      { field: 'assignees', type: 'array' },
+      { field: 'observers', type: 'array' },
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+      { field: 'completedBy', type: 'string' },
+    ],
+    tasks_archive: [
+      { field: 'assignees', type: 'array' },
+      { field: 'observers', type: 'array' },
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    projects: [
+      { field: 'members', type: 'array' },
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    goals: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    goal_evaluations: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    notifications: [
+      { field: 'recipientId', type: 'string' },
+      { field: 'recipientIds', type: 'array' },
+      { field: 'actorId', type: 'string' },
+      { field: 'userId', type: 'string' },
+    ],
+    requests: [
+      { field: 'assignedTo', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+      { field: 'requestedBy', type: 'string' },
+    ],
+    csat_surveys: [
+      { field: 'userId', type: 'string' },
+      { field: 'createdBy', type: 'string' },
+      { field: 'assignedTo', type: 'string' },
+    ],
+    feedbacks: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+      { field: 'givenBy', type: 'string' },
+      { field: 'receivedBy', type: 'string' },
+    ],
+    feedback_schedules: [
+      { field: 'createdBy', type: 'string' },
+    ],
+    landing_pages: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    roteiros: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+      { field: 'assignees', type: 'array' },
+    ],
+    portal_areas: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    news_monitor: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    absences: [
+      { field: 'userId', type: 'string' },
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    vacation_requests: [
+      { field: 'userId', type: 'string' },
+      { field: 'createdBy', type: 'string' },
+    ],
+    vacation_periods: [
+      { field: 'userId', type: 'string' },
+    ],
+    time_clock: [
+      { field: 'userId', type: 'string' },
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    desk_reservations: [
+      { field: 'userId', type: 'string' },
+    ],
+    ai_skills: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    ai_automations: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    task_categories: [
+      { field: 'createdBy', type: 'string' },
+    ],
+    meta_posts: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    roles: [
+      { field: 'createdBy', type: 'string' },
+      { field: 'updatedBy', type: 'string' },
+    ],
+    portal_generations: [
+      { field: 'generatedBy', type: 'string' },
+    ],
+  };
+
+  // ── 1. Coletar todos os pares (legacyUid → currentUid) a migrar ──
+  // Estratégia: cruzar audit_logs (action=users.create entityId=legacy)
+  // com users atuais (lookup por email).
+  const usersSnap = await db.collection('users').get();
+  const emailToCurrent = {};
+  usersSnap.docs.forEach(d => {
+    const email = (d.data().email || '').toLowerCase();
+    if (email) emailToCurrent[email] = { id: d.id, legacyUid: d.data().legacyUid || null };
+  });
+
+  const auditSnap = await db.collection('audit_logs')
+    .where('action', '==', 'users.create')
+    .limit(1000)
+    .get();
+
+  const migrationPairs = []; // [{ legacyUid, currentUid, email }]
+  const seen = new Set();
+  auditSnap.docs.forEach(d => {
+    const data = d.data();
+    const email = (data.details?.email || data.targetEmail || '').toLowerCase();
+    const legacyUid = data.entityId || data.targetUid;
+    if (!email || !legacyUid) return;
+    const current = emailToCurrent[email];
+    if (!current || current.id === legacyUid) return; // sem migração necessária
+    const key = `${legacyUid}->${current.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    migrationPairs.push({ legacyUid, currentUid: current.id, email });
+  });
+
+  // Adiciona pares de users com legacyUid setado (de migrações via migrateUserToSso)
+  usersSnap.docs.forEach(d => {
+    const u = d.data();
+    if (u.legacyUid && u.legacyUid !== d.id) {
+      const key = `${u.legacyUid}->${d.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        migrationPairs.push({ legacyUid: u.legacyUid, currentUid: d.id, email: u.email });
+      }
+    }
+  });
+
+  // ── 2. Pra cada par, varre coleções e faz swap ──
+  const report = {
+    pairsScanned: migrationPairs.length,
+    migrations: [],
+    errors: [],
+    totalDocsTouched: 0,
+  };
+
+  for (const pair of migrationPairs) {
+    const { legacyUid, currentUid, email } = pair;
+    const summary = { email, legacyUid: legacyUid.slice(0,8), currentUid: currentUid.slice(0,8), perCollection: {} };
+
+    for (const [colName, fields] of Object.entries(COLLECTION_FIELD_MAP)) {
+      let touchedInColl = 0;
+
+      // Pra cada FIELD da coleção, faz uma query separada
+      // (não dá pra "OR" entre campos no Firestore)
+      for (const { field, type } of fields) {
+        try {
+          let snap;
+          if (type === 'array') {
+            snap = await db.collection(colName)
+              .where(field, 'array-contains', legacyUid)
+              .limit(500)
+              .get();
+          } else {
+            snap = await db.collection(colName)
+              .where(field, '==', legacyUid)
+              .limit(500)
+              .get();
+          }
+
+          for (const doc of snap.docs) {
+            try {
+              if (type === 'array') {
+                await doc.ref.update({ [field]: FieldValue.arrayRemove(legacyUid) });
+                await doc.ref.update({ [field]: FieldValue.arrayUnion(currentUid) });
+              } else {
+                await doc.ref.update({ [field]: currentUid });
+              }
+              touchedInColl++;
+            } catch (e) {
+              report.errors.push({ collection: colName, field, docId: doc.id, error: e.message });
+            }
+          }
+        } catch (queryErr) {
+          // Coleção pode não existir, ou não ter index pro field. Não fatal.
+          if (!String(queryErr.message || '').includes('no matching index')) {
+            console.warn(`[migrateGlobal] query ${colName}.${field} skip: ${queryErr.message}`);
+          }
+        }
+      }
+
+      if (touchedInColl > 0) {
+        summary.perCollection[colName] = touchedInColl;
+        report.totalDocsTouched += touchedInColl;
+      }
+    }
+
+    report.migrations.push(summary);
+  }
+
+  // Audit log
+  await db.collection('audit_logs').add({
+    action: 'system.migrate_user_uid_global',
+    userId: auth.uid,
+    pairsScanned: report.pairsScanned,
+    totalDocsTouched: report.totalDocsTouched,
+    errorCount: report.errors.length,
+    timestamp: FieldValue.serverTimestamp(),
+    severity: 'critical',
+  });
+
+  return report;
+});
+
+/* ═════════════════════════════════════════════════════════
  * auditAndMigrateAllSso — varre TODOS users SSO no Firestore e migra
  * automaticamente quem ainda tem credencial email/senha no Firebase Auth.
  *

@@ -15,6 +15,7 @@ import {
   fetchUserWorkspaces, fetchAllWorkspaces, fetchArchivedWorkspaces,
   WORKSPACE_ICONS, WORKSPACE_COLORS,
 } from '../services/workspaces.js';
+import { resolveUserSync, resolveUsers } from '../services/userResolver.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -79,12 +80,16 @@ export async function renderWorkspaces(container) {
 async function loadWorkspaces() {
   try {
     const user = store.get('currentUser');
-    if (store.can('system_view_all')) {
-      allWorkspaces = await fetchAllWorkspaces();
-    } else {
-      allWorkspaces = await fetchUserWorkspaces(user.uid);
-    }
-    allWorkspaces = allWorkspaces.filter(w => !w.archived);
+    // Carrega workspaces E users em paralelo. Pre-load de users é
+    // crítico pra que o modal de membros consiga resolver UIDs → nomes
+    // sem precisar bater no Firestore por user. Sem isso, modal abre
+    // mostrando IDs crus (bug visual reportado).
+    const { fetchUsers } = await import('../services/users.js');
+    const [wsList, _users] = await Promise.all([
+      store.can('system_view_all') ? fetchAllWorkspaces() : fetchUserWorkspaces(user.uid),
+      fetchUsers().catch(() => []), // popula store.users
+    ]);
+    allWorkspaces = wsList.filter(w => !w.archived);
     renderGrid();
   } catch(e) {
     toast.error('Erro ao carregar squads: ' + e.message);
@@ -120,14 +125,14 @@ function renderGrid() {
   grid.innerHTML = allWorkspaces.map(ws => {
     const isAdmin   = ws.adminIds?.includes(uid);
     const memberCount = ws.members?.length || 0;
-    const allUsers  = store.get('users') || [];
     const members   = ws.members?.slice(0, 5).map(mid => {
-      const u = allUsers.find(u => u.id === mid);
-      if (!u) return '';
-      const initials = u.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+      // Usa resolveUserSync — cobre store + pending_* + email-derivation.
+      // Substitui o `allUsers.find(u => u.id === mid)` que falhava silenciosamente
+      // pra UIDs antigos/pending que não estavam no cache.
+      const u = resolveUserSync(mid) || { name: 'Usuário', avatarColor: '#6B7280', initials: '?' };
       return `<div class="avatar avatar-sm" title="${esc(u.name)}"
-        style="background:${u.avatarColor||'#3B82F6'};margin-left:-8px;border:2px solid var(--bg-card);">
-        ${initials}</div>`;
+        style="background:${u.avatarColor};margin-left:-8px;border:2px solid var(--bg-card);">
+        ${u.initials}</div>`;
     }).join('') || '';
 
     return `
@@ -517,6 +522,18 @@ function openWorkspaceModal(ws = null) {
 /* ─── Modal: membros ─────────────────────────────────────── */
 async function openMembersModal(ws) {
   if (!ws) return;
+
+  // Pre-carrega users + cache de resolução, garantindo que o modal abre
+  // com nomes resolvidos (não IDs crus). Sem isso, o cache de users pode
+  // estar vazio dependendo de qual página o admin veio.
+  const { fetchUsers } = await import('../services/users.js');
+  const resolverMod = await import('../services/userResolver.js');
+  const { resolveUserSync, resolveUsers } = resolverMod;
+  await fetchUsers().catch(() => {});
+  // Resolve em batch todos os IDs de members pra popular o cache de resolver
+  // (evita múltiplos getDocs serializados quando renderizar a lista)
+  await resolveUsers([...(ws.members||[]), ...(ws.adminIds||[])]).catch(() => {});
+
   const allUsers = store.get('users') || [];
   const uid      = store.get('currentUser')?.uid;
   const canManage = store.can('system_view_all') || ws.adminIds?.includes(uid);
@@ -558,21 +575,24 @@ async function openMembersModal(ws) {
                   Use a aba <strong>+ Adicionar</strong> pra incluir usuários.
                 </p></div>`
             : members.map(mid => {
-                const u       = allUsers.find(u => u.id === mid);
-                const name    = u?.name || mid;
+                // Usa resolveUserSync (cobre store + cache de resolução + pending_*)
+                // Já populamos o cache acima via resolveUsers() em batch.
+                const u = resolveUserSync(mid) || {
+                  id: mid, name: 'Usuário não encontrado', avatarColor: '#6B7280',
+                  initials: '?', email: '', sector: '', role: '',
+                };
                 const isAdminMember = ws.adminIds?.includes(mid);
                 const isOwner = ws.ownerId === mid;
-                const initials = (u?.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
 
                 return `
                   <div style="display:flex;align-items:center;gap:10px;padding:8px;
                     border-bottom:1px solid var(--border-subtle);">
-                    <div class="avatar avatar-sm" style="background:${u?.avatarColor||'#3B82F6'};flex-shrink:0;">
-                      ${initials}
+                    <div class="avatar avatar-sm" style="background:${u.avatarColor};flex-shrink:0;">
+                      ${u.initials}
                     </div>
                     <div style="flex:1;min-width:0;">
-                      <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${esc(name)}</div>
-                      <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u?.department||u?.role||'')}</div>
+                      <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${esc(u.name)}</div>
+                      <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u.email || u.sector || u.role || '')}</div>
                     </div>
                     <div style="display:flex;align-items:center;gap:6px;">
                       ${isOwner
