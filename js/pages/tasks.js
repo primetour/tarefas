@@ -805,8 +805,13 @@ function renderTaskList() {
     `;
   } else {
     const groups = buildGroups();
-    container.innerHTML = groups.map(g => `
-      <div class="task-group" data-group="${g.key}">
+    container.innerHTML = groups.map(g => {
+      // Grupo "Concluídas" / status='done' começa colapsado por default —
+      // ajuda a limpar o visual da lista (o foco do dia-a-dia são as
+      // ativas). User clica no header pra expandir quando quer ver.
+      const startCollapsed = g.key === 'done';
+      return `
+      <div class="task-group${startCollapsed ? ' collapsed' : ''}" data-group="${g.key}">
         <div class="task-group-header" onclick="this.closest('.task-group').classList.toggle('collapsed')">
           <span class="task-group-chevron">\u25be</span>
           <span class="task-group-title">
@@ -831,7 +836,8 @@ function renderTaskList() {
           ${renderQuickAdd(g.key)}
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
 
   _attachListEvents();
