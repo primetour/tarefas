@@ -443,7 +443,8 @@ export async function generateRoteiroPDF(roteiro, area = null) {
         const cleaned = await pngWithAlpha(logoData).catch(() => null);
         if (cleaned) {
           const ratio = cleaned.naturalW / Math.max(cleaned.naturalH, 1);
-          const maxW = 70, maxH = 25;
+          // Logo grande na capa (~3x maior que header). Caps por largura E altura.
+          const maxW = 130, maxH = 55;
           let w = maxW, h = w / ratio;
           if (h > maxH) { h = maxH; w = h * ratio; }
           logoCoverPng = { dataUrl: cleaned.dataUrl, widthMm: w, heightMm: h };
@@ -510,7 +511,7 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   }
 
   /* ─── CLOSING PAGE ───────────────────────────────────────── */
-  buildClosingPage(doc, roteiro, buName, primary, secondary);
+  buildClosingPage(doc, roteiro, buName, primary, secondary, logoCoverPng);
 
   /* ─── FOOTERS (retroactive) ──────────────────────────────── */
   const totalPages = doc.internal.getNumberOfPages();
@@ -615,23 +616,21 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
   doc.setFillColor(255, 255, 255);
   doc.rect(30, 40, PAGE_W - 60, 0.6, 'F');
 
-  // Logo da área no topo. PNG nativo com transparência preservada
-  // (mode='SLOW' faz jsPDF processar com alpha; 'FAST' converteria pra JPEG).
-  let nextY = 70;
+  // Logo da área grande no topo da capa. PNG transparente preservado.
+  let nextY = 80;
   if (logoCover) {
     const lw = logoCover.widthMm, lh = logoCover.heightMm;
-    const lx = (PAGE_W - lw) / 2, ly = 48;
+    const lx = (PAGE_W - lw) / 2, ly = 50;
     try {
       doc.addImage(logoCover.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'SLOW');
-      nextY = ly + lh + 18;
+      nextY = ly + lh + 14;
     } catch (e) { /* fallback */ }
   } else {
-    // Fallback: nome PRIMETOUR em texto
-    doc.setFont('Poppins', 'normal');
-    doc.setFontSize(11);
+    doc.setFont('Poppins', 'bold');
+    doc.setFontSize(22);
     doc.setTextColor(255, 255, 255);
-    doc.text(buName, PAGE_W / 2, 52, { align: 'center', charSpace: 3 });
-    nextY = 80;
+    doc.text(buName, PAGE_W / 2, 70, { align: 'center' });
+    nextY = 90;
   }
 
   // Destination names (18pt, white, large)
@@ -654,11 +653,12 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
   // O ouro/amarelo de uma BU de luxo seria o único caso que funcionaria
   // como primary direto, mas pra ser consistente: cover = branco sempre.
 
-  // Subtitle: ROTEIRO DE VIAGEM
+  // Subtitle: ROTEIRO DE VIAGEM (sem charSpace — jsPDF align:center não compensa
+  // o spacing extra e o texto fica deslocado vs o separador abaixo).
   doc.setFont('Poppins', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(255, 255, 255);
-  doc.text('ROTEIRO DE VIAGEM', PAGE_W / 2, destY + 8, { align: 'center', charSpace: 3 });
+  doc.text('ROTEIRO DE VIAGEM', PAGE_W / 2, destY + 8, { align: 'center' });
 
   // Thin separator branco
   doc.setFillColor(255, 255, 255);
@@ -680,11 +680,11 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
   doc.roundedRect(badgeX, badgeY - 6, badgeW, 12, 2, 2, 'S');
   doc.text(badgeText, PAGE_W / 2, badgeY + 2, { align: 'center' });
 
-  // Date range
+  // Date range — branco quase puro pra contraste sobre fundo escuro
   if (roteiro.travel?.startDate && roteiro.travel?.endDate) {
     doc.setFont('Poppins', 'normal');
     doc.setFontSize(10);
-    doc.setTextColor(180, 180, 180);
+    doc.setTextColor(245, 245, 245);
     const dateStr = `${fmtDateFull(roteiro.travel.startDate)}  a  ${fmtDateFull(roteiro.travel.endDate)}`;
     doc.text(dateStr, PAGE_W / 2, badgeY + 20, { align: 'center' });
   }
@@ -693,29 +693,30 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
   doc.setFillColor(255, 255, 255);
   doc.rect(30, PAGE_H - 60, PAGE_W - 60, 0.6, 'F');
 
-  // Client name
+  // Client name \u2014 branco quase puro pra ler sobre hero/overlay
   if (roteiro.client?.name) {
-    doc.setFont('Poppins', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(200, 200, 200);
+    doc.setFont('Poppins', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
     doc.text(`Preparado para ${roteiro.client.name}`, PAGE_W / 2, PAGE_H - 48, { align: 'center' });
 
     const paxParts = [];
     if (roteiro.client.adults) paxParts.push(`${roteiro.client.adults} adulto${roteiro.client.adults > 1 ? 's' : ''}`);
     if (roteiro.client.children) paxParts.push(`${roteiro.client.children} crian\u00E7a${roteiro.client.children > 1 ? 's' : ''}`);
     if (paxParts.length) {
-      doc.setFontSize(9);
-      doc.setTextColor(160, 160, 160);
-      doc.text(paxParts.join(' + '), PAGE_W / 2, PAGE_H - 42, { align: 'center' });
+      doc.setFont('Poppins', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(230, 230, 230);
+      doc.text(paxParts.join(' + '), PAGE_W / 2, PAGE_H - 41, { align: 'center' });
     }
   }
 
-  // Title at very bottom
+  // Title at very bottom \u2014 branco mais leve, ainda leg\u00EDvel
   if (roteiro.title) {
     doc.setFont('Poppins', 'italic');
-    doc.setFontSize(8);
-    doc.setTextColor(120, 120, 120);
-    doc.text(roteiro.title, PAGE_W / 2, PAGE_H - 20, { align: 'center' });
+    doc.setFontSize(9);
+    doc.setTextColor(220, 220, 220);
+    doc.text(roteiro.title, PAGE_W / 2, PAGE_H - 22, { align: 'center' });
   }
 }
 
@@ -760,12 +761,12 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
     const neededSpace = 20 + (narrativeLines * 5) + (dayImageData ? 32 : 0) + 15;
     y = checkPageBreak(doc, y, Math.min(neededSpace, 80));
 
-    // Day number circle
+    // Day number circle — fill = primary, número = branco (max contraste)
     doc.setFillColor(pr, pg, pb);
     doc.circle(MARGIN + 5, y + 4, 5, 'F');
     doc.setFont('Poppins', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(sr, sg, sb);
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
     doc.text(String(day.dayNumber || i + 1), MARGIN + 5, y + 5.5, { align: 'center' });
 
     // "DIA X -- date" header
@@ -1361,49 +1362,58 @@ function buildImportantInfoSection(doc, roteiro, primary, secondary) {
 }
 
 /* ─── Closing Page ────────────────────────────────────────── */
-function buildClosingPage(doc, roteiro, buName, primary, secondary) {
+function buildClosingPage(doc, roteiro, buName, primary, secondary, logoCoverPng = null) {
   const [pr, pg, pb] = hexToRgb(primary);
   const [sr, sg, sb] = hexToRgb(secondary);
 
   doc.addPage();
 
-  // Full secondary background
+  // Fundo escuro
   doc.setFillColor(sr, sg, sb);
   doc.rect(0, 0, PAGE_W, PAGE_H, 'F');
 
-  // Top gold line
-  doc.setFillColor(pr, pg, pb);
-  doc.rect(50, PAGE_H / 2 - 25, PAGE_W - 100, 0.6, 'F');
+  // Linhas brancas (n\u00E3o primary cinza \u2014 contraste ruim)
+  doc.setFillColor(255, 255, 255);
+  doc.rect(50, PAGE_H / 2 - 35, PAGE_W - 100, 0.6, 'F');
 
-  // BU Name (18pt)
-  doc.setFont('Poppins', 'bold');
-  doc.setFontSize(18);
-  doc.setTextColor(pr, pg, pb);
-  doc.text(buName.toUpperCase(), PAGE_W / 2, PAGE_H / 2 - 5, { align: 'center', charSpace: 4 });
+  // Logo grande no centro (substitui texto "PRIMETOUR")
+  if (logoCoverPng) {
+    const lw = logoCoverPng.widthMm, lh = logoCoverPng.heightMm;
+    const lx = (PAGE_W - lw) / 2;
+    const ly = PAGE_H / 2 - 25;
+    try {
+      doc.addImage(logoCoverPng.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'SLOW');
+    } catch (e) { /* fallback abaixo */ }
+  } else {
+    doc.setFont('Poppins', 'bold');
+    doc.setFontSize(22);
+    doc.setTextColor(255, 255, 255);
+    doc.text(buName, PAGE_W / 2, PAGE_H / 2 - 5, { align: 'center' });
+  }
 
-  // "Boa viagem!" message
+  // "Boa viagem!" abaixo do logo
   doc.setFont('Poppins', 'italic');
   doc.setFontSize(14);
   doc.setTextColor(255, 255, 255);
-  doc.text('Boa viagem!', PAGE_W / 2, PAGE_H / 2 + 10, { align: 'center' });
+  doc.text('Boa viagem!', PAGE_W / 2, PAGE_H / 2 + 30, { align: 'center' });
 
-  // Tagline
+  // Tagline branca
   doc.setFont('Poppins', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(180, 180, 180);
-  doc.text('Experi\u00EAncias exclusivas de viagem', PAGE_W / 2, PAGE_H / 2 + 20, { align: 'center' });
+  doc.setFontSize(10);
+  doc.setTextColor(230, 230, 230);
+  doc.text('Experi\u00EAncias exclusivas de viagem', PAGE_W / 2, PAGE_H / 2 + 40, { align: 'center' });
 
-  // Bottom gold line
-  doc.setFillColor(pr, pg, pb);
-  doc.rect(50, PAGE_H / 2 + 28, PAGE_W - 100, 0.6, 'F');
+  // Linha inferior branca
+  doc.setFillColor(255, 255, 255);
+  doc.rect(50, PAGE_H / 2 + 50, PAGE_W - 100, 0.6, 'F');
 
-  // Contact info if available
+  // Contato (se houver)
   const contact = roteiro.contact || roteiro.client?.agentEmail;
   if (contact) {
     doc.setFont('Poppins', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(140, 140, 140);
-    doc.text(contact, PAGE_W / 2, PAGE_H / 2 + 42, { align: 'center' });
+    doc.setFontSize(9);
+    doc.setTextColor(220, 220, 220);
+    doc.text(contact, PAGE_W / 2, PAGE_H / 2 + 62, { align: 'center' });
   }
 }
 
