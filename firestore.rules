@@ -625,10 +625,17 @@ service cloud.firestore {
     match /roteiro_web_links/{token} {
       allow read:   if true;   // public — link holder can read
       allow create: if isAuth();
-      // Update público: só permite incrementar viewCount, sem alterar conteúdo
+      // Update público: só permite incrementar viewCount + atualizar lastViewedAt.
+      // Antes a regra checava apenas que roteiroId/createdBy não mudaram,
+      // mas isso permitia injetar/alterar QUALQUER outro campo. Agora forçamos
+      // que apenas viewCount e lastViewedAt podem ser modificados.
       allow update: if isAuth()
-                    || (request.resource.data.roteiroId == resource.data.roteiroId
-                        && request.resource.data.createdBy == resource.data.createdBy);
+                    || (
+                      request.resource.data.roteiroId == resource.data.roteiroId
+                      && request.resource.data.createdBy == resource.data.createdBy
+                      && request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['viewCount', 'lastViewedAt'])
+                    );
       allow delete: if isAuth() && isAdmin();
     }
 

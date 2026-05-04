@@ -146,8 +146,19 @@ function pickFromBank(allImages, { city, country }) {
   return null;
 }
 
-/** Cache simples de fetchDestinationPhoto durante uma geração. */
-const _photoCache = new Map();
+/** Cache de fetchDestinationPhoto. TTL 1h pra evitar crescimento unbounded
+ *  em sessões longas (admin tela aberta o dia todo). */
+const _photoCache = new Map(); // key → { url, ts }
+const _PHOTO_CACHE_TTL = 60 * 60 * 1000; // 1h
+function _cacheGet(k) {
+  const v = _photoCache.get(k);
+  if (!v) return undefined;
+  if (Date.now() - v.ts > _PHOTO_CACHE_TTL) { _photoCache.delete(k); return undefined; }
+  return v.url;
+}
+function _cacheSet(k, url) {
+  _photoCache.set(k, { url, ts: Date.now() });
+}
 let _fnPhotoPromise = null;
 
 async function getPhotoFn() {
@@ -245,7 +256,8 @@ function translateToEnglish(query) {
 async function fetchAutoPhoto(query) {
   if (!query) return null;
   const k = query.toLowerCase().trim();
-  if (_photoCache.has(k)) return _photoCache.get(k);
+  const cached = _cacheGet(k);
+  if (cached !== undefined) return cached;
 
   const tryQuery = async (q) => {
     try {
@@ -270,7 +282,7 @@ async function fetchAutoPhoto(query) {
     }
   }
 
-  _photoCache.set(k, url);
+  _cacheSet(k, url);
   return url;
 }
 
