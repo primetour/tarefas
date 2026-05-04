@@ -150,14 +150,29 @@ function renderGrid() {
             </div>
           </div>
           <div style="display:flex;gap:4px;">
-            <button class="btn btn-ghost btn-icon btn-sm ws-open-btn" data-id="${ws.id}" title="Abrir squad">↗</button>
-            ${isAdmin || store.can('system_view_all') ? `
-              <button class="btn btn-ghost btn-icon btn-sm ws-edit-btn" data-id="${ws.id}" title="Editar">✎</button>
-              <button class="btn btn-ghost btn-icon btn-sm ws-members-btn" data-id="${ws.id}" title="Membros">◉</button>
-              ${store.can('workspace_delete') || store.can('system_view_all') ? `
-                <button class="btn btn-ghost btn-icon btn-sm ws-archive-card-btn" data-id="${ws.id}" title="Arquivar">📥</button>
-              ` : ''}
-            ` : ''}
+            ${(() => {
+              // Helper SVG: ícones Lucide-style, 16x16, currentColor.
+              // Substitui unicode/emoji que eram ambíguos demais (user
+              // reportou não identificar os botões).
+              const svgIcon = (path) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" `
+                + `width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" `
+                + `stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+              const ICON_OPEN    = svgIcon('<path d="M7 7h10v10"/><path d="M7 17 17 7"/>');
+              const ICON_EDIT    = svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>');
+              const ICON_MEMBERS = svgIcon('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>');
+              const ICON_ARCHIVE = svgIcon('<rect x="3" y="3" width="18" height="4" rx="1"/><path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7"/><path d="M10 12h4"/>');
+
+              return `
+                <button class="btn btn-ghost btn-icon btn-sm ws-open-btn" data-id="${ws.id}" title="Abrir squad">${ICON_OPEN}</button>
+                ${isAdmin || store.can('system_view_all') ? `
+                  <button class="btn btn-ghost btn-icon btn-sm ws-edit-btn" data-id="${ws.id}" title="Editar squad">${ICON_EDIT}</button>
+                  <button class="btn btn-ghost btn-icon btn-sm ws-members-btn" data-id="${ws.id}" title="Gerenciar membros">${ICON_MEMBERS}</button>
+                  ${store.can('workspace_delete') || store.can('system_view_all') ? `
+                    <button class="btn btn-ghost btn-icon btn-sm ws-archive-card-btn" data-id="${ws.id}" title="Arquivar squad">${ICON_ARCHIVE}</button>
+                  ` : ''}
+                ` : ''}
+              `;
+            })()}
           </div>
         </div>
         <div class="card-body" style="padding-top:0;">
