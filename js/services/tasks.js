@@ -423,7 +423,18 @@ export async function updateTask(taskId, data) {
 
   await updateDoc(doc(db, 'tasks', taskId), updates);
   invalidateTasksCache();
-  await auditLog('tasks.update', 'task', taskId, { fields: Object.keys(data) });
+  // Audit detail: título atual (do update OU do prev) + campos alterados.
+  // Permite que a aba Auditoria mostre "X atualizou tarefa 'Y'" sem ter que
+  // bater no Firestore pra resolver o ID.
+  const auditTitle = updates.title || prevData?.title || '';
+  const changedFields = Object.keys(data).filter(k => k !== '_prevStatus');
+  await auditLog('tasks.update', 'task', taskId, {
+    title:  auditTitle,
+    fields: changedFields,
+    ...(data.status && data._prevStatus && data.status !== data._prevStatus
+      ? { statusFrom: data._prevStatus, statusTo: data.status }
+      : {}),
+  });
 
   // Notify newly-added / removed assignees (diff prev vs new)
   if (Array.isArray(data.assignees) && prevData) {
@@ -547,6 +558,13 @@ export async function toggleTaskComplete(taskId, isDone) {
     throw new Error('Você não tem permissão para concluir tarefas. Peça a um coordenador para homologar.');
   }
   const user = store.get('currentUser');
+  // Lê título antes do update pra incluir no audit (rotular humano-friendly)
+  let taskTitle = '';
+  try {
+    const snap = await getDoc(doc(db, 'tasks', taskId));
+    if (snap.exists()) taskTitle = snap.data().title || '';
+  } catch (_) {}
+
   await updateDoc(doc(db, 'tasks', taskId), {
     status:      isDone ? 'done' : 'not_started',
     completedAt: isDone ? serverTimestamp() : null,
@@ -554,7 +572,7 @@ export async function toggleTaskComplete(taskId, isDone) {
     updatedBy:   user.uid,
   });
   invalidateTasksCache();
-  await auditLog('tasks.complete', 'task', taskId, { done: isDone });
+  await auditLog('tasks.complete', 'task', taskId, { done: isDone, title: taskTitle });
   if (isDone) playCompletionSound();
 }
 
@@ -567,15 +585,21 @@ export async function deleteTask(taskId) {
   // Se a task veio de uma notícia, limpa o registro de conversão
   // pra não inflar KPIs de "utilização de notícias" (proteção contra erro
   // ou burla: criar→deletar em loop pra aumentar números).
+  // Também captura título pra audit log antes de deletar (humano-friendly).
   let sourceNewsId = null;
+  let taskTitle = '';
   try {
     const snap = await getDoc(doc(db, 'tasks', taskId));
-    sourceNewsId = snap.exists() ? (snap.data().sourceNewsId || null) : null;
+    if (snap.exists()) {
+      const d = snap.data();
+      sourceNewsId = d.sourceNewsId || null;
+      taskTitle    = d.title || '';
+    }
   } catch (_) { /* segue sem bloquear delete */ }
 
   await deleteDoc(doc(db, 'tasks', taskId));
   invalidateTasksCache();
-  await auditLog('tasks.delete', 'task', taskId, { sourceNewsId });
+  await auditLog('tasks.delete', 'task', taskId, { sourceNewsId, title: taskTitle });
 
   if (sourceNewsId) {
     try {

@@ -306,15 +306,22 @@ export async function auditLog(action, entity, entityId, details = {}) {
  * Busca logs de auditoria com filtros e paginação.
  *
  * Filtros server-side (Firestore where):
- *   - filterUser, filterAction, startDate, endDate
+ *   - startDate, endDate (mesmo campo do orderBy → não exige composite index)
  *
- * Filtros client-side (post-fetch — Firestore não suporta `in` ilimitado):
- *   - filterModule  ('roteiro', 'portal', 'agent', 'auth', etc — prefix da action)
- *   - filterSeverity ('info' | 'warn' | 'critical')
+ * Filtros client-side (post-fetch):
+ *   - filterUser, filterAction, filterModule, filterSeverity
  *
- * Como o Firestore limita combinações de where + orderBy, módulo e severidade
- * são aplicados em memória após o fetch. Pra catalogos com muito histórico,
- * use também filterAction (server-side) pra reduzir o payload.
+ * Por que tudo client-side menos data?
+ *   - `where('userId', '==', X) + orderBy('timestamp', 'desc')` exige um
+ *     composite index `(userId ASC, timestamp DESC)` que precisa ser criado
+ *     manualmente no Firebase Console — quando ele falta o app quebra com
+ *     "FirebaseError: The query requires an index" (bug reportado).
+ *   - O mesmo vale pra `where('action', ...)`. Pra evitar a dependência de
+ *     index management, filtramos em memória; e quando algum desses filtros
+ *     está ativo fazemos over-fetch agressivo pra ainda termos páginas
+ *     razoáveis após o filtro.
+ *   - Date range usa o mesmo campo do orderBy (timestamp), então NÃO exige
+ *     composite index — pode ficar server-side e reduzir payload.
  */
 export async function fetchAuditLogs({
   pageSize   = 50,
@@ -326,10 +333,14 @@ export async function fetchAuditLogs({
   startDate  = null,
   endDate    = null,
 } = {}) {
-  // Quando há filtros client-side, fazemos over-fetch (3× pageSize) pra
-  // garantir que após filtrar ainda temos páginas razoáveis.
-  const hasClientFilters = !!(filterModule || filterSeverity);
-  const fetchLimit = hasClientFilters ? Math.min(pageSize * 3, 300) : pageSize;
+  // Over-fetch quando há filtros client-side restritivos.
+  // user/action são MUITO restritivos → multiplicador alto (10×).
+  // module/severity menos → 3×.
+  const hasUserOrAction = !!(filterUser || filterAction);
+  const hasOtherClient  = !!(filterModule || filterSeverity);
+  let fetchLimit = pageSize;
+  if (hasUserOrAction) fetchLimit = Math.min(pageSize * 10, 500);
+  else if (hasOtherClient) fetchLimit = Math.min(pageSize * 3, 300);
 
   let q = query(
     collection(db, 'audit_logs'),
@@ -337,8 +348,7 @@ export async function fetchAuditLogs({
     limit(fetchLimit)
   );
 
-  if (filterUser)   q = query(q, where('userId', '==', filterUser));
-  if (filterAction) q = query(q, where('action', '==', filterAction));
+  // Apenas date range fica server-side (mesmo campo do orderBy → safe)
   if (startDate)    q = query(q, where('timestamp', '>=', startDate));
   if (endDate)      q = query(q, where('timestamp', '<=', endDate));
   if (lastDoc)      q = query(q, startAfter(lastDoc));
@@ -347,9 +357,9 @@ export async function fetchAuditLogs({
   let logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
   // Client-side filters
-  if (filterModule) {
-    logs = logs.filter(l => moduleFromAction(l.action) === filterModule);
-  }
+  if (filterUser)   logs = logs.filter(l => l.userId === filterUser);
+  if (filterAction) logs = logs.filter(l => l.action === filterAction);
+  if (filterModule) logs = logs.filter(l => moduleFromAction(l.action) === filterModule);
   if (filterSeverity) {
     logs = logs.filter(l => severityFromAction(l.action) === filterSeverity);
   }

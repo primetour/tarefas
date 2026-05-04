@@ -7,6 +7,7 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { fetchAuditLogs, ACTION_LABELS, REVERTIBLE_ACTIONS, auditLog } from '../auth/audit.js';
+import { fetchUsers } from '../services/users.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -212,6 +213,18 @@ export async function renderAudit(container) {
     <div id="audit-pagination" style="display:flex; justify-content:center; align-items:center; gap:12px; margin-top:16px; padding:8px 0;"></div>
   `;
 
+  // Pré-carrega lista de usuários (cache 5 min) para que o filtro "Todos os
+  // usuários" tenha opções e para que resolveUserEmail() consiga fazer fallback
+  // de email/nome em logs antigos sem userEmail gravado.
+  // Sem await: render começa imediatamente, opções aparecem assim que chegar.
+  fetchUsers().then(() => {
+    const sel = document.getElementById('audit-filter-user');
+    if (!sel || sel.options.length > 1) return; // já populado
+    const users = store.get('users') || [];
+    sel.innerHTML = '<option value="">Todos os usuários</option>'
+      + users.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('');
+  }).catch(() => {});
+
   _bindAuditEvents();
   await loadLogs();
 }
@@ -237,8 +250,12 @@ async function loadLogs({ append = false } = {}) {
     const result = await fetchAuditLogs({
       pageSize:     SERVER_PAGE,
       lastDoc:      append ? lastDoc : null,
+      // user/action ficam client-side dentro do fetchAuditLogs, mas passamos
+      // pra que ele aumente o batch quando estão ativos (over-fetch agressivo).
       filterAction: filterAction || null,
       filterUser:   filterUser || null,
+      filterModule: filterModule || null,
+      filterSeverity: filterSeverity || null,
       startDate:    dateFrom ? new Date(dateFrom) : null,
       endDate:      dateTo ? new Date(dateTo + 'T23:59:59') : null,
     });
@@ -344,6 +361,11 @@ function renderLogs() {
 
     const userColor = (store.get('users')||[]).find(u=>u.id===log.userId)?.avatarColor || '#6B7280';
     const initials  = (log.userName||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    const userEmail = resolveUserEmail(log);
+    // Nome curto pra economizar espaço; email completo no title (tooltip)
+    const nameShort = (log.userName || '—').length > 22
+      ? (log.userName || '—').slice(0, 22) + '…'
+      : (log.userName || '—');
 
     // Detail summary for the row
     const details = log.details || {};
@@ -380,16 +402,17 @@ function renderLogs() {
         </div>
 
         <!-- User -->
-        <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
-          <div class="avatar" style="background:${userColor}; width:24px; height:24px; font-size:0.5rem; flex-shrink:0;">
+        <div style="display:flex; align-items:center; gap:8px; overflow:hidden;"
+             title="${esc(userEmail || log.userId || '')}">
+          <div class="avatar" style="background:${userColor}; width:28px; height:28px; font-size:0.55rem; flex-shrink:0;">
             ${initials}
           </div>
           <div style="min-width:0;overflow:hidden;">
-            <div style="font-size:0.8125rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-secondary);">
-              ${esc(log.userName || '—')}
+            <div style="font-size:0.8125rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-secondary); line-height:1.2;">
+              ${esc(nameShort)}
             </div>
-            <div style="font-size:0.625rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-              ${esc(log.userRole || '')}
+            <div style="font-size:0.6875rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;">
+              ${userEmail ? esc(userEmail) : (log.userRole ? esc(log.userRole) : '<em style="opacity:0.5;">sem email</em>')}
             </div>
           </div>
         </div>
@@ -449,23 +472,91 @@ function renderLogs() {
   renderPagination();
 }
 
+/* ─── Lookup helpers (resolvem ID -> nome humano) ────────── */
+// Em logs antigos só temos entityId; tentamos resolver pra título atual
+// usando o que já está em memória no store (sem hit no Firestore).
+function resolveEntityLabel(log) {
+  const d = log.details || {};
+  // Prefere o que foi gravado no log (snapshot do momento)
+  if (d.title) return d.title;
+  if (d.name)  return d.name;
+  if (!log.entityId) return '';
+
+  const entity = log.entity || '';
+  // Tarefa
+  if (entity === 'task' || /^tasks?\./.test(log.action || '')) {
+    const tasks = store.get('tasks') || [];
+    const t = tasks.find(x => x.id === log.entityId);
+    if (t?.title) return t.title;
+  }
+  // Projeto
+  if (entity === 'project' || /^projects?\./.test(log.action || '')) {
+    const projects = store.get('projects') || [];
+    const p = projects.find(x => x.id === log.entityId);
+    if (p?.name) return p.name;
+  }
+  // Squad / workspace
+  if (entity === 'workspace' || /^workspaces?\./.test(log.action || '')) {
+    const ws = store.get('workspaces') || [];
+    const w = ws.find(x => x.id === log.entityId);
+    if (w?.name) return w.name;
+  }
+  // Usuário
+  if (entity === 'user' || /^users?\./.test(log.action || '')) {
+    const users = store.get('users') || [];
+    const u = users.find(x => x.id === log.entityId);
+    if (u?.name) return u.name;
+  }
+  // Roteiro
+  if (entity === 'roteiro' || /^roteiro\./.test(log.action || '')) {
+    const r = (store.get('roteiros') || []).find(x => x.id === log.entityId);
+    if (r?.title) return r.title;
+  }
+  return '';
+}
+
+// Email do usuário do log: prefere userEmail; fallback lookup no store.
+// Importante pra logs antigos que foram criados antes do campo userEmail existir.
+function resolveUserEmail(log) {
+  if (log.userEmail) return log.userEmail;
+  if (!log.userId) return '';
+  const users = store.get('users') || [];
+  const u = users.find(x => x.id === log.userId);
+  return u?.email || '';
+}
+
 /* ─── Detail snippet (preview in row) ───────────────────── */
 function buildDetailSnippet(log) {
   const d = log.details || {};
   const parts = [];
 
-  if (d.title)       parts.push(`"${d.title}"`);
-  if (d.name)        parts.push(d.name);
-  if (d.taskId)      parts.push(`tarefa: ${d.taskId.slice(0,8)}`);
-  if (d.clientEmail) parts.push(d.clientEmail);
-  if (d.email)       parts.push(d.email);
-  if (d.status)      parts.push(`status: ${d.status}`);
+  // Resolve nome humano (tenta details → store → fallback ID)
+  const label = resolveEntityLabel(log);
+  if (label) parts.push(`"${label}"`);
 
-  if (!parts.length && log.entityId) {
-    parts.push(`${log.entity || 'recurso'}: ${log.entityId.slice(0,12)}`);
+  // Status change visível (ex: "rascunho → enviado")
+  if (d.statusFrom && d.statusTo) {
+    parts.push(`${d.statusFrom} → ${d.statusTo}`);
+  } else if (d.status) {
+    parts.push(`status: ${d.status}`);
   }
 
-  return parts.length ? esc(parts.join(' · ').slice(0, 100)) : '';
+  // Campos alterados (tasks.update inclui list de fields)
+  if (Array.isArray(d.fields) && d.fields.length) {
+    const f = d.fields.filter(x => !['updatedAt','updatedBy'].includes(x)).slice(0, 4);
+    if (f.length) parts.push(`alterou: ${f.join(', ')}`);
+  }
+
+  // Emails relevantes (CSAT, convites)
+  if (d.clientEmail) parts.push(d.clientEmail);
+  else if (d.email && d.email !== log.userEmail) parts.push(d.email);
+
+  // Fallback: ID truncado quando nada faz sentido humano
+  if (!parts.length && log.entityId) {
+    parts.push(`${log.entity || 'recurso'}: ${String(log.entityId).slice(0,12)}…`);
+  }
+
+  return parts.length ? esc(parts.join(' · ').slice(0, 130)) : '';
 }
 
 /* ─── Expanded detail panel ─────────────────────────────── */
@@ -518,7 +609,11 @@ function renderDetailPanel(log) {
           </div>
           <div style="display:flex;flex-direction:column;gap:4px;">
             <div style="font-size:0.8125rem;"><strong>Nome:</strong> ${esc(log.userName || '—')}</div>
-            <div style="font-size:0.8125rem;"><strong>Email:</strong> ${esc(log.userEmail || '—')}</div>
+            <div style="font-size:0.8125rem;"><strong>Email:</strong> ${
+              resolveUserEmail(log)
+                ? esc(resolveUserEmail(log))
+                : '<em style="color:var(--text-muted);">não registrado</em>'
+            }</div>
             <div style="font-size:0.8125rem;"><strong>Perfil:</strong> ${esc(log.userRole || '—')}</div>
             <div style="font-size:0.8125rem;"><strong>UID:</strong> <span style="font-family:monospace;font-size:0.75rem;color:var(--text-muted);">${esc(log.userId || '—')}</span></div>
           </div>
@@ -842,10 +937,17 @@ function _bindAuditEvents() {
     timer = setTimeout(() => { searchTerm = e.target.value; applyLocalFilters(); }, 250);
   });
   document.getElementById('audit-filter-action')?.addEventListener('change', e => {
-    filterAction = e.target.value; loadLogs();    // server-side
+    filterAction = e.target.value;
+    // Filtro client-side puro (evita exigência de composite index no Firestore).
+    // Se o usuário pediu uma ação específica e ela é rara, usamos loadLogs() pra
+    // over-fetchar mais histórico — o fetchAuditLogs já cuida disso.
+    if (filterAction) loadLogs(); else applyLocalFilters();
   });
   document.getElementById('audit-filter-user')?.addEventListener('change', e => {
-    filterUser = e.target.value; loadLogs();      // server-side
+    filterUser = e.target.value;
+    // Mesmo raciocínio do filterAction. Esse era o caso que disparava o
+    // FirebaseError: The query requires an index — agora roda 100% client-side.
+    if (filterUser) loadLogs(); else applyLocalFilters();
   });
   document.getElementById('audit-filter-module')?.addEventListener('change', e => {
     filterModule = e.target.value; applyLocalFilters();
