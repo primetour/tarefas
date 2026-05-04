@@ -868,6 +868,7 @@ const exportPDF = withExportGuard(async function exportPDF() {
         }
       },
     });
+    kit.y = doc.lastAutoTable.finalY + 8;
 
     kit.drawFooter('PRIMETOUR  ·  Performance Redes Sociais');
     // Insights & Observações — agrupado por widget

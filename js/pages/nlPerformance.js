@@ -862,6 +862,8 @@ const exportPDF = withExportGuard(async function exportPDF() {
         }
       },
     });
+    // Atualiza cursor pra próxima seção não sobrepor a tabela.
+    kit.y = doc.lastAutoTable.finalY + 8;
 
     // Insights & Observações — agrupados por widget (Performance tab)
     try {
@@ -1210,6 +1212,7 @@ const exportCalPDF = withExportGuard(async function exportCalPDF() {
         }
       },
     });
+    kit.y = doc.lastAutoTable.finalY + 8;
 
     // Insights & Observações (mesmo bloco do Performance — dashboard='nl' compartilha)
     try {

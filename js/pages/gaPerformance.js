@@ -1706,6 +1706,7 @@ const exportPDF = withExportGuard(async function exportPDF() {
         }
       },
     });
+    kit.y = doc.lastAutoTable.finalY + 8;
 
     // Insights & Observações — agrupado por widget
     try {
