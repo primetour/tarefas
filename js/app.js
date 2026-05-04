@@ -167,45 +167,145 @@ function renderApp(root) {
 
 /* ─── Tela: sem workspace ────────────────────────────────── */
 function renderNoWorkspace(root) {
+  const profile = store.get('userProfile');
+  const userName = profile?.name?.split(' ')[0] || 'Usuário';
+  const userEmail = profile?.email || '';
+
+  // Carrega lista de admins (masters) pra mostrar contato. Live snapshot
+  // do store já popula store.users.
+  const masters = (store.get('users') || []).filter(u =>
+    (u.role === 'master' || u.roleId === 'master') && u.id !== profile?.id && u.active !== false
+  );
+
   root.innerHTML = `
     <div style="
       min-height:100vh; display:flex; align-items:center; justify-content:center;
-      background:var(--bg-dark); font-family:var(--font-ui);">
-      <div style="text-align:center; max-width:420px; padding:40px 24px;">
-        <div style="font-size:3rem; margin-bottom:20px; opacity:0.5;">◈</div>
-        <h2 style="font-size:1.375rem; font-weight:600; color:var(--text-primary); margin-bottom:12px;">
-          Você ainda não foi atribuído a um workspace
-        </h2>
-        <p style="font-size:0.9375rem; color:var(--text-secondary); line-height:1.7; margin-bottom:28px;">
-          Contate seu gestor para que ele configure seu acesso ao ambiente de trabalho correto.
-        </p>
+      background:var(--bg-dark); font-family:var(--font-ui); padding:20px;">
+      <div style="max-width:520px; width:100%; padding:40px 24px;">
+
+        <div style="text-align:center; margin-bottom:32px;">
+          <div style="font-size:2.5rem;margin-bottom:12px;">👋</div>
+          <h1 style="font-size:1.5rem; font-weight:700; color:var(--text-primary); margin:0 0 8px;">
+            Olá, ${esc(userName)}!
+          </h1>
+          <p style="font-size:0.9375rem; color:var(--text-secondary); line-height:1.6; margin:0;">
+            Sua conta foi criada com sucesso, mas você ainda não foi atribuído(a)
+            a nenhum squad de trabalho.
+          </p>
+        </div>
+
+        <div style="background:var(--bg-surface); border:1px solid var(--border-default);
+          border-radius:var(--radius-lg); padding:24px; margin-bottom:16px;">
+          <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;">
+            <span style="font-size:1.4rem;flex-shrink:0;">⏳</span>
+            <div>
+              <h2 style="font-size:0.9375rem;font-weight:600;color:var(--text-primary);margin:0 0 4px;">
+                Aguardando atribuição
+              </h2>
+              <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.5;margin:0;">
+                Os administradores foram notificados sobre sua entrada e
+                vão te atribuir um squad em breve. Esta tela vai atualizar
+                automaticamente quando isso acontecer.
+              </p>
+            </div>
+          </div>
+
+          ${masters.length > 0 ? `
+            <div style="border-top:1px solid var(--border-subtle);padding-top:16px;margin-top:12px;">
+              <h3 style="font-size:0.75rem;font-weight:600;color:var(--text-muted);
+                text-transform:uppercase;letter-spacing:0.05em;margin:0 0 12px;">
+                Contato com administradores
+              </h3>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                ${masters.slice(0, 3).map(m => `
+                  <a href="mailto:${esc(m.email)}?subject=Acesso%20ao%20Gestor%20PRIMETOUR&body=Ol%C3%A1%2C%20entrei%20no%20Gestor%20PRIMETOUR%20mas%20ainda%20n%C3%A3o%20fui%20atribu%C3%ADdo(a)%20a%20um%20squad.%20Pode%20me%20configurar%3F"
+                    style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+                    background:var(--bg-elevated);border:1px solid var(--border-subtle);
+                    border-radius:var(--radius-md);text-decoration:none;color:inherit;">
+                    <div class="avatar avatar-sm" style="background:${esc(m.avatarColor||'#6B7280')};
+                      width:28px;height:28px;font-size:0.625rem;">
+                      ${esc((m.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase())}
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:0.8125rem;font-weight:500;color:var(--text-primary);">
+                        ${esc(m.name)}
+                      </div>
+                      <div style="font-size:0.6875rem;color:var(--text-muted);">
+                        ${esc(m.email)}
+                      </div>
+                    </div>
+                    <span style="color:var(--brand-gold);font-size:0.75rem;">✉</span>
+                  </a>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
         <div style="display:flex;gap:10px;justify-content:center;">
-          <button id="no-ws-refresh" class="btn btn-primary">
+          <button id="no-ws-refresh" class="btn btn-primary" style="flex:1;max-width:200px;">
             ↺ Verificar novamente
           </button>
           <button id="no-ws-logout" class="btn btn-secondary">
             Sair
           </button>
         </div>
-        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:20px;">
+
+        <p style="font-size:0.75rem; color:var(--text-muted); margin-top:20px;text-align:center;">
           Logado como: <strong style="color:var(--text-secondary);">
-            ${store.get('userProfile')?.email || ''}
+            ${esc(userEmail)}
           </strong>
         </p>
       </div>
     </div>
   `;
 
-  document.getElementById('no-ws-refresh')?.addEventListener('click', () => {
-    import('./services/workspaces.js').then(m => m.loadUserWorkspaces()).then(() => {
-      renderApp(root);
-    }).catch(() => renderApp(root));
+  // Auto-refresh quando admin atribuir squad ao user.
+  // store.userWorkspaces é populado pelo loadUserWorkspaces. Quando admin
+  // adicionar este user a um workspace, o snapshot global de users
+  // vai disparar (porque user é re-fetched), e podemos verificar se
+  // ele agora tem workspace. Aqui usamos store.subscribe pra escutar.
+  let refreshing = false;
+  const tryAutoRefresh = async () => {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const { loadUserWorkspaces } = await import('./services/workspaces.js');
+      await loadUserWorkspaces();
+      const ws = store.get('userWorkspaces') || [];
+      if (ws.length > 0) {
+        // User foi adicionado a um squad! Re-render.
+        renderApp(root);
+        return;
+      }
+    } catch {}
+    refreshing = false;
+  };
+
+  // Polling leve a cada 8s pra detectar atribuição (firebase rules às vezes
+  // bloqueiam onSnapshot de workspaces pra non-members; polling é safe)
+  const pollInterval = setInterval(tryAutoRefresh, 8000);
+  // Cleanup quando renderApp re-renderiza outra coisa
+  const observer = new MutationObserver(() => {
+    if (!document.getElementById('no-ws-refresh')) {
+      clearInterval(pollInterval);
+      observer.disconnect();
+    }
   });
+  observer.observe(root, { childList: true, subtree: false });
+
+  document.getElementById('no-ws-refresh')?.addEventListener('click', tryAutoRefresh);
 
   document.getElementById('no-ws-logout')?.addEventListener('click', async () => {
+    clearInterval(pollInterval);
     const { signOut } = await import('./auth/auth.js');
     await signOut().catch(() => {});
   });
+}
+
+// Helper de escape (pequeno) — definido localmente pro renderNoWorkspace
+function esc(s) {
+  return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 /* ─── Wizard de primeiro acesso ──────────────────────────── */

@@ -254,6 +254,35 @@ export function initAuthObserver(onReady) {
               role: newProfile.role,
             }).catch(() => {});
 
+            // Notifica todos masters quando user TOTALMENTE NOVO entra
+            // (sem pré-cadastro pelo admin). Sem isso, admin não saberia
+            // que tem alguém esperando atribuição de squad/role.
+            if (!mergedFromPending) {
+              try {
+                const notifMod = await import('../services/notifications.js');
+                const usersSnap = await getDocs(query(
+                  collection(db, 'users'),
+                  where('role', '==', 'master'),
+                ));
+                const masterIds = usersSnap.docs
+                  .map(d => d.id)
+                  .filter(id => id !== firebaseUser.uid);
+                if (masterIds.length && notifMod.notify) {
+                  notifMod.notify('user.new_sso_entry', {
+                    entityType: 'user',
+                    entityId: firebaseUser.uid,
+                    recipientIds: masterIds,
+                    title: 'Novo usuário entrou via SSO',
+                    body: `${newProfile.name} (${email}) acabou de fazer 1º login. Atribua squad/role na tela de Usuários.`,
+                    route: 'users',
+                    priority: 'high',
+                  });
+                }
+              } catch (e) {
+                console.warn('[SSO] Falha ao notificar admins:', e?.message);
+              }
+            }
+
             const welcome = mergedFromPending
               ? `Bem-vindo(a), ${newProfile.name}! Sua conta foi ativada com a role ${newProfile.role}.`
               : `Bem-vindo(a), ${newProfile.name}! Sua conta foi criada automaticamente via SSO Microsoft.`;
