@@ -407,10 +407,22 @@ export async function updateTask(taskId, data, opts = {}) {
     }
   }
 
-  // Permitir edição se tem permissão global OU é o criador da tarefa
-  if (!store.can('task_edit_any')) {
-    if (prevData && prevData.createdBy !== user.uid) {
-      throw new Error('Permissão negada.');
+  // Permitir edição se:
+  //   - tem permissão global (task_edit_any) — diretoria/head/manager/coordinator
+  //   - é o criador da tarefa
+  //   - é assignee (responsável) — pessoa envolvida pode atualizar (check de
+  //     subtarefa, status, etc) sem precisar pedir pro criador.
+  //   - é observer — mesma lógica: já está envolvido, então pode editar.
+  // Antes do fix de mai/2026: só criador + permissão global → causava
+  // "Permissão negada" ao salvar modal pra assignee/observer (incl. ao
+  // marcar subtarefa como concluída).
+  if (!store.can('task_edit_any') && prevData) {
+    const me = user.uid;
+    const isCreator  = prevData.createdBy === me;
+    const isAssignee = Array.isArray(prevData.assignees) && prevData.assignees.includes(me);
+    const isObserver = Array.isArray(prevData.observers) && prevData.observers.includes(me);
+    if (!isCreator && !isAssignee && !isObserver) {
+      throw new Error('Permissão negada. Apenas criador, responsável, observador ou hierarquia podem editar esta tarefa.');
     }
   }
   // Bloquear mudança para "done" sem permissão task_complete
