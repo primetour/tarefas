@@ -228,16 +228,26 @@
     import { firebaseConfig, isAllowedSSODomain } from './js/config.js';
 
     // ─── Lista de docs disponíveis ──────────────────────────
+    // Ordem das sections segue a UI do "Sobre o Sistema":
+    // - Segurança / Privacidade → aba "🛡 Segurança & LGPD"
+    // - Desenvolvimento / Operação / Geral → aba "📚 Documentação Técnica"
     const DOCS = [
+      // Segurança & LGPD
       { id: 'security',     icon: '🛡', file: 'SECURITY.md',            title: 'Política de Segurança',     section: 'Segurança' },
       { id: 'threat-model', icon: '🎯', file: 'THREAT-MODEL.md',        title: 'Modelo de Ameaças (STRIDE)',section: 'Segurança' },
       { id: 'incident',     icon: '🚨', file: 'INCIDENT-RESPONSE.md',   title: 'Resposta a Incidentes',     section: 'Segurança' },
       { id: 'access',       icon: '🔑', file: 'ACCESS-CONTROL.md',      title: 'Controle de Acesso (RBAC)', section: 'Segurança' },
       { id: 'data-flow',    icon: '🔐', file: 'DATA-FLOW.md',           title: 'Fluxo de Dados & PII',      section: 'Privacidade' },
+      // Desenvolvimento (novos docs criados na auditoria)
+      { id: 'architecture', icon: '🏗', file: 'docs/ARCHITECTURE.md',   title: 'Arquitetura',               section: 'Desenvolvimento' },
+      { id: 'contributing', icon: '🤝', file: 'docs/CONTRIBUTING.md',   title: 'Convenções e Workflow',     section: 'Desenvolvimento' },
+      { id: 'performance',  icon: '⚡', file: 'docs/PERFORMANCE.md',    title: 'Performance & Custos',      section: 'Desenvolvimento' },
+      // Operação
       { id: 'data-model',   icon: '🗂', file: 'DATA-MODEL.md',          title: 'Modelo de Dados (Firestore)', section: 'Operação' },
       { id: 'infra',        icon: '⚙', file: 'INFRA.md',               title: 'Infraestrutura',            section: 'Operação' },
       { id: 'prompt-cache', icon: '💾', file: 'PROMPT-CACHING.md',      title: 'Prompt Caching (IA)',       section: 'Operação' },
       { id: 'cloudflare',   icon: '☁',  file: 'MIGRATION-CLOUDFLARE.md',title: 'Migração Cloudflare',       section: 'Operação' },
+      // Geral
       { id: 'fact-sheet',   icon: '📄', file: 'FACT_SHEET.md',          title: 'Fact Sheet (executivo)',    section: 'Geral' },
     ];
 

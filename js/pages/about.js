@@ -52,6 +52,7 @@ const TABS = [
   { id:'modulos',   label:'🗺 Módulos' },
   { id:'stack',     label:'⚙ Stack' },
   { id:'seguranca', label:'🛡 Segurança & LGPD' },
+  { id:'docs',      label:'📚 Documentação técnica' },
 ];
 
 /* ─── Content per tab ──────────────────────────────────────── */
@@ -546,12 +547,14 @@ const CONTENT = {
       </p>
     </div>
 
-    <!-- ═══ DOCS DETALHADOS ═══ -->
+    <!-- ═══ DOCS DE SEGURANÇA & LGPD (apenas) ═══ -->
     <h3 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 6px;">
-      📚 Documentação técnica completa
+      📋 Documentos de Segurança & LGPD
     </h3>
     <p style="font-size:0.8125rem;color:var(--text-muted);line-height:1.6;margin-bottom:14px;">
       Cada doc abre em página dedicada (auth obrigatória, formatado, sem ir ao GitHub).
+      Para docs técnicos de arquitetura, performance e operação, vá pra aba
+      <strong>📚 Documentação técnica</strong>.
     </p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-bottom:24px;">
       ${[
@@ -560,7 +563,6 @@ const CONTENT = {
         ['🚨','Resposta a Incidentes',          'incident',     'Runbook P0–P3, comunicação ANPD &lt;72h, recovery'],
         ['🔑','Controle de Acesso (RBAC)',      'access',       'Matriz roles × permissions, lifecycle, MFA'],
         ['🔐','Fluxo de Dados & PII',           'data-flow',    'Inventário PII, fluxos, base legal LGPD, transferência internacional'],
-        ['📄','Fact Sheet (executivo)',         'fact-sheet',   'Resumo 1-página pra apresentar a clientes'],
       ].map(([icon,title,id,desc]) => `
         <a href="docs.html?doc=${id}"
           style="display:flex;gap:12px;align-items:flex-start;padding:14px;
@@ -584,6 +586,98 @@ const CONTENT = {
         <strong>Rene Castro</strong> — <code style="font-size:0.75rem;background:var(--bg-elevated);padding:1px 6px;border-radius:4px;">rene.castro@primetour.com.br</code>.
         Solicitações de titulares (acesso, correção, eliminação) respondidas em até 15 dias úteis.
         Reportar vulnerabilidades: <a href="/.well-known/security.txt" target="_blank" style="color:var(--brand-gold);">/.well-known/security.txt</a>.
+      </p>
+    </div>`,
+
+  /* ═══════════════════════════════════════════════════════
+   * 📚 DOCUMENTAÇÃO TÉCNICA — arquitetura, dev, ops, geral
+   * Movido de dentro da aba Segurança em 2026-05-04. Antes os docs
+   * técnicos viviam dentro de "Segurança & LGPD" o que era confuso —
+   * arquitetura/performance/dev workflow não são tópicos de segurança.
+   * ═══════════════════════════════════════════════════════ */
+  docs: () => `
+    <h3 style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0 0 8px;">📚 Documentação técnica</h3>
+    <p style="font-size:0.8125rem;color:var(--text-muted);line-height:1.6;margin-bottom:18px;">
+      Referência completa pra time de desenvolvimento. Cada doc abre em página dedicada
+      (auth obrigatória, formatado em HTML, conteúdo do GitHub renderizado).
+      Para docs de segurança/LGPD, vá pra aba <strong>🛡 Segurança & LGPD</strong>.
+    </p>
+
+    <!-- ═══ DESENVOLVIMENTO ═══ -->
+    <h4 style="font-size:0.8125rem;font-weight:700;color:var(--text-muted);
+      text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Desenvolvimento</h4>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-bottom:24px;">
+      ${[
+        ['🏗','Arquitetura',          'architecture', 'Decisões, camadas, fluxos, padrões, segurança em 5 camadas, débitos'],
+        ['🤝','Convenções e Workflow', 'contributing','Naming, async patterns, error handling, XSS, logging, Conventional Commits'],
+        ['⚡','Performance & Custos', 'performance', 'Otimizações, free tier, listeners, estimativas por volume, roadmap'],
+      ].map(([icon,title,id,desc]) => `
+        <a href="docs.html?doc=${id}"
+          style="display:flex;gap:12px;align-items:flex-start;padding:14px;
+          background:var(--bg-surface);border:1px solid var(--border-subtle);
+          border-radius:var(--radius-md);text-decoration:none;transition:all .15s;">
+          <div style="font-size:1.5rem;flex-shrink:0;">${icon}</div>
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);margin-bottom:3px;">${esc(title)}</div>
+            <div style="font-size:0.7188rem;color:var(--text-muted);line-height:1.5;">${desc}</div>
+          </div>
+          <div style="font-size:0.875rem;color:var(--text-muted);flex-shrink:0;">→</div>
+        </a>
+      `).join('')}
+    </div>
+
+    <!-- ═══ OPERAÇÃO ═══ -->
+    <h4 style="font-size:0.8125rem;font-weight:700;color:var(--text-muted);
+      text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Operação</h4>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-bottom:24px;">
+      ${[
+        ['🗂','Modelo de Dados (Firestore)','data-model',  '42+ collections, schema, índices, TTL'],
+        ['⚙','Infraestrutura',             'infra',       'Cloudflare, Firestore, GitHub Actions, DR'],
+        ['💾','Prompt Caching (IA)',        'prompt-cache','Estratégia de cache de tokens pra LLMs (Anthropic, OpenAI, Gemini)'],
+        ['☁','Migração Cloudflare',        'cloudflare',  'Plano de migração GH Pages → Cloudflare Pages'],
+      ].map(([icon,title,id,desc]) => `
+        <a href="docs.html?doc=${id}"
+          style="display:flex;gap:12px;align-items:flex-start;padding:14px;
+          background:var(--bg-surface);border:1px solid var(--border-subtle);
+          border-radius:var(--radius-md);text-decoration:none;transition:all .15s;">
+          <div style="font-size:1.5rem;flex-shrink:0;">${icon}</div>
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);margin-bottom:3px;">${esc(title)}</div>
+            <div style="font-size:0.7188rem;color:var(--text-muted);line-height:1.5;">${desc}</div>
+          </div>
+          <div style="font-size:0.875rem;color:var(--text-muted);flex-shrink:0;">→</div>
+        </a>
+      `).join('')}
+    </div>
+
+    <!-- ═══ GERAL ═══ -->
+    <h4 style="font-size:0.8125rem;font-weight:700;color:var(--text-muted);
+      text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Geral</h4>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-bottom:24px;">
+      ${[
+        ['📄','Fact Sheet (executivo)', 'fact-sheet', 'Resumo 1-página pra apresentar a clientes'],
+      ].map(([icon,title,id,desc]) => `
+        <a href="docs.html?doc=${id}"
+          style="display:flex;gap:12px;align-items:flex-start;padding:14px;
+          background:var(--bg-surface);border:1px solid var(--border-subtle);
+          border-radius:var(--radius-md);text-decoration:none;transition:all .15s;">
+          <div style="font-size:1.5rem;flex-shrink:0;">${icon}</div>
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);margin-bottom:3px;">${esc(title)}</div>
+            <div style="font-size:0.7188rem;color:var(--text-muted);line-height:1.5;">${desc}</div>
+          </div>
+          <div style="font-size:0.875rem;color:var(--text-muted);flex-shrink:0;">→</div>
+        </a>
+      `).join('')}
+    </div>
+
+    <div style="background:rgba(56,189,248,.06);border-left:3px solid #38BDF8;
+      border-radius:0 var(--radius-md) var(--radius-md) 0;padding:12px 16px;">
+      <p style="font-size:0.8125rem;font-weight:600;color:#38BDF8;margin-bottom:4px">Para devs novos</p>
+      <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin:0">
+        Quickstart de setup local: <a href="https://github.com/primetour/tarefas/blob/main/README.md"
+          target="_blank" style="color:var(--brand-gold);">README.md</a>.
+        Convenções de código + workflow de PR: aba <strong>Convenções e Workflow</strong> acima.
       </p>
     </div>`,
 };
