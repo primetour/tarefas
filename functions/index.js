@@ -727,6 +727,22 @@ export const repairOrphanSquadMembers = onCall({
     if (email && oldUid) oldUidToEmail[oldUid] = email;
   });
 
+  // 2b. Pending IDs órfãos: o pattern é pending_local_part_domain_com_br
+  // (criados por createUser SSO + posteriormente consolidados+deletados).
+  // Audit logs não os indexam por entityId (pending IDs são gerados no
+  // momento do createUser, sem passar por users.create com UID Firebase).
+  // Heurística: se orphan começa com "pending_", varre users por email
+  // e tenta match. Como o slug perde info de pontuação, comparamos slugs.
+  // Helper local: gera o slug pendente de um email (mesma lógica do createUser SSO)
+  const slugFromEmail = (email) => `pending_${email.replace(/[@.]/g, '_')}`;
+  const pendingSlugToEmail = {};
+  // Mapeia slugs → emails de TODOS os users atuais (cobre tanto consolidados
+  // quanto pendings que ainda existem)
+  usersSnap.docs.forEach(d => {
+    const email = (d.data().email || '').toLowerCase();
+    if (email) pendingSlugToEmail[slugFromEmail(email)] = email;
+  });
+
   // 3. Varre workspaces, identifica órfãos, faz swap
   const wsSnap = await db.collection('workspaces').get();
   const report = [];
@@ -745,7 +761,12 @@ export const repairOrphanSquadMembers = onCall({
 
     let wsPatched = 0;
     for (const orphanUid of allOrphans) {
-      const email = oldUidToEmail[orphanUid];
+      // Lookup do email: 1º tenta audit_logs, 2º (se for pending_*) tenta
+      // resolver via slug (mesma lógica de createUser SSO).
+      let email = oldUidToEmail[orphanUid];
+      if (!email && orphanUid.startsWith('pending_')) {
+        email = pendingSlugToEmail[orphanUid];
+      }
       if (!email) {
         report.push({
           workspace: data.name, orphanUid, status: 'sem_email_no_audit',
