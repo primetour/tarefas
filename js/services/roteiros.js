@@ -10,6 +10,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
+import { auditLog } from '../auth/audit.js';
 
 /* ─── Collections ─────────────────────────────────────────── */
 const COL         = 'roteiros';
@@ -244,6 +245,10 @@ export async function saveRoteiro(id, data) {
       updatedAt: now,
       updatedBy: uid,
     });
+    auditLog('roteiro.update', 'roteiro', id, {
+      title: data.title || existing?.title || '',
+      fields: Object.keys(data),
+    }).catch(() => {});
     return id;
   } else {
     if (!store.canCreateRoteiro()) {
@@ -256,6 +261,11 @@ export async function saveRoteiro(id, data) {
       updatedAt: now,
       updatedBy: uid,
     });
+    auditLog('roteiro.create', 'roteiro', ref.id, {
+      title: data.title || '',
+      clientName: data.clientName || '',
+      destinations: Array.isArray(data.destinations) ? data.destinations.slice(0,5) : [],
+    }).catch(() => {});
     return ref.id;
   }
 }
@@ -268,6 +278,9 @@ export async function deleteRoteiro(id) {
     throw new Error('Permissão negada: você não pode excluir este roteiro.');
   }
   await deleteDoc(doc(db, COL, id));
+  auditLog('roteiro.delete', 'roteiro', id, {
+    title: existing?.title || '',
+  }).catch(() => {});
 }
 
 export async function updateRoteiroStatus(id, status) {
@@ -278,6 +291,7 @@ export async function updateRoteiroStatus(id, status) {
     throw new Error('Permissão negada: você não pode alterar o status deste roteiro.');
   }
 
+  const prevStatus = existing?.status;
   const extra = {};
   if (status === 'sent') extra.sentAt = serverTimestamp();
   if (status === 'archived') extra.archivedAt = serverTimestamp();
@@ -288,6 +302,15 @@ export async function updateRoteiroStatus(id, status) {
     updatedAt: serverTimestamp(),
     updatedBy: uid,
   });
+  // Audit do status change. Especial pra archive/restore (severity warn)
+  const action = status === 'archived' ? 'roteiro.archive'
+              : prevStatus === 'archived' && status !== 'archived' ? 'roteiro.restore'
+              : 'roteiro.status_change';
+  auditLog(action, 'roteiro', id, {
+    title: existing?.title || '',
+    statusFrom: prevStatus,
+    statusTo: status,
+  }).catch(() => {});
 }
 
 /* ─── Duplicar roteiro ────────────────────────────────────── */

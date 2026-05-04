@@ -468,6 +468,12 @@ export function initAuthObserver(onReady) {
           } catch {}
         })();
 
+        // Inicia tracking de presence (online users em tempo real)
+        // Heartbeat a cada 30s + listener da coleção presence.
+        import('../services/presence.js')
+          .then(m => m.startPresence())
+          .catch(() => {});
+
         // ─── Automation services (lazy, non-blocking) ───
         Promise.resolve().then(async () => {
           const [
@@ -592,6 +598,13 @@ export async function signOut() {
       email: user.email
     }).catch(() => {});
   }
+  // Para presence (heartbeat + listener) ANTES do firebaseSignOut
+  // pra que o deleteDoc do presence/{uid} funcione (precisa estar
+  // autenticado).
+  try {
+    const { stopPresence } = await import('../services/presence.js');
+    stopPresence();
+  } catch {}
   await firebaseSignOut(auth);
 }
 

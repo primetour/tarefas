@@ -101,6 +101,15 @@ service cloud.firestore {
     // que nao tem origem server, ex: 'page.viewed') E os campos obrigatorios.
     // Logs de seguranca (auth.login, security.*, lgpd.*, system.*) sao gerados
     // server-side via Cloud Functions (Admin SDK bypassa rules).
+    // ── Presence (online users em tempo real) ────────────────
+    // Cada user só escreve seu próprio doc (presence/{uid}). Todos lêem.
+    // Rate-limit natural: heartbeat a cada 30s já é suficiente pra evitar abuse.
+    match /presence/{userId} {
+      allow read:   if isAuth();
+      allow write:  if isAuth() && request.auth.uid == userId;
+      allow delete: if isAuth() && request.auth.uid == userId;
+    }
+
     match /audit_logs/{logId} {
       allow read:   if isAdmin();
       allow create: if isAuth() &&

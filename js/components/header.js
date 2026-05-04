@@ -132,6 +132,11 @@ export class Header {
       </div>
 
       <div class="header-actions">
+        <!-- Online users em tempo real (presence). Mostra avatares dos
+             N primeiros + count se houver mais. Tooltip lista nomes. -->
+        <div id="header-online-users" style="display:flex;align-items:center;
+          margin-right:8px;"></div>
+
         <button class="header-action-btn" id="notif-btn" title="Notificações"
           style="position:relative;">
           🔔
@@ -316,6 +321,55 @@ export class Header {
     };
     updateBadge(store.get('unreadCount') || 0);
     this._unsubNotif = store.subscribe('unreadCount', updateBadge);
+
+    // ── Online users (presence) ─────────────────────────────
+    // Renderiza avatares dos users atualmente online em tempo real.
+    // store.onlineUsers é populado pelo serviço presence.js (heartbeat 30s).
+    const renderOnlineUsers = (online = []) => {
+      const wrap = this.el.querySelector('#header-online-users');
+      if (!wrap) return;
+      const currentUid = store.get('currentUser')?.uid;
+      // Exclui o próprio user da lista (não faz sentido se ver "online")
+      const others = (online || []).filter(u => u.uid !== currentUid);
+      if (!others.length) {
+        wrap.innerHTML = '';
+        return;
+      }
+      const MAX_VISIBLE = 4;
+      const visible = others.slice(0, MAX_VISIBLE);
+      const overflow = others.length - visible.length;
+      const tooltipNames = others.map(u => u.name || u.email || 'Usuário').join(', ');
+
+      wrap.innerHTML = `
+        <div title="Online agora: ${tooltipNames.replace(/"/g, '&quot;')}"
+          style="display:flex;align-items:center;cursor:default;">
+          ${visible.map(u => {
+            const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+            return `<div class="avatar avatar-sm" style="
+              background:${u.avatarColor || '#3B82F6'};
+              width:28px;height:28px;font-size:0.625rem;font-weight:600;color:#fff;
+              border:2px solid var(--bg-card,#fff);
+              display:flex;align-items:center;justify-content:center;
+              border-radius:50%;margin-left:-6px;position:relative;"
+              title="${(u.name || '').replace(/"/g, '&quot;')}">
+              ${initials}
+              <span style="position:absolute;bottom:-2px;right:-2px;width:8px;height:8px;
+                background:#22C55E;border:1.5px solid var(--bg-card,#fff);border-radius:50%;"></span>
+            </div>`;
+          }).join('')}
+          ${overflow > 0 ? `<div style="
+            width:28px;height:28px;border-radius:50%;
+            background:var(--bg-elevated);color:var(--text-secondary);
+            font-size:0.625rem;font-weight:600;
+            display:flex;align-items:center;justify-content:center;
+            border:2px solid var(--bg-card,#fff);margin-left:-6px;">
+            +${overflow}
+          </div>` : ''}
+        </div>
+      `;
+    };
+    renderOnlineUsers(store.get('onlineUsers') || []);
+    this._unsubOnline = store.subscribe('onlineUsers', renderOnlineUsers);
 
     // Mobile menu
     const mobileBtn = this.el.querySelector('#mobile-menu-btn');
@@ -843,6 +897,7 @@ export class Header {
   destroy() {
     this._unsubRoute?.();
     this._unsubNotif?.();
+    this._unsubOnline?.();
   }
 }
 
