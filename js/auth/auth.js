@@ -684,7 +684,38 @@ export async function updateUserProfile(uid, data) {
   updateData.updatedAt = serverTimestamp();
   updateData.updatedBy = currentUser.uid;
 
-  await updateDoc(doc(db, 'users', uid), updateData);
+  // Update com fallback robusto: se o doc com `uid` não existe (caso comum
+  // após migração SSO — UI tinha pending_email_dot_dot stale enquanto o
+  // doc real foi consolidado pra UID novo), procura por email e tenta de
+  // novo no doc encontrado. Sem isso, admin via tela "FirebaseError: No
+  // document to update" e ficava preso editando users migrados.
+  let actualDocId = uid;
+  try {
+    await updateDoc(doc(db, 'users', uid), updateData);
+  } catch (err) {
+    const isMissing = err.code === 'not-found'
+      || /no document to update/i.test(err.message || '');
+    if (!isMissing) throw err;
+
+    // Lookup alternativo: o user em memória tem email; buscamos por ele
+    // pra encontrar o ID atual real (que pode ser diferente do stale).
+    const cachedProfile = (store.get('users') || []).find(u => u.id === uid);
+    const lookupEmail = (cachedProfile?.email || '').toLowerCase();
+    if (!lookupEmail) {
+      throw new Error('Usuário não encontrado (doc ausente e sem email pra lookup).');
+    }
+
+    const altQ = query(collection(db, 'users'), where('email', '==', lookupEmail));
+    const altSnap = await getDocs(altQ);
+    if (altSnap.empty) {
+      throw new Error(`Usuário com email ${lookupEmail} não encontrado em nenhum doc.`);
+    }
+    // Prefere doc consolidado (não-pending) se houver mais de um
+    const target = altSnap.docs.find(d => !d.id.startsWith('pending_'))
+      || altSnap.docs[0];
+    actualDocId = target.id;
+    await updateDoc(target.ref, updateData);
+  }
 
   // Se atualizou o próprio perfil, sincronizar no store
   if (isOwner) {
@@ -692,7 +723,7 @@ export async function updateUserProfile(uid, data) {
     store.set('userProfile', updated);
   }
 
-  await auditLog('users.update', 'user', uid, updateData);
+  await auditLog('users.update', 'user', actualDocId, updateData);
 
   try {
     const { invalidateUsersCache } = await import('../services/users.js');
