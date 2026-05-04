@@ -117,18 +117,20 @@ export const APP_CONFIG = {
   // Paginação padrão
   itemsPerPage: 15,
 
-  // EmailJS — CSAT (Etapa 4)
+  // EmailJS — CSAT
   // ─────────────────────────────────────────────────────────
-  // 1. Crie conta gratuita em https://www.emailjs.com
-  // 2. Conecte um serviço de e-mail (Gmail, Outlook, etc.)
-  // 3. Crie 2 templates (veja README para os campos esperados)
-  // 4. Substitua os valores abaixo com suas credenciais
-  emailjs: {
-    publicKey:           'LctNxJvF_1lDbPpfE',     // Account > API Keys
-    serviceId:           'service_ri6pgns',     // Email Services > Service ID
-    templateCsat:        'template_0y9028t',       // Template de envio ao cliente
-    templateInternal:    'SEU_TEMPLATE_INTERNO_ID',    // Template de notificação interna (opcional)
-  },
+  // SECRETS MOVIDOS pra Secret Manager (Google Cloud Functions).
+  // Antes: publicKey/serviceId/templateId estavam aqui no client (git público)
+  // → qualquer um podia abusar da conta EmailJS (gastar quota, spam).
+  // Agora: js/services/csat.js sendCsatEmail() chama Cloud Function
+  // `sendCsatEmail` que injeta secrets server-side. Vide functions/index.js.
+  //
+  // PRA CONFIGURAR (1x admin):
+  //   firebase functions:secrets:set EMAILJS_SERVICE_ID
+  //   firebase functions:secrets:set EMAILJS_TEMPLATE_ID
+  //   firebase functions:secrets:set EMAILJS_PUBLIC_KEY
+  //   firebase deploy --only functions:sendCsatEmail
+  // emailjs: {} — removido (secrets foram pra Secret Manager)
 
   // Firebase Cloud Functions — envio de e-mail via Gmail
   // ─────────────────────────────────────────────────────────

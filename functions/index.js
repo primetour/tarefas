@@ -41,6 +41,12 @@ const SHAREPOINT_CLIENT_SECRET = defineSecret('SHAREPOINT_CLIENT_SECRET');
 const GITHUB_PAT        = defineSecret('GITHUB_PAT');
 const SIEM_SLACK_WEBHOOK = defineSecret('SIEM_SLACK_WEBHOOK');  // optional - if not set, digest only logs
 const UNSPLASH_ACCESS_KEY = defineSecret('UNSPLASH_ACCESS_KEY');  // optional - fallback Wikipedia se nao setado
+// EmailJS — credenciais movidas do client (config.js) pra cá pra evitar
+// abuse via secrets em git público. Função sendCsatEmail valida caller +
+// rate limita antes de enviar.
+const EMAILJS_SERVICE_ID  = defineSecret('EMAILJS_SERVICE_ID');
+const EMAILJS_TEMPLATE_ID = defineSecret('EMAILJS_TEMPLATE_ID');
+const EMAILJS_PUBLIC_KEY  = defineSecret('EMAILJS_PUBLIC_KEY');
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 function requireAuth(request) {
@@ -1295,6 +1301,94 @@ export const repairOrphanSquadMembers = onCall({
     workspacesScanned: wsSnap.size,
     report,
   };
+});
+
+/* ═════════════════════════════════════════════════════════
+ * sendCsatEmail — proxy server-side pra EmailJS
+ *
+ * MOTIVAÇÃO: antes os secrets do EmailJS (serviceId, templateId,
+ * publicKey) estavam hardcoded em js/config.js no client. Como o repo
+ * é público no GitHub, qualquer um podia abusar da conta EmailJS
+ * (gastar quota, spam). Movido pra Secret Manager.
+ *
+ * SEGURANÇA:
+ *   1. Auth obrigatório (onCall request.auth).
+ *   2. Verifica que survey existe e o caller é quem CRIOU (createdBy).
+ *   3. Rate limit: 10 envios / 5 min por user (evita spam burst).
+ *   4. Secrets ficam no Secret Manager, nunca no git.
+ *
+ * Pra deployar (1x admin):
+ *   firebase functions:secrets:set EMAILJS_SERVICE_ID  # service_xxxx
+ *   firebase functions:secrets:set EMAILJS_TEMPLATE_ID # template_xxxx
+ *   firebase functions:secrets:set EMAILJS_PUBLIC_KEY  # publicKey
+ *   firebase deploy --only functions:sendCsatEmail
+ * ═════════════════════════════════════════════════════════ */
+export const sendCsatEmail = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  maxInstances: 5,
+  timeoutSeconds: 30,
+  secrets: [EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY],
+}, async (request) => {
+  const auth = requireAuth(request);
+
+  // Rate limit: 10 envios / 5 min
+  await checkRateLimit(auth.uid, 'csat_email', 10, 300);
+
+  const { surveyId, params } = request.data || {};
+  if (!surveyId || !params) {
+    throw new HttpsError('invalid-argument', 'surveyId + params obrigatórios.');
+  }
+
+  // Valida que survey existe e caller é quem criou
+  const surveyDoc = await db.doc(`csat_surveys/${surveyId}`).get();
+  if (!surveyDoc.exists) {
+    throw new HttpsError('not-found', 'Survey não encontrada.');
+  }
+  const survey = surveyDoc.data();
+  if (survey.createdBy !== auth.uid && !(await isAdmin(auth.uid))) {
+    throw new HttpsError('permission-denied', 'Só o criador da survey ou admin pode enviar.');
+  }
+
+  // Chama EmailJS REST API
+  const serviceId  = EMAILJS_SERVICE_ID.value();
+  const templateId = EMAILJS_TEMPLATE_ID.value();
+  const publicKey  = EMAILJS_PUBLIC_KEY.value();
+  if (!serviceId || !templateId || !publicKey) {
+    throw new HttpsError('failed-precondition',
+      'EmailJS não configurado. Admin: rodar `firebase functions:secrets:set` + redeploy.');
+  }
+
+  let resp;
+  try {
+    resp = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id:  serviceId,
+        template_id: templateId,
+        user_id:     publicKey,
+        template_params: params,
+      }),
+    });
+  } catch (e) {
+    throw new HttpsError('unavailable', `Falha de rede: ${e.message}`);
+  }
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new HttpsError('internal', `EmailJS rejeitou (${resp.status}): ${text.slice(0, 200)}`);
+  }
+
+  // Audit
+  await db.collection('audit_logs').add({
+    action: 'csat.email_sent',
+    userId: auth.uid,
+    entityId: surveyId,
+    timestamp: FieldValue.serverTimestamp(),
+    severity: 'info',
+  });
+
+  return { ok: true };
 });
 
 export const eraseUserDataServer = onCall({

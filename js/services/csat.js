@@ -29,23 +29,11 @@ export const SCORE_LABELS = {
   5: { label: 'Muito satisfeito',   emoji: '😄', color: '#16A34A' },
 };
 
-/* ─── EmailJS loader ─────────────────────────────────────── */
-let _emailjsLoaded = false;
-async function loadEmailJS() {
-  if (window.emailjs) return window.emailjs;
-  if (_emailjsLoaded) return window.emailjs;
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
-    s.onload = () => {
-      _emailjsLoaded = true;
-      window.emailjs.init(APP_CONFIG.emailjs.publicKey);
-      resolve(window.emailjs);
-    };
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
+// EmailJS removido do client. Envio agora vai por Cloud Function
+// `sendCsatEmail` que mantém os secrets no Secret Manager (Google Cloud).
+// Antes: SDK do EmailJS rodava no browser com publicKey/serviceId no
+// config.js commitado em git → qualquer um abusava da conta.
+// Vide functions/index.js sendCsatEmail.
 
 /* ─── Criar survey ───────────────────────────────────────── */
 export async function createCsatSurvey({
@@ -89,25 +77,19 @@ export async function createCsatSurvey({
   return { id: ref.id, ...surveyDoc };
 }
 
-/* ─── Enviar e-mail ──────────────────────────────────────── */
+/* ─── Enviar e-mail (via Cloud Function — secrets server-side) ──── */
 export async function sendCsatEmail(surveyId) {
   const snap = await getDoc(doc(db, 'csat_surveys', surveyId));
   if (!snap.exists()) throw new Error('Pesquisa não encontrada.');
   const survey = { id: snap.id, ...snap.data() };
-
-  const cfg = APP_CONFIG.emailjs;
-  if (!cfg.publicKey || cfg.publicKey.startsWith('SUA_')) {
-    throw new Error('EmailJS não configurado. Configure as credenciais em js/config.js.');
-  }
-
-  const ejs = await loadEmailJS();
 
   // Aponta direto para csat-response.html (página pública, sem autenticação)
   const origin    = APP_CONFIG.csat.baseUrl || window.location.origin;
   const basePath  = window.location.pathname.replace(/\/[^/]*$/, '');
   const surveyUrl = `${origin}${basePath}/csat-response.html?token=${survey.token}&id=${surveyId}`;
 
-  // Template params (customize os nomes conforme seu template EmailJS)
+  // Template params (mesma estrutura de antes — agora viajam pra function
+  // que injeta service_id/template_id/user_id server-side)
   const params = {
     to_email:      survey.clientEmail,
     to_name:       survey.clientName,
@@ -125,13 +107,15 @@ export async function sendCsatEmail(surveyId) {
     year:          new Date().getFullYear(),
   };
 
+  // Chama Cloud Function (secrets ficam no Google Cloud Secret Manager)
   try {
-    await ejs.send(cfg.serviceId, cfg.templateCsat, params);
-  } catch (ejsErr) {
-    // EmailJS rejeita com {status, text} em vez de Error
-    const detail = ejsErr?.text || ejsErr?.message || JSON.stringify(ejsErr);
-    console.error('EmailJS send error:', ejsErr);
-    throw new Error(`Falha ao enviar e-mail: ${detail}`);
+    const { app } = await import('../firebase.js');
+    const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+    const fn = fb.httpsCallable(fb.getFunctions(app, 'us-central1'), 'sendCsatEmail');
+    await fn({ surveyId, params });
+  } catch (err) {
+    const msg = err?.message || JSON.stringify(err);
+    throw new Error(`Falha ao enviar e-mail: ${msg}`);
   }
 
   // Marcar como enviado

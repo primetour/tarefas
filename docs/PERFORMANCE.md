@@ -153,5 +153,15 @@ Alerta automático: setar threshold em **80%** do limite no Cloud Monitoring.
 
 ---
 
+## 8. Vide também
+
+- [docs/ARCHITECTURE.md](./ARCHITECTURE.md) — visão técnica do sistema
+- [docs/CONTRIBUTING.md](./CONTRIBUTING.md) — convenções de código + workflow
+- [README.md](../README.md) — quickstart pra dev novo
+- [INFRA.md](../INFRA.md) — infraestrutura produção
+- [SECURITY.md](../SECURITY.md) — threat model + auditoria pentest
+
+---
+
 **Última revisão:** 2026-05-04
 **Responsável técnico:** time PRIMETOUR
