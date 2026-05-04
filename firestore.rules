@@ -112,10 +112,19 @@ service cloud.firestore {
 
     match /audit_logs/{logId} {
       allow read:   if isAdmin();
+      // Client pode criar log de qualquer ação de domínio (tasks, projects,
+      // goals, csat, feedbacks, content_calendar, page, client, user, etc),
+      // EXCETO ações server-only (auth/security/lgpd/system) — essas só
+      // entram via Cloud Function com Admin SDK.
+      // Validações:
+      //   - userId precisa ser o próprio uid (não pode forjar logs de outros)
+      //   - action precisa ser string no formato `<dominio>.<acao>` ou
+      //     `<dominio>.<sub>.<acao>` (lowercase + underscore)
+      //   - prefixos auth/security/lgpd/system bloqueados
       allow create: if isAuth() &&
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.action is string &&
-        request.resource.data.action.matches('^(client|page|user)[.][a-z_]+$') &&
+        request.resource.data.action.matches('^[a-z_]+[.][a-z_]+([.][a-z_]+)?$') &&
         !request.resource.data.action.matches('^(auth|security|lgpd|system)[.].*$');
       allow update, delete: if false;
     }

@@ -327,12 +327,20 @@ export async function renderKanban(container) {
             // Para a renderização inicial (antes de tasks chegarem), usa STATUSES
             // se groupBy === 'status'; caso contrário, deixa vazio e renderCards
             // re-renderiza o board quando tasks chegarem.
+            // Datasets data-group-key-rendered e data-rendered-group-keys são
+            // usados em renderCards pra detectar quando re-renderizar (ex: ao
+            // mudar groupBy ou quando um grupo deixa de ter tasks e some).
             if (groupBy === 'status') {
-              return `<div class="kanban-board" id="kanban-board">
+              const initialKeys = STATUSES.map(s => s.value).join('|');
+              return `<div class="kanban-board" id="kanban-board"
+                data-group-key-rendered="status"
+                data-rendered-group-keys="${esc(initialKeys)}">
                 ${STATUSES.map(s => renderColumn({ value: s.value, label: s.label, color: s.color }, [])).join('')}
               </div>`;
             }
-            return `<div class="kanban-board" id="kanban-board" data-groupby="${esc(groupBy)}"></div>`;
+            return `<div class="kanban-board" id="kanban-board"
+              data-group-key-rendered=""
+              data-rendered-group-keys=""></div>`;
           })()}
     </div>
   `;
@@ -449,15 +457,25 @@ function renderCards(tasks, _ignored = '') {
   // Calcula grupos (colunas) — para 'status' usa STATUSES; outros derivam dos tasks
   const groups = getKanbanGroups(groupBy, filteredTasks);
 
-  // Se groupBy !== 'status', a UI das colunas precisa ser construída agora
-  // (renderKanban deixou o board vazio porque as colunas dependem dos tasks)
-  if (groupBy !== 'status') {
-    const board = document.getElementById('kanban-board');
-    if (board && !board.querySelector('.kanban-column')) {
-      board.innerHTML = groups.map(g => renderColumn(g, [])).join('');
-    } else if (board && board.dataset.groupKeyRendered !== groupBy) {
+  // Re-render do board: comparar conjunto de grupos atual com o renderizado.
+  // Necessário sempre que:
+  //   1. groupBy mudou (ex: status → área)
+  //   2. Conjunto de groups mudou (ex: agrupando por área, todas as tarefas
+  //      de "Marketing" mudaram de área → coluna Marketing deve sumir)
+  // Em status mode, STATUSES é fixo (sempre 5 grupos), então só re-renderiza
+  // se viemos de outro groupBy.
+  const board = document.getElementById('kanban-board');
+  if (board) {
+    const expectedKeys = groups.map(g => g.value).join('|');
+    const renderedGroupBy = board.dataset.groupKeyRendered || 'status';
+    const renderedKeys = board.dataset.renderedGroupKeys || '';
+    const shouldRebuild =
+      renderedGroupBy !== groupBy ||
+      (groupBy !== 'status' && renderedKeys !== expectedKeys);
+    if (shouldRebuild) {
       board.innerHTML = groups.map(g => renderColumn(g, [])).join('');
       board.dataset.groupKeyRendered = groupBy;
+      board.dataset.renderedGroupKeys = expectedKeys;
     }
   }
 
