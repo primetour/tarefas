@@ -518,88 +518,232 @@ function openWorkspaceModal(ws = null) {
 async function openMembersModal(ws) {
   if (!ws) return;
   const allUsers = store.get('users') || [];
-  const members  = ws.members || [];
   const uid      = store.get('currentUser')?.uid;
+  const canManage = store.can('system_view_all') || ws.adminIds?.includes(uid);
+
+  // Helper: re-renderiza o conteúdo do modal sem fechar/reabrir.
+  // Isso evita flicker e mantém scroll position quando user adiciona/remove
+  // múltiplos membros em sequência.
+  const renderContent = () => {
+    const members = ws.members || [];
+    const memberSet = new Set(members);
+    const nonMembers = allUsers
+      .filter(u => !memberSet.has(u.id) && u.active !== false)
+      .sort((a, b) => (a.name||'').localeCompare(b.name||''));
+
+    return `
+      <div style="display:flex;flex-direction:column;gap:0;max-height:70vh;overflow:hidden;">
+        <!-- TABS -->
+        <div style="display:flex;gap:4px;border-bottom:1px solid var(--border-subtle);margin-bottom:12px;">
+          <button class="ws-mm-tab active" data-tab="current"
+            style="padding:8px 12px;background:transparent;border:none;border-bottom:2px solid var(--brand-gold);
+            color:var(--text-primary);cursor:pointer;font-size:0.875rem;font-weight:500;">
+            Membros atuais (${members.length})
+          </button>
+          ${canManage ? `
+            <button class="ws-mm-tab" data-tab="add"
+              style="padding:8px 12px;background:transparent;border:none;border-bottom:2px solid transparent;
+              color:var(--text-muted);cursor:pointer;font-size:0.875rem;font-weight:500;">
+              + Adicionar (${nonMembers.length} disponíveis)
+            </button>
+          ` : ''}
+        </div>
+
+        <!-- TAB: Membros atuais -->
+        <div class="ws-mm-pane" data-pane="current"
+          style="display:flex;flex-direction:column;gap:4px;overflow-y:auto;flex:1;">
+          ${members.length === 0
+            ? `<div class="empty-state" style="padding:24px;"><div class="empty-state-title">Nenhum membro ainda</div>
+                <p style="font-size:0.8125rem;color:var(--text-muted);margin-top:8px;">
+                  Use a aba <strong>+ Adicionar</strong> pra incluir usuários.
+                </p></div>`
+            : members.map(mid => {
+                const u       = allUsers.find(u => u.id === mid);
+                const name    = u?.name || mid;
+                const isAdminMember = ws.adminIds?.includes(mid);
+                const isOwner = ws.ownerId === mid;
+                const initials = (u?.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+
+                return `
+                  <div style="display:flex;align-items:center;gap:10px;padding:8px;
+                    border-bottom:1px solid var(--border-subtle);">
+                    <div class="avatar avatar-sm" style="background:${u?.avatarColor||'#3B82F6'};flex-shrink:0;">
+                      ${initials}
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${esc(name)}</div>
+                      <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u?.department||u?.role||'')}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      ${isOwner
+                        ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:var(--radius-full);background:rgba(212,168,67,0.12);color:var(--brand-gold);">Dono</span>`
+                        : isAdminMember
+                          ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:var(--radius-full);background:rgba(56,189,248,0.12);color:#38BDF8;">Admin</span>`
+                          : ''}
+                      ${canManage && !isOwner ? `
+                        <button class="btn btn-ghost btn-icon btn-sm toggle-admin-btn"
+                          data-uid="${mid}" data-admin="${isAdminMember}" title="${isAdminMember?'Rebaixar de admin':'Promover a admin'}"
+                          style="font-size:0.875rem;">
+                          ${isAdminMember ? '⬇' : '⬆'}
+                        </button>
+                        <button class="btn btn-ghost btn-icon btn-sm remove-member-btn"
+                          data-uid="${mid}" title="Remover do squad"
+                          style="color:var(--color-danger);font-weight:bold;">✕</button>
+                      ` : ''}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+        </div>
+
+        <!-- TAB: Adicionar membros -->
+        ${canManage ? `
+          <div class="ws-mm-pane" data-pane="add" style="display:none;flex-direction:column;gap:4px;overflow-y:auto;flex:1;">
+            <div style="margin-bottom:8px;">
+              <input type="text" class="form-input" id="ws-mm-search"
+                placeholder="🔍 Buscar usuário por nome ou e-mail…"
+                style="width:100%;font-size:0.875rem;" />
+            </div>
+            ${nonMembers.length === 0
+              ? `<div class="empty-state" style="padding:24px;"><div class="empty-state-title">Todos os usuários já estão neste squad</div></div>`
+              : nonMembers.map(u => {
+                  const initials = (u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+                  return `
+                    <div class="ws-mm-add-row" data-uid="${u.id}"
+                      data-search="${esc((u.name||'').toLowerCase()+' '+(u.email||'').toLowerCase())}"
+                      style="display:flex;align-items:center;gap:10px;padding:8px;cursor:pointer;
+                      border-bottom:1px solid var(--border-subtle);transition:background 0.15s;border-radius:var(--radius-sm);">
+                      <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">
+                        ${initials}
+                      </div>
+                      <div style="flex:1;min-width:0;">
+                        <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${esc(u.name||'')}</div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u.email||'')}</div>
+                      </div>
+                      <button class="btn btn-primary btn-sm ws-mm-add-btn"
+                        data-uid="${u.id}" style="font-size:0.75rem;padding:4px 12px;">
+                        + Adicionar
+                      </button>
+                    </div>
+                  `;
+                }).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  };
 
   modal.open({
     title: `Membros — ${ws.name}`,
     size:  'md',
-    content: `
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        ${members.length === 0
-          ? `<div class="empty-state" style="padding:24px;"><div class="empty-state-title">Nenhum membro</div></div>`
-          : members.map(mid => {
-              const u       = allUsers.find(u => u.id === mid);
-              const name    = u?.name || mid;
-              const isAdmin = ws.adminIds?.includes(mid);
-              const isOwner = ws.ownerId === mid;
-              const initials = (u?.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
-              const canManage = store.can('system_view_all') || ws.adminIds?.includes(uid);
-
-              return `
-                <div style="display:flex;align-items:center;gap:10px;padding:8px 0;
-                  border-bottom:1px solid var(--border-subtle);">
-                  <div class="avatar avatar-sm" style="background:${u?.avatarColor||'#3B82F6'};flex-shrink:0;">
-                    ${initials}
-                  </div>
-                  <div style="flex:1;min-width:0;">
-                    <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${esc(name)}</div>
-                    <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u?.department||u?.role||'')}</div>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:6px;">
-                    ${isOwner
-                      ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:var(--radius-full);background:rgba(212,168,67,0.12);color:var(--brand-gold);">Dono</span>`
-                      : isAdmin
-                        ? `<span style="font-size:0.6875rem;padding:2px 8px;border-radius:var(--radius-full);background:rgba(56,189,248,0.12);color:#38BDF8;">Admin</span>`
-                        : ''}
-                    ${canManage && !isOwner ? `
-                      <button class="btn btn-ghost btn-icon btn-sm toggle-admin-btn"
-                        data-uid="${mid}" data-admin="${isAdmin}" title="${isAdmin?'Rebaixar':'Promover a admin'}">
-                        ${isAdmin ? '↓' : '↑'}
-                      </button>
-                      <button class="btn btn-ghost btn-icon btn-sm remove-member-btn"
-                        data-uid="${mid}" title="Remover do squad" style="color:var(--color-danger);">✕</button>
-                    ` : ''}
-                  </div>
-                </div>
-              `;
-            }).join('')}
-      </div>
-    `,
+    content: renderContent(),
     footer: [{ label:'Fechar', class:'btn-secondary', closeOnClick:true }],
   });
 
-  setTimeout(() => {
+  // Wire-up: tabs + actions. Re-roda após cada mudança pra rebind.
+  const wireUp = () => {
+    // Tabs
+    document.querySelectorAll('.ws-mm-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+        document.querySelectorAll('.ws-mm-tab').forEach(t => {
+          t.classList.toggle('active', t === tab);
+          t.style.borderBottomColor = t === tab ? 'var(--brand-gold)' : 'transparent';
+          t.style.color = t === tab ? 'var(--text-primary)' : 'var(--text-muted)';
+        });
+        document.querySelectorAll('.ws-mm-pane').forEach(p => {
+          p.style.display = p.dataset.pane === target ? 'flex' : 'none';
+        });
+        // Auto-focus search se for aba "add"
+        if (target === 'add') {
+          setTimeout(() => document.getElementById('ws-mm-search')?.focus(), 50);
+        }
+      });
+    });
+
+    // Search no tab "Adicionar"
+    document.getElementById('ws-mm-search')?.addEventListener('input', e => {
+      const q = (e.target.value || '').toLowerCase();
+      document.querySelectorAll('.ws-mm-add-row').forEach(row => {
+        const match = !q || (row.dataset.search || '').includes(q);
+        row.style.display = match ? 'flex' : 'none';
+      });
+    });
+
+    // Promover/rebaixar admin
     document.querySelectorAll('.toggle-admin-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const makeAdmin = btn.dataset.admin === 'false';
         try {
           await toggleWorkspaceAdmin(ws.id, btn.dataset.uid, makeAdmin);
-          toast.success(makeAdmin ? 'Usuário promovido a admin.' : 'Admin rebaixado.');
-          document.querySelector('.modal-overlay')?.click();
-          await loadWorkspaces();
+          toast.success(makeAdmin ? 'Promovido a admin.' : 'Admin rebaixado.');
+          // Refresh: pega ws atualizado
+          ws = await getWorkspace(ws.id);
+          // Re-render dentro do modal sem fechar
+          const modalContent = document.querySelector('.modal-content, [data-modal-content]');
+          if (modalContent) {
+            modalContent.innerHTML = renderContent();
+            wireUp();
+          }
         } catch(e) { toast.error(e.message); }
       });
     });
+
+    // Remover membro
     document.querySelectorAll('.remove-member-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const u = allUsers.find(u => u.id === btn.dataset.uid);
         const ok = await modal.confirm({
           title:'Remover membro',
-          message:`Remover <strong>${esc(u?.name||btn.dataset.uid)}</strong> deste squad?`,
+          message:`Remover <strong>${esc(u?.name||btn.dataset.uid)}</strong> de "${esc(ws.name)}"?`,
           confirmText:'Remover', danger:true, icon:'✕',
         });
-        if (ok) {
-          try {
-            await removeMember(ws.id, btn.dataset.uid);
-            toast.success('Membro removido.');
-            document.querySelector('.modal-overlay')?.click();
-            await loadWorkspaces();
-          } catch(e) { toast.error(e.message); }
+        if (!ok) return;
+        try {
+          await removeMember(ws.id, btn.dataset.uid);
+          toast.success('Membro removido.');
+          ws = await getWorkspace(ws.id);
+          const modalContent = document.querySelector('.modal-content, [data-modal-content]');
+          if (modalContent) {
+            modalContent.innerHTML = renderContent();
+            wireUp();
+          }
+          await loadWorkspaces();
+        } catch(e) { toast.error(e.message); }
+      });
+    });
+
+    // Adicionar membro (botão "+ Adicionar" inline)
+    document.querySelectorAll('.ws-mm-add-btn').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        if (btn.disabled) return;
+        btn.disabled = true;
+        const orig = btn.textContent;
+        btn.textContent = '⟳ Adicionando…';
+        const targetUid = btn.dataset.uid;
+        try {
+          await addMember(ws.id, targetUid);
+          toast.success('Membro adicionado.');
+          ws = await getWorkspace(ws.id);
+          const modalContent = document.querySelector('.modal-content, [data-modal-content]');
+          if (modalContent) {
+            modalContent.innerHTML = renderContent();
+            wireUp();
+            // Mantém aba "Adicionar" aberta pra encadear adições rápidas
+            document.querySelector('.ws-mm-tab[data-tab="add"]')?.click();
+          }
+          await loadWorkspaces();
+        } catch(e) {
+          toast.error(e.message);
+          btn.disabled = false;
+          btn.textContent = orig;
         }
       });
     });
-  }, 50);
+  };
+
+  setTimeout(wireUp, 50);
 }
 
 /* ─── Modal: convidar membro ─────────────────────────────── */
