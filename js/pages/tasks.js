@@ -1051,7 +1051,8 @@ function _attachPageEvents() {
   if (pdfBtn) pdfBtn.onclick = exportTasksPdf;
 
   // Ativa dropdowns do header (export menu + overflow ⋮)
-  wireUiKitMenus(container);
+  // _attachPageEvents não recebe container como param — usa document como root
+  wireUiKitMenus(document);
 
   // Search
   let timer;

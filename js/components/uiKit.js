@@ -301,16 +301,18 @@ export function renderFilterBar({ statusPills, activeStatus = '', search, select
     <div style="position:relative;flex:1;min-width:220px;max-width:340px;">
       <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:0.875rem;
         color:var(--text-muted);pointer-events:none;">🔍</span>
-      <input type="text" id="${esc(search.id || 'uikit-search')}" class="form-input"
+      <input type="text" id="${esc(search.id || 'uikit-search')}" class="filter-select"
         placeholder="${esc(search.placeholder || 'Buscar...')}"
         value="${esc(search.value || '')}"
         style="height:34px;font-size:0.8125rem;padding-left:32px;width:100%;" />
     </div>
   ` : '';
 
+  // Selects usam .filter-select (tem seta SVG nativa via CSS) — antes
+  // usávamos .form-input que não renderiza a seta indicadora.
   const selectsHTML = (selects || []).map(s => `
-    <select id="${esc(s.id)}" class="form-input"
-      style="height:34px;font-size:0.8125rem;min-width:140px;max-width:220px;">
+    <select id="${esc(s.id)}" class="filter-select"
+      style="height:34px;font-size:0.8125rem;min-width:160px;max-width:220px;">
       <option value="">${esc(s.label || '— Filtrar —')}</option>
       ${(s.options || []).map(o => `
         <option value="${esc(o.value)}" ${o.value === s.value ? 'selected' : ''}>${esc(o.label)}</option>
@@ -375,6 +377,67 @@ export function renderTabsBar({ tabs = [], active } = {}) {
       }).join('')}
     </div>
   `;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ESC GLOBAL — fecha modais/popups visíveis ao apertar Esc
+   ═══════════════════════════════════════════════════════════════ */
+
+let _escInstalled = false;
+
+/**
+ * Instala handler global de Esc. Idempotente — chamar quantas vezes quiser.
+ * Ordem de fechamento (apenas o TOPO é fechado por Esc, não todos):
+ *   1. Menus abertos do uiKit (.uikit-export-menu, .uikit-overflow-menu)
+ *   2. Overlay com z-index mais alto que tenha botão de fechar
+ *
+ * Convenções suportadas pra "botão fechar" (procura nessa ordem):
+ *   - [data-modal-close]
+ *   - .modal-close
+ *   - [aria-label="Fechar"], [aria-label="Close"]
+ *   - .close-btn
+ */
+export function installGlobalEscHandler() {
+  if (_escInstalled) return;
+  _escInstalled = true;
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    // Não fecha se o foco está num input/textarea com texto sendo digitado
+    // (deixa o navegador limpar o campo)
+    const tag = (document.activeElement?.tagName || '').toLowerCase();
+    if (tag === 'textarea') return;
+
+    // 1. Menus abertos do uiKit
+    const openMenu = document.querySelector('.uikit-export-menu[style*="display: block"], .uikit-overflow-menu[style*="display: block"]');
+    if (openMenu) {
+      openMenu.style.display = 'none';
+      e.preventDefault();
+      return;
+    }
+
+    // 2. Overlay/modal mais "no topo" (maior z-index)
+    const overlays = Array.from(document.querySelectorAll('div, aside, section'))
+      .filter(el => {
+        const cs = getComputedStyle(el);
+        if (cs.position !== 'fixed') return false;
+        if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+        const z = parseInt(cs.zIndex) || 0;
+        if (z < 100) return false; // ignora elementos comuns fixed (sidebar, etc)
+        // Tem que ter algum botão de close pra ser modal
+        return el.querySelector('[data-modal-close], .modal-close, [aria-label="Fechar"], [aria-label="Close"], .close-btn, [data-close]');
+      })
+      .sort((a, b) => (parseInt(getComputedStyle(b).zIndex) || 0) - (parseInt(getComputedStyle(a).zIndex) || 0));
+
+    if (overlays.length) {
+      const top = overlays[0];
+      const closeBtn = top.querySelector('[data-modal-close], .modal-close, [aria-label="Fechar"], [aria-label="Close"], .close-btn, [data-close]');
+      if (closeBtn) {
+        closeBtn.click();
+        e.preventDefault();
+      }
+    }
+  });
 }
 
 /**

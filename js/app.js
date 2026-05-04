@@ -10,6 +10,7 @@ import { router }           from './router.js';
 import { toast }            from './components/toast.js';
 import { Sidebar }          from './components/sidebar.js';
 import { Header }           from './components/header.js';
+import { installGlobalEscHandler } from './components/uiKit.js';
 import { subscribeNotifications, cleanupExpired } from './services/notifications.js';
 import { syncBrandingToCache }                    from './services/branding.js';
 import { injectSandboxBanner }                    from './services/sandbox.js';
@@ -89,6 +90,9 @@ async function init() {
 
   // Injeta timer de ponto (analista) — invisível até user bater entrada
   injectClockTimer();
+
+  // ESC fecha menus do uiKit + modais visíveis (idempotente, instala 1x)
+  installGlobalEscHandler();
 
   // Aguarda estado de auth antes de qualquer render
   initAuthObserver(() => {
