@@ -142,6 +142,15 @@ export async function renderUsers(container) {
          migração SSO sem o swap de members). -->
     <div id="orphan-repair-banner" style="display:none;"></div>
 
+    <!-- Botão admin: auditar e migrar todos os SSO bloqueados -->
+    <div style="margin-bottom:20px;text-align:right;">
+      <button id="audit-migrate-sso-btn" class="btn btn-ghost btn-sm"
+        style="font-size:0.75rem;color:var(--text-muted);"
+        title="Varre todos users SSO e migra automaticamente quem ainda tem credencial Auth email/senha (causa do bug 'senha incorreta no SSO')">
+        🔍 Auditar e migrar SSO
+      </button>
+    </div>
+
     <!-- Stats -->
     <div id="users-stats" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px;">
       <div class="stat-card skeleton" style="height:96px;"></div>
@@ -1084,6 +1093,53 @@ function openResetPasswordModal(uid, user) {
 function _attachPageEvents() {
   // New user button
   document.getElementById('new-user-btn')?.addEventListener('click', () => openUserModal());
+
+  // Auditar e migrar SSO (varre todos users SSO com credencial Auth password
+  // e migra automaticamente, evitando o bug "senha incorreta no SSO")
+  document.getElementById('audit-migrate-sso-btn')?.addEventListener('click', async () => {
+    const ok = await modal.confirm({
+      title:   'Auditar e migrar todos os usuários SSO',
+      message: `<div style="font-size:0.875rem;line-height:1.5;">
+        <p>Vou varrer todos os usuários SSO no Firestore e detectar quem
+        ainda tem credencial <strong>email/senha</strong> no Firebase Auth.</p>
+        <p style="margin-top:8px;color:var(--text-muted);">
+        Pra cada user encontrado, faço a migração completa: swap squads
+        (oldUid → pendingId), apago a credencial Auth, marco doc como
+        pendingSso. Próximo SSO Microsoft do user consolida tudo.</p>
+        <p style="margin-top:8px;color:var(--text-muted);font-size:0.75rem;">
+        <strong>Exceção:</strong> admin@primetour.com.br não é tocado
+        (mantido como login emergencial).</p>
+      </div>`,
+      confirmText: 'Auditar e migrar',
+      icon: '🔍',
+    });
+    if (!ok) return;
+
+    const btn = document.getElementById('audit-migrate-sso-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⟳ Auditando...'; }
+
+    try {
+      const { app } = await import('../firebase.js');
+      const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+      const fn = fb.httpsCallable(fb.getFunctions(app, 'us-central1'), 'auditAndMigrateAllSso');
+      const result = await fn({});
+      const r = result.data || {};
+      const msg = `Varridos: ${r.scanned} · Migrados: ${r.migrated?.length || 0} · `
+                + `Já SSO: ${r.skippedAlreadySso} · Sem Auth: ${r.skippedNoAuth || 0}`;
+      if (r.errors?.length) {
+        toast.warning(`${msg} · ${r.errors.length} erros`);
+      } else {
+        toast.success(msg);
+      }
+      console.table(r.migrated);
+      await loadUsers();
+    } catch (err) {
+      console.error('auditAndMigrateAllSso failed:', err);
+      toast.error('Falha: ' + (err.message || 'erro desconhecido'));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🔍 Auditar e migrar SSO'; }
+    }
+  });
 
   // Export
   document.getElementById('export-users-btn')?.addEventListener('click', () => exportUsers());

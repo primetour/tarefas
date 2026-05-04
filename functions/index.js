@@ -669,6 +669,154 @@ export const migrateUserToSso = onCall({
 });
 
 /* ═════════════════════════════════════════════════════════
+ * auditAndMigrateAllSso — varre TODOS users SSO no Firestore e migra
+ * automaticamente quem ainda tem credencial email/senha no Firebase Auth.
+ *
+ * Bug original: usuários cadastrados com password ANTES do SSO ficavam
+ * com credencial 'password' no Auth. Quando tentavam SSO Microsoft,
+ * Firebase batia colisão (account-exists-with-different-credential) e
+ * pedia a senha original — que ninguém sabia.
+ *
+ * Esta function:
+ *  1. Lista todos users SSO domain no Firestore
+ *  2. Pra cada um, busca Auth user pelo email
+ *  3. Se encontrar e tiver provider 'password' (não 'microsoft.com'):
+ *     - Adiciona à fila de migração
+ *  4. Migra cada um chamando a lógica do migrateUserToSso (inline pra
+ *     evitar HTTP roundtrip)
+ *
+ * EXCEÇÕES (não migra):
+ *  - Emails na list `keepPasswordEmails` (admin emergencial)
+ *  - Users que já só têm provider 'microsoft.com' (já SSO-only)
+ *  - Users sem Auth credential (já em pending state)
+ *
+ * Idempotente: rodar várias vezes não faz mal. Só migra quem precisa.
+ * ═════════════════════════════════════════════════════════ */
+export const auditAndMigrateAllSso = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  maxInstances: 2,
+  timeoutSeconds: 540,
+}, async (request) => {
+  const auth = requireAuth(request);
+  const adminFlag = await isAdmin(auth.uid);
+  if (!adminFlag) throw new HttpsError('permission-denied', 'Só admin.');
+
+  // Manter login emergencial: admin@primetour.com.br fica com password
+  // pra acesso de recuperação. Outros podem ser opt-in via UI no futuro.
+  const keepPasswordEmails = new Set([
+    'admin@primetour.com.br',
+  ]);
+
+  const ssoDomains = ['primetour.com.br', 'primetravel.tur.br', 'primetouroperator.com.br'];
+  const isSsoDomain = e => ssoDomains.some(d => (e||'').toLowerCase().endsWith('@'+d));
+
+  // 1. Lista users SSO no Firestore (skip pendings + skip excluded emails)
+  const usersSnap = await db.collection('users').get();
+  const candidates = usersSnap.docs
+    .map(d => ({ id: d.id, data: d.data() }))
+    .filter(u => {
+      const email = (u.data.email || '').toLowerCase();
+      if (!isSsoDomain(email)) return false;
+      if (keepPasswordEmails.has(email)) return false;
+      if (u.data.pendingSso === true) return false; // já em estado pending
+      return true;
+    });
+
+  const report = {
+    scanned: candidates.length,
+    skippedAlreadySso: 0,
+    skippedNoAuth: 0,
+    migrated: [],
+    errors: [],
+  };
+
+  for (const u of candidates) {
+    const email = (u.data.email || '').toLowerCase();
+    let authUser;
+    try {
+      authUser = await getAuth().getUserByEmail(email);
+    } catch (e) {
+      if (e.code === 'auth/user-not-found') {
+        report.skippedNoAuth++;
+        continue;
+      }
+      report.errors.push({ email, stage: 'getUserByEmail', error: e.message });
+      continue;
+    }
+
+    // Verifica providers do Auth user
+    const providers = (authUser.providerData || []).map(p => p.providerId);
+    const hasPassword = providers.includes('password');
+    const hasMicrosoft = providers.includes('microsoft.com');
+
+    // Se já é só Microsoft (sem password), pula
+    if (!hasPassword) {
+      report.skippedAlreadySso++;
+      continue;
+    }
+
+    // Migra: swap workspaces + delete Auth + move Firestore doc pra pending
+    try {
+      const legacyUid = authUser.uid;
+      const pendingId = `pending_${email.replace(/[@.]/g, '_')}`;
+
+      // Swap em workspaces (members + adminIds)
+      const wsSnap = await db.collection('workspaces')
+        .where('members', 'array-contains', legacyUid)
+        .get();
+      let wsPatch = 0;
+      for (const wsDoc of wsSnap.docs) {
+        const data = wsDoc.data();
+        await wsDoc.ref.update({ members: FieldValue.arrayRemove(legacyUid) });
+        await wsDoc.ref.update({ members: FieldValue.arrayUnion(pendingId) });
+        if ((data.adminIds || []).includes(legacyUid)) {
+          await wsDoc.ref.update({ adminIds: FieldValue.arrayRemove(legacyUid) });
+          await wsDoc.ref.update({ adminIds: FieldValue.arrayUnion(pendingId) });
+        }
+        wsPatch++;
+      }
+
+      // Delete Auth credential
+      await getAuth().deleteUser(legacyUid);
+
+      // Move Firestore doc → pending
+      const newDoc = {
+        ...u.data,
+        id: pendingId,
+        email,
+        pendingSso: true,
+        legacyUid,
+        authProvider: 'microsoft.com',
+        migratedToSsoAt: FieldValue.serverTimestamp(),
+        migratedToSsoBy: auth.uid,
+        autoMigrated: true,
+      };
+      await db.doc(`users/${pendingId}`).set(newDoc);
+      if (u.id !== pendingId) {
+        await db.doc(`users/${u.id}`).delete();
+      }
+
+      report.migrated.push({ email, name: u.data.name, legacyUid: legacyUid.slice(0,8), workspacesPatched: wsPatch });
+    } catch (e) {
+      report.errors.push({ email, stage: 'migrate', error: e.message });
+    }
+  }
+
+  // Audit log
+  await db.collection('audit_logs').add({
+    action: 'system.audit_and_migrate_all_sso',
+    userId: auth.uid,
+    scanned: report.scanned,
+    migrated: report.migrated.length,
+    errors: report.errors.length,
+    timestamp: FieldValue.serverTimestamp(),
+    severity: 'critical',
+  });
+
+  return report;
+});
+
+/* ═════════════════════════════════════════════════════════
  * repairOrphanSquadMembers — backfill pra usuários migrados ANTES do
  * fix de workspaces.members estar no migrateUserToSso.
  *
