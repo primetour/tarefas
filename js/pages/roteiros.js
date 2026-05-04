@@ -7,6 +7,7 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiros, deleteRoteiro, duplicateRoteiro, updateRoteiroStatus, generateRoteiroFromPrompt } from '../services/roteiros.js';
+import { fetchAreas } from '../services/portal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 /* ─── Helpers ─────────────────────────────────────────────── */
@@ -75,9 +76,15 @@ function statusBadge(status) {
 export async function renderRoteiros(container) {
   /* ── State ── */
   let allRoteiros = [];
+  let allAreas = [];
   let activeStatus = '';
   let searchTerm = '';
   let selectedConsultant = '';
+  let selectedAreaId = '';
+  let sortKey = 'updatedAt';   // 'updatedAt' | 'client' | 'destinos' | 'period' | 'consultant' | 'title'
+  let sortDir = 'desc';        // 'asc' | 'desc'
+  let currentPage = 1;
+  const PAGE_SIZE = 50;
 
   /* ── Initial HTML ── */
   container.innerHTML = `
@@ -112,7 +119,7 @@ export async function renderRoteiros(container) {
     </div>
 
     <!-- Filters bar -->
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
       <div class="rt-pills" style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="rt-pill active" data-status="">Todos</button>
         <button class="rt-pill" data-status="draft">Rascunho</button>
@@ -122,68 +129,119 @@ export async function renderRoteiros(container) {
         <button class="rt-pill" data-status="archived">Arquivado</button>
       </div>
       <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center;">
-        <input type="text" id="rt-search" class="form-input" placeholder="Buscar cliente ou destino..."
-          style="max-width:240px;height:34px;font-size:0.8125rem;" />
+        <input type="text" id="rt-search" class="form-input" placeholder="Buscar cliente, título ou destino..."
+          style="min-width:240px;max-width:280px;height:34px;font-size:0.8125rem;" />
+        <select id="rt-area" class="form-input" style="max-width:160px;height:34px;font-size:0.8125rem;">
+          <option value="">Todas áreas</option>
+        </select>
         <select id="rt-consultant" class="form-input" style="max-width:200px;height:34px;font-size:0.8125rem;display:none;">
-          <option value="">Todos os consultores</option>
+          <option value="">Todos consultores</option>
         </select>
       </div>
     </div>
 
-    <!-- Cards grid -->
-    <div id="rt-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
-      <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);">Carregando...</div>
+    <!-- Result count + pagination top -->
+    <div id="rt-meta" style="display:flex;justify-content:space-between;align-items:center;
+      font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;">
+      <span id="rt-count">—</span>
+      <div id="rt-pagination" style="display:flex;gap:6px;align-items:center;"></div>
+    </div>
+
+    <!-- Tabela densa (desktop) — em mobile vira lista compacta via CSS -->
+    <div id="rt-table-wrap" style="background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);
+      border-radius:10px;overflow:hidden;">
+      <div id="rt-table">
+        <div style="padding:40px;text-align:center;color:var(--text-muted);">Carregando...</div>
+      </div>
     </div>
 
     <style>
+      /* Pills filtro status */
       .rt-pill {
         padding:5px 14px;border-radius:999px;font-size:0.8125rem;font-weight:600;
         border:1px solid var(--border, #e5e7eb);background:transparent;color:var(--text-muted, #6B7280);
         cursor:pointer;transition:all 0.15s;
       }
-      .rt-pill:hover { background:var(--bg-card, #fff); }
+      .rt-pill:hover { background:var(--bg-hover, rgba(0,0,0,0.04)); }
       .rt-pill.active {
         background:var(--brand-blue, #3B82F6);color:#fff;border-color:var(--brand-blue, #3B82F6);
       }
-      .rt-card {
-        background:var(--bg-card, #fff);border:1px solid var(--border, #e5e7eb);
-        border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:12px;
-        transition:all 0.15s;
+
+      /* Tabela densa */
+      .rt-table-el { width:100%; border-collapse:collapse; font-size:0.8125rem; }
+      .rt-table-el thead th {
+        text-align:left; padding:10px 12px;
+        background:var(--bg-surface, #f8fafc);
+        color:var(--text-muted, #6B7280);
+        font-weight:600; font-size:0.6875rem;
+        text-transform:uppercase; letter-spacing:0.04em;
+        border-bottom:1px solid var(--border, #e5e7eb);
+        cursor:default; user-select:none;
+        white-space:nowrap;
       }
-      .rt-card:hover {
-        border-color:var(--brand-blue, #3B82F6);
-        box-shadow:0 2px 8px rgba(0,0,0,0.08);
-        transform:translateY(-1px);
+      .rt-table-el thead th.sortable { cursor:pointer; }
+      .rt-table-el thead th.sortable:hover { color:var(--text-primary); }
+      .rt-table-el thead th .sort-arrow { opacity:0.5; margin-left:4px; font-size:0.7em; }
+      .rt-table-el thead th.sort-active .sort-arrow { opacity:1; color:var(--brand-blue, #3B82F6); }
+      .rt-table-el tbody tr {
+        border-bottom:1px solid var(--border-subtle, #f0f0f0);
+        transition:background 0.1s;
       }
-      .rt-card-title {
-        font-weight:700;font-size:0.9375rem;color:var(--text-primary);
-        margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+      .rt-table-el tbody tr:hover { background:var(--bg-hover, rgba(59,130,246,0.04)); }
+      .rt-table-el tbody td {
+        padding:10px 12px; vertical-align:middle;
+        color:var(--text-primary);
       }
-      .rt-card-meta {
-        font-size:0.8125rem;color:var(--text-muted);display:flex;flex-direction:column;gap:4px;
+      .rt-table-el tbody td.muted { color:var(--text-muted); font-size:0.75rem; }
+      .rt-table-el tbody td.title-cell {
+        max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
       }
-      .rt-card-actions {
-        display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:8px;
-        border-top:1px solid var(--border, #e5e7eb);
+      .rt-table-el tbody td.title-cell a {
+        color:var(--text-primary); text-decoration:none; font-weight:600;
       }
-      .rt-card-actions button {
-        padding:4px 10px;border-radius:6px;font-size:0.75rem;font-weight:600;
-        border:1px solid var(--border, #e5e7eb);background:transparent;
-        color:var(--text-muted);cursor:pointer;transition:all 0.15s;
+      .rt-table-el tbody td.title-cell a:hover { color:var(--brand-blue, #3B82F6); }
+      .rt-table-el tbody td.dest-cell {
+        max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+        font-size:0.75rem; color:var(--text-muted);
       }
-      .rt-card-actions button:hover { background:var(--bg-card);color:var(--text-primary); }
-      .rt-card-actions button.danger { color:#EF4444; }
-      .rt-card-actions button.danger:hover { background:rgba(239,68,68,0.1);border-color:#EF444433; }
+      .rt-actions { display:flex; gap:4px; justify-content:flex-end; }
+      .rt-actions button {
+        padding:4px 6px; border-radius:5px; font-size:0.75rem;
+        border:none; background:transparent; cursor:pointer;
+        color:var(--text-muted); transition:all 0.1s;
+        line-height:1;
+      }
+      .rt-actions button:hover { background:var(--bg-hover, rgba(0,0,0,0.05)); color:var(--text-primary); }
+      .rt-actions button.danger:hover { background:rgba(239,68,68,0.1); color:#EF4444; }
+
       .rt-client-badge {
-        display:inline-block;padding:1px 8px;border-radius:999px;font-size:0.6875rem;font-weight:600;
-        background:var(--brand-blue, #3B82F6)15;color:var(--brand-blue, #3B82F6);
-        border:1px solid var(--brand-blue, #3B82F6)25;
+        display:inline-block; padding:1px 7px; border-radius:999px; font-size:0.65rem; font-weight:600;
+        background:rgba(59,130,246,0.1); color:var(--brand-blue, #3B82F6);
+        border:1px solid rgba(59,130,246,0.2); margin-left:6px; vertical-align:middle;
       }
-      @media (max-width: 1024px) {
-        #rt-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+      /* Paginação */
+      .rt-pg-btn {
+        padding:4px 10px; border-radius:6px; font-size:0.75rem; cursor:pointer;
+        background:transparent; border:1px solid var(--border, #e5e7eb); color:var(--text-secondary);
       }
-      @media (max-width: 640px) {
-        #rt-grid { grid-template-columns: 1fr !important; }
+      .rt-pg-btn:disabled { opacity:0.4; cursor:not-allowed; }
+      .rt-pg-btn:not(:disabled):hover { background:var(--bg-hover, rgba(0,0,0,0.04)); }
+
+      /* Mobile: vira "lista de cards" */
+      @media (max-width: 768px) {
+        .rt-table-el thead { display:none; }
+        .rt-table-el, .rt-table-el tbody, .rt-table-el tr, .rt-table-el td {
+          display:block; width:100%;
+        }
+        .rt-table-el tbody tr {
+          padding:10px 12px; margin-bottom:6px;
+          border:1px solid var(--border, #e5e7eb); border-radius:8px;
+        }
+        .rt-table-el tbody td { padding:3px 0; border:none; }
+        .rt-table-el tbody td.title-cell { max-width:none; font-size:0.875rem; }
+        .rt-table-el tbody td.dest-cell { max-width:none; }
+        .rt-actions { justify-content:flex-start; flex-wrap:wrap; margin-top:6px; }
       }
     </style>
   `;
@@ -191,16 +249,29 @@ export async function renderRoteiros(container) {
   /* ── Load data ── */
   async function loadData() {
     try {
-      allRoteiros = await fetchRoteiros();
+      const [roteiros, areas] = await Promise.all([
+        fetchRoteiros(),
+        fetchAreas().catch(() => []),
+      ]);
+      allRoteiros = roteiros;
+      allAreas = areas;
       populateConsultantFilter();
-      renderGrid();
+      populateAreaFilter();
+      renderTable();
     } catch (err) {
-      const grid = document.getElementById('rt-grid');
-      if (grid) grid.innerHTML = `
-        <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);">
+      const tableEl = document.getElementById('rt-table');
+      if (tableEl) tableEl.innerHTML = `
+        <div style="text-align:center;padding:40px;color:var(--text-muted);">
           Erro ao carregar roteiros: ${esc(err.message)}
         </div>`;
     }
+  }
+
+  function populateAreaFilter() {
+    const select = document.getElementById('rt-area');
+    if (!select || !allAreas?.length) return;
+    select.innerHTML = `<option value="">Todas áreas</option>` +
+      allAreas.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
   }
 
   function populateConsultantFilter() {
@@ -216,20 +287,18 @@ export async function renderRoteiros(container) {
 
     if (consultants.length > 0) {
       select.style.display = '';
-      select.innerHTML = `<option value="">Todos os consultores</option>` +
+      select.innerHTML = `<option value="">Todos consultores</option>` +
         consultants.map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('');
     }
   }
 
+  /* Filtros + ordenação aplicados */
   function getFiltered() {
     let filtered = allRoteiros;
 
-    if (activeStatus) {
-      filtered = filtered.filter(r => r.status === activeStatus);
-    }
-    if (selectedConsultant) {
-      filtered = filtered.filter(r => r.consultantId === selectedConsultant);
-    }
+    if (activeStatus)        filtered = filtered.filter(r => r.status === activeStatus);
+    if (selectedConsultant)  filtered = filtered.filter(r => r.consultantId === selectedConsultant);
+    if (selectedAreaId)      filtered = filtered.filter(r => r.areaId === selectedAreaId);
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(r =>
@@ -238,70 +307,145 @@ export async function renderRoteiros(container) {
         (r.title || '').toLowerCase().includes(term)
       );
     }
+
+    // Sort
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const getVal = (r) => {
+      switch (sortKey) {
+        case 'title':      return (r.title || '').toLowerCase();
+        case 'client':     return (r.client?.name || '').toLowerCase();
+        case 'destinos':   return destinationsText(r.travel).toLowerCase();
+        case 'period':     return r.travel?.startDate || '';
+        case 'consultant': return (r.consultantName || '').toLowerCase();
+        case 'updatedAt':
+        default: {
+          const d = r.updatedAt;
+          if (!d) return 0;
+          return (d?.toDate ? d.toDate() : new Date(d)).getTime();
+        }
+      }
+    };
+    filtered = [...filtered].sort((a, b) => {
+      const va = getVal(a), vb = getVal(b);
+      if (va < vb) return -1 * dir;
+      if (va > vb) return  1 * dir;
+      return 0;
+    });
+
     return filtered;
   }
 
-  function renderGrid() {
-    const grid = document.getElementById('rt-grid');
-    if (!grid) return;
+  /* ── Render: tabela densa com paginação ── */
+  function renderTable() {
+    const tableEl = document.getElementById('rt-table');
+    const countEl = document.getElementById('rt-count');
+    const pgEl    = document.getElementById('rt-pagination');
+    if (!tableEl) return;
 
     const filtered = getFiltered();
+    const total = filtered.length;
 
-    if (!filtered.length) {
-      grid.innerHTML = `
-        <div style="grid-column:1/-1;text-align:center;padding:60px 20px;">
+    // Empty state
+    if (!total) {
+      tableEl.innerHTML = `
+        <div style="text-align:center;padding:60px 20px;">
           <div style="font-size:3rem;opacity:0.3;margin-bottom:12px;">✈</div>
           <p style="color:var(--text-muted);font-size:0.9375rem;">
             ${allRoteiros.length
               ? 'Nenhum roteiro encontrado com esses filtros.'
-              : 'Nenhum roteiro encontrado. Crie seu primeiro roteiro!'}
+              : 'Nenhum roteiro cadastrado ainda.'}
           </p>
           ${!allRoteiros.length && store.canCreateRoteiro() ? `
             <button class="btn btn-primary" data-action="new-roteiro" style="margin-top:16px;">+ Criar primeiro roteiro</button>
           ` : ''}
         </div>`;
+      if (countEl) countEl.textContent = '';
+      if (pgEl)    pgEl.innerHTML = '';
       return;
     }
 
-    grid.innerHTML = filtered.map(r => {
-      const clientName = r.client?.name || 'Sem cliente';
+    // Paginação
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (currentPage > totalPages) currentPage = totalPages;
+    const startIdx = (currentPage - 1) * PAGE_SIZE;
+    const endIdx   = Math.min(startIdx + PAGE_SIZE, total);
+    const slice    = filtered.slice(startIdx, endIdx);
+
+    if (countEl) {
+      countEl.textContent = `${total} roteiro${total !== 1 ? 's' : ''}` +
+        (totalPages > 1 ? ` · mostrando ${startIdx + 1}–${endIdx}` : '');
+    }
+    if (pgEl) {
+      pgEl.innerHTML = totalPages > 1 ? `
+        <button class="rt-pg-btn" data-pg="prev" ${currentPage === 1 ? 'disabled' : ''}>‹ Anterior</button>
+        <span style="padding:0 6px;">Pág ${currentPage} de ${totalPages}</span>
+        <button class="rt-pg-btn" data-pg="next" ${currentPage === totalPages ? 'disabled' : ''}>Próxima ›</button>
+      ` : '';
+    }
+
+    // Headers (com sort)
+    const sortArrow = (key) => sortKey === key
+      ? `<span class="sort-arrow">${sortDir === 'asc' ? '▲' : '▼'}</span>`
+      : '<span class="sort-arrow">↕</span>';
+    const sortable = (key, label, extra = '') => `
+      <th class="sortable ${sortKey === key ? 'sort-active' : ''}" data-sort="${key}" ${extra}>
+        ${label} ${sortArrow(key)}
+      </th>`;
+
+    // Linhas
+    const rows = slice.map(r => {
+      const clientName = r.client?.name || '—';
       const clientType = r.client?.type || 'individual';
-      const dests = destinationsText(r.travel);
-      const dateRange = fmtDateRange(r.travel);
+      const dests = destinationsText(r.travel) || '—';
+      const period = fmtDateRange(r.travel) || '—';
       const isArchived = r.status === 'archived';
+      const idEsc = esc(r.id);
 
       return `
-        <div class="rt-card" data-id="${esc(r.id)}">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
-            <h3 class="rt-card-title">${esc(r.title || 'Sem título')}</h3>
-            ${statusBadge(r.status)}
-          </div>
-
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:0.875rem;color:var(--text-primary);font-weight:500;">
-              ${esc(clientName)}
-            </span>
+        <tr data-id="${idEsc}">
+          <td style="white-space:nowrap;">${statusBadge(r.status)}</td>
+          <td class="title-cell">
+            <a href="#roteiro-editor?id=${idEsc}" data-action="edit" data-id="${idEsc}"
+              title="${esc(r.title || 'Sem título')}">${esc(r.title || 'Sem título')}</a>
+          </td>
+          <td>
+            <span style="font-weight:500;">${esc(clientName)}</span>
             <span class="rt-client-badge">${esc(clientTypeLabel(clientType))}</span>
-          </div>
-
-          <div class="rt-card-meta">
-            ${dests ? `<span>📍 ${esc(dests)}</span>` : ''}
-            ${dateRange ? `<span>📅 ${esc(dateRange)}</span>` : ''}
-            <span>👤 ${esc(r.consultantName || '—')}</span>
-            <span style="font-size:0.75rem;">Atualizado ${timeAgo(r.updatedAt)}</span>
-          </div>
-
-          <div class="rt-card-actions">
-            <button data-action="edit" data-id="${esc(r.id)}">Editar</button>
-            <button data-action="duplicate" data-id="${esc(r.id)}">Duplicar</button>
-            <button data-action="export-pdf" data-id="${esc(r.id)}">Exportar PDF</button>
-            <button data-action="${isArchived ? 'restore' : 'archive'}" data-id="${esc(r.id)}">
-              ${isArchived ? 'Restaurar' : 'Arquivar'}
-            </button>
-            <button data-action="delete" data-id="${esc(r.id)}" class="danger">Excluir</button>
-          </div>
-        </div>`;
+          </td>
+          <td class="dest-cell" title="${esc(dests)}">${esc(dests)}</td>
+          <td style="white-space:nowrap;font-size:0.75rem;color:var(--text-muted);">${esc(period)}</td>
+          <td style="font-size:0.8125rem;">${esc(r.consultantName || '—')}</td>
+          <td class="muted" style="white-space:nowrap;">${esc(timeAgo(r.updatedAt))}</td>
+          <td>
+            <div class="rt-actions">
+              <button data-action="edit" data-id="${idEsc}" title="Editar">✎</button>
+              <button data-action="duplicate" data-id="${idEsc}" title="Duplicar">⧉</button>
+              <button data-action="export-pdf" data-id="${idEsc}" title="Exportar PDF">↓</button>
+              <button data-action="${isArchived ? 'restore' : 'archive'}" data-id="${idEsc}"
+                title="${isArchived ? 'Restaurar' : 'Arquivar'}">${isArchived ? '↺' : '⊠'}</button>
+              <button data-action="delete" data-id="${idEsc}" class="danger" title="Excluir">✕</button>
+            </div>
+          </td>
+        </tr>`;
     }).join('');
+
+    tableEl.innerHTML = `
+      <table class="rt-table-el">
+        <thead>
+          <tr>
+            <th style="width:90px;">Status</th>
+            ${sortable('title', 'Roteiro')}
+            ${sortable('client', 'Cliente')}
+            ${sortable('destinos', 'Destinos')}
+            ${sortable('period', 'Período')}
+            ${sortable('consultant', 'Consultor')}
+            ${sortable('updatedAt', 'Atualizado')}
+            <th style="text-align:right;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
   }
 
   /* ── Event delegation ── */
@@ -391,11 +535,34 @@ export async function renderRoteiros(container) {
   /* ── Status pills ── */
   container.addEventListener('click', (e) => {
     const pill = e.target.closest('.rt-pill');
-    if (!pill) return;
-    container.querySelectorAll('.rt-pill').forEach(p => p.classList.remove('active'));
-    pill.classList.add('active');
-    activeStatus = pill.dataset.status;
-    renderGrid();
+    if (pill) {
+      container.querySelectorAll('.rt-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      activeStatus = pill.dataset.status;
+      currentPage = 1;
+      renderTable();
+      return;
+    }
+
+    // Sort por header
+    const th = e.target.closest('.rt-table-el thead th.sortable');
+    if (th) {
+      const key = th.dataset.sort;
+      if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      else { sortKey = key; sortDir = 'asc'; }
+      renderTable();
+      return;
+    }
+
+    // Paginação
+    const pgBtn = e.target.closest('[data-pg]');
+    if (pgBtn && !pgBtn.disabled) {
+      if (pgBtn.dataset.pg === 'next') currentPage++;
+      else if (pgBtn.dataset.pg === 'prev') currentPage--;
+      renderTable();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
   });
 
   /* ── Search ── */
@@ -403,7 +570,18 @@ export async function renderRoteiros(container) {
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       searchTerm = e.target.value;
-      renderGrid();
+      currentPage = 1;
+      renderTable();
+    });
+  }
+
+  /* ── Area filter ── */
+  const areaSelect = document.getElementById('rt-area');
+  if (areaSelect) {
+    areaSelect.addEventListener('change', (e) => {
+      selectedAreaId = e.target.value;
+      currentPage = 1;
+      renderTable();
     });
   }
 
@@ -412,7 +590,8 @@ export async function renderRoteiros(container) {
   if (consultantSelect) {
     consultantSelect.addEventListener('change', (e) => {
       selectedConsultant = e.target.value;
-      renderGrid();
+      currentPage = 1;
+      renderTable();
     });
   }
 
