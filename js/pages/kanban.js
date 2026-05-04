@@ -30,6 +30,150 @@ let optimisticTasks = [];
 let activeView   = 'kanban';   // 'kanban' | 'pipeline'
 let kbFilterState = { sector: null, type: null, project: null, area: null, assignee: null };
 
+/* ─── Group-By: agrupar colunas do Steps por outro campo ──────
+ * Default = 'status' (comportamento original). Mudando, recalcula colunas.
+ * Drag-and-drop entre colunas só funciona em status (única mudança que
+ * faz sentido sem ambiguidade — ex: arrastar entre áreas exigiria UI
+ * pra decidir se é mover só a tarefa ou reatribuir requestingArea).
+ * Persiste em localStorage por user. */
+const GROUPBY_KEY = 'primetour-kanban-groupby';
+const GROUPBY_OPTIONS = [
+  { value: 'status',     label: 'Status',          field: 'status'         },
+  { value: 'area',       label: 'Área solicitante', field: 'requestingArea' },
+  { value: 'sector',     label: 'Setor',           field: 'sector'         },
+  { value: 'priority',   label: 'Prioridade',      field: 'priority'       },
+  { value: 'project',    label: 'Projeto',         field: 'projectId'      },
+  { value: 'type',       label: 'Tipo de tarefa',  field: 'typeId'         },
+  { value: 'assignee',   label: 'Responsável',     field: 'assignees'      },
+];
+let groupBy = (() => {
+  try { return localStorage.getItem(GROUPBY_KEY) || 'status'; }
+  catch { return 'status'; }
+})();
+function setGroupBy(v) {
+  groupBy = v;
+  try { localStorage.setItem(GROUPBY_KEY, v); } catch {}
+}
+
+/**
+ * getKanbanGroups(groupKey, tasks)
+ * Retorna [{ value, label, color }] — uma "coluna virtual" por valor único.
+ * Para 'status' usa o STATUSES (mantém ordem e cor originais).
+ * Para outros campos, deriva do conjunto de tasks (filtra "Sem X" no fim).
+ */
+function getKanbanGroups(groupKey, tasks) {
+  if (groupKey === 'status') {
+    return STATUSES.map(s => ({ value: s.value, label: s.label, color: s.color }));
+  }
+
+  const opt = GROUPBY_OPTIONS.find(o => o.value === groupKey);
+  if (!opt) return STATUSES.map(s => ({ value: s.value, label: s.label, color: s.color }));
+
+  const users = store.get('users') || [];
+  const userById = new Map(users.map(u => [u.id, u]));
+  const projectById = new Map(allProjects.map(p => [p.id, p]));
+  const typeById = new Map(allTaskTypes.map(t => [t.id, t]));
+
+  // Cores estáveis por valor (hash simples)
+  const colorFor = (str) => {
+    if (!str) return '#6B7280';
+    const hue = [...String(str)].reduce((a,c)=>a+c.charCodeAt(0),0) % 360;
+    return `hsl(${hue},45%,55%)`;
+  };
+
+  // Coleta valores únicos
+  const seen = new Map(); // value -> label
+  const addValue = (v, label) => {
+    if (v == null || v === '') return;
+    if (Array.isArray(v)) {
+      v.forEach(x => addValue(x, null));
+      return;
+    }
+    if (!seen.has(v)) seen.set(v, label || String(v));
+  };
+
+  for (const t of tasks) {
+    const raw = t[opt.field];
+    if (groupKey === 'assignee') {
+      const arr = Array.isArray(raw) ? raw : (typeof raw === 'string' && raw ? [raw] : []);
+      arr.forEach(uid => {
+        const u = userById.get(uid);
+        addValue(uid, u?.name || (typeof uid === 'string' && uid.startsWith('pending_') ? '(pendente)' : '(usuário)'));
+      });
+    } else if (groupKey === 'project') {
+      if (raw) {
+        const p = projectById.get(raw);
+        addValue(raw, p ? `${p.icon||''} ${p.name}`.trim() : '(projeto removido)');
+      }
+    } else if (groupKey === 'type') {
+      if (raw) {
+        const ty = typeById.get(raw);
+        addValue(raw, ty ? `${ty.icon||''} ${ty.name}`.trim() : '(tipo removido)');
+      }
+    } else if (groupKey === 'priority') {
+      if (raw) addValue(raw, (PRIORITY_MAP[raw]?.label) || raw);
+    } else {
+      if (raw) addValue(raw, String(raw));
+    }
+  }
+
+  // Ordena: prioridade tem ordem fixa; outros alfabético
+  const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low'];
+  let entries = [...seen.entries()];
+  if (groupKey === 'priority') {
+    entries.sort((a,b) => PRIORITY_ORDER.indexOf(a[0]) - PRIORITY_ORDER.indexOf(b[0]));
+  } else {
+    entries.sort((a,b) => a[1].localeCompare(b[1], 'pt-BR'));
+  }
+
+  const groups = entries.map(([value, label]) => ({
+    value: `gb_${value}`,            // prefixo evita colisão com IDs do DOM (ex: 'done' do status)
+    rawValue: value,
+    label,
+    color: groupKey === 'priority' ? (PRIORITY_MAP[value]?.color || colorFor(value)) : colorFor(value),
+  }));
+
+  // "Sem X" sempre por último — agrupa tasks sem o campo
+  const hasOrphans = tasks.some(t => {
+    const raw = t[opt.field];
+    if (groupKey === 'assignee') {
+      const arr = Array.isArray(raw) ? raw : (typeof raw === 'string' && raw ? [raw] : []);
+      return arr.length === 0;
+    }
+    return raw == null || raw === '';
+  });
+  if (hasOrphans) {
+    groups.push({
+      value: 'gb___none__',
+      rawValue: null,
+      label: `Sem ${opt.label.toLowerCase()}`,
+      color: '#6B7280',
+    });
+  }
+
+  return groups;
+}
+
+/** Retorna se uma task pertence ao grupo (pra filtrar coluna). */
+function taskBelongsToGroup(task, groupKey, group) {
+  if (groupKey === 'status') return task.status === group.value;
+  const opt = GROUPBY_OPTIONS.find(o => o.value === groupKey);
+  if (!opt) return false;
+  const raw = task[opt.field];
+  if (group.value === 'gb___none__') {
+    if (groupKey === 'assignee') {
+      const arr = Array.isArray(raw) ? raw : (typeof raw === 'string' && raw ? [raw] : []);
+      return arr.length === 0;
+    }
+    return raw == null || raw === '';
+  }
+  if (groupKey === 'assignee') {
+    const arr = Array.isArray(raw) ? raw : (typeof raw === 'string' && raw ? [raw] : []);
+    return arr.includes(group.rawValue);
+  }
+  return raw === group.rawValue;
+}
+
 function initKbFilterState() {
   // Pre-select user's sector on first load (only if single-sector user)
   if (!kbFilterState.sector) {
@@ -156,6 +300,16 @@ export async function renderKanban(container) {
           </select>
         ` : ''}
 
+        <!-- Group-by selector (only in kanban view) -->
+        ${activeView === 'kanban' ? `
+          <select class="filter-select" id="kanban-groupby" title="Agrupar colunas por"
+            style="min-width:170px;border-color:${groupBy!=='status'?'var(--brand-gold)':''};">
+            ${GROUPBY_OPTIONS.map(o =>
+              `<option value="${o.value}" ${groupBy===o.value?'selected':''}>Agrupar: ${esc(o.label)}</option>`
+            ).join('')}
+          </select>
+        ` : ''}
+
         <!-- Filters rendered below header -->
 
         ${store.can('task_create') ? `
@@ -169,9 +323,17 @@ export async function renderKanban(container) {
     <div id="kanban-board-wrap">
       ${activeView === 'pipeline'
         ? renderPipelineBoard(pipelineTypes)
-        : `<div class="kanban-board" id="kanban-board">
-            ${STATUSES.map(s => renderColumn(s, [])).join('')}
-           </div>`}
+        : (() => {
+            // Para a renderização inicial (antes de tasks chegarem), usa STATUSES
+            // se groupBy === 'status'; caso contrário, deixa vazio e renderCards
+            // re-renderiza o board quando tasks chegarem.
+            if (groupBy === 'status') {
+              return `<div class="kanban-board" id="kanban-board">
+                ${STATUSES.map(s => renderColumn({ value: s.value, label: s.label, color: s.color }, [])).join('')}
+              </div>`;
+            }
+            return `<div class="kanban-board" id="kanban-board" data-groupby="${esc(groupBy)}"></div>`;
+          })()}
     </div>
   `;
 
@@ -203,6 +365,11 @@ export async function renderKanban(container) {
     renderKanban(container);
   });
 
+  document.getElementById('kanban-groupby')?.addEventListener('change', (e) => {
+    setGroupBy(e.target.value);
+    renderKanban(container);
+  });
+
   _subscribeToTasks();
 }
 
@@ -219,20 +386,27 @@ function _subscribeToTasks() {
   });
 }
 
-function renderColumn(status, tasks) {
+/**
+ * renderColumn(group, tasks)
+ * `group` pode ser um status (compat) ou um grupo derivado (groupBy != 'status').
+ * Em ambos os casos, tem { value, label, color }. Para drag-and-drop, lemos
+ * o atributo data-col-status (mantido por compat — drop só dispara mudança
+ * de status quando groupBy === 'status').
+ */
+function renderColumn(group, tasks) {
   return `
-    <div class="kanban-column" data-col-status="${status.value}">
+    <div class="kanban-column" data-col-status="${esc(group.value)}">
       <div class="kanban-column-header">
-        <div class="kanban-col-dot" style="background:${status.color};"></div>
-        <span class="kanban-col-title">${status.label}</span>
-        <span class="kanban-col-count" id="col-count-${status.value}">${tasks.length}</span>
+        <div class="kanban-col-dot" style="background:${group.color};"></div>
+        <span class="kanban-col-title">${esc(group.label)}</span>
+        <span class="kanban-col-count" id="col-count-${esc(group.value)}">${tasks.length}</span>
       </div>
-      <div class="kanban-col-body" id="col-body-${status.value}"
-        data-status="${status.value}">
+      <div class="kanban-col-body" id="col-body-${esc(group.value)}"
+        data-status="${esc(group.value)}">
         ${tasks.map(t => renderKanbanCard(t)).join('')}
       </div>
       ${store.can('task_create') ? `
-        <button class="kanban-add-btn" data-add-status="${status.value}">
+        <button class="kanban-add-btn" data-add-status="${esc(group.value)}">
           + Adicionar tarefa
         </button>
       ` : ''}
@@ -270,39 +444,71 @@ function renderCards(tasks, _ignored = '') {
   // Merge optimistic tasks (mostrar imediatamente antes do Firestore confirmar)
   const merged = [...optimisticTasks.filter(ot => !tasks.some(t => t.title === ot.title && t.status === ot.status)), ...tasks].filter(t => !t.archived);
   const filterFn = buildFilterFn(kbFilterState);
-  STATUSES.forEach(s => {
-    const body  = document.getElementById(`col-body-${s.value}`);
-    const count = document.getElementById(`col-count-${s.value}`);
+  const filteredTasks = merged.filter(filterFn);
+
+  // Calcula grupos (colunas) — para 'status' usa STATUSES; outros derivam dos tasks
+  const groups = getKanbanGroups(groupBy, filteredTasks);
+
+  // Se groupBy !== 'status', a UI das colunas precisa ser construída agora
+  // (renderKanban deixou o board vazio porque as colunas dependem dos tasks)
+  if (groupBy !== 'status') {
+    const board = document.getElementById('kanban-board');
+    if (board && !board.querySelector('.kanban-column')) {
+      board.innerHTML = groups.map(g => renderColumn(g, [])).join('');
+    } else if (board && board.dataset.groupKeyRendered !== groupBy) {
+      board.innerHTML = groups.map(g => renderColumn(g, [])).join('');
+      board.dataset.groupKeyRendered = groupBy;
+    }
+  }
+
+  groups.forEach(g => {
+    const body  = document.getElementById(`col-body-${g.value}`);
+    const count = document.getElementById(`col-count-${g.value}`);
     if (!body) return;
 
-    let colTasks = merged.filter(t => t.status === s.value && filterFn(t));
+    let colTasks = filteredTasks.filter(t => taskBelongsToGroup(t, groupBy, g));
 
-    // Tarefas concluídas/canceladas vão para o final da lista
-    if (s.value === 'done' || s.value === 'cancelled') {
+    // Tarefas concluídas/canceladas vão para o final da lista (só faz sentido em status)
+    if (groupBy === 'status' && (g.value === 'done' || g.value === 'cancelled')) {
       colTasks.sort((a, b) => {
         const aTime = a.completedAt?.toDate?.() || a.completedAt || a.updatedAt?.toDate?.() || a.updatedAt || 0;
         const bTime = b.completedAt?.toDate?.() || b.completedAt || b.updatedAt?.toDate?.() || b.updatedAt || 0;
-        // Mais recentes no final
         return (new Date(aTime)) - (new Date(bTime));
       });
     }
 
     renderColumnBody(
-      body, count, colTasks, `kb:${s.value}`,
+      body, count, colTasks, `kb:${g.value}`,
       t => renderKanbanCard(t),
       b => b.querySelectorAll('.kanban-card').forEach(card => bindCardDrag(card)),
     );
   });
 
-  // Bind add buttons
+  // Bind add buttons (só funciona em status — outros agrupamentos não definem
+  // o valor pra criar tarefa; se quiser adicionar fora do status, pré-popula
+  // o campo agrupado a partir do dataset)
   document.querySelectorAll('[data-add-status]').forEach(btn => {
     btn.onclick = () => {
-      const status = btn.dataset.addStatus;
-      openTaskModal({ status, onSave: () => {} });
+      const colVal = btn.dataset.addStatus;
+      if (groupBy === 'status') {
+        openTaskModal({ status: colVal, onSave: () => {} });
+      } else {
+        // Pré-popula o campo agrupado quando possível
+        const opt = GROUPBY_OPTIONS.find(o => o.value === groupBy);
+        const group = groups.find(g => g.value === colVal);
+        const taskData = {};
+        if (opt && group && group.rawValue != null) {
+          if (groupBy === 'assignee') taskData.assignees = [group.rawValue];
+          else if (opt.field) taskData[opt.field] = group.rawValue;
+        }
+        openTaskModal({ taskData, onSave: () => {} });
+      }
     };
   });
 
-  // Bind column drop zones
+  // Bind column drop zones (drag-and-drop entre colunas só persiste mudança
+  // quando agrupando por status; outros groupBy não têm semântica clara
+  // para "mover entre colunas" — a função bindColumnDrop respeita essa regra)
   document.querySelectorAll('.kanban-col-body').forEach(col => bindColumnDrop(col));
 }
 
@@ -445,9 +651,24 @@ function bindColumnDrop(col) {
     document.querySelector('.kanban-placeholder')?.remove();
 
     const taskId   = e.dataTransfer.getData('text/plain');
-    const newStatus = col.dataset.status;
+    const newColValue = col.dataset.status;
 
-    if (!taskId || !newStatus) return;
+    if (!taskId || !newColValue) return;
+
+    // Drop entre colunas só altera status quando agrupando por status.
+    // Para outros groupBy, drag-drop apenas reorganiza visualmente sem
+    // persistir (avisa o user). Reordenar dentro da mesma coluna continua
+    // funcionando independente do groupBy.
+    if (groupBy !== 'status') {
+      const sameCol = (dragOriginCol === newColValue);
+      if (!sameCol) {
+        toast.info('Mudança de coluna só persiste quando agrupado por status. Use o modal pra alterar o campo.');
+        // Re-renderiza pra reverter a posição visual
+        renderCards(allTasks);
+      }
+      dragTask = null;
+      return;
+    }
 
     // Compute new order from position
     const afterEl = getDragAfterElement(col, e.clientY);
@@ -456,10 +677,10 @@ function bindColumnDrop(col) {
     const newOrder = idx * 1000 + Date.now() % 1000;
 
     try {
-      await moveTaskKanban(taskId, newStatus, newOrder);
+      await moveTaskKanban(taskId, newColValue, newOrder);
 
       // Double-check overlay when completing a task via kanban drag
-      if (newStatus === 'done') {
+      if (newColValue === 'done') {
         const { getTask } = await import('../services/tasks.js');
         const fresh = await getTask(taskId).catch(() => dragTask);
         openTaskDoneOverlay(taskId, fresh || dragTask || {});
