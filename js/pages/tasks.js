@@ -1135,7 +1135,13 @@ async function _handleDelegatedClick(e) {
     try {
       await toggleTaskComplete(id, isDone);
       if (isDone) {
-        const fresh = await getTask(id).catch(() => task);
+        // Se getTask falhar, log o erro mas usa stale local — overlay ainda
+        // abre. Antes silenciava completamente e podia mostrar dados velhos
+        // sem indicação que algo deu errado.
+        const fresh = await getTask(id).catch(err => {
+          console.warn('[tasks] getTask after complete falhou:', err.message);
+          return task;
+        });
         openTaskDoneOverlay(id, fresh);
       }
     } catch(err) { toast.error(err.message); }
