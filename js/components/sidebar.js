@@ -538,11 +538,15 @@ export class Sidebar {
   }
 
   destroy() {
-    this._unsubRoute?.();
-    this._unsubWs?.();
-    this._paletteObserver?.disconnect();
-    this.el?.remove();
-    this.overlay?.remove();
+    // Cleanup robusto: cada item em try/catch pra que falha de um não impeça
+    // os outros (antes: se _unsubRoute lançasse, _unsubWs ficava como leak).
+    [
+      () => this._unsubRoute?.(),
+      () => this._unsubWs?.(),
+      () => this._paletteObserver?.disconnect(),
+      () => this.el?.remove(),
+      () => this.overlay?.remove(),
+    ].forEach(fn => { try { fn(); } catch (e) { console.warn('[sidebar] cleanup falhou:', e.message); } });
   }
 }
 

@@ -290,8 +290,15 @@ export async function auditLog(action, entity, entityId, details = {}) {
 
     await addDoc(collection(db, 'audit_logs'), entry);
   } catch (err) {
-    // Auditoria nunca deve quebrar a operação principal
-    console.warn('Audit log failed:', err.message);
+    // Auditoria nunca deve quebrar a operação principal.
+    // permission-denied em actions server-side (auth.*/security.*/lgpd.*/system.*)
+    // é ESPERADO — Firestore rules bloqueiam o client; quem grava esses eventos
+    // são as Cloud Functions via Admin SDK. Suprime o warning pra não poluir console.
+    const isExpected = (err.code === 'permission-denied' || /permission/i.test(err.message || ''))
+      && /^(auth|security|lgpd|system)\./.test(action);
+    if (!isExpected) {
+      console.warn('Audit log failed:', err.message);
+    }
   }
 }
 

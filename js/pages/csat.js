@@ -120,7 +120,9 @@ export async function renderCsat(container) {
     ]);
   } catch(e) {}
 
-  // Real-time surveys
+  // Real-time surveys — cleanup defensivo: se já existe um unsub do render
+  // anterior (race entre re-mount), desliga primeiro pra não vazar listener.
+  if (unsubscribe) { try { unsubscribe(); } catch (e) { /* ignore */ } unsubscribe = null; }
   unsubscribe = subscribeSurveys(surveys => {
     allSurveys = surveys;
     renderKPIs(calcCsatMetrics(surveys));
