@@ -120,7 +120,16 @@ function buildAgentButton(agent) {
   const avatar = agent.avatarUrl
     ? `<img src="${esc(agent.avatarUrl)}" alt="" style="width:20px;height:20px;border-radius:50%;object-fit:cover;" />`
     : `<span style="font-size:1rem;">${esc(agent.icon || '◈')}</span>`;
-  btn.innerHTML = `${avatar} <span>${esc(agent.triggers?.button?.label || agent.name)}</span>`;
+  // Defensive: strip do agent.icon se aparece como prefix do label
+  // (agents salvos no Firestore podem ter labels antigos com emoji
+  // duplicado: agent.icon = '✓' + label = '✓ Triar Tarefas' → "✓ ✓ Triar Tarefas").
+  // Resolve sem precisar migrar Firestore.
+  let label = agent.triggers?.button?.label || agent.name || '';
+  const iconChar = agent.icon || '';
+  if (iconChar && label.startsWith(iconChar)) {
+    label = label.slice(iconChar.length).trimStart();
+  }
+  btn.innerHTML = `${avatar} <span>${esc(label)}</span>`;
   btn.addEventListener('click', () => openAgentPanel(agent));
   return btn;
 }
