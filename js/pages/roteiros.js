@@ -147,9 +147,10 @@ export async function renderRoteiros(container) {
       <div id="rt-pagination" style="display:flex;gap:6px;align-items:center;"></div>
     </div>
 
-    <!-- Tabela densa (desktop) — em mobile vira lista compacta via CSS -->
+    <!-- Tabela densa (desktop) — em mobile vira lista compacta via CSS.
+         overflow-x:auto pra evitar cortar a coluna de Ações em telas justas. -->
     <div id="rt-table-wrap" style="background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);
-      border-radius:10px;overflow:hidden;">
+      border-radius:10px;overflow-x:auto;">
       <div id="rt-table">
         <div style="padding:40px;text-align:center;color:var(--text-muted);">Carregando...</div>
       </div>
@@ -168,7 +169,7 @@ export async function renderRoteiros(container) {
       }
 
       /* Tabela densa */
-      .rt-table-el { width:100%; border-collapse:collapse; font-size:0.8125rem; }
+      .rt-table-el { width:100%; min-width:1080px; border-collapse:collapse; font-size:0.8125rem; }
       .rt-table-el thead th {
         text-align:left; padding:10px 12px;
         background:var(--bg-surface, #f8fafc);
@@ -204,12 +205,12 @@ export async function renderRoteiros(container) {
         max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
         font-size:0.75rem; color:var(--text-muted);
       }
-      .rt-actions { display:flex; gap:4px; justify-content:flex-end; }
+      .rt-actions { display:flex; gap:2px; justify-content:flex-end; flex-wrap:nowrap; }
       .rt-actions button {
-        padding:4px 6px; border-radius:5px; font-size:0.75rem;
+        padding:5px 7px; border-radius:5px; font-size:0.875rem;
         border:none; background:transparent; cursor:pointer;
         color:var(--text-muted); transition:all 0.1s;
-        line-height:1;
+        line-height:1; flex-shrink:0;
       }
       .rt-actions button:hover { background:var(--bg-hover, rgba(0,0,0,0.05)); color:var(--text-primary); }
       .rt-actions button.danger:hover { background:rgba(239,68,68,0.1); color:#EF4444; }
@@ -434,13 +435,13 @@ export async function renderRoteiros(container) {
         <thead>
           <tr>
             <th style="width:90px;">Status</th>
-            ${sortable('title', 'Roteiro')}
-            ${sortable('client', 'Cliente')}
-            ${sortable('destinos', 'Destinos')}
-            ${sortable('period', 'Período')}
-            ${sortable('consultant', 'Consultor')}
-            ${sortable('updatedAt', 'Atualizado')}
-            <th style="text-align:right;">Ações</th>
+            ${sortable('title', 'Roteiro', 'style="min-width:200px;"')}
+            ${sortable('client', 'Cliente', 'style="min-width:140px;"')}
+            ${sortable('destinos', 'Destinos', 'style="min-width:160px;"')}
+            ${sortable('period', 'Período', 'style="width:170px;"')}
+            ${sortable('consultant', 'Consultor', 'style="width:120px;"')}
+            ${sortable('updatedAt', 'Atualizado', 'style="width:90px;"')}
+            <th style="text-align:right;width:170px;">Ações</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
