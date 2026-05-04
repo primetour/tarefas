@@ -343,7 +343,10 @@ export class Header {
       const escHtml = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
       wrap.innerHTML = `
-        <div style="display:flex;align-items:center;cursor:default;">
+        <div style="display:flex;align-items:center;cursor:default;gap:8px;">
+          <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;
+            white-space:nowrap;letter-spacing:0.01em;">Usuários on-line:</span>
+          <div style="display:flex;align-items:center;">
           ${visible.map(u => {
             const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
             return `<div class="avatar avatar-sm header-online-avatar" style="
@@ -370,6 +373,7 @@ export class Header {
             data-overflow-names="${escAttr(allOthers.slice(MAX_VISIBLE).map(u => u.name || u.email || 'Usuário').join(', '))}">
             +${overflow}
           </div>` : ''}
+          </div>
         </div>
       `;
 
