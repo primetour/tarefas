@@ -115,7 +115,7 @@ export async function renderCsat(container) {
           <input type="text" class="toolbar-search-input" id="csat-search"
             placeholder="Buscar por tarefa, cliente, e-mail..." />
         </div>
-        <select id="csat-project-filter" class="form-input"
+        <select id="csat-project-filter" class="filter-select"
           style="height:34px;font-size:0.8125rem;min-width:200px;max-width:280px;">
           <option value="">— Todos projetos —</option>
         </select>

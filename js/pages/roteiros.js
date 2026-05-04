@@ -108,14 +108,6 @@ export async function renderRoteiros(container) {
 
     <div id="rt-filters-mount"></div>
 
-    <!-- Tabela densa (desktop) — em mobile vira lista compacta via CSS -->
-    <div id="rt-table-wrap" style="background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);
-      border-radius:10px;overflow-x:auto;">
-      <div id="rt-table">
-        <div style="padding:40px;text-align:center;color:var(--text-muted);">Carregando...</div>
-      </div>
-    </div>
-
     <!-- Tabela densa (desktop) — em mobile vira lista compacta via CSS.
          overflow-x:auto pra evitar cortar a coluna de Ações em telas justas. -->
     <div id="rt-table-wrap" style="background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);
