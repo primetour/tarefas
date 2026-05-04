@@ -1291,15 +1291,17 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px;">
               <div>
                 <label class="form-label" style="font-size:0.75rem;">Começar em</label>
-                <input type="date" id="tm-rec-start" class="form-input" />
+                <input type="date" id="tm-rec-start" class="form-input" required />
               </div>
               <div>
-                <label class="form-label" style="font-size:0.75rem;">Parar em (opcional)</label>
-                <input type="date" id="tm-rec-end" class="form-input" />
+                <label class="form-label" style="font-size:0.75rem;">
+                  Parar em <span style="color:#EF4444;">*</span>
+                </label>
+                <input type="date" id="tm-rec-end" class="form-input" required />
               </div>
             </div>
             <p style="font-size:0.7rem;color:var(--text-muted);margin-top:10px;margin-bottom:0;">
-              ℹ As instâncias são geradas automaticamente quando alguém abrir a página de Tarefas. Você pode gerenciar templates em Configurações › Tarefas recorrentes.
+              ℹ As instâncias são geradas automaticamente quando alguém abrir a página de Tarefas. <strong>Defina sempre uma data de encerramento</strong> (limite de 24 meses); pode editar depois em Configurações › Tarefas recorrentes.
             </p>
           </div>
         </div>
@@ -1621,7 +1623,29 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
     const recToggle = document.getElementById('tm-recurring-toggle');
     const recConfig = document.getElementById('tm-recurrence-config');
     const recStart  = document.getElementById('tm-rec-start');
-    if (recStart && !recStart.value) recStart.value = new Date().toISOString().slice(0,10);
+    const recEnd    = document.getElementById('tm-rec-end');
+    // Defaults: começa hoje; termina em 3 meses (default razoável,
+    // user pode estender até 24 meses ou encurtar).
+    const todayLocal = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    })();
+    if (recStart && !recStart.value) recStart.value = todayLocal;
+    if (recEnd && !recEnd.value) {
+      const end = new Date();
+      end.setMonth(end.getMonth() + 3);
+      recEnd.value = `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`;
+    }
+    // Limita o máximo do endDate em 24 meses a partir do start
+    const updateEndMax = () => {
+      if (!recStart || !recEnd || !recStart.value) return;
+      const startD = new Date(recStart.value + 'T12:00:00');
+      const maxD = new Date(startD); maxD.setMonth(maxD.getMonth() + 24);
+      recEnd.min = recStart.value;
+      recEnd.max = `${maxD.getFullYear()}-${String(maxD.getMonth()+1).padStart(2,'0')}-${String(maxD.getDate()).padStart(2,'0')}`;
+    };
+    updateEndMax();
+    recStart?.addEventListener('change', updateEndMax);
     recToggle?.addEventListener('change', () => {
       if (recConfig) recConfig.style.display = recToggle.checked ? 'block' : 'none';
     });
@@ -2406,12 +2430,24 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
       const { createTemplate, runDueRecurrenceGeneration } = await import('../services/recurringTasks.js');
       const freq       = $('tm-rec-frequency')?.value || 'weekly';
       const dueOffset  = parseInt($('tm-rec-due-offset')?.value || '0', 10) || 0;
-      const startDate  = $('tm-rec-start')?.value || new Date().toISOString().slice(0,10);
-      const endDate    = $('tm-rec-end')?.value || null;
+      const startDate  = $('tm-rec-start')?.value || '';
+      const endDate    = $('tm-rec-end')?.value || '';
       const weekdays   = Array.from(document.querySelectorAll('.tm-rec-weekday:checked'))
         .map(cb => Number(cb.dataset.day));
       const monthDay   = parseInt($('tm-rec-month-day')?.value || '1', 10) || 1;
       const intervalDays = parseInt($('tm-rec-interval')?.value || '7', 10) || 7;
+
+      // Validações client-side (createTemplate também valida server-side)
+      if (!startDate) {
+        if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+        toast.error('Defina a data de início da recorrência.');
+        return;
+      }
+      if (!endDate) {
+        if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+        toast.error('Defina a data de encerramento da recorrência (obrigatório).');
+        return;
+      }
 
       // Remove campos incompatíveis do template (startDate/dueDate viram offsets)
       const templateTaskData = { ...data };
@@ -2419,13 +2455,19 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
       delete templateTaskData.dueDate;
       delete templateTaskData._prevStatus;
 
-      await createTemplate({
-        taskData: templateTaskData,
-        frequency: freq,
-        weekdays, monthDay, intervalDays,
-        startDate, endDate,
-        dueOffsetDays: dueOffset,
-      });
+      try {
+        await createTemplate({
+          taskData: templateTaskData,
+          frequency: freq,
+          weekdays, monthDay, intervalDays,
+          startDate, endDate,
+          dueOffsetDays: dueOffset,
+        });
+      } catch (validationErr) {
+        if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+        toast.error(validationErr.message || 'Erro ao criar recorrência.');
+        return;
+      }
       toast.success('Tarefa recorrente criada! As instâncias serão geradas automaticamente.');
       // Gerar imediatamente as ocorrências pendentes (inclusive a de hoje)
       runDueRecurrenceGeneration({ force: true }).catch(() => {});

@@ -28,34 +28,67 @@
 
 import {
   collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc,
-  query, where, serverTimestamp,
+  query, where, limit, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
 import { createTask } from './tasks.js';
+import { auditLog } from '../auth/audit.js';
 
 const COL = 'recurring_task_templates';
 
+/* ─── Limites de segurança ───────────────────────────────── */
+// Toda recorrência precisa ter endDate. Templates legacy sem endDate ganham
+// fallback de 12 meses a partir de startDate. Limite hard cap pro form é 24m.
+export const MAX_RECURRENCE_MONTHS = 24;
+export const DEFAULT_MAX_RECURRENCE_MONTHS = 12; // fallback p/ templates legacy
+// Máximo de instâncias criadas em uma única chamada (proteção contra rodada
+// massiva — ex: template muito antigo descongelado depois de meses)
+const MAX_INSTANCES_PER_RUN = 30;
+
 /* ─── Utils de data ──────────────────────────────────────── */
-function toISO(d)      { return d.toISOString().slice(0, 10); }
+// IMPORTANTE: usar timezone LOCAL para toISO, não UTC. Antes (toISOString())
+// causava bug de timezone: tarefa de '2026-05-04' criada às 21:30 BRT
+// virava '2026-05-05' (porque UTC estava no dia seguinte).
+function toISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 function fromISO(s)    { return new Date(s + 'T12:00:00'); }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function addMonths(d, n) { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; }
+
+/**
+ * Retorna o endDate efetivo do template. Se não estiver setado (template
+ * legacy criado antes do fix de mai/2026), aplica fallback de 12 meses a
+ * partir de startDate.
+ */
+function getEffectiveEndDate(template) {
+  if (template.endDate) return fromISO(template.endDate);
+  const start = fromISO(template.startDate);
+  return addMonths(start, DEFAULT_MAX_RECURRENCE_MONTHS);
+}
 
 /** Retorna as datas (ISO) em que o template deveria ter gerado instância,
- *  entre (last+1 ou start) e hoje. Limita a 60 datas para segurança. */
+ *  entre (last+1 ou start) e min(hoje, endDate). Limita a MAX_INSTANCES_PER_RUN
+ *  para evitar rodada massiva caso template fique muito tempo dormido. */
 function computeDueOccurrences(template, todayISO) {
   const start   = fromISO(template.startDate);
-  const end     = template.endDate ? fromISO(template.endDate) : null;
+  const end     = getEffectiveEndDate(template);
   const today   = fromISO(todayISO);
   const lastGen = template.lastGeneratedFor ? fromISO(template.lastGeneratedFor) : null;
   let cursor    = lastGen ? addDays(lastGen, 1) : new Date(start);
   if (cursor < start) cursor = new Date(start);
 
+  // Não passa do endDate em hipótese alguma
+  const horizon = today < end ? today : end;
+
   const dates = [];
   let safety = 0;
-  while (cursor <= today && safety < 90) {
+  while (cursor <= horizon && safety < 400 && dates.length < MAX_INSTANCES_PER_RUN) {
     safety++;
-    if (end && cursor > end) break;
     let match = false;
     if (template.frequency === 'daily') {
       match = true;
@@ -63,7 +96,6 @@ function computeDueOccurrences(template, todayISO) {
       match = Array.isArray(template.weekdays) && template.weekdays.includes(cursor.getDay());
     } else if (template.frequency === 'monthly') {
       const day = Number(template.monthDay) || 1;
-      // Suporta 'último dia': usar 0 na clonagem
       const lastDayOfMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
       const targetDay = Math.min(day, lastDayOfMonth);
       match = cursor.getDate() === targetDay;
@@ -76,6 +108,32 @@ function computeDueOccurrences(template, todayISO) {
     cursor = addDays(cursor, 1);
   }
   return dates;
+}
+
+/**
+ * Idempotência real: dado um templateId e um occISO, retorna true se já
+ * existe alguma task em `tasks` com esses 2 campos. Usado em
+ * runDueRecurrenceGeneration ANTES de criar pra prevenir duplicação por
+ * race condition (multi-aba/multi-user/dupla-click).
+ *
+ * Custo: 1 read por occorrência candidata. Aceitável (max 30 por run).
+ */
+async function instanceAlreadyExists(templateId, occISO) {
+  try {
+    const q = query(
+      collection(db, 'tasks'),
+      where('recurringFromTemplateId', '==', templateId),
+      where('recurringOccurrence', '==', occISO),
+      limit(1),
+    );
+    const snap = await getDocs(q);
+    return !snap.empty;
+  } catch (e) {
+    // Se a query falhar (ex: índice composto faltando), retornar false
+    // pra não bloquear a criação. Pior caso: duplicação isolada (recoverable).
+    console.warn('[recurringTasks] instance-exists check fail:', e?.message || e);
+    return false;
+  }
 }
 
 /* ─── CRUD ───────────────────────────────────────────────── */
@@ -95,8 +153,31 @@ function _canManageRecurring() {
   return store.isMaster() || store.can('task_create');
 }
 
+/**
+ * Validações comuns para template (criação e edição).
+ * - startDate obrigatório
+ * - endDate obrigatório (decidido em mai/2026 — recorrência sem fim
+ *   gerava tasks pra sempre, enchendo o banco)
+ * - endDate >= startDate
+ * - endDate dentro do MAX_RECURRENCE_MONTHS (24 meses)
+ * - weekly: pelo menos 1 weekday
+ */
+function validateTemplate(data) {
+  if (!data.startDate) throw new Error('Data de início é obrigatória.');
+  if (!data.endDate)   throw new Error('Data de encerramento é obrigatória — defina por quanto tempo a recorrência deve gerar tarefas.');
+  const start = fromISO(data.startDate);
+  const end = fromISO(data.endDate);
+  if (end < start) throw new Error('Data de encerramento não pode ser antes da data de início.');
+  const maxEnd = addMonths(start, MAX_RECURRENCE_MONTHS);
+  if (end > maxEnd) throw new Error(`Recorrência limitada a ${MAX_RECURRENCE_MONTHS} meses. Reduza o período ou crie um novo template depois.`);
+  if (data.frequency === 'weekly' && (!Array.isArray(data.weekdays) || data.weekdays.length === 0)) {
+    throw new Error('Selecione ao menos um dia da semana.');
+  }
+}
+
 export async function createTemplate(data) {
   if (!_canManageRecurring()) throw new Error('Permissão negada: você não pode criar tarefas recorrentes.');
+  validateTemplate(data);
   const user = store.get('currentUser');
   const profile = store.get('userProfile') || {};
   const ref = await addDoc(collection(db, COL), {
@@ -108,11 +189,26 @@ export async function createTemplate(data) {
     createdBy:     user?.uid || '',
     createdByName: profile.name || user?.email || '',
   });
+  await auditLog('recurring_tasks.create', 'recurring_task_template', ref.id, {
+    title: data.taskData?.title || '',
+    frequency: data.frequency,
+    startDate: data.startDate,
+    endDate: data.endDate,
+  }).catch(() => {});
   return ref.id;
 }
 
 export async function updateTemplate(id, patch) {
   if (!_canManageRecurring()) throw new Error('Permissão negada: você não pode editar tarefas recorrentes.');
+  // Se a edição toca em campos de recorrência, re-valida o template como um
+  // todo (precisa ler o atual pra mesclar). Edições "técnicas" (lastGeneratedFor,
+  // updatedAt) não exigem re-validação.
+  const touchesScheduling = ['startDate','endDate','frequency','weekdays','monthDay','intervalDays'].some(k => k in patch);
+  if (touchesScheduling) {
+    const cur = await getTemplate(id);
+    if (!cur) throw new Error('Template não encontrado.');
+    validateTemplate({ ...cur, ...patch });
+  }
   await updateDoc(doc(db, COL, id), { ...patch, updatedAt: serverTimestamp() });
 }
 
@@ -137,7 +233,7 @@ export async function runDueRecurrenceGeneration({ force = false } = {}) {
   _running = true;
   _lastRunAt = Date.now();
 
-  const report = { templates: 0, created: 0, skipped: 0, errors: 0 };
+  const report = { templates: 0, created: 0, skipped: 0, alreadyExists: 0, errors: 0 };
   try {
     const snap = await getDocs(query(collection(db, COL), where('active', '==', true)));
     const today = new Date();
@@ -152,6 +248,20 @@ export async function runDueRecurrenceGeneration({ force = false } = {}) {
 
         let lastCreatedFor = template.lastGeneratedFor || null;
         for (const occISO of dates) {
+          // ── IDEMPOTÊNCIA REAL: evita duplicação por race condition ──
+          // Antes do fix de mai/2026: 2 abas/users podiam ler lastGeneratedFor=null
+          // simultaneamente, ambos computavam mesmas datas, ambos criavam tasks →
+          // duplicação. Agora: ANTES de criar, query Firestore. Se já existe
+          // task com (templateId, occISO), pula. Idempotente independente de
+          // quantas execuções concorrentes rodem.
+          const exists = await instanceAlreadyExists(template.id, occISO);
+          if (exists) {
+            report.alreadyExists++;
+            // Atualiza lastGeneratedFor mesmo assim — ocorrência foi processada
+            if (!lastCreatedFor || occISO > lastCreatedFor) lastCreatedFor = occISO;
+            continue;
+          }
+
           const occDate = fromISO(occISO);
           const dueDate = addDays(occDate, Number(template.dueOffsetDays) || 0);
           const base = template.taskData || {};
@@ -178,7 +288,11 @@ export async function runDueRecurrenceGeneration({ force = false } = {}) {
           }
         }
         if (lastCreatedFor && lastCreatedFor !== template.lastGeneratedFor) {
-          await updateTemplate(template.id, { lastGeneratedFor: lastCreatedFor });
+          // Update direto (não passa por validateTemplate — só lastGeneratedFor)
+          await updateDoc(doc(db, COL, template.id), {
+            lastGeneratedFor: lastCreatedFor,
+            updatedAt: serverTimestamp(),
+          }).catch(e => console.warn('[recurringTasks] updateLastGen fail:', e?.message));
         }
       } catch (e) {
         console.warn('[recurringTasks] template error:', e?.message || e);

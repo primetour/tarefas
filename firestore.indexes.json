@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "tasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "recurringFromTemplateId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "recurringOccurrence",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "absences",
       "queryScope": "COLLECTION",
       "fields": [
