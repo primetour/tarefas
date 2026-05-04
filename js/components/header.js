@@ -338,16 +338,26 @@ export class Header {
       const MAX_VISIBLE = 4;
       const visible = others.slice(0, MAX_VISIBLE);
       const overflow = others.length - visible.length;
-      const allOthers = others; // closure-stored pra usar no hover do "+N"
       const escAttr = s => String(s||'').replace(/"/g, '&quot;');
       const escHtml = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+      // Enriquece presence (uid+name+email+avatarColor) com sector do
+      // snapshot global de users (presence guarda só dados leves; sector
+      // vem de users[]).
+      const usersById = new Map((store.get('users') || []).map(u => [u.id, u]));
+      const enrich = (u) => {
+        const full = usersById.get(u.uid);
+        return { ...u, sector: full?.sector || full?.department || '' };
+      };
+      const allOthers = others.map(enrich); // closure-stored pra dropdown do "+N"
+      const visibleEnriched = allOthers.slice(0, MAX_VISIBLE);
 
       wrap.innerHTML = `
         <div style="display:flex;align-items:center;cursor:default;gap:8px;">
           <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;
             white-space:nowrap;letter-spacing:0.01em;">Usuários on-line:</span>
           <div style="display:flex;align-items:center;">
-          ${visible.map(u => {
+          ${visibleEnriched.map(u => {
             const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
             return `<div class="avatar avatar-sm header-online-avatar" style="
               background:${u.avatarColor || '#3B82F6'};
@@ -358,21 +368,22 @@ export class Header {
               data-uid="${escAttr(u.uid || '')}"
               data-name="${escAttr(u.name || 'Usuário')}"
               data-email="${escAttr(u.email || '')}"
-              data-role="${escAttr(u.role || u.roleId || '')}">
+              data-sector="${escAttr(u.sector || '')}">
               ${initials}
               <span style="position:absolute;bottom:-2px;right:-2px;width:8px;height:8px;
                 background:#22C55E;border:1.5px solid var(--bg-card,#fff);border-radius:50%;"></span>
             </div>`;
           }).join('')}
-          ${overflow > 0 ? `<div class="header-online-overflow" style="
+          ${overflow > 0 ? `<button class="header-online-overflow" type="button" style="
             width:28px;height:28px;border-radius:50%;
             background:var(--bg-elevated);color:var(--text-secondary);
             font-size:0.625rem;font-weight:600;
             display:flex;align-items:center;justify-content:center;
-            border:2px solid var(--bg-card,#fff);margin-left:-6px;cursor:default;"
-            data-overflow-names="${escAttr(allOthers.slice(MAX_VISIBLE).map(u => u.name || u.email || 'Usuário').join(', '))}">
+            border:2px solid var(--bg-card,#fff);margin-left:-6px;cursor:pointer;
+            font-family:inherit;padding:0;transition:background 0.15s;"
+            title="Ver todos os ${others.length} online">
             +${overflow}
-          </div>` : ''}
+          </button>` : ''}
           </div>
         </div>
       `;
@@ -422,35 +433,122 @@ export class Header {
         av.addEventListener('mouseenter', () => {
           const name = av.dataset.name || 'Usuário';
           const email = av.dataset.email || '';
-          const role = av.dataset.role || '';
+          const sector = av.dataset.sector || '';
           const html = `
             <div style="font-weight:600;color:var(--text-primary);margin-bottom:2px;">${escHtml(name)}</div>
-            ${email ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:4px;">${escHtml(email)}</div>` : ''}
-            <div style="display:flex;align-items:center;gap:6px;font-size:0.6875rem;color:var(--text-muted);">
-              <span style="width:6px;height:6px;background:#22C55E;border-radius:50%;display:inline-block;"></span>
-              <span>Online agora${role ? ` · ${escHtml(role)}` : ''}</span>
-            </div>
+            ${email ? `<div style="font-size:0.6875rem;color:var(--text-muted);${sector ? 'margin-bottom:2px;' : ''}">${escHtml(email)}</div>` : ''}
+            ${sector ? `<div style="font-size:0.6875rem;color:var(--text-muted);">🏢 ${escHtml(sector)}</div>` : ''}
           `;
           showTip(av, html);
         });
         av.addEventListener('mouseleave', removeTip);
       });
 
+      // ── Dropdown do "+N" (click) ──
+      // User pediu: ao clicar no badge "+N", abrir lista completa com
+      // nome, email e área pra cada um. Mais útil que tooltip de hover
+      // quando há muitos online.
       const overflowEl = wrap.querySelector('.header-online-overflow');
+      let dropdown = null;
+      const closeDropdown = () => {
+        if (dropdown) { dropdown.remove(); dropdown = null; }
+        document.removeEventListener('click', outsideClickHandler, true);
+        document.removeEventListener('keydown', escHandler);
+      };
+      const outsideClickHandler = (e) => {
+        if (!dropdown) return;
+        if (dropdown.contains(e.target) || overflowEl?.contains(e.target)) return;
+        closeDropdown();
+      };
+      const escHandler = (e) => { if (e.key === 'Escape') closeDropdown(); };
+
       if (overflowEl) {
-        overflowEl.addEventListener('mouseenter', () => {
-          const names = overflowEl.dataset.overflowNames || '';
-          const html = `
-            <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">+${overflow} também online</div>
-            <div style="font-size:0.6875rem;color:var(--text-muted);white-space:normal;">${escHtml(names)}</div>
+        overflowEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (dropdown) { closeDropdown(); return; }
+          removeTip();
+
+          dropdown = document.createElement('div');
+          dropdown.className = 'online-overflow-dropdown';
+          // Lista completa (todos os N online), não só os ocultos.
+          // Visualmente: cards verticais com avatar pequeno + nome + email + área.
+          const listItems = allOthers.map(u => {
+            const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+            return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
+              border-bottom:1px solid var(--border-subtle);">
+              <div class="avatar avatar-sm" style="background:${u.avatarColor || '#3B82F6'};
+                width:32px;height:32px;font-size:0.6875rem;font-weight:600;color:#fff;
+                display:flex;align-items:center;justify-content:center;border-radius:50%;
+                flex-shrink:0;position:relative;">
+                ${initials}
+                <span style="position:absolute;bottom:-1px;right:-1px;width:8px;height:8px;
+                  background:#22C55E;border:1.5px solid var(--bg-card,#fff);border-radius:50%;"></span>
+              </div>
+              <div style="min-width:0;flex:1;">
+                <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${escHtml(u.name || 'Usuário')}
+                </div>
+                <div style="font-size:0.6875rem;color:var(--text-muted);
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${escHtml(u.email || '')}
+                </div>
+                ${u.sector ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">
+                  🏢 ${escHtml(u.sector)}
+                </div>` : ''}
+              </div>
+            </div>`;
+          }).join('');
+
+          dropdown.innerHTML = `
+            <div style="padding:10px 12px;border-bottom:1px solid var(--border-subtle);
+              font-size:0.75rem;font-weight:600;color:var(--text-muted);
+              text-transform:uppercase;letter-spacing:0.05em;
+              display:flex;align-items:center;justify-content:space-between;">
+              <span>${others.length} online agora</span>
+              <button class="online-dropdown-close" type="button" style="background:none;border:none;
+                color:var(--text-muted);cursor:pointer;font-size:1rem;line-height:1;padding:0;
+                font-family:inherit;">×</button>
+            </div>
+            <div style="max-height:340px;overflow-y:auto;">
+              ${listItems}
+            </div>
           `;
-          showTip(overflowEl, html);
+          Object.assign(dropdown.style, {
+            position:     'fixed',
+            zIndex:       '9999',
+            background:   'var(--bg-card, #1A2332)',
+            border:       '1px solid var(--border-default, #1E2D3D)',
+            borderRadius: 'var(--radius-md, 8px)',
+            boxShadow:    '0 12px 32px rgba(0,0,0,0.45)',
+            width:        '300px',
+            maxWidth:     'calc(100vw - 32px)',
+            fontFamily:   'var(--font-ui)',
+            overflow:     'hidden',
+          });
+          document.body.appendChild(dropdown);
+
+          // Posiciona abaixo do badge, alinhado à direita pra não sair da tela
+          const r = overflowEl.getBoundingClientRect();
+          const dr = dropdown.getBoundingClientRect();
+          let left = r.right - dr.width;
+          const margin = 8;
+          if (left < margin) left = margin;
+          if (left + dr.width > window.innerWidth - margin) left = window.innerWidth - dr.width - margin;
+          dropdown.style.left = `${left}px`;
+          dropdown.style.top = `${r.bottom + 8}px`;
+
+          // Fecha ao clicar no X, fora ou Esc
+          dropdown.querySelector('.online-dropdown-close')?.addEventListener('click', closeDropdown);
+          setTimeout(() => {
+            document.addEventListener('click', outsideClickHandler, true);
+            document.addEventListener('keydown', escHandler);
+          }, 0);
         });
-        overflowEl.addEventListener('mouseleave', removeTip);
       }
 
       // Cleanup ao re-render (próxima chamada de renderOnlineUsers)
-      wrap._cleanupTip = removeTip;
+      wrap._cleanupTip = () => { removeTip(); closeDropdown(); };
     };
     renderOnlineUsers(store.get('onlineUsers') || []);
     this._unsubOnline = store.subscribe('onlineUsers', renderOnlineUsers);
