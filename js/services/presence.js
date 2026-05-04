@@ -1,115 +1,106 @@
 /**
  * PRIMETOUR — User Presence (Online Users)
  *
- * Mantém registro em tempo real de quem está online no sistema.
- * Cada user logado escreve heartbeat em `presence/{uid}` a cada 30s.
- * Listener do header lê presence onde lastSeen > now - 90s e mostra
- * avatares dos online users.
+ * Implementação via Firebase Realtime Database (RTDB), não Firestore.
  *
- * IMPLEMENTAÇÃO:
- * - Heartbeat: setInterval a cada 30s → updateDoc presence/{uid}
- * - Threshold: user é "online" se lastSeen >= now - 90s (3 heartbeats
- *   missed = offline). Tolerância pra slow networks.
- * - Cleanup: ao logout/beforeunload → deleteDoc presence/{uid}
- * - Listener: onSnapshot na coleção presence inteira (max 200 docs OK)
+ * POR QUE RTDB E NÃO FIRESTORE:
+ * - RTDB tem `onDisconnect()` nativo: o servidor Firebase apaga o doc
+ *   automaticamente quando a aba/conexão cai. Sem isso (Firestore), user
+ *   que fechou navegador sem logout fica "fantasma" online por minutos.
+ * - RTDB free tier separado do Firestore: 100 conexões simultâneas,
+ *   1GB storage, 10GB transfer/mês. Não consome quota Firestore.
+ * - Heartbeat de presence é fire-and-forget — não precisa transação,
+ *   índices, ou queries complexas. RTDB é OPTIMIZADO pra esse caso.
+ *
+ * COMO FUNCIONA:
+ * 1. Login → start():
+ *    - Cria entry em /presence/{uid} com {name, email, color, lastSeen}
+ *    - Configura onDisconnect: quando conexão cair, RTDB apaga o entry
+ *    - Listener no /presence path → store.onlineUsers
+ * 2. Logout → stop(): remove entry + cancela onDisconnect
+ *
+ * PERFORMANCE:
+ * - 1 conexão WebSocket aberta enquanto user está online (não é polling)
+ * - Updates incremento ao invés de re-fetch completo
+ * - 100 users simultâneos = bem dentro do free tier
+ *
+ * SEGURANÇA (rules):
+ * - Cada user só escreve em /presence/{seu-uid}
+ * - Todos auth users leem /presence (lista pública de online users)
  */
 
 import {
-  collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp,
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { db }    from '../firebase.js';
+  ref, set, onValue, onDisconnect, serverTimestamp, remove, off,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+import { rtdb } from '../firebase.js';
 import { store } from '../store.js';
 
-// Intervalos otimizados pra free tier:
-// - Heartbeat 2min = 720 writes/user/dia (vs 2880 em 30s = 4x menos)
-// - Threshold 6min = 3 heartbeats missed = offline
-// Custo pra 200 users: ~144k writes/dia. Ainda alto mas viável no Blaze.
-// Plano definitivo: migrar pra Firebase Realtime Database (RTDB), que tem
-// onDisconnect() nativo e não consome quota Firestore. Requer habilitar
-// RTDB no Firebase Console (1 click). Ver TODO no commit message.
-const HEARTBEAT_INTERVAL_MS = 2 * 60 * 1000;  // 2 min
-const ONLINE_THRESHOLD_MS   = 6 * 60 * 1000;  // 6 min
-
-let _heartbeatTimer = null;
-let _presenceUnsub  = null;
-let _beforeunloadHandler = null;
+const ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 min: tolerância p/ refresh
+let _onlineUnsub = null;
+let _myRef = null;
 
 /**
- * Inicia o heartbeat + listener. Chamar uma vez no boot, após login.
+ * Inicia tracking de presence. Chamar após login.
  */
 export function startPresence() {
   const user = store.get('currentUser');
   if (!user?.uid) return;
 
-  // Para ciclo anterior se houver (idempotente em re-login na mesma aba)
+  // Para qualquer ciclo anterior (idempotente)
   stopPresence();
 
-  // Heartbeat: escreve agora + a cada 30s
-  const writeHeartbeat = async () => {
-    try {
-      const profile = store.get('userProfile');
-      await setDoc(doc(db, 'presence', user.uid), {
-        uid:      user.uid,
-        name:     profile?.name || '',
-        email:    profile?.email || '',
-        avatarColor: profile?.avatarColor || '#6B7280',
-        lastSeen: serverTimestamp(),
-      }, { merge: true });
-    } catch (e) {
-      // Silencioso: se rules bloqueiam ou rede caiu, não tem o que fazer
-      console.debug('[presence] heartbeat falhou:', e?.message);
-    }
-  };
-  writeHeartbeat();
-  _heartbeatTimer = setInterval(writeHeartbeat, HEARTBEAT_INTERVAL_MS);
+  const profile = store.get('userProfile');
+  _myRef = ref(rtdb, `presence/${user.uid}`);
 
-  // Cleanup no fechamento da aba (best-effort — beacon é mais robusto
-  // mas requer endpoint server; deleteDoc client funciona bem na maioria)
-  _beforeunloadHandler = () => {
-    try { deleteDoc(doc(db, 'presence', user.uid)); } catch {}
-  };
-  window.addEventListener('beforeunload', _beforeunloadHandler);
+  // 1. Configura onDisconnect ANTES de set — garante que se a conexão
+  //    cair entre o set() e o onDisconnect(), ainda assim limpa.
+  // 2. set() escreve presence/{uid} com dados do user.
+  // 3. RTDB mantém WebSocket aberto enquanto a aba estiver viva.
+  //    Quando cair (close, network drop, sleep), servidor executa o
+  //    onDisconnect remoto e apaga o entry.
+  onDisconnect(_myRef).remove().then(() => {
+    return set(_myRef, {
+      uid:         user.uid,
+      name:        profile?.name || '',
+      email:       profile?.email || '',
+      avatarColor: profile?.avatarColor || '#6B7280',
+      lastSeen:    serverTimestamp(),
+    });
+  }).catch(e => {
+    console.warn('[presence] start falhou:', e?.message);
+  });
 
-  // Listener: monitora coleção presence inteira → store.onlineUsers
-  // (ID do user, name, lastSeen). UI lê do store.
-  _presenceUnsub = onSnapshot(
-    collection(db, 'presence'),
-    (snap) => {
-      const now = Date.now();
-      const online = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(p => {
-          const ts = p.lastSeen?.toMillis?.() || 0;
-          return ts && (now - ts) <= ONLINE_THRESHOLD_MS;
-        });
-      store.set('onlineUsers', online);
-    },
-    (err) => {
-      console.warn('[presence] snapshot err:', err?.message);
-    }
-  );
+  // Listener: lê /presence inteiro (max ~200 users) e popula store
+  const allRef = ref(rtdb, 'presence');
+  const handler = (snap) => {
+    const data = snap.val() || {};
+    const now = Date.now();
+    const online = Object.values(data).filter(p => {
+      // Filtro defensivo: se lastSeen for recente, considera online.
+      // (RTDB com onDisconnect já limpa entries velhos, mas tolerância
+      // pra casos onde o cleanup atrasou.)
+      const ts = typeof p?.lastSeen === 'number' ? p.lastSeen : 0;
+      return ts && (now - ts) <= ONLINE_THRESHOLD_MS;
+    });
+    store.set('onlineUsers', online);
+  };
+  onValue(allRef, handler);
+  _onlineUnsub = () => off(allRef, 'value', handler);
 }
 
 /**
- * Para o heartbeat e remove presence. Chamar no logout.
+ * Para presence (logout). Remove entry + cancela onDisconnect.
  */
 export function stopPresence() {
-  if (_heartbeatTimer) {
-    clearInterval(_heartbeatTimer);
-    _heartbeatTimer = null;
+  if (_onlineUnsub) {
+    try { _onlineUnsub(); } catch {}
+    _onlineUnsub = null;
   }
-  if (_presenceUnsub) {
-    try { _presenceUnsub(); } catch {}
-    _presenceUnsub = null;
-  }
-  if (_beforeunloadHandler) {
-    try { window.removeEventListener('beforeunload', _beforeunloadHandler); } catch {}
-    _beforeunloadHandler = null;
-  }
-  // Tenta apagar o doc de presence (best-effort)
-  const user = store.get('currentUser');
-  if (user?.uid) {
-    deleteDoc(doc(db, 'presence', user.uid)).catch(() => {});
+  if (_myRef) {
+    // Cancela onDisconnect e apaga o entry imediatamente.
+    onDisconnect(_myRef).cancel().catch(() => {});
+    remove(_myRef).catch(() => {});
+    _myRef = null;
   }
   store.set('onlineUsers', []);
 }
