@@ -87,6 +87,9 @@ let allSlots      = [];
 let currentDate   = new Date();
 let activeView    = 'month';   // 'month' | 'week' | 'list'
 let activeAccount = '';        // '' = all
+let activeStatus  = '';        // GAP fix: filtro por status
+let activePlatform = '';       // GAP fix: filtro por plataforma
+let activeContentType = '';    // GAP fix: filtro por tipo de conteúdo
 let editingSlot   = null;      // null = new slot
 let modalOpen     = false;
 
@@ -227,15 +230,56 @@ function renderPage(container) {
             border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);
             font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">
             IA: Sugerir Semana</button>
-          <button id="cc-export-xls" title="Exportar slots em XLSX" style="padding:6px 12px;
-            border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;
-            background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
-            font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">XLS</button>
-          <button id="cc-export-pdf" title="Exportar slots em PDF" style="padding:6px 12px;
-            border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;
-            background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
-            font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">PDF</button>
+          <!-- Split-button Export (consolida XLS+PDF) -->
+          <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+            <button class="uikit-export-trigger" data-export-trigger="1"
+              style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;
+              background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
+              font-size:0.8125rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;">
+              <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+            </button>
+            <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+              background:var(--bg-card,#0F1923);border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;
+              min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.4);z-index:100;padding:4px;">
+              <button class="uikit-export-item" id="cc-export-xls"
+                style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+                background:transparent;border:none;cursor:pointer;font-size:0.8125rem;color:var(--text-primary);
+                border-radius:6px;font-family:inherit;">
+                <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
+              </button>
+              <button class="uikit-export-item" id="cc-export-pdf"
+                style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+                background:transparent;border:none;cursor:pointer;font-size:0.8125rem;color:var(--text-primary);
+                border-radius:6px;font-family:inherit;">
+                <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
+              </button>
+            </div>
+          </div>
         </div>
+      </div>
+
+      <!-- Sub-toolbar de filtros (apenas na view "lista") — GAP fix: status/plataforma/categoria -->
+      <div id="cc-filter-bar" style="display:${activeView === 'list' ? 'flex' : 'none'};
+        gap:8px;flex-wrap:wrap;padding:0 12px 12px;align-items:center;">
+        <select id="cc-filter-status" style="padding:5px 10px;border:1px solid var(--border-subtle,#1E2D3D);
+          border-radius:6px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
+          font-size:0.75rem;cursor:pointer;">
+          <option value="">Todos status</option>
+          <option value="idea">Ideia</option>
+          <option value="approved">Aprovado</option>
+          <option value="scheduled">Agendado</option>
+          <option value="published">Publicado</option>
+        </select>
+        <select id="cc-filter-platform" style="padding:5px 10px;border:1px solid var(--border-subtle,#1E2D3D);
+          border-radius:6px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
+          font-size:0.75rem;cursor:pointer;">
+          <option value="">Todas plataformas</option>
+        </select>
+        <select id="cc-filter-content-type" style="padding:5px 10px;border:1px solid var(--border-subtle,#1E2D3D);
+          border-radius:6px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
+          font-size:0.75rem;cursor:pointer;">
+          <option value="">Todos tipos</option>
+        </select>
       </div>
 
       <!-- Calendar body -->
@@ -403,9 +447,10 @@ function renderListView(container) {
     return sd.getFullYear() === y && sd.getMonth() === m;
   });
 
-  if (activeAccount) {
-    filtered = filtered.filter(s => s.account === activeAccount);
-  }
+  if (activeAccount)     filtered = filtered.filter(s => s.account === activeAccount);
+  if (activeStatus)      filtered = filtered.filter(s => s.status === activeStatus);
+  if (activePlatform)    filtered = filtered.filter(s => s.platform === activePlatform);
+  if (activeContentType) filtered = filtered.filter(s => s.contentType === activeContentType);
 
   // Sort by date
   filtered.sort((a, b) => {
@@ -589,6 +634,40 @@ function bindHeaderEvents(container) {
       renderCalendarBody();
     });
   }
+
+  // GAP fix: filtros status/platform/contentType (somente list view)
+  const statusEl = document.getElementById('cc-filter-status');
+  if (statusEl) {
+    statusEl.value = activeStatus;
+    statusEl.addEventListener('change', () => {
+      activeStatus = statusEl.value;
+      renderCalendarBody();
+    });
+  }
+  const platformEl = document.getElementById('cc-filter-platform');
+  if (platformEl) {
+    // Popular plataformas únicas dos slots
+    const set = new Set(allSlots.map(s => s.platform).filter(Boolean));
+    platformEl.innerHTML = `<option value="">Todas plataformas</option>` +
+      [...set].sort().map(p => `<option value="${esc(p)}" ${p === activePlatform ? 'selected' : ''}>${esc(p)}</option>`).join('');
+    platformEl.addEventListener('change', () => {
+      activePlatform = platformEl.value;
+      renderCalendarBody();
+    });
+  }
+  const contentTypeEl = document.getElementById('cc-filter-content-type');
+  if (contentTypeEl) {
+    const set = new Set(allSlots.map(s => s.contentType).filter(Boolean));
+    contentTypeEl.innerHTML = `<option value="">Todos tipos</option>` +
+      [...set].sort().map(t => `<option value="${esc(t)}" ${t === activeContentType ? 'selected' : ''}>${esc(t)}</option>`).join('');
+    contentTypeEl.addEventListener('change', () => {
+      activeContentType = contentTypeEl.value;
+      renderCalendarBody();
+    });
+  }
+
+  // Ativa dropdown do split-button Export
+  import('../components/uiKit.js').then(m => m.wireUiKitMenus(container));
 
   // Navigation
   const prevBtn = document.getElementById('cc-prev');
