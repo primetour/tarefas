@@ -1373,6 +1373,96 @@ export const getGitHubFile = onCall({
 });
 
 /* ═════════════════════════════════════════════════════════
+ * pruneOldAuditLogs — apaga audit_logs com mais de 90 dias.
+ *
+ * MOTIVAÇÃO: cada ação no sistema cria 1 doc em audit_logs (login,
+ * edit task, etc). Sem TTL, a coleção cresce indefinidamente — em 1
+ * ano com 50 users ativos = ~500k docs. Storage cresce, queries lentas,
+ * custo em $$ no plano Blaze.
+ *
+ * RETENÇÃO: 90 dias. Cobre auditoria operacional típica (debug, compli-
+ * ance leve). Pra retenção mais longa de eventos críticos (LGPD,
+ * deleção de user), considerar export pra Cloud Storage antes de apagar
+ * — não implementado nesta v1, vide docs/PERFORMANCE.md.
+ *
+ * EXCEÇÕES (NÃO apaga, mesmo > 90 dias):
+ *   - severity: 'critical' (pentest, segurança, LGPD)
+ *   - action começa com 'lgpd.' (compliance)
+ *   - action começa com 'security.' (incidentes)
+ *
+ * BATCH: Firestore deletes em batches de 500 (limite de transação).
+ * Idempotente: se rodar 2x no mesmo dia, na segunda não tem o que apagar.
+ * Roda 03:30 BRT (06:30 UTC) — 30 min depois do dailyBackup pra não competir.
+ * ═════════════════════════════════════════════════════════ */
+export const pruneOldAuditLogs = onSchedule({
+  schedule: '30 6 * * *',
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540,
+  memory: '256MiB',
+}, async () => {
+  const RETENTION_DAYS = 90;
+  const BATCH_SIZE = 500;
+  const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
+
+  let totalDeleted = 0;
+  let batchCount = 0;
+  let preserved = 0; // logs críticos/lgpd/security mantidos
+
+  while (true) {
+    // Busca os logs MAIS ANTIGOS que cutoff (limit BATCH_SIZE)
+    const snap = await db.collection('audit_logs')
+      .where('timestamp', '<', cutoff)
+      .orderBy('timestamp', 'asc')
+      .limit(BATCH_SIZE)
+      .get();
+
+    if (snap.empty) break; // tudo limpo
+
+    const batch = db.batch();
+    let deletedInBatch = 0;
+    snap.docs.forEach(doc => {
+      const data = doc.data();
+      const action = data.action || '';
+      const severity = data.severity || '';
+      // Skip preservation rules
+      if (severity === 'critical' || action.startsWith('lgpd.') || action.startsWith('security.')) {
+        preserved++;
+        return;
+      }
+      batch.delete(doc.ref);
+      deletedInBatch++;
+    });
+
+    if (deletedInBatch > 0) {
+      await batch.commit();
+      totalDeleted += deletedInBatch;
+    }
+    batchCount++;
+
+    // Se este batch tinha só preservados, próximo loop pegaria os mesmos
+    // → break pra evitar loop infinito
+    if (deletedInBatch === 0) break;
+    // Safety: max 50 batches/run = 25k logs apagados/dia (mais que suficiente)
+    if (batchCount >= 50) break;
+  }
+
+  // Audit log da operação (irônico mas útil pra ver histórico de prunes)
+  await db.collection('audit_logs').add({
+    action: 'system.audit_logs_pruned',
+    userId: 'system',
+    totalDeleted,
+    preserved,
+    cutoffDate: cutoff.toISOString(),
+    retentionDays: RETENTION_DAYS,
+    batchesProcessed: batchCount,
+    timestamp: FieldValue.serverTimestamp(),
+    severity: 'info',
+  });
+
+  console.log(`[pruneOldAuditLogs] deleted=${totalDeleted} preserved=${preserved} batches=${batchCount}`);
+});
+
+/* ═════════════════════════════════════════════════════════
  * dailyBackup — exporta Firestore pra Cloud Storage diariamente
  * Compliance: SOC2 + ISO 27001 exigem backup automatizado.
  * Roda 03:00 BRT (06:00 UTC).

@@ -446,9 +446,10 @@ export function initAuthObserver(onReady) {
         store.set('isAuthenticated', true);
         store.set('authLoading', false);
 
-        // Inicializar e carregar tipos de tarefa (silencioso)
+        // initSystemTaskTypes: garante que types padrão existam (idempotente).
+        // loadTaskTypes REMOVIDO do boot — agora lazy via taskModal/pages.
+        // Economia: ~50 reads/login. Vide services/taskTypes.js loadTaskTypes().
         initSystemTaskTypes().catch(() => {});
-        loadTaskTypes().catch(() => {});
 
         // Audit login (silencioso — não bloqueia)
         auditLog('auth.login', 'session', null, {

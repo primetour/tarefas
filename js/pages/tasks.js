@@ -60,6 +60,15 @@ function saveFilterVisibility() {
 export async function renderTasks(container) {
   loadFilterVisibility();
 
+  // Lazy load: taskTypes saiu do boot (otimização free tier).
+  // Garante carregamento aqui (idempotente — só carrega 1x na sessão).
+  if (!(store.get('taskTypes') || []).length) {
+    try {
+      const { loadTaskTypes } = await import('../services/taskTypes.js');
+      await loadTaskTypes();
+    } catch {}
+  }
+
   // Lê query params do hash (ex: #tasks?projectId=xxx) para pré-filtrar
   // Reset antes de aplicar query para evitar "lembrar" um filtro antigo de outra navegação
   let urlProjectId   = '';

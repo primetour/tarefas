@@ -457,18 +457,46 @@ export async function updateTask(taskId, data, opts = {}) {
 
   await updateDoc(doc(db, 'tasks', taskId), updates);
   invalidateTasksCache();
-  // Audit detail: título atual (do update OU do prev) + campos alterados.
-  // Permite que a aba Auditoria mostre "X atualizou tarefa 'Y'" sem ter que
-  // bater no Firestore pra resolver o ID.
-  const auditTitle = updates.title || prevData?.title || '';
-  const changedFields = Object.keys(data).filter(k => k !== '_prevStatus');
-  await auditLog('tasks.update', 'task', taskId, {
-    title:  auditTitle,
-    fields: changedFields,
-    ...(data.status && data._prevStatus && data.status !== data._prevStatus
-      ? { statusFrom: data._prevStatus, statusTo: data.status }
-      : {}),
-  });
+
+  // ── Audit sampling: pula updates triviais pra reduzir volume ──
+  // Sem isso, cada caractere digitado em descrição (autosave, etc) gera
+  // 1 doc em audit_logs. Em 200 users = milhares de logs irrelevantes/dia.
+  // FIELDS RELEVANTES (sempre logam):
+  //   - status, assignees, observers, dueDate, priority, projectId,
+  //     workspaceId, completedAt, completedBy
+  //   - mudanças que entram pro audit completo
+  // FIELDS TRIVIAIS (logam só se for o ÚNICO field alterado e for "creep"):
+  //   - title (sem mudar mais nada) → skip se diff < 3 chars
+  //   - description, subtasks (autosave) → skip
+  //   - updatedAt, updatedBy (metadata) → skip
+  const RELEVANT_FIELDS = new Set([
+    'status', 'assignees', 'observers', 'dueDate', 'startDate',
+    'priority', 'projectId', 'workspaceId', 'completedAt',
+    'completedBy', 'tags', 'sector', 'metaLinks', 'goalId',
+    'archived', 'taskTypeId', 'requesterEditFlag',
+  ]);
+  const SILENT_FIELDS = new Set(['updatedAt', 'updatedBy', '_prevStatus']);
+
+  const changedFields = Object.keys(data).filter(k => !SILENT_FIELDS.has(k));
+  const hasRelevant = changedFields.some(f => RELEVANT_FIELDS.has(f));
+  const isStatusChange = data.status && data._prevStatus && data.status !== data._prevStatus;
+  const isOnlyDescription = changedFields.length === 1 && changedFields[0] === 'description';
+  const isOnlyTitle = changedFields.length === 1 && changedFields[0] === 'title'
+    && Math.abs((data.title || '').length - (prevData?.title || '').length) < 3;
+
+  // Skip se: só descrição autosave, OU só correção pequena de título
+  const shouldSkip = !hasRelevant && (isOnlyDescription || isOnlyTitle);
+
+  if (!shouldSkip) {
+    const auditTitle = updates.title || prevData?.title || '';
+    await auditLog('tasks.update', 'task', taskId, {
+      title:  auditTitle,
+      fields: changedFields,
+      ...(isStatusChange
+        ? { statusFrom: data._prevStatus, statusTo: data.status }
+        : {}),
+    });
+  }
 
   // Notify newly-added / removed assignees (diff prev vs new)
   if (Array.isArray(data.assignees) && prevData) {

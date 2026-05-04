@@ -38,6 +38,13 @@ function initCalFilterState() {
 
 /* ─── Main render ────────────────────────────────────────── */
 export async function renderCalendar(container) {
+  // Lazy load taskTypes (saiu do boot pra economizar reads)
+  if (!(store.get('taskTypes') || []).length) {
+    try {
+      const { loadTaskTypes } = await import('../services/taskTypes.js');
+      await loadTaskTypes();
+    } catch {}
+  }
   const taskTypes    = store.get('taskTypes') || [];
   const userSectors  = store.getVisibleSectors();
   const pipeTypes    = taskTypes.filter(t =>

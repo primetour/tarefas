@@ -30,6 +30,13 @@ function initTlFilterState() {
 }
 
 export async function renderTimeline(container) {
+  // Lazy load taskTypes (saiu do boot)
+  if (!(store.get('taskTypes') || []).length) {
+    try {
+      const { loadTaskTypes } = await import('../services/taskTypes.js');
+      await loadTaskTypes();
+    } catch {}
+  }
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">

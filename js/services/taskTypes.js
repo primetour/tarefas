@@ -423,14 +423,49 @@ export function getSubtaskTemplate(taskType) {
   return [];
 }
 
-/* ─── Carregar tipos no boot ─────────────────────────────── */
+/* ─── Carregar tipos no boot (lazy) ──────────────────────── */
+// Cache em memória do load anterior pra evitar re-fetch no mesmo session.
+// Mudanças propagam quando admin edita types (invalidateOnUpdate).
+let _taskTypesLoaded = false;
+let _taskTypesLoadingPromise = null;
+
+/**
+ * Carrega task types — agora LAZY:
+ *   - 1ª chamada faz fetch e popula store.taskTypes
+ *   - Próximas chamadas retornam imediatamente (já em cache)
+ *   - Páginas que precisam (taskModal, /task-types) chamam isto on-demand
+ *   - Boot do app NÃO chama mais — economiza ~50 reads/login
+ *
+ * Anteriormente: chamado em initAuthObserver, sempre carrega no login.
+ * Agora: lazy via páginas. Veja taskModal.js e pages/taskTypes.js.
+ */
 export async function loadTaskTypes() {
-  try {
-    const types = await fetchTaskTypes();
-    store.set('taskTypes', types);
-    return types;
-  } catch(e) {
-    console.warn('Could not load task types:', e.message);
-    return [];
+  // Se já carregou nesta sessão, retorna do store
+  if (_taskTypesLoaded) {
+    return store.get('taskTypes') || [];
   }
+  // Se já tem fetch em andamento, aguarda (evita race condition)
+  if (_taskTypesLoadingPromise) {
+    return _taskTypesLoadingPromise;
+  }
+  _taskTypesLoadingPromise = (async () => {
+    try {
+      const types = await fetchTaskTypes();
+      store.set('taskTypes', types);
+      _taskTypesLoaded = true;
+      return types;
+    } catch (e) {
+      console.warn('Could not load task types:', e.message);
+      return [];
+    } finally {
+      _taskTypesLoadingPromise = null;
+    }
+  })();
+  return _taskTypesLoadingPromise;
+}
+
+/** Reset do cache lazy quando admin edita types (chamar em CRUD). */
+export function invalidateTaskTypesCache() {
+  _taskTypesLoaded = false;
+  _taskTypesLoadingPromise = null;
 }
