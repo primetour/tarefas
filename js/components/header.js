@@ -338,35 +338,115 @@ export class Header {
       const MAX_VISIBLE = 4;
       const visible = others.slice(0, MAX_VISIBLE);
       const overflow = others.length - visible.length;
-      const tooltipNames = others.map(u => u.name || u.email || 'Usuário').join(', ');
+      const allOthers = others; // closure-stored pra usar no hover do "+N"
+      const escAttr = s => String(s||'').replace(/"/g, '&quot;');
+      const escHtml = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
       wrap.innerHTML = `
-        <div title="Online agora: ${tooltipNames.replace(/"/g, '&quot;')}"
-          style="display:flex;align-items:center;cursor:default;">
+        <div style="display:flex;align-items:center;cursor:default;">
           ${visible.map(u => {
             const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
-            return `<div class="avatar avatar-sm" style="
+            return `<div class="avatar avatar-sm header-online-avatar" style="
               background:${u.avatarColor || '#3B82F6'};
               width:28px;height:28px;font-size:0.625rem;font-weight:600;color:#fff;
               border:2px solid var(--bg-card,#fff);
               display:flex;align-items:center;justify-content:center;
               border-radius:50%;margin-left:-6px;position:relative;"
-              title="${(u.name || '').replace(/"/g, '&quot;')}">
+              data-uid="${escAttr(u.uid || '')}"
+              data-name="${escAttr(u.name || 'Usuário')}"
+              data-email="${escAttr(u.email || '')}"
+              data-role="${escAttr(u.role || u.roleId || '')}">
               ${initials}
               <span style="position:absolute;bottom:-2px;right:-2px;width:8px;height:8px;
                 background:#22C55E;border:1.5px solid var(--bg-card,#fff);border-radius:50%;"></span>
             </div>`;
           }).join('')}
-          ${overflow > 0 ? `<div style="
+          ${overflow > 0 ? `<div class="header-online-overflow" style="
             width:28px;height:28px;border-radius:50%;
             background:var(--bg-elevated);color:var(--text-secondary);
             font-size:0.625rem;font-weight:600;
             display:flex;align-items:center;justify-content:center;
-            border:2px solid var(--bg-card,#fff);margin-left:-6px;">
+            border:2px solid var(--bg-card,#fff);margin-left:-6px;cursor:default;"
+            data-overflow-names="${escAttr(allOthers.slice(MAX_VISIBLE).map(u => u.name || u.email || 'Usuário').join(', '))}">
             +${overflow}
           </div>` : ''}
         </div>
       `;
+
+      // Tooltip custom: aparece imediato no hover (sem delay do title nativo).
+      // Mostra nome + email + role com indicador "online agora". Posiciona
+      // abaixo do avatar e centralizado.
+      let tip = null;
+      const removeTip = () => {
+        if (tip) { tip.remove(); tip = null; }
+      };
+      const showTip = (anchor, html) => {
+        removeTip();
+        tip = document.createElement('div');
+        tip.className = 'online-user-tip';
+        tip.innerHTML = html;
+        Object.assign(tip.style, {
+          position:        'fixed',
+          zIndex:          '9999',
+          background:      'var(--bg-card, #1A2332)',
+          color:           'var(--text-primary, #E8ECF1)',
+          border:          '1px solid var(--border-default, #1E2D3D)',
+          borderRadius:    'var(--radius-md, 8px)',
+          padding:         '8px 12px',
+          fontSize:        '0.75rem',
+          lineHeight:      '1.4',
+          boxShadow:       '0 8px 24px rgba(0,0,0,0.35)',
+          pointerEvents:   'none',
+          maxWidth:        '260px',
+          whiteSpace:      'nowrap',
+          fontFamily:      'var(--font-ui)',
+        });
+        document.body.appendChild(tip);
+        const r = anchor.getBoundingClientRect();
+        const t = tip.getBoundingClientRect();
+        let left = r.left + (r.width / 2) - (t.width / 2);
+        // Garante que não corta na tela
+        const margin = 8;
+        if (left < margin) left = margin;
+        if (left + t.width > window.innerWidth - margin) left = window.innerWidth - t.width - margin;
+        const top = r.bottom + 8;
+        tip.style.left = `${left}px`;
+        tip.style.top = `${top}px`;
+      };
+
+      wrap.querySelectorAll('.header-online-avatar').forEach(av => {
+        av.addEventListener('mouseenter', () => {
+          const name = av.dataset.name || 'Usuário';
+          const email = av.dataset.email || '';
+          const role = av.dataset.role || '';
+          const html = `
+            <div style="font-weight:600;color:var(--text-primary);margin-bottom:2px;">${escHtml(name)}</div>
+            ${email ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:4px;">${escHtml(email)}</div>` : ''}
+            <div style="display:flex;align-items:center;gap:6px;font-size:0.6875rem;color:var(--text-muted);">
+              <span style="width:6px;height:6px;background:#22C55E;border-radius:50%;display:inline-block;"></span>
+              <span>Online agora${role ? ` · ${escHtml(role)}` : ''}</span>
+            </div>
+          `;
+          showTip(av, html);
+        });
+        av.addEventListener('mouseleave', removeTip);
+      });
+
+      const overflowEl = wrap.querySelector('.header-online-overflow');
+      if (overflowEl) {
+        overflowEl.addEventListener('mouseenter', () => {
+          const names = overflowEl.dataset.overflowNames || '';
+          const html = `
+            <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">+${overflow} também online</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);white-space:normal;">${escHtml(names)}</div>
+          `;
+          showTip(overflowEl, html);
+        });
+        overflowEl.addEventListener('mouseleave', removeTip);
+      }
+
+      // Cleanup ao re-render (próxima chamada de renderOnlineUsers)
+      wrap._cleanupTip = removeTip;
     };
     renderOnlineUsers(store.get('onlineUsers') || []);
     this._unsubOnline = store.subscribe('onlineUsers', renderOnlineUsers);
