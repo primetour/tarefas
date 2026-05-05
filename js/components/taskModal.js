@@ -1927,7 +1927,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
             slaWarn.innerHTML = `
               <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:0.8125rem;line-height:1.3;">
                 <span style="font-size:0.875rem;flex-shrink:0;">⚠</span>
-                <span>Prazo abaixo do SLA</span>
+                <span>Prazo menor que SLA</span>
               </div>
               <div style="margin-top:4px;font-size:0.6875rem;opacity:0.9;line-height:1.45;">
                 Variação exige <strong>${days} dia${days!==1?'s':''} úteis</strong>
@@ -1941,7 +1941,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
                   border:1px solid currentColor;color:inherit;padding:6px 10px;
                   border-radius:6px;font-size:0.6875rem;cursor:pointer;
                   font-weight:500;font-family:inherit;line-height:1.3;">
-                  Remover urgência…
+                  Remover urgência
                 </button>
               ` : ''}
             `;
@@ -2423,7 +2423,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
 /* ──────────────────────────────────────────────────────────
  * Modal de override de urgência por SLA
  *
- * Acionado pelo botão "Remover urgência…" no banner de SLA breach
+ * Acionado pelo botão "Remover urgência" no banner de SLA breach
  * (visível só pra users com permissão `task_override_urgency`).
  * Pede justificativa obrigatória (mín. 10 chars), grava no doc da task,
  * audita (severity:warning, preservado além do TTL 90d) e notifica o
