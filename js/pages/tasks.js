@@ -13,6 +13,7 @@ import { APP_CONFIG }    from '../config.js';
 import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
 import { createDoc, loadJsPdf, COL, STATUS_STYLE, txt, withExportGuard } from '../components/pdfKit.js';
 import { wireUiKitMenus } from '../components/uiKit.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -149,24 +150,33 @@ export async function renderTasks(container) {
         <input type="text" class="toolbar-search-input" id="tasks-search"
           placeholder="Buscar tarefas..." />
       </div>
-      <select class="filter-select" id="filter-status" style="${filterVisibility.status?'':'display:none;'}">
-        <option value="">Todos os status</option>
-        ${STATUSES.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
-      </select>
-      <select class="filter-select" id="filter-priority" style="${filterVisibility.priority?'':'display:none;'}">
-        <option value="">Todas as prioridades</option>
-        ${PRIORITIES.map(p=>`<option value="${p.value}">${p.icon} ${p.label}</option>`).join('')}
-      </select>
+      <div class="toolbar-filter-wrap" style="${filterVisibility.status?'':'display:none;'}min-width:170px;">
+        <select id="filter-status" style="display:none;">
+          <option value="">Todos os status</option>
+          ${STATUSES.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'filter-status-btn', selected: null, emptyLabel: 'Todos os status' })}
+      </div>
+      <div class="toolbar-filter-wrap" style="${filterVisibility.priority?'':'display:none;'}min-width:170px;">
+        <select id="filter-priority" style="display:none;">
+          <option value="">Todas as prioridades</option>
+          ${PRIORITIES.map(p=>`<option value="${p.value}">${p.icon} ${p.label}</option>`).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'filter-priority-btn', selected: null, emptyLabel: 'Todas as prioridades' })}
+      </div>
       <select class="filter-select" id="filter-project" style="${filterVisibility.project?'':'display:none;'}">
         <option value="">Todos os projetos</option>
       </select>
-      <select class="filter-select" id="filter-squad" style="${filterVisibility.squad?'':'display:none;'}">
-        <option value="">Todos os squads</option>
-        <option value="__none__">— Sem squad</option>
-        ${(store.get('userWorkspaces')||[]).map(ws => `
-          <option value="${ws.id}">${esc(ws.icon || '◈')} ${esc(ws.name)}${ws.multiSector ? ' (multissetor)' : ''}</option>
-        `).join('')}
-      </select>
+      <div class="toolbar-filter-wrap" style="${filterVisibility.squad?'':'display:none;'}min-width:180px;">
+        <select id="filter-squad" style="display:none;">
+          <option value="">Todos os squads</option>
+          <option value="__none__">— Sem squad</option>
+          ${(store.get('userWorkspaces')||[]).map(ws => `
+            <option value="${ws.id}">${esc(ws.icon || '◈')} ${esc(ws.name)}${ws.multiSector ? ' (multissetor)' : ''}</option>
+          `).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'filter-squad-btn', selected: null, emptyLabel: 'Todos os squads' })}
+      </div>
       <select class="filter-select" id="filter-assignee" style="${filterVisibility.assignee?'':'display:none;'}">
         <option value="">Todos os respons\u00e1veis</option>
         ${(store.get('users')||[]).filter(u=>u.active).map(u=>`
@@ -278,7 +288,9 @@ export async function renderTasks(container) {
     const squadFilter = document.getElementById('filter-squad');
     if (squadFilter) {
       squadFilter.value = filterSquad;
-      squadFilter.style.display = '';
+      // O select agora vive escondido dentro de um wrapper; mostra o wrapper.
+      const wrap = squadFilter.closest('.toolbar-filter-wrap');
+      if (wrap) wrap.style.display = '';
       filterVisibility.squad = true;
     }
   }
@@ -1144,6 +1156,58 @@ function _attachPageEvents() {
   document.getElementById('filter-priority')?.addEventListener('change', e => { filterPriority = e.target.value; applyFilters(); });
   document.getElementById('filter-project')?.addEventListener('change', e => { filterProject = e.target.value; applyFilters(); });
   document.getElementById('filter-squad')?.addEventListener('change', e => { filterSquad = e.target.value; applyFilters(); });
+
+  // Visual pickers (status / priority / squad) — selects nativos preservados pra change events
+  const statusOpts = () => STATUSES.map(s => ({ id: s.value, label: s.label, icon: '●', color: s.color }));
+  const findStatus = (id) => statusOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-status-btn',
+    selectId: 'filter-status',
+    buildConfig: () => ({
+      options: statusOpts(),
+      empty: { id: '', label: 'Todos os status' },
+      searchPlaceholder: 'Buscar status…',
+    }),
+    findSelected: findStatus,
+    emptyLabel: 'Todos os status',
+  });
+  const priorityOpts = () => PRIORITIES.map(p => ({ id: p.value, label: p.label, icon: p.icon, color: p.color }));
+  const findPriority = (id) => priorityOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-priority-btn',
+    selectId: 'filter-priority',
+    buildConfig: () => ({
+      options: priorityOpts(),
+      empty: { id: '', label: 'Todas as prioridades' },
+      searchPlaceholder: 'Buscar prioridade…',
+    }),
+    findSelected: findPriority,
+    emptyLabel: 'Todas as prioridades',
+  });
+  const squadOpts = () => {
+    const ws = store.get('userWorkspaces') || [];
+    return [
+      { id: '__none__', label: '— Sem squad', icon: '○', color: '#6B7280' },
+      ...ws.map(w => ({
+        id: w.id,
+        label: w.name + (w.multiSector ? ' (multissetor)' : ''),
+        icon: w.icon || '◈',
+        color: w.color || '#6366F1',
+      })),
+    ];
+  };
+  const findSquad = (id) => squadOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-squad-btn',
+    selectId: 'filter-squad',
+    buildConfig: () => ({
+      options: squadOpts(),
+      empty: { id: '', label: 'Todos os squads' },
+      searchPlaceholder: 'Buscar squad…',
+    }),
+    findSelected: findSquad,
+    emptyLabel: 'Todos os squads',
+  });
   document.getElementById('filter-assignee')?.addEventListener('change', e => { filterAssignee = e.target.value; applyFilters(); });
   document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
   document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; applyFilters(); });
