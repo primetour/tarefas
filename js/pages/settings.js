@@ -102,34 +102,6 @@ export async function renderSettings(container) {
             style="border-color:var(--brand-gold);color:var(--brand-gold);">
             🔄 Desarquivar tarefas concluídas há &lt; 730 dias
           </button>
-
-          <hr style="margin:24px 0;border:none;border-top:1px solid var(--border);">
-
-          <h4 style="margin:0 0 6px 0;font-size:0.9rem;">Backfill do sistema de Horas de Desenvolvimento (4.1.0)</h4>
-          <p style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:14px;line-height:1.6;">
-            Popula a collection <code>dev_hours</code> com:
-            <strong>4 fases retroativas agregadas</strong> (1.x e 2.x — pré-versionamento formal, ~1.100 commits) +
-            <strong>15 releases granulares</strong> (3.0.0 → 4.0.0). Todas as entradas entram como
-            <strong>rascunho</strong> aguardando sua aprovação manual em <a href="#dev-hours">/Horas de Dev</a>.
-            <em>Idempotente — entries existentes são puladas. Pode rodar múltiplas vezes.</em>
-          </p>
-          <div id="seed-progress" style="display:none;margin-bottom:12px;">
-            <div id="seed-label" style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:6px;">Aguardando...</div>
-            <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
-              <div id="seed-bar" style="height:100%;background:#8B5CF6;width:0%;transition:width .3s;border-radius:3px;"></div>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn btn-secondary" id="seed-devhours-btn"
-              style="border-color:#8B5CF6;color:#8B5CF6;">
-              ⏱ Rodar backfill de horas (1.x até 4.0.0)
-            </button>
-            <button class="btn btn-secondary" id="seed-devhours-clear-btn"
-              style="border-color:var(--color-danger);color:var(--color-danger);"
-              title="Apaga TODAS as entradas e refaz com valores recalibrados">
-              🗑 Limpar tudo e refazer
-            </button>
-          </div>
         </div>
       </div>
 
@@ -256,82 +228,6 @@ export async function renderSettings(container) {
     } finally {
       btn.disabled = false;
       btn.textContent = '🔄 Desarquivar tarefas concluídas há < 730 dias';
-    }
-  });
-
-  // Limpar tudo e refazer (master-only) — útil pra reaplicar calibração.
-  document.getElementById('seed-devhours-clear-btn')?.addEventListener('click', async () => {
-    if (!store.isMaster()) return;
-    if (!confirm('Apagar TODAS as entradas de dev_hours e refazer com valores recalibrados?\n\nUse depois de mudanças nos basePoints do seed. Idempotente após executar.')) return;
-
-    const btn   = document.getElementById('seed-devhours-clear-btn');
-    const prog  = document.getElementById('seed-progress');
-    const label = document.getElementById('seed-label');
-    const bar   = document.getElementById('seed-bar');
-    btn.disabled = true;
-    btn.textContent = 'Limpando...';
-    prog.style.display = 'block';
-    bar.style.background = 'var(--color-danger)';
-
-    try {
-      const { clearAllDevHours, seedBackfill } = await import('../services/devHoursSeed.js');
-      const cleared = await clearAllDevHours((c, t, name) => {
-        const pct = Math.round((c / t) * 100);
-        bar.style.width = `${pct}%`;
-        label.textContent = `Limpando ${c}/${t}: ${name}`;
-      });
-      label.textContent = `${cleared.deleted} removidas. Recriando...`;
-      bar.style.background = '#8B5CF6';
-      bar.style.width = '0%';
-
-      const result = await seedBackfill((c, t, name) => {
-        const pct = Math.round((c / t) * 100);
-        bar.style.width = `${pct}%`;
-        label.textContent = `[${c}/${t}] ${name}`;
-      });
-      label.textContent = `✓ Limpo e refeito. ${cleared.deleted} removidas → ${result.created} novas.`;
-      bar.style.background = 'var(--color-success)';
-      toast.success(`${cleared.deleted} removidas, ${result.created} novas (recalibradas).`);
-    } catch (e) {
-      label.textContent = `✗ Erro: ${e.message}`;
-      toast.error('Falha: ' + e.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '🗑 Limpar tudo e refazer';
-    }
-  });
-
-  // Backfill do sistema de Horas de Desenvolvimento (master-only).
-  // Idempotente: pula entries existentes (por releaseVersion ou phaseLabel).
-  document.getElementById('seed-devhours-btn')?.addEventListener('click', async () => {
-    if (!store.isMaster()) return;
-    if (!confirm('Rodar backfill do sistema de horas?\n\nIsso vai criar 19 entradas em rascunho na collection dev_hours.\nIdempotente: pode rodar múltiplas vezes sem duplicar.')) return;
-
-    const btn   = document.getElementById('seed-devhours-btn');
-    const prog  = document.getElementById('seed-progress');
-    const label = document.getElementById('seed-label');
-    const bar   = document.getElementById('seed-bar');
-    btn.disabled = true;
-    btn.textContent = 'Processando...';
-    prog.style.display = 'block';
-
-    try {
-      const { seedBackfill } = await import('../services/devHoursSeed.js');
-      const result = await seedBackfill((current, total, name) => {
-        const pct = Math.round((current / total) * 100);
-        bar.style.width = `${pct}%`;
-        label.textContent = `[${current}/${total}] ${name}`;
-      });
-      label.textContent = `✓ Concluído. ${result.created} criadas, ${result.skipped} já existentes${result.errors.length ? `, ${result.errors.length} erros` : ''}.`;
-      bar.style.background = 'var(--color-success)';
-      toast.success(`Backfill: ${result.created} criadas, ${result.skipped} puladas.`);
-      try { auditLog('devhours_seed_backfill', result); } catch (_) {}
-    } catch (e) {
-      label.textContent = `✗ Erro: ${e.message}`;
-      toast.error('Falha no backfill: ' + e.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '⏱ Rodar backfill de horas (1.x até 4.0.0)';
     }
   });
 

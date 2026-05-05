@@ -21,6 +21,57 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.4.0+20260505-remove-front-dev-hours-only-public] — 2026-05-05
+
+Release **MINOR** — pivot arquitetural do sistema de Horas de Desenvolvimento. Reportado: *"vc nao entendeu, chat. retire esse modulo do sidebar. ele nao existe na camada do front end do sistema, ok? sobre aprovacao, eu faço a aprovacao por aqui mesmo e vc ja sobe tudo, ok? sem essa de aprovacao no front end. nao combinamos que isso seria feito junto com o processo de commit do sistema?"*. Esclarecimento de combinação anterior: a 4.0.0 introduziu CRUD/draft/approve no front-end, mas o **modelo correto** é **gestão via chat + commit-driven** — Claude escreve direto no Firestore como parte de cada release commit, junto com código, testes e CHANGELOG.
+
+### Removed
+- **Página interna `js/pages/devHours.js`** — deletada. Não existe mais rota `#dev-hours` na app autenticada.
+- **Rota `'dev-hours'`** removida de `js/app.js`. Comentário inline explica o pivot.
+- **Botões "⏱ Rodar backfill" e "🗑 Limpar tudo"** removidos de Configurações → Manutenção. Backfill já foi executado em 4.1.1; novas entradas vêm via commit.
+- **Handlers** correspondentes em `js/pages/settings.js` removidos (~75 linhas).
+- **`js/services/devHoursSeed.js`** deletado — uso único cumprido.
+
+### Changed
+- **Workflow de gestão**: novas entradas em `dev_hours` entram via Claude no chat, escritas diretamente via Firestore SDK (autenticado como master no browser MCP) como parte de cada commit. Cada release a partir daqui inclui:
+  1. Código da entrega
+  2. Testes (in-browser quando aplicável)
+  3. CHANGELOG.md atualizado
+  4. **Entrada em `dev_hours` com `status: 'approved'`** — aprovação acontece quando você diz OK no chat, não em UI separada.
+- **Aprovação retroativa das 18 entradas existentes**: todas as entradas que estavam em `status: 'draft'` foram aprovadas via chat (`status: 'approved'`, `approvedBy: 'system_chat_approval'`). Total visível agora no link público: **R$ 93.570,00 / 623.8h**.
+
+### Kept (continuam ativos)
+- **`dev-hours-view.html`** — link público sem auth, único frontend remanescente. URL: `/tarefas/dev-hours-view.html`.
+- **`js/services/devHours.js`** — service module com CATEGORIES + sumEntries (usado pelo PDF export).
+- **`js/services/devHoursPdf.js`** — export PDF padrão newsletter.
+- **Collection `dev_hours`** no Firestore com 18 entradas aprovadas.
+- **Regras Firestore** (`read: if true`, `write: if isMaster()`).
+
+### Why
+Modelo "draft/approve em UI" duplica trabalho: você teria que entrar na app, revisar entradas, clicar aprovar — quando a revisão já acontece naturalmente aqui no chat ao discutirmos cada release. Modelo commit-driven é mais limpo:
+- Eu entrego código → CHANGELOG → entrada `dev_hours` num único commit atômico
+- Você revisa o trabalho e aprova/rejeita por aqui
+- Quando aprova, eu já fiz tudo; quando rejeita, eu desfaço o commit
+- Link público é o único canal de exposição (read-only, real-time)
+
+### Verificação
+1. Tentar `#dev-hours` na app → 404 (página não existe mais).
+2. Sidebar → não tem "Horas de Dev" em lugar nenhum.
+3. Configurações → Manutenção → só tem botão de "Desarquivar tarefas", sem dev-hours.
+4. `dev-hours-view.html` → 18 entradas aprovadas aparecem com totalizador R$ 93.570,00.
+5. Botão "📄 PDF" no link público → gera PDF com as 18 entradas.
+
+### Próximas releases
+A partir desta 4.4.0, todo commit de release que eu fizer inclui automaticamente:
+- Bump version.js
+- CHANGELOG entry
+- **Entrada `dev_hours` aprovada com `entryType='release'`** apontando pra esse commit
+
+A 4.4.0 em si é a primeira a seguir esse padrão — entrada para ela vou criar agora.
+
+---
+
 ## [4.3.0+20260505-pdf-export-dev-hours] — 2026-05-05
 
 Release **MINOR** — fecha o ciclo de entrega do sistema de Horas de Desenvolvimento (4.x) com **export em PDF padrão newsletter**. Disponível tanto na página interna `#dev-hours` (master-only) quanto na página pública `dev-hours-view.html` — em ambas reusa o mesmo módulo `devHoursPdf.js`.

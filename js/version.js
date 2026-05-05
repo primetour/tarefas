@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 3,
+  minor: 4,
   patch: 0,
-  build: '20260505-pdf-export-dev-hours',
+  build: '20260505-remove-front-dev-hours-only-public',
 };
 
 /** "1.2.0" */
