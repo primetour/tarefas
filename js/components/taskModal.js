@@ -1252,10 +1252,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
           placeholder="Descreva a tarefa...">${esc(task.description)}</textarea>
       </div>
       <div class="form-group mt-4">
-        <label class="form-label" style="display:flex;align-items:center;gap:6px;">
-          <span>🔗 Link da entrega</span>
-          <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">(opcional)</span>
-        </label>
+        <label class="form-label">Link da entrega</label>
         <input type="url" id="tm-delivery-link" class="form-input"
           placeholder="https://drive.google.com/... ou https://figma.com/..."
           value="${esc(task.deliveryLink || '')}" />
