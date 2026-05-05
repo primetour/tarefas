@@ -12,6 +12,30 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [3.7.0+20260505-reorganiza-cards-painel] — 2026-05-05
+
+Release "Meu Painel canônico 4+4". Reorganiza os KPIs do painel em duas seções simétricas com 4 cards cada, refletindo exatamente o pedido do usuário: *"Meu desempenho: Minhas tarefas / Atrasadas / Em andamento / Concluídas hoje. Equipe: Tarefas da equipe / Atrasadas / Em andamento / Concluídas hoje"*.
+
+### Changed
+- **🎯 Meu desempenho** — 4 cards canônicos, sempre na mesma ordem:
+  1. **Minhas tarefas** (`myTasks.length`) → `#tasks?assignee=me`
+  2. **Atrasadas** (status virtual `overdue` aplicado em `myActive`) → `#tasks?assignee=me&status=overdue`
+  3. **Em andamento** (`myInProgress`) → `#tasks?assignee=me&status=in_progress`
+  4. **Concluídas hoje** (`myDoneToday`) → `#tasks?assignee=me&completedToday=1`
+- **🏢 Equipe / Setor** (mostrado só se `visibleTasks > myTasks` — analista solo não vê) — espelha a seção pessoal:
+  1. **Tarefas da equipe** (`visibleTasks.length`) → `#tasks`
+  2. **Atrasadas** (`teamOverdue`) → `#tasks?status=overdue`
+  3. **Em andamento** (`teamInProgress`) → `#tasks?status=in_progress`
+  4. **Concluídas hoje** (`teamDoneToday`) → `#tasks?completedToday=1`
+- **Removidos dos KPIs principais** "Observando" e "Parcerias ativas" (informação ainda acessível na lista #tasks via `?observer=me` / `?partnership=1` + nos atalhos do menu). Razão: poluíam visualmente a grade 4+4 e raramente eram usados como entrada — usuários iam direto pra lista.
+- Renomeado "Concluí Hoje" → "Concluídas hoje" (paralelismo com "Em andamento", consistência tipográfica).
+
+### Fixed
+- **Filtro "Últimos 30 dias" não desabilitava com `?assignee=me` puro**: ao clicar o card "Minhas tarefas" (sem outros filtros), o preset default de 30 dias era aplicado e ocultava tarefas mais antigas → número da lista < número do card. Agora `filterDatePreset` é desabilitado quando QUALQUER filtro vem da URL (`assignee`, `status`, `projectId`, `workspaceId`, `observer`, `open`, `completedToday`, `partnership`) — o card abre a visão completa correspondente.
+
+---
+
 ## [3.6.1+20260505-fix-buraco-painel] — 2026-05-05
 
 ### Fixed

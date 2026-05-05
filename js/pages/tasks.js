@@ -118,7 +118,11 @@ export async function renderTasks(container) {
   // Se URL traz qualquer filtro temporal específico (observado, concluídas hoje,
   // parceria), o preset de data padrão (Últimos 30 dias) deixa de fazer sentido —
   // o user clicou num KPI específico, quer ver TUDO daquela categoria.
-  if (urlOpen || urlCompletedToday || urlPartnership || urlObserver) {
+  // Quando deep-link traz QUALQUER filtro próprio (assignee/observer/status/etc),
+  // o preset default "Últimos 30 dias" deixa de fazer sentido — user clicou num
+  // KPI específico, quer ver o conjunto completo daquela categoria.
+  if (urlOpen || urlCompletedToday || urlPartnership || urlObserver
+      || urlAssignee || urlStatus || urlProjectId || urlWorkspaceId) {
     filterDatePreset = '';
   }
 

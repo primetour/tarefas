@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 3,
-  minor: 6,
-  patch: 1,
-  build: '20260505-fix-buraco-painel',
+  minor: 7,
+  patch: 0,
+  build: '20260505-reorganiza-cards-painel',
 };
 
 /** "1.2.0" */

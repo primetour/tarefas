@@ -168,20 +168,24 @@ export async function renderDashboard(container) {
     const sectionLabel = (text) => `<div class="dash-stats-section-label">${text}</div>`;
     const cardsRow = (cards) => `<div class="dash-stats-row">${cards}</div>`;
 
+    // 4 cards canônicos por seção (3.7.0+):
+    //   Meu desempenho: Minhas tarefas (total) · Atrasadas · Em andamento · Concluídas hoje
+    //   Equipe:         Tarefas da equipe       · Atrasadas · Em andamento · Concluídas hoje
+    // Observando e Parcerias deixaram de ser cards principais — informação
+    // ainda disponível na lista "Minhas Tarefas" abaixo (seções colapsáveis).
     const myCards = [
-      statCard('Minhas Abertas', myActive.length, '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)', '#tasks?assignee=me&open=1'),
-      statCard('Em Andamento', myInProgress.length, '▶', 'rgba(56,189,248,0.12)', 'var(--role-manager)', '#tasks?assignee=me&status=in_progress'),
-      myOverdue.length ? statCard('⚠ Atrasadas', myOverdue.length, '⚠', 'rgba(239,68,68,0.10)', '#EF4444', '#tasks?assignee=me&status=overdue') : '',
-      statCard('Concluí Hoje', myDoneToday.length, '✓', 'var(--color-success-bg)', 'var(--color-success)', '#tasks?assignee=me&completedToday=1'),
-      myObserving.length ? statCard('Observando', myObserving.length, '🔭', 'rgba(56,189,248,0.10)', 'var(--color-info,#38BDF8)', '#tasks?observer=me') : '',
-      myPartnerships.length ? statCard('Parcerias ativas', myPartnerships.length, '🤝', 'rgba(212,168,67,0.10)', 'var(--brand-gold)', '#tasks?assignee=me&partnership=1') : '',
-    ].filter(Boolean).join('');
+      statCard('Minhas tarefas',     myTasks.length,       '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)',                 '#tasks?assignee=me'),
+      statCard('Atrasadas',          myOverdue.length,     '⚠',  'rgba(239,68,68,0.10)',  '#EF4444',                            '#tasks?assignee=me&status=overdue'),
+      statCard('Em andamento',       myInProgress.length,  '▶',  'rgba(56,189,248,0.12)', 'var(--role-manager)',                '#tasks?assignee=me&status=in_progress'),
+      statCard('Concluídas hoje',    myDoneToday.length,   '✓',  'var(--color-success-bg)','var(--color-success)',              '#tasks?assignee=me&completedToday=1'),
+    ].join('');
 
     const teamCards = teamCardsVisible ? [
-      statCard('Equipe Em Andamento', teamInProgress.length, '▶', 'rgba(56,189,248,0.06)', 'var(--text-secondary)', '#tasks?status=in_progress'),
-      teamOverdue.length ? statCard('Equipe Atrasadas', teamOverdue.length, '⚠', 'rgba(239,68,68,0.06)', 'var(--text-secondary)', '#tasks?status=overdue') : '',
-      statCard('Equipe Concluiu Hoje', teamDoneToday.length, '✓', 'var(--color-success-bg)', 'var(--text-secondary)', '#tasks?completedToday=1'),
-    ].filter(Boolean).join('') : '';
+      statCard('Tarefas da equipe',  visibleTasks.length,  '👥', 'rgba(99,102,241,0.10)', 'var(--text-secondary)',              '#tasks'),
+      statCard('Atrasadas',          teamOverdue.length,   '⚠',  'rgba(239,68,68,0.06)',  'var(--text-secondary)',              '#tasks?status=overdue'),
+      statCard('Em andamento',       teamInProgress.length,'▶',  'rgba(56,189,248,0.06)', 'var(--text-secondary)',              '#tasks?status=in_progress'),
+      statCard('Concluídas hoje',    teamDoneToday.length, '✓',  'var(--color-success-bg)','var(--text-secondary)',             '#tasks?completedToday=1'),
+    ].join('') : '';
 
     $stats.innerHTML = `
       ${sectionLabel('🎯 Meu desempenho')}
