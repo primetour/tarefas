@@ -238,6 +238,27 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           _bypassDirtyCheck = true;
           m.close();
         } },
+      // Botão "Concluir" — atalho rápido pra marcar como done sem precisar
+      // mexer no select de status. Aparece apenas em edição, quando a task
+      // ainda não está done e o user tem permissão. Reusa o overlay de
+      // conclusão (evidência/CSAT) pra paridade com o check da lista.
+      ...(isEdit && task.status !== 'done' && store.can('task_complete') ? [{
+        label:'✓ Concluir tarefa', class:'btn-success', closeOnClick:false,
+        onClick: async (_,{close}) => {
+          try {
+            const { toggleTaskComplete, getTask } = await import('../services/tasks.js');
+            await toggleTaskComplete(task.id, true);
+            const fresh = await getTask(task.id).catch(() => task);
+            // Mostra overlay (evidência) ANTES de fechar pra dar continuidade
+            const { openTaskDoneOverlay } = await import('./taskModal.js');
+            await openTaskDoneOverlay(task.id, fresh || task);
+            _bypassDirtyCheck = true;
+            close();
+            onSave?.();
+            toast.success('Tarefa concluída.');
+          } catch(e) { toast.error(e.message); }
+        },
+      }] : []),
       { label: isEdit ? 'Salvar alterações' : 'Criar tarefa', class:'btn-primary', closeOnClick:false,
         onClick: async (_,{close}) => {
           const modalEl = document.querySelector('.modal-body') || document.querySelector('.modal') || document;

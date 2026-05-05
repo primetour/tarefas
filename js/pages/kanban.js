@@ -6,7 +6,7 @@
 import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
-  subscribeToTasks, moveTaskKanban, createTask,
+  subscribeToTasks, moveTaskKanban, createTask, toggleTaskComplete, getTask,
   STATUSES, PRIORITY_MAP,
 } from '../services/tasks.js';
 import { fetchProjects }  from '../services/projects.js';
@@ -743,13 +743,29 @@ function renderKanbanCard(task, type = null) {
   const subtasks = task.subtasks||[];
   const subDone  = subtasks.filter(s=>s.done).length;
 
+  const isDone = task.status === 'done';
+  const canComplete = store.can('task_complete');
+
   return `
-    <div class="kanban-card ${task.priority||'medium'}"
+    <div class="kanban-card ${task.priority||'medium'} ${isDone?'done':''}"
       data-task-id="${task.id}"
       draggable="true"
-      style="${task._optimistic ? 'opacity:0.6;pointer-events:none;' : ''}">
-      ${project ? `<div class="kanban-card-project">${project.icon} ${esc(project.name)}</div>` : ''}
-      <div class="kanban-card-title">${esc(task.title)}</div>
+      style="position:relative;${task._optimistic ? 'opacity:0.6;pointer-events:none;' : ''}${isDone ? 'opacity:0.65;' : ''}">
+      <div class="kanban-card-check ${isDone?'checked':''} ${!canComplete && !isDone ? 'disabled' : ''}"
+        data-check-id="${task.id}"
+        title="${isDone ? 'Reabrir tarefa' : (canComplete ? 'Concluir tarefa' : 'Sem permissão para concluir')}"
+        style="position:absolute;top:8px;right:8px;width:22px;height:22px;
+        border-radius:50%;border:2px solid ${isDone ? 'var(--color-success,#22C55E)' : 'var(--border-default,#3B4754)'};
+        background:${isDone ? 'var(--color-success,#22C55E)' : 'var(--bg-card,#fff)'};
+        cursor:${!canComplete && !isDone ? 'not-allowed' : 'pointer'};
+        display:flex;align-items:center;justify-content:center;
+        font-size:0.75rem;color:#fff;font-weight:700;line-height:1;
+        transition:all 0.15s;z-index:1;
+        ${!canComplete && !isDone ? 'opacity:0.4;' : ''}">
+        ${isDone ? '✓' : ''}
+      </div>
+      ${project ? `<div class="kanban-card-project" style="padding-right:32px;">${project.icon} ${esc(project.name)}</div>` : ''}
+      <div class="kanban-card-title" style="padding-right:32px;">${esc(task.title)}</div>
       ${task.urgencyOverride?.active ? (() => {
         const ov = task.urgencyOverride;
         const parseAt = v => {
@@ -816,7 +832,29 @@ function bindCardDrag(card) {
     document.querySelectorAll('.kanban-placeholder').forEach(el => el.remove());
   });
 
-  card.addEventListener('click', (e) => {
+  card.addEventListener('click', async (e) => {
+    // Click no botão de check (canto superior direito) → toggle status done
+    // sem abrir o modal. Aplica o overlay de conclusão (CSAT, evidência, etc)
+    // pra paridade com o comportamento da lista de tarefas.
+    const check = e.target.closest('.kanban-card-check[data-check-id]');
+    if (check) {
+      e.stopPropagation();
+      if (check.classList.contains('disabled')) return;
+      const id = check.dataset.checkId;
+      const task = allTasks.find(t => t.id === id);
+      if (!task) return;
+      const willBeDone = task.status !== 'done';
+      try {
+        await toggleTaskComplete(id, willBeDone);
+        if (willBeDone) {
+          const fresh = await getTask(id).catch(() => task);
+          openTaskDoneOverlay(id, fresh || task);
+        }
+      } catch (err) { toast.error(err.message); }
+      dragTask = null;
+      return;
+    }
+
     if (!dragTask) {
       const task = allTasks.find(t => t.id === card.dataset.taskId);
       if (task) openTaskModal({ taskData: task, onSave: () => {} });
