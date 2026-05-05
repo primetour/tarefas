@@ -969,8 +969,16 @@ export function subscribeToTasks(callback, filters = {}) {
       }
 
       // Filtro por setor — squad membership sobrescreve (multissetor funcional)
-      const visibleSectors = store.get('visibleSectors') || [];
-      if (!store.isMaster() && visibleSectors.length > 0) {
+      // IMPORTANTE: usa store.getVisibleSectors() (mesmo que fetchTasks),
+      // NÃO store.get('visibleSectors'). Diferença crítica:
+      //   getVisibleSectors() → null p/ master, [userSector] p/ usuário comum
+      //   get('visibleSectors') → raw _state (geralmente [] p/ não-Head)
+      // Bug pré-3.7.1: usava o raw, fazendo `length > 0` falhar p/ todo
+      // usuário não-Head — listener NÃO filtrava por setor → dashboard
+      // (que usa fetchTasks) mostrava 860, lista (que usa este listener)
+      // mostrava 1039 do sistema todo, atravessando setores.
+      const visibleSectors = store.getVisibleSectors();
+      if (visibleSectors !== null && visibleSectors.length > 0) {
         tasks = tasks.filter(t =>
           isAssignee(t)
           || isInActiveSquad(t)

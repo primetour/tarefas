@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 3,
   minor: 7,
-  patch: 0,
-  build: '20260505-reorganiza-cards-painel',
+  patch: 1,
+  build: '20260505-fix-painel-filtros-persistentes',
 };
 
 /** "1.2.0" */

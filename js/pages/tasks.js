@@ -107,10 +107,19 @@ export async function renderTasks(container) {
       urlPartnership = qs.get('partnership') === '1';
     }
   } catch (_) { /* noop */ }
+  // CRÍTICO: URL = fonte da verdade absoluta na entrada da página.
+  // Bug pré-3.7.1: `if (urlAssignee) filterAssignee = urlAssignee;` só
+  // SOBRESCREVIA quando a URL trazia valor. Resultado: navegar de
+  // `#tasks?assignee=me` → dashboard → click em "Tarefas da equipe"
+  // (URL `#tasks` puro) mantinha filterAssignee='me' do click anterior.
+  // Card mostrava 860 mas lista mostrava só MINHAS (ou ATRASADAS×ME=0
+  // quando combinado com status='overdue' persistente). Fix: sempre
+  // assignar valor da URL (vazio se ausente) — picker da página continua
+  // funcionando porque ele só altera estado in-page (não re-roda este bloco).
   filterProject  = urlProjectId;
   filterSquad    = urlWorkspaceId;
-  if (urlAssignee) filterAssignee = urlAssignee;
-  if (urlStatus)   filterStatus   = urlStatus;
+  filterAssignee = urlAssignee || '';
+  filterStatus   = urlStatus   || '';
   filterObserver       = urlObserver;
   filterOpen           = urlOpen;
   filterCompletedToday = urlCompletedToday;
