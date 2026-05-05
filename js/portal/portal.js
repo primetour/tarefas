@@ -290,16 +290,29 @@ const buildAreaOptions = () => REQUESTING_AREAS.map(a => ({
 }));
 const findAreaOption = (id) => buildAreaOptions().find(o => o.id === id) || null;
 
-/* Lê opções dinâmicas dum <select> escondido populado em runtime */
+/* Lê opções dinâmicas dum <select> escondido populado em runtime.
+   Se o label começar com emoji (ex: "📧 Newsletter"), separa o emoji
+   pra usar como ícone do picker e fica só "Newsletter" no label. */
+const splitEmoji = (text) => {
+  const t = (text || '').trim();
+  const firstChar = t[0];
+  const isEmoji = firstChar && firstChar.codePointAt(0) > 127;
+  if (!isEmoji) return { icon: null, label: t };
+  const parts = t.split(/\s+/);
+  return { icon: parts[0], label: parts.slice(1).join(' ').trim() || t };
+};
 const optionsFromSelect = (selectId, defaultIcon = '◈', defaultColor = '#6366F1') => {
   const sel = document.getElementById(selectId);
   if (!sel) return [];
-  return [...sel.options].filter(o => o.value).map(o => ({
-    id: o.value,
-    label: o.textContent.trim(),
-    icon: defaultIcon,
-    color: defaultColor,
-  }));
+  return [...sel.options].filter(o => o.value).map(o => {
+    const { icon, label } = splitEmoji(o.textContent);
+    return {
+      id: o.value,
+      label: label || o.textContent.trim(),
+      icon: icon || defaultIcon,
+      color: defaultColor,
+    };
+  });
 };
 const findInSelect = (selectId, id, opts = {}) =>
   optionsFromSelect(selectId, opts.icon, opts.color).find(o => o.id === id) || null;
