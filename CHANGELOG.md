@@ -19,6 +19,39 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.2.0+20260505-link-publico-dev-hours] — 2026-05-05
+
+Release **MINOR** — entrega o link público do sistema de Horas de Desenvolvimento. URL: [`/tarefas/dev-hours-view.html`](https://primetour.github.io/tarefas/dev-hours-view.html). Sem auth, read-only, real-time. Apenas entradas com `status: 'approved'` aparecem no link público — drafts e rejeitadas ficam restritas à página interna.
+
+### Added
+- **`dev-hours-view.html`** — página standalone (sem dependências da app principal), padrão `portal-view.html`/`roteiro-view.html`. Inclui:
+  - **Topbar** com brand + summary do total
+  - **4 cards**: Horas trabalhadas · Custo · Releases formais · Fases agregadas
+  - **Filtros**: período, tipo (release/fase), categoria, busca textual
+  - **Legenda de categorias** com cores/ícones consistentes com a página interna
+  - **Tabela** com Data, Tipo, Versão/Fase, Resumo, Categorias (mini-barras), Horas, Custo
+  - **Disclaimer permanente** "Estimativa equivalente, não cronometragem" no topo
+  - **Real-time**: `onSnapshot` em `dev_hours` — toda aprovação/edição reflete instantaneamente
+  - **Footer** com timestamp da última atualização + link pro CHANGELOG
+  - **CSS inline** completo (~150 linhas) — sem dependência de css/ files da app principal
+  - `<meta name="robots" content="noindex,nofollow">` — não indexa em buscadores
+- **Filtra apenas `status === 'approved'`** no client-side. Drafts e rejeitadas (que existem no Firestore) NÃO aparecem aqui — privacidade do workflow editorial.
+
+### Decisões de design
+- **Sem auth**: regras Firestore (`allow read: if true` em `dev_hours`) + URL não-óbvia + `noindex` = exposição controlada. Master decide quando compartilhar.
+- **Standalone HTML**: zero dependência de bundle da app principal. Carrega só Firebase SDK + módulo inline. Performance independente.
+- **Mesmas cores/ícones de categoria** entre página interna e pública — coerência visual.
+
+### Verificação
+1. Acessar `https://primetour.github.io/tarefas/dev-hours-view.html` em janela anônima (sem auth).
+2. Cards devem mostrar 0 inicialmente (nenhuma entrada ainda aprovada na 4.1.1).
+3. Voltar à app autenticada → `#dev-hours` → aprovar uma entrada (botão ✓).
+4. Recarregar dev-hours-view → entrada aparece nos cards e na tabela em real-time (sem reload).
+5. Testar filtros: por categoria "💭 Refinamento" → tabela mostra só entries com horas dessa categoria.
+
+---
+
 ## [4.1.1+20260505-firestore-rules-recalibrar-93k-sidebar-out] — 2026-05-05
 
 Patch **crítico** corrigindo 3 problemas pós-4.1.0. Reportado: *"rodei o seed e voltou vazio. nao quero o calibre conservador. rode em cima dos 93K. esse horas de dev nao pode estar no sidebar"*.

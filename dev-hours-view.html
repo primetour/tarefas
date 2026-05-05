@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Horas de Desenvolvimento · PRIMETOUR</title>
+  <meta name="description" content="Histórico de horas e custo de desenvolvimento — sistema PRIMETOUR.">
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #FAFAF7;
+      --bg-card: #FFFFFF;
+      --border: #E5E7EB;
+      --text-primary: #111827;
+      --text-secondary: #4B5563;
+      --text-muted: #9CA3AF;
+      --brand-gold: #D4A843;
+      --color-success: #10B981;
+      --color-danger: #EF4444;
+      --color-warning: #F59E0B;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+      --shadow-md: 0 4px 12px rgba(0,0,0,.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Inter', -apple-system, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-bottom: 20px; border-bottom: 1px solid var(--border); margin-bottom: 32px;
+    }
+    .topbar-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.125rem; color: var(--brand-gold); }
+    .topbar-meta  { font-size: 0.8125rem; color: var(--text-muted); }
+    h1 { margin: 0 0 4px 0; font-size: 1.875rem; font-weight: 700; letter-spacing: -0.01em; }
+    .subtitle { color: var(--text-muted); font-size: 0.95rem; margin: 0 0 32px 0; }
+    .disclaimer {
+      background: rgba(245,158,11,.08);
+      border-left: 3px solid var(--color-warning);
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: var(--shadow-sm);
+    }
+    .card-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+    .card-value { font-size: 1.875rem; font-weight: 700; margin-top: 6px; }
+    .card-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
+    .card-icon { font-size: 1.25rem; opacity: .7; float: right; margin-top: -4px; }
+
+    .filters {
+      display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 16px; margin-bottom: 16px;
+    }
+    .filters select, .filters input[type=text] {
+      padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+      background: white; font-size: 0.875rem; font-family: inherit;
+    }
+    .filters input[type=text] { flex: 1; min-width: 200px; }
+
+    table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-sm); }
+    thead tr { background: #F9FAFB; }
+    th { text-align: left; padding: 11px 14px; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+    td { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 0.875rem; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    .pill {
+      display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 0.7rem; font-weight: 500;
+    }
+    .pill-phase   { background: rgba(139,92,246,.12); color: #8B5CF6; }
+    .pill-release { background: rgba(56,189,248,.12); color: #38BDF8; }
+    .cat-bars { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
+    .cat-bar  { width: 14px; border-radius: 2px 2px 0 0; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+    .cost { color: var(--color-success); }
+    .empty { padding: 60px 20px; text-align: center; color: var(--text-muted); }
+    .footer-note {
+      margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border);
+      font-size: 0.75rem; color: var(--text-muted); text-align: center; line-height: 1.7;
+    }
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.75rem; margin-top: 8px; }
+    .legend-item { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); }
+    .legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+    .loading { padding: 80px 20px; text-align: center; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="topbar-brand">⏱ PRIMETOUR · Horas de Desenvolvimento</div>
+      <div class="topbar-meta" id="topbar-meta">Carregando...</div>
+    </div>
+
+    <h1>Histórico de horas e custo</h1>
+    <p class="subtitle">Linha do tempo do desenvolvimento contínuo do sistema PRIMETOUR — fases retroativas agregadas + releases granulares formalizadas a partir da 3.0.0.</p>
+
+    <div class="disclaimer">
+      <strong>⚠ Estimativa equivalente, não cronometragem.</strong>
+      Os valores refletem o tempo que um sr full-stack dev com conhecimento do codebase
+      levaria pra entregar o mesmo escopo. Cada entrada usa metodologia transparente
+      (bucket de complexidade × multiplicadores aplicáveis). Taxa horária: R$ 150,00.
+      Apenas entradas com status <strong>aprovado</strong> entram nos totais.
+    </div>
+
+    <div class="cards" id="cards">
+      <div class="loading">Carregando dados…</div>
+    </div>
+
+    <div class="filters" id="filters" style="display:none;">
+      <select id="f-period">
+        <option value="">Todo período</option>
+        <option value="month">Este mês</option>
+        <option value="quarter">Este trimestre</option>
+        <option value="year">Este ano</option>
+      </select>
+      <select id="f-type">
+        <option value="all">Todos os tipos</option>
+        <option value="release">Releases</option>
+        <option value="phase">Fases retroativas</option>
+      </select>
+      <select id="f-category">
+        <option value="">Todas categorias</option>
+        <option value="refinamento">💭 Refinamento</option>
+        <option value="desenvolvimento">⚙ Desenvolvimento</option>
+        <option value="testes">🧪 Testes</option>
+        <option value="documentacao">📝 Documentação</option>
+        <option value="implantacao">🚀 Implantação</option>
+      </select>
+      <input type="text" id="f-search" placeholder="Buscar título/versão/fase...">
+    </div>
+
+    <div class="legend" id="legend"></div>
+    <div style="height:8px;"></div>
+
+    <table id="dh-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Tipo</th>
+          <th>Versão / Fase</th>
+          <th>Resumo</th>
+          <th>Categorias</th>
+          <th class="num">Horas</th>
+          <th class="num">Custo</th>
+        </tr>
+      </thead>
+      <tbody id="dh-body"></tbody>
+    </table>
+
+    <div class="footer-note">
+      Página gerada pelo sistema interno PRIMETOUR. Atualizada em tempo real conforme
+      novas entradas são aprovadas. Para auditoria completa da metodologia, consulte
+      <a href="https://github.com/primetour/tarefas/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG.md</a>.
+      <br>
+      <span id="footer-timestamp" style="font-variant-numeric: tabular-nums;"></span>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp }   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import { getFirestore, collection, onSnapshot, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { firebaseConfig } from './js/config.js';
+
+    const CATEGORIES = [
+      { key: 'refinamento',     label: 'Refinamento',     color: '#8B5CF6', icon: '💭' },
+      { key: 'desenvolvimento', label: 'Desenvolvimento', color: '#3B82F6', icon: '⚙'  },
+      { key: 'testes',          label: 'Testes',          color: '#10B981', icon: '🧪' },
+      { key: 'documentacao',    label: 'Documentação',    color: '#F59E0B', icon: '📝' },
+      { key: 'implantacao',     label: 'Implantação',     color: '#EF4444', icon: '🚀' },
+    ];
+
+    const fmtBR = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+    const fmtH  = n => `${(+n||0).toFixed(2).replace(/\.00$/, '')}h`;
+    const esc   = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const fmtDate = ts => {
+      if (!ts) return '—';
+      const d = ts.toDate ? ts.toDate() : new Date(ts);
+      return d.toLocaleDateString('pt-BR');
+    };
+
+    const app = initializeApp(firebaseConfig, 'dev-hours-view');
+    const db  = getFirestore(app);
+
+    let allEntries = [];
+    let f_period = '', f_type = 'all', f_category = '', f_search = '';
+
+    // Filtros em tempo real
+    document.getElementById('f-period').addEventListener('change', e => { f_period = e.target.value; render(); });
+    document.getElementById('f-type').addEventListener('change',   e => { f_type   = e.target.value; render(); });
+    document.getElementById('f-category').addEventListener('change', e => { f_category = e.target.value; render(); });
+    document.getElementById('f-search').addEventListener('input', e => { f_search = e.target.value.trim().toLowerCase(); render(); });
+
+    // Legenda das categorias
+    document.getElementById('legend').innerHTML = CATEGORIES.map(c => `
+      <span class="legend-item">
+        <span class="legend-swatch" style="background:${c.color}"></span>
+        ${c.icon} ${c.label}
+      </span>
+    `).join('');
+
+    // Subscribe real-time — só APROVADAS entram nos totais públicos
+    const q = query(collection(db, 'dev_hours'), orderBy('completedAt', 'desc'));
+    onSnapshot(q, (snap) => {
+      allEntries = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(e => e.status === 'approved');
+      document.querySelector('.loading')?.remove();
+      document.getElementById('filters').style.display = 'flex';
+      document.getElementById('dh-table').style.display = 'table';
+      render();
+      const ts = new Date().toLocaleString('pt-BR');
+      document.getElementById('footer-timestamp').textContent = `Última atualização: ${ts}`;
+    }, (err) => {
+      document.getElementById('cards').innerHTML = `<div class="empty">Erro ao carregar dados: ${esc(err.message)}</div>`;
+    });
+
+    function applyFilters(arr) {
+      const now = new Date();
+      let from = null, to = null;
+      if (f_period === 'month')   { from = new Date(now.getFullYear(), now.getMonth(), 1); to = new Date(now.getFullYear(), now.getMonth()+1, 0, 23,59,59); }
+      if (f_period === 'quarter') { const q = Math.floor(now.getMonth()/3); from = new Date(now.getFullYear(), q*3, 1); to = new Date(now.getFullYear(), q*3+3, 0, 23,59,59); }
+      if (f_period === 'year')    { from = new Date(now.getFullYear(), 0, 1); to = new Date(now.getFullYear(), 11, 31, 23,59,59); }
+
+      return arr.filter(e => {
+        const dt = e.completedAt?.toDate ? e.completedAt.toDate() : (e.completedAt ? new Date(e.completedAt) : null);
+        if (from && dt && dt < from) return false;
+        if (to   && dt && dt > to)   return false;
+        if (f_type !== 'all' && e.entryType !== f_type) return false;
+        if (f_category && (+(e.hoursByCategory?.[f_category] || 0)) === 0) return false;
+        if (f_search) {
+          const hay = `${e.releaseVersion||''} ${e.phaseLabel||''} ${e.title||''} ${e.summary||''}`.toLowerCase();
+          if (!hay.includes(f_search)) return false;
+        }
+        return true;
+      });
+    }
+
+    function render() {
+      const arr = applyFilters(allEntries);
+
+      // Cards
+      let totalH = 0, totalC = 0;
+      const byCat = { refinamento: 0, desenvolvimento: 0, testes: 0, documentacao: 0, implantacao: 0 };
+      for (const e of arr) {
+        totalH += +(e.totalHours || 0);
+        totalC += +(e.totalCost  || 0);
+        for (const k of Object.keys(byCat)) byCat[k] += +(e.hoursByCategory?.[k] || 0);
+      }
+      const phaseCount = arr.filter(e => e.entryType === 'phase').length;
+      const releaseCount = arr.filter(e => e.entryType === 'release').length;
+
+      document.getElementById('topbar-meta').textContent = `${arr.length} entrada${arr.length !== 1 ? 's' : ''} aprovada${arr.length !== 1 ? 's' : ''} • ${fmtH(totalH)} • ${fmtBR.format(totalC)}`;
+
+      document.getElementById('cards').innerHTML = `
+        <div class="card">
+          <span class="card-icon">⏱</span>
+          <div class="card-label">Horas trabalhadas</div>
+          <div class="card-value">${fmtH(totalH)}</div>
+          <div class="card-sub">no período filtrado</div>
+        </div>
+        <div class="card">
+          <span class="card-icon">💰</span>
+          <div class="card-label">Custo de desenvolvimento</div>
+          <div class="card-value cost">${fmtBR.format(totalC)}</div>
+          <div class="card-sub">@ R$ 150,00/h</div>
+        </div>
+        <div class="card">
+          <span class="card-icon">🚀</span>
+          <div class="card-label">Releases formais</div>
+          <div class="card-value">${releaseCount}</div>
+          <div class="card-sub">granularidade fina (3.0.0+)</div>
+        </div>
+        <div class="card">
+          <span class="card-icon">📜</span>
+          <div class="card-label">Fases agregadas</div>
+          <div class="card-value">${phaseCount}</div>
+          <div class="card-sub">retroativas (1.x / 2.x)</div>
+        </div>
+      `;
+
+      // Tabela
+      const tbody = document.getElementById('dh-body');
+      if (!arr.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty">Nenhuma entrada aprovada nos filtros atuais.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = arr.map(e => {
+        const isPhase = e.entryType === 'phase';
+        const versionCell = isPhase
+          ? `<strong>${esc(e.phaseLabel || '—')}</strong>
+             <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">≈${e.phaseCommitsCount || 0} commits</div>`
+          : `<strong>${esc(e.releaseVersion || '—')}</strong>
+             ${e.releaseSlug ? `<div style="font-size:0.7rem;color:var(--text-muted);">${esc(e.releaseSlug)}</div>` : ''}`;
+
+        const summaryCell = `<div style="font-weight:500;color:var(--text-primary);">${esc(e.title || '')}</div>
+                             ${e.summary ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;line-height:1.5;">${esc(e.summary).slice(0,180)}${e.summary.length>180?'…':''}</div>` : ''}`;
+
+        const hbc = e.hoursByCategory || {};
+        const totalEH = Object.values(hbc).reduce((a,b)=>a+(+b||0), 0);
+        const catBars = CATEGORIES.map(c => {
+          const v = +(hbc[c.key] || 0);
+          const pct = totalEH > 0 ? (v / totalEH * 100) : 0;
+          return `<div class="cat-bar" title="${c.label}: ${v.toFixed(2)}h (${pct.toFixed(0)}%)"
+            style="height:${Math.max(2, pct/3.5)}px;background:${c.color};opacity:${pct>0?1:.15};"></div>`;
+        }).join('');
+
+        return `<tr>
+          <td style="white-space:nowrap;color:var(--text-muted);font-size:0.75rem;">${fmtDate(e.completedAt)}</td>
+          <td><span class="pill ${isPhase?'pill-phase':'pill-release'}">${isPhase?'📜 Fase':'🚀 Release'}</span></td>
+          <td>${versionCell}</td>
+          <td>${summaryCell}</td>
+          <td><div class="cat-bars">${catBars}</div></td>
+          <td class="num">${fmtH(e.totalHours)}</td>
+          <td class="num cost">${fmtBR.format(e.totalCost || 0)}</td>
+        </tr>`;
+      }).join('');
+    }
+  </script>
+</body>
+</html>

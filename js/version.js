@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 1,
-  patch: 1,
-  build: '20260505-firestore-rules-recalibrar-93k-sidebar-out',
+  minor: 2,
+  patch: 0,
+  build: '20260505-link-publico-dev-hours',
 };
 
 /** "1.2.0" */
