@@ -301,7 +301,8 @@
 
       document.getElementById('root').innerHTML = `
         <header class="docs-topbar">
-          <a href="/tarefas/" class="back-btn">← Voltar ao Gestor PRIMETOUR</a>
+          <a id="docs-back-btn" href="https://primetour.com.br" class="back-btn"
+            target="_blank" rel="noopener">🌐 primetour.com.br</a>
           <div style="display:flex;align-items:center;gap:14px;flex:1;justify-content:center;min-width:0;">
             <span class="topbar-title">📚 Docs Técnicos</span>
             <span class="topbar-meta">·</span>
@@ -363,6 +364,51 @@
             <strong>Erro ao carregar:</strong> ${e.message}<br>
             <a href="/tarefas/${doc.file}" target="_blank" style="color:#D4A843;">Abrir markdown raw</a>
           </div>`;
+      }
+
+      // Detecta sessão e adapta o botão de "Voltar".
+      // Externo (sem sessão) → mantém "primetour.com.br" (já default no innerHTML).
+      // Interno (com sessão) → "Voltar ao Gestor PRIMETOUR" indo direto pro app.
+      // Lazy: roda em paralelo, não bloqueia a renderização do markdown.
+      adaptBackButton().catch(() => {});
+    }
+
+    async function adaptBackButton() {
+      try {
+        const [{ initializeApp, getApp }, { getAuth, onAuthStateChanged },
+               { firebaseConfig }] = await Promise.all([
+          import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
+          import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js'),
+          import('./js/config.js'),
+        ]);
+        // Reusa o app existente se já foi criado em outra aba; senão cria.
+        let app;
+        try { app = getApp('primetour-main'); }
+        catch { app = initializeApp(firebaseConfig, 'primetour-main'); }
+        const auth = getAuth(app);
+
+        // Aguarda o onAuthStateChanged hidratar (IndexedDB pode demorar ~200ms).
+        // Se em 2s ainda não houver user, assume externo e mantém botão atual.
+        await new Promise((resolve) => {
+          let done = false;
+          const settle = () => { if (!done) { done = true; resolve(); } };
+          setTimeout(settle, 2000);
+          onAuthStateChanged(auth, (user) => {
+            if (user) {
+              const btn = document.getElementById('docs-back-btn');
+              if (btn) {
+                btn.textContent = '← Voltar ao Gestor PRIMETOUR';
+                btn.href = '/tarefas/';
+                btn.removeAttribute('target');
+                btn.removeAttribute('rel');
+                btn.title = `Logado como ${user.email || ''}`;
+              }
+            }
+            settle();
+          });
+        });
+      } catch (_) {
+        // Firebase indisponível ou config bloqueada — mantém botão "externo" (default).
       }
     }
 

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 3,
   minor: 2,
-  patch: 0,
-  build: '20260505-governance',
+  patch: 1,
+  build: '20260505-backbtn',
 };
 
 /** "1.2.0" */
