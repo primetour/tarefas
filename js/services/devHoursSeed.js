@@ -21,7 +21,7 @@
  *   - Confiança "high" — sei exatamente o que fizemos
  */
 
-import { findByVersion, createEntry, calcCost } from './devHours.js';
+import { findByVersion, createEntry, calcCost, fetchDevHours, deleteEntry } from './devHours.js';
 
 const SEED_DATA = [
   /* ───────── FASES RETROATIVAS (1.x / 2.x) ───────── */
@@ -33,8 +33,8 @@ const SEED_DATA = [
     summary: 'Infraestrutura inicial: configuração Firebase, autenticação, estrutura de pastas, router custom, store global, design system inicial. Módulos base: tarefas, projetos, kanban, dashboard. Sem versionamento estruturado nesse período — agregado retrospectivamente. Confiança baixa por ausência de prompts originais.',
     completedAt: '2026-03-25',
     bucket: 'mega',
-    basePoint: 50,
-    multipliers: ['integration'],   // +20%
+    basePoint: 110,                        // 110h base + 20% integração = 132h
+    multipliers: ['integration'],
     profile: 'phase',
     confidenceLevel: 'low',
   },
@@ -46,8 +46,8 @@ const SEED_DATA = [
     summary: 'Cinco sprints focados em endurecer o sistema: roles e permissões granulares, audit trail, multi-fator quando aplicável, sanitização XSS, CSP headers, revisão de regras Firestore, separação por setor/squad, hardening de upload de arquivos. Marco de compliance.',
     completedAt: '2026-04-15',
     bucket: 'mega',
-    basePoint: 60,
-    multipliers: ['security', 'investigation'],   // +25% +30%
+    basePoint: 130,                        // 130h × 1.55 (security+investigation) = 201.5h
+    multipliers: ['security', 'investigation'],
     profile: 'phase',
     confidenceLevel: 'low',
   },
@@ -59,8 +59,8 @@ const SEED_DATA = [
     summary: 'Migração da arquitetura single-tenant pra multi-tenant. Schema de squads (workspaces), múltiplos setores por usuário, regras de visibilidade cruzada, ativeWorkspaceIds + visibleSectors. Ajustes em 100% das páginas de listagem. Migração de dados.',
     completedAt: '2026-04-25',
     bucket: 'mega',
-    basePoint: 50,
-    multipliers: ['migration', 'pure_refactor'],   // +20% -20% = 0%
+    basePoint: 110,                        // 110h × 1.00 (migration+pure_refactor cancelam) = 110h
+    multipliers: ['migration', 'pure_refactor'],
     profile: 'phase',
     confidenceLevel: 'low',
   },
@@ -72,8 +72,8 @@ const SEED_DATA = [
     summary: 'Refinamento de UX em todos os módulos, criação do IA Hub (agents/skills), módulos de Metas, Roteiros, Calendário de Conteúdo, Newsletter, Portal de Solicitações, Análise de notícias. Preparação pra formalização de versionamento (3.0.0).',
     completedAt: '2026-05-02',
     bucket: 'mega',
-    basePoint: 45,
-    multipliers: ['integration'],   // +20%
+    basePoint: 95,                         // 95h × 1.20 = 114h
+    multipliers: ['integration'],
     profile: 'phase',
     confidenceLevel: 'low',
   },
@@ -244,6 +244,22 @@ function calcHours(basePoint, multiplierIds) {
   let factor = 1;
   for (const id of multiplierIds || []) factor += MULTIPLIER_VALUES[id] || 0;
   return Math.max(0.25, +(basePoint * factor).toFixed(2));
+}
+
+/**
+ * Limpa TODAS as entries de dev_hours (não só drafts) — útil pra recalibrar
+ * o backfill. Confirma antes de chamar (UI já confirma).
+ */
+export async function clearAllDevHours(progressCb = () => {}) {
+  const all = await fetchDevHours();
+  const total = all.length;
+  let deleted = 0;
+  for (const e of all) {
+    progressCb(deleted + 1, total, `Removendo ${e.releaseVersion || e.phaseLabel || e.id}`);
+    await deleteEntry(e.id);
+    deleted++;
+  }
+  return { deleted, total };
 }
 
 /**

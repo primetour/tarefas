@@ -119,10 +119,17 @@ export async function renderSettings(container) {
               <div id="seed-bar" style="height:100%;background:#8B5CF6;width:0%;transition:width .3s;border-radius:3px;"></div>
             </div>
           </div>
-          <button class="btn btn-secondary" id="seed-devhours-btn"
-            style="border-color:#8B5CF6;color:#8B5CF6;">
-            ⏱ Rodar backfill de horas (1.x até 4.0.0)
-          </button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-secondary" id="seed-devhours-btn"
+              style="border-color:#8B5CF6;color:#8B5CF6;">
+              ⏱ Rodar backfill de horas (1.x até 4.0.0)
+            </button>
+            <button class="btn btn-secondary" id="seed-devhours-clear-btn"
+              style="border-color:var(--color-danger);color:var(--color-danger);"
+              title="Apaga TODAS as entradas e refaz com valores recalibrados">
+              🗑 Limpar tudo e refazer
+            </button>
+          </div>
         </div>
       </div>
 
@@ -249,6 +256,48 @@ export async function renderSettings(container) {
     } finally {
       btn.disabled = false;
       btn.textContent = '🔄 Desarquivar tarefas concluídas há < 730 dias';
+    }
+  });
+
+  // Limpar tudo e refazer (master-only) — útil pra reaplicar calibração.
+  document.getElementById('seed-devhours-clear-btn')?.addEventListener('click', async () => {
+    if (!store.isMaster()) return;
+    if (!confirm('Apagar TODAS as entradas de dev_hours e refazer com valores recalibrados?\n\nUse depois de mudanças nos basePoints do seed. Idempotente após executar.')) return;
+
+    const btn   = document.getElementById('seed-devhours-clear-btn');
+    const prog  = document.getElementById('seed-progress');
+    const label = document.getElementById('seed-label');
+    const bar   = document.getElementById('seed-bar');
+    btn.disabled = true;
+    btn.textContent = 'Limpando...';
+    prog.style.display = 'block';
+    bar.style.background = 'var(--color-danger)';
+
+    try {
+      const { clearAllDevHours, seedBackfill } = await import('../services/devHoursSeed.js');
+      const cleared = await clearAllDevHours((c, t, name) => {
+        const pct = Math.round((c / t) * 100);
+        bar.style.width = `${pct}%`;
+        label.textContent = `Limpando ${c}/${t}: ${name}`;
+      });
+      label.textContent = `${cleared.deleted} removidas. Recriando...`;
+      bar.style.background = '#8B5CF6';
+      bar.style.width = '0%';
+
+      const result = await seedBackfill((c, t, name) => {
+        const pct = Math.round((c / t) * 100);
+        bar.style.width = `${pct}%`;
+        label.textContent = `[${c}/${t}] ${name}`;
+      });
+      label.textContent = `✓ Limpo e refeito. ${cleared.deleted} removidas → ${result.created} novas.`;
+      bar.style.background = 'var(--color-success)';
+      toast.success(`${cleared.deleted} removidas, ${result.created} novas (recalibradas).`);
+    } catch (e) {
+      label.textContent = `✗ Erro: ${e.message}`;
+      toast.error('Falha: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🗑 Limpar tudo e refazer';
     }
   });
 

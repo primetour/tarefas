@@ -30,7 +30,7 @@ let _unsubscribe = null;
 let f_from   = null;     // Date | null
 let f_to     = null;     // Date | null
 let f_period = '';       // '' | 'month' | 'quarter' | 'year' | 'all' | 'custom'
-let f_statuses = ['approved']; // mostra só aprovados por default
+let f_statuses = ['draft','approved','rejected']; // default: TODAS pra evitar "voltou vazio" pós-seed
 let f_types  = ['release', 'phase'];
 let f_search = '';
 
@@ -93,8 +93,8 @@ export async function renderDevHours(container) {
           <input type="date" id="devh-to" class="form-input" style="width:140px;">
         </div>
         <select class="filter-select" id="devh-status">
-          <option value="approved" selected>Só aprovadas</option>
-          <option value="all">Todas</option>
+          <option value="all" selected>Todas</option>
+          <option value="approved">Só aprovadas</option>
           <option value="draft">Só rascunhos</option>
           <option value="rejected">Só rejeitadas</option>
         </select>

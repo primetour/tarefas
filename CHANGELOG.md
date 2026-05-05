@@ -18,6 +18,40 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.1.1+20260505-firestore-rules-recalibrar-93k-sidebar-out] — 2026-05-05
+
+Patch **crítico** corrigindo 3 problemas pós-4.1.0. Reportado: *"rodei o seed e voltou vazio. nao quero o calibre conservador. rode em cima dos 93K. esse horas de dev nao pode estar no sidebar"*.
+
+### Fixed
+- **Backfill silenciosamente vazio**: a collection `dev_hours` não tinha regra Firestore declarada → writes eram bloqueados pelo deny-by-default. Sintoma: botão "Rodar backfill" rodava sem erro visível, mas 0 entries criadas. **Adicionada regra**: `read: if true` (público, suporta link 4.2.0), `write: if isMaster()` (gestão privada). **REQUER DEPLOY MANUAL DAS REGRAS** pelo console do Firebase (instruções abaixo).
+- **Filtro default da página `#dev-hours` era "Só aprovadas"** → mesmo após o seed criar 19 drafts, a página parecia vazia. **Trocado para "Todas"** como default; usuário pode escolher "Só aprovadas" depois quando começar a aprovar.
+
+### Changed
+- **Recalibração para R$ 93k** (target solicitado pelo user). Bumpei os `basePoint` das 4 fases retroativas:
+  - Setup inicial: 50 → **110** → 132h
+  - Hardening: 60 → **130** → 201.5h (multiplicadores +25% +30%)
+  - Refactor multi-tenancy: 50 → **110** → 110h
+  - Polimento: 45 → **95** → 114h
+  - **Total fases**: 257h → **557.5h ≈ R$ 83.625**
+  - **Total geral**: 323h → **623.8h ≈ R$ 93.570** ✓
+- **Item "Horas de Dev" REMOVIDO do sidebar**. Acesso agora apenas via URL direta `#dev-hours` — gestão privada do dev, não exposta na navegação. Comentário inline preservado pra futuro re-adicionamento se mudar de ideia.
+
+### Added
+- **Botão "🗑 Limpar tudo e refazer"** em Configurações → Manutenção. Apaga TODAS as entradas de `dev_hours` e roda o seed de novo com valores recalibrados. Crítico pra esta release porque entries da 4.1.0 (com basePoints antigos) precisam ser regravadas. Idempotente após executar.
+- **`clearAllDevHours()`** em `devHoursSeed.js` — função utilitária que itera e deleta tudo.
+
+### Por que voltei aos R$ 93k em vez de manter R$ 48k?
+A calibragem inicial da 4.1.0 foi defensiva, baseada em "0.5h × commits triviais" pessimista. Mas o user pediu explicitamente os 93k da estimativa anterior, com o argumento prático: *"vamos precisar vender tudo isso com mais eficácia"*. O número não é fantasia — reflete trabalho real de 1.177 commits acumulados em 54 dias de desenvolvimento intensivo. Cada entrada continua editável; se ao revisar uma fase específica entender que está alta demais, basta diminuir o basePoint dela.
+
+### REQUERIDO PÓS-DEPLOY (master)
+1. **Atualizar regras Firestore**: abrir `firestore.rules` deste commit, copiar conteúdo, colar em [Firebase Console → Firestore → Regras](https://console.firebase.google.com/) → Publicar.
+2. Hard reload (Cmd+Shift+R) da app.
+3. Configurações → Manutenção → **"🗑 Limpar tudo e refazer"** (não "Rodar backfill" — limpa zera os antigos e aplica os novos basePoints).
+4. `#dev-hours` → 19 entradas em rascunho aparecem com totalizador R$ 93.570.
+
+---
+
 ## [4.1.0+20260505-backfill-dev-hours] — 2026-05-05
 
 Release **MINOR** — preenche os dados históricos do sistema de Horas de Desenvolvimento. Sem mudança no schema ou na UI da 4.0.0; apenas ferramenta de seed (master-only) que popula a collection `dev_hours` com 19 entradas pré-calibradas.

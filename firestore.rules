@@ -826,5 +826,14 @@ service cloud.firestore {
       allow read:  if isAdmin();
       allow write: if false;
     }
+
+    // ── Dev Hours (sistema de horas de desenvolvimento) ──────
+    // Leitura PÚBLICA (sem auth) — habilita o link compartilhável da 4.2.0.
+    // Escrita: master-only (gestão privada do dev).
+    // Página #dev-hours é acessada APENAS via URL direta (não está no sidebar).
+    match /dev_hours/{docId} {
+      allow read:  if true;
+      allow write: if isMaster();
+    }
   }
 }

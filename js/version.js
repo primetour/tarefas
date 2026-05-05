@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 1,
-  patch: 0,
-  build: '20260505-backfill-dev-hours',
+  patch: 1,
+  build: '20260505-firestore-rules-recalibrar-93k-sidebar-out',
 };
 
 /** "1.2.0" */

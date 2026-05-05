@@ -154,7 +154,9 @@ const NAV_GROUPS = [
       { route: 'ai-hub',     icon: 'ai-hub',     label: 'IA Hub',            perm: 'system_manage_settings' },
       // 'ai-skills' DEPRECADO em favor do IA Hub. Skills migradas viram agents.
       { route: 'audit',      icon: 'audit',      label: 'Auditoria',         perm: 'system_manage_settings' },
-      { route: 'dev-hours',   icon: 'about',      label: 'Horas de Dev',       perm: '__master_only__' },
+      // 'dev-hours' INTENCIONALMENTE removido do sidebar.
+      // Acesso só via URL direta (#dev-hours) — gestão privada do dev,
+      // não exposta na navegação. Página continua roteada e funcional.
       { route: 'settings',   icon: 'settings',   label: 'Configurações',     perm: 'system_manage_settings' },
       { route: 'about',      icon: 'about',      label: 'Sobre o sistema',   perm: 'system_manage_users' },
       { route: 'help',       icon: 'help',       label: 'Ajuda',             perm: null }, // todos
