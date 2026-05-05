@@ -1254,7 +1254,6 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
       <div class="form-group mt-4">
         <label class="form-label">Link da entrega</label>
         <input type="url" id="tm-delivery-link" class="form-input"
-          placeholder="https://drive.google.com/... ou https://figma.com/..."
           value="${esc(task.deliveryLink || '')}" />
         ${task.deliveryLink ? `
           <div style="margin-top:6px;">
@@ -1269,8 +1268,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
         <div class="form-group mt-4" id="tm-recurrence-section">
           <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
             <input type="checkbox" id="tm-recurring-toggle" />
-            <span>🔄 Tarefa recorrente</span>
-            <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">(gera automaticamente)</span>
+            <span>Tarefa recorrente</span>
           </label>
           <div id="tm-recurrence-config" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-elevated);">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -1565,11 +1563,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
           font-size:0.875rem;color:var(--text-primary);user-select:none;">
           <input type="checkbox" id="tm-partnership" ${task.isPartnership?'checked':''}
             style="width:16px;height:16px;cursor:pointer;accent-color:var(--brand-gold);" />
-          <span style="flex:1;">🤝 Envolve parceria
-            <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;display:block;margin-top:1px;">
-              Tarefa é devolutiva de pacote de divulgação vendido pra empresa parceira
-            </span>
-          </span>
+          <span style="flex:1;">🤝 Envolve parceria</span>
         </label>
       </div>
       <div class="task-detail-field">
