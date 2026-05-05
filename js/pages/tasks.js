@@ -47,6 +47,12 @@ let filterOpen           = false;  // !done && !cancelled — cardstat "Minhas A
 let filterCompletedToday = false;  // done && completedAt é hoje — cardstat "Concluídas Hoje"
 let filterPartnership    = false;  // task.isPartnership — cardstat "Parcerias"
 
+// Toggle "Mostrar arquivadas" — off por default. Quando ON, applyFilters()
+// remove o `!t.archived` e mostra tarefas com archived:true (badge cinza).
+// Útil pra auditoria de metas anuais/plurianuais (ver quais tarefas
+// contribuíram). Aceita URL param ?archived=1 pra deep-link.
+let filterShowArchived = false;
+
 // Visibilidade de filtros (persistida no localStorage por usuário)
 const FILTER_VISIBILITY_KEY = 'tasks.filterVisibility.v1';
 const DEFAULT_FILTER_VISIBILITY = {
@@ -88,6 +94,7 @@ export async function renderTasks(container) {
   let urlOpen        = false;       // status != done && status != cancelled
   let urlCompletedToday = false;    // status==='done' && completedAt é hoje
   let urlPartnership = false;
+  let urlArchived    = false;       // ?archived=1 ativa toggle "Mostrar arquivadas"
   try {
     const rawHash = window.location.hash || '';
     const qIdx = rawHash.indexOf('?');
@@ -105,6 +112,7 @@ export async function renderTasks(container) {
       urlOpen     = qs.get('open') === '1';
       urlCompletedToday = qs.get('completedToday') === '1';
       urlPartnership = qs.get('partnership') === '1';
+      urlArchived    = qs.get('archived') === '1';
     }
   } catch (_) { /* noop */ }
   // CRÍTICO: URL = fonte da verdade absoluta na entrada da página.
@@ -124,6 +132,7 @@ export async function renderTasks(container) {
   filterOpen           = urlOpen;
   filterCompletedToday = urlCompletedToday;
   filterPartnership    = urlPartnership;
+  filterShowArchived   = urlArchived;
   // Se URL traz qualquer filtro temporal específico (observado, concluídas hoje,
   // parceria), o preset de data padrão (Últimos 30 dias) deixa de fazer sentido —
   // o user clicou num KPI específico, quer ver TUDO daquela categoria.
@@ -286,6 +295,14 @@ export async function renderTasks(container) {
         <option value="with"    ${filterMeta==='with'   ?'selected':''}>🎯 Com meta vinculada</option>
         <option value="without" ${filterMeta==='without'?'selected':''}>○ Sem meta vinculada</option>
       </select>
+      <label id="filter-archived-wrap" title="Tarefas auto-arquivadas após 730 dias de conclusão"
+        style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border,#e5e7eb);
+               border-radius:8px;font-size:0.8125rem;color:var(--text-secondary);cursor:pointer;
+               background:${filterShowArchived ? 'var(--brand-gold-bg,rgba(212,168,67,.12))' : 'transparent'};">
+        <input type="checkbox" id="filter-archived" ${filterShowArchived?'checked':''}
+          style="margin:0;cursor:pointer;">
+        <span>📦 Mostrar arquivadas</span>
+      </label>
       <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
         <label style="font-size:0.8125rem; color:var(--text-muted);">Agrupar:</label>
         <select class="filter-select" id="group-by">
@@ -765,7 +782,9 @@ function _populateTagFilter() {
 
 /* \u2500\u2500\u2500 Filters \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 function applyFilters() {
-  let result = allTasks.filter(t => !t.archived);
+  // Arquivadas só entram quando toggle "Mostrar arquivadas" está ativo
+  // (ou ?archived=1 na URL). Default: ocultas pra manter UX limpa.
+  let result = filterShowArchived ? [...allTasks] : allTasks.filter(t => !t.archived);
 
   if (searchTerm) {
     const q = searchTerm.toLowerCase();
@@ -880,15 +899,16 @@ function applyFilters() {
 
   const label = document.getElementById('tasks-count-label');
   if (label) {
-    // Denominador = tarefas ATIVAS (sem arquivadas), não allTasks bruto.
-    // Por quê: arquivadas estão permanentemente ocultas nesta view (não há
-    // toggle "mostrar arquivadas"), então contá-las em "(de N)" mostra um
-    // teto que o usuário nunca alcança — gerava confusão tipo "card mostra
-    // 860 mas lista diz 'de 1039', de onde vem essa diferença?". Resposta:
-    // 179 arquivadas que ninguém pode ver. Agora "(de N)" representa o que
-    // o usuário PODERIA ver removendo todos os filtros desta tela.
-    const activeTotal = allTasks.filter(t => !t.archived).length;
-    label.textContent = `${filteredTasks.length} tarefa${filteredTasks.length !== 1 ? 's' : ''}${activeTotal !== filteredTasks.length ? ` (de ${activeTotal})` : ''}`;
+    // Denominador "(de N)" = teto alcançável removendo filtros REAIS desta tela.
+    // - Toggle OFF: denominador = só ativas (arquivadas estão ocultas, não devem
+    //   aparecer no teto).
+    // - Toggle ON: denominador = TODAS (incluindo arquivadas), porque agora elas
+    //   estão na lista visível.
+    const denominator = filterShowArchived
+      ? allTasks.length
+      : allTasks.filter(t => !t.archived).length;
+    const archivedSuffix = filterShowArchived ? ' (incluindo arquivadas)' : '';
+    label.textContent = `${filteredTasks.length} tarefa${filteredTasks.length !== 1 ? 's' : ''}${denominator !== filteredTasks.length ? ` (de ${denominator})` : ''}${archivedSuffix}`;
   }
 
   renderTaskList();
@@ -1030,6 +1050,11 @@ function renderTaskRow(task) {
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;align-items:center;">
           <span class="badge badge-priority-${task.priority}" style="font-size:0.6rem;">${prio.label}</span>
+          ${task.archived ? `<span title="Arquivada automaticamente após 730 dias de conclusão"
+            style="font-size:0.625rem;padding:2px 8px;border-radius:99px;background:rgba(107,114,128,0.12);
+                   color:var(--text-muted);border:1px solid rgba(107,114,128,0.3);font-weight:500;white-space:nowrap;">
+            📦 Arquivada
+          </span>` : ''}
           ${task.urgencyOverride?.active ? (() => {
             const ov = task.urgencyOverride;
             const parseAt = v => {
@@ -1369,6 +1394,13 @@ function _attachPageEvents() {
   document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
   document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; applyFilters(); });
   document.getElementById('filter-meta')?.addEventListener('change', e => { filterMeta = e.target.value; applyFilters(); });
+  document.getElementById('filter-archived')?.addEventListener('change', e => {
+    filterShowArchived = e.target.checked;
+    // Atualiza o destaque visual do label (fundo dourado quando ON)
+    const wrap = document.getElementById('filter-archived-wrap');
+    if (wrap) wrap.style.background = filterShowArchived ? 'var(--brand-gold-bg,rgba(212,168,67,.12))' : 'transparent';
+    applyFilters();
+  });
   document.getElementById('filter-date-preset')?.addEventListener('change', e => {
     filterDatePreset = e.target.value;
     const customBar = document.getElementById('filter-date-custom');

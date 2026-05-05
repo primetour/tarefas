@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 3,
-  minor: 7,
-  patch: 2,
-  build: '20260505-fix-contador-arquivadas',
+  minor: 8,
+  patch: 0,
+  build: '20260505-arquivamento-730d-toggle',
 };
 
 /** "1.2.0" */

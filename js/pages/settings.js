@@ -8,6 +8,7 @@ import { toast }       from '../components/toast.js';
 import { APP_CONFIG }  from '../config.js';
 import {
   collection, doc, getDoc, setDoc, serverTimestamp,
+  query, where, getDocs, updateDoc, limit,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }          from '../firebase.js';
 import { auditLog }    from '../auth/audit.js';
@@ -80,7 +81,31 @@ export async function renderSettings(container) {
     </div>
 
     ${store.isMaster() ? `
-      <div class="card" style="margin-top:32px;border:1px solid rgba(239,68,68,.4);">
+      <div class="card" style="margin-top:32px;border:1px solid rgba(212,168,67,.4);">
+        <div class="card-header"><div class="card-title" style="color:var(--brand-gold);">🔧 Manutenção</div></div>
+        <div class="card-body">
+          <h4 style="margin:0 0 6px 0;font-size:0.9rem;">Reaplicar regra de auto-arquivamento (730 dias)</h4>
+          <p style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:14px;line-height:1.6;">
+            A regra de auto-arquivamento foi alterada de <strong>30 dias</strong> para <strong>730 dias</strong> (2 anos)
+            na release 3.8.0, alinhando com o horizonte de auditoria de metas anuais e plurianuais.
+            Este botão escaneia todas as tarefas com flag <code>archived: true</code> e <strong>desarquiva</strong>
+            aquelas concluídas há menos de 730 dias — efetivamente reaplicando a regra nova retroativamente
+            às tarefas já arquivadas pela regra antiga. <em>Idempotente — pode rodar múltiplas vezes sem efeito colateral.</em>
+          </p>
+          <div id="unarchive-progress" style="display:none;margin-bottom:12px;">
+            <div id="unarchive-label" style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:6px;">Aguardando...</div>
+            <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
+              <div id="unarchive-bar" style="height:100%;background:var(--brand-gold);width:0%;transition:width .3s;border-radius:3px;"></div>
+            </div>
+          </div>
+          <button class="btn btn-secondary" id="unarchive-recent-btn"
+            style="border-color:var(--brand-gold);color:var(--brand-gold);">
+            🔄 Desarquivar tarefas concluídas há &lt; 730 dias
+          </button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:24px;border:1px solid rgba(239,68,68,.4);">
         <div class="card-header"><div class="card-title" style="color:var(--color-danger);">⚠ Zona de Perigo</div></div>
         <div class="card-body">
           <p style="font-size:0.875rem;color:var(--text-secondary);margin-bottom:14px;line-height:1.6;">
@@ -134,6 +159,77 @@ export async function renderSettings(container) {
     });
   });
   bindSectionEvents(settings);
+
+  // Manutenção — desarquivar tarefas dentro do novo threshold de 730 dias (master-only).
+  // Idempotente: lê archived=true, recalcula completedAt vs cutoff de 730 dias atrás,
+  // desarquiva as que entram no novo escopo. Tarefas que JÁ estão fora dos 730 dias
+  // permanecem arquivadas. Pode ser executado quantas vezes for preciso.
+  document.getElementById('unarchive-recent-btn')?.addEventListener('click', async () => {
+    if (!store.isMaster()) return;
+    if (!confirm('Reaplicar a regra de 730 dias?\n\nTarefas concluídas há menos de 2 anos serão desarquivadas e voltarão a aparecer nas listagens.\n\nEsta operação é segura e idempotente.')) return;
+
+    const btn   = document.getElementById('unarchive-recent-btn');
+    const prog  = document.getElementById('unarchive-progress');
+    const label = document.getElementById('unarchive-label');
+    const bar   = document.getElementById('unarchive-bar');
+    btn.disabled = true;
+    btn.textContent = 'Processando...';
+    prog.style.display = 'block';
+    label.textContent = 'Buscando tarefas arquivadas...';
+
+    try {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 730);
+
+      // Lê em batches para não exceder limite do Firestore (1500 docs em 1 query é OK)
+      const q = query(
+        collection(db, 'tasks'),
+        where('archived', '==', true),
+        limit(2000)
+      );
+      const snap = await getDocs(q);
+      const total = snap.size;
+      label.textContent = `${total} tarefa(s) arquivada(s) encontrada(s). Avaliando...`;
+
+      let unarchived = 0;
+      let kept = 0;
+      let processed = 0;
+
+      for (const d of snap.docs) {
+        const t = d.data();
+        const completedAt = t.completedAt?.toDate?.()
+          || (t.completedAt?.seconds ? new Date(t.completedAt.seconds * 1000) : null);
+
+        // Sem completedAt = não dá pra avaliar; mantém arquivada por segurança
+        if (completedAt && completedAt > cutoff) {
+          await updateDoc(doc(db, 'tasks', d.id), {
+            archived: false,
+            archivedAt: null,
+            unarchivedAt: serverTimestamp(),
+            unarchivedReason: 'rule_change_730d',
+          });
+          unarchived++;
+        } else {
+          kept++;
+        }
+        processed++;
+        const pct = Math.round((processed / total) * 100);
+        bar.style.width = `${pct}%`;
+        label.textContent = `Processando ${processed}/${total} — ${unarchived} desarquivadas, ${kept} mantidas`;
+      }
+
+      label.textContent = `✓ Concluído. ${unarchived} desarquivadas (< 730d), ${kept} mantidas (> 730d).`;
+      bar.style.background = 'var(--color-success)';
+      toast.success(`${unarchived} tarefa(s) desarquivada(s).`);
+      try { auditLog('rule_reapply_unarchive', { unarchived, kept, threshold: 730 }); } catch (_) {}
+    } catch (e) {
+      label.textContent = `✗ Erro: ${e.message}`;
+      toast.error('Falha ao desarquivar: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔄 Desarquivar tarefas concluídas há < 730 dias';
+    }
+  });
 
   // Danger zone — deletar TODAS as tarefas (master-only)
   document.getElementById('delete-all-tasks-btn')?.addEventListener('click', async () => {

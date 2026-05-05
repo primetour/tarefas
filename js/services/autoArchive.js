@@ -1,6 +1,18 @@
 /**
  * PRIMETOUR — Auto-Archive Service
- * Arquiva automaticamente tarefas concluídas há mais de 30 dias
+ * Arquiva automaticamente tarefas concluídas há mais de 730 dias (2 anos).
+ *
+ * Por que 730 e não 30 (anterior)?
+ *   Metas duram até 12 meses (anuais) — algumas multianuais (rebranding,
+ *   transformações). Threshold de 30 dias retirava da UI tarefas que ainda
+ *   estavam dentro do escopo de metas em andamento, impossibilitando o
+ *   drill-down de "quais tarefas contribuíram pra minha meta de 2025".
+ *   730 dias = 2 ciclos anuais completos + buffer pra metas plurianuais.
+ *   Tarefas só arquivam quando estão claramente fora de qualquer escopo
+ *   produtivo de auditoria de metas.
+ *
+ *   A página #tasks tem toggle "Mostrar arquivadas" (3.8.0+) para auditoria
+ *   das que excedem 730 dias quando necessário.
  */
 import { collection, getDocs, updateDoc, doc, query, where, limit, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -9,7 +21,7 @@ import { store } from '../store.js';
 
 const ARCHIVE_KEY = 'primetour-archive-last-check';
 const ARCHIVE_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-const ARCHIVE_AFTER_DAYS = 30;
+const ARCHIVE_AFTER_DAYS = 730; // 2 anos — alinha com horizonte de metas
 
 export async function runAutoArchive() {
   // Only run for admins/managers

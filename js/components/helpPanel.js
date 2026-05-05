@@ -72,7 +72,7 @@ const HELP_CATEGORIES = [
       },
       {
         q: 'O que acontece quando uma tarefa é concluída?',
-        a: 'Ao marcar como concluída, se houver email de cliente vinculado, o sistema pode enviar automaticamente uma pesquisa CSAT. Tarefas concluídas há mais de 30 dias são auto-arquivadas.',
+        a: 'Ao marcar como concluída, se houver email de cliente vinculado, o sistema pode enviar automaticamente uma pesquisa CSAT. Tarefas concluídas há mais de 730 dias (2 anos) são auto-arquivadas — esse horizonte protege o escopo das metas anuais e plurianuais.',
       },
       {
         q: 'O que é o nudge de tarefas paradas?',
@@ -464,7 +464,7 @@ const HELP_CATEGORIES = [
       },
       {
         q: 'Como funciona o auto-arquivamento?',
-        a: 'Tarefas concluídas há mais de 30 dias são automaticamente marcadas como arquivadas. Elas deixam de aparecer nas listagens e kanban, mas podem ser encontradas com filtros específicos.',
+        a: 'Tarefas concluídas há mais de 730 dias (2 anos) são automaticamente marcadas como arquivadas. Elas deixam de aparecer nas listagens e kanban por padrão, mas podem ser visualizadas marcando o toggle "📦 Mostrar arquivadas" no header de filtros da página #tarefas (ou via URL com `?archived=1`). O horizonte de 2 anos foi escolhido para proteger o escopo de auditoria de metas anuais e plurianuais — tarefas só arquivam quando estão claramente fora de qualquer ciclo produtivo.',
       },
       {
         q: 'O que é o resumo diário?',
