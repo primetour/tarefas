@@ -2607,19 +2607,40 @@ function openTypePickerPopover(anchor, currentId, onSelect) {
   document.querySelectorAll('.type-picker-popover').forEach(p => p.remove());
 
   const types = store.get('taskTypes') || [];
-  // Agrupa por sector. Tipos sem sector vão pra "Outros".
+  // Squads do sistema (internamente chamados de "nucleos" no schema —
+  // referenciados em t.nucleos[] de cada tipo). UI mostra "Squad" pra
+  // alinhar com a nomenclatura do produto.
+  const squads = store.get('nucleos') || [];
+  const squadById = new Map(squads.map(s => [s.id, s]));
+
+  // Agrupa: cada squad → tipos cuja `nucleos[]` inclui o squad.id.
+  // Tipo em N squads aparece N vezes (uma por squad), conforme pedido.
+  // Tipos sem nucleos[] vão pra "Geral" (visíveis a todos).
   const groups = new Map();
+  squads.forEach(s => groups.set(s.id, { squad: s, items: [] }));
+  const general = [];
   types.forEach(t => {
-    const key = t.sector || 'Outros';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(t);
+    const nucs = (t.nucleos || []).filter(Boolean);
+    if (!nucs.length) {
+      general.push(t);
+      return;
+    }
+    nucs.forEach(squadId => {
+      // Aceita id direto OU nome (legacy). Resolve.
+      const sq = squadById.get(squadId) || squads.find(s => s.name === squadId);
+      const key = sq?.id || squadId; // fallback caso seja id desconhecido
+      if (!groups.has(key)) groups.set(key, { squad: sq || { id: key, name: squadId, color: '#6B7280' }, items: [] });
+      groups.get(key).items.push(t);
+    });
   });
-  // Ordena setores alfabeticamente, mantendo "Outros" no fim
-  const groupKeys = [...groups.keys()].sort((a, b) => {
-    if (a === 'Outros') return 1;
-    if (b === 'Outros') return -1;
-    return a.localeCompare(b, 'pt-BR');
-  });
+
+  // Ordena squads alfabeticamente; "Geral" entra como grupo virtual no fim
+  const orderedSquads = [...groups.values()]
+    .filter(g => g.items.length > 0)
+    .sort((a, b) => (a.squad.name || '').localeCompare(b.squad.name || '', 'pt-BR'));
+  if (general.length) {
+    orderedSquads.push({ squad: { id: '__general__', name: 'Geral', color: '#6B7280', icon: '◈' }, items: general });
+  }
 
   const pop = document.createElement('div');
   pop.className = 'type-picker-popover';
@@ -2657,44 +2678,63 @@ function openTypePickerPopover(anchor, currentId, onSelect) {
         <span style="flex:1;font-weight:${currentId === '' ? '600' : '400'};">— Padrão (sem tipo) —</span>
         ${currentId === '' ? '<span style="color:var(--brand-gold);">✓</span>' : ''}
       </button>
-      ${groupKeys.map(sector => `
-        <div class="type-picker-group" data-sector="${esc(sector)}">
-          <div style="padding:8px 14px 4px;font-size:0.6875rem;font-weight:600;
-            color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;
-            border-top:1px solid var(--border-subtle);margin-top:2px;">
-            ${esc(sector)}
-          </div>
-          ${groups.get(sector).map(t => {
-            const isSelected = t.id === currentId;
-            const variationCount = (t.variations || []).length;
-            const searchText = `${t.name} ${sector}`.toLowerCase();
-            return `<button type="button" class="type-picker-item"
-              data-id="${esc(t.id)}"
-              data-search="${esc(searchText)}"
-              style="width:100%;display:flex;align-items:center;gap:10px;
-              padding:8px 14px;background:${isSelected?'rgba(212,168,67,0.06)':'transparent'};
-              border:none;cursor:pointer;font-family:inherit;font-size:0.8125rem;text-align:left;
-              color:var(--text-primary);transition:background 0.1s;">
-              <span style="width:28px;height:28px;border-radius:6px;
-                background:${(t.color || '#6B7280')}20;color:${t.color || '#6B7280'};
-                display:flex;align-items:center;justify-content:center;font-size:0.875rem;
-                flex-shrink:0;">${esc(t.icon || '◈')}</span>
-              <span style="flex:1;min-width:0;">
-                <span style="display:block;font-weight:${isSelected?'600':'500'};
-                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                  ${esc(t.name)}
-                </span>
-                ${variationCount > 0 ? `
-                  <span style="font-size:0.6875rem;color:var(--text-muted);">
-                    ${variationCount} variaç${variationCount===1?'ão':'ões'}
+      ${orderedSquads.map((g, gIdx) => {
+        const sq = g.squad;
+        const sqColor = sq.color || '#6366F1';
+        // Cabeçalho clicável (acordeão). Default: todos expandidos. Click
+        // toggle no atributo data-expanded e na visibilidade do conteúdo.
+        return `
+        <div class="type-picker-group" data-squad="${esc(sq.id)}" data-expanded="1">
+          <button type="button" class="type-picker-group-header"
+            style="width:100%;display:flex;align-items:center;gap:8px;
+            padding:10px 14px 6px;background:transparent;border:none;
+            border-top:1px solid var(--border-subtle);
+            cursor:pointer;font-family:inherit;text-align:left;
+            color:var(--text-secondary);${gIdx === 0 ? 'border-top:none;' : ''}">
+            <span class="type-picker-group-chevron"
+              style="font-size:0.625rem;color:var(--text-muted);transition:transform 0.15s;">▾</span>
+            <span style="width:8px;height:8px;border-radius:50%;background:${sqColor};flex-shrink:0;"></span>
+            <span style="font-size:0.6875rem;font-weight:600;text-transform:uppercase;
+              letter-spacing:0.05em;flex:1;">
+              ${esc(sq.icon || '')} ${esc(sq.name || 'Squad')}
+            </span>
+            <span style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;text-transform:none;">
+              ${g.items.length}
+            </span>
+          </button>
+          <div class="type-picker-group-body">
+            ${g.items.map(t => {
+              const isSelected = t.id === currentId;
+              const variationCount = (t.variations || []).length;
+              const searchText = `${t.name} ${sq.name || ''}`.toLowerCase();
+              return `<button type="button" class="type-picker-item"
+                data-id="${esc(t.id)}"
+                data-search="${esc(searchText)}"
+                style="width:100%;display:flex;align-items:center;gap:10px;
+                padding:8px 14px 8px 32px;background:${isSelected?'rgba(212,168,67,0.06)':'transparent'};
+                border:none;cursor:pointer;font-family:inherit;font-size:0.8125rem;text-align:left;
+                color:var(--text-primary);transition:background 0.1s;">
+                <span style="width:28px;height:28px;border-radius:6px;
+                  background:${(t.color || '#6B7280')}20;color:${t.color || '#6B7280'};
+                  display:flex;align-items:center;justify-content:center;font-size:0.875rem;
+                  flex-shrink:0;">${esc(t.icon || '◈')}</span>
+                <span style="flex:1;min-width:0;">
+                  <span style="display:block;font-weight:${isSelected?'600':'500'};
+                    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                    ${esc(t.name)}
                   </span>
-                ` : ''}
-              </span>
-              ${isSelected ? '<span style="color:var(--brand-gold);font-size:0.875rem;">✓</span>' : ''}
-            </button>`;
-          }).join('')}
-        </div>
-      `).join('')}
+                  ${variationCount > 0 ? `
+                    <span style="font-size:0.6875rem;color:var(--text-muted);">
+                      ${variationCount} variaç${variationCount===1?'ão':'ões'}
+                    </span>
+                  ` : ''}
+                </span>
+                ${isSelected ? '<span style="color:var(--brand-gold);font-size:0.875rem;">✓</span>' : ''}
+              </button>`;
+            }).join('')}
+          </div>
+        </div>`;
+      }).join('')}
     </div>
   `;
   document.body.appendChild(pop);
@@ -2733,7 +2773,22 @@ function openTypePickerPopover(anchor, currentId, onSelect) {
     });
   });
 
-  // Busca: filtra items pelo texto
+  // Acordeão por squad: click no header expande/recolhe
+  pop.querySelectorAll('.type-picker-group-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const group = header.closest('.type-picker-group');
+      const expanded = group.dataset.expanded === '1';
+      group.dataset.expanded = expanded ? '0' : '1';
+      const body = group.querySelector('.type-picker-group-body');
+      const chev = header.querySelector('.type-picker-group-chevron');
+      if (body) body.style.display = expanded ? 'none' : '';
+      if (chev) chev.style.transform = expanded ? 'rotate(-90deg)' : 'rotate(0deg)';
+    });
+  });
+
+  // Busca: filtra items pelo texto. Quando há query, força grupos a
+  // ficarem expandidos pra mostrar os matches.
   const search = pop.querySelector('.type-picker-search');
   search?.addEventListener('input', () => {
     const q = (search.value || '').toLowerCase().trim();
@@ -2745,10 +2800,18 @@ function openTypePickerPopover(anchor, currentId, onSelect) {
       }
       item.style.display = item.dataset.search.includes(q) ? '' : 'none';
     });
-    // Esconde grupos vazios
+    // Esconde grupos vazios + força expansão dos grupos com match
     pop.querySelectorAll('.type-picker-group').forEach(g => {
       const visible = [...g.querySelectorAll('.type-picker-item')].some(i => i.style.display !== 'none');
       g.style.display = visible ? '' : 'none';
+      if (q && visible) {
+        // Força expansão pra busca evidenciar matches
+        g.dataset.expanded = '1';
+        const body = g.querySelector('.type-picker-group-body');
+        const chev = g.querySelector('.type-picker-group-chevron');
+        if (body) body.style.display = '';
+        if (chev) chev.style.transform = 'rotate(0deg)';
+      }
     });
   });
   setTimeout(() => search?.focus(), 30);

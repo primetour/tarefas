@@ -408,9 +408,11 @@ function openTypeModal(type = null) {
         </div>
       </div>
 
-      <!-- Núcleos — appears after sector is selected -->
+      <!-- Squads (núcleos) — appears after sector is selected.
+           Schema interno usa `nucleos[]` por compat; UI mostra "Squad"
+           pra alinhar com a nomenclatura do produto. -->
       <div class="form-group" id="tt-nucleos-group" style="display:${type?.sector?'block':'none'};">
-        <label class="form-label">Núcleo(s) de produção</label>
+        <label class="form-label">Squad(s) de produção</label>
         <div id="tt-nucleos-chips" style="display:flex;flex-wrap:wrap;gap:6px;">
           ${(type?.sector
             ? nucleos.filter(n => !n.sector || n.sector === type.sector)
@@ -581,7 +583,7 @@ function openTypeModal(type = null) {
         const { fetchNucleos } = await import('../services/sectors.js');
         const sectorNucleos = await fetchNucleos({ sector });
         if (!sectorNucleos.length) {
-          chipsEl.innerHTML = `<span style="font-size:0.8125rem;color:var(--text-muted);">Nenhum núcleo cadastrado para "${sector}". Adicione em Setores e Núcleos.</span>`;
+          chipsEl.innerHTML = `<span style="font-size:0.8125rem;color:var(--text-muted);">Nenhum squad cadastrado para "${sector}". Adicione em Setores e Squads.</span>`;
           return;
         }
         chipsEl.innerHTML = sectorNucleos.map(n => {
@@ -606,7 +608,7 @@ function openTypeModal(type = null) {
           });
         });
       } catch(e) {
-        chipsEl.innerHTML = `<span style="font-size:0.8125rem;color:var(--color-danger);">Erro ao carregar núcleos.</span>`;
+        chipsEl.innerHTML = `<span style="font-size:0.8125rem;color:var(--color-danger);">Erro ao carregar squads.</span>`;
       }
     });
 
