@@ -42,7 +42,7 @@ export async function renderDashboard(container) {
       </div>
     </div>
 
-    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px;" id="dash-stats">
+    <div id="dash-stats">
       ${[0,1,2,3].map(()=>'<div class="stat-card skeleton" style="height:100px;"></div>').join('')}
     </div>
 
@@ -158,26 +158,36 @@ export async function renderDashboard(container) {
     //   - "Atrasadas minhas" novo (vinculado ao status virtual 3.5.0)
     //   - Filtro `archived` aplicado consistentemente
     const teamCardsVisible = visibleTasks.length > myTasks.length;
-    const sectionLabel = (text) => `<div style="grid-column:1/-1;
-      font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-      letter-spacing:.08em;color:var(--text-muted);margin:8px 0 -4px;
-      padding-left:2px;">${text}</div>`;
+    // Cada seção tem grid próprio com auto-fit (cards expandem pra preencher
+    // a largura). Antes (3.6.0): labels com grid-column:1/-1 misturado com
+    // cards no mesmo grid causava "buraco" branco quando havia menos cards
+    // que colunas implícitas (ex: 3 cards num grid de 6 col = 3 col vazias
+    // que auto-fit não colapsava por estarem no fim da row do mesmo grid).
+    // Fix 3.6.1: container vira flex-column + cada seção é seu próprio
+    // grid auto-fit que distribui o espaço entre os cards que TEM.
+    const sectionLabel = (text) => `<div class="dash-stats-section-label">${text}</div>`;
+    const cardsRow = (cards) => `<div class="dash-stats-row">${cards}</div>`;
+
+    const myCards = [
+      statCard('Minhas Abertas', myActive.length, '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)', '#tasks?assignee=me&open=1'),
+      statCard('Em Andamento', myInProgress.length, '▶', 'rgba(56,189,248,0.12)', 'var(--role-manager)', '#tasks?assignee=me&status=in_progress'),
+      myOverdue.length ? statCard('⚠ Atrasadas', myOverdue.length, '⚠', 'rgba(239,68,68,0.10)', '#EF4444', '#tasks?assignee=me&status=overdue') : '',
+      statCard('Concluí Hoje', myDoneToday.length, '✓', 'var(--color-success-bg)', 'var(--color-success)', '#tasks?assignee=me&completedToday=1'),
+      myObserving.length ? statCard('Observando', myObserving.length, '🔭', 'rgba(56,189,248,0.10)', 'var(--color-info,#38BDF8)', '#tasks?observer=me') : '',
+      myPartnerships.length ? statCard('Parcerias ativas', myPartnerships.length, '🤝', 'rgba(212,168,67,0.10)', 'var(--brand-gold)', '#tasks?assignee=me&partnership=1') : '',
+    ].filter(Boolean).join('');
+
+    const teamCards = teamCardsVisible ? [
+      statCard('Equipe Em Andamento', teamInProgress.length, '▶', 'rgba(56,189,248,0.06)', 'var(--text-secondary)', '#tasks?status=in_progress'),
+      teamOverdue.length ? statCard('Equipe Atrasadas', teamOverdue.length, '⚠', 'rgba(239,68,68,0.06)', 'var(--text-secondary)', '#tasks?status=overdue') : '',
+      statCard('Equipe Concluiu Hoje', teamDoneToday.length, '✓', 'var(--color-success-bg)', 'var(--text-secondary)', '#tasks?completedToday=1'),
+    ].filter(Boolean).join('') : '';
 
     $stats.innerHTML = `
       ${sectionLabel('🎯 Meu desempenho')}
-      ${statCard('Minhas Abertas', myActive.length, '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)', '#tasks?assignee=me&open=1')}
-      ${statCard('Em Andamento', myInProgress.length, '▶', 'rgba(56,189,248,0.12)', 'var(--role-manager)', '#tasks?assignee=me&status=in_progress')}
-      ${myOverdue.length ? statCard('⚠ Atrasadas', myOverdue.length, '⚠', 'rgba(239,68,68,0.10)', '#EF4444', '#tasks?assignee=me&status=overdue') : ''}
-      ${statCard('Concluí Hoje', myDoneToday.length, '✓', 'var(--color-success-bg)', 'var(--color-success)', '#tasks?assignee=me&completedToday=1')}
-      ${myObserving.length ? statCard('Observando', myObserving.length, '🔭', 'rgba(56,189,248,0.10)', 'var(--color-info,#38BDF8)', '#tasks?observer=me') : ''}
-      ${myPartnerships.length ? statCard('Parcerias ativas', myPartnerships.length, '🤝', 'rgba(212,168,67,0.10)', 'var(--brand-gold)', '#tasks?assignee=me&partnership=1') : ''}
-
-      ${teamCardsVisible ? `
-        ${sectionLabel(sectorSel ? `🏢 Setor ${sectorSel}` : '🏢 Equipe / Setor')}
-        ${statCard('Equipe Em Andamento', teamInProgress.length, '▶', 'rgba(56,189,248,0.06)', 'var(--text-secondary)', '#tasks?status=in_progress')}
-        ${teamOverdue.length ? statCard('Equipe Atrasadas', teamOverdue.length, '⚠', 'rgba(239,68,68,0.06)', 'var(--text-secondary)', '#tasks?status=overdue') : ''}
-        ${statCard('Equipe Concluiu Hoje', teamDoneToday.length, '✓', 'var(--color-success-bg)', 'var(--text-secondary)', '#tasks?completedToday=1')}
-      ` : ''}
+      ${cardsRow(myCards)}
+      ${teamCards ? sectionLabel(sectorSel ? `🏢 Setor ${sectorSel}` : '🏢 Equipe / Setor') : ''}
+      ${teamCards ? cardsRow(teamCards) : ''}
     `;
 
     // overdue mantido por compat — myOverdue já calculado acima

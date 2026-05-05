@@ -11,11 +11,40 @@
 }
 
 /* ─── DASHBOARD LAYOUT ────────────────────────────────────── */
+/* 12 colunas legacy — usado em /dashboards (analytics) que tem widgets
+   com col-span-3, col-span-6, col-span-12 explícitos. */
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   gap: 16px;
   margin-bottom: 24px;
+}
+
+/* dash-stats (Meu Painel 3.6.1+) — flex column de seções; cada seção é
+   um grid auto-fit que distribui o espaço entre seus cards.
+   Antes (3.6.0): grid único misturava labels (grid-column:1/-1) com
+   cards, causando "buraco" branco quando havia 3 cards num grid auto-fit
+   que estimava 6 colunas — auto-fit não colapsava as 3 vazias porque
+   estavam no fim da mesma row dos cards. */
+#dash-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.dash-stats-section-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-muted);
+  margin: 8px 0 0;
+  padding-left: 2px;
+}
+.dash-stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
 }
 
 .dash-widget {
