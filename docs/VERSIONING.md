@@ -37,7 +37,15 @@ Como versão é definida, propagada e exibida no Gestor PRIMETOUR.
 | Funcionalidade nova compatível com versão anterior | **MINOR** |
 | Bugfix sem mudar comportamento esperado | **PATCH** |
 | Polish visual / refactor interno | **PATCH** |
-| Cada deploy | atualiza **BUILD** mesmo se `MAJOR.MINOR.PATCH` não mudou |
+| Cada deploy (push pra `main`) | atualiza **BUILD** mesmo se `MAJOR.MINOR.PATCH` não mudou |
+
+> **Regra dura: todo push pra `main` bumpa pelo menos o BUILD.**
+> GitHub Pages deploya automaticamente em cada push, então cada push é um deploy
+> em produção. Não pode haver desalinhamento entre código rodando e versão
+> declarada — auditoria, telemetria e rollback dependem disso.
+>
+> Use `./scripts/release.sh` para automatizar o bump (atualiza `version.js` +
+> `index.html` + adiciona placeholder no `CHANGELOG.md` de uma vez). Ver § "Como bumpar" abaixo.
 
 ### Regra prática
 Se um usuário com a versão antiga abrir o sistema e algo deixar de funcionar como esperava, é **MAJOR**. Se ganha algo novo e o que tinha continua igual, é **MINOR**. Resto é **PATCH**.
@@ -68,6 +76,33 @@ export const LABEL  = `v${SHORT}`;
 ---
 
 ## Como bumpar
+
+### Forma rápida (recomendada)
+
+```bash
+./scripts/release.sh patch fix-icones-projeto
+./scripts/release.sh minor pickers-multiinstance
+./scripts/release.sh major schema-multitenancy
+./scripts/release.sh build hotfix-cache  # mantém X.Y.Z, só atualiza BUILD
+```
+
+O script faz os 3 updates atomicamente:
+- `js/version.js` → bump major/minor/patch + novo build slug
+- `index.html` → atualiza `?v=...` no script tag (cache-bust alinhado)
+- `CHANGELOG.md` → adiciona seção placeholder com a nova versão (você edita o conteúdo)
+
+Depois você revisa, edita o CHANGELOG, commita e pusha:
+
+```bash
+git diff CHANGELOG.md             # edita a seção nova
+git add -A
+git commit -m "chore(release): X.Y.Z+slug"
+git push origin main              # deploy automático
+```
+
+### Forma manual (sem script)
+
+Se precisar fazer manualmente:
 
 1. **Editar `js/version.js`**
    ```js

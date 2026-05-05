@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 3,
-  minor: 2,
-  patch: 2,
-  build: '20260505-pci-scope',
+  minor: 3,
+  patch: 0,
+  build: '20260505-fix-icones-e-release-script',
 };
 
 /** "1.2.0" */

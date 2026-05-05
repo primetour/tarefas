@@ -19,6 +19,14 @@ import { getTaskType } from '../services/taskTypes.js';
 import { resolveUserName, resolveUserSync } from '../services/userResolver.js';
 /* getSubtaskTemplate: lazy-loaded (may not exist in older deployments) */
 let getSubtaskTemplate = () => [];
+
+/* Cache local de projects do modal corrente — usado em lookupProject().
+   `store.set('projects', …)` nunca é chamado em lugar nenhum, então
+   store.get('projects') retorna undefined e o fallback (que tinha
+   regex quebrada pra emoji multi-byte) acabava sendo o caminho default,
+   causando perda de ícone do projeto no picker. Mantemos a referência
+   ao array passado pra buildHTML pra que o lookup seja barato. */
+let _currentProjects = [];
 let _ttLoaded = false;
 async function _loadSubtaskTemplate() {
   if (_ttLoaded) return;
@@ -1112,6 +1120,8 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 }
 
 function buildHTML(task, users, projects, tags, assignees, observers, isEdit, taskType = null, taskSector = null, absences = []) {
+  // Cache pra lookupProject() — ver explicação no topo do arquivo.
+  _currentProjects = Array.isArray(projects) ? projects : [];
   const opt = (arr, valKey, labelKey, cur) => arr.map(x =>
     `<option value="${x[valKey]}" ${cur===x[valKey]?'selected':''}>${esc(x[labelKey])}</option>`
   ).join('');
@@ -1808,21 +1818,29 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
     findSelected: (id) => id ? { id, label: id } : null,
   });
 
-  // Projeto — usa as <option>s do select escondido como source of truth
-  // (foram populadas em buildHTML com base em projects + fallback). Pra
-  // cada id, lookup em store pra recuperar icon/color quando disponível.
+  // Projeto — lookup primário no cache _currentProjects (passado pra
+  // buildHTML). Fallback lê do <option> do select escondido (caso de
+  // projeto vinculado mas fora do conjunto carregado). Fallback usa
+  // splitEmoji-style (codePointAt > 127) pra suportar emojis multi-byte
+  // como "🚀" (a regex /^(\S)\s/ anterior capturava só metade do
+  // surrogate pair, gerando ícone quebrado).
   const lookupProject = (id) => {
     if (!id) return null;
-    const allProjs = store.get('projects') || [];
-    const p = allProjs.find(x => x.id === id);
+    const p = _currentProjects.find(x => x?.id === id);
     if (p) return { id: p.id, label: p.name, icon: p.icon || '◈', color: p.color };
-    // Fallback: lê do <option> do select escondido (ex: projeto fora do
-    // workspace ativo mas anexo à task atual)
+
     const sel = document.getElementById('tm-project');
     const opt = sel?.querySelector(`option[value="${id}"]`);
     if (!opt) return null;
     const txt = opt.textContent.trim();
-    return { id, label: txt.replace(/^[^\s]+\s+/, '') || txt, icon: txt.match(/^(\S)\s/)?.[1] || '◈' };
+    // Extrai emoji do início se houver (mesma lógica de portal/splitEmoji)
+    const fc = txt[0];
+    const isEmoji = fc && fc.codePointAt(0) > 127;
+    if (isEmoji) {
+      const parts = txt.split(/\s+/);
+      return { id, label: parts.slice(1).join(' ').trim() || txt, icon: parts[0] };
+    }
+    return { id, label: txt, icon: '◈' };
   };
   bindOptionPicker({
     btnId:    'tm-project-btn',
