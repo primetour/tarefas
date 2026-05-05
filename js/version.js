@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 0,
+  minor: 1,
   patch: 0,
-  build: '20260505-dev-hours-foundation',
+  build: '20260505-backfill-dev-hours',
 };
 
 /** "1.2.0" */

@@ -17,6 +17,43 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.1.0+20260505-backfill-dev-hours] — 2026-05-05
+
+Release **MINOR** — preenche os dados históricos do sistema de Horas de Desenvolvimento. Sem mudança no schema ou na UI da 4.0.0; apenas ferramenta de seed (master-only) que popula a collection `dev_hours` com 19 entradas pré-calibradas.
+
+### Added
+- **`js/services/devHoursSeed.js`** — script de backfill com dados pré-calibrados:
+  - **4 fases retroativas** agregadas (1.x/2.x — pré-versionamento formal):
+    1. Setup inicial + arquitetura base (≈150 commits, 60h, R$ 9.000)
+    2. Hardening de segurança 5 sprints (≈400 commits, 97.5h, R$ 14.625) — multiplicadores +25% +30%
+    3. Refactor multi-tenancy + multi-setor (≈300 commits, 50h, R$ 7.500) — `migration` + `pure_refactor` se cancelam
+    4. Polimento + preparação 3.0.0 (≈250 commits, 54h, R$ 8.100) — `integration` +20%
+  - **15 releases granulares** (3.0.0 → 4.0.0): cada release com seu próprio bucket, multiplicadores e perfil de distribuição categórica baseado no tipo (feature/bugfix/refactor/docs).
+  - **Idempotência completa**: usa `findByVersion()` pra releases e busca por `phaseLabel` pra fases. Pode rodar quantas vezes for necessário sem duplicar.
+  - Todas as entradas entram como **`status: 'draft'`** — nada vai pros totalizadores principais até você clicar ✓ Aprovar manualmente em `#dev-hours`.
+
+- **Botão "⏱ Rodar backfill de horas"** em Configurações → Manutenção (master-only). Progress bar + toast no fim. Loga `auditLog('devhours_seed_backfill', {created, skipped, errors, total})`.
+
+### Estimativa total prevista do backfill
+- **Fases retroativas**: 257h ≈ R$ 38.550
+- **Releases granulares**: 66.3h ≈ R$ 9.945
+- **TOTAL**: **323.3h ≈ R$ 48.495**
+
+Esses números são **ordem de grandeza**. Cada entrada entra em rascunho com confiança calibrada (`high` para releases granulares onde tenho transcript, `low` para fases retroativas estimadas via volume de commits + duração calendar). Você pode editar cada entrada manualmente, ajustar bucket, multiplicadores, distribuição categórica, ou rejeitar antes de aprovar.
+
+### Por que ~323h e não ~636h (estimativa anterior)?
+A primeira projeção (~636h) ancorou em "0.5h/commit" linear sem considerar que **commits podem ser triviais** (bump, rename, fix de typo). Recalibrei pra 50–60h por fase agregada, que reflete melhor a complexidade real (uma fase de hardening não é 0.5h × 400 commits = 200h; é mais próximo de 60h porque muitos commits foram pequenos ajustes iterativos). Você pode aumentar o bucket pra `mega` com basePoint maior se entender que está subestimado — basta editar a entrada e clicar ↻ recalc.
+
+### Verificação
+1. Configurações → Manutenção → "⏱ Rodar backfill de horas" → confirma → aguarda 19 progressos.
+2. Vai pra `#dev-hours` → vê 19 entradas em rascunho.
+3. Cards inicialmente zerados (filtro default = "Só aprovadas"). Mude pra "Todas" pra ver totalizador 323.3h.
+4. Click ⓘ em qualquer entrada → modal "Como cheguei" → metodologia exposta.
+5. Aprovar uma a uma OU em lote (futuro: botão "Aprovar tudo").
+
+---
+
 ## [4.0.0+20260505-dev-hours-foundation] — 2026-05-05
 
 Release **MAJOR** — abre a 4.x. Introduz o módulo **Horas de Desenvolvimento** (`#dev-hours`), um sistema de contabilização de horas e custo de desenvolvimento que serve simultaneamente para auditoria interna, transparência com cliente e fundamentação de proposta comercial. Esta é a **fundação (4.0.0)** — backfill histórico (4.1.0), link público (4.2.0) e PDF export (4.3.0) vêm em sequência.
