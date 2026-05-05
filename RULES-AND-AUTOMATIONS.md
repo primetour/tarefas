@@ -348,6 +348,21 @@ de comprometimento.
 
 ### 10.1 Tarefas
 
+- **Definição canônica de "minhas tarefas"** (3.6.0+):
+  - **Estrita** (`?assignee=me`, KPIs do Meu Painel "Meu desempenho"):
+    `t.assignees.includes(uid)`. Mesmo critério em painel e em filtro de
+    `#tasks` — garante que o número do KPI bate com a lista após click.
+  - **Observada** (`?observer=me`, card "Observando"): `t.observers.includes(uid)
+    && !t.assignees.includes(uid)`. Excluímos quem é assignee + observer
+    pra não inflar o card "Observando" com tarefas que já contam em "Minhas".
+  - **Filtro `archived`**: TODAS as views filtram `!t.archived` por padrão.
+    A página `#tasks` faz isso em `applyFilters()` linha 755; o Meu Painel
+    faz em `baseTasks` na 3.6.0+. Antes da 3.6.0 o painel não filtrava,
+    causando divergência (cards mostravam X, lista mostrava X-archived).
+  - **Tarefas "da equipe/setor"**: `visibleTasks` = todas tarefas que o user
+    enxerga conforme RBAC (sector visibility + squad membership). Mostradas
+    em seção "Equipe / Setor" do Meu Painel separada das "Minhas" — evita
+    confusão entre KPI pessoal e capacidade do time.
 - **Status VIRTUAL "⚠ Atrasada"** (3.5.0+): além dos 6 status persistidos
   (`not_started`, `in_progress`, `review`, `rework`, `done`, `cancelled`), há
   um **status virtual derivado**: tarefa é considerada *atrasada* quando

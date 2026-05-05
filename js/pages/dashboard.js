@@ -86,44 +86,102 @@ export async function renderDashboard(container) {
     // Guard: user navigated away during async fetch — container no longer in DOM
     if (!document.getElementById('dash-stats')) return;
 
-    // If master selected a specific sector in the filter, apply it
+    // ── Filtros base ────────────────────────────────────────
+    // CRÍTICO: filtrar archived em TODOS os cálculos. A página #tasks
+    // filtra archived em applyFilters(); se o painel não fizer o mesmo,
+    // os números do card divergem dos da lista (bug 3.5.x reportado).
     const sectorSel = document.getElementById('dash-sector-filter')?.value || null;
-    const visibleTasks = sectorSel ? tasks.filter(t => !t.sector || t.sector === sectorSel) : tasks;
+    const baseTasks = tasks.filter(t => !t.archived);
+    const visibleTasks = sectorSel ? baseTasks.filter(t => !t.sector || t.sector === sectorSel) : baseTasks;
 
+    // ── "MEU" — sempre estritamente assignees.includes(uid) ──
+    // Definição canônica: ver RULES-AND-AUTOMATIONS.md § 10.1 ("Minhas tarefas")
+    // Mesmo critério que ?assignee=me usa em tasks.js — garante que click
+    // no card leva pra lista com EXATAMENTE o mesmo número de tarefas.
     const myTasks       = visibleTasks.filter(t => t.assignees?.includes(uid));
-    const myObserving   = visibleTasks.filter(t => (t.observers||[]).includes(uid) && !(t.assignees||[]).includes(uid));
     const myActive      = myTasks.filter(t => !['done','cancelled'].includes(t.status));
+    const myInProgress  = myTasks.filter(t => t.status === 'in_progress');
+    const myOverdue     = myActive.filter(t => {
+      if (!t.dueDate) return false;
+      const due = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+      const today = new Date(); today.setHours(0,0,0,0);
+      return due < today;
+    });
     const myPartnerships = myActive.filter(t => t.isPartnership);
-    const openTasks     = visibleTasks.filter(t => !['done','cancelled'].includes(t.status));
-    const inProgress    = visibleTasks.filter(t => t.status === 'in_progress');
-    const now           = new Date();
-    const doneToday     = tasks.filter(t => {
-      if (!t.completedAt) return false;
+    // "Concluí hoje" = status done + completedAt em hoje, e fui assignee.
+    // Antes: contava TODAS concluídas hoje no sistema (bug 3.5.x).
+    const now = new Date();
+    const todayStr = now.toDateString();
+    const myDoneToday = myTasks.filter(t => {
+      if (t.status !== 'done' || !t.completedAt) return false;
       const d = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
-      return d.toDateString() === now.toDateString();
+      return d.toDateString() === todayStr;
+    });
+
+    // ── "Observando" — observer mas NÃO assignee ───────────
+    const myObserving = visibleTasks.filter(t =>
+      (t.observers||[]).includes(uid) && !(t.assignees||[]).includes(uid)
+    );
+
+    // ── "EQUIPE / SETOR" — todas visíveis (não-arquivadas) ──
+    // Mostradas em seção separada pra dar visão de capacidade do time.
+    // Coordenador/manager/admin tem skin nesse número; analista comum vê,
+    // mas o card é informativo, não vinculado a uma ação dele.
+    const teamActive     = visibleTasks.filter(t => !['done','cancelled'].includes(t.status));
+    const teamInProgress = visibleTasks.filter(t => t.status === 'in_progress');
+    const teamOverdue    = teamActive.filter(t => {
+      if (!t.dueDate) return false;
+      const due = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+      const today = new Date(); today.setHours(0,0,0,0);
+      return due < today;
+    });
+    const teamDoneToday = visibleTasks.filter(t => {
+      if (t.status !== 'done' || !t.completedAt) return false;
+      const d = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
+      return d.toDateString() === todayStr;
     });
 
     // ── Stats ─────────────────────────────────────────────
     const $stats = document.getElementById('dash-stats');
     if (!$stats) return; // user navigated away
-    // Os hrefs passam query params pra filtrar a página de destino —
-    // ver tasks.js que lê assignee/observer/status/partnership da URL.
-    // Antes (3.4.x): todos apontavam pra #tasks/#kanban sem filtro, abrindo
-    // a lista completa — UX de "vai pra Tarefas e perde-se na lista".
+    // Painel reorganizado em 3.6.0 com 2 seções:
+    //   1. "Meu desempenho" — KPIs estritos (assignee=me) onde o número
+    //      do card BATE com a lista do clique (mesma definição em ambos)
+    //   2. "Equipe" — opcional, mostrada se houver visibleTasks > myTasks
+    //      (analista solo não vê — evita ruído). Skin: coordenador+ usa
+    //      pra distribuir trabalho.
+    //
+    // Mudanças vs 3.5.x:
+    //   - "Em Andamento: 48" (todas do sistema) → "Minhas Em Andamento" (só minhas)
+    //   - "Concluídas Hoje: 40" (todas do sistema) → "Concluí Hoje" (só minhas)
+    //   - "Projetos Ativos" removido (não é desempenho pessoal)
+    //   - "Atrasadas minhas" novo (vinculado ao status virtual 3.5.0)
+    //   - Filtro `archived` aplicado consistentemente
+    const teamCardsVisible = visibleTasks.length > myTasks.length;
+    const sectionLabel = (text) => `<div style="grid-column:1/-1;
+      font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.08em;color:var(--text-muted);margin:8px 0 -4px;
+      padding-left:2px;">${text}</div>`;
+
     $stats.innerHTML = `
+      ${sectionLabel('🎯 Meu desempenho')}
       ${statCard('Minhas Abertas', myActive.length, '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)', '#tasks?assignee=me&open=1')}
-      ${statCard('Em Andamento', inProgress.length, '▶', 'rgba(56,189,248,0.12)', 'var(--role-manager)', '#tasks?assignee=me&status=in_progress')}
-      ${statCard('Concluídas Hoje', doneToday.length, '✓', 'var(--color-success-bg)', 'var(--color-success)', '#tasks?assignee=me&completedToday=1')}
-      ${statCard('Observando', myObserving.length, '🔭', 'rgba(56,189,248,0.10)', 'var(--color-info,#38BDF8)', '#tasks?observer=me')}
+      ${statCard('Em Andamento', myInProgress.length, '▶', 'rgba(56,189,248,0.12)', 'var(--role-manager)', '#tasks?assignee=me&status=in_progress')}
+      ${myOverdue.length ? statCard('⚠ Atrasadas', myOverdue.length, '⚠', 'rgba(239,68,68,0.10)', '#EF4444', '#tasks?assignee=me&status=overdue') : ''}
+      ${statCard('Concluí Hoje', myDoneToday.length, '✓', 'var(--color-success-bg)', 'var(--color-success)', '#tasks?assignee=me&completedToday=1')}
+      ${myObserving.length ? statCard('Observando', myObserving.length, '🔭', 'rgba(56,189,248,0.10)', 'var(--color-info,#38BDF8)', '#tasks?observer=me') : ''}
       ${myPartnerships.length ? statCard('Parcerias ativas', myPartnerships.length, '🤝', 'rgba(212,168,67,0.10)', 'var(--brand-gold)', '#tasks?assignee=me&partnership=1') : ''}
-      ${statCard('Projetos Ativos', projects.filter(p=>p.status==='active'||p.status==='always_on').length, '◈', 'rgba(167,139,250,0.12)', 'var(--role-admin)', '#projects')}
+
+      ${teamCardsVisible ? `
+        ${sectionLabel(sectorSel ? `🏢 Setor ${sectorSel}` : '🏢 Equipe / Setor')}
+        ${statCard('Equipe Em Andamento', teamInProgress.length, '▶', 'rgba(56,189,248,0.06)', 'var(--text-secondary)', '#tasks?status=in_progress')}
+        ${teamOverdue.length ? statCard('Equipe Atrasadas', teamOverdue.length, '⚠', 'rgba(239,68,68,0.06)', 'var(--text-secondary)', '#tasks?status=overdue') : ''}
+        ${statCard('Equipe Concluiu Hoje', teamDoneToday.length, '✓', 'var(--color-success-bg)', 'var(--text-secondary)', '#tasks?completedToday=1')}
+      ` : ''}
     `;
 
-    const overdue = myTasks.filter(t => {
-      if (!t.dueDate || t.status === 'done') return false;
-      const d = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
-      return d < now;
-    });
+    // overdue mantido por compat — myOverdue já calculado acima
+    const overdue = myOverdue;
 
     // ── Main grid ─────────────────────────────────────────
     const $main = document.getElementById('dash-main');
@@ -237,9 +295,10 @@ export async function renderDashboard(container) {
             </div>
             <div class="card-body" style="padding:8px 16px;display:flex;flex-direction:column;gap:8px;">
               ${workspaces.slice(0,4).map(ws => {
-                const wsTasks = tasks.filter(t => t.workspaceId === ws.id);
+                // baseTasks (não-arquivadas) — consistente com a página #tasks
+                const wsTasks = baseTasks.filter(t => t.workspaceId === ws.id);
                 const wsDone  = wsTasks.filter(t => t.status==='done').length;
-                return `<div style="display:flex;align-items:center;gap:10px;padding:4px 0;">
+                return `<a href="#tasks?workspaceId=${esc(ws.id)}" style="display:flex;align-items:center;gap:10px;padding:4px 0;text-decoration:none;color:inherit;">
                   <div style="width:28px;height:28px;border-radius:var(--radius-sm);flex-shrink:0;
                     background:${ws.color||'#D4A843'}22;color:${ws.color||'#D4A843'};
                     display:flex;align-items:center;justify-content:center;font-size:0.875rem;">
@@ -249,7 +308,7 @@ export async function renderDashboard(container) {
                     <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(ws.name)}</div>
                     <div style="font-size:0.75rem;color:var(--text-muted);">${wsTasks.length} tarefa${wsTasks.length!==1?'s':''} · ${wsDone} concluídas</div>
                   </div>
-                </div>`;
+                </a>`;
               }).join('')}
             </div>
           </div>`;
@@ -350,7 +409,8 @@ export async function renderDashboard(container) {
               ${myGoals.slice(0,3).map(g => {
                 const pct = g.target > 0 ? Math.min(100, Math.round((g.current||0)/g.target*100)) : g.progress||0;
                 const color = pct>=100?'#22C55E':pct>=60?'#F59E0B':'#38BDF8';
-                const gTasks = tasks.filter(t => {
+                // baseTasks: filtra archived (consistência com #tasks)
+                const gTasks = baseTasks.filter(t => {
                   if (t.goalId === g.id) return true;
                   if (Array.isArray(t.metaLinks)) return t.metaLinks.some(l => l && l.goalId === g.id);
                   return false;
@@ -374,57 +434,81 @@ export async function renderDashboard(container) {
           </div>
         ` : ''}
 
-        <!-- Projects -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">📦 Projetos</div>
-            <a href="#projects" class="btn btn-ghost btn-sm">Ver →</a>
-          </div>
-          <div class="card-body" style="padding:12px 16px; display:flex; flex-direction:column; gap:10px;">
-            ${projects.length === 0
-              ? `<p class="text-sm text-muted">Nenhum projeto criado.</p>`
-              : projects.slice(0,4).map(p => {
-                  const pt  = tasks.filter(t=>t.projectId===p.id);
-                  const pd  = pt.filter(t=>t.status==='done').length;
-                  const pct = pt.length ? Math.round(pd/pt.length*100) : 0;
-                  return `<div style="cursor:pointer;" onclick="location.hash='#projects'">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-                      <span style="font-size:0.8125rem;font-weight:500;color:var(--text-primary);">${p.icon} ${esc(p.name)}</span>
-                      <span style="font-size:0.75rem;color:var(--text-muted);">${pct}%</span>
-                    </div>
-                    <div class="progress" style="height:4px;">
-                      <div class="progress-bar" style="width:${pct}%;background:${p.color||'var(--brand-gold)'};"></div>
-                    </div>
-                  </div>`;
-                }).join('')
-            }
-          </div>
-        </div>
+        <!-- Meus Projetos — onde sou member, criador, ou tenho tarefa atribuída.
+             Fix 3.6.0: antes mostrava TODOS os projetos do sistema, mesmo
+             aqueles onde o user nem participa. Agora filtra por relevância. -->
+        ${(() => {
+          const myProjects = projects.filter(p => {
+            // Critério de "meu projeto":
+            //   1. Sou member explícito
+            //   2. Criei
+            //   3. Tenho ao menos 1 tarefa atribuída a mim no projeto
+            if ((p.members || []).includes(uid)) return true;
+            if (p.createdBy === uid) return true;
+            return myTasks.some(t => t.projectId === p.id);
+          });
+          if (!myProjects.length) return '';
+          return `<div class="card">
+            <div class="card-header">
+              <div class="card-title">📦 Meus Projetos</div>
+              <a href="#projects" class="btn btn-ghost btn-sm">Ver todos →</a>
+            </div>
+            <div class="card-body" style="padding:12px 16px; display:flex; flex-direction:column; gap:10px;">
+              ${myProjects.slice(0,4).map(p => {
+                // Tarefas do projeto, mas só MINHAS (assignee) — % reflete meu progresso
+                // no projeto, não progresso global do projeto.
+                const pt = myTasks.filter(t => t.projectId === p.id);
+                const pd = pt.filter(t => t.status==='done').length;
+                const pct = pt.length ? Math.round(pd/pt.length*100) : 0;
+                return `<a href="#tasks?projectId=${esc(p.id)}&assignee=me" style="text-decoration:none;color:inherit;display:block;">
+                  <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+                    <span style="font-size:0.8125rem;font-weight:500;color:var(--text-primary);">${p.icon||'📦'} ${esc(p.name)}</span>
+                    <span style="font-size:0.75rem;color:var(--text-muted);">${pt.length ? `${pd}/${pt.length} (${pct}%)` : 'sem tarefas minhas'}</span>
+                  </div>
+                  ${pt.length ? `<div class="progress" style="height:4px;">
+                    <div class="progress-bar" style="width:${pct}%;background:${p.color||'var(--brand-gold)'};"></div>
+                  </div>` : ''}
+                </a>`;
+              }).join('')}
+              ${myProjects.length > 4 ? `<a href="#projects" style="font-size:0.75rem;color:var(--text-muted);text-align:center;text-decoration:none;">
+                +${myProjects.length - 4} projeto${myProjects.length-4!==1?'s':''}
+              </a>` : ''}
+            </div>
+          </div>`;
+        })()}
 
-        <!-- Status distribution -->
-        <div class="card">
-          <div class="card-header"><div class="card-title">📊 Distribuição</div></div>
-          <div class="card-body" style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;">
-            ${[
-              {value:'todo',        label:'A Fazer',      color:'#38BDF8'},
-              {value:'in_progress', label:'Em Andamento', color:'#F59E0B'},
-              {value:'review',      label:'Em Revisão',   color:'#A78BFA'},
-              {value:'done',        label:'Concluídas',   color:'#22C55E'},
-            ].map(s => {
-              const cnt = tasks.filter(t=>t.status===s.value).length;
-              const pct = tasks.length ? Math.round(cnt/tasks.length*100) : 0;
-              return `<div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-                  <span style="font-size:0.8125rem;color:var(--text-secondary);">${s.label}</span>
-                  <span style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">${cnt}</span>
-                </div>
-                <div class="progress" style="height:5px;">
-                  <div class="progress-bar" style="width:${pct}%;background:${s.color};"></div>
-                </div>
-              </div>`;
-            }).join('')}
+        <!-- Minha distribuição — status só das MINHAS tarefas (assignee).
+             Fix 3.6.0:
+               - Antes: filtrava tasks (global) e usava status='todo' que não existe
+                 (real é 'not_started'), sempre mostrando 0 em "A Fazer"
+               - Agora: usa myTasks (consistente) e os 5 status reais do sistema -->
+        ${myTasks.length ? `
+          <div class="card">
+            <div class="card-header"><div class="card-title">📊 Minha distribuição</div></div>
+            <div class="card-body" style="padding:12px 16px;display:flex;flex-direction:column;gap:8px;">
+              ${[
+                {value:'not_started', label:'Não iniciado', color:'#38BDF8'},
+                {value:'in_progress', label:'Em Andamento', color:'#F59E0B'},
+                {value:'review',      label:'Em Revisão',   color:'#A78BFA'},
+                {value:'rework',      label:'Retrabalho',   color:'#F97316'},
+                {value:'done',        label:'Concluídas',   color:'#22C55E'},
+              ].map(s => {
+                const cnt = myTasks.filter(t => t.status === s.value).length;
+                if (!cnt) return '';
+                const pct = Math.round(cnt / myTasks.length * 100);
+                return `<a href="#tasks?assignee=me&status=${s.value}" style="text-decoration:none;color:inherit;display:block;">
+                  <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+                    <span style="font-size:0.8125rem;color:var(--text-secondary);">${s.label}</span>
+                    <span style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">${cnt}</span>
+                  </div>
+                  <div class="progress" style="height:5px;">
+                    <div class="progress-bar" style="width:${pct}%;background:${s.color};"></div>
+                  </div>
+                </a>`;
+              }).filter(Boolean).join('')}
+            </div>
           </div>
-        </div>
+        ` : ''}
       </div>
     `;
 

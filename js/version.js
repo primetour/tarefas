@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 3,
-  minor: 5,
-  patch: 1,
-  build: '20260505-fix-pickers-deeplink-sync',
+  minor: 6,
+  patch: 0,
+  build: '20260505-refactor-meu-painel',
 };
 
 /** "1.2.0" */
