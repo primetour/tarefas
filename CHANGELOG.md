@@ -8,6 +8,48 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [3.5.0+20260505-status-atrasada-datepicker-search-meu-painel] — 2026-05-05
+
+Release "Quick Wins UX". 4 melhorias pontuais que vinham gerando atrito:
+
+### Added
+- **Status virtual "⚠ Atrasada"** em tarefas — derivado de `dueDate < hoje && status !== done && !== cancelled`. Não é campo persistido (estado temporal). Aparece como:
+  - **Coluna no kanban** (groupBy=status), vermelha, no início do board. Tarefa atrasada some da coluna do status real (não duplica).
+  - **Opção no filtro de status** da toolbar `#tasks` (com mesmo visual e cor).
+  - **Picker visual** unificado com bolinha vermelha + ícone ⚠.
+  - Helper canônico `isTaskOverdue(t)` exportado de `js/services/tasks.js`.
+  - Comportamento documentado em `RULES-AND-AUTOMATIONS.md` § 10.1 com racional ("por que virtual e não persistido").
+- **`js/components/datepickerEnhance.js`** — input `type="date"` agora abre o calendário ao clicar em **qualquer parte** do input (não só no ícone). Usa `showPicker()` API (Chrome 99+, Edge 99+, Safari 16+, Firefox 101+) com fallback gracioso pra browsers antigos. Helper genérico aplicável a `date / datetime-local / month / time / week`. Hookado no `taskModal` no setup do modal.
+- **CSS global** em `css/portal.css`: `cursor:pointer` em todos os inputs de data + hover state no `::-webkit-calendar-picker-indicator`.
+- **Search inline** nos pickers de Responsáveis e Observadores no modal de tarefa. Ao abrir o dropdown, foco automático na barra de busca; lista filtra em real-time conforme digita; "Nenhum resultado" quando zera.
+- **Deep-link com filtros** na página `#tasks` via query string da URL hash:
+  - `?assignee=me|<uid>` · `?observer=me|<uid>` · `?status=in_progress|overdue|...` · `?open=1` · `?completedToday=1` · `?partnership=1` · `?projectId=<id>` · `?workspaceId=<id>`
+  - Combinados em AND.
+  - Quando deep-link traz filtro temporal próprio (`open`/`completedToday`/`partnership`/`observer`), o preset default "Últimos 30 dias" é desabilitado para mostrar a categoria completa.
+  - Atualização canônica em `RULES-AND-AUTOMATIONS.md` § 10.1.
+
+### Changed
+- **Meu Painel (`#dashboard`)**: cada KPI card agora linka pra `#tasks` com **filtro pré-aplicado** específico:
+  - "Minhas Abertas" → `?assignee=me&open=1`
+  - "Em Andamento" → `?assignee=me&status=in_progress`
+  - "Concluídas Hoje" → `?assignee=me&completedToday=1`
+  - "Observando" → `?observer=me`
+  - "Parcerias ativas" → `?assignee=me&partnership=1`
+  - Antes: todos apontavam pra `#tasks` cru e o user via lista completa, perdendo contexto do KPI clicado.
+
+### Fixed
+- Status virtual "Atrasada" resolve UX crítica: antes não havia visão consolidada de tarefas com prazo vencido — user precisava abrir o filtro de prazo e escolher "⚠ Atrasadas" manualmente. Agora aparece destacada no kanban e no filtro de status, casando com a expectativa natural ("Atrasada é um estado").
+
+### Why
+4 demandas concretas reportadas pelo product owner. Cada uma resolve atrito específico:
+1. "Falta status Atrasado" — visibilidade imediata de prazos vencidos
+2. "Datepicker não abre clicando no campo" — em browsers modernos `<input type="date">` só abre no clique do indicator (canto direito); UX confusa
+3. "Não tem busca inline em responsáveis/observadores" — listas longas (20+ pessoas) sem filtro = scroll/leitura linear pra achar alguém
+4. "Cards do Meu Painel mostram TODAS as tarefas, não filtradas" — dead-end de contexto: user clica no KPI específico e perde a categoria
+
+---
+
 ## [3.4.0+20260505-regras-e-search-docs] — 2026-05-05
 
 Release "Auditoria de Regras + Search". Documenta de forma completa todas as regras automáticas que o sistema aplica vinculadas a hierarquia/permissões/módulos, com **racional** explicando cada decisão. Adiciona search global na página pública de documentação.

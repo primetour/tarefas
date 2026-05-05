@@ -7,7 +7,7 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
   subscribeToTasks, moveTaskKanban, createTask, toggleTaskComplete, getTask,
-  STATUSES, PRIORITY_MAP,
+  STATUSES, STATUS_OVERDUE, isTaskOverdue, PRIORITY_MAP,
 } from '../services/tasks.js';
 import { fetchProjects }  from '../services/projects.js';
 import { openTaskModal, openTaskDoneOverlay }  from '../components/taskModal.js';
@@ -64,7 +64,14 @@ function setGroupBy(v) {
  */
 function getKanbanGroups(groupKey, tasks) {
   if (groupKey === 'status') {
-    return STATUSES.map(s => ({ value: s.value, label: s.label, color: s.color }));
+    // Coluna virtual "Atrasada" no início — atalho visual pra prazos vencidos.
+    // Tarefa atrasada some do status real e aparece SÓ aqui (ver taskBelongsToGroup).
+    // Comportamento documentado em RULES-AND-AUTOMATIONS.md § 10.1.
+    const cols = [
+      { value: STATUS_OVERDUE.value, label: STATUS_OVERDUE.label, color: STATUS_OVERDUE.color, virtual: true },
+      ...STATUSES.map(s => ({ value: s.value, label: s.label, color: s.color })),
+    ];
+    return cols;
   }
 
   const opt = GROUPBY_OPTIONS.find(o => o.value === groupKey);
@@ -157,7 +164,13 @@ function getKanbanGroups(groupKey, tasks) {
 
 /** Retorna se uma task pertence ao grupo (pra filtrar coluna). */
 function taskBelongsToGroup(task, groupKey, group) {
-  if (groupKey === 'status') return task.status === group.value;
+  if (groupKey === 'status') {
+    // Coluna virtual "atrasada": tem precedência sobre o status real.
+    // Tarefa atrasada NÃO aparece na coluna do status real — evita duplicar.
+    if (group.value === 'overdue') return isTaskOverdue(task);
+    if (isTaskOverdue(task)) return false;  // atrasada já foi pra coluna virtual
+    return task.status === group.value;
+  }
   const opt = GROUPBY_OPTIONS.find(o => o.value === groupKey);
   if (!opt) return false;
   const raw = task[opt.field];
@@ -489,11 +502,16 @@ export async function renderKanban(container) {
             // usados em renderCards pra detectar quando re-renderizar (ex: ao
             // mudar groupBy ou quando um grupo deixa de ter tasks e some).
             if (groupBy === 'status') {
-              const initialKeys = STATUSES.map(s => s.value).join('|');
+              // Inclui coluna virtual "Atrasada" no início
+              const initialCols = [
+                { value: STATUS_OVERDUE.value, label: STATUS_OVERDUE.label, color: STATUS_OVERDUE.color, virtual: true },
+                ...STATUSES.map(s => ({ value: s.value, label: s.label, color: s.color })),
+              ];
+              const initialKeys = initialCols.map(s => s.value).join('|');
               return `<div class="kanban-board" id="kanban-board"
                 data-group-key-rendered="status"
                 data-rendered-group-keys="${esc(initialKeys)}">
-                ${STATUSES.map(s => renderColumn({ value: s.value, label: s.label, color: s.color }, [])).join('')}
+                ${initialCols.map(s => renderColumn(s, [])).join('')}
               </div>`;
             }
             return `<div class="kanban-board" id="kanban-board"

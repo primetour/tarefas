@@ -348,12 +348,40 @@ de comprometimento.
 
 ### 10.1 Tarefas
 
+- **Status VIRTUAL "⚠ Atrasada"** (3.5.0+): além dos 6 status persistidos
+  (`not_started`, `in_progress`, `review`, `rework`, `done`, `cancelled`), há
+  um **status virtual derivado**: tarefa é considerada *atrasada* quando
+  `dueDate < hoje && status !== done && status !== cancelled`. Não é um campo
+  no Firestore — é calculado em runtime via `isTaskOverdue(t)` em
+  `services/tasks.js`.
+  - **Onde aparece**:
+    - Kanban (groupBy=status): coluna virtual no início do board, **vermelha**, ✕
+    - Toolbar `#tasks` filtro de status: opção "⚠ Atrasada"
+  - **Comportamento**:
+    - Tarefa atrasada **some** da coluna do status real (não duplica). Ex: tarefa `in_progress` com prazo vencido aparece SÓ em "Atrasada", não em "Em Andamento". Drag&drop pra outra coluna ainda funciona — ao soltar em "Em Revisão", o status muda e o flag overdue continua até atualizar `dueDate`.
+    - Filtro `?status=overdue` na URL passa pelo filtro virtual.
+  - **Por que virtual e não persistido**:
+    1. Estado **temporal** — muda sozinho ao passar da meia-noite, sem cron
+    2. Idempotente — não há janela de inconsistência onde "tá atrasada mas o campo não foi atualizado"
+    3. Não conflita com workflow — tarefa atrasada continua tendo seu status semântico (`in_progress`, etc.)
+  - **Limitação conhecida**: não persiste em audit log como "tarefa entrou em atraso em DD/MM". Se for necessário rastrear, ver `notificationScheduler` que dispara `task.overdue` quando o prazo passa.
 - **Quick complete (kanban)**: clicar no botão ✓ marca como `done` direto, sem abrir modal. Atalho UX para completar tarefas simples.
   - **Override de urgência**: marcar tarefa como urgente quando o `dueDate < hoje + SLA_minimo` exige justificativa textual + audit. Evita inflação de urgência (quando tudo é urgente, nada é).
 - **Override de tarefa concluída**: reabrir tarefa concluída exige confirmação dupla.
 - **Recorrência**: tarefas com `recurrence: { pattern, count }` geram instâncias automaticamente via `runDueRecurrenceGeneration` quando user abre a página de Tarefas. Idempotente (não duplica se já gerou).
 - **Atribuição cross-squad**: tarefas podem ter `assignees` de qualquer squad — não há restrição. Vai aparecer no `Meu Painel` do assignee independente do squad.
 - **Auto-extract de tags**: criação de tarefa via importação Planner extrai hashtags do título e adiciona em `tags[]`.
+- **Deep-link da página `#tasks` via query string** (3.5.0+): página aceita filtros via URL hash:
+  - `?assignee=me` ou `?assignee=<uid>` — filtra por responsável
+  - `?observer=me` ou `?observer=<uid>` — filtra por observador
+  - `?status=in_progress` (ou `overdue`) — filtra por status (incluindo virtual)
+  - `?open=1` — só não-finalizadas (`status !== done && !== cancelled`)
+  - `?completedToday=1` — só `done` com `completedAt` de hoje
+  - `?partnership=1` — só tarefas com `isPartnership: true`
+  - `?projectId=<id>` — projeto específico
+  - `?workspaceId=<id>` — squad específico
+  - **Combinação**: parametros são AND-juntos. Ex: `#tasks?assignee=me&open=1` = "minhas tarefas abertas"
+  - **Uso no Meu Painel**: cada KPI card linka pra essa URL com filtro adequado, em vez de abrir tudo. Antes de 3.5.0, cards apontavam pra `#tasks` cru e o user via lista completa, perdendo contexto.
 
 ### 10.2 Goals (Metas)
 

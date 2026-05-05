@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 3,
-  minor: 4,
+  minor: 5,
   patch: 0,
-  build: '20260505-regras-e-search-docs',
+  build: '20260505-status-atrasada-datepicker-search-meu-painel',
 };
 
 /** "1.2.0" */

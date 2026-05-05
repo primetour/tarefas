@@ -6,6 +6,7 @@ import { modal }  from './modal.js';
 import { toast }  from './toast.js';
 import { store }  from '../store.js';
 import { renderPickerButton, bindOptionPicker } from './optionPicker.js';
+import { enhanceDatepickers } from './datepickerEnhance.js';
 import {
   createTask, updateTask, deleteTask,
   addSubtask, toggleSubtask, updateSubtaskDue, updateSubtaskTitle,
@@ -307,6 +308,8 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         if (modalBody) {
           modalBody.addEventListener('input', () => { _isDirty = true; }, { once: false });
           modalBody.addEventListener('change', () => { _isDirty = true; }, { once: false });
+          // Wire-up datepicker pra abrir em qualquer click no input (3.5.0 UX fix)
+          enhanceDatepickers(modalBody);
         }
       }, 100);
 
@@ -1599,8 +1602,15 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
           <button class="assignee-add-btn" id="assignee-add-btn" title="Adicionar">+</button>
         </div>
         <div id="assignee-dropdown" style="display:none;margin-top:6px;">
-          <div style="background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);max-height:200px;overflow-y:auto;">
-            ${userListHTML}
+          <div style="background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);overflow:hidden;">
+            <input type="text" id="assignee-search" placeholder="🔍 Buscar pessoa…"
+              autocomplete="off" spellcheck="false"
+              style="width:100%;padding:10px 12px;font-size:0.875rem;
+                background:transparent;border:none;border-bottom:1px solid var(--border-subtle);
+                color:var(--text-primary);outline:none;box-sizing:border-box;font-family:inherit;" />
+            <div id="assignee-list" style="max-height:200px;overflow-y:auto;">
+              ${userListHTML}
+            </div>
           </div>
         </div>
       </div>
@@ -1618,7 +1628,13 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
           <button class="assignee-add-btn" id="observer-add-btn" title="Adicionar observador">+</button>
         </div>
         <div id="observer-dropdown" style="display:none;margin-top:6px;">
-          <div style="background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);max-height:200px;overflow-y:auto;">
+          <div style="background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);overflow:hidden;">
+            <input type="text" id="observer-search" placeholder="🔍 Buscar pessoa…"
+              autocomplete="off" spellcheck="false"
+              style="width:100%;padding:10px 12px;font-size:0.875rem;
+                background:transparent;border:none;border-bottom:1px solid var(--border-subtle);
+                color:var(--text-primary);outline:none;box-sizing:border-box;font-family:inherit;" />
+            <div id="observer-list" style="max-height:200px;overflow-y:auto;">
             ${activeUsers.length
               ? activeUsers.map(u => `
                 <div class="dropdown-item" data-add-obs-uid="${u.id}"
@@ -1630,6 +1646,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
                   </div>
                 </div>`).join('')
               : `<div style="padding:12px;color:var(--text-muted);font-size:0.875rem;">Nenhum usuário ativo.</div>`}
+            </div>
           </div>
         </div>
       </div>
@@ -2259,8 +2276,51 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   document.getElementById('assignee-add-btn')?.addEventListener('click', (e) => {
     e.stopPropagation();
     const dd = document.getElementById('assignee-dropdown');
-    if (dd) dd.style.display = dd.style.display==='none' ? 'block' : 'none';
+    if (dd) {
+      const open = dd.style.display === 'none';
+      dd.style.display = open ? 'block' : 'none';
+      if (open) {
+        // Auto-focus no search ao abrir + reset do filtro
+        const search = document.getElementById('assignee-search');
+        if (search) {
+          search.value = '';
+          filterUserList('assignee-list', '');
+          setTimeout(() => search.focus(), 30);
+        }
+      }
+    }
   });
+  // Filter por search
+  function filterUserList(listId, q) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    const ql = q.toLowerCase().trim();
+    let shown = 0;
+    list.querySelectorAll('.dropdown-item').forEach(el => {
+      const text = el.textContent.toLowerCase();
+      const match = !ql || text.includes(ql);
+      el.style.display = match ? '' : 'none';
+      if (match) shown++;
+    });
+    // "Nenhum resultado" se zerou
+    let empty = list.querySelector('.dropdown-empty');
+    if (shown === 0 && ql) {
+      if (!empty) {
+        empty = document.createElement('div');
+        empty.className = 'dropdown-empty';
+        empty.style.cssText = 'padding:12px;color:var(--text-muted);font-size:0.875rem;text-align:center;';
+        empty.textContent = 'Nenhum resultado.';
+        list.appendChild(empty);
+      }
+    } else if (empty) {
+      empty.remove();
+    }
+  }
+  document.getElementById('assignee-search')?.addEventListener('input', (e) => {
+    e.stopPropagation();
+    filterUserList('assignee-list', e.target.value);
+  });
+  document.getElementById('assignee-search')?.addEventListener('click', (e) => e.stopPropagation());
   document.getElementById('assignee-dropdown')?.addEventListener('click', (e) => {
     const item = e.target.closest('[data-add-uid]');
     if (!item) return;
@@ -2303,8 +2363,24 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   document.getElementById('observer-add-btn')?.addEventListener('click', (e) => {
     e.stopPropagation();
     const dd = document.getElementById('observer-dropdown');
-    if (dd) dd.style.display = dd.style.display==='none' ? 'block' : 'none';
+    if (dd) {
+      const open = dd.style.display === 'none';
+      dd.style.display = open ? 'block' : 'none';
+      if (open) {
+        const search = document.getElementById('observer-search');
+        if (search) {
+          search.value = '';
+          filterUserList('observer-list', '');
+          setTimeout(() => search.focus(), 30);
+        }
+      }
+    }
   });
+  document.getElementById('observer-search')?.addEventListener('input', (e) => {
+    e.stopPropagation();
+    filterUserList('observer-list', e.target.value);
+  });
+  document.getElementById('observer-search')?.addEventListener('click', (e) => e.stopPropagation());
   document.getElementById('observer-dropdown')?.addEventListener('click', (e) => {
     const item = e.target.closest('[data-add-obs-uid]');
     if (!item) return;

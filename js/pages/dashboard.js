@@ -106,12 +106,16 @@ export async function renderDashboard(container) {
     // ── Stats ─────────────────────────────────────────────
     const $stats = document.getElementById('dash-stats');
     if (!$stats) return; // user navigated away
+    // Os hrefs passam query params pra filtrar a página de destino —
+    // ver tasks.js que lê assignee/observer/status/partnership da URL.
+    // Antes (3.4.x): todos apontavam pra #tasks/#kanban sem filtro, abrindo
+    // a lista completa — UX de "vai pra Tarefas e perde-se na lista".
     $stats.innerHTML = `
-      ${statCard('Minhas Abertas', myActive.length, '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)', '#tasks')}
-      ${statCard('Em Andamento', inProgress.length, '▶', 'rgba(56,189,248,0.12)', 'var(--role-manager)', '#kanban')}
-      ${statCard('Concluídas Hoje', doneToday.length, '✓', 'var(--color-success-bg)', 'var(--color-success)', '#tasks')}
-      ${statCard('Observando', myObserving.length, '🔭', 'rgba(56,189,248,0.10)', 'var(--color-info,#38BDF8)', '#tasks')}
-      ${myPartnerships.length ? statCard('Parcerias ativas', myPartnerships.length, '🤝', 'rgba(212,168,67,0.10)', 'var(--brand-gold)', '#tasks') : ''}
+      ${statCard('Minhas Abertas', myActive.length, '📋', 'rgba(212,168,67,0.12)', 'var(--brand-gold)', '#tasks?assignee=me&open=1')}
+      ${statCard('Em Andamento', inProgress.length, '▶', 'rgba(56,189,248,0.12)', 'var(--role-manager)', '#tasks?assignee=me&status=in_progress')}
+      ${statCard('Concluídas Hoje', doneToday.length, '✓', 'var(--color-success-bg)', 'var(--color-success)', '#tasks?assignee=me&completedToday=1')}
+      ${statCard('Observando', myObserving.length, '🔭', 'rgba(56,189,248,0.10)', 'var(--color-info,#38BDF8)', '#tasks?observer=me')}
+      ${myPartnerships.length ? statCard('Parcerias ativas', myPartnerships.length, '🤝', 'rgba(212,168,67,0.10)', 'var(--brand-gold)', '#tasks?assignee=me&partnership=1') : ''}
       ${statCard('Projetos Ativos', projects.filter(p=>p.status==='active'||p.status==='always_on').length, '◈', 'rgba(167,139,250,0.12)', 'var(--role-admin)', '#projects')}
     `;
 

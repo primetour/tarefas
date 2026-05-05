@@ -4,7 +4,7 @@ import { modal }  from '../components/modal.js';
 import {
   fetchTasks, subscribeToTasks, toggleTaskComplete, getTask, updateTask,
   bulkUpdateTasks,
-  STATUSES, PRIORITIES, STATUS_MAP, PRIORITY_MAP,
+  STATUSES, PRIORITIES, STATUS_MAP, PRIORITY_MAP, isTaskOverdue,
   TASK_TYPES, NEWSLETTER_STATUSES, NUCLEOS, REQUESTING_AREAS,
 } from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
@@ -38,6 +38,14 @@ let filterArea     = '';
 let filterTag      = '';
 let filterSquad    = '';   // workspaceId | '' (todos)
 let filterMeta     = '';   // '' | 'with' | 'without' — vínculo com meta (metaLinks[] ou goalId legado)
+
+// Filtros vindos via URL hash (tipicamente do Meu Painel) — não persistem
+// na toolbar, mas são aplicados em applyFilters() junto com os demais.
+// Reset ao usuário trocar manualmente os pickers da toolbar.
+let filterObserver       = '';     // UID — quem é observer; típico cardstat "Observando"
+let filterOpen           = false;  // !done && !cancelled — cardstat "Minhas Abertas"
+let filterCompletedToday = false;  // done && completedAt é hoje — cardstat "Concluídas Hoje"
+let filterPartnership    = false;  // task.isPartnership — cardstat "Parcerias"
 
 // Visibilidade de filtros (persistida no localStorage por usuário)
 const FILTER_VISIBILITY_KEY = 'tasks.filterVisibility.v1';
@@ -74,6 +82,12 @@ export async function renderTasks(container) {
   // Reset antes de aplicar query para evitar "lembrar" um filtro antigo de outra navegação
   let urlProjectId   = '';
   let urlWorkspaceId = '';
+  let urlAssignee    = '';
+  let urlObserver    = '';
+  let urlStatus      = '';
+  let urlOpen        = false;       // status != done && status != cancelled
+  let urlCompletedToday = false;    // status==='done' && completedAt é hoje
+  let urlPartnership = false;
   try {
     const rawHash = window.location.hash || '';
     const qIdx = rawHash.indexOf('?');
@@ -81,10 +95,32 @@ export async function renderTasks(container) {
       const qs = new URLSearchParams(rawHash.slice(qIdx + 1));
       urlProjectId   = qs.get('projectId')   || '';
       urlWorkspaceId = qs.get('workspaceId') || '';
+      // "me" = currentUser; senão tratamos como UID
+      const myUid = store.get('currentUser')?.uid || '';
+      const a = qs.get('assignee') || '';
+      const o = qs.get('observer') || '';
+      urlAssignee = a === 'me' ? myUid : a;
+      urlObserver = o === 'me' ? myUid : o;
+      urlStatus   = qs.get('status') || '';
+      urlOpen     = qs.get('open') === '1';
+      urlCompletedToday = qs.get('completedToday') === '1';
+      urlPartnership = qs.get('partnership') === '1';
     }
   } catch (_) { /* noop */ }
-  filterProject = urlProjectId;
-  filterSquad   = urlWorkspaceId;
+  filterProject  = urlProjectId;
+  filterSquad    = urlWorkspaceId;
+  if (urlAssignee) filterAssignee = urlAssignee;
+  if (urlStatus)   filterStatus   = urlStatus;
+  filterObserver       = urlObserver;
+  filterOpen           = urlOpen;
+  filterCompletedToday = urlCompletedToday;
+  filterPartnership    = urlPartnership;
+  // Se URL traz qualquer filtro temporal específico (observado, concluídas hoje,
+  // parceria), o preset de data padrão (Últimos 30 dias) deixa de fazer sentido —
+  // o user clicou num KPI específico, quer ver TUDO daquela categoria.
+  if (urlOpen || urlCompletedToday || urlPartnership || urlObserver) {
+    filterDatePreset = '';
+  }
 
   container.innerHTML = `
     <div class="page-header">
@@ -153,6 +189,7 @@ export async function renderTasks(container) {
       <div class="toolbar-filter-wrap" style="${filterVisibility.status?'':'display:none;'}min-width:170px;">
         <select id="filter-status" style="display:none;">
           <option value="">Todos os status</option>
+          <option value="overdue">⚠ Atrasada</option>
           ${STATUSES.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
         </select>
         ${renderPickerButton({ btnId: 'filter-status-btn', selected: null, emptyLabel: 'Todos os status' })}
@@ -704,7 +741,31 @@ function applyFilters() {
       t.tags?.some(tag=>tag.toLowerCase().includes(q))
     );
   }
-  if (filterStatus)   result = result.filter(t => t.status === filterStatus);
+  if (filterStatus === 'overdue') {
+    // Status virtual: tarefa com prazo vencido e ainda em aberto
+    result = result.filter(t => isTaskOverdue(t));
+  } else if (filterStatus) {
+    result = result.filter(t => t.status === filterStatus);
+  }
+  // Filtros vindos do Meu Painel via URL hash
+  if (filterOpen) {
+    result = result.filter(t => t.status !== 'done' && t.status !== 'cancelled');
+  }
+  if (filterCompletedToday) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+    result = result.filter(t => {
+      if (t.status !== 'done' || !t.completedAt) return false;
+      const d = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
+      return d >= today && d < tomorrow;
+    });
+  }
+  if (filterPartnership) {
+    result = result.filter(t => t.isPartnership === true);
+  }
+  if (filterObserver) {
+    result = result.filter(t => Array.isArray(t.observers) && t.observers.includes(filterObserver));
+  }
   if (filterPriority) result = result.filter(t => t.priority === filterPriority);
   if (filterProject)  result = result.filter(t => t.projectId === filterProject);
   if (filterAssignee) result = result.filter(t => t.assignees?.includes(filterAssignee));
@@ -1166,8 +1227,13 @@ function _attachPageEvents() {
   document.getElementById('filter-squad')?.addEventListener('change', e => { filterSquad = e.target.value; applyFilters(); });
 
   // Visual pickers (status / priority / squad) — selects nativos preservados pra change events
-  // status: cor da bolinha já identifica, sem icon redundante
-  const statusOpts = () => STATUSES.map(s => ({ id: s.value, label: s.label, icon: '', color: s.color }));
+  // status: cor da bolinha já identifica, sem icon redundante.
+  // "Atrasada" entra como status virtual (não persistido) — ver
+  // STATUS_OVERDUE em services/tasks.js + RULES-AND-AUTOMATIONS.md § 10.1
+  const statusOpts = () => [
+    { id: 'overdue', label: '⚠ Atrasada', icon: '', color: '#EF4444' },
+    ...STATUSES.map(s => ({ id: s.value, label: s.label, icon: '', color: s.color })),
+  ];
   const findStatus = (id) => statusOpts().find(o => o.id === id) || null;
   bindOptionPicker({
     btnId: 'filter-status-btn',

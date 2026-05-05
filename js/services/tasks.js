@@ -174,6 +174,37 @@ export const STATUSES = [
   { value: 'cancelled',   label: 'Cancelada',      color: '#EF4444' },
 ];
 
+/**
+ * Status VIRTUAL "atrasada" — não é persistido no Firestore, é derivado.
+ * Tarefa está atrasada quando: tem dueDate, dueDate < hoje (00:00),
+ * e o status não é finalizado (done/cancelled).
+ *
+ * Por que virtual e não um campo real:
+ *   - Estado temporal — muda sozinho ao passar da meia-noite, sem rewrite
+ *   - Idempotente — não precisa cron pra "marcar atrasadas"
+ *   - Não conflita com workflow (tarefa atrasada ainda está in_progress, review, etc.)
+ *
+ * Onde aparece como coluna/filtro:
+ *   - Kanban groupBy='status': vira coluna virtual no início
+ *   - Toolbar filter-status: opção "⚠ Atrasada"
+ *   - filterBar (Calendar/Kanban/Timeline): mesma opção
+ *
+ * Detalhes em RULES-AND-AUTOMATIONS.md § 10.1.
+ */
+export const STATUS_OVERDUE = {
+  value: 'overdue', label: '⚠ Atrasada', color: '#EF4444', virtual: true,
+};
+
+export function isTaskOverdue(t) {
+  if (!t || !t.dueDate) return false;
+  if (t.status === 'done' || t.status === 'cancelled') return false;
+  const due = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+  if (isNaN(due)) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return due < today;
+}
+
 // Sub-status para tarefas do tipo Newsletter
 export const NEWSLETTER_STATUSES = [
   { value: 'pauta',           label: 'Pauta'            },

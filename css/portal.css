@@ -58,6 +58,26 @@
 [data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator {
   filter: none;
 }
+
+/* Datepicker — UX (3.5.0):
+   Por default, browsers só abrem o calendário ao clicar no ícone do
+   indicator (lado direito do input). Tornamos o input INTEIRO clicável
+   via cursor:pointer + JS chamando showPicker() (Chrome 99+, Safari 16+).
+   Fallback: o ícone nativo continua funcionando em browsers antigos.
+   Implementação JS em js/components/datepickerEnhance.js. */
+input[type="date"], input[type="datetime-local"], input[type="time"], input[type="month"] {
+  cursor: pointer;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+input[type="date"]:hover::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]:hover::-webkit-calendar-picker-indicator {
+  opacity: 1;
+}
 [data-theme="light"] .form-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%234A5568' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
 }
