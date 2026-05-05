@@ -7,6 +7,46 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 ---
 
 
+
+## [3.4.0+20260505-regras-e-search-docs] — 2026-05-05
+
+Release "Auditoria de Regras + Search". Documenta de forma completa todas as regras automáticas que o sistema aplica vinculadas a hierarquia/permissões/módulos, com **racional** explicando cada decisão. Adiciona search global na página pública de documentação.
+
+### Added
+- **`RULES-AND-AUTOMATIONS.md`** (novo, ~400 linhas) — mapa completo das regras automáticas, com **racional**:
+  1. **Hierarquia de papéis** com porquê de cada nível
+  2. **Permissions × roles** (tabela canônica) com racional de quem ganhou cada permissão
+  3. **Visibility scopes** (own / sector / squad / all) — quem vê o quê e por quê
+  4. **Auto-provisioning de usuários SSO** — allowlist de domínio, defaults, sync `nucleos→squads`, notificação a masters
+  5. **Defaults automáticos** por módulo (tasks, goals, calendário, projetos, feedbacks)
+  6. **Cascatas e syncs** (núcleos↔squads, tipo→variação→SLA, setor→tipo, re-bind de UID em SSO consolidation)
+  7. **Notificações automáticas** — quem recebe quando, regras de roteamento, self-suppression, cron schedule
+  8. **Validações server-side** (Firestore Rules) — defense-in-depth
+  9. **Auditoria automática** — o que é logado sem ação explícita (~13 eventos)
+  10. **Regras por módulo** com racional (Tarefas, Goals, Feedbacks, CSAT, Calendário, IA Hub, Auditoria, Squads, Time Clock, LGPD)
+- **Entrada `⚖ Regras & Automações`** no menu de `docs.html` (seção Segurança).
+- **Link direto da página `#roles`** (Configurações → Roles e Permissões) para o doc novo: "📖 Ver documento técnico de Regras & Automações" no banner de info.
+- **Cross-link em `ACCESS-CONTROL.md`** apontando pro novo doc.
+- **Search global em `docs.html`**:
+  - Pré-fetch de todos os 18 MDs em paralelo após render do doc atual (não-bloqueante, ~200ms)
+  - Cache em memória com texto raw + lowercase pra busca rápida
+  - Input no topo da sidebar com placeholder "Buscar nos documentos…", ícone 🔍 e botão de limpar (✕)
+  - Status indicator durante indexação ("⏳ Indexando 5/18…" → "✓ 18 documentos indexados")
+  - Resultados renderizados como cards clicáveis com snippet de ±60 chars contextual ao redor da 1ª ocorrência, com `<mark>` highlighting
+  - Boost para hit no título do doc (vai pro topo)
+  - Top 30 resultados, sort por score
+  - Atalho `Esc` limpa search e restaura conteúdo
+  - Nav lateral marca docs com hit (border esquerda dourada)
+  - "Search empty" estado quando nenhum match
+
+### Why
+A demanda do time de TI/auditoria foi explícita: precisamos de um lugar único onde estejam escritas todas as regras vinculadas a hierarquia e módulos, com **racional** ("o porquê", não só "o que"). E com o acervo de docs crescendo (~18 docs agora), busca por título de menu não é mais suficiente — search por conteúdo vira essencial.
+
+### Mudanças menores
+- `docs.html` topbar e sidebar.subtitle ganharam ajustes de margin pra acomodar o search.
+
+---
+
 ## [3.3.0+20260505-fix-icones-e-release-script] — 2026-05-05
 
 ### Added

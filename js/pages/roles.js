@@ -52,6 +52,11 @@ export async function renderRoles(container) {
         <strong>(Master, Administrador, Gerente, Membro)</strong> não podem ser excluídos.
         Você pode criar roles customizados para cargos específicos da organização.
         Passe o mouse sobre o <strong>ℹ</strong> de cada permissão para entender o que ela libera.
+        <br><br>
+        📖 <a href="docs.html?doc=rules" target="_blank" rel="noopener"
+          style="color:var(--brand-gold);font-weight:500;">Ver documento técnico de Regras &amp; Automações</a>
+        — racional completo de cada permissão, regras de visibilidade, defaults
+        automáticos, notificações, cascatas e validações server-side.
       </span>
     </div>
 

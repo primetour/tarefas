@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 3,
-  minor: 3,
+  minor: 4,
   patch: 0,
-  build: '20260505-fix-icones-e-release-script',
+  build: '20260505-regras-e-search-docs',
 };
 
 /** "1.2.0" */

@@ -7,6 +7,11 @@
 > Coleção Firestore `nucleos` segue acessível por back-compat mas não é mais a
 > fonte de verdade — `userDoc().squads` é o canônico. Sync automática entre as duas
 > coleções é mantida durante a janela de transição.
+>
+> **Para o "porquê" de cada permissão e suas regras automáticas**, ver
+> [`RULES-AND-AUTOMATIONS.md`](RULES-AND-AUTOMATIONS.md) — mapa completo das
+> regras automáticas (defaults, cascatas, syncs, notificações, validações
+> server-side, auditoria), com **racional** explicando cada decisão.
 
 ## Roles
 

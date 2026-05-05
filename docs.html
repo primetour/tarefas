@@ -107,7 +107,104 @@
     .docs-sidebar .subtitle {
       font-size: 0.75rem;
       color: var(--text-muted, #64748B);
-      margin-bottom: 24px;
+      margin-bottom: 16px;
+    }
+
+    /* ─── Search global ──────────────────────── */
+    .docs-search-wrap {
+      position: relative;
+      margin-bottom: 16px;
+    }
+    .docs-search-input {
+      width: 100%;
+      padding: 8px 30px 8px 32px;
+      font-size: 0.8125rem;
+      background: var(--bg-elevated, #1E293B);
+      border: 1px solid var(--border-subtle, #1F2937);
+      border-radius: 6px;
+      color: var(--text-primary, #E2E8F0);
+      outline: none;
+      box-sizing: border-box;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    .docs-search-input:focus { border-color: var(--brand-gold, #D4A843); }
+    .docs-search-icon {
+      position: absolute;
+      left: 10px; top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.875rem;
+      color: var(--text-muted, #64748B);
+      pointer-events: none;
+    }
+    .docs-search-clear {
+      position: absolute;
+      right: 8px; top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--text-muted, #64748B);
+      cursor: pointer;
+      padding: 2px 6px;
+      font-size: 0.875rem;
+      display: none;
+    }
+    .docs-search-clear:hover { color: var(--text-primary, #E2E8F0); }
+    .docs-search-status {
+      font-size: 0.6875rem;
+      color: var(--text-muted, #64748B);
+      margin-top: 6px;
+      letter-spacing: 0.02em;
+    }
+
+    /* Resultados da search renderizados no main em vez do markdown */
+    .docs-search-results { padding: 4px 0; }
+    .docs-search-result {
+      display: block;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      background: var(--bg-surface, #0F1B30);
+      border: 1px solid var(--border-subtle, #1F2937);
+      border-radius: 8px;
+      text-decoration: none;
+      transition: all 0.15s;
+      cursor: pointer;
+    }
+    .docs-search-result:hover {
+      border-color: var(--brand-gold, #D4A843);
+      background: rgba(212,168,67,0.05);
+    }
+    .docs-search-result-doc {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--brand-gold, #D4A843);
+      margin-bottom: 4px;
+    }
+    .docs-search-result-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--text-primary, #E2E8F0);
+      margin-bottom: 6px;
+    }
+    .docs-search-result-snippet {
+      font-size: 0.8125rem;
+      color: var(--text-secondary, #94A3B8);
+      line-height: 1.5;
+    }
+    .docs-search-result mark {
+      background: rgba(212,168,67,0.25);
+      color: var(--brand-gold, #D4A843);
+      padding: 0 2px;
+      border-radius: 2px;
+      font-weight: 600;
+    }
+    .docs-search-empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted, #64748B);
+      font-size: 0.875rem;
     }
     .docs-nav {
       display: flex;
@@ -248,6 +345,7 @@
       { id: 'threat-model', icon: '🎯', file: 'THREAT-MODEL.md',        title: 'Modelo de Ameaças (STRIDE)',section: 'Segurança' },
       { id: 'incident',     icon: '🚨', file: 'INCIDENT-RESPONSE.md',   title: 'Resposta a Incidentes',     section: 'Segurança' },
       { id: 'access',       icon: '🔑', file: 'ACCESS-CONTROL.md',      title: 'Controle de Acesso (RBAC)', section: 'Segurança' },
+      { id: 'rules',        icon: '⚖', file: 'RULES-AND-AUTOMATIONS.md', title: 'Regras & Automações',     section: 'Segurança' },
       { id: 'data-flow',    icon: '🔐', file: 'DATA-FLOW.md',           title: 'Fluxo de Dados & PII',      section: 'Privacidade' },
       // Desenvolvimento (novos docs criados na auditoria)
       { id: 'onboarding',   icon: '🚀', file: 'docs/ONBOARDING.md',     title: 'Onboarding (dev novo)',     section: 'Desenvolvimento' },
@@ -316,8 +414,18 @@
         <div class="docs-layout">
           <aside class="docs-sidebar">
             <h1>📚 Docs Técnicos</h1>
-            <p class="subtitle">Gestor PRIMETOUR — Segurança & Operação</p>
-            <nav class="docs-nav">
+            <p class="subtitle">Gestor PRIMETOUR — Segurança &amp; Operação</p>
+
+            <div class="docs-search-wrap">
+              <span class="docs-search-icon">🔍</span>
+              <input id="docs-search-input" class="docs-search-input"
+                type="text" placeholder="Buscar nos documentos…"
+                autocomplete="off" spellcheck="false" />
+              <button id="docs-search-clear" class="docs-search-clear" title="Limpar">✕</button>
+            </div>
+            <div id="docs-search-status" class="docs-search-status">⏳ Indexando documentos…</div>
+
+            <nav class="docs-nav" id="docs-nav-tree">
               ${Object.entries(sections).map(([section, items]) => `
                 <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
                   letter-spacing:.06em;color:#64748B;padding:14px 12px 6px;">${section}</div>
@@ -371,6 +479,163 @@
       // Interno (com sessão) → "Voltar ao Gestor PRIMETOUR" indo direto pro app.
       // Lazy: roda em paralelo, não bloqueia a renderização do markdown.
       adaptBackButton().catch(() => {});
+
+      // Search global — também lazy
+      initSearch().catch(() => {});
+    }
+
+    /* ═══════════════════════════════════════════════════════════
+     * SEARCH GLOBAL — busca full-text em todos os MDs do índice DOCS.
+     *
+     * Estratégia:
+     *   1. Pré-fetch de todos os MDs em paralelo após render do doc atual
+     *      (não bloqueia a leitura).
+     *   2. Cache em memória (Map<docId, {raw, lower}>).
+     *   3. Search filtra pelo termo (case-insensitive) e devolve top 30
+     *      matches com snippet contextual de ±60 chars ao redor da 1ª
+     *      ocorrência. Hits no título do doc têm boost.
+     *   4. Resultado renderiza no #md-output como cards clicáveis.
+     * ═══════════════════════════════════════════════════════════ */
+    const _searchCache = new Map();   // docId → { raw, lower, title, file }
+    let _searchReady = false;
+    let _navTreeHtml = '';            // HTML original da árvore (pra restaurar)
+
+    async function initSearch() {
+      const input = document.getElementById('docs-search-input');
+      const clearBtn = document.getElementById('docs-search-clear');
+      const status = document.getElementById('docs-search-status');
+      const navTree = document.getElementById('docs-nav-tree');
+      if (!input) return;
+      _navTreeHtml = navTree?.innerHTML || '';
+
+      // Pré-fetch dos MDs (não-bloqueante)
+      let loaded = 0;
+      const total = DOCS.length;
+      await Promise.all(DOCS.map(async d => {
+        try {
+          const res = await fetch(`/tarefas/${d.file}?cb=${Date.now()}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const raw = await res.text();
+          _searchCache.set(d.id, { raw, lower: raw.toLowerCase(), title: d.title, file: d.file });
+        } catch (e) {
+          // Silencia erros individuais — search ainda funciona com o que carregou
+          console.warn(`[search] falha em ${d.file}:`, e.message);
+        } finally {
+          loaded++;
+          if (status) status.textContent = `⏳ Indexando ${loaded}/${total} documentos…`;
+        }
+      }));
+      _searchReady = true;
+      if (status) status.textContent = `✓ ${total} documentos indexados`;
+
+      // Wire input
+      let timer;
+      input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        clearBtn.style.display = q ? 'block' : 'none';
+        timer = setTimeout(() => runSearch(q), 150);
+      });
+      clearBtn.addEventListener('click', () => {
+        input.value = '';
+        clearBtn.style.display = 'none';
+        runSearch('');
+        input.focus();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          input.value = '';
+          clearBtn.style.display = 'none';
+          runSearch('');
+        }
+      });
+    }
+
+    function runSearch(q) {
+      const out = document.getElementById('md-output');
+      const navTree = document.getElementById('docs-nav-tree');
+      if (!out || !navTree) return;
+
+      // Vazio → restaura conteúdo do doc atual
+      if (!q) {
+        navTree.innerHTML = _navTreeHtml;
+        const params = new URLSearchParams(location.search);
+        const requestedId = params.get('doc') || 'governance';
+        const doc = DOCS.find(d => d.id === requestedId) || DOCS[0];
+        loadMarkdown(doc);
+        return;
+      }
+
+      const qLower = q.toLowerCase();
+      const results = [];
+
+      DOCS.forEach(d => {
+        const cached = _searchCache.get(d.id);
+        if (!cached) return;
+        const titleHit = cached.title.toLowerCase().includes(qLower);
+        const idx = cached.lower.indexOf(qLower);
+        if (idx === -1 && !titleHit) return;
+
+        // Snippet ao redor da ocorrência
+        let snippet = '';
+        if (idx !== -1) {
+          const start = Math.max(0, idx - 60);
+          const end = Math.min(cached.raw.length, idx + q.length + 80);
+          snippet = (start > 0 ? '…' : '') + cached.raw.slice(start, end).replace(/\s+/g, ' ').trim() + (end < cached.raw.length ? '…' : '');
+        } else {
+          // Match só no título — snippet fica com primeiros 140 chars
+          snippet = cached.raw.slice(0, 140).replace(/\s+/g, ' ').trim() + '…';
+        }
+
+        // Highlight
+        const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        const highlighted = snippet.replace(re, m => `<mark>${m}</mark>`);
+        const titleHl = cached.title.replace(re, m => `<mark>${m}</mark>`);
+
+        results.push({
+          id: d.id,
+          title: titleHl,
+          snippet: highlighted,
+          score: titleHit ? 100 : 1,  // boost título
+        });
+      });
+
+      results.sort((a, b) => b.score - a.score);
+      const top = results.slice(0, 30);
+
+      // Atualiza nav: marca docs com hit
+      const hitIds = new Set(results.map(r => r.id));
+      const navHtml = _navTreeHtml.replace(/href="\?doc=([^"]+)"/g, (m, id) =>
+        hitIds.has(id) ? m + ' style="border-left:2px solid var(--brand-gold);"' : m);
+      navTree.innerHTML = navHtml;
+
+      // Renderiza resultados
+      if (!top.length) {
+        out.innerHTML = `<div class="docs-search-empty">
+          Nenhum resultado para <strong>"${escHtml(q)}"</strong>.<br>
+          <span style="font-size:0.75rem;">Tente termos mais curtos ou variações.</span>
+        </div>`;
+        return;
+      }
+
+      out.innerHTML = `
+        <div style="margin-bottom:16px;font-size:0.875rem;color:var(--text-muted);">
+          ${results.length} resultado${results.length === 1 ? '' : 's'} para "<strong>${escHtml(q)}</strong>"
+          ${results.length > 30 ? ` <span style="font-size:0.75rem;">(mostrando top 30)</span>` : ''}
+        </div>
+        <div class="docs-search-results">
+          ${top.map(r => `
+            <a class="docs-search-result" href="?doc=${r.id}">
+              <div class="docs-search-result-doc">${DOCS.find(d => d.id === r.id)?.section || ''}</div>
+              <div class="docs-search-result-title">${r.title}</div>
+              <div class="docs-search-result-snippet">${r.snippet}</div>
+            </a>
+          `).join('')}
+        </div>`;
+    }
+
+    function escHtml(s) {
+      return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
     async function adaptBackButton() {
