@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 3,
-  minor: 1,
+  minor: 2,
   patch: 0,
-  build: '20260505-docs',
+  build: '20260505-governance',
 };
 
 /** "1.2.0" */

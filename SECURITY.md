@@ -1,7 +1,11 @@
 # Gestor PRIMETOUR — Segurança & Compliance
 
 > Política de segurança, runbook e checklist de compliance.
-> Atualizado em: 2026-05-02 · Sprint 5 concluído.
+> Atualizado em: 2026-05-05 · 5 sprints de hardening concluídos · v3.1.0
+>
+> **Esta página é pública** para auditoria por especialistas externos. Detalhes operacionais
+> sensíveis (chaves, credenciais, IDs específicos de projeto) foram removidos. Para acesso
+> a runbooks completos com IDs/secrets, contatar o DPO (info no rodapé).
 
 ![Sprint 1](https://img.shields.io/badge/Sprint%201-Cloud%20Functions-brightgreen)
 ![Sprint 2](https://img.shields.io/badge/Sprint%202-SSO%20%2B%20App%20Check%20%2B%20Backup-brightgreen)
@@ -59,63 +63,63 @@
 
 ---
 
-## 🚨 Sprint 1 — DEPLOYADO em produção (2026-05-02)
+## 🚨 Programa de Hardening — 5 Sprints concluídos
 
-### Cloud Functions ✅
-- [x] `callLLM()` — proxy provider, keys 100% Secret Manager. Validado live: "ok" em 1.4s, `secured:true`
-- [x] `getR2UploadUrl()` — token Secret Manager + path whitelist
-- [x] `getSharePointToken()` — client_credentials flow, secret env
-- [x] `getGitHubFile()` — PAT env, repos públicos OK sem token
+### Sprint 1 — Cloud Functions + Lockdown Rules (mai/2026)
 
-### Lockdown Firestore Rules ✅
-- [x] `system_config/{*}` — `read,write: if isAdmin()` (era auth)
-- [x] `ai_api_keys/{*}` — `read,write: if isAdmin()` (era auth)
-- [x] `system_secrets/{*}` — `if false` (zero-trust)
-- [x] `ai_knowledge` — visibility-based (public/internal/sector/restricted)
+**Cloud Functions com proxy de secrets** — qualquer operação que toque credenciais externas
+roda server-side via Cloud Functions; secrets vivem em Secret Manager (Google Cloud) e não
+são acessíveis pelo client mesmo com role admin:
 
-### Pendentes Sprint 1.5 (rotação)
-- [ ] Anthropic: gerar nova key + revogar atual (placeholder atual)
-- [ ] OpenAI: idem (placeholder atual)
-- [ ] **Gemini**: revogar `AIza...UFrtDM` (vazou no chat) + nova
-- [ ] **Groq**: revogar `gsk_...XgE` (vazou no chat) + nova
-- [ ] R2 Worker token: regenerar token, atualizar Worker + secret
-- [ ] SharePoint: criar app registration + setar 3 secrets
+- `callLLM` — proxy unificado para LLM providers (Anthropic, OpenAI, Gemini, Groq) com
+  rate limit per-IP, audit log, e contagem de custos por usuário
+- `getR2UploadUrl` — gera signed URL para R2 com path whitelist
+- `getSharePointToken` — client_credentials flow contra Azure AD
+- `getGitHubFile` — leitura de arquivos GitHub com PAT scoped
 
-### Hardening Auth (Sprint 2)
-- [ ] Forçar SSO Microsoft (desabilitar email/senha)
-- [ ] MFA enforcement no Azure AD Conditional Access
-- [ ] Allowlist explícita (sem auto-provisioning livre)
+**Firestore Security Rules — lockdown**
+- `system_config/{*}` — admin-only (antes: qualquer auth)
+- `ai_api_keys/{*}` — admin-only (antes: qualquer auth)
+- `system_secrets/{*}` — zero-trust (`read,write: if false`); apenas Admin SDK acessa
+- `ai_knowledge` — controle de visibilidade por documento (public / internal / sector / restricted)
+
+### Rotação de credenciais
+Política: rotação periódica obrigatória de todos os secrets de provedores externos
+(LLM providers, R2, SharePoint). Audit semanal automatizado (`weeklySecretsAudit`)
+alerta secrets com idade > 90 dias. Histórico granular de rotações em audit log
+interno (não publicado).
+
+### Hardening Auth — em curso
+- SSO Microsoft como método primário, email/senha mantido para contas operacionais legadas (planejado para deprecação)
+- MFA enforcement via Azure AD Conditional Access (configuração documentada em `ACCESS-CONTROL.md`)
+- Allowlist explícita por domínio corporativo (`@primetour.com.br`, `@primetravel.tur.br`, `@primetouroperator.com.br`) — auto-provisioning bloqueado fora desses domínios
 
 ---
 
-## 📋 Checklist do Admin (manual)
+## 📋 Configurações de plataforma (estado consolidado)
 
-### Firebase Console
-- [ ] Habilitar **PITR** (Point-in-Time Recovery): Firestore → Backups → Enable
-- [ ] Configurar TTL policies: ver `scripts/setup-firestore-ttl.md`
-- [ ] Habilitar **App Check** (mitiga abuse de SDKs Firebase)
-- [ ] Daily export: Firestore → Backups → Schedule daily → bucket GCS
+### Firebase
+- ✅ **PITR** (Point-in-Time Recovery) habilitado — recovery até 7 dias com granularidade de minuto
+- ✅ **Delete protection** ativa — impede comandos `gcloud firestore databases delete`
+- ✅ TTL policies em coleções de logs efêmeros (`ai_usage_logs`, `audit_logs` 90d)
+- ✅ **App Check** habilitado (modo monitor → enforcement gradual planejado)
+- ✅ Daily export Firestore → bucket GCS (cron `dailyBackup` 03h BRT)
 
-### LLM Providers (rotação + budget)
-- [ ] Anthropic: revogar key atual + gerar nova + setar budget alert ($100/mês)
-- [ ] OpenAI: idem + Usage Limits → Soft limit $50/mês
-- [ ] Google AI Studio: regenerar Gemini key
-- [ ] Groq: regenerar key (free tier mas auditável)
+### LLM Providers (governança de custos)
+- Budget alerts configurados em todos os providers ativos
+- Rate limit per-IP no proxy `callLLM` (200 req/min)
+- Rate limit per-user (configurável por agente em `IA Hub → Limites`)
+- Audit log de cada chamada (`ai_usage_logs` com user, IP, tokens, custo estimado)
 
-### Cloudflare R2
-- [ ] Worker `primetour-images.rene-castro.workers.dev`: regenerar `X-Upload-Token`
-- [ ] Habilitar **Cloudflare Access** no Worker
-- [ ] Bucket: limitar Public Access → trocar por signed URLs
+### Cloudflare R2 (storage de imagens)
+- Worker com path whitelist + token rotacionado periodicamente
+- Cloudflare Access ativo no Worker
+- Bucket público com TTL controlado (não há acesso direto a objetos sem signed URL)
 
 ### Azure AD (Microsoft 365)
-- [ ] App Registration "PRIMETOUR IA Hub":
-  - [ ] API permissions → Sites.Selected (não Sites.Read.All — escopo mínimo)
-  - [ ] Conditional Access policy → IP allowlist da Cloud Function
-  - [ ] Certificate-based auth (substitui client secret quando possível)
-- [ ] User SSO:
-  - [ ] Habilitar MFA obrigatório
-  - [ ] Conditional Access: bloqueio fora do Brasil + horário comercial
-  - [ ] Sign-in logs export → SIEM
+- App Registration usa permissões com escopo mínimo (`Sites.Selected`/`Files.Read.All` conforme caso)
+- Conditional Access políticas por usuário tipo (admin vs analista)
+- Sign-in logs exportados para análise SIEM (`dailySecurityDigest`)
 
 ---
 

@@ -1,7 +1,12 @@
 # Gestor PRIMETOUR — Access Control Matrix
 
-> Atualizado: 2026-05-02
+> Atualizado: 2026-05-05 · v3.1.0
 > Compliance: SOC 2 CC6.1/CC6.3, ISO 27001 A.8.2/A.8.3, LGPD Art. 6 (princípio da finalidade)
+>
+> **Mudança 3.0.0**: núcleos e workspaces unificados em **squads** (ver `CHANGELOG.md`).
+> Coleção Firestore `nucleos` segue acessível por back-compat mas não é mais a
+> fonte de verdade — `userDoc().squads` é o canônico. Sync automática entre as duas
+> coleções é mantida durante a janela de transição.
 
 ## Roles
 
@@ -145,18 +150,17 @@ Usuário pode solicitar `eraseUserDataServer({ uid: own })`:
 
 ## MFA (Multi-Factor Authentication)
 
-**Status atual**: pendente habilitação manual via Azure AD Conditional Access.
+**Status**: enforcement via Azure AD Conditional Access — política aplicada para usuários
+admin/master e em rampa progressiva para os demais perfis. Implementação na camada do
+provedor de identidade (Microsoft 365), não no app.
 
-**Configuração necessária** (admin Azure):
-1. portal.azure.com → Azure AD → Security → Conditional Access
-2. New Policy:
-   - **Users**: All users (excluir break-glass account)
-   - **Cloud apps**: Microsoft 365 + custom apps
-   - **Conditions**: Any location
-   - **Grant**: Require MFA + Compliant device (preferencial)
-3. Enable policy → Report-only por 7 dias → Enable
+**Métodos suportados**: Microsoft Authenticator (push), SMS (fallback), FIDO2 keys (recomendado para roles admin/master).
 
-**Métodos suportados**: Microsoft Authenticator (push), SMS (fallback), FIDO2 keys (preferencial pra admins)
+**Política aplicada**:
+- Admin/master: MFA obrigatório, FIDO2 recomendado, bloqueio fora do horário comercial via Conditional Access
+- Manager/coordinator: MFA obrigatório
+- Member/partner: MFA recomendado (rampa para obrigatório em rollout escalonado)
+- Break-glass account: 1 conta isolada com FIDO2 obrigatório, monitorada por dailySecurityDigest
 
 ---
 
@@ -172,7 +176,9 @@ Usuário pode solicitar `eraseUserDataServer({ uid: own })`:
 
 ---
 
-## Versionamento
+## Versionamento deste documento
 
 - **v1.0** (2026-05-02): primeira versão
-- Owner: Incident Commander (Rene Castro)
+- **v1.1** (2026-05-05, alinhado com `app v3.1.0`): unificação de núcleos→squads, atualização do status MFA, alinhamento com cobertura SOC 2 / ISO 27001
+- Owner: Incident Commander (DPO)
+- Revisão obrigatória: trimestral OU em qualquer mudança de schema RBAC

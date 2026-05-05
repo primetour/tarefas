@@ -241,6 +241,8 @@
     // - Segurança / Privacidade → aba "🛡 Segurança & LGPD"
     // - Desenvolvimento / Operação / Geral → aba "📚 Documentação Técnica"
     const DOCS = [
+      // Governança (visão executiva — papéis, ciclo, riscos, fornecedores)
+      { id: 'governance',   icon: '🏛', file: 'GOVERNANCE.md',          title: 'Governança',                section: 'Governança' },
       // Segurança & LGPD
       { id: 'security',     icon: '🛡', file: 'SECURITY.md',            title: 'Política de Segurança',     section: 'Segurança' },
       { id: 'threat-model', icon: '🎯', file: 'THREAT-MODEL.md',        title: 'Modelo de Ameaças (STRIDE)',section: 'Segurança' },
@@ -280,7 +282,7 @@
     // ─── Render ────────────────────────────────────────────
     async function render() {
       const params = new URLSearchParams(location.search);
-      const requestedId = params.get('doc') || 'security';
+      const requestedId = params.get('doc') || 'governance';
       const doc = DOCS.find(d => d.id === requestedId) || DOCS[0];
 
       // Group docs by section

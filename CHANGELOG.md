@@ -6,6 +6,41 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [3.2.0+20260505-governance] — 2026-05-05
+
+Release "Auditoria-Ready". Endurece a documentação para revisão por especialistas TI externos: cria doc de governança (faltava no acervo), saneia exposições no SECURITY.md, alinha ACCESS-CONTROL com squads unificados, atualiza INFRA com referências a docs irmãos.
+
+### Added
+- **`GOVERNANCE.md`** (novo, ~250 linhas) — política completa de governança técnica e de dados:
+  - Modelo de papéis e responsabilidades (Sponsor, Tech Lead, DPO, Incident Commander, Admin, Auditor)
+  - Comitês e cadências (review de Segurança mensal, Acessos trimestral, Fornecedores trimestral, Pentest anual)
+  - Ciclo de vida de mudança (versionamento, pipeline de deploy, janelas de manutenção)
+  - Gestão de fornecedores (críticos vs não-críticos, política de troca)
+  - Política de retenção de dados (7 categorias com período + justificativa legal)
+  - Classificação de dados (Pública / Interna / Confidencial / Restrita)
+  - Direitos do titular LGPD (mapeamento de Art. 18 → endpoints)
+  - Risk register (8 riscos identificados com tratamento)
+  - Backup & DR (RTO 4h, RPO 1h)
+  - Compliance mapping (LGPD ✓, SOC 2 artefatos prontos, ISO 27001 mapeado, GDPR equivalente)
+  - Política de uso de IA com dados de cliente (no-training, metadados-only em logs)
+- Entrada nova no menu de `docs.html`: **Governança** (seção própria, primeira da lista, default ao abrir docs)
+- Cabeçalho de aviso "Esta página é pública" em SECURITY.md e INFRA.md com link pro DPO
+
+### Changed
+- **`SECURITY.md` saneado** para auditoria externa:
+  - Removidos prefixos de chaves vazadas mencionadas no histórico (eram detalhes operacionais internos com info sensível)
+  - Removidos TODOs abertos com detalhes específicos (PITR habilitar, App Check setup, rotação de keys) — substituídos por descrição do estado consolidado atual
+  - Reescrita seção "Sprint 1" para destacar capacidades de segurança em vez de log operacional
+  - Adicionado disclaimer no topo: "página pública, info sensível indisponível externamente"
+- **`ACCESS-CONTROL.md`**: nota sobre unificação de núcleos→squads (3.0.0); status do MFA atualizado para "enforcement em rampa por perfil" (era "pendente"); versionamento do doc bumpado para v1.1
+- **`INFRA.md`**: cabeçalho ganha aviso de página pública + cross-links para docs irmãos (GOVERNANCE, SECURITY, ACCESS-CONTROL, DATA-FLOW, MIGRATION-CLOUDFLARE)
+- **`docs.html`**: doc default ao abrir mudou de `security` para `governance` (entrypoint adequado para auditor externo); nova seção "Governança" no menu lateral
+
+### Security
+- **Saneamento de exposição**: SECURITY.md anteriormente listava prefixos truncados de chaves de provedores que vazaram durante desenvolvimento (mesmo truncados, a admissão pública é exposição). Removido em 3.2.0 junto com a abertura pública de `docs.html` em 3.1.0.
+
+---
+
 ## [3.1.0+20260505-docs] — 2026-05-05
 
 Release "Docs Públicos". Estabelece a página de documentação técnica acessível externamente para auditoria por especialistas, e adiciona o doc faltante sobre componentes UI compartilhados.

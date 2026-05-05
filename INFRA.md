@@ -1,8 +1,17 @@
 # Gestor PRIMETOUR — Infraestrutura
 
-Mapa completo de todas as peças que compõem o sistema em produção. Use este
-documento para: onboarding, auditoria de custos, planejamento de migração,
-ou handoff (venda/transferência) do software.
+> Atualizado em: 2026-05-05 · v3.1.0
+> Mapa completo de todas as peças que compõem o sistema em produção.
+> Use este documento para: onboarding, auditoria de custos, planejamento de migração,
+> handoff (transferência) do software.
+>
+> **Esta página é pública** para auditoria por especialistas externos. IDs específicos
+> de projeto (Cloud Function tokens, GCP project numbers) foram redatados quando não
+> são informações de baixa sensibilidade. Para acesso completo, contatar o DPO.
+>
+> Documentos relacionados: [`GOVERNANCE.md`](GOVERNANCE.md) · [`SECURITY.md`](SECURITY.md) ·
+> [`ACCESS-CONTROL.md`](ACCESS-CONTROL.md) · [`DATA-FLOW.md`](DATA-FLOW.md) ·
+> [`MIGRATION-CLOUDFLARE.md`](MIGRATION-CLOUDFLARE.md)
 
 ---
 
