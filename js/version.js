@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 3,
-  minor: 0,
+  minor: 1,
   patch: 0,
-  build: '20260505-pickers',
+  build: '20260505-docs',
 };
 
 /** "1.2.0" */

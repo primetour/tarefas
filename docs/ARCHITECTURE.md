@@ -246,6 +246,30 @@ Toda ação crítica grava em `audit_logs`:
 
 Detalhes em `docs/PERFORMANCE.md` (otimizações pendentes).
 
+## Componentes UI compartilhados (3.0.0+)
+
+A partir da release **3.0.0**, a app consolidou unidade visual via componentes reusáveis. O ponto central é o **`optionPicker`** (`js/components/optionPicker.js`), que substituiu **~96 `<select>` nativos** em 23 módulos por um popover padronizado (bolinha colorida + ícone + label + chevron, com busca interna e suporte a agrupamento com acordeão).
+
+Outros componentes do mesmo registro:
+
+| Componente | Função |
+|---|---|
+| `optionPicker` | Substitui `<select>` nativo |
+| `filterBar` | Filtros compartilhados em Calendar/Kanban/Timeline |
+| `taskModal` | Modal de criação/edição de tarefa (5 pickers integrados) |
+| `modal` | Wrapper de modais com footer customizável |
+| `toast` | Notificações não-bloqueantes |
+| `uiKit` | Split-button + overflow menu nos headers |
+| `cardPrefsModal` | Personalização de campos visíveis em cards |
+
+Documentação detalhada (API, padrões de uso, cor por hash, avatar por inicial, cascata via `picker-refresh`) em [`docs/UI-COMPONENTS.md`](UI-COMPONENTS.md).
+
+## Versionamento
+
+Esquema **SemVer + BUILD** formalizado em `js/version.js`. Versão atual exibida no rodapé da sidebar (`PRIMETOUR · v3.0.0`, hover mostra build completa).
+
+Regras de bump, checklist de release e histórico consolidado em [`docs/VERSIONING.md`](VERSIONING.md) e [`CHANGELOG.md`](../CHANGELOG.md).
+
 ## Versão das dependências
 
 - Firebase SDK: `10.12.2` (CDN)

@@ -223,9 +223,18 @@
   <div id="root"><div class="auth-gate"><h2>Carregando…</h2></div></div>
 
   <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-    import { firebaseConfig, isAllowedSSODomain } from './js/config.js';
+    // ─── Acesso público (3.0.0) ─────────────────────────────
+    // Esta página é DELIBERADAMENTE pública (sem login) pra permitir auditoria
+    // técnica externa (especialistas TI / parceiros / clientes corporativos).
+    //
+    // Mitigação:
+    //   • <meta name="robots" content="noindex"> (não vai pra Google)
+    //   • Não linkamos esta URL fora — distribuição é manual via link direto
+    //   • Conteúdo é público por design (decisões arquiteturais, não secrets)
+    //   • Secrets de prod vivem em Cloud Functions / Secret Manager — nunca em docs
+    //
+    // Antes de 3.0.0 essa página exigia SSO interno. Tornar pública foi decisão
+    // explícita pra suportar revisões externas sem onboarding em cada parceiro.
 
     // ─── Lista de docs disponíveis ──────────────────────────
     // Ordem das sections segue a UI do "Sobre o Sistema":
@@ -243,6 +252,9 @@
       { id: 'architecture', icon: '🏗', file: 'docs/ARCHITECTURE.md',   title: 'Arquitetura',               section: 'Desenvolvimento' },
       { id: 'contributing', icon: '🤝', file: 'docs/CONTRIBUTING.md',   title: 'Convenções e Workflow',     section: 'Desenvolvimento' },
       { id: 'performance',  icon: '⚡', file: 'docs/PERFORMANCE.md',    title: 'Performance & Custos',      section: 'Desenvolvimento' },
+      { id: 'ui-components',icon: '🧩', file: 'docs/UI-COMPONENTS.md',  title: 'Componentes UI (optionPicker)', section: 'Desenvolvimento' },
+      { id: 'versioning',   icon: '🔖', file: 'docs/VERSIONING.md',     title: 'Versionamento (SemVer)',    section: 'Desenvolvimento' },
+      { id: 'changelog',    icon: '📜', file: 'CHANGELOG.md',           title: 'Changelog (release notes)', section: 'Desenvolvimento' },
       // Operação
       { id: 'data-model',   icon: '🗂', file: 'DATA-MODEL.md',          title: 'Modelo de Dados (Firestore)', section: 'Operação' },
       { id: 'infra',        icon: '⚙', file: 'INFRA.md',               title: 'Infraestrutura',            section: 'Operação' },
@@ -252,46 +264,17 @@
       { id: 'fact-sheet',   icon: '📄', file: 'FACT_SHEET.md',          title: 'Fact Sheet (executivo)',    section: 'Geral' },
     ];
 
-    // ─── Init Firebase Auth ─────────────────────────────────
-    // CRITICAL: usar mesmo app name 'primetour-main' que o app principal
-    // pra COMPARTILHAR sessao via IndexedDB (escopo por app name).
-    // Antes: 'primetour-docs' criava sessao separada → login restrito eterno.
-    const app = initializeApp(firebaseConfig, 'primetour-main');
-    const auth = getAuth(app);
-
-    // Aguarda Firebase Auth restaurar sessao do IndexedDB (assincrono).
-    // onAuthStateChanged dispara primeiro com null antes de hidratar.
-    let resolved = false;
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        document.getElementById('root').innerHTML = `
-          <div class="auth-gate">
-            <h2>🔒 Acesso restrito</h2>
-            <p>Esta documentação é interna.</p>
-            <p style="font-size:0.75rem;">Você precisa estar logado em <code>primetour.github.io/tarefas</code> nesta mesma janela do navegador.</p>
-            <a class="btn" href="/tarefas/">Ir para o sistema</a>
-          </div>`;
-      }
-    }, 4000);
-
-    onAuthStateChanged(auth, async (user) => {
-      if (resolved) return;        // ja fechou (timeout ou login)
-      if (!user) return;           // ainda hidratando, espera proximo evento ou timeout
-      resolved = true;
-      clearTimeout(timeout);
-
-      // Validar email pertencente aos domínios SSO autorizados
-      if (!isAllowedSSODomain(user.email)) {
-        document.getElementById('root').innerHTML = `
-          <div class="auth-gate">
-            <h2>🚫 Acesso negado</h2>
-            <p>Sua conta (${user.email || 'sem email'}) não pertence aos domínios autorizados da Primetour.</p>
-            <a class="btn" href="/tarefas/">Voltar</a>
-          </div>`;
-        return;
-      }
-      await render();
+    // ─── Render direto (público a partir de 3.0.0) ─────────
+    // Antes de 3.0.0, esta página exigia SSO + validação de domínio interno.
+    // Decisão registrada em docs/UI-COMPONENTS.md e CHANGELOG.md.
+    render().catch(err => {
+      console.error('[docs.html] render error:', err);
+      document.getElementById('root').innerHTML = `
+        <div class="auth-gate">
+          <h2>Erro ao carregar documentação</h2>
+          <p style="font-size:0.875rem;">${err.message || 'Erro desconhecido.'}</p>
+          <a class="btn" href="/tarefas/">Voltar ao sistema</a>
+        </div>`;
     });
 
     // ─── Render ────────────────────────────────────────────
@@ -307,6 +290,13 @@
         sections[d.section].push(d);
       });
 
+      // Carrega versão (best-effort) pra exibir na topbar
+      let appVersion = '';
+      try {
+        const v = await import('./js/version.js');
+        appVersion = v.LABEL;
+      } catch {}
+
       document.getElementById('root').innerHTML = `
         <header class="docs-topbar">
           <a href="/tarefas/" class="back-btn">← Voltar ao Gestor PRIMETOUR</a>
@@ -315,8 +305,9 @@
             <span class="topbar-meta">·</span>
             <span class="topbar-meta">${doc.title}</span>
           </div>
-          <div style="font-size:0.75rem;color:var(--text-muted, #64748B);">
-            🔒 Acesso interno
+          <div style="font-size:0.75rem;color:var(--text-muted, #64748B);display:flex;gap:10px;align-items:center;">
+            ${appVersion ? `<span title="Versão da app no momento do snapshot">${appVersion}</span>` : ''}
+            <span>📄 Documentação técnica</span>
           </div>
         </header>
         <div class="docs-layout">
@@ -340,7 +331,7 @@
               <div class="loading">Carregando ${doc.file}…</div>
             </div>
             <div class="docs-footer">
-              <span>Documentação interna · não distribuir externamente</span>
+              <span>Documentação técnica · auditoria externa autorizada</span>
               <span>
                 <a href="/tarefas/${doc.file}" target="_blank">📄 Markdown raw</a>
                 &nbsp;·&nbsp;

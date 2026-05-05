@@ -345,13 +345,20 @@ export class Sidebar {
           </div>
           <button class="sidebar-user-menu-btn">⋯</button>
         </div>
-        <!-- Versão (single source of truth: js/version.js) -->
-        <div class="sidebar-version" title="Build: ${APP_VERSION_FULL}"
-          style="padding:8px 14px 10px;font-size:0.6875rem;color:var(--text-muted);
+        <!-- Versão + acesso à documentação técnica.
+             Single source of truth: js/version.js
+             docs.html é público (auditoria externa autorizada) — ver
+             docs/UI-COMPONENTS.md "Acesso público (3.0.0)". -->
+        <a class="sidebar-version" href="docs.html" target="_blank" rel="noopener"
+          title="Documentação técnica · Build: ${APP_VERSION_FULL}"
+          style="display:flex;align-items:center;justify-content:center;gap:6px;
+            padding:8px 14px 10px;font-size:0.6875rem;color:var(--text-muted);
             text-align:center;letter-spacing:0.04em;font-variant-numeric:tabular-nums;
             border-top:1px solid var(--border-subtle);margin-top:4px;opacity:0.7;
-            cursor:default;user-select:none;"
-        >PRIMETOUR · ${APP_VERSION_LABEL}</div>
+            text-decoration:none;transition:opacity 0.15s,color 0.15s;"
+          onmouseover="this.style.opacity='1';this.style.color='var(--brand-gold)';"
+          onmouseout="this.style.opacity='0.7';this.style.color='var(--text-muted)';"
+        ><span>PRIMETOUR · ${APP_VERSION_LABEL}</span><span style="font-size:0.625rem;">📚</span></a>
       </div>
     `;
 
