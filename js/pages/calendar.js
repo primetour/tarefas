@@ -167,7 +167,7 @@ function renderFilters() {
     taskTypes, projects,
     users: store.get('users') || [],
   });
-  bindFilterBar(wrap, calFilterState, () => render());
+  bindFilterBar(wrap, calFilterState, () => render(), { taskTypes, projects, users: store.get('users') || [] });
 }
 
 function render() {

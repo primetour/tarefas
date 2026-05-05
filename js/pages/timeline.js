@@ -147,7 +147,7 @@ function _renderTlFilters() {
     taskTypes: tlTaskTypes,
     projects:  allProjects,
   });
-  bindFilterBar(wrap, tlFilterState, () => renderGantt());
+  bindFilterBar(wrap, tlFilterState, () => renderGantt(), { taskTypes: tlTaskTypes, projects: allProjects, users: store.get('users') || [] });
 }
 
 function renderGantt() {

@@ -633,7 +633,7 @@ function _renderKbFilters(container) {
     } else {
       renderKanban(container);
     }
-  });
+  }, { taskTypes: allTaskTypes, projects: allProjects, users: store.get('users') || [] });
 }
 
 function renderCards(tasks, _ignored = '') {
