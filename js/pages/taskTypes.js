@@ -15,6 +15,21 @@ import {
   CATEGORY_COLORS, CATEGORY_ICONS,
 } from '../services/taskCategories.js';
 import { loadNucleos } from '../services/sectors.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const _TT_HASH = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const _ttHash = (s) => {
+  const str = String(s || ''); let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return _TT_HASH[Math.abs(h) % _TT_HASH.length];
+};
+const _ttFromSel = (selectId, defaultIcon = '◈') => {
+  const sel = document.getElementById(selectId);
+  if (!sel) return [];
+  return [...sel.options].filter(o => o.value).map(o => ({
+    id: o.value, label: o.textContent.trim(), icon: defaultIcon, color: _ttHash(o.value),
+  }));
+};
 
 // Local copy to avoid cross-service dependency issues
 const REQUESTING_AREAS = [
@@ -358,9 +373,13 @@ function openTypeModal(type = null) {
         </div>
         <div class="form-group" style="margin:0;">
           <label class="form-label">Ícone</label>
-          <select class="form-select" id="tt-icon">
+          <select id="tt-icon" style="display:none;">
             ${TYPE_ICONS.map(i=>`<option value="${i}" ${(type?.icon||'📋')===i?'selected':''}>${i}</option>`).join('')}
           </select>
+          ${(() => {
+            const cur = type?.icon || '📋';
+            return renderPickerButton({ btnId: 'tt-icon-btn', selected: { id: cur, label: cur, icon: cur, color: _ttHash(cur) }, emptyLabel: 'Ícone' });
+          })()}
         </div>
         <div class="form-group" style="margin:0;">
           <label class="form-label">Cor</label>
@@ -386,24 +405,35 @@ function openTypeModal(type = null) {
         <label class="form-label">Setor <span class="required">*</span>
           <span title="Define em qual setor este tipo de tarefa está disponível no portal de solicitações." style="cursor:help;color:var(--text-muted);font-size:0.75rem;">ℹ</span>
         </label>
-        <select class="form-select" id="tt-sector">
+        <select id="tt-sector" style="display:none;">
           <option value="">— Sem setor (global) —</option>
           ${REQUESTING_AREAS.map(a =>
             `<option value="${a}" ${(type?.sector||'')===a?'selected':''}>${a}</option>`
           ).join('')}
         </select>
+        ${(() => {
+          const cur = type?.sector || '';
+          return renderPickerButton({
+            btnId: 'tt-sector-btn',
+            selected: cur ? { id: cur, label: cur, icon: '◈', color: _ttHash(cur) } : null,
+            emptyLabel: '— Sem setor (global) —',
+          });
+        })()}
       </div>
 
       <!-- Categoria (aparece após setor ser selecionado) -->
       <div class="form-group" id="tt-cat-group" style="display:${type?.sector?'block':'none'};">
         <label class="form-label">Categoria</label>
         <div style="display:flex;gap:8px;">
-          <select class="form-select" id="tt-cat" style="flex:1;">
-            <option value="">— Sem categoria —</option>
-            ${allCategories.filter(c => !c.sector || c.sector === (type?.sector||'')).map(c=>
-              `<option value="${c.id}|${c.name}" ${type?.categoryId===c.id?'selected':''}>${esc(c.icon||'')} ${esc(c.name)}</option>`
-            ).join('')}
-          </select>
+          <div style="flex:1;">
+            <select id="tt-cat" style="display:none;">
+              <option value="">— Sem categoria —</option>
+              ${allCategories.filter(c => !c.sector || c.sector === (type?.sector||'')).map(c=>
+                `<option value="${c.id}|${c.name}" ${type?.categoryId===c.id?'selected':''}>${esc(c.icon||'')} ${esc(c.name)}</option>`
+              ).join('')}
+            </select>
+            ${renderPickerButton({ btnId: 'tt-cat-btn', selected: null, emptyLabel: '— Sem categoria —' })}
+          </div>
           <button class="btn btn-ghost btn-sm" id="tt-new-cat-btn" type="button">+ Nova</button>
         </div>
       </div>
@@ -545,6 +575,40 @@ function openTypeModal(type = null) {
   });
 
   setTimeout(() => {
+    // Pickers visuais (tt-icon, tt-sector, tt-cat)
+    bindOptionPicker({
+      btnId: 'tt-icon-btn',
+      selectId: 'tt-icon',
+      buildConfig: () => ({
+        options: _ttFromSel('tt-icon').map(o => ({ ...o, icon: o.id })), // ícone = próprio glifo
+        searchPlaceholder: 'Buscar ícone…',
+      }),
+      findSelected: (id) => ({ id, label: id, icon: id, color: _ttHash(id) }),
+      emptyLabel: 'Ícone',
+    });
+    bindOptionPicker({
+      btnId: 'tt-sector-btn',
+      selectId: 'tt-sector',
+      buildConfig: () => ({
+        options: _ttFromSel('tt-sector', '◈'),
+        empty: { id: '', label: '— Sem setor (global) —' },
+        searchPlaceholder: 'Buscar setor…',
+      }),
+      findSelected: (id) => _ttFromSel('tt-sector', '◈').find(o => o.id === id) || null,
+      emptyLabel: '— Sem setor (global) —',
+    });
+    bindOptionPicker({
+      btnId: 'tt-cat-btn',
+      selectId: 'tt-cat',
+      buildConfig: () => ({
+        options: _ttFromSel('tt-cat', '◇'),
+        empty: { id: '', label: '— Sem categoria —' },
+        searchPlaceholder: 'Buscar categoria…',
+      }),
+      findSelected: (id) => _ttFromSel('tt-cat', '◇').find(o => o.id === id) || null,
+      emptyLabel: '— Sem categoria —',
+    });
+
     // Sector change → filter and show nucleos + category
     document.getElementById('tt-sector')?.addEventListener('change', async (e) => {
       const sector   = e.target.value;
@@ -572,6 +636,7 @@ function openTypeModal(type = null) {
         } catch(e) {
           catSel.innerHTML = '<option value="">— Sem categoria —</option>';
         }
+        catSel.dispatchEvent(new Event('picker-refresh'));
       }
 
       group.style.display = 'block';
@@ -765,12 +830,20 @@ function openCategoryEditor(cat = null, onDone) {
           <label class="form-label">Setor
             <span title="Vincula a categoria a um setor (deixe vazio para global)." style="cursor:help;color:var(--text-muted);font-size:0.75rem;">ℹ</span>
           </label>
-          <select class="form-select" id="cat-edit-sector">
+          <select id="cat-edit-sector" style="display:none;">
             <option value="">— Global (todos os setores) —</option>
             ${REQUESTING_AREAS.map(a =>
               `<option value="${a}" ${state.sector===a?'selected':''}>${a}</option>`
             ).join('')}
           </select>
+          ${(() => {
+            const cur = state.sector;
+            return renderPickerButton({
+              btnId: 'cat-edit-sector-btn',
+              selected: cur ? { id: cur, label: cur, icon: '◈', color: _ttHash(cur) } : null,
+              emptyLabel: '— Global (todos os setores) —',
+            });
+          })()}
         </div>
 
         <!-- Cor -->
@@ -854,6 +927,19 @@ function openCategoryEditor(cat = null, onDone) {
   });
 
   setTimeout(() => {
+    // Picker visual de setor da categoria
+    bindOptionPicker({
+      btnId: 'cat-edit-sector-btn',
+      selectId: 'cat-edit-sector',
+      buildConfig: () => ({
+        options: _ttFromSel('cat-edit-sector', '◈'),
+        empty: { id: '', label: '— Global (todos os setores) —' },
+        searchPlaceholder: 'Buscar setor…',
+      }),
+      findSelected: (id) => _ttFromSel('cat-edit-sector', '◈').find(o => o.id === id) || null,
+      emptyLabel: '— Global (todos os setores) —',
+    });
+
     // Color swatches
     document.querySelectorAll('.cat-color-swatch').forEach(sw => {
       sw.addEventListener('click', () => {

@@ -558,9 +558,17 @@ async function renderConfigTab(el) {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="form-group" style="margin:0;">
                 <label class="form-label" style="font-size:0.8125rem;">Provider padrão</label>
-                <select class="form-select" id="ai-cfg-provider" style="font-size:0.8125rem;">
+                <select id="ai-cfg-provider" style="display:none;">
                   ${AI_PROVIDERS.map(p => `<option value="${p.id}" ${config.provider === p.id ? 'selected' : ''}>${p.label}</option>`).join('')}
                 </select>
+                ${(() => {
+                  const p = AI_PROVIDERS.find(x => x.id === config.provider);
+                  return renderPickerButton({
+                    btnId: 'ai-cfg-provider-btn',
+                    selected: p ? { id: p.id, label: p.label, icon: p.icon || '🤖', color: _skHash(p.id) } : null,
+                    emptyLabel: 'Provider',
+                  });
+                })()}
               </div>
               <div class="form-group" style="margin:0;">
                 <label class="form-label" style="font-size:0.8125rem;">Max tokens padrão</label>
@@ -639,6 +647,17 @@ async function renderConfigTab(el) {
       renderKeyForm();
     });
   });
+
+  // Picker visual do provider padrão
+  if (document.getElementById('ai-cfg-provider-btn')) {
+    bindOptionPicker({
+      btnId: 'ai-cfg-provider-btn',
+      selectId: 'ai-cfg-provider',
+      buildConfig: () => ({ options: _findInSel('ai-cfg-provider', '🤖'), searchPlaceholder: 'Buscar provider…' }),
+      findSelected: (id) => _findInSel('ai-cfg-provider', '🤖').find(o => o.id === id) || null,
+      emptyLabel: 'Provider',
+    });
+  }
 
   // ── Event: Save ────────────────────────────────────────
   document.getElementById('ai-cfg-save')?.addEventListener('click', async () => {
@@ -1486,10 +1505,18 @@ function buildSkillForm(s = null) {
           <label class="form-label">Tom de voz / Manual de redação
             <span class="info-tip" title="Selecione um documento da Base de Conhecimento que define o tom de voz, estilo e regras de redação. A IA usará como referência obrigatória.">ℹ</span>
           </label>
-          <select class="form-select" id="sk-voice-doc">
+          <select id="sk-voice-doc" style="display:none;">
             <option value="">Nenhum (sem referência de tom)</option>
             ${allKnowledge.map(d => `<option value="${d.id}" ${s?.voiceDocId === d.id ? 'selected' : ''}>📄 ${esc(d.title)}</option>`).join('')}
           </select>
+          ${(() => {
+            const d = allKnowledge.find(x => x.id === s?.voiceDocId);
+            return renderPickerButton({
+              btnId: 'sk-voice-doc-btn',
+              selected: d ? { id: d.id, label: d.title, icon: '📄', color: _skHash(d.id) } : null,
+              emptyLabel: 'Nenhum (sem referência de tom)',
+            });
+          })()}
           ${!allKnowledge.length ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;font-style:italic;">
             Nenhum documento disponível. Crie um manual de redação na aba "Base de Conhecimento".
           </div>` : ''}
@@ -1517,11 +1544,13 @@ function buildSkillForm(s = null) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="form-group" style="margin:0;">
           <label class="form-label">Formato de saída</label>
-          <select class="form-select" id="sk-output-format">${outputOptions}</select>
+          <select id="sk-output-format" style="display:none;">${outputOptions}</select>
+          ${renderPickerButton({ btnId: 'sk-output-format-btn', selected: null, emptyLabel: 'Formato' })}
         </div>
         <div class="form-group" style="margin:0;">
           <label class="form-label">Gatilho</label>
-          <select class="form-select" id="sk-trigger">${triggerOptions}</select>
+          <select id="sk-trigger" style="display:none;">${triggerOptions}</select>
+          ${renderPickerButton({ btnId: 'sk-trigger-btn', selected: null, emptyLabel: 'Gatilho' })}
         </div>
       </div>
 
@@ -1626,6 +1655,38 @@ function bindSkillFormEvents() {
     findSelected: (id) => _findInSel('sk-model', '◈').find(o => o.id === id) || null,
     emptyLabel: 'Modelo',
   });
+  // Restantes do skill form
+  if (document.getElementById('sk-voice-doc-btn')) {
+    bindOptionPicker({
+      btnId: 'sk-voice-doc-btn',
+      selectId: 'sk-voice-doc',
+      buildConfig: () => ({
+        options: _findInSel('sk-voice-doc', '📄'),
+        empty: { id: '', label: 'Nenhum (sem referência de tom)' },
+        searchPlaceholder: 'Buscar documento…',
+      }),
+      findSelected: (id) => _findInSel('sk-voice-doc', '📄').find(o => o.id === id) || null,
+      emptyLabel: 'Nenhum (sem referência de tom)',
+    });
+  }
+  if (document.getElementById('sk-output-format-btn')) {
+    bindOptionPicker({
+      btnId: 'sk-output-format-btn',
+      selectId: 'sk-output-format',
+      buildConfig: () => ({ options: _findInSel('sk-output-format', '📝'), searchPlaceholder: 'Buscar formato…' }),
+      findSelected: (id) => _findInSel('sk-output-format', '📝').find(o => o.id === id) || null,
+      emptyLabel: 'Formato',
+    });
+  }
+  if (document.getElementById('sk-trigger-btn')) {
+    bindOptionPicker({
+      btnId: 'sk-trigger-btn',
+      selectId: 'sk-trigger',
+      buildConfig: () => ({ options: _findInSel('sk-trigger', '⚡'), searchPlaceholder: 'Buscar gatilho…' }),
+      findSelected: (id) => _findInSel('sk-trigger', '⚡').find(o => o.id === id) || null,
+      emptyLabel: 'Gatilho',
+    });
+  }
 
   // Module change → show context fields with explanations
   document.getElementById('sk-module')?.addEventListener('change', (e) => {

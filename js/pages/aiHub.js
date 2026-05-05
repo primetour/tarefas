@@ -326,6 +326,41 @@ async function openAgentEditor(agentId) {
     bindToolToggles(agent);
     bindFewShotEditor(agent);
     bindSiteEditor(agent);
+    bindAgentPickers(agent);
+  }
+
+  // Bind dos pickers visuais que aparecem nas sub-tabs do agent modal.
+  // Chamado em renderSubTab — reconfigura os pickers existentes na sub-tab atual.
+  function bindAgentPickers(a) {
+    // Helper: lê opções dinâmicas do <select> escondido
+    const fromSel = (id, defaultIcon = '◈') => {
+      const sel = document.getElementById(id);
+      if (!sel) return [];
+      return [...sel.options].map(o => ({
+        id: o.value, label: o.textContent.trim(), icon: defaultIcon, color: _aiHash(o.value),
+      }));
+    };
+
+    const tryBind = (btnId, selectId, opts, emptyLabel) => {
+      if (!document.getElementById(btnId)) return;
+      bindOptionPicker({
+        btnId,
+        selectId,
+        buildConfig: () => ({ options: opts(), searchPlaceholder: 'Buscar…' }),
+        findSelected: (id) => opts().find(o => o.id === id) || null,
+        emptyLabel,
+      });
+    };
+
+    tryBind('a-module-btn',           'a-module',           () => fromSel('a-module', '🔧'),       'Selecione');
+    tryBind('a-provider-btn',         'a-provider',         () => fromSel('a-provider', '🤖'),     'Provider');
+    tryBind('a-model-btn',            'a-model',            () => fromSel('a-model', '◈'),         'Modelo');
+    tryBind('a-apikey-ref-btn',       'a-apikey-ref',       () => fromSel('a-apikey-ref', '🔑'),   'Cascata automática');
+    tryBind('a-output-format-btn',    'a-output-format',    () => fromSel('a-output-format', '📝'), 'Formato');
+    tryBind('a-tools-mode-btn',       'a-tools-mode',       () => fromSel('a-tools-mode', '🔧'),   'Modo');
+    tryBind('a-trig-sched-mode-btn',  'a-trig-sched-mode',  () => fromSel('a-trig-sched-mode', '◇'), 'Modo');
+    tryBind('a-trig-sched-preset-btn','a-trig-sched-preset',() => fromSel('a-trig-sched-preset', '⏰'), 'Preset');
+    tryBind('a-vis-mode-btn',         'a-vis-mode',         () => fromSel('a-vis-mode', '👁'),     'Quem pode usar?');
   }
 
   function bindSiteEditor(a) {
@@ -468,6 +503,7 @@ async function openAgentEditor(agentId) {
     const refillModels = () => {
       const models = getModelsForProvider(provSel.value);
       modelSel.innerHTML = models.map(m => `<option value="${esc(m.id)}" ${m.id===agent.model?'selected':''}>${esc(m.label)}</option>`).join('');
+      modelSel.dispatchEvent(new Event('picker-refresh'));
     };
     provSel.addEventListener('change', () => { agent.provider = provSel.value; refillModels(); });
   }
@@ -629,10 +665,11 @@ function subTabIdentity(a) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div class="form-group">
         <label class="form-label">Módulo onde atua</label>
-        <select id="a-module" class="form-select">
+        <select id="a-module" style="display:none;">
           ${Object.entries(MODULE_REGISTRY).map(([id, m]) =>
             `<option value="${esc(id)}" ${id===a.module?'selected':''}>${esc(m.icon)} ${esc(m.label)}</option>`).join('')}
         </select>
+        ${(() => { const m = MODULE_REGISTRY[a.module]; return renderPickerButton({ btnId: 'a-module-btn', selected: m ? { id: a.module, label: m.label, icon: m.icon || '🔧', color: _aiHash(a.module) } : null, emptyLabel: 'Selecione' }); })()}
       </div>
       <div class="form-group">
         <label class="form-label">Status</label>
@@ -654,26 +691,39 @@ function subTabModel(a) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div class="form-group">
         <label class="form-label">Provider</label>
-        <select id="a-provider" class="form-select">
+        <select id="a-provider" style="display:none;">
           ${AI_PROVIDERS.map(p =>
             `<option value="${esc(p.id)}" ${p.id===a.provider?'selected':''}>${esc(p.icon)} ${esc(p.label)}${p.free?' · Grátis':''}</option>`).join('')}
         </select>
+        ${(() => { const p = AI_PROVIDERS.find(x => x.id === a.provider); return renderPickerButton({ btnId: 'a-provider-btn', selected: p ? { id: p.id, label: p.label + (p.free?' · Grátis':''), icon: p.icon || '🤖', color: _aiHash(p.id) } : null, emptyLabel: 'Provider' }); })()}
       </div>
       <div class="form-group">
         <label class="form-label">Modelo</label>
-        <select id="a-model" class="form-select">
+        <select id="a-model" style="display:none;">
           ${models.map(m => `<option value="${esc(m.id)}" ${m.id===a.model?'selected':''}>${esc(m.label)}</option>`).join('')}
         </select>
+        ${(() => { const m = models.find(x => x.id === a.model); return renderPickerButton({ btnId: 'a-model-btn', selected: m ? { id: m.id, label: m.label, icon: '◈', color: _aiHash(m.id) } : null, emptyLabel: 'Modelo' }); })()}
       </div>
     </div>
     <div class="form-group">
       <label class="form-label">Origem da API Key</label>
-      <select id="a-apikey-ref" class="form-select">
+      <select id="a-apikey-ref" style="display:none;">
         <option value="auto" ${ref.scope==='global'||ref.scope==='auto'?'selected':''}>🌐 Cascata automática (user → núcleo → setor → global)</option>
         ${scopedKeys.map(k => `<option value="scoped:${esc(k.id)}" ${ref.scopeId===k.id?'selected':''}>
           🎯 ${esc(k.scope)} · ${esc(k.scopeLabel || k.scopeId)}
         </option>`).join('')}
       </select>
+      ${(() => {
+        if (ref.scope === 'global' || ref.scope === 'auto') {
+          return renderPickerButton({ btnId: 'a-apikey-ref-btn', selected: { id: 'auto', label: 'Cascata automática', icon: '🌐', color: '#0EA5E9' }, emptyLabel: 'Cascata automática' });
+        }
+        const k = scopedKeys.find(x => x.id === ref.scopeId);
+        return renderPickerButton({
+          btnId: 'a-apikey-ref-btn',
+          selected: k ? { id: 'scoped:'+k.id, label: `${k.scope} · ${k.scopeLabel||k.scopeId}`, icon: '🎯', color: '#D4A843' } : null,
+          emptyLabel: 'Cascata automática',
+        });
+      })()}
       <small style="color:var(--text-muted);font-size:0.6875rem;">
         ${scopedKeys.length ? scopedKeys.length + ' chave(s) escopada(s) disponível(eis). Configure em IA Hub → API Keys.' : 'Sem chaves escopadas. Configure em IA Hub → API Keys pra forçar escopo.'}
       </small>
@@ -696,12 +746,17 @@ function subTabPrompt(a) {
     </div>
     <div class="form-group">
       <label class="form-label">Formato da resposta</label>
-      <select id="a-output-format" class="form-select">
+      <select id="a-output-format" style="display:none;">
         <option value="text"     ${a.outputFormat==='text'?'selected':''}>Texto livre</option>
         <option value="markdown" ${a.outputFormat==='markdown'?'selected':''}>Markdown</option>
         <option value="json"     ${a.outputFormat==='json'?'selected':''}>JSON estruturado</option>
         <option value="html"     ${a.outputFormat==='html'?'selected':''}>HTML</option>
       </select>
+      ${(() => {
+        const FMT = { text: 'Texto livre', markdown: 'Markdown', json: 'JSON estruturado', html: 'HTML' };
+        const cur = a.outputFormat || 'text';
+        return renderPickerButton({ btnId: 'a-output-format-btn', selected: { id: cur, label: FMT[cur] || cur, icon: '📝', color: _aiHash(cur) }, emptyLabel: 'Formato' });
+      })()}
     </div>
 
     <h4 style="font-size:0.875rem;margin:18px 0 8px;display:flex;justify-content:space-between;align-items:center;">
@@ -842,10 +897,15 @@ function subTabTools(a) {
     <h3 style="margin:0 0 12px;font-size:1.0625rem;">Ferramentas (Tools)</h3>
     <div class="form-group">
       <label class="form-label">Modo</label>
-      <select id="a-tools-mode" class="form-select">
+      <select id="a-tools-mode" style="display:none;">
         <option value="auto"   ${a.toolsMode==='auto'?'selected':''}>Auto (todas as tools do módulo)</option>
         <option value="manual" ${a.toolsMode==='manual'?'selected':''}>Manual (selecionar específicas)</option>
       </select>
+      ${(() => {
+        const TM = { auto: 'Auto (todas as tools do módulo)', manual: 'Manual (selecionar específicas)' };
+        const cur = a.toolsMode || 'auto';
+        return renderPickerButton({ btnId: 'a-tools-mode-btn', selected: { id: cur, label: TM[cur] || cur, icon: '🔧', color: _aiHash(cur) }, emptyLabel: 'Modo' });
+      })()}
     </div>
     <div id="a-tools-catalog">
       ${renderToolList(moduleTools, `Tools do módulo ${a.module}`)}
@@ -927,17 +987,31 @@ function subTabTriggers(a) {
       </label>
       <div style="margin-top:10px;display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center;">
         <span style="font-size:0.75rem;color:var(--text-muted);">Modo:</span>
-        <select id="a-trig-sched-mode" class="form-select" style="font-size:0.8125rem;">
-          <option value="preset" ${t.schedule?.mode==='preset'?'selected':''}>Preset (simples)</option>
-          <option value="cron"   ${t.schedule?.mode==='cron'?'selected':''}>Cron (avançado)</option>
-        </select>
+        <div>
+          <select id="a-trig-sched-mode" style="display:none;">
+            <option value="preset" ${t.schedule?.mode==='preset'?'selected':''}>Preset (simples)</option>
+            <option value="cron"   ${t.schedule?.mode==='cron'?'selected':''}>Cron (avançado)</option>
+          </select>
+          ${(() => {
+            const SM = { preset: 'Preset (simples)', cron: 'Cron (avançado)' };
+            const cur = t.schedule?.mode || 'preset';
+            return renderPickerButton({ btnId: 'a-trig-sched-mode-btn', selected: { id: cur, label: SM[cur], icon: '◇', color: _aiHash(cur) }, emptyLabel: 'Modo' });
+          })()}
+        </div>
         <span style="font-size:0.75rem;color:var(--text-muted);">Preset:</span>
-        <select id="a-trig-sched-preset" class="form-select" style="font-size:0.8125rem;">
-          <option value="hourly"  ${t.schedule?.preset==='hourly'?'selected':''}>A cada hora</option>
-          <option value="daily"   ${t.schedule?.preset==='daily'?'selected':''}>Diário</option>
-          <option value="weekly"  ${t.schedule?.preset==='weekly'?'selected':''}>Semanal</option>
-          <option value="monthly" ${t.schedule?.preset==='monthly'?'selected':''}>Mensal</option>
-        </select>
+        <div>
+          <select id="a-trig-sched-preset" style="display:none;">
+            <option value="hourly"  ${t.schedule?.preset==='hourly'?'selected':''}>A cada hora</option>
+            <option value="daily"   ${t.schedule?.preset==='daily'?'selected':''}>Diário</option>
+            <option value="weekly"  ${t.schedule?.preset==='weekly'?'selected':''}>Semanal</option>
+            <option value="monthly" ${t.schedule?.preset==='monthly'?'selected':''}>Mensal</option>
+          </select>
+          ${(() => {
+            const PR = { hourly: 'A cada hora', daily: 'Diário', weekly: 'Semanal', monthly: 'Mensal' };
+            const cur = t.schedule?.preset || 'daily';
+            return renderPickerButton({ btnId: 'a-trig-sched-preset-btn', selected: { id: cur, label: PR[cur], icon: '⏰', color: _aiHash(cur) }, emptyLabel: 'Preset' });
+          })()}
+        </div>
         <span style="font-size:0.75rem;color:var(--text-muted);">Cron:</span>
         <input type="text" id="a-trig-sched-cron" class="form-input" value="${esc(t.schedule?.cron||'')}" placeholder="0 9 * * 1-5" style="font-size:0.8125rem;font-family:monospace;" />
         <span style="font-size:0.75rem;color:var(--text-muted);">Hora:</span>
@@ -1066,12 +1140,17 @@ function subTabVisibility(a) {
     <h3 style="margin:0 0 12px;font-size:1.0625rem;">Visibilidade</h3>
     <div class="form-group">
       <label class="form-label">Quem pode usar este agente?</label>
-      <select id="a-vis-mode" class="form-select">
+      <select id="a-vis-mode" style="display:none;">
         <option value="all"    ${v.mode==='all'?'selected':''}>Todos os usuários</option>
         <option value="admin"  ${v.mode==='admin'?'selected':''}>Apenas admin/master</option>
         <option value="sector" ${v.mode==='sector'?'selected':''}>Setor específico</option>
         <option value="role"   ${v.mode==='role'?'selected':''}>Role específico</option>
       </select>
+      ${(() => {
+        const VM = { all: 'Todos os usuários', admin: 'Apenas admin/master', sector: 'Setor específico', role: 'Role específico' };
+        const cur = v.mode || 'all';
+        return renderPickerButton({ btnId: 'a-vis-mode-btn', selected: { id: cur, label: VM[cur], icon: '👁', color: _aiHash(cur) }, emptyLabel: 'Quem pode usar?' });
+      })()}
     </div>
     <div class="form-group">
       <label class="form-label">Valor (se setor/role)</label>

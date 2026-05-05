@@ -11,6 +11,14 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }          from '../firebase.js';
 import { auditLog }    from '../auth/audit.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const _ST_HASH = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const _stHash = (s) => {
+  const str = String(s || ''); let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return _ST_HASH[Math.abs(h) % _ST_HASH.length];
+};
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -161,6 +169,25 @@ export async function renderSettings(container) {
   document.getElementById('settings-save-btn')?.addEventListener('click', async () => {
     await saveAllSettings();
   });
+
+  // Pickers visuais
+  const fromSel = (id, defaultIcon = '◈') => {
+    const sel = document.getElementById(id);
+    if (!sel) return [];
+    return [...sel.options].map(o => ({ id: o.value, label: o.textContent.trim(), icon: defaultIcon, color: _stHash(o.value) }));
+  };
+  const tryBindSet = (btnId, selectId, opts, emptyLabel) => {
+    if (!document.getElementById(btnId)) return;
+    bindOptionPicker({
+      btnId, selectId,
+      buildConfig: () => ({ options: opts(), searchPlaceholder: 'Buscar…' }),
+      findSelected: (id) => opts().find(o => o.id === id) || null,
+      emptyLabel,
+    });
+  };
+  tryBindSet('s-timezone-btn',  's-timezone',  () => fromSel('s-timezone',  '🌎'), 'Fuso horário');
+  tryBindSet('s-language-btn',  's-language',  () => fromSel('s-language',  '🌐'), 'Idioma');
+  tryBindSet('s-page-size-btn', 's-page-size', () => fromSel('s-page-size', ''),    'Tamanho');
 }
 
 /* ─── Sections ────────────────────────────────────────────── */
@@ -177,26 +204,39 @@ function renderSectionGeneral(s) {
           </div>
           <div class="form-group">
             <label class="form-label">Fuso horário</label>
-            <select class="form-select" id="s-timezone">
+            <select id="s-timezone" style="display:none;">
               ${[
                 'America/Sao_Paulo','America/Manaus','America/Belem',
                 'America/Fortaleza','America/Recife','America/Campo_Grande',
                 'UTC','Europe/Lisbon','Europe/London',
               ].map(tz => `<option value="${tz}" ${(s.timezone||'America/Sao_Paulo')===tz?'selected':''}>${tz}</option>`).join('')}
             </select>
+            ${(() => {
+              const cur = s.timezone || 'America/Sao_Paulo';
+              return renderPickerButton({ btnId: 's-timezone-btn', selected: { id: cur, label: cur, icon: '🌎', color: _stHash(cur) }, emptyLabel: 'Fuso horário' });
+            })()}
           </div>
           <div class="form-group">
             <label class="form-label">Idioma padrão</label>
-            <select class="form-select" id="s-language">
+            <select id="s-language" style="display:none;">
               <option value="pt-BR" ${(s.language||'pt-BR')==='pt-BR'?'selected':''}>Português (Brasil)</option>
               <option value="en-US" ${s.language==='en-US'?'selected':''}>English (US)</option>
             </select>
+            ${(() => {
+              const LANG = { 'pt-BR': 'Português (Brasil)', 'en-US': 'English (US)' };
+              const cur = s.language || 'pt-BR';
+              return renderPickerButton({ btnId: 's-language-btn', selected: { id: cur, label: LANG[cur], icon: '🌐', color: _stHash(cur) }, emptyLabel: 'Idioma' });
+            })()}
           </div>
           <div class="form-group">
             <label class="form-label">Itens por página</label>
-            <select class="form-select" id="s-page-size">
+            <select id="s-page-size" style="display:none;">
               ${[10,15,20,25,50].map(n => `<option value="${n}" ${(s.pageSize||15)===n?'selected':''}>${n}</option>`).join('')}
             </select>
+            ${(() => {
+              const cur = String(s.pageSize || 15);
+              return renderPickerButton({ btnId: 's-page-size-btn', selected: { id: cur, label: cur + ' itens', icon: '', color: '#0EA5E9' }, emptyLabel: 'Tamanho' });
+            })()}
           </div>
         </div>
       </div>
