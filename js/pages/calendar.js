@@ -13,6 +13,7 @@ import {
 import { openCardPrefsModal }        from '../components/cardPrefsModal.js';
 import { renderCardFields }          from '../services/cardPrefs.js';
 import { toast }                     from '../components/toast.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -91,9 +92,19 @@ export async function renderCalendar(container) {
         </div>
 
         ${(activeView==='pipeline'||activeView==='agenda') && pipeTypes.length>1?`
-          <select class="filter-select" id="cal-type-filter" style="min-width:150px;">
-            ${pipeTypes.map(t=>`<option value="${t.id}" ${pipelineTypeId===t.id?'selected':''}>${esc(t.icon||'')} ${esc(t.name)}</option>`).join('')}
-          </select>
+          <div class="toolbar-filter-wrap" style="min-width:170px;">
+            <select id="cal-type-filter" style="display:none;">
+              ${pipeTypes.map(t=>`<option value="${t.id}" ${pipelineTypeId===t.id?'selected':''}>${esc(t.icon||'')} ${esc(t.name)}</option>`).join('')}
+            </select>
+            ${renderPickerButton({
+              btnId: 'cal-type-filter-btn',
+              selected: (() => {
+                const t = pipeTypes.find(x => x.id === pipelineTypeId);
+                return t ? { id: t.id, label: t.name, icon: t.icon || '', color: '#0EA5E9' } : null;
+              })(),
+              emptyLabel: 'Selecione o tipo',
+            })}
+          </div>
         `:''}
 
         <button class="btn btn-primary" id="cal-new-task-btn">+ Nova Tarefa</button>
@@ -116,6 +127,16 @@ export async function renderCalendar(container) {
   document.getElementById('cal-type-filter')?.addEventListener('change', e => {
     pipelineTypeId = e.target.value; renderCalendar(container);
   });
+  if (document.getElementById('cal-type-filter-btn')) {
+    const calTypeOpts = () => pipeTypes.map(t => ({ id: t.id, label: t.name, icon: t.icon || '', color: '#0EA5E9' }));
+    bindOptionPicker({
+      btnId: 'cal-type-filter-btn',
+      selectId: 'cal-type-filter',
+      buildConfig: () => ({ options: calTypeOpts(), searchPlaceholder: 'Buscar tipo…' }),
+      findSelected: (id) => calTypeOpts().find(o => o.id === id) || null,
+      emptyLabel: 'Selecione o tipo',
+    });
+  }
   document.getElementById('cal-new-task-btn')?.addEventListener('click', () => {
     const typeId = activeView==='pipeline' ? pipelineTypeId : null;
     openTaskModal({ typeId, onSave: () => load() });

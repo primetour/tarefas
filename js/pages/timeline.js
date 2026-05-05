@@ -13,6 +13,7 @@ import { toast }                     from '../components/toast.js';
 import { store }                     from '../store.js';
 import { openCardPrefsModal }         from '../components/cardPrefsModal.js';
 import { renderCardFields }           from '../services/cardPrefs.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -44,16 +45,22 @@ export async function renderTimeline(container) {
         <p class="page-subtitle">Visualização temporal de tarefas com datas de início e prazo</p>
       </div>
       <div class="page-header-actions">
-        <select class="filter-select" id="tl-proj-filter" style="min-width:180px;">
-          <option value="">Todos os projetos</option>
-        </select>
-        <select class="filter-select" id="tl-window">
-          <option value="7">7 dias</option>
-          <option value="14">14 dias</option>
-          <option value="30">30 dias</option>
-          <option value="60" selected>60 dias</option>
-          <option value="90">90 dias</option>
-        </select>
+        <div class="toolbar-filter-wrap" style="min-width:200px;">
+          <select id="tl-proj-filter" style="display:none;">
+            <option value="">Todos os projetos</option>
+          </select>
+          ${renderPickerButton({ btnId: 'tl-proj-filter-btn', selected: null, emptyLabel: 'Todos os projetos' })}
+        </div>
+        <div class="toolbar-filter-wrap" style="min-width:120px;">
+          <select id="tl-window" style="display:none;">
+            <option value="7">7 dias</option>
+            <option value="14">14 dias</option>
+            <option value="30">30 dias</option>
+            <option value="60" selected>60 dias</option>
+            <option value="90">90 dias</option>
+          </select>
+          ${renderPickerButton({ btnId: 'tl-window-btn', selected: { id: '60', label: '60 dias', icon: '', color: '#0EA5E9' }, emptyLabel: '60 dias' })}
+        </div>
         <button class="btn btn-ghost btn-icon" id="tl-prefs-btn" title="Personalizar cards" style="font-size:1rem;">⚙</button>
       </div>
     </div>
@@ -73,11 +80,45 @@ export async function renderTimeline(container) {
       opt.value = p.id; opt.textContent = `${p.icon} ${p.name}`;
       sel?.appendChild(opt);
     });
+    sel?.dispatchEvent(new Event('picker-refresh'));
 
     renderGantt();
 
     document.getElementById('tl-proj-filter')?.addEventListener('change', renderGantt);
     document.getElementById('tl-window')?.addEventListener('change', renderGantt);
+
+    // Pickers visuais
+    const projOpts = () => allProjects.map(p => ({
+      id: p.id,
+      label: p.name,
+      icon: p.icon || '',
+      color: p.color || '#6366F1',
+    }));
+    bindOptionPicker({
+      btnId: 'tl-proj-filter-btn',
+      selectId: 'tl-proj-filter',
+      buildConfig: () => ({
+        options: projOpts(),
+        empty: { id: '', label: 'Todos os projetos' },
+        searchPlaceholder: 'Buscar projeto…',
+      }),
+      findSelected: (id) => projOpts().find(o => o.id === id) || null,
+      emptyLabel: 'Todos os projetos',
+    });
+    const windowOpts = [
+      { id: '7',  label: '7 dias',  icon: '', color: '#0EA5E9' },
+      { id: '14', label: '14 dias', icon: '', color: '#0EA5E9' },
+      { id: '30', label: '30 dias', icon: '', color: '#0EA5E9' },
+      { id: '60', label: '60 dias', icon: '', color: '#0EA5E9' },
+      { id: '90', label: '90 dias', icon: '', color: '#0EA5E9' },
+    ];
+    bindOptionPicker({
+      btnId: 'tl-window-btn',
+      selectId: 'tl-window',
+      buildConfig: () => ({ options: windowOpts }),
+      findSelected: (id) => windowOpts.find(o => o.id === id) || null,
+      emptyLabel: '60 dias',
+    });
     document.getElementById('tl-prefs-btn')?.addEventListener('click', () =>
       openCardPrefsModal(() => renderGantt())
     );

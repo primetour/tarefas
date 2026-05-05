@@ -17,6 +17,7 @@ import {
 } from '../components/filterBar.js';
 import { openCardPrefsModal }     from '../components/cardPrefsModal.js';
 import { renderCardFields }       from '../services/cardPrefs.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -431,23 +432,40 @@ export async function renderKanban(container) {
 
         <!-- Pipeline type selector (only in pipeline view) -->
         ${activeView === 'pipeline' && pipelineTypes.length > 1 ? `
-          <select class="filter-select" id="pipeline-type-filter" style="min-width:160px;">
-            ${pipelineTypes.map(t =>
-              `<option value="${t.id}" ${activePipelineTypeId===t.id?'selected':''}>
-                ${t.icon||''} ${esc(t.name)}
-              </option>`
-            ).join('')}
-          </select>
+          <div class="toolbar-filter-wrap" style="min-width:170px;">
+            <select id="pipeline-type-filter" style="display:none;">
+              ${pipelineTypes.map(t =>
+                `<option value="${t.id}" ${activePipelineTypeId===t.id?'selected':''}>${t.icon||''} ${esc(t.name)}</option>`
+              ).join('')}
+            </select>
+            ${renderPickerButton({
+              btnId: 'pipeline-type-filter-btn',
+              selected: (() => {
+                const t = pipelineTypes.find(x => x.id === activePipelineTypeId);
+                return t ? { id: t.id, label: t.name, icon: t.icon || '', color: '#0EA5E9' } : null;
+              })(),
+              emptyLabel: 'Selecione o tipo',
+            })}
+          </div>
         ` : ''}
 
         <!-- Group-by selector (only in kanban view) -->
         ${activeView === 'kanban' ? `
-          <select class="filter-select" id="kanban-groupby" title="Agrupar colunas por"
-            style="min-width:170px;border-color:${groupBy!=='status'?'var(--brand-gold)':''};">
-            ${GROUPBY_OPTIONS.map(o =>
-              `<option value="${o.value}" ${groupBy===o.value?'selected':''}>Agrupar: ${esc(o.label)}</option>`
-            ).join('')}
-          </select>
+          <div class="toolbar-filter-wrap" style="min-width:180px;">
+            <select id="kanban-groupby" style="display:none;">
+              ${GROUPBY_OPTIONS.map(o =>
+                `<option value="${o.value}" ${groupBy===o.value?'selected':''}>Agrupar: ${esc(o.label)}</option>`
+              ).join('')}
+            </select>
+            ${renderPickerButton({
+              btnId: 'kanban-groupby-btn',
+              selected: (() => {
+                const o = GROUPBY_OPTIONS.find(x => x.value === groupBy);
+                return o ? { id: o.value, label: 'Agrupar: ' + o.label, icon: '', color: groupBy !== 'status' ? '#D4A843' : '#64748B' } : null;
+              })(),
+              emptyLabel: 'Agrupar: Status',
+            })}
+          </div>
         ` : ''}
 
         <!-- Filters rendered below header -->
@@ -512,11 +530,36 @@ export async function renderKanban(container) {
     activePipelineTypeId = e.target.value;
     renderKanban(container);
   });
+  if (document.getElementById('pipeline-type-filter-btn')) {
+    const pipeOpts = () => pipelineTypes.map(t => ({ id: t.id, label: t.name, icon: t.icon || '', color: '#0EA5E9' }));
+    bindOptionPicker({
+      btnId: 'pipeline-type-filter-btn',
+      selectId: 'pipeline-type-filter',
+      buildConfig: () => ({ options: pipeOpts(), searchPlaceholder: 'Buscar tipo…' }),
+      findSelected: (id) => pipeOpts().find(o => o.id === id) || null,
+      emptyLabel: 'Selecione o tipo',
+    });
+  }
 
   document.getElementById('kanban-groupby')?.addEventListener('change', (e) => {
     setGroupBy(e.target.value);
     renderKanban(container);
   });
+  if (document.getElementById('kanban-groupby-btn')) {
+    const groupOpts = () => GROUPBY_OPTIONS.map(o => ({
+      id: o.value,
+      label: 'Agrupar: ' + o.label,
+      icon: '',
+      color: o.value !== 'status' ? '#D4A843' : '#64748B',
+    }));
+    bindOptionPicker({
+      btnId: 'kanban-groupby-btn',
+      selectId: 'kanban-groupby',
+      buildConfig: () => ({ options: groupOpts(), searchPlaceholder: 'Buscar agrupamento…' }),
+      findSelected: (id) => groupOpts().find(o => o.id === id) || null,
+      emptyLabel: 'Agrupar: Status',
+    });
+  }
 
   _subscribeToTasks();
 }
