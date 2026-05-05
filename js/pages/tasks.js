@@ -206,6 +206,7 @@ export async function renderTasks(container) {
           <option value="status">Por status</option>
           <option value="priority">Por prioridade</option>
           <option value="project">Por projeto</option>
+          <option value="squad">Por squad</option>
           <option value="none">Sem agrupamento</option>
         </select>
         <button class="btn btn-ghost btn-sm" id="filter-config-btn" title="Configurar filtros visíveis"
@@ -1064,6 +1065,46 @@ function buildGroups() {
     if (noProject.length) groups.push({ key: 'none', label: 'Sem projeto', color: '#6B7280', tasks: noProject });
     return groups;
   }
+  if (groupBy === 'squad') {
+    // Agrupa por workspace (squad). Squads vêm de userWorkspaces no store
+    // (squads que o user é membro). Tasks de squads que ele não vê (caso
+    // master/admin com visão ampla) são derivadas do conjunto de tasks.
+    const groups = [];
+    const userSquads = store.get('userWorkspaces') || [];
+    const squadById = new Map(userSquads.map(w => [w.id, w]));
+    // Coleta também IDs de squads vistos nas tasks (cobertura pra master)
+    const seen = new Set();
+    filteredTasks.forEach(t => { if (t.workspaceId) seen.add(t.workspaceId); });
+    // Constrói grupos na ordem: squads do user primeiro, depois os "vistos"
+    userSquads.forEach(w => {
+      const tasks = filteredTasks.filter(t => t.workspaceId === w.id);
+      if (tasks.length) {
+        groups.push({
+          key:   w.id,
+          label: `${w.icon || '◈'} ${w.name}${w.multiSector ? ' · multissetor' : ''}`,
+          color: w.color || '#6366F1',
+          tasks,
+        });
+      }
+    });
+    // Squads visíveis nas tasks mas que o user não é membro (ex: master)
+    seen.forEach(wid => {
+      if (squadById.has(wid)) return;
+      const tasks = filteredTasks.filter(t => t.workspaceId === wid);
+      if (tasks.length) {
+        groups.push({
+          key:   wid,
+          label: `◈ Squad ${wid.slice(0, 6)}…`,
+          color: '#6366F1',
+          tasks,
+        });
+      }
+    });
+    // "Sem squad" sempre por último
+    const noSquad = filteredTasks.filter(t => !t.workspaceId);
+    if (noSquad.length) groups.push({ key: 'none', label: 'Sem squad', color: '#6B7280', tasks: noSquad });
+    return groups;
+  }
   return [];
 }
 
@@ -1240,6 +1281,7 @@ async function _handleDelegatedClick(e) {
     if (groupBy === 'status')   presets.status    = key;
     if (groupBy === 'priority') presets.priority  = key;
     if (groupBy === 'project')  presets.projectId = key !== 'none' ? key : null;
+    if (groupBy === 'squad')    presets.workspaceId = key !== 'none' ? key : null;
     openNewTask(presets);
     return;
   }
@@ -1268,6 +1310,7 @@ async function _handleDelegatedKeydown(e) {
     if (groupBy === 'status' && groupKey !== 'none') newTaskData.status = groupKey;
     if (groupBy === 'priority' && groupKey !== 'none') newTaskData.priority = groupKey;
     if (groupBy === 'project' && groupKey !== 'none') newTaskData.projectId = groupKey;
+    if (groupBy === 'squad' && groupKey !== 'none') newTaskData.workspaceId = groupKey;
     try {
       const { createTask } = await import('../services/tasks.js');
       await createTask(newTaskData);
@@ -1374,6 +1417,19 @@ async function _handleDrop(e) {
         await updateTask(_dragTaskId, { projectId: newProjectId === 'none' ? null : newProjectId });
         const proj = allProjects.find(p => p.id === newProjectId);
         toast.success(proj ? `Movida para ${proj.name}` : 'Removida do projeto');
+      } catch (err) { toast.error(err.message); }
+    }
+  }
+  // When grouped by squad, change workspaceId
+  else if (groupBy === 'squad' && targetGroup) {
+    const newSquadId = targetGroup.dataset.group;
+    const currentSquad = task.workspaceId || 'none';
+    if (newSquadId !== currentSquad) {
+      try {
+        await updateTask(_dragTaskId, { workspaceId: newSquadId === 'none' ? null : newSquadId });
+        const squads = store.get('userWorkspaces') || [];
+        const sq = squads.find(s => s.id === newSquadId);
+        toast.success(sq ? `Movida para ${sq.name}` : 'Removida do squad');
       } catch (err) { toast.error(err.message); }
     }
   }
