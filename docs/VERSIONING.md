@@ -8,15 +8,17 @@ Como versão é definida, propagada e exibida no Gestor PRIMETOUR.
 
 - **Esquema**: `MAJOR.MINOR.PATCH+BUILD` (SemVer + identificador de build).
 - **Fonte de verdade**: [`js/version.js`](../js/version.js) — toda referência de versão no app importa daqui.
-- **Exibido**: rodapé da sidebar (`PRIMETOUR · v1.2.0`), tooltip mostra build completa.
+- **Exibido**: rodapé da sidebar (`PRIMETOUR · v3.0.0`), tooltip mostra build completa.
 - **Bump**: edita `js/version.js`, atualiza `CHANGELOG.md`, sincroniza `?v=...` no `index.html`, commit.
+
+> **Calibragem inicial**: a app rodou ~2 meses (mar–mai 2026, ~1.161 commits) sem versionamento formal. `3.0.0` foi o ponto onde SemVer foi instituído, com `[1.x]` e `[2.x]` consolidados retrospectivamente em `CHANGELOG.md`. Granularidade pré-3.0 segue em `git log`.
 
 ---
 
 ## Esquema
 
 ```
-1.2.0+20260505-pickers
+3.0.0+20260505-pickers
 └┬┘ ┬ ┬   └──────┬──────┘
  │  │ │          │
  │  │ │          └── BUILD (yyyymmdd-slug, opcional)
@@ -46,8 +48,8 @@ Se um usuário com a versão antiga abrir o sistema e algo deixar de funcionar c
 
 ```js
 export const VERSION = {
-  major: 1,
-  minor: 2,
+  major: 3,
+  minor: 0,
   patch: 0,
   build: '20260505-pickers',
 };
@@ -70,24 +72,24 @@ export const LABEL  = `v${SHORT}`;
 1. **Editar `js/version.js`**
    ```js
    export const VERSION = {
-     major: 1,
-     minor: 3,           // ← bumpa aqui
+     major: 3,
+     minor: 1,           // ← bumpa aqui
      patch: 0,
      build: '20260512-newfeature',
    };
    ```
 
-2. **Atualizar `CHANGELOG.md`** com nova seção `[1.3.0+20260512-newfeature] — YYYY-MM-DD` listando mudanças. Use as categorias `Added`, `Changed`, `Fixed`, `Removed`, `Deprecated`, `Security` (Keep a Changelog).
+2. **Atualizar `CHANGELOG.md`** com nova seção `[3.1.0+20260512-newfeature] — YYYY-MM-DD` listando mudanças. Use as categorias `Added`, `Changed`, `Fixed`, `Removed`, `Deprecated`, `Security` (Keep a Changelog).
 
 3. **Sincronizar cache-bust em `index.html`**
    ```html
-   <script type="module" src="js/app.js?v=1.3.0+20260512-newfeature"></script>
+   <script type="module" src="js/app.js?v=3.1.0+20260512-newfeature"></script>
    ```
    Esse `?v=` precisa bater com `FULL`. Se esquecer, o browser pode servir módulos antigos cacheados (max-age 600s no GitHub Pages) e algumas mudanças não aparecem até refresh forçado.
 
 4. **Commit** com mensagem que reflete o bump:
    ```
-   chore(release): 1.3.0+20260512-newfeature
+   chore(release): 3.1.0+20260512-newfeature
 
    <copia o resumo do CHANGELOG da seção nova>
    ```
@@ -108,15 +110,16 @@ Convenção do slug: `yyyymmdd-tema` (kebab-case, curto, identifica a feature do
 
 ---
 
-## Exemplos passados
+## Marcos passados (e exemplos de futuros bumps)
 
 | Versão | Quando bumpou |
 |---|---|
-| `1.0.0+launch` | Lançamento inicial em prod |
-| `1.1.0+20260504-typepicker` | Modal de tarefa ganhou pickers visuais (feature nova) |
-| `1.2.0+20260505-pickers` | Unificação visual completa em ~23 módulos (feature massiva, mas não quebra nada) |
-| `1.2.1+20260506-hotfix` | Hipotético: bugfix de cache não-invalidado em portal-view |
-| `2.0.0+20260601-multi-tenant` | Hipotético: schema de Firestore reorganizado para multi-tenancy (quebra contrato) |
+| `1.x` (consolidado) | Lançamento (mar/2026) + módulos centrais: Tarefas, Projetos, Goals, Feedbacks, CSAT, Users, Auditoria, Portal de Solicitações, Calendário de Conteúdo, Check-in. SSO Microsoft (1 domínio). |
+| `2.x` (consolidado) | Hardening Sprint 1–5 (LOCKDOWN, App Check, dailyBackup, SIEM, PITR, rate limit), IA Hub Fases 1–8, Portal Web Fases A–D, News Monitor, override de urgência por SLA, Realtime Database (presence). |
+| `3.0.0+20260505-pickers` | Refactor núcleos→squads (schema MAJOR), unificação visual completa em ~23 módulos via `optionPicker`, página pública do Calendário de Conteúdo com SSO + real-time, esquema de versionamento formalizado. |
+| `3.0.1+20260506-hotfix` | (Hipotético) Bugfix de cache não-invalidado em portal-view. |
+| `3.1.0+20260520-multi-instance-pickers` | (Hipotético) Migração dos selects multi-instance pendentes (KPI inline goals, scheduleSlots taskTypes) — feature compatível. |
+| `4.0.0+20260601-multi-tenant` | (Hipotético) Schema de Firestore reorganizado para multi-tenancy — quebra contrato, exige migração. |
 
 ---
 
@@ -129,11 +132,11 @@ A versão aparece no rodapé da sidebar, abaixo do user-card:
 │  [Avatar] João Silva    │
 │           Analista      │
 │─────────────────────────│
-│  PRIMETOUR · v1.2.0     │  ← clica nada, hover mostra tooltip
+│  PRIMETOUR · v3.0.0     │  ← clica nada, hover mostra tooltip
 └─────────────────────────┘
 ```
 
-Hover (atributo `title`) mostra `Build: 1.2.0+20260505-pickers` para suporte/debug.
+Hover (atributo `title`) mostra `Build: 3.0.0+20260505-pickers` para suporte/debug.
 
 Render code: `js/components/sidebar.js`, próximo da linha 348.
 
@@ -145,8 +148,8 @@ Toda página injeta a versão em `window.__PRIMETOUR_VERSION__`:
 
 ```js
 window.__PRIMETOUR_VERSION__
-// { major: 1, minor: 2, patch: 0, build: '20260505-pickers',
-//   full: '1.2.0+20260505-pickers', label: 'v1.2.0' }
+// { major: 3, minor: 0, patch: 0, build: '20260505-pickers',
+//   full: '3.0.0+20260505-pickers', label: 'v3.0.0' }
 ```
 
 Útil pra checar in-browser se a versão deployada bate com a esperada.

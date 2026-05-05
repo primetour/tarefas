@@ -23,8 +23,8 @@
  */
 
 export const VERSION = {
-  major: 1,
-  minor: 2,
+  major: 3,
+  minor: 0,
   patch: 0,
   build: '20260505-pickers',
 };
