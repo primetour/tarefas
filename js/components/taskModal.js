@@ -1735,11 +1735,11 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   // Botão custom (#tm-type-btn) abre popover com lista agrupada por setor +
   // busca. Ao selecionar, atualiza o <select> escondido e dispara `change`
   // pro pipeline existente (variations, dynamic fields, SLA badge) reagir.
-  document.getElementById('tm-type-btn')?.addEventListener('click', (ev) => {
+  document.getElementById('tm-type-btn')?.addEventListener('click', async (ev) => {
     ev.stopPropagation();
     const select = document.getElementById('tm-type-id');
     if (!select) return;
-    openTypePickerPopover(ev.currentTarget, select.value, (newId) => {
+    await openTypePickerPopover(ev.currentTarget, select.value, (newId) => {
       select.value = newId;
       select.dispatchEvent(new Event('change', { bubbles: true }));
       // Re-renderiza o próprio botão pra refletir o novo selected
@@ -2602,7 +2602,7 @@ function _refreshTypeButton(typeId) {
   `;
 }
 
-function openTypePickerPopover(anchor, currentId, onSelect) {
+async function openTypePickerPopover(anchor, currentId, onSelect) {
   // Fecha popover anterior se existir
   document.querySelectorAll('.type-picker-popover').forEach(p => p.remove());
 
@@ -2610,7 +2610,20 @@ function openTypePickerPopover(anchor, currentId, onSelect) {
   // Squads do sistema (internamente chamados de "nucleos" no schema —
   // referenciados em t.nucleos[] de cada tipo). UI mostra "Squad" pra
   // alinhar com a nomenclatura do produto.
-  const squads = store.get('nucleos') || [];
+  // IMPORTANTE: store.get('nucleos') só é populado quando o user passa
+  // por #task-types ou #users. Em #tasks (onde o picker é mais usado),
+  // costuma estar vazio. Carrega lazy aqui pra garantir nomes corretos
+  // nos cabeçalhos do acordeão.
+  let squads = store.get('nucleos') || [];
+  if (!squads.length) {
+    try {
+      const { loadNucleos } = await import('../services/sectors.js');
+      squads = await loadNucleos();
+    } catch (e) {
+      console.warn('[type-picker] loadNucleos falhou:', e?.message);
+      squads = [];
+    }
+  }
   const squadById = new Map(squads.map(s => [s.id, s]));
 
   // Agrupa: cada squad → tipos cuja `nucleos[]` inclui o squad.id.
