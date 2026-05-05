@@ -1835,20 +1835,37 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
             slaWarn.style.background = 'rgba(59,130,246,0.08)';
             slaWarn.style.borderColor = 'rgba(59,130,246,0.3)';
             slaWarn.style.color = '#3B82F6';
-            slaWarn.innerHTML = `<div style="display:flex;align-items:flex-start;gap:8px;">
-              <div style="flex:1;">
-                <strong>ℹ Urgência removida manualmente</strong>
-                ${override.byName ? `por <strong>${esc(override.byName)}</strong>` : ''}
-                ${dateStr ? `em ${esc(dateStr)}` : ''}.
-                ${override.reason ? `<div style="margin-top:4px;font-size:0.75rem;font-style:italic;">"${esc(override.reason)}"</div>` : ''}
+            slaWarn.style.padding = '10px 12px';
+            // Layout empilhado vertical (cabe na coluna estreita 235px sem
+            // estourar): título → metadados → motivo (em quote) → botão full
+            slaWarn.innerHTML = `
+              <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:0.8125rem;line-height:1.3;">
+                <span style="font-size:0.875rem;flex-shrink:0;">ℹ</span>
+                <span>Urgência removida</span>
               </div>
+              ${override.byName || dateStr ? `
+                <div style="margin-top:4px;font-size:0.6875rem;opacity:0.85;line-height:1.4;">
+                  ${override.byName ? esc(override.byName) : ''}${override.byName && dateStr ? ' · ' : ''}${dateStr ? esc(dateStr) : ''}
+                </div>
+              ` : ''}
+              ${override.reason ? `
+                <div style="margin-top:6px;padding:6px 8px;background:rgba(59,130,246,0.06);
+                  border-left:2px solid currentColor;border-radius:0 4px 4px 0;
+                  font-size:0.6875rem;font-style:italic;line-height:1.45;
+                  color:var(--text-secondary);word-break:break-word;">
+                  "${esc(override.reason)}"
+                </div>
+              ` : ''}
               ${store.can('task_override_urgency') && task?.id ? `
                 <button type="button" id="tm-urgency-restore-btn"
-                  style="background:transparent;border:1px solid currentColor;color:inherit;
-                  padding:4px 10px;border-radius:6px;font-size:0.75rem;cursor:pointer;
-                  white-space:nowrap;flex-shrink:0;">↺ Restaurar urgência</button>
+                  style="margin-top:8px;width:100%;background:transparent;
+                  border:1px solid currentColor;color:inherit;padding:6px 10px;
+                  border-radius:6px;font-size:0.6875rem;cursor:pointer;
+                  font-weight:500;font-family:inherit;line-height:1.3;">
+                  ↺ Restaurar urgência automática
+                </button>
               ` : ''}
-            </div>`;
+            `;
             // Bind botão restaurar
             slaWarn.querySelector('#tm-urgency-restore-btn')?.addEventListener('click', async () => {
               if (!confirm('Restaurar a urgência automática? A tarefa voltará a ser marcada como URGENTE pelo SLA breach.')) return;
@@ -1873,21 +1890,29 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
             slaWarn.style.background = '';
             slaWarn.style.borderColor = '';
             slaWarn.style.color = '';
+            slaWarn.style.padding = '10px 12px';
             const canOverride = store.can('task_override_urgency') && task?.id;
-            slaWarn.innerHTML = `<div style="display:flex;align-items:flex-start;gap:8px;">
-              <div style="flex:1;">
-                <strong>⚠ Prazo abaixo do SLA</strong> — variação exige
-                <strong>${days} dia${days!==1?'s':''} úteis</strong> (mínimo
-                ${fmt(minDue)}). Prioridade marcada como <strong>URGENTE</strong>
-                automaticamente.
+            // Layout empilhado vertical: título → detalhe → botão full-width
+            slaWarn.innerHTML = `
+              <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:0.8125rem;line-height:1.3;">
+                <span style="font-size:0.875rem;flex-shrink:0;">⚠</span>
+                <span>Prazo abaixo do SLA</span>
+              </div>
+              <div style="margin-top:4px;font-size:0.6875rem;opacity:0.9;line-height:1.45;">
+                Variação exige <strong>${days} dia${days!==1?'s':''} úteis</strong>
+                (mínimo ${fmt(minDue)}).<br>
+                Prioridade marcada como <strong>URGENTE</strong> automaticamente.
               </div>
               ${canOverride ? `
                 <button type="button" id="tm-urgency-remove-btn"
-                  style="background:transparent;border:1px solid currentColor;color:inherit;
-                  padding:4px 10px;border-radius:6px;font-size:0.75rem;cursor:pointer;
-                  white-space:nowrap;flex-shrink:0;">Remover urgência…</button>
+                  style="margin-top:8px;width:100%;background:transparent;
+                  border:1px solid currentColor;color:inherit;padding:6px 10px;
+                  border-radius:6px;font-size:0.6875rem;cursor:pointer;
+                  font-weight:500;font-family:inherit;line-height:1.3;">
+                  Remover urgência…
+                </button>
               ` : ''}
-            </div>`;
+            `;
             // Bind botão remover urgência (abre modal de justificativa)
             slaWarn.querySelector('#tm-urgency-remove-btn')?.addEventListener('click', () => {
               openUrgencyOverrideModal(task, () => {
