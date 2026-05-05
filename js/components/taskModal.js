@@ -1374,18 +1374,42 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
           ${PRIORITIES.map(p=>`<option value="${p.value}" ${task.priority===p.value?'selected':''}>${p.icon} ${p.label}</option>`).join('')}
         </select>
       </div>
-      <!-- Tipo de tarefa -->
+      <!-- Tipo de tarefa — picker custom com lista agrupada por setor -->
       <div class="task-detail-field">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
           <span class="task-detail-label" style="margin:0;">Tipo de tarefa</span>
         </div>
-        <select class="form-select" id="tm-type-id" style="padding:8px 32px 8px 12px;">
+        <!-- Select escondido preserva o contrato de value pro handleSave;
+             interação visual fica no botão custom abaixo. -->
+        <select id="tm-type-id" style="display:none;">
           <option value="">— Padrão (sem tipo) —</option>
           ${(store.get('taskTypes')||[]).map(t =>
-            `<option value="${t.id}" ${(task.typeId||task.type)===t.id?'selected':''}
-              style="color:${t.color||'inherit'};">${esc(t.icon||'')} ${esc(t.name)}</option>`
+            `<option value="${t.id}" ${(task.typeId||task.type)===t.id?'selected':''}>${esc(t.icon||'')} ${esc(t.name)}</option>`
           ).join('')}
         </select>
+        ${(() => {
+          const types = store.get('taskTypes') || [];
+          const selectedId = task.typeId || task.type || '';
+          const selected = types.find(t => t.id === selectedId);
+          const dotColor = selected?.color || 'var(--border-default)';
+          const label = selected
+            ? `<span style="font-size:1rem;flex-shrink:0;">${esc(selected.icon || '◈')}</span>
+               <span style="flex:1;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(selected.name)}</span>
+               ${selected.sector ? `<span style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;">${esc(selected.sector)}</span>` : ''}`
+            : `<span style="flex:1;color:var(--text-muted);">— Padrão (sem tipo) —</span>`;
+          return `
+            <button type="button" id="tm-type-btn"
+              style="width:100%;display:flex;align-items:center;gap:10px;
+                padding:8px 12px;border-radius:var(--radius-md);cursor:pointer;
+                background:var(--bg-surface);border:1px solid var(--border-default);
+                font-family:inherit;font-size:0.875rem;text-align:left;
+                transition:border-color 0.15s;">
+              <span style="width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0;"></span>
+              ${label}
+              <span style="font-size:0.625rem;color:var(--text-muted);flex-shrink:0;">▾</span>
+            </button>
+          `;
+        })()}
       </div>
 
       <!-- Variação do material -->
@@ -1706,6 +1730,22 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
 
   // Bind dynamic field chips
   bindDynamicFieldEvents(document);
+
+  // ── Picker custom de Tipo de tarefa ──
+  // Botão custom (#tm-type-btn) abre popover com lista agrupada por setor +
+  // busca. Ao selecionar, atualiza o <select> escondido e dispara `change`
+  // pro pipeline existente (variations, dynamic fields, SLA badge) reagir.
+  document.getElementById('tm-type-btn')?.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const select = document.getElementById('tm-type-id');
+    if (!select) return;
+    openTypePickerPopover(ev.currentTarget, select.value, (newId) => {
+      select.value = newId;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      // Re-renderiza o próprio botão pra refletir o novo selected
+      _refreshTypeButton(newId);
+    });
+  });
 
   // Type change → reload dynamic fields + variation dropdown
   document.getElementById('tm-type-id')?.addEventListener('change', async (e) => {
@@ -2533,6 +2573,202 @@ function openUrgencyOverrideModal(task, onApplied) {
       errEl.textContent = err.message;
     }
   });
+}
+
+/* ──────────────────────────────────────────────────────────
+ * Picker custom de Tipo de Tarefa
+ *
+ * Substitui o <select> nativo por um popover com cards visuais
+ * agrupados por setor. Cada card mostra ícone + nome + variation count
+ * com cor do tipo. Suporta busca por texto. Click seleciona e fecha.
+ * Mantém o <select id="tm-type-id"> escondido como fonte de verdade
+ * pro handleSave e listeners existentes.
+ * ────────────────────────────────────────────────────────── */
+function _refreshTypeButton(typeId) {
+  const btn = document.getElementById('tm-type-btn');
+  if (!btn) return;
+  const types = store.get('taskTypes') || [];
+  const sel = types.find(t => t.id === typeId);
+  const dot = sel?.color || 'var(--border-default)';
+  const inner = sel
+    ? `<span style="font-size:1rem;flex-shrink:0;">${esc(sel.icon || '◈')}</span>
+       <span style="flex:1;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(sel.name)}</span>
+       ${sel.sector ? `<span style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;">${esc(sel.sector)}</span>` : ''}`
+    : `<span style="flex:1;color:var(--text-muted);">— Padrão (sem tipo) —</span>`;
+  btn.innerHTML = `
+    <span style="width:8px;height:8px;border-radius:50%;background:${dot};flex-shrink:0;"></span>
+    ${inner}
+    <span style="font-size:0.625rem;color:var(--text-muted);flex-shrink:0;">▾</span>
+  `;
+}
+
+function openTypePickerPopover(anchor, currentId, onSelect) {
+  // Fecha popover anterior se existir
+  document.querySelectorAll('.type-picker-popover').forEach(p => p.remove());
+
+  const types = store.get('taskTypes') || [];
+  // Agrupa por sector. Tipos sem sector vão pra "Outros".
+  const groups = new Map();
+  types.forEach(t => {
+    const key = t.sector || 'Outros';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  });
+  // Ordena setores alfabeticamente, mantendo "Outros" no fim
+  const groupKeys = [...groups.keys()].sort((a, b) => {
+    if (a === 'Outros') return 1;
+    if (b === 'Outros') return -1;
+    return a.localeCompare(b, 'pt-BR');
+  });
+
+  const pop = document.createElement('div');
+  pop.className = 'type-picker-popover';
+  Object.assign(pop.style, {
+    position:     'fixed',
+    zIndex:       '10000',
+    background:   'var(--bg-card)',
+    border:       '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md, 8px)',
+    boxShadow:    '0 12px 32px rgba(0,0,0,0.45)',
+    width:        '380px',
+    maxWidth:     'calc(100vw - 32px)',
+    maxHeight:    '420px',
+    display:      'flex',
+    flexDirection: 'column',
+    fontFamily:   'var(--font-ui)',
+    overflow:     'hidden',
+  });
+  pop.innerHTML = `
+    <div style="padding:10px 12px;border-bottom:1px solid var(--border-subtle);">
+      <input type="text" class="type-picker-search" placeholder="Buscar tipo…"
+        style="width:100%;padding:7px 10px;border:1px solid var(--border-default);
+        border-radius:var(--radius-sm);background:var(--bg-surface);
+        color:var(--text-primary);font-family:inherit;font-size:0.8125rem;outline:none;
+        box-sizing:border-box;" />
+    </div>
+    <div class="type-picker-list" style="overflow-y:auto;flex:1;padding:4px 0;">
+      <button type="button" class="type-picker-item" data-id=""
+        style="width:100%;display:flex;align-items:center;gap:10px;
+        padding:8px 14px;background:transparent;border:none;cursor:pointer;
+        font-family:inherit;font-size:0.8125rem;text-align:left;
+        color:${currentId === '' ? 'var(--brand-gold)' : 'var(--text-secondary)'};
+        ${currentId === '' ? 'background:rgba(212,168,67,0.06);' : ''}">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--border-default);flex-shrink:0;"></span>
+        <span style="flex:1;font-weight:${currentId === '' ? '600' : '400'};">— Padrão (sem tipo) —</span>
+        ${currentId === '' ? '<span style="color:var(--brand-gold);">✓</span>' : ''}
+      </button>
+      ${groupKeys.map(sector => `
+        <div class="type-picker-group" data-sector="${esc(sector)}">
+          <div style="padding:8px 14px 4px;font-size:0.6875rem;font-weight:600;
+            color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;
+            border-top:1px solid var(--border-subtle);margin-top:2px;">
+            ${esc(sector)}
+          </div>
+          ${groups.get(sector).map(t => {
+            const isSelected = t.id === currentId;
+            const variationCount = (t.variations || []).length;
+            const searchText = `${t.name} ${sector}`.toLowerCase();
+            return `<button type="button" class="type-picker-item"
+              data-id="${esc(t.id)}"
+              data-search="${esc(searchText)}"
+              style="width:100%;display:flex;align-items:center;gap:10px;
+              padding:8px 14px;background:${isSelected?'rgba(212,168,67,0.06)':'transparent'};
+              border:none;cursor:pointer;font-family:inherit;font-size:0.8125rem;text-align:left;
+              color:var(--text-primary);transition:background 0.1s;">
+              <span style="width:28px;height:28px;border-radius:6px;
+                background:${(t.color || '#6B7280')}20;color:${t.color || '#6B7280'};
+                display:flex;align-items:center;justify-content:center;font-size:0.875rem;
+                flex-shrink:0;">${esc(t.icon || '◈')}</span>
+              <span style="flex:1;min-width:0;">
+                <span style="display:block;font-weight:${isSelected?'600':'500'};
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${esc(t.name)}
+                </span>
+                ${variationCount > 0 ? `
+                  <span style="font-size:0.6875rem;color:var(--text-muted);">
+                    ${variationCount} variaç${variationCount===1?'ão':'ões'}
+                  </span>
+                ` : ''}
+              </span>
+              ${isSelected ? '<span style="color:var(--brand-gold);font-size:0.875rem;">✓</span>' : ''}
+            </button>`;
+          }).join('')}
+        </div>
+      `).join('')}
+    </div>
+  `;
+  document.body.appendChild(pop);
+
+  // Posicionamento: abaixo do anchor, alinhado pela esquerda. Clamp na viewport.
+  const rect = anchor.getBoundingClientRect();
+  let left = rect.left;
+  let top  = rect.bottom + 6;
+  const popRect = pop.getBoundingClientRect();
+  const margin = 8;
+  if (left + popRect.width > window.innerWidth - margin) {
+    left = window.innerWidth - popRect.width - margin;
+  }
+  if (left < margin) left = margin;
+  if (top + popRect.height > window.innerHeight - margin) {
+    top = Math.max(margin, rect.top - popRect.height - 6); // abre acima
+  }
+  pop.style.left = `${left}px`;
+  pop.style.top  = `${top}px`;
+
+  // Hover (mouseover destaca item)
+  pop.querySelectorAll('.type-picker-item').forEach(item => {
+    item.addEventListener('mouseenter', () => {
+      if (item.dataset.id !== currentId) {
+        item.style.background = 'rgba(212,168,67,0.04)';
+      }
+    });
+    item.addEventListener('mouseleave', () => {
+      if (item.dataset.id !== currentId) {
+        item.style.background = 'transparent';
+      }
+    });
+    item.addEventListener('click', () => {
+      onSelect(item.dataset.id);
+      cleanup();
+    });
+  });
+
+  // Busca: filtra items pelo texto
+  const search = pop.querySelector('.type-picker-search');
+  search?.addEventListener('input', () => {
+    const q = (search.value || '').toLowerCase().trim();
+    pop.querySelectorAll('.type-picker-item').forEach(item => {
+      if (!item.dataset.search) {
+        // O item "Padrão" sempre visível
+        item.style.display = '';
+        return;
+      }
+      item.style.display = item.dataset.search.includes(q) ? '' : 'none';
+    });
+    // Esconde grupos vazios
+    pop.querySelectorAll('.type-picker-group').forEach(g => {
+      const visible = [...g.querySelectorAll('.type-picker-item')].some(i => i.style.display !== 'none');
+      g.style.display = visible ? '' : 'none';
+    });
+  });
+  setTimeout(() => search?.focus(), 30);
+
+  // Cleanup: click fora, Esc, ou re-render
+  function cleanup() {
+    pop.remove();
+    document.removeEventListener('click', outsideHandler, true);
+    document.removeEventListener('keydown', escHandler);
+  }
+  function outsideHandler(e) {
+    if (!pop.contains(e.target) && !anchor.contains(e.target)) cleanup();
+  }
+  function escHandler(e) {
+    if (e.key === 'Escape') cleanup();
+  }
+  setTimeout(() => {
+    document.addEventListener('click', outsideHandler, true);
+    document.addEventListener('keydown', escHandler);
+  }, 0);
 }
 
 async function handleSave(task, tags, assignees, observers, isEdit, close, onSave, ctx=document) {
