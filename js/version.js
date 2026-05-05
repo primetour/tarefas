@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 4,
-  patch: 0,
-  build: '20260505-remove-front-dev-hours-only-public',
+  patch: 1,
+  build: '20260505-adr-actions-vs-functions-fix-infra-count',
 };
 
 /** "1.2.0" */

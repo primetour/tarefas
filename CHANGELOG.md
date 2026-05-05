@@ -22,6 +22,34 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.4.1+20260505-adr-actions-vs-functions-fix-infra-count] — 2026-05-05
+
+Patch de **documentação** — preenche um gap arquitetural que ficou exposto durante uma discussão sobre dashboard de TI. Reportado: *"essa sua analise actions e functions ta na doc tecnica?"* — a resposta era **não**: os docs descreviam **o quê** (lista de workflows, lista de functions) mas não **por quê** existe a divisão entre os dois mecanismos.
+
+### Documentation
+- **Novo ADR em `docs/ARCHITECTURE.md`**: seção *"Por que GitHub Actions para syncs em vez de Cloud Functions?"* — segue o mesmo padrão das outras decisões arquiteturais já documentadas (Vanilla JS, Firebase, store.js). Conteúdo:
+  - Tabela de **trade-offs comparados** (custo, timeout, cold start, logs, observabilidade, real-time, debug, memória)
+  - **Critérios de decisão** para novos workflows (cenário → onde fica)
+  - **Quando reconsiderar** (4 gatilhos concretos pra reavaliar a divisão)
+  - Princípio: **Hybrid > monolítico** quando os trade-offs são diferentes — não unificar por princípio, usar a ferramenta certa.
+
+### Fixed
+- **Contagem de workflows**: estava `6` em 3 lugares (INFRA.md diagrama §1, §3 cabeçalho, §4.1, §"Sair do GitHub Actions") + 1 lugar em `js/pages/settings.js`. Real é `7` (faltava `ga-cleanup.yml`). Atualizado para `7` em todos.
+- **Lista de detalhe** em settings.js (`detail: 'archive-tasks · ga-sync · mc-sync · ...'`) faltava `ga-cleanup`. Adicionado.
+- **Nova seção §3.7 em INFRA.md** documentando o `ga-cleanup.yml` — propósito (limpeza ad-hoc de inconsistências em `ga_*` collections), input `dry_run`, secrets necessários, quando rodar.
+
+### Why
+ADRs (Architecture Decision Records) protegem decisões boas de erosão. Sem o "por quê" registrado, daqui a 6 meses alguém (incluindo o próprio autor) pode achar que a divisão Actions/Functions é "legado bagunçado" e tentar unificar — desfazendo trade-offs intencionais. O documento existe pra que essa decisão seja **questionável com argumentos novos**, não acidentalmente revertida por desconhecimento.
+
+### Verificação
+1. `docs/ARCHITECTURE.md` → buscar "Por que GitHub Actions" → seção presente entre "Por que store.js" e "Camadas da aplicação".
+2. `INFRA.md` § 1 diagrama → "7 workflows".
+3. `INFRA.md` § 3 → 7 sub-seções (3.1 até 3.7).
+4. Configurações → Integrações → card "GitHub Actions" → mostra "✓ 7 workflows" + lista completa.
+
+---
+
 ## [4.4.0+20260505-remove-front-dev-hours-only-public] — 2026-05-05
 
 Release **MINOR** — pivot arquitetural do sistema de Horas de Desenvolvimento. Reportado: *"vc nao entendeu, chat. retire esse modulo do sidebar. ele nao existe na camada do front end do sistema, ok? sobre aprovacao, eu faço a aprovacao por aqui mesmo e vc ja sobe tudo, ok? sem essa de aprovacao no front end. nao combinamos que isso seria feito junto com o processo de commit do sistema?"*. Esclarecimento de combinação anterior: a 4.0.0 introduziu CRUD/draft/approve no front-end, mas o **modelo correto** é **gestão via chat + commit-driven** — Claude escreve direto no Firestore como parte de cada release commit, junto com código, testes e CHANGELOG.

@@ -44,7 +44,7 @@
 
   ┌───────────────┐
   │ GitHub Actions│─── fetch ───▶ GA4 / Meta Graph / Marketing Cloud
-  │ (6 workflows) │
+  │ (7 workflows) │
   └───────────────┘
 ```
 
@@ -95,7 +95,7 @@ audiências externas ou usos específicos:
 
 ## 3. Workflows agendados (GitHub Actions)
 
-Total: **6 workflows**, todos em `.github/workflows/`. Cada um chama um script Node.js em `scripts/`.
+Total: **7 workflows**, todos em `.github/workflows/`. Cada um chama um script Node.js em `scripts/`.
 
 ### 3.1 GA4 → Firestore Sync
 
@@ -288,6 +288,25 @@ de contas sociais.
 
 ---
 
+### 3.7 GA Firestore Cleanup (manual, one-off)
+
+| Campo | Valor |
+|---|---|
+| **Arquivo** | `.github/workflows/ga-cleanup.yml` |
+| **Script** | `scripts/ga-cleanup.js` |
+| **Schedule** | Nenhum — só manual |
+| **Timeout** | 15 min |
+| **Propósito** | Limpar entries antigas/inconsistentes nas collections `ga_*` (manutenção pontual após mudança de schema GA ou correção de dados) |
+
+**Input manual**:
+- `dry_run` (`true`/`false`) — quando `true`, apenas lista o que seria removido sem deletar
+
+**Secrets**: `GA_PROPERTY_ID`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`
+
+**Quando rodar**: ad-hoc, após detecção de inconsistência em `ga_daily`/`ga_pages`/etc., ou quando GA muda formato de métrica e dados antigos viram lixo.
+
+---
+
 ## 4. Secrets — tabela consolidada
 
 Existem **dois cofres separados** de secrets, com responsabilidades distintas:
@@ -295,7 +314,7 @@ Existem **dois cofres separados** de secrets, com responsabilidades distintas:
 ### 4.1 GitHub Actions Secrets (sincs cron de dados externos)
 
 Local: **GitHub → Settings → Secrets and variables → Actions**.
-Não estão no código nem em `.env` local. Usados apenas pelos 6 workflows da §3.
+Não estão no código nem em `.env` local. Usados apenas pelos 7 workflows da §3.
 
 | Secret | Usado por | Origem / como obter |
 |---|---|---|
@@ -521,7 +540,7 @@ Todas as Cloud Functions seguem:
 
 Se no futuro você quiser sair de qualquer peça do stack:
 
-### Sair do GitHub Actions (cron dos 6 workflows)
+### Sair do GitHub Actions (cron dos 7 workflows)
 
 **Dificuldade**: 🟢 Baixa.
 Os scripts em `scripts/*.js` são Node.js puro. Rodam em qualquer lugar.

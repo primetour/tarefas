@@ -49,6 +49,44 @@ function subscribe(key, cb) {
 }
 ```
 
+### Por que GitHub Actions para syncs em vez de Cloud Functions?
+
+A divisão atual é **deliberada**, não acidental: Cloud Functions hospeda tudo que é **runtime/interativo** (proxy LLM, signed URL R2, SSO, CSAT email, audit pruning, daily backup); GitHub Actions hospeda os **syncs batch externos** (GA4, Marketing Cloud, Meta Instagram, archive de tarefas).
+
+**Trade-offs comparados:**
+
+| Critério | Cloud Functions | GitHub Actions |
+|---|---|---|
+| Custo p/ workload baixo | $ por invocation + duração + memória | Grátis (free tier 2000 min/mês — sobra muito) |
+| Timeout | 9 min (default), 60 min (Gen 2 paid) | 6 horas |
+| Cold start | ~1–3s (Node 20) | ~30s init runner |
+| Logs | GCP Cloud Logging (interno) | GitHub Actions UI (auditável publicamente) |
+| Observabilidade falha | Sentry/Cloud Monitoring | Notification email + Actions tab |
+| Trigger real-time | Sim (HTTP, callable, Firestore events) | Não (só cron + manual dispatch) |
+| Debug | Difícil sem replay local | Fácil — re-run job, ver step-by-step |
+| Memória disponível | 256MB–4GB (Gen 2) | 7GB padrão grátis |
+
+**Critérios de decisão para novos workflows:**
+
+| Cenário | Fica em |
+|---|---|
+| Precisa responder a evento real-time (Firestore write, HTTP request) | **Function** |
+| Precisa de secret runtime (API key LLM, etc) | **Function** (Secret Manager) |
+| Cron diário/mensal puxando API externa pesada (GB de dados) | **Action** |
+| One-shot administrativo (cleanup, seed inicial) | **Action** (manual dispatch) |
+| Job que pode demorar >9 min | **Action** |
+| Logs precisam ser auditáveis publicamente | **Action** |
+| Volume de invocations alto (>100k/mês) | **Function** (custo por invocation < custo por minuto Action) |
+
+**Quando reconsiderar:**
+
+1. **Free tier de Actions for esgotado** (improvável — usamos ~10 min/mês dos 2000 grátis).
+2. **Sync precisa virar real-time** (ex: alguém pediu pra Marketing Cloud sincronizar a cada hora em vez de 1×/dia → vira Function `onSchedule` ou trigger).
+3. **Function existente passa a ter timeout problemático** → pode mover pra Action se for batch puro.
+4. **Auditoria externa exige logs públicos** de algo que hoje está em Function → pode mover pra Action.
+
+A escolha NÃO é unificar por princípio (Functions ou Actions tudo). É usar a ferramenta certa pro tipo de carga. **Hybrid > monolítico** quando os trade-offs são diferentes.
+
 ## Camadas da aplicação
 
 ```

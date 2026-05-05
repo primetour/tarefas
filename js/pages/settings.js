@@ -763,8 +763,8 @@ async function loadIntegrationsSection(s = {}) {
     icon: '🐙',
     name: 'GitHub Actions',
     status: 'ok',
-    statusLabel: '✓ 6 workflows',
-    detail: 'archive-tasks · ga-sync · mc-sync · meta-sync · portal-seed · seed-ai-setting',
+    statusLabel: '✓ 7 workflows',
+    detail: 'archive-tasks · ga-cleanup · ga-sync · mc-sync · meta-sync · portal-seed · seed-ai-setting',
     actions: [
       { label: '↗ Todos os workflows', external: true, href: 'https://github.com/primetour/tarefas/actions' },
       { label: '↗ Secrets', external: true, href: 'https://github.com/primetour/tarefas/settings/secrets/actions' },
