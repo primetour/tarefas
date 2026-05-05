@@ -7,6 +7,21 @@
 import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const _SK_HASH = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const _skHash = (s) => {
+  const str = String(s || ''); let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return _SK_HASH[Math.abs(h) % _SK_HASH.length];
+};
+const _findInSel = (selectId, defaultIcon = '◈', defaultColor = '#6366F1') => {
+  const sel = document.getElementById(selectId);
+  if (!sel) return [];
+  return [...sel.options].filter(o => o.value).map(o => ({
+    id: o.value, label: o.textContent.trim(), icon: defaultIcon, color: _skHash(o.value) || defaultColor,
+  }));
+};
 import {
   fetchSkills, createSkill, updateSkill, deleteSkill, getSkill,
   getAIConfig, saveAIConfig,
@@ -1398,10 +1413,11 @@ function buildSkillForm(s = null) {
         </div>
         <div class="form-group" style="margin:0;">
           <label class="form-label">Módulo *</label>
-          <select class="form-select" id="sk-module">
+          <select id="sk-module" style="display:none;">
             <option value="">Selecione...</option>
             ${moduleOptions}
           </select>
+          ${renderPickerButton({ btnId: 'sk-module-btn', selected: null, emptyLabel: 'Selecione...' })}
         </div>
       </div>
 
@@ -1417,15 +1433,17 @@ function buildSkillForm(s = null) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group" style="margin:0;">
             <label class="form-label">Provider</label>
-            <select class="form-select" id="sk-provider">
+            <select id="sk-provider" style="display:none;">
               ${providerOptions}
             </select>
+            ${renderPickerButton({ btnId: 'sk-provider-btn', selected: null, emptyLabel: 'Provider' })}
           </div>
           <div class="form-group" style="margin:0;">
             <label class="form-label">Modelo</label>
-            <select class="form-select" id="sk-model">
+            <select id="sk-model" style="display:none;">
               ${modelOptions}
             </select>
+            ${renderPickerButton({ btnId: 'sk-model-btn', selected: null, emptyLabel: 'Modelo' })}
           </div>
         </div>
       </div>
@@ -1570,7 +1588,43 @@ function bindSkillFormEvents() {
       modelSelect.innerHTML = models.map(m =>
         `<option value="${m.id}">${m.label} — ${m.desc}</option>`
       ).join('');
+      // Reset visual do picker de modelo (lista mudou)
+      modelSelect.value = models[0]?.id || '';
+      modelSelect.dispatchEvent(new Event('picker-refresh'));
     }
+  });
+
+  // Pickers visuais — leem opções do select escondido
+  bindOptionPicker({
+    btnId: 'sk-module-btn',
+    selectId: 'sk-module',
+    buildConfig: () => ({
+      options: _findInSel('sk-module', '🔧'),
+      empty: { id: '', label: 'Selecione...' },
+      searchPlaceholder: 'Buscar módulo…',
+    }),
+    findSelected: (id) => _findInSel('sk-module', '🔧').find(o => o.id === id) || null,
+    emptyLabel: 'Selecione...',
+  });
+  bindOptionPicker({
+    btnId: 'sk-provider-btn',
+    selectId: 'sk-provider',
+    buildConfig: () => ({
+      options: _findInSel('sk-provider', '🤖'),
+      searchPlaceholder: 'Buscar provider…',
+    }),
+    findSelected: (id) => _findInSel('sk-provider', '🤖').find(o => o.id === id) || null,
+    emptyLabel: 'Provider',
+  });
+  bindOptionPicker({
+    btnId: 'sk-model-btn',
+    selectId: 'sk-model',
+    buildConfig: () => ({
+      options: _findInSel('sk-model', '◈'),
+      searchPlaceholder: 'Buscar modelo…',
+    }),
+    findSelected: (id) => _findInSel('sk-model', '◈').find(o => o.id === id) || null,
+    emptyLabel: 'Modelo',
   });
 
   // Module change → show context fields with explanations

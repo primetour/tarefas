@@ -15,6 +15,14 @@
 import { store }   from '../store.js';
 import { toast }   from '../components/toast.js';
 import { modal }   from '../components/modal.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const _AI_HASH = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const _aiHash = (s) => {
+  const str = String(s || ''); let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return _AI_HASH[Math.abs(h) % _AI_HASH.length];
+};
 import {
   fetchAgents, subscribeAgents, getAgent, createAgent, updateAgent,
   deleteAgent, toggleAgent, uploadAgentAvatar, runAgent,
@@ -1255,12 +1263,21 @@ async function renderApiKeysTab(container) {
           <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;margin-bottom:16px;">
             <div class="form-group" style="margin:0;">
               <label class="form-label">Escopo</label>
-              <select id="ak-scope" class="form-select">
+              <select id="ak-scope" style="display:none;">
                 <option value="user"      ${d.scope==='user'?'selected':''}>Usuário</option>
                 <option value="nucleo"    ${d.scope==='nucleo'?'selected':''}>Núcleo</option>
                 <option value="area"      ${d.scope==='area'?'selected':''}>Área/Setor</option>
                 <option value="workspace" ${d.scope==='workspace'?'selected':''}>Workspace</option>
               </select>
+              ${(() => {
+                const SCOPE_LABELS = { user: 'Usuário', nucleo: 'Núcleo', area: 'Área/Setor', workspace: 'Workspace' };
+                const cur = d.scope || 'user';
+                return renderPickerButton({
+                  btnId: 'ak-scope-btn',
+                  selected: { id: cur, label: SCOPE_LABELS[cur] || cur, icon: '◇', color: _aiHash(cur) },
+                  emptyLabel: 'Selecione',
+                });
+              })()}
             </div>
             <div class="form-group" style="margin:0;">
               <label class="form-label">Identificador (uid, nome de núcleo, setor, etc.)</label>
@@ -1329,6 +1346,22 @@ async function renderApiKeysTab(container) {
         }},
       ],
     });
+    // Picker visual do escopo
+    setTimeout(() => {
+      const SCOPE_OPTS = [
+        { id: 'user',      label: 'Usuário',    icon: '👤', color: _aiHash('user') },
+        { id: 'nucleo',    label: 'Núcleo',     icon: '◇',  color: _aiHash('nucleo') },
+        { id: 'area',      label: 'Área/Setor', icon: '◈',  color: _aiHash('area') },
+        { id: 'workspace', label: 'Workspace',  icon: '◉',  color: _aiHash('workspace') },
+      ];
+      bindOptionPicker({
+        btnId: 'ak-scope-btn',
+        selectId: 'ak-scope',
+        buildConfig: () => ({ options: SCOPE_OPTS, searchPlaceholder: 'Buscar escopo…' }),
+        findSelected: (id) => SCOPE_OPTS.find(o => o.id === id) || null,
+        emptyLabel: 'Selecione',
+      });
+    }, 60);
   }
 
   paint();
@@ -1424,10 +1457,19 @@ async function renderKnowledgeTab(container) {
           </div>
           <div class="form-group">
             <label class="form-label">Tipo</label>
-            <select id="kb-f-type" class="form-select">
+            <select id="kb-f-type" style="display:none;">
               <option value="text" ${d.type==='text'?'selected':''}>Texto</option>
               <option value="url"  ${d.type==='url'?'selected':''}>URL (snapshot)</option>
             </select>
+            ${(() => {
+              const KB = { text: { label: 'Texto', icon: '📄', color: '#0EA5E9' }, url: { label: 'URL (snapshot)', icon: '🔗', color: '#6366F1' } };
+              const cur = d.type || 'text';
+              return renderPickerButton({
+                btnId: 'kb-f-type-btn',
+                selected: { id: cur, ...KB[cur] },
+                emptyLabel: 'Selecione',
+              });
+            })()}
           </div>
         </div>
         <div class="form-group" id="kb-url-group" style="${d.type==='url'?'':'display:none;'}">
@@ -1464,6 +1506,18 @@ async function renderKnowledgeTab(container) {
       document.getElementById('kb-f-type')?.addEventListener('change', (e) => {
         document.getElementById('kb-url-group').style.display = e.target.value === 'url' ? 'block' : 'none';
       });
+      // Picker visual de tipo
+      const KB_OPTS = [
+        { id: 'text', label: 'Texto', icon: '📄', color: '#0EA5E9' },
+        { id: 'url',  label: 'URL (snapshot)', icon: '🔗', color: '#6366F1' },
+      ];
+      bindOptionPicker({
+        btnId: 'kb-f-type-btn',
+        selectId: 'kb-f-type',
+        buildConfig: () => ({ options: KB_OPTS, searchPlaceholder: 'Buscar tipo…' }),
+        findSelected: (id) => KB_OPTS.find(o => o.id === id) || null,
+        emptyLabel: 'Selecione',
+      });
     }, 60);
   }
 
@@ -1494,10 +1548,20 @@ async function renderLogsTab(container) {
     container.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
         <label style="font-size:0.8125rem;color:var(--text-secondary);">Filtrar por agente:</label>
-        <select class="form-select" id="logs-filter" style="width:auto;font-size:0.8125rem;">
-          <option value="">Todos (${logs.length})</option>
-          ${agents.map(a => `<option value="${esc(a.id)}" ${a.id===filterAgent?'selected':''}>${esc(a.name)}</option>`).join('')}
-        </select>
+        <div style="min-width:240px;">
+          <select id="logs-filter" style="display:none;">
+            <option value="">Todos (${logs.length})</option>
+            ${agents.map(a => `<option value="${esc(a.id)}" ${a.id===filterAgent?'selected':''}>${esc(a.name)}</option>`).join('')}
+          </select>
+          ${(() => {
+            const a = agents.find(x => x.id === filterAgent);
+            return renderPickerButton({
+              btnId: 'logs-filter-btn',
+              selected: a ? { id: a.id, label: a.name, icon: '🤖', color: _aiHash(a.id) } : null,
+              emptyLabel: `Todos (${logs.length})`,
+            });
+          })()}
+        </div>
         <span style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);">${filtered.length} entradas</span>
       </div>
       <div class="card" style="padding:0;">
@@ -1526,6 +1590,21 @@ async function renderLogsTab(container) {
     `;
     document.getElementById('logs-filter')?.addEventListener('change', (e) => {
       filterAgent = e.target.value; paint();
+    });
+    // Picker visual do filtro de agente
+    const logsAgentOpts = () => agents.map(a => ({
+      id: a.id, label: a.name, icon: '🤖', color: _aiHash(a.id),
+    }));
+    bindOptionPicker({
+      btnId: 'logs-filter-btn',
+      selectId: 'logs-filter',
+      buildConfig: () => ({
+        options: logsAgentOpts(),
+        empty: { id: '', label: `Todos (${logs.length})` },
+        searchPlaceholder: 'Buscar agente…',
+      }),
+      findSelected: (id) => logsAgentOpts().find(o => o.id === id) || null,
+      emptyLabel: `Todos (${logs.length})`,
     });
   }
   paint();
