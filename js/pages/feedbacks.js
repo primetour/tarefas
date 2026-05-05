@@ -12,9 +12,20 @@ import {
   FB_CONTEXTS, FB_TYPES, FB_SCHEDULE_FREQUENCIES,
 } from '../services/feedbacks.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ─── Visual configs pro optionPicker ──────────────────── */
+const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const hashColor = (s) => {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+};
+const findIn = (list, id) => list.find(o => o.id === id) || null;
 const fmt = ts => {
   if (!ts) return '—';
   const d = ts?.toDate ? ts.toDate() : new Date(ts);
@@ -185,36 +196,40 @@ async function renderListTab(container) {
           placeholder="Tema, nome, plano de ação…">
       </div>
 
-      <div style="min-width:140px;">
+      <div style="min-width:170px;">
         <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Gestor</label>
-        <select id="ff-manager" class="filter-select" style="width:100%;">
+        <select id="ff-manager" style="display:none;">
           <option value="">Todos</option>
           ${getManagerOptions()}
         </select>
+        ${renderPickerButton({ btnId: 'ff-manager-btn', selected: null, emptyLabel: 'Todos os gestores' })}
       </div>
 
-      <div style="min-width:140px;">
+      <div style="min-width:180px;">
         <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Colaborador</label>
-        <select id="ff-collaborator" class="filter-select" style="width:100%;">
+        <select id="ff-collaborator" style="display:none;">
           <option value="">Todos</option>
           ${_users.map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}
         </select>
+        ${renderPickerButton({ btnId: 'ff-collaborator-btn', selected: null, emptyLabel: 'Todos os colaboradores' })}
       </div>
 
-      <div style="min-width:120px;">
+      <div style="min-width:160px;">
         <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Contexto</label>
-        <select id="ff-context" class="filter-select" style="width:100%;">
+        <select id="ff-context" style="display:none;">
           <option value="">Todos</option>
           ${FB_CONTEXTS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
         </select>
+        ${renderPickerButton({ btnId: 'ff-context-btn', selected: null, emptyLabel: 'Todos os contextos' })}
       </div>
 
-      <div style="min-width:130px;">
+      <div style="min-width:160px;">
         <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Tipo</label>
-        <select id="ff-type" class="filter-select" style="width:100%;">
+        <select id="ff-type" style="display:none;">
           <option value="">Todos</option>
           ${FB_TYPES.map(t => `<option value="${esc(t.key)}">${esc(t.label)}</option>`).join('')}
         </select>
+        ${renderPickerButton({ btnId: 'ff-type-btn', selected: null, emptyLabel: 'Todos os tipos' })}
       </div>
 
       <button class="btn btn-ghost btn-sm" id="ff-clear"
@@ -278,10 +293,71 @@ async function renderListTab(container) {
     el?.addEventListener(id === 'ff-search' ? 'input' : 'change', applyF);
   });
 
+  // Pickers visuais (toolbar) — selects nativos sao a fonte-de-verdade
+  const userOpts = (users) => users.map(u => ({
+    id: u.id,
+    label: u.name || u.email || 'Usuário',
+    icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+    color: hashColor(u.id),
+  }));
+  const ffManagerUsers = () => {
+    const ids = [...new Set(allFeedbacks.map(f => f.managerId).filter(Boolean))];
+    return ids.map(id => ({ id, name: userName(id) }));
+  };
+  bindOptionPicker({
+    btnId: 'ff-manager-btn',
+    selectId: 'ff-manager',
+    buildConfig: () => ({
+      options: userOpts(ffManagerUsers()),
+      empty: { id: '', label: 'Todos os gestores' },
+      searchPlaceholder: 'Buscar gestor…',
+    }),
+    findSelected: (id) => findIn(userOpts(ffManagerUsers()), id),
+    emptyLabel: 'Todos os gestores',
+  });
+  bindOptionPicker({
+    btnId: 'ff-collaborator-btn',
+    selectId: 'ff-collaborator',
+    buildConfig: () => ({
+      options: userOpts(_users),
+      empty: { id: '', label: 'Todos os colaboradores' },
+      searchPlaceholder: 'Buscar colaborador…',
+    }),
+    findSelected: (id) => findIn(userOpts(_users), id),
+    emptyLabel: 'Todos os colaboradores',
+  });
+  const ctxOpts = () => FB_CONTEXTS.map(c => ({ id: c, label: c, icon: '◈', color: hashColor(c) }));
+  bindOptionPicker({
+    btnId: 'ff-context-btn',
+    selectId: 'ff-context',
+    buildConfig: () => ({
+      options: ctxOpts(),
+      empty: { id: '', label: 'Todos os contextos' },
+      searchPlaceholder: 'Buscar contexto…',
+    }),
+    findSelected: (id) => findIn(ctxOpts(), id),
+    emptyLabel: 'Todos os contextos',
+  });
+  const typeOpts = () => FB_TYPES.map(t => ({ id: t.key, label: t.label, icon: t.icon || '', color: t.color || '#6366F1' }));
+  bindOptionPicker({
+    btnId: 'ff-type-btn',
+    selectId: 'ff-type',
+    buildConfig: () => ({
+      options: typeOpts(),
+      empty: { id: '', label: 'Todos os tipos' },
+      searchPlaceholder: 'Buscar tipo…',
+    }),
+    findSelected: (id) => findIn(typeOpts(), id),
+    emptyLabel: 'Todos os tipos',
+  });
+
   document.getElementById('ff-clear')?.addEventListener('click', () => {
     ['ff-search','ff-manager','ff-collaborator','ff-context','ff-type'].forEach(id => {
       const el = document.getElementById(id);
-      if (el) el.value = '';
+      if (el) {
+        el.value = '';
+        if (id !== 'ff-search') el.dispatchEvent(new Event('picker-refresh'));
+      }
     });
     filters = { search:'', context:'', type:'', managerId:'', collaboratorId:'', dateFrom:'', dateTo:'' };
     currentPeriod = 'all';
@@ -877,19 +953,35 @@ function showFeedbackForm(container, fb = null) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div>
             <label style="${LBL}">Gestor *</label>
-            <select id="fbf-manager" class="filter-select" style="width:100%;">
+            <select id="fbf-manager" style="display:none;">
               <option value="">Selecione…</option>
               ${_users.map(u => `<option value="${esc(u.id)}"
                 ${fb?.managerId === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
             </select>
+            ${(() => {
+              const u = _users.find(x => x.id === fb?.managerId);
+              return renderPickerButton({
+                btnId: 'fbf-manager-btn',
+                selected: u ? { id: u.id, label: u.name, icon: (u.name||'?').charAt(0).toUpperCase(), color: hashColor(u.id) } : null,
+                emptyLabel: '— Selecione —',
+              });
+            })()}
           </div>
           <div>
             <label style="${LBL}">Colaborador *</label>
-            <select id="fbf-collaborator" class="filter-select" style="width:100%;">
+            <select id="fbf-collaborator" style="display:none;">
               <option value="">Selecione…</option>
               ${_users.map(u => `<option value="${esc(u.id)}"
                 ${fb?.collaboratorId === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
             </select>
+            ${(() => {
+              const u = _users.find(x => x.id === fb?.collaboratorId);
+              return renderPickerButton({
+                btnId: 'fbf-collaborator-btn',
+                selected: u ? { id: u.id, label: u.name, icon: (u.name||'?').charAt(0).toUpperCase(), color: hashColor(u.id) } : null,
+                emptyLabel: '— Selecione —',
+              });
+            })()}
           </div>
         </div>
 
@@ -901,19 +993,32 @@ function showFeedbackForm(container, fb = null) {
           </div>
           <div>
             <label style="${LBL}">Contexto *</label>
-            <select id="fbf-context" class="filter-select" style="width:100%;">
+            <select id="fbf-context" style="display:none;">
               <option value="">Selecione…</option>
               ${FB_CONTEXTS.map(c => `<option ${fb?.context === c ? 'selected' : ''}
                 value="${esc(c)}">${esc(c)}</option>`).join('')}
             </select>
+            ${renderPickerButton({
+              btnId: 'fbf-context-btn',
+              selected: fb?.context ? { id: fb.context, label: fb.context, icon: '◈', color: hashColor(fb.context) } : null,
+              emptyLabel: '— Selecione —',
+            })}
           </div>
           <div>
             <label style="${LBL}">Tipo *</label>
-            <select id="fbf-type" class="filter-select" style="width:100%;">
+            <select id="fbf-type" style="display:none;">
               <option value="">Selecione…</option>
               ${FB_TYPES.map(t => `<option ${fb?.type === t.key ? 'selected' : ''}
                 value="${esc(t.key)}">${esc(t.label)}</option>`).join('')}
             </select>
+            ${(() => {
+              const t = FB_TYPES.find(x => x.key === fb?.type);
+              return renderPickerButton({
+                btnId: 'fbf-type-btn',
+                selected: t ? { id: t.key, label: t.label, icon: t.icon || '', color: t.color || '#6366F1' } : null,
+                emptyLabel: '— Selecione —',
+              });
+            })()}
           </div>
         </div>
 
@@ -1013,6 +1118,60 @@ function showFeedbackForm(container, fb = null) {
   m.addEventListener('click', e => { if (e.target === m) m.remove(); });
   m.querySelector('#fbf-close')?.addEventListener('click', () => m.remove());
   m.querySelector('#fbf-cancel')?.addEventListener('click', () => m.remove());
+
+  // Pickers visuais do form de feedback
+  const fbfUserOpts = () => _users.map(u => ({
+    id: u.id,
+    label: u.name || u.email || 'Usuário',
+    icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+    color: hashColor(u.id),
+  }));
+  bindOptionPicker({
+    btnId: 'fbf-manager-btn',
+    selectId: 'fbf-manager',
+    buildConfig: () => ({
+      options: fbfUserOpts(),
+      empty: { id: '', label: '— Selecione —' },
+      searchPlaceholder: 'Buscar gestor…',
+    }),
+    findSelected: (id) => findIn(fbfUserOpts(), id),
+    emptyLabel: '— Selecione —',
+  });
+  bindOptionPicker({
+    btnId: 'fbf-collaborator-btn',
+    selectId: 'fbf-collaborator',
+    buildConfig: () => ({
+      options: fbfUserOpts(),
+      empty: { id: '', label: '— Selecione —' },
+      searchPlaceholder: 'Buscar colaborador…',
+    }),
+    findSelected: (id) => findIn(fbfUserOpts(), id),
+    emptyLabel: '— Selecione —',
+  });
+  const fbfCtxOpts = () => FB_CONTEXTS.map(c => ({ id: c, label: c, icon: '◈', color: hashColor(c) }));
+  bindOptionPicker({
+    btnId: 'fbf-context-btn',
+    selectId: 'fbf-context',
+    buildConfig: () => ({
+      options: fbfCtxOpts(),
+      empty: { id: '', label: '— Selecione —' },
+      searchPlaceholder: 'Buscar contexto…',
+    }),
+    findSelected: (id) => findIn(fbfCtxOpts(), id),
+    emptyLabel: '— Selecione —',
+  });
+  const fbfTypeOpts = () => FB_TYPES.map(t => ({ id: t.key, label: t.label, icon: t.icon || '', color: t.color || '#6366F1' }));
+  bindOptionPicker({
+    btnId: 'fbf-type-btn',
+    selectId: 'fbf-type',
+    buildConfig: () => ({
+      options: fbfTypeOpts(),
+      empty: { id: '', label: '— Selecione —' },
+      searchPlaceholder: 'Buscar tipo…',
+    }),
+    findSelected: (id) => findIn(fbfTypeOpts(), id),
+    emptyLabel: '— Selecione —',
+  });
 
   // Dynamic highlights
   function addRow(containerId, cls) {
@@ -1376,18 +1535,34 @@ function showScheduleForm(container, sch = null) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div>
             <label style="${LBL}">Gestor responsável *</label>
-            <select id="schf-manager" class="filter-select" style="width:100%;">
+            <select id="schf-manager" style="display:none;">
               <option value="">Selecione…</option>
               ${_users.map(u => `<option value="${esc(u.id)}"
                 ${sch?.managerId === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}
             </select>
+            ${(() => {
+              const u = _users.find(x => x.id === sch?.managerId);
+              return renderPickerButton({
+                btnId: 'schf-manager-btn',
+                selected: u ? { id: u.id, label: u.name, icon: (u.name||'?').charAt(0).toUpperCase(), color: hashColor(u.id) } : null,
+                emptyLabel: '— Selecione —',
+              });
+            })()}
           </div>
           <div>
             <label style="${LBL}">Frequência *</label>
-            <select id="schf-freq" class="filter-select" style="width:100%;">
+            <select id="schf-freq" style="display:none;">
               ${FB_SCHEDULE_FREQUENCIES.map(f => `<option value="${esc(f.key)}"
                 ${sch?.frequency === f.key ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}
             </select>
+            ${(() => {
+              const f = FB_SCHEDULE_FREQUENCIES.find(x => x.key === (sch?.frequency || 'monthly'));
+              return renderPickerButton({
+                btnId: 'schf-freq-btn',
+                selected: f ? { id: f.key, label: f.label, icon: '', color: '#0EA5E9' } : null,
+                emptyLabel: 'Selecione',
+              });
+            })()}
           </div>
         </div>
         <div>
@@ -1421,6 +1596,33 @@ function showScheduleForm(container, sch = null) {
   document.body.appendChild(m);
   m.addEventListener('click', e => { if (e.target === m) m.remove(); });
   m.querySelectorAll('.schf-close').forEach(b => b.addEventListener('click', () => m.remove()));
+
+  // Pickers visuais do form de schedule
+  const schfMgrOpts = () => _users.map(u => ({
+    id: u.id,
+    label: u.name || u.email || 'Usuário',
+    icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+    color: hashColor(u.id),
+  }));
+  bindOptionPicker({
+    btnId: 'schf-manager-btn',
+    selectId: 'schf-manager',
+    buildConfig: () => ({
+      options: schfMgrOpts(),
+      empty: { id: '', label: '— Selecione —' },
+      searchPlaceholder: 'Buscar gestor…',
+    }),
+    findSelected: (id) => findIn(schfMgrOpts(), id),
+    emptyLabel: '— Selecione —',
+  });
+  const schfFreqOpts = () => FB_SCHEDULE_FREQUENCIES.map(f => ({ id: f.key, label: f.label, icon: '', color: '#0EA5E9' }));
+  bindOptionPicker({
+    btnId: 'schf-freq-btn',
+    selectId: 'schf-freq',
+    buildConfig: () => ({ options: schfFreqOpts(), searchPlaceholder: 'Buscar frequência…' }),
+    findSelected: (id) => findIn(schfFreqOpts(), id),
+    emptyLabel: 'Selecione',
+  });
 
   m.querySelector('#schf-save')?.addEventListener('click', async () => {
     const managerId = m.querySelector('#schf-manager')?.value;
