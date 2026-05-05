@@ -1226,7 +1226,7 @@ export async function setUrgencyOverride(taskId, reason) {
   if (!taskSnap.exists()) throw new Error('Tarefa não encontrada.');
   const prev = taskSnap.data();
 
-  const override = {
+  const overrideForDb = {
     active:  true,
     reason:  trimmed,
     by:      user.uid,
@@ -1236,10 +1236,14 @@ export async function setUrgencyOverride(taskId, reason) {
 
   // Reduz priority de urgent → medium ao aplicar override (mantém o efeito
   // visual esperado). Se já está em outro priority, não toca.
-  const updates = { urgencyOverride: override, updatedAt: serverTimestamp(), updatedBy: user.uid };
+  const updates = { urgencyOverride: overrideForDb, updatedAt: serverTimestamp(), updatedBy: user.uid };
   if (prev.priority === 'urgent') updates.priority = 'medium';
 
   await updateDoc(doc(db, 'tasks', taskId), updates);
+
+  // Versão pra UI imediata: substitui sentinel `serverTimestamp()` por Date
+  // local. Snapshot listener vai trocar pelo timestamp real do servidor depois.
+  const overrideForUi = { ...overrideForDb, at: new Date() };
 
   // Audit log preservado (severity:warning sai do TTL 90d)
   await auditLog('tasks.urgency_override', 'task', taskId, {
@@ -1264,7 +1268,7 @@ export async function setUrgencyOverride(taskId, reason) {
     }
   } catch (e) { console.warn('[urgency-override] notify failed:', e?.message); }
 
-  return override;
+  return overrideForUi;
 }
 
 /** Restaura urgência automática (apaga o override). Reversível. */
