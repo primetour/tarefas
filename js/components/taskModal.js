@@ -1887,11 +1887,16 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
           if (slaWarn) {
             const fmt = d => d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
             slaWarn.style.display = 'block';
-            slaWarn.style.background = '';
-            slaWarn.style.borderColor = '';
-            slaWarn.style.color = '';
+            // Restaura a cor vermelha de aviso (style inline original era
+            // perdido após setar p/ azul no modo override-ativo). Setar
+            // explicitamente em vez de '' (que apagaria a propriedade).
+            slaWarn.style.background = 'rgba(239,68,68,0.08)';
+            slaWarn.style.borderColor = 'rgba(239,68,68,0.3)';
+            slaWarn.style.color = '#EF4444';
             slaWarn.style.padding = '10px 12px';
-            const canOverride = store.can('task_override_urgency') && task?.id;
+            // Botão aparece pra qualquer user com permissão. Se ainda não
+            // salvou a task, openUrgencyOverrideModal mostra toast orientativo.
+            const canOverride = store.can('task_override_urgency');
             // Layout empilhado vertical: título → detalhe → botão full-width
             slaWarn.innerHTML = `
               <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:0.8125rem;line-height:1.3;">
@@ -2399,7 +2404,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
  * ────────────────────────────────────────────────────────── */
 function openUrgencyOverrideModal(task, onApplied) {
   if (!task?.id) {
-    toast.error('Salve a tarefa primeiro pra poder remover a urgência.');
+    toast.info('Salve a tarefa primeiro. Depois reabra ela e o botão "Remover urgência" estará disponível.');
     return;
   }
   const overlay = document.createElement('div');
