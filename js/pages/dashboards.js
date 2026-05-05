@@ -21,6 +21,16 @@ import {
 } from '../services/analytics.js';
 import { fetchSurveys } from '../services/csat.js';
 import { REQUESTING_AREAS } from '../components/filterBar.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const hashColor = (s) => {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+};
+const findIn = (list, id) => list.find(o => o.id === id) || null;
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -80,6 +90,19 @@ export async function renderDashboards(container) {
       users = all.filter(u => u.active !== false);
     } catch { /* ignore */ }
   }
+
+  // Pré-calcula visibleUsers/Areas no escopo da função pra serem
+  // acessíveis tanto no template quanto no bindOptionPicker depois.
+  const _isMasterOrAdmin = store.isMaster() || store.can('system_view_all');
+  const _visibleSectors = store.getVisibleSectors();
+  const visibleUsersOuter = _isMasterOrAdmin ? users
+    : users.filter(u => {
+        const uSector = u.sector || u.department || '';
+        if (!uSector) return true;
+        return _visibleSectors && _visibleSectors.includes(uSector);
+      });
+  const visibleAreasOuter = _isMasterOrAdmin ? REQUESTING_AREAS
+    : REQUESTING_AREAS.filter(s => _visibleSectors && _visibleSectors.includes(s));
 
   container.innerHTML = `
     <div class="page-header">
@@ -162,18 +185,48 @@ export async function renderDashboards(container) {
       // Núcleos: show all (núcleos are cross-sector, no permission restriction needed)
       return `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
-      <select class="filter-select" id="dash-user-filter" style="min-width:190px;">
-        <option value="">Todos os usuários</option>
-        ${visibleUsers.map(u => `<option value="${esc(u.id)}" ${filterUser===u.id?'selected':''}>${esc(u.name || u.email)}</option>`).join('')}
-      </select>
-      <select class="filter-select" id="dash-nucleo-filter" style="min-width:150px;">
-        <option value="">Todos os núcleos</option>
-        ${NUCLEOS_LIST.map(n => `<option value="${esc(n.value)}" ${filterNucleo===n.value?'selected':''}>${esc(n.label)}</option>`).join('')}
-      </select>
-      <select class="filter-select" id="dash-sector-filter" style="min-width:160px;">
-        <option value="">Todas as áreas</option>
-        ${visibleAreas.map(s => `<option value="${esc(s)}" ${filterSector===s?'selected':''}>${esc(s)}</option>`).join('')}
-      </select>
+      <div class="toolbar-filter-wrap" style="min-width:200px;">
+        <select id="dash-user-filter" style="display:none;">
+          <option value="">Todos os usuários</option>
+          ${visibleUsers.map(u => `<option value="${esc(u.id)}" ${filterUser===u.id?'selected':''}>${esc(u.name || u.email)}</option>`).join('')}
+        </select>
+        ${(() => {
+          const u = visibleUsers.find(x => x.id === filterUser);
+          return renderPickerButton({
+            btnId: 'dash-user-filter-btn',
+            selected: u ? { id: u.id, label: u.name || u.email, icon: (u.name||'?').charAt(0).toUpperCase(), color: hashColor(u.id) } : null,
+            emptyLabel: 'Todos os usuários',
+          });
+        })()}
+      </div>
+      <div class="toolbar-filter-wrap" style="min-width:170px;">
+        <select id="dash-nucleo-filter" style="display:none;">
+          <option value="">Todos os núcleos</option>
+          ${NUCLEOS_LIST.map(n => `<option value="${esc(n.value)}" ${filterNucleo===n.value?'selected':''}>${esc(n.label)}</option>`).join('')}
+        </select>
+        ${(() => {
+          const n = NUCLEOS_LIST.find(x => x.value === filterNucleo);
+          return renderPickerButton({
+            btnId: 'dash-nucleo-filter-btn',
+            selected: n ? { id: n.value, label: n.label, icon: '◇', color: hashColor(n.value) } : null,
+            emptyLabel: 'Todos os núcleos',
+          });
+        })()}
+      </div>
+      <div class="toolbar-filter-wrap" style="min-width:170px;">
+        <select id="dash-sector-filter" style="display:none;">
+          <option value="">Todas as áreas</option>
+          ${visibleAreas.map(s => `<option value="${esc(s)}" ${filterSector===s?'selected':''}>${esc(s)}</option>`).join('')}
+        </select>
+        ${(() => {
+          const s = visibleAreas.find(x => x === filterSector);
+          return renderPickerButton({
+            btnId: 'dash-sector-filter-btn',
+            selected: s ? { id: s, label: s, icon: '◈', color: hashColor(s) } : null,
+            emptyLabel: 'Todas as áreas',
+          });
+        })()}
+      </div>
       ${(filterUser||filterNucleo||filterSector) ? `
         <button class="btn btn-ghost btn-sm" id="dash-clear-filters"
           style="font-size:0.75rem;color:var(--text-muted);">✕ Limpar filtros</button>` : ''}
@@ -294,6 +347,51 @@ export async function renderDashboards(container) {
     filterSector = e.target.value;
     destroyCharts(); loadData(container);
   });
+
+  // Pickers visuais
+  if (document.getElementById('dash-user-filter-btn')) {
+    const dashUserOpts = () => visibleUsersOuter.map(u => ({
+      id: u.id,
+      label: u.name || u.email,
+      icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+      color: hashColor(u.id),
+    }));
+    bindOptionPicker({
+      btnId: 'dash-user-filter-btn',
+      selectId: 'dash-user-filter',
+      buildConfig: () => ({
+        options: dashUserOpts(),
+        empty: { id: '', label: 'Todos os usuários' },
+        searchPlaceholder: 'Buscar usuário…',
+      }),
+      findSelected: (id) => findIn(dashUserOpts(), id),
+      emptyLabel: 'Todos os usuários',
+    });
+    const dashNucleoOpts = () => NUCLEOS_LIST.map(n => ({ id: n.value, label: n.label, icon: '◇', color: hashColor(n.value) }));
+    bindOptionPicker({
+      btnId: 'dash-nucleo-filter-btn',
+      selectId: 'dash-nucleo-filter',
+      buildConfig: () => ({
+        options: dashNucleoOpts(),
+        empty: { id: '', label: 'Todos os núcleos' },
+        searchPlaceholder: 'Buscar núcleo…',
+      }),
+      findSelected: (id) => findIn(dashNucleoOpts(), id),
+      emptyLabel: 'Todos os núcleos',
+    });
+    const dashSectorOpts = () => visibleAreasOuter.map(s => ({ id: s, label: s, icon: '◈', color: hashColor(s) }));
+    bindOptionPicker({
+      btnId: 'dash-sector-filter-btn',
+      selectId: 'dash-sector-filter',
+      buildConfig: () => ({
+        options: dashSectorOpts(),
+        empty: { id: '', label: 'Todas as áreas' },
+        searchPlaceholder: 'Buscar área…',
+      }),
+      findSelected: (id) => findIn(dashSectorOpts(), id),
+      emptyLabel: 'Todas as áreas',
+    });
+  }
   document.getElementById('dash-clear-filters')?.addEventListener('click', () => {
     filterUser = ''; filterNucleo = ''; filterSector = '';
     const uf = document.getElementById('dash-user-filter');   if (uf) uf.value = '';

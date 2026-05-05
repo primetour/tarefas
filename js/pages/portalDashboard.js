@@ -11,6 +11,16 @@ import {
   collection, getDocs, query, orderBy, limit, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from '../firebase.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const hashColor = (s) => {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+};
+const findIn = (list, id) => list.find(o => o.id === id) || null;
 
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -67,15 +77,18 @@ export async function renderPortalDashboard(container) {
 
     <!-- Filters -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center;">
-      <select class="filter-select" id="pd-period-filter" style="min-width:180px;">
-        <option value="0"   selected>Todo o período</option>
-        <option value="7">Últimos 7 dias</option>
-        <option value="30">Últimos 30 dias</option>
-        <option value="60">Últimos 60 dias</option>
-        <option value="90">Últimos 90 dias</option>
-        <option value="365">Último ano</option>
-        <option value="custom">Personalizado…</option>
-      </select>
+      <div class="toolbar-filter-wrap" style="min-width:200px;">
+        <select id="pd-period-filter" style="display:none;">
+          <option value="0"   selected>Todo o período</option>
+          <option value="7">Últimos 7 dias</option>
+          <option value="30">Últimos 30 dias</option>
+          <option value="60">Últimos 60 dias</option>
+          <option value="90">Últimos 90 dias</option>
+          <option value="365">Último ano</option>
+          <option value="custom">Personalizado…</option>
+        </select>
+        ${renderPickerButton({ btnId: 'pd-period-filter-btn', selected: { id: '0', label: 'Todo o período', icon: '', color: '#0EA5E9' }, emptyLabel: 'Todo o período' })}
+      </div>
       <div id="pd-custom-dates" style="display:none;gap:6px;align-items:center;">
         <input type="date" class="filter-select" id="pd-date-from" style="min-width:130px;" />
         <span style="color:var(--text-muted);font-size:0.8125rem;">a</span>
@@ -83,10 +96,13 @@ export async function renderPortalDashboard(container) {
         <button class="btn btn-ghost btn-sm" id="pd-apply-custom"
           style="font-size:0.75rem;">Aplicar</button>
       </div>
-      <select class="filter-select" id="pd-user-filter" style="min-width:200px;">
-        <option value="">Todos os usuários</option>
-        ${users.map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email)}</option>`).join('')}
-      </select>
+      <div class="toolbar-filter-wrap" style="min-width:220px;">
+        <select id="pd-user-filter" style="display:none;">
+          <option value="">Todos os usuários</option>
+          ${users.map(u => `<option value="${esc(u.id)}">${esc(u.name || u.email)}</option>`).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'pd-user-filter-btn', selected: null, emptyLabel: 'Todos os usuários' })}
+      </div>
     </div>
 
     <div id="dash-body">${skeleton()}</div>`;
@@ -111,6 +127,42 @@ export async function renderPortalDashboard(container) {
     filterUser = e.target.value;
     renderDash();
   });
+
+  // Pickers visuais
+  const pdPeriodOpts = [
+    { id: '0',      label: 'Todo o período',     icon: '', color: '#0EA5E9' },
+    { id: '7',      label: 'Últimos 7 dias',     icon: '', color: '#0EA5E9' },
+    { id: '30',     label: 'Últimos 30 dias',    icon: '', color: '#0EA5E9' },
+    { id: '60',     label: 'Últimos 60 dias',    icon: '', color: '#0EA5E9' },
+    { id: '90',     label: 'Últimos 90 dias',    icon: '', color: '#0EA5E9' },
+    { id: '365',    label: 'Último ano',         icon: '', color: '#0EA5E9' },
+    { id: 'custom', label: 'Personalizado…',     icon: '', color: '#D4A843' },
+  ];
+  bindOptionPicker({
+    btnId: 'pd-period-filter-btn',
+    selectId: 'pd-period-filter',
+    buildConfig: () => ({ options: pdPeriodOpts, searchPlaceholder: 'Buscar período…' }),
+    findSelected: (id) => findIn(pdPeriodOpts, id),
+    emptyLabel: 'Todo o período',
+  });
+  const pdUserOpts = () => users.map(u => ({
+    id: u.id,
+    label: u.name || u.email,
+    icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+    color: hashColor(u.id),
+  }));
+  bindOptionPicker({
+    btnId: 'pd-user-filter-btn',
+    selectId: 'pd-user-filter',
+    buildConfig: () => ({
+      options: pdUserOpts(),
+      empty: { id: '', label: 'Todos os usuários' },
+      searchPlaceholder: 'Buscar usuário…',
+    }),
+    findSelected: (id) => findIn(pdUserOpts(), id),
+    emptyLabel: 'Todos os usuários',
+  });
+
   document.getElementById('dash-refresh')?.addEventListener('click', () => loadAll());
   document.getElementById('dash-export-pdf')?.addEventListener('click', () => exportPortalPdf());
   document.getElementById('dash-export-xls')?.addEventListener('click', () => exportPortalXls());

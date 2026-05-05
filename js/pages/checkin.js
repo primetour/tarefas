@@ -12,6 +12,16 @@ import { store }   from '../store.js';
 import { toast }   from '../components/toast.js';
 import { modal }   from '../components/modal.js';
 import { REQUESTING_AREAS } from '../services/tasks.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const hashColor = (s) => {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+};
+const findIn = (list, id) => list.find(o => o.id === id) || null;
 import {
   DEFAULT_AREAS, DEFAULT_SECTOR_RULES, DEFAULT_WORKDAY_HOURS,
   fetchCheckinConfig, saveCheckinConfig,
@@ -157,7 +167,10 @@ async function renderMap(container) {
   container.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
       <label style="font-size:0.875rem;color:var(--text-secondary);">Data:</label>
-      <select class="filter-select" id="ck-date-sel">${dateOpts()}</select>
+      <div class="toolbar-filter-wrap" style="min-width:200px;">
+        <select id="ck-date-sel" style="display:none;">${dateOpts()}</select>
+        ${renderPickerButton({ btnId: 'ck-date-sel-btn', selected: null, emptyLabel: 'Selecione a data' })}
+      </div>
       <span id="ck-occupy-badge" style="font-size:0.75rem;color:var(--text-muted);"></span>
     </div>
 
@@ -197,6 +210,19 @@ async function renderMap(container) {
   document.getElementById('ck-date-sel').addEventListener('change', (e) => {
     _selectedDate = e.target.value;
     drawAll();
+  });
+  // Picker visual da data
+  const ckDateSelOpts = () => {
+    const sel = document.getElementById('ck-date-sel');
+    if (!sel) return [];
+    return [...sel.options].map(o => ({ id: o.value, label: o.textContent.trim(), icon: '', color: '#0EA5E9' }));
+  };
+  bindOptionPicker({
+    btnId: 'ck-date-sel-btn',
+    selectId: 'ck-date-sel',
+    buildConfig: () => ({ options: ckDateSelOpts(), searchPlaceholder: 'Buscar data…' }),
+    findSelected: (id) => findIn(ckDateSelOpts(), id),
+    emptyLabel: 'Selecione a data',
   });
 
   function drawAll() {
