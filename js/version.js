@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 3,
   minor: 5,
-  patch: 0,
-  build: '20260505-status-atrasada-datepicker-search-meu-painel',
+  patch: 1,
+  build: '20260505-fix-pickers-deeplink-sync',
 };
 
 /** "1.2.0" */

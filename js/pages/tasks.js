@@ -188,18 +188,34 @@ export async function renderTasks(container) {
       </div>
       <div class="toolbar-filter-wrap" style="${filterVisibility.status?'':'display:none;'}min-width:170px;">
         <select id="filter-status" style="display:none;">
-          <option value="">Todos os status</option>
-          <option value="overdue">⚠ Atrasada</option>
-          ${STATUSES.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
+          <option value="" ${filterStatus===''?'selected':''}>Todos os status</option>
+          <option value="overdue" ${filterStatus==='overdue'?'selected':''}>⚠ Atrasada</option>
+          ${STATUSES.map(s=>`<option value="${s.value}" ${filterStatus===s.value?'selected':''}>${s.label}</option>`).join('')}
         </select>
-        ${renderPickerButton({ btnId: 'filter-status-btn', selected: null, emptyLabel: 'Todos os status' })}
+        ${(() => {
+          // Pre-popula o botão com o estado vindo da URL (deep-link do Meu Painel)
+          if (filterStatus === 'overdue') {
+            return renderPickerButton({ btnId: 'filter-status-btn',
+              selected: { id: 'overdue', label: '⚠ Atrasada', icon: '', color: '#EF4444' },
+              emptyLabel: 'Todos os status' });
+          }
+          const s = STATUSES.find(x => x.value === filterStatus);
+          return renderPickerButton({ btnId: 'filter-status-btn',
+            selected: s ? { id: s.value, label: s.label, icon: '', color: s.color } : null,
+            emptyLabel: 'Todos os status' });
+        })()}
       </div>
       <div class="toolbar-filter-wrap" style="${filterVisibility.priority?'':'display:none;'}min-width:170px;">
         <select id="filter-priority" style="display:none;">
-          <option value="">Todas as prioridades</option>
-          ${PRIORITIES.map(p=>`<option value="${p.value}">${p.icon} ${p.label}</option>`).join('')}
+          <option value="" ${filterPriority===''?'selected':''}>Todas as prioridades</option>
+          ${PRIORITIES.map(p=>`<option value="${p.value}" ${filterPriority===p.value?'selected':''}>${p.icon} ${p.label}</option>`).join('')}
         </select>
-        ${renderPickerButton({ btnId: 'filter-priority-btn', selected: null, emptyLabel: 'Todas as prioridades' })}
+        ${(() => {
+          const p = PRIORITIES.find(x => x.value === filterPriority);
+          return renderPickerButton({ btnId: 'filter-priority-btn',
+            selected: p ? { id: p.value, label: p.label, icon: p.icon, color: p.color } : null,
+            emptyLabel: 'Todas as prioridades' });
+        })()}
       </div>
       <select class="filter-select" id="filter-project" style="${filterVisibility.project?'':'display:none;'}">
         <option value="">Todos os projetos</option>
@@ -216,12 +232,17 @@ export async function renderTasks(container) {
       </div>
       <div class="toolbar-filter-wrap" style="${filterVisibility.assignee?'':'display:none;'}min-width:180px;">
         <select id="filter-assignee" style="display:none;">
-          <option value="">Todos os respons\u00e1veis</option>
+          <option value="" ${filterAssignee===''?'selected':''}>Todos os respons\u00e1veis</option>
           ${(store.get('users')||[]).filter(u=>u.active).map(u=>`
-            <option value="${u.id}">${esc(u.name)}</option>
+            <option value="${u.id}" ${filterAssignee===u.id?'selected':''}>${esc(u.name)}</option>
           `).join('')}
         </select>
-        ${renderPickerButton({ btnId: 'filter-assignee-btn', selected: null, emptyLabel: 'Todos os respons\u00e1veis' })}
+        ${(() => {
+          const u = (store.get('users')||[]).find(x => x.id === filterAssignee);
+          return renderPickerButton({ btnId: 'filter-assignee-btn',
+            selected: u ? { id: u.id, label: u.name, icon: (u.name||'?').charAt(0).toUpperCase(), color: '#6366F1' } : null,
+            emptyLabel: 'Todos os respons\u00e1veis' });
+        })()}
       </div>
       <select class="filter-select" id="filter-date-preset" style="${filterVisibility.datePreset?'':'display:none;'}">
         <option value=""            ${filterDatePreset===''?'selected':''}>Qualquer prazo</option>
