@@ -1805,6 +1805,18 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
         if (dow !== 0 && dow !== 6) biz--;
       }
       if (due < minDue) {
+        // Decisão de UX (mai/2026): só FORÇA priority='urgent' quando:
+        //   1) task nova (isEdit=false) — primeiro contato, alerta genuíno
+        //   2) task existente já marcada como urgent (manter o estado)
+        // Em task existente que NÃO é urgent (criada com cronograma,
+        // tarefas pré-programadas no calendário editorial, recorrentes),
+        // NÃO força urgent — só mostra um aviso informativo. Isso evita
+        // fricção quando o user só está preenchendo uma tarefa que já
+        // tinha um prazo planejado pelo criador.
+        const prioElNow = document.getElementById('tm-priority');
+        const isAlreadyUrgent = prioElNow?.value === 'urgent';
+        const shouldForceUrgent = !isEdit || isAlreadyUrgent;
+
         // Override de urgência ativo? (gestor removeu manualmente com
         // justificativa). Nesse caso, NÃO força urgent — banner muda
         // pra info ("Urgência removida por X em Y · motivo").
@@ -1881,22 +1893,36 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
             });
           }
         } else {
-          // Caminho normal: força urgência
+          // Caminho normal: SLA breach detectado.
+          // Só força priority='urgent' em (1) task nova ou (2) task que
+          // JÁ ESTÁ urgent (mantém estado). Em task existente programada
+          // que estava com priority=medium/high/etc, mantém o priority
+          // original e mostra apenas aviso informativo (laranja, não vermelho).
           const prioEl = document.getElementById('tm-priority');
-          if (prioEl && prioEl.value !== 'urgent') prioEl.value = 'urgent';
+          if (shouldForceUrgent && prioEl && prioEl.value !== 'urgent') prioEl.value = 'urgent';
           if (slaWarn) {
             const fmt = d => d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
             slaWarn.style.display = 'block';
-            // Restaura a cor vermelha de aviso (style inline original era
-            // perdido após setar p/ azul no modo override-ativo). Setar
-            // explicitamente em vez de '' (que apagaria a propriedade).
-            slaWarn.style.background = 'rgba(239,68,68,0.08)';
-            slaWarn.style.borderColor = 'rgba(239,68,68,0.3)';
-            slaWarn.style.color = '#EF4444';
             slaWarn.style.padding = '10px 12px';
+
+            // Cor + texto variam conforme contexto:
+            // - shouldForceUrgent (nova ou já-urgent): vermelho — alerta direto
+            // - task editada não-urgent: laranja — aviso informativo
+            if (shouldForceUrgent) {
+              slaWarn.style.background = 'rgba(239,68,68,0.08)';
+              slaWarn.style.borderColor = 'rgba(239,68,68,0.3)';
+              slaWarn.style.color = '#EF4444';
+            } else {
+              slaWarn.style.background = 'rgba(245,158,11,0.08)';
+              slaWarn.style.borderColor = 'rgba(245,158,11,0.3)';
+              slaWarn.style.color = '#D97706';
+            }
+
             // Botão aparece pra qualquer user com permissão. Se ainda não
             // salvou a task, openUrgencyOverrideModal mostra toast orientativo.
-            const canOverride = store.can('task_override_urgency');
+            // Em task editada não-urgent, NÃO mostra botão (não há urgência
+            // forçada pra remover — priority continua o que o user definiu).
+            const canOverride = store.can('task_override_urgency') && shouldForceUrgent;
             // Layout empilhado vertical: título → detalhe → botão full-width
             slaWarn.innerHTML = `
               <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:0.8125rem;line-height:1.3;">
@@ -1905,8 +1931,9 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
               </div>
               <div style="margin-top:4px;font-size:0.6875rem;opacity:0.9;line-height:1.45;">
                 Variação exige <strong>${days} dia${days!==1?'s':''} úteis</strong>
-                (mínimo ${fmt(minDue)}).<br>
-                Prioridade marcada como <strong>URGENTE</strong> automaticamente.
+                (mínimo ${fmt(minDue)}).${shouldForceUrgent
+                  ? `<br>Prioridade marcada como <strong>URGENTE</strong> automaticamente.`
+                  : `<br>Como a tarefa já estava programada, a prioridade <strong>não foi alterada</strong>.`}
               </div>
               ${canOverride ? `
                 <button type="button" id="tm-urgency-remove-btn"
