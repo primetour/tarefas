@@ -880,7 +880,15 @@ function applyFilters() {
 
   const label = document.getElementById('tasks-count-label');
   if (label) {
-    label.textContent = `${filteredTasks.length} tarefa${filteredTasks.length !== 1 ? 's' : ''}${allTasks.length !== filteredTasks.length ? ` (de ${allTasks.length})` : ''}`;
+    // Denominador = tarefas ATIVAS (sem arquivadas), não allTasks bruto.
+    // Por quê: arquivadas estão permanentemente ocultas nesta view (não há
+    // toggle "mostrar arquivadas"), então contá-las em "(de N)" mostra um
+    // teto que o usuário nunca alcança — gerava confusão tipo "card mostra
+    // 860 mas lista diz 'de 1039', de onde vem essa diferença?". Resposta:
+    // 179 arquivadas que ninguém pode ver. Agora "(de N)" representa o que
+    // o usuário PODERIA ver removendo todos os filtros desta tela.
+    const activeTotal = allTasks.filter(t => !t.archived).length;
+    label.textContent = `${filteredTasks.length} tarefa${filteredTasks.length !== 1 ? 's' : ''}${activeTotal !== filteredTasks.length ? ` (de ${activeTotal})` : ''}`;
   }
 
   renderTaskList();

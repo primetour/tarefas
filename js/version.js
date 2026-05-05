@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 3,
   minor: 7,
-  patch: 1,
-  build: '20260505-fix-painel-filtros-persistentes',
+  patch: 2,
+  build: '20260505-fix-contador-arquivadas',
 };
 
 /** "1.2.0" */
