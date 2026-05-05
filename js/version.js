@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 3,
   minor: 2,
-  patch: 1,
-  build: '20260505-backbtn',
+  patch: 2,
+  build: '20260505-pci-scope',
 };
 
 /** "1.2.0" */

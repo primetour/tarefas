@@ -226,6 +226,24 @@ Aceitamos e suportamos auditorias por especialistas TI de clientes corporativos.
 documentação é o ponto de partida; informações complementares (configurações específicas
 de projeto, IDs internos, evidências de execução) ficam disponíveis sob NDA.
 
+### 7.3 Frameworks que NÃO se aplicam (e por quê)
+
+Declarar não-aplicabilidade explicitamente é tão importante quanto declarar conformidade —
+evita escopo inflado, auditoria mal direcionada e custos desnecessários. As verificações
+abaixo foram revisadas em cada release MAJOR.
+
+| Framework | Não se aplica porque… |
+|---|---|
+| **PCI DSS** (Payment Card Industry) | O Gestor **não armazena, processa nem transmite dados de cartão de pagamento**. Não há checkout, gateway de pagamento, captura de PAN/CVV ou integração com PSP/adquirente. Dados de cartão da operação PRIMETOUR vivem em sistemas segregados (sistema de booking, gateway, ERP financeiro), cada um com seu próprio compliance PCI. Manter o Gestor fora do escopo PCI é decisão de arquitetura — minimizar superfície reduz drasticamente o custo de assessment QSA, pen-test específico e segmentação de rede. Auditoria do escopo de dados está em [`DATA-FLOW.md`](DATA-FLOW.md) — Inventário PII por collection. |
+| **HIPAA** (saúde, EUA) | Não processa **Protected Health Information**. Sistema é de gestão operacional de agência de viagens; nenhuma collection contém prontuário médico, diagnóstico ou identificadores de paciente. |
+| **PCI 3DS / EMVCo** | Decorrência do PCI DSS não-aplicável (sem cartão = sem 3DS). |
+| **FedRAMP** (governo EUA) | Sistema serve clientes corporativos brasileiros; não há contrato com agência federal americana. |
+| **SOX** (Sarbanes-Oxley) | Não é sistema de relatório financeiro auditado; PRIMETOUR não é empresa listada na bolsa americana. |
+
+**Política de revisão**: a cada release MAJOR (`X.0.0`) o time revisa se algum framework
+acima passou a se aplicar (ex: se um dia for adicionada feature de pagamento, PCI sai
+desta seção e entra em 7.1 com plano de conformidade). Histórico em [`CHANGELOG.md`](CHANGELOG.md).
+
 ---
 
 ## 8. Ownership do produto
