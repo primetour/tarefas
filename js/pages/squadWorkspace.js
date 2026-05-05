@@ -13,6 +13,14 @@ import {
   STATUS_MAP, PRIORITY_MAP,
 } from '../services/tasks.js';
 import { openTaskModal, openTaskDoneOverlay } from '../components/taskModal.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const _SW_HASH = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const _swHash = (s) => {
+  const str = String(s || ''); let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return _SW_HASH[Math.abs(h) % _SW_HASH.length];
+};
 import { openProjectModal } from './projects.js';
 import { addMember, removeMember, toggleWorkspaceAdmin, getWorkspace } from '../services/workspaces.js';
 import { modal } from '../components/modal.js';
@@ -576,10 +584,13 @@ async function openMembersModal() {
     ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-subtle);">
          <label style="font-size:0.75rem;font-weight:600;color:var(--text-muted);display:block;margin-bottom:6px;">Adicionar membro</label>
          <div style="display:flex;gap:8px;">
-           <select id="sw-add-member-select" class="form-select" style="flex:1;font-size:0.8125rem;">
-             <option value="">Selecione um usuário...</option>
-             ${nonMembers.map(u => `<option value="${u.id}">${esc(u.name || u.displayName || u.email)}</option>`).join('')}
-           </select>
+           <div style="flex:1;">
+             <select id="sw-add-member-select" style="display:none;">
+               <option value="">Selecione um usuário...</option>
+               ${nonMembers.map(u => `<option value="${u.id}">${esc(u.name || u.displayName || u.email)}</option>`).join('')}
+             </select>
+             ${renderPickerButton({ btnId: 'sw-add-member-select-btn', selected: null, emptyLabel: 'Selecione um usuário...' })}
+           </div>
            <button class="btn btn-primary btn-sm" id="sw-add-member-btn">+ Adicionar</button>
          </div>
        </div>`
@@ -598,6 +609,26 @@ async function openMembersModal() {
 
   // Bind eventos após render
   setTimeout(() => {
+    // Picker visual de adicionar membro
+    if (document.getElementById('sw-add-member-select-btn')) {
+      const swMemberOpts = () => nonMembers.map(u => ({
+        id: u.id,
+        label: u.name || u.displayName || u.email,
+        icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+        color: _swHash(u.id),
+      }));
+      bindOptionPicker({
+        btnId: 'sw-add-member-select-btn',
+        selectId: 'sw-add-member-select',
+        buildConfig: () => ({
+          options: swMemberOpts(),
+          empty: { id: '', label: 'Selecione um usuário...' },
+          searchPlaceholder: 'Buscar usuário…',
+        }),
+        findSelected: (id) => swMemberOpts().find(o => o.id === id) || null,
+        emptyLabel: 'Selecione um usuário...',
+      });
+    }
     // Adicionar membro
     document.getElementById('sw-add-member-btn')?.addEventListener('click', async (ev) => {
       const btn = ev.currentTarget;

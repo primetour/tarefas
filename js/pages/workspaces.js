@@ -7,6 +7,14 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { REQUESTING_AREAS } from '../services/tasks.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const _HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const _hashColor = (s) => {
+  const str = String(s || ''); let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return _HASH_PALETTE[Math.abs(h) % _HASH_PALETTE.length];
+};
 import {
   createWorkspace, updateWorkspace, archiveWorkspace, unarchiveWorkspace,
   deleteWorkspace, checkWorkspaceDependencies,
@@ -384,12 +392,20 @@ function openWorkspaceModal(ws = null) {
         </div>
         <div class="form-group">
           <label class="form-label">Setor principal (opcional)</label>
-          <select class="form-select" id="ws-sector">
+          <select id="ws-sector" style="display:none;">
             <option value="">— Nenhum setor específico —</option>
             ${REQUESTING_AREAS.map(a =>
               `<option value="${a}" ${(ws?.sector||'')=== a?'selected':''}>${a}</option>`
             ).join('')}
           </select>
+          ${(() => {
+            const cur = ws?.sector || '';
+            return renderPickerButton({
+              btnId: 'ws-sector-btn',
+              selected: cur ? { id: cur, label: cur, icon: '◈', color: _hashColor(cur) } : null,
+              emptyLabel: '— Nenhum setor específico —',
+            });
+          })()}
           <small style="display:block;margin-top:4px;font-size:0.75rem;color:var(--text-muted);">
             Usado para sugerir membros quando não é multissetor. Deixe em branco se o squad é transversal.
           </small>
@@ -493,8 +509,21 @@ function openWorkspaceModal(ws = null) {
     ],
   });
 
-  // Bind icon/color selectors
+  // Bind icon/color selectors + picker visual de setor
   setTimeout(() => {
+    const wsSectorOpts = () => REQUESTING_AREAS.map(a => ({ id: a, label: a, icon: '◈', color: _hashColor(a) }));
+    bindOptionPicker({
+      btnId: 'ws-sector-btn',
+      selectId: 'ws-sector',
+      buildConfig: () => ({
+        options: wsSectorOpts(),
+        empty: { id: '', label: '— Nenhum setor específico —' },
+        searchPlaceholder: 'Buscar setor…',
+      }),
+      findSelected: (id) => wsSectorOpts().find(o => o.id === id) || null,
+      emptyLabel: '— Nenhum setor específico —',
+    });
+
     document.querySelectorAll('.ws-icon-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.getElementById('ws-icon').value = btn.dataset.icon;

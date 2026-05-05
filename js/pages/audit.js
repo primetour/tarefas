@@ -10,6 +10,16 @@ import { fetchAuditLogs, ACTION_LABELS, REVERTIBLE_ACTIONS, auditLog } from '../
 import { fetchUsers } from '../services/users.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 import { renderPageSizePicker, wirePageSizePicker, getPageSize } from '../components/pageSize.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const hashColor = (s) => {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+};
+const findIn = (list, id) => list.find(o => o.id === id) || null;
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -182,27 +192,39 @@ export async function renderAudit(container) {
         <input type="text" class="toolbar-search-input" id="audit-search"
           placeholder="Buscar por usuário, ação, recurso, detalhe..." />
       </div>
-      <select class="filter-select" id="audit-filter-module" style="min-width:140px;">
-        <option value="">Todos os módulos</option>
-        ${moduleOptions}
-      </select>
-      <select class="filter-select" id="audit-filter-action" style="min-width:160px;">
-        <option value="">Todas as ações</option>
-        ${actionOptions}
-      </select>
-      <select class="filter-select" id="audit-filter-severity" style="min-width:120px;">
-        <option value="">Severidade</option>
-        <option value="critical">● Crítico</option>
-        <option value="warning">▲ Atenção</option>
-        <option value="success">✓ Normal</option>
-        <option value="info">○ Info</option>
-      </select>
-      <select class="filter-select" id="audit-filter-user" style="min-width:160px;">
-        <option value="">Todos os usuários</option>
-        ${(store.get('users')||[]).map(u =>
-          `<option value="${u.id}">${esc(u.name)}</option>`
-        ).join('')}
-      </select>
+      <div class="toolbar-filter-wrap" style="min-width:160px;">
+        <select id="audit-filter-module" style="display:none;">
+          <option value="">Todos os módulos</option>
+          ${moduleOptions}
+        </select>
+        ${renderPickerButton({ btnId: 'audit-filter-module-btn', selected: null, emptyLabel: 'Todos os módulos' })}
+      </div>
+      <div class="toolbar-filter-wrap" style="min-width:180px;">
+        <select id="audit-filter-action" style="display:none;">
+          <option value="">Todas as ações</option>
+          ${actionOptions}
+        </select>
+        ${renderPickerButton({ btnId: 'audit-filter-action-btn', selected: null, emptyLabel: 'Todas as ações' })}
+      </div>
+      <div class="toolbar-filter-wrap" style="min-width:140px;">
+        <select id="audit-filter-severity" style="display:none;">
+          <option value="">Severidade</option>
+          <option value="critical">Crítico</option>
+          <option value="warning">Atenção</option>
+          <option value="success">Normal</option>
+          <option value="info">Info</option>
+        </select>
+        ${renderPickerButton({ btnId: 'audit-filter-severity-btn', selected: null, emptyLabel: 'Severidade' })}
+      </div>
+      <div class="toolbar-filter-wrap" style="min-width:180px;">
+        <select id="audit-filter-user" style="display:none;">
+          <option value="">Todos os usuários</option>
+          ${(store.get('users')||[]).map(u =>
+            `<option value="${u.id}">${esc(u.name)}</option>`
+          ).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'audit-filter-user-btn', selected: null, emptyLabel: 'Todos os usuários' })}
+      </div>
       <input type="date" class="filter-select" id="audit-filter-date-from"
         style="padding:8px 12px;" title="Data de início" />
       <input type="date" class="filter-select" id="audit-filter-date-to"
@@ -242,6 +264,7 @@ export async function renderAudit(container) {
     const users = store.get('users') || [];
     sel.innerHTML = '<option value="">Todos os usuários</option>'
       + users.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('');
+    sel.dispatchEvent(new Event('picker-refresh'));
   }).catch(() => {});
 
   _bindAuditEvents();
@@ -989,6 +1012,71 @@ function _bindAuditEvents() {
   });
   document.getElementById('audit-filter-severity')?.addEventListener('change', e => {
     filterSeverity = e.target.value; applyLocalFilters();
+  });
+
+  // Pickers visuais — leem opções do select escondido
+  const fromSelect = (selectId, defaultIcon = '◈', defaultColor = '#6366F1') => {
+    const sel = document.getElementById(selectId);
+    if (!sel) return [];
+    return [...sel.options].filter(o => o.value).map(o => ({
+      id: o.value, label: o.textContent.trim(), icon: defaultIcon, color: hashColor(o.value) || defaultColor,
+    }));
+  };
+  bindOptionPicker({
+    btnId: 'audit-filter-module-btn',
+    selectId: 'audit-filter-module',
+    buildConfig: () => ({
+      options: fromSelect('audit-filter-module', '◈'),
+      empty: { id: '', label: 'Todos os módulos' },
+      searchPlaceholder: 'Buscar módulo…',
+    }),
+    findSelected: (id) => findIn(fromSelect('audit-filter-module', '◈'), id),
+    emptyLabel: 'Todos os módulos',
+  });
+  bindOptionPicker({
+    btnId: 'audit-filter-action-btn',
+    selectId: 'audit-filter-action',
+    buildConfig: () => ({
+      options: fromSelect('audit-filter-action', '◇'),
+      empty: { id: '', label: 'Todas as ações' },
+      searchPlaceholder: 'Buscar ação…',
+    }),
+    findSelected: (id) => findIn(fromSelect('audit-filter-action', '◇'), id),
+    emptyLabel: 'Todas as ações',
+  });
+  const sevOpts = [
+    { id: 'critical', label: 'Crítico', icon: '', color: '#EF4444' },
+    { id: 'warning',  label: 'Atenção', icon: '', color: '#F59E0B' },
+    { id: 'success',  label: 'Normal',  icon: '', color: '#22C55E' },
+    { id: 'info',     label: 'Info',    icon: '', color: '#0EA5E9' },
+  ];
+  bindOptionPicker({
+    btnId: 'audit-filter-severity-btn',
+    selectId: 'audit-filter-severity',
+    buildConfig: () => ({
+      options: sevOpts,
+      empty: { id: '', label: 'Severidade' },
+      searchPlaceholder: 'Buscar severidade…',
+    }),
+    findSelected: (id) => findIn(sevOpts, id),
+    emptyLabel: 'Severidade',
+  });
+  const auditUserOpts = () => (store.get('users') || []).map(u => ({
+    id: u.id,
+    label: u.name || u.email || 'Usuário',
+    icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+    color: hashColor(u.id),
+  }));
+  bindOptionPicker({
+    btnId: 'audit-filter-user-btn',
+    selectId: 'audit-filter-user',
+    buildConfig: () => ({
+      options: auditUserOpts(),
+      empty: { id: '', label: 'Todos os usuários' },
+      searchPlaceholder: 'Buscar usuário…',
+    }),
+    findSelected: (id) => findIn(auditUserOpts(), id),
+    emptyLabel: 'Todos os usuários',
   });
   document.getElementById('audit-filter-date-from')?.addEventListener('change', () => loadLogs());
   document.getElementById('audit-filter-date-to')?.addEventListener('change',   () => loadLogs());

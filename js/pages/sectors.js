@@ -7,6 +7,14 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { updateUserProfile } from '../auth/auth.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const sectorColor = (s) => {
+  const str = String(s || '');
+  let h = 0; for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+};
 import {
   fetchNucleos, createNucleo, updateNucleo, deleteNucleo,
   SECTORS, userNucleos, userInNucleo,
@@ -366,12 +374,20 @@ function openNucleoModal(nucleo = null, presetSector = '') {
       <div style="display:flex;flex-direction:column;gap:14px;">
         <div class="form-group">
           <label class="form-label">Setor *</label>
-          <select class="form-select" id="nc-sector">
+          <select id="nc-sector" style="display:none;">
             <option value="">— Selecione o setor —</option>
             ${visibleSectors.map(s =>
               `<option value="${esc(s)}" ${(nucleo?.sector||presetSector)===s?'selected':''}>${esc(s)}</option>`
             ).join('')}
           </select>
+          ${(() => {
+            const cur = nucleo?.sector || presetSector;
+            return renderPickerButton({
+              btnId: 'nc-sector-btn',
+              selected: cur ? { id: cur, label: cur, icon: '◈', color: sectorColor(cur) } : null,
+              emptyLabel: '— Selecione o setor —',
+            });
+          })()}
           <span class="form-error-msg" id="nc-sector-error"></span>
         </div>
         <div class="form-group">
@@ -450,6 +466,20 @@ function openNucleoModal(nucleo = null, presetSector = '') {
         btn.style.borderColor = 'white';
         btn.style.boxShadow   = `0 0 0 2px ${btn.dataset.color}`;
       });
+    });
+
+    // Picker visual de setor
+    const ncSectorOpts = () => visibleSectors.map(s => ({ id: s, label: s, icon: '◈', color: sectorColor(s) }));
+    bindOptionPicker({
+      btnId: 'nc-sector-btn',
+      selectId: 'nc-sector',
+      buildConfig: () => ({
+        options: ncSectorOpts(),
+        empty: { id: '', label: '— Selecione o setor —' },
+        searchPlaceholder: 'Buscar setor…',
+      }),
+      findSelected: (id) => ncSectorOpts().find(o => o.id === id) || null,
+      emptyLabel: '— Selecione o setor —',
     });
   }, 50);
 }
