@@ -93,10 +93,14 @@ export function isAllowedSSODomain(email) {
  * }
  */
 
+// Versão é fonte-de-verdade única em js/version.js — não duplicar aqui.
+import { SHORT as APP_VERSION_SHORT, FULL as APP_VERSION_FULL } from './version.js';
+
 export const APP_CONFIG = {
   name:    'Gestor de Tarefas',
   brand:   'PRIMETOUR',
-  version: '1.0.0',
+  version: APP_VERSION_SHORT,
+  buildId: APP_VERSION_FULL,
   
   // Configurações de usuário
   roles: {
