@@ -16,6 +16,22 @@ import {
 import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask } from '../services/tasks.js';
 import { fetchAllWorkspaces } from '../services/workspaces.js';
 import { openTaskModal } from '../components/taskModal.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+/* ─── Visual configs pro optionPicker ────────────────────── */
+const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const hashColor = (s) => {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+};
+const GOAL_STATUS_OPTS = [
+  { id: 'rascunho',  label: 'Rascunho',  icon: '', color: '#94A3B8' },
+  { id: 'publicada', label: 'Publicada', icon: '', color: '#22C55E' },
+  { id: 'encerrada', label: 'Encerrada', icon: '', color: '#6B7280' },
+];
+const findIn = (list, id) => list.find(o => o.id === id) || null;
 import { userNucleos, userInNucleo } from '../services/sectors.js';
 import { tasksLinkedToGoal } from '../services/metaLinks.js';
 
@@ -114,16 +130,22 @@ export async function renderGoals(container) {
     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
       <input type="text" id="goal-search" class="portal-field"
         placeholder="Buscar meta…" style="flex:1;min-width:180px;font-size:0.875rem;">
-      <select id="goal-scope-filter" class="filter-select" style="min-width:150px;">
-        <option value="">Todos os escopos</option>
-        ${GOAL_SCOPES.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
-      </select>
-      <select id="goal-status-filter" class="filter-select" style="min-width:140px;">
-        <option value="">Todos os status</option>
-        <option value="rascunho">Rascunho</option>
-        <option value="publicada">Publicada</option>
-        <option value="encerrada">Encerrada</option>
-      </select>
+      <div class="toolbar-filter-wrap" style="min-width:170px;">
+        <select id="goal-scope-filter" style="display:none;">
+          <option value="">Todos os escopos</option>
+          ${GOAL_SCOPES.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'goal-scope-filter-btn', selected: null, emptyLabel: 'Todos os escopos' })}
+      </div>
+      <div class="toolbar-filter-wrap" style="min-width:160px;">
+        <select id="goal-status-filter" style="display:none;">
+          <option value="">Todos os status</option>
+          <option value="rascunho">Rascunho</option>
+          <option value="publicada">Publicada</option>
+          <option value="encerrada">Encerrada</option>
+        </select>
+        ${renderPickerButton({ btnId: 'goal-status-filter-btn', selected: null, emptyLabel: 'Todos os status' })}
+      </div>
     </div>
 
     <div id="goals-content"></div>`;
@@ -155,6 +177,31 @@ export async function renderGoals(container) {
   container.querySelector('#goal-search')?.addEventListener('input', renderContent);
   container.querySelector('#goal-scope-filter')?.addEventListener('change', renderContent);
   container.querySelector('#goal-status-filter')?.addEventListener('change', renderContent);
+
+  // Pickers visuais (toolbar)
+  const goalScopeOpts = () => GOAL_SCOPES.map(s => ({ id: s.value, label: s.label, icon: s.icon || '◈', color: hashColor(s.value) }));
+  bindOptionPicker({
+    btnId: 'goal-scope-filter-btn',
+    selectId: 'goal-scope-filter',
+    buildConfig: () => ({
+      options: goalScopeOpts(),
+      empty: { id: '', label: 'Todos os escopos' },
+      searchPlaceholder: 'Buscar escopo…',
+    }),
+    findSelected: (id) => findIn(goalScopeOpts(), id),
+    emptyLabel: 'Todos os escopos',
+  });
+  bindOptionPicker({
+    btnId: 'goal-status-filter-btn',
+    selectId: 'goal-status-filter',
+    buildConfig: () => ({
+      options: GOAL_STATUS_OPTS,
+      empty: { id: '', label: 'Todos os status' },
+      searchPlaceholder: 'Buscar status…',
+    }),
+    findSelected: (id) => findIn(GOAL_STATUS_OPTS, id),
+    emptyLabel: 'Todos os status',
+  });
 
   // Wire buttons
   document.getElementById('new-goal-btn')?.addEventListener('click', () => openGoalForm(container, null));
@@ -667,20 +714,31 @@ function buildGoalFormHTML(draft, users) {
         </div>
         <div style="grid-column:span 2;">
           <label style="${LBL}">Escopo</label>
-          <select id="gf-escopo" class="filter-select" style="width:100%;">
+          <select id="gf-escopo" style="display:none;">
             ${GOAL_SCOPES.map(s=>`<option value="${s.value}" ${draft.escopo===s.value?'selected':''}>${s.icon} ${s.label}</option>`).join('')}
           </select>
+          ${renderPickerButton({
+            btnId: 'gf-escopo-btn',
+            selected: (() => { const s = GOAL_SCOPES.find(x => x.value === draft.escopo); return s ? { id: s.value, label: s.label, icon: s.icon || '◈', color: hashColor(s.value) } : null; })(),
+            emptyLabel: 'Selecione o escopo',
+          })}
           <div id="gf-escopo-hint" style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;"></div>
         </div>
         <div id="gf-squad-wrap" style="display:none;grid-column:span 2;">
           <label style="${LBL}">Squad <span style="font-weight:400;color:var(--text-muted);">(selecione o squad — núcleo e responsáveis preenchem automaticamente)</span></label>
-          <select id="gf-squad" class="filter-select" style="width:100%;">
+          <select id="gf-squad" style="display:none;">
             <option value="">Carregando squads…</option>
           </select>
+          ${renderPickerButton({ btnId: 'gf-squad-btn', selected: null, emptyLabel: 'Carregando squads…' })}
         </div>
         <div id="gf-nucleo-wrap">
           <label style="${LBL}">Núcleo</label>
-          <select id="gf-nucleo" class="filter-select" style="width:100%;">${nucleoOpts}</select>
+          <select id="gf-nucleo" style="display:none;">${nucleoOpts}</select>
+          ${renderPickerButton({
+            btnId: 'gf-nucleo-btn',
+            selected: draft.nucleo ? { id: draft.nucleo, label: draft.nucleo, icon: '◈', color: hashColor(draft.nucleo) } : null,
+            emptyLabel: '— Selecione o núcleo —',
+          })}
         </div>
         <div id="gf-responsaveis-wrap" style="grid-column:span 2;">
           <label style="${LBL}">
@@ -695,7 +753,15 @@ function buildGoalFormHTML(draft, users) {
         </div>
         <div>
           <label style="${LBL}">Gestor</label>
-          <select id="gf-gestor" class="filter-select" style="width:100%;">${gestorOpts}</select>
+          <select id="gf-gestor" style="display:none;">${gestorOpts}</select>
+          ${(() => {
+            const g = gestorUsers.find(u => u.id === draft.gestorId);
+            return renderPickerButton({
+              btnId: 'gf-gestor-btn',
+              selected: g ? { id: g.id, label: g.name, icon: (g.name || '?').charAt(0).toUpperCase(), color: hashColor(g.id) } : null,
+              emptyLabel: '— Selecione o gestor —',
+            });
+          })()}
         </div>
         <div>
           <label style="${LBL}">Área / Setor <span style="font-weight:400;color:var(--text-muted);">(automático)</span></label>
@@ -1139,6 +1205,76 @@ function wireGoalForm(draft) {
     draft.responsavelIds = filterRespByNucleo(draft.responsavelIds, draft.nucleo);
     renderRespPicker(draft);
   });
+
+  // Pickers visuais do form de meta
+  const gfScopeOpts = () => GOAL_SCOPES.map(s => ({ id: s.value, label: s.label, icon: s.icon || '◈', color: hashColor(s.value) }));
+  bindOptionPicker({
+    btnId: 'gf-escopo-btn',
+    selectId: 'gf-escopo',
+    buildConfig: () => ({ options: gfScopeOpts(), searchPlaceholder: 'Buscar escopo…' }),
+    findSelected: (id) => findIn(gfScopeOpts(), id),
+    emptyLabel: 'Selecione o escopo',
+  });
+  const gfNucleoOpts = () => {
+    const sel = document.getElementById('gf-nucleo');
+    if (!sel) return [];
+    return [...sel.options].filter(o => o.value).map(o => ({
+      id: o.value,
+      label: o.textContent.trim(),
+      icon: '◈',
+      color: hashColor(o.value),
+    }));
+  };
+  bindOptionPicker({
+    btnId: 'gf-nucleo-btn',
+    selectId: 'gf-nucleo',
+    buildConfig: () => ({
+      options: gfNucleoOpts(),
+      empty: { id: '', label: '— Selecione o núcleo —' },
+      searchPlaceholder: 'Buscar núcleo…',
+    }),
+    findSelected: (id) => findIn(gfNucleoOpts(), id),
+    emptyLabel: '— Selecione o núcleo —',
+  });
+  const gfGestorOpts = () => gestorUsers.map(u => ({
+    id: u.id,
+    label: u.name || u.email || 'Usuário',
+    icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+    color: hashColor(u.id),
+  }));
+  bindOptionPicker({
+    btnId: 'gf-gestor-btn',
+    selectId: 'gf-gestor',
+    buildConfig: () => ({
+      options: gfGestorOpts(),
+      empty: { id: '', label: '— Selecione o gestor —' },
+      searchPlaceholder: 'Buscar gestor…',
+    }),
+    findSelected: (id) => findIn(gfGestorOpts(), id),
+    emptyLabel: '— Selecione o gestor —',
+  });
+  // Squad: opções carregam async — bind reads dinamicamente do <select>
+  const gfSquadOpts = () => {
+    const sel = document.getElementById('gf-squad');
+    if (!sel) return [];
+    return [...sel.options].filter(o => o.value).map(o => ({
+      id: o.value,
+      label: o.textContent.trim(),
+      icon: '◊',
+      color: hashColor(o.value),
+    }));
+  };
+  bindOptionPicker({
+    btnId: 'gf-squad-btn',
+    selectId: 'gf-squad',
+    buildConfig: () => ({
+      options: gfSquadOpts(),
+      empty: { id: '', label: '— Selecione o squad —' },
+      searchPlaceholder: 'Buscar squad…',
+    }),
+    findSelected: (id) => findIn(gfSquadOpts(), id),
+    emptyLabel: '— Selecione o squad —',
+  });
   document.getElementById('gf-nome')?.addEventListener('input', e => { draft.nome = e.target.value; });
   document.getElementById('gf-objetivo')?.addEventListener('input', e => { draft.objetivoNucleo = e.target.value; });
   document.getElementById('gf-inicio')?.addEventListener('input', e => { draft.inicio = e.target.value; });
@@ -1208,6 +1344,7 @@ async function populateSquadsDropdown(draft) {
       `<option value="${esc(w.id)}" ${draft.squadId===w.id?'selected':''}>${esc(w.name)}${w.sector?` — ${esc(w.sector)}`:''}</option>`
     ).join('');
     sel.innerHTML = `<option value="">— Selecione um squad —</option>${opts}`;
+    sel.dispatchEvent(new Event('picker-refresh'));
 
     sel.addEventListener('change', e => {
       const id = e.target.value;
@@ -1225,7 +1362,7 @@ async function populateSquadsDropdown(draft) {
       nuc = userNucleo(u);
       if (nuc) {
         draft.nucleo = nuc;
-        const nEl = document.getElementById('gf-nucleo'); if (nEl) nEl.value = nuc;
+        const nEl = document.getElementById('gf-nucleo'); if (nEl) { nEl.value = nuc; nEl.dispatchEvent(new Event('picker-refresh')); }
       }
 
       // Auto-fill setor pelo sector do squad
@@ -1351,7 +1488,7 @@ function applyScopeVisibility(draft) {
 
   if (nucleoWrap) {
     nucleoWrap.style.display = rule.showNucleo ? '' : 'none';
-    if (!rule.showNucleo) { draft.nucleo = ''; const s = document.getElementById('gf-nucleo'); if (s) s.value = ''; }
+    if (!rule.showNucleo) { draft.nucleo = ''; const s = document.getElementById('gf-nucleo'); if (s) { s.value = ''; s.dispatchEvent(new Event('picker-refresh')); } }
   }
   if (respWrap) {
     respWrap.style.display = rule.showResponsaveis ? '' : 'none';
@@ -1521,15 +1658,40 @@ function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEva
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
         <div>
           <label style="${LBL}">Pilar</label>
-          <select id="ev-pilar" class="filter-select" style="width:100%;">${pilarOpts}</select>
+          <select id="ev-pilar" style="display:none;">${pilarOpts}</select>
+          ${(() => {
+            const p = (goal.pilares || [])[pillarIdx];
+            return renderPickerButton({
+              btnId: 'ev-pilar-btn',
+              selected: p ? { id: String(pillarIdx), label: p.titulo || `Pilar ${pillarIdx+1}`, icon: '◇', color: hashColor(String(pillarIdx)) } : null,
+              emptyLabel: '— Pilar —',
+            });
+          })()}
         </div>
         <div>
           <label style="${LBL}">Meta</label>
-          <select id="ev-meta" class="filter-select" style="width:100%;">${metaOpts}</select>
+          <select id="ev-meta" style="display:none;">${metaOpts}</select>
+          ${(() => {
+            const m = (pilar?.metas || [])[metaIdx];
+            return renderPickerButton({
+              btnId: 'ev-meta-btn',
+              selected: m ? { id: String(metaIdx), label: m.titulo || `Meta ${metaIdx+1}`, icon: '◉', color: hashColor(String(metaIdx)) } : null,
+              emptyLabel: '— Meta —',
+            });
+          })()}
         </div>
         <div>
           <label style="${LBL}">Período de referência</label>
-          <select id="ev-periodo" class="filter-select" style="width:100%;">${periodOpts}</select>
+          <select id="ev-periodo" style="display:none;">${periodOpts}</select>
+          ${(() => {
+            const k = existingEval?.periodoRef;
+            const p = periods.find(x => x.key === k);
+            return renderPickerButton({
+              btnId: 'ev-periodo-btn',
+              selected: p ? { id: p.key, label: p.label, icon: '', color: '#0EA5E9' } : (periods.length ? null : { id: 'unico', label: 'Avaliação única', icon: '', color: '#0EA5E9' }),
+              emptyLabel: '— Período —',
+            });
+          })()}
         </div>
       </div>
 
@@ -1624,6 +1786,46 @@ function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEva
 
   // modal.open doesn't support onOpen — wire live progress recalc after DOM is inserted
   setTimeout(() => {
+    // Pickers visuais do modal de avaliação
+    const evPilarOpts = () => (goal.pilares || []).map((p, pi) => ({
+      id: String(pi), label: p.titulo || `Pilar ${pi+1}`, icon: '◇', color: hashColor(String(pi)),
+    }));
+    bindOptionPicker({
+      btnId: 'ev-pilar-btn',
+      selectId: 'ev-pilar',
+      buildConfig: () => ({ options: evPilarOpts(), searchPlaceholder: 'Buscar pilar…' }),
+      findSelected: (id) => findIn(evPilarOpts(), id),
+      emptyLabel: '— Pilar —',
+    });
+    const evMetaOpts = () => {
+      const sel = document.getElementById('ev-meta');
+      if (!sel) return [];
+      return [...sel.options].map((o, i) => ({
+        id: o.value, label: o.textContent.trim(), icon: '◉', color: hashColor(o.value),
+      }));
+    };
+    bindOptionPicker({
+      btnId: 'ev-meta-btn',
+      selectId: 'ev-meta',
+      buildConfig: () => ({ options: evMetaOpts(), searchPlaceholder: 'Buscar meta…' }),
+      findSelected: (id) => findIn(evMetaOpts(), id),
+      emptyLabel: '— Meta —',
+    });
+    const evPeriodoOpts = () => {
+      const sel = document.getElementById('ev-periodo');
+      if (!sel) return [];
+      return [...sel.options].map(o => ({
+        id: o.value, label: o.textContent.trim(), icon: '', color: '#0EA5E9',
+      }));
+    };
+    bindOptionPicker({
+      btnId: 'ev-periodo-btn',
+      selectId: 'ev-periodo',
+      buildConfig: () => ({ options: evPeriodoOpts(), searchPlaceholder: 'Buscar período…' }),
+      findSelected: (id) => findIn(evPeriodoOpts(), id),
+      emptyLabel: '— Período —',
+    });
+
     const recalc = () => {
       const scores = [...document.querySelectorAll('.ev-kpi-score')].map(el=>
         el.value!==''?Number(el.value):null
