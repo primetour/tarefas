@@ -12,6 +12,10 @@ import {
 } from '../services/projects.js';
 import { fetchTasks } from '../services/tasks.js';
 import { openTaskModal } from '../components/taskModal.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const projStatusOpts = () => PROJECT_STATUSES.map(s => ({ id: s.value, label: s.label, icon: '●', color: s.color }));
+const findProjStatus = (id) => projStatusOpts().find(o => o.id === id) || null;
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -37,10 +41,13 @@ export async function renderProjects(container) {
         <span class="toolbar-search-icon">🔍</span>
         <input type="text" class="toolbar-search-input" id="proj-search" placeholder="Buscar projetos..." />
       </div>
-      <select class="filter-select" id="proj-filter-status">
-        <option value="">Todos os status</option>
-        ${PROJECT_STATUSES.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
-      </select>
+      <div class="toolbar-filter-wrap" style="min-width:170px;">
+        <select id="proj-filter-status" style="display:none;">
+          <option value="">Todos os status</option>
+          ${PROJECT_STATUSES.map(s=>`<option value="${s.value}">${s.label}</option>`).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'proj-filter-status-btn', selected: null, emptyLabel: 'Todos os status' })}
+      </div>
     </div>
 
     <div id="projects-content">
@@ -77,6 +84,17 @@ export async function renderProjects(container) {
   });
   document.getElementById('proj-filter-status')?.addEventListener('change', e => {
     filterStatus = e.target.value; renderList();
+  });
+  bindOptionPicker({
+    btnId: 'proj-filter-status-btn',
+    selectId: 'proj-filter-status',
+    buildConfig: () => ({
+      options: projStatusOpts(),
+      empty: { id: '', label: 'Todos os status' },
+      searchPlaceholder: 'Buscar status…',
+    }),
+    findSelected: findProjStatus,
+    emptyLabel: 'Todos os status',
   });
 
   await loadData();
@@ -398,11 +416,12 @@ export async function openProjectModal(project = null, { defaultWorkspaceId = nu
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <div class="form-group">
           <label class="form-label">Status</label>
-          <select class="form-select" id="pf-status">
+          <select id="pf-status" style="display:none;">
             ${PROJECT_STATUSES.map(s=>`
               <option value="${s.value}" ${project?.status===s.value?'selected':''}>${s.label}</option>
             `).join('')}
           </select>
+          ${renderPickerButton({ btnId: 'pf-status-btn', selected: findProjStatus(project?.status), emptyLabel: 'Selecione o status' })}
         </div>
         <div class="form-group"></div>
         <div class="form-group">
@@ -490,6 +509,18 @@ export async function openProjectModal(project = null, { defaultWorkspaceId = nu
   });
 
   setTimeout(() => {
+    // Status picker (visual unificado)
+    bindOptionPicker({
+      btnId: 'pf-status-btn',
+      selectId: 'pf-status',
+      buildConfig: () => ({
+        options: projStatusOpts(),
+        searchPlaceholder: 'Buscar status…',
+      }),
+      findSelected: findProjStatus,
+      emptyLabel: 'Selecione o status',
+    });
+
     // Color picker
     document.querySelectorAll('#color-picker [data-color]').forEach(el => {
       el.addEventListener('click', () => {
