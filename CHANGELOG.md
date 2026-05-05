@@ -23,6 +23,41 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.4.2+20260505-tarefa-meta-evidencia-auto-aviso-atraso] — 2026-05-05
+
+Patch que fecha **2 gaps de produto** detectados durante revisão da integração tarefa↔meta. Reportado: *"Link da entrega na tarefa se torna automaticamente evidência de meta na avaliação? Se a tarefa é concluída com atraso, como fica para a meta? fica um aviso na avaliação?"*. Resposta investigativa: ambos os gaps existiam — `deliveryLink` e `linkComprovacao` eram campos completamente independentes (zero auto-population), e nenhum lugar do módulo de metas comparava `dueDate` com `completedAt`.
+
+### Added (Fix A — Link de entrega → Comprovação)
+- **`js/components/taskModal.js`** — overlay `showEvidenceModal` (pós-conclusão) agora pré-popula o campo "Link de comprovação" com `taskData.deliveryLink` quando `linkComprovacao` está vazio. Editável; usuário pode trocar/limpar antes de confirmar.
+- **Hint visual** logo abaixo do campo: *"💡 Pré-preenchido com o link da entrega. Edite se quiser usar outro."* (aparece só quando o pré-fill ocorre — não polui se o user já tinha digitado o link de comprovação manualmente antes).
+- **Comportamento**: `linkComprovacao` continua sendo gravado como campo separado (não sobrescreve `deliveryLink`). Cada um mantém seu propósito; só o input ganhou inteligência.
+
+### Added (Fix B — Aviso de atraso na avaliação)
+- **`js/services/tasks.js`** — nova função utilitária **`wasTaskCompletedLate(t)`** que retorna `{late: boolean, daysLate: number}` para tarefas em status `done` cujo `completedAt > dueDate`. Diferente de `isTaskOverdue()` (que cobre tarefas ainda ABERTAS após prazo) — esta cobre tarefas JÁ FECHADAS mas tardiamente. Cálculo em dias inteiros (`Math.floor((dDone - dDue) / 86400000)`) com normalização de timezones.
+- **`js/pages/goals.js` — Lista de "📎 Tarefas vinculadas"**: cada tarefa concluída com atraso ganha badge laranja **"⚠ Atrasada Xd"** ao lado dos badges de status/evidência/período, com tooltip *"Concluída X dias após o prazo"*.
+- **`openEvaluationForm`** (formulário onde o gestor registra avaliação): novo banner laranja entre a barra de progresso e os KPIs:
+  - *"⚠ N de M tarefas concluídas desta meta saíram com atraso (X%)"*
+  - Lista as 5 mais atrasadas (ordenadas por `daysLate` desc)
+  - Texto orientativo: *"Considere isso ao definir a nota — a meta pode ter sido atingida, mas a entrega no prazo também é parte da execução."*
+  - **Não bloqueia** salvar a avaliação — é informação contextual, decisão fica com o gestor.
+  - Banner some completamente quando 0 tarefas atrasadas (não polui visual em metas saudáveis).
+- **PDF de metas** (`exportPdf`) — chip laranja **"ATRASADA Xd"** após o chip "EVIDENCIA" quando aplicável, na seção "Tarefas vinculadas". Garante que mesmo o relatório impresso/exportado preserve a informação.
+
+### Why
+Antes do Fix A, o usuário **digitava o link 2×** (uma na tarefa, outra na evidência) — fricção que fazia muita gente abandonar o registro de evidência. Os campos seguem **separados no schema** (deliveryLink ≠ linkComprovacao têm propósitos diferentes), mas o input pré-populado elimina o atrito.
+
+Antes do Fix B, o gestor avaliava metas **sem visibilidade do prazo**: 100% das metas batidas viravam "100% de progresso", mesmo quando 80% das tarefas saíram tardiamente. A nota podia ser dada sem o gestor sequer perceber. Agora a informação é exposta de 3 formas (badge na lista, banner no form, chip no PDF) — decisão final continua humana, mas com contexto.
+
+### Verificação
+1. Criar tarefa com "Link da entrega" preenchido → marcar como done → overlay aparece com link já no campo "Link de comprovação" + hint 💡.
+2. Criar tarefa com `dueDate` no passado → marcar como done → vincular a uma meta → ir em #goals → meta exibe a tarefa com badge "⚠ Atrasada Xd".
+3. Como gestor, abrir registro de avaliação dessa meta → banner laranja aparece com X tarefas atrasadas listadas.
+4. Exportar PDF de metas → chip "ATRASADA Xd" presente na seção de tarefas vinculadas.
+5. Meta sem nenhum atraso → banner some completamente (ev-late-warning style display:none).
+
+---
+
 ## [4.4.1+20260505-adr-actions-vs-functions-fix-infra-count] — 2026-05-05
 
 Patch de **documentação** — preenche um gap arquitetural que ficou exposto durante uma discussão sobre dashboard de TI. Reportado: *"essa sua analise actions e functions ta na doc tecnica?"* — a resposta era **não**: os docs descreviam **o quê** (lista de workflows, lista de functions) mas não **por quê** existe a divisão entre os dois mecanismos.

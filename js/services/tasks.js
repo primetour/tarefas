@@ -205,6 +205,30 @@ export function isTaskOverdue(t) {
   return due < today;
 }
 
+/**
+ * Tarefa concluída APÓS o prazo (status='done' && completedAt > dueDate).
+ * Diferente de isTaskOverdue() — aquela é pra tarefas ainda ABERTAS depois
+ * do prazo. Esta é pra tarefas JÁ FECHADAS mas que demoraram além do prazo.
+ *
+ * @returns {{late: boolean, daysLate: number}} — daysLate=0 se on-time
+ */
+export function wasTaskCompletedLate(t) {
+  if (!t || t.status !== 'done' || !t.dueDate || !t.completedAt) {
+    return { late: false, daysLate: 0 };
+  }
+  const due = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+  const done = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
+  if (isNaN(due) || isNaN(done)) return { late: false, daysLate: 0 };
+
+  // Normaliza ambas para 00:00 do dia pra contar dias inteiros
+  const dDue  = new Date(due);  dDue.setHours(0, 0, 0, 0);
+  const dDone = new Date(done); dDone.setHours(0, 0, 0, 0);
+
+  if (dDone <= dDue) return { late: false, daysLate: 0 };
+  const daysLate = Math.floor((dDone - dDue) / 86400000);
+  return { late: true, daysLate };
+}
+
 // Sub-status para tarefas do tipo Newsletter
 export const NEWSLETTER_STATUSES = [
   { value: 'pauta',           label: 'Pauta'            },

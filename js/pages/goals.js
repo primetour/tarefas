@@ -13,7 +13,7 @@ import {
   GOAL_SCOPES, GOAL_PRAZO_TYPES, SCOPE_FIELD_RULES,
   getResponsavelIds,
 } from '../services/goals.js';
-import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask } from '../services/tasks.js';
+import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask, wasTaskCompletedLate } from '../services/tasks.js';
 import { fetchAllWorkspaces } from '../services/workspaces.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
@@ -33,7 +33,7 @@ const GOAL_STATUS_OPTS = [
 ];
 const findIn = (list, id) => list.find(o => o.id === id) || null;
 import { userNucleos, userInNucleo } from '../services/sectors.js';
-import { tasksLinkedToGoal } from '../services/metaLinks.js';
+import { tasksLinkedToGoal, tasksLinkedToMeta } from '../services/metaLinks.js';
 
 /** Roles que podem ser gestor de uma meta. Analistas (member) ficam fora. */
 const GESTOR_ROLE_IDS = ['master', 'admin', 'manager', 'coordinator', 'partner'];
@@ -503,6 +503,10 @@ async function renderAvaliacoes(container) {
           const doneDate = t.completedAt?.toDate ? t.completedAt.toDate() : null;
           const sIcon = statusIcons[t.status] || '○';
           const sColor = statusColors[t.status] || '#6B7280';
+          // Detecta atraso: tarefa concluida APOS o dueDate. Importante pro
+          // gestor saber, na hora de avaliar a meta, quantas entregas saíram
+          // tardiamente — info que estava invisível antes da 4.4.2.
+          const lateInfo = wasTaskCompletedLate(t);
           return `
           <div class="goal-linked-task" data-task-id="${esc(t.id)}"
             style="background:var(--bg-surface);border-radius:var(--radius-md);
@@ -520,6 +524,10 @@ async function renderAvaliacoes(container) {
                 <span class="badge badge-status-${t.status}" style="font-size:0.5625rem;padding:1px 6px;">
                   ${t.status === 'done' ? 'Concluída' : t.status === 'in_progress' ? 'Em andamento' : t.status}
                 </span>
+                ${lateInfo.late ? `<span title="Concluída ${lateInfo.daysLate} dia${lateInfo.daysLate>1?'s':''} após o prazo"
+                  style="font-size:0.625rem;color:#D97706;background:rgba(245,158,11,.12);
+                  padding:1px 6px;border-radius:var(--radius-full);font-weight:600;">
+                  ⚠ Atrasada ${lateInfo.daysLate}d</span>`:''}
                 ${t.confirmadaEvidencia?`<span style="font-size:0.625rem;color:#22C55E;
                   background:rgba(34,197,94,.1);padding:1px 6px;border-radius:var(--radius-full);">
                   ✓ Evidência</span>`:''}
@@ -1634,6 +1642,45 @@ function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEva
   const meta  = pilar?.metas?.[metaIdx];
   if (!meta) { toast.error('Meta não encontrada.'); return; }
 
+  // Tarefas vinculadas a ESTA meta específica que foram concluídas com atraso —
+  // info crítica pro gestor calibrar a nota com contexto. Fetch async pra evitar
+  // depender de estado externo (modal abre standalone). Renderiza como banner
+  // se houver atrasos, oculto se tudo on-time.
+  let lateTasksHTML = '';
+  Promise.all([fetchTasks().catch(()=>[]), fetchArchivedTasks().catch(()=>[])])
+    .then(([active, archived]) => {
+      const all = [...active, ...archived];
+      const metaRef = `${pillarIdx}:${metaIdx}`;
+      const linkedToThisMeta = tasksLinkedToMeta(all, goal.id, metaRef);
+      const lateOnes = linkedToThisMeta
+        .map(t => ({ task: t, lateInfo: wasTaskCompletedLate(t) }))
+        .filter(x => x.lateInfo.late)
+        .sort((a, b) => b.lateInfo.daysLate - a.lateInfo.daysLate);
+
+      const wrap = document.getElementById('ev-late-warning');
+      if (!wrap) return;
+      if (lateOnes.length === 0) { wrap.style.display = 'none'; return; }
+
+      wrap.style.display = 'block';
+      const totalLinked = linkedToThisMeta.filter(t => t.status === 'done').length;
+      const pctLate = totalLinked > 0 ? Math.round((lateOnes.length / totalLinked) * 100) : 0;
+      wrap.innerHTML = `
+        <div style="font-size:0.8125rem;font-weight:600;color:#D97706;margin-bottom:6px;">
+          ⚠ ${lateOnes.length} de ${totalLinked} tarefa${totalLinked!==1?'s':''} concluída${totalLinked!==1?'s':''} desta meta saiu${lateOnes.length>1?'ram':''} com atraso (${pctLate}%)
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.6;">
+          ${lateOnes.slice(0, 5).map(({ task, lateInfo }) =>
+            `• <strong>${esc(task.title)}</strong> — <span style="color:#D97706;">${lateInfo.daysLate} dia${lateInfo.daysLate>1?'s':''} de atraso</span>`
+          ).join('<br>')}
+          ${lateOnes.length > 5 ? `<br><em style="color:var(--text-muted);">+ ${lateOnes.length - 5} outras tarefas atrasadas</em>` : ''}
+        </div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:8px;font-style:italic;">
+          Considere isso ao definir a nota — a meta pode ter sido atingida, mas a entrega no prazo também é parte da execução.
+        </div>
+      `;
+    })
+    .catch(() => {});
+
   const kpiScores = existingEval?.kpiScores
     || (meta.kpis||[]).map(()=>({score:null,comentario:''}));
 
@@ -1713,6 +1760,11 @@ function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEva
           ⚠ Avaliação parcial — nem todos os KPIs foram preenchidos
         </div>
       </div>
+
+      <!-- Late tasks warning — preenchido dinamicamente pelo Promise acima -->
+      <div id="ev-late-warning" style="display:none;background:rgba(245,158,11,.08);
+        border-left:3px solid #D97706;border-radius:var(--radius-md);
+        padding:12px 16px;"></div>
 
       <!-- KPI scores -->
       <div>
@@ -2401,6 +2453,12 @@ async function exportGoalsPdf() {
       if (t.confirmadaEvidencia) {
         const eCh = drawChip('EVIDENCIA', chipX, y + 2.2, COL.green, COL.white, 6.5, 2.2, 1.2);
         chipX += eCh.w + 2;
+      }
+      // Marca de atraso (concluida apos dueDate) — info pro gestor que ler o relatorio
+      const lateInfoPdf = wasTaskCompletedLate(t);
+      if (lateInfoPdf.late) {
+        const lCh = drawChip(`ATRASADA ${lateInfoPdf.daysLate}D`, chipX, y + 2.2, COL.orange, COL.white, 6.5, 2.2, 1.2);
+        chipX += lCh.w + 2;
       }
 
       // Título da tarefa

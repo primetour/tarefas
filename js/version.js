@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 4,
-  patch: 1,
-  build: '20260505-adr-actions-vs-functions-fix-infra-count',
+  patch: 2,
+  build: '20260505-tarefa-meta-evidencia-auto-aviso-atraso',
 };
 
 /** "1.2.0" */

@@ -3941,7 +3941,11 @@ function showEvidenceModal(taskId, taskData) {
               <div>
                 <label style="${LBL2}">Link de comprovação <span style="font-weight:400;">(opcional)</span></label>
                 <input type="url" id="dc-link" class="portal-field" style="${F2}"
-                  placeholder="https://…" value="${esc2(taskData.linkComprovacao||'')}">
+                  placeholder="https://…" value="${esc2(taskData.linkComprovacao || taskData.deliveryLink || '')}">
+                ${!taskData.linkComprovacao && taskData.deliveryLink ? `
+                  <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+                    💡 Pré-preenchido com o link da entrega. Edite se quiser usar outro.
+                  </div>` : ''}
               </div>
             </div>` : ''}
           </div>
