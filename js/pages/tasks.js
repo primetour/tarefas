@@ -908,7 +908,15 @@ function renderTaskRow(task) {
           <span class="badge badge-priority-${task.priority}" style="font-size:0.6rem;">${prio.label}</span>
           ${task.urgencyOverride?.active ? (() => {
             const ov = task.urgencyOverride;
-            const dt = ov.at?.toDate ? ov.at.toDate() : (ov.at ? new Date(ov.at) : null);
+            const parseAt = v => {
+              if (!v) return null;
+              if (v instanceof Date && !isNaN(v.getTime())) return v;
+              if (typeof v.toDate === 'function') { try { const d=v.toDate(); if(!isNaN(d.getTime())) return d; } catch {} }
+              if (typeof v === 'object' && typeof v.seconds === 'number') return new Date(v.seconds * 1000);
+              if (typeof v === 'string' || typeof v === 'number') { const d=new Date(v); if(!isNaN(d.getTime())) return d; }
+              return null;
+            };
+            const dt = parseAt(ov.at);
             const dateStr = dt ? dt.toLocaleDateString('pt-BR') : '';
             const tip = `Urgência automática removida${ov.byName?` por ${ov.byName}`:''}${dateStr?` em ${dateStr}`:''}${ov.reason?` — Motivo: ${ov.reason}`:''}`;
             return `<span title="${esc(tip)}"

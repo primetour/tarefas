@@ -1811,7 +1811,25 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
         const override = task?.urgencyOverride;
         if (override?.active) {
           if (slaWarn) {
-            const overrideAt = override.at?.toDate ? override.at.toDate() : (override.at ? new Date(override.at) : null);
+            // Parse defensivo do `at`: pode ser Date local (recém-aplicado pela
+            // UI), Timestamp do Firestore (após snapshot — tem .toDate),
+            // string ISO, número, ou sentinel não resolvido. Tenta cada caso
+            // em ordem e usa now() como fallback se nada bater.
+            const parseAt = (v) => {
+              if (!v) return null;
+              if (v instanceof Date && !isNaN(v.getTime())) return v;
+              if (typeof v.toDate === 'function') {
+                try { const d = v.toDate(); if (!isNaN(d.getTime())) return d; } catch {}
+              }
+              if (typeof v === 'object' && typeof v.seconds === 'number') {
+                return new Date(v.seconds * 1000);
+              }
+              if (typeof v === 'string' || typeof v === 'number') {
+                const d = new Date(v); if (!isNaN(d.getTime())) return d;
+              }
+              return null;
+            };
+            const overrideAt = parseAt(override.at);
             const dateStr = overrideAt ? overrideAt.toLocaleDateString('pt-BR') : '';
             slaWarn.style.display = 'block';
             slaWarn.style.background = 'rgba(59,130,246,0.08)';
