@@ -78,6 +78,14 @@
       background: white; font-size: 0.875rem; font-family: inherit;
     }
     .filters input[type=text] { flex: 1; min-width: 200px; }
+    .pdf-btn {
+      background: var(--brand-gold); color: white; border: none;
+      padding: 6px 14px; border-radius: 6px; font-size: 0.875rem;
+      cursor: pointer; font-weight: 500; font-family: inherit;
+      transition: opacity .15s;
+    }
+    .pdf-btn:hover { opacity: .9; }
+    .pdf-btn:disabled { opacity: .5; cursor: wait; }
 
     table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow-sm); }
     thead tr { background: #F9FAFB; }
@@ -147,6 +155,7 @@
         <option value="implantacao">🚀 Implantação</option>
       </select>
       <input type="text" id="f-search" placeholder="Buscar título/versão/fase...">
+      <button class="pdf-btn" id="pdf-btn" title="Exportar histórico filtrado em PDF">📄 PDF</button>
     </div>
 
     <div class="legend" id="legend"></div>
@@ -209,6 +218,29 @@
     document.getElementById('f-type').addEventListener('change',   e => { f_type   = e.target.value; render(); });
     document.getElementById('f-category').addEventListener('change', e => { f_category = e.target.value; render(); });
     document.getElementById('f-search').addEventListener('input', e => { f_search = e.target.value.trim().toLowerCase(); render(); });
+
+    // PDF export — reutiliza o mesmo módulo da app autenticada (já há filtragem por status='approved' no array)
+    document.getElementById('pdf-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('pdf-btn');
+      btn.disabled = true;
+      btn.textContent = '⌛ Gerando...';
+      try {
+        const filtered = applyFilters(allEntries);
+        if (!filtered.length) { alert('Sem entradas para exportar com os filtros atuais.'); return; }
+        const { exportDevHoursPdf } = await import('./js/services/devHoursPdf.js');
+        const periodLabel = f_period === 'month'   ? 'Este mês'
+                         : f_period === 'quarter' ? 'Este trimestre'
+                         : f_period === 'year'    ? 'Este ano'
+                         : 'Histórico completo';
+        await exportDevHoursPdf(filtered, { periodLabel });
+      } catch (e) {
+        console.error(e);
+        alert('Falha ao gerar PDF: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '📄 PDF';
+      }
+    });
 
     // Legenda das categorias
     document.getElementById('legend').innerHTML = CATEGORIES.map(c => `

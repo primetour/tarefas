@@ -59,7 +59,8 @@ export async function renderDevHours(container) {
         <h1 class="page-title">⏱ Horas de Desenvolvimento</h1>
         <p class="page-subtitle" id="devh-summary">Carregando...</p>
       </div>
-      <div class="page-header-actions">
+      <div class="page-header-actions" style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" id="devh-pdf-btn" title="Exportar entradas filtradas para PDF">📄 Exportar PDF</button>
         <button class="btn btn-primary" id="devh-new-btn">+ Nova entrada</button>
       </div>
     </div>
@@ -133,6 +134,33 @@ export async function renderDevHours(container) {
 
   attachFiltersEvents();
   document.getElementById('devh-new-btn').addEventListener('click', () => openEditModal(null));
+
+  // Exportar PDF — usa as entradas atualmente filtradas, mas APENAS aprovadas
+  // (mesma regra do link público — drafts/rejeitadas não vão pro cliente).
+  document.getElementById('devh-pdf-btn').addEventListener('click', async () => {
+    try {
+      const filtered = filterEntries(_allEntries, {
+        from: f_from, to: f_to,
+        statuses: ['approved'], // força apenas aprovadas no export
+        types: f_types,
+      });
+      if (!filtered.length) {
+        toast.error('Nenhuma entrada aprovada nos filtros atuais. Aprove pelo menos 1 entrada antes de exportar.');
+        return;
+      }
+      const { exportDevHoursPdf } = await import('../services/devHoursPdf.js');
+      const periodLabel = f_period === 'month'   ? 'Este mês'
+                       : f_period === 'quarter' ? 'Este trimestre'
+                       : f_period === 'year'    ? 'Este ano'
+                       : f_period === 'custom'  ? `${f_from?.toLocaleDateString('pt-BR')||''} a ${f_to?.toLocaleDateString('pt-BR')||''}`
+                       : 'Histórico completo';
+      await exportDevHoursPdf(filtered, { periodLabel });
+      toast.success('PDF gerado.');
+    } catch (e) {
+      console.error('[devHours] PDF error:', e);
+      toast.error('Falha ao gerar PDF: ' + e.message);
+    }
+  });
 
   // Subscribe real-time
   if (_unsubscribe) _unsubscribe();

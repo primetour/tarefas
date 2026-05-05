@@ -20,6 +20,51 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.3.0+20260505-pdf-export-dev-hours] — 2026-05-05
+
+Release **MINOR** — fecha o ciclo de entrega do sistema de Horas de Desenvolvimento (4.x) com **export em PDF padrão newsletter**. Disponível tanto na página interna `#dev-hours` (master-only) quanto na página pública `dev-hours-view.html` — em ambas reusa o mesmo módulo `devHoursPdf.js`.
+
+### Added
+- **`js/services/devHoursPdf.js`** — exportador completo usando `js/components/pdfKit.js`:
+  - **Capa brand-gold compacta** com título, subtítulo PRIMETOUR, data
+  - **Linha de meta**: período + contagem de entradas aprovadas
+  - **4 KPIs em cards horizontais** (Horas / Custo / Releases / Fases) com barra superior colorida
+  - **Disclaimer ético** "Estimativa equivalente, não cronometragem" em card dourado
+  - **Seção "Distribuição por categoria"** — barras horizontais com horas absolutas e % do total para as 5 categorias
+  - **Tabela paginada de entradas** — colunas: Data, Tipo (chip), Versão/Fase, Título (multi-linha), Horas, Custo. Linhas alternadas em zebra. Header repete em cada página nova.
+  - **Linha de total** ao fim da tabela em fundo brand
+  - **Footer com paginação** ("Página N de M") + label "PRIMETOUR · Horas de Desenvolvimento" + data
+  - **Filename**: `horas-desenvolvimento-primetour-YYYY-MM-DD.pdf`
+- **Botão "📄 Exportar PDF"** no header da página `#dev-hours` (master). Sempre filtra por `status='approved'` no momento da exportação — drafts e rejeitadas NUNCA entram no PDF mesmo que o filtro de tela esteja em "Todas". Garantia ética: o PDF é peça de comunicação com cliente, deve refletir só o que foi formalmente aprovado.
+- **Botão "📄 PDF"** dourado no `dev-hours-view.html` (público). Reusa o mesmo módulo via import dinâmico (`./js/services/devHoursPdf.js`). Já filtra approved no client-side antes de chamar.
+
+### Decisões de design
+1. **Filtragem dupla**: a página interna pode mostrar drafts pra você revisar, mas o PDF SEMPRE só inclui aprovadas. Isso impede compartilhar acidentalmente um PDF com números preliminares.
+2. **Reuso do `pdfKit.js`**: cores, tipografia, capa, footer e helpers vêm do módulo central — coerência total com PDFs de Newsletter, Tasks, Goals, etc.
+3. **Sanitização Unicode**: `pdfKit.txt()` neutraliza glyphs UTF-8 (→ ↳ ▸ ✓ aspas curvas) que jsPDF não renderiza corretamente em Helvetica WinAnsi. Decorações usam primitivas (chips desenhados com `roundedRect`).
+4. **Multi-linha em títulos**: `wrap()` quebra automaticamente títulos longos. Altura da linha da tabela ajusta dinamicamente (`Math.max(7, lines * 3.2 + 4)`).
+5. **`withExportGuard`**: previne duplo-clique gerando 2 PDFs.
+
+### Conclusão do ciclo 4.x
+Sistema de Horas de Desenvolvimento entregue completo:
+
+| Versão | Entrega |
+|---|---|
+| 4.0.0 | Schema + service + página master-only + workflow draft/approve + transparência radical |
+| 4.1.0 | Backfill: 4 fases retroativas + 14 releases granulares (R$ 48k inicial) |
+| 4.1.1 | Firestore rules + recalibração R$ 93.570 + sidebar removido + botão "Limpar tudo" |
+| 4.2.0 | Link público sem auth (`dev-hours-view.html`) — só aprovadas, real-time |
+| 4.3.0 | PDF export padrão newsletter — interno + público, só aprovadas |
+
+### Verificação
+1. `#dev-hours` → ainda nenhuma entry aprovada → click "📄 Exportar PDF" → toast de erro "Aprove pelo menos 1 entrada".
+2. Aprovar 1-3 entradas (botão ✓) → click "📄 Exportar PDF" novamente → PDF baixa em `horas-desenvolvimento-primetour-YYYY-MM-DD.pdf`.
+3. Abrir PDF → verificar: capa, KPIs (apenas aprovadas), disclaimer, distribuição por categoria com barras, tabela com chips Tipo, footer com paginação.
+4. `dev-hours-view.html` em janela anônima → click "📄 PDF" → mesmo PDF.
+
+---
+
 ## [4.2.0+20260505-link-publico-dev-hours] — 2026-05-05
 
 Release **MINOR** — entrega o link público do sistema de Horas de Desenvolvimento. URL: [`/tarefas/dev-hours-view.html`](https://primetour.github.io/tarefas/dev-hours-view.html). Sem auth, read-only, real-time. Apenas entradas com `status: 'approved'` aparecem no link público — drafts e rejeitadas ficam restritas à página interna.
