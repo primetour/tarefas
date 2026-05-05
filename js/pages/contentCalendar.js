@@ -12,6 +12,7 @@ import {
   suggestWeekContent, suggestDescription,
 } from '../services/contentCalendar.js';
 import { openTaskModal } from '../components/taskModal.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 
 const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -80,6 +81,42 @@ const ACCOUNTS = [
   { value: 'primetourviagens',  label: '@primetourviagens' },
   { value: 'icsbyprimetour',    label: '@icsbyprimetour' },
 ];
+
+/* ── Option configs (optionPicker visual) ───────────────── */
+
+const PLATFORM_OPTIONS = [
+  { id: 'instagram',  label: 'Instagram',  icon: '📷', color: '#E1306C' },
+  { id: 'facebook',   label: 'Facebook',   icon: '◈',  color: '#1877F2' },
+  { id: 'linkedin',   label: 'LinkedIn',   icon: '▤',  color: '#0A66C2' },
+  { id: 'newsletter', label: 'Newsletter', icon: '✉',  color: '#D4A843' },
+  { id: 'blog',       label: 'Blog',       icon: '✎',  color: '#64748B' },
+  { id: 'tiktok',     label: 'TikTok',     icon: '▣',  color: '#94A3B8' },
+];
+
+const CONTENT_TYPE_OPTIONS = [
+  { id: 'post',       label: 'Post',       icon: '📸', color: '#6366F1' },
+  { id: 'reel',       label: 'Reel',       icon: '🎬', color: '#EC4899' },
+  { id: 'carrossel',  label: 'Carrossel',  icon: '📑', color: '#8B5CF6' },
+  { id: 'story',      label: 'Story',      icon: '📱', color: '#F59E0B' },
+  { id: 'artigo',     label: 'Artigo',     icon: '📰', color: '#0EA5E9' },
+  { id: 'newsletter', label: 'Newsletter', icon: '✉',  color: '#D4A843' },
+];
+
+const ACCOUNT_OPTIONS = [
+  { id: 'primetourviagens', label: '@primetourviagens', icon: '✈', color: '#D4A843' },
+  { id: 'icsbyprimetour',   label: '@icsbyprimetour',   icon: '◈', color: '#22C55E' },
+];
+
+const CATEGORY_OPTIONS = [
+  { id: 'destinos',      label: 'Destinos',      icon: '🌍', color: '#0EA5E9' },
+  { id: 'dicas',         label: 'Dicas',         icon: '💡', color: '#F59E0B' },
+  { id: 'institucional', label: 'Institucional', icon: '🏢', color: '#6366F1' },
+  { id: 'promocional',   label: 'Promocional',   icon: '🎯', color: '#EC4899' },
+  { id: 'engajamento',   label: 'Engajamento',   icon: '💬', color: '#22C55E' },
+  { id: 'bastidores',    label: 'Bastidores',    icon: '🎬', color: '#8B5CF6' },
+];
+
+const findOption = (list, id) => list.find(o => o.id === id) || null;
 
 /* ── State ──────────────────────────────────────────────── */
 
@@ -912,17 +949,19 @@ function openSlotModal(slot, prefillDate) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;${fieldGroupStyle}">
           <div>
             <label style="${labelStyle}">Plataforma</label>
-            <select id="cc-f-platform" style="${inputStyle}cursor:pointer;">
+            <select id="cc-f-platform" style="display:none;">
               <option value="">Selecionar...</option>
               ${PLATFORM_LIST.map(p => `<option value="${p.value}" ${s.platform === p.value ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
             </select>
+            ${renderPickerButton({ btnId: 'cc-f-platform-btn', selected: findOption(PLATFORM_OPTIONS, s.platform), emptyLabel: '— Plataforma —' })}
           </div>
           <div>
             <label style="${labelStyle}">Tipo de Conteudo</label>
-            <select id="cc-f-contentType" style="${inputStyle}cursor:pointer;">
+            <select id="cc-f-contentType" style="display:none;">
               <option value="">Selecionar...</option>
-              ${CONTENT_TYPE_LIST.map(t => `<option value="${t.value}" ${s.contentType === t.value ? 'selected' : ''}>${getTypeIcon(t.value)} ${esc(t.label)}</option>`).join('')}
+              ${CONTENT_TYPE_LIST.map(t => `<option value="${t.value}" ${s.contentType === t.value ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
             </select>
+            ${renderPickerButton({ btnId: 'cc-f-contentType-btn', selected: findOption(CONTENT_TYPE_OPTIONS, s.contentType), emptyLabel: '— Tipo —' })}
           </div>
         </div>
 
@@ -930,10 +969,11 @@ function openSlotModal(slot, prefillDate) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;${fieldGroupStyle}">
           <div>
             <label style="${labelStyle}">Conta</label>
-            <select id="cc-f-account" style="${inputStyle}cursor:pointer;">
+            <select id="cc-f-account" style="display:none;">
               <option value="">Selecionar...</option>
               ${ACCOUNTS.map(a => `<option value="${a.value}" ${s.account === a.value ? 'selected' : ''}>${esc(a.label)}</option>`).join('')}
             </select>
+            ${renderPickerButton({ btnId: 'cc-f-account-btn', selected: findOption(ACCOUNT_OPTIONS, s.account), emptyLabel: '— Conta —' })}
           </div>
           <div>
             <label style="${labelStyle}">Data Agendada</label>
@@ -944,10 +984,11 @@ function openSlotModal(slot, prefillDate) {
         <!-- Category -->
         <div style="${fieldGroupStyle}">
           <label style="${labelStyle}">Categoria</label>
-          <select id="cc-f-category" style="${inputStyle}cursor:pointer;">
+          <select id="cc-f-category" style="display:none;">
             <option value="">Selecionar...</option>
             ${CATEGORY_LIST.map(c => `<option value="${c.value}" ${s.category === c.value ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
           </select>
+          ${renderPickerButton({ btnId: 'cc-f-category-btn', selected: findOption(CATEGORY_OPTIONS, s.category), emptyLabel: '— Categoria —' })}
         </div>
 
         <!-- Description (unified brief + caption) -->
@@ -1047,6 +1088,52 @@ function bindModalEvents() {
   // Convert to task button
   const toTaskBtn = document.getElementById('cc-modal-to-task');
   if (toTaskBtn) toTaskBtn.addEventListener('click', handleConvertToTask);
+
+  // Option pickers (visual unificado)
+  bindOptionPicker({
+    btnId: 'cc-f-platform-btn',
+    selectId: 'cc-f-platform',
+    buildConfig: () => ({
+      options: PLATFORM_OPTIONS,
+      empty: { id: '', label: '— Sem plataforma —' },
+      searchPlaceholder: 'Buscar plataforma…',
+    }),
+    findSelected: (id) => findOption(PLATFORM_OPTIONS, id),
+    emptyLabel: '— Plataforma —',
+  });
+  bindOptionPicker({
+    btnId: 'cc-f-contentType-btn',
+    selectId: 'cc-f-contentType',
+    buildConfig: () => ({
+      options: CONTENT_TYPE_OPTIONS,
+      empty: { id: '', label: '— Sem tipo —' },
+      searchPlaceholder: 'Buscar tipo…',
+    }),
+    findSelected: (id) => findOption(CONTENT_TYPE_OPTIONS, id),
+    emptyLabel: '— Tipo —',
+  });
+  bindOptionPicker({
+    btnId: 'cc-f-account-btn',
+    selectId: 'cc-f-account',
+    buildConfig: () => ({
+      options: ACCOUNT_OPTIONS,
+      empty: { id: '', label: '— Sem conta —' },
+      searchPlaceholder: 'Buscar conta…',
+    }),
+    findSelected: (id) => findOption(ACCOUNT_OPTIONS, id),
+    emptyLabel: '— Conta —',
+  });
+  bindOptionPicker({
+    btnId: 'cc-f-category-btn',
+    selectId: 'cc-f-category',
+    buildConfig: () => ({
+      options: CATEGORY_OPTIONS,
+      empty: { id: '', label: '— Sem categoria —' },
+      searchPlaceholder: 'Buscar categoria…',
+    }),
+    findSelected: (id) => findOption(CATEGORY_OPTIONS, id),
+    emptyLabel: '— Categoria —',
+  });
 
   // AI Description — toggle input + generate
   document.getElementById('cc-ai-desc-toggle')?.addEventListener('click', () => {
