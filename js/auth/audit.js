@@ -261,7 +261,7 @@ export const REVERTIBLE_ACTIONS = {
 /**
  * Registra uma entrada de auditoria no Firestore
  */
-export async function auditLog(action, entity, entityId, details = {}) {
+export async function auditLog(action, entity, entityId, details = {}, opts = {}) {
   try {
     const user = store.get('currentUser');
 
@@ -287,6 +287,9 @@ export async function auditLog(action, entity, entityId, details = {}) {
       ip:         null, // IP só acessível via backend; deixar null no client
       userAgent:  navigator.userAgent.slice(0, 200),
     };
+    // Severity opcional (ex: 'warning', 'critical'). Quando setada,
+    // pruneOldAuditLogs respeita pra preservação além do TTL 90d.
+    if (opts.severity) entry.severity = opts.severity;
 
     await addDoc(collection(db, 'audit_logs'), entry);
   } catch (err) {

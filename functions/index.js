@@ -1560,8 +1560,16 @@ export const pruneOldAuditLogs = onSchedule({
       const data = doc.data();
       const action = data.action || '';
       const severity = data.severity || '';
-      // Skip preservation rules
-      if (severity === 'critical' || action.startsWith('lgpd.') || action.startsWith('security.')) {
+      // Skip preservation rules:
+      // - severity 'critical' (sempre preserva)
+      // - lgpd.* (compliance LGPD obrigatório)
+      // - security.* (auditoria de segurança)
+      // - tasks.urgency_* (override manual de urgência por SLA — accountability
+      //   de gestor que removeu a marcação automática; preservar pra disputas)
+      if (severity === 'critical'
+          || action.startsWith('lgpd.')
+          || action.startsWith('security.')
+          || action.startsWith('tasks.urgency_')) {
         preserved++;
         return;
       }

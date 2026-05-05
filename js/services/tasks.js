@@ -1190,3 +1190,103 @@ function parseMentions(text, users, currentUid) {
   }
   return [...mentioned];
 }
+
+/* ════════════════════════════════════════════════════════════
+ * setUrgencyOverride / clearUrgencyOverride
+ *
+ * Permite que usuários autorizados (master/admin/manager/coordinator)
+ * removam manualmente a marcação automática de "urgência por SLA breach"
+ * em uma tarefa específica, com justificativa obrigatória.
+ *
+ * Caso de uso: tarefa já em andamento há tempos foi inserida tardiamente
+ * no sistema. O `enforceCalendarRules()` em taskModal força priority='urgent'
+ * porque dueDate < hoje + SLA, mas isso é falso na prática (a tarefa não
+ * está atrasada — só foi cadastrada tarde).
+ *
+ * Pra cada override: audit log com severity:warning, notificação ao
+ * criador da task, e o flag `urgencyOverride.active=true` impede o
+ * `enforceCalendarRules` de re-forçar urgent em edições futuras.
+ *
+ * É reversível via clearUrgencyOverride (também auditado).
+ * ════════════════════════════════════════════════════════════ */
+
+/** Aplica override de urgência. `reason` obrigatório (mín. 10 chars). */
+export async function setUrgencyOverride(taskId, reason) {
+  if (!store.can('task_override_urgency')) {
+    throw new Error('Permissão negada: você não pode remover urgência automática.');
+  }
+  const trimmed = String(reason || '').trim();
+  if (trimmed.length < 10) {
+    throw new Error('Justificativa muito curta (mínimo 10 caracteres).');
+  }
+
+  const user = store.get('currentUser');
+  const profile = store.get('userProfile') || {};
+  const taskSnap = await getDoc(doc(db, 'tasks', taskId));
+  if (!taskSnap.exists()) throw new Error('Tarefa não encontrada.');
+  const prev = taskSnap.data();
+
+  const override = {
+    active:  true,
+    reason:  trimmed,
+    by:      user.uid,
+    byName:  profile.name || user.email || 'Usuário',
+    at:      serverTimestamp(),
+  };
+
+  // Reduz priority de urgent → medium ao aplicar override (mantém o efeito
+  // visual esperado). Se já está em outro priority, não toca.
+  const updates = { urgencyOverride: override, updatedAt: serverTimestamp(), updatedBy: user.uid };
+  if (prev.priority === 'urgent') updates.priority = 'medium';
+
+  await updateDoc(doc(db, 'tasks', taskId), updates);
+
+  // Audit log preservado (severity:warning sai do TTL 90d)
+  await auditLog('tasks.urgency_override', 'task', taskId, {
+    taskTitle: prev.title || '',
+    reason:    trimmed,
+    prevPriority: prev.priority || 'medium',
+  }, { severity: 'warning' }).catch(() => {});
+
+  // Notifica o criador da task (se não for ele mesmo aplicando)
+  try {
+    if (prev.createdBy && prev.createdBy !== user.uid) {
+      const { notify } = await import('./notifications.js');
+      await notify('task.urgency_override', {
+        entityType:   'task',
+        entityId:     taskId,
+        recipientIds: [prev.createdBy],
+        title:        'Urgência removida da sua tarefa',
+        body:         `${profile.name || 'Um gestor'} removeu a urgência automática de "${prev.title || 'tarefa'}". Motivo: ${trimmed.slice(0, 120)}`,
+        route:        'tasks',
+        priority:     'normal',
+      });
+    }
+  } catch (e) { console.warn('[urgency-override] notify failed:', e?.message); }
+
+  return override;
+}
+
+/** Restaura urgência automática (apaga o override). Reversível. */
+export async function clearUrgencyOverride(taskId) {
+  if (!store.can('task_override_urgency')) {
+    throw new Error('Permissão negada.');
+  }
+  const user = store.get('currentUser');
+  const taskSnap = await getDoc(doc(db, 'tasks', taskId));
+  if (!taskSnap.exists()) throw new Error('Tarefa não encontrada.');
+  const prev = taskSnap.data();
+  if (!prev.urgencyOverride?.active) return; // idempotente
+
+  await updateDoc(doc(db, 'tasks', taskId), {
+    urgencyOverride: null,
+    updatedAt: serverTimestamp(),
+    updatedBy: user.uid,
+  });
+
+  await auditLog('tasks.urgency_override_revoked', 'task', taskId, {
+    taskTitle:   prev.title || '',
+    prevReason:  prev.urgencyOverride?.reason || '',
+    prevBy:      prev.urgencyOverride?.byName || '',
+  }, { severity: 'warning' }).catch(() => {});
+}

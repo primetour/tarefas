@@ -1805,16 +1805,81 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
         if (dow !== 0 && dow !== 6) biz--;
       }
       if (due < minDue) {
-        // Força urgência
-        const prioEl = document.getElementById('tm-priority');
-        if (prioEl && prioEl.value !== 'urgent') prioEl.value = 'urgent';
-        if (slaWarn) {
-          const fmt = d => d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
-          slaWarn.style.display = 'block';
-          slaWarn.innerHTML = `<strong>⚠ Prazo abaixo do SLA</strong> — variação exige
-            <strong>${days} dia${days!==1?'s':''} úteis</strong> (mínimo
-            ${fmt(minDue)}). Prioridade marcada como <strong>URGENTE</strong>
-            automaticamente.`;
+        // Override de urgência ativo? (gestor removeu manualmente com
+        // justificativa). Nesse caso, NÃO força urgent — banner muda
+        // pra info ("Urgência removida por X em Y · motivo").
+        const override = task?.urgencyOverride;
+        if (override?.active) {
+          if (slaWarn) {
+            const overrideAt = override.at?.toDate ? override.at.toDate() : (override.at ? new Date(override.at) : null);
+            const dateStr = overrideAt ? overrideAt.toLocaleDateString('pt-BR') : '';
+            slaWarn.style.display = 'block';
+            slaWarn.style.background = 'rgba(59,130,246,0.08)';
+            slaWarn.style.borderColor = 'rgba(59,130,246,0.3)';
+            slaWarn.style.color = '#3B82F6';
+            slaWarn.innerHTML = `<div style="display:flex;align-items:flex-start;gap:8px;">
+              <div style="flex:1;">
+                <strong>ℹ Urgência removida manualmente</strong>
+                ${override.byName ? `por <strong>${esc(override.byName)}</strong>` : ''}
+                ${dateStr ? `em ${esc(dateStr)}` : ''}.
+                ${override.reason ? `<div style="margin-top:4px;font-size:0.75rem;font-style:italic;">"${esc(override.reason)}"</div>` : ''}
+              </div>
+              ${store.can('task_override_urgency') && task?.id ? `
+                <button type="button" id="tm-urgency-restore-btn"
+                  style="background:transparent;border:1px solid currentColor;color:inherit;
+                  padding:4px 10px;border-radius:6px;font-size:0.75rem;cursor:pointer;
+                  white-space:nowrap;flex-shrink:0;">↺ Restaurar urgência</button>
+              ` : ''}
+            </div>`;
+            // Bind botão restaurar
+            slaWarn.querySelector('#tm-urgency-restore-btn')?.addEventListener('click', async () => {
+              if (!confirm('Restaurar a urgência automática? A tarefa voltará a ser marcada como URGENTE pelo SLA breach.')) return;
+              try {
+                const { clearUrgencyOverride } = await import('../services/tasks.js');
+                await clearUrgencyOverride(task.id);
+                task.urgencyOverride = null;
+                toast.success('Urgência automática restaurada.');
+                enforceCalendarRules();
+                const prioEl2 = document.getElementById('tm-priority');
+                if (prioEl2) prioEl2.value = 'urgent';
+              } catch (err) { toast.error(err.message); }
+            });
+          }
+        } else {
+          // Caminho normal: força urgência
+          const prioEl = document.getElementById('tm-priority');
+          if (prioEl && prioEl.value !== 'urgent') prioEl.value = 'urgent';
+          if (slaWarn) {
+            const fmt = d => d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+            slaWarn.style.display = 'block';
+            slaWarn.style.background = '';
+            slaWarn.style.borderColor = '';
+            slaWarn.style.color = '';
+            const canOverride = store.can('task_override_urgency') && task?.id;
+            slaWarn.innerHTML = `<div style="display:flex;align-items:flex-start;gap:8px;">
+              <div style="flex:1;">
+                <strong>⚠ Prazo abaixo do SLA</strong> — variação exige
+                <strong>${days} dia${days!==1?'s':''} úteis</strong> (mínimo
+                ${fmt(minDue)}). Prioridade marcada como <strong>URGENTE</strong>
+                automaticamente.
+              </div>
+              ${canOverride ? `
+                <button type="button" id="tm-urgency-remove-btn"
+                  style="background:transparent;border:1px solid currentColor;color:inherit;
+                  padding:4px 10px;border-radius:6px;font-size:0.75rem;cursor:pointer;
+                  white-space:nowrap;flex-shrink:0;">Remover urgência…</button>
+              ` : ''}
+            </div>`;
+            // Bind botão remover urgência (abre modal de justificativa)
+            slaWarn.querySelector('#tm-urgency-remove-btn')?.addEventListener('click', () => {
+              openUrgencyOverrideModal(task, () => {
+                // Após salvar override: re-renderiza banner pro modo "info"
+                enforceCalendarRules();
+                const prioEl3 = document.getElementById('tm-priority');
+                if (prioEl3 && prioEl3.value === 'urgent') prioEl3.value = 'medium';
+              });
+            });
+          }
         }
       } else if (slaWarn) {
         slaWarn.style.display = 'none';
@@ -2278,6 +2343,109 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
 
   // ── @Mention Autocomplete ──────────────────────────────────
   setupMentionAutocomplete();
+}
+
+/* ──────────────────────────────────────────────────────────
+ * Modal de override de urgência por SLA
+ *
+ * Acionado pelo botão "Remover urgência…" no banner de SLA breach
+ * (visível só pra users com permissão `task_override_urgency`).
+ * Pede justificativa obrigatória (mín. 10 chars), grava no doc da task,
+ * audita (severity:warning, preservado além do TTL 90d) e notifica o
+ * criador da task. Não-destrutivo (reversível via clearUrgencyOverride).
+ * ────────────────────────────────────────────────────────── */
+function openUrgencyOverrideModal(task, onApplied) {
+  if (!task?.id) {
+    toast.error('Salve a tarefa primeiro pra poder remover a urgência.');
+    return;
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'urgency-override-overlay';
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0', zIndex: '10000',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(0,0,0,0.5)', padding: '16px',
+  });
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border-default);
+      border-radius:var(--radius-lg);padding:22px 24px;width:100%;max-width:480px;
+      box-shadow:0 20px 50px rgba(0,0,0,0.4);font-family:var(--font-ui);">
+      <h3 style="margin:0 0 8px;font-size:1rem;font-weight:600;color:var(--text-primary);">
+        Remover urgência automática
+      </h3>
+      <p style="margin:0 0 14px;font-size:0.8125rem;color:var(--text-muted);line-height:1.5;">
+        O sistema marcou esta tarefa como <strong>URGENTE</strong> porque o prazo está
+        abaixo do SLA. Use esta opção apenas se a tarefa <strong>já está em andamento
+        no fluxo correto</strong> e foi inserida tardiamente. <strong>A justificativa
+        ficará registrada na tarefa, no log de auditoria, e o criador será notificado.</strong>
+      </p>
+      <label style="display:block;font-size:0.75rem;font-weight:600;color:var(--text-muted);
+        text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">
+        Justificativa <span style="color:#EF4444;">*</span>
+      </label>
+      <textarea id="urg-override-reason" rows="4" maxlength="500"
+        placeholder="Ex: Tarefa já em produção há 3 semanas, foi cadastrada hoje no sistema apenas pra acompanhar conclusão."
+        style="width:100%;padding:10px 12px;border:1px solid var(--border-default);
+        border-radius:var(--radius-md);background:var(--bg-input);color:var(--text-primary);
+        font-family:inherit;font-size:0.8125rem;resize:vertical;min-height:80px;
+        box-sizing:border-box;outline:none;"></textarea>
+      <div id="urg-override-err" style="display:none;font-size:0.75rem;color:#EF4444;
+        margin-top:6px;"></div>
+      <div style="margin-top:6px;font-size:0.6875rem;color:var(--text-muted);">
+        Mínimo 10 caracteres. <span id="urg-override-counter">0</span>/500
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;">
+        <button id="urg-override-cancel" type="button" class="btn btn-secondary btn-sm"
+          style="font-size:0.8125rem;">Cancelar</button>
+        <button id="urg-override-apply" type="button" class="btn btn-primary btn-sm"
+          style="font-size:0.8125rem;background:#3B82F6;border-color:#3B82F6;">
+          Confirmar e remover urgência
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const txt    = overlay.querySelector('#urg-override-reason');
+  const cnt    = overlay.querySelector('#urg-override-counter');
+  const errEl  = overlay.querySelector('#urg-override-err');
+  const cancel = overlay.querySelector('#urg-override-cancel');
+  const apply  = overlay.querySelector('#urg-override-apply');
+
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onEsc); };
+  const onEsc = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onEsc);
+  cancel.addEventListener('click', close);
+
+  txt.addEventListener('input', () => {
+    cnt.textContent = String(txt.value.length);
+    if (errEl) errEl.style.display = 'none';
+  });
+  setTimeout(() => txt.focus(), 50);
+
+  apply.addEventListener('click', async () => {
+    const reason = txt.value.trim();
+    if (reason.length < 10) {
+      errEl.style.display = 'block';
+      errEl.textContent = 'Justificativa precisa de no mínimo 10 caracteres.';
+      txt.focus();
+      return;
+    }
+    apply.disabled = true; apply.textContent = 'Aplicando…';
+    try {
+      const { setUrgencyOverride } = await import('../services/tasks.js');
+      const override = await setUrgencyOverride(task.id, reason);
+      // Atualiza task em memória pra UI refletir sem aguardar snapshot
+      task.urgencyOverride = override;
+      toast.success('Urgência removida. Justificativa registrada.');
+      close();
+      onApplied?.(override);
+    } catch (err) {
+      apply.disabled = false; apply.textContent = 'Confirmar e remover urgência';
+      errEl.style.display = 'block';
+      errEl.textContent = err.message;
+    }
+  });
 }
 
 async function handleSave(task, tags, assignees, observers, isEdit, close, onSave, ctx=document) {

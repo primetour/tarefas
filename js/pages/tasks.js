@@ -906,6 +906,18 @@ function renderTaskRow(task) {
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;align-items:center;">
           <span class="badge badge-priority-${task.priority}" style="font-size:0.6rem;">${prio.label}</span>
+          ${task.urgencyOverride?.active ? (() => {
+            const ov = task.urgencyOverride;
+            const dt = ov.at?.toDate ? ov.at.toDate() : (ov.at ? new Date(ov.at) : null);
+            const dateStr = dt ? dt.toLocaleDateString('pt-BR') : '';
+            const tip = `Urgência automática removida${ov.byName?` por ${ov.byName}`:''}${dateStr?` em ${dateStr}`:''}${ov.reason?` — Motivo: ${ov.reason}`:''}`;
+            return `<span title="${esc(tip)}"
+              style="font-size:0.625rem;padding:2px 8px;border-radius:99px;
+              background:rgba(59,130,246,0.12);color:#3B82F6;border:1px solid rgba(59,130,246,0.3);
+              font-weight:500;white-space:nowrap;cursor:help;">
+              ℹ urgência removida
+            </span>`;
+          })() : ''}
           ${(task.nucleos||[]).length ? `<span style="font-size:0.6875rem;color:var(--text-muted);">◈ ${(task.nucleos||[]).map(n=>NUCLEOS.find(x=>x.value===n)?.label||n).join(', ')}</span>` : ''}
           ${task.tags?.length ? task.tags.slice(0,2).map(t=>`<span style="font-size:0.6875rem;color:var(--text-muted);">#${esc(t)}</span>`).join('') : ''}
           ${project ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${project.icon} ${esc(project.name)}</span>` : ''}

@@ -750,6 +750,18 @@ function renderKanbanCard(task, type = null) {
       style="${task._optimistic ? 'opacity:0.6;pointer-events:none;' : ''}">
       ${project ? `<div class="kanban-card-project">${project.icon} ${esc(project.name)}</div>` : ''}
       <div class="kanban-card-title">${esc(task.title)}</div>
+      ${task.urgencyOverride?.active ? (() => {
+        const ov = task.urgencyOverride;
+        const dt = ov.at?.toDate ? ov.at.toDate() : (ov.at ? new Date(ov.at) : null);
+        const dateStr = dt ? dt.toLocaleDateString('pt-BR') : '';
+        const tip = `Urgência removida${ov.byName?` por ${ov.byName}`:''}${dateStr?` em ${dateStr}`:''}${ov.reason?` — Motivo: ${ov.reason}`:''}`;
+        return `<span title="${esc(tip)}"
+          style="display:inline-block;font-size:0.625rem;padding:1px 6px;border-radius:99px;
+          background:rgba(59,130,246,0.12);color:#3B82F6;border:1px solid rgba(59,130,246,0.3);
+          font-weight:500;margin-bottom:4px;cursor:help;">
+          ℹ urgência removida
+        </span>`;
+      })() : ''}
       ${tagsHTML ? `<div class="kanban-card-tags">${tagsHTML}</div>` : ''}
       ${type ? renderKanbanCardPipelineExtra(task, type) : ''}
       ${subtasks.length ? `
