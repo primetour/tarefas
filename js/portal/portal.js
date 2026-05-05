@@ -12,6 +12,7 @@ import {
   getAuth, signInWithEmailAndPassword, signInWithPopup, signOut, onAuthStateChanged,
   OAuthProvider,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { renderPickerButton, refreshPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
 /* ─── Estado do usuário autenticado ─────────────────────────── */
 let portalUser = null; // { uid, name, email, department }
@@ -277,6 +278,32 @@ const REQUESTING_AREAS = [
   'Operadora','Programa ICs','Projetos','PTS Bradesco','Qualidade','Suppliers','TI',
 ];
 
+/* ─── Visual config pra optionPicker ────────────────────── */
+// Hash determinístico → cor estável por área (sem precisar mapear manual)
+const AREA_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const areaColor = (name) => {
+  let h = 0; for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  return AREA_PALETTE[Math.abs(h) % AREA_PALETTE.length];
+};
+const buildAreaOptions = () => REQUESTING_AREAS.map(a => ({
+  id: a, label: a, icon: '◈', color: areaColor(a),
+}));
+const findAreaOption = (id) => buildAreaOptions().find(o => o.id === id) || null;
+
+/* Lê opções dinâmicas dum <select> escondido populado em runtime */
+const optionsFromSelect = (selectId, defaultIcon = '◈', defaultColor = '#6366F1') => {
+  const sel = document.getElementById(selectId);
+  if (!sel) return [];
+  return [...sel.options].filter(o => o.value).map(o => ({
+    id: o.value,
+    label: o.textContent.trim(),
+    icon: defaultIcon,
+    color: defaultColor,
+  }));
+};
+const findInSelect = (selectId, id, opts = {}) =>
+  optionsFromSelect(selectId, opts.icon, opts.color).find(o => o.id === id) || null;
+
 /* ─── Render form ─────────────────────────────────────────── */
 async function renderForm(db, taskTypes, auth) {
   const root = document.getElementById('portal-root');
@@ -347,9 +374,10 @@ async function renderForm(db, taskTypes, auth) {
                   <label class="form-label">Área solicitante <span class="required">*</span>
                     <span class="info-tip" title="Pode ser diferente da sua área, caso esteja solicitando em nome de outra.">ℹ</span>
                   </label>
-                  <select class="form-select" id="p-area">
+                  <select class="form-select" id="p-area" style="display:none;">
                     ${REQUESTING_AREAS.map(a => `<option value="${a}" ${a===u.department?'selected':''}>${a}</option>`).join('')}
                   </select>
+                  ${renderPickerButton({ btnId: 'p-area-btn', selected: findAreaOption(u.department), emptyLabel: '— Selecione a área —' })}
                   <div class="form-error" id="err-area">Selecione uma área.</div>
                 </div>
               </div>
@@ -365,10 +393,11 @@ async function renderForm(db, taskTypes, auth) {
                   Setor responsável <span class="required">*</span>
                   <span class="info-tip" title="Selecione o setor que receberá esta demanda. Os tipos de demanda disponíveis serão filtrados por setor.">ℹ</span>
                 </label>
-                <select class="form-select" id="p-setor">
+                <select class="form-select" id="p-setor" style="display:none;">
                   <option value="">— Selecione o setor —</option>
                   ${REQUESTING_AREAS.map(a => `<option value="${a}">${a}</option>`).join('')}
                 </select>
+                ${renderPickerButton({ btnId: 'p-setor-btn', selected: null, emptyLabel: '— Selecione o setor —' })}
                 <div class="form-error" id="err-setor">Selecione um setor.</div>
               </div>
 
@@ -378,9 +407,10 @@ async function renderForm(db, taskTypes, auth) {
                   Tipo de demanda <span class="required">*</span>
                   <span class="info-tip" title="Tipos disponíveis para o setor selecionado.">ℹ</span>
                 </label>
-                <select class="form-select" id="p-type">
+                <select class="form-select" id="p-type" style="display:none;">
                   <option value="">— Selecione o tipo —</option>
                 </select>
+                ${renderPickerButton({ btnId: 'p-type-btn', selected: null, emptyLabel: '— Selecione o tipo —' })}
                 <div class="form-error" id="err-type">Selecione um tipo.</div>
               </div>
 
@@ -486,9 +516,10 @@ async function renderForm(db, taskTypes, auth) {
                   Variação do material <span class="required">*</span>
                   <span class="info-tip" title="A variação define o SLA de produção. Pode ser preenchida automaticamente ao clicar em um slot do calendário.">ℹ</span>
                 </label>
-                <select class="form-select" id="p-variation">
+                <select class="form-select" id="p-variation" style="display:none;">
                   <option value="">— Selecione a variação —</option>
                 </select>
+                ${renderPickerButton({ btnId: 'p-variation-btn', selected: null, emptyLabel: '— Selecione a variação —' })}
                 <div class="sla-badge" id="sla-badge" style="margin-top:8px;">
                   <span style="color:var(--brand-gold);">⏱</span>
                   <span>SLA de produção: <strong id="sla-label"></strong></span>
@@ -501,9 +532,10 @@ async function renderForm(db, taskTypes, auth) {
                   Núcleo responsável
                   <span class="info-tip" title="Núcleo específico dentro do setor. Pode ser preenchido automaticamente ao clicar em um slot do calendário.">ℹ</span>
                 </label>
-                <select class="form-select" id="p-nucleo">
+                <select class="form-select" id="p-nucleo" style="display:none;">
                   <option value="">— Selecione o núcleo —</option>
                 </select>
+                ${renderPickerButton({ btnId: 'p-nucleo-btn', selected: null, emptyLabel: '— Selecione o núcleo —' })}
               </div>
 
               <!-- Passo 6: Título (pre-preenchido pelo slot) -->
@@ -1619,7 +1651,10 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
       // Type
       if (portalCalTypeId) {
         const typeEl = document.getElementById('p-type');
-        if (typeEl) typeEl.value = portalCalTypeId;
+        if (typeEl) {
+          typeEl.value = portalCalTypeId;
+          typeEl.dispatchEvent(new Event('picker-refresh'));
+        }
       }
 
       // Núcleo = "Design"
@@ -1628,7 +1663,10 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
         const designOpt = Array.from(nucleoSel.options).find(o =>
           o.value.toLowerCase().includes('design') || o.textContent.toLowerCase().includes('design')
         );
-        if (designOpt) nucleoSel.value = designOpt.value;
+        if (designOpt) {
+          nucleoSel.value = designOpt.value;
+          nucleoSel.dispatchEvent(new Event('picker-refresh'));
+        }
       }
 
       // Title from modal
@@ -2285,6 +2323,7 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
       for (const opt of areaSel.options) {
         if (opt.value === area) { areaSel.value = area; break; }
       }
+      areaSel.dispatchEvent(new Event('picker-refresh'));
     }
   }
 
@@ -2292,7 +2331,8 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
   const typeEl = document.getElementById('p-type');
   if (typeEl && portalCalTypeId) {
     typeEl.value = portalCalTypeId;
-    // Don't dispatch change (would re-render calendar), just set value
+    typeEl.dispatchEvent(new Event('picker-refresh'));
+    // Don't dispatch 'change' (would re-render calendar), just set value + sync visual
   }
 
   // ── Pre-fill setor from active type's sector ──
@@ -2302,6 +2342,7 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
     const setorEl = document.getElementById('p-setor');
     if (setorEl && setorEl.value !== activeType.sector) {
       setorEl.value = activeType.sector;
+      setorEl.dispatchEvent(new Event('picker-refresh'));
       // Don't full cascade — just set value, type is already set above
     }
   }
@@ -2315,6 +2356,7 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
     );
     if (designOpt) {
       nucleoSel.value = designOpt.value;
+      nucleoSel.dispatchEvent(new Event('picker-refresh'));
     }
   }
 
@@ -2347,7 +2389,8 @@ function fillFormFromSlot(dateISO, title, variationId, area) {
         }
       }
     }
-    if (matched) varSel.dispatchEvent(new Event('change'));
+    if (matched) varSel.dispatchEvent(new Event('change')); // dispara cascade SLA
+    else varSel.dispatchEvent(new Event('picker-refresh')); // ao menos sincroniza visual se nada match
   }
 
   // Unlock toggles
@@ -2745,6 +2788,63 @@ async function handleBatchSubmit(db, taskTypes) {
 /* ─── Bind events ─────────────────────────────────────────── */
 function bindFormEvents(db, taskTypes) {
 
+  // ── Option pickers (visual unificado) ───────────────────
+  bindOptionPicker({
+    btnId: 'p-area-btn',
+    selectId: 'p-area',
+    buildConfig: () => ({
+      options: buildAreaOptions(),
+      empty: { id: '', label: '— Selecione a área —' },
+      searchPlaceholder: 'Buscar área…',
+    }),
+    findSelected: findAreaOption,
+    emptyLabel: '— Selecione a área —',
+  });
+  bindOptionPicker({
+    btnId: 'p-setor-btn',
+    selectId: 'p-setor',
+    buildConfig: () => ({
+      options: buildAreaOptions(),
+      empty: { id: '', label: '— Selecione o setor —' },
+      searchPlaceholder: 'Buscar setor…',
+    }),
+    findSelected: findAreaOption,
+    emptyLabel: '— Selecione o setor —',
+  });
+  bindOptionPicker({
+    btnId: 'p-type-btn',
+    selectId: 'p-type',
+    buildConfig: () => ({
+      options: optionsFromSelect('p-type', '📋', '#0EA5E9'),
+      empty: { id: '', label: '— Selecione o tipo —' },
+      searchPlaceholder: 'Buscar tipo…',
+    }),
+    findSelected: (id) => findInSelect('p-type', id, { icon: '📋', color: '#0EA5E9' }),
+    emptyLabel: '— Selecione o tipo —',
+  });
+  bindOptionPicker({
+    btnId: 'p-variation-btn',
+    selectId: 'p-variation',
+    buildConfig: () => ({
+      options: optionsFromSelect('p-variation', '🎯', '#8B5CF6'),
+      empty: { id: '', label: '— Selecione a variação —' },
+      searchPlaceholder: 'Buscar variação…',
+    }),
+    findSelected: (id) => findInSelect('p-variation', id, { icon: '🎯', color: '#8B5CF6' }),
+    emptyLabel: '— Selecione a variação —',
+  });
+  bindOptionPicker({
+    btnId: 'p-nucleo-btn',
+    selectId: 'p-nucleo',
+    buildConfig: () => ({
+      options: optionsFromSelect('p-nucleo', '◇', '#22C55E'),
+      empty: { id: '', label: '— Selecione o núcleo —' },
+      searchPlaceholder: 'Buscar núcleo…',
+    }),
+    findSelected: (id) => findInSelect('p-nucleo', id, { icon: '◇', color: '#22C55E' }),
+    emptyLabel: '— Selecione o núcleo —',
+  });
+
   // ── Setor → filter types + nucleos ──────────────────────
   document.getElementById('p-setor')?.addEventListener('change', async (e) => {
     const sector    = e.target.value;
@@ -2783,6 +2883,9 @@ function bindFormEvents(db, taskTypes) {
     }
     // Only show type field if there are types for this sector
     if (typeFG) typeFG.style.display = sectorTypes.length > 0 ? 'block' : 'none';
+    // Reseta o botão visual de tipo + variação (cascata foi reescrita)
+    refreshPickerButton('p-type-btn', { selected: null, emptyLabel: '— Selecione o tipo —' });
+    refreshPickerButton('p-variation-btn', { selected: null, emptyLabel: '— Selecione a variação —' });
 
     // Show nucleos for this sector
     if (nucleoSel && nucleos.length) {
@@ -2792,6 +2895,7 @@ function bindFormEvents(db, taskTypes) {
     } else {
       if (nucleoFG) nucleoFG.style.display = 'none';
     }
+    refreshPickerButton('p-nucleo-btn', { selected: null, emptyLabel: '— Selecione o núcleo —' });
   });
 
   // ── Type → show variations + calendar (NO SLA here) ────
@@ -2825,6 +2929,8 @@ function bindFormEvents(db, taskTypes) {
         varFG.style.display = 'none';
       }
     }
+    // Reseta visual do picker de variação (lista foi reescrita)
+    refreshPickerButton('p-variation-btn', { selected: null, emptyLabel: '— Selecione a variação —' });
 
     if (slotsEl) slotsEl.classList.add('visible');
 

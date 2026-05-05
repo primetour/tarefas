@@ -360,6 +360,16 @@ export function bindOptionPicker(cfg) {
     });
   });
 
+  // Sync externo: se outro código fizer `select.value = X` + dispatchEvent('change'),
+  // o botão visual reflete automaticamente. Pra atualizar SÓ visual sem disparar
+  // efeitos colaterais (cascata, re-render), use `dispatchEvent(new Event('picker-refresh'))`.
+  const syncBtn = () => {
+    const cur = lookupOption(select.value);
+    refreshPickerButton(btnId, { selected: cur, emptyLabel });
+  };
+  select.addEventListener('change', syncBtn);
+  select.addEventListener('picker-refresh', syncBtn);
+
   // Sync inicial: garante que o botão reflete o value atual
   const sel = lookupOption(select.value);
   refreshPickerButton(btnId, { selected: sel, emptyLabel });
