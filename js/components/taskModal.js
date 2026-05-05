@@ -5,6 +5,7 @@
 import { modal }  from './modal.js';
 import { toast }  from './toast.js';
 import { store }  from '../store.js';
+import { renderPickerButton, bindOptionPicker } from './optionPicker.js';
 import {
   createTask, updateTask, deleteTask,
   addSubtask, toggleSubtask, updateSubtaskDue, updateSubtaskTitle,
@@ -1412,19 +1413,34 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
         })()}
       </div>
 
-      <!-- Variação do material -->
+      <!-- Variação do material — picker visual (popula dinamicamente no
+           change do tipo via handler em bindEvents) -->
       <div class="task-detail-field" id="tm-variation-group"
         style="display:${taskType?.variations?.length?'block':'none'};">
         <div style="margin-bottom:5px;">
           <span class="task-detail-label">Variação do material</span>
         </div>
-        <select class="form-select" id="tm-variation" style="padding:8px 32px 8px 12px;">
+        <select id="tm-variation" style="display:none;">
           <option value="">— Selecione a variação —</option>
           ${(taskType?.variations||[]).map(v =>
             `<option value="${v.id}" data-sla="${v.slaDays}"
               ${task.variationId===v.id?'selected':''}>${esc(cleanVarName(v.name))}</option>`
           ).join('')}
         </select>
+        ${(() => {
+          const v = (taskType?.variations || []).find(x => x.id === task.variationId);
+          return renderPickerButton({
+            btnId: 'tm-variation-btn',
+            selected: v ? {
+              id: v.id,
+              label: cleanVarName(v.name),
+              icon: '🎯',
+              color: '#A78BFA',
+              sublabel: v.slaDays === 0 ? 'Mesmo dia' : `${v.slaDays} dia${v.slaDays!==1?'s':''} úteis`,
+            } : null,
+            emptyLabel: '— Selecione a variação —',
+          });
+        })()}
       </div>
 
       <!-- SLA badge — shown immediately if editing with a saved variation -->
@@ -1481,40 +1497,66 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
         // de nenhum grupo específico.
         if (workspaces.length >= 1) {
           const canEditWs = !isEdit || store.can('task_edit_any');
-          const wsName = workspaces.find(w => w.id === currentWsId)?.name || '';
+          const ws = workspaces.find(w => w.id === currentWsId);
           if (!canEditWs) {
             return `<div class="task-detail-field">
-              <div class="task-detail-label">Squad / Workspace</div>
+              <div class="task-detail-label">Squad</div>
               <div class="task-detail-value" style="font-size:0.875rem;color:var(--text-secondary);">
-                ${wsName ? esc(wsName) : '<em>Sem squad</em>'}
+                ${ws ? esc(ws.name) : '<em>Sem squad</em>'}
               </div>
             </div>`;
           }
           return `<div class="task-detail-field">
-            <div class="task-detail-label">Squad / Workspace</div>
-            <select class="form-select" id="tm-workspace" style="padding:8px 32px 8px 12px;">
-              <option value="" ${!currentWsId ? 'selected' : ''}>— Sem squad (apenas por setor)</option>
+            <div class="task-detail-label">Squad</div>
+            <select id="tm-workspace" style="display:none;">
+              <option value="" ${!currentWsId ? 'selected' : ''}>— Sem squad (apenas por setor) —</option>
               ${workspaces.map(w => `
                 <option value="${w.id}" ${currentWsId===w.id?'selected':''}>
                   ${esc(w.icon||'◈')} ${esc(w.name)}${w.multiSector ? ' · multissetor' : ''}
                 </option>
               `).join('')}
             </select>
+            ${renderPickerButton({
+              btnId: 'tm-workspace-btn',
+              selected: ws ? {
+                id: ws.id,
+                label: ws.name,
+                icon: ws.icon || '◈',
+                color: ws.color,
+                sublabel: ws.multiSector ? 'multissetor' : '',
+              } : null,
+              emptyLabel: '— Sem squad —',
+            })}
           </div>`;
         }
         return '';
       })()}
       <div class="task-detail-field">
         <div class="task-detail-label">Área solicitante</div>
-        <select class="form-select" id="tm-area" style="padding:8px 32px 8px 12px;">
+        <!-- Select escondido = fonte de verdade pro handleSave/listeners.
+             Botão visível abaixo é trigger do optionPicker. -->
+        <select id="tm-area" style="display:none;">
           ${areaOpts}
         </select>
+        ${renderPickerButton({
+          btnId: 'tm-area-btn',
+          selected: task.requestingArea ? { id: task.requestingArea, label: task.requestingArea } : null,
+          emptyLabel: '— Selecione área —',
+        })}
       </div>
       <div class="task-detail-field">
         <div class="task-detail-label">Projeto</div>
-        <select class="form-select" id="tm-project" style="padding:8px 32px 8px 12px;">
+        <select id="tm-project" style="display:none;">
           ${projectOpts}
         </select>
+        ${(() => {
+          const proj = projectList.find(p => p.id === task.projectId);
+          return renderPickerButton({
+            btnId: 'tm-project-btn',
+            selected: proj ? { id: proj.id, label: proj.name, icon: proj.icon || '◈', color: proj.color } : null,
+            emptyLabel: '— Sem projeto —',
+          });
+        })()}
       </div>
       <div class="task-detail-field">
         <div class="task-detail-label">Meta vinculada</div>
@@ -1747,6 +1789,129 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
     });
   });
 
+  // ── Pickers visuais nos demais campos (paridade com o tipo) ──
+  // Cada um substitui um <select> nativo por um botão custom + popover.
+  // O <select> permanece no DOM (display:none) como fonte de verdade pro
+  // handleSave; bindOptionPicker dispara `change` ao selecionar pra que
+  // listeners existentes continuem reagindo.
+
+  // Área solicitante (lista fixa de REQUESTING_AREAS)
+  bindOptionPicker({
+    btnId:    'tm-area-btn',
+    selectId: 'tm-area',
+    emptyLabel: '— Selecione área —',
+    buildConfig: () => ({
+      empty: { id: '', label: '— Selecione área —' },
+      options: REQUESTING_AREAS.map(a => ({ id: a, label: a })),
+      searchPlaceholder: 'Buscar área…',
+    }),
+    findSelected: (id) => id ? { id, label: id } : null,
+  });
+
+  // Projeto — usa as <option>s do select escondido como source of truth
+  // (foram populadas em buildHTML com base em projects + fallback). Pra
+  // cada id, lookup em store pra recuperar icon/color quando disponível.
+  const lookupProject = (id) => {
+    if (!id) return null;
+    const allProjs = store.get('projects') || [];
+    const p = allProjs.find(x => x.id === id);
+    if (p) return { id: p.id, label: p.name, icon: p.icon || '◈', color: p.color };
+    // Fallback: lê do <option> do select escondido (ex: projeto fora do
+    // workspace ativo mas anexo à task atual)
+    const sel = document.getElementById('tm-project');
+    const opt = sel?.querySelector(`option[value="${id}"]`);
+    if (!opt) return null;
+    const txt = opt.textContent.trim();
+    return { id, label: txt.replace(/^[^\s]+\s+/, '') || txt, icon: txt.match(/^(\S)\s/)?.[1] || '◈' };
+  };
+  bindOptionPicker({
+    btnId:    'tm-project-btn',
+    selectId: 'tm-project',
+    emptyLabel: '— Sem projeto —',
+    buildConfig: () => {
+      const sel = document.getElementById('tm-project');
+      const ids = [...(sel?.querySelectorAll('option') || [])]
+        .map(o => o.value).filter(v => v !== '');
+      const options = ids.map(id => lookupProject(id)).filter(Boolean);
+      return {
+        empty: { id: '', label: '— Sem projeto —' },
+        options,
+        searchPlaceholder: 'Buscar projeto…',
+      };
+    },
+    findSelected: lookupProject,
+  });
+
+  // Squad — só renderiza se houver workspaces. Lookup por id no userWorkspaces.
+  const lookupSquad = (id) => {
+    if (!id) return null;
+    const wss = store.get('userWorkspaces') || [];
+    const w = wss.find(x => x.id === id);
+    return w ? {
+      id: w.id,
+      label: w.name,
+      icon: w.icon || '◈',
+      color: w.color,
+      sublabel: w.multiSector ? 'multissetor' : '',
+    } : null;
+  };
+  bindOptionPicker({
+    btnId:    'tm-workspace-btn',
+    selectId: 'tm-workspace',
+    emptyLabel: '— Sem squad —',
+    buildConfig: () => {
+      const wss = store.get('userWorkspaces') || [];
+      return {
+        empty: { id: '', label: '— Sem squad (apenas por setor) —' },
+        options: wss.map(w => ({
+          id: w.id,
+          label: w.name,
+          icon: w.icon || '◈',
+          color: w.color,
+          sublabel: w.multiSector ? 'multissetor' : '',
+        })),
+        searchPlaceholder: 'Buscar squad…',
+      };
+    },
+    findSelected: lookupSquad,
+  });
+
+  // Variação do material — opções vêm do tipo selecionado. O <select>
+  // escondido é repopulado pelo handler de change do tipo (mais abaixo).
+  // buildConfig lê as <option>s correntes do select (sempre fresh).
+  const lookupVariation = (id) => {
+    if (!id) return null;
+    const sel = document.getElementById('tm-variation');
+    const opt = sel?.querySelector(`option[value="${id}"]`);
+    if (!opt) return null;
+    const sla = parseInt(opt.dataset?.sla || '');
+    return {
+      id,
+      label: opt.textContent.trim(),
+      icon: '🎯',
+      color: '#A78BFA',
+      sublabel: !isNaN(sla) ? (sla === 0 ? 'Mesmo dia' : `${sla} dia${sla!==1?'s':''} úteis`) : '',
+    };
+  };
+  bindOptionPicker({
+    btnId:    'tm-variation-btn',
+    selectId: 'tm-variation',
+    emptyLabel: '— Selecione a variação —',
+    buildConfig: () => {
+      const sel = document.getElementById('tm-variation');
+      const opts = [...(sel?.querySelectorAll('option') || [])]
+        .filter(o => o.value !== '')
+        .map(o => lookupVariation(o.value))
+        .filter(Boolean);
+      return {
+        empty: { id: '', label: '— Selecione a variação —' },
+        options: opts,
+        searchPlaceholder: 'Buscar variação…',
+      };
+    },
+    findSelected: lookupVariation,
+  });
+
   // Type change → reload dynamic fields + variation dropdown
   document.getElementById('tm-type-id')?.addEventListener('change', async (e) => {
     const typeId   = e.target.value;
@@ -1770,6 +1935,13 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
         variations.map(v =>
           `<option value="${v.id}" data-sla="${v.slaDays}">${esc(cleanVarName(v.name))}</option>`
         ).join('');
+      // Reset visível: type mudou → variation atual virou inválida.
+      varSel.value = '';
+      // Refresh do botão custom pra exibir "— Selecione a variação —"
+      try {
+        const { refreshPickerButton } = await import('./optionPicker.js');
+        refreshPickerButton('tm-variation-btn', { selected: null, emptyLabel: '— Selecione a variação —' });
+      } catch (_) {}
     }
 
     // Clear SLA badge when type changes
