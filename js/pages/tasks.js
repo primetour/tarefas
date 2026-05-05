@@ -895,8 +895,8 @@ function renderTaskRow(task) {
     <div class="task-row ${isDone?'done':''}" data-task-id="${task.id}" draggable="true">
       <div class="task-check ${isDone?'checked':''} ${!canComplete && !isDone ? 'disabled' : ''}"
            data-check-id="${task.id}"
-           ${!canComplete && !isDone ? 'title="Sem permissão para concluir tarefas. Peça a um coordenador."' : ''}>
-        ${isDone ? '✓' : ''}
+           title="${isDone ? 'Reabrir tarefa' : (canComplete ? 'Marcar como concluída' : 'Sem permissão para concluir tarefas. Peça a um coordenador.')}">
+        ✓
       </div>
       <div>
         <div class="task-row-title">

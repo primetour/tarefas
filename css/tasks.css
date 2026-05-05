@@ -88,7 +88,13 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; color: transparent; font-size: 0.6rem;
+  flex-shrink: 0;
+  /* ✓ visível em cinza por padrão (dica visual de "marca aqui pra concluir").
+     Muda pra verde no hover, branco no checked. */
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
 }
 .task-check:hover { border-color: var(--color-success); color: var(--color-success); }
 .task-check.checked {
@@ -100,10 +106,11 @@
   cursor: not-allowed;
   opacity: 0.35;
   border-style: dashed;
+  color: var(--text-muted);
 }
 .task-check.disabled:hover {
   border-color: var(--border-default);
-  color: transparent;
+  color: var(--text-muted);
 }
 
 .task-row-title {
@@ -269,6 +276,15 @@
 .kanban-card.high::before   { background: var(--priority-high); }
 .kanban-card.medium::before { background: var(--priority-medium); }
 .kanban-card.low::before    { background: var(--priority-low); }
+
+/* Botão circular de conclusão rápida no canto do card kanban.
+   Estado padrão: borda + ✓ cinzas. Hover: ambos verdes (preview).
+   Checked: fundo verde + ✓ branco. Mesmo padrão visual da .task-check
+   da lista — paridade UX entre #tasks e #kanban. */
+.kanban-card-check:hover:not(.disabled):not(.checked) {
+  border-color: var(--color-success) !important;
+  color: var(--color-success) !important;
+}
 
 .kanban-card:hover {
   border-color: var(--border-accent);

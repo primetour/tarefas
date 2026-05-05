@@ -18,7 +18,7 @@ const PAGE_TITLES = {
   dashboard:    { title: 'Dashboard',           icon: '⊞' },
   tasks:        { title: 'Tarefas',              icon: '✓' },
   projects:     { title: 'Projetos',             icon: '◈' },
-  kanban:       { title: 'Kanban',               icon: '▤' },
+  kanban:       { title: 'Steps',                icon: '▤' },
   calendar:     { title: 'Calendário',           icon: '◷' },
   timeline:     { title: 'Timeline / Gantt',     icon: '━' },
   team:         { title: 'Equipe',               icon: '◎' },

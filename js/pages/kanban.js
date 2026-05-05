@@ -753,16 +753,17 @@ function renderKanbanCard(task, type = null) {
       style="position:relative;${task._optimistic ? 'opacity:0.6;pointer-events:none;' : ''}${isDone ? 'opacity:0.65;' : ''}">
       <div class="kanban-card-check ${isDone?'checked':''} ${!canComplete && !isDone ? 'disabled' : ''}"
         data-check-id="${task.id}"
-        title="${isDone ? 'Reabrir tarefa' : (canComplete ? 'Concluir tarefa' : 'Sem permissão para concluir')}"
+        title="${isDone ? 'Reabrir tarefa' : (canComplete ? 'Marcar como concluída' : 'Sem permissão para concluir')}"
         style="position:absolute;top:8px;right:8px;width:22px;height:22px;
         border-radius:50%;border:2px solid ${isDone ? 'var(--color-success,#22C55E)' : 'var(--border-default,#3B4754)'};
         background:${isDone ? 'var(--color-success,#22C55E)' : 'var(--bg-card,#fff)'};
         cursor:${!canComplete && !isDone ? 'not-allowed' : 'pointer'};
         display:flex;align-items:center;justify-content:center;
-        font-size:0.75rem;color:#fff;font-weight:700;line-height:1;
+        font-size:0.75rem;color:${isDone ? '#fff' : 'var(--text-muted,#9AA5B5)'};
+        font-weight:700;line-height:1;
         transition:all 0.15s;z-index:1;
         ${!canComplete && !isDone ? 'opacity:0.4;' : ''}">
-        ${isDone ? '✓' : ''}
+        ✓
       </div>
       ${project ? `<div class="kanban-card-project" style="padding-right:32px;">${project.icon} ${esc(project.name)}</div>` : ''}
       <div class="kanban-card-title" style="padding-right:32px;">${esc(task.title)}</div>
