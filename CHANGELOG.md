@@ -16,6 +16,61 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.0.0+20260505-dev-hours-foundation] — 2026-05-05
+
+Release **MAJOR** — abre a 4.x. Introduz o módulo **Horas de Desenvolvimento** (`#dev-hours`), um sistema de contabilização de horas e custo de desenvolvimento que serve simultaneamente para auditoria interna, transparência com cliente e fundamentação de proposta comercial. Esta é a **fundação (4.0.0)** — backfill histórico (4.1.0), link público (4.2.0) e PDF export (4.3.0) vêm em sequência.
+
+### Added
+- **`js/services/devHours.js`** — service layer completo com:
+  - **5 categorias canônicas** mapeadas com cor/ícone/descrição: Refinamento (💭), Desenvolvimento (⚙), Testes (🧪), Documentação (📝), Implantação (🚀).
+  - **6 buckets de complexidade**: Trivial (0.25–0.5h) · Pequeno (0.5–1.5h) · Médio (1.5–4h) · Grande (4–8h) · Épico (8–16h) · Mega (16–80h, pra fases retrospectivas).
+  - **6 multiplicadores aplicáveis**: investigação não-trivial (+30%), migração de dados (+20%), PDF/export (+15%), integração externa (+20%), hardening de segurança (+25%), refactor puro (−20%).
+  - **Estimador `calcHoursFromBucket(bucket, multipliers, basePoint?)`** — multiplicador aplicado sobre ponto-base (default = média do range do bucket).
+  - **Distribuidor automático `suggestCategoryBreakdown(totalHours, profile)`** — perfis pre-definidos (feature/bugfix/docs/refactor/phase) que distribuem o total em proporções típicas. Usuário sempre pode override manual.
+  - **`explainEntry(entry)`** — gera explicação humano-legível da estimativa: bucket, ponto-base, multiplicadores aplicados (com %), fator total, decomposição em categorias com %, total recalculado vs armazenado (alerta se divergir).
+  - CRUD completo + workflow draft/approve/reject/reopen + audit trail (createdBy/updatedBy/approvedBy/approvedAt/rejectedAt + `rejectReason`).
+  - Real-time via `subscribeToDevHours` (Firestore `onSnapshot` em `dev_hours` collection).
+
+- **`js/pages/devHours.js`** — página master-only `#dev-hours`:
+  - **2 cards principais** + 2 secundários: Horas trabalhadas (no período filtrado), Custo de desenvolvimento, Em rascunho, Aprovadas.
+  - **Filtros**: período (mês/trimestre/ano/personalizado), status (só aprovadas / todas / rascunhos / rejeitadas), tipo (releases / fases retroativas / todos), busca textual.
+  - **Tabela** com colunas: Data, Tipo (Release/Fase), Versão/Fase/Título, Categorias (mini-barras visuais coloridas por categoria), Horas, Custo, Status, Ações (ⓘ explicar / ✎ editar / ✓ aprovar / ↺ reabrir / ✕ excluir).
+  - **Modal "ⓘ Como cheguei nessa estimativa"** — exposição RADICAL da metodologia: bucket inicial, razão, ponto-base, multiplicadores aplicados (com label e %), fator total, decomposição em 5 categorias com % de cada, comparação horas-armazenadas vs recalculadas, confiança, taxa horária, custo final. **Tudo inspecionável pelo cliente.**
+  - **Modal de edição** — formulário rico com tipo, datas, versão/slug ou fase/commits, título, resumo, bucket, confiança, multiplicadores (checkboxes com %), total de horas (auto-recalc do bucket), taxa horária, perfil de distribuição, decomposição editável manualmente nas 5 categorias, validação de soma (alerta se categorias ≠ total), botão "↻ Sugerir distribuição" que aplica perfil escolhido.
+
+- **Disclaimer permanente** no topo da página: *"Estimativa equivalente, não cronometragem. Valores refletem o tempo que um sr full-stack dev levaria pra entregar o mesmo escopo."* — exigido eticamente quando se cobra de cliente.
+
+- **Item de menu "Horas de Dev"** em Administração (master-only via perm `__master_only__` que ninguém tem; passa o filtro do sidebar pelo `store.isMaster() return true`).
+
+- **Rota `#dev-hours`** registrada com lazy-load em `js/app.js`.
+
+### Why
+Esta sessão (3.5.0 → 3.8.0, ~36.5h estimadas / ~R$ 5.475 em ordem de grandeza) foi o gatilho. Pediu-se um sistema que: (a) registre horas e custo por release, (b) permita exposição transparente ao cliente, (c) decomponha o trabalho em categorias significativas pra discussão de escopo, (d) tenha workflow draft→approve pra dev poder revisar antes de oficializar, (e) seja exportável em PDF. A 4.0.0 entrega a fundação executável; releases subsequentes preenchem dados retroativos e adicionam canais de distribuição.
+
+### Decisões de design importantes
+1. **Renê + Claude consolidados como autor único** ("sem prompt, eu não trabalho; sem código, prompt vira ar"). Não há split de horas — uma entrada = colaboração total.
+2. **R$ 150/h flat** pra ambos. Mercado BR sr full-stack: R$ 120–180; ancorando no meio-alto.
+3. **Granularidade híbrida**: releases formais (3.0.0+) viram entradas individuais; fases pré-versionadas (1.x/2.x) viram entradas agregadas com `entryType='phase'` e `phaseCommitsCount`.
+4. **Categorias sempre somam o total** (validação na UI). Permite ajuste manual fino mesmo após sugestão automática.
+5. **Public link (4.2.0)**: tudo aberto, incluindo R$. Decisão consciente — ferramenta de marketing que mostra velocidade de entrega ao cliente.
+6. **Sem detalhamento de quem fez o quê** — cada categoria é colaborativa por natureza no nosso fluxo de trabalho.
+
+### Próximas releases planejadas
+- **4.1.0 — Backfill**: agregação retroativa das fases 1.x/2.x (mar/26 → início mai/26, ~600h estimadas) + 8 releases granulares desta sessão (3.5.0 → 3.8.0).
+- **4.2.0 — Link público**: `dev-hours-view.html` standalone, sem auth, com mesma tabela e cards (read-only).
+- **4.3.0 — PDF export**: padrão `pdfKit.js` (estilo newsletter), capa + tabela paginada + totalizadores + disclaimer ético.
+
+### Verificação manual
+1. Master entra em `/Administração/Horas de Dev` — vê página vazia (esperado pré-backfill) com cards zerados.
+2. Click "+ Nova entrada" → preenche release de teste → bucket "Médio" + multiplicador "Investigação" → total auto-calc deve ser 2.75h (média 2.75 × 1.30) — wait, fórmula: ponto-base = (1.5+4)/2 = 2.75h × 1.30 = **3.575h** (arredondado a 3.58).
+3. "↻ Sugerir distribuição" perfil "Bug fix" → categorias preenchidas em 30/40/15/10/5%.
+4. "Salvar" → entrada aparece em rascunho.
+5. Modal "ⓘ Como cheguei" → vê explicação completa.
+6. Botão ✓ → aprova → entra nos cards de "Aprovadas" e nos totalizadores principais.
+
+---
+
 ## [3.8.0+20260505-arquivamento-730d-toggle] — 2026-05-05
 
 Release "Arquivamento alinhado ao escopo de metas". Corrige uma incompatibilidade arquitetural entre o auto-archive de 30 dias e o ciclo de auditoria de metas (anuais e plurianuais). Reportado: *"se eu tenho metas que duram 12 meses, uma tarefa que é arquivada em 30 dias sai do meu escopo de metas, concorda?"* — confirmando o problema e expondo que o help text antigo prometia *"podem ser encontradas com filtros específicos"*, mas esse filtro nunca existiu na UI.

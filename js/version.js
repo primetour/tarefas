@@ -23,10 +23,10 @@
  */
 
 export const VERSION = {
-  major: 3,
-  minor: 8,
+  major: 4,
+  minor: 0,
   patch: 0,
-  build: '20260505-arquivamento-730d-toggle',
+  build: '20260505-dev-hours-foundation',
 };
 
 /** "1.2.0" */

@@ -537,6 +537,7 @@ function setupRouter() {
     'roteiro-dashboard': async () => { destroyRoteiroDashboard(); await renderRoteiroDashboard(content); },
     'integrations': async () => { await renderIntegrations(content); },
     'about':        async () => { await renderAbout(content); },
+    'dev-hours':    async () => { const { renderDevHours } = await import('./pages/devHours.js'); await renderDevHours(content); },
     'help':         async () => { const { renderHelp } = await import('./pages/help.js?v=20260501oo2'); await renderHelp(content); },
     'ai-hub':       async () => { const { renderAiHub } = await import('./pages/aiHub.js?v=20260501oo2'); await renderAiHub(content); },
     // Redirects de URLs legadas para o IA Hub (mantém links antigos funcionando)
