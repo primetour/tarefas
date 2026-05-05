@@ -14,7 +14,8 @@ import { fetchTasks } from '../services/tasks.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
-const projStatusOpts = () => PROJECT_STATUSES.map(s => ({ id: s.value, label: s.label, icon: '●', color: s.color }));
+// status: cor da bolinha já identifica, sem icon redundante
+const projStatusOpts = () => PROJECT_STATUSES.map(s => ({ id: s.value, label: s.label, icon: '', color: s.color }));
 const findProjStatus = (id) => projStatusOpts().find(o => o.id === id) || null;
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

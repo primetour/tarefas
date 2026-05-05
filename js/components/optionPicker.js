@@ -47,8 +47,11 @@ const ITEM_PADDING_GRP = '8px 14px 8px 32px';
  */
 export function renderPickerButton({ btnId, selected = null, emptyLabel = '— Selecionar —' }) {
   const dot = selected?.color || 'var(--border-default)';
+  const iconHtml = selected && selected.icon
+    ? `<span style="font-size:1rem;flex-shrink:0;">${esc(selected.icon)}</span>`
+    : '';
   const inner = selected
-    ? `<span style="font-size:1rem;flex-shrink:0;">${esc(selected.icon || '◈')}</span>
+    ? `${iconHtml}
        <span style="flex:1;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(selected.label || '')}</span>
        ${selected.sublabel ? `<span style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;flex-shrink:0;">${esc(selected.sublabel)}</span>` : ''}`
     : `<span style="flex:1;color:var(--text-muted);">${esc(emptyLabel)}</span>`;
@@ -75,8 +78,11 @@ export function refreshPickerButton(btnId, { selected = null, emptyLabel = '— 
   const btn = document.getElementById(btnId);
   if (!btn) return;
   const dot = selected?.color || 'var(--border-default)';
+  const iconHtml = selected && selected.icon
+    ? `<span style="font-size:1rem;flex-shrink:0;">${esc(selected.icon)}</span>`
+    : '';
   const inner = selected
-    ? `<span style="font-size:1rem;flex-shrink:0;">${esc(selected.icon || '◈')}</span>
+    ? `${iconHtml}
        <span style="flex:1;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(selected.label || '')}</span>
        ${selected.sublabel ? `<span style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;flex-shrink:0;">${esc(selected.sublabel)}</span>` : ''}`
     : `<span style="flex:1;color:var(--text-muted);">${esc(emptyLabel)}</span>`;
@@ -134,6 +140,9 @@ export function openOptionPicker(anchor, config, onSelect) {
     const isSelected = it.id === currentId;
     const padding = indented ? ITEM_PADDING_GRP : ITEM_PADDING;
     const searchText = `${it.label || ''} ${it.sublabel || ''}`.toLowerCase();
+    // Quadradinho colorido — se item não tem ícone (ex: status onde a cor já
+    // identifica), vira só um swatch sem glifo dentro.
+    const swatchInner = it.icon ? esc(it.icon) : '';
     return `<button type="button" class="option-picker-item"
       data-id="${esc(it.id)}"
       data-search="${esc(searchText)}"
@@ -141,10 +150,10 @@ export function openOptionPicker(anchor, config, onSelect) {
       padding:${padding};background:${isSelected?'rgba(212,168,67,0.06)':'transparent'};
       border:none;cursor:pointer;font-family:inherit;font-size:0.8125rem;text-align:left;
       color:var(--text-primary);transition:background 0.1s;">
-      <span style="width:28px;height:28px;border-radius:6px;
-        background:${(it.color || '#6B7280')}20;color:${it.color || '#6B7280'};
+      <span style="width:${it.icon?'28px':'14px'};height:${it.icon?'28px':'14px'};border-radius:${it.icon?'6px':'50%'};
+        background:${(it.color || '#6B7280')}${it.icon?'20':''};color:${it.color || '#6B7280'};
         display:flex;align-items:center;justify-content:center;font-size:0.875rem;
-        flex-shrink:0;">${esc(it.icon || '◈')}</span>
+        flex-shrink:0;">${swatchInner}</span>
       <span style="flex:1;min-width:0;">
         <span style="display:block;font-weight:${isSelected?'600':'500'};
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">

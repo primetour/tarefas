@@ -177,12 +177,15 @@ export async function renderTasks(container) {
         </select>
         ${renderPickerButton({ btnId: 'filter-squad-btn', selected: null, emptyLabel: 'Todos os squads' })}
       </div>
-      <select class="filter-select" id="filter-assignee" style="${filterVisibility.assignee?'':'display:none;'}">
-        <option value="">Todos os respons\u00e1veis</option>
-        ${(store.get('users')||[]).filter(u=>u.active).map(u=>`
-          <option value="${u.id}">${esc(u.name)}</option>
-        `).join('')}
-      </select>
+      <div class="toolbar-filter-wrap" style="${filterVisibility.assignee?'':'display:none;'}min-width:180px;">
+        <select id="filter-assignee" style="display:none;">
+          <option value="">Todos os respons\u00e1veis</option>
+          ${(store.get('users')||[]).filter(u=>u.active).map(u=>`
+            <option value="${u.id}">${esc(u.name)}</option>
+          `).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'filter-assignee-btn', selected: null, emptyLabel: 'Todos os respons\u00e1veis' })}
+      </div>
       <select class="filter-select" id="filter-date-preset" style="${filterVisibility.datePreset?'':'display:none;'}">
         <option value=""            ${filterDatePreset===''?'selected':''}>Qualquer prazo</option>
         <option value="last30Days"  ${filterDatePreset==='last30Days'?'selected':''}>Últimos 30 dias (padrão)</option>
@@ -196,10 +199,13 @@ export async function renderTasks(container) {
         <option value="noDue"       ${filterDatePreset==='noDue'?'selected':''}>Sem prazo</option>
         <option value="custom"      ${filterDatePreset==='custom'?'selected':''}>Período customizado…</option>
       </select>
-      <select class="filter-select" id="filter-area" style="${filterVisibility.area?'':'display:none;'}">
-        <option value="">Todas as áreas</option>
-        ${REQUESTING_AREAS.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('')}
-      </select>
+      <div class="toolbar-filter-wrap" style="${filterVisibility.area?'':'display:none;'}min-width:160px;">
+        <select id="filter-area" style="display:none;">
+          <option value="">Todas as áreas</option>
+          ${REQUESTING_AREAS.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'filter-area-btn', selected: null, emptyLabel: 'Todas as áreas' })}
+      </div>
       <select class="filter-select" id="filter-tag" style="${filterVisibility.tag?'':'display:none;'}">
         <option value="">Todas as tags</option>
       </select>
@@ -259,6 +265,8 @@ export async function renderTasks(container) {
           (store.get('users') || []).filter(u => u.active).map(u =>
             `<option value="${u.id}">${esc(u.name)}</option>`).join('');
         if (cur) assigneeSel.value = cur;
+        // Sincroniza visual do picker com a nova lista de opções
+        assigneeSel.dispatchEvent(new Event('picker-refresh'));
       }
     } catch (e) { console.warn('[tasks] users load:', e?.message || e); }
   }
@@ -1158,7 +1166,8 @@ function _attachPageEvents() {
   document.getElementById('filter-squad')?.addEventListener('change', e => { filterSquad = e.target.value; applyFilters(); });
 
   // Visual pickers (status / priority / squad) — selects nativos preservados pra change events
-  const statusOpts = () => STATUSES.map(s => ({ id: s.value, label: s.label, icon: '●', color: s.color }));
+  // status: cor da bolinha já identifica, sem icon redundante
+  const statusOpts = () => STATUSES.map(s => ({ id: s.value, label: s.label, icon: '', color: s.color }));
   const findStatus = (id) => statusOpts().find(o => o.id === id) || null;
   bindOptionPicker({
     btnId: 'filter-status-btn',
@@ -1207,6 +1216,46 @@ function _attachPageEvents() {
     }),
     findSelected: findSquad,
     emptyLabel: 'Todos os squads',
+  });
+  // Hash determinístico → cor estável por área
+  const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+  const hashColor = (s) => {
+    let h = 0; for (let i = 0; i < s.length; i++) h = ((h<<5)-h+s.charCodeAt(i))|0;
+    return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+  };
+  const areaOpts = () => REQUESTING_AREAS.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
+  const findArea = (id) => areaOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-area-btn',
+    selectId: 'filter-area',
+    buildConfig: () => ({
+      options: areaOpts(),
+      empty: { id: '', label: 'Todas as áreas' },
+      searchPlaceholder: 'Buscar área…',
+    }),
+    findSelected: findArea,
+    emptyLabel: 'Todas as áreas',
+  });
+  // Inicial do nome como ícone, cor estável via hash do id do usuário
+  const assigneeOpts = () => (store.get('users') || [])
+    .filter(u => u.active)
+    .map(u => ({
+      id: u.id,
+      label: u.name || u.email || 'Usuário',
+      icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+      color: hashColor(u.id || u.email || u.name || ''),
+    }));
+  const findAssignee = (id) => assigneeOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-assignee-btn',
+    selectId: 'filter-assignee',
+    buildConfig: () => ({
+      options: assigneeOpts(),
+      empty: { id: '', label: 'Todos os responsáveis' },
+      searchPlaceholder: 'Buscar responsável…',
+    }),
+    findSelected: findAssignee,
+    emptyLabel: 'Todos os responsáveis',
   });
   document.getElementById('filter-assignee')?.addEventListener('change', e => { filterAssignee = e.target.value; applyFilters(); });
   document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
