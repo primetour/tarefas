@@ -1236,7 +1236,9 @@ function wireGoalForm(draft) {
     findSelected: (id) => findIn(gfNucleoOpts(), id),
     emptyLabel: '— Selecione o núcleo —',
   });
-  const gfGestorOpts = () => gestorUsers.map(u => ({
+  // gestorUsers é local de renderGoalForm; aqui em wireGoalForm precisamos
+  // recomputar a partir do store + isGestorRole pra não depender do closure.
+  const gfGestorOpts = () => (store.get('users') || []).filter(isGestorRole).map(u => ({
     id: u.id,
     label: u.name || u.email || 'Usuário',
     icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
