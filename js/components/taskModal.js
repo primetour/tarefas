@@ -2694,10 +2694,13 @@ async function openTypePickerPopover(anchor, currentId, onSelect) {
       ${orderedSquads.map((g, gIdx) => {
         const sq = g.squad;
         const sqColor = sq.color || '#6366F1';
-        // Cabeçalho clicável (acordeão). Default: todos expandidos. Click
-        // toggle no atributo data-expanded e na visibilidade do conteúdo.
+        // Default: todos COLAPSADOS pra UX mais clean (sem scroll vertical).
+        // Exceção: se o tipo selecionado atualmente está neste grupo, abre.
+        // Busca também força expansão dos grupos com match.
+        const containsSelected = currentId && g.items.some(t => t.id === currentId);
+        const expanded = containsSelected;
         return `
-        <div class="type-picker-group" data-squad="${esc(sq.id)}" data-expanded="1">
+        <div class="type-picker-group" data-squad="${esc(sq.id)}" data-expanded="${expanded ? '1' : '0'}">
           <button type="button" class="type-picker-group-header"
             style="width:100%;display:flex;align-items:center;gap:8px;
             padding:10px 14px 6px;background:transparent;border:none;
@@ -2705,7 +2708,8 @@ async function openTypePickerPopover(anchor, currentId, onSelect) {
             cursor:pointer;font-family:inherit;text-align:left;
             color:var(--text-secondary);${gIdx === 0 ? 'border-top:none;' : ''}">
             <span class="type-picker-group-chevron"
-              style="font-size:0.625rem;color:var(--text-muted);transition:transform 0.15s;">▾</span>
+              style="font-size:0.625rem;color:var(--text-muted);transition:transform 0.15s;
+              ${expanded ? '' : 'transform:rotate(-90deg);'}">▾</span>
             <span style="width:8px;height:8px;border-radius:50%;background:${sqColor};flex-shrink:0;"></span>
             <span style="font-size:0.6875rem;font-weight:600;text-transform:uppercase;
               letter-spacing:0.05em;flex:1;">
@@ -2715,7 +2719,7 @@ async function openTypePickerPopover(anchor, currentId, onSelect) {
               ${g.items.length}
             </span>
           </button>
-          <div class="type-picker-group-body">
+          <div class="type-picker-group-body" style="${expanded ? '' : 'display:none;'}">
             ${g.items.map(t => {
               const isSelected = t.id === currentId;
               const variationCount = (t.variations || []).length;
