@@ -11,6 +11,16 @@ import { fetchRoles } from '../services/rbac.js';
 import { toast }       from '../components/toast.js';
 import { modal }       from '../components/modal.js';
 import { APP_CONFIG, isAllowedSSODomain, ALLOWED_SSO_DOMAINS }  from '../config.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const hashColor = (s) => {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+};
+const findIn = (list, id) => list.find(o => o.id === id) || null;
 
 // ─── Roles (carregado dinamicamente) ────────────────────────
 let availableRoles = [];
@@ -194,22 +204,31 @@ export async function renderUsers(container) {
           id="users-search"
         />
       </div>
-      <div class="toolbar-filter">
-        <select class="filter-select" id="filter-role">
-          <option value="">Todos os cargos</option>
-          ${availableRoles.map(r =>
-            `<option value="${r.id}">${r.name}</option>`
-          ).join('')}
-        </select>
+      <div class="toolbar-filter" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div class="toolbar-filter-wrap" style="min-width:170px;">
+          <select id="filter-role" style="display:none;">
+            <option value="">Todos os cargos</option>
+            ${availableRoles.map(r =>
+              `<option value="${r.id}">${r.name}</option>`
+            ).join('')}
+          </select>
+          ${renderPickerButton({ btnId: 'filter-role-btn', selected: null, emptyLabel: 'Todos os cargos' })}
+        </div>
         <!-- GAP fix: filtro por SETOR (era impossível agrupar usuários por área) -->
-        <select class="filter-select" id="filter-sector">
-          <option value="">Todos os setores</option>
-        </select>
-        <select class="filter-select" id="filter-status">
-          <option value="">Todos os status</option>
-          <option value="active">Ativos</option>
-          <option value="inactive">Inativos</option>
-        </select>
+        <div class="toolbar-filter-wrap" style="min-width:170px;">
+          <select id="filter-sector" style="display:none;">
+            <option value="">Todos os setores</option>
+          </select>
+          ${renderPickerButton({ btnId: 'filter-sector-btn', selected: null, emptyLabel: 'Todos os setores' })}
+        </div>
+        <div class="toolbar-filter-wrap" style="min-width:160px;">
+          <select id="filter-status" style="display:none;">
+            <option value="">Todos os status</option>
+            <option value="active">Ativos</option>
+            <option value="inactive">Inativos</option>
+          </select>
+          ${renderPickerButton({ btnId: 'filter-status-btn', selected: null, emptyLabel: 'Todos os status' })}
+        </div>
       </div>
     </div>
 
@@ -1402,7 +1421,49 @@ function _attachPageEvents() {
   if (sectorEl && sectorSet.size) {
     sectorEl.innerHTML = `<option value="">Todos os setores</option>` +
       [...sectorSet].sort().map(s => `<option value="${s}">${s}</option>`).join('');
+    sectorEl.dispatchEvent(new Event('picker-refresh'));
   }
+
+  // Pickers visuais (toolbar) — selects nativos como fonte-de-verdade
+  const roleOpts = () => availableRoles.map(r => ({ id: r.id, label: r.name, icon: '◈', color: r.color || hashColor(r.id) }));
+  bindOptionPicker({
+    btnId: 'filter-role-btn',
+    selectId: 'filter-role',
+    buildConfig: () => ({
+      options: roleOpts(),
+      empty: { id: '', label: 'Todos os cargos' },
+      searchPlaceholder: 'Buscar cargo…',
+    }),
+    findSelected: (id) => findIn(roleOpts(), id),
+    emptyLabel: 'Todos os cargos',
+  });
+  const usrSectorOpts = () => [...sectorSet].sort().map(s => ({ id: s, label: s, icon: '◈', color: hashColor(s) }));
+  bindOptionPicker({
+    btnId: 'filter-sector-btn',
+    selectId: 'filter-sector',
+    buildConfig: () => ({
+      options: usrSectorOpts(),
+      empty: { id: '', label: 'Todos os setores' },
+      searchPlaceholder: 'Buscar setor…',
+    }),
+    findSelected: (id) => findIn(usrSectorOpts(), id),
+    emptyLabel: 'Todos os setores',
+  });
+  const usrStatusOpts = [
+    { id: 'active',   label: 'Ativos',   icon: '', color: '#22C55E' },
+    { id: 'inactive', label: 'Inativos', icon: '', color: '#94A3B8' },
+  ];
+  bindOptionPicker({
+    btnId: 'filter-status-btn',
+    selectId: 'filter-status',
+    buildConfig: () => ({
+      options: usrStatusOpts,
+      empty: { id: '', label: 'Todos os status' },
+      searchPlaceholder: 'Buscar status…',
+    }),
+    findSelected: (id) => findIn(usrStatusOpts, id),
+    emptyLabel: 'Todos os status',
+  });
 
   // Ativa dropdown do split-button Export
   import('../components/uiKit.js').then(m => m.wireUiKitMenus(document.body));

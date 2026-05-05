@@ -15,6 +15,16 @@ import {
 import { fetchTasks }    from '../services/tasks.js';
 import { fetchProjects } from '../services/projects.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const hashColor = (s) => {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+};
+const findIn = (list, id) => list.find(o => o.id === id) || null;
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -115,10 +125,12 @@ export async function renderCsat(container) {
           <input type="text" class="toolbar-search-input" id="csat-search"
             placeholder="Buscar por tarefa, cliente, e-mail..." />
         </div>
-        <select id="csat-project-filter" class="filter-select"
-          style="height:34px;font-size:0.8125rem;min-width:200px;max-width:280px;">
-          <option value="">— Todos projetos —</option>
-        </select>
+        <div class="toolbar-filter-wrap" style="min-width:220px;max-width:280px;">
+          <select id="csat-project-filter" style="display:none;">
+            <option value="">— Todos projetos —</option>
+          </select>
+          ${renderPickerButton({ btnId: 'csat-project-filter-btn', selected: null, emptyLabel: '— Todos projetos —' })}
+        </div>
       </div>
     </div>
 
@@ -196,7 +208,26 @@ export async function renderCsat(container) {
       projSel.innerHTML = `<option value="">— Todos projetos —</option>` +
         [...allProjects].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
           .map(p => `<option value="${p.id}">${p.name || p.id}</option>`).join('');
+      projSel.dispatchEvent(new Event('picker-refresh'));
     }
+    // Bind picker visual após popular options
+    const csatProjOpts = () => allProjects.map(p => ({
+      id: p.id,
+      label: p.name || p.id,
+      icon: p.icon || '',
+      color: p.color || hashColor(p.id),
+    }));
+    bindOptionPicker({
+      btnId: 'csat-project-filter-btn',
+      selectId: 'csat-project-filter',
+      buildConfig: () => ({
+        options: csatProjOpts(),
+        empty: { id: '', label: '— Todos projetos —' },
+        searchPlaceholder: 'Buscar projeto…',
+      }),
+      findSelected: (id) => findIn(csatProjOpts(), id),
+      emptyLabel: '— Todos projetos —',
+    });
   } catch(e) {}
 
   // Real-time surveys — cleanup defensivo: se já existe um unsub do render
@@ -565,7 +596,7 @@ function openNewSurveyModal(presetTask = null) {
     content: `
       <div class="form-group">
         <label class="form-label">Tarefa *</label>
-        <select class="form-select" id="ns-task" style="padding:8px 32px 8px 12px;">
+        <select id="ns-task" style="display:none;">
           <option value="">— Selecionar tarefa concluída —</option>
           ${completedTasks.map(t =>
             `<option value="${t.id}" ${presetTask?.id===t.id?'selected':''}
@@ -574,6 +605,14 @@ function openNewSurveyModal(presetTask = null) {
             </option>`
           ).join('')}
         </select>
+        ${(() => {
+          const t = completedTasks.find(x => x.id === presetTask?.id);
+          return renderPickerButton({
+            btnId: 'ns-task-btn',
+            selected: t ? { id: t.id, label: t.title || t.id, icon: '✓', color: '#22C55E' } : null,
+            emptyLabel: '— Selecionar tarefa concluída —',
+          });
+        })()}
         <span class="form-error-msg" id="ns-task-err"></span>
       </div>
 
@@ -672,6 +711,26 @@ function openNewSurveyModal(presetTask = null) {
       }
     ],
   });
+  // Bind picker visual da tarefa após o modal abrir
+  setTimeout(() => {
+    const nsTaskOpts = () => completedTasks.map(t => ({
+      id: t.id,
+      label: t.title || t.id,
+      icon: '✓',
+      color: '#22C55E',
+    }));
+    bindOptionPicker({
+      btnId: 'ns-task-btn',
+      selectId: 'ns-task',
+      buildConfig: () => ({
+        options: nsTaskOpts(),
+        empty: { id: '', label: '— Selecionar tarefa concluída —' },
+        searchPlaceholder: 'Buscar tarefa…',
+      }),
+      findSelected: (id) => findIn(nsTaskOpts(), id),
+      emptyLabel: '— Selecionar tarefa concluída —',
+    });
+  }, 50);
 }
 
 /* ─── Bottom widgets ──────────────────────────────────────── */
@@ -1161,7 +1220,7 @@ function openAutoCsatModal() {
       <div style="display:grid;grid-template-columns:1fr auto;gap:12px;margin-bottom:16px;">
         <div class="form-group" style="margin:0;">
           <label class="form-label">Período de busca</label>
-          <select class="form-select" id="auto-period" style="padding:8px 32px 8px 12px;">
+          <select id="auto-period" style="display:none;">
             <option value="7">Últimos 7 dias</option>
             <option value="14">Últimos 14 dias</option>
             <option value="30" selected>Últimos 30 dias</option>
@@ -1170,6 +1229,11 @@ function openAutoCsatModal() {
             <option value="180">Últimos 180 dias</option>
             <option value="365">Último ano</option>
           </select>
+          ${renderPickerButton({
+            btnId: 'auto-period-btn',
+            selected: { id: '30', label: 'Últimos 30 dias', icon: '', color: '#0EA5E9' },
+            emptyLabel: 'Últimos 30 dias',
+          })}
         </div>
         <div style="align-self:flex-end;">
           <button class="btn btn-secondary" id="auto-scan-btn" style="height:38px;">🔍 Buscar pendentes</button>
@@ -1246,8 +1310,24 @@ function openAutoCsatModal() {
     ],
   });
 
-  // Wire scan button
+  // Wire scan button + picker visual de período
   setTimeout(() => {
+    const autoPeriodOpts = () => [
+      { id: '7',   label: 'Últimos 7 dias',   icon: '', color: '#0EA5E9' },
+      { id: '14',  label: 'Últimos 14 dias',  icon: '', color: '#0EA5E9' },
+      { id: '30',  label: 'Últimos 30 dias',  icon: '', color: '#0EA5E9' },
+      { id: '60',  label: 'Últimos 60 dias',  icon: '', color: '#0EA5E9' },
+      { id: '90',  label: 'Últimos 90 dias',  icon: '', color: '#0EA5E9' },
+      { id: '180', label: 'Últimos 180 dias', icon: '', color: '#0EA5E9' },
+      { id: '365', label: 'Último ano',       icon: '', color: '#0EA5E9' },
+    ];
+    bindOptionPicker({
+      btnId: 'auto-period-btn',
+      selectId: 'auto-period',
+      buildConfig: () => ({ options: autoPeriodOpts(), searchPlaceholder: 'Buscar período…' }),
+      findSelected: (id) => findIn(autoPeriodOpts(), id),
+      emptyLabel: 'Últimos 30 dias',
+    });
     document.getElementById('auto-scan-btn')?.addEventListener('click', async () => {
       const preview = document.getElementById('auto-preview');
       const period  = parseInt(document.getElementById('auto-period')?.value || '30');

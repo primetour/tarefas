@@ -8,6 +8,15 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { openTaskModal } from '../components/taskModal.js';
+import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+
+const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+const hashColor = (s) => {
+  const str = String(s || '');
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+};
 import {
   fetchRequests, subscribeRequests,
   updateRequestStatus, convertToTask,
@@ -61,10 +70,19 @@ export async function renderRequests(container) {
         ${(() => {
           const sectors = store.getVisibleSectors();
           if (sectors === null || sectors.length > 1) {
-            const opts = (sectors || ['BTG','C&P','Célula ICs','Centurion','CEP','Concierge Bradesco','Contabilidade','Diretoria','Eventos','Financeiro','Lazer','Marketing','Operadora','Programa ICs','Projetos','PTS Bradesco','Qualidade','Suppliers','TI'])
-              .map(s=>`<option value="${esc(s)}" ${filterSector===s?'selected':''}>${esc(s)}</option>`).join('');
-            return `<select class="filter-select" id="req-sector-filter" style="min-width:150px;">
-              <option value="">Todos os setores</option>${opts}</select>`;
+            const list = sectors || ['BTG','C&P','Célula ICs','Centurion','CEP','Concierge Bradesco','Contabilidade','Diretoria','Eventos','Financeiro','Lazer','Marketing','Operadora','Programa ICs','Projetos','PTS Bradesco','Qualidade','Suppliers','TI'];
+            const opts = list.map(s=>`<option value="${esc(s)}" ${filterSector===s?'selected':''}>${esc(s)}</option>`).join('');
+            const sel = list.find(s => s === filterSector);
+            return `<div class="toolbar-filter-wrap" style="min-width:170px;">
+              <select id="req-sector-filter" style="display:none;">
+                <option value="">Todos os setores</option>${opts}
+              </select>
+              ${renderPickerButton({
+                btnId: 'req-sector-filter-btn',
+                selected: sel ? { id: sel, label: sel, icon: '◈', color: hashColor(sel) } : null,
+                emptyLabel: 'Todos os setores',
+              })}
+            </div>`;
           }
           return sectors.length === 1
             ? `<span style="font-size:0.8125rem;padding:6px 12px;border-radius:var(--radius-md);background:rgba(212,168,67,.1);color:var(--brand-gold);border:1px solid rgba(212,168,67,.3);">🏢 ${esc(sectors[0])}</span>`
@@ -103,6 +121,26 @@ export async function renderRequests(container) {
       );
     });
   });
+
+  // Filtro de setor (picker visual + select hidden)
+  const reqSectorEl = document.getElementById('req-sector-filter');
+  if (reqSectorEl) {
+    reqSectorEl.addEventListener('change', e => { filterSector = e.target.value; renderList(); });
+    const reqSecOpts = () => [...reqSectorEl.options].filter(o => o.value).map(o => ({
+      id: o.value, label: o.textContent.trim(), icon: '◈', color: hashColor(o.value),
+    }));
+    bindOptionPicker({
+      btnId: 'req-sector-filter-btn',
+      selectId: 'req-sector-filter',
+      buildConfig: () => ({
+        options: reqSecOpts(),
+        empty: { id: '', label: 'Todos os setores' },
+        searchPlaceholder: 'Buscar setor…',
+      }),
+      findSelected: (id) => reqSecOpts().find(o => o.id === id) || null,
+      emptyLabel: 'Todos os setores',
+    });
+  }
 
   if (unsubscribe) unsubscribe();
   unsubscribe = subscribeRequests(reqs => {
