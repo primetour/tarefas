@@ -408,9 +408,7 @@ function openTypeModal(type = null) {
         </div>
       </div>
 
-      <!-- Squads (núcleos) — appears after sector is selected.
-           Schema interno usa `nucleos[]` por compat; UI mostra "Squad"
-           pra alinhar com a nomenclatura do produto. -->
+      <!-- Squads de produção (sector ja escolhido) -->
       <div class="form-group" id="tt-nucleos-group" style="display:${type?.sector?'block':'none'};">
         <label class="form-label">Squad(s) de produção</label>
         <div id="tt-nucleos-chips" style="display:flex;flex-wrap:wrap;gap:6px;">
