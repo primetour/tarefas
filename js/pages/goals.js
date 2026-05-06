@@ -1643,41 +1643,63 @@ function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEva
   if (!meta) { toast.error('Meta não encontrada.'); return; }
 
   // Tarefas vinculadas a ESTA meta específica que foram concluídas com atraso —
-  // info crítica pro gestor calibrar a nota com contexto. Fetch async pra evitar
-  // depender de estado externo (modal abre standalone). Renderiza como banner
-  // se houver atrasos, oculto se tudo on-time.
-  let lateTasksHTML = '';
+  // info crítica pro gestor calibrar a nota com contexto. Cache do array completo
+  // (fetchado 1×) + função `renderLateBanner(pi, mi)` que recalcula on-demand.
+  // Reativa ao usuário mudar pilar/meta nos pickers (`change` event no <select>
+  // hidden que o bindOptionPicker manipula).
+  let _allTasksCache = null;
+  const renderLateBanner = (currentPi, currentMi) => {
+    if (!_allTasksCache) return;  // ainda carregando
+    const wrap = document.getElementById('ev-late-warning');
+    if (!wrap) return;
+
+    const metaRef = `${currentPi}:${currentMi}`;
+    const linkedToThisMeta = tasksLinkedToMeta(_allTasksCache, goal.id, metaRef);
+    const lateOnes = linkedToThisMeta
+      .map(t => ({ task: t, lateInfo: wasTaskCompletedLate(t) }))
+      .filter(x => x.lateInfo.late)
+      .sort((a, b) => b.lateInfo.daysLate - a.lateInfo.daysLate);
+
+    if (lateOnes.length === 0) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+
+    wrap.style.display = 'block';
+    const totalLinked = linkedToThisMeta.filter(t => t.status === 'done').length;
+    const pctLate = totalLinked > 0 ? Math.round((lateOnes.length / totalLinked) * 100) : 0;
+    wrap.innerHTML = `
+      <div style="font-size:0.8125rem;font-weight:600;color:#D97706;margin-bottom:6px;">
+        ⚠ ${lateOnes.length} de ${totalLinked} tarefa${totalLinked!==1?'s':''} concluída${totalLinked!==1?'s':''} desta meta saiu${lateOnes.length>1?'ram':''} com atraso (${pctLate}%)
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.6;">
+        ${lateOnes.slice(0, 5).map(({ task, lateInfo }) =>
+          `• <strong>${esc(task.title)}</strong> — <span style="color:#D97706;">${lateInfo.daysLate} dia${lateInfo.daysLate>1?'s':''} de atraso</span>`
+        ).join('<br>')}
+        ${lateOnes.length > 5 ? `<br><em style="color:var(--text-muted);">+ ${lateOnes.length - 5} outras tarefas atrasadas</em>` : ''}
+      </div>
+      <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:8px;font-style:italic;">
+        Considere isso ao definir a nota — a meta pode ter sido atingida, mas a entrega no prazo também é parte da execução.
+      </div>
+    `;
+  };
+
   Promise.all([fetchTasks().catch(()=>[]), fetchArchivedTasks().catch(()=>[])])
     .then(([active, archived]) => {
-      const all = [...active, ...archived];
-      const metaRef = `${pillarIdx}:${metaIdx}`;
-      const linkedToThisMeta = tasksLinkedToMeta(all, goal.id, metaRef);
-      const lateOnes = linkedToThisMeta
-        .map(t => ({ task: t, lateInfo: wasTaskCompletedLate(t) }))
-        .filter(x => x.lateInfo.late)
-        .sort((a, b) => b.lateInfo.daysLate - a.lateInfo.daysLate);
+      _allTasksCache = [...active, ...archived];
+      // Render inicial pra pilar/meta default
+      renderLateBanner(pillarIdx, metaIdx);
 
-      const wrap = document.getElementById('ev-late-warning');
-      if (!wrap) return;
-      if (lateOnes.length === 0) { wrap.style.display = 'none'; return; }
-
-      wrap.style.display = 'block';
-      const totalLinked = linkedToThisMeta.filter(t => t.status === 'done').length;
-      const pctLate = totalLinked > 0 ? Math.round((lateOnes.length / totalLinked) * 100) : 0;
-      wrap.innerHTML = `
-        <div style="font-size:0.8125rem;font-weight:600;color:#D97706;margin-bottom:6px;">
-          ⚠ ${lateOnes.length} de ${totalLinked} tarefa${totalLinked!==1?'s':''} concluída${totalLinked!==1?'s':''} desta meta saiu${lateOnes.length>1?'ram':''} com atraso (${pctLate}%)
-        </div>
-        <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.6;">
-          ${lateOnes.slice(0, 5).map(({ task, lateInfo }) =>
-            `• <strong>${esc(task.title)}</strong> — <span style="color:#D97706;">${lateInfo.daysLate} dia${lateInfo.daysLate>1?'s':''} de atraso</span>`
-          ).join('<br>')}
-          ${lateOnes.length > 5 ? `<br><em style="color:var(--text-muted);">+ ${lateOnes.length - 5} outras tarefas atrasadas</em>` : ''}
-        </div>
-        <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:8px;font-style:italic;">
-          Considere isso ao definir a nota — a meta pode ter sido atingida, mas a entrega no prazo também é parte da execução.
-        </div>
-      `;
+      // Reatividade: usuario mudando pilar/meta no picker recalcula.
+      // Os pickers ev-pilar-btn e ev-meta-btn manipulam <select id="ev-pilar"> e
+      // <select id="ev-meta"> — escutamos 'change' nestes selects (event ja
+      // disparado pelo optionPicker quando user seleciona).
+      const pilarSel = document.getElementById('ev-pilar');
+      const metaSel  = document.getElementById('ev-meta');
+      const handler = () => {
+        const pi = parseInt(pilarSel?.value ?? pillarIdx, 10);
+        const mi = parseInt(metaSel?.value  ?? metaIdx, 10);
+        if (!isNaN(pi) && !isNaN(mi)) renderLateBanner(pi, mi);
+      };
+      pilarSel?.addEventListener('change', handler);
+      metaSel?.addEventListener('change', handler);
     })
     .catch(() => {});
 

@@ -24,6 +24,31 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.4.3+20260505-fix-banner-atraso-reativo] — 2026-05-05
+
+Patch corrigindo gap detectado **durante teste in-browser da 4.4.2** (resposta à pergunta "testou?" do usuário, que motivou a validação real). O banner de atraso no formulário de avaliação só carregava 1× quando o modal abria — trocar pilar/meta no picker não recarregava o banner.
+
+### Fixed
+- **Banner de atraso reativo a mudanças de picker** (`js/pages/goals.js` `openEvaluationForm`):
+  - Tasks fetched 1× e cacheadas em `_allTasksCache` (closure local)
+  - Função `renderLateBanner(pi, mi)` separada — recebe pillar+meta atual e re-renderiza usando cache
+  - Listeners `change` nos `<select id="ev-pilar">` e `<select id="ev-meta">` chamam `renderLateBanner` com índices atualizados
+  - Trocar pilar ou meta no picker → banner atualiza instantaneamente
+
+### Why
+Bug só apareceu em teste in-browser real. A função `wasTaskCompletedLate()` passou no smoke test (3 casos), o badge na lista de tarefas vinculadas funciona em produção (67 badges renderizados em 822 task blocks). Mas como o picker default é `pilarIdx=0, metaIdx=0` e raramente é a combinação com mais atrasos, sem reatividade o banner ficava invisível pra maioria dos casos reais.
+
+### Estado validação Fix A + Fix B (acumulado 4.4.2 + 4.4.3)
+| Fix | Status |
+|---|---|
+| Fix A — `linkComprovacao` pré-popular com `deliveryLink` | ⏳ Pendente teste in-browser |
+| Fix B parte 1 — Badge "⚠ Atrasada Xd" na lista de tarefas vinculadas | ✅ Validado prod (67 badges) |
+| Fix B parte 2 — Banner reativo no form de avaliação | ✅ Código fixado na 4.4.3 |
+| Fix B parte 3 — Chip "ATRASADA Xd" no PDF | ⏳ Pendente teste (export PDF) |
+
+---
+
 ## [4.4.2+20260505-tarefa-meta-evidencia-auto-aviso-atraso] — 2026-05-05
 
 Patch que fecha **2 gaps de produto** detectados durante revisão da integração tarefa↔meta. Reportado: *"Link da entrega na tarefa se torna automaticamente evidência de meta na avaliação? Se a tarefa é concluída com atraso, como fica para a meta? fica um aviso na avaliação?"*. Resposta investigativa: ambos os gaps existiam — `deliveryLink` e `linkComprovacao` eram campos completamente independentes (zero auto-population), e nenhum lugar do módulo de metas comparava `dueDate` com `completedAt`.

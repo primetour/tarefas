@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 4,
-  patch: 2,
-  build: '20260505-tarefa-meta-evidencia-auto-aviso-atraso',
+  patch: 3,
+  build: '20260505-fix-banner-atraso-reativo',
 };
 
 /** "1.2.0" */
