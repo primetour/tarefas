@@ -520,7 +520,7 @@ async function callProvider(provider, model, apiKey, systemPrompt, userPrompt, m
  * - Logado em ai_usage_logs (visível na IA Hub)
  * - Falha graceful se agente ausente, key ausente, ou erro de provider
  */
-async function extractEntitiesViaAgent(text, agent, retries = 1) {
+async function extractEntitiesViaAgent(text, agent, retries = 3) {
   if (!agent) return null;
   if (!text || text.length < 50) return null;
 
@@ -536,8 +536,10 @@ async function extractEntitiesViaAgent(text, agent, retries = 1) {
     return null;
   }
 
-  // Trunca input
-  const input = text.slice(0, 8000);
+  // Trunca input — 5000 chars (~1.5k tokens) cabe confortavelmente no
+  // Groq TPM 12k on-demand mesmo c/ system prompt + output. Emails de
+  // marketing são repetitivos: as primeiras seções já trazem destinos/hotéis.
+  const input = text.slice(0, 5000);
   const userPrompt = `Extraia as entidades do texto abaixo conforme o schema. Retorne APENAS JSON, sem markdown.\n\nTexto:\n"""${input}"""`;
 
   const t0 = Date.now();
@@ -553,7 +555,11 @@ async function extractEntitiesViaAgent(text, agent, retries = 1) {
     return { json, provider, model };
   } catch (e) {
     if (retries > 0 && /429|5\d\d/.test(e.message)) {
-      await new Promise(r => setTimeout(r, 2000));
+      // Tenta extrair tempo de espera do erro Groq: "Please try again in XX.XXXs"
+      const waitMatch = e.message.match(/try again in ([\d.]+)s/i);
+      const waitMs = waitMatch ? Math.ceil(parseFloat(waitMatch[1]) * 1000) + 500 : 5000;
+      console.log(`    rate limit hit, esperando ${waitMs}ms antes de retry...`);
+      await new Promise(r => setTimeout(r, waitMs));
       return extractEntitiesViaAgent(text, agent, retries - 1);
     }
     console.warn(`  Agent extract falhou: ${e.message}`);
@@ -689,7 +695,11 @@ async function main() {
       const enrichmentMap = new Map(); // name -> { description, htmlHash, extracted, structural }
       if (assetMap.size) {
         const entries = [...assetMap.entries()];
-        const CONCURRENCY = 4;
+        // CONCURRENCY=1 (serial). Groq TPM 12k on-demand não suporta paralelismo
+        // pra HTMLs de marketing (~5k tokens cada). Sequencial leva ~1-2s/email,
+        // pra 30-50 emails/dia ainda termina em 2 min. Se migrar pra Anthropic
+        // ou Groq tier upgrade, pode aumentar.
+        const CONCURRENCY = 1;
 
         for (let i = 0; i < entries.length; i += CONCURRENCY) {
           const slice = entries.slice(i, i + CONCURRENCY);

@@ -32,6 +32,25 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.6.2+20260505-fix-rate-limit-serial-retry] — 2026-05-05
+
+Hotfix do throughput. Após o **breakthrough da 4.6.1** (match Send→Asset por NOME, recuperando 18/18 assets), o Groq tier on-demand retornou 429 em 10 das 18 chamadas LLM por TPM (12k tokens/minuto) excedido.
+
+### Fixed
+- **Concorrência reduzida 4 → 1** (serial). HTML de marketing emails tem ~5k tokens, então 4 paralelas estouravam o TPM Groq facilmente.
+- **Truncate de input 8000 → 5000 chars** (~1.5k tokens). Marketing emails são repetitivos: as primeiras seções já trazem destinos/hotéis/temas. Reduz token spend em ~38% sem perda significativa de qualidade.
+- **Retry inteligente**: parse do `try again in X.XXXs` da resposta Groq pra calcular backoff exato em vez de 2s fixo. Se rate limit pede 25s, espera 25.5s.
+- **Retries: 1 → 3**. Permite atravessar múltiplos rate limits seguidos numa única run.
+
+### Why
+4 paralelas × 5k tokens = 20k tokens em rajada vs limite 12k/min. Serial leva ~1-2s/email; pra 30-50 emails/dia ainda termina em <2min total. Trade-off aceitável.
+
+### Verificação
+- ⏳ Re-trigger workflow_dispatch — esperado: `0 falhas` em vez de `10`
+
+---
+
 ## [4.6.1+20260505-fix-asset-query-fields-syntax] — 2026-05-05
 
 Hotfix capturado em primeiro workflow_dispatch após user habilitar permissão `Assets > Read` no SFMC. SFMC aceitou autenticação (saiu de 403 → 400), mas rejeitou o `fields` parameter por dot-notation: `views.html.content is not a valid field argument`.

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 6,
-  patch: 1,
-  build: '20260505-fix-asset-query-fields-syntax',
+  patch: 2,
+  build: '20260505-fix-rate-limit-serial-retry',
 };
 
 /** "1.2.0" */
