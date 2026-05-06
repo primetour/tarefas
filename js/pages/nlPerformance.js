@@ -2294,18 +2294,52 @@ function renderBrandsPills(brandsMap, allEnriched) {
   </div>`;
 }
 
+// Larguras default + persistência via localStorage. Coluna 0=Data, 1=Tipo·Nome, 2=Países,
+// 3=Hotéis, 4=Temas, 5=Open, 6=Editar.
+const ENVIOS_COL_DEFAULTS = [88, 260, 160, 200, 160, 70, 60];
+const ENVIOS_COL_KEY = 'nl-content-envios-col-widths-v2';
+
+function _loadEnviosColWidths() {
+  try {
+    const raw = localStorage.getItem(ENVIOS_COL_KEY);
+    if (!raw) return [...ENVIOS_COL_DEFAULTS];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || arr.length !== ENVIOS_COL_DEFAULTS.length) return [...ENVIOS_COL_DEFAULTS];
+    return arr.map((n, i) => Math.max(40, +n || ENVIOS_COL_DEFAULTS[i]));
+  } catch { return [...ENVIOS_COL_DEFAULTS]; }
+}
+function _saveEnviosColWidths(arr) {
+  try { localStorage.setItem(ENVIOS_COL_KEY, JSON.stringify(arr)); } catch {}
+}
+
 function renderEnrichedSendsList(docs) {
   const top = docs.slice(0, 50);
-  return `<div style="overflow-x:auto;">
-    <table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
+  const widths = _loadEnviosColWidths();
+  const colgroup = `<colgroup>
+    ${widths.map(w => `<col style="width:${w}px;">`).join('')}
+  </colgroup>`;
+  // Cada th tem um handle de resize na borda direita
+  const thStyle = 'text-align:left;padding:8px 6px;position:relative;user-select:none;';
+  const handle  = `<span class="nlc-col-resize" style="position:absolute;right:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:1;"></span>`;
+  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <span style="font-size:0.6875rem;color:var(--text-muted);">
+      💡 Arraste a borda direita do cabeçalho para ajustar a largura das colunas.
+    </span>
+    <button id="nlc-reset-cols" class="btn btn-ghost btn-sm"
+      title="Restaurar larguras padrão"
+      style="font-size:0.6875rem;color:var(--text-muted);padding:2px 8px;">↺ Reset colunas</button>
+  </div>
+  <div style="overflow-x:auto;">
+    <table id="nlc-envios-table" style="font-size:0.8125rem;border-collapse:collapse;table-layout:fixed;width:max-content;min-width:100%;">
+      ${colgroup}
       <thead><tr style="border-bottom:1px solid var(--border-subtle);color:var(--text-muted);font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;">
-        <th style="text-align:left;padding:8px 6px;">Data</th>
-        <th style="text-align:left;padding:8px 6px;">Tipo · Nome</th>
-        <th style="text-align:left;padding:8px 6px;">Países</th>
-        <th style="text-align:left;padding:8px 6px;">Hotéis</th>
-        <th style="text-align:left;padding:8px 6px;">Temas</th>
-        <th style="text-align:right;padding:8px 6px;">Open</th>
-        <th style="text-align:center;padding:8px 6px;">Editar</th>
+        <th data-col="0" style="${thStyle}">Data${handle}</th>
+        <th data-col="1" style="${thStyle}">Tipo · Nome${handle}</th>
+        <th data-col="2" style="${thStyle}">Países${handle}</th>
+        <th data-col="3" style="${thStyle}">Hotéis${handle}</th>
+        <th data-col="4" style="${thStyle}">Temas${handle}</th>
+        <th data-col="5" style="${thStyle}text-align:right;">Open${handle}</th>
+        <th data-col="6" style="${thStyle}text-align:center;">Editar</th>
       </tr></thead>
       <tbody>${top.map(d => {
         const dateStr = d.sentDate?.toDate ? d.sentDate.toDate().toLocaleDateString('pt-BR') : '—';
@@ -2317,13 +2351,14 @@ function renderEnrichedSendsList(docs) {
         const ntype = ex.newsletterType ? `<span style="font-size:0.625rem;padding:1px 6px;border-radius:8px;background:rgba(139,92,246,.1);color:#8B5CF6;margin-right:4px;">${esc(ex.newsletterType)}</span>` : '';
         const waveTxt = d._waveCount > 1
           ? `<span title="${d._waveCount} ondas disparadas" style="font-size:0.625rem;color:var(--text-muted);font-weight:400;margin-left:4px;">⊞${d._waveCount}</span>` : '';
+        const cellTrunc = 'padding:7px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         return `<tr style="border-bottom:1px solid var(--border-subtle);">
-          <td style="padding:7px 6px;color:var(--text-muted);font-size:0.75rem;white-space:nowrap;">${dateStr}</td>
-          <td style="padding:7px 6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${ntype}${esc(d.name || '—')}${waveTxt}</td>
-          <td style="padding:7px 6px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(countries)}</td>
-          <td style="padding:7px 6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(hotels || '—')}${moreH}</td>
-          <td style="padding:7px 6px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(themes || '—')}</td>
-          <td style="padding:7px 6px;text-align:right;font-weight:600;color:${rateColor2(d.openRate || 0)};">${(d.openRate || 0).toFixed(1)}%</td>
+          <td title="${esc(dateStr)}" style="${cellTrunc}color:var(--text-muted);font-size:0.75rem;">${dateStr}</td>
+          <td title="${esc(d.name || '')}" style="${cellTrunc}">${ntype}${esc(d.name || '—')}${waveTxt}</td>
+          <td title="${esc(countries)}" style="${cellTrunc}color:var(--text-secondary);">${esc(countries)}</td>
+          <td title="${esc(hotels || '')}" style="${cellTrunc}color:var(--text-secondary);">${esc(hotels || '—')}${moreH}</td>
+          <td title="${esc(themes || '')}" style="${cellTrunc}color:var(--text-secondary);">${esc(themes || '—')}</td>
+          <td style="${cellTrunc}text-align:right;font-weight:600;color:${rateColor2(d.openRate || 0)};">${(d.openRate || 0).toFixed(1)}%</td>
           <td style="padding:7px 6px;text-align:center;">
             <button class="nlc-edit-doc btn btn-ghost btn-sm" data-doc-id="${esc(d.id)}"
               title="Editar análise manualmente"
@@ -2336,6 +2371,43 @@ function renderEnrichedSendsList(docs) {
       Mostrando 50 de ${docs.length}. Filtre pra refinar.
     </div>` : ''}
   </div>`;
+}
+
+/** Wire dos resize-handles + reset da tabela de envios. Idempotente. */
+function wireEnviosColResize() {
+  const table = document.getElementById('nlc-envios-table');
+  if (!table || table.dataset.wiredResize) return;
+  table.dataset.wiredResize = '1';
+
+  const cols = table.querySelectorAll('colgroup col');
+  if (!cols.length) return;
+
+  table.querySelectorAll('.nlc-col-resize').forEach((handle, i) => {
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = cols[i].getBoundingClientRect().width;
+      const onMove = (ev) => {
+        const newW = Math.max(40, startW + (ev.clientX - startX));
+        cols[i].style.width = `${newW}px`;
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        const widths = [...cols].map(c => Math.round(c.getBoundingClientRect().width));
+        _saveEnviosColWidths(widths);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+    handle.addEventListener('mouseenter', () => handle.style.background = 'var(--brand-gold)');
+    handle.addEventListener('mouseleave', () => handle.style.background = 'transparent');
+  });
+
+  document.getElementById('nlc-reset-cols')?.addEventListener('click', () => {
+    _saveEnviosColWidths([...ENVIOS_COL_DEFAULTS]);
+    [...cols].forEach((c, i) => c.style.width = `${ENVIOS_COL_DEFAULTS[i]}px`);
+  });
 }
 
 function renderContentEmptyState(totalDocs) {
@@ -2389,6 +2461,8 @@ function wireDrillDowns() {
       openExtractedEditor(btn.dataset.docId);
     });
   });
+  // Resize de colunas da tabela de envios (idempotente)
+  wireEnviosColResize();
 }
 
 function rateColor2(pct) {
@@ -2453,8 +2527,146 @@ function renderContentByBu(docs) {
  * por IA quando estiverem erradas. Salva direto em mc_performance.
  * Garante 100% de efetividade nas análises (palavra do user).
  */
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODAL EDITAR — UI com chips/multi-select (sem JSON exposto)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// Sugestões pré-curadas para auto-complete rápido nos chip-inputs
+const SUGGEST = {
+  themes: ['luxo','romance','familia','aventura','gastronomia','wellness','cultura','praia','cidade','natureza','mar','slow-travel'],
+  targetAudience: ['casais','familias','jovens','grupos','solo-travelers','luxury-seekers','aventureiros','boomers','executivos'],
+  activities: ['safari','trekking','spa','gastronomia','vinho','golf','mergulho','yoga','passeios-culturais','city-tour','cruise','observacao-fauna'],
+  brands: ['Aman','Belmond','Faena','Six Senses','Bvlgari','Cheval Blanc','Four Seasons','Ritz-Carlton','EDITION','Lotte','OIÁ','Carmel','Emiliano','Inkaterra','Anantara','Mandarin Oriental','One&Only','Rosewood','Park Hyatt','St. Regis'],
+  countries: ['Brasil','Argentina','Chile','Peru','Uruguai','Estados Unidos','México','Itália','França','Espanha','Portugal','Grécia','Egito','Marrocos','África do Sul','Quênia','Tanzânia','Japão','Tailândia','Indonésia','Maldivas','Vietnã','Camboja','Índia','Austrália','Nova Zelândia','Polinésia Francesa','Antártida','Emirados Árabes Unidos','Turquia','Inglaterra','Escócia','Irlanda','Suíça','Áustria','Alemanha','Croácia','Islândia'],
+  cities: ['Atenas','Mykonos','Santorini','Roma','Florença','Veneza','Toscana','Cinque Terre','Paris','Nice','Provence','Barcelona','Madri','Lisboa','Algarve','Porto','Buenos Aires','Mendoza','Patagônia','Bariloche','Cusco','Machu Picchu','Mekong','Bangkok','Phuket','Bali','Marrakech','Cairo','Petra','Cidade do Cabo','Maui','Maldivas','Bora Bora','Fernando de Noronha','Lençóis Maranhenses','Cumbuco','Trancoso','Jericoacoara'],
+  hotelCategories: ['ultra-luxo','luxo','premium','boutique'],
+  cruiseCategories: ['ultra-luxo','luxo','expedicao','river-cruise'],
+  pricePoints: ['ultra-luxo','luxo','premium'],
+  confidences: [
+    { v:'high', l:'Alta — IA + manual confirmado' },
+    { v:'medium', l:'Média — IA com confiança razoável' },
+    { v:'low', l:'Baixa — IA incerta, requer revisão' },
+  ],
+  newsletterTypes: [
+    { v:'promocao', l:'🏷 Promoção' },
+    { v:'aereo', l:'✈ Aéreo' },
+    { v:'roteiro', l:'📍 Roteiro' },
+    { v:'hotelaria', l:'🏨 Hotelaria' },
+    { v:'cruzeiro', l:'🚢 Cruzeiro' },
+    { v:'csat', l:'📋 CSAT (pesquisa)' },
+    { v:'inspiracional', l:'🌟 Inspiracional' },
+    { v:'institucional', l:'🏢 Institucional' },
+    { v:'show/evento', l:'🎤 Show/Evento' },
+    { v:'retreat/wellness', l:'🧘 Retreat/Wellness' },
+  ],
+};
+
+/** Cria um campo de chips com input livre + sugestões via datalist. */
+function createChipInput(initial = [], { placeholder = 'Digite e pressione Enter…', suggestions = [], dataListId = '' } = {}) {
+  const items = [...(initial || [])];
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'min-height:38px;padding:6px;border:1px solid var(--border-subtle);border-radius:6px;background:var(--bg-elevated);display:flex;flex-wrap:wrap;gap:4px;align-items:center;';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = placeholder;
+  input.style.cssText = 'flex:1;min-width:120px;border:none;background:transparent;outline:none;padding:4px 6px;font-size:0.8125rem;color:var(--text-primary);';
+  if (dataListId) input.setAttribute('list', dataListId);
+
+  const renderChips = () => {
+    wrap.innerHTML = '';
+    items.forEach((it, i) => {
+      const chip = document.createElement('span');
+      chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--brand-gold);color:#000;border-radius:12px;font-size:0.75rem;font-weight:500;';
+      chip.innerHTML = `${esc(it)} <button type="button" style="background:none;border:none;color:#000;cursor:pointer;font-size:0.875rem;line-height:1;padding:0 0 0 2px;" data-idx="${i}">×</button>`;
+      chip.querySelector('button').addEventListener('click', () => {
+        items.splice(i, 1); renderChips();
+      });
+      wrap.appendChild(chip);
+    });
+    wrap.appendChild(input);
+    input.focus();
+  };
+
+  const addItem = (val) => {
+    const v = (val || '').trim();
+    if (!v) return;
+    if (items.includes(v)) return;
+    items.push(v);
+    renderChips();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addItem(input.value);
+      input.value = '';
+    } else if (e.key === 'Backspace' && !input.value && items.length) {
+      items.pop(); renderChips();
+    }
+  });
+  input.addEventListener('blur', () => {
+    if (input.value.trim()) { addItem(input.value); input.value = ''; }
+  });
+
+  renderChips();
+  return { wrap, getItems: () => [...items], setItems: (arr) => { items.length = 0; items.push(...(arr||[])); renderChips(); } };
+}
+
+/** Lista de objetos {name, brand, category} editáveis (hotels/cruises) — 3 inputs + add + remove */
+function createObjectListEditor(initial = [], categories = [], { nameLabel = 'Nome', brandLabel = 'Marca' } = {}) {
+  const items = (initial || []).map(o => ({
+    name: o?.name || '',
+    brand: o?.brand || '',
+    category: o?.category || '',
+  }));
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+
+  const renderRows = () => {
+    wrap.innerHTML = '';
+    items.forEach((o, i) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:grid;grid-template-columns:1.2fr 1fr 0.9fr auto;gap:6px;align-items:center;';
+      row.innerHTML = `
+        <input type="text" value="${esc(o.name)}" placeholder="${esc(nameLabel)}" class="form-input" style="font-size:0.8125rem;">
+        <input type="text" value="${esc(o.brand)}" placeholder="${esc(brandLabel)} (opcional)" class="form-input" style="font-size:0.8125rem;">
+        <select class="form-input" style="font-size:0.8125rem;">
+          <option value="">— categoria —</option>
+          ${categories.map(c => `<option value="${esc(c)}" ${c === o.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+        </select>
+        <button type="button" class="btn btn-ghost btn-sm" title="Remover" style="padding:4px 8px;color:var(--color-danger);">✕</button>
+      `;
+      const [nameI, brandI, catS, delB] = row.children;
+      nameI.addEventListener('input', e => o.name = e.target.value);
+      brandI.addEventListener('input', e => o.brand = e.target.value);
+      catS.addEventListener('change', e => o.category = e.target.value);
+      delB.addEventListener('click', () => { items.splice(i, 1); renderRows(); });
+      wrap.appendChild(row);
+    });
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn btn-ghost btn-sm';
+    addBtn.style.cssText = 'align-self:flex-start;font-size:0.75rem;color:var(--brand-gold);';
+    addBtn.textContent = '+ Adicionar';
+    addBtn.addEventListener('click', () => { items.push({ name:'', brand:'', category:'' }); renderRows(); });
+    wrap.appendChild(addBtn);
+  };
+
+  renderRows();
+  return {
+    wrap,
+    getItems: () => items.filter(o => o.name && o.name.trim()).map(o => ({
+      name: o.name.trim(),
+      ...(o.brand?.trim() ? { brand: o.brand.trim() } : {}),
+      ...(o.category ? { category: o.category } : {}),
+    })),
+  };
+}
+
 async function openExtractedEditor(docId) {
-  const { collection, doc, getDoc, updateDoc, serverTimestamp } = await import(
+  const { doc, getDoc, updateDoc, serverTimestamp } = await import(
     'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
   );
   const { db } = await import('../firebase.js');
@@ -2465,90 +2677,130 @@ async function openExtractedEditor(docId) {
   const data = snap.data();
   const ex = data.extracted || {};
 
-  // Helper pra render array de strings/objetos como textarea (1 linha cada)
-  const arrToText = (arr, key) => (arr || []).map(v =>
-    typeof v === 'string' ? v : (key === 'hotels' || key === 'cruises'
-      ? JSON.stringify(v)
-      : (v?.name || JSON.stringify(v)))
-  ).join('\n');
+  // Normaliza arrays heterogêneos (string/objeto) pra forma simples (string)
+  const arrToStrings = (arr) => (arr || []).map(v => typeof v === 'string' ? v : (v?.name || ''))
+    .filter(Boolean);
 
   const overlay = document.createElement('div');
-  overlay.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);
+  overlay.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);
     z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;`;
-  overlay.innerHTML = `
-    <div class="card" style="max-width:720px;width:100%;max-height:88vh;overflow:auto;padding:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <h3 style="margin:0;font-size:1rem;">✎ Editar análise · ${esc(data.name || docId)}</h3>
-        <button class="btn btn-ghost btn-sm" id="ed-close">✕</button>
-      </div>
-      <p style="margin:0 0 14px 0;font-size:0.75rem;color:var(--text-muted);">
-        Subject: ${esc(data.subject || '—')}
-      </p>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Tipo de newsletter
+  const sectionLabel = (text, hint) => `
+    <div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+      letter-spacing:0.05em;margin:0 0 6px 0;display:flex;align-items:center;gap:6px;">
+      ${esc(text)}
+      ${hint ? `<span title="${esc(hint)}" style="cursor:help;display:inline-flex;align-items:center;
+        justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--bg-secondary);
+        font-size:0.5625rem;font-weight:600;font-style:italic;font-family:Georgia,serif;
+        border:1px solid var(--border-subtle);">i</span>` : ''}
+    </div>`;
+
+  overlay.innerHTML = `
+    <div class="card" style="max-width:780px;width:100%;max-height:90vh;overflow:auto;padding:22px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:12px;">
+        <div style="flex:1;">
+          <h3 style="margin:0 0 4px 0;font-size:1rem;">✎ Editar análise</h3>
+          <div style="font-size:0.8125rem;color:var(--text-secondary);font-weight:500;">${esc(data.name || docId)}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Subject: ${esc(data.subject || '—')}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="ed-close" style="font-size:1rem;">✕</button>
+      </div>
+
+      <!-- Linha 1: tipo + confiança + price point -->
+      <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div>
+          ${sectionLabel('Tipo de newsletter', 'Categorização principal — usada nos filtros e bloco "Tipo".')}
           <select id="ed-newsletterType" class="form-input" style="width:100%;">
             <option value="">— escolher —</option>
-            <option value="promocao">🏷 promocao</option>
-            <option value="aereo">✈ aereo</option>
-            <option value="roteiro">📍 roteiro</option>
-            <option value="hotelaria">🏨 hotelaria</option>
-            <option value="cruzeiro">🚢 cruzeiro</option>
-            <option value="csat">📋 csat</option>
-            <option value="inspiracional">🌟 inspiracional</option>
-            <option value="institucional">🏢 institucional</option>
-            <option value="show/evento">🎤 show/evento</option>
-            <option value="retreat/wellness">🧘 retreat/wellness</option>
+            ${SUGGEST.newsletterTypes.map(t => `<option value="${esc(t.v)}">${esc(t.l)}</option>`).join('')}
           </select>
-        </label>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Confiança
+        </div>
+        <div>
+          ${sectionLabel('Confiança', 'Quanto a IA confia na extração. Se você editou manualmente, suba para "Alta".')}
           <select id="ed-confidence" class="form-input" style="width:100%;">
-            <option value="high">high</option>
-            <option value="medium">medium</option>
-            <option value="low">low</option>
+            ${SUGGEST.confidences.map(c => `<option value="${esc(c.v)}">${esc(c.l)}</option>`).join('')}
           </select>
-        </label>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Price point
+        </div>
+        <div>
+          ${sectionLabel('Posicionamento', 'Faixa de preço/posicionamento da campanha.')}
           <select id="ed-pricePoint" class="form-input" style="width:100%;">
-            <option value="">—</option>
-            <option value="ultra-luxo">ultra-luxo</option>
-            <option value="luxo">luxo</option>
-            <option value="premium">premium</option>
+            <option value="">— não aplicável —</option>
+            ${SUGGEST.pricePoints.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')}
           </select>
-        </label>
-        <div></div>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Países (1 por linha)
-          <textarea id="ed-countries" class="form-input" style="width:100%;height:70px;font-size:0.8125rem;">${esc(arrToText(ex.countries, 'countries'))}</textarea>
-        </label>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Cidades/Regiões (1 por linha)
-          <textarea id="ed-cities" class="form-input" style="width:100%;height:70px;font-size:0.8125rem;">${esc(arrToText(ex.cities, 'cities'))}</textarea>
-        </label>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);grid-column:span 2;">Hotéis — JSON 1 por linha: {"name":"X","brand":"Y","category":"luxo"}
-          <textarea id="ed-hotels" class="form-input" style="width:100%;height:80px;font-size:0.75rem;font-family:ui-monospace;">${esc(arrToText(ex.hotels, 'hotels'))}</textarea>
-        </label>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);grid-column:span 2;">Cruzeiros (operadoras) — JSON 1 por linha: {"name":"Aqua Expeditions","brand":"X","category":"ultra-luxo"}
-          <textarea id="ed-cruises" class="form-input" style="width:100%;height:60px;font-size:0.75rem;font-family:ui-monospace;">${esc(arrToText(ex.cruises, 'cruises'))}</textarea>
-        </label>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Marcas (1 por linha)
-          <textarea id="ed-brands" class="form-input" style="width:100%;height:60px;font-size:0.8125rem;">${esc(arrToText(ex.brands))}</textarea>
-        </label>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Temas (1 por linha)
-          <textarea id="ed-themes" class="form-input" style="width:100%;height:60px;font-size:0.8125rem;">${esc(arrToText(ex.themes))}</textarea>
-        </label>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Target audience (1 por linha)
-          <textarea id="ed-targetAudience" class="form-input" style="width:100%;height:60px;font-size:0.8125rem;">${esc(arrToText(ex.targetAudience))}</textarea>
-        </label>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Atividades (1 por linha)
-          <textarea id="ed-activities" class="form-input" style="width:100%;height:60px;font-size:0.8125rem;">${esc(arrToText(ex.activities))}</textarea>
-        </label>
-        <label style="display:block;font-size:0.75rem;color:var(--text-muted);grid-column:span 2;">Sales points (1 por linha)
-          <textarea id="ed-sellingPoints" class="form-input" style="width:100%;height:60px;font-size:0.8125rem;">${esc(arrToText(ex.sellingPoints))}</textarea>
-        </label>
+        </div>
       </div>
 
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
-        <button class="btn btn-secondary" id="ed-cancel">Cancelar</button>
-        <button class="btn btn-primary" id="ed-save">💾 Salvar análise manual</button>
+      <!-- Hotéis -->
+      <div style="margin-bottom:16px;">
+        ${sectionLabel('🏨 Hotéis citados', 'Hotéis mencionados na newsletter. Marca e categoria são opcionais.')}
+        <div id="ed-hotels-host"></div>
+      </div>
+
+      <!-- Cruzeiros -->
+      <div style="margin-bottom:16px;">
+        ${sectionLabel('🚢 Cruzeiros / operadoras marítimas', 'Operadoras de cruzeiro (Aqua Expeditions, Silversea, etc.). SEPARADOS de hotéis.')}
+        <div id="ed-cruises-host"></div>
+      </div>
+
+      <!-- Linha 2 colunas: países + cidades -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div>
+          ${sectionLabel('🌍 Países', 'Países mencionados. Tecle Enter ou vírgula para adicionar.')}
+          <div id="ed-countries-host"></div>
+        </div>
+        <div>
+          ${sectionLabel('🏙 Cidades / Regiões', 'Cidades ou regiões específicas (Atenas, Toscana, Mekong…).')}
+          <div id="ed-cities-host"></div>
+        </div>
+      </div>
+
+      <!-- Linha 2 colunas: marcas + temas -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div>
+          ${sectionLabel('🏷 Marcas hoteleiras', 'Marcas citadas (auto-deduplicadas).')}
+          <div id="ed-brands-host"></div>
+        </div>
+        <div>
+          ${sectionLabel('🎯 Temas / posicionamento', 'Tags livres — clique nas sugestões ou digite.')}
+          <div id="ed-themes-host"></div>
+        </div>
+      </div>
+
+      <!-- Linha 2 colunas: audiência + atividades -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div>
+          ${sectionLabel('👥 Público-alvo', 'Para quem a newsletter está direcionada.')}
+          <div id="ed-targetAudience-host"></div>
+        </div>
+        <div>
+          ${sectionLabel('🎒 Atividades', 'Ações/experiências (safari, trekking, spa…).')}
+          <div id="ed-activities-host"></div>
+        </div>
+      </div>
+
+      <!-- Sales points -->
+      <div style="margin-bottom:18px;">
+        ${sectionLabel('✨ Argumentos de venda', 'Frases curtas usadas como gancho na peça.')}
+        <div id="ed-sellingPoints-host"></div>
+      </div>
+
+      <!-- datalists para auto-complete -->
+      <datalist id="ed-dl-countries">${SUGGEST.countries.map(s => `<option value="${esc(s)}">`).join('')}</datalist>
+      <datalist id="ed-dl-cities">${SUGGEST.cities.map(s => `<option value="${esc(s)}">`).join('')}</datalist>
+      <datalist id="ed-dl-themes">${SUGGEST.themes.map(s => `<option value="${esc(s)}">`).join('')}</datalist>
+      <datalist id="ed-dl-targetAudience">${SUGGEST.targetAudience.map(s => `<option value="${esc(s)}">`).join('')}</datalist>
+      <datalist id="ed-dl-activities">${SUGGEST.activities.map(s => `<option value="${esc(s)}">`).join('')}</datalist>
+      <datalist id="ed-dl-brands">${SUGGEST.brands.map(s => `<option value="${esc(s)}">`).join('')}</datalist>
+
+      <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;
+        margin-top:18px;padding-top:14px;border-top:1px solid var(--border-subtle);">
+        <span style="font-size:0.6875rem;color:var(--text-muted);">
+          ${ex.extractedBy ? `Última análise: <strong>${esc(ex.extractedBy)}</strong>` : ''}
+        </span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" id="ed-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="ed-save">💾 Salvar</button>
+        </div>
       </div>
     </div>
   `;
@@ -2557,38 +2809,65 @@ async function openExtractedEditor(docId) {
   // Pré-popula selects
   if (ex.newsletterType) document.getElementById('ed-newsletterType').value = ex.newsletterType;
   if (ex.confidence)     document.getElementById('ed-confidence').value     = ex.confidence;
+  else                   document.getElementById('ed-confidence').value     = 'medium';
   if (ex.pricePoint)     document.getElementById('ed-pricePoint').value     = ex.pricePoint;
+
+  // Monta chip-inputs
+  const cCountries = createChipInput(arrToStrings(ex.countries),
+    { placeholder: 'Ex: Brasil, Itália…', dataListId: 'ed-dl-countries' });
+  const cCities = createChipInput(arrToStrings(ex.cities),
+    { placeholder: 'Ex: Atenas, Toscana…', dataListId: 'ed-dl-cities' });
+  const cBrands = createChipInput(arrToStrings(ex.brands),
+    { placeholder: 'Ex: Aman, Faena…', dataListId: 'ed-dl-brands' });
+  const cThemes = createChipInput(arrToStrings(ex.themes),
+    { placeholder: 'Ex: luxo, romance…', dataListId: 'ed-dl-themes' });
+  const cTarget = createChipInput(arrToStrings(ex.targetAudience),
+    { placeholder: 'Ex: casais, famílias…', dataListId: 'ed-dl-targetAudience' });
+  const cActivities = createChipInput(arrToStrings(ex.activities),
+    { placeholder: 'Ex: safari, spa…', dataListId: 'ed-dl-activities' });
+  const cSellingPoints = createChipInput(arrToStrings(ex.sellingPoints),
+    { placeholder: 'Frases curtas (ex: 30% OFF, voos diretos)…' });
+
+  document.getElementById('ed-countries-host').appendChild(cCountries.wrap);
+  document.getElementById('ed-cities-host').appendChild(cCities.wrap);
+  document.getElementById('ed-brands-host').appendChild(cBrands.wrap);
+  document.getElementById('ed-themes-host').appendChild(cThemes.wrap);
+  document.getElementById('ed-targetAudience-host').appendChild(cTarget.wrap);
+  document.getElementById('ed-activities-host').appendChild(cActivities.wrap);
+  document.getElementById('ed-sellingPoints-host').appendChild(cSellingPoints.wrap);
+
+  // Object lists (hotels / cruises)
+  const oHotels = createObjectListEditor(ex.hotels, SUGGEST.hotelCategories,
+    { nameLabel: 'Nome do hotel', brandLabel: 'Marca' });
+  const oCruises = createObjectListEditor(ex.cruises, SUGGEST.cruiseCategories,
+    { nameLabel: 'Operadora / navio', brandLabel: 'Marca' });
+  document.getElementById('ed-hotels-host').appendChild(oHotels.wrap);
+  document.getElementById('ed-cruises-host').appendChild(oCruises.wrap);
 
   const close = () => overlay.remove();
   document.getElementById('ed-close').addEventListener('click', close);
   document.getElementById('ed-cancel').addEventListener('click', close);
-
-  // Helper pra parsear textarea de JSON 1-por-linha (hotels/cruises)
-  const parseJsonLines = (text) => {
-    return (text || '').split('\n').map(l => l.trim()).filter(Boolean).map(line => {
-      try { return JSON.parse(line); }
-      catch { return { name: line }; } // fallback: nome simples
-    });
-  };
-  const parseLines = (text) => (text || '').split('\n').map(l => l.trim()).filter(Boolean);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
   document.getElementById('ed-save').addEventListener('click', async () => {
+    const saveBtn = document.getElementById('ed-save');
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
     const newExtracted = {
       ...ex,
       newsletterType: document.getElementById('ed-newsletterType').value || null,
       confidence:     document.getElementById('ed-confidence').value || 'medium',
       pricePoint:     document.getElementById('ed-pricePoint').value || null,
-      countries: parseLines(document.getElementById('ed-countries').value),
-      cities:    parseLines(document.getElementById('ed-cities').value),
-      hotels:    parseJsonLines(document.getElementById('ed-hotels').value),
-      cruises:   parseJsonLines(document.getElementById('ed-cruises').value),
-      brands:    parseLines(document.getElementById('ed-brands').value),
-      themes:    parseLines(document.getElementById('ed-themes').value),
-      targetAudience: parseLines(document.getElementById('ed-targetAudience').value),
-      activities:     parseLines(document.getElementById('ed-activities').value),
-      sellingPoints:  parseLines(document.getElementById('ed-sellingPoints').value),
-      extractedBy: 'manual-edit',
-      editedAt:    serverTimestamp(),
+      countries:      cCountries.getItems(),
+      cities:         cCities.getItems(),
+      hotels:         oHotels.getItems(),
+      cruises:        oCruises.getItems(),
+      brands:         cBrands.getItems(),
+      themes:         cThemes.getItems(),
+      targetAudience: cTarget.getItems(),
+      activities:     cActivities.getItems(),
+      sellingPoints:  cSellingPoints.getItems(),
+      extractedBy:    'manual-edit',
+      editedAt:       serverTimestamp(),
     };
     try {
       await updateDoc(ref, { extracted: newExtracted });
@@ -2596,6 +2875,7 @@ async function openExtractedEditor(docId) {
       close();
       await loadContentTab();
     } catch (e) {
+      saveBtn.disabled = false; saveBtn.textContent = '💾 Salvar';
       alert('Falha ao salvar: ' + e.message);
     }
   });

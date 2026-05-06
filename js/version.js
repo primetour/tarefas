@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 9,
-  patch: 1,
-  build: '20260506-nl-content-insights-tooltips',
+  patch: 2,
+  build: '20260506-modal-chips-resize-cols',
 };
 
 /** "1.2.0" */

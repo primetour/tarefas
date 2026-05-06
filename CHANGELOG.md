@@ -37,6 +37,44 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.9.2+20260506-modal-chips-resize-cols] — 2026-05-06
+
+Release **PATCH** — atende as 2 últimas observações do user sobre a aba **Conteúdo & Temas**:
+
+1. *"qdo abro o form pra editar a info, ainda tem muita coisa com estilo desenvolvimento. precisamos de coisas prontas para o usuario final"* — modal "✎ Editar análise" totalmente reformulado. Sem JSON exposto, sem textareas. Substituído por:
+   - **Chip-inputs** com auto-complete via `<datalist>` para arrays de strings (Países, Cidades, Marcas, Temas, Público-alvo, Atividades, Argumentos de venda).
+   - **Object-list editors** (3 inputs por linha + botão remover + botão "+ Adicionar") para Hotéis e Cruzeiros (que têm `name`/`brand`/`category`).
+   - Selects amigáveis com labels descritivos para `confiança` ("Alta — IA + manual confirmado").
+   - Sugestões pré-curadas (38 países, 38 cidades, 20 marcas tier-1/luxo, 12 temas canônicos, 9 audiências, 12 atividades).
+   - Tooltips ⓘ por seção explicando o que entra em cada campo.
+
+2. *"a coluna unidade está cortando as palavras, e a de nome está muito grande para o texto atual. poderia ser interessante o usuario manipular isso"* — tabela de envios agora tem **colunas redimensionáveis pelo usuário**:
+   - Cada `<th>` ganha um drag-handle de 6px na borda direita. Mouse-down → arrasta → solta.
+   - Larguras persistidas em `localStorage[nl-content-envios-col-widths-v2]` por usuário/browser.
+   - Botão "↺ Reset colunas" no topo restaura defaults [88, 260, 160, 200, 160, 70, 60].
+   - `table-layout:fixed` + `<colgroup><col>` garantem que widths são respeitados.
+   - `title=""` em cada `<td>` mostra o conteúdo completo no hover quando há truncate.
+
+### Implementação
+
+#### Modal (`js/pages/nlPerformance.js`)
+- Constante `SUGGEST` com listas pré-curadas (countries, cities, themes, brands, etc.).
+- `createChipInput(initial, opts)` — componente genérico de chip-input com Enter/vírgula para adicionar, Backspace para remover último, suporte a `<datalist>`.
+- `createObjectListEditor(initial, categories, opts)` — editor de array de `{name, brand, category}` com 3 inputs por linha + botão remover + "+ Adicionar".
+- `openExtractedEditor()` totalmente reescrita: layout de cards/seções com tooltips, sem nenhum JSON visível.
+
+#### Resize de colunas (`js/pages/nlPerformance.js`)
+- `_loadEnviosColWidths()` / `_saveEnviosColWidths()` para persistência.
+- `wireEnviosColResize()` chamado dentro de `wireDrillDowns()`.
+- Drag handler com `mousedown` → `mousemove` listener temporário no document → `mouseup` → save.
+- Idempotente via `dataset.wiredResize`.
+
+### Arquivos alterados
+- `js/pages/nlPerformance.js` — modal completamente reescrito + resize de colunas (~+250 linhas)
+- `js/version.js` — bump 4.9.1 → 4.9.2
+- `index.html` — cache-bust v= alinhado
+
+
 ## [4.9.1+20260506-nl-content-insights-tooltips] — 2026-05-06
 
 Release **PATCH** — atende 2 observações do user sobre a aba **Newsletter → Conteúdo & Temas**:
