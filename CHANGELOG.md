@@ -34,6 +34,62 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.8.0+20260505-vision-first-gemini-extraction] — 2026-05-05
+
+**Pivot fundamental do enrichment.** Reportado: *"NAOOO... descricao fizemos só em alguns casos como exemplo!"* + *"muitas news tem html apenas no header e no footer. vai ter que analisar textos dentro de imagens, né? o miolo esta em img..."*. Diagnóstico anterior estava errado — tanto a ideia de description manual quanto extração via texto stripped (que só pega rodapé legal). Único caminho: **Vision API** lendo as imagens dos emails.
+
+### Changed (arquitetura inteira do extract)
+- **Agente IA Hub atualizado**: `provider: 'groq'` → **`'gemini'`**, `model: 'llama-3.3-70b-versatile'` → **`'gemini-2.5-flash'`**. System prompt reescrito pra extração multimodal (imagens + contexto textual). `name`: "Extrator de Conteúdo de Newsletter (Vision)". `maxTokensPerRun: 2000`, `timeoutMs: 60000`.
+- **`extractEntitiesViaAgent` refatorada** — assinatura passa a aceitar objeto `{html, text, subject, name}` em vez de só `text`. Detecta `provider === 'gemini' && html` → fluxo Vision.
+
+### Added (pipeline Vision-first)
+- **`extractContentImages(html, topN=5)`** — extrai URLs de `<img>` do HTML cru com filtros:
+  - Pula tracking pixels (1×1, gif analytics)
+  - Pula spacers (<10px)
+  - Pula logos (<200×<100)
+  - Score por área × bonus de alt-text descritivo
+  - Dedup por URL, retorna top N por score
+- **`fetchImageAsBase64(url)`** — download HTTP da imagem, valida content-type, limita 5MB, retorna `{mimeType, data: base64}`. User-Agent custom.
+- **`callGeminiVision(model, apiKey, sysPrompt, userPrompt, images, ...)`** — endpoint Gemini 2.5 Flash multimodal: `inlineData: {mimeType, data}` por imagem. Up to 5 imgs num único request. `responseMimeType: 'application/json'`.
+- **Cache por URL de imagem** em nova collection `mc_image_extractions`:
+  - Doc id = `sha256(url)`
+  - Fields: `{url, extracted, ts}`
+  - Cache hit: usa extracted antigo, não re-baixa imagem nem re-chama Vision
+  - Insight: hotéis populares (Faena, Aman) reaparecem em múltiplas campanhas → hit rate alto após poucos runs
+- **Prompt enriquecido** combina: contexto textual (subject + name + alt-texts) + cache de imagens já analisadas + imagens novas. Modelo cross-valida contexto vs Vision.
+
+### Why
+1. **Description não escala**: usuário confirmou que só foi preenchida em casos isolados como teste. Não é fonte confiável.
+2. **HTML stripped só dá rodapé**: template SFMC tem header (logo) + footer (telefone, disclaimer legal) em texto. O conteúdo real (banners de hotel, cards de oferta, preços) está em `<img>` no meio.
+3. **Vision via Gemini é cheap**: ~$0.0002/email, ~R$ 7/ano operação anual completa. Cache derruba mais ainda.
+4. **Gemini key já configurada**: zero ação do usuário pra ativar (key em `system_config/ai-config.geminiApiKey`).
+
+### Custo recalculado
+| Operação | Volume típico | Custo USD | BRL |
+|---|---|---|---|
+| Backfill 90d (sem cache imgs) | 150 emails × 3-5 imgs avg = 600 calls | ~$0.05 | R$ 0.30 |
+| Daily incremental | 10 emails × 3 imgs avg = 30 calls | ~$0.003/dia | R$ 0.02 |
+| **1 ano com cache** (hotéis recorrentes) | ~3000 imgs únicas no ano | ~$1.10 | **~R$ 7** |
+
+### Verificação
+1. ✓ `node --check` passou
+2. ✓ Agente atualizado em `ai_agents/{slug}` com provider gemini + prompt vision
+3. ⏳ Workflow_dispatch após deploy: validar logs `🖼 N imgs Vision (M cache img)`
+4. ⏳ Inspecionar 1-2 docs `mc_performance` recentes — `extracted.hotels`, `countries`, `cities` populados COM dados reais (não mais empty arrays do Llama)
+5. ⏳ Aba Conteúdo & Temas → KPIs e blocos com **dados ricos de verdade**
+
+### Schema novo: `mc_image_extractions`
+- `{id (sha256 url), url, extracted, ts}` — collection de cache de extração por imagem
+- Útil pra debug: olhar quais imagens foram analisadas e o que cada uma rendeu
+- Tamanho médio: ~2kb/doc; pra 3000 imgs únicas/ano = 6MB. Trivial.
+
+### Próximas releases planejadas
+- **4.8.x — Tunning de prompt baseado em resultados reais** (após primeiro batch de Vision)
+- **4.9.0 — PDF da aba Conteúdo + relatórios cruzados** (sazonalidade, top hotéis × performance)
+
+---
+
 ## [4.7.0+20260505-wave-dedup-content-htmltext-dump] — 2026-05-05
 
 Reportado: *"Lembre-se: muitos disparos tem o mesmo codigo (PXXX, por exemplo), pq disparamos em ondas, dividindo o mailing. isso precisa estar no seu racional de analise de termos"* — necessidade crítica de dedup por campanha pra contagem de hotéis/destinos não inflar artificialmente. Também: *"eu gostaria que vc fizesse e analisasse os docs... pq a IA do sistema é muito fraca"* — preparação pra re-extração manual via Claude.

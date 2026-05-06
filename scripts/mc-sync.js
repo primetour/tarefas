@@ -356,6 +356,75 @@ function stripHtml(html) {
     .trim();
 }
 
+/* ─── Extrai URLs de imagens do HTML cru com filtros ──────────
+ * Newsletters PRIMETOUR têm o conteúdo principal em IMAGENS (banners
+ * de hotéis, cards de destinos), não em texto. Pra analisar via Vision,
+ * extraímos URLs filtrando: tracking pixels (1×1), logos pequenos,
+ * spacers. Pega top N imagens "de conteúdo" (maiores).
+ *
+ * Retorna array de { url, alt, width, height, score } ordenado por score desc.
+ */
+function extractContentImages(html, topN = 5) {
+  if (!html) return [];
+  const imgs = [];
+  const re = /<img\s+([^>]*?)>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const attrs = m[1];
+    const url = (attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1] || '';
+    if (!url) continue;
+    // Pula data: URIs e javascript:
+    if (/^(data:|javascript:)/i.test(url)) continue;
+    // Pula tracking pixels conhecidos (analytics, mailing trackers)
+    if (/\.gif(\?|$)/i.test(url) && /(open|track|pixel|beacon|t\.gif|spacer)/i.test(url)) continue;
+
+    const alt = ((attrs.match(/\balt\s*=\s*["']([^"']*)["']/i) || [])[1] || '').trim();
+    const width  = parseInt((attrs.match(/\bwidth\s*=\s*["']?(\d+)/i)  || [])[1], 10) || 0;
+    const height = parseInt((attrs.match(/\bheight\s*=\s*["']?(\d+)/i) || [])[1], 10) || 0;
+
+    // Filtros de tamanho:
+    // 1×1 ou 1×N = tracking pixel
+    if ((width === 1 && height >= 0) || (height === 1 && width >= 0)) continue;
+    // Spacer (<10px qualquer dimensão)
+    if (width > 0 && width < 10) continue;
+    if (height > 0 && height < 10) continue;
+    // Logos típicos: <200×<100
+    if (width > 0 && width < 200 && height > 0 && height < 100) continue;
+
+    // Score: imagens maiores + com alt text descritivo
+    const area = (width || 400) * (height || 300);
+    const altScore = alt.length > 20 ? 1.5 : (alt.length > 5 ? 1.2 : 1.0);
+    const score = area * altScore;
+
+    imgs.push({ url, alt, width, height, score });
+  }
+  // Dedup por URL
+  const seen = new Set();
+  const dedup = imgs.filter(i => { if (seen.has(i.url)) return false; seen.add(i.url); return true; });
+  // Ordena por score desc, pega topN
+  return dedup.sort((a, b) => b.score - a.score).slice(0, topN);
+}
+
+/* ─── Download de imagem + base64 (pra Vision API) ─────────── */
+async function fetchImageAsBase64(url) {
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'User-Agent': 'PRIMETOUR-Sync/1.0' },
+      redirect: 'follow',
+    });
+    if (!res.ok) return null;
+    const ct = res.headers.get('content-type') || 'image/jpeg';
+    if (!/^image\//i.test(ct)) return null;
+    // Limita 5MB pra não engasgar
+    const buf = await res.buffer();
+    if (buf.length > 5 * 1024 * 1024) return null;
+    return { mimeType: ct.split(';')[0], data: buf.toString('base64') };
+  } catch (_) {
+    return null;
+  }
+}
+
 /* ─── Estatísticas estruturais do HTML (zero LLM) ─────────── */
 function htmlStructuralStats(html) {
   if (!html) return { ctaCount: 0, imageCount: 0, wordCount: 0, charCount: 0 };
@@ -421,6 +490,42 @@ async function resolveGlobalApiKey(provider) {
   if (!snap.exists) return '';
   const cfg = snap.data();
   return cfg[`${provider}ApiKey`] || '';
+}
+
+/* ─── Gemini Vision multimodal: imagens + texto numa só call ──
+ * Newsletters PRIMETOUR têm conteúdo em imagens. Gemini 2.5 Flash
+ * suporta multi-image (até dezenas) numa request. Cada imagem ~258
+ * tokens. Gratuito em volume baixo.
+ *
+ * @param {Array<{mimeType,data}>} images — base64 + mime das imgs
+ * @returns {{text, tokensIn, tokensOut}}
+ */
+async function callGeminiVision(model, apiKey, systemPrompt, userPrompt, images, maxTokens, temperature) {
+  const parts = [{ text: userPrompt }];
+  for (const img of images) {
+    parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+  }
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts }],
+      generationConfig: {
+        temperature,
+        maxOutputTokens: maxTokens,
+        responseMimeType: 'application/json',
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`gemini-vision ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  return {
+    text: data.candidates?.[0]?.content?.parts?.[0]?.text || '',
+    tokensIn:  data.usageMetadata?.promptTokenCount || 0,
+    tokensOut: data.usageMetadata?.candidatesTokenCount || 0,
+  };
 }
 
 /* ─── Extração — multi-provider, dirigido pelo agente ───────── */
@@ -513,21 +618,57 @@ async function callProvider(provider, model, apiKey, systemPrompt, userPrompt, m
   throw new Error(`provider nao suportado: ${provider}`);
 }
 
+/* ─── Cache de extração por URL de imagem ─────────────────────
+ * Imagens reaparecem em campanhas (logo Belmond, foto de hotel popular).
+ * Cache por sha256(url) na collection mc_image_extractions evita re-call
+ * Vision na mesma imagem. Estrutura: { url, mimeType, extracted, ts }.
+ */
+async function fetchImageExtractionCache(urls) {
+  if (!urls || !urls.length) return new Map();
+  const out = new Map();
+  const ids = urls.map(u => sha256(u));
+  // Firestore in() limit 30
+  for (let i = 0; i < ids.length; i += 30) {
+    const chunk = ids.slice(i, i + 30);
+    const reads = await Promise.all(
+      chunk.map(id => db.collection('mc_image_extractions').doc(id).get())
+    );
+    reads.forEach((r, j) => {
+      if (r.exists) out.set(urls[i + j], r.data());
+    });
+  }
+  return out;
+}
+
+async function saveImageExtractionCache(url, extracted) {
+  const id = sha256(url);
+  await db.collection('mc_image_extractions').doc(id).set({
+    url,
+    extracted,
+    ts: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
 /**
  * Extrai entidades usando o agente registrado na IA Hub.
- * - Prompt e modelo vêm do agente (editável via UI sem deploy)
- * - Chave de API resolvida do system_config (mesmo lugar que app browser usa)
- * - Logado em ai_usage_logs (visível na IA Hub)
- * - Falha graceful se agente ausente, key ausente, ou erro de provider
+ *
+ * Estratégia VISION-FIRST (4.8.0+):
+ *   - Newsletters PRIMETOUR têm conteúdo principalmente em IMAGENS
+ *   - Se provider do agente é 'gemini' AND temos URLs de imagens:
+ *     baixa top 5 imagens → manda multimodal pro Gemini Vision
+ *   - Senão (texto only): usa apenas subject + name + alt + texto stripped
+ *
+ * @param {Object} input — { text, html, subject, name, alts }
+ * @param {Object} agent — config do agente
+ * @returns {{ json, provider, model }} ou null
  */
-async function extractEntitiesViaAgent(text, agent, retries = 3) {
+async function extractEntitiesViaAgent(input, agent, retries = 3) {
   if (!agent) return null;
-  if (!text || text.length < 50) return null;
 
-  const provider = agent.provider || 'groq';
-  const model    = agent.model    || 'llama-3.3-70b-versatile';
+  const provider = agent.provider || 'gemini';
+  const model    = agent.model    || 'gemini-2.5-flash';
   const sysPrompt = agent.systemPrompt || '';
-  const maxTok   = agent.limits?.maxTokensPerRun || 1500;
+  const maxTok   = agent.limits?.maxTokensPerRun || 2000;
   const temp     = agent.limits?.temperature ?? 0;
 
   const apiKey = await resolveGlobalApiKey(provider);
@@ -536,31 +677,89 @@ async function extractEntitiesViaAgent(text, agent, retries = 3) {
     return null;
   }
 
-  // Trunca input — 5000 chars (~1.5k tokens) cabe confortavelmente no
-  // Groq TPM 12k on-demand mesmo c/ system prompt + output. Emails de
-  // marketing são repetitivos: as primeiras seções já trazem destinos/hotéis.
-  const input = text.slice(0, 5000);
-  const userPrompt = `Extraia as entidades do texto abaixo conforme o schema. Retorne APENAS JSON, sem markdown.\n\nTexto:\n"""${input}"""`;
+  const { text = '', html = '', subject = '', name = '' } = (input || {});
+
+  // Monta contexto textual (usado em todos os providers)
+  const textContext = [
+    name    ? `NOME: ${name}` : '',
+    subject ? `SUBJECT: ${subject}` : '',
+    text    ? `TEXTO HTML (rodapé/disclaimer): ${text.slice(0, 2000)}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  let userPrompt = `Analise a newsletter de viagens da PRIMETOUR e extraia entidades em JSON estrito.\n\n${textContext}`;
+  let images = [];
+  let imagesUsed = [];
+  let cacheHitsImg = 0;
+
+  // VISION FLOW: baixa top imagens, chama Gemini multimodal
+  if (provider === 'gemini' && html) {
+    const candidates = extractContentImages(html, 5);
+    if (candidates.length > 0) {
+      const urls = candidates.map(c => c.url);
+      const cache = await fetchImageExtractionCache(urls);
+      // Cache: imagens já analisadas → usa extracted cacheado, sem re-baixar
+      const cachedExtractions = [];
+      const toFetch = [];
+      for (const c of candidates) {
+        const cached = cache.get(c.url);
+        if (cached?.extracted) {
+          cachedExtractions.push({ url: c.url, alt: c.alt, extracted: cached.extracted });
+          cacheHitsImg++;
+        } else {
+          toFetch.push(c);
+        }
+      }
+      // Download em paralelo (até 5 imgs)
+      const downloads = await Promise.all(toFetch.map(c => fetchImageAsBase64(c.url)));
+      images = downloads.filter(Boolean);
+      imagesUsed = toFetch.map((c, i) => downloads[i] ? c.url : null).filter(Boolean);
+
+      // Adiciona cache resumido ao prompt (aproveita análises antigas)
+      if (cachedExtractions.length > 0) {
+        userPrompt += `\n\nIMAGENS JÁ ANALISADAS (cache):\n` +
+          cachedExtractions.map(c => `- ${c.alt || 'imagem'}: ${JSON.stringify(c.extracted).slice(0, 300)}`).join('\n');
+      }
+
+      // Adiciona alts ao prompt
+      const altsText = candidates.filter(c => c.alt).map(c => `- ${c.alt}`).join('\n');
+      if (altsText) userPrompt += `\n\nALT-TEXTS DAS IMAGENS:\n${altsText}`;
+    }
+  }
+
+  userPrompt += `\n\nRetorne APENAS JSON conforme schema do system prompt. Sem markdown.`;
 
   const t0 = Date.now();
   try {
-    const r = await callProvider(provider, model, apiKey, sysPrompt, userPrompt, maxTok, temp);
+    let r;
+    if (provider === 'gemini' && images.length > 0) {
+      r = await callGeminiVision(model, apiKey, sysPrompt, userPrompt, images, maxTok, temp);
+    } else {
+      r = await callProvider(provider, model, apiKey, sysPrompt, userPrompt, maxTok, temp);
+    }
     const cleaned = r.text.replace(/^```json\s*/i, '').replace(/\s*```\s*$/, '').trim();
     const json = JSON.parse(cleaned);
+
+    // Salva cache de cada imagem analisada (best-effort: usa o JSON inteiro;
+    // distribuição precisa por imagem requeria prompt diferente — por ora,
+    // cacheia o JSON consolidado por URL).
+    for (const url of imagesUsed) {
+      try { await saveImageExtractionCache(url, json); } catch (_) {}
+    }
+
     await logAgentUsage({
       agentId: agent.id, provider, model, source: 'mc-sync',
       tokensIn: r.tokensIn, tokensOut: r.tokensOut,
       success: true, ms: Date.now() - t0,
+      meta: { imagesUsed: imagesUsed.length, cacheHitsImg, hasVision: images.length > 0 },
     });
-    return { json, provider, model };
+    return { json, provider, model, imagesUsed: imagesUsed.length, cacheHitsImg };
   } catch (e) {
     if (retries > 0 && /429|5\d\d/.test(e.message)) {
-      // Tenta extrair tempo de espera do erro Groq: "Please try again in XX.XXXs"
       const waitMatch = e.message.match(/try again in ([\d.]+)s/i);
       const waitMs = waitMatch ? Math.ceil(parseFloat(waitMatch[1]) * 1000) + 500 : 5000;
       console.log(`    rate limit hit, esperando ${waitMs}ms antes de retry...`);
       await new Promise(r => setTimeout(r, waitMs));
-      return extractEntitiesViaAgent(text, agent, retries - 1);
+      return extractEntitiesViaAgent(input, agent, retries - 1);
     }
     console.warn(`  Agent extract falhou: ${e.message}`);
     await logAgentUsage({
@@ -726,17 +925,28 @@ async function main() {
               return;
             }
 
-            // Sem cache: extrai via agente
+            // Sem cache: extrai via agente. Passa contexto rico:
+            // - html cru (pra Vision extrair imagens)
+            // - text stripped (rodapé/disclaimer pode ter contexto)
+            // - subject + name (representativos da campanha)
             let extracted = null;
             let extractedMeta = null;
             if (enrichEnabled && asset.html) {
               const text = stripHtml(asset.html);
-              const result = await extractEntitiesViaAgent(text, agent);
+              const sample = sends.find(s => (s.EmailName || '').trim() === name);
+              const result = await extractEntitiesViaAgent({
+                html: asset.html,
+                text,
+                subject: sample?.Subject || '',
+                name,
+              }, agent);
               if (result?.json) {
                 extracted = result.json;
                 extractedMeta = { provider: result.provider, model: result.model };
                 summary.llmCalls++;
                 summary.enriched++;
+                if (result.imagesUsed) summary.imagesUsed = (summary.imagesUsed || 0) + result.imagesUsed;
+                if (result.cacheHitsImg) summary.imageCacheHits = (summary.imageCacheHits || 0) + result.cacheHitsImg;
               }
             }
 
@@ -814,7 +1024,10 @@ async function main() {
   }
   console.log(`📊 Total: ${summary.total} documentos`);
   if (enrichEnabled) {
-    console.log(`🤖 Enriquecimento IA: ${summary.enriched} novos · ${summary.cacheHits} cache hits · ${summary.llmCalls} chamadas LLM`);
+    const visionInfo = summary.imagesUsed
+      ? ` · 🖼 ${summary.imagesUsed} imgs Vision (${summary.imageCacheHits || 0} cache img)`
+      : '';
+    console.log(`🤖 Enriquecimento IA: ${summary.enriched} novos · ${summary.cacheHits} cache hits · ${summary.llmCalls} chamadas LLM${visionInfo}`);
   }
 }
 

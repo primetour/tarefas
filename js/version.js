@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 7,
+  minor: 8,
   patch: 0,
-  build: '20260505-wave-dedup-content-htmltext-dump',
+  build: '20260505-vision-first-gemini-extraction',
 };
 
 /** "1.2.0" */
