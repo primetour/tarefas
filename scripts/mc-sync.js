@@ -192,7 +192,6 @@ async function fetchAssetsByLegacyIds(token, legacyIds) {
         <Properties>ID</Properties>
         <Properties>Name</Properties>
         <Properties>Subject</Properties>
-        <Properties>Description</Properties>
         <Properties>HTMLBody</Properties>
         <Properties>CustomerKey</Properties>
         <Filter xsi:type="SimpleFilterPart">
@@ -213,11 +212,28 @@ async function fetchAssetsByLegacyIds(token, legacyIds) {
     const status = xml.match(/<OverallStatus>(.*?)<\/OverallStatus>/)?.[1] || '';
     console.log(`  [DEBUG SOAP Email by ID=${legacyIds[0]}] status: ${status}`);
     if (status.startsWith('OK')) {
-      const desc = xml.match(/<Description[^>]*>([\s\S]*?)<\/Description>/i)?.[1] || '';
       const name = xml.match(/<Name[^>]*>([\s\S]*?)<\/Name>/i)?.[1] || '';
       const ck = xml.match(/<CustomerKey[^>]*>([\s\S]*?)<\/CustomerKey>/i)?.[1] || '';
       const htmlLen = (xml.match(/<HTMLBody[^>]*>([\s\S]*?)<\/HTMLBody>/i)?.[1] || '').length;
-      console.log(`  [DEBUG] SOAP Email Name=${name.slice(0,40)} CustomerKey=${ck} Description=${desc.slice(0,80)} HTMLBody len=${htmlLen}`);
+      console.log(`  [DEBUG] SOAP Email Name=${name.slice(0,40)} CustomerKey=${ck} HTMLBody len=${htmlLen}`);
+
+      // Se temos CustomerKey, agora podemos achar Asset via REST
+      if (ck) {
+        const assetByKey = await fetch(`${MC_REST_URL}/asset/v1/content/assets/query`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            page: { page: 1, pageSize: 1 },
+            query: { property: 'customerKey', simpleOperator: 'equals', value: ck },
+          }),
+        });
+        if (assetByKey.ok) {
+          const dd = await assetByKey.json();
+          const it = dd.items?.[0];
+          if (it) console.log(`  [DEBUG] Asset by customerKey: id=${it.id} name=${it.name?.slice(0,40)} description=${(it.description||'').slice(0,80)}`);
+          else console.log(`  [DEBUG] Asset by customerKey: NOT FOUND (count=${dd.count})`);
+        }
+      }
     } else {
       console.log(`  [DEBUG] SOAP Email body snippet:`, xml.slice(0, 400));
     }
