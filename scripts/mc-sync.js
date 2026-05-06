@@ -183,11 +183,32 @@ async function fetchAssetsByLegacyIds(token, legacyIds) {
       const it = dd.items?.[0];
       if (it) {
         console.log(`  [DEBUG] sample asset id=${it.id} name=${(it.name||'').slice(0,40)}`);
-        console.log(`  [DEBUG] data.email.legacyId =`, it.data?.email?.legacyId);
-        console.log(`  [DEBUG] data.email keys:`, Object.keys(it.data?.email || {}).slice(0, 15));
-        console.log(`  [DEBUG] legacyData =`, it.legacyData);
-        console.log(`  [DEBUG] root keys:`, Object.keys(it).slice(0, 25));
+        console.log(`  [DEBUG] data.email.options:`, JSON.stringify(it.data?.email?.options).slice(0, 200));
+        console.log(`  [DEBUG] data.email.legacy:`, JSON.stringify(it.data?.email?.legacy).slice(0, 300));
+        console.log(`  [DEBUG] legacyData FULL:`, JSON.stringify(it.legacyData).slice(0, 300));
+        console.log(`  [DEBUG] customerKey:`, it.customerKey);
       }
+    }
+
+    // Tenta segunda query buscando por legacyData.legacyId em vez de data.email.legacyId
+    const tryAlt = await fetch(`${MC_REST_URL}/asset/v1/content/assets/query`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        page: { page: 1, pageSize: 5 },
+        query: {
+          property: 'legacyData.legacyId',
+          simpleOperator: 'in',
+          value: legacyIds.map(String),
+        },
+      }),
+    });
+    if (tryAlt.ok) {
+      const ddAlt = await tryAlt.json();
+      console.log(`  [DEBUG] tentativa legacyData.legacyId: ${ddAlt.count || 0} matches`);
+      if (ddAlt.items?.[0]) console.log(`  [DEBUG] match name:`, ddAlt.items[0].name);
+    } else {
+      console.log(`  [DEBUG] legacyData.legacyId query: ${tryAlt.status} ${(await tryAlt.text()).slice(0, 200)}`);
     }
   }
 
