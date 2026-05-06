@@ -165,6 +165,32 @@ async function fetchSends(token, days) {
 async function fetchAssetsByLegacyIds(token, legacyIds) {
   if (!legacyIds || !legacyIds.length) return new Map();
 
+  // ── DEBUG TEMPORÁRIO (remove após descobrir property path correta) ──
+  if (process.env.DEBUG_SFMC === '1' && legacyIds.length > 0) {
+    console.log(`  [DEBUG] legacyIds buscados:`, legacyIds.slice(0, 3));
+    // Pega 1 asset qualquer pra ver schema
+    const debugBody = {
+      page: { page: 1, pageSize: 1 },
+      query: { property: 'assetType.name', simpleOperator: 'equals', value: 'htmlemail' },
+    };
+    const debugRes = await fetch(`${MC_REST_URL}/asset/v1/content/assets/query`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(debugBody),
+    });
+    if (debugRes.ok) {
+      const dd = await debugRes.json();
+      const it = dd.items?.[0];
+      if (it) {
+        console.log(`  [DEBUG] sample asset id=${it.id} name=${(it.name||'').slice(0,40)}`);
+        console.log(`  [DEBUG] data.email.legacyId =`, it.data?.email?.legacyId);
+        console.log(`  [DEBUG] data.email keys:`, Object.keys(it.data?.email || {}).slice(0, 15));
+        console.log(`  [DEBUG] legacyData =`, it.legacyData);
+        console.log(`  [DEBUG] root keys:`, Object.keys(it).slice(0, 25));
+      }
+    }
+  }
+
   const url = `${MC_REST_URL}/asset/v1/content/assets/query`;
   // Sintaxe correta SFMC: query top-level tem property + simpleOperator + value
   // (não usa leftOperand como SQLLike). 'fields' rejeita dot-notation, então
