@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 8,
-  patch: 0,
-  build: '20260505-vision-first-gemini-extraction',
+  patch: 1,
+  build: '20260505-conteudo-separado-por-bu',
 };
 
 /** "1.2.0" */

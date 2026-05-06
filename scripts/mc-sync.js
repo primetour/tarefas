@@ -908,11 +908,11 @@ async function main() {
       const enrichmentMap = new Map(); // name -> { description, htmlHash, extracted, structural }
       if (assetMap.size) {
         const entries = [...assetMap.entries()];
-        // CONCURRENCY=1 (serial). Groq TPM 12k on-demand não suporta paralelismo
-        // pra HTMLs de marketing (~5k tokens cada). Sequencial leva ~1-2s/email,
-        // pra 30-50 emails/dia ainda termina em 2 min. Se migrar pra Anthropic
-        // ou Groq tier upgrade, pode aumentar.
+        // CONCURRENCY=1 (serial). Aplica tanto pra Groq quanto Gemini Vision.
+        // Gemini Flash free tier: 15 RPM, 1M TPM, 1500 RPD — serial+throttle
+        // 4s entre chamadas (~15 RPM) cabe folgado.
         const CONCURRENCY = 1;
+        const PROVIDER_DELAY_MS = (agent?.provider === 'gemini') ? 4500 : 0;
 
         for (let i = 0; i < entries.length; i += CONCURRENCY) {
           const slice = entries.slice(i, i + CONCURRENCY);
@@ -961,6 +961,10 @@ async function main() {
                 summary.enriched++;
                 if (result.imagesUsed) summary.imagesUsed = (summary.imagesUsed || 0) + result.imagesUsed;
                 if (result.cacheHitsImg) summary.imageCacheHits = (summary.imageCacheHits || 0) + result.cacheHitsImg;
+              }
+              // Throttle entre chamadas pra respeitar rate limits (Gemini ~15 RPM)
+              if (PROVIDER_DELAY_MS > 0) {
+                await new Promise(r => setTimeout(r, PROVIDER_DELAY_MS));
               }
             }
 

@@ -1901,6 +1901,13 @@ function renderContentTab() {
 
     </div>
 
+    <!-- Comparativo por BU (igual padrão Performance) -->
+    <div class="card" style="padding:18px;margin-top:16px;">
+      <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:0.06em;color:var(--text-muted);">🏢 Conteúdo por unidade (BU)</h3>
+      ${renderContentByBu(enrichedDocs)}
+    </div>
+
     <!-- Lista de envios filtrados -->
     <div class="card" style="padding:18px;margin-top:16px;">
       <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
@@ -2237,3 +2244,51 @@ function rateColor2(pct) {
 }
 
 function fmtPct(n) { return `${(+n || 0).toFixed(1)}%`; }
+
+/* ─── Comparativo por BU (separação solicitada pelo user) ─────
+ * Mostra 1 linha por BU com: # campanhas, top destino, top hotel,
+ * top tema, open rate médio. Espelha padrão da aba Performance.
+ */
+function renderContentByBu(docs) {
+  const byBu = new Map(); // buName -> { campaigns, countries, hotels, themes, opens, sendCount }
+  for (const d of docs) {
+    const bu = d.buName || d.buId || '—';
+    if (!byBu.has(bu)) byBu.set(bu, {
+      campaigns: 0, countries: new Map(), hotels: new Map(), themes: new Map(),
+      openSum: 0, openCount: 0,
+    });
+    const b = byBu.get(bu);
+    b.campaigns++;
+    const ex = d.extracted || {};
+    (ex.countries || []).forEach(c => b.countries.set(c, (b.countries.get(c) || 0) + 1));
+    (ex.themes    || []).forEach(t => b.themes.set(t, (b.themes.get(t) || 0) + 1));
+    (ex.hotels    || []).forEach(h => {
+      const n = typeof h === 'string' ? h : h?.name; if (n) b.hotels.set(n, (b.hotels.get(n) || 0) + 1);
+    });
+    if (d.openRate > 0) { b.openSum += +d.openRate; b.openCount++; }
+  }
+  const top = (m) => [...m.entries()].sort((a,b) => b[1]-a[1])[0]?.[0] || '—';
+  return `<table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
+    <thead><tr style="border-bottom:1px solid var(--border-subtle);color:var(--text-muted);font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;">
+      <th style="text-align:left;padding:8px 6px;">Unidade</th>
+      <th style="text-align:right;padding:8px 6px;">Campanhas</th>
+      <th style="text-align:left;padding:8px 6px;">Top destino</th>
+      <th style="text-align:left;padding:8px 6px;">Top hotel</th>
+      <th style="text-align:left;padding:8px 6px;">Top tema</th>
+      <th style="text-align:right;padding:8px 6px;">Open rate médio</th>
+    </tr></thead>
+    <tbody>${[...byBu.entries()]
+      .sort((a,b) => b[1].campaigns - a[1].campaigns)
+      .map(([bu, b]) => {
+        const avgOpen = b.openCount > 0 ? (b.openSum / b.openCount) : 0;
+        return `<tr style="border-bottom:1px solid var(--border-subtle);">
+          <td style="padding:7px 6px;font-weight:600;">${esc(bu)}</td>
+          <td style="padding:7px 6px;text-align:right;color:var(--text-secondary);">${b.campaigns}</td>
+          <td style="padding:7px 6px;color:var(--text-secondary);">${esc(top(b.countries))}</td>
+          <td style="padding:7px 6px;color:var(--text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(top(b.hotels))}</td>
+          <td style="padding:7px 6px;color:var(--text-secondary);text-transform:capitalize;">${esc(top(b.themes))}</td>
+          <td style="padding:7px 6px;text-align:right;font-weight:600;color:${rateColor2(avgOpen)};">${avgOpen.toFixed(1)}%</td>
+        </tr>`;
+      }).join('')}</tbody>
+  </table>`;
+}

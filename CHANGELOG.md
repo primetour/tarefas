@@ -35,6 +35,14 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.8.1+20260505-conteudo-separado-por-bu] — 2026-05-05
+
+### Changed
+- (descreva aqui as mudanças deste deploy)
+
+---
+
 ## [4.8.0+20260505-vision-first-gemini-extraction] — 2026-05-05
 
 **Pivot fundamental do enrichment.** Reportado: *"NAOOO... descricao fizemos só em alguns casos como exemplo!"* + *"muitas news tem html apenas no header e no footer. vai ter que analisar textos dentro de imagens, né? o miolo esta em img..."*. Diagnóstico anterior estava errado — tanto a ideia de description manual quanto extração via texto stripped (que só pega rodapé legal). Único caminho: **Vision API** lendo as imagens dos emails.

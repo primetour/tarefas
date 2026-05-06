@@ -373,9 +373,18 @@ service cloud.firestore {
     }
 
     // ── Performance de Newsletters (Marketing Cloud) ──────────
+    // Read: qualquer usuário autenticado (analytics interno)
+    // Write: GitHub Actions (sem auth) E master (analise manual / re-extracao)
     match /mc_performance/{docId} {
       allow read:  if isAuth();
-      allow write: if false; // escrita apenas via GitHub Actions
+      allow write: if isMaster();
+    }
+
+    // ── Cache de extração de imagens (Vision API) ─────────────
+    // Populated by mc-sync. Master pode ler/escrever pra debug e re-extração.
+    match /mc_image_extractions/{docId} {
+      allow read:  if isAuth();
+      allow write: if isMaster();
     }
 
     // ── Performance Redes Sociais (Meta Instagram) ────────────
