@@ -717,9 +717,8 @@ async function main() {
 
             if (allCached) {
               summary.cacheHits += matchingDocIds.length;
-              // Mesmo em cache hit, salva htmlText (caso ainda não tenha sido
-              // dumpado em runs anteriores).
-              const htmlText = asset.html ? stripHtml(asset.html).slice(0, 10000) : '';
+              // Mesmo em cache hit, salva htmlText (até 30k chars).
+              const htmlText = asset.html ? stripHtml(asset.html).slice(0, 30000) : '';
               enrichmentMap.set(name, {
                 description: asset.description, htmlHash, structural, extracted: null,
                 htmlText,
@@ -741,8 +740,12 @@ async function main() {
               }
             }
 
-            // Dump texto stripped (até 10k chars) pra auditoria/re-extração futura
-            const htmlText = asset.html ? stripHtml(asset.html).slice(0, 10000) : '';
+            // Dump texto stripped (até 30k chars) pra auditoria + re-extração.
+            // Aumentado de 10k → 30k em 4.7.1 após descobrir que os primeiros
+            // ~5-8k chars de email SFMC são template/rodapé legal — o conteúdo
+            // real (destinos, hotéis) vem DEPOIS no HTML cru (estrutura de
+            // tabelas aninhadas).
+            const htmlText = asset.html ? stripHtml(asset.html).slice(0, 30000) : '';
             enrichmentMap.set(name, {
               description: asset.description,
               htmlHash, structural, extracted, extractedMeta,
