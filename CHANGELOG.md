@@ -26,6 +26,18 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.4.5+20260505-typo-saiuram] — 2026-05-05
+
+Patch de correção gramatical exposto durante teste in-browser da 4.4.4 (banner do form de avaliação de meta).
+
+### Fixed
+- **Typo "saiuram" → "saíram"** no banner de atraso. Era erro de morfologia: o código tentava pluralizar via `saiu${count>1?'ram':''}` que produzia "saiuram" (não existe em português). Corrigido para `${count>1?'saíram':'saiu'}`.
+- Singular: "**saiu** com atraso" (1 tarefa)
+- Plural: "**saíram** com atraso" (2+ tarefas)
+
+---
+
 ## [4.4.4+20260505-fix-eval-form-regenera-meta-periodo] — 2026-05-05
 
 Patch corrigindo bug pré-existente no form de avaliação descoberto durante teste in-browser do banner reativo da 4.4.3. Sem este fix, o banner de atraso era inacessível na prática (impossível selecionar meta de outro pilar).

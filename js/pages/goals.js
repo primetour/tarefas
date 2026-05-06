@@ -1667,7 +1667,7 @@ function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEva
     const pctLate = totalLinked > 0 ? Math.round((lateOnes.length / totalLinked) * 100) : 0;
     wrap.innerHTML = `
       <div style="font-size:0.8125rem;font-weight:600;color:#D97706;margin-bottom:6px;">
-        ⚠ ${lateOnes.length} de ${totalLinked} tarefa${totalLinked!==1?'s':''} concluída${totalLinked!==1?'s':''} desta meta saiu${lateOnes.length>1?'ram':''} com atraso (${pctLate}%)
+        ⚠ ${lateOnes.length} de ${totalLinked} tarefa${totalLinked!==1?'s':''} concluída${totalLinked!==1?'s':''} desta meta ${lateOnes.length>1?'saíram':'saiu'} com atraso (${pctLate}%)
       </div>
       <div style="font-size:0.75rem;color:var(--text-secondary);line-height:1.6;">
         ${lateOnes.slice(0, 5).map(({ task, lateInfo }) =>

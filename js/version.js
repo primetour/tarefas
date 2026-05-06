@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 4,
-  patch: 4,
-  build: '20260505-fix-eval-form-regenera-meta-periodo',
+  patch: 5,
+  build: '20260505-typo-saiuram',
 };
 
 /** "1.2.0" */
