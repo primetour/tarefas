@@ -16,7 +16,7 @@ import {
 import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask, wasTaskCompletedLate } from '../services/tasks.js';
 import { fetchAllWorkspaces } from '../services/workspaces.js';
 import { openTaskModal } from '../components/taskModal.js';
-import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+import { renderPickerButton, bindOptionPicker, refreshPickerButton } from '../components/optionPicker.js';
 
 /* ─── Visual configs pro optionPicker ────────────────────── */
 const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
@@ -1900,6 +1900,61 @@ function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEva
       buildConfig: () => ({ options: evPeriodoOpts(), searchPlaceholder: 'Buscar período…' }),
       findSelected: (id) => findIn(evPeriodoOpts(), id),
       emptyLabel: '— Período —',
+    });
+
+    // BUG fix 4.4.4: quando user troca pilar no picker, as opções de meta NÃO
+    // se atualizavam (ficavam as do pilar inicial). Isso bloqueava o usuário de
+    // selecionar uma meta de outro pilar — e tornava o banner de atraso inerte.
+    // Mesma coisa pra período (depende da meta selecionada).
+    //
+    // Fix: ao mudar pilar → regenera <select id="ev-meta"> com as metas do pilar
+    // novo + reseta seleção pra meta 0 + atualiza botão visual + dispara change
+    // de meta (que cascateia pra periodo + banner). Mesma lógica pra meta→periodo.
+    const pilarSelEl   = document.getElementById('ev-pilar');
+    const metaSelEl    = document.getElementById('ev-meta');
+    const periodoSelEl = document.getElementById('ev-periodo');
+
+    pilarSelEl?.addEventListener('change', () => {
+      const pi = parseInt(pilarSelEl.value, 10);
+      if (isNaN(pi)) return;
+      const newPilar = goal.pilares?.[pi];
+      const metas = newPilar?.metas || [];
+      // Regenera options de meta
+      metaSelEl.innerHTML = metas.map((m, mi) =>
+        `<option value="${mi}">${esc(m.titulo || `Meta ${mi+1}`)}</option>`
+      ).join('');
+      metaSelEl.value = '0';
+      // Atualiza botão visual do picker de meta
+      const m0 = metas[0];
+      refreshPickerButton('ev-meta-btn', {
+        selected: m0 ? { id: '0', label: m0.titulo || 'Meta 1', icon: '◉', color: hashColor('0') } : null,
+        emptyLabel: '— Meta —',
+      });
+      // Cascateia change de meta (que vai regenerar período + banner)
+      metaSelEl.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    metaSelEl?.addEventListener('change', () => {
+      const pi = parseInt(pilarSelEl.value, 10);
+      const mi = parseInt(metaSelEl.value, 10);
+      if (isNaN(pi) || isNaN(mi)) return;
+      const newMeta = goal.pilares?.[pi]?.metas?.[mi];
+      if (!newMeta) return;
+      // Regenera options de período (depende da meta — getPendingPeriods filtra
+      // por evals já existentes pra essa meta)
+      const newPeriods = getPendingPeriods(newMeta, existingEvals);
+      periodoSelEl.innerHTML = newPeriods.length
+        ? newPeriods.map(p => `<option value="${esc(p.key)}">${esc(p.label)}</option>`).join('')
+        : `<option value="unico">Avaliação única</option>`;
+      // Reset períod a primeira opção
+      periodoSelEl.value = newPeriods[0]?.key || 'unico';
+      const p0 = newPeriods[0];
+      refreshPickerButton('ev-periodo-btn', {
+        selected: p0
+          ? { id: p0.key, label: p0.label, icon: '', color: '#0EA5E9' }
+          : { id: 'unico', label: 'Avaliação única', icon: '', color: '#0EA5E9' },
+        emptyLabel: '— Período —',
+      });
     });
 
     const recalc = () => {

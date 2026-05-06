@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 4,
-  patch: 3,
-  build: '20260505-fix-banner-atraso-reativo',
+  patch: 4,
+  build: '20260505-fix-eval-form-regenera-meta-periodo',
 };
 
 /** "1.2.0" */

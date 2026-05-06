@@ -25,6 +25,44 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.4.4+20260505-fix-eval-form-regenera-meta-periodo] — 2026-05-05
+
+Patch corrigindo bug pré-existente no form de avaliação descoberto durante teste in-browser do banner reativo da 4.4.3. Sem este fix, o banner de atraso era inacessível na prática (impossível selecionar meta de outro pilar).
+
+### Fixed
+- **Trocar pilar não regenerava opções de meta** (`openEvaluationForm`):
+  - `<select id="ev-meta">` era populado UMA vez no template
+  - Trocar pilar via picker atualizava só o `<select id="ev-pilar">.value`, deixando ev-meta com opções do pilar antigo
+  - Usuário ficava preso na meta inicial, sem conseguir avaliar metas de outros pilares
+  - **Fix**: novo listener `change` no ev-pilar regenera ev-meta + atualiza picker visual via `refreshPickerButton`
+- **Trocar meta não regenerava opções de período** (mesmo padrão): novo listener no ev-meta regenera ev-periodo + cascateia visual.
+
+### Why
+A 4.4.2 entregou o banner, a 4.4.3 fez ele reativo. Ambos passaram smoke test isolado mas o fluxo real ficava inutilizável: banner reativo a um picker que UI não deixava operar. Banner correto sem fluxo correto = feature stub.
+
+Bug existia muito antes da 4.4.x — só apareceu agora porque o fix do banner exigiu de fato trocar pilar/meta na UI pra validar.
+
+### Added
+- `refreshPickerButton` importado de `optionPicker.js` (já existia, só faltava uso em goals.js).
+
+### Verificação
+1. `#goals` → "Avaliação de Metas" → "+ Avaliar" em goal com pilares múltiplos
+2. Modal abre em pilar 0 / meta 0 (default)
+3. Picker de Pilar → escolher pilar 2 (ex: "Suporte integral sob demanda" da Design)
+4. Picker de Meta agora mostra as 6 metas desse pilar (não mais só a do pilar 0)
+5. Selecionar meta com atrasos → banner laranja aparece com lista de atrasados
+
+### Estado consolidado pós-4.4.4
+| Fix | Status |
+|---|---|
+| Fix A — `linkComprovacao` pré-popular com `deliveryLink` | ✅ Validado visual |
+| Fix B.1 — Badge na lista de tarefas vinculadas | ✅ Validado prod (67 badges) |
+| Fix B.2 — Banner laranja reativo no form | ✅ 4.4.3 + 4.4.4 |
+| Fix B.3 — Chip "ATRASADA Xd" no PDF | ⏳ Não testado (export real) |
+
+---
+
 ## [4.4.3+20260505-fix-banner-atraso-reativo] — 2026-05-05
 
 Patch corrigindo gap detectado **durante teste in-browser da 4.4.2** (resposta à pergunta "testou?" do usuário, que motivou a validação real). O banner de atraso no formulário de avaliação só carregava 1× quando o modal abria — trocar pilar/meta no picker não recarregava o banner.
