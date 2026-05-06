@@ -46,7 +46,6 @@ jobs:
           # Enriquecimento IA via agente registrado na IA Hub.
           # Provider/model/prompt/key vem de Firestore (ai_agents + system_config).
           # Para desativar temporariamente sem deletar agente: ENRICH_DISABLED=1
-          DEBUG_SFMC: '1'
           SYNC_DAYS: ${{ github.event.inputs.days || '90' }}
         run: node mc-sync.js
         working-directory: scripts

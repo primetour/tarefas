@@ -162,7 +162,73 @@ async function fetchSends(token, days) {
  * mesmo número. Usamos POST /asset/v1/content/assets/query pra batch
  * (filter $in cobre múltiplos IDs num round trip).
  */
-async function fetchAssetsByLegacyIds(token, legacyIds) {
+/**
+ * Busca assets do tipo email por NOME (mais robusto que por ID legacy).
+ * SFMC tem 3 IDs distintos pra emails (asset.id, legacyData.legacyId, Email
+ * SOAP ID) que NÃO batem entre si. O nome é o único campo que cruza confiável
+ * entre o objeto Send (EmailName) e o Asset (name).
+ *
+ * Recebe array de nomes únicos, retorna Map<name, {description, html, ...}>.
+ */
+async function fetchAssetsByNames(token, names) {
+  if (!names || !names.length) return new Map();
+
+  const out = new Map();
+  // SFMC asset query "in" com strings com chars especiais é flaky.
+  // Estratégia: 1 query por batch de até 50 nomes via "in".
+  const CHUNK = 50;
+  for (let i = 0; i < names.length; i += CHUNK) {
+    const slice = names.slice(i, i + CHUNK);
+    const url = `${MC_REST_URL}/asset/v1/content/assets/query`;
+    const body = {
+      page: { page: 1, pageSize: 200 },
+      query: {
+        leftOperand:  { property: 'assetType.name', simpleOperator: 'equals', value: 'htmlemail' },
+        logicalOperator: 'AND',
+        rightOperand: { property: 'name', simpleOperator: 'in', value: slice },
+      },
+    };
+    const res = await fetch(url, {
+      method:  'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.warn(`  Asset query (by name) falhou: ${res.status} — ${txt.slice(0, 200)}`);
+      continue;
+    }
+    const data = await res.json();
+    for (const it of (data.items || [])) {
+      const name = (it.name || '').trim();
+      if (!name) continue;
+      const html = it.views?.html?.content || it.content || it.views?.text?.content || '';
+      // Se há múltiplos assets com mesmo nome, mantém o mais recente
+      const existing = out.get(name);
+      if (existing) {
+        const newDate = new Date(it.modifiedDate || 0).getTime();
+        const oldDate = new Date(existing.modifiedDate || 0).getTime();
+        if (newDate <= oldDate) continue;
+      }
+      out.set(name, {
+        assetId:     it.id,
+        assetName:   name,
+        description: (it.description || '').trim(),
+        html,
+        modifiedDate: it.modifiedDate,
+      });
+    }
+  }
+  return out;
+}
+
+/** @deprecated — kept for reference. Use fetchAssetsByNames instead.
+ *  Tentativa original era buscar por data.email.legacyId, mas SFMC tem 3 IDs
+ *  distintos pra emails (asset.id, legacyData.legacyId, Email SOAP ID) que NÃO
+ *  batem entre si. Match por nome resolve. Função kept here só pro caso de
+ *  alguém futuro precisar testar essa rota.
+ */
+async function _OLD_fetchAssetsByLegacyIds(token, legacyIds) {
   if (!legacyIds || !legacyIds.length) return new Map();
 
   // ── DEBUG TEMPORÁRIO (remove após descobrir property path correta) ──
@@ -216,24 +282,6 @@ async function fetchAssetsByLegacyIds(token, legacyIds) {
       const ck = xml.match(/<CustomerKey[^>]*>([\s\S]*?)<\/CustomerKey>/i)?.[1] || '';
       const htmlLen = (xml.match(/<HTMLBody[^>]*>([\s\S]*?)<\/HTMLBody>/i)?.[1] || '').length;
       console.log(`  [DEBUG] SOAP Email Name=${name.slice(0,40)} CustomerKey=${ck} HTMLBody len=${htmlLen}`);
-
-      // Se temos CustomerKey, agora podemos achar Asset via REST
-      if (ck) {
-        const assetByKey = await fetch(`${MC_REST_URL}/asset/v1/content/assets/query`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            page: { page: 1, pageSize: 1 },
-            query: { property: 'customerKey', simpleOperator: 'equals', value: ck },
-          }),
-        });
-        if (assetByKey.ok) {
-          const dd = await assetByKey.json();
-          const it = dd.items?.[0];
-          if (it) console.log(`  [DEBUG] Asset by customerKey: id=${it.id} name=${it.name?.slice(0,40)} description=${(it.description||'').slice(0,80)}`);
-          else console.log(`  [DEBUG] Asset by customerKey: NOT FOUND (count=${dd.count})`);
-        }
-      }
     } else {
       console.log(`  [DEBUG] SOAP Email body snippet:`, xml.slice(0, 400));
     }
@@ -609,61 +657,63 @@ async function main() {
       }
 
       // ── Enriquecimento: batch fetch HTML + extração LLM ───────
-      // 1. Coleta legacyIds únicos dos sends
-      // 2. Fetch batch de assets via REST asset query
+      // 1. Coleta NOMES únicos dos sends (EmailName)
+      // 2. Fetch batch de assets via REST asset query (por nome — único campo
+      //    confiável que cruza Send→Asset; os IDs não batem entre as APIs)
       // 3. Pra cada asset: hash do HTML → checa Firestore se já tem
       //    extracted com mesmo hash → cache hit (skip). Senão chama LLM.
-      // 4. Mapa: legacyId -> {description, extracted, htmlHash}
-      const legacyIds = [...new Set(sends.map(s => s.EmailID).filter(Boolean))];
-      const assetMap  = await fetchAssetsByLegacyIds(token, legacyIds);
-      console.log(`   ${assetMap.size} assets recuperados (de ${legacyIds.length} legacyIds únicos)`);
+      // 4. Mapa: nome -> {description, extracted, htmlHash}
+      const sendNames = [...new Set(sends.map(s => (s.EmailName || '').trim()).filter(Boolean))];
+      const assetMap  = await fetchAssetsByNames(token, sendNames);
+      console.log(`   ${assetMap.size} assets recuperados (de ${sendNames.length} nomes únicos)`);
 
-      // Pré-busca docs existentes pra cache lookup
-      const existingDocs = new Map(); // legacyId -> existing.htmlHash
+      // Pré-busca docs existentes pra cache lookup (por jobId já é nosso docId)
+      const existingDocs = new Map(); // jobId -> htmlHash existente
       if (enrichEnabled && assetMap.size) {
-        // Buscar todos os docs dessa BU que tenham as legacyIds — pra checar htmlHash
-        // Firestore in() limita 30 — quebra em chunks
+        const docIds = sends.map(s => `${bu.id}_${s.ID}`);
         const chunks = [];
-        for (let i = 0; i < legacyIds.length; i += 30) chunks.push(legacyIds.slice(i, i + 30));
+        for (let i = 0; i < docIds.length; i += 30) chunks.push(docIds.slice(i, i + 30));
         for (const chunk of chunks) {
-          const snap = await db.collection('mc_performance')
-            .where('buId', '==', bu.id)
-            .where('emailLegacyId', 'in', chunk)
-            .get();
-          snap.docs.forEach(d => {
-            const data = d.data();
-            if (data.emailLegacyId) existingDocs.set(String(data.emailLegacyId), data.htmlHash || null);
+          const reads = await Promise.all(chunk.map(id => db.collection('mc_performance').doc(id).get()));
+          reads.forEach(r => {
+            if (r.exists) {
+              const data = r.data();
+              if (data.htmlHash) existingDocs.set(r.id, data.htmlHash);
+            }
           });
         }
       }
 
       // Enriquece assets (htmlHash + extracted via LLM)
-      const enrichmentMap = new Map(); // legacyId -> { description, htmlHash, extracted, structural }
+      // Mapa por NOME (não mais legacyId)
+      const enrichmentMap = new Map(); // name -> { description, htmlHash, extracted, structural }
       if (assetMap.size) {
-        // Concorrência limitada (4 paralelas) pra não sobrecarregar Anthropic
         const entries = [...assetMap.entries()];
         const CONCURRENCY = 4;
 
         for (let i = 0; i < entries.length; i += CONCURRENCY) {
           const slice = entries.slice(i, i + CONCURRENCY);
-          await Promise.all(slice.map(async ([legacyId, asset]) => {
+          await Promise.all(slice.map(async ([name, asset]) => {
             const htmlHash = sha256(asset.html);
             const structural = htmlStructuralStats(asset.html);
-            const cachedHash = existingDocs.get(legacyId);
 
-            // Cache hit: já tem extracted com mesmo hash → não re-chama LLM
-            if (cachedHash && cachedHash === htmlHash) {
-              summary.cacheHits++;
-              enrichmentMap.set(legacyId, {
-                description: asset.description,
-                htmlHash,
-                structural,
-                extracted: null, // mantém o existente no Firestore via merge
+            // Cache hit: pra qualquer doc dessa BU com este nome+hash, pula
+            // (multiplos sends do mesmo email = mesmo asset = mesmo hash)
+            const matchingDocIds = sends
+              .filter(s => (s.EmailName || '').trim() === name)
+              .map(s => `${bu.id}_${s.ID}`);
+            const allCached = matchingDocIds.length > 0 &&
+              matchingDocIds.every(id => existingDocs.get(id) === htmlHash);
+
+            if (allCached) {
+              summary.cacheHits += matchingDocIds.length;
+              enrichmentMap.set(name, {
+                description: asset.description, htmlHash, structural, extracted: null,
               });
               return;
             }
 
-            // Sem cache: extrai via agente (se ativo)
+            // Sem cache: extrai via agente
             let extracted = null;
             let extractedMeta = null;
             if (enrichEnabled && asset.html) {
@@ -677,12 +727,10 @@ async function main() {
               }
             }
 
-            enrichmentMap.set(legacyId, {
+            enrichmentMap.set(name, {
               description: asset.description,
-              htmlHash,
-              structural,
-              extracted,
-              extractedMeta,
+              htmlHash, structural, extracted, extractedMeta,
+              assetId: asset.assetId, assetName: asset.assetName,
             });
           }));
         }
@@ -694,13 +742,15 @@ async function main() {
         const doc   = buildDoc(send, bu);
         const docId = `${bu.id}_${send.ID}`;
 
-        // Anexa enrichment se disponível
-        const enrich = send.EmailID ? enrichmentMap.get(send.EmailID) : null;
+        // Anexa enrichment se disponível (lookup por nome agora)
+        const sendName = (send.EmailName || '').trim();
+        const enrich = sendName ? enrichmentMap.get(sendName) : null;
         if (enrich) {
-          doc.emailLegacyId = send.EmailID;
-          if (enrich.description) doc.description = enrich.description;
-          if (enrich.htmlHash)    doc.htmlHash    = enrich.htmlHash;
-          if (enrich.structural)  doc.htmlStats   = enrich.structural;
+          if (send.EmailID)         doc.emailLegacyId = send.EmailID;
+          if (enrich.assetId)       doc.assetId       = enrich.assetId;
+          if (enrich.description)   doc.description   = enrich.description;
+          if (enrich.htmlHash)      doc.htmlHash      = enrich.htmlHash;
+          if (enrich.structural)    doc.htmlStats     = enrich.structural;
           if (enrich.extracted) {
             doc.extracted = {
               ...enrich.extracted,
