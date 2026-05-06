@@ -717,8 +717,12 @@ async function main() {
 
             if (allCached) {
               summary.cacheHits += matchingDocIds.length;
+              // Mesmo em cache hit, salva htmlText (caso ainda não tenha sido
+              // dumpado em runs anteriores).
+              const htmlText = asset.html ? stripHtml(asset.html).slice(0, 10000) : '';
               enrichmentMap.set(name, {
                 description: asset.description, htmlHash, structural, extracted: null,
+                htmlText,
               });
               return;
             }
