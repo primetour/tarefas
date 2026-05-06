@@ -166,6 +166,9 @@ async function fetchAssetsByLegacyIds(token, legacyIds) {
   if (!legacyIds || !legacyIds.length) return new Map();
 
   const url = `${MC_REST_URL}/asset/v1/content/assets/query`;
+  // OBS: API não aceita dot-notation em "fields" (rejeita "views.html.content"
+  // com errorcode 10005). Solução: omitir "fields" e pegar payload completo.
+  // Trade-off: response maior, mas pra ~10 assets/dia é trivial.
   const body = {
     page: { page: 1, pageSize: 200 },
     query: {
@@ -175,7 +178,6 @@ async function fetchAssetsByLegacyIds(token, legacyIds) {
         value: legacyIds.map(String),
       },
     },
-    fields: ['id', 'name', 'description', 'views.html.content', 'data.email.legacyId'],
   };
 
   const res = await fetch(url, {
@@ -193,15 +195,21 @@ async function fetchAssetsByLegacyIds(token, legacyIds) {
   const data = await res.json();
   const items = data.items || [];
   // Map legacyId -> { description, html, name, assetId }
+  // Em alguns assets o HTML está em views.html.content; em outros, em
+  // content (texto direto). Tenta ambos.
   const out = new Map();
   for (const it of items) {
     const legacyId = String(it.data?.email?.legacyId || '');
     if (!legacyId) continue;
+    const html = it.views?.html?.content
+              || it.content
+              || it.views?.text?.content
+              || '';
     out.set(legacyId, {
       assetId:     it.id,
       assetName:   it.name || '',
       description: (it.description || '').trim(),
-      html:        it.views?.html?.content || '',
+      html,
     });
   }
   return out;

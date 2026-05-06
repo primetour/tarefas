@@ -31,6 +31,24 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.6.1+20260505-fix-asset-query-fields-syntax] — 2026-05-05
+
+Hotfix capturado em primeiro workflow_dispatch após user habilitar permissão `Assets > Read` no SFMC. SFMC aceitou autenticação (saiu de 403 → 400), mas rejeitou o `fields` parameter por dot-notation: `views.html.content is not a valid field argument`.
+
+### Fixed
+- **`scripts/mc-sync.js fetchAssetsByLegacyIds`**: removido o array `fields` do POST query. SFMC asset API não aceita dot-notation em `fields` (errorcode 10005). Solução: omitir o parâmetro inteiro — API retorna payload completo. Trade-off aceitável: response maior, mas pra ~10 assets/dia o tráfego é trivial.
+- **HTML extraction com fallback**: alguns assets podem ter conteúdo em `views.html.content`, outros em `content` direto, ou ainda `views.text.content` (text-only). Tentamos os 3 em ordem.
+
+### Why
+Documentação SFMC asset API é vaga sobre o suporte a dot-notation no `fields`. Tentei conforme exemplos antigos achados online, falhou. Omitir é a abordagem mais robusta — payload extra é desprezível.
+
+### Verificação
+- ✓ `node --check` passou
+- ⏳ Re-trigger workflow — esperado ver `N assets recuperados` em vez de `0` + `M chamadas LLM`
+
+---
+
 ## [4.6.0+20260505-aba-conteudo-temas-newsletter] — 2026-05-05
 
 **Fase 2 do projeto enriquecimento de newsletters.** Entrega a aba **"🌍 Conteúdo & Temas"** no `#nl-performance` consumindo `mc_performance.extracted` (entidades extraídas via IA na Fase 1, releases 4.5.0-4.5.2). Adiantada enquanto o Marketing Cloud está fora do ar — assim que o sync rodar com `Assets > Read` ativo no SFMC, a UI já vai estar pronta consumindo os dados reais.

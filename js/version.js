@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 6,
-  patch: 0,
-  build: '20260505-aba-conteudo-temas-newsletter',
+  patch: 1,
+  build: '20260505-fix-asset-query-fields-syntax',
 };
 
 /** "1.2.0" */
