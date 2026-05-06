@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 4,
-  patch: 5,
-  build: '20260505-typo-saiuram',
+  minor: 5,
+  patch: 0,
+  build: '20260505-mc-sync-html-ia-extracao',
 };
 
 /** "1.2.0" */

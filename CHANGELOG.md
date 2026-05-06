@@ -27,6 +27,68 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.5.0+20260505-mc-sync-html-ia-extracao] — 2026-05-05
+
+Release **MINOR** — Fase 1 do enriquecimento de newsletters por IA. O sync diário do Marketing Cloud passa a puxar o **HTML completo** de cada disparo (via REST `/asset/v1/content/assets/query`) e extrai entidades via Claude Haiku 4.5: países, cidades, hotéis, marcas, temas, target audience, atividades, faixa de preço, sales points. Tudo persistido em `mc_performance.extracted`. Pipeline com cache por `htmlHash` pra zero re-trabalho.
+
+Esta é a fundação de dados. **Fase 2** entrega a UI (nova aba "Conteúdo & Temas" no `#nl-performance`); **Fase 3** entrega relatórios cruzados e PDF. Ambas dependem desta release rodar em produção.
+
+### Added
+- **`scripts/mc-sync.js`** — funções novas:
+  - `fetchAssetsByLegacyIds(token, legacyIds)` — POST `/asset/v1/content/assets/query` com filter `data.email.legacyId in [...]`. Retorna `{description, html, assetId, assetName}` por legacyId. Batch de 200 por request.
+  - `stripHtml(html)` — regex strip + decode de entidades. Sem dependência externa.
+  - `htmlStructuralStats(html)` — conta CTAs (`<a href>`), imagens (`<img>`), palavras, chars. Determinístico, $0.
+  - `sha256(s)` — hash do HTML pra cache lookup.
+  - `extractEntitiesViaLLM(text, anthropicKey, retries)` — chama Anthropic Messages API com prompt estruturado em PT-BR, exige JSON estrito, temperature 0, max_tokens 1500. Retry exponencial 1× em 429/5xx.
+- **EmailID adicionado ao SOAP Send query** — propriedade legacy necessária pra ligar Send → Asset (é o `data.email.legacyId` do Content Builder).
+- **Pipeline integrado no `main()`**:
+  1. Coleta EmailIDs únicos dos sends do período
+  2. Batch fetch assets via REST
+  3. Pré-busca docs existentes em Firestore (chunks de 30 — limite do `where in`) pra cache lookup por `htmlHash`
+  4. Concorrência limitada (4 paralelas) na extração LLM pra respeitar rate-limit
+  5. Cache hit: skip LLM, mantém `extracted` existente via merge
+  6. Cache miss: extrai + persiste com `extractedAt` + `extractedBy: 'claude-haiku-4-5'`
+- **Logs de operação**: cada run reporta `{enriched, cacheHits, llmCalls}` no resumo final, permitindo monitorar custo de IA em tempo real.
+
+### Changed
+- **Schema `mc_performance`** ganha campos opcionais:
+  - `emailLegacyId: string`
+  - `description: string` (do Content Builder Asset)
+  - `htmlHash: string` (sha256)
+  - `htmlStats: { ctaCount, imageCount, wordCount, charCount }`
+  - `extracted: { countries, cities, hotels[], brands, productTypes, themes, targetAudience, activities, pricePoint, priceRange, travelSeason, sellingPoints, confidence, extractedAt, extractedBy }`
+- **`.github/workflows/mc-sync.yml`** — adicionado env `ANTHROPIC_API_KEY` opcional. Workflow continua funcionando sem o secret (extração desativa).
+- **`INFRA.md` § 3.2** atualizado com permissão `Assets > Read` necessária + pipeline de enriquecimento documentado.
+- **`RULES-AND-AUTOMATIONS.md`** ganhou seção **§ 10.5b — Newsletter Performance — Enriquecimento por IA** com pipeline + regras de cache + custo operacional + condições de re-execução.
+
+### Why
+A descrição manual do Content Builder pediria trabalho do time editorial. O HTML completo já existe e contém tudo que precisamos extrair (e mais — preços, sales points, atividades, target audience). Deixar IA fazer leitura estruturada é zero esforço humano + análise mais rica. Custo operacional desprezível (~R$ 30/ano) graças ao cache por htmlHash e modelo barato (Haiku 4.5). Frame [IA vs determinístico documentado em conversa interna] aplicado: cardinalidade infinita (hotéis novos toda semana) + necessidade de inferência contextual (temas, target) ⇒ IA pura ganha.
+
+### REQUERIDO PÓS-DEPLOY (master)
+1. **Verificar permissão SFMC**: Setup → Apps → Installed Packages → seu package atual → Components → confirmar que tem **`Assets > Read`** ativado. Se não tiver, adicionar e reativar token. (Sem isso o REST `/asset/v1/content/assets/query` retorna 401/403.)
+2. **Adicionar GitHub Secret `ANTHROPIC_API_KEY`** com a key da Anthropic. Sem ele, o sync roda mas pula extração (campos `extracted` ficam ausentes).
+3. **Trigger manual de teste**: `Actions → Sync Marketing Cloud → Run workflow → days: 7`. Validar nos logs:
+   - `Enriquecimento IA: ✓ ATIVO`
+   - `N assets recuperados`
+   - `Enriquecimento IA: X novos · Y cache hits · Z chamadas LLM`
+4. **Inspecionar Firestore**: 1-2 docs em `mc_performance` da última semana devem ter os novos campos populados.
+5. Se OK, próxima release (4.6.0) entrega Fase 2 — aba "Conteúdo & Temas" na UI.
+
+### Custo estimado (operação contínua pós-backfill)
+| Operação | Volume diário | Custo USD | Custo BRL |
+|---|---|---|---|
+| Diario (~10 emails novos) | 40K input + 5K output tokens | $0.015 | R$ 0.09 |
+| Backfill 90d (~1.000 emails) | 4M input + 500K output | $1.40 | R$ 8.40 |
+| **Anual incremental** | — | ~$5 | **~R$ 30** |
+
+### Verificação técnica
+- ✓ `node --check scripts/mc-sync.js` passou
+- ✓ Workflow yml válido
+- ⏳ Test manual workflow_dispatch — depende user adicionar secret + permissão SFMC
+
+---
+
 ## [4.4.5+20260505-typo-saiuram] — 2026-05-05
 
 Patch de correção gramatical exposto durante teste in-browser da 4.4.4 (banner do form de avaliação de meta).

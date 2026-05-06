@@ -430,6 +430,20 @@ de comprometimento.
 - **Conversão idea → tarefa**: botão `Converter em Tarefa` abre modal de tarefa pré-preenchido. Slot original ganha campo `taskId` linkando.
 - **Página pública (`calendario-conteudo.html`)**: read-only, real-time via `onSnapshot`. SSO obrigatório mas não exige permissão específica — qualquer user PRIMETOUR vê o calendário.
 
+### 10.5b Newsletter Performance — Enriquecimento por IA (4.5.0+)
+
+- **Auto-extração de entidades**: cada disparo sincronizado de `mc_performance` é enriquecido automaticamente via IA com base no HTML do email. Sem trabalho do time editorial.
+- **Pipeline (cron diário em GitHub Action `mc-sync.yml`)**:
+  1. SOAP Send → coleta `EmailID` legacy
+  2. REST asset query → HTML + description em batch
+  3. `htmlHash = sha256(html)` → cache lookup em Firestore
+  4. Se cache miss → Claude Haiku 4.5 extrai entidades (countries, cities, hotels, brands, themes, productTypes, targetAudience, activities, pricePoint, priceRange, sellingPoints) em JSON estrito
+  5. Persiste em `mc_performance.extracted` + `htmlHash` + `htmlStats` (ctaCount, imageCount, wordCount)
+- **Cache de hash**: emails reusados em múltiplos disparos só são extraídos uma vez. Re-extração só se HTML mudar.
+- **Fallback gracioso**: ausência de `ANTHROPIC_API_KEY`, falha LLM ou parse JSON quebrado → sync continua, doc fica sem `extracted` (campo opcional).
+- **Custo operacional típico**: ~R$ 30/ano com volume atual (~10 emails novos/dia, ~$0.001/extração). Variável `ENRICH_DISABLED=1` desliga sem mexer no secret.
+- **Regra de quando re-rodar**: `workflow_dispatch` com `days=N` força re-sync — útil pra backfill após mudanças de prompt ou novo modelo.
+
 ### 10.6 IA Hub
 
 - **Cascata automática de API key**: `ref.scope = 'auto'` faz lookup user → núcleo → setor → global. Primeira chave válida é usada. Permite que gestores configurem keys por equipe sem touch global.

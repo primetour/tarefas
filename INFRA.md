@@ -149,6 +149,11 @@ Total: **7 workflows**, todos em `.github/workflows/`. Cada um chama um script N
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY`
+- `ANTHROPIC_API_KEY` — *(opcional desde 4.5.0)* enriquecimento via Claude. Se ausente, sync continua sem extração.
+
+**Permissão SFMC necessária no Installed Package**:
+- `Email > Read` (já tinha — necessário pra Send objects)
+- `Assets > Read` *(novo desde 4.5.0)* — pra REST `/asset/v1/content/assets/query` puxar HTML
 
 **Business Units sincronizadas** (5 MIDs):
 | ID | Nome | MID |
@@ -161,9 +166,19 @@ Total: **7 workflows**, todos em `.github/workflows/`. Cada um chama um script N
 
 **Escreve em Firestore**:
 - `mc_performance` — performance dos envios por BU
+- *(desde 4.5.0)* mesmos docs ganham campos `description`, `htmlHash`, `htmlStats`, `extracted` (entidades extraídas via IA: `countries`, `cities`, `hotels`, `brands`, `themes`, `productTypes`, `targetAudience`, `activities`, `pricePoint`, `priceRange`, `travelSeason`, `sellingPoints`, `confidence`)
 
 **Parâmetros**:
 - `SYNC_DAYS` — default 90 (configurável no trigger manual)
+- `ENRICH_DISABLED=1` — desliga extração IA mesmo com `ANTHROPIC_API_KEY` setado
+
+**Pipeline de enriquecimento** (4.5.0+):
+1. SOAP query Send → coleta `EmailID` (legacy) de cada disparo
+2. REST `/asset/v1/content/assets/query` com filter `data.email.legacyId in [...]` → batch fetch de HTML + description
+3. Pra cada asset: `htmlHash = sha256(html)`. Se já existe doc com mesmo hash, **cache hit** (skip LLM).
+4. Cache miss: `stripHtml` → texto plain (até 8000 chars) → Anthropic API (Claude Haiku 4.5, temp 0, max_tokens 1500)
+5. Persiste extracted + htmlHash + structural stats (ctaCount, imageCount, wordCount)
+6. Custo típico: ~$0.001/email novo, ~$0.00 em cache hits, ~R$ 30/ano operação completa
 
 ---
 

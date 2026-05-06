@@ -43,6 +43,8 @@ jobs:
           FIREBASE_PROJECT_ID:       ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_CLIENT_EMAIL:     ${{ secrets.FIREBASE_CLIENT_EMAIL }}
           FIREBASE_PRIVATE_KEY:      ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          # Enriquecimento IA (opcional - se ausente, sync continua sem extracao)
+          ANTHROPIC_API_KEY:         ${{ secrets.ANTHROPIC_API_KEY }}
           SYNC_DAYS: ${{ github.event.inputs.days || '90' }}
         run: node mc-sync.js
         working-directory: scripts
