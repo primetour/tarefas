@@ -36,6 +36,65 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.9.0+20260506-schema-cruises-newslettertype-cidades-edit-modal] — 2026-05-06
+
+Release **MINOR** — atende 5 observações cirúrgicas do user sobre a aba de Conteúdo & Temas:
+1. *"se um hotel é citado mais de uma vez na mesma newsletter, ele ganha apenas uma citação"* — dedup intra-doc via `Set`
+2. *"importante entender qual o critério para temas/posicionamento"* — critérios canônicos documentados em RULES § 10.5b
+3. *"saiba diferenciar hotel de cruzeiro (ex: acqua expeditions)"* — schema **separado** `cruises[]` ≠ `hotels[]`, com bloco UI próprio
+4. *"ter a opcao de editar a lista que vc fez para termos 100% de efetividade"* — botão **✎ Editar** + modal completo de edição manual
+5. *"outro topico importante de analise: tipo da newsletter (se é promocao, áereo, roteiro, hotelaria)"* — novo campo `newsletterType` enum (10 valores) com KPI/filtro/bloco
+6. *"ah, faltou ter analise por cidade/regiao... e nao só país"* — novo bloco "Top cidades/regiões" + KPI + filtro + drill-down
+
+### Schema novo (`mc_performance.extracted`)
+- **`cruises[]`** — array separado de operadoras marítimas (Aqua Expeditions, Silversea, Ritz-Carlton Yacht, Delfin Amazon). NÃO devem aparecer em `hotels[]`.
+- **`newsletterType`** — enum com 10 valores: `promocao | aereo | roteiro | hotelaria | cruzeiro | csat | inspiracional | institucional | show/evento | retreat/wellness`. Documentado com critério canônico em RULES § 10.5b.
+
+### UI atualizada (aba "🌍 Conteúdo & Temas")
+- **6 KPIs no topo**: Países · Cidades (NOVO) · Hotéis · Cruzeiros (NOVO) · Marcas · Open Rate Médio
+- **7 blocos** (era 4): Tipo de newsletter (NOVO) · Top países · Top cidades/regiões (NOVO) · Top hotéis · Cruzeiros (NOVO) · Temas · Marcas
+- **Filtros expandidos** (de 4 pra 7): BU · Período · **Tipo (NOVO)** · País · **Cidade (NOVO)** · Tema · Busca
+- **Drill-down por cidade** (era só por país)
+- **Coluna "Editar"** na tabela de envios com botão ✎ → modal de edição manual
+- **Badge tipo de newsletter** ao lado do nome de cada envio
+
+### Modal de edição manual (`openExtractedEditor`)
+- Form com selects (newsletterType, confidence, pricePoint) + textareas (1 entidade por linha) pra todos os 11 campos do schema
+- Hotels/Cruises aceitam JSON inline `{"name":"X","brand":"Y","category":"luxo"}` por linha
+- Salva direto em Firestore com `extractedBy: 'manual-edit'` + `editedAt`
+- Cache invalidado automaticamente após save
+- Garantia: master pode corrigir 100% das análises onde IA errou
+
+### Documentação (RULES § 10.5b)
+Reescrita completa da seção de Newsletter Performance Enriquecimento:
+- Pipeline atual (Vision-first 4.8.0+)
+- Schema canônico de `extracted` documentado
+- **Tabela de critérios de tipo** (10 categorias com triggers)
+- **Tabela de critérios de tema** (13 categorias com triggers)
+- Regras de dedup (intra-doc + inter-wave)
+- Cruises separados de hotels (regra explícita)
+- Quando re-rodar (workflow_dispatch, edição manual, ENRICH_DISABLED)
+
+### Why
+Observações cirúrgicas de domínio que IAs gerais não pegam:
+- Aqua Expeditions é cruzeiro fluvial (Mekong/Amazônia), não hotel — mas IA classificava como hotel
+- Cidades importam tanto quanto países pra curadoria (Atenas vs Grécia, Cumbuco vs Brasil)
+- Tipo de newsletter (promo vs hotelaria vs aéreo) é dimensão crítica pra entender o portfolio
+- Edição manual é INDISPENSÁVEL quando se cobra de cliente — IA erra, humano corrige
+- Critérios documentados evitam que próxima IA invente categorias novas a cada extração
+
+### Verificação
+1. ✓ `node --check` passou
+2. ⏳ Bulk write (159 campanhas) — pendente browser reconectar
+3. ⏳ Validação visual da nova UI
+
+### Próximas releases planejadas
+- **4.9.x — Bulk write das 159 campanhas analisadas por Claude Sonnet** (pendente)
+- **4.10.0 — PDF + relatórios cruzados** (sazonalidade, top hotéis × performance, alinhamento subject↔body)
+
+---
+
 ## [4.8.1+20260505-conteudo-separado-por-bu] — 2026-05-05
 
 ### Changed

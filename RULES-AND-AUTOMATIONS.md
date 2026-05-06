@@ -430,19 +430,88 @@ de comprometimento.
 - **Conversão idea → tarefa**: botão `Converter em Tarefa` abre modal de tarefa pré-preenchido. Slot original ganha campo `taskId` linkando.
 - **Página pública (`calendario-conteudo.html`)**: read-only, real-time via `onSnapshot`. SSO obrigatório mas não exige permissão específica — qualquer user PRIMETOUR vê o calendário.
 
-### 10.5b Newsletter Performance — Enriquecimento por IA (4.5.0+)
+### 10.5b Newsletter Performance — Enriquecimento por IA (4.5.0+ → 4.9.0+)
 
-- **Auto-extração de entidades**: cada disparo sincronizado de `mc_performance` é enriquecido automaticamente via IA com base no HTML do email. Sem trabalho do time editorial.
-- **Pipeline (cron diário em GitHub Action `mc-sync.yml`)**:
-  1. SOAP Send → coleta `EmailID` legacy
-  2. REST asset query → HTML + description em batch
-  3. `htmlHash = sha256(html)` → cache lookup em Firestore
-  4. Se cache miss → Claude Haiku 4.5 extrai entidades (countries, cities, hotels, brands, themes, productTypes, targetAudience, activities, pricePoint, priceRange, sellingPoints) em JSON estrito
-  5. Persiste em `mc_performance.extracted` + `htmlHash` + `htmlStats` (ctaCount, imageCount, wordCount)
-- **Cache de hash**: emails reusados em múltiplos disparos só são extraídos uma vez. Re-extração só se HTML mudar.
-- **Fallback gracioso**: ausência de `ANTHROPIC_API_KEY`, falha LLM ou parse JSON quebrado → sync continua, doc fica sem `extracted` (campo opcional).
-- **Custo operacional típico**: ~R$ 30/ano com volume atual (~10 emails novos/dia, ~$0.001/extração). Variável `ENRICH_DISABLED=1` desliga sem mexer no secret.
-- **Regra de quando re-rodar**: `workflow_dispatch` com `days=N` força re-sync — útil pra backfill após mudanças de prompt ou novo modelo.
+#### Pipeline atual (4.8.0+: Vision-first)
+- **Auto-extração de entidades** via Gemini 2.5 Flash multimodal lendo as IMAGENS dos emails (banners de hotel, cards de oferta) — porque o HTML stripped só tem rodapé/disclaimer.
+- **Pipeline (cron diário em `mc-sync.yml`)**:
+  1. SOAP Send → coleta `EmailName` (matchkey) e `Email.ID` legacy
+  2. REST asset query (POST `/asset/v1/content/assets/query`) → match Send→Asset por **NOME** (3 IDs distintos no SFMC não batem entre si)
+  3. `extractContentImages(html, topN=5)` → top 5 imagens "de conteúdo" (filtra trackers/spacers/logos por size+score)
+  4. Cache por URL em `mc_image_extractions` (hotéis populares reaparecem)
+  5. Cache miss → Gemini Vision multimodal (subject + alt-texts + 5 imgs base64) → JSON estrito
+  6. Persiste em `mc_performance.extracted` + `htmlHash` + `htmlStats` + `htmlText` (até 30k chars)
+- **Cache de hash**: emails reusados só extraídos uma vez. Re-extração só se HTML mudar OU `extractedBy` antigo não bater com agente atual (4.5.1+).
+- **Throttling**: serial + 4.5s entre chamadas (Gemini Flash free tier 15 RPM).
+- **Fallback gracioso**: agente inativo, sem chave, falha LLM ou parse JSON quebrado → sync continua, doc fica sem `extracted`.
+- **Custo operacional**: ~R$ 7/ano com cache (~10 emails/dia × ~3 imgs avg × $0.0002/img).
+
+#### Edição manual da análise (4.9.0+)
+Botão **✎ Editar** em cada envio na aba "Conteúdo & Temas" abre modal pra correção manual quando IA erra (ex: classificou cruzeiro como hotel, perdeu hotel obscuro). Garante 100% de efetividade. Salva em `mc_performance.extracted` com `extractedBy: 'manual-edit'` e `editedAt: timestamp`.
+
+#### Schema canônico de `extracted`
+```json
+{
+  "newsletterType": "promocao | aereo | roteiro | hotelaria | cruzeiro | csat | inspiracional | institucional | show/evento | retreat/wellness",
+  "countries": ["nome em português br"],
+  "cities":    ["cidade ou região"],
+  "hotels":    [{"name": "...", "brand": "marca|null", "category": "ultra-luxo|luxo|premium|null"}],
+  "cruises":   [{"name": "operadora", "brand": "...", "category": "..."}],  // separado de hotels (4.9.0+)
+  "brands":    ["Belmond", "Aman", ...],
+  "productTypes":   ["hotel|cruise|fam|roteiro|experiencia|aereo"],
+  "themes":         ["luxo|romance|familia|aventura|gastronomia|wellness|cultura|praia|cidade|natureza|mar|slow-travel"],
+  "targetAudience": ["casais|familias|solo|grupo|50+|millennials|agencias-parceiras|B2B"],
+  "activities":     [...],
+  "pricePoint":     "ultra-luxo|luxo|premium|null",
+  "priceRange":     {"min":null,"max":null,"currency":"USD|BRL|EUR|null","basis":"noite|pacote|null"},
+  "travelSeason":   ["primavera|verao|outono|inverno|alta-temporada"],
+  "sellingPoints":  ["frase curta de venda"],
+  "confidence":     "high|medium|low",
+  "extractedAt":    "timestamp",
+  "extractedBy":    "groq/llama-3.3-70b-versatile | gemini/gemini-2.5-flash | claude-manual-analysis | manual-edit"
+}
+```
+
+#### Critérios canônicos de **tipo de newsletter** (4.9.0+)
+| Tipo | Quando classificar |
+|---|---|
+| `promocao` | Ofertas com %OFF, "benefícios exclusivos", datas comemorativas (Dia das Mães, Páscoa, Black Friday), kids cortesia |
+| `aereo` | Voos diretos, classes executivas, parcelamento, "Voos para X" |
+| `roteiro` | Multi-destinos numa mesma comunicação, "explore X dias em..." |
+| `hotelaria` | Foco em hotéis específicos como produto principal |
+| `cruzeiro` | Operadoras marítimas (Aqua, Silversea, Ritz Yacht), itinerários fluviais |
+| `csat` | Pesquisas de satisfação ("Como avalia nosso atendimento?") |
+| `inspiracional` | Conteúdo sem oferta direta, "descubra o..", curiosidade/lifestyle |
+| `institucional` | Comunicação da marca PRIMETOUR sem produto |
+| `show/evento` | Shows musicais, festivais, GP Mônaco, BTS, Andrea Bocelli |
+| `retreat/wellness` | Wellness, spa, yoga, retiros, longas estadias terapêuticas |
+
+#### Critérios canônicos de **temas** (4.9.0+)
+| Tema | Trigger |
+|---|---|
+| `luxo` | Marcas premium (Belmond, Aman, Faena, Six Senses), "ultra-luxo", preços altos |
+| `ultra-luxo` | Marca tier máximo (Aman, Bvlgari) ou explícito no copy |
+| `romance` | Lua-de-mel, "à dois", suítes especiais |
+| `familia` | "Crianças cortesia", villas familiares, Dia das Mães |
+| `aventura` | Safari, expedições, trekking, atividades outdoor, Antártica/Ártico |
+| `gastronomia` | "Estrelas Michelin", culinária local, vinho, cozinha |
+| `wellness` | Spa, retiros, yoga, slow-travel terapêutico |
+| `cultura` | Museus, sítios arqueológicos ("Acrópole"), Andrea Bocelli, arte, design |
+| `praia` | Ilhas, beach, resort à beira-mar |
+| `cidade` | City-break, urbanismo (NY, Paris, Amsterdam) |
+| `natureza` | Parques, paisagem (Lençóis Maranhenses, Patagônia) |
+| `mar` | Cruzeiros, navegação, yacht |
+| `slow-travel` | "Viver sem pressa", longas estadias |
+
+#### Regras de agregação (4.9.0+)
+- **Dedup intra-doc**: cada hotel/destino aparece **1 vez por campanha**, mesmo que mencionado 3× no email. Aplicado via `Set` na função `aggregateContent`.
+- **Dedup inter-wave**: P0209_1, P0209_2, P0209_3 = 1 campanha. Aplicado via `dedupContentByCampaign(docs)` antes da agregação.
+- **Cruises separados de hotels**: Aqua Expeditions, Silversea, Ritz-Carlton Yacht NÃO entram em `hotels[]` (mesmo sendo "hospedagem flutuante"). Vão em `cruises[]` separado.
+
+#### Quando re-rodar
+- `workflow_dispatch` com `days=N` força re-sync (force re-extract via mudança de provider/model do agente)
+- Master pode editar manualmente cada doc via botão ✎ na aba Conteúdo
+- `ENRICH_DISABLED=1` desliga IA mantendo sync de métricas SFMC
 
 ### 10.6 IA Hub
 

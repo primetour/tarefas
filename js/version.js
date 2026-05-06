@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 8,
-  patch: 1,
-  build: '20260505-conteudo-separado-por-bu',
+  minor: 9,
+  patch: 0,
+  build: '20260506-schema-cruises-newslettertype-cidades-edit-modal',
 };
 
 /** "1.2.0" */

@@ -284,25 +284,31 @@ export async function renderNlPerformance(container) {
 
       <!-- Filters -->
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
-        <select class="filter-select" id="nlc-bu-filter" style="min-width:160px;">
+        <select class="filter-select" id="nlc-bu-filter" style="min-width:140px;">
           <option value="">Todas as unidades</option>
           ${BUS.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}
         </select>
-        <select class="filter-select" id="nlc-period-filter" style="min-width:140px;">
+        <select class="filter-select" id="nlc-period-filter" style="min-width:130px;">
           <option value="30">Últimos 30 dias</option>
-          <option value="90" selected>Últimos 90 dias</option>
-          <option value="180">Últimos 180 dias</option>
+          <option value="90">Últimos 90 dias</option>
+          <option value="180" selected>Últimos 180 dias</option>
           <option value="365">Último ano</option>
           <option value="">Todo período</option>
         </select>
-        <select class="filter-select" id="nlc-country-filter" style="min-width:140px;">
-          <option value="">Todos os países</option>
+        <select class="filter-select" id="nlc-type-filter" style="min-width:130px;">
+          <option value="">Todos os tipos</option>
         </select>
-        <select class="filter-select" id="nlc-theme-filter" style="min-width:140px;">
-          <option value="">Todos os temas</option>
+        <select class="filter-select" id="nlc-country-filter" style="min-width:130px;">
+          <option value="">Todos países</option>
+        </select>
+        <select class="filter-select" id="nlc-city-filter" style="min-width:140px;">
+          <option value="">Todas cidades</option>
+        </select>
+        <select class="filter-select" id="nlc-theme-filter" style="min-width:130px;">
+          <option value="">Todos temas</option>
         </select>
         <input type="text" id="nlc-search" class="portal-field" placeholder="Buscar hotel/cidade…"
-          style="min-width:180px;font-size:0.8125rem;">
+          style="min-width:160px;font-size:0.8125rem;flex:1;">
         <span id="nlc-meta" style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);"></span>
       </div>
 
@@ -1772,7 +1778,7 @@ async function setupNlCalendarInsights() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 let _contentDataCache = null;       // array de docs com extracted
-let _contentFiltersState = { bu: '', period: '90', country: '', theme: '', search: '' };
+let _contentFiltersState = { bu: '', period: '180', country: '', city: '', theme: '', newsletterType: '', search: '' };
 
 async function loadContentTab() {
   const root = document.getElementById('nlc-content');
@@ -1811,8 +1817,14 @@ async function loadContentTab() {
     document.getElementById('nlc-country-filter').addEventListener('change', e => {
       _contentFiltersState.country = e.target.value; renderContentTab();
     });
+    document.getElementById('nlc-city-filter')?.addEventListener('change', e => {
+      _contentFiltersState.city = e.target.value; renderContentTab();
+    });
     document.getElementById('nlc-theme-filter').addEventListener('change', e => {
       _contentFiltersState.theme = e.target.value; renderContentTab();
+    });
+    document.getElementById('nlc-type-filter')?.addEventListener('change', e => {
+      _contentFiltersState.newsletterType = e.target.value; renderContentTab();
     });
     document.getElementById('nlc-search').addEventListener('input', e => {
       _contentFiltersState.search = e.target.value.trim().toLowerCase(); renderContentTab();
@@ -1860,22 +1872,37 @@ function renderContentTab() {
 
   root.innerHTML = `
     <!-- KPIs -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
-      ${contentKpi('🌍 Países distintos',  agg.countries.size,           'destinos cobertos no período')}
-      ${contentKpi('🏨 Hotéis citados',    agg.hotels.size,              'mentions únicos')}
-      ${contentKpi('🏷 Marcas',            agg.brands.size,              'brands hoteleiras')}
-      ${contentKpi('📊 Open rate médio',  fmtPct(agg.avgOpenRate),       'das newsletters enriquecidas')}
-      ${contentKpi('🤖 Confiança IA',      `${agg.confidenceHigh}/${enrichedDocs.length}`, '"high" confidence')}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;">
+      ${contentKpi('🌍 Países',          agg.countries.size,           'distintos no período')}
+      ${contentKpi('🏙 Cidades',          agg.cities.size,              'mencionadas')}
+      ${contentKpi('🏨 Hotéis',          agg.hotels.size,              'únicos citados')}
+      ${contentKpi('🚢 Cruzeiros',        agg.cruises.size,             'operadoras')}
+      ${contentKpi('🏷 Marcas',           agg.brands.size,              'hoteleiras')}
+      ${contentKpi('📊 Open rate médio', fmtPct(agg.avgOpenRate),       'das aprovadas')}
     </div>
 
     <!-- 2-col grid de blocos -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;">
 
-      <!-- Top destinos com performance -->
+      <!-- Tipo de newsletter -->
       <div class="card" style="padding:18px;">
         <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:0.06em;color:var(--text-muted);">🌍 Top destinos · performance</h3>
+          letter-spacing:0.06em;color:var(--text-muted);">📂 Tipo de newsletter</h3>
+        ${renderNewsletterTypesBars(agg.newsletterTypes, enrichedDocs)}
+      </div>
+
+      <!-- Top destinos (países) com performance -->
+      <div class="card" style="padding:18px;">
+        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.06em;color:var(--text-muted);">🌍 Top países · performance</h3>
         ${renderTopDestinosTable(agg.byCountry, enrichedDocs)}
+      </div>
+
+      <!-- Top cidades / regiões -->
+      <div class="card" style="padding:18px;">
+        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.06em;color:var(--text-muted);">🏙 Top cidades / regiões</h3>
+        ${renderTopDestinosTable(agg.cities, enrichedDocs, 'cidade')}
       </div>
 
       <!-- Top hotéis -->
@@ -1883,6 +1910,13 @@ function renderContentTab() {
         <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
           letter-spacing:0.06em;color:var(--text-muted);">🏨 Hotéis mais mencionados</h3>
         ${renderTopHoteisBars(agg.hotels, enrichedDocs)}
+      </div>
+
+      <!-- Top cruzeiros (separado de hotéis) -->
+      <div class="card" style="padding:18px;">
+        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.06em;color:var(--text-muted);">🚢 Cruzeiros / operadoras marítimas</h3>
+        ${renderTopHoteisBars(agg.cruises, enrichedDocs)}
       </div>
 
       <!-- Temas/posicionamento -->
@@ -1986,19 +2020,23 @@ function dedupContentByCampaign(docs) {
 
 function applyAllContentFilters(docs) {
   const f = _contentFiltersState;
-  // 1. Filtra por BU/período (raw)
   const baseFiltered = applyContentFilters(docs);
-  // 2. DEDUP por campanha (P0209_1/_2/_3 = 1) — críticа pra contagem de termos
   const deduped = dedupContentByCampaign(baseFiltered);
-  // 3. Filtra por país/tema/busca
   return deduped.filter(d => {
     if (f.country) {
       const countries = (d.extracted?.countries || []).map(c => String(c).toLowerCase());
       if (!countries.includes(f.country.toLowerCase())) return false;
     }
+    if (f.city) {
+      const cities = (d.extracted?.cities || []).map(c => String(c).toLowerCase());
+      if (!cities.includes(f.city.toLowerCase())) return false;
+    }
     if (f.theme) {
       const themes = (d.extracted?.themes || []).map(t => String(t).toLowerCase());
       if (!themes.includes(f.theme.toLowerCase())) return false;
+    }
+    if (f.newsletterType) {
+      if ((d.extracted?.newsletterType || '').toLowerCase() !== f.newsletterType.toLowerCase()) return false;
     }
     if (f.search) {
       const hay = JSON.stringify(d.extracted || {}).toLowerCase()
@@ -2015,31 +2053,44 @@ function populateContentDropdowns(allDocs) {
   const enriched = baseFiltered.filter(d => d.extracted);
 
   const countries = new Set();
+  const cities    = new Set();
   const themes    = new Set();
+  const types     = new Set();
   for (const d of enriched) {
     (d.extracted.countries || []).forEach(c => c && countries.add(c));
-    (d.extracted.themes || []).forEach(t => t && themes.add(t));
+    (d.extracted.cities    || []).forEach(c => c && cities.add(c));
+    (d.extracted.themes    || []).forEach(t => t && themes.add(t));
+    if (d.extracted.newsletterType) types.add(d.extracted.newsletterType);
   }
 
   const countrySel = document.getElementById('nlc-country-filter');
+  const citySel    = document.getElementById('nlc-city-filter');
   const themeSel   = document.getElementById('nlc-theme-filter');
-  const cur1 = countrySel.value, cur2 = themeSel.value;
+  const typeSel    = document.getElementById('nlc-type-filter');
+  const cur1 = countrySel?.value, cur2 = themeSel?.value;
+  const cur3 = citySel?.value,    cur4 = typeSel?.value;
 
-  countrySel.innerHTML = `<option value="">Todos os países</option>` +
+  if (countrySel) countrySel.innerHTML = `<option value="">Todos os países</option>` +
     [...countries].sort().map(c => `<option value="${esc(c)}" ${c===cur1?'selected':''}>${esc(c)}</option>`).join('');
-  themeSel.innerHTML = `<option value="">Todos os temas</option>` +
+  if (citySel) citySel.innerHTML = `<option value="">Todas cidades/regiões</option>` +
+    [...cities].sort().map(c => `<option value="${esc(c)}" ${c===cur3?'selected':''}>${esc(c)}</option>`).join('');
+  if (themeSel) themeSel.innerHTML = `<option value="">Todos os temas</option>` +
     [...themes].sort().map(t => `<option value="${esc(t)}" ${t===cur2?'selected':''}>${esc(t)}</option>`).join('');
+  if (typeSel) typeSel.innerHTML = `<option value="">Todos os tipos</option>` +
+    [...types].sort().map(t => `<option value="${esc(t)}" ${t===cur4?'selected':''}>${esc(t)}</option>`).join('');
 }
 
 /* ─── Agregações ───────────────────────────────────────────── */
 
 function aggregateContent(docs) {
-  const countries = new Map(); // name -> { count, totalSent, totalOpen, sends: [docId] }
+  const countries = new Map();
   const cities    = new Map();
   const hotels    = new Map();
+  const cruises   = new Map();   // 4.9.0+ separado de hotels
   const brands    = new Map();
   const themes    = new Map();
   const audiences = new Map();
+  const newsletterTypes = new Map(); // 4.9.0+ promocao/aereo/roteiro/hotelaria/cruzeiro/csat/inspiracional/institucional
   let confidenceHigh = 0;
   let totalOpenRate = 0;
   let openRateCount = 0;
@@ -2063,20 +2114,25 @@ function aggregateContent(docs) {
       map.set(k, cur);
     };
 
-    (ex.countries || []).forEach(c => tally(countries, c));
-    (ex.cities    || []).forEach(c => tally(cities, c));
-    (ex.brands    || []).forEach(b => tally(brands, b));
-    (ex.themes    || []).forEach(t => tally(themes, t));
-    (ex.targetAudience || []).forEach(a => tally(audiences, a));
-    (ex.hotels || []).forEach(h => {
-      if (!h) return;
-      const name = typeof h === 'string' ? h : (h.name || h);
-      tally(hotels, name);
-    });
+    // Dedup INTRA-doc: cada entidade conta 1× por campanha (já está OK
+    // porque arrays de extracted normalmente já vêm sem duplicatas; mas
+    // garantimos via Set local).
+    const dedup = (arr) => [...new Set((arr || []).filter(Boolean).map(x =>
+      typeof x === 'string' ? x.trim() : (x?.name || '').trim()
+    ).filter(Boolean))];
+
+    dedup(ex.countries).forEach(c => tally(countries, c));
+    dedup(ex.cities).forEach(c => tally(cities, c));
+    dedup(ex.brands).forEach(b => tally(brands, b));
+    dedup(ex.themes).forEach(t => tally(themes, t));
+    dedup(ex.targetAudience).forEach(a => tally(audiences, a));
+    dedup(ex.hotels).forEach(h => tally(hotels, h));
+    dedup(ex.cruises).forEach(c => tally(cruises, c));
+    dedup(ex.newsletterType ? [ex.newsletterType] : []).forEach(t => tally(newsletterTypes, t));
   }
 
   return {
-    countries, cities, hotels, brands, themes, audiences,
+    countries, cities, hotels, cruises, brands, themes, audiences, newsletterTypes,
     confidenceHigh,
     avgOpenRate: openRateCount > 0 ? totalOpenRate / openRateCount : 0,
     byCountry: countries,
@@ -2094,26 +2150,63 @@ function contentKpi(title, value, sub) {
   </div>`;
 }
 
-function renderTopDestinosTable(countriesMap, allEnriched) {
-  if (countriesMap.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum destino identificado ainda.</p>';
-  const top = [...countriesMap.entries()]
+function renderTopDestinosTable(map, allEnriched, label = 'País') {
+  if (!map || map.size === 0) return `<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum ${String(label).toLowerCase()} identificado ainda.</p>`;
+  const top = [...map.entries()]
     .map(([name, d]) => ({ name, count: d.count, openRate: d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100) : 0 }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
+  const headerLabel = label === 'cidade' ? 'Cidade / Região' : 'País';
+  const drillClass = label === 'cidade' ? 'nlc-city-drill' : 'nlc-country-drill';
+  const drillAttr  = label === 'cidade' ? 'data-city'      : 'data-country';
 
   return `<table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
     <thead><tr style="border-bottom:1px solid var(--border-subtle);color:var(--text-muted);font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;">
-      <th style="text-align:left;padding:8px 6px;">País</th>
+      <th style="text-align:left;padding:8px 6px;">${esc(headerLabel)}</th>
       <th style="text-align:right;padding:8px 6px;">Disparos</th>
       <th style="text-align:right;padding:8px 6px;">Open rate</th>
     </tr></thead>
     <tbody>${top.map(r => `<tr style="border-bottom:1px solid var(--border-subtle);cursor:pointer;"
-      class="nlc-country-drill" data-country="${esc(r.name)}">
+      class="${drillClass}" ${drillAttr}="${esc(r.name)}">
       <td style="padding:7px 6px;font-weight:500;">${esc(r.name)}</td>
       <td style="padding:7px 6px;text-align:right;color:var(--text-secondary);">${r.count}</td>
       <td style="padding:7px 6px;text-align:right;font-weight:600;color:${rateColor2(r.openRate)};">${r.openRate.toFixed(1)}%</td>
     </tr>`).join('')}</tbody>
   </table>`;
+}
+
+function renderNewsletterTypesBars(typesMap, allEnriched) {
+  if (!typesMap || typesMap.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Tipos não classificados ainda.</p>';
+  const labels = {
+    promocao: '🏷 Promoção',
+    aereo: '✈ Aéreo',
+    roteiro: '📍 Roteiro',
+    hotelaria: '🏨 Hotelaria',
+    cruzeiro: '🚢 Cruzeiro',
+    csat: '📋 CSAT',
+    inspiracional: '🌟 Inspiracional',
+    institucional: '🏢 Institucional',
+    'show/evento': '🎤 Show/Evento',
+    'retreat/wellness': '🧘 Retreat/Wellness',
+  };
+  const colors = {
+    promocao: '#F59E0B', aereo: '#3B82F6', roteiro: '#10B981',
+    hotelaria: '#8B5CF6', cruzeiro: '#06B6D4', csat: '#6B7280',
+    inspiracional: '#EC4899', institucional: '#64748B',
+    'show/evento': '#F97316', 'retreat/wellness': '#14B8A6',
+  };
+  const top = [...typesMap.entries()]
+    .map(([name, d]) => ({ name, count: d.count, openRate: d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100) : 0 }))
+    .sort((a, b) => b.count - a.count);
+  const max = top[0]?.count || 1;
+  return top.map(r => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;">
+    <div style="flex:0 0 140px;">${esc(labels[r.name] || r.name)}</div>
+    <div style="flex:1;min-width:60px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
+      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:${colors[r.name] || '#94A3B8'};"></div>
+    </div>
+    <div style="flex:0 0 40px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
+    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};">${r.openRate.toFixed(1)}%</div>
+  </div>`).join('');
 }
 
 function renderTopHoteisBars(hotelsMap, allEnriched) {
@@ -2169,11 +2262,12 @@ function renderEnrichedSendsList(docs) {
     <table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
       <thead><tr style="border-bottom:1px solid var(--border-subtle);color:var(--text-muted);font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;">
         <th style="text-align:left;padding:8px 6px;">Data</th>
-        <th style="text-align:left;padding:8px 6px;">Nome</th>
+        <th style="text-align:left;padding:8px 6px;">Tipo · Nome</th>
         <th style="text-align:left;padding:8px 6px;">Países</th>
         <th style="text-align:left;padding:8px 6px;">Hotéis</th>
         <th style="text-align:left;padding:8px 6px;">Temas</th>
         <th style="text-align:right;padding:8px 6px;">Open</th>
+        <th style="text-align:center;padding:8px 6px;">Editar</th>
       </tr></thead>
       <tbody>${top.map(d => {
         const dateStr = d.sentDate?.toDate ? d.sentDate.toDate().toLocaleDateString('pt-BR') : '—';
@@ -2182,15 +2276,21 @@ function renderEnrichedSendsList(docs) {
         const hotels = (ex.hotels || []).slice(0, 2).map(h => typeof h === 'string' ? h : h.name).filter(Boolean).join(', ');
         const moreH = (ex.hotels || []).length > 2 ? ` +${ex.hotels.length - 2}` : '';
         const themes = (ex.themes || []).slice(0, 3).join(', ');
+        const ntype = ex.newsletterType ? `<span style="font-size:0.625rem;padding:1px 6px;border-radius:8px;background:rgba(139,92,246,.1);color:#8B5CF6;margin-right:4px;">${esc(ex.newsletterType)}</span>` : '';
         const waveTxt = d._waveCount > 1
           ? `<span title="${d._waveCount} ondas disparadas" style="font-size:0.625rem;color:var(--text-muted);font-weight:400;margin-left:4px;">⊞${d._waveCount}</span>` : '';
         return `<tr style="border-bottom:1px solid var(--border-subtle);">
           <td style="padding:7px 6px;color:var(--text-muted);font-size:0.75rem;white-space:nowrap;">${dateStr}</td>
-          <td style="padding:7px 6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.name || '—')}${waveTxt}</td>
+          <td style="padding:7px 6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${ntype}${esc(d.name || '—')}${waveTxt}</td>
           <td style="padding:7px 6px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(countries)}</td>
           <td style="padding:7px 6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(hotels || '—')}${moreH}</td>
           <td style="padding:7px 6px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(themes || '—')}</td>
           <td style="padding:7px 6px;text-align:right;font-weight:600;color:${rateColor2(d.openRate || 0)};">${(d.openRate || 0).toFixed(1)}%</td>
+          <td style="padding:7px 6px;text-align:center;">
+            <button class="nlc-edit-doc btn btn-ghost btn-sm" data-doc-id="${esc(d.id)}"
+              title="Editar análise manualmente"
+              style="padding:2px 8px;font-size:0.75rem;color:var(--brand-gold);">✎</button>
+          </td>
         </tr>`;
       }).join('')}</tbody>
     </table>
@@ -2232,6 +2332,23 @@ function wireDrillDowns() {
       const sel = document.getElementById('nlc-country-filter');
       if (sel) sel.value = country;
       renderContentTab();
+    });
+  });
+  // Click em cidade → seta filtro de cidade e re-renderiza
+  document.querySelectorAll('.nlc-city-drill').forEach(row => {
+    row.addEventListener('click', () => {
+      const city = row.dataset.city;
+      _contentFiltersState.city = city;
+      const sel = document.getElementById('nlc-city-filter');
+      if (sel) sel.value = city;
+      renderContentTab();
+    });
+  });
+  // Botão "✎" em cada envio → abre modal de edição manual do extracted
+  document.querySelectorAll('.nlc-edit-doc').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openExtractedEditor(btn.dataset.docId);
     });
   });
 }
@@ -2291,4 +2408,157 @@ function renderContentByBu(docs) {
         </tr>`;
       }).join('')}</tbody>
   </table>`;
+}
+
+/* ─── Modal de edição manual de extracted (4.9.0+) ─────────────
+ * Permite ao master/admin corrigir manualmente entidades extraídas
+ * por IA quando estiverem erradas. Salva direto em mc_performance.
+ * Garante 100% de efetividade nas análises (palavra do user).
+ */
+async function openExtractedEditor(docId) {
+  const { collection, doc, getDoc, updateDoc, serverTimestamp } = await import(
+    'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+  );
+  const { db } = await import('../firebase.js');
+
+  const ref = doc(db, 'mc_performance', docId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) { alert('Documento não encontrado.'); return; }
+  const data = snap.data();
+  const ex = data.extracted || {};
+
+  // Helper pra render array de strings/objetos como textarea (1 linha cada)
+  const arrToText = (arr, key) => (arr || []).map(v =>
+    typeof v === 'string' ? v : (key === 'hotels' || key === 'cruises'
+      ? JSON.stringify(v)
+      : (v?.name || JSON.stringify(v)))
+  ).join('\n');
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);
+    z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;`;
+  overlay.innerHTML = `
+    <div class="card" style="max-width:720px;width:100%;max-height:88vh;overflow:auto;padding:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <h3 style="margin:0;font-size:1rem;">✎ Editar análise · ${esc(data.name || docId)}</h3>
+        <button class="btn btn-ghost btn-sm" id="ed-close">✕</button>
+      </div>
+      <p style="margin:0 0 14px 0;font-size:0.75rem;color:var(--text-muted);">
+        Subject: ${esc(data.subject || '—')}
+      </p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Tipo de newsletter
+          <select id="ed-newsletterType" class="form-input" style="width:100%;">
+            <option value="">— escolher —</option>
+            <option value="promocao">🏷 promocao</option>
+            <option value="aereo">✈ aereo</option>
+            <option value="roteiro">📍 roteiro</option>
+            <option value="hotelaria">🏨 hotelaria</option>
+            <option value="cruzeiro">🚢 cruzeiro</option>
+            <option value="csat">📋 csat</option>
+            <option value="inspiracional">🌟 inspiracional</option>
+            <option value="institucional">🏢 institucional</option>
+            <option value="show/evento">🎤 show/evento</option>
+            <option value="retreat/wellness">🧘 retreat/wellness</option>
+          </select>
+        </label>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Confiança
+          <select id="ed-confidence" class="form-input" style="width:100%;">
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low">low</option>
+          </select>
+        </label>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Price point
+          <select id="ed-pricePoint" class="form-input" style="width:100%;">
+            <option value="">—</option>
+            <option value="ultra-luxo">ultra-luxo</option>
+            <option value="luxo">luxo</option>
+            <option value="premium">premium</option>
+          </select>
+        </label>
+        <div></div>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Países (1 por linha)
+          <textarea id="ed-countries" class="form-input" style="width:100%;height:70px;font-size:0.8125rem;">${esc(arrToText(ex.countries, 'countries'))}</textarea>
+        </label>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Cidades/Regiões (1 por linha)
+          <textarea id="ed-cities" class="form-input" style="width:100%;height:70px;font-size:0.8125rem;">${esc(arrToText(ex.cities, 'cities'))}</textarea>
+        </label>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);grid-column:span 2;">Hotéis — JSON 1 por linha: {"name":"X","brand":"Y","category":"luxo"}
+          <textarea id="ed-hotels" class="form-input" style="width:100%;height:80px;font-size:0.75rem;font-family:ui-monospace;">${esc(arrToText(ex.hotels, 'hotels'))}</textarea>
+        </label>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);grid-column:span 2;">Cruzeiros (operadoras) — JSON 1 por linha: {"name":"Aqua Expeditions","brand":"X","category":"ultra-luxo"}
+          <textarea id="ed-cruises" class="form-input" style="width:100%;height:60px;font-size:0.75rem;font-family:ui-monospace;">${esc(arrToText(ex.cruises, 'cruises'))}</textarea>
+        </label>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Marcas (1 por linha)
+          <textarea id="ed-brands" class="form-input" style="width:100%;height:60px;font-size:0.8125rem;">${esc(arrToText(ex.brands))}</textarea>
+        </label>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Temas (1 por linha)
+          <textarea id="ed-themes" class="form-input" style="width:100%;height:60px;font-size:0.8125rem;">${esc(arrToText(ex.themes))}</textarea>
+        </label>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Target audience (1 por linha)
+          <textarea id="ed-targetAudience" class="form-input" style="width:100%;height:60px;font-size:0.8125rem;">${esc(arrToText(ex.targetAudience))}</textarea>
+        </label>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);">Atividades (1 por linha)
+          <textarea id="ed-activities" class="form-input" style="width:100%;height:60px;font-size:0.8125rem;">${esc(arrToText(ex.activities))}</textarea>
+        </label>
+        <label style="display:block;font-size:0.75rem;color:var(--text-muted);grid-column:span 2;">Sales points (1 por linha)
+          <textarea id="ed-sellingPoints" class="form-input" style="width:100%;height:60px;font-size:0.8125rem;">${esc(arrToText(ex.sellingPoints))}</textarea>
+        </label>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-secondary" id="ed-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="ed-save">💾 Salvar análise manual</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Pré-popula selects
+  if (ex.newsletterType) document.getElementById('ed-newsletterType').value = ex.newsletterType;
+  if (ex.confidence)     document.getElementById('ed-confidence').value     = ex.confidence;
+  if (ex.pricePoint)     document.getElementById('ed-pricePoint').value     = ex.pricePoint;
+
+  const close = () => overlay.remove();
+  document.getElementById('ed-close').addEventListener('click', close);
+  document.getElementById('ed-cancel').addEventListener('click', close);
+
+  // Helper pra parsear textarea de JSON 1-por-linha (hotels/cruises)
+  const parseJsonLines = (text) => {
+    return (text || '').split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+      try { return JSON.parse(line); }
+      catch { return { name: line }; } // fallback: nome simples
+    });
+  };
+  const parseLines = (text) => (text || '').split('\n').map(l => l.trim()).filter(Boolean);
+
+  document.getElementById('ed-save').addEventListener('click', async () => {
+    const newExtracted = {
+      ...ex,
+      newsletterType: document.getElementById('ed-newsletterType').value || null,
+      confidence:     document.getElementById('ed-confidence').value || 'medium',
+      pricePoint:     document.getElementById('ed-pricePoint').value || null,
+      countries: parseLines(document.getElementById('ed-countries').value),
+      cities:    parseLines(document.getElementById('ed-cities').value),
+      hotels:    parseJsonLines(document.getElementById('ed-hotels').value),
+      cruises:   parseJsonLines(document.getElementById('ed-cruises').value),
+      brands:    parseLines(document.getElementById('ed-brands').value),
+      themes:    parseLines(document.getElementById('ed-themes').value),
+      targetAudience: parseLines(document.getElementById('ed-targetAudience').value),
+      activities:     parseLines(document.getElementById('ed-activities').value),
+      sellingPoints:  parseLines(document.getElementById('ed-sellingPoints').value),
+      extractedBy: 'manual-edit',
+      editedAt:    serverTimestamp(),
+    };
+    try {
+      await updateDoc(ref, { extracted: newExtracted });
+      _contentDataCache = null; // força refetch
+      close();
+      await loadContentTab();
+    } catch (e) {
+      alert('Falha ao salvar: ' + e.message);
+    }
+  });
 }
