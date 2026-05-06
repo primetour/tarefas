@@ -37,6 +37,36 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.9.3+20260506-fix-resize-disparos-envios] — 2026-05-06
+
+Release **PATCH** — corrige 2 problemas reportados pelo user nas tabelas:
+
+1. *"a primeira [Disparos] está com colunas em que as palavras aparecem cortadas"* — tabela **Disparos** (aba Performance) agora tem resize-handles em **todas** as colunas, larguras default mais generosas, e botão "↺ Reset colunas".
+2. *"a outra [Envios] deixou a coluna C vinculada a B, criando um aspecto estranho, desajeitado"* — bug no resize da tabela **Envios** (aba Conteúdo) corrigido. O drag de uma coluna fazia as colunas vizinhas "se moverem junto" porque o handler usava `getBoundingClientRect().width` para capturar widths de TODAS as colunas no `mouseup` (e o browser distribuía espaço extra entre cols sem width explícita devido a `width:max-content` + `min-width:100%`).
+
+### Bugfix Envios (`renderEnrichedSendsList` + `wireEnviosColResize`)
+- `<table style="width:max-content;min-width:100%">` → `<table style="width:${totalW}px">` (largura explícita = soma das cols, scrollada pelo wrapper).
+- `wireEnviosColResize` agora mantém um `state[]` de larguras explícitas por coluna. No `mousemove` atualiza só o índice arrastado, no `mouseup` salva esse mesmo array — não captura widths renderizadas via `getBoundingClientRect`.
+- Adicionado `document.body.style.cursor = 'col-resize'` durante o drag.
+
+### Resize tabela Disparos (`renderTable`)
+- Substituídas as 3 colunas sticky (BU, Data, Nome) + 11 scroll-cols por uma única `<table>` com `<colgroup>` + `table-layout:fixed`.
+- Definição declarativa em `DISPAROS_COLS_DEFINITION` (15 cols com defaults entre 40 e 280px e `visibleWhen` para edit/filterBu).
+- Persistência por chave em `localStorage[nl-disparos-col-widths-v1]` (objeto `{key: width}` em vez de array — sobrevive a mudanças de visibilidade).
+- Botão "↺ Reset colunas" no topo da tabela com `_resetDisparosColWidths()`.
+- Helper `_renderDisparosCell(col, r, hidden)` — render baseado em `col.type` (date, name, subject, num, num-bad, pct-good, edit, bu).
+- `loadData` atualizado pra usar `nl-table-wrap` direto (sem `nl-tbody`).
+
+### Trade-offs
+- Sticky-cols removidas — resize + sticky era complexo (sticky `left` precisa recomputar com cada drag). User prioriza resize, scroll horizontal é a alternativa.
+- Resize não preserva `editMode` toggle widths separadamente (compartilha mesma key, recompute na hora).
+
+### Arquivos alterados
+- `js/pages/nlPerformance.js` — refactor renderTable + bugfix wireEnviosColResize
+- `js/version.js` — bump 4.9.2 → 4.9.3
+- `index.html` — cache-bust v= alinhado
+
+
 ## [4.9.2+20260506-modal-chips-resize-cols] — 2026-05-06
 
 Release **PATCH** — atende as 2 últimas observações do user sobre a aba **Conteúdo & Temas**:

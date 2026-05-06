@@ -194,15 +194,19 @@ export async function renderNlPerformance(container) {
         <span class="widget-insights-slot" data-widget-id="nl-table-block"></span>
       </div>
       <div class="card" style="padding:0;overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:center;
+          padding:8px 14px;border-bottom:1px solid var(--border-subtle);background:var(--bg-elevated);">
+          <span style="font-size:0.6875rem;color:var(--text-muted);">
+            💡 Arraste a borda direita do cabeçalho para ajustar a largura das colunas.
+          </span>
+          <button id="nl-disparos-reset-cols" class="btn btn-ghost btn-sm"
+            title="Restaurar larguras padrão"
+            style="font-size:0.6875rem;color:var(--text-muted);padding:2px 8px;">↺ Reset colunas</button>
+        </div>
         <div id="nl-table-wrap" style="overflow-x:auto;max-height:72vh;overflow-y:auto;">
-          <table id="nl-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:0.8125rem;">
-            <thead id="nl-thead"></thead>
-            <tbody id="nl-tbody">
-              <tr><td colspan="14" style="padding:40px;text-align:center;color:var(--text-muted);">
-                Carregando dados…
-              </td></tr>
-            </tbody>
-          </table>
+          <div style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+            Carregando dados…
+          </div>
         </div>
       </div>
     </div>
@@ -392,14 +396,20 @@ export async function renderNlPerformance(container) {
   document.getElementById('nl-cal-export-xlsx')?.addEventListener('click', exportCalXLSX);
   document.getElementById('nl-cal-export-pdf')?.addEventListener('click',  exportCalPDF);
 
+  // Reset colunas Disparos
+  document.getElementById('nl-disparos-reset-cols')?.addEventListener('click', () => {
+    _resetDisparosColWidths();
+    renderTable(editMode);
+  });
+
   await loadData(editMode);
 }
 
 /* ─── Load from Firestore ─────────────────────────────────── */
 async function loadData(editMode = false) {
-  const tbody = document.getElementById('nl-tbody');
-  if (tbody) tbody.innerHTML = `<tr><td colspan="14" style="padding:40px;text-align:center;
-    color:var(--text-muted);">Carregando…</td></tr>`;
+  const wrap = document.getElementById('nl-table-wrap');
+  if (wrap) wrap.innerHTML = `<div style="padding:40px;text-align:center;
+    color:var(--text-muted);font-size:0.8125rem;">Carregando…</div>`;
 
   try {
     let cutoff, cutoffTo = null;
@@ -446,9 +456,9 @@ async function loadData(editMode = false) {
     renderTable(editMode);
   } catch(e) {
     console.error('nl-performance load error:', e);
-    const tbody = document.getElementById('nl-tbody');
-    if (tbody) tbody.innerHTML = `<tr><td colspan="14" style="padding:40px;text-align:center;
-      color:var(--text-muted);">Erro: ${esc(e.message)}</td></tr>`;
+    const wrap = document.getElementById('nl-table-wrap');
+    if (wrap) wrap.innerHTML = `<div style="padding:40px;text-align:center;
+      color:var(--color-danger);font-size:0.8125rem;">Erro: ${esc(e.message)}</div>`;
   }
 }
 
@@ -530,6 +540,51 @@ function mergeWaves(rows) {
 }
 
 /* ─── Render table ────────────────────────────────────────── */
+/* ─── Larguras default + persistência da tabela Disparos ───────
+ * Ordem: edit?(36) | unidade(120) | data(110) | nome(220) | assunto(280) |
+ *        enviados(80) | entrega(80) | hardB(90) | softB(90) | blockB(90) |
+ *        abertura(90) | %abertura(90) | cliques(80) | %cliques(80) | optout(80)
+ * Ao mudar editMode/filterBu, recomputa colunas visíveis dinamicamente.
+ */
+const DISPAROS_COLS_DEFINITION = [
+  { key:'_edit',      label:'',           defaultW:40,  visibleWhen:'editMode',  sortable:false, type:'edit' },
+  { key:'_bu',        label:'Unidade',    defaultW:120, visibleWhen:'!filterBu', sortable:false, type:'bu' },
+  { key:'sentDate',   label:'Data',       defaultW:110, sortable:true, type:'date' },
+  { key:'name',       label:'Nome',       defaultW:220, sortable:true, type:'name' },
+  { key:'subject',    label:'Assunto',    defaultW:280, sortable:true, type:'subject' },
+  { key:'totalSent',  label:'Enviados',   defaultW:80,  sortable:true, type:'num',     align:'right' },
+  { key:'deliveryRate', label:'Entrega',  defaultW:80,  sortable:true, type:'pct-good', align:'right', t1:95, t2:85 },
+  { key:'hardBounce', label:'Hard bounce',  defaultW:90, sortable:true, type:'num-bad', align:'right' },
+  { key:'softBounce', label:'Soft bounce',  defaultW:90, sortable:true, type:'num-bad', align:'right' },
+  { key:'blockBounce',label:'Block bounce', defaultW:90, sortable:true, type:'num-bad', align:'right' },
+  { key:'openUnique', label:'Abertura',   defaultW:90,  sortable:true, type:'num',     align:'right' },
+  { key:'openRate',   label:'% Abertura', defaultW:90,  sortable:true, type:'pct-good', align:'right', t1:20, t2:10 },
+  { key:'clickUnique',label:'Cliques',    defaultW:80,  sortable:true, type:'num',     align:'right' },
+  { key:'clickRate',  label:'% Cliques',  defaultW:80,  sortable:true, type:'pct-good', align:'right', t1:3, t2:1 },
+  { key:'optOut',     label:'Opt-out',    defaultW:80,  sortable:true, type:'num-bad', align:'right' },
+];
+const DISPAROS_COL_KEY = 'nl-disparos-col-widths-v1';
+
+function _getVisibleDisparosCols(editMode) {
+  return DISPAROS_COLS_DEFINITION.filter(c => {
+    if (c.visibleWhen === 'editMode')  return !!editMode;
+    if (c.visibleWhen === '!filterBu') return !filterBu;
+    return true;
+  });
+}
+function _loadDisparosColWidths(visibleCols) {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(DISPAROS_COL_KEY) || '{}') || {}; } catch {}
+  return visibleCols.map(c => Math.max(40, +saved[c.key] || c.defaultW));
+}
+function _saveDisparosColWidth(key, width) {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(DISPAROS_COL_KEY) || '{}') || {}; } catch {}
+  saved[key] = Math.round(width);
+  try { localStorage.setItem(DISPAROS_COL_KEY, JSON.stringify(saved)); } catch {}
+}
+function _resetDisparosColWidths() { try { localStorage.removeItem(DISPAROS_COL_KEY); } catch {} }
+
 function renderTable(editMode = false) {
   // Setup insights na primeira vez que dados estão prontos
   if (allData?.length) {
@@ -552,137 +607,111 @@ function renderTable(editMode = false) {
     return sortDir * (va - vb);
   });
 
-  // In export mode: only visible rows. In display: show all with crossed style
-  const visibleRows = rows.filter(r => !hiddenRows.has(r.jobId));
-
   const count = document.getElementById('nl-count');
   if (count) count.textContent = `${rows.length} disparos`;
   updateHiddenCount();
   renderKpis(rows);
 
-  // ── Styles for sticky columns ──────────────────────────────
-  const stickyBase  = `position:sticky;z-index:2;background:var(--bg-card);`;
-  const stickyHead  = `position:sticky;z-index:3;background:var(--bg-surface);`;
+  const visibleCols = _getVisibleDisparosCols(editMode);
+  const widths = _loadDisparosColWidths(visibleCols);
+  const totalW = widths.reduce((s, w) => s + w, 0);
 
-  // Fixed col widths: col0=BU(90), col1=Date(90), col2=Name(180)
-  const hasBu     = !filterBu;
-  const col0w     = hasBu ? 90  : 0;
-  const col1left  = hasBu ? col0w : 0;   // Date left position
-  const col2left  = col1left + 112;       // Name left position (after Date=112px)
-  const afterFixed= col2left + 190;       // shadow starts here
+  // ── Replace whole table content (colgroup + thead + tbody) ────
+  const wrap = document.getElementById('nl-table-wrap');
+  if (!wrap) return;
 
-  const thFixed = (left, w, label, sortK) => {
-    const active = sortK === sortKey;
-    return `<th data-sort="${sortK}" class="nl-sort-th"
-      style="${stickyHead}left:${left}px;min-width:${w}px;max-width:${w}px;
-      padding:10px 12px;text-align:left;font-size:0.6875rem;font-weight:600;
-      text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;cursor:pointer;
-      border-bottom:1px solid var(--border-subtle);
+  const handle = `<span class="nl-col-resize" style="position:absolute;right:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:5;"></span>`;
+
+  const thHTML = visibleCols.map((c, i) => {
+    if (c.type === 'edit') {
+      return `<th data-col-idx="${i}" data-col-key="${esc(c.key)}"
+        style="position:relative;padding:10px 8px;border-bottom:1px solid var(--border-subtle);"></th>`;
+    }
+    const active = c.sortable && sortKey === c.key;
+    const arrow = active ? (sortDir === -1 ? ' ↓' : ' ↑') : '';
+    const align = c.align === 'right' ? 'right' : 'left';
+    const cursor = c.sortable ? 'cursor:pointer;' : '';
+    return `<th data-col-idx="${i}" data-col-key="${esc(c.key)}"
+      ${c.sortable ? `class="nl-sort-th" data-sort="${c.key}"` : ''}
+      style="position:relative;text-align:${align};padding:10px 12px;
+      font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
       ${active ? 'color:var(--brand-gold);' : 'color:var(--text-muted);'}
-      ${left + w === afterFixed ? 'box-shadow:4px 0 8px -4px rgba(0,0,0,.25);' : ''}">
-      ${label}${active ? (sortDir === -1 ? ' ↓' : ' ↑') : ''}
+      border-bottom:1px solid var(--border-subtle);${cursor}user-select:none;">
+      ${esc(c.label)}${arrow}${handle}
     </th>`;
-  };
-
-  const tdFixed = (left, w, content, extra = '') =>
-    `<td style="${stickyBase}left:${left}px;min-width:${w}px;max-width:${w}px;
-      padding:9px 12px;vertical-align:middle;
-      ${left + w === afterFixed ? 'box-shadow:4px 0 8px -4px rgba(0,0,0,.2);' : ''}
-      ${extra}">
-      ${content}
-    </td>`;
-
-  const thScroll = (c) => {
-    const active = c.key === sortKey;
-    return `<th data-sort="${c.key}" class="nl-sort-th"
-      style="${thStyle(active)}">${c.label}${active ? (sortDir === -1 ? ' ↓' : ' ↑') : ''}</th>`;
-  };
-
-  // ── Header ─────────────────────────────────────────────────
-  const thead = document.getElementById('nl-thead');
-  if (thead) {
-    thead.innerHTML = `<tr style="background:var(--bg-surface);">
-      ${editMode ? `<th style="${stickyHead}left:0;min-width:36px;padding:10px 8px;
-        border-bottom:1px solid var(--border-subtle);z-index:3;"></th>` : ''}
-      ${hasBu ? `<th style="${stickyHead}left:${editMode?36:0}px;min-width:${col0w}px;max-width:${col0w}px;
-        padding:10px 12px;font-size:0.6875rem;font-weight:600;text-transform:uppercase;
-        letter-spacing:.05em;color:var(--text-muted);white-space:nowrap;overflow:hidden;
-        border-bottom:1px solid var(--border-subtle);">Unidade</th>` : ''}
-      ${thFixed(hasBu ? col0w + (editMode?36:0) : (editMode?36:0), 112, 'Data', 'sentDate')}
-      ${thFixed(hasBu ? col2left + (editMode?36:0) : 112 + (editMode?36:0), 190, 'Nome', 'name')}
-      ${COLS_EXTRA.map(thScroll).join('')}
-    </tr>`;
-
-    thead.querySelectorAll('.nl-sort-th').forEach(th => {
-      th.addEventListener('click', () => {
-        if (sortKey === th.dataset.sort) sortDir *= -1;
-        else { sortKey = th.dataset.sort; sortDir = -1; }
-        renderTable(editMode);
-      });
-    });
-  }
-
-  // ── Body ───────────────────────────────────────────────────
-  const tbody = document.getElementById('nl-tbody');
-  if (!tbody) return;
-
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="14" style="padding:48px;text-align:center;
-      color:var(--text-muted);">Nenhum disparo encontrado para o período selecionado.</td></tr>`;
-    return;
-  }
-
-  const editOffset = editMode ? 36 : 0;
-  const buOffset   = hasBu   ? col0w : 0;
-
-  tbody.innerHTML = rows.map(r => {
-    const hidden = hiddenRows.has(r.jobId);
-    const rowStyle = hidden
-      ? 'opacity:.35;text-decoration:line-through;'
-      : 'border-bottom:1px solid var(--border-subtle);';
-
-    return `<tr style="${rowStyle}transition:background .1s;"
-      onmouseover="if(!this.dataset.hidden)this.style.background='var(--bg-surface)'"
-      onmouseout="this.style.background=''"
-      data-hidden="${hidden}">
-      ${editMode ? `
-        <td style="position:sticky;left:0;z-index:2;background:var(--bg-card);
-          min-width:36px;padding:9px 8px;text-align:center;vertical-align:middle;">
-          <button class="nl-hide-btn" data-jobid="${r.jobId}"
-            title="${hidden ? 'Mostrar linha' : 'Ocultar linha'}"
-            style="border:none;background:none;cursor:pointer;font-size:0.875rem;
-              color:${hidden ? 'var(--brand-gold)' : 'var(--text-muted)'};">
-            ${hidden ? '👁' : '✕'}
-          </button>
-        </td>` : ''}
-      ${hasBu ? `<td style="${stickyBase}left:${editOffset}px;min-width:${col0w}px;max-width:${col0w}px;
-        padding:9px 12px;vertical-align:middle;overflow:hidden;">${buBadge(r.virtualBuId, r.virtualBuName)}</td>` : ''}
-      ${tdFixed(buOffset + editOffset, 112, fmt(r.sentDate), 'color:var(--text-muted);font-size:0.75rem;')}
-      ${tdFixed(buOffset + editOffset + 112, 190,
-        `<span style="display:block;font-size:0.8125rem;white-space:normal;line-height:1.35;word-break:break-word;">
-          ${esc(r.name || '—')}
-          ${r.waveCount > 1 ? `<br><span title="${esc(r.waveNames)}" style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;cursor:help;">⊞ ${r.waveCount} ondas</span>` : ''}
-        </span>`,
-        `box-shadow:4px 0 8px -4px rgba(0,0,0,.2);vertical-align:top;`)}
-      <td style="padding:9px 12px;vertical-align:top;white-space:normal;word-break:break-word;
-        color:var(--text-muted);font-size:0.75rem;line-height:1.4;min-width:180px;max-width:300px;">
-        ${esc(r.subject || '—')}
-      </td>
-      <td style="${tdStyle('right')}">${num(r.totalSent)}</td>
-      <td style="${tdStyle('right')};${rateColor(r.deliveryRate, 95, 85)}">${pct(r.deliveryRate)}</td>
-      <td style="${tdStyle('right')};${badColor(r.hardBounce)}">${num(r.hardBounce)}</td>
-      <td style="${tdStyle('right')};${badColor(r.softBounce)}">${num(r.softBounce)}</td>
-      <td style="${tdStyle('right')};${badColor(r.blockBounce)}">${num(r.blockBounce)}</td>
-      <td style="${tdStyle('right')}">${num(r.openUnique)}</td>
-      <td style="${tdStyle('right')};${rateColor(r.openRate, 20, 10)}">${pct(r.openRate)}</td>
-      <td style="${tdStyle('right')}">${num(r.clickUnique)}</td>
-      <td style="${tdStyle('right')};${rateColor(r.clickRate, 3, 1)}">${pct(r.clickRate)}</td>
-      <td style="${tdStyle('right')};${badColor(r.optOut)}">${num(r.optOut)}</td>
-    </tr>`;
   }).join('');
 
+  const tbodyHTML = rows.length === 0
+    ? `<tr><td colspan="${visibleCols.length}" style="padding:48px;text-align:center;
+        color:var(--text-muted);">Nenhum disparo encontrado para o período selecionado.</td></tr>`
+    : rows.map(r => {
+        const hidden = hiddenRows.has(r.jobId);
+        const rowStyle = hidden
+          ? 'opacity:.35;text-decoration:line-through;'
+          : 'border-bottom:1px solid var(--border-subtle);';
+
+        return `<tr style="${rowStyle}transition:background .1s;"
+          onmouseover="if(!this.dataset.hidden)this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background=''"
+          data-hidden="${hidden}">
+          ${visibleCols.map(c => _renderDisparosCell(c, r, hidden)).join('')}
+        </tr>`;
+      }).join('');
+
+  wrap.innerHTML = `<table id="nl-disparos-table" style="font-size:0.8125rem;
+    border-collapse:separate;border-spacing:0;table-layout:fixed;width:${totalW}px;">
+    <colgroup>${widths.map(w => `<col style="width:${w}px;">`).join('')}</colgroup>
+    <thead><tr style="background:var(--bg-surface);position:sticky;top:0;z-index:4;">
+      ${thHTML}
+    </tr></thead>
+    <tbody>${tbodyHTML}</tbody>
+  </table>`;
+
+  // Bind sort
+  wrap.querySelectorAll('.nl-sort-th').forEach(th => {
+    th.addEventListener('click', (e) => {
+      // Não dispara sort se clicou no handle de resize
+      if (e.target.classList.contains('nl-col-resize')) return;
+      if (sortKey === th.dataset.sort) sortDir *= -1;
+      else { sortKey = th.dataset.sort; sortDir = -1; }
+      renderTable(editMode);
+    });
+  });
+
+  // Bind resize handles
+  const cols = [...wrap.querySelectorAll('colgroup col')];
+  const state = [...widths];
+  const recomputeTableW = () => {
+    const t = document.getElementById('nl-disparos-table');
+    if (t) t.style.width = `${state.reduce((s, w) => s + w, 0)}px`;
+  };
+  wrap.querySelectorAll('.nl-col-resize').forEach((h, i) => {
+    h.addEventListener('mousedown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const startX = e.clientX;
+      const startW = state[i];
+      document.body.style.cursor = 'col-resize';
+      const onMove = (ev) => {
+        const newW = Math.max(40, Math.round(startW + (ev.clientX - startX)));
+        state[i] = newW;
+        cols[i].style.width = `${newW}px`;
+        recomputeTableW();
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        _saveDisparosColWidth(visibleCols[i].key, state[i]);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+    h.addEventListener('mouseenter', () => h.style.background = 'var(--brand-gold)');
+    h.addEventListener('mouseleave', () => h.style.background = 'transparent');
+  });
+
   // Bind hide buttons
-  tbody.querySelectorAll('.nl-hide-btn').forEach(btn => {
+  wrap.querySelectorAll('.nl-hide-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const jobId = btn.dataset.jobid;
@@ -691,6 +720,55 @@ function renderTable(editMode = false) {
       renderTable(editMode);
     });
   });
+}
+
+/** Render de uma célula da tabela Disparos baseado no tipo de coluna. */
+function _renderDisparosCell(col, r, hidden) {
+  const align = col.align === 'right' ? 'right' : 'left';
+  const baseTd = `padding:9px 12px;vertical-align:top;text-align:${align};
+    overflow:hidden;text-overflow:ellipsis;`;
+  const truncTd = `${baseTd}white-space:nowrap;`;
+  const wrapTd  = `${baseTd}white-space:normal;word-break:break-word;line-height:1.35;`;
+  switch (col.type) {
+    case 'edit': {
+      return `<td style="padding:8px;text-align:center;vertical-align:middle;">
+        <button class="nl-hide-btn" data-jobid="${r.jobId}"
+          title="${hidden ? 'Mostrar linha' : 'Ocultar linha'}"
+          style="border:none;background:none;cursor:pointer;font-size:0.875rem;
+            color:${hidden ? 'var(--brand-gold)' : 'var(--text-muted)'};">
+          ${hidden ? '👁' : '✕'}
+        </button></td>`;
+    }
+    case 'bu': {
+      return `<td title="${esc(r.virtualBuName || '')}" style="${truncTd}vertical-align:middle;">
+        ${buBadge(r.virtualBuId, r.virtualBuName)}</td>`;
+    }
+    case 'date':
+      return `<td style="${truncTd}color:var(--text-muted);font-size:0.75rem;vertical-align:middle;">${fmt(r.sentDate)}</td>`;
+    case 'name':
+      return `<td title="${esc(r.name || '')}" style="${wrapTd}">
+        ${esc(r.name || '—')}
+        ${r.waveCount > 1 ? `<br><span title="${esc(r.waveNames)}"
+          style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;cursor:help;">⊞ ${r.waveCount} ondas</span>` : ''}
+      </td>`;
+    case 'subject':
+      return `<td title="${esc(r.subject || '')}" style="${wrapTd}color:var(--text-muted);font-size:0.75rem;line-height:1.4;">
+        ${esc(r.subject || '—')}
+      </td>`;
+    case 'num': {
+      const v = r[col.key];
+      return `<td style="${truncTd}vertical-align:middle;">${num(v)}</td>`;
+    }
+    case 'num-bad': {
+      const v = r[col.key];
+      return `<td style="${truncTd}vertical-align:middle;${badColor(v)}">${num(v)}</td>`;
+    }
+    case 'pct-good': {
+      const v = r[col.key];
+      return `<td style="${truncTd}vertical-align:middle;${rateColor(v, col.t1, col.t2)}">${pct(v)}</td>`;
+    }
+    default: return `<td style="${truncTd}">${esc(String(r[col.key] ?? '—'))}</td>`;
+  }
 }
 
 /* ─── Hidden rows counter ─────────────────────────────────── */
@@ -2315,6 +2393,7 @@ function _saveEnviosColWidths(arr) {
 function renderEnrichedSendsList(docs) {
   const top = docs.slice(0, 50);
   const widths = _loadEnviosColWidths();
+  const totalW = widths.reduce((s, w) => s + w, 0);
   const colgroup = `<colgroup>
     ${widths.map(w => `<col style="width:${w}px;">`).join('')}
   </colgroup>`;
@@ -2330,7 +2409,7 @@ function renderEnrichedSendsList(docs) {
       style="font-size:0.6875rem;color:var(--text-muted);padding:2px 8px;">↺ Reset colunas</button>
   </div>
   <div style="overflow-x:auto;">
-    <table id="nlc-envios-table" style="font-size:0.8125rem;border-collapse:collapse;table-layout:fixed;width:max-content;min-width:100%;">
+    <table id="nlc-envios-table" style="font-size:0.8125rem;border-collapse:collapse;table-layout:fixed;width:${totalW}px;">
       ${colgroup}
       <thead><tr style="border-bottom:1px solid var(--border-subtle);color:var(--text-muted);font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;">
         <th data-col="0" style="${thStyle}">Data${handle}</th>
@@ -2379,23 +2458,32 @@ function wireEnviosColResize() {
   if (!table || table.dataset.wiredResize) return;
   table.dataset.wiredResize = '1';
 
-  const cols = table.querySelectorAll('colgroup col');
+  const cols = [...table.querySelectorAll('colgroup col')];
   if (!cols.length) return;
+
+  // Mantém o array de larguras explicitas em estado — só altera a coluna arrastada.
+  const state = _loadEnviosColWidths();
+  const recomputeTableWidth = () => {
+    table.style.width = `${state.reduce((s, w) => s + w, 0)}px`;
+  };
 
   table.querySelectorAll('.nlc-col-resize').forEach((handle, i) => {
     handle.addEventListener('mousedown', (e) => {
-      e.preventDefault();
+      e.preventDefault(); e.stopPropagation();
       const startX = e.clientX;
-      const startW = cols[i].getBoundingClientRect().width;
+      const startW = state[i];
+      document.body.style.cursor = 'col-resize';
       const onMove = (ev) => {
-        const newW = Math.max(40, startW + (ev.clientX - startX));
+        const newW = Math.max(40, Math.round(startW + (ev.clientX - startX)));
+        state[i] = newW;
         cols[i].style.width = `${newW}px`;
+        recomputeTableWidth();
       };
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
-        const widths = [...cols].map(c => Math.round(c.getBoundingClientRect().width));
-        _saveEnviosColWidths(widths);
+        document.body.style.cursor = '';
+        _saveEnviosColWidths(state);
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -2405,8 +2493,9 @@ function wireEnviosColResize() {
   });
 
   document.getElementById('nlc-reset-cols')?.addEventListener('click', () => {
-    _saveEnviosColWidths([...ENVIOS_COL_DEFAULTS]);
-    [...cols].forEach((c, i) => c.style.width = `${ENVIOS_COL_DEFAULTS[i]}px`);
+    ENVIOS_COL_DEFAULTS.forEach((w, i) => { state[i] = w; cols[i].style.width = `${w}px`; });
+    recomputeTableWidth();
+    _saveEnviosColWidths(state);
   });
 }
 
