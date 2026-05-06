@@ -402,7 +402,13 @@ de comprometimento.
 
 - **Status `rascunho` é invisível**: meta em rascunho aparece **só** pra quem criou + master/admin. Member não vê metas inacabadas.
 - **Vínculo tarefa → meta**: ao concluir tarefa vinculada a meta(s), pop-up pergunta se quer marcar como evidência. Vínculo é **multi-instance** (mesma tarefa pode evidenciar múltiplas metas, uma por responsável).
+- **Auto-popular link de comprovação** (4.4.2+): se a tarefa tem `deliveryLink` preenchido e `linkComprovacao` está vazio, o pop-up de evidência **pré-popula** o input "Link de comprovação" com `deliveryLink`. Hint visual *"💡 Pré-preenchido com o link da entrega"* aparece. Editável — usuário pode trocar/limpar antes de confirmar. Os campos seguem **separados no schema** (propósitos diferentes: `deliveryLink` é o link que a tarefa entregou, `linkComprovacao` é o que comprova a meta — geralmente são iguais, mas não obrigatoriamente).
+- **Conceito "concluída com atraso"** (4.4.2+): tarefa com `status === 'done'` e `completedAt > dueDate`. Diferente de **"atrasada"** (`isTaskOverdue`) que é tarefa AINDA aberta após o prazo.
+  - Helper: `wasTaskCompletedLate(task)` em `js/services/tasks.js` retorna `{late: boolean, daysLate: number}`. Cálculo: `Math.floor((completedAt - dueDate) / 86400000)` com normalização de timezones.
+  - **Onde aparece**: badge laranja "⚠ Atrasada Xd" na lista de Tarefas Vinculadas em `#goals`; banner laranja "⚠ N de M concluídas com atraso (X%)" no formulário de avaliação (`openEvaluationForm`); chip "ATRASADA Xd" no PDF de metas.
+  - **Não bloqueia avaliação** — informação contextual pro gestor calibrar a nota com consciência do prazo.
 - **Avaliação periódica**: gestor avalia meta em períodos definidos (`period.frequency`); ao avaliar, sistema calcula `progressoCalculado` ponderado por KPI.
+- **Form de avaliação — pickers cascata** (4.4.4+): trocar pilar regenera as opções do picker de meta + reseta meta para a primeira do pilar novo + cascateia regeneração do período. Trocar meta regenera apenas opções de período (via `getPendingPeriods(meta, existingEvals)`). Bug pré-4.4.4: usuário ficava preso na meta inicial.
 - **Filtro hierárquico**: já documentado em § 3 acima.
 
 ### 10.3 Feedbacks
