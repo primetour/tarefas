@@ -29,6 +29,24 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.5.2+20260505-fix-soap-email-id-nested] — 2026-05-05
+
+Hotfix capturado em teste in-browser do workflow_dispatch da 4.5.1: SOAP do SFMC retornou `Error: The Request Property(s) EmailID do not match with the fields of Send retrieve`. O nome correto da property é `Email.ID` (sub-property aninhada do objeto Send).
+
+### Fixed
+- **SOAP property `EmailID` → `Email.ID`** em `scripts/mc-sync.js`. O SFMC SOAP partner API expõe o EmailID como sub-property nested do objeto Send, não como property direta.
+- **Parser de XML ajustado**: `Email.ID` retorna como `<Email><ID>37396</ID></Email>` no envelope SOAP. Adicionei extração nested via regex `<Email>...</Email>` → captura `<ID>` interno.
+
+### Why
+SFMC SOAP é particular sobre dot-notation em properties. Documentação não é cristalina, eu errei na primeira tentativa. Capturado rapidamente porque o GH Action falhou logo no primeiro fetch (status `0 sends encontrados` com erro explícito) — proteção do `if (!sends.length) continue` evitou que o sync inteiro travasse.
+
+### Verificação
+- ✓ `node --check` passou
+- ⏳ Re-trigger workflow_dispatch — esperado: `N sends encontrados` em vez de `0`
+
+---
+
 ## [4.5.1+20260505-ia-hub-agent-newsletter-extractor] — 2026-05-05
 
 **Pivot arquitetural** sobre a 4.5.0. Reportado: *"o certo nao é usar o IA Hub como modulo parceiro dessa solucao? assim temos o agente registrado, com maior visibilidade e possibilidade de manutencao no front. e mais: podemos escolher o modelo pra trabalhar."* — observação cirúrgica que mata o approach hardcoded da 4.5.0 e amarra o pipeline ao módulo IA Hub que já tem governança (audit, budget, key cascade, UI de gestão).

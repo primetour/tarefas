@@ -81,7 +81,7 @@ async function fetchSends(token, days) {
         <ObjectType>Send</ObjectType>
         <Properties>ID</Properties>
         <Properties>EmailName</Properties>
-        <Properties>EmailID</Properties>
+        <Properties>Email.ID</Properties>
         <Properties>Subject</Properties>
         <Properties>SentDate</Properties>
         <Properties>NumberSent</Properties>
@@ -130,9 +130,15 @@ async function fetchSends(token, days) {
       return m ? m[1].trim() : null;
     };
     const id = get('ID');
+    // Email vem aninhado: <Email><ID>37396</ID></Email>
+    // Extrai o ID de dentro do bloco <Email>
+    const emailBlock = block.match(/<(?:\w+:)?Email[^>]*>([\s\S]*?)<\/(?:\w+:)?Email>/i)?.[1] || '';
+    const emailIdMatch = emailBlock.match(/<(?:\w+:)?ID[^>]*>([\s\S]*?)<\/(?:\w+:)?ID>/i);
+    const emailId = emailIdMatch ? emailIdMatch[1].trim() : null;
+
     if (id) sends.push({
       ID:              id,
-      EmailID:         get('EmailID'),
+      EmailID:         emailId,
       EmailName:       get('EmailName'),
       Subject:         get('Subject'),
       SentDate:        get('SentDate'),

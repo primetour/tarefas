@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 5,
-  patch: 1,
-  build: '20260505-ia-hub-agent-newsletter-extractor',
+  patch: 2,
+  build: '20260505-fix-soap-email-id-nested',
 };
 
 /** "1.2.0" */
