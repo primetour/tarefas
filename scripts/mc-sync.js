@@ -178,37 +178,48 @@ async function fetchAssetsByLegacyIds(token, legacyIds) {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(debugBody),
     });
-    if (debugRes.ok) {
-      const dd = await debugRes.json();
-      const it = dd.items?.[0];
-      if (it) {
-        console.log(`  [DEBUG] sample asset id=${it.id} name=${(it.name||'').slice(0,40)}`);
-        console.log(`  [DEBUG] data.email.options:`, JSON.stringify(it.data?.email?.options).slice(0, 200));
-        console.log(`  [DEBUG] data.email.legacy:`, JSON.stringify(it.data?.email?.legacy).slice(0, 300));
-        console.log(`  [DEBUG] legacyData FULL:`, JSON.stringify(it.legacyData).slice(0, 300));
-        console.log(`  [DEBUG] customerKey:`, it.customerKey);
-      }
-    }
-
-    // Tenta segunda query buscando por legacyData.legacyId em vez de data.email.legacyId
-    const tryAlt = await fetch(`${MC_REST_URL}/asset/v1/content/assets/query`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        page: { page: 1, pageSize: 5 },
-        query: {
-          property: 'legacyData.legacyId',
-          simpleOperator: 'in',
-          value: legacyIds.map(String),
-        },
-      }),
+    // Tenta buscar Email object via SOAP (ID 37336 do Send é Email Object ID antigo)
+    const soapBase = MC_AUTH_URL.replace(/\/v2\/token\/?$/, '').replace(/\/$/, '')
+      .replace('.auth.marketingcloudapis.com', '.soap.marketingcloudapis.com');
+    const soapBody = `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing">
+  <s:Header><fueloauth xmlns="http://exacttarget.com">${token}</fueloauth></s:Header>
+  <s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <RetrieveRequestMsg xmlns="http://exacttarget.com/wsdl/partnerAPI">
+      <RetrieveRequest>
+        <ObjectType>Email</ObjectType>
+        <Properties>ID</Properties>
+        <Properties>Name</Properties>
+        <Properties>Subject</Properties>
+        <Properties>Description</Properties>
+        <Properties>HTMLBody</Properties>
+        <Properties>CustomerKey</Properties>
+        <Filter xsi:type="SimpleFilterPart">
+          <Property>ID</Property>
+          <SimpleOperator>equals</SimpleOperator>
+          <Value>${legacyIds[0]}</Value>
+        </Filter>
+      </RetrieveRequest>
+    </RetrieveRequestMsg>
+  </s:Body>
+</s:Envelope>`;
+    const soapRes = await fetch(`${soapBase}/Service.asmx`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'text/xml', 'SOAPAction': 'Retrieve' },
+      body:    soapBody,
     });
-    if (tryAlt.ok) {
-      const ddAlt = await tryAlt.json();
-      console.log(`  [DEBUG] tentativa legacyData.legacyId: ${ddAlt.count || 0} matches`);
-      if (ddAlt.items?.[0]) console.log(`  [DEBUG] match name:`, ddAlt.items[0].name);
+    const xml = await soapRes.text();
+    const status = xml.match(/<OverallStatus>(.*?)<\/OverallStatus>/)?.[1] || '';
+    console.log(`  [DEBUG SOAP Email by ID=${legacyIds[0]}] status: ${status}`);
+    if (status.startsWith('OK')) {
+      const desc = xml.match(/<Description[^>]*>([\s\S]*?)<\/Description>/i)?.[1] || '';
+      const name = xml.match(/<Name[^>]*>([\s\S]*?)<\/Name>/i)?.[1] || '';
+      const ck = xml.match(/<CustomerKey[^>]*>([\s\S]*?)<\/CustomerKey>/i)?.[1] || '';
+      const htmlLen = (xml.match(/<HTMLBody[^>]*>([\s\S]*?)<\/HTMLBody>/i)?.[1] || '').length;
+      console.log(`  [DEBUG] SOAP Email Name=${name.slice(0,40)} CustomerKey=${ck} Description=${desc.slice(0,80)} HTMLBody len=${htmlLen}`);
     } else {
-      console.log(`  [DEBUG] legacyData.legacyId query: ${tryAlt.status} ${(await tryAlt.text()).slice(0, 200)}`);
+      console.log(`  [DEBUG] SOAP Email body snippet:`, xml.slice(0, 400));
     }
   }
 
