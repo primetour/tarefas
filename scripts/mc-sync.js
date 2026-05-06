@@ -737,10 +737,13 @@ async function main() {
               }
             }
 
+            // Dump texto stripped (até 10k chars) pra auditoria/re-extração futura
+            const htmlText = asset.html ? stripHtml(asset.html).slice(0, 10000) : '';
             enrichmentMap.set(name, {
               description: asset.description,
               htmlHash, structural, extracted, extractedMeta,
               assetId: asset.assetId, assetName: asset.assetName,
+              htmlText,
             });
           }));
         }
@@ -772,6 +775,9 @@ async function main() {
               agentSlug: agent?.slug || null,
             };
           }
+          // Dump texto stripped (até 10k chars) pra auditoria + re-extração
+          // futura sem refazer fetch SFMC.
+          if (enrich.htmlText) doc.htmlText = enrich.htmlText;
         }
 
         batch.set(db.collection('mc_performance').doc(docId), doc, { merge: true });

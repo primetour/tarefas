@@ -33,6 +33,41 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.7.0+20260505-wave-dedup-content-htmltext-dump] — 2026-05-05
+
+Reportado: *"Lembre-se: muitos disparos tem o mesmo codigo (PXXX, por exemplo), pq disparamos em ondas, dividindo o mailing. isso precisa estar no seu racional de analise de termos"* — necessidade crítica de dedup por campanha pra contagem de hotéis/destinos não inflar artificialmente. Também: *"eu gostaria que vc fizesse e analisasse os docs... pq a IA do sistema é muito fraca"* — preparação pra re-extração manual via Claude.
+
+### Added (Wave dedup)
+- **`dedupContentByCampaign(docs)`** em `nlPerformance.js` aba Conteúdo: agrupa docs com mesmo `baseCode` (P0209_1/_2/_3 → P0209). Mantém doc canônico (com extracted preenchido) + agrega métricas de performance (totalSent, openRate, clickRate). Critical pra que "Hotel X mencionado em P0209" não vire "3 mentions" só porque o mailing foi dividido.
+- **Reusa lógica `baseCode()`** existente no `mergeWaves` (linhas 451-460): strip de sufixos `_N`, `-N`, `_X`. Mesmo critério da aba Performance.
+- **Badge `⊞N` na tabela de envios** mostra contagem de ondas se >1.
+- **Counter atualizado**: agora mostra "X campanhas (Y disparos) no período" em vez de só "Y disparos" — comunica explicitamente a deduplicação.
+
+### Added (htmlText dump)
+- Campo novo `mc_performance.htmlText` (string, até 10k chars do HTML stripped). Salvo automaticamente pelo `mc-sync.js` durante enrichment. Custo: +10kb/doc × ~50 docs = 500kb. Trivial.
+- Permite re-extração manual sem refazer fetch SFMC. Útil quando:
+  - User quer revisar/auditar o que a IA extraiu vs o conteúdo real
+  - Trocar modelo (Llama → Claude Sonnet) e re-rodar extração nos docs antigos
+  - Análise manual ad-hoc (Claude no chat lê e extrai melhor que Llama 70B)
+
+### Why
+**Wave dedup** corrige ruído na análise — sem ele, qualquer destaque de "Hotel X é o mais mencionado" estaria distorcido pelo número de ondas, não por relevância real do produto.
+
+**htmlText dump** desbloqueia re-análise sem custo de fetch. Fundamental dado que o user vai trocar pra modelo melhor (Claude Sonnet quando adquirir API paga) e queremos re-extrair os ~150 docs históricos sem refazer todo o sync SFMC. Custo de storage é trivial.
+
+### Verificação
+1. Rodar workflow_dispatch após este deploy → docs ganham `htmlText` populado
+2. `#nl-performance` → aba "🌍 Conteúdo & Temas" → counter mostra "N campanhas (M disparos)" — N < M se houver waves
+3. Hotéis citados: cada campanha conta 1 vez (não inflado por waves)
+4. Cards de envios mostram badge ⊞N quando aplicável
+
+### Próximas releases planejadas
+- **4.7.x — Re-extração manual via Claude (quando user adquirir API paga)**: troca o agente IA Hub `provider: 'groq'` → `'anthropic'`, modelo `'claude-haiku-4-5'` ou `'claude-sonnet-4-6'`. Re-roda extração nos docs com `htmlText` populado. Sem custo SFMC.
+- **4.8.0 — PDF da aba Conteúdo + relatórios cruzados** (sazonalidade, hotéis subutilizados).
+
+---
+
 ## [4.6.2+20260505-fix-rate-limit-serial-retry] — 2026-05-05
 
 Hotfix do throughput. Após o **breakthrough da 4.6.1** (match Send→Asset por NOME, recuperando 18/18 assets), o Groq tier on-demand retornou 429 em 10 das 18 chamadas LLM por TPM (12k tokens/minuto) excedido.

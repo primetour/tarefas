@@ -1840,13 +1840,14 @@ function renderContentTab() {
   // Filtra mais por search/country/theme depois dos dropdowns prontos
   const filtered = applyAllContentFilters(_contentDataCache || []);
 
-  // Stats globais
-  const totalDocs = filtered.length;
+  // Stats globais — agora `filtered` já vem com wave dedup (1 campanha = 1 doc)
+  const totalCampaigns = filtered.length;
+  const totalRawDocs = filtered.reduce((s, d) => s + (d._waveCount || 1), 0);
   const enrichedDocs = filtered.filter(d => d.extracted && Object.keys(d.extracted).length > 0);
-  const enrichedPct = totalDocs > 0 ? Math.round((enrichedDocs.length / totalDocs) * 100) : 0;
+  const enrichedPct = totalCampaigns > 0 ? Math.round((enrichedDocs.length / totalCampaigns) * 100) : 0;
 
   document.getElementById('nlc-meta').textContent =
-    `${totalDocs} disparo${totalDocs!==1?'s':''} no período · ${enrichedDocs.length} enriquecidos (${enrichedPct}%)`;
+    `${totalCampaigns} campanha${totalCampaigns!==1?'s':''} (${totalRawDocs} disparos) no período · ${enrichedDocs.length} enriquecidas (${enrichedPct}%)`;
 
   // Empty state se não tem nenhum enriquecido
   if (enrichedDocs.length === 0) {
@@ -1927,9 +1928,63 @@ function applyContentFilters(docs) {
   });
 }
 
+/* ─── Wave dedup pra análise de conteúdo ───────────────────────
+ * Newsletters PXXX/UXXX são divididas em ondas (P0209_1, P0209_2, P0209_3)
+ * que disparam o MESMO HTML. Pra contagem de termos (hotéis, países, etc.)
+ * cada campanha-base conta UMA vez, não 3. Performance segue por wave.
+ * Reusa baseCode() do mergeWaves existente.
+ */
+function dedupContentByCampaign(docs) {
+  const baseCode = (name) => (name || '').trim()
+    .replace(/\s*-\s*\d+$/, '').replace(/_\d+$/, '')
+    .replace(/-\d+$/, '').replace(/_[A-Z]$/, '').trim();
+
+  const groups = new Map(); // bu|baseCode -> docs[]
+  for (const d of docs) {
+    const key = (d.buId || '') + '|' + baseCode(d.name || '');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(d);
+  }
+
+  // Pra cada grupo: mantém doc canônico (com extracted) + agrega métricas
+  const merged = [];
+  for (const [, group] of groups) {
+    // Pega o doc com extracted preenchido se houver; senão o primeiro
+    const withExtracted = group.find(d => d.extracted);
+    const canonical = withExtracted || group[0];
+    if (group.length === 1) {
+      merged.push({ ...canonical, _waveCount: 1, _waveDocs: group });
+    } else {
+      // Soma métricas, mantém extracted do canônico
+      const totalSent  = group.reduce((s, d) => s + (+d.totalSent || 0), 0);
+      const delivered  = group.reduce((s, d) => s + (+d.delivered || 0), 0);
+      const openUnique = group.reduce((s, d) => s + (+d.openUnique || 0), 0);
+      const clickUnique = group.reduce((s, d) => s + (+d.clickUnique || 0), 0);
+      merged.push({
+        ...canonical,
+        name: baseCode(canonical.name),
+        totalSent,
+        delivered,
+        openUnique,
+        clickUnique,
+        openRate: delivered > 0 ? +(openUnique / delivered * 100).toFixed(2) : 0,
+        clickRate: delivered > 0 ? +(clickUnique / delivered * 100).toFixed(2) : 0,
+        _waveCount: group.length,
+        _waveDocs: group,
+      });
+    }
+  }
+  return merged;
+}
+
 function applyAllContentFilters(docs) {
   const f = _contentFiltersState;
-  return applyContentFilters(docs).filter(d => {
+  // 1. Filtra por BU/período (raw)
+  const baseFiltered = applyContentFilters(docs);
+  // 2. DEDUP por campanha (P0209_1/_2/_3 = 1) — críticа pra contagem de termos
+  const deduped = dedupContentByCampaign(baseFiltered);
+  // 3. Filtra por país/tema/busca
+  return deduped.filter(d => {
     if (f.country) {
       const countries = (d.extracted?.countries || []).map(c => String(c).toLowerCase());
       if (!countries.includes(f.country.toLowerCase())) return false;
@@ -2120,9 +2175,11 @@ function renderEnrichedSendsList(docs) {
         const hotels = (ex.hotels || []).slice(0, 2).map(h => typeof h === 'string' ? h : h.name).filter(Boolean).join(', ');
         const moreH = (ex.hotels || []).length > 2 ? ` +${ex.hotels.length - 2}` : '';
         const themes = (ex.themes || []).slice(0, 3).join(', ');
+        const waveTxt = d._waveCount > 1
+          ? `<span title="${d._waveCount} ondas disparadas" style="font-size:0.625rem;color:var(--text-muted);font-weight:400;margin-left:4px;">⊞${d._waveCount}</span>` : '';
         return `<tr style="border-bottom:1px solid var(--border-subtle);">
           <td style="padding:7px 6px;color:var(--text-muted);font-size:0.75rem;white-space:nowrap;">${dateStr}</td>
-          <td style="padding:7px 6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.name || '—')}</td>
+          <td style="padding:7px 6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.name || '—')}${waveTxt}</td>
           <td style="padding:7px 6px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(countries)}</td>
           <td style="padding:7px 6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(hotels || '—')}${moreH}</td>
           <td style="padding:7px 6px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(themes || '—')}</td>

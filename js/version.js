@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 6,
-  patch: 2,
-  build: '20260505-fix-rate-limit-serial-retry',
+  minor: 7,
+  patch: 0,
+  build: '20260505-wave-dedup-content-htmltext-dump',
 };
 
 /** "1.2.0" */
