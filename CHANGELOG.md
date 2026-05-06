@@ -30,6 +30,46 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.6.0+20260505-aba-conteudo-temas-newsletter] — 2026-05-05
+
+**Fase 2 do projeto enriquecimento de newsletters.** Entrega a aba **"🌍 Conteúdo & Temas"** no `#nl-performance` consumindo `mc_performance.extracted` (entidades extraídas via IA na Fase 1, releases 4.5.0-4.5.2). Adiantada enquanto o Marketing Cloud está fora do ar — assim que o sync rodar com `Assets > Read` ativo no SFMC, a UI já vai estar pronta consumindo os dados reais.
+
+### Added
+- **Nova tab "🌍 Conteúdo & Temas"** em `#nl-performance` (entre Calendário e Performance):
+  - **5 KPIs**: países distintos · hotéis citados · marcas · open rate médio · confiança IA (high count)
+  - **Bloco "🌍 Top destinos · performance"** — tabela ordenada com país, count de disparos, open rate (color-coded). Clique em linha = drill-down: filtro de país aplicado e re-renderiza tudo.
+  - **Bloco "🏨 Hotéis mais mencionados"** — top 10 com bar chart horizontal proporcional.
+  - **Bloco "🎯 Temas / posicionamento"** — todas categorias (luxo, romance, família, etc.) com count + open rate por tema. Permite ver quais temas convertem mais.
+  - **Bloco "🏷 Marcas hoteleiras"** — pills com count (Belmond, Aman, Four Seasons, etc.).
+  - **Tabela "📧 Envios"** — últimos 50 disparos enriquecidos com: data, nome, países, hotéis (top 2 + count), temas (top 3), open rate.
+- **Filtros transversais**: BU, período (30/90/180/365/all), país, tema, busca textual. Dropdowns de país e tema **populados dinamicamente** com base nos dados reais.
+- **Empty state inteligente** quando nenhum doc tem `extracted`: explica se é falta de dados (sync não rodou) OU permissão SFMC ausente OU agente IA inativo. Links diretos pra GH Actions e IA Hub.
+- **Cache em memória** (`_contentDataCache`) — fetch único pra todos os toggles de filtro. Botão "↻ Atualizar" força refetch.
+
+### Changed
+- Tab navigation handler atualizado pra suportar 3 tabs: Performance · Calendário · Conteúdo & Temas.
+- `loadContentTab()` é lazy-loaded — só carrega Firestore na primeira vez que user clica na tab.
+
+### Why
+Sem UI consumindo o `extracted`, o trabalho da Fase 1 ficaria invisível. Mesmo com o MC fora do ar agora (impossibilitando teste end-to-end), entregar a UI pronta significa que basta o sync rodar 1× pra tudo aparecer. Mantém o ritmo de entrega + permite revisar layout antes de ter dados (UX no vácuo é ruim, então fiz com empty states ricos que já são úteis).
+
+### Pendências (independentes desta release)
+1. ⏳ SFMC: liberar `Assets > Read` no Installed Package
+2. ⏳ Re-trigger workflow_dispatch após (1)
+3. ✅ Aba pronta consumindo o que vier
+
+### Próxima release
+**4.7.0 — Fase 3**: PDF export da aba Conteúdo + relatórios cruzados (sazonalidade, hotéis subutilizados, alinhamento subject↔body).
+
+### Verificação
+1. Acessar `#nl-performance` → ver 3 tabs no topo
+2. Click "🌍 Conteúdo & Temas" → empty state aparece (sem dados ainda)
+3. Empty state deve dizer "X disparos no período mas 0 enriquecidos" + links pra GH Actions e IA Hub
+4. Ao primeiro doc com `extracted` chegar via sync → KPIs + 4 blocos + tabela renderizam automaticamente
+
+---
+
 ## [4.5.2+20260505-fix-soap-email-id-nested] — 2026-05-05
 
 Hotfix capturado em teste in-browser do workflow_dispatch da 4.5.1: SOAP do SFMC retornou `Error: The Request Property(s) EmailID do not match with the fields of Send retrieve`. O nome correto da property é `Email.ID` (sub-property aninhada do objeto Send).

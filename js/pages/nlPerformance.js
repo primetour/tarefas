@@ -120,6 +120,12 @@ export async function renderNlPerformance(container) {
         color:var(--text-muted);font-family:var(--font-ui);">
         📅 Calendário Editorial
       </button>
+      <button class="nl-tab" data-tab="content"
+        style="padding:10px 20px;border:none;background:transparent;font-size:0.875rem;font-weight:500;
+        cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;
+        color:var(--text-muted);font-family:var(--font-ui);">
+        🌍 Conteúdo &amp; Temas
+      </button>
     </div>
 
     <!-- Tab: Performance -->
@@ -259,6 +265,50 @@ export async function renderNlPerformance(container) {
       <!-- Análise Geral do tab Calendar -->
       <div id="nl-cal-insights-section" style="margin-top:24px;"></div>
     </div><!-- /nl-tab-calendar -->
+
+    <!-- Tab: Conteúdo & Temas -->
+    <div id="nl-tab-content" style="display:none;">
+      <div class="page-header" style="margin-top:0;">
+        <div class="page-header-left">
+          <p style="margin:4px 0 0 0;color:var(--text-muted);font-size:0.875rem;">
+            Análise das newsletters por destinos, hotéis, marcas, temas e argumentos —
+            extraído automaticamente do HTML via IA (agente
+            <a href="#ai-hub" style="color:var(--brand-gold);">"Extrator de Conteúdo de Newsletter"</a>).
+          </p>
+        </div>
+        <div class="page-header-actions" style="gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" id="nl-content-refresh">↻ Atualizar</button>
+          <button class="btn btn-secondary btn-sm" id="nl-content-pdf">⬇ PDF</button>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
+        <select class="filter-select" id="nlc-bu-filter" style="min-width:160px;">
+          <option value="">Todas as unidades</option>
+          ${BUS.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}
+        </select>
+        <select class="filter-select" id="nlc-period-filter" style="min-width:140px;">
+          <option value="30">Últimos 30 dias</option>
+          <option value="90" selected>Últimos 90 dias</option>
+          <option value="180">Últimos 180 dias</option>
+          <option value="365">Último ano</option>
+          <option value="">Todo período</option>
+        </select>
+        <select class="filter-select" id="nlc-country-filter" style="min-width:140px;">
+          <option value="">Todos os países</option>
+        </select>
+        <select class="filter-select" id="nlc-theme-filter" style="min-width:140px;">
+          <option value="">Todos os temas</option>
+        </select>
+        <input type="text" id="nlc-search" class="portal-field" placeholder="Buscar hotel/cidade…"
+          style="min-width:180px;font-size:0.8125rem;">
+        <span id="nlc-meta" style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);"></span>
+      </div>
+
+      <!-- Conteúdo dinâmico -->
+      <div id="nlc-content"></div>
+    </div><!-- /nl-tab-content -->
   `;
 
   let editMode = false;
@@ -278,10 +328,13 @@ export async function renderNlPerformance(container) {
       tab.classList.add('active');
 
       document.getElementById('nl-tab-performance').style.display = tab.dataset.tab === 'performance' ? 'block' : 'none';
-      document.getElementById('nl-tab-calendar').style.display = tab.dataset.tab === 'calendar' ? 'block' : 'none';
+      document.getElementById('nl-tab-calendar').style.display    = tab.dataset.tab === 'calendar'    ? 'block' : 'none';
+      document.getElementById('nl-tab-content').style.display     = tab.dataset.tab === 'content'     ? 'block' : 'none';
 
       if (tab.dataset.tab === 'calendar') {
         loadCalendarDashboard();
+      } else if (tab.dataset.tab === 'content') {
+        loadContentTab();
       }
     });
   });
@@ -1712,3 +1765,418 @@ async function setupNlCalendarInsights() {
     });
   } catch (e) { console.warn('[nl] cal insights setup:', e); }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ABA "CONTEÚDO & TEMAS" (4.6.0+) — análise das newsletters por entidades
+   extraídas via IA do HTML de cada disparo (campo mc_performance.extracted)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+let _contentDataCache = null;       // array de docs com extracted
+let _contentFiltersState = { bu: '', period: '90', country: '', theme: '', search: '' };
+
+async function loadContentTab() {
+  const root = document.getElementById('nlc-content');
+  if (!root) return;
+
+  if (!_contentDataCache) {
+    root.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+      ⏳ Carregando análise de conteúdo…</div>`;
+    try {
+      const { collection, getDocs, query, orderBy, limit, where } = await import(
+        'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+      );
+      const { db } = await import('../firebase.js');
+      const snap = await getDocs(query(
+        collection(db, 'mc_performance'),
+        orderBy('sentDate', 'desc'),
+        limit(2000)
+      ));
+      _contentDataCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+      root.innerHTML = `<div style="text-align:center;padding:40px;color:var(--color-danger);">
+        Erro ao carregar: ${esc(e.message)}</div>`;
+      return;
+    }
+  }
+
+  // Wire filtros (idempotente)
+  if (!root.dataset.wired) {
+    root.dataset.wired = '1';
+    document.getElementById('nlc-bu-filter').addEventListener('change', e => {
+      _contentFiltersState.bu = e.target.value; renderContentTab();
+    });
+    document.getElementById('nlc-period-filter').addEventListener('change', e => {
+      _contentFiltersState.period = e.target.value; renderContentTab();
+    });
+    document.getElementById('nlc-country-filter').addEventListener('change', e => {
+      _contentFiltersState.country = e.target.value; renderContentTab();
+    });
+    document.getElementById('nlc-theme-filter').addEventListener('change', e => {
+      _contentFiltersState.theme = e.target.value; renderContentTab();
+    });
+    document.getElementById('nlc-search').addEventListener('input', e => {
+      _contentFiltersState.search = e.target.value.trim().toLowerCase(); renderContentTab();
+    });
+    document.getElementById('nl-content-refresh')?.addEventListener('click', async () => {
+      _contentDataCache = null;
+      await loadContentTab();
+    });
+    document.getElementById('nl-content-pdf')?.addEventListener('click', () => {
+      alert('Export PDF da aba Conteúdo será entregue na 4.7.0 (Fase 3).');
+    });
+  }
+
+  renderContentTab();
+}
+
+function renderContentTab() {
+  const root = document.getElementById('nlc-content');
+  if (!root) return;
+
+  // Aplica filtros básicos primeiro pra popular dropdowns
+  const baseFiltered = applyContentFilters(_contentDataCache || []);
+  populateContentDropdowns(_contentDataCache || []);
+
+  // Filtra mais por search/country/theme depois dos dropdowns prontos
+  const filtered = applyAllContentFilters(_contentDataCache || []);
+
+  // Stats globais
+  const totalDocs = filtered.length;
+  const enrichedDocs = filtered.filter(d => d.extracted && Object.keys(d.extracted).length > 0);
+  const enrichedPct = totalDocs > 0 ? Math.round((enrichedDocs.length / totalDocs) * 100) : 0;
+
+  document.getElementById('nlc-meta').textContent =
+    `${totalDocs} disparo${totalDocs!==1?'s':''} no período · ${enrichedDocs.length} enriquecidos (${enrichedPct}%)`;
+
+  // Empty state se não tem nenhum enriquecido
+  if (enrichedDocs.length === 0) {
+    root.innerHTML = renderContentEmptyState(totalDocs);
+    return;
+  }
+
+  // Calcula agregações
+  const agg = aggregateContent(enrichedDocs);
+
+  root.innerHTML = `
+    <!-- KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
+      ${contentKpi('🌍 Países distintos',  agg.countries.size,           'destinos cobertos no período')}
+      ${contentKpi('🏨 Hotéis citados',    agg.hotels.size,              'mentions únicos')}
+      ${contentKpi('🏷 Marcas',            agg.brands.size,              'brands hoteleiras')}
+      ${contentKpi('📊 Open rate médio',  fmtPct(agg.avgOpenRate),       'das newsletters enriquecidas')}
+      ${contentKpi('🤖 Confiança IA',      `${agg.confidenceHigh}/${enrichedDocs.length}`, '"high" confidence')}
+    </div>
+
+    <!-- 2-col grid de blocos -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;">
+
+      <!-- Top destinos com performance -->
+      <div class="card" style="padding:18px;">
+        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.06em;color:var(--text-muted);">🌍 Top destinos · performance</h3>
+        ${renderTopDestinosTable(agg.byCountry, enrichedDocs)}
+      </div>
+
+      <!-- Top hotéis -->
+      <div class="card" style="padding:18px;">
+        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.06em;color:var(--text-muted);">🏨 Hotéis mais mencionados</h3>
+        ${renderTopHoteisBars(agg.hotels, enrichedDocs)}
+      </div>
+
+      <!-- Temas/posicionamento -->
+      <div class="card" style="padding:18px;">
+        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.06em;color:var(--text-muted);">🎯 Temas / posicionamento</h3>
+        ${renderThemesBars(agg.themes, enrichedDocs)}
+      </div>
+
+      <!-- Marcas -->
+      <div class="card" style="padding:18px;">
+        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:0.06em;color:var(--text-muted);">🏷 Marcas hoteleiras citadas</h3>
+        ${renderBrandsPills(agg.brands, enrichedDocs)}
+      </div>
+
+    </div>
+
+    <!-- Lista de envios filtrados -->
+    <div class="card" style="padding:18px;margin-top:16px;">
+      <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:0.06em;color:var(--text-muted);">📧 Envios (${enrichedDocs.length})</h3>
+      ${renderEnrichedSendsList(enrichedDocs)}
+    </div>
+  `;
+
+  wireDrillDowns();
+}
+
+/* ─── Filtros ──────────────────────────────────────────────── */
+
+function applyContentFilters(docs) {
+  const f = _contentFiltersState;
+  return docs.filter(d => {
+    if (f.bu && d.buId !== f.bu) return false;
+    if (f.period) {
+      const days = parseInt(f.period, 10);
+      const cutoff = Date.now() - days * 86400000;
+      const ts = d.sentDate?.toDate?.()?.getTime() || (d.sentDate?.seconds * 1000) || 0;
+      if (ts < cutoff) return false;
+    }
+    return true;
+  });
+}
+
+function applyAllContentFilters(docs) {
+  const f = _contentFiltersState;
+  return applyContentFilters(docs).filter(d => {
+    if (f.country) {
+      const countries = (d.extracted?.countries || []).map(c => String(c).toLowerCase());
+      if (!countries.includes(f.country.toLowerCase())) return false;
+    }
+    if (f.theme) {
+      const themes = (d.extracted?.themes || []).map(t => String(t).toLowerCase());
+      if (!themes.includes(f.theme.toLowerCase())) return false;
+    }
+    if (f.search) {
+      const hay = JSON.stringify(d.extracted || {}).toLowerCase()
+        + ' ' + (d.name || '').toLowerCase()
+        + ' ' + (d.subject || '').toLowerCase();
+      if (!hay.includes(f.search)) return false;
+    }
+    return true;
+  });
+}
+
+function populateContentDropdowns(allDocs) {
+  const baseFiltered = applyContentFilters(allDocs);
+  const enriched = baseFiltered.filter(d => d.extracted);
+
+  const countries = new Set();
+  const themes    = new Set();
+  for (const d of enriched) {
+    (d.extracted.countries || []).forEach(c => c && countries.add(c));
+    (d.extracted.themes || []).forEach(t => t && themes.add(t));
+  }
+
+  const countrySel = document.getElementById('nlc-country-filter');
+  const themeSel   = document.getElementById('nlc-theme-filter');
+  const cur1 = countrySel.value, cur2 = themeSel.value;
+
+  countrySel.innerHTML = `<option value="">Todos os países</option>` +
+    [...countries].sort().map(c => `<option value="${esc(c)}" ${c===cur1?'selected':''}>${esc(c)}</option>`).join('');
+  themeSel.innerHTML = `<option value="">Todos os temas</option>` +
+    [...themes].sort().map(t => `<option value="${esc(t)}" ${t===cur2?'selected':''}>${esc(t)}</option>`).join('');
+}
+
+/* ─── Agregações ───────────────────────────────────────────── */
+
+function aggregateContent(docs) {
+  const countries = new Map(); // name -> { count, totalSent, totalOpen, sends: [docId] }
+  const cities    = new Map();
+  const hotels    = new Map();
+  const brands    = new Map();
+  const themes    = new Map();
+  const audiences = new Map();
+  let confidenceHigh = 0;
+  let totalOpenRate = 0;
+  let openRateCount = 0;
+
+  for (const d of docs) {
+    const ex = d.extracted || {};
+    const sent = +(d.totalSent || 0);
+    const opens = +(d.openUnique || 0);
+    if (sent > 0) { totalOpenRate += +(d.openRate || 0); openRateCount++; }
+    if (ex.confidence === 'high') confidenceHigh++;
+
+    const tally = (map, name) => {
+      if (!name) return;
+      const k = String(name).trim();
+      if (!k) return;
+      const cur = map.get(k) || { count: 0, totalSent: 0, totalOpen: 0, sends: [] };
+      cur.count++;
+      cur.totalSent += sent;
+      cur.totalOpen += opens;
+      cur.sends.push(d.id);
+      map.set(k, cur);
+    };
+
+    (ex.countries || []).forEach(c => tally(countries, c));
+    (ex.cities    || []).forEach(c => tally(cities, c));
+    (ex.brands    || []).forEach(b => tally(brands, b));
+    (ex.themes    || []).forEach(t => tally(themes, t));
+    (ex.targetAudience || []).forEach(a => tally(audiences, a));
+    (ex.hotels || []).forEach(h => {
+      if (!h) return;
+      const name = typeof h === 'string' ? h : (h.name || h);
+      tally(hotels, name);
+    });
+  }
+
+  return {
+    countries, cities, hotels, brands, themes, audiences,
+    confidenceHigh,
+    avgOpenRate: openRateCount > 0 ? totalOpenRate / openRateCount : 0,
+    byCountry: countries,
+  };
+}
+
+/* ─── Renderers ────────────────────────────────────────────── */
+
+function contentKpi(title, value, sub) {
+  return `<div class="card" style="padding:14px 16px;">
+    <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;
+      letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">${title}</div>
+    <div style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">${value}</div>
+    <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">${sub}</div>
+  </div>`;
+}
+
+function renderTopDestinosTable(countriesMap, allEnriched) {
+  if (countriesMap.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum destino identificado ainda.</p>';
+  const top = [...countriesMap.entries()]
+    .map(([name, d]) => ({ name, count: d.count, openRate: d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100) : 0 }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12);
+
+  return `<table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
+    <thead><tr style="border-bottom:1px solid var(--border-subtle);color:var(--text-muted);font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;">
+      <th style="text-align:left;padding:8px 6px;">País</th>
+      <th style="text-align:right;padding:8px 6px;">Disparos</th>
+      <th style="text-align:right;padding:8px 6px;">Open rate</th>
+    </tr></thead>
+    <tbody>${top.map(r => `<tr style="border-bottom:1px solid var(--border-subtle);cursor:pointer;"
+      class="nlc-country-drill" data-country="${esc(r.name)}">
+      <td style="padding:7px 6px;font-weight:500;">${esc(r.name)}</td>
+      <td style="padding:7px 6px;text-align:right;color:var(--text-secondary);">${r.count}</td>
+      <td style="padding:7px 6px;text-align:right;font-weight:600;color:${rateColor2(r.openRate)};">${r.openRate.toFixed(1)}%</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function renderTopHoteisBars(hotelsMap, allEnriched) {
+  if (hotelsMap.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum hotel identificado ainda.</p>';
+  const top = [...hotelsMap.entries()]
+    .map(([name, d]) => ({ name, count: d.count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+  const max = top[0]?.count || 1;
+  return top.map(r => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;">
+    <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</div>
+    <div style="flex:0 0 120px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
+      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:var(--brand-gold);"></div>
+    </div>
+    <div style="flex:0 0 30px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
+  </div>`).join('');
+}
+
+function renderThemesBars(themesMap, allEnriched) {
+  if (themesMap.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum tema identificado ainda.</p>';
+  const top = [...themesMap.entries()]
+    .map(([name, d]) => ({ name, count: d.count, openRate: d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100) : 0 }))
+    .sort((a, b) => b.count - a.count);
+  const max = top[0]?.count || 1;
+  return top.map(r => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;">
+    <div style="flex:0 0 120px;text-transform:capitalize;">${esc(r.name)}</div>
+    <div style="flex:1;min-width:60px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
+      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:#8B5CF6;"></div>
+    </div>
+    <div style="flex:0 0 50px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
+    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};">${r.openRate.toFixed(1)}%</div>
+  </div>`).join('');
+}
+
+function renderBrandsPills(brandsMap, allEnriched) {
+  if (brandsMap.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhuma marca identificada ainda.</p>';
+  const top = [...brandsMap.entries()]
+    .map(([name, d]) => ({ name, count: d.count }))
+    .sort((a, b) => b.count - a.count);
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;">
+    ${top.map(r => `<span style="display:inline-flex;align-items:center;gap:4px;
+      padding:4px 10px;border-radius:16px;background:rgba(212,168,67,0.12);
+      color:var(--brand-gold);font-size:0.75rem;font-weight:600;">
+      ${esc(r.name)} <span style="background:rgba(255,255,255,0.5);padding:1px 6px;border-radius:8px;
+        color:var(--text-secondary);font-weight:500;">${r.count}</span>
+    </span>`).join('')}
+  </div>`;
+}
+
+function renderEnrichedSendsList(docs) {
+  const top = docs.slice(0, 50);
+  return `<div style="overflow-x:auto;">
+    <table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
+      <thead><tr style="border-bottom:1px solid var(--border-subtle);color:var(--text-muted);font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;">
+        <th style="text-align:left;padding:8px 6px;">Data</th>
+        <th style="text-align:left;padding:8px 6px;">Nome</th>
+        <th style="text-align:left;padding:8px 6px;">Países</th>
+        <th style="text-align:left;padding:8px 6px;">Hotéis</th>
+        <th style="text-align:left;padding:8px 6px;">Temas</th>
+        <th style="text-align:right;padding:8px 6px;">Open</th>
+      </tr></thead>
+      <tbody>${top.map(d => {
+        const dateStr = d.sentDate?.toDate ? d.sentDate.toDate().toLocaleDateString('pt-BR') : '—';
+        const ex = d.extracted || {};
+        const countries = (ex.countries || []).join(', ') || '—';
+        const hotels = (ex.hotels || []).slice(0, 2).map(h => typeof h === 'string' ? h : h.name).filter(Boolean).join(', ');
+        const moreH = (ex.hotels || []).length > 2 ? ` +${ex.hotels.length - 2}` : '';
+        const themes = (ex.themes || []).slice(0, 3).join(', ');
+        return `<tr style="border-bottom:1px solid var(--border-subtle);">
+          <td style="padding:7px 6px;color:var(--text-muted);font-size:0.75rem;white-space:nowrap;">${dateStr}</td>
+          <td style="padding:7px 6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.name || '—')}</td>
+          <td style="padding:7px 6px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(countries)}</td>
+          <td style="padding:7px 6px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(hotels || '—')}${moreH}</td>
+          <td style="padding:7px 6px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary);">${esc(themes || '—')}</td>
+          <td style="padding:7px 6px;text-align:right;font-weight:600;color:${rateColor2(d.openRate || 0)};">${(d.openRate || 0).toFixed(1)}%</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>
+    ${docs.length > 50 ? `<div style="text-align:center;color:var(--text-muted);font-size:0.75rem;padding:12px;">
+      Mostrando 50 de ${docs.length}. Filtre pra refinar.
+    </div>` : ''}
+  </div>`;
+}
+
+function renderContentEmptyState(totalDocs) {
+  return `<div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+    <div style="font-size:3rem;margin-bottom:12px;">🌍</div>
+    <h3 style="margin:0 0 8px 0;color:var(--text-primary);">Análise de conteúdo ainda não disponível</h3>
+    <p style="font-size:0.875rem;line-height:1.6;max-width:560px;margin:0 auto;">
+      ${totalDocs > 0
+        ? `Encontrei <strong>${totalDocs} disparo${totalDocs!==1?'s':''}</strong> no período, mas nenhum tem
+           extração de entidades ainda. Isso significa que o sync rodou antes da feature 4.5.0+
+           OU o pipeline de extração não conseguiu rodar (sem permissão SFMC <code>Assets &gt; Read</code>
+           ou agente IA Hub inativo).`
+        : 'Nenhum disparo no período selecionado. Tente ampliar o filtro.'}
+    </p>
+    <div style="margin-top:20px;">
+      <a href="https://github.com/primetour/tarefas/actions/workflows/mc-sync.yml"
+        target="_blank" rel="noopener" class="btn btn-secondary btn-sm"
+        style="text-decoration:none;">↗ Ver Sync Marketing Cloud</a>
+      <a href="#ai-hub" class="btn btn-secondary btn-sm" style="margin-left:8px;text-decoration:none;">
+        🤖 IA Hub: agente "Extrator"
+      </a>
+    </div>
+  </div>`;
+}
+
+function wireDrillDowns() {
+  // Click em país → seta filtro de país e re-renderiza
+  document.querySelectorAll('.nlc-country-drill').forEach(row => {
+    row.addEventListener('click', () => {
+      const country = row.dataset.country;
+      _contentFiltersState.country = country;
+      const sel = document.getElementById('nlc-country-filter');
+      if (sel) sel.value = country;
+      renderContentTab();
+    });
+  });
+}
+
+function rateColor2(pct) {
+  if (pct >= 25) return '#10B981';
+  if (pct >= 15) return '#F59E0B';
+  if (pct >= 5)  return '#6B7280';
+  return '#EF4444';
+}
+
+function fmtPct(n) { return `${(+n || 0).toFixed(1)}%`; }

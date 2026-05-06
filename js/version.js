@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 5,
-  patch: 2,
-  build: '20260505-fix-soap-email-id-nested',
+  minor: 6,
+  patch: 0,
+  build: '20260505-aba-conteudo-temas-newsletter',
 };
 
 /** "1.2.0" */
