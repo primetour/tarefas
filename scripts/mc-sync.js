@@ -873,7 +873,13 @@ async function main() {
       console.log(`   ${assetMap.size} assets recuperados (de ${sendNames.length} nomes únicos)`);
 
       // Pré-busca docs existentes pra cache lookup (por jobId já é nosso docId)
-      const existingDocs = new Map(); // jobId -> htmlHash existente
+      // Cache hit = mesmo htmlHash + extracted no formato/provider atual.
+      // Se extractedBy mudou (ex: Groq → Gemini Vision), invalida cache.
+      const expectedExtractedBy = agent
+        ? `${agent.provider}/${agent.model}`
+        : null;
+      const FORCE_REEXTRACT = process.env.FORCE_REEXTRACT === '1';
+      const existingDocs = new Map(); // jobId -> htmlHash existente (válido)
       if (enrichEnabled && assetMap.size) {
         const docIds = sends.map(s => `${bu.id}_${s.ID}`);
         const chunks = [];
@@ -883,7 +889,15 @@ async function main() {
           reads.forEach(r => {
             if (r.exists) {
               const data = r.data();
-              if (data.htmlHash) existingDocs.set(r.id, data.htmlHash);
+              // Cache só válido se: tem htmlHash + extracted populado + extractedBy
+              // bate com agente atual + não há FORCE_REEXTRACT
+              const matchesProvider = expectedExtractedBy
+                ? (data.extracted?.extractedBy || '').startsWith(expectedExtractedBy.split('/')[0])
+                : true;
+              const hasExtracted = data.extracted && Object.keys(data.extracted).length > 2;
+              if (data.htmlHash && hasExtracted && matchesProvider && !FORCE_REEXTRACT) {
+                existingDocs.set(r.id, data.htmlHash);
+              }
             }
           });
         }
