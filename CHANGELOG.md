@@ -28,6 +28,53 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+
+## [4.5.1+20260505-ia-hub-agent-newsletter-extractor] — 2026-05-05
+
+**Pivot arquitetural** sobre a 4.5.0. Reportado: *"o certo nao é usar o IA Hub como modulo parceiro dessa solucao? assim temos o agente registrado, com maior visibilidade e possibilidade de manutencao no front. e mais: podemos escolher o modelo pra trabalhar."* — observação cirúrgica que mata o approach hardcoded da 4.5.0 e amarra o pipeline ao módulo IA Hub que já tem governança (audit, budget, key cascade, UI de gestão).
+
+### Changed
+- **`scripts/mc-sync.js` refatorado pra usar agente registrado**:
+  - Provider, modelo, prompt e limites lidos de `ai_agents` (Firestore). **Trocar modelo agora é editar campo no agente, sem deploy.**
+  - Chave de API resolvida de `system_config/ai-config` (mesmo doc que `js/services/ai.js` lê — single source of truth).
+  - Multi-provider implementado: anthropic, groq, openai, gemini.
+  - Logs em `ai_usage_logs`: cada extração registra `agentId, provider, model, source: 'mc-sync', tokensIn, tokensOut, success, durationMs`. Visível no dashboard da IA Hub.
+  - Falha graceful em 5 níveis: agente ausente / agente inativo / sem chave / sem HTML / parse JSON falhou.
+- **Workflow `mc-sync.yml`**: removido `ANTHROPIC_API_KEY` env. Chave vem de Firestore.
+
+### Added
+- **Agente "Extrator de Conteúdo de Newsletter"** seedado em `ai_agents`:
+  - `slug: 'newsletter-content-extractor'`
+  - `provider: 'groq'`, `model: 'llama-3.3-70b-versatile'`
+  - `module: 'nl-performance'`
+  - `outputFormat: 'json'`, `limits.temperature: 0`
+  - `visibility.mode: 'admin'`, `invokedBy: ['mc-sync GitHub Action']`
+- **Schema `mc_performance.extracted`** ganha `agentId`, `agentSlug` e `extractedBy: 'groq/llama-3.3-70b-versatile'` (dinâmico vs hardcoded da 4.5.0).
+
+### Why
+A 4.5.0 entregou fundação técnica certa mas arquitetura de provider hardcoded — péssima prática num sistema que já tem IA Hub funcional. **Pivot ganha:**
+1. Visibilidade: agente aparece no `#ai-hub` junto com outros — admin vê custo, erro, prompt, modelo num só lugar
+2. Manutenção sem deploy: trocar modelo (Llama→Sonnet→Gemini) é click; ajustar prompt é editar campo
+3. Governança: audit log, budget alert, rate limit, key cascade — tudo já existe na IA Hub
+4. Reuso: futuras extrações similares seguem o mesmo padrão
+
+**Por Groq Llama 3.3 70B:** chave já em `system_config` (zero ação user), JSON mode nativo, custo ~R$ 15/ano (vs ~R$ 30 com Haiku), latência ~1-2s. Pode trocar pra qualquer outro provider editando o agente.
+
+### Verificação
+1. ✓ Agente criado em `ai_agents` com `slug: 'newsletter-content-extractor'`
+2. ✓ `system_config/ai-config.groqApiKey` confirmado (key real, len 56)
+3. ✓ `node --check scripts/mc-sync.js` passou
+4. ⏳ Trigger workflow_dispatch `days=7`: validar logs `Enriquecimento IA: ✓ ATIVO via agente "Extrator de Conteúdo de Newsletter" (groq/llama-3.3-70b-versatile)`
+5. ⏳ Inspecionar `mc_performance` docs recentes — `extracted` + `agentId` + `extractedBy` populados
+
+### Pré-requisito SFMC ainda válido
+Permissão `Assets > Read` no Installed Package SFMC. Se 401/403 nos logs, configurar conforme 4.5.0.
+
+### Próxima release
+**4.6.0 — Fase 2**: aba "Conteúdo & Temas" no `#nl-performance` consumindo `mc_performance.extracted`.
+
+---
+
 ## [4.5.0+20260505-mc-sync-html-ia-extracao] — 2026-05-05
 
 Release **MINOR** — Fase 1 do enriquecimento de newsletters por IA. O sync diário do Marketing Cloud passa a puxar o **HTML completo** de cada disparo (via REST `/asset/v1/content/assets/query`) e extrai entidades via Claude Haiku 4.5: países, cidades, hotéis, marcas, temas, target audience, atividades, faixa de preço, sales points. Tudo persistido em `mc_performance.extracted`. Pipeline com cache por `htmlHash` pra zero re-trabalho.

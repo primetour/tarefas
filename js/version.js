@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 5,
-  patch: 0,
-  build: '20260505-mc-sync-html-ia-extracao',
+  patch: 1,
+  build: '20260505-ia-hub-agent-newsletter-extractor',
 };
 
 /** "1.2.0" */

@@ -243,84 +243,190 @@ function sha256(s) {
   return crypto.createHash('sha256').update(String(s || '')).digest('hex');
 }
 
-/* ─── Extração de entidades via Anthropic API ─────────────────
- * Usa Claude Haiku 3.5 (fast + barato). Prompt estruturado pede JSON
- * estrito com countries/cities/hotels/brands/etc. Falha gracefully se
- * key ausente, parse falhar ou rate-limit — sync continua sem enrich.
+/* ─── IA Hub: agente registrado + chave global ────────────────
+ * Em vez de hardcodar provider/model/prompt, lemos tudo de:
+ *   - ai_agents/{slug}: configuração do agente (provider, model, systemPrompt, limits)
+ *   - system_config/main: chave de API global (groqApiKey, anthropicApiKey, etc.)
+ *
+ * Permite trocar modelo/prompt via UI da IA Hub sem mexer em código.
+ * Usa Firestore Admin SDK (já inicializado) — sem auth user.
  */
-async function extractEntitiesViaLLM(text, anthropicKey, retries = 1) {
-  if (!anthropicKey) return null;
-  if (!text || text.length < 50) return null;
+const AGENT_SLUG = 'newsletter-content-extractor';
 
-  // Trunca pra 8000 chars (~2.5k tokens) — emails longos não ajudam mais
-  const input = text.slice(0, 8000);
-
-  const prompt = `Você é um extrator de entidades especializado em conteúdo de marketing turístico de luxo.
-
-Analise o texto abaixo de uma newsletter e extraia em JSON ESTRITO (sem markdown, sem comentários):
-
-{
-  "countries": ["nome do país em português"],
-  "cities":    ["cidades/regiões"],
-  "hotels":    [{"name": "nome do hotel", "brand": "marca ou null", "category": "ultra-luxo|luxo|premium|null"}],
-  "brands":    ["marcas hoteleiras citadas (Belmond, Aman, Four Seasons, etc.)"],
-  "productTypes":   ["hotel|cruise|fam|roteiro|experiencia"],
-  "themes":         ["luxo|romance|familia|aventura|gastronomia|wellness|cultura|praia|cidade|natureza"],
-  "targetAudience": ["casais|familias|solo|grupo|50+|millennials"],
-  "activities":     ["atividades específicas mencionadas"],
-  "pricePoint":     "ultra-luxo|luxo|premium|null",
-  "priceRange":     {"min": null, "max": null, "currency": "USD|BRL|EUR|null", "basis": "noite|pacote|null"},
-  "travelSeason":   ["primavera|verao|outono|inverno|alta-temporada"],
-  "sellingPoints":  ["argumentos de venda em frase curta"],
-  "confidence":     "high|medium|low"
+async function loadAgentConfig(slug) {
+  // Procura por slug; agent doc id é random, busca via field 'slug'
+  const snap = await db.collection('ai_agents').where('slug', '==', slug).limit(1).get();
+  if (snap.empty) {
+    // Fallback: tenta achar por id literal
+    const byId = await db.collection('ai_agents').doc(slug).get();
+    if (byId.exists) return { id: byId.id, ...byId.data() };
+    return null;
+  }
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
 }
 
-Regras:
-- Se não conseguir identificar com certeza, deixe array vazio ou null. Não invente.
-- Use nomes em português brasileiro quando óbvio (Maldivas, não Maldives).
-- Categorias e enums devem ser EXATAMENTE como listados. Sem variações.
-- Se o texto for curto/vazio, confidence: "low".
-- Hotels: só inclua nomes específicos identificáveis, não "hotel da rede" genérico.
-
-Texto:
-"""${input}"""
-
-JSON:`;
-
+async function logAgentUsage({ agentId, provider, model, source, tokensIn, tokensOut, success, error, ms }) {
   try {
+    await db.collection('ai_usage_logs').add({
+      agentId, provider, model, source,
+      tokensIn:  tokensIn  || 0,
+      tokensOut: tokensOut || 0,
+      success:   success !== false,
+      error:     error || null,
+      durationMs: ms || 0,
+      ts: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (e) { /* logging falha não trava sync */ }
+}
+
+async function resolveGlobalApiKey(provider) {
+  // system_config/ai-config (mesmo CONFIG_DOC_ID usado por js/services/ai.js)
+  // Schema: { groqApiKey, anthropicApiKey, openaiApiKey, geminiApiKey }
+  const snap = await db.collection('system_config').doc('ai-config').get();
+  if (!snap.exists) return '';
+  const cfg = snap.data();
+  return cfg[`${provider}ApiKey`] || '';
+}
+
+/* ─── Extração — multi-provider, dirigido pelo agente ───────── */
+async function callProvider(provider, model, apiKey, systemPrompt, userPrompt, maxTokens, temperature) {
+  if (provider === 'anthropic') {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method:  'POST',
-      headers: {
-        'x-api-key':         anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'content-type':      'application/json',
-      },
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model:       'claude-haiku-4-5',
-        max_tokens:  1500,
-        temperature: 0,
-        messages:    [{ role: 'user', content: prompt }],
+        model, max_tokens: maxTokens, temperature,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
       }),
     });
-
-    if (!res.ok) {
-      const txt = await res.text();
-      if ((res.status === 429 || res.status >= 500) && retries > 0) {
-        await new Promise(r => setTimeout(r, 2000));
-        return extractEntitiesViaLLM(text, anthropicKey, retries - 1);
-      }
-      console.warn(`  LLM falhou: ${res.status} — ${txt.slice(0, 200)}`);
-      return null;
-    }
-
+    if (!res.ok) throw new Error(`anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const data = await res.json();
-    const raw = data.content?.[0]?.text || '';
-    // Tolerância: às vezes vem com ```json ... ``` mesmo com instrução
-    const cleaned = raw.replace(/^```json\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    return {
+      text: data.content?.[0]?.text || '',
+      tokensIn: data.usage?.input_tokens || 0,
+      tokensOut: data.usage?.output_tokens || 0,
+    };
+  }
+
+  if (provider === 'groq') {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model, max_tokens: maxTokens, temperature,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userPrompt },
+        ],
+      }),
+    });
+    if (!res.ok) throw new Error(`groq ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json();
+    return {
+      text: data.choices?.[0]?.message?.content || '',
+      tokensIn: data.usage?.prompt_tokens || 0,
+      tokensOut: data.usage?.completion_tokens || 0,
+    };
+  }
+
+  if (provider === 'openai') {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model, max_tokens: maxTokens, temperature,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userPrompt },
+        ],
+      }),
+    });
+    if (!res.ok) throw new Error(`openai ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json();
+    return {
+      text: data.choices?.[0]?.message?.content || '',
+      tokensIn: data.usage?.prompt_tokens || 0,
+      tokensOut: data.usage?.completion_tokens || 0,
+    };
+  }
+
+  if (provider === 'gemini') {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+        generationConfig: {
+          temperature,
+          maxOutputTokens: maxTokens,
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+    if (!res.ok) throw new Error(`gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const data = await res.json();
+    return {
+      text: data.candidates?.[0]?.content?.parts?.[0]?.text || '',
+      tokensIn: data.usageMetadata?.promptTokenCount || 0,
+      tokensOut: data.usageMetadata?.candidatesTokenCount || 0,
+    };
+  }
+
+  throw new Error(`provider nao suportado: ${provider}`);
+}
+
+/**
+ * Extrai entidades usando o agente registrado na IA Hub.
+ * - Prompt e modelo vêm do agente (editável via UI sem deploy)
+ * - Chave de API resolvida do system_config (mesmo lugar que app browser usa)
+ * - Logado em ai_usage_logs (visível na IA Hub)
+ * - Falha graceful se agente ausente, key ausente, ou erro de provider
+ */
+async function extractEntitiesViaAgent(text, agent, retries = 1) {
+  if (!agent) return null;
+  if (!text || text.length < 50) return null;
+
+  const provider = agent.provider || 'groq';
+  const model    = agent.model    || 'llama-3.3-70b-versatile';
+  const sysPrompt = agent.systemPrompt || '';
+  const maxTok   = agent.limits?.maxTokensPerRun || 1500;
+  const temp     = agent.limits?.temperature ?? 0;
+
+  const apiKey = await resolveGlobalApiKey(provider);
+  if (!apiKey) {
+    console.warn(`  Agent "${agent.name||agent.slug}": sem chave para provider ${provider}`);
+    return null;
+  }
+
+  // Trunca input
+  const input = text.slice(0, 8000);
+  const userPrompt = `Extraia as entidades do texto abaixo conforme o schema. Retorne APENAS JSON, sem markdown.\n\nTexto:\n"""${input}"""`;
+
+  const t0 = Date.now();
+  try {
+    const r = await callProvider(provider, model, apiKey, sysPrompt, userPrompt, maxTok, temp);
+    const cleaned = r.text.replace(/^```json\s*/i, '').replace(/\s*```\s*$/, '').trim();
     const json = JSON.parse(cleaned);
-    return json;
+    await logAgentUsage({
+      agentId: agent.id, provider, model, source: 'mc-sync',
+      tokensIn: r.tokensIn, tokensOut: r.tokensOut,
+      success: true, ms: Date.now() - t0,
+    });
+    return { json, provider, model };
   } catch (e) {
-    console.warn(`  LLM parse falhou: ${e.message}`);
+    if (retries > 0 && /429|5\d\d/.test(e.message)) {
+      await new Promise(r => setTimeout(r, 2000));
+      return extractEntitiesViaAgent(text, agent, retries - 1);
+    }
+    console.warn(`  Agent extract falhou: ${e.message}`);
+    await logAgentUsage({
+      agentId: agent.id, provider, model, source: 'mc-sync',
+      success: false, error: e.message, ms: Date.now() - t0,
+    });
     return null;
   }
 }
@@ -373,13 +479,34 @@ function buildDoc(send, bu) {
 
 /* ─── Main ────────────────────────────────────────────────── */
 async function main() {
-  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
-  const ENRICH_DISABLED   = process.env.ENRICH_DISABLED === '1';
-  const enrichEnabled     = !!ANTHROPIC_API_KEY && !ENRICH_DISABLED;
+  const ENRICH_DISABLED = process.env.ENRICH_DISABLED === '1';
 
   console.log(`\n🔄 PRIMETOUR — Marketing Cloud Sync`);
   console.log(`   Período: últimos ${SYNC_DAYS} dias`);
-  console.log(`   Enriquecimento IA: ${enrichEnabled ? '✓ ATIVO (Claude Haiku)' : '✗ desativado (sem ANTHROPIC_API_KEY)'}\n`);
+
+  // Carrega agente da IA Hub (se existir + estiver ativo) e checa se tem
+  // chave do provider configurada. Caso contrário, sync continua sem enrich.
+  let agent = null;
+  let enrichEnabled = false;
+  if (!ENRICH_DISABLED) {
+    agent = await loadAgentConfig(AGENT_SLUG);
+    if (!agent) {
+      console.log(`   Enriquecimento IA: ✗ desativado (agente "${AGENT_SLUG}" nao registrado na IA Hub)`);
+    } else if (agent.active === false) {
+      console.log(`   Enriquecimento IA: ✗ desativado (agente "${agent.name}" inativo)`);
+    } else {
+      const apiKey = await resolveGlobalApiKey(agent.provider);
+      if (!apiKey) {
+        console.log(`   Enriquecimento IA: ✗ desativado (sem chave global para provider "${agent.provider}")`);
+      } else {
+        enrichEnabled = true;
+        console.log(`   Enriquecimento IA: ✓ ATIVO via agente "${agent.name || agent.slug}" (${agent.provider}/${agent.model})`);
+      }
+    }
+  } else {
+    console.log(`   Enriquecimento IA: ✗ desativado (ENRICH_DISABLED=1)`);
+  }
+  console.log('');
 
   const summary = { success: [], failed: [], total: 0, enriched: 0, cacheHits: 0, llmCalls: 0 };
 
@@ -450,12 +577,15 @@ async function main() {
               return;
             }
 
-            // Sem cache: extrai via LLM (se ativo)
+            // Sem cache: extrai via agente (se ativo)
             let extracted = null;
+            let extractedMeta = null;
             if (enrichEnabled && asset.html) {
               const text = stripHtml(asset.html);
-              extracted = await extractEntitiesViaLLM(text, ANTHROPIC_API_KEY);
-              if (extracted) {
+              const result = await extractEntitiesViaAgent(text, agent);
+              if (result?.json) {
+                extracted = result.json;
+                extractedMeta = { provider: result.provider, model: result.model };
                 summary.llmCalls++;
                 summary.enriched++;
               }
@@ -466,6 +596,7 @@ async function main() {
               htmlHash,
               structural,
               extracted,
+              extractedMeta,
             });
           }));
         }
@@ -488,7 +619,11 @@ async function main() {
             doc.extracted = {
               ...enrich.extracted,
               extractedAt: admin.firestore.FieldValue.serverTimestamp(),
-              extractedBy: 'claude-haiku-4-5',
+              extractedBy: enrich.extractedMeta
+                ? `${enrich.extractedMeta.provider}/${enrich.extractedMeta.model}`
+                : 'agent',
+              agentId: agent?.id || null,
+              agentSlug: agent?.slug || null,
             };
           }
         }
