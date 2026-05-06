@@ -166,17 +166,15 @@ async function fetchAssetsByLegacyIds(token, legacyIds) {
   if (!legacyIds || !legacyIds.length) return new Map();
 
   const url = `${MC_REST_URL}/asset/v1/content/assets/query`;
-  // OBS: API não aceita dot-notation em "fields" (rejeita "views.html.content"
-  // com errorcode 10005). Solução: omitir "fields" e pegar payload completo.
-  // Trade-off: response maior, mas pra ~10 assets/dia é trivial.
+  // Sintaxe correta SFMC: query top-level tem property + simpleOperator + value
+  // (não usa leftOperand como SQLLike). 'fields' rejeita dot-notation, então
+  // omitimos pra pegar payload completo.
   const body = {
     page: { page: 1, pageSize: 200 },
     query: {
-      leftOperand: {
-        property: 'data.email.legacyId',
-        simpleOperator: 'in',
-        value: legacyIds.map(String),
-      },
+      property: 'data.email.legacyId',
+      simpleOperator: 'in',
+      value: legacyIds.map(String),
     },
   };
 
