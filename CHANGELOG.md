@@ -37,6 +37,38 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.9.1+20260506-nl-content-insights-tooltips] — 2026-05-06
+
+Release **PATCH** — atende 2 observações do user sobre a aba **Newsletter → Conteúdo & Temas**:
+
+1. *"todos os cards tem que ter um 'i' explicando o critério de selecao feito pela IA"* — tooltip "ⓘ" em **todos** os 6 KPIs e nos 9 cards/blocos explicando o critério de extração (dicionário curado de keywords, dedup intra-doc, regex no subject por tipo, triggers por tema, etc.).
+2. *"falta implementar insights em todas as abas (acho q só tem em 1)"* — **Insights & Observações** agora também na aba **Conteúdo & Temas** (antes existia só em Performance e Calendário). 10 widgets ancorados (`contentKpis`, `newsletterTypes`, `topCountries`, `topCities`, `topHotels`, `topCruises`, `themes`, `brands`, `contentByBu`, `enrichedSends`) + painel "Análise Geral" com snapshot agregado.
+
+### Implementação
+
+#### Tooltips (`js/pages/nlPerformance.js`)
+- Constante `INFO_TIPS` (15 keys) — texto canônico do critério IA por bloco/KPI.
+- Helper `blockHeader(title, tooltip, widgetId)` — renderiza header com badge ⓘ + slot de insights opcional.
+- Helper `contentKpi(title, value, sub, tooltip)` — adiciona ⓘ flutuando no canto direito do KPI.
+- Aplicado em **6 KPIs** (Países, Cidades, Hotéis, Cruzeiros, Marcas, Open rate) e **9 blocos** (Tipo, Top países/cidades/hotéis/cruzeiros, Temas, Marcas, Por BU, Envios).
+
+#### Insights na aba Conteúdo (`js/pages/nlPerformance.js`)
+- 8 funções snapshot: `buildNlContentKpisSnapshot`, `buildNlContentTypesSnapshot`, `buildNlContentCountriesSnapshot`, `buildNlContentCitiesSnapshot`, `buildNlContentHotelsSnapshot`, `buildNlContentCruisesSnapshot`, `buildNlContentThemesSnapshot`, `buildNlContentBrandsSnapshot`, `buildNlContentByBuSnapshot`, `buildNlContentSendsSnapshot`.
+- `buildNlContentGeneralSnapshot()` — snapshot agregado com totais + top-5 de cada dimensão para o painel geral.
+- `setupNlContentInsights(enrichedDocs, agg)` — monta widgets via `setupDashboardInsights({...})`. Chamado dentro de `renderContentTab()` (re-monta a cada render — slots zeram quando `innerHTML` é reescrito).
+- Período do `setupDashboardInsights` deriva de `_contentFiltersState.period` (default 180 dias). Filtros propagados: bu/country/city/theme/newsletterType/search.
+
+### Arquivos alterados
+- `js/pages/nlPerformance.js` — tooltips + insights setup completo (~+200 linhas)
+- `js/version.js` — bump 4.9.0 → 4.9.1
+- `index.html` — cache-bust v= alinhado
+
+### Verificação
+- Sintaxe JS validada (`node --check`).
+- Compatível com `setupDashboardInsights` API (já usada em Performance + Calendar).
+- IA Hub não precisa de mudanças — `dashboard='nl'` já cobre as 3 abas via `indexKey`.
+
+
 ## [4.9.0+20260506-schema-cruises-newslettertype-cidades-edit-modal] — 2026-05-06
 
 Release **MINOR** — atende 5 observações cirúrgicas do user sobre a aba de Conteúdo & Temas:

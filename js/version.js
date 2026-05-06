@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 9,
-  patch: 0,
-  build: '20260506-schema-cruises-newslettertype-cidades-edit-modal',
+  patch: 1,
+  build: '20260506-nl-content-insights-tooltips',
 };
 
 /** "1.2.0" */

@@ -1872,85 +1872,76 @@ function renderContentTab() {
 
   root.innerHTML = `
     <!-- KPIs -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;">
-      ${contentKpi('🌍 Países',          agg.countries.size,           'distintos no período')}
-      ${contentKpi('🏙 Cidades',          agg.cities.size,              'mencionadas')}
-      ${contentKpi('🏨 Hotéis',          agg.hotels.size,              'únicos citados')}
-      ${contentKpi('🚢 Cruzeiros',        agg.cruises.size,             'operadoras')}
-      ${contentKpi('🏷 Marcas',           agg.brands.size,              'hoteleiras')}
-      ${contentKpi('📊 Open rate médio', fmtPct(agg.avgOpenRate),       'das aprovadas')}
+    <div id="nl-content-kpis-block" style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">📊 Indicadores de conteúdo</h3>
+        <span class="widget-insights-slot" data-widget-id="nl-content-kpis-block"></span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">
+        ${contentKpi('🌍 Países',          agg.countries.size,           'distintos no período', INFO_TIPS.countries)}
+        ${contentKpi('🏙 Cidades',          agg.cities.size,              'mencionadas',         INFO_TIPS.cities)}
+        ${contentKpi('🏨 Hotéis',          agg.hotels.size,              'únicos citados',      INFO_TIPS.hotels)}
+        ${contentKpi('🚢 Cruzeiros',        agg.cruises.size,             'operadoras',          INFO_TIPS.cruises)}
+        ${contentKpi('🏷 Marcas',           agg.brands.size,              'hoteleiras',          INFO_TIPS.brands)}
+        ${contentKpi('📊 Open rate médio', fmtPct(agg.avgOpenRate),       'das aprovadas',       INFO_TIPS.openRate)}
+      </div>
     </div>
 
     <!-- 2-col grid de blocos -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;">
 
-      <!-- Tipo de newsletter -->
-      <div class="card" style="padding:18px;">
-        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:0.06em;color:var(--text-muted);">📂 Tipo de newsletter</h3>
+      <div id="nl-content-types-block" class="card" style="padding:18px;">
+        ${blockHeader('📂 Tipo de newsletter', INFO_TIPS.newsletterType, 'nl-content-types-block')}
         ${renderNewsletterTypesBars(agg.newsletterTypes, enrichedDocs)}
       </div>
-
-      <!-- Top destinos (países) com performance -->
-      <div class="card" style="padding:18px;">
-        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:0.06em;color:var(--text-muted);">🌍 Top países · performance</h3>
+      <div id="nl-content-countries-block" class="card" style="padding:18px;">
+        ${blockHeader('🌍 Top países · performance', INFO_TIPS.topCountries, 'nl-content-countries-block')}
         ${renderTopDestinosTable(agg.byCountry, enrichedDocs)}
       </div>
-
-      <!-- Top cidades / regiões -->
-      <div class="card" style="padding:18px;">
-        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:0.06em;color:var(--text-muted);">🏙 Top cidades / regiões</h3>
+      <div id="nl-content-cities-block" class="card" style="padding:18px;">
+        ${blockHeader('🏙 Top cidades / regiões', INFO_TIPS.topCities, 'nl-content-cities-block')}
         ${renderTopDestinosTable(agg.cities, enrichedDocs, 'cidade')}
       </div>
-
-      <!-- Top hotéis -->
-      <div class="card" style="padding:18px;">
-        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:0.06em;color:var(--text-muted);">🏨 Hotéis mais mencionados</h3>
+      <div id="nl-content-hotels-block" class="card" style="padding:18px;">
+        ${blockHeader('🏨 Hotéis mais mencionados', INFO_TIPS.topHotels, 'nl-content-hotels-block')}
         ${renderTopHoteisBars(agg.hotels, enrichedDocs)}
       </div>
-
-      <!-- Top cruzeiros (separado de hotéis) -->
-      <div class="card" style="padding:18px;">
-        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:0.06em;color:var(--text-muted);">🚢 Cruzeiros / operadoras marítimas</h3>
+      <div id="nl-content-cruises-block" class="card" style="padding:18px;">
+        ${blockHeader('🚢 Cruzeiros / operadoras marítimas', INFO_TIPS.topCruises, 'nl-content-cruises-block')}
         ${renderTopHoteisBars(agg.cruises, enrichedDocs)}
       </div>
-
-      <!-- Temas/posicionamento -->
-      <div class="card" style="padding:18px;">
-        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:0.06em;color:var(--text-muted);">🎯 Temas / posicionamento</h3>
+      <div id="nl-content-themes-block" class="card" style="padding:18px;">
+        ${blockHeader('🎯 Temas / posicionamento', INFO_TIPS.themes, 'nl-content-themes-block')}
         ${renderThemesBars(agg.themes, enrichedDocs)}
       </div>
-
-      <!-- Marcas -->
-      <div class="card" style="padding:18px;">
-        <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
-          letter-spacing:0.06em;color:var(--text-muted);">🏷 Marcas hoteleiras citadas</h3>
+      <div id="nl-content-brands-block" class="card" style="padding:18px;">
+        ${blockHeader('🏷 Marcas hoteleiras citadas', INFO_TIPS.brandsBlock, 'nl-content-brands-block')}
         ${renderBrandsPills(agg.brands, enrichedDocs)}
       </div>
 
     </div>
 
-    <!-- Comparativo por BU (igual padrão Performance) -->
-    <div class="card" style="padding:18px;margin-top:16px;">
-      <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
-        letter-spacing:0.06em;color:var(--text-muted);">🏢 Conteúdo por unidade (BU)</h3>
+    <!-- Comparativo por BU -->
+    <div id="nl-content-bybu-block" class="card" style="padding:18px;margin-top:16px;">
+      ${blockHeader('🏢 Conteúdo por unidade (BU)', INFO_TIPS.byBu, 'nl-content-bybu-block')}
       ${renderContentByBu(enrichedDocs)}
     </div>
 
     <!-- Lista de envios filtrados -->
-    <div class="card" style="padding:18px;margin-top:16px;">
-      <h3 style="margin:0 0 12px 0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
-        letter-spacing:0.06em;color:var(--text-muted);">📧 Envios (${enrichedDocs.length})</h3>
+    <div id="nl-content-sends-block" class="card" style="padding:18px;margin-top:16px;">
+      ${blockHeader(`📧 Envios (${enrichedDocs.length})`, INFO_TIPS.envios, 'nl-content-sends-block')}
       ${renderEnrichedSendsList(enrichedDocs)}
     </div>
+
+    <!-- Análise Geral do tab Conteúdo & Temas -->
+    <div id="nl-content-insights-section" style="margin-top:24px;"></div>
   `;
 
   wireDrillDowns();
+
+  // Setup insights da aba Conteúdo (idempotente — remontado a cada renderContentTab)
+  setTimeout(() => setupNlContentInsights(enrichedDocs, agg), 50);
 }
 
 /* ─── Filtros ──────────────────────────────────────────────── */
@@ -2141,10 +2132,57 @@ function aggregateContent(docs) {
 
 /* ─── Renderers ────────────────────────────────────────────── */
 
-function contentKpi(title, value, sub) {
+/* ─── Critérios canônicos da IA (4.10.0+) ─────────────────────
+ * Cada bloco/KPI tem um tooltip "ⓘ" que explica COMO a entidade
+ * foi extraída. Transparência radical pra usuário entender o que
+ * está vendo e quando deve corrigir manualmente via botão Editar.
+ */
+const INFO_TIPS = {
+  countries:      'Países extraídos por matching contra dicionário curado de keywords geográficas (ex: "Mekong" → Vietnã, "Toscana" → Itália, "Acrópole" → Grécia). Subject + nome + descrição.',
+  cities:         'Cidades/regiões identificadas por keywords específicas no subject (ex: "Lençóis Maranhenses", "Cumbuco", "Atenas", "Mar Jônico"). Granularidade abaixo de país.',
+  hotels:         'Hotéis identificados por matching contra dicionário curado de marcas e empreendimentos PRIMETOUR (Faena, OIÁ, Carmel, Emiliano, Six Senses, EDITION, Four Seasons, Inkaterra, etc.).',
+  cruises:        'Operadoras marítimas (Aqua Expeditions, Silversea, Ritz-Carlton Yacht, Delfin, AmaWaterways, Orient Express). Ficam SEPARADAS de hotéis pois são produtos distintos.',
+  brands:         'Subset de hotels.brand + cruises.brand. Cada marca aparece 1× por campanha (não infla por waves).',
+  openRate:       'Média ponderada da taxa de abertura das newsletters enriquecidas (sample.openRate × N campanhas / total).',
+  newsletterType: 'Classificação por padrões no subject: csat (pesquisa), aereo (voo/classe executiva), cruzeiro (yacht/Silversea/Aqua), show/evento (BTS, Bocelli, GP), retreat/wellness (Rituaali, spa), promocao (Dia das Mães, %OFF), roteiro (multi-destino), hotelaria (default).',
+  topCountries:   'Top 12 países por # de campanhas. Open rate médio agregado dos disparos relacionados. Click pra drill-down.',
+  topCities:      'Top 12 cidades/regiões por # de campanhas. Granularidade abaixo de país (ex: Atenas dentro de Grécia). Click pra drill-down.',
+  topHotels:      'Top 10 hotéis mais mencionados nas newsletters do período. Cada hotel conta 1× por campanha (dedup intra-doc + inter-wave).',
+  topCruises:     'Top operadoras de cruzeiro. Estão SEPARADAS de hotéis no schema pois são produtos distintos no portfolio.',
+  themes:         'Temas inferidos por triggers no subject. luxo→cinco-estrelas/Faena/Aman; romance→casais/lua-de-mel; familia→Dia-das-Mães/crianças/villas; aventura→safari/Antártida; gastronomia→Michelin/vinho; wellness→spa/yoga; cultura→museu/Acrópole; praia→ilhas/beach; cidade→city-break; natureza→parques/paisagem; mar→cruzeiro/yacht; slow-travel→sem-pressa.',
+  brandsBlock:    'Marcas mais citadas em ordem decrescente. Tier-1 (ultra-luxo): Aman, Belmond, Faena, Six Senses, Bvlgari, Cheval Blanc. Tier-2 (luxo): Four Seasons, Ritz-Carlton, EDITION, Lotte. Marcas próprias PRIMETOUR: OIÁ, Carmel, Emiliano.',
+  byBu:           'Distribuição de campanhas, top destino, top hotel, top tema e open rate médio agrupados por BU (Primetour, BTG Partners, BTG Ultrablue, Centurion, PTS).',
+  envios:         'Lista das campanhas enriquecidas (deduplicadas por baseCode — P0209_1/_2/_3 = 1 linha). Click no ✎ pra editar manualmente quando IA errar.',
+};
+
+function blockHeader(title, tooltip, widgetId) {
+  const tipBadge = tooltip ? `<span title="${esc(tooltip)}"
+      style="cursor:help;display:inline-flex;align-items:center;justify-content:center;
+      width:18px;height:18px;border-radius:50%;background:var(--bg-elevated);
+      color:var(--text-muted);font-size:0.7rem;font-weight:600;font-style:italic;
+      font-family:Georgia,serif;border:1px solid var(--border-subtle);">i</span>` : '';
+  const insightSlot = widgetId
+    ? `<span class="widget-insights-slot" data-widget-id="${esc(widgetId)}"></span>`
+    : '';
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px 0;">
+    <h3 style="margin:0;font-size:0.875rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:0.06em;color:var(--text-muted);">${title}</h3>
+    <div style="display:flex;align-items:center;gap:6px;">
+      ${insightSlot}
+      ${tipBadge}
+    </div>
+  </div>`;
+}
+
+function contentKpi(title, value, sub, tooltip) {
+  const infoBtn = tooltip ? `<span title="${esc(tooltip)}"
+    style="cursor:help;float:right;display:inline-flex;align-items:center;justify-content:center;
+    width:16px;height:16px;border-radius:50%;background:var(--bg-elevated);
+    color:var(--text-muted);font-size:0.625rem;font-weight:600;font-style:italic;
+    font-family:Georgia,serif;border:1px solid var(--border-subtle);">i</span>` : '';
   return `<div class="card" style="padding:14px 16px;">
     <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;
-      letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">${title}</div>
+      letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">${title}${infoBtn}</div>
     <div style="font-size:1.5rem;font-weight:700;color:var(--text-primary);">${value}</div>
     <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">${sub}</div>
   </div>`;
@@ -2561,4 +2599,173 @@ async function openExtractedEditor(docId) {
       alert('Falha ao salvar: ' + e.message);
     }
   });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   INSIGHTS & OBSERVAÇÕES — Aba "Conteúdo & Temas"
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function _topEntries(map, n = 8) {
+  if (!map || typeof map.entries !== 'function') return [];
+  return [...map.entries()]
+    .sort((a, b) => {
+      const ca = typeof a[1] === 'object' ? (a[1].count || 0) : a[1];
+      const cb = typeof b[1] === 'object' ? (b[1].count || 0) : b[1];
+      return cb - ca;
+    })
+    .slice(0, n)
+    .map(([k, v]) => ({ label: k, count: typeof v === 'object' ? (v.count || 0) : v }));
+}
+
+function buildNlContentKpisSnapshot(agg) {
+  if (!agg) return { kpis: 'sem dados — aba Conteúdo não renderizada' };
+  return {
+    countries: agg.countries?.size || 0,
+    cities: agg.cities?.size || 0,
+    hotels: agg.hotels?.size || 0,
+    cruises: agg.cruises?.size || 0,
+    brands: agg.brands?.size || 0,
+    avgOpenRate: agg.avgOpenRate || 0,
+  };
+}
+
+function buildNlContentTypesSnapshot(agg) {
+  if (!agg?.newsletterTypes) return {};
+  return { newsletterTypes: _topEntries(agg.newsletterTypes, 12) };
+}
+
+function buildNlContentCountriesSnapshot(agg) {
+  if (!agg?.byCountry) return {};
+  return { topCountries: _topEntries(agg.byCountry, 12) };
+}
+
+function buildNlContentCitiesSnapshot(agg) {
+  if (!agg?.cities) return {};
+  return { topCities: _topEntries(agg.cities, 12) };
+}
+
+function buildNlContentHotelsSnapshot(agg) {
+  if (!agg?.hotels) return {};
+  return { topHotels: _topEntries(agg.hotels, 12) };
+}
+
+function buildNlContentCruisesSnapshot(agg) {
+  if (!agg?.cruises) return {};
+  return { topCruises: _topEntries(agg.cruises, 12) };
+}
+
+function buildNlContentThemesSnapshot(agg) {
+  if (!agg?.themes) return {};
+  return { themes: _topEntries(agg.themes, 12) };
+}
+
+function buildNlContentBrandsSnapshot(agg) {
+  if (!agg?.brands) return {};
+  return { brands: _topEntries(agg.brands, 12) };
+}
+
+function buildNlContentByBuSnapshot(enrichedDocs) {
+  if (!enrichedDocs?.length) return {};
+  const byBu = new Map();
+  enrichedDocs.forEach(d => {
+    const bu = d.virtualBuName || getVirtualBuName(d.buId) || '—';
+    if (!byBu.has(bu)) byBu.set(bu, { count: 0, openRateSum: 0, openRateN: 0 });
+    const e = byBu.get(bu);
+    e.count++;
+    if (typeof d.openRate === 'number') { e.openRateSum += d.openRate; e.openRateN++; }
+  });
+  return {
+    byBu: [...byBu.entries()].map(([bu, e]) => ({
+      bu, campaigns: e.count,
+      avgOpenRate: e.openRateN ? +(e.openRateSum / e.openRateN).toFixed(1) : 0,
+    })),
+  };
+}
+
+function buildNlContentSendsSnapshot(enrichedDocs) {
+  if (!enrichedDocs?.length) return {};
+  return {
+    totalSends: enrichedDocs.length,
+    enrichedBy: enrichedDocs.reduce((acc, d) => {
+      const k = d.extracted?.extractedBy || 'unknown';
+      acc[k] = (acc[k] || 0) + 1;
+      return acc;
+    }, {}),
+  };
+}
+
+function buildNlContentGeneralSnapshot(enrichedDocs, agg) {
+  if (!enrichedDocs?.length || !agg) return {};
+  return {
+    totalCampaigns: enrichedDocs.length,
+    avgOpenRate: agg.avgOpenRate || 0,
+    countries: agg.countries?.size || 0,
+    cities: agg.cities?.size || 0,
+    hotels: agg.hotels?.size || 0,
+    cruises: agg.cruises?.size || 0,
+    brands: agg.brands?.size || 0,
+    topCountries: _topEntries(agg.byCountry, 5),
+    topCities: _topEntries(agg.cities, 5),
+    topHotels: _topEntries(agg.hotels, 5),
+    topThemes: _topEntries(agg.themes, 5),
+    typesDistribution: _topEntries(agg.newsletterTypes, 12),
+    byBu: buildNlContentByBuSnapshot(enrichedDocs).byBu,
+  };
+}
+
+/** Setup dos insights na aba Conteúdo (idempotente, chamado após renderContentTab). */
+async function setupNlContentInsights(enrichedDocs, agg) {
+  // Idempotente: se os botões já estão montados, não remonta.
+  if (document.querySelector('#nl-content-kpis-block .ip-widget-btn')) return;
+  try {
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+
+    // Período: usa o filtro selecionado na aba Conteúdo (ou últimos 180 dias por default).
+    const days = parseInt(_contentFiltersState.period, 10) || 180;
+    const end = new Date();
+    const start = new Date(); start.setDate(start.getDate() - days);
+    const periodLabel = days >= 365 ? `Últimos ${Math.round(days/365)} ano(s)` : `Últimos ${days} dias`;
+    const filters = {
+      bu: _contentFiltersState.bu || 'all',
+      country: _contentFiltersState.country || '',
+      city: _contentFiltersState.city || '',
+      theme: _contentFiltersState.theme || '',
+      newsletterType: _contentFiltersState.newsletterType || '',
+      search: _contentFiltersState.search || '',
+      periodLabel,
+    };
+
+    await setupDashboardInsights({
+      dashboard: 'nl',
+      widgets: [
+        { widgetId: 'nl-content-kpis-block',     indexKey: 'contentKpis',      label: '📊 Indicadores de conteúdo',
+          snapshot: () => buildNlContentKpisSnapshot(agg) },
+        { widgetId: 'nl-content-types-block',    indexKey: 'newsletterTypes',  label: '📂 Tipo de newsletter',
+          snapshot: () => buildNlContentTypesSnapshot(agg) },
+        { widgetId: 'nl-content-countries-block', indexKey: 'topCountries',    label: '🌍 Top países',
+          snapshot: () => buildNlContentCountriesSnapshot(agg) },
+        { widgetId: 'nl-content-cities-block',   indexKey: 'topCities',        label: '🏙 Top cidades',
+          snapshot: () => buildNlContentCitiesSnapshot(agg) },
+        { widgetId: 'nl-content-hotels-block',   indexKey: 'topHotels',        label: '🏨 Hotéis',
+          snapshot: () => buildNlContentHotelsSnapshot(agg) },
+        { widgetId: 'nl-content-cruises-block',  indexKey: 'topCruises',       label: '🚢 Cruzeiros',
+          snapshot: () => buildNlContentCruisesSnapshot(agg) },
+        { widgetId: 'nl-content-themes-block',   indexKey: 'themes',           label: '🎯 Temas / posicionamento',
+          snapshot: () => buildNlContentThemesSnapshot(agg) },
+        { widgetId: 'nl-content-brands-block',   indexKey: 'brands',           label: '🏷 Marcas',
+          snapshot: () => buildNlContentBrandsSnapshot(agg) },
+        { widgetId: 'nl-content-bybu-block',     indexKey: 'contentByBu',      label: '🏢 Conteúdo por unidade',
+          snapshot: () => buildNlContentByBuSnapshot(enrichedDocs) },
+        { widgetId: 'nl-content-sends-block',    indexKey: 'enrichedSends',    label: '📧 Envios enriquecidos',
+          snapshot: () => buildNlContentSendsSnapshot(enrichedDocs) },
+      ],
+      metrics: null,
+      periodFrom: start, periodTo: end,
+      periodLabel,
+      filters,
+      generalPanelContainerId: 'nl-content-insights-section',
+      buildGeneralSnapshot: () => buildNlContentGeneralSnapshot(enrichedDocs, agg),
+      enableAi: true,
+    });
+  } catch (e) { console.warn('[nl] content insights setup:', e); }
 }
