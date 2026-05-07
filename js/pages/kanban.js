@@ -614,15 +614,16 @@ function renderColumn(group, tasks) {
         <span class="kanban-col-title">${esc(group.label)}</span>
         <span class="kanban-col-count" id="col-count-${esc(group.value)}">${tasks.length}</span>
       </div>
+      ${store.can('task_create') ? `
+        <button class="kanban-add-btn kanban-add-btn-top" data-add-status="${esc(group.value)}"
+          title="Adicionar tarefa nesta coluna">
+          + Adicionar tarefa
+        </button>
+      ` : ''}
       <div class="kanban-col-body" id="col-body-${esc(group.value)}"
         data-status="${esc(group.value)}">
         ${tasks.map(t => renderKanbanCard(t)).join('')}
       </div>
-      ${store.can('task_create') ? `
-        <button class="kanban-add-btn" data-add-status="${esc(group.value)}">
-          + Adicionar tarefa
-        </button>
-      ` : ''}
     </div>
   `;
 }
@@ -1122,15 +1123,16 @@ function renderPipelineColumn(col, type, tasks) {
         <span class="kanban-col-title">${esc(col.label)}</span>
         <span class="kanban-col-count" id="pcol-count-${col.id}">${tasks.length}</span>
       </div>
+      ${!isDone && store.can('task_create') ? `
+        <button class="kanban-add-btn kanban-add-btn-top" data-add-step="${col.id}" data-type-id="${type.id}"
+          title="Adicionar tarefa nesta etapa">
+          + Adicionar
+        </button>
+      ` : ''}
       <div class="kanban-col-body" id="pcol-body-${col.id}"
         data-step="${col.id}" data-status="${isDone ? 'done' : ''}">
         ${tasks.map(t => renderKanbanCard(t, type)).join('')}
       </div>
-      ${!isDone && store.can('task_create') ? `
-        <button class="kanban-add-btn" data-add-step="${col.id}" data-type-id="${type.id}">
-          + Adicionar
-        </button>
-      ` : ''}
     </div>
   `;
 }

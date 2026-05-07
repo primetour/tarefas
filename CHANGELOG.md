@@ -37,6 +37,37 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.14.3+20260507-kanban-add-btn-top] — 2026-05-07
+
+Release **PATCH** — UX: botão "+ Adicionar tarefa" no Steps movido pro topo da coluna.
+
+### Pedido do user
+> "trocar a localização do botão '+ Adicionar tarefa', que hoje está na parte inferior da coluna, para abaixo do título da coluna"
+
+### Mudança
+
+Antes: botão no rodapé da coluna (precisava scrollar coluna inteira pra encontrar).
+Depois: botão logo abaixo do header da coluna (sempre visível).
+
+### Implementação
+
+#### `js/pages/kanban.js`
+- `renderColumn()` (kanban view) — botão movido pra antes do `kanban-col-body`
+- `renderPipelineColumn()` (pipeline/esteira view) — mesma mudança
+- Classe adicionada: `.kanban-add-btn-top` pra variante visual
+- Mantido `data-add-status` / `data-add-step` / `data-type-id` (sem mudança no handler de click)
+
+#### `css/tasks.css`
+- `.kanban-add-btn.kanban-add-btn-top` — margens e padding mais compactos
+- `text-align: center` (ao invés de `left`) pro centro
+- Hover: bordas sólidas (mais clean)
+
+### Arquivos alterados
+- `js/pages/kanban.js` — 2 funções de render alteradas
+- `css/tasks.css` — variante `.kanban-add-btn-top`
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+
 ## [4.14.2+20260507-fix-bulkbar-stack-overflow] — 2026-05-07
 
 Release **PATCH** — corrige bug crítico no bulkActionBar (existia desde v4.13.0).

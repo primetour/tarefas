@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 14,
-  patch: 2,
-  build: '20260507-fix-bulkbar-stack-overflow',
+  patch: 3,
+  build: '20260507-kanban-add-btn-top',
 };
 
 /** "1.2.0" */

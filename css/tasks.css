@@ -399,6 +399,21 @@
   color: var(--brand-gold);
   background: rgba(212,168,67,0.05);
 }
+/* 4.15+: variante posicionada no TOPO (logo abaixo do header da coluna).
+ * Ajusta margens e visual sutilmente pra ficar mais discreto + acessível.
+ */
+.kanban-add-btn.kanban-add-btn-top {
+  margin: 4px 10px 8px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-align: center;
+  border-style: dashed;
+}
+.kanban-add-btn.kanban-add-btn-top:hover {
+  background: rgba(212,168,67,0.08);
+  border-style: solid;
+}
 
 /* Drag placeholder */
 .kanban-placeholder {
