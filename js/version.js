@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 10,
+  minor: 11,
   patch: 0,
-  build: '20260507-presence-idle-detection',
+  build: '20260507-content-calendar-by-project',
 };
 
 /** "1.2.0" */

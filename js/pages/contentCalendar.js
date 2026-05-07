@@ -10,7 +10,9 @@ import {
   PLATFORMS, CONTENT_TYPES, SLOT_STATUSES, CATEGORIES,
   fetchSlots, createSlot, updateSlot, deleteSlot,
   suggestWeekContent, suggestDescription,
+  ensureGeneralProjectAndMigrateOrphans,
 } from '../services/contentCalendar.js';
+import { fetchProjects } from '../services/projects.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
@@ -129,6 +131,9 @@ let activePlatform = '';       // GAP fix: filtro por plataforma
 let activeContentType = '';    // GAP fix: filtro por tipo de conteúdo
 let editingSlot   = null;      // null = new slot
 let modalOpen     = false;
+// 4.11+ — projeto agora é o scope principal do calendário
+let activeProjectId   = '';   // '' = nenhum projeto selecionado
+let availableProjects = [];   // projetos visíveis ao user (cache local)
 
 /* ── Helpers ────────────────────────────────────────────── */
 
@@ -198,10 +203,46 @@ export async function renderContentCalendar(container) {
   const main = container || document.getElementById('main');
   if (!main) return;
 
-  // fetchSlots já retorna [] em caso de erro/collection vazia
-  allSlots = await fetchSlots();
+  // ── Parse URL: #content-calendar?project=ABC ────────────
+  try {
+    const hashQuery = (location.hash || '').split('?')[1] || '';
+    const params = new URLSearchParams(hashQuery);
+    activeProjectId = params.get('project') || '';
+  } catch {
+    activeProjectId = '';
+  }
+
+  // Migração best-effort: garante projeto "Geral · Conteúdo" e atribui
+  // slots órfãos (idempotente, só roda 1x por sessão de browser).
+  ensureGeneralProjectAndMigrateOrphans().catch(e =>
+    console.warn('[ContentCalendar] migration skipped:', e.message));
+
+  // Carrega projetos visíveis ao user (com cache do store)
+  try {
+    availableProjects = await fetchProjects();
+  } catch (e) {
+    console.warn('[ContentCalendar] fetchProjects falhou:', e.message);
+    availableProjects = [];
+  }
+
+  // Carrega slots do projeto ativo (ou todos se nenhum projeto)
+  allSlots = await fetchSlots(activeProjectId ? { projectId: activeProjectId } : {});
 
   renderPage(main);
+}
+
+/** Atualiza projeto ativo, sincroniza URL e recarrega slots. */
+async function setActiveProject(projectId) {
+  activeProjectId = projectId || '';
+  // Atualiza URL sem disparar router (history.replaceState)
+  const newHash = activeProjectId
+    ? `#content-calendar?project=${encodeURIComponent(activeProjectId)}`
+    : '#content-calendar';
+  try { history.replaceState(null, '', newHash); } catch {}
+  // Re-fetch slots do novo escopo
+  allSlots = await fetchSlots(activeProjectId ? { projectId: activeProjectId } : {});
+  const main = document.getElementById('main');
+  if (main) renderPage(main);
 }
 
 function renderPage(container) {
@@ -216,19 +257,45 @@ function renderPage(container) {
       })()
     : `${PT_MONTHS[m]} ${y}`;
 
+  // Projeto ativo (objeto completo) — null se nenhum selecionado
+  const activeProject = availableProjects.find(p => p.id === activeProjectId) || null;
+  const hasProjectSelected = !!activeProjectId && !!activeProject;
+  // Se há projeto ativo no estado mas o user não tem mais acesso a ele
+  // (não está no availableProjects), trata como "nenhum projeto" e mostra
+  // empty state. Não força reset pra preservar URL bookmark.
+  const projectGoneFromList = !!activeProjectId && !activeProject;
+
   container.innerHTML = `
     <div style="padding:0;">
       <!-- Header -->
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
         <div>
           <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0 0 4px 0;">
             📱 Calendário de Conteúdo
+            ${activeProject ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:${activeProject.color || 'var(--brand-gold)'};">· ${esc(activeProject.icon || '📦')} ${esc(activeProject.name)}</span>` : ''}
           </h1>
           <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0;">
-            Planejamento e gestão de publicações
+            ${activeProject
+              ? 'Calendário deste projeto. Para trocar, use o seletor ao lado.'
+              : 'Selecione um projeto pra ver/criar conteúdo.'}
           </p>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <!-- Project selector (PRIMARY scope filter) -->
+          <select id="cc-project-select" style="padding:8px 14px;border:1px solid var(--brand-gold,#D4A843);
+            border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
+            font-size:0.875rem;font-weight:600;cursor:pointer;outline:none;min-width:240px;">
+            <option value="">— Selecione um projeto —</option>
+            ${availableProjects.map(p =>
+              `<option value="${esc(p.id)}" ${activeProjectId === p.id ? 'selected' : ''}>${esc(p.icon || '📦')} ${esc(p.name)}${p.archived ? ' (arquivado)' : ''}</option>`
+            ).join('')}
+          </select>
+          <button id="cc-new-project" title="Criar novo projeto"
+            style="padding:8px 12px;border:1px dashed var(--brand-gold,#D4A843);border-radius:8px;
+            background:transparent;color:var(--brand-gold,#D4A843);font-size:0.8125rem;font-weight:600;
+            cursor:pointer;">+ Novo projeto</button>
+
+          ${hasProjectSelected ? `
           <!-- View toggle -->
           <div style="display:flex;border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;overflow:hidden;">
             ${[['month', 'Mes'], ['week', 'Semana'], ['list', 'Lista']].map(([v, l]) => `
@@ -239,14 +306,15 @@ function renderPage(container) {
             `).join('')}
           </div>
 
-          <!-- Account selector -->
+          <!-- Account selector (secondary — handle social) -->
           <select id="cc-account-select" style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
             border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
             font-size:0.8125rem;cursor:pointer;outline:none;">
             <option value="">Todas as contas</option>
             ${ACCOUNTS.map(a => `<option value="${esc(a.value)}" ${activeAccount === a.value ? 'selected' : ''}>${esc(a.label)}</option>`).join('')}
-          </select>
+          </select>` : ''}
 
+          ${hasProjectSelected ? `
           <!-- Navigation -->
           <div style="display:flex;align-items:center;gap:4px;">
             <button id="cc-prev" style="padding:6px 10px;border:1px solid var(--border-subtle,#1E2D3D);
@@ -266,7 +334,8 @@ function renderPage(container) {
           <button id="cc-suggest-week" style="padding:6px 16px;border:1px solid var(--brand-gold,#D4A843);
             border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);
             font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">
-            IA: Sugerir Semana</button>
+            IA: Sugerir Semana</button>` : ''}
+          ${hasProjectSelected ? `
           <!-- Split-button Export (consolida XLS+PDF) -->
           <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
             <button class="uikit-export-trigger" data-export-trigger="1"
@@ -291,10 +360,11 @@ function renderPage(container) {
                 <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
               </button>
             </div>
-          </div>
+          </div>` : ''}
         </div>
       </div>
 
+      ${hasProjectSelected ? `
       <!-- Sub-toolbar de filtros (apenas na view "lista") — GAP fix: status/plataforma/categoria -->
       <div id="cc-filter-bar" style="display:${activeView === 'list' ? 'flex' : 'none'};
         gap:8px;flex-wrap:wrap;padding:0 12px 12px;align-items:center;">
@@ -322,6 +392,31 @@ function renderPage(container) {
 
       <!-- Calendar body -->
       <div id="cc-body"></div>
+      ` : `
+      <!-- Empty state: nenhum projeto selecionado -->
+      <div style="text-align:center;padding:80px 24px;color:var(--text-muted,#5A6B7A);">
+        <div style="font-size:4rem;margin-bottom:16px;">📂</div>
+        <h2 style="font-size:1.25rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0 0 8px 0;">
+          ${projectGoneFromList ? 'Projeto não encontrado' : 'Selecione um projeto pra começar'}
+        </h2>
+        <p style="font-size:0.875rem;line-height:1.6;max-width:520px;margin:0 auto 24px;">
+          ${projectGoneFromList
+            ? 'O projeto deste link foi arquivado, removido ou você não tem acesso. Escolha outro no seletor acima.'
+            : 'O calendário de conteúdo agora é organizado por <strong>projeto</strong>. Cada projeto tem seu próprio calendário com slots, ideias e cronograma.'}
+        </p>
+        ${availableProjects.length === 0 ? `
+        <p style="font-size:0.8125rem;color:var(--text-muted);max-width:520px;margin:0 auto 16px;">
+          Você ainda não tem projetos. Crie um pra começar!
+        </p>` : ''}
+        <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap;">
+          <button id="cc-empty-go-projects" style="padding:10px 20px;border:1px solid var(--brand-gold,#D4A843);
+            border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);font-size:0.875rem;
+            font-weight:600;cursor:pointer;">
+            ${availableProjects.length === 0 ? '+ Criar primeiro projeto' : '↗ Ver todos os projetos'}
+          </button>
+        </div>
+      </div>
+      `}
 
       <!-- Modal overlay -->
       <div id="cc-modal-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;
@@ -656,6 +751,28 @@ function bindCalendarCellEvents(container) {
 /* ── Header event binding ───────────────────────────────── */
 
 function bindHeaderEvents(container) {
+  // Project selector — scope principal do calendário
+  const projectSelect = document.getElementById('cc-project-select');
+  if (projectSelect) {
+    projectSelect.addEventListener('change', () => {
+      setActiveProject(projectSelect.value);
+    });
+  }
+  // "+ Novo projeto" — redireciona pra página de projetos (decisão do user)
+  const newProjBtn = document.getElementById('cc-new-project');
+  if (newProjBtn) {
+    newProjBtn.addEventListener('click', () => {
+      location.hash = '#projects';
+    });
+  }
+  // Empty-state CTA
+  const goProjectsBtn = document.getElementById('cc-empty-go-projects');
+  if (goProjectsBtn) {
+    goProjectsBtn.addEventListener('click', () => {
+      location.hash = '#projects';
+    });
+  }
+
   // View toggle
   container.querySelectorAll('[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -938,6 +1055,29 @@ function openSlotModal(slot, prefillDate) {
 
       <!-- Modal body -->
       <div style="padding:24px;">
+        ${(() => {
+          // Mostra o projeto vinculado ao slot (read-only — pra trocar, redirect)
+          const slotProjId = s.projectId || activeProjectId;
+          const slotProj = availableProjects.find(p => p.id === slotProjId);
+          if (!slotProj) {
+            return `<div style="${fieldGroupStyle}padding:10px 12px;border-radius:8px;
+              background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.4);
+              color:#F59E0B;font-size:0.8125rem;">
+              ⚠ Sem projeto vinculado. Selecione um projeto antes de criar slots.
+            </div>`;
+          }
+          return `<div style="${fieldGroupStyle}padding:10px 12px;border-radius:8px;
+            background:${slotProj.color || '#D4A843'}18;border-left:3px solid ${slotProj.color || '#D4A843'};
+            display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div style="font-size:0.8125rem;color:var(--text-primary,#E8ECF1);">
+              <span style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">Projeto</span><br>
+              <span style="font-weight:600;">${esc(slotProj.icon || '📦')} ${esc(slotProj.name)}</span>
+            </div>
+            <a href="#projects" style="font-size:0.6875rem;color:var(--brand-gold,#D4A843);text-decoration:none;">
+              Trocar de projeto →
+            </a>
+          </div>`;
+        })()}
         <!-- Title -->
         <div style="${fieldGroupStyle}">
           <label style="${labelStyle}">Titulo</label>
@@ -1179,6 +1319,10 @@ function getFormData() {
     category:      document.getElementById('cc-f-category')?.value || '',
     description:   document.getElementById('cc-f-description')?.value?.trim() || '',
     imageNotes:    document.getElementById('cc-f-imageNotes')?.value?.trim() || '',
+    // 4.11+ — projeto é o scope canônico do calendário. Se editando um
+    // slot existente, mantém o projectId original (não muda só por estar
+    // num filtro diferente). Se criando novo, usa o projeto ativo.
+    projectId:     editingSlot?.projectId || activeProjectId || null,
   };
 }
 
@@ -1189,6 +1333,11 @@ async function handleSave() {
 
   if (!data.title) {
     toast.error('Titulo e obrigatório');
+    return;
+  }
+  // Novo slot sem projeto — bloqueia (todo slot precisa ser de um projeto)
+  if (!editingSlot && !data.projectId) {
+    toast.error('Selecione um projeto antes de criar slots.');
     return;
   }
 
@@ -1324,12 +1473,17 @@ async function handleConvertToTask() {
 
   closeModal();
 
+  // Vincula a tarefa ao mesmo projeto do slot (caminho canônico em 4.11+).
+  // Slots herdam projectId via getFormData() — `data.projectId` preenchido.
+  const taskProjectId = data.projectId || slot.projectId || activeProjectId || null;
+
   openTaskModal({
     taskData: {
       title: data.title || slot.title || '',
       description: data.description || slot.description || '',
       sector: 'Marketing',
       requestingArea: 'Redes Sociais',
+      projectId: taskProjectId,
       dueDate,
       status: 'not_started',
       tags: ['conteudo', data.platform || '', data.contentType || ''].filter(Boolean),

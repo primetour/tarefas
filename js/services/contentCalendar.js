@@ -78,7 +78,7 @@ export const CONTENT_TYPE_MAP = Object.fromEntries(CONTENT_TYPES.map(t => [t.val
 /**
  * Buscar slots com filtros opcionais.
  */
-export async function fetchSlots({ startDate, endDate, account, platform, status } = {}) {
+export async function fetchSlots({ startDate, endDate, account, platform, status, projectId } = {}) {
   try {
     // Query simples sem orderBy composto — ordena client-side
     const q = query(collection(db, COL));
@@ -91,6 +91,7 @@ export async function fetchSlots({ startDate, endDate, account, platform, status
     if (account)   items = items.filter(i => i.account === account);
     if (platform)  items = items.filter(i => i.platform === platform);
     if (status)    items = items.filter(i => i.status === status);
+    if (projectId) items = items.filter(i => i.projectId === projectId);
 
     // Ordenar por data agendada
     items.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
@@ -465,4 +466,77 @@ export async function getContentCalendarStats({ startDate, endDate, account } = 
     inProgress: (byStatus.draft || 0) + (byStatus.review || 0),
     pending: byStatus.idea || 0,
   };
+}
+
+/* ════════════════════════════════════════════════════════════
+   Migração: garante projeto "Geral" e atribui slots órfãos
+   ════════════════════════════════════════════════════════════
+ *
+ * Idempotente. Roda no boot da página de calendário (uma vez por
+ * sessão de browser). Só executa write se houver órfãos.
+ *
+ * 1. Procura projeto com nome "Geral · Conteúdo" (slug fixo).
+ * 2. Se não existe, cria via createProject (qualquer master/admin).
+ * 3. Atualiza slots sem projectId pra ter projectId = id do "Geral".
+ *
+ * Rate-limit natural: cache em sessionStorage (chave 'cc-orphan-migration-v1'),
+ * só roda a primeira vez na sessão. */
+const GENERAL_PROJECT_NAME = 'Geral · Conteúdo';
+const MIGRATION_FLAG_KEY = 'cc-orphan-migration-v1';
+
+export async function ensureGeneralProjectAndMigrateOrphans() {
+  // Idempotência por sessão
+  try { if (sessionStorage.getItem(MIGRATION_FLAG_KEY) === 'done') return null; } catch {}
+
+  try {
+    // 1. Procura projeto "Geral · Conteúdo"
+    const projQ = query(collection(db, 'projects'), where('name', '==', GENERAL_PROJECT_NAME));
+    const projSnap = await getDocs(projQ);
+    let generalProjectId;
+
+    if (projSnap.empty) {
+      // Não existe — só cria se user tem permissão (master/admin)
+      if (!store.can('project_create')) {
+        try { sessionStorage.setItem(MIGRATION_FLAG_KEY, 'done'); } catch {}
+        return null; // não-master sem projeto Geral: silencioso
+      }
+      const { createProject } = await import('./projects.js');
+      const created = await createProject({
+        name: GENERAL_PROJECT_NAME,
+        description: 'Projeto agregador para slots de calendário sem projeto definido. Criado automaticamente na migração.',
+        color: '#94A3B8',
+        icon: '📋',
+        status: 'always_on',
+      });
+      generalProjectId = created.id;
+    } else {
+      generalProjectId = projSnap.docs[0].id;
+    }
+
+    // 2. Atualiza slots órfãos (sem projectId)
+    const slotsSnap = await getDocs(collection(db, COL));
+    const orphans = slotsSnap.docs.filter(d => !d.data().projectId);
+    if (orphans.length > 0 && store.canManageContentCalendar()) {
+      // Updates sequenciais (poucos slots geralmente)
+      for (const oDoc of orphans) {
+        try {
+          await updateDoc(doc(db, COL, oDoc.id), {
+            projectId: generalProjectId,
+            updatedAt: serverTimestamp(),
+            updatedBy: uid(),
+            migratedToProject: true,
+          });
+        } catch (e) {
+          console.warn('[ContentCalendar migration] falhou ao migrar slot', oDoc.id, e.message);
+        }
+      }
+      console.log(`[ContentCalendar] Migração: ${orphans.length} slots órfãos → projeto "${GENERAL_PROJECT_NAME}"`);
+    }
+
+    try { sessionStorage.setItem(MIGRATION_FLAG_KEY, 'done'); } catch {}
+    return generalProjectId;
+  } catch (e) {
+    console.warn('[ContentCalendar] migration error:', e.message || e);
+    return null;
+  }
 }

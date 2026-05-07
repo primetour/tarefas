@@ -37,6 +37,63 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.11.0+20260507-content-calendar-by-project] — 2026-05-07
+
+Release **MINOR** — Calendário de Conteúdo agora é organizado por **projeto**, não mais global.
+
+### Pedido do user
+> "calendário de conteúdo: separar por projetos, e não ter um global. usuario acessa calendário de interesse via filtro."
+
+### Decisões de design (alinhadas com o user)
+1. **Projeto = collection `projects` existente** — reaproveita permissões/squads
+2. **Projeto coexiste com `account`** — projeto = "qual campanha/iniciativa?" · conta = "qual handle posta?"
+3. **Migração A**: cria projeto "Geral · Conteúdo" e atribui slots órfãos automaticamente
+4. **"+ Novo projeto"** redireciona pra `/projects` (não abre modal inline)
+
+### Implementação
+
+#### Schema
+- Slot ganha campo `projectId: string` (referência a `projects/{id}`)
+- Migration idempotente `ensureGeneralProjectAndMigrateOrphans()`:
+  - Procura ou cria projeto "Geral · Conteúdo" (icon 📋, status `always_on`)
+  - Atribui slots sem `projectId` ao projeto Geral
+  - Idempotência via `sessionStorage[cc-orphan-migration-v1]`
+
+#### Service `contentCalendar.js`
+- `fetchSlots({ projectId })` — novo filtro
+- Nova função `ensureGeneralProjectAndMigrateOrphans()` exportada
+
+#### Page `contentCalendar.js`
+- **State**: `activeProjectId`, `availableProjects[]`
+- **URL**: `#content-calendar?project=ABC` (bookmarkable, sincronizado via `history.replaceState` pra não disparar re-route)
+- **Header**: seletor de projeto **prominente** (border dourada, primary scope) + botão "+ Novo projeto"
+- **Sem projeto selecionado**: empty state com ícone 📂 + CTA "↗ Ver todos os projetos" → `/projects`
+- **Com projeto**: header mostra "📱 Calendário · 📦 Nome do Projeto"; calendário mês/semana/lista filtrado
+- Conta (`@handle`) continua como filtro secundário **dentro** do projeto
+
+#### Modal de criar/editar slot
+- **Banner do projeto** no topo do modal (bg colorido com ícone+nome)
+- Link "Trocar de projeto →" leva pra `/projects`
+- `getFormData()` injeta `projectId` automaticamente:
+  - Editando: mantém `editingSlot.projectId` original
+  - Criando: usa `activeProjectId`
+- Validação em `handleSave()`: bloqueia criação sem projeto
+
+#### Convert-to-task
+- Tarefa gerada herda `projectId` do slot → entra automaticamente no projeto correto
+
+### Backward-compatibility
+- Slots existentes sem `projectId` migram pra "Geral · Conteúdo" no primeiro acesso
+- URL antiga `#content-calendar` continua válida (mostra empty state em vez de calendário global)
+- Função `account` mantida — só muda de scope-principal pra filtro-secundário
+
+### Arquivos alterados
+- `js/services/contentCalendar.js` — +85 linhas (migration + filter)
+- `js/pages/contentCalendar.js` — +120 linhas (selector, URL state, empty state, modal banner, convert-to-task)
+- `js/version.js` — bump 4.10.0 → 4.11.0
+- `index.html` — cache-bust v= alinhado
+
+
 ## [4.10.0+20260507-presence-idle-detection] — 2026-05-07
 
 Release **MINOR** — presence agora distingue **ativo** vs **ausente** (inatividade real).
