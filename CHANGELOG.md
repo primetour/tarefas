@@ -37,6 +37,50 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.15.1+20260507-fix-orphan-permission-projects-manage] — 2026-05-07
+
+Release **PATCH** — auditoria de roles + correção de permission órfã + atualização do RULES-AND-AUTOMATIONS.md.
+
+### Auditoria de roles (resultado)
+
+Cruzei todas as `store.can('xxx')` calls no código vs `PERMISSION_CATALOG` em `rbac.js`:
+
+| Métrica | Valor |
+|---|---|
+| Permissions no catálogo | 63 |
+| Usadas via `store.can()` direto | 36 |
+| Usadas via helpers | 8 |
+| Catalogadas mas órfãs (0 hits) | 3 (`ai_skills_manage`, `requests_manage`, `audit_logs_view`) |
+| **Usadas no código mas fora do catálogo** | **1** (`projects_manage`) ← BUG SILENCIOSO |
+
+### Bug corrigido: `projects_manage`
+
+Em `js/pages/tasks.js:484` o check usava `store.can('projects_manage')` mas essa permission **não existia** no `PERMISSION_CATALOG`. Resultado: sempre retornava `false` (exceto pra master via bypass `isMaster()`).
+
+**Fix**: trocado por `store.can('project_edit')` que existe e é semanticamente o equivalente correto (quem edita projetos pode atribuir/remover tarefas órfãs).
+
+### Documentação atualizada
+
+`RULES-AND-AUTOMATIONS.md` ganhou nova seção **§ 11. Features 4.10–4.15** documentando:
+- Presence ativo vs ausente (4.10.0)
+- Calendário por projeto (4.11.0)
+- Tempo de uso do sistema (4.12.0)
+- Bulk update de tarefas (4.13.0)
+- Edição inline em células (4.14.0–4.14.1)
+- Calendário: drag-drop + real-time + bug fixes (4.15.0)
+- Auditoria de permissions + roles personalizadas (4.15.1)
+
+### Roles personalizadas (resposta ao user)
+
+Sistema **suporta** roles custom sem breakage. Master cria em `/roles` → escolhe checkboxes do catálogo de 63 perms. Recomendado usar apenas keys já existentes (não inventar nomes que não casem com `store.can('key')` no código).
+
+### Arquivos alterados
+- `js/pages/tasks.js` — fix `projects_manage` → `project_edit`
+- `RULES-AND-AUTOMATIONS.md` — +130 linhas (§ 11 novo)
+- `js/version.js` — bump 4.15.0 → 4.15.1
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.15.0+20260507-cc-bugs-tz-perm-dragdrop] — 2026-05-07
 
 Release **MINOR** — Auditoria criteriosa do Calendário de Conteúdo. Corrige 3 bugs reportados + 3 colaterais + adiciona real-time.

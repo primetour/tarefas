@@ -479,9 +479,12 @@ function renderPlannerOrphansBanner() {
   const banner = document.getElementById('tasks-orphans-banner');
   if (!banner) return;
 
+  // 4.15.1: era `projects_manage` (não existe no catálogo PERMISSION_CATALOG).
+  // Trocado pra `project_edit` (existe e é semanticamente o mesmo —
+  // quem edita projetos pode atribuir/remover tarefas).
   const canRepair = store.isMaster()
     || store.can('system_manage_roles')
-    || store.can('projects_manage')
+    || store.can('project_edit')
     || store.can('task_create');
   if (!canRepair) { banner.style.display = 'none'; return; }
 

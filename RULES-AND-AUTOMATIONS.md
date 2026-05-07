@@ -560,3 +560,114 @@ Botão **✎ Editar** em cada envio na aba "Conteúdo & Temas" abre modal pra co
 - Mudança de comportamento de módulo → atualizar § 10
 
 Owner: Tech Lead. Revisão obrigatória: a cada release MAJOR + revisão sumária a cada MINOR.
+
+---
+
+## 11. Features 4.10–4.15 (atualização 2026-05-07)
+
+### 11.1 Presence ativo vs ausente (4.10.0)
+
+**Coleção:** `presence/{uid}` (overwritten a cada heartbeat)
+
+**Sinais de atividade do user**:
+- Eventos: `mousedown`, `mousemove`, `keydown`, `scroll`, `touchstart`, `wheel`, `click` (throttled a 1s)
+- `document.visibilitychange`: aba escondida → idle imediato
+
+**State derivado a cada heartbeat**:
+- `document.hidden === true` → `'idle'`
+- `(now - lastActivity) > 5min` → `'idle'`
+- caso contrário → `'active'`
+
+**Heartbeat adaptativo**:
+- Active: 2 min · Idle: 5 min (-60% writes quando ausente)
+- Skip writes redundantes quando state não mudou e dentro da janela
+
+**UI no header**: "5 ativos · 2 ausentes" + bolinhas verde/amarela. Tooltip mostra "ativo agora" ou "ausente há X min".
+
+### 11.2 Calendário de Conteúdo por projeto (4.11.0)
+
+**Schema mudou**: slot ganha `projectId: string` (referência a `projects/{id}`).
+
+**Migration idempotente** (`ensureGeneralProjectAndMigrateOrphans`):
+- Cria projeto "Geral · Conteúdo" se não existe
+- Atribui slots órfãos (sem `projectId`) ao projeto Geral
+- Race-condition fix: sessionStorage flag síncrono antes de qualquer await
+
+**UX**: seletor de projeto prominente no topo. Sem projeto = empty state com CTA. URL `#content-calendar?project=ABC` (bookmarkable, history.replaceState).
+
+**Permissão de edição (4.15.0+)**: além de master/manage/owner, **qualquer member do projeto** do slot pode editar (lookup de `projects/{slot.projectId}.members`).
+
+### 11.3 Tempo de uso do sistema (4.12.0)
+
+**Coleção:** `presence_daily/{uid}_{YYYY-MM-DD}`
+
+**Schema:**
+```
+{
+  uid, userName, email, sector, nucleos[],
+  date: 'YYYY-MM-DD',
+  activeMs, idleMs, totalMs,
+  lastSeen, updatedAt,
+}
+```
+
+**Acumulador atomic**: cada heartbeat calcula delta desde último write. Se gap ≤ 10min (continuidade de sessão), incrementa `totalMs` e `activeMs`/`idleMs` via `FieldValue.increment(delta)`. Gaps > 10min (offline) NÃO contam — preserva semantics de "tempo realmente usando".
+
+**Widget no dashboard de produtividade**: 6 KPIs + leaderboard top 10. Herda filtros do dashboard (período, user, núcleo, setor).
+
+**Rules:**
+```
+match /presence_daily/{docId} {
+  allow read:   if isAuth();
+  allow write:  if isAuth() && request.resource.data.uid == request.auth.uid;
+  allow delete: if isAdmin();
+}
+```
+
+### 11.4 Atualização em massa de tarefas (4.13.0)
+
+**UX (estilo Monday)**: checkbox por linha (lista) e por card (kanban) → action bar flutuante quando ≥1 selecionada → 7 ações via popovers (Prazo, Prioridade, Status, Responsável, Área, Projeto, Núcleo) + Excluir com confirmação dupla.
+
+**Implementação:**
+- `bulkUpdateTasks(items, onProgress)` — JÁ EXISTIA, signature `[{id, data}]`
+- `bulkDeleteTasks(ids, onProgress)` — NOVO em 4.13. Batches de 400 + audit
+- Componente compartilhado: `js/components/bulkActionBar.js`
+
+**Permissões**: confia que página filtrou tarefas que user pode ver. Firestore rules validam batch atômico.
+
+### 11.5 Edição inline em células (4.14.0–4.14.1)
+
+**UX**: hover dourado sinaliza célula editável → click abre popover ancorado → não abre modal.
+
+**Campos editáveis inline:**
+- Lista: status, área, prazo, responsáveis, **tipo/etapa** (popover dual)
+- Kanban: prazo, responsáveis (status segue via drag-and-drop)
+
+**Componente compartilhado**: `js/components/taskPopovers.js` exporta 8 popovers reutilizados pelo bulk bar e pela edição inline.
+
+### 11.6 Calendário de Conteúdo: drag-drop + real-time + bug fixes (4.15.0)
+
+**Bug fixes:**
+- **Timezone**: helper `parseLocalDate(value)` constrói `Date` no fuso local com meio-dia (DST-safe). Antes: `new Date('2026-05-08')` virava UTC midnight = dia 7 no Brasil.
+- **Permissão alinhada ao modelo de projetos**: membro do projeto edita slot.
+- **Toast informativo**: usa `e.message` real em vez de "Erro genérico".
+
+**Drag-and-drop**:
+- Cards `draggable="true"` + cells `dragover/drop`
+- Drop dispara `updateSlot(id, { scheduledDate })`
+- Visual feedback: opacity + rotation no card; bg dourado + box-shadow no destino
+
+**Real-time** (`subscribeToSlots`): `onSnapshot` em vez de fetch único. Cleanup via `destroyContentCalendar()` exportada.
+
+### 11.7 Permissions: catálogo + inconsistências (auditoria 4.15.1)
+
+**Total**: 63 permissions catalogadas em `services/rbac.js > PERMISSION_CATALOG`.
+
+**Auditoria (cruzou com `store.can('xxx')` no código):**
+- 36 usadas direto via `store.can()`
+- 8 usadas via helpers (`canManageContentCalendar`, `canCreateRoteiro`, etc.)
+- 3 órfãs (catalogadas mas zero uso): `ai_skills_manage`, `requests_manage`, `audit_logs_view` — investigar se são roadmap ou esquecidas
+- 1 lacuna corrigida em 4.15.1: `projects_manage` (usado em código mas fora do catálogo) → trocado por `project_edit` (existe)
+
+**Roles personalizadas:**
+Master cria via `/roles` → escolhe checkboxes do catálogo. Funciona com qualquer combinação. `store.can(key)` consulta a role do user e retorna boolean. Nenhum problema de breakage.
