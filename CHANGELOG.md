@@ -37,6 +37,30 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.14.2+20260507-fix-bulkbar-stack-overflow] — 2026-05-07
+
+Release **PATCH** — corrige bug crítico no bulkActionBar (existia desde v4.13.0).
+
+### Bug
+RangeError: Maximum call stack size exceeded — `show()` → `update()` → `show()` em loop infinito.
+
+```js
+// ANTES (bugado)
+show()   { ...; this.update(); }      // chama update
+update() { ...; if (n) this.show(); } // chama show de novo → recursão
+```
+
+Sintoma: ao tentar abrir popover de inline edit (incluindo o novo Tipo/Etapa da v4.14.1), o navegador travava silenciosamente. Os testes passavam quando a bulk bar não estava montada (primeira interação), mas qualquer interação subsequente disparava stack overflow.
+
+### Fix
+Helper `_setVisible(visible, count)` único que faz o trabalho. `show()`/`hide()`/`update()` apenas chamam ele com flags diferentes, sem recursão.
+
+### Arquivos alterados
+- `js/components/bulkActionBar.js` — refator do API público (~+10 linhas, -10)
+- `js/version.js` — bump 4.14.1 → 4.14.2
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.14.1+20260507-inline-edit-typestep] — 2026-05-07
 
 Release **PATCH** — Adiciona Tipo/Etapa à edição inline na lista.

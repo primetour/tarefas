@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 14,
-  patch: 1,
-  build: '20260507-inline-edit-typestep',
+  patch: 2,
+  build: '20260507-fix-bulkbar-stack-overflow',
 };
 
 /** "1.2.0" */

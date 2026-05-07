@@ -220,21 +220,27 @@ export function mountBulkActionBar({
   });
 
   // ─── API pública ─────────────────────────────────────────
+  // Estado interno pra evitar recursão entre show/update.
+  // Bug 4.13.0: show() chamava update() que chamava show() = stack overflow.
+  function _setVisible(visible, count) {
+    el.style.transform = visible
+      ? 'translateX(-50%) translateY(0)'
+      : 'translateX(-50%) translateY(140%)';
+    const countEl = document.getElementById(`${BAR_ID}-count`);
+    if (countEl) countEl.textContent = `${count} selecionada${count !== 1 ? 's' : ''}`;
+    if (!visible) closeTaskPopover();
+  }
   return {
     show() {
-      el.style.transform = 'translateX(-50%) translateY(0)';
-      this.update();
+      const n = (getSelectedIds() || []).length;
+      _setVisible(true, n);
     },
     hide() {
-      closeTaskPopover();
-      el.style.transform = 'translateX(-50%) translateY(140%)';
+      _setVisible(false, 0);
     },
     update() {
       const n = (getSelectedIds() || []).length;
-      const countEl = document.getElementById(`${BAR_ID}-count`);
-      if (countEl) countEl.textContent = `${n} selecionada${n !== 1 ? 's' : ''}`;
-      if (n === 0) this.hide();
-      else this.show();
+      _setVisible(n > 0, n);
     },
     destroy() {
       closeTaskPopover();
