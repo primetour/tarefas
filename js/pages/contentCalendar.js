@@ -339,10 +339,74 @@ function _bindTasksListener() {
 
   _tasksUnsub = subscribeToTasksByIds(taskIds, (taskMap) => {
     _linkedTasks = taskMap;
+    // 4.17+: sync unidirecional task.dueDate → slot.scheduledDate
+    // Quando a tarefa muda data, o slot reflete automaticamente.
+    _syncTaskDatesToSlots(taskMap).catch(err =>
+      console.warn('[cc] sync task→slot dates falhou:', err?.message));
     if (document.getElementById('cc-body')) {
       renderCalendarBody();
     }
   });
+}
+
+/**
+ * 4.17+ — Sync unidirecional de data: task.dueDate → slot.scheduledDate.
+ *
+ * Quando o listener real-time recebe um update de uma task vinculada a slot,
+ * verificamos se a `task.dueDate` divergiu da `slot.scheduledDate`. Se sim,
+ * atualiza o slot pra refletir a nova data da tarefa.
+ *
+ * Unidirecional (task→slot apenas) — não cria loop:
+ *   - Slot tem listener próprio (subscribeToSlots) que reflete mudanças
+ *     concorrentes mas NÃO escreve na task.
+ *   - Task tem este listener que escreve no slot quando dueDate diverge.
+ *   - Drag-drop no slot escreve apenas em slot.scheduledDate (não toca task).
+ *
+ * Tolerâncias:
+ *   - Skip se task.dueDate é null/undefined
+ *   - Skip se as datas (normalizadas pra YYYY-MM-DD local) já são iguais
+ *   - Falha de updateSlot é silenciosa (permissão, network, etc) — log no console
+ *
+ * Performance: roda a cada evento de listener mas só faz write quando muda
+ * de fato. Cada slot tem no máx 1 task vinculada — overhead linear em N slots.
+ */
+async function _syncTaskDatesToSlots(taskMap) {
+  if (!taskMap || !taskMap.size) return;
+
+  const updates = [];
+  for (const [taskId, task] of taskMap) {
+    if (!task?.dueDate) continue;
+    const slot = allSlots.find(s => s.taskId === taskId);
+    if (!slot) continue;
+
+    // Normaliza task.dueDate pra YYYY-MM-DD no fuso local (mesma convenção do slot)
+    const taskDate = parseLocalDate(task.dueDate);
+    if (!taskDate) continue;
+    const taskIso = formatDate(taskDate);
+
+    if (slot.scheduledDate === taskIso) continue; // sem mudança
+
+    updates.push({ slot, newDate: taskIso, taskId });
+  }
+  if (!updates.length) return;
+
+  // Aplica em paralelo (cada slot é independente)
+  await Promise.all(updates.map(async ({ slot, newDate }) => {
+    try {
+      await updateSlot(slot.id, { scheduledDate: newDate });
+      // Update local cache pra UI refletir antes do listener próprio chegar
+      slot.scheduledDate = newDate;
+    } catch (err) {
+      // Silencioso: pode ser permissão (user não é membro do projeto), network, etc.
+      // Próxima execução do listener tenta novamente.
+      console.debug('[cc] sync date task→slot skipped:', slot.id, err?.message);
+    }
+  }));
+
+  // Re-renderiza pra refletir o slot na nova posição
+  if (document.getElementById('cc-body')) {
+    renderCalendarBody();
+  }
 }
 
 /** Atualiza projetos ativos, sincroniza URL e recarrega slots. */
@@ -1570,7 +1634,7 @@ function openSlotModal(slot, prefillDate) {
             <span style="color:var(--text-muted);">Status:</span>
             <span style="color:${headerColor};font-weight:500;">${esc(task.status || '—')}</span>
             ${taskDueStr ? `<span style="color:var(--text-muted);">Prazo:</span>
-            <span>${esc(taskDueStr)}</span>` : ''}
+            <span title="A data deste slot acompanha automaticamente o prazo da tarefa.">${esc(taskDueStr)} <span style="opacity:.6;font-size:0.625rem;">↺ sincronizado</span></span>` : ''}
             ${completedStr ? `<span style="color:var(--text-muted);">Concluída em:</span>
             <span style="color:#22C55E;font-weight:500;">${esc(completedStr)}</span>` : ''}
             ${assignees.length ? `<span style="color:var(--text-muted);">Responsáveis:</span>

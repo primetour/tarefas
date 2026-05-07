@@ -37,6 +37,54 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.17.0+20260507-cc-sync-task-date-to-slot] — 2026-05-07
+
+Release **MINOR** — Sync de data unidirecional: tarefa → slot.
+
+### Pedido do user
+> "relação entre slot e tarefa, no calendário de conteúdo: se mudar a data na tarefa, precisa refletir no slot"
+
+### Mudança de comportamento
+
+Na v4.16.0 implementei live lookup com decisão deliberada de **não replicar campos** do slot (slot e task podiam ter datas diferentes). Após feedback do user, agora **sincroniza automaticamente**: quando a `task.dueDate` muda, o `slot.scheduledDate` é atualizado pra acompanhar.
+
+### Implementação
+
+`_syncTaskDatesToSlots(taskMap)` no callback do `subscribeToTasksByIds`:
+
+1. Pra cada `[taskId, task]` no Map de tasks vinculadas:
+   - Skip se `task.dueDate` é null
+   - Encontra o slot com `slot.taskId === taskId`
+   - Normaliza `task.dueDate` pra `YYYY-MM-DD` no fuso local (via `parseLocalDate` + `formatDate`)
+   - Skip se já são iguais
+2. Aplica `updateSlot(id, { scheduledDate: newDate })` em paralelo
+3. Atualiza local cache + re-renderiza body
+
+### Por que **unidirecional** (task → slot)?
+
+Evita loop:
+- **Slot tem listener próprio** (`subscribeToSlots`) que atualiza UI mas NÃO escreve na task
+- **Task tem este listener** que escreve no slot quando `dueDate` diverge
+- **Drag-drop no slot** escreve apenas `slot.scheduledDate` (não toca task)
+
+Se fosse bidirecional, drag-drop no slot mudaria task.dueDate, que dispararia este listener, que escreveria de novo no slot → loop.
+
+### Tolerâncias
+
+- Skip se `task.dueDate` é null/undefined
+- Skip se as datas (normalizadas) já são iguais (idempotente)
+- Falha de `updateSlot` é silenciosa (permissão, network, etc) — só log no console.debug. Próxima execução do listener tenta de novo.
+
+### UI: badge "↺ sincronizado"
+
+No modal do slot, na seção "Tarefa vinculada", o campo "Prazo" agora mostra um pequeno indicador `↺ sincronizado` com tooltip "A data deste slot acompanha automaticamente o prazo da tarefa."
+
+### Arquivos alterados
+- `js/pages/contentCalendar.js` — `_syncTaskDatesToSlots()` novo (~+50 linhas) + label "↺ sincronizado" no modal
+- `js/version.js` — bump 4.16.2 → 4.17.0
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.16.2+20260507-cc-ux-add-project-btn] — 2026-05-07
 
 Release **PATCH** — UX: ajuste nos botões do calendário de conteúdo.
