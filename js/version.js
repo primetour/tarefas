@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 20,
+  minor: 21,
   patch: 0,
-  build: '20260507-ui-chrome-svg-icons',
+  build: '20260507-multi-assignee-recurrence-cards',
 };
 
 /** "1.2.0" */

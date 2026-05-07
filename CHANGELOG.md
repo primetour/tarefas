@@ -37,6 +37,59 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.21.0+20260507-multi-assignee-recurrence-cards] — 2026-05-07
+
+Release **MINOR** — três pedidos do user num pacote: filtro multi-responsável,
+recorrência editável após criação e fix visual no card kanban.
+
+### Pedido do user
+> 1. filtros "por responsável" - ter a possibilidade de selecionar mais de um responsável
+> 2. em steps, o botão seletor que vai em cada card está sobreposto à informação de projeto, deixando o visual poluído
+> 3. tarefa recorrente: as tarefas importadas do planner não trazem a opção de recorrência. Usuário quer ter o poder de decisão depois da criação.
+
+### 1) Filtro multi-select de responsável
+Adicionado `openMultiOptionPicker` / `bindMultiOptionPicker` / `renderMultiPickerButton` em
+`optionPicker.js` — popover com checkbox, "Selecionar todos", "Limpar", busca e
+contador. Não fecha ao clicar item; só ao clicar fora ou Esc.
+
+`filterBar.js`: `assignee` agora é multi-select. State pode ser `null | string (legacy) | string[] (novo)`.
+`buildFilterFn`: passa se a tarefa tem AO MENOS UM dos responsáveis selecionados (OR semantics).
+
+`tasks.js`: filtro próprio também migrado pro multi-picker. Deep-link
+`?assignee=uid` segue funcionando (single value vira `[uid]` internamente).
+
+### 2) Card kanban — overlap do checkbox bulk
+O `<input type=checkbox>` de seleção em massa (top:8 left:8, w:16 h:16) sobrepunha
+o início do título e do nome do projeto do card. Fix em `tasks.css`:
+- `.kanban-card-title` e `.kanban-card-project`: `padding-left` 6px → **24px**
+- `.kanban-bulk-checkbox`: `opacity:0` por padrão; **aparece on hover** ou
+  quando o card está `.bulk-selected` (Monday-style — chrome só quando útil)
+
+Resultado: cards limpos no estado normal; checkbox sutil aparece quando o user
+passa o mouse, sem nunca sobrepor texto.
+
+### 3) Recorrência editável após criação
+Antes: a seção de recorrência só era renderizada em `!isEdit` (criação). Tarefas
+do Planner (importadas) ou criadas anteriormente nunca podiam virar recorrentes.
+
+Agora em `taskModal.js`:
+- Seção visível em **edição também** (label muda pra "Tornar tarefa recorrente")
+- Tarefas vindas de uma série existente (`recurringFromTemplateId` setado) mostram
+  só um aviso + link pra Configurações › Tarefas recorrentes
+- Em edição: marcar o toggle + salvar = `updateTask` normal (com stale-check)
+  + cria template em paralelo via `createTemplate`. Tarefa atual fica intocada;
+  novas instâncias são geradas a partir da `startDate` configurada
+
+### Files
+- `js/components/optionPicker.js` (+ ~190 linhas: multi-picker)
+- `js/components/filterBar.js`
+- `js/pages/tasks.js`
+- `js/components/taskModal.js`
+- `css/tasks.css`
+- `js/version.js`, `index.html`
+
+---
+
 ## [4.20.0+20260507-ui-chrome-svg-icons] — 2026-05-07
 
 Release **MINOR** — UI chrome universal: header secondary actions, toasts e botões de ação migram pra SVG.

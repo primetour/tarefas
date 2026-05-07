@@ -13,7 +13,10 @@ import { APP_CONFIG }    from '../config.js';
 import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
 import { createDoc, loadJsPdf, COL, STATUS_STYLE, txt, withExportGuard } from '../components/pdfKit.js';
 import { wireUiKitMenus } from '../components/uiKit.js';
-import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+import {
+  renderPickerButton, bindOptionPicker,
+  renderMultiPickerButton, bindMultiOptionPicker,
+} from '../components/optionPicker.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -29,6 +32,8 @@ let searchTerm   = '';
 let filterStatus = '';
 let filterPriority = '';
 let filterProject  = '';
+// 4.21+ — multi-select. Pode ser '' (legacy/none), string (single via deep-link
+// `?assignee=uid`), ou string[] (multi via UI). applyFilters normaliza.
 let filterAssignee = '';
 let filterDatePreset = 'last30Days'; // default: mantém lista leve mesmo com milhares de tarefas históricas
                                      // '' | 'last30Days' | 'last90Days' | 'today' | 'tomorrow' | 'thisWeek' | 'nextWeek' | 'overdue' | 'thisMonth' | 'noDue' | 'custom'
@@ -257,18 +262,24 @@ export async function renderTasks(container) {
         </select>
         ${renderPickerButton({ btnId: 'filter-squad-btn', selected: null, emptyLabel: 'Todos os squads' })}
       </div>
-      <div class="toolbar-filter-wrap" style="${filterVisibility.assignee?'':'display:none;'}min-width:180px;">
-        <select id="filter-assignee" style="display:none;">
-          <option value="" ${filterAssignee===''?'selected':''}>Todos os respons\u00e1veis</option>
-          ${(store.get('users')||[]).filter(u=>u.active).map(u=>`
-            <option value="${u.id}" ${filterAssignee===u.id?'selected':''}>${esc(u.name)}</option>
-          `).join('')}
-        </select>
+      <div class="toolbar-filter-wrap" style="${filterVisibility.assignee?'':'display:none;'}min-width:180px;"
+        data-multi-key="assignee">
         ${(() => {
-          const u = (store.get('users')||[]).find(x => x.id === filterAssignee);
-          return renderPickerButton({ btnId: 'filter-assignee-btn',
-            selected: u ? { id: u.id, label: u.name, icon: (u.name||'?').charAt(0).toUpperCase(), color: '#6366F1' } : null,
-            emptyLabel: 'Todos os respons\u00e1veis' });
+          // 4.21+ multi-select. filterAssignee pode ser '' | string | string[].
+          const ids = Array.isArray(filterAssignee)
+            ? filterAssignee
+            : (filterAssignee ? [filterAssignee] : []);
+          const users = (store.get('users')||[]).filter(u => u.active);
+          const selectedItems = ids.map(id => {
+            const u = users.find(x => x.id === id);
+            return u ? { id: u.id, label: u.name, icon: (u.name||'?').charAt(0).toUpperCase(),
+                         color: '#6366F1' } : null;
+          }).filter(Boolean);
+          return renderMultiPickerButton({
+            btnId: 'filter-assignee-btn',
+            selectedItems,
+            emptyLabel: 'Todos os respons\u00e1veis',
+          });
         })()}
       </div>
       <select class="filter-select" id="filter-date-preset" style="${filterVisibility.datePreset?'':'display:none;'}">
@@ -350,17 +361,10 @@ export async function renderTasks(container) {
     try {
       const { fetchUsers } = await import('../services/users.js');
       await fetchUsers();
-      // Re-popula o filtro de responsáveis agora que users chegaram
-      const assigneeSel = document.getElementById('filter-assignee');
-      if (assigneeSel) {
-        const cur = assigneeSel.value;
-        assigneeSel.innerHTML = '<option value="">Todos os responsáveis</option>' +
-          (store.get('users') || []).filter(u => u.active).map(u =>
-            `<option value="${u.id}">${esc(u.name)}</option>`).join('');
-        if (cur) assigneeSel.value = cur;
-        // Sincroniza visual do picker com a nova lista de opções
-        assigneeSel.dispatchEvent(new Event('picker-refresh'));
-      }
+      // 4.21+ — assignee virou multi-picker (sem hidden <select>); o
+      // bindMultiOptionPicker reconstrói as opções a cada abertura via
+      // buildOptions(), então não há nada pra refazer aqui. Mantemos o
+      // bloco vazio só por clareza arqueológica do diff.
     } catch (e) { console.warn('[tasks] users load:', e?.message || e); }
   }
 
@@ -829,7 +833,16 @@ function applyFilters() {
   }
   if (filterPriority) result = result.filter(t => t.priority === filterPriority);
   if (filterProject)  result = result.filter(t => t.projectId === filterProject);
-  if (filterAssignee) result = result.filter(t => t.assignees?.includes(filterAssignee));
+  // assignee: pode ser '' (none), string (single legacy/deep-link), ou string[] (multi).
+  if (filterAssignee) {
+    const want = Array.isArray(filterAssignee) ? filterAssignee : [filterAssignee];
+    if (want.length > 0) {
+      result = result.filter(t => {
+        const ta = t.assignees || [];
+        return want.some(uid => ta.includes(uid));
+      });
+    }
+  }
   if (filterArea)     result = result.filter(t => t.requestingArea === filterArea);
   if (filterTag)      result = result.filter(t => (t.tags || []).includes(filterTag));
   if (filterMeta) {
@@ -1413,19 +1426,20 @@ function _attachPageEvents() {
       icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
       color: hashColor(u.id || u.email || u.name || ''),
     }));
-  const findAssignee = (id) => assigneeOpts().find(o => o.id === id) || null;
-  bindOptionPicker({
+  // 4.21+ — assignee é multi-select. Usa bindMultiOptionPicker; o estado
+  // (filterAssignee) é a single source of truth (sem hidden <select>).
+  bindMultiOptionPicker({
     btnId: 'filter-assignee-btn',
-    selectId: 'filter-assignee',
-    buildConfig: () => ({
-      options: assigneeOpts(),
-      empty: { id: '', label: 'Todos os responsáveis' },
-      searchPlaceholder: 'Buscar responsável…',
-    }),
-    findSelected: findAssignee,
+    buildOptions: assigneeOpts,
+    getValues: () => Array.isArray(filterAssignee)
+      ? filterAssignee
+      : (filterAssignee ? [filterAssignee] : []),
+    setValues: (ids) => {
+      filterAssignee = ids.length === 0 ? '' : ids;
+      applyFilters();
+    },
     emptyLabel: 'Todos os responsáveis',
   });
-  document.getElementById('filter-assignee')?.addEventListener('change', e => { filterAssignee = e.target.value; applyFilters(); });
   document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
   document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; applyFilters(); });
   document.getElementById('filter-meta')?.addEventListener('change', e => { filterMeta = e.target.value; applyFilters(); });

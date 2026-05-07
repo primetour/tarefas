@@ -8,7 +8,10 @@
  */
 
 import { store } from '../store.js';
-import { renderPickerButton, bindOptionPicker } from './optionPicker.js';
+import {
+  renderPickerButton, bindOptionPicker,
+  renderMultiPickerButton, bindMultiOptionPicker,
+} from './optionPicker.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -129,7 +132,12 @@ export function renderFilterBar(opts = {}) {
   } = opts;
 
   const sectorOptions = getUserSectorOptions();
-  const hasFilters    = show.some(k => state[k]);
+  // Considera array-vazio como "sem filtro" (multi-select assignee).
+  const hasFilters = show.some(k => {
+    const v = state[k];
+    if (Array.isArray(v)) return v.length > 0;
+    return !!v;
+  });
 
   // When sector is active, filter types to that sector
   const visibleTypes = state.sector
@@ -165,8 +173,22 @@ export function renderFilterBar(opts = {}) {
     blocks.push(pickerField('area', 'fb-area', o, findIn(o, state.area), 'Todas as áreas'));
   }
   if (show.includes('assignee') && users.length) {
+    // 4.21+ — assignee passou a aceitar multi-select. state.assignee agora pode
+    // ser: null | string (legacy, single) | string[] (novo, multi).
     const o = assigneeOpts(users);
-    blocks.push(pickerField('assignee', 'fb-assignee', o, findIn(o, state.assignee), 'Todos os responsáveis'));
+    const currentIds = Array.isArray(state.assignee)
+      ? state.assignee
+      : (state.assignee ? [state.assignee] : []);
+    const selectedItems = currentIds.map(id => o.find(opt => opt.id === id)).filter(Boolean);
+    blocks.push(`
+      <div class="toolbar-filter-wrap" style="min-width:180px;" data-multi-key="assignee">
+        ${renderMultiPickerButton({
+          btnId: 'fb-assignee-btn',
+          selectedItems,
+          emptyLabel: 'Todos os responsáveis',
+        })}
+      </div>
+    `);
   }
   if (show.includes('status')) {
     const o = statusOpts();
@@ -248,8 +270,9 @@ export function bindFilterBar(container, state, onChange, ctx = {}) {
     });
   });
 
-  // 2) Wire optionPicker em cada select escondido
-  ['sector','type','project','area','assignee','status','meta'].forEach(key => {
+  // 2) Wire optionPicker em cada select escondido (single-select)
+  // assignee é tratado separadamente abaixo (multi-select desde 4.21).
+  ['sector','type','project','area','status','meta'].forEach(key => {
     const sel = container.querySelector(`[data-filter="${key}"]`);
     if (!sel) return;
     const selectId = sel.id;
@@ -267,6 +290,23 @@ export function bindFilterBar(container, state, onChange, ctx = {}) {
     });
   });
 
+  // 2b) Multi-select: assignee
+  const assigneeWrap = container.querySelector('[data-multi-key="assignee"]');
+  if (assigneeWrap) {
+    bindMultiOptionPicker({
+      btnId: 'fb-assignee-btn',
+      buildOptions: () => buildOptionsForKey('assignee', { ...ctx, state }),
+      getValues: () => Array.isArray(state.assignee)
+        ? state.assignee
+        : (state.assignee ? [state.assignee] : []),
+      setValues: (ids) => {
+        state.assignee = ids.length === 0 ? null : ids;
+        onChange({ ...state });
+      },
+      emptyLabel: 'Todos os responsáveis',
+    });
+  }
+
   container.querySelector('.filter-clear-btn')?.addEventListener('click', () => {
     Object.keys(state).forEach(k => state[k] = null);
     onChange({ ...state });
@@ -283,7 +323,16 @@ export function buildFilterFn(state = {}) {
     if (state.type     && task.typeId          !== state.type)                    return false;
     if (state.project  && task.projectId       !== state.project)                 return false;
     if (state.area     && task.requestingArea  !== state.area)                    return false;
-    if (state.assignee && !(task.assignees||[]).includes(state.assignee))         return false;
+    // assignee: pode ser string (legacy) ou string[] (multi-select 4.21+).
+    // Multi: passa se a tarefa tem AO MENOS UM dos responsáveis selecionados.
+    if (state.assignee) {
+      const want = Array.isArray(state.assignee) ? state.assignee : [state.assignee];
+      if (want.length > 0) {
+        const taskAssignees = task.assignees || [];
+        const hasAny = want.some(uid => taskAssignees.includes(uid));
+        if (!hasAny) return false;
+      }
+    }
     if (state.status   && task.status          !== state.status)                  return false;
     // Meta vinculada: tarefa "tem meta" se tem metaLinks[] preenchido OU
     // goalId legado (back-compat para tarefas anteriores ao multi-link).

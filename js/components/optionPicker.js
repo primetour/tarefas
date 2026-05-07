@@ -384,5 +384,286 @@ export function bindOptionPicker(cfg) {
   refreshPickerButton(btnId, { selected: sel, emptyLabel });
 }
 
+/* ════════════════════════════════════════════════════════════
+ * MULTI-SELECT PICKER (4.21+)
+ * Para filtros que permitem múltiplos valores (ex: filtro de
+ * responsável aceita N usuários). Mantém o single-select acima
+ * intacto pra não regredir todos os outros pickers.
+ * ════════════════════════════════════════════════════════════ */
+
+/**
+ * renderMultiPickerButton — botão visual que substitui um <select multiple>.
+ * Mostra: bolinha cinza + label adaptativo ("Todos os X" / "Nome" / "N selecionados") + chevron.
+ */
+export function renderMultiPickerButton({ btnId, selectedItems = [], emptyLabel = '— Selecionar —' }) {
+  const n = selectedItems.length;
+  let inner;
+  if (n === 0) {
+    inner = `<span style="flex:1;color:var(--text-muted);">${esc(emptyLabel)}</span>`;
+  } else if (n === 1) {
+    const s = selectedItems[0];
+    const iconHtml = s.icon ? `<span style="font-size:1rem;flex-shrink:0;">${esc(s.icon)}</span>` : '';
+    inner = `${iconHtml}
+       <span style="flex:1;font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.label || '')}</span>`;
+  } else {
+    inner = `<span style="flex:1;font-weight:500;color:var(--text-primary);">${n} selecionados</span>`;
+  }
+  const dot = n === 1 ? (selectedItems[0].color || 'var(--border-default)') : (n > 1 ? 'var(--brand-gold)' : 'var(--border-default)');
+  return `
+    <button type="button" id="${esc(btnId)}"
+      style="width:100%;display:flex;align-items:center;gap:10px;
+        padding:8px 12px;border-radius:var(--radius-md);cursor:pointer;
+        background:var(--bg-surface);border:1px solid var(--border-default);
+        font-family:inherit;font-size:0.875rem;text-align:left;
+        transition:border-color 0.15s;">
+      <span style="width:8px;height:8px;border-radius:50%;background:${dot};flex-shrink:0;"></span>
+      ${inner}
+      <span style="font-size:0.625rem;color:var(--text-muted);flex-shrink:0;">▾</span>
+    </button>
+  `;
+}
+
+export function refreshMultiPickerButton(btnId, { selectedItems = [], emptyLabel = '— Selecionar —' } = {}) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  // Re-render usando o mesmo helper inline
+  const html = renderMultiPickerButton({ btnId, selectedItems, emptyLabel })
+    .replace(/^\s*<button[^>]*>/, '')
+    .replace(/<\/button>\s*$/, '');
+  btn.innerHTML = html;
+}
+
+/**
+ * openMultiOptionPicker — popover multi-select com checkboxes, busca,
+ * "Selecionar todos" / "Limpar". Não fecha ao clicar item — só ao clicar fora,
+ * Esc, ou no botão "Aplicar".
+ *
+ * @param {HTMLElement} anchor
+ * @param {object} config
+ * @param {Array}  config.options    - {id, label, icon, color, sublabel}
+ * @param {Array}  config.currentIds - ids atualmente selecionados
+ * @param {string} config.searchPlaceholder
+ * @param {Function} onChange - callback(idsArray) chamado a cada toggle (live)
+ */
+export function openMultiOptionPicker(anchor, config, onChange) {
+  document.querySelectorAll('.option-picker-popover').forEach(p => p.remove());
+
+  const {
+    options = [],
+    currentIds = [],
+    searchPlaceholder = 'Buscar…',
+  } = config;
+
+  const selected = new Set(currentIds);
+
+  const pop = document.createElement('div');
+  pop.className = 'option-picker-popover';
+  Object.assign(pop.style, {
+    position: 'fixed', zIndex: '10000',
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md, 8px)',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.45)',
+    width: POPOVER_WIDTH + 'px',
+    maxWidth: 'calc(100vw - 32px)',
+    maxHeight: POPOVER_MAX_H + 'px',
+    display: 'flex', flexDirection: 'column',
+    fontFamily: 'var(--font-ui)',
+    overflow: 'hidden',
+  });
+
+  const renderItem = (it) => {
+    const isChecked = selected.has(it.id);
+    const searchText = `${it.label || ''} ${it.sublabel || ''}`.toLowerCase();
+    const swatchInner = it.icon ? esc(it.icon) : '';
+    return `<button type="button" class="option-picker-item"
+      data-id="${esc(it.id)}"
+      data-search="${esc(searchText)}"
+      style="width:100%;display:flex;align-items:center;gap:10px;
+      padding:${ITEM_PADDING};background:${isChecked ? 'rgba(212,168,67,0.06)' : 'transparent'};
+      border:none;cursor:pointer;font-family:inherit;font-size:0.8125rem;text-align:left;
+      color:var(--text-primary);transition:background 0.1s;">
+      <span class="opm-check" style="width:16px;height:16px;flex-shrink:0;
+        border:1.5px solid ${isChecked ? 'var(--brand-gold)' : 'var(--border-default)'};
+        background:${isChecked ? 'var(--brand-gold)' : 'transparent'};
+        border-radius:3px;display:flex;align-items:center;justify-content:center;
+        color:#fff;font-size:0.75rem;font-weight:700;line-height:1;">
+        ${isChecked ? '✓' : ''}
+      </span>
+      <span style="width:${it.icon ? '24px' : '12px'};height:${it.icon ? '24px' : '12px'};
+        border-radius:${it.icon ? '5px' : '50%'};
+        background:${(it.color || '#6B7280')}${it.icon ? '20' : ''};
+        color:${it.color || '#6B7280'};
+        display:flex;align-items:center;justify-content:center;font-size:0.8125rem;
+        flex-shrink:0;">${swatchInner}</span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+        ${esc(it.label || '')}
+      </span>
+    </button>`;
+  };
+
+  pop.innerHTML = `
+    <div style="padding:10px 12px;border-bottom:1px solid var(--border-subtle);
+      display:flex;flex-direction:column;gap:8px;">
+      <input type="text" class="option-picker-search" placeholder="${esc(searchPlaceholder)}"
+        style="width:100%;padding:7px 10px;border:1px solid var(--border-default);
+        border-radius:var(--radius-sm);background:var(--bg-surface);
+        color:var(--text-primary);font-family:inherit;font-size:0.8125rem;outline:none;
+        box-sizing:border-box;" />
+      <div style="display:flex;gap:8px;align-items:center;font-size:0.6875rem;">
+        <button type="button" class="opm-select-all"
+          style="background:none;border:none;color:var(--brand-gold);cursor:pointer;
+          font-family:inherit;font-size:0.6875rem;font-weight:500;padding:2px 4px;">
+          Selecionar todos
+        </button>
+        <span style="color:var(--text-muted);">·</span>
+        <button type="button" class="opm-clear"
+          style="background:none;border:none;color:var(--text-muted);cursor:pointer;
+          font-family:inherit;font-size:0.6875rem;font-weight:500;padding:2px 4px;">
+          Limpar
+        </button>
+        <span class="opm-count" style="margin-left:auto;color:var(--text-muted);font-size:0.6875rem;">
+          ${selected.size} selecionado${selected.size === 1 ? '' : 's'}
+        </span>
+      </div>
+    </div>
+    <div class="option-picker-list" style="overflow-y:auto;flex:1;padding:4px 0;">
+      ${options.map(it => renderItem(it)).join('')}
+    </div>
+  `;
+  document.body.appendChild(pop);
+
+  // Posicionamento clamped (mesma lógica do single-select)
+  const rect = anchor.getBoundingClientRect();
+  let left = rect.left;
+  let top = rect.bottom + 6;
+  const popRect = pop.getBoundingClientRect();
+  const margin = 8;
+  if (left + popRect.width > window.innerWidth - margin) {
+    left = window.innerWidth - popRect.width - margin;
+  }
+  if (left < margin) left = margin;
+  if (top + popRect.height > window.innerHeight - margin) {
+    top = Math.max(margin, rect.top - popRect.height - 6);
+  }
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+
+  function cleanup() {
+    pop.remove();
+    document.removeEventListener('click', outsideHandler, true);
+    document.removeEventListener('keydown', escHandler);
+  }
+  function outsideHandler(e) {
+    if (!pop.contains(e.target) && !anchor.contains(e.target)) cleanup();
+  }
+  function escHandler(e) { if (e.key === 'Escape') cleanup(); }
+
+  function notify() {
+    onChange(Array.from(selected));
+  }
+
+  function rerenderItem(itemEl, it) {
+    const isChecked = selected.has(it.id);
+    itemEl.style.background = isChecked ? 'rgba(212,168,67,0.06)' : 'transparent';
+    const ck = itemEl.querySelector('.opm-check');
+    if (ck) {
+      ck.style.borderColor = isChecked ? 'var(--brand-gold)' : 'var(--border-default)';
+      ck.style.background = isChecked ? 'var(--brand-gold)' : 'transparent';
+      ck.textContent = isChecked ? '✓' : '';
+    }
+  }
+  function refreshCount() {
+    const c = pop.querySelector('.opm-count');
+    if (c) c.textContent = `${selected.size} selecionado${selected.size === 1 ? '' : 's'}`;
+  }
+
+  pop.querySelectorAll('.option-picker-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const id = item.dataset.id;
+      if (selected.has(id)) selected.delete(id);
+      else selected.add(id);
+      const it = options.find(o => o.id === id);
+      if (it) rerenderItem(item, it);
+      refreshCount();
+      notify();
+    });
+  });
+
+  pop.querySelector('.opm-select-all')?.addEventListener('click', () => {
+    options.forEach(it => selected.add(it.id));
+    pop.querySelectorAll('.option-picker-item').forEach(itemEl => {
+      const it = options.find(o => o.id === itemEl.dataset.id);
+      if (it) rerenderItem(itemEl, it);
+    });
+    refreshCount();
+    notify();
+  });
+  pop.querySelector('.opm-clear')?.addEventListener('click', () => {
+    selected.clear();
+    pop.querySelectorAll('.option-picker-item').forEach(itemEl => {
+      const it = options.find(o => o.id === itemEl.dataset.id);
+      if (it) rerenderItem(itemEl, it);
+    });
+    refreshCount();
+    notify();
+  });
+
+  // Busca
+  const search = pop.querySelector('.option-picker-search');
+  search?.addEventListener('input', () => {
+    const q = (search.value || '').toLowerCase().trim();
+    pop.querySelectorAll('.option-picker-item').forEach(item => {
+      item.style.display = item.dataset.search.includes(q) ? '' : 'none';
+    });
+  });
+  setTimeout(() => search?.focus(), 30);
+
+  setTimeout(() => {
+    document.addEventListener('click', outsideHandler, true);
+    document.addEventListener('keydown', escHandler);
+  }, 0);
+}
+
+/**
+ * bindMultiOptionPicker — wire-up de botão visual + estado externo.
+ * Diferente do single-select: como um <select multiple> nativo é meio chato
+ * de manter sincronizado, o estado fica em `getValues()`/`setValues()`
+ * fornecidos pelo caller. O componente só renderiza e dispara onChange.
+ */
+export function bindMultiOptionPicker(cfg) {
+  const {
+    btnId,
+    buildOptions,    // () => [{id,label,icon,color,...}]
+    getValues,       // () => string[]
+    setValues,       // (string[]) => void  (dispara o filtro)
+    emptyLabel = '— Selecionar —',
+    searchPlaceholder = 'Buscar…',
+  } = cfg;
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+
+  const lookupItems = (ids) => {
+    const opts = buildOptions();
+    return ids.map(id => opts.find(o => o.id === id)).filter(Boolean);
+  };
+
+  btn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const opts = buildOptions();
+    openMultiOptionPicker(btn, {
+      options: opts,
+      currentIds: getValues(),
+      searchPlaceholder,
+    }, (newIds) => {
+      setValues(newIds);
+      refreshMultiPickerButton(btnId, { selectedItems: lookupItems(newIds), emptyLabel });
+    });
+  });
+
+  // Sync inicial
+  refreshMultiPickerButton(btnId, { selectedItems: lookupItems(getValues()), emptyLabel });
+}
+
 // Re-export pra debug/teste
 export { store as _store };

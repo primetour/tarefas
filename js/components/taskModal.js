@@ -1279,12 +1279,30 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
             </a>
           </div>` : ''}
       </div>
-      ${!isEdit ? `
+      ${task.recurringFromTemplateId ? `
+        <div class="form-group mt-4" id="tm-recurrence-section">
+          <div style="padding:10px 12px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-elevated);
+            display:flex;align-items:center;gap:10px;font-size:0.8125rem;color:var(--text-secondary);">
+            <span style="font-size:1rem;">↻</span>
+            <span style="flex:1;">
+              Esta tarefa foi gerada por uma série recorrente.
+              <a href="#settings/recurring-tasks" style="color:var(--brand-gold);text-decoration:none;font-weight:500;">
+                Gerenciar série →
+              </a>
+            </span>
+          </div>
+        </div>
+      ` : `
         <div class="form-group mt-4" id="tm-recurrence-section">
           <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
             <input type="checkbox" id="tm-recurring-toggle" />
-            <span>Tarefa recorrente</span>
+            <span>${isEdit ? 'Tornar tarefa recorrente' : 'Tarefa recorrente'}</span>
           </label>
+          ${isEdit ? `
+            <p style="font-size:0.6875rem;color:var(--text-muted);margin:4px 0 0 24px;">
+              Cria uma <strong>série recorrente</strong> baseada nesta tarefa. A tarefa atual é mantida; novas instâncias são geradas automaticamente.
+            </p>
+          ` : ''}
           <div id="tm-recurrence-config" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-elevated);">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div>
@@ -1336,7 +1354,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
             </p>
           </div>
         </div>
-      ` : ''}
+      `}
       <div class="task-detail-field">
         <div class="task-detail-label" style="display:flex;align-items:center;justify-content:space-between;">
           <span>Subtarefas</span>
@@ -1724,8 +1742,11 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
     }
   });
 
-  // Recorrência (apenas criação)
-  if (!isEdit) {
+  // Recorrência — disponível em criação E edição (4.21+).
+  // Em edição, marcar o toggle cria uma nova série recorrente baseada na tarefa
+  // atual (a tarefa em si permanece intocada). Tarefas que já vieram de uma
+  // série (recurringFromTemplateId) mostram apenas um aviso, sem o toggle.
+  if (!task.recurringFromTemplateId) {
     const recToggle = document.getElementById('tm-recurring-toggle');
     const recConfig = document.getElementById('tm-recurrence-config');
     const recStart  = document.getElementById('tm-rec-start');
@@ -3206,8 +3227,12 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
 
   if(isEdit) data._prevStatus=task.status;
 
-  // Recorrência: se marcado na criação, cria template em vez de tarefa
-  const isRecurring = !isEdit && $('tm-recurring-toggle')?.checked;
+  // Recorrência:
+  // - Em CRIAÇÃO marcado → cria template ao invés de tarefa pontual
+  // - Em EDIÇÃO marcado → salva a tarefa normalmente E cria template em paralelo
+  const recurringChecked = $('tm-recurring-toggle')?.checked && !task.recurringFromTemplateId;
+  const isRecurring         = !isEdit && recurringChecked;
+  const createTemplateInEdit =  isEdit && recurringChecked;
   const btn=document.querySelector('.modal-footer .btn-primary');
   if(btn){btn.classList.add('loading');btn.disabled=true;}
   try {
@@ -3333,7 +3358,43 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
       }
     }
 
-    // close() para edição/recorrência (criação já fechou acima)
+    // 4.21+ — Em EDIÇÃO, se o user marcou "Tornar tarefa recorrente",
+    // a tarefa já foi salva acima (com stale-check). Criamos uma série
+    // recorrente em paralelo, baseada nos dados atuais da tarefa.
+    if (createTemplateInEdit && savedTask) {
+      try {
+        const { createTemplate, runDueRecurrenceGeneration } = await import('../services/recurringTasks.js');
+        const freq         = $('tm-rec-frequency')?.value || 'weekly';
+        const dueOffset    = parseInt($('tm-rec-due-offset')?.value || '0', 10) || 0;
+        const startDate    = $('tm-rec-start')?.value || '';
+        const endDate      = $('tm-rec-end')?.value || '';
+        const weekdays     = Array.from(document.querySelectorAll('.tm-rec-weekday:checked'))
+          .map(cb => Number(cb.dataset.day));
+        const monthDay     = parseInt($('tm-rec-month-day')?.value || '1', 10) || 1;
+        const intervalDays = parseInt($('tm-rec-interval')?.value || '7', 10) || 7;
+        if (!startDate || !endDate) {
+          toast.warning('Tarefa atualizada, mas a recorrência precisa de datas de início e fim.');
+        } else {
+          const templateTaskData = { ...data };
+          delete templateTaskData.startDate;
+          delete templateTaskData.dueDate;
+          delete templateTaskData._prevStatus;
+          await createTemplate({
+            taskData: templateTaskData,
+            frequency: freq,
+            weekdays, monthDay, intervalDays,
+            startDate, endDate,
+            dueOffsetDays: dueOffset,
+          });
+          toast.success('Série recorrente criada a partir desta tarefa.');
+          runDueRecurrenceGeneration({ force: true }).catch(() => {});
+        }
+      } catch (recErr) {
+        toast.warning('Tarefa salva, mas falhou ao criar série recorrente: ' + (recErr.message || ''));
+      }
+    }
+
+    // close() para edição/recorrência (criação simples já fechou acima)
     if (isEdit || isRecurring) close();
 
     // Double-check overlay: show whenever a task is being completed

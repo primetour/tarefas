@@ -370,7 +370,9 @@
   color: var(--text-primary);
   margin-bottom: 8px;
   line-height: 1.4;
-  padding-left: 6px;
+  /* 4.21+ — padding-left aumentado p/ não colidir com bulk-checkbox (top-left).
+     Antes: 6px → checkbox sobrepunha o início do título e do projeto. */
+  padding-left: 24px;
   word-wrap: break-word;
   overflow-wrap: break-word;
   /* Exibe até 3 linhas; trunca com reticências se exceder */
@@ -389,7 +391,8 @@
   font-size: 0.6875rem;
   color: var(--text-muted);
   margin-bottom: 6px;
-  padding-left: 6px;
+  /* 4.21+ — clearance pro bulk-checkbox (16px @ left:8px) */
+  padding-left: 24px;
 }
 .kanban-card-tags {
   display: flex;
@@ -397,6 +400,21 @@
   gap: 4px;
   padding-left: 6px;
   margin-bottom: 8px;
+}
+
+/* 4.21+ — Bulk checkbox subtle por padrão, evidente só quando útil.
+   - default: invisível (não polui o card limpo)
+   - hover do card OU card já selecionado: aparece
+   - quando algum card está selecionado, o card hovered também mostra
+     pra facilitar adicionar/tirar da seleção */
+.kanban-bulk-checkbox {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.kanban-card:hover .kanban-bulk-checkbox,
+.kanban-card.bulk-selected .kanban-bulk-checkbox,
+.kanban-card:focus-within .kanban-bulk-checkbox {
+  opacity: 1;
 }
 .kanban-tag {
   font-size: 0.625rem;
