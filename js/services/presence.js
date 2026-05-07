@@ -1,17 +1,21 @@
 /**
- * PRIMETOUR — User Presence (Online Users)
+ * PRIMETOUR — User Presence (Online Users) com detecção de inatividade
  *
- * Mantém registro em tempo real de quem está online no sistema.
- * Cada user logado escreve heartbeat em `presence/{uid}` a cada 30s.
- * Listener do header lê presence onde lastSeen > now - 90s e mostra
- * avatares dos online users.
+ * Mantém registro em tempo real de quem está online — diferenciando
+ * "ativo" (interagindo agora) de "ausente" (aba aberta sem interação).
  *
  * IMPLEMENTAÇÃO:
- * - Heartbeat: setInterval a cada 30s → updateDoc presence/{uid}
- * - Threshold: user é "online" se lastSeen >= now - 90s (3 heartbeats
- *   missed = offline). Tolerância pra slow networks.
- * - Cleanup: ao logout/beforeunload → deleteDoc presence/{uid}
- * - Listener: onSnapshot na coleção presence inteira (max 200 docs OK)
+ * - Heartbeat: setInterval escreve presence/{uid} com state ('active'|'idle')
+ * - Sinal de atividade: mousemove/mousedown/keydown/scroll/touchstart/wheel
+ *   → atualiza `_lastActivityTs`. document.visibilitychange tb dispara.
+ * - State derivado: `document.hidden` OU `now - lastActivity > IDLE_AFTER_MS`
+ *   → 'idle'. Senão → 'active'.
+ * - Heartbeat adaptativo: 2min ativo, 5min idle (menos writes quando ausente).
+ * - Threshold do listener: ainda 6min = remove do "online" total. Idle continua
+ *   contando como online (apenas marcação visual diferente).
+ * - Cleanup: ao logout/beforeunload → deleteDoc presence/{uid}.
+ * - Listener: onSnapshot na coleção presence inteira → store.onlineUsers
+ *   (active) + store.idleUsers (ausentes).
  */
 
 import {
@@ -20,22 +24,37 @@ import {
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
 
-// Intervalos otimizados pra free tier:
-// - Heartbeat 2min = 720 writes/user/dia (vs 2880 em 30s = 4x menos)
-// - Threshold 6min = 3 heartbeats missed = offline
-// Custo pra 200 users: ~144k writes/dia. Ainda alto mas viável no Blaze.
-// Plano definitivo: migrar pra Firebase Realtime Database (RTDB), que tem
-// onDisconnect() nativo e não consome quota Firestore. Requer habilitar
-// RTDB no Firebase Console (1 click). Ver TODO no commit message.
-const HEARTBEAT_INTERVAL_MS = 2 * 60 * 1000;  // 2 min
-const ONLINE_THRESHOLD_MS   = 6 * 60 * 1000;  // 6 min
+// ─── Configuração ──────────────────────────────────────────
+// Janelas otimizadas pra Blaze tier:
+// - Active heartbeat 2min: 720 writes/user/dia
+// - Idle heartbeat 5min: 288 writes/user/dia (40% do active)
+// - IDLE_AFTER 5min de inatividade já marca como ausente
+// - ONLINE_THRESHOLD 6min: além disso → some do header
+const ACTIVE_HEARTBEAT_MS = 2 * 60 * 1000;  // 2 min
+const IDLE_HEARTBEAT_MS   = 5 * 60 * 1000;  // 5 min
+const IDLE_AFTER_MS       = 5 * 60 * 1000;  // 5 min sem interação → idle
+const ONLINE_THRESHOLD_MS = 6 * 60 * 1000;  // doc mais antigo que isso = offline
+
+const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'wheel', 'click'];
 
 let _heartbeatTimer = null;
 let _presenceUnsub  = null;
 let _beforeunloadHandler = null;
+let _visibilityHandler = null;
+let _activityHandler   = null;
+let _lastActivityTs = 0;
+let _lastWriteTs    = 0;
+let _lastWrittenState = null;
+
+/** Calcula o state atual baseado em atividade + visibilidade da aba. */
+function computeState() {
+  if (typeof document !== 'undefined' && document.hidden) return 'idle';
+  if (Date.now() - _lastActivityTs > IDLE_AFTER_MS)        return 'idle';
+  return 'active';
+}
 
 /**
- * Inicia o heartbeat + listener. Chamar uma vez no boot, após login.
+ * Inicia heartbeat + listeners de atividade. Chamar uma vez no boot, após login.
  */
 export function startPresence() {
   const user = store.get('currentUser');
@@ -44,45 +63,100 @@ export function startPresence() {
   // Para ciclo anterior se houver (idempotente em re-login na mesma aba)
   stopPresence();
 
-  // Heartbeat: escreve agora + a cada 30s
-  const writeHeartbeat = async () => {
+  // Marca atividade inicial — o user acabou de logar/abrir a aba
+  _lastActivityTs = Date.now();
+  _lastWriteTs    = 0;
+  _lastWrittenState = null;
+
+  // Heartbeat: escreve agora e periodicamente. Skip writes redundantes
+  // quando state não mudou e ainda dentro da janela do heartbeat ativo/idle.
+  const writeHeartbeat = async (force = false) => {
     try {
+      const state = computeState();
+      const interval = state === 'active' ? ACTIVE_HEARTBEAT_MS : IDLE_HEARTBEAT_MS;
+      const elapsed  = Date.now() - _lastWriteTs;
+      const stateChanged = state !== _lastWrittenState;
+      // Pula write se: não foi forçado, state não mudou, e dentro da janela
+      if (!force && !stateChanged && elapsed < interval) return;
+
       const profile = store.get('userProfile');
       await setDoc(doc(db, 'presence', user.uid), {
         uid:      user.uid,
         name:     profile?.name || '',
         email:    profile?.email || '',
         avatarColor: profile?.avatarColor || '#6B7280',
+        state,
         lastSeen: serverTimestamp(),
+        lastActivityAt: _lastActivityTs,
       }, { merge: true });
+      _lastWriteTs = Date.now();
+      _lastWrittenState = state;
     } catch (e) {
-      // Silencioso: se rules bloqueiam ou rede caiu, não tem o que fazer
       console.debug('[presence] heartbeat falhou:', e?.message);
     }
   };
-  writeHeartbeat();
-  _heartbeatTimer = setInterval(writeHeartbeat, HEARTBEAT_INTERVAL_MS);
+  writeHeartbeat(true);
+  // Roda a checagem com intervalo curto (1min); cada chamada decide se escreve
+  _heartbeatTimer = setInterval(() => writeHeartbeat(false), 60 * 1000);
 
-  // Cleanup no fechamento da aba (best-effort — beacon é mais robusto
-  // mas requer endpoint server; deleteDoc client funciona bem na maioria)
+  // ─── Sinais de atividade ────────────────────────────────
+  // Throttle: dispara updates de _lastActivityTs no máximo a cada 1s pra
+  // não sobrecarregar com mousemove (~60Hz). Pra reagir rápido na transição
+  // idle→active, força um heartbeat se acabou de virar ativo.
+  let lastBumpTs = 0;
+  const ACTIVITY_THROTTLE_MS = 1000;
+  _activityHandler = () => {
+    const now = Date.now();
+    if (now - lastBumpTs < ACTIVITY_THROTTLE_MS) return;
+    lastBumpTs = now;
+    const wasIdle = computeState() === 'idle';
+    _lastActivityTs = now;
+    if (wasIdle) {
+      // Transição idle → active: força heartbeat imediato pra atualizar UI
+      writeHeartbeat(true);
+    }
+  };
+  ACTIVITY_EVENTS.forEach(ev => {
+    window.addEventListener(ev, _activityHandler, { passive: true, capture: true });
+  });
+
+  // ─── Visibilidade da aba ────────────────────────────────
+  // Aba escondida → idle imediato. Aba visível → reset _lastActivityTs.
+  _visibilityHandler = () => {
+    if (document.hidden) {
+      // Forçar idle escrevendo um heartbeat com estado idle
+      _lastActivityTs = 0; // garante computeState='idle'
+      writeHeartbeat(true);
+    } else {
+      _lastActivityTs = Date.now();
+      writeHeartbeat(true);
+    }
+  };
+  document.addEventListener('visibilitychange', _visibilityHandler);
+
+  // ─── Cleanup no fechamento da aba ───────────────────────
   _beforeunloadHandler = () => {
     try { deleteDoc(doc(db, 'presence', user.uid)); } catch {}
   };
   window.addEventListener('beforeunload', _beforeunloadHandler);
 
-  // Listener: monitora coleção presence inteira → store.onlineUsers
-  // (ID do user, name, lastSeen). UI lê do store.
+  // ─── Listener da coleção presence ───────────────────────
   _presenceUnsub = onSnapshot(
     collection(db, 'presence'),
     (snap) => {
       const now = Date.now();
-      const online = snap.docs
+      const allOnline = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(p => {
           const ts = p.lastSeen?.toMillis?.() || 0;
           return ts && (now - ts) <= ONLINE_THRESHOLD_MS;
         });
-      store.set('onlineUsers', online);
+      // Separa active vs idle. Mantém store.onlineUsers como o conjunto de
+      // ativos pra preservar comportamento legado (avatares no header).
+      const active = allOnline.filter(p => p.state !== 'idle');
+      const idle   = allOnline.filter(p => p.state === 'idle');
+      store.set('onlineUsers', active);
+      store.set('idleUsers',   idle);
     },
     (err) => {
       console.warn('[presence] snapshot err:', err?.message);
@@ -106,10 +180,21 @@ export function stopPresence() {
     try { window.removeEventListener('beforeunload', _beforeunloadHandler); } catch {}
     _beforeunloadHandler = null;
   }
+  if (_visibilityHandler) {
+    try { document.removeEventListener('visibilitychange', _visibilityHandler); } catch {}
+    _visibilityHandler = null;
+  }
+  if (_activityHandler) {
+    ACTIVITY_EVENTS.forEach(ev => {
+      try { window.removeEventListener(ev, _activityHandler, { capture: true }); } catch {}
+    });
+    _activityHandler = null;
+  }
   // Tenta apagar o doc de presence (best-effort)
   const user = store.get('currentUser');
   if (user?.uid) {
     deleteDoc(doc(db, 'presence', user.uid)).catch(() => {});
   }
   store.set('onlineUsers', []);
+  store.set('idleUsers',   []);
 }

@@ -323,55 +323,69 @@ export class Header {
     this._unsubNotif = store.subscribe('unreadCount', updateBadge);
 
     // ── Online users (presence) ─────────────────────────────
-    // Renderiza avatares dos users atualmente online em tempo real.
-    // store.onlineUsers é populado pelo serviço presence.js (heartbeat 30s).
-    const renderOnlineUsers = (online = []) => {
+    // Renderiza avatares dos users em tempo real, separando ATIVOS
+    // (interagindo agora) de AUSENTES (aba aberta sem interação por 5min+).
+    // store.onlineUsers = ativos · store.idleUsers = ausentes.
+    const renderOnlineUsers = () => {
       const wrap = this.el.querySelector('#header-online-users');
       if (!wrap) return;
       const currentUid = store.get('currentUser')?.uid;
-      // Exclui o próprio user da lista (não faz sentido se ver "online")
-      const others = (online || []).filter(u => u.uid !== currentUid);
-      if (!others.length) {
+      const active = (store.get('onlineUsers') || []).filter(u => u.uid !== currentUid);
+      const idle   = (store.get('idleUsers')   || []).filter(u => u.uid !== currentUid);
+      const total  = active.length + idle.length;
+      if (total === 0) {
         wrap.innerHTML = '';
         return;
       }
       const MAX_VISIBLE = 4;
-      const visible = others.slice(0, MAX_VISIBLE);
-      const overflow = others.length - visible.length;
       const escAttr = s => String(s||'').replace(/"/g, '&quot;');
       const escHtml = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-      // Enriquece presence (uid+name+email+avatarColor) com sector do
-      // snapshot global de users (presence guarda só dados leves; sector
-      // vem de users[]).
       const usersById = new Map((store.get('users') || []).map(u => [u.id, u]));
-      const enrich = (u) => {
+      const enrich = (u, state) => {
         const full = usersById.get(u.uid);
-        return { ...u, sector: full?.sector || full?.department || '' };
+        return { ...u, state, sector: full?.sector || full?.department || '' };
       };
-      const allOthers = others.map(enrich); // closure-stored pra dropdown do "+N"
+      // Mostra ativos primeiro, depois ausentes
+      const allOthers = [
+        ...active.map(u => enrich(u, 'active')),
+        ...idle.map(u   => enrich(u, 'idle')),
+      ];
       const visibleEnriched = allOthers.slice(0, MAX_VISIBLE);
+      const overflow = allOthers.length - visibleEnriched.length;
+
+      // Resumo: "5 ativos · 2 ausentes" — flexível conforme o que tem
+      const summary = active.length && idle.length
+        ? `<span style="color:var(--text-secondary);">${active.length} ativo${active.length!==1?'s':''}</span> · <span style="color:var(--text-muted);">${idle.length} ausente${idle.length!==1?'s':''}</span>`
+        : active.length
+          ? `<span style="color:var(--text-secondary);">${active.length} ativo${active.length!==1?'s':''}</span>`
+          : `<span style="color:var(--text-muted);">${idle.length} ausente${idle.length!==1?'s':''}</span>`;
 
       wrap.innerHTML = `
         <div style="display:flex;align-items:center;cursor:default;gap:8px;">
           <span style="font-size:0.75rem;color:var(--text-muted);font-weight:500;
-            white-space:nowrap;letter-spacing:0.01em;">Usuários on-line:</span>
+            white-space:nowrap;letter-spacing:0.01em;">${summary}</span>
           <div style="display:flex;align-items:center;">
           ${visibleEnriched.map(u => {
             const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+            const dotColor = u.state === 'idle' ? '#F59E0B' : '#22C55E';
+            const opacity  = u.state === 'idle' ? '0.7' : '1';
             return `<div class="avatar avatar-sm header-online-avatar" style="
               background:${u.avatarColor || '#3B82F6'};
               width:28px;height:28px;font-size:0.625rem;font-weight:600;color:#fff;
-              border:2px solid var(--bg-card,#fff);
+              border:2px solid var(--bg-card,#fff);opacity:${opacity};
               display:flex;align-items:center;justify-content:center;
               border-radius:50%;margin-left:-6px;position:relative;"
               data-uid="${escAttr(u.uid || '')}"
               data-name="${escAttr(u.name || 'Usuário')}"
               data-email="${escAttr(u.email || '')}"
-              data-sector="${escAttr(u.sector || '')}">
+              data-sector="${escAttr(u.sector || '')}"
+              data-state="${u.state}"
+              data-last-activity="${u.lastActivityAt || ''}"
+              data-last-seen="${u.lastSeen?.toMillis?.() || ''}">
               ${initials}
               <span style="position:absolute;bottom:-2px;right:-2px;width:8px;height:8px;
-                background:#22C55E;border:1.5px solid var(--bg-card,#fff);border-radius:50%;"></span>
+                background:${dotColor};border:1.5px solid var(--bg-card,#fff);border-radius:50%;"></span>
             </div>`;
           }).join('')}
           ${overflow > 0 ? `<button class="header-online-overflow" type="button" style="
@@ -381,7 +395,7 @@ export class Header {
             display:flex;align-items:center;justify-content:center;
             border:2px solid var(--bg-card,#fff);margin-left:-6px;cursor:pointer;
             font-family:inherit;padding:0;transition:background 0.15s;"
-            title="Ver todos os ${others.length} online">
+            title="Ver todos os ${total} usuários (ativos + ausentes)">
             +${overflow}
           </button>` : ''}
           </div>
@@ -429,13 +443,30 @@ export class Header {
         tip.style.top = `${top}px`;
       };
 
+      // Helper: formata "ausente há X" baseado em lastActivityAt (ms timestamp)
+      const formatIdleSince = (lastActivityAtMs) => {
+        const ts = +lastActivityAtMs || 0;
+        if (!ts) return 'ausente';
+        const min = Math.floor((Date.now() - ts) / 60000);
+        if (min < 1) return 'ausente agora';
+        if (min < 60) return `ausente há ${min} min`;
+        const h = Math.floor(min / 60);
+        return `ausente há ${h}h${min % 60 ? ` ${min % 60}m` : ''}`;
+      };
+
       wrap.querySelectorAll('.header-online-avatar').forEach(av => {
         av.addEventListener('mouseenter', () => {
           const name = av.dataset.name || 'Usuário';
           const email = av.dataset.email || '';
           const sector = av.dataset.sector || '';
+          const state = av.dataset.state || 'active';
+          const lastActivityAt = av.dataset.lastActivity;
+          const statusLabel = state === 'idle'
+            ? `<span style="color:#F59E0B;">● ${formatIdleSince(lastActivityAt)}</span>`
+            : `<span style="color:#22C55E;">● ativo agora</span>`;
           const html = `
             <div style="font-weight:600;color:var(--text-primary);margin-bottom:2px;">${escHtml(name)}</div>
+            <div style="font-size:0.6875rem;margin-bottom:2px;">${statusLabel}</div>
             ${email ? `<div style="font-size:0.6875rem;color:var(--text-muted);${sector ? 'margin-bottom:2px;' : ''}">${escHtml(email)}</div>` : ''}
             ${sector ? `<div style="font-size:0.6875rem;color:var(--text-muted);">🏢 ${escHtml(sector)}</div>` : ''}
           `;
@@ -470,27 +501,33 @@ export class Header {
 
           dropdown = document.createElement('div');
           dropdown.className = 'online-overflow-dropdown';
-          // Lista completa (todos os N online), não só os ocultos.
-          // Visualmente: cards verticais com avatar pequeno + nome + email + área.
-          const listItems = allOthers.map(u => {
+          // Lista completa, agrupada por state. Mostra ATIVOS primeiro,
+          // depois AUSENTES com timestamp "ausente há X min".
+          const renderItem = (u) => {
             const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+            const dotColor = u.state === 'idle' ? '#F59E0B' : '#22C55E';
+            const opacity  = u.state === 'idle' ? '0.7' : '1';
+            const statusLine = u.state === 'idle'
+              ? `<span style="color:#F59E0B;font-size:0.6875rem;">● ${formatIdleSince(u.lastActivityAt)}</span>`
+              : `<span style="color:#22C55E;font-size:0.6875rem;">● ativo agora</span>`;
             return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
-              border-bottom:1px solid var(--border-subtle);">
+              border-bottom:1px solid var(--border-subtle);opacity:${opacity};">
               <div class="avatar avatar-sm" style="background:${u.avatarColor || '#3B82F6'};
                 width:32px;height:32px;font-size:0.6875rem;font-weight:600;color:#fff;
                 display:flex;align-items:center;justify-content:center;border-radius:50%;
                 flex-shrink:0;position:relative;">
                 ${initials}
                 <span style="position:absolute;bottom:-1px;right:-1px;width:8px;height:8px;
-                  background:#22C55E;border:1.5px solid var(--bg-card,#fff);border-radius:50%;"></span>
+                  background:${dotColor};border:1.5px solid var(--bg-card,#fff);border-radius:50%;"></span>
               </div>
               <div style="min-width:0;flex:1;">
                 <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);
                   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                   ${escHtml(u.name || 'Usuário')}
                 </div>
+                <div style="margin-top:1px;">${statusLine}</div>
                 <div style="font-size:0.6875rem;color:var(--text-muted);
-                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;">
                   ${escHtml(u.email || '')}
                 </div>
                 ${u.sector ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">
@@ -498,14 +535,31 @@ export class Header {
                 </div>` : ''}
               </div>
             </div>`;
-          }).join('');
+          };
+
+          const sectionHeader = (title) => `<div style="padding:8px 12px;
+            background:var(--bg-elevated);font-size:0.6875rem;font-weight:600;
+            color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">
+            ${title}</div>`;
+
+          const activeOthers = allOthers.filter(u => u.state !== 'idle');
+          const idleOthers   = allOthers.filter(u => u.state === 'idle');
+          let listItems = '';
+          if (activeOthers.length) {
+            listItems += sectionHeader(`🟢 Ativos (${activeOthers.length})`);
+            listItems += activeOthers.map(renderItem).join('');
+          }
+          if (idleOthers.length) {
+            listItems += sectionHeader(`🟡 Ausentes (${idleOthers.length})`);
+            listItems += idleOthers.map(renderItem).join('');
+          }
 
           dropdown.innerHTML = `
             <div style="padding:10px 12px;border-bottom:1px solid var(--border-subtle);
               font-size:0.75rem;font-weight:600;color:var(--text-muted);
               text-transform:uppercase;letter-spacing:0.05em;
               display:flex;align-items:center;justify-content:space-between;">
-              <span>${others.length} online agora</span>
+              <span>${total} usuário${total!==1?'s':''} no sistema</span>
               <button class="online-dropdown-close" type="button" style="background:none;border:none;
                 color:var(--text-muted);cursor:pointer;font-size:1rem;line-height:1;padding:0;
                 font-family:inherit;">×</button>
@@ -550,8 +604,10 @@ export class Header {
       // Cleanup ao re-render (próxima chamada de renderOnlineUsers)
       wrap._cleanupTip = () => { removeTip(); closeDropdown(); };
     };
-    renderOnlineUsers(store.get('onlineUsers') || []);
+    renderOnlineUsers();
+    // Subscribe em ambos: active + idle. Cada mudança re-renderiza.
     this._unsubOnline = store.subscribe('onlineUsers', renderOnlineUsers);
+    this._unsubIdle   = store.subscribe('idleUsers',   renderOnlineUsers);
 
     // Mobile menu
     const mobileBtn = this.el.querySelector('#mobile-menu-btn');
@@ -1080,6 +1136,7 @@ export class Header {
     this._unsubRoute?.();
     this._unsubNotif?.();
     this._unsubOnline?.();
+    this._unsubIdle?.();
   }
 }
 

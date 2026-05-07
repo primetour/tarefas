@@ -37,6 +37,55 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.10.0+20260507-presence-idle-detection] — 2026-05-07
+
+Release **MINOR** — presence agora distingue **ativo** vs **ausente** (inatividade real).
+
+### Problema reportado pelo user
+> "se eu abro o sistema, ele me deixa como online, mas o ideal é medir inatividade para entender se user realmente esta on line, né?"
+
+A implementação anterior só validava "aba aberta" (heartbeat a cada 2min). Se o user abria o sistema e ia pegar café 1h, continuava aparecendo como online — gerando ruído na lista de "Usuários on-line".
+
+### Solução
+
+Detecção de inatividade real via 2 sinais:
+1. **Eventos de interação** — `mousedown`, `mousemove`, `keydown`, `scroll`, `touchstart`, `wheel`, `click` (capture phase, throttled a 1s)
+2. **Visibilidade da aba** — `document.visibilitychange`: aba escondida → idle imediato; visível → reset
+
+State derivado a cada heartbeat:
+- `document.hidden === true` → `'idle'`
+- `now - lastActivity > 5min` → `'idle'`
+- caso contrário → `'active'`
+
+Heartbeat adaptativo:
+- Active: 2 min (igual antes)
+- Idle: 5 min (-60% writes quando ausente)
+- Skip writes redundantes quando state não mudou e dentro da janela
+- Transição idle → active força um heartbeat imediato pra UI atualizar rápido
+
+Doc presence agora tem `state: 'active' | 'idle'` + `lastActivityAt` (ms timestamp). Listener separa em `store.onlineUsers` (ativos) e `store.idleUsers` (ausentes).
+
+### Header UI
+
+- Resumo dinâmico: "5 ativos · 2 ausentes" (em vez do antigo "Usuários on-line:")
+- Avatares dos ativos com bolinha verde (#22C55E), opacity 1.0
+- Avatares dos ausentes com bolinha amarela (#F59E0B), opacity 0.7
+- Tooltip mostra o status: "● ativo agora" ou "● ausente há X min"
+- Dropdown "+N" agrupa por seção: 🟢 Ativos / 🟡 Ausentes
+
+### Custos
+
+Para 200 users com ~30% idle a qualquer momento:
+- Antes: 200 × 720 = 144k writes/dia
+- Agora: 140 × 720 + 60 × 288 = ~118k writes/dia (-18%)
+
+### Arquivos alterados
+- `js/services/presence.js` — refatoração completa (rewrite, +60 linhas)
+- `js/components/header.js` — UI separa active/idle, tooltip + dropdown atualizados
+- `js/version.js` — bump 4.9.3 → 4.10.0
+- `index.html` — cache-bust v= alinhado
+
+
 ## [4.9.3+20260506-fix-resize-disparos-envios] — 2026-05-06
 
 Release **PATCH** — corrige 2 problemas reportados pelo user nas tabelas:

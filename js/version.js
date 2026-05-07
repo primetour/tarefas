@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 9,
-  patch: 3,
-  build: '20260506-fix-resize-disparos-envios',
+  minor: 10,
+  patch: 0,
+  build: '20260507-presence-idle-detection',
 };
 
 /** "1.2.0" */
