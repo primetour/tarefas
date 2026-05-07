@@ -726,8 +726,9 @@ function renderCards(tasks, _ignored = '') {
   //   1. groupBy mudou (ex: status → área)
   //   2. Conjunto de groups mudou (ex: agrupando por área, todas as tarefas
   //      de "Marketing" mudaram de área → coluna Marketing deve sumir)
-  // Em status mode, STATUSES é fixo (sempre 5 grupos), então só re-renderiza
-  // se viemos de outro groupBy.
+  //   3. ORDEM dos groups mudou (4.18+: user reordenou colunas via drag —
+  //      antes só rebuildava em groupBy != 'status', mas agora qualquer
+  //      groupBy permite reorder).
   const board = document.getElementById('kanban-board');
   if (board) {
     const expectedKeys = groups.map(g => g.value).join('|');
@@ -735,7 +736,7 @@ function renderCards(tasks, _ignored = '') {
     const renderedKeys = board.dataset.renderedGroupKeys || '';
     const shouldRebuild =
       renderedGroupBy !== groupBy ||
-      (groupBy !== 'status' && renderedKeys !== expectedKeys);
+      renderedKeys !== expectedKeys; // 4.18+: rebuild sempre que keys/ordem mudarem
     if (shouldRebuild) {
       board.innerHTML = groups.map(g => renderColumn(g, [])).join('');
       board.dataset.groupKeyRendered = groupBy;
