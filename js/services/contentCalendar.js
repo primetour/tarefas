@@ -155,7 +155,9 @@ export function subscribeToSlots(callback, filters = {}) {
  * @returns {Function} unsubscribe (cancela TODOS os listeners criados)
  */
 export function subscribeToTasksByIds(taskIds, callback) {
-  const ids = [...new Set((taskIds || []).filter(Boolean))];
+  // Filtro defensivo: aceita apenas strings não-vazias (algum slot pode ter
+  // `taskId` como objeto/referência se a UI antiga salvou errado — bug 4.17.0).
+  const ids = [...new Set((taskIds || []).filter(t => typeof t === 'string' && t.trim()))];
   if (!ids.length) {
     callback(new Map());
     return () => {};

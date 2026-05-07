@@ -325,7 +325,12 @@ async function _bindSlotsListener() {
  */
 let _lastTaskIdsSig = '';
 function _bindTasksListener() {
-  const taskIds = [...new Set(allSlots.map(s => s.taskId).filter(Boolean))].sort();
+  // Defensivo: aceita apenas strings não-vazias (slot.taskId mal salvo
+  // em versões antigas pode ser objeto — bug detectado 4.17.0).
+  const taskIds = [...new Set(allSlots
+    .map(s => s.taskId)
+    .filter(t => typeof t === 'string' && t.trim())
+  )].sort();
   const sig = taskIds.join('|');
   if (sig === _lastTaskIdsSig && _tasksUnsub) return; // sem mudança, mantém listener
 

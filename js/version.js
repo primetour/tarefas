@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 17,
-  patch: 0,
-  build: '20260507-cc-sync-task-date-to-slot',
+  patch: 1,
+  build: '20260507-cc-sync-fix-taskid-defensive',
 };
 
 /** "1.2.0" */
