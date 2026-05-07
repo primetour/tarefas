@@ -37,6 +37,71 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.12.0+20260507-presence-daily-usage-widget] — 2026-05-07
+
+Release **MINOR** — Tempo de uso do sistema agora é trackado e exibido no dashboard de produtividade.
+
+### Pedido do user
+> "usuarios online/ausente (presence): colocar no dash de produtividade o tempo de uso no sistema (com os mesmos filtros do dash)"
+
+### Implementação
+
+#### Schema novo: `presence_daily`
+```
+presence_daily/{uid}_{YYYY-MM-DD} {
+  uid, userName, email, sector, nucleos[],
+  date: 'YYYY-MM-DD',
+  activeMs, idleMs, totalMs,
+  lastSeen, updatedAt,
+}
+```
+
+#### `presence.js` — acumulador atomic
+Cada heartbeat (a cada 2-5min) calcula o delta desde o último write. Se o gap ≤ 10min (continuidade de sessão), incrementa `totalMs` e `activeMs`/`idleMs` (conforme state anterior) via `FieldValue.increment(delta)`. Gaps > 10min (user offline, abas todas fechadas) NÃO contam — preserva semantics de "tempo realmente usando".
+
+#### `services/presenceUsage.js` (novo)
+- `fetchUsageByPeriod({ from, to, userIds, sectors, nucleos })` — busca docs do período + agrega por usuário, retorna breakdown ordenado por totalMs desc
+- `summarizeUsage(breakdown)` — totais agregados (users, totalH, activeH, idleH, avgMsPerUser, activePct)
+- `formatDuration(ms)` — string amigável "12h 34min" / "45min"
+
+#### Widget `presence-usage-widget` no dashboard de produtividade
+Posicionado entre os blocos R3 e Insights:
+- **6 KPI cards**: Usuários ativos · Tempo total · Tempo ativo · Tempo ausente · Média/usuário · % Ativo
+- **Leaderboard top 10**: avatar + nome + setor + dias ativos + barra de progresso + duração
+- Empty state com explicação clara quando não há dados (período antes da feature)
+
+Herda **automaticamente** os filtros do dashboard:
+- Período (7d / 30d / 90d / 12m / custom)
+- Usuário, Núcleo, Setor
+
+#### Firestore rules
+```
+match /presence_daily/{docId} {
+  allow read:   if isAuth();
+  allow write:  if isAuth() && request.resource.data.uid == request.auth.uid;
+  allow delete: if isAdmin();
+}
+```
+
+### Cost analysis
+Para 200 users com 30% idle:
+- Heartbeats: ~720/dia ativo + 288/dia idle = ~510 writes/user/dia
+- Cada heartbeat agora escreve em 2 docs (presence + presence_daily)
+- Total: ~204k writes/dia (-15% vs estimativa anterior por skip-when-state-unchanged)
+- Storage: 200 docs/dia em presence_daily = 73k docs/ano (manageable)
+
+### Nota importante
+Os dados de uso começam a acumular **a partir desta versão**. Períodos passados aparecerão vazios. Em 7-30 dias o dashboard estará populado e útil.
+
+### Arquivos alterados
+- `js/services/presence.js` — daily accumulator no writeHeartbeat
+- `js/services/presenceUsage.js` — NOVO arquivo (fetch + summarize + format)
+- `js/pages/dashboards.js` — widget presence-usage-widget + chamada no flow principal
+- `firestore.rules` — collection presence_daily
+- `js/version.js` — bump 4.11.1 → 4.12.0
+- `index.html` — cache-bust v=
+
+
 ## [4.11.1+20260507-cc-fix-container-id-race] — 2026-05-07
 
 Release **PATCH** — bugfixes encontrados em testes da v4.11.0.

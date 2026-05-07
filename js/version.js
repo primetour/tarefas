@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 11,
-  patch: 1,
-  build: '20260507-cc-fix-container-id-race',
+  minor: 12,
+  patch: 0,
+  build: '20260507-presence-daily-usage-widget',
 };
 
 /** "1.2.0" */

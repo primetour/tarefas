@@ -298,6 +298,13 @@ export async function renderDashboards(container) {
       </div>
     </div>
 
+    <!-- Tempo de uso do sistema (presence_daily) — herda filtros do dash -->
+    <div class="dashboard-grid" id="usage-grid" style="margin-top:24px;margin-bottom:24px;">
+      <div class="dash-widget col-span-12" id="presence-usage-widget" style="min-height:240px;">
+        <div class="chart-loading"><div class="chart-loading-spinner"></div></div>
+      </div>
+    </div>
+
     <!-- Insights & Observações (componente reutilizavel) -->
     <div id="dash-insights-section" style="margin-top:24px;"></div>
   `;
@@ -478,6 +485,7 @@ async function loadData(container) {
     metrics.surveys = surveys;
     renderKPIs(m);
     renderAllCharts(Chart, m);
+    renderPresenceUsage(m).catch(err => console.warn('[dash] presence usage falhou:', err?.message));
   } catch(e) {
     console.error('Dashboard error:', e);
     toast.error('Erro ao carregar dados do dashboard.');
@@ -1548,6 +1556,136 @@ function tooltipStyle() {
     padding: 10,
     cornerRadius: 8,
   };
+}
+
+/* ─── Presence Usage Widget ─────────────────────────────────
+ * Tempo de uso do sistema por usuário no período. Herda os mesmos
+ * filtros do dash (período/user/núcleo/área).
+ * Dados vêm de `presence_daily` (populada por presence.js).
+ */
+async function renderPresenceUsage() {
+  const el = document.getElementById('presence-usage-widget');
+  if (!el) return;
+
+  try {
+    const { fetchUsageByPeriod, summarizeUsage, formatDuration } =
+      await import('../services/presenceUsage.js?v=20260507uu');
+    const { getPeriodDates } = await import('../services/analytics.js');
+
+    const { start, end } = getPeriodDates(activePeriod());
+    const fromStr = start.toISOString().slice(0, 10);
+    const toStr   = end.toISOString().slice(0, 10);
+
+    // Aplica os mesmos filtros do dash (user / sector / núcleo)
+    const userIds = filterUser ? [filterUser] : null;
+    const sectors = filterSector ? [filterSector] : null;
+    const nucleos = filterNucleo ? [filterNucleo] : null;
+
+    const breakdown = await fetchUsageByPeriod({
+      from: fromStr, to: toStr, userIds, sectors, nucleos,
+    });
+    const summary = summarizeUsage(breakdown);
+
+    if (!breakdown.length) {
+      el.innerHTML = `
+        <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <h3 class="widget-title" style="margin:0;">⏱ Tempo de uso no sistema</h3>
+          <span class="widget-insights-slot" data-widget-id="presence-usage-widget"></span>
+        </div>
+        <div style="padding:32px 16px;text-align:center;color:var(--text-muted);font-size:0.875rem;">
+          <div style="font-size:2rem;margin-bottom:8px;">📊</div>
+          <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">
+            Sem dados de uso no período selecionado
+          </div>
+          <div style="font-size:0.75rem;line-height:1.5;max-width:480px;margin:0 auto;">
+            A coleta começa a partir de 07/05/2026. Cada heartbeat (~2min ativo, 5min ausente)
+            grava em <code>presence_daily</code>. Os dados se acumulam ao longo do tempo
+            conforme os usuários usam o sistema.
+          </div>
+        </div>`;
+      return;
+    }
+
+    // Top 10 por totalMs
+    const top = breakdown.slice(0, 10);
+    const maxMs = top[0]?.totalMs || 1;
+
+    const summaryCard = (label, value, color) => `
+      <div style="flex:1;min-width:140px;padding:12px 14px;border:1px solid var(--border-subtle);
+        border-radius:8px;background:var(--bg-elevated);">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;
+          letter-spacing:0.05em;font-weight:600;margin-bottom:4px;">${label}</div>
+        <div style="font-size:1.25rem;font-weight:700;color:${color || 'var(--text-primary)'};">
+          ${value}
+        </div>
+      </div>`;
+
+    const periodLabel = currentPeriod === 'custom' && customFrom && customTo
+      ? `${customFrom} → ${customTo}`
+      : ({'7d':'7 dias','30d':'30 dias','90d':'90 dias','12m':'12 meses'}[currentPeriod] || currentPeriod);
+
+    el.innerHTML = `
+      <div class="widget-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <h3 class="widget-title" style="margin:0;">⏱ Tempo de uso no sistema</h3>
+        <span style="font-size:0.6875rem;color:var(--text-muted);">· ${esc(periodLabel)}</span>
+        <span class="widget-insights-slot" data-widget-id="presence-usage-widget"></span>
+      </div>
+      <div class="widget-body">
+        <!-- Resumo agregado -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+          ${summaryCard('Usuários ativos', summary.users)}
+          ${summaryCard('Tempo total',     formatDuration(summary.totalMs), 'var(--brand-gold)')}
+          ${summaryCard('Tempo ativo',     formatDuration(summary.activeMs), 'var(--color-success)')}
+          ${summaryCard('Tempo ausente',   formatDuration(summary.idleMs),   'var(--color-warning)')}
+          ${summaryCard('Média/usuário',   formatDuration(summary.avgMsPerUser))}
+          ${summaryCard('% Ativo',         `${summary.activePct}%`, summary.activePct >= 70 ? 'var(--color-success)' : 'var(--color-warning)')}
+        </div>
+
+        <!-- Leaderboard top 10 -->
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;
+          letter-spacing:0.05em;font-weight:600;margin-bottom:8px;">
+          Ranking — top ${top.length} por tempo total no período
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${top.map((u, i) => {
+            const pct = Math.round((u.totalMs / maxMs) * 100);
+            const initials = (u.userName || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+            return `<div style="display:grid;grid-template-columns:auto auto 1fr auto auto;gap:10px;
+              align-items:center;padding:6px 8px;border-radius:6px;background:var(--bg-elevated);">
+              <div style="font-size:0.75rem;color:var(--text-muted);min-width:18px;text-align:right;">${i+1}.</div>
+              <div style="width:28px;height:28px;border-radius:50%;background:${hashColor(u.uid)};
+                color:#fff;font-size:0.625rem;font-weight:700;display:flex;align-items:center;
+                justify-content:center;">${esc(initials)}</div>
+              <div style="min-width:0;">
+                <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.userName || '—')}</div>
+                <div style="font-size:0.6875rem;color:var(--text-muted);
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.sector || '')}${u.daysActive ? ` · ${u.daysActive} dia${u.daysActive!==1?'s':''} ativos` : ''}</div>
+              </div>
+              <div style="position:relative;width:140px;height:8px;background:var(--bg-surface);
+                border-radius:4px;overflow:hidden;">
+                <div style="position:absolute;left:0;top:0;height:100%;width:${pct}%;
+                  background:linear-gradient(90deg, var(--color-success) 0%, var(--brand-gold) 100%);
+                  border-radius:4px;"></div>
+              </div>
+              <div style="font-size:0.75rem;font-weight:600;color:var(--text-primary);
+                text-align:right;min-width:80px;">${formatDuration(u.totalMs)}</div>
+            </div>`;
+          }).join('')}
+        </div>
+
+        ${breakdown.length > 10 ? `<div style="text-align:center;font-size:0.6875rem;
+          color:var(--text-muted);margin-top:10px;">
+          + ${breakdown.length - 10} usuário${breakdown.length - 10 !== 1 ? 's' : ''} no período
+        </div>` : ''}
+      </div>`;
+  } catch (e) {
+    console.warn('[dash] renderPresenceUsage err:', e?.message);
+    el.innerHTML = `<div class="widget-header"><h3 class="widget-title">⏱ Tempo de uso no sistema</h3></div>
+      <div style="padding:24px;text-align:center;color:var(--color-danger);font-size:0.8125rem;">
+        Erro ao carregar dados de uso: ${esc(e?.message || 'desconhecido')}
+      </div>`;
+  }
 }
 
 /* ─── R3: CSAT Geral ─────────────────────────────────────── */

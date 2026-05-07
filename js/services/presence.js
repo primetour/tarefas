@@ -19,7 +19,7 @@
  */
 
 import {
-  collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp,
+  collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp, increment,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -34,6 +34,10 @@ const ACTIVE_HEARTBEAT_MS = 2 * 60 * 1000;  // 2 min
 const IDLE_HEARTBEAT_MS   = 5 * 60 * 1000;  // 5 min
 const IDLE_AFTER_MS       = 5 * 60 * 1000;  // 5 min sem interação → idle
 const ONLINE_THRESHOLD_MS = 6 * 60 * 1000;  // doc mais antigo que isso = offline
+
+// Threshold pra considerar uma "sessão contínua" — gaps maiores que isto
+// (user offline, abas todas fechadas) NÃO contam como tempo de uso.
+const SESSION_GAP_MS = 10 * 60 * 1000; // 10 min
 
 const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'wheel', 'click'];
 
@@ -74,7 +78,8 @@ export function startPresence() {
     try {
       const state = computeState();
       const interval = state === 'active' ? ACTIVE_HEARTBEAT_MS : IDLE_HEARTBEAT_MS;
-      const elapsed  = Date.now() - _lastWriteTs;
+      const now = Date.now();
+      const elapsed  = now - _lastWriteTs;
       const stateChanged = state !== _lastWrittenState;
       // Pula write se: não foi forçado, state não mudou, e dentro da janela
       if (!force && !stateChanged && elapsed < interval) return;
@@ -89,7 +94,39 @@ export function startPresence() {
         lastSeen: serverTimestamp(),
         lastActivityAt: _lastActivityTs,
       }, { merge: true });
-      _lastWriteTs = Date.now();
+
+      // ── Acumulador diário de tempo de uso (presence_daily) ─────
+      // Adiciona o delta desde o último heartbeat ao contador do dia.
+      // Gaps > SESSION_GAP_MS (e.g., user offline) NÃO contam — preserva
+      // semantics de "tempo realmente usando o sistema".
+      // Atribui o delta ao state ANTERIOR (era o state em vigor durante o gap).
+      try {
+        if (_lastWriteTs > 0) {
+          const delta = now - _lastWriteTs;
+          if (delta > 0 && delta <= SESSION_GAP_MS) {
+            const prevState = _lastWrittenState || state;
+            const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+            const dailyRef = doc(db, 'presence_daily', `${user.uid}_${today}`);
+            const dailyUpdate = {
+              uid:        user.uid,
+              userName:   profile?.name || '',
+              email:      profile?.email || '',
+              sector:     profile?.sector || profile?.department || '',
+              nucleos:    Array.isArray(profile?.nucleos) ? profile.nucleos : [],
+              date:       today,
+              lastSeen:   serverTimestamp(),
+              updatedAt:  serverTimestamp(),
+              totalMs:    increment(delta),
+              [prevState === 'active' ? 'activeMs' : 'idleMs']: increment(delta),
+            };
+            await setDoc(dailyRef, dailyUpdate, { merge: true });
+          }
+        }
+      } catch (dailyErr) {
+        console.debug('[presence] daily accumulator falhou:', dailyErr?.message);
+      }
+
+      _lastWriteTs = now;
       _lastWrittenState = state;
     } catch (e) {
       console.debug('[presence] heartbeat falhou:', e?.message);

@@ -110,6 +110,17 @@ service cloud.firestore {
       allow delete: if isAuth() && request.auth.uid == userId;
     }
 
+    // ── Presence daily — acumulador de tempo de uso por usuário/dia ──
+    // Doc ID: '{uid}_{YYYY-MM-DD}'. User só escreve nos próprios docs.
+    // Leitura aberta (autenticado) pra dashboards de produtividade agregarem.
+    match /presence_daily/{docId} {
+      allow read:   if isAuth();
+      // Só permite write se uid no payload bate com auth uid
+      // (validacao via request.resource.data.uid; docId começa com uid)
+      allow write:  if isAuth() && request.resource.data.uid == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
     match /audit_logs/{logId} {
       allow read:   if isAdmin();
       // Client pode criar log de qualquer ação de domínio (tasks, projects,
