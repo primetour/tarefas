@@ -37,6 +37,43 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.16.1+20260507-cc-fix-popover-tdz-shadow] — 2026-05-07
+
+Release **PATCH** — bug crítico do popover "+ Adicionar projeto" que não abria.
+
+### Bug
+Click no "+ Adicionar projeto" não fazia nada. Sem console error visível ao usuário porque o erro era `ReferenceError` dentro de bloco try silencioso (não havia try). O popover era criado mas a linha `pop.innerHTML = ...` jogava `ReferenceError: Cannot access 'esc' before initialization`.
+
+### Causa raiz: shadowing + TDZ
+
+A função `_openAddProjectPopover` declara no fim:
+```js
+const esc = (ev) => { if (ev.key === 'Escape') close(); };
+```
+
+Esse `esc` (handler de Escape) **shadows** o `esc` global do módulo (linha 21 — escape HTML). Por causa do TDZ (temporal dead zone) de `const`, **qualquer uso de `esc()` na função** — mesmo nas linhas anteriores ao `const esc = ...` — falha com ReferenceError.
+
+A função usava `esc()` no template do `pop.innerHTML` (escape de `p.id`, `p.name`, `p.icon`) que disparava o erro.
+
+### Fix
+
+Renomeado o handler de `esc` → `escHandler`. Adicionado comentário explicando o pegadinha pra futuros devs não repetirem.
+
+```js
+// ATENÇÃO: NÃO renomear `escHandler` pra `esc` — `esc` é a função global
+// de escape HTML do módulo (linha 21). Shadow + TDZ causam ReferenceError
+// em qualquer uso de esc() acima nesta função (bug 4.16.0 fix).
+```
+
+### Detecção
+Investigação via console.log step-by-step + `try/catch` revelando o ReferenceError. Tempo de debug: ~30 min.
+
+### Arquivos alterados
+- `js/pages/contentCalendar.js` — rename `esc` → `escHandler` + comentário
+- `js/version.js` — bump 4.16.0 → 4.16.1
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.16.0+20260507-cc-multi-project-task-snapshot] — 2026-05-07
 
 Release **MINOR** — Calendário de Conteúdo: 3 melhorias pedidas pelo user.

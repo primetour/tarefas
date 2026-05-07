@@ -373,24 +373,17 @@ async function setActiveProject(projectId) {
  * Lista projetos disponíveis (excluindo os já ativos), permite filtrar e clicar.
  */
 function _openAddProjectPopover(anchor) {
-  console.log('[cc-add-popover] _openAddProjectPopover called', {
-    anchor: anchor?.id,
-    availableProjectsLen: availableProjects?.length,
-    activeProjectIds,
-  });
   // Remove popover anterior se existir
   document.querySelectorAll('.cc-project-popover').forEach(el => el.remove());
 
   const candidates = availableProjects.filter(p =>
     !activeProjectIds.includes(p.id) && !p.archived
   );
-  console.log('[cc-add-popover] candidates:', candidates.length);
   if (!candidates.length) {
     toast.info('Todos os projetos disponíveis já estão no calendário.');
     return;
   }
 
-  console.log('[cc-add-popover] step: createElement');
   const pop = document.createElement('div');
   pop.className = 'cc-project-popover';
   pop.style.cssText = `
@@ -399,9 +392,7 @@ function _openAddProjectPopover(anchor) {
     border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,0.5);
     padding:8px; min-width:260px; max-width:340px;
   `;
-  console.log('[cc-add-popover] step: setting innerHTML');
-  try {
-    pop.innerHTML = `
+  pop.innerHTML = `
     <div style="font-size:0.6875rem;color:var(--text-muted);padding:6px 10px 8px;
       border-bottom:1px solid var(--border-subtle);margin-bottom:6px;
       text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">
@@ -424,13 +415,7 @@ function _openAddProjectPopover(anchor) {
       `).join('')}
     </div>
   `;
-  } catch (e) {
-    console.error('[cc-add-popover] innerHTML failed:', e);
-    return;
-  }
-  console.log('[cc-add-popover] step: appendChild');
   document.body.appendChild(pop);
-  console.log('[cc-add-popover] step: appended ok');
 
   // Posiciona abaixo do anchor
   const r = anchor.getBoundingClientRect();
@@ -464,12 +449,15 @@ function _openAddProjectPopover(anchor) {
   });
 
   // Close on outside click / ESC
-  const close = () => { pop.remove(); document.removeEventListener('click', outside, true); document.removeEventListener('keydown', esc); };
+  // ATENÇÃO: NÃO renomear `escHandler` pra `esc` — `esc` é a função global
+  // de escape HTML do módulo (linha 21). Shadow + TDZ causam ReferenceError
+  // em qualquer uso de esc() acima nesta função (bug 4.16.0 fix).
+  const close = () => { pop.remove(); document.removeEventListener('click', outside, true); document.removeEventListener('keydown', escHandler); };
   const outside = (ev) => { if (!pop.contains(ev.target) && ev.target !== anchor) close(); };
-  const esc = (ev) => { if (ev.key === 'Escape') close(); };
+  const escHandler = (ev) => { if (ev.key === 'Escape') close(); };
   setTimeout(() => {
     document.addEventListener('click', outside, true);
-    document.addEventListener('keydown', esc);
+    document.addEventListener('keydown', escHandler);
   }, 0);
 }
 
@@ -1134,11 +1122,9 @@ function bindHeaderEvents(container) {
     });
   });
   const addProjBtn = document.getElementById('cc-add-project');
-  console.log('[cc-bind] addProjBtn found?', !!addProjBtn);
   if (addProjBtn) {
     addProjBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      console.log('[cc-bind] add-project click handler fired');
       _openAddProjectPopover(addProjBtn);
     });
   }

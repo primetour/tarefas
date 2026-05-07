@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 16,
-  patch: 0,
-  build: '20260507-cc-multi-project-debug2',
+  patch: 1,
+  build: '20260507-cc-fix-popover-tdz-shadow',
 };
 
 /** "1.2.0" */
