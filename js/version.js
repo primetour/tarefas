@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 13,
+  minor: 14,
   patch: 0,
-  build: '20260507-bulk-task-update-monday-style',
+  build: '20260507-inline-edit-cells',
 };
 
 /** "1.2.0" */

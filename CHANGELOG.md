@@ -37,6 +37,82 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.14.0+20260507-inline-edit-cells] — 2026-05-07
+
+Release **MINOR** — Edição inline em células de tarefa, sem abrir o modal.
+
+### Pedido do user
+> "seria interessante mudar o status, area, prazo e responsáveis da tarefa sem ter que abrir ela"
+
+### UX entregue
+- **Hover em célula editável** → background dourado + cursor pointer (sinal claro)
+- **Click numa célula** → popover ancorado (mesmo estilo dos do bulk)
+- **Click numa opção** → updateTask single + toast "Atualizado · X"
+- **Não abre o modal** — só o título da tarefa abre modal (comportamento original)
+
+### Campos com inline edit
+
+| View | Campos |
+|---|---|
+| Lista (Tarefas) | Status, Área, Prazo, Responsáveis |
+| Kanban (Steps) | Prazo, Responsáveis (status segue via drag-and-drop) |
+
+> **Por que kanban não tem status inline?** Drag entre colunas já é o método primário pra mudar status — duplicar via popover gera ambiguidade. Bulk select continua disponível pra mudanças em massa.
+
+### Refator: `taskPopovers.js` (NOVO)
+
+Popovers extraídos do `bulkActionBar.js` e centralizados num módulo compartilhado:
+- `openDueDatePopover(anchor, { onPick, currentValue })`
+- `openStatusPopover(anchor, { onPick, currentValue })`
+- `openAreaPopover(anchor, { onPick, currentValue })` — **NOVO** (REQUESTING_AREAS)
+- `openAssigneesPopover(anchor, { onPick, currentValue, allUsers, multi })`
+- `openPriorityPopover` / `openProjectPopover` / `openNucleoPopover` (também disponíveis)
+- `closeTaskPopover()` — utilitário
+
+Cada popover destaca o valor atual com `✓` em cor dourada.
+
+### `bulkActionBar.js` agora delega
+
+Removidas ~280 linhas de implementação duplicada. O bulk bar agora é DRY:
+```js
+function popDueDate(btn)   { openDueDatePopover(btn,   { onPick: applyPatch }); }
+function popStatus(btn)    { openStatusPopover(btn,    { onPick: applyPatch }); }
+// ... etc
+```
+
+Bonus: bulk bar ganhou botão **▸ Área** (popover já existia, só faltava expor).
+
+### `tasks.js` (Lista)
+
+- 4 cells com `class="task-cell-edit" data-edit-field="..." data-edit-id="..."`
+- Click delegate captura `[data-edit-field]` e chama `_openInlineEditPopover(cell, field, task)`
+- Helper aplica `updateTask` single + atualiza local cache + re-renderiza sem refetch
+
+### `kanban.js` (Steps)
+
+- 2 cells (due + assignees) com `class="kb-cell-edit"`
+- Mesmo flow: handler intercepta antes do `openTaskModal`
+- `e.stopPropagation()` evita conflito com drag-and-drop
+
+### CSS
+
+```css
+.task-cell-edit:hover, .kb-cell-edit:hover {
+  background: rgba(212, 168, 67, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(212, 168, 67, 0.35);
+}
+```
+
+### Arquivos alterados
+- `js/components/taskPopovers.js` — NOVO (~370 linhas)
+- `js/components/bulkActionBar.js` — refatorado (-280 linhas)
+- `js/pages/tasks.js` — cells clickable + handler (~+50 linhas)
+- `js/pages/kanban.js` — cells clickable + handler (~+40 linhas)
+- `css/tasks.css` — `.task-cell-edit`, `.kb-cell-edit` hover styles
+- `js/version.js` — bump 4.13.0 → 4.14.0
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.13.0+20260507-bulk-task-update-monday-style] — 2026-05-07
 
 Release **MINOR** — Atualização em massa de tarefas estilo Monday.com, na lista E no Steps (Kanban).

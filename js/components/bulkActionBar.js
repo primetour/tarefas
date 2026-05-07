@@ -25,9 +25,12 @@
 import { store } from '../store.js';
 import { toast } from './toast.js';
 import {
-  STATUSES, PRIORITIES, NUCLEOS,
   bulkUpdateTasks, bulkDeleteTasks,
 } from '../services/tasks.js';
+import {
+  openDueDatePopover, openStatusPopover, openAreaPopover, openAssigneesPopover,
+  openPriorityPopover, openProjectPopover, openNucleoPopover, closeTaskPopover,
+} from './taskPopovers.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -76,6 +79,7 @@ export function mountBulkActionBar({
     <button data-action="priority"  class="bab-btn" title="Alterar prioridade">🔥 <span>Prioridade</span></button>
     <button data-action="status"    class="bab-btn" title="Alterar status">🚦 <span>Status</span></button>
     <button data-action="assignees" class="bab-btn" title="Alterar responsáveis">👤 <span>Responsável</span></button>
+    <button data-action="area"      class="bab-btn" title="Alterar área">▸ <span>Área</span></button>
     <button data-action="projectId" class="bab-btn" title="Alterar projeto">◈ <span>Projeto</span></button>
     <button data-action="nucleos"   class="bab-btn" title="Alterar núcleo">◉ <span>Núcleo</span></button>
     <button data-action="delete"    class="bab-btn bab-danger" title="Excluir">🗑 <span>Excluir</span></button>
@@ -145,49 +149,11 @@ export function mountBulkActionBar({
     document.head.appendChild(styleEl);
   }
 
-  // ─── Renderiza popover genérico ─────────────────────────
-  let popover = null;
-  const closePopover = () => {
-    if (popover) { popover.remove(); popover = null; }
-    document.removeEventListener('click', _outsideHandler, true);
-    document.removeEventListener('keydown', _escHandler);
-  };
-  const _outsideHandler = (e) => {
-    if (!popover) return;
-    if (popover.contains(e.target) || e.target.closest('.bab-btn')) return;
-    closePopover();
-  };
-  const _escHandler = (e) => { if (e.key === 'Escape') closePopover(); };
-
-  function openPopover(anchor, html) {
-    closePopover();
-    popover = document.createElement('div');
-    popover.className = 'bab-popover';
-    popover.innerHTML = html;
-    document.body.appendChild(popover);
-
-    // Posiciona acima do botão (já que a barra está no rodapé)
-    const r = anchor.getBoundingClientRect();
-    const pr = popover.getBoundingClientRect();
-    let left = r.left + r.width / 2 - pr.width / 2;
-    if (left < 8) left = 8;
-    if (left + pr.width > window.innerWidth - 8) left = window.innerWidth - pr.width - 8;
-    let top = r.top - pr.height - 8;
-    if (top < 8) top = r.bottom + 8;
-    popover.style.left = `${left}px`;
-    popover.style.top = `${top}px`;
-
-    setTimeout(() => {
-      document.addEventListener('click', _outsideHandler, true);
-      document.addEventListener('keydown', _escHandler);
-    }, 0);
-  }
-
   // ─── Handler genérico de batch update ───────────────────
   async function applyPatch(patch, label) {
     const ids = getSelectedIds();
     if (!ids.length) return;
-    closePopover();
+    closeTaskPopover();
     const items = ids.map(id => ({ id, data: patch }));
     try {
       const result = await bulkUpdateTasks(items);
@@ -201,188 +167,21 @@ export function mountBulkActionBar({
     if (typeof onAfterUpdate === 'function') await onAfterUpdate();
   }
 
-  // ─── Popovers individuais por ação ──────────────────────
-  function popDueDate(btn) {
-    openPopover(btn, `
-      <div class="bab-pop-header">Definir prazo</div>
-      <div style="padding:0 10px 10px;">
-        <input type="date" id="bab-due-input" class="bab-pop-input">
-      </div>
-      <div style="display:flex;gap:6px;padding:0 10px 10px;">
-        <button class="bab-btn" id="bab-due-apply" style="flex:1;">Aplicar</button>
-        <button class="bab-btn" id="bab-due-clear" style="background:transparent;border-color:var(--border-subtle);">Remover prazo</button>
-      </div>
-    `);
-    document.getElementById('bab-due-apply').addEventListener('click', () => {
-      const v = document.getElementById('bab-due-input').value;
-      if (!v) { toast.error('Selecione uma data ou clique em Remover prazo.'); return; }
-      // Salva como Date (Firestore serializa pra Timestamp)
-      applyPatch({ dueDate: new Date(v + 'T12:00:00') }, `prazo: ${v}`);
-    });
-    document.getElementById('bab-due-clear').addEventListener('click', () => {
-      applyPatch({ dueDate: null }, 'prazo removido');
-    });
-  }
+  // ─── Popovers (delegados ao taskPopovers compartilhado) ─
+  const onPick = (patch, label) => applyPatch(patch, label);
 
-  function popPriority(btn) {
-    openPopover(btn, `
-      <div class="bab-pop-header">Alterar prioridade</div>
-      ${PRIORITIES.map(p => `
-        <div class="bab-pop-item" data-val="${esc(p.value)}">
-          <span style="width:10px;height:10px;border-radius:50%;background:${p.color};"></span>
-          <span>${esc(p.label)}</span>
-        </div>
-      `).join('')}
-    `);
-    popover.querySelectorAll('.bab-pop-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const v = item.dataset.val;
-        const label = PRIORITIES.find(p => p.value === v)?.label || v;
-        applyPatch({ priority: v }, `prioridade: ${label}`);
-      });
-    });
-  }
-
-  function popStatus(btn) {
-    openPopover(btn, `
-      <div class="bab-pop-header">Alterar status</div>
-      ${STATUSES.map(s => `
-        <div class="bab-pop-item" data-val="${esc(s.value)}">
-          <span style="width:10px;height:10px;border-radius:50%;background:${s.color};"></span>
-          <span>${esc(s.label)}</span>
-        </div>
-      `).join('')}
-    `);
-    popover.querySelectorAll('.bab-pop-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const v = item.dataset.val;
-        const label = STATUSES.find(s => s.value === v)?.label || v;
-        const patch = { status: v };
-        // Quando marca como concluído, registra completedAt
-        if (v === 'done') patch.completedAt = new Date();
-        applyPatch(patch, `status: ${label}`);
-      });
-    });
-  }
-
-  function popAssignees(btn) {
-    const users = allUsers || (store.get('users') || []).filter(u => u.active !== false);
-    openPopover(btn, `
-      <div class="bab-pop-header">Definir responsável (substitui)</div>
-      <div style="padding:0 10px 8px;">
-        <input type="text" class="bab-pop-input" id="bab-assignee-search" placeholder="Buscar usuário…">
-      </div>
-      <div id="bab-assignee-list" style="max-height:240px;overflow-y:auto;padding:0 4px;">
-        ${users.map(u => `
-          <div class="bab-pop-item" data-val="${esc(u.id)}" data-name="${esc(u.name||'')}">
-            <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};
-              width:24px;height:24px;font-size:0.625rem;font-weight:600;color:#fff;
-              display:flex;align-items:center;justify-content:center;border-radius:50%;">
-              ${(u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
-            </div>
-            <div style="flex:1;min-width:0;">
-              <div style="font-size:0.8125rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(u.name || '—')}</div>
-              <div style="font-size:0.6875rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(u.email || '')}</div>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-      <div style="padding:8px 10px;border-top:1px solid var(--border-subtle);margin-top:4px;">
-        <button class="bab-btn" id="bab-assignee-clear" style="width:100%;background:transparent;border-color:var(--border-subtle);">
-          Remover todos os responsáveis
-        </button>
-      </div>
-    `);
-    const search = document.getElementById('bab-assignee-search');
-    const list = document.getElementById('bab-assignee-list');
-    search?.addEventListener('input', () => {
-      const q = search.value.toLowerCase();
-      list.querySelectorAll('.bab-pop-item').forEach(item => {
-        const n = (item.dataset.name || '').toLowerCase();
-        item.style.display = n.includes(q) ? '' : 'none';
-      });
-    });
-    list.querySelectorAll('.bab-pop-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const v = item.dataset.val;
-        applyPatch({ assignees: [v] }, `responsável: ${item.dataset.name}`);
-      });
-    });
-    document.getElementById('bab-assignee-clear').addEventListener('click', () => {
-      applyPatch({ assignees: [] }, 'sem responsável');
-    });
-  }
-
-  function popProject(btn) {
-    openPopover(btn, `
-      <div class="bab-pop-header">Mover para projeto</div>
-      <div style="padding:0 10px 8px;">
-        <input type="text" class="bab-pop-input" id="bab-proj-search" placeholder="Buscar projeto…">
-      </div>
-      <div id="bab-proj-list" style="max-height:280px;overflow-y:auto;padding:0 4px;">
-        ${(allProjects||[]).filter(p => !p.archived).map(p => `
-          <div class="bab-pop-item" data-val="${esc(p.id)}" data-name="${esc(p.name||'')}">
-            <span style="font-size:1rem;">${esc(p.icon || '📦')}</span>
-            <span style="flex:1;color:var(--text-primary);">${esc(p.name || '—')}</span>
-          </div>
-        `).join('')}
-      </div>
-      <div style="padding:8px 10px;border-top:1px solid var(--border-subtle);margin-top:4px;">
-        <button class="bab-btn" id="bab-proj-clear" style="width:100%;background:transparent;border-color:var(--border-subtle);">
-          Tirar do projeto
-        </button>
-      </div>
-    `);
-    const search = document.getElementById('bab-proj-search');
-    const list = document.getElementById('bab-proj-list');
-    search?.addEventListener('input', () => {
-      const q = search.value.toLowerCase();
-      list.querySelectorAll('.bab-pop-item').forEach(item => {
-        const n = (item.dataset.name || '').toLowerCase();
-        item.style.display = n.includes(q) ? '' : 'none';
-      });
-    });
-    list.querySelectorAll('.bab-pop-item').forEach(item => {
-      item.addEventListener('click', () => {
-        applyPatch({ projectId: item.dataset.val }, `projeto: ${item.dataset.name}`);
-      });
-    });
-    document.getElementById('bab-proj-clear').addEventListener('click', () => {
-      applyPatch({ projectId: null }, 'sem projeto');
-    });
-  }
-
-  function popNucleo(btn) {
-    openPopover(btn, `
-      <div class="bab-pop-header">Alterar núcleo (substitui)</div>
-      ${NUCLEOS.map(n => `
-        <div class="bab-pop-item" data-val="${esc(n.value)}">
-          <span style="color:var(--brand-gold);">◈</span>
-          <span>${esc(n.label)}</span>
-        </div>
-      `).join('')}
-      <div style="padding:8px 10px;border-top:1px solid var(--border-subtle);margin-top:4px;">
-        <button class="bab-btn" id="bab-nuc-clear" style="width:100%;background:transparent;border-color:var(--border-subtle);">
-          Remover núcleo
-        </button>
-      </div>
-    `);
-    popover.querySelectorAll('.bab-pop-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const v = item.dataset.val;
-        const label = NUCLEOS.find(n => n.value === v)?.label || v;
-        applyPatch({ nucleos: [v] }, `núcleo: ${label}`);
-      });
-    });
-    document.getElementById('bab-nuc-clear').addEventListener('click', () => {
-      applyPatch({ nucleos: [] }, 'sem núcleo');
-    });
-  }
+  function popDueDate(btn)   { openDueDatePopover(btn,   { onPick }); }
+  function popPriority(btn)  { openPriorityPopover(btn,  { onPick }); }
+  function popStatus(btn)    { openStatusPopover(btn,    { onPick }); }
+  function popArea(btn)      { openAreaPopover(btn,      { onPick }); }
+  function popAssignees(btn) { openAssigneesPopover(btn, { onPick, allUsers, multi: true }); }
+  function popProject(btn)   { openProjectPopover(btn,   { onPick, allProjects }); }
+  function popNucleo(btn)    { openNucleoPopover(btn,    { onPick }); }
 
   async function handleDelete() {
     const ids = getSelectedIds();
     if (!ids.length) return;
-    closePopover();
+    closeTaskPopover();
     const ok = confirm(`Excluir ${ids.length} tarefa${ids.length!==1?'s':''} permanentemente?\n\nEsta ação NÃO pode ser desfeita.`);
     if (!ok) return;
     const ok2 = confirm(`⚠ CONFIRMAÇÃO FINAL: ${ids.length} tarefa(s) serão apagadas. Continuar?`);
@@ -406,6 +205,7 @@ export function mountBulkActionBar({
         case 'dueDate':   popDueDate(btn);   break;
         case 'priority':  popPriority(btn);  break;
         case 'status':    popStatus(btn);    break;
+        case 'area':      popArea(btn);      break;
         case 'assignees': popAssignees(btn); break;
         case 'projectId': popProject(btn);   break;
         case 'nucleos':   popNucleo(btn);    break;
@@ -415,7 +215,7 @@ export function mountBulkActionBar({
   });
 
   document.getElementById(`${BAR_ID}-close`).addEventListener('click', () => {
-    closePopover();
+    closeTaskPopover();
     if (typeof onClear === 'function') onClear();
   });
 
@@ -426,7 +226,7 @@ export function mountBulkActionBar({
       this.update();
     },
     hide() {
-      closePopover();
+      closeTaskPopover();
       el.style.transform = 'translateX(-50%) translateY(140%)';
     },
     update() {
@@ -437,7 +237,7 @@ export function mountBulkActionBar({
       else this.show();
     },
     destroy() {
-      closePopover();
+      closeTaskPopover();
       el.remove();
     },
   };

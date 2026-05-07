@@ -1120,7 +1120,8 @@ function renderTaskRow(task) {
           })() : ''}
         </div>
       </div>
-      <div>
+      <div class="task-cell-edit" data-edit-field="status" data-edit-id="${task.id}"
+        title="Click pra alterar status">
         <span class="badge badge-status-${task.status}" style="font-size:0.6875rem;">
           ${status.label}
         </span>
@@ -1143,11 +1144,21 @@ function renderTaskRow(task) {
             }).join('');
         })()}
       </div>
-      <div style="font-size:0.8125rem; color:var(--text-muted);">
-        ${task.requestingArea ? esc(task.requestingArea) : '—'}
+      <div class="task-cell-edit" data-edit-field="area" data-edit-id="${task.id}"
+        title="Click pra alterar área"
+        style="font-size:0.8125rem; color:var(--text-muted);">
+        ${task.requestingArea ? esc(task.requestingArea) : '<span style="opacity:.5;">—</span>'}
       </div>
-      <div class="kanban-card-due ${dueClass}" style="font-size:0.8125rem;">${dueText}</div>
-      <div style="display:flex; align-items:center;">${assignees}${extraAssignees}</div>
+      <div class="task-cell-edit kanban-card-due ${dueClass}"
+        data-edit-field="dueDate" data-edit-id="${task.id}"
+        title="Click pra alterar prazo"
+        style="font-size:0.8125rem;">${dueText || '<span style="opacity:.5;">—</span>'}</div>
+      <div class="task-cell-edit" data-edit-field="assignees" data-edit-id="${task.id}"
+        title="Click pra alterar responsáveis"
+        style="display:flex; align-items:center;">
+        ${assignees}${extraAssignees}
+        ${assigneesArr.length === 0 ? '<span style="opacity:.5;font-size:0.75rem;">—</span>' : ''}
+      </div>
     </div>
 
   `;
@@ -1542,6 +1553,18 @@ async function _handleDelegatedClick(e) {
     if (_selectedTaskIds.has(id)) _selectedTaskIds.delete(id);
     else                          _selectedTaskIds.add(id);
     _refreshBulkUi();
+    return;
+  }
+
+  // --- Inline edit em célula (status/area/prazo/responsáveis) ---
+  const editCell = e.target.closest('.task-cell-edit[data-edit-field][data-edit-id]');
+  if (editCell) {
+    e.stopPropagation();
+    const field = editCell.dataset.editField;
+    const id    = editCell.dataset.editId;
+    const task  = allTasks.find(t => t.id === id);
+    if (!task) return;
+    await _openInlineEditPopover(editCell, field, task);
     return;
   }
 
@@ -2172,6 +2195,49 @@ const exportTasksPdf = withExportGuard(async function exportTasksPdf() {
   doc.save(`primetour_tarefas_${new Date().toISOString().slice(0, 10)}.pdf`);
   toast.success('PDF exportado.');
 });
+
+/* \u2500\u2500\u2500 Inline edit (popovers em c\u00e9lulas da linha) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+ * Click numa c\u00e9lula edit\u00e1vel (status/\u00e1rea/prazo/respons\u00e1veis) abre o
+ * popover compartilhado e dispara updateTask single ao escolher op\u00e7\u00e3o.
+ */
+async function _openInlineEditPopover(anchor, field, task) {
+  const { updateTask } = await import('../services/tasks.js');
+  const popovers = await import('../components/taskPopovers.js');
+
+  const onPick = async (patch, label) => {
+    try {
+      await updateTask(task.id, patch);
+      // Atualiza local cache pra UI refletir sem aguardar fetch
+      Object.assign(task, patch);
+      const idx = allTasks.findIndex(t => t.id === task.id);
+      if (idx >= 0) Object.assign(allTasks[idx], patch);
+      const idx2 = filteredTasks.findIndex(t => t.id === task.id);
+      if (idx2 >= 0) Object.assign(filteredTasks[idx2], patch);
+      renderTaskList();
+      toast.success(`Atualizado \u00b7 ${label}`);
+    } catch (e) {
+      toast.error('Falha: ' + (e.message || 'erro desconhecido'));
+    }
+  };
+
+  switch (field) {
+    case 'status':
+      popovers.openStatusPopover(anchor, { onPick, currentValue: task.status });
+      break;
+    case 'area':
+      popovers.openAreaPopover(anchor, { onPick, currentValue: task.requestingArea });
+      break;
+    case 'dueDate':
+      popovers.openDueDatePopover(anchor, { onPick, currentValue: task.dueDate });
+      break;
+    case 'assignees':
+      popovers.openAssigneesPopover(anchor, {
+        onPick, currentValue: task.assignees, multi: true,
+        allUsers: store.get('users') || [],
+      });
+      break;
+  }
+}
 
 /* \u2500\u2500\u2500 Bulk Action Bar wiring \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 

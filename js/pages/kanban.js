@@ -879,10 +879,15 @@ function renderKanbanCard(task, type = null) {
       })() : ''}
       ${renderCardFields(task, { compact: true, skipFields: ['dueDate', 'assignees'] })}
       <div class="kanban-card-meta">
-        <div class="kanban-card-due ${dueClass}">
-          ${dueText ? `📅 ${dueText}` : ''}
+        <div class="kanban-card-due kb-cell-edit ${dueClass}"
+          data-edit-field="dueDate" data-edit-id="${task.id}"
+          title="Click pra alterar prazo">
+          ${dueText ? `📅 ${dueText}` : '📅 —'}
         </div>
-        <div style="display:flex;align-items:center;margin-left:6px;">${assignees}</div>
+        <div class="kb-cell-edit"
+          data-edit-field="assignees" data-edit-id="${task.id}"
+          title="Click pra alterar responsáveis"
+          style="display:flex;align-items:center;margin-left:6px;">${assignees || '<span style="opacity:.5;font-size:0.75rem;">—</span>'}</div>
       </div>
     </div>
   `;
@@ -914,6 +919,19 @@ function bindCardDrag(card) {
       if (_selectedTaskIds.has(id)) _selectedTaskIds.delete(id);
       else                          _selectedTaskIds.add(id);
       _refreshKanbanBulkUi();
+      dragTask = null;
+      return;
+    }
+
+    // Click numa célula com edição inline (prazo / responsáveis) → popover
+    const editCell = e.target.closest('.kb-cell-edit[data-edit-field][data-edit-id]');
+    if (editCell) {
+      e.stopPropagation();
+      const field = editCell.dataset.editField;
+      const id    = editCell.dataset.editId;
+      const task  = allTasks.find(t => t.id === id);
+      if (!task) return;
+      await _openKanbanInlineEdit(editCell, field, task);
       dragTask = null;
       return;
     }
@@ -1275,6 +1293,40 @@ function renderKanbanCardPipelineExtra(task, type) {
       ${esc(f.label)}: <span style="color:var(--text-secondary);">${esc(display)}</span>
     </div>`;
   }).join('');
+}
+
+/* ─── Inline edit popover (prazo / responsáveis) ──────────
+ * Click numa célula do card abre o popover compartilhado.
+ */
+async function _openKanbanInlineEdit(anchor, field, task) {
+  const { updateTask } = await import('../services/tasks.js');
+  const popovers = await import('../components/taskPopovers.js');
+
+  const onPick = async (patch, label) => {
+    try {
+      await updateTask(task.id, patch);
+      // Subscribe vai trazer dados frescos. Atualiza local pra UI imediata.
+      Object.assign(task, patch);
+      const idx = allTasks.findIndex(t => t.id === task.id);
+      if (idx >= 0) Object.assign(allTasks[idx], patch);
+      renderCards(allTasks);
+      toast.success(`Atualizado · ${label}`);
+    } catch (e) {
+      toast.error('Falha: ' + (e.message || 'erro desconhecido'));
+    }
+  };
+
+  switch (field) {
+    case 'dueDate':
+      popovers.openDueDatePopover(anchor, { onPick, currentValue: task.dueDate });
+      break;
+    case 'assignees':
+      popovers.openAssigneesPopover(anchor, {
+        onPick, currentValue: task.assignees, multi: true,
+        allUsers: store.get('users') || [],
+      });
+      break;
+  }
 }
 
 /* ─── Bulk select UI refresh ──────────────────────────────── */
