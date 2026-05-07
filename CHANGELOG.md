@@ -37,6 +37,47 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.14.1+20260507-inline-edit-typestep] — 2026-05-07
+
+Release **PATCH** — Adiciona Tipo/Etapa à edição inline na lista.
+
+### Pedido do user
+> "faltou fazer em tipo/etapa"
+
+### Implementação
+
+#### Novo: `openTypeStepPopover(anchor, { onPick, task, allTaskTypes })`
+
+Popover **dual** com 2 seções:
+1. **TIPO** — lista todos os tipos disponíveis: built-in (Padrão, Newsletter) + custom types do Firestore
+2. **ETAPA** — depende do tipo atual:
+   - Newsletter → 9 NEWSLETTER_STATUSES (Pauta, Conteúdo técnico, Redação, Design, Revisão, Tarifa e dispo, Agendado, Disparado, Análise de Dados)
+   - Custom types → seu array `steps[]`
+   - Padrão (sem tipo) → mensagem "este tipo não tem etapas"
+
+### Lógica de patch
+
+Click numa **Tipo**:
+- Se mudou de tipo → patch limpa step antigo (`newsletterStatus: ''` ou `customFields.currentStep: ''`) pra forçar re-escolha consistente
+- `task.type` recebe valor built-in ou null
+- `task.typeId` recebe id do custom type ou null
+
+Click numa **Etapa**:
+- Se tipo é Newsletter → patch `{ newsletterStatus: v }`
+- Se tipo é custom → patch `{ customFields: { ..., currentStep: v } }`
+
+### `tasks.js`
+
+- Cell "Tipo/Etapa" virou `class="task-cell-edit" data-edit-field="typeStep"`
+- Switch case adicionado em `_openInlineEditPopover` chamando `openTypeStepPopover` com `pageTaskTypes`
+
+### Arquivos alterados
+- `js/components/taskPopovers.js` — `openTypeStepPopover` (~+130 linhas)
+- `js/pages/tasks.js` — cell clickable + case 'typeStep'
+- `js/version.js` — bump 4.14.0 → 4.14.1
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.14.0+20260507-inline-edit-cells] — 2026-05-07
 
 Release **MINOR** — Edição inline em células de tarefa, sem abrir o modal.

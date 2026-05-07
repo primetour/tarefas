@@ -1126,8 +1126,10 @@ function renderTaskRow(task) {
           ${status.label}
         </span>
       </div>
-      <div style="font-size:0.8125rem;">
-        ${typeLabel ? `<div style="color:var(--text-secondary);">${esc(typeLabel)}</div>` : '—'}
+      <div class="task-cell-edit" data-edit-field="typeStep" data-edit-id="${task.id}"
+        title="Click pra alterar tipo/etapa"
+        style="font-size:0.8125rem;">
+        ${typeLabel ? `<div style="color:var(--text-secondary);">${esc(typeLabel)}</div>` : '<span style="opacity:.5;">—</span>'}
         ${nlStatus ? `<div style="font-size:0.75rem;color:var(--brand-gold);margin-top:2px;">↳ ${esc(nlStatus)}</div>` : ''}
         ${(() => {
           // Show showInList custom fields for this task's type
@@ -2234,6 +2236,11 @@ async function _openInlineEditPopover(anchor, field, task) {
       popovers.openAssigneesPopover(anchor, {
         onPick, currentValue: task.assignees, multi: true,
         allUsers: store.get('users') || [],
+      });
+      break;
+    case 'typeStep':
+      popovers.openTypeStepPopover(anchor, {
+        onPick, task, allTaskTypes: pageTaskTypes,
       });
       break;
   }

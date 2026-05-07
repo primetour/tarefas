@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 14,
-  patch: 0,
-  build: '20260507-inline-edit-cells',
+  patch: 1,
+  build: '20260507-inline-edit-typestep',
 };
 
 /** "1.2.0" */

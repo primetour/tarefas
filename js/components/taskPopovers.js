@@ -18,6 +18,7 @@
 import { store } from '../store.js';
 import {
   STATUSES, PRIORITIES, NUCLEOS, REQUESTING_AREAS,
+  TASK_TYPES, NEWSLETTER_STATUSES,
 } from '../services/tasks.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -411,5 +412,148 @@ export function openNucleoPopover(anchor, { onPick, currentValue = [] } = {}) {
   pop.querySelector('#tp-nuc-clear').addEventListener('click', () => {
     closeTaskPopover();
     onPick?.({ nucleos: [] }, 'sem núcleo');
+  });
+}
+
+/* ─── Tipo + Etapa (combinado) ─────────────────────────────
+ * Popover dual: seção TIPO (mostra todos os tipos disponíveis) +
+ * seção ETAPA (steps do tipo atual da tarefa).
+ *
+ * Como funciona:
+ * - Click num tipo → muda type/typeId. Se for Newsletter, limpa
+ *   newsletterStatus pra forçar o user a re-escolher etapa.
+ * - Click numa etapa → muda newsletterStatus (newsletter) ou
+ *   customFields.currentStep (custom type).
+ *
+ * task: { type, typeId, newsletterStatus, customFields }
+ * allTaskTypes: array de custom types do Firestore (com .steps[])
+ */
+export function openTypeStepPopover(anchor, { onPick, task, allTaskTypes = [] } = {}) {
+  const t = task || {};
+
+  // Identifica o tipo CORRENTE da task
+  // - Se tem typeId, é custom type (id no Firestore)
+  // - Senão, usa task.type (vazio = Padrão, 'newsletter' = Newsletter built-in)
+  const currentTypeKey = t.typeId
+    ? `custom:${t.typeId}`
+    : (t.type ? `builtin:${t.type}` : 'builtin:');
+
+  // Catálogo unificado de tipos: built-in + custom
+  // [{ key, label, kind: 'builtin'|'custom', value, id, steps[]? }]
+  const builtinList = TASK_TYPES.map(tt => ({
+    key:   `builtin:${tt.value}`,
+    label: tt.label,
+    kind:  'builtin',
+    value: tt.value,                 // '' (Padrão) ou 'newsletter'
+    steps: tt.value === 'newsletter' ? NEWSLETTER_STATUSES : [],
+  }));
+  const customList = (allTaskTypes || []).map(ct => ({
+    key:   `custom:${ct.id}`,
+    label: `${ct.icon || '◈'} ${ct.name}`,
+    kind:  'custom',
+    id:    ct.id,
+    steps: (ct.steps || []).map(s => ({ value: s.id, label: s.label || s.name })),
+  }));
+  const allTypes = [...builtinList, ...customList];
+  const currentType = allTypes.find(tt => tt.key === currentTypeKey) || allTypes[0];
+  // Etapa corrente
+  const currentStepValue = t.type === 'newsletter'
+    ? t.newsletterStatus
+    : (t.customFields?.currentStep || '');
+
+  const pop = mountPopover(anchor, `
+    <div class="tp-pop-header">Tipo e etapa</div>
+
+    <!-- Seção TIPO -->
+    <div style="padding:0 6px 4px;">
+      <div style="font-size:0.625rem;color:var(--text-muted);font-weight:600;
+        text-transform:uppercase;letter-spacing:0.04em;padding:4px 6px 2px;">Tipo</div>
+      <div id="tp-type-list" style="max-height:160px;overflow-y:auto;">
+        ${allTypes.map(tt => `
+          <div class="tp-pop-item" data-type-key="${esc(tt.key)}"
+            ${tt.key === currentTypeKey ? 'style="background:var(--bg-elevated);"' : ''}>
+            <span style="font-size:0.875rem;">${esc(tt.label)}</span>
+            ${tt.key === currentTypeKey ? `<span style="margin-left:auto;color:var(--brand-gold);">✓</span>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    ${currentType.steps?.length ? `
+    <!-- Seção ETAPA (depende do tipo atual) -->
+    <div style="padding:6px 6px 4px;border-top:1px solid var(--border-subtle);margin-top:6px;">
+      <div style="font-size:0.625rem;color:var(--text-muted);font-weight:600;
+        text-transform:uppercase;letter-spacing:0.04em;padding:4px 6px 2px;">Etapa de ${esc(currentType.label)}</div>
+      <div id="tp-step-list" style="max-height:200px;overflow-y:auto;">
+        ${currentType.steps.map(s => `
+          <div class="tp-pop-item" data-step-value="${esc(s.value)}"
+            ${s.value === currentStepValue ? 'style="background:var(--bg-elevated);"' : ''}>
+            <span style="color:var(--brand-gold);">↳</span>
+            <span>${esc(s.label)}</span>
+            ${s.value === currentStepValue ? `<span style="margin-left:auto;color:var(--brand-gold);">✓</span>` : ''}
+          </div>
+        `).join('')}
+        <div class="tp-pop-item" data-step-value=""
+          style="opacity:.7;font-style:italic;">
+          <span>—</span><span>Sem etapa</span>
+        </div>
+      </div>
+    </div>
+    ` : `
+    <div style="padding:8px 12px;border-top:1px solid var(--border-subtle);margin-top:6px;
+      font-size:0.6875rem;color:var(--text-muted);font-style:italic;">
+      Este tipo não tem etapas definidas.
+    </div>
+    `}
+  `);
+
+  // ── Click em TIPO ──────────────────────────────────────
+  pop.querySelectorAll('#tp-type-list .tp-pop-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const key = item.dataset.typeKey;
+      const tt = allTypes.find(x => x.key === key);
+      if (!tt) return;
+      // Patch: limpa typeId/type/newsletterStatus/currentStep e seta o novo
+      const patch = {
+        type:    tt.kind === 'builtin' ? tt.value : null,
+        typeId:  tt.kind === 'custom'  ? tt.id    : null,
+      };
+      // Limpa step antigo se trocou de tipo (incompatível)
+      if (currentTypeKey !== tt.key) {
+        if (tt.kind === 'builtin' && tt.value === 'newsletter') {
+          patch.newsletterStatus = '';
+        } else if (tt.kind === 'custom') {
+          patch.customFields = { ...(t.customFields || {}), currentStep: '' };
+        } else {
+          // Padrão: limpa ambos por segurança
+          patch.newsletterStatus = '';
+          if (t.customFields?.currentStep) {
+            patch.customFields = { ...(t.customFields || {}), currentStep: '' };
+          }
+        }
+      }
+      closeTaskPopover();
+      onPick?.(patch, `tipo: ${tt.label.replace(/^[^\s]+\s/, '')}`);
+    });
+  });
+
+  // ── Click em ETAPA ─────────────────────────────────────
+  pop.querySelectorAll('#tp-step-list .tp-pop-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const v = item.dataset.stepValue;
+      let patch;
+      let label;
+      if (currentType.kind === 'builtin' && currentType.value === 'newsletter') {
+        patch = { newsletterStatus: v };
+        label = NEWSLETTER_STATUSES.find(s => s.value === v)?.label || (v ? v : 'sem etapa');
+      } else if (currentType.kind === 'custom') {
+        patch = { customFields: { ...(t.customFields || {}), currentStep: v } };
+        label = currentType.steps.find(s => s.value === v)?.label || (v ? v : 'sem etapa');
+      } else {
+        return;
+      }
+      closeTaskPopover();
+      onPick?.(patch, `etapa: ${label}`);
+    });
   });
 }
