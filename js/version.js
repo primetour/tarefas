@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 19,
+  minor: 20,
   patch: 0,
-  build: '20260507-icons-single-source-of-truth',
+  build: '20260507-ui-chrome-svg-icons',
 };
 
 /** "1.2.0" */

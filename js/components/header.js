@@ -172,7 +172,7 @@ export class Header {
       </div>
 
       <div class="header-search">
-        <span class="header-search-icon">🔍</span>
+        <span class="header-search-icon" style="display:inline-flex;align-items:center;">${renderIcon('search', { size: 16 })}</span>
         <input
           type="text"
           class="header-search-input"
@@ -189,8 +189,8 @@ export class Header {
           margin-right:8px;"></div>
 
         <button class="header-action-btn" id="notif-btn" title="Notificações"
-          style="position:relative;">
-          🔔
+          style="position:relative;display:inline-flex;align-items:center;justify-content:center;">
+          ${renderIcon('bell', { size: 18 })}
           <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;
             min-width:16px;height:16px;border-radius:8px;background:#EF4444;color:#fff;
             font-size:0.5625rem;font-weight:700;line-height:16px;text-align:center;
@@ -199,8 +199,9 @@ export class Header {
 
         <div class="dropdown" style="position:relative;">
           <button class="header-action-btn" id="palette-toggle-btn"
-            title="Paleta de cores">
-            🎨
+            title="Paleta de cores"
+            style="display:inline-flex;align-items:center;justify-content:center;">
+            ${renderIcon('palette', { size: 18 })}
           </button>
           <div class="dropdown-menu palette-dropdown" id="palette-dropdown"
             style="display:none;min-width:220px;max-height:480px;overflow-y:auto;">
@@ -208,8 +209,9 @@ export class Header {
           </div>
         </div>
 
-        <button class="header-action-btn" id="help-btn" title="Ajuda">
-          ❓
+        <button class="header-action-btn" id="help-btn" title="Ajuda"
+          style="display:inline-flex;align-items:center;justify-content:center;">
+          ${renderIcon('help', { size: 18 })}
         </button>
 
         <div class="dropdown">

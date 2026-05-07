@@ -6,6 +6,7 @@ import { modal }  from './modal.js';
 import { toast }  from './toast.js';
 import { store }  from '../store.js';
 import { renderPickerButton, bindOptionPicker } from './optionPicker.js';
+import { renderIcon } from './icons.js';
 import { enhanceDatepickers } from './datepickerEnhance.js';
 import {
   createTask, updateTask, deleteTask,
@@ -234,7 +235,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
       task.sector || currentTaskType?.sector || store.get('userSector') || null, allAbsences),
     footer: [
       ...(isEdit && store.can('task_delete') ? [{
-        label:'🗑 Excluir', class:'btn-danger btn-sm', closeOnClick:false,
+        label:`${renderIcon('trash',{size:14})} <span style="vertical-align:middle;">Excluir</span>`, class:'btn-danger btn-sm', closeOnClick:false,
         onClick: async (_,{close}) => {
           if (await modal.confirm({ title:'Excluir tarefa', message:`Excluir "<strong>${esc(task.title)}</strong>"?`, confirmText:'Excluir', danger:true, icon:'🗑️' })) {
             try { await deleteTask(task.id); toast.success('Tarefa excluída.'); _bypassDirtyCheck = true; close(); onSave?.(); }
@@ -253,7 +254,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
       // ainda não está done e o user tem permissão. Reusa o overlay de
       // conclusão (evidência/CSAT) pra paridade com o check da lista.
       ...(isEdit && task.status !== 'done' && store.can('task_complete') ? [{
-        label:'✓ Concluir tarefa', class:'btn-success', closeOnClick:false,
+        label:`${renderIcon('check',{size:14})} <span style="vertical-align:middle;">Concluir tarefa</span>`, class:'btn-success', closeOnClick:false,
         onClick: async (_,{close}) => {
           try {
             const { toggleTaskComplete, getTask } = await import('../services/tasks.js');

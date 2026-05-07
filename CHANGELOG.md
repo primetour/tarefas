@@ -37,6 +37,49 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.20.0+20260507-ui-chrome-svg-icons] — 2026-05-07
+
+Release **MINOR** — UI chrome universal: header secondary actions, toasts e botões de ação migram pra SVG.
+
+### Pedido do user
+> "pensando por esse mesmo raciocínio, o certo era ter a mesma biblioteca de ícones para tudo, não concorda? projetos, squads, tipo de tarefa, áreas… notificações, paleta de cores, ajuda, dashs, IA…"
+>
+> "fase a - ok, user content - B1"
+
+### Decisão (escopo Fase A)
+- **UI chrome (sistema)** → SVG via `icons.js` (single source of truth).
+  Inclui: notificações (sino), busca, paleta, ajuda, toasts (success/error/warning/info + close) e botões universais de ação (✎ editar, ↺ desfazer, 🗑 excluir, + adicionar).
+- **User content** → mantém **B1**: emojis seguem editáveis em projetos, squads, tipos de tarefa e áreas (campo aberto, customizável pelo user).
+
+### Implementação
+1. `js/components/icons.js` — +21 chaves novas (UI chrome):
+   `bell`, `search`, `palette`, `plus`, `edit`, `edit-pencil`, `trash`,
+   `rotate-ccw`, `check`, `x`, `check-circle`, `x-circle`,
+   `alert-triangle`, `info-circle`, `chevron-down`, `chevron-right`,
+   `more-vertical`, `external-link`, `download`, `upload`, `filter`.
+2. `js/components/header.js` — botões 🔔/🔍/🎨/❓ → `renderIcon('bell'|'search'|'palette'|'help')`.
+3. `js/components/toast.js` — glifos Unicode `✓ ✕ ⚠ ℹ` no ícone do toast → `check-circle / x-circle / alert-triangle / info-circle`. Botão de fechar `✕` → `renderIcon('x')`.
+4. `js/components/taskModal.js` — footer: `🗑 Excluir` → `renderIcon('trash') + Excluir`; `✓ Concluir tarefa` → `renderIcon('check') + Concluir tarefa`.
+5. `js/components/bulkActionBar.js` — botão `🗑 Excluir` e fechamento `✕` migrados pra SVG.
+
+### Não-objetivos (deliberados nesta release)
+- Botões categóricos da bulk action bar (📅 Prazo, 🔥 Prioridade, 🚦 Status, 👤 Responsável, ▸ Área, ◈ Projeto, ◉ Núcleo) — adiados.
+- H1 emojis em pages individuais (header global já renderiza ícone canônico) — limpeza pendente.
+- Painéis (insights, notification, ai, help) com `✕` próprio — pendente.
+
+### Por que importa
+Toast quebrava ao tentar usar variável `ICONS` removida (ReferenceError). Esta release fecha o gap entre a padronização v4.19 (sidebar/header) e o resto do chrome do sistema. User content continua livre — só o sistema ganha consistência visual.
+
+### Files
+- `js/components/icons.js`
+- `js/components/header.js`
+- `js/components/toast.js`
+- `js/components/taskModal.js`
+- `js/components/bulkActionBar.js`
+- `js/version.js`, `index.html`
+
+---
+
 ## [4.19.0+20260507-icons-single-source-of-truth] — 2026-05-07
 
 Release **MINOR** — Padronização: ícone do header global = ícone do sidebar.

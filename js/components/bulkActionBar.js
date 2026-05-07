@@ -24,6 +24,7 @@
 
 import { store } from '../store.js';
 import { toast } from './toast.js';
+import { renderIcon } from './icons.js';
 import {
   bulkUpdateTasks, bulkDeleteTasks,
 } from '../services/tasks.js';
@@ -82,10 +83,10 @@ export function mountBulkActionBar({
     <button data-action="area"      class="bab-btn" title="Alterar área">▸ <span>Área</span></button>
     <button data-action="projectId" class="bab-btn" title="Alterar projeto">◈ <span>Projeto</span></button>
     <button data-action="nucleos"   class="bab-btn" title="Alterar núcleo">◉ <span>Núcleo</span></button>
-    <button data-action="delete"    class="bab-btn bab-danger" title="Excluir">🗑 <span>Excluir</span></button>
+    <button data-action="delete"    class="bab-btn bab-danger" title="Excluir">${renderIcon('trash',{size:14})} <span>Excluir</span></button>
     <button id="${BAR_ID}-close" title="Limpar seleção"
       style="background:none;border:none;color:var(--text-muted);cursor:pointer;
-      font-size:1rem;padding:4px 8px;margin-left:4px;">✕</button>
+      display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;margin-left:4px;">${renderIcon('x',{size:16})}</button>
   `;
   document.body.appendChild(el);
 
