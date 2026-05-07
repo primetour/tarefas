@@ -390,6 +390,7 @@ function _openAddProjectPopover(anchor) {
     return;
   }
 
+  console.log('[cc-add-popover] step: createElement');
   const pop = document.createElement('div');
   pop.className = 'cc-project-popover';
   pop.style.cssText = `
@@ -398,7 +399,9 @@ function _openAddProjectPopover(anchor) {
     border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,0.5);
     padding:8px; min-width:260px; max-width:340px;
   `;
-  pop.innerHTML = `
+  console.log('[cc-add-popover] step: setting innerHTML');
+  try {
+    pop.innerHTML = `
     <div style="font-size:0.6875rem;color:var(--text-muted);padding:6px 10px 8px;
       border-bottom:1px solid var(--border-subtle);margin-bottom:6px;
       text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">
@@ -421,7 +424,13 @@ function _openAddProjectPopover(anchor) {
       `).join('')}
     </div>
   `;
+  } catch (e) {
+    console.error('[cc-add-popover] innerHTML failed:', e);
+    return;
+  }
+  console.log('[cc-add-popover] step: appendChild');
   document.body.appendChild(pop);
+  console.log('[cc-add-popover] step: appended ok');
 
   // Posiciona abaixo do anchor
   const r = anchor.getBoundingClientRect();
