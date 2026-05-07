@@ -51,6 +51,11 @@ let filterObserver       = '';     // UID — quem é observer; típico cardstat
 let filterOpen           = false;  // !done && !cancelled — cardstat "Minhas Abertas"
 let filterCompletedToday = false;  // done && completedAt é hoje — cardstat "Concluídas Hoje"
 let filterPartnership    = false;  // task.isPartnership — cardstat "Parcerias"
+// 4.23+ — drill-down do card "Pontualidade" do dashboard de produtividade.
+// Granularidade pra mostrar exatamente o sub-cenário descrito no card.
+let filterCompletedOnTime    = false; // done && completedAt <= dueDate
+let filterCompletedLate      = false; // done && completedAt > dueDate
+let filterCompletedNoDueDate = false; // done && !dueDate
 
 // 4.13+ — Bulk select (Monday-style): IDs selecionados pra batch update.
 // Action bar flutuante (bulkActionBar.js) aparece quando size > 0.
@@ -104,6 +109,10 @@ export async function renderTasks(container) {
   let urlOpen        = false;       // status != done && status != cancelled
   let urlCompletedToday = false;    // status==='done' && completedAt é hoje
   let urlPartnership = false;
+  // 4.23+ — drill-down do card "Pontualidade" do dashboard
+  let urlCompletedOnTime    = false; // done && completedAt <= dueDate
+  let urlCompletedLate      = false; // done && completedAt > dueDate
+  let urlCompletedNoDueDate = false; // done && !dueDate
   let urlArchived    = false;       // ?archived=1 ativa toggle "Mostrar arquivadas"
   try {
     const rawHash = window.location.hash || '';
@@ -122,6 +131,10 @@ export async function renderTasks(container) {
       urlOpen     = qs.get('open') === '1';
       urlCompletedToday = qs.get('completedToday') === '1';
       urlPartnership = qs.get('partnership') === '1';
+      // 4.23+ — filtros do dashboard de Pontualidade (cards clicáveis)
+      urlCompletedOnTime    = qs.get('completedOnTime')    === '1';
+      urlCompletedLate      = qs.get('completedLate')      === '1';
+      urlCompletedNoDueDate = qs.get('completedNoDueDate') === '1';
       urlArchived    = qs.get('archived') === '1';
     }
   } catch (_) { /* noop */ }
@@ -143,6 +156,9 @@ export async function renderTasks(container) {
   filterCompletedToday = urlCompletedToday;
   filterPartnership    = urlPartnership;
   filterShowArchived   = urlArchived;
+  filterCompletedOnTime    = urlCompletedOnTime;
+  filterCompletedLate      = urlCompletedLate;
+  filterCompletedNoDueDate = urlCompletedNoDueDate;
   // Se URL traz qualquer filtro temporal específico (observado, concluídas hoje,
   // parceria), o preset de data padrão (Últimos 30 dias) deixa de fazer sentido —
   // o user clicou num KPI específico, quer ver TUDO daquela categoria.
@@ -827,6 +843,26 @@ function applyFilters() {
   }
   if (filterPartnership) {
     result = result.filter(t => t.isPartnership === true);
+  }
+  // 4.23+ — drill-down do card "Pontualidade" do dashboard de produtividade
+  if (filterCompletedOnTime) {
+    result = result.filter(t => {
+      if (t.status !== 'done' || !t.dueDate || !t.completedAt) return false;
+      const due = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+      const cmp = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
+      return cmp <= due;
+    });
+  }
+  if (filterCompletedLate) {
+    result = result.filter(t => {
+      if (t.status !== 'done' || !t.dueDate || !t.completedAt) return false;
+      const due = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+      const cmp = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
+      return cmp > due;
+    });
+  }
+  if (filterCompletedNoDueDate) {
+    result = result.filter(t => t.status === 'done' && !t.dueDate);
   }
   if (filterObserver) {
     result = result.filter(t => Array.isArray(t.observers) && t.observers.includes(filterObserver));

@@ -1380,6 +1380,17 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
             <textarea id="comment-input" class="comment-input" rows="1" placeholder="Comentário... (Ctrl+Enter)"></textarea>
             <button class="btn btn-primary btn-sm" id="comment-send-btn">Enviar</button>
           </div>
+        </div>
+
+        <!-- 4.23+ Histórico de alterações (audit log filtrado por entityId) -->
+        <div class="task-detail-field mt-6" id="tm-history-section">
+          <div class="task-detail-label" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;"
+            id="tm-history-toggle">
+            <span>Histórico de alterações</span>
+            <span style="font-size:0.75rem;color:var(--text-muted);" id="tm-history-toggle-icon">▾ Carregar</span>
+          </div>
+          <div id="tm-history-list" style="display:none;margin-top:8px;font-size:0.8125rem;
+            max-height:280px;overflow-y:auto;border-left:2px solid var(--border-subtle);padding-left:12px;"></div>
         </div>` : ''}
     </div>
 
@@ -2755,6 +2766,80 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   };
   document.getElementById('comment-send-btn')?.addEventListener('click',send);
   document.getElementById('comment-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.ctrlKey)send();});
+
+  // ── 4.23+ Histórico de alterações (lazy-load on click) ────
+  const historyToggle = document.getElementById('tm-history-toggle');
+  const historyList   = document.getElementById('tm-history-list');
+  const historyIcon   = document.getElementById('tm-history-toggle-icon');
+  let historyLoaded   = false;
+  historyToggle?.addEventListener('click', async () => {
+    if (!historyList) return;
+    const isOpen = historyList.style.display !== 'none';
+    if (isOpen) {
+      historyList.style.display = 'none';
+      if (historyIcon) historyIcon.textContent = '▾ Mostrar';
+      return;
+    }
+    historyList.style.display = 'block';
+    if (historyIcon) historyIcon.textContent = '▴ Esconder';
+    if (historyLoaded) return;
+    historyLoaded = true;
+    historyList.innerHTML = `<div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0;">Carregando…</div>`;
+    try {
+      const { fetchEntityHistory, ACTION_LABELS } = await import('../auth/audit.js');
+      const logs = await fetchEntityHistory('task', task.id, 50);
+      if (!logs.length) {
+        historyList.innerHTML = `<div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0;">
+          Sem registros de alterações para esta tarefa.
+        </div>`;
+        return;
+      }
+      // Render timeline
+      historyList.innerHTML = logs.map(l => {
+        // Resolve nome atual via users store (fallback para userName cacheado)
+        const users = store.get('users') || [];
+        const u = users.find(x => x.id === l.userId);
+        const who = u?.name || l.userName || 'Sistema';
+        const when = (() => {
+          const d = l.timestamp?.toDate ? l.timestamp.toDate() : (l.timestamp instanceof Date ? l.timestamp : null);
+          if (!d) return '—';
+          return d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit',
+            hour:'2-digit', minute:'2-digit' });
+        })();
+        const label = ACTION_LABELS[l.action] || l.action;
+        // Render delta resumido — campos alterados (services/tasks.js grava em details.fields)
+        // ou transição de status (statusFrom → statusTo).
+        let delta = '';
+        if (l.details && typeof l.details === 'object') {
+          const FIELD_LABELS = {
+            title:'título', description:'descrição', status:'status', priority:'prioridade',
+            assignees:'responsáveis', observers:'observadores', dueDate:'prazo',
+            startDate:'data de início', tags:'tags', projectId:'projeto', workspaceId:'squad',
+            sector:'setor', requestingArea:'área', taskTypeId:'tipo', metaLinks:'metas',
+            subtasks:'subtarefas', nucleos:'núcleos',
+          };
+          if (l.details.statusFrom && l.details.statusTo) {
+            delta = ` <span style="color:var(--text-muted);">(${esc(l.details.statusFrom)} → ${esc(l.details.statusTo)})</span>`;
+          } else if (Array.isArray(l.details.fields) && l.details.fields.length) {
+            const labels = l.details.fields.slice(0,4).map(f => FIELD_LABELS[f] || f);
+            delta = ` <span style="color:var(--text-muted);">(${labels.map(esc).join(', ')}${l.details.fields.length > 4 ? '…' : ''})</span>`;
+          }
+        }
+        return `
+          <div style="padding:6px 0;border-bottom:1px dashed var(--border-subtle);">
+            <div style="font-weight:500;color:var(--text-primary);">${esc(label)}${delta}</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">
+              ${esc(who)} · ${esc(when)}
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (err) {
+      historyList.innerHTML = `<div style="color:var(--color-danger);font-size:0.75rem;padding:8px 0;">
+        Erro ao carregar histórico: ${esc(err.message || String(err))}
+      </div>`;
+    }
+  });
 
   // ── @Mention Autocomplete ──────────────────────────────────
   setupMentionAutocomplete();

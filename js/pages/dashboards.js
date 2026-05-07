@@ -494,15 +494,25 @@ async function loadData(container) {
 
 /* ─── KPIs ────────────────────────────────────────────────── */
 function renderKPIs(m) {
+  // 4.23+ — Cards passam a navegar pra lista de tarefas com filtros
+  // pré-aplicados, atendendo ao pedido do user de drill-down. O card
+  // "Pontualidade" tem 3 sub-cenários renderizados como links no subtitle.
+  const punctualitySub = m.doneEvaluable
+    ? `<a class="kpi-sublink" href="#tasks?completedOnTime=1">${m.doneOnTime} no prazo</a>` +
+      ` · ` +
+      `<a class="kpi-sublink" href="#tasks?completedLate=1">${m.doneLate} atrasadas</a>` +
+      (m.doneNoDueDate ? ` · <a class="kpi-sublink" href="#tasks?completedNoDueDate=1">${m.doneNoDueDate} sem prazo</a>` : '')
+    : (m.doneNoDueDate
+        ? `<a class="kpi-sublink" href="#tasks?completedNoDueDate=1">${m.doneNoDueDate} concluídas sem prazo definido</a>`
+        : 'sem dados');
+
   document.getElementById('kpi-row').innerHTML = `
-    ${kpiCard('Total de Tarefas',    m.total,                   '📋', 'rgba(212,168,67,0.12)',  'var(--brand-gold)')}
-    ${kpiCard('Em Andamento',        m.inProgress,              '▶',  'rgba(56,189,248,0.12)',  'var(--color-info)')}
-    ${kpiCard('Concluídas (período)',m.doneInPeriod,             '✓',  'rgba(34,197,94,0.12)',   'var(--color-success)')}
-    ${kpiCard('Em Atraso',           m.overdue,                 '⚠',  'rgba(239,68,68,0.12)',   'var(--color-danger)')}
+    ${kpiCard('Total de Tarefas',    m.total,                   '📋', 'rgba(212,168,67,0.12)',  'var(--brand-gold)',  '', '#tasks')}
+    ${kpiCard('Em Andamento',        m.inProgress,              '▶',  'rgba(56,189,248,0.12)',  'var(--color-info)',   '', '#tasks?status=in_progress')}
+    ${kpiCard('Concluídas (período)',m.doneInPeriod,             '✓',  'rgba(34,197,94,0.12)',   'var(--color-success)','', '#tasks?status=done')}
+    ${kpiCard('Em Atraso',           m.overdue,                 '⚠',  'rgba(239,68,68,0.12)',   'var(--color-danger)', '', '#tasks?status=overdue')}
     ${kpiCard('Pontualidade',        m.onTimeRate + '%',        '🎯', 'rgba(167,139,250,0.12)', 'var(--role-admin)',
-      m.doneEvaluable
-        ? `${m.doneOnTime} no prazo · ${m.doneLate} atrasadas${m.doneNoDueDate ? ` · ${m.doneNoDueDate} sem prazo` : ''}`
-        : (m.doneNoDueDate ? `${m.doneNoDueDate} concluídas sem prazo definido` : 'sem dados'))}
+      punctualitySub, null /* sublinks já navegam — card todo não tem link único */, true /* subIsHtml */)}
   `;
   // Animate bars
   setTimeout(() => {
@@ -512,21 +522,30 @@ function renderKPIs(m) {
   }, 80);
 }
 
-function kpiCard(label, value, icon, ibg, ic, sub = '') {
+function kpiCard(label, value, icon, ibg, ic, sub = '', link = null, subIsHtml = false) {
   const pct = typeof value === 'string' ? parseInt(value) : Math.min(100, Math.round(value / 20 * 100));
   // Map color to accent type for CSS stripe
   const accentMap = { 'var(--color-info)':'info', 'var(--color-success)':'success',
     'var(--color-danger)':'danger', 'var(--color-warning)':'warning', 'var(--brand-gold)':'brand' };
   const accent = accentMap[ic] || 'brand';
+  const cursor    = link ? 'cursor:pointer;' : '';
+  const hoverHint = link ? `onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='var(--shadow-md)'"
+                            onmouseout="this.style.transform='';this.style.boxShadow=''"` : '';
+  const onclick   = link ? `onclick="location.hash='${link}'"` : '';
+  const subHTML   = sub ? (subIsHtml
+    ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${sub}</div>`
+    : `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${sub}</div>`)
+    : '';
   return `
-    <div class="dash-widget kpi col-span-3" data-accent="${accent}" style="min-height:unset;">
+    <div class="dash-widget kpi col-span-3" data-accent="${accent}" style="min-height:unset;${cursor}transition:transform .15s,box-shadow .15s;"
+      ${hoverHint} ${onclick}>
       <div class="kpi-widget">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
           <div class="widget-icon" style="background:${ibg}; color:${ic};">${icon}</div>
           <span class="kpi-label" style="margin:0;">${label}</span>
         </div>
         <div class="kpi-value">${value}</div>
-        ${sub ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">${sub}</div>` : ''}
+        ${subHTML}
         <div class="kpi-bar" style="margin-top:auto;">
           <div class="kpi-bar-fill" data-pct="${pct}"
             style="width:0%; background:${ic}; transition: width 1s ease;"></div>

@@ -17,6 +17,8 @@ const sectorColor = (s) => {
 };
 import {
   fetchNucleos, createNucleo, updateNucleo, deleteNucleo,
+  fetchSectors, createSector, updateSector, deleteSector,
+  loadSectors, getActiveSectors,
   SECTORS, userNucleos, userInNucleo,
 } from '../services/sectors.js';
 
@@ -29,6 +31,7 @@ const NUCLEO_COLORS = [
 ];
 
 let allNucleos = [];
+let allSectorDocs = []; // 4.23+ — sectors da collection (com IDs pra edit/del)
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderSectors(container) {
@@ -50,7 +53,8 @@ export async function renderSectors(container) {
         <h1 class="page-title">Setores e Núcleos</h1>
         <p class="page-subtitle">Gerencie a estrutura organizacional da empresa</p>
       </div>
-      <div class="page-header-actions">
+      <div class="page-header-actions" style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" id="new-sector-btn">+ Novo Setor</button>
         <button class="btn btn-primary" id="new-nucleo-btn">+ Novo Núcleo</button>
       </div>
     </div>
@@ -74,24 +78,28 @@ export async function renderSectors(container) {
   `;
 
   document.getElementById('new-nucleo-btn')?.addEventListener('click', () => openNucleoModal());
+  document.getElementById('new-sector-btn')?.addEventListener('click', () => openSectorModal());
   await load(visibleSectors);
 }
 
 async function load(visibleSectors) {
   try {
-    // A página não é visitada pelo app boot — se o usuário abrir direto aqui
-    // (aba privativa, link direto, primeira navegação) o store de users vem
-    // vazio e a contagem de membros + modal de membros ficam quebrados.
-    // Força o load em paralelo com os núcleos.
     const needUsers = !(store.get('users') || []).length;
-    const [nuc] = await Promise.all([
+    const [nuc, secDocs] = await Promise.all([
       fetchNucleos(),
+      fetchSectors().catch(() => []), // 4.23+
       needUsers ? reloadUsers() : Promise.resolve(),
     ]);
-    allNucleos = nuc;
-    render(visibleSectors);
+    allNucleos     = nuc;
+    allSectorDocs  = secDocs || [];
+    // Re-deriva visibleSectors com base no que está dinâmico (caso master
+    // tenha criado setores novos). A função render usa SECTORS estático
+    // como fonte; vamos sobrepor com getActiveSectors() pra refletir o vivo.
+    const live = getActiveSectors();
+    const scope = store.isMaster() ? live : (visibleSectors || []);
+    render(scope);
   } catch(e) {
-    toast.error('Erro ao carregar núcleos: ' + e.message);
+    toast.error('Erro ao carregar setores/núcleos: ' + e.message);
   }
 }
 
@@ -105,24 +113,45 @@ function render(visibleSectors) {
     return;
   }
 
-  const sectors = store.isMaster() ? SECTORS : visibleSectors;
+  // 4.23+ — usa lista dinâmica (getActiveSectors) em vez do SECTORS estático.
+  // Mantém visibleSectors quando o user não é master (mantém escopo).
+  const sectors = visibleSectors;
 
   grid.innerHTML = sectors.map(sector => {
     const nucleos = allNucleos.filter(n => n.sector === sector);
     const users   = (store.get('users') || []).filter(u =>
       (u.sector || u.department) === sector && u.active !== false
     );
+    // 4.23+ — encontra doc do setor (se existir) pra habilitar edit/del.
+    // Setores legacy (sem doc) ainda renderizam, mas sem botões de edição
+    // até serem migrados via "+ Novo Setor" (estratégia: master pode criar
+    // doc com mesmo nome → começa a aparecer editável).
+    const sectorDoc = allSectorDocs.find(s => s.name === sector);
 
     return `
       <div class="card" style="margin-bottom:16px;">
         <div class="card-header">
-          <div>
-            <div class="card-title">${esc(sector)}</div>
-            <div class="card-subtitle">${users.length} membro${users.length!==1?'s':''} · ${nucleos.length} núcleo${nucleos.length!==1?'s':''}</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div>
+              <div class="card-title" style="display:flex;align-items:center;gap:8px;">
+                ${sectorDoc?.color ? `<span style="width:10px;height:10px;border-radius:50%;background:${sectorDoc.color};display:inline-block;"></span>` : ''}
+                ${esc(sector)}
+                ${!sectorDoc ? `<span style="font-size:0.625rem;color:var(--text-muted);font-weight:400;background:var(--bg-elevated);padding:1px 6px;border-radius:4px;" title="Setor padrão do sistema (não persistido). Crie um setor novo com este nome para habilitar edição.">padrão</span>` : ''}
+              </div>
+              <div class="card-subtitle">${users.length} membro${users.length!==1?'s':''} · ${nucleos.length} núcleo${nucleos.length!==1?'s':''}</div>
+            </div>
           </div>
-          <button class="btn btn-ghost btn-sm add-nucleo-btn" data-sector="${esc(sector)}">
-            + Núcleo
-          </button>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <button class="btn btn-ghost btn-sm add-nucleo-btn" data-sector="${esc(sector)}">
+              + Núcleo
+            </button>
+            ${sectorDoc ? `
+              <button class="btn btn-ghost btn-icon" data-sector-edit="${sectorDoc.id}"
+                title="Editar setor" style="width:28px;height:28px;font-size:0.75rem;">✎</button>
+              <button class="btn btn-ghost btn-icon" data-sector-del="${sectorDoc.id}" data-sector-name="${esc(sector)}"
+                title="Excluir setor" style="width:28px;height:28px;font-size:0.75rem;color:var(--color-danger);">✕</button>
+            ` : ''}
+          </div>
         </div>
         <div class="card-body" style="padding:8px 16px 16px;">
           ${!nucleos.length ? `
@@ -189,6 +218,16 @@ function render(visibleSectors) {
   );
   grid.querySelectorAll('[data-nucleo-del]').forEach(btn =>
     btn.addEventListener('click', () => confirmDelete(btn.dataset.nucleoDel))
+  );
+  // 4.23+ — handlers de setor
+  grid.querySelectorAll('[data-sector-edit]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const s = allSectorDocs.find(x => x.id === btn.dataset.sectorEdit);
+      if (s) openSectorModal(s);
+    })
+  );
+  grid.querySelectorAll('[data-sector-del]').forEach(btn =>
+    btn.addEventListener('click', () => confirmDeleteSector(btn.dataset.sectorDel, btn.dataset.sectorName))
   );
 }
 
@@ -501,4 +540,133 @@ async function confirmDelete(nucleoId) {
     const visibleSectors = store.isMaster() ? SECTORS : (store.get('visibleSectors') || []);
     await load(visibleSectors);
   } catch(e) { toast.error(e.message); }
+}
+
+/* ─── 4.23+ Modal: criar / editar setor ─────────────────── */
+const SECTOR_COLORS = [
+  '#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E',
+  '#0EA5E9','#D4A843','#64748B','#10B981','#EF4444',
+  '#06B6D4','#84CC16',
+];
+
+function openSectorModal(sectorDoc = null) {
+  const isEdit = !!sectorDoc;
+  modal.open({
+    title: isEdit ? `Editar setor — ${sectorDoc.name}` : 'Novo Setor',
+    size: 'sm',
+    content: `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div class="form-group">
+          <label class="form-label">Nome do setor *</label>
+          <input type="text" class="form-input" id="sec-name" maxlength="60"
+            value="${esc(sectorDoc?.name || '')}"
+            placeholder="Ex: Marketing, Comercial, TI..." />
+          <span class="form-error-msg" id="sec-name-error"></span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cor de identificação</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${SECTOR_COLORS.map(c => `
+              <div class="sec-color-btn" data-color="${c}" style="
+                width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;
+                border:3px solid ${(sectorDoc?.color||SECTOR_COLORS[0])===c?'white':'transparent'};
+                box-shadow:${(sectorDoc?.color||SECTOR_COLORS[0])===c?'0 0 0 2px '+c:'none'};
+                transition:all 0.15s;"></div>
+            `).join('')}
+          </div>
+          <input type="hidden" id="sec-color" value="${esc(sectorDoc?.color || SECTOR_COLORS[0])}" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ordem de exibição</label>
+          <input type="number" class="form-input" id="sec-order" min="0" max="999"
+            value="${sectorDoc?.order ?? 100}" />
+          <p style="font-size:0.6875rem;color:var(--text-muted);margin:4px 0 0;">
+            Setores aparecem ordenados crescentemente. Use 100 como padrão.
+          </p>
+        </div>
+        ${isEdit ? '' : `
+          <div style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);
+            border-radius:var(--radius-md);padding:10px 14px;font-size:0.75rem;color:var(--text-secondary);">
+            <strong>ℹ Setores legados:</strong> os 19 setores padrão do sistema (BTG, Marketing, etc.)
+            ainda funcionam. Crie um novo setor com o mesmo nome se quiser editá-lo.
+          </div>
+        `}
+      </div>
+    `,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+      {
+        label: isEdit ? 'Salvar' : 'Criar setor',
+        class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const name = document.getElementById('sec-name')?.value?.trim();
+          const errN = document.getElementById('sec-name-error');
+          if (!name) { if (errN) errN.textContent = 'Nome obrigatório.'; return; }
+          if (errN) errN.textContent = '';
+          const data = {
+            name,
+            color: document.getElementById('sec-color')?.value || SECTOR_COLORS[0],
+            order: parseInt(document.getElementById('sec-order')?.value || '100', 10) || 100,
+          };
+          const btn = document.querySelector('.modal-footer .btn-primary');
+          if (btn) { btn.classList.add('loading'); btn.disabled = true; }
+          try {
+            if (isEdit) { await updateSector(sectorDoc.id, data); toast.success('Setor atualizado!'); }
+            else        { await createSector(data);                toast.success('Setor criado!'); }
+            close();
+            await loadSectors();
+            const visibleSectors = store.isMaster() ? getActiveSectors() : (store.get('visibleSectors') || []);
+            await load(visibleSectors);
+          } catch (e) { toast.error(e.message); }
+          finally { if (btn) { btn.classList.remove('loading'); btn.disabled = false; } }
+        },
+      },
+    ],
+  });
+
+  // Wire color picker
+  setTimeout(() => {
+    document.querySelectorAll('.sec-color-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('sec-color').value = btn.dataset.color;
+        document.querySelectorAll('.sec-color-btn').forEach(b => {
+          b.style.borderColor = 'transparent'; b.style.boxShadow = 'none';
+        });
+        btn.style.borderColor = 'white';
+        btn.style.boxShadow = `0 0 0 2px ${btn.dataset.color}`;
+      });
+    });
+  }, 50);
+}
+
+async function confirmDeleteSector(sectorId, sectorName) {
+  // Conta núcleos e usuários afetados antes de pedir confirmação
+  const nucCount = allNucleos.filter(n => n.sector === sectorName).length;
+  const userCount = (store.get('users') || []).filter(u =>
+    (u.sector || u.department) === sectorName && u.active !== false
+  ).length;
+  const ok = await modal.confirm({
+    title: `Excluir setor "${sectorName}"`,
+    message: `<div style="line-height:1.5;font-size:0.875rem;">
+      <p>O setor será marcado como inativo (soft delete). Histórico preservado.</p>
+      ${nucCount || userCount ? `
+        <p style="margin-top:8px;color:var(--color-warning);">
+          <strong>Atenção:</strong> existe${nucCount + userCount === 1 ? '' : 'm'}
+          ${nucCount ? `${nucCount} núcleo${nucCount === 1 ? '' : 's'}` : ''}
+          ${nucCount && userCount ? ' e ' : ''}
+          ${userCount ? `${userCount} usuário${userCount === 1 ? '' : 's'}` : ''}
+          vinculado${nucCount + userCount === 1 ? '' : 's'} a este setor — eles continuarão referenciando o nome.
+        </p>
+      ` : ''}
+    </div>`,
+    confirmText: 'Excluir', danger: true, icon: '✕',
+  });
+  if (!ok) return;
+  try {
+    await deleteSector(sectorId);
+    toast.success('Setor excluído.');
+    await loadSectors();
+    const visibleSectors = store.isMaster() ? getActiveSectors() : (store.get('visibleSectors') || []);
+    await load(visibleSectors);
+  } catch (e) { toast.error(e.message); }
 }

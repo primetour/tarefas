@@ -37,6 +37,79 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.23.0+20260507-sectors-history-drilldown-notif] — 2026-05-07
+
+Release **MINOR** — quatro melhorias pedidas pelo user numa única release.
+
+### 1) Setores: CRUD completo (criar, editar, excluir)
+**Antes**: lista hardcoded em `services/tasks.js` (REQUESTING_AREAS),
+sem como editar via UI. Página de Setores só permitia gerenciar núcleos.
+
+**Agora**:
+- Nova collection Firestore `sectors` com `{name, color, order, active, createdAt, createdBy}`
+- API: `fetchSectors`, `createSector`, `updateSector`, `deleteSector` (soft delete)
+- `loadSectors()` no boot (auth.js), popula `store.get('sectors')`
+- `getActiveSectors()` helper — retorna lista dinâmica OU fallback p/ DEFAULT_SECTORS
+- Sectors page (`pages/sectors.js`):
+  - Botão "+ Novo Setor" no header
+  - Botões ✎ editar e ✕ excluir em cada card de setor que tem doc Firestore
+  - Modal com nome + cor (12 opções) + ordem de exibição
+  - Setores legados (sem doc) aparecem com badge "padrão" — criar setor com mesmo nome para tornar editável
+  - Confirmação de exclusão alerta núcleos/usuários afetados
+- Consumers principais usam lista dinâmica:
+  - `filterBar.js`: `getUserSectorOptions()` e `areaOpts()` — filtros refletem setores criados
+
+### 2) Dashboard Produtividade: cards clicáveis (drill-down)
+**Antes**: cards eram estáticos, sem navegação.
+
+**Agora**:
+- Cards "Total / Em Andamento / Concluídas / Em Atraso" → click abre lista de tarefas pré-filtrada
+- Card "Pontualidade" tem 3 sublinks (no prazo · atrasadas · sem prazo) — cada um navega pra cenário exato descrito
+- Novos query params em tasks.js: `?completedOnTime=1`, `?completedLate=1`, `?completedNoDueDate=1`
+- Filter logic em `applyFilters()`: compara `completedAt` vs `dueDate` no client
+- CSS: `.kpi-sublink` com underline pontilhado + hover dourado
+
+### 3) Notificações: bug do nome (sempre Rafaela Gouvêa)
+**Causa raiz identificada**: `notify()` lia `store.get('userProfile')?.name` no momento da
+criação. Se `userProfile` ficasse desatualizado/cacheado de uma sessão anterior, o nome
+gravado era do user errado. Notificações antigas mantinham o nome legado.
+
+**Fix em duas camadas**:
+1. **notify()**: agora resolve o nome do actor pelo `store.get('users')` (source of truth
+   atualizado por subscriptions) usando o `currentUser.uid`. userProfile vira fallback.
+2. **notificationPanel render**: ao exibir cada notificação, re-resolve o nome do actor pelo
+   users store (via `actorId`). Notificações ANTIGAS com nome errado também são corrigidas
+   no display, sem precisar reescrever os docs.
+
+### 4) Histórico de alterações dentro do card da tarefa
+**Antes**: histórico só visível na página global de Auditoria.
+
+**Agora**:
+- Nova função `fetchEntityHistory(entity, entityId, max)` em `auth/audit.js`
+  - Query server-side por `(entity, entityId, timestamp DESC)`
+  - Fallback client-side se composite index não existir
+- Seção "Histórico de alterações" no taskModal (lazy-load on click)
+- Timeline mostra: ação legível (ACTION_LABELS), campos alterados (`details.fields`
+  → labels em português), transição de status (when applicable), quem e quando
+- Resolve nome do autor pelo users store atual (mesma estratégia anti-bug do #3)
+- `tasks.update` audit já gravava `details.fields` — só precisei consumir
+
+### Files
+- `js/services/sectors.js` (CRUD novo + getActiveSectors)
+- `js/pages/sectors.js` (UI de setor + modal + delete)
+- `js/auth/auth.js` (loadSectors no boot)
+- `js/auth/audit.js` (fetchEntityHistory)
+- `js/services/notifications.js` (fix actorName)
+- `js/components/notificationPanel.js` (resolve actor no render)
+- `js/components/filterBar.js` (consumes lista dinâmica)
+- `js/components/taskModal.js` (seção histórico)
+- `js/pages/dashboards.js` (kpiCard recebe link, sublinks Pontualidade)
+- `js/pages/tasks.js` (3 novos url params + filtros)
+- `css/dashboards.css` (.kpi-sublink)
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+---
+
 ## [4.22.0+20260507-icons-phase-a-finalize] — 2026-05-07
 
 Release **MINOR** — fechamento da Fase A de padronização de ícones.

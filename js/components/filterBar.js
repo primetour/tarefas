@@ -70,7 +70,13 @@ function projectOpts(list) {
   }));
 }
 function areaOpts() {
-  return REQUESTING_AREAS.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
+  // 4.23+ — Setores e áreas compartilham a mesma lista (REQUESTING_AREAS).
+  // Usamos a lista dinâmica quando disponível (alimentada pelo CRUD de setores).
+  const dyn = store.get('sectors');
+  const list = (Array.isArray(dyn) && dyn.length)
+    ? dyn.filter(s => s.active !== false).map(s => s.name)
+    : REQUESTING_AREAS;
+  return list.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
 }
 function assigneeOpts(users) {
   return users.map(u => ({
@@ -93,8 +99,14 @@ const metaOpts = () => [
  */
 function getUserSectorOptions() {
   const visible = store.getVisibleSectors(); // null | string[]
-  if (visible === null) return REQUESTING_AREAS; // master sees all
-  if (visible.length === 0) return REQUESTING_AREAS; // no sector set — show all (failsafe)
+  // 4.23+ — usa lista DINÂMICA do store (loadSectors no boot) com fallback
+  // pro REQUESTING_AREAS estático. Setores novos criados em /sectors aparecem.
+  const dyn = store.get('sectors');
+  const allSectors = (Array.isArray(dyn) && dyn.length)
+    ? dyn.filter(s => s.active !== false).map(s => s.name)
+    : REQUESTING_AREAS;
+  if (visible === null) return allSectors; // master sees all
+  if (visible.length === 0) return allSectors; // no sector set — show all (failsafe)
   return visible;
 }
 

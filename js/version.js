@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 22,
+  minor: 23,
   patch: 0,
-  build: '20260507-icons-phase-a-finalize',
+  build: '20260507-sectors-history-drilldown-notif',
 };
 
 /** "1.2.0" */

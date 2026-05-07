@@ -184,6 +184,21 @@
   transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* 4.23+ — Sublinks de drill-down dentro do card "Pontualidade".
+   Cards-mãe são clicáveis (cursor:pointer); o sublink ainda precisa
+   de outline visual pra deixar claro que é clicável independente do card. */
+.kpi-sublink {
+  color: var(--text-muted);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border-default);
+  transition: color 0.15s, border-color 0.15s;
+  cursor: pointer;
+}
+.kpi-sublink:hover {
+  color: var(--brand-gold);
+  border-bottom-color: var(--brand-gold);
+}
+
 /* ─── LEADERBOARD / RANKING ───────────────────────────────── */
 .leaderboard-item {
   display: flex;

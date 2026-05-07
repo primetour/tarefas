@@ -159,8 +159,20 @@ export async function notify(type, {
 }) {
   if (!recipientIds.length) { console.log('[Notify] No recipients, skipping'); return; }
 
+  // 4.23+ — Bug fix: lia userProfile cacheado, podendo gravar o nome do
+  // user que abriu o app antes (relato: aparecia "Rafaela Gouvêa" em
+  // notificações disparadas por outros). Agora re-lê o currentUser pelo
+  // store de users (que é o source of truth atualizado por subscriptions),
+  // e só usa userProfile como fallback.
   const actorId   = uid();
-  const actorName = store.get('userProfile')?.name || 'Sistema';
+  const actorName = (() => {
+    if (actorId) {
+      const users = store.get('users') || [];
+      const u = users.find(x => x.id === actorId);
+      if (u?.name) return u.name;
+    }
+    return store.get('userProfile')?.name || 'Sistema';
+  })();
 
   // Auto-detect category from type
   if (!category) category = type.split('.')[0];

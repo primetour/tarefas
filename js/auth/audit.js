@@ -378,6 +378,58 @@ export async function fetchAuditLogs({
 }
 
 /**
+ * Histórico de uma entidade específica (ex: tarefa).
+ * Query server-side por (entity, entityId) — exige composite index
+ * (entity ASC, entityId ASC, timestamp DESC) ou cai pra client-side filter.
+ *
+ * 4.23+ — adicionado pra exibir histórico de alterações DENTRO do card da tarefa.
+ *
+ * @param {string} entity   — ex: 'task', 'project'
+ * @param {string} entityId — id do documento
+ * @param {number} max      — limite de registros (default 50)
+ */
+export async function fetchEntityHistory(entity, entityId, max = 50) {
+  if (!entity || !entityId) return [];
+  try {
+    // Tenta query composta primeiro (precisa do índice)
+    const q = query(
+      collection(db, 'audit_logs'),
+      where('entity', '==', entity),
+      where('entityId', '==', entityId),
+      orderBy('timestamp', 'desc'),
+      limit(max),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    // Sem índice → fallback client-side: busca os últimos N por entityId
+    // (limit baixo pra não estourar quota; tarefas raramente passam de 50 changes)
+    if (err?.code === 'failed-precondition' || /index/i.test(err?.message || '')) {
+      console.debug('[audit] composite index missing, using client-side filter');
+      try {
+        const fallbackLimit = 500;
+        const q2 = query(
+          collection(db, 'audit_logs'),
+          where('entityId', '==', entityId),
+          orderBy('timestamp', 'desc'),
+          limit(fallbackLimit),
+        );
+        const snap2 = await getDocs(q2);
+        return snap2.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(l => l.entity === entity)
+          .slice(0, max);
+      } catch (err2) {
+        console.warn('[audit] fetchEntityHistory fallback failed:', err2.message);
+        return [];
+      }
+    }
+    console.warn('[audit] fetchEntityHistory failed:', err.message);
+    return [];
+  }
+}
+
+/**
  * Lista de módulos catalogados (pra popular dropdown de filtro).
  * Derivada das ACTION_LABELS — sempre em sync.
  */

@@ -14,10 +14,112 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
-import { REQUESTING_AREAS } from './tasks.js';
+import { REQUESTING_AREAS as DEFAULT_SECTORS } from './tasks.js';
 
-/* ─── Setores disponíveis (espelha REQUESTING_AREAS) ─────── */
-export { REQUESTING_AREAS as SECTORS };
+/* ─── Setores 4.23+ ──────────────────────────────────────────
+ * Antes (≤4.22): SECTORS era um alias estático de REQUESTING_AREAS
+ * (lista hardcoded em services/tasks.js). Não havia CRUD: a Sectors page
+ * só permitia criar/editar/excluir NÚCLEOS; setores eram fixos.
+ *
+ * Agora: collection Firestore `sectors` com {name, color, order, active,
+ * createdAt}. Se a collection estiver vazia (primeiro acesso), o sistema
+ * cai pro DEFAULT_SECTORS (REQUESTING_AREAS) como seed/fallback.
+ *
+ * Consumers devem usar getActiveSectors() em vez de importar DEFAULT_SECTORS
+ * diretamente — assim a fonte é dinâmica.
+ *
+ * Mantido o re-export `SECTORS` apontando pro default p/ back-compat com
+ * imports antigos que ainda não migraram.
+ */
+export { DEFAULT_SECTORS as SECTORS };
+
+/**
+ * Retorna a lista ATIVA de setores (nomes string[]).
+ * - Primeiro tenta store.get('sectors') (carregado no boot por loadSectors)
+ * - Fallback: DEFAULT_SECTORS estático
+ */
+export function getActiveSectors() {
+  const dyn = store.get('sectors');
+  if (Array.isArray(dyn) && dyn.length) {
+    return dyn.filter(s => s.active !== false).map(s => s.name);
+  }
+  return DEFAULT_SECTORS;
+}
+
+/* ─── Buscar todos os setores (raw) ──────────────────────── */
+export async function fetchSectors() {
+  const snap = await getDocs(query(collection(db, 'sectors'), orderBy('order', 'asc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/* ─── Criar setor ────────────────────────────────────────── */
+export async function createSector({ name, color = '#6366F1', order = 999 }) {
+  if (!store.can('system_manage_users') && !store.isMaster()) {
+    throw new Error('Permissão negada.');
+  }
+  const trimmed = String(name || '').trim();
+  if (!trimmed) throw new Error('Nome do setor é obrigatório.');
+  // Verifica duplicata (case-insensitive) entre os ATIVOS
+  const existing = getActiveSectors();
+  if (existing.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
+    throw new Error(`Já existe um setor "${trimmed}".`);
+  }
+  const user = store.get('currentUser');
+  const ref = await addDoc(collection(db, 'sectors'), {
+    name:      trimmed,
+    color,
+    order,
+    active:    true,
+    createdAt: serverTimestamp(),
+    createdBy: user?.uid || null,
+  });
+  return { id: ref.id, name: trimmed, color, order, active: true };
+}
+
+/* ─── Atualizar setor ────────────────────────────────────── */
+export async function updateSector(sectorId, data) {
+  if (!store.can('system_manage_users') && !store.isMaster()) {
+    throw new Error('Permissão negada.');
+  }
+  await updateDoc(doc(db, 'sectors', sectorId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/* ─── Excluir setor (soft delete via active=false) ───────── */
+export async function deleteSector(sectorId, { hard = false } = {}) {
+  if (!store.isMaster() && !store.can('system_manage_users')) {
+    throw new Error('Permissão negada.');
+  }
+  if (hard) {
+    await deleteDoc(doc(db, 'sectors', sectorId));
+  } else {
+    // Soft delete preserva histórico (tarefas/usuários ainda referenciam o nome)
+    await updateDoc(doc(db, 'sectors', sectorId), {
+      active: false, deletedAt: serverTimestamp(),
+    });
+  }
+}
+
+/* ─── Carregar setores no store ──────────────────────────── */
+export async function loadSectors() {
+  try {
+    const list = await fetchSectors();
+    // Seed inicial: se a collection está vazia, NÃO escreve nada (evita
+    // gerar lixo se permissões mudarem). Apenas usa o default como fallback.
+    if (!list.length) {
+      store.set('sectors', null);
+      return [];
+    }
+    store.set('sectors', list);
+    return list;
+  } catch (e) {
+    console.warn('[sectors] load falhou:', e.message);
+    store.set('sectors', null);
+    return [];
+  }
+}
 
 /* ─── Buscar todos os núcleos ────────────────────────────── */
 export async function fetchNucleos({ sector = null } = {}) {

@@ -240,6 +240,19 @@ function buildListHTML() {
     const priorityBar = n.priority === 'high' ? 'border-left:3px solid #EF4444;' :
                         n.priority === 'low'  ? '' : '';
 
+    // 4.23+ — Bug fix: nome do actor era cacheado no momento da criação
+    // (snapshot de userProfile do user logado então). Notificações antigas
+    // herdavam o nome de quem rodou a app primeiro (ex: Rafaela Gouvêa
+    // reportado pelo user). Solução: sempre que possível, resolver pelo
+    // actorId atual no store de users (truth source). Mantém actorName
+    // gravado como fallback para casos onde o usuário foi removido.
+    let displayActorName = n.actorName;
+    if (n.actorId && n.actorId !== 'system') {
+      const users = store.get('users') || [];
+      const actor = users.find(u => u.id === n.actorId);
+      if (actor?.name) displayActorName = actor.name;
+    }
+
     return `
       <div class="notif-item" data-id="${esc(n.id)}" data-route="${esc(n.route||'')}"
         data-entity-type="${esc(n.entityType||'')}" data-entity-id="${esc(n.entityId||'')}"
@@ -268,7 +281,7 @@ function buildListHTML() {
             -webkit-line-clamp:2;-webkit-box-orient:vertical;">${esc(n.body)}</div>` : ''}
           <div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
             <span style="font-size:0.6875rem;color:var(--text-muted);">${esc(time)}</span>
-            ${n.actorName ? `<span style="font-size:0.6875rem;color:var(--text-muted);">· ${esc(n.actorName)}</span>` : ''}
+            ${displayActorName ? `<span style="font-size:0.6875rem;color:var(--text-muted);">· ${esc(displayActorName)}</span>` : ''}
           </div>
         </div>
 

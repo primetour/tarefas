@@ -35,7 +35,7 @@ import {
 import { auth, secondaryAuth, db, microsoftProvider } from '../firebase.js';
 import { getRole, initSystemRoles, SYSTEM_ROLES } from '../services/rbac.js';
 import { loadUserWorkspaces }          from '../services/workspaces.js';
-import { loadNucleos }                  from '../services/sectors.js';
+import { loadNucleos, loadSectors }     from '../services/sectors.js';
 import { loadCategories }              from '../services/taskCategories.js';
 import { loadCardPrefs }               from '../services/cardPrefs.js';
 import { initSystemTaskTypes, loadTaskTypes } from '../services/taskTypes.js';
@@ -421,8 +421,9 @@ export function initAuthObserver(onReady) {
           : (userSector ? [userSector] : []);
         store.set('visibleSectors', rawVisibleSectors);
 
-        // Carregar núcleos, categorias e preferências de card
+        // Carregar setores, núcleos, categorias e preferências de card
         Promise.all([
+          loadSectors().catch(() => {}), // 4.23+ — setores agora dinâmicos
           loadNucleos().catch(() => {}),
           loadCategories().catch(() => {}),
           Promise.resolve(loadCardPrefs()).catch(() => {}),
