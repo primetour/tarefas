@@ -240,6 +240,40 @@
   background: var(--bg-surface);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   flex-shrink: 0;
+  cursor: grab;
+  transition: background 0.12s, box-shadow 0.12s;
+  user-select: none;
+}
+.kanban-column-header:hover {
+  background: var(--bg-elevated);
+}
+.kanban-column-header:active {
+  cursor: grabbing;
+}
+/* 4.18+: handle de drag (⋮⋮) sutil que aparece no hover */
+.kanban-col-drag-handle {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: -2px;
+  opacity: 0.4;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+  cursor: grab;
+}
+.kanban-column-header:hover .kanban-col-drag-handle {
+  opacity: 1;
+}
+/* Estados durante drag de coluna */
+.kanban-column-header.col-dragging {
+  opacity: 0.5;
+}
+.kanban-column.col-dragging {
+  opacity: 0.5;
+  transform: scale(0.99);
+}
+.kanban-column-header.col-drag-target {
+  background: rgba(212, 168, 67, 0.18);
+  box-shadow: inset 0 0 0 2px var(--brand-gold);
 }
 .kanban-col-dot {
   width: 10px; height: 10px;

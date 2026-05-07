@@ -37,6 +37,71 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.18.0+20260507-kanban-col-reorder] — 2026-05-07
+
+Release **MINOR** — Steps: drag-and-drop pra reordenar colunas (preferência do user).
+
+### Pedido do user
+> "usuário quer ter liberdade de mover colunas em steps, pra fazer a própria organização visual do kanban (e isso fica gravado nas preferências dele)"
+
+### Implementação
+
+#### Persistência
+- Storage: `localStorage[primetour-kanban-col-order]` como JSON `{groupBy: ['col1','col2',...]}`
+- Por groupBy: status, priority, area, sector, project, type, assignee — cada um tem sua ordem própria
+- Per-browser (não sincroniza entre devices). Promover pra Firestore `users/{uid}/preferences` depois se houver demanda.
+
+#### Helpers (kanban.js)
+- `_loadColumnOrder(groupKey)` → `string[]`
+- `_saveColumnOrder(groupKey, order)`
+- `_applyColumnOrder(groupKey, cols)` → reordena array preservando colunas novas no fim e ignorando colunas que sumiram
+
+#### `getKanbanGroups`
+Aplica `_applyColumnOrder` antes de retornar (status + outros groupBy). Pipeline view (custom task type) **não usa** este sistema — pipeline tem ordem fixa pelos `steps[]` do task type.
+
+#### Header como drop zone
+```html
+<div class="kanban-column-header" draggable="true" data-col-drag-key="...">
+  <span class="kanban-col-drag-handle">⋮⋮</span>
+  <div class="kanban-col-dot">...</div>
+  ...
+</div>
+```
+
+Handle `⋮⋮` aparece com opacity 0.4 e fica 1.0 no hover. `cursor: grab` no header inteiro pra UX óbvia.
+
+#### `bindColumnReorder()`
+Registra dragstart/dragover/dragleave/drop em cada header. Distingue de card-drag pelo prefixo `COL:` no `dataTransfer`.
+
+#### Não-colisão com card-drag
+- Card-drag usa apenas `taskId` no dataTransfer (sem prefixo)
+- Column-drag usa `COL:<colKey>`
+- `bindColumnDrop` (no col-body) ignora drops com prefixo `COL:` pra não tentar mover task fantasma
+
+### CSS
+- `.kanban-column-header:hover` — bg sutil + drag handle aparece
+- `.col-dragging` — opacity 0.5 + scale 0.99
+- `.col-drag-target` — bg dourado claro + box-shadow inset gold
+
+### Lógica de reorder
+1. Pega ordem atual do DOM (data-col-status)
+2. Splice fromKey, insert na posição de toKey
+3. Salva via `_saveColumnOrder(groupBy, novaOrdem)`
+4. `renderCards(allTasks)` re-renderiza com nova ordem aplicada via `_applyColumnOrder`
+
+### Edge cases tratados
+- ✅ Coluna nova (não na ordem salva) → vai pro fim
+- ✅ Coluna que sumiu (sector desativado) → ignorada na ordem salva
+- ✅ Trocar groupBy → ordem específica do novo groupBy é aplicada
+- ✅ User sem ordem salva → comportamento padrão (igual antes)
+
+### Arquivos alterados
+- `js/pages/kanban.js` — helpers + bindColumnReorder + apply em getKanbanGroups (~+90 linhas)
+- `css/tasks.css` — drag handle + estados visuais (~+30 linhas)
+- `js/version.js` — bump 4.17.2 → 4.18.0
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.17.2+20260507-doc-staging-lab] — 2026-05-07
 
 Release **PATCH** — Documentação técnica do novo ambiente de staging.

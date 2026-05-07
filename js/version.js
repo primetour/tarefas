@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 17,
-  patch: 2,
-  build: '20260507-doc-staging-lab',
+  minor: 18,
+  patch: 0,
+  build: '20260507-kanban-col-reorder',
 };
 
 /** "1.2.0" */

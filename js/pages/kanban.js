@@ -60,6 +60,55 @@ function setGroupBy(v) {
   try { localStorage.setItem(GROUPBY_KEY, v); } catch {}
 }
 
+/* ─── 4.18+ Reordenação de colunas (preferência do user) ──────
+ * Cada user define a ordem visual das colunas via drag no header.
+ * Persiste em localStorage por groupBy (status/priority/area/etc.) — não por
+ * user-id pq já é per-browser. Pra sync entre devices, promover pra Firestore
+ * em users/{uid}/preferences depois.
+ *
+ * Schema:
+ *   localStorage[primetour-kanban-col-order] = JSON.stringify({
+ *     status: ['atrasada', 'in_progress', 'not_started', ...],
+ *     priority: ['urgent', 'high', ...],
+ *     area: ['Marketing', 'Diretoria', ...],
+ *   })
+ *
+ * Aplicação na ordem:
+ *   1. Pega a ordem salva pra o groupBy ativo
+ *   2. Aplica nas colunas existentes (mantendo o objeto original)
+ *   3. Colunas que não estão na ordem salva (NOVAS) → vão pro fim
+ *   4. Colunas que sumiram (ex: setor desativado) → ignoradas
+ */
+const COL_ORDER_KEY = 'primetour-kanban-col-order';
+function _loadColumnOrder(groupKey) {
+  try {
+    const all = JSON.parse(localStorage.getItem(COL_ORDER_KEY) || '{}');
+    return Array.isArray(all[groupKey]) ? all[groupKey] : [];
+  } catch { return []; }
+}
+function _saveColumnOrder(groupKey, order) {
+  try {
+    const all = JSON.parse(localStorage.getItem(COL_ORDER_KEY) || '{}');
+    all[groupKey] = Array.isArray(order) ? order : [];
+    localStorage.setItem(COL_ORDER_KEY, JSON.stringify(all));
+  } catch {}
+}
+function _applyColumnOrder(groupKey, cols) {
+  const saved = _loadColumnOrder(groupKey);
+  if (!saved.length) return cols;
+  const byValue = new Map(cols.map(c => [String(c.value), c]));
+  const result = [];
+  for (const v of saved) {
+    if (byValue.has(String(v))) {
+      result.push(byValue.get(String(v)));
+      byValue.delete(String(v));
+    }
+  }
+  // Colunas novas (não estavam na ordem salva) → final
+  for (const c of byValue.values()) result.push(c);
+  return result;
+}
+
 /**
  * getKanbanGroups(groupKey, tasks)
  * Retorna [{ value, label, color }] — uma "coluna virtual" por valor único.
@@ -75,7 +124,8 @@ function getKanbanGroups(groupKey, tasks) {
       { value: STATUS_OVERDUE.value, label: STATUS_OVERDUE.label, color: STATUS_OVERDUE.color, virtual: true },
       ...STATUSES.map(s => ({ value: s.value, label: s.label, color: s.color })),
     ];
-    return cols;
+    // 4.18+: aplica preferência do user (drag pra reordenar)
+    return _applyColumnOrder(groupKey, cols);
   }
 
   const opt = GROUPBY_OPTIONS.find(o => o.value === groupKey);
@@ -163,7 +213,8 @@ function getKanbanGroups(groupKey, tasks) {
     });
   }
 
-  return groups;
+  // 4.18+: aplica preferência do user (drag pra reordenar)
+  return _applyColumnOrder(groupKey, groups);
 }
 
 /** Retorna se uma task pertence ao grupo (pra filtrar coluna). */
@@ -609,7 +660,9 @@ function _subscribeToTasks() {
 function renderColumn(group, tasks) {
   return `
     <div class="kanban-column" data-col-status="${esc(group.value)}">
-      <div class="kanban-column-header">
+      <div class="kanban-column-header" draggable="true" data-col-drag-key="${esc(group.value)}"
+        title="Arraste pra reordenar as colunas. A ordem fica salva no seu navegador.">
+        <span class="kanban-col-drag-handle" aria-hidden="true">⋮⋮</span>
         <div class="kanban-col-dot" style="background:${group.color};"></div>
         <span class="kanban-col-title">${esc(group.label)}</span>
         <span class="kanban-col-count" id="col-count-${esc(group.value)}">${tasks.length}</span>
@@ -763,6 +816,74 @@ function renderCards(tasks, _ignored = '') {
   // quando agrupando por status; outros groupBy não têm semântica clara
   // para "mover entre colunas" — a função bindColumnDrop respeita essa regra)
   document.querySelectorAll('.kanban-col-body').forEach(col => bindColumnDrop(col));
+
+  // 4.18+: bind column reorder via drag no header
+  bindColumnReorder();
+}
+
+/* 4.18+ — Reordenação de colunas via drag no header.
+ * Distingue de card-drag pelo prefixo `COL:` no dataTransfer.
+ * `bindColumnDrop` (no col-body) já ignora drops com COL: pra não tentar
+ * mover task fantasma.
+ * Pipeline view (renderPipelineColumn) NÃO usa este sistema — pipeline
+ * tem ordem fixa pelos steps[] do task type.
+ */
+function bindColumnReorder() {
+  const headers = document.querySelectorAll('.kanban-column-header[draggable="true"]');
+  headers.forEach(h => {
+    h.addEventListener('dragstart', (e) => {
+      const key = h.dataset.colDragKey;
+      if (!key) return;
+      e.dataTransfer.setData('text/plain', 'COL:' + key);
+      e.dataTransfer.effectAllowed = 'move';
+      h.classList.add('col-dragging');
+      h.closest('.kanban-column')?.classList.add('col-dragging');
+    });
+    h.addEventListener('dragend', () => {
+      h.classList.remove('col-dragging');
+      h.closest('.kanban-column')?.classList.remove('col-dragging');
+      document.querySelectorAll('.col-drag-target').forEach(el => el.classList.remove('col-drag-target'));
+    });
+    h.addEventListener('dragover', (e) => {
+      // Só aceita drops de tipo column (texto começando com COL:)
+      // dataTransfer.types não permite ler o valor, mas permite checar tipos.
+      // Confiamos no .col-dragging do source pra detectar é column drag.
+      const src = document.querySelector('.kanban-column-header.col-dragging');
+      if (!src) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      h.classList.add('col-drag-target');
+    });
+    h.addEventListener('dragleave', () => {
+      h.classList.remove('col-drag-target');
+    });
+    h.addEventListener('drop', (e) => {
+      e.preventDefault();
+      h.classList.remove('col-drag-target');
+      const data = e.dataTransfer.getData('text/plain') || '';
+      if (!data.startsWith('COL:')) return; // não é column drag
+      const fromKey = data.slice(4);
+      const toKey = h.dataset.colDragKey;
+      if (!fromKey || !toKey || fromKey === toKey) return;
+      _reorderColumns(fromKey, toKey);
+    });
+  });
+}
+
+/** Move coluna fromKey pra posição da toKey na ordem visual e persiste. */
+function _reorderColumns(fromKey, toKey) {
+  // Le ordem atual do DOM
+  const cols = [...document.querySelectorAll('.kanban-column[data-col-status]')];
+  if (!cols.length) return;
+  const order = cols.map(c => c.dataset.colStatus);
+  const fromIdx = order.indexOf(fromKey);
+  const toIdx = order.indexOf(toKey);
+  if (fromIdx === -1 || toIdx === -1) return;
+  const [moved] = order.splice(fromIdx, 1);
+  order.splice(toIdx, 0, moved);
+  _saveColumnOrder(groupBy, order);
+  // Re-renderiza com nova ordem
+  renderCards(allTasks);
 }
 
 /** Adiciona tarefa otimista (aparece imediatamente na UI) */
@@ -1000,6 +1121,9 @@ function bindColumnDrop(col) {
     document.querySelector('.kanban-placeholder')?.remove();
 
     const taskId   = e.dataTransfer.getData('text/plain');
+    // 4.18+: ignora drops de column-drag (prefixo COL:) — esses são
+    // tratados em bindColumnReorder no header da coluna destino.
+    if (typeof taskId === 'string' && taskId.startsWith('COL:')) return;
     const newColValue = col.dataset.status;
 
     if (!taskId || !newColValue) return;
