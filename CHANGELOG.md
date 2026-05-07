@@ -37,6 +37,39 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.16.2+20260507-cc-ux-add-project-btn] — 2026-05-07
+
+Release **PATCH** — UX: ajuste nos botões do calendário de conteúdo.
+
+### Pedido do user
+> "tirar o botão '+ novo projeto' da página e deixar o botão '+ adicionar projeto' no padrão de botões (sem tracejado, cor 'cheia', dentro do botão em si)"
+
+### Mudanças
+
+#### "+ Novo projeto" REMOVIDO
+- Botão antigo redirecionava pra `/projects`
+- User considerou redundante (já existe em `/projects` direto + ainda há "Ver todos os projetos" no empty state)
+- Handler `cc-new-project` em `bindHeaderEvents` também removido
+
+#### "+ Adicionar projeto" — RESTILIZADO
+
+| Antes | Depois |
+|---|---|
+| Border `dashed` dourada | Sem border |
+| Background `transparent` | Background `var(--brand-gold)` (cor cheia) |
+| Texto cor dourada | Texto branco |
+| Font-weight 500 | Font-weight 600 |
+| Padding 4×10px | Padding 6×14px |
+| — | Hover: opacity 0.85 |
+
+Mais alinhado com o padrão de botões primários do sistema.
+
+### Arquivos alterados
+- `js/pages/contentCalendar.js` — remoção do botão + restilização + handler removed
+- `js/version.js` — bump 4.16.1 → 4.16.2
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.16.1+20260507-cc-fix-popover-tdz-shadow] — 2026-05-07
 
 Release **PATCH** — bug crítico do popover "+ Adicionar projeto" que não abria.

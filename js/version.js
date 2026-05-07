@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 16,
-  patch: 1,
-  build: '20260507-cc-fix-popover-tdz-shadow',
+  patch: 2,
+  build: '20260507-cc-ux-add-project-btn',
 };
 
 /** "1.2.0" */

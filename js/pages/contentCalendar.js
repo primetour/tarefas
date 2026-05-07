@@ -522,10 +522,6 @@ function renderPage(container) {
                 transition:all 0.15s;font-weight:${activeView === v ? '600' : '400'};">${l}</button>
             `).join('')}
           </div>` : ''}
-          <button id="cc-new-project" title="Criar novo projeto"
-            style="padding:8px 12px;border:1px dashed var(--brand-gold,#D4A843);border-radius:8px;
-            background:transparent;color:var(--brand-gold,#D4A843);font-size:0.8125rem;font-weight:600;
-            cursor:pointer;">+ Novo projeto</button>
 
           ${hasProjectSelected ? `
           <!-- Account selector (secondary — handle social) -->
@@ -609,9 +605,11 @@ function renderPage(container) {
           </span>
         `).join('')}
         <button id="cc-add-project" title="Adicionar projeto ao calendário"
-          style="padding:4px 10px;border:1px dashed var(--brand-gold,#D4A843);border-radius:99px;
-          background:transparent;color:var(--brand-gold,#D4A843);font-size:0.75rem;font-weight:500;
-          cursor:pointer;margin-left:auto;">+ Adicionar projeto</button>
+          style="padding:6px 14px;border:none;border-radius:99px;
+          background:var(--brand-gold,#D4A843);color:#FFFFFF;font-size:0.75rem;font-weight:600;
+          cursor:pointer;margin-left:auto;transition:opacity 0.15s;"
+          onmouseover="this.style.opacity='0.85'"
+          onmouseout="this.style.opacity='1'">+ Adicionar projeto</button>
       </div>
 
       ${hasProjectSelected ? `
@@ -1128,13 +1126,7 @@ function bindHeaderEvents(container) {
       _openAddProjectPopover(addProjBtn);
     });
   }
-  // "+ Novo projeto" — redireciona pra página de projetos (decisão do user)
-  const newProjBtn = document.getElementById('cc-new-project');
-  if (newProjBtn) {
-    newProjBtn.addEventListener('click', () => {
-      location.hash = '#projects';
-    });
-  }
+  // 4.16.2: botão "+ Novo projeto" removido — usar página /projects.
   // Empty-state CTA
   const goProjectsBtn = document.getElementById('cc-empty-go-projects');
   if (goProjectsBtn) {
