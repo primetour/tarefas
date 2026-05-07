@@ -37,6 +37,63 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.15.0+20260507-cc-bugs-tz-perm-dragdrop] — 2026-05-07
+
+Release **MINOR** — Auditoria criteriosa do Calendário de Conteúdo. Corrige 3 bugs reportados + 3 colaterais + adiciona real-time.
+
+### Bugs reportados pelo user
+> "tarefas colocadas no calendário não podem ser alteradas (sistema não registra alteração)"
+> "calendário está alterando data (usuário seta dia 8 e sistema registra dia 7)"
+> "não há opção de drag and drop"
+
+### Bug 1 — Timezone (dia 8 → dia 7) [CRÍTICO]
+
+**Causa raiz**: `new Date('2026-05-08')` em JS é interpretado como UTC midnight. No fuso UTC-3 (Brasil), vira `2026-05-07T21:00:00`. Display perdia 1 dia.
+
+**Fix**: helper `parseLocalDate(value)` que retorna `Date` no fuso local (constrói com meio-dia pra robustez contra DST). Substituídas TODAS as 8 ocorrências de `new Date(s.scheduledDate)` em `pages/contentCalendar.js`:
+- `slotsForDate()` — filter da view mensal
+- `renderListView()` — filter + sort
+- `renderSlotCard()` — display compact e detalhado
+- `openSlotModal()` — pré-população do input date
+- `openSuggestWeekModal()` — sugestões IA
+- Helpers de export PDF/XLS
+
+### Bug 2 — Edição silenciosa [ALTO]
+
+**Causa raiz dupla**:
+1. `updateSlot()` no service só permitia master, `content_calendar_manage` ou owner. **Membro do projeto** não conseguia editar slots criados por colega.
+2. Toast catch usava mensagem genérica "Erro ao salvar slot" — escondia "Permissão negada".
+
+**Fix**:
+- **Permissão alinhada ao modelo de projetos (v4.11+)**: agora qualquer member do projeto do slot pode editar. Lookup feito no `updateSlot` lendo `projects/{slot.projectId}.members`.
+- **Toast usa `e.message` real** em handleSave + handleDelete
+
+### Bug 3 — Drag and drop [FEATURE]
+
+**Implementado**:
+- Cards de slot com `draggable="true"` (apenas modo non-compact por enquanto, mas a classe é a mesma)
+- `cc-day-cell` com handlers `dragover` / `dragleave` / `drop`
+- Drop dispara `updateSlot(id, { scheduledDate: novaData })`
+- Visual feedback: card arrastado fica `opacity:.4` + rotação leve; cell destino destaca com bg dourado + box-shadow
+
+CSS injetado idempotentemente via `ensureCalendarStyles()` (não tem css/contentCalendar.css). Classes:
+- `.cc-slot-card.cc-dragging`
+- `.cc-day-cell.cc-drag-over`
+
+### Bonus — Fase 2: Real-time
+
+Adicionado `subscribeToSlots(callback, filters)` no service. Page agora usa listener `onSnapshot` em vez de fetch único:
+- Mudanças de outro user aparecem automaticamente
+- Cleanup via `destroyContentCalendar()` exportada para o router
+- `setActiveProject()` reinicia listener com novo scope
+
+### Arquivos alterados
+- `js/services/contentCalendar.js` — `subscribeToSlots`, `updateSlot` com lookup de projeto, `onSnapshot` import
+- `js/pages/contentCalendar.js` — `parseLocalDate` helper, ~10 substituições, drag handlers, listener wiring, CSS injection
+- `js/version.js` — bump 4.14.3 → 4.15.0
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.14.3+20260507-kanban-add-btn-top] — 2026-05-07
 
 Release **PATCH** — UX: botão "+ Adicionar tarefa" no Steps movido pro topo da coluna.

@@ -8,7 +8,7 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import {
   PLATFORMS, CONTENT_TYPES, SLOT_STATUSES, CATEGORIES,
-  fetchSlots, createSlot, updateSlot, deleteSlot,
+  fetchSlots, subscribeToSlots, createSlot, updateSlot, deleteSlot,
   suggestWeekContent, suggestDescription,
   ensureGeneralProjectAndMigrateOrphans,
 } from '../services/contentCalendar.js';
@@ -134,6 +134,8 @@ let modalOpen     = false;
 // 4.11+ — projeto agora é o scope principal do calendário
 let activeProjectId   = '';   // '' = nenhum projeto selecionado
 let availableProjects = [];   // projetos visíveis ao user (cache local)
+// 4.15+ — listener real-time pra ver mudanças concorrentes
+let _slotsUnsub = null;
 
 /* ── Helpers ────────────────────────────────────────────── */
 
@@ -167,6 +169,46 @@ function formatDateBR(d) {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
+/**
+ * 4.15+ — Parser robusto de scheduledDate.
+ *
+ * BUG ANTERIOR: `new Date('2026-05-08')` interpreta como UTC midnight.
+ * No fuso UTC-3 (Brasil), virava `2026-05-07T21:00:00`. `getDate()` retornava 7.
+ * User configurava dia 8 e via dia 7 → bug crítico.
+ *
+ * Fix: se for string 'YYYY-MM-DD' → constrói Date no fuso LOCAL (meio-dia
+ * pra evitar edge case de DST). Se já for Date ou Timestamp Firestore, retorna
+ * como-está (já tá no fuso certo).
+ */
+function parseLocalDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+  // Firestore Timestamp
+  if (typeof value?.toDate === 'function') {
+    try { const d = value.toDate(); return isNaN(d.getTime()) ? null : d; } catch { return null; }
+  }
+  if (typeof value === 'string') {
+    // Match YYYY-MM-DD ou YYYY-MM-DD T... (pega só a parte de data)
+    const m = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      // Constrói no fuso local; meio-dia pra robustez contra DST
+      return new Date(+m[1], +m[2] - 1, +m[3], 12, 0, 0, 0);
+    }
+    // Fallback: ISO completo (com Z ou offset). new Date funciona ok aqui.
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  // number (timestamp ms) ou objeto com .seconds
+  if (typeof value === 'number') {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === 'object' && typeof value.seconds === 'number') {
+    return new Date(value.seconds * 1000);
+  }
+  return null;
+}
+
 function getMonthDays(year, month) {
   return new Date(year, month + 1, 0).getDate();
 }
@@ -184,7 +226,8 @@ function truncate(str, len) {
 function slotsForDate(date) {
   return allSlots.filter(s => {
     if (!s.scheduledDate) return false;
-    const sd = s.scheduledDate instanceof Date ? s.scheduledDate : new Date(s.scheduledDate);
+    const sd = parseLocalDate(s.scheduledDate);
+    if (!sd) return false;
     return isSameDay(sd, date);
   }).filter(s => !activeAccount || s.account === activeAccount);
 }
@@ -225,10 +268,28 @@ export async function renderContentCalendar(container) {
     availableProjects = [];
   }
 
-  // Carrega slots do projeto ativo (ou todos se nenhum projeto)
-  allSlots = await fetchSlots(activeProjectId ? { projectId: activeProjectId } : {});
+  // Carrega slots do projeto ativo + assina real-time
+  await _bindSlotsListener();
 
   renderPage(main);
+}
+
+/**
+ * Inicia/reinicia listener real-time de slots conforme activeProjectId.
+ * Idempotente: cancela anterior antes de assinar de novo.
+ */
+async function _bindSlotsListener() {
+  if (_slotsUnsub) { try { _slotsUnsub(); } catch {} _slotsUnsub = null; }
+  // Primeiro fetch sincrono pra mostrar dados imediatos
+  allSlots = await fetchSlots(activeProjectId ? { projectId: activeProjectId } : {});
+  // Assina listener pra updates concorrentes
+  _slotsUnsub = subscribeToSlots((slots) => {
+    allSlots = slots;
+    // Só re-renderiza se a página continua montada (cc-body presente)
+    if (document.getElementById('cc-body')) {
+      renderCalendarBody();
+    }
+  }, activeProjectId ? { projectId: activeProjectId } : {});
 }
 
 /** Atualiza projeto ativo, sincroniza URL e recarrega slots. */
@@ -239,10 +300,15 @@ async function setActiveProject(projectId) {
     ? `#content-calendar?project=${encodeURIComponent(activeProjectId)}`
     : '#content-calendar';
   try { history.replaceState(null, '', newHash); } catch {}
-  // Re-fetch slots do novo escopo
-  allSlots = await fetchSlots(activeProjectId ? { projectId: activeProjectId } : {});
+  // Re-bind listener com novo scope
+  await _bindSlotsListener();
   const main = document.getElementById('page-content') || document.getElementById('main');
   if (main) renderPage(main);
+}
+
+/** Cleanup quando sai da página. Chamado pelo router em destroy. */
+export function destroyContentCalendar() {
+  if (_slotsUnsub) { try { _slotsUnsub(); } catch {} _slotsUnsub = null; }
 }
 
 function renderPage(container) {
@@ -576,7 +642,8 @@ function renderListView(container) {
 
   let filtered = allSlots.filter(s => {
     if (!s.scheduledDate) return false;
-    const sd = s.scheduledDate instanceof Date ? s.scheduledDate : new Date(s.scheduledDate);
+    const sd = parseLocalDate(s.scheduledDate);
+    if (!sd) return false;
     return sd.getFullYear() === y && sd.getMonth() === m;
   });
 
@@ -587,9 +654,9 @@ function renderListView(container) {
 
   // Sort by date
   filtered.sort((a, b) => {
-    const da = a.scheduledDate instanceof Date ? a.scheduledDate : new Date(a.scheduledDate);
-    const db = b.scheduledDate instanceof Date ? b.scheduledDate : new Date(b.scheduledDate);
-    return da - db;
+    const da = parseLocalDate(a.scheduledDate);
+    const db = parseLocalDate(b.scheduledDate);
+    return (da?.getTime() || 0) - (db?.getTime() || 0);
   });
 
   container.innerHTML = `
@@ -610,7 +677,7 @@ function renderListView(container) {
           Nenhum slot para este periodo
         </div>
       ` : filtered.map(slot => {
-        const sd = slot.scheduledDate instanceof Date ? slot.scheduledDate : new Date(slot.scheduledDate);
+        const sd = parseLocalDate(slot.scheduledDate) || new Date();
         const statusColor = getStatusColor(slot.status);
         const typeIcon = getTypeIcon(slot.contentType);
         const account = ACCOUNTS.find(a => a.value === slot.account);
@@ -683,7 +750,7 @@ function renderSlotCard(slot, mode) {
 
   if (mode === 'compact') {
     return `
-      <div class="cc-slot-card" data-slot-id="${esc(slot.id)}"
+      <div class="cc-slot-card" draggable="true" data-slot-id="${esc(slot.id)}"
         style="padding:3px 6px;border-radius:4px;font-size:0.6875rem;cursor:pointer;
           background:${statusColor}18;border-left:3px solid ${statusColor};
           transition:background 0.15s;display:flex;align-items:center;gap:3px;overflow:hidden;"
@@ -698,7 +765,7 @@ function renderSlotCard(slot, mode) {
   }
 
   // Detailed mode (week view)
-  const sd = slot.scheduledDate instanceof Date ? slot.scheduledDate : new Date(slot.scheduledDate);
+  const sd = parseLocalDate(slot.scheduledDate) || new Date();
   const desc = slot.description || slot.brief || '';
 
   return `
@@ -726,7 +793,30 @@ function renderSlotCard(slot, mode) {
 
 /* ── Cell event binding ─────────────────────────────────── */
 
+/**
+ * Injeta CSS pra drag-drop (idempotente).
+ * Não temos css/contentCalendar.css; injetamos uma vez via <style>.
+ */
+function ensureCalendarStyles() {
+  if (document.getElementById('cc-styles')) return;
+  const styleEl = document.createElement('style');
+  styleEl.id = 'cc-styles';
+  styleEl.textContent = `
+    .cc-slot-card[draggable="true"] { user-select: none; }
+    .cc-slot-card.cc-dragging {
+      opacity: 0.4; cursor: grabbing;
+      transform: rotate(1deg) scale(1.02);
+    }
+    .cc-day-cell.cc-drag-over {
+      background: rgba(212, 168, 67, 0.18) !important;
+      box-shadow: inset 0 0 0 2px var(--brand-gold, #D4A843);
+    }
+  `;
+  document.head.appendChild(styleEl);
+}
+
 function bindCalendarCellEvents(container) {
+  ensureCalendarStyles();
   // Click on empty area of day cell = new slot with date
   container.querySelectorAll('.cc-day-cell').forEach(cell => {
     cell.addEventListener('click', (e) => {
@@ -744,6 +834,55 @@ function bindCalendarCellEvents(container) {
       const slotId = card.dataset.slotId;
       const slot = allSlots.find(s => s.id === slotId);
       if (slot) openSlotModal(slot);
+    });
+  });
+
+  // 4.15+ — Drag-and-drop: arrasta um slot pra outro dia/cell pra mudar data
+  let _dragSlotId = null;
+  container.querySelectorAll('.cc-slot-card').forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      _dragSlotId = card.dataset.slotId;
+      card.classList.add('cc-dragging');
+      try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', _dragSlotId); } catch {}
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('cc-dragging');
+      container.querySelectorAll('.cc-day-cell.cc-drag-over').forEach(c => c.classList.remove('cc-drag-over'));
+      _dragSlotId = null;
+    });
+  });
+  container.querySelectorAll('.cc-day-cell').forEach(cell => {
+    cell.addEventListener('dragover', (e) => {
+      if (!cell.dataset.date) return; // padding cells
+      e.preventDefault(); // necessário pra permitir drop
+      e.dataTransfer.dropEffect = 'move';
+      cell.classList.add('cc-drag-over');
+    });
+    cell.addEventListener('dragleave', () => {
+      cell.classList.remove('cc-drag-over');
+    });
+    cell.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      cell.classList.remove('cc-drag-over');
+      const slotId = _dragSlotId || (e.dataTransfer?.getData('text/plain') || '');
+      const newDate = cell.dataset.date;
+      if (!slotId || !newDate) return;
+      const slot = allSlots.find(s => s.id === slotId);
+      if (!slot) return;
+      // Sem mudança real
+      const currIso = slot.scheduledDate
+        ? formatDate(parseLocalDate(slot.scheduledDate) || new Date())
+        : '';
+      if (currIso === newDate) return;
+      try {
+        await updateSlot(slot.id, { scheduledDate: newDate });
+        slot.scheduledDate = newDate;
+        toast.success(`Movido para ${newDate.split('-').reverse().join('/')}`);
+        renderCalendarBody();
+      } catch (err) {
+        console.error('Drag-drop falhou:', err);
+        toast.error(err?.message || 'Erro ao mover slot');
+      }
     });
   });
 }
@@ -1020,7 +1159,7 @@ function openSlotModal(slot, prefillDate) {
   // Pre-fill date
   let dateVal = '';
   if (s.scheduledDate) {
-    const sd = s.scheduledDate instanceof Date ? s.scheduledDate : new Date(s.scheduledDate);
+    const sd = parseLocalDate(s.scheduledDate) || new Date();
     dateVal = formatDate(sd);
   } else if (prefillDate) {
     dateVal = prefillDate;
@@ -1373,7 +1512,8 @@ async function handleSave() {
     renderCalendarBody();
   } catch (e) {
     console.error('Erro ao salvar slot:', e);
-    toast.error('Erro ao salvar slot');
+    // 4.15+: mostra a mensagem real do erro (antes era opaco "Erro ao salvar")
+    toast.error(e?.message || 'Erro ao salvar slot');
   } finally {
     if (saveBtn) {
       saveBtn.textContent = 'Salvar';
@@ -1406,7 +1546,7 @@ async function handleDelete() {
     renderCalendarBody();
   } catch (e) {
     console.error('Erro ao excluir slot:', e);
-    toast.error('Erro ao excluir slot');
+    toast.error(e?.message || 'Erro ao excluir slot');
     if (deleteBtn) {
       deleteBtn.textContent = 'Excluir';
       deleteBtn.disabled = false;
@@ -1521,21 +1661,21 @@ function getExportableSlots() {
     const we = endOfWeek(currentDate);
     list = list.filter(s => {
       if (!s.scheduledDate) return false;
-      const sd = s.scheduledDate instanceof Date ? s.scheduledDate : new Date(s.scheduledDate);
+      const sd = parseLocalDate(s.scheduledDate) || new Date();
       return sd >= ws && sd <= we;
     });
   } else {
     list = list.filter(s => {
       if (!s.scheduledDate) return false;
-      const sd = s.scheduledDate instanceof Date ? s.scheduledDate : new Date(s.scheduledDate);
+      const sd = parseLocalDate(s.scheduledDate) || new Date();
       return sd.getFullYear() === y && sd.getMonth() === m;
     });
   }
 
   // Ordena por data
   list.sort((a, b) => {
-    const da = a.scheduledDate instanceof Date ? a.scheduledDate : new Date(a.scheduledDate);
-    const db = b.scheduledDate instanceof Date ? b.scheduledDate : new Date(b.scheduledDate);
+    const da = parseLocalDate(a.scheduledDate);
+    const db = parseLocalDate(b.scheduledDate);
     return da - db;
   });
 
@@ -1569,7 +1709,7 @@ function _categoryLabel(val) {
 
 function _buildSlotRows(list) {
   return list.map(s => {
-    const sd = s.scheduledDate instanceof Date ? s.scheduledDate : (s.scheduledDate ? new Date(s.scheduledDate) : null);
+    const sd = parseLocalDate(s.scheduledDate);
     return {
       date: sd ? formatDateBR(sd) : '',
       weekday: sd ? PT_DAYS_S[((sd.getDay() + 6) % 7)] : '',

@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 14,
-  patch: 3,
-  build: '20260507-kanban-add-btn-top',
+  minor: 15,
+  patch: 0,
+  build: '20260507-cc-bugs-tz-perm-dragdrop',
 };
 
 /** "1.2.0" */

@@ -5,7 +5,7 @@
 
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, limit, serverTimestamp,
+  query, where, orderBy, limit, serverTimestamp, onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -104,6 +104,36 @@ export async function fetchSlots({ startDate, endDate, account, platform, status
 }
 
 /**
+ * 4.15+ — Listener real-time da coleção content_calendar.
+ *
+ * Retorna função de unsubscribe. Callback é chamado em cada update
+ * (próprio user E concorrente).
+ *
+ * Filtros são aplicados client-side (mesma lógica do fetchSlots) pra
+ * não exigir índice composto.
+ *
+ * @param {Function} callback (slots: Array) => void
+ * @param {Object} [filters] mesmas opções de fetchSlots
+ * @returns {Function} unsubscribe
+ */
+export function subscribeToSlots(callback, filters = {}) {
+  const q = query(collection(db, COL));
+  return onSnapshot(q, (snap) => {
+    let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (filters.startDate) items = items.filter(i => i.scheduledDate && i.scheduledDate >= filters.startDate);
+    if (filters.endDate)   items = items.filter(i => i.scheduledDate && i.scheduledDate <= filters.endDate);
+    if (filters.account)   items = items.filter(i => i.account === filters.account);
+    if (filters.platform)  items = items.filter(i => i.platform === filters.platform);
+    if (filters.status)    items = items.filter(i => i.status === filters.status);
+    if (filters.projectId) items = items.filter(i => i.projectId === filters.projectId);
+    items.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
+    try { callback(items); } catch (e) { console.warn('[ContentCalendar] subscribe callback error:', e); }
+  }, (err) => {
+    console.warn('[ContentCalendar] subscribe error:', err?.message);
+  });
+}
+
+/**
  * Buscar slot individual.
  */
 export async function getSlot(id) {
@@ -130,19 +160,42 @@ export async function createSlot(data) {
 }
 
 /**
- * Atualizar slot existente — dono pode editar; gestores podem editar todos.
+ * Atualizar slot existente.
+ *
+ * Permissões (4.15+):
+ *  1. Master sempre pode
+ *  2. Quem tem `content_calendar_manage` sempre pode
+ *  3. O `createdBy` pode editar o que criou
+ *  4. **Membro do projeto** do slot pode editar (alinhado ao modelo de
+ *     projetos de v4.11+ onde slots têm projectId — quem participa do
+ *     projeto colabora no calendário)
+ *
+ * Antes (até 4.14.x): só master/manage/owner podia. Bug reportado: slots
+ * criados por colega ficavam intocáveis pelos demais membros do projeto.
  */
 export async function updateSlot(id, data) {
   const me = uid();
   const existing = await getSlot(id).catch(() => null);
-  const isOwner = existing && existing.createdBy === me;
-  if (!store.canManageContentCalendar() && !isOwner && !store.canCreateContentCalendar()) {
-    throw new Error('Permissão negada: você não pode editar este conteúdo.');
+  if (!existing) throw new Error('Slot não encontrado.');
+
+  const isOwner = existing.createdBy === me;
+  let canEdit = store.canManageContentCalendar() || isOwner;
+
+  // Membro do projeto do slot tb pode editar (modelo de projetos)
+  if (!canEdit && existing.projectId) {
+    try {
+      const projSnap = await getDoc(doc(db, 'projects', existing.projectId));
+      if (projSnap.exists()) {
+        const members = projSnap.data().members || [];
+        if (members.includes(me)) canEdit = true;
+      }
+    } catch { /* falha ao buscar projeto = nega por segurança */ }
   }
-  // Quem só tem create (não manage) e não é dono: bloqueia
-  if (!store.canManageContentCalendar() && !isOwner) {
-    throw new Error('Permissão negada: você só pode editar conteúdos que você criou.');
+
+  if (!canEdit) {
+    throw new Error('Permissão negada: você precisa ser membro do projeto, dono do slot, ou ter permissão de gerenciar calendário de conteúdo.');
   }
+
   await updateDoc(doc(db, COL, id), {
     ...data,
     updatedAt: serverTimestamp(),
