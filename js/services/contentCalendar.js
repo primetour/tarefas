@@ -5,7 +5,7 @@
 
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, limit, serverTimestamp, onSnapshot,
+  query, where, orderBy, limit, serverTimestamp, onSnapshot, documentId,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -78,7 +78,7 @@ export const CONTENT_TYPE_MAP = Object.fromEntries(CONTENT_TYPES.map(t => [t.val
 /**
  * Buscar slots com filtros opcionais.
  */
-export async function fetchSlots({ startDate, endDate, account, platform, status, projectId } = {}) {
+export async function fetchSlots({ startDate, endDate, account, platform, status, projectId, projectIds } = {}) {
   try {
     // Query simples sem orderBy composto — ordena client-side
     const q = query(collection(db, COL));
@@ -92,6 +92,11 @@ export async function fetchSlots({ startDate, endDate, account, platform, status
     if (platform)  items = items.filter(i => i.platform === platform);
     if (status)    items = items.filter(i => i.status === status);
     if (projectId) items = items.filter(i => i.projectId === projectId);
+    // 4.16+ — Multi-projeto: filtra por qualquer um dos IDs no array
+    if (Array.isArray(projectIds) && projectIds.length) {
+      const set = new Set(projectIds);
+      items = items.filter(i => set.has(i.projectId));
+    }
 
     // Ordenar por data agendada
     items.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
@@ -126,11 +131,66 @@ export function subscribeToSlots(callback, filters = {}) {
     if (filters.platform)  items = items.filter(i => i.platform === filters.platform);
     if (filters.status)    items = items.filter(i => i.status === filters.status);
     if (filters.projectId) items = items.filter(i => i.projectId === filters.projectId);
+    // 4.16+ — Multi-projeto
+    if (Array.isArray(filters.projectIds) && filters.projectIds.length) {
+      const set = new Set(filters.projectIds);
+      items = items.filter(i => set.has(i.projectId));
+    }
     items.sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
     try { callback(items); } catch (e) { console.warn('[ContentCalendar] subscribe callback error:', e); }
   }, (err) => {
     console.warn('[ContentCalendar] subscribe error:', err?.message);
   });
+}
+
+/**
+ * 4.16+ — Subscribe live em tasks vinculadas a slots (`taskId`).
+ *
+ * Firebase suporta `where(documentId(), 'in', [...])` com **máx 30 IDs por
+ * query** (limite Firestore). Pra arrays maiores, fragmenta em chunks
+ * de 30 e mantém um listener por chunk; chama callback com o merge consolidado.
+ *
+ * @param {string[]} taskIds — IDs únicos de tasks vinculadas
+ * @param {Function} callback — recebe Map<taskId, taskDoc>
+ * @returns {Function} unsubscribe (cancela TODOS os listeners criados)
+ */
+export function subscribeToTasksByIds(taskIds, callback) {
+  const ids = [...new Set((taskIds || []).filter(Boolean))];
+  if (!ids.length) {
+    callback(new Map());
+    return () => {};
+  }
+
+  // Estado consolidado entre chunks
+  const consolidated = new Map();
+  const unsubs = [];
+
+  // Chunks de 30 (limite Firestore para `in`)
+  const CHUNK_SIZE = 30;
+  for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + CHUNK_SIZE);
+    const chunkSet = new Set(chunk);
+    try {
+      const qChunk = query(collection(db, 'tasks'), where(documentId(), 'in', chunk));
+      const unsub = onSnapshot(qChunk, (snap) => {
+        // Limpa entradas deste chunk e re-popula
+        for (const id of chunkSet) consolidated.delete(id);
+        snap.docs.forEach(d => consolidated.set(d.id, { id: d.id, ...d.data() }));
+        try { callback(new Map(consolidated)); } catch (e) {
+          console.warn('[ContentCalendar] tasks subscribe callback error:', e);
+        }
+      }, (err) => {
+        console.warn('[ContentCalendar] tasks subscribe error:', err?.message);
+      });
+      unsubs.push(unsub);
+    } catch (e) {
+      console.warn('[ContentCalendar] tasks subscribe chunk failed:', e?.message);
+    }
+  }
+
+  return () => {
+    for (const u of unsubs) { try { u(); } catch {} }
+  };
 }
 
 /**

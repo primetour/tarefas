@@ -8,7 +8,8 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import {
   PLATFORMS, CONTENT_TYPES, SLOT_STATUSES, CATEGORIES,
-  fetchSlots, subscribeToSlots, createSlot, updateSlot, deleteSlot,
+  fetchSlots, subscribeToSlots, subscribeToTasksByIds,
+  createSlot, updateSlot, deleteSlot,
   suggestWeekContent, suggestDescription,
   ensureGeneralProjectAndMigrateOrphans,
 } from '../services/contentCalendar.js';
@@ -132,10 +133,16 @@ let activeContentType = '';    // GAP fix: filtro por tipo de conteúdo
 let editingSlot   = null;      // null = new slot
 let modalOpen     = false;
 // 4.11+ — projeto agora é o scope principal do calendário
-let activeProjectId   = '';   // '' = nenhum projeto selecionado
+// 4.16+ — multi-projeto: array de IDs em vez de string única.
+// `activeProjectId` mantido como espelho do primeiro pra retrocompat.
+let activeProjectIds  = [];   // [] = nenhum projeto
+let activeProjectId   = '';   // espelho do primeiro (legado)
 let availableProjects = [];   // projetos visíveis ao user (cache local)
 // 4.15+ — listener real-time pra ver mudanças concorrentes
 let _slotsUnsub = null;
+// 4.16+ — Map<taskId, task> live cache + unsub pra re-vincular ao mudar slots
+let _linkedTasks = new Map();
+let _tasksUnsub = null;
 
 /* ── Helpers ────────────────────────────────────────────── */
 
@@ -246,12 +253,24 @@ export async function renderContentCalendar(container) {
   const main = container || document.getElementById('page-content') || document.getElementById('main');
   if (!main) return;
 
-  // ── Parse URL: #content-calendar?project=ABC ────────────
+  // ── Parse URL ──────────────────────────────────────────
+  // Aceita:
+  //   - #content-calendar?project=ABC          (legado, single)
+  //   - #content-calendar?projects=A,B,C       (4.16+, multi-projeto CSV)
+  // Multi tem precedência se ambos presentes.
   try {
     const hashQuery = (location.hash || '').split('?')[1] || '';
     const params = new URLSearchParams(hashQuery);
-    activeProjectId = params.get('project') || '';
+    const csv = params.get('projects');
+    if (csv) {
+      activeProjectIds = csv.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      const single = params.get('project') || '';
+      activeProjectIds = single ? [single] : [];
+    }
+    activeProjectId = activeProjectIds[0] || '';
   } catch {
+    activeProjectIds = [];
     activeProjectId = '';
   }
 
@@ -275,30 +294,68 @@ export async function renderContentCalendar(container) {
 }
 
 /**
- * Inicia/reinicia listener real-time de slots conforme activeProjectId.
+ * Inicia/reinicia listener real-time de slots conforme activeProjectIds.
  * Idempotente: cancela anterior antes de assinar de novo.
+ * Também rebinda o listener de tasks vinculadas após receber novos slots.
  */
 async function _bindSlotsListener() {
   if (_slotsUnsub) { try { _slotsUnsub(); } catch {} _slotsUnsub = null; }
+
+  const filters = activeProjectIds.length ? { projectIds: activeProjectIds } : {};
   // Primeiro fetch sincrono pra mostrar dados imediatos
-  allSlots = await fetchSlots(activeProjectId ? { projectId: activeProjectId } : {});
+  allSlots = await fetchSlots(filters);
+  _bindTasksListener(); // re-vincula tasks listener com novos slots
+
   // Assina listener pra updates concorrentes
   _slotsUnsub = subscribeToSlots((slots) => {
     allSlots = slots;
+    _bindTasksListener();
     // Só re-renderiza se a página continua montada (cc-body presente)
     if (document.getElementById('cc-body')) {
       renderCalendarBody();
     }
-  }, activeProjectId ? { projectId: activeProjectId } : {});
+  }, filters);
 }
 
-/** Atualiza projeto ativo, sincroniza URL e recarrega slots. */
-async function setActiveProject(projectId) {
-  activeProjectId = projectId || '';
+/**
+ * 4.16+ — Vincula listener às tasks dos slots com taskId.
+ * Coleta IDs únicos do allSlots e mantém um Map<taskId, task> via onSnapshot.
+ * Idempotente; cancela listeners anteriores antes de re-subscribe.
+ * Quando o set de IDs não muda, evita reinicializar (otimização).
+ */
+let _lastTaskIdsSig = '';
+function _bindTasksListener() {
+  const taskIds = [...new Set(allSlots.map(s => s.taskId).filter(Boolean))].sort();
+  const sig = taskIds.join('|');
+  if (sig === _lastTaskIdsSig && _tasksUnsub) return; // sem mudança, mantém listener
+
+  if (_tasksUnsub) { try { _tasksUnsub(); } catch {} _tasksUnsub = null; }
+  _lastTaskIdsSig = sig;
+
+  if (!taskIds.length) {
+    _linkedTasks = new Map();
+    return;
+  }
+
+  _tasksUnsub = subscribeToTasksByIds(taskIds, (taskMap) => {
+    _linkedTasks = taskMap;
+    if (document.getElementById('cc-body')) {
+      renderCalendarBody();
+    }
+  });
+}
+
+/** Atualiza projetos ativos, sincroniza URL e recarrega slots. */
+async function setActiveProjects(projectIds) {
+  activeProjectIds = Array.isArray(projectIds) ? [...new Set(projectIds.filter(Boolean))] : [];
+  activeProjectId  = activeProjectIds[0] || '';
   // Atualiza URL sem disparar router (history.replaceState)
-  const newHash = activeProjectId
-    ? `#content-calendar?project=${encodeURIComponent(activeProjectId)}`
-    : '#content-calendar';
+  let newHash = '#content-calendar';
+  if (activeProjectIds.length === 1) {
+    newHash += `?project=${encodeURIComponent(activeProjectIds[0])}`;
+  } else if (activeProjectIds.length > 1) {
+    newHash += `?projects=${activeProjectIds.map(encodeURIComponent).join(',')}`;
+  }
   try { history.replaceState(null, '', newHash); } catch {}
   // Re-bind listener com novo scope
   await _bindSlotsListener();
@@ -306,9 +363,107 @@ async function setActiveProject(projectId) {
   if (main) renderPage(main);
 }
 
+/** Compat: setActiveProject (single) — usa o novo setActiveProjects. */
+async function setActiveProject(projectId) {
+  return setActiveProjects(projectId ? [projectId] : []);
+}
+
+/**
+ * 4.16+ — Popover pra adicionar projeto à seleção multi.
+ * Lista projetos disponíveis (excluindo os já ativos), permite filtrar e clicar.
+ */
+function _openAddProjectPopover(anchor) {
+  // Remove popover anterior se existir
+  document.querySelectorAll('.cc-project-popover').forEach(el => el.remove());
+
+  const candidates = availableProjects.filter(p =>
+    !activeProjectIds.includes(p.id) && !p.archived
+  );
+  if (!candidates.length) {
+    toast.info('Todos os projetos disponíveis já estão no calendário.');
+    return;
+  }
+
+  const pop = document.createElement('div');
+  pop.className = 'cc-project-popover';
+  pop.style.cssText = `
+    position:fixed; z-index:9999;
+    background:var(--bg-card,#111B27); border:1px solid var(--border-subtle,#1E2D3D);
+    border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,0.5);
+    padding:8px; min-width:260px; max-width:340px;
+  `;
+  pop.innerHTML = `
+    <div style="font-size:0.6875rem;color:var(--text-muted);padding:6px 10px 8px;
+      border-bottom:1px solid var(--border-subtle);margin-bottom:6px;
+      text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">
+      Adicionar projeto ao calendário
+    </div>
+    <input type="text" id="cc-add-search" placeholder="Buscar..." autofocus
+      style="width:calc(100% - 20px);margin:0 10px 8px;padding:6px 10px;
+      border:1px solid var(--border-subtle);border-radius:6px;
+      background:var(--bg-surface);color:var(--text-primary);outline:none;
+      font-family:inherit;font-size:0.8125rem;box-sizing:border-box;">
+    <div id="cc-add-list" style="max-height:280px;overflow-y:auto;padding:0 4px;">
+      ${candidates.map(p => `
+        <div class="cc-add-item" data-pid="${esc(p.id)}" data-name="${esc((p.name||'').toLowerCase())}"
+          style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;
+          border-radius:6px;font-size:0.8125rem;color:var(--text-primary);">
+          <span style="font-size:1rem;">${esc(p.icon || '📦')}</span>
+          <span style="flex:1;">${esc(p.name)}</span>
+          <span style="width:8px;height:8px;border-radius:50%;background:${p.color || '#D4A843'};"></span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  document.body.appendChild(pop);
+
+  // Posiciona abaixo do anchor
+  const r = anchor.getBoundingClientRect();
+  const pr = pop.getBoundingClientRect();
+  let left = r.right - pr.width;
+  if (left < 8) left = 8;
+  let top = r.bottom + 6;
+  if (top + pr.height > window.innerHeight - 8) top = r.top - pr.height - 6;
+  pop.style.left = `${left}px`;
+  pop.style.top  = `${top}px`;
+
+  // Hover effect
+  pop.querySelectorAll('.cc-add-item').forEach(el => {
+    el.addEventListener('mouseenter', () => el.style.background = 'var(--bg-elevated)');
+    el.addEventListener('mouseleave', () => el.style.background = 'transparent');
+    el.addEventListener('click', () => {
+      const pid = el.dataset.pid;
+      pop.remove();
+      setActiveProjects([...activeProjectIds, pid]);
+    });
+  });
+
+  // Search filter
+  const search = pop.querySelector('#cc-add-search');
+  search?.focus();
+  search?.addEventListener('input', () => {
+    const q = search.value.toLowerCase();
+    pop.querySelectorAll('.cc-add-item').forEach(el => {
+      el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+    });
+  });
+
+  // Close on outside click / ESC
+  const close = () => { pop.remove(); document.removeEventListener('click', outside, true); document.removeEventListener('keydown', esc); };
+  const outside = (ev) => { if (!pop.contains(ev.target) && ev.target !== anchor) close(); };
+  const esc = (ev) => { if (ev.key === 'Escape') close(); };
+  setTimeout(() => {
+    document.addEventListener('click', outside, true);
+    document.addEventListener('keydown', esc);
+  }, 0);
+}
+
 /** Cleanup quando sai da página. Chamado pelo router em destroy. */
 export function destroyContentCalendar() {
   if (_slotsUnsub) { try { _slotsUnsub(); } catch {} _slotsUnsub = null; }
+  if (_tasksUnsub) { try { _tasksUnsub(); } catch {} _tasksUnsub = null; }
+  _lastTaskIdsSig = '';
+  _linkedTasks = new Map();
 }
 
 function renderPage(container) {
@@ -323,44 +478,37 @@ function renderPage(container) {
       })()
     : `${PT_MONTHS[m]} ${y}`;
 
-  // Projeto ativo (objeto completo) — null se nenhum selecionado
-  const activeProject = availableProjects.find(p => p.id === activeProjectId) || null;
-  const hasProjectSelected = !!activeProjectId && !!activeProject;
-  // Se há projeto ativo no estado mas o user não tem mais acesso a ele
-  // (não está no availableProjects), trata como "nenhum projeto" e mostra
-  // empty state. Não força reset pra preservar URL bookmark.
-  const projectGoneFromList = !!activeProjectId && !activeProject;
+  // 4.16+ — Multi-projeto: lista de projetos ativos, deduplicados e validados
+  const activeProjectsResolved = activeProjectIds
+    .map(id => availableProjects.find(p => p.id === id))
+    .filter(Boolean);
+  const hasProjectSelected = activeProjectsResolved.length > 0;
+  const projectGoneFromList = activeProjectIds.length > 0 && activeProjectsResolved.length === 0;
+  const isMulti = activeProjectsResolved.length > 1;
+  const activeProject = activeProjectsResolved[0] || null; // primeiro pra header label
 
   container.innerHTML = `
     <div style="padding:0;">
       <!-- Header -->
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
         <div>
           <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0 0 4px 0;">
             📱 Calendário de Conteúdo
-            ${activeProject ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:${activeProject.color || 'var(--brand-gold)'};">· ${esc(activeProject.icon || '📦')} ${esc(activeProject.name)}</span>` : ''}
+            ${isMulti
+              ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:var(--brand-gold);">· ${activeProjectsResolved.length} projetos</span>`
+              : (activeProject
+                  ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:${activeProject.color || 'var(--brand-gold)'};">· ${esc(activeProject.icon || '📦')} ${esc(activeProject.name)}</span>`
+                  : '')}
           </h1>
           <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0;">
-            ${activeProject
-              ? 'Calendário deste projeto. Para trocar, use o seletor ao lado.'
+            ${hasProjectSelected
+              ? (isMulti
+                  ? 'Visualizando múltiplos projetos. Cores dos cards = cor do projeto.'
+                  : 'Calendário deste projeto. Adicione mais projetos pra ver vários ao mesmo tempo.')
               : 'Selecione um projeto pra ver/criar conteúdo.'}
           </p>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <!-- Project selector (PRIMARY scope filter) -->
-          <select id="cc-project-select" style="padding:8px 14px;border:1px solid var(--brand-gold,#D4A843);
-            border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
-            font-size:0.875rem;font-weight:600;cursor:pointer;outline:none;min-width:240px;">
-            <option value="">— Selecione um projeto —</option>
-            ${availableProjects.map(p =>
-              `<option value="${esc(p.id)}" ${activeProjectId === p.id ? 'selected' : ''}>${esc(p.icon || '📦')} ${esc(p.name)}${p.archived ? ' (arquivado)' : ''}</option>`
-            ).join('')}
-          </select>
-          <button id="cc-new-project" title="Criar novo projeto"
-            style="padding:8px 12px;border:1px dashed var(--brand-gold,#D4A843);border-radius:8px;
-            background:transparent;color:var(--brand-gold,#D4A843);font-size:0.8125rem;font-weight:600;
-            cursor:pointer;">+ Novo projeto</button>
-
           ${hasProjectSelected ? `
           <!-- View toggle -->
           <div style="display:flex;border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;overflow:hidden;">
@@ -370,8 +518,13 @@ function renderPage(container) {
                 color:${activeView === v ? '#FFFFFF' : 'var(--text-muted,#5A6B7A)'};
                 transition:all 0.15s;font-weight:${activeView === v ? '600' : '400'};">${l}</button>
             `).join('')}
-          </div>
+          </div>` : ''}
+          <button id="cc-new-project" title="Criar novo projeto"
+            style="padding:8px 12px;border:1px dashed var(--brand-gold,#D4A843);border-radius:8px;
+            background:transparent;color:var(--brand-gold,#D4A843);font-size:0.8125rem;font-weight:600;
+            cursor:pointer;">+ Novo projeto</button>
 
+          ${hasProjectSelected ? `
           <!-- Account selector (secondary — handle social) -->
           <select id="cc-account-select" style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
             border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
@@ -428,6 +581,34 @@ function renderPage(container) {
             </div>
           </div>` : ''}
         </div>
+      </div>
+
+      <!-- 4.16+: Chips de projetos ativos (multi-select) -->
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:16px;
+        padding:8px 12px;background:var(--bg-surface,#16202C);border-radius:8px;
+        border:1px solid var(--border-subtle,#1E2D3D);">
+        <span style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;
+          letter-spacing:0.05em;font-weight:600;margin-right:4px;">Projetos:</span>
+        ${activeProjectsResolved.length === 0 ? `
+          <span style="font-size:0.8125rem;color:var(--text-muted);font-style:italic;">
+            Nenhum selecionado
+          </span>
+        ` : activeProjectsResolved.map(p => `
+          <span class="cc-project-chip" data-pid="${esc(p.id)}"
+            style="display:inline-flex;align-items:center;gap:4px;padding:3px 6px 3px 10px;
+            background:${p.color || '#D4A843'}22;border:1px solid ${p.color || '#D4A843'};
+            border-radius:99px;font-size:0.75rem;font-weight:500;color:var(--text-primary);">
+            <span style="font-size:0.875rem;">${esc(p.icon || '📦')}</span>
+            <span>${esc(p.name)}</span>
+            <button class="cc-chip-remove" data-pid="${esc(p.id)}" title="Remover do calendário"
+              style="background:none;border:none;color:var(--text-muted);cursor:pointer;
+              padding:0 4px;font-size:0.875rem;line-height:1;">✕</button>
+          </span>
+        `).join('')}
+        <button id="cc-add-project" title="Adicionar projeto ao calendário"
+          style="padding:4px 10px;border:1px dashed var(--brand-gold,#D4A843);border-radius:99px;
+          background:transparent;color:var(--brand-gold,#D4A843);font-size:0.75rem;font-weight:500;
+          cursor:pointer;margin-left:auto;">+ Adicionar projeto</button>
       </div>
 
       ${hasProjectSelected ? `
@@ -748,17 +929,55 @@ function renderSlotCard(slot, mode) {
   const typeIcon = getTypeIcon(slot.contentType);
   const title = truncate(slot.title || 'Sem titulo', mode === 'compact' ? 20 : 35);
 
+  // 4.16+ — Cor do projeto (border-left) quando multi-projeto ativo
+  const project = slot.projectId
+    ? availableProjects.find(p => p.id === slot.projectId)
+    : null;
+  const isMulti = activeProjectIds.length > 1;
+  const projectColor = (isMulti && project?.color) ? project.color : statusColor;
+
+  // 4.16+ — Badge dinâmico baseado no status REAL da task vinculada (live lookup)
+  // Estados:
+  //  - sem taskId → nada
+  //  - taskId + task.status === 'done' → ✓ Concluída (verde sólido)
+  //  - taskId + task.status === 'cancelled' → ✕ Cancelada (cinza)
+  //  - taskId + outros → Tarefa (amarelo, em andamento)
+  let taskBadge = '';
+  if (slot.taskId) {
+    const task = _linkedTasks.get(slot.taskId);
+    if (task?.status === 'done') {
+      taskBadge = `<span style="font-size:0.5625rem;background:rgba(34,197,94,0.25);color:#22C55E;padding:1px 6px;border-radius:4px;margin-left:4px;font-weight:600;">✓ Concluída</span>`;
+    } else if (task?.status === 'cancelled') {
+      taskBadge = `<span style="font-size:0.5625rem;background:rgba(107,114,128,0.18);color:#9AA5B5;padding:1px 6px;border-radius:4px;margin-left:4px;text-decoration:line-through;">Cancelada</span>`;
+    } else if (task) {
+      taskBadge = `<span style="font-size:0.5625rem;background:rgba(245,158,11,0.18);color:#F59E0B;padding:1px 6px;border-radius:4px;margin-left:4px;">Tarefa</span>`;
+    } else {
+      // Task ainda não chegou pelo listener — placeholder neutro
+      taskBadge = `<span style="font-size:0.5625rem;background:rgba(107,114,128,0.12);color:var(--text-muted);padding:1px 6px;border-radius:4px;margin-left:4px;">Tarefa</span>`;
+    }
+  }
+
+  // Mini badge (compact) só com ✓ verde se concluída — economiza espaço
+  let compactTaskMark = '';
+  if (slot.taskId) {
+    const task = _linkedTasks.get(slot.taskId);
+    compactTaskMark = task?.status === 'done'
+      ? `<span title="Tarefa concluída" style="color:#22C55E;font-weight:700;font-size:0.625rem;flex-shrink:0;">✓</span>`
+      : `<span title="Vinculada a tarefa" style="color:#F59E0B;font-size:0.625rem;flex-shrink:0;">●</span>`;
+  }
+
   if (mode === 'compact') {
     return `
       <div class="cc-slot-card" draggable="true" data-slot-id="${esc(slot.id)}"
         style="padding:3px 6px;border-radius:4px;font-size:0.6875rem;cursor:pointer;
-          background:${statusColor}18;border-left:3px solid ${statusColor};
+          background:${statusColor}18;border-left:3px solid ${projectColor};
           transition:background 0.15s;display:flex;align-items:center;gap:3px;overflow:hidden;"
         onmouseover="this.style.background='${statusColor}30'"
         onmouseout="this.style.background='${statusColor}18'">
         <span style="flex-shrink:0;">${typeIcon}</span>
         <span style="color:var(--text-primary,#E8ECF1);overflow:hidden;text-overflow:ellipsis;
           white-space:nowrap;">${esc(title)}</span>
+        ${compactTaskMark}
         <span style="width:5px;height:5px;border-radius:50%;background:${statusColor};flex-shrink:0;margin-left:auto;"></span>
       </div>
     `;
@@ -769,9 +988,9 @@ function renderSlotCard(slot, mode) {
   const desc = slot.description || slot.brief || '';
 
   return `
-    <div class="cc-slot-card" data-slot-id="${esc(slot.id)}"
+    <div class="cc-slot-card" draggable="true" data-slot-id="${esc(slot.id)}"
       style="padding:8px 10px;border-radius:6px;cursor:pointer;
-        background:${statusColor}12;border-left:3px solid ${statusColor};
+        background:${statusColor}12;border-left:3px solid ${projectColor};
         transition:background 0.15s;"
       onmouseover="this.style.background='${statusColor}25'"
       onmouseout="this.style.background='${statusColor}12'">
@@ -780,10 +999,11 @@ function renderSlotCard(slot, mode) {
         <span style="font-size:0.75rem;font-weight:600;color:var(--text-primary,#E8ECF1);
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(title)}</span>
       </div>
-      <div style="display:flex;align-items:center;gap:4px;margin-top:4px;">
+      <div style="display:flex;align-items:center;gap:4px;margin-top:4px;flex-wrap:wrap;">
         <span style="width:6px;height:6px;border-radius:50%;background:${statusColor};flex-shrink:0;"></span>
         <span style="font-size:0.6875rem;color:${statusColor};">${esc(STATUS_LABELS[slot.status] || '')}</span>
-        ${slot.taskId ? '<span style="font-size:0.5625rem;background:rgba(34,197,94,0.15);color:#22C55E;padding:1px 5px;border-radius:4px;margin-left:4px;">Tarefa</span>' : ''}
+        ${taskBadge}
+        ${isMulti && project ? `<span style="font-size:0.625rem;color:${project.color || 'var(--text-muted)'};opacity:0.85;">· ${esc(project.icon || '📦')} ${esc(project.name)}</span>` : ''}
       </div>
       ${desc ? `<div style="font-size:0.6875rem;color:var(--text-muted,#5A6B7A);margin-top:4px;
         overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(truncate(desc, 40))}</div>` : ''}
@@ -890,11 +1110,19 @@ function bindCalendarCellEvents(container) {
 /* ── Header event binding ───────────────────────────────── */
 
 function bindHeaderEvents(container) {
-  // Project selector — scope principal do calendário
-  const projectSelect = document.getElementById('cc-project-select');
-  if (projectSelect) {
-    projectSelect.addEventListener('change', () => {
-      setActiveProject(projectSelect.value);
+  // 4.16+ — Chips de projetos ativos: remoção e adição via popover
+  container.querySelectorAll('.cc-chip-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pid = btn.dataset.pid;
+      setActiveProjects(activeProjectIds.filter(id => id !== pid));
+    });
+  });
+  const addProjBtn = document.getElementById('cc-add-project');
+  if (addProjBtn) {
+    addProjBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _openAddProjectPopover(addProjBtn);
     });
   }
   // "+ Novo projeto" — redireciona pra página de projetos (decisão do user)
@@ -1302,10 +1530,64 @@ function openSlotModal(slot, prefillDate) {
             style="${inputStyle}resize:vertical;min-height:50px;">${esc(s.imageNotes || '')}</textarea>
         </div>
 
-        ${!isNew && s.taskId ? `
-        <div style="padding:8px 12px;border-radius:6px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);margin-bottom:14px;">
-          <div style="font-size:0.75rem;color:#22C55E;font-weight:600;">✓ Convertido em tarefa</div>
-        </div>` : ''}
+        ${!isNew && s.taskId ? (() => {
+          // 4.16+ — Snapshot live da task vinculada (não replica campos do slot).
+          // Lê do _linkedTasks (Map populado pelo subscribeToTasksByIds).
+          const task = _linkedTasks.get(s.taskId);
+          const isDone = task?.status === 'done';
+          const isCancelled = task?.status === 'cancelled';
+          const isInProgress = task && !isDone && !isCancelled;
+          const headerColor = isDone ? '#22C55E' : (isCancelled ? '#9AA5B5' : '#F59E0B');
+          const headerLabel = !task ? '🔄 Tarefa vinculada (carregando…)'
+            : isDone ? '✓ Tarefa vinculada · Concluída'
+            : isCancelled ? '✕ Tarefa vinculada · Cancelada'
+            : '🔄 Tarefa vinculada · Em andamento';
+          const taskDue = task?.dueDate
+            ? (task.dueDate?.toDate?.() || new Date(task.dueDate))
+            : null;
+          const taskDueStr = taskDue && !isNaN(taskDue.getTime()) ? formatDateBR(taskDue) : null;
+          const completedAt = task?.completedAt?.toDate?.() || (task?.completedAt ? new Date(task.completedAt) : null);
+          const completedStr = completedAt && !isNaN(completedAt?.getTime()) ? formatDateBR(completedAt) : null;
+          // Lookup de assignees nos users do store
+          const users = store.get('users') || [];
+          const assignees = (task?.assignees || []).slice(0, 4).map(uid => {
+            const u = users.find(x => x.id === uid);
+            return u ? { name: u.name || u.email, color: u.avatarColor || '#3B82F6' } : null;
+          }).filter(Boolean);
+          const moreAssignees = (task?.assignees || []).length > 4 ? (task.assignees.length - 4) : 0;
+
+          return `
+        <div style="padding:10px 14px;border-radius:8px;
+          background:${headerColor}12;border:1px solid ${headerColor}50;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;
+            font-size:0.75rem;color:${headerColor};font-weight:600;margin-bottom:${task ? '8px' : '0'};">
+            <span>${headerLabel}</span>
+            ${task ? `<a href="#tasks" data-open-task="${esc(task.id)}"
+              style="color:${headerColor};text-decoration:none;font-weight:500;font-size:0.6875rem;">
+              Abrir tarefa →
+            </a>` : ''}
+          </div>
+          ${task ? `
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:0.75rem;
+            color:var(--text-secondary,#9AA5B5);">
+            <span style="color:var(--text-muted);">Título:</span>
+            <span style="color:var(--text-primary);font-weight:500;">${esc(task.title || '—')}</span>
+            <span style="color:var(--text-muted);">Status:</span>
+            <span style="color:${headerColor};font-weight:500;">${esc(task.status || '—')}</span>
+            ${taskDueStr ? `<span style="color:var(--text-muted);">Prazo:</span>
+            <span>${esc(taskDueStr)}</span>` : ''}
+            ${completedStr ? `<span style="color:var(--text-muted);">Concluída em:</span>
+            <span style="color:#22C55E;font-weight:500;">${esc(completedStr)}</span>` : ''}
+            ${assignees.length ? `<span style="color:var(--text-muted);">Responsáveis:</span>
+            <span style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+              ${assignees.map(a => `<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:99px;background:${a.color}25;color:${a.color};font-size:0.625rem;font-weight:600;">
+                ${esc(a.name)}
+              </span>`).join('')}
+              ${moreAssignees > 0 ? `<span style="font-size:0.625rem;color:var(--text-muted);">+${moreAssignees}</span>` : ''}
+            </span>` : ''}
+          </div>` : ''}
+        </div>`;
+        })() : ''}
       </div>
 
       <!-- Modal footer -->
@@ -1347,6 +1629,36 @@ function bindModalEvents() {
   const modal = document.getElementById('cc-modal');
 
   // Nao fecha por clique no backdrop — apenas pelo X (comportamento global)
+
+  // 4.16+ — Link "Abrir tarefa" no snapshot da tarefa vinculada.
+  // Usa o cache _linkedTasks pra abrir o taskModal direto sem fetch.
+  modal?.querySelectorAll('[data-open-task]').forEach(link => {
+    link.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const taskId = link.dataset.openTask;
+      const cached = _linkedTasks.get(taskId);
+      closeModal();
+      try {
+        const { openTaskModal } = await import('../components/taskModal.js');
+        // Se já temos a task no cache live, abre direto. Senão, busca.
+        if (cached) {
+          openTaskModal({ taskData: cached, onSave: () => {} });
+        } else {
+          const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+          const { db } = await import('../firebase.js');
+          const snap = await fb.getDoc(fb.doc(db, 'tasks', taskId));
+          if (snap.exists()) {
+            openTaskModal({ taskData: { id: snap.id, ...snap.data() }, onSave: () => {} });
+          } else {
+            toast.error('Tarefa não encontrada (pode ter sido excluída).');
+          }
+        }
+      } catch (err) {
+        console.warn('[cc] failed to open task modal:', err);
+        location.hash = '#tasks';
+      }
+    });
+  });
 
   // Close button
   const closeBtn = document.getElementById('cc-modal-close');

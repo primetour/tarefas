@@ -37,6 +37,76 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.16.0+20260507-cc-multi-project-task-snapshot] — 2026-05-07
+
+Release **MINOR** — Calendário de Conteúdo: 3 melhorias pedidas pelo user.
+
+### Pedidos do user
+> 1. "tem o slot/ slot transformado em tarefa e precisamos, também, de visualização do slot que virou tarefa e essa tarefa foi concluída"
+> 2. "quando slot convertido em tarefa, e tarefa é atualizada/editada, isso precisa ser refletido no slot"
+> 3. "opção de ver mais de um calendário ao mesmo tempo (usuário seleciona quantos quiser)"
+
+### Decisões alinhadas com o user
+- **D**: badge "✓ Concluída" verde + ícone, sem riscar título
+- **A**: live lookup (não replica campos do slot — preserva semântica)
+- **B**: chips coloridos com ✕ pra remover, "+ Adicionar projeto" via popover
+
+### Implementação
+
+#### Item 1+2 — Visualização tarefa + reflexão live
+
+**Service `subscribeToTasksByIds(taskIds, callback)`** (NOVO):
+- Coleta `taskIds` únicos dos slots com `slot.taskId`
+- Chunks de 30 (limite Firestore para `where(documentId(), 'in', [...])`)
+- Mantém `Map<taskId, task>` consolidado, atualiza em real-time
+- Retorna unsubscribe que cancela todos os listeners
+
+**Page**: `_bindTasksListener()` re-vincula sempre que slots mudam (com signature dedup pra evitar re-subscribe se IDs não mudaram).
+
+**Slot card** com 3 estados visuais distintos:
+- 📝 Slot só (sem taskId)
+- 🔄 Slot + tarefa **em andamento** — badge amarelo "Tarefa"
+- ✓ Slot + tarefa **concluída** — badge verde "✓ Concluída"
+- ✕ Slot + tarefa **cancelada** — badge cinza riscado
+- Mode compact: só ícone (✓ verde / ● amarelo) pra economizar espaço
+
+**Modal "Tarefa vinculada"**:
+- Substitui o banner antigo "Convertido em tarefa"
+- Snapshot live: título, status, prazo, concluída em, responsáveis (avatars com iniciais)
+- Link "Abrir tarefa →" abre o `taskModal` direto com cached data (zero fetch extra)
+
+#### Item 3 — Multi-projeto
+
+**Service**: `fetchSlots`/`subscribeToSlots` aceitam `projectIds: string[]` (mantém `projectId` single pra retrocompat).
+
+**Page**:
+- Estado: `activeProjectIds[]` (substitui `activeProjectId` single, mas mantém espelho)
+- URL: `?projects=id1,id2,id3` (CSV) ou `?project=id` (single, legado)
+- **Chips bar** abaixo do header:
+  - Cada chip mostra ícone + nome do projeto + ✕ pra remover
+  - Borda colorida com cor do projeto
+  - Botão "+ Adicionar projeto" abre popover com lista filtrável
+- **Slot card border-left** colorido com cor do projeto (quando >1 projeto ativo)
+- **Slot card mostra projeto** abaixo do status (quando >1)
+
+### UX
+
+```
+┌─ Calendário · 2 projetos ──────────────────────────────┐
+│ Visualizando múltiplos projetos. Cores = cor do projeto│
+├────────────────────────────────────────────────────────┤
+│ Projetos: [🎨 Black Friday ✕] [🏖 Verão 2026 ✕]       │
+│ + Adicionar projeto                                     │
+└────────────────────────────────────────────────────────┘
+```
+
+### Arquivos alterados
+- `js/services/contentCalendar.js` — `subscribeToTasksByIds` novo, `projectIds` em fetch+subscribe
+- `js/pages/contentCalendar.js` — estado multi, chips UI, slot card dinâmico, modal snapshot live, popover "+ projeto"
+- `js/version.js` — bump 4.15.1 → 4.16.0
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.15.1+20260507-fix-orphan-permission-projects-manage] — 2026-05-07
 
 Release **PATCH** — auditoria de roles + correção de permission órfã + atualização do RULES-AND-AUTOMATIONS.md.

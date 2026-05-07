@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 15,
-  patch: 1,
-  build: '20260507-fix-orphan-permission-projects-manage',
+  minor: 16,
+  patch: 0,
+  build: '20260507-cc-multi-project-task-snapshot',
 };
 
 /** "1.2.0" */
