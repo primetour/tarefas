@@ -37,6 +37,70 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.26.0+20260507-bugs-fix-rename-filter] — 2026-05-07
+
+Release **MINOR** — 4 melhorias do user (3 bug fixes + 1 feature nova).
+
+### 1) Lembretes / Anotações
+**Bug**: Modal "Novo lembrete" às vezes recusava o título mesmo quando estava
+preenchido.
+**Causa**: `document.getElementById('rem-title')` podia retornar input de
+um modal residual no DOM (race com double-click ou modal anterior não-fechado),
+retornando valor vazio.
+**Fix**: capturar refs no escopo do MODAL atual via `modalHandle.getElement()`
++ `querySelector`. Não depende mais de IDs globais. Mesmo tratamento em
+`openNoteModal` (texto + cor).
+
+**UX**: cards Lembretes & Anotações migrados pro **TOPO do Meu Painel**
+(grid 2-col acima de "Meu Desempenho") — antes ficavam no rodapé direito.
+User pediu mais visibilidade.
+
+### 2) Setores legados — permitir renomear
+**Pedido**: trocar "Concierge Bradesco" por "Concierge".
+
+**Solução**: cards de setores legados agora têm botão ✎ Renomear que abre
+modal com aviso. A função `renameLegacySector(legacy, {newName, color})`:
+- Cria doc Firestore com `replacesLegacyName: legacyName` setado
+- `getActiveSectors()` agora reconhece esse campo e oculta o nome legado
+  da lista (sem deletar — preserva histórico)
+- Novo nome aparece em filtros, pickers e na própria página
+
+Tarefas existentes vinculadas ao nome antigo seguem intactas (preservação
+de histórico) — UI passa a mostrar o novo nome onde renderiza por nome.
+
+### 3) Tarefas — groupBy + filtro multi-assignee
+**Bug**: ao agrupar por responsável e filtrar 2 users no filtro multi,
+apareciam grupos extras (de co-responsáveis das mesmas tasks).
+**Causa**: `computeGroups('assignee')` iterava por TODOS os assignees
+das tasks que passaram pelo filtro, sem checar se cada uid estava no
+filtro selecionado. Tasks com 3+ responsáveis criavam grupo pra cada um.
+**Fix**: quando `filterAssignee` está setado, restringe os grupos APENAS
+aos uids selecionados. Tasks aparecem só nos grupos relevantes.
+
+### 4) Calendário de Conteúdo — filtro fino por tipo de tarefa (NOVO)
+**Pedido**: "+ Adicionar tipo de tarefa com exibição opcional".
+
+**Implementação**:
+- Novo botão `+ Tipos: todos` ao lado do toggle "Tarefas dos projetos"
+  (visível só quando o toggle global está ON)
+- Click abre popover com checkboxes dos typeIds usados pelas tasks dos
+  projetos ativos (extraídos automaticamente do dataset)
+- "Selecionar todos" / "Limpar" / "Aplicar"
+- Estado persistido em localStorage `cc-visible-task-types`
+  (null = todos visíveis; array = só os listados)
+- Aplicado ao filtro: `projectTasksForDate` checa `t.typeId` contra a lista
+- Label do botão atualiza dinamicamente: "Tipos: todos" ou "Tipos: N"
+
+### Files
+- `js/pages/dashboard.js` (Lembretes/Anotações: refs scoped + reposicionados)
+- `js/services/sectors.js` (renameLegacySector + getActiveSectors com replaces)
+- `js/pages/sectors.js` (botão renomear + openRenameLegacyModal)
+- `js/pages/tasks.js` (computeGroups respeita filterUids em assignee)
+- `js/pages/contentCalendar.js` (visibleTaskTypes + popover + filtro)
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+---
+
 ## [4.25.0+20260507-cc-project-task-slots] — 2026-05-07
 
 Release **MINOR** — completa o pacote da v4.24 com a feature deferida.

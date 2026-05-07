@@ -42,6 +42,29 @@ export async function renderDashboard(container) {
       </div>
     </div>
 
+    <!-- 4.26+ Lembretes & Anotações no TOPO (acima de Meu Desempenho).
+         Antes ficavam no rodapé direito; user pediu pra ficarem mais visíveis. -->
+    <div class="dash-personal-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+      <div class="card" id="dash-reminders-card-top">
+        <div class="card-header">
+          <div class="card-title">⏰ Lembretes</div>
+          <button class="btn btn-ghost btn-sm" id="dash-reminders-add" title="Novo lembrete" style="padding:4px 8px;">+ Novo</button>
+        </div>
+        <div class="card-body" id="dash-reminders-list" style="padding:8px 16px 12px;min-height:80px;">
+          <div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0;">Carregando...</div>
+        </div>
+      </div>
+      <div class="card" id="dash-notes-card-top">
+        <div class="card-header">
+          <div class="card-title">📝 Anotações</div>
+          <button class="btn btn-ghost btn-sm" id="dash-notes-add" title="Novo post-it" style="padding:4px 8px;">+ Novo</button>
+        </div>
+        <div class="card-body" id="dash-notes-list" style="padding:8px 16px 12px;min-height:80px;">
+          <div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0;">Carregando...</div>
+        </div>
+      </div>
+    </div>
+
     <div id="dash-stats">
       ${[0,1,2,3].map(()=>'<div class="stat-card skeleton" style="height:100px;"></div>').join('')}
     </div>
@@ -524,27 +547,6 @@ export async function renderDashboard(container) {
           </div>
         ` : ''}
 
-        <!-- 4.24+ Lembretes pessoais -->
-        <div class="card" id="dash-reminders-card">
-          <div class="card-header">
-            <div class="card-title">⏰ Lembretes</div>
-            <button class="btn btn-ghost btn-sm" id="dash-reminders-add" title="Novo lembrete" style="padding:4px 8px;">+ Novo</button>
-          </div>
-          <div class="card-body" id="dash-reminders-list" style="padding:8px 16px 12px;">
-            <div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0;">Carregando...</div>
-          </div>
-        </div>
-
-        <!-- 4.24+ Anotações (post-its) -->
-        <div class="card" id="dash-notes-card">
-          <div class="card-header">
-            <div class="card-title">📝 Anotações</div>
-            <button class="btn btn-ghost btn-sm" id="dash-notes-add" title="Novo post-it" style="padding:4px 8px;">+ Novo</button>
-          </div>
-          <div class="card-body" id="dash-notes-list" style="padding:8px 16px 12px;">
-            <div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0;">Carregando...</div>
-          </div>
-        </div>
       </div>
     `;
 
@@ -783,7 +785,17 @@ async function mountUserPanels(container) {
 
 function openReminderModal({ createReminder, onSaved }) {
   import('../components/modal.js').then(({ modal }) => {
-    modal.open({
+    // 4.26+ Bug fix: usar ref capturada do input (e do modal element) em vez
+    // de getElementById no onClick. Causa do bug: se o user abrisse o modal
+    // 2× rapidamente (debounce ausente), poderia haver 2 inputs com mesmo
+    // id no DOM e getElementById retornava o errado (vazio). Solução:
+    // capturar refs no escopo do MODAL atual via getElement().querySelector.
+    let modalHandle = null;
+    let titleInput = null;
+    let dueInput = null;
+    let notifyInput = null;
+
+    modalHandle = modal.open({
       title: 'Novo lembrete',
       size: 'sm',
       content: `
@@ -791,7 +803,7 @@ function openReminderModal({ createReminder, onSaved }) {
           <div class="form-group">
             <label class="form-label">Título *</label>
             <input type="text" class="form-input" id="rem-title" maxlength="120"
-              placeholder="Ex: Confirmar voo da Maria" autofocus />
+              placeholder="Ex: Confirmar voo da Maria" />
           </div>
           <div class="form-group">
             <label class="form-label">Data de vencimento</label>
@@ -810,10 +822,17 @@ function openReminderModal({ createReminder, onSaved }) {
         {
           label: 'Criar lembrete', class: 'btn-primary', closeOnClick: false,
           onClick: async (_, { close }) => {
-            const title = document.getElementById('rem-title')?.value?.trim();
-            if (!title) { toast.warning('Título obrigatório.'); return; }
-            const dueAt = document.getElementById('rem-due')?.value || null;
-            const notify = document.getElementById('rem-notify')?.checked ?? true;
+            // Lê SEMPRE do modal corrente (escopo isolado)
+            const title  = (titleInput?.value || '').trim();
+            const dueAt  = dueInput?.value || null;
+            const notify = notifyInput?.checked ?? true;
+            if (!title) {
+              console.warn('[reminder] título vazio. titleInput:', titleInput,
+                'value:', titleInput?.value);
+              toast.warning('Digite um título para o lembrete.');
+              titleInput?.focus();
+              return;
+            }
             try {
               await createReminder({ title, dueAt, notify });
               toast.success('Lembrete criado!');
@@ -824,13 +843,27 @@ function openReminderModal({ createReminder, onSaved }) {
         },
       ],
     });
+
+    // Captura refs no escopo do modal atual (não no document) — evita
+    // colisão de id se outro modal residual ainda estiver no DOM.
+    setTimeout(() => {
+      const root = modalHandle?.getElement?.() || document;
+      titleInput  = root.querySelector('#rem-title');
+      dueInput    = root.querySelector('#rem-due');
+      notifyInput = root.querySelector('#rem-notify');
+      titleInput?.focus();
+    }, 50);
   });
 }
 
 function openNoteModal({ note, createNote, updateNote, deleteNote, NOTE_COLORS, onSaved }) {
   const isEdit = !!note;
   import('../components/modal.js').then(({ modal }) => {
-    modal.open({
+    let modalHandle = null;
+    let textInput  = null;
+    let colorInput = null;
+
+    modalHandle = modal.open({
       title: isEdit ? 'Editar anotação' : 'Nova anotação',
       size: 'sm',
       content: `
@@ -860,8 +893,8 @@ function openNoteModal({ note, createNote, updateNote, deleteNote, NOTE_COLORS, 
         {
           label: isEdit ? 'Salvar' : 'Criar', class: 'btn-primary', closeOnClick: false,
           onClick: async (_, { close }) => {
-            const text  = document.getElementById('note-text')?.value || '';
-            const color = document.getElementById('note-color')?.value || NOTE_COLORS[0];
+            const text  = textInput?.value ?? '';
+            const color = colorInput?.value || NOTE_COLORS[0];
             try {
               if (isEdit) await updateNote(note.id, { text, color });
               else        await createNote({ text, color });
@@ -873,15 +906,20 @@ function openNoteModal({ note, createNote, updateNote, deleteNote, NOTE_COLORS, 
       ],
     });
     setTimeout(() => {
-      document.querySelectorAll('.note-color-btn').forEach(btn => {
+      // Refs no escopo do modal corrente (mesmo padrão do reminder)
+      const root = modalHandle?.getElement?.() || document;
+      textInput  = root.querySelector('#note-text');
+      colorInput = root.querySelector('#note-color');
+      root.querySelectorAll('.note-color-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-          document.getElementById('note-color').value = btn.dataset.color;
-          document.querySelectorAll('.note-color-btn').forEach(b => {
+          if (colorInput) colorInput.value = btn.dataset.color;
+          root.querySelectorAll('.note-color-btn').forEach(b => {
             b.style.borderColor = 'transparent';
           });
           btn.style.borderColor = '#1F2937';
         });
       });
+      textInput?.focus();
     }, 50);
   });
 }

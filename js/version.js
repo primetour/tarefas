@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 25,
+  minor: 26,
   patch: 0,
-  build: '20260507-cc-project-task-slots',
+  build: '20260507-bugs-fix-rename-filter',
 };
 
 /** "1.2.0" */

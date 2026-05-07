@@ -155,6 +155,25 @@ let showProjectTasks = (() => {
 })();
 let _projectTasks = []; // cache local: tasks dos projetos ativos com dueDate
 
+// 4.26+ — Filtro por tipo de tarefa: lista de typeIds VISÍVEIS no calendário.
+// `null` = TODOS visíveis (default); array vazio = NENHUM; array com items = só os listados.
+const VISIBLE_TASK_TYPES_KEY = 'cc-visible-task-types';
+let visibleTaskTypes = (() => {
+  try {
+    const v = localStorage.getItem(VISIBLE_TASK_TYPES_KEY);
+    if (v === null || v === '') return null;
+    return JSON.parse(v);
+  } catch { return null; }
+})();
+function persistVisibleTaskTypes() {
+  try {
+    localStorage.setItem(
+      VISIBLE_TASK_TYPES_KEY,
+      visibleTaskTypes === null ? '' : JSON.stringify(visibleTaskTypes),
+    );
+  } catch {}
+}
+
 /* ── Helpers ────────────────────────────────────────────── */
 
 function startOfWeek(d) {
@@ -259,8 +278,14 @@ function slotsForDate(date) {
 function projectTasksForDate(date) {
   if (!showProjectTasks) return [];
   if (!_projectTasks.length) return [];
+  // 4.26+ Filtro fino por tipo de tarefa (se visibleTaskTypes !== null)
+  const restricted = Array.isArray(visibleTaskTypes);
   return _projectTasks.filter(t => {
     if (!t.dueDate) return false;
+    if (restricted) {
+      const tid = t.typeId || '__no_type__';
+      if (!visibleTaskTypes.includes(tid)) return false;
+    }
     // task.dueDate pode ser Timestamp ou string ISO
     const d = t.dueDate?.toDate
       ? t.dueDate.toDate()
@@ -268,6 +293,16 @@ function projectTasksForDate(date) {
     if (!d || isNaN(d.getTime())) return false;
     return isSameDay(d, date);
   });
+}
+
+/**
+ * 4.26+ — Lista de typeIds usados pelas tasks dos projetos ativos.
+ * Inclui '__no_type__' se houver tasks sem typeId.
+ */
+function getProjectTaskTypeIds() {
+  const types = new Set();
+  _projectTasks.forEach(t => types.add(t.typeId || '__no_type__'));
+  return [...types];
 }
 
 /**
@@ -536,6 +571,146 @@ async function setActiveProject(projectId) {
 }
 
 /**
+ * 4.26+ — Popover pra escolher quais tipos de tarefa exibir no calendário.
+ * Mostra todos os typeIds presentes nas tasks dos projetos ativos com
+ * checkboxes. "Selecionar todos / Limpar / Aplicar" no rodapé.
+ */
+function _openTaskTypePopover(anchor) {
+  document.querySelectorAll('.cc-tasktype-popover').forEach(el => el.remove());
+
+  const types = store.get('taskTypes') || [];
+  const usedIds = getProjectTaskTypeIds(); // ids presentes nas tasks dos projetos
+  // Constrói lista — para cada usedId, mostra label/icon do tipo (ou genérico
+  // se for '__no_type__' ou tipo desconhecido).
+  const items = usedIds.map(id => {
+    if (id === '__no_type__') return { id, label: '— Sem tipo —', icon: '📋', color: '#6B7280' };
+    const t = types.find(x => x.id === id);
+    return {
+      id,
+      label: t?.name || `Tipo ${id.slice(0, 6)}…`,
+      icon:  t?.icon || '📋',
+      color: t?.color || '#0EA5E9',
+    };
+  }).sort((a, b) => a.label.localeCompare(b.label));
+
+  const checked = new Set(visibleTaskTypes === null ? items.map(i => i.id) : visibleTaskTypes);
+
+  const pop = document.createElement('div');
+  pop.className = 'cc-tasktype-popover';
+  Object.assign(pop.style, {
+    position: 'fixed', zIndex: '10000',
+    background: 'var(--bg-card,#0F1923)',
+    border: '1px solid var(--border-default,#1E2D3D)',
+    borderRadius: '8px',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.45)',
+    width: '320px', maxWidth: 'calc(100vw - 32px)',
+    maxHeight: '420px',
+    display: 'flex', flexDirection: 'column',
+    fontFamily: 'var(--font-ui)',
+    overflow: 'hidden',
+  });
+  pop.innerHTML = `
+    <div style="padding:10px 12px;border-bottom:1px solid var(--border-subtle);
+      display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <div style="font-weight:600;font-size:0.8125rem;color:var(--text-primary);">Tipos visíveis</div>
+      <div style="display:flex;gap:8px;font-size:0.6875rem;">
+        <button data-act="all" style="background:none;border:none;color:#0EA5E9;cursor:pointer;">Todos</button>
+        <span style="color:var(--text-muted);">·</span>
+        <button data-act="none" style="background:none;border:none;color:var(--text-muted);cursor:pointer;">Limpar</button>
+      </div>
+    </div>
+    <div class="ttp-list" style="overflow-y:auto;flex:1;padding:4px 0;">
+      ${items.length === 0 ? `<div style="padding:14px 12px;color:var(--text-muted);font-size:0.75rem;text-align:center;">
+        Nenhuma tarefa com tipo nos projetos ativos.</div>` :
+        items.map(it => `
+          <label class="ttp-item" data-id="${esc(it.id)}" style="display:flex;align-items:center;gap:10px;
+            padding:8px 14px;cursor:pointer;font-size:0.8125rem;color:var(--text-primary);
+            background:${checked.has(it.id) ? 'rgba(14,165,233,0.06)' : 'transparent'};">
+            <input type="checkbox" data-id="${esc(it.id)}" ${checked.has(it.id) ? 'checked' : ''}
+              style="cursor:pointer;accent-color:#0EA5E9;" />
+            <span style="width:24px;height:24px;border-radius:6px;background:${it.color}20;
+              color:${it.color};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${esc(it.icon)}</span>
+            <span style="flex:1;">${esc(it.label)}</span>
+          </label>
+        `).join('')}
+    </div>
+    <div style="padding:8px 12px;border-top:1px solid var(--border-subtle);display:flex;justify-content:flex-end;gap:8px;">
+      <button data-act="apply" style="padding:6px 14px;border:none;border-radius:6px;
+        background:var(--brand-gold);color:#fff;font-size:0.75rem;font-weight:600;cursor:pointer;">
+        Aplicar
+      </button>
+    </div>
+  `;
+  document.body.appendChild(pop);
+  // Posicionamento (clamped)
+  const r = anchor.getBoundingClientRect();
+  let left = r.left;
+  let top = r.bottom + 6;
+  const pr = pop.getBoundingClientRect();
+  if (left + pr.width > window.innerWidth - 8) left = window.innerWidth - pr.width - 8;
+  if (left < 8) left = 8;
+  if (top + pr.height > window.innerHeight - 8) top = Math.max(8, r.top - pr.height - 6);
+  pop.style.left = `${left}px`;
+  pop.style.top  = `${top}px`;
+
+  function cleanup() {
+    pop.remove();
+    document.removeEventListener('click', outside, true);
+    document.removeEventListener('keydown', escH);
+  }
+  function outside(e) {
+    if (!pop.contains(e.target) && !anchor.contains(e.target)) cleanup();
+  }
+  function escH(e) { if (e.key === 'Escape') cleanup(); }
+
+  pop.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const id = cb.dataset.id;
+      if (cb.checked) checked.add(id); else checked.delete(id);
+      const row = cb.closest('.ttp-item');
+      if (row) row.style.background = cb.checked ? 'rgba(14,165,233,0.06)' : 'transparent';
+    });
+  });
+  pop.querySelector('[data-act="all"]')?.addEventListener('click', () => {
+    items.forEach(i => checked.add(i.id));
+    pop.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.checked = true;
+      const row = cb.closest('.ttp-item');
+      if (row) row.style.background = 'rgba(14,165,233,0.06)';
+    });
+  });
+  pop.querySelector('[data-act="none"]')?.addEventListener('click', () => {
+    checked.clear();
+    pop.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.checked = false;
+      const row = cb.closest('.ttp-item');
+      if (row) row.style.background = 'transparent';
+    });
+  });
+  pop.querySelector('[data-act="apply"]')?.addEventListener('click', () => {
+    // Se TODOS marcados → null (default visual "Tipos: todos")
+    if (checked.size === items.length) visibleTaskTypes = null;
+    else visibleTaskTypes = [...checked];
+    persistVisibleTaskTypes();
+    cleanup();
+    // Atualiza label do botão e re-render
+    const btn = document.getElementById('cc-filter-task-types');
+    if (btn) {
+      const label = btn.querySelector('span:last-child');
+      if (label) label.textContent = visibleTaskTypes === null
+        ? 'Tipos: todos'
+        : `Tipos: ${visibleTaskTypes.length}`;
+    }
+    renderCalendarBody();
+  });
+
+  setTimeout(() => {
+    document.addEventListener('click', outside, true);
+    document.addEventListener('keydown', escH);
+  }, 0);
+}
+
+/**
  * 4.16+ — Popover pra adicionar projeto à seleção multi.
  * Lista projetos disponíveis (excluindo os já ativos), permite filtrar e clicar.
  */
@@ -721,6 +896,17 @@ function renderPage(container) {
             display:inline-flex;align-items:center;gap:6px;">
             <span style="font-size:0.875rem;">${showProjectTasks ? '👁' : '🚫'}</span>
             <span>Tarefas dos projetos</span>
+          </button>
+
+          <!-- 4.26+ Filtro fino: tipos de tarefa visíveis -->
+          <button id="cc-filter-task-types" title="Escolher quais tipos de tarefa exibir"
+            style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
+            border-radius:8px;background:var(--bg-surface,#16202C);
+            color:var(--text-primary,#E8ECF1);
+            font-size:0.8125rem;font-weight:500;cursor:pointer;transition:all 0.15s;
+            display:${showProjectTasks ? 'inline-flex' : 'none'};align-items:center;gap:6px;">
+            <span style="font-size:0.875rem;">+</span>
+            <span>${visibleTaskTypes === null ? 'Tipos: todos' : `Tipos: ${visibleTaskTypes.length}`}</span>
           </button>
 
           <!-- Action buttons -->
@@ -1337,6 +1523,15 @@ function bindHeaderEvents(container) {
       // Re-fetch e re-render
       if (showProjectTasks && !_projectTasks.length) await loadProjectTasks();
       renderCalendarBody();
+    });
+  }
+
+  // 4.26+ Filtro de tipos de tarefa
+  const filterTypesBtn = document.getElementById('cc-filter-task-types');
+  if (filterTypesBtn) {
+    filterTypesBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _openTaskTypePopover(filterTypesBtn);
     });
   }
 

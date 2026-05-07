@@ -1341,10 +1341,19 @@ function buildGroups() {
   // 4.24+ — agrupar por responsável (assignee). Tarefas com múltiplos
   // responsáveis aparecem em CADA grupo (semantica OR). "Sem responsável"
   // é grupo separado pra deixar visível tarefas órfãs.
+  // 4.26+ — quando há filtro de assignee ativo, restringe os grupos APENAS
+  // aos uids selecionados (antes mostrava grupos extras dos co-responsáveis
+  // que não estavam no filtro).
   if (groupBy === 'assignee') {
     const groups = [];
     const users = store.get('users') || [];
     const userById = new Map(users.map(u => [u.id, u]));
+    // 4.26+ Restrição de uids quando o filtro de assignee está ativo
+    const filterUids = (() => {
+      if (!filterAssignee) return null; // null = sem restrição
+      const want = Array.isArray(filterAssignee) ? filterAssignee : [filterAssignee];
+      return want.length ? new Set(want) : null;
+    })();
     // Coleta uids únicos das tasks (cobertura: master vê tasks de users
     // que ele talvez não conheça por outro caminho)
     const seen = new Map(); // uid → tasks[]
@@ -1353,6 +1362,8 @@ function buildGroups() {
       const arr = Array.isArray(t.assignees) ? t.assignees : [];
       if (!arr.length) { noAssignee.push(t); return; }
       arr.forEach(uid => {
+        // Se há filtro ativo, ignora uids não selecionados (grupos extras)
+        if (filterUids && !filterUids.has(uid)) return;
         if (!seen.has(uid)) seen.set(uid, []);
         seen.get(uid).push(t);
       });

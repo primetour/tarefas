@@ -40,20 +40,31 @@ export { DEFAULT_SECTORS as SECTORS };
  * Firestore) com os DEFAULT_SECTORS hardcoded — assim criar 1 setor novo
  * NÃO esconde os 19 legados.
  *
+ * 4.26+: novo campo `replacesLegacyName` permite RENOMEAR um setor padrão.
+ * Se um doc tem `replacesLegacyName: 'Concierge Bradesco'` e `name: 'Concierge'`,
+ * o legado some da lista e o novo nome aparece. Mantém histórico (tarefas
+ * antigas continuam apontando pro nome legacy, mas a UI mostra o nome novo
+ * onde for renderizado por nome).
+ *
  * Regras de precedência (case-insensitive por nome):
  *   - Setor dinâmico ativo → entra na lista
- *   - Setor dinâmico inativo (active:false) → REMOVE da lista (mesmo se for legacy)
- *     → user pode "ocultar" um setor padrão criando um doc com mesmo nome + active:false
- *   - Setor legado SEM doc → entra na lista (back-compat default)
+ *   - Setor dinâmico inativo (active:false) → REMOVE da lista
+ *   - replacesLegacyName setado → oculta o legado correspondente
+ *   - Setor legado SEM doc/replace → entra na lista (back-compat)
  *
- * Ordem: dinâmicos primeiro (por `order`), depois legados sem doc (ordem original).
+ * Ordem: dinâmicos primeiro (por `order`), depois legados sem doc.
  */
 export function getActiveSectors() {
   const dyn = Array.isArray(store.get('sectors')) ? store.get('sectors') : [];
   // Index dinâmico: name (lower) → doc
   const dynByName = new Map();
+  // 4.26+ replaces legacy: set de nomes legados que foram renomeados
+  const replacedLegacy = new Set();
   for (const s of dyn) {
     if (s?.name) dynByName.set(String(s.name).toLowerCase(), s);
+    if (s?.replacesLegacyName && s.active !== false) {
+      replacedLegacy.add(String(s.replacesLegacyName).toLowerCase());
+    }
   }
   const out = [];
   // 1) Dinâmicos ATIVOS (na ordem definida)
@@ -61,12 +72,13 @@ export function getActiveSectors() {
     if (s.active !== false) out.push(s.name);
   }
   // 2) Legados que NÃO foram redefinidos (sem doc com mesmo nome) E não foram desativados
+  //    E não foram substituídos por um doc replacesLegacyName
   for (const name of DEFAULT_SECTORS) {
-    const dynMatch = dynByName.get(name.toLowerCase());
-    if (!dynMatch) {
-      out.push(name); // sem doc → preserva legacy
-    }
-    // Se dynMatch existir, já foi tratado no loop 1 (entra se active, sai se !active)
+    const lower = name.toLowerCase();
+    const dynMatch = dynByName.get(lower);
+    if (dynMatch) continue;          // tratado no loop 1
+    if (replacedLegacy.has(lower)) continue; // 4.26+ renomeado, oculta original
+    out.push(name);                  // sem doc → preserva legacy
   }
   // Dedup case-insensitive (precaução)
   const seen = new Set();
@@ -75,6 +87,37 @@ export function getActiveSectors() {
     if (seen.has(k)) return false;
     seen.add(k); return true;
   });
+}
+
+/**
+ * 4.26+ — Renomear um setor padrão (legado). Cria doc com `replacesLegacyName`
+ * marcado, para que `getActiveSectors()` esconda o nome antigo.
+ */
+export async function renameLegacySector(legacyName, { newName, color = '#6366F1', order = 100 }) {
+  if (!store.can('system_manage_users') && !store.isMaster()) {
+    throw new Error('Permissão negada.');
+  }
+  const trimmed = String(newName || '').trim();
+  if (!trimmed) throw new Error('Novo nome é obrigatório.');
+  // Verifica duplicata com OUTROS setores ativos (excluindo o próprio legado
+  // que vai sumir, e excluindo doc com mesmo replacesLegacyName se já existir)
+  const existing = getActiveSectors();
+  const conflict = existing.some(n =>
+    n.toLowerCase() === trimmed.toLowerCase() &&
+    n.toLowerCase() !== String(legacyName).toLowerCase()
+  );
+  if (conflict) throw new Error(`Já existe um setor "${trimmed}".`);
+  const user = store.get('currentUser');
+  const ref = await addDoc(collection(db, 'sectors'), {
+    name:                trimmed,
+    color,
+    order,
+    active:              true,
+    replacesLegacyName:  legacyName, // marca de override
+    createdAt:           serverTimestamp(),
+    createdBy:           user?.uid || null,
+  });
+  return { id: ref.id, name: trimmed, color, order, active: true, replacesLegacyName: legacyName };
 }
 
 /* ─── Buscar todos os setores (raw) ──────────────────────── */

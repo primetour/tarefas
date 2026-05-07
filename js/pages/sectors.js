@@ -18,6 +18,7 @@ const sectorColor = (s) => {
 import {
   fetchNucleos, createNucleo, updateNucleo, deleteNucleo,
   fetchSectors, createSector, updateSector, deleteSector,
+  renameLegacySector,
   loadSectors, getActiveSectors,
   SECTORS, userNucleos, userInNucleo,
 } from '../services/sectors.js';
@@ -150,7 +151,11 @@ function render(visibleSectors) {
                 title="Editar setor" style="width:28px;height:28px;font-size:0.75rem;">✎</button>
               <button class="btn btn-ghost btn-icon" data-sector-del="${sectorDoc.id}" data-sector-name="${esc(sector)}"
                 title="Excluir setor" style="width:28px;height:28px;font-size:0.75rem;color:var(--color-danger);">✕</button>
-            ` : ''}
+            ` : `
+              <!-- 4.26+ Setor padrão (legacy) — botão de renomear cria override -->
+              <button class="btn btn-ghost btn-icon" data-sector-rename-legacy="${esc(sector)}"
+                title="Renomear setor padrão" style="width:28px;height:28px;font-size:0.75rem;">✎</button>
+            `}
           </div>
         </div>
         <div class="card-body" style="padding:8px 16px 16px;">
@@ -228,6 +233,10 @@ function render(visibleSectors) {
   );
   grid.querySelectorAll('[data-sector-del]').forEach(btn =>
     btn.addEventListener('click', () => confirmDeleteSector(btn.dataset.sectorDel, btn.dataset.sectorName))
+  );
+  // 4.26+ Renomear setor legado (cria override)
+  grid.querySelectorAll('[data-sector-rename-legacy]').forEach(btn =>
+    btn.addEventListener('click', () => openRenameLegacyModal(btn.dataset.sectorRenameLegacy))
   );
 }
 
@@ -669,4 +678,96 @@ async function confirmDeleteSector(sectorId, sectorName) {
     const visibleSectors = store.isMaster() ? getActiveSectors() : (store.get('visibleSectors') || []);
     await load(visibleSectors);
   } catch (e) { toast.error(e.message); }
+}
+
+/* ─── 4.26+ Modal: renomear setor legado (cria override) ─── */
+function openRenameLegacyModal(legacyName) {
+  let modalHandle = null;
+  let nameInput = null;
+  let colorHidden = null;
+
+  modalHandle = modal.open({
+    title: `Renomear "${legacyName}"`,
+    size: 'sm',
+    content: `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);
+          border-radius:var(--radius-md);padding:10px 14px;font-size:0.75rem;color:var(--text-secondary);
+          line-height:1.5;">
+          <strong>ℹ Sobre setores padrão:</strong> "${esc(legacyName)}" é parte da lista
+          padrão do sistema. Renomear cria um <strong>override customizado</strong> e oculta o nome
+          original. <strong>Tarefas existentes continuam vinculadas ao nome antigo</strong>
+          (preservação de histórico).
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nome atual</label>
+          <input type="text" class="form-input" value="${esc(legacyName)}" disabled
+            style="opacity:0.6;cursor:not-allowed;" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Novo nome *</label>
+          <input type="text" class="form-input" id="sec-rename-name" maxlength="60"
+            placeholder="Digite o novo nome..." />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cor de identificação</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${SECTOR_COLORS.map(c => `
+              <div class="sec-rename-color-btn" data-color="${c}" style="
+                width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;
+                border:3px solid ${SECTOR_COLORS[0]===c?'white':'transparent'};
+                box-shadow:${SECTOR_COLORS[0]===c?'0 0 0 2px '+c:'none'};
+                transition:all 0.15s;"></div>
+            `).join('')}
+          </div>
+          <input type="hidden" id="sec-rename-color" value="${SECTOR_COLORS[0]}" />
+        </div>
+      </div>
+    `,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+      {
+        label: 'Renomear', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const newName = (nameInput?.value || '').trim();
+          if (!newName) { toast.warning('Digite o novo nome.'); nameInput?.focus(); return; }
+          if (newName.toLowerCase() === legacyName.toLowerCase()) {
+            toast.warning('O novo nome é igual ao atual.'); return;
+          }
+          const color = colorHidden?.value || SECTOR_COLORS[0];
+          const btn = document.querySelector('.modal-footer .btn-primary');
+          if (btn) { btn.classList.add('loading'); btn.disabled = true; }
+          try {
+            await renameLegacySector(legacyName, { newName, color, order: 100 });
+            toast.success(`Setor renomeado para "${newName}".`);
+            close();
+            await loadSectors();
+            const visibleSectors = store.isMaster() ? getActiveSectors() : (store.get('visibleSectors') || []);
+            await load(visibleSectors);
+          } catch (e) {
+            toast.error(e.message);
+          } finally {
+            if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
+          }
+        },
+      },
+    ],
+  });
+
+  setTimeout(() => {
+    const root = modalHandle?.getElement?.() || document;
+    nameInput   = root.querySelector('#sec-rename-name');
+    colorHidden = root.querySelector('#sec-rename-color');
+    nameInput?.focus();
+    root.querySelectorAll('.sec-rename-color-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (colorHidden) colorHidden.value = btn.dataset.color;
+        root.querySelectorAll('.sec-rename-color-btn').forEach(b => {
+          b.style.borderColor = 'transparent'; b.style.boxShadow = 'none';
+        });
+        btn.style.borderColor = 'white';
+        btn.style.boxShadow = `0 0 0 2px ${btn.dataset.color}`;
+      });
+    });
+  }, 50);
 }
