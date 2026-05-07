@@ -26,7 +26,7 @@ export const VERSION = {
   major: 4,
   minor: 16,
   patch: 0,
-  build: '20260507-cc-multi-project-task-snapshot',
+  build: '20260507-cc-multi-project-debug',
 };
 
 /** "1.2.0" */

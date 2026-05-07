@@ -373,12 +373,18 @@ async function setActiveProject(projectId) {
  * Lista projetos disponíveis (excluindo os já ativos), permite filtrar e clicar.
  */
 function _openAddProjectPopover(anchor) {
+  console.log('[cc-add-popover] _openAddProjectPopover called', {
+    anchor: anchor?.id,
+    availableProjectsLen: availableProjects?.length,
+    activeProjectIds,
+  });
   // Remove popover anterior se existir
   document.querySelectorAll('.cc-project-popover').forEach(el => el.remove());
 
   const candidates = availableProjects.filter(p =>
     !activeProjectIds.includes(p.id) && !p.archived
   );
+  console.log('[cc-add-popover] candidates:', candidates.length);
   if (!candidates.length) {
     toast.info('Todos os projetos disponíveis já estão no calendário.');
     return;
@@ -1119,9 +1125,11 @@ function bindHeaderEvents(container) {
     });
   });
   const addProjBtn = document.getElementById('cc-add-project');
+  console.log('[cc-bind] addProjBtn found?', !!addProjBtn);
   if (addProjBtn) {
     addProjBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      console.log('[cc-bind] add-project click handler fired');
       _openAddProjectPopover(addProjBtn);
     });
   }
