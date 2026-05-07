@@ -402,23 +402,28 @@ export async function fetchEntityHistory(entity, entityId, max = 50) {
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (err) {
-    // Sem índice → fallback client-side: busca os últimos N por entityId
-    // (limit baixo pra não estourar quota; tarefas raramente passam de 50 changes)
+    // Sem índice composto → fallback INDEX-FREE: orderBy timestamp puro
+    // (single field, sempre indexado pelo Firestore) + filtro client-side.
+    // Trade-off: precisa fetchar mais docs pra cobrir tarefas com mudanças
+    // antigas. fallbackLimit é generoso (1500) — suficiente pra cobrir ~30
+    // dias de auditoria em uma instalação ativa.
+    //
+    // A combinação `where(any) + orderBy(timestamp)` também requer composite
+    // index — por isso o fallback NÃO usa where, só orderBy.
     if (err?.code === 'failed-precondition' || /index/i.test(err?.message || '')) {
-      console.debug('[audit] composite index missing, using client-side filter');
+      console.debug('[audit] composite index missing, using index-free client-side filter');
       try {
-        const fallbackLimit = 500;
+        const fallbackLimit = 1500;
         const q2 = query(
           collection(db, 'audit_logs'),
-          where('entityId', '==', entityId),
           orderBy('timestamp', 'desc'),
           limit(fallbackLimit),
         );
         const snap2 = await getDocs(q2);
-        return snap2.docs
+        const filtered = snap2.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .filter(l => l.entity === entity)
-          .slice(0, max);
+          .filter(l => l.entity === entity && l.entityId === entityId);
+        return filtered.slice(0, max);
       } catch (err2) {
         console.warn('[audit] fetchEntityHistory fallback failed:', err2.message);
         return [];

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 23,
-  patch: 0,
-  build: '20260507-sectors-history-drilldown-notif',
+  patch: 1,
+  build: '20260507-fix-audit-fallback',
 };
 
 /** "1.2.0" */

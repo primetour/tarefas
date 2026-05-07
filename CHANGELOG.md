@@ -37,6 +37,29 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.23.1+20260507-fix-audit-fallback] — 2026-05-07
+
+PATCH — fix bug do histórico no card descoberto no E2E.
+
+### Problema
+v4.23.0 trouxe a seção "Histórico de alterações" no taskModal, mas todas as
+tarefas mostravam "Sem registros". Causa: o fallback do `fetchEntityHistory`
+(quando o composite index `(entity, entityId, timestamp DESC)` não existe)
+ainda usava `where('entityId', '==', X) + orderBy('timestamp', 'desc')`, que
+TAMBÉM exige composite index — ele só pulava o `where('entity')` mas mantinha
+um where + orderBy → mesma falha.
+
+### Fix
+Fallback agora é REALMENTE index-free: só `orderBy('timestamp', 'desc')` (single
+field, sempre indexado pelo Firestore) com filtro client-side por `entity` E
+`entityId`. fallbackLimit subiu de 500 → 1500 pra cobrir tarefas com mudanças
+mais antigas (~30 dias de auditoria em uma instalação ativa).
+
+### Files
+- `js/auth/audit.js` (fallback corrigido)
+
+---
+
 ## [4.23.0+20260507-sectors-history-drilldown-notif] — 2026-05-07
 
 Release **MINOR** — quatro melhorias pedidas pelo user numa única release.
