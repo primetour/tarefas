@@ -523,8 +523,33 @@ export async function renderDashboard(container) {
             </div>
           </div>
         ` : ''}
+
+        <!-- 4.24+ Lembretes pessoais -->
+        <div class="card" id="dash-reminders-card">
+          <div class="card-header">
+            <div class="card-title">⏰ Lembretes</div>
+            <button class="btn btn-ghost btn-sm" id="dash-reminders-add" title="Novo lembrete" style="padding:4px 8px;">+ Novo</button>
+          </div>
+          <div class="card-body" id="dash-reminders-list" style="padding:8px 16px 12px;">
+            <div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0;">Carregando...</div>
+          </div>
+        </div>
+
+        <!-- 4.24+ Anotações (post-its) -->
+        <div class="card" id="dash-notes-card">
+          <div class="card-header">
+            <div class="card-title">📝 Anotações</div>
+            <button class="btn btn-ghost btn-sm" id="dash-notes-add" title="Novo post-it" style="padding:4px 8px;">+ Novo</button>
+          </div>
+          <div class="card-body" id="dash-notes-list" style="padding:8px 16px 12px;">
+            <div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0;">Carregando...</div>
+          </div>
+        </div>
       </div>
     `;
+
+    // 4.24+ Mount Lembretes & Anotações (lazy import + render assíncrono)
+    mountUserPanels(container);
 
     // Bind task rows
     container.querySelectorAll('.dash-task-row[data-tid]').forEach(row => {
@@ -567,6 +592,298 @@ function statCard(label, value, icon, ibg, ic, href) {
     <div class="stat-card-label">${label}</div>
     <div class="stat-card-value">${value}</div>
   </div>`;
+}
+
+/* ─── 4.24+ Lembretes & Anotações (Meu Painel) ─────────────── */
+
+const escTxt = s => String(s||'').replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function mountUserPanels(container) {
+  const [{
+    fetchNotes, createNote, updateNote, deleteNote,
+    fetchReminders, createReminder, updateReminder, deleteReminder,
+    checkDueReminders, NOTE_COLORS,
+  }, { openTaskModal: openTM }] = await Promise.all([
+    import('../services/userNotes.js'),
+    import('../components/taskModal.js'),
+  ]);
+
+  // ── Reminders ──────────────────────────────────────────────
+  async function renderReminders() {
+    const list = await fetchReminders({ includeDone: false }).catch(() => []);
+    const el = document.getElementById('dash-reminders-list');
+    if (!el) return;
+    if (!list.length) {
+      el.innerHTML = `<div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0;text-align:center;">
+        Nenhum lembrete ativo. Clique em <strong>+ Novo</strong> pra criar.
+      </div>`;
+      return;
+    }
+    const fmtDue = (r) => {
+      if (!r.dueAt) return '';
+      const d = r.dueAt?.toDate?.() || new Date(r.dueAt);
+      if (isNaN(d.getTime())) return '';
+      const today = new Date(); today.setHours(0,0,0,0);
+      const diff = Math.floor((d - today) / 86400000);
+      const overdue = d < new Date();
+      const color = overdue ? '#EF4444' : diff <= 1 ? '#F59E0B' : 'var(--text-muted)';
+      const label = overdue ? 'vencido' :
+                    diff === 0 ? 'hoje' :
+                    diff === 1 ? 'amanhã' :
+                    diff < 7 ? `em ${diff}d` :
+                    d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
+      return `<span style="font-size:0.6875rem;color:${color};font-weight:500;">📅 ${label}</span>`;
+    };
+    el.innerHTML = list.slice(0, 5).map(r => `
+      <div class="reminder-row" data-id="${escTxt(r.id)}" style="display:flex;align-items:center;gap:8px;padding:6px 0;
+        border-bottom:1px dashed var(--border-subtle);">
+        <input type="checkbox" data-act="rem-done" data-id="${escTxt(r.id)}"
+          style="cursor:pointer;flex-shrink:0;accent-color:var(--brand-gold);" />
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
+          <div style="font-size:0.8125rem;color:var(--text-primary);overflow:hidden;
+            text-overflow:ellipsis;white-space:nowrap;">${escTxt(r.title)}</div>
+          ${r.dueAt ? fmtDue(r) : ''}
+        </div>
+        <button data-act="rem-task" data-id="${escTxt(r.id)}" title="Converter em tarefa"
+          style="background:none;border:none;cursor:pointer;color:var(--text-muted);
+          padding:4px 6px;font-size:0.6875rem;">→ tarefa</button>
+        <button data-act="rem-del" data-id="${escTxt(r.id)}" title="Excluir"
+          style="background:none;border:none;cursor:pointer;color:var(--color-danger);
+          padding:4px 6px;font-size:0.75rem;">✕</button>
+      </div>
+    `).join('') + (list.length > 5 ? `<div style="text-align:center;padding-top:6px;
+      font-size:0.6875rem;color:var(--text-muted);">+${list.length-5} mais lembretes</div>` : '');
+
+    // Wire actions
+    el.querySelectorAll('[data-act="rem-done"]').forEach(cb => {
+      cb.addEventListener('change', async (e) => {
+        try {
+          await updateReminder(e.target.dataset.id, { done: true, completedAt: new Date() });
+          toast.success('Lembrete concluído!');
+          await renderReminders();
+        } catch (err) { toast.error('Erro: ' + err.message); }
+      });
+    });
+    el.querySelectorAll('[data-act="rem-del"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Excluir este lembrete?')) return;
+        try {
+          await deleteReminder(btn.dataset.id);
+          await renderReminders();
+        } catch (err) { toast.error('Erro: ' + err.message); }
+      });
+    });
+    el.querySelectorAll('[data-act="rem-task"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const r = list.find(x => x.id === btn.dataset.id);
+        if (!r) return;
+        // Abre taskModal pré-preenchido com dados do lembrete
+        openTM({
+          taskData: {
+            title: r.title,
+            description: '',
+            assignees: [store.get('currentUser')?.uid].filter(Boolean),
+            dueDate: r.dueAt
+              ? (r.dueAt.toDate?.() || new Date(r.dueAt)).toISOString().slice(0,10)
+              : null,
+            status: 'not_started',
+            tags: ['lembrete'],
+          },
+          onSave: async (newTaskId) => {
+            // Marca lembrete como done + linka task
+            try {
+              await updateReminder(r.id, { done: true, taskId: newTaskId, completedAt: new Date() });
+              toast.success('Lembrete convertido em tarefa!');
+              await renderReminders();
+            } catch (err) { console.warn('Update reminder fail:', err.message); }
+          },
+        });
+      });
+    });
+  }
+
+  document.getElementById('dash-reminders-add')?.addEventListener('click', () => {
+    openReminderModal({ createReminder, onSaved: renderReminders });
+  });
+
+  // ── Notes (post-its) ────────────────────────────────────────
+  async function renderNotes() {
+    const list = await fetchNotes().catch(() => []);
+    const el = document.getElementById('dash-notes-list');
+    if (!el) return;
+    if (!list.length) {
+      el.innerHTML = `<div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0;text-align:center;">
+        Sem anotações. Clique em <strong>+ Novo</strong> pra criar um post-it.
+      </div>`;
+      return;
+    }
+    el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;">${
+      list.slice(0, 6).map(n => `
+        <div class="note-card" data-id="${escTxt(n.id)}"
+          style="background:${escTxt(n.color || NOTE_COLORS[0])};color:#1F2937;
+          border-radius:6px;padding:10px;width:calc(50% - 4px);min-height:80px;
+          font-size:0.75rem;line-height:1.4;cursor:pointer;
+          box-shadow:0 1px 3px rgba(0,0,0,0.08);position:relative;
+          transition:transform 0.1s;"
+          onmouseover="this.style.transform='translateY(-1px)'"
+          onmouseout="this.style.transform=''">
+          <div style="white-space:pre-wrap;word-break:break-word;
+            display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;
+            overflow:hidden;">${escTxt(n.text || '— vazio —')}</div>
+          <button data-act="note-del" data-id="${escTxt(n.id)}" title="Excluir"
+            style="position:absolute;top:2px;right:4px;background:none;border:none;
+            cursor:pointer;color:rgba(0,0,0,0.4);font-size:0.875rem;line-height:1;
+            padding:2px 4px;">×</button>
+        </div>
+      `).join('')
+    }</div>${list.length > 6 ? `<div style="text-align:center;padding-top:6px;
+      font-size:0.6875rem;color:var(--text-muted);">+${list.length-6} anotações</div>` : ''}`;
+
+    el.querySelectorAll('.note-card').forEach(card => {
+      card.addEventListener('click', (e) => {
+        if (e.target.dataset.act === 'note-del') return;
+        const n = list.find(x => x.id === card.dataset.id);
+        if (n) openNoteModal({ note: n, updateNote, deleteNote, NOTE_COLORS, onSaved: renderNotes });
+      });
+    });
+    el.querySelectorAll('[data-act="note-del"]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('Excluir esta anotação?')) return;
+        try {
+          await deleteNote(btn.dataset.id);
+          await renderNotes();
+        } catch (err) { toast.error('Erro: ' + err.message); }
+      });
+    });
+  }
+
+  document.getElementById('dash-notes-add')?.addEventListener('click', () => {
+    openNoteModal({ note: null, createNote, NOTE_COLORS, onSaved: renderNotes });
+  });
+
+  // Render initial
+  renderReminders();
+  renderNotes();
+
+  // Check due reminders → toast (one-shot per session)
+  if (!window.__reminders_checked__) {
+    window.__reminders_checked__ = true;
+    checkDueReminders().then(due => {
+      if (due.length) {
+        toast.warning(`Você tem ${due.length} lembrete${due.length>1?'s':''} vencido${due.length>1?'s':''}!`,
+          'Lembretes');
+      }
+    });
+  }
+}
+
+/* ─── Modais auxiliares ─────────────────────────────────────── */
+
+function openReminderModal({ createReminder, onSaved }) {
+  import('../components/modal.js').then(({ modal }) => {
+    modal.open({
+      title: 'Novo lembrete',
+      size: 'sm',
+      content: `
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div class="form-group">
+            <label class="form-label">Título *</label>
+            <input type="text" class="form-input" id="rem-title" maxlength="120"
+              placeholder="Ex: Confirmar voo da Maria" autofocus />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data de vencimento</label>
+            <input type="date" class="form-input" id="rem-due" />
+          </div>
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px;font-size:0.8125rem;cursor:pointer;">
+              <input type="checkbox" id="rem-notify" checked />
+              Notificar quando vencer
+            </label>
+          </div>
+        </div>
+      `,
+      footer: [
+        { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+        {
+          label: 'Criar lembrete', class: 'btn-primary', closeOnClick: false,
+          onClick: async (_, { close }) => {
+            const title = document.getElementById('rem-title')?.value?.trim();
+            if (!title) { toast.warning('Título obrigatório.'); return; }
+            const dueAt = document.getElementById('rem-due')?.value || null;
+            const notify = document.getElementById('rem-notify')?.checked ?? true;
+            try {
+              await createReminder({ title, dueAt, notify });
+              toast.success('Lembrete criado!');
+              close();
+              onSaved?.();
+            } catch (err) { toast.error('Erro: ' + err.message); }
+          },
+        },
+      ],
+    });
+  });
+}
+
+function openNoteModal({ note, createNote, updateNote, deleteNote, NOTE_COLORS, onSaved }) {
+  const isEdit = !!note;
+  import('../components/modal.js').then(({ modal }) => {
+    modal.open({
+      title: isEdit ? 'Editar anotação' : 'Nova anotação',
+      size: 'sm',
+      content: `
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div class="form-group">
+            <label class="form-label">Texto</label>
+            <textarea class="form-input" id="note-text" rows="6"
+              placeholder="Digite sua anotação..." maxlength="2000"
+              style="resize:vertical;">${escTxt(note?.text || '')}</textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cor</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              ${NOTE_COLORS.map(c => `
+                <div class="note-color-btn" data-color="${c}" style="
+                  width:32px;height:32px;border-radius:6px;background:${c};cursor:pointer;
+                  border:3px solid ${(note?.color||NOTE_COLORS[0])===c?'#1F2937':'transparent'};
+                  transition:all 0.15s;"></div>
+              `).join('')}
+            </div>
+            <input type="hidden" id="note-color" value="${escTxt(note?.color || NOTE_COLORS[0])}" />
+          </div>
+        </div>
+      `,
+      footer: [
+        { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+        {
+          label: isEdit ? 'Salvar' : 'Criar', class: 'btn-primary', closeOnClick: false,
+          onClick: async (_, { close }) => {
+            const text  = document.getElementById('note-text')?.value || '';
+            const color = document.getElementById('note-color')?.value || NOTE_COLORS[0];
+            try {
+              if (isEdit) await updateNote(note.id, { text, color });
+              else        await createNote({ text, color });
+              close();
+              onSaved?.();
+            } catch (err) { toast.error('Erro: ' + err.message); }
+          },
+        },
+      ],
+    });
+    setTimeout(() => {
+      document.querySelectorAll('.note-color-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.getElementById('note-color').value = btn.dataset.color;
+          document.querySelectorAll('.note-color-btn').forEach(b => {
+            b.style.borderColor = 'transparent';
+          });
+          btn.style.borderColor = '#1F2937';
+        });
+      });
+    }, 50);
+  });
 }
 
 function dueColor(ts, done) {

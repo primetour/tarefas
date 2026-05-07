@@ -446,6 +446,12 @@ function _runTour(opts) {
 
 function showWelcomeModal({ title, body, onAccept, onSkip }) {
   injectStyles();
+  // 4.24+ Bug fix: o user reportou "tem que clicar 3x pra sair".
+  // Causa: triggerTourFor disparava múltiplas vezes (re-render da página) e
+  // welcome modals empilhavam — cada click fechava apenas UM dos backdrops.
+  // Fix: remove TODOS os welcome backdrops antes de criar um novo (idempotente).
+  document.querySelectorAll('.tour-welcome-backdrop').forEach(el => el.remove());
+
   const back = document.createElement('div');
   back.className = 'tour-welcome-backdrop';
   back.innerHTML = `
@@ -460,10 +466,21 @@ function showWelcomeModal({ title, body, onAccept, onSkip }) {
     </div>
   `;
   document.body.appendChild(back);
-  back.querySelector('[data-act="ok"]').addEventListener('click', () => { back.remove(); onAccept?.(); });
-  back.querySelector('[data-act="skip"]').addEventListener('click', () => { back.remove(); onSkip?.(); });
+
+  // Cleanup unificado: remove TODOS os backdrops welcome (defesa extra
+  // caso outro tour empilhe entre o append e o click) + desbinda o ESC.
+  const cleanup = () => {
+    document.querySelectorAll('.tour-welcome-backdrop').forEach(el => el.remove());
+    window.removeEventListener('keydown', onKey);
+  };
+  back.querySelector('[data-act="ok"]').addEventListener('click', () => { cleanup(); onAccept?.(); });
+  back.querySelector('[data-act="skip"]').addEventListener('click', () => { cleanup(); onSkip?.(); });
+  // Click no backdrop (fora do modal) também conta como "skip" — UX padrão
+  back.addEventListener('click', (e) => {
+    if (e.target === back) { cleanup(); onSkip?.(); }
+  });
   // ESC fecha
-  const onKey = (e) => { if (e.key === 'Escape') { back.remove(); onSkip?.(); window.removeEventListener('keydown', onKey); } };
+  const onKey = (e) => { if (e.key === 'Escape') { cleanup(); onSkip?.(); } };
   window.addEventListener('keydown', onKey);
 }
 

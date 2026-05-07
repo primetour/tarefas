@@ -382,6 +382,12 @@ export class Header {
     const renderOnlineUsers = () => {
       const wrap = this.el.querySelector('#header-online-users');
       if (!wrap) return;
+      // 4.24+ Bug fix presence stuck: o tooltip era criado em closure scope
+      // dentro desta função; quando o subscriber re-disparava (presença atualiza
+      // a cada minuto), criava novo closure e o tooltip antigo ficava órfão
+      // no DOM sem listener pra removê-lo. Solução: limpar QUALQUER tooltip
+      // órfão de hover no início de cada re-render.
+      document.querySelectorAll('.online-user-tip').forEach(el => el.remove());
       const currentUid = store.get('currentUser')?.uid;
       const active = (store.get('onlineUsers') || []).filter(u => u.uid !== currentUid);
       const idle   = (store.get('idleUsers')   || []).filter(u => u.uid !== currentUid);

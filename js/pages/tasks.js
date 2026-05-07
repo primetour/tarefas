@@ -343,6 +343,7 @@ export async function renderTasks(container) {
           <option value="priority">Por prioridade</option>
           <option value="project">Por projeto</option>
           <option value="squad">Por squad</option>
+          <option value="assignee">Por responsável</option>
           <option value="none">Sem agrupamento</option>
         </select>
         <button class="btn btn-ghost btn-sm" id="filter-config-btn" title="Configurar filtros visíveis"
@@ -1335,6 +1336,45 @@ function buildGroups() {
     // "Sem squad" sempre por último
     const noSquad = filteredTasks.filter(t => !t.workspaceId);
     if (noSquad.length) groups.push({ key: 'none', label: 'Sem squad', color: '#6B7280', tasks: noSquad });
+    return groups;
+  }
+  // 4.24+ — agrupar por responsável (assignee). Tarefas com múltiplos
+  // responsáveis aparecem em CADA grupo (semantica OR). "Sem responsável"
+  // é grupo separado pra deixar visível tarefas órfãs.
+  if (groupBy === 'assignee') {
+    const groups = [];
+    const users = store.get('users') || [];
+    const userById = new Map(users.map(u => [u.id, u]));
+    // Coleta uids únicos das tasks (cobertura: master vê tasks de users
+    // que ele talvez não conheça por outro caminho)
+    const seen = new Map(); // uid → tasks[]
+    const noAssignee = [];
+    filteredTasks.forEach(t => {
+      const arr = Array.isArray(t.assignees) ? t.assignees : [];
+      if (!arr.length) { noAssignee.push(t); return; }
+      arr.forEach(uid => {
+        if (!seen.has(uid)) seen.set(uid, []);
+        seen.get(uid).push(t);
+      });
+    });
+    // Ordena: usuários conhecidos por nome alfabético, depois desconhecidos
+    const sortedEntries = [...seen.entries()].sort((a, b) => {
+      const ua = userById.get(a[0]); const ub = userById.get(b[0]);
+      const na = ua?.name || `?${a[0].slice(0,6)}`;
+      const nb = ub?.name || `?${b[0].slice(0,6)}`;
+      return na.localeCompare(nb);
+    });
+    sortedEntries.forEach(([uid, tasks]) => {
+      const u = userById.get(uid);
+      const initials = (u?.name || '?').split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase();
+      groups.push({
+        key:   uid,
+        label: `${initials} ${u?.name || `Usuário ${uid.slice(0,6)}…`}`,
+        color: u?.avatarColor || '#3B82F6',
+        tasks,
+      });
+    });
+    if (noAssignee.length) groups.push({ key: 'none', label: 'Sem responsável', color: '#6B7280', tasks: noAssignee });
     return groups;
   }
   return [];

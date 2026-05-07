@@ -37,6 +37,58 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.24.0+20260507-reminders-notes-groupby-fixes] — 2026-05-07
+
+Release **MINOR** — 4 melhorias do user (1 deferido p/ próxima).
+
+### 1) Tarefas: agrupar por responsável
+Novo `groupBy === 'assignee'` em tasks.js. Tarefas com múltiplos
+responsáveis aparecem em CADA grupo (semântica OR). "Sem responsável"
+fica no fim. Label do grupo: iniciais + nome completo + cor avatar.
+
+### 2) Bug do tour: skip exigia 3 cliques
+**Causa**: `triggerTourFor` disparava várias vezes (re-render da página)
+e welcome modals empilhavam — cada click fechava só 1 backdrop.
+**Fix em `tour.js showWelcomeModal`**:
+- Idempotente: remove TODOS `.tour-welcome-backdrop` no início
+- Cleanup global ao fechar (todos backdrops + ESC handler)
+- Click no backdrop (fora do modal) também conta como skip (UX padrão)
+
+### 3) Presence trava no hover
+**Causa**: `let tip = null` era closure-scoped dentro de `renderOnlineUsers`.
+A cada update de presença (~1/min), novo closure rodava sem referência ao tip
+antigo, que ficava órfão no DOM.
+**Fix em `header.js`**: limpa qualquer `.online-user-tip` órfão no início de
+cada render (defesa em profundidade — mouseleave continua funcionando como antes).
+
+### 4) Lembretes & Anotações no Meu Painel (NOVO)
+- Novo serviço `services/userNotes.js` (CRUD + checkDueReminders)
+- 2 collections privativas Firestore: `user_notes`, `user_reminders`
+  (rules: read/write apenas pelo dono via `userId == request.auth.uid`)
+- 2 cards no dashboard direito:
+  - **Lembretes**: lista com checkbox concluído, badge de prazo (vencido/hoje/amanhã/em N dias),
+    botão "→ tarefa" (converte em task pré-preenchida via taskModal),
+    botão excluir. Modal de criar com título + data + checkbox notify
+  - **Anotações**: post-its 2-col, 6 cores, click pra editar, ✕ pra excluir
+- Toast `warning` on-load se houver lembretes vencidos não notificados
+  (uma vez por sessão, marca `notified:true` pra não repetir)
+
+### Deferido p/ 4.25
+- Calendário de Conteúdo: slots de tipo de tarefa por projeto + flag de ocultar.
+  Escopo grande (mexe em service de slots + render de tipo de tarefa) — tratado
+  em release dedicada.
+
+### Files
+- `js/services/userNotes.js` (novo)
+- `js/components/tour.js` (showWelcomeModal idempotente)
+- `js/components/header.js` (cleanup `.online-user-tip` órfão)
+- `js/pages/tasks.js` (groupBy assignee + option no select)
+- `js/pages/dashboard.js` (mountUserPanels + 2 cards + 2 modais auxiliares)
+- `firestore.rules` (`user_notes`, `user_reminders`) — deployed
+- `js/version.js`, `index.html`
+
+---
+
 ## [4.23.2+20260507-sectors-union-rules] — 2026-05-07
 
 PATCH — fix dois bugs descobertos no E2E da v4.23.0/4.23.1.
