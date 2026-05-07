@@ -485,11 +485,17 @@ const GENERAL_PROJECT_NAME = 'Geral · Conteúdo';
 const MIGRATION_FLAG_KEY = 'cc-orphan-migration-v1';
 
 export async function ensureGeneralProjectAndMigrateOrphans() {
-  // Idempotência por sessão
-  try { if (sessionStorage.getItem(MIGRATION_FLAG_KEY) === 'done') return null; } catch {}
+  // Idempotência por sessão. Set IMEDIATO (síncrono) pra prevenir race
+  // condition entre múltiplas chamadas concorrentes na mesma sessão
+  // (ex: hashchange dispara renderContentCalendar 2x rápido).
+  try {
+    if (sessionStorage.getItem(MIGRATION_FLAG_KEY) === 'done') return null;
+    sessionStorage.setItem(MIGRATION_FLAG_KEY, 'in-progress');
+  } catch {}
 
   try {
-    // 1. Procura projeto "Geral · Conteúdo"
+    // 1. Procura projeto "Geral · Conteúdo" — escolhe o MAIS ANTIGO
+    // se houver duplicatas (race condition antiga).
     const projQ = query(collection(db, 'projects'), where('name', '==', GENERAL_PROJECT_NAME));
     const projSnap = await getDocs(projQ);
     let generalProjectId;
@@ -510,7 +516,13 @@ export async function ensureGeneralProjectAndMigrateOrphans() {
       });
       generalProjectId = created.id;
     } else {
-      generalProjectId = projSnap.docs[0].id;
+      // Pega o MAIS ANTIGO (createdAt menor). Se houver duplicatas, é o
+      // canônico; os outros podem ser arquivados manualmente pelo admin.
+      const sorted = projSnap.docs.map(d => ({
+        id: d.id,
+        createdAt: d.data().createdAt?.toMillis?.() || Infinity,
+      })).sort((a, b) => a.createdAt - b.createdAt);
+      generalProjectId = sorted[0].id;
     }
 
     // 2. Atualiza slots órfãos (sem projectId)

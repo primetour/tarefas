@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 11,
-  patch: 0,
-  build: '20260507-content-calendar-by-project',
+  patch: 1,
+  build: '20260507-cc-fix-container-id-race',
 };
 
 /** "1.2.0" */

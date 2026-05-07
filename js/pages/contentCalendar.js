@@ -200,7 +200,7 @@ function getTypeIcon(type) {
 /* ── Main render ────────────────────────────────────────── */
 
 export async function renderContentCalendar(container) {
-  const main = container || document.getElementById('main');
+  const main = container || document.getElementById('page-content') || document.getElementById('main');
   if (!main) return;
 
   // ── Parse URL: #content-calendar?project=ABC ────────────
@@ -241,7 +241,7 @@ async function setActiveProject(projectId) {
   try { history.replaceState(null, '', newHash); } catch {}
   // Re-fetch slots do novo escopo
   allSlots = await fetchSlots(activeProjectId ? { projectId: activeProjectId } : {});
-  const main = document.getElementById('main');
+  const main = document.getElementById('page-content') || document.getElementById('main');
   if (main) renderPage(main);
 }
 

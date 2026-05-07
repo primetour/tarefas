@@ -37,6 +37,32 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.11.1+20260507-cc-fix-container-id-race] — 2026-05-07
+
+Release **PATCH** — bugfixes encontrados em testes da v4.11.0.
+
+### Bug 1: Container ID errado (Empty state mesmo com projeto selecionado)
+`renderContentCalendar()` e `setActiveProject()` faziam fallback pra `document.getElementById('main')`, mas o container correto é `#page-content`. Resultado: a UI re-renderizava num container fantasma; o `#page-content` continuava com o HTML do empty state inicial.
+
+Fix: `document.getElementById('page-content') || document.getElementById('main')` em ambos os pontos.
+
+### Bug 2: Race condition na migration cria projeto "Geral · Conteúdo" duplicado
+Duas chamadas concorrentes de `ensureGeneralProjectAndMigrateOrphans()` (provavelmente do hashchange disparando renderContentCalendar 2x) competiam: ambas viam `projSnap.empty=true` e criavam doc Firestore. Resultado: 2 projetos "Geral · Conteúdo" no banco.
+
+Fix em 2 camadas:
+1. Set `sessionStorage[migration-flag]='in-progress'` IMEDIATO (síncrono) antes de qualquer await — bloqueia segunda call
+2. Quando query encontra múltiplos projetos com mesmo nome, escolhe o **mais antigo** (createdAt menor) como canônico
+
+### Limpeza manual
+A duplicata existente em produção foi arquivada manualmente via JS no browser (renomeada com sufixo "(duplicata · arquivado)").
+
+### Arquivos alterados
+- `js/services/contentCalendar.js` — defesa contra race condition
+- `js/pages/contentCalendar.js` — fix container ID em 2 pontos
+- `js/version.js` — bump 4.11.0 → 4.11.1
+- `index.html` — cache-bust v= alinhado
+
+
 ## [4.11.0+20260507-content-calendar-by-project] — 2026-05-07
 
 Release **MINOR** — Calendário de Conteúdo agora é organizado por **projeto**, não mais global.
