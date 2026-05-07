@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 24,
+  minor: 25,
   patch: 0,
-  build: '20260507-reminders-notes-groupby-fixes',
+  build: '20260507-cc-project-task-slots',
 };
 
 /** "1.2.0" */

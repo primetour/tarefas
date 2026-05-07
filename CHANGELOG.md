@@ -37,6 +37,37 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.25.0+20260507-cc-project-task-slots] — 2026-05-07
+
+Release **MINOR** — completa o pacote da v4.24 com a feature deferida.
+
+### Calendário de Conteúdo: slots de tarefa por projeto + flag ocultar
+**Pedido**: "Calendário de Conteúdo - incluir os slots de tipo de tarefa
+vinculadas aos projetos, com visualização default e ocultar opcional, via flag."
+
+**Implementação**:
+- Nova state global `showProjectTasks` persistida em localStorage
+  (`cc-show-project-tasks`, default: true)
+- `loadProjectTasks()` puxa todas as tasks dos projetos ativos com `dueDate`
+  preenchido (executado no boot e ao adicionar/remover projeto)
+- `projectTasksForDate(date)` retorna as tasks daquele dia
+- `renderTaskSlot(task, mode)` renderiza com estilo distinto:
+  - Borda esquerda azul (#0EA5E9) — diferencia de slots de conteúdo dourados
+  - Ícone do tipo de tarefa (do task type cadastrado) ou 📋 default
+  - Tasks done: opacity 0.55 + line-through
+  - Modo `compact` (mês) e `detailed` (semana)
+- Toggle button no header — 👁 quando ON, 🚫 quando OFF
+- Click em task slot → abre `taskModal` em modo edit
+- Após save: recarrega tasks e re-renderiza
+- View mês: limita a 3 entries no total (slots + tasks); excedente vira
+  "+N tarefa(s)" em itálico azul
+
+### Files
+- `js/pages/contentCalendar.js` (state + 3 funções novas + render + handlers)
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+---
+
 ## [4.24.0+20260507-reminders-notes-groupby-fixes] — 2026-05-07
 
 Release **MINOR** — 4 melhorias do user (1 deferido p/ próxima).

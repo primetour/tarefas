@@ -144,6 +144,17 @@ let _slotsUnsub = null;
 let _linkedTasks = new Map();
 let _tasksUnsub = null;
 
+// 4.25+ — Tarefas dos PROJETOS ativos (não os linkados a slots), exibidas
+// como "slots de tarefa" no calendário. Default: visível. Toggle persistido.
+const SHOW_PROJECT_TASKS_KEY = 'cc-show-project-tasks';
+let showProjectTasks = (() => {
+  try {
+    const v = localStorage.getItem(SHOW_PROJECT_TASKS_KEY);
+    return v === null ? true : v === '1';
+  } catch { return true; }
+})();
+let _projectTasks = []; // cache local: tasks dos projetos ativos com dueDate
+
 /* ── Helpers ────────────────────────────────────────────── */
 
 function startOfWeek(d) {
@@ -239,6 +250,86 @@ function slotsForDate(date) {
   }).filter(s => !activeAccount || s.account === activeAccount);
 }
 
+/**
+ * 4.25+ — Tarefas dos projetos ativos com dueDate na data informada.
+ * Retorna [] se a flag showProjectTasks estiver desligada.
+ * Tarefas archived ou done são incluídas (visão completa do projeto);
+ * cabe ao user filtrar via outras ferramentas se quiser.
+ */
+function projectTasksForDate(date) {
+  if (!showProjectTasks) return [];
+  if (!_projectTasks.length) return [];
+  return _projectTasks.filter(t => {
+    if (!t.dueDate) return false;
+    // task.dueDate pode ser Timestamp ou string ISO
+    const d = t.dueDate?.toDate
+      ? t.dueDate.toDate()
+      : (typeof t.dueDate === 'string' ? parseLocalDate(t.dueDate) : new Date(t.dueDate));
+    if (!d || isNaN(d.getTime())) return false;
+    return isSameDay(d, date);
+  });
+}
+
+/**
+ * 4.25+ — Carrega tasks dos projetos ativos (com dueDate) pra exibir no calendário.
+ * Disparado quando os projetos ativos mudam ou a flag liga.
+ */
+async function loadProjectTasks() {
+  if (!showProjectTasks || !activeProjectIds.length) {
+    _projectTasks = [];
+    return;
+  }
+  try {
+    const { fetchTasks } = await import('../services/tasks.js');
+    const all = await fetchTasks();
+    _projectTasks = all.filter(t => t.dueDate && activeProjectIds.includes(t.projectId));
+  } catch (e) {
+    console.warn('[cc] loadProjectTasks failed:', e?.message);
+    _projectTasks = [];
+  }
+}
+
+/**
+ * 4.25+ — Render de "slot de tarefa" (estilo distinto dos slots de conteúdo).
+ * Borda azul à esquerda + ícone do tipo de tarefa + título truncado.
+ */
+function renderTaskSlot(task, mode = 'compact') {
+  const types = store.get('taskTypes') || [];
+  const type  = types.find(t => t.id === task.typeId);
+  const icon  = type?.icon || '📋';
+  const color = type?.color || '#0EA5E9';
+  const status = task.status || 'not_started';
+  const isDone = status === 'done';
+  const opacity = isDone ? '0.55' : '1';
+  if (mode === 'compact') {
+    return `<div class="cc-task-slot" data-task-id="${esc(task.id)}"
+      style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px;
+      background:${color}15;border-left:2px solid ${color};font-size:0.6875rem;
+      cursor:pointer;opacity:${opacity};transition:background 0.1s;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+      title="Tarefa do projeto · ${esc(task.title)}">
+      <span style="flex-shrink:0;">${esc(icon)}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;color:${color};
+        font-weight:500;${isDone ? 'text-decoration:line-through;' : ''}">${esc(task.title)}</span>
+    </div>`;
+  }
+  // Detailed (week/list views)
+  return `<div class="cc-task-slot" data-task-id="${esc(task.id)}"
+    style="display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border-radius:6px;
+    background:${color}15;border-left:3px solid ${color};font-size:0.75rem;
+    cursor:pointer;opacity:${opacity};transition:background 0.15s;">
+    <span style="flex-shrink:0;font-size:0.875rem;">${esc(icon)}</span>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:500;color:var(--text-primary);
+        ${isDone ? 'text-decoration:line-through;' : ''}
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(task.title)}</div>
+      <div style="font-size:0.625rem;color:var(--text-muted);margin-top:1px;">
+        ${esc(type?.name || 'Tarefa')}${task.assignees?.length ? ` · ${task.assignees.length} resp.` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
 function getStatusColor(status) {
   return STATUS_COLORS[status] || '#6B7280';
 }
@@ -288,7 +379,11 @@ export async function renderContentCalendar(container) {
   }
 
   // Carrega slots do projeto ativo + assina real-time
-  await _bindSlotsListener();
+  // 4.25+ Carrega tarefas dos projetos ativos em paralelo
+  await Promise.all([
+    _bindSlotsListener(),
+    loadProjectTasks(),
+  ]);
 
   renderPage(main);
 }
@@ -426,8 +521,11 @@ async function setActiveProjects(projectIds) {
     newHash += `?projects=${activeProjectIds.map(encodeURIComponent).join(',')}`;
   }
   try { history.replaceState(null, '', newHash); } catch {}
-  // Re-bind listener com novo scope
-  await _bindSlotsListener();
+  // Re-bind listener com novo scope + 4.25+ recarrega tasks dos novos projetos
+  await Promise.all([
+    _bindSlotsListener(),
+    loadProjectTasks(),
+  ]);
   const main = document.getElementById('page-content') || document.getElementById('main');
   if (main) renderPage(main);
 }
@@ -613,6 +711,17 @@ function renderPage(container) {
               border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
               cursor:pointer;font-size:0.875rem;" title="Proximo">&#9654;</button>
           </div>
+
+          <!-- 4.25+ Toggle: mostrar tarefas dos projetos como slots no calendário -->
+          <button id="cc-toggle-tasks" title="${showProjectTasks ? 'Ocultar' : 'Mostrar'} tarefas dos projetos no calendário"
+            style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
+            border-radius:8px;background:${showProjectTasks ? 'rgba(14,165,233,0.12)' : 'var(--bg-surface,#16202C)'};
+            color:${showProjectTasks ? '#0EA5E9' : 'var(--text-muted)'};
+            font-size:0.8125rem;font-weight:500;cursor:pointer;transition:all 0.15s;
+            display:inline-flex;align-items:center;gap:6px;">
+            <span style="font-size:0.875rem;">${showProjectTasks ? '👁' : '🚫'}</span>
+            <span>Tarefas dos projetos</span>
+          </button>
 
           <!-- Action buttons -->
           <button id="cc-new-slot" style="padding:6px 16px;border:none;border-radius:8px;
@@ -822,6 +931,15 @@ function renderMonthView(container) {
               <div style="display:flex;flex-direction:column;gap:3px;">
                 ${slots.slice(0, 3).map(slot => renderSlotCard(slot, 'compact')).join('')}
                 ${slots.length > 3 ? `<div style="font-size:0.6875rem;color:var(--text-muted,#5A6B7A);padding:2px 4px;">+${slots.length - 3} mais</div>` : ''}
+                ${(() => {
+                  // 4.25+ Slots de tarefa do projeto (cabe junto se houver espaço)
+                  if (!cell.date) return '';
+                  const tasks = projectTasksForDate(cell.date);
+                  if (!tasks.length) return '';
+                  const max = Math.max(0, 3 - slots.length);
+                  return tasks.slice(0, max).map(t => renderTaskSlot(t, 'compact')).join('') +
+                    (tasks.length > max ? `<div style="font-size:0.625rem;color:#0EA5E9;padding:1px 4px;font-style:italic;">+${tasks.length - max} tarefa${tasks.length - max > 1 ? 's' : ''}</div>` : '');
+                })()}
               </div>
             </div>
           `;
@@ -871,9 +989,10 @@ function renderWeekView(container) {
                   ${day.getDate()}
                 </div>
               </div>
-              <!-- Slots -->
+              <!-- Slots de conteúdo + 4.25+ slots de tarefa -->
               <div style="display:flex;flex-direction:column;gap:6px;">
                 ${slots.map(slot => renderSlotCard(slot, 'detailed')).join('')}
+                ${projectTasksForDate(day).map(t => renderTaskSlot(t, 'detailed')).join('')}
               </div>
             </div>
           `;
@@ -1111,6 +1230,7 @@ function bindCalendarCellEvents(container) {
   container.querySelectorAll('.cc-day-cell').forEach(cell => {
     cell.addEventListener('click', (e) => {
       if (e.target.closest('.cc-slot-card')) return;
+      if (e.target.closest('.cc-task-slot')) return; // 4.25+ task slot tem handler próprio
       const dateStr = cell.dataset.date;
       if (!dateStr) return;
       openSlotModal(null, dateStr);
@@ -1124,6 +1244,24 @@ function bindCalendarCellEvents(container) {
       const slotId = card.dataset.slotId;
       const slot = allSlots.find(s => s.id === slotId);
       if (slot) openSlotModal(slot);
+    });
+  });
+
+  // 4.25+ Click em task slot abre o taskModal em modo edit
+  container.querySelectorAll('.cc-task-slot').forEach(card => {
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const taskId = card.dataset.taskId;
+      const task = _projectTasks.find(t => t.id === taskId);
+      if (!task) return;
+      openTaskModal({
+        taskData: task,
+        onSave: async () => {
+          // Recarrega tasks pra refletir mudança no calendário
+          await loadProjectTasks();
+          renderCalendarBody();
+        },
+      });
     });
   });
 
@@ -1180,6 +1318,28 @@ function bindCalendarCellEvents(container) {
 /* ── Header event binding ───────────────────────────────── */
 
 function bindHeaderEvents(container) {
+  // 4.25+ Toggle "Tarefas dos projetos"
+  const toggleBtn = document.getElementById('cc-toggle-tasks');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', async () => {
+      showProjectTasks = !showProjectTasks;
+      try { localStorage.setItem(SHOW_PROJECT_TASKS_KEY, showProjectTasks ? '1' : '0'); } catch {}
+      // Atualiza visual do botão imediato
+      const newColor = showProjectTasks ? '#0EA5E9' : 'var(--text-muted)';
+      const newBg = showProjectTasks ? 'rgba(14,165,233,0.12)' : 'var(--bg-surface,#16202C)';
+      const newIcon = showProjectTasks ? '👁' : '🚫';
+      const newTitle = showProjectTasks ? 'Ocultar' : 'Mostrar';
+      toggleBtn.style.color = newColor;
+      toggleBtn.style.background = newBg;
+      toggleBtn.title = newTitle + ' tarefas dos projetos no calendário';
+      const iconSpan = toggleBtn.querySelector('span:first-child');
+      if (iconSpan) iconSpan.textContent = newIcon;
+      // Re-fetch e re-render
+      if (showProjectTasks && !_projectTasks.length) await loadProjectTasks();
+      renderCalendarBody();
+    });
+  }
+
   // 4.16+ — Chips de projetos ativos: remoção e adição via popover
   container.querySelectorAll('.cc-chip-remove').forEach(btn => {
     btn.addEventListener('click', (e) => {
