@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 12,
+  minor: 13,
   patch: 0,
-  build: '20260507-presence-daily-usage-widget',
+  build: '20260507-bulk-task-update-monday-style',
 };
 
 /** "1.2.0" */

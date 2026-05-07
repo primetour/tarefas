@@ -810,6 +810,41 @@ export async function bulkUpdateTasks(items, onProgress) {
   return { total, updated, failed };
 }
 
+/* ─── Excluir várias tarefas selecionadas (bulk delete) ─────
+ * Apaga em batches de 400. Para uso na bulk-action-bar.
+ * Cada user pode excluir apenas tarefas que tem permissão (caller filtra).
+ */
+export async function bulkDeleteTasks(ids, onProgress) {
+  const user = store.get('currentUser');
+  if (!user?.uid) throw new Error('Usuário não autenticado.');
+  if (!Array.isArray(ids) || !ids.length) return { total: 0, deleted: 0, failed: 0 };
+
+  const total = ids.length;
+  let   deleted = 0;
+  let   failed  = 0;
+  const BATCH = 400;
+
+  for (let i = 0; i < total; i += BATCH) {
+    const slice = ids.slice(i, i + BATCH);
+    const batch = writeBatch(db);
+    slice.forEach(id => {
+      if (id) batch.delete(doc(db, 'tasks', id));
+    });
+    try {
+      await batch.commit();
+      deleted += slice.length;
+    } catch (e) {
+      console.warn('[bulkDeleteTasks] batch falhou:', e?.message);
+      failed += slice.length;
+    }
+    if (typeof onProgress === 'function') onProgress(deleted + failed, total);
+  }
+
+  invalidateTasksCache();
+  await auditLog('tasks.bulkDelete', 'tasks', null, { count: deleted, failed }).catch(() => {});
+  return { total, deleted, failed };
+}
+
 /* ─── Excluir TODAS as tarefas (master-only / danger zone) ──
  * Apaga em lotes (batches de 400, abaixo do limite de 500 do Firestore).
  * Não faz backup automático — o usuário deve confirmar que tem backup.

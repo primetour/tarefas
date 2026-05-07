@@ -31,6 +31,10 @@ let optimisticTasks = [];
 let activeView   = 'kanban';   // 'kanban' | 'pipeline'
 let kbFilterState = { sector: null, type: null, project: null, area: null, assignee: null, status: null };
 
+// 4.13+ — Bulk select compartilhado com lista de tarefas
+const _selectedTaskIds = new Set();
+let   _bulkBar = null;
+
 /* ─── Group-By: agrupar colunas do Steps por outro campo ──────
  * Default = 'status' (comportamento original). Mudando, recalcula colunas.
  * Drag-and-drop entre colunas só funciona em status (única mudança que
@@ -807,11 +811,17 @@ function renderKanbanCard(task, type = null) {
   const isDone = task.status === 'done';
   const canComplete = store.can('task_complete');
 
+  const isSel = _selectedTaskIds.has(task.id);
   return `
-    <div class="kanban-card ${task.priority||'medium'} ${isDone?'done':''}"
+    <div class="kanban-card ${task.priority||'medium'} ${isDone?'done':''} ${isSel?'bulk-selected':''}"
       data-task-id="${task.id}"
       draggable="true"
-      style="position:relative;${task._optimistic ? 'opacity:0.6;pointer-events:none;' : ''}${isDone ? 'opacity:0.65;' : ''}">
+      style="position:relative;${task._optimistic ? 'opacity:0.6;pointer-events:none;' : ''}${isDone ? 'opacity:0.65;' : ''}${isSel ? 'box-shadow:0 0 0 2px var(--brand-gold,#D4A843);' : ''}">
+      <input type="checkbox" class="kanban-bulk-checkbox bulk-checkbox" data-bulk-id="${task.id}"
+        ${isSel ? 'checked' : ''}
+        title="Selecionar para edição em massa"
+        style="position:absolute;top:8px;left:8px;width:16px;height:16px;
+        cursor:pointer;accent-color:var(--brand-gold);z-index:2;">
       <div class="kanban-card-check ${isDone?'checked':''} ${!canComplete && !isDone ? 'disabled' : ''}"
         data-check-id="${task.id}"
         title="${isDone ? 'Reabrir tarefa' : (canComplete ? 'Marcar como concluída' : 'Sem permissão para concluir')}"
@@ -895,6 +905,19 @@ function bindCardDrag(card) {
   });
 
   card.addEventListener('click', async (e) => {
+    // Click no checkbox de bulk-select (canto superior esquerdo) → toggle
+    // selecionado pra batch update via action bar. Não abre modal.
+    const bulk = e.target.closest('.kanban-bulk-checkbox[data-bulk-id]');
+    if (bulk) {
+      e.stopPropagation();
+      const id = bulk.dataset.bulkId;
+      if (_selectedTaskIds.has(id)) _selectedTaskIds.delete(id);
+      else                          _selectedTaskIds.add(id);
+      _refreshKanbanBulkUi();
+      dragTask = null;
+      return;
+    }
+
     // Click no botão de check (canto superior direito) → toggle status done
     // sem abrir o modal. Aplica o overlay de conclusão (CSAT, evidência, etc)
     // pra paridade com o comportamento da lista de tarefas.
@@ -1254,6 +1277,48 @@ function renderKanbanCardPipelineExtra(task, type) {
   }).join('');
 }
 
+/* ─── Bulk select UI refresh ──────────────────────────────── */
+function _refreshKanbanBulkUi() {
+  // Re-pinta cards selecionados
+  document.querySelectorAll('.kanban-card[data-task-id]').forEach(card => {
+    const id = card.dataset.taskId;
+    const sel = _selectedTaskIds.has(id);
+    card.classList.toggle('bulk-selected', sel);
+    if (sel) {
+      card.style.boxShadow = '0 0 0 2px var(--brand-gold,#D4A843)';
+    } else {
+      card.style.boxShadow = '';
+    }
+    const cb = card.querySelector('.kanban-bulk-checkbox');
+    if (cb) cb.checked = sel;
+  });
+  if (!_bulkBar) {
+    import('../components/bulkActionBar.js').then(({ mountBulkActionBar }) => {
+      _bulkBar = mountBulkActionBar({
+        getSelectedIds:   () => [..._selectedTaskIds],
+        getSelectedTasks: () => allTasks.filter(t => _selectedTaskIds.has(t.id)),
+        onClear: () => {
+          _selectedTaskIds.clear();
+          _refreshKanbanBulkUi();
+        },
+        onAfterUpdate: async () => {
+          _selectedTaskIds.clear();
+          // Subscribe vai trazer dados frescos automaticamente; força re-render
+          renderCards(allTasks);
+          _refreshKanbanBulkUi();
+        },
+        allProjects,
+        allUsers: store.get('users') || [],
+      });
+      _bulkBar.update();
+    });
+  } else {
+    _bulkBar.update();
+  }
+}
+
 export function destroyKanban() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  _selectedTaskIds.clear();
+  if (_bulkBar) { _bulkBar.destroy(); _bulkBar = null; }
 }

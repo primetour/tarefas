@@ -37,6 +37,77 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.13.0+20260507-bulk-task-update-monday-style] — 2026-05-07
+
+Release **MINOR** — Atualização em massa de tarefas estilo Monday.com, na lista E no Steps (Kanban).
+
+### Pedido do user
+> "atualização em massa, pra alterar prazo, prioridade, status, responsável... de preferência, direto na lista/steps... usuario relata function que existe no app monday"
+
+### Decisões alinhadas
+- **Escopo B**: Lista + Steps (Kanban) — mesma versão
+- **Sem Undo** (B) — confirmação dupla apenas no delete
+
+### UX implementada
+1. Cada linha de tarefa (lista) e cada card (Steps) ganha um **checkbox** sempre visível
+2. Ao selecionar ≥1 tarefa, **action bar flutuante** desliza pelo rodapé
+3. Action bar mostra **6 ações** + delete:
+   - 📅 Prazo · 🔥 Prioridade · 🚦 Status · 👤 Responsável · ◈ Projeto · ◉ Núcleo · 🗑 Excluir
+4. Click numa ação abre **popover** com opções (popovers contextualizados por tipo)
+5. Click numa opção dispara **batch update** via Firestore writeBatch
+6. Toast confirma "N tarefas atualizadas — alteração: X"
+
+### Implementação
+
+#### `js/components/bulkActionBar.js` (NOVO — componente compartilhado)
+- `mountBulkActionBar({ getSelectedIds, getSelectedTasks, onClear, onAfterUpdate, allProjects, allUsers })`
+- Barra flutuante com `transform` animation (slide-in/out do rodapé)
+- Popovers por ação: prazo (date input + remover), prioridade (4 cores), status (5 estados), responsável (multi-select com search), projeto (search), núcleo (12 opções), delete (confirmação dupla)
+- Reutilizado em ambas as páginas — DRY total
+
+#### `js/services/tasks.js`
+- `bulkUpdateTasks(items, onProgress)` — JÁ EXISTIA, signature `[{id, data}]`. Reuso direto.
+- `bulkDeleteTasks(ids, onProgress)` — NOVO. Batches de 400, audit log, invalidate cache
+
+#### `js/pages/tasks.js` (Lista)
+- State: `_selectedTaskIds = new Set()` + `_bulkBar`
+- `renderTaskRow`: nova primeira coluna com checkbox `.bulk-checkbox`
+- `renderListHeader`: master-checkbox que seleciona/desmarca tudo
+- Click delegation pra checkbox (toggle individual + master)
+- `_refreshBulkUi()` — re-pinta linhas selecionadas (border dourada) + atualiza master + show/hide bar
+
+#### `js/pages/kanban.js` (Steps)
+- State idêntico: `_selectedTaskIds` + `_bulkBar`
+- `renderKanbanCard`: checkbox no canto superior esquerdo (par com check de done à direita)
+- Click handler pro checkbox (com `e.stopPropagation` pra não abrir modal)
+- `_refreshKanbanBulkUi()` — pinta cards com `box-shadow: 0 0 0 2px gold` + bar update
+
+#### CSS `css/tasks.css`
+- `.task-row` grid-template-columns: nova coluna 28px no início
+- `.task-row.bulk-selected` — bg dourado claro + border dourada
+- `.task-list-header` grid alinhado
+- Mobile breakpoints atualizados (1024px, 640px)
+
+### Performance
+- Firestore writeBatch (max 400 ops/batch) — atualiza centenas de tarefas em 1 RTT
+- Para >400, função chunca em múltiplos batches sequenciais
+- `invalidateTasksCache()` + `onAfterUpdate` re-fetch pra UI atualizar
+
+### Permissões
+- `bulkUpdateTasks` confia que página filtrou tarefas que user pode ver
+- Firestore rules vão rejeitar tarefas que o user não pode editar (batch atômico — se 1 falha, todo o batch rollback)
+- Em produção, recomendado filtrar IDs editáveis client-side antes do submit
+
+### Arquivos alterados
+- `js/components/bulkActionBar.js` — NOVO (~340 linhas)
+- `js/services/tasks.js` — `bulkDeleteTasks` adicionada
+- `js/pages/tasks.js` — checkbox + bulk handler + `_refreshBulkUi` (~+80 linhas)
+- `js/pages/kanban.js` — checkbox + bulk handler + `_refreshKanbanBulkUi` (~+60 linhas)
+- `css/tasks.css` — grid-template-columns + estilos bulk-selected (~+15 linhas)
+- `js/version.js` — bump 4.12.0 → 4.13.0
+- `index.html`, `CHANGELOG.md`
+
+
 ## [4.12.0+20260507-presence-daily-usage-widget] — 2026-05-07
 
 Release **MINOR** — Tempo de uso do sistema agora é trackado e exibido no dashboard de produtividade.

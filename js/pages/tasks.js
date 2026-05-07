@@ -47,6 +47,11 @@ let filterOpen           = false;  // !done && !cancelled — cardstat "Minhas A
 let filterCompletedToday = false;  // done && completedAt é hoje — cardstat "Concluídas Hoje"
 let filterPartnership    = false;  // task.isPartnership — cardstat "Parcerias"
 
+// 4.13+ — Bulk select (Monday-style): IDs selecionados pra batch update.
+// Action bar flutuante (bulkActionBar.js) aparece quando size > 0.
+const _selectedTaskIds = new Set();
+let   _bulkBar = null;
+
 // Toggle "Mostrar arquivadas" — off por default. Quando ON, applyFilters()
 // remove o `!t.archived` e mostra tarefas com archived:true (badge cinza).
 // Útil pra auditoria de metas anuais/plurianuais (ver quais tarefas
@@ -988,7 +993,12 @@ function renderTaskList() {
 }
 
 function renderListHeader() {
+  // Header tem mesmo grid-template-columns das linhas, então 8 cols (incl. bulk)
   return `<div class="task-list-header">
+    <div title="Selecionar todas visíveis nesta página">
+      <input type="checkbox" id="bulk-select-all" class="bulk-checkbox"
+        style="cursor:pointer;width:14px;height:14px;accent-color:var(--brand-gold);">
+    </div>
     <div></div>
     <div>Título</div>
     <div>Status</div>
@@ -1034,8 +1044,17 @@ function renderTaskRow(task) {
   const subs = Array.isArray(task.subtasks) ? task.subtasks : [];
   const subDone = subs.filter(s => s.done).length;
   const subPct = subs.length ? Math.round((subDone / subs.length) * 100) : 0;
+  const isSel = _selectedTaskIds.has(task.id);
   return `
-    <div class="task-row ${isDone?'done':''}" data-task-id="${task.id}" draggable="true">
+    <div class="task-row ${isDone?'done':''} ${isSel?'bulk-selected':''}" data-task-id="${task.id}" draggable="true">
+      <div class="bulk-select-cell" data-bulk-toggle="${task.id}"
+        title="Selecionar para edição em massa"
+        style="display:flex;align-items:center;justify-content:center;cursor:pointer;
+        padding:4px;border-radius:4px;transition:background 0.15s;">
+        <input type="checkbox" class="bulk-checkbox" data-bulk-id="${task.id}"
+          ${isSel ? 'checked' : ''}
+          style="cursor:pointer;width:16px;height:16px;accent-color:var(--brand-gold);">
+      </div>
       <div class="task-check ${isDone?'checked':''} ${!canComplete && !isDone ? 'disabled' : ''}"
            data-check-id="${task.id}"
            title="${isDone ? 'Reabrir tarefa' : (canComplete ? 'Marcar como concluída' : 'Sem permissão para concluir tarefas. Peça a um coordenador.')}">
@@ -1500,6 +1519,31 @@ async function _handleDelegatedClick(e) {
   // --- "Empty state" new-task button ---
   const emptyBtn = e.target.closest('#empty-new-task-btn');
   if (emptyBtn) { openNewTask(); return; }
+
+  // --- Bulk select master-checkbox (header) ---
+  if (e.target.id === 'bulk-select-all') {
+    e.stopPropagation();
+    const checked = e.target.checked;
+    if (checked) {
+      filteredTasks.forEach(t => _selectedTaskIds.add(t.id));
+    } else {
+      _selectedTaskIds.clear();
+    }
+    _refreshBulkUi();
+    return;
+  }
+  // --- Bulk select por linha (cell ou checkbox) ---
+  const bulkCell = e.target.closest('[data-bulk-toggle]');
+  const bulkCheck = e.target.closest('.bulk-checkbox[data-bulk-id]');
+  if (bulkCell || bulkCheck) {
+    e.stopPropagation();
+    const id = bulkCell?.dataset.bulkToggle || bulkCheck?.dataset.bulkId;
+    if (!id) return;
+    if (_selectedTaskIds.has(id)) _selectedTaskIds.delete(id);
+    else                          _selectedTaskIds.add(id);
+    _refreshBulkUi();
+    return;
+  }
 
   // --- Task check toggle (must come before row click) ---
   const check = e.target.closest('.task-check[data-check-id]');
@@ -2129,10 +2173,59 @@ const exportTasksPdf = withExportGuard(async function exportTasksPdf() {
   toast.success('PDF exportado.');
 });
 
+/* \u2500\u2500\u2500 Bulk Action Bar wiring \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+
+/** Atualiza a UI: linhas selecionadas + barra de a\u00e7\u00f5es + master-checkbox. */
+function _refreshBulkUi() {
+  // Atualiza visual de cada linha (border dourada + checkbox state)
+  document.querySelectorAll('.task-row[data-task-id]').forEach(row => {
+    const id = row.dataset.taskId;
+    const sel = _selectedTaskIds.has(id);
+    row.classList.toggle('bulk-selected', sel);
+    const cb = row.querySelector('.bulk-checkbox');
+    if (cb) cb.checked = sel;
+  });
+  // Master-checkbox: marca se TODAS as filteredTasks est\u00e3o selecionadas
+  const master = document.getElementById('bulk-select-all');
+  if (master) {
+    const allSelected = filteredTasks.length > 0 &&
+      filteredTasks.every(t => _selectedTaskIds.has(t.id));
+    master.checked = allSelected;
+    master.indeterminate = !allSelected && _selectedTaskIds.size > 0;
+  }
+  // Atualiza ou monta a action bar
+  if (!_bulkBar) {
+    import('../components/bulkActionBar.js').then(({ mountBulkActionBar }) => {
+      _bulkBar = mountBulkActionBar({
+        getSelectedIds:   () => [..._selectedTaskIds],
+        getSelectedTasks: () => allTasks.filter(t => _selectedTaskIds.has(t.id)),
+        onClear: () => {
+          _selectedTaskIds.clear();
+          _refreshBulkUi();
+        },
+        onAfterUpdate: async () => {
+          _selectedTaskIds.clear();
+          await fetchTasks().then(ts => { allTasks = ts; }).catch(() => {});
+          applyFilters?.();
+          renderTaskList();
+          _refreshBulkUi();
+        },
+        allProjects,
+        allUsers: store.get('users') || [],
+      });
+      _bulkBar.update();
+    });
+  } else {
+    _bulkBar.update();
+  }
+}
+
 /* \u2500\u2500\u2500 Cleanup \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 export function destroyTasksPage() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
   _delegationAttached = false;
+  _selectedTaskIds.clear();
+  if (_bulkBar) { _bulkBar.destroy(); _bulkBar = null; }
 }
 
 /* \u2500\u2500\u2500 CSAT prompt on task completion \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500*/
