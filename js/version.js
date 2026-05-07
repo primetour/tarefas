@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 18,
-  patch: 1,
-  build: '20260507-kanban-col-reorder-rebuild',
+  minor: 19,
+  patch: 0,
+  build: '20260507-icons-single-source-of-truth',
 };
 
 /** "1.2.0" */

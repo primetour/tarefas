@@ -9,26 +9,73 @@ import { router }  from '../router.js';
 import { toast }   from './toast.js';
 import { toggleNotificationPanel } from './notificationPanel.js';
 import { toggleHelpPanel } from './helpPanel.js';
+import { renderIcon, ICONS } from './icons.js';
 import {
   collection, getDocs, query, orderBy, limit, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from '../firebase.js';
 
+/**
+ * 4.19+: títulos de página + ícones agora vêm de uma única fonte.
+ * - Título: definido aqui (label longo do header pode diferir do label
+ *   curto do sidebar — ex: sidebar="Steps", header="Steps · Kanban").
+ * - Ícone: SEMPRE puxado de `./icons.js` via `renderIcon(route)`.
+ *   Isto garante que o ícone visto na barra lateral seja IDÊNTICO ao
+ *   do header da página correspondente.
+ *
+ * Cobre TODAS as ~40 rotas do sidebar. Se nova rota for criada e o
+ * usuário acessar antes do PAGE_TITLES ser atualizado, fallback usa
+ * a chave da rota como título e tenta `renderIcon(route)`.
+ */
 const PAGE_TITLES = {
-  dashboard:    { title: 'Dashboard',           icon: '⊞' },
-  tasks:        { title: 'Tarefas',              icon: '✓' },
-  projects:     { title: 'Projetos',             icon: '◈' },
-  kanban:       { title: 'Steps',                icon: '▤' },
-  calendar:     { title: 'Calendário',           icon: '◷' },
-  timeline:     { title: 'Timeline / Gantt',     icon: '━' },
-  team:         { title: 'Equipe',               icon: '◎' },
-  csat:         { title: 'CSAT',                 icon: '★' },
-  dashboards:   { title: 'Dashboards',           icon: '◫' },
-  users:        { title: 'Gestão de Usuários',   icon: '◉' },
-  audit:        { title: 'Auditoria',            icon: '◌' },
-  settings:     { title: 'Configurações',        icon: '⚙' },
-  integrations: { title: 'Integrações',          icon: '⟳' },
-  profile:      { title: 'Meu Perfil',           icon: '👤' },
+  // Tarefas e Projetos
+  'check-in':         { title: 'Check-in' },
+  dashboard:          { title: 'Meu Painel' },
+  tasks:              { title: 'Tarefas' },
+  projects:           { title: 'Projetos' },
+  kanban:             { title: 'Steps' },
+  calendar:           { title: 'Calendário' },
+  timeline:           { title: 'Timeline / Gantt' },
+  // Gestão de Equipe
+  workspaces:         { title: 'Squads' },
+  requests:           { title: 'Solicitações' },
+  notifications:      { title: 'Notificações' },
+  team:               { title: 'Equipe' },
+  feedbacks:          { title: 'Feedbacks' },
+  goals:              { title: 'Metas' },
+  csat:               { title: 'CSAT' },
+  // Serviços
+  'content-calendar': { title: 'Calendário de Conteúdo' },
+  roteiros:           { title: 'Gerador de Roteiros' },
+  'portal-tips':      { title: 'Portal de Dicas' },
+  'portal-areas':     { title: 'Templates de Áreas' },
+  'portal-images':    { title: 'Banco de Imagens' },
+  'landing-pages':    { title: 'Landing Pages' },
+  cms:                { title: 'CMS / Site' },
+  'arts-editor':      { title: 'Editor de Artes' },
+  'luxury-travel':    { title: 'Revista Luxury Travel' },
+  'news-monitor':     { title: 'Pautas e Clipping' },
+  // Análise de Dados
+  dashboards:         { title: 'Produtividade' },
+  'nl-performance':   { title: 'Performance de Newsletters' },
+  'meta-performance': { title: 'Performance de Instagram' },
+  'ga-performance':   { title: 'Performance Google Analytics' },
+  'portal-dashboard': { title: 'Dashboard do Portal de Dicas' },
+  'roteiro-dashboard':{ title: 'Dashboard de Roteiros' },
+  // Administração
+  users:              { title: 'Usuários' },
+  sectors:            { title: 'Setores e Núcleos' },
+  'task-types':       { title: 'Tipos de Tarefa' },
+  roles:              { title: 'Roles e Acesso' },
+  'ai-hub':           { title: 'IA Hub' },
+  audit:              { title: 'Auditoria' },
+  settings:           { title: 'Configurações' },
+  about:              { title: 'Sobre o Sistema' },
+  help:               { title: 'Ajuda' },
+  // Outros
+  integrations:       { title: 'Integrações' },
+  profile:            { title: 'Meu Perfil' },
+  absences:           { title: 'Ausências' },
 };
 
 const PALETTES = [
@@ -109,15 +156,19 @@ export class Header {
 
   render() {
     const route = store.get('currentRoute') || 'dashboard';
-    const page  = PAGE_TITLES[route] || { title: 'PRIMETOUR', icon: '✦' };
+    const page  = PAGE_TITLES[route] || { title: 'PRIMETOUR' };
     const profile = store.get('userProfile');
     const initials = store.getUserInitials();
     const avatarColor = profile?.avatarColor || '#3B82F6';
+    // 4.19+: ícone vem do mesmo conjunto SVG do sidebar (single source of truth).
+    // Fallback gracioso: se rota nova não tem entry no ICONS, omite ícone.
+    const iconHtml = ICONS[route]
+      ? `<span class="app-header-icon" style="color:var(--text-muted); margin-right:8px; display:inline-flex; vertical-align:middle;">${renderIcon(route, { size: 18 })}</span>`
+      : '';
 
     const html = `
       <div class="app-header-title">
-        <span style="color:var(--text-muted); margin-right:8px; font-size:0.875rem;">${page.icon}</span>
-        ${page.title}
+        ${iconHtml}<span style="vertical-align:middle;">${page.title}</span>
       </div>
 
       <div class="header-search">
@@ -641,13 +692,13 @@ export class Header {
 
     // Subscribe to route changes
     this._unsubRoute = store.subscribe('currentRoute', (route) => {
-      const page = PAGE_TITLES[route] || { title: 'PRIMETOUR', icon: '✦' };
+      const page = PAGE_TITLES[route] || { title: 'PRIMETOUR' };
       const titleEl = this.el.querySelector('.app-header-title');
       if (titleEl) {
-        titleEl.innerHTML = `
-          <span style="color:var(--text-muted); margin-right:8px; font-size:0.875rem;">${page.icon}</span>
-          ${page.title}
-        `;
+        const iconHtml = ICONS[route]
+          ? `<span class="app-header-icon" style="color:var(--text-muted); margin-right:8px; display:inline-flex; vertical-align:middle;">${renderIcon(route, { size: 18 })}</span>`
+          : '';
+        titleEl.innerHTML = `${iconHtml}<span style="vertical-align:middle;">${page.title}</span>`;
       }
     });
   }

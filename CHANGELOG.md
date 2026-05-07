@@ -37,6 +37,60 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.19.0+20260507-icons-single-source-of-truth] — 2026-05-07
+
+Release **MINOR** — Padronização: ícone do header global = ícone do sidebar.
+
+### Pedido do user
+> "os ícones exibidos no sidebar devem ser os mesmos dos exibidos nas páginas"
+
+### Diagnóstico (3 fontes inconsistentes)
+| Local | Tipo | Cobertura |
+|---|---|---|
+| Sidebar | SVG (lucide-style) | 40+ rotas |
+| Header global | Glifos Unicode (`⊞`, `✓`, `◈`...) | só 14 rotas |
+| Page H1 | Emojis hardcoded em cada page | varia |
+
+### Solução: single source of truth
+
+**NOVO `js/components/icons.js`**: exporta `ICONS` map + `renderIcon(key, opts)`. 41 chaves cobrindo todas as rotas.
+
+**Sidebar**: remove cópia local do ICONS (~75 linhas), importa do módulo. Comportamento idêntico ao anterior.
+
+**Header**: remove glifos Unicode do `PAGE_TITLES`. Cobre 41 rotas (era 14). Renderiza SVG inline via `renderIcon(route, { size: 18 })`.
+
+### Resultado
+| Antes | Depois |
+|---|---|
+| Sidebar SVG `▤ kanban` ≠ Header Unicode `▤` | Sidebar SVG = Header SVG (idêntico) |
+| Header só com ícone em 14 rotas | Header com ícone em 41 rotas |
+
+### Próximo passo (não nesta versão)
+Remover emojis hardcoded dos H1 das pages individuais (ex: "📱 Calendário de Conteúdo" → "Calendário de Conteúdo"). Polish caso a caso.
+
+### Arquivos alterados
+- `js/components/icons.js` — NOVO (~140 linhas)
+- `js/components/sidebar.js` — remove ICONS local, importa do módulo
+- `js/components/header.js` — PAGE_TITLES expandido + usa renderIcon
+- `js/version.js` — bump 4.18.1 → 4.19.0
+- `index.html`, `CHANGELOG.md`
+
+
+## [4.18.1+20260507-kanban-col-reorder-rebuild] — 2026-05-07
+
+Release **PATCH** — bugfix da v4.18.0: rebuild board quando ordem das colunas muda.
+
+### Bug
+Drag de coluna salvava ordem em localStorage mas DOM continuava igual. A otimização de `shouldRebuild` ignorava reorder em `groupBy='status'`.
+
+### Fix
+Condição agora é `renderedKeys !== expectedKeys` para qualquer groupBy. Reorder muda os values no array, expectedKeys muda, board rebuilda.
+
+### Arquivos alterados
+- `js/pages/kanban.js` — condicao do shouldRebuild
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+
 ## [4.18.0+20260507-kanban-col-reorder] — 2026-05-07
 
 Release **MINOR** — Steps: drag-and-drop pra reordenar colunas (preferência do user).
