@@ -37,6 +37,39 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.23.2+20260507-sectors-union-rules] — 2026-05-07
+
+PATCH — fix dois bugs descobertos no E2E da v4.23.0/4.23.1.
+
+### #1 Setores: criação ocultava os 19 legados
+**Bug**: ao criar 1 setor novo via UI, os 19 hardcoded (BTG, Marketing, etc.)
+sumiam dos filtros e da página de Setores. Causa: `getActiveSectors()` retornava
+DEFAULT_SECTORS APENAS quando a collection estava vazia — qualquer doc fazia
+substituir, não unir.
+
+**Fix**: nova lógica de UNIÃO em `getActiveSectors()` (services/sectors.js)
+e nos consumers (filterBar `getUserSectorOptions`/`areaOpts`):
+- Dinâmicos ATIVOS entram primeiro (ordem por `order`)
+- Legados SEM doc com mesmo nome entram depois (back-compat)
+- Doc com `active:false` REMOVE setor da lista (mecanismo pra "ocultar"
+  legados criando um doc com mesmo nome desativado)
+
+### #2 Firestore rules sem regra para `sectors`
+**Bug**: createSector falhava com `permission-denied`. Causa: collection
+`sectors` (nova em v4.23.0) sem regras → bloqueio default.
+
+**Fix**: adicionada regra em `firestore.rules` (mesmo padrão de `nucleos`):
+- read público (portal de solicitações usa)
+- create/update/delete: `isAdmin()`
+- Deployed via `firebase deploy --only firestore:rules`
+
+### Files
+- `js/services/sectors.js` (getActiveSectors com união)
+- `js/components/filterBar.js` (getUserSectorOptions + areaOpts com união)
+- `firestore.rules` (regra `match /sectors/{sectorId}`)
+
+---
+
 ## [4.23.1+20260507-fix-audit-fallback] — 2026-05-07
 
 PATCH — fix bug do histórico no card descoberto no E2E.

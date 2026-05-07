@@ -70,12 +70,17 @@ function projectOpts(list) {
   }));
 }
 function areaOpts() {
-  // 4.23+ — Setores e áreas compartilham a mesma lista (REQUESTING_AREAS).
-  // Usamos a lista dinâmica quando disponível (alimentada pelo CRUD de setores).
-  const dyn = store.get('sectors');
-  const list = (Array.isArray(dyn) && dyn.length)
-    ? dyn.filter(s => s.active !== false).map(s => s.name)
-    : REQUESTING_AREAS;
+  // 4.23.2+ — UNIÃO de dinâmicos + legados (mesma lógica de getUserSectorOptions).
+  const dyn = Array.isArray(store.get('sectors')) ? store.get('sectors') : [];
+  const dynByName = new Map(dyn.filter(s => s?.name)
+    .map(s => [String(s.name).toLowerCase(), s]));
+  const list = [];
+  for (const s of dyn.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999))) {
+    if (s.active !== false) list.push(s.name);
+  }
+  for (const name of REQUESTING_AREAS) {
+    if (!dynByName.has(name.toLowerCase())) list.push(name);
+  }
   return list.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
 }
 function assigneeOpts(users) {
@@ -99,14 +104,22 @@ const metaOpts = () => [
  */
 function getUserSectorOptions() {
   const visible = store.getVisibleSectors(); // null | string[]
-  // 4.23+ — usa lista DINÂMICA do store (loadSectors no boot) com fallback
-  // pro REQUESTING_AREAS estático. Setores novos criados em /sectors aparecem.
-  const dyn = store.get('sectors');
-  const allSectors = (Array.isArray(dyn) && dyn.length)
-    ? dyn.filter(s => s.active !== false).map(s => s.name)
-    : REQUESTING_AREAS;
-  if (visible === null) return allSectors; // master sees all
-  if (visible.length === 0) return allSectors; // no sector set — show all (failsafe)
+  // 4.23.2+ — UNIÃO de dinâmicos + legados (não substitui).
+  // Mesma lógica de getActiveSectors() em services/sectors.js, inlined pra
+  // evitar import cíclico (filterBar é importado em vários lugares hot-path).
+  const dyn = Array.isArray(store.get('sectors')) ? store.get('sectors') : [];
+  const dynByName = new Map(dyn.filter(s => s?.name)
+    .map(s => [String(s.name).toLowerCase(), s]));
+  const out = [];
+  for (const s of dyn.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999))) {
+    if (s.active !== false) out.push(s.name);
+  }
+  for (const name of REQUESTING_AREAS) {
+    if (!dynByName.has(name.toLowerCase())) out.push(name);
+  }
+  const allSectors = out;
+  if (visible === null) return allSectors;
+  if (visible.length === 0) return allSectors;
   return visible;
 }
 

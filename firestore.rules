@@ -233,6 +233,15 @@ service cloud.firestore {
       allow delete:         if isAdmin();
     }
 
+    // ── Setores (4.23+ — antes era hardcoded; agora collection editável) ──
+    // Mesma política dos núcleos: leitura pública (portal de solicitações
+    // mostra dropdown de setores sem login), escrita só admin/master.
+    match /sectors/{sectorId} {
+      allow read:           if true;
+      allow create, update: if isAdmin();
+      allow delete:         if isAdmin();
+    }
+
     // ── Categorias de tipos de tarefa ─────────────────────────
     match /task_categories/{catId} {
       allow read:           if isAuth();

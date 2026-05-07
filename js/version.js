@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 23,
-  patch: 1,
-  build: '20260507-fix-audit-fallback',
+  patch: 2,
+  build: '20260507-sectors-union-rules',
 };
 
 /** "1.2.0" */

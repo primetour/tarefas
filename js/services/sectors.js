@@ -35,15 +35,46 @@ export { DEFAULT_SECTORS as SECTORS };
 
 /**
  * Retorna a lista ATIVA de setores (nomes string[]).
- * - Primeiro tenta store.get('sectors') (carregado no boot por loadSectors)
- * - Fallback: DEFAULT_SECTORS estático
+ *
+ * Estratégia de UNIÃO (4.23.2+): merge dos setores dinâmicos (collection
+ * Firestore) com os DEFAULT_SECTORS hardcoded — assim criar 1 setor novo
+ * NÃO esconde os 19 legados.
+ *
+ * Regras de precedência (case-insensitive por nome):
+ *   - Setor dinâmico ativo → entra na lista
+ *   - Setor dinâmico inativo (active:false) → REMOVE da lista (mesmo se for legacy)
+ *     → user pode "ocultar" um setor padrão criando um doc com mesmo nome + active:false
+ *   - Setor legado SEM doc → entra na lista (back-compat default)
+ *
+ * Ordem: dinâmicos primeiro (por `order`), depois legados sem doc (ordem original).
  */
 export function getActiveSectors() {
-  const dyn = store.get('sectors');
-  if (Array.isArray(dyn) && dyn.length) {
-    return dyn.filter(s => s.active !== false).map(s => s.name);
+  const dyn = Array.isArray(store.get('sectors')) ? store.get('sectors') : [];
+  // Index dinâmico: name (lower) → doc
+  const dynByName = new Map();
+  for (const s of dyn) {
+    if (s?.name) dynByName.set(String(s.name).toLowerCase(), s);
   }
-  return DEFAULT_SECTORS;
+  const out = [];
+  // 1) Dinâmicos ATIVOS (na ordem definida)
+  for (const s of dyn.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999))) {
+    if (s.active !== false) out.push(s.name);
+  }
+  // 2) Legados que NÃO foram redefinidos (sem doc com mesmo nome) E não foram desativados
+  for (const name of DEFAULT_SECTORS) {
+    const dynMatch = dynByName.get(name.toLowerCase());
+    if (!dynMatch) {
+      out.push(name); // sem doc → preserva legacy
+    }
+    // Se dynMatch existir, já foi tratado no loop 1 (entra se active, sai se !active)
+  }
+  // Dedup case-insensitive (precaução)
+  const seen = new Set();
+  return out.filter(n => {
+    const k = String(n).toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
 }
 
 /* ─── Buscar todos os setores (raw) ──────────────────────── */
