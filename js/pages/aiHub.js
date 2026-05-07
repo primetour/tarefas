@@ -54,7 +54,7 @@ export async function renderAiHub(container) {
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">◈ IA Hub</h1>
+        <h1 class="page-title">IA Hub</h1>
         <p class="page-subtitle">Agentes, conhecimento, automações e logs de IA — tudo num só lugar</p>
       </div>
       <div class="page-header-actions">

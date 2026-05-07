@@ -55,7 +55,7 @@ export async function renderAiSkills(container) {
       <div class="page-header-left">
         <h1 class="page-title">
           <span style="background:linear-gradient(135deg,var(--brand-gold),#F59E0B);-webkit-background-clip:text;
-            -webkit-text-fill-color:transparent;font-weight:700;">◈ IA Skills</span>
+            -webkit-text-fill-color:transparent;font-weight:700;">IA Skills</span>
         </h1>
         <p class="page-subtitle">Configure inteligência artificial nos módulos do sistema</p>
       </div>

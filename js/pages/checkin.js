@@ -75,7 +75,7 @@ export async function renderCheckin(container) {
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">⏱ Check-in</h1>
+        <h1 class="page-title">Check-in</h1>
         <p class="page-subtitle">Reserva de estação · check-in · registro de ponto</p>
       </div>
     </div>

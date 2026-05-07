@@ -223,7 +223,7 @@ export async function renderHelp(container) {
     container.innerHTML = `
       <div class="page-header">
         <div class="page-header-left">
-          <h1 class="page-title">❓ Ajuda</h1>
+          <h1 class="page-title">Ajuda</h1>
           <p class="page-subtitle">Tire dúvidas, refaça tours e veja atalhos. Conteúdo global do sistema.</p>
         </div>
       </div>

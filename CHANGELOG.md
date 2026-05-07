@@ -37,6 +37,70 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.22.0+20260507-icons-phase-a-finalize] — 2026-05-07
+
+Release **MINOR** — fechamento da Fase A de padronização de ícones.
+Os 3 itens deixados pendentes em v4.20 (escopo deliberado) agora migrados.
+
+### Pedido do user
+> "opere o que restou:
+> - Bulk action bar categórica (📅 Prazo, 🔥 Prioridade, 🚦 Status, 👤 Responsável, ▸ Área, ◈ Projeto, ◉ Núcleo)
+> - H1 emojis hardcoded em pages individuais
+> - Botões ✕ próprios de painéis (insightsPanel, notificationPanel, aiPanel, helpPanel)"
+
+### 1) Bulk Action Bar — botões categóricos em SVG
+`bulkActionBar.js`:
+- 📅 Prazo → `renderIcon('calendar')`
+- 🔥 Prioridade → `renderIcon('flame')`
+- 🚦 Status → `renderIcon('flag')`
+- 👤 Responsável → `renderIcon('user')`
+- ▸ Área → `renderIcon('folder')`
+- ◈ Projeto → `renderIcon('briefcase')`
+- ◉ Núcleo → `renderIcon('target')`
+
+### 2) Painéis ✕ migrados
+- `notificationPanel.js`: close `✕` (header) + dismiss `✕` (cada item) → `renderIcon('x')`
+- `aiPanel.js`: chat-close `✕` + attach-chip-remove `✕` → SVG
+- `insightsPanel.js`: 4 ocorrências (popover-close, formulário-close, edit ✎ e del ✕ em 2 templates) → `edit-pencil` e `x` SVGs
+- `filterBar.js`: botão "✕ Limpar filtros" → SVG x
+
+### 3) H1 emojis removidos
+Header global já renderiza ícone canônico via `header.js` + `icons.js`. Emojis
+duplicados no `<h1 class="page-title">` viraram ruído visual:
+- `help.js`: ❓ Ajuda → Ajuda
+- `checkin.js`: ⏱ Check-in → Check-in
+- `aiHub.js`: ◈ IA Hub → IA Hub
+- `aiAutomations.js`: ⚡ Automações IA → Automações IA
+- `aiSkills.js`: ◈ IA Skills → IA Skills
+- `aiDashboard.js`: ◈ Dashboard IA → Dashboard IA
+- `luxuryTravelAdmin.js`: ⚙ Administrar — … → Administrar — …
+
+**Mantido**: `dashboard.js` "Olá, Nome! 👋" (saudação humana, não chrome).
+
+### Novos ícones em `icons.js`
+`flame`, `flag`, `user`, `folder`, `briefcase`, `target`, `minus` — outline
+lucide-style, viewBox 24×24, currentColor.
+
+### Files
+- `js/components/icons.js`
+- `js/components/bulkActionBar.js`
+- `js/components/notificationPanel.js`
+- `js/components/aiPanel.js`
+- `js/components/insightsPanel.js`
+- `js/components/filterBar.js`
+- `js/pages/help.js`, `js/pages/checkin.js`, `js/pages/aiHub.js`,
+  `js/pages/aiAutomations.js`, `js/pages/aiSkills.js`,
+  `js/pages/aiDashboard.js`, `js/pages/luxuryTravelAdmin.js`
+- `js/version.js`, `index.html`
+
+### Status da Fase A
+✅ Header (4.19/4.20) · ✅ Toast (4.20) · ✅ Action buttons taskModal (4.20)
+✅ Bulk action bar categórica (4.22) · ✅ Painéis ✕ (4.22) · ✅ H1 emojis (4.22)
+
+User content (B1) — emojis editáveis em projetos/squads/tipos/áreas — segue intacto.
+
+---
+
 ## [4.21.0+20260507-multi-assignee-recurrence-cards] — 2026-05-07
 
 Release **MINOR** — três pedidos do user num pacote: filtro multi-responsável,

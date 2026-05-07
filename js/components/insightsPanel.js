@@ -47,6 +47,7 @@ import {
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
 } from '../services/insights.js?v=20260503uu1';
 import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260503uu1';
+import { renderIcon } from './icons.js';
 
 /** Mapa global de widgetLabels passado pelo dashboards.js — usado no export PDF/XLSX
  * pra mostrar nome legível do widget. Set/get via janela compartilhada. */
@@ -288,7 +289,8 @@ export async function mountInsightsPanel(opts) {
             💡 Insights ${indexLabel ? '· ' + esc(indexLabel) : ''}
           </div>
           <button id="ip-pop-close" style="border:none;background:none;cursor:pointer;
-            font-size:1rem;color:var(--text-muted);padding:4px 8px;">✕</button>
+            color:var(--text-muted);padding:4px 8px;display:inline-flex;align-items:center;justify-content:center;"
+            title="Fechar">${renderIcon('x',{size:16})}</button>
         </div>
         <div style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <span>${total} no histórico${current !== total && (periodFrom || periodTo) ? ` · ${current} cobre(m) período atual` : ''}</span>
@@ -449,9 +451,11 @@ export async function mountInsightsPanel(opts) {
             <button data-act="ip-export" data-id="${esc(ins.id)}"
               style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 5px;font-size:0.75rem;" title="Exportar este insight (PDF ou XLSX)">📤</button>
             <button data-act="ip-edit" data-id="${esc(ins.id)}"
-              style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 5px;font-size:0.75rem;" title="Editar">✎</button>
+              style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 5px;
+              display:inline-flex;align-items:center;justify-content:center;" title="Editar">${renderIcon('edit-pencil',{size:14})}</button>
             <button data-act="ip-del" data-id="${esc(ins.id)}"
-              style="border:none;background:none;cursor:pointer;color:var(--color-danger);padding:3px 5px;font-size:0.75rem;" title="Remover">✕</button>
+              style="border:none;background:none;cursor:pointer;color:var(--color-danger);padding:3px 5px;
+              display:inline-flex;align-items:center;justify-content:center;" title="Remover">${renderIcon('x',{size:14})}</button>
           </div>
         </div>
       </div>
@@ -610,8 +614,8 @@ export async function mountInsightsPanel(opts) {
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0;">
             <button class="btn btn-ghost btn-sm" data-act="ip-export" data-id="${esc(ins.id)}" title="Exportar este insight (PDF ou XLSX)">📤</button>
-            <button class="btn btn-ghost btn-sm" data-act="ip-edit" data-id="${esc(ins.id)}" title="Editar">✎</button>
-            <button class="btn btn-ghost btn-sm" data-act="ip-del" data-id="${esc(ins.id)}" title="Remover" style="color:var(--color-danger);">✕</button>
+            <button class="btn btn-ghost btn-sm" data-act="ip-edit" data-id="${esc(ins.id)}" title="Editar">${renderIcon('edit-pencil',{size:14})}</button>
+            <button class="btn btn-ghost btn-sm" data-act="ip-del" data-id="${esc(ins.id)}" title="Remover" style="color:var(--color-danger);">${renderIcon('x',{size:14})}</button>
           </div>
         </div>
       </div>
@@ -907,7 +911,8 @@ export async function mountInsightsPanel(opts) {
             💡 ${isEdit ? 'Editar' : 'Novo'} insight · ${dashInfo.icon} ${esc(dashInfo.label)}
             ${targetIndexKey ? `<span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;">📍 ${esc(indexLabel || targetIndexKey)}</span>` : ''}
           </div>
-          <button id="ipf-close" style="border:none;background:none;cursor:pointer;font-size:1.25rem;color:var(--text-muted);">✕</button>
+          <button id="ipf-close" style="border:none;background:none;cursor:pointer;color:var(--text-muted);
+            display:inline-flex;align-items:center;justify-content:center;padding:4px;" title="Fechar">${renderIcon('x',{size:18})}</button>
         </div>
 
         <div style="overflow-y:auto;flex:1;padding:18px 22px;display:flex;flex-direction:column;gap:14px;">

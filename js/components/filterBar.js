@@ -12,6 +12,7 @@ import {
   renderPickerButton, bindOptionPicker,
   renderMultiPickerButton, bindMultiOptionPicker,
 } from './optionPicker.js';
+import { renderIcon } from './icons.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -202,8 +203,9 @@ export function renderFilterBar(opts = {}) {
   if (hasFilters) {
     blocks.push(`
       <button class="btn btn-ghost btn-sm filter-clear-btn"
-        style="color:var(--text-muted);font-size:0.75rem;white-space:nowrap;">
-        ✕ Limpar filtros
+        style="color:var(--text-muted);font-size:0.75rem;white-space:nowrap;
+        display:inline-flex;align-items:center;gap:4px;">
+        ${renderIcon('x',{size:12})} Limpar filtros
       </button>
     `);
   }

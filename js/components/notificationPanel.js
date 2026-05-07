@@ -9,6 +9,7 @@ import {
   markAsRead, markAllAsRead, dismissNotification,
   NOTIF_ICONS, timeAgo,
 } from '../services/notifications.js';
+import { renderIcon } from './icons.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -155,7 +156,8 @@ function buildPanelHTML() {
           ${unreadCount > 0 ? `<button id="notif-mark-all" class="btn btn-ghost btn-sm"
             style="font-size:0.75rem;color:var(--text-muted);">Marcar tudo como lido</button>` : ''}
           <button id="notif-close" style="border:none;background:none;cursor:pointer;
-            font-size:1.25rem;color:var(--text-muted);">✕</button>
+            color:var(--text-muted);display:inline-flex;align-items:center;justify-content:center;
+            padding:4px;" title="Fechar">${renderIcon('x',{size:18})}</button>
         </div>
       </div>
 
@@ -273,8 +275,9 @@ function buildListHTML() {
         <!-- Dismiss -->
         <button class="notif-dismiss" data-id="${esc(n.id)}"
           style="border:none;background:none;cursor:pointer;color:var(--text-muted);
-          font-size:0.75rem;padding:4px;flex-shrink:0;opacity:0;transition:opacity .15s;"
-          title="Descartar">✕</button>
+          padding:4px;flex-shrink:0;opacity:0;transition:opacity .15s;
+          display:inline-flex;align-items:center;justify-content:center;"
+          title="Descartar">${renderIcon('x',{size:14})}</button>
       </div>`;
   }
 

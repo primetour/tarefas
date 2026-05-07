@@ -7,6 +7,7 @@
  */
 
 import { fetchSkillsForModule, runSkill, chatWithAI, MODULE_REGISTRY, getAIConfig } from '../services/ai.js';
+import { renderIcon } from './icons.js';
 import { parseActions, cleanActionBlocks, executeAction, getActionsForModule } from '../services/aiActions.js';
 import { parseFiles, formatFilesForPrompt, validateFile, getAcceptString, MAX_FILES } from '../services/aiFileParser.js';
 
@@ -170,7 +171,8 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
             <div class="ai-chat-header-subtitle">${esc(moduleMeta.label)}</div>
           </div>
           ${hasSkills ? `<span class="ai-chat-badge">${skills.length} skill${skills.length>1?'s':''}</span>` : ''}
-          <button class="ai-chat-close" title="Minimizar">✕</button>
+          <button class="ai-chat-close" title="Minimizar"
+            style="display:inline-flex;align-items:center;justify-content:center;">${renderIcon('x',{size:16})}</button>
         </div>
 
         ${hasSkills ? `
@@ -534,7 +536,8 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       return `<span class="ai-attach-chip">
         <span style="font-size:0.75rem;">${ext === 'PDF' ? '📄' : ext === 'XLSX' || ext === 'XLS' || ext === 'CSV' ? '📊' : ext === 'DOCX' ? '📝' : '🖼'}</span>
         <span class="ai-attach-chip-name" title="${esc(f.name)}">${esc(f.name)}</span>
-        <span class="ai-attach-chip-remove" data-idx="${i}" title="Remover">✕</span>
+        <span class="ai-attach-chip-remove" data-idx="${i}" title="Remover"
+          style="display:inline-flex;align-items:center;justify-content:center;">${renderIcon('x',{size:12})}</span>
       </span>`;
     }).join('') + `<span class="ai-attach-status">${pendingFiles.length}/${MAX_FILES}</span>`;
 

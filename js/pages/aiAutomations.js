@@ -25,7 +25,7 @@ export async function renderAiAutomations(container) {
       <div class="page-header-left">
         <h1 class="page-title">
           <span style="background:linear-gradient(135deg,var(--brand-gold),#F59E0B);-webkit-background-clip:text;
-            -webkit-text-fill-color:transparent;font-weight:700;">⚡ Automações IA</span>
+            -webkit-text-fill-color:transparent;font-weight:700;">Automações IA</span>
         </h1>
         <p class="page-subtitle">Tarefas automatizadas executadas pela inteligência artificial</p>
       </div>

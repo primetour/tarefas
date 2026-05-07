@@ -76,13 +76,13 @@ export function mountBulkActionBar({
       <span id="${BAR_ID}-count" style="font-size:0.875rem;font-weight:700;
         color:var(--brand-gold);">0 selecionada${''}</span>
     </div>
-    <button data-action="dueDate"   class="bab-btn" title="Alterar prazo">📅 <span>Prazo</span></button>
-    <button data-action="priority"  class="bab-btn" title="Alterar prioridade">🔥 <span>Prioridade</span></button>
-    <button data-action="status"    class="bab-btn" title="Alterar status">🚦 <span>Status</span></button>
-    <button data-action="assignees" class="bab-btn" title="Alterar responsáveis">👤 <span>Responsável</span></button>
-    <button data-action="area"      class="bab-btn" title="Alterar área">▸ <span>Área</span></button>
-    <button data-action="projectId" class="bab-btn" title="Alterar projeto">◈ <span>Projeto</span></button>
-    <button data-action="nucleos"   class="bab-btn" title="Alterar núcleo">◉ <span>Núcleo</span></button>
+    <button data-action="dueDate"   class="bab-btn" title="Alterar prazo">${renderIcon('calendar',{size:14})} <span>Prazo</span></button>
+    <button data-action="priority"  class="bab-btn" title="Alterar prioridade">${renderIcon('flame',{size:14})} <span>Prioridade</span></button>
+    <button data-action="status"    class="bab-btn" title="Alterar status">${renderIcon('flag',{size:14})} <span>Status</span></button>
+    <button data-action="assignees" class="bab-btn" title="Alterar responsáveis">${renderIcon('user',{size:14})} <span>Responsável</span></button>
+    <button data-action="area"      class="bab-btn" title="Alterar área">${renderIcon('folder',{size:14})} <span>Área</span></button>
+    <button data-action="projectId" class="bab-btn" title="Alterar projeto">${renderIcon('briefcase',{size:14})} <span>Projeto</span></button>
+    <button data-action="nucleos"   class="bab-btn" title="Alterar núcleo">${renderIcon('target',{size:14})} <span>Núcleo</span></button>
     <button data-action="delete"    class="bab-btn bab-danger" title="Excluir">${renderIcon('trash',{size:14})} <span>Excluir</span></button>
     <button id="${BAR_ID}-close" title="Limpar seleção"
       style="background:none;border:none;color:var(--text-muted);cursor:pointer;

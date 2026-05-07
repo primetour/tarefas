@@ -55,7 +55,7 @@ export async function renderAiDashboard(container) {
       <div class="page-header-left">
         <h1 class="page-title">
           <span style="background:linear-gradient(135deg,var(--brand-gold),var(--brand-gold-light));-webkit-background-clip:text;
-            -webkit-text-fill-color:transparent;font-weight:700;">◈ Dashboard IA</span>
+            -webkit-text-fill-color:transparent;font-weight:700;">Dashboard IA</span>
         </h1>
         <p class="page-subtitle">Análise de uso de inteligência artificial nos módulos</p>
       </div>

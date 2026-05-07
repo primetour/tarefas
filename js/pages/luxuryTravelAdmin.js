@@ -55,7 +55,7 @@ export async function renderLuxuryTravelAdmin(container) {
           ← Voltar à página pública
         </a>
         <h1 class="page-title" style="margin-top:4px;">
-          ⚙ Administrar — Revista Luxury Travel
+          Administrar — Revista Luxury Travel
         </h1>
       </div>
     </div>

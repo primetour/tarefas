@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 21,
+  minor: 22,
   patch: 0,
-  build: '20260507-multi-assignee-recurrence-cards',
+  build: '20260507-icons-phase-a-finalize',
 };
 
 /** "1.2.0" */
