@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 17,
-  patch: 1,
-  build: '20260507-cc-sync-fix-taskid-defensive',
+  patch: 2,
+  build: '20260507-doc-staging-lab',
 };
 
 /** "1.2.0" */

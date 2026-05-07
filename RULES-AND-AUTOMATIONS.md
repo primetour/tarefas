@@ -671,3 +671,45 @@ match /presence_daily/{docId} {
 
 **Roles personalizadas:**
 Master cria via `/roles` → escolhe checkboxes do catálogo. Funciona com qualquer combinação. `store.can(key)` consulta a role do user e retorna boolean. Nenhum problema de breakage.
+
+---
+
+## 12. Ambientes — PROD vs LAB (atualização 2026-05-07)
+
+**Mudança importante**: a partir de 2026-05-06 o sistema passa a ter um **ambiente de staging/lab** isolado. Antes, qualquer commit ia direto para produção via `primetour/tarefas`.
+
+### Topologia atual
+
+| Ambiente | Repo | Visibilidade | URL pública | Owner técnico |
+|---|---|---|---|---|
+| **PROD** | `primetour/tarefas` | Público | https://primetour.github.io/tarefas/ | Renê Castro + equipe |
+| **LAB** | `primetour/gestor-btg-lp-builder-lab` | Privado | (sem Pages) | Tiago Prado |
+
+### Propósito do LAB
+
+Validar 2 iniciativas sem risco para PROD:
+1. Migração do projeto BTG Pactual pro ecossistema do Gestor
+2. Evolução do gerador de Landing Pages em blocos (LP Builder)
+
+### Guardrails formais (NUNCA quebrar)
+
+1. ❌ Não usar credenciais de produção no LAB
+2. ❌ Não habilitar workflows agendados no LAB sem Firebase/R2/Cloudflare staging dedicado
+3. ❌ Não gravar em coleções de produção durante POCs no LAB
+4. ❌ Não fazer commits de feature de LAB direto em PROD (e vice-versa)
+
+### Estado atual (lab incompleto)
+- ✅ Repo criado, código higienizado (266 arquivos), commit `be06110`
+- ✅ `.firebaserc` aponta pra `STAGING_PROJECT` (placeholder)
+- ✅ 8 workflows movidos pra `.github/workflows.disabled/`
+- ✅ Tokens R2 inline removidos dos serviços client-side
+- ⚠ **Pendente**: criar projeto Firebase dedicado (ex: `gestor-primetour-staging`)
+- ⚠ **Pendente**: criar conta R2/Cloudflare staging
+- ⚠ **Pendente**: estabelecer cadência de sync LAB ↔ PROD
+
+### Documentação completa
+
+→ Ver [`STAGING-LAB.md`](./STAGING-LAB.md) (raiz do repo PROD) — diff completo, riscos, comandos, workflow recomendado, pendências.
+
+### Item adicionado ao checklist da equipe técnica
+Toda mudança que envolva BTG ou LP Builder deve passar primeiro pelo LAB. Hotfixes de PROD podem ir direto, mas devem ser sincronizados pro LAB depois (cherry-pick) pra evitar drift.

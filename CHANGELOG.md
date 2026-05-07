@@ -37,6 +37,70 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.17.2+20260507-doc-staging-lab] — 2026-05-07
+
+Release **PATCH** — Documentação técnica do novo ambiente de staging.
+
+### Pedido do user
+> "coloquei uma nova pessoa para trabalhar neste projeto e ele fez a versão staging do sistema. identifique isso no github, analise e adicione à documentação técnica."
+
+### Identificação
+
+Investigação revelou repo `primetour/gestor-btg-lp-builder-lab`:
+- Privado, criado 2026-05-06 20:25 UTC
+- Owner técnico: **Tiago Prado**
+- Commit único `be06110 chore: create sanitized lab baseline`
+- 266 arquivos (cópia higienizada do gestor)
+- Propósito: validar migração BTG Pactual + evolução do LP Builder em blocos
+
+### Diferenças vs PROD
+- 8 workflows movidos pra `.github/workflows.disabled/` (nenhum ativo)
+- `.firebaserc` placeholder `STAGING_PROJECT` (Firebase staging ainda não criado)
+- Tokens R2 inline removidos do client
+- Pages desabilitado (sem URL pública)
+
+### Pendências do LAB
+- Criar projeto Firebase dedicado
+- Conta R2/Cloudflare staging
+- Cadência de sync LAB ↔ PROD
+
+### Arquivos adicionados/atualizados
+- **NOVO** `STAGING-LAB.md` (raiz) — diff completo, guardrails, riscos+mitigações, comandos
+- `RULES-AND-AUTOMATIONS.md` § 12 — topologia ambientes + referência cruzada
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+
+## [4.17.1+20260507-cc-sync-fix-taskid-defensive] — 2026-05-07
+
+Release **PATCH** — bugfix do sync da v4.17.0.
+
+### Bug
+A sync `task.dueDate → slot.scheduledDate` da v4.17.0 falhava silenciosamente. `subscribeToTasksByIds` quebrava com:
+```
+Invalid query. When querying with documentId(), you must provide a valid string or a DocumentReference, but it was: a custom Object
+```
+
+### Causa
+Algum slot tinha `taskId` salvo como **objeto** (referência?) em vez de string. Um valor errado quebrava a query inteira (Firestore `where(documentId(), 'in', [...])` valida strict). Listener nunca chamava callback → `_linkedTasks` ficava vazio → sync nunca disparava.
+
+### Fix defensivo (2 camadas)
+- `subscribeToTasksByIds` filtra: `t => typeof t === 'string' && t.trim()`
+- `_bindTasksListener` aplica mesmo filtro antes de passar IDs
+
+Slots com `taskId` mal-salvado ficam órfãos do sync (badge não reflete status), mas o sistema todo não trava mais.
+
+### Validação E2E
+- Cria task com `dueDate: 2026-05-10` + slot vinculado com mesma data
+- `updateTask(taskId, { dueDate: 2026-05-25 })`
+- Aguarda 6s pra listener disparar
+- ✅ Slot final: `scheduledDate: 2026-05-25` (sync aplicou)
+
+### Arquivos alterados
+- `js/services/contentCalendar.js` — filtro defensivo no service
+- `js/pages/contentCalendar.js` — filtro defensivo na page
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+
 ## [4.17.0+20260507-cc-sync-task-date-to-slot] — 2026-05-07
 
 Release **MINOR** — Sync de data unidirecional: tarefa → slot.
