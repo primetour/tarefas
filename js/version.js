@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 33,
-  patch: 2,
-  build: '20260508-cachebust-r1',
+  patch: 3,
+  build: '20260508-dev-hours-days-avg',
 };
 
 /** "1.2.0" */

@@ -37,6 +37,46 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.33.3+20260508-dev-hours-days-avg] — 2026-05-08
+
+Release **PATCH** — Página pública de horas de dev: cards de total de
+dias e média/dia.
+
+### Pedido do user
+> "na pagina de horas de desenvolvimento, colocar total de dias do
+> projeto e média de desenvolvimento/dia"
+
+### Mudanças em `dev-hours-view.html`
+- Calcula janela temporal real (data mais antiga das entradas filtradas
+  → hoje), em dias inclusive.
+- Novo card **"📅 Dias do projeto"** com subtítulo mostrando a janela
+  (ex: "13/03/26 → 08/05/26").
+- Novo card **"📊 Média por dia"** = horas totais / dias do projeto,
+  em horas decimais.
+- Total de cards passa de 4 → 6 (mantém Releases formais e Fases).
+
+### Cálculo
+- Janela: `[earliestEntry, max(latestEntry, today)]` — protege contra
+  entradas com data futura.
+- Mínimo 1 dia (defensivo, evita div/0).
+- Atualiza junto com filtros (mês/trimestre/ano) — média do período
+  filtrado ÷ dias do filtro.
+
+---
+
+## [4.33.2+20260508-cachebust-r1] — 2026-05-08
+
+Release **PATCH** — Cache-bust de query strings antigas em imports ESM.
+
+Imports tipo `?v=20260503uu1` estavam ignorando bumps recentes (max-age
+=600). Atualizado massa para `?v=20260508r1` em 12 arquivos.
+
+Sem mudança funcional — necessário pra que o redesign do bloco
+"O que você estava analisando" (4.33.1) chegue ao browser sem aguardar
+TTL de 10 min.
+
+---
+
 ## [4.33.1+20260508-insight-snapshot-friendly] — 2026-05-08
 
 Release **PATCH** — Bloco "Dados observados" reformulado pra linguagem amigável.

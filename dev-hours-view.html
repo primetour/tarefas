@@ -292,15 +292,40 @@
       // Cards
       let totalH = 0, totalC = 0;
       const byCat = { refinamento: 0, desenvolvimento: 0, testes: 0, documentacao: 0, implantacao: 0 };
+      // 4.33.2+ Janela temporal real do projeto: data mais antiga (completedAt
+      // OU createdAt) até data mais recente. Usado pra calcular dias do projeto
+      // e média de horas/dia. Janela considera apenas entradas filtradas.
+      let earliestTs = null, latestTs = null;
       for (const e of arr) {
         totalH += +(e.totalHours || 0);
         totalC += +(e.totalCost  || 0);
         for (const k of Object.keys(byCat)) byCat[k] += +(e.hoursByCategory?.[k] || 0);
+        const dt = e.completedAt?.toDate ? e.completedAt.toDate()
+                 : e.createdAt?.toDate  ? e.createdAt.toDate()
+                 : null;
+        if (dt) {
+          if (!earliestTs || dt < earliestTs) earliestTs = dt;
+          if (!latestTs   || dt > latestTs)   latestTs   = dt;
+        }
       }
       const phaseCount = arr.filter(e => e.entryType === 'phase').length;
       const releaseCount = arr.filter(e => e.entryType === 'release').length;
+      // Dias decorridos: data mais antiga até HOJE (ou última se posterior).
+      // +1 pra incluir os dois extremos. Mínimo 1 dia (defensivo).
+      const today = new Date();
+      const lastDay = (latestTs && latestTs > today) ? latestTs : today;
+      const projectDays = earliestTs
+        ? Math.max(1, Math.ceil((lastDay - earliestTs) / (1000 * 60 * 60 * 24)) + 1)
+        : 0;
+      const avgHoursPerDay = projectDays > 0 ? totalH / projectDays : 0;
 
       document.getElementById('topbar-meta').textContent = `${arr.length} entrada${arr.length !== 1 ? 's' : ''} aprovada${arr.length !== 1 ? 's' : ''} • ${fmtH(totalH)} • ${fmtBR.format(totalC)}`;
+
+      // Formata janela temporal (ex: "13/03/26 → 08/05/26") pra subtítulo
+      const fmtShort = d => d ? d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '—';
+      const projectWindowLabel = earliestTs && lastDay
+        ? `${fmtShort(earliestTs)} → ${fmtShort(lastDay)}`
+        : 'sem registros';
 
       document.getElementById('cards').innerHTML = `
         <div class="card">
@@ -314,6 +339,18 @@
           <div class="card-label">Custo de desenvolvimento</div>
           <div class="card-value cost">${fmtBR.format(totalC)}</div>
           <div class="card-sub">@ R$ 150,00/h</div>
+        </div>
+        <div class="card">
+          <span class="card-icon">📅</span>
+          <div class="card-label">Dias do projeto</div>
+          <div class="card-value">${projectDays}</div>
+          <div class="card-sub">${esc(projectWindowLabel)}</div>
+        </div>
+        <div class="card">
+          <span class="card-icon">📊</span>
+          <div class="card-label">Média por dia</div>
+          <div class="card-value">${fmtH(avgHoursPerDay)}</div>
+          <div class="card-sub">total ÷ dias do projeto</div>
         </div>
         <div class="card">
           <span class="card-icon">🚀</span>
