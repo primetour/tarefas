@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 2,
-  build: '20260508-sound-bank-real',
+  patch: 3,
+  build: '20260508-sound-card-subtext',
 };
 
 /** "1.2.0" */

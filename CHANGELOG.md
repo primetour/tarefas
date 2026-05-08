@@ -37,6 +37,40 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.34.3+20260508-sound-card-subtext] — 2026-05-08
+
+Release **PATCH** — Fix sub-texto dos cards de som no /profile.
+
+### Pedido do user
+> "vc nao alterou o texto dos sons que foram inseridos. alguns ainda
+> aparecem com 'slot aguardando mp3'"
+
+### Bug
+Em `profile.js` o sub-texto dos cards era calculado como:
+```js
+const slotPending = s.file && !s.synth;
+// ...
+${slotPending ? 'Slot aguardando MP3' : (s.mute ? 'Sem som' : '')}
+```
+A condição marcava como "pendente" qualquer som com arquivo,
+independente de o arquivo realmente existir. Após 4.34.2 ter copiado
+os MP3s reais, todos os sons de arquivo continuavam mostrando o texto
+errado.
+
+### Fix
+Sub-texto agora vem da `description` do som (já existia em SOUND_LIBRARY,
+só não estava sendo usada). Mute mantém "Sem som".
+
+Exemplos:
+- Leão rugindo → "Rugido de leão"
+- Buzina de palhaço → "Buzina honk-honk"
+- Plin → "Tríade ascendente C6→E6→G6 (som original do sistema)."
+
+Texto truncado com ellipsis se passar do width do card; tooltip mostra
+descrição completa no hover.
+
+---
+
 ## [4.34.2+20260508-sound-bank-real] — 2026-05-08
 
 Release **PATCH** — Banco real de sons de conclusão (7 MP3s) substitui

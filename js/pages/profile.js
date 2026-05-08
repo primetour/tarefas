@@ -547,7 +547,10 @@ function _bindProfileEvents(profile) {
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
               ${g.items.map(s => {
                 const selected = s.id === _selectedSoundId;
-                const slotPending = s.file && !s.synth;
+                // 4.34.3+ Sub-texto vira descrição amigável do som (antes era
+                // hardcoded "Slot aguardando MP3" pra TODO arquivo, mesmo
+                // depois do banco real chegar).
+                const subtext = s.mute ? 'Sem som' : (s.description || '');
                 return `
                   <div class="sound-card" data-sound-id="${s.id}" style="
                     border:2px solid ${selected ? 'var(--brand-gold)' : 'var(--border-subtle)'};
@@ -559,8 +562,9 @@ function _bindProfileEvents(profile) {
                       <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">
                         ${s.label}${selected ? ' <span style="color:var(--brand-gold);">✓</span>' : ''}
                       </div>
-                      <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.3;">
-                        ${slotPending ? 'Slot aguardando MP3' : (s.mute ? 'Sem som' : '')}
+                      <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.3;
+                        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(subtext)}">
+                        ${esc(subtext)}
                       </div>
                     </div>
                     ${!s.mute ? `
