@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 12,
-  build: '20260508-csat-periodic-pool-architecture',
+  patch: 13,
+  build: '20260508-csat-cloud-function-cron',
 };
 
 /** "1.2.0" */

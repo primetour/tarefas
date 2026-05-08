@@ -1433,6 +1433,228 @@ export const sendCsatEmail = onCall({
   return { ok: true };
 });
 
+/* ═════════════════════════════════════════════════════════
+   CSAT — Cron Periódico (4.34.13+)
+   Roda a cada 30min. Para cada tipo com csatConfig.mode=periodic:
+     - Verifica se today=dayOfWeek E now>=timeOfDay
+     - Cria lock atômico em csat_periodic_runs/{typeId}_{winId}
+     - Coleta tarefas com csatPool='pending:periodic:{typeId}:{winId}'
+     - Agrupa por clientEmail, cria 1 survey por cliente, dispara emails
+     - Marca tarefas: csatPool='sent:periodic:...', csatSurveyId, csatSentAt
+   Idempotente via Firestore lock.
+   ═════════════════════════════════════════════════════════ */
+
+// Helpers compartilhados com o client (espelhados aqui pra rodar server-side)
+function csatPeriodWindowId(period, dayOfWeek = 5) {
+  const now = new Date();
+  if (period === 'monthly') {
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+  if (period === 'biweekly') {
+    const half = now.getDate() <= 15 ? 'a' : 'b';
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${half}`;
+  }
+  // weekly: ISO week
+  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNum = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2,'0')}`;
+}
+
+async function fireSurveyForPool(pool, type, cfg, winId) {
+  const sentPoolKey = `sent:periodic:${type.id}:${winId}`;
+  const labelTpl = cfg.periodLabel || `${type.name} · ${winId}`;
+  let surveysCreated = 0;
+  let totalTasks = 0;
+
+  for (const [email, tasks] of Object.entries(pool)) {
+    try {
+      // Cria survey doc
+      const surveyRef = db.collection('csat_surveys').doc();
+      const taskIds = tasks.map(x => x.id);
+      const questions = (cfg.questions || []).map(q => ({
+        id: q.id,
+        label: q.label,
+        type: q.type || 'score',
+        required: q.required !== false,
+      }));
+      await surveyRef.set({
+        taskId: tasks[0].id,
+        taskIds,
+        taskTypeId: type.id,
+        taskTitle: `${labelTpl} (${tasks.length} entrega${tasks.length>1?'s':''})`,
+        projectId: tasks[0].projectId || null,
+        projectName: tasks[0].projectName || null,
+        clientEmail: email,
+        clientName: tasks[0].clientName || email.split('@')[0],
+        assignedTo: (tasks[0].assignees||[])[0] || null,
+        questions,
+        responses: {},
+        status: 'sent',
+        token: Math.random().toString(36).slice(2) + Date.now().toString(36),
+        score: null,
+        comment: null,
+        customMessage: cfg.customMessage || `Avalie as entregas desta ${cfg.period === 'weekly' ? 'semana' : cfg.period === 'biweekly' ? 'quinzena' : 'período'}.`,
+        csatMode: 'periodic',
+        createdBy: 'system-cron',
+        createdAt: FieldValue.serverTimestamp(),
+        sentAt: FieldValue.serverTimestamp(),
+        respondedAt: null,
+      });
+
+      // TODO: enviar email via EmailJS (a Cloud Function existente sendCsatEmail
+      // só aceita chamadas autenticadas — aqui rodamos como service. Por hora
+      // fica registrado pendente; admin pode disparar manualmente do /csat).
+      // Nota: futuramente, refatorar sendCsatEmail pra aceitar trigger system.
+
+      // Marca tarefas
+      const batch = db.batch();
+      tasks.forEach(t => {
+        batch.update(db.doc(`tasks/${t.id}`), {
+          csatPool: sentPoolKey,
+          csatSurveyId: surveyRef.id,
+          csatSentAt: FieldValue.serverTimestamp(),
+        });
+      });
+      await batch.commit();
+
+      surveysCreated++;
+      totalTasks += tasks.length;
+    } catch (e) {
+      console.warn(`[csat-cron] failed for ${email} type=${type.id}:`, e.message);
+    }
+  }
+  return { surveysCreated, totalTasks };
+}
+
+export const csatPeriodicTrigger = onSchedule({
+  schedule: 'every 30 minutes',
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540,
+  memory: '512MiB',
+}, async () => {
+  console.log('[csat-cron] starting tick');
+
+  // Pega todos os tipos com csatConfig.mode=periodic
+  const typesSnap = await db.collection('task_types').get();
+  const periodicTypes = [];
+  typesSnap.forEach(doc => {
+    const data = doc.data();
+    const cfg = data.csatConfig;
+    if (cfg?.enabled && cfg.mode === 'periodic') {
+      periodicTypes.push({ id: doc.id, ...data });
+    }
+  });
+
+  if (!periodicTypes.length) {
+    console.log('[csat-cron] no periodic types configured');
+    return;
+  }
+
+  const now = new Date();
+  // Brasília agora — onSchedule já roda em America/Sao_Paulo então now já tá no fuso certo
+  const todayDow = now.getDay();
+  const nowHHMM = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+  let totalRuns = 0, totalSurveys = 0;
+
+  for (const type of periodicTypes) {
+    const cfg = type.csatConfig;
+    // 1) Time gate
+    if (cfg.dayOfWeek !== todayDow) continue;
+    if (nowHHMM < (cfg.timeOfDay || '09:00')) continue;
+
+    const winId = csatPeriodWindowId(cfg.period, cfg.dayOfWeek);
+    const lockId = `${type.id}_${winId}`;
+    const lockRef = db.doc(`csat_periodic_runs/${lockId}`);
+
+    // 2) Lock atômico — primeiro a criar wins
+    try {
+      const existing = await lockRef.get();
+      if (existing.exists) {
+        // Já rodou nesta janela
+        continue;
+      }
+      await lockRef.create({
+        typeId: type.id,
+        winId,
+        poolKey: `pending:periodic:${type.id}:${winId}`,
+        startedAt: FieldValue.serverTimestamp(),
+        startedBy: { uid: 'system-cron', name: 'CSAT Cron' },
+        status: 'processing',
+      });
+    } catch (lockErr) {
+      // Race condition — outra invocação criou primeiro
+      console.log(`[csat-cron] lock race won by other invocation: ${lockId}`);
+      continue;
+    }
+
+    // 3) Coleta tarefas com csatPool=pending pra este tipo+janela
+    const poolKey = `pending:periodic:${type.id}:${winId}`;
+    const tasksSnap = await db.collection('tasks')
+      .where('csatPool', '==', poolKey)
+      .where('status', '==', 'done')
+      .get();
+
+    const candidates = [];
+    tasksSnap.forEach(doc => {
+      const data = doc.data();
+      if (!data.clientEmail) return;
+      candidates.push({ id: doc.id, ...data });
+    });
+
+    if (!candidates.length) {
+      await lockRef.update({
+        status: 'empty',
+        finishedAt: FieldValue.serverTimestamp(),
+        surveysCreated: 0,
+      });
+      continue;
+    }
+
+    // 4) Agrupa por clientEmail
+    const byClient = {};
+    candidates.forEach(task => {
+      const email = String(task.clientEmail).toLowerCase();
+      if (!byClient[email]) byClient[email] = [];
+      byClient[email].push(task);
+    });
+
+    // 5) Cria surveys + atualiza tasks
+    const result = await fireSurveyForPool(byClient, type, cfg, winId);
+
+    // 6) Finaliza lock
+    await lockRef.update({
+      status: 'done',
+      finishedAt: FieldValue.serverTimestamp(),
+      surveysCreated: result.surveysCreated,
+      tasksCount: result.totalTasks,
+      clientsCount: Object.keys(byClient).length,
+    });
+
+    // Audit log
+    await db.collection('audit_logs').add({
+      action: 'csat.periodic_dispatched',
+      userId: 'system-cron',
+      entityId: lockId,
+      typeId: type.id,
+      typeName: type.name,
+      winId,
+      surveysCreated: result.surveysCreated,
+      tasksCount: result.totalTasks,
+      timestamp: FieldValue.serverTimestamp(),
+      severity: 'info',
+    });
+
+    totalRuns++;
+    totalSurveys += result.surveysCreated;
+  }
+
+  console.log(`[csat-cron] tick done · ${totalRuns} bolsões processados · ${totalSurveys} surveys criadas`);
+});
+
 export const eraseUserDataServer = onCall({
   cors: ['https://primetour.github.io', 'http://localhost:5000'],
   maxInstances: 5,
