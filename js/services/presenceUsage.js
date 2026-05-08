@@ -97,12 +97,24 @@ export async function fetchUsageByPeriod({ from, to, userIds = null, sectors = n
     if (d.sector)   acc.sector   = d.sector;
   }
 
-  // Computa derivados
-  const results = [...byUser.values()].map(u => ({
-    ...u,
-    avgMsPerDay: u.daysActive > 0 ? Math.round(u.totalMs / u.daysActive) : 0,
-    activePct:   u.totalMs > 0 ? Math.round(u.activeMs / u.totalMs * 100) : 0,
-  }));
+  // Computa derivados — 4.34.9+ Adiciona photoURL puxando do store.users
+  // pra que o ranking mostre foto SSO no avatar (em vez de siglas).
+  let storeUsers = [];
+  try {
+    const { store } = await import('../store.js');
+    storeUsers = store.get('users') || [];
+  } catch (_) { /* sem store, sem foto — siglas como fallback */ }
+
+  const results = [...byUser.values()].map(u => {
+    const userDoc = storeUsers.find(su => su.id === u.uid);
+    return {
+      ...u,
+      photoURL:    userDoc?.photoURL || null,
+      avatarColor: userDoc?.avatarColor || null,
+      avgMsPerDay: u.daysActive > 0 ? Math.round(u.totalMs / u.daysActive) : 0,
+      activePct:   u.totalMs > 0 ? Math.round(u.activeMs / u.totalMs * 100) : 0,
+    };
+  });
   results.sort((a, b) => b.totalMs - a.totalMs);
   return results;
 }

@@ -1602,7 +1602,7 @@ async function renderPresenceUsage() {
 
   try {
     const { fetchUsageByPeriod, summarizeUsage, formatDuration } =
-      await import('../services/presenceUsage.js?v=20260507uu');
+      await import('../services/presenceUsage.js?v=20260508r9');
     const { getPeriodDates } = await import('../services/analytics.js');
 
     const { start, end } = getPeriodDates(activePeriod());
@@ -1683,12 +1683,19 @@ async function renderPresenceUsage() {
           ${top.map((u, i) => {
             const pct = Math.round((u.totalMs / maxMs) * 100);
             const initials = (u.userName || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+            // 4.34.9+ Renderiza foto SSO se disponível (fallback pra iniciais via onerror)
+            const bg = u.avatarColor || hashColor(u.uid);
+            const inner = u.photoURL
+              ? `<img src="${esc(u.photoURL)}" alt="${esc(initials)}"
+                  onerror="this.style.display='none';"
+                  style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />${esc(initials)}`
+              : esc(initials);
             return `<div style="display:grid;grid-template-columns:auto auto 1fr auto auto;gap:10px;
               align-items:center;padding:6px 8px;border-radius:6px;background:var(--bg-elevated);">
               <div style="font-size:0.75rem;color:var(--text-muted);min-width:18px;text-align:right;">${i+1}.</div>
-              <div style="width:28px;height:28px;border-radius:50%;background:${hashColor(u.uid)};
+              <div style="width:28px;height:28px;border-radius:50%;background:${bg};
                 color:#fff;font-size:0.625rem;font-weight:700;display:flex;align-items:center;
-                justify-content:center;">${esc(initials)}</div>
+                justify-content:center;position:relative;overflow:hidden;">${inner}</div>
               <div style="min-width:0;">
                 <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);
                   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.userName || '—')}</div>

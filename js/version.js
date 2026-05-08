@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 8,
-  build: '20260508-dash-photo-and-type-icon-fix',
+  patch: 9,
+  build: '20260508-presence-ranking-photo',
 };
 
 /** "1.2.0" */
