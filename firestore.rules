@@ -157,6 +157,16 @@ service cloud.firestore {
       allow delete:         if isAdmin();
     }
 
+    // ── CSAT periodic run locks ─────────────────────────────────
+    // 4.34.12+ Doc por (typeId, winId) representa disparo do bolsão.
+    // Lock atômico (primeiro a criar = wins) garante idempotência.
+    match /csat_periodic_runs/{runId} {
+      allow read:    if isAuth();
+      allow create:  if isAuth();
+      allow update:  if isAuth();
+      allow delete:  if isAdmin();
+    }
+
     // ── Integrações ───────────────────────────────────────────
     match /integrations/{intId} {
       allow read:  if isAuth();

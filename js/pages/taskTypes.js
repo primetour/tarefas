@@ -296,6 +296,7 @@ function openTypeModal(type = null) {
       mode,
       period: document.getElementById('tt-csat-period')?.value || 'weekly',
       dayOfWeek: parseInt(document.getElementById('tt-csat-dow')?.value || '5', 10),
+      timeOfDay: document.getElementById('tt-csat-time')?.value || '09:00',
       periodLabel: document.getElementById('tt-csat-period-label')?.value?.trim() || '',
       customMessage: document.getElementById('tt-csat-msg')?.value?.trim() || '',
       questions,
@@ -642,7 +643,7 @@ function openTypeModal(type = null) {
             <!-- Periodic options (visible only if mode=periodic) -->
             <div id="tt-csat-periodic-block" style="display:${(type?.csatConfig?.mode==='periodic')?'block':'none'};
               padding:10px 12px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-subtle);">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
                 <div>
                   <label class="form-label" style="font-size:0.6875rem;">Cadência</label>
                   <select id="tt-csat-period" class="form-select" style="font-size:0.875rem;">
@@ -657,6 +658,11 @@ function openTypeModal(type = null) {
                     ${['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado']
                       .map((d, i) => `<option value="${i}" ${(type?.csatConfig?.dayOfWeek ?? 5)===i?'selected':''}>${d}</option>`).join('')}
                   </select>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.6875rem;">Horário (BRT)</label>
+                  <input type="time" id="tt-csat-time" class="form-input" style="font-size:0.875rem;"
+                    value="${esc(type?.csatConfig?.timeOfDay || '09:00')}" step="300" />
                 </div>
               </div>
               <div style="margin-top:8px;">

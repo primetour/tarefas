@@ -4011,6 +4011,78 @@ function showEvidenceModal(taskId, taskData) {
         </div>
         <div style="padding:20px 22px;display:flex;flex-direction:column;gap:18px;">
 
+          ${(() => {
+            // 4.34.12+ Detecta MODO efetivo do CSAT pra essa tarefa.
+            // Se tipo é periodic, NÃO mostra toggle "enviar agora" — mostra info
+            // que vai entrar no bolsão. Email ainda é capturado pra envio futuro.
+            const types = (typeof store !== 'undefined') ? (store.get('taskTypes') || []) : [];
+            const _t = types.find(tt => tt.id === taskData?.typeId);
+            const _cfg = _t?.csatConfig;
+            const _mode = _cfg?.enabled ? (_cfg.mode || 'individual') : null;
+            const _isPeriodic = _mode === 'periodic';
+            // Calcula próximo envio (fri+horário ou conforme dayOfWeek)
+            const _nextSend = (() => {
+              if (!_isPeriodic) return null;
+              const dayOfWeek = _cfg.dayOfWeek ?? 5;
+              const time = _cfg.timeOfDay || '09:00';
+              const [hh, mm] = time.split(':').map(Number);
+              const d = new Date();
+              const cur = d.getDay();
+              let diff = dayOfWeek - cur;
+              if (diff < 0) diff += 7;
+              if (diff === 0) {
+                // Mesmo dia: se já passou da hora, próxima semana
+                if (d.getHours() > hh || (d.getHours() === hh && d.getMinutes() >= mm)) diff = 7;
+              }
+              d.setDate(d.getDate() + diff);
+              d.setHours(hh, mm, 0, 0);
+              return d;
+            })();
+            const _periodLabel = _cfg?.period === 'weekly' ? 'semanal'
+              : _cfg?.period === 'biweekly' ? 'quinzenal'
+              : _cfg?.period === 'monthly' ? 'mensal' : '';
+            // Periodic mode: card informativo em vez do toggle
+            if (_isPeriodic) {
+              const _fmtNext = _nextSend
+                ? _nextSend.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' })
+                  + ' às ' + _nextSend.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                : '';
+              return `
+                <div style="border:1px solid rgba(59,130,246,0.3);border-radius:var(--radius-md);
+                  background:rgba(59,130,246,0.06);padding:12px 16px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                    <div>
+                      <div style="font-weight:600;font-size:0.875rem;color:#3B82F6;">⏳ CSAT ${esc2(_periodLabel)} (em lote)</div>
+                      <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px;line-height:1.4;">
+                        Esta entrega entrará no <strong>próximo envio ${esc2(_periodLabel)}</strong>
+                        do tipo "${esc2(_t.name || '')}" — junto com outras concluídas no período.
+                        ${_fmtNext ? `<br>📅 Próximo envio: <strong>${esc2(_fmtNext)}</strong>` : ''}
+                      </div>
+                    </div>
+                  </div>
+                  <div style="margin-top:10px;">
+                    <label style="${LBL2}">E-mail do cliente</label>
+                    <input type="email" id="dc-csat-email" class="portal-field" style="${F2}"
+                      value="${esc2(taskData.clientEmail||'')}" placeholder="cliente@empresa.com">
+                    <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+                      Sem e-mail, esta tarefa não entra no bolsão. Preencha pra incluir.
+                    </div>
+                  </div>
+                  <input type="hidden" id="dc-csat-mode" value="periodic" />
+                  <input type="hidden" id="dc-csat-check" />
+                </div>
+              `;
+            }
+            return ''; // cai no template original abaixo
+          })()}
+          ${(() => {
+            // Se NÃO é periodic, render padrão (individual + milestone)
+            const types = (typeof store !== 'undefined') ? (store.get('taskTypes') || []) : [];
+            const _t = types.find(tt => tt.id === taskData?.typeId);
+            const _cfg = _t?.csatConfig;
+            const _isPeriodic = _cfg?.enabled && _cfg.mode === 'periodic';
+            if (_isPeriodic) return ''; // já renderizou acima
+            return `
           <!-- CSAT -->
           <div style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
             <div style="padding:12px 16px;background:var(--bg-surface);
@@ -4074,6 +4146,8 @@ function showEvidenceModal(taskId, taskData) {
               })()}
             </div>
           </div>
+            `; // fim do template original (não-periodic)
+          })()}
 
           <!-- Meta -->
           <div style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);overflow:hidden;">
@@ -4330,7 +4404,11 @@ function showEvidenceModal(taskId, taskData) {
       const btn = document.getElementById('dc-confirm');
       if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
 
-      const sendCsat  = document.getElementById('dc-csat-check')?.checked;
+      // 4.34.12+ Detecta modo periodic — pra esses, NÃO envia CSAT na hora,
+      // marca a tarefa pra entrar no bolsão da janela atual.
+      const csatMode = document.getElementById('dc-csat-mode')?.value;
+      const isPeriodicMode = csatMode === 'periodic';
+      const sendCsat  = !isPeriodicMode && (document.getElementById('dc-csat-check')?.checked || false);
       const regMeta   = document.getElementById('dc-meta-check')?.checked;
       const csatEmail = document.getElementById('dc-csat-email')?.value?.trim();
       // 4.29+ Multi-select: lê todos os checkboxes marcados em vez de single select
@@ -4378,6 +4456,19 @@ function showEvidenceModal(taskId, taskData) {
         }
       }
       if (sendCsat && csatEmail) updates.clientEmail = csatEmail;
+
+      // 4.34.12+ Modo periodic: marca tarefa com csatPool pra entrar no bolsão
+      if (isPeriodicMode && csatEmail) {
+        updates.clientEmail = csatEmail;
+        try {
+          const { computePeriodicPoolKey } = await import('../services/csat.js');
+          const types = (typeof store !== 'undefined') ? (store.get('taskTypes') || []) : [];
+          const t = types.find(tt => tt.id === taskData?.typeId);
+          if (t?.csatConfig) {
+            updates.csatPool = computePeriodicPoolKey(t.id, t.csatConfig);
+          }
+        } catch (e) { console.warn('[csat] computePeriodicPoolKey falhou:', e.message); }
+      }
 
       if (Object.keys(updates).length) {
         ops.push(

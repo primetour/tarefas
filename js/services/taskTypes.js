@@ -193,6 +193,9 @@ function sanitizeCsatConfig(cfg) {
     dayOfWeek: Number.isInteger(cfg.dayOfWeek) && cfg.dayOfWeek >= 0 && cfg.dayOfWeek <= 6
       ? cfg.dayOfWeek : 5,
     periodLabel: typeof cfg.periodLabel === 'string' ? cfg.periodLabel.trim() : '',
+    // 4.34.12+ horário do disparo (HH:mm 24h, fuso BRT). Default 09:00.
+    // Cloud Function cron usa esse valor + dayOfWeek pra agendar.
+    timeOfDay: /^([01]\d|2[0-3]):[0-5]\d$/.test(cfg.timeOfDay || '') ? cfg.timeOfDay : '09:00',
     customMessage: typeof cfg.customMessage === 'string' ? cfg.customMessage.trim() : '',
     questions: Array.isArray(cfg.questions) ? cfg.questions
       .filter(q => q && q.label && q.label.trim())

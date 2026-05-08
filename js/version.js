@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 11,
-  build: '20260508-portal-past-date-block-and-sla-uteis',
+  patch: 12,
+  build: '20260508-csat-periodic-pool-architecture',
 };
 
 /** "1.2.0" */

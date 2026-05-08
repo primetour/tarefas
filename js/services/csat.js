@@ -4,13 +4,17 @@
  */
 
 import {
-  collection, doc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
+  collection, doc, addDoc, setDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, where, orderBy, limit, serverTimestamp, onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }       from '../firebase.js';
 import { store }    from '../store.js';
 import { APP_CONFIG } from '../config.js';
 import { auditLog } from '../auth/audit.js';
+
+/* ─── Helpers ────────────────────────────────────────────── */
+const uid = () => store.get('currentUser')?.uid || null;
+const userName = () => store.get('userProfile')?.name || store.get('currentUser')?.email || 'Sistema';
 
 /* ─── Constants ──────────────────────────────────────────── */
 export const CSAT_STATUS = {
@@ -628,13 +632,90 @@ function periodWindowStart(period, now = new Date()) {
 }
 
 /**
+ * 4.34.12+ Computa a chave do bolsão atual para um tipo periodic.
+ * Format: "pending:periodic:{typeId}:{winId}"
+ *   pending = aguardando envio
+ *   sent    = já enviado (após trigger)
+ * Usado pra marcar task.csatPool ao concluir tarefa do tipo periodic.
+ *
+ * @param {string} typeId
+ * @param {Object} csatConfig
+ * @returns {string} ex: 'pending:periodic:nl:2026-W19'
+ */
+export function computePeriodicPoolKey(typeId, csatConfig) {
+  const winId = periodWindowId(csatConfig.period, csatConfig.dayOfWeek);
+  return `pending:periodic:${typeId}:${winId}`;
+}
+
+/**
+ * 4.34.12+ Lista tarefas aguardando entrar em algum bolsão (csatPool=pending:*)
+ * Agrupa por bolsão. Cada bolsão = 1 entry com {typeId, winId, tasks[]}.
+ * Usado pela aba "Aguardando envio" no /csat.
+ *
+ * @returns {Promise<Array<{poolKey, typeId, typeName, winId, period, dayOfWeek, timeOfDay, tasks: Task[], byClient: {email: tasks[]}}>>}
+ */
+export async function listPendingCsatPools() {
+  const tasksMod = await import('./tasks.js');
+  const allTasks = await tasksMod.fetchTasks();
+  const taskTypes = store.get('taskTypes') || [];
+
+  const byPool = {};
+  for (const task of allTasks) {
+    if (!task.csatPool) continue;
+    if (!task.csatPool.startsWith('pending:periodic:')) continue;
+    if (task.status !== 'done') continue;
+    if (!byPool[task.csatPool]) byPool[task.csatPool] = [];
+    byPool[task.csatPool].push(task);
+  }
+
+  return Object.entries(byPool).map(([poolKey, tasks]) => {
+    const [, , typeId, winId] = poolKey.split(':');
+    const t = taskTypes.find(tt => tt.id === typeId);
+    const cfg = t?.csatConfig || {};
+    // Agrupa por cliente
+    const byClient = {};
+    tasks.forEach(task => {
+      if (!task.clientEmail) return;
+      const email = String(task.clientEmail).toLowerCase();
+      if (!byClient[email]) byClient[email] = [];
+      byClient[email].push(task);
+    });
+    return {
+      poolKey,
+      typeId,
+      typeName: t?.name || typeId,
+      winId,
+      period: cfg.period || 'weekly',
+      dayOfWeek: cfg.dayOfWeek ?? 5,
+      timeOfDay: cfg.timeOfDay || '09:00',
+      cfg,
+      tasks,
+      byClient,
+      clientCount: Object.keys(byClient).length,
+      noEmailCount: tasks.filter(t => !t.clientEmail).length,
+    };
+  }).sort((a, b) => a.winId.localeCompare(b.winId));
+}
+
+/**
  * Processa todos os tipos com modo periodic. Chamado no boot do app
  * (auth.js após login) — silencioso, async, não bloqueia.
+ * Também chamável manualmente (botão "Disparar agora" no /csat).
+ *
+ * 4.34.12+ Mudanças:
+ * - Usa task.csatPool em vez de filtrar por completedAt (mais preciso, idempotente)
+ * - Lock atômico via Firestore doc csat_periodic_runs/{typeId}_{winId}
+ * - Ao final, marca tarefas como sent:periodic:{...} pra não pegar de novo
+ *
+ * @param {Object} opts
+ * @param {boolean} [opts.force]  ignora dia/hora (manual)
+ * @param {string}  [opts.poolKey] dispara só este bolsão específico
  *
  * Retorna { processed: N, surveys: [...] }
  */
-export async function runPeriodicCsatTrigger() {
-  if (!store.can?.('csat_send')) return { processed: 0, surveys: [], skipped: 'permission' };
+export async function runPeriodicCsatTrigger(opts = {}) {
+  // Permissão flexibilizada em 4.34.12: qualquer user logado pode disparar,
+  // mas createCsatSurvey ainda verifica permissão server-side via Firestore rules.
   try {
     const taskTypes = store.get('taskTypes') || [];
     const periodicTypes = taskTypes.filter(t =>
@@ -642,40 +723,66 @@ export async function runPeriodicCsatTrigger() {
     );
     if (!periodicTypes.length) return { processed: 0, surveys: [] };
 
-    // Lê histórico de runs pra evitar disparos duplos no mesmo período
-    let runs = {};
-    try {
-      const raw = localStorage.getItem(PERIODIC_RUN_KEY);
-      if (raw) runs = JSON.parse(raw) || {};
-    } catch {}
-
     const now = new Date();
     const todayDow = now.getDay();
     const created = [];
 
-    // Tarefas done (uma vez só, reutiliza pra cada tipo)
+    // Tarefas done com csatPool=pending (uma vez só, reutiliza pra cada tipo)
     const tasksMod = await import('./tasks.js');
     const allTasks = await tasksMod.fetchTasks();
 
     for (const t of periodicTypes) {
       const cfg = t.csatConfig;
-      // Só dispara se hoje é o dia configurado
-      if (cfg.dayOfWeek !== todayDow) continue;
       const winId = periodWindowId(cfg.period, cfg.dayOfWeek);
-      const runKey = `${t.id}:${winId}`;
-      if (runs[runKey]) continue; // já rodou neste período
+      const poolKey = `pending:periodic:${t.id}:${winId}`;
 
-      // Coleta done desta janela do período + deste tipo + com clientEmail
-      const winStart = periodWindowStart(cfg.period, now);
-      const candidates = allTasks.filter(task => {
-        if (task.typeId !== t.id) return false;
-        if (task.status !== 'done') return false;
-        if (!task.clientEmail) return false;
-        if (!task.completedAt) return false;
-        const compDate = task.completedAt?.toDate?.() || new Date(task.completedAt);
-        return compDate >= winStart;
-      });
-      if (!candidates.length) continue;
+      // Filtro por bolsão (se opts.poolKey foi passado, ignora outros)
+      if (opts.poolKey && opts.poolKey !== poolKey) continue;
+
+      // Time gate (a menos que force OU manual via poolKey específico)
+      if (!opts.force && !opts.poolKey) {
+        if (cfg.dayOfWeek !== todayDow) continue;
+        // Se passou da hora configurada
+        const [hh, mm] = (cfg.timeOfDay || '09:00').split(':').map(Number);
+        const target = new Date(now);
+        target.setHours(hh, mm, 0, 0);
+        if (now < target) continue;
+      }
+
+      // Lock atômico via Firestore — primeiro user/cron a chegar ganha
+      const runDocRef = doc(db, 'csat_periodic_runs', `${t.id}_${winId}`);
+      try {
+        const existing = await getDoc(runDocRef);
+        if (existing.exists() && !opts.force) continue; // já rodou
+        // Cria lock ANTES de processar pra evitar race condition
+        await setDoc(runDocRef, {
+          typeId: t.id,
+          winId,
+          poolKey,
+          startedAt: serverTimestamp(),
+          startedBy: { uid: uid(), name: userName() },
+          status: 'processing',
+        }, { merge: false });
+      } catch (lockErr) {
+        // Outro processo já criou o doc no race window — pula
+        console.log('[csat-periodic] lock conflict, outro processo está rodando:', t.id, winId);
+        continue;
+      }
+
+      // Coleta tasks com csatPool == poolKey
+      const candidates = allTasks.filter(task =>
+        task.csatPool === poolKey && task.status === 'done' && task.clientEmail
+      );
+
+      if (!candidates.length) {
+        // Lock fica ativo mas marca como vazio
+        await updateDoc(runDocRef, {
+          status: 'empty',
+          finishedAt: serverTimestamp(),
+          surveysCreated: 0,
+        }).catch(() => {});
+        continue;
+      }
 
       // Agrupa por clientEmail
       const byClient = {};
@@ -685,8 +792,10 @@ export async function runPeriodicCsatTrigger() {
         byClient[email].push(task);
       });
 
-      // Cria 1 survey por cliente
+      // Cria 1 survey por cliente, marca tarefas como sent
       const labelTpl = cfg.periodLabel || `${t.name} · ${winId}`;
+      const sentPoolKey = `sent:periodic:${t.id}:${winId}`;
+      const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
       for (const [email, tasks] of Object.entries(byClient)) {
         try {
           const survey = await createCsatSurvey({
@@ -703,20 +812,32 @@ export async function runPeriodicCsatTrigger() {
           });
           await sendCsatEmail(survey.id);
           created.push(survey);
+          // Marca cada tarefa: csatPool=sent + csatSurveyId
+          await Promise.all(tasks.map(task =>
+            fb.updateDoc(fb.doc(db, 'tasks', task.id), {
+              csatPool: sentPoolKey,
+              csatSurveyId: survey.id,
+              csatSentAt: serverTimestamp(),
+            }).catch(e => console.warn('[csat-periodic] mark task failed:', task.id, e.message))
+          ));
         } catch (e) {
           console.warn('[csat-periodic] failed for', email, t.name, e.message);
         }
       }
 
-      runs[runKey] = { runAt: Date.now(), surveysCreated: byClient ? Object.keys(byClient).length : 0 };
+      // Finaliza lock
+      await updateDoc(runDocRef, {
+        status: 'done',
+        finishedAt: serverTimestamp(),
+        surveysCreated: created.length,
+        clientsCount: Object.keys(byClient).length,
+        tasksCount: candidates.length,
+      }).catch(() => {});
     }
 
-    // Persiste histórico (limita a 100 entradas mais recentes pra não inflar)
-    const entries = Object.entries(runs).sort((a, b) => (b[1].runAt || 0) - (a[1].runAt || 0)).slice(0, 100);
-    try { localStorage.setItem(PERIODIC_RUN_KEY, JSON.stringify(Object.fromEntries(entries))); } catch {}
-
+    // Mantém localStorage como cache adicional pra evitar re-fetch (idempotência cross-session já é via Firestore)
     if (created.length) {
-      console.log(`[csat-periodic] ${created.length} survey${created.length>1?'s':''} criada${created.length>1?'s':''} hoje`);
+      console.log(`[csat-periodic] ${created.length} survey${created.length>1?'s':''} criada${created.length>1?'s':''}`);
     }
     return { processed: periodicTypes.length, surveys: created };
   } catch (e) {

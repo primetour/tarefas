@@ -137,6 +137,11 @@ export async function renderCsat(container) {
             </button>
           </div>
         </div>
+        ${store.can('csat_queue_view') ? `
+          <button class="btn btn-secondary" id="csat-queue-btn"
+            title="Ver tarefas aguardando envio em CSAT periódico"
+            style="padding:6px 12px;">📋 <span id="csat-queue-count">Aguardando envio</span></button>
+        ` : ''}
         ${store.can('csat_send') ? `
           <!-- Overflow: Auto + Massa -->
           <div class="uikit-overflow-wrap" style="position:relative;display:inline-block;">
@@ -215,6 +220,18 @@ export async function renderCsat(container) {
   document.getElementById('csat-new-btn')?.addEventListener('click', () => openNewSurveyModal());
   document.getElementById('csat-bulk-btn')?.addEventListener('click', () => openBulkCsatModal());
   document.getElementById('csat-auto-btn')?.addEventListener('click', () => openAutoCsatModal());
+  // 4.34.12+ Botão "Aguardando envio" — abre modal com bolsões pendentes
+  document.getElementById('csat-queue-btn')?.addEventListener('click', () => openQueueModal());
+  // Atualiza contador no header (lazy)
+  (async () => {
+    try {
+      const { listPendingCsatPools } = await import('../services/csat.js');
+      const pools = await listPendingCsatPools();
+      const total = pools.reduce((a, p) => a + p.tasks.length, 0);
+      const el = document.getElementById('csat-queue-count');
+      if (el && total > 0) el.textContent = `Aguardando envio (${total})`;
+    } catch (_) {}
+  })();
   document.getElementById('csat-export-xls')?.addEventListener('click', exportCsatXls);
   document.getElementById('csat-export-pdf')?.addEventListener('click', exportCsatPdf);
 
@@ -1354,6 +1371,160 @@ function openBulkCsatModal() {
 }
 
 /* ─── Automação: enviar pendentes do período ─────────────── */
+/**
+ * 4.34.12+ Modal "Aguardando envio" — lista todos os bolsões pendentes
+ * (csatPool=pending:periodic:*), agrupado por bolsão e por cliente.
+ * Permite remover tarefa do bolsão, editar email, e disparar envio
+ * antecipado (admin/manager/coordinator/master).
+ */
+async function openQueueModal() {
+  const m = document.createElement('div');
+  m.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2000;
+    display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;`;
+  m.innerHTML = `
+    <div class="card" style="width:100%;max-width:900px;max-height:92vh;
+      padding:0;overflow:hidden;display:flex;flex-direction:column;">
+      <div style="padding:16px 22px;background:var(--bg-surface);
+        border-bottom:1px solid var(--border-subtle);
+        display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:700;font-size:1rem;">📋 Aguardando envio</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+            Tarefas concluídas que entrarão no próximo CSAT periódico
+          </div>
+        </div>
+        <button id="csat-queue-close" style="border:none;background:none;cursor:pointer;
+          color:var(--text-muted);font-size:1.5rem;padding:4px;">✕</button>
+      </div>
+      <div style="overflow-y:auto;flex:1;padding:18px 22px;" id="csat-queue-body">
+        <div style="text-align:center;padding:40px;color:var(--text-muted);">Carregando...</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+  document.getElementById('csat-queue-close')?.addEventListener('click', () => m.remove());
+
+  const body = document.getElementById('csat-queue-body');
+  try {
+    const { listPendingCsatPools, runPeriodicCsatTrigger } = await import('../services/csat.js');
+    const pools = await listPendingCsatPools();
+
+    if (!pools.length) {
+      body.innerHTML = `
+        <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+          <div style="font-size:3rem;margin-bottom:12px;">✓</div>
+          <div style="font-weight:600;color:var(--text-primary);font-size:0.9375rem;">
+            Nenhuma tarefa aguardando envio
+          </div>
+          <div style="font-size:0.8125rem;margin-top:6px;">
+            Quando tarefas de tipos com CSAT periódico forem concluídas, elas aparecem aqui.
+          </div>
+        </div>`;
+      return;
+    }
+
+    const fmtNextRun = (pool) => {
+      const [hh, mm] = (pool.timeOfDay || '09:00').split(':').map(Number);
+      const d = new Date();
+      const cur = d.getDay();
+      let diff = pool.dayOfWeek - cur;
+      if (diff < 0) diff += 7;
+      if (diff === 0 && (d.getHours() > hh || (d.getHours() === hh && d.getMinutes() >= mm))) diff = 7;
+      d.setDate(d.getDate() + diff);
+      d.setHours(hh, mm, 0, 0);
+      return d.toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'2-digit' })
+        + ' às ' + d.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+    };
+    const periodLabel = p => p === 'weekly' ? 'semanal' : p === 'biweekly' ? 'quinzenal' : 'mensal';
+
+    body.innerHTML = `
+      <div style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:14px;">
+        ${pools.length} bolsão${pools.length>1?'ões':''} agrupados ·
+        ${pools.reduce((a, p) => a + p.tasks.length, 0)} tarefa${pools.reduce((a, p) => a + p.tasks.length, 0)>1?'s':''} no total
+      </div>
+      ${pools.map((pool, i) => `
+        <div class="card" style="margin-bottom:16px;padding:14px 16px;border:1px solid var(--border-default);">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px;">
+            <div>
+              <div style="font-weight:700;font-size:0.9375rem;">
+                📅 ${esc(pool.typeName)} <span style="color:var(--text-muted);font-weight:400;">· ${periodLabel(pool.period)}</span>
+              </div>
+              <div style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px;">
+                Próximo envio: <strong>${esc(fmtNextRun(pool))}</strong> ·
+                ${pool.tasks.length} tarefa${pool.tasks.length>1?'s':''} · ${pool.clientCount} cliente${pool.clientCount>1?'s':''}
+                ${pool.noEmailCount > 0 ? `<span style="color:var(--color-warning);"> · ⚠ ${pool.noEmailCount} sem email</span>` : ''}
+              </div>
+            </div>
+            ${store.can('csat_send') ? `
+              <button class="btn btn-primary btn-sm csat-pool-fire" data-pool-key="${esc(pool.poolKey)}"
+                style="font-size:0.75rem;padding:5px 10px;flex-shrink:0;">⚡ Disparar agora</button>
+            ` : ''}
+          </div>
+          <div style="border-top:1px solid var(--border-subtle);padding-top:10px;font-size:0.8125rem;">
+            ${Object.entries(pool.byClient).map(([email, tks]) => `
+              <details style="margin-bottom:6px;">
+                <summary style="cursor:pointer;padding:4px 0;color:var(--text-primary);">
+                  <strong>${esc(email)}</strong>
+                  <span style="color:var(--text-muted);font-size:0.75rem;">— ${tks.length} tarefa${tks.length>1?'s':''}</span>
+                </summary>
+                <ul style="margin:6px 0 0 24px;padding:0;list-style:disc;color:var(--text-secondary);font-size:0.75rem;">
+                  ${tks.map(t => `
+                    <li style="margin:2px 0;">
+                      ${esc(t.title || 'Sem título')}
+                      ${t.completedAt ? `<span style="color:var(--text-muted);"> · concluída ${(() => { const d = t.completedAt?.toDate?.() || new Date(t.completedAt); return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' }); })()}</span>` : ''}
+                      <button class="csat-pool-remove" data-task-id="${esc(t.id)}"
+                        style="background:none;border:none;color:var(--color-danger);cursor:pointer;
+                        font-size:0.6875rem;margin-left:6px;text-decoration:underline;">remover</button>
+                    </li>
+                  `).join('')}
+                </ul>
+              </details>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+    `;
+
+    // Bind: disparar bolsão agora
+    body.querySelectorAll('.csat-pool-fire').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const poolKey = btn.dataset.poolKey;
+        if (!confirm(`Disparar CSAT agora para este bolsão?\n\nIsso vai enviar email pra cada cliente com as tarefas concluídas.`)) return;
+        btn.disabled = true; btn.textContent = '⏳ Enviando...';
+        try {
+          const result = await runPeriodicCsatTrigger({ force: true, poolKey });
+          toast.success(`${result.surveys?.length || 0} CSAT${(result.surveys?.length || 0) > 1 ? 's' : ''} enviado${(result.surveys?.length || 0) > 1 ? 's' : ''}.`);
+          m.remove();
+          renderTop(allSurveys); // refresh principal
+        } catch (e) {
+          btn.disabled = false; btn.textContent = '⚡ Disparar agora';
+          toast.error('Erro: ' + (e.message || ''));
+        }
+      });
+    });
+
+    // Bind: remover tarefa do bolsão
+    body.querySelectorAll('.csat-pool-remove').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const taskId = btn.dataset.taskId;
+        if (!confirm('Remover esta tarefa do bolsão? Não receberá CSAT.')) return;
+        try {
+          const { updateTask } = await import('../services/tasks.js');
+          await updateTask(taskId, { csatPool: null });
+          toast.success('Removida do bolsão.');
+          openQueueModal(); // recarrega modal
+          m.remove();
+        } catch (e) {
+          toast.error('Erro: ' + (e.message || ''));
+        }
+      });
+    });
+  } catch (e) {
+    body.innerHTML = `<div style="color:var(--color-danger);padding:20px;">Erro: ${esc(e.message || '')}</div>`;
+  }
+}
+
 function openAutoCsatModal() {
   // Estado local para guardar tarefas encontradas e emails editáveis
   let foundTasks = [];
