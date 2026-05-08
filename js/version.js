@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 29,
-  patch: 0,
-  build: '20260508-goals-filter-rename-overlay',
+  patch: 1,
+  build: '20260508-fix-selmeta-undefined',
 };
 
 /** "1.2.0" */

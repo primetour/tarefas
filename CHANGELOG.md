@@ -37,6 +37,34 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.29.1+20260508-fix-selmeta-undefined] — 2026-05-08
+
+PATCH — fix bug do overlay de tarefa concluída.
+
+### Bug
+Após o refactor multi-select da v4.29.0, ao confirmar 2+ metas no overlay
+"Tarefa concluída", o botão **Confirmar travava em "⏳"** indefinidamente.
+
+### Causa raiz
+Resíduo de uma referência à variável antiga `selMeta` (single-select)
+que tinha sido renomeada pra `selMetas` (array) no resto do refactor:
+```js
+if (regMeta && selMeta) toast.success(...);  // ← selMeta não existia
+```
+Esse `ReferenceError` interrompia o handler **DEPOIS** do save no Firestore
+ter sucesso (a tarefa era atualizada, mas o `overlay.remove()` nunca era
+chamado e o botão ficava travado).
+
+### Fix
+Substituído por `selMetas.length || hasMetaLinks` + mensagem dinâmica
+("Evidência registrada (N metas)!" quando 2+).
+
+### Files
+- `js/components/taskModal.js` (linha 4319 do branch confirm)
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+---
+
 ## [4.29.0+20260508-goals-filter-rename-overlay] — 2026-05-08
 
 Release **MINOR** — 3 melhorias em metas pedidas pelo user.

@@ -4316,7 +4316,13 @@ function showEvidenceModal(taskId, taskData) {
       await Promise.all(ops);
 
       if (sendCsat && csatEmail) toast.success('CSAT enviado para ' + csatEmail);
-      if (regMeta && selMeta)    toast.success('Evidência registrada!');
+      // 4.29.1: selMeta foi removida no refactor multi-select (v4.29) — usar
+      // selMetas (array) ou hasMetaLinks pra detectar se houve evidência.
+      if (regMeta && (selMetas.length || hasMetaLinks)) {
+        toast.success(selMetas.length > 1
+          ? `Evidência registrada (${selMetas.length} metas)!`
+          : 'Evidência registrada!');
+      }
 
       overlay.remove();
       resolveOverlay();
