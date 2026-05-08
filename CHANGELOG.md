@@ -37,6 +37,45 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.30.0+20260508-goals-accordion] — 2026-05-08
+
+Release **MINOR** — página de Metas com accordion de 2 níveis.
+
+### Pedido do user
+> "página metas: deixar os quadros de metas e pilares fechados,
+> estilo acordeon"
+
+### Implementação
+**Antes**: cards de meta listavam todos os pilares e suas metas EXPANDIDOS,
+gerando muito scroll quando havia muitas metas.
+
+**Agora**: 2 níveis de accordion, ambos FECHADOS por default:
+
+1. **Card da meta** (nível 1):
+   - Header sempre visível: chevron ▸ + status + scope + título + contagens
+   - Click no chevron OU no título alterna a expansão
+   - Quando expande: chevron rotaciona 90° + cor dourada
+   - Pilares ficam ocultos por padrão
+
+2. **Pilar** (nível 2, dentro do goal expandido):
+   - Header sempre visível: chevron ▸ + "Pilar N · Título" + ponderação% +
+     contador "N metas" no canto direito
+   - Click toggle expande as metas individuais (chips em pílula)
+   - Independente de outros pilares (cada um abre/fecha sozinho)
+
+### UX
+- Estado inicial sem scroll desnecessário — user vê apenas headers
+- Cliques são rastreáveis (chevron OU título de meta = toggle)
+- Pilares dentro do goal mantêm comportamento independente
+- Estado de expansão NÃO persiste entre re-renders (intencional — ao
+  publicar/editar/excluir uma meta, todos voltam ao fechado)
+
+### Files
+- `js/pages/goals.js` (renderGoalsList: chevron + handlers + display:none default)
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+---
+
 ## [4.29.1+20260508-fix-selmeta-undefined] — 2026-05-08
 
 PATCH — fix bug do overlay de tarefa concluída.

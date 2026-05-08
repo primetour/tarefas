@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 29,
-  patch: 1,
-  build: '20260508-fix-selmeta-undefined',
+  minor: 30,
+  patch: 0,
+  build: '20260508-goals-accordion',
 };
 
 /** "1.2.0" */

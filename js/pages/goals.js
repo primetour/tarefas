@@ -264,11 +264,17 @@ function renderGoalsList(container) {
     const statusColors = { rascunho:'#6B7280', publicada:'#22C55E', encerrada:'#A78BFA' };
 
     return `
-    <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px;">
+    <div class="card goal-card" data-goal-id="${esc(goal.id)}" style="padding:0;overflow:hidden;margin-bottom:12px;">
       <!-- Header bar -->
       <div style="height:4px;background:${statusColors[goal.status]||'#6B7280'};"></div>
       <div style="padding:18px 22px;">
         <div style="display:flex;align-items:flex-start;gap:12px;">
+          <!-- 4.30+ Toggle (chevron) — accordion -->
+          <button class="goal-toggle" data-id="${esc(goal.id)}" type="button"
+            title="Expandir / recolher pilares"
+            style="background:none;border:none;cursor:pointer;color:var(--text-muted);
+              padding:4px 6px;font-size:0.875rem;line-height:1;flex-shrink:0;margin-top:2px;
+              transition:transform 0.15s, color 0.15s;">▸</button>
           <div style="flex:1;min-width:0;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
               <span style="font-size:0.75rem;padding:2px 10px;border-radius:var(--radius-full);
@@ -286,7 +292,8 @@ function renderGoalsList(container) {
                 background:#F59E0B18;border-radius:var(--radius-full);border:1px solid #F59E0B30;"
                 title="${esc(warnings.join('\n'))}">⚠ ponderação pendente</span>`:''}
             </div>
-            <div style="font-weight:700;font-size:0.9375rem;margin-bottom:4px;">
+            <div class="goal-title-clickable" data-id="${esc(goal.id)}"
+              style="font-weight:700;font-size:0.9375rem;margin-bottom:4px;cursor:pointer;">
               ${esc(goal.nome || goal.objetivoNucleo || (goal.pilares?.[0]?.titulo) || 'Meta sem título')}
             </div>
             <div style="font-size:0.8125rem;color:var(--text-muted);">
@@ -310,18 +317,31 @@ function renderGoalsList(container) {
           </div>
         </div>
 
-        <!-- Pilares preview -->
+        <!-- 4.30+ Pilares — accordion FECHADO por default. Cada pilar tb é accordion. -->
         ${(goal.pilares||[]).length ? `
-        <div style="margin-top:14px;border-top:1px solid var(--border-subtle);padding-top:12px;
-          display:flex;flex-direction:column;gap:8px;">
+        <div class="goal-pilares-body" data-goal-id="${esc(goal.id)}"
+          style="margin-top:14px;border-top:1px solid var(--border-subtle);padding-top:12px;
+          flex-direction:column;gap:8px;display:none;">
           ${(goal.pilares||[]).map((pilar,pi) => `
-            <div style="background:var(--bg-surface);border-radius:var(--radius-sm);padding:10px 14px;">
-              <div style="font-size:0.75rem;font-weight:700;color:var(--text-muted);
-                text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">
-                Pilar ${pi+1} · ${esc(pilar.titulo||'Sem título')}
-                <span style="font-weight:400;color:var(--brand-gold);margin-left:6px;">${pilar.ponderacao||0}%</span>
+            <div class="goal-pilar-item" data-pi="${pi}"
+              style="background:var(--bg-surface);border-radius:var(--radius-sm);padding:10px 14px;">
+              <div class="goal-pilar-header" data-goal-id="${esc(goal.id)}" data-pi="${pi}"
+                style="font-size:0.75rem;font-weight:700;color:var(--text-muted);
+                text-transform:uppercase;letter-spacing:.05em;cursor:pointer;
+                display:flex;align-items:center;gap:8px;user-select:none;">
+                <span class="goal-pilar-chev" style="font-size:0.6875rem;color:var(--text-muted);
+                  transition:transform 0.15s;display:inline-block;">▸</span>
+                <span style="flex:1;">
+                  Pilar ${pi+1} · ${esc(pilar.titulo||'Sem título')}
+                  <span style="font-weight:400;color:var(--brand-gold);margin-left:6px;">${pilar.ponderacao||0}%</span>
+                </span>
+                <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:0.6875rem;
+                  color:var(--text-muted);opacity:0.7;">
+                  ${(pilar.metas||[]).length} meta${(pilar.metas||[]).length!==1?'s':''}
+                </span>
               </div>
-              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              <div class="goal-pilar-metas" style="display:none;margin-top:8px;
+                flex-wrap:wrap;gap:6px;">
                 ${(pilar.metas||[]).map((meta,mi) => `
                   <span style="font-size:0.75rem;padding:2px 10px;background:var(--bg-dark);
                     border-radius:var(--radius-full);color:var(--text-secondary);">
@@ -334,6 +354,44 @@ function renderGoalsList(container) {
       </div>
     </div>`;
   }).join('');
+
+  // 4.30+ Wire accordion handlers
+  // Goal-level toggle (chevron OR title)
+  const toggleGoal = (goalId) => {
+    const card = el.querySelector(`.goal-card[data-goal-id="${CSS.escape(goalId)}"]`);
+    if (!card) return;
+    const body = card.querySelector('.goal-pilares-body');
+    const chev = card.querySelector('.goal-toggle');
+    if (!body) return;
+    const isOpen = body.style.display === 'flex';
+    body.style.display = isOpen ? 'none' : 'flex';
+    if (chev) {
+      chev.style.transform = isOpen ? '' : 'rotate(90deg)';
+      chev.style.color = isOpen ? 'var(--text-muted)' : 'var(--brand-gold)';
+    }
+  };
+  el.querySelectorAll('.goal-toggle').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleGoal(btn.dataset.id);
+    });
+  });
+  el.querySelectorAll('.goal-title-clickable').forEach(t => {
+    t.addEventListener('click', () => toggleGoal(t.dataset.id));
+  });
+  // Pilar-level toggle
+  el.querySelectorAll('.goal-pilar-header').forEach(h => {
+    h.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pilarItem = h.closest('.goal-pilar-item');
+      const metas = pilarItem?.querySelector('.goal-pilar-metas');
+      const chev = h.querySelector('.goal-pilar-chev');
+      if (!metas) return;
+      const isOpen = metas.style.display === 'flex';
+      metas.style.display = isOpen ? 'none' : 'flex';
+      if (chev) chev.style.transform = isOpen ? '' : 'rotate(90deg)';
+    });
+  });
 
   // Wire buttons
   el.querySelectorAll('.goal-edit-btn').forEach(btn => {
