@@ -174,6 +174,16 @@ const ENTRIES = [
     multiplierIds:  [],
     completedAt:    new Date('2026-05-08T17:00:00-03:00'),
   },
+  {
+    releaseVersion: '4.34.8',
+    releaseSlug:    '20260508-dash-photo-and-type-icon-fix',
+    title:          'Fix dashboard produtividade: ranking equipe c/ foto + ranking tipo s/ sigla',
+    summary:        'Bug A: getTasksByMember nao retornava photoURL — leaderboard mostrava siglas mesmo apos backfill. Bug B: Ranking por Tipo gerava avatar com sigla "📰N" do nome "📰 Newsletter" — redundante e feio. Fix A: campo photoURL no return de getTasksByMember. Fix B: separar icon do name no map de byType, renderLeaderboard mostra apenas o icon na bolinha quando iconOnly=true.',
+    profile:        'bugfix',
+    bucket:         'micro',           // 0.25-0.5h (~0.4h)
+    multiplierIds:  [],
+    completedAt:    new Date('2026-05-08T17:30:00-03:00'),
+  },
 ];
 
 // ─── Buckets (espelha js/services/devHours.js BUCKETS) ─────
