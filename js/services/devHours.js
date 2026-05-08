@@ -87,8 +87,28 @@ const COLLECTION = 'dev_hours';
    ─────────────────────────────────────────────────────────────────── */
 
 /**
+ * 4.34.10+ Fator de assistência IA aplicado ao tempo estimado humano puro.
+ *
+ * Tempo humano puro × AI_ASSISTANCE_MULTIPLIER = tempo equivalente do
+ * dev sênior trabalhando ASSISTIDO POR IA (modelo "human-in-the-loop").
+ *
+ * Calibragem em 0.40 (~2.5× speedup) baseada em:
+ *   - Microsoft Copilot studies: ~55% redução de tempo em tasks de coding
+ *   - GitHub research: ~30-50% mais produtividade
+ *   - Observação interna desta plataforma (12 releases): speedup ~13×
+ *     no tempo bruto de execução, mas dev humano ainda investe tempo
+ *     significativo em revisão/decisão/teste/integração
+ *   - Faixa segura conservadora vs valor de mercado real
+ *
+ * Aplicado em createEntry: salvamos humanEquivalentHours (puro) +
+ * totalHours (× multiplier). Display público usa totalHours.
+ */
+export const AI_ASSISTANCE_MULTIPLIER = 0.40;
+
+/**
  * Calcula horas estimadas a partir do bucket + multiplicadores.
- * Retorna número (decimal). Por padrão usa o ponto médio do range do bucket.
+ * Retorna o **tempo humano puro** (sem o ajuste de IA — esse é
+ * aplicado no createEntry).
  *
  * @param {string} bucketValue
  * @param {string[]} multiplierIds
@@ -110,6 +130,14 @@ export function calcHoursFromBucket(bucketValue, multiplierIds = [], basePoint =
   }
   // Floor em 0.25 (15 min) — abaixo disso não faz sentido cobrar
   return Math.max(0.25, +(base * factor).toFixed(2));
+}
+
+/**
+ * Aplica o fator de assistência IA. humanHours × 0.40.
+ * Floor em 0.1 (6min) pra entradas muito pequenas.
+ */
+export function applyAiAssistance(humanHours) {
+  return Math.max(0.1, +(humanHours * AI_ASSISTANCE_MULTIPLIER).toFixed(2));
 }
 
 /** Custo = horas × rate. */
@@ -176,6 +204,17 @@ export async function findByVersion(version) {
 
 export async function createEntry(data) {
   const user = store.get('currentUser') || {};
+  // 4.34.10+ Aplica fator AI-assistance se data.totalHours veio como tempo
+  // humano puro (sem o ajuste). Detectamos pela ausência de humanEquivalentHours
+  // no payload — se o caller já calculou, respeita.
+  const humanHrs = data.humanEquivalentHours != null
+    ? data.humanEquivalentHours
+    : (data.totalHours || 0);
+  const adjustedHrs = data.humanEquivalentHours != null
+    ? (data.totalHours || 0)
+    : applyAiAssistance(humanHrs);
+  const adjustedCost = +(adjustedHrs * (data.hourlyRate || DEFAULT_HOURLY_RATE)).toFixed(2);
+
   const payload = {
     // tipo
     entryType: data.entryType || 'release',     // 'release' | 'phase'
@@ -194,13 +233,15 @@ export async function createEntry(data) {
     // datas
     startedAt:   data.startedAt   || null,
     completedAt: data.completedAt || serverTimestamp(),
-    // estimativa
+    // estimativa — 4.34.10+ guardamos AMBOS os valores pra rastreabilidade.
     bucket:      data.bucket || 'medium',
     basePoint:   data.basePoint != null ? data.basePoint : null,
     multipliers: data.multipliers || [],
-    totalHours:  data.totalHours || 0,
+    humanEquivalentHours: humanHrs,             // tempo dev solo (referência)
+    aiAssistanceMultiplier: AI_ASSISTANCE_MULTIPLIER, // fator aplicado
+    totalHours:  adjustedHrs,                    // tempo ajustado (display)
     hourlyRate:  data.hourlyRate || DEFAULT_HOURLY_RATE,
-    totalCost:   data.totalCost  || 0,
+    totalCost:   adjustedCost,
     // categorias
     hoursByCategory: data.hoursByCategory || {
       refinamento: 0, desenvolvimento: 0, testes: 0, documentacao: 0, implantacao: 0,

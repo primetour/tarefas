@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 9,
-  build: '20260508-presence-ranking-photo',
+  patch: 10,
+  build: '20260508-dev-hours-ai-assist-calibration',
 };
 
 /** "1.2.0" */

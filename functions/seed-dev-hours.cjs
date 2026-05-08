@@ -20,6 +20,9 @@ admin.initializeApp({
 const db = admin.firestore();
 
 const HOURLY_RATE = 150;
+// 4.34.10+ Aplica fator de AI-assistance no totalHours/totalCost.
+// Salva tempo humano puro como humanEquivalentHours pra rastreabilidade.
+const AI_ASSISTANCE_MULTIPLIER = 0.40;
 
 // ─── Releases dessa sessão ─────────────────────────
 // Baseado em escopo real: linhas alteradas, complexidade, multipliers.
@@ -249,7 +252,10 @@ async function seed() {
   const col = db.collection('dev_hours');
 
   for (const e of ENTRIES) {
-    const totalHours = calcHours(e.bucket, e.multiplierIds);
+    // 4.34.10+ humanEquivalentHours = tempo dev solo (referência);
+    //          totalHours = humanEquivalentHours × 0.40 (com AI-assist)
+    const humanHours = calcHours(e.bucket, e.multiplierIds);
+    const totalHours = Math.max(0.1, +(humanHours * AI_ASSISTANCE_MULTIPLIER).toFixed(2));
     const totalCost  = +(totalHours * HOURLY_RATE).toFixed(2);
     const breakdown  = suggestBreakdown(totalHours, e.profile);
 
@@ -262,6 +268,8 @@ async function seed() {
       bucket:           e.bucket,
       multiplierIds:    e.multiplierIds || [],
       profile:          e.profile,
+      humanEquivalentHours:   humanHours,
+      aiAssistanceMultiplier: AI_ASSISTANCE_MULTIPLIER,
       totalHours,
       totalCost,
       hourlyRate:       HOURLY_RATE,
