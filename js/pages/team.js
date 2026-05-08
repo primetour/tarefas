@@ -4,6 +4,7 @@
  */
 
 import { store }  from '../store.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import {
@@ -171,7 +172,7 @@ function renderMembers(container) {
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
             <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};
               width:40px;height:40px;font-size:0.875rem;flex-shrink:0;">
-              ${initials}
+              ${userAvatarInner(u)}
             </div>
             <div style="min-width:0;flex:1;">
               <div style="font-weight:600;color:var(--text-primary);
@@ -325,7 +326,7 @@ async function renderTeamAvailability(container) {
             <div style="padding:8px 16px;border-bottom:1px solid var(--border-subtle);">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
                 <div class="avatar avatar-sm" style="background:${u.avatarColor};flex-shrink:0;">
-                  ${u.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+                  ${userAvatarInner(u)}
                 </div>
                 <div style="flex:1;min-width:0;">
                   <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.name.split(' ')[0])}</div>

@@ -4,6 +4,7 @@
  */
 
 import { store }    from '../store.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 import { toast }    from '../components/toast.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
@@ -920,7 +921,7 @@ function renderLeaderboard(gridId, id, colClass, opts) {
               ${i < 3 ? rankLabels[i+1] : i+1}
             </div>
             <div class="avatar avatar-sm" style="background:${u.avatarColor}; flex-shrink:0;">
-              ${(u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+              ${userAvatarInner(u)}
             </div>
             <div class="leaderboard-info">
               <div class="leaderboard-name">${esc(u.name)}</div>

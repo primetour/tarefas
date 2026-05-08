@@ -4,6 +4,7 @@
  */
 
 import { store }  from '../store.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { fetchAuditLogs, ACTION_LABELS, REVERTIBLE_ACTIONS, auditLog } from '../auth/audit.js';
@@ -402,8 +403,11 @@ function renderLogs() {
     const isRevertible = REVERTIBLE_ACTIONS[log.action];
     const isExpanded   = expandedLogId === log.id;
 
-    const userColor = (store.get('users')||[]).find(u=>u.id===log.userId)?.avatarColor || '#6B7280';
+    const userDoc = (store.get('users')||[]).find(u=>u.id===log.userId);
+    const userColor = userDoc?.avatarColor || '#6B7280';
     const initials  = (log.userName||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    // 4.34.6+ Usa photoURL do user se disponível
+    const userForAvatar = { name: log.userName, photoURL: userDoc?.photoURL };
     const userEmail = resolveUserEmail(log);
     // Nome curto pra economizar espaço; email completo no title (tooltip)
     const nameShort = (log.userName || '—').length > 22
@@ -448,7 +452,7 @@ function renderLogs() {
         <div style="display:flex; align-items:center; gap:8px; overflow:hidden;"
              title="${esc(userEmail || log.userId || '')}">
           <div class="avatar" style="background:${userColor}; width:28px; height:28px; font-size:0.55rem; flex-shrink:0;">
-            ${initials}
+            ${userAvatarInner(userForAvatar)}
           </div>
           <div style="min-width:0;overflow:hidden;">
             <div style="font-size:0.8125rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-secondary); line-height:1.2;">

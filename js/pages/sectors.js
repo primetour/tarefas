@@ -4,6 +4,7 @@
  */
 
 import { store }  from '../store.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { updateUserProfile } from '../auth/auth.js';

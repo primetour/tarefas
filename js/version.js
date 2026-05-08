@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 5,
-  build: '20260508-photo-onload-and-sync-btn',
+  patch: 6,
+  build: '20260508-avatar-photos-everywhere',
 };
 
 /** "1.2.0" */

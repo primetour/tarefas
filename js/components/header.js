@@ -217,9 +217,14 @@ export class Header {
 
         <div class="dropdown">
           <button class="header-action-btn" id="user-avatar-btn"
-            style="background:${avatarColor}; color:white; font-size:0.75rem; font-weight:600; border:none;"
+            style="background:${avatarColor}; color:white; font-size:0.75rem; font-weight:600; border:none;
+              position:relative; overflow:hidden;"
             title="${profile?.name || 'Usuário'}"
-          >${initials}</button>
+          >${profile?.photoURL
+              ? `<img src="${profile.photoURL}" alt="${initials}"
+                  onerror="this.style.display='none';"
+                  style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;" />${initials}`
+              : initials}</button>
           
           <div class="dropdown-menu" id="user-dropdown" style="display:none;">
             <div style="padding:12px 14px; border-bottom:1px solid var(--border-subtle);">

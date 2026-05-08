@@ -3,6 +3,7 @@
  * Form multi-pilar + aba Avaliação de Metas
  */
 import { store }  from '../store.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import {
@@ -1486,7 +1487,7 @@ function buildRespChipsHTML(users, draft) {
         border-color:${sel?'rgba(212,168,67,0.4)':'transparent'};
         cursor:pointer;">
       <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">
-        ${(u.name||'').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+        ${userAvatarInner(u)}
       </div>
       ${esc((u.name||'').split(' ')[0])}
       <span class="goal-resp-check" style="color:var(--brand-gold);font-size:0.75rem;display:${sel?'inline':'none'};">✓</span>

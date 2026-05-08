@@ -4,6 +4,7 @@
  */
 
 import { store }       from '../store.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 import { createUser, updateUserProfile, deactivateUser, reactivateUser, getErrorMessage } from '../auth/auth.js';
 import { REQUESTING_AREAS } from '../services/tasks.js';
 import { userNucleos } from '../services/sectors.js';
@@ -655,7 +656,7 @@ function renderUserRow(user) {
       <td>
         <div class="flex items-center gap-3">
           <div class="avatar avatar-sm" style="background:${user.avatarColor || '#3B82F6'}">
-            ${initials}
+            ${userAvatarInner(user)}
           </div>
           <div>
             <div style="font-weight:500; color:var(--text-primary);">${escHtml(user.name)}</div>

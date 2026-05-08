@@ -3,6 +3,7 @@
  */
 
 import { store }  from '../store.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import {
@@ -210,7 +211,7 @@ function renderProjectCard(p) {
     if (!u) return '';
     return `<div class="avatar avatar-sm" title="${esc(u.name)}"
       style="background:${u.avatarColor||'#3B82F6'}; margin-left:-6px; border:2px solid var(--bg-card);">
-      ${(u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+      ${userAvatarInner(u)}
     </div>`;
   }).join('');
 
@@ -448,7 +449,7 @@ export async function openProjectModal(project = null, { defaultWorkspaceId = nu
                 border-color:${isMember?'rgba(212,168,67,0.4)':'transparent'};
                 cursor:pointer;">
               <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">
-                ${(u.name||'').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+                ${userAvatarInner(u)}
               </div>
               ${esc(u.name.split(' ')[0])}
               <span class="member-check" style="color:var(--brand-gold);font-size:0.75rem;display:${isMember?'inline':'none'};">✓</span>

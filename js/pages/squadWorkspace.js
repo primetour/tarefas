@@ -5,6 +5,7 @@
  */
 
 import { store }  from '../store.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 import { router } from '../router.js';
 import { toast }  from '../components/toast.js';
 import { fetchProjects, PROJECT_STATUS_MAP, projectIncludesSquad } from '../services/projects.js';
@@ -118,7 +119,7 @@ function renderHeader(ws, projCount, taskCount) {
     if (!u) return '';
     return `<div class="avatar avatar-sm" title="${esc(u.name)}"
       style="background:${u.avatarColor||'#3B82F6'}; margin-left:-6px; border:2px solid var(--bg-card);">
-      ${(u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+      ${userAvatarInner(u)}
     </div>`;
   }).join('');
   const extraMembers = (ws.members || []).length > 6
@@ -326,7 +327,7 @@ function renderCompactTaskRow(task) {
     if (!u) return '';
     return `<div class="avatar avatar-sm" title="${esc(u.name)}"
       style="background:${u.avatarColor||'#3B82F6'};margin-left:-6px;border:2px solid var(--bg-card);width:22px;height:22px;font-size:0.55rem;">
-      ${(u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+      ${userAvatarInner(u)}
     </div>`;
   }).join('');
 
