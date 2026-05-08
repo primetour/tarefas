@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 33,
-  patch: 0,
-  build: '20260508-insight-drafts',
+  patch: 1,
+  build: '20260508-insight-snapshot-friendly',
 };
 
 /** "1.2.0" */

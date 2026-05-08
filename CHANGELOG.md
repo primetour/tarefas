@@ -37,6 +37,45 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.33.1+20260508-insight-snapshot-friendly] — 2026-05-08
+
+Release **PATCH** — Bloco "Dados observados" reformulado pra linguagem amigável.
+
+### Pedido do user
+> "o sistema apresenta um bloco chamado 'dados observados', mas ainda
+> me parece muito técnico, até com mudança de fonte e termos não
+> amigáveis ao user. precisamos melhorar isso"
+
+### Mudanças
+- **Renomeado**: "📊 Dados observados — foto histórica, imutável"
+  → "📌 O que você estava analisando"
+- **Sem monospace**: layout em cards com tipografia padrão do app
+- **Labels técnicas mapeadas** (em `insights.js`):
+  - `weeklyVelocity` → "📈 Tarefas por semana"
+  - `csatGeneral` → "★ CSAT geral"
+  - `responseRate` → "Taxa de resposta"
+  - `avgDays` → "Dias (média)"
+  - +20 outras chaves dos 6 dashboards
+- **Valores formatados em pt-BR**: números com vírgula decimal, datas
+  como "15/04/26", percentuais com %
+- **Estrutura visual**: grid de "label → valor", agrupados por grupo
+  do widget. Sem chaves aninhadas (`weeklyVelocity[0].weekStart`).
+- **Texto explicativo simples**: "Os números acima são salvos junto
+  com o insight — assim, mesmo que o dashboard mude, você sempre
+  poderá voltar e ver o que motivou a análise."
+- **Mensagem da IA**: jargão "ai-edited / audit trail" → "Suas edições
+  ficam registradas no histórico, mas a versão original é preservada"
+- **Popover de listagem**: mesmo tratamento amigável (badge "📌 O que
+  foi analisado" + items compactos com `label: valor`)
+
+### Compat
+- Função antiga `formatDataSnapshot()` mantida (PDF/XLSX export ainda
+  usa a versão compacta de uma linha)
+- Nova função `formatDataSnapshotFriendly()` retorna estrutura
+  `[{ label, items: [{ name, value }] }]` pra UI
+
+---
+
 ## [4.33.0+20260508-insight-drafts] — 2026-05-08
 
 Release **MINOR** — Rascunhos de insights com auto-save (estilo Outlook/Gmail).

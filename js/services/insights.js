@@ -221,6 +221,202 @@ function renderBreakdownItem(item) {
   return label;
 }
 
+/* ─── 4.33.1+ Friendly labels para chaves técnicas ────────
+ * Mapeia chaves de top-level que aparecem nos snapshots dos widgets pra
+ * nomes legíveis em português. Quando uma chave não está no mapping,
+ * cai num humanizer genérico (camelCase → "Camel Case").
+ */
+const FRIENDLY_TOPLEVEL_LABELS = {
+  weeklyVelocity:       '📈 Tarefas por semana',
+  timeByType:           '⏱ Tempo médio por tipo',
+  statusDistribution:   '◎ Status das tarefas',
+  priorityDistribution: '▲ Prioridade das tarefas',
+  projectProgress:      '📦 Progresso por projeto',
+  memberRanking:        '🏆 Ranking da equipe',
+  typeRanking:          '◇ Ranking por tipo de tarefa',
+  upcomingDeadlines:    '⏰ Prazos próximos',
+  activityHeatmap:      '🔥 Atividade no período',
+  csatGeneral:          '★ CSAT geral',
+  csatByArea:           '★ CSAT por área',
+  rework:               '✓ Retrabalho',
+  newsletters:          '📧 Newsletters',
+  nucleo:               '◈ Performance por núcleo',
+  totals:               '📊 Totais',
+  // Meta/GA/NL — comuns
+  spend:                '💰 Investimento',
+  impressions:          '👁 Impressões',
+  clicks:               '🖱 Cliques',
+  conversions:          '✓ Conversões',
+  ctr:                  'CTR',
+  cpc:                  'CPC',
+  cpm:                  'CPM',
+  cpa:                  'CPA',
+  roas:                 'ROAS',
+  sessions:             'Sessões',
+  users:                'Usuários',
+  pageviews:            'Pageviews',
+  bounceRate:           'Taxa de rejeição',
+};
+
+const FRIENDLY_FIELD_LABELS = {
+  // CSAT
+  avg:             'Média',
+  total:           'Total',
+  sent:            'Enviadas',
+  responded:       'Respondidas',
+  responseRate:    'Taxa de resposta',
+  score:           'Score',
+  // Tasks
+  rate:            'Taxa',
+  count:           'Quantidade',
+  done:            'Concluídas',
+  created:         'Criadas',
+  partnerships:    'Parcerias',
+  partnershipRate: '% parcerias',
+  // Rework
+  withRework:      'Com retrabalho',
+  withoutRework:   'Sem retrabalho',
+  noReworkRate:    'Sem retrabalho (%)',
+  reworkRate:      'Com retrabalho (%)',
+  inRework:        'Em retrabalho',
+  // Newsletters
+  outOfCalendar:    'Fora do calendário',
+  inCalendar:       'No calendário',
+  outOfCalendarPct: '% fora do calendário',
+  // Time
+  avgDays:         'Dias (média)',
+  // Heatmap
+  totalActions:    'Total de ações',
+  activeDays:      'Dias ativos',
+  max:             'Pico',
+  // Genéricos
+  label:           '',  // já é o label do item
+  name:            '',
+  area:            '',
+  type:            'Tipo',
+  priority:        'Prioridade',
+  weekStart:       'Semana de',
+  weekEnd:         'até',
+  dueDate:         'Vence em',
+  completedAt:     'Concluída em',
+};
+
+/** Humaniza camelCase em string com primeira maiúscula. */
+function humanizeKey(k) {
+  return String(k || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^./, c => c.toUpperCase());
+}
+
+function friendlyTop(k) {
+  return FRIENDLY_TOPLEVEL_LABELS[k] || humanizeKey(k);
+}
+
+function friendlyField(k) {
+  if (k in FRIENDLY_FIELD_LABELS) return FRIENDLY_FIELD_LABELS[k];
+  return humanizeKey(k);
+}
+
+/** Formata um valor primitivo de forma humana (BR locale, datas curtas). */
+function formatValue(v, hint = '') {
+  if (v == null || v === '') return '—';
+  if (typeof v === 'number') {
+    // Heurística: se chave indica %, sufixa; se float pequeno, 1 casa
+    if (/Rate|Pct|Percent/.test(hint) && v <= 1.01) return Math.round(v * 100) + '%';
+    if (Number.isInteger(v)) return v.toLocaleString('pt-BR');
+    return v.toFixed(1).replace('.', ',');
+  }
+  if (typeof v === 'string') {
+    // ISO date? Renderiza dd/mm/aa
+    const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1].slice(2)}`;
+    return v.length > 80 ? v.slice(0, 78) + '…' : v;
+  }
+  if (typeof v === 'boolean') return v ? 'Sim' : 'Não';
+  return String(v);
+}
+
+/**
+ * Formata snapshot em estrutura visual amigável pra renderização em UI.
+ * Retorna array de "grupos" cada um com label e items. UI escolhe como
+ * renderizar (cards, lista, etc).
+ *
+ * Exemplo de saída:
+ *   [
+ *     {
+ *       label: '★ CSAT geral',
+ *       items: [
+ *         { name: 'Média',           value: '4,2/5' },
+ *         { name: 'Respondidas',     value: '18' },
+ *         { name: 'Taxa de resposta', value: '72%' }
+ *       ]
+ *     },
+ *     {
+ *       label: '📈 Tarefas por semana',
+ *       items: [
+ *         { name: 'Semana de 15/04', value: '12 criadas · 9 concluídas' },
+ *         ...
+ *       ]
+ *     }
+ *   ]
+ */
+export function formatDataSnapshotFriendly(snap) {
+  if (!snap || typeof snap !== 'object') return [];
+  const groups = [];
+
+  Object.entries(snap).forEach(([topKey, topVal]) => {
+    if (TECHNICAL_KEYS.has(topKey) || topKey === 'capturedAt' || topKey.startsWith('_')) return;
+    if (topVal == null) return;
+
+    const groupLabel = friendlyTop(topKey);
+    const items = [];
+
+    if (Array.isArray(topVal)) {
+      if (topVal.length === 0) return;
+      if (isBreakdownArray(topVal)) {
+        topVal.slice(0, 8).forEach(item => {
+          const name = item.label || item.name || item.area || 'Item';
+          // Prioriza métricas em ordem
+          const parts = [];
+          if (item.avg != null)         parts.push(`${formatValue(item.avg)}${item.responseRate != null ? ` (${item.responseRate}% resp.)` : ''}`);
+          else if (item.rate != null)   parts.push(`${formatValue(item.rate, 'rate')}${item.done != null && item.total != null ? ` (${item.done}/${item.total})` : ''}`);
+          else if (item.count != null)  parts.push(`${formatValue(item.count)}`);
+          else if (item.total != null)  parts.push(`${item.done != null ? item.done + '/' : ''}${formatValue(item.total)}`);
+          else if (item.value != null)  parts.push(formatValue(item.value));
+          // Métricas extras úteis
+          if (item.created != null && item.done != null) {
+            // Caso weeklyVelocity
+            parts.push(`${formatValue(item.created)} criadas · ${formatValue(item.done)} concluídas`);
+          }
+          if (item.avgDays != null) parts.push(`${formatValue(item.avgDays)}d média`);
+          items.push({ name, value: parts.length ? parts.join(' · ') : '—' });
+        });
+        if (topVal.length > 8) items.push({ name: '…', value: `+${topVal.length - 8} item${topVal.length - 8 > 1 ? 's' : ''}` });
+      } else if (typeof topVal[0] === 'object') {
+        // Array de objetos sem schema breakdown — mostra contagem
+        items.push({ name: 'Total de itens', value: formatValue(topVal.length) });
+      } else {
+        items.push({ name: 'Lista', value: topVal.slice(0, 5).map(formatValue).join(', ') + (topVal.length > 5 ? '…' : '') });
+      }
+    } else if (typeof topVal === 'object') {
+      // Objeto — extrai métricas planas
+      Object.entries(topVal).forEach(([fk, fv]) => {
+        if (TECHNICAL_KEYS.has(fk) || fk === 'capturedAt' || fk.startsWith('_')) return;
+        if (Array.isArray(fv) || (typeof fv === 'object' && fv !== null)) return; // skip nested
+        const label = friendlyField(fk);
+        if (!label) return;
+        items.push({ name: label, value: formatValue(fv, fk) });
+      });
+    } else {
+      items.push({ name: groupLabel, value: formatValue(topVal) });
+    }
+
+    if (items.length) groups.push({ label: groupLabel, items });
+  });
+
+  return groups;
+}
+
 /** Formata dataSnapshot pra string legível compacta (uma linha).
  * SMART: detecta arrays de objetos com {label, count} e renderiza como
  * "Em Andamento: 41 · Concluída: 823" ao invés de "statusDistribution[0]: ...".

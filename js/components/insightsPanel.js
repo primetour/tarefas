@@ -43,7 +43,7 @@ import { toast } from './toast.js';
 import {
   fetchInsights, createInsight, updateInsight, deleteInsight,
   suggestInsightsViaAi,
-  insightCoversPeriod, formatInsightPeriod, formatDataSnapshot,
+  insightCoversPeriod, formatInsightPeriod, formatDataSnapshot, formatDataSnapshotFriendly,
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
 } from '../services/insights.js?v=20260503uu1';
 import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260503uu1';
@@ -596,15 +596,22 @@ export async function mountInsightsPanel(opts) {
               </div>
             ` : ''}
             ${(() => {
-              const snap = formatDataSnapshot(ins.dataSnapshot);
-              return snap ? `
+              const groups = formatDataSnapshotFriendly(ins.dataSnapshot);
+              if (!groups.length) return '';
+              // Compacto: até 2 grupos, até 4 itens cada
+              const compact = groups.slice(0, 2).map(g => {
+                const items = g.items.slice(0, 4).map(i => `${esc(i.name)}: <strong>${esc(i.value)}</strong>`).join(' · ');
+                return `<div style="margin-bottom:3px;"><span style="color:#3B82F6;font-weight:600;">${esc(g.label)}</span> — ${items}</div>`;
+              }).join('');
+              return `
                 <div style="background:rgba(59,130,246,.06);border-left:2px solid #3B82F6;
                   padding:8px 12px;border-radius:0 4px 4px 0;font-size:0.75rem;color:var(--text-secondary);
-                  line-height:1.5;margin-bottom:6px;font-family:monospace;word-break:break-word;"
-                  title="Foto dos dados que motivaram este insight (imutável)">
-                  <strong style="color:#3B82F6;">📊 Dados observados:</strong> ${esc(snap)}
+                  line-height:1.5;margin-bottom:6px;"
+                  title="Números que motivaram este insight">
+                  <strong style="color:#3B82F6;">📌 O que foi analisado:</strong>
+                  <div style="margin-top:4px;">${compact}</div>
                 </div>
-              ` : '';
+              `;
             })()}
             <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.6;">
               ${periodCovered ? `📅 <strong>Análise de ${esc(periodCovered)}</strong> · ` : ''}
@@ -879,6 +886,7 @@ export async function mountInsightsPanel(opts) {
       }
     }
     const snapshotPreview = initialSnapshot ? formatDataSnapshot(initialSnapshot) : null;
+    const snapshotGroups = initialSnapshot ? formatDataSnapshotFriendly(initialSnapshot) : [];
 
     // Captura imagem do canvas do widget (se houver) pra embed no PDF.
     // Widgets DOM-based (heatmap, leaderboards) não têm canvas — chartImage fica null
@@ -926,8 +934,8 @@ export async function mountInsightsPanel(opts) {
           ${isAiSourced ? `
             <div style="background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.3);
               padding:8px 12px;border-radius:var(--radius-sm);font-size:0.75rem;color:var(--text-secondary);">
-              🤖 Insight gerado por IA. Edições serão marcadas como "ai-edited" mantendo o original em audit trail.
-              ${initialSnapshot ? '<br><strong>Dados observados</strong> (abaixo) ficam preservados imutáveis — são a foto do que a IA analisou.' : ''}
+              🤖 Este insight foi gerado pela IA. Suas edições ficam registradas no histórico, mas a versão original sugerida pela IA é preservada.
+              ${initialSnapshot ? '<br>Os números que a IA analisou aparecem mais abaixo.' : ''}
             </div>
           ` : ''}
 
@@ -987,30 +995,44 @@ export async function mountInsightsPanel(opts) {
               placeholder="Ação sugerida para corrigir/explorar este achado..." style="width:100%;resize:vertical;">${esc(prefill?.recommendation || '')}</textarea>
           </div>
 
-          <!-- ═══ DADOS OBSERVADOS (snapshot, readonly) ═══ -->
-          ${snapshotPreview ? `
+          <!-- ═══ DADOS QUE MOTIVARAM ESTE INSIGHT (snapshot, readonly) ═══
+               4.33.1+ Renderização amigável: cards por grupo, sem monospace,
+               labels em português, valores formatados com locale BR. -->
+          ${snapshotGroups.length ? `
           <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
-            padding:10px 12px;border-radius:var(--radius-sm);">
-            <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:6px;color:var(--text-primary);">
-              📊 Dados observados <span style="font-weight:400;color:var(--text-muted);">— foto histórica, imutável</span>
+            padding:12px 14px;border-radius:var(--radius-sm);">
+            <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:10px;color:var(--text-primary);">
+              📌 O que você estava analisando
             </label>
-            <div style="font-size:0.75rem;color:var(--text-secondary);font-family:monospace;
-              line-height:1.5;background:var(--bg-elevated);padding:8px 10px;border-radius:4px;
-              max-height:90px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;">${esc(snapshotPreview)}</div>
-            <div style="font-size:0.65rem;color:var(--text-muted);margin-top:4px;font-style:italic;">
-              ${initialSnapshot?._source === 'ai-suggestion'
-                ? 'Capturado pela IA quando gerou esta sugestão.'
-                : 'Capturado do widget no momento de criação.'}
-              ${initialSnapshot?.capturedAt ? ' · ' + new Date(initialSnapshot.capturedAt).toLocaleString('pt-BR') : ''}
-              ${widgetHasCanvas && initialChartImage ? ' · Imagem do gráfico será incluída no PDF.' : ''}
-              ${!widgetHasCanvas && targetIndexKey ? ' · Este widget não gera gráfico — apenas dados serão exportados.' : ''}
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              ${snapshotGroups.map(g => `
+                <div style="background:var(--bg-elevated);border-radius:6px;padding:8px 10px;">
+                  <div style="font-size:0.7rem;font-weight:600;color:var(--text-secondary);
+                    margin-bottom:6px;letter-spacing:0.02em;">${esc(g.label)}</div>
+                  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+                    gap:4px 12px;font-size:0.75rem;">
+                    ${g.items.map(it => `
+                      <div style="display:flex;justify-content:space-between;gap:6px;
+                        padding:2px 0;border-bottom:1px dotted var(--border-subtle);">
+                        <span style="color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(it.name)}">${esc(it.name)}</span>
+                        <strong style="color:var(--text-primary);text-align:right;white-space:nowrap;">${esc(it.value)}</strong>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+            <div style="font-size:0.65rem;color:var(--text-muted);margin-top:8px;">
+              Os números acima são salvos junto com o insight — assim, mesmo que o
+              dashboard mude, você sempre poderá voltar e ver o que motivou a análise.
+              ${widgetHasCanvas && initialChartImage ? 'O gráfico atual também é incluído no PDF exportado.' : ''}
             </div>
           </div>
           ` : (!isEdit && targetIndexKey ? `
           <div style="background:var(--bg-surface);border:1px dashed var(--border-subtle);
-            padding:8px 12px;border-radius:var(--radius-sm);font-size:0.7rem;color:var(--text-muted);">
-            ⓘ Sem dados pra capturar deste widget no momento.
-            ${!widgetHasCanvas ? 'Este widget não gera gráfico — insight ficará só com texto.' : 'Insight será salvo sem snapshot.'}
+            padding:10px 14px;border-radius:var(--radius-sm);font-size:0.75rem;color:var(--text-muted);">
+            ⓘ Não há dados específicos pra capturar neste momento.
+            O insight será salvo apenas com o texto que você escrever.
           </div>
           ` : '')}
 
