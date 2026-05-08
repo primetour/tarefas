@@ -308,7 +308,8 @@ async function seed() {
     }
   }
 
-  const totalH = ENTRIES.reduce((a, e) => a + calcHours(e.bucket, e.multiplierIds), 0);
+  // 4.34.10+ aplica o fator no total agregado pra refletir o que foi salvo
+  const totalH = ENTRIES.reduce((a, e) => a + calcHours(e.bucket, e.multiplierIds) * AI_ASSISTANCE_MULTIPLIER, 0);
   const totalC = totalH * HOURLY_RATE;
   console.log(`\n✓ ${ENTRIES.length} entradas. Total: ${totalH.toFixed(2)}h · R$ ${totalC.toFixed(2)}`);
 }
