@@ -397,17 +397,64 @@
         </div>`;
       };
 
+      // 4.34.14+ Lista de entregas + (futuro) link pra evidências
+      const taskIds = Array.isArray(s.taskIds) ? s.taskIds : [];
+      const isMultiTask = taskIds.length > 1;
       card.innerHTML = `
         <div class="brand">PRIMETOUR</div>
-        <div class="task-chip">✓ ${escHtml(s.taskTitle)}</div>
+        <div class="task-chip">${isMultiTask ? '📦 ' + taskIds.length + ' entregas' : '✓ ' + escHtml(s.taskTitle)}</div>
         <h1 style="margin-bottom:8px;">Avaliação</h1>
         <p class="subtitle">${s.customMessage || 'Sua opinião é muito importante para nós. Algumas perguntas rápidas abaixo:'}</p>
+
+        ${isMultiTask ? `
+          <div id="task-list-block" style="background:#1F2937;border-radius:10px;padding:18px 20px;margin:18px 0 4px;text-align:left;">
+            <div style="font-size:0.6875rem;color:#D4A843;letter-spacing:0.12em;text-transform:uppercase;font-weight:700;margin-bottom:10px;">
+              Entregas avaliadas neste lote
+            </div>
+            <div id="task-list-items" style="color:#FFFFFF;font-size:0.875rem;line-height:1.6;">
+              <div style="opacity:0.7;font-size:0.8125rem;">Carregando...</div>
+            </div>
+          </div>
+        ` : ''}
+
         <div id="multi-questions" style="text-align:left;margin-top:24px;">
           ${s.questions.map((q,i) => renderQuestion(q,i)).join('')}
         </div>
         <p id="multi-error" class="error-msg" style="display:none;text-align:center;"></p>
         <button class="btn-submit" id="submit-btn" type="button">Enviar avaliação</button>
       `;
+
+      // Carrega títulos + evidências das tarefas (somente leitura, via Firestore público)
+      if (isMultiTask) {
+        (async () => {
+          const items = [];
+          for (const tid of taskIds) {
+            try {
+              const taskSnap = await getDoc(doc(db, 'tasks', tid));
+              if (taskSnap.exists()) {
+                const t = taskSnap.data();
+                items.push({
+                  id: tid,
+                  title: t.title || 'Entrega',
+                  evidence: t.linkComprovacao || null,
+                });
+              }
+            } catch (_) { /* sem permissão pra essa task — pula */ }
+          }
+          const el = document.getElementById('task-list-items');
+          if (!el) return;
+          if (!items.length) {
+            el.innerHTML = '<div style="opacity:0.7;">Detalhes das entregas indisponíveis.</div>';
+            return;
+          }
+          el.innerHTML = items.map(it => `
+            <div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);">
+              <div style="font-weight:500;color:#FFFFFF;">${escHtml(it.title)}</div>
+              ${it.evidence ? `<a href="${escHtml(it.evidence)}" target="_blank" rel="noopener" style="font-size:0.75rem;color:#D4A843;text-decoration:none;">📎 Ver evidência</a>` : ''}
+            </div>
+          `).join('');
+        })();
+      }
 
       // Score buttons
       card.querySelectorAll('.score-btn[data-mq-id][data-score]').forEach(btn => {

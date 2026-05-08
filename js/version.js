@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 13,
-  build: '20260508-csat-cloud-function-cron',
+  patch: 14,
+  build: '20260508-csat-graph-flat-design',
 };
 
 /** "1.2.0" */

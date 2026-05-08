@@ -117,42 +117,18 @@ export async function createCsatSurvey({
   return { id: ref.id, ...surveyDoc };
 }
 
-/* ─── Enviar e-mail (via Cloud Function — secrets server-side) ──── */
+/* ─── Enviar e-mail (via Cloud Function — Microsoft Graph, 4.34.14+) ──── */
 export async function sendCsatEmail(surveyId) {
   const snap = await getDoc(doc(db, 'csat_surveys', surveyId));
   if (!snap.exists()) throw new Error('Pesquisa não encontrada.');
-  const survey = { id: snap.id, ...snap.data() };
 
-  // Aponta direto para csat-response.html (página pública, sem autenticação)
-  const origin    = APP_CONFIG.csat.baseUrl || window.location.origin;
-  const basePath  = window.location.pathname.replace(/\/[^/]*$/, '');
-  const surveyUrl = `${origin}${basePath}/csat-response.html?token=${survey.token}&id=${surveyId}`;
-
-  // Template params (mesma estrutura de antes — agora viajam pra function
-  // que injeta service_id/template_id/user_id server-side)
-  const params = {
-    to_email:      survey.clientEmail,
-    to_name:       survey.clientName,
-    task_title:    survey.taskTitle,
-    project_name:  survey.projectName || 'PRIMETOUR',
-    custom_message: survey.customMessage || 'Sua tarefa foi concluída! Gostaríamos de saber sua opinião.',
-    survey_url:    surveyUrl,
-    score_1_url:   `${surveyUrl}&score=1`,
-    score_2_url:   `${surveyUrl}&score=2`,
-    score_3_url:   `${surveyUrl}&score=3`,
-    score_4_url:   `${surveyUrl}&score=4`,
-    score_5_url:   `${surveyUrl}&score=5`,
-    brand_color:   APP_CONFIG.csat.brandColor || 'D4A843',
-    from_name:     APP_CONFIG.csat.fromName   || 'PRIMETOUR',
-    year:          new Date().getFullYear(),
-  };
-
-  // Chama Cloud Function (secrets ficam no Google Cloud Secret Manager)
+  // 4.34.14+ A Cloud Function agora monta HTML server-side a partir do
+  // doc da survey. Cliente só precisa passar o surveyId.
   try {
     const { app } = await import('../firebase.js');
     const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
     const fn = fb.httpsCallable(fb.getFunctions(app, 'us-central1'), 'sendCsatEmail');
-    await fn({ surveyId, params });
+    await fn({ surveyId });
   } catch (err) {
     const msg = err?.message || JSON.stringify(err);
     throw new Error(`Falha ao enviar e-mail: ${msg}`);

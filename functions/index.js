@@ -47,6 +47,12 @@ const UNSPLASH_ACCESS_KEY = defineSecret('UNSPLASH_ACCESS_KEY');  // optional - 
 const EMAILJS_SERVICE_ID  = defineSecret('EMAILJS_SERVICE_ID');
 const EMAILJS_TEMPLATE_ID = defineSecret('EMAILJS_TEMPLATE_ID');
 const EMAILJS_PUBLIC_KEY  = defineSecret('EMAILJS_PUBLIC_KEY');
+// 4.34.14+ Microsoft Graph (notificações email — substitui EmailJS)
+const GRAPH_TENANT_ID     = defineSecret('GRAPH_TENANT_ID');
+const GRAPH_CLIENT_ID     = defineSecret('GRAPH_CLIENT_ID');
+const GRAPH_CLIENT_SECRET = defineSecret('GRAPH_CLIENT_SECRET');
+const GRAPH_SENDER_EMAIL  = defineSecret('GRAPH_SENDER_EMAIL');
+const GRAPH_SENDER_ID     = defineSecret('GRAPH_SENDER_ID');  // 4.34.14+ Object ID do sender (UUID)
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 function requireAuth(request) {
@@ -1365,69 +1371,289 @@ export const repairOrphanSquadMembers = onCall({
  *   firebase functions:secrets:set EMAILJS_PUBLIC_KEY  # publicKey
  *   firebase deploy --only functions:sendCsatEmail
  * ═════════════════════════════════════════════════════════ */
+/* ═════════════════════════════════════════════════════════
+   Microsoft Graph — envio de emails (4.34.14+)
+   Substitui EmailJS. Token via client_credentials, mensagens
+   enviadas como sender configurado em GRAPH_SENDER_EMAIL.
+   ═════════════════════════════════════════════════════════ */
+
+let _graphTokenCache = null;
+
+async function getGraphAccessToken() {
+  // Cache simples: válido enquanto < expiresAt - 60s
+  if (_graphTokenCache && Date.now() < _graphTokenCache.expiresAt - 60_000) {
+    return _graphTokenCache.token;
+  }
+  const tenantId     = GRAPH_TENANT_ID.value();
+  const clientId     = GRAPH_CLIENT_ID.value();
+  const clientSecret = GRAPH_CLIENT_SECRET.value();
+  if (!tenantId || !clientId || !clientSecret) {
+    throw new HttpsError('failed-precondition',
+      'Microsoft Graph não configurado. Admin: rodar `firebase functions:secrets:set GRAPH_*`.');
+  }
+  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+  const body = new URLSearchParams({
+    client_id:     clientId,
+    client_secret: clientSecret,
+    scope:         'https://graph.microsoft.com/.default',
+    grant_type:    'client_credentials',
+  });
+  const res = await fetch(url, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body:    body.toString(),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Graph token fetch ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const json = await res.json();
+  _graphTokenCache = {
+    token:     json.access_token,
+    expiresAt: Date.now() + (json.expires_in || 3600) * 1000,
+  };
+  return _graphTokenCache.token;
+}
+
+/**
+ * Envia email via Microsoft Graph.
+ * @param {Object} opts
+ * @param {string|string[]} opts.to       — email(s) destinatário
+ * @param {string} opts.subject
+ * @param {string} opts.html              — corpo HTML
+ * @param {string} [opts.replyTo]
+ */
+async function sendEmailViaGraph({ to, subject, html, replyTo }) {
+  const token    = await getGraphAccessToken();
+  const senderId = GRAPH_SENDER_ID.value();
+  if (!senderId) throw new Error('GRAPH_SENDER_ID não configurado');
+
+  // 4.34.14+ Usa Object ID (UUID) em vez de email no path —
+  // evita erro 400 IIS quando email tem múltiplos pontos no domínio
+  const recipients = Array.isArray(to) ? to : [to];
+  const url = `https://graph.microsoft.com/v1.0/users/${senderId}/sendMail`;
+
+  const message = {
+    subject,
+    body:          { contentType: 'HTML', content: html },
+    toRecipients:  recipients.map(addr => ({ emailAddress: { address: addr } })),
+  };
+  if (replyTo) {
+    message.replyTo = [{ emailAddress: { address: replyTo } }];
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify({ message, saveToSentItems: true }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Graph sendMail ${res.status}: ${text.slice(0, 300)}`);
+  }
+  // Graph retorna 202 sem corpo em sucesso
+  return { ok: true, status: res.status };
+}
+
+/* ─── Templates HTML (4.34.14+) ──────────────────────────
+ * Templates inline com paleta dourada PRIMETOUR.
+ * Variantes: individual / periodic / milestone.
+ */
+
+/* 4.34.14+ Layout email — design FLAT que funciona bem em LIGHT e DARK mode.
+ * Em vez de tentar forçar light (vários clients ignoram), aceitamos o modo do
+ * usuário e usamos cores que ficam ok em ambos:
+ *   - Sem fundos brancos sólidos (clients escurecem em dark)
+ *   - Sem decoração pesada (gradiente, shadow)
+ *   - Apenas linhas finas e blocos simples
+ *   - Cores absolutas só em elementos críticos (CTA dourado, header navy)
+ *   - Texto neutro adapta ao modo do client
+ */
+const PRIMETOUR_LOGO = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
+
+function _baseEmailLayout({ heading, intro, body, ctaUrl, ctaLabel, footerNote }) {
+  const safeCtaUrl   = (ctaUrl || '').replace(/"/g, '%22');
+  const safeCtaLabel = (ctaLabel || 'Avaliar agora').replace(/[<>]/g, '');
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>${heading}</title>
+  <!--[if mso]><style>body,table,td{font-family:'Segoe UI',Arial,sans-serif!important;}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+  <div style="display:none;max-height:0;overflow:hidden;">${heading}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;border-radius:14px;overflow:hidden;border:1px solid rgba(127,127,127,0.2);">
+
+        <!-- HEADER: navy fixo + logo branco -->
+        <tr><td bgcolor="#1F2937" style="padding:32px;background-color:#1F2937;text-align:center;border-bottom:3px solid #D4A843;">
+          <img src="${PRIMETOUR_LOGO}" alt="PRIMETOUR" width="200" style="display:inline-block;max-width:200px;height:auto;border:0;outline:none;text-decoration:none;">
+          <div style="margin-top:14px;font-size:11px;color:#D4A843;letter-spacing:0.22em;text-transform:uppercase;font-weight:700;">Pesquisa de Satisfação</div>
+        </td></tr>
+
+        <!-- Conteúdo principal — sem bg forçado, adapta ao client -->
+        <tr><td style="padding:36px 32px 28px;">
+          <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;line-height:1.35;letter-spacing:-0.01em;">${heading}</h1>
+          ${intro ? `<p style="margin:0 0 20px;font-size:15px;line-height:1.65;">${intro}</p>` : ''}
+          ${body || ''}
+          ${ctaUrl ? `
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:28px auto 0;">
+              <tr><td align="center" bgcolor="#D4A843" style="border-radius:10px;background-color:#D4A843;">
+                <a href="${safeCtaUrl}" target="_blank" style="display:inline-block;padding:14px 36px;font-size:16px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:10px;letter-spacing:0.01em;">${safeCtaLabel}</a>
+              </td></tr>
+            </table>
+            <p style="margin:14px 0 0;font-size:11px;text-align:center;line-height:1.55;opacity:0.7;">
+              Ou copie este link:<br>
+              <a href="${safeCtaUrl}" style="word-break:break-all;font-size:11px;color:#D4A843;text-decoration:none;">${safeCtaUrl}</a>
+            </p>
+          ` : ''}
+        </td></tr>
+
+        <!-- Footer flat -->
+        <tr><td style="padding:20px 32px 24px;border-top:1px solid rgba(127,127,127,0.15);">
+          <p style="margin:0;font-size:12px;line-height:1.6;opacity:0.85;">
+            ${footerNote || 'Email automático gerado após uma entrega concluída. Sua resposta é confidencial e nos ajuda a melhorar.'}
+          </p>
+          <p style="margin:10px 0 0;font-size:10px;opacity:0.6;letter-spacing:0.02em;">© PRIMETOUR Viagens &amp; Experiências · não responda diretamente</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+function _buildCsatEmailHtml({ surveyId, token, taskTitle, taskIds, taskTypeLabel, customMessage, csatMode, taskList }) {
+  const baseUrl = 'https://primetour.github.io/tarefas/csat-response.html';
+  const ctaUrl  = `${baseUrl}?id=${encodeURIComponent(surveyId)}&token=${encodeURIComponent(token)}`;
+  // 4.34.14+ Bloco "entregas neste lote" agora navy + texto branco
+  // (cores fixas, alta legibilidade em light E dark mode).
+  // Se taskList[] foi passado (com title de cada), lista todas; senão mostra contagem.
+  const tasksHtml = Array.isArray(taskIds) && taskIds.length > 1
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#1F2937" style="background-color:#1F2937;border-radius:10px;margin:0 0 24px;">
+         <tr><td style="padding:18px 20px;">
+           <div style="font-size:11px;color:#D4A843;margin-bottom:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;">${taskIds.length} entregas neste lote</div>
+           ${Array.isArray(taskList) && taskList.length
+             ? `<ul style="margin:0;padding:0 0 0 18px;color:#FFFFFF;font-size:14px;line-height:1.7;">
+                  ${taskList.map(t => `<li style="margin:0 0 4px;color:#FFFFFF;">${escHtml(t.title || 'Entrega')}</li>`).join('')}
+                </ul>`
+             : `<div style="font-size:15px;color:#FFFFFF;font-weight:500;">${escHtml(taskTitle || '')}</div>`
+           }
+         </td></tr>
+       </table>`
+    : '';
+
+  const heading = csatMode === 'periodic'
+    ? `Como avalia este lote de entregas?`
+    : csatMode === 'milestone'
+      ? `Como avalia este marco?`
+      : `Como avalia esta entrega?`;
+
+  const intro = customMessage
+    || (csatMode === 'periodic'
+      ? `Recebemos a finalização de algumas entregas relacionadas. Sua avaliação consolidada nos ajuda a entender o atendimento como um todo.`
+      : csatMode === 'milestone'
+        ? `Concluímos um marco importante do seu projeto. Avalie em conjunto as entregas que fazem parte deste fechamento.`
+        : `Concluímos a entrega "<strong>${escHtml(taskTitle || '')}</strong>" e gostaríamos da sua opinião.`);
+
+  return _baseEmailLayout({
+    heading,
+    intro,
+    body: tasksHtml,
+    ctaUrl,
+    ctaLabel: '⭐ Avaliar agora',
+    footerNote: 'Sua avaliação leva menos de 2 minutos. Ela é registrada de forma anônima quando configurado e usada apenas para melhorar nosso serviço.',
+  });
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
 export const sendCsatEmail = onCall({
   cors: ['https://primetour.github.io', 'http://localhost:5000'],
   maxInstances: 5,
   timeoutSeconds: 30,
-  secrets: [EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, EMAILJS_PUBLIC_KEY],
+  // 4.34.14+ Migrou EmailJS → Microsoft Graph
+  secrets: [GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_SENDER_EMAIL, GRAPH_SENDER_ID],
 }, async (request) => {
   const auth = requireAuth(request);
 
   // Rate limit: 10 envios / 5 min
   await checkRateLimit(auth.uid, 'csat_email', 10, 300);
 
-  const { surveyId, params } = request.data || {};
-  if (!surveyId || !params) {
-    throw new HttpsError('invalid-argument', 'surveyId + params obrigatórios.');
+  const { surveyId } = request.data || {};
+  if (!surveyId) {
+    throw new HttpsError('invalid-argument', 'surveyId obrigatório.');
   }
 
-  // Valida que survey existe e caller é quem criou
+  // Valida que survey existe e caller é quem criou (ou admin/cron)
   const surveyDoc = await db.doc(`csat_surveys/${surveyId}`).get();
   if (!surveyDoc.exists) {
     throw new HttpsError('not-found', 'Survey não encontrada.');
   }
   const survey = surveyDoc.data();
-  if (survey.createdBy !== auth.uid && !(await isAdmin(auth.uid))) {
+  if (survey.createdBy !== auth.uid
+      && survey.createdBy !== 'system-cron'
+      && !(await isAdmin(auth.uid))) {
     throw new HttpsError('permission-denied', 'Só o criador da survey ou admin pode enviar.');
   }
 
-  // Chama EmailJS REST API
-  const serviceId  = EMAILJS_SERVICE_ID.value();
-  const templateId = EMAILJS_TEMPLATE_ID.value();
-  const publicKey  = EMAILJS_PUBLIC_KEY.value();
-  if (!serviceId || !templateId || !publicKey) {
-    throw new HttpsError('failed-precondition',
-      'EmailJS não configurado. Admin: rodar `firebase functions:secrets:set` + redeploy.');
+  // 4.34.14+ Carrega títulos das tarefas pra mostrar lista no email
+  let taskList = [];
+  if (Array.isArray(survey.taskIds) && survey.taskIds.length) {
+    try {
+      const refs = survey.taskIds.map(id => db.doc(`tasks/${id}`));
+      const docs = await db.getAll(...refs);
+      taskList = docs.map(d => d.exists ? { id: d.id, title: d.data().title || 'Entrega' } : null).filter(Boolean);
+    } catch (e) { console.warn('[csat] task list lookup:', e.message); }
   }
 
-  let resp;
+  // Monta HTML + envia via Microsoft Graph
+  const html = _buildCsatEmailHtml({
+    surveyId,
+    token:          survey.token,
+    taskTitle:      survey.taskTitle,
+    taskIds:        survey.taskIds,
+    taskList,
+    taskTypeLabel:  survey.taskTypeName,
+    customMessage:  survey.customMessage,
+    csatMode:       survey.csatMode || 'individual',
+  });
+
+  const subject = survey.csatMode === 'periodic'
+    ? `Avalie suas entregas — ${survey.taskTitle || 'PRIMETOUR'}`
+    : survey.csatMode === 'milestone'
+      ? `Avalie o marco: ${survey.taskTitle || 'PRIMETOUR'}`
+      : `Como foi a entrega: ${survey.taskTitle || 'PRIMETOUR'}?`;
+
   try {
-    resp = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service_id:  serviceId,
-        template_id: templateId,
-        user_id:     publicKey,
-        template_params: params,
-      }),
+    await sendEmailViaGraph({
+      to:      survey.clientEmail,
+      subject,
+      html,
     });
   } catch (e) {
-    throw new HttpsError('unavailable', `Falha de rede: ${e.message}`);
-  }
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new HttpsError('internal', `EmailJS rejeitou (${resp.status}): ${text.slice(0, 200)}`);
+    throw new HttpsError('internal', `Microsoft Graph rejeitou: ${e.message}`);
   }
 
   // Audit
   await db.collection('audit_logs').add({
-    action: 'csat.email_sent',
-    userId: auth.uid,
-    entityId: surveyId,
+    action:    'csat.email_sent',
+    userId:    auth.uid,
+    entityId:  surveyId,
+    via:       'graph',
     timestamp: FieldValue.serverTimestamp(),
-    severity: 'info',
+    severity:  'info',
   });
 
   return { ok: true };
@@ -1480,7 +1706,8 @@ async function fireSurveyForPool(pool, type, cfg, winId) {
         type: q.type || 'score',
         required: q.required !== false,
       }));
-      await surveyRef.set({
+      const surveyToken = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const surveyData = {
         taskId: tasks[0].id,
         taskIds,
         taskTypeId: type.id,
@@ -1492,22 +1719,46 @@ async function fireSurveyForPool(pool, type, cfg, winId) {
         assignedTo: (tasks[0].assignees||[])[0] || null,
         questions,
         responses: {},
-        status: 'sent',
-        token: Math.random().toString(36).slice(2) + Date.now().toString(36),
+        status: 'pending', // será marcado como 'sent' quando email for enviado
+        token: surveyToken,
         score: null,
         comment: null,
         customMessage: cfg.customMessage || `Avalie as entregas desta ${cfg.period === 'weekly' ? 'semana' : cfg.period === 'biweekly' ? 'quinzena' : 'período'}.`,
         csatMode: 'periodic',
         createdBy: 'system-cron',
         createdAt: FieldValue.serverTimestamp(),
-        sentAt: FieldValue.serverTimestamp(),
+        // 4.34.14+ Survey expira em 7 dias (mesmo TTL do client manual)
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        sentAt: null,
         respondedAt: null,
-      });
+      };
+      await surveyRef.set(surveyData);
 
-      // TODO: enviar email via EmailJS (a Cloud Function existente sendCsatEmail
-      // só aceita chamadas autenticadas — aqui rodamos como service. Por hora
-      // fica registrado pendente; admin pode disparar manualmente do /csat).
-      // Nota: futuramente, refatorar sendCsatEmail pra aceitar trigger system.
+      // 4.34.14+ Envia email via Microsoft Graph (substituiu EmailJS)
+      try {
+        const html = _buildCsatEmailHtml({
+          surveyId:       surveyRef.id,
+          token:          surveyData.token,
+          taskTitle:      surveyData.taskTitle,
+          taskIds:        surveyData.taskIds,
+          taskList:       tasks.map(t => ({ id: t.id, title: t.title })),
+          taskTypeLabel:  type.name,
+          customMessage:  cfg.customMessage,
+          csatMode:       'periodic',
+        });
+        const subject = `Avalie suas entregas — ${surveyData.taskTitle}`;
+        await sendEmailViaGraph({
+          to:      email,
+          subject,
+          html,
+        });
+        // Marca survey como sent
+        await surveyRef.update({ status: 'sent', sentAt: FieldValue.serverTimestamp() });
+      } catch (e) {
+        console.warn(`[csat-cron] sendEmailViaGraph failed for ${email}:`, e.message);
+        // Mantém survey criada mas marca status='failed' pra admin reenviar manualmente
+        await surveyRef.update({ status: 'failed', sendError: e.message }).catch(() => {});
+      }
 
       // Marca tarefas
       const batch = db.batch();
@@ -1534,6 +1785,8 @@ export const csatPeriodicTrigger = onSchedule({
   timeZone: 'America/Sao_Paulo',
   timeoutSeconds: 540,
   memory: '512MiB',
+  // 4.34.14+ Microsoft Graph pra enviar emails dos surveys criados
+  secrets: [GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_SENDER_EMAIL, GRAPH_SENDER_ID],
 }, async () => {
   console.log('[csat-cron] starting tick');
 
