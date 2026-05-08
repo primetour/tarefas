@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 6,
-  build: '20260508-avatar-photos-everywhere',
+  patch: 7,
+  build: '20260508-tasks-sort-and-expand-all',
 };
 
 /** "1.2.0" */

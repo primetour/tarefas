@@ -71,6 +71,41 @@ descrição completa no hover.
 
 ---
 
+## [4.34.7+20260508-tasks-sort-and-expand-all] — 2026-05-08
+
+Release **PATCH** — Tarefas: ordenação configurável + expandir/comprimir
+todos os grupos.
+
+### Pedido do user
+> "Tarefas: expandir/comprimir todas as tarefas de uma vez só (facilita
+> a visualização). opções de ordenar: por ordem alfabetica, por data
+> de entrega, etc"
+
+### Mudanças em `pages/tasks.js`
+
+**Ordenação configurável:**
+- Novo dropdown "Ordenar:" ao lado do "Agrupar:"
+- 9 opções: prazo (asc/desc), alfabética (A-Z/Z-A), criação (recente/antiga),
+  prioridade (alta→baixa/baixa→alta), status
+- `applySort()` aplicado dentro de cada grupo (e na lista inteira se
+  groupBy='none')
+- Persistido em `localStorage` ('primetour-tasks-sort')
+
+**Expandir/Comprimir todos os grupos:**
+- Botões ⬇ (expand all) e ⬆ (collapse all) na barra de filtros
+- Estado global `groupExpandState`: 'mixed' (default — só "Concluídas"
+  começa colapsado), 'all' (todos expandidos), 'none' (todos colapsados)
+- Click toggla TODOS os `.task-group` na página instantaneamente
+
+### Edge cases
+- Tarefas sem `dueDate` ou `createdAt` vão pro fim na ordenação asc,
+  pro início na desc — mantém previsibilidade
+- localeCompare pt-BR no sort alfabético (acentos respeitados)
+- Sort funciona em todos os groupBy modes: dueDate, status, priority,
+  project, squad, assignee, none
+
+---
+
 ## [4.34.2+20260508-sound-bank-real] — 2026-05-08
 
 Release **PATCH** — Banco real de sons de conclusão (7 MP3s) substitui

@@ -29,6 +29,17 @@ let filteredTasks = [];
 let unsubscribe  = null;
 let _delegationAttached = false;
 let groupBy      = 'dueDate';   // 'dueDate' | 'status' | 'priority' | 'project' | 'none'
+// 4.34.7+ Ordenação dentro do grupo (ou da lista inteira se groupBy='none').
+// Persistido em localStorage pra manter entre sessões.
+let sortBy = (() => {
+  try { return localStorage.getItem('primetour-tasks-sort') || 'dueDate-asc'; }
+  catch { return 'dueDate-asc'; }
+})();
+// 4.34.7+ Estado global de expand/collapse de TODOS os grupos.
+// 'mixed' = padrão (cada grupo no seu estado, dones colapsados).
+// 'all'   = todos expandidos.
+// 'none'  = todos colapsados.
+let groupExpandState = 'mixed';
 let searchTerm   = '';
 let filterStatus = '';
 let filterPriority = '';
@@ -336,7 +347,7 @@ export async function renderTasks(container) {
           style="margin:0;cursor:pointer;">
         <span>📦 Mostrar arquivadas</span>
       </label>
-      <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+      <div style="margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
         <label style="font-size:0.8125rem; color:var(--text-muted);">Agrupar:</label>
         <select class="filter-select" id="group-by">
           <option value="dueDate">Por prazo</option>
@@ -347,6 +358,22 @@ export async function renderTasks(container) {
           <option value="assignee">Por responsável</option>
           <option value="none">Sem agrupamento</option>
         </select>
+        <label style="font-size:0.8125rem; color:var(--text-muted);">Ordenar:</label>
+        <select class="filter-select" id="sort-by">
+          <option value="dueDate-asc">Prazo (mais próximo)</option>
+          <option value="dueDate-desc">Prazo (mais distante)</option>
+          <option value="title-asc">Alfabética (A-Z)</option>
+          <option value="title-desc">Alfabética (Z-A)</option>
+          <option value="createdAt-desc">Criação (mais recente)</option>
+          <option value="createdAt-asc">Criação (mais antiga)</option>
+          <option value="priority-desc">Prioridade (alta → baixa)</option>
+          <option value="priority-asc">Prioridade (baixa → alta)</option>
+          <option value="status-asc">Status</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" id="expand-all-btn" title="Expandir todos os grupos"
+          style="padding:6px 10px;font-size:0.9rem;">⬇</button>
+        <button class="btn btn-ghost btn-sm" id="collapse-all-btn" title="Comprimir todos os grupos"
+          style="padding:6px 10px;font-size:0.9rem;">⬆</button>
         <button class="btn btn-ghost btn-sm" id="filter-config-btn" title="Configurar filtros visíveis"
           style="padding:6px 10px;">⚙</button>
         <button class="btn btn-ghost btn-sm" id="tasks-card-prefs-btn" title="Personalizar campos dos cards"
@@ -998,21 +1025,32 @@ function renderTaskList() {
   }
 
   if (groupBy === 'none') {
+    const sortedTasks = applySort(filteredTasks);
     container.innerHTML = `
       <div class="card" style="overflow:hidden;">
         ${renderListHeader()}
         <div class="task-list" id="task-list-body">
-          ${filteredTasks.map(t => renderTaskRow(t)).join('')}
+          ${sortedTasks.map(t => renderTaskRow(t)).join('')}
         </div>
       </div>
     `;
   } else {
     const groups = buildGroups();
+    // 4.34.7+ Aplica sort dentro de cada grupo (depois do build, sobrescreve
+    // qualquer sort interno que algumas branches do buildGroups fazem).
+    groups.forEach(g => { g.tasks = applySort(g.tasks); });
     container.innerHTML = groups.map(g => {
       // Grupo "Concluídas" / status='done' começa colapsado por default —
       // ajuda a limpar o visual da lista (o foco do dia-a-dia são as
       // ativas). User clica no header pra expandir quando quer ver.
-      const startCollapsed = g.key === 'done';
+      // 4.34.7+ Respeita estado global de expand/collapse:
+      //   'all'   = todos expandidos (mesmo "Concluídas")
+      //   'none'  = todos colapsados
+      //   'mixed' = padrão original (só "Concluídas" começa colapsado)
+      const startCollapsed =
+        groupExpandState === 'all'  ? false :
+        groupExpandState === 'none' ? true  :
+        g.key === 'done';
       return `
       <div class="task-group${startCollapsed ? ' collapsed' : ''}" data-group="${g.key}">
         <div class="task-group-header" onclick="this.closest('.task-group').classList.toggle('collapsed')">
@@ -1229,6 +1267,57 @@ function renderQuickAdd(groupKey) {
         data-group="${groupKey}" maxlength="200" />
     </div>
   `;
+}
+
+/**
+ * 4.34.7+ Aplica ordenação configurável a uma lista de tarefas.
+ * Usa o estado global `sortBy` (formato 'campo-direção').
+ *
+ * Comportamentos:
+ *   - dueDate: tarefas sem prazo vão pro fim em asc, início em desc
+ *   - title: localeCompare pt-BR (acentos corretos)
+ *   - createdAt: data de criação
+ *   - priority: ordem urgent > high > medium > low (undefined = baixa)
+ *   - status: alfabética por chave de status
+ */
+function applySort(tasks) {
+  const [field, dir] = (sortBy || 'dueDate-asc').split('-');
+  const mult = dir === 'desc' ? -1 : 1;
+  const PRIORITY_ORDER = { urgent: 4, high: 3, medium: 2, low: 1 };
+
+  const arr = [...tasks];
+  arr.sort((a, b) => {
+    if (field === 'title') {
+      return mult * String(a.title || '').localeCompare(String(b.title || ''), 'pt-BR', { sensitivity: 'base' });
+    }
+    if (field === 'dueDate') {
+      const da = a.dueDate?.toDate?.() || (a.dueDate ? new Date(a.dueDate) : null);
+      const db = b.dueDate?.toDate?.() || (b.dueDate ? new Date(b.dueDate) : null);
+      // Tarefas sem prazo: fim em asc, fim em desc também (não atrapalha)
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return mult * (da.getTime() - db.getTime());
+    }
+    if (field === 'createdAt') {
+      const da = a.createdAt?.toDate?.() || (a.createdAt ? new Date(a.createdAt) : null);
+      const db = b.createdAt?.toDate?.() || (b.createdAt ? new Date(b.createdAt) : null);
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return mult * (da.getTime() - db.getTime());
+    }
+    if (field === 'priority') {
+      const va = PRIORITY_ORDER[a.priority] || 0;
+      const vb = PRIORITY_ORDER[b.priority] || 0;
+      return mult * (va - vb);
+    }
+    if (field === 'status') {
+      return mult * String(a.status || '').localeCompare(String(b.status || ''));
+    }
+    return 0;
+  });
+  return arr;
 }
 
 function buildGroups() {
@@ -1558,6 +1647,25 @@ function _attachPageEvents() {
   document.getElementById('filter-config-btn')?.addEventListener('click', openFilterConfigModal);
   document.getElementById('tasks-card-prefs-btn')?.addEventListener('click', () => openCardPrefsModal(() => renderTaskList()));
   document.getElementById('group-by')?.addEventListener('change', e => { groupBy = e.target.value; renderTaskList(); });
+  // 4.34.7+ Sort dropdown
+  const sortSel = document.getElementById('sort-by');
+  if (sortSel) {
+    sortSel.value = sortBy;
+    sortSel.addEventListener('change', e => {
+      sortBy = e.target.value;
+      try { localStorage.setItem('primetour-tasks-sort', sortBy); } catch {}
+      renderTaskList();
+    });
+  }
+  // 4.34.7+ Expand/collapse global de todos os grupos
+  document.getElementById('expand-all-btn')?.addEventListener('click', () => {
+    groupExpandState = 'all';
+    document.querySelectorAll('.task-group').forEach(g => g.classList.remove('collapsed'));
+  });
+  document.getElementById('collapse-all-btn')?.addEventListener('click', () => {
+    groupExpandState = 'none';
+    document.querySelectorAll('.task-group').forEach(g => g.classList.add('collapsed'));
+  });
 }
 
 /* ─── Modal de configuração de filtros visíveis ──────────── */
