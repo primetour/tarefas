@@ -29,7 +29,7 @@ import { renderTimeline }    from './pages/timeline.js';
 import { renderPlaceholder }  from './pages/placeholder.js';
 import { renderDashboards, destroyDashboards } from './pages/dashboards.js?v=20260508r1';
 import { renderAudit }       from './pages/audit.js';
-import { renderProfile }     from './pages/profile.js';
+import { renderProfile }     from './pages/profile.js?v=20260508r3';
 import { renderRoles }       from './pages/roles.js';
 import { renderWorkspaces }   from './pages/workspaces.js';
 import { renderSquadWorkspace } from './pages/squadWorkspace.js';

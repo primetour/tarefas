@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 3,
-  build: '20260508-sound-card-subtext',
+  patch: 4,
+  build: '20260508-profile-cachebust',
 };
 
 /** "1.2.0" */
