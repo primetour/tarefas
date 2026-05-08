@@ -37,6 +37,45 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [Governança 4.30.x] — 2026-05-08
+
+Atualização do registro de Horas de Desenvolvimento (`dev_hours`):
+
+### Pedido do user
+> "atualizou doc tecnico e horas de desenvolvimento? aliás, todos os titulos
+> do horas de desenvolvimento precisam ser mais user friendly. estao
+> extremamente tecnicos. quem aprova o custo é uma pessoa de financeiro.
+> ela precisa ter um vocabulário mais amistoso para os nossos sprints"
+
+### Operação realizada (via browser console, master-only write)
+1. **31 entradas criadas** (releases 4.10 → 4.30) — gap de registro descoberto
+   (última entry antes era 4.7.0)
+2. **29 títulos reescritos** em entries antigas — removido jargão técnico
+   ("PIVOT Vision-first", "BREAKTHROUGH SFMC", "TDZ shadow", "fetchTasks vs
+   subscribe") e substituído por linguagem de negócio ("Análise de
+   newsletters por imagem", "Correlação automática entre envios e
+   materiais", "Correção: filtros persistiam ao navegar")
+
+### Princípios da reescrita
+- Foco no VALOR ENTREGUE, não na implementação
+- Sem siglas internas (SOAP, ADR, TDZ, schema)
+- Sem nomes de funções/arquivos
+- Subtítulo curto pode trazer contexto técnico, mas o título principal
+  é sempre amigável
+- Mesmo correções pequenas devem ser entendíveis ("Correção ortográfica"
+  em vez de "Fix typo saiuram → saíram no banner")
+
+### Totais finais (após operação)
+- 65 entradas aprovadas
+- 757,67 h
+- R$ 113.650,50 (taxa R$ 150/h)
+
+### Files
+- Apenas dados Firestore (collection `dev_hours`) — sem mudança de código
+- Este CHANGELOG entry registra a operação de governança
+
+---
+
 ## [4.30.0+20260508-goals-accordion] — 2026-05-08
 
 Release **MINOR** — página de Metas com accordion de 2 níveis.
