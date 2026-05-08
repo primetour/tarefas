@@ -207,6 +207,16 @@ const ENTRIES = [
     multiplierIds:  [],
     completedAt:    new Date('2026-05-08T18:30:00-03:00'),
   },
+  {
+    releaseVersion: '4.34.11',
+    releaseSlug:    '20260508-portal-past-date-block-and-sla-uteis',
+    title:          'Portal: bloqueia datas passadas + labels SLA explicitam "dias úteis"',
+    summary:        'Bug 1 reportado: portal permitia solicitar pra datas passadas (slot do dia 6 com hoje sendo dia 8). Bug 2: labels de SLA não deixavam claro se eram dias úteis ou corridos. Fix: getMinDate() agora usa fuso local em vez de UTC; novo isPastDate() helper; click em slot/dia passado, digitar data passada, e submit com data passada todos bloqueiam com alert + erro inline. Cálculo de SLA já estava em dias úteis (confirmado em calcSla + countBusinessDays); labels explicitam "X dias úteis" agora.',
+    profile:        'bugfix',
+    bucket:         'small',           // 0.5-1.5h (~1h)
+    multiplierIds:  [],
+    completedAt:    new Date('2026-05-08T19:00:00-03:00'),
+  },
 ];
 
 // ─── Buckets (espelha js/services/devHours.js BUCKETS) ─────
