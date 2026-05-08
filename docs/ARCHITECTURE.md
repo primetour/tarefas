@@ -299,8 +299,52 @@ Outros componentes do mesmo registro:
 | `toast` | Notificações não-bloqueantes |
 | `uiKit` | Split-button + overflow menu nos headers |
 | `cardPrefsModal` | Personalização de campos visíveis em cards |
+| `insightsPanel` | Insights & observações por widget de dashboard |
+| `insightDraftsDock` | Drawer rodapé com rascunhos de insights (4.33.0+) |
 
 Documentação detalhada (API, padrões de uso, cor por hash, avatar por inicial, cascata via `picker-refresh`) em [`docs/UI-COMPONENTS.md`](UI-COMPONENTS.md).
+
+## Padrões de "single source of truth"
+
+Conforme a app cresceu, várias camadas adicionaram lógica paralela ao mesmo conceito. Releases recentes consolidaram fontes únicas:
+
+### SLA de tarefa = SLA do tipo (4.32.2+)
+
+Antes existiam **dois sistemas** calculando `dueDate`:
+- `slaDays` na variação do tipo de tarefa (`taskTypes.js calcSla`) — **dias úteis**
+- `dueOffsetDays` no template de tarefa recorrente — **dias corridos**
+
+Resultado: tarefas recorrentes **ignoravam silenciosamente** o SLA do tipo. Mesmo conceito, duas verdades, em unidades diferentes.
+
+A partir de **4.32.2**, a engine de geração recorrente não passa mais `dueDate` — `createTask()` calcula via `calcSla(typeId, occDate, variationId)` (mesma lógica das tarefas pontuais). Templates legacy com `dueOffsetDays > 0` só usam o offset se o tipo NÃO tem `slaDays` configurado (compat sem migração).
+
+**Regra**: para qualquer tarefa nova ou gerada, prazo vem do tipo. Customizar prazo individual é responsabilidade do usuário (campo manual no form), não default do sistema.
+
+### Resolver de tipo de tarefa (4.32.0/4.32.1)
+
+Widgets de dashboard que mostravam "tipo da tarefa" usavam estratégias diferentes (legacy `t.type`, lookup direto, hardcoded labels). Resultado: IDs cifrados aparecendo em produção quando typeId não correspondia a doc Firestore.
+
+A partir de **4.32.0**, `analytics.js` define um único `resolveTypeName(typeId)` com 3 fallbacks:
+1. Doc no `store.get('taskTypes')` (Firestore)
+2. `STATIC_FALLBACKS` (chaves legacy: `newsletter`, etc)
+3. Genérico `"Outros tipos"` (em vez de mostrar ID cifrado)
+
+Usado em `getProductivityByType`, `getTimePerTaskByType`, `getNewslettersOutOfCalendar`. Tipos órfãos são merged em "Outros tipos" pra não poluir rankings.
+
+### CSAT modular por tipo (4.31.x — 4.32.0)
+
+CSAT antes era universal: todas as tarefas done com cliente → 1 pergunta padrão. Não escalava: newsletter precisa avaliar conteúdo + design separadamente; outras entregas tem perguntas próprias.
+
+A partir de **4.31.0**, cada tipo de tarefa pode ter `csatConfig` com:
+- **Perguntas customizadas** (texto livre, score 1-5, sim/não)
+- **Modo de envio**: `individual` (uma survey por tarefa, default), `periodic` (uma survey por período cobrindo várias tarefas), `milestone` (survey de tarefa-pai abrangendo entregas relacionadas)
+- **Snapshot pattern**: ao criar a survey, as perguntas são **copiadas** do tipo pra dentro do doc da survey — assim, mesmo se o admin mudar as perguntas depois, surveys antigas mantêm o que foi enviado
+
+Score derivado = `round(avg(scores))`. Comentário derivado = concat de campos texto com `[label]` prefix.
+
+`runPeriodicCsatTrigger()` em `csat.js` é cron client-side com idempotência via `localStorage` (`csat-periodic-runs`). Chave: `<typeId>:<periodWindowId>` onde periodWindowId é `YYYY-WNN` (weekly), `YYYY-MM-a/b` (biweekly), `YYYY-MM` (monthly).
+
+Em produção robusta, próxima fase F2.1 deveria mover o trigger pra Cloud Function cron — pra não depender de alguém abrir o app no dia certo.
 
 ## Versionamento
 

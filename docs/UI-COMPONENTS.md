@@ -17,6 +17,8 @@ Documento técnico dos componentes reusáveis que sustentam a unidade visual do 
 | **`toast`** | `js/components/toast.js` | Toda app | `alert()` |
 | **`uiKit`** | `js/components/uiKit.js` | Headers de página | Repetição de split-button + overflow menu |
 | **`cardPrefsModal`** | `js/components/cardPrefsModal.js` | Tasks / Calendar / Kanban / Timeline | Configuração de campos visíveis |
+| **`insightsPanel`** | `js/components/insightsPanel.js` | Todos dashboards (produtividade, ga, meta, nl, portal, roteiro) | — (introduzido em 3.x) |
+| **`insightDraftsDock`** | `js/components/insightDraftsDock.js` | Todos dashboards | Drawer estilo Outlook (4.33.0+) |
 
 ---
 
@@ -369,3 +371,100 @@ Mudanças em `optionPicker` que quebrem a API exigem **MAJOR** bump (afeta ~96 c
 Histórico:
 - **3.0.0** — introdução, adoção em 23 módulos
 - Próximas mudanças sob roadmap em [`CHANGELOG.md`](../CHANGELOG.md)
+
+---
+
+## 9. `insightsPanel` & `insightDraftsDock` — análises por dashboard
+
+Bloco unificado de **insights & observações** disponível em todos os dashboards. Cada widget ganha um botão `💡 + insights` no header; cada dashboard ganha um painel "Análise Geral" no rodapé. Insights são persistidos em `dashboard_insights` (Firestore).
+
+### Wiring
+
+Dashboards usam o helper `setupDashboardInsights({ dashboard, widgets, metrics, ... })` em `js/services/insightWidgets.js`. Esse helper:
+1. Monta popover de insights em cada widget (`attachWidgetInsights`)
+2. Monta painel "Análise Geral" no rodapé (`attachGeneralPanel`)
+3. **4.33.0+** Monta drawer de rascunhos no rodapé (`mountInsightDraftsDock`)
+
+### Anatomia de um insight
+
+```
+{
+  dashboard:      'produtividade',
+  indexKey:       'velocity'  // ou 'general' se não-ancorado
+  title, observation, recommendation,
+  type:           'positive' | 'negative' | 'neutral' | 'warning' | 'opportunity',
+  impact:         'low' | 'medium' | 'high',
+  periodFrom, periodTo,
+  filters,        // snapshot dos filtros do dash
+  source:         'manual' | 'ai-generated' | 'ai-edited',
+  dataSnapshot,   // foto dos números — IMUTÁVEL
+  chartImage,     // PNG base64 do canvas (PDF export)
+  createdBy, createdAt, updatedAt,
+}
+```
+
+### Bloco "O que você estava analisando" (4.33.1+)
+
+Renderização amigável do `dataSnapshot`:
+- **Antes**: monospace + chaves técnicas (`weeklyVelocity[0].weekStart: 2026-04-15`)
+- **Depois**: cards com tipografia padrão + labels em pt-BR (`📈 Tarefas por semana → Semana de 15/04: 12 criadas · 9 concluídas`)
+
+Implementado via `formatDataSnapshotFriendly()` em `js/services/insights.js`:
+- Registry `FRIENDLY_TOPLEVEL_LABELS` mapeia ~25 chaves técnicas pra ícone+label
+- Registry `FRIENDLY_FIELD_LABELS` mapeia campos comuns (`avg`, `responseRate`, `avgDays`, etc)
+- Valores formatados em locale BR (vírgula decimal, datas dd/mm/aa, %)
+- Output: `[{ label: '★ CSAT geral', items: [{ name, value }, ...] }]`
+
+A função antiga `formatDataSnapshot()` (string compacta de uma linha) foi preservada para PDF/XLSX export onde o formato compacto é desejável.
+
+### Rascunhos com auto-save (4.33.0+)
+
+`insightDraftsDock` é um drawer fixo no rodapé que aparece quando o usuário tem rascunhos não-publicados. Inspirado no Outlook drafts panel.
+
+**Auto-save:**
+- Cada keystroke → debounce 500ms → save em `localStorage` (`primetour-insight-drafts`)
+- Critério mínimo (`shouldDraft`): ≥1 char no título OU ≥10 chars na observação (evita criar rascunho de typo acidental)
+- Indicador no rodapé do form: `📝 Rascunho salvo automaticamente` → `💾 Rascunho salvo às HH:MM`
+- Salvar oficialmente o insight → deleta o draft
+
+**Persistência:**
+- Local: `localStorage` (sync entre abas via `storage` event)
+- Cap: 20 drafts (FIFO)
+- Auto-purge: drafts > 30 dias
+
+**Cross-dashboard:**
+- Cards do dashboard atual aparecem com destaque (borda dourada)
+- Click em card de outro dashboard → navega + abre form lá (pendência via `sessionStorage`, expira em 30s)
+
+### API exposta no dashboard
+
+Dashboards não interagem diretamente com `insightsPanel.js`. Apenas declaram seus widgets:
+
+```js
+const WIDGETS = [
+  {
+    widgetId: 'sla-chart',
+    indexKey: 'sla',
+    label:    '📊 SLA',
+    snapshot: (m) => ({ sla: getSlaData(m) }),  // dados pra IA + bloco "O que você estava analisando"
+  },
+  ...
+];
+
+await setupDashboardInsights({
+  dashboard: 'produtividade',
+  widgets: WIDGETS,
+  metrics,
+  periodFrom, periodTo, periodLabel, filters,
+  generalPanelContainerId: 'dash-insights-section',
+  buildGeneralSnapshot: () => buildDashboardSnapshot(metrics, period),
+});
+```
+
+### Histórico
+
+- **3.x** — Introdução do módulo (manual + AI-generated insights)
+- **4.32.0** — F4 CSAT: bloco "Médias por pergunta" no `/csat`
+- **4.33.0** — Rascunhos com auto-save + drawer no rodapé
+- **4.33.1** — Bloco "Dados observados" reformulado (sem monospace, labels pt-BR)
+- **4.33.2** — Cache-bust de imports antigos pra propagar 4.33.1
