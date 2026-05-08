@@ -37,6 +37,67 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.28.0+20260508-cc-virtual-slots-agenda-previa] — 2026-05-08
+
+Release **MINOR** — Calendário de Conteúdo passa a exibir a "agenda prévia"
+dos tipos de tarefa (slots virtuais).
+
+### Pedido do user
+> "verifique o módulo tipo de tarefa. quando se cria um tipo de tarefa,
+> existe a possibilidade de criar uma agenda prévia. Newsletters é um caso
+> com isso. lá tem os slots que se criam para agenda previa, que deve
+> espelhar em calendário, portal de solicitações e, agora, em calendário
+> de conteúdo. A proposta é o usuario ver o que já existe previsto por
+> tipo de tarefa."
+
+### Schema descoberto
+Tipos de tarefa têm `scheduleSlots[]`, cada um com:
+- `id`, `title`, `active`
+- `recurrence`: `'weekly'` | `'monthly_days'` | `'custom'`
+- `weekDay` (0-6) para semanal
+- `monthDays` [1..31] para dias-do-mês
+- `customDates` [yyyy-mm-dd] para datas avulsas
+- `requestingArea`, `color`
+
+Antes da v4.28 esses slots eram usados em outros lugares (calendário
+geral, portal de solicitações, validação de "fora do calendário"),
+mas o **Calendário de Conteúdo não exibia**.
+
+### Implementação
+1. **`generateVirtualSlots(date)`** — para cada tipo de tarefa em uso pelos
+   projetos ativos (e respeitando o filtro `visibleTaskTypes`), itera
+   `scheduleSlots[]` e checa qual recorrência casa com a data:
+   - weekly: `s.weekDay === date.getDay()`
+   - monthly_days: `s.monthDays.includes(dayOfMonth)`
+   - custom: `s.customDates.includes(iso)`
+   Retorna array de objetos `{ virtual:true, date, title, color, typeId,
+   typeName, slotId, area }`.
+2. **`renderVirtualSlotCard(vslot, mode)`** — visual distinto:
+   - Borda **tracejada** (`1px dashed`) — diferencia de tarefa real
+   - Ícone `◌` (slot vazio aguardando)
+   - Texto em **itálico** + opacity reduzida
+   - Modos `compact` (mês) e `detailed` (semana)
+3. **De-duplicação**: se já existe tarefa real do mesmo `typeId` no dia,
+   o slot virtual é OCULTADO (a previsão já foi materializada).
+4. **Click em virtual slot**: abre `taskModal` em modo CRIAÇÃO pré-preenchido
+   com título do slot, typeId, projectId (primeiro ativo), dueDate da célula,
+   `requestingArea` herdada do slot, tag `agenda-previa`.
+
+### Fluxo do usuário
+1. User entra no Cal de Conteúdo com projeto Newsletters
+2. Ativa "Tarefas dos projetos" + "Newsletter" no filtro de tipos
+3. Vê:
+   - **Tasks reais** (já criadas): borda azul sólida
+   - **Slots virtuais** (agenda prévia): borda azul tracejada com ◌ e itálico
+4. Click num slot virtual = cria a tarefa pré-preenchida pra aquela data
+
+### Files
+- `js/pages/contentCalendar.js` (generateVirtualSlots + renderVirtualSlotCard
+  + integrações em renderMonthView/renderWeekView + click handler)
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+---
+
 ## [4.27.0+20260508-cc-task-types-resolve] — 2026-05-08
 
 PATCH/MINOR — fix dos nomes de tipos de tarefa cifrados no Calendário de Conteúdo.

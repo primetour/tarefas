@@ -306,6 +306,93 @@ function getProjectTaskTypeIds() {
 }
 
 /**
+ * 4.28+ — Slots VIRTUAIS gerados a partir dos `scheduleSlots[]` dos tipos
+ * de tarefa em uso (agenda prévia). Refletem a "previsão editorial":
+ * onde DEVERIA haver uma tarefa baseado na recorrência configurada no tipo.
+ *
+ * Cada virtual slot tem o shape:
+ *   { virtual:true, date, title, color, typeId, typeName, slotId, area }
+ *
+ * Filtra:
+ *   - Apenas slots com `active !== false`
+ *   - Apenas tipos visíveis (visibleTaskTypes / showProjectTasks)
+ *   - Datas dentro do range visível (do início do mês -1 até fim do mês +1)
+ *
+ * Cobertura: weekly / monthly_days / custom (todas as recurrences do schema).
+ */
+function generateVirtualSlots(date) {
+  if (!showProjectTasks) return [];
+  const restricted = Array.isArray(visibleTaskTypes);
+  const allTypes = store.get('taskTypes') || [];
+  // Tipos em uso pelas tasks dos projetos ativos
+  const usedTypeIds = new Set(_projectTasks.map(t => t.typeId).filter(Boolean));
+  const dow = date.getDay();
+  const dom = date.getDate();
+  const dateIso = formatDate(date);
+  const out = [];
+  for (const type of allTypes) {
+    if (!usedTypeIds.has(type.id)) continue;
+    if (restricted && !visibleTaskTypes.includes(type.id)) continue;
+    const slots = Array.isArray(type.scheduleSlots) ? type.scheduleSlots : [];
+    for (const s of slots) {
+      if (s.active === false) continue;
+      let matches = false;
+      if (s.recurrence === 'weekly')             matches = s.weekDay === dow;
+      else if (s.recurrence === 'monthly_days')  matches = (s.monthDays || []).includes(dom);
+      else if (s.recurrence === 'custom')        matches = (s.customDates || []).includes(dateIso);
+      if (!matches) continue;
+      out.push({
+        virtual: true,
+        slotId:   s.id,
+        date:     dateIso,
+        title:    s.title || type.name || 'Slot agendado',
+        color:    s.color || type.color || '#D4A843',
+        typeId:   type.id,
+        typeName: type.name || '',
+        area:     s.requestingArea || '',
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * 4.28+ — Render de slot VIRTUAL (agenda prévia).
+ * Visual distinto: borda tracejada (dashed) + ícone ◌ (slot vazio aguardando)
+ * + opacity reduzida. Click abre criação rápida pré-preenchida.
+ */
+function renderVirtualSlotCard(vslot, mode = 'compact') {
+  const ico = '◌';
+  if (mode === 'compact') {
+    return `<div class="cc-virtual-slot" data-virtual-slot-id="${esc(vslot.slotId || '')}"
+      data-virtual-date="${esc(vslot.date)}" data-virtual-type-id="${esc(vslot.typeId)}"
+      style="display:flex;align-items:center;gap:4px;padding:2px 4px;border-radius:4px;
+      background:${vslot.color}10;border:1px dashed ${vslot.color};font-size:0.6875rem;
+      cursor:pointer;opacity:0.85;transition:all 0.1s;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${vslot.color};"
+      title="Slot previsto · ${esc(vslot.typeName)}${vslot.area ? ' · ' + esc(vslot.area) : ''}">
+      <span style="flex-shrink:0;font-weight:700;">${ico}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;font-weight:500;
+        font-style:italic;">${esc(vslot.title)}</span>
+    </div>`;
+  }
+  return `<div class="cc-virtual-slot" data-virtual-slot-id="${esc(vslot.slotId || '')}"
+    data-virtual-date="${esc(vslot.date)}" data-virtual-type-id="${esc(vslot.typeId)}"
+    style="display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border-radius:6px;
+    background:${vslot.color}10;border:1px dashed ${vslot.color};font-size:0.75rem;
+    cursor:pointer;opacity:0.9;transition:background 0.15s;color:${vslot.color};">
+    <span style="flex-shrink:0;font-size:0.875rem;font-weight:700;">${ico}</span>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:500;font-style:italic;
+        overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(vslot.title)}</div>
+      <div style="font-size:0.625rem;opacity:0.8;margin-top:1px;">
+        ${esc(vslot.typeName)}${vslot.area ? ' · ' + esc(vslot.area) : ''} · agenda prévia
+      </div>
+    </div>
+  </div>`;
+}
+
+/**
  * 4.25+ — Carrega tasks dos projetos ativos (com dueDate) pra exibir no calendário.
  * Disparado quando os projetos ativos mudam ou a flag liga.
  */
@@ -1152,13 +1239,26 @@ function renderMonthView(container) {
                 ${slots.slice(0, 3).map(slot => renderSlotCard(slot, 'compact')).join('')}
                 ${slots.length > 3 ? `<div style="font-size:0.6875rem;color:var(--text-muted,#5A6B7A);padding:2px 4px;">+${slots.length - 3} mais</div>` : ''}
                 ${(() => {
-                  // 4.25+ Slots de tarefa do projeto (cabe junto se houver espaço)
+                  // 4.25+ Slots de tarefa do projeto + 4.28+ Slots virtuais (agenda prévia)
                   if (!cell.date) return '';
                   const tasks = projectTasksForDate(cell.date);
-                  if (!tasks.length) return '';
-                  const max = Math.max(0, 3 - slots.length);
-                  return tasks.slice(0, max).map(t => renderTaskSlot(t, 'compact')).join('') +
-                    (tasks.length > max ? `<div style="font-size:0.625rem;color:#0EA5E9;padding:1px 4px;font-style:italic;">+${tasks.length - max} tarefa${tasks.length - max > 1 ? 's' : ''}</div>` : '');
+                  const virtuals = generateVirtualSlots(cell.date)
+                    // Filtra slots virtuais que JÁ têm tarefa real correspondente do mesmo tipo
+                    // (evita duplicar a previsão quando ela já foi materializada)
+                    .filter(v => !tasks.some(t => t.typeId === v.typeId));
+                  if (!tasks.length && !virtuals.length) return '';
+                  const usedSpace = slots.length;
+                  const taskMax = Math.max(0, 3 - usedSpace);
+                  const virtualMax = Math.max(0, 3 - usedSpace - Math.min(taskMax, tasks.length));
+                  let html = tasks.slice(0, taskMax).map(t => renderTaskSlot(t, 'compact')).join('');
+                  if (tasks.length > taskMax) {
+                    html += `<div style="font-size:0.625rem;color:#0EA5E9;padding:1px 4px;font-style:italic;">+${tasks.length - taskMax} tarefa${tasks.length - taskMax > 1 ? 's' : ''}</div>`;
+                  }
+                  html += virtuals.slice(0, virtualMax).map(v => renderVirtualSlotCard(v, 'compact')).join('');
+                  if (virtuals.length > virtualMax) {
+                    html += `<div style="font-size:0.625rem;color:var(--text-muted);padding:1px 4px;font-style:italic;">+${virtuals.length - virtualMax} previsto${virtuals.length - virtualMax > 1 ? 's' : ''}</div>`;
+                  }
+                  return html;
                 })()}
               </div>
             </div>
@@ -1209,10 +1309,16 @@ function renderWeekView(container) {
                   ${day.getDate()}
                 </div>
               </div>
-              <!-- Slots de conteúdo + 4.25+ slots de tarefa -->
+              <!-- Slots de conteúdo + 4.25+ slots de tarefa + 4.28+ virtuais -->
               <div style="display:flex;flex-direction:column;gap:6px;">
                 ${slots.map(slot => renderSlotCard(slot, 'detailed')).join('')}
-                ${projectTasksForDate(day).map(t => renderTaskSlot(t, 'detailed')).join('')}
+                ${(() => {
+                  const tasks = projectTasksForDate(day);
+                  const virtuals = generateVirtualSlots(day)
+                    .filter(v => !tasks.some(t => t.typeId === v.typeId));
+                  return tasks.map(t => renderTaskSlot(t, 'detailed')).join('') +
+                    virtuals.map(v => renderVirtualSlotCard(v, 'detailed')).join('');
+                })()}
               </div>
             </div>
           `;
@@ -1451,6 +1557,7 @@ function bindCalendarCellEvents(container) {
     cell.addEventListener('click', (e) => {
       if (e.target.closest('.cc-slot-card')) return;
       if (e.target.closest('.cc-task-slot')) return; // 4.25+ task slot tem handler próprio
+      if (e.target.closest('.cc-virtual-slot')) return; // 4.28+ virtual slot tem handler próprio
       const dateStr = cell.dataset.date;
       if (!dateStr) return;
       openSlotModal(null, dateStr);
@@ -1478,6 +1585,36 @@ function bindCalendarCellEvents(container) {
         taskData: task,
         onSave: async () => {
           // Recarrega tasks pra refletir mudança no calendário
+          await loadProjectTasks();
+          renderCalendarBody();
+        },
+      });
+    });
+  });
+
+  // 4.28+ Click em slot VIRTUAL (agenda prévia) abre criar tarefa pré-preenchida
+  container.querySelectorAll('.cc-virtual-slot').forEach(card => {
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const date   = card.dataset.virtualDate;
+      const typeId = card.dataset.virtualTypeId;
+      const slotId = card.dataset.virtualSlotId;
+      const types  = store.get('taskTypes') || [];
+      const type   = types.find(t => t.id === typeId);
+      const slot   = type?.scheduleSlots?.find(s => s.id === slotId);
+      // projectId default: primeiro projeto ativo
+      const projectId = activeProjectIds[0] || null;
+      openTaskModal({
+        taskData: {
+          title:           slot?.title || type?.name || 'Nova tarefa',
+          typeId:          typeId,
+          projectId,
+          dueDate:         date,
+          status:          'not_started',
+          requestingArea:  slot?.requestingArea || '',
+          tags:            ['agenda-previa'],
+        },
+        onSave: async () => {
           await loadProjectTasks();
           renderCalendarBody();
         },

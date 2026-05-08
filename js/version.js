@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 27,
+  minor: 28,
   patch: 0,
-  build: '20260508-cc-task-types-resolve',
+  build: '20260508-cc-virtual-slots-agenda-previa',
 };
 
 /** "1.2.0" */
