@@ -689,7 +689,11 @@ function renderAllCharts(Chart, m) {
         ? ` · 🤝 ${t.partnerships} parc. (${t.partnershipRate}%)`
         : '';
       return {
-        name: `${t.icon} ${t.name}${parcSuffix}`,
+        // 4.34.8+ name SEM o ícone (avatar mostra o ícone separado)
+        // Antes virava "📰N" como sigla do "📰 Newsletter" — feio e redundante.
+        name: `${t.name}${parcSuffix}`,
+        icon: t.icon,         // ícone do tipo (renderizado dentro da bolinha)
+        iconOnly: true,       // flag pro renderLeaderboard mostrar ícone em vez de iniciais
         avatarColor: t.color,
         done: t.done,
         total: t.total,
@@ -921,7 +925,9 @@ function renderLeaderboard(gridId, id, colClass, opts) {
               ${i < 3 ? rankLabels[i+1] : i+1}
             </div>
             <div class="avatar avatar-sm" style="background:${u.avatarColor}; flex-shrink:0;">
-              ${userAvatarInner(u)}
+              ${u.iconOnly && u.icon
+                ? `<span style="font-size:1rem;">${u.icon}</span>`
+                : userAvatarInner(u)}
             </div>
             <div class="leaderboard-info">
               <div class="leaderboard-name">${esc(u.name)}</div>

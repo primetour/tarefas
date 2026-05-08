@@ -167,7 +167,11 @@ export function getTasksByMember(tasks) {
     .map(([uid, data]) => {
       const user = users.find(u => u.id === uid);
       return {
-        uid, name: user?.name || uid, avatarColor: user?.avatarColor || '#6B7280',
+        uid,
+        id: uid,                                    // 4.34.8+ pra helper userAvatar reconhecer como user
+        name: user?.name || uid,
+        avatarColor: user?.avatarColor || '#6B7280',
+        photoURL: user?.photoURL || null,           // 4.34.8+ pra ranking mostrar foto SSO
         ...data,
         rate: data.total ? Math.round(data.done / data.total * 100) : 0,
       };

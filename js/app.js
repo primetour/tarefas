@@ -27,7 +27,7 @@ import { renderKanban, destroyKanban } from './pages/kanban.js';
 import { renderCalendar }    from './pages/calendar.js';
 import { renderTimeline }    from './pages/timeline.js';
 import { renderPlaceholder }  from './pages/placeholder.js';
-import { renderDashboards, destroyDashboards } from './pages/dashboards.js?v=20260508r1';
+import { renderDashboards, destroyDashboards } from './pages/dashboards.js?v=20260508r8';
 import { renderAudit }       from './pages/audit.js';
 import { renderProfile }     from './pages/profile.js?v=20260508r6';
 import { renderRoles }       from './pages/roles.js';
@@ -615,7 +615,7 @@ function setupRouter() {
       'kanban':    () => { destroyKanban(); import('./pages/kanban.js').then(m => m.renderKanban(content)); },
       'check-in':  () => import('./pages/checkin.js').then(m => m.renderCheckin(content)),
       'dashboard': () => import('./pages/dashboard.js').then(m => m.renderDashboard(content)),
-      'dashboards':() => { destroyDashboards(); import('./pages/dashboards.js?v=20260508r1').then(m => m.renderDashboards(content)); },
+      'dashboards':() => { destroyDashboards(); import('./pages/dashboards.js?v=20260508r8').then(m => m.renderDashboards(content)); },
       'csat':      () => { destroyCsat(); import('./pages/csat.js').then(m => m.renderCsat(content)); },
       'squad':     () => import('./pages/squadWorkspace.js').then(m => m.renderSquadWorkspace(content)),
     };
