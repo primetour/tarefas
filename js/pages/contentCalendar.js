@@ -325,14 +325,47 @@ async function loadProjectTasks() {
 }
 
 /**
+ * 4.27+ — Resolve typeId pra nome/ícone/cor amigáveis.
+ * Cobre 3 casos:
+ *   1. Doc Firestore em store.get('taskTypes') (mais comum)
+ *   2. Valor legacy estático em TASK_TYPES (ex: 'newsletter' → 'Newsletter')
+ *   3. Fallback genérico se ainda não encontrar
+ */
+function resolveTaskType(typeId) {
+  if (!typeId || typeId === '__no_type__') {
+    return { name: 'Sem tipo', icon: '📋', color: '#6B7280' };
+  }
+  const dyn = store.get('taskTypes') || [];
+  const fromDoc = dyn.find(t => t.id === typeId);
+  if (fromDoc) {
+    return {
+      name: fromDoc.name || 'Tipo',
+      icon: fromDoc.icon || '📋',
+      color: fromDoc.color || '#0EA5E9',
+    };
+  }
+  // Legacy estático (services/tasks.js TASK_TYPES) — typeId === value
+  // Ex: 'newsletter' (lowercase) → '📧 Newsletter'
+  const STATIC_FALLBACKS = {
+    newsletter: { name: 'Newsletter', icon: '📧', color: '#D4A843' },
+  };
+  if (STATIC_FALLBACKS[typeId]) return STATIC_FALLBACKS[typeId];
+  // Match case-insensitive em nomes dinâmicos (cobertura defensiva)
+  const fuzzy = dyn.find(t =>
+    String(t.name || '').toLowerCase() === String(typeId).toLowerCase()
+  );
+  if (fuzzy) return { name: fuzzy.name, icon: fuzzy.icon || '📋', color: fuzzy.color || '#0EA5E9' };
+  return { name: `Tipo (${String(typeId).slice(0, 6)}…)`, icon: '📋', color: '#94A3B8' };
+}
+
+/**
  * 4.25+ — Render de "slot de tarefa" (estilo distinto dos slots de conteúdo).
  * Borda azul à esquerda + ícone do tipo de tarefa + título truncado.
  */
 function renderTaskSlot(task, mode = 'compact') {
-  const types = store.get('taskTypes') || [];
-  const type  = types.find(t => t.id === task.typeId);
-  const icon  = type?.icon || '📋';
-  const color = type?.color || '#0EA5E9';
+  const type = resolveTaskType(task.typeId);
+  const icon = type.icon;
+  const color = type.color;
   const status = task.status || 'not_started';
   const isDone = status === 'done';
   const opacity = isDone ? '0.55' : '1';
@@ -359,7 +392,7 @@ function renderTaskSlot(task, mode = 'compact') {
         ${isDone ? 'text-decoration:line-through;' : ''}
         overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(task.title)}</div>
       <div style="font-size:0.625rem;color:var(--text-muted);margin-top:1px;">
-        ${esc(type?.name || 'Tarefa')}${task.assignees?.length ? ` · ${task.assignees.length} resp.` : ''}
+        ${esc(type.name || 'Tarefa')}${task.assignees?.length ? ` · ${task.assignees.length} resp.` : ''}
       </div>
     </div>
   </div>`;
@@ -412,6 +445,14 @@ export async function renderContentCalendar(container) {
     console.warn('[ContentCalendar] fetchProjects falhou:', e.message);
     availableProjects = [];
   }
+
+  // 4.27+ Carrega taskTypes (lazy — só faz fetch 1× por sessão).
+  // Necessário para o popover "Tipos visíveis" exibir nomes amigáveis em vez
+  // de "Tipo XYZ..." (raw IDs).
+  try {
+    const { loadTaskTypes } = await import('../services/taskTypes.js');
+    await loadTaskTypes();
+  } catch (e) { /* silent — fallback usa TASK_TYPES estático */ }
 
   // Carrega slots do projeto ativo + assina real-time
   // 4.25+ Carrega tarefas dos projetos ativos em paralelo
@@ -578,19 +619,12 @@ async function setActiveProject(projectId) {
 function _openTaskTypePopover(anchor) {
   document.querySelectorAll('.cc-tasktype-popover').forEach(el => el.remove());
 
-  const types = store.get('taskTypes') || [];
   const usedIds = getProjectTaskTypeIds(); // ids presentes nas tasks dos projetos
-  // Constrói lista — para cada usedId, mostra label/icon do tipo (ou genérico
-  // se for '__no_type__' ou tipo desconhecido).
+  // 4.27+: resolveTaskType cobre Firestore + legacy estático (ex: 'newsletter').
   const items = usedIds.map(id => {
     if (id === '__no_type__') return { id, label: '— Sem tipo —', icon: '📋', color: '#6B7280' };
-    const t = types.find(x => x.id === id);
-    return {
-      id,
-      label: t?.name || `Tipo ${id.slice(0, 6)}…`,
-      icon:  t?.icon || '📋',
-      color: t?.color || '#0EA5E9',
-    };
+    const r = resolveTaskType(id);
+    return { id, label: r.name, icon: r.icon, color: r.color };
   }).sort((a, b) => a.label.localeCompare(b.label));
 
   const checked = new Set(visibleTaskTypes === null ? items.map(i => i.id) : visibleTaskTypes);

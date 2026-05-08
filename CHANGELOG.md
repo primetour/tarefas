@@ -37,6 +37,43 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.27.0+20260508-cc-task-types-resolve] — 2026-05-08
+
+PATCH/MINOR — fix dos nomes de tipos de tarefa cifrados no Calendário de Conteúdo.
+
+### Bug
+Após v4.26 o popover "Tipos visíveis" mostrava itens como
+**"Tipo AOo69u…"**, **"Tipo gcwpSi…"**, **"Tipo XVEgOw…"** em vez dos nomes
+amigáveis. Causa: `store.get('taskTypes')` retornava `[]` na página de
+Calendário de Conteúdo — o `loadTaskTypes()` é lazy (não roda no boot
+desde v3.x para economizar reads) e a página de calendário nunca
+disparava o load. Sem dados no store, o fallback caía em
+`Tipo ${id.slice(0,6)}…`.
+
+Adicionalmente, alguns tasks usam typeId estático legacy `'newsletter'`
+(da constante `TASK_TYPES` em services/tasks.js) que NUNCA foi migrado pra
+collection — esse caso aparecia como `(NÃO ENCONTRADO)`.
+
+### Fix
+1. **renderContentCalendar()**: agora chama `loadTaskTypes()` no boot da
+   página (lazy, 1× por sessão).
+2. **Nova função `resolveTaskType(typeId)`** com 3 níveis de fallback:
+   - Doc Firestore por id (caso comum)
+   - Map estático para legacy (`'newsletter'` → `'📧 Newsletter'`)
+   - Genérico `Tipo (XXXXXX…)` como último recurso
+3. **`renderTaskSlot` e `_openTaskTypePopover`** usam `resolveTaskType()`
+   centralizado — antes faziam lookup independente direto no store.
+
+### Impacto
+Popover passa a exibir nomes legíveis: "Newsletter", "Comunicado",
+"Post/story", "Roteiro" — em vez de IDs cifrados.
+
+### Files
+- `js/pages/contentCalendar.js` (loadTaskTypes + resolveTaskType + render usage)
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+---
+
 ## [4.26.0+20260507-bugs-fix-rename-filter] — 2026-05-07
 
 Release **MINOR** — 4 melhorias do user (3 bug fixes + 1 feature nova).
