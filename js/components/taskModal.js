@@ -1312,20 +1312,19 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
             </p>
           ` : ''}
           <div id="tm-recurrence-config" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--border-subtle);border-radius:8px;background:var(--bg-elevated);">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-              <div>
-                <label class="form-label" style="font-size:0.75rem;">Frequência</label>
-                <select id="tm-rec-frequency" class="form-select">
-                  <option value="daily">Diariamente</option>
-                  <option value="weekly" selected>Semanalmente</option>
-                  <option value="monthly">Mensalmente</option>
-                  <option value="custom">A cada N dias</option>
-                </select>
-              </div>
-              <div>
-                <label class="form-label" style="font-size:0.75rem;">Prazo (dias após geração)</label>
-                <input type="number" id="tm-rec-due-offset" class="form-input" min="0" max="90" value="3" />
-              </div>
+            <div>
+              <label class="form-label" style="font-size:0.75rem;">Frequência</label>
+              <select id="tm-rec-frequency" class="form-select">
+                <option value="daily">Diariamente</option>
+                <option value="weekly" selected>Semanalmente</option>
+                <option value="monthly">Mensalmente</option>
+                <option value="custom">A cada N dias</option>
+              </select>
+              <p style="font-size:0.6875rem;color:var(--text-muted);margin:6px 0 0 0;">
+                <strong>Prazo de cada instância:</strong> calculado automaticamente pelo SLA
+                configurado no <strong>Tipo de Tarefa</strong> (em dias úteis). Sem SLA configurado,
+                a tarefa nasce sem prazo e precisa ser ajustada manualmente.
+              </p>
             </div>
             <div id="tm-rec-weekly" style="margin-top:10px;">
               <label class="form-label" style="font-size:0.75rem;">Dias da semana</label>
@@ -3381,9 +3380,9 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
       }
     } else if (isRecurring) {
       // Criar template de recorrência em vez de tarefa pontual
+      // 4.32.2+ Prazo NÃO é mais campo do form — vem do SLA do tipo de tarefa.
       const { createTemplate, runDueRecurrenceGeneration } = await import('../services/recurringTasks.js');
       const freq       = $('tm-rec-frequency')?.value || 'weekly';
-      const dueOffset  = parseInt($('tm-rec-due-offset')?.value || '0', 10) || 0;
       const startDate  = $('tm-rec-start')?.value || '';
       const endDate    = $('tm-rec-end')?.value || '';
       const weekdays   = Array.from(document.querySelectorAll('.tm-rec-weekday:checked'))
@@ -3415,7 +3414,6 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
           frequency: freq,
           weekdays, monthDay, intervalDays,
           startDate, endDate,
-          dueOffsetDays: dueOffset,
         });
       } catch (validationErr) {
         if (btn) { btn.classList.remove('loading'); btn.disabled = false; }
@@ -3456,7 +3454,6 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
       try {
         const { createTemplate, runDueRecurrenceGeneration } = await import('../services/recurringTasks.js');
         const freq         = $('tm-rec-frequency')?.value || 'weekly';
-        const dueOffset    = parseInt($('tm-rec-due-offset')?.value || '0', 10) || 0;
         const startDate    = $('tm-rec-start')?.value || '';
         const endDate      = $('tm-rec-end')?.value || '';
         const weekdays     = Array.from(document.querySelectorAll('.tm-rec-weekday:checked'))
@@ -3475,7 +3472,6 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
             frequency: freq,
             weekdays, monthDay, intervalDays,
             startDate, endDate,
-            dueOffsetDays: dueOffset,
           });
           toast.success('Série recorrente criada a partir desta tarefa.');
           runDueRecurrenceGeneration({ force: true }).catch(() => {});

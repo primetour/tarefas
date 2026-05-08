@@ -21,7 +21,11 @@
  *   startDate: string (ISO),      // começa a gerar a partir daqui
  *   endDate:   string (ISO)|null, // parar após essa data
  *   lastGeneratedFor: string|null,// última data (ISO) para a qual gerou
- *   dueOffsetDays: number,        // prazo = data da ocorrência + offset
+ *   dueOffsetDays: number,        // [DEPRECATED 4.32.2] usado apenas como
+ *                                 //   FALLBACK quando o tipo da tarefa não tem
+ *                                 //   slaDays configurado. Em templates novos
+ *                                 //   este campo é sempre 0 — o prazo vem do
+ *                                 //   SLA do tipo (calcSla, dias úteis).
  *   createdAt, createdBy, createdByName
  * }
  */
@@ -184,6 +188,8 @@ export async function createTemplate(data) {
     ...data,
     active: data.active !== false,
     lastGeneratedFor: data.lastGeneratedFor || null,
+    // 4.32.2+ Default 0: prazo vem do SLA do tipo. Templates legacy mantêm
+    // o valor existente (não sobrescreve em update sem o campo explícito).
     dueOffsetDays: Number(data.dueOffsetDays) || 0,
     createdAt:     serverTimestamp(),
     createdBy:     user?.uid || '',
@@ -269,8 +275,23 @@ export async function runDueRecurrenceGeneration({ force = false } = {}) {
           }
 
           const occDate = fromISO(occISO);
-          const dueDate = addDays(occDate, Number(template.dueOffsetDays) || 0);
           const base = template.taskData || {};
+          // 4.32.2+ Prazo: deixa createTask() calcular via SLA do tipo (dias úteis).
+          // Só seta dueDate manualmente se o template TEM dueOffsetDays > 0
+          // (templates legacy criados antes desta versão) E o tipo da tarefa
+          // NÃO tem slaDays configurado (fallback de compat).
+          let dueDate = null;
+          const offset = Number(template.dueOffsetDays) || 0;
+          if (offset > 0) {
+            // Verifica se o tipo tem SLA — se sim, ignora offset (SLA prevalece)
+            const types = store.get('taskTypes') || [];
+            const t = types.find(tt => tt.id === base.typeId);
+            const hasSla = t && (
+              (Array.isArray(t.variations) && t.variations.some(v => Number(v.slaDays) >= 0)) ||
+              (t.sla?.days != null)
+            );
+            if (!hasSla) dueDate = addDays(occDate, offset);
+          }
           const task = {
             ...base,
             title:        base.title || 'Tarefa recorrente',
@@ -278,7 +299,7 @@ export async function runDueRecurrenceGeneration({ force = false } = {}) {
             tags:         Array.isArray(base.tags)      ? base.tags      : [],
             nucleos:      Array.isArray(base.nucleos)   ? base.nucleos   : [],
             status:       'not_started',
-            dueDate:      dueDate,
+            ...(dueDate ? { dueDate } : {}),  // só passa dueDate se tem fallback
             startDate:    occDate,
             recurringFromTemplateId: template.id,
             recurringOccurrence: occISO,

@@ -37,6 +37,41 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.32.2+20260508-recurring-prazo-via-sla] — 2026-05-08
+
+Release **PATCH** — Tarefas recorrentes agora respeitam SLA do tipo de tarefa.
+
+### Pedido do user
+> "em tarefas, no modal de criação e edição, campo tarefa recorrente,
+> pra que serve o campo prazo (dias após a geração)? ficou confuso.
+> muitas vezes o prazo é estabelecido pelo SLA em tipo de tarefa."
+
+### Problema
+Existiam dois sistemas paralelos calculando `dueDate`:
+- **SLA do tipo** (`slaDays` na variação) — dias úteis
+- **`dueOffsetDays` do template recorrente** — dias corridos
+
+A engine recorrente sempre setava `dueDate = occDate + offset` antes de chamar
+`createTask()`. Como `createTask` só auto-calc SLA se `dueDate` está vazio, o
+SLA do tipo nunca era aplicado em tarefas recorrentes — fonte de verdade
+duplicada e divergente.
+
+### Mudança (Opção A — fonte única de verdade)
+- Removido o campo "Prazo (dias após geração)" do modal de tarefa recorrente
+- Substituído por nota explicativa: prazo vem do SLA do tipo (dias úteis)
+- Engine recorrente agora **não passa `dueDate`** — deixa `createTask` calcular
+  via `calcSla(typeId, occDate, variationId)`
+- Tarefa sem typeId / sem SLA configurado → nasce sem prazo (precisa ajustar
+  manualmente, igual modo não-recorrente)
+
+### Compat com templates legacy
+Templates criados antes desta versão podem ter `dueOffsetDays > 0`. A engine
+ainda respeita o offset **apenas se o tipo NÃO tem SLA configurado** —
+caso contrário, o SLA prevalece (single source of truth). Sem migração
+de dados necessária.
+
+---
+
 ## [4.32.1+20260508-dash-tempo-tipo-newsletter-resolver] — 2026-05-08
 
 Release **PATCH** — Polish do dashboard de produtividade após revisão geral pedida em 4.32.0.
