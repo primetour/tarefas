@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 4,
-  build: '20260508-profile-cachebust',
+  patch: 5,
+  build: '20260508-photo-onload-and-sync-btn',
 };
 
 /** "1.2.0" */

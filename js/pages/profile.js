@@ -79,11 +79,22 @@ export async function renderProfile(container) {
     <div class="profile-layout">
       <!-- Left: avatar card -->
       <div class="profile-card" id="profile-left-card">
-        <div class="profile-avatar-wrapper">
+        <div class="profile-avatar-wrapper" style="position:relative;">
           <div class="avatar" id="profile-avatar-big"
             style="width:80px; height:80px; font-size:1.75rem; background:${profile.avatarColor||'#3B82F6'};">
-            ${getInitials(profile.name)}
+            ${profile.photoURL
+              ? `<img src="${esc(profile.photoURL)}" alt="${esc(getInitials(profile.name))}"
+                  onerror="this.style.display='none';"
+                  style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />${getInitials(profile.name)}`
+              : getInitials(profile.name)}
           </div>
+          <button id="sync-photo-btn" type="button" title="Sincronizar foto do Microsoft 365"
+            style="position:absolute;top:0;right:calc(50% - 50px);background:var(--bg-card);
+            border:1px solid var(--border-default);border-radius:50%;width:30px;height:30px;
+            display:flex;align-items:center;justify-content:center;cursor:pointer;
+            color:var(--text-secondary);font-size:0.875rem;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
+            🔄
+          </button>
         </div>
         <div class="profile-name">${esc(profile.name)}</div>
         <div class="profile-email">${esc(profile.email)}</div>
@@ -603,6 +614,62 @@ function _bindProfileEvents(profile) {
   })();
 
   // Save preferences (notifications + palette + som de conclusão)
+  // ── 4.34.5+ Botão "Sincronizar foto" no avatar ──
+  // Faz fetch da foto do Microsoft 365 via Graph com o accessToken do user
+  // (já em sessionStorage). Se token expirou, pede pro user relogar.
+  document.getElementById('sync-photo-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('sync-photo-btn');
+    btn.style.opacity = '0.5';
+    btn.textContent = '⏳';
+    try {
+      const token = sessionStorage.getItem('ms-access-token');
+      const exp = parseInt(sessionStorage.getItem('ms-token-expires') || '0', 10);
+      if (!token || exp <= Date.now()) {
+        toast.warning('Sessão SSO expirou. Faça logout e login novamente pra atualizar a foto.');
+        return;
+      }
+      const res = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 404) {
+        toast.info('Você não tem foto cadastrada no Microsoft 365.');
+        return;
+      }
+      if (!res.ok) throw new Error('Graph ' + res.status);
+      const blob = await res.blob();
+      // Resize via canvas (mesma fn de auth.js mas inline aqui pra desacoplar)
+      const dataUrl = await new Promise(resolve => {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          const c = document.createElement('canvas');
+          c.width = c.height = 96;
+          const ctx = c.getContext('2d');
+          const ss = Math.min(img.width, img.height);
+          ctx.drawImage(img, (img.width-ss)/2, (img.height-ss)/2, ss, ss, 0, 0, 96, 96);
+          URL.revokeObjectURL(url);
+          resolve(c.toDataURL('image/jpeg', 0.85));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+        img.src = url;
+      });
+      if (!dataUrl) throw new Error('falha ao processar imagem');
+      await updateUserProfile(store.get('currentUser').uid, { photoURL: dataUrl });
+      toast.success('Foto sincronizada! Recarregue a página pra ver em todos os lugares.');
+      // Atualiza o avatar grande na hora
+      const big = document.getElementById('profile-avatar-big');
+      if (big) {
+        big.innerHTML = `<img src="${dataUrl}"
+          style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />${getInitials(profile.name)}`;
+      }
+    } catch (e) {
+      toast.error('Falha ao sincronizar: ' + e.message);
+    } finally {
+      btn.textContent = '🔄';
+      btn.style.opacity = '1';
+    }
+  });
+
   document.getElementById('prefs-save-btn')?.addEventListener('click', async () => {
     const btn = document.getElementById('prefs-save-btn');
     if(btn) { btn.classList.add('loading'); btn.disabled=true; }

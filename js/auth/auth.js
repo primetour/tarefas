@@ -345,6 +345,43 @@ export function initAuthObserver(onReady) {
         store.set('currentUser',     firebaseUser);
         store.set('userProfile',     profile);
 
+        // ── 4.34.5+ Captura on-load da foto SSO ──
+        // Se o user já está logado mas profile.photoURL está vazio (ex: criou
+        // conta antes de 4.34.1, ou login fresh sem foto no MS365 na época),
+        // tenta capturar agora usando msAccessToken que está em sessionStorage.
+        // Isso evita ter que pedir logout-login a cada user. Captura é silenciosa
+        // e idempotente — se falhar, segue normal e tenta de novo na próxima sessão.
+        if (!profile.photoURL && firebaseUser.uid) {
+          const cachedToken = (() => {
+            try {
+              const t = sessionStorage.getItem('ms-access-token');
+              const exp = parseInt(sessionStorage.getItem('ms-token-expires') || '0', 10);
+              if (t && exp > Date.now()) return t;
+            } catch (_) {}
+            return null;
+          })();
+          if (cachedToken) {
+            (async () => {
+              try {
+                const res = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+                  headers: { Authorization: `Bearer ${cachedToken}` },
+                });
+                if (!res.ok) return;
+                const blob = await res.blob();
+                const dataUrl = await blobToResizedDataUrl(blob, 96);
+                if (!dataUrl) return;
+                await updateDoc(doc(db, 'users', firebaseUser.uid), { photoURL: dataUrl })
+                  .catch(e => console.warn('[Auth] save photoURL on-load falhou:', e.message));
+                const cur = store.get('userProfile');
+                if (cur && cur.id === firebaseUser.uid) {
+                  store.set('userProfile', { ...cur, photoURL: dataUrl });
+                }
+                console.log('[Auth] photoURL capturada on-load via Graph API.');
+              } catch (e) { /* silent */ }
+            })();
+          }
+        }
+
         // Carregar role + workspaces em paralelo (otimização de latência)
         const roleId = profile.roleId || profile.role || 'member';
         const [roleDoc, _ws] = await Promise.all([
