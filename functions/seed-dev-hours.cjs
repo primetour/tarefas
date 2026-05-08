@@ -184,6 +184,16 @@ const ENTRIES = [
     multiplierIds:  [],
     completedAt:    new Date('2026-05-08T17:30:00-03:00'),
   },
+  {
+    releaseVersion: '4.34.9',
+    releaseSlug:    '20260508-presence-ranking-photo',
+    title:          'Ranking "tempo de uso" mostra foto SSO no avatar',
+    summary:        'renderPresenceUsage em dashboards.js renderizava avatar hardcoded com siglas — Rene aparecia como #1 com 24h55min mas bolinha mostrava "RC". Fix: presenceUsage.js agora puxa photoURL+avatarColor do store.users e adiciona ao breakdown; renderPresenceUsage usa <img> se disponível, fallback pra siglas via onerror.',
+    profile:        'bugfix',
+    bucket:         'micro',           // 0.25-0.5h (~0.4h)
+    multiplierIds:  [],
+    completedAt:    new Date('2026-05-08T18:00:00-03:00'),
+  },
 ];
 
 // ─── Buckets (espelha js/services/devHours.js BUCKETS) ─────
