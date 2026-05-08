@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 28,
+  minor: 29,
   patch: 0,
-  build: '20260508-cc-virtual-slots-agenda-previa',
+  build: '20260508-goals-filter-rename-overlay',
 };
 
 /** "1.2.0" */

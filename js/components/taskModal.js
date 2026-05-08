@@ -785,8 +785,10 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         };
 
         // Atualiza estado visual do botão trigger
-        const btnIcon   = document.getElementById('tm-goal-btn-icon');
-        const btnAction = document.getElementById('tm-goal-btn-action');
+        // 4.29+: removido "Escolher / Editar" no canto direito; label central
+        // virou caixa-alta ("SELECIONAR METAS"). Quando há metas vinculadas,
+        // o label mostra contagem (ex: "2 METAS · 3 VÍNCULOS").
+        const btnIcon = document.getElementById('tm-goal-btn-icon');
         const refreshBtnLabel = () => {
           const links = task.metaLinks || [];
           if (!links.length) {
@@ -796,8 +798,12 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
             btn.style.border = '1.5px dashed var(--border-default)';
             btn.style.color = 'var(--text-muted)';
             if (btnIcon) btnIcon.textContent = '🎯';
-            if (btnLbl)  btnLbl.textContent = 'Vincular meta(s)…';
-            if (btnAction) { btnAction.textContent = 'Escolher'; btnAction.style.color = 'var(--text-muted)'; }
+            if (btnLbl) {
+              btnLbl.textContent = 'SELECIONAR METAS';
+              btnLbl.style.fontWeight = '700';
+              btnLbl.style.letterSpacing = '.05em';
+              btnLbl.style.textTransform = 'uppercase';
+            }
             return;
           }
           // Agrega por meta para o resumo do botão
@@ -811,6 +817,9 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           btn.style.color = 'var(--text-primary)';
           if (btnIcon) btnIcon.textContent = '🎯';
           if (btnLbl) {
+            btnLbl.style.fontWeight = '600';
+            btnLbl.style.letterSpacing = '';
+            btnLbl.style.textTransform = '';
             btnLbl.innerHTML = `
               <span style="color:var(--text-primary);font-weight:600;">
                 ${distinctMetas.size} meta${distinctMetas.size === 1 ? '' : 's'} vinculada${distinctMetas.size === 1 ? '' : 's'}
@@ -819,7 +828,6 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
                 · ${links.length} vínculo${links.length === 1 ? '' : 's'}
               </span>`;
           }
-          if (btnAction) { btnAction.textContent = 'Editar'; btnAction.style.color = color; }
           syncHiddenSelect();
         };
 
@@ -1616,9 +1624,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
             background:transparent;border:1.5px dashed var(--border-default);color:var(--text-muted);">
           <span id="tm-goal-btn-icon" style="font-size:1rem;flex-shrink:0;">🎯</span>
           <span id="tm-goal-btn-label" style="flex:1;overflow:hidden;text-overflow:ellipsis;
-            white-space:nowrap;">Vincular meta…</span>
-          <span id="tm-goal-btn-action" style="font-size:0.6875rem;font-weight:700;
-            letter-spacing:.05em;text-transform:uppercase;opacity:0.7;">Escolher</span>
+            white-space:nowrap;letter-spacing:.05em;text-transform:uppercase;font-weight:700;">SELECIONAR METAS</span>
         </button>
         <!-- Cartão com contexto da meta (escopo + identidade) -->
         <div id="tm-goal-info" style="margin-top:6px;display:none;
@@ -4057,20 +4063,70 @@ function showEvidenceModal(taskId, taskData) {
                   }).join('')}
                 </div>
               ` : `
+                <!-- 4.29+ Visual unificado com modal de criação: hierárquico
+                     Plano > Pilar > Meta com checkboxes (multi-select). -->
                 <div>
-                  <label style="${LBL2}">Meta do pilar</label>
-                  <select id="dc-meta-sel" class="filter-select" style="${F2}">
-                    <option value="">— Selecione a meta —</option>
-                    ${metaOptions.map(m => `<option value="${esc2(m.value)}"
-                      ${m.value === activeMetaValue ? 'selected' : ''}>
-                      ${esc2(m.metaName)} — Pilar: ${esc2(m.pilarName)} (${esc2(m.goalName)})
-                    </option>`).join('')}
-                  </select>
-                </div>
-                <div id="dc-pilar-info" style="display:${activeMeta ? 'block' : 'none'};
-                  background:var(--bg-hover);border-radius:var(--radius-sm);padding:8px 12px;
-                  font-size:0.75rem;color:var(--text-muted);">
-                  ${activeMeta ? `<strong>Pilar:</strong> ${esc2(activeMeta.pilarName)} · <strong>Meta geral:</strong> ${esc2(activeMeta.goalName)}` : ''}
+                  <label style="${LBL2}">Selecionar metas evidenciadas</label>
+                  <input type="text" id="dc-meta-search"
+                    placeholder="Buscar meta, pilar ou plano…"
+                    style="${F2};padding:8px 10px;font-size:0.8125rem;
+                      background:var(--bg-elevated);border:1px solid var(--border-default);
+                      border-radius:6px;color:var(--text-primary);outline:none;margin-bottom:8px;" />
+                  <div id="dc-meta-tree"
+                    style="max-height:260px;overflow-y:auto;border:1px solid var(--border-subtle);
+                      border-radius:6px;background:var(--bg-elevated);padding:6px;">
+                    ${(() => {
+                      // Agrupa metaOptions por goal → pilar
+                      const groups = {};
+                      metaOptions.forEach(m => {
+                        const gKey = m.goalId;
+                        if (!groups[gKey]) groups[gKey] = { goalName: m.goalName, pilares: {} };
+                        const pKey = m.pilarIdx;
+                        if (!groups[gKey].pilares[pKey]) {
+                          groups[gKey].pilares[pKey] = { pilarName: m.pilarName, metas: [] };
+                        }
+                        groups[gKey].pilares[pKey].metas.push(m);
+                      });
+                      return Object.entries(groups).map(([gid, gd]) => `
+                        <div class="dc-goal-block" data-search-goal="${esc2(gd.goalName.toLowerCase())}"
+                          style="margin-bottom:6px;">
+                          <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+                            letter-spacing:.04em;color:var(--text-muted);padding:6px 4px 4px;
+                            border-bottom:1px solid var(--border-subtle);">
+                            ${esc2(gd.goalName)}
+                          </div>
+                          ${Object.entries(gd.pilares).map(([pi, pd]) => `
+                            <div class="dc-pilar-block" data-search-pilar="${esc2(pd.pilarName.toLowerCase())}"
+                              style="margin:4px 0 2px;padding-left:6px;">
+                              <div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);
+                                padding:4px 0;">
+                                ◆ ${esc2(pd.pilarName)}
+                              </div>
+                              ${pd.metas.map(m => `
+                                <label class="dc-meta-row" data-meta-value="${esc2(m.value)}"
+                                  data-search-meta="${esc2(m.metaName.toLowerCase())}"
+                                  style="display:flex;align-items:center;gap:8px;padding:5px 8px 5px 16px;
+                                    cursor:pointer;border-radius:4px;font-size:0.8125rem;
+                                    transition:background .1s;line-height:1.3;">
+                                  <input type="checkbox" class="dc-meta-cb"
+                                    value="${esc2(m.value)}"
+                                    ${m.value === activeMetaValue ? 'checked' : ''}
+                                    style="cursor:pointer;accent-color:var(--brand-gold);flex-shrink:0;" />
+                                  <span style="flex:1;color:var(--text-primary);">
+                                    ${esc2(m.metaName)}
+                                  </span>
+                                </label>
+                              `).join('')}
+                            </div>
+                          `).join('')}
+                        </div>
+                      `).join('');
+                    })()}
+                  </div>
+                  <div id="dc-meta-count" style="font-size:0.6875rem;color:var(--text-muted);
+                    margin-top:6px;">
+                    ${activeMeta ? '1 meta selecionada' : '0 metas selecionadas'}
+                  </div>
                 </div>
               `}
               <div>
@@ -4115,28 +4171,61 @@ function showEvidenceModal(taskId, taskData) {
       if (body) body.style.display = e.target.checked ? 'flex' : 'none';
     });
 
-    // Meta change → show pilar info + reload periods
-    document.getElementById('dc-meta-sel')?.addEventListener('change', async e => {
-      const val = e.target.value;
-      const meta = metaOptions.find(m => m.value === val);
-      const infoEl = document.getElementById('dc-pilar-info');
-      if (meta) {
-        if (infoEl) {
-          infoEl.style.display = 'block';
-          infoEl.innerHTML = `<strong>Pilar:</strong> ${esc2(meta.pilarName)} · <strong>Meta geral:</strong> ${esc2(meta.goalName)}`;
+    // 4.29+ Multi-select: tracks selected meta values + sync count + period list
+    const dcSelected = new Set(activeMetaValue ? [activeMetaValue] : []);
+    const updateDcCount = () => {
+      const el = document.getElementById('dc-meta-count');
+      if (!el) return;
+      const n = dcSelected.size;
+      el.textContent = `${n} meta${n === 1 ? '' : 's'} selecionada${n === 1 ? '' : 's'}`;
+      el.style.color = n > 0 ? 'var(--brand-gold)' : 'var(--text-muted)';
+      el.style.fontWeight = n > 0 ? '600' : '400';
+    };
+    document.querySelectorAll('.dc-meta-cb').forEach(cb => {
+      cb.addEventListener('change', async (e) => {
+        const v = e.target.value;
+        if (e.target.checked) dcSelected.add(v);
+        else dcSelected.delete(v);
+        updateDcCount();
+        // Atualiza períodos com base na PRIMEIRA meta selecionada
+        const firstVal = [...dcSelected][0];
+        const firstMeta = firstVal ? metaOptions.find(m => m.value === firstVal) : null;
+        if (firstMeta) {
+          try {
+            const { generatePendingPeriods } = await import('../services/goals.js');
+            periods = generatePendingPeriods(firstMeta.goal);
+            const pSel = document.getElementById('dc-periodo-sel');
+            if (pSel) pSel.innerHTML =
+              `<option value="">Selecione o período…</option>` +
+              periods.map(p => `<option value="${esc2(p.label)}">${esc2(p.label)}</option>`).join('') +
+              `<option value="__custom__">Informar manualmente…</option>`;
+          } catch(err) {}
         }
-        try {
-          const { generatePendingPeriods } = await import('../services/goals.js');
-          periods = generatePendingPeriods(meta.goal);
-          const pSel = document.getElementById('dc-periodo-sel');
-          if (pSel) pSel.innerHTML =
-            `<option value="">Selecione o período…</option>` +
-            periods.map(p => `<option value="${esc2(p.label)}">${esc2(p.label)}</option>`).join('') +
-            `<option value="__custom__">Informar manualmente…</option>`;
-        } catch(err) {}
-      } else {
-        if (infoEl) infoEl.style.display = 'none';
-      }
+      });
+    });
+    // Busca client-side
+    const searchEl = document.getElementById('dc-meta-search');
+    searchEl?.addEventListener('input', () => {
+      const q = (searchEl.value || '').toLowerCase().trim();
+      // Esconde/mostra metas individualmente; pilares e plans somem se nenhuma meta visível
+      document.querySelectorAll('.dc-meta-row').forEach(row => {
+        const txt = (row.dataset.searchMeta || '');
+        const pilar = row.closest('.dc-pilar-block')?.dataset?.searchPilar || '';
+        const goal = row.closest('.dc-goal-block')?.dataset?.searchGoal || '';
+        const match = !q || txt.includes(q) || pilar.includes(q) || goal.includes(q);
+        row.style.display = match ? 'flex' : 'none';
+      });
+      // Esconde pilares sem nenhuma meta visível, idem para goal blocks
+      document.querySelectorAll('.dc-pilar-block').forEach(pb => {
+        const anyVisible = [...pb.querySelectorAll('.dc-meta-row')]
+          .some(r => r.style.display !== 'none');
+        pb.style.display = anyVisible ? '' : 'none';
+      });
+      document.querySelectorAll('.dc-goal-block').forEach(gb => {
+        const anyVisible = [...gb.querySelectorAll('.dc-pilar-block')]
+          .some(pb => pb.style.display !== 'none');
+        gb.style.display = anyVisible ? '' : 'none';
+      });
     });
 
     document.getElementById('dc-periodo-sel')?.addEventListener('change', e => {
@@ -4153,8 +4242,12 @@ function showEvidenceModal(taskId, taskData) {
       const sendCsat  = document.getElementById('dc-csat-check')?.checked;
       const regMeta   = document.getElementById('dc-meta-check')?.checked;
       const csatEmail = document.getElementById('dc-csat-email')?.value?.trim();
-      const metaVal   = document.getElementById('dc-meta-sel')?.value || '';
-      const selMeta   = metaOptions.find(m => m.value === metaVal);
+      // 4.29+ Multi-select: lê todos os checkboxes marcados em vez de single select
+      const selectedValues = [...document.querySelectorAll('.dc-meta-cb:checked')]
+        .map(cb => cb.value);
+      const selMetas = selectedValues
+        .map(v => metaOptions.find(m => m.value === v))
+        .filter(Boolean);
       const pSel      = document.getElementById('dc-periodo-sel')?.value;
       const pTxt      = document.getElementById('dc-periodo-txt')?.value?.trim();
       const periodoRef = pSel === '__custom__' ? pTxt : pSel;
@@ -4171,18 +4264,23 @@ function showEvidenceModal(taskId, taskData) {
           updates.periodoRef = periodoRef || '';
           updates.linkComprovacao = link;
           updates.confirmadaEvidencia = true;
-        } else if (selMeta) {
-          // Legado: cria 1 link e deixa tasks.js sincronizar goalId/goalMetaRef.
-          // Atribui aos assignees existentes (ou gestor se não houver).
+        } else if (selMetas.length) {
+          // 4.29+ Multi-select: cria N links (um por meta selecionada × cada assignee)
           const assigneesArr = Array.isArray(taskData.assignees) ? taskData.assignees : [];
           const recipients = assigneesArr.length
             ? assigneesArr
             : (taskData.createdBy ? [taskData.createdBy] : []);
-          updates.metaLinks = recipients.map(uid => ({
-            userId: uid,
-            goalId: selMeta.goalId,
-            metaRef: `${selMeta.pilarIdx}:${selMeta.metaIdx}`,
-          }));
+          const links = [];
+          recipients.forEach(uid => {
+            selMetas.forEach(m => {
+              links.push({
+                userId: uid,
+                goalId: m.goalId,
+                metaRef: `${m.pilarIdx}:${m.metaIdx}`,
+              });
+            });
+          });
+          updates.metaLinks = links;
           updates.periodoRef = periodoRef || '';
           updates.linkComprovacao = link;
           updates.confirmadaEvidencia = true;

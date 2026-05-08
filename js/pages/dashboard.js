@@ -97,14 +97,25 @@ export async function renderDashboard(container) {
     const in30Days = new Date(todayStart); in30Days.setDate(in30Days.getDate()+30);
     const isManager = store.can('system_manage_users') || store.can('workspace_create');
 
-    const [tasks, projects, pendingReqs, myGoals, myAbsences, allAbsences] = await Promise.all([
+    const [tasks, projects, pendingReqs, allGoals, myAbsences, allAbsences] = await Promise.all([
       fetchTasks().catch(() => []),
       fetchProjects().catch(() => []),
       countPendingRequests().catch(() => 0),
-      fetchGoals({ type: 'personal' }).catch(() => []),
+      fetchGoals().catch(() => []),
       fetchUserAbsences(uid).catch(() => []),
       isManager ? fetchAllAbsences({ startDate: todayStart, endDate: in30Days }).catch(() => []) : Promise.resolve([]),
     ]);
+
+    // 4.29+ — Bug fix: card "Minhas Metas" mostrava TODAS as metas em vez
+    // de filtrar pelo vínculo do user. Causa: fetchGoals() não aceita filtro
+    // (o parâmetro `{type:'personal'}` era ignorado).
+    // Fix: filtrar client-side por responsavelIds (formato novo) ou
+    // responsavelId (legado) — apenas metas onde o user é responsável.
+    const { getResponsavelIds } = await import('../services/goals.js');
+    const myGoals = allGoals.filter(g => {
+      const ids = getResponsavelIds(g);
+      return ids.includes(uid);
+    });
 
     // Guard: user navigated away during async fetch — container no longer in DOM
     if (!document.getElementById('dash-stats')) return;

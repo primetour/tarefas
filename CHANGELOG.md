@@ -37,6 +37,51 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.29.0+20260508-goals-filter-rename-overlay] — 2026-05-08
+
+Release **MINOR** — 3 melhorias em metas pedidas pelo user.
+
+### 1) Meu Painel — "Minhas Metas" só mostra metas vinculadas ao user
+**Bug**: Card "◎ Minhas Metas" mostrava TODAS as metas do sistema. Causa:
+`fetchGoals({ type:'personal' })` ignorava o filtro (a função não aceita
+parâmetros). Resultado: card aparecia pra todo user, mesmo sem vínculo.
+
+**Fix**: filtra client-side via `getResponsavelIds(goal)` (cobre formato
+novo `responsavelIds[]` e legado `responsavelId`). Apenas metas onde o
+user é responsável aparecem agora.
+
+### 2) Modal de tarefa — botão de meta renomeado e simplificado
+**Antes**: `🎯 Vincular meta…` + chip "ESCOLHER" no canto direito
+**Agora**: `🎯 SELECIONAR METAS` (caixa-alta, sem chip extra)
+
+Quando há metas vinculadas, mostra contagem (`2 metas vinculadas · 3 vínculos`).
+Removido o "ESCOLHER / Editar" que duplicava o feedback visual.
+
+### 3) Popup "Tarefa concluída" — visual unificado com modal de criação
+**Bug**: a seção de seleção de meta no overlay de conclusão usava um
+`<select>` flat com todas metas listadas linearmente — destoava da
+visual hierárquica do modal de criação.
+
+**Fix**: substituído por uma árvore hierárquica idêntica ao picker do
+modal de criação:
+- **Plano (goalName)** como header em caixa-alta + linha divisória
+- **◆ Pilar** indentado, em negrito, cinza médio
+- **Metas** em sub-itens com checkbox individual
+- Campo de busca client-side (filtra por meta, pilar e plano)
+- Multi-select (várias metas evidenciadas pela mesma tarefa)
+- Contador visual de selecionadas no rodapé da árvore
+- Períodos atualizam com base na PRIMEIRA meta selecionada
+
+Confirm: gera N `metaLinks` (um por combinação assignee × meta selecionada).
+
+### Files
+- `js/pages/dashboard.js` (filtro myGoals via getResponsavelIds)
+- `js/components/taskModal.js` (label SELECIONAR METAS + árvore na overlay
+  de conclusão + multi-select com busca + handler atualizado)
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+---
+
 ## [4.28.0+20260508-cc-virtual-slots-agenda-previa] — 2026-05-08
 
 Release **MINOR** — Calendário de Conteúdo passa a exibir a "agenda prévia"
