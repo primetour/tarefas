@@ -37,6 +37,30 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.31.1+20260508-fix-csat-response-path] — 2026-05-08
+
+PATCH — fix: CSAT custom não renderizava multi-pergunta na resposta.
+
+### Bug
+Após v4.31.0, surveys com `questions[]` ainda exibiam só 1 pergunta na
+página `/csat-response.html`.
+
+### Causa raiz
+**Duas cópias do arquivo** no repo: `csat-response.html` (raiz) e
+`js/csat-response.html` (subpasta). A v4.31.0 editou só `/js/`. Os links
+gerados pelo serviço `csat.js` usam `${basePath}/csat-response.html` que
+aponta pra **raiz**.
+
+### Fix
+Sincronizadas as duas cópias (`cp js/csat-response.html csat-response.html`).
+Cogitar consolidar em uma só fonte numa próxima — por hora, ambas têm o
+mesmo conteúdo.
+
+### Files
+- `csat-response.html` (sincronizada com a versão de `/js/`)
+
+---
+
 ## [4.31.0+20260508-csat-custom-questions] — 2026-05-08
 
 Release **MINOR** — Fase 1 do redesenho do CSAT.

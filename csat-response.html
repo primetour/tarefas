@@ -208,7 +208,6 @@
     const hashQuery = new URLSearchParams(window.location.hash.replace(/^#csat-response\?/, ''));
     const token     = params.get('token') || hashQuery.get('token');
     const surveyId  = params.get('id')    || hashQuery.get('id');
-    const digestEmail = params.get('digest') || hashQuery.get('digest');
     const preScore  = parseInt(params.get('score') || hashQuery.get('score') || '0');
 
     const SCORE_DATA = {
@@ -224,6 +223,7 @@
     // ─── Load Firebase config from parent app (same origin) ──
     let db;
     try {
+      // Try to read firebaseConfig from sibling config.js
       const cfgModule = await import('./js/config.js');
       const app = initializeApp(cfgModule.firebaseConfig, 'csat-public');
       db = getFirestore(app);
@@ -232,147 +232,48 @@
       throw e;
     }
 
-    // ─── Digest mode: multiple surveys for the same client ──
-    if (digestEmail) {
-      try {
-        const q = query(
-          collection(db, 'csat_surveys'),
-          where('clientEmail', '==', digestEmail.trim().toLowerCase()),
-          where('status', '==', 'sent')
-        );
-        const snap = await getDocs(q);
-        const surveys = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (!surveys.length) {
-          showError('Nenhuma pesquisa pendente encontrada.');
-        } else {
-          renderDigestForm(surveys);
-        }
-      } catch(e) {
-        showError('Erro ao carregar pesquisas: ' + e.message);
+    // ─── Load survey ──────────────────────────────────────
+    let survey = null;
+    try {
+      if (surveyId) {
+        const snap = await getDoc(doc(db, 'csat_surveys', surveyId));
+        if (snap.exists()) survey = { id: snap.id, ...snap.data() };
+      } else if (token) {
+        const q   = query(collection(db, 'csat_surveys'), where('token','==',token), limit(1));
+        const snp = await getDocs(q);
+        if (!snp.empty) survey = { id: snp.docs[0].id, ...snp.docs[0].data() };
       }
-    } else {
-      // ─── Single survey mode ──────────────────────────────
-      let survey = null;
-      try {
-        if (surveyId) {
-          const snap = await getDoc(doc(db, 'csat_surveys', surveyId));
-          if (snap.exists()) survey = { id: snap.id, ...snap.data() };
-        } else if (token) {
-          const q = query(collection(db, 'csat_surveys'), where('token','==',token), limit(1));
-          const snp = await getDocs(q);
-          if (!snp.empty) survey = { id: snp.docs[0].id, ...snp.docs[0].data() };
-        }
-      } catch(e) {
-        showError('Erro ao carregar pesquisa: ' + e.message);
-        throw e;
-      }
-
-      if (!survey) {
-        showError('Pesquisa não encontrada ou link inválido.');
-      } else {
-        const expiresAt = survey.expiresAt?.toDate ? survey.expiresAt.toDate() : new Date(survey.expiresAt || 0);
-        if (expiresAt < new Date()) {
-          showExpired(survey);
-        } else if (survey.status === 'responded') {
-          showAlreadyDone(survey);
-        } else {
-          renderForm(survey, preScore || 0);
-        }
-      }
+    } catch(e) {
+      showError('Erro ao carregar pesquisa: ' + e.message);
+      throw e;
     }
 
-    // ─── Digest form: multiple tasks to rate ──────────────
-    function renderDigestForm(surveys) {
-      const scores = {};
-      surveys.forEach(s => { scores[s.id] = 0; });
-
-      card.style.maxWidth = '600px';
-      card.innerHTML = `
-        <div class="brand">PRIMETOUR</div>
-        <h1>Avalie nossas entregas</h1>
-        <p class="subtitle">Temos ${surveys.length} entregas para você avaliar. Sua opinião é fundamental!</p>
-
-        <div id="digest-list" style="text-align:left;display:flex;flex-direction:column;gap:16px;margin-bottom:24px;">
-          ${surveys.map((s, i) => `
-            <div style="border:1px solid var(--border-default);border-radius:var(--radius-md);
-              padding:16px;background:var(--bg-surface);">
-              <div style="font-size:0.8125rem;font-weight:600;margin-bottom:4px;">${i+1}. ${escHtml(s.taskTitle)}</div>
-              ${s.projectName ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;">${escHtml(s.projectName)}</div>` : ''}
-              <div class="score-picker" style="justify-content:flex-start;gap:6px;margin-bottom:0;">
-                ${[1,2,3,4,5].map(n => {
-                  const sd = SCORE_DATA[n];
-                  return `<button class="score-btn digest-score-btn" data-survey="${s.id}" data-score="${n}" type="button"
-                    style="min-width:52px;padding:8px 4px;">
-                    <span class="score-btn-emoji" style="font-size:1.25rem;">${sd.emoji}</span>
-                    <span class="score-btn-num" style="font-size:0.875rem;">${n}</span>
-                  </button>`;
-                }).join('')}
-              </div>
-            </div>
-          `).join('')}
-        </div>
-
-        <textarea id="digest-comment" rows="3" maxlength="500"
-          placeholder="Comentário geral (opcional)..."></textarea>
-
-        <button class="btn-submit" id="digest-submit" type="button">Enviar avaliações</button>
-      `;
-
-      // Wire score buttons
-      card.querySelectorAll('.digest-score-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const sid = btn.dataset.survey;
-          const sc  = parseInt(btn.dataset.score);
-          scores[sid] = sc;
-          card.querySelectorAll(`.digest-score-btn[data-survey="${sid}"]`).forEach(b => b.classList.remove('selected'));
-          btn.classList.add('selected');
-        });
-      });
-
-      // Wire submit
-      document.getElementById('digest-submit').addEventListener('click', async () => {
-        const unanswered = surveys.filter(s => !scores[s.id]);
-        if (unanswered.length) {
-          alert(`Selecione uma nota para todas as tarefas. Faltam ${unanswered.length}.`);
-          return;
-        }
-
-        const submitBtn = document.getElementById('digest-submit');
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Enviando...';
-        const comment = document.getElementById('digest-comment')?.value?.trim() || '';
-
-        try {
-          for (const s of surveys) {
-            await updateDoc(doc(db, 'csat_surveys', s.id), {
-              score:       scores[s.id],
-              comment,
-              status:      'responded',
-              respondedAt: serverTimestamp(),
-            });
-          }
-
-          const avgScore = Math.round(surveys.reduce((sum, s) => sum + scores[s.id], 0) / surveys.length * 10) / 10;
-          const sd = SCORE_DATA[Math.round(avgScore)];
-          card.innerHTML = `
-            <div class="brand">PRIMETOUR</div>
-            <span class="success-icon">${sd?.emoji || '✓'}</span>
-            <div class="success-title" style="color:${sd?.color || 'var(--color-success)'};">Obrigado!</div>
-            <p class="success-msg">
-              Você avaliou <strong>${surveys.length} entregas</strong> com média <strong style="color:${sd?.color};">${avgScore}/5</strong>.<br>
-              Suas avaliações são muito importantes para continuarmos melhorando.
-            </p>
-          `;
-        } catch(err) {
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Enviar avaliações';
-          alert('Erro ao enviar: ' + err.message);
-        }
-      });
+    if (!survey) {
+      return showError('Pesquisa não encontrada ou link inválido.');
     }
+
+    // Expirado?
+    const expiresAt = survey.expiresAt?.toDate ? survey.expiresAt.toDate() : new Date(survey.expiresAt || 0);
+    if (expiresAt < new Date()) {
+      return showExpired(survey);
+    }
+
+    // Já respondido?
+    if (survey.status === 'responded') {
+      return showAlreadyDone(survey);
+    }
+
+    // ─── Render form ──────────────────────────────────────
+    // 4.31+ Multi-pergunta: se survey.questions[] tem itens, renderiza N perguntas;
+    // senão cai no modo legado (1 pergunta padrão score+comment).
+    const isMulti = Array.isArray(survey.questions) && survey.questions.length > 0;
+    let selectedScore = preScore || 0;
+    const multiResponses = {}; // { qId: value }
+    renderForm(survey, selectedScore);
 
     function renderForm(s, initScore) {
-      let selectedScore = initScore || 0;
+      if (isMulti) return renderMultiForm(s, initScore);
+
       card.innerHTML = `
         <div class="brand">PRIMETOUR</div>
         <div class="task-chip">✓ ${escHtml(s.taskTitle)}</div>
@@ -408,7 +309,7 @@
         });
       });
 
-      // Submit
+      // Submit (legado single)
       document.getElementById('submit-btn').addEventListener('click', async () => {
         if (!selectedScore) {
           document.getElementById('score-error').style.display = 'block';
@@ -430,6 +331,174 @@
           showSuccess(selectedScore, comment);
         } catch(err) {
           btn.disabled    = false;
+          btn.textContent = 'Enviar avaliação';
+          showError('Erro ao enviar: ' + err.message);
+        }
+      });
+    }
+
+    // 4.31+ Multi-pergunta render
+    function renderMultiForm(s, initScore) {
+      // Preenche score da URL na PRIMEIRA pergunta type=score (UX: cliente clica
+      // em "score 4" no e-mail e já vê a primeira pergunta marcada)
+      const firstScoreQ = s.questions.find(q => q.type === 'score');
+      if (initScore && firstScoreQ) multiResponses[firstScoreQ.id] = initScore;
+
+      const renderQuestion = (q, idx) => {
+        const reqMark = q.required ? '<span style="color:#EF4444;">*</span>' : '';
+        if (q.type === 'score') {
+          const cur = multiResponses[q.id];
+          return `<div class="multi-q-block" data-qid="${escHtml(q.id)}" data-qtype="score" data-required="${q.required ? '1':'0'}"
+            style="margin-bottom:24px;padding-bottom:20px;${idx > 0 ? 'border-top:1px solid #E5E7EB;padding-top:20px;' : ''}">
+            <div style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:14px;line-height:1.4;">
+              ${idx+1}. ${escHtml(q.label)} ${reqMark}
+            </div>
+            <div class="score-picker">
+              ${[1,2,3,4,5].map(n => {
+                const sd = SCORE_DATA[n];
+                return `<button class="score-btn ${n===cur?'selected':''}"
+                  data-mq-id="${escHtml(q.id)}" data-score="${n}" type="button">
+                  <span class="score-btn-emoji">${sd.emoji}</span>
+                  <span class="score-btn-num">${n}</span>
+                  <span class="score-btn-lbl">${sd.label}</span>
+                </button>`;
+              }).join('')}
+            </div>
+          </div>`;
+        }
+        if (q.type === 'yesno') {
+          const cur = multiResponses[q.id];
+          return `<div class="multi-q-block" data-qid="${escHtml(q.id)}" data-qtype="yesno" data-required="${q.required ? '1':'0'}"
+            style="margin-bottom:24px;padding-bottom:20px;${idx > 0 ? 'border-top:1px solid #E5E7EB;padding-top:20px;' : ''}">
+            <div style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:14px;line-height:1.4;">
+              ${idx+1}. ${escHtml(q.label)} ${reqMark}
+            </div>
+            <div style="display:flex;gap:10px;">
+              ${[
+                {v:'yes', l:'Sim', emoji:'👍', color:'#22C55E'},
+                {v:'no',  l:'Não', emoji:'👎', color:'#EF4444'},
+              ].map(o => `<button type="button" class="score-btn ${cur===o.v?'selected':''}"
+                data-mq-id="${escHtml(q.id)}" data-yn="${o.v}"
+                style="border-color:${cur===o.v?o.color:'var(--border)'};
+                       background:${cur===o.v?o.color+'15':'#fff'};">
+                <span class="score-btn-emoji">${o.emoji}</span>
+                <span class="score-btn-lbl" style="font-weight:600;">${o.l}</span>
+              </button>`).join('')}
+            </div>
+          </div>`;
+        }
+        // text
+        return `<div class="multi-q-block" data-qid="${escHtml(q.id)}" data-qtype="text" data-required="${q.required ? '1':'0'}"
+          style="margin-bottom:24px;padding-bottom:20px;${idx > 0 ? 'border-top:1px solid #E5E7EB;padding-top:20px;' : ''}">
+          <div style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:14px;line-height:1.4;">
+            ${idx+1}. ${escHtml(q.label)} ${reqMark}
+          </div>
+          <textarea data-mq-id="${escHtml(q.id)}" rows="3" maxlength="500"
+            placeholder="${q.required ? 'Sua resposta…' : 'Opcional — conte-nos sua opinião…'}"
+            style="width:100%;"></textarea>
+        </div>`;
+      };
+
+      card.innerHTML = `
+        <div class="brand">PRIMETOUR</div>
+        <div class="task-chip">✓ ${escHtml(s.taskTitle)}</div>
+        <h1 style="margin-bottom:8px;">Avaliação</h1>
+        <p class="subtitle">${s.customMessage || 'Sua opinião é muito importante para nós. Algumas perguntas rápidas abaixo:'}</p>
+        <div id="multi-questions" style="text-align:left;margin-top:24px;">
+          ${s.questions.map((q,i) => renderQuestion(q,i)).join('')}
+        </div>
+        <p id="multi-error" class="error-msg" style="display:none;text-align:center;"></p>
+        <button class="btn-submit" id="submit-btn" type="button">Enviar avaliação</button>
+      `;
+
+      // Score buttons
+      card.querySelectorAll('.score-btn[data-mq-id][data-score]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const qid = btn.dataset.mqId;
+          const v = parseInt(btn.dataset.score);
+          multiResponses[qid] = v;
+          // Reset siblings
+          card.querySelectorAll(`.score-btn[data-mq-id="${qid}"]`).forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          document.getElementById('multi-error').style.display = 'none';
+        });
+      });
+      // Yes/No buttons
+      card.querySelectorAll('.score-btn[data-mq-id][data-yn]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const qid = btn.dataset.mqId;
+          const v = btn.dataset.yn;
+          multiResponses[qid] = v;
+          card.querySelectorAll(`.score-btn[data-mq-id="${qid}"]`).forEach(b => {
+            b.classList.remove('selected');
+            b.style.borderColor = 'var(--border)';
+            b.style.background = '#fff';
+          });
+          btn.classList.add('selected');
+          const color = v === 'yes' ? '#22C55E' : '#EF4444';
+          btn.style.borderColor = color;
+          btn.style.background = color + '15';
+          document.getElementById('multi-error').style.display = 'none';
+        });
+      });
+
+      // Submit (multi)
+      document.getElementById('submit-btn').addEventListener('click', async () => {
+        // Coleta texto
+        card.querySelectorAll('textarea[data-mq-id]').forEach(ta => {
+          const qid = ta.dataset.mqId;
+          multiResponses[qid] = ta.value.trim();
+        });
+        // Valida required
+        const errEl = document.getElementById('multi-error');
+        for (const q of s.questions) {
+          if (!q.required) continue;
+          const v = multiResponses[q.id];
+          let bad = false;
+          if (q.type === 'score') bad = !v || v < 1 || v > 5;
+          else if (q.type === 'yesno') bad = (v !== 'yes' && v !== 'no');
+          else if (q.type === 'text') bad = !v || !String(v).trim();
+          if (bad) {
+            errEl.style.display = 'block';
+            errEl.textContent = `Pergunta obrigatória sem resposta: "${q.label}"`;
+            // Scroll pra primeira pergunta sem resposta
+            card.querySelector(`.multi-q-block[data-qid="${q.id}"]`)?.scrollIntoView({behavior:'smooth', block:'center'});
+            return;
+          }
+        }
+
+        const btn = document.getElementById('submit-btn');
+        btn.disabled = true;
+        btn.textContent = 'Enviando...';
+
+        try {
+          // Score derivado: média dos type=score
+          const scoreVals = s.questions
+            .filter(q => q.type === 'score')
+            .map(q => multiResponses[q.id])
+            .filter(v => Number.isFinite(v) && v >= 1 && v <= 5);
+          const avgScore = scoreVals.length
+            ? Math.round(scoreVals.reduce((s,v)=>s+v,0) / scoreVals.length)
+            : null;
+          const commentDerived = s.questions
+            .filter(q => q.type === 'text')
+            .map(q => {
+              const v = (multiResponses[q.id] || '').toString().trim();
+              return v ? `[${q.label}] ${v}` : '';
+            })
+            .filter(Boolean)
+            .join('\n\n');
+
+          await updateDoc(doc(db, 'csat_surveys', s.id), {
+            responses:   multiResponses,
+            score:       avgScore,
+            comment:     commentDerived,
+            status:      'responded',
+            respondedAt: serverTimestamp(),
+          });
+          showSuccess(avgScore, commentDerived);
+        } catch(err) {
+          btn.disabled = false;
           btn.textContent = 'Enviar avaliação';
           showError('Erro ao enviar: ' + err.message);
         }

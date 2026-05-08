@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 31,
-  patch: 0,
-  build: '20260508-csat-custom-questions',
+  patch: 1,
+  build: '20260508-fix-csat-response-path',
 };
 
 /** "1.2.0" */
