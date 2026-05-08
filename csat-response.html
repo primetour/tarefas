@@ -248,28 +248,26 @@
       throw e;
     }
 
-    if (!survey) {
-      return showError('Pesquisa não encontrada ou link inválido.');
-    }
-
-    // Expirado?
-    const expiresAt = survey.expiresAt?.toDate ? survey.expiresAt.toDate() : new Date(survey.expiresAt || 0);
-    if (expiresAt < new Date()) {
-      return showExpired(survey);
-    }
-
-    // Já respondido?
-    if (survey.status === 'responded') {
-      return showAlreadyDone(survey);
-    }
-
-    // ─── Render form ──────────────────────────────────────
-    // 4.31+ Multi-pergunta: se survey.questions[] tem itens, renderiza N perguntas;
-    // senão cai no modo legado (1 pergunta padrão score+comment).
-    const isMulti = Array.isArray(survey.questions) && survey.questions.length > 0;
+    // 4.31.2+ Bug fix: 'return' no top-level de <script type="module"> é
+    // SyntaxError e mata o módulo INTEIRO antes de executar (loading spinner
+    // ficava preso indefinidamente). Refatorado pra if-else encadeado.
+    const expiresAt = survey?.expiresAt?.toDate ? survey.expiresAt.toDate() : new Date(survey?.expiresAt || 0);
+    const isMulti = Array.isArray(survey?.questions) && survey.questions.length > 0;
     let selectedScore = preScore || 0;
     const multiResponses = {}; // { qId: value }
-    renderForm(survey, selectedScore);
+
+    if (!survey) {
+      showError('Pesquisa não encontrada ou link inválido.');
+    } else if (expiresAt < new Date()) {
+      showExpired(survey);
+    } else if (survey.status === 'responded') {
+      showAlreadyDone(survey);
+    } else {
+      // ─── Render form ──────────────────────────────────────
+      // 4.31+ Multi-pergunta: se survey.questions[] tem itens, renderiza N perguntas;
+      // senão cai no modo legado (1 pergunta padrão score+comment).
+      renderForm(survey, selectedScore);
+    }
 
     function renderForm(s, initScore) {
       if (isMulti) return renderMultiForm(s, initScore);

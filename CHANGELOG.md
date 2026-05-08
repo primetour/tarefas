@@ -37,6 +37,45 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.31.2+20260508-fix-csat-response-syntax] — 2026-05-08
+
+PATCH — fix bug crítico que travava 100% das páginas de CSAT.
+
+### Bug
+Página `csat-response.html` ficava travada em "Carregando pesquisa..."
+indefinidamente — modo single OU multi.
+
+### Causa raiz
+Código antigo tinha 3 `return` declarations no top-level do
+`<script type="module">`:
+```js
+if (!survey) {
+  return showError('...');  // ← SyntaxError: Illegal return statement
+}
+```
+`return` no top-level de **module** é SyntaxError de PARSE — ou seja,
+o módulo INTEIRO falha em parsear e nunca executa. Resultado: o
+loading spinner inicial do HTML nunca é substituído.
+
+Pré-v4.31 esse bug existia também, mas pode ter mascarado por algum
+parser permissivo ou teste insuficiente. Tornou-se visível agora porque
+testamos o caminho multi-pergunta.
+
+### Fix
+Refatorado para if-else encadeado (não usa `return`):
+```js
+if (!survey)                      showError('...');
+else if (expiresAt < new Date())  showExpired(survey);
+else if (survey.status === 'responded') showAlreadyDone(survey);
+else                              renderForm(survey, selectedScore);
+```
+
+### Files
+- `csat-response.html` (raiz — versão usada pelos links de e-mail)
+- `js/csat-response.html` (sincronizada)
+
+---
+
 ## [4.31.1+20260508-fix-csat-response-path] — 2026-05-08
 
 PATCH — fix: CSAT custom não renderizava multi-pergunta na resposta.
