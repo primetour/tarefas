@@ -144,6 +144,36 @@ const ENTRIES = [
     multiplierIds:  [],
     completedAt:    new Date('2026-05-08T15:25:00-03:00'),
   },
+  {
+    releaseVersion: '4.34.5',
+    releaseSlug:    '20260508-photo-onload-and-sync-btn',
+    title:          'Foto SSO: captura on-load + botão sync no /profile',
+    summary:        'Diagnóstico: 0/17 users tinham photoURL após 4.34.1 — captura só rodava em login fresh. Fix: auth.js agora dispara captura automaticamente ao detectar profile sem photoURL + msAccessToken válido em sessionStorage. Botão 🔄 no avatar do /profile pra forçar sync manual. Avatar grande do /profile renderiza foto se já existe.',
+    profile:        'bugfix',
+    bucket:         'small',           // 0.5-1.5h (~1h)
+    multiplierIds:  ['integration'],   // Graph API
+    completedAt:    new Date('2026-05-08T16:00:00-03:00'),
+  },
+  {
+    releaseVersion: '4.34.6',
+    releaseSlug:    '20260508-avatar-photos-everywhere',
+    title:          'Foto SSO aparece em projects, team, capacity, users, audit etc',
+    summary:        'Helper userAvatarInner aplicado em 9 arquivos novos (header, projects, team, capacity, users, squadWorkspace, goals, dashboards, audit). Cada div.avatar agora renderiza <img> se user tem photoURL, fallback automático pra iniciais via onerror.',
+    profile:        'feature',
+    bucket:         'small',           // 0.5-1.5h (~1h)
+    multiplierIds:  [],
+    completedAt:    new Date('2026-05-08T16:30:00-03:00'),
+  },
+  {
+    releaseVersion: '4.34.7',
+    releaseSlug:    '20260508-tasks-sort-and-expand-all',
+    title:          'Tarefas: ordenação configurável + expandir/comprimir todos',
+    summary:        'Pedido user: dropdown "Ordenar:" com 9 opções (prazo, alfabética, criação, prioridade, status — asc/desc) persistido em localStorage. Botões ⬇/⬆ pra expandir/comprimir todos os grupos de uma vez. applySort() aplicado dentro de cada grupo + na lista inteira (groupBy=none). localeCompare pt-BR pro alfabético.',
+    profile:        'feature',
+    bucket:         'small',           // 0.5-1.5h (~1h)
+    multiplierIds:  [],
+    completedAt:    new Date('2026-05-08T17:00:00-03:00'),
+  },
 ];
 
 // ─── Buckets (espelha js/services/devHours.js BUCKETS) ─────
