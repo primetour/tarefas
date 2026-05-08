@@ -71,18 +71,24 @@ export const SOUND_LIBRARY = [
     description: 'Inspirado nas moedas do Mario.' },
   { id: 'level-up',   label: 'Subiu de nível',    icon: '⬆️', category: 'fun',     synth: true,
     description: 'Inspirado em RPG — arpejo ascendente vitorioso.' },
-  { id: 'clown-horn', label: 'Buzina de palhaço', icon: '🤡', category: 'fun',     synth: true,
-    description: 'Honk-honk descendente. Para humor.' },
   { id: 'laser',      label: 'Laser',             icon: '🔫', category: 'fun',     synth: true,
     description: 'Pew-pew espacial.' },
 
-  // ─── Arquivos (slots — aguardam MP3 em assets/sounds/) ───
-  { id: 'lion',       label: 'Leão rugindo',      icon: '🦁', category: 'fun',     file: 'lion.mp3',
-    description: 'Rugido de leão — animal real, requer MP3.' },
-  { id: 'sheep',      label: 'Ovelha',            icon: '🐑', category: 'fun',     file: 'sheep.mp3',
-    description: 'Mééé — animal real, requer MP3.' },
-  { id: 'dog-bark',   label: 'Latido',            icon: '🐕', category: 'fun',     file: 'dog-bark.mp3',
-    description: 'Au au — animal real, requer MP3.' },
+  // ─── Arquivos (banco de sons real em assets/sounds/) ───
+  { id: 'lion',         label: 'Leão rugindo',      icon: '🦁', category: 'fun', file: 'lion.mp3',
+    description: 'Rugido de leão.' },
+  { id: 'sheep',        label: 'Ovelha',            icon: '🐑', category: 'fun', file: 'sheep.mp3',
+    description: 'Mééé.' },
+  { id: 'clown-horn',   label: 'Buzina de palhaço', icon: '🤡', category: 'fun', file: 'clown-horn.mp3',
+    description: 'Buzina honk-honk.' },
+  { id: 'explosion',    label: 'Explosão',          icon: '💥', category: 'fun', file: 'explosion.mp3',
+    description: 'BOOM!' },
+  { id: 'woah',         label: 'Woooooaah',         icon: '😱', category: 'fun', file: 'woah.mp3',
+    description: 'Reação de surpresa.' },
+  { id: 'i-got-this',   label: 'I got this',        icon: '😎', category: 'fun', file: 'i-got-this.mp3',
+    description: 'Confiança.' },
+  { id: 'johnny-bacon', label: 'Johnny Bacon',      icon: '🥓', category: 'fun', file: 'johnny-bacon.mp3',
+    description: 'Easter egg da equipe.' },
 
   // ─── Especial ───
   { id: 'mute',       label: 'Mudo',              icon: '🔇', category: 'meta',    mute: true,
@@ -192,21 +198,6 @@ const SYNTH_PLAYERS = {
     });
     // Acorde final
     [1047, 1319, 1568].forEach(f => _tone(ctx, f, now + 0.45, 0.6, 'triangle', 0.18));
-  },
-
-  'clown-horn'(ctx) {
-    // Honk-honk descendente
-    const now = ctx.currentTime;
-    [392, 330].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sawtooth';
-      osc.frequency.value = freq;
-      _envelope(gain, now + i * 0.18, 0.01, 0.22, 0.15);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(now + i * 0.18);
-      osc.stop(now + i * 0.18 + 0.2);
-    });
   },
 
   laser(ctx) {

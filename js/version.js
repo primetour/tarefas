@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 1,
-  build: '20260508-sso-avatar-photos',
+  patch: 2,
+  build: '20260508-sound-bank-real',
 };
 
 /** "1.2.0" */

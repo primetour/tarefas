@@ -37,6 +37,46 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.34.2+20260508-sound-bank-real] — 2026-05-08
+
+Release **PATCH** — Banco real de sons de conclusão (7 MP3s) substitui
+slots vazios e amplia catálogo.
+
+### Pedido do user
+> "Coloquei uma pasta local pra você atualizar a parte de sons. Chama
+> 'Sound Effects'. Atualize/adapte a lista para ter esses sons também
+> (e substituir/adaptar o que está sem som). Este será o banco de sons"
+
+### Mudanças no `SOUND_LIBRARY`
+- **Slots ativados** (lion, sheep): agora têm MP3 real, deixam de mostrar
+  "Slot aguardando MP3"
+- **`clown-horn` synth → arquivo**: substituído pelo MP3 real (mais
+  autêntico que síntese sawtooth)
+- **`dog-bark` removido**: sem arquivo correspondente no banco fornecido
+- **Novos sons** (4): explosion 💥, woah 😱, i-got-this 😎, johnny-bacon 🥓
+
+### Arquivos copiados → `assets/sounds/`
+| Original                    | Slug              |
+|-----------------------------|-------------------|
+| Buzinha de palhaço.mp3      | clown-horn.mp3    |
+| Explosão.mp3                | explosion.mp3     |
+| I got this.mp3              | i-got-this.mp3    |
+| Johnny Bacon.mp3            | johnny-bacon.mp3  |
+| Leão.mp3                    | lion.mp3          |
+| Ovelha.mp3                  | sheep.mp3         |
+| woooooaah.mp3               | woah.mp3          |
+
+Total banco: ~440KB (lazy-loaded — só baixa quando preview/seleção).
+
+### Catálogo final (15 sons + mudo)
+**Clássicos (6 synth):** plin, sino, carrilhão, pop, tada, sucesso UI
+**Divertidos (3 synth):** moeda, level-up, laser
+**Divertidos (7 arquivo):** lion, sheep, clown-horn, explosion, woah,
+i-got-this, johnny-bacon
+**Especial:** mudo
+
+---
+
 ## [4.34.1+20260508-sso-avatar-photos] — 2026-05-08
 
 Release **PATCH** — Avatares dos usuários agora puxam foto do Microsoft 365.
