@@ -10,6 +10,7 @@ import { toast }   from './toast.js';
 import { toggleNotificationPanel } from './notificationPanel.js';
 import { toggleHelpPanel } from './helpPanel.js';
 import { renderIcon, ICONS } from './icons.js';
+import { userAvatarInner } from './userAvatar.js';
 import {
   collection, getDocs, query, orderBy, limit, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -426,15 +427,15 @@ export class Header {
             white-space:nowrap;letter-spacing:0.01em;">${summary}</span>
           <div style="display:flex;align-items:center;">
           ${visibleEnriched.map(u => {
-            const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
             const dotColor = u.state === 'idle' ? '#F59E0B' : '#22C55E';
             const opacity  = u.state === 'idle' ? '0.7' : '1';
-            return `<div class="avatar avatar-sm header-online-avatar" style="
-              background:${u.avatarColor || '#3B82F6'};
-              width:28px;height:28px;font-size:0.625rem;font-weight:600;color:#fff;
-              border:2px solid var(--bg-card,#fff);opacity:${opacity};
-              display:flex;align-items:center;justify-content:center;
-              border-radius:50%;margin-left:-6px;position:relative;"
+            // 4.34+ Wrapper externo carrega o data-* + dot de status; avatar real fica DENTRO
+            // (com overflow:hidden via CSS pra crop circular da foto). O dot precisa ficar
+            // FORA do overflow:hidden, então usa um wrapper extra.
+            return `<div class="header-online-avatar" style="
+              width:28px;height:28px;border:2px solid var(--bg-card,#fff);opacity:${opacity};
+              border-radius:50%;margin-left:-6px;position:relative;cursor:pointer;
+              box-sizing:content-box;"
               data-uid="${escAttr(u.uid || '')}"
               data-name="${escAttr(u.name || 'Usuário')}"
               data-email="${escAttr(u.email || '')}"
@@ -442,9 +443,14 @@ export class Header {
               data-state="${u.state}"
               data-last-activity="${u.lastActivityAt || ''}"
               data-last-seen="${u.lastSeen?.toMillis?.() || ''}">
-              ${initials}
+              <div class="avatar avatar-sm" style="
+                background:${u.avatarColor || '#3B82F6'};width:28px;height:28px;
+                font-size:0.625rem;font-weight:600;color:#fff;">
+                ${userAvatarInner(u)}
+              </div>
               <span style="position:absolute;bottom:-2px;right:-2px;width:8px;height:8px;
-                background:${dotColor};border:1.5px solid var(--bg-card,#fff);border-radius:50%;"></span>
+                background:${dotColor};border:1.5px solid var(--bg-card,#fff);border-radius:50%;
+                z-index:1;"></span>
             </div>`;
           }).join('')}
           ${overflow > 0 ? `<button class="header-online-overflow" type="button" style="

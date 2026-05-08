@@ -12,6 +12,7 @@ import { LABEL as APP_VERSION_LABEL, FULL as APP_VERSION_FULL } from '../version
 // Sidebar e header global usam o mesmo conjunto pra que o ícone visto na
 // barra lateral seja IDÊNTICO ao do header da página correspondente.
 import { ICONS, renderIcon } from './icons.js';
+import { userAvatarInner } from './userAvatar.js';
 
 // ─── Ícones SVG (estilo Lucide) ─────────────────
 // Por que SVG inline em vez de Unicode/emoji?
@@ -271,7 +272,7 @@ export class Sidebar {
         <div class="sidebar-user" id="sidebar-user-btn">
           <div class="avatar avatar-sm sidebar-user-avatar"
                style="background:${avatarColor}"
-          >${initials}</div>
+          >${userAvatarInner(profile, { withTitle: true })}</div>
           <div class="sidebar-user-info">
             <div class="sidebar-user-name">${profile?.name || 'Usuário'}</div>
             <div class="sidebar-user-role">${roleLabel}</div>

@@ -13,6 +13,7 @@ import { APP_CONFIG }    from '../config.js';
 import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
 import { createDoc, loadJsPdf, COL, STATUS_STYLE, txt, withExportGuard } from '../components/pdfKit.js';
 import { wireUiKitMenus } from '../components/uiKit.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 import {
   renderPickerButton, bindOptionPicker,
   renderMultiPickerButton, bindMultiOptionPicker,
@@ -1077,7 +1078,7 @@ function renderTaskRow(task) {
     if (!u) return '';
     return `<div class="avatar avatar-sm" title="${esc(u.name)}"
       style="background:${u.avatarColor||'#3B82F6'}; margin-left:-6px; border:2px solid var(--bg-card);">
-      ${(u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+      ${userAvatarInner(u)}
     </div>`;
   }).join('');
   const extraAssignees = assigneesArr.length > 3

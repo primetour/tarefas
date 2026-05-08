@@ -80,6 +80,22 @@ function getInitials(name) {
   return (name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
 }
 
+// 4.34+ helper local: dentro de <div class="avatar">, devolve <img> da
+// foto SSO (se existir) com fallback pra iniciais. Drop-in pra
+// substituir getInitials(u.name) em qualquer wrapper.avatar.
+function avatarInner(u) {
+  if (!u) return '?';
+  const initials = getInitials(u.name);
+  const photo = u.photoURL;
+  if (photo) {
+    return `<img src="${esc(photo)}" alt="${esc(initials)}"
+      onerror="this.style.display='none';"
+      style="position:absolute;inset:0;width:100%;height:100%;
+      object-fit:cover;border-radius:50%;display:block;" />${initials}`;
+  }
+  return initials;
+}
+
 /** Verifica se o usuário tem ausência que sobrepõe o período da tarefa */
 function getUserAbsenceInPeriod(absences, userId, startDate, dueDate) {
   if (!absences.length) return null;
@@ -1184,7 +1200,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
     const absence = getUserAbsenceInPeriod(absences, uid, task.startDate, task.dueDate);
     const absIcon = absence ? '<span title="' + esc(ABSENCE_TYPE_LABELS[absence.type]||'Ausente') + '" style="color:#EF4444;font-size:0.625rem;margin-left:2px;">⚠</span>' : '';
     return `<div class="assignee-chip" data-uid="${uid}" ${absence?'style="border-color:#EF4444;background:#EF444410;"':''}>
-      <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${getInitials(u.name)}</div>
+      <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${avatarInner(u)}</div>
       ${esc(u.name.split(' ')[0])}${absIcon}<span style="font-size:0.7rem;opacity:0.6;">✕</span></div>`;
   }).join('');
 
@@ -1194,7 +1210,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
     const u = activeUsers.find(u=>u.id===uid);
     if (!u) return '';
     return `<div class="assignee-chip observer-chip" data-obs-uid="${uid}">
-      <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${getInitials(u.name)}</div>
+      <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${avatarInner(u)}</div>
       ${esc(u.name.split(' ')[0])}<span style="font-size:0.7rem;opacity:0.6;">✕</span></div>`;
   }).join('');
 
@@ -1210,7 +1226,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
         <div class="dropdown-item" data-add-uid="${u.id}" data-absent="${absence?'1':''}"
           style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 12px;
           ${absence?'opacity:0.6;':''}">
-          <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">${getInitials(u.name)}</div>
+          <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">${avatarInner(u)}</div>
           <div style="flex:1;min-width:0;">
             <div style="font-size:0.875rem;color:var(--text-primary);">${esc(u.name)}</div>
             <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u.department||u.role||'')}</div>
@@ -1382,7 +1398,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
           <div class="comment-list" id="comment-list">${renderComments(task.comments||[])}</div>
           <div class="comment-input-area">
             <div class="avatar avatar-sm" style="background:${store.get('userProfile')?.avatarColor||'#3B82F6'};flex-shrink:0;">
-              ${getInitials(store.get('userProfile')?.name||'')}
+              ${avatarInner(store.get('userProfile') || {})}
             </div>
             <textarea id="comment-input" class="comment-input" rows="1" placeholder="Comentário... (Ctrl+Enter)"></textarea>
             <button class="btn btn-primary btn-sm" id="comment-send-btn">Enviar</button>
@@ -1674,7 +1690,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
               ? activeUsers.map(u => `
                 <div class="dropdown-item" data-add-obs-uid="${u.id}"
                   style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 12px;">
-                  <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">${getInitials(u.name)}</div>
+                  <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">${avatarInner(u)}</div>
                   <div style="flex:1;min-width:0;">
                     <div style="font-size:0.875rem;color:var(--text-primary);">${esc(u.name)}</div>
                     <div style="font-size:0.75rem;color:var(--text-muted);">${esc(u.department||u.role||'')}</div>
@@ -2378,7 +2394,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
         const el = document.createElement('div');
         el.className='assignee-chip'; el.dataset.uid=uid;
         if (absence) { el.style.borderColor='#EF4444'; el.style.background='#EF444410'; }
-        el.innerHTML=`<div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${getInitials(u.name)}</div>${esc(u.name.split(' ')[0])}${absIcon}<span style="font-size:0.7rem;opacity:0.6;">✕</span>`;
+        el.innerHTML=`<div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${avatarInner(u)}</div>${esc(u.name.split(' ')[0])}${absIcon}<span style="font-size:0.7rem;opacity:0.6;">✕</span>`;
         const btn=document.getElementById('assignee-add-btn');
         document.getElementById('assignee-picker')?.insertBefore(el,btn);
 
@@ -2430,7 +2446,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
         const el = document.createElement('div');
         el.className = 'assignee-chip observer-chip';
         el.dataset.obsUid = uid;
-        el.innerHTML = `<div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${getInitials(u.name)}</div>${esc(u.name.split(' ')[0])}<span style="font-size:0.7rem;opacity:0.6;">✕</span>`;
+        el.innerHTML = `<div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">${avatarInner(u)}</div>${esc(u.name.split(' ')[0])}<span style="font-size:0.7rem;opacity:0.6;">✕</span>`;
         const btn = document.getElementById('observer-add-btn');
         document.getElementById('observer-picker')?.insertBefore(el, btn);
       }
@@ -3557,7 +3573,7 @@ function renderSubtaskAssignees(s) {
     return `<div class="avatar avatar-sm" title="${esc(u.name)}"
       style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.55rem;
         margin-left:-4px;border:2px solid var(--bg-card);">
-      ${getInitials(u.name)}
+      ${avatarInner(u)}
     </div>`;
   }).join('');
   const extra = assignees.length > 3
@@ -3649,7 +3665,7 @@ function openSubtaskAssigneesPopover(anchorEl, subId, task, isEdit, allUsers, on
             style="margin:0;cursor:pointer;" />
           <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};
             width:22px;height:22px;font-size:0.55rem;flex-shrink:0;">
-            ${getInitials(u.name)}
+            ${avatarInner(u)}
           </div>
           <span style="font-size:0.8125rem;color:var(--text-primary);overflow:hidden;
             text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(u.name || u.email || '—')}</span>
@@ -3744,8 +3760,11 @@ function highlightMentions(text) {
 
 function renderCommentItem(c){
   const time=c.createdAt?new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(c.createdAt?.toDate?c.createdAt.toDate():new Date(c.createdAt)):'';
+  // 4.34+ Lookup user pra puxar photoURL atual (comment armazena só authorId+authorName legado)
+  const users = store.get('users') || [];
+  const author = users.find(u => u.id === c.authorId) || { name: c.authorName, avatarColor: c.authorColor };
   return `<div class="comment-item">
-    <div class="avatar avatar-sm" style="background:${c.authorColor||'#3B82F6'};">${getInitials(c.authorName)}</div>
+    <div class="avatar avatar-sm" style="background:${c.authorColor||author.avatarColor||'#3B82F6'};">${avatarInner(author)}</div>
     <div class="comment-bubble">
       <div class="comment-header"><span class="comment-author">${esc(c.authorName)}</span><span class="comment-time">${time}</span></div>
       <p class="comment-text">${highlightMentions(c.text)}</p>

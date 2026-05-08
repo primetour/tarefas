@@ -37,6 +37,52 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.34.1+20260508-sso-avatar-photos] — 2026-05-08
+
+Release **PATCH** — Avatares dos usuários agora puxam foto do Microsoft 365.
+
+### Pedido do user
+> "agora que o login é via SSO, você consegue puxar o avatar dos users
+> pra substituir nas 'bolinhas' dos nomes? hoje é sigla, mas queria
+> que fosse a foto deles."
+
+### Captura da foto
+- Após `signInWithMicrosoft()`, faz `GET /v1.0/me/photo/$value` no
+  Graph API com o accessToken já capturado.
+- Converte response → Blob → resize 96×96 + crop quadrado central →
+  base64 JPEG ~10KB.
+- Salva em `users/{uid}.photoURL`.
+- Atualiza store local pra UI refletir já na sessão atual.
+- Falha silenciosa se user não tem foto configurada (Graph 404).
+
+### Helper centralizado
+- **Novo:** `js/components/userAvatar.js`
+  - `userAvatarInner(user)` — drop-in pra dentro de `<div class="avatar">`,
+    devolve `<img>` se tem `photoURL`, senão fallback pra iniciais.
+    `onerror` na img remove o elemento e revela as iniciais (nunca quebra).
+  - `userAvatarHTML(user, opts)` — wrapper completo pra sites novos.
+- `css/components.css` — `.avatar` agora tem `position:relative`+
+  `overflow:hidden`; `<img>` filho cobre 100% via `object-fit:cover`.
+
+### Substituições aplicadas (5 lugares mais visíveis)
+- `js/components/sidebar.js` — avatar do user logado (rodapé)
+- `js/components/header.js` — pílulas de online users
+- `js/components/taskPopovers.js` — popover de assignees
+- `js/components/taskModal.js` — todos os 9 lugares (assignees,
+  comentários, lista de seleção, etc) via helper local `avatarInner(u)`
+- `js/pages/kanban.js` — avatares nos cards
+- `js/pages/tasks.js` — avatares na lista
+
+Outros call sites (~13 arquivos) seguem com sigla — não bloqueante,
+podem migrar gradualmente. Helper único na ponta do funil.
+
+### Compat
+- Users sem `photoURL` continuam vendo iniciais (sem mudança).
+- Foto é capturada na próxima vez que user faz login SSO. User existente
+  sem login ainda na 4.34.1 vê iniciais até relogar.
+
+---
+
 ## [4.34.0+20260508-completion-sounds] — 2026-05-08
 
 Release **MINOR** — Banco de sons de conclusão de tarefa configurável por usuário.

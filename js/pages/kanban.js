@@ -18,6 +18,7 @@ import {
 import { openCardPrefsModal }     from '../components/cardPrefsModal.js';
 import { renderCardFields }       from '../services/cardPrefs.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -913,7 +914,7 @@ function renderKanbanCard(task, type = null) {
     return `<div class="avatar" style="background:${u.avatarColor||'#3B82F6'};
       width:22px;height:22px;font-size:0.5rem;
       border:2px solid var(--bg-card);margin-left:-4px;flex-shrink:0;">
-      ${(u.name||'').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()}
+      ${userAvatarInner(u)}
     </div>`;
   }).join('');
 

@@ -16,6 +16,7 @@
  */
 
 import { store } from '../store.js';
+import { userAvatarInner } from './userAvatar.js';
 import {
   STATUSES, PRIORITIES, NUCLEOS, REQUESTING_AREAS,
   TASK_TYPES, NEWSLETTER_STATUSES,
@@ -242,13 +243,11 @@ export function openAssigneesPopover(anchor, {
     <div id="tp-asn-list" style="max-height:240px;overflow-y:auto;padding:0 4px;">
       ${users.map(u => {
         const isSel = selected.has(u.id);
-        const initials = (u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
         return `<div class="tp-pop-item" data-val="${esc(u.id)}" data-name="${esc((u.name||'').toLowerCase())}"
           ${isSel ? 'style="background:var(--bg-elevated);"' : ''}>
           <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};
-            width:24px;height:24px;font-size:0.625rem;font-weight:600;color:#fff;
-            display:flex;align-items:center;justify-content:center;border-radius:50%;">
-            ${initials}
+            width:24px;height:24px;font-size:0.625rem;font-weight:600;color:#fff;">
+            ${userAvatarInner(u)}
           </div>
           <div style="flex:1;min-width:0;">
             <div style="font-size:0.8125rem;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(u.name || '—')}</div>

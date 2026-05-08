@@ -293,6 +293,18 @@
   color: white;
   flex-shrink: 0;
   font-size: 0.8125rem;
+  position: relative;       /* 4.34+ pra que <img> com position:absolute funcione */
+  overflow: hidden;          /* 4.34+ pra que crop circular respeite o border-radius */
+}
+
+/* 4.34+ Foto do user (Microsoft Graph) cobre o background color quando carrega.
+ * Se onerror dispara, o img é hidden e o conteúdo de texto (iniciais) volta a aparecer. */
+.avatar > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
 }
 
 .avatar-sm  { width: 28px; height: 28px; font-size: 0.6875rem; }

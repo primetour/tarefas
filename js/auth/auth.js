@@ -44,6 +44,36 @@ import { toast }   from '../components/toast.js';
 import { APP_CONFIG, ALLOWED_SSO_DOMAINS, isAllowedSSODomain } from '../config.js';
 import { auditLog } from './audit.js';
 
+// ─── 4.34+ Helper: blob → dataURL redimensionado ──────────
+// Usado pra capturar foto do Microsoft Graph e armazenar em formato leve
+// (96x96 JPEG ~10KB) no doc do user. Sem isso ficaríamos com 50-150KB
+// inflando o doc do Firestore (limite 1MB) e tráfego em snapshots.
+async function blobToResizedDataUrl(blob, size = 96) {
+  return new Promise(resolve => {
+    try {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          // Crop quadrado central + resize
+          const sourceSize = Math.min(img.width, img.height);
+          const sx = (img.width - sourceSize) / 2;
+          const sy = (img.height - sourceSize) / 2;
+          ctx.drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, size, size);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          URL.revokeObjectURL(url);
+          resolve(dataUrl);
+        } catch (_) { resolve(null); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    } catch (_) { resolve(null); }
+  });
+}
+
 // ─── Observer de estado de autenticação ───────────────────
 
 // Listener tempo-real do doc do user logado.
@@ -559,19 +589,47 @@ export async function signInWithMicrosoft() {
 
     // Captura access token Microsoft pra usar em SharePoint/OneDrive
     // (precisa pra IA Hub agentes lerem knowledge desses serviços)
+    let msAccessToken = null;
     try {
       const credential = OAuthProvider.credentialFromResult(result);
-      const accessToken = credential?.accessToken;
-      if (accessToken) {
-        store.set('msAccessToken', accessToken);
+      msAccessToken = credential?.accessToken;
+      if (msAccessToken) {
+        store.set('msAccessToken', msAccessToken);
         // Persiste em sessionStorage pra não perder ao recarregar
-        try { sessionStorage.setItem('ms-access-token', accessToken); } catch {}
+        try { sessionStorage.setItem('ms-access-token', msAccessToken); } catch {}
         // Salva expiração (~1h) pra refresh proativo
         const expiresAt = Date.now() + 50 * 60 * 1000;
         store.set('msAccessTokenExpiresAt', expiresAt);
         try { sessionStorage.setItem('ms-token-expires', String(expiresAt)); } catch {}
       }
     } catch (e) { console.warn('[auth] MS token capture err:', e?.message); }
+
+    // ── 4.34+ Captura foto do perfil via Microsoft Graph ──
+    // GET /me/photo/$value retorna binary (image/jpeg). Salva como base64
+    // dataURL em users/{uid}.photoURL (resize 96x96 pra ficar leve, ~10KB).
+    // Falha silenciosa se user não tiver foto configurada (Graph 404).
+    if (msAccessToken && result.user?.uid) {
+      (async () => {
+        try {
+          const res = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+            headers: { Authorization: `Bearer ${msAccessToken}` },
+          });
+          if (!res.ok) return; // 404 esperado pra users sem foto
+          const blob = await res.blob();
+          const dataUrl = await blobToResizedDataUrl(blob, 96);
+          if (!dataUrl) return;
+          // Persiste no doc do user. updateDoc lazy import pra evitar overhead.
+          const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+          await fb.updateDoc(fb.doc(db, 'users', result.user.uid), { photoURL: dataUrl })
+            .catch(e => console.warn('[auth] save photoURL falhou:', e.message));
+          // Atualiza store local pra UI já refletir
+          const profile = store.get('userProfile');
+          if (profile && profile.id === result.user.uid) {
+            store.set('userProfile', { ...profile, photoURL: dataUrl });
+          }
+        } catch (e) { /* silent — não trava login */ }
+      })();
+    }
 
     // O initAuthObserver cuida do resto (auto-provisioning + carregamento de perfil)
     return result.user;
