@@ -124,6 +124,26 @@ const ENTRIES = [
     multiplierIds:  [],
     completedAt:    new Date('2026-05-08T15:00:00-03:00'),
   },
+  {
+    releaseVersion: '4.34.3',
+    releaseSlug:    '20260508-sound-card-subtext',
+    title:          'Fix: sub-texto dos cards de som usa description, não "aguardando MP3"',
+    summary:        'Em profile.js o sub-texto era hardcoded como "Slot aguardando MP3" pra qualquer som com arquivo, independente de existir. Após 4.34.2 trazer os MP3s reais, cards continuavam com texto errado. Fix: subtext agora vem de SOUND_LIBRARY[].description. Truncate com ellipsis + tooltip no hover.',
+    profile:        'bugfix',
+    bucket:         'micro',           // 0.25-0.5h (~0.3h)
+    multiplierIds:  [],
+    completedAt:    new Date('2026-05-08T15:15:00-03:00'),
+  },
+  {
+    releaseVersion: '4.34.4',
+    releaseSlug:    '20260508-profile-cachebust',
+    title:          'Cache-bust de profile.js para fix 4.34.3 chegar ao browser',
+    summary:        'Import de profile.js em app.js não tinha query string, fazia browser servir do cache HTTP por 600s. Adicionado ?v=20260508r3 no import.',
+    profile:        'bugfix',
+    bucket:         'micro',           // 0.25-0.5h (~0.25h)
+    multiplierIds:  [],
+    completedAt:    new Date('2026-05-08T15:25:00-03:00'),
+  },
 ];
 
 // ─── Buckets (espelha js/services/devHours.js BUCKETS) ─────
