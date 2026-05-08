@@ -2056,7 +2056,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
     const dueEl  = document.getElementById('tm-due');
 
     if (opt?.value && !isNaN(days) && slaEl) {
-      const label = days === 0 ? 'Mesmo dia' : `${days} dia${days!==1?'s':''}`;
+      const label = days === 0 ? 'Mesmo dia' : `${days} dia${days!==1?'s':''} ${days===1?'útil':'úteis'}`;
       slaEl.style.display = 'block';
       slaEl.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;
         background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);

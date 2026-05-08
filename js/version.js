@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 34,
-  patch: 10,
-  build: '20260508-dev-hours-ai-assist-calibration',
+  patch: 11,
+  build: '20260508-portal-past-date-block-and-sla-uteis',
 };
 
 /** "1.2.0" */

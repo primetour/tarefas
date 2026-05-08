@@ -428,13 +428,14 @@ async function renderForm(db, taskTypes, auth) {
               </div>
 
               <!-- Passo 3: Calendário + Data (aparece após tipo) -->
-              <div class="form-group">
+              <div class="form-group" id="fg-date">
                 <label class="form-label">
                   Data desejada para entrega
                   <span class="info-tip" title="Selecione uma data no calendário ou defina manualmente. O calendário mostra os slots pré-agendados — clique em um para preencher automaticamente os campos abaixo.">ℹ</span>
                 </label>
                 <input type="date" class="form-input" id="p-date"
                   min="${getMinDate()}" />
+                <div class="form-error" id="err-date">A data de entrega não pode ser anterior a hoje.</div>
 
                 <!-- Calendar widget inserted here by renderPortalCalendar -->
                 <div class="slots-container" id="slots-container"></div>
@@ -1237,6 +1238,13 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       const dateISO = el.dataset.slotDate;
+      // 4.34.11+ Bloqueia clique em slots de DATA PASSADA. Antes era possível
+      // selecionar slot do dia 6 mesmo estando no dia 8 — quebrava o fluxo
+      // de planejamento (timeline + SLA).
+      if (isPastDate(dateISO)) {
+        alert('Esse slot é de uma data passada. Escolha um dia a partir de hoje.');
+        return;
+      }
       const title   = el.dataset.slotTitle || '';
       const varId   = el.dataset.slotVariation || '';
       const area    = el.dataset.slotArea || '';
@@ -1280,6 +1288,11 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       if (e.target.closest('.pcal-slot-click') || e.target.closest('.pcal-filled-click')) return;
       const dateISO = cell.dataset.pcalDate;
       if (!dateISO) return;
+      // 4.34.11+ Bloqueia clique em dias passados.
+      if (isPastDate(dateISO)) {
+        alert('Não é possível solicitar para datas passadas. Escolha um dia a partir de hoje.');
+        return;
+      }
       const date  = new Date(dateISO + 'T12:00:00');
       const slots = getSlotsForDate(date);
       const dayTasks = taskMap[date.getDate()] || [];
@@ -1381,7 +1394,7 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
   // SLA display for selected variation
   const selectedVar = variations.find(v => v.id === matchedVarId);
   const slaDisplay = selectedVar?.slaDays != null
-    ? (selectedVar.slaDays === 0 ? 'Mesmo dia' : `${selectedVar.slaDays} dia${selectedVar.slaDays!==1?'s':''}`)
+    ? (selectedVar.slaDays === 0 ? 'Mesmo dia' : `${selectedVar.slaDays} dia${selectedVar.slaDays!==1?'s':''} ${selectedVar.slaDays===1?'útil':'úteis'}`)
     : '';
 
   // Check urgency: 24h rule OR SLA-based rule
@@ -1561,7 +1574,7 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
     const slaEl = overlay.querySelector('#fs-sla');
     if (slaEl && opt?.value && !isNaN(days)) {
       slaEl.style.display = 'block';
-      slaEl.innerHTML = `⏱ SLA: <strong>${days === 0 ? 'Mesmo dia' : days + ' dia' + (days !== 1 ? 's' : '')}</strong>`;
+      slaEl.innerHTML = `⏱ SLA: <strong>${days === 0 ? 'Mesmo dia' : days + ' dia' + (days !== 1 ? 's' : '') + ' ' + (days === 1 ? 'útil' : 'úteis')}</strong>`;
     } else if (slaEl) {
       slaEl.style.display = 'none';
     }
@@ -2054,7 +2067,7 @@ async function openEditRequestModal(db, taskTypes, data) {
         <label style="font-size:0.75rem;font-weight:500;color:var(--text-secondary);margin-bottom:4px;display:block;">
           Data desejada
         </label>
-        <input type="date" id="fs-edit-date" style="width:100%;padding:8px 12px;border-radius:6px;
+        <input type="date" id="fs-edit-date" min="${getMinDate()}" style="width:100%;padding:8px 12px;border-radius:6px;
           border:1px solid var(--border-subtle);background:var(--bg-card);color:var(--text-primary);
           font-size:0.875rem;font-family:var(--font-ui);outline:none;box-sizing:border-box;"
           value="${data.dateISO || ''}" />
@@ -2114,6 +2127,12 @@ async function openEditRequestModal(db, taskTypes, data) {
   overlay.querySelector('#fs-edit-date')?.addEventListener('change', (e) => {
     const newDate = e.target.value;
     if (!newDate) return;
+    // 4.34.11+ Bloqueia data passada
+    if (isPastDate(newDate)) {
+      alert('A data de entrega não pode ser anterior a hoje.');
+      e.target.value = '';
+      return;
+    }
     const deadline = new Date(newDate + 'T23:59:59');
     const hoursUntil = (deadline - new Date()) / 3600000;
     // Get SLA from the request's variation
@@ -3012,6 +3031,15 @@ function bindFormEvents(db, taskTypes) {
   dateInput?.addEventListener('change', (e) => {
     const val = e.target.value;
     if (!val) return;
+    // 4.34.11+ Reverte digitação manual de data passada (alguns browsers ignoram min)
+    if (isPastDate(val)) {
+      alert('A data de entrega não pode ser anterior a hoje. Selecione uma data a partir de ' + (new Date()).toLocaleDateString('pt-BR') + '.');
+      e.target.value = '';
+      const fg = document.getElementById('fg-date');
+      fg?.classList.add('has-error');
+      return;
+    }
+    document.getElementById('fg-date')?.classList.remove('has-error');
     // Check out-of-calendar via slots
     const dbRef = window._portalDb;
     const types = window._portalTaskTypes || taskTypes;
@@ -3155,6 +3183,10 @@ function validate() {
       : []),
     { id: 'p-title',  errId: 'err-title',  fgId: 'fg-title',  check: v => v.trim().length >= 3 },
     { id: 'p-desc',   errId: 'err-desc',   fgId: 'fg-desc',   check: v => v.trim().length >= 10 },
+    // 4.34.11+ Data de entrega: opcional (alguns tipos não pedem), mas se preenchida
+    // deve ser >= hoje. O <input type="date" min=...> bloqueia no UI moderno mas
+    // não impede submit programático nem entradas via slot click.
+    { id: 'p-date',   errId: 'err-date',   fgId: 'fg-date',   check: v => !v || !isPastDate(v) },
   ];
 
   rules.forEach(r => {
@@ -3340,8 +3372,27 @@ async function notifyTeam(reqDoc) {
 }
 
 /* ─── Helpers ─────────────────────────────────────────────── */
+/**
+ * Retorna a data MÍNIMA permitida pra solicitação (= hoje, fuso local).
+ * 4.34.11+ Trocado de toISOString() (UTC) pra fuso local porque à noite
+ * em UTC-3 retornava o dia seguinte como "hoje" — bloqueando o user de
+ * solicitar pra hoje. Agora usa formato local YYYY-MM-DD.
+ */
 function getMinDate() {
-  return new Date().toISOString().slice(0,10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Verifica se uma string ISO YYYY-MM-DD é uma data passada (anterior a hoje
+ * no fuso local). Hoje conta como NÃO-passada.
+ */
+function isPastDate(isoDate) {
+  if (!isoDate) return false;
+  return isoDate < getMinDate();
 }
 
 function showError(msg) {
