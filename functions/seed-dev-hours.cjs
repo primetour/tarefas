@@ -114,6 +114,16 @@ const ENTRIES = [
     multiplierIds:  ['integration'],   // +20% — Graph API
     completedAt:    new Date('2026-05-08T14:30:00-03:00'),
   },
+  {
+    releaseVersion: '4.34.2',
+    releaseSlug:    '20260508-sound-bank-real',
+    title:          'Banco real de 7 MP3s substitui slots vazios + amplia catálogo',
+    summary:        '7 MP3s copiados pra assets/sounds/ com slugified names: clown-horn, explosion, i-got-this, johnny-bacon, lion, sheep, woah. SOUND_LIBRARY ajustada: lion/sheep ativados (eram slots), clown-horn migrou de synth pra arquivo real, dog-bark removido (sem MP3), novos sons adicionados (explosion, woah, i-got-this, johnny-bacon). Total catálogo: 15 sons + mudo.',
+    profile:        'bugfix',
+    bucket:         'micro',           // 0.25-0.5h (~0.4h)
+    multiplierIds:  [],
+    completedAt:    new Date('2026-05-08T15:00:00-03:00'),
+  },
 ];
 
 // ─── Buckets (espelha js/services/devHours.js BUCKETS) ─────
