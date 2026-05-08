@@ -228,6 +228,20 @@ export async function renderProfile(container) {
           </div>
         </div>
 
+        <!-- Som de conclusão de tarefa (4.34+) -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header">
+            <div class="card-title">Som de conclusão de tarefa</div>
+            <div class="card-subtitle">Toca quando você marca uma tarefa como concluída</div>
+          </div>
+          <div class="card-body">
+            <div id="sound-chooser-section">
+              <!-- preenchido por _renderSoundChooser() após mount -->
+              <div style="font-size:0.8125rem;color:var(--text-muted);">Carregando opções...</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Color palette preference -->
         <div class="card">
           <div class="card-header">
@@ -506,18 +520,97 @@ function _bindProfileEvents(profile) {
     });
   });
 
-  // Save preferences (notifications + palette)
+  // ─── Sound chooser (4.34+) ───
+  // Estado local do som escolhido (sincroniza com prefs e com o save).
+  let _selectedSoundId = profile.prefs?.completionSoundId || 'plin';
+  (async () => {
+    try {
+      const { SOUND_LIBRARY, playSound } = await import('../services/sounds.js');
+      const section = document.getElementById('sound-chooser-section');
+      if (!section) return;
+
+      const renderCards = () => {
+        const groups = {
+          classic: { label: 'Clássicos',          icon: '🎵', items: [] },
+          fun:     { label: 'Divertidos',         icon: '🎈', items: [] },
+          meta:    { label: 'Outros',             icon: '⚙',  items: [] },
+        };
+        for (const s of SOUND_LIBRARY) {
+          (groups[s.category] || groups.meta).items.push(s);
+        }
+        section.innerHTML = Object.entries(groups).filter(([, g]) => g.items.length).map(([key, g]) => `
+          <div style="margin-bottom:18px;">
+            <div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);
+              margin-bottom:8px;letter-spacing:0.04em;text-transform:uppercase;">
+              ${g.icon} ${g.label}
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+              ${g.items.map(s => {
+                const selected = s.id === _selectedSoundId;
+                const slotPending = s.file && !s.synth;
+                return `
+                  <div class="sound-card" data-sound-id="${s.id}" style="
+                    border:2px solid ${selected ? 'var(--brand-gold)' : 'var(--border-subtle)'};
+                    background:${selected ? 'rgba(212,168,67,0.08)' : 'var(--bg-card)'};
+                    border-radius:8px;padding:12px;cursor:pointer;
+                    transition:all 0.15s;display:flex;align-items:center;gap:10px;">
+                    <div style="font-size:1.5rem;flex-shrink:0;">${s.icon}</div>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">
+                        ${s.label}${selected ? ' <span style="color:var(--brand-gold);">✓</span>' : ''}
+                      </div>
+                      <div style="font-size:0.6875rem;color:var(--text-muted);line-height:1.3;">
+                        ${slotPending ? 'Slot aguardando MP3' : (s.mute ? 'Sem som' : '')}
+                      </div>
+                    </div>
+                    ${!s.mute ? `
+                    <button class="sound-preview-btn" data-sound-id="${s.id}" title="Ouvir prévia"
+                      style="background:none;border:1px solid var(--border-subtle);border-radius:50%;
+                      width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+                      cursor:pointer;color:var(--text-secondary);font-size:0.75rem;flex-shrink:0;">
+                      ▶
+                    </button>` : ''}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `).join('');
+
+        // Bind cards: click no card seleciona, click no botão ▶ toca preview
+        section.querySelectorAll('.sound-card').forEach(card => {
+          card.addEventListener('click', e => {
+            if (e.target.closest('.sound-preview-btn')) return;  // delegado abaixo
+            _selectedSoundId = card.dataset.soundId;
+            renderCards();
+          });
+        });
+        section.querySelectorAll('.sound-preview-btn').forEach(btn => {
+          btn.addEventListener('click', e => {
+            e.stopPropagation();
+            playSound(btn.dataset.soundId);
+          });
+        });
+      };
+      renderCards();
+    } catch (e) {
+      console.warn('[profile] sound chooser falhou:', e?.message);
+    }
+  })();
+
+  // Save preferences (notifications + palette + som de conclusão)
   document.getElementById('prefs-save-btn')?.addEventListener('click', async () => {
     const btn = document.getElementById('prefs-save-btn');
     if(btn) { btn.classList.add('loading'); btn.disabled=true; }
     try {
       await updateUserProfile(store.get('currentUser').uid, {
         prefs: {
-          notifyAssign:   document.getElementById('pref-notify-assign')?.checked ?? true,
-          notifyMention:  document.getElementById('pref-notify-mention')?.checked ?? true,
-          notifyDeadline: document.getElementById('pref-notify-deadline')?.checked ?? true,
-          notifySound:    document.getElementById('pref-notify-sound')?.checked ?? true,
-          palette:        _selectedPalette,
+          notifyAssign:        document.getElementById('pref-notify-assign')?.checked ?? true,
+          notifyMention:       document.getElementById('pref-notify-mention')?.checked ?? true,
+          notifyDeadline:      document.getElementById('pref-notify-deadline')?.checked ?? true,
+          notifySound:         document.getElementById('pref-notify-sound')?.checked ?? true,
+          completionSoundId:   _selectedSoundId,
+          palette:             _selectedPalette,
         }
       });
       toast.success('Preferências salvas!');

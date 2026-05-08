@@ -37,6 +37,64 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.34.0+20260508-completion-sounds] — 2026-05-08
+
+Release **MINOR** — Banco de sons de conclusão de tarefa configurável por usuário.
+
+### Pedido do user
+> "usuarios querem uma perfumaria: poder escolher o som de conclusão das
+> tarefas. Pensaram em coisas animadas/memes, como som de leão rugindo,
+> buzina de palhaço, ovelha gritando, sino, além de sons clássicos."
+
+### Funcionalidade
+
+**13 sons no catálogo:**
+
+*Clássicos sintetizados (6):*
+- ✨ Plin (default — tríade C6→E6→G6, mantém o som original)
+- 🔔 Sino (fundamental + harmônicos)
+- 🎐 Carrilhão (4 notas em cascata)
+- 💭 Pop (noise burst filtrado)
+- 🎉 Tada! (fanfarra)
+- ✅ Sucesso UI (sweep ascendente)
+
+*Divertidos sintetizados (4):*
+- 🪙 Moeda (Mario-like square waves)
+- ⬆️ Subiu de nível (RPG-like arpejo)
+- 🤡 Buzina de palhaço (honk-honk)
+- 🔫 Laser (pew descendente)
+
+*Slots aguardando MP3 (3):*
+- 🦁 Leão rugindo (animal real, requer arquivo)
+- 🐑 Ovelha (animal real, requer arquivo)
+- 🐕 Latido (animal real, requer arquivo)
+
+*Especial:*
+- 🔇 Mudo
+
+### Arquitetura
+- **Novo:** `js/services/sounds.js` (~280 LOC)
+  - Catálogo `SOUND_LIBRARY` com synth + file
+  - 10 sintetizadores via Web Audio API (zero dependência)
+  - Lazy load + cache em memória pra arquivos MP3
+  - Fallback silencioso pro 'plin' se MP3 do slot escolhido não existe
+- `js/services/tasks.js` — `playCompletionSound()` delega ao service consumindo `prefs.completionSoundId`
+- `js/pages/profile.js` — novo card "Som de conclusão de tarefa" com grid agrupado por categoria (Clássicos / Divertidos / Outros), cada som tem botão ▶ pra preview imediato
+- **Novo:** `assets/sounds/` com README explicando como dropar MP3s
+
+### Persistência
+- Schema: `users/{uid}.prefs.completionSoundId: string`
+- Default: `'plin'` (compat com usuários atuais — sem migração)
+
+### Como adicionar mais sons
+1. **Synth**: nova entrada em `SOUND_LIBRARY` com `synth: true` + função em `SYNTH_PLAYERS`
+2. **Arquivo**: drop `assets/sounds/{x}.mp3` + entrada em `SOUND_LIBRARY` com `file: '{x}.mp3'`
+
+### Pendência (não bloqueante)
+3 slots de animais reais (lion, sheep, dog-bark) ficam **disabled** mostrando "Slot aguardando MP3" até alguém commitar os arquivos. Sites recomendados (CC0): freesound.org, pixabay.com/sound-effects.
+
+---
+
 ## [4.33.3+20260508-dev-hours-days-avg] — 2026-05-08
 
 Release **PATCH** — Página pública de horas de dev: cards de total de

@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 33,
-  patch: 3,
-  build: '20260508-dev-hours-days-avg',
+  minor: 34,
+  patch: 0,
+  build: '20260508-completion-sounds',
 };
 
 /** "1.2.0" */

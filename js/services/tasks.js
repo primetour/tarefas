@@ -14,70 +14,23 @@ import { store }    from '../store.js';
 import { auditLog } from '../auth/audit.js';
 import { syncLegacyFields, migrateLegacyToMetaLinks } from './metaLinks.js';
 
-/* ─── Som de conclusão de tarefa (Web Audio API) ─────────── */
-// Navegadores modernos (Chrome, Safari, Firefox) bloqueiam áudio até o
-// usuário interagir com a página. Pra garantir que o "plin" toque quando
-// a tarefa for concluída, fazemos duas coisas:
-//  1. Primer: no primeiro clique/teclada da sessão, criamos o
-//     AudioContext dentro do gesto do usuário — isso o deixa em estado
-//     "running" permanentemente.
-//  2. resume(): sempre chamamos antes de tocar, caso o contexto tenha
-//     sido suspenso em algum momento.
-let _completionCtx = null;
-let _audioPrimed   = false;
+/* ─── Som de conclusão (4.34+) ──────────────────────────
+ * AudioContext + primer movidos pra js/services/sounds.js.
+ * Som agora é configurável por usuário via prefs.completionSoundId. */
 
-function _ensureAudioCtx() {
-  if (_completionCtx) return _completionCtx;
-  try {
-    _completionCtx = new (window.AudioContext || window.webkitAudioContext)();
-  } catch { /* navegador sem Web Audio */ }
-  return _completionCtx;
-}
-
-if (typeof window !== 'undefined' && !_audioPrimed) {
-  const primer = () => {
-    if (_audioPrimed) return;
-    _audioPrimed = true;
-    const ctx = _ensureAudioCtx();
-    if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
-    window.removeEventListener('click',   primer, true);
-    window.removeEventListener('keydown', primer, true);
-    window.removeEventListener('touchstart', primer, true);
-  };
-  window.addEventListener('click',     primer, true);
-  window.addEventListener('keydown',   primer, true);
-  window.addEventListener('touchstart', primer, true);
-}
-
+/**
+ * Toca o som de conclusão escolhido pelo usuário (4.34+).
+ * Delega ao service `sounds.js`. Se prefs.completionSoundId não existe ou
+ * é inválido, cai no default 'plin' (compat).
+ */
 function playCompletionSound() {
   try {
-    const ctx = _ensureAudioCtx();
-    if (!ctx) { console.warn('[Audio] AudioContext indisponível neste navegador'); return; }
-    const playTones = () => {
-      const now = ctx.currentTime;
-      // "Plin" — ascending triad: C6 → E6 → G6
-      [1047, 1319, 1568].forEach((freq, i) => {
-        const osc  = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0, now + i * 0.1);
-        gain.gain.linearRampToValueAtTime(0.22, now + i * 0.1 + 0.015);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.1 + 0.35);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(now + i * 0.1);
-        osc.stop(now + i * 0.1 + 0.4);
-      });
-      console.log('[Audio] Som de conclusão tocado (state=' + ctx.state + ')');
-    };
-    if (ctx.state === 'suspended') {
-      // Chrome/Safari: resume() é assíncrono — aguarda antes de tocar
-      ctx.resume().then(playTones).catch(err => {
-        console.warn('[Audio] resume() falhou:', err.message);
-      });
-    } else {
-      playTones();
-    }
+    const profile = store.get('userProfile') || {};
+    const soundId = profile.prefs?.completionSoundId;  // pode ser undefined → default
+    // Lazy import pra não inflar boot — sounds.js é leve mas só carrega quando precisa
+    import('./sounds.js')
+      .then(m => m.playSound(soundId || m.DEFAULT_SOUND_ID))
+      .catch(e => console.warn('[Audio] sounds.js falhou:', e.message));
   } catch (e) {
     console.warn('[Audio] Erro ao tocar som:', e.message);
   }
