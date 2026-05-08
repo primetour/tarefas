@@ -248,6 +248,60 @@ function openTypeModal(type = null) {
     </div>`;
   }
 
+  // 4.31+ Renderizador de uma linha de pergunta CSAT
+  function renderCsatQuestionRow(q, i) {
+    const TYPES = [
+      { v:'score', l:'Nota 1-5' },
+      { v:'text',  l:'Texto livre' },
+      { v:'yesno', l:'Sim/Não' },
+    ];
+    return `<div class="tt-csat-q-row" data-idx="${i}"
+      style="display:grid;grid-template-columns:1fr 130px 80px 32px;gap:8px;align-items:center;
+      padding:8px;border:1px solid var(--border-subtle);border-radius:6px;background:var(--bg-surface);">
+      <input type="text" class="form-input tt-csat-q-label"
+        value="${esc(q.label || '')}"
+        placeholder="Ex: Como avalia o conteúdo?"
+        style="font-size:0.8125rem;" />
+      <select class="form-select tt-csat-q-type" style="font-size:0.8125rem;">
+        ${TYPES.map(t => `<option value="${t.v}" ${q.type===t.v?'selected':''}>${esc(t.l)}</option>`).join('')}
+      </select>
+      <label style="display:flex;align-items:center;gap:4px;font-size:0.75rem;cursor:pointer;
+        color:var(--text-secondary);">
+        <input type="checkbox" class="tt-csat-q-required" ${q.required!==false?'checked':''}
+          style="accent-color:var(--brand-gold);" />
+        Obrig.
+      </label>
+      <button class="btn btn-ghost btn-icon btn-sm tt-csat-q-del" type="button"
+        style="color:var(--color-danger);width:32px;height:32px;">✕</button>
+    </div>`;
+  }
+
+  // Coleta o estado de csatConfig do DOM
+  function collectCsat() {
+    const enabled = document.getElementById('tt-csat-enabled')?.checked === true;
+    if (!enabled) return null;
+    const mode  = document.querySelector('input[name="tt-csat-mode"]:checked')?.value || 'individual';
+    const questions = [];
+    document.querySelectorAll('.tt-csat-q-row').forEach(row => {
+      const label = row.querySelector('.tt-csat-q-label')?.value?.trim();
+      if (!label) return;
+      questions.push({
+        label,
+        type: row.querySelector('.tt-csat-q-type')?.value || 'score',
+        required: row.querySelector('.tt-csat-q-required')?.checked !== false,
+      });
+    });
+    return {
+      enabled: true,
+      mode,
+      period: document.getElementById('tt-csat-period')?.value || 'weekly',
+      dayOfWeek: parseInt(document.getElementById('tt-csat-dow')?.value || '5', 10),
+      periodLabel: document.getElementById('tt-csat-period-label')?.value?.trim() || '',
+      customMessage: document.getElementById('tt-csat-msg')?.value?.trim() || '',
+      questions,
+    };
+  }
+
   function renderStepRow(s, i) {
     return `<div class="tt-step-row" data-idx="${i}"
       style="display:grid;grid-template-columns:1fr 36px 32px;gap:8px;align-items:center;">
@@ -530,6 +584,120 @@ function openTypeModal(type = null) {
           <button class="btn btn-ghost btn-sm" id="tt-add-slot-btn" type="button">+ Slot de agenda</button>
         </div>
       </details>
+
+      <!-- 4.31+ CSAT customizável -->
+      <details style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);">
+        <summary style="padding:10px 14px;cursor:pointer;font-size:0.875rem;font-weight:500;
+          color:var(--text-secondary);user-select:none;">
+          ★ Pesquisa de satisfação (CSAT)
+          <span style="font-size:0.75rem;font-weight:400;color:var(--text-muted);margin-left:8px;">
+            Perguntas customizadas e modo de envio
+          </span>
+        </summary>
+        <div style="padding:12px 14px;border-top:1px solid var(--border-subtle);
+          display:flex;flex-direction:column;gap:14px;" id="tt-csat-section">
+          <!-- enabled toggle -->
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.875rem;cursor:pointer;">
+            <input type="checkbox" id="tt-csat-enabled"
+              ${(type?.csatConfig?.enabled) ? 'checked' : ''}
+              style="accent-color:var(--brand-gold);" />
+            <strong>Habilitar CSAT customizado para este tipo</strong>
+          </label>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0;line-height:1.4;">
+            Sem habilitar, o sistema usa a pergunta padrão única (1–5 + comentário).
+          </p>
+
+          <div id="tt-csat-body" style="display:${(type?.csatConfig?.enabled) ? 'flex' : 'none'};
+            flex-direction:column;gap:14px;">
+
+            <!-- Mode -->
+            <div>
+              <label class="form-label" style="font-size:0.75rem;font-weight:600;
+                color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">
+                Modo de envio
+              </label>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                ${[
+                  { v:'individual', l:'Individual', d:'1 CSAT por tarefa concluída' },
+                  { v:'periodic',   l:'Periódico',  d:'1 CSAT/semana cobrindo todas as tarefas (em breve)' },
+                  { v:'milestone',  l:'Marco',      d:'1 CSAT cobrindo um conjunto de entregas (em breve)' },
+                ].map(m => `
+                  <label style="flex:1;min-width:160px;padding:10px;border:1px solid ${(type?.csatConfig?.mode||'individual')===m.v?'var(--brand-gold)':'var(--border-subtle)'};
+                    border-radius:6px;cursor:pointer;background:${(type?.csatConfig?.mode||'individual')===m.v?'rgba(212,168,67,0.06)':'transparent'};
+                    transition:all 0.15s;">
+                    <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:0.875rem;">
+                      <input type="radio" name="tt-csat-mode" value="${m.v}"
+                        ${(type?.csatConfig?.mode||'individual')===m.v?'checked':''}
+                        style="accent-color:var(--brand-gold);" />
+                      ${esc(m.l)}
+                    </div>
+                    <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;line-height:1.4;">
+                      ${esc(m.d)}
+                    </div>
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Periodic options (visible only if mode=periodic) -->
+            <div id="tt-csat-periodic-block" style="display:${(type?.csatConfig?.mode==='periodic')?'block':'none'};
+              padding:10px 12px;border-radius:6px;background:var(--bg-surface);border:1px solid var(--border-subtle);">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div>
+                  <label class="form-label" style="font-size:0.6875rem;">Cadência</label>
+                  <select id="tt-csat-period" class="form-select" style="font-size:0.875rem;">
+                    <option value="weekly"   ${(type?.csatConfig?.period||'weekly')==='weekly'?'selected':''}>Semanal</option>
+                    <option value="biweekly" ${type?.csatConfig?.period==='biweekly'?'selected':''}>Quinzenal</option>
+                    <option value="monthly"  ${type?.csatConfig?.period==='monthly'?'selected':''}>Mensal</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size:0.6875rem;">Dia da semana (envio)</label>
+                  <select id="tt-csat-dow" class="form-select" style="font-size:0.875rem;">
+                    ${['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado']
+                      .map((d, i) => `<option value="${i}" ${(type?.csatConfig?.dayOfWeek ?? 5)===i?'selected':''}>${d}</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+              <div style="margin-top:8px;">
+                <label class="form-label" style="font-size:0.6875rem;">Como esse "lote" é apresentado ao cliente</label>
+                <input type="text" class="form-input" id="tt-csat-period-label"
+                  value="${esc(type?.csatConfig?.periodLabel || '')}"
+                  placeholder="Ex: Newsletters da semana de {período}"
+                  style="font-size:0.875rem;" />
+              </div>
+            </div>
+
+            <!-- Mensagem custom -->
+            <div>
+              <label class="form-label" style="font-size:0.6875rem;">Mensagem do e-mail (opcional)</label>
+              <textarea class="form-input" id="tt-csat-msg" rows="2"
+                placeholder="Ex: Avalie como foi a entrega das newsletters dessa semana"
+                style="font-size:0.8125rem;resize:vertical;">${esc(type?.csatConfig?.customMessage || '')}</textarea>
+            </div>
+
+            <!-- Questions -->
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                <label class="form-label" style="font-size:0.75rem;font-weight:600;color:var(--text-muted);
+                  text-transform:uppercase;letter-spacing:.04em;margin:0;">
+                  Perguntas
+                </label>
+                <button class="btn btn-ghost btn-sm" id="tt-csat-add-q" type="button"
+                  style="font-size:0.75rem;">+ Pergunta</button>
+              </div>
+              <div id="tt-csat-questions" style="display:flex;flex-direction:column;gap:8px;">
+                ${((type?.csatConfig?.questions) || []).map((q,i) => renderCsatQuestionRow(q, i)).join('')}
+              </div>
+              ${!(type?.csatConfig?.questions || []).length ? `
+                <p style="font-size:0.75rem;color:var(--text-muted);margin:8px 0 0;font-style:italic;">
+                  Adicione pelo menos 1 pergunta. Sem perguntas, o sistema usa a pergunta padrão única.
+                </p>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+      </details>
     </div>`,
     footer: [
       { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
@@ -559,6 +727,7 @@ function openTypeModal(type = null) {
             variations:       variations.filter(v => v.name?.trim()),
             steps,
             scheduleSlots:    slots.filter(s => s.title?.trim()),
+            csatConfig:       collectCsat(), // 4.31+
             fields:           type?.fields?.filter(f=>!f.system) || [],
           };
           const btn = document.querySelector('.modal-footer .btn-primary');
@@ -717,6 +886,63 @@ function openTypeModal(type = null) {
       rebuildSlots();
     });
     rebuildSlots();
+
+    // 4.31+ CSAT handlers
+    const csatEnabledCb = document.getElementById('tt-csat-enabled');
+    const csatBody = document.getElementById('tt-csat-body');
+    csatEnabledCb?.addEventListener('change', () => {
+      if (csatBody) csatBody.style.display = csatEnabledCb.checked ? 'flex' : 'none';
+    });
+
+    // Mode radio: toggle visibility do bloco periodic
+    document.querySelectorAll('input[name="tt-csat-mode"]').forEach(r => {
+      r.addEventListener('change', () => {
+        const mode = document.querySelector('input[name="tt-csat-mode"]:checked')?.value;
+        const block = document.getElementById('tt-csat-periodic-block');
+        if (block) block.style.display = mode === 'periodic' ? 'block' : 'none';
+      });
+    });
+
+    // Adicionar pergunta
+    const rebuildCsatQs = () => {
+      const list = document.getElementById('tt-csat-questions');
+      if (!list) return;
+      // Coleta estado atual antes de re-renderizar
+      const current = [];
+      list.querySelectorAll('.tt-csat-q-row').forEach(row => {
+        current.push({
+          label: row.querySelector('.tt-csat-q-label')?.value || '',
+          type:  row.querySelector('.tt-csat-q-type')?.value || 'score',
+          required: row.querySelector('.tt-csat-q-required')?.checked !== false,
+        });
+      });
+      list.innerHTML = current.map((q,i) => renderCsatQuestionRow(q, i)).join('');
+      bindCsatQRows();
+    };
+    const bindCsatQRows = () => {
+      document.querySelectorAll('.tt-csat-q-del').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const row = e.target.closest('.tt-csat-q-row');
+          row?.remove();
+        });
+      });
+    };
+    document.getElementById('tt-csat-add-q')?.addEventListener('click', () => {
+      const list = document.getElementById('tt-csat-questions');
+      if (!list) return;
+      const current = [];
+      list.querySelectorAll('.tt-csat-q-row').forEach(row => {
+        current.push({
+          label: row.querySelector('.tt-csat-q-label')?.value || '',
+          type:  row.querySelector('.tt-csat-q-type')?.value || 'score',
+          required: row.querySelector('.tt-csat-q-required')?.checked !== false,
+        });
+      });
+      current.push({ label: '', type: 'score', required: true });
+      list.innerHTML = current.map((q,i) => renderCsatQuestionRow(q, i)).join('');
+      bindCsatQRows();
+    });
+    bindCsatQRows();
     // Inline new category — abre o editor completo (com ícone + cor)
     document.getElementById('tt-new-cat-btn')?.addEventListener('click', () => {
       const sector = document.getElementById('tt-sector')?.value || null;

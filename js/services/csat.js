@@ -36,9 +36,15 @@ export const SCORE_LABELS = {
 // Vide functions/index.js sendCsatEmail.
 
 /* ─── Criar survey ───────────────────────────────────────── */
+/**
+ * 4.31+ Aceita opcionalmente `taskTypeId` para snapshot do `csatConfig`
+ * (perguntas + custom message). Se ausente ou tipo sem CSAT habilitado,
+ * usa modelo legado (1 pergunta padrão).
+ */
 export async function createCsatSurvey({
   taskId,
   taskTitle,
+  taskTypeId   = null,
   projectId    = null,
   projectName  = null,
   clientEmail,
@@ -50,20 +56,44 @@ export async function createCsatSurvey({
   const user = store.get('currentUser');
   if (!clientEmail) throw new Error('E-mail do cliente é obrigatório.');
 
+  // 4.31+ Snapshot do csatConfig do tipo (se habilitado)
+  let questionsSnapshot = [];
+  let csatMode = 'individual';
+  let resolvedCustomMessage = customMessage;
+  if (taskTypeId) {
+    const types = store.get('taskTypes') || [];
+    const t = types.find(tt => tt.id === taskTypeId);
+    const cfg = t?.csatConfig;
+    if (cfg && cfg.enabled && Array.isArray(cfg.questions) && cfg.questions.length) {
+      questionsSnapshot = cfg.questions.map(q => ({
+        id: q.id, label: q.label, type: q.type || 'score',
+        required: q.required !== false,
+      }));
+      csatMode = cfg.mode || 'individual';
+      if (!resolvedCustomMessage && cfg.customMessage) resolvedCustomMessage = cfg.customMessage;
+    }
+  }
+
   const workspace = store.get('currentWorkspace');
   const surveyDoc = {
     workspaceId:  workspace?.id || null,
     taskId,
+    taskTypeId,
     taskTitle:    taskTitle || 'Tarefa',
     projectId,
     projectName,
     clientEmail:  clientEmail.trim().toLowerCase(),
     clientName:   clientName.trim() || clientEmail.split('@')[0],
     assignedTo,
-    customMessage,
+    customMessage: resolvedCustomMessage,
     status:       'pending',
+    // Legado (single): score + comment. Mantido pra back-compat.
     score:        null,
     comment:      null,
+    // 4.31+ Multi-pergunta. Vazio = single-question flow.
+    questions:    questionsSnapshot,
+    responses:    {}, // { [questionId]: value }
+    csatMode,
     token:        generateToken(),
     createdAt:    serverTimestamp(),
     createdBy:    user.uid,
@@ -73,7 +103,7 @@ export async function createCsatSurvey({
   };
 
   const ref = await addDoc(collection(db, 'csat_surveys'), surveyDoc);
-  await auditLog('csat.create', 'survey', ref.id, { taskId, clientEmail });
+  await auditLog('csat.create', 'survey', ref.id, { taskId, clientEmail, multiQ: questionsSnapshot.length });
   return { id: ref.id, ...surveyDoc };
 }
 
@@ -128,21 +158,84 @@ export async function sendCsatEmail(surveyId) {
   return survey;
 }
 
-/* ─── Registrar resposta ─────────────────────────────────── */
-export async function respondCsatSurvey(surveyId, { score, comment = '' }) {
-  if (!score || score < 1 || score > 5) throw new Error('Nota inválida (1–5).');
-
-  // Fetch survey data before updating to get recipient info
+/* ─── Registrar resposta (multi-pergunta 4.31+) ──────────── */
+/**
+ * Aceita 2 modos:
+ *   - Legado (single):  { score: 1-5, comment: '...' }
+ *   - Multi (4.31+):    { responses: { [questionId]: value } }
+ *
+ * Para multi, calcula um `score` derivado (média dos scores das perguntas
+ * type=score) — preserva back-compat com listagem que olha `score`.
+ */
+export async function respondCsatSurvey(surveyId, payload = {}) {
+  // Fetch survey data before updating to get recipient info + questions snapshot
   const surveySnap = await getDoc(doc(db, 'csat_surveys', surveyId));
-  const surveyData = surveySnap.exists() ? surveySnap.data() : {};
+  if (!surveySnap.exists()) throw new Error('Pesquisa não encontrada.');
+  const surveyData = surveySnap.data();
 
-  await updateDoc(doc(db, 'csat_surveys', surveyId), {
-    score,
-    comment:     comment.trim(),
-    status:      'responded',
-    respondedAt: serverTimestamp(),
-  });
-  await auditLog('csat.respond', 'survey', surveyId, { score });
+  const questions = Array.isArray(surveyData.questions) ? surveyData.questions : [];
+  const isMulti = questions.length > 0;
+
+  let updates;
+  let scoreForAudit;
+  if (isMulti) {
+    // Multi-pergunta: payload.responses = { [qId]: value }
+    const responses = payload.responses || {};
+    // Valida required
+    for (const q of questions) {
+      if (!q.required) continue;
+      const v = responses[q.id];
+      if (q.type === 'score' && (!v || v < 1 || v > 5)) {
+        throw new Error(`Pergunta obrigatória sem nota: "${q.label}"`);
+      }
+      if (q.type === 'text' && (!v || !String(v).trim())) {
+        throw new Error(`Pergunta obrigatória sem resposta: "${q.label}"`);
+      }
+      if (q.type === 'yesno' && (v !== 'yes' && v !== 'no')) {
+        throw new Error(`Pergunta obrigatória sem resposta: "${q.label}"`);
+      }
+    }
+    // Score derivado: média dos scores
+    const scoreVals = questions
+      .filter(q => q.type === 'score')
+      .map(q => responses[q.id])
+      .filter(v => Number.isFinite(v) && v >= 1 && v <= 5);
+    const avgScore = scoreVals.length
+      ? Math.round(scoreVals.reduce((s,v)=>s+v,0) / scoreVals.length)
+      : null;
+    updates = {
+      responses,
+      score: avgScore, // back-compat
+      // Comment derivado: concatena respostas type=text (não obrigatórias entram só se preenchidas)
+      comment: questions
+        .filter(q => q.type === 'text')
+        .map(q => {
+          const v = (responses[q.id] || '').toString().trim();
+          return v ? `[${q.label}] ${v}` : '';
+        })
+        .filter(Boolean)
+        .join('\n\n'),
+      status:      'responded',
+      respondedAt: serverTimestamp(),
+    };
+    scoreForAudit = avgScore;
+  } else {
+    // Legado: single score + comment
+    const { score, comment = '' } = payload;
+    if (!score || score < 1 || score > 5) throw new Error('Nota inválida (1–5).');
+    updates = {
+      score,
+      comment: String(comment || '').trim(),
+      status: 'responded',
+      respondedAt: serverTimestamp(),
+    };
+    scoreForAudit = score;
+  }
+
+  await updateDoc(doc(db, 'csat_surveys', surveyId), updates);
+  await auditLog('csat.respond', 'survey', surveyId, { score: scoreForAudit, multiQ: isMulti });
+
+  const score = scoreForAudit;
 
   // Notify assignee + creator
   const recipients = [surveyData.assignedTo, surveyData.createdBy].filter(Boolean);

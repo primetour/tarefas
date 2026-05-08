@@ -264,10 +264,16 @@
     }
 
     // ─── Render form ──────────────────────────────────────
+    // 4.31+ Multi-pergunta: se survey.questions[] tem itens, renderiza N perguntas;
+    // senão cai no modo legado (1 pergunta padrão score+comment).
+    const isMulti = Array.isArray(survey.questions) && survey.questions.length > 0;
     let selectedScore = preScore || 0;
+    const multiResponses = {}; // { qId: value }
     renderForm(survey, selectedScore);
 
     function renderForm(s, initScore) {
+      if (isMulti) return renderMultiForm(s, initScore);
+
       card.innerHTML = `
         <div class="brand">PRIMETOUR</div>
         <div class="task-chip">✓ ${escHtml(s.taskTitle)}</div>
@@ -303,7 +309,7 @@
         });
       });
 
-      // Submit
+      // Submit (legado single)
       document.getElementById('submit-btn').addEventListener('click', async () => {
         if (!selectedScore) {
           document.getElementById('score-error').style.display = 'block';
@@ -325,6 +331,174 @@
           showSuccess(selectedScore, comment);
         } catch(err) {
           btn.disabled    = false;
+          btn.textContent = 'Enviar avaliação';
+          showError('Erro ao enviar: ' + err.message);
+        }
+      });
+    }
+
+    // 4.31+ Multi-pergunta render
+    function renderMultiForm(s, initScore) {
+      // Preenche score da URL na PRIMEIRA pergunta type=score (UX: cliente clica
+      // em "score 4" no e-mail e já vê a primeira pergunta marcada)
+      const firstScoreQ = s.questions.find(q => q.type === 'score');
+      if (initScore && firstScoreQ) multiResponses[firstScoreQ.id] = initScore;
+
+      const renderQuestion = (q, idx) => {
+        const reqMark = q.required ? '<span style="color:#EF4444;">*</span>' : '';
+        if (q.type === 'score') {
+          const cur = multiResponses[q.id];
+          return `<div class="multi-q-block" data-qid="${escHtml(q.id)}" data-qtype="score" data-required="${q.required ? '1':'0'}"
+            style="margin-bottom:24px;padding-bottom:20px;${idx > 0 ? 'border-top:1px solid #E5E7EB;padding-top:20px;' : ''}">
+            <div style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:14px;line-height:1.4;">
+              ${idx+1}. ${escHtml(q.label)} ${reqMark}
+            </div>
+            <div class="score-picker">
+              ${[1,2,3,4,5].map(n => {
+                const sd = SCORE_DATA[n];
+                return `<button class="score-btn ${n===cur?'selected':''}"
+                  data-mq-id="${escHtml(q.id)}" data-score="${n}" type="button">
+                  <span class="score-btn-emoji">${sd.emoji}</span>
+                  <span class="score-btn-num">${n}</span>
+                  <span class="score-btn-lbl">${sd.label}</span>
+                </button>`;
+              }).join('')}
+            </div>
+          </div>`;
+        }
+        if (q.type === 'yesno') {
+          const cur = multiResponses[q.id];
+          return `<div class="multi-q-block" data-qid="${escHtml(q.id)}" data-qtype="yesno" data-required="${q.required ? '1':'0'}"
+            style="margin-bottom:24px;padding-bottom:20px;${idx > 0 ? 'border-top:1px solid #E5E7EB;padding-top:20px;' : ''}">
+            <div style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:14px;line-height:1.4;">
+              ${idx+1}. ${escHtml(q.label)} ${reqMark}
+            </div>
+            <div style="display:flex;gap:10px;">
+              ${[
+                {v:'yes', l:'Sim', emoji:'👍', color:'#22C55E'},
+                {v:'no',  l:'Não', emoji:'👎', color:'#EF4444'},
+              ].map(o => `<button type="button" class="score-btn ${cur===o.v?'selected':''}"
+                data-mq-id="${escHtml(q.id)}" data-yn="${o.v}"
+                style="border-color:${cur===o.v?o.color:'var(--border)'};
+                       background:${cur===o.v?o.color+'15':'#fff'};">
+                <span class="score-btn-emoji">${o.emoji}</span>
+                <span class="score-btn-lbl" style="font-weight:600;">${o.l}</span>
+              </button>`).join('')}
+            </div>
+          </div>`;
+        }
+        // text
+        return `<div class="multi-q-block" data-qid="${escHtml(q.id)}" data-qtype="text" data-required="${q.required ? '1':'0'}"
+          style="margin-bottom:24px;padding-bottom:20px;${idx > 0 ? 'border-top:1px solid #E5E7EB;padding-top:20px;' : ''}">
+          <div style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:14px;line-height:1.4;">
+            ${idx+1}. ${escHtml(q.label)} ${reqMark}
+          </div>
+          <textarea data-mq-id="${escHtml(q.id)}" rows="3" maxlength="500"
+            placeholder="${q.required ? 'Sua resposta…' : 'Opcional — conte-nos sua opinião…'}"
+            style="width:100%;"></textarea>
+        </div>`;
+      };
+
+      card.innerHTML = `
+        <div class="brand">PRIMETOUR</div>
+        <div class="task-chip">✓ ${escHtml(s.taskTitle)}</div>
+        <h1 style="margin-bottom:8px;">Avaliação</h1>
+        <p class="subtitle">${s.customMessage || 'Sua opinião é muito importante para nós. Algumas perguntas rápidas abaixo:'}</p>
+        <div id="multi-questions" style="text-align:left;margin-top:24px;">
+          ${s.questions.map((q,i) => renderQuestion(q,i)).join('')}
+        </div>
+        <p id="multi-error" class="error-msg" style="display:none;text-align:center;"></p>
+        <button class="btn-submit" id="submit-btn" type="button">Enviar avaliação</button>
+      `;
+
+      // Score buttons
+      card.querySelectorAll('.score-btn[data-mq-id][data-score]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const qid = btn.dataset.mqId;
+          const v = parseInt(btn.dataset.score);
+          multiResponses[qid] = v;
+          // Reset siblings
+          card.querySelectorAll(`.score-btn[data-mq-id="${qid}"]`).forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          document.getElementById('multi-error').style.display = 'none';
+        });
+      });
+      // Yes/No buttons
+      card.querySelectorAll('.score-btn[data-mq-id][data-yn]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const qid = btn.dataset.mqId;
+          const v = btn.dataset.yn;
+          multiResponses[qid] = v;
+          card.querySelectorAll(`.score-btn[data-mq-id="${qid}"]`).forEach(b => {
+            b.classList.remove('selected');
+            b.style.borderColor = 'var(--border)';
+            b.style.background = '#fff';
+          });
+          btn.classList.add('selected');
+          const color = v === 'yes' ? '#22C55E' : '#EF4444';
+          btn.style.borderColor = color;
+          btn.style.background = color + '15';
+          document.getElementById('multi-error').style.display = 'none';
+        });
+      });
+
+      // Submit (multi)
+      document.getElementById('submit-btn').addEventListener('click', async () => {
+        // Coleta texto
+        card.querySelectorAll('textarea[data-mq-id]').forEach(ta => {
+          const qid = ta.dataset.mqId;
+          multiResponses[qid] = ta.value.trim();
+        });
+        // Valida required
+        const errEl = document.getElementById('multi-error');
+        for (const q of s.questions) {
+          if (!q.required) continue;
+          const v = multiResponses[q.id];
+          let bad = false;
+          if (q.type === 'score') bad = !v || v < 1 || v > 5;
+          else if (q.type === 'yesno') bad = (v !== 'yes' && v !== 'no');
+          else if (q.type === 'text') bad = !v || !String(v).trim();
+          if (bad) {
+            errEl.style.display = 'block';
+            errEl.textContent = `Pergunta obrigatória sem resposta: "${q.label}"`;
+            // Scroll pra primeira pergunta sem resposta
+            card.querySelector(`.multi-q-block[data-qid="${q.id}"]`)?.scrollIntoView({behavior:'smooth', block:'center'});
+            return;
+          }
+        }
+
+        const btn = document.getElementById('submit-btn');
+        btn.disabled = true;
+        btn.textContent = 'Enviando...';
+
+        try {
+          // Score derivado: média dos type=score
+          const scoreVals = s.questions
+            .filter(q => q.type === 'score')
+            .map(q => multiResponses[q.id])
+            .filter(v => Number.isFinite(v) && v >= 1 && v <= 5);
+          const avgScore = scoreVals.length
+            ? Math.round(scoreVals.reduce((s,v)=>s+v,0) / scoreVals.length)
+            : null;
+          const commentDerived = s.questions
+            .filter(q => q.type === 'text')
+            .map(q => {
+              const v = (multiResponses[q.id] || '').toString().trim();
+              return v ? `[${q.label}] ${v}` : '';
+            })
+            .filter(Boolean)
+            .join('\n\n');
+
+          await updateDoc(doc(db, 'csat_surveys', s.id), {
+            responses:   multiResponses,
+            score:       avgScore,
+            comment:     commentDerived,
+            status:      'responded',
+            respondedAt: serverTimestamp(),
+          });
+          showSuccess(avgScore, commentDerived);
+        } catch(err) {
+          btn.disabled = false;
           btn.textContent = 'Enviar avaliação';
           showError('Erro ao enviar: ' + err.message);
         }

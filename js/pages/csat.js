@@ -409,6 +409,40 @@ function renderSurveyCard(s) {
     `<span class="score-star ${i<=s.score?'filled':'empty'}">★</span>`
   ).join('') : '';
 
+  // 4.31+ Multi-pergunta: se survey.questions[] existe, renderiza breakdown por pergunta
+  const isMulti = Array.isArray(s.questions) && s.questions.length > 0;
+  const responses = s.responses || {};
+  const multiHtml = isMulti && s.status === 'responded' ? `
+    <div style="margin-top:10px;padding:10px;border-radius:6px;background:var(--bg-surface);
+      border:1px solid var(--border-subtle);">
+      <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+        color:var(--text-muted);margin-bottom:6px;">Respostas (${s.questions.length} pergunta${s.questions.length>1?'s':''})</div>
+      ${s.questions.map(q => {
+        const v = responses[q.id];
+        let valueHtml;
+        if (q.type === 'score') {
+          if (!v) { valueHtml = '<span style="color:var(--text-muted);">—</span>'; }
+          else {
+            const sd = SCORE_LABELS[v];
+            valueHtml = `<span style="color:${sd.color};font-weight:600;">${sd.emoji} ${v}/5</span>`;
+          }
+        } else if (q.type === 'yesno') {
+          valueHtml = v === 'yes' ? '<span style="color:#22C55E;font-weight:600;">👍 Sim</span>'
+                    : v === 'no'  ? '<span style="color:#EF4444;font-weight:600;">👎 Não</span>'
+                    : '<span style="color:var(--text-muted);">—</span>';
+        } else {
+          valueHtml = v ? `<em style="color:var(--text-secondary);">"${esc(String(v).slice(0,150))}${String(v).length>150?'…':''}"</em>`
+                        : '<span style="color:var(--text-muted);">—</span>';
+        }
+        return `<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;
+          font-size:0.75rem;border-top:1px dashed var(--border-subtle);">
+          <span style="color:var(--text-secondary);flex:1;">${esc(q.label)}</span>
+          <span style="flex-shrink:0;text-align:right;">${valueHtml}</span>
+        </div>`;
+      }).join('')}
+    </div>
+  ` : '';
+
   return `
     <div class="survey-card" data-survey-id="${s.id}">
       <div class="survey-card-header">
@@ -422,6 +456,7 @@ function renderSurveyCard(s) {
         <span>✉ ${esc(s.clientEmail)}</span>
         ${s.projectName ? `<span>📦 ${esc(s.projectName)}</span>` : ''}
         ${s.sentAt ? `<span>📅 ${fmtDate(s.sentAt)}</span>` : ''}
+        ${isMulti ? `<span style="color:var(--brand-gold);font-weight:500;">★ CSAT custom</span>` : ''}
       </div>
 
       ${scoreInfo ? `
@@ -429,7 +464,7 @@ function renderSurveyCard(s) {
           <span style="font-size:1.5rem;">${scoreInfo.emoji}</span>
           <div>
             <div class="score-display">${starsHtml}
-              <span class="score-value">${s.score}/5</span>
+              <span class="score-value">${isMulti ? `${s.score}/5 (média)` : `${s.score}/5`}</span>
             </div>
             <div style="font-size:0.75rem; color:${scoreInfo.color}; font-weight:500;">
               ${scoreInfo.label}
@@ -438,7 +473,9 @@ function renderSurveyCard(s) {
         </div>
       ` : ''}
 
-      ${s.comment ? `
+      ${multiHtml}
+
+      ${s.comment && !isMulti ? `
         <div class="survey-card-comment">"${esc(s.comment)}"</div>
       ` : ''}
 

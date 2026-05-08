@@ -4018,6 +4018,32 @@ function showEvidenceModal(taskId, taskData) {
               <label style="${LBL2}">E-mail do cliente</label>
               <input type="email" id="dc-csat-email" class="portal-field" style="${F2}"
                 value="${esc2(taskData.clientEmail||'')}" placeholder="cliente@empresa.com">
+              ${(() => {
+                // 4.31+ Preview das perguntas customizadas (se o tipo tiver csatConfig)
+                const types = (typeof store !== 'undefined') ? (store.get('taskTypes') || []) : [];
+                const t = types.find(tt => tt.id === taskData?.typeId);
+                const cfg = t?.csatConfig;
+                if (!cfg?.enabled || !Array.isArray(cfg.questions) || !cfg.questions.length) return '';
+                return `
+                  <div style="margin-top:10px;padding:10px;border-radius:6px;
+                    background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.25);
+                    font-size:0.75rem;">
+                    <div style="font-weight:600;color:var(--brand-gold);margin-bottom:6px;">
+                      ★ CSAT customizado para "${esc2(t.name || 'tipo')}"
+                    </div>
+                    <div style="color:var(--text-secondary);">
+                      ${cfg.questions.length} pergunta${cfg.questions.length>1?'s':''}:
+                    </div>
+                    <ol style="margin:6px 0 0 18px;padding:0;color:var(--text-secondary);">
+                      ${cfg.questions.map(q => {
+                        const tp = q.type === 'score' ? '1-5' : q.type === 'yesno' ? 'sim/não' : 'texto';
+                        return `<li style="margin:2px 0;">${esc2(q.label)}
+                          <span style="color:var(--text-muted);font-style:italic;"> (${tp})</span></li>`;
+                      }).join('')}
+                    </ol>
+                  </div>
+                `;
+              })()}
             </div>
           </div>
 
@@ -4302,6 +4328,7 @@ function showEvidenceModal(taskId, taskData) {
           import('../services/csat.js').then(({ createCsatSurvey, sendCsatEmail }) => {
             return createCsatSurvey({
               taskId,
+              taskTypeId:  taskData.typeId || null, // 4.31+ pra snapshot do csatConfig
               taskTitle:   taskData.title || 'Entrega PRIMETOUR',
               projectId:   taskData.projectId || null,
               projectName: taskData.projectName || null,

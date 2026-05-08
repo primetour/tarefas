@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 30,
+  minor: 31,
   patch: 0,
-  build: '20260508-goals-accordion',
+  build: '20260508-csat-custom-questions',
 };
 
 /** "1.2.0" */

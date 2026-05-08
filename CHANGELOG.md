@@ -37,6 +37,85 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.31.0+20260508-csat-custom-questions] — 2026-05-08
+
+Release **MINOR** — Fase 1 do redesenho do CSAT.
+
+### Pedido do user
+> "Separar CSAT de newsletter (conteúdo e design - duas perguntas) e
+> outra pra outras entregas do marketing. Acrescentar uma function de
+> CSAT vinculada ao tipo de tarefa, no intuito de personalizar o CSAT,
+> caso necessário."
+
+### Implementação (Fase 1 — perguntas customizadas por tipo)
+**Schema** — novo bloco `csatConfig` no documento do tipo de tarefa:
+```
+csatConfig = {
+  enabled: bool,
+  mode: 'individual' | 'periodic' | 'milestone',  // F1: só individual ativo
+  period: 'weekly' | 'biweekly' | 'monthly',
+  dayOfWeek: 0-6,
+  periodLabel, customMessage,
+  questions: [{ id, label, type:'score'|'text'|'yesno', required }],
+}
+```
+
+**UI no admin** (/task-types modal): nova seção "★ Pesquisa de satisfação"
+em accordion com:
+- Toggle "Habilitar CSAT customizado"
+- Radio do modo (Individual ativo; Periódico/Marco em breve)
+- Bloco condicional pra cadência + dia da semana (se modo=periodic)
+- Mensagem custom do e-mail
+- Lista editável de perguntas (label + tipo + obrigatório + remover)
+
+**Schema do `csat_surveys`** — novos campos:
+- `taskTypeId` (snapshot de origem)
+- `questions[]` (cópia das perguntas no momento do envio)
+- `responses` (map qId → value)
+- `csatMode`
+- Mantidos `score`/`comment` legados — calculados como média/concat das
+  respostas tipo score/text na resposta multi (back-compat com listagem)
+
+**`createCsatSurvey`** lê `taskType.csatConfig` no momento da criação e
+faz snapshot das perguntas no doc da survey (imutável após envio).
+
+**`respondCsatSurvey`** detecta multi pelo `questions.length > 0` e:
+- Valida required por tipo (score 1-5, yesno yes/no, text não-vazio)
+- Calcula `score` derivado (média dos scores) e `comment` derivado
+  (concat dos textos com prefix do label)
+
+**`csat-response.html`** (página pública) detecta `survey.questions[]`:
+- Modo single (legado): UI atual inalterada
+- Modo multi: render N perguntas em sequência com:
+  - Score: 5 botões emoji
+  - Yes/no: 2 botões coloridos (👍 verde / 👎 vermelho)
+  - Text: textarea
+  - Auto-fill da primeira `score`-question com URL `?score=N`
+  - Validação client-side com scroll-to-error
+
+**Overlay tarefa-concluída** mostra preview das perguntas customizadas
+do tipo (caixa dourada com lista das N perguntas e seus tipos).
+
+**Página /csat (lista)** renderiza breakdown por pergunta nos surveys
+multi (com badge "★ CSAT custom" + lista de respostas com cores).
+
+### Não-objetivos (próximas fases)
+- **F2**: Modo `periodic` (cron Cloud Function semanal + agregação)
+- **F3**: Modo `milestone` (multi-select no fechamento)
+- **F4**: Dashboard CSAT redesenhado (médias por pergunta, alertas,
+  filtros rotina/projeto)
+
+### Files
+- `js/services/taskTypes.js` (csatConfig + sanitizer)
+- `js/pages/taskTypes.js` (UI accordion CSAT + handlers)
+- `js/services/csat.js` (snapshot + respondCsatSurvey multi)
+- `js/csat-response.html` (renderMultiForm + multi submit)
+- `js/components/taskModal.js` (passa taskTypeId + preview perguntas)
+- `js/pages/csat.js` (render breakdown multi)
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+---
+
 ## [Governança 4.30.x] — 2026-05-08
 
 Atualização do registro de Horas de Desenvolvimento (`dev_hours`):

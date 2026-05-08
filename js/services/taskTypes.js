@@ -179,6 +179,32 @@ function injectStepField(type) {
   return { ...type, fields: [...(type.fields||[]), stepField] };
 }
 
+/* ─── 4.31+ Sanitizer pra csatConfig ──────────────────────── */
+function sanitizeCsatConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const QUESTION_TYPES = ['score', 'text', 'yesno'];
+  const MODES = ['individual', 'periodic', 'milestone'];
+  const PERIODS = ['weekly', 'biweekly', 'monthly'];
+  return {
+    enabled: cfg.enabled === true,
+    mode: MODES.includes(cfg.mode) ? cfg.mode : 'individual',
+    period: PERIODS.includes(cfg.period) ? cfg.period : 'weekly',
+    // 0 = domingo, 5 = sexta (default semanal). Só usado em mode=periodic.
+    dayOfWeek: Number.isInteger(cfg.dayOfWeek) && cfg.dayOfWeek >= 0 && cfg.dayOfWeek <= 6
+      ? cfg.dayOfWeek : 5,
+    periodLabel: typeof cfg.periodLabel === 'string' ? cfg.periodLabel.trim() : '',
+    customMessage: typeof cfg.customMessage === 'string' ? cfg.customMessage.trim() : '',
+    questions: Array.isArray(cfg.questions) ? cfg.questions
+      .filter(q => q && q.label && q.label.trim())
+      .map((q, i) => ({
+        id: q.id || `q${i+1}_${Date.now().toString(36)}`,
+        label: String(q.label || '').trim(),
+        type: QUESTION_TYPES.includes(q.type) ? q.type : 'score',
+        required: q.required !== false,
+      })) : [],
+  };
+}
+
 /* ─── Criar tipo customizado ──────────────────────────────── */
 export async function createTaskType({
   name, description, icon, color,
@@ -189,6 +215,7 @@ export async function createTaskType({
   variations,
   fields, steps,
   scheduleSlots,
+  csatConfig,
   workspaceId,
 }) {
   if (!store.can('task_type_create')) throw new Error('Permissão negada.');
@@ -226,6 +253,9 @@ export async function createTaskType({
     fields:           (fields || []).map(f => ({ ...f, id: f.id || crypto.randomUUID() })),
     steps:            (steps  || []).map((s, i) => ({ ...s, id: s.id || crypto.randomUUID(), order: i })),
     scheduleSlots:    (scheduleSlots || []).filter(s => s.title?.trim()).map(s => ({ ...s, id: s.id || crypto.randomUUID().slice(0,8) })),
+    // 4.31+ CSAT customizável por tipo. Se enabled=false ou ausente, sistema
+    // usa pergunta padrão única (back-compat com csat_surveys legado).
+    csatConfig:       csatConfig ? sanitizeCsatConfig(csatConfig) : null,
     createdAt:        serverTimestamp(),
     createdBy:        user.uid,
     updatedAt:        serverTimestamp(),
@@ -260,6 +290,8 @@ export async function updateTaskType(typeId, data) {
     steps: (data.steps || type.steps || []).map((s, i) => ({
       ...s, id: s.id || crypto.randomUUID(), order: i,
     })),
+    // 4.31+ csatConfig com sanitizer (evita injeção de campos arbitrários)
+    ...(data.csatConfig !== undefined ? { csatConfig: data.csatConfig ? sanitizeCsatConfig(data.csatConfig) : null } : {}),
     updatedAt: serverTimestamp(),
     updatedBy: user.uid,
   };
