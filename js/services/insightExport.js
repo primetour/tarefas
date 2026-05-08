@@ -20,7 +20,7 @@
 import {
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
   formatInsightPeriod, formatDataSnapshot,
-} from './insights.js?v=20260503uu1';
+} from './insights.js?v=20260508r1';
 
 const fmtDate = ts => {
   if (!ts) return '—';

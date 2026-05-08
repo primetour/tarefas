@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 33,
-  patch: 1,
-  build: '20260508-insight-snapshot-friendly',
+  patch: 2,
+  build: '20260508-cachebust-r1',
 };
 
 /** "1.2.0" */

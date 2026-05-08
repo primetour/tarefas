@@ -847,7 +847,7 @@ async function exportXLSX() {
 
     // Sheet "Insights" — histórico completo de observações no dashboard NL
     try {
-      const { fetchInsights, insightsToXlsxRows } = await import('../services/insights.js?v=20260503uu1');
+      const { fetchInsights, insightsToXlsxRows } = await import('../services/insights.js?v=20260508r1');
       const insights = await fetchInsights({ dashboard: 'nl', max: 200 });
       if (insights.length) {
         const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.nl || {};
@@ -1005,7 +1005,7 @@ const exportPDF = withExportGuard(async function exportPDF() {
     // Insights & Observações — agrupados por widget (Performance tab)
     try {
       const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
-        await import('../services/insights.js?v=20260503uu1');
+        await import('../services/insights.js?v=20260508r1');
       const insights = await fetchInsights({ dashboard: 'nl', max: 200 });
       if (insights.length) {
         const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.nl || {};
@@ -1354,7 +1354,7 @@ const exportCalPDF = withExportGuard(async function exportCalPDF() {
     // Insights & Observações (mesmo bloco do Performance — dashboard='nl' compartilha)
     try {
       const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
-        await import('../services/insights.js?v=20260503uu1');
+        await import('../services/insights.js?v=20260508r1');
       const insights = await fetchInsights({ dashboard: 'nl', max: 200 });
       if (insights.length) {
         const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.nl || {};
@@ -1742,7 +1742,7 @@ function buildNlPerfGeneralSnapshot() {
 async function setupNlPerformanceInsights() {
   if (document.querySelector('#nl-kpis-block .ip-widget-btn')) return;
   try {
-    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260508r1');
     const period = computeNlPeriod();
     const filters = { bu: filterBu, days: filterDays, periodLabel: period.label };
 
@@ -1820,7 +1820,7 @@ function buildNlCalGeneralSnapshot() {
 async function setupNlCalendarInsights() {
   if (document.querySelector('#nl-cal-kpis-block .ip-widget-btn')) return;
   try {
-    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260508r1');
     // Calendar usa janela fixa de 90 dias (ver loadCalendarDashboard)
     const end = new Date();
     const start = new Date(); start.setDate(start.getDate() - 90);
@@ -3087,7 +3087,7 @@ async function setupNlContentInsights(enrichedDocs, agg) {
   // Idempotente: se os botões já estão montados, não remonta.
   if (document.querySelector('#nl-content-kpis-block .ip-widget-btn')) return;
   try {
-    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260508r1');
 
     // Período: usa o filtro selecionado na aba Conteúdo (ou últimos 180 dias por default).
     const days = parseInt(_contentFiltersState.period, 10) || 180;

@@ -700,7 +700,7 @@ async function exportXLSX() {
 
     // Sheet "Insights"
     try {
-      const { fetchInsights, insightsToXlsxRows } = await import('../services/insights.js?v=20260503uu1');
+      const { fetchInsights, insightsToXlsxRows } = await import('../services/insights.js?v=20260508r1');
       const insights = await fetchInsights({ dashboard: 'meta', max: 200 });
       if (insights.length) {
         const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.meta || {};
@@ -874,7 +874,7 @@ const exportPDF = withExportGuard(async function exportPDF() {
     // Insights & Observações — agrupado por widget
     try {
       const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
-        await import('../services/insights.js?v=20260503uu1');
+        await import('../services/insights.js?v=20260508r1');
       const insights = await fetchInsights({ dashboard: 'meta', max: 200 });
       if (insights.length) {
         const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.meta || {};
@@ -1000,7 +1000,7 @@ const META_WIDGETS = [
 async function setupMetaInsights() {
   if (document.querySelector('#meta-kpis-block .ip-widget-btn')) return;
   try {
-    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260508r1');
     const period = computeMetaPeriod();
     await setupDashboardInsights({
       dashboard: 'meta',

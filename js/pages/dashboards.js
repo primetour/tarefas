@@ -9,7 +9,7 @@ import { openTaskModal } from '../components/taskModal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 // Insights & Observações: 14 widgets ganham popover compacto + painel geral no fim.
 // Setup via helper genérico em insightWidgets.js (importado dinamicamente no IIFE).
-import { fetchInsights, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } from '../services/insights.js?v=20260503uu1';
+import { fetchInsights, insightsToXlsxRows, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } from '../services/insights.js?v=20260508r1';
 import {
   getOverviewMetrics, getTasksByDay, getStatusDistribution,
   getPriorityDistribution, getTasksByMember, getTasksByProject,
@@ -715,7 +715,7 @@ function renderAllCharts(Chart, m) {
      IIFE async pra nao precisar tornar renderAllCharts async (multiplos callers). */
   (async () => {
     try {
-      const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+      const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260508r1');
       const { start, end } = getPeriodDates(activePeriod());
       const periodLabel = ({
         '7d': 'Últimos 7 dias', '30d': 'Últimos 30 dias',

@@ -30,7 +30,7 @@
  *   });
  */
 
-import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260503uu1';
+import { mountInsightsPanel } from '../components/insightsPanel.js?v=20260508r1';
 
 /**
  * Publica widgetLabels num registro global pra insightExport.js encontrar

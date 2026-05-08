@@ -1060,7 +1060,7 @@ const exportPortalPdf = withExportGuard(async function exportPortalPdf() {
     // Insights & Observações — agrupado por widget
     try {
       const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
-        await import('../services/insights.js?v=20260503uu1');
+        await import('../services/insights.js?v=20260508r1');
       const insights = await fetchInsights({ dashboard: 'portal', max: 200 });
       if (insights.length) {
         const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.portal || {};
@@ -1377,7 +1377,7 @@ const PD_WIDGETS = [
 async function setupPdInsights() {
   if (document.querySelector('#dash-kpis-block .ip-widget-btn')) return;
   try {
-    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260508r1');
     const period = computePdPeriod();
     await setupDashboardInsights({
       dashboard: 'portal',

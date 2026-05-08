@@ -1476,7 +1476,7 @@ async function exportXLSX() {
 
     // Sheet "Insights"
     try {
-      const { fetchInsights, insightsToXlsxRows } = await import('../services/insights.js?v=20260503uu1');
+      const { fetchInsights, insightsToXlsxRows } = await import('../services/insights.js?v=20260508r1');
       const insights = await fetchInsights({ dashboard: 'ga', max: 200 });
       if (insights.length) {
         const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.ga || {};
@@ -1711,7 +1711,7 @@ const exportPDF = withExportGuard(async function exportPDF() {
     // Insights & Observações — agrupado por widget
     try {
       const { fetchInsights, groupInsightsByIndex, formatInsightPeriod, formatDataSnapshot } =
-        await import('../services/insights.js?v=20260503uu1');
+        await import('../services/insights.js?v=20260508r1');
       const insights = await fetchInsights({ dashboard: 'ga', max: 200 });
       if (insights.length) {
         const widgetLabels = window.__INSIGHT_WIDGET_LABELS?.ga || {};
@@ -3253,7 +3253,7 @@ async function setupGaInsights() {
   // Idempotência: se já tem botão no slot, está mountado nesta sessão de DOM
   if (document.querySelector('#ga-kpis-block .ip-widget-btn')) return;
   try {
-    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260503uu1');
+    const { setupDashboardInsights } = await import('../services/insightWidgets.js?v=20260508r1');
     const period = computeGaPeriod();
     await setupDashboardInsights({
       dashboard: 'ga',

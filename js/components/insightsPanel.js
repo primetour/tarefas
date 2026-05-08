@@ -45,8 +45,8 @@ import {
   suggestInsightsViaAi,
   insightCoversPeriod, formatInsightPeriod, formatDataSnapshot, formatDataSnapshotFriendly,
   INSIGHT_TYPES, IMPACT_LEVELS, DASHBOARDS,
-} from '../services/insights.js?v=20260503uu1';
-import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260503uu1';
+} from '../services/insights.js?v=20260508r1';
+import { exportInsightToPdf, exportInsightToXlsx } from '../services/insightExport.js?v=20260508r1';
 import { renderIcon } from './icons.js';
 
 /** Mapa global de widgetLabels passado pelo dashboards.js — usado no export PDF/XLSX
