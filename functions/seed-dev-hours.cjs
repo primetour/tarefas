@@ -197,6 +197,16 @@ const ENTRIES = [
     multiplierIds:  [],
     completedAt:    new Date('2026-05-08T18:00:00-03:00'),
   },
+  {
+    releaseVersion: '4.34.10',
+    releaseSlug:    '20260508-dev-hours-ai-assist-calibration',
+    title:          'Calibragem dev_hours: fator AI-assistance 0.40 aplicado',
+    summary:        'AI_ASSISTANCE_MULTIPLIER 0.40 (~2.5x speedup) aplicado em devHours.js + seed-dev-hours.cjs. Migração one-shot recalibrou 93 entradas existentes (827.88h → 331.17h, R$ 124.182 → R$ 49.675). Disclaimer da página pública dev-hours-view atualizado pra "desenvolvedor assistido por IA". Cada entrada agora salva humanEquivalentHours (puro, rastreabilidade) + totalHours (ajustado, display) + aiAssistanceMultiplier.',
+    profile:        'feature',
+    bucket:         'small',           // 0.5-1.5h (~1h)
+    multiplierIds:  [],
+    completedAt:    new Date('2026-05-08T18:30:00-03:00'),
+  },
 ];
 
 // ─── Buckets (espelha js/services/devHours.js BUCKETS) ─────
