@@ -37,6 +37,84 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.32.0+20260508-csat-fases-2-3-4-dashboard] — 2026-05-08
+
+Release **MINOR** — Fases 2/3/4 do CSAT + revisão geral do dashboard.
+
+### Pedido do user
+> "segue e finaliza tudo. vou ver apenas a versão final.
+> qdo for para o dashboard, ja faz uma revisao, pq, em tipo de tarefa,
+> por exemplo, aparecem varios codigos no lugar do tipo. dash de
+> produtividade precisa de uma revisao geral"
+
+### F2 — CSAT periódico (modo `periodic`)
+Cliente-side trigger no boot do app (sem Cloud Function por enquanto):
+- `runPeriodicCsatTrigger()` em `csat.js`:
+  - Itera taskTypes com `csatConfig.mode='periodic'` e `enabled=true`
+  - Só dispara se hoje é o `dayOfWeek` configurado
+  - Calcula janela do período (weekly/biweekly/monthly) via `periodWindowId`
+  - Coleta tarefas done daquele tipo na janela, agrupadas por clientEmail
+  - Cria 1 csat_survey por cliente com `taskIds[]` cobrindo todas
+  - Chave em `localStorage` ('csat-periodic-runs') previne disparos duplicados
+- Wire no `auth.js` boot (após login, async, silencioso)
+
+Caveat: precisa que alguém abra o app no dia configurado. Pra produção
+robusta, próxima fase F2.1 deveria ser Cloud Function cron.
+
+### F3 — CSAT milestone (modo `milestone`)
+Multi-select de tarefas relacionadas no fechamento:
+- Overlay tarefa-concluída detecta `csatConfig.mode='milestone'` e mostra
+  seção "🏆 Tarefas que este marco encerra" carregando todas done do mesmo
+  projeto (cap 30, pré-marcadas)
+- Submit coleta as marcadas e passa `taskIds=[currentTaskId, ...selecionadas]`
+  pra `createCsatSurvey`
+- Schema `csat_surveys.taskIds[]` (novo, lista de tarefas cobertas; mantém
+  `taskId` legacy = primeiro da lista)
+- Página /csat lista: badge "🏆 Marco · N entregas" (roxo)
+
+### F4 — Dashboard CSAT redesenhado
+Novo bloco "**★ Médias por pergunta (CSAT customizado)**" no topo do
+relatório (`renderBottom`):
+- `aggregateByQuestion()` agrupa surveys respondidos por `taskTypeId`
+  e calcula:
+  - Score type → média 1-5 (com cor por faixa: ≥4.5 verde, ≥3.5 amarelo, <3.5 vermelho)
+  - Yesno type → % de Sim
+  - Text type → contagem de respostas
+- Header por tipo: "Newsletter · 12 respostas"
+- Bar chart por pergunta com cor + média + N respostas
+- Surveys legados (sem questions[]) caem na "Distribuição de Notas"
+  tradicional (back-compat preservado)
+
+### Dashboard de Produtividade — fix nomes de tipos
+**Bug**: Ranking "Produtividade por Tipo" mostrava typeIds cifrados
+(`AOo69uSBifGVU2cf...`, `newsletter`) em vez de nomes amigáveis.
+
+**Causa**: dashboards.js não chamava `loadTaskTypes()` no boot →
+`store.get('taskTypes')` vazio → fallback caía no próprio typeId.
+
+**Fix**:
+1. `loadData(container)` em dashboards.js dispara `loadTaskTypes()` antes
+2. `getProductivityByType` em analytics.js refatorada com `resolveTypeName()`:
+   - Doc Firestore por id
+   - `STATIC_FALLBACKS` para legacy (`newsletter` → `Newsletter`)
+   - Genérico "Outros tipos" como último recurso
+3. Merge automático de typeIds órfãos em "Outros tipos" (evita lista poluída)
+
+### Files
+- `js/services/csat.js` (createCsatSurvey aceita taskIds + runPeriodicCsatTrigger)
+- `js/components/taskModal.js` (overlay milestone multi-select + envio)
+- `js/pages/csat.js` (badge milestone + bloco médias por pergunta)
+- `js/pages/dashboards.js` (loadTaskTypes no boot)
+- `js/services/analytics.js` (resolveTypeName + merge "Outros tipos")
+- `js/auth/auth.js` (runPeriodicCsatTrigger no boot)
+- `js/version.js`, `index.html`, `CHANGELOG.md`
+
+### Status final do CSAT modular
+✅ F1 (perguntas customizadas) · ✅ F2 (periodic client-trigger) · ✅ F3 (milestone) · ✅ F4 (dashboard redesenhado)
+🔜 F2.1 (Cloud Function cron) — quando precisar de robustez sem dependência de cliente
+
+---
+
 ## [4.31.2+20260508-fix-csat-response-syntax] — 2026-05-08
 
 PATCH — fix bug crítico que travava 100% das páginas de CSAT.

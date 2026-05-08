@@ -250,11 +250,43 @@ export function getTimePerTaskByType(tasks) {
     .sort((a, b) => b.count - a.count);
 }
 
+/* ─── 4.32+ Resolver typeId pra nome amigável ─────────────
+ * Cobre 3 casos (igual contentCalendar):
+ *   1. Doc Firestore em store.get('taskTypes')
+ *   2. Valor legacy estático ('newsletter' → 'Newsletter')
+ *   3. Genérico se não encontrar (em vez de mostrar ID cifrado)
+ */
+const STATIC_FALLBACKS = {
+  newsletter: { name: 'Newsletter', icon: '📧', color: '#D4A843' },
+};
+
+function resolveTypeName(typeId) {
+  if (!typeId || typeId === '__none__') {
+    return { name: 'Sem tipo', icon: '◇', color: '#6B7280' };
+  }
+  const dyn = store.get('taskTypes') || [];
+  const fromDoc = dyn.find(t => t.id === typeId);
+  if (fromDoc) {
+    return {
+      name: fromDoc.name || 'Tipo',
+      icon: fromDoc.icon || '◇',
+      color: fromDoc.color || '#6B7280',
+    };
+  }
+  if (STATIC_FALLBACKS[typeId]) return STATIC_FALLBACKS[typeId];
+  // Match case-insensitive em nomes dinâmicos (defensivo)
+  const fuzzy = dyn.find(t =>
+    String(t.name || '').toLowerCase() === String(typeId).toLowerCase()
+  );
+  if (fuzzy) return { name: fuzzy.name, icon: fuzzy.icon || '◇', color: fuzzy.color || '#6B7280' };
+  // Fallback final: genérico em vez de ID cifrado
+  return { name: 'Outros tipos', icon: '◇', color: '#94A3B8' };
+}
+
 /* ─── Ranking de produtividade por tipo de tarefa ─────────
  * Agrupa por taskTypeId (campo `typeId` na task), calcula concluídas,
  * total, taxa, e VOLUME DE PARCERIAS (isPartnership=true). */
 export function getProductivityByType(tasks) {
-  const taskTypes = store.get('taskTypes') || [];
   const byType = {};
   tasks.forEach(t => {
     const typeId = t.typeId || '__none__';
@@ -263,21 +295,32 @@ export function getProductivityByType(tasks) {
     if (t.status === 'done') byType[typeId].done++;
     if (t.isPartnership)     byType[typeId].partnerships++;
   });
-  return Object.entries(byType)
-    .map(([typeId, data]) => {
-      const td = taskTypes.find(x => x.id === typeId);
-      return {
-        typeId,
-        name:  td?.name || (typeId === '__none__' ? 'Sem tipo' : typeId),
-        icon:  td?.icon || '◇',
-        color: td?.color || '#6B7280',
-        ...data,
-        rate: data.total ? Math.round(data.done / data.total * 100) : 0,
-        partnershipRate: data.total
-          ? Math.round(data.partnerships / data.total * 100)
-          : 0,
-      };
-    })
+  // 4.32+ Agrega "Outros tipos" pra evitar lista poluída de tipos órfãos
+  // (typeIds legacy sem doc nem fallback estático)
+  const resolved = Object.entries(byType).map(([typeId, data]) => {
+    const r = resolveTypeName(typeId);
+    return {
+      typeId, ...r, ...data,
+      rate: data.total ? Math.round(data.done / data.total * 100) : 0,
+      partnershipRate: data.total ? Math.round(data.partnerships / data.total * 100) : 0,
+    };
+  });
+  // Merge das entries com mesmo "name" (casos onde 2+ typeIds órfãos viram "Outros tipos")
+  const merged = {};
+  resolved.forEach(r => {
+    const k = r.name.toLowerCase();
+    if (!merged[k]) merged[k] = { ...r, total: 0, done: 0, partnerships: 0, _ids: [] };
+    merged[k].total += r.total;
+    merged[k].done  += r.done;
+    merged[k].partnerships += r.partnerships;
+    merged[k]._ids.push(r.typeId);
+  });
+  return Object.values(merged)
+    .map(m => ({
+      ...m,
+      rate: m.total ? Math.round(m.done / m.total * 100) : 0,
+      partnershipRate: m.total ? Math.round(m.partnerships / m.total * 100) : 0,
+    }))
     .filter(t => t.total > 0)
     .sort((a, b) => b.done - a.done);
 }

@@ -4024,12 +4024,13 @@ function showEvidenceModal(taskId, taskData) {
                 const t = types.find(tt => tt.id === taskData?.typeId);
                 const cfg = t?.csatConfig;
                 if (!cfg?.enabled || !Array.isArray(cfg.questions) || !cfg.questions.length) return '';
+                const isMilestone = cfg.mode === 'milestone';
                 return `
                   <div style="margin-top:10px;padding:10px;border-radius:6px;
                     background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.25);
                     font-size:0.75rem;">
                     <div style="font-weight:600;color:var(--brand-gold);margin-bottom:6px;">
-                      ★ CSAT customizado para "${esc2(t.name || 'tipo')}"
+                      ★ CSAT customizado para "${esc2(t.name || 'tipo')}" ${isMilestone ? '· 🏆 Marco' : ''}
                     </div>
                     <div style="color:var(--text-secondary);">
                       ${cfg.questions.length} pergunta${cfg.questions.length>1?'s':''}:
@@ -4041,6 +4042,18 @@ function showEvidenceModal(taskId, taskData) {
                           <span style="color:var(--text-muted);font-style:italic;"> (${tp})</span></li>`;
                       }).join('')}
                     </ol>
+                    ${isMilestone ? `
+                      <div id="dc-milestone-section" style="margin-top:10px;padding-top:8px;
+                        border-top:1px dashed rgba(212,168,67,.3);">
+                        <div style="font-weight:600;color:var(--brand-gold);margin-bottom:6px;">
+                          🏆 Tarefas que este marco encerra
+                        </div>
+                        <div id="dc-milestone-list" style="display:flex;flex-direction:column;gap:4px;
+                          max-height:180px;overflow-y:auto;font-size:0.75rem;">
+                          <span style="color:var(--text-muted);font-style:italic;">Carregando…</span>
+                        </div>
+                      </div>
+                    ` : ''}
                   </div>
                 `;
               })()}
@@ -4197,6 +4210,43 @@ function showEvidenceModal(taskId, taskData) {
       if (body) body.style.display = e.target.checked ? 'flex' : 'none';
     });
 
+    // 4.32+ F3 Milestone: carrega tarefas done do mesmo projeto pra
+    // multi-select. Tarefas marcadas serão registradas no taskIds[] do CSAT.
+    (async () => {
+      const milestoneList = document.getElementById('dc-milestone-list');
+      if (!milestoneList) return; // não é tipo milestone
+      try {
+        const { fetchTasks } = await import('../services/tasks.js');
+        const all = await fetchTasks();
+        const sameProj = all.filter(t =>
+          t.projectId && taskData.projectId && t.projectId === taskData.projectId &&
+          t.id !== taskId && t.status === 'done' && !t.archived
+        ).slice(0, 30); // cap defensivo
+        if (!sameProj.length) {
+          milestoneList.innerHTML = `<span style="color:var(--text-muted);font-style:italic;">
+            Nenhuma outra tarefa concluída neste projeto.
+          </span>`;
+          return;
+        }
+        milestoneList.innerHTML = sameProj.map(t => `
+          <label style="display:flex;align-items:center;gap:6px;padding:3px 4px;cursor:pointer;
+            border-radius:4px;background:transparent;transition:background .1s;"
+            onmouseover="this.style.background='rgba(212,168,67,.05)'"
+            onmouseout="this.style.background='transparent'">
+            <input type="checkbox" class="dc-milestone-cb" data-tid="${esc2(t.id)}" checked
+              style="cursor:pointer;accent-color:var(--brand-gold);" />
+            <span style="flex:1;color:var(--text-secondary);overflow:hidden;
+              text-overflow:ellipsis;white-space:nowrap;">${esc2(t.title || 'Tarefa')}</span>
+            <span style="font-size:0.6875rem;color:var(--text-muted);flex-shrink:0;">
+              ${t.completedAt ? new Date(t.completedAt?.toDate?.() || t.completedAt).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}) : ''}
+            </span>
+          </label>
+        `).join('');
+      } catch (err) {
+        milestoneList.innerHTML = `<span style="color:var(--color-danger);">Erro ao carregar: ${esc2(err.message)}</span>`;
+      }
+    })();
+
     // 4.29+ Multi-select: tracks selected meta values + sync count + period list
     const dcSelected = new Set(activeMetaValue ? [activeMetaValue] : []);
     const updateDcCount = () => {
@@ -4324,12 +4374,19 @@ function showEvidenceModal(taskId, taskData) {
 
       // Send CSAT via csat service
       if (sendCsat && csatEmail) {
+        // 4.32+ Milestone: coleta tarefas marcadas pra cobrir
+        const milestoneIds = [...document.querySelectorAll('.dc-milestone-cb:checked')]
+          .map(cb => cb.dataset.tid);
+        const allIds = milestoneIds.length ? [taskId, ...milestoneIds] : null;
         ops.push(
           import('../services/csat.js').then(({ createCsatSurvey, sendCsatEmail }) => {
             return createCsatSurvey({
               taskId,
+              taskIds:     allIds, // 4.32+ Milestone agregado
               taskTypeId:  taskData.typeId || null, // 4.31+ pra snapshot do csatConfig
-              taskTitle:   taskData.title || 'Entrega PRIMETOUR',
+              taskTitle:   allIds && allIds.length > 1
+                ? `${taskData.title || 'Marco'} (+ ${allIds.length-1} entrega${allIds.length-1>1?'s':''})`
+                : (taskData.title || 'Entrega PRIMETOUR'),
               projectId:   taskData.projectId || null,
               projectName: taskData.projectName || null,
               clientEmail: csatEmail,

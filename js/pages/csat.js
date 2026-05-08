@@ -28,6 +28,73 @@ const findIn = (list, id) => list.find(o => o.id === id) || null;
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/* ─── 4.32+ F4 — Agregação por pergunta (CSAT custom) ─────
+ * Recebe surveys já filtrados (status='responded'). Agrupa por taskTypeId
+ * E pelo conjunto de perguntas (que é idêntico para mesmo taskTypeId pois
+ * é snapshot no envio). Calcula:
+ *   - per-question average (só score type)
+ *   - yesNo % de Sim
+ *   - text count (texto livre é só contagem)
+ *
+ * Surveys legados sem questions[] são ignorados aqui (caem na "Distribuição
+ * de Notas" tradicional).
+ */
+function aggregateByQuestion(respondedSurveys) {
+  const byTypeId = {};
+  let totalResponses = 0;
+  for (const s of respondedSurveys) {
+    if (!Array.isArray(s.questions) || s.questions.length === 0) continue;
+    const tid = s.taskTypeId || '__unknown__';
+    if (!byTypeId[tid]) {
+      byTypeId[tid] = {
+        typeId: tid,
+        typeName: '',
+        questions: s.questions.map(q => ({
+          id: q.id, label: q.label, type: q.type,
+          scores: [], yesCount: 0, noCount: 0, textCount: 0,
+          totalResponded: 0,
+        })),
+        responsesCount: 0,
+      };
+    }
+    const grp = byTypeId[tid];
+    const responses = s.responses || {};
+    let consumedAny = false;
+    for (const q of grp.questions) {
+      const v = responses[q.id];
+      if (v == null || v === '') continue;
+      consumedAny = true;
+      q.totalResponded++;
+      if (q.type === 'score' && Number.isFinite(v) && v >= 1 && v <= 5) {
+        q.scores.push(v);
+      } else if (q.type === 'yesno') {
+        if (v === 'yes') q.yesCount++;
+        else if (v === 'no') q.noCount++;
+      } else if (q.type === 'text') {
+        q.textCount++;
+      }
+    }
+    if (consumedAny) { grp.responsesCount++; totalResponses++; }
+  }
+  // Resolve typeName via store
+  const taskTypes = (typeof store !== 'undefined' && store.get) ? (store.get('taskTypes') || []) : [];
+  const STATIC_FB = { newsletter: 'Newsletter' };
+  const groups = Object.values(byTypeId).map(g => {
+    const td = taskTypes.find(t => t.id === g.typeId);
+    g.typeName = td?.name || STATIC_FB[g.typeId] || (g.typeId === '__unknown__' ? 'Sem tipo' : 'Outros');
+    g.questions = g.questions.map(q => ({
+      ...q,
+      avg: q.scores.length ? (q.scores.reduce((a,b)=>a+b,0) / q.scores.length) : 0,
+      yesPct: (q.yesCount + q.noCount) ? Math.round(q.yesCount/(q.yesCount+q.noCount)*100) : 0,
+    }));
+    return g;
+  });
+  // Ordena: tipos com mais respostas primeiro
+  groups.sort((a, b) => b.responsesCount - a.responsesCount);
+  return { groups, totalResponses };
+}
+
+
 let allSurveys   = [];
 let allTasks     = [];
 let allProjects  = [];
@@ -411,6 +478,8 @@ function renderSurveyCard(s) {
 
   // 4.31+ Multi-pergunta: se survey.questions[] existe, renderiza breakdown por pergunta
   const isMulti = Array.isArray(s.questions) && s.questions.length > 0;
+  // 4.32+ Milestone: cobre vários taskIds
+  const isMilestone = Array.isArray(s.taskIds) && s.taskIds.length > 1;
   const responses = s.responses || {};
   const multiHtml = isMulti && s.status === 'responded' ? `
     <div style="margin-top:10px;padding:10px;border-radius:6px;background:var(--bg-surface);
@@ -457,6 +526,7 @@ function renderSurveyCard(s) {
         ${s.projectName ? `<span>📦 ${esc(s.projectName)}</span>` : ''}
         ${s.sentAt ? `<span>📅 ${fmtDate(s.sentAt)}</span>` : ''}
         ${isMulti ? `<span style="color:var(--brand-gold);font-weight:500;">★ CSAT custom</span>` : ''}
+        ${isMilestone ? `<span style="color:#A78BFA;font-weight:500;" title="Marco cobre ${s.taskIds.length} entregas">🏆 Marco · ${s.taskIds.length} entregas</span>` : ''}
       </div>
 
       ${scoreInfo ? `
@@ -780,7 +850,57 @@ function renderBottom(surveys) {
     .filter(s => s.status === 'responded' && s.comment)
     .slice(0, 5);
 
+  // 4.32+ F4: Médias por pergunta agregadas (cobre surveys multi)
+  const perQuestion = aggregateByQuestion(surveys.filter(s => s.status === 'responded'));
+
   container.innerHTML = `
+    <!-- 4.32+ Médias por pergunta (CSAT custom) -->
+    ${perQuestion.groups.length ? `
+      <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-header">
+          <div class="card-title">★ Médias por pergunta (CSAT customizado)</div>
+          <span class="badge badge-neutral">${perQuestion.totalResponses} resposta${perQuestion.totalResponses!==1?'s':''}</span>
+        </div>
+        <div class="card-body" style="padding:14px 18px;display:flex;flex-direction:column;gap:18px;">
+          ${perQuestion.groups.map(g => `
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;
+                font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+                text-transform:uppercase;letter-spacing:.04em;">
+                <span style="color:var(--brand-gold);">${esc(g.typeName || 'Tipo')}</span>
+                <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0;
+                  font-size:0.75rem;">${g.responsesCount} respostas</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                ${g.questions.map(q => {
+                  if (q.type !== 'score') {
+                    return `<div style="display:flex;justify-content:space-between;font-size:0.8125rem;color:var(--text-muted);
+                      padding:4px 0;border-top:1px dashed var(--border-subtle);">
+                      <span>${esc(q.label)}</span>
+                      <span>${q.totalResponded} resposta${q.totalResponded!==1?'s':''} ${q.type === 'yesno' ? `· ${q.yesPct}% Sim` : '(texto livre)'}</span>
+                    </div>`;
+                  }
+                  const color = q.avg >= 4.5 ? '#22C55E' : q.avg >= 3.5 ? '#F59E0B' : q.avg ? '#EF4444' : '#94A3B8';
+                  const pct = q.avg ? (q.avg / 5 * 100) : 0;
+                  return `<div style="padding:4px 0;border-top:1px dashed var(--border-subtle);">
+                    <div style="display:flex;justify-content:space-between;font-size:0.8125rem;margin-bottom:3px;">
+                      <span style="color:var(--text-secondary);">${esc(q.label)}</span>
+                      <span><strong style="color:${color};">${q.avg ? q.avg.toFixed(1) : '—'}</strong>
+                        <span style="color:var(--text-muted);">/5 · ${q.totalResponded} resp.</span></span>
+                    </div>
+                    <div style="height:5px;background:var(--bg-elevated);border-radius:3px;overflow:hidden;">
+                      <div style="height:100%;width:${pct}%;background:${color};
+                        border-radius:3px;transition:width 0.6s ease;"></div>
+                    </div>
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+
     <!-- Distribution -->
     <div class="card">
       <div class="card-header">

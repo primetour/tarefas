@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 31,
-  patch: 2,
-  build: '20260508-fix-csat-response-syntax',
+  minor: 32,
+  patch: 0,
+  build: '20260508-csat-fases-2-3-4-dashboard',
 };
 
 /** "1.2.0" */

@@ -43,6 +43,7 @@ export const SCORE_LABELS = {
  */
 export async function createCsatSurvey({
   taskId,
+  taskIds      = null,   // 4.32+ Milestone/periodic: covers vários taskIds
   taskTitle,
   taskTypeId   = null,
   projectId    = null,
@@ -75,9 +76,14 @@ export async function createCsatSurvey({
   }
 
   const workspace = store.get('currentWorkspace');
+  // 4.32+ Normalizar taskIds: se passado, usa; senão fallback pra [taskId]
+  const finalTaskIds = Array.isArray(taskIds) && taskIds.length
+    ? [...new Set(taskIds.filter(Boolean))]
+    : (taskId ? [taskId] : []);
   const surveyDoc = {
     workspaceId:  workspace?.id || null,
-    taskId,
+    taskId,            // back-compat: primeiro taskId (ou único)
+    taskIds:      finalTaskIds, // 4.32+ Milestone: lista completa
     taskTypeId,
     taskTitle:    taskTitle || 'Tarefa',
     projectId,
@@ -562,4 +568,159 @@ export async function findTasksWithoutCsat({ periodDays = 30 } = {}) {
 function generateToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)))
     .map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+/* ════════════════════════════════════════════════════════════
+   4.32+ F2 — CSAT periódico (modo `periodic` em taskType.csatConfig)
+   ──────────────────────────────────────────────────────────────
+   Sem Cloud Function: dispara client-side no boot do app.
+   Estratégia:
+   - Para cada taskType com csatConfig.mode='periodic' e enabled=true
+   - Verifica se hoje é o `dayOfWeek` configurado E se ainda não rodamos
+     pra esse período (chave: '<typeId>:<period-window-id>')
+   - Coleta todas as tarefas done daquele tipo na janela do período,
+     agrupadas por clientEmail
+   - Cria 1 csat_survey por cliente com taskIds = [...todas as done]
+   - Marca o run em localStorage pra evitar disparos duplicados na sessão
+
+   Caveat: cliente fica responsável por abrir o app pra disparar. Pra
+   produção, o ideal é Cloud Function cron — F2.1 numa próxima.
+   ════════════════════════════════════════════════════════════ */
+
+const PERIODIC_RUN_KEY = 'csat-periodic-runs';
+
+function periodWindowId(period, dayOfWeek = 5) {
+  // Identifica a janela atual do período. Ex: weekly = 'YYYY-WNN'
+  const now = new Date();
+  if (period === 'monthly') {
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+  if (period === 'biweekly') {
+    // 2 janelas/mês: dias 1-15 e 16-fim
+    const half = now.getDate() <= 15 ? 'a' : 'b';
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${half}`;
+  }
+  // weekly: ISO week
+  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNum = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNum).padStart(2,'0')}`;
+}
+
+function periodWindowStart(period, now = new Date()) {
+  // Início da janela atual (pra filtrar tarefas done dentro dela)
+  if (period === 'monthly') {
+    return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+  }
+  if (period === 'biweekly') {
+    const day = now.getDate() <= 15 ? 1 : 16;
+    return new Date(now.getFullYear(), now.getMonth(), day, 0, 0, 0);
+  }
+  // weekly: segunda-feira da semana atual
+  const d = new Date(now);
+  const dayOfWeek = d.getDay();
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Processa todos os tipos com modo periodic. Chamado no boot do app
+ * (auth.js após login) — silencioso, async, não bloqueia.
+ *
+ * Retorna { processed: N, surveys: [...] }
+ */
+export async function runPeriodicCsatTrigger() {
+  if (!store.can?.('csat_send')) return { processed: 0, surveys: [], skipped: 'permission' };
+  try {
+    const taskTypes = store.get('taskTypes') || [];
+    const periodicTypes = taskTypes.filter(t =>
+      t.csatConfig?.enabled && t.csatConfig?.mode === 'periodic'
+    );
+    if (!periodicTypes.length) return { processed: 0, surveys: [] };
+
+    // Lê histórico de runs pra evitar disparos duplos no mesmo período
+    let runs = {};
+    try {
+      const raw = localStorage.getItem(PERIODIC_RUN_KEY);
+      if (raw) runs = JSON.parse(raw) || {};
+    } catch {}
+
+    const now = new Date();
+    const todayDow = now.getDay();
+    const created = [];
+
+    // Tarefas done (uma vez só, reutiliza pra cada tipo)
+    const tasksMod = await import('./tasks.js');
+    const allTasks = await tasksMod.fetchTasks();
+
+    for (const t of periodicTypes) {
+      const cfg = t.csatConfig;
+      // Só dispara se hoje é o dia configurado
+      if (cfg.dayOfWeek !== todayDow) continue;
+      const winId = periodWindowId(cfg.period, cfg.dayOfWeek);
+      const runKey = `${t.id}:${winId}`;
+      if (runs[runKey]) continue; // já rodou neste período
+
+      // Coleta done desta janela do período + deste tipo + com clientEmail
+      const winStart = periodWindowStart(cfg.period, now);
+      const candidates = allTasks.filter(task => {
+        if (task.typeId !== t.id) return false;
+        if (task.status !== 'done') return false;
+        if (!task.clientEmail) return false;
+        if (!task.completedAt) return false;
+        const compDate = task.completedAt?.toDate?.() || new Date(task.completedAt);
+        return compDate >= winStart;
+      });
+      if (!candidates.length) continue;
+
+      // Agrupa por clientEmail
+      const byClient = {};
+      candidates.forEach(task => {
+        const email = String(task.clientEmail).toLowerCase();
+        if (!byClient[email]) byClient[email] = [];
+        byClient[email].push(task);
+      });
+
+      // Cria 1 survey por cliente
+      const labelTpl = cfg.periodLabel || `${t.name} · ${winId}`;
+      for (const [email, tasks] of Object.entries(byClient)) {
+        try {
+          const survey = await createCsatSurvey({
+            taskId: tasks[0].id, // back-compat
+            taskIds: tasks.map(x => x.id),
+            taskTypeId: t.id,
+            taskTitle: `${labelTpl} (${tasks.length} entrega${tasks.length>1?'s':''})`,
+            projectId: tasks[0].projectId || null,
+            projectName: tasks[0].projectName || null,
+            clientEmail: email,
+            clientName: tasks[0].clientName || email.split('@')[0],
+            assignedTo: (tasks[0].assignees||[])[0] || null,
+            customMessage: cfg.customMessage || `Avalie as entregas desta ${cfg.period === 'weekly' ? 'semana' : cfg.period === 'biweekly' ? 'quinzena' : 'período'}.`,
+          });
+          await sendCsatEmail(survey.id);
+          created.push(survey);
+        } catch (e) {
+          console.warn('[csat-periodic] failed for', email, t.name, e.message);
+        }
+      }
+
+      runs[runKey] = { runAt: Date.now(), surveysCreated: byClient ? Object.keys(byClient).length : 0 };
+    }
+
+    // Persiste histórico (limita a 100 entradas mais recentes pra não inflar)
+    const entries = Object.entries(runs).sort((a, b) => (b[1].runAt || 0) - (a[1].runAt || 0)).slice(0, 100);
+    try { localStorage.setItem(PERIODIC_RUN_KEY, JSON.stringify(Object.fromEntries(entries))); } catch {}
+
+    if (created.length) {
+      console.log(`[csat-periodic] ${created.length} survey${created.length>1?'s':''} criada${created.length>1?'s':''} hoje`);
+    }
+    return { processed: periodicTypes.length, surveys: created };
+  } catch (e) {
+    console.warn('[csat-periodic] erro geral:', e.message);
+    return { processed: 0, surveys: [], error: e.message };
+  }
 }

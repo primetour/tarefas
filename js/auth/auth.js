@@ -429,6 +429,18 @@ export function initAuthObserver(onReady) {
           Promise.resolve(loadCardPrefs()).catch(() => {}),
         ]).catch(() => {});
 
+        // 4.32+ F2 CSAT periódico — dispara client-side no boot do app.
+        // Async, silencioso, idempotente (localStorage previne duplicação).
+        // Carrega taskTypes primeiro pra ter o csatConfig.
+        (async () => {
+          try {
+            const { loadTaskTypes } = await import('../services/taskTypes.js');
+            await loadTaskTypes();
+            const { runPeriodicCsatTrigger } = await import('../services/csat.js');
+            await runPeriodicCsatTrigger();
+          } catch (e) { /* silent */ }
+        })();
+
         // Aplicar paleta de cores do perfil do usuário
         const savedPalette = profile.prefs?.palette || localStorage.getItem('primetour-palette') || 'portal';
         document.documentElement.dataset.palette = savedPalette;

@@ -436,6 +436,13 @@ function applyFilters(tasks) {
 /* ─── Load & render all charts ────────────────────────────── */
 async function loadData(container) {
   try {
+    // 4.32+ Carrega taskTypes (lazy 1×/sessão) — necessário pra exibir
+    // nomes amigáveis em vez de typeIds cifrados nos rankings/charts.
+    try {
+      const { loadTaskTypes } = await import('../services/taskTypes.js');
+      await loadTaskTypes();
+    } catch (e) { /* silent — analytics tem fallback */ }
+
     const [Chart, m, surveys] = await Promise.all([
       loadChartJS(),
       getOverviewMetrics(activePeriod()),
