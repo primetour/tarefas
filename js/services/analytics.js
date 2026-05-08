@@ -219,33 +219,43 @@ export function getWeeklyVelocity(tasks, weeks = 12) {
   return result;
 }
 
-/* ─── Tempo médio por tarefa por tipo ────────────────────── */
+/* ─── Tempo médio por tarefa por tipo ──────────────────────
+ * 4.32+ Usa typeId (não mais o campo legado t.type) e resolveTypeName,
+ * casando com o ranking por tipo. Tipos órfãos viram "Outros tipos". */
 export function getTimePerTaskByType(tasks) {
-  // Group done tasks by type, compute avg days from createdAt to completedAt
   const groups = {};
-
   tasks.forEach(t => {
     if (t.status !== 'done' || !t.createdAt || !t.completedAt) return;
-    const type = t.type || 'standard';
+    const typeId = t.typeId || t.type || '__none__';
     const created   = t.createdAt?.toDate   ? t.createdAt.toDate()   : new Date(t.createdAt);
     const completed = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
     const days = (completed - created) / (1000 * 60 * 60 * 24);
-    if (!groups[type]) groups[type] = { total: 0, count: 0 };
-    groups[type].total += days;
-    groups[type].count += 1;
+    if (!groups[typeId]) groups[typeId] = { total: 0, count: 0 };
+    groups[typeId].total += days;
+    groups[typeId].count += 1;
   });
-
-  const LABELS = { standard: 'Padrão', newsletter: 'Newsletter' };
-  const COLORS = { standard: '#38BDF8', newsletter: '#D4A843' };
-
-  return Object.entries(groups)
+  // Resolve nome amigável e merge dos órfãos em "Outros tipos"
+  const resolved = Object.entries(groups)
     .filter(([, g]) => g.count > 0)
-    .map(([type, g]) => ({
-      type,
-      label:   LABELS[type] || type,
-      color:   COLORS[type] || '#A78BFA',
-      avgDays: Math.round((g.total / g.count) * 10) / 10,
-      count:   g.count,
+    .map(([typeId, g]) => {
+      const r = resolveTypeName(typeId);
+      return { typeId, label: r.name, icon: r.icon, color: r.color, total: g.total, count: g.count };
+    });
+  const merged = {};
+  resolved.forEach(r => {
+    const k = r.label.toLowerCase();
+    if (!merged[k]) merged[k] = { ...r, total: 0, count: 0 };
+    merged[k].total += r.total;
+    merged[k].count += r.count;
+  });
+  return Object.values(merged)
+    .map(m => ({
+      type: m.typeId,
+      label: m.label,
+      icon: m.icon,
+      color: m.color,
+      avgDays: Math.round((m.total / m.count) * 10) / 10,
+      count: m.count,
     }))
     .sort((a, b) => b.count - a.count);
 }
@@ -452,7 +462,16 @@ export function getReworkRate(tasks) {
 
 /* ─── Newsletters fora do calendário ─────────────────────── */
 export function getNewslettersOutOfCalendar(tasks, period = null) {
-  let newsletters = tasks.filter(t => t.type === 'newsletter');
+  // 4.32+ Aceita tanto legacy t.type quanto t.typeId. Resolve typeId via store
+  // pra cobrir caso onde o doc do tipo tenha id arbitrário mas nome "Newsletter".
+  const dyn = store.get('taskTypes') || [];
+  const newsletterIds = new Set(['newsletter']);
+  dyn.forEach(t => {
+    if (String(t.name || '').toLowerCase() === 'newsletter') newsletterIds.add(t.id);
+  });
+  let newsletters = tasks.filter(t =>
+    t.type === 'newsletter' || (t.typeId && newsletterIds.has(t.typeId))
+  );
   if (period) {
     const { start } = getPeriodDates(period);
     newsletters = newsletters.filter(t => {

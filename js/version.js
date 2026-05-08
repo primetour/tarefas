@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 32,
-  patch: 0,
-  build: '20260508-csat-fases-2-3-4-dashboard',
+  patch: 1,
+  build: '20260508-dash-tempo-tipo-newsletter-resolver',
 };
 
 /** "1.2.0" */

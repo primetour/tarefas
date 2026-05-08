@@ -37,6 +37,30 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.32.1+20260508-dash-tempo-tipo-newsletter-resolver] — 2026-05-08
+
+Release **PATCH** — Polish do dashboard de produtividade após revisão geral pedida em 4.32.0.
+
+### Correções
+- **`getTimePerTaskByType` (Tempo médio por Tipo)** — antes usava o campo legado
+  `t.type` com LABELS hardcoded apenas para 'standard'/'newsletter'; tipos
+  dinâmicos caíam direto no typeId cifrado como label. Agora usa `t.typeId`
+  + `resolveTypeName()` (mesmo resolver do ranking) e merge de órfãos em
+  "Outros tipos". Mantém fallback `t.type` para compat.
+- **`getNewslettersOutOfCalendar` (widget de Newsletters)** — só pegava
+  `t.type === 'newsletter'`. Agora também aceita tasks cujo `t.typeId`
+  aponte para um doc Firestore com nome "Newsletter" (case-insensitive).
+
+### Impacto
+Widgets afetados — agora mostram nomes amigáveis em vez de IDs:
+- ⏱ Tempo por Tarefa / Tipo
+- 📧 Newsletters fora do calendário (agora capta tasks novas do tipo)
+
+Combinado com `getProductivityByType` (já corrigido em 4.32.0), todos os
+3 widgets baseados em tipo de tarefa agora compartilham o mesmo resolver.
+
+---
+
 ## [4.32.0+20260508-csat-fases-2-3-4-dashboard] — 2026-05-08
 
 Release **MINOR** — Fases 2/3/4 do CSAT + revisão geral do dashboard.
