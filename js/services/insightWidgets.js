@@ -165,6 +165,16 @@ export async function setupDashboardInsights(opts) {
     });
   }
 
+  // 4) Dock de rascunhos no rodapé (4.32.3+) — singleton por página de dashboard.
+  //    Re-mount quando trocar de dashboard ajusta automaticamente o "current".
+  //    Falha silenciosa: dashboard funciona mesmo se dock quebrar.
+  try {
+    const { mountInsightDraftsDock } = await import('../components/insightDraftsDock.js');
+    mountInsightDraftsDock({ dashboard });
+  } catch (e) {
+    console.warn('[insightWidgets] dock mount falhou:', e?.message);
+  }
+
   return { widgets: widgetResult, general: generalApi };
 }
 

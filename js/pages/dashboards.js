@@ -1962,4 +1962,9 @@ function destroyCharts() {
 
 export function destroyDashboards() {
   destroyCharts();
+  // Desmonta o dock de rascunhos pra evitar overlay órfão noutras páginas.
+  // Lazy import — se módulo nunca foi carregado, no-op.
+  import('../components/insightDraftsDock.js')
+    .then(mod => mod.unmountInsightDraftsDock?.())
+    .catch(() => {});
 }

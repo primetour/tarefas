@@ -37,6 +37,58 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 
 
+## [4.33.0+20260508-insight-drafts] — 2026-05-08
+
+Release **MINOR** — Rascunhos de insights com auto-save (estilo Outlook/Gmail).
+
+### Pedido do user
+> "tenho um pedido para o bloco de insights das análises em todos os
+> dashboards: a opção de 'salvar rascunho'. Várias vezes comecei a
+> escrever e queria olhar o relatório para conferir algum dado e preciso
+> parar, jogar o que escrevi para outro lugar e depois retomar. Pensei
+> em uma visualização como do outlook, que fica uma aba na parte de
+> baixo com os rascunhos."
+
+### Funcionalidade
+
+**Auto-save no form de insight:**
+- Cada keystroke dispara save com debounce de 500ms
+- Indicador no rodapé do form: "💾 Rascunho salvo às HH:MM"
+- Critério mínimo pra criar draft: 1 char no título OU 10 chars na obs
+  (evita criar lixo de typo acidental)
+- Salvar oficialmente o insight → deleta o draft
+- Botão "Descartar rascunho" remove explicitamente
+- Botão de fechar/cancelar mantém o rascunho
+
+**Dock no rodapé:**
+- Barrinha fixa: "📝 Rascunhos (N) ▲" — só aparece se há drafts
+- Click → expande lista de cards (até 280px altura, scrollable)
+- Drafts do dashboard atual aparecem primeiro (destaque visual)
+- Cards de outros dashboards: clicar navega pra rota correta + abre form
+  (pendência via sessionStorage, expira em 30s)
+- ✕ por card → confirma e descarta
+- Auto-unmount ao sair de páginas que não são dashboard
+
+**Persistência:**
+- localStorage chave `primetour-insight-drafts`
+- Máx 20 drafts por usuário (FIFO ao exceder)
+- Auto-purge de drafts > 30 dias
+- Sync entre abas via storage event nativo
+
+### Arquivos
+- **Novo:** `js/services/insightDrafts.js` (~180 LOC) — CRUD + sync cross-tab
+- **Novo:** `js/components/insightDraftsDock.js` (~270 LOC) — drawer rodapé
+- `js/components/insightsPanel.js` — auto-save + indicador no form,
+  param `draft` em `openForm`, expor opener via `window.__primetourInsightForm`
+- `js/services/insightWidgets.js` — mount automático do dock em
+  `setupDashboardInsights` (todos dashboards ganham de graça)
+
+### Cobertura
+Aplicado em todos os dashboards que usam `setupDashboardInsights`:
+produtividade, meta, ga, nl, portal, roteiro.
+
+---
+
 ## [4.32.2+20260508-recurring-prazo-via-sla] — 2026-05-08
 
 Release **PATCH** — Tarefas recorrentes agora respeitam SLA do tipo de tarefa.

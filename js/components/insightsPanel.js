@@ -846,20 +846,27 @@ export async function mountInsightsPanel(opts) {
        - Checkbox "Sem período específico"
        - Viewer readonly do snapshot dos dados (auto-capturado ou IA)
      ════════════════════════════════════════════════ */
-  function openForm(existing = null) {
+  function openForm(existing = null, draft = null) {
     const isEdit = !!existing?.id;
     const isAiSourced = existing?.source === 'ai-generated' || existing?.source === 'ai-edited';
+    const existingDraftId = draft?.id || null;
+    // Pra resto da fn, "existing" representa dados pré-preenchidos
+    // (de insight existente OU de rascunho). isEdit distingue os dois.
+    const prefill = existing || draft || null;
     const targetIndexKey = isEdit
       ? (existing.indexKey || null)
-      : (indexKey === 'general' ? null : indexKey || null);
+      : (prefill?.indexKey ?? (indexKey === 'general' ? null : indexKey || null));
 
-    // Período: edit usa o que já tem; novo pré-preenche com filtro do dash
-    const initFrom = existing?.periodFrom?.toDate?.() || (existing?.periodFrom ? new Date(existing.periodFrom) : periodFrom);
-    const initTo   = existing?.periodTo?.toDate?.()   || (existing?.periodTo   ? new Date(existing.periodTo)   : periodTo);
+    // Período: edit usa o que já tem; novo pré-preenche com filtro do dash OU draft
+    const draftFromIso = draft?.periodFrom ? new Date(draft.periodFrom + 'T12:00:00') : null;
+    const draftToIso   = draft?.periodTo   ? new Date(draft.periodTo   + 'T12:00:00') : null;
+    const initFrom = existing?.periodFrom?.toDate?.() || (existing?.periodFrom ? new Date(existing.periodFrom) : (draftFromIso || periodFrom));
+    const initTo   = existing?.periodTo?.toDate?.()   || (existing?.periodTo   ? new Date(existing.periodTo)   : (draftToIso || periodTo));
     const dateToInput = d => d ? d.toISOString().slice(0, 10) : '';
     const initFromStr = dateToInput(initFrom);
     const initToStr   = dateToInput(initTo);
-    const noPeriodInit = isEdit && !existing.periodFrom && !existing.periodTo;
+    const noPeriodInit = (isEdit && !existing.periodFrom && !existing.periodTo)
+      || (!isEdit && !!draft?.noPeriod);
 
     // Snapshot: edit usa o salvo; novo captura do widget agora (manual) — se não houver ainda
     let initialSnapshot = existing?.dataSnapshot || null;
@@ -928,20 +935,20 @@ export async function mountInsightsPanel(opts) {
             <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Título *</label>
             <input id="ipf-title" type="text" class="portal-field" style="width:100%;"
               maxlength="200" placeholder="Ex: SLA caiu 15% no setor Marketing"
-              value="${esc(existing?.title || '')}">
+              value="${esc(prefill?.title || '')}">
           </div>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div>
               <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Tipo</label>
               <select id="ipf-type" class="filter-select" style="width:100%;">
-                ${INSIGHT_TYPES.map(t => `<option value="${t.key}" ${(existing?.type || 'neutral') === t.key ? 'selected' : ''}>${t.icon} ${esc(t.label)}</option>`).join('')}
+                ${INSIGHT_TYPES.map(t => `<option value="${t.key}" ${(prefill?.type || 'neutral') === t.key ? 'selected' : ''}>${t.icon} ${esc(t.label)}</option>`).join('')}
               </select>
             </div>
             <div>
               <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Impacto</label>
               <select id="ipf-impact" class="filter-select" style="width:100%;">
-                ${IMPACT_LEVELS.map(x => `<option value="${x.key}" ${(existing?.impact || 'medium') === x.key ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}
+                ${IMPACT_LEVELS.map(x => `<option value="${x.key}" ${(prefill?.impact || 'medium') === x.key ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -971,13 +978,13 @@ export async function mountInsightsPanel(opts) {
           <div>
             <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Observação (o que aconteceu) *</label>
             <textarea id="ipf-obs" class="portal-field" rows="4" maxlength="4000"
-              placeholder="Descreva o achado nos dados..." style="width:100%;resize:vertical;">${esc(existing?.observation || '')}</textarea>
+              placeholder="Descreva o achado nos dados..." style="width:100%;resize:vertical;">${esc(prefill?.observation || '')}</textarea>
           </div>
 
           <div>
             <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Recomendação (o que fazer) <span style="font-weight:400;color:var(--text-muted);">opcional</span></label>
             <textarea id="ipf-rec" class="portal-field" rows="3" maxlength="4000"
-              placeholder="Ação sugerida para corrigir/explorar este achado..." style="width:100%;resize:vertical;">${esc(existing?.recommendation || '')}</textarea>
+              placeholder="Ação sugerida para corrigir/explorar este achado..." style="width:100%;resize:vertical;">${esc(prefill?.recommendation || '')}</textarea>
           </div>
 
           <!-- ═══ DADOS OBSERVADOS (snapshot, readonly) ═══ -->
@@ -1011,16 +1018,29 @@ export async function mountInsightsPanel(opts) {
             <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">Tags <span style="font-weight:400;color:var(--text-muted);">separadas por vírgula, opcional</span></label>
             <input id="ipf-tags" type="text" class="portal-field" style="width:100%;"
               placeholder="ex: marketing, atraso, urgente"
-              value="${esc((existing?.tags || []).join(', '))}">
+              value="${esc((prefill?.tags || []).join(', '))}">
           </div>
         </div>
 
-        <div style="padding:14px 22px;border-top:1px solid var(--border-subtle);
-          background:var(--bg-surface);display:flex;gap:10px;">
-          <button class="btn btn-secondary" id="ipf-cancel" style="flex:1;">Cancelar</button>
-          <button class="btn btn-primary" id="ipf-save" style="flex:2;font-weight:600;">
-            💾 ${isEdit ? 'Salvar alterações' : 'Adicionar insight'}
-          </button>
+        <div style="padding:10px 22px 14px;border-top:1px solid var(--border-subtle);
+          background:var(--bg-surface);display:flex;flex-direction:column;gap:8px;">
+          ${!isEdit ? `
+            <div id="ipf-draft-status" style="font-size:0.7rem;color:var(--text-muted);
+              display:flex;align-items:center;gap:8px;min-height:18px;">
+              <span id="ipf-draft-indicator">📝 Rascunho salvo automaticamente</span>
+              <button id="ipf-discard-draft" type="button" style="display:none;
+                background:none;border:none;color:var(--color-danger);cursor:pointer;
+                font-size:0.7rem;text-decoration:underline;padding:0;">
+                Descartar rascunho
+              </button>
+            </div>
+          ` : ''}
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-secondary" id="ipf-cancel" style="flex:1;">${isEdit ? 'Cancelar' : 'Fechar (manter rascunho)'}</button>
+            <button class="btn btn-primary" id="ipf-save" style="flex:2;font-weight:600;">
+              💾 ${isEdit ? 'Salvar alterações' : 'Adicionar insight'}
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -1028,6 +1048,98 @@ export async function mountInsightsPanel(opts) {
     m.addEventListener('click', e => { if (e.target === m) m.remove(); });
     document.getElementById('ipf-close')?.addEventListener('click', () => m.remove());
     document.getElementById('ipf-cancel')?.addEventListener('click', () => m.remove());
+
+    // ═══ AUTO-SAVE DE RASCUNHO ═══
+    // Só ativa em modo NOVO insight (não edit). Persiste localmente a cada
+    // mudança em qualquer campo, com debounce de 500ms. Se o user digitar
+    // algo significativo (shouldDraft), cria draft. Salvar oficialmente
+    // remove o draft. Discard explícito também remove.
+    let currentDraftId = existingDraftId || null;
+    let draftTimer = null;
+    let draftSavedAt = null;
+
+    if (!isEdit) {
+      const updateIndicator = () => {
+        const ind = document.getElementById('ipf-draft-indicator');
+        const btn = document.getElementById('ipf-discard-draft');
+        if (!ind) return;
+        if (currentDraftId && draftSavedAt) {
+          const hh = String(draftSavedAt.getHours()).padStart(2,'0');
+          const mm = String(draftSavedAt.getMinutes()).padStart(2,'0');
+          ind.textContent = `💾 Rascunho salvo às ${hh}:${mm}`;
+          ind.style.color = 'var(--color-success)';
+          if (btn) btn.style.display = 'inline';
+        } else {
+          ind.textContent = '📝 Rascunho salvo automaticamente conforme você escreve';
+          ind.style.color = 'var(--text-muted)';
+          if (btn) btn.style.display = 'none';
+        }
+      };
+      updateIndicator();
+
+      const collectDraftData = () => {
+        const noPeriod = document.getElementById('ipf-no-period')?.checked;
+        return {
+          id: currentDraftId,
+          dashboard,
+          indexKey: targetIndexKey,
+          indexLabel: indexLabel || targetIndexKey || '',
+          title: document.getElementById('ipf-title')?.value || '',
+          observation: document.getElementById('ipf-obs')?.value || '',
+          recommendation: document.getElementById('ipf-rec')?.value || '',
+          type: document.getElementById('ipf-type')?.value || 'neutral',
+          impact: document.getElementById('ipf-impact')?.value || 'medium',
+          tags: (document.getElementById('ipf-tags')?.value || '')
+            .split(',').map(s => s.trim()).filter(Boolean).slice(0, 10),
+          periodFrom: noPeriod ? null : document.getElementById('ipf-period-from')?.value || null,
+          periodTo: noPeriod ? null : document.getElementById('ipf-period-to')?.value || null,
+          noPeriod: !!noPeriod,
+          snapshot: initialSnapshot,
+          widgetHasCanvas,
+          filters,
+        };
+      };
+
+      const debouncedSave = () => {
+        clearTimeout(draftTimer);
+        draftTimer = setTimeout(async () => {
+          try {
+            const { saveDraft, shouldDraft } = await import('../services/insightDrafts.js');
+            const data = collectDraftData();
+            // Critério: só salva se passou o limiar (evita criar rascunho de typo acidental)
+            if (!currentDraftId && !shouldDraft(data)) return;
+            const saved = saveDraft(data);
+            currentDraftId = saved.id;
+            draftSavedAt = new Date();
+            updateIndicator();
+          } catch (e) { console.warn('[insightsPanel] auto-save draft falhou:', e?.message); }
+        }, 500);
+      };
+
+      // Bind em todos os inputs/textareas do form
+      ['ipf-title','ipf-obs','ipf-rec','ipf-type','ipf-impact','ipf-tags',
+       'ipf-period-from','ipf-period-to','ipf-no-period'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const ev = (el.tagName === 'SELECT' || el.type === 'checkbox') ? 'change' : 'input';
+        el.addEventListener(ev, debouncedSave);
+      });
+
+      // Botão descartar rascunho
+      document.getElementById('ipf-discard-draft')?.addEventListener('click', async () => {
+        if (!currentDraftId) return;
+        if (!confirm('Descartar este rascunho? O texto digitado será perdido.')) return;
+        try {
+          const { deleteDraft } = await import('../services/insightDrafts.js');
+          deleteDraft(currentDraftId);
+          currentDraftId = null;
+          draftSavedAt = null;
+          updateIndicator();
+          toast.info('Rascunho descartado.');
+          m.remove();
+        } catch (e) { console.warn(e); }
+      });
+    }
 
     // Toggle "Sem período específico" — desabilita inputs de data
     document.getElementById('ipf-no-period')?.addEventListener('change', (e) => {
@@ -1099,6 +1211,15 @@ export async function mountInsightsPanel(opts) {
       try {
         if (isEdit) await updateInsight(existing.id, data);
         else await createInsight(data);
+        // Salvou oficialmente — apaga o draft (se houver) e cancela timer pendente
+        if (currentDraftId) {
+          clearTimeout(draftTimer);
+          try {
+            const { deleteDraft } = await import('../services/insightDrafts.js');
+            deleteDraft(currentDraftId);
+            currentDraftId = null;
+          } catch (_) {}
+        }
         toast.success(isEdit ? 'Insight atualizado.' : 'Insight adicionado.');
         m.remove();
         await refresh();
@@ -1110,8 +1231,16 @@ export async function mountInsightsPanel(opts) {
   }
 
   await refresh();
+  // Expõe global pra o dock de rascunhos abrir formulário a partir de qq lugar.
+  // last-write-wins se múltiplos panels coexistirem na mesma página (last mount
+  // ganha) — é OK porque o dock só precisa de UM caminho pra abrir form.
+  if (typeof window !== 'undefined') {
+    window.__primetourInsightForm = window.__primetourInsightForm || {};
+    window.__primetourInsightForm[dashboard] = (draftObj) => openForm(null, draftObj);
+  }
   return {
     refresh,
+    openFormWithDraft: (draftObj) => openForm(null, draftObj),
     open: () => {
       // No modo widget, abre popover programaticamente
       if (mode === 'widget') {

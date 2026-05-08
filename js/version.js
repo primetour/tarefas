@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 32,
-  patch: 2,
-  build: '20260508-recurring-prazo-via-sla',
+  minor: 33,
+  patch: 0,
+  build: '20260508-insight-drafts',
 };
 
 /** "1.2.0" */
