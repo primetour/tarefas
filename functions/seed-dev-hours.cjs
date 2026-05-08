@@ -94,6 +94,26 @@ const ENTRIES = [
     multiplierIds:  [],
     completedAt:    new Date('2026-05-08T13:00:00-03:00'),
   },
+  {
+    releaseVersion: '4.34.0',
+    releaseSlug:    '20260508-completion-sounds',
+    title:          'Banco de sons de conclusão de tarefa configurável por usuário',
+    summary:        '13 sons no catálogo: 6 clássicos sintetizados (plin, sino, carrilhão, pop, tada, sucesso UI), 4 divertidos sintetizados (moeda Mario-like, level-up RPG, buzina de palhaço, laser), 3 slots de animais (lion/sheep/dog-bark) aguardando MP3, e mudo. Service sounds.js com Web Audio API + lazy load + fallback silencioso pro plin se MP3 do slot escolhido não existir. UI no profile com grid agrupado e botão preview por som. prefs.completionSoundId persiste a escolha.',
+    profile:        'feature',
+    bucket:         'large',           // 4-8h (~6h)
+    multiplierIds:  [],
+    completedAt:    new Date('2026-05-08T13:30:00-03:00'),
+  },
+  {
+    releaseVersion: '4.34.1',
+    releaseSlug:    '20260508-sso-avatar-photos',
+    title:          'Avatares dos usuários puxam foto do Microsoft 365 via Graph',
+    summary:        'Captura foto via /v1.0/me/photo/$value após login SSO usando accessToken já capturado, resize 96x96 + crop quadrado central, base64 JPEG ~10KB salvo em users/{uid}.photoURL. Helper userAvatar.js drop-in (userAvatarInner) com onerror que cai em iniciais se foto falhar. CSS .avatar agora position:relative + overflow:hidden + img cobrindo 100%. Substituído em 5 locais visíveis (sidebar, header, taskPopovers, taskModal com 9 subs, kanban, tasks).',
+    profile:        'feature',
+    bucket:         'medium',          // 2-4h (~3h)
+    multiplierIds:  ['integration'],   // +20% — Graph API
+    completedAt:    new Date('2026-05-08T14:30:00-03:00'),
+  },
 ];
 
 // ─── Buckets (espelha js/services/devHours.js BUCKETS) ─────
