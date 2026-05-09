@@ -167,6 +167,18 @@ service cloud.firestore {
       allow delete:  if isAdmin();
     }
 
+    // ── System Feedback (4.35.3+) ───────────────────────────────
+    // Bugs/sugestões/dúvidas/elogios sobre o sistema. Não confundir
+    // com /feedbacks (gestão de pessoas, manager → subordinado).
+    // Qualquer auth user CRIA seu próprio feedback (authorUid bate);
+    // só admin LÊ/EDITA; só master DELETA.
+    match /system_feedback/{fbId} {
+      allow read:   if isAuth() && (isAdmin() || resource.data.authorUid == request.auth.uid);
+      allow create: if isAuth() && request.resource.data.authorUid == request.auth.uid;
+      allow update: if isAuth() && isAdmin();
+      allow delete: if isAuth() && isMaster();
+    }
+
     // ── Integrações ───────────────────────────────────────────
     match /integrations/{intId} {
       allow read:  if isAuth();

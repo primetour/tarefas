@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 2,
-  build: '20260509-dev-hours-summary-expand',
+  patch: 3,
+  build: '20260509-system-feedback-module',
 };
 
 /** "1.2.0" */

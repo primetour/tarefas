@@ -63,8 +63,13 @@ export async function renderGovernance(container) {
         `).join('')}
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-subtle);font-size:0.7rem;color:var(--text-muted);line-height:1.5;">
           <strong style="color:var(--text-secondary);">Atualização contínua</strong><br>
-          Este doc evolui com o sistema. Sugestões → Feedback no menu.
+          Este doc evolui com o sistema.
         </div>
+        <button id="gov-feedback-btn" style="margin-top:10px;padding:10px 12px;border:none;border-radius:var(--radius-sm);
+          background:var(--brand-gold);color:#0F172A;font-weight:600;cursor:pointer;font-size:0.8125rem;
+          width:100%;text-align:center;transition:all 0.15s;">
+          💬 Enviar sugestão
+        </button>
       </nav>
 
       <!-- Content -->
@@ -74,6 +79,14 @@ export async function renderGovernance(container) {
       </div>
     </div>
   `;
+
+  // 4.35.3+ Botão "Enviar sugestão" abre modal compartilhado
+  document.getElementById('gov-feedback-btn')?.addEventListener('click', async () => {
+    try {
+      const { openSystemFeedbackModal } = await import('../components/systemFeedbackModal.js');
+      openSystemFeedbackModal();
+    } catch (e) { console.error('[governance] feedback modal failed:', e); }
+  });
 
   // TOC binding
   container.querySelectorAll('.gov-toc-btn').forEach(btn => {

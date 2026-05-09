@@ -70,6 +70,10 @@ export const ACTION_LABELS = {
   'csat.delete':             'Pesquisa CSAT excluída',
   'csat.send_digest':        'Digest CSAT enviado',
   'csat.project_fire':       'CSAT do projeto disparado', // 4.35+
+  // System Feedback (4.35.3+)
+  'system_feedback.create':  'Feedback do sistema enviado',
+  'system_feedback.update':  'Feedback do sistema atualizado',
+  'system_feedback.delete':  'Feedback do sistema excluído',
   // Goals / Metas
   'goals.create':            'Meta criada',
   'goals.update':            'Meta atualizada',

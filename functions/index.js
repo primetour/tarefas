@@ -20,6 +20,7 @@
  */
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule }         from 'firebase-functions/v2/scheduler';
+import { onDocumentCreated }  from 'firebase-functions/v2/firestore';
 import { defineSecret }       from 'firebase-functions/params';
 import { initializeApp }      from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
@@ -2731,3 +2732,92 @@ function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+
+
+/* ─────────────────────────────────────────────────────────────
+   4.35.3+ System Feedback — Firestore trigger envia email pra admin
+   ─────────────────────────────────────────────────────────────
+   Quando user cria doc em system_feedback/{id}, dispara email via
+   Microsoft Graph pro destinatário FEEDBACK_ADMIN_EMAIL com:
+   - tipo (bug/sugestão/dúvida/elogio)
+   - mensagem
+   - autor (nome + email + role)
+   - página + versão (debug)
+   ───────────────────────────────────────────────────────────── */
+
+const FEEDBACK_TYPE_LABELS = {
+  bug:        { emoji: '🐛', label: 'Bug',       color: '#EF4444' },
+  suggestion: { emoji: '💡', label: 'Sugestão',  color: '#D4A843' },
+  question:   { emoji: '❓', label: 'Dúvida',    color: '#38BDF8' },
+  praise:     { emoji: '🌟', label: 'Elogio',    color: '#22C55E' },
+};
+
+const FEEDBACK_ADMIN_EMAIL = 'rene.castro@primetour.com.br';
+
+function _escFb(s) {
+  return String(s || '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function _buildSystemFeedbackEmailHtml(fb) {
+  const t = FEEDBACK_TYPE_LABELS[fb.type] || { emoji: '💬', label: 'Feedback', color: '#888' };
+  return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="padding:24px 16px;">
+<tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;border-radius:12px;overflow:hidden;border:1px solid rgba(127,127,127,0.2);">
+
+<tr><td bgcolor="#0F172A" style="padding:24px 28px;background-color:#0F172A;border-bottom:3px solid ${t.color};">
+  <div style="font-size:11px;color:${t.color};letter-spacing:0.18em;text-transform:uppercase;font-weight:700;">${t.emoji} ${t.label} — Sistema</div>
+  <div style="margin-top:6px;color:#FFFFFF;font-size:18px;font-weight:600;line-height:1.3;">Feedback do Sistema PRIMETOUR</div>
+</td></tr>
+
+<tr><td style="padding:24px 28px;">
+  <div style="background:#F8F9FA;border-left:3px solid ${t.color};padding:14px 16px;border-radius:6px;margin-bottom:18px;white-space:pre-wrap;font-size:14px;line-height:1.6;color:#1F2937;">${_escFb(fb.message || '')}</div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:13px;line-height:1.7;color:#475569;">
+    <tr><td style="padding:3px 0;width:120px;color:#94A3B8;">De:</td><td style="padding:3px 0;color:#1F2937;font-weight:600;">${_escFb(fb.authorName || 'Usuário')}</td></tr>
+    <tr><td style="padding:3px 0;color:#94A3B8;">E-mail:</td><td style="padding:3px 0;"><a href="mailto:${_escFb(fb.authorEmail||'')}" style="color:#D4A843;text-decoration:none;">${_escFb(fb.authorEmail || '—')}</a></td></tr>
+    <tr><td style="padding:3px 0;color:#94A3B8;">Função:</td><td style="padding:3px 0;">${_escFb(fb.authorRole || 'member')}</td></tr>
+    <tr><td style="padding:3px 0;color:#94A3B8;">Página:</td><td style="padding:3px 0;font-family:ui-monospace,Menlo,monospace;font-size:12px;">${_escFb(fb.page || '#')}</td></tr>
+    <tr><td style="padding:3px 0;color:#94A3B8;">Versão app:</td><td style="padding:3px 0;font-family:ui-monospace,Menlo,monospace;font-size:12px;">${_escFb(fb.appVersion || '?')}</td></tr>
+  </table>
+
+  <div style="margin-top:18px;padding-top:14px;border-top:1px solid #E2E8F0;text-align:center;">
+    <a href="https://primetour.github.io/tarefas/#system-feedback" style="display:inline-block;padding:10px 24px;background:#D4A843;color:#FFFFFF;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600;">Ver no sistema</a>
+  </div>
+</td></tr>
+
+<tr><td style="padding:14px 28px;border-top:1px solid #E2E8F0;font-size:11px;color:#94A3B8;line-height:1.5;">
+  Email automático disparado quando um usuário envia feedback pela página de Governança ou pelo botão "Enviar Sugestão". Para responder, vá em <strong>/system-feedback</strong> no sistema.
+</td></tr>
+
+</table></td></tr></table></body></html>`;
+}
+
+export const onSystemFeedbackCreate = onDocumentCreated({
+  document: 'system_feedback/{feedbackId}',
+  region:   'us-central1',
+  secrets:  [GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_SENDER_ID],
+}, async (event) => {
+  const fb = event.data?.data();
+  if (!fb) return;
+
+  const t = FEEDBACK_TYPE_LABELS[fb.type] || { emoji: '💬', label: 'Feedback' };
+  const subject = `${t.emoji} ${t.label} no Sistema PRIMETOUR — ${fb.authorName || 'Usuário'}`;
+  const html = _buildSystemFeedbackEmailHtml(fb);
+
+  try {
+    await sendEmailViaGraph({
+      to:      FEEDBACK_ADMIN_EMAIL,
+      subject,
+      html,
+      replyTo: fb.authorEmail || undefined,
+    });
+    console.log(`[system_feedback] email enviado para ${FEEDBACK_ADMIN_EMAIL} (${fb.type})`);
+  } catch (e) {
+    console.error('[system_feedback] falha ao enviar email:', e?.message || e);
+    // Não relança — o doc já foi salvo, admin vê pela UI mesmo sem email
+  }
+});
