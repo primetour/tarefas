@@ -18,7 +18,17 @@ import { loadJsPdf, createDoc, withExportGuard, txt, COL } from '../components/p
 import { CATEGORIES, sumEntries } from './devHours.js';
 
 const fmtBR = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-const fmtH = n => `${(+n || 0).toFixed(2).replace(/\.00$/, '')}h`;
+// 4.35.1+ Formato HH:MM (ex: "6h 40min") em vez de decimal "6.67h"
+const fmtH = (n) => {
+  const total = +n || 0;
+  const h = Math.floor(total);
+  let m = Math.round((total - h) * 60);
+  if (m === 60) return `${h + 1}h`;
+  if (h === 0 && m === 0) return '0min';
+  if (h === 0)            return `${m}min`;
+  if (m === 0)            return `${h}h`;
+  return `${h}h ${m}min`;
+};
 const fmtDate = (ts) => {
   if (!ts) return '—';
   const d = ts.toDate ? ts.toDate() : new Date(ts);

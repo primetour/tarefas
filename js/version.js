@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 0,
-  build: '20260508-csat-project-level',
+  patch: 1,
+  build: '20260509-hours-hhmm-format',
 };
 
 /** "1.2.0" */

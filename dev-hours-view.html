@@ -202,7 +202,18 @@
     ];
 
     const fmtBR = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-    const fmtH  = n => `${(+n||0).toFixed(2).replace(/\.00$/, '')}h`;
+    // 4.35.1+ Formato HH:MM (ex: "6h 40min", "1h 30min", "45min", "12h")
+    // em vez de decimal "6.67h" (que confundia com base 100).
+    const fmtH = (n) => {
+      const total = +n || 0;
+      const h = Math.floor(total);
+      let m = Math.round((total - h) * 60);
+      if (m === 60) return `${h + 1}h`;
+      if (h === 0 && m === 0) return '0min';
+      if (h === 0)            return `${m}min`;
+      if (m === 0)            return `${h}h`;
+      return `${h}h ${m}min`;
+    };
     const esc   = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const fmtDate = ts => {
       if (!ts) return '—';
@@ -392,7 +403,7 @@
         const catBars = CATEGORIES.map(c => {
           const v = +(hbc[c.key] || 0);
           const pct = totalEH > 0 ? (v / totalEH * 100) : 0;
-          return `<div class="cat-bar" title="${c.label}: ${v.toFixed(2)}h (${pct.toFixed(0)}%)"
+          return `<div class="cat-bar" title="${c.label}: ${fmtH(v)} (${pct.toFixed(0)}%)"
             style="height:${Math.max(2, pct/3.5)}px;background:${c.color};opacity:${pct>0?1:.15};"></div>`;
         }).join('');
 
