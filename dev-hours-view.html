@@ -395,8 +395,21 @@
           : `<strong>${esc(e.releaseVersion || '—')}</strong>
              ${e.releaseSlug ? `<div style="font-size:0.7rem;color:var(--text-muted);">${esc(e.releaseSlug)}</div>` : ''}`;
 
+        // 4.35.2+ Summary truncado mas com botão "Ver mais" — antes ficava
+        // só com "…" sem como ver o texto completo.
+        const sumRaw = e.summary || '';
+        const sumLong = sumRaw.length > 180;
+        const sumId = `s_${e.id}`;
         const summaryCell = `<div style="font-weight:500;color:var(--text-primary);">${esc(e.title || '')}</div>
-                             ${e.summary ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;line-height:1.5;">${esc(e.summary).slice(0,180)}${e.summary.length>180?'…':''}</div>` : ''}`;
+                             ${sumRaw ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;line-height:1.5;">
+                               <span id="${sumId}_short">${esc(sumRaw).slice(0,180)}${sumLong?'… ':' '}</span>
+                               <span id="${sumId}_full" style="display:none;">${esc(sumRaw)} </span>
+                               ${sumLong ? `<button type="button" class="sum-toggle" data-sid="${sumId}"
+                                 style="background:none;border:none;padding:0;color:var(--brand-gold);
+                                   cursor:pointer;font-size:0.75rem;font-weight:600;text-decoration:underline;">
+                                 Ver mais
+                               </button>` : ''}
+                             </div>` : ''}`;
 
         const hbc = e.hoursByCategory || {};
         const totalEH = Object.values(hbc).reduce((a,b)=>a+(+b||0), 0);
@@ -417,6 +430,19 @@
           <td class="num cost">${fmtBR.format(e.totalCost || 0)}</td>
         </tr>`;
       }).join('');
+
+      // 4.35.2+ Toggle "Ver mais"/"Ver menos" no resumo de cada entrada
+      tbody.querySelectorAll('.sum-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const sid = btn.dataset.sid;
+          const shortEl = document.getElementById(`${sid}_short`);
+          const fullEl  = document.getElementById(`${sid}_full`);
+          const showing = fullEl.style.display === 'inline';
+          fullEl.style.display  = showing ? 'none' : 'inline';
+          shortEl.style.display = showing ? 'inline' : 'none';
+          btn.textContent = showing ? 'Ver mais' : 'Ver menos';
+        });
+      });
     }
   </script>
 </body>

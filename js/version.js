@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 1,
-  build: '20260509-hours-hhmm-format',
+  patch: 2,
+  build: '20260509-dev-hours-summary-expand',
 };
 
 /** "1.2.0" */
