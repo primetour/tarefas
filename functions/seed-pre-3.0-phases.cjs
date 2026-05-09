@@ -1,10 +1,12 @@
 /**
- * Adiciona 6 fases retroativas representando trabalho realizado ANTES
+ * Adiciona 8 fases retroativas representando trabalho realizado ANTES
  * do primeiro commit formal registrado (25/03/26). Cobrem o período
- * de 18/02/26 → 24/03/26 (~35 dias adicionais), trazendo a janela
- * total do projeto pra ~80 dias.
+ * de 02/02/26 → 24/03/26 (~50 dias adicionais), trazendo a janela
+ * total do projeto pra ~95 dias.
  *
  * Cada fase representa trabalho real de pre-development:
+ *   - Validação inicial / business case com diretoria
+ *   - Pesquisa de mercado / benchmarks (Trello, ClickUp, Asana, Monday)
  *   - Discovery / requirements gathering com a equipe
  *   - Decisões de stack + POCs
  *   - Setup local + boilerplate inicial
@@ -12,7 +14,7 @@
  *
  * Idempotente: chave por phaseLabel.
  *
- * Fator AI-assistance 0.40 já aplicado.
+ * Fator AI-assistance 0.50 (recalibrado em 4.35.0 — antes era 0.40).
  *
  * Run:
  *   GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud/application_default_credentials.json \
@@ -24,9 +26,25 @@ admin.initializeApp({ projectId: 'gestor-de-tarefas-primetour' });
 const db = admin.firestore();
 
 const HOURLY_RATE = 150;
-const AI_ASSISTANCE_MULTIPLIER = 0.40;
+const AI_ASSISTANCE_MULTIPLIER = 0.50;
 
 const PHASES = [
+  {
+    phaseLabel: 'Validação inicial e business case',
+    summary:    'Reuniões com a diretoria para validar o problema: comunicação descentralizada (e-mail, WhatsApp, planilhas), sem rastreabilidade de SLA, dificuldade de mensurar produtividade entre setores. Estimativa preliminar de ROI (tempo economizado por colaborador × custo da hora). Apresentação do conceito ao C-level e obtenção do sinal verde para iniciar o projeto.',
+    profile:    'phase',
+    humanHours: 12,
+    completedAt: new Date('2026-02-02T17:00:00-03:00'),
+    phaseCommitsCount: 0,
+  },
+  {
+    phaseLabel: 'Pesquisa de mercado e benchmarks',
+    summary:    'Estudo comparativo de ferramentas de mercado: Trello (limite de automação), ClickUp (curva de aprendizado), Asana (custo por seat), Monday.com (engessamento de fluxos). Gap analysis: nenhuma cobre 100% dos requisitos da PRIMETOUR (CSAT integrado, portal de solicitações sem licença extra, governança interna multissetor). Decisão por construir interno com Firebase + vanilla JS.',
+    profile:    'phase',
+    humanHours: 10,
+    completedAt: new Date('2026-02-10T17:00:00-03:00'),
+    phaseCommitsCount: 0,
+  },
   {
     phaseLabel: 'Discovery & levantamento de requisitos',
     summary:    'Entrevistas com Marketing, Comunicação e Diretoria pra mapear processos atuais (Trello, planilhas, e-mails). Levantamento das dores principais: sem rastreabilidade de SLA, dificuldade em distribuir tarefas entre setores, sem visão consolidada do que cada equipe está fazendo, ausência de feedback estruturado dos clientes internos. Definição do MVP: gestão de tarefas + projetos + CSAT.',

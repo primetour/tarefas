@@ -26,6 +26,95 @@ let allTasks    = [];
 let searchTerm  = '';
 let filterStatus = '';
 
+/* ─── 4.35+ CSAT section no modal de projeto ───────────────── */
+function renderCsatSection(project) {
+  const cfg = project?.csatConfig || {};
+  const enabled = cfg.enabled === true;
+  const trigger = cfg.trigger || 'on_close';
+  const taskTypes = (store.get('taskTypes') || []).filter(t => t.csatConfig?.enabled);
+  const isEdit = !!project?.id;
+
+  return `
+    <div class="form-group" style="margin-top:18px;border-top:1px solid var(--border-subtle);padding-top:18px;">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:600;">
+        <input type="checkbox" id="pf-csat-enabled" ${enabled ? 'checked' : ''}
+          style="width:18px;height:18px;cursor:pointer;accent-color:var(--brand-gold);" />
+        <span>★ Coletar Pesquisa de Satisfação neste projeto</span>
+      </label>
+      <small style="display:block;margin:4px 0 0 28px;color:var(--text-muted);font-size:0.75rem;">
+        Quando ligado, este projeto controla o CSAT — sobrescreve a config de tipo de tarefa para tarefas dentro dele.
+      </small>
+
+      <div id="pf-csat-body" style="display:${enabled ? 'block' : 'none'};margin-top:14px;padding:14px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface);">
+
+        <div style="margin-bottom:14px;">
+          <div style="font-size:0.8125rem;font-weight:600;margin-bottom:8px;">Quando disparar a pesquisa</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:0.875rem;">
+              <input type="radio" name="pf-csat-trigger" value="on_close" ${trigger==='on_close'?'checked':''} style="margin-top:3px;accent-color:var(--brand-gold);" />
+              <span>
+                <strong>Ao fechar o projeto</strong>
+                <div style="font-size:0.75rem;color:var(--text-muted);">Dispara 1 pesquisa quando você marcar o projeto como concluído.</div>
+              </span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:0.875rem;">
+              <input type="radio" name="pf-csat-trigger" value="custom_milestones" ${trigger==='custom_milestones'?'checked':''} style="margin-top:3px;accent-color:var(--brand-gold);" />
+              <span>
+                <strong>Em marcos que eu marcar</strong>
+                <div style="font-size:0.75rem;color:var(--text-muted);">Cada tarefa marcada como "marco" dispara CSAT cobrindo as concluídas desde o último marco.</div>
+              </span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:0.875rem;">
+              <input type="radio" name="pf-csat-trigger" value="manual_only" ${trigger==='manual_only'?'checked':''} style="margin-top:3px;accent-color:var(--brand-gold);" />
+              <span>
+                <strong>Apenas manualmente</strong>
+                <div style="font-size:0.75rem;color:var(--text-muted);">Para projetos always-on. Você decide quando clicar em "Disparar agora".</div>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">E-mail do cliente *</label>
+          <input type="email" class="form-input" id="pf-csat-email"
+            value="${esc(cfg.clientEmail || '')}" placeholder="cliente@empresa.com" />
+        </div>
+
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">Perguntas da pesquisa</label>
+          <select class="form-input" id="pf-csat-type" style="padding:8px 12px;">
+            <option value="">— Usar pergunta padrão (1 nota)</option>
+            ${taskTypes.map(t => `<option value="${esc(t.id)}" ${cfg.taskTypeId===t.id?'selected':''}>${esc(t.icon||'')} ${esc(t.name)} (${(t.csatConfig?.questions||[]).length} perguntas)</option>`).join('')}
+          </select>
+          <small style="display:block;margin-top:4px;font-size:0.7rem;color:var(--text-muted);">
+            Reaproveita as perguntas configuradas no tipo de tarefa selecionado.
+          </small>
+        </div>
+
+        <div class="form-group" style="margin-bottom:14px;">
+          <label class="form-label">Mensagem custom (opcional)</label>
+          <textarea class="form-textarea" id="pf-csat-msg" rows="2"
+            placeholder="Texto que aparece no e-mail. Deixe vazio para usar o padrão.">${esc(cfg.customMessage || '')}</textarea>
+        </div>
+
+        ${isEdit ? `
+          <div style="border-top:1px dashed var(--border-subtle);padding-top:12px;margin-top:8px;">
+            <button type="button" id="pf-csat-fire" class="btn btn-secondary btn-sm" style="background:var(--brand-gold);color:#0F172A;border:none;">
+              ⚡ Disparar CSAT agora
+            </button>
+            <small style="display:block;margin-top:6px;font-size:0.7rem;color:var(--text-muted);">
+              ${project?.lastCsatFiredAt
+                ? `Último disparo: ${new Date(project.lastCsatFiredAt?.toDate ? project.lastCsatFiredAt.toDate() : project.lastCsatFiredAt).toLocaleDateString('pt-BR')}`
+                : 'Nunca disparado.'}
+              Cobre tarefas concluídas desde o último envio.
+            </small>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
 export async function renderProjects(container) {
   container.innerHTML = `
     <div class="page-header">
@@ -457,6 +546,9 @@ export async function openProjectModal(project = null, { defaultWorkspaceId = nu
           }).join('')}
         </div>
       </div>
+
+      <!-- 4.35+ CSAT no projeto (collapsible) -->
+      ${renderCsatSection(project)}
     </form>
   `;
 
@@ -480,6 +572,27 @@ export async function openProjectModal(project = null, { defaultWorkspaceId = nu
           if(btn){ btn.classList.add('loading'); btn.disabled=true; }
           try {
             const wsIds = [...selectedSquadIds].filter(Boolean);
+            // 4.35+ Coleta csatConfig do form (se ligado)
+            const csatEnabled = document.getElementById('pf-csat-enabled')?.checked || false;
+            let csatConfig = null;
+            if (csatEnabled) {
+              const trigger = document.querySelector('input[name="pf-csat-trigger"]:checked')?.value || 'on_close';
+              const csatEmail = document.getElementById('pf-csat-email')?.value?.trim() || '';
+              if (!csatEmail) {
+                toast.error('Informe o e-mail do cliente para o CSAT do projeto.');
+                return;
+              }
+              const taskTypeId = document.getElementById('pf-csat-type')?.value || null;
+              csatConfig = {
+                enabled: true,
+                trigger,
+                clientEmail: csatEmail,
+                questionsSource: taskTypeId ? 'task_type' : 'custom',
+                taskTypeId: taskTypeId || null,
+                questions: [],
+                customMessage: document.getElementById('pf-csat-msg')?.value?.trim() || '',
+              };
+            }
             const data = {
               name,
               description:  document.getElementById('pf-desc')?.value?.trim()||'',
@@ -491,6 +604,7 @@ export async function openProjectModal(project = null, { defaultWorkspaceId = nu
               endDate:      document.getElementById('pf-end')?.value   || null,
               workspaceIds: wsIds,                 // canônico (B5p multi-squad)
               workspaceId:  wsIds[0] || null,      // espelho legacy
+              csatConfig,                          // null limpa, objeto ativa (4.35+)
             };
             if (isEdit) await updateProject(project.id, data);
             else        await createProject(data);
@@ -563,6 +677,43 @@ export async function openProjectModal(project = null, { defaultWorkspaceId = nu
         const check = el.querySelector('.member-check');
         if (check) check.style.display = isSelected ? 'inline' : 'none';
       });
+    });
+
+    // 4.35+ CSAT toggle: mostra/esconde corpo
+    document.getElementById('pf-csat-enabled')?.addEventListener('change', (e) => {
+      const body = document.getElementById('pf-csat-body');
+      if (body) body.style.display = e.target.checked ? 'block' : 'none';
+    });
+
+    // 4.35+ Botão "Disparar CSAT agora" (só em edit mode)
+    document.getElementById('pf-csat-fire')?.addEventListener('click', async () => {
+      if (!project?.id) return;
+      const btn = document.getElementById('pf-csat-fire');
+      btn.disabled = true;
+      btn.textContent = '⏳ Disparando...';
+      try {
+        // Salva config primeiro (caso o user tenha alterado e não salvado)
+        const csatEmail = document.getElementById('pf-csat-email')?.value?.trim() || '';
+        if (!csatEmail) throw new Error('Informe o e-mail do cliente antes de disparar.');
+        const trigger = document.querySelector('input[name="pf-csat-trigger"]:checked')?.value || 'on_close';
+        const taskTypeId = document.getElementById('pf-csat-type')?.value || null;
+        await updateProject(project.id, {
+          csatConfig: {
+            enabled: true, trigger, clientEmail: csatEmail,
+            questionsSource: taskTypeId ? 'task_type' : 'custom',
+            taskTypeId, questions: [],
+            customMessage: document.getElementById('pf-csat-msg')?.value?.trim() || '',
+          },
+        });
+        const { fireProjectCsatManual } = await import('../services/csat.js');
+        const res = await fireProjectCsatManual(project.id);
+        toast.success(`CSAT disparado! ${res.taskIds.length} tarefa(s) cobertas.`);
+        btn.textContent = '✓ Disparado';
+      } catch (e) {
+        toast.error(e.message || 'Falha ao disparar CSAT.');
+        btn.textContent = '⚡ Disparar CSAT agora';
+        btn.disabled = false;
+      }
     });
 
     // Squads multi-select toggle (B5p)

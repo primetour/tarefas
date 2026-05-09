@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 34,
-  patch: 14,
-  build: '20260508-csat-graph-flat-design',
+  minor: 35,
+  patch: 0,
+  build: '20260508-csat-project-level',
 };
 
 /** "1.2.0" */

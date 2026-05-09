@@ -1493,7 +1493,7 @@ function _baseEmailLayout({ heading, intro, body, ctaUrl, ctaLabel, footerNote }
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;border-radius:14px;overflow:hidden;border:1px solid rgba(127,127,127,0.2);">
 
         <!-- HEADER: navy fixo + logo branco -->
-        <tr><td bgcolor="#1F2937" style="padding:32px;background-color:#1F2937;text-align:center;border-bottom:3px solid #D4A843;">
+        <tr><td bgcolor="#0F172A" style="padding:32px;background-color:#0F172A;text-align:center;border-bottom:3px solid #D4A843;">
           <img src="${PRIMETOUR_LOGO}" alt="PRIMETOUR" width="200" style="display:inline-block;max-width:200px;height:auto;border:0;outline:none;text-decoration:none;">
           <div style="margin-top:14px;font-size:11px;color:#D4A843;letter-spacing:0.22em;text-transform:uppercase;font-weight:700;">Pesquisa de Satisfação</div>
         </td></tr>
@@ -1537,7 +1537,7 @@ function _buildCsatEmailHtml({ surveyId, token, taskTitle, taskIds, taskTypeLabe
   // (cores fixas, alta legibilidade em light E dark mode).
   // Se taskList[] foi passado (com title de cada), lista todas; senão mostra contagem.
   const tasksHtml = Array.isArray(taskIds) && taskIds.length > 1
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#1F2937" style="background-color:#1F2937;border-radius:10px;margin:0 0 24px;">
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#0F172A" style="background-color:#0F172A;border-radius:10px;margin:0 0 24px;">
          <tr><td style="padding:18px 20px;">
            <div style="font-size:11px;color:#D4A843;margin-bottom:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;">${taskIds.length} entregas neste lote</div>
            ${Array.isArray(taskList) && taskList.length

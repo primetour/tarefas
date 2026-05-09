@@ -28,6 +28,18 @@ const findIn = (list, id) => list.find(o => o.id === id) || null;
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/* Score pode ser decimal (média de várias perguntas score, ex: 4 + 5 → 4.5).
+ * fmtScore: formata pra exibição (4 → "4", 4.5 → "4,5" pt-BR style)
+ * scoreBucket: arredonda pra 1..5 pra lookup em SCORE_LABELS (emoji/cor/label) */
+const fmtScore = (n) => {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
+  return Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',');
+};
+const scoreBucket = (n) => {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  return Math.max(1, Math.min(5, Math.round(n)));
+};
+
 /* ─── 4.32+ F4 — Agregação por pergunta (CSAT custom) ─────
  * Recebe surveys já filtrados (status='responded'). Agrupa por taskTypeId
  * E pelo conjunto de perguntas (que é idêntico para mesmo taskTypeId pois
@@ -451,7 +463,7 @@ function renderTableView(container, list) {
       </div>
       ${list.map(s => {
         const statusInfo  = CSAT_STATUS[s.status] || {};
-        const scoreInfo   = s.score ? SCORE_LABELS[s.score] : null;
+        const scoreInfo   = s.score ? SCORE_LABELS[scoreBucket(s.score)] : null;
         const sentDate    = s.sentAt ? fmtDate(s.sentAt) : '—';
         return `<div style="display:grid; grid-template-columns:2fr 1fr 1fr 120px 100px 120px;
           gap:12px; padding:11px 16px; font-size:0.8125rem;
@@ -475,7 +487,7 @@ function renderTableView(container, list) {
           </div>
           <div>
             ${scoreInfo ? `<span style="font-size:1.125rem;">${scoreInfo.emoji}</span>
-              <strong style="color:${scoreInfo.color}; margin-left:4px;">${s.score}</strong>` : '—'}
+              <strong style="color:${scoreInfo.color}; margin-left:4px;">${fmtScore(s.score)}</strong>` : '—'}
           </div>
           <div style="color:var(--text-muted); font-size:0.75rem;">${sentDate}</div>
           <div>${renderActionBtns(s, 'sm')}</div>
@@ -488,9 +500,11 @@ function renderTableView(container, list) {
 
 function renderSurveyCard(s) {
   const statusInfo = CSAT_STATUS[s.status] || {};
-  const scoreInfo  = s.score ? SCORE_LABELS[s.score] : null;
+  const scoreInfo  = s.score ? SCORE_LABELS[scoreBucket(s.score)] : null;
+  // Estrelas: usa Math.round pra preencher (4.5 → 5 estrelas cheias).
+  // Visualmente fiel o suficiente; o valor real aparece ao lado em fmtScore.
   const starsHtml  = s.score ? [1,2,3,4,5].map(i =>
-    `<span class="score-star ${i<=s.score?'filled':'empty'}">★</span>`
+    `<span class="score-star ${i<=Math.round(s.score)?'filled':'empty'}">★</span>`
   ).join('') : '';
 
   // 4.31+ Multi-pergunta: se survey.questions[] existe, renderiza breakdown por pergunta
@@ -551,7 +565,7 @@ function renderSurveyCard(s) {
           <span style="font-size:1.5rem;">${scoreInfo.emoji}</span>
           <div>
             <div class="score-display">${starsHtml}
-              <span class="score-value">${isMulti ? `${s.score}/5 (média)` : `${s.score}/5`}</span>
+              <span class="score-value">${isMulti ? `${fmtScore(s.score)}/5 (média)` : `${fmtScore(s.score)}/5`}</span>
             </div>
             <div style="font-size:0.75rem; color:${scoreInfo.color}; font-weight:500;">
               ${scoreInfo.label}
@@ -677,7 +691,7 @@ async function handleDelete(sid, survey) {
 }
 
 function openResponseModal(survey) {
-  const scoreInfo = SCORE_LABELS[survey.score];
+  const scoreInfo = SCORE_LABELS[scoreBucket(survey.score)];
   modal.open({
     title: 'Resposta do cliente',
     size:  'sm',
@@ -685,7 +699,7 @@ function openResponseModal(survey) {
       <div style="text-align:center; padding:8px 0 16px;">
         <div style="font-size:3rem; margin-bottom:8px;">${scoreInfo?.emoji||'★'}</div>
         <div style="font-size:2rem; font-weight:700; color:${scoreInfo?.color||'var(--brand-gold)'};">
-          ${survey.score}/5 — ${scoreInfo?.label||''}
+          ${fmtScore(survey.score)}/5 — ${scoreInfo?.label||''}
         </div>
         <div style="font-size:0.875rem; color:var(--text-muted); margin-top:4px;">
           ${fmtDate(survey.respondedAt)}
@@ -972,7 +986,7 @@ function renderBottom(surveys) {
               <div class="empty-state-title">Sem comentários ainda</div>
             </div>`
           : recent.map(s => {
-              const si = SCORE_LABELS[s.score];
+              const si = SCORE_LABELS[scoreBucket(s.score)];
               return `<div style="padding:12px 0; border-bottom:1px solid var(--border-subtle);">
                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
                   <span style="font-size:1.125rem;">${si?.emoji||'★'}</span>
@@ -1073,7 +1087,8 @@ const exportCsatPdf = withExportGuard(async function exportCsatPdf() {
     doc.text(txt('DISTRIBUICAO DE NOTAS'), M, kit.y);
     kit.addY(4.5);
     for (let s = 5; s >= 1; s--) {
-      const n = withScore.filter(x => Number(x.score) === s).length;
+      // Distribuição agrupa por bucket arredondado (4.5 conta no bucket 5)
+      const n = withScore.filter(x => scoreBucket(Number(x.score)) === s).length;
       const pct = Math.round(n * 100 / withScore.length);
       setText(COL.text); doc.setFont('helvetica','bold'); doc.setFontSize(8);
       doc.text(String(s), M, kit.y);
@@ -1120,10 +1135,10 @@ const exportCsatPdf = withExportGuard(async function exportCsatPdf() {
       doc.text(txt(fmtDate(s.respondedAt || s.createdAt)), W - M - 3, top + 6, { align: 'right' });
     }
 
-    // Nota grande (destaque)
+    // Nota grande (destaque) — pode ser decimal (ex: "4,5")
     if (typeof s.score === 'number' && s.score > 0) {
       setText(noteCol); doc.setFont('helvetica','bold'); doc.setFontSize(20);
-      doc.text(txt(String(s.score)), W - M - 3, top + cardH - 6, { align: 'right' });
+      doc.text(txt(fmtScore(s.score)), W - M - 3, top + cardH - 6, { align: 'right' });
       setText(COL.muted); doc.setFont('helvetica','bold'); doc.setFontSize(6);
       doc.text(txt('/ 5'), W - M - 3, top + cardH - 1.8, { align: 'right' });
     }

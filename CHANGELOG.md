@@ -6,6 +6,68 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.35.0+20260508-csat-project-level] — 2026-05-08
+
+Release **MINOR** — CSAT no nível do Projeto (override de tipos) + score decimal + recalibragem dev-hours.
+
+### Pedido do user
+> "se elas ja estiverem dentro de um projeto, como eu faço? o usuario vai
+> esquecer desse cadastro... E teremos também os projetos always on que o
+> user vai ter que fechar um marco e disparar csat"
+
+### Mudança
+Antes: CSAT era configurado apenas em **task types** (newsletter, apresentação etc).
+Projetos longos / always-on não tinham como agrupar pesquisas. Tarefas
+órfãs (sem tipo CSAT) ficavam sem coleta.
+
+Agora: cada **projeto** pode ter `csatConfig` próprio com 3 triggers:
+
+| Trigger | Quando dispara |
+|---|---|
+| `on_close` | User marca status='completed' no projeto |
+| `custom_milestones` | Task com `isMilestone=true` é concluída |
+| `manual_only` | Apenas via botão "⚡ Disparar CSAT agora" (always-on) |
+
+Quando habilitado, o projeto **substitui** (replace, não soma) qualquer
+config de CSAT dos tipos das tarefas dentro dele. Evita disparos duplicados.
+
+### Detalhes técnicos
+- Novo campo `projects/{id}.csatConfig` + `lastCsatFiredAt`
+- Novo campo `tasks/{id}.isMilestone` + `csatFiredAt`
+- `fireProjectCsat(project, {reason, triggerTaskId})` — coleta tarefas
+  concluídas desde `lastCsatFiredAt`, cria 1 survey modo `milestone` com
+  `taskIds[]`, envia via Cloud Function (Microsoft Graph), atualiza
+  `lastCsatFiredAt`
+- `fireProjectCsatManual(projectId)` — endpoint pro botão manual
+- `triggerCsatOnTaskComplete()` agora checa o override do projeto antes
+  de cair no fluxo legacy
+- `runPeriodicCsatTrigger` e `listPendingCsatPools` pulam tarefas em
+  projetos com CSAT ativo
+
+### Score decimal
+Bug correlato corrigido: pesquisa com 4 + 5 não mais arredonda pra 5 —
+salva `4.5` (1 casa decimal). UI mostra `4,5/5` em pt-BR. Distribuição
+agrupa por bucket arredondado (4,5 → bucket 5).
+
+### Calibragem dev-hours
+- `AI_ASSISTANCE_MULTIPLIER` recalibrado: `0.40` → `0.50`
+- Projeto retroativo agora cobre 95 dias (02/02/2026 → 08/05/2026):
+  adicionadas 2 fases pré-discovery (validação inicial + benchmarks de
+  mercado)
+
+### Arquivos
+- `js/services/projects.js` — sanitizer + close hook
+- `js/services/csat.js` — fireProjectCsat + override
+- `js/services/tasks.js` — delegação centralizada
+- `js/pages/projects.js` — UI no modal + botão manual
+- `js/components/taskModal.js` — checkbox isMilestone condicional
+- `js/auth/audit.js` — action `csat.project_fire`
+- `js/services/devHours.js` — multiplier 0.50
+- `functions/seed-pre-3.0-phases.cjs` — 8 fases (95 dias)
+- `csat-response.html` — score decimal
+
+---
+
 
 
 

@@ -567,22 +567,19 @@ export async function updateTask(taskId, data, opts = {}) {
     }
   }
 
-  // Auto-send CSAT if task has clientEmail and is being completed
-  if (data.status === 'done' && data.status !== data._prevStatus && data.clientEmail) {
-    import('./csat.js').then(async ({ createCsatSurvey, sendCsatEmail }) => {
+  // 4.35+ Auto-CSAT centralizado em triggerCsatOnTaskComplete (decide
+  // entre projeto-level / task-type-level / individual). Não dispara mais
+  // direto aqui — passa pra função que conhece o override do projeto.
+  if (data.status === 'done' && data.status !== data._prevStatus) {
+    import('./csat.js').then(async ({ triggerCsatOnTaskComplete }) => {
       try {
-        const survey = await createCsatSurvey({
-          taskId,
-          taskTitle: data.title || 'Tarefa',
-          clientEmail: data.clientEmail,
-          clientName: data.clientName || '',
-          projectName: data.projectName || '',
-        });
-        if (survey?.id) {
-          await sendCsatEmail(survey.id).catch(() => {});
-          console.log('[CSAT] Auto-sent for task:', taskId);
-        }
-      } catch (e) { console.warn('[CSAT] Auto-send failed:', e); }
+        const merged = {
+          id: taskId,
+          ...prevData,
+          ...data,
+        };
+        await triggerCsatOnTaskComplete(merged);
+      } catch (e) { console.warn('[CSAT] trigger failed:', e?.message || e); }
     }).catch(() => {});
   }
 

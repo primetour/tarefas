@@ -1623,6 +1623,22 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
             emptyLabel: '— Sem projeto —',
           });
         })()}
+        <!-- 4.35+ Marco do projeto (visível só se projeto tem trigger='custom_milestones') -->
+        <div id="tm-milestone-wrap" style="display:${(() => {
+          const proj = projectList.find(p => p.id === task.projectId);
+          return (proj?.csatConfig?.enabled && proj.csatConfig.trigger === 'custom_milestones') ? 'block' : 'none';
+        })()};margin-top:8px;padding:8px 10px;background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.25);border-radius:6px;">
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:0.8125rem;">
+            <input type="checkbox" id="tm-is-milestone" ${task.isMilestone ? 'checked' : ''}
+              style="margin-top:2px;accent-color:var(--brand-gold);" />
+            <span>
+              <strong>🎯 Esta tarefa fecha um marco</strong>
+              <div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">
+                Ao concluir, dispara CSAT cobrindo as tarefas concluídas desde o último marco.
+              </div>
+            </span>
+          </label>
+        </div>
       </div>
       <div class="task-detail-field">
         <div class="task-detail-label">Meta vinculada</div>
@@ -1929,6 +1945,19 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
       };
     },
     findSelected: lookupProject,
+  });
+
+  // 4.35+ Quando troca de projeto, mostra/esconde checkbox "marco" baseado
+  // no csatConfig do projeto selecionado.
+  document.getElementById('tm-project')?.addEventListener('change', (e) => {
+    const wrap = document.getElementById('tm-milestone-wrap');
+    const cb = document.getElementById('tm-is-milestone');
+    if (!wrap) return;
+    const proj = _currentProjects.find(p => p.id === e.target.value);
+    const showMilestone = proj?.csatConfig?.enabled
+      && proj.csatConfig.trigger === 'custom_milestones';
+    wrap.style.display = showMilestone ? 'block' : 'none';
+    if (!showMilestone && cb) cb.checked = false; // limpa se trocou pra projeto sem
   });
 
   // Squad — só renderiza se houver workspaces. Lookup por id no userWorkspaces.
@@ -3295,6 +3324,8 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
     status:       $('tm-status')?.value||'not_started',
     priority:     $('tm-priority')?.value||'medium',
     projectId:    $('tm-project')?.value||null,
+    // 4.35+ Marco no projeto (custom_milestones trigger)
+    isMilestone:  $('tm-is-milestone')?.checked || false,
     typeId:       typeIdVal || null,
     sector:       taskSector,
     variationId:  variationId || null,
@@ -4404,11 +4435,24 @@ function showEvidenceModal(taskId, taskData) {
       const btn = document.getElementById('dc-confirm');
       if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
 
+      // 4.35+ Override por projeto: se a task pertence a projeto com csatConfig.enabled,
+      // o projeto controla — não envia CSAT individual nem entra no bolsão periódico.
+      // O hook do tasks.js + project close vão decidir o disparo.
+      let projectControlsCsat = false;
+      try {
+        if (taskData?.projectId) {
+          const projsMod = await import('../services/projects.js');
+          const proj = await projsMod.getProject(taskData.projectId);
+          if (proj?.csatConfig?.enabled) projectControlsCsat = true;
+        }
+      } catch (_) {}
+
       // 4.34.12+ Detecta modo periodic — pra esses, NÃO envia CSAT na hora,
       // marca a tarefa pra entrar no bolsão da janela atual.
       const csatMode = document.getElementById('dc-csat-mode')?.value;
-      const isPeriodicMode = csatMode === 'periodic';
-      const sendCsat  = !isPeriodicMode && (document.getElementById('dc-csat-check')?.checked || false);
+      const isPeriodicMode = !projectControlsCsat && csatMode === 'periodic';
+      const sendCsat  = !projectControlsCsat && !isPeriodicMode
+        && (document.getElementById('dc-csat-check')?.checked || false);
       const regMeta   = document.getElementById('dc-meta-check')?.checked;
       const csatEmail = document.getElementById('dc-csat-email')?.value?.trim();
       // 4.29+ Multi-select: lê todos os checkboxes marcados em vez de single select

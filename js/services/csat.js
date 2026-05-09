@@ -326,9 +326,11 @@ export function calcCsatMetrics(surveys) {
   const detractors = responded.filter(s => s.score <= 2).length;
   const nps        = Math.round(((promoters - detractors) / responded.length) * 100);
 
+  // Distribuição: scores podem ser decimais (média de várias perguntas).
+  // Agrupa por bucket arredondado — 4.5 conta no bucket 5.
   const distribution = {};
   for (let i = 1; i <= 5; i++) {
-    distribution[i] = responded.filter(s => s.score === i).length;
+    distribution[i] = responded.filter(s => Math.round(s.score) === i).length;
   }
 
   return {
@@ -346,11 +348,37 @@ export function calcCsatMetrics(surveys) {
 }
 
 /* ─── Auto-disparo ao concluir tarefa ────────────────────── */
+/**
+ * 4.35+ Decide quem controla o CSAT desta tarefa:
+ *  1. Se a task pertence a um projeto com csatConfig.enabled=true,
+ *     o projeto OVERRIDE — task NÃO dispara CSAT individual.
+ *     - Exceção: se trigger='custom_milestones' e task.isMilestone=true,
+ *       dispara CSAT do projeto cobrindo as tarefas do intervalo.
+ *  2. Caso contrário, fluxo legado (clientEmail-based individual CSAT).
+ */
 export async function triggerCsatOnTaskComplete(task) {
-  // Só dispara se a tarefa tiver e-mail do cliente configurado
+  // Override por projeto
+  if (task.projectId) {
+    try {
+      const { getProject } = await import('./projects.js');
+      const project = await getProject(task.projectId);
+      if (project?.csatConfig?.enabled) {
+        const trigger = project.csatConfig.trigger || 'on_close';
+        if (trigger === 'custom_milestones' && task.isMilestone) {
+          return fireProjectCsat(project, { reason: 'milestone', triggerTaskId: task.id });
+        }
+        // projeto controla — esse evento não dispara
+        return null;
+      }
+    } catch (e) {
+      console.warn('[CSAT] project override check failed:', e?.message || e);
+    }
+  }
+
+  // Fluxo legado: task com clientEmail → individual CSAT
   if (!task.clientEmail) return null;
   const existing = await fetchSurveys({ taskId: task.id, limitN: 1 });
-  if (existing.length) return null; // Já existe uma survey para esta tarefa
+  if (existing.length) return null;
 
   const survey = await createCsatSurvey({
     taskId:       task.id,
@@ -361,14 +389,139 @@ export async function triggerCsatOnTaskComplete(task) {
     assignedTo:   task.assignees?.[0] || null,
   });
 
-  // Enviar com delay configurável
   const delayMs = (APP_CONFIG.csat.delayHours || 1) * 60 * 60 * 1000;
-  if (delayMs <= 0) {
-    await sendCsatEmail(survey.id);
-  }
-  // (se delayHours > 0, o envio é feito por um job externo ou manualmente)
+  if (delayMs <= 0) await sendCsatEmail(survey.id);
 
   return survey;
+}
+
+/* ─── 4.35+ Disparo de CSAT no nível do projeto ─────────────
+ * Coleta tarefas elegíveis (concluídas desde o último disparo, ou todas
+ * se nunca disparou), cria 1 survey modo 'milestone' com taskIds[],
+ * envia, e atualiza project.lastCsatFiredAt.
+ *
+ * @param {Object} project - documento completo do projeto (com .csatConfig)
+ * @param {Object} opts
+ * @param {'close'|'milestone'|'manual'} opts.reason
+ * @param {string} [opts.triggerTaskId] - id da task que disparou (custom_milestones)
+ */
+export async function fireProjectCsat(project, { reason, triggerTaskId = null } = {}) {
+  const cfg = project?.csatConfig;
+  if (!cfg?.enabled) throw new Error('CSAT do projeto não está habilitado.');
+  if (!cfg.clientEmail) throw new Error('E-mail do cliente não configurado no CSAT do projeto.');
+
+  // Janela: tarefas concluídas com completedAt > project.lastCsatFiredAt
+  const lastFired = project.lastCsatFiredAt?.toDate
+    ? project.lastCsatFiredAt.toDate()
+    : (project.lastCsatFiredAt ? new Date(project.lastCsatFiredAt) : null);
+
+  const tasksSnap = await getDocs(query(
+    collection(db, 'tasks'),
+    where('projectId', '==', project.id),
+    where('status', '==', 'done'),
+  ));
+
+  const eligibleTasks = tasksSnap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(t => {
+      if (!t.completedAt) return false;
+      const completed = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
+      if (lastFired && completed <= lastFired) return false;
+      return true;
+    });
+
+  if (!eligibleTasks.length) {
+    throw new Error('Nenhuma tarefa elegível (nada concluído desde o último disparo).');
+  }
+
+  // Resolve perguntas: do tipo selecionado ou customizado
+  let questions = [];
+  if (cfg.questionsSource === 'task_type' && cfg.taskTypeId) {
+    const types = store.get('taskTypes') || [];
+    const t = types.find(tt => tt.id === cfg.taskTypeId);
+    if (t?.csatConfig?.questions?.length) {
+      questions = t.csatConfig.questions.map(q => ({
+        id: q.id, label: q.label, type: q.type || 'score',
+        required: q.required !== false,
+      }));
+    }
+  } else if (cfg.questionsSource === 'custom' && Array.isArray(cfg.questions)) {
+    questions = cfg.questions.map(q => ({
+      id: q.id, label: q.label, type: q.type || 'score',
+      required: q.required !== false,
+    }));
+  }
+  // Fallback: pergunta única padrão (legacy)
+  if (!questions.length) {
+    questions = [{ id: 'q1', label: 'Como avalia o trabalho entregue?', type: 'score', required: true }];
+  }
+
+  const user = store.get('currentUser');
+  const taskIds = eligibleTasks.map(t => t.id);
+  const subjectTitle = reason === 'close'
+    ? `Marco final: ${project.name}`
+    : reason === 'milestone'
+      ? `Marco do projeto: ${project.name}`
+      : `Avaliação: ${project.name}`;
+
+  // Cria survey modo 'milestone' (cobre vários taskIds)
+  const surveyDoc = {
+    workspaceId:  project.workspaceId || null,
+    taskId:       triggerTaskId || taskIds[0],
+    taskIds,
+    taskTypeId:   cfg.taskTypeId || null,
+    taskTitle:    subjectTitle,
+    projectId:    project.id,
+    projectName:  project.name,
+    clientEmail:  cfg.clientEmail.trim().toLowerCase(),
+    clientName:   cfg.clientEmail.split('@')[0],
+    assignedTo:   null,
+    customMessage: cfg.customMessage || '',
+    status:       'pending',
+    score:        null,
+    comment:      null,
+    questions,
+    responses:    {},
+    csatMode:     'milestone',
+    csatTrigger:  reason, // 'close' | 'milestone' | 'manual'
+    token:        generateToken(),
+    createdAt:    serverTimestamp(),
+    createdBy:    user?.uid || 'system',
+    sentAt:       null,
+    respondedAt:  null,
+    expiresAt:    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  };
+
+  const ref = await addDoc(collection(db, 'csat_surveys'), surveyDoc);
+  await auditLog('csat.project_fire', 'survey', ref.id, {
+    projectId: project.id, reason, taskCount: taskIds.length,
+  });
+
+  // Envia o e-mail via Cloud Function
+  await sendCsatEmail(ref.id).catch(e => {
+    console.warn('[CSAT] project fire — sendCsatEmail falhou:', e?.message || e);
+  });
+
+  // Marca o lastCsatFiredAt no projeto e (se milestone) marca a task disparadora
+  await updateDoc(doc(db, 'projects', project.id), {
+    lastCsatFiredAt: serverTimestamp(),
+  });
+  if (triggerTaskId) {
+    await updateDoc(doc(db, 'tasks', triggerTaskId), {
+      csatFiredAt: serverTimestamp(),
+    }).catch(() => {});
+  }
+
+  return { id: ref.id, ...surveyDoc, taskIds };
+}
+
+/* ─── 4.35+ Disparo manual (botão "Disparar CSAT agora") ──── */
+export async function fireProjectCsatManual(projectId) {
+  if (!store.can('csat_send')) throw new Error('Permissão negada.');
+  const { getProject } = await import('./projects.js');
+  const project = await getProject(projectId);
+  if (!project) throw new Error('Projeto não encontrado.');
+  return fireProjectCsat(project, { reason: 'manual' });
 }
 
 /* ─── Mapa de surveys por taskId (para cruzamento com tarefas) */
@@ -635,11 +788,19 @@ export async function listPendingCsatPools() {
   const allTasks = await tasksMod.fetchTasks();
   const taskTypes = store.get('taskTypes') || [];
 
+  // 4.35+ Override: tasks em projetos com csatConfig.enabled NÃO entram em bolsão
+  const projsMod = await import('./projects.js');
+  const allProjs = await projsMod.fetchProjects().catch(() => []);
+  const projsWithCsat = new Set(
+    (allProjs || []).filter(p => p?.csatConfig?.enabled).map(p => p.id)
+  );
+
   const byPool = {};
   for (const task of allTasks) {
     if (!task.csatPool) continue;
     if (!task.csatPool.startsWith('pending:periodic:')) continue;
     if (task.status !== 'done') continue;
+    if (task.projectId && projsWithCsat.has(task.projectId)) continue; // override
     if (!byPool[task.csatPool]) byPool[task.csatPool] = [];
     byPool[task.csatPool].push(task);
   }
@@ -707,6 +868,13 @@ export async function runPeriodicCsatTrigger(opts = {}) {
     const tasksMod = await import('./tasks.js');
     const allTasks = await tasksMod.fetchTasks();
 
+    // 4.35+ Override: tasks em projetos com csatConfig.enabled NÃO disparam periodic
+    const projsMod = await import('./projects.js');
+    const allProjs = await projsMod.fetchProjects().catch(() => []);
+    const projsWithCsat = new Set(
+      (allProjs || []).filter(p => p?.csatConfig?.enabled).map(p => p.id)
+    );
+
     for (const t of periodicTypes) {
       const cfg = t.csatConfig;
       const winId = periodWindowId(cfg.period, cfg.dayOfWeek);
@@ -746,8 +914,12 @@ export async function runPeriodicCsatTrigger(opts = {}) {
       }
 
       // Coleta tasks com csatPool == poolKey
+      // 4.35+ Pula tasks em projetos com CSAT ativo (projeto controla)
       const candidates = allTasks.filter(task =>
-        task.csatPool === poolKey && task.status === 'done' && task.clientEmail
+        task.csatPool === poolKey
+        && task.status === 'done'
+        && task.clientEmail
+        && !(task.projectId && projsWithCsat.has(task.projectId))
       );
 
       if (!candidates.length) {

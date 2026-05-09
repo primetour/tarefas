@@ -69,6 +69,7 @@ export const ACTION_LABELS = {
   'csat.cancel':             'Pesquisa CSAT cancelada',
   'csat.delete':             'Pesquisa CSAT excluída',
   'csat.send_digest':        'Digest CSAT enviado',
+  'csat.project_fire':       'CSAT do projeto disparado', // 4.35+
   // Goals / Metas
   'goals.create':            'Meta criada',
   'goals.update':            'Meta atualizada',

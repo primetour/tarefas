@@ -34,6 +34,37 @@ export const PROJECT_STATUS_MAP = Object.fromEntries(
   PROJECT_STATUSES.map(s => [s.value, s])
 );
 
+/* ─── 4.35+ Sanitizer pra project.csatConfig ──────────────────
+ * CSAT no nível do projeto — substitui (replace) qualquer csatConfig
+ * de tipo de tarefa nas tasks dentro deste projeto. 3 triggers:
+ *  - on_close: dispara quando user marca status='completed'
+ *  - custom_milestones: dispara quando task com isMilestone=true conclui
+ *  - manual_only: só pelo botão "Disparar CSAT agora"
+ */
+export function sanitizeProjectCsatConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object') return null;
+  const TRIGGERS = ['on_close', 'custom_milestones', 'manual_only'];
+  const QUESTION_TYPES = ['score', 'text', 'yesno'];
+  const SOURCES = ['task_type', 'custom'];
+  return {
+    enabled: cfg.enabled === true,
+    trigger: TRIGGERS.includes(cfg.trigger) ? cfg.trigger : 'on_close',
+    clientEmail: typeof cfg.clientEmail === 'string'
+      ? cfg.clientEmail.trim().toLowerCase() : '',
+    questionsSource: SOURCES.includes(cfg.questionsSource) ? cfg.questionsSource : 'task_type',
+    taskTypeId: typeof cfg.taskTypeId === 'string' ? cfg.taskTypeId : null,
+    customMessage: typeof cfg.customMessage === 'string' ? cfg.customMessage.trim() : '',
+    questions: Array.isArray(cfg.questions) ? cfg.questions
+      .filter(q => q && q.label && q.label.trim())
+      .map((q, i) => ({
+        id: q.id || `q${i+1}_${Date.now().toString(36)}`,
+        label: String(q.label || '').trim(),
+        type: QUESTION_TYPES.includes(q.type) ? q.type : 'score',
+        required: q.required !== false,
+      })) : [],
+  };
+}
+
 /* ─── Helpers de squad (B5p — multi-squad) ──────────────────
  * O modelo passou de `workspaceId: string|null` para
  * `workspaceIds: string[]`. Mantemos `workspaceId` como campo
@@ -81,6 +112,9 @@ export async function createProject(data) {
     endDate:     data.endDate   || null,
     taskCount:   0,
     doneCount:   0,
+    // 4.35+ CSAT no nível do projeto (override do tipo)
+    csatConfig:  data.csatConfig ? sanitizeProjectCsatConfig(data.csatConfig) : null,
+    lastCsatFiredAt: null,
     createdAt:   serverTimestamp(),
     createdBy:   user.uid,
     updatedAt:   serverTimestamp(),
@@ -128,11 +162,28 @@ export async function updateProject(projectId, data) {
     patch.workspaceId  = patch.workspaceIds[0] || null;
   }
 
+  // 4.35+ Sanitiza csatConfig se vier no patch (null limpa, objeto sanitiza)
+  if (data.csatConfig !== undefined) {
+    patch.csatConfig = data.csatConfig ? sanitizeProjectCsatConfig(data.csatConfig) : null;
+  }
+
   await updateDoc(doc(db, 'projects', projectId), {
     ...patch, updatedAt: serverTimestamp(), updatedBy: user.uid,
   });
   await auditLog('projects.update', 'project', projectId, { fields: Object.keys(data) });
   store.invalidateCache('projects');
+
+  // 4.35+ Hook: projeto fechado manualmente + CSAT trigger=on_close → dispara
+  if (data.status === 'completed' && prevData?.status !== 'completed') {
+    const cfg = (data.csatConfig !== undefined ? data.csatConfig : prevData?.csatConfig);
+    if (cfg?.enabled && cfg.trigger === 'on_close') {
+      import('./csat.js').then(({ fireProjectCsat }) => {
+        const merged = { id: projectId, ...prevData, ...data, csatConfig: cfg };
+        fireProjectCsat(merged, { reason: 'close' })
+          .catch(e => console.warn('[CSAT] project close trigger failed:', e?.message || e));
+      }).catch(() => {});
+    }
+  }
 
   // Notificar membros recém-adicionados e removidos (diff)
   if (Array.isArray(data.members) && prevData) {

@@ -517,13 +517,14 @@
         btn.textContent = 'Enviando...';
 
         try {
-          // Score derivado: média dos type=score
+          // Score derivado: média dos type=score (1 casa decimal — preserva
+          // fidelidade quando há mistura de notas, ex: 4 + 5 → 4.5 e não 5)
           const scoreVals = s.questions
             .filter(q => q.type === 'score')
             .map(q => multiResponses[q.id])
             .filter(v => Number.isFinite(v) && v >= 1 && v <= 5);
           const avgScore = scoreVals.length
-            ? Math.round(scoreVals.reduce((s,v)=>s+v,0) / scoreVals.length)
+            ? Math.round((scoreVals.reduce((s,v)=>s+v,0) / scoreVals.length) * 10) / 10
             : null;
           const commentDerived = s.questions
             .filter(q => q.type === 'text')
@@ -551,13 +552,16 @@
     }
 
     function showSuccess(score, comment) {
-      const sd = SCORE_DATA[score];
+      // Score pode ser decimal (ex: 4.5). SCORE_DATA tem chaves 1..5 inteiras —
+      // arredonda só pra escolher emoji/cor/label, mas exibe o valor original.
+      const sd = SCORE_DATA[Math.round(score)] || SCORE_DATA[5];
+      const scoreDisplay = Number.isInteger(score) ? score : score.toFixed(1).replace('.', ',');
       card.innerHTML = `
         <div class="brand">PRIMETOUR</div>
         <span class="success-icon">${sd.emoji}</span>
         <div class="success-title" style="color:${sd.color};">Obrigado pelo feedback!</div>
         <p class="success-msg">
-          Você nos deu nota <strong style="color:${sd.color};">${score}/5 — ${sd.label}</strong>.<br>
+          Você nos deu nota <strong style="color:${sd.color};">${scoreDisplay}/5 — ${sd.label}</strong>.<br>
           ${comment ? `<em style="display:block;margin-top:8px;color:var(--text-muted);">"${escHtml(comment)}"</em>` : ''}
           <br>Sua avaliação é muito importante para continuarmos melhorando nossos serviços.
         </p>

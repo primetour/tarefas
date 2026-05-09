@@ -92,18 +92,20 @@ const COLLECTION = 'dev_hours';
  * Tempo humano puro × AI_ASSISTANCE_MULTIPLIER = tempo equivalente do
  * dev sênior trabalhando ASSISTIDO POR IA (modelo "human-in-the-loop").
  *
- * Calibragem em 0.40 (~2.5× speedup) baseada em:
- *   - Microsoft Copilot studies: ~55% redução de tempo em tasks de coding
- *   - GitHub research: ~30-50% mais produtividade
- *   - Observação interna desta plataforma (12 releases): speedup ~13×
- *     no tempo bruto de execução, mas dev humano ainda investe tempo
- *     significativo em revisão/decisão/teste/integração
- *   - Faixa segura conservadora vs valor de mercado real
+ * Calibragem em 0.50 (~2× speedup) — recalibrada em 4.35.0 a partir do
+ * 0.40 anterior, alinhada à observação interna real (95 dias de projeto
+ * vs estimativa pura humana de ~190 dias). 0.50 reflete melhor o ritmo
+ * sustentado, levando em conta:
+ *   - Tempo de revisão/decisão/integração que IA não acelera
+ *   - Sessões de design/discovery (não é só coding)
+ *   - Iteração com user (feedback loops humanos)
+ *
+ * Referência: documento de horas de desenvolvimento (95 dias × 8h = 760h).
  *
  * Aplicado em createEntry: salvamos humanEquivalentHours (puro) +
  * totalHours (× multiplier). Display público usa totalHours.
  */
-export const AI_ASSISTANCE_MULTIPLIER = 0.40;
+export const AI_ASSISTANCE_MULTIPLIER = 0.50;
 
 /**
  * Calcula horas estimadas a partir do bucket + multiplicadores.
@@ -133,7 +135,7 @@ export function calcHoursFromBucket(bucketValue, multiplierIds = [], basePoint =
 }
 
 /**
- * Aplica o fator de assistência IA. humanHours × 0.40.
+ * Aplica o fator de assistência IA. humanHours × 0.50.
  * Floor em 0.1 (6min) pra entradas muito pequenas.
  */
 export function applyAiAssistance(humanHours) {

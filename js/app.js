@@ -520,6 +520,7 @@ function setupRouter() {
     'csat':         async () => { destroyCsat(); await renderCsat(content); },
     'dashboards':   async () => { destroyDashboards(); await renderDashboards(content); },
     'audit':        async () => { await renderAudit(content); },
+    'governance':   async () => { const { renderGovernance } = await import('./pages/governance.js?v=4.35.0'); await renderGovernance(content); },
     'workspaces':   async () => { await renderWorkspaces(content); },
     'squad':        async () => { await renderSquadWorkspace(content); },
     'task-types':   async () => { await renderTaskTypes(content); },
