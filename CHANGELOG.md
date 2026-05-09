@@ -6,6 +6,84 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.35.3+20260509-system-feedback-module] — 2026-05-09
+
+Release **MINOR** — Módulo System Feedback com email automático via Microsoft Graph.
+
+### Pedido do user
+> "em governança você fala sobre o usuario enviar feedback. onde está isso?
+> agora com o email outlook 365 rodando, conseguimos fazer isso sem problemas.
+> vale montar o módulo"
+
+### Mudança
+O sistema referenciava "Feedback no menu" na Governança mas não existia módulo
+pra coletar feedback **sobre o sistema**. O `/feedbacks` atual é gestão de pessoas
+(manager → subordinado), não bug/sugestão.
+
+Módulo novo construído end-to-end:
+
+| Componente | Descrição |
+|---|---|
+| `js/services/systemFeedback.js` | CRUD da coleção, tipos (bug/sugestão/dúvida/elogio), status (novo/análise/desenvolvimento/resolvido/rejeitado) |
+| `js/components/systemFeedbackModal.js` | Modal compartilhado (cards de tipo + textarea + char counter) |
+| `js/pages/systemFeedback.js` | Página admin com KPIs, filtros, cards, modal de detalhe + resposta interna |
+| `functions/index.js` | Firestore trigger v2 `onSystemFeedbackCreate` (1ª no projeto, exigiu Eventarc Service Agent) → email via Microsoft Graph |
+| `firestore.rules` | Auth cria próprio, admin lê/edita, master deleta |
+| `js/auth/audit.js` | 3 actions: `system_feedback.create/update/delete` |
+
+### Acesso
+- **Usuário**: botão "💬 Enviar sugestão" no TOC sidebar da Governança
+- **Admin**: sidebar Administração → "Feedbacks do Sistema" (acima de Configurações)
+- **Email destino**: rene.castro@primetour.com.br (template HTML com header navy + tipo destacado + metadata)
+
+### Testado
+- Smoke test via script: doc criado, log da function confirma `email enviado`
+- UI test via Chrome: fluxo modal → Firestore → Cloud Function → Graph completo
+
+---
+
+## [4.35.2+20260509-dev-hours-summary-expand] — 2026-05-09
+
+Release **PATCH** — Botão "Ver mais" pra ver descrições truncadas em dev_hours.
+
+### Pedido do user
+> "tem várias descrições de trabalho que estão com ... e isso nao pode ser
+> visto em nenhum lugar. faça algo que permita ver o texto completo"
+
+### Mudança
+Em `dev-hours-view.html`: descrições > 180 chars eram cortadas com `…` mas não
+havia como ver o texto completo. Agora cada entrada com summary longo tem
+botão **Ver mais** dourado que alterna entre versão truncada e completa
+inline. Click handler bound após cada render do tbody.
+
+---
+
+## [4.35.1+20260509-hours-hhmm-format] — 2026-05-09
+
+Release **PATCH** — Formato HH:MM em horas de desenvolvimento (em vez de decimal).
+
+### Pedido do user
+> "transforme para o padrao de hora (hoje, parece que está de 0 a 100 pra
+> formar uma hora)"
+
+### Mudança
+`fmtH(6.67)` retornava `"6.67h"` — confundia com base 100. Trocado por
+formato real:
+
+| Antes | Depois |
+|---|---|
+| `6.67h` | `6h 40min` |
+| `4.5h`  | `4h 30min` |
+| `0.5h`  | `30min`    |
+| `12h`   | `12h`      |
+
+Aplicado em `dev-hours-view.html` (página + tooltips de cat-bar) e
+`devHoursPdf.js` (KPIs + tabela + totais). Edge cases: zero (`0min`),
+sub-hora (só min), exato (só h), arredondamento que estoura 60min vira
++1h.
+
+---
+
 ## [4.35.0+20260508-csat-project-level] — 2026-05-08
 
 Release **MINOR** — CSAT no nível do Projeto (override de tipos) + score decimal + recalibragem dev-hours.

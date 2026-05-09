@@ -20,10 +20,16 @@
 - `variationId` (novo)
 - `sector` (novo)
 - `nucleos[]` (FK → nucleos)
-- `status` (`not_started` | `in_progress` | `done` | `cancelled`)
+- `status` (`not_started` | `in_progress` | `done` | `cancelled` | `rework`)
 - `assignees[]` (FK → users)
+- `projectId` (FK → projects)
 - `workspaceId` (FK → workspaces)
 - `dueDate`, `priority`, `description`
+- `clientEmail`, `clientName` (CSAT individual)
+- **`isMilestone`** (4.35+) — boolean, marca task como ponto de fechamento de marco no projeto (só vale se `project.csatConfig.trigger='custom_milestones'`)
+- **`csatPool`** (4.34.12+) — `pending:periodic:{typeId}:{winId}` ou `sent:...` (controla bolsão de CSAT periódico)
+- **`csatFiredAt`** (4.35+) — anti-duplicação de disparo de marco
+- `linkComprovacao` — link de evidência da entrega
 - `comments[]` (subcollection)
 
 ### `task_types`
@@ -35,6 +41,8 @@
 - `scheduleSlots[]` (novo)
 - `steps[]` — etapas do fluxo
 - `deliveryStandard` (novo)
+- **`csatConfig`** (4.31+) — `null` ou `{ enabled, mode: 'individual' | 'periodic' | 'milestone', period: 'weekly'|'biweekly'|'monthly', dayOfWeek (0-6), timeOfDay 'HH:mm' (4.34.12+), periodLabel, customMessage, questions[]: [{id, label, type: 'score'|'text'|'yesno', required}] }`
+- **Override**: se `task.projectId` aponta pra projeto com `project.csatConfig.enabled=true`, o projeto **substitui** essa config (4.35+).
 
 ### `requests` (portal público)
 - `id` (PK)
@@ -57,6 +65,42 @@
 - `name`
 - `sector` (novo)
 - `color`, `icon`
+
+### `projects` (4.35+ campos novos)
+- `id` (PK)
+- `name`, `description`, `icon`, `color`
+- `status` — `planning` | `active` | `always_on` | `on_hold` | `completed` | `cancelled`
+- `members[]` (FK → users)
+- `workspaceIds[]` (FK → workspaces, multi-squad B5p+)
+- `sector` (FK)
+- `startDate`, `endDate`
+- **`csatConfig`** (4.35+) — `null` ou `{ enabled, trigger: 'on_close' | 'custom_milestones' | 'manual_only', clientEmail, questionsSource, taskTypeId, questions[], customMessage }`
+- **`lastCsatFiredAt`** (4.35+) — controle de janela de CSAT
+- `taskCount`, `doneCount`
+- `archived`
+
+### `csat_surveys` (4.31-4.35 evolução completa)
+- `id` (PK)
+- `taskId`, **`taskIds[]`** (4.32+ milestone/periodic agrupado)
+- `taskTypeId` (snapshot)
+- `projectId`, `projectName`
+- `clientEmail`, `clientName`
+- **`questions[]`** (4.31+) — snapshot do `csatConfig.questions` no envio
+- **`responses{}`** (4.31+) — `{ [questionId]: value }`
+- `score` (decimal 1.0-5.0, 4.35+ aceita `4.5` etc; antes era inteiro)
+- `comment`
+- **`csatMode`** — `individual` | `periodic` | `milestone`
+- **`csatTrigger`** (4.35+) — `close` | `milestone` | `manual` (quando vem de projeto)
+- **`csatPool`** (4.34.12+) — `pending:periodic:{typeId}:{winId}` ou `sent:...`
+- `status` — `pending` | `sent` | `responded` | `expired` | `cancelled`
+- `token`, `expiresAt`, `sentAt`, `respondedAt`
+
+### `csat_periodic_runs` (4.34.12+)
+- `id` = `{typeId}_{winId}` (lock atômico)
+- `typeId`, `winId`, `poolKey`
+- `startedAt`, `startedBy{}`, `status` (`processing` | `done` | `empty`)
+- `surveysCreated`, `finishedAt`
+- **Função**: idempotência do disparo periódico — primeiro processo a criar o doc ganha; outros viram no-op.
 
 ### `users`
 - `id` (PK)
@@ -185,6 +229,22 @@
 - `fromUid` (FK)
 - `toUid` (FK)
 - `kudos | concern`
+- **Escopo**: gestão de pessoas (manager → subordinado, 1:1)
+
+### `system_feedback` (4.35.3+)
+- `id` (PK)
+- `type` — `bug` | `suggestion` | `question` | `praise`
+- `message` (≤ 2000 chars)
+- `page` — hash da rota onde o user estava
+- `appVersion`, `userAgent`
+- `authorUid` (FK), `authorName`, `authorEmail`, `authorRole`
+- `status` — `new` | `analyzing` | `in_progress` | `resolved` | `rejected`
+- `adminResponse` (≤ 1000 chars, anotação interna)
+- `resolvedAt`, `createdAt`, `updatedAt`
+- **Escopo**: feedback **sobre o sistema** (NÃO confundir com `feedbacks`).
+- **Trigger**: `onSystemFeedbackCreate` envia email via Microsoft Graph
+  pra `rene.castro@primetour.com.br` no momento da criação.
+- **Rules**: auth cria próprio (authorUid bate), admin lê/edita, master deleta.
 
 ### `goals`
 - `id` (PK)

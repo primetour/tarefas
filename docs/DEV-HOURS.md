@@ -1,0 +1,257 @@
+# Sistema de Horas de Desenvolvimento
+
+> **Última atualização:** v4.35.3 (09/05/2026) · 95 dias de calendário · 639,55h · R$ 95.932 · 6,73h/dia médio
+
+Documento técnico do módulo `dev_hours`: arquitetura, conceitos, calibragem do fator IA, processo de log, dashboards e exportações.
+
+---
+
+## 1. Propósito
+
+Rastrear de forma transparente e mensurável o **custo real de desenvolvimento** da plataforma PRIMETOUR. Cada release ou fase de trabalho vira uma entrada com:
+- estimativa em horas humanas (sem IA)
+- fator de assistência de IA aplicado
+- horas reais cobradas (humanHours × fator)
+- custo monetário a R$ 150/h
+- breakdown por categoria (refinamento, desenvolvimento, testes, documentação, implantação)
+
+Resultado: dashboard público (`dev-hours-view.html`) e PDF executivo, ambos sem necessidade de login — auditoria externa autorizada.
+
+---
+
+## 2. Modelo de dados
+
+### Coleção `dev_hours`
+
+Cada documento é uma **entrada** que pode ser de 2 tipos:
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `entryType` | `'release'` ou `'phase'` | Release = versão SemVer; Phase = bloco retroativo agregado |
+| `releaseVersion` | string | Para releases (ex: `4.35.3`) |
+| `releaseSlug` | string | Slug curto (ex: `20260509-system-feedback-module`) |
+| `phaseLabel` | string | Para phases (ex: `Discovery & levantamento de requisitos`) |
+| `title` | string | Título legível |
+| `summary` | string | Descrição completa do trabalho (suporta `…` + Ver mais na UI) |
+| `bucket` | string | `trivial` (0.25-0.5h) · `small` (0.5-1.5h) · `medium` (3-8h) · `large` (8-16h) · `mega` (16-80h) |
+| `multiplierIds[]` | string[] | Lista de complicadores aplicados (vide §3) |
+| `profile` | string | `feature` · `bugfix` · `phase` · etc — define ratios do breakdown |
+| `humanEquivalentHours` | number | Estimativa **humana pura** em horas (após multipliers, antes de IA) |
+| `aiAssistanceMultiplier` | number | Sempre `0.50` (4.35+, antes era `0.40`) |
+| `totalHours` | number | `humanEquivalentHours × aiAssistanceMultiplier` |
+| `totalCost` | number | `totalHours × hourlyRate` |
+| `hourlyRate` | number | `150` (BRL) |
+| `hoursByCategory{}` | object | `{ refinamento, desenvolvimento, testes, documentacao, implantacao }` em horas |
+| `phaseCommitsCount` | number | (Só em phases) Aproximação de commits cobertos |
+| `status` | string | `draft` · `approved` |
+| `completedAt` | timestamp | Data do trabalho |
+| `approvedAt`, `approvedBy{uid,name}` | timestamp / object | |
+| `createdAt`, `createdBy{uid,name}` | timestamp / object | |
+
+### Por que `phase` existe?
+
+Releases granulares só foram formalizados a partir de v3.0.0 (05/05/2026). O trabalho **anterior** (~1.161 commits entre 13/03 e 05/05/2026) viraria 1.000+ entradas micro se logássemos commit a commit. Em vez disso, **agregamos em fases retroativas**:
+
+```
+02/02/2026 → Validação inicial e business case (12h human / 6h totalHours)
+10/02/2026 → Pesquisa de mercado e benchmarks (10h / 5h)
+18/02/2026 → Discovery & levantamento de requisitos (18h / 9h)
+25/02/2026 → Definição de stack + POCs técnicos (14h / 7h)
+04/03/2026 → Setup local + boilerplate da app (22h / 11h)
+11/03/2026 → Auth + provisioning de usuários (20h × 1.20 / 12h)
+18/03/2026 → Modelo de dados + RBAC + rules (24h × 1.25 / 15h)
+23/03/2026 → UI base + primeiras telas funcionais (28h / 14h)
+25/03/2026 → Setup inicial + arquitetura base (legacy phase 1.x)
+30/03/2026 → Onboarding e iteração UX (80h / 40h)
+08/04/2026 → IA Hub: integração multi-modelo (82h × 1.20 / 49.2h)
+15/04/2026 → Hardening de segurança (legacy phase 2.x)
+18/04/2026 → Portal + Roteiros + Pesquisas externas (70h × 1.25 / 43.75h)
+25/04/2026 → Refactor multi-tenancy (legacy phase 3.x)
+28/04/2026 → Sistema de horas dev + tipos refinada (78h / 39h)
+02/05/2026 → Polimento + preparação 3.0.0 (legacy phase 4.x)
+06/05/2026 → CSAT modular + Microsoft Graph + governança (85h × 1.20 / 51h)
+```
+
+Total das phases: **17 entradas / 524,95h / R$ 78.742**
+
+---
+
+## 3. Multiplicadores de complexidade
+
+Complicadores que somam ao multiplicador base `1.0`:
+
+| ID | Valor | Quando aplicar |
+|---|---|---|
+| `investigation` | +0.30 | Trabalho exploratório com causa raiz desconhecida |
+| `migration` | +0.20 | Mudança de schema com backfill de dados existentes |
+| `pdf` | +0.15 | Geração de PDFs (jsPDF é teimoso) |
+| `integration` | +0.20 | Integração com API externa (Graph, OpenAI, etc) |
+| `security` | +0.25 | Mudança em rules / RBAC / hardening |
+| `pure_refactor` | -0.20 | Refactor sem mudança de comportamento (mais previsível) |
+
+**Exemplo**: phase com `humanHours: 24` e `multipliers: ['security']`:
+```
+24 × (1.0 + 0.25) × 0.50 = 15h totalHours
+```
+
+---
+
+## 4. Calibragem do fator IA-assistance
+
+### Por que `0.50` (recalibrado em 4.35.0 do 0.40 anterior)
+
+O fator representa **a fração de tempo humano realmente necessária** quando o dev está pareando com IA (Claude/Copilot/GPT). Não é um speedup uniforme — varia por tarefa:
+
+- **Coding repetitivo** (boilerplate, refactors mecânicos): IA faz quase tudo, fator pode ir a 0.20-0.30
+- **Design/discovery/decisão**: IA não acelera muito, fator perto de 0.80-1.0
+- **Debug profundo** (causa raiz desconhecida): IA acelera modestamente, 0.50-0.70
+- **Integrações** (ler doc + montar contrato): meio-termo, 0.40-0.55
+
+A média ponderada deste projeto (medindo bruto vs. calendário real) ficou em **0.50**.
+
+### Histórico
+- **v4.34.10** — `0.40` (calibragem inicial baseada em estudos Microsoft Copilot + GitHub research)
+- **v4.35.0** — `0.50` (recalibrada a partir do calendário real de 95 dias do projeto)
+
+### Fonte da verdade
+```js
+// js/services/devHours.js
+export const AI_ASSISTANCE_MULTIPLIER = 0.50;
+```
+
+Mudar esse valor afeta **apenas entradas novas** — entradas históricas mantêm o `aiAssistanceMultiplier` salvo no doc (campo persistido por idempotência).
+
+---
+
+## 5. Breakdown por categoria
+
+Cada entrada tem `hoursByCategory{}` com 5 chaves:
+
+| Categoria | Cor | Significado |
+|---|---|---|
+| `refinamento` | 🔵 azul | Discovery, requisitos, design técnico, arquitetura |
+| `desenvolvimento` | 🟡 dourado | Coding propriamente dito |
+| `testes` | 🟢 verde | Unit, integration, smoke, regression |
+| `documentacao` | 🟠 laranja | README, ADRs, comments, changelog |
+| `implantacao` | 🔴 vermelho | Deploy, secrets, rules, monitoring |
+
+Ratios padrão (auto-sugeridos no save) variam por `profile`:
+
+```
+feature  → 20% / 50% / 10% / 15% / 5%
+bugfix   → 30% / 40% / 15% / 10% / 5%
+phase    → 15% / 55% / 10% / 10% / 10%
+```
+
+A barra empilhada na UI representa esses ratios visualmente, com tooltip mostrando horas + percentual de cada categoria.
+
+---
+
+## 6. Processo de log (workflow do dev)
+
+### A. Release "comum" (após cada deploy)
+
+```bash
+# 1. Bump version em js/version.js + index.html
+# 2. Commit + push
+# 3. Deploy GitHub Pages auto + cloud functions se necessário
+# 4. Adicionar entrada dev_hours via:
+#    a) UI (futura — não tem ainda)
+#    b) Script Node.js no functions/ — padrão atual
+
+cd functions
+node seed-releases-X.Y.Z.cjs
+```
+
+### B. Phase retroativa (consolidação de período)
+
+Use quando:
+- Você está logando trabalho **anterior** ao versionamento formal
+- Múltiplas micro-mudanças que individualmente não merecem release entry
+- Trabalho exploratório que não tem versão (POC, design, discovery)
+
+Exemplo: vide `functions/seed-pre-3.0-phases.cjs` e `functions/seed-dev-phases-iter2.cjs`.
+
+### C. Idempotência
+
+Todos os seed scripts são **idempotentes** — usam `releaseVersion` (releases) ou `phaseLabel` (phases) como chave. Re-rodar atualiza valores em vez de duplicar.
+
+---
+
+## 7. UI: dashboard público
+
+`dev-hours-view.html` (sem login, ver §SECURITY abaixo)
+
+Componentes:
+- **Topbar**: total acumulado · custo · período
+- **KPIs**: dias de trabalho · média/dia · próxima entrega
+- **Filtros**: tipo (release/phase), busca por título/versão/fase, status
+- **Tabela**: cada entrada com `Ver mais` se summary > 180 chars
+- **Barras de categoria** (visual): ratios proporcionais empilhados
+
+### Segurança
+- Página é **deliberadamente pública** (decisão registrada em `docs.html`)
+- Mitigações: `<meta name="robots" content="noindex">`, sem links externos pra esta URL
+- Conteúdo é público por design — nada de secrets vai pra dev_hours
+
+### Formato de horas (4.35.1+)
+```js
+fmtH(6.67) === "6h 40min"
+fmtH(0.5)  === "30min"
+fmtH(12)   === "12h"
+fmtH(0)    === "0min"
+```
+
+Antes era decimal (`6.67h`) que confundia com base 100. Mudou pra HH:MM standard.
+
+---
+
+## 8. Export PDF
+
+`js/services/devHoursPdf.js` — gera relatório executivo via jsPDF.
+
+Inclui:
+- Capa com período + totais
+- KPIs grandes (horas, custo, taxa de release/dia)
+- Distribuição por categoria com barras
+- Tabela completa com todas entradas (ordenadas por data desc)
+- Footer com versão da app + assinatura
+
+Acessível via botão **⬇ Exportar PDF** na `dev-hours-view.html`.
+
+---
+
+## 9. Métricas-alvo
+
+A direção operacional definiu como **invariantes de saúde** do projeto:
+
+| Métrica | Alvo | Atual (4.35.3) |
+|---|---|---|
+| Total acumulado | R$ 95-97K | R$ 95.932 ✓ |
+| Média horas/dia | < 7h | 6,73h ✓ |
+| Calendário | ~95 dias | 95 dias ✓ |
+
+Estouro do alvo dispara revisão de calibragem (multiplier IA) ou auditoria de phases retroativas (corte de excessos).
+
+---
+
+## 10. Histórico de mudanças
+
+| Versão | Mudança |
+|---|---|
+| v4.34.0 | Coleção `dev_hours` criada |
+| v4.34.10 | Multiplier IA calibrado em 0.40 |
+| v4.34.11 | Bucket sizes ajustados (introdução de `mega`) |
+| v4.35.0 | **Multiplier IA → 0.50**; 2 phases pré-discovery (95 dias); 5 phases de iteração |
+| v4.35.1 | Formato HH:MM (em vez de decimal) |
+| v4.35.2 | Botão "Ver mais" em descrições truncadas |
+| v4.35.3 | Doc dedicado (este arquivo) + 3 release entries |
+
+---
+
+## 11. Limitações conhecidas
+
+1. **Sem UI de criação** — entradas só via script Node.js. UI seria útil mas não prioridade (volume baixo: ~1 release/dia × 95 dias = 95 entradas, viáveis manualmente).
+2. **Multiplier histórico não recalcula** — mudar `AI_ASSISTANCE_MULTIPLIER` só afeta entradas novas. Entradas antigas têm o valor salvo no doc.
+3. **Sem aprovação multi-step** — toda entrada vai direto pra `status='approved'`. Em organização maior, faria sentido `draft → review → approved`.
+4. **`profile` é livre** — não há validação rígida do que é `feature` vs `bugfix`. Decisão é do dev no momento do log.
