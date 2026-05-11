@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 4,
-  build: '20260509-tech-docs-update',
+  patch: 5,
+  build: '20260509-dashboard-period-filter-fix',
 };
 
 /** "1.2.0" */

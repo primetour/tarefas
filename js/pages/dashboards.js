@@ -450,14 +450,29 @@ async function loadData(container) {
       fetchSurveys({ limitN: 500 }).catch(() => []),
     ]);
 
-    // Apply user/nucleo/sector filters
+    // Apply user/nucleo/sector filters (não-temporais)
     m.tasks    = applyFilters(m.tasks);
-    m.total    = m.tasks.length;
 
-    const { start } = getPeriodDates(activePeriod());
+    // 4.35.5+ Filtro por período: tarefa "no período" = criada OU concluída
+    // dentro do range. Reflete atividade do time naquele intervalo, não
+    // o backlog total da empresa. Snapshot atual (em andamento / em atraso)
+    // mantemos sobre `tasksAll` pra refletir o estado "agora".
+    const { start, end } = getPeriodDates(activePeriod());
+    const inPeriod = (t) => {
+      const c = t.createdAt?.toDate   ? t.createdAt.toDate()   : (t.createdAt ? new Date(t.createdAt) : null);
+      const d = t.completedAt?.toDate ? t.completedAt.toDate() : (t.completedAt ? new Date(t.completedAt) : null);
+      if (c && c >= start && c <= end) return true;
+      if (d && d >= start && d <= end) return true;
+      return false;
+    };
+    const tasksAll = m.tasks;
+    m.tasksAll = tasksAll;
+    m.tasks    = tasksAll.filter(inPeriod);   // tudo abaixo respeita período
+
+    m.total          = m.tasks.length;
     const done       = m.tasks.filter(t => t.status === 'done');
-    const inProgress = m.tasks.filter(t => t.status === 'in_progress');
-    const overdue    = m.tasks.filter(t => {
+    const inProgress = tasksAll.filter(t => t.status === 'in_progress'); // snapshot atual
+    const overdue    = tasksAll.filter(t => {                            // snapshot atual
       if (!t.dueDate || t.status === 'done') return false;
       const d = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
       return d < new Date();
@@ -465,7 +480,7 @@ async function loadData(container) {
     const doneInPeriod = done.filter(t => {
       if (!t.completedAt) return false;
       const d = t.completedAt?.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
-      return d >= start;
+      return d >= start && d <= end;
     });
     // Pontualidade: só avaliamos tarefas que TÊM prazo.
     // Sem dueDate → não-avaliável (não puxa taxa pra baixo, mas é reportado).
@@ -605,8 +620,19 @@ function renderAllCharts(Chart, m) {
 
   const gridColor = 'rgba(255,255,255,0.05)';
 
-  /* 1a — Criadas vs Concluídas por semana (line, 8-col) */
-  const velocity = getWeeklyVelocity(tasks, 12);
+  /* 1a — Criadas vs Concluídas por semana (line, 8-col)
+     4.35.5+ Número de semanas derivado do período (não mais fixo em 12). */
+  const weeksByPeriod = ({ '7d': 2, '30d': 5, '90d': 13, '12m': 52 })[currentPeriod];
+  let velocityWeeks;
+  if (currentPeriod === 'custom' && customFrom && customTo) {
+    const ms = new Date(customTo) - new Date(customFrom);
+    velocityWeeks = Math.max(1, Math.ceil(ms / (7 * 86400000)));
+  } else {
+    velocityWeeks = weeksByPeriod || 12;
+  }
+  // Velocity recebe tasksAll porque a função se auto-filtra por semana
+  // (cada bucket considera createdAt/completedAt naquela janela específica).
+  const velocity = getWeeklyVelocity(m.tasksAll || tasks, velocityWeeks);
   const hasVelocity = velocity.some(v => v.done > 0 || v.created > 0);
   if (hasVelocity) {
     renderLineChart(Chart, 'charts-grid', 'velocity-chart', 'col-span-8', {
@@ -702,11 +728,13 @@ function renderAllCharts(Chart, m) {
     }),
   });
 
-  /* 7 — Upcoming deadlines (4-col) */
-  renderUpcoming('bottom-grid', 'upcoming-widget', 'col-span-4', tasks);
+  /* 7 — Upcoming deadlines (4-col)
+     4.35.5+ Próximas entregas são forward-looking → ignora filtro de período.
+     Filtro de user/setor/núcleo (não-temporal) já está aplicado em tasksAll. */
+  renderUpcoming('bottom-grid', 'upcoming-widget', 'col-span-4', m.tasksAll || tasks);
 
-  /* 8 — Activity heatmap */
-  renderHeatmap('heatmap-widget', tasks);
+  /* 8 — Activity heatmap (já é histórico — usa tasksAll) */
+  renderHeatmap('heatmap-widget', m.tasksAll || tasks);
 
   /* R3 — New widgets */
   const surveys = m.surveys || [];
