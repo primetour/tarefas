@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 6,
-  build: '20260511-photo-upload-manual-and-logs',
+  patch: 7,
+  build: '20260511-portaltips-updatepreview-scope-fix',
 };
 
 /** "1.2.0" */

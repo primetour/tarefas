@@ -504,7 +504,7 @@ function addExtraDestination() {
   div.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
       <span style="font-size:0.8125rem;font-weight:600;color:var(--text-muted);">Destino ${idx + 1}</span>
-      <button onclick="this.closest('div').remove();updatePreview()" style="border:none;background:none;cursor:pointer;color:var(--text-muted);">✕</button>
+      <button class="extra-dest-remove" style="border:none;background:none;cursor:pointer;color:var(--text-muted);">✕</button>
     </div>
     <select class="filter-select extra-continent" style="width:100%;margin-bottom:6px;">
       <option value="">Continente</option>
@@ -516,6 +516,12 @@ function addExtraDestination() {
       <option value="">Cidade (opcional)</option>
     </select>
   `;
+  // 4.35.7+ Bind do remover via addEventListener (antes era inline com
+  // updatePreview() que falhava por estar fora do escopo global do módulo).
+  div.querySelector('.extra-dest-remove')?.addEventListener('click', () => {
+    div.remove();
+    updatePreview();
+  });
   container.appendChild(div);
 
   // Populate continents for extra dest
@@ -569,11 +575,16 @@ async function updateSegments(destinationId) {
       onmouseover="this.style.background='var(--bg-surface)'"
       onmouseout="this.style.background=''">
       <input type="checkbox" name="segment" value="${s.key}" checked
-        style="width:15px;height:15px;accent-color:var(--brand-gold);cursor:pointer;"
-        onchange="updatePreview()">
+        style="width:15px;height:15px;accent-color:var(--brand-gold);cursor:pointer;">
       <span style="font-size:0.875rem;color:var(--text-primary);">${esc(s.label)}</span>
     </label>
   `).join('');
+  // 4.35.7+ Bind via addEventListener (antes era inline `onchange="updatePreview()"`,
+  // mas updatePreview() vive no escopo do módulo ES — inline lookups na window
+  // davam ReferenceError + quebravam a geração de material).
+  container.querySelectorAll('input[name=segment]').forEach(cb => {
+    cb.addEventListener('change', updatePreview);
+  });
 }
 
 async function updatePreview() {
