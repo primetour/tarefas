@@ -1227,15 +1227,9 @@ function renderPage(container) {
                 text-decoration:underline;">limpar todos</button>
             </div>
           ` : ''}
-          <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-            ${hasTypesSelected
-              ? 'Calendário dos tipos de tarefa selecionados. Adicione projeto pra visualizar tarefas já previstas na rotina.'
-              : hasProjectSelected
-                ? (isMulti
-                    ? 'Visualizando múltiplos projetos. Cores dos cards = cor do projeto.'
-                    : 'Calendário deste projeto. Adicione tipos pra refinar.')
-                : 'Selecione tipo(s) abaixo pra ver o calendário.'}
-          </p>
+          ${/* 4.35.17+ Subtitulo movido pra fora desse flex column — fica
+                comprimido pela toolbar a direita. Agora em linha propria abaixo,
+                full-width, 1 linha sem ellipsis. */ ''}
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           ${hasContext ? `
@@ -1330,6 +1324,19 @@ function renderPage(container) {
           </div>` : ''}
         </div>
       </div>
+
+      ${/* 4.35.17+ Subtitulo em linha propria abaixo do header (full-width),
+            antes era dentro da coluna do h1 e ficava espremido pela toolbar */ ''}
+      <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:-4px 0 12px 0;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+        ${hasTypesSelected
+          ? 'Calendário dos tipos de tarefa selecionados. Adicione projeto pra visualizar tarefas já previstas na rotina.'
+          : hasProjectSelected
+            ? (isMulti
+                ? 'Visualizando múltiplos projetos. Cores dos cards = cor do projeto.'
+                : 'Calendário deste projeto. Adicione tipos pra refinar.')
+            : 'Selecione tipo(s) abaixo pra ver o calendário.'}
+      </p>
 
       <!-- 4.16+: Chips de projetos ativos (multi-select) -->
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:16px;

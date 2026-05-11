@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 16,
-  build: '20260511-cc-categories-project-field-layout',
+  patch: 17,
+  build: '20260511-subtitle-fullwidth-row',
 };
 
 /** "1.2.0" */
