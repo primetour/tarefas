@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 11,
-  build: '20260511-cc-eixo-tipo-home-cards',
+  patch: 12,
+  build: '20260511-cc-chips-no-accounts-no-project-cta',
 };
 
 /** "1.2.0" */

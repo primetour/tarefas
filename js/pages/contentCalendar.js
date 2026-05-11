@@ -1067,19 +1067,33 @@ function renderPage(container) {
     <div style="padding:0;">
       <!-- Header -->
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
-        <div>
-          <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0 0 4px 0;">
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:0;flex:1;">
+          <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0;">
             📱 Calendário de Conteúdo
-            ${hasTypesSelected && selectedTypesLabels.length === 1
-              ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:${selectedTypesLabels[0].color};">· ${esc(selectedTypesLabels[0].icon)} ${esc(selectedTypesLabels[0].name)}</span>`
-              : hasTypesSelected
-                ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:var(--brand-gold);">· ${selectedTypesLabels.length} tipos</span>`
-                : isMulti
-                  ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:var(--brand-gold);">· ${activeProjectsResolved.length} projetos</span>`
-                  : (activeProject
-                      ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:${activeProject.color || 'var(--brand-gold)'};">· ${esc(activeProject.icon || '📦')} ${esc(activeProject.name)}</span>`
-                      : '')}
           </h1>
+          ${/* 4.35.12+ Chips de contexto: cada tipo selecionado vira chip removível
+                pra ficar claro que NÃO está "fixado" — é um filtro ativo. */ ''}
+          ${hasTypesSelected ? `
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              <span style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+                letter-spacing:.08em;color:var(--text-muted);">Tipo${selectedTypesLabels.length>1?'s':''}:</span>
+              ${selectedTypesLabels.map((tl, i) => `
+                <button class="cc-type-chip" data-type-id="${esc(visibleTaskTypes[i])}"
+                  title="Remover este tipo do filtro" style="
+                  display:inline-flex;align-items:center;gap:6px;padding:3px 8px 3px 10px;
+                  border-radius:14px;font-size:0.8125rem;font-weight:500;cursor:pointer;
+                  border:1px solid ${tl.color}66;background:${tl.color}15;color:${tl.color};
+                  font-family:inherit;">
+                  <span>${esc(tl.icon)}</span>
+                  <span>${esc(tl.name)}</span>
+                  <span style="font-size:0.875rem;line-height:1;opacity:0.6;margin-left:2px;">✕</span>
+                </button>
+              `).join('')}
+              <button id="cc-clear-types" style="font-size:0.6875rem;color:var(--text-muted);
+                background:none;border:none;cursor:pointer;padding:3px 6px;margin-left:2px;
+                text-decoration:underline;">limpar todos</button>
+            </div>
+          ` : ''}
           <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0;">
             ${hasTypesSelected
               ? (hasProjectSelected
@@ -1104,14 +1118,8 @@ function renderPage(container) {
             `).join('')}
           </div>` : ''}
 
-          ${hasContext ? `
-          <!-- Account selector (secondary — handle social) -->
-          <select id="cc-account-select" style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
-            border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
-            font-size:0.8125rem;cursor:pointer;outline:none;">
-            <option value="">Todas as contas</option>
-            ${ACCOUNTS.map(a => `<option value="${esc(a.value)}" ${activeAccount === a.value ? 'selected' : ''}>${esc(a.label)}</option>`).join('')}
-          </select>` : ''}
+          ${/* 4.35.12+ Account selector removido: módulo agora cobre tipos
+                 além de redes sociais. Tudo passa pelo tipo de tarefa. */ ''}
 
           ${hasContext ? `
           <!-- Navigation -->
@@ -1376,17 +1384,9 @@ function renderTypeCardsHome(projectCount) {
             </div>`;
         }).join('')}
 
-        ${projectCount > 0 ? `
-          <div style="text-align:center;margin-top:32px;padding-top:24px;border-top:1px solid var(--border-subtle);">
-            <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 12px;">
-              Ou comece pelo projeto (visão por escopo, vê todas as tarefas com prazo)
-            </p>
-            <button id="cc-empty-go-projects" style="padding:8px 16px;border:1px solid var(--border-default);
-              border-radius:8px;background:transparent;color:var(--text-secondary);
-              font-size:0.8125rem;cursor:pointer;">
-              ↗ Ver projetos
-            </button>
-          </div>` : ''}
+        ${/* 4.35.12+ Removido link "Ver projetos" — calendário é eixo-TIPO.
+              Projeto vira filtro secundário acessível pelo "+ Adicionar projeto"
+              no toolbar de cima, e pelo toggle "Tarefas dos projetos". */ ''}
       </div>
     </div>`;
 }
@@ -1924,6 +1924,25 @@ function bindCalendarCellEvents(container) {
 /* ── Header event binding ───────────────────────────────── */
 
 function bindHeaderEvents(container) {
+  // 4.35.12+ Chips de tipo: click no chip remove esse tipo do filtro
+  container.querySelectorAll('.cc-type-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const typeId = chip.dataset.typeId;
+      visibleTaskTypes = (visibleTaskTypes || []).filter(t => t !== typeId);
+      // Se ficou vazio, volta pra home (visibleTaskTypes = null = todos visíveis,
+      // mas sem context se nada selecionado → empty state mostra)
+      if (visibleTaskTypes.length === 0) visibleTaskTypes = null;
+      persistVisibleTaskTypes();
+      renderPage(container);
+    });
+  });
+  // Botão "limpar todos" os tipos
+  document.getElementById('cc-clear-types')?.addEventListener('click', () => {
+    visibleTaskTypes = null;
+    persistVisibleTaskTypes();
+    renderPage(container);
+  });
+
   // 4.25+ Toggle "Tarefas dos projetos"
   const toggleBtn = document.getElementById('cc-toggle-tasks');
   if (toggleBtn) {
