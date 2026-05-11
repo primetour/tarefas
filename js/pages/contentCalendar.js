@@ -1048,6 +1048,21 @@ function renderPage(container) {
   const isMulti = activeProjectsResolved.length > 1;
   const activeProject = activeProjectsResolved[0] || null; // primeiro pra header label
 
+  // 4.35.11+ Eixo TIPO: calendário pode ser visualizado por tipo de tarefa
+  // (que tem scheduleSlots) sem precisar de projeto. Projeto vira filtro
+  // secundário opcional. Home agora mostra cards de tipos quando nada
+  // selecionado, em vez de forçar "Selecione um projeto".
+  const hasTypesSelected = Array.isArray(visibleTaskTypes) && visibleTaskTypes.length > 0;
+  const hasContext = hasProjectSelected || hasTypesSelected;
+
+  // 4.35.11+ Label do contexto: tipos têm prioridade sobre projeto (eixo principal).
+  const selectedTypesLabels = hasTypesSelected
+    ? visibleTaskTypes.map(id => {
+        if (id === '__no_type__') return { name: 'Sem tipo', icon: '📋', color: '#6B7280' };
+        return resolveTaskType(id);
+      })
+    : [];
+
   container.innerHTML = `
     <div style="padding:0;">
       <!-- Header -->
@@ -1055,22 +1070,30 @@ function renderPage(container) {
         <div>
           <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0 0 4px 0;">
             📱 Calendário de Conteúdo
-            ${isMulti
-              ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:var(--brand-gold);">· ${activeProjectsResolved.length} projetos</span>`
-              : (activeProject
-                  ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:${activeProject.color || 'var(--brand-gold)'};">· ${esc(activeProject.icon || '📦')} ${esc(activeProject.name)}</span>`
-                  : '')}
+            ${hasTypesSelected && selectedTypesLabels.length === 1
+              ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:${selectedTypesLabels[0].color};">· ${esc(selectedTypesLabels[0].icon)} ${esc(selectedTypesLabels[0].name)}</span>`
+              : hasTypesSelected
+                ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:var(--brand-gold);">· ${selectedTypesLabels.length} tipos</span>`
+                : isMulti
+                  ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:var(--brand-gold);">· ${activeProjectsResolved.length} projetos</span>`
+                  : (activeProject
+                      ? `<span style="margin-left:8px;font-size:0.875rem;font-weight:500;color:${activeProject.color || 'var(--brand-gold)'};">· ${esc(activeProject.icon || '📦')} ${esc(activeProject.name)}</span>`
+                      : '')}
           </h1>
           <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0;">
-            ${hasProjectSelected
-              ? (isMulti
-                  ? 'Visualizando múltiplos projetos. Cores dos cards = cor do projeto.'
-                  : 'Calendário deste projeto. Adicione mais projetos pra ver vários ao mesmo tempo.')
-              : 'Selecione um projeto pra ver/criar conteúdo.'}
+            ${hasTypesSelected
+              ? (hasProjectSelected
+                  ? 'Calendário do(s) tipo(s) selecionado(s), filtrado por projeto(s).'
+                  : 'Calendário do(s) tipo(s) selecionado(s). Adicione projeto pra filtrar.')
+              : hasProjectSelected
+                ? (isMulti
+                    ? 'Visualizando múltiplos projetos. Cores dos cards = cor do projeto.'
+                    : 'Calendário deste projeto. Adicione tipos pra refinar.')
+                : 'Selecione tipo(s) abaixo pra ver o calendário.'}
           </p>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          ${hasProjectSelected ? `
+          ${hasContext ? `
           <!-- View toggle -->
           <div style="display:flex;border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;overflow:hidden;">
             ${[['month', 'Mes'], ['week', 'Semana'], ['list', 'Lista']].map(([v, l]) => `
@@ -1081,7 +1104,7 @@ function renderPage(container) {
             `).join('')}
           </div>` : ''}
 
-          ${hasProjectSelected ? `
+          ${hasContext ? `
           <!-- Account selector (secondary — handle social) -->
           <select id="cc-account-select" style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
             border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
@@ -1090,7 +1113,7 @@ function renderPage(container) {
             ${ACCOUNTS.map(a => `<option value="${esc(a.value)}" ${activeAccount === a.value ? 'selected' : ''}>${esc(a.label)}</option>`).join('')}
           </select>` : ''}
 
-          ${hasProjectSelected ? `
+          ${hasContext ? `
           <!-- Navigation -->
           <div style="display:flex;align-items:center;gap:4px;">
             <button id="cc-prev" style="padding:6px 10px;border:1px solid var(--border-subtle,#1E2D3D);
@@ -1133,7 +1156,7 @@ function renderPage(container) {
             border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);
             font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">
             IA: Sugerir Semana</button>` : ''}
-          ${hasProjectSelected ? `
+          ${hasContext ? `
           <!-- Split-button Export (consolida XLS+PDF) -->
           <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
             <button class="uikit-export-trigger" data-export-trigger="1"
@@ -1192,7 +1215,7 @@ function renderPage(container) {
           onmouseout="this.style.opacity='1'">+ Adicionar projeto</button>
       </div>
 
-      ${hasProjectSelected ? `
+      ${hasContext ? `
       <!-- Sub-toolbar de filtros (apenas na view "lista") — GAP fix: status/plataforma/categoria -->
       <div id="cc-filter-bar" style="display:${activeView === 'list' ? 'flex' : 'none'};
         gap:8px;flex-wrap:wrap;padding:0 12px 12px;align-items:center;">
@@ -1221,29 +1244,11 @@ function renderPage(container) {
       <!-- Calendar body -->
       <div id="cc-body"></div>
       ` : `
-      <!-- Empty state: nenhum projeto selecionado -->
-      <div style="text-align:center;padding:80px 24px;color:var(--text-muted,#5A6B7A);">
-        <div style="font-size:4rem;margin-bottom:16px;">📂</div>
-        <h2 style="font-size:1.25rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0 0 8px 0;">
-          ${projectGoneFromList ? 'Projeto não encontrado' : 'Selecione um projeto pra começar'}
-        </h2>
-        <p style="font-size:0.875rem;line-height:1.6;max-width:520px;margin:0 auto 24px;">
-          ${projectGoneFromList
-            ? 'O projeto deste link foi arquivado, removido ou você não tem acesso. Escolha outro no seletor acima.'
-            : 'O calendário de conteúdo agora é organizado por <strong>projeto</strong>. Cada projeto tem seu próprio calendário com slots, ideias e cronograma.'}
-        </p>
-        ${availableProjects.length === 0 ? `
-        <p style="font-size:0.8125rem;color:var(--text-muted);max-width:520px;margin:0 auto 16px;">
-          Você ainda não tem projetos. Crie um pra começar!
-        </p>` : ''}
-        <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap;">
-          <button id="cc-empty-go-projects" style="padding:10px 20px;border:1px solid var(--brand-gold,#D4A843);
-            border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);font-size:0.875rem;
-            font-weight:600;cursor:pointer;">
-            ${availableProjects.length === 0 ? '+ Criar primeiro projeto' : '↗ Ver todos os projetos'}
-          </button>
-        </div>
-      </div>
+      <!-- 4.35.11+ Empty state EIXO-TIPO: cards de tipos agrupados por categoria
+           Antes: forçava "Selecione um projeto" → confuso (projeto não tem calendário,
+           tipo é quem tem scheduleSlots). Agora: cada tipo com agenda vira um card
+           clicável. Click adiciona ao filtro + renderiza o calendário. -->
+      ${renderTypeCardsHome(availableProjects.length)}
       `}
 
       <!-- Modal overlay -->
@@ -1255,6 +1260,155 @@ function renderPage(container) {
 
   renderCalendarBody();
   bindHeaderEvents(container);
+  // 4.35.11+ Binds dos cards do empty-state eixo-tipo (só ativa se a home aparece)
+  bindTypeCardsHome(container);
+}
+
+/* ── 4.35.11+ Empty state eixo-tipo: cards de tipos agrupados por categoria ── */
+function renderTypeCardsHome(projectCount) {
+  const allTypes = store.get('taskTypes') || [];
+
+  // Tipos elegíveis: têm scheduleSlots OU pertencem a uma categoria "de conteúdo"
+  // Categorias conhecidas de conteúdo: ICs, Comunicação, Divulgação, Comunicação interna, Design
+  // Heurística: qualquer tipo com pelo menos 1 scheduleSlot ativo + alguns por nome
+  const contentTypes = allTypes.filter(t => {
+    const slots = Array.isArray(t.scheduleSlots) ? t.scheduleSlots : [];
+    if (slots.some(s => s.active !== false)) return true;
+    // Caps: comunicação/post/story/news/instagram nominais ainda aparecem
+    const n = (t.name || '').toLowerCase();
+    return /(post|story|news|instagram|newsletter|whatsapp|comunica|reel|carrossel)/.test(n);
+  });
+
+  if (!contentTypes.length) {
+    return `
+      <div style="text-align:center;padding:80px 24px;color:var(--text-muted,#5A6B7A);">
+        <div style="font-size:4rem;margin-bottom:16px;">🗓</div>
+        <h2 style="font-size:1.25rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0 0 8px;">
+          Nenhum tipo com agenda configurado
+        </h2>
+        <p style="font-size:0.875rem;line-height:1.6;max-width:520px;margin:0 auto 16px;">
+          Pra ver o calendário aqui, configure <strong>scheduleSlots</strong> em algum tipo de tarefa
+          (Administração → Tipos de Tarefa → editar tipo → "Agenda recorrente").
+        </p>
+        <button onclick="location.hash='task-types'" style="padding:10px 20px;
+          border:1px solid var(--brand-gold);border-radius:8px;background:transparent;
+          color:var(--brand-gold);font-size:0.875rem;font-weight:600;cursor:pointer;">
+          → Configurar Tipos de Tarefa
+        </button>
+      </div>`;
+  }
+
+  // Agrupa por categoria
+  const groups = {};
+  contentTypes.forEach(t => {
+    const cat = t.categoryName || '— Sem categoria —';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(t);
+  });
+  Object.values(groups).forEach(arr => arr.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+  const sortedCats = Object.keys(groups).sort((a, b) => {
+    if (a.startsWith('—')) return 1;
+    if (b.startsWith('—')) return -1;
+    return a.localeCompare(b);
+  });
+
+  return `
+    <div style="padding:24px 16px;">
+      <div style="max-width:1080px;margin:0 auto;">
+        <div style="text-align:center;margin-bottom:28px;">
+          <div style="font-size:2.5rem;margin-bottom:8px;">🗓</div>
+          <h2 style="font-size:1.25rem;font-weight:700;color:var(--text-primary);margin:0 0 6px;">
+            Calendários de conteúdo
+          </h2>
+          <p style="font-size:0.875rem;color:var(--text-muted);max-width:520px;margin:0 auto;line-height:1.55;">
+            Cada tipo de tarefa com agenda recorrente tem seu próprio calendário.
+            Selecione um ou mais pra começar — você pode adicionar projeto como filtro depois.
+          </p>
+        </div>
+
+        ${sortedCats.map(cat => {
+          const types = groups[cat];
+          return `
+            <div style="margin-bottom:28px;">
+              <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
+                color:var(--text-muted);margin-bottom:10px;padding:0 4px;">
+                ${esc(cat)}  ·  ${types.length} tipo${types.length>1?'s':''}
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;">
+                ${types.map(t => {
+                  const slots = (t.scheduleSlots || []).filter(s => s.active !== false);
+                  const slotCount = slots.length;
+                  const slotPeriods = slots.map(s => s.recurrence).filter(Boolean);
+                  const hasWeekly  = slotPeriods.includes('weekly');
+                  const hasMonthly = slotPeriods.includes('monthly_days');
+                  const periodHint = hasWeekly && hasMonthly ? 'semanal + mensal'
+                    : hasWeekly  ? 'semanal'
+                    : hasMonthly ? 'mensal'
+                    : slotCount  ? 'recorrente'
+                    : 'sem agenda — slots manuais';
+                  return `
+                    <button class="cc-type-card" data-type-id="${esc(t.id)}"
+                      style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+                        border-radius:10px;padding:14px;text-align:left;cursor:pointer;
+                        display:flex;flex-direction:column;gap:8px;
+                        transition:all 0.15s;font-family:inherit;">
+                      <div style="display:flex;align-items:center;gap:10px;">
+                        <span style="width:34px;height:34px;border-radius:8px;
+                          background:${t.color || '#D4A843'}22;color:${t.color || '#D4A843'};
+                          display:flex;align-items:center;justify-content:center;font-size:1.125rem;
+                          flex-shrink:0;">${esc(t.icon || '📋')}</span>
+                        <div style="min-width:0;flex:1;">
+                          <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);
+                            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(t.name)}</div>
+                          <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">
+                            ${slotCount} slot${slotCount!==1?'s':''} · ${periodHint}
+                          </div>
+                        </div>
+                      </div>
+                      <div style="font-size:0.6875rem;color:var(--brand-gold);font-weight:600;
+                        align-self:flex-end;">
+                        → Abrir calendário
+                      </div>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            </div>`;
+        }).join('')}
+
+        ${projectCount > 0 ? `
+          <div style="text-align:center;margin-top:32px;padding-top:24px;border-top:1px solid var(--border-subtle);">
+            <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 12px;">
+              Ou comece pelo projeto (visão por escopo, vê todas as tarefas com prazo)
+            </p>
+            <button id="cc-empty-go-projects" style="padding:8px 16px;border:1px solid var(--border-default);
+              border-radius:8px;background:transparent;color:var(--text-secondary);
+              font-size:0.8125rem;cursor:pointer;">
+              ↗ Ver projetos
+            </button>
+          </div>` : ''}
+      </div>
+    </div>`;
+}
+
+function bindTypeCardsHome(container) {
+  container.querySelectorAll('.cc-type-card').forEach(card => {
+    card.addEventListener('mouseover', () => {
+      card.style.borderColor = 'var(--brand-gold)';
+      card.style.background = 'rgba(212,168,67,0.04)';
+    });
+    card.addEventListener('mouseout', () => {
+      card.style.borderColor = 'var(--border-subtle)';
+      card.style.background = 'var(--bg-surface)';
+    });
+    card.addEventListener('click', () => {
+      const typeId = card.dataset.typeId;
+      // Adiciona o tipo ao filtro + persiste + re-renderiza
+      visibleTaskTypes = [typeId];
+      persistVisibleTaskTypes();
+      renderPage(container);
+    });
+  });
 }
 
 /* ── Calendar body renderers ────────────────────────────── */

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 10,
-  build: '20260511-cc-types-categorized-and-schedule-only',
+  patch: 11,
+  build: '20260511-cc-eixo-tipo-home-cards',
 };
 
 /** "1.2.0" */
