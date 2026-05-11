@@ -25,6 +25,15 @@ const CONTENTS = [
   { id: 'newsletter', label: 'Newsletter', icon: '✉',  color: '#D4A843', order: 6 },
 ];
 
+const CATEGORIES = [
+  { id: 'destinos',      label: 'Destinos',      icon: '🌍', color: '#0EA5E9', order: 1 },
+  { id: 'dicas',         label: 'Dicas',         icon: '💡', color: '#F59E0B', order: 2 },
+  { id: 'institucional', label: 'Institucional', icon: '🏛', color: '#6B7280', order: 3 },
+  { id: 'lancamento',    label: 'Lançamento',    icon: '🚀', color: '#EC4899', order: 4 },
+  { id: 'engajamento',   label: 'Engajamento',   icon: '❤',  color: '#EF4444', order: 5 },
+  { id: 'educativo',     label: 'Educativo',     icon: '📚', color: '#8B5CF6', order: 6 },
+];
+
 async function seedCollection(name, items) {
   const col = db.collection(name);
   const existing = await col.get();
@@ -47,6 +56,7 @@ async function seedCollection(name, items) {
   console.log('🌱 Seeding content meta...');
   await seedCollection('content_platforms', PLATFORMS);
   await seedCollection('content_contents', CONTENTS);
+  await seedCollection('content_categories', CATEGORIES);
   console.log('✓ Done.');
   process.exit(0);
 })().catch(e => { console.error('❌', e); process.exit(1); });

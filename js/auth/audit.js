@@ -81,6 +81,9 @@ export const ACTION_LABELS = {
   'content_contents.create': 'Tipo de conteúdo criado',
   'content_contents.update': 'Tipo de conteúdo atualizado',
   'content_contents.delete': 'Tipo de conteúdo excluído',
+  'content_categories.create':'Categoria de conteúdo criada',
+  'content_categories.update':'Categoria de conteúdo atualizada',
+  'content_categories.delete':'Categoria de conteúdo excluída',
   // Goals / Metas
   'goals.create':            'Meta criada',
   'goals.update':            'Meta atualizada',

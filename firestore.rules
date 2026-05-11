@@ -185,6 +185,12 @@ service cloud.firestore {
       allow update: if isAdmin();
       allow delete: if isMaster();
     }
+    match /content_categories/{id} {
+      allow read:   if isAuth();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isMaster();
+    }
 
     // ── System Feedback (4.35.3+) ───────────────────────────────
     // Bugs/sugestões/dúvidas/elogios sobre o sistema. Não confundir

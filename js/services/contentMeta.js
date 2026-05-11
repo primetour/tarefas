@@ -21,11 +21,16 @@ import { db }       from '../firebase.js';
 import { store }    from '../store.js';
 import { auditLog } from '../auth/audit.js';
 
-const COLS = { platforms: 'content_platforms', contents: 'content_contents' };
+const COLS = {
+  platforms:  'content_platforms',
+  contents:   'content_contents',
+  categories: 'content_categories', // 4.35.16+
+};
 
 const CACHE_KEYS = {
-  platforms: 'content_platforms',
-  contents:  'content_contents',
+  platforms:  'content_platforms',
+  contents:   'content_contents',
+  categories: 'content_categories',
 };
 
 /* ─── Sanitizer (server e client) ─────────────────────────── */
@@ -50,8 +55,9 @@ async function _list(kind) {
   return arr;
 }
 
-export async function fetchPlatforms() { return _list('platforms'); }
-export async function fetchContents()  { return _list('contents');  }
+export async function fetchPlatforms()  { return _list('platforms'); }
+export async function fetchContents()   { return _list('contents');  }
+export async function fetchCategories() { return _list('categories'); }
 
 /* ─── Criar ───────────────────────────────────────────────── */
 async function _create(kind, data) {
@@ -71,8 +77,9 @@ async function _create(kind, data) {
   return { id: ref.id, ...docData };
 }
 
-export const createPlatform = (d) => _create('platforms', d);
-export const createContent  = (d) => _create('contents',  d);
+export const createPlatform  = (d) => _create('platforms', d);
+export const createContent   = (d) => _create('contents',  d);
+export const createCategory  = (d) => _create('categories', d);
 
 /* ─── Atualizar ───────────────────────────────────────────── */
 async function _update(kind, id, data) {
@@ -85,8 +92,9 @@ async function _update(kind, id, data) {
   store.invalidateCache(CACHE_KEYS[kind]);
 }
 
-export const updatePlatform = (id, d) => _update('platforms', id, d);
-export const updateContent  = (id, d) => _update('contents',  id, d);
+export const updatePlatform  = (id, d) => _update('platforms', id, d);
+export const updateContent   = (id, d) => _update('contents',  id, d);
+export const updateCategory  = (id, d) => _update('categories', id, d);
 
 /* ─── Excluir ─────────────────────────────────────────────── */
 async function _delete(kind, id) {
@@ -96,8 +104,9 @@ async function _delete(kind, id) {
   store.invalidateCache(CACHE_KEYS[kind]);
 }
 
-export const deletePlatform = (id) => _delete('platforms', id);
-export const deleteContent  = (id) => _delete('contents',  id);
+export const deletePlatform  = (id) => _delete('platforms', id);
+export const deleteContent   = (id) => _delete('contents',  id);
+export const deleteCategory  = (id) => _delete('categories', id);
 
 /* ─── Helpers pro modal de slot: lista com fallback estático ─
  * Enquanto Firestore não tiver dados, retorna defaults.
@@ -121,6 +130,16 @@ export const FALLBACK_CONTENTS = [
   { id: 'newsletter', label: 'Newsletter', icon: '✉',  color: '#D4A843', order: 6 },
 ];
 
+// 4.35.16+ Categorias de slot (Destinos, Dicas, Institucional, etc).
+export const FALLBACK_CATEGORIES = [
+  { id: 'destinos',      label: 'Destinos',      icon: '🌍', color: '#0EA5E9', order: 1 },
+  { id: 'dicas',         label: 'Dicas',         icon: '💡', color: '#F59E0B', order: 2 },
+  { id: 'institucional', label: 'Institucional', icon: '🏛', color: '#6B7280', order: 3 },
+  { id: 'lancamento',    label: 'Lançamento',    icon: '🚀', color: '#EC4899', order: 4 },
+  { id: 'engajamento',   label: 'Engajamento',   icon: '❤',  color: '#EF4444', order: 5 },
+  { id: 'educativo',     label: 'Educativo',     icon: '📚', color: '#8B5CF6', order: 6 },
+];
+
 /**
  * Resolve lista live + fallback. Filtra inativos.
  * Usado nos dropdowns do modal de slot.
@@ -134,5 +153,11 @@ export async function getActivePlatforms() {
 export async function getActiveContents() {
   let list = await fetchContents().catch(() => []);
   if (!list.length) list = FALLBACK_CONTENTS;
+  return list.filter(x => x.active !== false);
+}
+
+export async function getActiveCategories() {
+  let list = await fetchCategories().catch(() => []);
+  if (!list.length) list = FALLBACK_CATEGORIES;
   return list.filter(x => x.active !== false);
 }

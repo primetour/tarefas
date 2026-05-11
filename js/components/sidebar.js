@@ -90,7 +90,6 @@ const NAV_GROUPS = [
       { route: 'audit',           icon: 'audit',      label: 'Auditoria',           perm: 'system_manage_settings' },
       { route: 'governance',      icon: 'governance', label: 'Governança',          perm: null }, // todos os autenticados
       { route: 'system-feedback', icon: 'feedbacks',  label: 'Feedbacks do Sistema',perm: 'system_manage_settings' },
-      { route: 'content-config',  icon: 'content-calendar', label: 'Conteúdo · Config',   perm: 'system_manage_settings' },
       { route: 'settings',        icon: 'settings',   label: 'Configurações',       perm: 'system_manage_settings' },
       { route: 'about',      icon: 'about',      label: 'Sobre o sistema',   perm: 'system_manage_users' },
       { route: 'help',       icon: 'help',       label: 'Ajuda',             perm: null }, // todos

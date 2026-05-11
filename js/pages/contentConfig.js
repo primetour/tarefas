@@ -12,18 +12,19 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import { modal } from '../components/modal.js';
 import {
-  fetchPlatforms, fetchContents,
-  createPlatform, createContent,
-  updatePlatform, updateContent,
-  deletePlatform, deleteContent,
+  fetchPlatforms, fetchContents, fetchCategories,
+  createPlatform, createContent, createCategory,
+  updatePlatform, updateContent, updateCategory,
+  deletePlatform, deleteContent, deleteCategory,
 } from '../services/contentMeta.js';
 import { renderEmojiPicker, bindEmojiPicker } from '../components/emojiPicker.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let activeTab = 'platforms';
-let allPlatforms = [];
-let allContents  = [];
+let allPlatforms  = [];
+let allContents   = [];
+let allCategories = [];
 
 export async function renderContentConfig(container) {
   if (!store.can('system_manage_settings') && !store.isMaster()) {
@@ -49,6 +50,9 @@ export async function renderContentConfig(container) {
       </button>
       <button class="cc-cfg-tab" data-tab="contents" style="${tabStyle('contents')}">
         🧩 Tipos de Conteúdo
+      </button>
+      <button class="cc-cfg-tab" data-tab="categories" style="${tabStyle('categories')}">
+        🏷 Categorias
       </button>
     </div>
 
@@ -77,18 +81,33 @@ function tabStyle(id) {
 
 async function loadData() {
   try {
-    [allPlatforms, allContents] = await Promise.all([
+    [allPlatforms, allContents, allCategories] = await Promise.all([
       fetchPlatforms().catch(() => []),
       fetchContents().catch(() => []),
+      fetchCategories().catch(() => []),
     ]);
   } catch(e) { console.warn('[content-config] load:', e.message); }
+}
+
+function _itemsForTab() {
+  if (activeTab === 'platforms')  return allPlatforms;
+  if (activeTab === 'contents')   return allContents;
+  if (activeTab === 'categories') return allCategories;
+  return [];
+}
+
+function _labelForTab() {
+  if (activeTab === 'platforms')  return 'plataforma';
+  if (activeTab === 'contents')   return 'tipo de conteúdo';
+  if (activeTab === 'categories') return 'categoria';
+  return 'item';
 }
 
 function renderTab() {
   const wrap = document.getElementById('cc-cfg-body');
   if (!wrap) return;
-  const items = activeTab === 'platforms' ? allPlatforms : allContents;
-  const label = activeTab === 'platforms' ? 'plataforma' : 'tipo de conteúdo';
+  const items = _itemsForTab();
+  const label = _labelForTab();
   wrap.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
       <span style="color:var(--text-muted);font-size:0.875rem;">
@@ -147,8 +166,7 @@ function renderTab() {
 
 function openEditModal(existing) {
   const isEdit = !!existing;
-  const isContents = activeTab === 'contents';
-  const what = isContents ? 'tipo de conteúdo' : 'plataforma';
+  const what = _labelForTab();
   modal.open({
     title: isEdit ? `Editar ${what}` : `Nova ${what}`,
     size: 'sm',
@@ -202,9 +220,12 @@ function openEditModal(existing) {
           };
           if (!data.label) { toast.error('Nome é obrigatório.'); return; }
           try {
-            if (isContents) {
+            if (activeTab === 'contents') {
               if (isEdit) await updateContent(existing.id, data);
               else        await createContent(data);
+            } else if (activeTab === 'categories') {
+              if (isEdit) await updateCategory(existing.id, data);
+              else        await createCategory(data);
             } else {
               if (isEdit) await updatePlatform(existing.id, data);
               else        await createPlatform(data);
@@ -213,6 +234,7 @@ function openEditModal(existing) {
             close();
             store.invalidateCache('content_platforms');
             store.invalidateCache('content_contents');
+            store.invalidateCache('content_categories');
             await loadData();
             renderTab();
           } catch(e) { toast.error(e.message); }
@@ -225,9 +247,8 @@ function openEditModal(existing) {
 }
 
 async function handleDelete(id) {
-  const isContents = activeTab === 'contents';
-  const what = isContents ? 'tipo de conteúdo' : 'plataforma';
-  const items = isContents ? allContents : allPlatforms;
+  const what = _labelForTab();
+  const items = _itemsForTab();
   const it = items.find(x => x.id === id);
   if (!it) return;
   const ok = await modal.confirm({
@@ -237,8 +258,9 @@ async function handleDelete(id) {
   });
   if (!ok) return;
   try {
-    if (isContents) await deleteContent(id);
-    else            await deletePlatform(id);
+    if (activeTab === 'contents')        await deleteContent(id);
+    else if (activeTab === 'categories') await deleteCategory(id);
+    else                                  await deletePlatform(id);
     toast.success('Excluído.');
     await loadData();
     renderTab();

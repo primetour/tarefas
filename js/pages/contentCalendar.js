@@ -114,7 +114,12 @@ let CONTENT_TYPE_OPTIONS = [
 // listas e re-seleciona o item novo no dropdown.
 async function _quickCreateMeta(kind) {
   const { renderEmojiPicker, bindEmojiPicker } = await import('../components/emojiPicker.js');
-  const what = kind === 'platform' ? 'plataforma' : 'tipo de conteúdo';
+  const what = kind === 'platform' ? 'plataforma'
+             : kind === 'category' ? 'categoria'
+             : 'tipo de conteúdo';
+  const placeholderEx = kind === 'platform' ? 'YouTube'
+                      : kind === 'category' ? 'Sazonal'
+                      : 'Webinar';
   const result = await new Promise((resolve) => {
     modal.open({
       title: `Nova ${what}`,
@@ -123,7 +128,7 @@ async function _quickCreateMeta(kind) {
         <div class="form-group">
           <label class="form-label">Nome *</label>
           <input type="text" class="form-input" id="qcm-label" maxlength="60"
-            placeholder="Ex: ${kind === 'platform' ? 'YouTube' : 'Webinar'}" />
+            placeholder="Ex: ${placeholderEx}" />
         </div>
         <div style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;">
           <div class="form-group" style="min-width:90px;">
@@ -162,9 +167,9 @@ async function _quickCreateMeta(kind) {
             };
             try {
               const meta = await import('../services/contentMeta.js');
-              const created = kind === 'platform'
-                ? await meta.createPlatform(data)
-                : await meta.createContent(data);
+              const created = kind === 'platform' ? await meta.createPlatform(data)
+                            : kind === 'category' ? await meta.createCategory(data)
+                            : await meta.createContent(data);
               close();
               resolve(created);
             } catch (e) { toast.error(e.message); }
@@ -180,7 +185,9 @@ async function _quickCreateMeta(kind) {
 
   // Recarrega listas e re-seleciona o novo item
   await _loadDynamicMetadata();
-  const selectId = kind === 'platform' ? 'cc-f-platform' : 'cc-f-contentType';
+  const selectId = kind === 'platform' ? 'cc-f-platform'
+                 : kind === 'category' ? 'cc-f-category'
+                 : 'cc-f-contentType';
   const sel = document.getElementById(selectId);
   if (sel) {
     // Adiciona option e seleciona
@@ -190,7 +197,9 @@ async function _quickCreateMeta(kind) {
     opt.selected = true;
     sel.appendChild(opt);
     // Re-renderiza o picker visual (recarrega o botão)
-    const btnId = kind === 'platform' ? 'cc-f-platform-btn' : 'cc-f-contentType-btn';
+    const btnId = kind === 'platform' ? 'cc-f-platform-btn'
+                : kind === 'category' ? 'cc-f-category-btn'
+                : 'cc-f-contentType-btn';
     const btn = document.getElementById(btnId);
     if (btn) {
       btn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;">
@@ -205,15 +214,19 @@ async function _quickCreateMeta(kind) {
 async function _loadDynamicMetadata() {
   try {
     const meta = await import('../services/contentMeta.js');
-    const [plats, conts] = await Promise.all([
+    const [plats, conts, cats] = await Promise.all([
       meta.getActivePlatforms(),
       meta.getActiveContents(),
+      meta.getActiveCategories(),
     ]);
     if (plats.length) {
       PLATFORM_OPTIONS = plats.map(p => ({ id: p.id, label: p.label, icon: p.icon, color: p.color }));
     }
     if (conts.length) {
       CONTENT_TYPE_OPTIONS = conts.map(c => ({ id: c.id, label: c.label, icon: c.icon, color: c.color }));
+    }
+    if (cats.length) {
+      CATEGORY_OPTIONS = cats.map(c => ({ id: c.id, label: c.label, icon: c.icon, color: c.color }));
     }
   } catch (e) { console.warn('[content-meta] load failed, using fallback:', e?.message); }
 }
@@ -223,7 +236,8 @@ const ACCOUNT_OPTIONS = [
   { id: 'icsbyprimetour',   label: '@icsbyprimetour',   icon: '◈', color: '#22C55E' },
 ];
 
-const CATEGORY_OPTIONS = [
+// 4.35.16+ CATEGORY_OPTIONS dinâmico (let). Atualizado por _loadDynamicMetadata.
+let CATEGORY_OPTIONS = [
   { id: 'destinos',      label: 'Destinos',      icon: '🌍', color: '#0EA5E9' },
   { id: 'dicas',         label: 'Dicas',         icon: '💡', color: '#F59E0B' },
   { id: 'institucional', label: 'Institucional', icon: '🏢', color: '#6366F1' },
@@ -1184,37 +1198,38 @@ function renderPage(container) {
       <!-- Header -->
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
         <div style="display:flex;flex-direction:column;gap:6px;min-width:0;flex:1;">
-          <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0;">
+          <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0;white-space:nowrap;">
             📱 Calendário de Conteúdo
           </h1>
-          ${/* 4.35.12+ Chips de contexto: cada tipo selecionado vira chip removível
-                pra ficar claro que NÃO está "fixado" — é um filtro ativo. */ ''}
+          ${/* 4.35.16+ Chips em uma linha só (overflow-x scroll se passar). Labels
+                de tipo abreviam se muito longos pra não quebrar layout. */ ''}
           ${hasTypesSelected ? `
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow-x:auto;
+              padding:2px 0;min-width:0;">
               <span style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-                letter-spacing:.08em;color:var(--text-muted);">Tipo${selectedTypesLabels.length>1?'s':''}:</span>
+                letter-spacing:.08em;color:var(--text-muted);flex-shrink:0;white-space:nowrap;">
+                Tipo${selectedTypesLabels.length>1?'s':''}:
+              </span>
               ${selectedTypesLabels.map((tl, i) => `
                 <button class="cc-type-chip" data-type-id="${esc(visibleTaskTypes[i])}"
-                  title="Remover este tipo do filtro" style="
+                  title="Remover ${esc(tl.name)}" style="
                   display:inline-flex;align-items:center;gap:6px;padding:3px 8px 3px 10px;
                   border-radius:14px;font-size:0.8125rem;font-weight:500;cursor:pointer;
                   border:1px solid ${tl.color}66;background:${tl.color}15;color:${tl.color};
-                  font-family:inherit;">
+                  font-family:inherit;flex-shrink:0;white-space:nowrap;max-width:200px;">
                   <span>${esc(tl.icon)}</span>
-                  <span>${esc(tl.name)}</span>
+                  <span style="overflow:hidden;text-overflow:ellipsis;">${esc(tl.name)}</span>
                   <span style="font-size:0.875rem;line-height:1;opacity:0.6;margin-left:2px;">✕</span>
                 </button>
               `).join('')}
               <button id="cc-clear-types" style="font-size:0.6875rem;color:var(--text-muted);
-                background:none;border:none;cursor:pointer;padding:3px 6px;margin-left:2px;
+                background:none;border:none;cursor:pointer;padding:3px 6px;flex-shrink:0;white-space:nowrap;
                 text-decoration:underline;">limpar todos</button>
             </div>
           ` : ''}
-          <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0;">
+          <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
             ${hasTypesSelected
-              ? (hasProjectSelected
-                  ? 'Calendário do(s) tipo(s) selecionado(s), filtrado por projeto(s).'
-                  : 'Calendário do(s) tipo(s) selecionado(s). Adicione projeto pra filtrar.')
+              ? 'Calendário dos tipos de tarefa selecionados. Adicione projeto pra visualizar tarefas já previstas na rotina.'
               : hasProjectSelected
                 ? (isMulti
                     ? 'Visualizando múltiplos projetos. Cores dos cards = cor do projeto.'
@@ -1279,7 +1294,14 @@ function renderPage(container) {
           <button id="cc-suggest-week" style="padding:6px 16px;border:1px solid var(--brand-gold,#D4A843);
             border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);
             font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">
-            IA: Sugerir Semana</button>` : ''}
+            IA: Sugerir Semana</button>
+          ${/* 4.35.16+ Acesso rapido pra /content-config (era no sidebar, saiu pra
+                não poluir). Só admin/master enxerga. */ ''}
+          ${(store.can('system_manage_settings') || store.isMaster()) ? `
+            <button id="cc-config-btn" title="Configurar plataformas, tipos e categorias"
+              style="padding:6px 10px;border:1px solid var(--border-subtle);border-radius:8px;
+              background:var(--bg-surface);color:var(--text-muted);font-size:0.875rem;
+              cursor:pointer;" onclick="location.hash='content-config'">⚙</button>` : ''}` : ''}
           ${hasContext ? `
           <!-- Split-button Export (consolida XLS+PDF) -->
           <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
@@ -2443,7 +2465,7 @@ function openSlotModal(slot, prefillDate) {
             ${(store.can('system_manage_settings') || store.isMaster()) ? `
               <button type="button" id="cc-f-platform-new" style="font-size:0.7rem;color:var(--brand-gold);
                 background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
-                + Criar nova plataforma…
+                + Criar nova plataforma
               </button>` : ''}
           </div>
           <div>
@@ -2456,25 +2478,29 @@ function openSlotModal(slot, prefillDate) {
             ${(store.can('system_manage_settings') || store.isMaster()) ? `
               <button type="button" id="cc-f-content-new" style="font-size:0.7rem;color:var(--brand-gold);
                 background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
-                + Criar novo tipo…
+                + Criar novo tipo
               </button>` : ''}
           </div>
         </div>
 
-        <!-- Row: Account + Date -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;${fieldGroupStyle}">
-          <div>
-            <label style="${labelStyle}">Conta</label>
-            <select id="cc-f-account" style="display:none;">
-              <option value="">Selecionar...</option>
-              ${ACCOUNTS.map(a => `<option value="${a.value}" ${s.account === a.value ? 'selected' : ''}>${esc(a.label)}</option>`).join('')}
-            </select>
-            ${renderPickerButton({ btnId: 'cc-f-account-btn', selected: findOption(ACCOUNT_OPTIONS, s.account), emptyLabel: '— Conta —' })}
-          </div>
-          <div>
-            <label style="${labelStyle}">Data Agendada</label>
-            <input type="date" id="cc-f-date" value="${esc(dateVal)}" style="${inputStyle}" />
-          </div>
+        <!-- 4.35.16+ Projeto explicito no form (antes era inferido do contexto) -->
+        <div style="${fieldGroupStyle}">
+          <label style="${labelStyle}">Projeto</label>
+          <select id="cc-f-project" style="${inputStyle}">
+            <option value="">— Sem projeto —</option>
+            ${availableProjects.map(p => `<option value="${p.id}" ${s.projectId === p.id ? 'selected' : ''}>${esc(p.icon || '📦')} ${esc(p.name)}</option>`).join('')}
+          </select>
+        </div>
+
+        <!-- Row: Data + (Conta retirada — eixo tipo nao usa contas) -->
+        <div style="${fieldGroupStyle}">
+          <label style="${labelStyle}">Data Agendada</label>
+          <input type="date" id="cc-f-date" value="${esc(dateVal)}" style="${inputStyle}" />
+          <!-- Hidden account pra back-compat com saves antigos -->
+          <select id="cc-f-account" style="display:none;">
+            <option value=""></option>
+            ${ACCOUNTS.map(a => `<option value="${a.value}" ${s.account === a.value ? 'selected' : ''}></option>`).join('')}
+          </select>
         </div>
 
         <!-- Category -->
@@ -2485,6 +2511,11 @@ function openSlotModal(slot, prefillDate) {
             ${CATEGORY_LIST.map(c => `<option value="${c.value}" ${s.category === c.value ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
           </select>
           ${renderPickerButton({ btnId: 'cc-f-category-btn', selected: findOption(CATEGORY_OPTIONS, s.category), emptyLabel: '— Categoria —' })}
+          ${(store.can('system_manage_settings') || store.isMaster()) ? `
+            <button type="button" id="cc-f-category-new" style="font-size:0.7rem;color:var(--brand-gold);
+              background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
+              + Criar nova categoria
+            </button>` : ''}
         </div>
 
         <!-- Description (unified brief + caption) -->
@@ -2694,10 +2725,13 @@ function bindModalEvents() {
   });
 
   // 4.35.13+ Botões inline "+ Criar nova plataforma/tipo" no modal de slot
+  // 4.35.16+ + Criar nova categoria também
   document.getElementById('cc-f-platform-new')?.addEventListener('click', () =>
     _quickCreateMeta('platform'));
   document.getElementById('cc-f-content-new')?.addEventListener('click', () =>
     _quickCreateMeta('content'));
+  document.getElementById('cc-f-category-new')?.addEventListener('click', () =>
+    _quickCreateMeta('category'));
   bindOptionPicker({
     btnId: 'cc-f-account-btn',
     selectId: 'cc-f-account',
@@ -2766,9 +2800,11 @@ function getFormData() {
     description:   document.getElementById('cc-f-description')?.value?.trim() || '',
     imageNotes:    document.getElementById('cc-f-imageNotes')?.value?.trim() || '',
     // 4.11+ — projeto é o scope canônico do calendário. Se editando um
-    // slot existente, mantém o projectId original (não muda só por estar
-    // num filtro diferente). Se criando novo, usa o projeto ativo.
-    projectId:     editingSlot?.projectId || activeProjectId || null,
+    // 4.35.16+ Projeto agora vem EXPLICITO do dropdown no form (antes era
+    // herdado do contexto, confundia se múltiplos projetos selecionados).
+    // Fallback: editingSlot.projectId → activeProjectId → null.
+    projectId:     document.getElementById('cc-f-project')?.value
+                   || editingSlot?.projectId || activeProjectId || null,
   };
 }
 

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 15,
-  build: '20260511-emoji-picker',
+  patch: 16,
+  build: '20260511-cc-categories-project-field-layout',
 };
 
 /** "1.2.0" */
