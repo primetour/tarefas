@@ -113,6 +113,7 @@ let CONTENT_TYPE_OPTIONS = [
 // Abre um modal pequeno só com nome+icon+cor, salva no Firestore, recarrega
 // listas e re-seleciona o item novo no dropdown.
 async function _quickCreateMeta(kind) {
+  const { renderEmojiPicker, bindEmojiPicker } = await import('../components/emojiPicker.js');
   const what = kind === 'platform' ? 'plataforma' : 'tipo de conteúdo';
   const result = await new Promise((resolve) => {
     modal.open({
@@ -124,16 +125,22 @@ async function _quickCreateMeta(kind) {
           <input type="text" class="form-input" id="qcm-label" maxlength="60"
             placeholder="Ex: ${kind === 'platform' ? 'YouTube' : 'Webinar'}" />
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-          <div class="form-group">
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;">
+          <div class="form-group" style="min-width:90px;">
             <label class="form-label">Ícone</label>
             <input type="text" class="form-input" id="qcm-icon" maxlength="4" value="📋"
-              style="text-align:center;font-size:1.25rem;" />
+              style="text-align:center;font-size:1.5rem;height:48px;" readonly />
           </div>
           <div class="form-group">
             <label class="form-label">Cor</label>
-            <input type="color" class="form-input" id="qcm-color" value="#94A3B8" style="height:38px;padding:2px;" />
+            <input type="color" class="form-input" id="qcm-color" value="#94A3B8" style="height:48px;padding:2px;width:100%;" />
           </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-size:0.75rem;color:var(--text-muted);">
+            Escolher emoji (clique pra selecionar)
+          </label>
+          ${renderEmojiPicker('qcm-icon')}
         </div>
         <small style="color:var(--text-muted);font-size:0.7rem;">
           Edite ou exclua depois em <strong>Administração → Conteúdo · Config</strong>.
@@ -165,6 +172,8 @@ async function _quickCreateMeta(kind) {
         },
       ],
     });
+    // Bind do emoji picker — após o DOM injetar
+    setTimeout(() => bindEmojiPicker('qcm-icon'), 50);
   });
 
   if (!result) return;

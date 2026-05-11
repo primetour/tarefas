@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 14,
-  build: '20260511-modal-zstack-fix',
+  patch: 15,
+  build: '20260511-emoji-picker',
 };
 
 /** "1.2.0" */

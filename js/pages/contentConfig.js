@@ -17,6 +17,7 @@ import {
   updatePlatform, updateContent,
   deletePlatform, deleteContent,
 } from '../services/contentMeta.js';
+import { renderEmojiPicker, bindEmojiPicker } from '../components/emojiPicker.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -157,17 +158,23 @@ function openEditModal(existing) {
         <input type="text" class="form-input" id="cfg-label" maxlength="60"
           value="${esc(existing?.label || '')}" placeholder="Ex: ${isContents ? 'Carrossel' : 'Instagram'}" />
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group">
-          <label class="form-label">Ícone (emoji)</label>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;">
+        <div class="form-group" style="min-width:90px;">
+          <label class="form-label">Ícone</label>
           <input type="text" class="form-input" id="cfg-icon" maxlength="4"
-            value="${esc(existing?.icon || '📋')}" style="text-align:center;font-size:1.25rem;" />
+            value="${esc(existing?.icon || '📋')}" style="text-align:center;font-size:1.5rem;height:48px;" readonly />
         </div>
         <div class="form-group">
-          <label class="form-label">Cor (hex)</label>
+          <label class="form-label">Cor</label>
           <input type="color" class="form-input" id="cfg-color"
-            value="${esc(existing?.color || '#94A3B8')}" style="height:38px;padding:2px;" />
+            value="${esc(existing?.color || '#94A3B8')}" style="height:48px;padding:2px;width:100%;" />
         </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="font-size:0.75rem;color:var(--text-muted);">
+          Escolher emoji (clique pra selecionar)
+        </label>
+        ${renderEmojiPicker('cfg-icon')}
       </div>
       <div class="form-group">
         <label class="form-label">Ordem (asc)</label>
@@ -213,6 +220,8 @@ function openEditModal(existing) {
       },
     ],
   });
+  // 4.35.15+ Bind do emoji picker
+  setTimeout(() => bindEmojiPicker('cfg-icon'), 50);
 }
 
 async function handleDelete(id) {
