@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 7,
-  build: '20260511-portaltips-updatepreview-scope-fix',
+  patch: 8,
+  build: '20260511-metas-visivel-cc-presets-projects-all-squads',
 };
 
 /** "1.2.0" */

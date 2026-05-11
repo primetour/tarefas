@@ -125,18 +125,35 @@ const findOption = (list, id) => list.find(o => o.id === id) || null;
 
 let allSlots      = [];
 let currentDate   = new Date();
-let activeView    = 'month';   // 'month' | 'week' | 'list'
-let activeAccount = '';        // '' = all
-let activeStatus  = '';        // GAP fix: filtro por status
-let activePlatform = '';       // GAP fix: filtro por plataforma
-let activeContentType = '';    // GAP fix: filtro por tipo de conteúdo
-let editingSlot   = null;      // null = new slot
+// 4.35.8+ Persistência dos filtros do user em localStorage (preset).
+// Antes o user precisava re-selecionar cada acesso. Agora restaura último estado.
+const CC_FILTERS_KEY = 'cc-filters-v1';
+function _loadFilters() {
+  try { return JSON.parse(localStorage.getItem(CC_FILTERS_KEY) || '{}'); }
+  catch { return {}; }
+}
+function _saveFilters() {
+  try {
+    localStorage.setItem(CC_FILTERS_KEY, JSON.stringify({
+      view: activeView, account: activeAccount, status: activeStatus,
+      platform: activePlatform, contentType: activeContentType,
+      projectIds: activeProjectIds,
+    }));
+  } catch {}
+}
+const _savedFilters = _loadFilters();
+let activeView    = _savedFilters.view || 'month';
+let activeAccount = _savedFilters.account || '';
+let activeStatus  = _savedFilters.status || '';
+let activePlatform = _savedFilters.platform || '';
+let activeContentType = _savedFilters.contentType || '';
+let editingSlot   = null;
 let modalOpen     = false;
 // 4.11+ — projeto agora é o scope principal do calendário
 // 4.16+ — multi-projeto: array de IDs em vez de string única.
 // `activeProjectId` mantido como espelho do primeiro pra retrocompat.
-let activeProjectIds  = [];   // [] = nenhum projeto
-let activeProjectId   = '';   // espelho do primeiro (legado)
+let activeProjectIds  = Array.isArray(_savedFilters.projectIds) ? _savedFilters.projectIds : [];
+let activeProjectId   = activeProjectIds[0] || '';   // espelho do primeiro (legado)
 let availableProjects = [];   // projetos visíveis ao user (cache local)
 // 4.15+ — listener real-time pra ver mudanças concorrentes
 let _slotsUnsub = null;
@@ -261,12 +278,20 @@ function truncate(str, len) {
 }
 
 function slotsForDate(date) {
+  // 4.35.8+ Aplica TODOS os filtros ativos (account/platform/contentType/status)
+  // — antes só account, daí "Instagram ICs com newsletter" mostrava newsletter
+  // misturada com posts mesmo com platform=instagram selecionado.
   return allSlots.filter(s => {
     if (!s.scheduledDate) return false;
     const sd = parseLocalDate(s.scheduledDate);
     if (!sd) return false;
-    return isSameDay(sd, date);
-  }).filter(s => !activeAccount || s.account === activeAccount);
+    if (!isSameDay(sd, date)) return false;
+    if (activeAccount     && s.account     !== activeAccount)     return false;
+    if (activePlatform    && s.platform    !== activePlatform)    return false;
+    if (activeContentType && s.contentType !== activeContentType) return false;
+    if (activeStatus      && s.status      !== activeStatus)      return false;
+    return true;
+  });
 }
 
 /**
@@ -525,9 +550,11 @@ export async function renderContentCalendar(container) {
   ensureGeneralProjectAndMigrateOrphans().catch(e =>
     console.warn('[ContentCalendar] migration skipped:', e.message));
 
-  // Carrega projetos visíveis ao user (com cache do store)
+  // Carrega projetos — 4.35.8+ usa allWorkspaces:true pra trazer projetos
+  // de TODOS os squads/setores, não só os ativos. Calendário de conteúdo é
+  // uma visão cross-squad (cliente pode ter campanhas em vários squads).
   try {
-    availableProjects = await fetchProjects();
+    availableProjects = await fetchProjects({ allWorkspaces: true });
   } catch (e) {
     console.warn('[ContentCalendar] fetchProjects falhou:', e.message);
     availableProjects = [];
@@ -676,6 +703,7 @@ async function _syncTaskDatesToSlots(taskMap) {
 async function setActiveProjects(projectIds) {
   activeProjectIds = Array.isArray(projectIds) ? [...new Set(projectIds.filter(Boolean))] : [];
   activeProjectId  = activeProjectIds[0] || '';
+  _saveFilters(); // 4.35.8+ persiste preset
   // Atualiza URL sem disparar router (history.replaceState)
   let newHash = '#content-calendar';
   if (activeProjectIds.length === 1) {
@@ -1730,10 +1758,11 @@ function bindHeaderEvents(container) {
     });
   }
 
-  // View toggle
+  // View toggle (4.35.8+ persiste preset)
   container.querySelectorAll('[data-view]').forEach(btn => {
     btn.addEventListener('click', () => {
       activeView = btn.dataset.view;
+      _saveFilters();
       renderPage(container);
     });
   });
@@ -1743,6 +1772,7 @@ function bindHeaderEvents(container) {
   if (accountSelect) {
     accountSelect.addEventListener('change', () => {
       activeAccount = accountSelect.value;
+      _saveFilters();
       renderCalendarBody();
     });
   }
@@ -1753,6 +1783,7 @@ function bindHeaderEvents(container) {
     statusEl.value = activeStatus;
     statusEl.addEventListener('change', () => {
       activeStatus = statusEl.value;
+      _saveFilters();
       renderCalendarBody();
     });
   }
@@ -1764,6 +1795,7 @@ function bindHeaderEvents(container) {
       [...set].sort().map(p => `<option value="${esc(p)}" ${p === activePlatform ? 'selected' : ''}>${esc(p)}</option>`).join('');
     platformEl.addEventListener('change', () => {
       activePlatform = platformEl.value;
+      _saveFilters();
       renderCalendarBody();
     });
   }
@@ -1774,6 +1806,7 @@ function bindHeaderEvents(container) {
       [...set].sort().map(t => `<option value="${esc(t)}" ${t === activeContentType ? 'selected' : ''}>${esc(t)}</option>`).join('');
     contentTypeEl.addEventListener('change', () => {
       activeContentType = contentTypeEl.value;
+      _saveFilters();
       renderCalendarBody();
     });
   }

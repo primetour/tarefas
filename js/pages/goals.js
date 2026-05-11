@@ -912,6 +912,17 @@ function renderPilarHTML(pilar, pi) {
         style="font-size:0.75rem;color:#EF4444;">✕</button>
     </div>
 
+    <!-- 4.35.8+ Toggle de visibilidade no picker de evidência de tarefas -->
+    <div style="margin-bottom:10px;padding:8px 10px;background:rgba(212,168,67,0.05);
+      border-radius:6px;display:flex;align-items:center;gap:10px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.75rem;color:var(--text-secondary);">
+        <input type="checkbox" class="gf-pilar-visible" data-pi="${pi}"
+          ${pilar.visibleInTasks !== false ? 'checked' : ''}
+          style="width:14px;height:14px;cursor:pointer;accent-color:var(--brand-gold);">
+        <span><strong>Visível em Tarefas</strong> (evidência) — desmarque pra ocultar este pilar e todas as suas metas do picker</span>
+      </label>
+    </div>
+
     <div style="margin-bottom:12px;">
       <label style="${LBL}">Objetivo do pilar</label>
       <textarea class="portal-field gf-pilar-obj" data-pi="${pi}" rows="2"
@@ -969,6 +980,14 @@ function renderMetaHTML(meta, pi, mi) {
           style="width:60px;font-size:0.8125rem;text-align:right;">
         <span style="font-size:0.8125rem;color:var(--text-muted);">%</span>
       </div>
+      <!-- 4.35.8+ Toggle de visibilidade da meta no picker (override individual) -->
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:0.6875rem;color:var(--text-muted);"
+        title="Visível em tarefas (evidência). Desmarque pra ocultar só esta meta.">
+        <input type="checkbox" class="gf-meta-visible" data-pi="${pi}" data-mi="${mi}"
+          ${meta.visibleInTasks !== false ? 'checked' : ''}
+          style="width:12px;height:12px;cursor:pointer;accent-color:var(--brand-gold);">
+        👁
+      </label>
       <button type="button" class="gf-del-meta btn btn-ghost btn-sm"
         data-pi="${pi}" data-mi="${mi}" style="font-size:0.75rem;color:#EF4444;">✕</button>
     </div>
@@ -1142,6 +1161,18 @@ function wireGoalForm(draft) {
     });
     pilaresEl.querySelectorAll('.gf-pilar-obj').forEach(el => {
       el.addEventListener('input', () => { draft.pilares[+el.dataset.pi].objetivo = el.value; });
+    });
+    // 4.35.8+ Toggle visibilidade do pilar no picker de evidência
+    pilaresEl.querySelectorAll('.gf-pilar-visible').forEach(el => {
+      el.addEventListener('change', () => {
+        draft.pilares[+el.dataset.pi].visibleInTasks = el.checked;
+      });
+    });
+    // 4.35.8+ Toggle visibilidade individual da meta
+    pilaresEl.querySelectorAll('.gf-meta-visible').forEach(el => {
+      el.addEventListener('change', () => {
+        draft.pilares[+el.dataset.pi].metas[+el.dataset.mi].visibleInTasks = el.checked;
+      });
     });
     pilaresEl.querySelectorAll('.gf-del-pilar').forEach(btn => {
       btn.addEventListener('click', () => {

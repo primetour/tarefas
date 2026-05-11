@@ -86,12 +86,17 @@ export function emptyMeta() {
     criterio: '', formato: '', observacoes: '',
     prazoTipo: 'monthly', prazoCustomInicio: '', prazoCustomFim: '',
     periodicidadeTipo: 'monthly', recorrenciaAval: false,
+    visibleInTasks: true, // 4.35.8+ controla aparição no picker de evidência de tarefa
     kpis: [emptyKpi()],
   };
 }
 
 export function emptyPilar() {
-  return { titulo: '', ponderacao: 0, metas: [emptyMeta()] };
+  return {
+    titulo: '', ponderacao: 0,
+    visibleInTasks: true, // 4.35.8+ se false, oculta todo o pilar (e suas metas) do picker de evidência
+    metas: [emptyMeta()],
+  };
 }
 
 export function emptyGoal() {

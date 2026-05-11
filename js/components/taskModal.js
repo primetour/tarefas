@@ -503,7 +503,11 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           }
 
           (g.pilares || []).forEach((pilar, pi) => {
+            // 4.35.8+ Pilar oculto → todas suas metas ficam fora do picker.
+            if (pilar.visibleInTasks === false) return;
             (pilar.metas || []).forEach((meta, mi) => {
+              // 4.35.8+ Meta individual oculta → não aparece no picker.
+              if (meta.visibleInTasks === false) return;
               const metaRef = `${pi}:${mi}`;
               const val = `${g.id}:${metaRef}`;            // chave estável p/ index
               const metaName = meta.titulo || `Meta ${mi + 1}`;
@@ -3967,10 +3971,14 @@ function showEvidenceModal(taskId, taskData) {
     if (!goals.length) goals = allGoals.filter(g => g.status !== 'encerrada');
 
     // Build flat list: each entry = one meta from one pilar from one goal
+    // 4.35.8+ Respeita visibleInTasks no pilar e meta — user pode ocultar
+    // do dia-a-dia sem despublicar.
     goals.forEach(g => {
       const goalName = g.nome || g.objetivoNucleo || g.titulo || 'Meta';
       (g.pilares || []).forEach((pilar, pi) => {
+        if (pilar.visibleInTasks === false) return;
         (pilar.metas || []).forEach((meta, mi) => {
+          if (meta.visibleInTasks === false) return;
           metaOptions.push({
             goalId:    g.id,
             pilarIdx:  pi,

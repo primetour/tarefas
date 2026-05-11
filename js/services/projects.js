@@ -300,10 +300,21 @@ export async function getProject(projectId) {
 }
 
 /* ─── Listar projetos ────────────────────────────────────── */
-export async function fetchProjects({ includeArchived = false, workspaceIds = null } = {}) {
-  // Cache: retorna dados em cache se < 5 min (evita re-fetch em cada navegação)
-  const cached = store.getCached('projects');
-  if (cached) return includeArchived ? cached : cached.filter(p => !p.archived);
+/**
+ * @param {Object} opts
+ * @param {boolean} [opts.includeArchived]
+ * @param {string[]|null} [opts.workspaceIds] - se passado, sobrescreve squads ativos
+ * @param {boolean} [opts.allWorkspaces] - 4.35.8+ se true, ignora filtro de squad
+ *   (útil em telas que mostram visão global, ex: content-calendar onde projetos
+ *   de outros squads aparecem por contexto cross-squad).
+ */
+export async function fetchProjects({ includeArchived = false, workspaceIds = null, allWorkspaces = false } = {}) {
+  // Cache: retorna dados em cache se < 5 min (evita re-fetch em cada navegação).
+  // 4.35.8+ Pula cache quando allWorkspaces=true — pra não retornar set filtrado.
+  if (!allWorkspaces) {
+    const cached = store.getCached('projects');
+    if (cached) return includeArchived ? cached : cached.filter(p => !p.archived);
+  }
 
   const q    = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
   const snap = await getDocs(q);
@@ -315,7 +326,8 @@ export async function fetchProjects({ includeArchived = false, workspaceIds = nu
   const activeIdsSet = new Set(activeIdsArr ?? []);
   const isInActiveSquad = (p) => projectMatchesAnySquad(p, [...activeIdsSet]);
 
-  if (activeIdsArr) {
+  // 4.35.8+ allWorkspaces=true bypassa filtro de squad inteiramente
+  if (activeIdsArr && !allWorkspaces) {
     all = all.filter(p => {
       const ids = getProjectSquadIds(p);
       if (!ids.length) return true;                    // sem squad: visível
@@ -324,8 +336,9 @@ export async function fetchProjects({ includeArchived = false, workspaceIds = nu
   }
 
   // Filtro por setor — pertencer a um squad ativo sobrescreve (squad multissetor)
+  // 4.35.8+ allWorkspaces=true também pula filtro de setor (visão global completa)
   const visibleSectors = store.get('visibleSectors') || [];
-  if (!store.isMaster() && visibleSectors.length > 0) {
+  if (!allWorkspaces && !store.isMaster() && visibleSectors.length > 0) {
     all = all.filter(p =>
       isInActiveSquad(p)
       || !p.sector
@@ -333,7 +346,7 @@ export async function fetchProjects({ includeArchived = false, workspaceIds = nu
     );
   }
 
-  store.setCache('projects', all);
+  if (!allWorkspaces) store.setCache('projects', all);
   return includeArchived ? all : all.filter(p => !p.archived);
 }
 
