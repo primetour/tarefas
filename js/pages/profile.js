@@ -95,6 +95,24 @@ export async function renderProfile(container) {
             color:var(--text-secondary);font-size:0.875rem;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
             🔄
           </button>
+          <!-- 4.35.6+ Upload manual de foto (independe do Outlook 365) -->
+          <button id="upload-photo-btn" type="button" title="Fazer upload de foto"
+            style="position:absolute;top:36px;right:calc(50% - 50px);background:var(--bg-card);
+            border:1px solid var(--border-default);border-radius:50%;width:30px;height:30px;
+            display:flex;align-items:center;justify-content:center;cursor:pointer;
+            color:var(--text-secondary);font-size:0.875rem;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
+            📷
+          </button>
+          ${profile.photoURL ? `
+            <button id="remove-photo-btn" type="button" title="Remover foto"
+              style="position:absolute;top:72px;right:calc(50% - 50px);background:var(--bg-card);
+              border:1px solid var(--border-default);border-radius:50%;width:30px;height:30px;
+              display:flex;align-items:center;justify-content:center;cursor:pointer;
+              color:var(--color-danger);font-size:0.75rem;box-shadow:0 2px 6px rgba(0,0,0,0.1);">
+              ✕
+            </button>
+          ` : ''}
+          <input type="file" id="photo-file-input" accept="image/*" style="display:none;" />
         </div>
         <div class="profile-name">${esc(profile.name)}</div>
         <div class="profile-email">${esc(profile.email)}</div>
@@ -668,6 +686,85 @@ function _bindProfileEvents(profile) {
       btn.textContent = '🔄';
       btn.style.opacity = '1';
     }
+  });
+
+  // 4.35.6+ Upload manual de foto — independe do Outlook 365
+  document.getElementById('upload-photo-btn')?.addEventListener('click', () => {
+    document.getElementById('photo-file-input')?.click();
+  });
+
+  document.getElementById('photo-file-input')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Selecione um arquivo de imagem (PNG, JPG, etc).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Imagem grande demais (máx 5MB). Use um arquivo menor.');
+      return;
+    }
+
+    const btn = document.getElementById('upload-photo-btn');
+    if (btn) { btn.style.opacity = '0.5'; btn.textContent = '⏳'; }
+
+    try {
+      // Resize via canvas (mesma lógica do sync: 96x96 quadrado, jpeg 0.85)
+      const dataUrl = await new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          const c = document.createElement('canvas');
+          c.width = c.height = 96;
+          const ctx = c.getContext('2d');
+          const ss = Math.min(img.width, img.height);
+          ctx.drawImage(img, (img.width - ss) / 2, (img.height - ss) / 2, ss, ss, 0, 0, 96, 96);
+          URL.revokeObjectURL(url);
+          resolve(c.toDataURL('image/jpeg', 0.85));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Imagem inválida ou corrompida.')); };
+        img.src = url;
+      });
+
+      await updateUserProfile(store.get('currentUser').uid, { photoURL: dataUrl });
+      toast.success('Foto atualizada! Recarregue a página pra ver em todos os lugares.');
+
+      // Atualiza o avatar grande na hora
+      const big = document.getElementById('profile-avatar-big');
+      if (big) {
+        big.innerHTML = `<img src="${dataUrl}" alt=""
+          style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />${getInitials(profile.name)}`;
+      }
+      // Atualiza store local pra header/sidebar refletir
+      const cur = store.get('userProfile');
+      if (cur) store.set('userProfile', { ...cur, photoURL: dataUrl });
+    } catch (err) {
+      toast.error('Falha ao processar imagem: ' + err.message);
+    } finally {
+      if (btn) { btn.style.opacity = '1'; btn.textContent = '📷'; }
+      e.target.value = ''; // limpa input pra permitir re-selecionar mesmo arquivo
+    }
+  });
+
+  // 4.35.6+ Remover foto (volta pras iniciais)
+  document.getElementById('remove-photo-btn')?.addEventListener('click', async () => {
+    const ok = await modal.confirm({
+      title: 'Remover foto?',
+      message: 'Sua foto será removida. Voltamos pra exibir as iniciais.',
+      confirmText: 'Remover', danger: true,
+    });
+    if (!ok) return;
+    try {
+      await updateUserProfile(store.get('currentUser').uid, { photoURL: null });
+      toast.success('Foto removida.');
+      const big = document.getElementById('profile-avatar-big');
+      if (big) big.innerHTML = getInitials(profile.name);
+      const cur = store.get('userProfile');
+      if (cur) store.set('userProfile', { ...cur, photoURL: null });
+      // Esconde o botão de remover (não tem mais foto)
+      const rmBtn = document.getElementById('remove-photo-btn');
+      if (rmBtn) rmBtn.style.display = 'none';
+    } catch (e) { toast.error('Falha ao remover: ' + e.message); }
   });
 
   document.getElementById('prefs-save-btn')?.addEventListener('click', async () => {

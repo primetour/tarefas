@@ -647,25 +647,47 @@ export async function signInWithMicrosoft() {
     // Falha silenciosa se user não tiver foto configurada (Graph 404).
     if (msAccessToken && result.user?.uid) {
       (async () => {
+        // 4.35.6+ Logs verbose pra diagnosticar por que muitos users ficam
+        // sem foto. Antes era 'silent — não trava login' e ninguém via o porquê.
+        const LOG = (...a) => console.log('[Auth/Photo]', ...a);
         try {
+          LOG('iniciando captura via Graph /me/photo/$value');
           const res = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
             headers: { Authorization: `Bearer ${msAccessToken}` },
           });
-          if (!res.ok) return; // 404 esperado pra users sem foto
+          if (res.status === 404) {
+            LOG('user não tem foto cadastrada no Microsoft 365 (Graph 404). Defina em https://myaccount.microsoft.com ou faça upload manual em /profile.');
+            return;
+          }
+          if (res.status === 401 || res.status === 403) {
+            LOG(`Graph rejeitou o token (${res.status}). Provavelmente scope user.read não foi concedido. Logout + login novamente forçando consent.`);
+            return;
+          }
+          if (!res.ok) {
+            LOG(`Graph retornou ${res.status} — não esperado. Body:`, await res.text().catch(()=>'?'));
+            return;
+          }
           const blob = await res.blob();
+          LOG(`foto recebida (${(blob.size/1024).toFixed(1)}KB). Processando resize...`);
           const dataUrl = await blobToResizedDataUrl(blob, 96);
-          if (!dataUrl) return;
-          // Persiste no doc do user. updateDoc lazy import pra evitar overhead.
+          if (!dataUrl) {
+            LOG('falha no resize do blob (canvas error?). Foto descartada.');
+            return;
+          }
           const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
           await fb.updateDoc(fb.doc(db, 'users', result.user.uid), { photoURL: dataUrl })
-            .catch(e => console.warn('[auth] save photoURL falhou:', e.message));
-          // Atualiza store local pra UI já refletir
+            .then(() => LOG('photoURL salva no Firestore com sucesso.'))
+            .catch(e => LOG('falha ao salvar photoURL:', e?.message || e));
           const profile = store.get('userProfile');
           if (profile && profile.id === result.user.uid) {
             store.set('userProfile', { ...profile, photoURL: dataUrl });
           }
-        } catch (e) { /* silent — não trava login */ }
+        } catch (e) {
+          LOG('erro inesperado durante captura:', e?.message || e);
+        }
       })();
+    } else {
+      console.log('[Auth/Photo] skipping — sem msAccessToken (credential.accessToken null). Possíveis causas: scope user.read não autorizado, prompt:login não emitiu token novo, ou Firebase descartou credential.');
     }
 
     // O initAuthObserver cuida do resto (auto-provisioning + carregamento de perfil)
