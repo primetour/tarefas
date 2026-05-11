@@ -114,6 +114,14 @@ class ModalManager {
     };
     document.addEventListener('keydown', handleKeydown);
 
+    // 4.35.14+ Auto-stacking pra nested modals (incluindo coexistência com
+    // overlays "estrangeiros" tipo cc-modal-overlay do calendário de conteúdo).
+    // Base z-index sobe 50 a cada nível pra garantir que o último aberto fica
+    // por cima do anterior, mesmo se outro DOM overlay (não-global) já existe.
+    const baseZ = 1000;
+    const stackedZ = baseZ + (this.stack.length * 50) + 100;
+    backdrop.style.zIndex = String(stackedZ);
+
     container.appendChild(backdrop);
     this.stack.push({ id, backdrop, onClose, handleKeydown, dedupeKey });
     document.body.style.overflow = 'hidden';

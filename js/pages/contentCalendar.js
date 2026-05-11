@@ -1368,7 +1368,7 @@ function renderPage(container) {
 
       <!-- Modal overlay -->
       <div id="cc-modal-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;
-        background:rgba(0,0,0,0.6);z-index:9999;justify-content:center;align-items:flex-start;
+        background:rgba(0,0,0,0.6);z-index:var(--z-modal,500);justify-content:center;align-items:flex-start;
         padding:40px 16px;overflow-y:auto;"></div>
     </div>
   `;

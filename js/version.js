@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 13,
-  build: '20260511-content-meta-crud-inline',
+  patch: 14,
+  build: '20260511-modal-zstack-fix',
 };
 
 /** "1.2.0" */
