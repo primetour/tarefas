@@ -167,6 +167,25 @@ service cloud.firestore {
       allow delete:  if isAdmin();
     }
 
+    // ── Content meta (4.35.13+) ─────────────────────────────────
+    // Plataformas (Instagram, Newsletter, ...) e tipos de conteúdo
+    // (Post, Reel, ...). Substituem PLATFORM_OPTIONS/CONTENT_TYPE_OPTIONS
+    // hardcoded — agora editáveis via /content-config.
+    // Leitura aberta (dropdowns precisam carregar mesmo pra users sem
+    // permissão de admin); escrita só admin; delete só master.
+    match /content_platforms/{id} {
+      allow read:   if isAuth();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isMaster();
+    }
+    match /content_contents/{id} {
+      allow read:   if isAuth();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isMaster();
+    }
+
     // ── System Feedback (4.35.3+) ───────────────────────────────
     // Bugs/sugestões/dúvidas/elogios sobre o sistema. Não confundir
     // com /feedbacks (gestão de pessoas, manager → subordinado).

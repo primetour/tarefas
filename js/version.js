@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 12,
-  build: '20260511-cc-chips-no-accounts-no-project-cta',
+  patch: 13,
+  build: '20260511-content-meta-crud-inline',
 };
 
 /** "1.2.0" */

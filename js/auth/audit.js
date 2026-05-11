@@ -74,6 +74,13 @@ export const ACTION_LABELS = {
   'system_feedback.create':  'Feedback do sistema enviado',
   'system_feedback.update':  'Feedback do sistema atualizado',
   'system_feedback.delete':  'Feedback do sistema excluído',
+  // Content meta (4.35.13+)
+  'content_platforms.create':'Plataforma de conteúdo criada',
+  'content_platforms.update':'Plataforma de conteúdo atualizada',
+  'content_platforms.delete':'Plataforma de conteúdo excluída',
+  'content_contents.create': 'Tipo de conteúdo criado',
+  'content_contents.update': 'Tipo de conteúdo atualizado',
+  'content_contents.delete': 'Tipo de conteúdo excluído',
   // Goals / Metas
   'goals.create':            'Meta criada',
   'goals.update':            'Meta atualizada',

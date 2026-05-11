@@ -6,6 +6,7 @@
 
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
+import { modal } from '../components/modal.js';
 import {
   PLATFORMS, CONTENT_TYPES, SLOT_STATUSES, CATEGORIES,
   fetchSlots, subscribeToSlots, subscribeToTasksByIds,
@@ -87,7 +88,10 @@ const ACCOUNTS = [
 
 /* ── Option configs (optionPicker visual) ───────────────── */
 
-const PLATFORM_OPTIONS = [
+// 4.35.13+ PLATFORM_OPTIONS e CONTENT_TYPE_OPTIONS agora vivem em Firestore
+// (content_platforms, content_contents) — editáveis via /content-config.
+// Os arrays abaixo viram FALLBACK pra primeira carga + sincronizam após fetch.
+let PLATFORM_OPTIONS = [
   { id: 'instagram',  label: 'Instagram',  icon: '📷', color: '#E1306C' },
   { id: 'facebook',   label: 'Facebook',   icon: '◈',  color: '#1877F2' },
   { id: 'linkedin',   label: 'LinkedIn',   icon: '▤',  color: '#0A66C2' },
@@ -96,7 +100,7 @@ const PLATFORM_OPTIONS = [
   { id: 'tiktok',     label: 'TikTok',     icon: '▣',  color: '#94A3B8' },
 ];
 
-const CONTENT_TYPE_OPTIONS = [
+let CONTENT_TYPE_OPTIONS = [
   { id: 'post',       label: 'Post',       icon: '📸', color: '#6366F1' },
   { id: 'reel',       label: 'Reel',       icon: '🎬', color: '#EC4899' },
   { id: 'carrossel',  label: 'Carrossel',  icon: '📑', color: '#8B5CF6' },
@@ -104,6 +108,106 @@ const CONTENT_TYPE_OPTIONS = [
   { id: 'artigo',     label: 'Artigo',     icon: '📰', color: '#0EA5E9' },
   { id: 'newsletter', label: 'Newsletter', icon: '✉',  color: '#D4A843' },
 ];
+
+// 4.35.13+ Quick create inline: nova plataforma ou tipo direto do modal de slot.
+// Abre um modal pequeno só com nome+icon+cor, salva no Firestore, recarrega
+// listas e re-seleciona o item novo no dropdown.
+async function _quickCreateMeta(kind) {
+  const what = kind === 'platform' ? 'plataforma' : 'tipo de conteúdo';
+  const result = await new Promise((resolve) => {
+    modal.open({
+      title: `Nova ${what}`,
+      size: 'sm',
+      content: `
+        <div class="form-group">
+          <label class="form-label">Nome *</label>
+          <input type="text" class="form-input" id="qcm-label" maxlength="60"
+            placeholder="Ex: ${kind === 'platform' ? 'YouTube' : 'Webinar'}" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label class="form-label">Ícone</label>
+            <input type="text" class="form-input" id="qcm-icon" maxlength="4" value="📋"
+              style="text-align:center;font-size:1.25rem;" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cor</label>
+            <input type="color" class="form-input" id="qcm-color" value="#94A3B8" style="height:38px;padding:2px;" />
+          </div>
+        </div>
+        <small style="color:var(--text-muted);font-size:0.7rem;">
+          Edite ou exclua depois em <strong>Administração → Conteúdo · Config</strong>.
+        </small>
+      `,
+      footer: [
+        { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true, onClick: () => resolve(null) },
+        {
+          label: 'Criar', class: 'btn-primary', closeOnClick: false,
+          onClick: async (_, { close }) => {
+            const label = document.getElementById('qcm-label')?.value?.trim();
+            if (!label) { toast.error('Nome obrigatório.'); return; }
+            const data = {
+              label,
+              icon:  document.getElementById('qcm-icon')?.value?.trim() || '📋',
+              color: document.getElementById('qcm-color')?.value || '#94A3B8',
+              order: 99,
+              active: true,
+            };
+            try {
+              const meta = await import('../services/contentMeta.js');
+              const created = kind === 'platform'
+                ? await meta.createPlatform(data)
+                : await meta.createContent(data);
+              close();
+              resolve(created);
+            } catch (e) { toast.error(e.message); }
+          },
+        },
+      ],
+    });
+  });
+
+  if (!result) return;
+
+  // Recarrega listas e re-seleciona o novo item
+  await _loadDynamicMetadata();
+  const selectId = kind === 'platform' ? 'cc-f-platform' : 'cc-f-contentType';
+  const sel = document.getElementById(selectId);
+  if (sel) {
+    // Adiciona option e seleciona
+    const opt = document.createElement('option');
+    opt.value = result.id;
+    opt.textContent = result.label;
+    opt.selected = true;
+    sel.appendChild(opt);
+    // Re-renderiza o picker visual (recarrega o botão)
+    const btnId = kind === 'platform' ? 'cc-f-platform-btn' : 'cc-f-contentType-btn';
+    const btn = document.getElementById(btnId);
+    if (btn) {
+      btn.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;">
+        <span style="width:18px;height:18px;border-radius:4px;background:${result.color}22;color:${result.color};display:flex;align-items:center;justify-content:center;font-size:0.875rem;">${result.icon}</span>
+        <span>${result.label}</span></span>`;
+    }
+  }
+  toast.success(`${what.charAt(0).toUpperCase() + what.slice(1)} "${result.label}" criada!`);
+}
+
+// 4.35.13+ Carrega de Firestore na primeira chamada + mantém sync após CRUD
+async function _loadDynamicMetadata() {
+  try {
+    const meta = await import('../services/contentMeta.js');
+    const [plats, conts] = await Promise.all([
+      meta.getActivePlatforms(),
+      meta.getActiveContents(),
+    ]);
+    if (plats.length) {
+      PLATFORM_OPTIONS = plats.map(p => ({ id: p.id, label: p.label, icon: p.icon, color: p.color }));
+    }
+    if (conts.length) {
+      CONTENT_TYPE_OPTIONS = conts.map(c => ({ id: c.id, label: c.label, icon: c.icon, color: c.color }));
+    }
+  } catch (e) { console.warn('[content-meta] load failed, using fallback:', e?.message); }
+}
 
 const ACCOUNT_OPTIONS = [
   { id: 'primetourviagens', label: '@primetourviagens', icon: '✈', color: '#D4A843' },
@@ -556,6 +660,9 @@ export async function renderContentCalendar(container) {
   // slots órfãos (idempotente, só roda 1x por sessão de browser).
   ensureGeneralProjectAndMigrateOrphans().catch(e =>
     console.warn('[ContentCalendar] migration skipped:', e.message));
+
+  // 4.35.13+ Carrega plataformas/tipos dinâmicos do Firestore (com fallback)
+  await _loadDynamicMetadata();
 
   // Carrega projetos — 4.35.8+ usa allWorkspaces:true pra trazer projetos
   // de TODOS os squads/setores, não só os ativos. Calendário de conteúdo é
@@ -2324,6 +2431,11 @@ function openSlotModal(slot, prefillDate) {
               ${PLATFORM_LIST.map(p => `<option value="${p.value}" ${s.platform === p.value ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
             </select>
             ${renderPickerButton({ btnId: 'cc-f-platform-btn', selected: findOption(PLATFORM_OPTIONS, s.platform), emptyLabel: '— Plataforma —' })}
+            ${(store.can('system_manage_settings') || store.isMaster()) ? `
+              <button type="button" id="cc-f-platform-new" style="font-size:0.7rem;color:var(--brand-gold);
+                background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
+                + Criar nova plataforma…
+              </button>` : ''}
           </div>
           <div>
             <label style="${labelStyle}">Tipo de Conteudo</label>
@@ -2332,6 +2444,11 @@ function openSlotModal(slot, prefillDate) {
               ${CONTENT_TYPE_LIST.map(t => `<option value="${t.value}" ${s.contentType === t.value ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
             </select>
             ${renderPickerButton({ btnId: 'cc-f-contentType-btn', selected: findOption(CONTENT_TYPE_OPTIONS, s.contentType), emptyLabel: '— Tipo —' })}
+            ${(store.can('system_manage_settings') || store.isMaster()) ? `
+              <button type="button" id="cc-f-content-new" style="font-size:0.7rem;color:var(--brand-gold);
+                background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
+                + Criar novo tipo…
+              </button>` : ''}
           </div>
         </div>
 
@@ -2566,6 +2683,12 @@ function bindModalEvents() {
     findSelected: (id) => findOption(CONTENT_TYPE_OPTIONS, id),
     emptyLabel: '— Tipo —',
   });
+
+  // 4.35.13+ Botões inline "+ Criar nova plataforma/tipo" no modal de slot
+  document.getElementById('cc-f-platform-new')?.addEventListener('click', () =>
+    _quickCreateMeta('platform'));
+  document.getElementById('cc-f-content-new')?.addEventListener('click', () =>
+    _quickCreateMeta('content'));
   bindOptionPicker({
     btnId: 'cc-f-account-btn',
     selectId: 'cc-f-account',

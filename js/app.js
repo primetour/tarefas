@@ -522,6 +522,7 @@ function setupRouter() {
     'audit':        async () => { await renderAudit(content); },
     'governance':   async () => { const { renderGovernance } = await import('./pages/governance.js?v=4.35.3'); await renderGovernance(content); },
     'system-feedback': async () => { const { renderSystemFeedback } = await import('./pages/systemFeedback.js?v=4.35.3'); await renderSystemFeedback(content); },
+    'content-config': async () => { const { renderContentConfig } = await import('./pages/contentConfig.js?v=4.35.13'); await renderContentConfig(content); },
     'workspaces':   async () => { await renderWorkspaces(content); },
     'squad':        async () => { await renderSquadWorkspace(content); },
     'task-types':   async () => { await renderTaskTypes(content); },
