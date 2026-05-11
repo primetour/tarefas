@@ -356,8 +356,15 @@ function generateVirtualSlots(date) {
   const dateIso = formatDate(date);
   const out = [];
   for (const type of allTypes) {
-    if (!usedTypeIds.has(type.id)) continue;
-    if (restricted && !visibleTaskTypes.includes(type.id)) continue;
+    // 4.35.10+ Antes: pulava se !usedTypeIds.has(type.id) — agora também
+    // aceita tipos EXPLICITAMENTE marcados em visibleTaskTypes (mesmo sem
+    // task criada). Permite ver previsões editoriais de tipos novos.
+    if (restricted) {
+      if (!visibleTaskTypes.includes(type.id)) continue;
+    } else if (!usedTypeIds.has(type.id)) {
+      // Sem filtro explícito: mantém comportamento antigo (só usados)
+      continue;
+    }
     const slots = Array.isArray(type.scheduleSlots) ? type.scheduleSlots : [];
     for (const s of slots) {
       if (s.active === false) continue;
@@ -734,13 +741,64 @@ async function setActiveProject(projectId) {
 function _openTaskTypePopover(anchor) {
   document.querySelectorAll('.cc-tasktype-popover').forEach(el => el.remove());
 
-  const usedIds = getProjectTaskTypeIds(); // ids presentes nas tasks dos projetos
-  // 4.27+: resolveTaskType cobre Firestore + legacy estático (ex: 'newsletter').
-  const items = usedIds.map(id => {
-    if (id === '__no_type__') return { id, label: '— Sem tipo —', icon: '📋', color: '#6B7280' };
+  // 4.35.10+ Antes: só tipos USADOS em tasks dos projetos ativos.
+  // Agora: tipos USADOS + tipos com scheduleSlots (previsão editorial) +
+  // tipos da mesma CATEGORIA dos usados. Resolve "Nem todos os tipos estão
+  // sendo espelhados em calendário de conteúdo" — tipos novos sem task ainda
+  // criada apareciam vazios. Agora todos da categoria de conteúdo aparecem.
+  const usedIds = new Set(getProjectTaskTypeIds());
+  const allTypes = store.get('taskTypes') || [];
+
+  // Categorias relevantes: as que têm pelo menos 1 tipo usado nas tasks atuais
+  const usedCategoryIds = new Set();
+  allTypes.forEach(t => {
+    if (usedIds.has(t.id) && t.categoryId) usedCategoryIds.add(t.categoryId);
+  });
+
+  // Constrói lista: usados + tipos com scheduleSlots + tipos da mesma categoria
+  const candidateIds = new Set([...usedIds]);
+  allTypes.forEach(t => {
+    if (Array.isArray(t.scheduleSlots) && t.scheduleSlots.length > 0) candidateIds.add(t.id);
+    if (t.categoryId && usedCategoryIds.has(t.categoryId)) candidateIds.add(t.id);
+  });
+
+  // Sempre permite "Sem tipo" se houver tarefas sem typeId
+  const hasNoType = usedIds.has('__no_type__');
+
+  const items = [...candidateIds].map(id => {
+    if (id === '__no_type__') return { id, label: '— Sem tipo —', icon: '📋', color: '#6B7280', categoryName: '— Outros —', hasSlots: false, isUsed: true };
+    const t = allTypes.find(tt => tt.id === id);
     const r = resolveTaskType(id);
-    return { id, label: r.name, icon: r.icon, color: r.color };
-  }).sort((a, b) => a.label.localeCompare(b.label));
+    return {
+      id,
+      label: r.name,
+      icon: r.icon,
+      color: r.color,
+      categoryName: t?.categoryName || '— Sem categoria —',
+      hasSlots: Array.isArray(t?.scheduleSlots) && t.scheduleSlots.length > 0,
+      isUsed: usedIds.has(id),
+    };
+  });
+  if (hasNoType && !items.find(i => i.id === '__no_type__')) {
+    items.unshift({ id: '__no_type__', label: '— Sem tipo —', icon: '📋', color: '#6B7280', categoryName: '— Outros —', hasSlots: false, isUsed: true });
+  }
+
+  // Agrupa por categoria
+  const groups = {};
+  items.forEach(it => {
+    const cat = it.categoryName;
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(it);
+  });
+  // Ordena items dentro da categoria + categorias alfabeticamente
+  Object.values(groups).forEach(arr => arr.sort((a, b) => a.label.localeCompare(b.label)));
+  const sortedCats = Object.keys(groups).sort((a, b) => {
+    if (a === '— Sem categoria —') return 1;
+    if (b === '— Sem categoria —') return -1;
+    if (a === '— Outros —') return 1;
+    if (b === '— Outros —') return -1;
+    return a.localeCompare(b);
+  });
 
   const checked = new Set(visibleTaskTypes === null ? items.map(i => i.id) : visibleTaskTypes);
 
@@ -770,17 +828,26 @@ function _openTaskTypePopover(anchor) {
     </div>
     <div class="ttp-list" style="overflow-y:auto;flex:1;padding:4px 0;">
       ${items.length === 0 ? `<div style="padding:14px 12px;color:var(--text-muted);font-size:0.75rem;text-align:center;">
-        Nenhuma tarefa com tipo nos projetos ativos.</div>` :
-        items.map(it => `
-          <label class="ttp-item" data-id="${esc(it.id)}" style="display:flex;align-items:center;gap:10px;
-            padding:8px 14px;cursor:pointer;font-size:0.8125rem;color:var(--text-primary);
-            background:${checked.has(it.id) ? 'rgba(14,165,233,0.06)' : 'transparent'};">
-            <input type="checkbox" data-id="${esc(it.id)}" ${checked.has(it.id) ? 'checked' : ''}
-              style="cursor:pointer;accent-color:#0EA5E9;" />
-            <span style="width:24px;height:24px;border-radius:6px;background:${it.color}20;
-              color:${it.color};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${esc(it.icon)}</span>
-            <span style="flex:1;">${esc(it.label)}</span>
-          </label>
+        Nenhum tipo de tarefa relacionado a conteúdo.</div>` :
+        sortedCats.map(cat => `
+          <div style="padding:8px 14px 4px;font-size:0.625rem;font-weight:700;
+            text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);
+            background:var(--bg-elevated, rgba(255,255,255,0.02));">
+            ${esc(cat)}
+          </div>
+          ${groups[cat].map(it => `
+            <label class="ttp-item" data-id="${esc(it.id)}" style="display:flex;align-items:center;gap:10px;
+              padding:8px 14px;cursor:pointer;font-size:0.8125rem;color:var(--text-primary);
+              background:${checked.has(it.id) ? 'rgba(14,165,233,0.06)' : 'transparent'};">
+              <input type="checkbox" data-id="${esc(it.id)}" ${checked.has(it.id) ? 'checked' : ''}
+                style="cursor:pointer;accent-color:#0EA5E9;" />
+              <span style="width:24px;height:24px;border-radius:6px;background:${it.color}20;
+                color:${it.color};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${esc(it.icon)}</span>
+              <span style="flex:1;">${esc(it.label)}</span>
+              ${it.hasSlots ? `<span title="Tipo com agenda recorrente (scheduleSlots)" style="font-size:0.625rem;color:var(--brand-gold);">⏱</span>` : ''}
+              ${!it.isUsed ? `<span title="Sem tarefas ainda — só prévia da agenda" style="font-size:0.625rem;color:var(--text-muted);">○</span>` : ''}
+            </label>
+          `).join('')}
         `).join('')}
     </div>
     <div style="padding:8px 12px;border-top:1px solid var(--border-subtle);display:flex;justify-content:flex-end;gap:8px;">

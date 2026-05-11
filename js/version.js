@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 9,
-  build: '20260511-team-availability-month-nav',
+  patch: 10,
+  build: '20260511-cc-types-categorized-and-schedule-only',
 };
 
 /** "1.2.0" */
