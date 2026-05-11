@@ -302,21 +302,50 @@ function absenceTable(absences, uid, showActions) {
   </table></div>`;
 }
 
+// 4.35.9+ Mês visualizado no calendário da equipe. Persistido em closure
+// pra permitir navegação prev/next sem perder estado.
+let _teamAvailMonth = null;
+
 /* ─── Tab: Disponibilidade da equipe ─────────────────────── */
 async function renderTeamAvailability(container) {
   const users = (store.get('users') || []).filter(u => u.active !== false);
-  const now   = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  // 4.35.9+ Default = mês corrente; user pode navegar pra meses futuros via prev/next
+  if (!_teamAvailMonth) _teamAvailMonth = new Date();
+  const ref   = _teamAvailMonth;
+  const start = new Date(ref.getFullYear(), ref.getMonth(), 1);
+  const end   = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+
+  // 4.35.9+ Busca TODAS as ausências (sem filtro) pra calcular contador
+  // de futuras → permite indicar visualmente que há ausências fora da view
+  const allAbsForCount = await (await import('../services/capacity.js')).fetchAllAbsences();
+  const futureAbsCount = allAbsForCount.filter(a => {
+    const aStart = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
+    return aStart > end;
+  }).length;
 
   const team  = await getTeamAvailability(users.map(u => u.id), start, end);
   const days  = [];
   for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) days.push(new Date(d));
 
   const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const monthLabel = new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(now);
+  const monthLabel = new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(ref);
+  const isCurrentMonth = ref.getFullYear() === new Date().getFullYear() && ref.getMonth() === new Date().getMonth();
 
   container.innerHTML = `
+    <!-- 4.35.9+ Navegação prev/next + indicador de ausências futuras -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="btn btn-secondary btn-sm" id="team-avail-prev" title="Mês anterior">‹</button>
+        <span style="font-weight:600;font-size:0.9375rem;text-transform:capitalize;min-width:160px;text-align:center;">${monthLabel}</span>
+        <button class="btn btn-secondary btn-sm" id="team-avail-next" title="Próximo mês">›</button>
+        ${!isCurrentMonth ? `<button class="btn btn-ghost btn-sm" id="team-avail-today" style="font-size:0.75rem;">↻ Mês atual</button>` : ''}
+      </div>
+      ${futureAbsCount > 0 ? `
+        <span style="font-size:0.75rem;color:var(--text-muted);">
+          📌 ${futureAbsCount} ausência${futureAbsCount>1?'s':''} agendada${futureAbsCount>1?'s':''} pra meses futuros
+        </span>` : ''}
+    </div>
+
     <div style="display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start;">
       <!-- Availability bars -->
       <div class="card">
@@ -409,6 +438,20 @@ async function renderTeamAvailability(container) {
       `).join('')}
     </div>
   `;
+
+  // 4.35.9+ Navegação de mês: ferias/ausencias futuras agora visíveis
+  document.getElementById('team-avail-prev')?.addEventListener('click', () => {
+    _teamAvailMonth = new Date(_teamAvailMonth.getFullYear(), _teamAvailMonth.getMonth() - 1, 1);
+    renderTeamAvailability(container);
+  });
+  document.getElementById('team-avail-next')?.addEventListener('click', () => {
+    _teamAvailMonth = new Date(_teamAvailMonth.getFullYear(), _teamAvailMonth.getMonth() + 1, 1);
+    renderTeamAvailability(container);
+  });
+  document.getElementById('team-avail-today')?.addEventListener('click', () => {
+    _teamAvailMonth = new Date();
+    renderTeamAvailability(container);
+  });
 }
 
 /* ─── Modal ausência ─────────────────────────────────────── */

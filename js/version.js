@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 8,
-  build: '20260511-metas-visivel-cc-presets-projects-all-squads',
+  patch: 9,
+  build: '20260511-team-availability-month-nav',
 };
 
 /** "1.2.0" */
