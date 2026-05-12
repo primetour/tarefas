@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 36,
-  patch: 2,
-  build: '20260512-office-furniture-bobbing',
+  patch: 3,
+  build: '20260512-office-walking-interactive',
 };
 
 /** "1.2.0" */

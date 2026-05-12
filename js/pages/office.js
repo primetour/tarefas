@@ -28,6 +28,9 @@ const esc = s => String(s||'').replace(/[&<>"']/g,
 let _unsub  = null;
 let _absUnsub = null;
 let _absences = [];
+// 4.36.3+ Atividade recente — uids que disparou ação nos últimos 60s
+let _recentActivityUids = new Set();
+let _activityPollTimer = null;
 
 /* ─── Mapa de rotas → salas ─────────────────────────────────
  * Cada chave do hash maps pra uma sala. O que não bate cai em "recepcao".
@@ -97,18 +100,18 @@ function routeToRoom(route) {
  * pra coordenadas isométricas no SVG.
  */
 const ROOMS = [
-  { id: 'recepcao',    label: 'Recepção',         icon: '🏠', col: 0, row: 0, color: '#64748B' },
-  { id: 'tarefas',     label: 'Tarefas',          icon: '📋', col: 1, row: 0, color: '#3B82F6' },
-  { id: 'reunioes',    label: 'Reuniões',         icon: '📊', col: 2, row: 0, color: '#8B5CF6' },
-  { id: 'comando',     label: 'Comando',          icon: '📈', col: 3, row: 0, color: '#06B6D4' },
-  { id: 'estudio',     label: 'Estúdio',          icon: '🎨', col: 0, row: 1, color: '#EC4899' },
-  { id: 'lousa',       label: 'Lousa',            icon: '📝', col: 1, row: 1, color: '#F59E0B' },
-  { id: 'roteiros',    label: 'Roteiros',         icon: '✈',  col: 2, row: 1, color: '#10B981' },
-  { id: 'atendimento', label: 'Atendimento',      icon: '💬', col: 3, row: 1, color: '#F97316' },
-  { id: 'lab-ia',      label: 'Lab IA',           icon: '🤖', col: 0, row: 2, color: '#A78BFA' },
-  { id: 'admin',       label: 'Admin',            icon: '⚙',  col: 1, row: 2, color: '#475569' },
-  { id: 'cafe',        label: 'Café',             icon: '☕', col: 2, row: 2, color: '#92400E' },
-  { id: 'descompressao', label: 'Descompressão',  icon: '🛋', col: 3, row: 2, color: '#7C3AED' },
+  { id: 'recepcao',    label: 'Recepção',         icon: '🏠', col: 0, row: 0, color: '#64748B', defaultRoute: 'home' },
+  { id: 'tarefas',     label: 'Tarefas',          icon: '📋', col: 1, row: 0, color: '#3B82F6', defaultRoute: 'tasks' },
+  { id: 'reunioes',    label: 'Reuniões',         icon: '📊', col: 2, row: 0, color: '#8B5CF6', defaultRoute: 'workspaces' },
+  { id: 'comando',     label: 'Comando',          icon: '📈', col: 3, row: 0, color: '#06B6D4', defaultRoute: 'dashboards' },
+  { id: 'estudio',     label: 'Estúdio',          icon: '🎨', col: 0, row: 1, color: '#EC4899', defaultRoute: 'portal-tips' },
+  { id: 'lousa',       label: 'Lousa',            icon: '📝', col: 1, row: 1, color: '#F59E0B', defaultRoute: 'content-calendar' },
+  { id: 'roteiros',    label: 'Roteiros',         icon: '✈',  col: 2, row: 1, color: '#10B981', defaultRoute: 'roteiros' },
+  { id: 'atendimento', label: 'Atendimento',      icon: '💬', col: 3, row: 1, color: '#F97316', defaultRoute: 'csat' },
+  { id: 'lab-ia',      label: 'Lab IA',           icon: '🤖', col: 0, row: 2, color: '#A78BFA', defaultRoute: 'ai-hub' },
+  { id: 'admin',       label: 'Admin',            icon: '⚙',  col: 1, row: 2, color: '#475569', defaultRoute: 'users' },
+  { id: 'cafe',        label: 'Café',             icon: '☕', col: 2, row: 2, color: '#92400E', defaultRoute: 'profile' },
+  { id: 'descompressao', label: 'Descompressão',  icon: '🛋', col: 3, row: 2, color: '#7C3AED', defaultRoute: 'team' },
 ];
 
 /* ─── Conversão grid → isométrica ──
@@ -228,12 +231,37 @@ export async function renderOffice(container) {
   store.subscribe('idleUsers',   () => repaint(container));
   store.subscribe('users',       () => repaint(container));
 
+  // 4.36.3+ Polling de audit_logs recentes pra detectar atividade nos últimos 60s
+  await pollRecentActivity();
+  _activityPollTimer = setInterval(async () => {
+    await pollRecentActivity();
+    repaint(container);
+  }, 20000);  // 20s
+
   repaint(container);
+}
+
+async function pollRecentActivity() {
+  try {
+    const { db } = await import('../firebase.js');
+    const { collection, query, where, getDocs, Timestamp, limit } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const sinceMs = Date.now() - 60 * 1000;
+    const snap = await getDocs(query(
+      collection(db, 'audit_logs'),
+      where('timestamp', '>=', Timestamp.fromMillis(sinceMs)),
+      limit(100),
+    ));
+    _recentActivityUids = new Set(snap.docs.map(d => d.data().userId).filter(Boolean));
+  } catch (e) {
+    // Sem permissão pra audit_logs: ignora — recentActivity simplesmente fica vazio
+    _recentActivityUids = new Set();
+  }
 }
 
 export function destroyOffice() {
   if (_unsub)    { _unsub();    _unsub = null; }
   if (_absUnsub) { _absUnsub(); _absUnsub = null; }
+  if (_activityPollTimer) { clearInterval(_activityPollTimer); _activityPollTimer = null; }
 }
 
 /* ─── Repaint: chama a cada nova snapshot ────────────────── */
@@ -288,6 +316,7 @@ function repaint(container) {
       currentRoute: p.currentRoute || 'home',
       lastActivityAt: p.lastActivityAt,
       isMe: p.uid === myUid,
+      recentActivity: _recentActivityUids.has(p.uid),
     });
   }
 
@@ -304,7 +333,7 @@ function repaint(container) {
   }
 
   stageEl.innerHTML = buildSvg(peopleByRoom);
-  wireHover(stageEl);
+  wireInteractions(stageEl);
 }
 
 /* ─── Builder principal do SVG ───────────────────────────── */
@@ -366,13 +395,16 @@ function renderRoom(room, cx, cy, people) {
   const isEmpty = count === 0;
 
   return `
-    <g class="office-room" data-room="${room.id}" style="transition:filter .2s;">
+    <g class="office-room" data-room="${room.id}" data-route="${esc(room.defaultRoute || '')}"
+       style="transition:filter .2s;${count > 0 ? `filter:drop-shadow(0 0 12px ${room.color}aa);` : ''}">
       <!-- Parede esquerda -->
-      <path d="${leftWallPath(cx, cy, WALL_HEIGHT)}" fill="${room.color}${WALL_LEFT_ALPHA}" stroke="${room.color}" stroke-width="1" opacity="0.85"/>
+      <path d="${leftWallPath(cx, cy, WALL_HEIGHT)}" fill="${room.color}${WALL_LEFT_ALPHA}" stroke="${room.color}" stroke-width="1" opacity="0.85" pointer-events="none"/>
       <!-- Parede direita -->
-      <path d="${rightWallPath(cx, cy, WALL_HEIGHT)}" fill="${room.color}${WALL_RIGHT_ALPHA}" stroke="${room.color}" stroke-width="1" opacity="0.7"/>
-      <!-- Chão -->
-      <polygon points="${floorPolygon(cx, cy)}" fill="${room.color}${FLOOR_ALPHA}" stroke="${room.color}" stroke-width="1.5" stroke-opacity="0.6"/>
+      <path d="${rightWallPath(cx, cy, WALL_HEIGHT)}" fill="${room.color}${WALL_RIGHT_ALPHA}" stroke="${room.color}" stroke-width="1" opacity="0.7" pointer-events="none"/>
+      <!-- Chão (clickable) -->
+      <polygon class="office-floor" points="${floorPolygon(cx, cy)}"
+        fill="${room.color}${FLOOR_ALPHA}" stroke="${room.color}" stroke-width="1.5" stroke-opacity="0.6"
+        style="cursor:pointer;"/>
       <polygon points="${floorPolygon(cx, cy)}" fill="url(#floorTexture)" pointer-events="none"/>
 
       <!-- Mobília -->
@@ -659,11 +691,18 @@ function renderAvatar(person, x, y, idx = 0) {
   const photoFg  = person.photoURL || '';
   const fg       = person.avatarColor || '#3B82F6';
 
-  // 4.36.2+ "Balanço" — cada avatar tem fase única (idx) pra animação não-sincronizada
-  // Bobbing sutil de ±1.5px em Y a cada ~2.5s. Pausa quando idle/absent.
-  const bobDuration = 2.4 + (idx * 0.15);  // 2.4s..3.0s+, depende do idx
-  const bobOffset   = (idx % 4) * 0.3;     // delay diferente por avatar
+  // 4.36.3+ Balanço (bob) + WALKING (animateMotion) — avatar caminha pela sala
+  const bobDuration = 2.4 + (idx * 0.15);
+  const bobOffset   = (idx % 4) * 0.3;
   const isStill = person.state === 'idle' || person.state === 'absent';
+
+  // Path de caminhada: 4 pontos numa elipse em torno do ponto base
+  // Duração entre 18-30s, cada user com seed única
+  const walkPath = generateWalkPath(person.uid, idx);
+  const walkDur  = 18 + ((idx * 7) % 12);  // 18-30s
+
+  // Cor do anel de "atividade recente" — pisca em dourado se user fez ação no último minuto
+  const isRecentlyActive = person.recentActivity === true;
 
   return `
     <g class="office-avatar" data-uid="${esc(person.uid)}" data-name="${esc(person.name)}"
@@ -672,49 +711,128 @@ function renderAvatar(person, x, y, idx = 0) {
        data-absence="${esc(person.absenceType || '')}"
        transform="translate(${x}, ${y})"
        style="cursor:pointer;transition:transform 600ms cubic-bezier(.4,.0,.2,1);">
-      <!-- Sombra (segue o bob via animação inversa pra parecer que pulsa quando avatar sobe) -->
-      <ellipse cx="0" cy="10" rx="14" ry="3" fill="rgba(0,0,0,0.25)">
-        ${!isStill ? `<animate attributeName="rx" values="14;12;14" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
-        ${!isStill ? `<animate attributeName="opacity" values="0.25;0.15;0.25" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
-      </ellipse>
-      <!-- Grupo do corpo (com bob animation) -->
+      <!-- Walking layer: avatar passeia pela sala -->
       <g>
-        ${!isStill ? `<animateTransform attributeName="transform" type="translate"
-          values="0,0;0,-2;0,0;0,-1;0,0" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
-        <circle cx="0" cy="0" r="14" fill="${fg}" stroke="${stateColor}" stroke-width="2.5"/>
-        ${photoFg ? `
-          <clipPath id="clip-${person.uid}">
-            <circle cx="0" cy="0" r="13"/>
-          </clipPath>
-          <image href="${esc(photoFg)}" x="-13" y="-13" width="26" height="26"
-            clip-path="url(#clip-${person.uid})" preserveAspectRatio="xMidYMid slice"/>
-        ` : `
-          <text x="0" y="4" text-anchor="middle"
-            style="font-family:-apple-system,sans-serif;font-size:11px;font-weight:700;fill:#fff;pointer-events:none;">${esc(initials)}</text>
-        `}
+        ${!isStill ? `<animateMotion dur="${walkDur}s" repeatCount="indefinite" rotate="0"
+          path="${walkPath}" calcMode="spline"
+          keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"
+          keyTimes="0; 0.25; 0.5; 0.75; 1"/>` : ''}
+        <!-- Sombra (segue o bob via animação inversa) -->
+        <ellipse cx="0" cy="10" rx="14" ry="3" fill="rgba(0,0,0,0.25)">
+          ${!isStill ? `<animate attributeName="rx" values="14;12;14" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+          ${!isStill ? `<animate attributeName="opacity" values="0.25;0.15;0.25" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+        </ellipse>
+        <!-- Bob layer: avatar respira -->
+        <g>
+          ${!isStill ? `<animateTransform attributeName="transform" type="translate"
+            values="0,0;0,-2;0,0;0,-1;0,0" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+          <circle cx="0" cy="0" r="14" fill="${fg}" stroke="${stateColor}" stroke-width="2.5"/>
+          ${photoFg ? `
+            <clipPath id="clip-${person.uid}">
+              <circle cx="0" cy="0" r="13"/>
+            </clipPath>
+            <image href="${esc(photoFg)}" x="-13" y="-13" width="26" height="26"
+              clip-path="url(#clip-${person.uid})" preserveAspectRatio="xMidYMid slice"/>
+          ` : `
+            <text x="0" y="4" text-anchor="middle"
+              style="font-family:-apple-system,sans-serif;font-size:11px;font-weight:700;fill:#fff;pointer-events:none;">${esc(initials)}</text>
+          `}
+        </g>
+        ${person.isMe ? `
+          <circle cx="0" cy="0" r="17" fill="none" stroke="#D4A843" stroke-width="2" stroke-dasharray="3,2">
+            <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="8s" repeatCount="indefinite"/>
+          </circle>
+        ` : ''}
+        ${person.state === 'active' && !isRecentlyActive ? `
+          <circle cx="0" cy="0" r="14" fill="none" stroke="${stateColor}" stroke-width="2" opacity="0.6">
+            <animate attributeName="r" values="14;22;14" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
+            <animate attributeName="opacity" values="0.6;0;0.6" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
+          </circle>
+        ` : ''}
+        ${isRecentlyActive ? `
+          <!-- Atividade recente: ⚡ flutuante acima do avatar -->
+          <text x="0" y="-20" text-anchor="middle" font-size="14" style="pointer-events:none;">
+            ⚡
+            <animate attributeName="opacity" values="1;0.3;1" dur="0.8s" repeatCount="indefinite"/>
+          </text>
+        ` : ''}
       </g>
-      ${person.isMe ? `
-        <!-- Anel dourado animado pro user logado -->
-        <circle cx="0" cy="0" r="17" fill="none" stroke="#D4A843" stroke-width="2" stroke-dasharray="3,2">
-          <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="8s" repeatCount="indefinite"/>
-        </circle>
-      ` : ''}
-      ${person.state === 'active' ? `
-        <!-- Pulso de "presença" no estado ativo (anel verde fade) -->
-        <circle cx="0" cy="0" r="14" fill="none" stroke="${stateColor}" stroke-width="2" opacity="0.6">
-          <animate attributeName="r" values="14;22;14" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="0.6;0;0.6" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
-        </circle>
-      ` : ''}
     </g>
   `;
 }
 
-/* ─── Hover tooltip ──────────────────────────────────────── */
-function wireHover(stageEl) {
+/* ─── Gera path de caminhada para o avatar dentro da sala ───
+ * 4 waypoints distribuídos em torno da posição base (0,0).
+ * Path inclui movimento elíptico (mais largo em X pq isométrico).
+ * Cada uid gera path único (deterministic) pra não embaralhar.
+ */
+function generateWalkPath(uid, idx) {
+  // Hash simples da string uid pra seed
+  let seed = 0;
+  for (let i = 0; i < (uid || '').length; i++) seed = (seed * 31 + uid.charCodeAt(i)) | 0;
+  seed = Math.abs(seed + idx * 17) % 1000;
+  const rng = (n) => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return (seed / 233280) * n;
+  };
+  // Raio em torno do ponto base (avatar fica perambulando)
+  const rx = 35 + rng(15);  // 35-50
+  const ry = 14 + rng(8);   // 14-22 (achatado pra ficar dentro do rombus)
+  // 4 pontos: noroeste, sudeste, nordeste, sudoeste (formato de "infinito")
+  const ang0 = rng(Math.PI * 2);
+  const pts = [0, 1, 2, 3].map(i => {
+    const a = ang0 + (i * Math.PI / 2) + (rng(0.4) - 0.2);  // pequeno jitter
+    const r = 0.85 + rng(0.3);
+    return [Math.cos(a) * rx * r, Math.sin(a) * ry * r];
+  });
+  // Inclui retorno ao ponto inicial pra fechar o loop
+  return `M ${pts[0][0]},${pts[0][1]} L ${pts[1][0]},${pts[1][1]} L ${pts[2][0]},${pts[2][1]} L ${pts[3][0]},${pts[3][1]} Z`;
+}
+
+/* ─── Hover tooltip + click navigation (4.36.3+) ───────────── */
+function wireInteractions(stageEl) {
   let tip = null;
   const removeTip = () => { if (tip) { tip.remove(); tip = null; } };
 
+  // 4.36.3+ Click no chão da sala → navega pro módulo correspondente
+  stageEl.querySelectorAll('.office-room').forEach(roomEl => {
+    const floor = roomEl.querySelector('.office-floor');
+    if (!floor) return;
+    floor.addEventListener('click', () => {
+      const route = roomEl.dataset.route;
+      if (route) router.navigate(route);
+    });
+    // Tooltip sutil no hover da sala (não conflita com o tooltip do avatar)
+    floor.addEventListener('mouseenter', () => {
+      removeTip();
+      const roomId = roomEl.dataset.room;
+      const room = ROOMS.find(r => r.id === roomId);
+      if (!room) return;
+      const route = roomEl.dataset.route;
+      tip = document.createElement('div');
+      tip.style.cssText = `
+        position:fixed;z-index:9999;
+        background:var(--bg-card, #1A2332);
+        color:var(--text-primary, #E8ECF1);
+        border:1px solid ${room.color};
+        border-radius:8px;padding:8px 12px;font-size:0.75rem;
+        box-shadow:0 4px 12px rgba(0,0,0,0.3);pointer-events:none;
+        max-width:240px;line-height:1.5;
+      `;
+      tip.innerHTML = `
+        <div style="font-weight:600;color:${room.color};margin-bottom:2px;">${esc(room.icon)} ${esc(room.label)}</div>
+        <div style="font-size:0.6875rem;opacity:0.85;">Clique para entrar nesta sala</div>
+        ${route ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">↗ /${esc(route)}</div>` : ''}
+      `;
+      document.body.appendChild(tip);
+      const rect = floor.getBoundingClientRect();
+      tip.style.left = (rect.left + rect.width / 2 - tip.offsetWidth / 2) + 'px';
+      tip.style.top  = (rect.top + 8) + 'px';
+    });
+    floor.addEventListener('mouseleave', removeTip);
+  });
+
+  // Tooltip do avatar
   stageEl.querySelectorAll('.office-avatar').forEach(av => {
     av.addEventListener('mouseenter', (e) => {
       removeTip();
@@ -738,7 +856,7 @@ function wireHover(stageEl) {
       tip.innerHTML = `
         <div style="font-weight:600;margin-bottom:2px;">${esc(name)}</div>
         <div style="font-size:0.6875rem;opacity:0.85;">${stateLabel}</div>
-        ${route !== 'descompressao' ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">Sala: ${esc(route)}</div>` : ''}
+        ${route !== 'descompressao' ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">Em: ${esc(route)}</div>` : ''}
       `;
       document.body.appendChild(tip);
       const rect = av.getBoundingClientRect();
