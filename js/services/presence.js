@@ -164,11 +164,12 @@ export function startPresence() {
 
   // ─── Visibilidade da aba ────────────────────────────────
   // Aba escondida → idle imediato. Aba visível → reset _lastActivityTs.
+  // 4.35.29+ NÃO zeramos _lastActivityTs ao esconder a aba (era a causa do
+  // tooltip "ausente" sem tempo). computeState() já força idle quando
+  // document.hidden=true; mantemos a timestamp real pra "ausente há X min".
   _visibilityHandler = () => {
     if (document.hidden) {
-      // Forçar idle escrevendo um heartbeat com estado idle
-      _lastActivityTs = 0; // garante computeState='idle'
-      writeHeartbeat(true);
+      writeHeartbeat(true); // grava state=idle mas preserva lastActivityAt
     } else {
       _lastActivityTs = Date.now();
       writeHeartbeat(true);

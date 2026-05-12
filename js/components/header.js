@@ -455,7 +455,7 @@ export class Header {
               data-email="${escAttr(u.email || '')}"
               data-sector="${escAttr(u.sector || '')}"
               data-state="${u.state}"
-              data-last-activity="${u.lastActivityAt || ''}"
+              data-last-activity="${u.lastActivityAt || (u.lastSeen?.toMillis?.() || '')}"
               data-last-seen="${u.lastSeen?.toMillis?.() || ''}">
               <div class="avatar avatar-sm" style="
                 background:${u.avatarColor || '#3B82F6'};width:28px;height:28px;
@@ -586,8 +586,11 @@ export class Header {
             const initials = (u.name || '?').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
             const dotColor = u.state === 'idle' ? '#F59E0B' : '#22C55E';
             const opacity  = u.state === 'idle' ? '0.7' : '1';
+            // 4.35.29+ fallback pra lastSeen quando lastActivityAt está vazio
+            // (acontece com docs antigos gravados antes do fix)
+            const lastTs = u.lastActivityAt || u.lastSeen?.toMillis?.() || 0;
             const statusLine = u.state === 'idle'
-              ? `<span style="color:#F59E0B;font-size:0.6875rem;">● ${formatIdleSince(u.lastActivityAt)}</span>`
+              ? `<span style="color:#F59E0B;font-size:0.6875rem;">● ${formatIdleSince(lastTs)}</span>`
               : `<span style="color:#22C55E;font-size:0.6875rem;">● ativo agora</span>`;
             return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
               border-bottom:1px solid var(--border-subtle);opacity:${opacity};">

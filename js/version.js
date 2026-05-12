@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 28,
-  build: '20260512-team-period-filters',
+  patch: 29,
+  build: '20260512-presence-idle-time-fix',
 };
 
 /** "1.2.0" */
