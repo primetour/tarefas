@@ -1029,6 +1029,9 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
           agentDailyCapUsd: opts.agentDailyCapUsd || 5,
           module: moduleId,
           source: opts.source || 'chatWithAI',
+          // 4.35.23+: vision (image data URIs) + web_search nativo
+          attachments: Array.isArray(opts.attachments) ? opts.attachments : [],
+          webSearch: opts.webSearch === true,
         });
         return { ...result, isMock: false, secured: true };
       }

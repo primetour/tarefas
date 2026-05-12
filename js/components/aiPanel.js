@@ -1013,9 +1013,16 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
       if (fileContextBlock) {
         context.__fileContext = fileContextBlock;
       }
+      // 4.35.23+ vision: passa imagens como image blocks (data URI base64)
+      // pra modelos multimodais (Anthropic, Gemini). Para os demais providers
+      // o fileContextBlock injetado no system prompt já dá fallback textual.
+      const imageAttachments = (parsedAttachments || [])
+        .filter(p => p?.type === 'image' && p.base64)
+        .map(p => p.base64);
       const result = await chatWithAI(text || 'Analise os arquivos anexados e descreva o conteúdo.', context, {
         moduleId,
         history: chatHistory.slice(-6),
+        attachments: imageAttachments,
       });
 
       loadingEl.remove();
