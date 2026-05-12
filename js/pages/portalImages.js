@@ -873,6 +873,10 @@ async function loadImages({ reset = true } = {}) {
   if (reset) {
     _pageCursor = null;
     allImages   = [];
+    // 4.40.1+ Invalida cache de contadores das pills sempre que recarregar do zero.
+    // Antes: deletar/editar/upload não refrescava os números das categorias
+    // (Todas 11, Destino 9, ...) porque _categoryCounts continuava válido.
+    _categoryCounts = null;
   }
   const { docs, lastDoc, hasMore } = await fetchImagesPage({
     ..._getFiltersForServer(),
