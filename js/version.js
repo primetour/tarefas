@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 27,
-  build: '20260512-presence-photoURL-fix',
+  patch: 28,
+  build: '20260512-team-period-filters',
 };
 
 /** "1.2.0" */

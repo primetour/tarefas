@@ -302,18 +302,82 @@ function absenceTable(absences, uid, showActions) {
   </table></div>`;
 }
 
-// 4.35.9+ Mês visualizado no calendário da equipe. Persistido em closure
-// pra permitir navegação prev/next sem perder estado.
-let _teamAvailMonth = null;
+// 4.35.9+ Mês visualizado / 4.35.28+ Período + âncora visualizada
+// Persistido em closure pra preservar navegação ao re-renderizar.
+let _teamAvailPeriod = 'month';   // 'week' | 'fortnight' | 'month' | 'quarter' | 'custom'
+let _teamAvailAnchor = null;       // data de início do período visualizado
+let _teamAvailCustomEnd = null;    // só usado quando period='custom'
+
+const PERIOD_PRESETS = [
+  { id: 'week',      label: 'Semana',    days: 7  },
+  { id: 'fortnight', label: 'Quinzena',  days: 14 },
+  { id: 'month',     label: 'Mês',       days: null }, // calculado dinamicamente
+  { id: 'quarter',   label: 'Trimestre', days: 90 },
+];
+
+// Helpers de cálculo de range por período. Sempre retorna { start, end, label }.
+function _computeTeamPeriodRange() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  let start, end, label;
+  const anchor = _teamAvailAnchor ? new Date(_teamAvailAnchor) : new Date(today);
+  anchor.setHours(0,0,0,0);
+
+  if (_teamAvailPeriod === 'week') {
+    // Âncora = segunda-feira da semana
+    const dow = anchor.getDay(); // 0=Dom
+    const offset = dow === 0 ? -6 : 1 - dow;
+    start = new Date(anchor); start.setDate(anchor.getDate() + offset);
+    end   = new Date(start);  end.setDate(start.getDate() + 6); end.setHours(23,59,59,999);
+    const fmt = new Intl.DateTimeFormat('pt-BR', { day:'2-digit', month:'short' });
+    label = `${fmt.format(start)} – ${fmt.format(end)}`;
+  } else if (_teamAvailPeriod === 'fortnight') {
+    start = new Date(anchor);
+    end   = new Date(anchor); end.setDate(anchor.getDate() + 13); end.setHours(23,59,59,999);
+    const fmt = new Intl.DateTimeFormat('pt-BR', { day:'2-digit', month:'short' });
+    label = `${fmt.format(start)} – ${fmt.format(end)} · 15 dias`;
+  } else if (_teamAvailPeriod === 'quarter') {
+    start = new Date(anchor);
+    end   = new Date(anchor); end.setDate(anchor.getDate() + 89); end.setHours(23,59,59,999);
+    const fmt = new Intl.DateTimeFormat('pt-BR', { day:'2-digit', month:'short' });
+    label = `${fmt.format(start)} – ${fmt.format(end)} · 90 dias`;
+  } else if (_teamAvailPeriod === 'custom' && _teamAvailCustomEnd) {
+    start = new Date(anchor);
+    end   = new Date(_teamAvailCustomEnd); end.setHours(23,59,59,999);
+    const fmt = new Intl.DateTimeFormat('pt-BR', { day:'2-digit', month:'short', year:'2-digit' });
+    label = `${fmt.format(start)} – ${fmt.format(end)}`;
+  } else {
+    // month (default): primeiro→último dia do mês da âncora
+    start = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    end   = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0, 23,59,59,999);
+    label = new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric' }).format(anchor);
+  }
+  return { start, end, label };
+}
+
+function _stepTeamPeriod(direction) {
+  // direction = +1 (next) ou -1 (prev). Avança âncora pelo tamanho do período.
+  const a = _teamAvailAnchor ? new Date(_teamAvailAnchor) : new Date();
+  if (_teamAvailPeriod === 'week') a.setDate(a.getDate() + 7 * direction);
+  else if (_teamAvailPeriod === 'fortnight') a.setDate(a.getDate() + 14 * direction);
+  else if (_teamAvailPeriod === 'quarter') a.setDate(a.getDate() + 90 * direction);
+  else if (_teamAvailPeriod === 'custom') {
+    // Custom: mantém o tamanho do range e desloca
+    const cur = _computeTeamPeriodRange();
+    const span = Math.round((cur.end - cur.start) / (24*3600*1000));
+    a.setDate(a.getDate() + (span + 1) * direction);
+    _teamAvailCustomEnd = new Date(a); _teamAvailCustomEnd.setDate(a.getDate() + span);
+  } else {
+    a.setMonth(a.getMonth() + direction);
+  }
+  _teamAvailAnchor = a;
+}
 
 /* ─── Tab: Disponibilidade da equipe ─────────────────────── */
 async function renderTeamAvailability(container) {
   const users = (store.get('users') || []).filter(u => u.active !== false);
-  // 4.35.9+ Default = mês corrente; user pode navegar pra meses futuros via prev/next
-  if (!_teamAvailMonth) _teamAvailMonth = new Date();
-  const ref   = _teamAvailMonth;
-  const start = new Date(ref.getFullYear(), ref.getMonth(), 1);
-  const end   = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+  // 4.35.28+ Default = período mensal corrente; user navega via pills/seta
+  if (!_teamAvailAnchor) _teamAvailAnchor = new Date();
+  const { start, end, label: periodLabel } = _computeTeamPeriodRange();
 
   // 4.35.9+ Busca TODAS as ausências (sem filtro) pra calcular contador
   // de futuras → permite indicar visualmente que há ausências fora da view
@@ -328,23 +392,55 @@ async function renderTeamAvailability(container) {
   for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) days.push(new Date(d));
 
   const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const monthLabel = new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric'}).format(ref);
-  const isCurrentMonth = ref.getFullYear() === new Date().getFullYear() && ref.getMonth() === new Date().getMonth();
+  const monthLabel = periodLabel;
+  // "Hoje cabe no range?" — se sim, esconde o reset. Compara só pelo dia.
+  const today = new Date(); today.setHours(0,0,0,0);
+  const isInCurrentRange = today >= start && today <= end;
 
   container.innerHTML = `
-    <!-- 4.35.9+ Navegação prev/next + indicador de ausências futuras -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <button class="btn btn-secondary btn-sm" id="team-avail-prev" title="Mês anterior">‹</button>
-        <span style="font-weight:600;font-size:0.9375rem;text-transform:capitalize;min-width:160px;text-align:center;">${monthLabel}</span>
-        <button class="btn btn-secondary btn-sm" id="team-avail-next" title="Próximo mês">›</button>
-        ${!isCurrentMonth ? `<button class="btn btn-ghost btn-sm" id="team-avail-today" style="font-size:0.75rem;">↻ Mês atual</button>` : ''}
+    <!-- 4.35.28+ Filtros de período: pills + nav prev/next + custom range -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <!-- Pills de período -->
+        <div style="display:flex;gap:4px;background:var(--bg-surface);padding:3px;border-radius:8px;">
+          ${PERIOD_PRESETS.map(p => `
+            <button class="team-period-pill" data-period="${p.id}" style="
+              padding:5px 12px;border:none;background:${_teamAvailPeriod===p.id?'var(--brand-gold)':'transparent'};
+              color:${_teamAvailPeriod===p.id?'#fff':'var(--text-secondary)'};
+              border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer;
+              transition:all .15s;">${p.label}</button>
+          `).join('')}
+          <button class="team-period-pill" data-period="custom" style="
+            padding:5px 12px;border:none;background:${_teamAvailPeriod==='custom'?'var(--brand-gold)':'transparent'};
+            color:${_teamAvailPeriod==='custom'?'#fff':'var(--text-secondary)'};
+            border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer;
+            transition:all .15s;">Personalizado</button>
+        </div>
+
+        <!-- Navegação prev/next + label -->
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="btn btn-secondary btn-sm" id="team-avail-prev" title="Anterior">‹</button>
+          <span style="font-weight:600;font-size:0.875rem;text-transform:capitalize;min-width:200px;text-align:center;">${monthLabel}</span>
+          <button class="btn btn-secondary btn-sm" id="team-avail-next" title="Próximo">›</button>
+          ${!isInCurrentRange ? `<button class="btn btn-ghost btn-sm" id="team-avail-today" style="font-size:0.75rem;">↻ Hoje</button>` : ''}
+        </div>
       </div>
+
       ${futureAbsCount > 0 ? `
         <span style="font-size:0.75rem;color:var(--text-muted);">
-          📌 ${futureAbsCount} ausência${futureAbsCount>1?'s':''} agendada${futureAbsCount>1?'s':''} pra meses futuros
+          📌 ${futureAbsCount} ausência${futureAbsCount>1?'s':''} agendada${futureAbsCount>1?'s':''} pra depois do período
         </span>` : ''}
     </div>
+
+    ${_teamAvailPeriod === 'custom' ? `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:10px 14px;background:var(--bg-surface);border-radius:8px;">
+        <span style="font-size:0.8125rem;color:var(--text-muted);">Período:</span>
+        <input type="date" id="team-custom-start" class="form-input" value="${start.toISOString().slice(0,10)}" style="width:160px;font-size:0.8125rem;height:32px;">
+        <span style="font-size:0.8125rem;color:var(--text-muted);">até</span>
+        <input type="date" id="team-custom-end" class="form-input" value="${end.toISOString().slice(0,10)}" style="width:160px;font-size:0.8125rem;height:32px;">
+        <button class="btn btn-primary btn-sm" id="team-custom-apply" style="font-size:0.8125rem;">Aplicar</button>
+      </div>
+    ` : ''}
 
     <div style="display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start;">
       <!-- Availability bars -->
@@ -439,17 +535,43 @@ async function renderTeamAvailability(container) {
     </div>
   `;
 
-  // 4.35.9+ Navegação de mês: ferias/ausencias futuras agora visíveis
+  // 4.35.28+ Navegação adaptativa ao período + filtros pills + custom range
   document.getElementById('team-avail-prev')?.addEventListener('click', () => {
-    _teamAvailMonth = new Date(_teamAvailMonth.getFullYear(), _teamAvailMonth.getMonth() - 1, 1);
+    _stepTeamPeriod(-1);
     renderTeamAvailability(container);
   });
   document.getElementById('team-avail-next')?.addEventListener('click', () => {
-    _teamAvailMonth = new Date(_teamAvailMonth.getFullYear(), _teamAvailMonth.getMonth() + 1, 1);
+    _stepTeamPeriod(+1);
     renderTeamAvailability(container);
   });
   document.getElementById('team-avail-today')?.addEventListener('click', () => {
-    _teamAvailMonth = new Date();
+    _teamAvailAnchor = new Date();
+    _teamAvailCustomEnd = null;
+    renderTeamAvailability(container);
+  });
+  container.querySelectorAll('.team-period-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const newPeriod = btn.dataset.period;
+      if (newPeriod === _teamAvailPeriod) return;
+      _teamAvailPeriod = newPeriod;
+      // Quando troca pra custom, inicializa o end com o end atual
+      if (newPeriod === 'custom') {
+        _teamAvailCustomEnd = end;
+      } else {
+        _teamAvailCustomEnd = null;
+      }
+      renderTeamAvailability(container);
+    });
+  });
+  document.getElementById('team-custom-apply')?.addEventListener('click', () => {
+    const sEl = document.getElementById('team-custom-start');
+    const eEl = document.getElementById('team-custom-end');
+    if (!sEl?.value || !eEl?.value) return;
+    const s = new Date(sEl.value + 'T00:00:00');
+    const e = new Date(eEl.value + 'T23:59:59');
+    if (e < s) { toast?.error?.('Data final precisa ser depois da inicial.'); return; }
+    _teamAvailAnchor = s;
+    _teamAvailCustomEnd = e;
     renderTeamAvailability(container);
   });
 }
