@@ -318,6 +318,12 @@ function buildSvg(peopleByRoom) {
   // Calcula viewBox: maior diagonal = (col+row) max
   // viewBox aproximado pra acomodar todas as salas + paredes + avatares
   return `
+    <style>
+      /* 4.36.2+ Hover destaca a sala inteira (chão + paredes + mobília + label) */
+      .office-room:hover { filter: brightness(1.15) saturate(1.2); cursor: pointer; }
+      .office-room:hover polygon { stroke-opacity: 1 !important; stroke-width: 2.5 !important; }
+      .office-avatar:hover { filter: drop-shadow(0 4px 8px rgba(212,168,67,0.6)); }
+    </style>
     <svg viewBox="0 0 1640 1080" xmlns="http://www.w3.org/2000/svg" style="
       width:100%;height:auto;display:block;
       filter:drop-shadow(0 8px 24px rgba(0,0,0,0.15));
@@ -338,30 +344,30 @@ function buildSvg(peopleByRoom) {
   `;
 }
 
-/* ─── Render de uma sala (parede + chão + label + avatares) ── */
+/* ─── Render de uma sala (parede + chão + mobília + label + avatares) ── */
 function renderRoom(room, cx, cy, people) {
-  const FLOOR_ALPHA = '22';   // hex 22 = ~13% opacity
-  const WALL_LEFT_ALPHA = '50';  // mais escuro
+  const FLOOR_ALPHA = '22';
+  const WALL_LEFT_ALPHA = '50';
   const WALL_RIGHT_ALPHA = '30';
 
-  // Posiciona avatares dentro da sala
+  // 4.36.2+ Mobília específica da sala (renderizada antes dos avatares)
+  const furniture = renderFurniture(room.id, cx, cy);
+
   const avatarHtml = people.map((p, i) => {
     const offset = avatarOffsetInRoom(i, people.length);
     const ax = cx + offset.x;
     const ay = cy + offset.y + TILE_H/2;
-    return renderAvatar(p, ax, ay);
+    return renderAvatar(p, ax, ay, i);
   }).join('');
 
-  // 4.36.1+ Label posicionado DENTRO da sala (no topo do rombus, atrás dos avatares)
-  // — não flutua entre salas, fica claro a que sala pertence
   const labelX = cx;
-  const labelY = cy + 22;  // logo abaixo do top point do rombus
+  const labelY = cy + 22;
   const count = people.length;
   const isEmpty = count === 0;
 
   return `
-    <g class="office-room" data-room="${room.id}">
-      <!-- Parede esquerda (mais escura) -->
+    <g class="office-room" data-room="${room.id}" style="transition:filter .2s;">
+      <!-- Parede esquerda -->
       <path d="${leftWallPath(cx, cy, WALL_HEIGHT)}" fill="${room.color}${WALL_LEFT_ALPHA}" stroke="${room.color}" stroke-width="1" opacity="0.85"/>
       <!-- Parede direita -->
       <path d="${rightWallPath(cx, cy, WALL_HEIGHT)}" fill="${room.color}${WALL_RIGHT_ALPHA}" stroke="${room.color}" stroke-width="1" opacity="0.7"/>
@@ -369,7 +375,10 @@ function renderRoom(room, cx, cy, people) {
       <polygon points="${floorPolygon(cx, cy)}" fill="${room.color}${FLOOR_ALPHA}" stroke="${room.color}" stroke-width="1.5" stroke-opacity="0.6"/>
       <polygon points="${floorPolygon(cx, cy)}" fill="url(#floorTexture)" pointer-events="none"/>
 
-      <!-- Label DENTRO da sala, no topo -->
+      <!-- Mobília -->
+      <g class="office-furniture" style="pointer-events:none;">${furniture}</g>
+
+      <!-- Label -->
       <g transform="translate(${labelX}, ${labelY})" style="pointer-events:none;">
         <rect x="-78" y="-13" width="156" height="22" rx="11"
           fill="${room.color}" opacity="${isEmpty ? '0.55' : '0.95'}"/>
@@ -383,6 +392,245 @@ function renderRoom(room, cx, cy, people) {
       ${avatarHtml}
     </g>
   `;
+}
+
+/* ─── Mobília isométrica por sala (4.36.2+) ──────────────────
+ * Helpers básicos: desk, chair, plant, monitor, sofa, board, etc.
+ * Cada peça é um conjunto de polígonos com tom escuro nas faces inferiores
+ * e tom claro nas faces superiores pra simular 3D.
+ */
+
+// Pequena mesa isométrica (vista de cima, parallelograma)
+function iso_desk(x, y, w = 60, d = 30, color = '#8B6F47') {
+  // top diamond
+  const dx = w / 2, dy = d / 2;
+  const top = `${x},${y-dy} ${x+dx},${y} ${x},${y+dy} ${x-dx},${y}`;
+  // sides
+  const leftSide  = `${x-dx},${y} ${x-dx},${y+10} ${x},${y+dy+10} ${x},${y+dy}`;
+  const rightSide = `${x+dx},${y} ${x+dx},${y+10} ${x},${y+dy+10} ${x},${y+dy}`;
+  return `
+    <polygon points="${leftSide}"  fill="${shade(color, -30)}" stroke="${shade(color, -40)}" stroke-width="0.5"/>
+    <polygon points="${rightSide}" fill="${shade(color, -15)}" stroke="${shade(color, -40)}" stroke-width="0.5"/>
+    <polygon points="${top}"       fill="${color}" stroke="${shade(color, -30)}" stroke-width="0.5"/>
+  `;
+}
+
+// Cadeira (pequeno cubo + encosto)
+function iso_chair(x, y, color = '#475569') {
+  const w = 16, d = 8;
+  const top = `${x},${y-d/2} ${x+w/2},${y} ${x},${y+d/2} ${x-w/2},${y}`;
+  return `
+    <polygon points="${top}" fill="${color}" stroke="${shade(color, -30)}" stroke-width="0.5"/>
+    <rect x="${x-1}" y="${y-d/2-10}" width="2" height="10" fill="${shade(color, -20)}"/>
+  `;
+}
+
+// Planta (pote + folhas)
+function iso_plant(x, y) {
+  return `
+    <ellipse cx="${x}" cy="${y+6}" rx="6" ry="2.5" fill="#92400E"/>
+    <ellipse cx="${x}" cy="${y-2}" rx="9" ry="6" fill="#10B981"/>
+    <ellipse cx="${x-3}" cy="${y-6}" rx="5" ry="4" fill="#16A34A"/>
+    <ellipse cx="${x+3}" cy="${y-7}" rx="4" ry="4" fill="#22C55E"/>
+  `;
+}
+
+// Monitor (tela em pé)
+function iso_monitor(x, y, color = '#1F2937') {
+  return `
+    <rect x="${x-10}" y="${y-12}" width="20" height="14" fill="${color}" stroke="${shade(color, -30)}" stroke-width="0.5" rx="1"/>
+    <rect x="${x-7}" y="${y-10}" width="14" height="10" fill="#3B82F6" opacity="0.4"/>
+    <rect x="${x-1}" y="${y+2}" width="2" height="3" fill="${color}"/>
+  `;
+}
+
+// Lousa/quadro
+function iso_board(x, y) {
+  return `
+    <rect x="${x-22}" y="${y-18}" width="44" height="24" fill="#FFFFFF" stroke="#D4A843" stroke-width="1.5" rx="2"/>
+    <line x1="${x-18}" y1="${y-12}" x2="${x-2}" y2="${y-12}" stroke="#3B82F6" stroke-width="1"/>
+    <line x1="${x-18}" y1="${y-8}"  x2="${x+10}" y2="${y-8}" stroke="#EF4444" stroke-width="1"/>
+    <line x1="${x-18}" y1="${y-4}"  x2="${x+4}" y2="${y-4}" stroke="#22C55E" stroke-width="1"/>
+  `;
+}
+
+// Sofá (rounded rect com almofadas)
+function iso_sofa(x, y, color = '#7C3AED') {
+  const w = 70, d = 30;
+  return `
+    <rect x="${x-w/2}" y="${y-d/2}" width="${w}" height="${d}" rx="6" fill="${color}" opacity="0.85"/>
+    <rect x="${x-w/2+4}" y="${y-d/2+4}" width="14" height="10" rx="3" fill="${shade(color, 30)}"/>
+    <rect x="${x-w/2+22}" y="${y-d/2+4}" width="14" height="10" rx="3" fill="${shade(color, 30)}"/>
+    <rect x="${x-w/2+40}" y="${y-d/2+4}" width="14" height="10" rx="3" fill="${shade(color, 30)}"/>
+  `;
+}
+
+// Máquina de café
+function iso_coffee(x, y) {
+  return `
+    <rect x="${x-8}" y="${y-12}" width="16" height="18" fill="#1F2937" rx="1"/>
+    <rect x="${x-6}" y="${y-8}" width="12" height="4" fill="#D4A843"/>
+    <rect x="${x-3}" y="${y-2}" width="6" height="5" fill="#92400E"/>
+    <circle cx="${x}" cy="${y+4}" r="1" fill="#D4A843"/>
+  `;
+}
+
+// Impressora
+function iso_printer(x, y) {
+  return `
+    <rect x="${x-12}" y="${y-6}" width="24" height="12" fill="#475569" rx="1"/>
+    <rect x="${x-10}" y="${y-2}" width="20" height="6" fill="#F1F5F9"/>
+    <rect x="${x-8}" y="${y-10}" width="16" height="4" fill="#1E293B"/>
+    <circle cx="${x-6}" cy="${y-4}" r="1" fill="#22C55E"/>
+  `;
+}
+
+// Mala/globo (roteiros)
+function iso_globe(x, y) {
+  return `
+    <circle cx="${x}" cy="${y-4}" r="10" fill="#3B82F6"/>
+    <path d="M ${x-10},${y-4} Q ${x},${y-12} ${x+10},${y-4}" fill="none" stroke="#10B981" stroke-width="1.5"/>
+    <path d="M ${x-10},${y-4} Q ${x},${y+4} ${x+10},${y-4}" fill="none" stroke="#10B981" stroke-width="1.5"/>
+    <line x1="${x}" y1="${y-14}" x2="${x}" y2="${y+6}" stroke="#1F2937" stroke-width="1"/>
+    <line x1="${x-6}" y1="${y+6}" x2="${x+6}" y2="${y+6}" stroke="#1F2937" stroke-width="1.5"/>
+  `;
+}
+
+// Robô (lab IA)
+function iso_robot(x, y) {
+  return `
+    <rect x="${x-9}" y="${y-12}" width="18" height="14" rx="3" fill="#A78BFA"/>
+    <circle cx="${x-4}" cy="${y-7}" r="2" fill="#fff"/>
+    <circle cx="${x+4}" cy="${y-7}" r="2" fill="#fff"/>
+    <circle cx="${x-4}" cy="${y-7}" r="1" fill="#1F2937"/>
+    <circle cx="${x+4}" cy="${y-7}" r="1" fill="#1F2937"/>
+    <line x1="${x}" y1="${y-14}" x2="${x}" y2="${y-12}" stroke="#A78BFA" stroke-width="1.5"/>
+    <circle cx="${x}" cy="${y-16}" r="2" fill="#D4A843">
+      <animate attributeName="opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite"/>
+    </circle>
+    <rect x="${x-6}" y="${y+2}" width="12" height="3" fill="#7C3AED"/>
+  `;
+}
+
+// Cofre/arquivo (admin)
+function iso_safe(x, y) {
+  return `
+    <rect x="${x-12}" y="${y-12}" width="24" height="20" fill="#374151" rx="2"/>
+    <rect x="${x-9}" y="${y-9}" width="18" height="14" fill="#1F2937"/>
+    <circle cx="${x}" cy="${y-2}" r="3" fill="#D4A843"/>
+    <line x1="${x-2}" y1="${y-2}" x2="${x+2}" y2="${y-2}" stroke="#1F2937" stroke-width="1"/>
+    <line x1="${x}" y1="${y-4}" x2="${x}" y2="${y}" stroke="#1F2937" stroke-width="1"/>
+  `;
+}
+
+// Cavalete de design (estúdio)
+function iso_easel(x, y) {
+  return `
+    <line x1="${x-10}" y1="${y+8}" x2="${x-2}" y2="${y-14}" stroke="#92400E" stroke-width="1.5"/>
+    <line x1="${x+10}" y1="${y+8}" x2="${x+2}" y2="${y-14}" stroke="#92400E" stroke-width="1.5"/>
+    <line x1="${x}" y1="${y+8}" x2="${x}" y2="${y-12}" stroke="#92400E" stroke-width="1.5"/>
+    <rect x="${x-12}" y="${y-12}" width="24" height="14" fill="#FFFFFF" stroke="#1F2937" stroke-width="0.5"/>
+    <circle cx="${x-4}" cy="${y-7}" r="2" fill="#EC4899"/>
+    <rect x="${x+2}" y="${y-9}" width="6" height="4" fill="#10B981"/>
+  `;
+}
+
+// Helper: aclara/escurece cor hex
+function shade(hex, percent) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = Math.max(0, Math.min(255, (num >> 16) + percent));
+  const g = Math.max(0, Math.min(255, ((num >> 8) & 0xFF) + percent));
+  const b = Math.max(0, Math.min(255, (num & 0xFF) + percent));
+  return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+}
+
+/* ─── Furniture map: por sala, lista de peças a renderizar ── */
+function renderFurniture(roomId, cx, cy) {
+  const centerY = cy + TILE_H / 2;  // centro vertical do rombus
+  // Coordenadas relativas ao centro inferior da sala
+  const pieces = {
+    'recepcao': [
+      iso_sofa(cx - 50, centerY + 50, '#64748B'),
+      iso_plant(cx + 80, centerY + 40),
+      iso_chair(cx + 40, centerY + 60, '#475569'),
+    ],
+    'tarefas': [
+      iso_desk(cx - 60, centerY + 40, 50, 26),
+      iso_monitor(cx - 60, centerY + 30),
+      iso_chair(cx - 60, centerY + 65),
+      iso_desk(cx + 50, centerY + 60, 50, 26),
+      iso_monitor(cx + 50, centerY + 50),
+      iso_chair(cx + 50, centerY + 85),
+    ],
+    'reunioes': [
+      iso_desk(cx, centerY + 50, 110, 50, '#3F4A5C'),
+      iso_chair(cx - 50, centerY + 30),
+      iso_chair(cx - 50, centerY + 75),
+      iso_chair(cx + 50, centerY + 30),
+      iso_chair(cx + 50, centerY + 75),
+      iso_chair(cx, centerY + 10),
+      iso_chair(cx, centerY + 95),
+    ],
+    'comando': [
+      iso_desk(cx, centerY + 55, 100, 36, '#1E293B'),
+      iso_monitor(cx - 28, centerY + 40),
+      iso_monitor(cx, centerY + 40),
+      iso_monitor(cx + 28, centerY + 40),
+      iso_chair(cx, centerY + 85),
+    ],
+    'estudio': [
+      iso_easel(cx - 30, centerY + 45),
+      iso_desk(cx + 30, centerY + 55, 50, 26, '#A07050'),
+      iso_chair(cx + 30, centerY + 80),
+      iso_plant(cx + 80, centerY + 80),
+    ],
+    'lousa': [
+      iso_board(cx, centerY + 30),
+      iso_desk(cx, centerY + 70, 60, 30, '#92400E'),
+      iso_chair(cx - 20, centerY + 95),
+      iso_chair(cx + 20, centerY + 95),
+    ],
+    'roteiros': [
+      iso_globe(cx - 30, centerY + 50),
+      iso_desk(cx + 30, centerY + 55, 50, 26, '#10B981'),
+      iso_monitor(cx + 30, centerY + 45),
+      iso_chair(cx + 30, centerY + 80),
+    ],
+    'atendimento': [
+      iso_desk(cx, centerY + 40, 100, 30, '#F97316'),
+      iso_monitor(cx - 28, centerY + 30),
+      iso_monitor(cx + 28, centerY + 30),
+      iso_chair(cx, centerY + 75),
+      iso_chair(cx + 50, centerY + 75),
+      iso_chair(cx - 50, centerY + 75),
+    ],
+    'lab-ia': [
+      iso_robot(cx - 30, centerY + 45),
+      iso_desk(cx + 30, centerY + 55, 50, 26, '#7C3AED'),
+      iso_monitor(cx + 30, centerY + 45),
+      iso_chair(cx + 30, centerY + 80),
+    ],
+    'admin': [
+      iso_safe(cx - 40, centerY + 50),
+      iso_desk(cx + 30, centerY + 55, 50, 26, '#475569'),
+      iso_printer(cx + 30, centerY + 45),
+      iso_chair(cx + 30, centerY + 80),
+    ],
+    'cafe': [
+      iso_coffee(cx - 40, centerY + 45),
+      iso_desk(cx + 20, centerY + 60, 60, 26, '#92400E'),
+      iso_chair(cx - 5, centerY + 85),
+      iso_chair(cx + 45, centerY + 85),
+      iso_plant(cx - 70, centerY + 70),
+    ],
+    'descompressao': [
+      iso_sofa(cx - 30, centerY + 50, '#7C3AED'),
+      iso_sofa(cx + 50, centerY + 70, '#A78BFA'),
+      iso_plant(cx - 80, centerY + 80),
+      iso_plant(cx + 90, centerY + 50),
+    ],
+  };
+  return (pieces[roomId] || []).join('');
 }
 
 /* ─── Posicionamento dos avatares dentro da sala ──
@@ -403,7 +651,7 @@ function avatarOffsetInRoom(idx, total) {
 }
 
 /* ─── Render de um avatar ─────────────────────────────────── */
-function renderAvatar(person, x, y) {
+function renderAvatar(person, x, y, idx = 0) {
   const stateColor = person.state === 'idle'   ? '#F59E0B'
                   : person.state === 'absent'  ? '#7C3AED'
                   : '#22C55E';
@@ -411,31 +659,51 @@ function renderAvatar(person, x, y) {
   const photoFg  = person.photoURL || '';
   const fg       = person.avatarColor || '#3B82F6';
 
-  // foreignObject permite renderizar HTML dentro do SVG → pra usar <img> de foto
+  // 4.36.2+ "Balanço" — cada avatar tem fase única (idx) pra animação não-sincronizada
+  // Bobbing sutil de ±1.5px em Y a cada ~2.5s. Pausa quando idle/absent.
+  const bobDuration = 2.4 + (idx * 0.15);  // 2.4s..3.0s+, depende do idx
+  const bobOffset   = (idx % 4) * 0.3;     // delay diferente por avatar
+  const isStill = person.state === 'idle' || person.state === 'absent';
+
   return `
     <g class="office-avatar" data-uid="${esc(person.uid)}" data-name="${esc(person.name)}"
        data-state="${esc(person.state)}" data-route="${esc(person.currentRoute || '')}"
        data-photo="${esc(photoFg)}"
        data-absence="${esc(person.absenceType || '')}"
        transform="translate(${x}, ${y})"
-       style="cursor:pointer;transition:transform 300ms cubic-bezier(.4,.0,.2,1);">
-      <!-- Sombra -->
-      <ellipse cx="0" cy="10" rx="14" ry="3" fill="rgba(0,0,0,0.25)"/>
-      <!-- "Corpo" (foto + borda colorida do estado) -->
-      <circle cx="0" cy="0" r="14" fill="${fg}" stroke="${stateColor}" stroke-width="2.5"/>
-      ${photoFg ? `
-        <clipPath id="clip-${person.uid}">
-          <circle cx="0" cy="0" r="13"/>
-        </clipPath>
-        <image href="${esc(photoFg)}" x="-13" y="-13" width="26" height="26"
-          clip-path="url(#clip-${person.uid})" preserveAspectRatio="xMidYMid slice"/>
-      ` : `
-        <text x="0" y="4" text-anchor="middle"
-          style="font-family:-apple-system,sans-serif;font-size:11px;font-weight:700;fill:#fff;pointer-events:none;">${esc(initials)}</text>
-      `}
+       style="cursor:pointer;transition:transform 600ms cubic-bezier(.4,.0,.2,1);">
+      <!-- Sombra (segue o bob via animação inversa pra parecer que pulsa quando avatar sobe) -->
+      <ellipse cx="0" cy="10" rx="14" ry="3" fill="rgba(0,0,0,0.25)">
+        ${!isStill ? `<animate attributeName="rx" values="14;12;14" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+        ${!isStill ? `<animate attributeName="opacity" values="0.25;0.15;0.25" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+      </ellipse>
+      <!-- Grupo do corpo (com bob animation) -->
+      <g>
+        ${!isStill ? `<animateTransform attributeName="transform" type="translate"
+          values="0,0;0,-2;0,0;0,-1;0,0" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+        <circle cx="0" cy="0" r="14" fill="${fg}" stroke="${stateColor}" stroke-width="2.5"/>
+        ${photoFg ? `
+          <clipPath id="clip-${person.uid}">
+            <circle cx="0" cy="0" r="13"/>
+          </clipPath>
+          <image href="${esc(photoFg)}" x="-13" y="-13" width="26" height="26"
+            clip-path="url(#clip-${person.uid})" preserveAspectRatio="xMidYMid slice"/>
+        ` : `
+          <text x="0" y="4" text-anchor="middle"
+            style="font-family:-apple-system,sans-serif;font-size:11px;font-weight:700;fill:#fff;pointer-events:none;">${esc(initials)}</text>
+        `}
+      </g>
       ${person.isMe ? `
+        <!-- Anel dourado animado pro user logado -->
         <circle cx="0" cy="0" r="17" fill="none" stroke="#D4A843" stroke-width="2" stroke-dasharray="3,2">
           <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="8s" repeatCount="indefinite"/>
+        </circle>
+      ` : ''}
+      ${person.state === 'active' ? `
+        <!-- Pulso de "presença" no estado ativo (anel verde fade) -->
+        <circle cx="0" cy="0" r="14" fill="none" stroke="${stateColor}" stroke-width="2" opacity="0.6">
+          <animate attributeName="r" values="14;22;14" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.6;0;0.6" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
         </circle>
       ` : ''}
     </g>

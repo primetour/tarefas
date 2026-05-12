@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 36,
-  patch: 1,
-  build: '20260512-office-layout-polish',
+  patch: 2,
+  build: '20260512-office-furniture-bobbing',
 };
 
 /** "1.2.0" */
