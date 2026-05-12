@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 39,
-  patch: 4,
-  build: '20260512-squads-grouped-by-area',
+  patch: 5,
+  build: '20260512-squad-cards-title-fix',
 };
 
 /** "1.2.0" */

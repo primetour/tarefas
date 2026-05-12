@@ -170,49 +170,37 @@ function renderGrid() {
         ${userAvatarInner(u)}</div>`;
     }).join('') || '';
 
+    // 4.39.5+ SVG icons (Lucide-style) - definidos uma vez antes do template
+    const svgIcon = (path) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" `
+      + `width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" `
+      + `stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+    const ICON_OPEN    = svgIcon('<path d="M7 7h10v10"/><path d="M7 17 17 7"/>');
+    const ICON_EDIT    = svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>');
+    const ICON_MEMBERS = svgIcon('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>');
+    const ICON_ARCHIVE = svgIcon('<rect x="3" y="3" width="18" height="4" rx="1"/><path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7"/><path d="M10 12h4"/>');
+
     return `
       <div class="card" style="border-top:3px solid ${esc(ws.color||'#D4A843')};cursor:default;">
         <div class="card-header" style="padding-bottom:12px;">
           <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;">
-            <div style="width:40px;height:40px;border-radius:var(--radius-md);
+            <div style="width:36px;height:36px;border-radius:var(--radius-md);
               background:${esc(ws.color||'#D4A843')}22;color:${esc(ws.color||'#D4A843')};
-              display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0;">
+              display:flex;align-items:center;justify-content:center;font-size:1.125rem;flex-shrink:0;">
               ${esc(ws.icon||'◈')}
             </div>
-            <div style="min-width:0;">
-              <div style="font-weight:600;color:var(--text-primary);font-size:0.9375rem;
-                overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(ws.name)}</div>
-              <div style="font-size:0.75rem;color:var(--text-muted);display:flex;align-items:center;gap:6px;">
+            <div style="min-width:0;flex:1;">
+              <div style="font-weight:600;color:var(--text-primary);font-size:0.9375rem;line-height:1.3;
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(ws.name)}">${esc(ws.name)}</div>
+              <div style="font-size:0.75rem;color:var(--text-muted);display:flex;align-items:center;gap:6px;
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                 ${ws.multiSector
                   ? `<span title="Squad multissetor — aceita membros de qualquer setor">⇌ Multissetor</span>`
-                  : (ws.sector ? esc(ws.sector) : 'Sem setor definido')}
+                  : (ws.sector ? esc(ws.sector) : 'Sem área definida')}
               </div>
             </div>
-          </div>
-          <div style="display:flex;gap:4px;">
-            ${(() => {
-              // Helper SVG: ícones Lucide-style, 16x16, currentColor.
-              // Substitui unicode/emoji que eram ambíguos demais (user
-              // reportou não identificar os botões).
-              const svgIcon = (path) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" `
-                + `width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" `
-                + `stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
-              const ICON_OPEN    = svgIcon('<path d="M7 7h10v10"/><path d="M7 17 17 7"/>');
-              const ICON_EDIT    = svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>');
-              const ICON_MEMBERS = svgIcon('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>');
-              const ICON_ARCHIVE = svgIcon('<rect x="3" y="3" width="18" height="4" rx="1"/><path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7"/><path d="M10 12h4"/>');
-
-              return `
-                <button class="btn btn-ghost btn-icon btn-sm ws-open-btn" data-id="${ws.id}" title="Abrir squad">${ICON_OPEN}</button>
-                ${isAdmin || store.can('system_view_all') ? `
-                  <button class="btn btn-ghost btn-icon btn-sm ws-edit-btn" data-id="${ws.id}" title="Editar squad">${ICON_EDIT}</button>
-                  <button class="btn btn-ghost btn-icon btn-sm ws-members-btn" data-id="${ws.id}" title="Gerenciar membros">${ICON_MEMBERS}</button>
-                  ${store.can('workspace_delete') || store.can('system_view_all') ? `
-                    <button class="btn btn-ghost btn-icon btn-sm ws-archive-card-btn" data-id="${ws.id}" title="Arquivar squad">${ICON_ARCHIVE}</button>
-                  ` : ''}
-                ` : ''}
-              `;
-            })()}
+            <!-- 4.39.5+ Só o botão "abrir" no header (action primária); outros foram pro rodapé -->
+            <button class="btn btn-ghost btn-icon btn-sm ws-open-btn" data-id="${ws.id}" title="Abrir squad"
+              style="flex-shrink:0;">${ICON_OPEN}</button>
           </div>
         </div>
         <div class="card-body" style="padding-top:0;">
@@ -234,10 +222,20 @@ function renderGrid() {
                   background:var(--bg-elevated);color:var(--text-muted);border:1px solid var(--border-subtle);">
                   Membro</span>`}
             ${isAdmin || store.can('system_view_all') ? `
-              <button class="btn btn-ghost btn-sm ws-invite-btn" data-id="${ws.id}"
-                style="margin-left:auto;font-size:0.8125rem;">
-                + Convidar
-              </button>
+              <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
+                <button class="btn btn-ghost btn-icon btn-sm ws-edit-btn" data-id="${ws.id}"
+                  title="Editar squad">${ICON_EDIT}</button>
+                <button class="btn btn-ghost btn-icon btn-sm ws-members-btn" data-id="${ws.id}"
+                  title="Gerenciar membros">${ICON_MEMBERS}</button>
+                ${store.can('workspace_delete') || store.can('system_view_all') ? `
+                  <button class="btn btn-ghost btn-icon btn-sm ws-archive-card-btn" data-id="${ws.id}"
+                    title="Arquivar squad">${ICON_ARCHIVE}</button>
+                ` : ''}
+                <button class="btn btn-ghost btn-sm ws-invite-btn" data-id="${ws.id}"
+                  style="font-size:0.75rem;padding:4px 10px;">
+                  + Convidar
+                </button>
+              </div>
             ` : ''}
           </div>
         </div>
@@ -264,7 +262,7 @@ function renderGrid() {
           ${meta.sub ? `<span style="font-size:0.6875rem;color:var(--text-muted);margin-left:auto;">${esc(meta.sub)}</span>` : ''}
         </div>
         <div class="ws-group-cards" style="display:grid;
-          grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;
+          grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;
           margin-bottom:24px;">
           ${cardsHtml}
         </div>
