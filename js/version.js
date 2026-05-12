@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 3,
-  build: '20260512-team-grouped-by-area',
+  patch: 4,
+  build: '20260512-team-area-accordion',
 };
 
 /** "1.2.0" */

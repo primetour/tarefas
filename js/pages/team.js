@@ -308,6 +308,20 @@ let _teamAvailPeriod = 'month';   // 'week' | 'fortnight' | 'month' | 'quarter' 
 let _teamAvailAnchor = null;       // data de início do período visualizado
 let _teamAvailCustomEnd = null;    // só usado quando period='custom'
 
+// 4.40.4+ Accordion: setores abertos persistidos em localStorage.
+// Default fechado pra escalar com 200+ funcionários — diretor clica
+// na área que quer inspecionar em vez de ver tudo expandido.
+const _TEAM_OPEN_KEY = 'team-avail-open-sectors';
+let _teamOpenSectors = (() => {
+  try {
+    const v = localStorage.getItem(_TEAM_OPEN_KEY);
+    return new Set(v ? JSON.parse(v) : []);
+  } catch { return new Set(); }
+})();
+function _persistOpenSectors() {
+  try { localStorage.setItem(_TEAM_OPEN_KEY, JSON.stringify([..._teamOpenSectors])); } catch {}
+}
+
 const PERIOD_PRESETS = [
   { id: 'week',      label: 'Semana',    days: 7  },
   { id: 'fortnight', label: 'Quinzena',  days: 14 },
@@ -479,101 +493,157 @@ async function renderTeamAvailability(container) {
       </div>
     ` : ''}
 
-    <div style="display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start;">
-      <!-- Availability bars — agrupado por área -->
-      <div class="card">
-        <div class="card-header"><div class="card-title">◐ ${monthLabel}</div></div>
-        <div class="card-body" style="padding:8px 0;">
-          ${sortedSectors.map(sector => `
-            <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
-              color:var(--text-muted);padding:10px 16px 6px;background:var(--bg-surface);
-              border-bottom:1px solid var(--border-subtle);position:sticky;top:0;z-index:1;">
-              ${esc(sector)} <span style="font-weight:400;opacity:0.6;">(${teamBySector[sector].length})</span>
-            </div>
-            ${teamBySector[sector].map(u => `
-              <div style="padding:8px 16px;border-bottom:1px solid var(--border-subtle);">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
-                  <div class="avatar avatar-sm" style="background:${u.avatarColor};flex-shrink:0;position:relative;">
-                    ${userAvatarInner(u)}
-                  </div>
-                  <div style="flex:1;min-width:0;">
-                    <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.name.split(' ')[0])}</div>
-                    <div style="font-size:0.6875rem;color:var(--text-muted);">${u.available}/${u.total}d</div>
-                  </div>
-                  <span style="font-size:0.8125rem;font-weight:700;color:${u.rate>=80?'#22C55E':u.rate>=50?'#F59E0B':'#EF4444'};">${u.rate}%</span>
+    ${/* 4.40.4+ Acordeão por área. Default fechado quando há múltiplas áreas
+          (escalável pra 200+ funcionários). Auto-abre se só 1 área visível. */ ''}
+    ${(() => {
+      // Auto-expand single-sector view (analista que só vê 1 área)
+      if (sortedSectors.length === 1 && !_teamOpenSectors.has(sortedSectors[0])) {
+        _teamOpenSectors.add(sortedSectors[0]);
+      }
+      return '';
+    })()}
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div style="font-size:0.75rem;color:var(--text-muted);">
+        ${sortedSectors.length} área${sortedSectors.length>1?'s':''} ·
+        ${team.length} membro${team.length>1?'s':''}
+      </div>
+      ${sortedSectors.length > 1 ? `
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm" id="team-expand-all" style="font-size:0.75rem;">Expandir todas</button>
+          <button class="btn btn-ghost btn-sm" id="team-collapse-all" style="font-size:0.75rem;">Recolher todas</button>
+        </div>
+      ` : ''}
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      ${sortedSectors.map(sector => {
+        const sectorUsers = teamBySector[sector];
+        const isOpen = _teamOpenSectors.has(sector);
+
+        // Summary stats pro header fechado
+        const avgRate = sectorUsers.length
+          ? Math.round(sectorUsers.reduce((s, u) => s + u.rate, 0) / sectorUsers.length)
+          : 0;
+        const absentCount = sectorUsers.filter(u => u.rate < 100).length;
+        const rateColor = avgRate >= 80 ? '#22C55E' : avgRate >= 50 ? '#F59E0B' : '#EF4444';
+
+        return `
+        <div class="team-sector-card card" data-sector="${esc(sector)}"
+          style="overflow:hidden;">
+          <button class="team-sector-toggle" data-sector="${esc(sector)}" type="button"
+            style="width:100%;padding:14px 18px;background:transparent;border:none;
+            display:flex;align-items:center;gap:14px;cursor:pointer;font-family:inherit;
+            color:var(--text-primary);text-align:left;
+            border-bottom:${isOpen ? '1px solid var(--border-subtle)' : 'none'};
+            transition:background 0.15s;"
+            onmouseover="this.style.background='var(--bg-surface)'"
+            onmouseout="this.style.background='transparent'">
+            <span style="font-size:0.875rem;color:var(--text-muted);
+              transform:${isOpen ? 'rotate(90deg)' : 'rotate(0)'};
+              transition:transform 0.2s;display:inline-block;width:14px;">▶</span>
+            <span style="font-size:0.9375rem;font-weight:600;flex:1;">
+              ${esc(sector)}
+              <span style="font-weight:400;color:var(--text-muted);font-size:0.8125rem;margin-left:4px;">
+                · ${sectorUsers.length} pessoa${sectorUsers.length>1?'s':''}
+              </span>
+            </span>
+            <span style="display:flex;align-items:center;gap:12px;font-size:0.75rem;
+              color:var(--text-muted);">
+              ${absentCount > 0 ? `
+                <span title="${absentCount} com ausência no período">
+                  📌 ${absentCount}
+                </span>
+              ` : ''}
+              <span style="font-weight:700;color:${rateColor};font-size:0.875rem;
+                min-width:42px;text-align:right;">${avgRate}%</span>
+              <div style="width:60px;height:5px;background:var(--bg-elevated);
+                border-radius:3px;overflow:hidden;">
+                <div style="height:100%;width:${avgRate}%;background:${rateColor};
+                  border-radius:3px;"></div>
+              </div>
+            </span>
+          </button>
+
+          ${isOpen ? `
+            <div class="team-sector-body" style="padding:14px 18px;">
+              <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start;">
+                <!-- Bars desta área -->
+                <div style="background:var(--bg-surface);border-radius:8px;padding:8px 0;">
+                  ${sectorUsers.map(u => `
+                    <div style="padding:8px 14px;border-bottom:1px solid var(--border-subtle);">
+                      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+                        <div class="avatar avatar-sm" style="background:${u.avatarColor};flex-shrink:0;position:relative;">
+                          ${userAvatarInner(u)}
+                        </div>
+                        <div style="flex:1;min-width:0;">
+                          <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.name.split(' ')[0])}</div>
+                          <div style="font-size:0.6875rem;color:var(--text-muted);">${u.available}/${u.total}d</div>
+                        </div>
+                        <span style="font-size:0.8125rem;font-weight:700;color:${u.rate>=80?'#22C55E':u.rate>=50?'#F59E0B':'#EF4444'};">${u.rate}%</span>
+                      </div>
+                      <div style="height:4px;background:var(--bg-elevated);border-radius:2px;overflow:hidden;">
+                        <div style="height:100%;width:${u.rate}%;background:${u.rate>=80?'#22C55E':u.rate>=50?'#F59E0B':'#EF4444'};border-radius:2px;"></div>
+                      </div>
+                    </div>
+                  `).join('')}
                 </div>
-                <div style="height:4px;background:var(--bg-elevated);border-radius:2px;overflow:hidden;">
-                  <div style="height:100%;width:${u.rate}%;background:${u.rate>=80?'#22C55E':u.rate>=50?'#F59E0B':'#EF4444'};border-radius:2px;"></div>
+
+                <!-- Calendar desta área -->
+                <div style="background:var(--bg-surface);border-radius:8px;padding:6px;overflow-x:auto;">
+                  <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
+                    <thead><tr>
+                      <th style="padding:4px 8px;text-align:left;color:var(--text-muted);min-width:80px;">Membro</th>
+                      ${days.map(d => {
+                        const isWe = d.getDay()===0||d.getDay()===6;
+                        return `<th style="padding:4px 2px;text-align:center;color:${isWe?'var(--border-default)':'var(--text-muted)'};min-width:26px;">${d.getDate()}</th>`;
+                      }).join('')}
+                    </tr></thead>
+                    <tbody>
+                      ${sectorUsers.map(u => `
+                        <tr>
+                          <td style="padding:3px 8px;font-size:0.75rem;color:var(--text-secondary);
+                            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;">
+                            ${esc(u.name.split(' ')[0])}
+                          </td>
+                          ${days.map(d => {
+                            const isWe = d.getDay()===0||d.getDay()===6;
+                            const ab   = u.absences.find(a => {
+                              const s = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
+                              const e = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
+                              s.setHours(0,0,0,0); e.setHours(23,59,59,999);
+                              const dd = new Date(d); dd.setHours(12);
+                              return dd>=s && dd<=e;
+                            });
+                            const td = ab ? (ABSENCE_TYPES.find(t=>t.value===ab.type)||ABSENCE_TYPES[5]) : null;
+                            const isPartial = !!ab?.partial;
+                            const tooltip = ab
+                              ? (isPartial
+                                  ? `${td.label} · parcial (${formatTimePart(ab.startDate)}-${formatTimePart(ab.endDate)})`
+                                  : td.label)
+                              : (isWe ? 'Fim de semana' : 'Disponível');
+                            return `<td style="padding:2px 1px;text-align:center;">
+                              <div style="width:22px;height:22px;border-radius:3px;margin:0 auto;
+                                display:flex;align-items:center;justify-content:center;font-size:0.625rem;
+                                background:${ab?(isPartial?td.color+'1A':td.color+'33'):isWe?'var(--bg-elevated)':'transparent'};
+                                color:${ab?td.color:'var(--text-muted)'};
+                                border:1px solid ${ab?td.color+'55':'transparent'};
+                                ${isPartial ? 'background-image:linear-gradient(135deg,'+td.color+'33 50%,transparent 50%);' : ''}"
+                                title="${esc(tooltip)}">
+                                ${ab?td.icon:isWe?'—':''}
+                              </div>
+                            </td>`;
+                          }).join('')}
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            `).join('')}
-          `).join('')}
-        </div>
-      </div>
-
-      <!-- Calendar — agrupado por área -->
-      <div class="card">
-        <div class="card-header"><div class="card-title">📅 Calendário de ausências</div></div>
-        <div class="card-body" style="overflow-x:auto;">
-          <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
-            <thead><tr>
-              <th style="padding:4px 8px;text-align:left;color:var(--text-muted);min-width:80px;">Membro</th>
-              ${days.map(d => {
-                const isWe = d.getDay()===0||d.getDay()===6;
-                return `<th style="padding:4px 2px;text-align:center;color:${isWe?'var(--border-default)':'var(--text-muted)'};min-width:26px;">${d.getDate()}</th>`;
-              }).join('')}
-            </tr></thead>
-            <tbody>
-              ${sortedSectors.map(sector => `
-                <tr>
-                  <td colspan="${days.length + 1}"
-                    style="padding:8px 8px 4px;font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-                    letter-spacing:0.08em;color:var(--text-muted);background:var(--bg-surface);
-                    border-bottom:1px solid var(--border-subtle);">
-                    ${esc(sector)} <span style="font-weight:400;opacity:0.6;">(${teamBySector[sector].length})</span>
-                  </td>
-                </tr>
-                ${teamBySector[sector].map(u => `
-                  <tr>
-                    <td style="padding:3px 8px;font-size:0.75rem;color:var(--text-secondary);
-                      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;">
-                      ${esc(u.name.split(' ')[0])}
-                    </td>
-                    ${days.map(d => {
-                      const isWe = d.getDay()===0||d.getDay()===6;
-                      const ab   = u.absences.find(a => {
-                        const s = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
-                        const e = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
-                        s.setHours(0,0,0,0); e.setHours(23,59,59,999);
-                        const dd = new Date(d); dd.setHours(12);
-                        return dd>=s && dd<=e;
-                      });
-                      const td = ab ? (ABSENCE_TYPES.find(t=>t.value===ab.type)||ABSENCE_TYPES[5]) : null;
-                      const isPartial = !!ab?.partial;
-                      const tooltip = ab
-                        ? (isPartial
-                            ? `${td.label} · parcial (${formatTimePart(ab.startDate)}-${formatTimePart(ab.endDate)})`
-                            : td.label)
-                        : (isWe ? 'Fim de semana' : 'Disponível');
-                      return `<td style="padding:2px 1px;text-align:center;">
-                        <div style="width:22px;height:22px;border-radius:3px;margin:0 auto;
-                          display:flex;align-items:center;justify-content:center;font-size:0.625rem;
-                          background:${ab?(isPartial?td.color+'1A':td.color+'33'):isWe?'var(--bg-elevated)':'transparent'};
-                          color:${ab?td.color:'var(--text-muted)'};
-                          border:1px solid ${ab?td.color+'55':'transparent'};
-                          ${isPartial ? 'background-image:linear-gradient(135deg,'+td.color+'33 50%,transparent 50%);' : ''}"
-                          title="${esc(tooltip)}">
-                          ${ab?td.icon:isWe?'—':''}
-                        </div>
-                      </td>`;
-                    }).join('')}
-                  </tr>
-                `).join('')}
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </div>
+          ` : ''}
+        </div>`;
+      }).join('')}
     </div>
 
     <!-- Legend -->
@@ -587,6 +657,27 @@ async function renderTeamAvailability(container) {
       `).join('')}
     </div>
   `;
+
+  // 4.40.4+ Accordion toggles por área
+  container.querySelectorAll('.team-sector-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sector = btn.dataset.sector;
+      if (_teamOpenSectors.has(sector)) _teamOpenSectors.delete(sector);
+      else _teamOpenSectors.add(sector);
+      _persistOpenSectors();
+      renderTeamAvailability(container);
+    });
+  });
+  document.getElementById('team-expand-all')?.addEventListener('click', () => {
+    sortedSectors.forEach(s => _teamOpenSectors.add(s));
+    _persistOpenSectors();
+    renderTeamAvailability(container);
+  });
+  document.getElementById('team-collapse-all')?.addEventListener('click', () => {
+    _teamOpenSectors.clear();
+    _persistOpenSectors();
+    renderTeamAvailability(container);
+  });
 
   // 4.35.28+ Navegação adaptativa ao período + filtros pills + custom range
   document.getElementById('team-avail-prev')?.addEventListener('click', () => {
