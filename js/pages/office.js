@@ -169,7 +169,7 @@ function rightWallPath(cx, cy, h = 50) {
 
 /* ─── Estado e render ─────────────────────────────────────── */
 
-export // 4.38.0+ Estado da câmera virtual
+// 4.38.0+ Estado da câmera virtual
 let _cam = {
   zoom: 1,
   panX: 0,
@@ -177,7 +177,7 @@ let _cam = {
   focusedRoom: null,  // id da sala em zoom drill-down
 };
 
-async function renderOffice(container) {
+export async function renderOffice(container) {
   if (!store.isMaster() && !store.can('office_view')) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
