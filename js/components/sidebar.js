@@ -88,6 +88,8 @@ const NAV_GROUPS = [
       { route: 'ai-hub',     icon: 'ai-hub',     label: 'IA Hub',            perm: 'system_manage_settings' },
       // 'ai-skills' DEPRECADO em favor do IA Hub. Skills migradas viram agents.
       { route: 'audit',           icon: 'audit',      label: 'Auditoria',           perm: 'system_manage_settings' },
+      // 4.36.0+ Escritório Virtual — visualização real-time dos users no sistema
+      { route: 'office',          icon: 'office',     label: 'Escritório Virtual',  perm: 'office_view' },
       { route: 'governance',      icon: 'governance', label: 'Governança',          perm: null }, // todos os autenticados
       { route: 'system-feedback', icon: 'feedbacks',  label: 'Feedbacks do Sistema',perm: 'system_manage_settings' },
       { route: 'settings',        icon: 'settings',   label: 'Configurações',       perm: 'system_manage_settings' },

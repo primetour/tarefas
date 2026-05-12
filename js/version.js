@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 35,
-  patch: 35,
-  build: '20260512-category-nav-await-fix',
+  minor: 36,
+  patch: 0,
+  build: '20260512-virtual-office-mvp',
 };
 
 /** "1.2.0" */

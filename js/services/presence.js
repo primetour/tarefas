@@ -46,6 +46,7 @@ let _presenceUnsub  = null;
 let _beforeunloadHandler = null;
 let _visibilityHandler = null;
 let _activityHandler   = null;
+let _hashChangeHandler = null;
 let _lastActivityTs = 0;
 let _lastWriteTs    = 0;
 let _lastWrittenState = null;
@@ -85,6 +86,11 @@ export function startPresence() {
       if (!force && !stateChanged && elapsed < interval) return;
 
       const profile = store.get('userProfile');
+      // 4.36.0+ currentRoute: rota atual do user pra alimentar o /office
+      // (Escritório Virtual). Lido via location.hash; usuários podem opt-out
+      // via profile.prefs.appearInOffice = false (default true).
+      const currentRoute = (typeof location !== 'undefined' ? location.hash.slice(1) : '') || 'home';
+      const appearInOffice = profile?.prefs?.appearInOffice !== false;
       // 4.35.27+ inclui photoURL (foto do SSO Microsoft ou upload manual)
       // pra header.js renderizar foto real em vez de cair sempre nas iniciais.
       // Foto pode ser grande (~50-80KB base64) — mesmo assim cabe no doc
@@ -98,6 +104,9 @@ export function startPresence() {
         state,
         lastSeen: serverTimestamp(),
         lastActivityAt: _lastActivityTs,
+        // 4.36.0+ Escritório Virtual
+        currentRoute: appearInOffice ? currentRoute : null,
+        appearInOffice,
       }, { merge: true });
 
       // ── Acumulador diário de tempo de uso (presence_daily) ─────
@@ -177,6 +186,10 @@ export function startPresence() {
   };
   document.addEventListener('visibilitychange', _visibilityHandler);
 
+  // 4.36.0+ Heartbeat forçado ao trocar de rota (alimenta o Escritório Virtual)
+  _hashChangeHandler = () => writeHeartbeat(true);
+  window.addEventListener('hashchange', _hashChangeHandler);
+
   // ─── Cleanup no fechamento da aba ───────────────────────
   _beforeunloadHandler = () => {
     try { deleteDoc(doc(db, 'presence', user.uid)); } catch {}
@@ -232,6 +245,10 @@ export function stopPresence() {
       try { window.removeEventListener(ev, _activityHandler, { capture: true }); } catch {}
     });
     _activityHandler = null;
+  }
+  if (_hashChangeHandler) {
+    try { window.removeEventListener('hashchange', _hashChangeHandler); } catch {}
+    _hashChangeHandler = null;
   }
   // Tenta apagar o doc de presence (best-effort)
   const user = store.get('currentUser');

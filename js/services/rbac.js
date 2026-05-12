@@ -101,6 +101,8 @@ export const PERMISSION_CATALOG = [
       // Antes ficava agrupada em portal_manage; separamos pra liberar pra diretoria
       // sem dar acesso a todo o resto da administração do Portal.
       { key: 'portal_images_manage', label: 'Gerenciar Banco de Imagens',          info: 'Upload, edição e exclusão de imagens no banco. Restrito à diretoria e administradores.' },
+      // 4.36.0+ Escritório Virtual (visualização de presença em tempo real)
+      { key: 'office_view',          label: 'Acessar Escritório Virtual',          info: 'Ver mapa real-time dos colegas online e em qual módulo cada um está. Restrito a gestores e diretoria.' },
       { key: 'portal_download_unlimited', label: 'Downloads ilimitados',           info: 'Gerar downloads sem limite diário. Parceiros têm limite de 5/dia.' },
     ],
   },
@@ -232,6 +234,7 @@ export const SYSTEM_ROLES = [
       branding_manage: true,
       ai_skills_manage: true, ai_dashboard_view: true, ai_keys_manage: true,
       luxury_travel_manage: true,
+      office_view: true,
       // Segurança: Head tem acesso quase total (mas master pode revogar)
       audit_logs_view: true, security_digest_view: true,
       security_alerts_receive: true, secrets_audit_view: true,
@@ -273,6 +276,7 @@ export const SYSTEM_ROLES = [
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: true, ai_keys_manage: false,
       luxury_travel_manage: false,
+      office_view: true,
       // Segurança: Gerente vê audit logs do squad + recebe alertas
       audit_logs_view: true, security_digest_view: false,
       security_alerts_receive: true, secrets_audit_view: false,
