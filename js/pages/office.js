@@ -195,15 +195,30 @@ export async function renderOffice(container) {
       </div>
     </div>
 
+    <!-- 4.37.0+ Stage com background dinâmico (day/night cycle) -->
     <div id="office-stage" style="
       position:relative;
       width:100%;
       min-height:720px;
-      background:linear-gradient(180deg, var(--bg-base) 0%, var(--bg-surface) 100%);
+      background:${getTimeOfDayGradient()};
       border:1px solid var(--border-subtle);
       border-radius:14px;
       overflow:hidden;
       padding:12px;
+      transition:background 1.5s ease-in-out;
+    "></div>
+
+    <!-- 4.37.0+ Activity feed flutuante (toasts narrando ações) -->
+    <div id="office-activity-feed" style="
+      position:fixed;
+      right:24px;
+      bottom:24px;
+      z-index:50;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      pointer-events:none;
+      max-width:320px;
     "></div>
 
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:0.75rem;color:var(--text-muted);">
@@ -237,8 +252,16 @@ export async function renderOffice(container) {
   await pollRecentActivity();
   _activityPollTimer = setInterval(async () => {
     await pollRecentActivity();
+    // 4.37.0+ Também busca eventos novos e mostra como toasts flutuantes
+    await pollAndShowActivities(container);
     repaint(container);
-  }, 20000);  // 20s
+  }, 20000);
+
+  // 4.37.0+ Atualiza background gradient a cada 10min (day/night cycle)
+  setInterval(() => {
+    const stage = container.querySelector('#office-stage');
+    if (stage) stage.style.background = getTimeOfDayGradient();
+  }, 10 * 60 * 1000);
 
   repaint(container);
 }
@@ -1242,7 +1265,7 @@ function avatarOffsetInRoom(idx, total) {
   return { x, y };
 }
 
-/* ─── Render de um avatar ─────────────────────────────────── */
+/* ─── Render de um avatar (4.37.0+ COM CORPO) ─────────────── */
 function renderAvatar(person, x, y, idx = 0) {
   const stateColor = person.state === 'idle'   ? '#F59E0B'
                   : person.state === 'absent'  ? '#7C3AED'
@@ -1251,18 +1274,15 @@ function renderAvatar(person, x, y, idx = 0) {
   const photoFg  = person.photoURL || '';
   const fg       = person.avatarColor || '#3B82F6';
 
-  // 4.36.3+ Balanço (bob) + WALKING (animateMotion) — avatar caminha pela sala
   const bobDuration = 2.4 + (idx * 0.15);
   const bobOffset   = (idx % 4) * 0.3;
   const isStill = person.state === 'idle' || person.state === 'absent';
-
-  // Path de caminhada: 4 pontos numa elipse em torno do ponto base
-  // Duração entre 18-30s, cada user com seed única
   const walkPath = generateWalkPath(person.uid, idx);
-  const walkDur  = 18 + ((idx * 7) % 12);  // 18-30s
-
-  // Cor do anel de "atividade recente" — pisca em dourado se user fez ação no último minuto
+  const walkDur  = 18 + ((idx * 7) % 12);
   const isRecentlyActive = person.recentActivity === true;
+  // Cor do "corpo/torso" — usa avatarColor com tom mais saturado, ou fallback cinza
+  const bodyColor = fg;
+  const bodyDark  = shade(fg, -30);
 
   return `
     <g class="office-avatar" data-uid="${esc(person.uid)}" data-name="${esc(person.name)}"
@@ -1271,47 +1291,50 @@ function renderAvatar(person, x, y, idx = 0) {
        data-absence="${esc(person.absenceType || '')}"
        transform="translate(${x}, ${y})"
        style="cursor:pointer;transition:transform 600ms cubic-bezier(.4,.0,.2,1);">
-      <!-- Walking layer: avatar passeia pela sala -->
       <g>
         ${!isStill ? `<animateMotion dur="${walkDur}s" repeatCount="indefinite" rotate="0"
           path="${walkPath}" calcMode="spline"
           keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"
           keyTimes="0; 0.25; 0.5; 0.75; 1"/>` : ''}
-        <!-- Sombra (segue o bob via animação inversa) -->
-        <ellipse cx="0" cy="10" rx="14" ry="3" fill="rgba(0,0,0,0.25)">
-          ${!isStill ? `<animate attributeName="rx" values="14;12;14" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
-          ${!isStill ? `<animate attributeName="opacity" values="0.25;0.15;0.25" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+        <!-- 4.37.0+ Sombra elongada no chão (mais realista) -->
+        <ellipse cx="0" cy="12" rx="13" ry="3.5" fill="rgba(0,0,0,0.35)">
+          ${!isStill ? `<animate attributeName="rx" values="13;11;13" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+          ${!isStill ? `<animate attributeName="opacity" values="0.35;0.25;0.35" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
         </ellipse>
-        <!-- Bob layer: avatar respira -->
         <g>
           ${!isStill ? `<animateTransform attributeName="transform" type="translate"
             values="0,0;0,-2;0,0;0,-1;0,0" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
-          <circle cx="0" cy="0" r="14" fill="${fg}" stroke="${stateColor}" stroke-width="2.5"/>
+          <!-- 4.37.0+ CORPO (torso): cápsula/elipse com cor do user -->
+          <ellipse cx="0" cy="8" rx="9" ry="6" fill="${bodyDark}" />
+          <path d="M -9,8 Q -9,0 -7,-2 L 7,-2 Q 9,0 9,8 Z" fill="${bodyColor}" stroke="${bodyDark}" stroke-width="0.5"/>
+          <!-- "Gola" -->
+          <ellipse cx="0" cy="-2" rx="6" ry="2" fill="${bodyDark}"/>
+          <!-- CABEÇA (foto ou iniciais, deslocada pra cima do torso) -->
+          <circle cx="0" cy="-8" r="11" fill="${fg}" stroke="${stateColor}" stroke-width="2.5"/>
           ${photoFg ? `
             <clipPath id="clip-${person.uid}">
-              <circle cx="0" cy="0" r="13"/>
+              <circle cx="0" cy="-8" r="10"/>
             </clipPath>
-            <image href="${esc(photoFg)}" x="-13" y="-13" width="26" height="26"
+            <image href="${esc(photoFg)}" x="-10" y="-18" width="20" height="20"
               clip-path="url(#clip-${person.uid})" preserveAspectRatio="xMidYMid slice"/>
           ` : `
-            <text x="0" y="4" text-anchor="middle"
-              style="font-family:-apple-system,sans-serif;font-size:11px;font-weight:700;fill:#fff;pointer-events:none;">${esc(initials)}</text>
+            <text x="0" y="-5" text-anchor="middle"
+              style="font-family:-apple-system,sans-serif;font-size:9px;font-weight:700;fill:#fff;pointer-events:none;">${esc(initials)}</text>
           `}
         </g>
         ${person.isMe ? `
-          <circle cx="0" cy="0" r="17" fill="none" stroke="#D4A843" stroke-width="2" stroke-dasharray="3,2">
-            <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="8s" repeatCount="indefinite"/>
+          <circle cx="0" cy="-8" r="14" fill="none" stroke="#D4A843" stroke-width="2" stroke-dasharray="3,2">
+            <animateTransform attributeName="transform" type="rotate" from="0 0 -8" to="360 0 -8" dur="8s" repeatCount="indefinite"/>
           </circle>
         ` : ''}
         ${person.state === 'active' && !isRecentlyActive ? `
-          <circle cx="0" cy="0" r="14" fill="none" stroke="${stateColor}" stroke-width="2" opacity="0.6">
-            <animate attributeName="r" values="14;22;14" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
+          <circle cx="0" cy="-8" r="11" fill="none" stroke="${stateColor}" stroke-width="2" opacity="0.6">
+            <animate attributeName="r" values="11;18;11" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
             <animate attributeName="opacity" values="0.6;0;0.6" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
           </circle>
         ` : ''}
         ${isRecentlyActive ? `
-          <!-- Atividade recente: ⚡ flutuante acima do avatar -->
-          <text x="0" y="-20" text-anchor="middle" font-size="14" style="pointer-events:none;">
+          <text x="0" y="-26" text-anchor="middle" font-size="14" style="pointer-events:none;">
             ⚡
             <animate attributeName="opacity" values="1;0.3;1" dur="0.8s" repeatCount="indefinite"/>
           </text>
@@ -1427,4 +1450,181 @@ function wireInteractions(stageEl) {
   });
 
   stageEl.addEventListener('mouseleave', removeTip);
+
+  // 4.37.0+ Easter egg: click no robô do IA Hub → frase aleatória
+  const labRoom = stageEl.querySelector('.office-room[data-room="lab-ia"]');
+  if (labRoom) {
+    const robotEls = labRoom.querySelectorAll('.office-furniture');
+    robotEls.forEach(rg => {
+      rg.style.pointerEvents = 'auto';
+      rg.style.cursor = 'help';
+      rg.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const phrases = [
+          'Beep boop. Estou aprendendo agora.',
+          'Detectei alta atividade na sala de Tarefas. Boa, equipe!',
+          'Anthropic Claude: pronto pra ajudar.',
+          'Posso gerar um roteiro pra você?',
+          'Pesquisas CSAT processadas: 12 esta semana.',
+          'Você sabia? Sou alimentado por Cloud Functions e Secret Manager.',
+          'Conecte-me aos seus dados e eu trago insights.',
+        ];
+        const txt = phrases[Math.floor(Math.random() * phrases.length)];
+        showFloatingBubble(rg, txt);
+      });
+    });
+  }
+}
+
+/* ─── 4.37.0+ Day/night cycle (background gradient pela hora real) ── */
+function getTimeOfDayGradient() {
+  const h = new Date().getHours();
+  if (h >= 6 && h < 10) {
+    // manhã — dourado suave
+    return 'linear-gradient(180deg, #FEF3C7 0%, #FDE68A 60%, #FCD34D 100%)';
+  } else if (h >= 10 && h < 17) {
+    // dia — luz brilhante
+    return 'linear-gradient(180deg, #E0F2FE 0%, #BAE6FD 60%, #7DD3FC 100%)';
+  } else if (h >= 17 && h < 19) {
+    // pôr-do-sol — laranja/rosa
+    return 'linear-gradient(180deg, #FED7AA 0%, #FDBA74 40%, #FB923C 100%)';
+  } else if (h >= 19 && h < 22) {
+    // entardecer — roxo
+    return 'linear-gradient(180deg, #C4B5FD 0%, #8B5CF6 60%, #4C1D95 100%)';
+  }
+  // noite — navy escuro
+  return 'linear-gradient(180deg, #1E293B 0%, #0F172A 100%)';
+}
+
+function isNightTime() {
+  const h = new Date().getHours();
+  return h >= 19 || h < 6;
+}
+
+/* ─── 4.37.0+ Activity feed: lê audit_logs e mostra toasts ── */
+let _lastActivitySeen = Date.now();
+let _activityKnownIds = new Set();
+
+async function pollAndShowActivities(container) {
+  try {
+    const { db } = await import('../firebase.js');
+    const { collection, query, where, getDocs, Timestamp, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const sinceMs = _lastActivitySeen;
+    _lastActivitySeen = Date.now();
+
+    const snap = await getDocs(query(
+      collection(db, 'audit_logs'),
+      where('timestamp', '>=', Timestamp.fromMillis(sinceMs)),
+      orderBy('timestamp', 'desc'),
+      limit(10),
+    ));
+
+    const events = snap.docs
+      .filter(d => !_activityKnownIds.has(d.id))
+      .map(d => {
+        _activityKnownIds.add(d.id);
+        return { id: d.id, ...d.data() };
+      });
+
+    // Limita memória (evita grow infinito)
+    if (_activityKnownIds.size > 500) {
+      _activityKnownIds = new Set([..._activityKnownIds].slice(-200));
+    }
+
+    events.forEach(e => showActivityToast(container, e));
+  } catch (_) {
+    // sem permissão pra audit_logs → silencia
+  }
+}
+
+const ACTION_TEXTS = {
+  'task.create':         (e) => `${e.userName} criou uma tarefa`,
+  'task.update':         (e) => `${e.userName} atualizou uma tarefa`,
+  'task.complete':       (e) => `${e.userName} concluiu uma tarefa`,
+  'task.delete':         (e) => `${e.userName} excluiu uma tarefa`,
+  'csat.send':           (e) => `${e.userName} enviou uma pesquisa CSAT`,
+  'csat.response':       (e) => `Resposta CSAT recebida`,
+  'portal_images.upload':(e) => `${e.userName} fez upload no Banco de Imagens`,
+  'portal_images.delete':(e) => `${e.userName} removeu uma imagem`,
+  'roteiro.create':      (e) => `${e.userName} criou um roteiro`,
+  'roteiro.update':      (e) => `${e.userName} editou um roteiro`,
+  'project.create':      (e) => `${e.userName} criou um projeto`,
+  'workspace.create':    (e) => `${e.userName} criou um squad`,
+  'goal.published':      (e) => `${e.userName} publicou uma meta`,
+  'feedback.create':     (e) => `${e.userName} registrou um feedback`,
+};
+
+function actionToText(event) {
+  const fn = ACTION_TEXTS[event.action];
+  if (fn) return fn(event);
+  // Fallback: humaniza a action key
+  const parts = String(event.action || 'algo').split('.');
+  return `${event.userName || 'Alguém'} ${parts[1] || 'fez algo'} em ${parts[0] || 'sistema'}`;
+}
+
+function showActivityToast(container, event) {
+  const feed = document.getElementById('office-activity-feed');
+  if (!feed) return;
+  const text = actionToText(event);
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    background:var(--bg-card, #1A2332);
+    color:var(--text-primary, #E8ECF1);
+    border-left:3px solid #D4A843;
+    border-radius:6px;
+    padding:8px 14px;
+    font-size:0.8125rem;
+    box-shadow:0 4px 14px rgba(0,0,0,0.25);
+    opacity:0;
+    transform:translateX(20px);
+    transition:opacity 300ms, transform 300ms;
+    pointer-events:auto;
+  `;
+  toast.innerHTML = `<span style="color:#D4A843;">●</span> ${esc(text)}`;
+  feed.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateX(0)';
+  });
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(20px)';
+    setTimeout(() => toast.remove(), 400);
+  }, 5500);
+}
+
+/* ─── Easter egg bubble (4.37.0+) ── */
+function showFloatingBubble(targetEl, text) {
+  const existing = document.querySelector('.office-bubble');
+  if (existing) existing.remove();
+  const bubble = document.createElement('div');
+  bubble.className = 'office-bubble';
+  bubble.style.cssText = `
+    position:fixed;z-index:9999;
+    background:var(--bg-card, #1A2332);
+    color:var(--text-primary, #E8ECF1);
+    border:1.5px solid #A78BFA;
+    border-radius:14px;
+    padding:10px 16px;
+    font-size:0.8125rem;
+    max-width:240px;line-height:1.45;
+    box-shadow:0 6px 20px rgba(167,139,250,0.4);
+    pointer-events:none;
+    opacity:0;transform:translateY(8px) scale(0.9);
+    transition:all 250ms cubic-bezier(.4,0,.2,1);
+  `;
+  bubble.innerHTML = `<strong style="color:#A78BFA;">🤖</strong> ${esc(text)}`;
+  document.body.appendChild(bubble);
+  const r = targetEl.getBoundingClientRect();
+  bubble.style.left = (r.left + r.width / 2 - 120) + 'px';
+  bubble.style.top  = (r.top - bubble.offsetHeight - 14) + 'px';
+  requestAnimationFrame(() => {
+    bubble.style.opacity = '1';
+    bubble.style.transform = 'translateY(0) scale(1)';
+  });
+  setTimeout(() => {
+    bubble.style.opacity = '0';
+    bubble.style.transform = 'translateY(-4px) scale(0.92)';
+    setTimeout(() => bubble.remove(), 250);
+  }, 4500);
 }

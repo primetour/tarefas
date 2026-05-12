@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 36,
-  patch: 4,
-  build: '20260512-office-themed-rooms',
+  minor: 37,
+  patch: 0,
+  build: '20260512-office-immersion-depth',
 };
 
 /** "1.2.0" */
