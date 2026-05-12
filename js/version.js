@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 6,
-  build: '20260512-image-bank-followups',
+  patch: 7,
+  build: '20260512-sticky-bar-gap-fix',
 };
 
 /** "1.2.0" */

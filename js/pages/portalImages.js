@@ -285,12 +285,15 @@ function uploadPanelHtml() {
       <!-- Step 2: Per-image metadata (appears after drop) -->
       <div id="img-batch-list" style="display:none;">
         ${/* 4.40.5+ Action bar STICKY no topo da viewport ao scroll. Botões
-              'Aplicar a todas' e 'Enviar todas' ficam sempre visíveis. */ ''}
+              'Aplicar a todas' e 'Enviar todas' ficam sempre visíveis.
+              4.40.7+ top:calc(0px - var(--space-6)) cancela o padding-top
+              da .page-content (24px) — antes ficava um gap branco visível
+              entre o topo da viewport e a barra ao scrollar. */ ''}
         <div id="img-batch-actions" style="padding:14px 24px;background:var(--bg-surface);
           border-bottom:1px solid var(--border-subtle);
           display:flex;align-items:center;justify-content:space-between;gap:12px;
           position:sticky;top:0;z-index:20;
-          box-shadow:0 2px 8px rgba(0,0,0,.18);">
+          box-shadow:0 -24px 0 var(--bg-surface),0 2px 8px rgba(0,0,0,.18);">
           <div style="min-width:0;flex:1;">
             <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
               letter-spacing:.07em;color:var(--text-muted);">2 · Configure cada imagem</div>
