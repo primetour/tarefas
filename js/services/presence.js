@@ -85,10 +85,15 @@ export function startPresence() {
       if (!force && !stateChanged && elapsed < interval) return;
 
       const profile = store.get('userProfile');
+      // 4.35.27+ inclui photoURL (foto do SSO Microsoft ou upload manual)
+      // pra header.js renderizar foto real em vez de cair sempre nas iniciais.
+      // Foto pode ser grande (~50-80KB base64) — mesmo assim cabe no doc
+      // (limite Firestore 1MB) e o batch de presence rod a a cada 30s.
       await setDoc(doc(db, 'presence', user.uid), {
         uid:      user.uid,
         name:     profile?.name || '',
         email:    profile?.email || '',
+        photoURL: profile?.photoURL || null,
         avatarColor: profile?.avatarColor || '#6B7280',
         state,
         lastSeen: serverTimestamp(),

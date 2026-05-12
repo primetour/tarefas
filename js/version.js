@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 26,
-  build: '20260512-email-notifs-template-trigger',
+  patch: 27,
+  build: '20260512-presence-photoURL-fix',
 };
 
 /** "1.2.0" */

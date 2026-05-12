@@ -409,7 +409,16 @@ export class Header {
       const usersById = new Map((store.get('users') || []).map(u => [u.id, u]));
       const enrich = (u, state) => {
         const full = usersById.get(u.uid);
-        return { ...u, state, sector: full?.sector || full?.department || '' };
+        // 4.35.27+ photoURL: presence doc só passou a gravar foto recentemente,
+        // então até todos terem re-feito heartbeat usamos o `users` store como
+        // fallback (que tem photoURL sincronizado da SSO).
+        return {
+          ...u,
+          state,
+          sector:   full?.sector || full?.department || '',
+          photoURL: u.photoURL || full?.photoURL || null,
+          avatarColor: u.avatarColor || full?.avatarColor || '#3B82F6',
+        };
       };
       // Mostra ativos primeiro, depois ausentes
       const allOthers = [
