@@ -1195,140 +1195,27 @@ function renderPage(container) {
 
   container.innerHTML = `
     <div style="padding:0;">
-      <!-- Header -->
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
-        <div style="display:flex;flex-direction:column;gap:6px;min-width:0;flex:1;">
-          <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0;white-space:nowrap;">
-            📱 Calendário de Conteúdo
-          </h1>
-          ${/* 4.35.16+ Chips em uma linha só (overflow-x scroll se passar). Labels
-                de tipo abreviam se muito longos pra não quebrar layout. */ ''}
-          ${hasTypesSelected ? `
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow-x:auto;
-              padding:2px 0;min-width:0;">
-              <span style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
-                letter-spacing:.08em;color:var(--text-muted);flex-shrink:0;white-space:nowrap;">
-                Tipo${selectedTypesLabels.length>1?'s':''}:
-              </span>
-              ${selectedTypesLabels.map((tl, i) => `
-                <button class="cc-type-chip" data-type-id="${esc(visibleTaskTypes[i])}"
-                  title="Remover ${esc(tl.name)}" style="
-                  display:inline-flex;align-items:center;gap:6px;padding:3px 8px 3px 10px;
-                  border-radius:14px;font-size:0.8125rem;font-weight:500;cursor:pointer;
-                  border:1px solid ${tl.color}66;background:${tl.color}15;color:${tl.color};
-                  font-family:inherit;flex-shrink:0;white-space:nowrap;max-width:200px;">
-                  <span>${esc(tl.icon)}</span>
-                  <span style="overflow:hidden;text-overflow:ellipsis;">${esc(tl.name)}</span>
-                  <span style="font-size:0.875rem;line-height:1;opacity:0.6;margin-left:2px;">✕</span>
-                </button>
-              `).join('')}
-              <button id="cc-clear-types" style="font-size:0.6875rem;color:var(--text-muted);
-                background:none;border:none;cursor:pointer;padding:3px 6px;flex-shrink:0;white-space:nowrap;
-                text-decoration:underline;">limpar todos</button>
-            </div>
-          ` : ''}
-          ${/* 4.35.17+ Subtitulo movido pra fora desse flex column — fica
-                comprimido pela toolbar a direita. Agora em linha propria abaixo,
-                full-width, 1 linha sem ellipsis. */ ''}
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          ${hasContext ? `
-          <!-- View toggle -->
-          <div style="display:flex;border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;overflow:hidden;">
-            ${[['month', 'Mes'], ['week', 'Semana'], ['list', 'Lista']].map(([v, l]) => `
-              <button data-view="${v}" style="padding:6px 14px;border:none;cursor:pointer;font-size:0.8125rem;
-                background:${activeView === v ? 'var(--brand-gold,#D4A843)' : 'var(--bg-surface,#16202C)'};
-                color:${activeView === v ? '#FFFFFF' : 'var(--text-muted,#5A6B7A)'};
-                transition:all 0.15s;font-weight:${activeView === v ? '600' : '400'};">${l}</button>
-            `).join('')}
-          </div>` : ''}
+      ${/* 4.35.18+ Header reorganizado em 5 LINHAS pra dar espaço suficiente:
+           1) h1 + ⚙ config (admin) à direita
+           2) subtitle full-width
+           3) chips de TIPOS (1 linha, scroll horizontal)
+           4) toolbar com view+nav+filtros+actions+export
+           5) chips de PROJETOS + add (em outro bloco abaixo) */ ''}
 
-          ${/* 4.35.12+ Account selector removido: módulo agora cobre tipos
-                 além de redes sociais. Tudo passa pelo tipo de tarefa. */ ''}
-
-          ${hasContext ? `
-          <!-- Navigation -->
-          <div style="display:flex;align-items:center;gap:4px;">
-            <button id="cc-prev" style="padding:6px 10px;border:1px solid var(--border-subtle,#1E2D3D);
-              border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
-              cursor:pointer;font-size:0.875rem;" title="Anterior">&#9664;</button>
-            <span style="font-size:0.875rem;font-weight:600;color:var(--text-primary,#E8ECF1);
-              min-width:180px;text-align:center;">${esc(navLabel)}</span>
-            <button id="cc-next" style="padding:6px 10px;border:1px solid var(--border-subtle,#1E2D3D);
-              border-radius:8px;background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
-              cursor:pointer;font-size:0.875rem;" title="Proximo">&#9654;</button>
-          </div>
-
-          <!-- 4.25+ Toggle: mostrar tarefas dos projetos como slots no calendário -->
-          <button id="cc-toggle-tasks" title="${showProjectTasks ? 'Ocultar' : 'Mostrar'} tarefas dos projetos no calendário"
-            style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
-            border-radius:8px;background:${showProjectTasks ? 'rgba(14,165,233,0.12)' : 'var(--bg-surface,#16202C)'};
-            color:${showProjectTasks ? '#0EA5E9' : 'var(--text-muted)'};
-            font-size:0.8125rem;font-weight:500;cursor:pointer;transition:all 0.15s;
-            display:inline-flex;align-items:center;gap:6px;">
-            <span style="font-size:0.875rem;">${showProjectTasks ? '👁' : '🚫'}</span>
-            <span>Tarefas dos projetos</span>
-          </button>
-
-          <!-- 4.26+ Filtro fino: tipos de tarefa visíveis -->
-          <button id="cc-filter-task-types" title="Escolher quais tipos de tarefa exibir"
-            style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
-            border-radius:8px;background:var(--bg-surface,#16202C);
-            color:var(--text-primary,#E8ECF1);
-            font-size:0.8125rem;font-weight:500;cursor:pointer;transition:all 0.15s;
-            display:${showProjectTasks ? 'inline-flex' : 'none'};align-items:center;gap:6px;">
-            <span style="font-size:0.875rem;">+</span>
-            <span>${visibleTaskTypes === null ? 'Tipos: todos' : `Tipos: ${visibleTaskTypes.length}`}</span>
-          </button>
-
-          <!-- Action buttons -->
-          <button id="cc-new-slot" style="padding:6px 16px;border:none;border-radius:8px;
-            background:var(--brand-gold,#D4A843);color:#FFFFFF;font-size:0.8125rem;font-weight:600;
-            cursor:pointer;transition:opacity 0.15s;">+ Novo Slot</button>
-          <button id="cc-suggest-week" style="padding:6px 16px;border:1px solid var(--brand-gold,#D4A843);
-            border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);
-            font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">
-            IA: Sugerir Semana</button>
-          ${/* 4.35.16+ Acesso rapido pra /content-config (era no sidebar, saiu pra
-                não poluir). Só admin/master enxerga. */ ''}
-          ${(store.can('system_manage_settings') || store.isMaster()) ? `
-            <button id="cc-config-btn" title="Configurar plataformas, tipos e categorias"
-              style="padding:6px 10px;border:1px solid var(--border-subtle);border-radius:8px;
-              background:var(--bg-surface);color:var(--text-muted);font-size:0.875rem;
-              cursor:pointer;" onclick="location.hash='content-config'">⚙</button>` : ''}` : ''}
-          ${hasContext ? `
-          <!-- Split-button Export (consolida XLS+PDF) -->
-          <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
-            <button class="uikit-export-trigger" data-export-trigger="1"
-              style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;
-              background:var(--bg-surface,#16202C);color:var(--text-primary,#E8ECF1);
-              font-size:0.8125rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;">
-              <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
-            </button>
-            <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
-              background:var(--bg-card,#0F1923);border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;
-              min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.4);z-index:100;padding:4px;">
-              <button class="uikit-export-item" id="cc-export-xls"
-                style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
-                background:transparent;border:none;cursor:pointer;font-size:0.8125rem;color:var(--text-primary);
-                border-radius:6px;font-family:inherit;">
-                <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
-              </button>
-              <button class="uikit-export-item" id="cc-export-pdf"
-                style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
-                background:transparent;border:none;cursor:pointer;font-size:0.8125rem;color:var(--text-primary);
-                border-radius:6px;font-family:inherit;">
-                <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
-              </button>
-            </div>
-          </div>` : ''}
-        </div>
+      <!-- LINHA 1: Título + ⚙ -->
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;">
+        <h1 style="font-size:1.5rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0;white-space:nowrap;">
+          📱 Calendário de Conteúdo
+        </h1>
+        ${(store.can('system_manage_settings') || store.isMaster()) ? `
+          <button id="cc-config-btn" title="Configurar plataformas, tipos e categorias"
+            style="padding:6px 10px;border:1px solid var(--border-subtle);border-radius:8px;
+            background:var(--bg-surface);color:var(--text-muted);font-size:0.875rem;
+            cursor:pointer;flex-shrink:0;" onclick="location.hash='content-config'">⚙ Config</button>` : ''}
       </div>
 
-      ${/* 4.35.17+ Subtitulo em linha propria abaixo do header (full-width),
-            antes era dentro da coluna do h1 e ficava espremido pela toolbar */ ''}
-      <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:-4px 0 12px 0;
-        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+      <!-- LINHA 2: Subtitle full-width -->
+      <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0 0 12px 0;">
         ${hasTypesSelected
           ? 'Calendário dos tipos de tarefa selecionados. Adicione projeto pra visualizar tarefas já previstas na rotina.'
           : hasProjectSelected
@@ -1337,6 +1224,123 @@ function renderPage(container) {
                 : 'Calendário deste projeto. Adicione tipos pra refinar.')
             : 'Selecione tipo(s) abaixo pra ver o calendário.'}
       </p>
+
+      <!-- LINHA 3: Chips de TIPOS (full-width, scroll horizontal se necessário) -->
+      ${hasTypesSelected ? `
+        <div style="display:flex;align-items:center;gap:6px;overflow-x:auto;
+          padding:4px 0;margin-bottom:10px;">
+          <span style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+            letter-spacing:.08em;color:var(--text-muted);flex-shrink:0;white-space:nowrap;">
+            Tipo${selectedTypesLabels.length>1?'s':''}:
+          </span>
+          ${selectedTypesLabels.map((tl, i) => `
+            <button class="cc-type-chip" data-type-id="${esc(visibleTaskTypes[i])}"
+              title="Remover ${esc(tl.name)}" style="
+              display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 12px;
+              border-radius:14px;font-size:0.8125rem;font-weight:500;cursor:pointer;
+              border:1px solid ${tl.color}66;background:${tl.color}15;color:${tl.color};
+              font-family:inherit;flex-shrink:0;white-space:nowrap;">
+              <span>${esc(tl.icon)}</span>
+              <span>${esc(tl.name)}</span>
+              <span style="font-size:0.875rem;line-height:1;opacity:0.6;margin-left:2px;">✕</span>
+            </button>
+          `).join('')}
+          <button id="cc-clear-types" style="font-size:0.6875rem;color:var(--text-muted);
+            background:none;border:none;cursor:pointer;padding:3px 6px;flex-shrink:0;white-space:nowrap;
+            text-decoration:underline;">limpar todos</button>
+        </div>
+      ` : ''}
+
+      <!-- LINHA 4: Toolbar (view + nav + filtros + actions + export) -->
+      ${hasContext ? `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;
+        padding:8px 12px;background:var(--bg-surface,#16202C);border-radius:8px;
+        border:1px solid var(--border-subtle,#1E2D3D);">
+
+        <!-- View toggle -->
+        <div style="display:flex;border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;overflow:hidden;">
+          ${[['month', 'Mês'], ['week', 'Semana'], ['list', 'Lista']].map(([v, l]) => `
+            <button data-view="${v}" style="padding:6px 14px;border:none;cursor:pointer;font-size:0.8125rem;
+              background:${activeView === v ? 'var(--brand-gold,#D4A843)' : 'var(--bg-card,#0F1923)'};
+              color:${activeView === v ? '#FFFFFF' : 'var(--text-muted,#5A6B7A)'};
+              transition:all 0.15s;font-weight:${activeView === v ? '600' : '400'};">${l}</button>
+          `).join('')}
+        </div>
+
+        <!-- Navigation -->
+        <div style="display:flex;align-items:center;gap:4px;">
+          <button id="cc-prev" style="padding:6px 10px;border:1px solid var(--border-subtle,#1E2D3D);
+            border-radius:8px;background:var(--bg-card,#0F1923);color:var(--text-primary,#E8ECF1);
+            cursor:pointer;font-size:0.875rem;" title="Anterior">&#9664;</button>
+          <span style="font-size:0.875rem;font-weight:600;color:var(--text-primary,#E8ECF1);
+            min-width:160px;text-align:center;">${esc(navLabel)}</span>
+          <button id="cc-next" style="padding:6px 10px;border:1px solid var(--border-subtle,#1E2D3D);
+            border-radius:8px;background:var(--bg-card,#0F1923);color:var(--text-primary,#E8ECF1);
+            cursor:pointer;font-size:0.875rem;" title="Próximo">&#9654;</button>
+        </div>
+
+        <!-- Toggle: tarefas dos projetos -->
+        <button id="cc-toggle-tasks" title="${showProjectTasks ? 'Ocultar' : 'Mostrar'} tarefas dos projetos no calendário"
+          style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
+          border-radius:8px;background:${showProjectTasks ? 'rgba(14,165,233,0.12)' : 'var(--bg-card,#0F1923)'};
+          color:${showProjectTasks ? '#0EA5E9' : 'var(--text-muted)'};
+          font-size:0.8125rem;font-weight:500;cursor:pointer;transition:all 0.15s;
+          display:inline-flex;align-items:center;gap:6px;">
+          <span style="font-size:0.875rem;">${showProjectTasks ? '👁' : '🚫'}</span>
+          <span>Tarefas dos projetos</span>
+        </button>
+
+        <!-- Filtro fino: tipos visíveis -->
+        <button id="cc-filter-task-types" title="Escolher quais tipos de tarefa exibir"
+          style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
+          border-radius:8px;background:var(--bg-card,#0F1923);
+          color:var(--text-primary,#E8ECF1);
+          font-size:0.8125rem;font-weight:500;cursor:pointer;transition:all 0.15s;
+          display:${showProjectTasks ? 'inline-flex' : 'none'};align-items:center;gap:6px;">
+          <span style="font-size:0.875rem;">+</span>
+          <span>${visibleTaskTypes === null ? 'Tipos: todos' : `Tipos: ${visibleTaskTypes.length}`}</span>
+        </button>
+
+        <!-- Spacer pra empurrar actions pra direita -->
+        <div style="flex:1;"></div>
+
+        <!-- Action buttons -->
+        <button id="cc-new-slot" style="padding:6px 16px;border:none;border-radius:8px;
+          background:var(--brand-gold,#D4A843);color:#FFFFFF;font-size:0.8125rem;font-weight:600;
+          cursor:pointer;transition:opacity 0.15s;">+ Novo Slot</button>
+        <button id="cc-suggest-week" style="padding:6px 16px;border:1px solid var(--brand-gold,#D4A843);
+          border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);
+          font-size:0.8125rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">
+          IA: Sugerir Semana
+        </button>
+
+        <!-- Split-button Export -->
+        <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
+          <button class="uikit-export-trigger" data-export-trigger="1"
+            style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;
+            background:var(--bg-card,#0F1923);color:var(--text-primary,#E8ECF1);
+            font-size:0.8125rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;">
+            <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+          </button>
+          <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
+            background:var(--bg-card,#0F1923);border:1px solid var(--border-subtle,#1E2D3D);border-radius:8px;
+            min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.4);z-index:100;padding:4px;">
+            <button class="uikit-export-item" id="cc-export-xls"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.8125rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>Excel (.xlsx)</span>
+            </button>
+            <button class="uikit-export-item" id="cc-export-pdf"
+              style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:8px 12px;
+              background:transparent;border:none;cursor:pointer;font-size:0.8125rem;color:var(--text-primary);
+              border-radius:6px;font-family:inherit;">
+              <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      ` : ''}
 
       <!-- 4.16+: Chips de projetos ativos (multi-select) -->
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:16px;
