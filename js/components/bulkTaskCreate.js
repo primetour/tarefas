@@ -9,19 +9,18 @@
 import { store } from '../store.js';
 import { modal } from './modal.js';
 import { toast } from './toast.js';
-import { bulkCreateTasks, PRIORITIES, STATUSES } from '../services/tasks.js';
+import { bulkCreateTasks, PRIORITIES, STATUSES, REQUESTING_AREAS } from '../services/tasks.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-// 4.39.0+ Estado interno: linhas + defaults
+// 4.39.0+ Estado interno: linhas + defaults (4.39.2+ usa requestingArea no lugar de sector)
 let _rows = [];
-let _defaults = { workspaceId: '', sector: '', typeId: '', priority: 'medium' };
+let _defaults = { workspaceId: '', requestingArea: '', typeId: '', priority: 'medium' };
 let _users = [];
 let _projects = [];
 let _types = [];
 let _workspaces = [];
-let _sectors = [];
 
 let _rowIdSeq = 0;
 function newRowId() { return 'br-' + (++_rowIdSeq); }
@@ -49,26 +48,23 @@ export async function openBulkTaskCreateModal({ projectId = null, workspaceId = 
   _rows = [emptyRow(), emptyRow(), emptyRow()];  // 3 linhas em branco pra começar
   _defaults = {
     workspaceId: workspaceId || '',
-    sector: '',
+    requestingArea: '',
     typeId: '',
     priority: 'medium',
   };
 
-  // Pre-load dados de apoio (4.39.1+ usa fetchAllWorkspaces + fetchSectors)
+  // 4.39.2+ Pre-load — Área usa REQUESTING_AREAS (canônico, mesmo do form single)
   try {
-    const [usersMod, projsMod, typesMod, wsMod, sectorsMod] = await Promise.all([
+    const [usersMod, projsMod, typesMod, wsMod] = await Promise.all([
       import('../services/users.js'),
       import('../services/projects.js'),
       import('../services/taskTypes.js'),
       import('../services/workspaces.js'),
-      import('../services/sectors.js'),
     ]);
     _users      = (await usersMod.fetchUsers({ active: true }).catch(() => store.get('users') || [])) || [];
     _projects   = (await projsMod.fetchProjects().catch(() => [])) || [];
     _types      = (await typesMod.fetchTaskTypes().catch(() => [])) || [];
     _workspaces = (await wsMod.fetchAllWorkspaces?.().catch(() => [])) || [];
-    _sectors    = (await sectorsMod.fetchSectors?.().catch(() => sectorsMod.getActiveSectors?.() || [])) || [];
-    if (!_sectors.length && sectorsMod.SECTORS) _sectors = sectorsMod.SECTORS.map(s => ({ name: s.name || s, id: s.id || s }));
   } catch (e) {
     console.warn('[bulkTaskCreate] erro pre-load:', e?.message);
   }
@@ -120,13 +116,10 @@ function renderContent() {
             </select>
           </div>
           <div>
-            <label style="font-size:0.7rem;font-weight:600;display:block;margin-bottom:4px;">Setor</label>
-            <select id="bdef-sector" class="form-select" style="width:100%;font-size:0.8125rem;">
-              <option value="">— Nenhum —</option>
-              ${_sectors.map(s => {
-                const name = s.name || s.id || s;
-                return `<option value="${esc(name)}" ${_defaults.sector===name?'selected':''}>${esc(name)}</option>`;
-              }).join('')}
+            <label style="font-size:0.7rem;font-weight:600;display:block;margin-bottom:4px;">Área solicitante</label>
+            <select id="bdef-area" class="form-select" style="width:100%;font-size:0.8125rem;">
+              <option value="">— Nenhuma —</option>
+              ${REQUESTING_AREAS.map(a => `<option value="${esc(a)}" ${_defaults.requestingArea===a?'selected':''}>${esc(a)}</option>`).join('')}
             </select>
           </div>
           <div>
@@ -166,11 +159,6 @@ function renderContent() {
               ${_rows.map((r, i) => renderRow(r, i)).join('')}
             </tbody>
           </table>
-        </div>
-        <!-- Hint visual: scroll lateral -->
-        <div style="padding:6px 12px;background:var(--bg-surface);border-top:1px solid var(--border-subtle);
-          font-size:0.6875rem;color:var(--text-muted);text-align:right;">
-          ← Role lateralmente pra ver todas as colunas →
         </div>
       </div>
 
@@ -237,12 +225,12 @@ function renderRow(r, idx) {
 /* ─── Wire events ───────────────────────────────────────── */
 function wireEvents() {
   // Defaults
-  ['bdef-workspace','bdef-sector','bdef-type','bdef-priority'].forEach(id => {
+  ['bdef-workspace','bdef-area','bdef-type','bdef-priority'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('change', () => {
       const k = id.replace('bdef-', '');
-      const map = { workspace: 'workspaceId', sector: 'sector', type: 'typeId', priority: 'priority' };
+      const map = { workspace: 'workspaceId', area: 'requestingArea', type: 'typeId', priority: 'priority' };
       _defaults[map[k]] = el.value;
     });
   });
@@ -425,18 +413,18 @@ async function handleSubmit() {
   const validRows = _rows.filter(r => r.title.trim().length > 0);
   if (!validRows.length) { toast.error('Preencha pelo menos um título.'); return; }
 
-  // Monta payloads aplicando defaults
+  // Monta payloads aplicando defaults (4.39.2+ requestingArea no lugar de sector)
   const payloads = validRows.map(r => ({
-    title:        r.title.trim(),
-    priority:     r.priority || _defaults.priority || 'medium',
-    typeId:       r.typeId || _defaults.typeId || null,
-    workspaceId:  _defaults.workspaceId || null,
-    sector:       _defaults.sector || '',
-    assignees:    r.assigneeId ? [r.assigneeId] : [],
-    projectId:    r.projectId || null,
-    dueDate:      r.dueDate || null,
-    tags:         r.tags ? r.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-    status:       'not_started',
+    title:          r.title.trim(),
+    priority:       r.priority || _defaults.priority || 'medium',
+    typeId:         r.typeId || _defaults.typeId || null,
+    workspaceId:    _defaults.workspaceId || null,
+    requestingArea: _defaults.requestingArea || '',
+    assignees:      r.assigneeId ? [r.assigneeId] : [],
+    projectId:      r.projectId || null,
+    dueDate:        r.dueDate || null,
+    tags:           r.tags ? r.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+    status:         'not_started',
   }));
 
   const btn = document.querySelector('.modal-footer .btn-primary');

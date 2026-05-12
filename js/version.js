@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 39,
-  patch: 1,
-  build: '20260512-bulk-create-visual-fixes',
+  patch: 2,
+  build: '20260512-bulk-create-area-not-sector',
 };
 
 /** "1.2.0" */
