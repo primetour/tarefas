@@ -6,6 +6,52 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.35.24+20260511-ai-hub-revamp] — 2026-05-11
+
+Release **PATCH** — IA Hub: revisão das 7 abas pra refletir a realidade
+pós-Secret-Manager + cálculo de custo cache-aware.
+
+### Pedido do user
+> "IA hub merece revisao... pq temos a aba API Keys se é tudo via firestore?
+> do jeito q esta parece q a gente configura via sistema. conhecimento nao
+> está atrelado à config do agente? pq tem aba pra isso? logs estao corretos?
+> custos estao corretos? migracao? pra que serve hoje em dia?"
+
+### API Keys
+- Banner verde no topo: "🔐 Anthropic agora é server-side" + caminho de
+  rotação via `firebase functions:secrets:set ANTHROPIC_API_KEY`.
+- Linha do Anthropic na tabela vira read-only ("✓ Secret Manager · server-side").
+- Footnote: "Próximo passo: migrar OpenAI/Gemini/Groq também pro Secret Manager".
+
+### Custos (cálculo cache-aware)
+- `estimateCost()` agora aceita `{ cacheReadTokens, cacheCreationTokens }`.
+  Cache read = 10% do input, cache creation = 125%. Antes os custos eram
+  superestimados pra agentes com prompt caching.
+- Novo KPI "Tokens cache (read)" mostra tokens reutilizados + economia em USD.
+- Tabela "Top agentes" ganhou coluna "Cache ↓" (tokens economizados por agente).
+
+### Biblioteca (ex-Conhecimento)
+- Aba renomeada de "Conhecimento" pra "Biblioteca" pra deixar claro que é
+  pool compartilhado.
+- Banner no topo: "📚 Biblioteca compartilhada — docs reutilizáveis por
+  múltiplos agentes... Fontes externas (SharePoint, GDrive, GitHub) ficam
+  no editor do agente, não aqui".
+
+### Migração (auto-detecta status)
+- Sonda contagem de `ai_skills` e `ai_automations`. Se ambos zerados,
+  mostra card "✓ Migração concluída" com ações avançadas escondidas em
+  `<details>`. Se ainda há legado, mostra fluxo completo + contadores.
+- Helpers extraídos: `_legacyMigrationButtonsHtml` + `_bindLegacyMigrationButtons`.
+
+### Conexões
+- Aviso de dívida técnica: SharePoint `clientSecret` ainda em Firestore;
+  próximo passo é mover pro Secret Manager.
+
+### Bump
+- `4.35.24+20260511-ai-hub-revamp` em `js/version.js` + `index.html`.
+
+---
+
 ## [4.35.23+20260511-anthropic-server-side-vision-web] — 2026-05-11
 
 Release **PATCH** — IA Hub: Anthropic em produção via Cloud Function, vision e

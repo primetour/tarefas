@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 23,
-  build: '20260511-anthropic-server-side-vision-web',
+  patch: 24,
+  build: '20260511-ai-hub-revamp',
 };
 
 /** "1.2.0" */

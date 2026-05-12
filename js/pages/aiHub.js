@@ -67,7 +67,7 @@ export async function renderAiHub(container) {
         { id:'agents',     label:'Agentes',      icon:'◈' },
         { id:'apikeys',    label:'API Keys',     icon:'⚿' },
         { id:'connections',label:'Conexões',     icon:'🔌' },
-        { id:'knowledge',  label:'Conhecimento', icon:'📚' },
+        { id:'knowledge',  label:'Biblioteca', icon:'📚' },
         { id:'logs',       label:'Logs',         icon:'⌚' },
         { id:'costs',      label:'Custos',       icon:'$' },
         { id:'migration',  label:'Migração',     icon:'↻' },
@@ -1253,9 +1253,18 @@ async function renderApiKeysTab(container) {
   const providers = ai.AI_PROVIDERS;
 
   function paint() {
+    // 4.35.24+: Anthropic é server-side (Secret Manager). Demais providers
+    // ainda usam fallback Firestore. Sinalizar isso claramente na UI.
+    const SECRET_MANAGER_PROVIDERS = new Set(['anthropic']);
     container.innerHTML = `
+      <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:0.8125rem;">
+        <strong style="color:#22C55E;">🔐 Anthropic agora é server-side</strong><br>
+        A key vive no <strong>GCP Secret Manager</strong> (<code>ANTHROPIC_API_KEY</code>) e é
+        lida só pela Cloud Function <code>callLLM</code>. O browser nunca vê.
+        Pra rotacionar: <code style="background:var(--bg-surface);padding:1px 6px;border-radius:3px;">firebase functions:secrets:set ANTHROPIC_API_KEY</code>
+      </div>
       <p style="color:var(--text-muted);font-size:0.8125rem;margin-bottom:16px;">
-        Chaves usadas pelos agentes. Resolução em cascata:
+        Resolução em cascata pros demais providers (legado):
         <strong>Usuário → Núcleo → Setor → Workspace → Global</strong>.
       </p>
 
@@ -1268,6 +1277,14 @@ async function renderApiKeysTab(container) {
           <table class="data-table" style="width:100%;font-size:0.8125rem;">
             <thead><tr><th>Provider</th><th>Status</th><th>Chave (mascarada)</th><th style="text-align:right;">Tamanho</th></tr></thead>
             <tbody>${providers.map(p => {
+              if (SECRET_MANAGER_PROVIDERS.has(p.id)) {
+                return `<tr>
+                  <td><strong>${esc(p.icon)} ${esc(p.label)}</strong></td>
+                  <td><span style="color:#22C55E;">✓ Secret Manager</span></td>
+                  <td style="font-family:var(--font-mono,monospace);color:var(--text-muted);">sk-ant-•••• <span style="font-size:0.7rem;">(server-side)</span></td>
+                  <td style="text-align:right;color:var(--text-muted);">—</td>
+                </tr>`;
+              }
               const s = providerStatus(global, p.id);
               return `<tr style="${s.has?'':'opacity:0.55;'}">
                 <td><strong>${esc(p.icon)} ${esc(p.label)}</strong></td>
@@ -1277,6 +1294,10 @@ async function renderApiKeysTab(container) {
               </tr>`;
             }).join('')}</tbody>
           </table>
+        </div>
+        <div style="padding:8px 14px;font-size:0.7rem;color:var(--text-muted);border-top:1px solid var(--border-subtle);">
+          ⚠ Próximo passo: migrar OpenAI/Gemini/Groq também pro Secret Manager
+          (mesmo padrão Anthropic). Hoje essas chaves ficam em <code>system_config/ai-config</code>.
         </div>
       </div>
 
@@ -1451,9 +1472,15 @@ async function renderKnowledgeTab(container) {
 
   function paint() {
     container.innerHTML = `
+      <div style="background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.25);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:0.8125rem;color:var(--text-secondary);">
+        📚 <strong>Biblioteca compartilhada</strong> — docs reutilizáveis por
+        múltiplos agentes. Cada agente escolhe quais usar em <em>Editor → Conhecimento</em>.
+        Fontes externas (SharePoint, GDrive, GitHub) ficam no editor do agente,
+        não aqui — esta aba é só pra texto interno (RAG).
+      </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <p style="color:var(--text-muted);font-size:0.8125rem;margin:0;">
-          ${docs.length} documento(s). Agentes referenciam estes docs em "Editor → Conhecimento".
+          ${docs.length} documento(s) na biblioteca.
         </p>
         <div style="display:flex;gap:8px;">
           <input type="file" id="kb-upload" accept=".md,.txt,.json,.csv" multiple style="display:none;" />
@@ -1705,16 +1732,30 @@ async function renderCostsTab(container) {
     return;
   }
 
-  let totalCost = 0, totalIn = 0, totalOut = 0;
+  let totalCost = 0, totalIn = 0, totalOut = 0, totalSaved = 0, totalCacheRead = 0;
   const byAgent = new Map();
   const byProvider = new Map();
   const byDay = new Map();
   logs.forEach(l => {
-    const cost = estimateCost(l.provider, l.model, l.inputTokens, l.outputTokens);
-    totalCost += cost; totalIn += l.inputTokens||0; totalOut += l.outputTokens||0;
+    // 4.35.24+: custo com cache-aware. cacheReadTokens custa ~10% do input,
+    // cacheCreationTokens custa ~125% do input (overhead de gravar). Sem
+    // esses ajustes, o cálculo superestima o custo real dos agentes que
+    // usam prompt caching (Anthropic).
+    const cost = estimateCost(l.provider, l.model, l.inputTokens, l.outputTokens, {
+      cacheReadTokens: l.cacheReadTokens || 0,
+      cacheCreationTokens: l.cacheCreationTokens || 0,
+    });
+    totalCost += cost;
+    totalIn  += l.inputTokens||0;
+    totalOut += l.outputTokens||0;
+    totalSaved     += l.tokensSaved || 0;
+    totalCacheRead += l.cacheReadTokens || 0;
     const aKey = l.agentName || l.skillName || '—';
-    if (!byAgent.has(aKey)) byAgent.set(aKey, { calls:0, cost:0, inT:0, outT:0 });
-    const a = byAgent.get(aKey); a.calls++; a.cost += cost; a.inT += l.inputTokens||0; a.outT += l.outputTokens||0;
+    if (!byAgent.has(aKey)) byAgent.set(aKey, { calls:0, cost:0, inT:0, outT:0, saved:0 });
+    const a = byAgent.get(aKey);
+    a.calls++; a.cost += cost;
+    a.inT += l.inputTokens||0; a.outT += l.outputTokens||0;
+    a.saved += l.tokensSaved||0;
     const pKey = l.provider || '—';
     if (!byProvider.has(pKey)) byProvider.set(pKey, { calls:0, cost:0 });
     const p = byProvider.get(pKey); p.calls++; p.cost += cost;
@@ -1727,6 +1768,12 @@ async function renderCostsTab(container) {
   const days = [...byDay.entries()].sort((a,b) => a[0].localeCompare(b[0]));
   const maxDayCost = Math.max(0.001, ...days.map(d => d[1].cost));
 
+  // Custo "naive" (sem cache) pra mostrar a economia
+  const naiveCost = logs.reduce((s, l) => s + estimateCost(l.provider, l.model,
+    (l.inputTokens||0) + (l.cacheReadTokens||0) + (l.cacheCreationTokens||0),
+    l.outputTokens||0), 0);
+  const savedUsd = Math.max(0, naiveCost - totalCost);
+
   container.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;">
       ${[
@@ -1734,10 +1781,12 @@ async function renderCostsTab(container) {
         { l: 'Chamadas', v: logs.length, c: '#3B82F6' },
         { l: 'Tokens entrada', v: totalIn.toLocaleString('pt-BR'), c: '#A78BFA' },
         { l: 'Tokens saída', v: totalOut.toLocaleString('pt-BR'), c: '#A78BFA' },
+        { l: 'Tokens cache (read)', v: totalCacheRead.toLocaleString('pt-BR'), c: '#10B981', sub: savedUsd > 0 ? '~$ '+savedUsd.toFixed(2)+' economizado' : '' },
         { l: 'Agentes ativos', v: byAgent.size, c: '#06B6D4' },
       ].map(c => `<div class="card" style="padding:14px;border-left:3px solid ${c.c};">
         <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;">${c.l}</div>
         <div style="font-size:1.5rem;font-weight:700;color:${c.c};margin-top:4px;">${c.v}</div>
+        ${c.sub ? `<div style="font-size:0.6875rem;color:#10B981;margin-top:2px;">${c.sub}</div>` : ''}
       </div>`).join('')}
     </div>
 
@@ -1761,11 +1810,18 @@ async function renderCostsTab(container) {
       <div class="card-header"><div class="card-title">🏆 Top agentes por custo</div></div>
       <div class="card-body" style="padding:0;">
         <table class="data-table" style="width:100%;font-size:0.8125rem;">
-          <thead><tr><th>Agente</th><th style="text-align:right;">Calls</th><th style="text-align:right;">Tokens In/Out</th><th style="text-align:right;">≈ USD</th></tr></thead>
+          <thead><tr>
+            <th>Agente</th>
+            <th style="text-align:right;">Calls</th>
+            <th style="text-align:right;">Tokens In/Out</th>
+            <th style="text-align:right;" title="Tokens entregues via cache hit (não cobrados a 100%)">Cache ↓</th>
+            <th style="text-align:right;">≈ USD</th>
+          </tr></thead>
           <tbody>${topAgents.map(([name, a]) => `<tr>
             <td><strong>${esc(name)}</strong></td>
             <td style="text-align:right;">${a.calls}</td>
             <td style="text-align:right;">${a.inT.toLocaleString('pt-BR')} / ${a.outT.toLocaleString('pt-BR')}</td>
+            <td style="text-align:right;color:${a.saved>0?'#10B981':'var(--text-muted)'};">${a.saved ? a.saved.toLocaleString('pt-BR') : '—'}</td>
             <td style="text-align:right;color:${a.cost>0.5?'#F59E0B':'var(--text-secondary)'};font-weight:600;">$${a.cost.toFixed(3)}</td>
           </tr>`).join('')}</tbody>
         </table>
@@ -1774,8 +1830,15 @@ async function renderCostsTab(container) {
   `;
 }
 
-/* Estimativa simplificada de custo USD (preço por 1M tokens) */
-function estimateCost(provider, model, inT, outT) {
+/* Estimativa de custo USD (preço por 1M tokens) — cache-aware (4.35.24+).
+ * Multipliers Anthropic:
+ *   - cacheReadTokens  custa 10% do input (ephemeral cache hit)
+ *   - cacheCreationTokens custa 125% do input (overhead de gravar no cache)
+ *   - inputTokens convencionais = 100%
+ *   - outputTokens = preço de output
+ * Doc: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+ */
+function estimateCost(provider, model, inT, outT, opts = {}) {
   const PRICES = {
     // Anthropic (USD per 1M tokens)
     'claude-opus-4-6':   { in: 15,    out: 75 },
@@ -1795,14 +1858,74 @@ function estimateCost(provider, model, inT, outT) {
     'llama-3.1-8b-instant':    { in: 0, out: 0 },
   };
   const p = PRICES[model] || { in: 1, out: 3 }; // default conservador
-  return ((inT||0) * p.in + (outT||0) * p.out) / 1_000_000;
+  const cacheRead     = opts.cacheReadTokens || 0;
+  const cacheCreation = opts.cacheCreationTokens || 0;
+  const billedInput   = (inT||0) + cacheCreation * 1.25 + cacheRead * 0.10;
+  return (billedInput * p.in + (outT||0) * p.out) / 1_000_000;
 }
 
 /* ═══════════════════════════════════════════════════════════
  * TAB: MIGRAÇÃO (skills + automações → agents, com backup)
+ * 4.35.24+: detecta automaticamente se a migração já rodou e mostra
+ * status "✓ Concluída" em vez de oferecer os botões de import/purge.
  * ═══════════════════════════════════════════════════════════ */
-function renderMigrationTab(container) {
+async function renderMigrationTab(container) {
+  // Sonda estado das collections legadas
+  let legacyCounts = { skills: null, automations: null };
+  try {
+    const { collection, getCountFromServer } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const { db } = await import('../firebase.js');
+    const [skillsSnap, autoSnap] = await Promise.all([
+      getCountFromServer(collection(db, 'ai_skills')).catch(() => null),
+      getCountFromServer(collection(db, 'ai_automations')).catch(() => null),
+    ]);
+    legacyCounts.skills      = skillsSnap?.data()?.count ?? 0;
+    legacyCounts.automations = autoSnap?.data()?.count ?? 0;
+  } catch {}
+
+  const allDone = legacyCounts.skills === 0 && legacyCounts.automations === 0;
+
+  if (allDone) {
+    container.innerHTML = `
+      <div class="card" style="padding:32px;text-align:center;border:1px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.04);">
+        <div style="font-size:2.5rem;margin-bottom:12px;">✓</div>
+        <h3 style="margin:0 0 8px;color:#22C55E;">Migração concluída</h3>
+        <p style="font-size:0.875rem;color:var(--text-secondary);margin:0 0 16px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.6;">
+          As collections legadas <code>ai_skills</code> e <code>ai_automations</code>
+          estão vazias. Todos os agentes hoje estão em <code>ai_agents</code>.
+          Os backups <code>ai_skills_archive</code> e <code>ai_automations_archive</code>
+          permanecem por segurança.
+        </p>
+        <details style="margin-top:16px;text-align:left;max-width:520px;margin-left:auto;margin-right:auto;">
+          <summary style="cursor:pointer;font-size:0.8125rem;color:var(--text-muted);">▸ Mostrar ações avançadas (re-seed, re-purge)</summary>
+          <div id="mig-advanced" style="margin-top:14px;"></div>
+        </details>
+      </div>
+    `;
+    // injeta os botões antigos só dentro do <details> avançado
+    const adv = document.getElementById('mig-advanced');
+    if (adv) {
+      adv.innerHTML = _legacyMigrationButtonsHtml();
+      _bindLegacyMigrationButtons();
+    }
+    return;
+  }
+
+  // Estado parcial ou ainda não migrado → mostra fluxo completo + contadores
   container.innerHTML = `
+    <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:0.8125rem;">
+      <strong style="color:#F59E0B;">⚠ Migração pendente</strong> —
+      <code>ai_skills</code>: ${legacyCounts.skills ?? '?'} docs ·
+      <code>ai_automations</code>: ${legacyCounts.automations ?? '?'} docs.
+      Rode o import abaixo pra trazer pra <code>ai_agents</code>.
+    </div>
+    ${_legacyMigrationButtonsHtml()}
+  `;
+  _bindLegacyMigrationButtons();
+}
+
+function _legacyMigrationButtonsHtml() {
+  return `
     <!-- Seed agentes do sistema -->
     <div class="card" style="padding:20px;margin-bottom:16px;border:1px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.04);">
       <h3 style="margin:0 0 12px;">🌱 Criar agentes pré-configurados do sistema</h3>
@@ -1853,7 +1976,9 @@ function renderMigrationTab(container) {
       <div id="mig-purge-result" style="display:none;margin-top:14px;"></div>
     </div>
   `;
+}
 
+function _bindLegacyMigrationButtons() {
   document.getElementById('seed-run')?.addEventListener('click', async () => {
     const btn = document.getElementById('seed-run');
     btn.disabled = true; btn.textContent = '⏳ Criando...';
@@ -1952,6 +2077,13 @@ async function renderConnectionsTab(container) {
         Plataformas externas que os agentes podem ler como base de conhecimento.
         Tokens vivem na sessão (sobrevivem reload, expiram em logout).
       </p>
+
+      <div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.25);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:0.75rem;color:var(--text-secondary);">
+        ⚠ <strong>Dívida técnica</strong>: hoje o SharePoint <code>clientSecret</code> fica em
+        <code>system_config/sharepoint-app</code> (Firestore). Próximo passo é movê-lo
+        pro Secret Manager (mesmo padrão da key Anthropic) — não é exposto no
+        cliente (read-only via callable), mas o ideal é nunca persistir em DB.
+      </div>
 
       <!-- Microsoft 365 / SharePoint (App-only — nivel sistema) -->
       <div class="card" style="margin-bottom:16px;">
