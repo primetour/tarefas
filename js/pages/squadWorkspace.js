@@ -649,7 +649,7 @@ async function openMembersModal() {
       try {
         await addMember(squad.id, uid);
         toast.success('Membro adicionado.');
-        document.querySelector('.modal-overlay')?.click();
+        modal.close();
         await reload();
       } catch (e) {
         toast.error(e.message);
@@ -673,7 +673,7 @@ async function openMembersModal() {
           try {
             await removeMember(squad.id, btn.dataset.uid);
             toast.success('Membro removido.');
-            document.querySelector('.modal-overlay')?.click();
+            modal.close();
             await reload();
           } catch (e) { toast.error(e.message); }
         }
@@ -687,7 +687,7 @@ async function openMembersModal() {
         try {
           await toggleWorkspaceAdmin(squad.id, btn.dataset.uid, makeAdmin);
           toast.success(makeAdmin ? 'Promovido a admin.' : 'Admin rebaixado.');
-          document.querySelector('.modal-overlay')?.click();
+          modal.close();
           await reload();
         } catch (e) { toast.error(e.message); }
       });
@@ -771,7 +771,7 @@ async function openSquadInviteModal() {
         try {
           await addMember(squad.id, uid);
           toast.success(`${esc(u?.name)} adicionado ao squad!`);
-          document.querySelector('.modal-overlay')?.click();
+          modal.close();
           await reload();
         } catch(e) {
           toast.error(e.message);

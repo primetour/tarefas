@@ -768,11 +768,11 @@ function openExportModal() {
   setTimeout(() => {
     document.getElementById('export-csv-btn')?.addEventListener('click', () => {
       exportCSV();
-      document.querySelector('.modal-overlay')?.click();
+      modal.close();
     });
     document.getElementById('export-pdf-btn')?.addEventListener('click', () => {
       exportPDF();
-      document.querySelector('.modal-overlay')?.click();
+      modal.close();
     });
   }, 50);
 }

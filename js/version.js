@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 39,
-  patch: 2,
-  build: '20260512-bulk-create-area-not-sector',
+  patch: 3,
+  build: '20260512-fix-squad-invite-loop',
 };
 
 /** "1.2.0" */

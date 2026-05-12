@@ -881,7 +881,7 @@ async function openInviteModal(wsId) {
         try {
           await addMember(wsId, uid);
           toast.success(`${u?.name} adicionado ao squad!`);
-          document.querySelector('.modal-overlay')?.click();
+          modal.close();
           await loadWorkspaces();
         } catch(e) {
           toast.error(e.message);
