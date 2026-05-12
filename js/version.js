@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 38,
-  patch: 2,
-  build: '20260512-office-bigger-avatars-shadows',
+  patch: 3,
+  build: '20260512-office-token-style-white-bg',
 };
 
 /** "1.2.0" */

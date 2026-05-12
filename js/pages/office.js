@@ -203,17 +203,16 @@ export async function renderOffice(container) {
       </div>
     </div>
 
-    <!-- 4.38.0+ Stage com câmera (zoom/pan/drill-down) + background dinâmico -->
+    <!-- 4.38.3+ Stage com background NEUTRO claro (escritório, não pôr-do-sol) -->
     <div id="office-stage" style="
       position:relative;
       width:100%;
       min-height:720px;
-      background:${getTimeOfDayGradient()};
+      background:linear-gradient(180deg, #FAFAF7 0%, #F0EFE9 100%);
       border:1px solid var(--border-subtle);
       border-radius:14px;
       overflow:hidden;
       padding:12px;
-      transition:background 1.5s ease-in-out;
     ">
       <!-- Wrapper de câmera: transformável via CSS pra zoom/pan -->
       <div id="office-camera" style="
@@ -251,7 +250,7 @@ export async function renderOffice(container) {
         border-radius:20px;font-size:0.7rem;letter-spacing:0.04em;
         backdrop-filter:blur(6px);
       ">
-        💡 Click numa sala pra entrar · click num avatar pra abrir painel · Ctrl+scroll zoom
+        💡 Click numa sala pra entrar · click num avatar pra abrir painel · Ctrl+scroll zoom · Shift+drag arrasta a câmera
       </div>
     </div>
 
@@ -317,12 +316,7 @@ export async function renderOffice(container) {
     repaint(container);
   }, 20000);
 
-  // 4.37.0+ Atualiza background gradient a cada 10min (day/night cycle)
-  setInterval(() => {
-    const stage = container.querySelector('#office-stage');
-    if (stage) stage.style.background = getTimeOfDayGradient();
-  }, 10 * 60 * 1000);
-
+  // 4.38.3+ day/night cycle removido — escritório sempre neutro/claro
   repaint(container);
 }
 
@@ -1363,68 +1357,77 @@ function renderAvatar(person, x, y, idx = 0) {
        data-photo="${esc(photoFg)}"
        data-absence="${esc(person.absenceType || '')}"
        transform="translate(${x}, ${y})"
-       style="cursor:pointer;transition:transform 600ms cubic-bezier(.4,.0,.2,1);
-       filter:drop-shadow(0 4px 6px rgba(0,0,0,0.3));">
+       style="cursor:pointer;transition:transform 600ms cubic-bezier(.4,.0,.2,1);">
       <g>
         ${!isStill ? `<animateMotion dur="${walkDur}s" repeatCount="indefinite" rotate="0"
           path="${walkPath}" calcMode="spline"
           keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"
           keyTimes="0; 0.25; 0.5; 0.75; 1"/>` : ''}
-        <!-- 4.38.2+ Sombra MUITO maior (2.2x) — peso visual real -->
-        <ellipse cx="0" cy="26" rx="28" ry="7" fill="rgba(0,0,0,0.45)">
-          ${!isStill ? `<animate attributeName="rx" values="28;24;28" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
-          ${!isStill ? `<animate attributeName="opacity" values="0.45;0.30;0.45" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+
+        <!-- 4.38.3+ Sombra elíptica no chão (peso visual) -->
+        <ellipse cx="0" cy="30" rx="28" ry="7" fill="rgba(0,0,0,0.35)">
+          ${!isStill ? `<animate attributeName="rx" values="28;25;28" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+          ${!isStill ? `<animate attributeName="opacity" values="0.35;0.22;0.35" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
         </ellipse>
+
         <g>
           ${!isStill ? `<animateTransform attributeName="transform" type="translate"
-            values="0,0;0,-3;0,0;0,-2;0,0" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
-          <!-- 4.38.2+ Pernas (2 cilindros) — dá altura real -->
-          <rect x="-7" y="14" width="5" height="12" fill="${shade(bodyDark, -10)}" rx="2"/>
-          <rect x="2"  y="14" width="5" height="12" fill="${shade(bodyDark, -10)}" rx="2"/>
-          <!-- TORSO maior (2x) -->
-          <ellipse cx="0" cy="18" rx="20" ry="14" fill="${bodyDark}"/>
-          <path d="M -20,18 Q -22,0 -17,-4 L 17,-4 Q 22,0 20,18 Z" fill="${bodyColor}" stroke="${shade(bodyDark, -20)}" stroke-width="1"/>
-          <!-- Gola maior -->
-          <ellipse cx="0" cy="-4" rx="13" ry="4" fill="${shade(bodyDark, -15)}"/>
-          <!-- CABEÇA 2.2x maior (r=24) -->
-          <circle cx="0" cy="-18" r="24" fill="${fg}" stroke="${stateColor}" stroke-width="3.5"/>
+            values="0,0;0,-2;0,0;0,-1;0,0" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+
+          <!-- 4.38.3+ Estilo "TOKEN/FICHA": pedestal limpo + cabeça grande -->
+          <!-- Pedestal/base (capsule rounded rect na cor do user) -->
+          <rect x="-22" y="6" width="44" height="22" rx="11" fill="${bodyDark}"/>
+          <rect x="-22" y="4" width="44" height="20" rx="10" fill="${bodyColor}"/>
+          <!-- Brilho no pedestal -->
+          <rect x="-18" y="6" width="36" height="3" rx="2" fill="rgba(255,255,255,0.35)"/>
+          <!-- Linha de cor do estado no rodapé -->
+          <rect x="-22" y="24" width="44" height="4" rx="2" fill="${stateColor}"/>
+
+          <!-- CABEÇA grande (foto/iniciais) — protagonista -->
+          <circle cx="0" cy="-16" r="28" fill="#fff" stroke="${stateColor}" stroke-width="4"
+            filter="drop-shadow(0 3px 6px rgba(0,0,0,0.35))"/>
+          <circle cx="0" cy="-16" r="26" fill="${fg}"/>
           ${photoFg ? `
             <clipPath id="clip-${person.uid}">
-              <circle cx="0" cy="-18" r="22"/>
+              <circle cx="0" cy="-16" r="26"/>
             </clipPath>
-            <image href="${esc(photoFg)}" x="-22" y="-40" width="44" height="44"
+            <image href="${esc(photoFg)}" x="-26" y="-42" width="52" height="52"
               clip-path="url(#clip-${person.uid})" preserveAspectRatio="xMidYMid slice"/>
           ` : `
-            <text x="0" y="-12" text-anchor="middle"
-              style="font-family:-apple-system,sans-serif;font-size:18px;font-weight:700;fill:#fff;pointer-events:none;">${esc(initials)}</text>
+            <text x="0" y="-10" text-anchor="middle"
+              style="font-family:-apple-system,sans-serif;font-size:22px;font-weight:700;fill:#fff;pointer-events:none;">${esc(initials)}</text>
           `}
         </g>
+
         ${person.isMe ? `
-          <circle cx="0" cy="-18" r="30" fill="none" stroke="#D4A843" stroke-width="2.5" stroke-dasharray="5,3">
-            <animateTransform attributeName="transform" type="rotate" from="0 0 -18" to="360 0 -18" dur="8s" repeatCount="indefinite"/>
+          <circle cx="0" cy="-16" r="34" fill="none" stroke="#D4A843" stroke-width="3" stroke-dasharray="6,4">
+            <animateTransform attributeName="transform" type="rotate" from="0 0 -16" to="360 0 -16" dur="8s" repeatCount="indefinite"/>
           </circle>
         ` : ''}
         ${person.state === 'active' && !isRecentlyActive ? `
-          <circle cx="0" cy="-18" r="24" fill="none" stroke="${stateColor}" stroke-width="2.5" opacity="0.6">
-            <animate attributeName="r" values="24;38;24" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
-            <animate attributeName="opacity" values="0.6;0;0.6" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
+          <circle cx="0" cy="-16" r="28" fill="none" stroke="${stateColor}" stroke-width="2.5" opacity="0.5">
+            <animate attributeName="r" values="28;44;28" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
+            <animate attributeName="opacity" values="0.5;0;0.5" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
           </circle>
         ` : ''}
         ${isRecentlyActive ? `
-          <text x="0" y="-50" text-anchor="middle" font-size="22" style="pointer-events:none;">
-            ⚡
-            <animate attributeName="opacity" values="1;0.3;1" dur="0.8s" repeatCount="indefinite"/>
-          </text>
+          <g style="pointer-events:none;">
+            <circle cx="22" cy="-32" r="11" fill="#D4A843">
+              <animate attributeName="opacity" values="1;0.4;1" dur="0.9s" repeatCount="indefinite"/>
+            </circle>
+            <text x="22" y="-28" text-anchor="middle" font-size="13" font-weight="700" fill="#fff" style="pointer-events:none;">⚡</text>
+          </g>
         ` : ''}
-        <!-- 4.38.2+ Nome do user fixo abaixo (sempre visível pra identificação) -->
+
+        <!-- Plaqueta do nome (sempre visível) -->
         <g style="pointer-events:none;">
-          <rect x="-44" y="32" width="88" height="14" rx="7" fill="rgba(15,23,42,0.85)"/>
-          <text x="0" y="42" text-anchor="middle"
-            style="font-family:-apple-system,sans-serif;font-size:9px;font-weight:600;fill:#fff;">
-            ${esc((person.name || '?').split(' ')[0])}
+          <rect x="-48" y="35" width="96" height="16" rx="8" fill="rgba(15,23,42,0.92)"
+            filter="drop-shadow(0 2px 4px rgba(0,0,0,0.2))"/>
+          <text x="0" y="46" text-anchor="middle"
+            style="font-family:-apple-system,sans-serif;font-size:10px;font-weight:600;fill:#fff;letter-spacing:0.02em;">
+            ${esc((person.name || '?').split(' ').slice(0,2).join(' '))}
           </text>
         </g>
-        ${!isStill && !isRecentlyActive ? renderMoodBubble(person, idx) : ''}
       </g>
     </g>
   `;
@@ -1669,41 +1672,58 @@ async function pollAndShowActivities(container) {
       _activityKnownIds = new Set([..._activityKnownIds].slice(-200));
     }
 
-    events.forEach(e => showActivityToast(container, e));
+    const labels = await _getActionLabels();
+    events.forEach(e => showActivityToast(container, e, labels));
   } catch (_) {
     // sem permissão pra audit_logs → silencia
   }
 }
 
-const ACTION_TEXTS = {
-  'task.create':         (e) => `${e.userName} criou uma tarefa`,
-  'task.update':         (e) => `${e.userName} atualizou uma tarefa`,
-  'task.complete':       (e) => `${e.userName} concluiu uma tarefa`,
-  'task.delete':         (e) => `${e.userName} excluiu uma tarefa`,
-  'csat.send':           (e) => `${e.userName} enviou uma pesquisa CSAT`,
-  'csat.response':       (e) => `Resposta CSAT recebida`,
-  'portal_images.upload':(e) => `${e.userName} fez upload no Banco de Imagens`,
-  'portal_images.delete':(e) => `${e.userName} removeu uma imagem`,
-  'roteiro.create':      (e) => `${e.userName} criou um roteiro`,
-  'roteiro.update':      (e) => `${e.userName} editou um roteiro`,
-  'project.create':      (e) => `${e.userName} criou um projeto`,
-  'workspace.create':    (e) => `${e.userName} criou um squad`,
-  'goal.published':      (e) => `${e.userName} publicou uma meta`,
-  'feedback.create':     (e) => `${e.userName} registrou um feedback`,
-};
-
-function actionToText(event) {
-  const fn = ACTION_TEXTS[event.action];
-  if (fn) return fn(event);
-  // Fallback: humaniza a action key
-  const parts = String(event.action || 'algo').split('.');
-  return `${event.userName || 'Alguém'} ${parts[1] || 'fez algo'} em ${parts[0] || 'sistema'}`;
+// 4.38.3+ Reusa ACTION_LABELS canônicos do audit (cobre todas as 60+ actions)
+let _actionLabelsCache = null;
+async function _getActionLabels() {
+  if (_actionLabelsCache) return _actionLabelsCache;
+  try {
+    const mod = await import('../auth/audit.js');
+    _actionLabelsCache = mod.ACTION_LABELS || {};
+  } catch { _actionLabelsCache = {}; }
+  return _actionLabelsCache;
 }
 
-function showActivityToast(container, event) {
+function actionToText(event, labels = {}) {
+  const label = labels[event.action];
+  const who = event.userName || 'Alguém';
+  if (label) return `${who} · ${label}`;
+  // Fallback humanizado pra ações não-mapeadas
+  const parts = String(event.action || '').split('.');
+  if (parts.length < 2) return `${who} · ação registrada`;
+  const verbMap = {
+    create: 'criou', update: 'atualizou', delete: 'removeu',
+    complete: 'concluiu', send: 'enviou', upload: 'fez upload em',
+    response: 'respondeu', published: 'publicou', view: 'acessou',
+    assign: 'atribuiu', rework: 'reabriu', login: 'fez login',
+    logout: 'saiu', deactivate: 'desativou', reactivate: 'reativou',
+    role_changed: 'mudou role', permission_changed: 'mudou permissão',
+  };
+  const moduleMap = {
+    tasks: 'tarefa', csat: 'CSAT', portal_images: 'imagem',
+    roteiro: 'roteiro', roteiros: 'roteiro', projects: 'projeto',
+    workspace: 'squad', squad: 'squad', goal: 'meta', goals: 'meta',
+    feedback: 'feedback', users: 'usuário', auth: 'autenticação',
+    task_types: 'tipo de tarefa', settings: 'configuração',
+    branding: 'branding', security: 'segurança', lgpd: 'LGPD',
+    notifications: 'notificação', sectors: 'setor', roles: 'role',
+    workspaces: 'squad', system: 'sistema',
+  };
+  const verb = verbMap[parts[1]] || parts[1].replace(/_/g, ' ');
+  const mod  = moduleMap[parts[0]] || parts[0].replace(/_/g, ' ');
+  return `${who} · ${verb} ${mod}`;
+}
+
+function showActivityToast(container, event, labels = {}) {
   const feed = document.getElementById('office-activity-feed');
   if (!feed) return;
-  const text = actionToText(event);
+  const text = actionToText(event, labels);
   const toast = document.createElement('div');
   toast.style.cssText = `
     background:var(--bg-card, #1A2332);
@@ -1778,11 +1798,22 @@ function wireCameraControls(stageEl) {
     applyCss();
   }, { passive: false });
 
-  // Pan via drag (só ativo quando zoom > 1)
+  // 4.38.3+ Pan via Shift+drag (explícito, não conflita com click em sala/avatar)
+  // OU drag em area vazia (background) quando zoom > 1
   let dragging = false, lastX = 0, lastY = 0;
   stageEl.addEventListener('mousedown', (e) => {
-    // Se clicou em controle ou sala/avatar (interativos), não dragga
-    if (e.target.closest('button') || e.target.closest('.office-floor') || e.target.closest('.office-avatar')) return;
+    if (e.target.closest('button')) return;
+    const hitAvatar = e.target.closest('.office-avatar');
+    const hitFloor  = e.target.closest('.office-floor');
+    // Shift+drag = pan SEMPRE (mesmo sobre sala/avatar)
+    if (e.shiftKey) {
+      e.preventDefault();
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      stageEl.style.cursor = 'grabbing';
+      return;
+    }
+    // Sem Shift: drag só em background, e só se zoom > 1
+    if (hitAvatar || hitFloor) return;
     if (_cam.zoom <= 1.05) return;
     dragging = true; lastX = e.clientX; lastY = e.clientY;
     stageEl.style.cursor = 'grabbing';
@@ -1797,6 +1828,13 @@ function wireCameraControls(stageEl) {
   window.addEventListener('mouseup', () => {
     dragging = false;
     stageEl.style.cursor = '';
+  });
+  // Cursor visual ao pressionar Shift (indica que pan está ativo)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Shift' && !dragging) stageEl.style.cursor = 'grab';
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.key === 'Shift' && !dragging) stageEl.style.cursor = '';
   });
 
   // Atalho R = reset
@@ -1893,6 +1931,8 @@ async function openAvatarPanel(uid) {
       limit(8),
     ));
     recentActions = snap.docs.map(d => d.data());
+    // 4.38.3+ garante labels canônicos carregados antes de renderizar
+    await _getActionLabels();
   } catch (_) { /* sem permissão */ }
 
   body.innerHTML = `
@@ -1960,20 +2000,13 @@ function _routeToRoomLabel(route) {
 
 function _humanAction(action) {
   if (!action) return 'Ação registrada';
-  const parts = String(action).split('.');
-  const verbMap = {
-    create: 'criou', update: 'atualizou', delete: 'removeu',
-    complete: 'concluiu', send: 'enviou', upload: 'fez upload em',
-    response: 'recebeu resposta em', published: 'publicou', view: 'acessou',
-  };
-  const moduleMap = {
-    task: 'uma tarefa', csat: 'pesquisa CSAT', portal_images: 'Banco de Imagens',
-    roteiro: 'um roteiro', project: 'um projeto', workspace: 'um squad',
-    goal: 'uma meta', feedback: 'um feedback', user: 'usuário',
-  };
-  const verb = verbMap[parts[1]] || parts[1];
-  const mod  = moduleMap[parts[0]] || parts[0];
-  return `${verb.charAt(0).toUpperCase()}${verb.slice(1)} ${mod}`;
+  // 4.38.3+ usa cache do ACTION_LABELS canônico (carregado via _getActionLabels)
+  if (_actionLabelsCache && _actionLabelsCache[action]) {
+    return _actionLabelsCache[action];
+  }
+  // Fallback humanizado pra ações não-mapeadas
+  return actionToText({ action, userName: '' }, _actionLabelsCache || {})
+    .replace(/^[·\s]+/, '');  // remove "· " do prefixo de userName vazio
 }
 
 /* ─── Easter egg bubble (4.37.0+) ── */
