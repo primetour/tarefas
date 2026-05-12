@@ -251,8 +251,12 @@ export async function renderPortalImages(container) {
 
 /* ── Upload panel ── */
 function uploadPanelHtml() {
+  // 4.40.6+ overflow:visible em vez de hidden — overflow:hidden no .card cria
+  // containing block pra position:sticky, fazendo o action bar SUMIR quando
+  // o user scrolla pra baixo (a sticky stops sticking quando o pai sai da view).
+  // Visual: corners do card seguem arredondados via border-radius nas crianças.
   return `
-    <div class="card" style="padding:0;overflow:hidden;">
+    <div class="card" style="padding:0;overflow:visible;border-radius:var(--radius-lg);">
 
       <!-- Step 1: Drop zone — always visible and large -->
       <div style="padding:24px;border-bottom:1px solid var(--border-subtle);">
@@ -1361,6 +1365,28 @@ function openEditModal(imgId) {
   const existing = document.getElementById('img-edit-modal');
   if (existing) existing.remove();
 
+  // 4.40.6+ Injeta CSS pra forçar barra de scroll VISÍVEL no body do modal
+  // em macOS (onde scrollbars são auto-hide por padrão). Roda apenas uma vez.
+  if (!document.getElementById('img-edit-modal-style')) {
+    const st = document.createElement('style');
+    st.id = 'img-edit-modal-style';
+    st.textContent = `
+      .img-edit-modal-body::-webkit-scrollbar { width: 12px; }
+      .img-edit-modal-body::-webkit-scrollbar-track {
+        background: var(--bg-surface, #16202C); border-radius: 6px;
+      }
+      .img-edit-modal-body::-webkit-scrollbar-thumb {
+        background: var(--border-default, #374151); border-radius: 6px;
+        border: 2px solid var(--bg-surface, #16202C);
+      }
+      .img-edit-modal-body::-webkit-scrollbar-thumb:hover {
+        background: var(--brand-gold, #D4A843);
+      }
+      .img-edit-modal-body { scrollbar-width: thin; scrollbar-color: var(--border-default) var(--bg-surface); }
+    `;
+    document.head.appendChild(st);
+  }
+
   const modal = document.createElement('div');
   modal.id = 'img-edit-modal';
   // 4.40.5+ Modal agora respeita max-height 90vh + scroll interno. Antes
@@ -1378,8 +1404,11 @@ function openEditModal(imgId) {
         <button id="edit-img-close" style="border:none;background:none;cursor:pointer;
           font-size:1.25rem;color:var(--text-muted);">✕</button>
       </div>
-      <div style="padding:24px;display:flex;flex-direction:column;gap:14px;
-        overflow-y:auto;flex:1;min-height:0;">
+      ${/* 4.40.6+ overflow-y:scroll (não auto) força barra sempre visível —
+            evita estado em que user não percebe que tem conteúdo abaixo. */ ''}
+      <div class="img-edit-modal-body"
+        style="padding:24px;display:flex;flex-direction:column;gap:14px;
+        overflow-y:scroll;flex:1;min-height:0;scrollbar-gutter:stable;">
         <img src="${esc(img.url)}" alt=""
           style="width:100%;height:160px;object-fit:cover;border-radius:var(--radius-sm);flex-shrink:0;">
         <div>

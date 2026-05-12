@@ -461,12 +461,14 @@ export async function fetchImagesPage(filters = {}) {
 //   showLocation     — 'full' (cont/país/cidade) | 'continent' (só) | 'none'
 //   pathPrefix       — prefixo do path no R2; vazio = monta a partir da geolocalização
 export const ASSET_CATEGORIES = [
-  { key: 'location',   label: 'Destino',     icon: '📍', requiresLocation: true,  showLocation: 'full',      pathPrefix: '' /* legacy: continent/country/city */ },
-  { key: 'hotel',      label: 'Hotel',       icon: '🏨', requiresLocation: false, showLocation: 'full',      pathPrefix: 'hoteis' },
-  { key: 'restaurant', label: 'Restaurante', icon: '🍽', requiresLocation: false, showLocation: 'full',      pathPrefix: 'restaurantes' },
-  { key: 'train',      label: 'Trem',        icon: '🚄', requiresLocation: false, showLocation: 'continent', pathPrefix: 'trens' },
-  { key: 'cruise',     label: 'Cruzeiro',    icon: '🚢', requiresLocation: false, showLocation: 'none',      pathPrefix: 'cruzeiros' },
-  { key: 'logo',       label: 'Logo',        icon: '◈', requiresLocation: false, showLocation: 'none',      pathPrefix: 'logos' },
+  { key: 'location',   label: 'Destino',     icon: '📍', requiresLocation: true,  showLocation: 'full', pathPrefix: '' /* legacy: continent/country/city */ },
+  { key: 'hotel',      label: 'Hotel',       icon: '🏨', requiresLocation: false, showLocation: 'full', pathPrefix: 'hoteis' },
+  { key: 'restaurant', label: 'Restaurante', icon: '🍽', requiresLocation: false, showLocation: 'full', pathPrefix: 'restaurantes' },
+  // 4.40.6+ Trem: continente/país/cidade VISÍVEIS mas opcionais (atende rotas
+  // domésticas Brasil + cruza-fronteiras tipo Eurostar — user decide o nível).
+  { key: 'train',      label: 'Trem',        icon: '🚄', requiresLocation: false, showLocation: 'full', pathPrefix: 'trens' },
+  { key: 'cruise',     label: 'Cruzeiro',    icon: '🚢', requiresLocation: false, showLocation: 'none', pathPrefix: 'cruzeiros' },
+  { key: 'logo',       label: 'Logo',        icon: '◈', requiresLocation: false, showLocation: 'none', pathPrefix: 'logos' },
 ];
 
 // Helper pra checar permissão de gerir o banco. 4.35.31+: aceita tanto a

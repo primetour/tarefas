@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 5,
-  build: '20260512-image-bank-overhaul',
+  patch: 6,
+  build: '20260512-image-bank-followups',
 };
 
 /** "1.2.0" */
