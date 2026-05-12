@@ -480,9 +480,24 @@ export const getR2UploadUrl = onCall({
     throw new HttpsError('invalid-argument', 'Path muito longo.');
   }
 
-  // Validação: path precisa começar com pasta whitelisted
-  const ALLOWED_PREFIXES = ['agents/', 'logos/', 'portal/', 'tasks/'];
-  if (!ALLOWED_PREFIXES.some(p => path.startsWith(p))) {
+  // Validação: path precisa começar com pasta whitelisted.
+  // 4.35.32+ Adicionado hoteis/ cruzeiros/ trens/ (novas categorias de asset
+  // no Banco de Imagens — antes só location-based fotos iam pra continent/...).
+  // Casos sem prefixo (location) também são aceitos via fallback abaixo.
+  const ALLOWED_PREFIXES = [
+    'agents/', 'logos/', 'portal/', 'tasks/',
+    'hoteis/', 'cruzeiros/', 'trens/',   // 4.35.32+ novas categorias do banco
+  ];
+  // Continentes (location-based) começam com letra minúscula sem prefixo fixo:
+  // brasil/sao-paulo/sao-paulo/...  →  permitido se NÃO bater em nenhum prefixo
+  // proibido (qualquer um começando com /,  .. ou //). Já validado acima.
+  const matchedPrefix = ALLOWED_PREFIXES.some(p => path.startsWith(p));
+  // Location: aceita se primeiro segmento é um continente conhecido
+  const KNOWN_CONTINENTS = ['brasil','africa','america-central','caribe','america-do-norte',
+    'america-do-sul','asia','europa','oriente-medio','oceania','antartica'];
+  const firstSeg = path.split('/')[0].toLowerCase();
+  const isLocationPath = KNOWN_CONTINENTS.includes(firstSeg);
+  if (!matchedPrefix && !isLocationPath) {
     throw new HttpsError('permission-denied', `Path "${path}" fora das pastas permitidas.`);
   }
   // Rate limit por IP + por user
