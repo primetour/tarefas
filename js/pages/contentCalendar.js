@@ -1211,15 +1211,15 @@ function renderPage(container) {
             cursor:pointer;flex-shrink:0;" onclick="location.hash='content-config'">⚙ Config</button>` : ''}
       </div>
 
-      <!-- LINHA 2: Subtitle full-width -->
-      <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0 0 12px 0;">
-        ${hasTypesSelected
-          ? 'Calendário dos tipos de tarefa selecionados. Adicione projeto pra visualizar tarefas já previstas na rotina.'
-          : hasProjectSelected
-            ? (isMulti
-                ? 'Visualizando múltiplos projetos. Cores dos cards = cor do projeto.'
-                : 'Calendário deste projeto. Adicione tipos pra refinar.')
-            : 'Selecione tipo(s) abaixo pra ver o calendário.'}
+      <!-- LINHA 2: Subtitle full-width — 4.40+ explicita as duas visões -->
+      <p style="font-size:0.8125rem;color:var(--text-muted,#5A6B7A);margin:0 0 12px 0;line-height:1.5;">
+        ${hasTypesSelected && hasProjectSelected
+          ? `<span style="color:var(--brand-gold);">📅 Tipo</span> + <span style="color:#0EA5E9;">📦 Projeto</span> — vendo <strong>agenda prévia</strong> dos tipos selecionados <em>cruzada com tarefas reais</em> dos projetos.`
+          : hasTypesSelected
+            ? `<span style="color:var(--brand-gold);">📅 Por Tipo</span> — mostra a <strong>agenda prévia</strong> (slots). Adicione um projeto pra cruzar com tarefas reais.`
+            : hasProjectSelected
+              ? `<span style="color:#0EA5E9;">📦 Por Projeto</span> — mostra <strong>tarefas reais</strong> da rotina${isMulti ? ' dos projetos' : ' do projeto'}. Adicione tipos pra ver a agenda prévia.`
+              : 'Selecione tipo(s) abaixo pra ver o calendário.'}
       </p>
 
       <!-- LINHA 3: Chips de TIPOS + botão "+ Tipos" pra adicionar mais -->
@@ -1286,6 +1286,29 @@ function renderPage(container) {
           onmouseover="this.style.opacity='0.85'"
           onmouseout="this.style.opacity='1'">+ Adicionar projeto</button>
       </div>
+
+      ${/* 4.40+ Filtro de TIPOS sempre disponível mesmo quando só projeto está selecionado.
+            Antes, se o user entrava por "+ Adicionar projeto" sem tipo, não tinha como
+            adicionar tipo depois sem voltar à home. Agora aparece SEMPRE que houver
+            contexto (projeto ou tipo) — combinação livre projeto + tipo. */ ''}
+      ${(hasContext && !hasTypesSelected) ? `
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;
+          padding:6px 12px;background:var(--bg-surface,#16202C);border-radius:8px;
+          border:1px dashed var(--border-subtle,#1E2D3D);">
+          <span style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;
+            letter-spacing:0.05em;font-weight:600;margin-right:4px;">Tipos:</span>
+          <span style="font-size:0.8125rem;color:var(--text-muted);font-style:italic;">
+            Nenhum — adicione pra ver a <strong>agenda prévia</strong> (slots)
+          </span>
+          <button id="cc-filter-task-types-inline" title="Adicionar tipos de tarefa"
+            style="padding:4px 12px;border:1px solid var(--brand-gold,#D4A843);
+            border-radius:14px;background:transparent;color:var(--brand-gold,#D4A843);
+            font-size:0.75rem;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap;
+            font-family:inherit;margin-left:auto;">
+            + Tipos
+          </button>
+        </div>
+      ` : ''}
 
       <!-- LINHA 5: Toolbar (view + nav + filtros + actions + export) -->
       ${hasContext ? `
@@ -1470,14 +1493,44 @@ function renderTypeCardsHome(projectCount) {
   return `
     <div style="padding:24px 16px;">
       <div style="max-width:1080px;margin:0 auto;">
-        <div style="text-align:center;margin-bottom:28px;">
+        <div style="text-align:center;margin-bottom:24px;">
           <div style="font-size:2.5rem;margin-bottom:8px;">🗓</div>
           <h2 style="font-size:1.25rem;font-weight:700;color:var(--text-primary);margin:0 0 6px;">
-            Calendários de conteúdo
+            Calendário de Conteúdo
           </h2>
-          <p style="font-size:0.875rem;color:var(--text-muted);max-width:520px;margin:0 auto;line-height:1.55;">
-            Cada tipo de tarefa com agenda recorrente tem seu próprio calendário.
-            Selecione um ou mais pra começar — você pode adicionar projeto como filtro depois.
+          <p style="font-size:0.875rem;color:var(--text-muted);max-width:600px;margin:0 auto;line-height:1.55;">
+            Ferramenta para organizar a <strong>rotina de times de comunicação</strong> —
+            posts, stories, newsletters e demais publicações nos canais digitais.
+          </p>
+        </div>
+
+        ${/* 4.40+ Banner conceitual explicando as 2 visualizações disponíveis */ ''}
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;
+          max-width:760px;margin:0 auto 32px;">
+          <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+            border-left:3px solid var(--brand-gold,#D4A843);border-radius:8px;padding:12px 14px;">
+            <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+              color:var(--brand-gold);margin-bottom:6px;">📅 Por Tipo de tarefa</div>
+            <div style="font-size:0.8125rem;color:var(--text-primary);line-height:1.5;">
+              Mostra a <strong>agenda prévia</strong> (slots recorrentes configurados nos tipos)
+              — o que está <em>previsto</em> publicar.
+            </div>
+          </div>
+          <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
+            border-left:3px solid #0EA5E9;border-radius:8px;padding:12px 14px;">
+            <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+              color:#0EA5E9;margin-bottom:6px;">📦 Por Projeto</div>
+            <div style="font-size:0.8125rem;color:var(--text-primary);line-height:1.5;">
+              Mostra <strong>tarefas reais</strong> já cadastradas na rotina dos projetos
+              — o que está <em>executando</em>.
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align:center;margin-bottom:20px;">
+          <p style="font-size:0.8125rem;color:var(--text-muted);max-width:560px;margin:0 auto;line-height:1.5;">
+            Os dois filtros podem ser <strong>combinados</strong>. Comece escolhendo um ou mais tipos abaixo —
+            depois adicione projeto pra cruzar com as tarefas em execução.
           </p>
         </div>
 
@@ -1550,8 +1603,14 @@ function bindTypeCardsHome(container) {
     });
     card.addEventListener('click', () => {
       const typeId = card.dataset.typeId;
-      // Adiciona o tipo ao filtro + persiste + re-renderiza
-      visibleTaskTypes = [typeId];
+      // 4.40+ Aditivo: se já tem outros tipos selecionados, ADICIONA em vez de
+      // sobrescrever. Permite combinar múltiplos tipos sem voltar à home.
+      const current = Array.isArray(visibleTaskTypes) ? visibleTaskTypes : [];
+      if (!current.includes(typeId)) {
+        visibleTaskTypes = [...current, typeId];
+      } else {
+        visibleTaskTypes = current; // já presente, no-op
+      }
       persistVisibleTaskTypes();
       renderPage(container);
     });
@@ -1633,7 +1692,11 @@ function renderMonthView(container) {
               </div>
               <div style="display:flex;flex-direction:column;gap:3px;">
                 ${slots.slice(0, 3).map(slot => renderSlotCard(slot, 'compact')).join('')}
-                ${slots.length > 3 ? `<div style="font-size:0.6875rem;color:var(--text-muted,#5A6B7A);padding:2px 4px;">+${slots.length - 3} mais</div>` : ''}
+                ${slots.length > 3 ? `<button class="cc-day-overflow" data-date="${formatDate(cell.date)}" data-kind="slot"
+                  style="font-size:0.6875rem;color:var(--text-muted,#5A6B7A);padding:2px 4px;
+                  background:transparent;border:none;cursor:pointer;text-align:left;font-family:inherit;
+                  text-decoration:underline dotted;text-underline-offset:2px;width:fit-content;"
+                  title="Ver todos">+${slots.length - 3} mais</button>` : ''}
                 ${(() => {
                   // 4.25+ Slots de tarefa do projeto + 4.28+ Slots virtuais (agenda prévia)
                   if (!cell.date) return '';
@@ -1646,13 +1709,22 @@ function renderMonthView(container) {
                   const usedSpace = slots.length;
                   const taskMax = Math.max(0, 3 - usedSpace);
                   const virtualMax = Math.max(0, 3 - usedSpace - Math.min(taskMax, tasks.length));
+                  const dateStr = formatDate(cell.date);
                   let html = tasks.slice(0, taskMax).map(t => renderTaskSlot(t, 'compact')).join('');
                   if (tasks.length > taskMax) {
-                    html += `<div style="font-size:0.625rem;color:#0EA5E9;padding:1px 4px;font-style:italic;">+${tasks.length - taskMax} tarefa${tasks.length - taskMax > 1 ? 's' : ''}</div>`;
+                    html += `<button class="cc-day-overflow" data-date="${dateStr}" data-kind="task"
+                      style="font-size:0.625rem;color:#0EA5E9;padding:1px 4px;font-style:italic;
+                      background:transparent;border:none;cursor:pointer;text-align:left;font-family:inherit;
+                      text-decoration:underline dotted;text-underline-offset:2px;width:fit-content;"
+                      title="Ver todas as tarefas do dia">+${tasks.length - taskMax} tarefa${tasks.length - taskMax > 1 ? 's' : ''}</button>`;
                   }
                   html += virtuals.slice(0, virtualMax).map(v => renderVirtualSlotCard(v, 'compact')).join('');
                   if (virtuals.length > virtualMax) {
-                    html += `<div style="font-size:0.625rem;color:var(--text-muted);padding:1px 4px;font-style:italic;">+${virtuals.length - virtualMax} previsto${virtuals.length - virtualMax > 1 ? 's' : ''}</div>`;
+                    html += `<button class="cc-day-overflow" data-date="${dateStr}" data-kind="virtual"
+                      style="font-size:0.625rem;color:var(--text-muted);padding:1px 4px;font-style:italic;
+                      background:transparent;border:none;cursor:pointer;text-align:left;font-family:inherit;
+                      text-decoration:underline dotted;text-underline-offset:2px;width:fit-content;"
+                      title="Ver todos os previstos">+${virtuals.length - virtualMax} previsto${virtuals.length - virtualMax > 1 ? 's' : ''}</button>`;
                   }
                   return html;
                 })()}
@@ -1954,9 +2026,20 @@ function bindCalendarCellEvents(container) {
       if (e.target.closest('.cc-slot-card')) return;
       if (e.target.closest('.cc-task-slot')) return; // 4.25+ task slot tem handler próprio
       if (e.target.closest('.cc-virtual-slot')) return; // 4.28+ virtual slot tem handler próprio
+      if (e.target.closest('.cc-day-overflow')) return; // 4.40+ overflow tem handler próprio
       const dateStr = cell.dataset.date;
       if (!dateStr) return;
       openSlotModal(null, dateStr);
+    });
+  });
+
+  // 4.40+ Click no "+N mais/tarefas/previstos" abre modal com TODOS os items do dia
+  container.querySelectorAll('.cc-day-overflow').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const dateStr = btn.dataset.date;
+      if (!dateStr) return;
+      openDayDetailsModal(dateStr);
     });
   });
 
@@ -2389,6 +2472,167 @@ function openSuggestWeekModal(container) {
 }
 
 /* ── Slot Modal ─────────────────────────────────────────── */
+
+/**
+ * 4.40+ Modal de detalhes do dia: lista TODOS os slots/tarefas/previstos
+ * daquele dia, sem limite de "+N mais". Itens são clicáveis e abrem o
+ * editor correspondente (slot/task/virtual).
+ */
+function openDayDetailsModal(dateStr) {
+  const overlay = document.getElementById('cc-modal-overlay');
+  if (!overlay) return;
+  const date = parseLocalDate(dateStr);
+  if (!date) return;
+
+  modalOpen = true;
+  overlay.style.display = 'flex';
+
+  const slots    = slotsForDate(date);
+  const tasks    = projectTasksForDate(date);
+  const virtuals = generateVirtualSlots(date).filter(v => !tasks.some(t => t.typeId === v.typeId));
+
+  const total = slots.length + tasks.length + virtuals.length;
+  const dayLabel = `${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}/${date.getFullYear()}`;
+  const weekday  = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'][date.getDay()];
+
+  overlay.innerHTML = `
+    <div id="cc-modal" style="background:var(--bg-card,#111B27);border:1px solid var(--border-subtle,#1E2D3D);
+      border-radius:12px;width:100%;max-width:560px;max-height:85vh;overflow-y:auto;
+      box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px;
+        border-bottom:1px solid var(--border-subtle,#1E2D3D);">
+        <div>
+          <h2 style="font-size:1.0625rem;font-weight:700;color:var(--text-primary,#E8ECF1);margin:0;">
+            ${esc(weekday)}, ${esc(dayLabel)}
+          </h2>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 0 0;">
+            ${total} item${total !== 1 ? 's' : ''} no calendário
+          </p>
+        </div>
+        <button id="cc-day-modal-close" style="background:none;border:none;color:var(--text-muted);
+          font-size:1.25rem;cursor:pointer;padding:4px 10px;border-radius:4px;line-height:1;"
+          onmouseover="this.style.background='var(--bg-surface)'"
+          onmouseout="this.style.background='none'">&times;</button>
+      </div>
+
+      <div style="padding:18px 22px;">
+        ${slots.length === 0 && tasks.length === 0 && virtuals.length === 0 ? `
+          <p style="color:var(--text-muted);font-size:0.875rem;text-align:center;padding:20px;">
+            Nenhum item neste dia.
+          </p>` : ''}
+
+        ${slots.length > 0 ? `
+          <div style="margin-bottom:16px;">
+            <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+              letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px;">
+              📱 Slots de Conteúdo (${slots.length})
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              ${slots.map(s => renderSlotCard(s, 'detailed')).join('')}
+            </div>
+          </div>` : ''}
+
+        ${tasks.length > 0 ? `
+          <div style="margin-bottom:16px;">
+            <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+              letter-spacing:.08em;color:#0EA5E9;margin-bottom:8px;">
+              ✓ Tarefas dos Projetos (${tasks.length})
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              ${tasks.map(t => renderTaskSlot(t, 'detailed')).join('')}
+            </div>
+          </div>` : ''}
+
+        ${virtuals.length > 0 ? `
+          <div style="margin-bottom:16px;">
+            <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+              letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px;">
+              ⏳ Previstos / Agenda prévia (${virtuals.length})
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              ${virtuals.map(v => renderVirtualSlotCard(v, 'detailed')).join('')}
+            </div>
+          </div>` : ''}
+      </div>
+
+      <div style="padding:14px 22px;border-top:1px solid var(--border-subtle,#1E2D3D);
+        display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <button id="cc-day-modal-new" style="padding:8px 16px;border:1px solid var(--brand-gold,#D4A843);
+          border-radius:8px;background:transparent;color:var(--brand-gold,#D4A843);
+          font-size:0.8125rem;font-weight:600;cursor:pointer;font-family:inherit;">
+          + Novo slot neste dia
+        </button>
+        <button id="cc-day-modal-cancel" style="padding:8px 16px;border:1px solid var(--border-subtle);
+          border-radius:8px;background:transparent;color:var(--text-muted);
+          font-size:0.8125rem;font-weight:500;cursor:pointer;font-family:inherit;">
+          Fechar
+        </button>
+      </div>
+    </div>
+  `;
+
+  // Bind close
+  const closeFn = () => { overlay.style.display = 'none'; overlay.innerHTML = ''; modalOpen = false; };
+  document.getElementById('cc-day-modal-close')?.addEventListener('click', closeFn);
+  document.getElementById('cc-day-modal-cancel')?.addEventListener('click', closeFn);
+  overlay.addEventListener('click', function bgClick(e) {
+    if (e.target === overlay) { closeFn(); overlay.removeEventListener('click', bgClick); }
+  });
+
+  // Bind new-slot
+  document.getElementById('cc-day-modal-new')?.addEventListener('click', () => {
+    closeFn();
+    openSlotModal(null, dateStr);
+  });
+
+  // Bind clicks nos cards dentro do modal — reaproveita os mesmos handlers
+  overlay.querySelectorAll('.cc-slot-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const slotId = card.dataset.slotId;
+      const slot = allSlots.find(s => s.id === slotId);
+      if (slot) { closeFn(); openSlotModal(slot); }
+    });
+  });
+  overlay.querySelectorAll('.cc-task-slot').forEach(card => {
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const taskId = card.dataset.taskId;
+      const task = _projectTasks.find(t => t.id === taskId);
+      if (!task) return;
+      closeFn();
+      openTaskModal({
+        taskData: task,
+        onSave: async () => { await loadProjectTasks(); renderCalendarBody(); },
+      });
+    });
+  });
+  overlay.querySelectorAll('.cc-virtual-slot').forEach(card => {
+    card.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const d      = card.dataset.virtualDate;
+      const typeId = card.dataset.virtualTypeId;
+      const slotId = card.dataset.virtualSlotId;
+      const types  = store.get('taskTypes') || [];
+      const type   = types.find(t => t.id === typeId);
+      const slot   = type?.scheduleSlots?.find(s => s.id === slotId);
+      const projectId = activeProjectIds[0] || null;
+      closeFn();
+      openTaskModal({
+        taskData: {
+          title:           slot?.title || type?.name || 'Nova tarefa',
+          typeId,
+          projectId,
+          dueDate:         d,
+          status:          'not_started',
+          requestingArea:  slot?.requestingArea || '',
+          tags:            ['agenda-previa'],
+        },
+        onSave: async () => { await loadProjectTasks(); renderCalendarBody(); },
+      });
+    });
+  });
+}
 
 function openSlotModal(slot, prefillDate) {
   editingSlot = slot || null;

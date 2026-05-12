@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 39,
-  patch: 5,
-  build: '20260512-squad-cards-title-fix',
+  minor: 40,
+  patch: 0,
+  build: '20260512-content-calendar-ux',
 };
 
 /** "1.2.0" */
