@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 36,
-  patch: 3,
-  build: '20260512-office-walking-interactive',
+  patch: 4,
+  build: '20260512-office-themed-rooms',
 };
 
 /** "1.2.0" */

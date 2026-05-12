@@ -99,19 +99,21 @@ function routeToRoom(route) {
  * Coordenadas em "grid" (0..3 cols, 0..2 rows). renderRoom converte
  * pra coordenadas isométricas no SVG.
  */
+// 4.36.4+ Labels alinhados com os módulos reais do sistema
 const ROOMS = [
-  { id: 'recepcao',    label: 'Recepção',         icon: '🏠', col: 0, row: 0, color: '#64748B', defaultRoute: 'home' },
-  { id: 'tarefas',     label: 'Tarefas',          icon: '📋', col: 1, row: 0, color: '#3B82F6', defaultRoute: 'tasks' },
-  { id: 'reunioes',    label: 'Reuniões',         icon: '📊', col: 2, row: 0, color: '#8B5CF6', defaultRoute: 'workspaces' },
-  { id: 'comando',     label: 'Comando',          icon: '📈', col: 3, row: 0, color: '#06B6D4', defaultRoute: 'dashboards' },
-  { id: 'estudio',     label: 'Estúdio',          icon: '🎨', col: 0, row: 1, color: '#EC4899', defaultRoute: 'portal-tips' },
-  { id: 'lousa',       label: 'Lousa',            icon: '📝', col: 1, row: 1, color: '#F59E0B', defaultRoute: 'content-calendar' },
-  { id: 'roteiros',    label: 'Roteiros',         icon: '✈',  col: 2, row: 1, color: '#10B981', defaultRoute: 'roteiros' },
-  { id: 'atendimento', label: 'Atendimento',      icon: '💬', col: 3, row: 1, color: '#F97316', defaultRoute: 'csat' },
-  { id: 'lab-ia',      label: 'Lab IA',           icon: '🤖', col: 0, row: 2, color: '#A78BFA', defaultRoute: 'ai-hub' },
-  { id: 'admin',       label: 'Admin',            icon: '⚙',  col: 1, row: 2, color: '#475569', defaultRoute: 'users' },
-  { id: 'cafe',        label: 'Café',             icon: '☕', col: 2, row: 2, color: '#92400E', defaultRoute: 'profile' },
-  { id: 'descompressao', label: 'Descompressão',  icon: '🛋', col: 3, row: 2, color: '#7C3AED', defaultRoute: 'team' },
+  { id: 'recepcao',      label: 'Meu Painel',           icon: '🏠', col: 0, row: 0, color: '#64748B', defaultRoute: 'home' },
+  { id: 'tarefas',       label: 'Tarefas',              icon: '📋', col: 1, row: 0, color: '#3B82F6', defaultRoute: 'tasks' },
+  { id: 'reunioes',      label: 'Squads',               icon: '🤝', col: 2, row: 0, color: '#8B5CF6', defaultRoute: 'workspaces' },
+  { id: 'comando',       label: 'Dashboards',           icon: '📊', col: 3, row: 0, color: '#06B6D4', defaultRoute: 'dashboards' },
+  { id: 'estudio',       label: 'Portal de Dicas',      icon: '🌍', col: 0, row: 1, color: '#EC4899', defaultRoute: 'portal-tips' },
+  { id: 'lousa',         label: 'Calendário de Conteúdo', icon: '📅', col: 1, row: 1, color: '#F59E0B', defaultRoute: 'content-calendar' },
+  { id: 'roteiros',      label: 'Roteiros de Viagem',   icon: '✈',  col: 2, row: 1, color: '#10B981', defaultRoute: 'roteiros' },
+  { id: 'atendimento',   label: 'CSAT',                 icon: '💬', col: 3, row: 1, color: '#F97316', defaultRoute: 'csat' },
+  { id: 'lab-ia',        label: 'IA Hub',               icon: '🤖', col: 0, row: 2, color: '#A78BFA', defaultRoute: 'ai-hub' },
+  { id: 'admin',         label: 'Administração',        icon: '⚙',  col: 1, row: 2, color: '#475569', defaultRoute: 'users' },
+  { id: 'cafe',          label: 'Perfil',               icon: '👤', col: 2, row: 2, color: '#92400E', defaultRoute: 'profile' },
+  // Fora hoje = users com absences ativas (módulo Equipe/Capacidade)
+  { id: 'descompressao', label: 'Fora hoje',            icon: '🌴', col: 3, row: 2, color: '#7C3AED', defaultRoute: 'team' },
 ];
 
 /* ─── Conversão grid → isométrica ──
@@ -184,8 +186,8 @@ export async function renderOffice(container) {
       <div class="page-header-left">
         <h1 class="page-title">🏢 Escritório Virtual</h1>
         <p class="page-subtitle">
-          Veja em tempo real quem está em cada módulo. Cada sala é um espaço de trabalho;
-          usuários ausentes ficam na sala de descompressão.
+          Veja em tempo real quem está trabalhando em cada módulo do sistema.
+          Clique em uma sala para ir até ela. Quem está fora hoje aparece em "Fora hoje".
         </p>
       </div>
       <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;">
@@ -576,93 +578,651 @@ function shade(hex, percent) {
   return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
 }
 
-/* ─── Furniture map: por sala, lista de peças a renderizar ── */
+/* ─── PRIMITIVOS EXTRAS (4.36.4+) ───────────────────────────
+ * Conjunto expandido pra dar contexto a cada sala. Todos
+ * desenhados em "vista isométrica fake" — top diamond com 2 sides.
+ */
+
+// Tapete (área rug — chão decorado dentro da sala)
+function iso_rug(cx, cy, w = 140, d = 80, color = '#92400E') {
+  const dx = w/2, dy = d/2;
+  return `
+    <polygon points="${cx},${cy-dy} ${cx+dx},${cy} ${cx},${cy+dy} ${cx-dx},${cy}"
+      fill="${color}" opacity="0.35" stroke="${shade(color, -20)}" stroke-width="0.5" stroke-dasharray="3,3"/>
+  `;
+}
+
+// Quadro / poster (frame na parede — pequeno, decorativo)
+function iso_poster(x, y, w = 22, h = 16, color = '#3B82F6') {
+  return `
+    <rect x="${x - w/2}" y="${y - h/2}" width="${w}" height="${h}"
+      fill="${color}" stroke="${shade(color, -40)}" stroke-width="1" rx="1"/>
+    <rect x="${x - w/2 + 2}" y="${y - h/2 + 2}" width="${w - 4}" height="${h - 4}"
+      fill="${shade(color, 40)}" opacity="0.6"/>
+  `;
+}
+
+// Estante / Bookshelf
+function iso_bookshelf(x, y) {
+  return `
+    <rect x="${x-18}" y="${y-22}" width="36" height="28" fill="#5C4033" stroke="#3D2817" stroke-width="0.5"/>
+    <line x1="${x-18}" y1="${y-15}" x2="${x+18}" y2="${y-15}" stroke="#3D2817" stroke-width="0.5"/>
+    <line x1="${x-18}" y1="${y-7}" x2="${x+18}" y2="${y-7}" stroke="#3D2817" stroke-width="0.5"/>
+    <line x1="${x-18}" y1="${y+1}" x2="${x+18}" y2="${y+1}" stroke="#3D2817" stroke-width="0.5"/>
+    <!-- livros -->
+    <rect x="${x-15}" y="${y-21}" width="3" height="6" fill="#DC2626"/>
+    <rect x="${x-11}" y="${y-21}" width="3" height="6" fill="#1E40AF"/>
+    <rect x="${x-7}" y="${y-21}" width="3" height="6" fill="#15803D"/>
+    <rect x="${x-3}" y="${y-21}" width="3" height="6" fill="#D97706"/>
+    <rect x="${x+1}" y="${y-21}" width="3" height="6" fill="#7C2D12"/>
+    <rect x="${x+5}" y="${y-21}" width="3" height="6" fill="#1F2937"/>
+    <rect x="${x-14}" y="${y-13}" width="3" height="6" fill="#0E7490"/>
+    <rect x="${x-10}" y="${y-13}" width="3" height="6" fill="#9A3412"/>
+    <rect x="${x+0}" y="${y-13}" width="3" height="6" fill="#1E40AF"/>
+    <rect x="${x+4}" y="${y-13}" width="3" height="6" fill="#15803D"/>
+  `;
+}
+
+// Mapa mundi grande (parede)
+function iso_worldmap(x, y) {
+  return `
+    <rect x="${x-28}" y="${y-20}" width="56" height="32" fill="#0EA5E9" stroke="#0369A1" stroke-width="1" rx="1"/>
+    <!-- continentes esquemáticos -->
+    <path d="M${x-22},${y-12} L${x-15},${y-10} L${x-13},${y-3} L${x-18},${y+2} L${x-23},${y-2} Z"
+      fill="#16A34A" opacity="0.8"/>
+    <path d="M${x-10},${y-8} L${x},${y-13} L${x+5},${y-5} L${x+3},${y+5} L${x-8},${y+3} Z"
+      fill="#16A34A" opacity="0.8"/>
+    <path d="M${x+8},${y-10} L${x+20},${y-8} L${x+22},${y+0} L${x+15},${y+8} L${x+10},${y+3} Z"
+      fill="#16A34A" opacity="0.8"/>
+    <!-- pinos -->
+    <circle cx="${x-15}" cy="${y-5}" r="1.5" fill="#EF4444"/>
+    <circle cx="${x+8}" cy="${y-2}" r="1.5" fill="#EF4444"/>
+    <circle cx="${x-3}" cy="${y+2}" r="1.5" fill="#EF4444"/>
+  `;
+}
+
+// Sticky notes (post-its colados)
+function iso_sticky_notes(x, y) {
+  return `
+    <rect x="${x-12}" y="${y-12}" width="11" height="11" fill="#FEF08A" stroke="#CA8A04" stroke-width="0.3" transform="rotate(-5 ${x} ${y})"/>
+    <rect x="${x-2}" y="${y-13}" width="11" height="11" fill="#FCA5A5" stroke="#B91C1C" stroke-width="0.3" transform="rotate(3 ${x} ${y})"/>
+    <rect x="${x+1}" y="${y-3}" width="11" height="11" fill="#86EFAC" stroke="#15803D" stroke-width="0.3" transform="rotate(-2 ${x} ${y})"/>
+    <rect x="${x-11}" y="${y-1}" width="11" height="11" fill="#93C5FD" stroke="#1E40AF" stroke-width="0.3" transform="rotate(6 ${x} ${y})"/>
+  `;
+}
+
+// Kanban board (parede) — para sala de Tarefas
+function iso_kanban_board(x, y) {
+  return `
+    <rect x="${x-32}" y="${y-22}" width="64" height="32" fill="#1F2937" stroke="#0F172A" stroke-width="1" rx="1"/>
+    <!-- 3 colunas To Do / Doing / Done -->
+    <rect x="${x-29}" y="${y-19}" width="18" height="26" fill="#374151"/>
+    <rect x="${x-10}" y="${y-19}" width="18" height="26" fill="#374151"/>
+    <rect x="${x+9}"  y="${y-19}" width="18" height="26" fill="#374151"/>
+    <!-- cards -->
+    <rect x="${x-27}" y="${y-17}" width="14" height="5" fill="#EF4444" rx="0.5"/>
+    <rect x="${x-27}" y="${y-10}" width="14" height="5" fill="#F59E0B" rx="0.5"/>
+    <rect x="${x-27}" y="${y-3}"  width="14" height="5" fill="#F59E0B" rx="0.5"/>
+    <rect x="${x-8}"  y="${y-17}" width="14" height="5" fill="#3B82F6" rx="0.5"/>
+    <rect x="${x-8}"  y="${y-10}" width="14" height="5" fill="#3B82F6" rx="0.5"/>
+    <rect x="${x+11}" y="${y-17}" width="14" height="5" fill="#22C55E" rx="0.5"/>
+    <rect x="${x+11}" y="${y-10}" width="14" height="5" fill="#22C55E" rx="0.5"/>
+    <rect x="${x+11}" y="${y-3}"  width="14" height="5" fill="#22C55E" rx="0.5"/>
+    <rect x="${x+11}" y="${y+4}"  width="14" height="5" fill="#22C55E" rx="0.5"/>
+  `;
+}
+
+// Calendário wall (sala do calendário de conteúdo)
+function iso_wall_calendar(x, y) {
+  return `
+    <rect x="${x-30}" y="${y-24}" width="60" height="36" fill="#FFFFFF" stroke="#D4A843" stroke-width="1.5" rx="2"/>
+    <rect x="${x-30}" y="${y-24}" width="60" height="8" fill="#D4A843"/>
+    <text x="${x}" y="${y-18}" text-anchor="middle" font-size="6" fill="#fff" font-weight="700">CALENDÁRIO</text>
+    <!-- grid 5x4 dias -->
+    ${(() => {
+      let cells = '';
+      for (let i = 0; i < 5; i++) for (let j = 0; j < 4; j++) {
+        const cx2 = x - 26 + i * 11;
+        const cy2 = y - 14 + j * 6.5;
+        cells += `<rect x="${cx2}" y="${cy2}" width="10" height="6" fill="${(i+j) % 2 ? '#F8FAFC' : '#E5E7EB'}" stroke="#CBD5E1" stroke-width="0.3"/>`;
+      }
+      return cells;
+    })()}
+    <!-- 3 eventos marcados -->
+    <rect x="${x-26}" y="${y-14}" width="10" height="6" fill="#3B82F6" opacity="0.6"/>
+    <rect x="${x-4}" y="${y-7.5}" width="10" height="6" fill="#EC4899" opacity="0.6"/>
+    <rect x="${x+18}" y="${y-1}" width="6" height="6" fill="#22C55E" opacity="0.6"/>
+  `;
+}
+
+// Tripé com câmera (sala de Calendário/Estúdio)
+function iso_camera_tripod(x, y) {
+  return `
+    <!-- pernas do tripé -->
+    <line x1="${x}" y1="${y-4}" x2="${x-7}" y2="${y+8}" stroke="#1F2937" stroke-width="1.5"/>
+    <line x1="${x}" y1="${y-4}" x2="${x+7}" y2="${y+8}" stroke="#1F2937" stroke-width="1.5"/>
+    <line x1="${x}" y1="${y-4}" x2="${x}" y2="${y+8}" stroke="#1F2937" stroke-width="1.5"/>
+    <!-- câmera -->
+    <rect x="${x-7}" y="${y-12}" width="14" height="9" fill="#1F2937" rx="1"/>
+    <circle cx="${x}" cy="${y-7.5}" r="3" fill="#374151"/>
+    <circle cx="${x}" cy="${y-7.5}" r="1.5" fill="#0EA5E9"/>
+    <rect x="${x+3}" y="${y-13}" width="2" height="2" fill="#EF4444">
+      <animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite"/>
+    </rect>
+  `;
+}
+
+// Server rack (IA Hub)
+function iso_server_rack(x, y) {
+  return `
+    <rect x="${x-10}" y="${y-20}" width="20" height="26" fill="#0F172A" stroke="#1E293B" stroke-width="0.5" rx="1"/>
+    ${(() => {
+      let units = '';
+      for (let i = 0; i < 5; i++) {
+        const ry = y - 18 + i * 5;
+        units += `<rect x="${x-8}" y="${ry}" width="16" height="3.5" fill="#1E293B"/>`;
+        // LEDs
+        units += `<circle cx="${x-5}" cy="${ry + 1.7}" r="0.7" fill="${i % 2 ? '#22C55E' : '#0EA5E9'}">
+          <animate attributeName="opacity" values="1;0.3;1" dur="${1 + i * 0.2}s" repeatCount="indefinite"/>
+        </circle>`;
+        units += `<circle cx="${x-2}" cy="${ry + 1.7}" r="0.7" fill="${i % 2 ? '#0EA5E9' : '#22C55E'}">
+          <animate attributeName="opacity" values="0.3;1;0.3" dur="${1.2 + i * 0.15}s" repeatCount="indefinite"/>
+        </circle>`;
+      }
+      return units;
+    })()}
+  `;
+}
+
+// Filing cabinet (Admin)
+function iso_filing_cabinet(x, y) {
+  return `
+    <rect x="${x-10}" y="${y-18}" width="20" height="24" fill="#475569" stroke="#1E293B" stroke-width="0.5" rx="1"/>
+    <rect x="${x-9}" y="${y-16}" width="18" height="5" fill="#64748B"/>
+    <rect x="${x-9}" y="${y-10}" width="18" height="5" fill="#64748B"/>
+    <rect x="${x-9}" y="${y-4}" width="18" height="5" fill="#64748B"/>
+    <circle cx="${x}" cy="${y-13.5}" r="1" fill="#D4A843"/>
+    <circle cx="${x}" cy="${y-7.5}" r="1" fill="#D4A843"/>
+    <circle cx="${x}" cy="${y-1.5}" r="1" fill="#D4A843"/>
+  `;
+}
+
+// Whiteboard com texto (Squads)
+function iso_whiteboard(x, y) {
+  return `
+    <rect x="${x-26}" y="${y-20}" width="52" height="28" fill="#FFFFFF" stroke="#94A3B8" stroke-width="1.5"/>
+    <line x1="${x-22}" y1="${y-15}" x2="${x+18}" y2="${y-15}" stroke="#1F2937" stroke-width="1"/>
+    <line x1="${x-22}" y1="${y-10}" x2="${x+10}" y2="${y-10}" stroke="#3B82F6" stroke-width="1"/>
+    <line x1="${x-22}" y1="${y-5}"  x2="${x+5}" y2="${y-5}"  stroke="#EF4444" stroke-width="1"/>
+    <line x1="${x-22}" y1="${y+0}"  x2="${x+15}" y2="${y+0}" stroke="#22C55E" stroke-width="1"/>
+    <line x1="${x-22}" y1="${y+5}"  x2="${x+8}" y2="${y+5}"  stroke="#1F2937" stroke-width="1"/>
+  `;
+}
+
+// TV de apresentação (Squads)
+function iso_tv_screen(x, y) {
+  return `
+    <rect x="${x-22}" y="${y-16}" width="44" height="28" fill="#0F172A" stroke="#1E293B" stroke-width="1" rx="2"/>
+    <rect x="${x-19}" y="${y-13}" width="38" height="22" fill="#1E3A8A"/>
+    <!-- gráfico de apresentação fake -->
+    <polyline points="${x-17},${y+6} ${x-12},${y+3} ${x-7},${y-2} ${x-2},${y-5} ${x+3},${y-3} ${x+8},${y-7} ${x+13},${y-10}"
+      fill="none" stroke="#22C55E" stroke-width="1.2"/>
+    <circle cx="${x-12}" cy="${y+3}" r="1" fill="#22C55E"/>
+    <circle cx="${x-2}"  cy="${y-5}" r="1" fill="#22C55E"/>
+    <circle cx="${x+8}"  cy="${y-7}" r="1" fill="#22C55E"/>
+  `;
+}
+
+// Dashboard com gráficos (Dashboards/Comando)
+function iso_dashboard_screen(x, y, w = 26) {
+  return `
+    <rect x="${x-w/2}" y="${y-16}" width="${w}" height="22" fill="#0F172A" rx="1.5"/>
+    <rect x="${x-w/2+2}" y="${y-14}" width="${w-4}" height="18" fill="#1E293B"/>
+    <!-- bars -->
+    <rect x="${x-w/2+3}" y="${y-2}" width="3" height="4" fill="#3B82F6"/>
+    <rect x="${x-w/2+7}" y="${y-6}" width="3" height="8" fill="#3B82F6"/>
+    <rect x="${x-w/2+11}" y="${y-10}" width="3" height="12" fill="#22C55E"/>
+    <rect x="${x-w/2+15}" y="${y-4}" width="3" height="6" fill="#3B82F6"/>
+    <rect x="${x-w/2+19}" y="${y-8}" width="3" height="10" fill="#F59E0B"/>
+    <!-- monitor stand -->
+    <rect x="${x-2}" y="${y+6}" width="4" height="3" fill="#475569"/>
+    <rect x="${x-5}" y="${y+9}" width="10" height="1.5" fill="#475569"/>
+  `;
+}
+
+// Star rating board (CSAT)
+function iso_star_board(x, y) {
+  return `
+    <rect x="${x-26}" y="${y-18}" width="52" height="22" fill="#FEF3C7" stroke="#D4A843" stroke-width="1" rx="2"/>
+    <text x="${x}" y="${y-12}" text-anchor="middle" font-size="5" fill="#92400E" font-weight="700">SATISFAÇÃO</text>
+    ${[0,1,2,3,4].map((i) => `
+      <path d="M ${x-19 + i*10},${y-3} l 1.5,-3 l 1,3 l 3,0.3 l -2.3,2 l 0.8,3 l -2.8,-1.6 l -2.8,1.6 l 0.8,-3 l -2.3,-2 z"
+        fill="#F59E0B" stroke="#92400E" stroke-width="0.3"/>
+    `).join('')}
+    <text x="${x}" y="${y+3}" text-anchor="middle" font-size="6" fill="#92400E" font-weight="700">★ 4.8</text>
+  `;
+}
+
+// Bolinhas de feedback (CSAT)
+function iso_feedback_chips(x, y) {
+  return `
+    <circle cx="${x-10}" cy="${y}" r="6" fill="#22C55E" opacity="0.8"/>
+    <text x="${x-10}" y="${y+2}" text-anchor="middle" font-size="6" fill="#fff">😊</text>
+    <circle cx="${x}" cy="${y}" r="6" fill="#F59E0B" opacity="0.8"/>
+    <text x="${x}" y="${y+2}" text-anchor="middle" font-size="6" fill="#fff">😐</text>
+    <circle cx="${x+10}" cy="${y}" r="6" fill="#EF4444" opacity="0.8"/>
+    <text x="${x+10}" y="${y+2}" text-anchor="middle" font-size="6" fill="#fff">😞</text>
+  `;
+}
+
+// Mala / suitcase (Roteiros)
+function iso_suitcase(x, y) {
+  return `
+    <rect x="${x-9}" y="${y-6}" width="18" height="13" fill="#92400E" stroke="#5C2E0A" stroke-width="0.5" rx="1.5"/>
+    <rect x="${x-4}" y="${y-9}" width="8" height="4" fill="none" stroke="#5C2E0A" stroke-width="1.2"/>
+    <line x1="${x-9}" y1="${y-1}" x2="${x+9}" y2="${y-1}" stroke="#5C2E0A" stroke-width="0.8"/>
+    <circle cx="${x-5}" cy="${y+2}" r="0.8" fill="#D4A843"/>
+    <circle cx="${x+5}" cy="${y+2}" r="0.8" fill="#D4A843"/>
+  `;
+}
+
+// Compass (Roteiros)
+function iso_compass(x, y) {
+  return `
+    <circle cx="${x}" cy="${y}" r="7" fill="#FEF3C7" stroke="#92400E" stroke-width="1"/>
+    <polygon points="${x},${y-5} ${x+1.5},${y} ${x},${y+5} ${x-1.5},${y}" fill="#EF4444"/>
+    <polygon points="${x},${y-5} ${x+1.5},${y}" fill="#1F2937"/>
+    <text x="${x}" y="${y-9}" text-anchor="middle" font-size="3" fill="#92400E" font-weight="700">N</text>
+  `;
+}
+
+// Lounge sofa (Perfil/Fora hoje)
+function iso_couch_big(x, y, color = '#7C3AED') {
+  return `
+    <!-- encosto -->
+    <rect x="${x-30}" y="${y-15}" width="60" height="10" fill="${shade(color, -20)}" rx="3"/>
+    <!-- assento -->
+    <rect x="${x-30}" y="${y-7}" width="60" height="14" rx="3" fill="${color}"/>
+    <!-- almofadas -->
+    <rect x="${x-26}" y="${y-5}" width="12" height="9" rx="2" fill="${shade(color, 30)}"/>
+    <rect x="${x-12}" y="${y-5}" width="12" height="9" rx="2" fill="${shade(color, 25)}"/>
+    <rect x="${x+2}"  y="${y-5}" width="12" height="9" rx="2" fill="${shade(color, 30)}"/>
+    <rect x="${x+16}" y="${y-5}" width="12" height="9" rx="2" fill="${shade(color, 25)}"/>
+    <!-- braços -->
+    <rect x="${x-32}" y="${y-8}" width="3" height="16" fill="${shade(color, -25)}" rx="1"/>
+    <rect x="${x+29}" y="${y-8}" width="3" height="16" fill="${shade(color, -25)}" rx="1"/>
+  `;
+}
+
+// Janela com vista (Fora hoje — vista de praia)
+function iso_window_view(x, y) {
+  return `
+    <rect x="${x-32}" y="${y-22}" width="64" height="34" fill="#87CEEB" stroke="#475569" stroke-width="1.5" rx="1"/>
+    <!-- céu gradiente -->
+    <rect x="${x-30}" y="${y-20}" width="60" height="15" fill="#7DD3FC"/>
+    <!-- sol -->
+    <circle cx="${x+18}" cy="${y-13}" r="4" fill="#FCD34D"/>
+    <!-- mar -->
+    <rect x="${x-30}" y="${y-5}" width="60" height="6" fill="#0284C7"/>
+    <!-- areia -->
+    <rect x="${x-30}" y="${y+1}" width="60" height="9" fill="#FDE68A"/>
+    <!-- palmeiras -->
+    <line x1="${x-20}" y1="${y+10}" x2="${x-18}" y2="${y-8}" stroke="#5C2E0A" stroke-width="1"/>
+    <ellipse cx="${x-19}" cy="${y-10}" rx="6" ry="3" fill="#16A34A"/>
+    <line x1="${x+10}" y1="${y+10}" x2="${x+12}" y2="${y-5}" stroke="#5C2E0A" stroke-width="1"/>
+    <ellipse cx="${x+11}" cy="${y-7}" rx="5" ry="2.5" fill="#16A34A"/>
+    <!-- caixilho da janela -->
+    <line x1="${x}" y1="${y-22}" x2="${x}" y2="${y+12}" stroke="#475569" stroke-width="1"/>
+    <line x1="${x-32}" y1="${y-5}" x2="${x+32}" y2="${y-5}" stroke="#475569" stroke-width="0.5"/>
+  `;
+}
+
+// Relógio de parede (Recepção)
+function iso_wall_clock(x, y) {
+  // Calcula ângulos das horas reais
+  const now = new Date();
+  const hours = now.getHours() % 12 + now.getMinutes() / 60;
+  const minutes = now.getMinutes();
+  const hourAngle = (hours / 12) * 360 - 90;
+  const minAngle = (minutes / 60) * 360 - 90;
+  const hx = x + Math.cos(hourAngle * Math.PI / 180) * 5;
+  const hy = y + Math.sin(hourAngle * Math.PI / 180) * 5;
+  const mx = x + Math.cos(minAngle * Math.PI / 180) * 7.5;
+  const my = y + Math.sin(minAngle * Math.PI / 180) * 7.5;
+  return `
+    <circle cx="${x}" cy="${y}" r="10" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.5"/>
+    <circle cx="${x}" cy="${y}" r="1" fill="#1F2937"/>
+    <line x1="${x}" y1="${y}" x2="${hx}" y2="${hy}" stroke="#1F2937" stroke-width="1.5"/>
+    <line x1="${x}" y1="${y}" x2="${mx}" y2="${my}" stroke="#1F2937" stroke-width="1"/>
+    <text x="${x}" y="${y-6}" text-anchor="middle" font-size="3" fill="#1F2937" font-weight="600">12</text>
+    <text x="${x+7}" y="${y+1.5}" text-anchor="middle" font-size="3" fill="#1F2937" font-weight="600">3</text>
+    <text x="${x}" y="${y+8}" text-anchor="middle" font-size="3" fill="#1F2937" font-weight="600">6</text>
+    <text x="${x-6}" y="${y+1.5}" text-anchor="middle" font-size="3" fill="#1F2937" font-weight="600">9</text>
+  `;
+}
+
+// Bell / campainha (Recepção)
+function iso_bell(x, y) {
+  return `
+    <rect x="${x-3}" y="${y+2}" width="6" height="2" fill="#92400E" rx="0.5"/>
+    <ellipse cx="${x}" cy="${y}" rx="5" ry="3.5" fill="#D4A843"/>
+    <ellipse cx="${x}" cy="${y-1}" rx="3" ry="2.5" fill="#FCD34D"/>
+    <circle cx="${x}" cy="${y-3}" r="1.2" fill="#92400E"/>
+  `;
+}
+
+// Lampada de chão / floor lamp
+function iso_floor_lamp(x, y) {
+  return `
+    <line x1="${x}" y1="${y+10}" x2="${x}" y2="${y-12}" stroke="#475569" stroke-width="1.5"/>
+    <ellipse cx="${x}" cy="${y+11}" rx="4" ry="1.5" fill="#1F2937"/>
+    <path d="M${x-7},${y-12} Q${x},${y-22} ${x+7},${y-12} L${x+5},${y-10} Q${x},${y-16} ${x-5},${y-10} Z"
+      fill="#FCD34D" stroke="#92400E" stroke-width="0.5"/>
+    <!-- glow effect -->
+    <ellipse cx="${x}" cy="${y-8}" rx="14" ry="5" fill="#FEF3C7" opacity="0.4"/>
+  `;
+}
+
+// Cards / papéis em pilha (Admin)
+function iso_papers_stack(x, y) {
+  return `
+    <rect x="${x-6}" y="${y-1}" width="14" height="9" fill="#F8FAFC" stroke="#94A3B8" stroke-width="0.3" transform="rotate(-3 ${x} ${y})"/>
+    <rect x="${x-5}" y="${y-3}" width="14" height="9" fill="#F1F5F9" stroke="#94A3B8" stroke-width="0.3" transform="rotate(2 ${x} ${y})"/>
+    <rect x="${x-7}" y="${y-5}" width="14" height="9" fill="#FFFFFF" stroke="#94A3B8" stroke-width="0.5"/>
+    <line x1="${x-4}" y1="${y-3}" x2="${x+4}" y2="${y-3}" stroke="#1F2937" stroke-width="0.4"/>
+    <line x1="${x-4}" y1="${y-1}" x2="${x+5}" y2="${y-1}" stroke="#1F2937" stroke-width="0.4"/>
+    <line x1="${x-4}" y1="${y+1}" x2="${x+3}" y2="${y+1}" stroke="#1F2937" stroke-width="0.4"/>
+  `;
+}
+
+// Headset (CSAT)
+function iso_headset(x, y) {
+  return `
+    <path d="M${x-7},${y+3} Q${x},${y-10} ${x+7},${y+3}" fill="none" stroke="#1F2937" stroke-width="2"/>
+    <ellipse cx="${x-7}" cy="${y+3}" rx="2.5" ry="3.5" fill="#1F2937"/>
+    <ellipse cx="${x+7}" cy="${y+3}" rx="2.5" ry="3.5" fill="#1F2937"/>
+    <path d="M${x-9},${y+3} Q${x-11},${y+8} ${x-6},${y+10}" fill="none" stroke="#1F2937" stroke-width="1"/>
+  `;
+}
+
+// Foto enquadrada (Perfil)
+function iso_photo_frame(x, y) {
+  return `
+    <rect x="${x-12}" y="${y-14}" width="24" height="20" fill="#D4A843" stroke="#92400E" stroke-width="0.8" rx="1"/>
+    <rect x="${x-10}" y="${y-12}" width="20" height="16" fill="#FED7AA"/>
+    <!-- silhueta de pessoa -->
+    <circle cx="${x}" cy="${y-6}" r="3" fill="#92400E"/>
+    <path d="M${x-5},${y+4} Q${x},${y-2} ${x+5},${y+4} L${x+5},${y+4} L${x-5},${y+4} Z" fill="#92400E"/>
+  `;
+}
+
+// Mesa redonda pequena (lounge)
+function iso_round_table(x, y, color = '#92400E') {
+  return `
+    <ellipse cx="${x}" cy="${y+5}" rx="12" ry="3" fill="${shade(color, -30)}"/>
+    <ellipse cx="${x}" cy="${y}" rx="12" ry="6" fill="${color}" stroke="${shade(color, -30)}" stroke-width="0.5"/>
+    <ellipse cx="${x}" cy="${y-1}" rx="11" ry="5" fill="${shade(color, 25)}" opacity="0.5"/>
+    <line x1="${x}" y1="${y+5}" x2="${x}" y2="${y+12}" stroke="${shade(color, -30)}" stroke-width="1.5"/>
+    <ellipse cx="${x}" cy="${y+12}" rx="5" ry="1.5" fill="${shade(color, -40)}"/>
+  `;
+}
+
+// Tabuleiro de jogo (Fora hoje)
+function iso_chess_board(x, y) {
+  let cells = '';
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    cells += `<rect x="${x - 8 + i*4}" y="${y - 8 + j*4}" width="4" height="4"
+      fill="${(i+j) % 2 ? '#1F2937' : '#F8FAFC'}"/>`;
+  }
+  return `
+    <rect x="${x-9}" y="${y-9}" width="18" height="18" fill="#5C2E0A"/>
+    ${cells}
+    <!-- pecinhas -->
+    <circle cx="${x-6}" cy="${y-6}" r="1.2" fill="#FFFFFF"/>
+    <circle cx="${x+6}" cy="${y+6}" r="1.2" fill="#FFFFFF"/>
+    <circle cx="${x+2}" cy="${y-2}" r="1.2" fill="#1F2937"/>
+  `;
+}
+
+// Mug / xícara de café
+function iso_mug(x, y, color = '#D4A843') {
+  return `
+    <rect x="${x-3}" y="${y-4}" width="6" height="6" fill="${color}" stroke="${shade(color, -30)}" stroke-width="0.5" rx="0.5"/>
+    <path d="M${x+3},${y-3} Q${x+5.5},${y-2} ${x+3},${y-0.5}" fill="none" stroke="${shade(color, -30)}" stroke-width="0.8"/>
+    <ellipse cx="${x}" cy="${y-4}" rx="3" ry="0.8" fill="#5C2E0A"/>
+    <!-- vapor sutil -->
+    <path d="M${x-1},${y-6} Q${x-2},${y-9} ${x},${y-10}" fill="none" stroke="#94A3B8" stroke-width="0.5" opacity="0.6">
+      <animate attributeName="opacity" values="0.6;0.2;0.6" dur="2s" repeatCount="indefinite"/>
+    </path>
+    <path d="M${x+1},${y-6} Q${x+2},${y-9} ${x},${y-10}" fill="none" stroke="#94A3B8" stroke-width="0.5" opacity="0.5">
+      <animate attributeName="opacity" values="0.2;0.6;0.2" dur="2s" repeatCount="indefinite"/>
+    </path>
+  `;
+}
+
+/* ─── Furniture map: cenas detalhadas por sala (4.36.4+) ────
+ *
+ * Cada sala vira uma micro-cena temática. Ordem: tapete (chão) →
+ * decorações de parede (back) → mobília média → itens pequenos (front).
+ * Coordenadas relativas ao centro inferior da sala (cx, centerY).
+ */
 function renderFurniture(roomId, cx, cy) {
-  const centerY = cy + TILE_H / 2;  // centro vertical do rombus
-  // Coordenadas relativas ao centro inferior da sala
+  const centerY = cy + TILE_H / 2;
   const pieces = {
+
+    /* ─── MEU PAINEL (recepção/home) ───
+     * Mesa de boas-vindas + relógio + planta + cadeira lounge
+     */
     'recepcao': [
-      iso_sofa(cx - 50, centerY + 50, '#64748B'),
-      iso_plant(cx + 80, centerY + 40),
-      iso_chair(cx + 40, centerY + 60, '#475569'),
+      iso_rug(cx, centerY + 50, 130, 70, '#64748B'),
+      iso_wall_clock(cx, centerY - 20),
+      iso_poster(cx - 35, centerY - 20, 22, 16, '#D4A843'),  // "Bem-vindo" placeholder
+      iso_desk(cx - 20, centerY + 45, 70, 32, '#94A3B8'),
+      iso_bell(cx - 30, centerY + 35),
+      iso_monitor(cx + 10, centerY + 35),
+      iso_chair(cx - 20, centerY + 75, '#475569'),
+      iso_plant(cx + 70, centerY + 60),
+      iso_plant(cx - 80, centerY + 70),
     ],
+
+    /* ─── TAREFAS ───
+     * Bullpen com kanban board + 2 estações de trabalho + sticky notes
+     */
     'tarefas': [
-      iso_desk(cx - 60, centerY + 40, 50, 26),
-      iso_monitor(cx - 60, centerY + 30),
-      iso_chair(cx - 60, centerY + 65),
-      iso_desk(cx + 50, centerY + 60, 50, 26),
-      iso_monitor(cx + 50, centerY + 50),
-      iso_chair(cx + 50, centerY + 85),
+      iso_rug(cx, centerY + 50, 150, 80, '#3B82F6'),
+      iso_kanban_board(cx, centerY - 16),
+      iso_sticky_notes(cx + 60, centerY - 8),
+      iso_desk(cx - 50, centerY + 30, 55, 28, '#6B7280'),
+      iso_monitor(cx - 50, centerY + 22),
+      iso_mug(cx - 30, centerY + 26),
+      iso_chair(cx - 50, centerY + 58),
+      iso_desk(cx + 50, centerY + 55, 55, 28, '#6B7280'),
+      iso_monitor(cx + 50, centerY + 47),
+      iso_papers_stack(cx + 70, centerY + 50),
+      iso_chair(cx + 50, centerY + 83),
+      iso_plant(cx + 90, centerY + 80),
     ],
+
+    /* ─── SQUADS (reuniões/workspaces) ───
+     * Sala de reunião formal: mesa grande + TV de apresentação + whiteboard
+     */
     'reunioes': [
-      iso_desk(cx, centerY + 50, 110, 50, '#3F4A5C'),
-      iso_chair(cx - 50, centerY + 30),
-      iso_chair(cx - 50, centerY + 75),
-      iso_chair(cx + 50, centerY + 30),
-      iso_chair(cx + 50, centerY + 75),
-      iso_chair(cx, centerY + 10),
+      iso_rug(cx, centerY + 50, 170, 90, '#8B5CF6'),
+      iso_tv_screen(cx - 30, centerY - 18),
+      iso_whiteboard(cx + 40, centerY - 14),
+      iso_desk(cx, centerY + 50, 120, 50, '#3F4A5C'),
+      iso_mug(cx - 35, centerY + 45),
+      iso_mug(cx + 35, centerY + 45),
+      iso_papers_stack(cx, centerY + 50),
+      iso_chair(cx - 55, centerY + 25),
+      iso_chair(cx - 55, centerY + 75),
+      iso_chair(cx + 55, centerY + 25),
+      iso_chair(cx + 55, centerY + 75),
+      iso_chair(cx, centerY + 5),
       iso_chair(cx, centerY + 95),
     ],
+
+    /* ─── DASHBOARDS (comando) ───
+     * Control room com 3 telas wall-mounted + mesa standing + lampada
+     */
     'comando': [
-      iso_desk(cx, centerY + 55, 100, 36, '#1E293B'),
-      iso_monitor(cx - 28, centerY + 40),
-      iso_monitor(cx, centerY + 40),
-      iso_monitor(cx + 28, centerY + 40),
-      iso_chair(cx, centerY + 85),
+      iso_rug(cx, centerY + 50, 150, 80, '#06B6D4'),
+      iso_dashboard_screen(cx - 38, centerY - 18, 26),
+      iso_dashboard_screen(cx, centerY - 18, 26),
+      iso_dashboard_screen(cx + 38, centerY - 18, 26),
+      iso_desk(cx, centerY + 50, 100, 36, '#1E293B'),
+      iso_monitor(cx - 25, centerY + 40),
+      iso_monitor(cx + 25, centerY + 40),
+      iso_papers_stack(cx, centerY + 45),
+      iso_chair(cx, centerY + 80),
+      iso_floor_lamp(cx + 80, centerY + 65),
+      iso_plant(cx - 80, centerY + 75),
     ],
+
+    /* ─── PORTAL DE DICAS (estúdio) ───
+     * Atelier criativo: cavalete + bookshelf + 3 posters de cidades + câmera
+     */
     'estudio': [
-      iso_easel(cx - 30, centerY + 45),
-      iso_desk(cx + 30, centerY + 55, 50, 26, '#A07050'),
-      iso_chair(cx + 30, centerY + 80),
-      iso_plant(cx + 80, centerY + 80),
+      iso_rug(cx, centerY + 50, 140, 80, '#EC4899'),
+      iso_bookshelf(cx - 60, centerY - 4),
+      iso_poster(cx + 10, centerY - 22, 22, 16, '#EC4899'),  // poster Paris
+      iso_poster(cx + 40, centerY - 22, 22, 16, '#F59E0B'),  // poster Roma
+      iso_poster(cx + 70, centerY - 22, 22, 16, '#22C55E'),  // poster Tokyo
+      iso_easel(cx - 25, centerY + 40),
+      iso_camera_tripod(cx + 60, centerY + 35),
+      iso_desk(cx + 25, centerY + 55, 55, 28, '#A07050'),
+      iso_monitor(cx + 25, centerY + 45),
+      iso_mug(cx + 5, centerY + 50),
+      iso_chair(cx + 25, centerY + 82),
+      iso_plant(cx + 90, centerY + 75),
     ],
+
+    /* ─── CALENDÁRIO DE CONTEÚDO (lousa) ───
+     * Estúdio editorial: calendário wall + câmera + iluminação + computador
+     */
     'lousa': [
-      iso_board(cx, centerY + 30),
-      iso_desk(cx, centerY + 70, 60, 30, '#92400E'),
-      iso_chair(cx - 20, centerY + 95),
-      iso_chair(cx + 20, centerY + 95),
+      iso_rug(cx, centerY + 50, 140, 80, '#F59E0B'),
+      iso_wall_calendar(cx, centerY - 18),
+      iso_sticky_notes(cx + 55, centerY - 5),
+      iso_desk(cx - 25, centerY + 55, 60, 32, '#92400E'),
+      iso_monitor(cx - 25, centerY + 45),
+      iso_mug(cx - 5, centerY + 50),
+      iso_chair(cx - 25, centerY + 85),
+      iso_camera_tripod(cx + 50, centerY + 45),
+      iso_floor_lamp(cx - 80, centerY + 50),
+      iso_plant(cx + 80, centerY + 70),
     ],
+
+    /* ─── ROTEIROS DE VIAGEM ───
+     * Sala de planejamento: mapa mundi + globo + bússola + mala + livros
+     */
     'roteiros': [
-      iso_globe(cx - 30, centerY + 50),
-      iso_desk(cx + 30, centerY + 55, 50, 26, '#10B981'),
-      iso_monitor(cx + 30, centerY + 45),
-      iso_chair(cx + 30, centerY + 80),
+      iso_rug(cx, centerY + 50, 140, 80, '#10B981'),
+      iso_worldmap(cx, centerY - 16),
+      iso_bookshelf(cx + 65, centerY - 4),
+      iso_desk(cx - 15, centerY + 50, 60, 30, '#0F766E'),
+      iso_globe(cx - 30, centerY + 40),
+      iso_compass(cx + 0, centerY + 48),
+      iso_monitor(cx - 15, centerY + 38),
+      iso_chair(cx - 15, centerY + 78),
+      iso_suitcase(cx + 60, centerY + 65),
+      iso_plant(cx - 80, centerY + 70),
     ],
+
+    /* ─── CSAT (atendimento) ───
+     * Call center: balcão longo + headsets + star board + chips de feedback
+     */
     'atendimento': [
-      iso_desk(cx, centerY + 40, 100, 30, '#F97316'),
-      iso_monitor(cx - 28, centerY + 30),
-      iso_monitor(cx + 28, centerY + 30),
-      iso_chair(cx, centerY + 75),
-      iso_chair(cx + 50, centerY + 75),
-      iso_chair(cx - 50, centerY + 75),
+      iso_rug(cx, centerY + 50, 150, 80, '#F97316'),
+      iso_star_board(cx - 30, centerY - 16),
+      iso_feedback_chips(cx + 40, centerY - 8),
+      iso_desk(cx, centerY + 40, 110, 32, '#9A3412'),
+      iso_monitor(cx - 30, centerY + 30),
+      iso_monitor(cx + 30, centerY + 30),
+      iso_headset(cx - 50, centerY + 32),
+      iso_headset(cx + 50, centerY + 32),
+      iso_mug(cx, centerY + 38),
+      iso_chair(cx - 40, centerY + 70),
+      iso_chair(cx, centerY + 70),
+      iso_chair(cx + 40, centerY + 70),
+      iso_plant(cx - 80, centerY + 75),
     ],
+
+    /* ─── IA HUB (lab IA) ───
+     * Laboratório de IA: robô + server rack + dashboard com dados + monitor
+     */
     'lab-ia': [
-      iso_robot(cx - 30, centerY + 45),
-      iso_desk(cx + 30, centerY + 55, 50, 26, '#7C3AED'),
-      iso_monitor(cx + 30, centerY + 45),
-      iso_chair(cx + 30, centerY + 80),
+      iso_rug(cx, centerY + 50, 140, 80, '#A78BFA'),
+      iso_dashboard_screen(cx - 30, centerY - 18, 28),
+      iso_dashboard_screen(cx + 25, centerY - 18, 24),
+      iso_server_rack(cx + 65, centerY + 8),
+      iso_robot(cx - 35, centerY + 50),
+      iso_desk(cx + 15, centerY + 55, 60, 32, '#5B21B6'),
+      iso_monitor(cx + 15, centerY + 45),
+      iso_papers_stack(cx + 38, centerY + 50),
+      iso_chair(cx + 15, centerY + 85),
+      iso_plant(cx - 80, centerY + 75),
     ],
+
+    /* ─── ADMINISTRAÇÃO ───
+     * Escritório corporativo: filing cabinet + mesa executiva + printer + safe
+     */
     'admin': [
-      iso_safe(cx - 40, centerY + 50),
-      iso_desk(cx + 30, centerY + 55, 50, 26, '#475569'),
-      iso_printer(cx + 30, centerY + 45),
-      iso_chair(cx + 30, centerY + 80),
+      iso_rug(cx, centerY + 50, 140, 80, '#475569'),
+      iso_filing_cabinet(cx - 60, centerY + 12),
+      iso_filing_cabinet(cx - 38, centerY + 22),
+      iso_safe(cx + 60, centerY + 30),
+      iso_desk(cx + 10, centerY + 55, 70, 32, '#374151'),
+      iso_monitor(cx + 10, centerY + 45),
+      iso_printer(cx + 45, centerY + 50),
+      iso_papers_stack(cx - 12, centerY + 50),
+      iso_chair(cx + 10, centerY + 85),
+      iso_floor_lamp(cx + 80, centerY + 70),
     ],
+
+    /* ─── PERFIL (café/lounge pessoal) ───
+     * Lounge particular: sofá + mesa de centro + foto enquadrada + café
+     */
     'cafe': [
-      iso_coffee(cx - 40, centerY + 45),
-      iso_desk(cx + 20, centerY + 60, 60, 26, '#92400E'),
-      iso_chair(cx - 5, centerY + 85),
-      iso_chair(cx + 45, centerY + 85),
-      iso_plant(cx - 70, centerY + 70),
+      iso_rug(cx, centerY + 50, 140, 80, '#92400E'),
+      iso_photo_frame(cx - 30, centerY - 18),
+      iso_poster(cx + 20, centerY - 22, 22, 16, '#D4A843'),
+      iso_couch_big(cx, centerY + 30, '#92400E'),
+      iso_round_table(cx, centerY + 60, '#5C2E0A'),
+      iso_mug(cx - 7, centerY + 55),
+      iso_books(cx + 5, centerY + 58),
+      iso_coffee(cx + 60, centerY + 40),
+      iso_plant(cx - 80, centerY + 70),
+      iso_plant(cx + 90, centerY + 70),
     ],
+
+    /* ─── FORA HOJE (descompressão / módulo Equipe) ───
+     * Sala de relaxamento: janela com vista de praia + 2 sofás + tabuleiro + plantas
+     */
     'descompressao': [
-      iso_sofa(cx - 30, centerY + 50, '#7C3AED'),
-      iso_sofa(cx + 50, centerY + 70, '#A78BFA'),
+      iso_rug(cx, centerY + 50, 150, 80, '#7C3AED'),
+      iso_window_view(cx, centerY - 18),
+      iso_couch_big(cx - 35, centerY + 40, '#7C3AED'),
+      iso_couch_big(cx + 40, centerY + 65, '#A78BFA'),
+      iso_round_table(cx, centerY + 55, '#5C2E0A'),
+      iso_chess_board(cx, centerY + 52),
+      iso_plant(cx - 90, centerY + 50),
       iso_plant(cx - 80, centerY + 80),
-      iso_plant(cx + 90, centerY + 50),
+      iso_plant(cx + 90, centerY + 35),
+      iso_plant(cx + 100, centerY + 75),
     ],
   };
   return (pieces[roomId] || []).join('');
+}
+
+// Stack de livros (helper extra)
+function iso_books(x, y) {
+  return `
+    <rect x="${x-7}" y="${y-2}" width="14" height="3.5" fill="#DC2626" stroke="#7F1D1D" stroke-width="0.3"/>
+    <rect x="${x-6}" y="${y-5.5}" width="12" height="3.5" fill="#1E40AF" stroke="#1E3A8A" stroke-width="0.3"/>
+    <rect x="${x-7.5}" y="${y-9}" width="15" height="3.5" fill="#15803D" stroke="#14532D" stroke-width="0.3"/>
+    <rect x="${x-5}" y="${y-12.5}" width="10" height="3.5" fill="#D97706" stroke="#92400E" stroke-width="0.3"/>
+  `;
 }
 
 /* ─── Posicionamento dos avatares dentro da sala ──
