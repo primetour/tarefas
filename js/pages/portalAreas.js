@@ -4,7 +4,7 @@
  */
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
-import { fetchAreas, saveArea, deleteArea, convertToWebp, uploadImageToR2 } from '../services/portal.js';
+import { fetchAreas, saveArea, deleteArea, convertToWebp, uploadImageToR2, saveImageMeta } from '../services/portal.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -321,13 +321,32 @@ function showAreaModal(area, areas = []) {
       progress.style.color   = 'var(--text-muted)';
       progress.textContent   = 'Convertendo para WebP…';
       try {
-        const { blob } = await convertToWebp(file, 0.95);
+        const { blob, width, height } = await convertToWebp(file, 0.95);
         progress.textContent = 'Enviando para Cloudflare R2…';
-        const areaSlug = slugForFile(document.getElementById('area-name')?.value || area?.name);
+        const areaName = document.getElementById('area-name')?.value || area?.name || 'Área';
+        const areaSlug = slugForFile(areaName);
         const path     = `logos/${areaSlug}-${slot}-${Date.now()}.webp`;
         const url      = await uploadImageToR2(blob, path);
         if (urlInput) urlInput.value = url;
         renderPreview(url);
+        // 4.35.33+ Auto-cria entry em portal_images pra logo aparecer no Banco de Imagens.
+        // Best-effort: falha aqui não bloqueia o upload da área.
+        try {
+          await saveImageMeta({
+            assetCategory: 'logo',
+            type:          'logo_area',
+            name:          `Logo ${areaName} (${slot === 'alt' ? 'alternativa' : 'principal'})`,
+            placeName:     areaName,
+            tags:          ['logo', areaName.toLowerCase(), slot],
+            copyright:     `© ${new Date().getFullYear()} ${areaName}`,
+            url, path,
+            originalName: file.name,
+            sizeMB: parseFloat((blob.size / 1024 / 1024).toFixed(2)),
+            width, height,
+          });
+        } catch (idxErr) {
+          console.warn('[portalAreas] index em portal_images falhou (não bloqueia):', idxErr?.message);
+        }
         progress.textContent = '✓ Upload concluído. Salve a área para confirmar.';
         progress.style.color = '#16A34A';
         if (dropLabel) dropLabel.textContent = '📁 Trocar (clique ou arraste)';

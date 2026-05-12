@@ -406,13 +406,33 @@ export async function fetchImagesPage(filters = {}) {
   parts.push(limit(pageSize));
 
   const snap = await getDocs(query(...parts));
-  let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  let docs = snap.docs.map(d => {
+    const data = d.data();
+    // 4.35.33+ Inferência retroativa de assetCategory. Ordem:
+    //  1. Campo explícito (uploads pos-4.35.31)
+    //  2. Prefixo do path (logos/, hoteis/, cruzeiros/, trens/)
+    //  3. Campo `type` legacy: 'logo_area' → 'logo'
+    //  4. Fallback: 'location' (foto de destino)
+    let inferredCategory = data.assetCategory;
+    if (!inferredCategory && data.path) {
+      const firstSeg = data.path.split('/')[0];
+      const PATH_TO_CATEGORY = {
+        'logos': 'logo', 'hoteis': 'hotel',
+        'cruzeiros': 'cruise', 'trens': 'train',
+      };
+      inferredCategory = PATH_TO_CATEGORY[firstSeg];
+    }
+    if (!inferredCategory && data.type === 'logo_area') {
+      inferredCategory = 'logo';
+    }
+    return { id: d.id, ...data, assetCategory: inferredCategory || 'location' };
+  });
 
   // Filtros client-side
   if (continent)     docs = docs.filter(d => d.continent === continent);
   if (country)       docs = docs.filter(d => d.country   === country);
   if (city)          docs = docs.filter(d => d.city       === city);
-  if (assetCategory) docs = docs.filter(d => (d.assetCategory || 'location') === assetCategory);
+  if (assetCategory) docs = docs.filter(d => d.assetCategory === assetCategory);
   if (type)          docs = docs.filter(d => d.type === type);
   if (uploadedBy)    docs = docs.filter(d => d.uploadedBy === uploadedBy);
   if (sinceDate) {
