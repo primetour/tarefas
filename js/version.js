@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 21,
-  build: '20260511-hierarquia-managerId-feedbacks',
+  patch: 22,
+  build: '20260511-csat-setor-overrides-guards-diff',
 };
 
 /** "1.2.0" */

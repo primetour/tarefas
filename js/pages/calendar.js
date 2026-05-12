@@ -6,7 +6,7 @@
 
 import { fetchTasks, updateTask, PRIORITY_MAP }  from '../services/tasks.js';
 import { openTaskModal }             from '../components/taskModal.js';
-import { store }                     from '../store.js';
+import { store, routeGuard }         from '../store.js';
 import {
   renderFilterBar, bindFilterBar, buildFilterFn,
 } from '../components/filterBar.js';
@@ -39,6 +39,7 @@ function initCalFilterState() {
 
 /* ─── Main render ────────────────────────────────────────── */
 export async function renderCalendar(container) {
+  if (!routeGuard(container, 'task_create')) return;
   // Lazy load taskTypes (saiu do boot pra economizar reads)
   if (!(store.get('taskTypes') || []).length) {
     try {

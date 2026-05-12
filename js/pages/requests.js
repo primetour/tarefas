@@ -4,7 +4,7 @@
  * Sem status "em análise"
  */
 
-import { store }  from '../store.js';
+import { store, routeGuard } from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { openTaskModal } from '../components/taskModal.js';
@@ -60,6 +60,7 @@ export function destroyRequests() {
 }
 
 export async function renderRequests(container) {
+  if (!routeGuard(container, 'task_create')) return;
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">

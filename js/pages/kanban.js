@@ -3,7 +3,7 @@
  * Board drag-and-drop com colunas por status
  */
 
-import { store }  from '../store.js';
+import { store, routeGuard } from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
   subscribeToTasks, moveTaskKanban, createTask, toggleTaskComplete, getTask,
@@ -437,6 +437,7 @@ function renderColumnBodyWithFinalized(body, count, activeTasks, finalizedTasks,
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderKanban(container) {
+  if (!routeGuard(container, 'task_create')) return;
   // Load users if store is empty (ex: primeiro acesso, aba privativa, refresh em /kanban)
   // Sem isso, os avatares de responsáveis aparecem vazios nos cards.
   const usersNeedLoad = !(store.get('users') || []).length;

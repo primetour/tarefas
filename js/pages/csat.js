@@ -330,11 +330,48 @@ export async function renderCsat(container) {
   // anterior (race entre re-mount), desliga primeiro pra não vazar listener.
   if (unsubscribe) { try { unsubscribe(); } catch (e) { /* ignore */ } unsubscribe = null; }
   unsubscribe = subscribeSurveys(surveys => {
+    // 4.35.22+ Filtro por setor (user pediu: "CSAT é por setor, não por user").
+    // Master/system_view_all veem tudo; demais veem só surveys cuja task
+    // pertence a um visibleSector do user (ou ao próprio setor se vazio).
+    surveys = _filterSurveysBySector(surveys);
     allSurveys = surveys;
     renderKPIs(calcCsatMetrics(surveys));
     applyFilters();
     renderBottom(surveys);
   });
+}
+
+/**
+ * 4.35.22+ Filtra surveys por setor — coordenador/gestor de Marketing
+ * não vê CSAT de Comunicação. Master / system_view_all veem tudo.
+ * Falha-aberto (sem filtro) se não conseguir resolver — não trava UI.
+ */
+function _filterSurveysBySector(surveys) {
+  try {
+    if (store.isMaster() || store.can('system_view_all')) return surveys;
+    const visibleSectors = store.getVisibleSectors();
+    // null = vê tudo (master); array vazio = só próprio setor
+    if (visibleSectors === null) return surveys;
+    const mySector = store.get('userProfile')?.sector || '';
+    const allowedSectors = new Set(
+      visibleSectors.length ? visibleSectors : (mySector ? [mySector] : [])
+    );
+    if (!allowedSectors.size) return surveys;
+    // Cruza com tasks pra pegar o setor de cada survey (tasks.sector)
+    const tasksMod = store.get('tasks') || [];
+    const taskSectorMap = new Map(tasksMod.map(t => [t.id, t.sector]));
+    return surveys.filter(s => {
+      // Se a survey tem taskId, usa o setor da task
+      const taskId = s.taskId || (Array.isArray(s.taskIds) && s.taskIds[0]);
+      const taskSector = taskSectorMap.get(taskId);
+      if (taskSector) return allowedSectors.has(taskSector);
+      // Sem task associada (raro): permite (fail-open)
+      return true;
+    });
+  } catch (e) {
+    console.warn('[csat] sector filter failed, falling back to no filter:', e?.message);
+    return surveys;
+  }
 }
 
 /* ─── KPIs ────────────────────────────────────────────────── */

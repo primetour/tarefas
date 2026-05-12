@@ -147,6 +147,15 @@ class Store {
     // Master sempre pode tudo
     if (this._state.userProfile?.isMaster) return true;
     if (this._state.userRole?.id === 'master') return true;
+    // 4.35.22+ Overrides por user têm prioridade sobre role base.
+    // user.permissionOverrides: { permKey: true|false }
+    //   true  → liga essa permissão pra esse user específico
+    //   false → desliga (mesmo que role libere)
+    //   undefined → cai no role base
+    const overrides = this._state.userProfile?.permissionOverrides;
+    if (overrides && Object.prototype.hasOwnProperty.call(overrides, permission)) {
+      return overrides[permission] === true;
+    }
     return this._state.userPermissions[permission] === true;
   }
 
@@ -218,3 +227,25 @@ class Store {
 
 export const store = new Store();
 export default store;
+
+/**
+ * 4.35.22+ Helper de route-guard pra páginas.
+ * @param {HTMLElement} container - destino do render
+ * @param {string|string[]} perms - permissão(ões) — basta UMA
+ * @returns {boolean} true se passou; false se renderizou "Acesso negado"
+ */
+export function routeGuard(container, perms) {
+  if (store.isMaster()) return true;
+  const list = Array.isArray(perms) ? perms : [perms];
+  if (list.some(p => store.can(p))) return true;
+  container.innerHTML = `
+    <div class="empty-state" style="min-height:60vh;padding:60px 20px;text-align:center;">
+      <div class="empty-state-icon" style="font-size:3rem;margin-bottom:10px;">🔒</div>
+      <div class="empty-state-title">Acesso restrito</div>
+      <p class="text-sm text-muted" style="margin-top:8px;max-width:480px;margin-left:auto;margin-right:auto;">
+        Você não tem permissão pra acessar este módulo.
+        Fale com a Diretoria pra liberar acesso.
+      </p>
+    </div>`;
+  return false;
+}

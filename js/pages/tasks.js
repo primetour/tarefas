@@ -1,4 +1,4 @@
-import { store }  from '../store.js';
+import { store, routeGuard } from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import {
@@ -100,6 +100,7 @@ function saveFilterVisibility() {
 
 /* \u2500\u2500\u2500 Render principal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 export async function renderTasks(container) {
+  if (!routeGuard(container, ['task_create', 'task_view_all'])) return;
   loadFilterVisibility();
 
   // Lazy load: taskTypes saiu do boot (otimização free tier).

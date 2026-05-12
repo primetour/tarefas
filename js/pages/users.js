@@ -849,6 +849,31 @@ function openUserModal(userId = null) {
         </div>
       </div>
 
+      ${/* 4.35.22+ Overrides de permissão por user (master only).
+            Lista permissões que diferem da role base. */ ''}
+      ${store.isMaster() && isEdit ? `
+        <details class="form-group" style="grid-column:span 2;margin-top:8px;">
+          <summary style="cursor:pointer;font-size:0.875rem;font-weight:600;
+            color:var(--brand-gold);padding:6px 0;">
+            ⚙ Permissões personalizadas <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">
+              (Diretoria) — override pontual da role
+            </span>
+          </summary>
+          <div id="uf-perm-overrides" style="margin-top:10px;padding:12px;
+            background:var(--bg-surface);border-radius:8px;border:1px solid var(--border-subtle);
+            max-height:280px;overflow-y:auto;">
+            <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:10px;line-height:1.55;">
+              Marque <strong>✓</strong> pra <strong>liberar</strong> uma permissão que a role base não tem.
+              Marque <strong>✕</strong> pra <strong>bloquear</strong> mesmo que a role libere.
+              Vazio = segue a role base. Use só pra exceções — pra padrão recorrente, prefira criar uma role.
+            </div>
+            <div id="uf-perm-overrides-list" data-user-id="${escHtml(user?.id || '')}">
+              <span style="color:var(--text-muted);font-size:0.75rem;">Carregando catálogo de permissões…</span>
+            </div>
+          </div>
+        </details>
+      ` : ''}
+
       ${store.isMaster() ? `
         <div class="form-group" style="grid-column:span 2;">
           <label class="form-label">
@@ -923,6 +948,7 @@ function openUserModal(userId = null) {
   // squad(s) o user vai entrar, independente do setor.
   setTimeout(() => {
     _loadAllWorkspacesAndPopulate();
+    _renderPermissionOverrides(user); // 4.35.22+
   }, 60);
 
   // Toggle password visibility
@@ -1045,6 +1071,90 @@ function wireSquadChips() {
  * Necessário porque admin pode atribuir QUALQUER squad ao user sendo
  * editado, mesmo que ele próprio não seja membro desses squads.
  */
+/**
+ * 4.35.22+ Renderiza catálogo de permissões pra overrides por user.
+ * Master only. Lista PERMISSION_CATALOG agrupado, com 3 estados por permissão:
+ *   - "✓ ligar" (override = true)
+ *   - "✕ desligar" (override = false)
+ *   - "—" (segue role base)
+ */
+async function _renderPermissionOverrides(user) {
+  const wrap = document.getElementById('uf-perm-overrides-list');
+  if (!wrap) return;
+  try {
+    const { PERMISSION_CATALOG, getRole } = await import('../services/rbac.js');
+    const groups = PERMISSION_CATALOG || [];
+    const overrides = user?.permissionOverrides || {};
+    // Resolve role base do user pra mostrar contexto (ligada/desligada)
+    let basePerms = {};
+    try {
+      const r = await getRole(user?.roleId || user?.role || 'member');
+      basePerms = r?.permissions || {};
+    } catch {}
+
+    wrap.innerHTML = groups.map(grp => `
+      <div style="margin-bottom:10px;">
+        <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+          letter-spacing:.08em;color:var(--text-muted);margin-bottom:6px;border-bottom:1px solid var(--border-subtle);padding-bottom:4px;">
+          ${escHtml(grp.label || grp.id)}
+        </div>
+        ${(grp.permissions || []).map(perm => {
+          const baseState = basePerms[perm.key] === true ? 'on' : 'off';
+          const override = overrides[perm.key];
+          const state = override === true ? 'on' : override === false ? 'off' : 'inherit';
+          return `
+            <div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:0.8125rem;">
+              <div style="flex:1;min-width:0;">
+                <div style="color:var(--text-primary);">${escHtml(perm.label)}</div>
+                <div style="font-size:0.6875rem;color:var(--text-muted);">
+                  ${escHtml(perm.key)} · base role: <strong>${baseState === 'on' ? 'liberada' : 'bloqueada'}</strong>
+                </div>
+              </div>
+              <div style="display:flex;gap:4px;flex-shrink:0;">
+                <button type="button" class="uf-perm-btn" data-perm="${escHtml(perm.key)}" data-val="on"
+                  title="Liberar pra este user"
+                  style="padding:3px 8px;border:1px solid ${state==='on'?'#22C55E':'var(--border-subtle)'};
+                  border-radius:4px;background:${state==='on'?'#22C55E22':'transparent'};
+                  color:${state==='on'?'#22C55E':'var(--text-muted)'};font-size:0.6875rem;
+                  cursor:pointer;font-weight:600;">✓</button>
+                <button type="button" class="uf-perm-btn" data-perm="${escHtml(perm.key)}" data-val="inherit"
+                  title="Seguir a role base"
+                  style="padding:3px 8px;border:1px solid ${state==='inherit'?'var(--brand-gold)':'var(--border-subtle)'};
+                  border-radius:4px;background:${state==='inherit'?'rgba(212,168,67,0.15)':'transparent'};
+                  color:${state==='inherit'?'var(--brand-gold)':'var(--text-muted)'};font-size:0.6875rem;
+                  cursor:pointer;font-weight:600;">—</button>
+                <button type="button" class="uf-perm-btn" data-perm="${escHtml(perm.key)}" data-val="off"
+                  title="Bloquear pra este user (mesmo que role libere)"
+                  style="padding:3px 8px;border:1px solid ${state==='off'?'#EF4444':'var(--border-subtle)'};
+                  border-radius:4px;background:${state==='off'?'#EF444422':'transparent'};
+                  color:${state==='off'?'#EF4444':'var(--text-muted)'};font-size:0.6875rem;
+                  cursor:pointer;font-weight:600;">✕</button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `).join('');
+
+    // Click handlers — atualiza visual e armazena estado no dataset do wrap
+    wrap.dataset.overrides = JSON.stringify(overrides);
+    wrap.querySelectorAll('.uf-perm-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const perm = btn.dataset.perm;
+        const val = btn.dataset.val;
+        const cur = JSON.parse(wrap.dataset.overrides || '{}');
+        if (val === 'inherit') delete cur[perm];
+        else cur[perm] = (val === 'on');
+        wrap.dataset.overrides = JSON.stringify(cur);
+        // Re-render só esta linha
+        _renderPermissionOverrides({ ...user, permissionOverrides: cur });
+      });
+    });
+  } catch (e) {
+    wrap.innerHTML = `<span style="color:var(--color-danger);font-size:0.75rem;">Erro ao carregar catálogo: ${escHtml(e.message)}</span>`;
+  }
+}
+
 async function _loadAllWorkspacesAndPopulate() {
   try {
     const { fetchAllWorkspaces } = await import('../services/workspaces.js');
@@ -1068,6 +1178,15 @@ async function handleUserSave(userId, isEdit, closeModal) {
   const role       = document.getElementById('uf-role')?.value;
   const department = document.getElementById('uf-department')?.value?.trim();
   const managerId  = document.getElementById('uf-manager')?.value || null; // 4.35.21+
+  // 4.35.22+ Permission overrides (só master enxerga UI; outros enviam vazio)
+  let permissionOverrides = null;
+  try {
+    const wrap = document.getElementById('uf-perm-overrides-list');
+    if (wrap && wrap.dataset.overrides) {
+      permissionOverrides = JSON.parse(wrap.dataset.overrides);
+      if (!Object.keys(permissionOverrides).length) permissionOverrides = null; // limpa se vazio
+    }
+  } catch {}
 
   // Squads: a fonte de verdade agora é workspace.members[]. O picker dá
   // os IDs de squad selecionados. Vamos:
@@ -1132,7 +1251,7 @@ async function handleUserSave(userId, isEdit, closeModal) {
     let savedUserId = userId;
     if (isEdit) {
       const visibleSectors = Array.from(document.querySelectorAll('.sector-vis-cb:checked')).map(cb => cb.value);
-      await updateUserProfile(userId, { name, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department, active, visibleSectors, managerId });
+      await updateUserProfile(userId, { name, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department, active, visibleSectors, managerId, permissionOverrides });
       toast.success(`Usuário "${name}" atualizado com sucesso!`);
     } else {
       const created = await createUser({ name, email, password, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department, managerId });

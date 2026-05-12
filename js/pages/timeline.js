@@ -10,7 +10,7 @@ import {
 import { fetchProjects }             from '../services/projects.js';
 import { openTaskModal }             from '../components/taskModal.js';
 import { toast }                     from '../components/toast.js';
-import { store }                     from '../store.js';
+import { store, routeGuard }         from '../store.js';
 import { openCardPrefsModal }         from '../components/cardPrefsModal.js';
 import { renderCardFields }           from '../services/cardPrefs.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
@@ -31,6 +31,7 @@ function initTlFilterState() {
 }
 
 export async function renderTimeline(container) {
+  if (!routeGuard(container, 'task_edit_any')) return;
   // Lazy load taskTypes (saiu do boot)
   if (!(store.get('taskTypes') || []).length) {
     try {

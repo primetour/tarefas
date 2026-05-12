@@ -942,6 +942,7 @@ export async function updateUserProfile(uid, data) {
     'role', 'roleId', 'active',
     'nucleo', 'nucleos', 'sector', 'visibleSectors',
     'managerId', // 4.35.21+ hierarquia direta
+    'permissionOverrides', // 4.35.22+ override de permissões por user
   ];
 
   const updateData = {};
@@ -1022,7 +1023,26 @@ export async function updateUserProfile(uid, data) {
     }
   }
 
-  await auditLog('users.update', 'user', actualDocId, updateData);
+  // 4.35.22+ Audit com diff antes/depois — agora capturamos o valor anterior
+  // dos campos mudados pra ficar claro o QUE mudou (não só o NOVO valor).
+  let diff = {};
+  try {
+    const prevSnap = await getDoc(doc(db, 'users', actualDocId));
+    const prev = prevSnap.exists() ? prevSnap.data() : {};
+    Object.keys(updateData).forEach(k => {
+      if (k === 'updatedAt' || k === 'updatedBy') return;
+      const before = prev[k];
+      const after = updateData[k];
+      // Só inclui no diff se realmente mudou (comparação superficial)
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        diff[k] = { before, after };
+      }
+    });
+  } catch (e) { console.warn('[audit diff] failed:', e?.message); }
+  await auditLog('users.update', 'user', actualDocId, {
+    fields: Object.keys(updateData).filter(k => k !== 'updatedAt' && k !== 'updatedBy'),
+    diff,
+  });
 
   try {
     const { invalidateUsersCache } = await import('../services/users.js');
