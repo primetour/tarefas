@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 38,
-  patch: 0,
-  build: '20260512-office-camera-drilldown',
+  patch: 1,
+  build: '20260512-office-camera-cache-bust',
 };
 
 /** "1.2.0" */
