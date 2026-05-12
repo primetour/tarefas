@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 22,
-  build: '20260511-csat-setor-overrides-guards-diff',
+  patch: 23,
+  build: '20260511-anthropic-server-side-vision-web',
 };
 
 /** "1.2.0" */

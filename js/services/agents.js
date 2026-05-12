@@ -1271,7 +1271,11 @@ export async function runAgent(agentId, userInput, context = {}) {
   }
 
   // Web search (busca prévia + injeta resultado no contexto)
-  if (agent.allowWebSearch && userInput?.length > 8) {
+  // 4.35.23+: Anthropic usa tool nativo `web_search_20250305` (mais barato,
+  // citações automáticas). Para os outros providers continua com Serper-prefetch.
+  const useNativeWebSearch = agent.allowWebSearch === true &&
+    (agent.provider === 'anthropic' || agent.provider === 'gemini');
+  if (agent.allowWebSearch && !useNativeWebSearch && userInput?.length > 8) {
     try {
       const aiActions = await import('./aiActions.js');
       // Tenta inferir query da mensagem; senão usa a própria mensagem
@@ -1286,10 +1290,14 @@ export async function runAgent(agentId, userInput, context = {}) {
   }
 
   // Valida que existe API key (chatWithAI faz a resolução completa,
-  // mas pré-valida pra falhar rápido com mensagem clara)
-  const resolved = await ai.resolveApiKey(agent.provider);
-  if (!resolved?.apiKey && agent.provider !== 'local') {
-    throw new Error(`API Key não configurada para ${agent.provider}. Configure em IA Hub → API Keys.`);
+  // mas pré-valida pra falhar rápido com mensagem clara).
+  // Anthropic roteia via Cloud Function callLLM (key fica no Secret Manager —
+  // não requer key no browser).
+  if (agent.provider !== 'local' && agent.provider !== 'anthropic') {
+    const resolved = await ai.resolveApiKey(agent.provider);
+    if (!resolved?.apiKey) {
+      throw new Error(`API Key não configurada para ${agent.provider}. Configure em IA Hub → API Keys.`);
+    }
   }
 
   // Tenta Cloud Function direto (mais limpo + auditável)
@@ -1307,6 +1315,13 @@ export async function runAgent(agentId, userInput, context = {}) {
       agentDailyCapUsd: agent.limits?.maxCostPerDayUsd || 5,
       module: agent.module,
       source: 'runAgent',
+      // 4.35.23+: vision (anexos) + web_search nativo (Anthropic)
+      // attachments vem do contexto (UI envia base64 OU image block já formado)
+      attachments: Array.isArray(context.attachments) ? context.attachments : [],
+      // webSearch nativo só quando provider suportar (Anthropic/Gemini) E
+      // o agente tiver allowWebSearch=true. Sem `allowedSites` ainda no native
+      // tool — Anthropic não suporta domain whitelist no web_search_20250305.
+      webSearch: agent.allowWebSearch === true && (agent.provider === 'anthropic' || agent.provider === 'gemini'),
     });
   } catch (e) {
     // Fallback ao chatWithAI legacy

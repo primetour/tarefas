@@ -6,6 +6,48 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.35.23+20260511-anthropic-server-side-vision-web] — 2026-05-11
+
+Release **PATCH** — IA Hub: Anthropic em produção via Cloud Function, vision e
+web search nativo.
+
+### Pedido do user
+> "secret key Claude API: sk-ant-... faça tudo para deixar esse módulo
+> exemplar e com alto requisito técnico."
+
+### Segurança — key fora do browser
+- Key Anthropic agora vive no **Secret Manager do GCP**
+  (`firebase functions:secrets:set ANTHROPIC_API_KEY`).
+- `callLLM` (Cloud Function v2 onCall) é o único caminho — browser nunca vê a key.
+- Removido `anthropic-dangerous-direct-browser-access: true` do caminho produtivo
+  (`js/services/ai.js` `callAnthropic` agora chama `callLLM` via `httpsCallable`).
+- Smoke test (`functions/test-anthropic-smoke.cjs`) valida ponta-a-ponta:
+  Secret Manager → API → resposta texto + busca nativa.
+
+### Vision multimodal
+- Cloud Function `callAnthropic` aceita `attachments` (image blocks ou
+  data-URI base64) e monta `content` como array `[image, text]`.
+- `callLLMSecure` + `runAgent` propagam `context.attachments` até a Cloud Function.
+
+### Web search nativo Anthropic
+- Tool `web_search_20250305` habilitada via flag `webSearch` no payload.
+- Quando `agent.allowWebSearch===true` e `provider==='anthropic'` (ou gemini),
+  o pre-fetch Serper antigo é **pulado** — o modelo decide buscar sozinho com
+  citações automáticas. Demais providers continuam com Serper-prefetch.
+
+### Guards / DX
+- `resolveApiKey` agora ignora a checagem de key local quando `provider==='anthropic'`
+  tanto no `executeSkill` quanto no caminho `chatWithAI` e no `runAgent`.
+- Mensagem de "API key não configurada" não dispara mais pra anthropic.
+- Bump version → `4.35.23` (build `20260511-anthropic-server-side-vision-web`).
+
+### Testado
+- Smoke text: "Brasília" (20 in / 6 out tokens).
+- Smoke web search: dólar do dia retornado com 1 search (9588 in / 119 out).
+- Cloud Function deployada (`firebase deploy --only functions:callLLM`).
+
+---
+
 ## [4.35.3+20260509-system-feedback-module] — 2026-05-09
 
 Release **MINOR** — Módulo System Feedback com email automático via Microsoft Graph.

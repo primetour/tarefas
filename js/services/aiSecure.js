@@ -46,12 +46,15 @@ export async function callLLMSecure({
   history = [], maxTokens = 2048, temperature = 0.3,
   agentId = null, agentName = null, agentDailyCapUsd = 5,
   module = 'general', source = 'cloud-function',
+  attachments = [], webSearch = false,
 }) {
   const result = await callable('callLLM', {
     provider, model, systemPrompt, userMessage, history,
     maxTokens, temperature,
     agentId, agentName, agentDailyCapUsd,
     module, source,
+    // 4.35.23+: vision (image blocks) + web_search tool nativo (Anthropic)
+    attachments, webSearch,
   });
   return { ...result, secured: true };
 }

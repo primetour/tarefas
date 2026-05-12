@@ -890,8 +890,12 @@ export async function runSkill(skillId, context = {}) {
 
   // Resolver API key com cascata: Usuário → Núcleo → Área → Global
   const resolved = await resolveApiKey(provider);
-  const apiKey = resolved.apiKey;
-  if (!apiKey) {
+  let apiKey = resolved.apiKey;
+  // 4.35.23+ Anthropic agora é 100% server-side via Cloud Function callLLM
+  // (key fica no Secret Manager, NUNCA no browser). Não precisa de key local.
+  if (provider === 'anthropic') {
+    apiKey = 'server-side-via-cloud-function';
+  } else if (!apiKey) {
     return mockResponse(skill, userPrompt);
   }
   // Se a config resolvida tem azureEndpoint, usar ela (para o provider Azure)
@@ -949,7 +953,7 @@ export async function runSkill(skillId, context = {}) {
       result = await callAzure({ config, apiKey, model, maxTokens, systemPrompt, userPrompt, temperature: skill.temperature });
       break;
     default:
-      result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature: skill.temperature });
+      result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature: skill.temperature, webSearch, attachments: skill.attachments });
   }
 
   // ── LGPD: restaurar PII na resposta ──
@@ -1073,9 +1077,13 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
   }
 
   const resolved = await resolveApiKey(provider);
-  const apiKey = resolved.apiKey;
-  // Provider local não precisa de API key — usa localEndpoint
-  if (!apiKey && provider !== 'local') {
+  let apiKey = resolved.apiKey;
+  // Anthropic roteia via Cloud Function callLLM (key fica no Secret Manager
+  // do GCP, nunca expõe no browser). Não precisa key local.
+  if (provider === 'anthropic') {
+    apiKey = 'server-side-via-cloud-function';
+  } else if (!apiKey && provider !== 'local') {
+    // Provider local não precisa de API key — usa localEndpoint
     return {
       text: '[SEM API KEY CONFIGURADA]\n\nConfigure uma API Key em IA Skills → Configurar API para usar o chat.',
       model: 'none', provider, inputTokens: 0, outputTokens: 0, isMock: true,
@@ -1171,7 +1179,13 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
       result = await callLocal({ config: resolved.config, apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature });
       break;
     default:
-      result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature });
+      // 4.35.23+: chat também suporta vision (opts.attachments) e web search
+      // nativo (opts.webSearch) quando o agente/skill habilitar.
+      result = await callAnthropic({
+        apiKey, model, maxTokens, systemPrompt, userPrompt: fullUserPrompt, temperature,
+        attachments: Array.isArray(opts.attachments) ? opts.attachments : [],
+        webSearch: opts.webSearch === true,
+      });
   }
 
   // ── LGPD: restaurar PII na resposta ──
@@ -1196,38 +1210,47 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
 }
 
 /* ─── Provider: Anthropic (Claude) ───────────────────────── */
-async function callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature }) {
-  const body = {
-    model,
-    max_tokens: maxTokens,
-    messages: [{ role: 'user', content: userPrompt }],
-  };
-  if (systemPrompt) body.system = systemPrompt;
-  if (temperature != null) body.temperature = temperature;
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type':      'application/json',
-      'x-api-key':         apiKey,
-      'anthropic-version':  '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Erro Anthropic: ${response.status}`);
+/**
+ * 4.35.23+ Anthropic agora roda 100% server-side via Cloud Function `callLLM`.
+ * Key fica no Firebase Secret Manager — NUNCA exposta no browser.
+ *
+ * Antes (inseguro): chamava api.anthropic.com direto com header
+ *   `anthropic-dangerous-direct-browser-access: true`. Em produção isso
+ *   significaria key vazada via Network tab.
+ *
+ * Agora: chama Cloud Function callLLM, que resolve a key do Secret Manager.
+ * Rate limits e caps de custo são aplicados server-side.
+ */
+async function callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature, attachments = [], webSearch = false }) {
+  try {
+    const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+    const { app } = await import('../firebase.js');
+    const callLLM = httpsCallable(getFunctions(app, 'us-central1'), 'callLLM');
+    const res = await callLLM({
+      provider:    'anthropic',
+      model,
+      systemPrompt,
+      userMessage: userPrompt,
+      maxTokens,
+      temperature,
+      attachments,  // 4.35.23+ imagens (vision)
+      webSearch,    // 4.35.23+ web_search tool nativo
+    });
+    const data = res.data || {};
+    return {
+      text:         data.text || '',
+      model:        data.model || model,
+      inputTokens:  data.inputTokens  || 0,
+      outputTokens: data.outputTokens || 0,
+    };
+  } catch (e) {
+    // Cloud Function retorna HttpsError com code; converte pra mensagem amigável
+    const msg = e?.message || e?.toString() || 'Erro desconhecido';
+    if (msg.includes('failed-precondition')) {
+      throw new Error('Key Anthropic não configurada no Secret Manager. Admin: rodar `firebase functions:secrets:set ANTHROPIC_API_KEY`.');
+    }
+    throw new Error('Erro Anthropic (Cloud Function): ' + msg);
   }
-
-  const data = await response.json();
-  return {
-    text:         data.content?.[0]?.text || '',
-    model:        data.model,
-    inputTokens:  data.usage?.input_tokens || 0,
-    outputTokens: data.usage?.output_tokens || 0,
-  };
 }
 
 /* ─── Provider: OpenAI (ChatGPT) ─────────────────────────── */

@@ -203,6 +203,9 @@ export const callLLM = onCall({
     temperature = 0.3,
     agentId = null,
     agentDailyCapUsd = 5,
+    // 4.35.23+ multimodal + web search
+    attachments = [],
+    webSearch = false,
   } = data;
 
   if (!userMessage || typeof userMessage !== 'string') {
@@ -231,7 +234,7 @@ export const callLLM = onCall({
   // ── Chama o provider ──
   let result;
   try {
-    if (provider === 'anthropic') result = await callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature });
+    if (provider === 'anthropic') result = await callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature, attachments, webSearch });
     else if (provider === 'openai') result = await callOpenAI(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature });
     else if (provider === 'gemini') result = await callGemini(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature });
     else if (provider === 'groq')   result = await callGroq(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature });
@@ -287,30 +290,76 @@ export const callLLM = onCall({
 });
 
 /* ─── Provider callers (sem ai.js exposure) ──────────────── */
-async function callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature }) {
-  const messages = [...history.map(h => ({ role: h.role, content: h.text })), { role: 'user', content: userMessage }];
+async function callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature, attachments, webSearch }) {
+  // 4.35.23+ MULTIMODAL (vision): se `attachments` é array de imagens
+  // (data URLs ou {type:'image', source:{type:'base64', media_type, data}}),
+  // monta o content com tipos misturados.
+  const buildUserContent = () => {
+    const atts = Array.isArray(attachments) ? attachments : [];
+    if (!atts.length) return userMessage;
+    // Anthropic API: messages[].content pode ser string OU array de blocos
+    const blocks = [];
+    for (const a of atts) {
+      if (a?.type === 'image' && a?.source) {
+        blocks.push(a); // já no formato {type:'image', source:{...}}
+      } else if (typeof a === 'string' && a.startsWith('data:image')) {
+        // data URL → split prefix
+        const m = a.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
+        if (m) blocks.push({
+          type: 'image',
+          source: { type: 'base64', media_type: m[1], data: m[2] },
+        });
+      }
+    }
+    blocks.push({ type: 'text', text: userMessage });
+    return blocks;
+  };
 
-  // PROMPT CACHING: cacheia system prompt se >= 1024 chars (~aprox 1024 tokens minimo Anthropic)
-  // Custo: write 1.25x normal, read 0.1x normal (90% desconto). Vale se prompt repete.
-  // TTL default ephemeral = 5min. Renovado a cada hit.
+  const messages = [
+    ...history.map(h => ({ role: h.role, content: h.text })),
+    { role: 'user', content: buildUserContent() },
+  ];
+
+  // PROMPT CACHING: cacheia system prompt se >= 1024 chars
   const useCache = systemPrompt && systemPrompt.length >= 1024;
   const systemField = useCache
     ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
     : systemPrompt;
 
+  // 4.35.23+ Web search nativo do Anthropic (server-side tool).
+  // Quando habilitado, o modelo decide quando fazer busca + cita fontes.
+  // Custos: $10 por 1000 buscas (a partir do Claude 3.5 Sonnet).
+  const tools = webSearch
+    ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }]
+    : undefined;
+
+  const reqBody = {
+    model: model || 'claude-sonnet-4-6',
+    system: systemField,
+    messages,
+    max_tokens: maxTokens,
+    temperature,
+  };
+  if (tools) reqBody.tools = tools;
+
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: model || 'claude-sonnet-4-6', system: systemField, messages, max_tokens: maxTokens, temperature }),
+    body: JSON.stringify(reqBody),
   });
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
   const d = await res.json();
+  // Extrair texto de TODOS os blocos type=text (web_search retorna múltiplos blocos)
+  const textBlocks = (d.content || []).filter(b => b.type === 'text').map(b => b.text || '');
+  const webSearches = (d.content || []).filter(b => b.type === 'server_tool_use' && b.name === 'web_search');
   return {
-    text: d.content?.[0]?.text || '', model: d.model,
+    text: textBlocks.join('\n'),
+    model: d.model,
     inputTokens:           d.usage?.input_tokens || 0,
     outputTokens:          d.usage?.output_tokens || 0,
     cacheCreationTokens:   d.usage?.cache_creation_input_tokens || 0,
     cacheReadTokens:       d.usage?.cache_read_input_tokens || 0,
+    webSearchCount:        webSearches.length,
   };
 }
 async function callOpenAI(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature }) {
