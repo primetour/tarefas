@@ -121,13 +121,13 @@ const ROOMS = [
  * Cada tile = 280px width × 160px height (vista isométrica).
  * Iso projection: x_iso = (col - row) * (W/2), y_iso = (col + row) * (H/2)
  */
-// 4.36.1+ tiles maiores + mais espaço; salas não se sobrepõem mais
+// 4.38.2+ Tudo MAIOR. Avatares ocupam ~15% da sala (era 3%). Walls altas.
 const TILE_W = 360;
 const TILE_H = 200;
-const TILE_GAP = 12;  // espaço entre tiles
+const TILE_GAP = 16;
 const ORIGIN_X = 760;
 const ORIGIN_Y = 60;
-const WALL_HEIGHT = 24;
+const WALL_HEIGHT = 48;  // 2x mais alto
 
 function gridToIso(col, row) {
   // 4.36.1+ TILE_GAP adiciona respiro entre salas → não sobreposição visual
@@ -438,9 +438,10 @@ function buildSvg(peopleByRoom) {
   // viewBox aproximado pra acomodar todas as salas + paredes + avatares
   return `
     <style>
-      .office-room:hover { filter: brightness(1.15) saturate(1.2); cursor: pointer; }
+      .office-room { filter: drop-shadow(0 10px 20px rgba(0,0,0,0.25)); transition: filter .25s; }
+      .office-room:hover { filter: drop-shadow(0 14px 28px rgba(212,168,67,0.45)) brightness(1.12) saturate(1.18); cursor: pointer; }
       .office-room:hover polygon { stroke-opacity: 1 !important; stroke-width: 2.5 !important; }
-      .office-avatar:hover { filter: drop-shadow(0 4px 8px rgba(212,168,67,0.6)); }
+      .office-avatar:hover { filter: drop-shadow(0 8px 14px rgba(212,168,67,0.7)); }
       /* 4.38.0+ Camera controls */
       .cam-btn {
         background: none; border: 1px solid rgba(212,168,67,0.4);
@@ -452,9 +453,8 @@ function buildSvg(peopleByRoom) {
       #cam-exit-room:hover { background: rgba(212,168,67,0.2); }
       #office-hint { transition: opacity .4s; }
     </style>
-    <svg viewBox="0 0 1640 1080" xmlns="http://www.w3.org/2000/svg" style="
+    <svg viewBox="0 0 1700 1180" xmlns="http://www.w3.org/2000/svg" style="
       width:100%;height:auto;display:block;
-      filter:drop-shadow(0 8px 24px rgba(0,0,0,0.15));
     ">
       <defs>
         <!-- Gradiente sutil pra cada chão -->
@@ -1327,15 +1327,14 @@ function iso_books(x, y) {
  * Coordenadas relativas ao centro (cx, cy + TILE_H/2).
  */
 function avatarOffsetInRoom(idx, total) {
-  // 4.36.1+ Layout em grid 4 cols, distribuídos abaixo do label
-  // O label fica em y ≈ +22 (topo do rombus); avatares começam em +50
-  const colsPerRow = 4;
+  // 4.38.2+ Avatares 2.2x maiores; spacing maior e menos por row
+  const colsPerRow = 2;
   const col = idx % colsPerRow;
   const row = Math.floor(idx / colsPerRow);
-  const spacing = 38;
-  const startY = 30;  // abaixo do label
+  const spacing = 60;
+  const startY = 20;
   const x = (col - (colsPerRow - 1) / 2) * spacing;
-  const y = startY + row * 28;
+  const y = startY + row * 50;
   return { x, y };
 }
 
@@ -1364,56 +1363,67 @@ function renderAvatar(person, x, y, idx = 0) {
        data-photo="${esc(photoFg)}"
        data-absence="${esc(person.absenceType || '')}"
        transform="translate(${x}, ${y})"
-       style="cursor:pointer;transition:transform 600ms cubic-bezier(.4,.0,.2,1);">
+       style="cursor:pointer;transition:transform 600ms cubic-bezier(.4,.0,.2,1);
+       filter:drop-shadow(0 4px 6px rgba(0,0,0,0.3));">
       <g>
         ${!isStill ? `<animateMotion dur="${walkDur}s" repeatCount="indefinite" rotate="0"
           path="${walkPath}" calcMode="spline"
           keySplines="0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1; 0.4 0 0.6 1"
           keyTimes="0; 0.25; 0.5; 0.75; 1"/>` : ''}
-        <!-- 4.37.0+ Sombra elongada no chão (mais realista) -->
-        <ellipse cx="0" cy="12" rx="13" ry="3.5" fill="rgba(0,0,0,0.35)">
-          ${!isStill ? `<animate attributeName="rx" values="13;11;13" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
-          ${!isStill ? `<animate attributeName="opacity" values="0.35;0.25;0.35" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+        <!-- 4.38.2+ Sombra MUITO maior (2.2x) — peso visual real -->
+        <ellipse cx="0" cy="26" rx="28" ry="7" fill="rgba(0,0,0,0.45)">
+          ${!isStill ? `<animate attributeName="rx" values="28;24;28" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+          ${!isStill ? `<animate attributeName="opacity" values="0.45;0.30;0.45" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
         </ellipse>
         <g>
           ${!isStill ? `<animateTransform attributeName="transform" type="translate"
-            values="0,0;0,-2;0,0;0,-1;0,0" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
-          <!-- 4.37.0+ CORPO (torso): cápsula/elipse com cor do user -->
-          <ellipse cx="0" cy="8" rx="9" ry="6" fill="${bodyDark}" />
-          <path d="M -9,8 Q -9,0 -7,-2 L 7,-2 Q 9,0 9,8 Z" fill="${bodyColor}" stroke="${bodyDark}" stroke-width="0.5"/>
-          <!-- "Gola" -->
-          <ellipse cx="0" cy="-2" rx="6" ry="2" fill="${bodyDark}"/>
-          <!-- CABEÇA (foto ou iniciais, deslocada pra cima do torso) -->
-          <circle cx="0" cy="-8" r="11" fill="${fg}" stroke="${stateColor}" stroke-width="2.5"/>
+            values="0,0;0,-3;0,0;0,-2;0,0" dur="${bobDuration}s" begin="${bobOffset}s" repeatCount="indefinite"/>` : ''}
+          <!-- 4.38.2+ Pernas (2 cilindros) — dá altura real -->
+          <rect x="-7" y="14" width="5" height="12" fill="${shade(bodyDark, -10)}" rx="2"/>
+          <rect x="2"  y="14" width="5" height="12" fill="${shade(bodyDark, -10)}" rx="2"/>
+          <!-- TORSO maior (2x) -->
+          <ellipse cx="0" cy="18" rx="20" ry="14" fill="${bodyDark}"/>
+          <path d="M -20,18 Q -22,0 -17,-4 L 17,-4 Q 22,0 20,18 Z" fill="${bodyColor}" stroke="${shade(bodyDark, -20)}" stroke-width="1"/>
+          <!-- Gola maior -->
+          <ellipse cx="0" cy="-4" rx="13" ry="4" fill="${shade(bodyDark, -15)}"/>
+          <!-- CABEÇA 2.2x maior (r=24) -->
+          <circle cx="0" cy="-18" r="24" fill="${fg}" stroke="${stateColor}" stroke-width="3.5"/>
           ${photoFg ? `
             <clipPath id="clip-${person.uid}">
-              <circle cx="0" cy="-8" r="10"/>
+              <circle cx="0" cy="-18" r="22"/>
             </clipPath>
-            <image href="${esc(photoFg)}" x="-10" y="-18" width="20" height="20"
+            <image href="${esc(photoFg)}" x="-22" y="-40" width="44" height="44"
               clip-path="url(#clip-${person.uid})" preserveAspectRatio="xMidYMid slice"/>
           ` : `
-            <text x="0" y="-5" text-anchor="middle"
-              style="font-family:-apple-system,sans-serif;font-size:9px;font-weight:700;fill:#fff;pointer-events:none;">${esc(initials)}</text>
+            <text x="0" y="-12" text-anchor="middle"
+              style="font-family:-apple-system,sans-serif;font-size:18px;font-weight:700;fill:#fff;pointer-events:none;">${esc(initials)}</text>
           `}
         </g>
         ${person.isMe ? `
-          <circle cx="0" cy="-8" r="14" fill="none" stroke="#D4A843" stroke-width="2" stroke-dasharray="3,2">
-            <animateTransform attributeName="transform" type="rotate" from="0 0 -8" to="360 0 -8" dur="8s" repeatCount="indefinite"/>
+          <circle cx="0" cy="-18" r="30" fill="none" stroke="#D4A843" stroke-width="2.5" stroke-dasharray="5,3">
+            <animateTransform attributeName="transform" type="rotate" from="0 0 -18" to="360 0 -18" dur="8s" repeatCount="indefinite"/>
           </circle>
         ` : ''}
         ${person.state === 'active' && !isRecentlyActive ? `
-          <circle cx="0" cy="-8" r="11" fill="none" stroke="${stateColor}" stroke-width="2" opacity="0.6">
-            <animate attributeName="r" values="11;18;11" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
+          <circle cx="0" cy="-18" r="24" fill="none" stroke="${stateColor}" stroke-width="2.5" opacity="0.6">
+            <animate attributeName="r" values="24;38;24" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
             <animate attributeName="opacity" values="0.6;0;0.6" dur="3s" begin="${bobOffset + 0.5}s" repeatCount="indefinite"/>
           </circle>
         ` : ''}
         ${isRecentlyActive ? `
-          <text x="0" y="-26" text-anchor="middle" font-size="14" style="pointer-events:none;">
+          <text x="0" y="-50" text-anchor="middle" font-size="22" style="pointer-events:none;">
             ⚡
             <animate attributeName="opacity" values="1;0.3;1" dur="0.8s" repeatCount="indefinite"/>
           </text>
         ` : ''}
-        <!-- 4.38.0+ Mood bubble: o que está fazendo, baseado na sala -->
+        <!-- 4.38.2+ Nome do user fixo abaixo (sempre visível pra identificação) -->
+        <g style="pointer-events:none;">
+          <rect x="-44" y="32" width="88" height="14" rx="7" fill="rgba(15,23,42,0.85)"/>
+          <text x="0" y="42" text-anchor="middle"
+            style="font-family:-apple-system,sans-serif;font-size:9px;font-weight:600;fill:#fff;">
+            ${esc((person.name || '?').split(' ')[0])}
+          </text>
+        </g>
         ${!isStill && !isRecentlyActive ? renderMoodBubble(person, idx) : ''}
       </g>
     </g>
@@ -1442,16 +1452,15 @@ function renderMoodBubble(person, idx) {
   let seed = 0;
   for (let i = 0; i < (person.uid || '').length; i++) seed += person.uid.charCodeAt(i);
   const text = opts[seed % opts.length];
-  // Aparece só depois de 4-8s na sala (delay aleatório) e fica fade-in/out lento
-  const showDelay = 4 + (idx * 1.5) % 5;
+  // 4.38.2+ Mood bubble SEMPRE visível (não pisca mais), maior e legível
   return `
-    <g style="pointer-events:none;" opacity="0">
-      <animate attributeName="opacity" values="0;0;0.95;0.95;0" keyTimes="0;${showDelay/14};${(showDelay+0.5)/14};${(showDelay+5)/14};1" dur="14s" repeatCount="indefinite"/>
-      <rect x="-44" y="-44" width="88" height="16" rx="8" fill="#FFFFFF" stroke="#1F2937" stroke-width="0.8"/>
-      <text x="0" y="-33" text-anchor="middle"
-        style="font-family:-apple-system,sans-serif;font-size:8px;font-weight:500;fill:#1F2937;">💭 ${esc(text)}</text>
-      <circle cx="-8" cy="-26" r="2" fill="#FFFFFF" stroke="#1F2937" stroke-width="0.6"/>
-      <circle cx="-5" cy="-24" r="1.3" fill="#FFFFFF" stroke="#1F2937" stroke-width="0.5"/>
+    <g style="pointer-events:none;">
+      <rect x="-62" y="-62" width="124" height="22" rx="11" fill="#FFFFFF" stroke="#1F2937" stroke-width="1.2"
+        filter="drop-shadow(0 2px 4px rgba(0,0,0,0.2))"/>
+      <text x="0" y="-48" text-anchor="middle"
+        style="font-family:-apple-system,sans-serif;font-size:11px;font-weight:600;fill:#1F2937;">💭 ${esc(text)}</text>
+      <circle cx="-12" cy="-38" r="3" fill="#FFFFFF" stroke="#1F2937" stroke-width="0.8"/>
+      <circle cx="-8" cy="-35" r="2" fill="#FFFFFF" stroke="#1F2937" stroke-width="0.6"/>
     </g>
   `;
 }

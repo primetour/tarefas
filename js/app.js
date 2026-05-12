@@ -521,7 +521,7 @@ function setupRouter() {
     'dashboards':   async () => { destroyDashboards(); await renderDashboards(content); },
     'audit':        async () => { await renderAudit(content); },
     // 4.36.0+ Escritório Virtual
-    'office':       async () => { const { renderOffice, destroyOffice } = await import('./pages/office.js?v=20260512o12'); window.__officeDestroy = destroyOffice; await renderOffice(content); },
+    'office':       async () => { const { renderOffice, destroyOffice } = await import('./pages/office.js?v=20260512o13'); window.__officeDestroy = destroyOffice; await renderOffice(content); },
     'governance':   async () => { const { renderGovernance } = await import('./pages/governance.js?v=4.35.3'); await renderGovernance(content); },
     'system-feedback': async () => { const { renderSystemFeedback } = await import('./pages/systemFeedback.js?v=4.35.3'); await renderSystemFeedback(content); },
     'content-config': async () => { const { renderContentConfig } = await import('./pages/contentConfig.js?v=4.35.13'); await renderContentConfig(content); },

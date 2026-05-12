@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 38,
-  patch: 1,
-  build: '20260512-office-camera-cache-bust',
+  patch: 2,
+  build: '20260512-office-bigger-avatars-shadows',
 };
 
 /** "1.2.0" */
