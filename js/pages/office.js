@@ -169,7 +169,15 @@ function rightWallPath(cx, cy, h = 50) {
 
 /* ─── Estado e render ─────────────────────────────────────── */
 
-export async function renderOffice(container) {
+export // 4.38.0+ Estado da câmera virtual
+let _cam = {
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+  focusedRoom: null,  // id da sala em zoom drill-down
+};
+
+async function renderOffice(container) {
   if (!store.isMaster() && !store.can('office_view')) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
@@ -195,7 +203,7 @@ export async function renderOffice(container) {
       </div>
     </div>
 
-    <!-- 4.37.0+ Stage com background dinâmico (day/night cycle) -->
+    <!-- 4.38.0+ Stage com câmera (zoom/pan/drill-down) + background dinâmico -->
     <div id="office-stage" style="
       position:relative;
       width:100%;
@@ -206,7 +214,59 @@ export async function renderOffice(container) {
       overflow:hidden;
       padding:12px;
       transition:background 1.5s ease-in-out;
-    "></div>
+    ">
+      <!-- Wrapper de câmera: transformável via CSS pra zoom/pan -->
+      <div id="office-camera" style="
+        width:100%;
+        height:100%;
+        transform:scale(1) translate(0px, 0px);
+        transform-origin:center center;
+        transition:transform 700ms cubic-bezier(.4, 0, .2, 1);
+      "></div>
+
+      <!-- Controles de câmera (canto superior direito do stage) -->
+      <div id="office-camera-controls" style="
+        position:absolute;top:16px;right:16px;z-index:30;
+        display:flex;gap:6px;background:rgba(15,23,42,0.85);padding:6px;
+        border-radius:8px;backdrop-filter:blur(8px);
+      ">
+        <button id="cam-zoom-in"  class="cam-btn" title="Aproximar (Ctrl + scroll up)">🔍＋</button>
+        <button id="cam-zoom-out" class="cam-btn" title="Afastar (Ctrl + scroll down)">🔍－</button>
+        <button id="cam-reset"    class="cam-btn" title="Resetar (R)">↻</button>
+        <span id="cam-zoom-label" style="color:#D4A843;font-size:0.75rem;padding:0 8px;align-self:center;font-weight:600;min-width:42px;text-align:center;">100%</span>
+      </div>
+
+      <!-- Botão "Sair da sala" — só visível quando zoom-into-room ativo -->
+      <button id="cam-exit-room" style="
+        position:absolute;top:16px;left:16px;z-index:30;display:none;
+        background:rgba(15,23,42,0.9);color:#fff;border:1px solid #D4A843;
+        padding:8px 16px;border-radius:8px;cursor:pointer;font-size:0.8125rem;
+        font-weight:600;
+      ">← Sair da sala</button>
+
+      <!-- Hint inicial -->
+      <div id="office-hint" style="
+        position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:30;
+        background:rgba(15,23,42,0.85);color:#E5E7EB;padding:8px 16px;
+        border-radius:20px;font-size:0.7rem;letter-spacing:0.04em;
+        backdrop-filter:blur(6px);
+      ">
+        💡 Click numa sala pra entrar · click num avatar pra abrir painel · Ctrl+scroll zoom
+      </div>
+    </div>
+
+    <!-- 4.38.0+ Side panel: detalhes do avatar clicado -->
+    <div id="office-side-panel" style="
+      position:fixed;top:0;right:0;width:360px;height:100vh;
+      background:var(--bg-card, #1A2332);
+      border-left:1px solid var(--border-default, #1E2D3D);
+      box-shadow:-8px 0 30px rgba(0,0,0,0.3);
+      transform:translateX(100%);
+      transition:transform 350ms cubic-bezier(.4, 0, .2, 1);
+      z-index:200;display:flex;flex-direction:column;
+    ">
+      <div id="office-side-panel-body" style="padding:24px;overflow-y:auto;flex:1;"></div>
+    </div>
 
     <!-- 4.37.0+ Activity feed flutuante (toasts narrando ações) -->
     <div id="office-activity-feed" style="
@@ -357,8 +417,13 @@ function repaint(container) {
     `;
   }
 
-  stageEl.innerHTML = buildSvg(peopleByRoom);
-  wireInteractions(stageEl);
+  // 4.38.0+ SVG vai pro container da câmera (não direto no stage)
+  const camEl = stageEl.querySelector('#office-camera');
+  if (camEl) {
+    camEl.innerHTML = buildSvg(peopleByRoom);
+    wireInteractions(camEl);
+    wireCameraControls(stageEl);
+  }
 }
 
 /* ─── Builder principal do SVG ───────────────────────────── */
@@ -373,10 +438,19 @@ function buildSvg(peopleByRoom) {
   // viewBox aproximado pra acomodar todas as salas + paredes + avatares
   return `
     <style>
-      /* 4.36.2+ Hover destaca a sala inteira (chão + paredes + mobília + label) */
       .office-room:hover { filter: brightness(1.15) saturate(1.2); cursor: pointer; }
       .office-room:hover polygon { stroke-opacity: 1 !important; stroke-width: 2.5 !important; }
       .office-avatar:hover { filter: drop-shadow(0 4px 8px rgba(212,168,67,0.6)); }
+      /* 4.38.0+ Camera controls */
+      .cam-btn {
+        background: none; border: 1px solid rgba(212,168,67,0.4);
+        color: #D4A843; padding: 5px 10px; border-radius: 6px;
+        cursor: pointer; font-size: 0.7rem; font-family: inherit; font-weight: 600;
+        transition: all .15s;
+      }
+      .cam-btn:hover { background: rgba(212,168,67,0.15); border-color: #D4A843; }
+      #cam-exit-room:hover { background: rgba(212,168,67,0.2); }
+      #office-hint { transition: opacity .4s; }
     </style>
     <svg viewBox="0 0 1640 1080" xmlns="http://www.w3.org/2000/svg" style="
       width:100%;height:auto;display:block;
@@ -1339,7 +1413,45 @@ function renderAvatar(person, x, y, idx = 0) {
             <animate attributeName="opacity" values="1;0.3;1" dur="0.8s" repeatCount="indefinite"/>
           </text>
         ` : ''}
+        <!-- 4.38.0+ Mood bubble: o que está fazendo, baseado na sala -->
+        ${!isStill && !isRecentlyActive ? renderMoodBubble(person, idx) : ''}
       </g>
+    </g>
+  `;
+}
+
+/* ─── 4.38.0+ Mood bubble (pensamento acima do avatar) ──── */
+function renderMoodBubble(person, idx) {
+  const room = routeToRoom(person.currentRoute);
+  const moods = {
+    'tarefas':       ['trabalhando…', 'na tarefa', 'arrumando o board'],
+    'reunioes':      ['em reunião', 'discutindo o squad'],
+    'comando':       ['vendo dashboards', 'analisando dados'],
+    'estudio':       ['criando dica', 'editando portal'],
+    'lousa':         ['agendando conteúdo', 'planejando'],
+    'roteiros':      ['montando roteiro', 'pesquisando destino'],
+    'atendimento':   ['atendendo CSAT', 'lendo feedbacks'],
+    'lab-ia':        ['testando agente IA', 'configurando LLM'],
+    'admin':         ['mexendo na admin', 'cuidando do sistema'],
+    'cafe':          ['ajustando perfil', 'tomando um café'],
+    'descompressao': ['de folga', 'descansando'],
+    'recepcao':      ['no painel inicial', 'navegando'],
+  };
+  const opts = moods[room] || ['trabalhando…'];
+  // Determinístico por uid (não muda toda hora)
+  let seed = 0;
+  for (let i = 0; i < (person.uid || '').length; i++) seed += person.uid.charCodeAt(i);
+  const text = opts[seed % opts.length];
+  // Aparece só depois de 4-8s na sala (delay aleatório) e fica fade-in/out lento
+  const showDelay = 4 + (idx * 1.5) % 5;
+  return `
+    <g style="pointer-events:none;" opacity="0">
+      <animate attributeName="opacity" values="0;0;0.95;0.95;0" keyTimes="0;${showDelay/14};${(showDelay+0.5)/14};${(showDelay+5)/14};1" dur="14s" repeatCount="indefinite"/>
+      <rect x="-44" y="-44" width="88" height="16" rx="8" fill="#FFFFFF" stroke="#1F2937" stroke-width="0.8"/>
+      <text x="0" y="-33" text-anchor="middle"
+        style="font-family:-apple-system,sans-serif;font-size:8px;font-weight:500;fill:#1F2937;">💭 ${esc(text)}</text>
+      <circle cx="-8" cy="-26" r="2" fill="#FFFFFF" stroke="#1F2937" stroke-width="0.6"/>
+      <circle cx="-5" cy="-24" r="1.3" fill="#FFFFFF" stroke="#1F2937" stroke-width="0.5"/>
     </g>
   `;
 }
@@ -1377,13 +1489,22 @@ function wireInteractions(stageEl) {
   let tip = null;
   const removeTip = () => { if (tip) { tip.remove(); tip = null; } };
 
-  // 4.36.3+ Click no chão da sala → navega pro módulo correspondente
+  // 4.38.0+ Click no chão da sala → drill-down (zoom-in dramatic)
+  // (antes navegava direto pro módulo — agora é "entrar" virtualmente, e dentro
+  // do panel/zoom-in tem botão "ir pro módulo" pra navegação real)
   stageEl.querySelectorAll('.office-room').forEach(roomEl => {
     const floor = roomEl.querySelector('.office-floor');
     if (!floor) return;
-    floor.addEventListener('click', () => {
-      const route = roomEl.dataset.route;
-      if (route) router.navigate(route);
+    floor.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const roomId = roomEl.dataset.room;
+      if (_cam.focusedRoom === roomId) {
+        // já está focada — segundo click navega
+        const route = roomEl.dataset.route;
+        if (route) router.navigate(route);
+      } else {
+        zoomIntoRoom(roomId);
+      }
     });
     // Tooltip sutil no hover da sala (não conflita com o tooltip do avatar)
     floor.addEventListener('mouseenter', () => {
@@ -1404,7 +1525,8 @@ function wireInteractions(stageEl) {
       `;
       tip.innerHTML = `
         <div style="font-weight:600;color:${room.color};margin-bottom:2px;">${esc(room.icon)} ${esc(room.label)}</div>
-        <div style="font-size:0.6875rem;opacity:0.85;">Clique para entrar nesta sala</div>
+        <div style="font-size:0.6875rem;opacity:0.85;">${_cam.focusedRoom === room.id
+          ? 'Clique de novo para abrir o módulo' : 'Clique para entrar na sala'}</div>
         ${route ? `<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">↗ /${esc(route)}</div>` : ''}
       `;
       document.body.appendChild(tip);
@@ -1447,6 +1569,13 @@ function wireInteractions(stageEl) {
       tip.style.top  = (rect.top - tip.offsetHeight - 8) + 'px';
     });
     av.addEventListener('mouseleave', removeTip);
+    // 4.38.0+ Click no avatar abre painel lateral
+    av.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeTip();
+      const uid = av.dataset.uid;
+      if (uid) openAvatarPanel(uid);
+    });
   });
 
   stageEl.addEventListener('mouseleave', removeTip);
@@ -1591,6 +1720,251 @@ function showActivityToast(container, event) {
     toast.style.transform = 'translateX(20px)';
     setTimeout(() => toast.remove(), 400);
   }, 5500);
+}
+
+/* ─── 4.38.0+ Câmera virtual (zoom/pan/drill-down) ────────── */
+
+function wireCameraControls(stageEl) {
+  const camEl = stageEl.querySelector('#office-camera');
+  if (!camEl) return;
+
+  // Idempotente: só vincula 1 vez
+  if (stageEl.dataset.camWired === '1') {
+    applyCamTransform(camEl);
+    return;
+  }
+  stageEl.dataset.camWired = '1';
+
+  const applyCss = () => applyCamTransform(camEl);
+
+  // Botões
+  stageEl.querySelector('#cam-zoom-in')?.addEventListener('click', () => {
+    _cam.focusedRoom = null;
+    _cam.zoom = Math.min(3, +(_cam.zoom + 0.25).toFixed(2));
+    applyCss();
+  });
+  stageEl.querySelector('#cam-zoom-out')?.addEventListener('click', () => {
+    _cam.focusedRoom = null;
+    _cam.zoom = Math.max(0.6, +(_cam.zoom - 0.25).toFixed(2));
+    applyCss();
+  });
+  stageEl.querySelector('#cam-reset')?.addEventListener('click', () => {
+    _cam = { zoom: 1, panX: 0, panY: 0, focusedRoom: null };
+    applyCss();
+    stageEl.querySelector('#cam-exit-room').style.display = 'none';
+  });
+  stageEl.querySelector('#cam-exit-room')?.addEventListener('click', () => {
+    _cam = { zoom: 1, panX: 0, panY: 0, focusedRoom: null };
+    applyCss();
+    stageEl.querySelector('#cam-exit-room').style.display = 'none';
+  });
+
+  // Ctrl + scroll = zoom (sem ctrl, deixa scroll natural)
+  stageEl.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    _cam.focusedRoom = null;
+    const delta = -Math.sign(e.deltaY) * 0.15;
+    _cam.zoom = Math.max(0.6, Math.min(3, +(_cam.zoom + delta).toFixed(2)));
+    applyCss();
+  }, { passive: false });
+
+  // Pan via drag (só ativo quando zoom > 1)
+  let dragging = false, lastX = 0, lastY = 0;
+  stageEl.addEventListener('mousedown', (e) => {
+    // Se clicou em controle ou sala/avatar (interativos), não dragga
+    if (e.target.closest('button') || e.target.closest('.office-floor') || e.target.closest('.office-avatar')) return;
+    if (_cam.zoom <= 1.05) return;
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    stageEl.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    _cam.panX += (e.clientX - lastX) / _cam.zoom;
+    _cam.panY += (e.clientY - lastY) / _cam.zoom;
+    lastX = e.clientX; lastY = e.clientY;
+    applyCss();
+  });
+  window.addEventListener('mouseup', () => {
+    dragging = false;
+    stageEl.style.cursor = '';
+  });
+
+  // Atalho R = reset
+  const keyHandler = (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'r' || e.key === 'R') {
+      _cam = { zoom: 1, panX: 0, panY: 0, focusedRoom: null };
+      applyCss();
+      stageEl.querySelector('#cam-exit-room').style.display = 'none';
+    }
+  };
+  document.addEventListener('keydown', keyHandler);
+  stageEl.__keyHandler = keyHandler;
+
+  applyCss();
+}
+
+function applyCamTransform(camEl) {
+  const stage = camEl.closest('#office-stage');
+  const label = stage?.querySelector('#cam-zoom-label');
+  if (label) label.textContent = Math.round(_cam.zoom * 100) + '%';
+  // Esconde hint quando user começa a interagir
+  const hint = stage?.querySelector('#office-hint');
+  if (hint) hint.style.opacity = (_cam.zoom !== 1 || _cam.panX || _cam.panY || _cam.focusedRoom) ? '0' : '1';
+
+  camEl.style.transform = `scale(${_cam.zoom}) translate(${_cam.panX}px, ${_cam.panY}px)`;
+}
+
+/* ─── 4.38.0+ Drill-down: zoom-in numa sala específica ──── */
+function zoomIntoRoom(roomId) {
+  const room = ROOMS.find(r => r.id === roomId);
+  if (!room) return;
+  // Calcula offset do centro da sala em relação ao centro do SVG
+  // viewBox: 0,0,1640,1080 → centro = (820, 540)
+  const { x, y } = gridToIso(room.col, room.row);
+  const roomCx = x;
+  const roomCy = y + TILE_H / 2;
+  const svgCx = 820, svgCy = 540;
+  // pra trazer o centro da sala pro centro da view, precisamos pan negativo
+  // mas como o transform-origin é "center center", precisamos calcular em px de viewport
+  const stage = document.getElementById('office-stage');
+  const svgEl = stage?.querySelector('svg');
+  if (!svgEl) return;
+  const rect = svgEl.getBoundingClientRect();
+  // proporção: (rect.width / 1640) é o fator de scale "natural" do SVG
+  const scaleFactor = rect.width / 1640;
+  const offsetXpx = (svgCx - roomCx) * scaleFactor;
+  const offsetYpx = (svgCy - roomCy) * scaleFactor;
+
+  _cam.zoom = 2.2;
+  _cam.panX = offsetXpx / _cam.zoom;
+  _cam.panY = offsetYpx / _cam.zoom;
+  _cam.focusedRoom = roomId;
+
+  const camEl = stage.querySelector('#office-camera');
+  applyCamTransform(camEl);
+  stage.querySelector('#cam-exit-room').style.display = 'block';
+}
+
+/* ─── 4.38.0+ Side panel (detalhes do avatar clicado) ──── */
+async function openAvatarPanel(uid) {
+  const panel = document.getElementById('office-side-panel');
+  const body  = document.getElementById('office-side-panel-body');
+  if (!panel || !body) return;
+
+  const users = store.get('users') || [];
+  const u = users.find(x => x.id === uid) || {};
+  const presence = [...(store.get('onlineUsers') || []), ...(store.get('idleUsers') || [])]
+    .find(p => p.uid === uid);
+
+  const photo = u.photoURL || presence?.photoURL;
+  const name  = u.name || presence?.name || 'Usuário';
+  const color = u.avatarColor || presence?.avatarColor || '#3B82F6';
+  const sector = u.sector || u.department || '';
+  const role   = u.role || u.roleId || '';
+  const stateColor = presence?.state === 'idle' ? '#F59E0B' : (presence ? '#22C55E' : '#94A3B8');
+  const stateLabel = presence?.state === 'idle' ? '🟡 ausente (idle)'
+                  : presence                     ? '🟢 ativo agora'
+                  : '⚪ offline';
+  const route = presence?.currentRoute || '—';
+
+  // Carrega últimas ações do user em audit_logs
+  body.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:60px 0;">⏳ Carregando…</div>`;
+  panel.style.transform = 'translateX(0)';
+
+  let recentActions = [];
+  try {
+    const { db } = await import('../firebase.js');
+    const { collection, query, where, orderBy, limit, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const snap = await getDocs(query(
+      collection(db, 'audit_logs'),
+      where('userId', '==', uid),
+      orderBy('timestamp', 'desc'),
+      limit(8),
+    ));
+    recentActions = snap.docs.map(d => d.data());
+  } catch (_) { /* sem permissão */ }
+
+  body.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+      <button id="osp-close" style="background:none;border:none;color:var(--text-muted);
+        font-size:1.5rem;cursor:pointer;padding:0;line-height:1;">×</button>
+    </div>
+
+    <div style="text-align:center;margin-bottom:24px;">
+      <div class="avatar" style="width:96px;height:96px;background:${color};margin:0 auto;
+        position:relative;border:3px solid ${stateColor};border-radius:50%;overflow:hidden;
+        display:flex;align-items:center;justify-content:center;font-size:1.75rem;font-weight:700;color:#fff;">
+        ${photo
+          ? `<img src="${esc(photo)}" style="width:100%;height:100%;object-fit:cover;" />`
+          : esc((name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase())}
+      </div>
+      <h2 style="margin:14px 0 4px;font-size:1.125rem;">${esc(name)}</h2>
+      <div style="font-size:0.75rem;color:var(--text-muted);">${esc(sector)} ${role ? '· ' + esc(role) : ''}</div>
+      <div style="margin-top:8px;font-size:0.8125rem;">${stateLabel}</div>
+    </div>
+
+    <div style="background:var(--bg-surface);border-radius:8px;padding:14px;margin-bottom:18px;">
+      <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Onde está agora</div>
+      <div style="font-size:0.9375rem;font-weight:600;">
+        ${esc(_routeToRoomLabel(route))}
+      </div>
+      ${presence ? `<button id="osp-go-to-room" class="btn btn-secondary btn-sm" style="margin-top:10px;font-size:0.75rem;">↗ Ir até a sala</button>` : ''}
+    </div>
+
+    <div>
+      <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Atividade recente</div>
+      ${recentActions.length === 0 ? `
+        <div style="font-size:0.8125rem;color:var(--text-muted);padding:14px;text-align:center;background:var(--bg-surface);border-radius:6px;">
+          Sem ações registradas recentemente.
+        </div>
+      ` : `
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${recentActions.map(a => {
+            const when = a.timestamp?.toDate ? a.timestamp.toDate() : null;
+            const whenTxt = when ? when.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+            return `<div style="padding:8px 12px;background:var(--bg-surface);border-radius:6px;font-size:0.75rem;">
+              <div style="color:var(--text-primary);">${esc(_humanAction(a.action))}</div>
+              <div style="color:var(--text-muted);font-size:0.6875rem;margin-top:2px;">${esc(whenTxt)}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      `}
+    </div>
+  `;
+
+  document.getElementById('osp-close')?.addEventListener('click', () => {
+    panel.style.transform = 'translateX(100%)';
+  });
+  document.getElementById('osp-go-to-room')?.addEventListener('click', () => {
+    const room = routeToRoom(presence?.currentRoute || 'home');
+    zoomIntoRoom(room);
+  });
+}
+
+function _routeToRoomLabel(route) {
+  const room = routeToRoom(route);
+  const r = ROOMS.find(x => x.id === room);
+  return r ? `${r.icon} ${r.label}` : route;
+}
+
+function _humanAction(action) {
+  if (!action) return 'Ação registrada';
+  const parts = String(action).split('.');
+  const verbMap = {
+    create: 'criou', update: 'atualizou', delete: 'removeu',
+    complete: 'concluiu', send: 'enviou', upload: 'fez upload em',
+    response: 'recebeu resposta em', published: 'publicou', view: 'acessou',
+  };
+  const moduleMap = {
+    task: 'uma tarefa', csat: 'pesquisa CSAT', portal_images: 'Banco de Imagens',
+    roteiro: 'um roteiro', project: 'um projeto', workspace: 'um squad',
+    goal: 'uma meta', feedback: 'um feedback', user: 'usuário',
+  };
+  const verb = verbMap[parts[1]] || parts[1];
+  const mod  = moduleMap[parts[0]] || parts[0];
+  return `${verb.charAt(0).toUpperCase()}${verb.slice(1)} ${mod}`;
 }
 
 /* ─── Easter egg bubble (4.37.0+) ── */

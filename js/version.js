@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 37,
+  minor: 38,
   patch: 0,
-  build: '20260512-office-immersion-depth',
+  build: '20260512-office-camera-drilldown',
 };
 
 /** "1.2.0" */
