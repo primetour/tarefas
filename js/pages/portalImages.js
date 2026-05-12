@@ -103,10 +103,14 @@ export async function renderPortalImages(container) {
       ${uploadPanelHtml()}
     </div>
 
-    <!-- Navigation breadcrumb + search -->
+    <!-- 4.35.34+ Navegação primária por categoria (pills com contadores) -->
+    <div id="img-category-nav" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;
+      padding-bottom:12px;border-bottom:1px solid var(--border-subtle);"></div>
+
+    <!-- Sub-nav (breadcrumb de continentes) + busca + count -->
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
       <div id="img-breadcrumb" style="display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap;
-        font-size:0.875rem;"></div>
+        font-size:0.875rem;min-height:28px;"></div>
       <div style="position:relative;">
         <input type="text" id="img-search" placeholder="Buscar por nome ou tag…"
           class="portal-field" style="width:220px;padding-left:28px;font-size:0.8125rem;">
@@ -114,8 +118,8 @@ export async function renderPortalImages(container) {
           color:var(--text-muted);font-size:0.8125rem;">🔍</span>
       </div>
       <button class="btn btn-ghost btn-sm" id="img-filters-toggle"
-        style="font-size:0.75rem;" title="Mostrar/ocultar filtros avançados">
-        ⚙ Filtros
+        style="font-size:0.75rem;" title="Mais filtros (tipo / quem subiu / data)">
+        ⚙ Mais filtros
       </button>
       <span id="img-count" style="font-size:0.8125rem;color:var(--text-muted);white-space:nowrap;"></span>
     </div>
@@ -205,19 +209,24 @@ export async function renderPortalImages(container) {
     if (bar) bar.style.display = bar.style.display === 'none' ? 'block' : 'none';
   });
   document.getElementById('img-filter-category')?.addEventListener('change', e => {
-    _filterCategory = e.target.value; loadImages({ reset: true });
+    _filterCategory = e.target.value;
+    navContinent = ''; navCountry = ''; navCity = '';
+    loadImages({ reset: true });
   });
+  // 4.35.34+ Mudanças nestes filtros invalidam os contadores das pills de categoria
   document.getElementById('img-filter-type')?.addEventListener('change', e => {
-    _filterType = e.target.value; loadImages({ reset: true });
+    _filterType = e.target.value; _categoryCounts = null; loadImages({ reset: true });
   });
   document.getElementById('img-filter-uploader')?.addEventListener('change', e => {
-    _filterUploader = e.target.value; loadImages({ reset: true });
+    _filterUploader = e.target.value; _categoryCounts = null; loadImages({ reset: true });
   });
   document.getElementById('img-filter-date')?.addEventListener('change', e => {
-    _filterDate = e.target.value; loadImages({ reset: true });
+    _filterDate = e.target.value; _categoryCounts = null; loadImages({ reset: true });
   });
   document.getElementById('img-filters-clear')?.addEventListener('click', () => {
     _filterCategory = _filterType = _filterUploader = _filterDate = '';
+    navContinent = ''; navCountry = ''; navCity = '';
+    _categoryCounts = null;
     ['img-filter-category','img-filter-type','img-filter-uploader','img-filter-date']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     loadImages({ reset: true });
@@ -873,12 +882,84 @@ async function loadImages({ reset = true } = {}) {
   allImages = reset ? docs : [...allImages, ...docs];
   _pageCursor = lastDoc;
   _hasMore    = hasMore;
+  renderCategoryNav();
   renderBreadcrumb();
   populateUploaderFilter();
   renderGallery();
   // Toggle "Carregar mais"
   const moreEl = document.getElementById('img-load-more-wrap');
   if (moreEl) moreEl.style.display = _hasMore ? 'block' : 'none';
+}
+
+/* ── 4.35.34+ Navegação primária por categoria de asset ─────
+ * Pills com contadores: 📍 Destinos · ◈ Logos · 🏨 Hotéis · ...
+ * Buscar contagem GLOBAL (não filtrada pela página atual): faz query
+ * leve sem o filtro de categoria pra calcular totais.
+ */
+let _categoryCounts = null;  // { all, location, logo, hotel, cruise, train }
+
+async function _fetchCategoryCounts() {
+  // Query sem filtro de categoria pra contar todos
+  // Reusa fetchImagesPage com pageSize grande mas SEM assetCategory filter
+  try {
+    const allCatFilters = { ..._getFiltersForServer() };
+    delete allCatFilters.assetCategory;
+    const { docs } = await fetchImagesPage({ ...allCatFilters, pageSize: 1000 });
+    const counts = { all: docs.length, location: 0, logo: 0, hotel: 0, cruise: 0, train: 0 };
+    docs.forEach(d => {
+      const k = d.assetCategory || 'location';
+      if (counts[k] !== undefined) counts[k]++;
+    });
+    _categoryCounts = counts;
+  } catch {
+    _categoryCounts = { all: allImages.length, location: 0, logo: 0, hotel: 0, cruise: 0, train: 0 };
+  }
+}
+
+async function renderCategoryNav() {
+  const el = document.getElementById('img-category-nav');
+  if (!el) return;
+  if (!_categoryCounts) await _fetchCategoryCounts();
+  const counts = _categoryCounts || { all: 0, location: 0, logo: 0, hotel: 0, cruise: 0, train: 0 };
+
+  // Pills: Todas + 5 categorias
+  const pills = [
+    { key: '',         label: 'Todas',     icon: '◐', count: counts.all },
+    ...ASSET_CATEGORIES.map(c => ({
+      key: c.key, label: c.label.replace(' (com localização)', ''), icon: c.icon, count: counts[c.key] || 0,
+    })),
+  ];
+
+  el.innerHTML = pills.map(p => {
+    const active = (_filterCategory || '') === p.key;
+    const isEmpty = p.count === 0 && p.key !== '';
+    return `<button class="img-cat-nav" data-cat="${esc(p.key)}" style="
+      padding:7px 14px;border-radius:20px;border:1px solid ${active?'var(--brand-gold)':'var(--border-subtle)'};
+      background:${active?'var(--brand-gold)15':'transparent'};
+      color:${active?'var(--brand-gold)':(isEmpty?'var(--text-muted)':'var(--text-secondary)')};
+      font-weight:${active?'600':'500'};font-size:0.8125rem;cursor:pointer;
+      display:inline-flex;align-items:center;gap:6px;transition:all .15s;
+      opacity:${isEmpty?'0.55':'1'};">
+      ${esc(p.icon)} ${esc(p.label)}
+      <span style="background:${active?'var(--brand-gold)':'var(--bg-elevated)'};
+        color:${active?'#fff':'var(--text-muted)'};
+        font-size:0.6875rem;font-weight:600;padding:1px 7px;border-radius:10px;">
+        ${p.count}
+      </span>
+    </button>`;
+  }).join('');
+
+  el.querySelectorAll('.img-cat-nav').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _filterCategory = btn.dataset.cat;
+      // Reset continent ao trocar de categoria (não faz sentido manter "Brasil" quando vai pra Logos)
+      navContinent = ''; navCountry = ''; navCity = '';
+      // Sincroniza com o select escondido (em "Mais filtros")
+      const sel = document.getElementById('img-filter-category');
+      if (sel) sel.value = _filterCategory;
+      loadImages({ reset: true });
+    });
+  });
 }
 
 // 4.35.32+ Popula o dropdown "Quem subiu" com uploaders já no banco
@@ -897,18 +978,35 @@ function populateUploaderFilter() {
     opts.map(o => `<option value="${esc(o.uid)}" ${o.uid===cur?'selected':''}>${esc(o.name)}</option>`).join('');
 }
 
-/* ── Breadcrumb navigation ── */
+/* ── Breadcrumb navigation ──
+ * 4.35.34+ Continent breadcrumb só aparece em 2 casos:
+ *   1. _filterCategory === '' (Todas) — pra usuário poder restringir
+ *   2. _filterCategory === 'location' (Destinos)
+ * Em categorias non-location (logo/hotel/cruise/train) o breadcrumb fica
+ * vazio (continent é '' nesses docs).
+ */
 function renderBreadcrumb() {
   const el = document.getElementById('img-breadcrumb');
   if (!el) return;
 
+  // Em categorias não-location, mostra apenas um label informativo
+  if (_filterCategory && _filterCategory !== 'location') {
+    const cat = ASSET_CATEGORIES.find(c => c.key === _filterCategory);
+    el.innerHTML = cat
+      ? `<span style="color:var(--text-secondary);font-weight:500;">
+           ${cat.icon} Categoria: <strong style="color:var(--brand-gold);">${esc(cat.label.replace(' (com localização)', ''))}</strong>
+         </span>`
+      : '';
+    return;
+  }
+
   const continents = [...new Set(allImages.map(i => i.continent).filter(Boolean))].sort();
 
   if (!navContinent) {
-    // Top level: show continent chips
+    // Top level: show continent chips (só quando categoria=Todas ou Destinos)
+    if (!continents.length) { el.innerHTML = ''; return; }
     el.innerHTML = `
-      <span style="color:var(--text-muted);">Todos</span>
-      <span style="color:var(--border-subtle);">›</span>
+      <span style="color:var(--text-muted);font-size:0.8125rem;">📍 Continente:</span>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         ${continents.map(c => {
           const cnt = allImages.filter(i => i.continent === c).length;

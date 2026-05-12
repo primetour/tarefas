@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 33,
-  build: '20260512-image-bank-category-inference',
+  patch: 34,
+  build: '20260512-image-bank-category-nav',
 };
 
 /** "1.2.0" */
