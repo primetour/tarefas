@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 18,
-  build: '20260511-header-5-rows-clean',
+  patch: 19,
+  build: '20260511-tipos-inline-projetos-acima-toolbar',
 };
 
 /** "1.2.0" */

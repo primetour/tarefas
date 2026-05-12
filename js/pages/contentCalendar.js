@@ -1039,15 +1039,12 @@ function _openTaskTypePopover(anchor) {
     else visibleTaskTypes = [...checked];
     persistVisibleTaskTypes();
     cleanup();
-    // Atualiza label do botão e re-render
-    const btn = document.getElementById('cc-filter-task-types');
-    if (btn) {
-      const label = btn.querySelector('span:last-child');
-      if (label) label.textContent = visibleTaskTypes === null
-        ? 'Tipos: todos'
-        : `Tipos: ${visibleTaskTypes.length}`;
-    }
-    renderCalendarBody();
+    // 4.35.19+ Re-renderiza PÁGINA INTEIRA (não só calendário) pra
+    // sincronizar os chips do header com o novo filtro. Antes:
+    // renderCalendarBody() só atualizava grade — chips ficavam stale.
+    const main = document.getElementById('page-content') || document.getElementById('main');
+    if (main) renderPage(main);
+    else renderCalendarBody();
   });
 
   setTimeout(() => {
@@ -1225,7 +1222,7 @@ function renderPage(container) {
             : 'Selecione tipo(s) abaixo pra ver o calendário.'}
       </p>
 
-      <!-- LINHA 3: Chips de TIPOS (full-width, scroll horizontal se necessário) -->
+      <!-- LINHA 3: Chips de TIPOS + botão "+ Tipos" pra adicionar mais -->
       ${hasTypesSelected ? `
         <div style="display:flex;align-items:center;gap:6px;overflow-x:auto;
           padding:4px 0;margin-bottom:10px;">
@@ -1245,13 +1242,52 @@ function renderPage(container) {
               <span style="font-size:0.875rem;line-height:1;opacity:0.6;margin-left:2px;">✕</span>
             </button>
           `).join('')}
+          ${/* 4.35.19+ Botao "+ Tipos" movido pra cá (era na toolbar). Conceitualmente
+                eh um filtro de TIPOS, fica junto dos chips faz sentido. */ ''}
+          <button id="cc-filter-task-types-inline" title="Adicionar/remover tipos"
+            style="padding:4px 10px;border:1px dashed var(--border-default,#374151);
+            border-radius:14px;background:transparent;color:var(--text-muted);
+            font-size:0.75rem;font-weight:500;cursor:pointer;flex-shrink:0;white-space:nowrap;
+            font-family:inherit;">
+            + Tipos
+          </button>
           <button id="cc-clear-types" style="font-size:0.6875rem;color:var(--text-muted);
             background:none;border:none;cursor:pointer;padding:3px 6px;flex-shrink:0;white-space:nowrap;
             text-decoration:underline;">limpar todos</button>
         </div>
       ` : ''}
 
-      <!-- LINHA 4: Toolbar (view + nav + filtros + actions + export) -->
+      <!-- LINHA 4: Chips de PROJETOS (4.35.19+ movido pra cá — antes era abaixo da toolbar) -->
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px;
+        padding:8px 12px;background:var(--bg-surface,#16202C);border-radius:8px;
+        border:1px solid var(--border-subtle,#1E2D3D);">
+        <span style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;
+          letter-spacing:0.05em;font-weight:600;margin-right:4px;">Projetos:</span>
+        ${activeProjectsResolved.length === 0 ? `
+          <span style="font-size:0.8125rem;color:var(--text-muted);font-style:italic;">
+            Nenhum selecionado
+          </span>
+        ` : activeProjectsResolved.map(p => `
+          <span class="cc-project-chip" data-pid="${esc(p.id)}"
+            style="display:inline-flex;align-items:center;gap:4px;padding:3px 6px 3px 10px;
+            background:${p.color || '#D4A843'}22;border:1px solid ${p.color || '#D4A843'};
+            border-radius:99px;font-size:0.75rem;font-weight:500;color:var(--text-primary);">
+            <span style="font-size:0.875rem;">${esc(p.icon || '📦')}</span>
+            <span>${esc(p.name)}</span>
+            <button class="cc-chip-remove" data-pid="${esc(p.id)}" title="Remover do calendário"
+              style="background:none;border:none;color:var(--text-muted);cursor:pointer;
+              padding:0 4px;font-size:0.875rem;line-height:1;">✕</button>
+          </span>
+        `).join('')}
+        <button id="cc-add-project" title="Adicionar projeto ao calendário"
+          style="padding:6px 14px;border:none;border-radius:99px;
+          background:var(--brand-gold,#D4A843);color:#FFFFFF;font-size:0.75rem;font-weight:600;
+          cursor:pointer;margin-left:auto;transition:opacity 0.15s;"
+          onmouseover="this.style.opacity='0.85'"
+          onmouseout="this.style.opacity='1'">+ Adicionar projeto</button>
+      </div>
+
+      <!-- LINHA 5: Toolbar (view + nav + filtros + actions + export) -->
       ${hasContext ? `
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;
         padding:8px 12px;background:var(--bg-surface,#16202C);border-radius:8px;
@@ -1290,16 +1326,8 @@ function renderPage(container) {
           <span>Tarefas dos projetos</span>
         </button>
 
-        <!-- Filtro fino: tipos visíveis -->
-        <button id="cc-filter-task-types" title="Escolher quais tipos de tarefa exibir"
-          style="padding:6px 12px;border:1px solid var(--border-subtle,#1E2D3D);
-          border-radius:8px;background:var(--bg-card,#0F1923);
-          color:var(--text-primary,#E8ECF1);
-          font-size:0.8125rem;font-weight:500;cursor:pointer;transition:all 0.15s;
-          display:${showProjectTasks ? 'inline-flex' : 'none'};align-items:center;gap:6px;">
-          <span style="font-size:0.875rem;">+</span>
-          <span>${visibleTaskTypes === null ? 'Tipos: todos' : `Tipos: ${visibleTaskTypes.length}`}</span>
-        </button>
+        ${/* 4.35.19+ Botao "+ Tipos" saiu daqui — foi pra junto dos chips
+              em LINHA 3 (mais coerente com filtro de tipo) */ ''}
 
         <!-- Spacer pra empurrar actions pra direita -->
         <div style="flex:1;"></div>
@@ -1341,36 +1369,6 @@ function renderPage(container) {
         </div>
       </div>
       ` : ''}
-
-      <!-- 4.16+: Chips de projetos ativos (multi-select) -->
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:16px;
-        padding:8px 12px;background:var(--bg-surface,#16202C);border-radius:8px;
-        border:1px solid var(--border-subtle,#1E2D3D);">
-        <span style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;
-          letter-spacing:0.05em;font-weight:600;margin-right:4px;">Projetos:</span>
-        ${activeProjectsResolved.length === 0 ? `
-          <span style="font-size:0.8125rem;color:var(--text-muted);font-style:italic;">
-            Nenhum selecionado
-          </span>
-        ` : activeProjectsResolved.map(p => `
-          <span class="cc-project-chip" data-pid="${esc(p.id)}"
-            style="display:inline-flex;align-items:center;gap:4px;padding:3px 6px 3px 10px;
-            background:${p.color || '#D4A843'}22;border:1px solid ${p.color || '#D4A843'};
-            border-radius:99px;font-size:0.75rem;font-weight:500;color:var(--text-primary);">
-            <span style="font-size:0.875rem;">${esc(p.icon || '📦')}</span>
-            <span>${esc(p.name)}</span>
-            <button class="cc-chip-remove" data-pid="${esc(p.id)}" title="Remover do calendário"
-              style="background:none;border:none;color:var(--text-muted);cursor:pointer;
-              padding:0 4px;font-size:0.875rem;line-height:1;">✕</button>
-          </span>
-        `).join('')}
-        <button id="cc-add-project" title="Adicionar projeto ao calendário"
-          style="padding:6px 14px;border:none;border-radius:99px;
-          background:var(--brand-gold,#D4A843);color:#FFFFFF;font-size:0.75rem;font-weight:600;
-          cursor:pointer;margin-left:auto;transition:opacity 0.15s;"
-          onmouseover="this.style.opacity='0.85'"
-          onmouseout="this.style.opacity='1'">+ Adicionar projeto</button>
-      </div>
 
       ${hasContext ? `
       <!-- Sub-toolbar de filtros (apenas na view "lista") — GAP fix: status/plataforma/categoria -->
@@ -2114,12 +2112,20 @@ function bindHeaderEvents(container) {
     });
   }
 
-  // 4.26+ Filtro de tipos de tarefa
+  // 4.26+ Filtro de tipos de tarefa (botão antigo na toolbar — pode não existir)
   const filterTypesBtn = document.getElementById('cc-filter-task-types');
   if (filterTypesBtn) {
     filterTypesBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       _openTaskTypePopover(filterTypesBtn);
+    });
+  }
+  // 4.35.19+ Botão "+ Tipos" inline (movido pra junto dos chips de TIPO)
+  const filterTypesInlineBtn = document.getElementById('cc-filter-task-types-inline');
+  if (filterTypesInlineBtn) {
+    filterTypesInlineBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _openTaskTypePopover(filterTypesInlineBtn);
     });
   }
 
