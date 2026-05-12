@@ -550,13 +550,24 @@ function iso_chair(x, y, color = '#475569') {
   `;
 }
 
-// Planta (pote + folhas)
+// Planta 3D (vaso + folhagem volumosa)
 function iso_plant(x, y) {
   return `
-    <ellipse cx="${x}" cy="${y+6}" rx="6" ry="2.5" fill="#92400E"/>
-    <ellipse cx="${x}" cy="${y-2}" rx="9" ry="6" fill="#10B981"/>
-    <ellipse cx="${x-3}" cy="${y-6}" rx="5" ry="4" fill="#16A34A"/>
-    <ellipse cx="${x+3}" cy="${y-7}" rx="4" ry="4" fill="#22C55E"/>
+    <!-- Sombra do vaso -->
+    <ellipse cx="${x}" cy="${y+8}" rx="8" ry="2" fill="rgba(0,0,0,0.2)"/>
+    <!-- Vaso (trapézio iso) -->
+    <path d="M ${x-7},${y+1} L ${x+7},${y+1} L ${x+6},${y+8} L ${x-6},${y+8} Z" fill="#92400E"/>
+    <path d="M ${x-7},${y+1} L ${x+7},${y+1} L ${x+6},${y+3} L ${x-6},${y+3} Z" fill="#A3441A"/>
+    <ellipse cx="${x}" cy="${y+1}" rx="7" ry="1.8" fill="#5C2E0A"/>
+    <ellipse cx="${x}" cy="${y+0.5}" rx="6" ry="1.4" fill="#1F2937"/>
+    <!-- Folhas (4 grupos sobrepostos com tonalidades diferentes) -->
+    <ellipse cx="${x-4}" cy="${y-4}" rx="5" ry="7" fill="#15803D" transform="rotate(-20 ${x-4} ${y-4})"/>
+    <ellipse cx="${x+4}" cy="${y-4}" rx="5" ry="7" fill="#16A34A" transform="rotate(20 ${x+4} ${y-4})"/>
+    <ellipse cx="${x-2}" cy="${y-8}" rx="4" ry="6" fill="#22C55E" transform="rotate(-10 ${x-2} ${y-8})"/>
+    <ellipse cx="${x+2}" cy="${y-9}" rx="4" ry="6" fill="#4ADE80" transform="rotate(10 ${x+2} ${y-9})"/>
+    <ellipse cx="${x}" cy="${y-12}" rx="3" ry="5" fill="#86EFAC"/>
+    <!-- Highlights nas folhas (toque de luz) -->
+    <ellipse cx="${x-3}" cy="${y-7}" rx="1.2" ry="2" fill="rgba(255,255,255,0.3)" transform="rotate(-15 ${x-3} ${y-7})"/>
   `;
 }
 
@@ -590,23 +601,58 @@ function iso_sofa(x, y, color = '#7C3AED') {
   `;
 }
 
-// Máquina de café
+// Máquina de café 3D (estilo cafeteira italiana moderna)
 function iso_coffee(x, y) {
   return `
-    <rect x="${x-8}" y="${y-12}" width="16" height="18" fill="#1F2937" rx="1"/>
-    <rect x="${x-6}" y="${y-8}" width="12" height="4" fill="#D4A843"/>
-    <rect x="${x-3}" y="${y-2}" width="6" height="5" fill="#92400E"/>
-    <circle cx="${x}" cy="${y+4}" r="1" fill="#D4A843"/>
+    <!-- Base larga -->
+    <ellipse cx="${x}" cy="${y+10}" rx="13" ry="2.5" fill="#1F2937"/>
+    <!-- Corpo da máquina (cinza escuro com volume) -->
+    <rect x="${x-10}" y="${y-14}" width="20" height="22" fill="#1F2937" rx="2"/>
+    <rect x="${x-10}" y="${y-14}" width="20" height="4" fill="#374151" rx="2"/>
+    <!-- Display LCD -->
+    <rect x="${x-7}" y="${y-12}" width="14" height="4" fill="#0EA5E9" opacity="0.7" rx="0.5"/>
+    <text x="${x}" y="${y-9}" text-anchor="middle" font-size="2.5" fill="#fff" font-weight="700">●●●</text>
+    <!-- Detalhe dourado/grupo -->
+    <rect x="${x-8}" y="${y-6}" width="16" height="5" fill="#D4A843" rx="0.5"/>
+    <circle cx="${x-4}" cy="${y-3.5}" r="1" fill="#92400E"/>
+    <circle cx="${x+4}" cy="${y-3.5}" r="1" fill="#92400E"/>
+    <!-- Bicos do café -->
+    <rect x="${x-1.5}" y="${y-1}" width="3" height="2" fill="#1F2937"/>
+    <!-- Xícara abaixo -->
+    <ellipse cx="${x}" cy="${y+5}" rx="3.5" ry="1" fill="#F1F5F9"/>
+    <rect x="${x-3.5}" y="${y+2}" width="7" height="4" fill="#F1F5F9" stroke="#94A3B8" stroke-width="0.4" rx="0.5"/>
+    <ellipse cx="${x}" cy="${y+2}" rx="3.5" ry="1" fill="#92400E"/>
+    <!-- Vapor sutil acima -->
+    <path d="M${x-2},${y-16} Q${x-3},${y-19} ${x},${y-21}" fill="none" stroke="#94A3B8" stroke-width="0.6" opacity="0.5">
+      <animate attributeName="opacity" values="0.5;0.1;0.5" dur="2.2s" repeatCount="indefinite"/>
+    </path>
+    <path d="M${x+2},${y-16} Q${x+3},${y-19} ${x},${y-21}" fill="none" stroke="#94A3B8" stroke-width="0.6" opacity="0.4">
+      <animate attributeName="opacity" values="0.1;0.5;0.1" dur="2.2s" repeatCount="indefinite"/>
+    </path>
   `;
 }
 
-// Impressora
+// Impressora 3D
 function iso_printer(x, y) {
+  const w = 30, d = 14;
   return `
-    <rect x="${x-12}" y="${y-6}" width="24" height="12" fill="#475569" rx="1"/>
-    <rect x="${x-10}" y="${y-2}" width="20" height="6" fill="#F1F5F9"/>
-    <rect x="${x-8}" y="${y-10}" width="16" height="4" fill="#1E293B"/>
-    <circle cx="${x-6}" cy="${y-4}" r="1" fill="#22C55E"/>
+    <!-- Topo/bandeja -->
+    <polygon points="${x-w/2},${y-12} ${x+w/2-d/2},${y-12+d/2} ${x+w/2},${y-12+d/2} ${x-w/2+d/2},${y-12}" fill="#334155"/>
+    <!-- Lateral -->
+    <polygon points="${x+w/2},${y-12+d/2} ${x+w/2},${y+2} ${x+w/2-d/2},${y+2+d/2} ${x+w/2-d/2},${y-12+d/2}" fill="#1E293B"/>
+    <!-- Corpo principal -->
+    <rect x="${x-w/2}" y="${y-12+d/2}" width="${w}" height="14" fill="#475569" rx="1"/>
+    <!-- Display LCD -->
+    <rect x="${x-8}" y="${y-7}" width="16" height="3.5" fill="#0EA5E9" opacity="0.8"/>
+    <!-- Botões -->
+    <circle cx="${x-10}" cy="${y-5.5}" r="0.8" fill="#D4A843"/>
+    <circle cx="${x+10}" cy="${y-5.5}" r="0.8" fill="#22C55E"/>
+    <!-- Bandeja de papel saindo -->
+    <rect x="${x-9}" y="${y+1}" width="18" height="3" fill="#F1F5F9" stroke="#94A3B8" stroke-width="0.4"/>
+    <!-- Papel impresso (folha saindo) -->
+    <rect x="${x-7}" y="${y+4}" width="14" height="5" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="0.4"/>
+    <line x1="${x-5}" y1="${y+6}" x2="${x+3}" y2="${y+6}" stroke="#94A3B8" stroke-width="0.4"/>
+    <line x1="${x-5}" y1="${y+7.5}" x2="${x+5}" y2="${y+7.5}" stroke="#94A3B8" stroke-width="0.4"/>
   `;
 }
 
@@ -621,30 +667,67 @@ function iso_globe(x, y) {
   `;
 }
 
-// Robô (lab IA)
+// Robô IA Hub (estilo personagem 3D)
 function iso_robot(x, y) {
   return `
-    <rect x="${x-9}" y="${y-12}" width="18" height="14" rx="3" fill="#A78BFA"/>
-    <circle cx="${x-4}" cy="${y-7}" r="2" fill="#fff"/>
-    <circle cx="${x+4}" cy="${y-7}" r="2" fill="#fff"/>
-    <circle cx="${x-4}" cy="${y-7}" r="1" fill="#1F2937"/>
-    <circle cx="${x+4}" cy="${y-7}" r="1" fill="#1F2937"/>
-    <line x1="${x}" y1="${y-14}" x2="${x}" y2="${y-12}" stroke="#A78BFA" stroke-width="1.5"/>
-    <circle cx="${x}" cy="${y-16}" r="2" fill="#D4A843">
+    <!-- Base/suporte arredondado -->
+    <ellipse cx="${x}" cy="${y+8}" rx="14" ry="3" fill="#5B21B6"/>
+    <ellipse cx="${x}" cy="${y+7}" rx="13" ry="2.5" fill="#7C3AED"/>
+    <!-- Corpo/tronco -->
+    <rect x="${x-11}" y="${y-4}" width="22" height="12" rx="4" fill="#7C3AED"/>
+    <rect x="${x-11}" y="${y-4}" width="22" height="3" rx="4" fill="#A78BFA" opacity="0.6"/>
+    <!-- Painel frontal com LED -->
+    <rect x="${x-5}" y="${y-1}" width="10" height="4" rx="0.5" fill="#1F2937"/>
+    <circle cx="${x-2}" cy="${y+1}" r="0.8" fill="#22C55E">
+      <animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="${x+2}" cy="${y+1}" r="0.8" fill="#0EA5E9"/>
+    <!-- Cabeça -->
+    <rect x="${x-10}" y="${y-18}" width="20" height="16" rx="5" fill="#A78BFA"/>
+    <rect x="${x-10}" y="${y-18}" width="20" height="5" rx="5" fill="#C4B5FD" opacity="0.5"/>
+    <!-- Olhos -->
+    <circle cx="${x-4.5}" cy="${y-10}" r="3" fill="#fff"/>
+    <circle cx="${x+4.5}" cy="${y-10}" r="3" fill="#fff"/>
+    <circle cx="${x-4}" cy="${y-10}" r="1.5" fill="#1F2937">
+      <animate attributeName="r" values="1.5;0.3;1.5" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="${x+5}" cy="${y-10}" r="1.5" fill="#1F2937">
+      <animate attributeName="r" values="1.5;0.3;1.5" dur="4s" begin="0.1s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Boca/sorriso -->
+    <path d="M${x-3},${y-5} Q${x},${y-3} ${x+3},${y-5}" fill="none" stroke="#1F2937" stroke-width="1.2" stroke-linecap="round"/>
+    <!-- Antena -->
+    <line x1="${x}" y1="${y-18}" x2="${x}" y2="${y-23}" stroke="#5B21B6" stroke-width="1.2"/>
+    <circle cx="${x}" cy="${y-25}" r="2.5" fill="#D4A843">
       <animate attributeName="opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite"/>
     </circle>
-    <rect x="${x-6}" y="${y+2}" width="12" height="3" fill="#7C3AED"/>
+    <!-- Braços -->
+    <rect x="${x-14}" y="${y-2}" width="3" height="10" rx="1.5" fill="#7C3AED"/>
+    <rect x="${x+11}" y="${y-2}" width="3" height="10" rx="1.5" fill="#7C3AED"/>
   `;
 }
 
-// Cofre/arquivo (admin)
+// Cofre 3D (Admin)
 function iso_safe(x, y) {
+  const w = 28, h = 26, d = 12;
   return `
-    <rect x="${x-12}" y="${y-12}" width="24" height="20" fill="#374151" rx="2"/>
-    <rect x="${x-9}" y="${y-9}" width="18" height="14" fill="#1F2937"/>
-    <circle cx="${x}" cy="${y-2}" r="3" fill="#D4A843"/>
-    <line x1="${x-2}" y1="${y-2}" x2="${x+2}" y2="${y-2}" stroke="#1F2937" stroke-width="1"/>
-    <line x1="${x}" y1="${y-4}" x2="${x}" y2="${y}" stroke="#1F2937" stroke-width="1"/>
+    <!-- Top -->
+    <polygon points="${x-w/2},${y-h} ${x+w/2-d/2},${y-h+d/2} ${x+w/2},${y-h+d/2} ${x-w/2+d/2},${y-h}" fill="#1F2937"/>
+    <!-- Lateral -->
+    <polygon points="${x+w/2},${y-h+d/2} ${x+w/2},${y+d/2-2} ${x+w/2-d/2},${y+d-2} ${x+w/2-d/2},${y-h+d/2}" fill="#0F172A"/>
+    <!-- Frontal -->
+    <rect x="${x-w/2}" y="${y-h+d/2}" width="${w}" height="${h-d/2-2}" fill="#374151"/>
+    <!-- Porta interna -->
+    <rect x="${x-w/2+3}" y="${y-h+d/2+3}" width="${w-6}" height="${h-d/2-8}" fill="#1F2937" stroke="#0F172A" stroke-width="0.5"/>
+    <!-- Roda/Volante dourado -->
+    <circle cx="${x}" cy="${y-h/2+2}" r="5" fill="#1F2937" stroke="#D4A843" stroke-width="1.5"/>
+    <circle cx="${x}" cy="${y-h/2+2}" r="3" fill="#D4A843"/>
+    <line x1="${x-4}" y1="${y-h/2+2}" x2="${x+4}" y2="${y-h/2+2}" stroke="#1F2937" stroke-width="1"/>
+    <line x1="${x}" y1="${y-h/2-2}" x2="${x}" y2="${y-h/2+6}" stroke="#1F2937" stroke-width="1"/>
+    <!-- Trinco -->
+    <rect x="${x+5}" y="${y-h/2+1}" width="3" height="6" fill="#D4A843" rx="0.5"/>
+    <!-- Highlight top -->
+    <line x1="${x-w/2+2}" y1="${y-h+d/2+0.5}" x2="${x+w/2-2}" y2="${y-h+d/2+0.5}" stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
   `;
 }
 
@@ -803,38 +886,58 @@ function iso_camera_tripod(x, y) {
   `;
 }
 
-// Server rack (IA Hub)
+// Server rack 3D isométrico (IA Hub)
 function iso_server_rack(x, y) {
+  // Iso projection: face frontal + lateral + topo
+  const w = 26, h = 38, d = 16;
   return `
-    <rect x="${x-10}" y="${y-20}" width="20" height="26" fill="#0F172A" stroke="#1E293B" stroke-width="0.5" rx="1"/>
+    <!-- Top do rack -->
+    <polygon points="${x-w/2},${y-h} ${x+w/2-d/2},${y-h+d/2} ${x+w/2},${y-h+d/2} ${x-w/2+d/2},${y-h}" fill="#0B1322"/>
+    <!-- Face direita (lateral) -->
+    <polygon points="${x+w/2},${y-h+d/2} ${x+w/2},${y+d/2-2} ${x+w/2-d/2},${y+d-2} ${x+w/2-d/2},${y-h+d/2}" fill="#070C18"/>
+    <!-- Face frontal -->
+    <rect x="${x-w/2}" y="${y-h+d/2}" width="${w}" height="${h-d/2-2}" fill="#0F172A"/>
+    <!-- 5 unidades com LEDs -->
     ${(() => {
       let units = '';
       for (let i = 0; i < 5; i++) {
-        const ry = y - 18 + i * 5;
-        units += `<rect x="${x-8}" y="${ry}" width="16" height="3.5" fill="#1E293B"/>`;
-        // LEDs
-        units += `<circle cx="${x-5}" cy="${ry + 1.7}" r="0.7" fill="${i % 2 ? '#22C55E' : '#0EA5E9'}">
-          <animate attributeName="opacity" values="1;0.3;1" dur="${1 + i * 0.2}s" repeatCount="indefinite"/>
+        const ry = y - h + d/2 + 3 + i * 6;
+        units += `<rect x="${x-w/2+2}" y="${ry}" width="${w-4}" height="4" fill="#1E293B"/>`;
+        // LEDs piscando
+        units += `<circle cx="${x-w/2+5}" cy="${ry + 2}" r="0.9" fill="${i % 2 ? '#22C55E' : '#0EA5E9'}">
+          <animate attributeName="opacity" values="1;0.25;1" dur="${1 + i * 0.2}s" repeatCount="indefinite"/>
         </circle>`;
-        units += `<circle cx="${x-2}" cy="${ry + 1.7}" r="0.7" fill="${i % 2 ? '#0EA5E9' : '#22C55E'}">
+        units += `<circle cx="${x-w/2+8.5}" cy="${ry + 2}" r="0.9" fill="${i % 2 ? '#0EA5E9' : '#22C55E'}">
           <animate attributeName="opacity" values="0.3;1;0.3" dur="${1.2 + i * 0.15}s" repeatCount="indefinite"/>
         </circle>`;
+        // Status display fake
+        units += `<rect x="${x-w/2+12}" y="${ry+1}" width="${w-16}" height="2" fill="#1E40AF" opacity="0.7"/>`;
       }
       return units;
     })()}
   `;
 }
 
-// Filing cabinet (Admin)
+// Filing cabinet 3D (Admin)
 function iso_filing_cabinet(x, y) {
+  const w = 26, h = 34, d = 14;
   return `
-    <rect x="${x-10}" y="${y-18}" width="20" height="24" fill="#475569" stroke="#1E293B" stroke-width="0.5" rx="1"/>
-    <rect x="${x-9}" y="${y-16}" width="18" height="5" fill="#64748B"/>
-    <rect x="${x-9}" y="${y-10}" width="18" height="5" fill="#64748B"/>
-    <rect x="${x-9}" y="${y-4}" width="18" height="5" fill="#64748B"/>
-    <circle cx="${x}" cy="${y-13.5}" r="1" fill="#D4A843"/>
-    <circle cx="${x}" cy="${y-7.5}" r="1" fill="#D4A843"/>
-    <circle cx="${x}" cy="${y-1.5}" r="1" fill="#D4A843"/>
+    <!-- Top -->
+    <polygon points="${x-w/2},${y-h} ${x+w/2-d/2},${y-h+d/2} ${x+w/2},${y-h+d/2} ${x-w/2+d/2},${y-h}" fill="#334155"/>
+    <!-- Lateral direita -->
+    <polygon points="${x+w/2},${y-h+d/2} ${x+w/2},${y+d/2-2} ${x+w/2-d/2},${y+d-2} ${x+w/2-d/2},${y-h+d/2}" fill="#1E293B"/>
+    <!-- Frontal -->
+    <rect x="${x-w/2}" y="${y-h+d/2}" width="${w}" height="${h-d/2-2}" fill="#475569"/>
+    <!-- 3 gavetas com puxadores -->
+    <rect x="${x-w/2+2}" y="${y-h+d/2+3}"     width="${w-4}" height="7" fill="#64748B" stroke="#334155" stroke-width="0.3"/>
+    <rect x="${x-w/2+2}" y="${y-h+d/2+12}"    width="${w-4}" height="7" fill="#64748B" stroke="#334155" stroke-width="0.3"/>
+    <rect x="${x-w/2+2}" y="${y-h+d/2+21}"    width="${w-4}" height="7" fill="#64748B" stroke="#334155" stroke-width="0.3"/>
+    <!-- Puxadores dourados -->
+    <rect x="${x-3}" y="${y-h+d/2+5.5}" width="6" height="1.5" rx="0.7" fill="#D4A843"/>
+    <rect x="${x-3}" y="${y-h+d/2+14.5}" width="6" height="1.5" rx="0.7" fill="#D4A843"/>
+    <rect x="${x-3}" y="${y-h+d/2+23.5}" width="6" height="1.5" rx="0.7" fill="#D4A843"/>
+    <!-- Highlight do topo -->
+    <line x1="${x-w/2+2}" y1="${y-h+d/2+0.5}" x2="${x+w/2-2}" y2="${y-h+d/2+0.5}" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
   `;
 }
 
@@ -1096,7 +1199,18 @@ function iso_mug(x, y, color = '#D4A843') {
  * Cada sala vira uma micro-cena temática. Ordem: tapete (chão) →
  * decorações de parede (back) → mobília média → itens pequenos (front).
  * Coordenadas relativas ao centro inferior da sala (cx, centerY).
+ *
+ * 4.38.5+ Cada peça vai wrapped em <g> com:
+ *   - filter: drop-shadow → grounding visual
+ *   - Aplicado individualmente, não no conjunto
  */
+function _piece(svgStr, includeGroundShadow = true, gx = 0, gy = 0) {
+  return `<g style="filter:drop-shadow(0 5px 5px rgba(0,0,0,0.28));">
+    ${includeGroundShadow ? `<ellipse cx="${gx}" cy="${gy + 8}" rx="18" ry="3.5" fill="rgba(0,0,0,0.18)"/>` : ''}
+    ${svgStr}
+  </g>`;
+}
+
 function renderFurniture(roomId, cx, cy) {
   const centerY = cy + TILE_H / 2;
   const pieces = {
@@ -1303,7 +1417,8 @@ function renderFurniture(roomId, cx, cy) {
       iso_plant(cx + 100, centerY + 75),
     ],
   };
-  return (pieces[roomId] || []).join('');
+  // 4.38.5+ Wraps each piece com drop-shadow individual + ground shadow
+  return (pieces[roomId] || []).map(p => _piece(p, false)).join('');
 }
 
 // Stack de livros (helper extra)

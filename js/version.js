@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 38,
-  patch: 4,
-  build: '20260512-office-universal-drag',
+  patch: 5,
+  build: '20260512-office-furniture-3d-volume',
 };
 
 /** "1.2.0" */
