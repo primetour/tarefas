@@ -170,6 +170,10 @@ class Store {
   canPortal()  { return this.isMaster() || this.can('portal_access'); }
   canCreateTip() { return this.isMaster() || this.can('portal_create'); }
   canManagePortal() { return this.isMaster() || this.can('portal_manage'); }
+  // 4.35.31+ banco de imagens: aceita portal_images_manage (novo) ou portal_manage (legado).
+  canManagePortalImages() {
+    return this.isMaster() || this.can('portal_images_manage') || this.can('portal_manage');
+  }
 
   canAccessRoteiros()  { return this.isMaster() || this.can('roteiro_access'); }
   canCreateRoteiro()   { return this.isMaster() || this.can('roteiro_create'); }

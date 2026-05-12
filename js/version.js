@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 30,
-  build: '20260512-photos-everywhere',
+  patch: 31,
+  build: '20260512-image-bank-revamp',
 };
 
 /** "1.2.0" */

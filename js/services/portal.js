@@ -377,9 +377,36 @@ export async function fetchImages({ continent, country, city } = {}) {
   return docs;
 }
 
+// 4.35.31+ Categorias de asset (suporte a imagens não-locação)
+export const ASSET_CATEGORIES = [
+  { key: 'location', label: 'Destino (com localização)', icon: '📍', requiresLocation: true,  pathPrefix: '' /* legacy: continent/country/city */ },
+  { key: 'logo',     label: 'Logo',                      icon: '◈', requiresLocation: false, pathPrefix: 'logos' },
+  { key: 'hotel',    label: 'Hotel',                     icon: '🏨', requiresLocation: false, pathPrefix: 'hoteis' },
+  { key: 'cruise',   label: 'Cruzeiro',                  icon: '🚢', requiresLocation: false, pathPrefix: 'cruzeiros' },
+  { key: 'train',    label: 'Trem',                      icon: '🚄', requiresLocation: false, pathPrefix: 'trens' },
+];
+
+// Helper pra checar permissão de gerir o banco. 4.35.31+: aceita tanto a
+// permission portal_images_manage especifica quanto o portal_manage legacy
+// (compat com roles antigas). canManagePortal() do store ja cobre master.
+export function canManageImageBank() {
+  return store.canManagePortal() || store.can?.('portal_images_manage');
+}
+
+// Audit logger best-effort (não bloqueia operação se falhar).
+// Usa as actions já existentes: portal_images.upload/update/delete (audit.js:126-128)
+async function _auditPortalImage(action, imgId, before, after) {
+  try {
+    const { auditLog } = await import('../auth/audit.js');
+    await auditLog(action, 'portal_image', imgId, { before, after });
+  } catch {/* ignore — audit não bloqueia operação */}
+}
+
 export async function saveImageMeta(data) {
   const ref = doc(collection(db, 'portal_images'));
   const meta = {
+    // 4.35.31+ assetCategory determina path no R2 e se a foto exige localização
+    assetCategory:data.assetCategory || 'location',
     continent:    data.continent    || '',
     country:      data.country      || '',
     city:         data.city         || '',
@@ -387,6 +414,8 @@ export async function saveImageMeta(data) {
     placeName:    data.placeName    || '', // nome do lugar específico que a foto representa
     tags:         Array.isArray(data.tags) ? data.tags : [],
     type:         data.type         || 'galeria', // 'destaque'|'galeria'|'logo_area'|'banner'
+    // 4.35.31+ Direitos autorais / atribuição da foto (texto livre)
+    copyright:    data.copyright    || '',
     url:          data.url          || '',
     path:         data.path         || '',
     originalName: data.originalName || '',
@@ -397,23 +426,35 @@ export async function saveImageMeta(data) {
     uploadedBy:   uid(),
   };
   await setDoc(ref, meta);
+  await _auditPortalImage('portal_images.upload', ref.id, null, { name: meta.name, type: meta.type, assetCategory: meta.assetCategory });
   return ref.id;
 }
 
 export async function updateImageMeta(id, data) {
-  const allowed = ['name','placeName','tags','type','continent','country','city'];
+  // 4.35.31+ allowlist inclui assetCategory + copyright
+  const allowed = ['name','placeName','tags','type','continent','country','city','assetCategory','copyright'];
   const patch   = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
+  // 4.35.31+ audit log com diff (lê doc antes pra log de before/after)
+  const before = await getDoc(doc(db, 'portal_images', id))
+    .then(s => s.exists() ? s.data() : null).catch(() => null);
   await updateDoc(doc(db, 'portal_images', id), patch);
+  await _auditPortalImage('portal_images.update', id,
+    before ? Object.fromEntries(Object.keys(patch).map(k => [k, before[k]])) : null,
+    patch);
 }
 
 export async function deleteImageMeta(id) {
-  if (!store.canManagePortal()) throw new Error('Permissão negada.');
-  // Also remove from R2 if path exists
+  if (!canManageImageBank()) throw new Error('Permissão negada.');
+  // 4.35.31+ audit log com snapshot do doc antes do delete
   const snap = await getDoc(doc(db, 'portal_images', id));
-  if (snap.exists() && snap.data().path) {
-    await deleteFromR2(snap.data().path).catch(() => {}); // non-fatal
+  const before = snap.exists() ? snap.data() : null;
+  if (before?.path) {
+    await deleteFromR2(before.path).catch(() => {}); // non-fatal
   }
   await deleteDoc(doc(db, 'portal_images', id));
+  await _auditPortalImage('portal_images.delete', id,
+    before ? { name: before.name, type: before.type, url: before.url, assetCategory: before.assetCategory } : null,
+    null);
 }
 
 export async function convertToWebp(file, quality = 0.92) {

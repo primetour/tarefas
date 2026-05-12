@@ -8,8 +8,12 @@ import { toast }  from '../components/toast.js';
 import {
   fetchImages, saveImageMeta, updateImageMeta, deleteImageMeta,
   convertToWebp, uploadImageToR2, fetchDestinations,
-  R2_PUBLIC_URL, CONTINENTS,
+  R2_PUBLIC_URL, CONTINENTS, ASSET_CATEGORIES,
 } from '../services/portal.js';
+
+// 4.35.31+ validações client-side
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;  // 10 MB
+const ACCEPTED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
 
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -59,9 +63,17 @@ let searchStr    = '';
 let lightboxIdx  = -1;
 
 export async function renderPortalImages(container) {
-  if (!store.canManagePortal()) {
+  // 4.35.31+ Hierarquia: usa portal_images_manage (novo) ou portal_manage (legacy).
+  // Diretoria/admin: liberado. Demais roles: bloqueado.
+  if (!store.canManagePortalImages()) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
-      <div class="empty-state-icon">🔒</div><div class="empty-state-title">Acesso restrito</div>
+      <div class="empty-state-icon">🔒</div>
+      <div class="empty-state-title">Acesso restrito</div>
+      <p style="font-size:0.875rem;color:var(--text-muted);max-width:480px;margin:8px auto 0;">
+        O Banco de Imagens é restrito à <strong>Diretoria</strong> e administradores.
+        Para liberar upload, edição ou exclusão a outros usuários, ative
+        <code>portal_images_manage</code> em /users → Permissões.
+      </p>
     </div>`;
     return;
   }
@@ -185,10 +197,39 @@ function uploadPanelHtml() {
         <!-- Default values (apply to all that don't have individual values) -->
         <div style="padding:16px 24px;background:var(--brand-gold)08;
           border-bottom:1px solid var(--border-subtle);">
-          <div style="font-size:0.75rem;font-weight:600;margin-bottom:10px;color:var(--brand-gold);">
-            ◈ Valores padrão — aplicados a todas as imagens sem preenchimento individual
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div style="font-size:0.75rem;font-weight:600;color:var(--brand-gold);">
+              ◈ Valores padrão — aplicados a todas as imagens sem preenchimento individual
+            </div>
+            <button id="img-apply-defaults" class="btn btn-secondary btn-sm"
+              style="font-size:0.7rem;padding:4px 10px;" title="Copia os valores padrão pra cada imagem da fila">
+              ↓ Aplicar a todas
+            </button>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
+
+          <!-- 4.35.31+ Categoria do asset (location | logo | hotel | cruise | train) -->
+          <div style="margin-bottom:12px;">
+            <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">Categoria</label>
+            <div id="def-asset-category-group" style="display:flex;gap:6px;flex-wrap:wrap;">
+              ${ASSET_CATEGORIES.map((c, i) => `
+                <label class="asset-cat-pill" data-cat="${c.key}" style="
+                  display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;
+                  border:1px solid ${i===0?'var(--brand-gold)':'var(--border-subtle)'};
+                  background:${i===0?'var(--brand-gold)15':'transparent'};
+                  color:${i===0?'var(--brand-gold)':'var(--text-secondary)'};
+                  cursor:pointer;font-size:0.75rem;transition:all .15s;">
+                  <input type="radio" name="def-asset-category" value="${c.key}" ${i===0?'checked':''}
+                    style="display:none;" />
+                  ${c.icon} ${esc(c.label)}
+                </label>
+              `).join('')}
+            </div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:6px;">
+              💡 Categorias sem localização (Logo/Hotel/Cruzeiro/Trem) escondem os campos de continente/país/cidade.
+            </div>
+          </div>
+
+          <div id="def-location-fields" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
             <div>
               <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">Continente</label>
               <select id="def-continent" class="filter-select" style="width:100%;">
@@ -214,6 +255,15 @@ function uploadPanelHtml() {
                 ${IMAGE_TYPES.map(t => `<option value="${t.key}">${t.icon} ${t.label}</option>`).join('')}
               </select>
             </div>
+          </div>
+
+          <!-- 4.35.31+ Direitos autorais padrão (texto livre, aplicado a todas) -->
+          <div style="margin-top:12px;">
+            <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">
+              Direitos autorais (opcional)
+            </label>
+            <input type="text" id="def-copyright" class="portal-field" style="width:100%;font-size:0.8125rem;"
+              placeholder="Ex: © Unsplash — João Silva · © 2024 Hotel Copacabana Palace">
           </div>
         </div>
 
@@ -247,18 +297,111 @@ function wireUploadPanel() {
     e.preventDefault();
     dropzone.style.borderColor = 'var(--border-subtle)';
     dropzone.style.background  = '';
-    buildBatchList([...e.dataTransfer.files].filter(f => f.type.startsWith('image/')));
+    buildBatchList(_validateFiles([...e.dataTransfer.files]));
   });
   fileInput?.addEventListener('change', () => {
-    buildBatchList([...fileInput.files].filter(f => f.type.startsWith('image/')));
+    buildBatchList(_validateFiles([...fileInput.files]));
     fileInput.value = '';
   });
 
   // Default values cascade
   wireCascade('def-continent', 'def-country', 'def-city');
 
+  // 4.35.31+ Categoria do asset (pill radio)
+  wireAssetCategoryPills();
+
+  // 4.35.31+ Botão "Aplicar a todas" — propaga def-* pra cada batch row
+  document.getElementById('img-apply-defaults')?.addEventListener('click', applyDefaultsToAllRows);
+
   // Upload all button
   document.getElementById('img-upload-all-btn')?.addEventListener('click', () => uploadBatch());
+}
+
+// 4.35.31+ Validação client-side: tamanho + mime type. Avisa o user
+// sobre arquivos rejeitados em vez de silenciosamente filtrar.
+function _validateFiles(files) {
+  const ok = [];
+  const rejected = [];
+  for (const f of files) {
+    if (!f.type.startsWith('image/')) { rejected.push([f.name, 'não é imagem']); continue; }
+    if (!ACCEPTED_MIMES.has(f.type)) { rejected.push([f.name, `tipo ${f.type} não suportado`]); continue; }
+    if (f.size > MAX_FILE_SIZE_BYTES) { rejected.push([f.name, `${(f.size/1024/1024).toFixed(1)} MB > 10 MB`]); continue; }
+    ok.push(f);
+  }
+  if (rejected.length) {
+    const lines = rejected.slice(0, 3).map(([n, why]) => `• ${n}: ${why}`).join('\n');
+    const more = rejected.length > 3 ? `\n…e mais ${rejected.length - 3}` : '';
+    toast.error(`${rejected.length} arquivo(s) rejeitado(s):\n${lines}${more}`);
+  }
+  return ok;
+}
+
+// 4.35.31+ Pills de categoria — ao trocar, esconde/mostra campos de localização.
+function wireAssetCategoryPills() {
+  const group = document.getElementById('def-asset-category-group');
+  if (!group) return;
+  group.querySelectorAll('.asset-cat-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      const cat = pill.dataset.cat;
+      // Marca radio + atualiza visual
+      const input = pill.querySelector('input[type=radio]');
+      if (input) input.checked = true;
+      group.querySelectorAll('.asset-cat-pill').forEach(p => {
+        const active = p.dataset.cat === cat;
+        p.style.background = active ? 'var(--brand-gold)15' : 'transparent';
+        p.style.borderColor = active ? 'var(--brand-gold)' : 'var(--border-subtle)';
+        p.style.color = active ? 'var(--brand-gold)' : 'var(--text-secondary)';
+      });
+      // Esconde/mostra campos de localização
+      const locFields = document.getElementById('def-location-fields');
+      const cfg = ASSET_CATEGORIES.find(c => c.key === cat);
+      if (locFields) locFields.style.display = (cfg?.requiresLocation === false) ? 'none' : 'grid';
+      // Aplica também aos batch rows que já existem
+      document.querySelectorAll('.batch-asset-category-wrap').forEach(w => {
+        const rowCat = w.dataset.id;
+        const rowLoc = document.querySelector(`.batch-location-fields[data-id="${rowCat}"]`);
+        if (rowLoc) rowLoc.style.display = (cfg?.requiresLocation === false) ? 'none' : 'grid';
+      });
+    });
+  });
+}
+
+// 4.35.31+ Copia valores padrão pra todos os batch rows.
+function applyDefaultsToAllRows() {
+  const defContinent = document.getElementById('def-continent')?.value || '';
+  const defCountry   = document.getElementById('def-country')?.value || '';
+  const defCity      = document.getElementById('def-city')?.value || '';
+  const defType      = document.getElementById('def-type')?.value || 'galeria';
+  const defCopyright = document.getElementById('def-copyright')?.value || '';
+  const defCategory  = document.querySelector('input[name="def-asset-category"]:checked')?.value || 'location';
+
+  const rows = document.querySelectorAll('[id^="batch-row-"]');
+  if (!rows.length) { toast.info?.('Nenhuma imagem na fila.'); return; }
+  let count = 0;
+  rows.forEach(row => {
+    const id = row.id.replace('batch-row-','');
+    const setVal = (sel, val) => {
+      const el = row.querySelector(`${sel}[data-id="${id}"]`);
+      if (el && val) {
+        el.value = val;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    };
+    if (defCategory) {
+      const catInput = row.querySelector(`input[name="row-asset-category-${id}"][value="${defCategory}"]`);
+      catInput?.click();
+    }
+    setVal('.batch-continent', defContinent);
+    // País + cidade só fazem sentido após continente disparar cascade — pequeno timeout
+    setTimeout(() => {
+      setVal('.batch-country', defCountry);
+      setTimeout(() => setVal('.batch-city', defCity), 30);
+    }, 30);
+    setVal('.batch-type', defType);
+    setVal('.batch-copyright', defCopyright);
+    count++;
+  });
+  toast.success(`Valores padrão aplicados a ${count} imagem${count === 1 ? '' : 's'}.`);
 }
 
 /* ── Destination cascade helper ── */
@@ -311,10 +454,14 @@ function buildBatchList(files) {
     // Preview thumbnail (generated client-side)
     const thumbUrl = URL.createObjectURL(file);
 
+    // Categoria default herdada do select global (mostra batch row em sync com pill ativa)
+    const defaultCategory = document.querySelector('input[name="def-asset-category"]:checked')?.value || 'location';
+    const defaultCatCfg   = ASSET_CATEGORIES.find(c => c.key === defaultCategory) || ASSET_CATEGORIES[0];
+
     row.innerHTML = `
       <div style="display:flex;gap:12px;padding:12px 14px;">
         <!-- Thumbnail -->
-        <img class="batch-thumb" alt=""
+        <img class="batch-thumb" alt="Preview ${esc(file.name)}"
           style="width:72px;height:54px;object-fit:cover;border-radius:var(--radius-sm);flex-shrink:0;">
 
         <!-- Fields -->
@@ -329,8 +476,26 @@ function buildBatchList(files) {
               style="font-size:0.75rem;color:var(--text-muted);flex-shrink:0;">✕</button>
           </div>
 
-          <!-- Row 2: continent / country / city / type -->
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
+          <!-- 4.35.31+ Row 1b: Categoria do asset (radio inline) -->
+          <div class="batch-asset-category-wrap" data-id="${id}" style="display:flex;gap:5px;flex-wrap:wrap;">
+            ${ASSET_CATEGORIES.map(c => `
+              <label class="batch-cat-pill" data-id="${id}" data-cat="${c.key}" style="
+                display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:14px;
+                border:1px solid ${c.key===defaultCategory?'var(--brand-gold)':'var(--border-subtle)'};
+                background:${c.key===defaultCategory?'var(--brand-gold)15':'transparent'};
+                color:${c.key===defaultCategory?'var(--brand-gold)':'var(--text-muted)'};
+                cursor:pointer;font-size:0.6875rem;transition:all .15s;">
+                <input type="radio" name="row-asset-category-${id}" value="${c.key}"
+                  ${c.key===defaultCategory?'checked':''} style="display:none;" />
+                ${c.icon} ${esc(c.label)}
+              </label>
+            `).join('')}
+          </div>
+
+          <!-- Row 2: continent / country / city / type (esconde quando categoria sem localização) -->
+          <div class="batch-location-fields" data-id="${id}"
+            style="display:${defaultCatCfg.requiresLocation === false ? 'none' : 'grid'};
+            grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
             <select class="filter-select batch-continent" data-id="${id}" style="font-size:0.75rem;">
               <option value="">Continente</option>
               ${CONTINENTS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
@@ -350,10 +515,17 @@ function buildBatchList(files) {
           <div>
             <input type="text" class="portal-field batch-placename" data-id="${id}"
               style="font-size:0.8125rem;width:100%;"
-              placeholder="Nome do lugar que esta foto representa (ex: Torre Eiffel, Restaurante Jules Verne)">
+              placeholder="Nome do lugar que esta foto representa (ex: Torre Eiffel, Hotel Copacabana Palace)">
             <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:3px;">
               💡 Quando informado, o sistema usa esta foto especificamente para este lugar nas dicas geradas.
             </div>
+          </div>
+
+          <!-- 4.35.31+ Row 2c: direitos autorais -->
+          <div>
+            <input type="text" class="portal-field batch-copyright" data-id="${id}"
+              style="font-size:0.75rem;width:100%;"
+              placeholder="Direitos autorais (opcional): © Fonte · Autor · Ano">
           </div>
 
           <!-- Row 3: tag chips + free text -->
@@ -392,6 +564,24 @@ function buildBatchList(files) {
 
     // Wire per-row cascade
     wireBatchCascade(row, id);
+
+    // 4.35.31+ Per-row category pill (mostra/esconde campos de localização)
+    row.querySelectorAll(`.batch-cat-pill[data-id="${id}"]`).forEach(pill => {
+      pill.addEventListener('click', () => {
+        const cat = pill.dataset.cat;
+        const input = pill.querySelector('input[type=radio]');
+        if (input) input.checked = true;
+        row.querySelectorAll(`.batch-cat-pill[data-id="${id}"]`).forEach(p => {
+          const active = p.dataset.cat === cat;
+          p.style.background = active ? 'var(--brand-gold)15' : 'transparent';
+          p.style.borderColor = active ? 'var(--brand-gold)' : 'var(--border-subtle)';
+          p.style.color = active ? 'var(--brand-gold)' : 'var(--text-muted)';
+        });
+        const locFields = row.querySelector(`.batch-location-fields[data-id="${id}"]`);
+        const cfg = ASSET_CATEGORIES.find(c => c.key === cat);
+        if (locFields) locFields.style.display = (cfg?.requiresLocation === false) ? 'none' : 'grid';
+      });
+    });
 
     // Wire tag chips
     row.querySelectorAll('.batch-tag-chip').forEach(chip => {
@@ -453,6 +643,9 @@ async function uploadBatch() {
   const defCountry   = document.getElementById('def-country')?.value   || '';
   const defCity      = document.getElementById('def-city')?.value      || '';
   const defType      = document.getElementById('def-type')?.value      || 'galeria';
+  // 4.35.31+ novos defaults: categoria + copyright
+  const defCopyright = document.getElementById('def-copyright')?.value || '';
+  const defCategory  = document.querySelector('input[name="def-asset-category"]:checked')?.value || 'location';
 
   let success = 0, failed = 0;
 
@@ -464,13 +657,18 @@ async function uploadBatch() {
     const statusEl = row.querySelector(`.batch-status[data-id="${id}"]`);
     if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'Convertendo…'; statusEl.style.color = 'var(--brand-gold)'; }
 
-    // Read per-row values, fall back to defaults
-    const continent = row.querySelector(`.batch-continent[data-id="${id}"]`)?.value || defContinent;
-    const country   = row.querySelector(`.batch-country[data-id="${id}"]`)?.value   || defCountry;
-    const city      = row.querySelector(`.batch-city[data-id="${id}"]`)?.value      || defCity;
+    // 4.35.31+ Read per-row values, fall back to defaults
+    const assetCategory = row.querySelector(`input[name="row-asset-category-${id}"]:checked`)?.value || defCategory;
+    const categoryCfg   = ASSET_CATEGORIES.find(c => c.key === assetCategory) || ASSET_CATEGORIES[0];
+    const requiresLoc   = categoryCfg.requiresLocation;
+
+    const continent = requiresLoc ? (row.querySelector(`.batch-continent[data-id="${id}"]`)?.value || defContinent) : '';
+    const country   = requiresLoc ? (row.querySelector(`.batch-country[data-id="${id}"]`)?.value   || defCountry) : '';
+    const city      = requiresLoc ? (row.querySelector(`.batch-city[data-id="${id}"]`)?.value      || defCity) : '';
     const type      = row.querySelector(`.batch-type[data-id="${id}"]`)?.value      || defType;
     const name      = row.querySelector(`.batch-name[data-id="${id}"]`)?.value?.trim() || file.name;
     const placeName = row.querySelector(`.batch-placename[data-id="${id}"]`)?.value?.trim() || '';
+    const copyright = row.querySelector(`.batch-copyright[data-id="${id}"]`)?.value?.trim() || defCopyright;
 
     // Active chip tags
     const chipTags = [...row.querySelectorAll(`.batch-tag-chip.active`)].map(c => c.dataset.tag);
@@ -479,7 +677,8 @@ async function uploadBatch() {
       .split(',').map(t => t.trim()).filter(Boolean);
     const tags = [...new Set([...chipTags, ...freeTags])];
 
-    if (!continent || !country) {
+    // 4.35.31+ Validação varia por categoria: location exige continente+país; demais não.
+    if (requiresLoc && (!continent || !country)) {
       if (statusEl) { statusEl.textContent = '✗ Selecione continente e país'; statusEl.style.color = '#EF4444'; }
       failed++;
       return;
@@ -492,11 +691,17 @@ async function uploadBatch() {
 
       const slug = s => s.toLowerCase().normalize('NFD')
         .replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
-      const path = [continent, country, city].filter(Boolean).map(slug).join('/')
+      // 4.35.31+ path varia por categoria: location → continent/country/city/...;
+      // logo/hotel/cruise/train → {prefix}/...
+      const pathPrefixParts = categoryCfg.pathPrefix
+        ? [categoryCfg.pathPrefix]
+        : [continent, country, city].filter(Boolean).map(slug);
+      const path = pathPrefixParts.join('/')
         + '/' + Date.now() + '-' + slug(file.name.replace(/\.[^.]+$/,'')) + '.webp';
 
       const url = await uploadImageToR2(blob, path);
-      await saveImageMeta({ continent, country, city, type, tags, name, placeName, url, path,
+      await saveImageMeta({ assetCategory, continent, country, city, type, tags, name, placeName,
+        copyright, url, path,
         originalName: file.name, sizeMB: parseFloat(sizeMB), width, height });
 
       if (statusEl) { statusEl.textContent = '✓ Enviado'; statusEl.style.color = '#22C55E'; }
@@ -682,7 +887,8 @@ function renderGallery() {
     });
   }
 
-  if (countEl) countEl.textContent = `${imgs.length} imagem${imgs.length!==1?'ns':''}`;
+  // 4.35.31+ fix typo "imagemns" → pluralização correta "imagens"
+  if (countEl) countEl.textContent = `${imgs.length} ${imgs.length === 1 ? 'imagem' : 'imagens'}`;
 
   if (!imgs.length) {
     gallery.innerHTML = `<div style="padding:60px;text-align:center;color:var(--text-muted);">
@@ -922,6 +1128,26 @@ function openEditModal(imgId) {
             ${IMAGE_TYPES.find(t=>t.key===(img.type||'galeria'))?.desc||''}
           </div>
         </div>
+        <!-- 4.35.31+ Categoria do asset (read-only — não pode trocar depois do upload pq mudaria o path R2) -->
+        <div>
+          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
+            Categoria</label>
+          <div style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;
+            background:var(--bg-surface);border-radius:var(--radius-sm);font-size:0.8125rem;">
+            ${(() => {
+              const cat = ASSET_CATEGORIES.find(c => c.key === (img.assetCategory || 'location')) || ASSET_CATEGORIES[0];
+              return `${cat.icon} ${esc(cat.label)}`;
+            })()}
+          </div>
+        </div>
+        <!-- 4.35.31+ Direitos autorais -->
+        <div>
+          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
+            Direitos autorais <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
+          <input type="text" id="edit-img-copyright" value="${esc(img.copyright||'')}"
+            class="portal-field" style="width:100%;"
+            placeholder="Ex: © Unsplash — João Silva · © 2024 Hotel Copacabana Palace">
+        </div>
         <div style="font-size:0.75rem;color:var(--text-muted);">
           ${img.width && img.height ? `${img.width} × ${img.height} px · ` : ''}${img.sizeMB || '—'} MB ·
           <a href="${esc(img.url)}" target="_blank" style="color:var(--brand-gold);">Abrir original ↗</a>
@@ -953,8 +1179,10 @@ function openEditModal(imgId) {
     const tags = (document.getElementById('edit-img-tags')?.value || '')
       .split(',').map(t => t.trim()).filter(Boolean);
     const type = document.getElementById('edit-img-type')?.value;
+    // 4.35.31+ inclui copyright no patch
+    const copyright = document.getElementById('edit-img-copyright')?.value.trim() || '';
     try {
-      await updateImageMeta(imgId, { name, placeName, tags, type });
+      await updateImageMeta(imgId, { name, placeName, tags, type, copyright });
       toast.success('Imagem atualizada.');
       close();
       await loadImages();
