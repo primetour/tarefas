@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 1,
-  build: '20260512-image-bank-counts-stale',
+  patch: 2,
+  build: '20260512-office-fixes',
 };
 
 /** "1.2.0" */

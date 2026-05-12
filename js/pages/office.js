@@ -285,7 +285,7 @@ export async function renderOffice(container) {
         <span style="width:10px;height:10px;border-radius:50%;background:#22C55E;display:inline-block;"></span> Ativo agora
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
-        <span style="width:10px;height:10px;border-radius:50%;background:#F59E0B;display:inline-block;"></span> Ausente (idle)
+        <span style="width:10px;height:10px;border-radius:50%;background:#F59E0B;display:inline-block;"></span> Ausente
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
         <span style="width:10px;height:10px;border-radius:50%;background:#7C3AED;display:inline-block;"></span> De folga / ausência hoje
@@ -1436,14 +1436,21 @@ function iso_books(x, y) {
  * Coordenadas relativas ao centro (cx, cy + TILE_H/2).
  */
 function avatarOffsetInRoom(idx, total) {
-  // 4.38.2+ Avatares 2.2x maiores; spacing maior e menos por row
-  const colsPerRow = 2;
+  // 4.40.2+ Anti-overlap: avatar tem ~56px de largura (cabeça) + animação
+  // de wander de ~20px de raio (ver generateWalkPath). Spacing precisa
+  // garantir folga visível mesmo no pico do bob → 90px H, 70px V.
+  // Layout: até 2 users em 1 col, 3-4 em 2 cols, 5-6 em 3 cols, 7+ em 3 cols
+  // com múltiplas linhas (chão da sala comporta ~6-8 confortavelmente).
+  const colsPerRow = total <= 2 ? Math.min(total, 1) || 1
+                   : total <= 4 ? 2
+                   :              3;
   const col = idx % colsPerRow;
   const row = Math.floor(idx / colsPerRow);
-  const spacing = 60;
-  const startY = 20;
+  const spacing = 90;
+  const rowSpacing = 70;
+  const startY = 18;
   const x = (col - (colsPerRow - 1) / 2) * spacing;
-  const y = startY + row * 50;
+  const y = startY + row * rowSpacing;
   return { x, y };
 }
 
@@ -1597,9 +1604,11 @@ function generateWalkPath(uid, idx) {
     seed = (seed * 9301 + 49297) % 233280;
     return (seed / 233280) * n;
   };
-  // Raio em torno do ponto base (avatar fica perambulando)
-  const rx = 35 + rng(15);  // 35-50
-  const ry = 14 + rng(8);   // 14-22 (achatado pra ficar dentro do rombus)
+  // 4.40.2+ Raio reduzido pra que o wander NÃO empurre o avatar pra cima
+  // do vizinho. Spacing entre avatares = 90px (avatarOffsetInRoom) → raio
+  // máximo seguro = ~25px (folga visual de 40px entre cabeças).
+  const rx = 18 + rng(8);   // 18-26
+  const ry = 8  + rng(4);   // 8-12 (achatado pra ficar dentro do rombus)
   // 4 pontos: noroeste, sudeste, nordeste, sudoeste (formato de "infinito")
   const ang0 = rng(Math.PI * 2);
   const pts = [0, 1, 2, 3].map(i => {
@@ -1672,7 +1681,7 @@ function wireInteractions(stageEl) {
       const state = av.dataset.state;
       const route = av.dataset.route || '—';
       const absence = av.dataset.absence;
-      const stateLabel = state === 'idle'   ? '🟡 ausente (idle)'
+      const stateLabel = state === 'idle'   ? '🟡 ausente'
                       :  state === 'absent' ? `🛋 ${absence || 'ausência'} hoje`
                       :  '🟢 ativo agora';
       tip = document.createElement('div');
@@ -2042,7 +2051,7 @@ async function openAvatarPanel(uid) {
   const sector = u.sector || u.department || '';
   const role   = u.role || u.roleId || '';
   const stateColor = presence?.state === 'idle' ? '#F59E0B' : (presence ? '#22C55E' : '#94A3B8');
-  const stateLabel = presence?.state === 'idle' ? '🟡 ausente (idle)'
+  const stateLabel = presence?.state === 'idle' ? '🟡 ausente'
                   : presence                     ? '🟢 ativo agora'
                   : '⚪ offline';
   const route = presence?.currentRoute || '—';
@@ -2052,19 +2061,33 @@ async function openAvatarPanel(uid) {
   panel.style.transform = 'translateX(0)';
 
   let recentActions = [];
+  let _activityError = null;
   try {
     const { db } = await import('../firebase.js');
-    const { collection, query, where, orderBy, limit, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const { collection, query, where, limit, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    // 4.40.2+ Removido orderBy('timestamp') — exigia composite index
+    // (userId+timestamp) que não estava criado, query falhava silenciosamente.
+    // Agora: fetch só por userId (índice automático) limit 50, sort client-side.
     const snap = await getDocs(query(
       collection(db, 'audit_logs'),
       where('userId', '==', uid),
-      orderBy('timestamp', 'desc'),
-      limit(8),
+      limit(50),
     ));
-    recentActions = snap.docs.map(d => d.data());
+    recentActions = snap.docs.map(d => d.data())
+      .sort((a, b) => {
+        const ta = a.timestamp?.toMillis ? a.timestamp.toMillis() : 0;
+        const tb = b.timestamp?.toMillis ? b.timestamp.toMillis() : 0;
+        return tb - ta;
+      })
+      .slice(0, 8);
     // 4.38.3+ garante labels canônicos carregados antes de renderizar
     await _getActionLabels();
-  } catch (_) { /* sem permissão */ }
+  } catch (err) {
+    _activityError = err?.code === 'permission-denied'
+      ? 'Sem permissão para ver atividade.'
+      : 'Erro ao carregar atividade.';
+    console.warn('[office] recent activity fetch fail:', err?.message || err);
+  }
 
   body.innerHTML = `
     <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
@@ -2090,14 +2113,14 @@ async function openAvatarPanel(uid) {
       <div style="font-size:0.9375rem;font-weight:600;">
         ${esc(_routeToRoomLabel(route))}
       </div>
-      ${presence ? `<button id="osp-go-to-room" class="btn btn-secondary btn-sm" style="margin-top:10px;font-size:0.75rem;">↗ Ir até a sala</button>` : ''}
+      ${presence ? `<button id="osp-go-to-room" class="btn btn-secondary btn-sm" style="margin-top:10px;font-size:0.75rem;" title="Abrir o módulo onde a pessoa está">↗ Ir até o módulo</button>` : ''}
     </div>
 
     <div>
       <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">Atividade recente</div>
       ${recentActions.length === 0 ? `
         <div style="font-size:0.8125rem;color:var(--text-muted);padding:14px;text-align:center;background:var(--bg-surface);border-radius:6px;">
-          Sem ações registradas recentemente.
+          ${_activityError || 'Sem ações registradas recentemente.'}
         </div>
       ` : `
         <div style="display:flex;flex-direction:column;gap:6px;">
@@ -2118,8 +2141,19 @@ async function openAvatarPanel(uid) {
     panel.style.transform = 'translateX(100%)';
   });
   document.getElementById('osp-go-to-room')?.addEventListener('click', () => {
-    const room = routeToRoom(presence?.currentRoute || 'home');
-    zoomIntoRoom(room);
+    // 4.40.2+ Navega DIRETO pro módulo onde a pessoa está, não só zoom no mapa
+    // (o mapa é pequeno demais pra justificar zoom — usuário quer ver o conteúdo).
+    const route = presence?.currentRoute;
+    if (route) {
+      const seg = String(route).split('/')[0].split('?')[0] || 'home';
+      location.hash = seg;
+    } else {
+      // Fallback: rota default da sala (se a pessoa não está mais presente mas
+      // estava em algum lugar conhecido).
+      const room = routeToRoom('home');
+      const r = ROOMS.find(x => x.id === room);
+      location.hash = r?.defaultRoute || 'home';
+    }
   });
 }
 
