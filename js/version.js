@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 25,
-  build: '20260512-ai-hub-secrets-all-server-side',
+  patch: 26,
+  build: '20260512-email-notifs-template-trigger',
 };
 
 /** "1.2.0" */

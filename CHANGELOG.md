@@ -6,6 +6,65 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.35.26+20260512-email-notifs-template-trigger] — 2026-05-12
+
+Release **MINOR** — Notificações por email com opt-in granular e identidade
+unificada.
+
+### Pedido do user
+> "agora que liberamos o email outlook, precisamos voltar a falar sobre
+> notificações por email, certo? gostaria de fazer isso em notificacoes,
+> para o user configurar o que quer receber por email. precisamos, também,
+> preparar os emails disso tudo em uma mesma identidade (csat é boa
+> referencia). opcao A pacote completo"
+
+### 1. Email Template DSL — `functions/emailTemplate.js`
+- `renderEmailTemplate({ preheader, overline, heading, intro, blocks, cta, footerNote, variant, productLabel })`
+- Identidade visual única baseada no CSAT (navy #0F172A + dourado #D4A843 + logo PRIMETOUR branco).
+- Variantes de cor: `default` / `success` / `warning` / `danger` afetam a borda inferior do header.
+- Tipos de blocks: `paragraph`, `list`, `data` (label-valor), `highlight` (navy destacado),
+  `quote` (borda esquerda), `divider`.
+- Helper `buildNotificationEmail(notif)` monta email a partir de um doc de notif.
+- `NOTIF_TYPE_META` mapeia cada tipo → overline + variant + label do CTA.
+- `_buildSystemFeedbackEmailHtml()` refatorado pra usar o helper (era 35 linhas inline, agora 18).
+
+### 2. Cloud Function `onNotificationCreate` (Firestore trigger)
+- Trigger em `notifications/{notifId}`.
+- Lê `users/{recipientId}.prefs.emailNotifications`.
+- Só envia se `enabled === true` AND `types[type] === true`.
+- Rate-limit: max 20 emails/h por user (anti-spam).
+- Renderiza email via `buildNotificationEmail()` + envia via Microsoft Graph.
+- Marca `emailSentAt` no doc da notif após sucesso.
+- Falha de email não bloqueia: notif in-app continua existindo.
+- Deployed: ✓.
+
+### 3. Service `js/services/emailPrefs.js`
+- `getEmailPrefs()` → lê preferências do user logado.
+- `saveEmailPrefs({ enabled, types })` → grava em `users/{uid}.prefs.emailNotifications`.
+- `DEFAULT_EMAIL_TYPES`: conjunto conservador (taskAssigned, taskOverdue, mention, csatResponded, lowScore).
+- `EMAIL_TYPE_GROUPS`: 9 categorias com 30+ tipos cobertos (Tarefas, Projetos & Squads,
+  CSAT, Metas, Solicitações, Menções, Feedbacks, Conteúdo & Roteiros, Sistema & IA).
+
+### 4. UI — aba "Notificações por email" em `/notifications`
+- Página `/notifications` agora tem duas abas: **🔔 Inbox** | **✉ Notificações por email**.
+- Toggle master "Receber notificações por email" + lista agrupada por categoria.
+- Cada tipo tem nome + hint (1 linha explicando quando dispara).
+- Por categoria: contador "X de Y ativos" + botão "Marcar todos / Desmarcar todos / Marcar restantes".
+- Botão "↻ Restaurar padrão" volta aos 5 defaults conservadores.
+- Barra "Salvar alterações / Descartar" sticky no fim da página, só aparece quando dirty.
+- Quando master desligado, lista fica opaca + sem interação.
+
+### 5. Firestore Rules
+- `users/{uid}` já permite self-update em `prefs.*` (não está na whitelist sensível).
+  Nenhuma mudança em rules necessária.
+
+### Bump
+- `4.35.26+20260512-email-notifs-template-trigger`
+- Cloud Functions deployadas: `onNotificationCreate` (novo) + `onSystemFeedbackCreate` (refatorado).
+- `app.js` imports bumped `v=20260512oo3` → `v=20260512oo4` pra invalidar cache.
+
+---
+
 ## [4.35.25+20260512-ai-hub-secrets-all-server-side] — 2026-05-12
 
 Release **PATCH** — IA Hub: todos os providers agora 100% server-side; aba

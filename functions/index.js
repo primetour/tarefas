@@ -26,6 +26,7 @@ import { initializeApp }      from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth }            from 'firebase-admin/auth';
 import { GoogleAuth }         from 'google-auth-library';
+import { renderEmailTemplate, buildNotificationEmail } from './emailTemplate.js';
 
 initializeApp();
 const db = getFirestore();
@@ -2838,40 +2839,29 @@ function _escFb(s) {
 }
 
 function _buildSystemFeedbackEmailHtml(fb) {
+  // 4.35.26+: usa renderEmailTemplate compartilhado (identidade unificada).
   const t = FEEDBACK_TYPE_LABELS[fb.type] || { emoji: '💬', label: 'Feedback', color: '#888' };
-  return `<!DOCTYPE html>
-<html lang="pt-BR"><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="padding:24px 16px;">
-<tr><td align="center">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;border-radius:12px;overflow:hidden;border:1px solid rgba(127,127,127,0.2);">
-
-<tr><td bgcolor="#0F172A" style="padding:24px 28px;background-color:#0F172A;border-bottom:3px solid ${t.color};">
-  <div style="font-size:11px;color:${t.color};letter-spacing:0.18em;text-transform:uppercase;font-weight:700;">${t.emoji} ${t.label} — Sistema</div>
-  <div style="margin-top:6px;color:#FFFFFF;font-size:18px;font-weight:600;line-height:1.3;">Feedback do Sistema PRIMETOUR</div>
-</td></tr>
-
-<tr><td style="padding:24px 28px;">
-  <div style="background:#F8F9FA;border-left:3px solid ${t.color};padding:14px 16px;border-radius:6px;margin-bottom:18px;white-space:pre-wrap;font-size:14px;line-height:1.6;color:#1F2937;">${_escFb(fb.message || '')}</div>
-
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:13px;line-height:1.7;color:#475569;">
-    <tr><td style="padding:3px 0;width:120px;color:#94A3B8;">De:</td><td style="padding:3px 0;color:#1F2937;font-weight:600;">${_escFb(fb.authorName || 'Usuário')}</td></tr>
-    <tr><td style="padding:3px 0;color:#94A3B8;">E-mail:</td><td style="padding:3px 0;"><a href="mailto:${_escFb(fb.authorEmail||'')}" style="color:#D4A843;text-decoration:none;">${_escFb(fb.authorEmail || '—')}</a></td></tr>
-    <tr><td style="padding:3px 0;color:#94A3B8;">Função:</td><td style="padding:3px 0;">${_escFb(fb.authorRole || 'member')}</td></tr>
-    <tr><td style="padding:3px 0;color:#94A3B8;">Página:</td><td style="padding:3px 0;font-family:ui-monospace,Menlo,monospace;font-size:12px;">${_escFb(fb.page || '#')}</td></tr>
-    <tr><td style="padding:3px 0;color:#94A3B8;">Versão app:</td><td style="padding:3px 0;font-family:ui-monospace,Menlo,monospace;font-size:12px;">${_escFb(fb.appVersion || '?')}</td></tr>
-  </table>
-
-  <div style="margin-top:18px;padding-top:14px;border-top:1px solid #E2E8F0;text-align:center;">
-    <a href="https://primetour.github.io/tarefas/#system-feedback" style="display:inline-block;padding:10px 24px;background:#D4A843;color:#FFFFFF;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600;">Ver no sistema</a>
-  </div>
-</td></tr>
-
-<tr><td style="padding:14px 28px;border-top:1px solid #E2E8F0;font-size:11px;color:#94A3B8;line-height:1.5;">
-  Email automático disparado quando um usuário envia feedback pela página de Governança ou pelo botão "Enviar Sugestão". Para responder, vá em <strong>/system-feedback</strong> no sistema.
-</td></tr>
-
-</table></td></tr></table></body></html>`;
+  const VARIANT_BY_TYPE = { bug: 'danger', suggestion: 'default', question: 'default', praise: 'success' };
+  return renderEmailTemplate({
+    preheader:    `${t.label} de ${fb.authorName || 'Usuário'}`,
+    overline:     `${t.emoji} ${t.label.toUpperCase()} — SISTEMA`,
+    heading:      'Feedback do Sistema PRIMETOUR',
+    intro:        '',
+    blocks: [
+      { type: 'quote', text: fb.message || '' },
+      { type: 'data', rows: [
+        ['De',         fb.authorName || 'Usuário'],
+        ['E-mail',     fb.authorEmail || '—'],
+        ['Função',     fb.authorRole || 'member'],
+        ['Página',     fb.page || '#'],
+        ['Versão',     fb.appVersion || '?'],
+      ]},
+    ],
+    cta:          { url: 'https://primetour.github.io/tarefas/#system-feedback', label: 'Ver no sistema' },
+    footerNote:   'Email disparado quando um usuário envia feedback pela Governança ou pelo botão "Enviar Sugestão". Responder em /system-feedback.',
+    variant:      VARIANT_BY_TYPE[fb.type] || 'default',
+    productLabel: 'Sistema',
+  });
 }
 
 export const onSystemFeedbackCreate = onDocumentCreated({
@@ -2897,5 +2887,82 @@ export const onSystemFeedbackCreate = onDocumentCreated({
   } catch (e) {
     console.error('[system_feedback] falha ao enviar email:', e?.message || e);
     // Não relança — o doc já foi salvo, admin vê pela UI mesmo sem email
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   onNotificationCreate (4.35.26+) — Firestore trigger que envia
+   email pro destinatário quando uma notif é criada, se ele optou
+   por receber esse tipo via email em users/{uid}.prefs.emailNotifications.
+
+   Defaults conservadores (se user nunca configurou):
+     types[type] === undefined → não envia
+     Sempre exige prefs.emailNotifications.enabled === true
+
+   Rate-limit: max 20 emails/hora por user (anti-spam).
+   ═══════════════════════════════════════════════════════════════ */
+const EMAIL_RATE_LIMIT_PER_HOUR = 20;
+
+export const onNotificationCreate = onDocumentCreated({
+  document: 'notifications/{notifId}',
+  region:   'us-central1',
+  secrets:  [GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_SENDER_ID],
+}, async (event) => {
+  const notif = event.data?.data();
+  if (!notif || !notif.recipientId || !notif.type) return;
+
+  const notifId = event.params?.notifId;
+
+  try {
+    // 1) Carrega prefs + email do destinatário
+    const userDoc = await db.collection('users').doc(notif.recipientId).get();
+    if (!userDoc.exists) {
+      console.log(`[onNotifCreate] user ${notif.recipientId} não existe — skip`);
+      return;
+    }
+    const user = userDoc.data();
+    const prefs = user.prefs?.emailNotifications;
+    if (!prefs || prefs.enabled === false) {
+      // Email global desligado
+      return;
+    }
+    const typeEnabled = prefs.types?.[notif.type] === true;
+    if (!typeEnabled) {
+      console.log(`[onNotifCreate] type ${notif.type} não habilitado pro user ${notif.recipientId}`);
+      return;
+    }
+
+    const toEmail = user.email || user.userEmail || null;
+    if (!toEmail) {
+      console.warn(`[onNotifCreate] user ${notif.recipientId} sem email`);
+      return;
+    }
+
+    // 2) Rate limit (anti-spam)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentSnap = await db.collection('notifications')
+      .where('recipientId', '==', notif.recipientId)
+      .where('emailSentAt', '>=', oneHourAgo)
+      .limit(EMAIL_RATE_LIMIT_PER_HOUR + 1)
+      .get()
+      .catch(() => ({ size: 0 }));
+    if (recentSnap.size >= EMAIL_RATE_LIMIT_PER_HOUR) {
+      console.warn(`[onNotifCreate] rate-limit hit pro user ${notif.recipientId} (${recentSnap.size}/${EMAIL_RATE_LIMIT_PER_HOUR}/h)`);
+      return;
+    }
+
+    // 3) Renderiza email + envia
+    const { subject, html } = buildNotificationEmail(notif);
+    await sendEmailViaGraph({ to: toEmail, subject, html });
+
+    // 4) Marca emailSentAt no doc (sem retrigger porque é update)
+    await db.collection('notifications').doc(notifId).update({
+      emailSentAt: FieldValue.serverTimestamp(),
+    });
+
+    console.log(`[onNotifCreate] email enviado pra ${toEmail} (type=${notif.type})`);
+  } catch (e) {
+    console.error('[onNotifCreate] falha:', e?.message || e);
+    // Não relança — notif in-app já existe, falha do email não bloqueia
   }
 });

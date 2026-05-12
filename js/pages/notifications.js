@@ -10,6 +10,10 @@ import {
   markAsRead, markAllAsRead, dismissNotification,
   NOTIF_ICONS, NOTIF_TYPE_LABELS, timeAgo,
 } from '../services/notifications.js';
+import {
+  getEmailPrefs, saveEmailPrefs,
+  DEFAULT_EMAIL_TYPES, EMAIL_TYPE_GROUPS,
+} from '../services/emailPrefs.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -32,6 +36,7 @@ let _filter = '';
 let _search = '';
 let _showUnreadOnly = false;
 let _page = 0;
+let _activeTab = 'inbox';      // 'inbox' | 'email-settings'
 
 /* ════════════════════════════════════════════════════════════
    Render
@@ -41,18 +46,79 @@ export async function renderNotifications(container) {
   _search = '';
   _showUnreadOnly = false;
   _page = 0;
+  _activeTab = 'inbox';
 
-  container.innerHTML = buildPageHTML();
-  wirePageEvents(container);
+  await paintFullPage(container);
+}
 
-  // Subscribe to real-time updates
-  _unsub = store.subscribe('notifications', () => {
-    const list = container.querySelector('#notif-page-list');
-    if (list) {
-      list.innerHTML = buildListHTML();
-      wireListEvents(container);
-      updateCounters(container);
+async function paintFullPage(container) {
+  container.innerHTML = buildPageShell();
+  wireTabs(container);
+  await renderActiveTab(container);
+}
+
+async function renderActiveTab(container) {
+  const tabPanel = container.querySelector('#notif-tab-panel');
+  if (!tabPanel) return;
+  if (_activeTab === 'inbox') {
+    tabPanel.innerHTML = buildInboxHTML();
+    wirePageEvents(container);
+    // Subscribe to real-time updates (only on inbox tab)
+    if (!_unsub) {
+      _unsub = store.subscribe('notifications', () => {
+        if (_activeTab !== 'inbox') return;
+        const list = container.querySelector('#notif-page-list');
+        if (list) {
+          list.innerHTML = buildListHTML();
+          wireListEvents(container);
+          updateCounters(container);
+        }
+      });
     }
+  } else if (_activeTab === 'email-settings') {
+    tabPanel.innerHTML = `<div class="card" style="padding:24px;"><div class="chart-loading"><div class="chart-loading-spinner"></div></div></div>`;
+    await renderEmailSettings(tabPanel);
+  }
+}
+
+function buildPageShell() {
+  return `
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1 class="page-title">Notificações</h1>
+        <p class="page-subtitle">Veja seu inbox e configure o que recebe por email.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border-subtle);">
+      ${[
+        { id: 'inbox',          label: '🔔 Inbox' },
+        { id: 'email-settings', label: '✉ Notificações por email' },
+      ].map(t => `
+        <button class="notif-tab-btn" data-tab="${t.id}" style="padding:10px 18px;border:none;
+          background:none;cursor:pointer;font-size:0.875rem;
+          color:${_activeTab===t.id?'var(--brand-gold)':'var(--text-muted)'};
+          border-bottom:2px solid ${_activeTab===t.id?'var(--brand-gold)':'transparent'};
+          transition:all .15s;">${t.label}</button>
+      `).join('')}
+    </div>
+
+    <div id="notif-tab-panel"></div>
+  `;
+}
+
+function wireTabs(container) {
+  container.querySelectorAll('.notif-tab-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      _activeTab = btn.dataset.tab;
+      // repinta só a barra de tabs (cores) + o painel
+      container.querySelectorAll('.notif-tab-btn').forEach(b => {
+        const active = b.dataset.tab === _activeTab;
+        b.style.color = active ? 'var(--brand-gold)' : 'var(--text-muted)';
+        b.style.borderBottomColor = active ? 'var(--brand-gold)' : 'transparent';
+      });
+      await renderActiveTab(container);
+    });
   });
 }
 
@@ -63,25 +129,20 @@ export function destroyNotifications() {
 /* ════════════════════════════════════════════════════════════
    Build page HTML
    ════════════════════════════════════════════════════════════ */
-function buildPageHTML() {
+function buildInboxHTML() {
   const allNotifs = store.get('notifications') || [];
   const unreadCount = allNotifs.filter(n => !n.read).length;
 
   return `
-    <div class="page-header">
-      <div class="page-header-left">
-        <h1 class="page-title">Notificações</h1>
-        <p class="page-subtitle">
-          <span id="notif-total-count">${allNotifs.length}</span> notificações ·
-          <span id="notif-unread-count" style="color:var(--brand-gold);font-weight:600;">${unreadCount} não lidas</span>
-        </p>
-      </div>
-      <div class="page-header-actions">
-        <button class="btn btn-secondary btn-sm" id="notif-mark-all-page"
-          ${unreadCount === 0 ? 'disabled' : ''}>
-          Marcar tudo como lido
-        </button>
-      </div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+      <p style="font-size:0.875rem;color:var(--text-muted);margin:0;">
+        <span id="notif-total-count">${allNotifs.length}</span> notificações ·
+        <span id="notif-unread-count" style="color:var(--brand-gold);font-weight:600;">${unreadCount} não lidas</span>
+      </p>
+      <button class="btn btn-secondary btn-sm" id="notif-mark-all-page"
+        ${unreadCount === 0 ? 'disabled' : ''}>
+        Marcar tudo como lido
+      </button>
     </div>
 
     <!-- Filters bar -->
@@ -402,4 +463,150 @@ function updateCounters(container) {
   if (totalEl) totalEl.textContent = allNotifs.length;
   if (unreadEl) unreadEl.textContent = `${unread} não lidas`;
   if (markAllBtn) markAllBtn.disabled = unread === 0;
+}
+
+/* ════════════════════════════════════════════════════════════
+   Tab: Email Settings (4.35.26+)
+   Configurar quais tipos de notificação chegam por email.
+   ════════════════════════════════════════════════════════════ */
+async function renderEmailSettings(panel) {
+  let prefs = await getEmailPrefs();
+  let dirty = false;
+
+  function paint() {
+    const enabledTypes = prefs.types || {};
+    panel.innerHTML = `
+      <div class="card" style="margin-bottom:16px;padding:18px 20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
+          <div>
+            <h3 style="margin:0 0 4px;font-size:1rem;">Receber notificações por email</h3>
+            <p style="margin:0;font-size:0.8125rem;color:var(--text-muted);">
+              Quando ativado, você recebe um email no <strong>${esc(store.get('currentUser')?.email || 'seu email')}</strong>
+              pra cada tipo selecionado abaixo. Identidade visual: mesma do CSAT.
+            </p>
+          </div>
+          <label class="switch" style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;">
+            <input type="checkbox" id="ep-master-toggle" ${prefs.enabled ? 'checked' : ''} />
+            <span style="font-size:0.875rem;font-weight:600;color:${prefs.enabled?'#22C55E':'var(--text-muted)'};">
+              ${prefs.enabled ? '✓ Ativado' : '— Desativado'}
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div style="opacity:${prefs.enabled?'1':'0.5'};pointer-events:${prefs.enabled?'auto':'none'};">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:18px 0 12px;">
+          <p style="font-size:0.8125rem;color:var(--text-muted);margin:0;">
+            Selecione quais tipos de evento disparam email. Você sempre recebe a notificação <strong>in-app</strong> — esta config só controla o email.
+          </p>
+          <button class="btn btn-ghost btn-sm" id="ep-reset" style="font-size:0.75rem;">
+            ↻ Restaurar padrão
+          </button>
+        </div>
+
+        ${EMAIL_TYPE_GROUPS.map(group => {
+          const groupCount = group.types.length;
+          const enabledCount = group.types.filter(t => enabledTypes[t.id]).length;
+          const allOn = enabledCount === groupCount;
+          const noneOn = enabledCount === 0;
+          return `
+            <div class="card" style="margin-bottom:12px;">
+              <div class="card-header" style="padding:14px 18px;">
+                <div>
+                  <div class="card-title" style="font-size:0.9375rem;">${esc(group.icon)} ${esc(group.label)}</div>
+                  <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
+                    ${enabledCount} de ${groupCount} ativos
+                  </div>
+                </div>
+                <button class="btn btn-ghost btn-sm ep-group-toggle" data-group="${group.key}" style="font-size:0.75rem;">
+                  ${allOn ? '☒ Desmarcar todos' : noneOn ? '☐ Marcar todos' : '◧ Marcar restantes'}
+                </button>
+              </div>
+              <div class="card-body" style="padding:0;">
+                ${group.types.map(t => {
+                  const isOn = !!enabledTypes[t.id];
+                  return `
+                    <label class="ep-row" data-type="${t.id}" style="display:flex;align-items:flex-start;gap:12px;padding:10px 18px;border-top:1px solid var(--border-subtle);cursor:pointer;">
+                      <input type="checkbox" class="ep-type" data-type="${t.id}" ${isOn?'checked':''}
+                        style="margin-top:3px;accent-color:var(--brand-gold);" />
+                      <div style="flex:1;">
+                        <div style="font-size:0.875rem;font-weight:${isOn?'600':'500'};color:${isOn?'var(--text-primary)':'var(--text-secondary)'};">
+                          ${esc(t.label)}
+                        </div>
+                        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;line-height:1.4;">
+                          ${esc(t.hint)}
+                        </div>
+                      </div>
+                    </label>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <div id="ep-actions" style="position:sticky;bottom:0;background:var(--bg-base);padding:14px 0 4px;display:${dirty?'flex':'none'};gap:10px;justify-content:flex-end;border-top:1px solid var(--border-subtle);margin-top:18px;">
+        <button class="btn btn-secondary btn-sm" id="ep-discard">Descartar</button>
+        <button class="btn btn-primary btn-sm" id="ep-save">💾 Salvar alterações</button>
+      </div>
+    `;
+    bindEvents();
+  }
+
+  function bindEvents() {
+    panel.querySelector('#ep-master-toggle')?.addEventListener('change', (e) => {
+      prefs.enabled = e.target.checked;
+      dirty = true; paint();
+    });
+
+    panel.querySelectorAll('.ep-type').forEach(cb => {
+      cb.addEventListener('change', () => {
+        prefs.types = prefs.types || {};
+        prefs.types[cb.dataset.type] = cb.checked;
+        dirty = true;
+        // Atualiza só o counter do group sem repintar tudo (otimização)
+        paint();
+      });
+    });
+
+    panel.querySelectorAll('.ep-group-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const group = EMAIL_TYPE_GROUPS.find(g => g.key === btn.dataset.group);
+        if (!group) return;
+        const ids = group.types.map(t => t.id);
+        const allOn = ids.every(id => prefs.types?.[id]);
+        prefs.types = prefs.types || {};
+        ids.forEach(id => { prefs.types[id] = !allOn; });
+        dirty = true; paint();
+      });
+    });
+
+    panel.querySelector('#ep-reset')?.addEventListener('click', () => {
+      if (!confirm('Restaurar configuração padrão? Vai marcar apenas: atribuição de tarefa, atraso, menção e CSAT.')) return;
+      prefs.types = { ...DEFAULT_EMAIL_TYPES };
+      dirty = true; paint();
+    });
+
+    panel.querySelector('#ep-discard')?.addEventListener('click', async () => {
+      prefs = await getEmailPrefs();
+      dirty = false; paint();
+    });
+
+    panel.querySelector('#ep-save')?.addEventListener('click', async () => {
+      const btn = panel.querySelector('#ep-save');
+      btn.disabled = true; btn.textContent = '⏳ Salvando...';
+      try {
+        await saveEmailPrefs(prefs);
+        toast.success('Preferências salvas.');
+        dirty = false;
+        paint();
+      } catch (e) {
+        toast.error('Erro ao salvar: ' + (e.message || e));
+        btn.disabled = false; btn.textContent = '💾 Salvar alterações';
+      }
+    });
+  }
+
+  paint();
 }
