@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 4,
-  build: '20260512-team-area-accordion',
+  patch: 5,
+  build: '20260512-image-bank-overhaul',
 };
 
 /** "1.2.0" */

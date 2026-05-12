@@ -94,6 +94,12 @@ export async function renderPortalImages(container) {
       </div>
       <div class="page-header-actions" style="gap:8px;">
         <button class="btn btn-secondary btn-sm" id="img-view-toggle" title="Alternar visualização">▦</button>
+        ${/* 4.40.5+ Atalho pro módulo de cadastro de destinos (mesmo padrão
+              já existente no Portal de Dicas, agora acessível também daqui) */ ''}
+        <button class="btn btn-secondary btn-sm" id="img-dests-shortcut"
+          title="Cadastrar destinos (continentes, países, cidades)">
+          🌍 Cadastrar destinos
+        </button>
         <button class="btn btn-primary btn-sm" id="img-upload-toggle">↑ Upload</button>
       </div>
     </div>
@@ -107,41 +113,26 @@ export async function renderPortalImages(container) {
     <div id="img-category-nav" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;
       padding-bottom:12px;border-bottom:1px solid var(--border-subtle);"></div>
 
-    <!-- Sub-nav (breadcrumb de continentes) + busca + count -->
+    <!-- 4.40.5+ Busca + toggle filtros (filtros agora default ABERTO) -->
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
-      <div id="img-breadcrumb" style="display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap;
-        font-size:0.875rem;min-height:28px;"></div>
-      <div style="position:relative;">
+      <div style="position:relative;flex:1;max-width:320px;">
         <input type="text" id="img-search" placeholder="Buscar por nome ou tag…"
-          class="portal-field" style="width:220px;padding-left:28px;font-size:0.8125rem;">
+          class="portal-field" style="width:100%;padding-left:28px;font-size:0.8125rem;">
         <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);
           color:var(--text-muted);font-size:0.8125rem;">🔍</span>
       </div>
       <button class="btn btn-ghost btn-sm" id="img-filters-toggle"
-        style="font-size:0.75rem;" title="Mais filtros (tipo / quem subiu / data)">
-        ⚙ Mais filtros
+        style="font-size:0.75rem;" title="Mostrar/ocultar filtros avançados">
+        ⚙ Filtros
       </button>
-      <span id="img-count" style="font-size:0.8125rem;color:var(--text-muted);white-space:nowrap;"></span>
+      <span id="img-count" style="font-size:0.8125rem;color:var(--text-muted);white-space:nowrap;margin-left:auto;"></span>
     </div>
 
-    <!-- 4.35.32+ Barra de filtros avançados (categoria/tipo/uploader/data) -->
-    <div id="img-filters-bar" style="display:none;margin-bottom:16px;padding:12px 16px;
+    <!-- 4.35.32+ Barra de filtros (categoria/uploader/data + continente/país/cidade) -->
+    <!-- 4.40.5+ Default ABERTO. Localização (continente/país/cidade) movida pra cá. -->
+    <div id="img-filters-bar" style="display:block;margin-bottom:16px;padding:12px 16px;
       background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-md);">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:5px;">
-          <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Categoria:</span>
-          <select id="img-filter-category" class="filter-select" style="font-size:0.75rem;min-width:140px;">
-            <option value="">Todas</option>
-            ${ASSET_CATEGORIES.map(c => `<option value="${c.key}">${c.icon} ${esc(c.label)}</option>`).join('')}
-          </select>
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;">
-          <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Tipo:</span>
-          <select id="img-filter-type" class="filter-select" style="font-size:0.75rem;min-width:140px;">
-            <option value="">Todos</option>
-            ${IMAGE_TYPES.map(t => `<option value="${t.key}">${t.icon} ${esc(t.label)}</option>`).join('')}
-          </select>
-        </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
         <div style="display:flex;align-items:center;gap:5px;">
           <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Quem subiu:</span>
           <select id="img-filter-uploader" class="filter-select" style="font-size:0.75rem;min-width:160px;">
@@ -163,6 +154,9 @@ export async function renderPortalImages(container) {
           ↻ Limpar
         </button>
       </div>
+      ${/* 4.40.5+ Drill-down de localização agora vive aqui (antes era breadcrumb solto acima) */ ''}
+      <div id="img-loc-filter" style="padding-top:10px;border-top:1px dashed var(--border-subtle);
+        display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:0.8125rem;min-height:28px;"></div>
     </div>
 
     <!-- Gallery -->
@@ -203,20 +197,15 @@ export async function renderPortalImages(container) {
     renderGallery();
   });
 
-  // 4.35.32+ Filtros avan\u00e7ados
+  // 4.35.32+ Filtros avan\u00e7ados \u2014 4.40.5+ default open, sem categoria/tipo
+  // (categoria vem das pills do topo; tipo foi removido \u2014 tratado em /dicas).
   document.getElementById('img-filters-toggle')?.addEventListener('click', () => {
     const bar = document.getElementById('img-filters-bar');
     if (bar) bar.style.display = bar.style.display === 'none' ? 'block' : 'none';
   });
-  document.getElementById('img-filter-category')?.addEventListener('change', e => {
-    _filterCategory = e.target.value;
-    navContinent = ''; navCountry = ''; navCity = '';
-    loadImages({ reset: true });
-  });
-  // 4.35.34+ Mudanças nestes filtros invalidam os contadores das pills de categoria
-  document.getElementById('img-filter-type')?.addEventListener('change', e => {
-    _filterType = e.target.value; _categoryCounts = null; loadImages({ reset: true });
-  });
+  // 4.40.5+ Removidos handlers de img-filter-category e img-filter-type:
+  // - categoria: agora navegada pelas pills do topo (renderCategoryNav)
+  // - tipo: campo removido — tratado em /dicas e /roteiros conforme uso
   document.getElementById('img-filter-uploader')?.addEventListener('change', e => {
     _filterUploader = e.target.value; _categoryCounts = null; loadImages({ reset: true });
   });
@@ -224,12 +213,16 @@ export async function renderPortalImages(container) {
     _filterDate = e.target.value; _categoryCounts = null; loadImages({ reset: true });
   });
   document.getElementById('img-filters-clear')?.addEventListener('click', () => {
-    _filterCategory = _filterType = _filterUploader = _filterDate = '';
+    _filterUploader = _filterDate = '';
     navContinent = ''; navCountry = ''; navCity = '';
     _categoryCounts = null;
-    ['img-filter-category','img-filter-type','img-filter-uploader','img-filter-date']
+    ['img-filter-uploader','img-filter-date']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     loadImages({ reset: true });
+  });
+  // 4.40.5+ Atalho pro módulo de cadastro de destinos
+  document.getElementById('img-dests-shortcut')?.addEventListener('click', () => {
+    location.hash = 'portal-destinations';
   });
 
   // 4.35.32+ "Carregar mais"
@@ -287,35 +280,40 @@ function uploadPanelHtml() {
 
       <!-- Step 2: Per-image metadata (appears after drop) -->
       <div id="img-batch-list" style="display:none;">
-        <div style="padding:16px 24px;background:var(--bg-surface);
+        ${/* 4.40.5+ Action bar STICKY no topo da viewport ao scroll. Botões
+              'Aplicar a todas' e 'Enviar todas' ficam sempre visíveis. */ ''}
+        <div id="img-batch-actions" style="padding:14px 24px;background:var(--bg-surface);
           border-bottom:1px solid var(--border-subtle);
-          display:flex;align-items:center;justify-content:space-between;">
-          <div>
+          display:flex;align-items:center;justify-content:space-between;gap:12px;
+          position:sticky;top:0;z-index:20;
+          box-shadow:0 2px 8px rgba(0,0,0,.18);">
+          <div style="min-width:0;flex:1;">
             <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
               letter-spacing:.07em;color:var(--text-muted);">2 · Configure cada imagem</div>
             <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:2px;">
-              Preencha destino, tipo e tags. Campos em branco herdam os valores padrão abaixo.
+              Campos em branco herdam os valores padrão abaixo.
             </div>
           </div>
-          <button id="img-upload-all-btn" class="btn btn-primary btn-sm" style="white-space:nowrap;">
-            ↑ Enviar todas
-          </button>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <button id="img-apply-defaults" class="btn btn-secondary btn-sm"
+              style="white-space:nowrap;font-size:0.75rem;"
+              title="Copia os valores padrão pra cada imagem da fila">
+              ↓ Aplicar a todas
+            </button>
+            <button id="img-upload-all-btn" class="btn btn-primary btn-sm" style="white-space:nowrap;">
+              ↑ Enviar todas
+            </button>
+          </div>
         </div>
 
         <!-- Default values (apply to all that don't have individual values) -->
-        <div style="padding:16px 24px;background:var(--brand-gold)08;
+        <div data-defaults-block style="padding:16px 24px;background:var(--brand-gold)08;
           border-bottom:1px solid var(--border-subtle);">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-            <div style="font-size:0.75rem;font-weight:600;color:var(--brand-gold);">
-              ◈ Valores padrão — aplicados a todas as imagens sem preenchimento individual
-            </div>
-            <button id="img-apply-defaults" class="btn btn-secondary btn-sm"
-              style="font-size:0.7rem;padding:4px 10px;" title="Copia os valores padrão pra cada imagem da fila">
-              ↓ Aplicar a todas
-            </button>
+          <div style="font-size:0.75rem;font-weight:600;color:var(--brand-gold);margin-bottom:10px;">
+            ◈ Valores padrão — aplicados a todas as imagens sem preenchimento individual
           </div>
 
-          <!-- 4.35.31+ Categoria do asset (location | logo | hotel | cruise | train) -->
+          <!-- 4.35.31+ Categoria do asset (location | logo | hotel | cruise | train | restaurant) -->
           <div style="margin-bottom:12px;">
             <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">Categoria</label>
             <div id="def-asset-category-group" style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -333,34 +331,29 @@ function uploadPanelHtml() {
               `).join('')}
             </div>
             <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:6px;">
-              💡 Categorias sem localização (Logo/Hotel/Cruzeiro/Trem) escondem os campos de continente/país/cidade.
+              💡 <strong>Destino</strong> é a categoria-mãe. Hotel/Restaurante/Trem aceitam localização opcional.
             </div>
           </div>
 
-          <div id="def-location-fields" style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
-            <div>
+          <div id="def-location-fields" data-loc-wrap
+            style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div data-loc-cell>
               <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">Continente</label>
-              <select id="def-continent" class="filter-select" style="width:100%;">
+              <select id="def-continent" data-loc-continent class="filter-select" style="width:100%;">
                 <option value="">—</option>
                 ${CONTINENTS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
               </select>
             </div>
-            <div>
+            <div data-loc-cell>
               <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">País</label>
-              <select id="def-country" class="filter-select" style="width:100%;" disabled>
+              <select id="def-country" data-loc-country class="filter-select" style="width:100%;" disabled>
                 <option value="">—</option>
               </select>
             </div>
-            <div>
+            <div data-loc-cell>
               <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">Cidade</label>
-              <select id="def-city" class="filter-select" style="width:100%;" disabled>
+              <select id="def-city" data-loc-city class="filter-select" style="width:100%;" disabled>
                 <option value="">—</option>
-              </select>
-            </div>
-            <div>
-              <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:4px;">Tipo</label>
-              <select id="def-type" class="filter-select" style="width:100%;">
-                ${IMAGE_TYPES.map(t => `<option value="${t.key}">${t.icon} ${t.label}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -445,6 +438,33 @@ function _validateFiles(files) {
 }
 
 // 4.35.31+ Pills de categoria — ao trocar, esconde/mostra campos de localização.
+// 4.40.5+ Agora usa showLocation ('full' | 'continent' | 'none') em vez de
+// requiresLocation binário. Hotel/Restaurante mostram TUDO mas opcional;
+// Trem mostra só continente; Cruzeiro/Logo escondem tudo.
+function _applyLocDisplay(scope, mode) {
+  // scope: elemento raiz (defaults block ou batch row). mode: 'full'|'continent'|'none'
+  const wrap = scope.querySelector('[data-loc-wrap]') || scope.querySelector('#def-location-fields') || scope.querySelector('.batch-location-fields');
+  if (!wrap) return;
+  if (mode === 'none') {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'grid';
+  // Mostra todos por default, esconde país/cidade se 'continent'
+  const country = wrap.querySelector('[data-loc-country]') || wrap.querySelector('#def-country') || wrap.querySelector('.batch-country');
+  const city    = wrap.querySelector('[data-loc-city]')    || wrap.querySelector('#def-city')    || wrap.querySelector('.batch-city');
+  // Wraps maiores podem ter labels; subimos pro parent direto
+  const hideEl = (el, hide) => {
+    if (!el) return;
+    const cellParent = el.closest('[data-loc-cell]') || el.parentElement;
+    if (cellParent) cellParent.style.display = hide ? 'none' : '';
+  };
+  hideEl(country, mode === 'continent');
+  hideEl(city,    mode === 'continent');
+  // Ajusta colunas do grid dinamicamente
+  wrap.style.gridTemplateColumns = mode === 'continent' ? '1fr' : '1fr 1fr 1fr';
+}
+
 function wireAssetCategoryPills() {
   const group = document.getElementById('def-asset-category-group');
   if (!group) return;
@@ -460,26 +480,26 @@ function wireAssetCategoryPills() {
         p.style.borderColor = active ? 'var(--brand-gold)' : 'var(--border-subtle)';
         p.style.color = active ? 'var(--brand-gold)' : 'var(--text-secondary)';
       });
-      // Esconde/mostra campos de localização
-      const locFields = document.getElementById('def-location-fields');
-      const cfg = ASSET_CATEGORIES.find(c => c.key === cat);
-      if (locFields) locFields.style.display = (cfg?.requiresLocation === false) ? 'none' : 'grid';
-      // Aplica também aos batch rows que já existem
-      document.querySelectorAll('.batch-asset-category-wrap').forEach(w => {
-        const rowCat = w.dataset.id;
-        const rowLoc = document.querySelector(`.batch-location-fields[data-id="${rowCat}"]`);
-        if (rowLoc) rowLoc.style.display = (cfg?.requiresLocation === false) ? 'none' : 'grid';
+      // Esconde/mostra campos de localização nos defaults
+      const defaultsBlock = document.getElementById('def-location-fields')?.closest('[data-defaults-block]') || document;
+      _applyLocDisplay(defaultsBlock, _locDisplayFor(cat));
+      // Aplica também aos batch rows que já existem (cada row tem sua categoria
+      // própria, mas se ainda não foi selecionada individualmente, segue o default)
+      document.querySelectorAll('[id^="batch-row-"]').forEach(row => {
+        const rowCat = row.querySelector(`input[name^="row-asset-category-"]:checked`)?.value || cat;
+        _applyLocDisplay(row, _locDisplayFor(rowCat));
       });
     });
   });
 }
 
 // 4.35.31+ Copia valores padrão pra todos os batch rows.
+// 4.40.5+ Removido campo 'Tipo' — type agora é 'galeria' default (tratado no
+// modal de dicas/roteiros conforme uso). 'def-copyright' segue sendo aplicado.
 function applyDefaultsToAllRows() {
   const defContinent = document.getElementById('def-continent')?.value || '';
   const defCountry   = document.getElementById('def-country')?.value || '';
   const defCity      = document.getElementById('def-city')?.value || '';
-  const defType      = document.getElementById('def-type')?.value || 'galeria';
   const defCopyright = document.getElementById('def-copyright')?.value || '';
   const defCategory  = document.querySelector('input[name="def-asset-category"]:checked')?.value || 'location';
 
@@ -505,7 +525,6 @@ function applyDefaultsToAllRows() {
       setVal('.batch-country', defCountry);
       setTimeout(() => setVal('.batch-city', defCity), 30);
     }, 30);
-    setVal('.batch-type', defType);
     setVal('.batch-copyright', defCopyright);
     count++;
   });
@@ -600,32 +619,35 @@ function buildBatchList(files) {
             `).join('')}
           </div>
 
-          <!-- Row 2: continent / country / city / type (esconde quando categoria sem localização) -->
-          <div class="batch-location-fields" data-id="${id}"
-            style="display:${defaultCatCfg.requiresLocation === false ? 'none' : 'grid'};
-            grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
-            <select class="filter-select batch-continent" data-id="${id}" style="font-size:0.75rem;">
-              <option value="">Continente</option>
-              ${CONTINENTS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
-            </select>
-            <select class="filter-select batch-country" data-id="${id}" style="font-size:0.75rem;" disabled>
-              <option value="">País</option>
-            </select>
-            <select class="filter-select batch-city" data-id="${id}" style="font-size:0.75rem;" disabled>
-              <option value="">Cidade</option>
-            </select>
-            <select class="filter-select batch-type" data-id="${id}" style="font-size:0.75rem;">
-              ${IMAGE_TYPES.map(t => `<option value="${t.key}">${t.icon} ${t.label}</option>`).join('')}
-            </select>
+          <!-- Row 2: continent / country / city (esconde/ajusta conforme categoria) -->
+          <div class="batch-location-fields" data-id="${id}" data-loc-wrap
+            style="display:${_locDisplayFor(defaultCategory) === 'none' ? 'none' : 'grid'};
+            grid-template-columns:${_locDisplayFor(defaultCategory) === 'continent' ? '1fr' : '1fr 1fr 1fr'};gap:6px;">
+            <div data-loc-cell>
+              <select class="filter-select batch-continent" data-id="${id}" data-loc-continent style="font-size:0.75rem;width:100%;">
+                <option value="">Continente</option>
+                ${CONTINENTS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+              </select>
+            </div>
+            <div data-loc-cell style="${_locDisplayFor(defaultCategory) === 'continent' ? 'display:none;' : ''}">
+              <select class="filter-select batch-country" data-id="${id}" data-loc-country style="font-size:0.75rem;width:100%;" disabled>
+                <option value="">País</option>
+              </select>
+            </div>
+            <div data-loc-cell style="${_locDisplayFor(defaultCategory) === 'continent' ? 'display:none;' : ''}">
+              <select class="filter-select batch-city" data-id="${id}" data-loc-city style="font-size:0.75rem;width:100%;" disabled>
+                <option value="">Cidade</option>
+              </select>
+            </div>
           </div>
 
-          <!-- Row 2b: place name (for matching with tip items) -->
+          <!-- 4.40.5+ Row 2b: descrição da foto (era 'Nome do lugar') -->
           <div>
             <input type="text" class="portal-field batch-placename" data-id="${id}"
               style="font-size:0.8125rem;width:100%;"
-              placeholder="Nome do lugar que esta foto representa (ex: Torre Eiffel, Hotel Copacabana Palace)">
+              placeholder="Descrição da foto — ex: Torre Eiffel ao pôr-do-sol, fachada do Hotel Copacabana Palace…">
             <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:3px;">
-              💡 Quando informado, o sistema usa esta foto especificamente para este lugar nas dicas geradas.
+              💡 Quando preenchido, o sistema usa esta foto especificamente para este lugar nas dicas geradas.
             </div>
           </div>
 
@@ -685,9 +707,8 @@ function buildBatchList(files) {
           p.style.borderColor = active ? 'var(--brand-gold)' : 'var(--border-subtle)';
           p.style.color = active ? 'var(--brand-gold)' : 'var(--text-muted)';
         });
-        const locFields = row.querySelector(`.batch-location-fields[data-id="${id}"]`);
-        const cfg = ASSET_CATEGORIES.find(c => c.key === cat);
-        if (locFields) locFields.style.display = (cfg?.requiresLocation === false) ? 'none' : 'grid';
+        // 4.40.5+ usa novo sistema showLocation (full|continent|none)
+        _applyLocDisplay(row, _locDisplayFor(cat));
       });
     });
 
@@ -750,7 +771,8 @@ async function uploadBatch() {
   const defContinent = document.getElementById('def-continent')?.value || '';
   const defCountry   = document.getElementById('def-country')?.value   || '';
   const defCity      = document.getElementById('def-city')?.value      || '';
-  const defType      = document.getElementById('def-type')?.value      || 'galeria';
+  // 4.40.5+ Campo 'Tipo' removido do form — fica fixo em 'galeria'.
+  const defType      = 'galeria';
   // 4.35.31+ novos defaults: categoria + copyright
   const defCopyright = document.getElementById('def-copyright')?.value || '';
   const defCategory  = document.querySelector('input[name="def-asset-category"]:checked')?.value || 'location';
@@ -773,7 +795,9 @@ async function uploadBatch() {
     const continent = requiresLoc ? (row.querySelector(`.batch-continent[data-id="${id}"]`)?.value || defContinent) : '';
     const country   = requiresLoc ? (row.querySelector(`.batch-country[data-id="${id}"]`)?.value   || defCountry) : '';
     const city      = requiresLoc ? (row.querySelector(`.batch-city[data-id="${id}"]`)?.value      || defCity) : '';
-    const type      = row.querySelector(`.batch-type[data-id="${id}"]`)?.value      || defType;
+    // 4.40.5+ Tipo fixo em 'galeria' (campo removido do form — definido no
+    // momento de uso em /dicas ou /roteiros conforme a função da foto)
+    const type      = defType;
     const name      = row.querySelector(`.batch-name[data-id="${id}"]`)?.value?.trim() || file.name;
     const placeName = row.querySelector(`.batch-placename[data-id="${id}"]`)?.value?.trim() || '';
     const copyright = row.querySelector(`.batch-copyright[data-id="${id}"]`)?.value?.trim() || defCopyright;
@@ -840,6 +864,11 @@ async function uploadBatch() {
         if (panel)     panel.style.display = 'none';
         const toggleBtn = document.getElementById('img-upload-toggle');
         if (toggleBtn) toggleBtn.textContent = '↑ Upload';
+        // 4.40.5+ Limpa o campo de direitos autorais default — antes ele
+        // persistia entre uploads, fazendo o sistema "auto-preencher" copyright
+        // do upload anterior na próxima rodada.
+        const copyEl = document.getElementById('def-copyright');
+        if (copyEl) copyEl.value = '';
       } else {
         // Some failed — only remove successful rows, keep failed ones
         const ir = document.getElementById('img-item-rows');
@@ -912,22 +941,30 @@ async function _fetchCategoryCounts() {
     const allCatFilters = { ..._getFiltersForServer() };
     delete allCatFilters.assetCategory;
     const { docs } = await fetchImagesPage({ ...allCatFilters, pageSize: 1000 });
-    const counts = { all: docs.length, location: 0, logo: 0, hotel: 0, cruise: 0, train: 0 };
+    const counts = { all: docs.length, location: 0, logo: 0, hotel: 0, restaurant: 0, cruise: 0, train: 0 };
     docs.forEach(d => {
       const k = d.assetCategory || 'location';
       if (counts[k] !== undefined) counts[k]++;
     });
     _categoryCounts = counts;
   } catch {
-    _categoryCounts = { all: allImages.length, location: 0, logo: 0, hotel: 0, cruise: 0, train: 0 };
+    _categoryCounts = { all: allImages.length, location: 0, logo: 0, hotel: 0, restaurant: 0, cruise: 0, train: 0 };
   }
+}
+
+// 4.40.5+ Helper que devolve quais campos de localização mostrar pra uma categoria.
+// Substitui o flag binário requiresLocation pelo trio { full / continent / none }.
+function _locDisplayFor(catKey) {
+  const cfg = ASSET_CATEGORIES.find(c => c.key === catKey) || ASSET_CATEGORIES[0];
+  if (cfg.showLocation) return cfg.showLocation;
+  return cfg.requiresLocation === false ? 'none' : 'full';
 }
 
 async function renderCategoryNav() {
   const el = document.getElementById('img-category-nav');
   if (!el) return;
   if (!_categoryCounts) await _fetchCategoryCounts();
-  const counts = _categoryCounts || { all: 0, location: 0, logo: 0, hotel: 0, cruise: 0, train: 0 };
+  const counts = _categoryCounts || { all: 0, location: 0, logo: 0, hotel: 0, restaurant: 0, cruise: 0, train: 0 };
 
   // Pills: Todas + 5 categorias
   const pills = [
@@ -961,9 +998,7 @@ async function renderCategoryNav() {
       _filterCategory = btn.dataset.cat;
       // Reset continent ao trocar de categoria (não faz sentido manter "Brasil" quando vai pra Logos)
       navContinent = ''; navCountry = ''; navCity = '';
-      // Sincroniza com o select escondido (em "Mais filtros")
-      const sel = document.getElementById('img-filter-category');
-      if (sel) sel.value = _filterCategory;
+      // 4.40.5+ Não há mais select 'img-filter-category' (categoria é só pelas pills)
       loadImages({ reset: true });
     });
   });
@@ -993,19 +1028,19 @@ function populateUploaderFilter() {
  * vazio (continent é '' nesses docs).
  */
 function renderBreadcrumb() {
-  const el = document.getElementById('img-breadcrumb');
+  // 4.40.5+ Target movido pra dentro do filtro bar (#img-loc-filter)
+  const el = document.getElementById('img-loc-filter');
   if (!el) return;
 
-  // Em categorias não-location, mostra apenas um label informativo
-  if (_filterCategory && _filterCategory !== 'location') {
-    const cat = ASSET_CATEGORIES.find(c => c.key === _filterCategory);
-    el.innerHTML = cat
-      ? `<span style="color:var(--text-secondary);font-weight:500;">
-           ${cat.icon} Categoria: <strong style="color:var(--brand-gold);">${esc(cat.label.replace(' (com localização)', ''))}</strong>
-         </span>`
-      : '';
+  // 4.40.5+ Localização só faz sentido pras categorias que mostram localização
+  // (Destino/Hotel/Restaurante/Trem). Logo/Cruzeiro: escondemos o filtro de loc.
+  const showsLoc = !_filterCategory || _locDisplayFor(_filterCategory) !== 'none';
+  if (!showsLoc) {
+    el.innerHTML = '';
+    el.style.display = 'none';
     return;
   }
+  el.style.display = 'flex';
 
   const continents = [...new Set(allImages.map(i => i.continent).filter(Boolean))].sort();
 
@@ -1328,19 +1363,25 @@ function openEditModal(imgId) {
 
   const modal = document.createElement('div');
   modal.id = 'img-edit-modal';
+  // 4.40.5+ Modal agora respeita max-height 90vh + scroll interno. Antes
+  // ocupava 100% da altura e usuário ficava sem como fechar (cabeçalho/Footer
+  // saíam da viewport em telas menores). Backdrop-click também fecha.
   modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2500;
     display:flex;align-items:center;justify-content:center;padding:20px;`;
   modal.innerHTML = `
-    <div class="card" style="width:100%;max-width:480px;padding:0;overflow:hidden;">
+    <div class="card" style="width:100%;max-width:480px;max-height:90vh;
+      padding:0;overflow:hidden;display:flex;flex-direction:column;">
       <div style="padding:18px 24px;background:var(--bg-surface);
-        border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:10px;">
+        border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:10px;
+        flex-shrink:0;">
         <div style="flex:1;font-weight:700;">Editar imagem</div>
         <button id="edit-img-close" style="border:none;background:none;cursor:pointer;
           font-size:1.25rem;color:var(--text-muted);">✕</button>
       </div>
-      <div style="padding:24px;display:flex;flex-direction:column;gap:14px;">
+      <div style="padding:24px;display:flex;flex-direction:column;gap:14px;
+        overflow-y:auto;flex:1;min-height:0;">
         <img src="${esc(img.url)}" alt=""
-          style="width:100%;height:160px;object-fit:cover;border-radius:var(--radius-sm);">
+          style="width:100%;height:160px;object-fit:cover;border-radius:var(--radius-sm);flex-shrink:0;">
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
             Nome da imagem</label>
@@ -1349,11 +1390,11 @@ function openEditModal(imgId) {
         </div>
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
-            Lugar representado
+            Descrição da foto
             <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
           <input type="text" id="edit-img-placename" value="${esc(img.placeName||'')}"
             class="portal-field" style="width:100%;"
-            placeholder="Ex: Torre Eiffel, Restaurante Jules Verne, Museu do Louvre">
+            placeholder="Ex: Torre Eiffel ao pôr-do-sol, fachada do Hotel Copacabana Palace…">
           <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
             Quando preenchido, esta foto é usada especificamente para este lugar nas dicas geradas.
           </div>
@@ -1364,20 +1405,7 @@ function openEditModal(imgId) {
           <input type="text" id="edit-img-tags" value="${esc((img.tags||[]).join(', '))}"
             class="portal-field" style="width:100%;">
         </div>
-        <div>
-          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
-            Tipo</label>
-          <select id="edit-img-type" class="filter-select" style="width:100%;">
-            ${IMAGE_TYPES.map(t =>
-              `<option value="${t.key}" ${img.type===t.key?'selected':''}>${t.icon} ${t.label}</option>`
-            ).join('')}
-          </select>
-          <div id="edit-type-desc"
-            style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;line-height:1.5;
-            padding:8px 10px;background:var(--bg-surface);border-radius:var(--radius-sm);">
-            ${IMAGE_TYPES.find(t=>t.key===(img.type||'galeria'))?.desc||''}
-          </div>
-        </div>
+        ${/* 4.40.5+ Campo 'Tipo' removido — tratado no momento de uso em /dicas e /roteiros */ ''}
         <!-- 4.35.31+ Categoria do asset (read-only — não pode trocar depois do upload pq mudaria o path R2) -->
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
@@ -1404,7 +1432,7 @@ function openEditModal(imgId) {
         </div>
       </div>
       <div style="padding:14px 24px;border-top:1px solid var(--border-subtle);
-        background:var(--bg-surface);display:flex;gap:8px;justify-content:flex-end;">
+        background:var(--bg-surface);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0;">
         <button id="edit-img-cancel" class="btn btn-ghost btn-sm">Cancelar</button>
         <button id="edit-img-save" class="btn btn-primary btn-sm">Salvar</button>
       </div>
@@ -1415,24 +1443,18 @@ function openEditModal(imgId) {
   const close = () => modal.remove();
   document.getElementById('edit-img-close')?.addEventListener('click', close);
   document.getElementById('edit-img-cancel')?.addEventListener('click', close);
-  // Backdrop-click não fecha — só X/Cancelar.
-
-  document.getElementById('edit-img-type')?.addEventListener('change', e => {
-    const desc = IMAGE_TYPES.find(t => t.key === e.target.value)?.desc || '';
-    const el   = document.getElementById('edit-type-desc');
-    if (el) el.textContent = desc;
-  });
+  // 4.40.5+ Backdrop click fecha (UX padrão de modais)
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
 
   document.getElementById('edit-img-save')?.addEventListener('click', async () => {
     const name      = document.getElementById('edit-img-name')?.value.trim();
     const placeName = document.getElementById('edit-img-placename')?.value.trim() || '';
     const tags = (document.getElementById('edit-img-tags')?.value || '')
       .split(',').map(t => t.trim()).filter(Boolean);
-    const type = document.getElementById('edit-img-type')?.value;
-    // 4.35.31+ inclui copyright no patch
+    // 4.40.5+ inclui copyright no patch. Type não é mais editado aqui.
     const copyright = document.getElementById('edit-img-copyright')?.value.trim() || '';
     try {
-      await updateImageMeta(imgId, { name, placeName, tags, type, copyright });
+      await updateImageMeta(imgId, { name, placeName, tags, copyright });
       toast.success('Imagem atualizada.');
       close();
       await loadImages();
