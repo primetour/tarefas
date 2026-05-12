@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 36,
-  patch: 0,
-  build: '20260512-virtual-office-mvp',
+  patch: 1,
+  build: '20260512-office-layout-polish',
 };
 
 /** "1.2.0" */

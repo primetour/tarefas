@@ -116,14 +116,20 @@ const ROOMS = [
  * Cada tile = 280px width × 160px height (vista isométrica).
  * Iso projection: x_iso = (col - row) * (W/2), y_iso = (col + row) * (H/2)
  */
-const TILE_W = 280;
-const TILE_H = 160;
-const ORIGIN_X = 700;
-const ORIGIN_Y = 80;
+// 4.36.1+ tiles maiores + mais espaço; salas não se sobrepõem mais
+const TILE_W = 360;
+const TILE_H = 200;
+const TILE_GAP = 12;  // espaço entre tiles
+const ORIGIN_X = 760;
+const ORIGIN_Y = 60;
+const WALL_HEIGHT = 24;
 
 function gridToIso(col, row) {
-  const x = ORIGIN_X + (col - row) * (TILE_W / 2);
-  const y = ORIGIN_Y + (col + row) * (TILE_H / 2);
+  // 4.36.1+ TILE_GAP adiciona respiro entre salas → não sobreposição visual
+  const STEP_W = TILE_W + TILE_GAP;
+  const STEP_H = TILE_H + TILE_GAP;
+  const x = ORIGIN_X + (col - row) * (STEP_W / 2);
+  const y = ORIGIN_Y + (col + row) * (STEP_H / 2);
   return { x, y };
 }
 
@@ -312,7 +318,7 @@ function buildSvg(peopleByRoom) {
   // Calcula viewBox: maior diagonal = (col+row) max
   // viewBox aproximado pra acomodar todas as salas + paredes + avatares
   return `
-    <svg viewBox="-100 0 1500 920" xmlns="http://www.w3.org/2000/svg" style="
+    <svg viewBox="0 0 1640 1080" xmlns="http://www.w3.org/2000/svg" style="
       width:100%;height:auto;display:block;
       filter:drop-shadow(0 8px 24px rgba(0,0,0,0.15));
     ">
@@ -334,42 +340,42 @@ function buildSvg(peopleByRoom) {
 
 /* ─── Render de uma sala (parede + chão + label + avatares) ── */
 function renderRoom(room, cx, cy, people) {
-  const FLOOR_ALPHA = '20';   // hex 20 = ~12% opacity
-  const WALL_LEFT_ALPHA = '40';  // mais escuro
-  const WALL_RIGHT_ALPHA = '25';
+  const FLOOR_ALPHA = '22';   // hex 22 = ~13% opacity
+  const WALL_LEFT_ALPHA = '50';  // mais escuro
+  const WALL_RIGHT_ALPHA = '30';
 
   // Posiciona avatares dentro da sala
-  // - Distribui em círculo/grid pra não sobrepor
   const avatarHtml = people.map((p, i) => {
     const offset = avatarOffsetInRoom(i, people.length);
     const ax = cx + offset.x;
-    const ay = cy + offset.y + TILE_H/2;  // centraliza no chão
+    const ay = cy + offset.y + TILE_H/2;
     return renderAvatar(p, ax, ay);
   }).join('');
 
-  // Label "flutuando" acima da sala (canto traseiro)
+  // 4.36.1+ Label posicionado DENTRO da sala (no topo do rombus, atrás dos avatares)
+  // — não flutua entre salas, fica claro a que sala pertence
   const labelX = cx;
-  const labelY = cy - 8;
+  const labelY = cy + 22;  // logo abaixo do top point do rombus
   const count = people.length;
+  const isEmpty = count === 0;
 
   return `
     <g class="office-room" data-room="${room.id}">
       <!-- Parede esquerda (mais escura) -->
-      <path d="${leftWallPath(cx, cy, 38)}" fill="${room.color}${WALL_LEFT_ALPHA}" stroke="${room.color}" stroke-width="1" opacity="0.85"/>
+      <path d="${leftWallPath(cx, cy, WALL_HEIGHT)}" fill="${room.color}${WALL_LEFT_ALPHA}" stroke="${room.color}" stroke-width="1" opacity="0.85"/>
       <!-- Parede direita -->
-      <path d="${rightWallPath(cx, cy, 38)}" fill="${room.color}${WALL_RIGHT_ALPHA}" stroke="${room.color}" stroke-width="1" opacity="0.7"/>
+      <path d="${rightWallPath(cx, cy, WALL_HEIGHT)}" fill="${room.color}${WALL_RIGHT_ALPHA}" stroke="${room.color}" stroke-width="1" opacity="0.7"/>
       <!-- Chão -->
-      <polygon points="${floorPolygon(cx, cy)}" fill="${room.color}${FLOOR_ALPHA}" stroke="${room.color}" stroke-width="1.5" stroke-opacity="0.5"/>
+      <polygon points="${floorPolygon(cx, cy)}" fill="${room.color}${FLOOR_ALPHA}" stroke="${room.color}" stroke-width="1.5" stroke-opacity="0.6"/>
       <polygon points="${floorPolygon(cx, cy)}" fill="url(#floorTexture)" pointer-events="none"/>
 
-      <!-- Label da sala -->
-      <g transform="translate(${labelX}, ${labelY})">
-        <rect x="-70" y="-22" width="140" height="26" rx="13"
-          fill="var(--bg-card, #1A2332)" stroke="${room.color}" stroke-width="1.5" opacity="0.95"/>
-        <text x="0" y="-4" text-anchor="middle"
-          style="font-family:-apple-system,sans-serif;font-size:13px;font-weight:600;fill:var(--text-primary, #E8ECF1);">
-          ${esc(room.icon)} ${esc(room.label)}
-          ${count > 0 ? `<tspan style="fill:${room.color};font-weight:700;"> · ${count}</tspan>` : ''}
+      <!-- Label DENTRO da sala, no topo -->
+      <g transform="translate(${labelX}, ${labelY})" style="pointer-events:none;">
+        <rect x="-78" y="-13" width="156" height="22" rx="11"
+          fill="${room.color}" opacity="${isEmpty ? '0.55' : '0.95'}"/>
+        <text x="0" y="2" text-anchor="middle"
+          style="font-family:-apple-system,sans-serif;font-size:12px;font-weight:600;fill:#fff;letter-spacing:0.01em;">
+          ${esc(room.icon)} ${esc(room.label)}${count > 0 ? ` · ${count}` : ''}
         </text>
       </g>
 
@@ -384,13 +390,15 @@ function renderRoom(room, cx, cy, people) {
  * Coordenadas relativas ao centro (cx, cy + TILE_H/2).
  */
 function avatarOffsetInRoom(idx, total) {
-  // Layout em grid 3 cols x N rows, com jitter pra parecer natural
-  const colsPerRow = 3;
+  // 4.36.1+ Layout em grid 4 cols, distribuídos abaixo do label
+  // O label fica em y ≈ +22 (topo do rombus); avatares começam em +50
+  const colsPerRow = 4;
   const col = idx % colsPerRow;
   const row = Math.floor(idx / colsPerRow);
-  const spacing = 32;
-  const x = (col - 1) * spacing;
-  const y = -10 + row * 22;  // levemente acima do chão pra dar "3D"
+  const spacing = 38;
+  const startY = 30;  // abaixo do label
+  const x = (col - (colsPerRow - 1) / 2) * spacing;
+  const y = startY + row * 28;
   return { x, y };
 }
 
