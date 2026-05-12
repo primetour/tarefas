@@ -537,7 +537,7 @@ export async function openProjectModal(project = null, { defaultWorkspaceId = nu
               style="background:${isMember?'rgba(212,168,67,0.15)':'var(--bg-elevated)'};
                 border-color:${isMember?'rgba(212,168,67,0.4)':'transparent'};
                 cursor:pointer;">
-              <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;">
+              <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};width:20px;height:20px;font-size:0.5rem;position:relative;">
                 ${userAvatarInner(u)}
               </div>
               ${esc(u.name.split(' ')[0])}

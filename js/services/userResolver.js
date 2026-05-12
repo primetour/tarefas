@@ -245,6 +245,9 @@ function _normalize(u) {
     name,
     email:       u.email || '',
     avatarColor: u.avatarColor || '#6B7280',
+    // 4.35.30+ photoURL faz parte do contrato pra `userAvatarInner` mostrar
+    // foto SSO. Antes faltava → workspaces/squads sempre mostravam iniciais.
+    photoURL:    u.photoURL || null,
     initials:    name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?',
     role:        u.role || u.roleId || 'member',
     sector:      u.sector || u.department || '',

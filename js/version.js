@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 29,
-  build: '20260512-presence-idle-time-fix',
+  patch: 30,
+  build: '20260512-photos-everywhere',
 };
 
 /** "1.2.0" */

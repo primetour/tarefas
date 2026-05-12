@@ -24,6 +24,7 @@ import {
   WORKSPACE_ICONS, WORKSPACE_COLORS,
 } from '../services/workspaces.js';
 import { resolveUserSync, resolveUsers } from '../services/userResolver.js';
+import { userAvatarInner } from '../components/userAvatar.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -139,8 +140,8 @@ function renderGrid() {
       // pra UIDs antigos/pending que não estavam no cache.
       const u = resolveUserSync(mid) || { name: 'Usuário', avatarColor: '#6B7280', initials: '?' };
       return `<div class="avatar avatar-sm" title="${esc(u.name)}"
-        style="background:${u.avatarColor};margin-left:-8px;border:2px solid var(--bg-card);">
-        ${u.initials}</div>`;
+        style="background:${u.avatarColor};margin-left:-8px;border:2px solid var(--bg-card);position:relative;">
+        ${userAvatarInner(u)}</div>`;
     }).join('') || '';
 
     return `
@@ -616,8 +617,8 @@ async function openMembersModal(ws) {
                 return `
                   <div style="display:flex;align-items:center;gap:10px;padding:8px;
                     border-bottom:1px solid var(--border-subtle);">
-                    <div class="avatar avatar-sm" style="background:${u.avatarColor};flex-shrink:0;">
-                      ${u.initials}
+                    <div class="avatar avatar-sm" style="background:${u.avatarColor};flex-shrink:0;position:relative;">
+                      ${userAvatarInner(u)}
                     </div>
                     <div style="flex:1;min-width:0;">
                       <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${esc(u.name)}</div>
@@ -656,14 +657,13 @@ async function openMembersModal(ws) {
             ${nonMembers.length === 0
               ? `<div class="empty-state" style="padding:24px;"><div class="empty-state-title">Todos os usuários já estão neste squad</div></div>`
               : nonMembers.map(u => {
-                  const initials = (u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
                   return `
                     <div class="ws-mm-add-row" data-uid="${u.id}"
                       data-search="${esc((u.name||'').toLowerCase()+' '+(u.email||'').toLowerCase())}"
                       style="display:flex;align-items:center;gap:10px;padding:8px;cursor:pointer;
                       border-bottom:1px solid var(--border-subtle);transition:background 0.15s;border-radius:var(--radius-sm);">
-                      <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">
-                        ${initials}
+                      <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;position:relative;">
+                        ${userAvatarInner(u)}
                       </div>
                       <div style="flex:1;min-width:0;">
                         <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${esc(u.name||'')}</div>
@@ -839,14 +839,13 @@ async function openInviteModal(wsId) {
         ${nonMembers.length ? `
           <div style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;">
             ${nonMembers.map(u => {
-              const initials = u.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
               return `
                 <div class="dropdown-item add-user-to-ws" data-uid="${u.id}"
                   style="display:flex;align-items:center;gap:10px;padding:8px 10px;
                   border-radius:var(--radius-md);cursor:pointer;border:1px solid transparent;
                   transition:all 0.15s;">
-                  <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">
-                    ${initials}
+                  <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;position:relative;">
+                    ${userAvatarInner(u)}
                   </div>
                   <div>
                     <div style="font-size:0.875rem;color:var(--text-primary);">${esc(u.name)}</div>

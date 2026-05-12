@@ -219,7 +219,12 @@ export async function getTeamAvailability(userIds, startDate, endDate) {
     const { available, absent, total } = calcAvailableDays(absences, uid, startDate, endDate);
     return {
       userId:    uid,
+      // 4.35.30+ aliases pra `userAvatarInner` funcionar (precisa de
+      // .name + .photoURL + .avatarColor). Antes faltava photoURL → caía
+      // sempre em iniciais.
+      id:        uid,
       name:      user?.name || uid,
+      photoURL:  user?.photoURL || null,
       avatarColor: user?.avatarColor || '#6B7280',
       total, available, absent,
       rate:      total ? Math.round((available / total) * 100) : 100,

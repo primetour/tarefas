@@ -564,9 +564,13 @@ async function openMembersModal() {
          </button>` : ''}
          <button class="btn btn-ghost btn-icon btn-sm sw-remove-member" data-uid="${mid}" title="${isOrphan ? 'Remover UID órfão' : 'Remover membro'}" style="color:var(--color-danger);">✕</button>`
       : '';
+    // 4.35.30+ avatarUser: objeto compatível com userAvatarInner (mostra foto SSO)
+    const avatarUser = isOrphan
+      ? { name: '?', photoURL: null, avatarColor: color }
+      : { name, photoURL: u?.photoURL || null, avatarColor: color };
     return `
       <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle);${isOrphan ? 'opacity:0.7;' : ''}">
-        <div class="avatar avatar-sm" style="background:${color};">${initials}</div>
+        <div class="avatar avatar-sm" style="background:${color};position:relative;">${userAvatarInner(avatarUser)}</div>
         <div style="flex:1;min-width:0;">
           <div style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${esc(name)}</div>
           <div style="font-size:0.75rem;color:var(--text-muted);">${esc(subText)}</div>
@@ -724,14 +728,13 @@ async function openSquadInviteModal() {
         ${nonMembers.length ? `
           <div style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;">
             ${nonMembers.map(u => {
-              const initials = (u.name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
               return `
                 <div class="dropdown-item sw-add-invite" data-uid="${u.id}"
                   style="display:flex;align-items:center;gap:10px;padding:8px 10px;
                   border-radius:var(--radius-md);cursor:pointer;border:1px solid transparent;
                   transition:all 0.15s;">
-                  <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;">
-                    ${initials}
+                  <div class="avatar avatar-sm" style="background:${u.avatarColor||'#3B82F6'};flex-shrink:0;position:relative;">
+                    ${userAvatarInner(u)}
                   </div>
                   <div>
                     <div style="font-size:0.875rem;color:var(--text-primary);">${esc(u.name)}</div>

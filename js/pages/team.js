@@ -171,7 +171,7 @@ function renderMembers(container) {
         <div class="card" style="padding:16px;">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
             <div class="avatar" style="background:${u.avatarColor||'#3B82F6'};
-              width:40px;height:40px;font-size:0.875rem;flex-shrink:0;">
+              width:40px;height:40px;font-size:0.875rem;flex-shrink:0;position:relative;">
               ${userAvatarInner(u)}
             </div>
             <div style="min-width:0;flex:1;">
@@ -450,7 +450,7 @@ async function renderTeamAvailability(container) {
           ${team.map(u => `
             <div style="padding:8px 16px;border-bottom:1px solid var(--border-subtle);">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
-                <div class="avatar avatar-sm" style="background:${u.avatarColor};flex-shrink:0;">
+                <div class="avatar avatar-sm" style="background:${u.avatarColor};flex-shrink:0;position:relative;">
                   ${userAvatarInner(u)}
                 </div>
                 <div style="flex:1;min-width:0;">
