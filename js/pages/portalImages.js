@@ -882,7 +882,10 @@ async function loadImages({ reset = true } = {}) {
   allImages = reset ? docs : [...allImages, ...docs];
   _pageCursor = lastDoc;
   _hasMore    = hasMore;
-  renderCategoryNav();
+  // 4.35.34+ renderCategoryNav é async (consulta contadores globais).
+  // Não await aqui: queremos a galeria principal pintando rápido. As pills
+  // aparecem ~200-500ms depois (sem bloquear UX).
+  renderCategoryNav().catch(e => console.warn('[portalImages] renderCategoryNav fail:', e?.message));
   renderBreadcrumb();
   populateUploaderFilter();
   renderGallery();
