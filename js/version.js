@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 39,
-  patch: 0,
-  build: '20260512-tasks-bulk-create',
+  patch: 1,
+  build: '20260512-bulk-create-visual-fixes',
 };
 
 /** "1.2.0" */

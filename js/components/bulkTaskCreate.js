@@ -21,6 +21,7 @@ let _users = [];
 let _projects = [];
 let _types = [];
 let _workspaces = [];
+let _sectors = [];
 
 let _rowIdSeq = 0;
 function newRowId() { return 'br-' + (++_rowIdSeq); }
@@ -53,18 +54,21 @@ export async function openBulkTaskCreateModal({ projectId = null, workspaceId = 
     priority: 'medium',
   };
 
-  // Pre-load dados de apoio
+  // Pre-load dados de apoio (4.39.1+ usa fetchAllWorkspaces + fetchSectors)
   try {
-    const [usersMod, projsMod, typesMod, wsMod] = await Promise.all([
+    const [usersMod, projsMod, typesMod, wsMod, sectorsMod] = await Promise.all([
       import('../services/users.js'),
       import('../services/projects.js'),
       import('../services/taskTypes.js'),
       import('../services/workspaces.js'),
+      import('../services/sectors.js'),
     ]);
     _users      = (await usersMod.fetchUsers({ active: true }).catch(() => store.get('users') || [])) || [];
     _projects   = (await projsMod.fetchProjects().catch(() => [])) || [];
     _types      = (await typesMod.fetchTaskTypes().catch(() => [])) || [];
-    _workspaces = (await wsMod.fetchWorkspaces?.().catch(() => [])) || [];
+    _workspaces = (await wsMod.fetchAllWorkspaces?.().catch(() => [])) || [];
+    _sectors    = (await sectorsMod.fetchSectors?.().catch(() => sectorsMod.getActiveSectors?.() || [])) || [];
+    if (!_sectors.length && sectorsMod.SECTORS) _sectors = sectorsMod.SECTORS.map(s => ({ name: s.name || s, id: s.id || s }));
   } catch (e) {
     console.warn('[bulkTaskCreate] erro pre-load:', e?.message);
   }
@@ -117,8 +121,13 @@ function renderContent() {
           </div>
           <div>
             <label style="font-size:0.7rem;font-weight:600;display:block;margin-bottom:4px;">Setor</label>
-            <input type="text" id="bdef-sector" class="form-input" placeholder="Ex: Marketing"
-              value="${esc(_defaults.sector || '')}" style="width:100%;font-size:0.8125rem;">
+            <select id="bdef-sector" class="form-select" style="width:100%;font-size:0.8125rem;">
+              <option value="">— Nenhum —</option>
+              ${_sectors.map(s => {
+                const name = s.name || s.id || s;
+                return `<option value="${esc(name)}" ${_defaults.sector===name?'selected':''}>${esc(name)}</option>`;
+              }).join('')}
+            </select>
           </div>
           <div>
             <label style="font-size:0.7rem;font-weight:600;display:block;margin-bottom:4px;">Tipo</label>
@@ -136,19 +145,21 @@ function renderContent() {
         </div>
       </div>
 
-      <!-- TABELA tipo Excel -->
+      <!-- 4.39.1+ TABELA com scrollbar SEMPRE visível + colunas mais largas -->
       <div style="border:1px solid var(--border-subtle);border-radius:8px;overflow:hidden;">
-        <div style="overflow-x:auto;">
-          <table id="bulk-task-table" style="width:100%;border-collapse:collapse;font-size:0.8125rem;min-width:980px;">
-            <thead style="background:var(--bg-surface);">
+        <div id="bulk-table-scroll" style="overflow-x:scroll;scrollbar-width:thin;
+          scrollbar-color:var(--brand-gold) var(--bg-surface);">
+          <table id="bulk-task-table" style="width:100%;border-collapse:separate;border-spacing:0;
+            font-size:0.8125rem;min-width:1240px;">
+            <thead style="background:var(--bg-surface);position:sticky;top:0;z-index:2;">
               <tr>
-                <th style="padding:8px 12px;width:32px;text-align:center;font-weight:600;font-size:0.7rem;color:var(--text-muted);">#</th>
-                <th style="padding:8px 12px;text-align:left;font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;">Título *</th>
-                <th style="padding:8px 12px;text-align:left;font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;width:170px;">Responsável</th>
-                <th style="padding:8px 12px;text-align:left;font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;width:170px;">Projeto</th>
-                <th style="padding:8px 12px;text-align:left;font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;width:130px;">Prazo</th>
-                <th style="padding:8px 12px;text-align:left;font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;width:120px;">Prioridade</th>
-                <th style="padding:8px 4px;width:30px;"></th>
+                <th style="padding:10px 8px;width:40px;text-align:center;font-weight:600;font-size:0.7rem;color:var(--text-muted);border-bottom:1px solid var(--border-default);">#</th>
+                <th style="padding:10px 12px;text-align:left;font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border-default);min-width:220px;">Título *</th>
+                <th style="padding:10px 12px;text-align:left;font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border-default);width:210px;">Responsável</th>
+                <th style="padding:10px 12px;text-align:left;font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border-default);width:210px;">Projeto</th>
+                <th style="padding:10px 12px;text-align:left;font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border-default);width:150px;">Prazo</th>
+                <th style="padding:10px 12px;text-align:left;font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border-default);width:160px;">Prioridade</th>
+                <th style="padding:10px 4px;width:40px;border-bottom:1px solid var(--border-default);"></th>
               </tr>
             </thead>
             <tbody id="bulk-task-rows">
@@ -156,7 +167,21 @@ function renderContent() {
             </tbody>
           </table>
         </div>
+        <!-- Hint visual: scroll lateral -->
+        <div style="padding:6px 12px;background:var(--bg-surface);border-top:1px solid var(--border-subtle);
+          font-size:0.6875rem;color:var(--text-muted);text-align:right;">
+          ← Role lateralmente pra ver todas as colunas →
+        </div>
       </div>
+
+      <style>
+        /* 4.39.1+ Scrollbar SEMPRE visível (não some) */
+        #bulk-table-scroll::-webkit-scrollbar { height: 10px; background: var(--bg-surface); }
+        #bulk-table-scroll::-webkit-scrollbar-thumb { background: var(--brand-gold); border-radius: 5px; border: 2px solid var(--bg-surface); }
+        #bulk-table-scroll::-webkit-scrollbar-thumb:hover { background: var(--brand-gold-dark, #B8902A); }
+        /* Cells maiores pra não cortar texto */
+        #bulk-task-table .bulk-cell { height: 36px !important; line-height: 1.4; padding: 4px 8px; }
+      </style>
 
       <!-- Toolbar (add line + paste) -->
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
@@ -169,42 +194,41 @@ function renderContent() {
 }
 
 function renderRow(r, idx) {
+  // 4.39.1+ Inputs maiores (36px), padding e borders mais visíveis
+  const cellStyle = 'width:100%;font-size:0.8125rem;padding:6px 10px;border:1px solid var(--border-subtle);border-radius:4px;background:var(--bg-base);';
   return `
     <tr data-row-id="${r.id}" style="border-top:1px solid var(--border-subtle);">
-      <td style="padding:6px 12px;text-align:center;color:var(--text-muted);font-size:0.75rem;">${idx + 1}</td>
-      <td style="padding:6px 8px;">
-        <input type="text" class="form-input bulk-cell" data-field="title" data-row="${r.id}"
-          value="${esc(r.title)}" placeholder="Título da tarefa…"
-          style="width:100%;font-size:0.8125rem;height:32px;">
+      <td style="padding:8px 8px;text-align:center;color:var(--text-muted);font-size:0.75rem;vertical-align:middle;">${idx + 1}</td>
+      <td style="padding:6px 8px;vertical-align:middle;">
+        <input type="text" class="bulk-cell" data-field="title" data-row="${r.id}"
+          value="${esc(r.title)}" placeholder="Título da tarefa…" style="${cellStyle}">
       </td>
-      <td style="padding:6px 8px;">
-        <select class="form-select bulk-cell" data-field="assigneeId" data-row="${r.id}"
-          style="width:100%;font-size:0.8125rem;height:32px;">
+      <td style="padding:6px 8px;vertical-align:middle;">
+        <select class="bulk-cell" data-field="assigneeId" data-row="${r.id}" style="${cellStyle}">
           <option value="">— Padrão —</option>
           ${_users.map(u => `<option value="${esc(u.id)}" ${r.assigneeId===u.id?'selected':''}>${esc(u.name || u.email || u.id)}</option>`).join('')}
         </select>
       </td>
-      <td style="padding:6px 8px;">
-        <select class="form-select bulk-cell" data-field="projectId" data-row="${r.id}"
-          style="width:100%;font-size:0.8125rem;height:32px;">
+      <td style="padding:6px 8px;vertical-align:middle;">
+        <select class="bulk-cell" data-field="projectId" data-row="${r.id}" style="${cellStyle}">
           <option value="">— Nenhum —</option>
           ${_projects.map(p => `<option value="${esc(p.id)}" ${r.projectId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
         </select>
       </td>
-      <td style="padding:6px 8px;">
-        <input type="date" class="form-input bulk-cell" data-field="dueDate" data-row="${r.id}"
-          value="${esc(r.dueDate || '')}" style="width:100%;font-size:0.8125rem;height:32px;">
+      <td style="padding:6px 8px;vertical-align:middle;">
+        <input type="date" class="bulk-cell" data-field="dueDate" data-row="${r.id}"
+          value="${esc(r.dueDate || '')}" style="${cellStyle}">
       </td>
-      <td style="padding:6px 8px;">
-        <select class="form-select bulk-cell" data-field="priority" data-row="${r.id}"
-          style="width:100%;font-size:0.8125rem;height:32px;">
+      <td style="padding:6px 8px;vertical-align:middle;">
+        <select class="bulk-cell" data-field="priority" data-row="${r.id}" style="${cellStyle}">
           <option value="">— Padrão —</option>
           ${PRIORITIES.map(p => `<option value="${esc(p.value)}" ${r.priority===p.value?'selected':''}>${esc(p.icon || '')} ${esc(p.label)}</option>`).join('')}
         </select>
       </td>
-      <td style="padding:6px 4px;text-align:center;">
-        <button class="btn btn-ghost btn-icon bulk-remove" data-row="${r.id}"
-          title="Remover linha" style="color:var(--text-muted);">✕</button>
+      <td style="padding:6px 4px;text-align:center;vertical-align:middle;">
+        <button class="bulk-remove" data-row="${r.id}" title="Remover linha"
+          style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1rem;
+          padding:6px 10px;border-radius:4px;transition:all .15s;">✕</button>
       </td>
     </tr>
   `;
