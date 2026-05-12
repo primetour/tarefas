@@ -131,7 +131,33 @@ function renderGrid() {
 
   const uid = store.get('currentUser')?.uid;
 
-  grid.innerHTML = allWorkspaces.map(ws => {
+  // 4.39.4+ Agrupa squads por sector (área). Multissetor vai pra grupo especial.
+  const groups = new Map();
+  const MULTI_KEY = '__multi__';
+  const NONE_KEY  = '__none__';
+  for (const ws of allWorkspaces) {
+    const key = ws.multiSector ? MULTI_KEY : (ws.sector?.trim() || NONE_KEY);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(ws);
+  }
+  // Ordem: Multissetor primeiro, depois áreas alfabéticas, "Sem área" por último
+  const orderedKeys = [...groups.keys()].sort((a, b) => {
+    if (a === MULTI_KEY) return -1; if (b === MULTI_KEY) return 1;
+    if (a === NONE_KEY)  return  1; if (b === NONE_KEY)  return -1;
+    return a.localeCompare(b);
+  });
+  // Sort squads dentro de cada grupo por nome
+  for (const [k, list] of groups) {
+    list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }
+
+  function groupLabel(key) {
+    if (key === MULTI_KEY) return { label: '⇌ Multissetor',  color: '#D4A843', sub: 'Aceitam membros de qualquer área' };
+    if (key === NONE_KEY)  return { label: '— Sem área —',    color: '#94A3B8', sub: 'Squads sem área atribuída' };
+    return { label: key, color: '#6366F1', sub: '' };
+  }
+
+  function renderWorkspaceCard(ws) {
     const isAdmin   = ws.adminIds?.includes(uid);
     const memberCount = ws.members?.length || 0;
     const members   = ws.members?.slice(0, 5).map(mid => {
@@ -214,6 +240,33 @@ function renderGrid() {
               </button>
             ` : ''}
           </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // 4.39.4+ Renderiza grupos por área (sector). Cada grupo: header + grid de cards
+  grid.innerHTML = orderedKeys.map(key => {
+    const list = groups.get(key);
+    const meta = groupLabel(key);
+    const cardsHtml = list.map(renderWorkspaceCard).join('');
+    return `
+      <div class="ws-group" style="grid-column:1 / -1;">
+        <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 12px;
+          padding-bottom:8px;border-bottom:1px solid var(--border-subtle);">
+          <h3 style="margin:0;font-size:0.9375rem;color:${meta.color};
+            font-weight:700;letter-spacing:0.01em;">
+            ${esc(meta.label)}
+          </h3>
+          <span style="font-size:0.75rem;color:var(--text-muted);">
+            ${list.length} squad${list.length!==1?'s':''}
+          </span>
+          ${meta.sub ? `<span style="font-size:0.6875rem;color:var(--text-muted);margin-left:auto;">${esc(meta.sub)}</span>` : ''}
+        </div>
+        <div class="ws-group-cards" style="display:grid;
+          grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;
+          margin-bottom:24px;">
+          ${cardsHtml}
         </div>
       </div>
     `;

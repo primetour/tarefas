@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 39,
-  patch: 3,
-  build: '20260512-fix-squad-invite-loop',
+  patch: 4,
+  build: '20260512-squads-grouped-by-area',
 };
 
 /** "1.2.0" */
