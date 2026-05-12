@@ -2440,29 +2440,9 @@ function openSlotModal(slot, prefillDate) {
 
       <!-- Modal body -->
       <div style="padding:24px;">
-        ${(() => {
-          // Mostra o projeto vinculado ao slot (read-only — pra trocar, redirect)
-          const slotProjId = s.projectId || activeProjectId;
-          const slotProj = availableProjects.find(p => p.id === slotProjId);
-          if (!slotProj) {
-            return `<div style="${fieldGroupStyle}padding:10px 12px;border-radius:8px;
-              background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.4);
-              color:#F59E0B;font-size:0.8125rem;">
-              ⚠ Sem projeto vinculado. Selecione um projeto antes de criar slots.
-            </div>`;
-          }
-          return `<div style="${fieldGroupStyle}padding:10px 12px;border-radius:8px;
-            background:${slotProj.color || '#D4A843'}18;border-left:3px solid ${slotProj.color || '#D4A843'};
-            display:flex;align-items:center;justify-content:space-between;gap:8px;">
-            <div style="font-size:0.8125rem;color:var(--text-primary,#E8ECF1);">
-              <span style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;">Projeto</span><br>
-              <span style="font-weight:600;">${esc(slotProj.icon || '📦')} ${esc(slotProj.name)}</span>
-            </div>
-            <a href="#projects" style="font-size:0.6875rem;color:var(--brand-gold,#D4A843);text-decoration:none;">
-              Trocar de projeto →
-            </a>
-          </div>`;
-        })()}
+        ${/* 4.35.20+ Removido o banner "Sem projeto vinculado" e o card
+              "Trocar de projeto →". Substituidos pelo campo Projeto
+              obrigatorio (dropdown) mais abaixo. */ ''}
         <!-- Title -->
         <div style="${fieldGroupStyle}">
           <label style="${labelStyle}">Titulo</label>
@@ -2500,11 +2480,13 @@ function openSlotModal(slot, prefillDate) {
           </div>
         </div>
 
-        <!-- 4.35.16+ Projeto explicito no form (antes era inferido do contexto) -->
+        <!-- 4.35.16+ Projeto explicito no form (antes era inferido do contexto)
+             4.35.20+ Agora obrigatorio: removidos avisos contextuais antigos,
+             validacao apenas via campo. -->
         <div style="${fieldGroupStyle}">
-          <label style="${labelStyle}">Projeto</label>
-          <select id="cc-f-project" style="${inputStyle}">
-            <option value="">— Sem projeto —</option>
+          <label style="${labelStyle}">Projeto <span style="color:var(--color-danger);">*</span></label>
+          <select id="cc-f-project" required style="${inputStyle}">
+            <option value="">— Selecione um projeto —</option>
             ${availableProjects.map(p => `<option value="${p.id}" ${s.projectId === p.id ? 'selected' : ''}>${esc(p.icon || '📦')} ${esc(p.name)}</option>`).join('')}
           </select>
         </div>
