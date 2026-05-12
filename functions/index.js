@@ -181,6 +181,35 @@ async function checkDailyCost(uid, agentId, capUsd) {
 }
 
 /* ═════════════════════════════════════════════════════════
+ * getAISecretsStatus — Lista quais secrets de provider estao
+ * configurados (sem expor o valor). Retorna { anthropic: true,
+ * openai: false, ... }. Usado pela UI de API Keys.
+ * ═════════════════════════════════════════════════════════ */
+export const getAISecretsStatus = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  secrets: [ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, GROQ_API_KEY],
+  maxInstances: 5,
+  timeoutSeconds: 10,
+}, async (request) => {
+  requireAuth(request);
+  const isConfigured = (v) =>
+    typeof v === 'string' && v.length > 8 && v !== 'not-configured-yet';
+  return {
+    anthropic: isConfigured(ANTHROPIC_API_KEY.value()),
+    openai:    isConfigured(OPENAI_API_KEY.value()),
+    gemini:    isConfigured(GEMINI_API_KEY.value()),
+    groq:      isConfigured(GROQ_API_KEY.value()),
+    // Tamanho aproximado pra UI confirmar visualmente (sem expor o valor)
+    lengths: {
+      anthropic: (ANTHROPIC_API_KEY.value() || '').length,
+      openai:    (OPENAI_API_KEY.value() || '').length,
+      gemini:    (GEMINI_API_KEY.value() || '').length,
+      groq:      (GROQ_API_KEY.value() || '').length,
+    },
+  };
+});
+
+/* ═════════════════════════════════════════════════════════
  * callLLM — Proxy seguro
  * ═════════════════════════════════════════════════════════ */
 export const callLLM = onCall({

@@ -67,10 +67,12 @@ export async function renderAiHub(container) {
         { id:'agents',     label:'Agentes',      icon:'◈' },
         { id:'apikeys',    label:'API Keys',     icon:'⚿' },
         { id:'connections',label:'Conexões',     icon:'🔌' },
-        { id:'knowledge',  label:'Biblioteca', icon:'📚' },
+        { id:'knowledge',  label:'Biblioteca',   icon:'📚' },
         { id:'logs',       label:'Logs',         icon:'⌚' },
         { id:'costs',      label:'Custos',       icon:'$' },
-        { id:'migration',  label:'Migração',     icon:'↻' },
+        // Aba "Migração" removida (4.35.25) — migração legada concluída.
+        // Funções ainda disponíveis via console: seedDefaultAgents,
+        // migrateLegacyToAgents, purgeLegacyCollections.
       ].map(t => `
         <button class="hub-tab-btn" data-tab="${t.id}" style="padding:10px 18px;border:none;
           background:none;cursor:pointer;font-size:0.875rem;
@@ -1232,124 +1234,188 @@ async function openAgentRunModal(agentId, agentObj = null) {
  * ═══════════════════════════════════════════════════════════ */
 async function renderApiKeysTab(container) {
   const ai = await import('../services/ai.js');
-  let global = null, scoped = [];
-  try {
-    global = await ai.getAIConfig() || {};
-    scoped = await ai.listAllScopedConfigs();
-  } catch (e) {
-    container.innerHTML = `<p style="color:var(--color-danger);padding:24px;">Erro: ${esc(e.message)}</p>`;
-    return;
-  }
+  // 4.35.25+: TODAS as keys de provider vivem no Secret Manager do GCP.
+  // Firestore (system_config/ai-config + ai_api_keys) só fica como
+  // dado legado read-only escondido em "Avançado".
+  let secretsStatus = null;
+  let legacyGlobal = null, legacyScoped = [];
+  let loadingErr = null;
 
-  const maskKey = (k) => {
-    if (!k) return '—';
-    if (k.length <= 12) return '••••••';
-    return k.slice(0, 4) + '••••••••' + k.slice(-4);
-  };
-  const providerStatus = (cfg, provider) => {
-    const k = cfg?.[provider + 'ApiKey'];
-    return k ? { has: true, masked: maskKey(k), len: k.length } : { has: false };
-  };
+  async function reloadStatus() {
+    try {
+      const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+      const { app } = await import('../firebase.js');
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'getAISecretsStatus');
+      const res = await fn();
+      secretsStatus = res.data || {};
+    } catch (e) {
+      loadingErr = e.message;
+    }
+    try {
+      legacyGlobal = await ai.getAIConfig() || {};
+      legacyScoped = await ai.listAllScopedConfigs();
+    } catch {/* legado opcional */}
+  }
+  await reloadStatus();
+
   const providers = ai.AI_PROVIDERS;
+  const SECRET_NAMES = {
+    anthropic: 'ANTHROPIC_API_KEY',
+    openai:    'OPENAI_API_KEY',
+    gemini:    'GEMINI_API_KEY',
+    groq:      'GROQ_API_KEY',
+  };
 
   function paint() {
-    // 4.35.24+: Anthropic é server-side (Secret Manager). Demais providers
-    // ainda usam fallback Firestore. Sinalizar isso claramente na UI.
-    const SECRET_MANAGER_PROVIDERS = new Set(['anthropic']);
     container.innerHTML = `
-      <div style="background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.3);border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:0.8125rem;">
-        <strong style="color:#22C55E;">🔐 Anthropic agora é server-side</strong><br>
-        A key vive no <strong>GCP Secret Manager</strong> (<code>ANTHROPIC_API_KEY</code>) e é
-        lida só pela Cloud Function <code>callLLM</code>. O browser nunca vê.
-        Pra rotacionar: <code style="background:var(--bg-surface);padding:1px 6px;border-radius:3px;">firebase functions:secrets:set ANTHROPIC_API_KEY</code>
+      <div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:0.8125rem;">
+        🔐 <strong style="color:#22C55E;">API Keys 100% server-side</strong> —
+        todos os providers vivem no <strong>GCP Secret Manager</strong>.
+        A Cloud Function <code>callLLM</code> é a única que lê. O browser nunca vê.
+        Configurar/rotacionar é via terminal (instruções no botão "Configurar" de cada provider).
       </div>
-      <p style="color:var(--text-muted);font-size:0.8125rem;margin-bottom:16px;">
-        Resolução em cascata pros demais providers (legado):
-        <strong>Usuário → Núcleo → Setor → Workspace → Global</strong>.
-      </p>
+
+      ${loadingErr ? `<div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:0.8125rem;color:#EF4444;">
+        ⚠ Não consegui consultar o status dos secrets: ${esc(loadingErr)}
+      </div>` : ''}
 
       <div class="card" style="margin-bottom:16px;">
         <div class="card-header">
-          <div class="card-title">🌐 Global (fallback padrão)</div>
-          <button class="btn btn-secondary btn-sm" id="ak-edit-global">✎ Editar</button>
+          <div class="card-title">⚿ Providers — Secret Manager</div>
+          <button class="btn btn-ghost btn-sm" id="ak-reload">↻ Verificar status</button>
         </div>
         <div class="card-body" style="padding:0;">
           <table class="data-table" style="width:100%;font-size:0.8125rem;">
-            <thead><tr><th>Provider</th><th>Status</th><th>Chave (mascarada)</th><th style="text-align:right;">Tamanho</th></tr></thead>
-            <tbody>${providers.map(p => {
-              if (SECRET_MANAGER_PROVIDERS.has(p.id)) {
-                return `<tr>
-                  <td><strong>${esc(p.icon)} ${esc(p.label)}</strong></td>
-                  <td><span style="color:#22C55E;">✓ Secret Manager</span></td>
-                  <td style="font-family:var(--font-mono,monospace);color:var(--text-muted);">sk-ant-•••• <span style="font-size:0.7rem;">(server-side)</span></td>
-                  <td style="text-align:right;color:var(--text-muted);">—</td>
-                </tr>`;
-              }
-              const s = providerStatus(global, p.id);
-              return `<tr style="${s.has?'':'opacity:0.55;'}">
+            <thead><tr>
+              <th>Provider</th>
+              <th>Status</th>
+              <th>Secret name</th>
+              <th style="text-align:right;">Tamanho</th>
+              <th style="text-align:right;">Ação</th>
+            </tr></thead>
+            <tbody>${providers.filter(p => SECRET_NAMES[p.id]).map(p => {
+              const ok  = !!secretsStatus?.[p.id];
+              const len = secretsStatus?.lengths?.[p.id] || 0;
+              return `<tr style="${ok?'':'opacity:0.7;'}">
                 <td><strong>${esc(p.icon)} ${esc(p.label)}</strong></td>
-                <td>${s.has ? '<span style="color:#22C55E;">✓ Configurada</span>' : '<span style="color:#9CA3AF;">— Vazia</span>'}</td>
-                <td style="font-family:var(--font-mono,monospace);">${esc(s.masked || '—')}</td>
-                <td style="text-align:right;">${s.len ? s.len + ' chars' : '—'}</td>
+                <td>${ok
+                  ? '<span style="color:#22C55E;">✓ Configurada</span>'
+                  : '<span style="color:#9CA3AF;">— Não configurada</span>'}</td>
+                <td style="font-family:var(--font-mono,monospace);font-size:0.75rem;color:var(--text-muted);">${SECRET_NAMES[p.id]}</td>
+                <td style="text-align:right;color:var(--text-muted);">${len ? len + ' chars' : '—'}</td>
+                <td style="text-align:right;">
+                  <button class="btn btn-secondary btn-sm" data-act="ak-config" data-provider="${p.id}">
+                    ${ok ? '↻ Rotacionar' : '+ Configurar'}
+                  </button>
+                </td>
               </tr>`;
             }).join('')}</tbody>
           </table>
         </div>
-        <div style="padding:8px 14px;font-size:0.7rem;color:var(--text-muted);border-top:1px solid var(--border-subtle);">
-          ⚠ Próximo passo: migrar OpenAI/Gemini/Groq também pro Secret Manager
-          (mesmo padrão Anthropic). Hoje essas chaves ficam em <code>system_config/ai-config</code>.
-        </div>
       </div>
 
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">🎯 Chaves por escopo</div>
-            <div class="card-subtitle" style="font-size:0.75rem;color:var(--text-muted);">
-              ${scoped.length} configuração(ões). Override por usuário/núcleo/setor/workspace.
-            </div>
+      <details style="margin-top:16px;">
+        <summary style="cursor:pointer;font-size:0.8125rem;color:var(--text-muted);padding:8px 0;">
+          ▸ Configurações legadas (Firestore) — não usadas em runtime
+        </summary>
+        <div style="margin-top:8px;padding:14px;background:var(--bg-surface);border-radius:6px;font-size:0.75rem;color:var(--text-muted);line-height:1.6;">
+          Existem ${(legacyGlobal && Object.keys(legacyGlobal).filter(k => k.endsWith('ApiKey') && legacyGlobal[k]).length) || 0}
+          key(s) globais e ${legacyScoped.length} key(s) escopada(s) ainda armazenadas em
+          <code>system_config/ai-config</code> e <code>ai_api_keys</code> respectivamente —
+          remanescentes da arquitetura anterior. <strong>A Cloud Function não lê esses
+          documentos</strong>; pode apagar quando se sentir confortável.
+          <div style="margin-top:8px;">
+            <button class="btn btn-ghost btn-sm" id="ak-purge-legacy" style="color:#EF4444;">
+              🗑 Apagar legado Firestore
+            </button>
           </div>
-          <button class="btn btn-primary btn-sm" id="ak-new-scoped">+ Nova escopada</button>
         </div>
-        <div class="card-body" style="padding:0;">
-          ${!scoped.length ? '<div class="empty-state" style="padding:24px;"><div class="empty-state-title" style="font-size:0.875rem;">Sem chaves escopadas. Todos usam a global.</div></div>'
-            : `<table class="data-table" style="width:100%;font-size:0.8125rem;">
-              <thead><tr>
-                <th>Escopo</th><th>Identificador</th><th>Providers</th>
-                <th>Status</th><th style="text-align:right;">Ações</th>
-              </tr></thead>
-              <tbody>${scoped.map(s => {
-                const provs = providers.filter(p => s[p.id + 'ApiKey']).map(p => p.label);
-                return `<tr>
-                  <td><strong>${esc(s.scope)}</strong></td>
-                  <td>${esc(s.scopeLabel || s.scopeId || '—')}</td>
-                  <td style="font-size:0.75rem;">${provs.length ? provs.join(', ') : '—'}</td>
-                  <td>${s.active === false ? '<span style="color:#F59E0B;">⏸ Pausada</span>' : '<span style="color:#22C55E;">✓ Ativa</span>'}</td>
-                  <td style="text-align:right;white-space:nowrap;">
-                    <button class="btn btn-secondary btn-sm" data-act="ak-edit" data-id="${s.id}">✎</button>
-                    <button class="btn btn-ghost btn-sm" data-act="ak-del" data-id="${s.id}" style="color:#EF4444;">🗑</button>
-                  </td>
-                </tr>`;
-              }).join('')}</tbody>
-            </table>`}
-        </div>
-      </div>
+      </details>
     `;
 
-    document.getElementById('ak-edit-global')?.addEventListener('click', () => openKeyEditor(null, global, false, true));
-    document.getElementById('ak-new-scoped')?.addEventListener('click', () => openKeyEditor(null, null, true));
-    container.querySelectorAll('[data-act="ak-edit"]').forEach(b =>
-      b.addEventListener('click', () => openKeyEditor(b.dataset.id, scoped.find(s => s.id === b.dataset.id))));
-    container.querySelectorAll('[data-act="ak-del"]').forEach(b =>
-      b.addEventListener('click', async () => {
-        if (!confirm('Excluir esta configuração de chave? Agentes usando este escopo passarão a usar o fallback.')) return;
-        try {
-          await ai.deleteScopedApiConfig(b.dataset.id);
-          toast.success('Excluída.');
-          scoped = await ai.listAllScopedConfigs();
-          paint();
-        } catch (e) { toast.error(e.message); }
-      }));
+    document.getElementById('ak-reload')?.addEventListener('click', async () => {
+      const btn = document.getElementById('ak-reload');
+      btn.disabled = true; btn.textContent = '⏳ Verificando...';
+      await reloadStatus();
+      paint();
+    });
+
+    container.querySelectorAll('[data-act="ak-config"]').forEach(b =>
+      b.addEventListener('click', () => openSecretRotateModal(b.dataset.provider)));
+
+    document.getElementById('ak-purge-legacy')?.addEventListener('click', async () => {
+      if (!confirm('Apagar TODAS as keys legadas de system_config/ai-config e ai_api_keys? A Cloud Function não usa esses dados, então é seguro.')) return;
+      try {
+        // Apaga global
+        const { doc, deleteDoc, getDocs, collection } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { db } = await import('../firebase.js');
+        await deleteDoc(doc(db, 'system_config', 'ai-config')).catch(() => {});
+        const snap = await getDocs(collection(db, 'ai_api_keys'));
+        await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+        toast.success('Legado Firestore apagado.');
+        await reloadStatus(); paint();
+      } catch (e) { toast.error(e.message); }
+    });
+  }
+
+  function openSecretRotateModal(provider) {
+    const name = SECRET_NAMES[provider];
+    const isAnthropic = provider === 'anthropic';
+    const ok = !!secretsStatus?.[provider];
+    modal.open({
+      title: `${ok ? '↻ Rotacionar' : '+ Configurar'} ${name}`,
+      size: 'md',
+      content: `
+        <p style="font-size:0.875rem;color:var(--text-secondary);line-height:1.6;">
+          A key fica no <strong>GCP Secret Manager</strong>, lida só pela Cloud
+          Function <code>callLLM</code>. O comando abaixo precisa ser rodado no
+          terminal por quem tem acesso ao projeto Firebase.
+        </p>
+
+        <h4 style="margin:18px 0 6px;font-size:0.875rem;">1. Setar/atualizar a key</h4>
+        <div style="position:relative;background:var(--bg-surface);padding:10px 14px;border-radius:6px;font-family:var(--font-mono,monospace);font-size:0.8125rem;">
+          firebase functions:secrets:set ${name}
+          <button class="btn btn-ghost btn-sm" id="ak-copy-set" style="position:absolute;top:6px;right:6px;font-size:0.7rem;">Copiar</button>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 12px;">
+          O CLI vai pedir o valor da key (cola e Enter). Não fica no histórico do shell.
+        </p>
+
+        <h4 style="margin:18px 0 6px;font-size:0.875rem;">2. Re-deploy a Cloud Function callLLM</h4>
+        <div style="position:relative;background:var(--bg-surface);padding:10px 14px;border-radius:6px;font-family:var(--font-mono,monospace);font-size:0.8125rem;">
+          firebase deploy --only functions:callLLM
+          <button class="btn btn-ghost btn-sm" id="ak-copy-deploy" style="position:absolute;top:6px;right:6px;font-size:0.7rem;">Copiar</button>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin:4px 0 12px;">
+          Necessário pra função pegar o novo valor (Cloud Functions só relê secret no deploy).
+        </p>
+
+        <h4 style="margin:18px 0 6px;font-size:0.875rem;">3. Voltar aqui e clicar "↻ Verificar status"</h4>
+        <p style="font-size:0.8125rem;color:var(--text-secondary);">
+          A linha deve mudar pra <span style="color:#22C55E;">✓ Configurada</span> com o tamanho da key.
+        </p>
+
+        ${isAnthropic ? '' : `
+          <div style="margin-top:18px;padding:10px 14px;background:rgba(99,102,241,0.06);border-radius:6px;font-size:0.75rem;color:var(--text-secondary);">
+            💡 Onde pegar a key:
+            ${provider === 'openai'  ? '<a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a>' : ''}
+            ${provider === 'gemini'  ? '<a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>' : ''}
+            ${provider === 'groq'    ? '<a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a>' : ''}
+          </div>
+        `}
+      `,
+      footer: [{ label: 'Fechar', class: 'btn-primary' }],
+    });
+    setTimeout(() => {
+      document.getElementById('ak-copy-set')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(`firebase functions:secrets:set ${name}`);
+        toast.success('Copiado.');
+      });
+      document.getElementById('ak-copy-deploy')?.addEventListener('click', () => {
+        navigator.clipboard.writeText('firebase deploy --only functions:callLLM');
+        toast.success('Copiado.');
+      });
+    }, 50);
   }
 
   function openKeyEditor(scopedId, data, isNewScoped = false, isGlobal = false) {

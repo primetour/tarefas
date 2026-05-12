@@ -6,6 +6,46 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.35.25+20260512-ai-hub-secrets-all-server-side] — 2026-05-12
+
+Release **PATCH** — IA Hub: todos os providers agora 100% server-side; aba
+Migração removida.
+
+### Pedido do user
+> "migracao: nao é melhor excluir, já que concluiu? api keys: não é melhor já
+> levar tudo pro banco de dados [Secret Manager] e, quando for inserir outras
+> API keys, a config já leva pro banco de dados e, ao configurar, volta com o
+> aviso positivo?"
+
+### Aba Migração — removida
+- Migração legada (ai_skills/ai_automations → ai_agents) já concluída e idempotente.
+- Aba removida do tab list (era visualmente confusa mesmo escondida em `<details>`).
+- Funções continuam acessíveis via console pra emergência: `seedDefaultAgents`,
+  `migrateLegacyToAgents`, `purgeLegacyCollections`.
+
+### Aba API Keys — totalmente refatorada (Secret Manager-first)
+- Nova Cloud Function `getAISecretsStatus` retorna quais secrets de provider
+  estão configurados (sem expor o valor). Lê via `defineSecret().value()`.
+- UI agora lista os 4 providers (Anthropic/OpenAI/Gemini/Groq) com status real
+  do Secret Manager — não mais Firestore.
+- Coluna mostra:
+  - `✓ Configurada` em verde + tamanho real da key
+  - `— Não configurada` em cinza + botão "+ Configurar"
+- Modal de configuração com instruções passo-a-passo:
+  1. `firebase functions:secrets:set NOME_KEY` (com botão "Copiar")
+  2. `firebase deploy --only functions:callLLM` (com botão "Copiar")
+  3. Voltar e clicar "↻ Verificar status"
+- Botão "↻ Verificar status" re-consulta o Cloud Function sem reload.
+- Modal mostra link pra obter a key (OpenAI, Gemini Studio, Groq Console).
+- Configurações legadas (system_config/ai-config + ai_api_keys) ficam num
+  `<details>` colapsado com aviso "não usadas em runtime" + botão pra apagar.
+
+### Bump
+- `4.35.25+20260512-ai-hub-secrets-all-server-side`
+- Cloud Function `getAISecretsStatus` deployada.
+
+---
+
 ## [4.35.24+20260511-ai-hub-revamp] — 2026-05-11
 
 Release **PATCH** — IA Hub: revisão das 7 abas pra refletir a realidade

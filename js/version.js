@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 24,
-  build: '20260511-ai-hub-revamp',
+  patch: 25,
+  build: '20260512-ai-hub-secrets-all-server-side',
 };
 
 /** "1.2.0" */
