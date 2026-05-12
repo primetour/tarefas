@@ -1,6 +1,6 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.35.23 (11/05/2026) · 97 dias de calendário · 662,31h · R$ 99.347 · 6,83h/dia médio · 114 releases + 17 phases
+> **Última atualização:** v4.40.7 (12/05/2026) · 98 dias de calendário · ~672h · ~R$ 100.797 · 6,86h/dia médio · 154+ releases + 17 phases
 
 Documento técnico do módulo `dev_hours`: arquitetura, conceitos, calibragem do fator IA, processo de log, dashboards e exportações.
 
@@ -225,11 +225,11 @@ Acessível via botão **⬇ Exportar PDF** na `dev-hours-view.html`.
 
 A direção operacional definiu como **invariantes de saúde** do projeto:
 
-| Métrica | Alvo | Atual (4.35.3) |
+| Métrica | Alvo | Atual (4.40.7) |
 |---|---|---|
-| Total acumulado | R$ 95-97K | R$ 95.932 ✓ |
-| Média horas/dia | < 7h | 6,73h ✓ |
-| Calendário | ~95 dias | 95 dias ✓ |
+| Total acumulado | R$ 95-105K | ~R$ 100.797 ✓ |
+| Média horas/dia | < 7h | ~6,86h ✓ |
+| Calendário | ~95-100 dias | 98 dias ✓ |
 
 Estouro do alvo dispara revisão de calibragem (multiplier IA) ou auditoria de phases retroativas (corte de excessos).
 
@@ -246,6 +246,10 @@ Estouro do alvo dispara revisão de calibragem (multiplier IA) ou auditoria de p
 | v4.35.1 | Formato HH:MM (em vez de decimal) |
 | v4.35.2 | Botão "Ver mais" em descrições truncadas |
 | v4.35.3 | Doc dedicado (este arquivo) + 3 release entries |
+| v4.35.4-23 | 20 releases · UX deepening, hierarquia organizacional, IA Hub server-side · ~32h totais |
+| v4.36.0-4.38.5 | Escritório Virtual (Office) — 6 iterações com visual isométrico SVG, presença ao vivo, anti-overlap inicial |
+| v4.39.0-5 | Bulk task create, squad invite loop fix, squads agrupados por área · ~6h totais |
+| v4.40.0-7 | UX deepening dia (12/05/2026): Content Calendar dual-view + clareza, Office 4 fixes, Team accordion p/ 200+ users, Banco de Imagens overhaul (Restaurante, Destino-mãe, sticky bar) · ~9,7h totais |
 
 ---
 
