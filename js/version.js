@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 38,
-  patch: 3,
-  build: '20260512-office-token-style-white-bg',
+  patch: 4,
+  build: '20260512-office-universal-drag',
 };
 
 /** "1.2.0" */

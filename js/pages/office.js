@@ -250,7 +250,7 @@ export async function renderOffice(container) {
         border-radius:20px;font-size:0.7rem;letter-spacing:0.04em;
         backdrop-filter:blur(6px);
       ">
-        💡 Click numa sala pra entrar · click num avatar pra abrir painel · Ctrl+scroll zoom · Shift+drag arrasta a câmera
+        💡 Click numa sala pra entrar · click num avatar pra abrir painel · Ctrl+scroll zoom · clique e arraste pra mover o mapa
       </div>
     </div>
 
@@ -1798,44 +1798,60 @@ function wireCameraControls(stageEl) {
     applyCss();
   }, { passive: false });
 
-  // 4.38.3+ Pan via Shift+drag (explícito, não conflita com click em sala/avatar)
-  // OU drag em area vazia (background) quando zoom > 1
-  let dragging = false, lastX = 0, lastY = 0;
+  // 4.38.4+ Click-and-drag UNIVERSAL — funciona em qualquer ponto da tela,
+  // mesmo sobre sala/avatar. Distingue click vs drag pela DISTÂNCIA percorrida:
+  //   - Movimento < 5px: click (ação normal)
+  //   - Movimento >= 5px: drag (pan da câmera)
+  // Click é suprimido após drag pra não disparar drill-down acidental.
+  const DRAG_THRESHOLD = 5;  // pixels
+  let pressing = false, drag = false, startX = 0, startY = 0, lastX = 0, lastY = 0;
+
   stageEl.addEventListener('mousedown', (e) => {
-    if (e.target.closest('button')) return;
-    const hitAvatar = e.target.closest('.office-avatar');
-    const hitFloor  = e.target.closest('.office-floor');
-    // Shift+drag = pan SEMPRE (mesmo sobre sala/avatar)
-    if (e.shiftKey) {
-      e.preventDefault();
-      dragging = true; lastX = e.clientX; lastY = e.clientY;
-      stageEl.style.cursor = 'grabbing';
-      return;
-    }
-    // Sem Shift: drag só em background, e só se zoom > 1
-    if (hitAvatar || hitFloor) return;
-    if (_cam.zoom <= 1.05) return;
-    dragging = true; lastX = e.clientX; lastY = e.clientY;
-    stageEl.style.cursor = 'grabbing';
+    if (e.target.closest('button')) return;  // controles do canto preservam click
+    pressing = true;
+    drag = false;
+    startX = lastX = e.clientX;
+    startY = lastY = e.clientY;
+    stageEl.style.cursor = 'grab';
   });
+
   window.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    _cam.panX += (e.clientX - lastX) / _cam.zoom;
-    _cam.panY += (e.clientY - lastY) / _cam.zoom;
-    lastX = e.clientX; lastY = e.clientY;
-    applyCss();
+    if (!pressing) return;
+    if (!drag) {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.abs(dx) >= DRAG_THRESHOLD || Math.abs(dy) >= DRAG_THRESHOLD) {
+        drag = true;
+        stageEl.style.cursor = 'grabbing';
+      }
+    }
+    if (drag) {
+      _cam.panX += (e.clientX - lastX) / _cam.zoom;
+      _cam.panY += (e.clientY - lastY) / _cam.zoom;
+      lastX = e.clientX; lastY = e.clientY;
+      applyCss();
+    }
   });
+
   window.addEventListener('mouseup', () => {
-    dragging = false;
+    if (!pressing) return;
+    if (drag) {
+      // Foi drag — suprime o próximo click (evita drill-down ou abrir panel acidental)
+      stageEl.__suppressClick = true;
+      setTimeout(() => { stageEl.__suppressClick = false; }, 50);
+    }
+    pressing = false;
+    drag = false;
     stageEl.style.cursor = '';
   });
-  // Cursor visual ao pressionar Shift (indica que pan está ativo)
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Shift' && !dragging) stageEl.style.cursor = 'grab';
-  });
-  document.addEventListener('keyup', (e) => {
-    if (e.key === 'Shift' && !dragging) stageEl.style.cursor = '';
-  });
+
+  // Capture-phase: intercepta clicks após drag e suprime
+  stageEl.addEventListener('click', (e) => {
+    if (stageEl.__suppressClick) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
 
   // Atalho R = reset
   const keyHandler = (e) => {
