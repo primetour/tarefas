@@ -6,7 +6,8 @@
 import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
-  fetchImages, saveImageMeta, updateImageMeta, deleteImageMeta,
+  fetchImages, fetchImagesPage,
+  saveImageMeta, updateImageMeta, deleteImageMeta,
   convertToWebp, uploadImageToR2, fetchDestinations,
   R2_PUBLIC_URL, CONTINENTS, ASSET_CATEGORIES,
 } from '../services/portal.js';
@@ -61,6 +62,13 @@ let navCity      = '';
 let viewMode     = 'grid';   // 'grid' | 'list'
 let searchStr    = '';
 let lightboxIdx  = -1;
+// 4.35.32+ Filtros avançados + paginação cursor
+let _filterCategory = '';
+let _filterType     = '';
+let _filterUploader = '';
+let _filterDate     = '';   // '' | '7d' | '30d' | '90d' | 'year'
+let _pageCursor     = null; // último doc da página anterior (pra cursor)
+let _hasMore        = false;
 
 export async function renderPortalImages(container) {
   // 4.35.31+ Hierarquia: usa portal_images_manage (novo) ou portal_manage (legacy).
@@ -96,7 +104,7 @@ export async function renderPortalImages(container) {
     </div>
 
     <!-- Navigation breadcrumb + search -->
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
       <div id="img-breadcrumb" style="display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap;
         font-size:0.875rem;"></div>
       <div style="position:relative;">
@@ -105,12 +113,65 @@ export async function renderPortalImages(container) {
         <span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);
           color:var(--text-muted);font-size:0.8125rem;">🔍</span>
       </div>
+      <button class="btn btn-ghost btn-sm" id="img-filters-toggle"
+        style="font-size:0.75rem;" title="Mostrar/ocultar filtros avançados">
+        ⚙ Filtros
+      </button>
       <span id="img-count" style="font-size:0.8125rem;color:var(--text-muted);white-space:nowrap;"></span>
+    </div>
+
+    <!-- 4.35.32+ Barra de filtros avançados (categoria/tipo/uploader/data) -->
+    <div id="img-filters-bar" style="display:none;margin-bottom:16px;padding:12px 16px;
+      background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-md);">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Categoria:</span>
+          <select id="img-filter-category" class="filter-select" style="font-size:0.75rem;min-width:140px;">
+            <option value="">Todas</option>
+            ${ASSET_CATEGORIES.map(c => `<option value="${c.key}">${c.icon} ${esc(c.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Tipo:</span>
+          <select id="img-filter-type" class="filter-select" style="font-size:0.75rem;min-width:140px;">
+            <option value="">Todos</option>
+            ${IMAGE_TYPES.map(t => `<option value="${t.key}">${t.icon} ${esc(t.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Quem subiu:</span>
+          <select id="img-filter-uploader" class="filter-select" style="font-size:0.75rem;min-width:160px;">
+            <option value="">Qualquer um</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="font-size:0.7rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Data:</span>
+          <select id="img-filter-date" class="filter-select" style="font-size:0.75rem;min-width:140px;">
+            <option value="">Qualquer</option>
+            <option value="7d">Últimos 7 dias</option>
+            <option value="30d">Últimos 30 dias</option>
+            <option value="90d">Últimos 90 dias</option>
+            <option value="year">Este ano</option>
+          </select>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="img-filters-clear"
+          style="margin-left:auto;font-size:0.7rem;color:var(--text-muted);">
+          ↻ Limpar
+        </button>
+      </div>
     </div>
 
     <!-- Gallery -->
     <div id="img-gallery">
       ${skeletonGrid()}
+    </div>
+
+    <!-- 4.35.32+ "Carregar mais" footer (aparece quando hasMore=true) -->
+    <div id="img-load-more-wrap" style="display:none;text-align:center;margin:24px 0;">
+      <button class="btn btn-secondary" id="img-load-more"
+        style="font-size:0.8125rem;padding:8px 24px;">
+        ↓ Carregar mais imagens
+      </button>
     </div>
 
     <!-- Lightbox (hidden) -->
@@ -136,6 +197,44 @@ export async function renderPortalImages(container) {
   document.getElementById('img-search')?.addEventListener('input', e => {
     searchStr = e.target.value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     renderGallery();
+  });
+
+  // 4.35.32+ Filtros avan\u00e7ados
+  document.getElementById('img-filters-toggle')?.addEventListener('click', () => {
+    const bar = document.getElementById('img-filters-bar');
+    if (bar) bar.style.display = bar.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('img-filter-category')?.addEventListener('change', e => {
+    _filterCategory = e.target.value; loadImages({ reset: true });
+  });
+  document.getElementById('img-filter-type')?.addEventListener('change', e => {
+    _filterType = e.target.value; loadImages({ reset: true });
+  });
+  document.getElementById('img-filter-uploader')?.addEventListener('change', e => {
+    _filterUploader = e.target.value; loadImages({ reset: true });
+  });
+  document.getElementById('img-filter-date')?.addEventListener('change', e => {
+    _filterDate = e.target.value; loadImages({ reset: true });
+  });
+  document.getElementById('img-filters-clear')?.addEventListener('click', () => {
+    _filterCategory = _filterType = _filterUploader = _filterDate = '';
+    ['img-filter-category','img-filter-type','img-filter-uploader','img-filter-date']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    loadImages({ reset: true });
+  });
+
+  // 4.35.32+ "Carregar mais"
+  document.getElementById('img-load-more')?.addEventListener('click', async () => {
+    const btn = document.getElementById('img-load-more');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = '\u23f3 Carregando\u2026';
+    try {
+      await loadImages({ reset: false });
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '\u2193 Carregar mais imagens';
+    }
   });
 
   // Upload panel wiring
@@ -746,10 +845,56 @@ async function uploadBatch() {
 
 
 /* ── Data ── */
-async function loadImages() {
-  allImages = await fetchImages();
+// 4.35.32+ filters helpers
+function _getFiltersForServer() {
+  const filters = {};
+  if (_filterCategory) filters.assetCategory = _filterCategory;
+  if (_filterType)     filters.type          = _filterType;
+  if (_filterUploader) filters.uploadedBy    = _filterUploader;
+  if (_filterDate) {
+    const now = Date.now();
+    const days = { '7d': 7, '30d': 30, '90d': 90 }[_filterDate];
+    if (days) filters.sinceDate = new Date(now - days * 24 * 3600 * 1000);
+    else if (_filterDate === 'year') filters.sinceDate = new Date(new Date().getFullYear(), 0, 1);
+  }
+  return filters;
+}
+
+async function loadImages({ reset = true } = {}) {
+  if (reset) {
+    _pageCursor = null;
+    allImages   = [];
+  }
+  const { docs, lastDoc, hasMore } = await fetchImagesPage({
+    ..._getFiltersForServer(),
+    pageAfter: _pageCursor,
+  });
+  // Concatena se for load-more, substitui se for reset
+  allImages = reset ? docs : [...allImages, ...docs];
+  _pageCursor = lastDoc;
+  _hasMore    = hasMore;
   renderBreadcrumb();
+  populateUploaderFilter();
   renderGallery();
+  // Toggle "Carregar mais"
+  const moreEl = document.getElementById('img-load-more-wrap');
+  if (moreEl) moreEl.style.display = _hasMore ? 'block' : 'none';
+}
+
+// 4.35.32+ Popula o dropdown "Quem subiu" com uploaders já no banco
+function populateUploaderFilter() {
+  const sel = document.getElementById('img-filter-uploader');
+  if (!sel) return;
+  // Mantém o selecionado
+  const cur = sel.value;
+  const uploaderIds = [...new Set(allImages.map(i => i.uploadedBy).filter(Boolean))];
+  const users = store.get('users') || [];
+  const opts = uploaderIds.map(uid => {
+    const u = users.find(x => x.id === uid);
+    return { uid, name: u?.name || u?.email || `Usuário ${uid.slice(0, 8)}` };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+  sel.innerHTML = `<option value="">Qualquer um</option>` +
+    opts.map(o => `<option value="${esc(o.uid)}" ${o.uid===cur?'selected':''}>${esc(o.name)}</option>`).join('');
 }
 
 /* ── Breadcrumb navigation ── */

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 31,
-  build: '20260512-image-bank-revamp',
+  patch: 32,
+  build: '20260512-image-bank-filters-pagination',
 };
 
 /** "1.2.0" */

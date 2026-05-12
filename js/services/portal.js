@@ -368,13 +368,67 @@ export async function registerDownload() {
 }
 
 /* ─── Images ──────────────────────────────────────────────── */
-export async function fetchImages({ continent, country, city } = {}) {
-  const snap = await getDocs(query(collection(db, 'portal_images'), orderBy('uploadedAt', 'desc'), limit(200)));
-  let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  if (continent) docs = docs.filter(d => d.continent === continent);
-  if (country)   docs = docs.filter(d => d.country   === country);
-  if (city)      docs = docs.filter(d => d.city       === city);
+// 4.35.31+ tamanho máximo (lado mais longo) na conversão WebP. Exportado
+// pra permitir override em casos especiais (logos altíssima qualidade).
+export const WEBP_MAX_SIDE_DEFAULT = 2560;
+
+// 4.35.32+ Page size do banco de imagens. Antes era 200 hardcoded; agora
+// suporta cursor-based pagination via `pageAfter` (último doc).
+export const IMAGES_PAGE_SIZE = 500;
+
+/**
+ * Busca imagens do banco. Backwards-compat: retorna ARRAY direto (como antes).
+ * Filtros opcionais (todos client-side): continent, country, city, assetCategory,
+ * type, uploadedBy, sinceDate, untilDate.
+ *
+ * Para paginação cursor-based, use `fetchImagesPage()` (4.35.32+).
+ */
+export async function fetchImages(filters = {}) {
+  const { docs } = await fetchImagesPage({ ...filters, pageSize: IMAGES_PAGE_SIZE });
   return docs;
+}
+
+/**
+ * 4.35.32+ Paginação cursor-based. Sem `pageAfter`: primeira página.
+ * Com `pageAfter`: continua a partir do último doc da página anterior.
+ * Retorna `{ docs, lastDoc, hasMore }`.
+ */
+export async function fetchImagesPage(filters = {}) {
+  const { pageAfter = null, pageSize = IMAGES_PAGE_SIZE,
+          continent, country, city,
+          assetCategory, type, uploadedBy, sinceDate, untilDate } = filters;
+
+  const parts = [collection(db, 'portal_images'), orderBy('uploadedAt', 'desc')];
+  if (pageAfter) {
+    const { startAfter } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    parts.push(startAfter(pageAfter));
+  }
+  parts.push(limit(pageSize));
+
+  const snap = await getDocs(query(...parts));
+  let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Filtros client-side
+  if (continent)     docs = docs.filter(d => d.continent === continent);
+  if (country)       docs = docs.filter(d => d.country   === country);
+  if (city)          docs = docs.filter(d => d.city       === city);
+  if (assetCategory) docs = docs.filter(d => (d.assetCategory || 'location') === assetCategory);
+  if (type)          docs = docs.filter(d => d.type === type);
+  if (uploadedBy)    docs = docs.filter(d => d.uploadedBy === uploadedBy);
+  if (sinceDate) {
+    const ts = sinceDate instanceof Date ? sinceDate.getTime() : new Date(sinceDate).getTime();
+    docs = docs.filter(d => (d.uploadedAt?.toMillis?.() || 0) >= ts);
+  }
+  if (untilDate) {
+    const ts = untilDate instanceof Date ? untilDate.getTime() : new Date(untilDate).getTime();
+    docs = docs.filter(d => (d.uploadedAt?.toMillis?.() || 0) <= ts);
+  }
+
+  return {
+    docs,
+    lastDoc: snap.docs[snap.docs.length - 1] || null,
+    hasMore: snap.docs.length === pageSize,
+  };
 }
 
 // 4.35.31+ Categorias de asset (suporte a imagens não-locação)
@@ -457,8 +511,8 @@ export async function deleteImageMeta(id) {
     null);
 }
 
-export async function convertToWebp(file, quality = 0.92) {
-  const MAX_SIDE = 2560;
+export async function convertToWebp(file, quality = 0.92, maxSide = WEBP_MAX_SIDE_DEFAULT) {
+  const MAX_SIDE = maxSide;
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
