@@ -236,6 +236,7 @@ export async function renderTasks(container) {
               font-family:inherit;text-decoration:none;">📨 Solicitação externa</a>
           </div>
         </div>
+        <button class="btn btn-secondary" id="bulk-new-tasks-btn" title="Criar várias tarefas como planilha">📋 Em lote</button>
         <button class="btn btn-primary" id="new-task-btn">+ Nova Tarefa</button>
       </div>
     </div>
@@ -1490,6 +1491,12 @@ function _attachPageEvents() {
   // não abre o modal duas vezes.
   const newBtn = document.getElementById('new-task-btn');
   if (newBtn) newBtn.onclick = () => openNewTask();
+  // 4.39.0+ Bulk create
+  const bulkBtn = document.getElementById('bulk-new-tasks-btn');
+  if (bulkBtn) bulkBtn.onclick = async () => {
+    const { openBulkTaskCreateModal } = await import('../components/bulkTaskCreate.js');
+    openBulkTaskCreateModal();
+  };
   const emailBtn = document.getElementById('email-task-btn');
   if (emailBtn) emailBtn.onclick = () => openEmailToTaskModal();
   const importBtn = document.getElementById('tasks-import-btn');

@@ -358,8 +358,11 @@ export async function createTask(data) {
   invalidateTasksCache();
   await auditLog('tasks.create', 'task', ref.id, { title: taskDoc.title });
 
+  // 4.39.0+ Bulk create suprime notifications individuais (1 toast resumo é enviado pelo orquestrador)
+  const suppressNotifs = data._suppressNotifications === true;
+
   // Notify assignees
-  if (taskDoc.assignees?.length) {
+  if (!suppressNotifs && taskDoc.assignees?.length) {
     import('./notifications.js').then(({ notify }) => {
       console.log('[Notify] task.assigned → recipients:', taskDoc.assignees);
       return notify('task.assigned', {
@@ -374,7 +377,7 @@ export async function createTask(data) {
   }
 
   // Notify observers (acompanham, mas não são responsáveis)
-  if (taskDoc.observers?.length) {
+  if (!suppressNotifs && taskDoc.observers?.length) {
     import('./notifications.js').then(({ notify }) => {
       return notify('task.observing', {
         entityType: 'task', entityId: ref.id,
@@ -387,6 +390,72 @@ export async function createTask(data) {
   }
 
   return { id: ref.id, ...taskDoc };
+}
+
+/* ─── 4.39.0+ Bulk create — N tarefas de uma vez ──────────────
+ * @param {Array} rows  — array de objetos no formato esperado por createTask
+ * @param {Function} onProgress — callback (done, total) — opcional
+ * @returns {Promise<{ created:Array, failed:Array }>}
+ *
+ * Suprime notificações individuais; envia 1 notification resumo por user
+ * que recebeu tarefas (agrupadas).
+ */
+export async function bulkCreateTasks(rows, onProgress = null) {
+  if (!store.can('task_create')) throw new Error('Sem permissão pra criar tarefas.');
+  if (!Array.isArray(rows) || !rows.length) return { created: [], failed: [] };
+
+  const created = [];
+  const failed  = [];
+  // Mapa uid → array de títulos atribuídos (pra resumo)
+  const assignmentsByUid = new Map();
+  const observationsByUid = new Map();
+
+  for (let i = 0; i < rows.length; i++) {
+    try {
+      const t = await createTask({ ...rows[i], _suppressNotifications: true });
+      created.push(t);
+      (t.assignees || []).forEach(uid => {
+        if (!assignmentsByUid.has(uid)) assignmentsByUid.set(uid, []);
+        assignmentsByUid.get(uid).push(t.title);
+      });
+      (t.observers || []).forEach(uid => {
+        if (!observationsByUid.has(uid)) observationsByUid.set(uid, []);
+        observationsByUid.get(uid).push(t.title);
+      });
+    } catch (e) {
+      failed.push({ index: i, row: rows[i], error: e.message });
+    }
+    if (onProgress) onProgress(i + 1, rows.length);
+  }
+
+  // Notifications agregadas (1 por user, com lista de tarefas)
+  try {
+    const { notify } = await import('./notifications.js');
+    for (const [uid, titles] of assignmentsByUid) {
+      const bodyTitles = titles.slice(0, 3).map(t => `• ${t}`).join('\n');
+      const more = titles.length > 3 ? `\n…e mais ${titles.length - 3}` : '';
+      await notify('task.assigned', {
+        entityType: 'task', recipientIds: [uid],
+        title: titles.length === 1 ? 'Nova tarefa atribuída' : `${titles.length} tarefas atribuídas`,
+        body: bodyTitles + more,
+        route: 'tasks',
+      });
+    }
+    for (const [uid, titles] of observationsByUid) {
+      const bodyTitles = titles.slice(0, 3).map(t => `• ${t}`).join('\n');
+      const more = titles.length > 3 ? `\n…e mais ${titles.length - 3}` : '';
+      await notify('task.observing', {
+        entityType: 'task', recipientIds: [uid],
+        title: titles.length === 1 ? 'Você está acompanhando uma tarefa' : `Acompanhando ${titles.length} tarefas novas`,
+        body: bodyTitles + more,
+        route: 'tasks',
+      });
+    }
+  } catch (e) {
+    console.warn('[bulkCreateTasks] notif resumo falhou:', e?.message);
+  }
+
+  return { created, failed };
 }
 
 /* ─── Atualizar tarefa ───────────────────────────────────── */

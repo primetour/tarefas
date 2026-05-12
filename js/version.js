@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 38,
-  patch: 5,
-  build: '20260512-office-furniture-3d-volume',
+  minor: 39,
+  patch: 0,
+  build: '20260512-tasks-bulk-create',
 };
 
 /** "1.2.0" */
