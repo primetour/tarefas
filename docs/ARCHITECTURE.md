@@ -234,6 +234,49 @@ export const callLLM = onCall({
 
 NUNCA commitar secrets em git. Sempre via Secret Manager.
 
+### IA Hub (4.35.23+) — arquitetura server-side
+
+**Princípio**: o browser nunca vê API keys de provedores de IA. Toda chamada LLM
+passa pela Cloud Function `callLLM`, que lê a key do Secret Manager.
+
+```
+browser  →  aiSecure.callLLMSecure (httpsCallable)
+         →  Cloud Function callLLM (requireAuth + rate limit + cost cap)
+         →  ANTHROPIC_API_KEY.value()
+         →  api.anthropic.com/v1/messages
+         →  response (text/citations/usage) → browser
+```
+
+Capacidades suportadas no payload:
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `provider` | string | `anthropic` / `gemini` / `openai` / `azure` / `groq` / `local` |
+| `model` | string | Ex: `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5` |
+| `systemPrompt`, `userMessage`, `history` | string/array | Conversa |
+| `maxTokens`, `temperature` | number | Limites |
+| `attachments` | array | **Vision**: image blocks ou data-URIs `data:image/...;base64,...` |
+| `webSearch` | bool | **Web search nativo**: ativa tool `web_search_20250305` da Anthropic |
+| `agentId`, `agentDailyCapUsd`, `module`, `source` | metadata | Auditoria + cost cap |
+
+Pontos de entrada do browser (todos roteiam pra Cloud Function):
+- `chatWithAI(msg, ctx, opts)` em `js/services/ai.js` — chat universal (aiPanel, slash-commands)
+- `callLLMSecure({...})` em `js/services/aiSecure.js` — caller direto pra Cloud Function
+- `runAgent(agentId, input, ctx)` em `js/services/agents.js` — execução de agente
+  configurado (system prompt + KB + tools + few-shots)
+
+KB do agente (`loadAgentKnowledge`) suporta fontes: `url`, `r2`, `sharepoint` (via
+Graph), `gdrive` (via Drive API v3), `github`, `webhook`. Cada fonte é fetched no
+runtime e injetada no system prompt.
+
+Web search (4.35.23+): quando `agent.allowWebSearch===true` e provider for
+`anthropic` ou `gemini`, o pre-fetch Serper é pulado e o modelo decide buscar
+sozinho via tool nativo (mais barato + citações automáticas). Demais providers
+continuam com Serper-prefetch.
+
+Smoke tests CLI (não logam a key):
+- `functions/test-anthropic-smoke.cjs` — text + web_search
+- `functions/test-anthropic-vision.cjs` — image block
+
 ## Segurança em camadas
 
 ### Camada 1 — CSP (Content Security Policy)

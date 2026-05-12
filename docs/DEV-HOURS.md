@@ -1,6 +1,6 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.35.3 (09/05/2026) · 95 dias de calendário · 639,55h · R$ 95.932 · 6,73h/dia médio
+> **Última atualização:** v4.35.23 (11/05/2026) · 97 dias de calendário · 662,31h · R$ 99.347 · 6,83h/dia médio · 114 releases + 17 phases
 
 Documento técnico do módulo `dev_hours`: arquitetura, conceitos, calibragem do fator IA, processo de log, dashboards e exportações.
 
