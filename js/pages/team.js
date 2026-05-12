@@ -374,7 +374,18 @@ function _stepTeamPeriod(direction) {
 
 /* ─── Tab: Disponibilidade da equipe ─────────────────────── */
 async function renderTeamAvailability(container) {
-  const users = (store.get('users') || []).filter(u => u.active !== false);
+  const allUsers = (store.get('users') || []).filter(u => u.active !== false);
+
+  // 4.40.3+ Filtra por áreas visíveis. Diretoria/master vê tudo; analista
+  // vê só a própria área. Mesma lógica usada em renderMembers e em projetos.
+  const visibleSectors = store.get('visibleSectors') || [];
+  const users = store.isMaster() || !visibleSectors.length
+    ? allUsers
+    : allUsers.filter(u => {
+        const uSector = u.sector || u.department;
+        return !uSector || visibleSectors.includes(uSector);
+      });
+
   // 4.35.28+ Default = período mensal corrente; user navega via pills/seta
   if (!_teamAvailAnchor) _teamAvailAnchor = new Date();
   const { start, end, label: periodLabel } = _computeTeamPeriodRange();
@@ -390,6 +401,24 @@ async function renderTeamAvailability(container) {
   const team  = await getTeamAvailability(users.map(u => u.id), start, end);
   const days  = [];
   for (let d = new Date(start); d <= end; d.setDate(d.getDate()+1)) days.push(new Date(d));
+
+  // 4.40.3+ Agrupa team por área (sector) — mesma ordem em barras e calendário
+  const SECTOR_KEY = (u) => {
+    const userRec = allUsers.find(x => x.id === u.id);
+    return userRec?.sector || userRec?.department || 'Sem área';
+  };
+  const teamBySector = {};
+  team.forEach(u => {
+    const k = SECTOR_KEY(u);
+    if (!teamBySector[k]) teamBySector[k] = [];
+    teamBySector[k].push(u);
+  });
+  // Ordena setores alfabeticamente, "Sem área" sempre por último
+  const sortedSectors = Object.keys(teamBySector).sort((a, b) => {
+    if (a === 'Sem área') return 1;
+    if (b === 'Sem área') return -1;
+    return a.localeCompare(b);
+  });
 
   const DAYS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const monthLabel = periodLabel;
@@ -442,32 +471,47 @@ async function renderTeamAvailability(container) {
       </div>
     ` : ''}
 
+    ${/* 4.40.3+ Hint visual quando filtrado por área (não-master) */ ''}
+    ${!store.isMaster() && visibleSectors.length > 0 ? `
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;padding:8px 12px;
+        background:var(--bg-surface);border-radius:6px;border-left:3px solid var(--brand-gold);">
+        Você está vendo disponibilidade de <strong>${esc(visibleSectors.join(', '))}</strong>.
+      </div>
+    ` : ''}
+
     <div style="display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start;">
-      <!-- Availability bars -->
+      <!-- Availability bars — agrupado por área -->
       <div class="card">
         <div class="card-header"><div class="card-title">◐ ${monthLabel}</div></div>
         <div class="card-body" style="padding:8px 0;">
-          ${team.map(u => `
-            <div style="padding:8px 16px;border-bottom:1px solid var(--border-subtle);">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
-                <div class="avatar avatar-sm" style="background:${u.avatarColor};flex-shrink:0;position:relative;">
-                  ${userAvatarInner(u)}
-                </div>
-                <div style="flex:1;min-width:0;">
-                  <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.name.split(' ')[0])}</div>
-                  <div style="font-size:0.6875rem;color:var(--text-muted);">${u.available}/${u.total}d</div>
-                </div>
-                <span style="font-size:0.8125rem;font-weight:700;color:${u.rate>=80?'#22C55E':u.rate>=50?'#F59E0B':'#EF4444'};">${u.rate}%</span>
-              </div>
-              <div style="height:4px;background:var(--bg-elevated);border-radius:2px;overflow:hidden;">
-                <div style="height:100%;width:${u.rate}%;background:${u.rate>=80?'#22C55E':u.rate>=50?'#F59E0B':'#EF4444'};border-radius:2px;"></div>
-              </div>
+          ${sortedSectors.map(sector => `
+            <div style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
+              color:var(--text-muted);padding:10px 16px 6px;background:var(--bg-surface);
+              border-bottom:1px solid var(--border-subtle);position:sticky;top:0;z-index:1;">
+              ${esc(sector)} <span style="font-weight:400;opacity:0.6;">(${teamBySector[sector].length})</span>
             </div>
+            ${teamBySector[sector].map(u => `
+              <div style="padding:8px 16px;border-bottom:1px solid var(--border-subtle);">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+                  <div class="avatar avatar-sm" style="background:${u.avatarColor};flex-shrink:0;position:relative;">
+                    ${userAvatarInner(u)}
+                  </div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-size:0.8125rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(u.name.split(' ')[0])}</div>
+                    <div style="font-size:0.6875rem;color:var(--text-muted);">${u.available}/${u.total}d</div>
+                  </div>
+                  <span style="font-size:0.8125rem;font-weight:700;color:${u.rate>=80?'#22C55E':u.rate>=50?'#F59E0B':'#EF4444'};">${u.rate}%</span>
+                </div>
+                <div style="height:4px;background:var(--bg-elevated);border-radius:2px;overflow:hidden;">
+                  <div style="height:100%;width:${u.rate}%;background:${u.rate>=80?'#22C55E':u.rate>=50?'#F59E0B':'#EF4444'};border-radius:2px;"></div>
+                </div>
+              </div>
+            `).join('')}
           `).join('')}
         </div>
       </div>
 
-      <!-- Calendar -->
+      <!-- Calendar — agrupado por área -->
       <div class="card">
         <div class="card-header"><div class="card-title">📅 Calendário de ausências</div></div>
         <div class="card-body" style="overflow-x:auto;">
@@ -480,42 +524,51 @@ async function renderTeamAvailability(container) {
               }).join('')}
             </tr></thead>
             <tbody>
-              ${team.map(u => `
+              ${sortedSectors.map(sector => `
                 <tr>
-                  <td style="padding:3px 8px;font-size:0.75rem;color:var(--text-secondary);
-                    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;">
-                    ${esc(u.name.split(' ')[0])}
+                  <td colspan="${days.length + 1}"
+                    style="padding:8px 8px 4px;font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+                    letter-spacing:0.08em;color:var(--text-muted);background:var(--bg-surface);
+                    border-bottom:1px solid var(--border-subtle);">
+                    ${esc(sector)} <span style="font-weight:400;opacity:0.6;">(${teamBySector[sector].length})</span>
                   </td>
-                  ${days.map(d => {
-                    const isWe = d.getDay()===0||d.getDay()===6;
-                    const ab   = u.absences.find(a => {
-                      const s = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
-                      const e = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
-                      s.setHours(0,0,0,0); e.setHours(23,59,59,999);
-                      const dd = new Date(d); dd.setHours(12);
-                      return dd>=s && dd<=e;
-                    });
-                    const td = ab ? (ABSENCE_TYPES.find(t=>t.value===ab.type)||ABSENCE_TYPES[5]) : null;
-                    // Indica se ausência é parcial (icon + tooltip diferenciado)
-                    const isPartial = !!ab?.partial;
-                    const tooltip = ab
-                      ? (isPartial
-                          ? `${td.label} · parcial (${formatTimePart(ab.startDate)}-${formatTimePart(ab.endDate)})`
-                          : td.label)
-                      : (isWe ? 'Fim de semana' : 'Disponível');
-                    return `<td style="padding:2px 1px;text-align:center;">
-                      <div style="width:22px;height:22px;border-radius:3px;margin:0 auto;
-                        display:flex;align-items:center;justify-content:center;font-size:0.625rem;
-                        background:${ab?(isPartial?td.color+'1A':td.color+'33'):isWe?'var(--bg-elevated)':'transparent'};
-                        color:${ab?td.color:'var(--text-muted)'};
-                        border:1px solid ${ab?td.color+'55':'transparent'};
-                        ${isPartial ? 'background-image:linear-gradient(135deg,'+td.color+'33 50%,transparent 50%);' : ''}"
-                        title="${esc(tooltip)}">
-                        ${ab?td.icon:isWe?'—':''}
-                      </div>
-                    </td>`;
-                  }).join('')}
                 </tr>
+                ${teamBySector[sector].map(u => `
+                  <tr>
+                    <td style="padding:3px 8px;font-size:0.75rem;color:var(--text-secondary);
+                      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;">
+                      ${esc(u.name.split(' ')[0])}
+                    </td>
+                    ${days.map(d => {
+                      const isWe = d.getDay()===0||d.getDay()===6;
+                      const ab   = u.absences.find(a => {
+                        const s = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
+                        const e = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
+                        s.setHours(0,0,0,0); e.setHours(23,59,59,999);
+                        const dd = new Date(d); dd.setHours(12);
+                        return dd>=s && dd<=e;
+                      });
+                      const td = ab ? (ABSENCE_TYPES.find(t=>t.value===ab.type)||ABSENCE_TYPES[5]) : null;
+                      const isPartial = !!ab?.partial;
+                      const tooltip = ab
+                        ? (isPartial
+                            ? `${td.label} · parcial (${formatTimePart(ab.startDate)}-${formatTimePart(ab.endDate)})`
+                            : td.label)
+                        : (isWe ? 'Fim de semana' : 'Disponível');
+                      return `<td style="padding:2px 1px;text-align:center;">
+                        <div style="width:22px;height:22px;border-radius:3px;margin:0 auto;
+                          display:flex;align-items:center;justify-content:center;font-size:0.625rem;
+                          background:${ab?(isPartial?td.color+'1A':td.color+'33'):isWe?'var(--bg-elevated)':'transparent'};
+                          color:${ab?td.color:'var(--text-muted)'};
+                          border:1px solid ${ab?td.color+'55':'transparent'};
+                          ${isPartial ? 'background-image:linear-gradient(135deg,'+td.color+'33 50%,transparent 50%);' : ''}"
+                          title="${esc(tooltip)}">
+                          ${ab?td.icon:isWe?'—':''}
+                        </div>
+                      </td>`;
+                    }).join('')}
+                  </tr>
+                `).join('')}
               `).join('')}
             </tbody>
           </table>
