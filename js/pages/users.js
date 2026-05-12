@@ -815,6 +815,26 @@ function openUserModal(userId = null) {
             ).join('')}
           </select>
         </div>
+        ${/* 4.35.21+ Hierarquia direta. Usado por feedbacks e (futuramente)
+              CSAT/dashboards/capacidade pra restringir visibilidade por arvore. */ ''}
+        <div class="form-group">
+          <label class="form-label">
+            Gestor direto
+            <span title="Quem este usuário reporta diretamente. Define hierarquia pra visibilidade de feedbacks, ranking, etc."
+              style="cursor:help;color:var(--brand-gold);font-size:0.75rem;">ⓘ</span>
+          </label>
+          <select class="form-select" id="uf-manager" size="1">
+            <option value="">— Sem gestor (topo) —</option>
+            ${(users || [])
+              .filter(u => u.id !== user?.id && u.active !== false)
+              .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+              .map(u => `<option value="${escHtml(u.id)}" ${(user?.managerId||'') === u.id ? 'selected' : ''}>${escHtml(u.name || u.email || u.id)}</option>`)
+              .join('')}
+          </select>
+          <span class="form-hint" style="font-size:0.7rem;color:var(--text-muted);">
+            Deixe vazio se for topo da hierarquia (Diretoria). Não pode criar loops (A→B→A).
+          </span>
+        </div>
         <div class="form-group">
           <label class="form-label">Squads <span style="font-weight:400;color:var(--text-muted);">(pode participar de mais de um)</span></label>
           <div id="uf-squads-picker" data-selected="${escHtml(JSON.stringify(_userSquadIds(user)))}"
@@ -1047,6 +1067,7 @@ async function handleUserSave(userId, isEdit, closeModal) {
   const password   = document.getElementById('uf-password')?.value;
   const role       = document.getElementById('uf-role')?.value;
   const department = document.getElementById('uf-department')?.value?.trim();
+  const managerId  = document.getElementById('uf-manager')?.value || null; // 4.35.21+
 
   // Squads: a fonte de verdade agora é workspace.members[]. O picker dá
   // os IDs de squad selecionados. Vamos:
@@ -1089,6 +1110,15 @@ async function handleUserSave(userId, isEdit, closeModal) {
     setErr('uf-password-error', 'Senha deve ter ao menos 6 caracteres.');
   }
 
+  // 4.35.21+ Valida loop de hierarquia (managerId não pode estar na subtree do user)
+  if (managerId && isEdit) {
+    const { isValidManagerAssignment } = await import('../services/users.js');
+    if (!isValidManagerAssignment(userId, managerId, users)) {
+      toast.error('Gestor inválido: criaria um loop na hierarquia (A reporta a B, B reporta a A).');
+      return;
+    }
+  }
+
   if (!valid) return;
 
   // Submit
@@ -1102,10 +1132,10 @@ async function handleUserSave(userId, isEdit, closeModal) {
     let savedUserId = userId;
     if (isEdit) {
       const visibleSectors = Array.from(document.querySelectorAll('.sector-vis-cb:checked')).map(cb => cb.value);
-      await updateUserProfile(userId, { name, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department, active, visibleSectors });
+      await updateUserProfile(userId, { name, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department, active, visibleSectors, managerId });
       toast.success(`Usuário "${name}" atualizado com sucesso!`);
     } else {
-      const created = await createUser({ name, email, password, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department });
+      const created = await createUser({ name, email, password, role, roleId: role, department: nucleo, nucleo, nucleos, sector: department, managerId });
       savedUserId = created?.id || savedUserId;
       toast.success(`Usuário "${name}" criado com sucesso!`);
     }

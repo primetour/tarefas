@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 35,
-  patch: 20,
-  build: '20260511-projeto-obrigatorio-no-form',
+  patch: 21,
+  build: '20260511-hierarquia-managerId-feedbacks',
 };
 
 /** "1.2.0" */

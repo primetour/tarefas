@@ -377,6 +377,35 @@ async function renderListTab(container) {
   const listEl = document.getElementById('fb-list');
   if (listEl) listEl.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-muted);">⏳ Carregando…</div>`;
   allFeedbacks = await fetchFeedbacks().catch(() => []);
+
+  // 4.35.21+ Filtro de visibilidade hierárquica:
+  //  - master / system_view_all → ve tudo (sem filtro)
+  //  - manager/coordinator     → vê só onde collaborator OU manager-do-feedback
+  //                              está na sua subtree (incluindo self)
+  //  - member                  → vê só onde collaborator === me OR manager-do-feedback === me
+  // Nota: f.managerId aqui é "quem deu o feedback" (não hierarquia). Mas se
+  // alguém me deu feedback ou eu dei pra alguém da minha equipe, faz sentido eu ver.
+  try {
+    const seeAll = store.isMaster() || store.can('system_view_all');
+    if (!seeAll) {
+      const { getVisibleUserIds } = await import('../services/users.js');
+      const usersList = store.get('users') || [];
+      const myProfile = store.get('userProfile');
+      const myUid = store.get('currentUser')?.uid;
+      if (myUid) {
+        const viewer = { uid: myUid, ...myProfile };
+        const visibleSet = getVisibleUserIds(viewer, usersList, (p) => store.can(p));
+        if (visibleSet) {
+          const before = allFeedbacks.length;
+          allFeedbacks = allFeedbacks.filter(f =>
+            visibleSet.has(f.collaboratorId) || visibleSet.has(f.managerId)
+          );
+          console.log(`[feedbacks] filtro hierárquico: ${before} → ${allFeedbacks.length} (subtree ${visibleSet.size} users)`);
+        }
+      }
+    }
+  } catch (e) { console.warn('[feedbacks] hierarchy filter failed:', e?.message); }
+
   renderFbKpis();
   renderFbList();
 }

@@ -778,7 +778,7 @@ export async function fetchUserProfile(uid) {
  * @param {object} args - dados do usuário
  * @param {string} args.password - obrigatório só para domínios não-SSO
  */
-export async function createUser({ name, email, password, role, roleId, department = '', nucleo = '', nucleos = [], sector = '' }) {
+export async function createUser({ name, email, password, role, roleId, department = '', nucleo = '', nucleos = [], sector = '', managerId = null }) {
   if (!store.can('system_manage_users')) throw new Error('Permissão negada.');
 
   const cleanEmail = email.trim().toLowerCase();
@@ -799,6 +799,7 @@ export async function createUser({ name, email, password, role, roleId, departme
                     : ((nucleo || department).trim() ? [(nucleo || department).trim()] : []),
     department:   (nucleo || department).trim(),
     sector:       (sector || '').trim(),
+    managerId:    managerId || null, // 4.35.21+ hierarquia direta
     avatarColor:  avatarColor,
     active:       true,
     firstLogin:   true,
@@ -940,6 +941,7 @@ export async function updateUserProfile(uid, data) {
   const adminFields = [
     'role', 'roleId', 'active',
     'nucleo', 'nucleos', 'sector', 'visibleSectors',
+    'managerId', // 4.35.21+ hierarquia direta
   ];
 
   const updateData = {};

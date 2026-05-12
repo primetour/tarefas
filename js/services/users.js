@@ -60,3 +60,75 @@ export async function fetchUsers({ active = false, force = false } = {}) {
 export function invalidateUsersCache() {
   store.invalidateCache(CACHE_KEY);
 }
+
+/* ─── 4.35.21+ Hierarquia (managerId) ────────────────────── *
+ * Cada user.managerId aponta pro gestor direto. Subordinados:
+ * filtram users.managerId === uid (diretos), recurse pra obter
+ * toda a árvore abaixo.
+ *
+ * Usado por feedbacks (visibilidade restrita pro gestor de área)
+ * e potencialmente CSAT, dashboards, capacity (vide auditoria).
+ */
+
+/** Subordinados diretos de um uid. */
+export function getDirectReports(uid, users) {
+  if (!uid || !Array.isArray(users)) return [];
+  return users.filter(u => u.managerId === uid);
+}
+
+/**
+ * Árvore inteira abaixo de um uid (recursivo + iterativo seguro).
+ * Detecta loops e ignora (idempotente).
+ * @returns {Array} usuários subordinados (excluindo o próprio uid)
+ */
+export function getSubordinatesTree(uid, users) {
+  if (!uid || !Array.isArray(users)) return [];
+  const visited = new Set([uid]); // evita loop
+  const result = [];
+  const queue = [uid];
+  while (queue.length) {
+    const current = queue.shift();
+    const directs = users.filter(u => u.managerId === current);
+    for (const d of directs) {
+      if (visited.has(d.id)) continue; // loop detectado
+      visited.add(d.id);
+      result.push(d);
+      queue.push(d.id);
+    }
+  }
+  return result;
+}
+
+/**
+ * Conjunto de UIDs visíveis hierarquicamente pra um viewer.
+ * - master/admin (com system_view_all): null = "todos visíveis"
+ * - gestor: { meUid + subordinados (transitivos) }
+ * - membro: { meUid } só
+ *
+ * Helper centralizado pra usar em feedbacks, csat e outros módulos
+ * que precisam aplicar visibilidade por hierarquia.
+ *
+ * @returns {Set<string>|null} null = ver todos; Set = só esses uids
+ */
+export function getVisibleUserIds(viewer, allUsers, roleCan) {
+  if (!viewer) return new Set();
+  // Master ou system_view_all: vê tudo
+  if (roleCan?.('system_view_all') || viewer.role === 'master') return null;
+  // Construir Set transitivo
+  const set = new Set([viewer.uid || viewer.id]);
+  const subtree = getSubordinatesTree(viewer.uid || viewer.id, allUsers);
+  subtree.forEach(u => set.add(u.id));
+  return set;
+}
+
+/**
+ * Validação de loop ao salvar managerId.
+ * @returns {boolean} true se NÃO há ciclo (ok pra salvar)
+ */
+export function isValidManagerAssignment(targetUid, newManagerId, allUsers) {
+  if (!newManagerId) return true; // remover gestor sempre ok
+  if (newManagerId === targetUid) return false; // não pode ser gestor de si
+  // Verifica se newManagerId está na subtree de targetUid (loop)
+  const subtree = getSubordinatesTree(targetUid, allUsers);
+  return !subtree.some(u => u.id === newManagerId);
+}
