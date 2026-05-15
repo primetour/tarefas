@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 15,
-  build: '20260515-goals-squad-membership',
+  patch: 16,
+  build: '20260515-cc-virtuals-respect-type-filter',
 };
 
 /** "1.2.0" */

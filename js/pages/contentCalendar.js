@@ -474,24 +474,21 @@ function getProjectTaskTypeIds() {
  */
 function generateVirtualSlots(date) {
   if (!showProjectTasks) return [];
-  const restricted = Array.isArray(visibleTaskTypes);
+  // 4.40.16+ Bug fix: virtual slots (agenda prévia) APENAS quando há tipos
+  // explicitamente selecionados em visibleTaskTypes. Antes, com apenas
+  // projetos selecionados (sem filtro de tipo), os virtuais apareciam pra
+  // TODOS os tipos usados pelas tarefas dos projetos — incluindo Newsletter,
+  // mesmo sem o user ter pedido. Quebrava a promessa visual do header
+  // "TIPOS: Nenhum — adicione pra ver a agenda prévia (slots)".
+  const restricted = Array.isArray(visibleTaskTypes) && visibleTaskTypes.length > 0;
+  if (!restricted) return [];
   const allTypes = store.get('taskTypes') || [];
-  // Tipos em uso pelas tasks dos projetos ativos
-  const usedTypeIds = new Set(_projectTasks.map(t => t.typeId).filter(Boolean));
   const dow = date.getDay();
   const dom = date.getDate();
   const dateIso = formatDate(date);
   const out = [];
   for (const type of allTypes) {
-    // 4.35.10+ Antes: pulava se !usedTypeIds.has(type.id) — agora também
-    // aceita tipos EXPLICITAMENTE marcados em visibleTaskTypes (mesmo sem
-    // task criada). Permite ver previsões editoriais de tipos novos.
-    if (restricted) {
-      if (!visibleTaskTypes.includes(type.id)) continue;
-    } else if (!usedTypeIds.has(type.id)) {
-      // Sem filtro explícito: mantém comportamento antigo (só usados)
-      continue;
-    }
+    if (!visibleTaskTypes.includes(type.id)) continue;
     const slots = Array.isArray(type.scheduleSlots) ? type.scheduleSlots : [];
     for (const s of slots) {
       if (s.active === false) continue;
