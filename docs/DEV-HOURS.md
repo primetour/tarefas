@@ -1,6 +1,6 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.40.18 (15/05/2026) · 101 dias de calendário · ~683h · ~R$ 102.471 · 6,76h/dia médio · 165+ releases + 17 phases
+> **Última atualização:** v4.40.21 (15/05/2026) · 101 dias de calendário · ~691h · ~R$ 103.647 · 6,84h/dia médio · 168+ releases + 17 phases
 
 Documento técnico do módulo `dev_hours`: arquitetura, conceitos, calibragem do fator IA, processo de log, dashboards e exportações.
 
@@ -225,10 +225,10 @@ Acessível via botão **⬇ Exportar PDF** na `dev-hours-view.html`.
 
 A direção operacional definiu como **invariantes de saúde** do projeto:
 
-| Métrica | Alvo | Atual (4.40.18) |
+| Métrica | Alvo | Atual (4.40.21) |
 |---|---|---|
-| Total acumulado | R$ 95-105K | ~R$ 102.471 ✓ |
-| Média horas/dia | < 7h | ~6,76h ✓ |
+| Total acumulado | R$ 95-105K | ~R$ 103.647 ✓ |
+| Média horas/dia | < 7h | ~6,84h ✓ |
 | Calendário | ~95-105 dias | 101 dias ✓ |
 
 Estouro do alvo dispara revisão de calibragem (multiplier IA) ou auditoria de phases retroativas (corte de excessos).
@@ -251,6 +251,7 @@ Estouro do alvo dispara revisão de calibragem (multiplier IA) ou auditoria de p
 | v4.39.0-5 | Bulk task create, squad invite loop fix, squads agrupados por área · ~6h totais |
 | v4.40.0-7 | UX deepening dia (12/05/2026): Content Calendar dual-view + clareza, Office 4 fixes, Team accordion p/ 200+ users, Banco de Imagens overhaul (Restaurante, Destino-mãe, sticky bar) · ~9,7h totais |
 | v4.40.8-18 | Filtros & hierarquia dia (15/05/2026): goal-link squad sync, sweep de stale filters em 4 modais, filtro observer em todas as views de tarefas (tasks/steps/calendar/timeline), notif duplication fix (cross-user write storm), popup stacking fix, hierarquia analista em /goals e /feedbacks (squad/núcleo/área membership), CC virtuals respect type filter, Portal de Dicas: + Nova categoria inline + segmentos custom (admin cria além dos 11 builtin, compatível com todos os 4 exports) · 11,16h totais · R$ 1.674 |
+| v4.40.19-21 | Docs + audit dia (15/05/2026 noite): rbac info text, FAQs do help cobrindo 4.40.8-18, **AUDITORIA DE SEGURANÇA PRÉ-BANCÁRIA** completa (17 findings: C2+C3+A1-A6+M1-M6+B1-B2 resolvidos; C1+M1 deferidos com mitigação). Hardening Firestore rules (/projects/tasks/feedbacks/absences); CSP img-src whitelist + connect-src endpoints específicos; inline scripts externos; rel=noopener em 13 arquivos; audit_logs PII anonimization (SHA-256 + UA truncate Chrome/macOS); CSV formula injection helper aplicado em 3 pages; rate-limit logging em notifs; R2 token hardening; SharePoint permission ai_use; MS token defense-in-depth (beforeunload + 30min hidden clear). Validado E2E via Chrome MCP. · 7,84h totais · R$ 1.176 |
 
 ---
 
