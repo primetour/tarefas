@@ -68,6 +68,19 @@ async function checkDeadlines() {
   // Filtra status localmente (sem custo de read extra)
   tasks = tasks.filter(t => activeSet.has(t.status) && t.dueDate);
 
+  // 4.40.12+ Cada user só notifica SUAS PRÓPRIAS tarefas (creator/assignee/observer).
+  // Antes: TODO user que abrisse o app iterava TODAS as tarefas visíveis e
+  // disparava notify(creator+assignees+observers) — gerando duplicação cross-user.
+  // Resultado: a mesma notif chegava ao recipient N vezes (uma por browser ativo
+  // no sistema), com actorName diferente, parecendo "notif de todos".
+  // Fix: filtra pelas tarefas onde EU sou stakeholder, e notifico apenas a mim.
+  const myUid = currentUser.uid;
+  tasks = tasks.filter(t => {
+    const assignees = Array.isArray(t.assignees) ? t.assignees : (t.assignees ? [t.assignees] : []);
+    const observers = Array.isArray(t.observers) ? t.observers : [];
+    return t.createdBy === myUid || assignees.includes(myUid) || observers.includes(myUid);
+  });
+
   const now = new Date();
   const { notify } = await import('./notifications.js');
 
@@ -76,12 +89,11 @@ async function checkDeadlines() {
     if (isNaN(due.getTime())) continue;
 
     const hoursUntilDue = (due - now) / (1000 * 60 * 60);
-    const assignees = Array.isArray(task.assignedTo) ? task.assignedTo
-                    : task.assignedTo ? [task.assignedTo] : [];
-    // Compat com o modelo atual (assignees), mantendo retrocompat
-    const assigneesArr = Array.isArray(task.assignees) ? task.assignees : assignees;
-    const recipients = [...new Set([task.createdBy, ...assigneesArr].filter(Boolean))];
-    if (!recipients.length) continue;
+    // 4.40.12+ Recipient = APENAS o user atual. Cada user é responsável por
+    // notificar a si mesmo sobre tarefas onde ele tem skin in the game.
+    // (Filtro já garantiu que myUid é creator/assignee/observer.) Antes era
+    // [creator, ...assignees] disparado por todo mundo → duplicação massiva.
+    const recipients = [myUid];
 
     const taskTitle = task.title || 'Tarefa sem título';
 

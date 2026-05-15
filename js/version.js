@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 11,
-  build: '20260515-tasks-observer-filter',
+  patch: 12,
+  build: '20260515-notif-duplication-fix',
 };
 
 /** "1.2.0" */
