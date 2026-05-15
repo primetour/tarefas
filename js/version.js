@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 16,
-  build: '20260515-cc-virtuals-respect-type-filter',
+  patch: 17,
+  build: '20260515-portal-add-category-inline',
 };
 
 /** "1.2.0" */

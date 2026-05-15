@@ -10,7 +10,7 @@
 import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
-  fetchDestinations, fetchTip, saveTip, fetchCategories,
+  fetchDestinations, fetchTip, saveTip, fetchCategories, saveCategories,
   SEGMENTS, CONTINENTS, MONTHS,
 } from '../services/portal.js';
 
@@ -636,6 +636,10 @@ function placeItemBlock(item, i, cats, isAgenda) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-right:90px;margin-bottom:10px;">
       <div>
         <label style="${LBL}">Categoria</label>
+        ${/* 4.40.17+ Última opção "+ Nova categoria…" abre prompt e persiste em
+              portal_categories/{segmentKey}. Categoria nova fica disponível
+              imediatamente no dropdown E em todos os exports (docx/pdf/pptx/web)
+              porque eles leem item.categoria como texto livre. */ ''}
         <select class="place-cat filter-select" data-index="${i}" style="width:100%;">
           <option value="">Selecione</option>
           ${cats.map(c=>`<option value="${esc(c)}" ${item.categoria===c?'selected':''}>${esc(c)}</option>`).join('')}
@@ -643,6 +647,7 @@ function placeItemBlock(item, i, cats, isAgenda) {
             ${!item.categoria||cats.includes(item.categoria)?'style="display:none"':''}>
             ${esc(item.categoria||'')}
           </option>
+          <option value="__add_new__" style="color:var(--brand-gold);font-weight:600;">+ Nova categoria…</option>
         </select>
       </div>
       <div>
@@ -711,6 +716,49 @@ function bindPlaceList(key, isAgenda = false) {
     });
     renderSegmentPanel(key); markDirty();
   });
+
+  // 4.40.17+ Handler do "+ Nova categoria…" inline. Quando user seleciona,
+  // pede nome via prompt, persiste em portal_categories/{key} e re-renderiza
+  // o painel com a nova categoria pre-selecionada no item.
+  container?.addEventListener('change', async (e) => {
+    const sel = e.target.closest('.place-cat');
+    if (!sel || sel.value !== '__add_new__') return;
+    const idx = parseInt(sel.dataset.index);
+    // Reverte seleção visual enquanto pedimos o nome (evita ficar com __add_new__)
+    sel.value = segmentData[key]?.items?.[idx]?.categoria || '';
+
+    const seg = SEGMENTS.find(s => s.key === key);
+    const segLabel = seg?.label || key;
+    const name = (prompt(`Nova categoria em "${segLabel}":\n\nDigite o nome da categoria (ex: Especiarias, Pet-friendly, …):`) || '').trim();
+    if (!name) return;
+
+    // Verifica se já existe (case-insensitive) — evita duplicatas
+    const current = categoriesCache[key] || [];
+    const dup = current.find(c => c.toLowerCase() === name.toLowerCase());
+    if (dup) {
+      // Já existe — usa essa
+      saveCurrentSegmentData();
+      segmentData[key].items[idx].categoria = dup;
+      renderSegmentPanel(key); markDirty();
+      toast.info(`Categoria "${dup}" já existia — usando essa.`);
+      return;
+    }
+
+    // Persiste no Firestore + atualiza cache local
+    try {
+      const updated = [...current, name];
+      await saveCategories(key, updated);
+      categoriesCache[key] = updated;
+      // Pre-seleciona no item
+      saveCurrentSegmentData();
+      segmentData[key].items[idx].categoria = name;
+      renderSegmentPanel(key); markDirty();
+      toast.success(`Categoria "${name}" criada em ${segLabel}.`);
+    } catch (err) {
+      toast.error(`Erro ao criar categoria: ${err.message || err}`);
+    }
+  });
+
   container?.addEventListener('click', e => {
     const btn = e.target.closest('button');
     if (!btn) return;
