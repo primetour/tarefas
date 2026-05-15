@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 8,
-  build: '20260515-goal-link-squad-sync',
+  patch: 9,
+  build: '20260515-goal-link-all-squads',
 };
 
 /** "1.2.0" */

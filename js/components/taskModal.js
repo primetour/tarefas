@@ -494,6 +494,15 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           // Lê live do store — workspaces/users podem ter mudado desde o boot
           const currentWorkspaces = store.get('userWorkspaces') || [];
           const currentUsers      = store.get('users') || [];
+
+          // 4.40.9+ Squads: inclui TODAS as squads ativas do sistema (não só
+          // as referenciadas por g.squadId). Antes, se uma squad existia mas
+          // ainda não tinha goal vinculada, ela ficava ausente da dropdown —
+          // confundia o user que esperava ver a lista atual de squads.
+          currentWorkspaces
+            .filter(w => !w.archived)
+            .forEach(w => squadSet.set(w.id, { name: w.name, icon: w.icon || '◊' }));
+
           available.forEach(g => {
             const respIdsLocal = getResponsavelIds(g);
             respIdsLocal.forEach(id => {
@@ -504,7 +513,11 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
               const u = currentUsers.find(x => x.id === g.gestorId);
               if (u) gestorSet.set(g.gestorId, u.name);
             }
-            if (g.squadId) {
+            // Inclui squads referenciadas em goals mas não presentes em
+            // userWorkspaces (raro: squad arquivada com goal ativo, ou
+            // squadId órfão pós-merge). Garante que a dropdown reflete o
+            // que pode ser filtrado.
+            if (g.squadId && !squadSet.has(g.squadId)) {
               const ws = currentWorkspaces.find(w => w.id === g.squadId);
               if (ws) squadSet.set(g.squadId, { name: ws.name, icon: ws.icon || '◊' });
             }
