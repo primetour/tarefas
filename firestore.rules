@@ -717,6 +717,14 @@ service cloud.firestore {
       allow write: if isAuth() && isAdmin();
     }
 
+    // 4.40.18+ Custom segments (segmentos extras além dos 11 builtin).
+    // Leitura PÚBLICA pra portal-view.html renderizar web links sem auth.
+    // Escrita só admin (mesmo padrão de portal_categories).
+    match /portal_segments/{segKey} {
+      allow read:  if true;
+      allow write: if isAuth() && isAdmin();
+    }
+
     // ── Roteiros de Viagem ──────────────────────────────────
     match /roteiros/{roteiroId} {
       allow read:   if isAuth();

@@ -42,19 +42,25 @@ export const DEFAULT_CATEGORIES = {
 //   simple_list   → Bairros, Arredores (text items)
 //   place_list    → standard list with category+place fields
 //   agenda        → Agenda Cultural (place_list + period per item)
-export const SEGMENTS = [
-  { key: 'informacoes_gerais',  label: 'Informações Gerais',               mode: 'special_info' },
-  { key: 'bairros',             label: 'Bairros',                          mode: 'simple_list'  },
-  { key: 'atracoes',            label: 'Atrações',                         mode: 'place_list'   },
-  { key: 'atracoes_criancas',   label: 'Atrações para Crianças',           mode: 'place_list'   },
-  { key: 'restaurantes',        label: 'Restaurantes',                     mode: 'place_list'   },
-  { key: 'vida_noturna',        label: 'Vida Noturna',                     mode: 'place_list'   },
-  { key: 'espetaculos',         label: 'Casas de Espetáculos, Teatros e Cia.', mode: 'place_list' },
-  { key: 'compras',             label: 'Compras',                          mode: 'place_list'   },
-  { key: 'arredores',           label: 'Arredores',                        mode: 'simple_list'  },
-  { key: 'highlights',          label: 'Highlights',                       mode: 'place_list'   },
-  { key: 'agenda_cultural',     label: 'Agenda Cultural',                  mode: 'agenda'       },
+// 4.40.18+ DEFAULT_SEGMENTS = lista hardcoded (built-in). User pode criar
+// segmentos extras via portal_segments (CRUD). getSegments() retorna a
+// união ordenada — defaults primeiro, custom no fim.
+export const DEFAULT_SEGMENTS = [
+  { key: 'informacoes_gerais',  label: 'Informações Gerais',               mode: 'special_info', builtin: true },
+  { key: 'bairros',             label: 'Bairros',                          mode: 'simple_list',  builtin: true },
+  { key: 'atracoes',            label: 'Atrações',                         mode: 'place_list',   builtin: true },
+  { key: 'atracoes_criancas',   label: 'Atrações para Crianças',           mode: 'place_list',   builtin: true },
+  { key: 'restaurantes',        label: 'Restaurantes',                     mode: 'place_list',   builtin: true },
+  { key: 'vida_noturna',        label: 'Vida Noturna',                     mode: 'place_list',   builtin: true },
+  { key: 'espetaculos',         label: 'Casas de Espetáculos, Teatros e Cia.', mode: 'place_list', builtin: true },
+  { key: 'compras',             label: 'Compras',                          mode: 'place_list',   builtin: true },
+  { key: 'arredores',           label: 'Arredores',                        mode: 'simple_list',  builtin: true },
+  { key: 'highlights',          label: 'Highlights',                       mode: 'place_list',   builtin: true },
+  { key: 'agenda_cultural',     label: 'Agenda Cultural',                  mode: 'agenda',       builtin: true },
 ];
+// Compat alias — código legacy ainda importa SEGMENTS. Mesma lista, sem custom.
+// Para incluir custom: use getSegments() (async).
+export const SEGMENTS = DEFAULT_SEGMENTS;
 
 export const GENERATION_FORMATS = [
   { key: 'docx', label: 'Word (.docx)' },
@@ -86,6 +92,87 @@ export async function saveCategories(segmentKey, categories) {
     updatedAt: serverTimestamp(),
     updatedBy: uid(),
   }, { merge: true });
+}
+
+/* ─── 4.40.18+ Custom Segments (dynamic) ──────────────────────
+ * Permite ao admin adicionar segmentos extras além dos DEFAULT_SEGMENTS.
+ * Cada custom seg vira um doc em portal_segments/{key} com:
+ *   key, label, mode (place_list|simple_list|agenda), order, builtin:false
+ * Cache local de 60s pra evitar fetch por tip-render.
+ */
+let _customSegmentsCache = null;
+let _customSegmentsCacheAt = 0;
+const CUSTOM_SEGMENTS_TTL = 60_000;
+
+export async function fetchCustomSegments({ force = false } = {}) {
+  if (!force && _customSegmentsCache && (Date.now() - _customSegmentsCacheAt < CUSTOM_SEGMENTS_TTL)) {
+    return _customSegmentsCache;
+  }
+  try {
+    const snap = await getDocs(query(collection(db, 'portal_segments'), orderBy('order', 'asc')));
+    const list = snap.docs.map(d => ({ ...d.data(), key: d.id, builtin: false }));
+    _customSegmentsCache = list;
+    _customSegmentsCacheAt = Date.now();
+    return list;
+  } catch (e) {
+    console.warn('[portal] fetchCustomSegments failed:', e?.message);
+    return [];
+  }
+}
+
+/**
+ * Retorna SEGMENTS mergeados: defaults (builtin) primeiro, custom no fim.
+ * Cada custom seg respeita a ordem do campo `order` (default = 999).
+ */
+export async function getSegments({ force = false } = {}) {
+  const custom = await fetchCustomSegments({ force });
+  return [...DEFAULT_SEGMENTS, ...custom];
+}
+
+/**
+ * Cria/atualiza um segmento custom. Key precisa ser único e não pode
+ * colidir com DEFAULT_SEGMENTS.
+ */
+export async function saveCustomSegment({ key, label, mode = 'place_list', order = 100 }) {
+  if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  if (!key || !label) throw new Error('key e label são obrigatórios.');
+  if (DEFAULT_SEGMENTS.find(s => s.key === key)) {
+    throw new Error(`Key "${key}" colide com segmento padrão.`);
+  }
+  if (!['place_list', 'simple_list', 'agenda'].includes(mode)) {
+    throw new Error(`Modo inválido: ${mode}. Use: place_list, simple_list ou agenda.`);
+  }
+  await setDoc(doc(db, 'portal_segments', key), {
+    label, mode, order,
+    builtin: false,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid(),
+  }, { merge: true });
+  // Invalida cache
+  _customSegmentsCache = null;
+}
+
+export async function deleteCustomSegment(key) {
+  if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  if (DEFAULT_SEGMENTS.find(s => s.key === key)) {
+    throw new Error(`Não é possível deletar segmento padrão.`);
+  }
+  await deleteDoc(doc(db, 'portal_segments', key));
+  _customSegmentsCache = null;
+}
+
+/**
+ * Slugify pra gerar key automática a partir do label. Idempotente.
+ *   "Praias e Costas" → "praias_e_costas"
+ */
+export function slugifySegmentKey(label) {
+  return String(label || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')  // remove acentos
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40)
+    || `seg_${Date.now()}`;
 }
 
 /* ─── Areas ───────────────────────────────────────────────── */

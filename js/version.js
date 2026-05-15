@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 17,
-  build: '20260515-portal-add-category-inline',
+  patch: 18,
+  build: '20260515-portal-custom-segments',
 };
 
 /** "1.2.0" */

@@ -93,23 +93,25 @@
 
 <script type="module">
 import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getFirestore, doc, getDoc, updateDoc, increment } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, doc, getDoc, getDocs, collection, query, orderBy, updateDoc, increment } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig }   from './js/config.js';
 import { applyPortalTheme } from './js/services/portalTokens.js';
 
 const MONTHS=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-const SEGMENTS=[
-  {key:'informacoes_gerais',label:'Informações', icon:'info'},
-  {key:'bairros',           label:'Bairros',      icon:'location_city'},
-  {key:'atracoes',          label:'Atrações',     icon:'visibility'},
-  {key:'atracoes_criancas', label:'Crianças',     icon:'child_care'},
-  {key:'restaurantes',      label:'Gastronomia',  icon:'restaurant'},
-  {key:'vida_noturna',      label:'Vida Noturna', icon:'nightlife'},
-  {key:'espetaculos',       label:'Espetáculos',  icon:'theater_comedy'},
-  {key:'compras',           label:'Compras',      icon:'shopping_bag'},
-  {key:'arredores',         label:'Arredores',    icon:'explore'},
-  {key:'highlights',        label:'Highlights',   icon:'star'},
-  {key:'agenda_cultural',   label:'Agenda',       icon:'event'},
+// 4.40.18+ Defaults (mode incluído pra dispatch). SEGMENTS é `let` —
+// pode ser estendido com customs fetched de portal_segments antes do render.
+let SEGMENTS=[
+  {key:'informacoes_gerais',label:'Informações', icon:'info',          mode:'special_info'},
+  {key:'bairros',           label:'Bairros',      icon:'location_city', mode:'simple_list'},
+  {key:'atracoes',          label:'Atrações',     icon:'visibility',    mode:'place_list'},
+  {key:'atracoes_criancas', label:'Crianças',     icon:'child_care',    mode:'place_list'},
+  {key:'restaurantes',      label:'Gastronomia',  icon:'restaurant',    mode:'place_list'},
+  {key:'vida_noturna',      label:'Vida Noturna', icon:'nightlife',     mode:'place_list'},
+  {key:'espetaculos',       label:'Espetáculos',  icon:'theater_comedy',mode:'place_list'},
+  {key:'compras',           label:'Compras',      icon:'shopping_bag',  mode:'place_list'},
+  {key:'arredores',         label:'Arredores',    icon:'explore',       mode:'simple_list'},
+  {key:'highlights',        label:'Highlights',   icon:'star',          mode:'place_list'},
+  {key:'agenda_cultural',   label:'Agenda',       icon:'event',         mode:'agenda'},
 ];
 
 const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -132,6 +134,23 @@ const db=getFirestore(app);
   if(!snap.exists()){showErr('Link não encontrado','Este link pode ter expirado ou foi removido.');return;}
   const data=snap.data();
   updateDoc(doc(db,'portal_web_links',token),{views:increment(1)}).catch(()=>{});
+
+  // 4.40.18+ Carrega segmentos custom de portal_segments (defaults +
+  // customs) pra renderizar segmentos extras criados pelo admin.
+  try {
+    const segSnap = await getDocs(query(collection(db,'portal_segments'),orderBy('order','asc')));
+    const customSegs = segSnap.docs.map(d => ({
+      key: d.id,
+      label: d.data().label || d.id,
+      icon: d.data().icon || 'bookmark',
+      mode: d.data().mode || 'place_list',
+      builtin: false,
+    }));
+    // Append apenas custom (defaults já estão em SEGMENTS)
+    SEGMENTS = [...SEGMENTS, ...customSegs];
+  } catch (e) {
+    console.warn('[portal-view] custom segments fetch fail:', e?.message);
+  }
 
   // Tokens compartilhados com o PDF: cores da área aplicadas via
   // CSS variables (`--portal-primary`, `--portal-secondary`) — os
@@ -626,9 +645,15 @@ async function mountMap(tip, dest) {
 function segHead(sd){return `<div class="seg-heading"><div class="seg-heading-bar"></div><span class="seg-heading-text">${esc(sd.label)}</span></div>`;}
 
 function renderSeg(sd,data,imgs){
-  if(sd.key==='informacoes_gerais')return renderInfo(sd,data);
-  if(sd.key==='bairros'||sd.key==='arredores')return renderSimple(sd,data,imgs);
-  return renderPlaces(sd,data,imgs,sd.key==='agenda_cultural');
+  // 4.40.18+ Dispatch por MODE (não key) — custom segs com modes válidos
+  // (place_list/simple_list/agenda) renderizam igual aos builtins.
+  const mode = sd.mode || (sd.key==='informacoes_gerais' ? 'special_info'
+                          : sd.key==='bairros'||sd.key==='arredores' ? 'simple_list'
+                          : sd.key==='agenda_cultural' ? 'agenda' : 'place_list');
+  if(mode==='special_info') return renderInfo(sd,data);
+  if(mode==='simple_list')  return renderSimple(sd,data,imgs);
+  if(mode==='agenda')       return renderPlaces(sd,data,imgs,true);
+  return renderPlaces(sd,data,imgs,false);
 }
 
 // Limpa CLIMA e REPRESENTAÇÃO BRASILEIRA de descrições legadas

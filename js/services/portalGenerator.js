@@ -11,21 +11,38 @@
 // Importa só o que é puro (sem firebase). Mantém identidade unificada.
 import { DEFAULT_COLORS as PORTAL_DEFAULT_COLORS, getPortalColors } from './portalTokens.js';
 
-// SEGMENTS inline (cópia da fonte em portal.js) — evita import circular
-// com módulo que carrega firebase. Se mudar lá, sincronizar aqui.
-const SEGMENTS = [
-  { key: 'informacoes_gerais',  label: 'Informações Gerais',                    mode: 'special_info' },
-  { key: 'bairros',             label: 'Bairros',                               mode: 'simple_list'  },
-  { key: 'atracoes',            label: 'Atrações',                              mode: 'place_list'   },
-  { key: 'atracoes_criancas',   label: 'Atrações para Crianças',                mode: 'place_list'   },
-  { key: 'restaurantes',        label: 'Restaurantes',                          mode: 'place_list'   },
-  { key: 'vida_noturna',        label: 'Vida Noturna',                          mode: 'place_list'   },
-  { key: 'espetaculos',         label: 'Casas de Espetáculos, Teatros e Cia.',  mode: 'place_list'   },
-  { key: 'compras',             label: 'Compras',                               mode: 'place_list'   },
-  { key: 'arredores',           label: 'Arredores',                             mode: 'simple_list'  },
-  { key: 'highlights',          label: 'Highlights',                            mode: 'place_list'   },
-  { key: 'agenda_cultural',     label: 'Agenda Cultural',                       mode: 'agenda'       },
+// SEGMENTS defaults (hardcoded como fallback se fetch falhar) + dinâmicos
+// (carregados de portal_segments quando user cria customs).
+// 4.40.18+ Agora é `let` ao invés de `const` — sobrescrito por _loadSegmentsAsync()
+// na entrada de generateTip(). Cópia local pra evitar import circular com
+// módulo que carrega firebase.
+let SEGMENTS = [
+  { key: 'informacoes_gerais',  label: 'Informações Gerais',                    mode: 'special_info', builtin: true },
+  { key: 'bairros',             label: 'Bairros',                               mode: 'simple_list',  builtin: true },
+  { key: 'atracoes',            label: 'Atrações',                              mode: 'place_list',   builtin: true },
+  { key: 'atracoes_criancas',   label: 'Atrações para Crianças',                mode: 'place_list',   builtin: true },
+  { key: 'restaurantes',        label: 'Restaurantes',                          mode: 'place_list',   builtin: true },
+  { key: 'vida_noturna',        label: 'Vida Noturna',                          mode: 'place_list',   builtin: true },
+  { key: 'espetaculos',         label: 'Casas de Espetáculos, Teatros e Cia.',  mode: 'place_list',   builtin: true },
+  { key: 'compras',             label: 'Compras',                               mode: 'place_list',   builtin: true },
+  { key: 'arredores',           label: 'Arredores',                             mode: 'simple_list',  builtin: true },
+  { key: 'highlights',          label: 'Highlights',                            mode: 'place_list',   builtin: true },
+  { key: 'agenda_cultural',     label: 'Agenda Cultural',                       mode: 'agenda',       builtin: true },
 ];
+
+// 4.40.18+ Carrega SEGMENTS atualizados (defaults + customs) antes de gerar.
+// Sem await aqui pra não bloquear o module load. Chamada no entrypoint
+// generateTip() abaixo. Falha silenciosa cai pros defaults.
+async function _loadSegmentsAsync() {
+  try {
+    const portalMod = await import('./portal.js');
+    if (typeof portalMod.getSegments === 'function') {
+      SEGMENTS = await portalMod.getSegments({ force: false });
+    }
+  } catch (e) {
+    console.warn('[portalGenerator] _loadSegmentsAsync failed:', e?.message);
+  }
+}
 const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
@@ -377,6 +394,10 @@ function loadScript(src) {
  * @returns {object} { url?, filename? }
  */
 export async function generateTip({ tip, area, dest, segments, format, extraTips = [], imagesOverride = {}, heroImageOverride = {}, clientName = '' }) {
+  // 4.40.18+ Garante que SEGMENTS está atualizado (incl. customs) antes de
+  // qualquer iteração. Sem isso, segmentos customs sumiam dos exports.
+  await _loadSegmentsAsync();
+
   const allTips  = [{ tip, dest }, ...extraTips];
   const areaName = area?.name || 'PRIMETOUR';
   const colors   = {

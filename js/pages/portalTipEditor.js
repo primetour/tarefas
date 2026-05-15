@@ -11,8 +11,14 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
   fetchDestinations, fetchTip, saveTip, fetchCategories, saveCategories,
-  SEGMENTS, CONTINENTS, MONTHS,
+  SEGMENTS, getSegments, saveCustomSegment, slugifySegmentKey,
+  CONTINENTS, MONTHS,
 } from '../services/portal.js';
+
+// 4.40.18+ Segmentos dinâmicos = defaults + custom (carregados do Firestore).
+// Antes era const SEGMENTS importada estática. Agora _allSegments é mutável
+// e pode crescer quando user cria custom segs via "+ Novo segmento".
+let _allSegments = [...SEGMENTS];
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -209,14 +215,22 @@ async function loadDestinationById(destId, destInfo = null) {
   const tip = await fetchTip(destId);
   currentTip = tip;
 
+  // 4.40.18+ Carrega custom segments do Firestore antes de inicializar
+  // segmentData — assim novos segs ficam disponíveis no nav imediatamente.
+  try {
+    _allSegments = await getSegments({ force: true });
+  } catch (e) {
+    console.warn('[tipEditor] getSegments failed, fallback to defaults:', e?.message);
+  }
+
   // Init segment data
   segmentData = {};
-  for (const seg of SEGMENTS) {
+  for (const seg of _allSegments) {
     segmentData[seg.key] = tip?.segments?.[seg.key] || emptySegData(seg);
   }
 
   // Preload all categories
-  for (const seg of SEGMENTS) {
+  for (const seg of _allSegments) {
     if (seg.mode === 'place_list' || seg.mode === 'agenda') {
       categoriesCache[seg.key] = await fetchCategories(seg.key);
     }
@@ -240,7 +254,7 @@ async function loadDestinationById(destId, destInfo = null) {
 
   renderSegmentNav();
   renderExpiryOverview();
-  activateSegment(SEGMENTS[0].key);
+  activateSegment(_allSegments[0].key);
 }
 
 function emptySegData(seg) {
@@ -253,7 +267,8 @@ function emptySegData(seg) {
 function renderSegmentNav() {
   const nav = document.getElementById('segment-nav');
   if (!nav) return;
-  nav.innerHTML = SEGMENTS.map(s => {
+  const canManage = store.canManagePortal?.() || store.isMaster?.();
+  nav.innerHTML = _allSegments.map(s => {
     const hasContent = segHasContent(s.key);
     const isExpired  = isExpiredSeg(s.key);
     const isActive   = s.key === activeSegKey;
@@ -263,19 +278,101 @@ function renderSegmentNav() {
       border-left:3px solid ${isActive ? 'var(--brand-gold)' : 'transparent'};
       cursor:pointer;display:flex;align-items:center;gap:8px;font-size:0.8125rem;">
       <span style="flex:1;color:${isActive ? 'var(--brand-gold)' : 'var(--text-primary)'};">
-        ${esc(s.label)}
+        ${esc(s.label)}${!s.builtin ? '<span style="font-size:0.625rem;color:var(--text-muted);margin-left:4px;">·custom</span>' : ''}
       </span>
       <span style="font-size:0.625rem;color:${isExpired?'#EF4444':hasContent?'#22C55E':'var(--text-muted)'};">
         ${isExpired ? '⚠' : hasContent ? '●' : '○'}
       </span>
     </button>`;
-  }).join('');
+  }).join('') + (canManage ? `
+    <button id="seg-add-new" style="width:100%;text-align:left;padding:10px 14px;border:none;
+      border-top:1px dashed var(--border-subtle);background:transparent;cursor:pointer;
+      color:var(--brand-gold);font-weight:600;font-size:0.8125rem;">
+      + Novo segmento
+    </button>` : '');
 
   nav.querySelectorAll('.seg-nav-btn').forEach(btn =>
     btn.addEventListener('click', () => {
       saveCurrentSegment();
       activateSegment(btn.dataset.key);
     }));
+  document.getElementById('seg-add-new')?.addEventListener('click', openNewSegmentModal);
+}
+
+/* ─── 4.40.18+ Modal pra criar novo segmento custom ──────────── */
+async function openNewSegmentModal() {
+  const { modal } = await import('../components/modal.js');
+  const ref = modal.open({
+    dedupeKey: 'seg-new-modal',
+    title: '+ Novo segmento',
+    size: 'sm',
+    closeOnEsc: true,
+    content: `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">
+            Nome do segmento *
+          </label>
+          <input type="text" class="portal-field" id="newseg-label" placeholder="Ex: Praias, Spas, Mirantes…"
+            style="width:100%;" maxlength="60" autofocus>
+          <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+            Aparece no menu lateral de segmentos. Use plural quando fizer sentido.
+          </div>
+        </div>
+        <div>
+          <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">
+            Tipo de conteúdo *
+          </label>
+          <select class="filter-select" id="newseg-mode" style="width:100%;">
+            <option value="place_list">📍 Lista de lugares (com categoria, endereço, site, etc.)</option>
+            <option value="simple_list">📝 Lista simples (apenas título + descrição)</option>
+            <option value="agenda">🗓 Agenda (lugares + período do evento)</option>
+          </select>
+          <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+            <strong>Lista de lugares</strong>: campos categoria, título, descrição, endereço, telefone, site, observações.<br>
+            <strong>Lista simples</strong>: só título + descrição (igual Bairros/Arredores).<br>
+            <strong>Agenda</strong>: igual lista de lugares + período do evento (igual Agenda Cultural).
+          </div>
+        </div>
+      </div>`,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+      { label: 'Criar segmento', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const label = ref.getBody().querySelector('#newseg-label')?.value?.trim();
+          const mode  = ref.getBody().querySelector('#newseg-mode')?.value || 'place_list';
+          if (!label) { toast.warning('Digite um nome.'); return; }
+          const key = slugifySegmentKey(label);
+          // Evita colisão com defaults ou outros customs
+          if (_allSegments.some(s => s.key === key)) {
+            toast.error(`Já existe um segmento com nome similar ("${key}"). Use outro nome.`);
+            return;
+          }
+          // Order = maior order atual + 10 (deixa o novo no fim)
+          const maxOrder = _allSegments.reduce((m, s) => Math.max(m, s.order ?? 0), 100);
+          try {
+            await saveCustomSegment({ key, label, mode, order: maxOrder + 10 });
+            // Refresh segmentos + segData
+            _allSegments = await getSegments({ force: true });
+            const newSeg = _allSegments.find(s => s.key === key);
+            if (newSeg) {
+              segmentData[key] = emptySegData(newSeg);
+              if (newSeg.mode === 'place_list' || newSeg.mode === 'agenda') {
+                categoriesCache[key] = await fetchCategories(key);
+              }
+            }
+            close();
+            toast.success(`Segmento "${label}" criado!`);
+            renderSegmentNav();
+            activateSegment(key);
+            markDirty();
+          } catch (err) {
+            toast.error(`Erro: ${err.message || err}`);
+          }
+        }
+      },
+    ],
+  });
 }
 
 function activateSegment(key) {
@@ -288,7 +385,7 @@ function activateSegment(key) {
 function renderSegmentPanel(key) {
   const panel = document.getElementById('segment-editor-panel');
   if (!panel) return;
-  const seg  = SEGMENTS.find(s => s.key === key);
+  const seg  = _allSegments.find(s => s.key === key);
   const data = segmentData[key] || emptySegData(seg);
   if (!seg) return;
 
@@ -727,7 +824,7 @@ function bindPlaceList(key, isAgenda = false) {
     // Reverte seleção visual enquanto pedimos o nome (evita ficar com __add_new__)
     sel.value = segmentData[key]?.items?.[idx]?.categoria || '';
 
-    const seg = SEGMENTS.find(s => s.key === key);
+    const seg = _allSegments.find(s => s.key === key);
     const segLabel = seg?.label || key;
     const name = (prompt(`Nova categoria em "${segLabel}":\n\nDigite o nome da categoria (ex: Especiarias, Pet-friendly, …):`) || '').trim();
     if (!name) return;
@@ -781,7 +878,7 @@ function bindPlaceList(key, isAgenda = false) {
 /* ─── Read DOM → segmentData ──────────────────────────────── */
 function saveCurrentSegmentData() {
   if (!activeSegKey) return;
-  const seg  = SEGMENTS.find(s => s.key === activeSegKey);
+  const seg  = _allSegments.find(s => s.key === activeSegKey);
   const data = segmentData[activeSegKey] || emptySegData(seg);
   data.hasExpiry  = chk('seg-has-expiry');
   data.expiryDate = inp('seg-expiry-date');
@@ -852,7 +949,7 @@ function saveCurrentSegment() {
 function renderExpiryOverview() {
   const el = document.getElementById('expiry-overview');
   if (!el) return;
-  const withExp = SEGMENTS.filter(s => segmentData[s.key]?.hasExpiry && segmentData[s.key]?.expiryDate);
+  const withExp = _allSegments.filter(s => segmentData[s.key]?.hasExpiry && segmentData[s.key]?.expiryDate);
   if (!withExp.length) {
     el.innerHTML = `<div style="font-size:0.75rem;color:var(--text-muted);">Nenhuma validade definida.</div>`;
     return;
@@ -881,7 +978,7 @@ async function saveDraft() {
   if (status) status.textContent = 'Salvando…';
   try {
     const segments = {};
-    for (const seg of SEGMENTS) {
+    for (const seg of _allSegments) {
       const data = segmentData[seg.key];
       if (segHasContent(seg.key) || data?.hasExpiry) segments[seg.key] = data;
     }
@@ -1007,7 +1104,7 @@ function _checkPendingAiSuggestion() {
     _showSegmentAiSuggestion({
       suggestion: data.suggestion,
       sources: [],
-      segmentLabel: SEGMENTS.find(s => s.key === data.segmentKey)?.label || data.segmentKey,
+      segmentLabel: _allSegments.find(s => s.key === data.segmentKey)?.label || data.segmentKey,
       provider: 'cache',
       model: 'sessão anterior',
     });
