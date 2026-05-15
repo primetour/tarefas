@@ -79,8 +79,8 @@ export const PERMISSION_CATALOG = [
   {
     group: 'Metas e Desempenho',
     permissions: [
-      { key: 'goals_view',    label: 'Visualizar metas',          info: 'Ver o quadro de metas e avaliações.' },
-      { key: 'goals_manage',  label: 'Gerenciar metas',           info: 'Criar, editar e publicar metas. Reservado para gestores.' },
+      { key: 'goals_view',    label: 'Visualizar metas',          info: 'Acessar a página /goals. Lista é automaticamente filtrada pela HIERARQUIA: master/goals_manage vê todas; demais veem apenas onde são (a) gestor da meta, (b) responsável, (c) membro do squad (escopo=squad), (d) membro do núcleo (escopo=nucleo), (e) setor da meta nos visibleSectors (escopo=area), ou (f) escopo=global. Editar/excluir é gateado por goals_manage.' },
+      { key: 'goals_manage',  label: 'Gerenciar metas',           info: 'Criar, editar, publicar e excluir metas. Reservado para gestores e diretoria. Sem essa permissão, botões de editar/excluir não aparecem nem para metas onde o usuário é responsável.' },
       { key: 'goals_evaluate',label: 'Avaliar metas (gestor)',    info: 'Registrar e editar avaliações de KPIs. Apenas gestor vinculado à meta.' },
     ],
   },

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 18,
-  build: '20260515-portal-custom-segments',
+  patch: 19,
+  build: '20260515-docs-and-hours-update',
 };
 
 /** "1.2.0" */
