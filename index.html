@@ -1,26 +1,9 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-<script>
-  // Aplica paleta e fonte salvas antes do render para evitar flash
-  (function(){
-    var p=localStorage.getItem('primetour-palette')||'portal';
-    var f=localStorage.getItem('primetour-font')||'';
-    document.documentElement.dataset.palette=p;
-    if(f&&f!=='outfit') document.documentElement.dataset.font=f;
-  })();
-  // Limpa qualquer cropped legacy do localStorage (versões antigas
-  // do sidebar.js cropavam erradamente em alguns browsers e o cropped
-  // ficava cacheado servindo a imagem errada). Sidebar agora usa
-  // URLs diretas hardcoded — nada mais é lido de localStorage.
-  (function(){
-    try {
-      ['app-logo-light-cropped','app-logo-dark-cropped'].forEach(function(k){
-        localStorage.removeItem(k);
-      });
-    } catch(e) {}
-  })();
-</script>
 <head>
+  <!-- 4.40.21+ (security audit) — scripts inline movidos pra js/preload.js
+       e js/splash.js. Permite remover 'unsafe-inline' do CSP no futuro. -->
+  <script src="js/preload.js"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Gestor PRIMETOUR — Plataforma interna de Gestão de Tarefas e Projetos" />
@@ -34,30 +17,24 @@
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <meta name="permissions-policy" content="camera=(), microphone=(self), geolocation=(self), interest-cohort=()" />
 
-  <!-- CSP — Content Security Policy -->
+  <!-- CSP — Content Security Policy
+       4.40.21+ (security audit): img-src wildcard `https:` substituído por
+       whitelist explícita (R2, Worker, Wikipedia, Unsplash). form-action
+       adicionada. frame-ancestors 'self' bloqueia clickjacking via iframe.
+       'unsafe-inline' em style mantido (componentes usam style="..." pesado);
+       em script será removível após migração pra build com nonce. -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'self';
     script-src  'self' 'unsafe-inline' https://www.gstatic.com https://www.google.com https://www.googletagmanager.com https://cdn.jsdelivr.net https://cdn.chart.js https://cdnjs.cloudflare.com https://apis.google.com https://accounts.google.com;
     style-src   'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com;
     font-src    'self' https://fonts.gstatic.com;
-    img-src     'self' data: blob: https:;
-    connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://www.gstatic.com https://www.google.com
-                https://firestore.googleapis.com https://identitytoolkit.googleapis.com
-                https://securetoken.googleapis.com https://api.groq.com https://api.openai.com
-                https://api.anthropic.com https://generativelanguage.googleapis.com
-                https://api.github.com https://raw.githubusercontent.com https://hooks.slack.com wss://*.firebaseio.com
-                https://google.serper.dev https://*.cse.google.com
-                https://primetour-images.rene-castro.workers.dev
-                https://upload.wikimedia.org https://images.unsplash.com
-                https://api.emailjs.com
-                https://primetour.com.br https://www.primetour.com.br
-                https://login.microsoftonline.com https://login.live.com https://graph.microsoft.com
-                https://nominatim.openstreetmap.org
-                https://speed.cloudflare.com
-                https://oauth2.googleapis.com https://content.googleapis.com https://www.googleapis.com;
-    frame-src   'self' https://*.firebaseapp.com https://login.microsoftonline.com https://login.live.com https://apis.google.com https://accounts.google.com https://content.googleapis.com https://www.google.com https://recaptcha.google.com;
+    img-src     'self' data: blob: https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev https://primetour-images.rene-castro.workers.dev https://upload.wikimedia.org https://images.unsplash.com https://lh3.googleusercontent.com https://graph.microsoft.com https://www.gstatic.com https://i.imgur.com https://www.google.com https://www.googletagmanager.com;
+    connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://oauth2.googleapis.com https://content.googleapis.com https://www.googleapis.com https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net https://gestor-de-tarefas-primetour.firebaseio.com wss://gestor-de-tarefas-primetour.firebaseio.com https://gestor-de-tarefas-primetour-default-rtdb.firebaseio.com wss://gestor-de-tarefas-primetour-default-rtdb.firebaseio.com https://firebaseinstallations.googleapis.com https://firebaseappcheck.googleapis.com https://www.gstatic.com https://www.google.com https://api.groq.com https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com https://api.github.com https://raw.githubusercontent.com https://hooks.slack.com https://google.serper.dev https://cse.google.com https://primetour-images.rene-castro.workers.dev https://upload.wikimedia.org https://images.unsplash.com https://api.emailjs.com https://primetour.com.br https://www.primetour.com.br https://login.microsoftonline.com https://login.live.com https://graph.microsoft.com https://nominatim.openstreetmap.org https://speed.cloudflare.com;
+    frame-src   'self' https://gestor-de-tarefas-primetour.firebaseapp.com https://login.microsoftonline.com https://login.live.com https://apis.google.com https://accounts.google.com https://content.googleapis.com https://www.google.com https://recaptcha.google.com;
     object-src  'none';
     base-uri    'self';
+    form-action 'self' https://login.microsoftonline.com;
+    frame-ancestors 'self';
   " />
 
   <title>Gestor PRIMETOUR</title>
@@ -86,29 +63,8 @@
         style="width:130px;height:130px;object-fit:contain;" />
       <span class="loading-logo-text" id="loading-logo-text">PRIMETOUR</span>
     </div>
-    <script>
-      // Aplica logo no loading splash. Mapping EXPLÍCITO por paleta.
-      // SEM cropped, SEM localStorage — URLs diretas hardcoded.
-      // Garantia 100% determinística independente de cache do browser.
-      (function() {
-        try {
-          var LIGHT_LOGO = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-1777390896671.webp';
-          var DARK_LOGO  = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/logos/lazer-alt-1777403810065.webp';
-          var palette = document.documentElement.getAttribute('data-palette') || 'midnight';
-          var useDark = (palette === 'platinum' || palette === 'sand');
-          var url = useDark ? DARK_LOGO : LIGHT_LOGO;
-          var img = document.getElementById('loading-logo-img');
-          var txt = document.getElementById('loading-logo-text');
-          if (img) {
-            img.src = url;
-            img.style.width = 'auto';
-            img.style.height = '120px';
-            img.style.maxWidth = '480px';
-          }
-          if (txt) txt.style.display = 'none';
-        } catch (e) {}
-      })();
-    </script>
+    <!-- 4.40.21+ script externalizado em js/splash.js (audit fix) -->
+    <script src="js/splash.js"></script>
     <div class="loading-bar">
       <div class="loading-bar-fill"></div>
     </div>
@@ -133,7 +89,7 @@
   <!-- Cache-bust: deve casar com FULL de js/version.js (4.31.0+20260508-csat-custom-questions).
        GitHub Pages serve com max-age=600 e browsers cacheiam módulos por URL.
        Bump aqui sempre que js/version.js for atualizado. -->
-  <script type="module" src="js/app.js?v=4.40.20+20260515-help-module-updated"></script>
+  <script type="module" src="js/app.js?v=4.40.21+20260515-security-audit-sprint"></script>
 
 </body>
 </html>

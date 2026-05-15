@@ -585,7 +585,7 @@ const CONTENT = {
         Encarregado pelo tratamento de dados pessoais (LGPD Art. 41):
         <strong>Rene Castro</strong> — <code style="font-size:0.75rem;background:var(--bg-elevated);padding:1px 6px;border-radius:4px;">rene.castro@primetour.com.br</code>.
         Solicitações de titulares (acesso, correção, eliminação) respondidas em até 15 dias úteis.
-        Reportar vulnerabilidades: <a href="/.well-known/security.txt" target="_blank" style="color:var(--brand-gold);">/.well-known/security.txt</a>.
+        Reportar vulnerabilidades: <a href="/.well-known/security.txt" target="_blank" rel="noopener noreferrer" style="color:var(--brand-gold);">/.well-known/security.txt</a>.
       </p>
     </div>`,
 
@@ -677,7 +677,7 @@ const CONTENT = {
       <p style="font-size:0.8125rem;font-weight:600;color:#38BDF8;margin-bottom:4px">Para devs novos</p>
       <p style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;margin:0">
         Quickstart de setup local: <a href="https://github.com/primetour/tarefas/blob/main/README.md"
-          target="_blank" style="color:var(--brand-gold);">README.md</a>.
+          target="_blank" rel="noopener noreferrer" style="color:var(--brand-gold);">README.md</a>.
         Convenções de código + workflow de PR: aba <strong>Convenções e Workflow</strong> acima.
       </p>
     </div>`,

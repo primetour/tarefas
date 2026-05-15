@@ -179,8 +179,13 @@ export const APP_CONFIG = {
   //    → Personal access tokens → Tokens (classic) → Generate new token
   // 2. Marque APENAS a permissão: repo (ou somente "repo:public_repo" para repo público)
   // 3. Cole o token abaixo
+  // 4.40.21+ (security audit) — NUNCA preencher token aqui. Repo é público,
+  // qualquer credential ficaria exposto no histórico Git. Usar Cloud Function
+  // `getGitHubFile` que lê o PAT via Secret Manager (GITHUB_PAT em
+  // functions/index.js linha 43). Manter placeholder pra retro-compat de
+  // código que ainda lê APP_CONFIG.github.token (caminho não-prod).
   github: {
-    token: 'SEU_GITHUB_PAT_AQUI',   // ghp_xxxxxxxxxxxxxxxxxxxx
+    token: '',                       // VAZIO em prod. Não preencher.
     repo:  'primetour/tarefas',
   },
 };

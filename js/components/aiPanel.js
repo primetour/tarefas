@@ -759,7 +759,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
               created++;
               createdTitles.push(item.title);
               addMessage('system', `⚡ ✅ ${createAction === 'create_clipping' ? 'Clipping' : 'Notícia'} cadastrado: <strong>${esc(item.title)}</strong>`
-                + (item.url ? `<br><a href="${esc(item.url)}" target="_blank" style="color:var(--primary);font-size:0.8rem;">${esc(item.source || item.url)}</a>` : ''));
+                + (item.url ? `<br><a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-size:0.8rem;">${esc(item.source || item.url)}</a>` : ''));
             } else {
               errors++;
             }
@@ -898,7 +898,7 @@ export async function mountAiPanel(container, moduleId, getContext, options = {}
                   if (res.success) {
                     chainCreated++;
                     addMessage('system', `⚡ ✅ Cadastrado: <strong>${esc(item.title)}</strong>`
-                      + (item.url ? `<br><a href="${esc(item.url)}" target="_blank" style="color:var(--primary);font-size:0.8rem;">${esc(item.source || item.url)}</a>` : ''));
+                      + (item.url ? `<br><a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--primary);font-size:0.8rem;">${esc(item.source || item.url)}</a>` : ''));
                   } else { chainErrors++; }
                 } catch { chainErrors++; }
               }

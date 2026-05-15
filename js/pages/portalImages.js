@@ -1460,7 +1460,7 @@ function openEditModal(imgId) {
         </div>
         <div style="font-size:0.75rem;color:var(--text-muted);">
           ${img.width && img.height ? `${img.width} × ${img.height} px · ` : ''}${img.sizeMB || '—'} MB ·
-          <a href="${esc(img.url)}" target="_blank" style="color:var(--brand-gold);">Abrir original ↗</a>
+          <a href="${esc(img.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-gold);">Abrir original ↗</a>
         </div>
       </div>
       <div style="padding:14px 24px;border-top:1px solid var(--border-subtle);

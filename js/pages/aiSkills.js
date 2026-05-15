@@ -590,7 +590,7 @@ async function renderConfigTab(el) {
               </div>
               <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">
                 Busca Google completa. 2.500 créditos gratuitos.
-                <a href="https://serper.dev/" target="_blank" style="color:var(--primary);">Criar conta e obter API Key →</a>
+                <a href="https://serper.dev/" target="_blank" rel="noopener noreferrer" style="color:var(--primary);">Criar conta e obter API Key →</a>
               </p>
               <div class="form-group" style="margin:0;">
                 <label class="form-label" style="font-size:0.8125rem;">Serper API Key</label>
@@ -607,7 +607,7 @@ async function renderConfigTab(el) {
               </div>
               <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">
                 100 buscas/dia gratuitas. Requer criar Search Engine com sites configurados.
-                <a href="https://programmablesearchengine.google.com/" target="_blank" style="color:var(--primary);">Criar →</a>
+                <a href="https://programmablesearchengine.google.com/" target="_blank" rel="noopener noreferrer" style="color:var(--primary);">Criar →</a>
               </p>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                 <div class="form-group" style="margin:0;">

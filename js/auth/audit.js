@@ -18,6 +18,36 @@ import {
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
 
+// 4.40.21+ (security audit) LGPD helpers — hash de PII + redução de UA.
+
+/** SHA-256 hex via WebCrypto. Não-reversível. Usado pra anonimizar emails em logs. */
+async function _sha256Hex(text) {
+  const buf = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/** Reduz UA pra apenas browser family (Chrome/Edge/Safari/Firefox/Other) + plataforma minimal.
+ *  Antes: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36..." (200 chars)
+ *  Depois: "Chrome/macOS" (24 chars) — suficiente pra forensics + anti-fingerprinting. */
+function _truncateUserAgent(ua) {
+  if (!ua) return '';
+  let browser = 'Other';
+  if (/Edg\//.test(ua))         browser = 'Edge';
+  else if (/Chrome\//.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  else if (/Safari\//.test(ua)) browser = 'Safari';
+  let platform = 'Other';
+  if (/Macintosh|Mac OS X/.test(ua))   platform = 'macOS';
+  else if (/Windows/.test(ua))         platform = 'Windows';
+  else if (/Linux/.test(ua))           platform = 'Linux';
+  else if (/iPhone|iPad/.test(ua))     platform = 'iOS';
+  else if (/Android/.test(ua))         platform = 'Android';
+  return `${browser}/${platform}`;
+}
+
 // ─── Mapa de ações legíveis ────────────────────────────────
 export const ACTION_LABELS = {
   // Auth
@@ -289,6 +319,15 @@ export async function auditLog(action, entity, entityId, details = {}, opts = {}
 
     const profile = store.get('userProfile');
 
+    // 4.40.21+ (security audit) LGPD compliance — hash emails antes de logar
+    // e reduz UA pra browser family. Antes: email/UA bruto em texto puro.
+    // Hash SHA-256 mantém rastreabilidade (mesmo hash = mesmo user) sem expor PII.
+    const rawEmail = profile?.email || user?.email || '';
+    const emailHash = rawEmail
+      ? await _sha256Hex(rawEmail.toLowerCase().trim()).then(h => 'h:' + h.slice(0, 16)).catch(() => '')
+      : '';
+    const uaTrimmed = _truncateUserAgent(navigator.userAgent || '');
+
     const entry = {
       action,
       entity,
@@ -296,11 +335,12 @@ export async function auditLog(action, entity, entityId, details = {}, opts = {}
       details,
       userId:     user?.uid    || 'system',
       userName:   profile?.name  || user?.email || 'Sistema',
-      userEmail:  profile?.email || user?.email || '',
+      // PII anonimizado: hash (não-reversível) em vez de email bruto
+      userEmailHash: emailHash,
       userRole:   profile?.role  || 'unknown',
       timestamp:  serverTimestamp(),
       ip:         null, // IP só acessível via backend; deixar null no client
-      userAgent:  navigator.userAgent.slice(0, 200),
+      userAgent:  uaTrimmed,
     };
     // Severity opcional (ex: 'warning', 'critical'). Quando setada,
     // pruneOldAuditLogs respeita pra preservação além do TTL 90d.

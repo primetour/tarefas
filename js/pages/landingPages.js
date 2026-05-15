@@ -124,7 +124,7 @@ async function loadList(container) {
         <button class="btn btn-primary btn-sm lp-edit-btn" data-id="${esc(page.id)}"
           style="flex:1;">✎ Editar</button>
         ${isPublished ? `
-          <a href="${esc(publicUrl)}" target="_blank" class="btn btn-ghost btn-sm"
+          <a href="${esc(publicUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm"
             style="font-size:0.75rem;text-decoration:none;">🔗 Abrir</a>
           <button class="btn btn-ghost btn-sm lp-unpublish-btn" data-id="${esc(page.id)}"
             style="font-size:0.75rem;color:var(--text-muted);">Despublicar</button>

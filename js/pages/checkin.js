@@ -13,6 +13,8 @@ import { toast }   from '../components/toast.js';
 import { modal }   from '../components/modal.js';
 import { REQUESTING_AREAS } from '../services/tasks.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+// 4.40.21+ CSV-safe export (alias _csvRow)
+import { csvRow as _csvRow } from '../util/csvSafe.js';
 
 const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
 const hashColor = (s) => {
@@ -1154,10 +1156,11 @@ async function renderReportTab(container) {
       'data;colaborador;setor;entrada;almoco_saida;almoco_volta;tempo_almoco_min;saida;horas_trabalhadas',
       ...sortedAll.map(r => {
         if (r.declined && !r.in) {
-          return `${r.date};${r.name||r.userName||''};${r.sector||''};RECUSOU;;;0;;0`;
+          // 4.40.21+ csvRow neutraliza formula injection
+          return _csvRow([r.date, r.name||r.userName||'', r.sector||'', 'RECUSOU','','',0,'',0]);
         }
         const lm = lunchMinutes(r);
-        return [
+        return _csvRow([
           r.date,
           r.userName||'',
           r.sector||'',
@@ -1167,7 +1170,7 @@ async function renderReportTab(container) {
           Math.round(lm),
           fmtTS(r.out),
           calcWorkedHours(r).toFixed(2),
-        ].join(';');
+        ]);
       }),
     ].join('\n');
     download(csv, `ponto_detalhado_${todayISO()}.csv`);
@@ -1853,7 +1856,8 @@ function openEspelhoPontoModal({ uid, user, fromISO, toISO }) {
         'data;dia;entrada;almoco_saida;almoco_volta;saida;trabalhadas;esperadas;saldo;status',
         ...espelho.map(row => {
           const r = row.record;
-          return [
+          // 4.40.21+ csvRow neutraliza formula injection
+          return _csvRow([
             row.date,
             dowLabel(row.date),
             r ? fmtTS(r.in) : '',
@@ -1864,7 +1868,7 @@ function openEspelhoPontoModal({ uid, user, fromISO, toISO }) {
             row.expected.toFixed(0),
             row.balance.toFixed(2),
             row.status,
-          ].join(';');
+          ]);
         }),
       ].join('\n');
       const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });

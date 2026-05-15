@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 20,
-  build: '20260515-help-module-updated',
+  patch: 21,
+  build: '20260515-security-audit-sprint',
 };
 
 /** "1.2.0" */

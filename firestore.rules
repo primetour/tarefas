@@ -50,6 +50,14 @@ service cloud.firestore {
     }
 
     // ── Usuários ──────────────────────────────────────────────
+    // SECURITY NOTE (audit 2026-05-15): read aberto pra auth users por
+    // necessidade operacional — UI exibe nome+avatar+role+sector em centenas
+    // de pontos (atribuição de tarefas, comentários, dashboards, etc.).
+    // Restringir read quebraria a app inteira.
+    // MITIGAÇÃO: campos sensíveis (senha hash, MFA secrets, tokens) NUNCA
+    // são gravados aqui — Firebase Auth gerencia separadamente.
+    // FUTURO: subcollection `users/{uid}/private/{doc}` pra dados confidenciais
+    // (permissions overrides, audit metadata) com rule isAdmin() OR self.
     match /users/{userId} {
       allow read:   if isAuth();
       // Admin pode criar qualquer usuário; SSO auto-provisioning: próprio UID
@@ -68,21 +76,36 @@ service cloud.firestore {
     }
 
     // ── Projetos ──────────────────────────────────────────────
+    // 4.40.21+ (security audit) — update/delete agora exigem ownership ou role.
+    // Antes: qualquer auth user alterava/deletava projeto alheio.
     match /projects/{projectId} {
       allow read:   if isAuth();
       allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isManager();
+      allow update: if isAuth() && (
+        isManager()
+        || resource.data.createdBy == request.auth.uid
+        || (resource.data.members != null && request.auth.uid in resource.data.members)
+      );
+      allow delete: if isManager() || (isAuth() && resource.data.createdBy == request.auth.uid);
     }
 
     // ── Tarefas ───────────────────────────────────────────────
+    // 4.40.21+ (security audit) — read SEMPRE exige auth (era aberta pra status
+    // done/in_progress como legacy do portal calendar; vetor de info-leak).
+    // Update/delete exigem ownership: creator, assignee, ou manager+.
     match /tasks/{taskId} {
-      // Leitura: autenticados lêem tudo; não-auth só lê com status done/in_progress (portal calendar)
-      allow read:   if isAuth()
-                    || resource.data.status in ['done', 'in_progress', 'not_started'];
+      allow read:   if isAuth();
       allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAuth();
+      allow update: if isAuth() && (
+        isManager()
+        || resource.data.createdBy == request.auth.uid
+        || (resource.data.assignees != null && request.auth.uid in resource.data.assignees)
+        || (resource.data.observers != null && request.auth.uid in resource.data.observers)
+      );
+      allow delete: if isAuth() && (
+        isManager()
+        || resource.data.createdBy == request.auth.uid
+      );
     }
 
     // ── Templates de tarefas recorrentes ──────────────────────
@@ -265,9 +288,13 @@ service cloud.firestore {
     }
 
     // ── Ausências / Capacidade ────────────────────────────────
+    // 4.40.21+ (security audit) — create exige que userId seja self ou criador
+    // tenha permissão de gerenciar ausências de outros.
     match /absences/{absenceId} {
       allow read:   if isAuth();
-      allow create: if isAuth();
+      allow create: if isAuth() && (
+        isManager() || request.resource.data.userId == request.auth.uid
+      );
       allow update, delete: if isAdmin()
                             || (isAuth() && resource.data.createdBy == request.auth.uid)
                             || (isAuth() && resource.data.userId    == request.auth.uid);
@@ -677,10 +704,23 @@ service cloud.firestore {
     }
 
     // ── Feedbacks ──────────────────────────────────────────────
+    // 4.40.21+ (security audit) — read/update agora exigem ownership ou role.
+    // Antes: qualquer auth user lia feedbacks confidenciais alheios.
     match /feedbacks/{docId} {
-      allow read:   if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
+      allow read:   if isAuth() && (
+        isManager()
+        || resource.data.collaboratorId == request.auth.uid
+        || resource.data.managerId == request.auth.uid
+        || resource.data.createdBy == request.auth.uid
+      );
+      allow create: if isAuth() && (
+        isManager() || request.resource.data.collaboratorId == request.auth.uid
+      );
+      allow update: if isAuth() && (
+        isAdmin()
+        || resource.data.managerId == request.auth.uid
+        || resource.data.createdBy == request.auth.uid
+      );
       allow delete: if isAuth() && (isAdmin() || resource.data.createdBy == request.auth.uid);
     }
 

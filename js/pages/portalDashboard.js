@@ -746,7 +746,7 @@ function renderDash() {
               <td style="padding:8px 12px;font-weight:600;">${l.views||0}</td>
               <td style="padding:8px 12px;color:var(--text-muted);">${fmtDate(l.createdAt)}</td>
               <td style="padding:8px 12px;">
-                <a href="${buildViewUrl(l.token)}" target="_blank"
+                <a href="${buildViewUrl(l.token)}" target="_blank" rel="noopener noreferrer"
                   title="Abrir link"
                   style="font-size:0.875rem;color:var(--brand-blue,#3B82F6);text-decoration:none;">↗</a>
               </td>

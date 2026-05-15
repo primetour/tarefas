@@ -542,7 +542,7 @@ async function showMaterialsModal(tip, dest) {
           ${formatPicker('')}
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;flex-wrap:wrap;">
-          <a href="${esc(webUrl)}" target="_blank" class="btn btn-ghost btn-sm"
+          <a href="${esc(webUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm"
             style="font-size:0.75rem;text-decoration:none;">🔗 Abrir</a>
           <button class="btn btn-ghost btn-sm mat-edit-btn" data-token="${esc(token)}"
             style="font-size:0.75rem;color:var(--text-muted);">✎ Editar</button>
@@ -932,7 +932,7 @@ async function openGenerationEditor({ tip, dest, area, segments, format, initial
             style="width:100%;padding:10px;background:var(--bg-surface);border:1px solid var(--border-subtle);
             border-radius:var(--radius-sm);font-size:0.8125rem;margin-bottom:16px;">
           <div style="display:flex;gap:8px;justify-content:center;">
-            <a href="${esc(result.url)}" target="_blank" class="btn btn-primary btn-sm">Abrir link</a>
+            <a href="${esc(result.url)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">Abrir link</a>
             <button class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('${esc(result.url)}');this.textContent='✓ Copiado!'">Copiar</button>
             <button class="btn btn-ghost btn-sm" onclick="this.closest('[style*=fixed]').remove()">Fechar</button>
           </div>
@@ -1065,7 +1065,7 @@ async function showRegenEditor({ link, tip, dest }) {
           💾 Salvar alterações
         </button>
         ${webUrl ? `
-        <a href="${esc(webUrl)}" target="_blank" class="btn btn-secondary"
+        <a href="${esc(webUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary"
           style="flex:1;text-decoration:none;text-align:center;">
           🔗 Ver link
         </a>` : ''}
@@ -1586,7 +1586,7 @@ function renderSegPreview(tip, segKey) {
           <div style="display:flex;flex-wrap:wrap;gap:10px;font-size:0.8125rem;color:var(--text-muted);">
             ${item.endereco ? `<span>📍 ${esc(item.endereco)}</span>` : ''}
             ${item.telefone ? `<span>📞 ${esc(item.telefone)}</span>` : ''}
-            ${item.site     ? `<a href="${esc(item.site)}" target="_blank" style="color:var(--brand-gold);text-decoration:none;">🌐 Site</a>` : ''}
+            ${item.site     ? `<a href="${esc(item.site)}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-gold);text-decoration:none;">🌐 Site</a>` : ''}
             ${item.periodo  ? `<span>📅 ${esc(item.periodo)}</span>` : ''}
           </div>
           ${item.observacoes ? `<div style="margin-top:6px;font-size:0.8125rem;color:var(--text-muted);font-style:italic;">💡 ${esc(item.observacoes)}</div>` : ''}

@@ -500,16 +500,35 @@ export const getR2UploadUrl = onCall({
   if (!matchedPrefix && !isLocationPath) {
     throw new HttpsError('permission-denied', `Path "${path}" fora das pastas permitidas.`);
   }
-  // Rate limit por IP + por user
-  await checkRateLimitIP(request, 'uploadR2', 100, 60);
-  await checkRateLimit(auth.uid, 'uploadR2', 30, 60);
-  // Retorna token efêmero (vamos passar pra um Worker que valida)
-  // Por enquanto: retorna o token do secret (Sprint 2 vai trocar por JWT real)
+  // Rate limit por IP + por user — apertados após security audit 4.40.21+
+  await checkRateLimitIP(request, 'uploadR2', 60, 60);   // antes 100
+  await checkRateLimit(auth.uid, 'uploadR2', 20, 60);    // antes 30
+  // 4.40.21+ (security audit) — anota intenção de upload em audit_logs ANTES
+  // de retornar token. Forensics + correlação com Worker-side acessos.
+  await db.collection('audit_logs').add({
+    action: 'security.r2_upload_token_issued',
+    userId: auth.uid,
+    entity: 'r2_upload',
+    details: { path, expiresIn: 60 },
+    severity: 'info',
+    timestamp: FieldValue.serverTimestamp(),
+  }).catch(() => {});
+  // SECURITY NOTE (audit 2026-05-15): R2_UPLOAD_TOKEN é compartilhado entre
+  // requests — token de longa duração validado pelo Worker. Defesas em camadas:
+  //   1. App Check valida que vem do app oficial (não Postman/curl)
+  //   2. Path whitelist (linha 487-501) limita destinos válidos
+  //   3. Rate limit por IP + user (linhas acima)
+  //   4. Audit log de cada token emitido (linha acima)
+  //   5. expiresIn 60s comunica intenção pro client; Worker pode ser
+  //      adaptado pra rejeitar TIMESTAMP_HEADER > 60s no futuro
+  // FUTURO (sprint dedicado): JWT efêmero {path, uid, exp} assinado por HMAC
+  // do mesmo Worker secret, eliminando token compartilhado.
   return {
     uploadUrl: 'https://primetour-images.rene-castro.workers.dev',
     uploadToken: R2_UPLOAD_TOKEN.value(),
     path,
-    expiresIn: 300, // 5 min
+    expiresIn: 60, // reduzido de 300s → 60s pra comunicar intenção
+    issuedAt: Date.now(),
   };
 });
 
@@ -522,9 +541,28 @@ export const getSharePointToken = onCall({
   maxInstances: 10,
 }, async (request) => {
   const auth = requireAuth(request);
+  // 4.40.21+ (security audit) — antes: comentário dizia "permite qualquer
+  // auth user pq agentes precisam ler" sem enforcement. Agora exige
+  // explicitamente admin OU permission `ai_use` no role/profile do user.
+  // Sem essa permission, throw permission-denied (rastreado no audit).
   if (!await isAdmin(auth.uid)) {
-    // Permite a qualquer auth user pq agentes precisam ler. Mas loga.
-    // Decisão futura: filtrar por permission `ai_use`.
+    const userSnap = await db.collection('users').doc(auth.uid).get();
+    const userData = userSnap.exists ? userSnap.data() : {};
+    const hasAiUse =
+      userData?.permissions?.ai_use === true ||
+      userData?.permissions?.system_view_all === true;
+    if (!hasAiUse) {
+      // Log audit antes de rejeitar
+      await db.collection('audit_logs').add({
+        action: 'security.sharepoint_token_denied',
+        userId: auth.uid,
+        severity: 'warning',
+        details: { reason: 'no_ai_use_permission' },
+        timestamp: FieldValue.serverTimestamp(),
+      }).catch(() => {});
+      throw new HttpsError('permission-denied',
+        'Sem permissão pra acessar SharePoint. Precisa de role com ai_use ou system_view_all.');
+    }
   }
   await checkRateLimitIP(request, 'spToken', 60, 60);
   await checkRateLimit(auth.uid, 'spToken', 30, 60);
@@ -1731,6 +1769,14 @@ export const sendCsatEmail = onCall({
       ? `Avalie o marco: ${survey.taskTitle || 'PRIMETOUR'}`
       : `Como foi a entrega: ${survey.taskTitle || 'PRIMETOUR'}?`;
 
+  // 4.40.21+ (security audit) — valida email antes de mandar pro Graph.
+  // Antes: passava survey.clientEmail direto sem regex → email injection /
+  // CRLF possíveis se o doc fosse adulterado client-side antes da rule fechar.
+  const RFC5322_LITE = /^[^\s<>"@]{1,64}@[^\s<>"@.]{1,63}(\.[^\s<>"@.]{1,63}){1,8}$/;
+  if (!survey.clientEmail || !RFC5322_LITE.test(survey.clientEmail)) {
+    throw new HttpsError('invalid-argument',
+      `Email do cliente inválido: ${survey.clientEmail || '(vazio)'}`);
+  }
   try {
     await sendEmailViaGraph({
       to:      survey.clientEmail,
@@ -2846,7 +2892,13 @@ const FEEDBACK_TYPE_LABELS = {
   praise:     { emoji: '🌟', label: 'Elogio',    color: '#22C55E' },
 };
 
-const FEEDBACK_ADMIN_EMAIL = 'rene.castro@primetour.com.br';
+// 4.40.21+ (security audit) — email do admin de feedbacks vem de env var
+// (process.env.FEEDBACK_ADMIN_EMAIL) com fallback ao valor histórico pra
+// não quebrar deploy existente. Pra trocar em prod:
+//   firebase functions:secrets:set FEEDBACK_ADMIN_EMAIL  (ou via gcloud)
+// ou
+//   --set-env-vars FEEDBACK_ADMIN_EMAIL=novo@dominio.com (no deploy)
+const FEEDBACK_ADMIN_EMAIL = process.env.FEEDBACK_ADMIN_EMAIL || 'rene.castro@primetour.com.br';
 
 function _escFb(s) {
   return String(s || '').replace(/[&<>"']/g, c =>
@@ -2963,6 +3015,32 @@ export const onNotificationCreate = onDocumentCreated({
       .catch(() => ({ size: 0 }));
     if (recentSnap.size >= EMAIL_RATE_LIMIT_PER_HOUR) {
       console.warn(`[onNotifCreate] rate-limit hit pro user ${notif.recipientId} (${recentSnap.size}/${EMAIL_RATE_LIMIT_PER_HOUR}/h)`);
+      // 4.40.21+ (security audit) — registra audit log do rate-limit pra
+      // SIEM/forensics. Antes: return silencioso → ataque podia gerar 100+
+      // notificações/h sem rastro. Agora logged + flag no doc da notif.
+      try {
+        await db.collection('audit_logs').add({
+          action: 'notif.rate_limited',
+          userId: 'system',
+          entity: 'notification',
+          entityId: notifId,
+          severity: 'warning',
+          details: {
+            recipientId: notif.recipientId,
+            type: notif.type,
+            recentCount: recentSnap.size,
+            limit: EMAIL_RATE_LIMIT_PER_HOUR,
+          },
+          timestamp: FieldValue.serverTimestamp(),
+        });
+        // Marca no próprio doc da notif pra retornos futuros saberem
+        await db.collection('notifications').doc(notifId).update({
+          emailSkippedReason: 'rate_limit',
+          emailSkippedAt: FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        console.warn('[onNotifCreate] failed to log rate-limit:', e.message);
+      }
       return;
     }
 

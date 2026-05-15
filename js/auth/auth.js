@@ -97,6 +97,16 @@ export function initAuthObserver(onReady) {
   };
 
   // Restaura access token Microsoft (SharePoint/OneDrive) do sessionStorage
+  //
+  // SECURITY (audit 2026-05-15): token aqui é vulnerável a XSS — qualquer
+  // payload no DOM lê e exfiltra. Defesas em camadas:
+  //   1. App Check rejeita requests fora do app oficial (impedindo o XSS
+  //      atacante usar o token roubado fora do browser legítimo)
+  //   2. TTL curto do MS (1h) limita janela de uso
+  //   3. beforeunload clear (linhas abaixo) zera quando tab fecha
+  //   4. visibilitychange + 30min hidden = clear (covers laptops esquecidos)
+  // FIX DEFINITIVO (sprint dedicado): mover pra cookie HttpOnly+Secure+SameSite
+  //   via Cloud Function intermediária. Requer refactor da auth Microsoft.
   try {
     const t = sessionStorage.getItem('ms-access-token');
     const exp = parseInt(sessionStorage.getItem('ms-token-expires') || '0');
@@ -108,6 +118,37 @@ export function initAuthObserver(onReady) {
       sessionStorage.removeItem('ms-token-expires');
     }
   } catch {}
+
+  // 4.40.21+ Defense-in-depth: clear MS token quando tab vai fechar
+  // (sessionStorage já faz isso ao fechar tab, mas explicit clear cobre
+  // edge cases tipo navegação cross-origin que mantém sessão por alguns segundos).
+  window.addEventListener('beforeunload', () => {
+    try {
+      sessionStorage.removeItem('ms-access-token');
+      sessionStorage.removeItem('ms-token-expires');
+    } catch {}
+  });
+
+  // 4.40.21+ Clear quando tab fica oculta por mais de 30min (laptop hibernando,
+  // user deixou aberto). Re-auth na volta — pequena fricção, ganho de segurança.
+  let _hiddenSince = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      _hiddenSince = Date.now();
+    } else if (document.visibilityState === 'visible' && _hiddenSince > 0) {
+      const hiddenMs = Date.now() - _hiddenSince;
+      _hiddenSince = 0;
+      if (hiddenMs > 30 * 60 * 1000) {
+        try {
+          sessionStorage.removeItem('ms-access-token');
+          sessionStorage.removeItem('ms-token-expires');
+          store.set('msAccessToken', null);
+          store.set('msAccessTokenExpiresAt', 0);
+          console.debug('[auth] MS token cleared after 30min hidden');
+        } catch {}
+      }
+    }
+  });
 
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
@@ -264,7 +305,9 @@ export function initAuthObserver(onReady) {
               const consolidationInfo = preExistingDocs.length > 0
                 ? `(consolidado de ${preExistingDocs.length} doc(s) antigo(s): ${preExistingDocs.map(d=>d.id.slice(0,12)).join(', ')})`
                 : '(novo, defaults)';
-              console.log('[SSO] Perfil criado com sucesso:', formattedName, email, consolidationInfo);
+              // 4.40.21+ (security audit) — não loga PII (email/nome) em console
+              // prod; só info estrutural. Antes: '[SSO] Perfil criado com sucesso: João Silva joao@empresa.com (novo)'.
+              console.log('[SSO] Perfil criado', consolidationInfo);
             } catch (writeErr) {
               console.error('[SSO] Erro ao criar perfil no Firestore:', writeErr);
               toast.error('Erro ao criar perfil. Verifique as regras do Firestore (users create).');

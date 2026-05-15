@@ -13,6 +13,8 @@ import { toast }       from '../components/toast.js';
 import { modal }       from '../components/modal.js';
 import { APP_CONFIG, isAllowedSSODomain, ALLOWED_SSO_DOMAINS }  from '../config.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
+// 4.40.21+ CSV-safe export
+import { csvRow } from '../util/csvSafe.js';
 
 const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
 const hashColor = (s) => {
@@ -1786,9 +1788,8 @@ function exportUsers() {
     u.createdAt?.toDate?.() ? formatDate(u.createdAt.toDate()) : '',
   ]);
 
-  const csv = [headers, ...rows]
-    .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
+  // 4.40.21+ csvRow protege contra formula injection (CSV injection)
+  const csv = [headers, ...rows].map(r => csvRow(r, null, { separator: ',' })).join('\n');
 
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);

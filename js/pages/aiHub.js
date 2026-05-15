@@ -1072,7 +1072,7 @@ function subTabSite(a) {
         <div style="font-weight:600;margin-bottom:6px;">🔗 URL do site:</div>
         <code style="font-size:0.75rem;word-break:break-all;color:var(--brand-gold);">${esc(publicUrl)}</code>
         <div style="margin-top:8px;display:flex;gap:6px;">
-          <a href="${esc(publicUrl)}" target="_blank" class="btn btn-primary btn-sm">⤢ Abrir</a>
+          <a href="${esc(publicUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm">⤢ Abrir</a>
           <button class="btn btn-secondary btn-sm" id="a-site-copy-url">📋 Copiar URL</button>
           <button class="btn btn-secondary btn-sm" id="a-site-copy-embed">&lt;&gt; Copiar embed</button>
         </div>
@@ -1398,9 +1398,9 @@ async function renderApiKeysTab(container) {
         ${isAnthropic ? '' : `
           <div style="margin-top:18px;padding:10px 14px;background:rgba(99,102,241,0.06);border-radius:6px;font-size:0.75rem;color:var(--text-secondary);">
             💡 Onde pegar a key:
-            ${provider === 'openai'  ? '<a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a>' : ''}
-            ${provider === 'gemini'  ? '<a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>' : ''}
-            ${provider === 'groq'    ? '<a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a>' : ''}
+            ${provider === 'openai'  ? '<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a>' : ''}
+            ${provider === 'gemini'  ? '<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a>' : ''}
+            ${provider === 'groq'    ? '<a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">console.groq.com/keys</a>' : ''}
           </div>
         `}
       `,
@@ -1459,7 +1459,7 @@ async function renderApiKeysTab(container) {
 
         ${providers.map(p => `
           <div class="form-group">
-            <label class="form-label">${esc(p.icon)} ${esc(p.label)}${p.signupUrl ? ` <a href="${esc(p.signupUrl)}" target="_blank" style="font-weight:400;font-size:0.75rem;">obter chave →</a>` : ''}</label>
+            <label class="form-label">${esc(p.icon)} ${esc(p.label)}${p.signupUrl ? ` <a href="${esc(p.signupUrl)}" target="_blank" rel="noopener noreferrer" style="font-weight:400;font-size:0.75rem;">obter chave →</a>` : ''}</label>
             <input type="password" id="ak-${p.id}" class="form-input" value="${esc(d[p.id+'ApiKey']||'')}"
               placeholder="${p.id === 'local' ? 'Endpoint, ex: http://localhost:11434' : 'sk-... / AIza... / gsk_...'}"
               style="font-family:var(--font-mono,monospace);font-size:0.8125rem;" autocomplete="new-password" />
@@ -2171,7 +2171,7 @@ async function renderConnectionsTab(container) {
           <div style="background:var(--bg-surface);padding:12px;border-radius:6px;font-size:0.75rem;line-height:1.6;">
             <strong>Setup (5min, admin Azure):</strong>
             <ol style="margin:6px 0 0 18px;">
-              <li>Vá em <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">portal.azure.com → App registrations</a></li>
+              <li>Vá em <a href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener noreferrer">portal.azure.com → App registrations</a></li>
               <li>+ New registration · "PRIMETOUR IA Hub" · single tenant</li>
               <li>API permissions → Microsoft Graph → <strong>Application permissions</strong> → <code>Sites.Selected</code> ou <code>Sites.Read.All</code> · Grant admin consent</li>
               <li>Certificates & secrets → New client secret · copia o valor</li>
@@ -2201,7 +2201,7 @@ async function renderConnectionsTab(container) {
               <strong>⚠ Configuração necessária:</strong> admin precisa criar um
               <strong>OAuth Client ID</strong> no Google Cloud Console:
               <ol style="margin:8px 0 0 20px;line-height:1.6;">
-                <li>Acesse <a href="https://console.cloud.google.com/apis/credentials" target="_blank">console.cloud.google.com/apis/credentials</a></li>
+                <li>Acesse <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">console.cloud.google.com/apis/credentials</a></li>
                 <li>Habilite <strong>Google Drive API</strong> no projeto</li>
                 <li>Criar Credentials → OAuth Client ID → Web application</li>
                 <li>Authorized JS origins: <code>https://primetour.github.io</code></li>
@@ -2352,7 +2352,7 @@ async function renderConnectionsTab(container) {
         dedupeKey: 'gh-config',
         content: `
           <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 14px;">
-            PAT com escopo <code>repo</code> (read). Crie em <a href="https://github.com/settings/tokens" target="_blank">github.com/settings/tokens</a>.
+            PAT com escopo <code>repo</code> (read). Crie em <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer">github.com/settings/tokens</a>.
             Salvo em <code>system_config/github</code>.
           </p>
           <div class="form-group">

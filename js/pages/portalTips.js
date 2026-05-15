@@ -1352,7 +1352,7 @@ function showWebLinkResult(url) {
           class="portal-field" style="flex:1;font-size:0.8125rem;">
         <button class="btn btn-primary btn-sm" id="weblink-copy">Copiar</button>
       </div>
-      <a href="${esc(url)}" target="_blank" class="btn btn-secondary btn-sm"
+      <a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm"
         style="text-decoration:none;display:inline-block;margin-right:8px;">
         Abrir link ↗
       </a>

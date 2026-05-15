@@ -237,7 +237,7 @@ const FAQS = [
   },
   {
     q: 'Como reportar um bug ou vulnerabilidade?',
-    a: 'Bug funcional: contate seu gestor. Vulnerabilidade de segurança: ver <a href="https://primetour.github.io/tarefas/.well-known/security.txt" target="_blank">/.well-known/security.txt</a> (responsible disclosure). Resposta em 72h.',
+    a: 'Bug funcional: contate seu gestor. Vulnerabilidade de segurança: ver <a href="https://primetour.github.io/tarefas/.well-known/security.txt" target="_blank" rel="noopener noreferrer">/.well-known/security.txt</a> (responsible disclosure). Resposta em 72h.',
     tags: 'bug erro vulnerabilidade reportar disclosure',
     category: 'sistema',
   },

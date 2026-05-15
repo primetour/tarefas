@@ -211,7 +211,7 @@ export function openAgentPanel(agent) {
         <div style="font-weight:700;font-size:0.9375rem;color:var(--text-primary);">${esc(agent.name)}</div>
         <div style="font-size:0.6875rem;color:var(--text-muted);">${esc(agent.provider)} · ${esc(agent.model)}</div>
       </div>
-      ${agent.triggers?.publicChat?.enabled ? `<a href="agente.html?slug=${encodeURIComponent(agent.triggers.publicChat.slug||'')}" target="_blank" class="btn btn-ghost btn-sm" title="Abrir em página dedicada">⤢</a>` : ''}
+      ${agent.triggers?.publicChat?.enabled ? `<a href="agente.html?slug=${encodeURIComponent(agent.triggers.publicChat.slug||'')}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm" title="Abrir em página dedicada">⤢</a>` : ''}
       <button class="btn btn-ghost btn-sm" id="agent-close" title="Fechar (ESC)" style="font-size:1.25rem;line-height:1;">×</button>
     </div>
     <div class="agent-side-panel-body" id="agent-body">

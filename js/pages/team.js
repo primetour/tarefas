@@ -21,6 +21,8 @@ import {
   MAX_FRACTIONS, MAX_ABONO_DAYS,
 } from '../services/vacation.js?v=20260501m';
 import { userNucleos } from '../services/sectors.js';
+// 4.40.21+ CSV-safe export — neutraliza formula injection
+import { csvRow } from '../util/csvSafe.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -945,11 +947,10 @@ function exportCSV() {
   if (!rows.length) { toast.warning('Nenhuma ausência para exportar.'); return; }
 
   const headers = ['Nome','Tipo','Início','Fim','Duração (dias)','Observação'];
+  // 4.40.21+ usa csvRow pra escapar formula injection (campos começando com =/+/-/@)
   const lines   = [
-    headers.join(';'),
-    ...rows.map(r => [
-      `"${r.nome}"`, `"${r.tipo}"`, r.inicio, r.fim, r.dias, `"${r.observacao}"`,
-    ].join(';')),
+    csvRow(headers),
+    ...rows.map(r => csvRow([r.nome, r.tipo, r.inicio, r.fim, r.dias, r.observacao])),
   ];
 
   const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
