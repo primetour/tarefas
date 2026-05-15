@@ -478,10 +478,38 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         const metaIndex = {};
         const bySector  = {}; // { setor: { goalId: { goal, pilares: { pIdx: { pilarName, items[] } } } } }
 
-        // Valores distintos p/ alimentar os filtros do popup
-        const respSet  = new Map();   // id → name
-        const gestorSet = new Map();  // id → name
-        const squadSet = new Map();   // id → {name,icon}
+        // 4.40.8+ Filtros (respSet/gestorSet/squadSet) calculados sob demanda
+        // a partir de DADOS FRESCOS do store. Antes eram capturados em closure
+        // no momento do build do taskModal — se squad nova fosse criada (ou uma
+        // antiga deletada) depois disso, a dropdown continuava com lista velha.
+        // _rebuildFilterSets() é chamada toda vez que openMetaModal abre.
+        let respSet   = new Map();   // id → name
+        let gestorSet = new Map();   // id → name
+        let squadSet  = new Map();   // id → {name,icon}
+
+        function _rebuildFilterSets() {
+          respSet   = new Map();
+          gestorSet = new Map();
+          squadSet  = new Map();
+          // Lê live do store — workspaces/users podem ter mudado desde o boot
+          const currentWorkspaces = store.get('userWorkspaces') || [];
+          const currentUsers      = store.get('users') || [];
+          available.forEach(g => {
+            const respIdsLocal = getResponsavelIds(g);
+            respIdsLocal.forEach(id => {
+              const u = currentUsers.find(x => x.id === id);
+              if (u) respSet.set(id, u.name);
+            });
+            if (g.gestorId) {
+              const u = currentUsers.find(x => x.id === g.gestorId);
+              if (u) gestorSet.set(g.gestorId, u.name);
+            }
+            if (g.squadId) {
+              const ws = currentWorkspaces.find(w => w.id === g.squadId);
+              if (ws) squadSet.set(g.squadId, { name: ws.name, icon: ws.icon || '◊' });
+            }
+          });
+        }
 
         available.forEach(g => {
           const escopo = g.escopo || 'individual';
@@ -489,6 +517,8 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           const respIds = getResponsavelIds(g);
           const derivedSetor = deriveSetor(g);
 
+          // Popula sets uma vez (estado inicial). Será reconstruído por
+          // _rebuildFilterSets() quando o modal abrir, garantindo frescor.
           respIds.forEach(id => {
             const u = usersRef.find(x => x.id === id);
             if (u) respSet.set(id, u.name);
@@ -893,7 +923,17 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
         };
 
         // ─── Abre modal dedicado para escolha das metas ─────────────
-        const openMetaModal = () => {
+        const openMetaModal = async () => {
+          // 4.40.8+ Refresh dos workspaces antes de abrir — se uma squad foi
+          // criada/deletada/arquivada após o boot do taskModal, queremos a
+          // dropdown sincronizada com o estado atual do sistema.
+          try {
+            const { loadUserWorkspaces } = await import('../services/workspaces.js');
+            await loadUserWorkspaces();
+          } catch (_) { /* falhou refresh → segue com cache do store */ }
+          // Reconstrói os Sets de filtro com dados frescos do store
+          _rebuildFilterSets();
+
           const totalMetas = Object.values(bySector).reduce((acc, goalsMap) =>
             acc + Object.values(goalsMap).reduce((n, gb) =>
               n + Object.values(gb.pilares).reduce((m, p) => m + p.items.length, 0), 0), 0);

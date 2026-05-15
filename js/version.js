@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 7,
-  build: '20260512-sticky-bar-gap-fix',
+  patch: 8,
+  build: '20260515-goal-link-squad-sync',
 };
 
 /** "1.2.0" */
