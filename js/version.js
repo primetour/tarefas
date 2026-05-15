@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 22,
-  build: '20260515-audit-docs-final',
+  patch: 23,
+  build: '20260515-b1-gcp-restrictions-c3-no-fallback',
 };
 
 /** "1.2.0" */

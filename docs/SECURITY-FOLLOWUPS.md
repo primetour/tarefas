@@ -7,7 +7,32 @@
 
 ### B1. GCP API Key Restrictions (Firebase apiKey)
 
-**Status:** ação no console do Google Cloud, fora do código.
+**Status:** ✅ **APLICADO em 2026-05-15** via `gcloud services api-keys update` (v4.40.23).
+
+**Restrições ativas:**
+- HTTP referrers: `https://primetour.github.io/*`, `https://*.primetour.com.br/*`, `https://primetour.com.br/*`, `http://localhost:8765/*`
+- API targets: 16 Firebase services (Identity Toolkit, Firestore, App Check, etc.)
+
+**Comprovação E2E (logs do `gcloud` + curl):**
+
+| Teste | Esperado | Resultado |
+|---|---|---|
+| `curl` sem referrer | 403 blocked | ✅ HTTP 403 `Requests from referer <empty> are blocked` |
+| `curl` com referrer `evil.example.com` | 403 blocked | ✅ HTTP 403 `Requests from referer https://evil.example.com/login are blocked` |
+| `curl` com referrer `primetour.github.io/tarefas/` | passa | ✅ HTTP 400 (chegou no endpoint, falha só no payload) |
+| App ao vivo lê Firestore | OK | ✅ `Rafaela Gouvêa` carregada |
+
+**Reaplicar (se mudar de host):**
+
+```bash
+gcloud services api-keys update 8649818d-3e7c-49c9-8bbc-a5b09980b558 \
+  --project=gestor-de-tarefas-primetour \
+  --allowed-referrers='https://primetour.github.io/*,https://*.primetour.com.br/*,https://primetour.com.br/*'
+```
+
+---
+
+### B1 (referência original — qual era o problema)
 
 **O que fazer:**
 

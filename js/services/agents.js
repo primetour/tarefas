@@ -995,18 +995,21 @@ async function _getSharePointAppToken() {
 }
 
 async function _fetchSharePoint(source) {
-  // SharePoint via Graph API com app-only auth (service-level)
-  // Cai no token do USER se app credentials não configuradas (fallback retrocompatível)
+  // 4.40.23+ (security audit C3 hardening) — REMOVIDO fallback pro token
+  // do USER. Antes: se app credentials falhassem, usava o MS token do
+  // sessionStorage (vulnerável a XSS). Agora: SharePoint via agents só
+  // usa server-side app-only credentials (client_credentials flow via
+  // Cloud Function getSharePointToken → SHAREPOINT_CLIENT_SECRET no
+  // Secret Manager).
+  //
+  // Trade-off: admin precisa configurar credenciais Azure AD uma vez
+  // (IA Hub → Conexões). Sem isso, agentes não leem SharePoint —
+  // mensagem clara guia o admin pra configuração correta.
   let token;
   try {
     token = await _getSharePointAppToken();
   } catch (e) {
-    // Fallback: tenta token do user (SSO)
-    const userToken = store.get('msAccessToken');
-    if (!userToken) {
-      return `[SharePoint: ${e.message}. Configure em IA Hub → Conexões.]`;
-    }
-    token = userToken;
+    return `[SharePoint: ${e.message}. Admin precisa configurar app-only credentials em IA Hub → Conexões. Token do usuário SSO não é mais usado como fallback (security hardening).]`;
   }
 
   try {
