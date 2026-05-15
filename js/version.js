@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 10,
-  build: '20260515-stale-filters-sweep',
+  patch: 11,
+  build: '20260515-tasks-observer-filter',
 };
 
 /** "1.2.0" */

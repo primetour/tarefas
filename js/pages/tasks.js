@@ -84,6 +84,7 @@ let filterShowArchived = false;
 const FILTER_VISIBILITY_KEY = 'tasks.filterVisibility.v1';
 const DEFAULT_FILTER_VISIBILITY = {
   status: true, priority: true, project: true, assignee: true,
+  observer: true, // 4.40.11+ filtro por observadores (multi-select)
   datePreset: true, squad: true, area: false, tag: false,
   meta: true,
 };
@@ -309,6 +310,28 @@ export async function renderTasks(container) {
             btnId: 'filter-assignee-btn',
             selectedItems,
             emptyLabel: 'Todos os respons\u00e1veis',
+          });
+        })()}
+      </div>
+      ${/* 4.40.11+ Filtro por OBSERVADORES (multi-select). Mesmo padr\u00e3o do
+            assignee: state \u00e9 '' | string | string[]. Persistido no
+            filterVisibility.observer (default true). */ ''}
+      <div class="toolbar-filter-wrap" style="${filterVisibility.observer?'':'display:none;'}min-width:180px;"
+        data-multi-key="observer">
+        ${(() => {
+          const ids = Array.isArray(filterObserver)
+            ? filterObserver
+            : (filterObserver ? [filterObserver] : []);
+          const users = (store.get('users')||[]).filter(u => u.active);
+          const selectedItems = ids.map(id => {
+            const u = users.find(x => x.id === id);
+            return u ? { id: u.id, label: u.name, icon: '\ud83d\udc41',
+                         color: '#0EA5E9' } : null;
+          }).filter(Boolean);
+          return renderMultiPickerButton({
+            btnId: 'filter-observer-btn',
+            selectedItems,
+            emptyLabel: '\ud83d\udc41 Todos os observadores',
           });
         })()}
       </div>
@@ -895,8 +918,17 @@ function applyFilters() {
   if (filterCompletedNoDueDate) {
     result = result.filter(t => t.status === 'done' && !t.dueDate);
   }
+  // 4.40.11+ Observador: aceita '' (none), string (single legacy/deep-link)
+  // ou string[] (multi-select). Tarefa passa se QUALQUER um dos observadores
+  // selecionados estiver em t.observers (OR, igual ao assignee).
   if (filterObserver) {
-    result = result.filter(t => Array.isArray(t.observers) && t.observers.includes(filterObserver));
+    const want = Array.isArray(filterObserver) ? filterObserver : [filterObserver];
+    if (want.length > 0) {
+      result = result.filter(t => {
+        const obs = Array.isArray(t.observers) ? t.observers : [];
+        return want.some(uid => obs.includes(uid));
+      });
+    }
   }
   if (filterPriority) result = result.filter(t => t.priority === filterPriority);
   if (filterProject)  result = result.filter(t => t.projectId === filterProject);
@@ -1625,6 +1657,28 @@ function _attachPageEvents() {
     },
     emptyLabel: 'Todos os responsáveis',
   });
+  // 4.40.11+ Observer (multi-select) — mesmo padrão do assignee, mas com
+  // ícone de olho 👁 e cor azul (consistente com o badge de observador no
+  // card da tarefa). buildOptions usa a mesma lista de users ativos.
+  bindMultiOptionPicker({
+    btnId: 'filter-observer-btn',
+    buildOptions: () => (store.get('users') || [])
+      .filter(u => u.active)
+      .map(u => ({
+        id: u.id,
+        label: u.name || u.email || 'Usuário',
+        icon: '👁',
+        color: '#0EA5E9',
+      })),
+    getValues: () => Array.isArray(filterObserver)
+      ? filterObserver
+      : (filterObserver ? [filterObserver] : []),
+    setValues: (ids) => {
+      filterObserver = ids.length === 0 ? '' : ids;
+      applyFilters();
+    },
+    emptyLabel: '👁 Todos os observadores',
+  });
   document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
   document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; applyFilters(); });
   document.getElementById('filter-meta')?.addEventListener('change', e => { filterMeta = e.target.value; applyFilters(); });
@@ -1684,6 +1738,7 @@ function openFilterConfigModal() {
     { key: 'project',    label: 'Projeto' },
     { key: 'squad',      label: 'Squad' },
     { key: 'assignee',   label: 'Responsável' },
+    { key: 'observer',   label: '👁 Observador' },
     { key: 'datePreset', label: 'Prazo (hoje, semana, mês…)' },
     { key: 'area',       label: 'Área solicitante' },
     { key: 'tag',        label: 'Tag' },
