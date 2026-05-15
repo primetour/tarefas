@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 13,
-  build: '20260515-observer-filter-everywhere',
+  patch: 14,
+  build: '20260515-popup-stacking-hierarchy-access',
 };
 
 /** "1.2.0" */

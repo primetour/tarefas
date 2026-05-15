@@ -352,6 +352,11 @@ function endTour(state, completed) {
 }
 
 function showCompletionModal(state) {
+  // 4.40.14+ Remove backdrops residuais antes de criar novo (mesmo padrão
+  // do showWelcomeModal). Previne 'clicar 2-3× pra fechar' quando vários
+  // tours fecham em sequência ou se welcome modal ainda estava no DOM.
+  document.querySelectorAll('.tour-welcome-backdrop').forEach(el => el.remove());
+
   const back = document.createElement('div');
   back.className = 'tour-welcome-backdrop';
   back.style.zIndex = '99998';

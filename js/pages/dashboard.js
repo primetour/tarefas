@@ -716,9 +716,13 @@ async function mountUserPanels(container) {
     });
   }
 
-  document.getElementById('dash-reminders-add')?.addEventListener('click', () => {
+  // 4.40.14+ .onclick (não addEventListener) — idempotente: se mountUserPanels
+  // rodar 2× no mesmo nó (race em renderDashboard duplo), handler é
+  // sobrescrito em vez de empilhado.
+  const remBtn = document.getElementById('dash-reminders-add');
+  if (remBtn) remBtn.onclick = () => {
     openReminderModal({ createReminder, onSaved: renderReminders });
-  });
+  };
 
   // ── Notes (post-its) ────────────────────────────────────────
   async function renderNotes() {
@@ -772,9 +776,11 @@ async function mountUserPanels(container) {
     });
   }
 
-  document.getElementById('dash-notes-add')?.addEventListener('click', () => {
+  // 4.40.14+ idempotente (vide remBtn acima)
+  const noteBtn = document.getElementById('dash-notes-add');
+  if (noteBtn) noteBtn.onclick = () => {
     openNoteModal({ note: null, createNote, NOTE_COLORS, onSaved: renderNotes });
-  });
+  };
 
   // Render initial
   renderReminders();
@@ -796,17 +802,16 @@ async function mountUserPanels(container) {
 
 function openReminderModal({ createReminder, onSaved }) {
   import('../components/modal.js').then(({ modal }) => {
-    // 4.26+ Bug fix: usar ref capturada do input (e do modal element) em vez
-    // de getElementById no onClick. Causa do bug: se o user abrisse o modal
-    // 2× rapidamente (debounce ausente), poderia haver 2 inputs com mesmo
-    // id no DOM e getElementById retornava o errado (vazio). Solução:
-    // capturar refs no escopo do MODAL atual via getElement().querySelector.
+    // 4.40.14+ dedupeKey impede empilhamento se botão tiver listener
+    // duplicado (ex: dashboard re-renderizado bind handler 2×). Antes:
+    // 3 cliques → 6 backdrops (comprovado via Chrome MCP).
     let modalHandle = null;
     let titleInput = null;
     let dueInput = null;
     let notifyInput = null;
 
     modalHandle = modal.open({
+      dedupeKey: 'reminder-create',
       title: 'Novo lembrete',
       size: 'sm',
       content: `
@@ -875,6 +880,9 @@ function openNoteModal({ note, createNote, updateNote, deleteNote, NOTE_COLORS, 
     let colorInput = null;
 
     modalHandle = modal.open({
+      // 4.40.14+ dedupeKey por nota (edit) ou 'create' (nova). Previne
+      // empilhamento por listener duplicado no botão.
+      dedupeKey: isEdit ? `note-edit-${note.id}` : 'note-create',
       title: isEdit ? 'Editar anotação' : 'Nova anotação',
       size: 'sm',
       content: `

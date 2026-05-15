@@ -65,13 +65,20 @@ export async function renderFeedbacks(container) {
     </div>
 
     <!-- Tabs -->
+    ${/* 4.40.14+ Tabs dashboard/schedule/import só para quem tem feedback_create
+          (gestores+). Analista (só feedback_view) só vê a aba 'Feedbacks' com
+          os próprios — sem dashboard agregado, sem rotina, sem importar. */ ''}
     <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:2px solid var(--border-subtle);">
-      ${[
-        { id:'list',      icon:'📋', label:'Feedbacks' },
-        { id:'dashboard', icon:'📊', label:'Dashboard' },
-        { id:'schedule',  icon:'🔔', label:'Rotina' },
-        { id:'import',    icon:'📥', label:'Importar' },
-      ].map(t => `
+      ${(() => {
+        const isManager = store.isMaster() || store.can('feedback_create');
+        const allTabs = [
+          { id:'list',      icon:'📋', label:'Feedbacks' },
+          { id:'dashboard', icon:'📊', label:'Dashboard',  managerOnly: true },
+          { id:'schedule',  icon:'🔔', label:'Rotina',     managerOnly: true },
+          { id:'import',    icon:'📥', label:'Importar',   managerOnly: true },
+        ];
+        return allTabs.filter(t => !t.managerOnly || isManager);
+      })().map(t => `
         <button class="fb-tab" data-tab="${t.id}"
           style="padding:10px 24px;font-size:0.875rem;font-weight:600;border:none;cursor:pointer;
           background:transparent;margin-bottom:-2px;
@@ -541,11 +548,16 @@ function renderFbList() {
               <div style="display:flex;gap:6px;justify-content:flex-end;">
                 <button class="btn btn-ghost btn-sm fb-view" data-id="${esc(fb.id)}"
                   style="font-size:0.75rem;" title="Ver detalhes">👁</button>
-                <button class="btn btn-ghost btn-sm fb-edit" data-id="${esc(fb.id)}"
-                  style="font-size:0.75rem;color:var(--brand-gold);">✎</button>
-                <button class="btn btn-ghost btn-sm fb-del" data-id="${esc(fb.id)}"
-                  data-name="${esc(fb.theme || '')}"
-                  style="font-size:0.75rem;color:#EF4444;">✕</button>
+                ${/* 4.40.14+ edit/delete só pra quem tem feedback_create (gestores).
+                      Analista vê seus próprios feedbacks (filtro hierárquico) mas
+                      não pode editar/excluir registros do gestor. */ ''}
+                ${(store.isMaster() || store.can('feedback_create')) ? `
+                  <button class="btn btn-ghost btn-sm fb-edit" data-id="${esc(fb.id)}"
+                    style="font-size:0.75rem;color:var(--brand-gold);" title="Editar">✎</button>
+                  <button class="btn btn-ghost btn-sm fb-del" data-id="${esc(fb.id)}"
+                    data-name="${esc(fb.theme || '')}"
+                    style="font-size:0.75rem;color:#EF4444;" title="Excluir">✕</button>
+                ` : ''}
               </div>
             </td>
           </tr>`;

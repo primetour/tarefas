@@ -87,8 +87,8 @@ export const PERMISSION_CATALOG = [
   {
     group: 'Feedbacks',
     permissions: [
-      { key: 'feedback_view',   label: 'Ver feedbacks',   info: 'Visualizar feedbacks registrados. Restrito a coordenadores, gerentes, heads e diretoria.' },
-      { key: 'feedback_create', label: 'Criar feedbacks', info: 'Registrar novos feedbacks para colaboradores.' },
+      { key: 'feedback_view',   label: 'Ver feedbacks',   info: 'Acessar a página /feedbacks. Lista é automaticamente filtrada pela HIERARQUIA: gestores veem da equipe; analistas veem só os próprios (onde são colaborador avaliado).' },
+      { key: 'feedback_create', label: 'Criar/editar feedbacks', info: 'Registrar e editar feedbacks de colaboradores. Sem essa permissão, o usuário consegue apenas VER seus próprios feedbacks (sem botões de editar/excluir).' },
     ],
   },
   {
@@ -390,7 +390,10 @@ export const SYSTEM_ROLES = [
       csat_send: false,        csat_view_all: false,   csat_manage: false,
       goals_view: true,        goals_manage: false,  goals_evaluate: false,
       analytics_view: false,
-      feedback_view: false, feedback_create: false,
+      // 4.40.14+ analista PODE acessar /feedbacks pra ver os PRÓPRIOS (filtro
+      // hierárquico já garante scope a self). Sem feedback_create → sem botões
+      // de editar/excluir (só visualização).
+      feedback_view: true, feedback_create: false,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_images_manage: false, portal_download_unlimited: true,
       portal_areas_view: true, portal_areas_manage: false,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false,

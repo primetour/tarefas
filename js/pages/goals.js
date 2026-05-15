@@ -162,6 +162,36 @@ export async function renderGoals(container) {
   allUsers   = store.get('users') || [];
   allTasksForGoals = [...activeTasks, ...archivedTasks];
 
+  // 4.40.14+ Filtro hierárquico: analista vê apenas as PRÓPRIAS metas
+  // (onde é responsável OU gestor). Master/system_view_all ignora o filtro.
+  // Mesmo padrão usado em /feedbacks.js desde 4.35.21.
+  try {
+    const seeAll = store.isMaster() || store.can('system_view_all') || store.can('goals_manage');
+    if (!seeAll) {
+      const myUid = store.get('currentUser')?.uid;
+      if (myUid) {
+        const { getVisibleUserIds } = await import('../services/users.js');
+        const myProfile = store.get('userProfile');
+        const viewer = { uid: myUid, ...myProfile };
+        const visibleSet = getVisibleUserIds(viewer, allUsers, (p) => store.can(p));
+        if (visibleSet) {
+          const before = allGoals.length;
+          allGoals = allGoals.filter(g => {
+            // É o gestor → vê
+            if (g.gestorId && visibleSet.has(g.gestorId)) return true;
+            // É responsável (singular legacy ou plural novo) → vê
+            const respIds = getResponsavelIds(g);
+            if (respIds.some(id => visibleSet.has(id))) return true;
+            // Meta global → todos veem
+            if (g.escopo === 'global') return true;
+            return false;
+          });
+          console.log(`[goals] filtro hierárquico: ${before} → ${allGoals.length} (subtree ${visibleSet.size} users)`);
+        }
+      }
+    }
+  } catch (e) { console.warn('[goals] hierarchy filter failed:', e?.message); }
+
   // Wire tabs
   container.querySelectorAll('.goal-tab').forEach(btn => {
     btn.addEventListener('click', () => {
