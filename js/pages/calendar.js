@@ -28,7 +28,7 @@ let currentDate    = new Date();
 let activeView     = 'standard';  // 'standard' | 'pipeline'
 let activeGran     = 'month';     // 'month' | 'week' | 'day'
 let pipelineTypeId = '';
-let calFilterState = { sector: null, type: null, project: null, area: null, assignee: null };
+let calFilterState = { sector: null, type: null, project: null, area: null, assignee: null, observer: null };
 
 function initCalFilterState() {
   if (!calFilterState.sector) {
@@ -163,7 +163,7 @@ function renderFilters() {
   const projects  = store.get('projects') || [];
   const taskTypes = store.get('taskTypes') || [];
   wrap.innerHTML = renderFilterBar({
-    show: ['sector','type','project','area','assignee','meta'],
+    show: ['sector','type','project','area','assignee','observer','meta'],
     state: calFilterState,
     taskTypes, projects,
     users: store.get('users') || [],

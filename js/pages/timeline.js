@@ -21,7 +21,7 @@ const PT_MONTHS_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','
 
 let allTasks      = [];
 let allProjects   = [];
-let tlFilterState = { sector: null, type: null, project: null, area: null };
+let tlFilterState = { sector: null, type: null, project: null, area: null, assignee: null, observer: null };
 
 function initTlFilterState() {
   if (!tlFilterState.sector) {
@@ -143,7 +143,7 @@ function _renderTlFilters() {
     !t.sector || userSectors === null || userSectors.includes(t.sector)
   );
   wrap.innerHTML = renderFilterBar({
-    show: ['sector','type','area','meta'],
+    show: ['sector','type','area','assignee','observer','meta'],
     state: tlFilterState,
     taskTypes: tlTaskTypes,
     projects:  allProjects,

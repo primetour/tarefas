@@ -30,7 +30,7 @@ let dragTask     = null;
 let dragOriginCol = null;
 let optimisticTasks = [];
 let activeView   = 'kanban';   // 'kanban' | 'pipeline'
-let kbFilterState = { sector: null, type: null, project: null, area: null, assignee: null, status: null };
+let kbFilterState = { sector: null, type: null, project: null, area: null, assignee: null, observer: null, status: null };
 
 // 4.13+ — Bulk select compartilhado com lista de tarefas
 const _selectedTaskIds = new Set();
@@ -692,9 +692,9 @@ function _renderKbFilters(container) {
   // tarefas "em andamento" agrupadas por área.
   const show = activeView === 'kanban'
     ? (groupBy === 'status'
-        ? ['sector','type','project','area','assignee','meta']
-        : ['sector','type','project','area','assignee','status','meta'])
-    : ['sector','area','assignee','status','meta'];
+        ? ['sector','type','project','area','assignee','observer','meta']
+        : ['sector','type','project','area','assignee','observer','status','meta'])
+    : ['sector','area','assignee','observer','status','meta'];
   wrap.innerHTML = renderFilterBar({
     show, state: kbFilterState,
     taskTypes: allTaskTypes,

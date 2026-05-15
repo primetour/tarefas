@@ -1,6 +1,6 @@
 /**
  * PRIMETOUR — Filter Bar Component
- * Combinable filters: sector, type, project, area, assignee, status, meta
+ * Combinable filters: sector, type, project, area, assignee, observer, status, meta
  * Sector list is always scoped to what the current user can see.
  *
  * Visual: usa optionPicker (mesma identidade do app — bolinha+icon+label+chevron).
@@ -91,6 +91,16 @@ function assigneeOpts(users) {
     color: hashColor(u.id || u.email || u.name || ''),
   }));
 }
+// 4.40.13+ Observer options — mesma lista de users, ícone 👁 + cor azul
+// (consistente com /tasks 4.40.11). Identidade visual distinta de assignee.
+function observerOpts(users) {
+  return users.map(u => ({
+    id: u.id,
+    label: u.name || u.email || 'Usuário',
+    icon: '👁',
+    color: '#0EA5E9',
+  }));
+}
 const statusOpts = () => STATUS_OPTIONS.map(s => ({ id: s.value, label: s.label, icon: '', color: s.color }));
 const metaOpts = () => [
   { id: 'with',    label: 'Com meta vinculada', icon: '🎯', color: '#22C55E' },
@@ -146,7 +156,7 @@ function pickerField(filterKey, selectId, opts, selectedOption, emptyLabel) {
 /**
  * renderFilterBar({ show, state, taskTypes, projects, users })
  * Returns HTML string. show = array of keys to include.
- * Available keys: 'sector', 'type', 'project', 'area', 'assignee', 'status', 'meta'
+ * Available keys: 'sector', 'type', 'project', 'area', 'assignee', 'observer', 'status', 'meta'
  */
 export function renderFilterBar(opts = {}) {
   const {
@@ -216,6 +226,23 @@ export function renderFilterBar(opts = {}) {
       </div>
     `);
   }
+  if (show.includes('observer') && users.length) {
+    // 4.40.13+ Observer multi-select (mesmo padrão do assignee mas com 👁)
+    const o = observerOpts(users);
+    const currentIds = Array.isArray(state.observer)
+      ? state.observer
+      : (state.observer ? [state.observer] : []);
+    const selectedItems = currentIds.map(id => o.find(opt => opt.id === id)).filter(Boolean);
+    blocks.push(`
+      <div class="toolbar-filter-wrap" style="min-width:180px;" data-multi-key="observer">
+        ${renderMultiPickerButton({
+          btnId: 'fb-observer-btn',
+          selectedItems,
+          emptyLabel: '👁 Todos os observadores',
+        })}
+      </div>
+    `);
+  }
   if (show.includes('status')) {
     const o = statusOpts();
     blocks.push(pickerField('status', 'fb-status', o, findIn(o, state.status), 'Todos os status'));
@@ -257,6 +284,7 @@ function buildOptionsForKey(key, opts) {
     case 'project':  return projectOpts(projects);
     case 'area':     return areaOpts();
     case 'assignee': return assigneeOpts(users);
+    case 'observer': return observerOpts(users);
     case 'status':   return statusOpts();
     case 'meta':     return metaOpts();
   }
@@ -269,6 +297,7 @@ const EMPTY_LABELS = {
   project:  'Todos os projetos',
   area:     'Todas as áreas',
   assignee: 'Todos os responsáveis',
+  observer: '👁 Todos os observadores',
   status:   'Todos os status',
   meta:     'Todas (c/ ou s/ meta)',
 };
@@ -333,6 +362,22 @@ export function bindFilterBar(container, state, onChange, ctx = {}) {
       emptyLabel: 'Todos os responsáveis',
     });
   }
+  // 4.40.13+ Multi-select: observer (mesmo padrão do assignee)
+  const observerWrap = container.querySelector('[data-multi-key="observer"]');
+  if (observerWrap) {
+    bindMultiOptionPicker({
+      btnId: 'fb-observer-btn',
+      buildOptions: () => buildOptionsForKey('observer', { ...ctx, state }),
+      getValues: () => Array.isArray(state.observer)
+        ? state.observer
+        : (state.observer ? [state.observer] : []),
+      setValues: (ids) => {
+        state.observer = ids.length === 0 ? null : ids;
+        onChange({ ...state });
+      },
+      emptyLabel: '👁 Todos os observadores',
+    });
+  }
 
   container.querySelector('.filter-clear-btn')?.addEventListener('click', () => {
     Object.keys(state).forEach(k => state[k] = null);
@@ -357,6 +402,16 @@ export function buildFilterFn(state = {}) {
       if (want.length > 0) {
         const taskAssignees = task.assignees || [];
         const hasAny = want.some(uid => taskAssignees.includes(uid));
+        if (!hasAny) return false;
+      }
+    }
+    // 4.40.13+ observer: mesma lógica do assignee. Multi: passa se a tarefa
+    // tem AO MENOS UM dos observadores selecionados em t.observers[].
+    if (state.observer) {
+      const want = Array.isArray(state.observer) ? state.observer : [state.observer];
+      if (want.length > 0) {
+        const taskObservers = task.observers || [];
+        const hasAny = want.some(uid => taskObservers.includes(uid));
         if (!hasAny) return false;
       }
     }

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 12,
-  build: '20260515-notif-duplication-fix',
+  patch: 13,
+  build: '20260515-observer-filter-everywhere',
 };
 
 /** "1.2.0" */
