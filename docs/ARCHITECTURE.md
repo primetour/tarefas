@@ -279,29 +279,104 @@ Smoke tests CLI (não logam a key):
 
 ## Segurança em camadas
 
+> **Última auditoria completa:** 2026-05-15 (v4.40.21–23). Pré-auditoria
+> bancária. 17 findings — 16 resolvidos no código + GCP Console, 1 deferido
+> com mitigação. Detalhes em `docs/SECURITY-AUDIT-2026-05-15.md` e
+> `docs/SECURITY-FOLLOWUPS.md`.
+
 ### Camada 1 — CSP (Content Security Policy)
-`index.html` tem CSP estrita: bloqueia eval, inline scripts não-autorizados, fontes externas suspeitas.
+`index.html` tem CSP em `<meta http-equiv>` (será via headers HTTP após
+migração Cloudflare):
+
+- `script-src 'self' 'unsafe-inline'` + CDNs whitelistadas (Firebase, jsDelivr, cdnjs)
+- `style-src 'self' 'unsafe-inline'` + Google Fonts + Accounts
+- `img-src` **whitelist explícita** (audit 4.40.21+) — R2, Worker, Wikipedia,
+  Unsplash, Google avatars, MS Graph, Imgur (substituiu `https:` wildcard)
+- `connect-src` **endpoints específicos** do project (audit 4.40.21+) — não usa
+  mais `*.googleapis.com`/`*.firebaseio.com` genéricos
+- `frame-ancestors 'self'` (anti-clickjacking)
+- `form-action 'self' + login.microsoftonline.com` (anti-CSRF via formulário)
+- `object-src 'none'`, `base-uri 'self'`
+
+Inline scripts foram migrados pra `js/preload.js` + `js/splash.js` (4.40.21+),
+deixando o caminho aberto pra remover `'unsafe-inline'` de `script-src` quando
+um build step for adicionado (Vite/esbuild com nonce automático).
 
 ### Camada 2 — Firestore Rules
 `firestore.rules` audita cada coleção:
-- read/write controlados por role
-- Validação de campos sensíveis (não pode auto-promover a master)
-- Rate limit em writes críticos
 
-Rules têm helpers: `isAuth()`, `isMaster()`, `isAdmin()`, `isManager()`.
+- read/write controlados por role + ownership
+- **Hardening 4.40.21+**: `/projects` e `/tasks` exigem ownership (createdBy/
+  assignees/observers) ou role `isManager()` pra update/delete. `/tasks` read
+  pra status `done`/`in_progress` sem auth foi removida (era info-leak vector
+  pro portal legacy).
+- `/feedbacks` read filtra por gestor/collaborator/managerId/createdBy (não
+  é mais "qualquer auth user lê tudo")
+- `/users` mantém read aberto pra auth (necessidade operacional, ~100 pontos
+  da UI dependem) com nota arquitetural recomendando subcollection
+  `users/{uid}/private/{doc}` no futuro pra campos confidenciais
+- `/audit_logs` read só isAdmin; create tem regex anti-spoofing de action
+- Validação de campos sensíveis (self-update não pode tocar `role`,
+  `isMaster`, `roleId`, `visibleSectors`, `permissions`, `active`)
+
+Rules têm helpers: `isAuth()`, `isMaster()`, `isAdmin()`, `isManager()`,
+`isPortalManager()`.
 
 ### Camada 3 — Cloud Functions
 - `requireAuth(request)` — onCall valida ID token
-- `isAdmin(uid)` — checa role no Firestore
+- `isAdmin(uid)` — checa role no Firestore (server-side)
 - `checkRateLimit(uid, key, max, window)` — atomic transaction
+- `checkRateLimitIP(request, key, max, window)` — limite por IP
 
-### Camada 4 — App Check (reCAPTCHA Enterprise)
-Valida que requests vêm do app real, não de Postman/curl.
+**Permissões granulares (4.40.21+):** `getSharePointToken` agora exige
+`isAdmin OR permissions.ai_use OR permissions.system_view_all`. Denials
+geram audit log de `security.sharepoint_token_denied`.
 
-### Camada 5 — Audit log
+### Camada 4 — GCP API Key Restrictions (4.40.23+)
+Firebase Web API key com `--allowed-referrers`:
+- `https://primetour.github.io/*`
+- `https://*.primetour.com.br/*`
+- `http://localhost:8765/*` (dev)
+
+Comprovado: curl sem referrer → HTTP 403. Mesmo se a key vazar, atacante
+não consegue usar de outros domínios.
+
+### Camada 5 — App Check (reCAPTCHA Enterprise)
+Valida que requests vêm do app real, não de Postman/curl. JWT renovado
+automaticamente.
+
+### Camada 6 — Audit log com PII anonymization (4.40.21+)
 Toda ação crítica grava em `audit_logs`:
-- Ações 90 dias (TTL via `pruneOldAuditLogs`)
-- Severity 'critical' / lgpd.* / security.* preservados indefinidamente
+
+- **`userEmailHash`** — SHA-256 truncado (`h:<16 hex chars>`) em vez de
+  email bruto (LGPD compliance). Mesmo hash = mesmo user (rastreabilidade
+  preservada para forensics).
+- **`userAgent`** — reduzido a `Browser/OS` (ex: `Chrome/macOS`, 12 chars)
+  em vez de fingerprint completo (200 chars). Anti-tracking + LGPD.
+- TTL 90 dias (via `pruneOldAuditLogs`)
+- Severity `'critical'` / `lgpd.*` / `security.*` preservados indefinidamente
+
+### Camada 7 — Tokens efêmeros + Secrets server-side
+- **MS user token** (SSO Microsoft, Graph): sessionStorage + defense-in-depth
+  4.40.21+ (`beforeunload` clear + `visibilitychange` 30min hidden auto-clear).
+  Para org data (SharePoint via IA agents): usa exclusivamente token app-only
+  via Cloud Function `getSharePointToken` + Secret Manager (4.40.23+).
+- **R2 upload token**: rate-limited (60/min IP, 20/min user), TTL 60s,
+  audit log antes de emit. JWT efêmero planejado pra sprint futuro.
+- **Anthropic/OpenAI/Gemini/Groq API keys**: nunca no client. Cloud Function
+  `callLLM` é a única porta de entrada. Keys via `defineSecret()` →
+  Secret Manager.
+- **GitHub PAT**: `config.js` está vazio em prod (4.40.23+). Usar Cloud
+  Function com `defineSecret('GITHUB_PAT')` se precisar.
+- **FEEDBACK_ADMIN_EMAIL**: `process.env` com fallback (4.40.21+, não é
+  credential mas externalizado pra portabilidade).
+
+### Camada 8 — Helpers de segurança defensiva
+- `js/util/csvSafe.js` (4.40.21+): `csvCell()`/`csvRow()` prefixam `'` em
+  campos começando com `=/+/-/@/|/%/TAB/CR/LF` (anti CSV formula injection
+  no Excel/Sheets). Aplicado em exports de `/team`, `/users`, `/checkin`.
+- `RFC5322_LITE` regex em `sendCsatEmail` (anti email/CRLF injection)
+- `target="_blank"` sempre com `rel="noopener noreferrer"` (anti tabnabbing)
 
 ## Anti-padrões a evitar
 
@@ -319,13 +394,18 @@ Toda ação crítica grava em `audit_logs`:
 |---|---|---|
 | `portal.js renderPortalCalendar()` 586 linhas | Alta | Quebrar em sub-funções (sprint futuro) |
 | `services/aiActions.js` 3476 linhas | Alta | Modularizar em `aiActions/{tasks,portal,goals}` |
+| MS token cookie HttpOnly (audit C3) | Média | Sprint dedicado — Cloud Function proxy pra Graph + auth via Firebase ID token cookie. Mitigação atual: defense-in-depth (App Check + TTL + beforeunload + 30min hidden clear + sem fallback em agents) |
+| Cloudflare Pages migration (audit C1) | Média | `_headers` file pronto. Quando migrar, HSTS + CSP-headers + COOP/CORP ativam automaticamente |
+| SRI em CDN scripts (audit M1) | Média | Incompatível com ES module imports atuais. Resolver junto com build step (Vite/esbuild + plugin SRI) |
 | ~30 `console.log` legados | Média | Migrar pra `logger.*` aos poucos |
 | Sem CI/CD (deploy manual) | Média | GitHub Actions: lint + rules tests + deploy |
 | Sem test coverage automatizado | Média | Vitest pra services + Playwright pra E2E |
+| R2 upload token compartilhado | Baixa | JWT efêmero `{path, uid, exp}` assinado por HMAC do Worker secret. Mitigação atual: rate-limit + path whitelist + App Check + audit log de cada token emit |
 | `~770` usos de `innerHTML` | Baixa | Auditar via grep + escHtml em hot spots |
 | RTDB presence revertido (travou) | Baixa | Investigar causa antes de re-tentar |
 
-Detalhes em `docs/PERFORMANCE.md` (otimizações pendentes).
+Detalhes em `docs/PERFORMANCE.md` (otimizações pendentes) e
+`docs/SECURITY-FOLLOWUPS.md` (itens da auditoria 2026-05-15).
 
 ## Componentes UI compartilhados (3.0.0+)
 
