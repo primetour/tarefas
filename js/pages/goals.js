@@ -162,31 +162,52 @@ export async function renderGoals(container) {
   allUsers   = store.get('users') || [];
   allTasksForGoals = [...activeTasks, ...archivedTasks];
 
-  // 4.40.14+ Filtro hierárquico: analista vê apenas as PRÓPRIAS metas
-  // (onde é responsável OU gestor). Master/system_view_all ignora o filtro.
-  // Mesmo padrão usado em /feedbacks.js desde 4.35.21.
+  // 4.40.14+ Filtro hierárquico: analista vê apenas as PRÓPRIAS metas.
+  // Master/system_view_all/goals_manage ignora o filtro.
+  // 4.40.15+ Estendido pra incluir metas DE SQUAD/NÚCLEO/ÁREA onde o user
+  // é membro (mesmo sem estar em respIds). Antes: analista de Comunicação
+  // não via a meta "Comunicação" (escopo squad sem respId explícito).
   try {
     const seeAll = store.isMaster() || store.can('system_view_all') || store.can('goals_manage');
     if (!seeAll) {
       const myUid = store.get('currentUser')?.uid;
       if (myUid) {
         const { getVisibleUserIds } = await import('../services/users.js');
-        const myProfile = store.get('userProfile');
+        const myProfile = store.get('userProfile') || {};
         const viewer = { uid: myUid, ...myProfile };
         const visibleSet = getVisibleUserIds(viewer, allUsers, (p) => store.can(p));
+
+        // 4.40.15+ Pertinências do user pra cobrir escopos squad/nucleo/area
+        const myWorkspaceIds = new Set(
+          (store.get('userWorkspaces') || []).map(w => w.id),
+        );
+        const myNucleos = new Set(
+          Array.isArray(myProfile.nucleos) && myProfile.nucleos.length
+            ? myProfile.nucleos
+            : (myProfile.nucleo ? [myProfile.nucleo] : []),
+        );
+        const myVisibleSectors = store.getVisibleSectors(); // null=all|string[]
+
         if (visibleSet) {
           const before = allGoals.length;
           allGoals = allGoals.filter(g => {
-            // É o gestor → vê
+            // 1) É gestor da meta
             if (g.gestorId && visibleSet.has(g.gestorId)) return true;
-            // É responsável (singular legacy ou plural novo) → vê
+            // 2) É responsável (singular legacy ou plural novo)
             const respIds = getResponsavelIds(g);
             if (respIds.some(id => visibleSet.has(id))) return true;
-            // Meta global → todos veem
+            // 3) Meta global — todos veem
             if (g.escopo === 'global') return true;
+            // 4.40.15+ 4) Escopo squad: user é membro desse workspace
+            if (g.escopo === 'squad' && g.squadId && myWorkspaceIds.has(g.squadId)) return true;
+            // 5) Escopo núcleo: user pertence a esse núcleo
+            if (g.escopo === 'nucleo' && g.nucleo && myNucleos.has(g.nucleo)) return true;
+            // 6) Escopo área: user tem o setor da meta nos seus visibleSectors
+            if (g.escopo === 'area' && g.setor &&
+                (myVisibleSectors === null || myVisibleSectors.includes(g.setor))) return true;
             return false;
           });
-          console.log(`[goals] filtro hierárquico: ${before} → ${allGoals.length} (subtree ${visibleSet.size} users)`);
+          console.log(`[goals] filtro hierárquico: ${before} → ${allGoals.length} (subtree ${visibleSet.size}, squads ${myWorkspaceIds.size}, nucleos ${myNucleos.size})`);
         }
       }
     }

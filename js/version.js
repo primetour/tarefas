@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 14,
-  build: '20260515-popup-stacking-hierarchy-access',
+  patch: 15,
+  build: '20260515-goals-squad-membership',
 };
 
 /** "1.2.0" */
