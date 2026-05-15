@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 19,
-  build: '20260515-docs-and-hours-update',
+  patch: 20,
+  build: '20260515-help-module-updated',
 };
 
 /** "1.2.0" */

@@ -86,6 +86,18 @@ const FAQS = [
     category: 'tarefas',
   },
   {
+    q: 'Como filtro tarefas por OBSERVADOR? (não só responsável)',
+    a: 'Em <strong>Tarefas</strong>, na barra de filtros, tem o picker <strong>👁 Todos os observadores</strong> ao lado do filtro de responsável. Multi-select. Disponível também em <strong>Steps</strong>, <strong>Calendário</strong> e <strong>Timeline</strong>. Se não estiver visível, abra ⚙ Filtros e ative "👁 Observador".',
+    tags: 'observador observer filtro acompanhar watcher',
+    category: 'tarefas',
+  },
+  {
+    q: 'Por que vejo squads/users desatualizados em algumas dropdowns?',
+    a: 'Você não deveria mais. A partir de v4.40.10, todos os modais (Vincular Metas, Editar Projeto, Editar Usuário, Editar Meta, Feedbacks) recarregam squads/users/roles do Firestore ao abrir — então mudanças feitas em outra aba/sessão aparecem na hora. Se ainda ver lista velha, force-refresh (Cmd+Shift+R).',
+    tags: 'stale filtro desatualizado squad cache',
+    category: 'tarefas',
+  },
+  {
     q: 'Qual a diferença entre tarefa, projeto e meta?',
     a: '<strong>Tarefa</strong> = entregável único (ex: "Revisar layout newsletter"). <strong>Projeto</strong> = agrupa várias tarefas com começo/fim (ex: "Lançamento campanha Verão"). <strong>Meta</strong> = KPI de desempenho avaliado periodicamente (ex: "NPS &gt; 8.5").',
     tags: 'tarefa projeto meta diferenca conceito',
@@ -101,6 +113,20 @@ const FAQS = [
     q: 'Como acompanho prazos e SLA?',
     a: 'O <strong>SLA</strong> é definido na variação do tipo de tarefa (em dias úteis). O sistema calcula o prazo automaticamente e mostra ⚠ quando ficar próximo (3 dias) ou 🔴 quando atrasar. Notificação automática.',
     tags: 'sla prazo deadline atraso',
+    category: 'tarefas',
+  },
+
+  // ── METAS E FEEDBACKS ──────────────────────────────────
+  {
+    q: 'Sou analista — por que não vejo todas as metas/feedbacks?',
+    a: 'A partir de v4.40.14/15, <strong>analista vê apenas as PRÓPRIAS metas/feedbacks</strong> — filtragem hierárquica por padrão. Em <strong>/goals</strong> você vê metas onde é: (a) gestor, (b) responsável, (c) membro do squad (escopo=squad), (d) membro do núcleo (escopo=nucleo), (e) setor da meta nos seus visíveis, ou (f) meta global. Em <strong>/feedbacks</strong>, só os onde você é o colaborador avaliado.',
+    tags: 'metas feedbacks analista hierarquia visibilidade goals',
+    category: 'tarefas',
+  },
+  {
+    q: 'Por que não posso editar/excluir feedbacks ou metas que vejo?',
+    a: 'Edição/exclusão é gateada por permissões específicas: <strong>feedback_create</strong> (gestores+) pra feedbacks, <strong>goals_manage</strong> pra metas. Analista vê os próprios registros (👁 Ver detalhes) mas não pode alterá-los — só o gestor que criou/avalia pode.',
+    tags: 'editar excluir feedback meta permissao gestor',
     category: 'tarefas',
   },
 
@@ -157,6 +183,24 @@ const FAQS = [
     tags: 'roteiro viagem destino cliente',
     category: 'marketing',
   },
+  {
+    q: 'No Calendário de Conteúdo, por que não vejo a agenda prévia (slots)?',
+    a: 'A partir de v4.40.16, slots virtuais ("agenda prévia") só aparecem quando você seleciona TIPOS de tarefa explicitamente. Filtrar só por projeto não dispara virtuais — o header mostra <em>"TIPOS: Nenhum — adicione pra ver a agenda prévia (slots)"</em>. Use o botão <strong>+ Tipos</strong> pra selecionar.',
+    tags: 'calendario conteudo agenda previa virtual slots tipos',
+    category: 'marketing',
+  },
+  {
+    q: 'Portal de Dicas: como adiciono uma CATEGORIA nova (ex: "Vinhos")?',
+    a: 'No editor de dicas → segmento (ex: Restaurantes) → no dropdown <strong>Categoria</strong>, escolha <strong>+ Nova categoria…</strong>. Digite o nome → fica salva globalmente naquele segmento. Aparece automaticamente nos exports (DOCX/PDF/PPTX/Web Link).',
+    tags: 'portal dicas categoria adicionar nova restaurantes atracoes',
+    category: 'marketing',
+  },
+  {
+    q: 'Portal de Dicas: como crio um SEGMENTO novo (ex: "Praias", "Spas")?',
+    a: 'No editor de dicas, no menu lateral de segmentos, role até o final → <strong>+ Novo segmento</strong> (dourado, só admin). Digite o nome e escolha o tipo: <em>Lista de lugares</em> (categoria+endereço+site), <em>Lista simples</em> (só título+descrição) ou <em>Agenda</em> (lugares+período). O segmento fica disponível em todas as dicas e aparece nos exports.',
+    tags: 'portal dicas segmento novo criar custom praias spas admin',
+    category: 'marketing',
+  },
 
   // ── NOTIFICAÇÕES ────────────────────────────────────────
   {
@@ -177,6 +221,18 @@ const FAQS = [
     q: 'Onde vejo a documentação técnica completa?',
     a: 'Em <strong>Sobre o Sistema</strong> (acesso Diretoria/Head). Tem 8 abas: Pilares, Hierarquia, Papéis, Modelo de dados, Módulos, ⚙ Infraestrutura, 🛡 Segurança, 🔐 Privacidade & LGPD.',
     tags: 'documentacao tecnica arquitetura',
+    category: 'sistema',
+  },
+  {
+    q: 'Lembretes/anotações abriam vários modais ao clicar. Resolvido?',
+    a: 'Sim — v4.40.14. Antes, clicar várias vezes no <strong>+ Novo</strong> de lembrete/anotação criava múltiplos popups empilhados, exigindo 2-3 cliques pra fechar todos. Fix em 3 frentes: dedupeKey no modal (chamadas duplicadas reusam o existente), <code>.onclick</code> idempotente nos botões, cleanup do backdrop do tour completion. 5 cliques rápidos agora = 1 popup.',
+    tags: 'popup modal empilhar fechar varios cliques lembrete anotacao',
+    category: 'sistema',
+  },
+  {
+    q: 'Tava recebendo notificações duplicadas. O que houve?',
+    a: 'Bug resolvido em v4.40.12. Causa: o scheduler de notificações rodava no browser de CADA usuário — cada um disparava avisos pros recipients (creator+assignees) da MESMA tarefa, gerando duplicação cross-user. Agora cada user só notifica a SI MESMO sobre suas tarefas (creator/assignee/observer). Notifs antigas duplicadas expiram em 30 dias.',
+    tags: 'notificacao duplicada repetida scheduler',
     category: 'sistema',
   },
   {
