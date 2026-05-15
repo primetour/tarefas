@@ -734,7 +734,25 @@ function renderPagination(current, total) {
 }
 
 // ─── Modal: Criar / Editar Usuário ────────────────────────
-function openUserModal(userId = null) {
+async function openUserModal(userId = null) {
+  // 4.40.10+ Refresh users+roles antes de abrir pra garantir lista atual
+  // (role criada em outra aba, novo manager etc.). Antes, módulo cacheava
+  // em vars module-level populadas no boot da página.
+  try {
+    const { fetchUsers, invalidateUsersCache } = await import('../services/users.js');
+    invalidateUsersCache();
+    const [freshUsers, freshRoles] = await Promise.all([
+      fetchUsers({ force: true }),
+      fetchRoles().catch(() => []),
+    ]);
+    users = freshUsers;
+    const { SYSTEM_ROLES } = await import('../services/rbac.js');
+    const roleIds = new Set(freshRoles.map(r => r.id));
+    availableRoles = [...freshRoles, ...SYSTEM_ROLES.filter(r => !roleIds.has(r.id))];
+    store.set('users', users);
+    store.set('roles', availableRoles);
+  } catch (e) { console.warn('[openUserModal] refresh:', e?.message); }
+
   const user = userId ? users.find(u => u.id === userId) : null;
   const isEdit = !!user;
   const title = isEdit ? 'Editar Usuário' : 'Novo Usuário';

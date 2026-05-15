@@ -109,9 +109,14 @@ export async function renderFeedbacks(container) {
 export function destroyFeedbacks() { /* cleanup if needed */ }
 
 async function ensureUsers() {
-  if (!(store.get('users') || []).length) {
+  // 4.40.10+ Sempre re-fetch pra refletir users novos/desativados
+  // (antes só fetch se store vazio → cache stale após boot).
+  try {
     const { fetchUsers } = await import('../services/users.js');
-    await fetchUsers();
+    await fetchUsers({ force: true });
+  } catch (e) {
+    // Rede falhou → segue com o que tem no store
+    console.warn('[feedbacks] users fetch fail:', e?.message);
   }
   _users = store.get('users') || [];
 }

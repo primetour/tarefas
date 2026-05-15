@@ -689,14 +689,19 @@ async function openGoalForm(container, goalId) {
   // Deep-copy for editing
   let draft = JSON.parse(JSON.stringify(goal));
 
-  // Use allUsers if available, fall back to store, then fetch directly
+  // 4.40.10+ Refresh users SEMPRE (não só se vazio) — pra garantir que
+  // role-changes (analista virou coordenador) reflitam no dropdown de
+  // gestor (gestorUsers filtra por isGestorRole). Mesmo padrão dos
+  // outros modais corrigidos hoje.
   let users = allUsers.length ? allUsers : (store.get('users')||[]);
-  if (!users.length) {
-    try {
-      const { fetchUsers } = await import('../services/users.js');
-      users = await fetchUsers();
-      allUsers = users;
-    } catch(e) { console.warn('users fetch failed:', e.message); }
+  try {
+    const { fetchUsers } = await import('../services/users.js');
+    users = await fetchUsers({ force: true });
+    allUsers = users;
+  } catch(e) {
+    console.warn('users fetch failed:', e.message);
+    // Fallback ao cache local se a rede falhar
+    if (!users.length) users = store.get('users') || [];
   }
 
   modal.open({

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 9,
-  build: '20260515-goal-link-all-squads',
+  patch: 10,
+  build: '20260515-stale-filters-sweep',
 };
 
 /** "1.2.0" */

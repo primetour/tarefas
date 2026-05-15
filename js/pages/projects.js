@@ -377,12 +377,18 @@ export async function openProjectModal(project = null, { defaultWorkspaceId = nu
   const isEdit = !!project;
   // Garante que users estejam carregados antes de montar o modal.
   // (Se o page load não rodou ou ainda está em curso, puxamos aqui.)
-  if (!(store.get('users') || []).length) {
-    try {
-      const { fetchUsers } = await import('../services/users.js');
-      await fetchUsers();
-    } catch(e) { console.warn('[openProjectModal] users:', e.message); }
-  }
+  // 4.40.10+ Refresh sempre (não só quando vazio) pra garantir que
+  // squads/users criados em outra aba/sessão apareçam no modal.
+  // Mesmo padrão aplicado em taskModal.js (4.40.8/9): captura em closure
+  // gerava lista stale se algo mudasse entre boot e abertura do modal.
+  try {
+    const { fetchUsers } = await import('../services/users.js');
+    const { loadUserWorkspaces } = await import('../services/workspaces.js');
+    await Promise.all([
+      fetchUsers({ force: true }).catch(() => {}),
+      loadUserWorkspaces().catch(() => {}),
+    ]);
+  } catch(e) { console.warn('[openProjectModal] refresh:', e.message); }
   // Usa `active !== false` (inclui docs legados sem o campo) — padrão do resto do app.
   // `u.active` filtrava todos que não têm o campo explicitamente true.
   const users  = (store.get('users')||[]).filter(u => u.active !== false);
