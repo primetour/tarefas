@@ -63,6 +63,28 @@
       ]
     },
     {
+      "collectionGroup": "btg_ofertas_dev",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "tipo_cartao",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "oferta_destaque",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "tasks",
       "queryScope": "COLLECTION",
       "fields": [
