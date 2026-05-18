@@ -112,11 +112,20 @@ const MODULE_PATTERNS = {
 
 /**
  * Retorna lista de módulos que uma entry tocou.
- * Prioriza campo explícito `modules` (array); se vazio, usa heurística
- * SOMENTE em title + slug + phaseLabel (summary tem muito ruído).
+ *
+ * Ordem de precedência:
+ *   1. Campo `modules` PRESENTE (mesmo se array vazio) → respeita literalmente.
+ *      Permite admin marcar entry como "explicitamente NÃO é trabalho de
+ *      produto" via `modules: []` (ex: phase legacy com palavra "Portal"
+ *      que na verdade era "Portal de Solicitações" e não "Portal de Dicas").
+ *   2. Sem campo `modules` → fallback pra heurística em
+ *      title + slug + phaseLabel (NÃO em summary pra evitar false positives).
  */
 export function detectEntryModules(entry) {
-  if (Array.isArray(entry.modules) && entry.modules.length) {
+  // 4.40.30+ Honra `modules` PRESENTE — array vazio = exclusão explícita.
+  // (Antes: array vazio caía na heurística, gerando false positives ao
+  // tentar excluir entries.)
+  if (Array.isArray(entry.modules)) {
     return entry.modules.filter(m => MODULE_MAP[m]);
   }
   const hay = [
