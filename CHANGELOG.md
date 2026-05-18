@@ -246,6 +246,71 @@ retorna sem fazer nada (`skippedReason: 'workflow-offline'`). Toast: "Modo offli
 
 ---
 
+## [4.44.0+20260518-sprint5-pptx-parity-wrapper] — 2026-05-18
+
+Release **MINOR** — Sprint 5 (Phase 1+2) do refactor de Roteiros: paridade
+de PPTX com PDF + wrapper único de export espelhando padrão maduro do
+Portal de Dicas (`generateTip({ format })`).
+
+### Pedido do user
+> "acho importante já olhar para exportação em multiplos formatos"
+> "aprenda com o que foi feito em portal de dicas. ja esta bastante maduro."
+
+### Audit prévio
+PPTX estava 50% incompleto — só renderizava 5 das 10 seções do PDF.
+Cliente recebia deck "vazado" sem Opcionais, Pagamento, Cancelamento,
+Info Importantes, e Dicas anexas (Sprint 3 deferido).
+
+### Phase 1: Wrapper único `generateRoteiro({ format })`
+
+Espelha `generateTip({ format })` do Portal — mesmo padrão de dispatch:
+```js
+generateRoteiro({ roteiro, area, format }) → switch case:
+  case 'pdf':  → generateRoteiroPDF()
+  case 'pptx': → generateRoteiroPPTX()
+  case 'docx': → throw (Phase 3 — em desenvolvimento)
+  case 'web':  → throw (Phase 4 — em desenvolvimento)
+```
+Strip defensivo `stripInternalFields` aplicado ANTES de delegar — custo
+interno, workflowMode, linkedTaskIds nunca aparecem em export pra cliente.
+
+### Phase 2: PPTX paridade com PDF
+
+5 novos slides adicionados ANTES do closing slide:
+
+1. **OPCIONAIS**: tabela com serviço × preço adulto/criança × observações
+2. **PAGAMENTO**: depósito, parcelamento, prazo, observações em layout
+   label+value vertical
+3. **CANCELAMENTO**: tabela antecedência × penalidade
+4. **INFORMAÇÕES IMPORTANTES**: layout 2 colunas alternadas (passaporte,
+   visto, vacinas, clima, bagagem, voos + customFields)
+5. **DICAS LOCAIS** (Sprint 3 deferred): 1 slide por dica anexada, com
+   título + subtitle + até 4 segmentos × 5 items cada
+
+Todos os slides usam header bar com cor `secondary` da área (multi-marca
+preservado). Layout consistente com slides existentes.
+
+### Aprendizado do Portal de Dicas
+
+Padrões observados em `portalGenerator.js` (2200 linhas):
+- **Wrapper único** com switch de format
+- **Lazy loading** de libs via `window[key]` check
+- **Helpers compartilhados**: `fetchImgData`, `compositeLogoOnBackground`
+- **`portalTokens.js`** centraliza branding (cores + PDF_TOKENS mm)
+- **Web link**: snapshot em sub-collection + token UUID + Cloud Function
+  pra OG tags
+- **Fontes embedded** (Poppins base64) — zero dependência CDN
+
+Sprint 5 Phase 1+2 reusou o pattern de wrapper. Phases 3+4 (DOCX e link
+web ativado) vão reusar `fetchImgData`, lazy loaders e o token system.
+
+### Próximas phases (planejadas)
+- **Phase 3 (4.45.0)**: DOCX via lib `docx@8.5.0` já no Portal
+- **Phase 4 (4.45.0)**: Link web público ativado (botão + modal + QR)
+- **Phase 5 (4.46.0)**: Email delivery via Microsoft Graph
+
+---
+
 ## [4.41.0+20260518-roteiros-sprint2-schema-evolution] — 2026-05-18
 
 Release **MINOR** — Sprint 2 do refactor de Roteiros: schema evolution

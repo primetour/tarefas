@@ -701,6 +701,46 @@ export async function generateRoteiroPDF(roteiro, area = null) {
  * @param {object} roteiro - Full roteiro object
  * @param {string} areaId - Portal area ID to fetch branding from
  */
+/**
+ * 4.44.0+ (Sprint 5) — Wrapper único de export no padrão do Portal de Dicas.
+ *
+ * Espelha `generateTip({ format })` em portalGenerator.js. Aceita format
+ * 'pdf'|'pptx'|'docx'|'web' e roteia pra função certa, com strip defensivo
+ * de internals e resolução de area antes de qualquer renderização.
+ *
+ * @param {Object} opts
+ * @param {Object} opts.roteiro       — doc completo do roteiro
+ * @param {string|null} opts.areaId   — ID da BU/área pra branding (opcional)
+ * @param {Object|null} opts.area     — área já resolvida (evita re-fetch)
+ * @param {'pdf'|'pptx'|'docx'|'web'} opts.format
+ * @returns {Promise<Object>} { filename?, blob?, url?, token?, ... }
+ */
+export async function generateRoteiro({ roteiro, areaId = null, area = null, format = 'pdf' }) {
+  // Resolve area se passou só ID
+  if (!area && areaId) {
+    const areas = await fetchAreas();
+    area = areas.find(a => a.id === areaId) || null;
+  }
+
+  // Strip defensivo (custo interno + workflow + linkedTaskIds — nunca pro cliente)
+  const sanitized = stripInternalFields(roteiro);
+
+  switch (format) {
+    case 'pdf':
+      return generateRoteiroPDF(sanitized, area);
+    case 'pptx':
+      return generateRoteiroPPTX(sanitized, area);
+    case 'docx':
+      // 4.45.0+ planned — fallback temporário
+      throw new Error('Export DOCX em desenvolvimento (Sprint 5 Phase 3).');
+    case 'web':
+      // 4.45.0+ planned — fallback temporário
+      throw new Error('Link web em desenvolvimento (Sprint 5 Phase 4).');
+    default:
+      throw new Error(`Formato desconhecido: ${format}`);
+  }
+}
+
 export async function generateRoteiroForExport(roteiro, areaId, format = 'pdf') {
   try {
     let area = null;
@@ -1925,6 +1965,166 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
       ieSlide.addText('N\u00C3O INCLUI:', { x: 5.2, y: 0.8, w: 4.5, h: 0.35, fontSize: 11, bold: true, color: 'EF4444' });
       const excText = roteiro.excludes.map(t => `\u2715  ${t}`).join('\n');
       ieSlide.addText(excText, { x: 5.2, y: 1.2, w: 4.5, h: 3.5, fontSize: 8.5, color: '333333', valign: 'top', wrap: true });
+    }
+  }
+
+  // ─── 4.44.0+ (Sprint 5) Opcionais slide ───────────────────
+  if (Array.isArray(roteiro.optionals) && roteiro.optionals.length) {
+    const optSlide = pptx.addSlide();
+    optSlide.background = { color: 'FFFFFF' };
+    optSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
+    optSlide.addText('OPCIONAIS', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: 'FFFFFF' });
+
+    const optRows = [[
+      { text: 'Serviço',          options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+      { text: 'Por adulto',       options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+      { text: 'Por criança',      options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+      { text: 'Observações',      options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+    ]];
+    const cur = roteiro.pricing?.currency || 'USD';
+    roteiro.optionals.forEach(o => {
+      optRows.push([
+        o.service || '—',
+        o.priceAdult != null ? formatCurrency(o.priceAdult, cur) : '—',
+        o.priceChild != null ? formatCurrency(o.priceChild, cur) : '—',
+        o.notes || '',
+      ]);
+    });
+    optSlide.addTable(optRows, {
+      x: 0.5, y: 0.9, w: W - 1, fontSize: 8.5,
+      border: { pt: 0.5, color: 'CCCCCC' },
+      colW: [3, 1.6, 1.6, 2.8],
+    });
+  }
+
+  // ─── 4.44.0+ (Sprint 5) Pagamento slide ───────────────────
+  const pay = roteiro.payment;
+  if (pay && (pay.deposit || pay.installments || pay.deadline || pay.notes)) {
+    const paySlide = pptx.addSlide();
+    paySlide.background = { color: 'FFFFFF' };
+    paySlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
+    paySlide.addText('PAGAMENTO', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: 'FFFFFF' });
+
+    let yPay = 1;
+    const addPayLine = (label, value) => {
+      if (!value) return;
+      paySlide.addText(label.toUpperCase(), { x: 0.7, y: yPay, w: 2.5, h: 0.4, fontSize: 9, bold: true, color: primary });
+      paySlide.addText(value, { x: 3.3, y: yPay, w: W - 3.8, h: 0.4, fontSize: 10, color: '333333', wrap: true });
+      yPay += 0.55;
+    };
+    addPayLine('Sinal / Depósito', pay.deposit);
+    addPayLine('Parcelamento',      pay.installments);
+    addPayLine('Prazo',             pay.deadline);
+    if (pay.notes) {
+      yPay += 0.2;
+      paySlide.addText('OBSERVAÇÕES', { x: 0.7, y: yPay, w: W - 1.4, h: 0.3, fontSize: 9, bold: true, color: primary });
+      yPay += 0.4;
+      paySlide.addText(pay.notes, { x: 0.7, y: yPay, w: W - 1.4, h: 2, fontSize: 9.5, color: '555555', italic: true, valign: 'top', wrap: true });
+    }
+  }
+
+  // ─── 4.44.0+ (Sprint 5) Cancelamento slide ────────────────
+  if (Array.isArray(roteiro.cancellation) && roteiro.cancellation.length) {
+    const cSlide = pptx.addSlide();
+    cSlide.background = { color: 'FFFFFF' };
+    cSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
+    cSlide.addText('POLÍTICA DE CANCELAMENTO', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: 'FFFFFF' });
+
+    const cRows = [[
+      { text: 'Antecedência',  options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+      { text: 'Penalidade',    options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+    ]];
+    roteiro.cancellation.forEach(c => {
+      cRows.push([c.period || '—', c.penalty || '—']);
+    });
+    cSlide.addTable(cRows, {
+      x: 1, y: 1, w: W - 2, fontSize: 10,
+      border: { pt: 0.5, color: 'CCCCCC' },
+      colW: [3.5, W - 5.5],
+    });
+  }
+
+  // ─── 4.44.0+ (Sprint 5) Informações Importantes slide ─────
+  const info = roteiro.importantInfo;
+  if (info && (info.passport || info.visa || info.vaccines || info.climate ||
+               info.luggage || info.flights || (info.customFields?.length))) {
+    const iSlide = pptx.addSlide();
+    iSlide.background = { color: 'FFFFFF' };
+    iSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
+    iSlide.addText('INFORMAÇÕES IMPORTANTES', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: 'FFFFFF' });
+
+    // Layout 2 colunas (left, right) pra caber em 1 slide.
+    const items = [
+      { label: 'PASSAPORTE', value: info.passport },
+      { label: 'VISTO',      value: info.visa },
+      { label: 'VACINAS',    value: info.vaccines },
+      { label: 'CLIMA',      value: info.climate },
+      { label: 'BAGAGEM',    value: info.luggage },
+      { label: 'VOOS',       value: info.flights },
+      ...(info.customFields || []).map(cf => ({ label: cf.label?.toUpperCase() || '', value: cf.value })),
+    ].filter(x => x.value);
+
+    // Distribui em 2 colunas alternando esquerda/direita
+    const colW = (W - 1.4) / 2;
+    let leftY = 0.9, rightY = 0.9;
+    items.forEach((it, idx) => {
+      const isLeft = idx % 2 === 0;
+      const x = isLeft ? 0.5 : 0.5 + colW + 0.4;
+      const y = isLeft ? leftY : rightY;
+      iSlide.addText(it.label, { x, y, w: colW, h: 0.3, fontSize: 9, bold: true, color: primary });
+      const lines = String(it.value).split('\n').length;
+      const h = Math.min(2.5, 0.4 + lines * 0.25);
+      iSlide.addText(it.value, { x, y: y + 0.32, w: colW, h, fontSize: 9, color: '444444', wrap: true, valign: 'top' });
+      const blockH = 0.32 + h + 0.15;
+      if (isLeft) leftY += blockH;
+      else        rightY += blockH;
+    });
+  }
+
+  // ─── 4.44.0+ (Sprint 5) Dicas Locais slide(s) — Sprint 3 deferred ─
+  if (Array.isArray(roteiro.embeddedTips) && roteiro.embeddedTips.length) {
+    for (const emb of roteiro.embeddedTips) {
+      const tSlide = pptx.addSlide();
+      tSlide.background = { color: 'FFFFFF' };
+      tSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
+      tSlide.addText('DICAS LOCAIS', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: 'FFFFFF' });
+
+      tSlide.addText(emb.title || '', { x: 0.5, y: 0.8, w: W - 1, h: 0.5, fontSize: 18, bold: true, color: secondary });
+      if (emb.subtitle) {
+        tSlide.addText(emb.subtitle, { x: 0.5, y: 1.25, w: W - 1, h: 0.3, fontSize: 10, color: '888888', italic: true });
+      }
+
+      // Renderiza segments — máx 4 segmentos por slide (cabe visualmente)
+      const segments = emb.content?.segments || {};
+      const segEntries = Object.entries(segments)
+        .filter(([_, items]) => Array.isArray(items) && items.length > 0)
+        .slice(0, 4);
+      let ySeg = 1.7;
+      for (const [segKey, items] of segEntries) {
+        const label = humanizeSegmentKey(segKey);
+        tSlide.addText(label.toUpperCase(), { x: 0.5, y: ySeg, w: W - 1, h: 0.3, fontSize: 9.5, bold: true, color: primary });
+        ySeg += 0.35;
+        // Top 5 items por segment pra caber visualmente
+        const lines = items.slice(0, 5).map(it => {
+          if (typeof it === 'string') return '• ' + it;
+          if (it && typeof it === 'object') {
+            const parts = [];
+            if (it.name) parts.push(it.name);
+            if (it.address || it.location) parts.push(it.address || it.location);
+            return '• ' + parts.filter(Boolean).join(' — ');
+          }
+          return '';
+        }).filter(Boolean).join('\n');
+        const blockH = Math.min(1.4, 0.2 + items.slice(0, 5).length * 0.22);
+        tSlide.addText(lines, { x: 0.7, y: ySeg, w: W - 1.4, h: blockH, fontSize: 8.5, color: '444444', valign: 'top', wrap: true });
+        ySeg += blockH + 0.15;
+        if (ySeg > 5.0) break;  // não estoura slide
+      }
+
+      // Se algum segmento ficou de fora, sinaliza no footer
+      if (segEntries.length < Object.keys(segments).filter(k => segments[k]?.length).length) {
+        tSlide.addText(`+ outras categorias no roteiro completo`, { x: 0.5, y: 5.2, w: W - 1, h: 0.3, fontSize: 8, color: '999999', italic: true });
+      }
     }
   }
 
