@@ -639,7 +639,7 @@ const db = getFirestore(app);
   //   - chrome accent pra overlines/lines (sempre branco no hero default)
   // module='roteiros' aplica overrides específicos se houver.
   try {
-    const { applyAreaTheme } = await import('./js/services/areaTokens.js');
+    const { applyAreaTheme } = await import('./js/services/areaTokens.js?v=4.48.1');
     applyAreaTheme(area, 'roteiros');
   } catch (e) {
     console.warn('[roteiro-view] applyAreaTheme falhou:', e.message);

@@ -5,7 +5,7 @@
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import { fetchAreas, saveArea, deleteArea, convertToWebp, uploadImageToR2, saveImageMeta } from '../services/portal.js';
-import { SUPPORTED_HEADLINE_FONTS, SUPPORTED_BODY_FONTS } from '../services/areaTokens.js';
+import { SUPPORTED_HEADLINE_FONTS, SUPPORTED_BODY_FONTS } from '../services/areaTokens.js?v=4.48.1';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
