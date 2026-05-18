@@ -91,6 +91,11 @@ export const MODULES = [
     desc: 'Catálogo editorial de destinos, áreas e dicas reutilizáveis em materiais.' },
   { id: 'images',   label: 'Banco de Imagens',    color: '#3B82F6', icon: '🖼',
     desc: 'Biblioteca categorizada (Hotel, Restaurante, Destino, Trem, etc.) usada em roteiros e portal.' },
+  // 4.40.32+ IA Hub entra como 4º módulo da iniciativa de produto.
+  // Cobre tudo de plataforma de IA: agents, skills, prompts, multi-provider,
+  // governança e cost tracking.
+  { id: 'iahub',    label: 'IA Hub',              color: '#10B981', icon: '🤖',
+    desc: 'Plataforma de IA (agents, skills, multi-provider, governança e cost tracking).' },
 ];
 export const MODULE_MAP = Object.fromEntries(MODULES.map(m => [m.id, m]));
 
@@ -108,6 +113,9 @@ const MODULE_PATTERNS = {
   portal:   /\b(portal[-_ ]?de[-_ ]?dicas?|portal[-_ ]?tips?|portal-?tips?)\b/i,
   // Banco de Imagens — pattern restrito pra não pegar "image" genérico em IA Hub
   images:   /\b(banco[-_ ]?de[-_ ]?imagens?|image[-_ ]?bank|portalimages|imagens?[-_ ]?(restaurante|destino|trem|hotel|bank|sticky|categoria)?)\b/i,
+  // 4.40.32+ IA Hub — cobre IA Hub, AI Hub, ai-hub, iahub, aihub. NÃO casa
+  // mentions soltas de "IA" / "AI" (muito genéricas, gerariam false positive).
+  iahub:    /\b((?:ia|ai)[-_ ]?hub|iahub|aihub)\b/i,
 };
 
 /**

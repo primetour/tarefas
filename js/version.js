@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 31,
-  build: '20260518-roteiros-sprint1-hardening',
+  patch: 32,
+  build: '20260518-iahub-products-tab',
 };
 
 /** "1.2.0" */
