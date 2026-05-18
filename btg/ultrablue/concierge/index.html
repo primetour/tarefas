@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Concierge Ultrablue — Cartão Ultrablue BTG Pactual</title>
+
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-tabs-section.css" />
+  <link rel="stylesheet" href="/btg/partners/concierge/concierge.css" />
+  <link rel="stylesheet" href="./concierge-ultrablue.css" />
+</head>
+<body>
+  <div id="header"></div>
+
+  <section class="concierge-hero concierge-hero--ultrablue">
+    <img src="/btg/assets/concierge/banner_concierge.png" alt="Concierge Ultrablue" class="concierge-hero__img concierge-hero__img--desktop" />
+    <img src="/btg/assets/concierge/banner_mobile-concierge.png" alt="Concierge Ultrablue" class="concierge-hero__img concierge-hero__img--mobile" />
+    <div class="concierge-hero__overlay"></div>
+    <div class="btg-container concierge-hero__inner">
+      <a href="/btg/ultrablue/" class="concierge-hero__back">← voltar</a>
+      <p class="concierge-hero__eyebrow">Concierge Ultrablue</p>
+      <h1 class="concierge-hero__title">É tempo de ir além</h1>
+      <p class="concierge-hero__desc">
+        O Concierge Ultrablue conecta você a experiências difíceis de acessar e simplifica momentos que exigem tempo, atenção e curadoria.
+      </p>
+    </div>
+  </section>
+
+  <section class="concierge-intro">
+    <div class="btg-container">
+      <p class="btg-eyebrow">Curadoria personalizada para o seu estilo</p>
+      <div class="concierge-intro__body">
+        <p>
+          Das reservas mais disputadas aos eventos de acesso restrito, das viagens sob medida às celebrações que merecem cada detalhe cuidado, conte com uma equipe que age com discrição e critério para viabilizar o que sua agenda exige.
+        </p>
+        <p>
+          Diretamente pelo WhatsApp, especialistas dedicados apoiam você na organização de viagens, reservas estratégicas, eventos, celebrações e experiências personalizadas — de segunda a segunda, das 8h às 20h.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <div id="tabs"></div>
+
+  <section class="concierge-ofertas">
+    <div class="btg-container">
+      <h2 class="concierge-ofertas__title">Todas as ofertas Concierge</h2>
+      <div id="ofertas-grid" class="ofertas-grid"></div>
+    </div>
+  </section>
+
+  <div id="closing-cta"></div>
+  <div id="footer"></div>
+
+  <script type="module">
+    import { renderBtgHeader } from '/btg/shared/btg-header.js';
+    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta } from '/btg/shared/btg-components.js';
+    import { renderTabsSection } from '/btg/shared/btg-tabs-section.js';
+    import { CONCIERGE_TABS } from '/btg/shared/btg-concierge-tabs-data.js';
+
+    renderBtgHeader(document.getElementById('header'), 'ultrablue');
+    renderBtgFooter(document.getElementById('footer'), 'ultrablue');
+
+    renderTabsSection(document.getElementById('tabs'), {
+      eyebrow: 'Concierge Ultrablue',
+      title: 'Conte com especialistas dedicados, diretamente no WhatsApp',
+      description: 'Especialistas para planejar suas viagens, celebrações, eventos, gastronomia e muito mais — com a discrição que cada situação exige.',
+      tabs: CONCIERGE_TABS,
+      theme: {
+        sectionBg: '#012A5B',
+        titleColor: '#ffffff',
+        textMuted: 'rgba(255,255,255,0.65)',
+        activeUnderline: '#10408d',
+        inactiveTab: 'rgba(255,255,255,0.55)',
+        iconColor: '#7ba9ff',
+      },
+    });
+
+    document.getElementById('ofertas-grid').innerHTML = '';
+
+    document.getElementById('closing-cta').innerHTML = createClosingCta({
+      title: 'Um mundo de possibilidades, à sua disposição',
+      description: 'Entre em contato com o seu Concierge Ultrablue. De segunda a segunda, das 8h às 20h.',
+      ctaUrl: 'https://wa.me/551148621688?text=' + encodeURIComponent('Olá! Tenho interesse no Concierge Ultrablue.'),
+      brand: 'ultrablue',
+    });
+  </script>
+</body>
+</html>

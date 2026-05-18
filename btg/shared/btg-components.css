@@ -1,0 +1,250 @@
+/*
+ * CSS dos componentes compartilhados — Closing CTA, Parceiros Hotéis,
+ * Category Hero. Carregue junto com btg-base.css em todas as páginas.
+ */
+
+/* ─── CLOSING CTA ──────────────────────────────────────── */
+
+.btg-closing-cta {
+  color: #fff;
+  padding: 56px 0;
+}
+
+.btg-closing-cta__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+@media (min-width: 768px) {
+  .btg-closing-cta__inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.btg-closing-cta__title {
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1.15;
+  max-width: 580px;
+}
+
+@media (min-width: 768px) {
+  .btg-closing-cta__title { font-size: 36px; }
+}
+
+.btg-closing-cta__desc {
+  margin-top: 12px;
+  font-size: 16px;
+  line-height: 1.4;
+  opacity: 0.85;
+  max-width: 540px;
+}
+
+/* ─── CATEGORY PAGE HERO ─────────────────────────────────── */
+
+.btg-category-hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.btg-category-hero--desktop {
+  display: none;
+  height: 480px;
+  padding-top: var(--header-offset);
+}
+
+@media (min-width: 768px) {
+  .btg-category-hero--desktop { display: block; }
+}
+
+@media (max-width: 767px) {
+  .btg-category-hero--mobile { display: block; }
+}
+
+@media (min-width: 768px) {
+  .btg-category-hero--mobile { display: none; }
+}
+
+.btg-category-hero--mobile {
+  padding-top: var(--header-offset);
+}
+
+.btg-category-hero__mobile-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1080 / 1600;
+  overflow: hidden;
+}
+
+.btg-category-hero__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.btg-category-hero__overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(5, 19, 42, 0.85) 0%, rgba(5, 19, 42, 0.35) 50%, transparent 100%);
+}
+
+.btg-category-hero[data-brand="ultrablue"] .btg-category-hero__overlay {
+  background: linear-gradient(to top, rgba(11, 40, 89, 0.85) 0%, rgba(11, 40, 89, 0.35) 50%, transparent 100%);
+}
+
+.btg-category-hero[data-brand="operadora"] .btg-category-hero__overlay {
+  background: linear-gradient(to top, rgba(26, 43, 74, 0.85) 0%, rgba(26, 43, 74, 0.35) 50%, transparent 100%);
+}
+
+.btg-category-hero__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100%;
+  padding-bottom: 40px;
+  color: #fff;
+}
+
+.btg-category-hero__content-mobile {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 20px 20px 32px;
+  color: #fff;
+}
+
+.btg-category-hero__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 24px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.85);
+  align-self: flex-start;
+}
+
+.btg-category-hero__back:hover { color: #fff; }
+
+.btg-category-hero__title {
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1.1;
+  max-width: 720px;
+  color: #fff;
+}
+
+@media (min-width: 768px) {
+  .btg-category-hero__title { font-size: 40px; }
+}
+
+.btg-category-hero__desc {
+  margin-top: 12px;
+  font-size: 16px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.85);
+  max-width: 540px;
+}
+
+@media (min-width: 768px) {
+  .btg-category-hero__desc { font-size: 18px; }
+}
+
+/* ─── PARCEIROS HOTÉIS ─────────────────────────────────── */
+
+.btg-parceiros {
+  padding: 64px 20px;
+  background: #fff;
+}
+
+@media (min-width: 1024px) {
+  .btg-parceiros { padding-left: 32px; padding-right: 32px; }
+}
+
+.btg-parceiros__title {
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1.1;
+}
+
+.btg-parceiros__tag {
+  margin-top: 16px;
+  max-width: 600px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--btg-navy-soft);
+}
+
+.btg-parceiros__grid {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+@media (min-width: 640px) {
+  .btg-parceiros__grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (min-width: 1024px) {
+  .btg-parceiros__grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.btg-parceiro-card {
+  position: relative;
+  height: 320px;
+  overflow: hidden;
+  background: #1f2a44;
+}
+
+.btg-parceiro-card img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 700ms ease;
+}
+
+.btg-parceiro-card:hover img {
+  transform: scale(1.05);
+}
+
+.btg-parceiro-card__overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.btg-parceiro-card__content {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 20px;
+}
+
+.btg-parceiro-card__rede {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.btg-parceiro-card__nome {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: #fff;
+}

@@ -1,0 +1,85 @@
+/*
+ * Tokens visuais BTG / Primetour — equivalente vanilla do tema Tailwind 4
+ * usado no projeto Next.js original. Cobre cores, tipografia e spacing
+ * pra todas as 3 marcas (Partners, Ultrablue, Operadora).
+ */
+
+:root {
+  /* Cores BTG ─────────────────────────────────────────── */
+  --btg-navy: #05132a;
+  --btg-navy-soft: rgba(5, 19, 42, 0.7);
+  --btg-navy-faint: rgba(5, 19, 42, 0.08);
+
+  /* Partners (igual ao BTG navy puro) */
+  --partners-navy: #05132a;
+  --partners-accent: #D2E5FF;
+  --partners-tag-bg: #05132a;
+  --partners-tag-text: #ffffff;
+
+  /* Ultrablue */
+  --ultrablue-navy-deep: #012A5B;
+  --ultrablue-navy: #0b2859;
+  --ultrablue-accent: #10408d;
+  --ultrablue-accent-light: #7ba9ff;
+  --ultrablue-text: #05132a;
+  --ultrablue-tag-bg: #10408d;
+  --ultrablue-tag-text: #ffffff;
+
+  /* Operadora */
+  --operadora-navy: #1a2b4a;
+  --operadora-navy-deep: #0f1e36;
+  --operadora-text: #1a2b4a;
+  --operadora-cta: #0f7a6e;
+  --operadora-cta-hover: #0a5a52;
+  --operadora-tag-bg: #f2b541;
+  --operadora-tag-text: #05132a;
+
+  /* Card universal */
+  --card-bg: #f5f5f5;
+  --card-bg-hover: #eaeaea;
+  --card-radius: 4px;
+
+  /* CTA azul (usado nos headers de Partners/Ultrablue) */
+  --cta-blue: #2E73D4;
+  --cta-blue-hover: #3A80E4;
+
+  /* Tipografia ───────────────────────────────────────── */
+  --font-btg: 'BTGPactualSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-figtree: 'Figtree', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-fantasm: 'Fantasm', 'Brush Script MT', cursive;
+
+  /* Escala (4 tamanhos do guia Figma) */
+  --fs-h1: 36px;
+  --fs-h2: 24px;
+  --fs-body: 16px;
+  --fs-label: 14px;
+  --fs-eyebrow: 12px;
+
+  /* Spacing usual */
+  --header-offset: 5.5rem;   /* mobile */
+  --header-offset-md: 6rem;  /* md+ */
+  --max-w: 1280px;
+
+  /* Sombras */
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-cta: 0 4px 12px rgba(46, 115, 212, 0.18);
+  --shadow-overlay: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+  /* Transições */
+  --t-fast: 150ms ease;
+  --t-base: 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  --t-slow: 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Fontes locais — referencia os arquivos que já estão no projeto Gestor */
+@font-face {
+  font-family: 'BTGPactualSans';
+  src: local('BTG Pactual Sans'), local('BTGPactualSans');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Fantasm';
+  src: url('/btg/shared/Fantasm.ttf') format('truetype');
+  font-display: swap;
+}

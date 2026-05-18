@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Benefícios Ultrablue — Cartão Ultrablue BTG Pactual</title>
+
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-tabs-section.css" />
+  <link rel="stylesheet" href="/btg/partners/beneficios/beneficios.css" />
+</head>
+<body>
+  <div id="header"></div>
+
+  <section class="beneficios-hero">
+    <div class="btg-container beneficios-hero__inner">
+      <a href="/btg/ultrablue/" class="btg-back">← voltar</a>
+      <div class="beneficios-hero__grid">
+        <div>
+          <h1 class="beneficios-hero__title" style="color:var(--ultrablue-navy);">
+            Benefícios do<br />
+            Cartão Ultrablue
+          </h1>
+          <p class="beneficios-hero__desc">
+            Muito mais do que um cartão:<br />
+            vantagens exclusivas para suas viagens e experiências ao redor do mundo.
+          </p>
+        </div>
+        <div class="beneficios-hero__card">
+          <img src="/btg/assets/ultrablue/ultrablue_logo.svg" alt="Cartão Ultrablue BTG Pactual" style="filter:none;" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="tabs"></div>
+
+  <div id="closing-cta"></div>
+  <div id="footer"></div>
+
+  <script type="module">
+    import { renderBtgHeader } from '/btg/shared/btg-header.js';
+    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
+    import { createClosingCta } from '/btg/shared/btg-components.js';
+    import { renderTabsSection } from '/btg/shared/btg-tabs-section.js';
+    import { ULTRABLUE_BENEFICIOS_TABS } from '/btg/shared/btg-beneficios-tabs-data.js';
+
+    renderBtgHeader(document.getElementById('header'), 'ultrablue');
+    renderBtgFooter(document.getElementById('footer'), 'ultrablue');
+
+    renderTabsSection(document.getElementById('tabs'), {
+      eyebrow: 'Benefícios do Cartão Ultrablue',
+      title: 'Tudo o que o cartão oferece, em um só lugar',
+      description: 'Navegue pelas categorias para conhecer cada benefício em detalhes.',
+      tabs: ULTRABLUE_BENEFICIOS_TABS,
+      theme: {
+        sectionBg: '#012A5B',
+        titleColor: '#ffffff',
+        textMuted: 'rgba(255,255,255,0.65)',
+        activeUnderline: '#10408d',
+        inactiveTab: 'rgba(255,255,255,0.55)',
+        iconColor: '#7ba9ff',
+      },
+    });
+
+    document.getElementById('closing-cta').innerHTML = createClosingCta({
+      title: 'Um mundo de possibilidades, à sua disposição',
+      description: 'Entre em contato com o seu Concierge Ultrablue. De segunda a segunda, das 8h às 20h.',
+      ctaUrl: 'https://wa.me/551148621688?text=' + encodeURIComponent('Olá! Tenho interesse no Cartão Ultrablue.'),
+      brand: 'ultrablue',
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Cartão Partners BTG Pactual</title>
+
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="./partners.css" />
+</head>
+<body>
+  <div id="header"></div>
+
+  <!-- ════════ HERO MOBILE ════════ -->
+  <section class="partners-hero partners-hero--mobile">
+    <div class="partners-hero__mobile-wrap">
+      <img src="/btg/assets/partners/hero_mobile-partners.jpg" alt="Resort à beira-mar ao entardecer" class="partners-hero__img" />
+    </div>
+    <div class="partners-hero__mobile-content">
+      <p class="partners-hero__eyebrow">Cartão Partners BTG Pactual</p>
+      <h1 class="partners-hero__title">
+        O mundo,<br />
+        do seu jeito
+      </h1>
+      <p class="partners-hero__desc">
+        Roteiros personalizados e experiências cuidadosamente selecionadas para cada jornada.
+      </p>
+    </div>
+    <div class="partners-hero__scroll-hint">
+      <p>Conheça nossas experiências</p>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+  </section>
+
+  <!-- ════════ HERO DESKTOP ════════ -->
+  <section class="partners-hero partners-hero--desktop">
+    <img src="/btg/assets/partners/banner_desk_partners.png" alt="Resort à beira-mar ao entardecer" class="partners-hero__img" />
+    <div class="partners-hero__overlay"></div>
+    <div class="btg-container partners-hero__inner">
+      <div>
+        <p class="partners-hero__eyebrow">Cartão Partners BTG Pactual</p>
+        <h1 class="partners-hero__title">
+          O mundo,<br />
+          do seu jeito
+        </h1>
+        <p class="partners-hero__desc">
+          Roteiros personalizados e experiências<br />
+          cuidadosamente selecionadas para cada jornada.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ INTRO ════════ -->
+  <section class="partners-intro">
+    <div class="btg-container partners-intro__inner">
+      <p class="btg-eyebrow">Curadoria Partners</p>
+      <h2 class="partners-intro__title">Viajar com a Primetour é começar pelo que importa: detalhes.</h2>
+      <p class="partners-intro__body">
+        Nosso time atua como uma extensão da sua agenda. Conhecemos hotéis e destinos pelo que entregam — não pelo que prometem — e desenhamos cada jornada com o mesmo cuidado que você espera.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════ CURATED OFFERS ════════ -->
+  <section class="partners-curated">
+    <div class="btg-container">
+      <div class="partners-curated__head">
+        <h2 class="partners-curated__title">Ofertas em destaque</h2>
+        <a href="/btg/partners/viagens/" class="partners-curated__see-all">
+          Ver todas as viagens
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+      <div id="curated-grid" class="ofertas-grid"></div>
+    </div>
+  </section>
+
+  <!-- ════════ SERVICOS VIAGEM ════════ -->
+  <section class="partners-servicos">
+    <div class="btg-container">
+      <h2 class="partners-servicos__title">O que cuidamos pra você</h2>
+      <div id="servicos-grid" class="partners-servicos__grid"></div>
+      <div id="servicos-arrows" class="partners-servicos__arrows"></div>
+    </div>
+  </section>
+
+  <!-- ════════ WHY PARTNERS ════════ -->
+  <section class="partners-why">
+    <div class="btg-container">
+      <p class="btg-eyebrow">Por que com a Partners</p>
+      <h2 class="partners-why__title">Acesso, curadoria e tempo de volta para o que importa.</h2>
+      <div class="partners-why__grid">
+        <article class="partners-why__item">
+          <div class="partners-why__icon">★</div>
+          <h3>Atendimento dedicado</h3>
+          <p>Especialista único do briefing à viagem. Sem repetir contexto.</p>
+        </article>
+        <article class="partners-why__item">
+          <div class="partners-why__icon">◆</div>
+          <h3>Seguro internacional</h3>
+          <p>Cobertura completa para você e dependentes em viagens internacionais.</p>
+        </article>
+        <article class="partners-why__item">
+          <div class="partners-why__icon">◇</div>
+          <h3>Acesso preferencial</h3>
+          <p>Reservas em endereços de alta demanda, com upgrade quando possível.</p>
+        </article>
+        <article class="partners-why__item">
+          <div class="partners-why__icon">◈</div>
+          <h3>Salas VIP</h3>
+          <p>Mais de 1.000 lounges ao redor do mundo, com bebidas e Wi-Fi.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ PARCEIROS HOTÉIS ════════ -->
+  <div id="parceiros"></div>
+
+  <!-- ════════ CLOSING ════════ -->
+  <div id="closing-cta"></div>
+
+  <!-- ════════ FOOTER ════════ -->
+  <div id="footer"></div>
+
+  <script type="module">
+    import { renderBtgHeader } from '/btg/shared/btg-header.js';
+    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta, createParceirosHoteis } from '/btg/shared/btg-components.js';
+    import { icon } from '/btg/shared/btg-icons.js';
+    import { listOfertas, normalizeForCard } from '/btg/shared/btg-ofertas-service.js';
+
+    // Header + footer
+    renderBtgHeader(document.getElementById('header'), 'partners');
+    renderBtgFooter(document.getElementById('footer'), 'partners');
+
+    // Ofertas — tenta Firestore primeiro, fallback pra mock
+    const MOCK = [
+      {
+        id: '1', slug: 'reveillon-pedras-do-patacho',
+        imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg',
+        destino: 'ALAGOAS', titulo: 'Réveillon Pedras do Patacho',
+        descricao: 'Resort à beira-mar com experiências privativas para a família.',
+        preco: '4460', moeda: 'R$', parcelamento: '6',
+        contextoPreco: 'Por pessoa em apto duplo',
+        ofertaEspecial: 'ALL-INCLUSIVE',
+      },
+      {
+        id: '2', slug: 'toscana-vinicolas',
+        imagem: '/btg/assets/parceiros/amanyangyun-shanghai.jpg',
+        destino: 'TOSCANA, ITÁLIA', titulo: '10 dias na Toscana — vinícolas e villas',
+        descricao: 'Roteiro privativo entre vinícolas premiadas e villas históricas.',
+        preco: '32500', moeda: 'R$', parcelamento: '10',
+        contextoPreco: 'Por casal',
+      },
+      {
+        id: '3', slug: 'mediterraneo-7-noites',
+        imagem: '/btg/assets/parceiros/mandarin-oriental-bangkok.jpg',
+        destino: 'MEDITERRÂNEO', titulo: 'Cruzeiro Mediterrâneo — 7 noites',
+        descricao: 'Embarque em Barcelona, escalas em Cannes, Roma, Florença.',
+        preco: '18900', moeda: 'R$', parcelamento: '10',
+        contextoPreco: 'Por pessoa, cabine externa',
+      },
+      {
+        id: '4', slug: 'tap-sp-paris-executiva',
+        imagem: '/btg/assets/parceiros/rosewood-mansion.jpg',
+        destino: 'SP → PARIS', titulo: 'TAP Air São Paulo → Paris',
+        descricao: 'Classe executiva com acesso ao lounge e prioridade no embarque.',
+        sobConsulta: true,
+        ofertaEspecial: '2 BAGAGENS',
+      },
+    ];
+
+    (async () => {
+      const fromFs = await listOfertas({ tipo_cartao: 'Partners', destaque: true, limit: 4 });
+      const ofertas = fromFs.length ? fromFs.map(normalizeForCard) : MOCK;
+      document.getElementById('curated-grid').innerHTML =
+        ofertas.map((o) => createOfertaCard(o, 'partners')).join('');
+    })();
+
+    // Servicos (6 cards no carrossel mobile, grid 3-col desktop)
+    const servicos = [
+      { icon: 'sparkles', title: 'Roteiros sob medida', desc: 'Especialista organiza cada etapa com atenção ao detalhe.' },
+      { icon: 'hotel', title: 'Hospedagens selecionadas', desc: 'Reservas em redes premium com condições especiais.' },
+      { icon: 'plane', title: 'Passagens aéreas', desc: 'Nacionais e internacionais, com inclusão de milhas.' },
+      { icon: 'ship', title: 'Trens e cruzeiros de luxo', desc: 'Jornadas fluviais e expedições selecionadas.' },
+      { icon: 'route', title: 'Roteiros personalizados', desc: 'Cultura, gastronomia e entretenimento alinhados ao seu estilo.' },
+      { icon: 'drama', title: 'Acesso a experiências culturais', desc: 'Óperas, balés, museus e feiras internacionais.' },
+    ];
+
+    document.getElementById('servicos-grid').innerHTML = servicos
+      .map((s) => `
+        <article class="partners-servico-card">
+          <span class="partners-servico-icon">${icon(s.icon, 'icon-md')}</span>
+          <h3>${s.title}</h3>
+          <p>${s.desc}</p>
+        </article>
+      `).join('');
+
+    // Setas do carrossel mobile
+    document.getElementById('servicos-arrows').innerHTML = `
+      <button type="button" aria-label="Card anterior" data-nav="prev">${icon('chevron-left', 'icon-sm')}</button>
+      <button type="button" aria-label="Próximo card" data-nav="next">${icon('chevron-right', 'icon-sm')}</button>
+    `;
+
+    const grid = document.getElementById('servicos-grid');
+    document.querySelector('[data-nav="prev"]').addEventListener('click', () => {
+      const card = grid.querySelector('article');
+      if (card) grid.scrollBy({ left: -(card.clientWidth + 16), behavior: 'smooth' });
+    });
+    document.querySelector('[data-nav="next"]').addEventListener('click', () => {
+      const card = grid.querySelector('article');
+      if (card) grid.scrollBy({ left: card.clientWidth + 16, behavior: 'smooth' });
+    });
+
+    // Parceiros hotéis
+    const hoteisPartners = [
+      { rede: 'Four Seasons', nome: 'Hotel George V, Paris', imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg' },
+      { rede: 'Aman', nome: 'Amanyangyun, Shanghai', imagem: '/btg/assets/parceiros/amanyangyun-shanghai.jpg' },
+      { rede: 'Mandarin Oriental', nome: 'Mandarin Oriental, Bangkok', imagem: '/btg/assets/parceiros/mandarin-oriental-bangkok.jpg' },
+      { rede: 'Six Senses', nome: 'Six Senses Bhutan', imagem: '/btg/assets/parceiros/six-senses-bhutan.jpg' },
+      { rede: 'St. Regis', nome: 'The St. Regis Maldives', imagem: '/btg/assets/parceiros/st-regis-maldives.jpg' },
+      { rede: 'Rosewood', nome: 'Rosewood Mansion on Turtle Creek', imagem: '/btg/assets/parceiros/rosewood-mansion.jpg' },
+    ];
+    document.getElementById('parceiros').innerHTML = createParceirosHoteis({
+      title: 'Os melhores parceiros do mundo, à sua disposição',
+      tagline: 'Reservas em propriedades selecionadas das principais redes internacionais — com condições especiais e acesso a experiências cuidadosamente curadas.',
+      hoteis: hoteisPartners,
+      brand: 'partners',
+    });
+
+    // Closing
+    document.getElementById('closing-cta').innerHTML = createClosingCta({
+      title: 'Um mundo de possibilidades, à sua disposição',
+      description: 'Entre em contato com o seu Concierge Partners. De segunda a segunda, das 8h às 20h.',
+      ctaUrl: 'https://wa.me/551148621680?text=' + encodeURIComponent('Olá! Tenho interesse em falar com o Concierge Partners.'),
+      brand: 'partners',
+    });
+  </script>
+</body>
+</html>

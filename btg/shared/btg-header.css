@@ -1,0 +1,311 @@
+/*
+ * Header BTG / Operadora — CSS específico.
+ * Importa antes do CSS da página específica.
+ */
+
+.btg-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: #fff;
+  border-bottom: 1px solid #f3f4f6;
+  transition: border-color var(--t-base), box-shadow var(--t-base);
+}
+
+.btg-header[data-solid="true"] {
+  border-bottom-color: #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.btg-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.btg-header__left {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+@media (min-width: 1024px) {
+  .btg-header__left { gap: 40px; }
+}
+
+.btg-header__logo-link {
+  flex-shrink: 0;
+}
+
+.btg-logo {
+  height: 56px;
+  width: auto;
+  filter: brightness(0);   /* PNG vira preto puro (mesmo padrão do projeto Next) */
+}
+
+.btg-logo--ultrablue {
+  filter: none;            /* SVG já tem a cor correta (#001E62) */
+  height: 48px;
+}
+
+.btg-logo--operadora {
+  filter: none;
+  height: 48px;
+}
+
+/* Nav desktop */
+.btg-header__nav {
+  display: none;
+  align-items: center;
+  gap: 24px;
+}
+
+@media (min-width: 1024px) {
+  .btg-header__nav { display: flex; }
+}
+
+.btg-header__nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 15px;
+  line-height: 23px;
+  font-weight: 400;
+  color: var(--btg-navy);
+  transition: opacity var(--t-fast);
+}
+
+.btg-header__nav-link:hover {
+  opacity: 0.7;
+}
+
+/* Dropdown */
+.btg-header__nav-group {
+  position: relative;
+}
+
+.btg-header__nav-group:hover .btg-header__dropdown,
+.btg-header__nav-group:focus-within .btg-header__dropdown {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.btg-header__nav-group:hover .btg-header__nav-link svg,
+.btg-header__nav-group:focus-within .btg-header__nav-link svg {
+  transform: rotate(180deg);
+}
+
+.btg-header__nav-link svg {
+  transition: transform var(--t-base);
+}
+
+.btg-header__dropdown {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, 8px);
+  z-index: 10;
+  visibility: hidden;
+  opacity: 0;
+  transition: all var(--t-base);
+  padding-top: 12px;
+}
+
+.btg-header__dropdown ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+}
+
+.btg-header__dropdown a {
+  display: block;
+  padding: 6px 8px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--btg-navy);
+  border-radius: 4px;
+  transition: opacity var(--t-fast);
+  white-space: nowrap;
+}
+
+.btg-header__dropdown a:hover { opacity: 0.7; }
+
+/* CTA */
+.btg-header__cta {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--cta-blue);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 4px;
+  box-shadow: var(--shadow-cta);
+  transition: background var(--t-fast);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@media (min-width: 1024px) {
+  .btg-header__cta { display: inline-flex; }
+}
+
+.btg-header__cta:hover {
+  background: var(--cta-blue-hover);
+}
+
+/* Toggle mobile */
+.btg-header__menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  width: 40px;
+  color: var(--btg-navy);
+  transition: opacity var(--t-fast);
+}
+
+@media (min-width: 1024px) {
+  .btg-header__menu-toggle { display: none; }
+}
+
+.btg-header__menu-toggle:hover { opacity: 0.7; }
+
+/* Mobile menu overlay */
+.btg-mobile-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  pointer-events: none;
+  background: rgba(5, 19, 42, 0.4);
+  opacity: 0;
+  transition: opacity var(--t-base);
+}
+
+.btg-mobile-menu--open {
+  pointer-events: auto;
+  opacity: 1;
+}
+
+.btg-mobile-menu__panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  background: #fff;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  transform: translateY(-16px);
+  opacity: 0;
+  transition: transform var(--t-base), opacity var(--t-base);
+}
+
+.btg-header-partners .btg-mobile-menu__panel,
+.btg-header-ultrablue .btg-mobile-menu__panel {
+  background: var(--btg-navy);
+  color: #fff;
+}
+
+.btg-mobile-menu--open .btg-mobile-menu__panel {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.btg-mobile-menu__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.btg-mobile-menu__label {
+  font-size: 14px;
+  opacity: 0.5;
+}
+
+.btg-mobile-menu__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  width: 40px;
+  opacity: 0.8;
+}
+
+.btg-mobile-menu__close:hover { opacity: 1; }
+
+.btg-mobile-menu__nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  flex: 1;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.btg-mobile-menu__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.btg-mobile-menu__group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.btg-mobile-menu__group > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.btg-mobile-menu__group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.btg-mobile-menu__group[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.btg-mobile-menu__group summary svg {
+  transition: transform var(--t-base);
+}
+
+.btg-mobile-menu__sub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.btg-mobile-menu__sublink {
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.btg-mobile-menu__cta {
+  margin-top: 20px;
+}

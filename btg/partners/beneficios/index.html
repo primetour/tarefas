@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Benefícios Partners — Cartão Partners BTG Pactual</title>
+
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-tabs-section.css" />
+  <link rel="stylesheet" href="./beneficios.css" />
+</head>
+<body>
+  <div id="header"></div>
+
+  <section class="beneficios-hero">
+    <div class="btg-container beneficios-hero__inner">
+      <a href="/btg/partners/" class="btg-back">← voltar</a>
+      <div class="beneficios-hero__grid">
+        <div>
+          <h1 class="beneficios-hero__title">
+            Benefícios do<br />
+            Cartão Partners
+          </h1>
+          <p class="beneficios-hero__desc">
+            Muito mais do que um cartão:<br />
+            vantagens exclusivas para suas viagens e experiências ao redor do mundo.
+          </p>
+        </div>
+        <div class="beneficios-hero__card">
+          <img src="/btg/assets/partners/btgpactual_logo.png" alt="Cartão Partners BTG Pactual" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="tabs"></div>
+
+  <div id="closing-cta"></div>
+  <div id="footer"></div>
+
+  <script type="module">
+    import { renderBtgHeader } from '/btg/shared/btg-header.js';
+    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
+    import { createClosingCta } from '/btg/shared/btg-components.js';
+    import { renderTabsSection } from '/btg/shared/btg-tabs-section.js';
+    import { PARTNERS_BENEFICIOS_TABS } from '/btg/shared/btg-beneficios-tabs-data.js';
+
+    renderBtgHeader(document.getElementById('header'), 'partners');
+    renderBtgFooter(document.getElementById('footer'), 'partners');
+
+    renderTabsSection(document.getElementById('tabs'), {
+      eyebrow: 'Benefícios do Cartão Partners',
+      title: 'Tudo o que o cartão oferece, em um só lugar',
+      description: 'Navegue pelas categorias para conhecer cada benefício em detalhes.',
+      tabs: PARTNERS_BENEFICIOS_TABS,
+      theme: {
+        sectionBg: '#05132a',
+        titleColor: '#ffffff',
+        textMuted: 'rgba(255,255,255,0.65)',
+        activeUnderline: '#D2E5FF',
+        inactiveTab: 'rgba(255,255,255,0.55)',
+        iconColor: '#D2E5FF',
+      },
+    });
+
+    document.getElementById('closing-cta').innerHTML = createClosingCta({
+      title: 'Um mundo de possibilidades, à sua disposição',
+      description: 'Entre em contato com o seu Concierge Partners. De segunda a segunda, das 8h às 20h.',
+      ctaUrl: 'https://wa.me/551148621680?text=' + encodeURIComponent('Olá! Tenho interesse no Cartão Partners.'),
+      brand: 'partners',
+    });
+  </script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "gestor-de-tarefas-primetour"
+    "default": "gestor-de-tarefas-primetour",
+    "staging": "gestor-btg-lp-builder-staging"
   }
 }

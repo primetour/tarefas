@@ -1,0 +1,14 @@
+.category-grid-section {
+  padding: 48px 20px 80px;
+  background: #fff;
+}
+
+@media (min-width: 1024px) {
+  .category-grid-section { padding-left: 32px; padding-right: 32px; }
+}
+
+.category-empty {
+  font-size: 16px;
+  color: rgba(5, 19, 42, 0.6);
+  padding: 40px 0;
+}

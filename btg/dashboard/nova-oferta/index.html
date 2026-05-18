@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Nova oferta — BTG / Primetour</title>
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/form/form.css" />
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="module">
+    import { createFormStore, defaultFormValues } from '/btg/shared/form/form-store.js';
+    import { renderTipoSelector } from '/btg/shared/form/tipo-selector.js';
+    import { renderStepShell, renderStepFields, setStepMessage } from '/btg/shared/form/step-shell.js';
+    import { renderLivePreview } from '/btg/shared/form/live-preview.js';
+    import { bindFormEvents } from '/btg/shared/form/form-inputs.js';
+    import { getStepsForType, getQuestionsForStep } from '/btg/shared/form/form-steps.js';
+    import { saveOferta, getOfertasSource } from '/btg/shared/btg-ofertas-service.js';
+
+    const root = document.getElementById('root');
+    const DRAFT_KEY = 'btg-lab-nova-oferta-draft-v1';
+    const TIPO_KEY = 'btg-lab-nova-oferta-tipo-v1';
+
+    // ─── STATE ──────────────────────────────────────────
+    const store = createFormStore(defaultFormValues());
+    let state = {
+      tipo: null,
+      currentStepIdx: 0,
+      completedSteps: new Set(),
+      previewMode: 'card',
+      activeTargets: [],
+      imageUrl: null,
+      steps: [],
+    };
+
+    // Carrega rascunho
+    try {
+      const stored = localStorage.getItem(TIPO_KEY);
+      if (stored) state.tipo = stored;
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+      if (draft) store.reset(draft);
+    } catch {}
+
+    // Auto-save
+    store.subscribe(() => {
+      try {
+        const v = store.values();
+        const draft = { ...v };
+        delete draft.imagem_file;  // não persiste File
+        delete draft.galeria_files;
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      } catch {}
+      // Re-render preview
+      const previewEl = document.getElementById('step-preview');
+      if (previewEl) {
+        renderLivePreview(previewEl, {
+          tipo: state.tipo, values: store.values(), mode: state.previewMode,
+          activeTargets: state.activeTargets, imageUrl: state.imageUrl,
+        });
+      }
+    });
+
+    // Image URL para preview — só atualiza a URL, o re-render já é feito
+    // pelo onButtonChange dentro do bindFormEvents quando o file picker dispara
+    store.subscribe((field) => {
+      if (field === 'imagem_file') {
+        const f = store.get('imagem_file');
+        if (state.imageUrl) URL.revokeObjectURL(state.imageUrl);
+        state.imageUrl = f instanceof File ? URL.createObjectURL(f) : null;
+      }
+    });
+
+    // ─── HANDLERS ───────────────────────────────────────
+    function chooseTipo(tipo) {
+      state.tipo = tipo;
+      state.currentStepIdx = 0;
+      state.completedSteps = new Set();
+      state.steps = getStepsForType(tipo);
+      store.set('tipo_oferta', tipo);
+      try { localStorage.setItem(TIPO_KEY, tipo); } catch {}
+      renderShell();
+    }
+
+    function resetTipo() {
+      if (!confirm('Trocar de tipo? Os dados preenchidos serão mantidos.')) return;
+      state.tipo = null;
+      state.currentStepIdx = 0;
+      try { localStorage.removeItem(TIPO_KEY); } catch {}
+      renderSplash();
+    }
+
+    function gotoStep(idx) {
+      if (idx < 0 || idx >= state.steps.length) return;
+      state.currentStepIdx = idx;
+      renderCurrentStep();
+    }
+
+    function nextStep() {
+      // Validação simples: campos obrigatórios não-condicionais visíveis
+      const step = state.steps[state.currentStepIdx];
+      const qs = getQuestionsForStep(state.tipo, step.id);
+      const values = store.values();
+      const visible = qs.filter((q) => !q.visibleWhen || q.visibleWhen(values));
+      const required = visible.filter((q) => !q.optional);
+      const missing = required.filter((q) =>
+        q.fields.some((f) => {
+          const v = values[f];
+          if (Array.isArray(v)) return v.length === 0;
+          if (typeof v === 'boolean') return false;
+          return !v || String(v).trim() === '';
+        })
+      );
+
+      if (missing.length > 0) {
+        setStepMessage(root, `Preencha os campos obrigatórios: ${missing.map((m) => m.title).join(', ')}`, 'error');
+        return;
+      }
+
+      setStepMessage(root, '', '');
+      state.completedSteps.add(state.currentStepIdx);
+
+      if (state.currentStepIdx < state.steps.length - 1) {
+        state.currentStepIdx++;
+        renderCurrentStep();
+      } else {
+        publicar();
+      }
+    }
+
+    function prevStep() {
+      if (state.currentStepIdx > 0) {
+        state.currentStepIdx--;
+        renderCurrentStep();
+      }
+    }
+
+    function saveAndClose() {
+      // Já está sendo salvo automaticamente via subscribe; só mostra um feedback
+      setStepMessage(root, 'Rascunho salvo. Você pode voltar quando quiser.', 'success');
+      setTimeout(() => setStepMessage(root, '', ''), 4000);
+    }
+
+    function importFile() {
+      alert('Import de Excel/Word: implementação Phase 2 — precisa de Cloud Function pra parsear server-side.');
+    }
+
+    async function publicar() {
+      const values = store.values();
+      setStepMessage(root, 'Publicando…', 'success');
+      try {
+        const result = await saveOferta(values);
+        setStepMessage(
+          root,
+          `Oferta publicada com sucesso! (id: ${result.id}, salvo em: ${result.source})`,
+          'success',
+        );
+        // Limpa rascunho e reseta
+        localStorage.removeItem(DRAFT_KEY);
+        localStorage.removeItem(TIPO_KEY);
+        setTimeout(() => {
+          state.tipo = null;
+          state.currentStepIdx = 0;
+          state.completedSteps = new Set();
+          store.reset(defaultFormValues());
+          renderSplash();
+        }, 2500);
+      } catch (err) {
+        console.error('[btg-lab] erro ao publicar:', err);
+        setStepMessage(root, 'Erro ao publicar oferta: ' + err.message, 'error');
+      }
+    }
+
+    // Mostra origem dos dados no topo do form (badge "Firestore" ou "Local")
+    getOfertasSource().then((info) => {
+      const badge = document.createElement('div');
+      badge.style.cssText =
+        'position:fixed;top:8px;right:8px;z-index:1000;' +
+        'padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;' +
+        'letter-spacing:.06em;text-transform:uppercase;' +
+        (info.source === 'firestore'
+          ? 'background:#dcfce7;color:#15803d;'
+          : 'background:#fef3c7;color:#92400e;');
+      badge.textContent =
+        info.source === 'firestore'
+          ? 'Firestore conectado'
+          : 'Modo local — Firebase não configurado';
+      document.body.appendChild(badge);
+    });
+
+    // ─── RENDER ─────────────────────────────────────────
+    function renderSplash() {
+      renderTipoSelector(root, chooseTipo, importFile);
+    }
+
+    function renderShell() {
+      renderStepShell(root, state, {
+        onChangeType: resetTipo,
+        onSaveAndClose: saveAndClose,
+        onImport: importFile,
+        onPrev: prevStep,
+        onNext: nextStep,
+        onGotoStep: gotoStep,
+      });
+      renderCurrentStep();
+    }
+
+    function renderCurrentStep() {
+      const step = state.steps[state.currentStepIdx];
+      const qs = getQuestionsForStep(state.tipo, step.id);
+      // Atualiza preview targets
+      const values = store.values();
+      const targets = new Set();
+      qs.forEach((q) => {
+        if (q.visibleWhen && !q.visibleWhen(values)) return;
+        (q.previewTargets || []).forEach((t) => targets.add(t));
+      });
+      state.activeTargets = Array.from(targets);
+
+      // Re-render shell pra atualizar título e stepper
+      renderShell.__locked = true;
+      renderStepShell(root, state, {
+        onChangeType: resetTipo,
+        onSaveAndClose: saveAndClose,
+        onImport: importFile,
+        onPrev: prevStep,
+        onNext: nextStep,
+        onGotoStep: gotoStep,
+      });
+
+      // Fields — re-render no callback pra cliques em botões refletirem visualmente
+      const fields = document.getElementById('step-fields');
+      const refreshFields = () => {
+        renderStepFields(fields, step, qs, store);
+        bindFormEvents(fields, store, { onButtonChange: refreshFields });
+      };
+      refreshFields();
+
+      // Preview
+      const previewEl = document.getElementById('step-preview');
+      renderLivePreview(previewEl, {
+        tipo: state.tipo, values: store.values(), mode: state.previewMode,
+        activeTargets: state.activeTargets, imageUrl: state.imageUrl,
+      });
+      previewEl.addEventListener('change-mode', (e) => {
+        state.previewMode = e.detail;
+        renderLivePreview(previewEl, {
+          tipo: state.tipo, values: store.values(), mode: state.previewMode,
+          activeTargets: state.activeTargets, imageUrl: state.imageUrl,
+        });
+      });
+    }
+
+    // ─── BOOTSTRAP ──────────────────────────────────────
+    if (state.tipo) {
+      state.steps = getStepsForType(state.tipo);
+      renderShell();
+    } else {
+      renderSplash();
+    }
+  </script>
+</body>
+</html>
