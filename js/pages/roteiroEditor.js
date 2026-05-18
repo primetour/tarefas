@@ -6,7 +6,7 @@
 import { store }  from '../store.js';
 import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
-import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, isEmbeddedTipStale } from '../services/roteiros.js';
+import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, isEmbeddedTipStale, createWebLink } from '../services/roteiros.js';
 import { generateRoteiroForExport, resolveDestinationImage } from '../services/roteiroGenerator.js';
 import { fetchDestinations, fetchAreas, fetchImages, fetchTips } from '../services/portal.js';
 import { detectBankContext, showBankGuardModal } from '../services/bankClientGuard.js';
@@ -2730,15 +2730,113 @@ async function handleEditorClick(e) {
             if (pdfBtn) pdfBtn.click();
             else showToast('Botão "Exportar PDF" não encontrado. Tente manualmente.', 'warning');
           },
-          onForceLink:  () => {
-            showToast('Gera\u00e7\u00e3o de link web dispon\u00edvel em breve. (Por ora, use Exportar PDF.)', 'info');
+          onForceLink:  async () => {
+            // 4.45.0+ (Sprint 5 Phase 4) \u2014 bank guard chose link mesmo c/ aviso
+            await doGenerateWebLink();
           },
         });
         break;
       }
-      showToast('Gera\u00e7\u00e3o de link web dispon\u00edvel em breve.', 'info');
+      // 4.45.0+ (Sprint 5 Phase 4) \u2014 link web ativado (era "em breve")
+      await doGenerateWebLink();
       break;
     }
+  }
+}
+
+/**
+ * 4.45.0+ (Sprint 5 Phase 4) \u2014 Gera link web p\u00fablico + modal de
+ * compartilhamento. Mesma UX do Portal de Dicas (URL + Abrir + Copiar +
+ * Fechar). Internals (custo, workflowMode, linkedTasks) J\u00c1 s\u00e3o stripados
+ * em createWebLink (via stripInternalForPublicLink) \u2014 Sprint 2/4 hardening.
+ */
+async function doGenerateWebLink() {
+  if (!currentRoteiro?.id || isDirty) {
+    await handleSave();
+    if (!currentRoteiro?.id) {
+      showToast('Salve o roteiro antes de gerar o link.', 'warning');
+      return;
+    }
+  }
+
+  if (!(currentRoteiro?.days || []).length) {
+    showToast('Adicione pelo menos um dia antes de gerar o link.', 'warning');
+    return;
+  }
+
+  const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
+  if (!areaId) {
+    showToast('Selecione uma \u00c1rea (BU) antes de gerar o link.', 'warning');
+    switchSection(11);
+    return;
+  }
+
+  showToast('Gerando link p\u00fablico...', 'info');
+  try {
+    // Resolve area pra branding (logo + cores) embedados no snapshot
+    let area = null;
+    if (areaId && Array.isArray(allAreas)) {
+      area = allAreas.find(a => a.id === areaId) || null;
+    }
+    // createWebLink j\u00e1 aplica stripInternalForPublicLink (Sprint 2)
+    const token = await createWebLink(currentRoteiro.id, currentRoteiro, area);
+    const baseUrl = `${location.protocol}//${location.host}${location.pathname.replace(/\/[^/]*$/, '/')}`;
+    const fullUrl = `${baseUrl}roteiro-view.html#${token}`;
+
+    // Modal estilo Portal \u2014 URL + Abrir + Copiar + Fechar
+    const modal = document.createElement('div');
+    modal.id = 're-link-modal';
+    modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2100;
+      display:flex;align-items:center;justify-content:center;padding:20px;`;
+    modal.innerHTML = `
+      <div style="background:var(--bg-card);max-width:520px;width:100%;padding:32px;
+        border-radius:12px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+        <div style="font-size:2.5rem;margin-bottom:12px;">\ud83d\udd17</div>
+        <h2 style="font-size:1.25rem;margin:0 0 6px;font-weight:600;">Link gerado com sucesso!</h2>
+        <p style="font-size:0.875rem;color:var(--text-muted);margin:0 0 18px;line-height:1.5;">
+          Compartilhe com o cliente. Internals do roteiro (custo, workflow, tarefas
+          operacionais) J\u00c1 foram removidos do snapshot p\u00fablico.
+        </p>
+        <input type="text" value="${esc(fullUrl)}" readonly
+          style="width:100%;padding:10px 12px;background:var(--bg-soft);
+            border:1px solid var(--border);border-radius:6px;font-size:0.8125rem;
+            font-family:monospace;margin-bottom:16px;" onclick="this.select()" />
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+          <a href="${esc(fullUrl)}" target="_blank" rel="noopener" class="re-add-btn"
+            style="margin:0;text-decoration:none;display:inline-block;">\u2197 Abrir link</a>
+          <button class="re-add-btn" id="re-link-copy" style="margin:0;
+            background:var(--bg-soft);color:var(--text-primary);">\ud83d\udccb Copiar</button>
+          <button class="re-add-btn" id="re-link-close" style="margin:0;
+            background:transparent;color:var(--text-muted);border:1px solid var(--border);">Fechar</button>
+        </div>
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);
+          font-size:0.7rem;color:var(--text-muted);">
+          Token: <code style="background:var(--bg-soft);padding:1px 6px;border-radius:3px;">${esc(token)}</code>
+          \u00b7 Roteiro: ${esc(currentRoteiro.title || 'Sem t\u00edtulo')}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.querySelector('#re-link-copy').addEventListener('click', async (e) => {
+      try {
+        await navigator.clipboard.writeText(fullUrl);
+        e.target.textContent = '\u2713 Copiado!';
+        setTimeout(() => { e.target.textContent = '\ud83d\udccb Copiar'; }, 2000);
+      } catch (_) {
+        // Fallback se clipboard bloqueado
+        modal.querySelector('input').select();
+        document.execCommand('copy');
+        e.target.textContent = '\u2713 Copiado!';
+      }
+    });
+    modal.querySelector('#re-link-close').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+    showToast('Link p\u00fablico gerado!', 'success');
+  } catch (err) {
+    console.error('[Roteiro] Erro ao gerar link web:', err);
+    showToast('Erro ao gerar link: ' + (err.message || err), 'error');
   }
 }
 

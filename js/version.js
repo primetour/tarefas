@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 44,
+  minor: 45,
   patch: 0,
-  build: '20260518-sprint5-pptx-parity-wrapper',
+  build: '20260518-sprint5-phase4-weblink-activated',
 };
 
 /** "1.2.0" */

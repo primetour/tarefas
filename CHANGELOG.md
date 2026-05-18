@@ -246,6 +246,56 @@ retorna sem fazer nada (`skippedReason: 'workflow-offline'`). Toast: "Modo offli
 
 ---
 
+## [4.45.0+20260518-sprint5-phase4-weblink-activated] — 2026-05-18
+
+Release **MINOR** — Sprint 5 Phase 4: link web público ativado no editor
+de Roteiros (era "em breve" desde Sprint 4).
+
+### Comportamento
+- Editor → botão "Gerar Link Web" agora **funcional** (não mostra mais
+  toast "em breve")
+- Bank guard preservado: clientes de bancos parceiros veem alerta antes
+- Click no botão (sem bank guard) → `doGenerateWebLink()`:
+  1. Salva roteiro se dirty
+  2. Valida que tem `days[].length > 0` + `areaId`
+  3. Chama `createWebLink()` que faz snapshot defensivo (Sprint 2/4 já
+     stripped: costPricing zerado, collaboratorIds/workflowMode/aiPrompt/
+     linkedTaskIds/tasksGeneratedAt removidos)
+  4. Constrói URL `{baseUrl}roteiro-view.html#{token}`
+  5. Mostra modal com UI igual ao Portal de Dicas: URL + Abrir + Copiar
+     + token visível (debug/suporte) + nome do roteiro
+
+### UX do modal (espelha Portal)
+- Header com 🔗 + título + disclaimer sobre privacidade
+- Input readonly com URL + click-to-select
+- 3 botões: Abrir (target=_blank), Copiar (clipboard API + fallback
+  document.execCommand), Fechar
+- Footer com token + título do roteiro
+- Click no backdrop fecha modal (UX padrão)
+
+### Privacy preservada
+`createWebLink` chama `stripInternalForPublicLink` ANTES de gravar no
+snapshot da sub-collection `roteiro_web_links`:
+- ✓ costPricing zerado
+- ✓ collaboratorIds removido
+- ✓ workflowMode removido
+- ✓ aiPrompt/aiSources/aiProvider/aiModel removidos
+- ✓ linkedTaskIds + tasksGeneratedAt removidos (Sprint 4 hardening)
+
+Cliente recebe apenas dados destinados a ele.
+
+### Aprendido do Portal
+- Modal de URL + Copy + Open pattern (portalTipsList.js linha 920+)
+- Token UUID 16-char via `crypto.randomUUID().replace(/-/g, '').slice(0, 16)`
+- Sub-collection separada (`roteiro_web_links/{token}`) — read público,
+  write restrito (Sprint 1 rule hardening)
+
+### Phase 3 (DOCX) ainda pendente
+Foco foi atalhar o caminho cliente-facing mais impactante (link público
+funcional). DOCX (lib `docx@8.5.0`) entra na próxima release.
+
+---
+
 ## [4.44.0+20260518-sprint5-pptx-parity-wrapper] — 2026-05-18
 
 Release **MINOR** — Sprint 5 (Phase 1+2) do refactor de Roteiros: paridade
