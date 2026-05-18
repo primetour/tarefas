@@ -35,8 +35,8 @@
  *     },
  *
  *     modules: {
- *       portal:   { /* overrides específicos pro Portal de Dicas */ },
- *       roteiros: { /* overrides específicos pra Roteiros */ },
+ *       portal:   { ... overrides específicos pro Portal de Dicas ... },
+ *       roteiros: { ... overrides específicos pra Roteiros ... },
  *     },
  *   }
  *

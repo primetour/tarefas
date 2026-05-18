@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 48,
-  patch: 0,
-  build: '20260518-sprint6bc-area-tokens-sso',
+  patch: 1,
+  build: '20260518-sprint6bc-fix-jsdoc',
 };
 
 /** "1.2.0" */
