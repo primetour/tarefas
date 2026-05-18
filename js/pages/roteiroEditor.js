@@ -1165,11 +1165,17 @@ function collectFormData() {
   });
 
   // Children ages
+  // 4.40.31+ (Sprint 1 B01) — truncar pra `client.children` count.
+  // Antes: ages.length era determinado pelo DOM, mas se o user diminuiu
+  // children de 3→1 e os inputs antigos ainda estavam visíveis no DOM
+  // (section não re-renderizou ainda), 3 idades eram salvas. Agora forçamos
+  // alinhamento ao count atualizado.
   const ages = [];
   mainContainer.querySelectorAll('[data-age-idx]').forEach(input => {
     ages.push(parseInt(input.value) || 0);
   });
-  if (ages.length) data.client.childrenAges = ages;
+  const childrenCount = Math.max(0, parseInt(data.client?.children) || 0);
+  data.client.childrenAges = ages.slice(0, childrenCount);
 
   // Preferences
   const prefs = [];
@@ -1307,19 +1313,91 @@ function collectFormData() {
   return data;
 }
 
+/* ─── Sanitização pré-save (4.40.31+ Sprint 1) ─────────────
+ * Limpa dados inconsistentes antes de gravar no Firestore:
+ *   B04: destinos sem cidade (apareceriam em branco no PDF)
+ *   B05: preços negativos (input type=number permite digitar -50)
+ *   B06: items vazios em arrays editáveis (includes/excludes/optionals/etc)
+ *   B07: deduplicação case-insensitive (já preset-* — mas defesa em profundidade)
+ *
+ * Roda IMEDIATAMENTE antes de saveRoteiro(), sem afetar o que o user vê
+ * na UI (collectFormData ainda retorna o estado bruto pra preservar dirty
+ * tracking; sanitizeForSave é só pra persistência).
+ */
+function sanitizeForSave(data) {
+  const out = JSON.parse(JSON.stringify(data));
+
+  // ── B04: Destinos sem cidade ────────────────────────────
+  if (Array.isArray(out.travel?.destinations)) {
+    out.travel.destinations = out.travel.destinations.filter(d => (d?.city || '').trim());
+    out.travel.nights = out.travel.destinations.reduce((s, d) => s + (parseInt(d.nights) || 0), 0);
+  }
+
+  // ── B05: Preços negativos ───────────────────────────────
+  // Clamp a 0 (não null — manter intenção de "preço zero" como possível).
+  const clamp0 = (v) => (typeof v === 'number' && v < 0) ? 0 : v;
+  if (out.pricing) {
+    out.pricing.perPerson = clamp0(out.pricing.perPerson);
+    out.pricing.perCouple = clamp0(out.pricing.perCouple);
+  }
+  if (Array.isArray(out.optionals)) {
+    out.optionals.forEach(o => {
+      o.priceAdult = clamp0(o.priceAdult);
+      o.priceChild = clamp0(o.priceChild);
+    });
+  }
+
+  // ── B06: Items vazios em arrays editáveis ───────────────
+  out.includes  = (out.includes  || []).map(s => (s || '').trim()).filter(Boolean);
+  out.excludes  = (out.excludes  || []).map(s => (s || '').trim()).filter(Boolean);
+  if (Array.isArray(out.optionals)) {
+    out.optionals = out.optionals.filter(o => (o?.service || '').trim());
+  }
+  if (Array.isArray(out.cancellation)) {
+    out.cancellation = out.cancellation.filter(c => (c?.period || '').trim() || (c?.penalty || '').trim());
+  }
+  if (Array.isArray(out.pricing?.customRows)) {
+    out.pricing.customRows = out.pricing.customRows.filter(r => (r?.label || '').trim() || (r?.value || '').trim());
+  }
+  if (Array.isArray(out.importantInfo?.customFields)) {
+    out.importantInfo.customFields = out.importantInfo.customFields.filter(
+      f => (f?.label || '').trim() || (f?.value || '').trim()
+    );
+  }
+
+  // ── B07: Dedup case-insensitive em includes/excludes ────
+  // (presets já dedupam ao adicionar; isto cobre caso de cópia manual
+  //  do user "Voo internacional" + "voo internacional" via custom).
+  const dedupCI = (arr) => {
+    const seen = new Set();
+    return arr.filter(s => {
+      const k = s.trim().toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
+  out.includes = dedupCI(out.includes);
+  out.excludes = dedupCI(out.excludes);
+
+  return out;
+}
+
 /* ─── Save logic ──────────────────────────────────────────── */
 async function handleSave() {
   try {
     currentRoteiro = collectFormData();
-    // Clean empty strings from includes/excludes
-    currentRoteiro.includes = (currentRoteiro.includes || []).map(s => (s || '').trim()).filter(Boolean);
-    currentRoteiro.excludes = (currentRoteiro.excludes || []).map(s => (s || '').trim()).filter(Boolean);
+    // 4.40.31+ Sanitização centralizada (B04-B07).
+    const sanitized = sanitizeForSave(currentRoteiro);
 
     const indicator = document.getElementById('re-autosave-status');
     if (indicator) indicator.textContent = 'Salvando...';
 
-    const newId = await saveRoteiro(currentRoteiro.id || null, currentRoteiro);
+    const newId = await saveRoteiro(currentRoteiro.id || null, sanitized);
     isDirty = false;
+
+    // Sincroniza o estado em memória com o que foi salvo (pra dirty tracking)
+    currentRoteiro = sanitized;
 
     if (!currentRoteiro.id && newId) {
       currentRoteiro.id = newId;
@@ -1617,25 +1695,37 @@ function handleEditorClick(e) {
       markDirty();
       break;
 
-    case 'preset-includes':
+    case 'preset-includes': {
+      // 4.40.31+ (Sprint 1 B07) \u2014 dedup case-insensitive + trim.
+      // Antes: .includes() exact match \u2192 "Voo" e "voo" coexistiam.
       currentRoteiro = collectFormData();
+      const existing = new Set(currentRoteiro.includes.map(s => (s || '').trim().toLowerCase()));
       INCLUDES_PRESETS.forEach(p => {
-        if (!currentRoteiro.includes.includes(p)) currentRoteiro.includes.push(p);
+        if (!existing.has(p.trim().toLowerCase())) {
+          currentRoteiro.includes.push(p);
+          existing.add(p.trim().toLowerCase());
+        }
       });
       switchSection(6);
       markDirty();
       showToast('Itens padr\u00e3o adicionados (Inclui).', 'success');
       break;
+    }
 
-    case 'preset-excludes':
+    case 'preset-excludes': {
       currentRoteiro = collectFormData();
+      const existing = new Set(currentRoteiro.excludes.map(s => (s || '').trim().toLowerCase()));
       EXCLUDES_PRESETS.forEach(p => {
-        if (!currentRoteiro.excludes.includes(p)) currentRoteiro.excludes.push(p);
+        if (!existing.has(p.trim().toLowerCase())) {
+          currentRoteiro.excludes.push(p);
+          existing.add(p.trim().toLowerCase());
+        }
       });
       switchSection(6);
       markDirty();
       showToast('Itens padr\u00e3o adicionados (N\u00e3o Inclui).', 'success');
       break;
+    }
 
     /* ── Cancellation ─────────────────────────────────────── */
     case 'add-canc':

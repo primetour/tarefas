@@ -56,6 +56,62 @@ Release **MINOR** — Sub-dashboard executivo de horas em "Foco em produto"
 
 ---
 
+## [4.40.31+20260518-roteiros-sprint1-hardening] — 2026-05-18
+
+Release **MINOR** — Sprint 1 do refactor do módulo de Roteiros:
+hardening de segurança + 7 bug fixes + hierarquia de visualização.
+
+### Pedido do user
+> "pode começar com o sprint 1 depois disso"
+> (após o user aprovar o plano de 4 sprints do audit do módulo)
+
+### 1. Hardening Firestore Rules
+
+**Antes (vetor de tampering identificado em audit bancária):**
+- `allow update: if isAuth();` — qualquer auth user editava roteiro alheio.
+
+**Depois:**
+- `allow create: if isAuth() && request.resource.data.consultantId == request.auth.uid;`
+- `allow update: if isAuth() && (isManager() OR consultantId==self OR uid in collaboratorIds)`
+- `allow delete:` mantém (admin OR consultantId==self).
+
+### 2. Bug fixes B01-B07
+
+| ID | Onde | Fix |
+|---|---|---|
+| B01 | `roteiroEditor.js` collectFormData | `childrenAges` truncado pra `client.children` count (antes mantinha idades de crianças removidas) |
+| B02 | `roteiros.js` generateRoteiroFromPrompt | Já tem try/catch + toast em ambos os layers (fetchSkills + chatWithAI). Sem mudança necessária — bug já resolvido em iterações anteriores. |
+| B03 | `roteiroEditor.js` | Sem ação code-side de "auto-preencher portal" no estado atual. Bug obsoleto. |
+| B04 | `sanitizeForSave()` novo | Destinos sem cidade filtrados antes de gravar |
+| B05 | `sanitizeForSave()` novo | Preços negativos clamp a 0 (pricing.perPerson/Couple + optionals) |
+| B06 | `sanitizeForSave()` novo | Items vazios filtrados em optionals/cancellation/customRows/customFields (antes só includes/excludes) |
+| B07 | `preset-includes/excludes` | Dedup case-insensitive + trim (antes "Voo" e "voo" coexistiam) |
+
+### 3. Hierarquia de visualização
+
+`fetchRoteiros()` simplificada — sempre retorna todos os roteiros (com orderBy
+server-side). Filtragem hierárquica acontece na página via `getVisibleUserIds()`
+— mesmo padrão de `/goals` e `/feedbacks`.
+
+Comportamento:
+- **master / roteiro_manage / system_view_all** → vê todos.
+- **gerente** → vê próprios + subordinados (managerId transitivo).
+- **analista** → vê próprios + roteiros onde está em `collaboratorIds[]`.
+
+Inclui suporte futuro pra colaboração multi-pessoa (campo `collaboratorIds[]`
+ainda não populado pela UI — entra no Sprint 2 com schema evolution).
+
+### Validação
+- Firestore rules deployadas via `firebase deploy --only firestore:rules`.
+- Code change live após push (GitHub Pages ~1min).
+
+### Próximo (Sprint 2)
+Schema evolution: client → client + travelers[] (responsável + acompanhantes),
+collaboratorIds[] populado pela UI, workflowMode opt-in, costPricing (custo
+interno separado do preço).
+
+---
+
 ## [4.40.27+20260518-sso-fix-mfa-prompt-conflict] — 2026-05-18
 
 Release **PATCH** — Segunda regressão SSO Microsoft pós-audit resolvida.

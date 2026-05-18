@@ -215,14 +215,50 @@ export async function renderRoteiros(container) {
     </style>
   `;
 
-  /* ── Load data ── */
+  /* ── Load data ──
+   * 4.40.31+ (Sprint 1) — aplica hierarquia via getVisibleUserIds()
+   * (mesmo padrão de /goals e /feedbacks).
+   *
+   * Regra:
+   *   - master / roteiro_manage / system_view_all → vê todos
+   *   - demais → vê próprios + de subordinados (transitivos via managerId)
+   *              + roteiros onde está em collaboratorIds[]
+   */
   async function loadData() {
     try {
       const [roteiros, areas] = await Promise.all([
         fetchRoteiros(),
         fetchAreas().catch(() => []),
       ]);
-      allRoteiros = roteiros;
+
+      // Aplica hierarquia
+      const seeAll = store.isMaster()
+        || store.can('system_view_all')
+        || store.can('roteiro_manage');
+
+      if (seeAll) {
+        allRoteiros = roteiros;
+      } else {
+        const myUid = store.get('currentUser')?.uid;
+        const myProfile = store.get('userProfile') || {};
+        const viewer = { uid: myUid, ...myProfile };
+        const allUsers = store.get('users') || [];
+        const { getVisibleUserIds } = await import('../services/users.js');
+        const visibleSet = getVisibleUserIds(viewer, allUsers, (p) => store.can(p));
+
+        if (!visibleSet) {
+          allRoteiros = roteiros;  // null = vê tudo
+        } else {
+          allRoteiros = roteiros.filter(r => {
+            // Próprio / hierarquia
+            if (r.consultantId && visibleSet.has(r.consultantId)) return true;
+            // Colaborador explícito
+            if (Array.isArray(r.collaboratorIds) && r.collaboratorIds.includes(myUid)) return true;
+            return false;
+          });
+        }
+      }
+
       allAreas = areas;
       renderFilters();
       renderTable();

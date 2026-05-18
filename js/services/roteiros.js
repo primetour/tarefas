@@ -184,43 +184,23 @@ export function generateDays(startDate, destinations) {
 
 /* ─── CRUD ────────────────────────────────────────────────── */
 
+/**
+ * 4.40.31+ (Sprint 1) — fetch SEMPRE todos os roteiros. Hierarquia é
+ * aplicada NA PÁGINA via getVisibleUserIds() — mesmo padrão de /goals
+ * e /feedbacks. Antes filtrava por consultantId server-side, o que
+ * impedia gerentes de ver roteiros dos seus subordinados.
+ *
+ * Volume de roteiros é pequeno (~centenas) então o custo de fetch+filter
+ * client-side é aceitável. Se chegar a milhares, repensar com paginação.
+ */
 export async function fetchRoteiros(filters = {}) {
-  // IMPORTANTE: Combinar where('consultantId') + orderBy('updatedAt')
-  // exige índice composto no Firestore. Para usuários não-manager (que
-  // têm o filtro consultantId aplicado), removemos o orderBy do servidor
-  // e ordenamos client-side, evitando o erro failed-precondition.
-  const isNonManager = !store.canManageRoteiros();
-  const uid = store.get('currentUser')?.uid;
-
-  const constraints = [];
-  if (isNonManager && uid) {
-    constraints.push(where('consultantId', '==', uid));
-    // sem orderBy server-side aqui
-  } else {
-    constraints.push(orderBy('updatedAt', 'desc'));
-  }
-
-  if (filters.status) {
-    constraints.unshift(where('status', '==', filters.status));
-  }
-
-  if (filters.limit) {
-    constraints.push(limit(filters.limit));
-  }
+  const constraints = [orderBy('updatedAt', 'desc')];
+  if (filters.status) constraints.unshift(where('status', '==', filters.status));
+  if (filters.limit)  constraints.push(limit(filters.limit));
 
   const q = query(collection(db, COL), ...constraints);
   const snap = await getDocs(q);
-  let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-  // Ordena client-side quando o orderBy foi removido para evitar índice
-  if (isNonManager) {
-    items.sort((a, b) => {
-      const ta = a.updatedAt?.toMillis?.() ?? a.updatedAt?.seconds ?? 0;
-      const tb = b.updatedAt?.toMillis?.() ?? b.updatedAt?.seconds ?? 0;
-      return tb - ta;
-    });
-  }
-  return items;
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 export async function fetchRoteiro(id) {

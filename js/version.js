@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 30,
-  build: '20260518-products-tab-baseline',
+  patch: 31,
+  build: '20260518-roteiros-sprint1-hardening',
 };
 
 /** "1.2.0" */

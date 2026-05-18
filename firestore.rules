@@ -766,10 +766,25 @@ service cloud.firestore {
     }
 
     // ── Roteiros de Viagem ──────────────────────────────────
+    // 4.40.31+ (Sprint 1 hardening) — update agora exige ownership ou
+    // collaborator ou manager. Antes: qualquer auth user editava roteiro
+    // alheio (vetor de tampering identificado em audit bancária).
+    //
+    // Modelo:
+    //   - consultantId    → dono primário (criador)
+    //   - collaboratorIds → array de UIDs com permissão de edição
+    //   - isManager       → roteiros_manage role bypass
+    //
+    // Read continua aberto pra auth (UI lista todos respeita hierarquia em código).
     match /roteiros/{roteiroId} {
       allow read:   if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
+      allow create: if isAuth() && request.resource.data.consultantId == request.auth.uid;
+      allow update: if isAuth() && (
+        isManager()
+        || resource.data.consultantId == request.auth.uid
+        || (resource.data.collaboratorIds != null
+            && request.auth.uid in resource.data.collaboratorIds)
+      );
       allow delete: if isAuth() && (isAdmin() || resource.data.consultantId == request.auth.uid);
     }
 
