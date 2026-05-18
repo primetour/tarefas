@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 25,
-  build: '20260518-assignee-observer-union-avatar-fix',
+  patch: 26,
+  build: '20260518-sso-fix-firebaseapp-referrer',
 };
 
 /** "1.2.0" */

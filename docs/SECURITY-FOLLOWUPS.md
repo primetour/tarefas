@@ -9,9 +9,16 @@
 
 **Status:** ✅ **APLICADO em 2026-05-15** via `gcloud services api-keys update` (v4.40.23).
 
-**Restrições ativas:**
-- HTTP referrers: `https://primetour.github.io/*`, `https://*.primetour.com.br/*`, `https://primetour.com.br/*`, `http://localhost:8765/*`
+**Restrições ativas (atualizado em 4.40.26 com fix do SSO):**
+- HTTP referrers:
+  - `https://primetour.github.io/*` (app principal)
+  - `https://*.primetour.com.br/*` + `https://primetour.com.br/*` (futuro)
+  - `https://gestor-de-tarefas-primetour.firebaseapp.com/*` ⚠ **OBRIGATÓRIO** — Firebase Auth handler do SSO Microsoft passa por aqui
+  - `https://gestor-de-tarefas-primetour.web.app/*` (alias do Firebase Hosting)
+  - `http://localhost:8765/*` (dev)
 - API targets: 16 Firebase services (Identity Toolkit, Firestore, App Check, etc.)
+
+**⚠ ARMADILHA documentada:** Esquecer `firebaseapp.com/*` quebra o login Microsoft SSO. O fluxo signInWithPopup abre o handler oficial `gestor-de-tarefas-primetour.firebaseapp.com/__/auth/handler` que chama Identity Toolkit com a mesma apiKey. Sem `firebaseapp.com` na whitelist, o popup mostra "The requested action is invalid" e o login trava. Bug introduzido em 4.40.23 e corrigido em 4.40.26 (16/05 manhã).
 
 **Comprovação E2E (logs do `gcloud` + curl):**
 
@@ -22,13 +29,17 @@
 | `curl` com referrer `primetour.github.io/tarefas/` | passa | ✅ HTTP 400 (chegou no endpoint, falha só no payload) |
 | App ao vivo lê Firestore | OK | ✅ `Rafaela Gouvêa` carregada |
 
-**Reaplicar (se mudar de host):**
+**Reaplicar (se mudar de host) — comando OFICIAL pós-fix 4.40.26:**
 
 ```bash
 gcloud services api-keys update 8649818d-3e7c-49c9-8bbc-a5b09980b558 \
   --project=gestor-de-tarefas-primetour \
-  --allowed-referrers='https://primetour.github.io/*,https://*.primetour.com.br/*,https://primetour.com.br/*'
+  --allowed-referrers='https://primetour.github.io/*,https://*.primetour.com.br/*,https://primetour.com.br/*,https://gestor-de-tarefas-primetour.firebaseapp.com/*,https://gestor-de-tarefas-primetour.web.app/*,http://localhost:8765/*'
 ```
+
+**REGRA DE OURO:** ao adicionar/remover referrers, SEMPRE manter
+`firebaseapp.com/*` E `web.app/*` da própria project — eles são internos do
+Firebase Auth.
 
 ---
 
