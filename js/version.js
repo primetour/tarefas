@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 45,
+  minor: 46,
   patch: 0,
-  build: '20260518-sprint5-phase4-weblink-activated',
+  build: '20260518-sprint5-phase3-docx',
 };
 
 /** "1.2.0" */

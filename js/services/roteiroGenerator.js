@@ -42,6 +42,12 @@ async function loadPptxGenJS() {
   await loadScript('https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js');
 }
 
+// 4.46.0+ (Sprint 5 Phase 3) — DOCX lazy loader, mesma versão do Portal de Dicas
+async function loadDocx() {
+  if (window.docx) return;
+  await loadScript('https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js');
+}
+
 /* ═══════════════════════════════════════════════════════════════
    HELPERS
    ═══════════════════════════════════════════════════════════════ */
@@ -731,8 +737,7 @@ export async function generateRoteiro({ roteiro, areaId = null, area = null, for
     case 'pptx':
       return generateRoteiroPPTX(sanitized, area);
     case 'docx':
-      // 4.45.0+ planned — fallback temporário
-      throw new Error('Export DOCX em desenvolvimento (Sprint 5 Phase 3).');
+      return generateRoteiroDOCX(sanitized, area);
     case 'web':
       // 4.45.0+ planned — fallback temporário
       throw new Error('Link web em desenvolvimento (Sprint 5 Phase 4).');
@@ -2172,4 +2177,350 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
   }
 
   return { filename };
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   4.46.0+ (Sprint 5 Phase 3) — DOCX EXPORT
+   ═══════════════════════════════════════════════════════════════
+
+   Espelha o pattern do Portal de Dicas (generateDocx em portalGenerator.js).
+   Lib: docx@8.5.0 (já no projeto via loadDocx).
+
+   FORMATO: pretende ser "editável pelo cliente" — diferente do PDF que é
+   final/closed. Por isso é mais texto-pesado e menos visual: cliente abre
+   no Word, adiciona observações, devolve.
+
+   ESTRUTURA (1 documento, sem page breaks fortes):
+     - Capa: logo + título + período + cliente + destinos
+     - Resumo da viagem (1 parágrafo curto)
+     - Dia a dia (cada dia: header + narrative resumida)
+     - Hotéis (tabela)
+     - Valores
+     - Opcionais (tabela)
+     - Inclui / Não inclui (2 listas)
+     - Pagamento
+     - Cancelamento (tabela)
+     - Informações importantes
+     - Dicas locais (cada dica embedded)
+     - Closing
+*/
+export async function generateRoteiroDOCX(roteiro, area = null) {
+  await loadDocx();
+  const D = window.docx;
+  const {
+    Document, Packer, Paragraph, TextRun, AlignmentType, BorderStyle,
+    Table, TableRow, TableCell, WidthType, HeadingLevel, PageBreak,
+  } = D;
+
+  // Cores (hex sem #) — pra TextRun.color
+  const primaryHex   = ((area?.colors?.primary)   || '#0F172A').replace('#', '');
+  const secondaryHex = ((area?.colors?.secondary) || '#475569').replace('#', '');
+  const mutedHex     = '6B7280';
+  const accentHex    = primaryHex;
+  const buName       = area?.name || 'PRIMETOUR';
+  const today        = new Date().toLocaleDateString('pt-BR', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  // Helpers locais — wrappers do docx API pra reduzir ruído visual
+  const tr  = (text, opts = {}) => new TextRun({ font: 'Calibri', text: String(text || ''), ...opts });
+  const p   = (children, opts = {}) => new Paragraph({ children, ...opts });
+  const hdr = (text, level = HeadingLevel.HEADING_1) => new Paragraph({
+    children: [tr(text.toUpperCase(), { bold: true, size: 28, color: secondaryHex, characterSpacing: 50 })],
+    spacing: { before: 320, after: 160 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: accentHex } },
+    heading: level,
+  });
+  const sub = (text) => new Paragraph({
+    children: [tr(text.toUpperCase(), { bold: true, size: 20, color: accentHex, characterSpacing: 60 })],
+    spacing: { before: 200, after: 80 },
+  });
+  const body = (text) => new Paragraph({
+    children: [tr(text, { size: 22, color: '333333' })],
+    spacing: { after: 100, line: 320 },
+  });
+
+  // Helper: célula simples
+  const cell = (text, opts = {}) => new TableCell({
+    children: [new Paragraph({ children: [tr(text, { size: 20, ...(opts.runOpts || {}) })] })],
+    width: opts.width,
+    shading: opts.shading,
+  });
+  const headerCell = (text, width) => cell(text, {
+    width,
+    runOpts: { bold: true, color: 'FFFFFF', size: 20 },
+    shading: { fill: secondaryHex, type: 'clear', color: 'auto' },
+  });
+
+  const children = [];
+
+  /* ── Capa ─────────────────────────────────────────────── */
+  children.push(p([tr(buName.toUpperCase(), { bold: true, size: 48, color: primaryHex, characterSpacing: 200 })], {
+    alignment: AlignmentType.CENTER, spacing: { before: 1200, after: 200 },
+  }));
+  children.push(p([tr('ROTEIRO DE VIAGEM', { size: 22, color: mutedHex, characterSpacing: 200 })], {
+    alignment: AlignmentType.CENTER, spacing: { after: 600 },
+  }));
+  children.push(p([tr(roteiro.title || 'Roteiro Personalizado', { bold: true, size: 36, color: secondaryHex })], {
+    alignment: AlignmentType.CENTER, spacing: { after: 200 },
+  }));
+
+  const clientLine = roteiro.client?.name
+    ? `Preparado para: ${roteiro.client.name}`
+    : '';
+  if (clientLine) {
+    children.push(p([tr(clientLine, { size: 22, color: secondaryHex, italics: true })], {
+      alignment: AlignmentType.CENTER, spacing: { after: 200 },
+    }));
+  }
+
+  const dests = (roteiro.travel?.destinations || []).map(d => d.city || d.country).filter(Boolean).join(' · ');
+  if (dests) {
+    children.push(p([tr(dests, { size: 24, bold: true, color: accentHex })], {
+      alignment: AlignmentType.CENTER, spacing: { after: 400 },
+    }));
+  }
+
+  if (roteiro.travel?.startDate || roteiro.travel?.endDate) {
+    const fmtD = (s) => s ? new Date(s + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const period = `${fmtD(roteiro.travel.startDate)} → ${fmtD(roteiro.travel.endDate)} · ${roteiro.travel.nights || 0} noites`;
+    children.push(p([tr(period, { size: 20, color: mutedHex })], {
+      alignment: AlignmentType.CENTER, spacing: { after: 400 },
+    }));
+  }
+
+  children.push(p([tr('───────────────────────', { color: accentHex, size: 16 })], {
+    alignment: AlignmentType.CENTER, spacing: { before: 200, after: 120 },
+  }));
+  children.push(p([tr(today, { size: 18, color: mutedHex })], { alignment: AlignmentType.CENTER }));
+  children.push(p([new PageBreak()]));
+
+  /* ── Dia a dia ────────────────────────────────────────── */
+  if (Array.isArray(roteiro.days) && roteiro.days.length) {
+    children.push(hdr('Dia a dia'));
+    for (const d of roteiro.days) {
+      const dayLabel = d.title?.trim() || `Dia ${d.dayNumber || ''}`;
+      const dateLabel = d.date ? ` · ${new Date(d.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}` : '';
+      const cityLabel = d.city ? ` · ${d.city}` : '';
+      children.push(sub(`${dayLabel}${dateLabel}${cityLabel}`));
+      if (d.narrative) children.push(body(d.narrative));
+      if (Array.isArray(d.activities) && d.activities.length) {
+        for (const a of d.activities) {
+          const t = (a.time || '').trim();
+          const desc = (a.description || '').trim();
+          if (!desc && !t) continue;
+          children.push(new Paragraph({
+            children: [
+              tr(t ? `${t} · ` : '', { bold: true, color: accentHex, size: 20 }),
+              tr(desc, { size: 20, color: '444444' }),
+            ],
+            spacing: { after: 60 },
+            indent: { left: 220 },
+          }));
+        }
+      }
+    }
+  }
+
+  /* ── Hotéis (tabela) ──────────────────────────────────── */
+  if (Array.isArray(roteiro.hotels) && roteiro.hotels.length) {
+    children.push(hdr('Hospedagem'));
+    const rows = [
+      new TableRow({ children: [
+        headerCell('Cidade'), headerCell('Hotel'), headerCell('Quarto'), headerCell('Regime'), headerCell('Noites'),
+      ]}),
+      ...roteiro.hotels.map(h => new TableRow({ children: [
+        cell(h.city || '—'),
+        cell(h.hotelName || '—'),
+        cell(h.roomType || '—'),
+        cell(h.regime || '—'),
+        cell(String(h.nights || '—')),
+      ]})),
+    ];
+    children.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }));
+    children.push(p([])); // spacer
+  }
+
+  /* ── Valores ──────────────────────────────────────────── */
+  const pricing = roteiro.pricing || {};
+  if (pricing.perPerson || pricing.perCouple || (pricing.customRows || []).length) {
+    children.push(hdr('Valores'));
+    const cur = pricing.currency || 'USD';
+    if (pricing.perCouple)  children.push(body(`Por casal: ${formatCurrency(pricing.perCouple, cur)}`));
+    if (pricing.perPerson)  children.push(body(`Por pessoa: ${formatCurrency(pricing.perPerson, cur)}`));
+    (pricing.customRows || []).forEach(r => {
+      if (r.label || r.value) children.push(body(`${r.label || ''}${r.label && r.value ? ': ' : ''}${r.value || ''}`));
+    });
+    if (pricing.disclaimer) {
+      children.push(p([tr(pricing.disclaimer, { italics: true, size: 18, color: mutedHex })], { spacing: { before: 200, after: 100 } }));
+    }
+  }
+
+  /* ── Opcionais (tabela) ───────────────────────────────── */
+  if (Array.isArray(roteiro.optionals) && roteiro.optionals.length) {
+    children.push(hdr('Serviços opcionais'));
+    const cur = pricing.currency || 'USD';
+    const rows = [
+      new TableRow({ children: [
+        headerCell('Serviço'), headerCell('Por adulto'), headerCell('Por criança'), headerCell('Observações'),
+      ]}),
+      ...roteiro.optionals.map(o => new TableRow({ children: [
+        cell(o.service || '—'),
+        cell(o.priceAdult != null ? formatCurrency(o.priceAdult, cur) : '—'),
+        cell(o.priceChild != null ? formatCurrency(o.priceChild, cur) : '—'),
+        cell(o.notes || ''),
+      ]})),
+    ];
+    children.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }));
+    children.push(p([]));
+  }
+
+  /* ── Inclui / Não inclui ──────────────────────────────── */
+  if ((roteiro.includes?.length) || (roteiro.excludes?.length)) {
+    children.push(hdr('Inclui / Não inclui'));
+    if (roteiro.includes?.length) {
+      children.push(sub('Inclui'));
+      roteiro.includes.forEach(i => children.push(new Paragraph({
+        children: [tr(`✓ ${i}`, { size: 20, color: '333333' })],
+        spacing: { after: 40 },
+        indent: { left: 220 },
+      })));
+    }
+    if (roteiro.excludes?.length) {
+      children.push(sub('Não inclui'));
+      roteiro.excludes.forEach(i => children.push(new Paragraph({
+        children: [tr(`✗ ${i}`, { size: 20, color: '666666' })],
+        spacing: { after: 40 },
+        indent: { left: 220 },
+      })));
+    }
+  }
+
+  /* ── Pagamento ────────────────────────────────────────── */
+  const pay = roteiro.payment || {};
+  if (pay.deposit || pay.installments || pay.deadline || pay.notes) {
+    children.push(hdr('Pagamento'));
+    if (pay.deposit)      children.push(body(`Sinal / Depósito: ${pay.deposit}`));
+    if (pay.installments) children.push(body(`Parcelamento: ${pay.installments}`));
+    if (pay.deadline)     children.push(body(`Prazo: ${pay.deadline}`));
+    if (pay.notes) {
+      children.push(sub('Observações'));
+      children.push(body(pay.notes));
+    }
+  }
+
+  /* ── Cancelamento ─────────────────────────────────────── */
+  if (Array.isArray(roteiro.cancellation) && roteiro.cancellation.length) {
+    children.push(hdr('Política de cancelamento'));
+    const rows = [
+      new TableRow({ children: [headerCell('Antecedência'), headerCell('Penalidade')]}),
+      ...roteiro.cancellation.map(c => new TableRow({ children: [
+        cell(c.period || '—'),
+        cell(c.penalty || '—'),
+      ]})),
+    ];
+    children.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }));
+    children.push(p([]));
+  }
+
+  /* ── Informações Importantes ──────────────────────────── */
+  const info = roteiro.importantInfo || {};
+  const infoItems = [
+    { label: 'Passaporte', value: info.passport },
+    { label: 'Visto', value: info.visa },
+    { label: 'Vacinas', value: info.vaccines },
+    { label: 'Clima', value: info.climate },
+    { label: 'Bagagem', value: info.luggage },
+    { label: 'Voos', value: info.flights },
+    ...((info.customFields || []).map(cf => ({ label: cf.label, value: cf.value }))),
+  ].filter(x => x.value);
+  if (infoItems.length) {
+    children.push(hdr('Informações importantes'));
+    infoItems.forEach(it => {
+      children.push(sub(it.label));
+      children.push(body(it.value));
+    });
+  }
+
+  /* ── Dicas anexas ─────────────────────────────────────── */
+  if (Array.isArray(roteiro.embeddedTips) && roteiro.embeddedTips.length) {
+    children.push(hdr('Dicas locais'));
+    for (const emb of roteiro.embeddedTips) {
+      children.push(sub(emb.title || '—'));
+      if (emb.subtitle) children.push(p([tr(emb.subtitle, { italics: true, color: mutedHex, size: 18 })], { spacing: { after: 80 } }));
+      const segments = emb.content?.segments || {};
+      for (const [segKey, items] of Object.entries(segments)) {
+        if (!Array.isArray(items) || !items.length) continue;
+        children.push(p([tr(humanizeSegmentKey(segKey).toUpperCase(), { bold: true, color: accentHex, size: 18 })], { spacing: { before: 100, after: 60 } }));
+        items.slice(0, 10).forEach(it => {  // máx 10 por segmento pra não inflar
+          let line;
+          if (typeof it === 'string') line = `• ${it}`;
+          else if (it && typeof it === 'object') {
+            const parts = [];
+            if (it.name) parts.push(it.name);
+            if (it.address || it.location) parts.push(it.address || it.location);
+            if (it.note || it.description) parts.push(it.note || it.description);
+            line = `• ${parts.filter(Boolean).join(' — ')}`;
+          } else return;
+          children.push(new Paragraph({
+            children: [tr(line, { size: 18, color: '444444' })],
+            spacing: { after: 40 },
+            indent: { left: 220 },
+          }));
+        });
+      }
+    }
+  }
+
+  /* ── Closing ──────────────────────────────────────────── */
+  children.push(p([]));
+  children.push(p([tr('Boa viagem!', { bold: true, size: 28, color: primaryHex, italics: true })], {
+    alignment: AlignmentType.CENTER, spacing: { before: 600 },
+  }));
+  children.push(p([tr(`${buName} · Experiências exclusivas de viagem`, { size: 16, color: mutedHex })], {
+    alignment: AlignmentType.CENTER, spacing: { before: 100 },
+  }));
+
+  /* ── Monta documento + save ───────────────────────────── */
+  const document = new Document({
+    creator: 'PRIMETOUR',
+    title: roteiro.title || 'Roteiro de Viagem',
+    sections: [{
+      properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } },
+      children,
+    }],
+  });
+
+  const blob = await Packer.toBlob(document);
+  const filename = buildRoteiroFilename(roteiro, 'docx');
+  saveBlob(blob, filename);
+
+  // Track
+  try {
+    await logGeneration({
+      roteiroId: roteiro.id,
+      format: 'docx',
+      areaId: area?.id || roteiro.areaId || '',
+      destinations: (roteiro.travel?.destinations || []).map(d => d.city || d.country),
+    });
+  } catch (e) {
+    console.warn('[roteiroGenerator] DOCX tracking failed:', e);
+  }
+
+  return { filename };
+}
+
+/* Helper compartilhado: salva blob via download link (igual ao PDF/PPTX) */
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+}
+
+/* Helper: nome de arquivo do roteiro (igual padrão PDF/PPTX) */
+function buildRoteiroFilename(roteiro, ext) {
+  const client = (roteiro.client?.name || 'cliente').replace(/[^\w]+/g, '_').slice(0, 30);
+  const dest = (roteiro.travel?.destinations?.[0]?.city || roteiro.travel?.destinations?.[0]?.country || 'roteiro').replace(/[^\w]+/g, '_').slice(0, 20);
+  const date = new Date().toISOString().slice(0, 10);
+  return `roteiro_${client}_${dest}_${date}.${ext}`;
 }

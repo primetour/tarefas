@@ -1661,6 +1661,7 @@ function renderPreviewSection() {
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button class="re-add-btn" data-action="export-pdf" style="margin-top:0;font-weight:700;">Exportar PDF</button>
       <button class="re-add-btn" data-action="export-pptx" style="margin-top:0;">Exportar PPTX</button>
+      <button class="re-add-btn" data-action="export-docx" style="margin-top:0;">Exportar DOCX</button>
       <button class="re-add-btn" data-action="gen-link" style="margin-top:0;">Gerar Web Link</button>
     </div>
   `;
@@ -2678,6 +2679,33 @@ async function handleEditorClick(e) {
             await generateRoteiroForExport(currentRoteiro, areaId);
           } catch (err) {
             showToast('Erro ao gerar PDF: ' + err.message, 'error');
+          }
+        })();
+      }
+      break;
+    }
+
+    case 'export-docx': {
+      // 4.46.0+ (Sprint 5 Phase 3)
+      if (!(currentRoteiro?.days || []).length) {
+        showToast('Adicione pelo menos um dia antes de exportar.', 'warning');
+        break;
+      }
+      {
+        const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
+        if (!areaId) {
+          showToast('Selecione uma Área (BU) antes de exportar.', 'warning');
+          switchSection(11);
+          break;
+        }
+        (async () => {
+          try {
+            if (isDirty || !currentRoteiro.id) await handleSave();
+            const { generateRoteiro } = await import('../services/roteiroGenerator.js');
+            await generateRoteiro({ roteiro: currentRoteiro, areaId, format: 'docx' });
+            showToast('DOCX gerado!', 'success');
+          } catch (err) {
+            showToast('Erro ao gerar DOCX: ' + err.message, 'error');
           }
         })();
       }

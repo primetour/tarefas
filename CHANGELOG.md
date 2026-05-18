@@ -246,6 +246,71 @@ retorna sem fazer nada (`skippedReason: 'workflow-offline'`). Toast: "Modo offli
 
 ---
 
+## [4.46.0+20260518-sprint5-phase3-docx] — 2026-05-18
+
+Release **MINOR** — Sprint 5 Phase 3: export DOCX (Word) ativado pra
+roteiros. Conclui o objetivo do Sprint 5 (paridade c/ Portal de Dicas):
+agora todos os 4 formatos disponíveis.
+
+### Pattern reusado do Portal
+
+`portalGenerator.js > generateDocx()` foi a referência. Reusos:
+- `loadDocx()` (lazy import lib `docx@8.5.0`)
+- Estrutura `Document → sections → children` (Paragraph + Table)
+- Helpers `tr/p/hdr/sub/body/cell/headerCell` simplificam ruído visual
+
+### Nova função `generateRoteiroDOCX(roteiro, area)`
+
+Estrutura (sem page breaks fortes — é "editável"):
+1. Capa: BU + título do roteiro + cliente + destinos + período + data
+2. Dia a dia: header por dia + narrative + activities indentadas
+3. Hospedagem: tabela cidade × hotel × quarto × regime × noites
+4. Valores: pricing + customRows + disclaimer
+5. Serviços opcionais: tabela serviço × adulto × criança × notas
+6. Inclui / Não inclui: 2 listas com bullets ✓ / ✗
+7. Pagamento: depósito, parcelamento, prazo, observações
+8. Cancelamento: tabela antecedência × penalidade
+9. Informações importantes: passaporte, visto, vacinas, etc + customFields
+10. Dicas locais: 1 seção por dica embedded, máx 10 items por segmento
+11. Closing: "Boa viagem!" + assinatura BU
+
+### Wrapper único agora completo
+```js
+generateRoteiro({ format }) → switch:
+  case 'pdf':  ✓ generateRoteiroPDF()
+  case 'pptx': ✓ generateRoteiroPPTX()       (paridade c/ PDF — Phase 1+2)
+  case 'docx': ✓ generateRoteiroDOCX()       ← Phase 3 (ESTA RELEASE)
+  case 'web':  ✓ createWebLink() via UI      (Phase 4 — release anterior)
+```
+
+### Botão no editor
+Seção Preview & Export ganha "Exportar DOCX" entre PPTX e Gerar Link.
+Handler `export-docx` espelha `export-pptx` mas chama wrapper unificado
+`generateRoteiro({ format: 'docx' })`.
+
+### Defensive privacy mantido
+`stripInternalFields` aplicado pelo wrapper antes de delegar — costPricing
+zerado, collaboratorIds/workflowMode/linkedTaskIds removidos. Cliente
+recebe DOCX puro pra editar, sem internals expostos.
+
+### Sprint 5 fechado
+
+5 fases entregues em 3 releases:
+- 4.44.0 (Phase 1+2): wrapper único + PPTX paridade c/ PDF
+- 4.45.0 (Phase 4): link web público ativado
+- 4.46.0 (Phase 3): DOCX export
+
+Phase 5 (email delivery via Microsoft Graph) FICA pra um próximo sprint
+dedicado — exige Cloud Function nova, escopo maior.
+
+### Próximos passos (decisão do user)
+- Salesforce two-way (deferred desde Sprint 0)
+- Email delivery do roteiro
+- Catálogo reutilizável (módulo separado)
+- Outra direção
+
+---
+
 ## [4.45.0+20260518-sprint5-phase4-weblink-activated] — 2026-05-18
 
 Release **MINOR** — Sprint 5 Phase 4: link web público ativado no editor
