@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 43,
-  patch: 0,
-  build: '20260518-roteiros-sprint4-tasks-integration',
+  patch: 1,
+  build: '20260518-sprint4-hotfix-async-handler',
 };
 
 /** "1.2.0" */
