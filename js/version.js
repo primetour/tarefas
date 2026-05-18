@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 28,
-  build: '20260518-dev-hours-products-tab',
+  patch: 29,
+  build: '20260518-sidebar-link-dev-hours',
 };
 
 /** "1.2.0" */

@@ -283,20 +283,30 @@ export class Sidebar {
           </div>
           <button class="sidebar-user-menu-btn">⋯</button>
         </div>
-        <!-- Versão + acesso à documentação técnica.
+        <!-- Versão + acesso à documentação técnica + horas de desenvolvimento.
              Single source of truth: js/version.js
-             docs.html é público (auditoria externa autorizada) — ver
-             docs/UI-COMPONENTS.md "Acesso público (3.0.0)". -->
-        <a class="sidebar-version" href="docs.html" target="_blank" rel="noopener"
-          title="Documentação técnica · Build: ${APP_VERSION_FULL}"
-          style="display:flex;align-items:center;justify-content:center;gap:6px;
-            padding:8px 14px 10px;font-size:0.6875rem;color:var(--text-muted);
-            text-align:center;letter-spacing:0.04em;font-variant-numeric:tabular-nums;
-            border-top:1px solid var(--border-subtle);margin-top:4px;opacity:0.7;
-            text-decoration:none;transition:opacity 0.15s,color 0.15s;"
-          onmouseover="this.style.opacity='1';this.style.color='var(--brand-gold)';"
-          onmouseout="this.style.opacity='0.7';this.style.color='var(--text-muted)';"
-        ><span>PRIMETOUR · ${APP_VERSION_LABEL}</span><span style="font-size:0.625rem;">📚</span></a>
+             docs.html e dev-hours-view.html são públicos (auditoria externa
+             autorizada) — ver docs/UI-COMPONENTS.md "Acesso público (3.0.0)". -->
+        <div style="display:flex;align-items:stretch;border-top:1px solid var(--border-subtle);margin-top:4px;opacity:0.7;">
+          <a class="sidebar-version" href="docs.html" target="_blank" rel="noopener"
+            title="Documentação técnica · Build: ${APP_VERSION_FULL}"
+            style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+              padding:8px 8px 10px;font-size:0.6875rem;color:var(--text-muted);
+              text-align:center;letter-spacing:0.04em;font-variant-numeric:tabular-nums;
+              text-decoration:none;transition:opacity 0.15s,color 0.15s;"
+            onmouseover="this.style.color='var(--brand-gold)';"
+            onmouseout="this.style.color='var(--text-muted)';"
+          ><span>PRIMETOUR · ${APP_VERSION_LABEL}</span><span style="font-size:0.625rem;">📚</span></a>
+          <a href="dev-hours-view.html#products" target="_blank" rel="noopener"
+            title="Horas de Desenvolvimento — Foco em produto (Portal/Imagens/Roteiros)"
+            style="display:flex;align-items:center;justify-content:center;
+              padding:8px 12px 10px;font-size:0.875rem;color:var(--text-muted);
+              text-decoration:none;border-left:1px solid var(--border-subtle);
+              transition:color 0.15s;"
+            onmouseover="this.style.color='var(--brand-gold)';"
+            onmouseout="this.style.color='var(--text-muted)';"
+          >⏱</a>
+        </div>
       </div>
     `;
 
