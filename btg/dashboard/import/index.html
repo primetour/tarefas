@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Importar oferta — BTG / Primetour</title>
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/form/form.css" />
+  <style>
+    body { background: #f5f6f8; min-height: 100vh; }
+    .import-wrap {
+      max-width: 880px;
+      margin: 40px auto;
+      padding: 0 24px;
+      font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+      color: #1f2937;
+    }
+    .import-wrap h1 {
+      font-size: 22px;
+      margin: 0 0 8px;
+      color: var(--btg-navy, #05132a);
+    }
+    .import-wrap .sub {
+      color: #6b7280;
+      font-size: 14px;
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+    .dropzone {
+      border: 2px dashed #d1d5db;
+      border-radius: 10px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      background: #fff;
+      transition: border-color 120ms, background 120ms;
+    }
+    .dropzone:hover, .dropzone.is-drag {
+      border-color: var(--btg-navy, #05132a);
+      background: #f9fafb;
+    }
+    .dropzone__icon { font-size: 40px; color: #9ca3af; margin-bottom: 8px; }
+    .dropzone__title { font-size: 16px; font-weight: 600; margin: 0; }
+    .dropzone__hint { color: #6b7280; font-size: 13px; margin: 4px 0 0; }
+    .filename { margin-top: 12px; font-size: 13px; color: #4b5563; }
+    .panel {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-top: 16px;
+    }
+    .panel h2 {
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin: 0 0 12px;
+      color: #6b7280;
+    }
+    .kv { display: grid; grid-template-columns: 200px 1fr; gap: 8px 16px; font-size: 14px; }
+    .kv dt { color: #6b7280; font-weight: 500; }
+    .kv dd { margin: 0; color: #111827; word-break: break-word; }
+    .kv dd .empty { color: #9ca3af; font-style: italic; }
+    .warning-list { margin: 0; padding-left: 20px; color: #b45309; font-size: 13px; }
+    .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+    .btn {
+      background: var(--btg-navy, #05132a);
+      color: #fff;
+      border: 0;
+      padding: 12px 22px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn--ghost {
+      background: transparent;
+      color: #4b5563;
+      border: 1px solid #d1d5db;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .status--ok { background: #ecfdf5; color: #065f46; }
+    .status--err { background: #fef2f2; color: #991b1b; }
+    .missing-list { color: #b91c1c; font-size: 13px; margin: 8px 0 0; }
+  </style>
+</head>
+<body>
+  <div class="import-wrap">
+    <h1>Importar oferta de Excel ou Word</h1>
+    <p class="sub">
+      Aceita planilha <code>.xlsx</code> (formato chave/valor ou tabela) e documento <code>.docx</code>
+      (formato <code>Campo: valor</code>). Os campos são detectados automaticamente.
+      Imagem precisa ser anexada manualmente depois (no editor de oferta).
+    </p>
+
+    <label class="dropzone" id="dz">
+      <input type="file" accept=".xlsx,.xls,.docx" hidden id="file-input" />
+      <div class="dropzone__icon">⬆️</div>
+      <h3 class="dropzone__title">Arraste o arquivo aqui ou clique</h3>
+      <p class="dropzone__hint">.xlsx, .xls, .docx — até 5 MB</p>
+      <div class="filename" id="filename"></div>
+    </label>
+
+    <div id="result" hidden>
+      <div class="panel">
+        <h2>Campos detectados</h2>
+        <dl class="kv" id="kv"></dl>
+      </div>
+      <div class="panel" id="warn-panel" hidden>
+        <h2>Avisos</h2>
+        <ul class="warning-list" id="warn-list"></ul>
+      </div>
+      <div class="panel" id="miss-panel" hidden>
+        <h2>Faltam campos obrigatórios</h2>
+        <p class="missing-list" id="miss-list"></p>
+        <p style="font-size:13px;color:#6b7280;margin:8px 0 0">
+          Você pode salvar mesmo assim e completar depois no editor.
+        </p>
+      </div>
+      <div class="actions">
+        <button class="btn btn--ghost" id="reset">Limpar</button>
+        <button class="btn" id="save">Salvar como nova oferta</button>
+      </div>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { parseFile } from '/btg/shared/btg-importer.js';
+    import { saveOferta } from '/btg/shared/btg-ofertas-service.js';
+
+    const dz = document.getElementById('dz');
+    const fileInput = document.getElementById('file-input');
+    const filenameEl = document.getElementById('filename');
+    const resultEl = document.getElementById('result');
+    const kvEl = document.getElementById('kv');
+    const warnPanel = document.getElementById('warn-panel');
+    const warnList = document.getElementById('warn-list');
+    const missPanel = document.getElementById('miss-panel');
+    const missList = document.getElementById('miss-list');
+    const saveBtn = document.getElementById('save');
+    const resetBtn = document.getElementById('reset');
+    const statusEl = document.getElementById('status');
+
+    const REQUIRED_BASE = ['tipo_cartao', 'tipo_oferta', 'nome_da_oferta', 'descricao', 'destino_rota'];
+
+    let currentValues = null;
+
+    function reset() {
+      currentValues = null;
+      fileInput.value = '';
+      filenameEl.textContent = '';
+      resultEl.hidden = true;
+      statusEl.innerHTML = '';
+    }
+
+    function setStatus(msg, kind = 'ok') {
+      statusEl.innerHTML = `<div class="status status--${kind}">${msg}</div>`;
+    }
+
+    function renderResult({ values, detected, warnings }) {
+      currentValues = values;
+      resultEl.hidden = false;
+
+      // KV table
+      kvEl.innerHTML = '';
+      const keys = Object.keys(values).sort();
+      if (keys.length === 0) {
+        kvEl.innerHTML = '<dt>Nenhum campo detectado.</dt>';
+      } else {
+        for (const k of keys) {
+          const v = values[k];
+          const display = Array.isArray(v) ? v.join(', ') : (v == null || v === '' ? '<span class="empty">vazio</span>' : v);
+          kvEl.insertAdjacentHTML('beforeend',
+            `<dt>${k}</dt><dd>${typeof v === 'string' ? escapeHtml(v) : display}</dd>`);
+        }
+      }
+
+      // Warnings
+      if (warnings.length > 0) {
+        warnPanel.hidden = false;
+        warnList.innerHTML = warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('');
+      } else {
+        warnPanel.hidden = true;
+      }
+
+      // Missing obrigatórios
+      const missing = REQUIRED_BASE.filter((k) => {
+        const v = values[k];
+        if (Array.isArray(v)) return v.length === 0;
+        return !v;
+      });
+      if (missing.length > 0) {
+        missPanel.hidden = false;
+        missList.textContent = missing.join(', ');
+      } else {
+        missPanel.hidden = true;
+      }
+
+      saveBtn.disabled = false;
+      statusEl.innerHTML = '';
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function handleFile(file) {
+      if (!file) return;
+      filenameEl.textContent = file.name;
+      try {
+        const result = await parseFile(file);
+        renderResult(result);
+      } catch (err) {
+        setStatus(`Erro ao ler arquivo: ${escapeHtml(err.message)}`, 'err');
+      }
+    }
+
+    // Eventos
+    fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('is-drag'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('is-drag'));
+    dz.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dz.classList.remove('is-drag');
+      handleFile(e.dataTransfer.files[0]);
+    });
+
+    resetBtn.addEventListener('click', reset);
+
+    saveBtn.addEventListener('click', async () => {
+      if (!currentValues) return;
+      saveBtn.disabled = true;
+      setStatus('Salvando oferta...', 'ok');
+      try {
+        const result = await saveOferta(currentValues);
+        setStatus(
+          `✓ Oferta criada: <strong>${escapeHtml(currentValues.nome_da_oferta || result.id)}</strong> ` +
+          `(slug: <code>${escapeHtml(result.slug)}</code>, source: ${result.source}). ` +
+          `<a href="/btg/dashboard/import/" style="color:#065f46;text-decoration:underline">Importar outra</a>`,
+          'ok',
+        );
+        currentValues = null;
+        fileInput.value = '';
+      } catch (err) {
+        setStatus(`Erro ao salvar: ${escapeHtml(err.message)}`, 'err');
+        saveBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
