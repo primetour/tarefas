@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 47,
-  patch: 1,
-  build: '20260518-sprint6a-fonts-payment-badge',
+  patch: 2,
+  build: '20260518-sprint6a-topbar-footer-mapa-pt',
 };
 
 /** "1.2.0" */
