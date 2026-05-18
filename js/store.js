@@ -174,6 +174,24 @@ class Store {
   canManagePortalImages() {
     return this.isMaster() || this.can('portal_images_manage') || this.can('portal_manage');
   }
+  // 4.49.2+ destinos (cidade/país/continente): perm granular pra liberar pro
+  // analista criar destino novo sem ter portal_manage (que dá acesso a tudo).
+  // Aceita portal_destinations_manage (novo) ou portal_manage (legado/master).
+  canManageDestinations() {
+    return this.isMaster() || this.can('portal_destinations_manage') || this.can('portal_manage');
+  }
+  // 4.49.6+ segmentos + categorias do Portal — mesma lógica do destinos.
+  canManagePortalSegments() {
+    return this.isMaster() || this.can('portal_segments_manage') || this.can('portal_manage');
+  }
+  // 4.49.2+ áreas/BUs (templates): wire das perms `portal_areas_*` que estavam
+  // no catálogo mas não eram consultadas no código (orphan).
+  canViewPortalAreas() {
+    return this.isMaster() || this.can('portal_areas_view') || this.can('portal_manage');
+  }
+  canManagePortalAreas() {
+    return this.isMaster() || this.can('portal_areas_manage') || this.can('portal_manage');
+  }
 
   canAccessRoteiros()  { return this.isMaster() || this.can('roteiro_access'); }
   canCreateRoteiro()   { return this.isMaster() || this.can('roteiro_create'); }

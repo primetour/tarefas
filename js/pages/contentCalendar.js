@@ -408,6 +408,22 @@ function slotsForDate(date) {
   // 4.35.8+ Aplica TODOS os filtros ativos (account/platform/contentType/status)
   // — antes só account, daí "Instagram ICs com newsletter" mostrava newsletter
   // misturada com posts mesmo com platform=instagram selecionado.
+  //
+  // 4.49.5+ Respeita TAMBÉM o filtro de TIPO (visibleTaskTypes). Antes, slots
+  // reais ignoravam o filtro porque slot real não tem typeId direto — só
+  // virtual slot tinha. Resultado: usuário filtra por "Post/Story Primetour"
+  // e via misturado "Dia Nacional do Museu", "Notícia", "Dia dos Namorados"
+  // (slots editoriais sem task vinculada de outro tipo).
+  //
+  // Regra: quando filtro de tipo ativo, slot real só passa se:
+  //   1. Tem taskId E task vinculada tem typeId no visibleTaskTypes; OU
+  //   2. Sua plataforma/conta casa com a configuração do tipo (heurística
+  //      pra slots sem task — exemplo: slot.platform='instagram' + tipo
+  //      Post/Story Primetour com nucleo de Instagram).
+  // Fallback: se nenhum dos dois cobrir, esconder (UX mais consistente).
+  const restricted = Array.isArray(visibleTaskTypes) && visibleTaskTypes.length > 0;
+  const linkedTaskById = _linkedTasks instanceof Map ? _linkedTasks : null;
+
   return allSlots.filter(s => {
     if (!s.scheduledDate) return false;
     const sd = parseLocalDate(s.scheduledDate);
@@ -417,6 +433,14 @@ function slotsForDate(date) {
     if (activePlatform    && s.platform    !== activePlatform)    return false;
     if (activeContentType && s.contentType !== activeContentType) return false;
     if (activeStatus      && s.status      !== activeStatus)      return false;
+    if (restricted) {
+      // Match via task vinculada (caminho preferencial)
+      const linkedTask = s.taskId && linkedTaskById ? linkedTaskById.get(s.taskId) : null;
+      const linkedTypeId = linkedTask?.typeId || s.taskTypeId || null;
+      if (linkedTypeId && visibleTaskTypes.includes(linkedTypeId)) return true;
+      // Slot sem task vinculada e sem typeId direto → esconde (filtro é estrito)
+      return false;
+    }
     return true;
   });
 }
@@ -1812,6 +1836,16 @@ function renderListView(container) {
   if (activeStatus)      filtered = filtered.filter(s => s.status === activeStatus);
   if (activePlatform)    filtered = filtered.filter(s => s.platform === activePlatform);
   if (activeContentType) filtered = filtered.filter(s => s.contentType === activeContentType);
+  // 4.49.5+ List view também respeita filtro de tipo (mesma regra do
+  // slotsForDate: slot só passa se task vinculada tem typeId no filtro).
+  const restrictTypes = Array.isArray(visibleTaskTypes) && visibleTaskTypes.length > 0;
+  if (restrictTypes) {
+    filtered = filtered.filter(s => {
+      const t = s.taskId && _linkedTasks instanceof Map ? _linkedTasks.get(s.taskId) : null;
+      const tid = t?.typeId || s.taskTypeId || null;
+      return tid && visibleTaskTypes.includes(tid);
+    });
+  }
 
   // Sort by date
   filtered.sort((a, b) => {
@@ -2089,6 +2123,16 @@ function bindCalendarCellEvents(container) {
           status:          'not_started',
           requestingArea:  slot?.requestingArea || '',
           tags:            ['agenda-previa'],
+          // 4.48.4+ Trilha de conversão: link slot virtual → tarefa criada.
+          // Usado pelo dashboard de Produtividade pra medir taxa de
+          // conversão de slots previstos (agenda prévia) em tarefas reais.
+          // typeId+slotId+date forma chave única do slot virtual no período.
+          fromSlot: {
+            typeId,
+            slotId: slotId || null,
+            date,        // ISO YYYY-MM-DD
+            createdAt: new Date().toISOString(),
+          },
         },
         onSave: async () => {
           await loadProjectTasks();
@@ -2624,6 +2668,13 @@ function openDayDetailsModal(dateStr) {
           status:          'not_started',
           requestingArea:  slot?.requestingArea || '',
           tags:            ['agenda-previa'],
+          // 4.48.4+ Trilha de conversão (mesma lógica do handler principal acima)
+          fromSlot: {
+            typeId,
+            slotId: slotId || null,
+            date: d,
+            createdAt: new Date().toISOString(),
+          },
         },
         onSave: async () => { await loadProjectTasks(); renderCalendarBody(); },
       });

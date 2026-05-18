@@ -126,21 +126,26 @@ export async function initSystemTaskTypes() {
 
 /* ─── Buscar todos os tipos disponíveis para o usuário ────── */
 export async function fetchTaskTypes({ workspaceId = null } = {}) {
-  // Cache: retorna dados em cache se < 5 min (evita re-fetch em cada navegação)
+  // 4.48.4+ Removido filtro por workspaceId.
+  //
+  // Bug reportado: "sumiram alguns tipos" — usuário em workspace Design
+  // só via 34 dos 42 tipos no Firestore. Os 8 ausentes eram criados em
+  // outros workspaces (Post Linkedin, Banners, Relatório...).
+  //
+  // Por que remover: visibilidade já é gerenciada via `nucleos[]` (squad)
+  // no type-picker — cada tipo aparece sob o(s) squad(s) declarado(s),
+  // ou em "Geral" se nucleos vazio. Filtrar por workspaceId era um conceito
+  // legacy que conflita com squad: usuário que pertence a múltiplos squads
+  // perdia tipos se não estivesse no workspace original.
+  //
+  // Parâmetro workspaceId mantido por compat de assinatura — ignorado.
   const cached = store.getCached('taskTypes');
-  if (cached) {
-    const wsId = workspaceId || store.get('currentWorkspace')?.id;
-    return cached.filter(t => !t.workspaceId || t.workspaceId === wsId);
-  }
+  if (cached) return cached;
 
   const snap = await getDocs(query(collection(db, 'task_types'), orderBy('createdAt', 'asc')));
-  let types  = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const types = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  // Tipos globais (workspaceId null) + tipos do workspace atual
-  const wsId = workspaceId || store.get('currentWorkspace')?.id;
-  types = types.filter(t => !t.workspaceId || t.workspaceId === wsId);
-
-  store.setCache('taskTypes', snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  store.setCache('taskTypes', types);
   return types;
 }
 

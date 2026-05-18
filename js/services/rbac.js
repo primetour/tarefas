@@ -97,13 +97,22 @@ export const PERMISSION_CATALOG = [
       { key: 'portal_access',        label: 'Acessar Portal de Dicas',             info: 'Ver e gerar dicas de destinos.' },
       { key: 'portal_create',        label: 'Criar e editar dicas',                info: 'Criar, editar e excluir dicas de destinos no portal.' },
       { key: 'portal_manage',        label: 'Administrar Portal de Dicas',         info: 'Gerenciar áreas, destinos, templates do Portal.' },
+      // 4.49.2+ Granular: analista precisa criar destinos sem ter portal_manage
+      // (que dá acesso a banco de imagens + templates + tudo). Default true pra
+      // member — viaja e cadastra cidade nova diretamente.
+      { key: 'portal_destinations_manage', label: 'Gerenciar destinos',            info: 'Criar, editar e excluir destinos (Continente → País → Cidade) usados em Portal de Dicas e Roteiros. Separado do portal_manage pra liberar pro analista sem dar acesso a banco de imagens/áreas.' },
+      // 4.49.6+ Granular: analista também precisa criar/editar segmentos
+      // (hospedagem, gastronomia, etc.) e categorias dentro de cada segmento.
+      // Mesmo princípio do destinos — separa da admin completa do Portal.
+      { key: 'portal_segments_manage',     label: 'Gerenciar segmentos e categorias', info: 'Criar, editar e excluir segmentos (hospedagem, gastronomia, etc.) e suas categorias internas. Separado do portal_manage pra liberar pro analista sem dar acesso a banco de imagens/áreas.' },
       // 4.35.31+ Permissão específica pra banco de imagens (upload/edit/delete).
       // Antes ficava agrupada em portal_manage; separamos pra liberar pra diretoria
       // sem dar acesso a todo o resto da administração do Portal.
       { key: 'portal_images_manage', label: 'Gerenciar Banco de Imagens',          info: 'Upload, edição e exclusão de imagens no banco. Restrito à diretoria e administradores.' },
-      // 4.36.0+ Escritório Virtual (visualização de presença em tempo real)
-      { key: 'office_view',          label: 'Acessar Escritório Virtual',          info: 'Ver mapa real-time dos colegas online e em qual módulo cada um está. Restrito a gestores e diretoria.' },
       { key: 'portal_download_unlimited', label: 'Downloads ilimitados',           info: 'Gerar downloads sem limite diário. Parceiros têm limite de 5/dia.' },
+      // 4.49.8+ office_view MOVIDO daqui pro grupo "Equipe, Ausências e Presença" —
+      // Escritório Virtual não é parte do Portal de Dicas, é feature de presença
+      // do time. Manter aqui criava confusão na UI de Roles.
     ],
   },
   {
@@ -146,10 +155,13 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
-    group: 'Equipe e Ausências',
+    group: 'Equipe, Ausências e Presença',
     permissions: [
       { key: 'absence_view_team',   label: 'Ver ausências da equipe',       info: 'Ver calendário de ausências e disponibilidade dos colegas. Sem essa permissão, só vê as próprias.' },
       { key: 'absence_manage_team', label: 'Gerenciar ausências da equipe', info: 'Registrar, editar e excluir ausências de outros usuários. Reservado a gestores.' },
+      // 4.49.8+ Movido pra cá (era em "Portal de Dicas") — pertence ao mesmo
+      // domínio de visibilidade de equipe (presença em tempo real).
+      { key: 'office_view',         label: 'Acessar Escritório Virtual',    info: 'Ver mapa real-time dos colegas online e em qual módulo cada um está. Restrito a gestores e diretoria.' },
     ],
   },
   {
@@ -228,6 +240,8 @@ export const SYSTEM_ROLES = [
       analytics_view: true,
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: true,  portal_images_manage: true,  portal_download_unlimited: true,
+      portal_destinations_manage: true,
+      portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: true, roteiro_view_cost: true,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true,
@@ -270,6 +284,8 @@ export const SYSTEM_ROLES = [
       analytics_view: true,
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_images_manage: false, portal_download_unlimited: true,
+      portal_destinations_manage: true,
+      portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: true, roteiro_view_cost: true,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true,
@@ -312,12 +328,16 @@ export const SYSTEM_ROLES = [
       analytics_view: true,
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_images_manage: false, portal_download_unlimited: true,
+      portal_destinations_manage: true,
+      portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: false,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false, roteiro_view_cost: false,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false,
       site_audit_view: true, site_audit_manage: false,
       requests_manage: true,
       absence_view_team: true, absence_manage_team: false,
+      // 4.49.8+ Coordenador é gestor — tem visão de presença do time
+      office_view: true,
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
       luxury_travel_manage: false,
@@ -354,12 +374,16 @@ export const SYSTEM_ROLES = [
       feedback_view: false, feedback_create: false,
       portal_access: true,     portal_create: false,
       portal_manage: false,    portal_images_manage: false, portal_download_unlimited: false,
+      portal_destinations_manage: false,
+      portal_segments_manage: false,
       portal_areas_view: false, portal_areas_manage: false,
       roteiro_access: false, roteiro_create: false, roteiro_manage: false, roteiro_view_cost: false,
       content_calendar_view: false, content_calendar_create: false, content_calendar_manage: false,
       site_audit_view: false, site_audit_manage: false,
       requests_manage: false,
       absence_view_team: false, absence_manage_team: false,
+      // 4.49.8+ Parceiro NÃO vê presença do time (externo)
+      office_view: false,
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
       luxury_travel_manage: false,
@@ -398,12 +422,20 @@ export const SYSTEM_ROLES = [
       // de editar/excluir (só visualização).
       feedback_view: true, feedback_create: false,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_images_manage: false, portal_download_unlimited: true,
+      // 4.49.2+ Analista AGORA cria destinos (cidade nova durante a viagem)
+      // sem ter portal_manage. Vai pra hierarquia Continente → País → Cidade.
+      portal_destinations_manage: true,
+      // 4.49.6+ Analista também cria/edita segmentos e categorias
+      // (hospedagem, gastronomia, etc.) — operações cotidianas do consultor.
+      portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: false,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false, roteiro_view_cost: false,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false,
       site_audit_view: true, site_audit_manage: false,
       requests_manage: false,
       absence_view_team: false, absence_manage_team: false,
+      // 4.49.8+ Analista NÃO vê Escritório Virtual (restrito a gestores+)
+      office_view: false,
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
       luxury_travel_manage: false,

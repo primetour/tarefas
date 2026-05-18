@@ -129,7 +129,10 @@ function colorPickerWithHex(field, label, value) {
 }
 
 export async function renderPortalAreas(container) {
-  if (!store.canManagePortal()) {
+  // 4.49.2+ Usa canManagePortalAreas() (wire da perm `portal_areas_manage`
+  // que estava orphan no catálogo) em vez do legado canManagePortal().
+  // Mantém compat via store.canManagePortalAreas() que aceita ambos.
+  if (!store.canManagePortalAreas()) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
       <div class="empty-state-title">Acesso restrito</div>

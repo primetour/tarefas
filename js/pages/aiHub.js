@@ -42,7 +42,14 @@ let _activeTab = 'agents';
 let _unsubAgents = null;
 
 export async function renderAiHub(container) {
-  if (!store.isMaster() && !store.can('system_manage_settings')) {
+  // 4.49.2+ Wire das perms granulares ai_dashboard_view + ai_skills_manage
+  // (eram orphan no catálogo). Aceita também o legado system_manage_settings
+  // pra não quebrar acesso de admins atuais.
+  const canView = store.isMaster()
+    || store.can('ai_dashboard_view')
+    || store.can('ai_skills_manage')
+    || store.can('system_manage_settings');
+  if (!canView) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
       <div class="empty-state-title">Acesso restrito</div>

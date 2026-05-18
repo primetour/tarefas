@@ -450,7 +450,7 @@ async function openRequestDetail(req) {
       }] : []),
 
       // Recusar — only when pending
-      ...(req.status === 'pending' ? [{
+      ...((req.status === 'pending' && (store.isMaster() || store.can('requests_manage'))) ? [{
         label: '✕ Recusar', class: 'btn-secondary btn-sm', closeOnClick: false,
         style: 'color:var(--color-danger);border-color:var(--color-danger);',
         onClick: async (_, { close }) => {
@@ -478,7 +478,7 @@ async function openRequestDetail(req) {
       }] : []),
 
       // Converter com IA — only when pending
-      ...(req.status === 'pending' ? [{
+      ...((req.status === 'pending' && (store.isMaster() || store.can('requests_manage'))) ? [{
         label: '✨ Converter com IA', class: 'btn-secondary', closeOnClick: false,
         style: 'color:var(--brand-gold);border-color:var(--brand-gold);',
         onClick: async (btn, { close }) => {
@@ -541,7 +541,7 @@ async function openRequestDetail(req) {
       }] : []),
 
       // Converter em tarefa — only when pending
-      ...(req.status === 'pending' ? [{
+      ...((req.status === 'pending' && (store.isMaster() || store.can('requests_manage'))) ? [{
         label: '✓ Converter em tarefa', class: 'btn-primary', closeOnClick: false,
         onClick: async (_, { close }) => {
           const wsId = document.getElementById('req-workspace')?.value || null;

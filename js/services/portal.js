@@ -86,7 +86,9 @@ export async function fetchCategories(segmentKey) {
 }
 
 export async function saveCategories(segmentKey, categories) {
-  if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  // 4.49.6+ Wire da perm granular portal_segments_manage (libera pro analista
+  // sem dar portal_manage completo)
+  if (!store.canManagePortalSegments()) throw new Error('Permissão negada.');
   await setDoc(doc(db, 'portal_categories', segmentKey), {
     categories,
     updatedAt: serverTimestamp(),
@@ -134,7 +136,8 @@ export async function getSegments({ force = false } = {}) {
  * colidir com DEFAULT_SEGMENTS.
  */
 export async function saveCustomSegment({ key, label, mode = 'place_list', order = 100 }) {
-  if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  // 4.49.6+ Wire da perm granular portal_segments_manage
+  if (!store.canManagePortalSegments()) throw new Error('Permissão negada.');
   if (!key || !label) throw new Error('key e label são obrigatórios.');
   if (DEFAULT_SEGMENTS.find(s => s.key === key)) {
     throw new Error(`Key "${key}" colide com segmento padrão.`);
@@ -153,7 +156,8 @@ export async function saveCustomSegment({ key, label, mode = 'place_list', order
 }
 
 export async function deleteCustomSegment(key) {
-  if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  // 4.49.6+ Wire da perm granular portal_segments_manage
+  if (!store.canManagePortalSegments()) throw new Error('Permissão negada.');
   if (DEFAULT_SEGMENTS.find(s => s.key === key)) {
     throw new Error(`Não é possível deletar segmento padrão.`);
   }
@@ -182,7 +186,8 @@ export async function fetchAreas() {
 }
 
 export async function saveArea(id, data) {
-  if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  // 4.49.2+ Wire da perm granular portal_areas_manage (era checked via portal_manage)
+  if (!store.canManagePortalAreas()) throw new Error('Permissão negada.');
   const ref = id ? doc(db, 'portal_areas', id) : doc(collection(db, 'portal_areas'));
   await setDoc(ref, {
     ...data,
@@ -194,7 +199,7 @@ export async function saveArea(id, data) {
 }
 
 export async function deleteArea(id) {
-  if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  if (!store.canManagePortalAreas()) throw new Error('Permissão negada.');
   await deleteDoc(doc(db, 'portal_areas', id));
 }
 
@@ -221,7 +226,8 @@ export async function fetchContinentsWithContent() {
 }
 
 export async function saveDestination(id, data) {
-  if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  // 4.49.2+ Aceita portal_destinations_manage (granular) OU portal_manage (legado/master)
+  if (!store.canManageDestinations()) throw new Error('Permissão negada.');
   const ref = id
     ? doc(db, 'portal_destinations', id)
     : doc(collection(db, 'portal_destinations'));
@@ -240,7 +246,9 @@ export async function saveDestination(id, data) {
 }
 
 export async function deleteDestination(id) {
-  if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  // 4.49.2+ Mesmo critério que saveDestination — analista pode deletar destinos
+  // que ele mesmo cadastrou. Auditoria server-side via auditLog preserva trilha.
+  if (!store.canManageDestinations()) throw new Error('Permissão negada.');
   await deleteDoc(doc(db, 'portal_destinations', id));
 }
 

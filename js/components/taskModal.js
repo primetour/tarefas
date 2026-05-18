@@ -3415,6 +3415,11 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
     requesterEditFlag:    task.requesterEditFlag    || false,
     requesterEditAt:      task.requesterEditAt      || null,
     requesterEditChanges: task.requesterEditChanges || '',
+    // 4.48.4+ fromSlot: trilha de conversão slot virtual → tarefa.
+    // Setado quando o modal é aberto a partir de um cc-virtual-slot click
+    // (contentCalendar.js). Persiste no Firestore pra agregação no dashboard
+    // de Produtividade (taxa de conversão de slots previstos).
+    fromSlot:             task.fromSlot             || null,
   };
   // Collect nucleos from legacy chips
   data.nucleos = Array.from(document.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);

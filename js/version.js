@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 48,
-  patch: 3,
-  build: '20260518-cache-loop-prevention',
+  minor: 49,
+  patch: 8,
+  build: '20260518-roles-reorg-office',
 };
 
 /** "1.2.0" */

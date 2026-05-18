@@ -244,7 +244,26 @@ function taskBelongsToGroup(task, groupKey, group) {
   return raw === group.rawValue;
 }
 
+// 4.48.4+ Persistência de filtros do Steps/Kanban.
+// Mesmo problema reportado de Tarefas: usuário re-aplicava filtros toda
+// vez que voltava pra página. Salva em localStorage e restaura no
+// initKbFilterState ANTES do default por setor.
+const KB_FILTER_KEY = 'kanban.filterState.v1';
+function _saveKbFilters() {
+  try { localStorage.setItem(KB_FILTER_KEY, JSON.stringify(kbFilterState)); } catch {}
+}
+function _loadKbFilters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(KB_FILTER_KEY) || '{}');
+    // Merge respeitando o shape — qualquer chave estranha é ignorada
+    ['sector','type','project','area','assignee','observer','status'].forEach(k => {
+      if (saved[k] !== undefined) kbFilterState[k] = saved[k];
+    });
+  } catch {}
+}
 function initKbFilterState() {
+  // 4.48.4+ Restaura filtros salvos antes do default por setor
+  _loadKbFilters();
   // Pre-select user's sector on first load (only if single-sector user)
   if (!kbFilterState.sector) {
     const sectors = store.getVisibleSectors();
@@ -444,7 +463,10 @@ export async function renderKanban(container) {
 
   try {
     const jobs = [
-      fetchProjects().catch(()=>[]),
+      // 4.49.3+ allWorkspaces:true — Steps mostra todos os projetos no filtro
+      // (consistente com timeline/calendar/contentCalendar). Antes filtrava por
+      // squad ativo, escondendo projetos cross-squad legítimos no dropdown.
+      fetchProjects({ allWorkspaces: true }).catch(()=>[]),
       fetchTaskTypes().catch(()=>[]),
     ];
     if (usersNeedLoad) {
@@ -461,13 +483,15 @@ export async function renderKanban(container) {
   } catch(e) {}
 
   // Types with steps only
-  const userSectors   = store.getVisibleSectors();
+  // 4.49.3+ Filtro de visibleSectors removido — pipeline mostra todos os tipos
+  // com steps. Antes escondia tipos de outros setores, mas user precisa ver tudo
+  // pra escolher esteira/pipeline livremente. Filter explícito por sector
+  // (kbFilterState.sector) continua respeitado quando user seleciona um filtro.
   const activeSector  = kbFilterState.sector || null;
   const pipelineTypes = allTaskTypes.filter(t => {
     if (!t.steps?.length) return false;
-    // Filter by explicitly selected sector OR by user's visible sectors
     if (activeSector) return !t.sector || t.sector === activeSector;
-    return !t.sector || userSectors === null || userSectors.includes(t.sector);
+    return true;
   });
   if (!activePipelineTypeId && pipelineTypes.length) {
     activePipelineTypeId = pipelineTypes[0].id;
@@ -706,6 +730,8 @@ function _renderKbFilters(container) {
     if (newState.sector !== undefined) {
       activePipelineTypeId = '';
     }
+    // 4.48.4+ Persiste filtros do Steps no localStorage
+    _saveKbFilters();
     if (activeView === 'kanban') {
       renderCards(allTasks);
     } else {

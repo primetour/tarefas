@@ -23,7 +23,21 @@ let allTasks      = [];
 let allProjects   = [];
 let tlFilterState = { sector: null, type: null, project: null, area: null, assignee: null, observer: null };
 
+// 4.48.4+ Persistência de filtros do Timeline em localStorage
+const TL_FILTER_KEY = 'timeline.filterState.v1';
+function _saveTlFilters() {
+  try { localStorage.setItem(TL_FILTER_KEY, JSON.stringify(tlFilterState)); } catch {}
+}
+function _loadTlFilters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TL_FILTER_KEY) || '{}');
+    ['sector','type','project','area','assignee','observer'].forEach(k => {
+      if (saved[k] !== undefined) tlFilterState[k] = saved[k];
+    });
+  } catch {}
+}
 function initTlFilterState() {
+  _loadTlFilters();
   if (!tlFilterState.sector) {
     const sectors = store.getVisibleSectors();
     if (sectors && sectors.length === 1) tlFilterState.sector = sectors[0];
@@ -72,7 +86,10 @@ export async function renderTimeline(container) {
   `;
 
   try {
-    [allTasks, allProjects] = await Promise.all([fetchTasks(), fetchProjects()]);
+    // 4.49.3+ allWorkspaces:true — timeline é visão cross-squad, mostra todos
+    // os projetos no filtro pra desambiguação (UX consistente com #calendar e
+    // #content-calendar). Antes filtrava por squad ativo → projetos sumiam.
+    [allTasks, allProjects] = await Promise.all([fetchTasks(), fetchProjects({ allWorkspaces: true })]);
 
     // Populate project filter
     const sel = document.getElementById('tl-proj-filter');
@@ -137,18 +154,17 @@ export async function renderTimeline(container) {
 function _renderTlFilters() {
   const wrap = document.getElementById('tl-filter-bar');
   if (!wrap) return;
-  // Remove project filter from filterBar since it's already in the header select
-  const userSectors = store.getVisibleSectors();
-  const tlTaskTypes = (store.get('taskTypes') || []).filter(t =>
-    !t.sector || userSectors === null || userSectors.includes(t.sector)
-  );
+  // 4.49.3+ Mostra TODOS os tipos no filtro (não só do setor do user).
+  // Antes filtrava por visibleSectors, escondendo tipos legítimos do dropdown.
+  // Listing de tarefas continua filtrado por hierarquia/sector do user.
+  const tlTaskTypes = store.get('taskTypes') || [];
   wrap.innerHTML = renderFilterBar({
     show: ['sector','type','area','assignee','observer','meta'],
     state: tlFilterState,
     taskTypes: tlTaskTypes,
     projects:  allProjects,
   });
-  bindFilterBar(wrap, tlFilterState, () => renderGantt(), { taskTypes: tlTaskTypes, projects: allProjects, users: store.get('users') || [] });
+  bindFilterBar(wrap, tlFilterState, () => { _saveTlFilters(); renderGantt(); }, { taskTypes: tlTaskTypes, projects: allProjects, users: store.get('users') || [] });
 }
 
 function renderGantt() {

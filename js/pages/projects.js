@@ -189,6 +189,25 @@ export async function renderProjects(container) {
   });
 
   await loadData();
+
+  // 4.49+ Deep-link de notificação: ?id=PROJ_ID abre detalhe do projeto
+  // assim que loadData terminou (allProjects populado).
+  try {
+    const rawHash = window.location.hash || '';
+    const qIdx = rawHash.indexOf('?');
+    if (qIdx >= 0) {
+      const qs = new URLSearchParams(rawHash.slice(qIdx + 1));
+      const pid = qs.get('id');
+      if (pid) {
+        // Limpa o param da URL antes de abrir pra evitar reabrir em F5
+        qs.delete('id');
+        const cleaned = qs.toString();
+        const newHash = rawHash.slice(0, qIdx) + (cleaned ? '?' + cleaned : '');
+        history.replaceState(null, '', window.location.pathname + window.location.search + newHash);
+        openProjectDetail(pid);
+      }
+    }
+  } catch (e) { /* noop — deep-link best-effort */ }
 }
 
 async function loadData() {

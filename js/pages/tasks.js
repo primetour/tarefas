@@ -99,10 +99,61 @@ function saveFilterVisibility() {
   try { localStorage.setItem(FILTER_VISIBILITY_KEY, JSON.stringify(filterVisibility)); } catch (_) {}
 }
 
+// 4.48.4+ Persistência de VALORES dos filtros (não só visibilidade).
+//
+// Problema reportado: usuário tinha que re-aplicar filtros toda vez que
+// abria/fechava o modal de criar tarefa, ou trocava de página e voltava.
+// Causa: filterStatus/filterProject/etc eram `let` em memória, reset
+// a cada `renderTasks()`. Single source of truth da sessão eram URL hash
+// params, mas estes some quando user navega entre páginas.
+//
+// Solução: snapshot dos filtros no localStorage. Restaurado em renderTasks()
+// ANTES de URL params (URL wins quando presente, ex: deep-link de Meu Painel).
+// Atualizado a cada change handler — debounced via _saveFilterValues.
+const FILTER_VALUES_KEY = 'tasks.filterValues.v1';
+function loadFilterValues() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FILTER_VALUES_KEY) || '{}');
+    if (typeof saved.filterStatus     === 'string') filterStatus     = saved.filterStatus;
+    if (typeof saved.filterPriority   === 'string') filterPriority   = saved.filterPriority;
+    if (typeof saved.filterProject    === 'string') filterProject    = saved.filterProject;
+    if (typeof saved.filterDatePreset === 'string') filterDatePreset = saved.filterDatePreset;
+    if (typeof saved.filterDateFrom   === 'string') filterDateFrom   = saved.filterDateFrom;
+    if (typeof saved.filterDateTo     === 'string') filterDateTo     = saved.filterDateTo;
+    if (typeof saved.filterArea       === 'string') filterArea       = saved.filterArea;
+    if (typeof saved.filterTag        === 'string') filterTag        = saved.filterTag;
+    if (typeof saved.filterSquad      === 'string') filterSquad      = saved.filterSquad;
+    if (typeof saved.filterMeta       === 'string') filterMeta       = saved.filterMeta;
+    // Multi-select: aceita string vazia, string single, ou array
+    if (saved.filterAssignee !== undefined) filterAssignee = saved.filterAssignee || '';
+    if (saved.filterObserver !== undefined) filterObserver = saved.filterObserver || '';
+    if (typeof saved.filterShowArchived === 'boolean') filterShowArchived = saved.filterShowArchived;
+    if (typeof saved.groupBy === 'string') groupBy = saved.groupBy;
+  } catch (_) { /* corrompido — segue com defaults */ }
+}
+let _saveFilterTimer = null;
+function saveFilterValues() {
+  // Debounce 300ms — evita gravar a cada keystroke em rangepickers
+  clearTimeout(_saveFilterTimer);
+  _saveFilterTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(FILTER_VALUES_KEY, JSON.stringify({
+        filterStatus, filterPriority, filterProject, filterAssignee, filterObserver,
+        filterDatePreset, filterDateFrom, filterDateTo,
+        filterArea, filterTag, filterSquad, filterMeta, filterShowArchived,
+        groupBy,
+      }));
+    } catch (_) { /* localStorage cheio — segue silencioso */ }
+  }, 300);
+}
+
 /* \u2500\u2500\u2500 Render principal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 export async function renderTasks(container) {
   if (!routeGuard(container, ['task_create', 'task_view_all'])) return;
   loadFilterVisibility();
+  // 4.48.4+ Restaura valores dos filtros (status/project/assignee/etc) salvos
+  // na última sessão. URL params abaixo TOMA PRECEDÊNCIA (deep-link wins).
+  loadFilterValues();
 
   // Lazy load: taskTypes saiu do boot (otimização free tier).
   // Garante carregamento aqui (idempotente — só carrega 1x na sessão).
@@ -135,6 +186,10 @@ export async function renderTasks(container) {
       const qs = new URLSearchParams(rawHash.slice(qIdx + 1));
       urlProjectId   = qs.get('projectId')   || '';
       urlWorkspaceId = qs.get('workspaceId') || '';
+      // 4.49+ Deep-link de notificação: ?taskId=X auto-abre o modal da
+      // tarefa após o subscribe popular allTasks. Limpa o param da URL
+      // pra evitar reabrir em F5 (UX clássica de "navegou e abriu uma vez").
+      window.__pendingOpenTaskId = qs.get('taskId') || null;
       // "me" = currentUser; senão tratamos como UID
       const myUid = store.get('currentUser')?.uid || '';
       const a = qs.get('assignee') || '';
@@ -280,9 +335,12 @@ export async function renderTasks(container) {
             emptyLabel: 'Todas as prioridades' });
         })()}
       </div>
-      <select class="filter-select" id="filter-project" style="${filterVisibility.project?'':'display:none;'}">
-        <option value="">Todos os projetos</option>
-      </select>
+      <div class="toolbar-filter-wrap" style="${filterVisibility.project?'':'display:none;'}min-width:180px;">
+        <select id="filter-project" style="display:none;">
+          <option value="">Todos os projetos</option>
+        </select>
+        ${renderPickerButton({ btnId: 'filter-project-btn', selected: null, emptyLabel: 'Todos os projetos' })}
+      </div>
       <div class="toolbar-filter-wrap" style="${filterVisibility.squad?'':'display:none;'}min-width:180px;">
         <select id="filter-squad" style="display:none;">
           <option value="">Todos os squads</option>
@@ -444,7 +502,10 @@ export async function renderTasks(container) {
 
   // Load projects for filter
   try {
-    allProjects = await fetchProjects();
+    // 4.49.3+ allWorkspaces:true — filtro de Projetos mostra TODOS os projetos
+    // do sistema (não só do squad ativo). Consistente com kanban/timeline/calendar.
+    // Listing de tarefas continua sendo filtrado por permissão hierárquica.
+    allProjects = await fetchProjects({ allWorkspaces: true });
     const projFilter = document.getElementById('filter-project');
     if (projFilter) {
       allProjects.forEach(p => {
@@ -502,6 +563,37 @@ function _subscribeToTasks() {
     _populateTagFilter();
     applyFilters();
     renderPlannerOrphansBanner();
+    // 4.49+ Deep-link de notificação: abre o modal da tarefa solicitada
+    // assim que ela aparece em allTasks. Idempotente — só abre 1×.
+    if (window.__pendingOpenTaskId) {
+      const target = allTasks.find(t => t.id === window.__pendingOpenTaskId);
+      if (target) {
+        const id = window.__pendingOpenTaskId;
+        window.__pendingOpenTaskId = null;
+        // Limpa o param da URL (history.replaceState) pra evitar reabrir em F5
+        try {
+          const h = window.location.hash || '';
+          const qIdx = h.indexOf('?');
+          if (qIdx >= 0) {
+            const qs = new URLSearchParams(h.slice(qIdx + 1));
+            qs.delete('taskId');
+            const cleaned = qs.toString();
+            const newHash = h.slice(0, qIdx) + (cleaned ? '?' + cleaned : '');
+            history.replaceState(null, '', window.location.pathname + window.location.search + newHash);
+          }
+        } catch {}
+        openTaskModal({
+          taskData: target,
+          onSave: () => { /* subscription re-renderiza */ },
+        });
+      } else {
+        // Task não está no escopo do user (sem permissão / arquivada / etc.)
+        // Limpa o pending pra não tentar de novo em próximas updates.
+        console.warn('[Tasks] Deep-link taskId=' + window.__pendingOpenTaskId + ' não encontrada em allTasks.');
+        window.__pendingOpenTaskId = null;
+        toast?.warning?.('Tarefa não encontrada ou sem permissão de acesso.');
+      }
+    }
   });
 }
 
@@ -1194,7 +1286,19 @@ function renderTaskRow(task) {
   const nlStatus = task.type === 'newsletter' && task.newsletterStatus
     ? NEWSLETTER_STATUSES?.find(s=>s.value===task.newsletterStatus)?.label || task.newsletterStatus
     : null;
-  const typeLabel = TASK_TYPES?.find(t=>t.value===task.type)?.label || '';
+  // 4.48.4+ Bug fix: typeLabel ficava vazio porque TASK_TYPES é o array
+  // legado (hardcoded com 'newsletter', etc.) e tarefas novas têm
+  // task.typeId apontando pra task_types collection. Lookup combinado:
+  //   1. Match em pageTaskTypes por typeId (caminho novo)
+  //   2. Match em pageTaskTypes por name.lower (legacy task.type string)
+  //   3. Fallback pra TASK_TYPES legado pra compat com tasks bem antigas
+  const _ttMatch = pageTaskTypes.find(t =>
+    (task.typeId && t.id === task.typeId) ||
+    (task.type   && t.name?.toLowerCase() === task.type)
+  );
+  const typeLabel = _ttMatch
+    ? `${_ttMatch.icon ? _ttMatch.icon + ' ' : ''}${_ttMatch.name}`
+    : (TASK_TYPES?.find(t => t.value === task.type)?.label || '');
 
   const canComplete = store.can('task_complete');
   const subs = Array.isArray(task.subtasks) ? task.subtasks : [];
@@ -1582,11 +1686,11 @@ function _attachPageEvents() {
     timer = setTimeout(() => { searchTerm = e.target.value; applyFilters(); }, 250);
   });
 
-  // Filters
-  document.getElementById('filter-status')?.addEventListener('change', e => { filterStatus = e.target.value; applyFilters(); });
-  document.getElementById('filter-priority')?.addEventListener('change', e => { filterPriority = e.target.value; applyFilters(); });
-  document.getElementById('filter-project')?.addEventListener('change', e => { filterProject = e.target.value; applyFilters(); });
-  document.getElementById('filter-squad')?.addEventListener('change', e => { filterSquad = e.target.value; applyFilters(); });
+  // Filters (4.48.4+ saveFilterValues persiste em localStorage)
+  document.getElementById('filter-status')?.addEventListener('change', e => { filterStatus = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-priority')?.addEventListener('change', e => { filterPriority = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-project')?.addEventListener('change', e => { filterProject = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-squad')?.addEventListener('change', e => { filterSquad = e.target.value; saveFilterValues(); applyFilters(); });
 
   // Visual pickers (status / priority / squad) — selects nativos preservados pra change events
   // status: cor da bolinha já identifica, sem icon redundante.
@@ -1620,6 +1724,28 @@ function _attachPageEvents() {
     }),
     findSelected: findPriority,
     emptyLabel: 'Todas as prioridades',
+  });
+  // 4.48.4+ Picker de Projetos com busca (substitui native <select> que ficava
+  // ingerenciável quando workspace tinha 30+ projetos). Source = allProjects
+  // (populado em fetchProjects). Funde com o hidden <select> via bindOptionPicker
+  // pra preservar contrato do change handler abaixo.
+  const projectOpts = () => allProjects.map(p => ({
+    id: p.id,
+    label: p.name,
+    icon: p.icon || '◈',
+    color: p.color || '#6366F1',
+  }));
+  const findProject = (id) => projectOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-project-btn',
+    selectId: 'filter-project',
+    buildConfig: () => ({
+      options: projectOpts(),
+      empty: { id: '', label: 'Todos os projetos' },
+      searchPlaceholder: 'Buscar projeto…',
+    }),
+    findSelected: findProject,
+    emptyLabel: 'Todos os projetos',
   });
   const squadOpts = () => {
     const ws = store.get('userWorkspaces') || [];
@@ -1685,6 +1811,7 @@ function _attachPageEvents() {
       : (filterAssignee ? [filterAssignee] : []),
     setValues: (ids) => {
       filterAssignee = ids.length === 0 ? '' : ids;
+      saveFilterValues();
       applyFilters();
     },
     emptyLabel: 'Todos os responsáveis',
@@ -1736,18 +1863,20 @@ function _attachPageEvents() {
       : (filterObserver ? [filterObserver] : []),
     setValues: (ids) => {
       filterObserver = ids.length === 0 ? '' : ids;
+      saveFilterValues();
       applyFilters();
     },
     emptyLabel: '👁 Todos os observadores',
   });
-  document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
-  document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; applyFilters(); });
-  document.getElementById('filter-meta')?.addEventListener('change', e => { filterMeta = e.target.value; applyFilters(); });
+  document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-meta')?.addEventListener('change', e => { filterMeta = e.target.value; saveFilterValues(); applyFilters(); });
   document.getElementById('filter-archived')?.addEventListener('change', e => {
     filterShowArchived = e.target.checked;
     // Atualiza o destaque visual do label (fundo dourado quando ON)
     const wrap = document.getElementById('filter-archived-wrap');
     if (wrap) wrap.style.background = filterShowArchived ? 'var(--brand-gold-bg,rgba(212,168,67,.12))' : 'transparent';
+    saveFilterValues();
     applyFilters();
   });
   document.getElementById('filter-date-preset')?.addEventListener('change', e => {
@@ -1755,21 +1884,23 @@ function _attachPageEvents() {
     const customBar = document.getElementById('filter-date-custom');
     if (customBar) customBar.style.display = (filterDatePreset === 'custom') ? 'flex' : 'none';
     if (filterDatePreset !== 'custom') { filterDateFrom = ''; filterDateTo = ''; }
+    saveFilterValues();
     applyFilters();
   });
-  document.getElementById('filter-date-from')?.addEventListener('change', e => { filterDateFrom = e.target.value; applyFilters(); });
-  document.getElementById('filter-date-to')?.addEventListener('change', e => { filterDateTo = e.target.value; applyFilters(); });
+  document.getElementById('filter-date-from')?.addEventListener('change', e => { filterDateFrom = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-date-to')?.addEventListener('change', e => { filterDateTo = e.target.value; saveFilterValues(); applyFilters(); });
   document.getElementById('filter-date-clear')?.addEventListener('click', () => {
     filterDatePreset = ''; filterDateFrom = ''; filterDateTo = '';
     const sel = document.getElementById('filter-date-preset'); if (sel) sel.value = '';
     const fromI = document.getElementById('filter-date-from'); if (fromI) fromI.value = '';
     const toI   = document.getElementById('filter-date-to');   if (toI)   toI.value = '';
     const customBar = document.getElementById('filter-date-custom'); if (customBar) customBar.style.display = 'none';
+    saveFilterValues();
     applyFilters();
   });
   document.getElementById('filter-config-btn')?.addEventListener('click', openFilterConfigModal);
   document.getElementById('tasks-card-prefs-btn')?.addEventListener('click', () => openCardPrefsModal(() => renderTaskList()));
-  document.getElementById('group-by')?.addEventListener('change', e => { groupBy = e.target.value; renderTaskList(); });
+  document.getElementById('group-by')?.addEventListener('change', e => { groupBy = e.target.value; saveFilterValues(); renderTaskList(); });
   // 4.34.7+ Sort dropdown
   const sortSel = document.getElementById('sort-by');
   if (sortSel) {

@@ -267,7 +267,9 @@ function emptySegData(seg) {
 function renderSegmentNav() {
   const nav = document.getElementById('segment-nav');
   if (!nav) return;
-  const canManage = store.canManagePortal?.() || store.isMaster?.();
+  // 4.49.6+ Usa canManagePortalSegments() (granular) — libera botão "+ Novo
+  // segmento" pro analista. Mantém compat com legado canManagePortal/master.
+  const canManage = store.canManagePortalSegments?.() || store.canManagePortal?.() || store.isMaster?.();
   nav.innerHTML = _allSegments.map(s => {
     const hasContent = segHasContent(s.key);
     const isExpired  = isExpiredSeg(s.key);

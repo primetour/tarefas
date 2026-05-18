@@ -697,6 +697,66 @@ function renderAllCharts(Chart, m) {
     emptyWidget('charts-grid', 'projects-chart', 'col-span-4', '📦 Progresso por Projeto', 200);
   }
 
+  /* 4b — 4.48.4+ Conversão de Slots (4-col)
+     Mede quantos slots previstos (agenda prévia via scheduleSlots[] do tipo)
+     viraram tarefas reais no período. Source da realização: task.fromSlot
+     gravado quando user clica num cc-virtual-slot no contentCalendar. */
+  (() => {
+    try {
+      const { start, end } = getPeriodDates(activePeriod());
+      const allTypes = store.get('taskTypes') || [];
+      const typesWithSlots = allTypes.filter(t =>
+        Array.isArray(t.scheduleSlots) && t.scheduleSlots.some(s => s.active !== false)
+      );
+      if (!typesWithSlots.length) {
+        emptyWidget('charts-grid', 'slot-conversion-chart', 'col-span-4', '◌ Conversão de Slots', 200);
+        return;
+      }
+      const conversions = typesWithSlots.map(t => {
+        const slots = t.scheduleSlots.filter(s => s.active !== false);
+        // Conta ocorrências esperadas no período (weekly + monthly_days + custom)
+        let expected = 0;
+        const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+        const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+        while (cursor <= endDay) {
+          const dow = cursor.getDay();
+          const dom = cursor.getDate();
+          const iso = `${cursor.getFullYear()}-${String(cursor.getMonth()+1).padStart(2,'0')}-${String(cursor.getDate()).padStart(2,'0')}`;
+          for (const s of slots) {
+            if (s.recurrence === 'weekly'        && s.weekDay === dow)                 expected++;
+            else if (s.recurrence === 'monthly_days' && (s.monthDays   || []).includes(dom)) expected++;
+            else if (s.recurrence === 'custom'       && (s.customDates || []).includes(iso)) expected++;
+          }
+          cursor.setDate(cursor.getDate() + 1);
+        }
+        // Conta tarefas no período (m.tasks) com fromSlot.typeId casando
+        const filled = (m.tasks || []).filter(task => task.fromSlot?.typeId === t.id).length;
+        const rate = expected > 0
+          ? Math.min(100, Math.round((filled / expected) * 100))
+          : (filled > 0 ? 100 : 0);
+        return { id: t.id, name: t.name, color: t.color || '#D4A843', expected, filled, rate };
+      })
+      .filter(c => c.expected > 0 || c.filled > 0)
+      .sort((a, b) => b.rate - a.rate);
+
+      if (!conversions.length) {
+        emptyWidget('charts-grid', 'slot-conversion-chart', 'col-span-4', '◌ Conversão de Slots', 200);
+        return;
+      }
+      renderHorizontalBarChart(Chart, 'charts-grid', 'slot-conversion-chart', 'col-span-4', {
+        title:    '◌ Conversão de Slots',
+        subtitle: 'Slots previstos virando tarefas no período',
+        labels:   conversions.slice(0, 6).map(c => `${c.name} (${c.filled}/${c.expected})`),
+        data:     conversions.slice(0, 6).map(c => c.rate),
+        colors:   conversions.slice(0, 6).map(c => c.color),
+        height:   220,
+      });
+    } catch (e) {
+      console.warn('[Slot conversion widget] err:', e?.message);
+      emptyWidget('charts-grid', 'slot-conversion-chart', 'col-span-4', '◌ Conversão de Slots', 200);
+    }
+  })();
+
   /* 6 — Member leaderboard (4-col) */
   const byMember = getTasksByMember(tasks);
   renderLeaderboard('bottom-grid', 'member-board', 'col-span-4', {

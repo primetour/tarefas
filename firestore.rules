@@ -72,7 +72,23 @@ service cloud.firestore {
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['role','isMaster','roleId','visibleSectors','permissions','active','sector','nucleos','nucleo'])
       );
-      allow delete: if isAdmin();
+      // 4.48.4+ Self-cleanup de doc pending_* via email match.
+      //
+      // Por que: quando admin pré-cadastra um SSO user, cria-se um doc
+      // 'users/pending_<email_slug>' (placeholder). No 1º login do user,
+      // o auto-provision em auth.js cria 'users/{uid}' e tenta deletar
+      // o pending. Como o user é 'member' (ainda não admin), a rule
+      // antiga `allow delete: if isAdmin()` bloqueava → pending ficava
+      // preso pra sempre, gerando duplicidade no listing de Users.
+      //
+      // Esta carve-out permite QUE o próprio dono (verificado pelo email
+      // do auth token) limpe seu pending. Seguro: só o legitimo holder
+      // do email consegue passar, ninguém pode deletar pending alheio.
+      allow delete: if isAdmin() || (
+        userId.matches('^pending_.*') &&
+        isAuth() &&
+        resource.data.email == request.auth.token.email
+      );
     }
 
     // ── Projetos ──────────────────────────────────────────────
