@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 40,
-  patch: 32,
-  build: '20260518-iahub-products-tab',
+  minor: 41,
+  patch: 0,
+  build: '20260518-roteiros-sprint2-schema-evolution',
 };
 
 /** "1.2.0" */

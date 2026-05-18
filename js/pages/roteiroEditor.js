@@ -54,6 +54,7 @@ const SECTIONS = [
   { icon: '\u274C',    label: 'Cancelamento' },
   { icon: '\u2139',    label: 'Informa\u00e7\u00f5es Importantes' },
   { icon: '\u{1F5BC}', label: 'Imagens' },
+  { icon: '\u2699',    label: 'Avan\u00e7ado' },        // 4.41.0+ Sprint 2 \u2014 colaboradores, workflow, custo
   { icon: '\u{1F4C4}', label: 'Preview & Export' },
 ];
 
@@ -319,17 +320,180 @@ function renderSectionContent(index) {
     case 8:  return renderCancelamentoSection();
     case 9:  return renderInfoSection();
     case 10: return renderImagensSection();
-    case 11: return renderPreviewSection();
+    case 11: return renderAdvancedSection();  // 4.41.0+ Sprint 2
+    case 12: return renderPreviewSection();
     default: return '';
   }
+}
+
+/* ── 11: Avançado (4.41.0+ Sprint 2) ──────────────────────── */
+function renderAdvancedSection() {
+  const r = currentRoteiro;
+  const colabIds = Array.isArray(r.collaboratorIds) ? r.collaboratorIds : [];
+  const workflowMode = r.workflowMode === 'offline' ? 'offline' : 'system';
+  const canViewCost = store.can?.('roteiro_view_cost') || store.isMaster?.() || false;
+  const cp = r.costPricing || { perPerson: null, perCouple: null, currency: 'USD', notes: '', customRows: [] };
+
+  // Lista de users elegíveis pra colaboradores (todos com roteiro_create — outros consultores)
+  const allUsers = (store.get('users') || []).filter(u => u.active !== false && u.id !== r.consultantId);
+  const collabOptionsHTML = allUsers.length
+    ? allUsers.map(u => {
+        const selected = colabIds.includes(u.id);
+        const initial = (u.name || '?').trim().charAt(0).toUpperCase();
+        const bg = u.avatarColor || '#94A3B8';
+        return `
+          <button type="button" data-colab-uid="${esc(u.id)}" data-colab-selected="${selected}"
+            style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;
+              border:1px solid ${selected ? 'var(--brand-gold)' : 'var(--border)'};
+              background:${selected ? 'var(--brand-gold)15' : 'transparent'};
+              color:${selected ? 'var(--brand-gold)' : 'var(--text-secondary)'};
+              font-size:0.8125rem;cursor:pointer;font-family:inherit;font-weight:500;">
+            <span style="width:22px;height:22px;border-radius:50%;background:${bg};color:white;
+              display:inline-flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:600;">${esc(initial)}</span>
+            <span>${esc(u.name)}</span>
+          </button>
+        `;
+      }).join('')
+    : '<span style="color:var(--text-muted);font-size:0.875rem;">Sem outros usuários ativos pra adicionar.</span>';
+
+  const costRowsHTML = (cp.customRows || []).length
+    ? cp.customRows.map((row, i) => `
+      <tr data-cprow-idx="${i}">
+        <td><input class="re-input" data-cprow="label" value="${esc(row.label||'')}" placeholder="Rubrica (ex: Hospedagem)" /></td>
+        <td><input class="re-input" data-cprow="value" value="${esc(row.value||'')}" placeholder="Valor (ex: USD 1200)" /></td>
+        <td><button class="re-btn-icon" data-action="remove-cprow" data-idx="${i}" title="Remover">✕</button></td>
+      </tr>
+    `).join('')
+    : '<tr><td colspan="3" style="padding:12px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">Sem linhas de custo. Adicione pra detalhar a margem.</td></tr>';
+
+  return `
+    <div class="re-section-title">Avançado</div>
+
+    <!-- ── Colaboradores ── -->
+    <div class="re-form-group" style="margin-bottom:32px;">
+      <label class="re-label">Colaboradores</label>
+      <div style="background:var(--bg-soft);border-left:3px solid var(--brand-gold);padding:8px 12px;
+        border-radius:4px;font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">
+        Usuários selecionados podem <strong>editar este roteiro</strong> (além do consultor responsável e dos gerentes).
+      </div>
+      <div id="re-collab-picker" style="display:flex;flex-wrap:wrap;gap:8px;">${collabOptionsHTML}</div>
+    </div>
+
+    <!-- ── Workflow Mode ── -->
+    <div class="re-form-group" style="margin-bottom:32px;">
+      <label class="re-label">Modo de fluxo</label>
+      <div style="display:flex;gap:24px;margin-top:8px;">
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;flex:1;padding:12px;
+          border:1px solid ${workflowMode==='system'?'var(--brand-gold)':'var(--border)'};border-radius:8px;
+          background:${workflowMode==='system'?'var(--brand-gold)08':'transparent'};">
+          <input type="radio" name="re-workflow-mode" value="system" ${workflowMode==='system'?'checked':''} style="margin-top:3px;" />
+          <div>
+            <div style="font-weight:600;font-size:0.875rem;">Via sistema (recomendado)</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;line-height:1.5;">
+              Status do roteiro avança no fluxo (Rascunho → Revisão → Enviado → Aprovado).
+              Notificações e auditoria automáticas.
+            </div>
+          </div>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;flex:1;padding:12px;
+          border:1px solid ${workflowMode==='offline'?'var(--brand-gold)':'var(--border)'};border-radius:8px;
+          background:${workflowMode==='offline'?'var(--brand-gold)08':'transparent'};">
+          <input type="radio" name="re-workflow-mode" value="offline" ${workflowMode==='offline'?'checked':''} style="margin-top:3px;" />
+          <div>
+            <div style="font-weight:600;font-size:0.875rem;">Offline</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:3px;line-height:1.5;">
+              Status é apenas informativo. Você gerencia o processo fora do sistema
+              (planilhas, email, etc.). Útil pra equipes em transição.
+            </div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- ── Custo Interno (só com permissão) ── -->
+    ${canViewCost ? `
+      <div class="re-form-group" id="re-cost-section" style="border:1px solid var(--brand-gold)40;border-radius:8px;padding:18px;background:var(--brand-gold)05;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <label class="re-label" style="margin:0;color:var(--brand-gold);">
+            💼 Custo interno (margem comercial)
+          </label>
+          <span style="font-size:0.7rem;color:var(--text-muted);background:var(--bg-soft);padding:3px 8px;border-radius:99px;">
+            🔒 INTERNO — nunca aparece em export pra cliente
+          </span>
+        </div>
+        <div style="background:var(--bg-soft);padding:8px 12px;border-radius:4px;font-size:0.75rem;color:var(--text-muted);margin-bottom:14px;line-height:1.5;">
+          Custos de fornecedor (hotelaria, transfer, guias). Use pra calcular margem.
+          <strong>Garantia técnica:</strong> este campo é filtrado em todos os exports e na página pública.
+        </div>
+        <div class="re-row">
+          <div class="re-form-group">
+            <label class="re-label">Custo por pessoa</label>
+            <input class="re-input" type="number" step="0.01" min="0" data-field="costPricing.perPerson" value="${cp.perPerson != null ? cp.perPerson : ''}" placeholder="0.00" />
+          </div>
+          <div class="re-form-group">
+            <label class="re-label">Custo por casal</label>
+            <input class="re-input" type="number" step="0.01" min="0" data-field="costPricing.perCouple" value="${cp.perCouple != null ? cp.perCouple : ''}" placeholder="0.00" />
+          </div>
+          <div class="re-form-group" style="max-width:130px;">
+            <label class="re-label">Moeda</label>
+            <select class="re-select" data-field="costPricing.currency">
+              <option value="USD" ${cp.currency==='USD'?'selected':''}>USD</option>
+              <option value="BRL" ${cp.currency==='BRL'?'selected':''}>BRL</option>
+              <option value="EUR" ${cp.currency==='EUR'?'selected':''}>EUR</option>
+              <option value="GBP" ${cp.currency==='GBP'?'selected':''}>GBP</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;margin-bottom:6px;">
+          <label class="re-label" style="margin:0;font-size:0.8125rem;">Rubricas (opcional)</label>
+          <button class="re-add-btn" data-action="add-cprow" style="margin:0;font-size:0.75rem;padding:4px 10px;">+ Adicionar rubrica</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;">
+          <tbody>${costRowsHTML}</tbody>
+        </table>
+        <div class="re-form-group" style="margin-top:14px;">
+          <label class="re-label">Notas internas</label>
+          <textarea class="re-textarea" rows="2" data-field="costPricing.notes" placeholder="Ex: cotação válida até XX/YY, fornecedor Z confirmou disponibilidade...">${esc(cp.notes || '')}</textarea>
+        </div>
+      </div>
+    ` : `
+      <div style="padding:16px;border:1px dashed var(--border);border-radius:8px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+        🔒 Você não tem permissão para ver/editar o custo interno deste roteiro.
+        <br><span style="font-size:0.7rem;">Solicite ao admin a permissão <code>roteiro_view_cost</code>.</span>
+      </div>
+    `}
+  `;
 }
 
 /* ── 0: Cliente ──────────────────────────────────────────── */
 function renderClienteSection() {
   const c = currentRoteiro.client;
+  // 4.41.0+ (Sprint 2) — viajantes substituem adults/children/childrenAges.
+  // Dados do RESPONSÁVEL ficam em client.{name,email,phone}; a lista de
+  // pessoas vai pra travelers[]. Compat: se vazio, mostra empty state.
+  const travelers = Array.isArray(currentRoteiro.travelers) && currentRoteiro.travelers.length
+    ? currentRoteiro.travelers
+    : [];
   const childrenAgesHTML = (c.childrenAges || []).map((age, i) =>
     `<input class="re-input" type="number" min="0" max="17" data-age-idx="${i}" value="${age}" style="width:70px;" />`
   ).join('');
+  const travelerRowsHTML = travelers.length
+    ? travelers.map((t, i) => `
+      <tr data-trv-idx="${i}">
+        <td><input class="re-input" data-trv="name" value="${esc(t.name || '')}" placeholder="Nome completo" /></td>
+        <td><input class="re-input" type="number" min="0" max="120" data-trv="age" value="${t.age != null ? t.age : ''}" placeholder="—" style="width:70px;" /></td>
+        <td>
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.875rem;cursor:pointer;">
+            <input type="radio" name="trv-lead" data-trv="isLead" ${t.isLead ? 'checked' : ''} style="margin:0;" />
+            <span>Responsável</span>
+          </label>
+        </td>
+        <td><input class="re-input" data-trv="doc" value="${esc(t.doc || '')}" placeholder="CPF / Passaporte" /></td>
+        <td><input class="re-input" data-trv="notes" value="${esc(t.notes || '')}" placeholder="Notas" /></td>
+        <td><button class="re-btn-icon" data-action="remove-trv" data-idx="${i}" title="Remover">✕</button></td>
+      </tr>
+    `).join('')
+    : `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);font-size:0.875rem;">Nenhum viajante. Clique "+ Adicionar viajante" pra começar.</td></tr>`;
 
   return `
     <div class="re-section-title">Cliente</div>
@@ -357,18 +521,38 @@ function renderClienteSection() {
           <option value="group" ${c.type==='group'?'selected':''}>Grupo</option>
         </select>
       </div>
-      <div class="re-form-group">
-        <label class="re-label">Adultos</label>
-        <input class="re-input" type="number" min="1" data-field="client.adults" value="${c.adults || 2}" />
-      </div>
-      <div class="re-form-group">
-        <label class="re-label">Crian\u00e7as</label>
-        <input class="re-input" type="number" min="0" data-field="client.children" value="${c.children || 0}" id="re-children-count" />
-      </div>
     </div>
-    <div id="re-children-ages" class="re-form-group" style="${c.children > 0 ? '' : 'display:none;'}">
-      <label class="re-label">Idades das Crian\u00e7as</label>
-      <div class="re-row" id="re-ages-row">${childrenAgesHTML}</div>
+    <!-- 4.41.0+ Tabela de viajantes (substitui adults/children/childrenAges) -->
+    <div class="re-form-group" style="margin-top:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <label class="re-label" style="margin:0;">Viajantes
+          <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;margin-left:6px;">
+            ${travelers.length} ${travelers.length === 1 ? 'pessoa' : 'pessoas'}
+          </span>
+        </label>
+        <button class="re-add-btn" data-action="add-trv" style="margin:0;">+ Adicionar viajante</button>
+      </div>
+      <div style="background:var(--bg-soft);border-left:3px solid var(--brand-gold);padding:8px 12px;border-radius:4px;font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">
+        Marque <strong>1 pessoa como Respons\u00e1vel</strong> (quem fecha o contrato). As demais entram como acompanhantes.
+      </div>
+      <table id="re-travelers-table" style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:var(--bg-soft);">
+            <th style="text-align:left;padding:8px;font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600;">Nome</th>
+            <th style="text-align:left;padding:8px;font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600;width:80px;">Idade</th>
+            <th style="text-align:left;padding:8px;font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600;width:140px;">Papel</th>
+            <th style="text-align:left;padding:8px;font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600;width:160px;">Documento</th>
+            <th style="text-align:left;padding:8px;font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600;">Notas</th>
+            <th style="width:36px;"></th>
+          </tr>
+        </thead>
+        <tbody id="re-travelers-body">${travelerRowsHTML}</tbody>
+      </table>
+      <!-- DEPRECATED inputs \u2014 escondidos mas mantidos pra compat com collectFormData antigo.
+           Removidos no fim do Sprint 2 quando collectFormData usar travelers como fonte prim\u00e1ria. -->
+      <input type="hidden" data-field="client.adults" value="${c.adults || 0}" />
+      <input type="hidden" data-field="client.children" value="${c.children || 0}" />
+      <span id="re-children-ages" style="display:none;">${childrenAgesHTML}</span>
     </div>
     <div class="re-form-group">
       <label class="re-label">Prefer\u00eancias</label>
@@ -1164,18 +1348,75 @@ function collectFormData() {
     setNested(data, path, v);
   });
 
-  // Children ages
+  // Children ages (DEPRECATED 4.41.0+ — kept for legacy docs not yet migrated)
   // 4.40.31+ (Sprint 1 B01) — truncar pra `client.children` count.
-  // Antes: ages.length era determinado pelo DOM, mas se o user diminuiu
-  // children de 3→1 e os inputs antigos ainda estavam visíveis no DOM
-  // (section não re-renderizou ainda), 3 idades eram salvas. Agora forçamos
-  // alinhamento ao count atualizado.
   const ages = [];
   mainContainer.querySelectorAll('[data-age-idx]').forEach(input => {
     ages.push(parseInt(input.value) || 0);
   });
   const childrenCount = Math.max(0, parseInt(data.client?.children) || 0);
   data.client.childrenAges = ages.slice(0, childrenCount);
+
+  // 4.41.0+ (Sprint 2) Travelers — lê tabela do DOM se presente
+  const trvRows = mainContainer.querySelectorAll('[data-trv-idx]');
+  if (trvRows.length || mainContainer.querySelector('#re-travelers-body')) {
+    const travelers = [];
+    trvRows.forEach((row) => {
+      const ageRaw = row.querySelector('[data-trv="age"]')?.value;
+      const age = ageRaw === '' || ageRaw == null ? null : parseInt(ageRaw);
+      travelers.push({
+        id:     row.dataset.trvId || ('trv-' + Math.random().toString(36).slice(2, 8)),
+        name:   row.querySelector('[data-trv="name"]')?.value?.trim() || '',
+        age:    Number.isFinite(age) && age >= 0 ? age : null,
+        isLead: !!row.querySelector('[data-trv="isLead"]')?.checked,
+        doc:    row.querySelector('[data-trv="doc"]')?.value?.trim() || '',
+        notes:  row.querySelector('[data-trv="notes"]')?.value?.trim() || '',
+      });
+    });
+    // Garante exatamente 1 lead (se nenhum marcado, primeiro vira lead)
+    if (travelers.length && !travelers.some(t => t.isLead)) {
+      travelers[0].isLead = true;
+    }
+    data.travelers = travelers;
+
+    // Sincroniza legacy adults/children/childrenAges pra retro-compat
+    // (PDF antigo, dashboard antigo etc. ainda podem ler isso até migrarmos tudo)
+    data.client.adults       = travelers.filter(t => t.age == null || t.age >= 18).length;
+    data.client.children     = travelers.filter(t => t.age != null && t.age < 18).length;
+    data.client.childrenAges = travelers.filter(t => t.age != null && t.age < 18).map(t => t.age);
+  }
+
+  // 4.41.0+ (Sprint 2) Colaboradores — lê chips selecionados
+  const colabPicker = mainContainer.querySelector('#re-collab-picker');
+  if (colabPicker) {
+    const colabIds = Array.from(colabPicker.querySelectorAll('[data-colab-uid]'))
+      .filter(el => el.dataset.colabSelected === 'true')
+      .map(el => el.dataset.colabUid);
+    data.collaboratorIds = colabIds;
+  }
+
+  // 4.41.0+ (Sprint 2) Workflow mode
+  const wfm = mainContainer.querySelector('input[name="re-workflow-mode"]:checked');
+  if (wfm) data.workflowMode = wfm.value;
+
+  // 4.41.0+ (Sprint 2) Cost pricing
+  const cpRows = mainContainer.querySelectorAll('[data-cprow-idx]');
+  if (mainContainer.querySelector('#re-cost-section')) {
+    if (!data.costPricing) data.costPricing = {};
+    const pPer = mainContainer.querySelector('[data-field="costPricing.perPerson"]')?.value;
+    const pCpl = mainContainer.querySelector('[data-field="costPricing.perCouple"]')?.value;
+    data.costPricing.perPerson = pPer === '' ? null : parseFloat(pPer);
+    data.costPricing.perCouple = pCpl === '' ? null : parseFloat(pCpl);
+    data.costPricing.currency  = mainContainer.querySelector('[data-field="costPricing.currency"]')?.value || 'USD';
+    data.costPricing.notes     = mainContainer.querySelector('[data-field="costPricing.notes"]')?.value?.trim() || '';
+    data.costPricing.customRows = [];
+    cpRows.forEach(row => {
+      data.costPricing.customRows.push({
+        label: row.querySelector('[data-cprow="label"]')?.value?.trim() || '',
+        value: row.querySelector('[data-cprow="value"]')?.value?.trim() || '',
+      });
+    });
+  }
 
   // Preferences
   const prefs = [];
@@ -1380,6 +1621,47 @@ function sanitizeForSave(data) {
   out.includes = dedupCI(out.includes);
   out.excludes = dedupCI(out.excludes);
 
+  // ── 4.41.0+ Sprint 2 sanitização ────────────────────────
+  // Travelers: filtrar entradas totalmente vazias (sem nome E sem idade E sem doc)
+  // — caso user clique "+ Adicionar viajante" sem preencher e salve.
+  if (Array.isArray(out.travelers)) {
+    out.travelers = out.travelers.filter(t =>
+      (t.name || '').trim() || t.age != null || (t.doc || '').trim()
+    );
+    // Garante exatamente 1 lead se há travelers
+    if (out.travelers.length > 0) {
+      const leads = out.travelers.filter(t => t.isLead);
+      if (leads.length === 0) {
+        out.travelers[0].isLead = true;
+      } else if (leads.length > 1) {
+        // múltiplos lead → primeiro mantém, outros viram false
+        let firstLeadFound = false;
+        out.travelers.forEach(t => {
+          if (t.isLead) {
+            if (firstLeadFound) t.isLead = false;
+            firstLeadFound = true;
+          }
+        });
+      }
+    }
+  }
+
+  // costPricing: clamp negativos a 0, filtrar customRows vazias
+  if (out.costPricing) {
+    out.costPricing.perPerson = clamp0(out.costPricing.perPerson);
+    out.costPricing.perCouple = clamp0(out.costPricing.perCouple);
+    if (Array.isArray(out.costPricing.customRows)) {
+      out.costPricing.customRows = out.costPricing.customRows.filter(
+        r => (r?.label || '').trim() || (r?.value || '').trim()
+      );
+    }
+  }
+
+  // collaboratorIds: dedupe + remover self (consultantId não precisa estar em colab)
+  if (Array.isArray(out.collaboratorIds)) {
+    out.collaboratorIds = [...new Set(out.collaboratorIds.filter(id => id && id !== out.consultantId))];
+  }
+
   return out;
 }
 
@@ -1490,6 +1772,20 @@ function generateDaysFromTravel() {
 function handleEditorClick(e) {
   const target = e.target.closest('[data-action]');
   if (!target) {
+    // 4.41.0+ (Sprint 2) Handle collaborator pills toggle
+    const colabBtn = e.target.closest('[data-colab-uid]');
+    if (colabBtn) {
+      e.preventDefault();
+      const wasSelected = colabBtn.dataset.colabSelected === 'true';
+      colabBtn.dataset.colabSelected = wasSelected ? 'false' : 'true';
+      // Restyle inline
+      const selected = !wasSelected;
+      colabBtn.style.borderColor = selected ? 'var(--brand-gold)' : 'var(--border)';
+      colabBtn.style.background  = selected ? 'var(--brand-gold)15' : 'transparent';
+      colabBtn.style.color       = selected ? 'var(--brand-gold)' : 'var(--text-secondary)';
+      markDirty();
+      return;
+    }
     // Handle checkbox groups
     const cbLabel = e.target.closest('.re-checkbox-group label');
     if (cbLabel) {
@@ -1665,6 +1961,60 @@ function handleEditorClick(e) {
       switchSection(5);
       markDirty();
       break;
+
+    /* ── Cost pricing rows (4.41.0+ Sprint 2) ─────────────── */
+    case 'add-cprow': {
+      currentRoteiro = collectFormData();
+      if (!currentRoteiro.costPricing) currentRoteiro.costPricing = { customRows: [] };
+      if (!Array.isArray(currentRoteiro.costPricing.customRows)) currentRoteiro.costPricing.customRows = [];
+      currentRoteiro.costPricing.customRows.push({ label: '', value: '' });
+      switchSection(11);
+      markDirty();
+      break;
+    }
+
+    case 'remove-cprow': {
+      currentRoteiro = collectFormData();
+      if (currentRoteiro.costPricing?.customRows) {
+        currentRoteiro.costPricing.customRows.splice(idx, 1);
+      }
+      switchSection(11);
+      markDirty();
+      break;
+    }
+
+    /* ── Travelers (4.41.0+ Sprint 2) ─────────────────────── */
+    case 'add-trv': {
+      currentRoteiro = collectFormData();
+      if (!Array.isArray(currentRoteiro.travelers)) currentRoteiro.travelers = [];
+      const isFirst = currentRoteiro.travelers.length === 0;
+      currentRoteiro.travelers.push({
+        id:     'trv-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+        name:   '',
+        age:    null,
+        isLead: isFirst,   // primeiro é responsável por default
+        doc:    '',
+        notes:  isFirst ? 'Responsável' : '',
+      });
+      switchSection(0);
+      markDirty();
+      break;
+    }
+
+    case 'remove-trv': {
+      currentRoteiro = collectFormData();
+      if (Array.isArray(currentRoteiro.travelers)) {
+        const wasLead = currentRoteiro.travelers[idx]?.isLead;
+        currentRoteiro.travelers.splice(idx, 1);
+        // Se removeu o lead e ainda há viajantes, primeiro vira lead
+        if (wasLead && currentRoteiro.travelers.length > 0) {
+          currentRoteiro.travelers[0].isLead = true;
+        }
+      }
+      switchSection(0);
+      markDirty();
+      break;
+    }
 
     /* ── Includes / Excludes ──────────────────────────────── */
     case 'add-inc':

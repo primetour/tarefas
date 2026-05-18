@@ -112,6 +112,85 @@ interno separado do preço).
 
 ---
 
+## [4.41.0+20260518-roteiros-sprint2-schema-evolution] — 2026-05-18
+
+Release **MINOR** — Sprint 2 do refactor de Roteiros: schema evolution
++ permissão dedicada pra custo interno + defense-in-depth contra vazamento
+de margem comercial.
+
+### Pedido do user
+> "sprint 2"
+> (após aprovar plano: travelers[], collaboratorIds, workflowMode, costPricing)
+
+### 1. Schema additions (backward compat)
+
+`emptyRoteiro()` agora retorna:
+```
+{
+  ...campos existentes,
+  collaboratorIds: [],           // ← novo
+  workflowMode: 'system',        // ← novo (system|offline)
+  client: { ...legacy, adults/children/childrenAges DEPRECATED },
+  travelers: [                   // ← novo (responsável + acompanhantes)
+    { id, name, age, isLead, doc, notes }
+  ],
+  costPricing: {                 // ← novo (custo interno, 🔒)
+    perPerson, perCouple, currency, notes, customRows[]
+  }
+}
+```
+
+**Migrations on-read** em `fetchRoteiro` / `fetchRoteiros`:
+- Deriva `travelers[]` automaticamente de `client.{adults,children,childrenAges}`
+  se ausente. Idempotente, defensivo, lazy.
+- Garante shapes mínimos pros novos campos em docs antigos.
+
+### 2. UI — Editor de Roteiros
+
+**Seção Cliente** (antiga): adults/children/childrenAges substituídos por
+tabela `travelers[]` com nome + idade + doc + papel (Responsável) + notas.
+Inputs legacy mantidos como hidden pra sincronização retroativa.
+
+**Nova seção "Avançado"** (12ª aba, ⚙):
+- **Colaboradores**: pills clicáveis pra adicionar/remover usuários que
+  podem editar este roteiro (popula `collaboratorIds[]` — já reconhecido
+  pelo firestore.rules do Sprint 1).
+- **Modo de fluxo**: radio system/offline. Permite ao user escolher se
+  segue o workflow no sistema ou fora dele (planilhas/email).
+- **Custo interno** (margem): só renderiza pra usuários com permission
+  `roteiro_view_cost`. Não-autorizados veem placeholder explicando.
+
+### 3. RBAC nova permission `roteiro_view_cost`
+
+- Concedida por default a: **master, admin**.
+- Negada: manager, member, parceiro.
+- Independente de `roteiro_manage` — pode ser dada a coordenadores
+  comerciais sem dar admin total do módulo.
+
+### 4. Defense-in-depth pra custo interno
+
+Custo NUNCA vaza pra cliente. 3 camadas:
+- **Layer 1 (firestore.rules)**: já restrito por ownership do Sprint 1.
+- **Layer 2 (`stripInternalFields` em roteiroGenerator.js)**: aplicado em
+  generateRoteiroForExport antes de PDF/PPTX rendering — costPricing
+  zerado + collaboratorIds/workflowMode/aiPrompt removidos.
+- **Layer 3 (`stripInternalForPublicLink` em createWebLink)**: aplicado no
+  snapshot que vai pra coleção `roteiro_web_links` (read público). Mesmo
+  se token vazar, custo não aparece.
+
+### 5. sanitizeForSave estendido
+
+Sprint 1 `sanitizeForSave()` ganha sanitização dos novos campos:
+- travelers: filtra entradas totalmente vazias, garante exatamente 1 lead
+- costPricing: clamp negativos a 0, filtra customRows vazias
+- collaboratorIds: dedupe + remove self (consultantId redundante)
+
+### Next (Sprint 3)
+Portal de Dicas embed: anexar dicas ao roteiro com snapshot por padrão +
+opção "re-publicar" pra atualizar com versão atual da dica.
+
+---
+
 ## [4.40.27+20260518-sso-fix-mfa-prompt-conflict] — 2026-05-18
 
 Release **PATCH** — Segunda regressão SSO Microsoft pós-audit resolvida.

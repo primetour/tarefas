@@ -293,6 +293,38 @@ async function fetchAutoPhoto(query) {
  * @param {Array} bankImages - resultado de fetchImages() (cache na sessão)
  * @returns {Promise<string|null>}
  */
+/* ─── 4.41.0+ (Sprint 2) Strip de campos internos ────────────
+ *
+ * Garante que dados confidenciais (custo interno, notas internas)
+ * JAMAIS apareçam em exports pra cliente.
+ *
+ * Aplicado em generateRoteiroForExport (PDF + PPTX) e em
+ * roteiro-view.html quando renderiza o web link público.
+ *
+ * Campos removidos:
+ *   - costPricing.* (custo interno, margem comercial)
+ *   - collaboratorIds (lista de quem pode editar — info interna)
+ *   - workflowMode (decisão operacional, não interessa cliente)
+ *   - aiPrompt, aiSources, aiProvider, aiModel (origem técnica)
+ *
+ * Tudo permanece no doc do Firestore — só não vai pra render externo.
+ */
+export function stripInternalFields(roteiro) {
+  if (!roteiro || typeof roteiro !== 'object') return roteiro;
+  const out = JSON.parse(JSON.stringify(roteiro));
+  // Custo interno: zerar pra que mesmo se renderer ler, não exibe nada útil.
+  out.costPricing = { perPerson: null, perCouple: null, currency: 'USD', notes: '', customRows: [] };
+  // Internals operacionais
+  delete out.collaboratorIds;
+  delete out.workflowMode;
+  // Metadata de IA
+  delete out.aiPrompt;
+  delete out.aiSources;
+  delete out.aiProvider;
+  delete out.aiModel;
+  return out;
+}
+
 export async function resolveDestinationImage(dest, override, bankImages) {
   if (override) return override;
   const fromBank = pickFromBank(bankImages, dest || {});
@@ -669,12 +701,18 @@ export async function generateRoteiroForExport(roteiro, areaId, format = 'pdf') 
       area = areas.find(a => a.id === areaId) || null;
     }
 
+    // 4.41.0+ (Sprint 2) — GARANTIA DE PRIVACIDADE: costPricing JAMAIS vai
+    // pra qualquer export pra cliente (PDF/PPTX/web link). Strip aqui, no
+    // único ponto de entrada de export. Defense-in-depth: mesmo que o
+    // renderer do PDF leia o campo, ele estará null.
+    const sanitized = stripInternalFields(roteiro);
+
     let result;
     if (format === 'pptx') {
-      result = await generateRoteiroPPTX(roteiro, area);
+      result = await generateRoteiroPPTX(sanitized, area);
       toast.success(`PPTX gerado: ${result.filename}`);
     } else {
-      result = await generateRoteiroPDF(roteiro, area);
+      result = await generateRoteiroPDF(sanitized, area);
       toast.success(`PDF gerado: ${result.filename}`);
     }
 

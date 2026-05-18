@@ -83,17 +83,64 @@ export function emptyRoteiro() {
     areaId: '',
     consultantId: profile?.uid || '',
     consultantName: profile?.name || '',
+    // 4.41.0+ (Sprint 2) — collaboratorIds usado pra dar permissão de
+    // edição a outros consultores. Vazio = só o consultantId edita.
+    collaboratorIds: [],
+    // 4.41.0+ workflowMode controla se o sistema FORÇA o fluxo de status
+    // (draft → review → sent → approved). Modo 'offline' = status é só
+    // informativo, user gerencia processo fora do sistema.
+    workflowMode: 'system',
 
     client: {
+      // Dados do RESPONSÁVEL/contato principal (quem fecha contrato).
+      // Informação operacional/legal — não é "passageiro" necessariamente.
       name: '', email: '', phone: '',
-      type: 'couple',
-      adults: 2,
-      children: 0,
-      childrenAges: [],
+      type: 'individual',     // individual | couple | family | group
       preferences: [],
       restrictions: [],
       economicProfile: 'premium',
       notes: '',
+      // ── DEPRECATED 4.41.0+ — mantidos pra compat com docs antigos ──
+      // Foram substituídos por `travelers[]`. migrateRoteiro converte
+      // adults/children/childrenAges → travelers automaticamente no read.
+      // Não usar em código novo. Serão removidos em 5.0.
+      adults: 1,
+      children: 0,
+      childrenAges: [],
+    },
+
+    /* 4.41.0+ (Sprint 2) — Viajantes individuais.
+     *
+     * Substitui o agregado adults/children/childrenAges por uma lista
+     * estruturada: cada viajante tem nome, idade, doc, papel.
+     *
+     * Schema de cada item:
+     *   {
+     *     id:      string,  // uuid local pra reorder/edit stable
+     *     name:    string,
+     *     age:     number|null,
+     *     isLead:  boolean, // o responsável principal (1 por roteiro)
+     *     doc:     string,  // CPF / passaporte (opcional)
+     *     notes:   string,
+     *   }
+     */
+    travelers: [],
+
+    /* 4.41.0+ (Sprint 2) — Custo interno (margem comercial).
+     *
+     * Estrutura paralela a `pricing`, mas só visível pra usuários com
+     * permission `roteiro_view_cost`. NUNCA renderizado em export pra
+     * cliente (PDF/PPT/link público).
+     *
+     * Schema espelha `pricing` pra facilitar margem calc:
+     *   margem% = (pricing - costPricing) / pricing × 100
+     */
+    costPricing: {
+      perPerson: null,
+      perCouple: null,
+      currency: 'USD',
+      notes: '',
+      customRows: [],  // { label, value }
     },
 
     travel: {
@@ -182,6 +229,103 @@ export function generateDays(startDate, destinations) {
   return days;
 }
 
+/* ─── Migrations on-read (4.41.0+ Sprint 2) ────────────────
+ *
+ * Roteiros antigos têm `client.{adults,children,childrenAges}` mas não
+ * têm `travelers[]`. Pra manter compat sem precisar rodar backfill
+ * imediato, convertemos no momento da leitura — defensivo e idempotente.
+ *
+ * Roteiros novos já são salvos com travelers populados pela UI.
+ */
+function _stableId(prefix, idx) {
+  return `${prefix}-${idx}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Converte client.{adults,children,childrenAges} → travelers[].
+ * Mantém os campos legacy intactos (não-destrutivo no client).
+ * @returns {Array} travelers (novo array; nunca undefined)
+ */
+export function deriveTravelersFromLegacyClient(client) {
+  const c = client || {};
+  const adults = Math.max(0, parseInt(c.adults) || 0);
+  const children = Math.max(0, parseInt(c.children) || 0);
+  const ages = Array.isArray(c.childrenAges) ? c.childrenAges : [];
+  const out = [];
+
+  // Primeiro adulto = lead (responsável); usa client.name se disponível.
+  if (adults > 0) {
+    out.push({
+      id:     _stableId('lead', 0),
+      name:   (c.name || '').trim(),
+      age:    null,
+      isLead: true,
+      doc:    '',
+      notes:  'Responsável',
+    });
+    for (let i = 1; i < adults; i++) {
+      out.push({
+        id:     _stableId('adulto', i),
+        name:   '',
+        age:    null,
+        isLead: false,
+        doc:    '',
+        notes:  'Adulto',
+      });
+    }
+  }
+
+  for (let i = 0; i < children; i++) {
+    const age = parseInt(ages[i]);
+    out.push({
+      id:     _stableId('crianca', i),
+      name:   '',
+      age:    Number.isFinite(age) ? age : null,
+      isLead: false,
+      doc:    '',
+      notes:  'Criança',
+    });
+  }
+
+  return out;
+}
+
+/**
+ * Aplica migrations idempotentes a um doc bruto de roteiro.
+ * Roda no read — não escreve no Firestore (escrita acontece quando o
+ * user editar e salvar pela UI).
+ */
+function migrateRoteiroOnRead(doc) {
+  if (!doc) return doc;
+  const out = { ...doc };
+
+  // travelers[]: deriva de adults/children/childrenAges se ausente
+  if (!Array.isArray(out.travelers) || out.travelers.length === 0) {
+    out.travelers = deriveTravelersFromLegacyClient(out.client);
+  }
+
+  // collaboratorIds: garantir array
+  if (!Array.isArray(out.collaboratorIds)) out.collaboratorIds = [];
+
+  // workflowMode: default 'system' (comportamento prévio)
+  if (out.workflowMode !== 'offline') out.workflowMode = 'system';
+
+  // costPricing: garantir shape mínimo
+  if (!out.costPricing || typeof out.costPricing !== 'object') {
+    out.costPricing = { perPerson: null, perCouple: null, currency: 'USD', notes: '', customRows: [] };
+  } else {
+    out.costPricing = {
+      perPerson:   out.costPricing.perPerson   ?? null,
+      perCouple:   out.costPricing.perCouple   ?? null,
+      currency:    out.costPricing.currency    || 'USD',
+      notes:       out.costPricing.notes       || '',
+      customRows:  Array.isArray(out.costPricing.customRows) ? out.costPricing.customRows : [],
+    };
+  }
+
+  return out;
+}
+
 /* ─── CRUD ────────────────────────────────────────────────── */
 
 /**
@@ -200,13 +344,15 @@ export async function fetchRoteiros(filters = {}) {
 
   const q = query(collection(db, COL), ...constraints);
   const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // 4.41.0+ aplicar migrations on-read defensivas
+  return snap.docs.map(d => migrateRoteiroOnRead({ id: d.id, ...d.data() }));
 }
 
 export async function fetchRoteiro(id) {
   const snap = await getDoc(doc(db, COL, id));
   if (!snap.exists()) throw new Error('Roteiro não encontrado');
-  return { id: snap.id, ...snap.data() };
+  // 4.41.0+ aplicar migrations on-read defensivas
+  return migrateRoteiroOnRead({ id: snap.id, ...snap.data() });
 }
 
 export async function saveRoteiro(id, data) {
@@ -333,11 +479,36 @@ export async function fetchGenerations(filters = {}) {
 }
 
 /* ─── Web links ───────────────────────────────────────────── */
+/**
+ * 4.41.0+ (Sprint 2) — STRIP DEFENSIVO de campos internos antes do snapshot.
+ *
+ * O snapshot vai pra coleção `roteiro_web_links` com regra de read PÚBLICA
+ * (qualquer holder do token vê). Se gravarmos custo interno aqui, vaza pro
+ * cliente independente de qualquer filtro no renderer.
+ *
+ * Mesma lógica do stripInternalFields em roteiroGenerator.js — duplicada
+ * intencionalmente aqui pra evitar import cíclico com generator (que é heavy).
+ */
+function stripInternalForPublicLink(roteiro) {
+  if (!roteiro || typeof roteiro !== 'object') return roteiro;
+  const out = JSON.parse(JSON.stringify(roteiro));
+  out.costPricing = { perPerson: null, perCouple: null, currency: 'USD', notes: '', customRows: [] };
+  delete out.collaboratorIds;
+  delete out.workflowMode;
+  delete out.aiPrompt;
+  delete out.aiSources;
+  delete out.aiProvider;
+  delete out.aiModel;
+  return out;
+}
+
 export async function createWebLink(roteiroId, data, area) {
   const token = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+  // 4.41.0+ Strip OBRIGATÓRIO — custo interno nunca vai pra link público.
+  const cleanData = stripInternalForPublicLink(data);
   await setDoc(doc(db, COL_LINKS, token), {
     roteiroId,
-    data,
+    data: cleanData,
     area: area || null,
     createdBy: store.get('currentUser')?.uid || '',
     createdAt: serverTimestamp(),
