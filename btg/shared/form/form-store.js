@@ -73,7 +73,9 @@ export function defaultFormValues(tipo = '') {
     contexto_do_preco: '',
     taxas: '',
     incluso_no_pacote: '',
-    imagem_file: null,
+    imagem_file: null,        // File object (upload manual; volátil — não persiste)
+    imagem_url: '',           // URL pública (escolhida do banco curado ou pós-upload R2)
+    imagem_meta: null,        // { name, placeName, country, city } quando vier do banco curado
     galeria_files: [],
   };
 }

@@ -7,6 +7,7 @@
   <title>Nova oferta — BTG / Primetour</title>
   <link rel="stylesheet" href="/btg/shared/btg-base.css" />
   <link rel="stylesheet" href="/btg/shared/form/form.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-image-picker.css" />
 </head>
 <body>
   <div id="root"></div>
@@ -63,13 +64,23 @@
       }
     });
 
-    // Image URL para preview — só atualiza a URL, o re-render já é feito
-    // pelo onButtonChange dentro do bindFormEvents quando o file picker dispara
+    // Image URL para preview — prioriza imagem_url (banco curado / R2)
+    // sobre imagem_file (upload manual). 4.41.0+ banco curado é o caminho
+    // principal; file fica como fallback legacy.
     store.subscribe((field) => {
-      if (field === 'imagem_file') {
-        const f = store.get('imagem_file');
-        if (state.imageUrl) URL.revokeObjectURL(state.imageUrl);
-        state.imageUrl = f instanceof File ? URL.createObjectURL(f) : null;
+      if (field !== 'imagem_file' && field !== 'imagem_url') return;
+      const url = store.get('imagem_url') || '';
+      const f = store.get('imagem_file');
+      // Revoga blob URL anterior pra evitar leak
+      if (state.imageUrl && state.imageUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(state.imageUrl);
+      }
+      if (url) {
+        state.imageUrl = url;
+      } else if (f instanceof File) {
+        state.imageUrl = URL.createObjectURL(f);
+      } else {
+        state.imageUrl = null;
       }
     });
 

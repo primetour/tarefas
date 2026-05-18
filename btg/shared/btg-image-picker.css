@@ -1,0 +1,335 @@
+/* BTG Image Picker — modal com 2 abas, grid filtrável */
+
+.btg-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 19, 42, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 24px;
+  animation: btgPickerFadeIn 160ms ease-out;
+}
+
+@keyframes btgPickerFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.btg-picker {
+  background: #fff;
+  width: min(960px, 100%);
+  max-height: calc(100vh - 48px);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  color: #1f2937;
+}
+
+.btg-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.btg-picker__title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--btg-navy, #05132a);
+}
+
+.btg-picker__close {
+  background: transparent;
+  border: 0;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.btg-picker__close:hover {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
+.btg-picker__tabs {
+  display: flex;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+  padding: 0 12px;
+}
+
+.btg-picker__tab {
+  background: transparent;
+  border: 0;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 120ms, border-color 120ms;
+}
+
+.btg-picker__tab:hover {
+  color: #1f2937;
+}
+
+.btg-picker__tab.is-active {
+  color: var(--btg-navy, #05132a);
+  border-bottom-color: var(--btg-navy, #05132a);
+}
+
+.btg-picker__body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.btg-picker__panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.btg-picker__panel[hidden] {
+  display: none;
+}
+
+.btg-picker__filters {
+  display: flex;
+  gap: 12px;
+  padding: 16px 24px;
+  border-bottom: 1px solid #f3f4f6;
+  background: #fff;
+}
+
+.btg-picker__search {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  background: #fff;
+  color: #1f2937;
+}
+
+.btg-picker__search:focus {
+  outline: none;
+  border-color: var(--btg-navy, #05132a);
+  box-shadow: 0 0 0 3px rgba(5, 19, 42, 0.1);
+}
+
+.btg-picker__select {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  background: #fff;
+  color: #1f2937;
+  min-width: 180px;
+  cursor: pointer;
+}
+
+.btg-picker__loading,
+.btg-picker__empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  font-size: 14px;
+  padding: 48px 24px;
+}
+
+.btg-picker__grid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 16px 24px 24px;
+  background: #fff;
+}
+
+.btg-picker__card {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 120ms, transform 120ms;
+}
+
+.btg-picker__card:hover {
+  border-color: var(--btg-navy, #05132a);
+  transform: translateY(-2px);
+}
+
+.btg-picker__card:focus-visible {
+  outline: none;
+  border-color: var(--btg-navy, #05132a);
+  box-shadow: 0 0 0 3px rgba(5, 19, 42, 0.2);
+}
+
+.btg-picker__thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background-size: cover;
+  background-position: center;
+  background-color: #f3f4f6;
+}
+
+.btg-picker__meta {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.btg-picker__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.3;
+}
+
+.btg-picker__place {
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.3;
+}
+
+/* Upload disabled panel */
+.btg-picker__upload-msg {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 64px 32px;
+  gap: 12px;
+  color: #4b5563;
+}
+
+.btg-picker__upload-icon {
+  font-size: 40px;
+  color: #9ca3af;
+  margin-bottom: 8px;
+}
+
+.btg-picker__upload-msg h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: #1f2937;
+}
+
+.btg-picker__upload-msg p {
+  max-width: 460px;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.btg-picker__link {
+  background: transparent;
+  border: 0;
+  color: var(--btg-navy, #05132a);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+.btg-picker__link:hover {
+  color: #000;
+}
+
+/* Dropzone "filled" (depois que escolheu imagem) ────────── */
+
+.btg-dropzone--filled {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  cursor: default;
+}
+
+.btg-dropzone__preview-img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-size: cover;
+  background-position: center;
+  background-color: #e5e7eb;
+  border-radius: 8px;
+}
+
+.btg-dropzone__preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.btg-dropzone__preview-meta strong {
+  font-size: 14px;
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.btg-dropzone__preview-meta span {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.btg-dropzone__change {
+  align-self: flex-start;
+  background: var(--btg-navy, #05132a);
+  color: #fff;
+  border: 0;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+
+.btg-dropzone__change:hover {
+  opacity: 0.9;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .btg-picker {
+    max-height: calc(100vh - 16px);
+    border-radius: 8px;
+  }
+  .btg-picker__filters {
+    flex-direction: column;
+  }
+  .btg-picker__grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+}

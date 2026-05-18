@@ -5,6 +5,7 @@
  */
 
 import { icon } from '../btg-icons.js';
+import { openImagePicker } from '../btg-image-picker.js';
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({
@@ -189,26 +190,55 @@ export function inputDataExpiracao(store) {
   return `<input type="date" class="${INPUT_CLASS}" data-field="data_expiracao" value="${esc(v)}" />`;
 }
 
-// ─── UPLOAD DE IMAGEM ───────────────────────────────────────
+// ─── ESCOLHA DE IMAGEM ──────────────────────────────────────
+//
+// 4.41.0+ (Fase 2.1 BTG migration): substitui o file input direto
+// por um botão que abre o ImagePicker (modal com 2 abas: Banco curado
+// + Upload novo). Mantém compat: `imagem_file` ainda existe pra retrocompat,
+// mas o source-of-truth pra preview/save é `imagem_url`.
 
 export function inputImagem(store) {
+  const url = store.get('imagem_url') || '';
+  const meta = store.get('imagem_meta');
   const file = store.get('imagem_file');
-  return `
-    <label class="btg-dropzone" data-field="imagem_file">
-      <input type="file" accept="image/*" hidden data-imagem-input />
-      ${file ? `
+
+  if (url) {
+    return `
+      <div class="btg-dropzone btg-dropzone--filled">
+        <div class="btg-dropzone__preview-img" style="background-image:url('${esc(url)}')"></div>
+        <div class="btg-dropzone__preview-meta">
+          ${meta?.name ? `<strong>${esc(meta.name)}</strong>` : ''}
+          ${meta?.city || meta?.country ? `<span>${esc([meta.city, meta.country].filter(Boolean).join(', '))}</span>` : ''}
+        </div>
+        <button type="button" class="btg-dropzone__change" data-action="open-image-picker">
+          Trocar imagem
+        </button>
+      </div>
+    `;
+  }
+
+  if (file) {
+    return `
+      <div class="btg-dropzone btg-dropzone--filled">
         <div class="btg-dropzone__preview">
           <span class="btg-dropzone__filename">${esc(file.name)}</span>
           <span class="btg-dropzone__size">${(file.size / 1024).toFixed(1)} KB</span>
         </div>
-      ` : `
-        <div class="btg-dropzone__empty">
-          ${icon('upload', 'icon-md')}
-          <span>Arraste a imagem aqui ou clique para selecionar</span>
-          <small>JPG ou PNG, até 5MB</small>
-        </div>
-      `}
-    </label>
+        <button type="button" class="btg-dropzone__change" data-action="open-image-picker">
+          Trocar imagem
+        </button>
+      </div>
+    `;
+  }
+
+  return `
+    <button type="button" class="btg-dropzone" data-action="open-image-picker">
+      <div class="btg-dropzone__empty">
+        ${icon('upload', 'icon-md')}
+        <span>Escolher imagem</span>
+        <small>Banco curado de hotéis premium · ou upload novo</small>
+      </div>
+    </button>
   `;
 }
 
@@ -241,11 +271,15 @@ export function bindFormEvents(container, store, opts = {}) {
     if (t.dataset && t.dataset.field && (t.tagName === 'SELECT' || t.type === 'date')) {
       store.set(t.dataset.field, t.value);
     }
-    // File picker da imagem — dataset camelCase: data-imagem-input → imagemInput
+    // File picker da imagem (legacy — mantido pra compat caso algum lugar
+    // ainda use input type="file" direto). 4.41.0+ caminho principal é o
+    // botão `data-action="open-image-picker"` que abre o ImagePicker.
     if (t.type === 'file' && t.dataset.imagemInput !== undefined) {
       const f = t.files?.[0];
       if (f) {
         store.set('imagem_file', f);
+        store.set('imagem_url', '');  // file local invalida URL anterior
+        store.set('imagem_meta', null);
         triggerRerender();
       }
     }
@@ -253,6 +287,27 @@ export function bindFormEvents(container, store, opts = {}) {
 
   // Botões — re-render após clique pra UI refletir o estado
   container.addEventListener('click', (e) => {
+    // 4.41.0+ BTG image picker (modal com banco curado + upload novo).
+    // Captura clicks no botão de escolher/trocar imagem, abre o modal,
+    // e ao escolher seta imagem_url no store + limpa file local.
+    const pickerBtn = e.target.closest('[data-action="open-image-picker"]');
+    if (pickerBtn) {
+      e.preventDefault();
+      openImagePicker({ initialUrl: store.get('imagem_url') || '' }).then((result) => {
+        if (!result) return; // usuário cancelou
+        store.set('imagem_url', result.url);
+        store.set('imagem_meta', {
+          name: result.name,
+          placeName: result.placeName,
+          country: result.country,
+          city: result.city,
+        });
+        store.set('imagem_file', null);
+        triggerRerender();
+      });
+      return;
+    }
+
     const btn = e.target.closest('[data-toggle]');
     if (btn) {
       const field = btn.dataset.toggle;
