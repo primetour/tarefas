@@ -23,12 +23,12 @@
  */
 
 export const btgFirebaseConfig = {
-  apiKey: "PLACEHOLDER_API_KEY",
+  apiKey: "AIzaSyAV0Qap-5SxyQ8aaqvjpvtUbUEgED_NV0E",
   authDomain: "gestor-btg-lp-builder-staging.firebaseapp.com",
   projectId: "gestor-btg-lp-builder-staging",
   storageBucket: "gestor-btg-lp-builder-staging.firebasestorage.app",
-  messagingSenderId: "PLACEHOLDER_SENDER_ID",
-  appId: "PLACEHOLDER_APP_ID"
+  messagingSenderId: "1030303143087",
+  appId: "1:1030303143087:web:b9ddfd844009cc384c705a"
 };
 
 export const BTG_COLLECTION = 'btg_ofertas_dev';

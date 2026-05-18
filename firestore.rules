@@ -989,5 +989,22 @@ service cloud.firestore {
       allow read:  if true;
       allow write: if isMaster();
     }
+
+    // ── BTG Ofertas (DEV/STAGING) ────────────────────────────
+    // Migração do projeto BTG Pactual pro Gestor — Fase 1+.
+    // Coleção alvo: gestor-btg-lp-builder-staging > btg_ofertas_dev.
+    // No projeto de produção (gestor-de-tarefas-primetour) essa coleção
+    // não existe — regras ficam inertes lá. Antes do cutover pra prod,
+    // criar bloco equivalente pra `btg_ofertas` exigindo SSO Microsoft
+    // + permissão `btg_offer_manage`.
+    //
+    // Postura STAGING: read+write liberados. Justificativa:
+    //   - ambiente isolado (projeto Firebase dedicado)
+    //   - sem auth setup ainda (POC roda sem login)
+    //   - dados de teste, sem PII real
+    //   - URL `*.web.app` não divulgada externamente
+    match /btg_ofertas_dev/{docId} {
+      allow read, write: if true;
+    }
   }
 }
