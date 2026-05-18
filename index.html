@@ -17,6 +17,16 @@
   <meta name="referrer" content="strict-origin-when-cross-origin" />
   <meta name="permissions-policy" content="camera=(), microphone=(self), geolocation=(self), interest-cohort=()" />
 
+  <!-- 4.48.3+ Cache control — instrui browser a sempre revalidar index.html
+       com servidor. Resolve "loop de login" pós-deploy: quando browser
+       cacheia index.html antigo (com app.js?v=OLD), os imports estáticos
+       puxam módulos JS cacheados e quebram boot em cascata. Com no-cache,
+       browser sempre busca index.html fresh → pega a nova versão do app.js
+       imediatamente. Módulos JS ainda têm seu cache via ?v=, mas o
+       index.html sempre indica a versão atual. -->
+  <meta http-equiv="Cache-Control" content="no-cache, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+
   <!-- CSP — Content Security Policy
        4.40.21+ (security audit): img-src wildcard `https:` substituído por
        whitelist explícita (R2, Worker, Wikipedia, Unsplash). form-action
@@ -89,7 +99,7 @@
   <!-- Cache-bust: deve casar com FULL de js/version.js (4.31.0+20260508-csat-custom-questions).
        GitHub Pages serve com max-age=600 e browsers cacheiam módulos por URL.
        Bump aqui sempre que js/version.js for atualizado. -->
-  <script type="module" src="js/app.js?v=4.48.2+20260518-fix-auth-loop-dynamic-import"></script>
+  <script type="module" src="js/app.js?v=4.48.3+20260518-cache-loop-prevention"></script>
 
 </body>
 </html>

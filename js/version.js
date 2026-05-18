@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 48,
-  patch: 2,
-  build: '20260518-fix-auth-loop-dynamic-import',
+  patch: 3,
+  build: '20260518-cache-loop-prevention',
 };
 
 /** "1.2.0" */
