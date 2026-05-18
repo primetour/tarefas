@@ -61,7 +61,7 @@ import { renderCms }                      from './pages/cms.js';
 import { renderArtsEditor }              from './pages/artsEditor.js';
 // renderAiSkills + renderAiDashboard + mountAiPanel removidos (FAB desabilitado, rotas redirecionam pra #ai-hub)
 import { renderRoteiros }               from './pages/roteiros.js';
-import { renderRoteiroEditor, destroyRoteiroEditor } from './pages/roteiroEditor.js';
+import { renderRoteiroEditor, destroyRoteiroEditor } from './pages/roteiroEditor.js?v=4.43.0-async-fix';
 import { renderRoteiroDashboard, destroyRoteiroDashboard } from './pages/roteiroDashboard.js?v=20260508r1';
 import { renderContentCalendar }         from './pages/contentCalendar.js';
 import { renderLuxuryTravel }            from './pages/luxuryTravel.js?v=20260508r1';
