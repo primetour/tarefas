@@ -18,7 +18,9 @@
   - `http://localhost:8765/*` (dev)
 - API targets: 16 Firebase services (Identity Toolkit, Firestore, App Check, etc.)
 
-**⚠ ARMADILHA documentada:** Esquecer `firebaseapp.com/*` quebra o login Microsoft SSO. O fluxo signInWithPopup abre o handler oficial `gestor-de-tarefas-primetour.firebaseapp.com/__/auth/handler` que chama Identity Toolkit com a mesma apiKey. Sem `firebaseapp.com` na whitelist, o popup mostra "The requested action is invalid" e o login trava. Bug introduzido em 4.40.23 e corrigido em 4.40.26 (16/05 manhã).
+**⚠ ARMADILHA #1 documentada:** Esquecer `firebaseapp.com/*` quebra o login Microsoft SSO. O fluxo signInWithPopup abre o handler oficial `gestor-de-tarefas-primetour.firebaseapp.com/__/auth/handler` que chama Identity Toolkit com a mesma apiKey. Sem `firebaseapp.com` na whitelist, o popup mostra "The requested action is invalid" e o login trava. Bug introduzido em 4.40.23 e corrigido em 4.40.26 (16/05 manhã).
+
+**⚠ ARMADILHA #2 documentada (4.40.27 — 18/05):** Após o fix de 4.40.26, popup voltou a abrir e aceitar email/senha, mas o desafio do **Microsoft Authenticator não disparava** e o sistema voltava ao login. Causa: `js/firebase.js` tinha `prompt: 'login'` em `setCustomParameters` (herdado de uma tentativa antiga de "evitar PIN do Authenticator"). Em tenants com Conditional Access que **exige MFA**, esse parâmetro conflita: MS rejeita o login silenciosamente quando não consegue satisfazer a política de MFA do tenant via re-auth forçada e o popup fecha com `auth/popup-closed-by-user` (silenciado em `login.js`), devolvendo user pra tela de login num loop. Fix: remover `prompt: 'login'` e `login_hint: ''` — deixar o tenant aplicar o fluxo padrão (email → senha → Authenticator). Validar sempre que mudar política Conditional Access no Azure AD.
 
 **Comprovação E2E (logs do `gcloud` + curl):**
 

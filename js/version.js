@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 26,
-  build: '20260518-sso-fix-firebaseapp-referrer',
+  patch: 27,
+  build: '20260518-sso-fix-mfa-prompt-conflict',
 };
 
 /** "1.2.0" */

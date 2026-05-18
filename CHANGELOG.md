@@ -6,6 +6,37 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.40.27+20260518-sso-fix-mfa-prompt-conflict] — 2026-05-18
+
+Release **PATCH** — Segunda regressão SSO Microsoft pós-audit resolvida.
+
+### Pedido do user
+> "usuario relatando que agora o sistema abre o pop up novamente, insere o
+> email, a senha, mas o authenticator nao é acionado. o sistema fica em
+> looping e volta pra tela de login. pode dar um double check em tudo?"
+
+### Causa
+`js/firebase.js` tinha `prompt: 'login'` + `login_hint: ''` em
+`microsoftProvider.setCustomParameters` (herdado de tentativa antiga de
+"evitar PIN do Authenticator"). Em tenants Primetour com Conditional Access
+**exigindo MFA**, esse parâmetro força re-autenticação completa que conflita
+com a política — MS rejeita silenciosamente quando não consegue satisfazer
+MFA via re-auth forçada, popup fecha com `auth/popup-closed-by-user`
+(silenciado em `login.js`) e user volta pra tela de login num loop.
+
+### Fix
+- `js/firebase.js`: removidos `prompt: 'login'` e `login_hint: ''`. Deixa o
+  tenant aplicar o fluxo padrão (email → senha → Authenticator).
+- `docs/SECURITY-FOLLOWUPS.md`: nova ARMADILHA #2 documentada (manter junto
+  da #1 — `firebaseapp.com/*` em allowed-referrers).
+
+### Validação
+- Build local OK, cache-bust bumpado.
+- Para validar em prod: logout → login SSO → confirmar que Authenticator
+  é acionado normalmente após senha.
+
+---
+
 ## [4.35.26+20260512-email-notifs-template-trigger] — 2026-05-12
 
 Release **MINOR** — Notificações por email com opt-in granular e identidade

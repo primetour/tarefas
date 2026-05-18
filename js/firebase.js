@@ -39,8 +39,20 @@ const secondaryApp = initializeApp(firebaseConfig, 'primetour-secondary');
 export const microsoftProvider = new OAuthProvider('microsoft.com');
 microsoftProvider.setCustomParameters({
   tenant: 'organizations',        // Aceita qualquer tenant corporativo Azure AD
-  prompt: 'login',                // Força login com email/senha (evita PIN do Authenticator)
-  login_hint: '',                 // Não sugere conta anterior
+  // 4.40.27 (regressão SSO): `prompt: 'login'` + `login_hint: ''` REMOVIDOS.
+  //
+  // CONTEXTO: tenants Primetour têm Conditional Access que EXIGE MFA via
+  // Microsoft Authenticator. `prompt: 'login'` força re-autenticação completa,
+  // mas em interação com a política de MFA do tenant, o popup fechava após
+  // o passo de senha SEM disparar o desafio do Authenticator — e o
+  // signInWithPopup resolvia com `auth/popup-closed-by-user` (silenciado em
+  // login.js), devolvendo o user pra tela de login num loop.
+  //
+  // `login_hint: ''` (string vazia) é tecnicamente inválido — alguns endpoints
+  // MS interpretam como hint "vazio" e abortam.
+  //
+  // Sem nenhum desses parâmetros, o tenant aplica o fluxo padrão (email →
+  // senha → Authenticator), que é o comportamento desejado.
 });
 microsoftProvider.addScope('user.read');
 // IMPORTANTE: scopes Files.Read.All e Sites.Read.All foram REMOVIDOS porque
