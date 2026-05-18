@@ -48,7 +48,7 @@ import { renderNlPerformance }            from './pages/nlPerformance.js?v=20260
 import { renderMetaPerformance }          from './pages/metaPerformance.js?v=20260508r1';
 import { renderGaPerformance }            from './pages/gaPerformance.js?v=20260508r1';
 import { renderPortalTips }               from './pages/portalTips.js';
-import { renderPortalAreas }              from './pages/portalAreas.js';
+import { renderPortalAreas }              from './pages/portalAreas.js?v=4.48.1';
 import { renderPortalDestinations }       from './pages/portalDestinations.js';
 import { renderPortalImages }             from './pages/portalImages.js';
 import { renderPortalDashboard }          from './pages/portalDashboard.js?v=20260508r1';
