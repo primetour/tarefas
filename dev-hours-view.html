@@ -110,6 +110,89 @@
     .legend-item { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); }
     .legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
     .loading { padding: 80px 20px; text-align: center; color: var(--text-muted); }
+
+    /* 4.40.28+ Tab switcher */
+    .tabs {
+      display: flex; gap: 4px; margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      padding: 12px 20px; background: transparent; border: none;
+      border-bottom: 2px solid transparent; cursor: pointer;
+      font-family: inherit; font-size: 0.9rem; font-weight: 600;
+      color: var(--text-muted); transition: color .15s, border-color .15s;
+    }
+    .tab:hover { color: var(--text-secondary); }
+    .tab.active { color: var(--brand-gold); border-bottom-color: var(--brand-gold); }
+    .tab-badge {
+      display: inline-block; padding: 1px 7px; margin-left: 6px;
+      background: rgba(212,168,67,.15); color: var(--brand-gold);
+      border-radius: 99px; font-size: 0.7rem; font-weight: 700;
+    }
+
+    /* 4.40.28+ Module breakdown card */
+    .module-breakdown {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px; margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+    .module-breakdown-title {
+      font-size: 0.75rem; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: .06em; font-weight: 600;
+      margin-bottom: 14px;
+    }
+    .module-row {
+      display: grid; grid-template-columns: 180px 1fr 200px;
+      align-items: center; gap: 12px; padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .module-row:last-child { border-bottom: none; }
+    .module-label {
+      display: flex; align-items: center; gap: 8px;
+      font-weight: 600; font-size: 0.875rem;
+    }
+    .module-icon { font-size: 1.1rem; }
+    .module-bar-wrap {
+      height: 8px; background: #F3F4F6; border-radius: 99px; overflow: hidden;
+    }
+    .module-bar-fill { height: 100%; border-radius: 99px; transition: width .3s; }
+    .module-stats {
+      text-align: right; font-size: 0.8125rem; color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+    }
+    .module-stats strong { color: var(--text-primary); }
+    .module-desc {
+      font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;
+    }
+
+    /* 4.40.28+ Detail row for products tab */
+    .entry-detail {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 20px; margin-bottom: 12px;
+      box-shadow: var(--shadow-sm);
+    }
+    .entry-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 16px; margin-bottom: 8px;
+    }
+    .entry-title { font-weight: 600; font-size: 1rem; color: var(--text-primary); margin: 0 0 4px 0; }
+    .entry-meta { font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .entry-summary {
+      font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6;
+      margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+    }
+    .entry-stats { text-align: right; flex-shrink: 0; }
+    .entry-hours { font-weight: 700; font-size: 1.125rem; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+    .entry-cost { font-weight: 600; font-size: 0.875rem; color: var(--color-success); font-variant-numeric: tabular-nums; }
+    .module-pill {
+      display: inline-block; padding: 2px 8px; border-radius: 99px;
+      font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .04em; color: white;
+    }
+    .empty-products {
+      padding: 60px 20px; text-align: center; color: var(--text-muted);
+      background: var(--bg-card); border: 1px dashed var(--border); border-radius: 10px;
+    }
   </style>
 </head>
 <body>
@@ -127,10 +210,18 @@
       Os valores refletem o tempo de um sr full-stack dev <strong>trabalhando com
       assistência de IA</strong> (modelo human-in-the-loop). Cada entrada usa metodologia
       transparente: bucket de complexidade × multiplicadores aplicáveis × fator de
-      AI-assistance (<strong>0.40</strong>, baseado em ~2.5× speedup observado em
-      pesquisas Microsoft Copilot e GitHub Research e na operação interna).
-      Taxa horária: R$ 150,00. Apenas entradas com status <strong>aprovado</strong>
-      entram nos totais.
+      AI-assistance (<strong>0.50</strong>, recalibrado a partir do 0.40 inicial com base
+      em ~2× speedup sustentado observado em 95 dias reais de projeto). Taxa horária:
+      R$ 150,00. Apenas entradas com status <strong>aprovado</strong> entram nos totais.
+    </div>
+
+    <!-- 4.40.28+ Tab switcher: Geral (default) vs Foco em Produto -->
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tab="general">📊 Visão geral</button>
+      <button class="tab" data-tab="products">
+        ✨ Foco em produto
+        <span class="tab-badge" id="tab-products-count">—</span>
+      </button>
     </div>
 
     <div class="cards" id="cards">
@@ -179,6 +270,12 @@
       <tbody id="dh-body"></tbody>
     </table>
 
+    <!-- 4.40.28+ Container do tab products (oculto por default) -->
+    <div id="products-section" style="display:none;">
+      <div class="module-breakdown" id="module-breakdown"></div>
+      <div id="products-list"></div>
+    </div>
+
     <div class="footer-note">
       Página gerada pelo sistema interno PRIMETOUR. Atualizada em tempo real conforme
       novas entradas são aprovadas. Para auditoria completa da metodologia, consulte
@@ -192,6 +289,8 @@
     import { initializeApp }   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
     import { getFirestore, collection, onSnapshot, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { firebaseConfig } from './js/config.js';
+    // 4.40.28+ Importa MODULES + helpers de classificação (mesma engine usada pelo PDF)
+    import { MODULES, detectEntryModules, aggregateByModule, entryMatchesModules } from './js/services/devHours.js?v=4.40.28';
 
     const CATEGORIES = [
       { key: 'refinamento',     label: 'Refinamento',     color: '#8B5CF6', icon: '💭' },
@@ -200,6 +299,10 @@
       { key: 'documentacao',    label: 'Documentação',    color: '#F59E0B', icon: '📝' },
       { key: 'implantacao',     label: 'Implantação',     color: '#EF4444', icon: '🚀' },
     ];
+
+    // 4.40.28+ Tab atual ('general' | 'products'). Persistido em hash da URL pra
+    // o user poder linkar direto pra aba de produto (#products).
+    let currentTab = (location.hash === '#products') ? 'products' : 'general';
 
     const fmtBR = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
     // 4.35.1+ Formato HH:MM (ex: "6h 40min", "1h 30min", "45min", "12h")
@@ -234,19 +337,26 @@
     document.getElementById('f-search').addEventListener('input', e => { f_search = e.target.value.trim().toLowerCase(); render(); });
 
     // PDF export — reutiliza o mesmo módulo da app autenticada (já há filtragem por status='approved' no array)
+    // 4.40.28+ No tab "products" passa focus/breakdown/fullSummary pra mudar layout do PDF.
     document.getElementById('pdf-btn').addEventListener('click', async () => {
       const btn = document.getElementById('pdf-btn');
       btn.disabled = true;
       btn.textContent = '⌛ Gerando...';
       try {
-        const filtered = applyFilters(allEntries);
+        const baseFiltered = applyFilters(allEntries);
+        const filtered = currentTab === 'products'
+          ? baseFiltered.filter(e => entryMatchesModules(e))
+          : baseFiltered;
         if (!filtered.length) { alert('Sem entradas para exportar com os filtros atuais.'); return; }
         const { exportDevHoursPdf } = await import('./js/services/devHoursPdf.js');
         const periodLabel = f_period === 'month'   ? 'Este mês'
                          : f_period === 'quarter' ? 'Este trimestre'
                          : f_period === 'year'    ? 'Este ano'
                          : 'Histórico completo';
-        await exportDevHoursPdf(filtered, { periodLabel });
+        const pdfOpts = currentTab === 'products'
+          ? { periodLabel, focus: 'products', includeFullSummary: true, includeModuleBreakdown: true, fileSuffix: '-produto' }
+          : { periodLabel };
+        await exportDevHoursPdf(filtered, pdfOpts);
       } catch (e) {
         console.error(e);
         alert('Falha ao gerar PDF: ' + e.message);
@@ -254,6 +364,18 @@
         btn.disabled = false;
         btn.textContent = '📄 PDF';
       }
+    });
+
+    // 4.40.28+ Tab switcher
+    document.querySelectorAll('.tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentTab = btn.dataset.tab;
+        document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
+        location.hash = currentTab === 'products' ? '#products' : '';
+        render();
+      });
+      // Inicializa estado visual conforme currentTab (deep link via #products)
+      btn.classList.toggle('active', btn.dataset.tab === currentTab);
     });
 
     // Legenda das categorias
@@ -301,7 +423,21 @@
     }
 
     function render() {
-      const arr = applyFilters(allEntries);
+      const arrAll = applyFilters(allEntries);
+      // 4.40.28+ No tab "products" só conta entries que tocaram um dos módulos.
+      const arr = currentTab === 'products'
+        ? arrAll.filter(e => entryMatchesModules(e))
+        : arrAll;
+
+      // Toggle visibilidade da tabela geral × seção produtos
+      const isProducts = currentTab === 'products';
+      document.getElementById('dh-table').style.display = isProducts ? 'none' : 'table';
+      document.getElementById('products-section').style.display = isProducts ? 'block' : 'none';
+
+      // Atualiza badge de contagem no tab Products (em ambas as views)
+      const productsCount = arrAll.filter(e => entryMatchesModules(e)).length;
+      const badge = document.getElementById('tab-products-count');
+      if (badge) badge.textContent = String(productsCount);
 
       // Cards
       let totalH = 0, totalC = 0;
@@ -380,7 +516,13 @@
         </div>
       `;
 
-      // Tabela
+      // 4.40.28+ Tab products: renderiza breakdown card + listagem detalhada
+      if (isProducts) {
+        renderProductsView(arr);
+        return;
+      }
+
+      // Tabela (visão geral)
       const tbody = document.getElementById('dh-body');
       if (!arr.length) {
         tbody.innerHTML = `<tr><td colspan="7" class="empty">Nenhuma entrada aprovada nos filtros atuais.</td></tr>`;
@@ -443,6 +585,103 @@
           btn.textContent = showing ? 'Ver mais' : 'Ver menos';
         });
       });
+    }
+
+    /* ── 4.40.28+ Render do tab "Foco em produto" ─────────────────
+     * Mostra:
+     *   1. Breakdown por módulo (horas/custo/entries proporcional)
+     *   2. Listagem detalhada das entries (uma por card, sem truncar summary)
+     *   3. Pills coloridas indicando módulo(s) que cada entry tocou
+     */
+    function renderProductsView(arr) {
+      const breakdownEl = document.getElementById('module-breakdown');
+      const listEl      = document.getElementById('products-list');
+
+      // ── Breakdown por módulo ──
+      const byModule = aggregateByModule(arr);
+      const totalH = MODULES.reduce((s, m) => s + (byModule[m.id]?.hours || 0), 0) || 1;
+      const moduleRowsHtml = MODULES.map(m => {
+        const slot = byModule[m.id] || { hours: 0, cost: 0, count: 0, lastDate: null };
+        const pct = (slot.hours / totalH) * 100;
+        const last = slot.lastDate
+          ? slot.lastDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+          : '—';
+        return `<div class="module-row">
+          <div class="module-label">
+            <span class="module-icon" style="color:${m.color}">${m.icon}</span>
+            <div>
+              <div>${esc(m.label)}</div>
+              <div class="module-desc">${esc(m.desc)}</div>
+            </div>
+          </div>
+          <div class="module-bar-wrap">
+            <div class="module-bar-fill" style="width:${pct.toFixed(1)}%;background:${m.color};"></div>
+          </div>
+          <div class="module-stats">
+            <div><strong>${fmtH(slot.hours)}</strong> · ${pct.toFixed(0)}%</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">
+              ${fmtBR.format(slot.cost)} · ${slot.count.toFixed(1)} entradas · último: ${last}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+      breakdownEl.innerHTML = `
+        <div class="module-breakdown-title">⏱ Calculadora por módulo · proporcional quando entry toca múltiplos</div>
+        ${moduleRowsHtml}
+      `;
+
+      // ── Listagem detalhada ──
+      if (!arr.length) {
+        listEl.innerHTML = `<div class="empty-products">
+          Nenhuma entrada de produto aprovada nos filtros atuais.<br>
+          <span style="font-size:0.75rem;">
+            Entradas são classificadas por heurística no título/slug/summary
+            (palavras: <em>portal/dica</em>, <em>imagem/image</em>, <em>roteiro/itinerar</em>)
+            ou pelo campo explícito <code>modules</code>.
+          </span>
+        </div>`;
+        return;
+      }
+
+      const sorted = [...arr].sort((a, b) => {
+        const da = a.completedAt?.toDate ? a.completedAt.toDate() : new Date(a.completedAt || 0);
+        const db = b.completedAt?.toDate ? b.completedAt.toDate() : new Date(b.completedAt || 0);
+        return db - da;
+      });
+
+      listEl.innerHTML = sorted.map(e => {
+        const isPhase = e.entryType === 'phase';
+        const verLabel = isPhase ? (e.phaseLabel || '—') : (e.releaseVersion || '—');
+        const slugLabel = !isPhase && e.releaseSlug ? `· ${esc(e.releaseSlug)}` : '';
+        const detectedModules = detectEntryModules(e);
+        const pillsHtml = detectedModules.map(id => {
+          const m = MODULES.find(x => x.id === id);
+          if (!m) return '';
+          return `<span class="module-pill" style="background:${m.color};">
+            ${m.icon} ${esc(m.label)}
+          </span>`;
+        }).join(' ');
+
+        return `<div class="entry-detail">
+          <div class="entry-header">
+            <div style="flex:1;min-width:0;">
+              <div class="entry-title">${esc(e.title || '—')}</div>
+              <div class="entry-meta">
+                <span class="pill ${isPhase?'pill-phase':'pill-release'}">${isPhase?'📜 Fase':'🚀 Release'}</span>
+                <strong>${esc(verLabel)}</strong>
+                <span>${slugLabel}</span>
+                <span>· ${fmtDate(e.completedAt)}</span>
+              </div>
+              <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">${pillsHtml}</div>
+            </div>
+            <div class="entry-stats">
+              <div class="entry-hours">${fmtH(e.totalHours)}</div>
+              <div class="entry-cost">${fmtBR.format(e.totalCost || 0)}</div>
+            </div>
+          </div>
+          ${e.summary ? `<div class="entry-summary">${esc(e.summary)}</div>` : ''}
+        </div>`;
+      }).join('');
     }
   </script>
 </body>

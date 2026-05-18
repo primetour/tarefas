@@ -6,6 +6,56 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.40.28+20260518-dev-hours-products-tab] — 2026-05-18
+
+Release **MINOR** — Sub-dashboard executivo de horas em "Foco em produto"
+(Portal de Dicas / Banco de Imagens / Gerador de Roteiros).
+
+### Pedido do user
+> "vou precisar de uma aba em 'horas de desenvolvimento' para falar apenas
+> sobre portal de dicas/banco de imagens/gerador de roteiros, com o mesmo
+> cálculo de horas (e uma calculadora específica pra ele, nos mesmos moldes
+> da home), e maior detalhamento sobre o que está sendo feito"
+
+### O que veio
+- **`js/services/devHours.js`**: nova constante `MODULES` (3 módulos com
+  cor/ícone/desc), helpers `detectEntryModules()` + `entryMatchesModules()` +
+  `aggregateByModule()`. Heurística por título/slug/phaseLabel (intencionalmente
+  NÃO usa summary — gera muito false positive). Schema permite override via
+  campo `modules: string[]` em entries futuras.
+- **`dev-hours-view.html`**: tab switcher "Visão geral" × "Foco em produto"
+  com badge dinâmica de contagem; deep link via hash `#products`.
+- **Tab Produto**: card de breakdown por módulo (horas/custo/entries/último
+  toque) + listagem detalhada com summary completo (não truncado) + pills
+  coloridas indicando módulo(s) de cada entry.
+- **`js/services/devHoursPdf.js`**: opções `focus: 'products'`,
+  `includeModuleBreakdown`, `includeFullSummary`. Capa muda título pra
+  "Avanços em Produto", desenha card de breakdown por módulo, renderiza
+  summary completo em cada linha da tabela com pills coloridas.
+
+### Comportamento
+- Entries existentes classificadas automaticamente via heurística (8 entries
+  detectadas no estado atual: 1 fase + 7 releases).
+- Phase legacy "Portal de Solicitações + Roteiros + Pesquisas externas"
+  creditada 100% pra Roteiros (não dá pra dividir retroativamente — futuras
+  entries multi-módulo devem usar campo `modules` explícito).
+- Crédito proporcional quando entry toca múltiplos módulos (ex: entry de
+  Banco de Imagens que também afeta Roteiros conta 50% pra cada).
+
+### Validação
+- Testado E2E via Chrome MCP: tab switching, badge update, breakdown render,
+  detail cards, PDF generation (41KB, 3 páginas).
+- Confirmado que heurística estrita (sem summary) elimina false positives
+  como "IA Hub: vision" virando "Banco de Imagens".
+
+### Findings paralelos
+- **Multi-marca em Portal de Dicas: NÃO EXISTE.** Multi-brand está em
+  news-monitor / SoV (Share of Voice), não em Portal. Para roteiros
+  multi-marca, ou estende Portal (sprint dedicada) ou implementa
+  direto no editor de roteiros.
+
+---
+
 ## [4.40.27+20260518-sso-fix-mfa-prompt-conflict] — 2026-05-18
 
 Release **PATCH** — Segunda regressão SSO Microsoft pós-audit resolvida.

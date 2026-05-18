@@ -15,7 +15,7 @@
  */
 
 import { loadJsPdf, createDoc, withExportGuard, txt, COL } from '../components/pdfKit.js';
-import { CATEGORIES, sumEntries } from './devHours.js';
+import { CATEGORIES, sumEntries, MODULES, aggregateByModule, detectEntryModules } from './devHours.js';
 
 const fmtBR = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 // 4.35.1+ Formato HH:MM (ex: "6h 40min") em vez de decimal "6.67h"
@@ -45,9 +45,23 @@ const CAT_COLORS = {
   implantacao:     [239, 68, 68],
 };
 
+// 4.40.28+ Cores dos módulos focados (Portal/Imagens/Roteiros)
+// Hex → RGB tuple pra jsPDF
+const hexToRgb = (h) => {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h || '');
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [128, 128, 128];
+};
+const MODULE_COLORS = Object.fromEntries(MODULES.map(m => [m.id, hexToRgb(m.color)]));
+
 /**
  * @param {Array} entries — entradas filtradas (já filtradas por status='approved' externamente)
- * @param {Object} opts   — { periodLabel, fileSuffix }
+ * @param {Object} opts   — {
+ *   periodLabel,
+ *   fileSuffix,
+ *   focus,              // 4.40.28+ 'general' (default) | 'products' (Portal/Imagens/Roteiros)
+ *   includeFullSummary, // 4.40.28+ true → renderiza summary inteiro abaixo do título
+ *   includeModuleBreakdown, // 4.40.28+ true → desenha card adicional de horas por módulo
+ * }
  */
 export const exportDevHoursPdf = withExportGuard(async function exportDevHoursPdf(entries, opts = {}) {
   await loadJsPdf();
@@ -58,11 +72,17 @@ export const exportDevHoursPdf = withExportGuard(async function exportDevHoursPd
   const periodLabel = opts.periodLabel || 'Histórico completo';
   const phaseCount   = entries.filter(e => e.entryType === 'phase').length;
   const releaseCount = entries.filter(e => e.entryType === 'release').length;
+  const focus = opts.focus === 'products' ? 'products' : 'general';
+  const isProducts = focus === 'products';
+  const includeFullSummary = opts.includeFullSummary || isProducts;
+  const includeModuleBreakdown = opts.includeModuleBreakdown || isProducts;
 
   /* ── Capa ──────────────────────────────────────────────── */
   D.drawCover({
-    title: 'Horas de Desenvolvimento',
-    subtitle: 'PRIMETOUR  ·  Sistema de Gestão de Tarefas',
+    title: isProducts ? 'Avanços em Produto' : 'Horas de Desenvolvimento',
+    subtitle: isProducts
+      ? 'PRIMETOUR · Portal de Dicas · Banco de Imagens · Gerador de Roteiros'
+      : 'PRIMETOUR  ·  Sistema de Gestão de Tarefas',
     meta: new Date().toLocaleDateString('pt-BR'),
   });
 
@@ -102,6 +122,40 @@ export const exportDevHoursPdf = withExportGuard(async function exportDevHoursPd
   const discText = wrap('Os valores refletem o tempo que um sr full-stack dev com conhecimento do codebase levaria pra entregar o mesmo escopo. Cada entrada usa metodologia transparente (bucket de complexidade x multiplicadores aplicaveis).', CW - 8, 7);
   doc.text(discText, M + 4, D.y + 9);
   D.addY(18);
+
+  /* ── 4.40.28+ Breakdown por módulo (só no modo products) ─ */
+  if (includeModuleBreakdown) {
+    const byModule = aggregateByModule(entries);
+    const totalModH = MODULES.reduce((s, m) => s + (byModule[m.id]?.hours || 0), 0) || 1;
+    D.drawSectionCard('Horas por modulo de produto', 'creditadas proporcionalmente quando entry toca varios modulos', () => {
+      const barMaxW = CW - 80;
+      for (const m of MODULES) {
+        const slot = byModule[m.id] || { hours: 0, cost: 0, count: 0, lastDate: null };
+        const pct = (slot.hours / totalModH) * 100;
+        ensureSpace(10);
+
+        // Label do módulo
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); setText(COL.text);
+        doc.text(txt(m.label), M, D.y + 4);
+
+        // Barra
+        const barX = M + 42;
+        setFill(COL.track); doc.rect(barX, D.y + 1.5, barMaxW, 3, 'F');
+        const fillW = (pct / 100) * barMaxW;
+        setFill(MODULE_COLORS[m.id]); doc.rect(barX, D.y + 1.5, fillW, 3, 'F');
+
+        // Horas + custo + entries
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); setText(COL.muted);
+        doc.text(
+          txt(`${fmtH(slot.hours)}  ·  ${fmtBR.format(slot.cost)}  ·  ${slot.count.toFixed(1)} entradas`),
+          W - M, D.y + 4, { align: 'right' }
+        );
+
+        D.addY(8);
+      }
+    });
+    D.addY(6);
+  }
 
   /* ── Resumo por categoria (barras horizontais) ─────────── */
   D.drawSectionCard('Distribuicao por categoria', 'horas absolutas e percentual do total', () => {
@@ -169,10 +223,23 @@ export const exportDevHoursPdf = withExportGuard(async function exportDevHoursPd
 
   let altRow = false;
   for (const e of sorted) {
-    const titleLines = wrap(e.title || '', CW - 78 - 40, 7.5);
-    const rowH = Math.max(7, titleLines.length * 3.2 + 4);
+    // 4.40.28+ -50 (era -40) pra dar margem maior entre fim do título e a coluna
+    // de horas — antes encavalavam visualmente em títulos longos.
+    const titleLines = wrap(e.title || '', CW - 78 - 50, 7.5);
+    // 4.40.28+ Renderiza summary completo no modo products (detalhamento exec).
+    const summaryLines = includeFullSummary && e.summary
+      ? wrap(e.summary, CW - 78 - 50, 6.5)
+      : [];
+    // Tags de módulo (só no modo products, pra etiquetar visualmente)
+    const moduleTags = includeFullSummary ? detectEntryModules(e) : [];
+    const tagsH = moduleTags.length ? 4 : 0;
+    const summaryH = summaryLines.length ? summaryLines.length * 2.6 + 2 : 0;
+    const rowH = Math.max(7, titleLines.length * 3.2 + 4 + summaryH + tagsH);
 
-    ensureSpace(rowH, () => { D.drawPageHeader('Horas de Desenvolvimento'); drawTableHeader(); });
+    ensureSpace(rowH, () => {
+      D.drawPageHeader(isProducts ? 'Avancos em Produto' : 'Horas de Desenvolvimento');
+      drawTableHeader();
+    });
 
     if (altRow) { setFill(COL.subBg); doc.rect(M, D.y, CW, rowH, 'F'); }
     altRow = !altRow;
@@ -197,6 +264,28 @@ export const exportDevHoursPdf = withExportGuard(async function exportDevHoursPd
     // Título (multi-linha)
     setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
     doc.text(titleLines, colX.title, D.y + 4.5);
+
+    // 4.40.28+ Summary (modo products) — texto cinza menor abaixo do título
+    if (summaryLines.length) {
+      const summaryY = D.y + 4.5 + titleLines.length * 3.2 + 1;
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+      doc.text(summaryLines, colX.title, summaryY);
+    }
+
+    // 4.40.28+ Module tags como chips abaixo do summary
+    if (moduleTags.length) {
+      const tagsY = D.y + 4.5 + titleLines.length * 3.2 + summaryH;
+      let tagX = colX.title;
+      for (const tagId of moduleTags) {
+        const mDef = MODULES.find(m => m.id === tagId);
+        if (!mDef) continue;
+        const tagW = (mDef.label.length * 1.5) + 4;
+        setFill(MODULE_COLORS[tagId]); doc.roundedRect(tagX, tagsY - 2.8, tagW, 3.5, 0.8, 0.8, 'F');
+        setText(COL.white); doc.setFont('helvetica', 'bold'); doc.setFontSize(5);
+        doc.text(txt(mDef.label.toUpperCase()), tagX + tagW / 2, tagsY - 0.5, { align: 'center' });
+        tagX += tagW + 2;
+      }
+    }
 
     // Horas
     setText(COL.text); doc.setFont('helvetica', 'bold'); doc.setFontSize(8);

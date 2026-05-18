@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 27,
-  build: '20260518-sso-fix-mfa-prompt-conflict',
+  patch: 28,
+  build: '20260518-dev-hours-products-tab',
 };
 
 /** "1.2.0" */

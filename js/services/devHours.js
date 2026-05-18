@@ -70,6 +70,106 @@ export const ENTRY_TYPES = [
   { value: 'phase',   label: 'Fase retroativa',   desc: 'Agregação 1.x/2.x sem prompts originais' },
 ];
 
+/**
+ * 4.40.28+ MÓDULOS DE PRODUTO
+ *
+ * Classificação opcional de entries por módulo do produto pra dashboards
+ * focados (Portal de Dicas / Banco de Imagens / Gerador de Roteiros).
+ *
+ * Entradas podem ser taggeadas explicitamente via campo `modules: string[]`,
+ * mas como a maioria das entries antigas não tem isso, oferecemos também
+ * detecção heurística via título/slug/summary — vide `detectEntryModules()`.
+ *
+ * Esses 3 módulos têm tracking dedicado porque são a frente de produto
+ * (cliente-facing/operacional) que o user usa pra reportar avanços executivos.
+ * Refactors internos / hardening / outros features ficam no track "Geral".
+ */
+export const MODULES = [
+  { id: 'roteiros', label: 'Gerador de Roteiros', color: '#D4A843', icon: '🗺',
+    desc: 'Produção de roteiros personalizados (cliente + viajantes + dias + serviços + materiais).' },
+  { id: 'portal',   label: 'Portal de Dicas',     color: '#8B5CF6', icon: '💡',
+    desc: 'Catálogo editorial de destinos, áreas e dicas reutilizáveis em materiais.' },
+  { id: 'images',   label: 'Banco de Imagens',    color: '#3B82F6', icon: '🖼',
+    desc: 'Biblioteca categorizada (Hotel, Restaurante, Destino, Trem, etc.) usada em roteiros e portal.' },
+];
+export const MODULE_MAP = Object.fromEntries(MODULES.map(m => [m.id, m]));
+
+// Padrões pra detecção heurística — somente quando entry não tem `modules`.
+// 4.40.28+ INTENCIONALMENTE só miram TÍTULO + SLUG + PHASE LABEL.
+// NÃO passamos `summary` pelo regex pq summaries têm muito vocabulário
+// genérico ("image", "roteiro" como substring em outros contextos)
+// → false positives gritantes (ex: "IA Hub vision" virava "Banco de Imagens").
+// Título + slug são curados pelo dev e refletem do que a entry É sobre.
+const MODULE_PATTERNS = {
+  // \b...s?\b cobre "roteiro" / "roteiros" (sem o `s?` o boundary
+  // não fecha quando vem o 's' no plural).
+  roteiros: /\b(roteiros?|itinerar|gerador[-_ ]?de[-_ ]?roteiros?)\b/i,
+  // Portal de DICAS especificamente (não confundir com "Portal de Solicitações")
+  portal:   /\b(portal[-_ ]?de[-_ ]?dicas?|portal[-_ ]?tips?|portal-?tips?)\b/i,
+  // Banco de Imagens — pattern restrito pra não pegar "image" genérico em IA Hub
+  images:   /\b(banco[-_ ]?de[-_ ]?imagens?|image[-_ ]?bank|portalimages|imagens?[-_ ]?(restaurante|destino|trem|hotel|bank|sticky|categoria)?)\b/i,
+};
+
+/**
+ * Retorna lista de módulos que uma entry tocou.
+ * Prioriza campo explícito `modules` (array); se vazio, usa heurística
+ * SOMENTE em title + slug + phaseLabel (summary tem muito ruído).
+ */
+export function detectEntryModules(entry) {
+  if (Array.isArray(entry.modules) && entry.modules.length) {
+    return entry.modules.filter(m => MODULE_MAP[m]);
+  }
+  const hay = [
+    entry.title || '',
+    entry.releaseSlug || '',
+    entry.phaseLabel || '',
+  ].join(' ');
+  const hits = [];
+  for (const [id, pat] of Object.entries(MODULE_PATTERNS)) {
+    if (pat.test(hay)) hits.push(id);
+  }
+  return hits;
+}
+
+/** True se a entry toca algum dos módulos listados (default: todos). */
+export function entryMatchesModules(entry, moduleIds = null) {
+  const detected = detectEntryModules(entry);
+  if (!moduleIds || !moduleIds.length) return detected.length > 0;
+  return detected.some(m => moduleIds.includes(m));
+}
+
+/** Agrega entries por módulo. Útil pro breakdown card. */
+export function aggregateByModule(entries) {
+  const acc = {};
+  for (const m of MODULES) {
+    acc[m.id] = { hours: 0, cost: 0, count: 0, lastDate: null };
+  }
+  for (const e of entries) {
+    const mods = detectEntryModules(e);
+    if (!mods.length) continue;
+    // Quando entry toca N módulos, divide o crédito (evita inflar totais)
+    const share = 1 / mods.length;
+    const dt = e.completedAt?.toDate ? e.completedAt.toDate()
+             : e.completedAt ? new Date(e.completedAt)
+             : null;
+    for (const id of mods) {
+      const slot = acc[id];
+      if (!slot) continue;
+      slot.hours += +(e.totalHours || 0) * share;
+      slot.cost  += +(e.totalCost  || 0) * share;
+      slot.count += share;
+      if (dt && (!slot.lastDate || dt > slot.lastDate)) slot.lastDate = dt;
+    }
+  }
+  // Round pra display
+  for (const id of Object.keys(acc)) {
+    acc[id].hours = +acc[id].hours.toFixed(2);
+    acc[id].cost  = +acc[id].cost.toFixed(2);
+    acc[id].count = +acc[id].count.toFixed(1);
+  }
+  return acc;
+}
+
 export const DEFAULT_MULTIPLIERS = [
   { id: 'investigation', label: 'Investigação não-trivial',  value: 0.30 },
   { id: 'migration',     label: 'Migração de dados',          value: 0.20 },
