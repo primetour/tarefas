@@ -1729,6 +1729,22 @@ function switchSection(index) {
   }
 }
 
+/**
+ * 4.41.0+ (Sprint 2) — Re-render apenas, SEM re-coletar do DOM.
+ *
+ * Handlers que modificam currentRoteiro diretamente (ex: add-trv, remove-trv,
+ * add-cprow) precisam re-renderizar a UI mas NÃO podem chamar switchSection
+ * porque ela invoca collectFormData(), que lê do DOM antigo e sobrescreve as
+ * mudanças in-memory. Use isto:
+ *
+ *   currentRoteiro.travelers.push({...});
+ *   rerenderCurrentSection();
+ */
+function rerenderCurrentSection() {
+  const content = document.getElementById('re-content-area');
+  if (content) content.innerHTML = renderSectionContent(activeSection);
+}
+
 /* ─── Generate empty days from travel data ────────────────── */
 function generateDaysFromTravel() {
   const t = currentRoteiro.travel;
@@ -1963,12 +1979,14 @@ function handleEditorClick(e) {
       break;
 
     /* ── Cost pricing rows (4.41.0+ Sprint 2) ─────────────── */
+    // IMPORTANTE: usa rerenderCurrentSection() em vez de switchSection() pra
+    // não perder o push/splice — switchSection re-coleta do DOM e sobrescreve.
     case 'add-cprow': {
       currentRoteiro = collectFormData();
       if (!currentRoteiro.costPricing) currentRoteiro.costPricing = { customRows: [] };
       if (!Array.isArray(currentRoteiro.costPricing.customRows)) currentRoteiro.costPricing.customRows = [];
       currentRoteiro.costPricing.customRows.push({ label: '', value: '' });
-      switchSection(11);
+      rerenderCurrentSection();
       markDirty();
       break;
     }
@@ -1978,7 +1996,7 @@ function handleEditorClick(e) {
       if (currentRoteiro.costPricing?.customRows) {
         currentRoteiro.costPricing.customRows.splice(idx, 1);
       }
-      switchSection(11);
+      rerenderCurrentSection();
       markDirty();
       break;
     }
@@ -1996,7 +2014,7 @@ function handleEditorClick(e) {
         doc:    '',
         notes:  isFirst ? 'Responsável' : '',
       });
-      switchSection(0);
+      rerenderCurrentSection();
       markDirty();
       break;
     }
@@ -2011,7 +2029,7 @@ function handleEditorClick(e) {
           currentRoteiro.travelers[0].isLead = true;
         }
       }
-      switchSection(0);
+      rerenderCurrentSection();
       markDirty();
       break;
     }
