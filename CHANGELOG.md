@@ -6,6 +6,125 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.8+20260518-roles-reorg-office] — 2026-05-18
+
+Release **PATCH** — Reorganização do catálogo RBAC: `office_view` movido de
+"Portal de Dicas" pro grupo renomeado "Equipe, Ausências e Presença".
+Coordenador agora tem `office_view` explícito (estava `undefined`).
+
+---
+
+## [4.49.7+20260518-destinations-bulk-import] — 2026-05-18
+
+Release **MINOR** — Bulk import de destinos via Excel (`.xlsx/.xls/.csv`)
+no Portal de Dicas. Novo componente `destinationsImport.js`: wizard
+com preview tabular (✓ novo / ⚠ duplicado / ✗ erro), dedup automático
+via slug, download de template Excel modelo, tolerância a aliases de coluna.
+Gated por `canManageDestinations()` — Analista também pode importar.
+
+---
+
+## [4.49.6+20260518-segments-categories-perm] — 2026-05-18
+
+Release **PATCH** — Nova perm `portal_segments_manage` liberada pro Analista
+(mesmo padrão de destinos). Wire em `portal.js` (saveCategories,
+saveCustomSegment, deleteCustomSegment) + `portalTipEditor.js` (botão
+"+ Novo segmento"). Propagada nos 6 roles em prod via `updateDoc`.
+
+---
+
+## [4.49.5+20260518-content-calendar-type-filter] — 2026-05-18
+
+Release **PATCH** — Calendário de Conteúdo: slots reais (do banco)
+agora respeitam filtro de tipo via task vinculada. 3 slots fantasma
+("Dia Nacional", "Dia dos Namorados", "Notícia") sumiam quando filtro
+estava ativo. `slotsForDate` + `renderListView` checam
+`visibleTaskTypes` via `_linkedTasks.get(slot.taskId).typeId`.
+
+---
+
+## [4.49.4+20260518-calendar-slot-filter-fix] — 2026-05-18
+
+Release **PATCH** — Calendar: slots virtuais respeitam filtro de tipo
+do toolbar. `getSlotsForDate(date, {typeId, sector})` recebe filtros
+em modo standard (não só pipeline). `renderDay` aplica `buildFilterFn`.
+Validado live: 300→55 cards (-82%) com filtro Newsletter.
+
+---
+
+## [4.49.3+20260518-filters-show-all-types-projects] — 2026-05-18
+
+Release **PATCH** — Filtros mostram TODOS os tipos e projetos. Removido
+filtro sector que escondia tipos no dropdown (timeline/kanban/calendar).
+Calendar usa `fetchProjects` local. `fetchProjects({allWorkspaces:true})`
+em 4 páginas pra mostrar projetos cross-squad. Listing continua filtrado
+por escopo do user.
+
+---
+
+## [4.49.2+20260518-roles-audit-destinos-perm] — 2026-05-18
+
+Release **MINOR** — Auditoria completa do catálogo RBAC + nova perm
+`portal_destinations_manage` (granular, liberada pro Analista). Wire de
+permissions órfãs: `portal_areas_view/manage`, `requests_manage`,
+`ai_skills_manage`, `ai_dashboard_view`. 3 novos helpers em store.js.
+
+---
+
+## [4.49.1+20260518-notif-deeplinks] — 2026-05-18
+
+Release **MINOR** — Notificações clicáveis com deep-link. Helper
+`deriveRouteForEntity(entityType, entityId)` deriva rota fundo: task
+→ abre modal, project → abre detalhe, goal → abre form. Suporte a 12
+entityTypes. URL params limpos via `history.replaceState`.
+
+---
+
+## [4.49.0+20260518-sprint7-tasks-filters-slots-dedup] — 2026-05-18
+
+Release **MAJOR de patch** — Sprint denso com 6 frentes:
+
+- **Item 6 (CRÍTICO)**: duplicação user SSO — firestore rule self-delete
+  pending_* por email match + cleanup retroativo em todo login (`auth.js`).
+  5 docs (Bruno, Letícia, João, Thaís, Beatriz) limpos em prod.
+- **Item 1**: coluna Tipo/Etapa vazia — lookup via `pageTaskTypes`.
+- **Item 3**: tipos sumindo no modal — removido filtro `workspaceId` em
+  `fetchTaskTypes` (8 tipos voltam).
+- **Item 2**: busca no filtro de Projetos em tasks.js (`bindOptionPicker`).
+- **Item 4**: persistência de filtros em `localStorage` por página
+  (tarefas/steps/calendario/timeline).
+- **Item 5**: Slots → Produtividade — campo `fromSlot:{typeId,slotId,date}`
+  + widget "◌ Conversão de Slots" no dashboard.
+
+---
+
+## [4.48.3+20260518-cache-loop-prevention] — 2026-05-18
+
+Release **PATCH** — Prevenção definitiva de loop pós-deploy.
+`<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">`
+em index.html + auto-reload version detector em preload.js. Browser
+sempre busca index.html fresh; se versão mudou recentemente, força
+`location.reload(true)` UMA vez pra purgar módulos cacheados.
+
+---
+
+## [4.48.2+20260518-dynamic-import-portalAreas] — 2026-05-18
+
+Release **PATCH** — `portalAreas.js` convertido pra dynamic import.
+Cascata de static imports quebrava boot quando o módulo cache stale
+falhava. Dynamic import isola a falha — `initAuthObserver` continua
+mesmo se portalAreas não carregar.
+
+---
+
+## [4.48.1+20260518-jsdoc-fix] — 2026-05-18
+
+Release **PATCH** — Fix crítico de parsing em `js/services/areaTokens.js`.
+Comentário `/* */` dentro de `/** */` gerava `SyntaxError` e travava o
+boot inteiro. Substituído por texto sem delimitadores.
+
+---
+
 ## [4.40.28+20260518-dev-hours-products-tab] — 2026-05-18
 
 Release **MINOR** — Sub-dashboard executivo de horas em "Foco em produto"
