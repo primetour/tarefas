@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 47,
-  patch: 2,
-  build: '20260518-sprint6a-topbar-footer-mapa-pt',
+  patch: 3,
+  build: '20260518-sprint6a-hero-white-servicos',
 };
 
 /** "1.2.0" */
