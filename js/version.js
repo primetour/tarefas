@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 24,
-  build: '20260518-observer-filter-ux-counter',
+  patch: 25,
+  build: '20260518-assignee-observer-union-avatar-fix',
 };
 
 /** "1.2.0" */

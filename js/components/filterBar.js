@@ -83,22 +83,25 @@ function areaOpts() {
   }
   return list.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
 }
+// 4.40.25+ Padroniza avatar com perfil do user: avatarColor (cor escolhida
+// em Perfil → Aparência) substitui hashColor. Antes, picker mostrava cor
+// hash-derivada diferente do avatar real do user, causando confusão visual.
 function assigneeOpts(users) {
   return users.map(u => ({
     id: u.id,
     label: u.name || u.email || 'Usuário',
     icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
-    color: hashColor(u.id || u.email || u.name || ''),
+    color: u.avatarColor || hashColor(u.id || u.email || u.name || ''),
   }));
 }
-// 4.40.13+ Observer options — mesma lista de users, ícone 👁 + cor azul
-// (consistente com /tasks 4.40.11). Identidade visual distinta de assignee.
+// 4.40.13+ Observer options — mesma lista de users, ícone como inicial +
+// cor do avatar (consistente com assignee picker em 4.40.25+).
 function observerOpts(users) {
   return users.map(u => ({
     id: u.id,
     label: u.name || u.email || 'Usuário',
-    icon: '👁',
-    color: '#0EA5E9',
+    icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+    color: u.avatarColor || hashColor(u.id || u.email || u.name || ''),
   }));
 }
 const statusOpts = () => STATUS_OPTIONS.map(s => ({ id: s.value, label: s.label, icon: '', color: s.color }));
@@ -395,24 +398,30 @@ export function buildFilterFn(state = {}) {
     if (state.type     && task.typeId          !== state.type)                    return false;
     if (state.project  && task.projectId       !== state.project)                 return false;
     if (state.area     && task.requestingArea  !== state.area)                    return false;
-    // assignee: pode ser string (legacy) ou string[] (multi-select 4.21+).
-    // Multi: passa se a tarefa tem AO MENOS UM dos responsáveis selecionados.
-    if (state.assignee) {
-      const want = Array.isArray(state.assignee) ? state.assignee : [state.assignee];
-      if (want.length > 0) {
-        const taskAssignees = task.assignees || [];
-        const hasAny = want.some(uid => taskAssignees.includes(uid));
-        if (!hasAny) return false;
-      }
-    }
-    // 4.40.13+ observer: mesma lógica do assignee. Multi: passa se a tarefa
-    // tem AO MENOS UM dos observadores selecionados em t.observers[].
-    if (state.observer) {
-      const want = Array.isArray(state.observer) ? state.observer : [state.observer];
-      if (want.length > 0) {
-        const taskObservers = task.observers || [];
-        const hasAny = want.some(uid => taskObservers.includes(uid));
-        if (!hasAny) return false;
+    // 4.40.25+ COMBINAÇÃO assignee + observer: UNION quando ambos têm
+    // seleção (task passa se assignee match OR observer match). Quando só
+    // um dos dois tem seleção, comporta como filtro único (mesma semântica
+    // que /tasks já aplica desde 4.40.25+).
+    // Antes (4.40.13–24): AND independente, criando intersecção restritiva.
+    const wantAssignee = state.assignee
+      ? (Array.isArray(state.assignee) ? state.assignee : [state.assignee])
+      : [];
+    const wantObserver = state.observer
+      ? (Array.isArray(state.observer) ? state.observer : [state.observer])
+      : [];
+    const hasA = wantAssignee.length > 0;
+    const hasO = wantObserver.length > 0;
+    if (hasA || hasO) {
+      const ta = Array.isArray(task.assignees) ? task.assignees : [];
+      const to = Array.isArray(task.observers) ? task.observers : [];
+      const matchA = hasA && wantAssignee.some(uid => ta.includes(uid));
+      const matchO = hasO && wantObserver.some(uid => to.includes(uid));
+      if (hasA && hasO) {
+        if (!(matchA || matchO)) return false;
+      } else if (hasA) {
+        if (!matchA) return false;
+      } else {
+        if (!matchO) return false;
       }
     }
     if (state.status   && task.status          !== state.status)                  return false;

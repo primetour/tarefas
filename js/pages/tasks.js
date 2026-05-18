@@ -297,6 +297,8 @@ export async function renderTasks(container) {
         data-multi-key="assignee">
         ${(() => {
           // 4.21+ multi-select. filterAssignee pode ser '' | string | string[].
+          // 4.40.25+ Usa u.avatarColor (consistente com avatar do user no app)
+          // \u2014 antes cor hardcoded #6366F1 n\u00e3o batia com perfil real.
           const ids = Array.isArray(filterAssignee)
             ? filterAssignee
             : (filterAssignee ? [filterAssignee] : []);
@@ -304,7 +306,7 @@ export async function renderTasks(container) {
           const selectedItems = ids.map(id => {
             const u = users.find(x => x.id === id);
             return u ? { id: u.id, label: u.name, icon: (u.name||'?').charAt(0).toUpperCase(),
-                         color: '#6366F1' } : null;
+                         color: u.avatarColor || '#6366F1' } : null;
           }).filter(Boolean);
           return renderMultiPickerButton({
             btnId: 'filter-assignee-btn',
@@ -319,14 +321,16 @@ export async function renderTasks(container) {
       <div class="toolbar-filter-wrap" style="${filterVisibility.observer?'':'display:none;'}min-width:180px;"
         data-multi-key="observer">
         ${(() => {
+          // 4.40.25+ Usa u.avatarColor + inicial do nome (igual ao assignee),
+          // mantendo apenas o \u00edcone \ud83d\udc41 no emptyLabel pra diferenciar contexto.
           const ids = Array.isArray(filterObserver)
             ? filterObserver
             : (filterObserver ? [filterObserver] : []);
           const users = (store.get('users')||[]).filter(u => u.active);
           const selectedItems = ids.map(id => {
             const u = users.find(x => x.id === id);
-            return u ? { id: u.id, label: u.name, icon: '\ud83d\udc41',
-                         color: '#0EA5E9' } : null;
+            return u ? { id: u.id, label: u.name, icon: (u.name||'?').charAt(0).toUpperCase(),
+                         color: u.avatarColor || '#0EA5E9' } : null;
           }).filter(Boolean);
           return renderMultiPickerButton({
             btnId: 'filter-observer-btn',
@@ -918,29 +922,35 @@ function applyFilters() {
   if (filterCompletedNoDueDate) {
     result = result.filter(t => t.status === 'done' && !t.dueDate);
   }
-  // 4.40.11+ Observador: aceita '' (none), string (single legacy/deep-link)
-  // ou string[] (multi-select). Tarefa passa se QUALQUER um dos observadores
-  // selecionados estiver em t.observers (OR, igual ao assignee).
-  if (filterObserver) {
-    const want = Array.isArray(filterObserver) ? filterObserver : [filterObserver];
-    if (want.length > 0) {
-      result = result.filter(t => {
-        const obs = Array.isArray(t.observers) ? t.observers : [];
-        return want.some(uid => obs.includes(uid));
-      });
-    }
-  }
   if (filterPriority) result = result.filter(t => t.priority === filterPriority);
   if (filterProject)  result = result.filter(t => t.projectId === filterProject);
-  // assignee: pode ser '' (none), string (single legacy/deep-link), ou string[] (multi).
-  if (filterAssignee) {
-    const want = Array.isArray(filterAssignee) ? filterAssignee : [filterAssignee];
-    if (want.length > 0) {
-      result = result.filter(t => {
-        const ta = t.assignees || [];
-        return want.some(uid => ta.includes(uid));
-      });
-    }
+
+  // 4.40.25+ COMBINAÇÃO assignee + observer:
+  // - Só assignee selecionado → task passa se assignees match (AND com demais)
+  // - Só observer selecionado → task passa se observers match
+  // - AMBOS selecionados → task passa se assignees match OR observers match (UNION)
+  // Antes (4.40.11–24): os 2 eram aplicados como AND independente, criando
+  // intersecção restritiva (task precisava ser ambos atribuída E observada
+  // por algum dos selecionados — quase zero matches reais).
+  const wantAssignee = filterAssignee
+    ? (Array.isArray(filterAssignee) ? filterAssignee : [filterAssignee])
+    : [];
+  const wantObserver = filterObserver
+    ? (Array.isArray(filterObserver) ? filterObserver : [filterObserver])
+    : [];
+  const hasA = wantAssignee.length > 0;
+  const hasO = wantObserver.length > 0;
+  if (hasA || hasO) {
+    result = result.filter(t => {
+      const ta = Array.isArray(t.assignees) ? t.assignees : [];
+      const to = Array.isArray(t.observers) ? t.observers : [];
+      const matchA = hasA && wantAssignee.some(uid => ta.includes(uid));
+      const matchO = hasO && wantObserver.some(uid => to.includes(uid));
+      // UNION quando ambos têm seleção; senão usa apenas o lado que está ativo
+      if (hasA && hasO) return matchA || matchO;
+      if (hasA) return matchA;
+      return matchO;
+    });
   }
   if (filterArea)     result = result.filter(t => t.requestingArea === filterArea);
   if (filterTag)      result = result.filter(t => (t.tags || []).includes(filterTag));
@@ -1654,14 +1664,16 @@ function _attachPageEvents() {
     findSelected: findArea,
     emptyLabel: 'Todas as áreas',
   });
-  // Inicial do nome como ícone, cor estável via hash do id do usuário
+  // 4.40.25+ Padroniza avatar com perfil do user: avatarColor (cor escolhida
+  // pelo user em Perfil → Aparência) substitui hashColor. Antes, picker
+  // mostrava cor hash-derivada diferente da cor do avatar do user no app.
   const assigneeOpts = () => (store.get('users') || [])
     .filter(u => u.active)
     .map(u => ({
       id: u.id,
       label: u.name || u.email || 'Usuário',
       icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
-      color: hashColor(u.id || u.email || u.name || ''),
+      color: u.avatarColor || hashColor(u.id || u.email || u.name || ''),
     }));
   // 4.21+ — assignee é multi-select. Usa bindMultiOptionPicker; o estado
   // (filterAssignee) é a single source of truth (sem hidden <select>).
@@ -1703,16 +1715,17 @@ function _attachPageEvents() {
       const users = (store.get('users') || []).filter(u => u.active);
       // Sort: quem tem mais tasks primeiro; users sem observers vão pro fim
       // mas continuam visíveis (decisão consciente — user pode querer adicionar).
+      // 4.40.25+ Padroniza avatar com perfil: icon=inicial + color=avatarColor.
+      // Contagem entra como sublabel pra não poluir o nome.
       return users
         .map(u => {
           const count = obsCountByUid[u.id] || 0;
           return {
             id: u.id,
-            label: count > 0
-              ? `${u.name || u.email || 'Usuário'} (${count})`
-              : `${u.name || u.email || 'Usuário'} (sem)`,
-            icon: count > 0 ? '👁' : '○',
-            color: count > 0 ? '#0EA5E9' : '#9CA3AF',
+            label: u.name || u.email || 'Usuário',
+            sublabel: count > 0 ? `${count} task${count>1?'s':''}` : 'sem',
+            icon: (u.name || u.email || '?').trim().charAt(0).toUpperCase(),
+            color: u.avatarColor || (count > 0 ? '#0EA5E9' : '#9CA3AF'),
             _obsCount: count, // marker pra sort
           };
         })
