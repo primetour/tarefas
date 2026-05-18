@@ -96,6 +96,8 @@ import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.2/fir
 import { getFirestore, doc, getDoc, getDocs, collection, query, orderBy, updateDoc, increment } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig }   from './js/config.js';
 import { applyPortalTheme } from './js/services/portalTokens.js';
+// 4.48.0+ (Sprint 6b/c) — areaTokens é o SSO de identidade. Aplica fonts + chrome.
+import { applyAreaTheme } from './js/services/areaTokens.js';
 
 const MONTHS=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 // 4.40.18+ Defaults (mode incluído pra dispatch). SEGMENTS é `let` —
@@ -157,6 +159,14 @@ const db=getFirestore(app);
   // aliases legados (--gold/--navy) são derivados automaticamente
   // em css/portal-tokens.css.
   applyPortalTheme({ colors: data.colors || {} });
+  // 4.48.0+ Aplica tokens completos (fonts + editorial) com module='portal'
+  // pra honrar overrides específicos do Portal de Dicas se houver.
+  applyAreaTheme({
+    colors: data.colors || {},
+    fonts: data.fonts || null,
+    editorial: data.editorial || null,
+    modules: data.modules || null,
+  }, 'portal');
   // Logo: header tem fundo BRANCO → usa logoUrlAlt (versão escura/colorida).
   //       footer tem fundo ESCURO → usa logoUrl (versão branca).
   // Se só houver um dos dois, usa o disponível em ambos os lugares.

@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 47,
-  patch: 3,
-  build: '20260518-sprint6a-hero-white-servicos',
+  minor: 48,
+  patch: 0,
+  build: '20260518-sprint6bc-area-tokens-sso',
 };
 
 /** "1.2.0" */

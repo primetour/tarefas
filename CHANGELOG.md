@@ -426,6 +426,92 @@ web ativado) vão reusar `fetchImgData`, lazy loaders e o token system.
 
 ---
 
+## [4.48.0+20260518-sprint6bc-area-tokens-sso] — 2026-05-18
+
+Release **MINOR** — Sprint 6b+c: templates de áreas evoluídos como SSO de
+identidade editorial. Resolve pedido do user:
+
+> "vamos ter que trabalhar com bastante racional nessa parte, pra criar
+> uma área de templates de areas que abasteça esses módulos de forma
+> consistente, editável e escalável"
+
+### Schema `portal_areas` expandido (backward-compatible)
+
+```js
+portal_areas/{id} = {
+  // legacy (mantido)
+  name, logoUrl, logoUrlAlt, colors: { primary, secondary },
+
+  // 4.48.0+ NEW
+  fonts: {
+    headline:    'Poppins'|'Cormorant Garamond'|'Playfair'|'Inter'|...,
+    body:        'Poppins'|'Inter'|'Outfit'|...,
+    accentScale: 'compact'|'normal'|'expressive',
+  },
+  editorial: {
+    voice:        'formal'|'caloroso'|'editorial-luxo',
+    sectionStyle: 'minimalista'|'revista'|'documento',
+    coverStyle:   'fullbleed'|'centered'|'side-image',
+    chromeAccent: 'white'|'gold-on-dark'|'primary',  // cor overlines/lines no hero
+  },
+  modules: {
+    portal:   { /* overrides Portal de Dicas */ },
+    roteiros: { /* overrides Roteiros */ },
+  },
+}
+```
+
+### Novo `js/services/areaTokens.js` — SSO
+
+- `resolveAreaTokens(area, moduleKey)` — merge defaults + module overrides
+- `applyAreaTheme(area, moduleKey)` — injeta CSS vars no `<html>`:
+  - `--area-primary/secondary` (+ `-rgb` para alpha)
+  - `--area-font-headline/body` (auto-load Google Fonts)
+  - `--area-chrome-accent` (white/gold/primary)
+  - Compat legacy: `--portal-primary/secondary`
+- Catálogos: `SUPPORTED_HEADLINE_FONTS` (6 opções), `SUPPORTED_BODY_FONTS` (5)
+
+### UI `/portal-areas` reorganizada com tabs
+
+Modal de área agora tem 4 abas:
+1. **🎨 Marca** — campos legacy (nome, categoria, logos, cores, descrição)
+2. **🔤 Tipografia** — headline + body (dropdown c/ 6+5 opções) + escala +
+   preview LIVE da fonte selecionada (auto-load Google Fonts on change)
+3. **📝 Editorial** — voice/sectionStyle/coverStyle/chromeAccent como
+   radios grandes c/ descrição
+4. **⚙ Por módulo** — overrides específicos pra Portal/Roteiros (accordion
+   collapsible; vazio = herda defaults)
+
+### Consumers wired
+
+- **`portal-view.html`**: importa `applyAreaTheme`, chama com
+  `moduleKey: 'portal'` — honra overrides do Portal de Dicas
+- **`roteiro-view.html`**: lazy-import + `moduleKey: 'roteiros'`. Substitui
+  hack legacy de `setProperty('--gold', area.colors.primary)` (que
+  pintava chrome do hero de azul quando primary era azul).
+- **CSS roteiro**: `body{font-family:var(--area-font-body)}`,
+  `h1/h2/h3{font-family:var(--area-font-headline)}`, `.hero-overline{color:var(--area-chrome-accent)}`
+  com fallback Poppins. Mudança em uma área → renderiza em TODOS formatos.
+
+### Decoupling de identidade vs chrome
+
+ANTES: overline/lines no hero usavam `var(--gold)` que era sobrescrito por
+`area.colors.primary` via `setProperty`. BU com primary azul-marinho
+deixava overline ilegível no hero escuro.
+
+AGORA: chrome do hero (overlines, lines decorativas) usa
+`--area-chrome-accent` (default `#fff`) — independente da brand color.
+Brand color continua aplicada em CTAs, badges e detalhes onde faz sentido.
+
+### Próximos passos (futuros)
+
+- PDF/PPTX/DOCX generators consumirem `fonts.headline/body` via PDF_TOKENS
+  (já preparado em portalTokens — só plumar)
+- Editorial `sectionStyle` afetando layout (minimalista vs revista vs documento)
+- Editorial `voice` aplicado em micro-copy (CTAs, mensagens)
+
+---
+
 ## [4.41.0+20260518-roteiros-sprint2-schema-evolution] — 2026-05-18
 
 Release **MINOR** — Sprint 2 do refactor de Roteiros: schema evolution
