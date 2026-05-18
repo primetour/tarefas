@@ -1006,5 +1006,18 @@ service cloud.firestore {
     match /btg_ofertas_dev/{docId} {
       allow read, write: if true;
     }
+
+    // ── BTG Portal Images (DEV/STAGING) ──────────────────────
+    // Banco de imagens de teste pra o picker do BTG (Fase 2.1).
+    // Reusa o schema da coleção real `portal_images` (Portal de
+    // Dicas) — assim quando migrar pra produção, é só apontar
+    // pra `portal_images` em vez de `portal_images_dev`.
+    // Sample populado via btg/_internal/seed-portal-images-dev.html
+    // com 12 imagens curadas de hoteis premium.
+    // Mesma postura permissiva do btg_ofertas_dev (justificativas
+    // identicas — staging isolado, sem PII).
+    match /portal_images_dev/{docId} {
+      allow read, write: if true;
+    }
   }
 }
