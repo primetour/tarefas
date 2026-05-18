@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 48,
-  patch: 1,
-  build: '20260518-sprint6bc-fix-jsdoc',
+  patch: 2,
+  build: '20260518-fix-auth-loop-dynamic-import',
 };
 
 /** "1.2.0" */
