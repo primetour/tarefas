@@ -406,13 +406,16 @@ function renderEmbeddedTipsSection() {
   `;
 }
 
-/* ── 11: Avançado (4.41.0+ Sprint 2) ──────────────────────── */
+/* ── 12: Avançado (4.41.0+ Sprint 2) ──────────────────────── */
 function renderAdvancedSection() {
   const r = currentRoteiro;
   const colabIds = Array.isArray(r.collaboratorIds) ? r.collaboratorIds : [];
   const workflowMode = r.workflowMode === 'offline' ? 'offline' : 'system';
   const canViewCost = store.can?.('roteiro_view_cost') || store.isMaster?.() || false;
   const cp = r.costPricing || { perPerson: null, perCouple: null, currency: 'USD', notes: '', customRows: [] };
+  // 4.43.0+ Sprint 4 — tarefas vinculadas
+  const linkedTaskIds = Array.isArray(r.linkedTaskIds) ? r.linkedTaskIds : [];
+  const tasksGeneratedAt = r.tasksGeneratedAt;
 
   // Lista de users elegíveis pra colaboradores (todos com roteiro_create — outros consultores)
   const allUsers = (store.get('users') || []).filter(u => u.active !== false && u.id !== r.consultantId);
@@ -542,6 +545,38 @@ function renderAdvancedSection() {
         <br><span style="font-size:0.7rem;">Solicite ao admin a permissão <code>roteiro_view_cost</code>.</span>
       </div>
     `}
+
+    <!-- 4.43.0+ Sprint 4: Tarefas vinculadas -->
+    <div class="re-form-group" style="margin-top:32px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <label class="re-label" style="margin:0;">🔗 Tarefas operacionais vinculadas</label>
+        ${linkedTaskIds.length > 0 || tasksGeneratedAt
+          ? `<button class="re-add-btn" data-action="regenerate-tasks" style="margin:0;font-size:0.75rem;padding:4px 10px;">↻ Re-sincronizar</button>`
+          : (r.status === 'approved' && workflowMode === 'system' && r.id
+              ? `<button class="re-add-btn" data-action="generate-tasks" style="margin:0;font-size:0.75rem;padding:4px 10px;">+ Gerar agora</button>`
+              : '')}
+      </div>
+      <div style="background:var(--bg-soft);border-left:3px solid var(--brand-gold);padding:8px 12px;
+        border-radius:4px;font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">
+        Quando o roteiro é <strong>aprovado</strong> no modo "via sistema", são geradas tarefas operacionais
+        automaticamente: reservar voos, confirmar hotéis, transfers, seguro, materiais e vouchers.
+        Cada tarefa tem deadline calculada a partir do início da viagem.
+      </div>
+      ${linkedTaskIds.length
+        ? `<div id="re-linked-tasks-list" style="min-height:40px;">
+            <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+              Carregando ${linkedTaskIds.length} tarefa(s)...
+            </div>
+          </div>`
+        : `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:0.8125rem;
+            background:var(--bg-soft);border:1px dashed var(--border);border-radius:8px;">
+            ${r.status === 'approved' && workflowMode === 'system'
+              ? 'Nenhuma tarefa gerada ainda. Clique "+ Gerar agora" pra criar as operacionais.'
+              : workflowMode === 'offline'
+                ? '⚙ Modo offline — sistema não gera tarefas automaticamente.'
+                : 'Tarefas serão geradas quando o roteiro for aprovado (em modo "via sistema").'}
+          </div>`}
+    </div>
   `;
 }
 
@@ -1194,6 +1229,83 @@ function renderImagensSection() {
       ${hotelRows}
     </div>
   `;
+}
+
+/**
+ * 4.43.0+ (Sprint 4) — Carrega tarefas vinculadas async e popula a lista
+ * na seção Avançado. Chamado via queueMicrotask após render.
+ *
+ * Mostra: título + status (badge colorida) + dueDate + ícone da operação.
+ * Click numa task abre #tasks?focus={taskId} (deep link no módulo de tarefas).
+ */
+async function populateLinkedTasksList(taskIds) {
+  const listEl = document.getElementById('re-linked-tasks-list');
+  if (!listEl || !taskIds?.length) return;
+  try {
+    const { fetchLinkedTasksLite, calcLinkedTasksProgress } = await import('../services/roteiroTasks.js');
+    const tasks = await fetchLinkedTasksLite(taskIds);
+    if (!tasks.length) {
+      listEl.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+        Tarefas vinculadas foram excluídas ou são inacessíveis.
+      </div>`;
+      return;
+    }
+    const progress = calcLinkedTasksProgress(tasks);
+    const STATUS_COLORS = {
+      not_started: { bg: '#94A3B8', text: 'Não iniciada' },
+      in_progress: { bg: '#3B82F6', text: 'Em andamento' },
+      done:        { bg: '#10B981', text: 'Concluída' },
+      blocked:     { bg: '#EF4444', text: 'Bloqueada' },
+      pending:     { bg: '#F59E0B', text: 'Pendente' },
+    };
+    const OP_ICONS = {
+      voos: '✈',  hotel: '🏨',  transfers: '🚐',
+      seguro: '🛡', materiais: '📦', vouchers: '🎟',
+    };
+    // Sort: done last, others by dueDate asc
+    const sorted = [...tasks].sort((a, b) => {
+      if (a.status === 'done' && b.status !== 'done') return 1;
+      if (b.status === 'done' && a.status !== 'done') return -1;
+      return (a.dueDate || '').localeCompare(b.dueDate || '');
+    });
+    const rowsHTML = sorted.map(t => {
+      const status = STATUS_COLORS[t.status] || STATUS_COLORS.not_started;
+      const icon = OP_ICONS[t.operation] || '📋';
+      const dueLabel = t.dueDate ? new Date(t.dueDate + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+      const isOverdue = t.dueDate && t.status !== 'done' && new Date(t.dueDate + 'T23:59:59') < new Date();
+      // Strip prefix "[Roteiro] ..." pra título mais compacto
+      const cleanTitle = (t.title || '').replace(/^\[Roteiro\][^—]+ — /, '');
+      return `<a href="#tasks?focus=${esc(t.id)}" target="_blank" rel="noopener"
+          style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);
+            border-radius:6px;margin-bottom:6px;background:var(--bg-card);text-decoration:none;color:inherit;
+            transition:background .15s;"
+          onmouseover="this.style.background='var(--bg-soft)'" onmouseout="this.style.background='var(--bg-card)'">
+        <span style="font-size:1.1rem;flex-shrink:0;">${icon}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.875rem;font-weight:500;${t.status==='done'?'text-decoration:line-through;color:var(--text-muted);':''}">${esc(cleanTitle || t.title)}</div>
+          <div style="font-size:0.7rem;color:${isOverdue?'#EF4444':'var(--text-muted)'};margin-top:2px;">
+            ${isOverdue?'⚠ ':''}Prazo: ${esc(dueLabel)}
+          </div>
+        </div>
+        <span style="font-size:0.7rem;font-weight:600;background:${status.bg};color:white;
+          padding:3px 10px;border-radius:99px;flex-shrink:0;">${status.text}</span>
+      </a>`;
+    }).join('');
+    listEl.innerHTML = `
+      <div style="margin-bottom:10px;display:flex;align-items:center;gap:12px;font-size:0.8125rem;color:var(--text-secondary);">
+        <span style="font-weight:600;">${progress.label}</span>
+        <div style="flex:1;height:6px;background:#F3F4F6;border-radius:99px;overflow:hidden;">
+          <div style="width:${progress.pct}%;height:100%;background:var(--brand-gold);transition:width .3s;"></div>
+        </div>
+        <span style="font-variant-numeric:tabular-nums;color:var(--text-muted);">${progress.pct}%</span>
+      </div>
+      ${rowsHTML}
+    `;
+  } catch (err) {
+    listEl.innerHTML = `<div style="padding:16px;text-align:center;color:#EF4444;font-size:0.8125rem;">
+      Erro ao carregar: ${esc(err.message)}
+    </div>`;
+  }
 }
 
 /**
@@ -1917,6 +2029,10 @@ function sanitizeForSave(data) {
 /* ─── Save logic ──────────────────────────────────────────── */
 async function handleSave() {
   try {
+    // 4.43.0+ (Sprint 4) — captura status PRÉVIO pra detectar transição
+    // pra 'approved' depois do save (trigger de geração de tarefas).
+    const prevStatus = currentRoteiro?.status;
+
     currentRoteiro = collectFormData();
     // 4.40.31+ Sanitização centralizada (B04-B07).
     const sanitized = sanitizeForSave(currentRoteiro);
@@ -1938,10 +2054,64 @@ async function handleSave() {
 
     if (indicator) indicator.textContent = 'Salvo';
     showToast('Roteiro salvo com sucesso!', 'success');
+
+    // 4.43.0+ (Sprint 4) — TRIGGER: se status virou 'approved' agora E
+    // workflowMode='system' E ainda não tem tasks geradas, oferece gerar.
+    // Roda DEPOIS do save (não bloqueia) e DEPOIS do toast de sucesso.
+    if (
+      sanitized.status === 'approved' &&
+      prevStatus !== 'approved' &&
+      sanitized.workflowMode !== 'offline' &&
+      !sanitized.tasksGeneratedAt &&
+      currentRoteiro.id
+    ) {
+      maybeOfferTaskGeneration(currentRoteiro.id);
+    }
   } catch (err) {
     const indicator = document.getElementById('re-autosave-status');
     if (indicator) indicator.textContent = 'Erro ao salvar';
     showToast('Erro ao salvar: ' + err.message, 'error');
+  }
+}
+
+/**
+ * 4.43.0+ (Sprint 4) — Oferece gerar tarefas operacionais via confirm().
+ * Não-bloqueante: roda async sem await no callsite.
+ */
+async function maybeOfferTaskGeneration(roteiroId) {
+  // Conta quantas tarefas seriam criadas (baseado no template) pra dar
+  // ao user uma noção concreta antes de aprovar.
+  const hotels = currentRoteiro.hotels?.length || 0;
+  // Fixed: voos + transfers + seguro + materiais + vouchers = 5
+  // Plus 1 por hotel
+  const estimated = 5 + hotels;
+
+  const userConfirmed = confirm(
+    `Roteiro aprovado!\n\n` +
+    `Quer gerar ${estimated} tarefas operacionais agora?\n` +
+    `(reservar voos, confirmar ${hotels} hotel(éis), transfers, seguro, materiais, vouchers)\n\n` +
+    `As datas vão ser calculadas automaticamente a partir do início da viagem.`
+  );
+  if (!userConfirmed) return;
+
+  try {
+    const { generateOperationalTasksForRoteiro } = await import('../services/roteiroTasks.js');
+    const result = await generateOperationalTasksForRoteiro(roteiroId);
+    if (result.skippedReason === 'workflow-offline') {
+      showToast('Modo offline — tarefas não foram geradas.', 'info');
+      return;
+    }
+    showToast(`${result.created} tarefa(s) gerada(s) com sucesso.`, 'success');
+    // Re-fetch roteiro pra atualizar linkedTaskIds em memória
+    try {
+      const fresh = await fetchRoteiro(roteiroId);
+      currentRoteiro.linkedTaskIds = fresh.linkedTaskIds || [];
+      currentRoteiro.tasksGeneratedAt = fresh.tasksGeneratedAt || null;
+      // Se user está na seção Avançado, re-renderiza pra mostrar a lista
+      if (activeSection === 12) rerenderCurrentSection();
+    } catch (_) { /* non-blocking */ }
+  } catch (err) {
+    showToast('Erro ao gerar tarefas: ' + err.message, 'error');
   }
 }
 
@@ -1976,6 +2146,12 @@ function switchSection(index) {
   if (content) {
     content.innerHTML = renderSectionContent(index);
   }
+
+  // 4.43.0+ (Sprint 4) — popula lista de tarefas vinculadas async
+  // após render da seção Avançado (12). Não-bloqueante.
+  if (index === 12 && Array.isArray(currentRoteiro?.linkedTaskIds) && currentRoteiro.linkedTaskIds.length) {
+    queueMicrotask(() => populateLinkedTasksList(currentRoteiro.linkedTaskIds));
+  }
 }
 
 /**
@@ -1992,6 +2168,10 @@ function switchSection(index) {
 function rerenderCurrentSection() {
   const content = document.getElementById('re-content-area');
   if (content) content.innerHTML = renderSectionContent(activeSection);
+  // 4.43.0+ (Sprint 4) — também popula tasks list quando re-renderiza Avançado.
+  if (activeSection === 12 && Array.isArray(currentRoteiro?.linkedTaskIds) && currentRoteiro.linkedTaskIds.length) {
+    queueMicrotask(() => populateLinkedTasksList(currentRoteiro.linkedTaskIds));
+  }
 }
 
 /* ─── Generate empty days from travel data ────────────────── */
@@ -2226,6 +2406,34 @@ function handleEditorClick(e) {
       switchSection(5);
       markDirty();
       break;
+
+    /* ── Linked tasks (4.43.0+ Sprint 4) ──────────────────── */
+    case 'generate-tasks':
+    case 'regenerate-tasks': {
+      if (!currentRoteiro.id) {
+        showToast('Salve o roteiro antes de gerar tarefas.', 'warning');
+        break;
+      }
+      if (isDirty) await handleSave();
+      showToast('Gerando tarefas operacionais...', 'info');
+      try {
+        const { generateOperationalTasksForRoteiro } = await import('../services/roteiroTasks.js');
+        const result = await generateOperationalTasksForRoteiro(currentRoteiro.id);
+        if (result.skippedReason === 'workflow-offline') {
+          showToast('Modo offline — tarefas não foram geradas.', 'info');
+          break;
+        }
+        showToast(`${result.created} nova(s) tarefa(s) criada(s). ${result.skipped} já existiam.`, 'success');
+        // Re-fetch + re-render
+        const fresh = await fetchRoteiro(currentRoteiro.id);
+        currentRoteiro.linkedTaskIds = fresh.linkedTaskIds || [];
+        currentRoteiro.tasksGeneratedAt = fresh.tasksGeneratedAt || null;
+        rerenderCurrentSection();
+      } catch (err) {
+        showToast('Erro: ' + err.message, 'error');
+      }
+      break;
+    }
 
     /* ── Embedded tips (4.42.0+ Sprint 3) ─────────────────── */
     case 'open-tip-picker': {

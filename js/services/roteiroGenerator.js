@@ -317,6 +317,9 @@ export function stripInternalFields(roteiro) {
   // Internals operacionais
   delete out.collaboratorIds;
   delete out.workflowMode;
+  // 4.43.0+ Sprint 4 — tarefas vinculadas são internals (operacional)
+  delete out.linkedTaskIds;
+  delete out.tasksGeneratedAt;
   // Metadata de IA
   delete out.aiPrompt;
   delete out.aiSources;

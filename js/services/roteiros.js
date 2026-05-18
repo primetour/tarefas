@@ -143,6 +143,20 @@ export function emptyRoteiro() {
       customRows: [],  // { label, value }
     },
 
+    /* 4.43.0+ (Sprint 4) — Integração com módulo de tarefas.
+     *
+     * Quando o roteiro é APROVADO (status: 'approved') e workflowMode='system',
+     * o sistema gera automaticamente N tarefas operacionais (reservar voos,
+     * confirmar hotéis, organizar transfers, emitir vouchers, etc.).
+     *
+     * `linkedTaskIds[]`: IDs gerados pra rastreabilidade bidirecional
+     *                    (cada task tem `roteiroId` apontando de volta).
+     * `tasksGeneratedAt`: timestamp da PRIMEIRA geração (idempotente). Re-gerar
+     *                     com IDs determinísticos não cria duplicatas.
+     */
+    linkedTaskIds: [],
+    tasksGeneratedAt: null,
+
     /* 4.42.0+ (Sprint 3) — Dicas anexas do Portal de Dicas.
      *
      * Cada item armazena um SNAPSHOT do conteúdo da dica no momento do
@@ -351,6 +365,10 @@ function migrateRoteiroOnRead(doc) {
 
   // 4.42.0+ (Sprint 3) embeddedTips: garantir array
   if (!Array.isArray(out.embeddedTips)) out.embeddedTips = [];
+
+  // 4.43.0+ (Sprint 4) linkedTaskIds + tasksGeneratedAt
+  if (!Array.isArray(out.linkedTaskIds)) out.linkedTaskIds = [];
+  if (out.tasksGeneratedAt === undefined) out.tasksGeneratedAt = null;
 
   return out;
 }
@@ -582,6 +600,9 @@ function stripInternalForPublicLink(roteiro) {
   out.costPricing = { perPerson: null, perCouple: null, currency: 'USD', notes: '', customRows: [] };
   delete out.collaboratorIds;
   delete out.workflowMode;
+  // 4.43.0+ Sprint 4 — tarefas vinculadas são internals (operacional)
+  delete out.linkedTaskIds;
+  delete out.tasksGeneratedAt;
   delete out.aiPrompt;
   delete out.aiSources;
   delete out.aiProvider;

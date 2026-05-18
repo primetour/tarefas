@@ -465,13 +465,22 @@ export async function renderRoteiros(container) {
       const period = fmtDateRange(r.travel) || '—';
       const isArchived = r.status === 'archived';
       const idEsc = esc(r.id);
+      // 4.43.0+ Sprint 4 — indicador de tarefas vinculadas
+      const taskCount = Array.isArray(r.linkedTaskIds) ? r.linkedTaskIds.length : 0;
+      const tasksBadge = taskCount > 0
+        ? `<span title="${taskCount} tarefa(s) operacional(is) vinculada(s)"
+            style="display:inline-flex;align-items:center;gap:3px;margin-left:8px;
+              font-size:0.7rem;font-weight:600;color:var(--brand-gold);
+              background:rgba(212,168,67,.12);padding:2px 7px;border-radius:99px;
+              vertical-align:middle;">🔗 ${taskCount}</span>`
+        : '';
 
       return `
         <tr data-id="${idEsc}">
           <td style="white-space:nowrap;">${statusBadge(r.status)}</td>
           <td class="title-cell ellipsis">
             <a href="#roteiro-editor?id=${idEsc}" data-action="edit" data-id="${idEsc}"
-              title="${esc(r.title || 'Sem título')}">${esc(r.title || 'Sem título')}</a>
+              title="${esc(r.title || 'Sem título')}">${esc(r.title || 'Sem título')}</a>${tasksBadge}
           </td>
           <td class="ellipsis">
             <span style="font-weight:500;">${esc(clientName)}</span>

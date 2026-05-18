@@ -169,6 +169,83 @@ operacionais (reservar voo, confirmar hotel, emitir voucher).
 
 ---
 
+## [4.43.0+20260518-roteiros-sprint4-tasks-integration] — 2026-05-18
+
+Release **MINOR** — Sprint 4 do refactor de Roteiros: integração com módulo
+de tarefas. Roteiro aprovado em modo "via sistema" gera tarefas operacionais
+automaticamente, com idempotência via IDs determinísticos.
+
+### Pedido do user
+> "sprint 4"
+> (após Sprint 3 entregue: Portal de Dicas embed com snapshot)
+
+### Comportamento
+1. User salva roteiro com `status='approved'` (primeira vez) e
+   `workflowMode='system'` (default)
+2. Sistema mostra confirmação: "Gerar N tarefas operacionais agora?"
+3. Se sim → cria N tasks no Firestore via `createTask` com IDs
+   determinísticos `roteiro-{roteiroId}-{operation}-{suffix?}`
+4. Roteiro atualizado com `linkedTaskIds[]` + `tasksGeneratedAt`
+5. Tasks renderizadas na subseção "🔗 Tarefas vinculadas" da aba Avançado
+6. Listagem `/roteiros` mostra badge "🔗 N" ao lado do título
+
+### Template operacional gerado
+| Operação | Quantidade | Deadline (dias antes do início) | Prioridade |
+|---|---|---|---|
+| Reservar voos | 1 | 14 | high |
+| Confirmar hotel | 1 por hotel do roteiro | 14 | high |
+| Organizar transfers | 1 (se houver destinos) | 10 | medium |
+| Contratar seguro viagem | 1 | 7 | medium |
+| Enviar materiais ao cliente | 1 | 7 | medium |
+| Emitir vouchers | 1 | 3 | high |
+
+Tasks ficam com:
+- `tags: ['roteiro', 'operacional']`
+- `customFields.roteiroId` (back-link bidirecional)
+- `customFields.roteiroOperation` (tipo: voos/hotel/transfers/etc)
+- `assignees`: `consultantId` + `collaboratorIds[]` (do Sprint 2)
+
+### Idempotência
+IDs determinísticos garantem que re-gerar nunca duplica.
+- 1ª geração: cria N tasks
+- 2ª geração (botão "Re-sincronizar"): cria 0, retorna N existentes
+- Se user editou status/subtasks/comentários nas tasks, isso é preservado
+
+### workflowMode='offline'
+Se user escolheu offline na seção Avançado (Sprint 2), `generateOperationalTasksForRoteiro`
+retorna sem fazer nada (`skippedReason: 'workflow-offline'`). Toast: "Modo offline
+— tarefas não foram geradas".
+
+### Arquivos
+- **`js/services/roteiroTasks.js`** (novo, ~300 linhas):
+  `generateOperationalTasksForRoteiro`, `fetchLinkedTasksLite`,
+  `calcLinkedTasksProgress`
+- **`js/services/roteiros.js`**: emptyRoteiro ganha `linkedTaskIds: []` +
+  `tasksGeneratedAt: null`. Migration on-read defensiva.
+- **`js/pages/roteiroEditor.js`**:
+  - `handleSave` captura `prevStatus` e dispara `maybeOfferTaskGeneration`
+    se transição draft/review→approved + workflowMode='system' + sem
+    tasksGeneratedAt
+  - Nova subseção "🔗 Tarefas vinculadas" em Avançado com lista async
+    populada por `populateLinkedTasksList`
+  - Progresso visual (% done) + badges de status coloridas + ícone por
+    operação + flag de overdue
+  - Handlers `generate-tasks` (manual) + `regenerate-tasks` (sync)
+- **`js/pages/roteiros.js`**: badge `🔗 N` ao lado do título quando
+  `linkedTaskIds.length > 0`
+
+### Defense-in-depth
+- `stripInternalFields` em PDF/PPT já remove `linkedTaskIds` + `workflowMode`
+  + `tasksGeneratedAt` (são internals — cliente não vê)
+- `stripInternalForPublicLink` no createWebLink idem
+
+### Next (Sprint 5+)
+- Decision pending: Salesforce two-way integration?
+- Ou polish de exports (PPTX richer, multi-marca refinada)?
+- Ou catálogo reutilizável (módulo separado que abastece roteiros)?
+
+---
+
 ## [4.41.0+20260518-roteiros-sprint2-schema-evolution] — 2026-05-18
 
 Release **MINOR** — Sprint 2 do refactor de Roteiros: schema evolution

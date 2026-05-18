@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 42,
+  minor: 43,
   patch: 0,
-  build: '20260518-roteiros-sprint3-tips-embed',
+  build: '20260518-roteiros-sprint4-tasks-integration',
 };
 
 /** "1.2.0" */
