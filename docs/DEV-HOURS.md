@@ -1,8 +1,8 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.49.8 (18/05/2026) · 104 dias de calendário · ~739,67h · ~R$ 110.950,50 · 7,11h/dia médio · 158 releases + 17 phases
+> **Última atualização:** v4.49.8 (19/05/2026) · 107 dias de calendário · ~727h 42min approved · ~R$ 109.155 · 6h 48min/dia médio · 147 releases + 17 phases (164 entradas aprovadas)
 >
-> _Backfill 18/05/2026_: 12 releases novas (4.48.1 → 4.49.8) registradas como sprint denso de bugfixes + features pequenas (auth dedup, filtros, deep-links, RBAC granular, bulk import destinos). +18,45h ajustado / +R$ 2.767,50 vs snapshot anterior (v4.40.23)._
+> _Backfill 18/05/2026_: 12 releases novas (4.48.1 → 4.49.8) registradas como sprint denso de bugfixes + features pequenas (auth dedup, filtros, deep-links, RBAC granular, bulk import destinos). +18,45h ajustado / +R$ 2.767,50 vs snapshot anterior (v4.40.23). Totais consideram apenas entradas com `status='approved'` — 11 entries em draft ficam de fora dos somatórios públicos._
 
 Documento técnico do módulo `dev_hours`: arquitetura, conceitos, calibragem do fator IA, processo de log, dashboards e exportações.
 
