@@ -2214,7 +2214,8 @@ function generateDaysFromTravel() {
 }
 
 /* ─── Event delegation handler ────────────────────────────── */
-function handleEditorClick(e) {
+// 4.43.0+ Sprint 4 — async porque alguns handlers (generate-tasks) usam await.
+async function handleEditorClick(e) {
   const target = e.target.closest('[data-action]');
   if (!target) {
     // 4.41.0+ (Sprint 2) Handle collaborator pills toggle
