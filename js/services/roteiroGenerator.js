@@ -60,6 +60,64 @@ const R2_ORIGIN = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev';
  *  - URLs externas com CORS aberto (Wikimedia/Unsplash): fetch direto
  *  - Tenta direto primeiro; se falhar, cai no proxy
  */
+/**
+ * 4.46.1+ (Sprint 5 fix) — Fetch imagem retornando ArrayBuffer + ext, espelhando
+ * `fetchImgData` do `portalGenerator.js`. Usado pelo DOCX (ImageRun precisa de
+ * ArrayBuffer, não dataUrl).
+ *
+ * Converte WebP→PNG via canvas (docx ImageRun não aceita webp). Mesma lógica
+ * do Portal — copiada porque importar deste módulo no roteiroGenerator seria
+ * acoplamento desnecessário (Portal tem 2200 linhas).
+ */
+async function fetchImgArrayBuffer(url) {
+  if (!url) return null;
+  try {
+    // Tenta direto primeiro (Wikipedia/Unsplash CORS), depois proxy R2
+    let res = null;
+    try {
+      res = await fetch(url);
+      if (!res.ok) res = null;
+    } catch { res = null; }
+    if (!res) {
+      try {
+        res = await fetch(`${R2_PROXY}?url=${encodeURIComponent(url)}`);
+        if (!res.ok) return null;
+      } catch { return null; }
+    }
+    const blob = await res.blob();
+    const mime = blob.type || 'image/jpeg';
+    const extMap = { 'image/jpeg':'jpg','image/jpg':'jpg','image/png':'png','image/webp':'png','image/gif':'gif' };
+    let ext  = extMap[mime] || 'jpg';
+    let arrayBuffer = await blob.arrayBuffer();
+
+    // WebP → PNG (docx ImageRun não aceita webp)
+    if (mime === 'image/webp' && typeof Image !== 'undefined') {
+      try {
+        const dataUrl = await new Promise(r => {
+          const fr = new FileReader();
+          fr.onload = () => r(fr.result);
+          fr.onerror = () => r(null);
+          fr.readAsDataURL(blob);
+        });
+        if (dataUrl) {
+          const img = await new Promise((resolve, reject) => {
+            const im = new Image();
+            im.onload = () => resolve(im);
+            im.onerror = reject;
+            im.src = dataUrl;
+          });
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+          canvas.getContext('2d').drawImage(img, 0, 0);
+          const pngBlob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+          if (pngBlob) { arrayBuffer = await pngBlob.arrayBuffer(); ext = 'png'; }
+        }
+      } catch (e) { /* fallback: usa webp mesmo, docx pode falhar silenciosamente */ }
+    }
+    return { arrayBuffer, ext };
+  } catch { return null; }
+}
+
 async function fetchImgData(url) {
   if (!url) return null;
   const tryFetch = async (u) => {
@@ -2210,7 +2268,39 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
   const {
     Document, Packer, Paragraph, TextRun, AlignmentType, BorderStyle,
     Table, TableRow, TableCell, WidthType, HeadingLevel, PageBreak,
+    ImageRun,
   } = D;
+
+  // 4.46.1+ (Sprint 5 fix) — resolve imagens via banco + Unsplash fallback,
+  // mesmo padrão usado por PDF/PPTX. Sem isso, DOCX ficaria só texto/tabelas
+  // (degradação assimétrica vs. Portal de Dicas que tem imagens em DOCX).
+  let images = { heroUrl: null, byCity: {}, byHotel: {} };
+  try { images = await enrichRoteiroImages(roteiro); }
+  catch (e) { console.warn('[roteiroGenerator] DOCX enrichImages falhou:', e.message); }
+
+  // Logo da BU (se houver) — usado na capa
+  let logoBuf = null;
+  if (area?.logoUrl) {
+    try { logoBuf = await fetchImgArrayBuffer(area.logoUrl); } catch {}
+  }
+
+  // Hero (capa) e dicts de city/hotel já vêm pré-resolvidos
+  const heroBuf = images.heroUrl ? await fetchImgArrayBuffer(images.heroUrl) : null;
+  // Pré-carrega city/hotel images em paralelo
+  const cityBufs = {};
+  await Promise.allSettled(
+    Object.entries(images.byCity).map(async ([key, url]) => {
+      const buf = await fetchImgArrayBuffer(url);
+      if (buf) cityBufs[key] = buf;
+    })
+  );
+  const hotelBufs = {};
+  await Promise.allSettled(
+    Object.entries(images.byHotel).map(async ([idx, url]) => {
+      const buf = await fetchImgArrayBuffer(url);
+      if (buf) hotelBufs[idx] = buf;
+    })
+  );
 
   // Cores (hex sem #) — pra TextRun.color
   const primaryHex   = ((area?.colors?.primary)   || '#0F172A').replace('#', '');
@@ -2253,8 +2343,19 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
   const children = [];
 
   /* ── Capa ─────────────────────────────────────────────── */
+  // 4.46.1+ Logo da BU (top, opcional)
+  if (logoBuf?.arrayBuffer) {
+    try {
+      children.push(p([new ImageRun({
+        data: logoBuf.arrayBuffer,
+        transformation: { width: 200, height: 80 },
+        type: logoBuf.ext,
+      })], { alignment: AlignmentType.CENTER, spacing: { before: 600, after: 200 } }));
+    } catch (e) { console.warn('[DOCX] logo skip:', e.message); }
+  }
+
   children.push(p([tr(buName.toUpperCase(), { bold: true, size: 48, color: primaryHex, characterSpacing: 200 })], {
-    alignment: AlignmentType.CENTER, spacing: { before: 1200, after: 200 },
+    alignment: AlignmentType.CENTER, spacing: { before: logoBuf ? 0 : 1200, after: 200 },
   }));
   children.push(p([tr('ROTEIRO DE VIAGEM', { size: 22, color: mutedHex, characterSpacing: 200 })], {
     alignment: AlignmentType.CENTER, spacing: { after: 600 },
@@ -2291,16 +2392,47 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
     alignment: AlignmentType.CENTER, spacing: { before: 200, after: 120 },
   }));
   children.push(p([tr(today, { size: 18, color: mutedHex })], { alignment: AlignmentType.CENTER }));
+
+  // 4.46.1+ Hero (capa) — pós-meta, antes da page break. Largura cheia.
+  if (heroBuf?.arrayBuffer) {
+    try {
+      children.push(p([new ImageRun({
+        data: heroBuf.arrayBuffer,
+        transformation: { width: 530, height: 260 },
+        type: heroBuf.ext,
+      })], { alignment: AlignmentType.CENTER, spacing: { before: 300, after: 100 } }));
+    } catch (e) { console.warn('[DOCX] hero skip:', e.message); }
+  }
+
   children.push(p([new PageBreak()]));
 
   /* ── Dia a dia ────────────────────────────────────────── */
   if (Array.isArray(roteiro.days) && roteiro.days.length) {
     children.push(hdr('Dia a dia'));
+    // Pra evitar repetir a mesma imagem em vários dias seguidos da mesma
+    // cidade, rastreamos qual cityKey já teve imagem inserida.
+    let lastCityKeyShown = null;
     for (const d of roteiro.days) {
       const dayLabel = d.title?.trim() || `Dia ${d.dayNumber || ''}`;
       const dateLabel = d.date ? ` · ${new Date(d.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}` : '';
       const cityLabel = d.city ? ` · ${d.city}` : '';
       children.push(sub(`${dayLabel}${dateLabel}${cityLabel}`));
+
+      // 4.46.1+ Imagem da cidade (1ª vez que aparece nos dias)
+      if (d.city) {
+        const cityKey = normKey(d.city);
+        if (cityKey !== lastCityKeyShown && cityBufs[cityKey]?.arrayBuffer) {
+          try {
+            children.push(p([new ImageRun({
+              data: cityBufs[cityKey].arrayBuffer,
+              transformation: { width: 480, height: 220 },
+              type: cityBufs[cityKey].ext,
+            })], { alignment: AlignmentType.CENTER, spacing: { before: 100, after: 200 } }));
+            lastCityKeyShown = cityKey;
+          } catch (e) { console.warn('[DOCX] city img skip:', e.message); }
+        }
+      }
+
       if (d.narrative) children.push(body(d.narrative));
       if (Array.isArray(d.activities) && d.activities.length) {
         for (const a of d.activities) {
@@ -2320,9 +2452,30 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
     }
   }
 
-  /* ── Hotéis (tabela) ──────────────────────────────────── */
+  /* ── Hotéis (thumbs + tabela) ─────────────────────────── */
   if (Array.isArray(roteiro.hotels) && roteiro.hotels.length) {
     children.push(hdr('Hospedagem'));
+
+    // 4.46.1+ Thumb por hotel (1 parágrafo por hotel, com header + image + nome)
+    for (let i = 0; i < roteiro.hotels.length; i++) {
+      const h = roteiro.hotels[i];
+      const buf = hotelBufs[i];
+      if (!buf?.arrayBuffer) continue;
+      try {
+        children.push(p([
+          tr(`${h.hotelName || `Hotel ${i+1}`}${h.city ? ' — ' + h.city : ''}`, {
+            bold: true, size: 22, color: secondaryHex,
+          }),
+        ], { spacing: { before: 200, after: 80 } }));
+        children.push(p([new ImageRun({
+          data: buf.arrayBuffer,
+          transformation: { width: 400, height: 200 },
+          type: buf.ext,
+        })], { alignment: AlignmentType.CENTER, spacing: { after: 100 } }));
+      } catch (e) { console.warn('[DOCX] hotel thumb skip:', e.message); }
+    }
+
+    // Tabela com detalhes operacionais
     const rows = [
       new TableRow({ children: [
         headerCell('Cidade'), headerCell('Hotel'), headerCell('Quarto'), headerCell('Regime'), headerCell('Noites'),
