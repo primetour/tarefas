@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 46,
-  patch: 1,
-  build: '20260518-sprint5-docx-images',
+  patch: 2,
+  build: '20260518-sprint5-images-dedup-hero-web',
 };
 
 /** "1.2.0" */

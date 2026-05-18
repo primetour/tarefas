@@ -69,7 +69,10 @@ h1, h2, h3, .serif { font-family: 'Cormorant Garamond', serif; }
 }
 .hero-bg {
   position: absolute; inset: 0; background: linear-gradient(135deg, var(--navy) 0%, var(--dark) 100%);
+  background-size: cover; background-position: center;
 }
+/* 4.46.2+ Sprint 5 fix — quando há imagem hero, escurece pra dar contraste no texto */
+.hero-bg.has-image { filter: brightness(0.65); }
 .hero-overlay {
   position: absolute; inset: 0;
   background: linear-gradient(to top, rgba(10,22,40,.95) 0%, rgba(10,22,40,.4) 40%, rgba(10,22,40,.1) 100%);
@@ -455,6 +458,9 @@ function render(container, r, area) {
   const info = r.info || r.informacoes || {};
   // 4.42.0+ Sprint 3 — dicas anexas (snapshot do Portal de Dicas)
   const embeddedTips = Array.isArray(r.embeddedTips) ? r.embeddedTips : [];
+  // 4.46.2+ Sprint 5 fix — imagens pré-resolvidas no snapshot (banco + Unsplash)
+  const enriched = r.enrichedImages || {};
+  const heroUrl = enriched.heroUrl || r.images?.hero || null;
   const buName = area?.name || area?.bu || 'PRIMETOUR';
 
   // Destinations from days
@@ -484,7 +490,7 @@ function render(container, r, area) {
   container.innerHTML = `
     <!-- Hero -->
     <section class="hero">
-      <div class="hero-bg"></div>
+      <div class="hero-bg${heroUrl ? ' has-image' : ''}" ${heroUrl ? `style="background-image:url('${esc(heroUrl)}')"` : ''}></div>
       <div class="hero-overlay"></div>
       <div class="hero-content">
         <span class="hero-overline">Roteiro de Viagem</span>

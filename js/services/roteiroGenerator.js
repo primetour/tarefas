@@ -194,19 +194,33 @@ function normKey(s) {
 /** Busca imagem no banco portal_images por cidade/país. Match flexível.
  * Retorna URL da PRIMEIRA imagem que bater (ordem: cidade exata, país, gallery genérica).
  */
-function pickFromBank(allImages, { city, country }) {
+/**
+ * 4.46.2+ (Sprint 5 dedup fix) — `excludeUrls Set` opcional.
+ * Itera TODOS os matches em cada nível de prioridade e devolve o 1º que
+ * NÃO está em excludeUrls. Sem isso, repetia mesma foto pra todos os
+ * slots da mesma cidade.
+ */
+function pickFromBank(allImages, { city, country }, opts = {}) {
   if (!allImages?.length) return null;
   const cN = normKey(city); const pN = normKey(country);
+  const exclude = opts.excludeUrls || new Set();
+  const pick = (predicate) => {
+    for (const img of allImages) {
+      if (!img.url) continue;
+      if (exclude.has(img.url)) continue;
+      if (predicate(img)) return img.url;
+    }
+    return null;
+  };
   // Prioridade 1: city + country match
-  let match = allImages.find(img =>
-    cN && pN && normKey(img.city) === cN && normKey(img.country) === pN);
-  if (match) return match.url;
+  let url = pick(img => cN && pN && normKey(img.city) === cN && normKey(img.country) === pN);
+  if (url) return url;
   // Prioridade 2: só city
-  match = allImages.find(img => cN && normKey(img.city) === cN);
-  if (match) return match.url;
+  url = pick(img => cN && normKey(img.city) === cN);
+  if (url) return url;
   // Prioridade 3: só country (genérica do país)
-  match = allImages.find(img => pN && normKey(img.country) === pN && !img.city);
-  if (match) return match.url;
+  url = pick(img => pN && normKey(img.country) === pN && !img.city);
+  if (url) return url;
   return null;
 }
 
@@ -313,41 +327,89 @@ function translateToEnglish(query) {
 }
 
 /** Busca foto auto via Cloud Function (Unsplash → Wikipedia fallback). Cached.
- *  Tenta na ordem: query original → tradução EN → null.
- *  PT-BR costuma falhar no Unsplash (que indexa em EN), então a 2ª tentativa
- *  pega muitos casos como "Tóquio" → "Tokyo".
+ *
+ *  4.46.2+ (Sprint 5 dedup fix) — agora suporta `excludeUrls Set` pra evitar
+ *  repetir mesma foto em diferentes destinos do mesmo roteiro/material.
+ *  Pede `count=8` da Cloud Function, filtra excluídas, retorna primeira nova.
+ *
+ *  Fluxo de fallback de query (ordem):
+ *    1. query original PT-BR
+ *    2. tradução EN se a 1ª veio vazia ("Tóquio" → "Tokyo")
+ *  Cada tentativa: pega 8 fotos, filtra contra excludeUrls, pega 1ª disponível.
+ *
+ *  @param {string} query
+ *  @param {Object} [opts]
+ *  @param {Set<string>} [opts.excludeUrls] - URLs já usadas no contexto atual
  */
-async function fetchAutoPhoto(query) {
+async function fetchAutoPhoto(query, opts = {}) {
   if (!query) return null;
+  const excludeUrls = opts.excludeUrls || new Set();
   const k = query.toLowerCase().trim();
-  const cached = _cacheGet(k);
-  if (cached !== undefined) return cached;
+
+  // Cache: armazena ARRAY de URLs (não 1 URL). Permite extrair "próxima
+  // não usada" sem chamar Cloud Function de novo na mesma sessão.
+  const cached = _cacheGetMulti(k);
+
+  // Helper: pega 1ª URL do array que NÃO está em excludeUrls
+  const pickFromArr = (arr) => {
+    for (const u of arr) {
+      if (u && !excludeUrls.has(u)) return u;
+    }
+    return null;
+  };
+
+  // Se já temos cache com URLs, tenta achar uma não-usada antes de fazer fetch
+  if (cached?.length) {
+    const fromCache = pickFromArr(cached);
+    if (fromCache) return fromCache;
+    // Cache esgotou (todas as cached estão em excludeUrls) → cai pro fetch
+  }
 
   const tryQuery = async (q) => {
     try {
       const fn = await getPhotoFn();
-      const r = await fn({ query: q });
-      return r?.data?.url || null;
+      // Pede 8 candidatos pra dar margem de dedup (count: 1-10 suportado pela CF)
+      const r = await fn({ query: q, count: 8 });
+      const urls = Array.isArray(r?.data?.urls) ? r.data.urls
+                 : (r?.data?.url ? [r.data.url] : []);
+      return urls;
     } catch (e) {
       console.warn('[roteiroImages] fetchAutoPhoto falhou:', q, e.message);
-      return null;
+      return [];
     }
   };
 
   // 1ª tentativa: query original
-  let url = await tryQuery(query);
+  let urls = await tryQuery(query);
 
   // 2ª tentativa: tradução EN se a 1ª veio vazia
-  if (!url) {
+  if (!urls.length) {
     const en = translateToEnglish(query);
     if (en && en.toLowerCase() !== query.toLowerCase()) {
       console.info('[roteiroImages] retry em EN:', query, '→', en);
-      url = await tryQuery(en);
+      urls = await tryQuery(en);
     }
   }
 
-  _cacheSet(k, url);
-  return url;
+  // Cacheia ARRAY pra dedup futuro na mesma sessão
+  _cacheSetMulti(k, urls);
+
+  // Retorna 1ª URL não-usada
+  return pickFromArr(urls);
+}
+
+/* Cache MULTI (4.46.2+) — armazena array de URLs por query.
+ * Substitui o cache antigo (url único) que tornava dedup impossível
+ * — quando 2 calls da mesma query vinham, ambos pegavam mesma URL. */
+const _photoCacheMulti = new Map();
+function _cacheGetMulti(k) {
+  const v = _photoCacheMulti.get(k);
+  if (!v) return undefined;
+  if (Date.now() - v.ts > _PHOTO_CACHE_TTL) { _photoCacheMulti.delete(k); return undefined; }
+  return v.urls;
+}
+function _cacheSetMulti(k, urls) {
+  _photoCacheMulti.set(k, { urls: Array.isArray(urls) ? urls : [], ts: Date.now() });
 }
 
 /** Resolve imagem pra um destino (city + country).
@@ -392,13 +454,18 @@ export function stripInternalFields(roteiro) {
   return out;
 }
 
-export async function resolveDestinationImage(dest, override, bankImages) {
+/**
+ * 4.46.2+ (Sprint 5 dedup fix) — adiciona param `opts.excludeUrls` pra dedup
+ * em cascata (banco → Unsplash). Mantém compat com callers antigos (4° arg
+ * opcional).
+ */
+export async function resolveDestinationImage(dest, override, bankImages, opts = {}) {
   if (override) return override;
-  const fromBank = pickFromBank(bankImages, dest || {});
+  const fromBank = pickFromBank(bankImages, dest || {}, opts);
   if (fromBank) return fromBank;
   const q = [dest?.city, dest?.country].filter(Boolean).join(' ');
   if (!q) return null;
-  return await fetchAutoPhoto(q);
+  return await fetchAutoPhoto(q, opts);
 }
 
 /** Enriquece roteiro com imagens pra capa, dias e hotéis.
@@ -415,18 +482,31 @@ export async function enrichRoteiroImages(roteiro) {
   const overrides = roteiro?.images?.overrides || {};
   const out = { heroUrl: null, byCity: {}, byHotel: {} };
 
+  // 4.46.2+ (Sprint 5 dedup fix) — Set global rastreia TODAS as URLs já
+  // alocadas nesta enrichment, em qualquer slot (hero/city/hotel). Cada
+  // resolução posterior passa o Set e evita repetir.
+  //
+  // Por que isso resolve user-reported "fotos se repetem":
+  //   - Banco pode ter 1 foto cadastrada pra "Tóquio" + 3 hotéis na cidade
+  //     → todos os 4 slots receberiam a mesma URL antes
+  //   - Unsplash pode retornar mesma top-foto pra queries similares
+  //   - Sem Set global, dedup é impossível
+  const usedUrls = new Set();
+
   // Carrega banco de imagens uma vez
   let bankImages = [];
   try { bankImages = await fetchImages({}); }
   catch (e) { console.warn('[roteiroImages] fetchImages falhou:', e.message); }
 
-  // 1) Hero — primeira destinação (ou override hero)
+  // 1) Hero — primeira destinação (ou override hero) — sempre alocado primeiro
   const heroOverride = overrides.hero || roteiro?.images?.hero;
   const firstDest = roteiro?.travel?.destinations?.[0];
   if (heroOverride) {
     out.heroUrl = heroOverride;
+    usedUrls.add(heroOverride);
   } else if (firstDest) {
-    out.heroUrl = await resolveDestinationImage(firstDest, null, bankImages);
+    out.heroUrl = await resolveDestinationImage(firstDest, null, bankImages, { excludeUrls: usedUrls });
+    if (out.heroUrl) usedUrls.add(out.heroUrl);
   }
 
   // 2) Por cidade — coleta cidades únicas do itinerário (days + destinations)
@@ -440,32 +520,50 @@ export async function enrichRoteiroImages(roteiro) {
     }
   });
 
-  await Promise.allSettled(
-    Array.from(cities.entries()).map(async ([key, dest]) => {
-      const ovKey = `city_${key}`;
-      const override = overrides[ovKey];
-      const url = await resolveDestinationImage(dest, override, bankImages);
-      if (url) out.byCity[key] = url;
-    })
-  );
+  // SEQUENCIAL (não Promise.allSettled) pra dedup funcionar — paralelismo
+  // perderia o Set sync. Volume típico (5-10 cities) torna a latência aceitável.
+  for (const [key, dest] of cities.entries()) {
+    const ovKey = `city_${key}`;
+    const override = overrides[ovKey];
+    if (override) {
+      out.byCity[key] = override;
+      usedUrls.add(override);
+      continue;
+    }
+    const url = await resolveDestinationImage(dest, null, bankImages, { excludeUrls: usedUrls });
+    if (url) {
+      out.byCity[key] = url;
+      usedUrls.add(url);
+    }
+  }
 
-  // 3) Por hotel (opcional) — usa city + hotelName
-  await Promise.allSettled(
-    (roteiro?.hotels || []).map(async (h, idx) => {
-      const ovKey = `hotel_${idx}`;
-      const override = overrides[ovKey];
-      if (override) { out.byHotel[idx] = override; return; }
-      // Tenta banco por city
-      const fromBank = pickFromBank(bankImages, { city: h.city, country: '' });
-      if (fromBank) { out.byHotel[idx] = fromBank; return; }
-      // Auto-fetch hotel-specific
-      const q = h.hotelName ? `${h.hotelName} ${h.city || ''}`.trim() : h.city;
-      if (q) {
-        const url = await fetchAutoPhoto(q);
-        if (url) out.byHotel[idx] = url;
+  // 3) Por hotel (opcional) — usa city + hotelName. Idem sequencial pro dedup.
+  for (let idx = 0; idx < (roteiro?.hotels?.length || 0); idx++) {
+    const h = roteiro.hotels[idx];
+    const ovKey = `hotel_${idx}`;
+    const override = overrides[ovKey];
+    if (override) {
+      out.byHotel[idx] = override;
+      usedUrls.add(override);
+      continue;
+    }
+    // Tenta banco por city (com dedup)
+    const fromBank = pickFromBank(bankImages, { city: h.city, country: '' }, { excludeUrls: usedUrls });
+    if (fromBank) {
+      out.byHotel[idx] = fromBank;
+      usedUrls.add(fromBank);
+      continue;
+    }
+    // Auto-fetch hotel-specific (com dedup)
+    const q = h.hotelName ? `${h.hotelName} ${h.city || ''}`.trim() : h.city;
+    if (q) {
+      const url = await fetchAutoPhoto(q, { excludeUrls: usedUrls });
+      if (url) {
+        out.byHotel[idx] = url;
+        usedUrls.add(url);
       }
-    })
-  );
+    }
+  }
 
   return out;
 }

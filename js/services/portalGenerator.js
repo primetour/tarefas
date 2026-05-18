@@ -1990,7 +1990,18 @@ async function enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments) {
   if (!tasks.length) return;
   console.log(`[autoPhotos] Buscando ${tasks.length} fotos (Unsplash → Wikipedia → fallback genérico)…`);
 
-  // Stage 1: query específica em batches de 8 paralelo
+  // 4.46.2+ DEDUP GLOBAL: rastreia URLs já alocadas (qualquer dest, qualquer stage).
+  // Pre-popula com URLs JÁ na gallery (cadastro manual + overrides) pra evitar
+  // que Unsplash retorne a mesma foto que já está cadastrada.
+  // Resolve report: "fallback nao pode repetir foto no export".
+  const usedUrls = new Set();
+  for (const destId of Object.keys(imagesByDest)) {
+    (imagesByDest[destId]?.gallery || []).forEach(g => { if (g.url) usedUrls.add(g.url); });
+    if (imagesByDest[destId]?.hero) usedUrls.add(imagesByDest[destId].hero);
+  }
+
+  // Stage 1: query específica em batches de 8 paralelo. Agora pede count=5
+  // pra ter alternativas se a top foto já foi usada por outro item.
   const BATCH = 8;
   const fallbackNeeded = [];
   let addedSpecific = 0;
@@ -1998,23 +2009,38 @@ async function enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments) {
     const batch = tasks.slice(i, i + BATCH);
     const results = await Promise.allSettled(
       batch.map(t =>
-        fnPhoto({ query: t.querySpecific }).then(r => ({ ...t, photo: r.data })).catch(() => ({ ...t, err: true }))
+        fnPhoto({ query: t.querySpecific, count: 5 }).then(r => ({ ...t, photo: r.data })).catch(() => ({ ...t, err: true }))
       )
     );
     for (const res of results) {
       const v = res.value;
-      if (res.status !== 'fulfilled' || v.err || !v.photo?.url) {
+      if (res.status !== 'fulfilled' || v.err || !v.photo) {
         fallbackNeeded.push(v);
         continue;
       }
+      // Pega 1ª URL não-usada do array retornado
+      const urls = v.photo.urls || (v.photo.url ? [v.photo.url] : []);
+      const sources = v.photo.sources || (v.photo.source ? [v.photo.source] : []);
+      const attrs = v.photo.attributions || (v.photo.attribution ? [v.photo.attribution] : []);
+      let pickedIdx = -1;
+      for (let j = 0; j < urls.length; j++) {
+        if (!usedUrls.has(urls[j])) { pickedIdx = j; break; }
+      }
+      if (pickedIdx === -1) {
+        // TODAS as URLs deste query já em uso — tenta fallback genérico
+        fallbackNeeded.push(v);
+        continue;
+      }
+      const pickedUrl = urls[pickedIdx];
+      usedUrls.add(pickedUrl);  // marca como usada
       imagesByDest[v.destId].gallery.push({
-        url:              v.photo.url,
+        url:              pickedUrl,
         placeName:        v.titulo,
         name:             v.titulo,
         tags:             [],
         _autoFetched:     true,
-        _photoSource:     v.photo.source,
-        _attribution:     v.photo.attribution || '',
+        _photoSource:     sources[pickedIdx] || sources[0],
+        _attribution:     attrs[pickedIdx] || attrs[0] || '',
         _attributionUrl:  v.photo.attributionUrl || '',
       });
       addedSpecific++;
@@ -2052,18 +2078,25 @@ async function enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments) {
       const attrs = photoData.attributions || (photoData.attribution ? [photoData.attribution] : []);
       if (!urls.length) continue;
 
-      // Cicla fotos entre items (round-robin)
+      // 4.46.2+ Filtra URLs já usadas globalmente. Se sobrar 0, pula este
+      // group (não enche gallery com fotos repetidas). Se sobrar 1+, cicla
+      // round-robin entre as disponíveis.
+      const availableUrls = urls.map((u, i) => ({ url: u, idx: i }))
+        .filter(o => !usedUrls.has(o.url));
+      if (!availableUrls.length) return;  // todas duplicatas — desiste deste group
+
       items.forEach((v, idx) => {
-        const photoIdx = idx % urls.length;
+        const pick = availableUrls[idx % availableUrls.length];
+        usedUrls.add(pick.url);  // marca como usada (afeta próximos groups)
         imagesByDest[v.destId].gallery.push({
-          url:             urls[photoIdx],
+          url:             pick.url,
           placeName:       v.titulo,
           name:            v.titulo,
           tags:            [],
           _autoFetched:    true,
-          _photoSource:    sources[photoIdx] || sources[0],
+          _photoSource:    sources[pick.idx] || sources[0],
           _photoFallback:  true,
-          _attribution:    attrs[photoIdx] || attrs[0] || '',
+          _attribution:    attrs[pick.idx] || attrs[0] || '',
         });
         addedGeneric++;
       });

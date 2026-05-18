@@ -614,6 +614,25 @@ export async function createWebLink(roteiroId, data, area) {
   const token = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   // 4.41.0+ Strip OBRIGATÓRIO — custo interno nunca vai pra link público.
   const cleanData = stripInternalForPublicLink(data);
+
+  // 4.46.2+ (Sprint 5 fix) — enriquece imagens ANTES do snapshot.
+  // Antes: snapshot tinha só `images.hero` (que ficava null se user não setou
+  // manualmente) e a página pública não renderizava capa nenhuma. Agora salva
+  // URLs resolvidas (banco + Unsplash fallback com dedup) num campo
+  // `enrichedImages` dedicado pro web view consumir.
+  try {
+    const { enrichRoteiroImages } = await import('./roteiroGenerator.js');
+    const enriched = await enrichRoteiroImages(cleanData);
+    cleanData.enrichedImages = {
+      heroUrl: enriched.heroUrl || null,
+      byCity:  enriched.byCity || {},
+      byHotel: enriched.byHotel || {},
+    };
+  } catch (e) {
+    console.warn('[roteiros.createWebLink] enrichImages falhou:', e.message);
+    // Não bloqueia — snapshot vai sem enriched (page mostra hero gradient apenas)
+  }
+
   await setDoc(doc(db, COL_LINKS, token), {
     roteiroId,
     data: cleanData,
