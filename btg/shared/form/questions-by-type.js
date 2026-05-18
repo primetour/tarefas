@@ -206,8 +206,10 @@ const qNomeFeriado = {
 const qImagem = {
   id: 'imagem',
   title: 'Envie a imagem principal',
-  hint: 'Aparece no card e no topo da página. 16:9, até 5 MB. JPG ou PNG.',
-  fields: ['imagem_file'],
+  hint: 'Escolha do banco curado ou faça upload. 16:9 recomendado.',
+  // 4.41.0+ valida imagem_url (setado pelo image picker). imagem_file legacy
+  // só serve de buffer interno — não persiste em Firestore.
+  fields: ['imagem_url'],
   previewTargets: ['imagem'],
   render: (s) => inputImagem(s),
 };
