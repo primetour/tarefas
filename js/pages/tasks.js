@@ -1040,6 +1040,25 @@ function renderTaskList() {
   if (!container) return;
 
   if (filteredTasks.length === 0) {
+    // 4.40.24+ Diagn\u00f3stico contextual quando filtro observer est\u00e1 ativo e
+    // resultado \u00e9 0: ajuda user a entender se selecionou colega que n\u00e3o \u00e9
+    // observer de NADA (UI dropdown j\u00e1 mostra "(0)" mas refor\u00e7a aqui).
+    let extraHint = '';
+    if (filterObserver) {
+      const ids = Array.isArray(filterObserver) ? filterObserver : [filterObserver];
+      const users = store.get('users') || [];
+      const names = ids.map(uid => users.find(u => u.id === uid)?.name || uid).join(', ');
+      const totalWithObs = (allTasks || []).filter(t => Array.isArray(t.observers) && t.observers.length > 0).length;
+      const pct = allTasks.length ? Math.round(100 * totalWithObs / allTasks.length) : 0;
+      extraHint = `
+        <div style="margin-top:14px;padding:10px 14px;background:rgba(14,165,233,0.06);
+          border:1px solid rgba(14,165,233,0.25);border-radius:6px;font-size:0.8125rem;
+          color:var(--text-secondary);text-align:left;max-width:520px;margin-left:auto;margin-right:auto;">
+          <strong>\ud83d\udc41 Filtro observador ativo:</strong> ${esc(names)}<br>
+          Nenhuma tarefa tem ${ids.length > 1 ? 'esses usu\u00e1rios' : 'esse usu\u00e1rio'} como observador
+          ${totalWithObs > 0 ? `(apenas ${pct}% das tarefas t\u00eam algum observador cadastrado)` : '(nenhuma tarefa do sistema tem observadores ainda)'}.
+        </div>`;
+    }
     container.innerHTML = `
       <div class="task-empty">
         <div class="task-empty-icon">\ud83d\udccb</div>
@@ -1049,6 +1068,7 @@ function renderTaskList() {
             ? 'Crie sua primeira tarefa clicando em "+ Nova Tarefa".'
             : 'Tente ajustar os filtros para encontrar as tarefas.'}
         </p>
+        ${extraHint}
         ${allTasks.length === 0 ? `
           <button class="btn btn-primary mt-4" id="empty-new-task-btn">+ Nova Tarefa</button>
         ` : ''}
@@ -1660,16 +1680,44 @@ function _attachPageEvents() {
   // 4.40.11+ Observer (multi-select) — mesmo padrão do assignee, mas com
   // ícone de olho 👁 e cor azul (consistente com o badge de observador no
   // card da tarefa). buildOptions usa a mesma lista de users ativos.
+  // 4.40.24+ (UX) — adiciona CONTADOR de tasks por user no label
+  // ("Tamiris Abib (2 tarefas)"). Resolve relato de "filtro não funciona":
+  // user selecionava colega que não era observer de nenhuma task e via 0
+  // resultados, achando que o filtro estava quebrado. Com o contador, fica
+  // visível que aquele user NÃO TEM tasks observando, em vez de parecer bug.
+  // Users sem observers ficam visíveis mas com "(0)" + ícone cinza.
   bindMultiOptionPicker({
     btnId: 'filter-observer-btn',
-    buildOptions: () => (store.get('users') || [])
-      .filter(u => u.active)
-      .map(u => ({
-        id: u.id,
-        label: u.name || u.email || 'Usuário',
-        icon: '👁',
-        color: '#0EA5E9',
-      })),
+    buildOptions: () => {
+      // Conta tasks-como-observer por uid usando o cache local allTasks.
+      // O cache pode estar populado por subscribeToTasks; se vazio, retorna
+      // counts zerados (não bloqueia o picker).
+      const obsCountByUid = {};
+      for (const t of (allTasks || [])) {
+        if (Array.isArray(t.observers)) {
+          for (const uid of t.observers) {
+            obsCountByUid[uid] = (obsCountByUid[uid] || 0) + 1;
+          }
+        }
+      }
+      const users = (store.get('users') || []).filter(u => u.active);
+      // Sort: quem tem mais tasks primeiro; users sem observers vão pro fim
+      // mas continuam visíveis (decisão consciente — user pode querer adicionar).
+      return users
+        .map(u => {
+          const count = obsCountByUid[u.id] || 0;
+          return {
+            id: u.id,
+            label: count > 0
+              ? `${u.name || u.email || 'Usuário'} (${count})`
+              : `${u.name || u.email || 'Usuário'} (sem)`,
+            icon: count > 0 ? '👁' : '○',
+            color: count > 0 ? '#0EA5E9' : '#9CA3AF',
+            _obsCount: count, // marker pra sort
+          };
+        })
+        .sort((a, b) => (b._obsCount - a._obsCount) || a.label.localeCompare(b.label));
+    },
     getValues: () => Array.isArray(filterObserver)
       ? filterObserver
       : (filterObserver ? [filterObserver] : []),

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 40,
-  patch: 23,
-  build: '20260515-b1-gcp-restrictions-c3-no-fallback',
+  patch: 24,
+  build: '20260518-observer-filter-ux-counter',
 };
 
 /** "1.2.0" */
