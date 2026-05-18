@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 47,
-  patch: 0,
-  build: '20260518-sprint6a-webview-polish-map',
+  patch: 1,
+  build: '20260518-sprint6a-fonts-payment-badge',
 };
 
 /** "1.2.0" */
