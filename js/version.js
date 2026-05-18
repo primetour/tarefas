@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 46,
-  patch: 2,
-  build: '20260518-sprint5-images-dedup-hero-web',
+  minor: 47,
+  patch: 0,
+  build: '20260518-sprint6a-webview-polish-map',
 };
 
 /** "1.2.0" */

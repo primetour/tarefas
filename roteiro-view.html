@@ -8,6 +8,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- 4.47.0+ (Sprint 6a) — Leaflet pra mapa interativo (mesma versão do Portal de Dicas).
+       Tiles OpenStreetMap (free, sem API key). -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <style>
 :root {
   --gold: #D4A843;
@@ -71,11 +75,15 @@ h1, h2, h3, .serif { font-family: 'Cormorant Garamond', serif; }
   position: absolute; inset: 0; background: linear-gradient(135deg, var(--navy) 0%, var(--dark) 100%);
   background-size: cover; background-position: center;
 }
-/* 4.46.2+ Sprint 5 fix — quando há imagem hero, escurece pra dar contraste no texto */
-.hero-bg.has-image { filter: brightness(0.65); }
+/* 4.47.0+ (Sprint 6a) — quando há imagem, escurece SUAVE pra foto respirar mais */
+.hero-bg.has-image { filter: brightness(0.78); }
 .hero-overlay {
   position: absolute; inset: 0;
-  background: linear-gradient(to top, rgba(10,22,40,.95) 0%, rgba(10,22,40,.4) 40%, rgba(10,22,40,.1) 100%);
+  /* Gradiente menos denso embaixo (70% vs 95%) + lateral suave esquerdo
+     pra texto ler bem sem matar a foto. Inspirado no Portal. */
+  background:
+    linear-gradient(to top, rgba(10,22,40,.85) 0%, rgba(10,22,40,.25) 50%, rgba(10,22,40,0) 100%),
+    linear-gradient(to right, rgba(10,22,40,.45) 0%, rgba(10,22,40,0) 50%);
 }
 .hero-content {
   position: relative; padding: 80px 48px 60px; max-width: 900px; z-index: 2;
@@ -190,18 +198,99 @@ h1, h2, h3, .serif { font-family: 'Cormorant Garamond', serif; }
 }
 .day-overnight svg { width: 14px; height: 14px; fill: var(--gold); flex-shrink: 0; }
 
-/* ── Hotels ── */
-.hotels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 40px; }
-.hotel-card {
-  background: var(--white); border: 1px solid rgba(0,0,0,.06); padding: 24px;
-  transition: box-shadow .3s;
+/* 4.47.0+ (Sprint 6a Phase 2d) — Mapa interativo */
+.roteiro-map-wrap {
+  width: 100%; height: 500px; border-radius: 8px; overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,.08); margin-top: 24px;
+  background: var(--light); position: relative;
 }
-.hotel-card:hover { box-shadow: 0 8px 32px rgba(0,0,0,.06); }
+.roteiro-map-placeholder {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: .875rem;
+}
+.map-pin-wrapper { background: transparent; border: none; }
+.map-pin {
+  width: 32px; height: 32px; border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg); display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,.3); color: #fff;
+}
+.map-pin span { transform: rotate(45deg); font-size: 14px; font-weight: 700; }
+.map-pin.city  { background: var(--navy); }
+.map-pin.hotel { background: var(--gold); }
+.map-pin.tip   { background: var(--success); }
+.map-popup-cat   { font-size: .7rem; letter-spacing: .15em; text-transform: uppercase; color: var(--gold); font-weight: 700; }
+.map-popup-title { font-size: 1rem; font-weight: 600; color: var(--navy); margin: 4px 0; }
+.map-popup-addr  { font-size: .8rem; color: var(--muted); }
+
+/* 4.47.0+ (Sprint 6a Phase 2a) — banner de cidade entre dias. Aparece
+   sempre que o roteiro MUDA de cidade — quebra a monotonia visual. */
+.day-city-banner {
+  position: relative; margin: 48px 0 32px; border-radius: 8px; overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,.08); height: 240px;
+}
+.day-city-banner-img {
+  position: absolute; inset: 0; background-size: cover; background-position: center;
+  filter: brightness(0.75);
+}
+.day-city-banner-label {
+  position: absolute; left: 32px; bottom: 24px; color: #fff;
+  display: flex; flex-direction: column; gap: 4px; z-index: 2;
+}
+.day-city-banner-overline {
+  font-size: .65rem; letter-spacing: .3em; font-weight: 600; opacity: .85;
+  text-transform: uppercase;
+}
+.day-city-banner-name { font-size: 2rem; font-weight: 500; line-height: 1; }
+.day-city-banner::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,.6) 0%, rgba(0,0,0,0) 60%);
+}
+
+/* ── Hotels (4.47.0+ Sprint 6a — visual estilo revista, foto + cards) ── */
+.hotels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; margin-top: 40px; }
+.hotel-card-rich {
+  background: var(--white); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,.06);
+  transition: transform .3s, box-shadow .3s; display: flex; flex-direction: column;
+}
+.hotel-card-rich:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,.1); }
+.hotel-img {
+  width: 100%; aspect-ratio: 16 / 10; background-size: cover; background-position: center;
+  background-color: var(--light);
+}
+.hotel-img-empty {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--gold); font-size: 1.2rem; letter-spacing: .3em;
+  background: linear-gradient(135deg, var(--navy) 0%, var(--dark) 100%);
+}
+.hotel-body { padding: 22px 24px 24px; }
 .hotel-cat {
-  font-size: .55rem; letter-spacing: .3em; font-weight: 700; color: var(--gold);
+  font-size: .6rem; letter-spacing: .3em; font-weight: 700; color: var(--gold);
   text-transform: uppercase; margin-bottom: 8px;
 }
-.hotel-name { font-size: 1.1rem; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+.hotel-name {
+  font-size: 1.35rem; font-weight: 600; color: var(--navy);
+  line-height: 1.25; margin: 0 0 4px;
+}
+.hotel-city {
+  font-size: .8rem; color: var(--muted); letter-spacing: .04em;
+  margin-bottom: 16px;
+}
+.hotel-dl {
+  margin: 0; padding-top: 14px; border-top: 1px solid rgba(0,0,0,.06);
+  display: grid; grid-template-columns: 110px 1fr; gap: 8px 14px; font-size: .8125rem;
+}
+.hotel-dl dt {
+  font-weight: 600; color: var(--navy); text-transform: uppercase;
+  letter-spacing: .06em; font-size: .65rem; padding-top: 2px;
+}
+.hotel-dl dd { margin: 0; color: #4B5563; }
+.hotel-obs {
+  margin-top: 14px; padding-top: 14px; border-top: 1px dashed rgba(0,0,0,.08);
+  font-size: .8rem; color: var(--muted); font-style: italic; line-height: 1.5;
+}
+/* Compat: cards antigos sem foto (caso roteiro pre-Sprint 6 ou sem images) */
+.hotel-card { background: var(--white); border: 1px solid rgba(0,0,0,.06); padding: 24px; }
 .hotel-detail { font-size: .8rem; color: var(--muted); line-height: 1.6; }
 .hotel-detail strong { color: var(--navy); font-weight: 600; }
 
@@ -475,16 +564,33 @@ function render(container, r, area) {
   const nNights = nDays > 0 ? nDays - 1 : 0;
   const durationText = nDays > 0 ? `${nDays} dia${nDays > 1 ? 's' : ''} / ${nNights} noite${nNights !== 1 ? 's' : ''}` : '';
 
+  // 4.47.0+ (Sprint 6a Phase 2a) — Imagens entre dias quando MUDA de cidade.
+  // Função utilitária pra normalizar cityKey (espelha normKey do generator).
+  const _norm = (s) => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\s]/g, '').trim();
+
+  // 4.47.0+ (Sprint 6a Phase 2d) — Mapa interativo
+  // Mostra apenas se houver cidades/hotéis OU dicas com geo (pinpoint-able).
+  const hasMapData = !!(
+    (r.travel?.destinations?.length || r.hotels?.length) ||
+    embeddedTips.some(emb => {
+      const segs = emb?.content?.segments || {};
+      return Object.values(segs).some(arr =>
+        Array.isArray(arr) && arr.some(it => it?._geo?.lat));
+    })
+  );
+
   // Build nav sections
   const navItems = [];
+  // 4.47.0+ (Sprint 6a) — labels com acentos corretos (antes eram ASCII).
   if (days.length) navItems.push({ id: 'roteiro', label: 'Roteiro' });
-  if (hotels.length) navItems.push({ id: 'hoteis', label: 'Hoteis' });
+  if (hasMapData) navItems.push({ id: 'mapa', label: 'Mapa' });
+  if (hotels.length) navItems.push({ id: 'hoteis', label: 'Hotéis' });
   if (pricing.value || pricing.valor) navItems.push({ id: 'valores', label: 'Valores' });
   if (optionals.length) navItems.push({ id: 'opcionais', label: 'Opcionais' });
-  if (includes.length || excludes.length) navItems.push({ id: 'inclui', label: 'Inclui / Nao Inclui' });
+  if (includes.length || excludes.length) navItems.push({ id: 'inclui', label: 'Inclui / Não inclui' });
   if (payment) navItems.push({ id: 'pagamento', label: 'Pagamento' });
   if (cancellation.length) navItems.push({ id: 'cancelamento', label: 'Cancelamento' });
-  if (Object.keys(info).length) navItems.push({ id: 'informacoes', label: 'Informacoes' });
+  if (Object.keys(info).length) navItems.push({ id: 'informacoes', label: 'Informações' });
   if (embeddedTips.length) navItems.push({ id: 'dicas', label: 'Dicas Locais' });
 
   container.innerHTML = `
@@ -495,7 +601,7 @@ function render(container, r, area) {
       <div class="hero-content">
         <span class="hero-overline">Roteiro de Viagem</span>
         <h1 class="hero-title serif">${esc(r.title || r.titulo || destinations.join(' · ') || 'Roteiro')}</h1>
-        ${destinations.length ? `<p class="hero-destinations">${esc(destinations.join(' &middot; '))}</p>` : ''}
+        ${destinations.length ? `<p class="hero-destinations">${esc(destinations.join(' · '))}</p>` : ''}
         ${durationText ? `<div class="hero-badge">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           ${esc(durationText)}
@@ -518,20 +624,45 @@ function render(container, r, area) {
         <h2 class="section-title serif">Roteiro Detalhado</h2>
         <p class="section-desc">${esc(destinations.join(', '))} ${durationText ? '&mdash; ' + esc(durationText) : ''}</p>
         <div class="timeline">
-          ${days.map((day, i) => {
-            const dayNum = day.day || day.dia || (i + 1);
-            const date = day.date || day.data || '';
-            const title = day.title || day.titulo || '';
-            const city = day.city || day.cidade || '';
-            const narrative = day.narrative || day.narrativa || day.description || day.descricao || '';
-            const overnight = day.overnight || day.pernoite || '';
-            return `
+          ${(() => {
+            // 4.47.0+ (Sprint 6a Phase 2a) — rastreia ULTIMA cidade vista
+            // pra inserir banner de imagem CADA VEZ QUE MUDA. Quebra a
+            // monotonia visual de 10 dias seguidos só de texto.
+            let lastCityKey = null;
+            return days.map((day, i) => {
+              const dayNum = day.day || day.dia || (i + 1);
+              const date = day.date || day.data || '';
+              const title = day.title || day.titulo || '';
+              const city = day.city || day.cidade || '';
+              const narrative = day.narrative || day.narrativa || day.description || day.descricao || '';
+              const overnight = day.overnight || day.pernoite || '';
+              // 4.47.0+ (Sprint 6a fix) — se title === city, omite a sub-label
+              const finalTitle = title || ('Dia ' + dayNum);
+              const cityIsRedundant = city && finalTitle &&
+                city.toLowerCase().trim() === finalTitle.toLowerCase().trim();
+
+              // Banner de imagem quando muda cidade (e há foto no enriched)
+              const cityKey = _norm(city);
+              const cityImg = (enriched.byCity && cityKey && enriched.byCity[cityKey]) || null;
+              const showCityBanner = city && cityKey !== lastCityKey && cityImg;
+              const banner = showCityBanner
+                ? `<div class="day-city-banner">
+                    <div class="day-city-banner-img" style="background-image:url('${esc(cityImg)}')"></div>
+                    <div class="day-city-banner-label">
+                      <span class="day-city-banner-overline">Próximo destino</span>
+                      <span class="day-city-banner-name serif">${esc(city)}</span>
+                    </div>
+                  </div>`
+                : '';
+              if (city) lastCityKey = cityKey;
+
+              return banner + `
             <div class="day-card">
               <div class="day-badge">${esc(dayNum)}</div>
               <div class="day-header">
                 ${date ? `<div class="day-date">${esc(fmtDate(date))}</div>` : `<div class="day-date">Dia ${esc(dayNum)}</div>`}
-                <h3 class="day-title serif">${esc(title || 'Dia ' + dayNum)}</h3>
-                ${city ? `<div class="day-city">${esc(city)}</div>` : ''}
+                <h3 class="day-title serif">${esc(finalTitle)}</h3>
+                ${city && !cityIsRedundant ? `<div class="day-city">${esc(city)}</div>` : ''}
               </div>
               ${narrative ? `<div class="day-narrative">${esc(narrative)}</div>` : ''}
               ${overnight ? `<div class="day-overnight">
@@ -539,34 +670,56 @@ function render(container, r, area) {
                 Pernoite: ${esc(overnight)}
               </div>` : ''}
             </div>`;
-          }).join('')}
+            }).join('');
+          })()}
         </div>
       </section>` : ''}
 
-      <!-- Hotels -->
+      <!-- 4.47.0+ (Sprint 6a Phase 2d) — Mapa interativo -->
+      ${hasMapData ? `
+      <section class="section" id="sec-mapa">
+        <span class="section-overline">Localização</span>
+        <h2 class="section-title serif">Mapa da viagem</h2>
+        <p class="section-desc">Cidades, hotéis e dicas marcados no mapa. Clique nos pins pra explorar.</p>
+        <div id="roteiro-map" class="roteiro-map-wrap">
+          <div class="roteiro-map-placeholder">Carregando mapa...</div>
+        </div>
+      </section>` : ''}
+
+      <!-- 4.47.0+ (Sprint 6a Phase 2b) — Hotéis: cards visuais com foto + nome + dl
+           limpo. Antes era label/value cru ("Cidade: Tóquio"). Agora estilo revista. -->
       ${hotels.length ? `
       <section class="section" id="sec-hoteis">
         <span class="section-overline">Hospedagem</span>
-        <h2 class="section-title serif">Hoteis</h2>
+        <h2 class="section-title serif">Hotéis</h2>
         <div class="hotels-grid">
-          ${hotels.map(h => {
-            const name = h.name || h.nome || '';
+          ${hotels.map((h, idx) => {
+            // Compat: schema atual usa hotelName, antigos podiam usar name/nome
+            const name = h.hotelName || h.name || h.nome || '';
             const city = h.city || h.cidade || '';
             const category = h.category || h.categoria || '';
             const roomType = h.roomType || h.tipoQuarto || h.acomodacao || '';
             const regime = h.regime || h.mealPlan || '';
             const nights = h.nights || h.noites || '';
             const obs = h.obs || h.observacao || '';
+            // 4.47.0+ Foto do hotel via enriched.byHotel[idx] — banco ou Unsplash
+            const hotelImg = enriched.byHotel && enriched.byHotel[idx] ? enriched.byHotel[idx] : null;
             return `
-            <div class="hotel-card">
-              ${category ? `<div class="hotel-cat">${esc(category)}</div>` : ''}
-              <div class="hotel-name">${esc(name)}</div>
-              ${city ? `<div class="hotel-detail"><strong>Cidade:</strong> ${esc(city)}</div>` : ''}
-              ${roomType ? `<div class="hotel-detail"><strong>Acomodacao:</strong> ${esc(roomType)}</div>` : ''}
-              ${regime ? `<div class="hotel-detail"><strong>Regime:</strong> ${esc(regime)}</div>` : ''}
-              ${nights ? `<div class="hotel-detail"><strong>Noites:</strong> ${esc(nights)}</div>` : ''}
-              ${obs ? `<div class="hotel-detail" style="margin-top:8px;font-style:italic;color:var(--muted);">${esc(obs)}</div>` : ''}
-            </div>`;
+            <article class="hotel-card-rich">
+              ${hotelImg ? `<div class="hotel-img" style="background-image:url('${esc(hotelImg)}')"></div>`
+                         : `<div class="hotel-img hotel-img-empty">${category ? esc(category) : '★★★★★'}</div>`}
+              <div class="hotel-body">
+                ${category ? `<div class="hotel-cat">${esc(category)}</div>` : ''}
+                <h3 class="hotel-name serif">${esc(name || 'Hotel')}</h3>
+                ${city ? `<div class="hotel-city">${esc(city)}</div>` : ''}
+                <dl class="hotel-dl">
+                  ${roomType ? `<dt>Acomodação</dt><dd>${esc(roomType)}</dd>` : ''}
+                  ${regime   ? `<dt>Regime</dt><dd>${esc(regime)}</dd>` : ''}
+                  ${nights   ? `<dt>Noites</dt><dd>${esc(nights)}</dd>` : ''}
+                </dl>
+                ${obs ? `<div class="hotel-obs">${esc(obs)}</div>` : ''}
+              </div>
+            </article>`;
           }).join('')}
         </div>
       </section>` : ''}
@@ -615,7 +768,7 @@ function render(container, r, area) {
       ${(includes.length || excludes.length) ? `
       <section class="section" id="sec-inclui">
         <span class="section-overline">Detalhamento</span>
-        <h2 class="section-title serif">O que esta incluso</h2>
+        <h2 class="section-title serif">O que está incluso</h2>
         <div class="inc-exc-grid">
           ${includes.length ? `
           <div class="inc-exc-col includes">
@@ -654,7 +807,7 @@ function render(container, r, area) {
       ${cancellation.length ? `
       <section class="section" id="sec-cancelamento">
         <span class="section-overline">Politicas</span>
-        <h2 class="section-title serif">Politica de Cancelamento</h2>
+        <h2 class="section-title serif">Política de Cancelamento</h2>
         <table class="cancel-table">
           <thead><tr>
             <th>Prazo</th>
@@ -680,7 +833,7 @@ function render(container, r, area) {
       ${Object.keys(info).length ? `
       <section class="section" id="sec-informacoes">
         <span class="section-overline">Essencial</span>
-        <h2 class="section-title serif">Informacoes Importantes</h2>
+        <h2 class="section-title serif">Informações Importantes</h2>
         <div class="accordion">
           ${Object.entries(info).map(([key, val]) => {
             if (!val || (typeof val === 'object' && !Object.keys(val).length)) return '';
@@ -705,8 +858,8 @@ function render(container, r, area) {
               documents: 'Documentos',
               observacoes: 'Observacoes',
               notes: 'Observacoes',
-              geral: 'Informacoes Gerais',
-              general: 'Informacoes Gerais',
+              geral: 'Informações Gerais',
+              general: 'Informações Gerais',
             }[key.toLowerCase()] || key.charAt(0).toUpperCase() + key.slice(1);
             const content = typeof val === 'string' ? val : (val.text || val.texto || JSON.stringify(val, null, 2));
             return `
@@ -732,10 +885,10 @@ function render(container, r, area) {
         ${embeddedTips.map(emb => {
           const segments = (emb.content && emb.content.segments) || {};
           const segLabels = {
-            informacoes_gerais: 'Informacoes Gerais', bairros: 'Bairros',
-            atracoes: 'Atracoes', atracoes_criancas: 'Atracoes para Criancas',
+            informacoes_gerais: 'Informações Gerais', bairros: 'Bairros',
+            atracoes: 'Atrações', atracoes_criancas: 'Atrações para Crianças',
             restaurantes: 'Restaurantes', vida_noturna: 'Vida Noturna',
-            espetaculos: 'Casas de Espetaculos', compras: 'Compras',
+            espetaculos: 'Casas de Espetáculos', compras: 'Compras',
             arredores: 'Arredores', highlights: 'Highlights',
             agenda_cultural: 'Agenda Cultural',
           };
@@ -778,6 +931,160 @@ function render(container, r, area) {
 
   // Setup nav active tracking
   setupNavTracking();
+
+  // 4.47.0+ (Sprint 6a Phase 2d) — Mapa interativo (async, não-bloqueante)
+  if (hasMapData) {
+    mountRoteiroMap(r, embeddedTips).catch(e => {
+      console.warn('[roteiro-view] map mount fail:', e?.message);
+      const el = document.getElementById('roteiro-map');
+      if (el) el.innerHTML = '<div class="roteiro-map-placeholder">Não foi possível carregar o mapa.</div>';
+    });
+  }
+}
+
+/**
+ * 4.47.0+ (Sprint 6a Phase 2d) — Renderiza mapa Leaflet com 3 tipos de pin:
+ *   - 🌍 cidades (do travel.destinations)
+ *   - 🏨 hotéis (do hotels[])
+ *   - 💡 dicas (items das embeddedTips com _geo)
+ *
+ * Geocoding de cidades/hotéis em RUNTIME via Nominatim (1 req/seg, sem key).
+ * Cache em sessionStorage pra não re-geocodar a cada view.
+ *
+ * Items das embeddedTips: usa `_geo` se já vier do snapshot (Portal geocodou
+ * antes do anexo). Sem _geo, item NÃO entra no mapa (sem fallback — Nominatim
+ * de items é responsabilidade do Portal pré-anexo).
+ */
+async function mountRoteiroMap(r, embeddedTips) {
+  const container = document.getElementById('roteiro-map');
+  if (!container) return;
+
+  // Carrega Leaflet sob demanda
+  if (typeof L === 'undefined') {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      s.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+      s.crossOrigin = '';
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  /* Geocoding com cache (sessionStorage + in-memory) */
+  const geoCache = new Map();
+  const geocode = async (query) => {
+    if (!query) return null;
+    const key = String(query).toLowerCase().trim();
+    if (geoCache.has(key)) return geoCache.get(key);
+    // sessionStorage scope tab — evita re-fetch em F5
+    try {
+      const stored = sessionStorage.getItem('geo:' + key);
+      if (stored) { const g = JSON.parse(stored); geoCache.set(key, g); return g; }
+    } catch {}
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error('nominatim status ' + res.status);
+      const arr = await res.json();
+      if (!arr.length) { geoCache.set(key, null); return null; }
+      const g = { lat: parseFloat(arr[0].lat), lng: parseFloat(arr[0].lon) };
+      geoCache.set(key, g);
+      try { sessionStorage.setItem('geo:' + key, JSON.stringify(g)); } catch {}
+      // Nominatim TOS: 1 req/seg — pausa antes da próxima
+      await new Promise(r => setTimeout(r, 1100));
+      return g;
+    } catch (e) {
+      console.warn('[map] geocode fail:', query, e.message);
+      geoCache.set(key, null);
+      return null;
+    }
+  };
+
+  /* Coleta pins */
+  const pins = []; // { lat, lng, label, type, addr? }
+
+  // 1) Cidades do travel.destinations
+  const destinations = r.travel?.destinations || [];
+  for (const d of destinations) {
+    if (!d.city) continue;
+    const q = `${d.city}${d.country ? ', ' + d.country : ''}`;
+    const g = await geocode(q);
+    if (g) pins.push({ ...g, label: d.city, type: 'city', addr: d.country || '' });
+  }
+
+  // 2) Hotéis (hotelName + city pra precisão)
+  const hotels = r.hotels || [];
+  for (let i = 0; i < hotels.length; i++) {
+    const h = hotels[i];
+    if (!h.hotelName && !h.city) continue;
+    const q = `${h.hotelName || ''}${h.city ? ', ' + h.city : ''}`.trim();
+    const g = await geocode(q);
+    if (g) pins.push({ ...g, label: h.hotelName || `Hotel ${i+1}`, type: 'hotel', addr: h.city || '' });
+  }
+
+  // 3) Dicas embedded (só items com _geo já calculado pelo Portal)
+  for (const emb of embeddedTips || []) {
+    const segs = emb?.content?.segments || {};
+    for (const [segKey, items] of Object.entries(segs)) {
+      if (!Array.isArray(items)) continue;
+      for (const it of items) {
+        if (!it?._geo?.lat || !it?._geo?.lng) continue;
+        const title = it.titulo || it.title || it.name || '';
+        if (!title) continue;
+        pins.push({
+          lat: it._geo.lat, lng: it._geo.lng,
+          label: title, type: 'tip',
+          addr: it.endereco || it.address || it.location || '',
+        });
+      }
+    }
+  }
+
+  if (!pins.length) {
+    container.innerHTML = '<div class="roteiro-map-placeholder">Sem coordenadas pra exibir no mapa.</div>';
+    return;
+  }
+
+  /* Render Leaflet */
+  container.innerHTML = ''; // limpa placeholder
+  const bounds = L.latLngBounds(pins.map(p => [p.lat, p.lng]));
+  const map = L.map(container, {
+    scrollWheelZoom: false,
+    zoomControl: true,
+    attributionControl: true,
+  }).fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 19,
+  }).addTo(map);
+
+  const ICON_LABEL = { city: '·', hotel: '★', tip: '✓' };
+  pins.forEach((p) => {
+    const icon = L.divIcon({
+      className: 'map-pin-wrapper',
+      html: `<div class="map-pin ${p.type}"><span>${ICON_LABEL[p.type] || '·'}</span></div>`,
+      iconSize: [32, 32],
+      iconAnchor: [16, 32],
+    });
+    const m = L.marker([p.lat, p.lng], { icon }).addTo(map);
+    const catLabel = p.type === 'city' ? 'Cidade' : p.type === 'hotel' ? 'Hotel' : 'Dica';
+    const gm = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
+    m.bindPopup(`
+      <div class="map-popup-cat">${esc(catLabel)}</div>
+      <div class="map-popup-title">${esc(p.label)}</div>
+      ${p.addr ? `<div class="map-popup-addr">${esc(p.addr)}</div>` : ''}
+      <a href="${gm}" target="_blank" rel="noopener" style="
+        display:inline-flex;align-items:center;gap:6px;margin-top:8px;
+        padding:6px 12px;background:var(--navy);color:#fff;
+        border-radius:99px;font-size:11px;font-weight:600;text-decoration:none;">
+        ↗ Abrir no Google Maps
+      </a>
+    `);
+  });
+
+  // Click reativa scrollwheel
+  container.addEventListener('click', () => map.scrollWheelZoom.enable(), { once: true });
 }
 
 /* ── Nav scroll tracking ── */
