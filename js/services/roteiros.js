@@ -143,6 +143,32 @@ export function emptyRoteiro() {
       customRows: [],  // { label, value }
     },
 
+    /* 4.42.0+ (Sprint 3) — Dicas anexas do Portal de Dicas.
+     *
+     * Cada item armazena um SNAPSHOT do conteúdo da dica no momento do
+     * anexo — garantia de previsibilidade pro cliente (mudanças posteriores
+     * na dica original NÃO afetam roteiros já enviados).
+     *
+     * O user pode "re-publicar" a dica pra puxar a versão atual quando
+     * quiser. Detection de divergência (`isStale`) é computada on-read
+     * comparando `content.updatedAtSnapshot` com `portal_tips/{tipId}.updatedAt`.
+     *
+     * Schema:
+     *   {
+     *     id:        string,    // uuid local pro UI (reorder, edit stable)
+     *     tipId:     string,    // doc id em portal_tips
+     *     title:     string,    // snapshot do título (city/country)
+     *     subtitle:  string,    // continent
+     *     snapshotAt: timestamp,// quando foi anexada/re-publicada
+     *     content: {
+     *       city, country, continent: string,
+     *       segments: { [segmentKey]: array },  // mesmo formato de portal_tips
+     *       updatedAtSnapshot: timestamp,       // updatedAt da tip no momento
+     *     },
+     *   }
+     */
+    embeddedTips: [],
+
     travel: {
       startDate: '',
       endDate: '',
@@ -323,7 +349,68 @@ function migrateRoteiroOnRead(doc) {
     };
   }
 
+  // 4.42.0+ (Sprint 3) embeddedTips: garantir array
+  if (!Array.isArray(out.embeddedTips)) out.embeddedTips = [];
+
   return out;
+}
+
+/* ─── 4.42.0+ (Sprint 3) Embed de dicas do Portal ──────────
+ *
+ * Anexa uma dica do Portal de Dicas ao roteiro fazendo SNAPSHOT do
+ * conteúdo atual. Snapshot fica em `embeddedTips[]` do doc do roteiro.
+ *
+ * Por que snapshot:
+ *   - Cliente recebe link/PDF com versão estável da dica
+ *   - Mudanças posteriores na dica original (admin reorganizou, removeu
+ *     restaurante etc.) NÃO mudam o que cliente já viu — previsibilidade
+ *   - User pode chamar `republishEmbeddedTip` quando quiser atualizar
+ */
+export async function snapshotTipForEmbed(tipId) {
+  const snap = await getDoc(doc(db, 'portal_tips', tipId));
+  if (!snap.exists()) throw new Error('Dica não encontrada (pode ter sido removida).');
+  const tip = snap.data();
+  const updatedAtSnapshot = tip.updatedAt || tip.createdAt || null;
+  // Pega apenas o que importa pra render — sem metadata interna (_geo
+  // pode ser pesado, deixamos só se já está no snapshot).
+  const content = {
+    city:              tip.city || '',
+    country:           tip.country || '',
+    continent:         tip.continent || '',
+    segments:          tip.segments || {},
+    updatedAtSnapshot, // ref pra detect stale
+  };
+  return {
+    id:         'emb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    tipId,
+    title:      `${tip.city || ''}${tip.country ? ', ' + tip.country : ''}`.trim() || '(sem destino)',
+    subtitle:   tip.continent || '',
+    snapshotAt: new Date(),
+    content,
+  };
+}
+
+/**
+ * Verifica se uma dica anexada está "stale" — i.e., a versão atual no
+ * portal é mais nova que o snapshot. Usado no editor pra mostrar badge
+ * "atualizada disponível".
+ *
+ * Retorna false se não conseguir ler a tip (sem badge — assume up-to-date
+ * pra não dar falso alarme).
+ */
+export async function isEmbeddedTipStale(embedded) {
+  if (!embedded?.tipId) return false;
+  try {
+    const snap = await getDoc(doc(db, 'portal_tips', embedded.tipId));
+    if (!snap.exists()) return false;
+    const live = snap.data();
+    const liveTs = live.updatedAt?.toMillis?.() || 0;
+    const snapTs = embedded.content?.updatedAtSnapshot?.toMillis?.() || 0;
+    // Stale = live é mais nova que snapshot (delta > 1s pra evitar flutter)
+    return liveTs - snapTs > 1000;
+  } catch (_) {
+    return false;
+  }
 }
 
 /* ─── CRUD ────────────────────────────────────────────────── */

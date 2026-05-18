@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 41,
+  minor: 42,
   patch: 0,
-  build: '20260518-roteiros-sprint2-schema-evolution',
+  build: '20260518-roteiros-sprint3-tips-embed',
 };
 
 /** "1.2.0" */

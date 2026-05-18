@@ -453,6 +453,8 @@ function render(container, r, area) {
   const payment = r.payment || r.pagamento || '';
   const cancellation = r.cancellation || r.cancelamento || [];
   const info = r.info || r.informacoes || {};
+  // 4.42.0+ Sprint 3 — dicas anexas (snapshot do Portal de Dicas)
+  const embeddedTips = Array.isArray(r.embeddedTips) ? r.embeddedTips : [];
   const buName = area?.name || area?.bu || 'PRIMETOUR';
 
   // Destinations from days
@@ -477,6 +479,7 @@ function render(container, r, area) {
   if (payment) navItems.push({ id: 'pagamento', label: 'Pagamento' });
   if (cancellation.length) navItems.push({ id: 'cancelamento', label: 'Cancelamento' });
   if (Object.keys(info).length) navItems.push({ id: 'informacoes', label: 'Informacoes' });
+  if (embeddedTips.length) navItems.push({ id: 'dicas', label: 'Dicas Locais' });
 
   container.innerHTML = `
     <!-- Hero -->
@@ -712,6 +715,49 @@ function render(container, r, area) {
             </div>`;
           }).join('')}
         </div>
+      </section>` : ''}
+
+      <!-- 4.42.0+ Sprint 3: Dicas anexas (Portal de Dicas embed) -->
+      ${embeddedTips.length ? `
+      <section class="section" id="sec-dicas">
+        <span class="section-overline">Recomendacoes</span>
+        <h2 class="section-title serif">Dicas Locais</h2>
+        <p class="section-desc">Curadoria de restaurantes, atracoes e experiencias selecionadas pelo seu consultor.</p>
+        ${embeddedTips.map(emb => {
+          const segments = (emb.content && emb.content.segments) || {};
+          const segLabels = {
+            informacoes_gerais: 'Informacoes Gerais', bairros: 'Bairros',
+            atracoes: 'Atracoes', atracoes_criancas: 'Atracoes para Criancas',
+            restaurantes: 'Restaurantes', vida_noturna: 'Vida Noturna',
+            espetaculos: 'Casas de Espetaculos', compras: 'Compras',
+            arredores: 'Arredores', highlights: 'Highlights',
+            agenda_cultural: 'Agenda Cultural',
+          };
+          const segHtml = Object.entries(segments).map(([k, items]) => {
+            if (!Array.isArray(items) || !items.length) return '';
+            const itemsHtml = items.map(it => {
+              if (typeof it === 'string') return `<li>${esc(it)}</li>`;
+              if (it && typeof it === 'object') {
+                const parts = [];
+                if (it.name) parts.push(`<strong>${esc(it.name)}</strong>`);
+                if (it.address || it.location) parts.push(esc(it.address || it.location));
+                if (it.note || it.description) parts.push(esc(it.note || it.description));
+                return `<li>${parts.join(' &middot; ')}</li>`;
+              }
+              return '';
+            }).join('');
+            const label = segLabels[k] || k.split('_').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+            return `<div class="dica-segment" style="margin-top:18px;">
+              <h4 style="font-size:.875rem;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin-bottom:8px;">${esc(label)}</h4>
+              <ul style="list-style:none;padding:0;margin:0;">${itemsHtml}</ul>
+            </div>`;
+          }).join('');
+          return `<div class="dica-card" style="background:rgba(248,249,250,.5);border-left:3px solid var(--gold);padding:24px 28px;border-radius:8px;margin-bottom:24px;">
+            <h3 class="serif" style="font-size:1.5rem;margin:0 0 4px;">${esc(emb.title || '')}</h3>
+            ${emb.subtitle ? `<div style="font-size:.875rem;color:var(--muted);">${esc(emb.subtitle)}</div>` : ''}
+            ${segHtml}
+          </div>`;
+        }).join('')}
       </section>` : ''}
 
     </div>

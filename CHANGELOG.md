@@ -112,6 +112,63 @@ interno separado do preço).
 
 ---
 
+## [4.42.0+20260518-roteiros-sprint3-tips-embed] — 2026-05-18
+
+Release **MINOR** — Sprint 3 do refactor de Roteiros: embed de dicas do
+Portal de Dicas com snapshot + re-publish.
+
+### Pedido do user
+> "sprint 3"
+> (após Sprint 2 entregue e testado: travelers + collab + workflow + cost)
+
+### Comportamento
+- User abre roteiro → seção nova **"💡 Dicas anexas"** (12ª aba)
+- Clica "+ Anexar dica" → modal lista dicas do Portal com filtros (continent + busca)
+- Clica numa dica → faz **SNAPSHOT** do conteúdo atual e anexa ao roteiro
+- Snapshot fica em `embeddedTips[]` do doc do roteiro (não é live)
+- Cliente recebe PDF/PPTX/link com versão **estável** da dica
+- Botão **↻ Re-publicar** atualiza o snapshot com versão atual do Portal
+- Badge **"⚠ versão mais recente disponível"** aparece quando Portal foi
+  editado depois do snapshot (detecção on-render comparando updatedAt)
+
+### Schema
+```
+roteiro.embeddedTips: [
+  { id, tipId, title, subtitle, snapshotAt,
+    content: { city, country, continent, segments, updatedAtSnapshot } }
+]
+```
+
+### Service helpers (`js/services/roteiros.js`)
+- `snapshotTipForEmbed(tipId)` — busca dica atual + monta snapshot
+- `isEmbeddedTipStale(embedded)` — compara updatedAt do snapshot vs live
+- `migrateRoteiroOnRead` agora garante `embeddedTips: []` em docs antigos
+
+### Editor (`js/pages/roteiroEditor.js`)
+- Nova seção 11 "Dicas anexas" (antes de Avançado)
+- 3 handlers: `open-tip-picker`, `republish-tip`, `remove-tip`
+- Modal picker reusa visual do image picker (mesma classe CSS)
+- Auto-check de stale em background (queueMicrotask, não bloqueia UX)
+
+### Render em exports
+- **PDF** (`roteiroGenerator.js` → `buildEmbeddedTipsSection`): nova seção
+  "DICAS LOCAIS" após informações importantes, antes do closing page.
+  Cada dica vira sub-seção com label + items (place_list ou simple_list).
+- **Web view** (`roteiro-view.html`): nova seção "Dicas Locais" com cards
+  por dica, segments agrupados, navegação sticky atualizada.
+- **PPTX**: defer pro Sprint 4 (polish de exports).
+
+### Defense-in-depth
+- `stripInternalFields` em generator + `stripInternalForPublicLink` em
+  createWebLink JÁ preservam embeddedTips (não estão na lista de strip).
+  Dicas embedded são conteúdo de cliente, portanto vão pro export ✓
+
+### Next (Sprint 4)
+Integração com módulo de tarefas: roteiro aprovado → gera tarefas
+operacionais (reservar voo, confirmar hotel, emitir voucher).
+
+---
+
 ## [4.41.0+20260518-roteiros-sprint2-schema-evolution] — 2026-05-18
 
 Release **MINOR** — Sprint 2 do refactor de Roteiros: schema evolution

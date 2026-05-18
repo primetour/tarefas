@@ -6,9 +6,9 @@
 import { store }  from '../store.js';
 import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
-import { fetchRoteiro, saveRoteiro } from '../services/roteiros.js';
+import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, isEmbeddedTipStale } from '../services/roteiros.js';
 import { generateRoteiroForExport, resolveDestinationImage } from '../services/roteiroGenerator.js';
-import { fetchDestinations, fetchAreas, fetchImages } from '../services/portal.js';
+import { fetchDestinations, fetchAreas, fetchImages, fetchTips } from '../services/portal.js';
 import { detectBankContext, showBankGuardModal } from '../services/bankClientGuard.js';
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -54,6 +54,7 @@ const SECTIONS = [
   { icon: '\u274C',    label: 'Cancelamento' },
   { icon: '\u2139',    label: 'Informa\u00e7\u00f5es Importantes' },
   { icon: '\u{1F5BC}', label: 'Imagens' },
+  { icon: '\u{1F4A1}', label: 'Dicas anexas' },  // 4.42.0+ Sprint 3 \u2014 embed do Portal de Dicas
   { icon: '\u2699',    label: 'Avan\u00e7ado' },        // 4.41.0+ Sprint 2 \u2014 colaboradores, workflow, custo
   { icon: '\u{1F4C4}', label: 'Preview & Export' },
 ];
@@ -320,10 +321,89 @@ function renderSectionContent(index) {
     case 8:  return renderCancelamentoSection();
     case 9:  return renderInfoSection();
     case 10: return renderImagensSection();
-    case 11: return renderAdvancedSection();  // 4.41.0+ Sprint 2
-    case 12: return renderPreviewSection();
+    case 11: return renderEmbeddedTipsSection();  // 4.42.0+ Sprint 3
+    case 12: return renderAdvancedSection();      // 4.41.0+ Sprint 2
+    case 13: return renderPreviewSection();
     default: return '';
   }
+}
+
+/* ── 11: Dicas anexas (4.42.0+ Sprint 3) ──────────────────
+ *
+ * Embed de dicas do Portal de Dicas com snapshot. User pode anexar
+ * dicas (via picker modal) que vão aparecer no PDF/PPTX/web do roteiro.
+ *
+ * Cada dica anexada é um SNAPSHOT — modificações posteriores na dica
+ * original não afetam o que cliente vê, até user clicar "Re-publicar".
+ */
+function renderEmbeddedTipsSection() {
+  const embedded = Array.isArray(currentRoteiro.embeddedTips) ? currentRoteiro.embeddedTips : [];
+
+  const rowsHTML = embedded.length
+    ? embedded.map((e, i) => {
+        const segmentsCount = e.content?.segments
+          ? Object.values(e.content.segments).reduce((s, arr) => s + (Array.isArray(arr) ? arr.length : 0), 0)
+          : 0;
+        const snapDate = (() => {
+          const d = e.snapshotAt?.toDate ? e.snapshotAt.toDate() : (e.snapshotAt ? new Date(e.snapshotAt) : null);
+          return d ? d.toLocaleDateString('pt-BR') : '—';
+        })();
+        return `
+          <div data-embed-idx="${i}" style="border:1px solid var(--border);border-radius:8px;
+            padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:14px;
+            background:var(--bg-card);">
+            <div style="font-size:1.5rem;flex-shrink:0;">💡</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:0.9375rem;">${esc(e.title)}</div>
+              <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+                ${esc(e.subtitle || 'Sem continente')} ·
+                ${segmentsCount} item${segmentsCount !== 1 ? 's' : ''} ·
+                snapshot em ${snapDate}
+                <span data-embed-stale-${i} style="display:none;margin-left:8px;color:#F59E0B;font-weight:600;">
+                  ⚠ versão mais recente disponível
+                </span>
+              </div>
+            </div>
+            <button class="re-add-btn" data-action="republish-tip" data-idx="${i}"
+              style="margin:0;background:var(--bg-soft);color:var(--text-primary);font-size:0.75rem;padding:6px 12px;">
+              ↻ Re-publicar
+            </button>
+            <button class="re-btn-icon" data-action="remove-tip" data-idx="${i}" title="Remover">✕</button>
+          </div>
+        `;
+      }).join('')
+    : `<div style="padding:40px 20px;text-align:center;color:var(--text-muted);
+        background:var(--bg-soft);border:1px dashed var(--border);border-radius:8px;">
+        <div style="font-size:2.5rem;margin-bottom:8px;">💡</div>
+        <div style="font-weight:600;font-size:0.9375rem;color:var(--text-primary);margin-bottom:4px;">
+          Nenhuma dica anexada
+        </div>
+        <div style="font-size:0.8125rem;line-height:1.5;max-width:480px;margin:0 auto;">
+          Anexe dicas do Portal de Dicas pra enriquecer o roteiro com recomendações
+          locais (restaurantes, atrações, vida noturna etc.).
+        </div>
+      </div>`;
+
+  return `
+    <div class="re-section-title">Dicas anexas</div>
+
+    <div style="background:var(--bg-soft);border-left:3px solid var(--brand-gold);padding:10px 14px;
+      border-radius:4px;font-size:0.8125rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
+      <strong style="color:var(--text-primary);">Como funciona:</strong>
+      Cada dica é um <strong>snapshot</strong> — modificações futuras na dica original
+      no Portal NÃO afetam o que o cliente vê. Use <strong>↻ Re-publicar</strong>
+      quando quiser puxar a versão atualizada.
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-size:0.875rem;color:var(--text-secondary);">
+        ${embedded.length} ${embedded.length === 1 ? 'dica anexada' : 'dicas anexadas'}
+      </div>
+      <button class="re-add-btn" data-action="open-tip-picker" style="margin:0;">+ Anexar dica</button>
+    </div>
+
+    <div id="re-embedded-tips-list">${rowsHTML}</div>
+  `;
 }
 
 /* ── 11: Avançado (4.41.0+ Sprint 2) ──────────────────────── */
@@ -1116,6 +1196,165 @@ function renderImagensSection() {
   `;
 }
 
+/**
+ * 4.42.0+ (Sprint 3) — Detecta dicas com versão mais recente disponível
+ * no Portal e mostra badge "atualizada disponível" pra cada uma. Faz
+ * requests paralelos em background, atualiza DOM sem bloquear UX.
+ */
+async function checkEmbeddedTipsStale(embedded) {
+  if (!Array.isArray(embedded) || !embedded.length) return;
+  const checks = embedded.map((e, i) =>
+    isEmbeddedTipStale(e).then(stale => ({ idx: i, stale })).catch(() => null)
+  );
+  const results = await Promise.all(checks);
+  results.filter(Boolean).forEach(({ idx, stale }) => {
+    const badge = document.querySelector(`[data-embed-stale-${idx}]`);
+    if (badge) badge.style.display = stale ? 'inline' : 'none';
+  });
+}
+
+/**
+ * 4.42.0+ (Sprint 3) — Modal pra anexar dica do Portal de Dicas.
+ *
+ * Reusa visual e estrutura do modal de imagens (mesmas classes CSS). Lista
+ * dicas com filtros por continent + country + busca textual. Click numa
+ * dica → faz snapshot via snapshotTipForEmbed e adiciona ao roteiro.
+ *
+ * Snapshot é defensivo: se a tip mudar depois, o roteiro mantém versão
+ * anexada. User pode re-publicar manualmente quando quiser.
+ */
+async function openTipPickerModal() {
+  const modal = document.createElement('div');
+  modal.className = 're-img-modal-overlay';
+  modal.innerHTML = `
+    <div class="re-img-modal">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">💡 Anexar dica do Portal</div>
+        <button class="re-img-modal-close" type="button" aria-label="Fechar">&times;</button>
+      </div>
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border);
+        display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <input id="re-tip-search" class="re-input" placeholder="Buscar por cidade ou país..." style="flex:1;min-width:220px;" />
+        <select id="re-tip-continent" class="re-select" style="max-width:200px;">
+          <option value="">Todos continentes</option>
+        </select>
+      </div>
+      <div id="re-tip-picker-list" style="padding:18px;overflow:auto;max-height:60vh;">
+        <div style="text-align:center;color:var(--text-muted);padding:40px;">Carregando dicas...</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const closeModal = () => modal.remove();
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  modal.querySelector('.re-img-modal-close').addEventListener('click', closeModal);
+  document.addEventListener('keydown', function escHandler(e) {
+    if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', escHandler); }
+  });
+
+  // Carrega dicas
+  let allTips = [];
+  try {
+    allTips = await fetchTips();
+  } catch (err) {
+    modal.querySelector('#re-tip-picker-list').innerHTML = `
+      <div style="text-align:center;color:var(--color-danger);padding:40px;">
+        Erro ao carregar dicas: ${esc(err.message)}
+      </div>`;
+    return;
+  }
+
+  // IDs já anexadas (pra mostrar status "já anexada")
+  const attachedIds = new Set(
+    (currentRoteiro.embeddedTips || []).map(e => e.tipId).filter(Boolean)
+  );
+
+  // Popula dropdown de continents
+  const continents = [...new Set(allTips.map(t => t.continent).filter(Boolean))].sort();
+  const contSelect = modal.querySelector('#re-tip-continent');
+  continents.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c; opt.textContent = c;
+    contSelect.appendChild(opt);
+  });
+
+  // Render fn
+  const listEl = modal.querySelector('#re-tip-picker-list');
+  const renderList = () => {
+    const term = (modal.querySelector('#re-tip-search')?.value || '').trim().toLowerCase();
+    const cont = contSelect.value;
+    const filtered = allTips.filter(t => {
+      if (cont && t.continent !== cont) return false;
+      if (term) {
+        const hay = `${t.city || ''} ${t.country || ''}`.toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      return true;
+    });
+    if (!filtered.length) {
+      listEl.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:40px;">
+        Nenhuma dica encontrada com esses filtros.
+      </div>`;
+      return;
+    }
+    listEl.innerHTML = filtered.map(t => {
+      const already = attachedIds.has(t.id);
+      const items = t.segments
+        ? Object.values(t.segments).reduce((s, arr) => s + (Array.isArray(arr) ? arr.length : 0), 0)
+        : 0;
+      return `
+        <div data-pick-tip-id="${esc(t.id)}" style="display:flex;align-items:center;gap:14px;
+          padding:12px 14px;border:1px solid var(--border);border-radius:8px;
+          margin-bottom:8px;cursor:${already ? 'default' : 'pointer'};
+          background:${already ? 'var(--bg-soft)' : 'var(--bg-card)'};
+          opacity:${already ? '0.6' : '1'};transition:background .15s;"
+          ${already ? '' : 'onmouseover="this.style.background=\'var(--bg-soft)\'" onmouseout="this.style.background=\'var(--bg-card)\'"'}>
+          <div style="font-size:1.5rem;">💡</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:0.9375rem;">
+              ${esc(t.city || '')}${t.country ? ', ' + esc(t.country) : ''}
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+              ${esc(t.continent || 'Sem continente')} · ${items} item${items !== 1 ? 's' : ''}
+            </div>
+          </div>
+          ${already
+            ? `<span style="font-size:0.7rem;font-weight:600;color:var(--color-success);
+                background:rgba(16,185,129,.1);padding:4px 10px;border-radius:99px;">✓ Já anexada</span>`
+            : `<span style="font-size:0.75rem;color:var(--brand-gold);font-weight:500;">Anexar →</span>`}
+        </div>
+      `;
+    }).join('');
+    // Wire clicks
+    listEl.querySelectorAll('[data-pick-tip-id]').forEach(row => {
+      const tipId = row.dataset.pickTipId;
+      if (attachedIds.has(tipId)) return; // já anexada — sem ação
+      row.addEventListener('click', async () => {
+        try {
+          row.style.opacity = '0.5';
+          row.style.pointerEvents = 'none';
+          const snapshot = await snapshotTipForEmbed(tipId);
+          if (!Array.isArray(currentRoteiro.embeddedTips)) currentRoteiro.embeddedTips = [];
+          currentRoteiro.embeddedTips.push(snapshot);
+          rerenderCurrentSection();
+          markDirty();
+          showToast('Dica anexada.', 'success');
+          closeModal();
+        } catch (err) {
+          showToast('Erro ao anexar: ' + err.message, 'error');
+          row.style.opacity = '1';
+          row.style.pointerEvents = 'auto';
+        }
+      });
+    });
+  };
+
+  modal.querySelector('#re-tip-search').addEventListener('input', renderList);
+  contSelect.addEventListener('change', renderList);
+  renderList();
+}
+
 /** Modal de seleção de imagem — 3 abas: Banco / Online / URL */
 async function openImagePickerModal({ imgKey, query }) {
   // Garante container modal
@@ -1398,6 +1637,16 @@ function collectFormData() {
   // 4.41.0+ (Sprint 2) Workflow mode
   const wfm = mainContainer.querySelector('input[name="re-workflow-mode"]:checked');
   if (wfm) data.workflowMode = wfm.value;
+
+  // 4.42.0+ (Sprint 3) embeddedTips — gerenciado in-memory, nada a coletar do DOM.
+  // Garantir que o array existe pra handlers downstream não quebrarem.
+  if (!Array.isArray(data.embeddedTips)) data.embeddedTips = currentRoteiro.embeddedTips || [];
+
+  // Auto-check stale para dicas anexadas (não-bloqueante).
+  // Após render, faz requests paralelos e atualiza badges via DOM patching.
+  if (Array.isArray(data.embeddedTips) && data.embeddedTips.length) {
+    queueMicrotask(() => checkEmbeddedTipsStale(data.embeddedTips));
+  }
 
   // 4.41.0+ (Sprint 2) Cost pricing
   const cpRows = mainContainer.querySelectorAll('[data-cprow-idx]');
@@ -1977,6 +2226,41 @@ function handleEditorClick(e) {
       switchSection(5);
       markDirty();
       break;
+
+    /* ── Embedded tips (4.42.0+ Sprint 3) ─────────────────── */
+    case 'open-tip-picker': {
+      currentRoteiro = collectFormData();
+      openTipPickerModal();
+      break;
+    }
+
+    case 'republish-tip': {
+      currentRoteiro = collectFormData();
+      const tip = currentRoteiro.embeddedTips?.[idx];
+      if (!tip?.tipId) { showToast('Dica sem referência ao original.', 'error'); break; }
+      showToast('Atualizando snapshot...', 'info');
+      snapshotTipForEmbed(tip.tipId).then(fresh => {
+        // Preserva o ID local (pra estabilidade na UI), mas atualiza
+        // título/subtitle/snapshotAt/content com a versão atual.
+        currentRoteiro.embeddedTips[idx] = { ...fresh, id: tip.id };
+        rerenderCurrentSection();
+        markDirty();
+        showToast('Snapshot atualizado!', 'success');
+      }).catch(err => {
+        showToast('Erro ao re-publicar: ' + err.message, 'error');
+      });
+      break;
+    }
+
+    case 'remove-tip': {
+      currentRoteiro = collectFormData();
+      if (Array.isArray(currentRoteiro.embeddedTips)) {
+        currentRoteiro.embeddedTips.splice(idx, 1);
+      }
+      rerenderCurrentSection();
+      markDirty();
+      break;
+    }
 
     /* ── Cost pricing rows (4.41.0+ Sprint 2) ─────────────── */
     // IMPORTANTE: usa rerenderCurrentSection() em vez de switchSection() pra

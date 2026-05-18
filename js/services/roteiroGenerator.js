@@ -650,6 +650,11 @@ export async function generateRoteiroPDF(roteiro, area = null) {
     buildImportantInfoSection(doc, roteiro, primary, secondary);
   }
 
+  /* ─── 4.42.0+ Sprint 3: DICAS ANEXAS ────────────────────── */
+  if (Array.isArray(roteiro.embeddedTips) && roteiro.embeddedTips.length) {
+    buildEmbeddedTipsSection(doc, roteiro, primary, secondary);
+  }
+
   /* ─── CLOSING PAGE ───────────────────────────────────────── */
   buildClosingPage(doc, roteiro, buName, primary, secondary, logoCoverPng);
 
@@ -1505,6 +1510,109 @@ function buildImportantInfoSection(doc, roteiro, primary, secondary) {
 
   // Anchor pra próxima seção (closing page) saber onde paramos
   doc.lastAutoTable = { finalY: y };
+}
+
+/* ─── 4.42.0+ Sprint 3: Dicas anexas (Portal de Dicas embed) ──
+ *
+ * Renderiza cada dica anexada como seção própria com título + segments.
+ * Snapshot foi feito no momento do anexo — usamos `content.segments` como
+ * source of truth, não live do portal.
+ *
+ * Cada segmento (atrações, restaurantes, etc) vira sub-bloco com items.
+ * Items podem ser objetos (place_list) ou strings (simple_list).
+ */
+function buildEmbeddedTipsSection(doc, roteiro, primary, secondary) {
+  const [pr, pg, pb] = hexToRgb(primary);
+  const embedded = roteiro.embeddedTips || [];
+  if (!embedded.length) return;
+
+  let y = (doc.lastAutoTable?.finalY || 0) + 15;
+  if (y > PAGE_H - 60) { doc.addPage(); y = MARGIN; }
+
+  y = addSectionTitle(doc, y, 'DICAS LOCAIS', primary, secondary);
+  y += 4;
+
+  for (const emb of embedded) {
+    // Header da dica (cidade, país)
+    y = checkPageBreak(doc, y, 25);
+    doc.setFont('Poppins', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(pr, pg, pb);
+    doc.text(emb.title || '(Sem destino)', MARGIN + 3, y + 4);
+    y += 6;
+
+    if (emb.subtitle) {
+      doc.setFont('Poppins', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(140, 140, 140);
+      doc.text(emb.subtitle, MARGIN + 3, y + 3);
+      y += 6;
+    }
+
+    // Renderiza segments (pegamos apenas os que têm items)
+    const segments = emb.content?.segments || {};
+    for (const [segKey, items] of Object.entries(segments)) {
+      if (!Array.isArray(items) || items.length === 0) continue;
+
+      // Label do segmento (usa key humanizada como fallback)
+      const segLabel = humanizeSegmentKey(segKey);
+      y = checkPageBreak(doc, y, 12);
+      doc.setFont('Poppins', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(pr, pg, pb);
+      doc.text(segLabel.toUpperCase(), MARGIN + 3, y + 3, { charSpace: 0.6 });
+      y += 6;
+
+      // Items — adaptamos pra string OU objeto
+      doc.setFont('Poppins', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(60, 60, 60);
+      for (const item of items) {
+        y = checkPageBreak(doc, y, 10);
+        let line;
+        if (typeof item === 'string') {
+          line = '· ' + item;
+        } else if (item && typeof item === 'object') {
+          const parts = [];
+          if (item.name)        parts.push(item.name);
+          if (item.address)     parts.push(item.address);
+          else if (item.location) parts.push(item.location);
+          if (item.note || item.description) parts.push(item.note || item.description);
+          line = '· ' + parts.filter(Boolean).join(' — ');
+        } else {
+          continue;
+        }
+        const lines = doc.splitTextToSize(line, CONTENT_W - 6);
+        doc.text(lines, MARGIN + 5, y + 3);
+        y += lines.length * 4.5 + 1;
+      }
+      y += 3;
+    }
+    y += 6;  // gap entre dicas
+  }
+
+  doc.lastAutoTable = { finalY: y };
+}
+
+function humanizeSegmentKey(key) {
+  // Mapeamento dos DEFAULT_SEGMENTS pra labels humanos.
+  // Match com js/services/portal.js DEFAULT_SEGMENTS.
+  const MAP = {
+    informacoes_gerais:  'Informações Gerais',
+    bairros:             'Bairros',
+    atracoes:            'Atrações',
+    atracoes_criancas:   'Atrações para Crianças',
+    restaurantes:        'Restaurantes',
+    vida_noturna:        'Vida Noturna',
+    espetaculos:         'Casas de Espetáculos',
+    compras:             'Compras',
+    arredores:           'Arredores',
+    highlights:          'Highlights',
+    agenda_cultural:     'Agenda Cultural',
+  };
+  if (MAP[key]) return MAP[key];
+  // Fallback: snake_case → Title Case
+  return key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 /* ─── Closing Page ────────────────────────────────────────── */
