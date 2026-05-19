@@ -1856,7 +1856,8 @@ async function setupNlCalendarInsights() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 let _contentDataCache = null;       // array de docs com extracted
-let _contentFiltersState = { bu: '', period: '180', country: '', city: '', theme: '', newsletterType: '', search: '' };
+// 4.49.27+ Filtros adicionais pra eixos duplos (commercial/tourism)
+let _contentFiltersState = { bu: '', period: '180', country: '', city: '', theme: '', newsletterType: '', search: '', commercial: '', tourism: '' };
 // 4.49.24+ Cache do snapshot filtrado pro drill modal — populado em renderContentTab
 let _lastContentDocs = [];
 
@@ -1975,8 +1976,18 @@ function renderContentTab() {
     <!-- 2-col grid de blocos -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;">
 
+      <!-- 4.49.27+ Eixos duplos (spec do user): Comercial + Turismo -->
+      <div id="nl-content-commercial-block" class="card" style="padding:18px;">
+        ${blockHeader('💼 Classificação Comercial', INFO_TIPS.commercial, 'nl-content-commercial-block')}
+        ${renderClassificationBars(agg.commercial, 'commercial')}
+      </div>
+      <div id="nl-content-tourism-block" class="card" style="padding:18px;">
+        ${blockHeader('✈️ Classificação Turismo', INFO_TIPS.tourism, 'nl-content-tourism-block')}
+        ${renderClassificationBars(agg.tourism, 'tourism')}
+      </div>
+
       <div id="nl-content-types-block" class="card" style="padding:18px;">
-        ${blockHeader('📂 Tipo de newsletter', INFO_TIPS.newsletterType, 'nl-content-types-block')}
+        ${blockHeader('📂 Tipo de newsletter (legado)', INFO_TIPS.newsletterType, 'nl-content-types-block')}
         ${renderNewsletterTypesBars(agg.newsletterTypes, enrichedDocs)}
       </div>
       <div id="nl-content-countries-block" class="card" style="padding:18px;">
@@ -2113,6 +2124,13 @@ function applyAllContentFilters(docs) {
     if (f.newsletterType) {
       if ((d.extracted?.newsletterType || '').toLowerCase() !== f.newsletterType.toLowerCase()) return false;
     }
+    // 4.49.27+ Filtros dos eixos duplos
+    if (f.commercial) {
+      if ((d.extracted?.commercial || '').toLowerCase() !== f.commercial.toLowerCase()) return false;
+    }
+    if (f.tourism) {
+      if ((d.extracted?.tourism || '').toLowerCase() !== f.tourism.toLowerCase()) return false;
+    }
     if (f.search) {
       const hay = JSON.stringify(d.extracted || {}).toLowerCase()
         + ' ' + (d.name || '').toLowerCase()
@@ -2166,6 +2184,9 @@ function aggregateContent(docs) {
   const themes    = new Map();
   const audiences = new Map();
   const newsletterTypes = new Map(); // 4.9.0+ promocao/aereo/roteiro/hotelaria/cruzeiro/csat/inspiracional/institucional
+  // 4.49.27+ Eixos duplos: Comercial + Turismo (spec do user)
+  const commercial = new Map(); // promocao|sazonal|parceiro|inspiracional
+  const tourism    = new Map(); // evento|aereo|roteiro|servico|hotelaria|cruzeiro|produto|destino|outros
   let confidenceHigh = 0;
   let totalOpenRate = 0;
   let openRateCount = 0;
@@ -2214,10 +2235,14 @@ function aggregateContent(docs) {
     dedup(ex.hotels).forEach(h => tally(hotels, h));
     dedup(ex.cruises).forEach(c => tally(cruises, c));
     dedup(ex.newsletterType ? [ex.newsletterType] : []).forEach(t => tally(newsletterTypes, t));
+    // 4.49.27+ Eixos duplos da spec do user
+    if (ex.commercial) tally(commercial, ex.commercial);
+    if (ex.tourism)    tally(tourism, ex.tourism);
   }
 
   return {
     countries, cities, hotels, cruises, brands, themes, audiences, newsletterTypes,
+    commercial, tourism,   // 4.49.27+
     confidenceHigh,
     avgOpenRate: openRateCount > 0 ? totalOpenRate / openRateCount : 0,
     byCountry: countries,
@@ -2239,6 +2264,9 @@ const INFO_TIPS = {
   brands:         'Subset de hotels.brand + cruises.brand. Cada marca aparece 1× por campanha (não infla por waves).',
   openRate:       'Média ponderada da taxa de abertura das newsletters enriquecidas (sample.openRate × N campanhas / total).',
   newsletterType: 'Classificação por padrões no subject: csat (pesquisa), aereo (voo/classe executiva), cruzeiro (yacht/Silversea/Aqua), show/evento (BTS, Bocelli, GP), retreat/wellness (Rituaali, spa), promocao (Dia das Mães, %OFF), roteiro (multi-destino), hotelaria (default).',
+  // 4.49.27+ Eixos duplos da spec do user
+  commercial:     'Eixo COMERCIAL (tema macro da comunicação): Sazonal (estação/feriado/data específica), Promoção (oferta/desconto/condição comercial), Parceiro (empresa parceira em destaque), Inspiracional (editorial sem valor). Prioridade: Sazonal > Promoção > Parceiro > Inspiracional.',
+  tourism:        'Eixo TURISMO (tipo de conteúdo turístico): Evento (shows/esportes/festivais), Aéreo (voos/passagens/milhas), Roteiro (multi-dia/multi-destino), Serviço (transfer/concierge), Hotelaria (hotel específico), Cruzeiro (yacht/river-cruise), Produto (presentes/revista), Destino (foco no lugar), Outros (trens, experiências raras). Prioridade: Evento > Aéreo > Roteiro > Serviço > Hotelaria > Cruzeiro > Produto > Destino > Outros.',
   topCountries:   'Top 12 países por # de campanhas. Open rate médio agregado dos disparos relacionados. Click pra drill-down.',
   topCities:      'Top 12 cidades/regiões por # de campanhas. Granularidade abaixo de país (ex: Atenas dentro de Grécia). Click pra drill-down.',
   topHotels:      'Top 10 hotéis mais mencionados nas newsletters do período. Cada hotel conta 1× por campanha (dedup intra-doc + inter-wave).',
@@ -2381,6 +2409,67 @@ function renderTopDestinosTable(map, allEnriched, label = 'País') {
     </tr>`).join('')}</tbody>
   </table>
   ${expandHint}`;
+}
+
+// 4.49.27+ Renderer dos eixos duplos (Comercial + Turismo).
+// Mesma estética dos newsletterTypes mas com labels/cores próprios e
+// drill-down clicável (data-entity=commercial/tourism).
+const COMMERCIAL_LABELS = {
+  promocao:       '🏷 Promoção',
+  sazonal:        '🗓 Sazonal',
+  parceiro:       '🤝 Parceiro',
+  inspiracional:  '✨ Inspiracional',
+};
+const COMMERCIAL_COLORS = {
+  promocao: '#F59E0B', sazonal: '#10B981',
+  parceiro: '#8B5CF6', inspiracional: '#3B82F6',
+};
+const TOURISM_LABELS = {
+  evento:    '🎤 Evento',
+  aereo:     '✈ Aéreo',
+  roteiro:   '📍 Roteiro',
+  servico:   '🛎 Serviço',
+  hotelaria: '🏨 Hotelaria',
+  cruzeiro:  '🚢 Cruzeiro',
+  produto:   '🎁 Produto',
+  destino:   '🌍 Destino',
+  outros:    '◇ Outros',
+};
+const TOURISM_COLORS = {
+  evento: '#F97316', aereo: '#3B82F6', roteiro: '#10B981',
+  servico: '#06B6D4', hotelaria: '#8B5CF6', cruzeiro: '#0EA5E9',
+  produto: '#EC4899', destino: '#D4A843', outros: '#6B7280',
+};
+
+function renderClassificationBars(map, axis) {
+  if (!map || map.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Sem dados classificados ainda. Rode o classifier.</p>';
+  const labels = axis === 'commercial' ? COMMERCIAL_LABELS : TOURISM_LABELS;
+  const colors = axis === 'commercial' ? COMMERCIAL_COLORS : TOURISM_COLORS;
+  const all = [...map.entries()].map(([name, d]) => ({
+    name, count: d.count, sends: d.sends, totalSent: d.totalSent,
+    openRate:   d.totalSent > 0 ? (d.totalOpen   / d.totalSent * 100) : 0,
+    clickRate:  d.totalSent > 0 ? (d.totalClick  / d.totalSent * 100) : 0,
+    optOutRate: d.totalSent > 0 ? (d.totalOptOut / d.totalSent * 100) : 0,
+  }));
+  all.sort((a, b) => b.count - a.count);
+  const max = all[0]?.count || 1;
+
+  return all.map(r => `<div class="nlc-drill-row" data-entity="${axis}" data-name="${esc(r.name)}"
+    data-sends="${esc(JSON.stringify(r.sends))}"
+    style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;
+    cursor:pointer;padding:2px 4px;border-radius:4px;"
+    title="Click pra ver os ${r.count} disparos classificados como ${esc(labels[r.name]||r.name)}"
+    onmouseover="this.style.background='rgba(212,168,67,0.06)'"
+    onmouseout="this.style.background=''">
+    <div style="flex:0 0 130px;">${esc(labels[r.name] || r.name)}</div>
+    <div style="flex:1;min-width:60px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
+      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:${colors[r.name] || '#94A3B8'};"></div>
+    </div>
+    <div style="flex:0 0 40px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
+    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};" title="Abertura">${r.openRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Cliques">${r.clickRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Opt-out">${r.optOutRate.toFixed(2)}%</div>
+  </div>`).join('');
 }
 
 function renderNewsletterTypesBars(typesMap, allEnriched) {
@@ -2736,6 +2825,8 @@ async function openDrillModal(entity, name, sendIds) {
   const entityLabels = {
     country: 'país', city: 'cidade', hotel: 'hotel',
     theme: 'tema', newsletterType: 'tipo de newsletter',
+    // 4.49.27+ Eixos duplos
+    commercial: 'classificação comercial', tourism: 'classificação turismo',
   };
   const entityLabel = entityLabels[entity] || entity;
 

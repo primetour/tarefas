@@ -6,6 +6,74 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.27+20260519-nl-eixos-duplos-comercial-turismo] — 2026-05-19
+
+Release **MINOR** — Eixos duplos de classificação no Newsletter
+"Conteúdo & Temas" (spec do user, ponto 1 do roadmap).
+
+### Eixo COMERCIAL (`extracted.commercial`)
+
+Tema macro da comunicação:
+
+| Valor | Detecção | Triggers principais |
+|---|---|---|
+| `promocao` | %OFF, desconto, "noite FREE", cashback, crédito US$ | Oferta/condição comercial |
+| `sazonal` | Estação, feriado, data comemorativa, mês+ano | Período específico |
+| `parceiro` | Cartão Partners, Centurion Card, Latam Pass, Bocelli | Empresa parceira em destaque |
+| `inspiracional` | (default) | Editorial sem valor/sazonalidade/parceiro |
+
+**Prioridade** (spec do user): `sazonal > promocao > parceiro > inspiracional`
+
+### Eixo TURISMO (`extracted.tourism`)
+
+Tipo de conteúdo turístico:
+
+| Valor | Detecção | Exemplos |
+|---|---|---|
+| `evento` | Show, GP, Wimbledon, Bocelli, Camarote | Comunicações sobre eventos |
+| `aereo` | Voo, passagem, classe executiva, milhas | Comunicações aéreas |
+| `roteiro` | "X noites", day-by-day, pacote, multi-destino | Pacote fechado |
+| `servico` | Transfer, concierge, Lifestyle Manager, alfaiate | Serviço de concierge |
+| `hotelaria` | Hospedagem, hotel, resort, villa, suíte | Bloco/destaque de hotel |
+| `cruzeiro` | Yacht, navio, Silversea, Aqua Mekong | Cruzeiros/yachts |
+| `produto` | Flores, presente, revista | Produto físico |
+| `destino` | (fallback se tem cidade/país) | Editorial sobre destino |
+| `outros` | Trens (Orient Express, Belmond), CSAT | Casos especiais |
+
+**Prioridade** (spec do user): `evento > aereo > roteiro > servico > hotelaria > cruzeiro > produto > destino > outros`
+
+### Distribuição real (756 docs classificados)
+
+**Comercial:**
+- 64% inspiracional · 16% sazonal · 12% parceiro · 8% promoção
+
+**Turismo:**
+- 29% outros (CSAT + trens raros) · 25% hotelaria · 17-18% destino ·
+  14% serviço · 6% cruzeiro · 3% aéreo · 3% evento · 2% roteiro
+
+### Pipeline
+
+1. `functions/classify-mc-claude.cjs` — classifier determinístico (regex
+   sobre subject+name+htmlText com anti-boilerplate). Marca
+   `extracted.classifiedBy='claude-classify-v4.49.27'`.
+2. `aggregateContent()` em `nlPerformance.js` ganhou maps `commercial`
+   e `tourism` agregando count + sent + open + click + opt-out.
+3. Dashboard "Conteúdo & Temas" ganhou 2 blocos novos no topo:
+   `💼 Classificação Comercial` e `✈️ Classificação Turismo`.
+4. Drill-down clicável → modal com lista de disparos (mesma UX dos
+   outros blocos da aba).
+5. Filtros novos `_contentFiltersState.commercial` e `.tourism`
+   aplicados em `applyAllContentFilters`.
+
+### Pendências
+
+- UI dos filtros (dropdowns) será adicionada na próxima release —
+  estado já está pronto, falta o `<select>` no DOM.
+- Modal de edição manual (extracted editor) ainda não tem campos pros
+  eixos duplos — backfill futuro.
+
+---
+
 ## [4.49.26+20260519-nl-enrich-htmltext-bodied] — 2026-05-19
 
 Release **PATCH** — User: "ler o html é fundamental. subject entrega muito

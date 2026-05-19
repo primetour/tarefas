@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 26,
-  build: '20260519-nl-enrich-htmltext-bodied',
+  patch: 27,
+  build: '20260519-nl-eixos-duplos-comercial-turismo',
 };
 
 /** "1.2.0" */
