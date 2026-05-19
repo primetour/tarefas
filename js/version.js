@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 20,
-  build: '20260519-presets-atividade-vs-emjogo',
+  patch: 21,
+  build: '20260519-metalinks-segue-responsavel',
 };
 
 /** "1.2.0" */

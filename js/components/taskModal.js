@@ -227,9 +227,21 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   let currentObservers = [...(task.observers||[])];
 
   // ── Auto-assign self for NEW tasks ──
+  // 4.49.21+ Condicional por role:
+  //   - Analista (member) → auto-assign (tipicamente cria a própria tarefa)
+  //   - Coord/Gerente/Head/Diretoria → NÃO auto-assign (criam pra equipe)
+  //
+  // Bug reportado: gestor criava tarefa pra outra pessoa mas metaLinks
+  // ficavam no UID dele (auto-assigned como primeiro responsável → vira
+  // `activeUserId` no picker de metas → meta linkada ao gestor em vez do
+  // executor). Pruning no save + condicional aqui = problema resolvido.
   if (!isEdit && !isPrefill && currentAssignees.length === 0) {
-    const uid = store.get('currentUser')?.uid;
-    if (uid) { currentAssignees = [uid]; task.assignees = [uid]; }
+    const roleId = store.get('userRole')?.id;
+    const isAnalystOnly = roleId === 'member' || roleId === 'partner';
+    if (isAnalystOnly) {
+      const uid = store.get('currentUser')?.uid;
+      if (uid) { currentAssignees = [uid]; task.assignees = [uid]; }
+    }
   }
   const modalTitle = isEdit
     ? 'Detalhes da Tarefa'
@@ -2495,7 +2507,19 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   });
   document.getElementById('assignee-picker')?.addEventListener('click', (e) => {
     const chip=e.target.closest('.assignee-chip[data-uid]');
-    if (chip){const uid=chip.dataset.uid;const i=currentAssignees.indexOf(uid);if(i>-1)currentAssignees.splice(i,1);chip.remove();}
+    if (chip){
+      const uid=chip.dataset.uid;
+      const i=currentAssignees.indexOf(uid);
+      if(i>-1)currentAssignees.splice(i,1);
+      chip.remove();
+      // 4.49.21+ Sync metaLinks: remover responsável → tirar todos os links dele.
+      // Senão fica "fantasma" no doc e o handleSave precisa limpar de qualquer jeito.
+      // Refletir aqui também mantém o UI consistente (badge de contagem nas abas
+      // do picker de meta).
+      if (Array.isArray(task.metaLinks) && task.metaLinks.length) {
+        task.metaLinks = task.metaLinks.filter(l => l.userId !== uid);
+      }
+    }
   });
   document.addEventListener('click', () => { const dd=document.getElementById('assignee-dropdown'); if(dd)dd.style.display='none'; });
 
@@ -3364,6 +3388,17 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
     || store.get('userSector')
     || null;
 
+  // 4.49.21+ Prune metaLinks: o userId DEVE estar nos assignees finais.
+  // Antes: se o gestor era auto-assigned como criador, depois trocava o
+  // responsável e a metaLink ficava órfã apontando pro UID do criador.
+  // Bug reportado: "meta fica vinculada ao meu user mesmo que eu coloque
+  // outras pessoas como responsáveis". Fix: o vínculo segue o assignee.
+  // O sentinel '__task__' (link sem responsável específico) passa.
+  const SCOPE_USER_SAVE = '__task__';
+  const assigneeSet = new Set(assignees || []);
+  const prunedMetaLinks = (Array.isArray(task.metaLinks) ? task.metaLinks : [])
+    .filter(l => l && (l.userId === SCOPE_USER_SAVE || assigneeSet.has(l.userId)));
+
   const data={
     title,
     subtasks:     Array.isArray(task.subtasks) ? task.subtasks : [],
@@ -3375,9 +3410,11 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
     // e o picker NÃO foi tocado, NÃO enviamos metaLinks — caso contrário
     // syncLegacyFields zeraria o goalId silenciosamente. Preserva o vínculo
     // legacy até que alguém o edite de fato no picker.
+    //
+    // 4.49.21+ Usa prunedMetaLinks: só responsáveis válidos da task atual.
     ...(task._legacyPreserve
       ? {}
-      : { metaLinks: Array.isArray(task.metaLinks) ? task.metaLinks : [] }),
+      : { metaLinks: prunedMetaLinks }),
     status:       $('tm-status')?.value||'not_started',
     priority:     $('tm-priority')?.value||'medium',
     projectId:    $('tm-project')?.value||null,

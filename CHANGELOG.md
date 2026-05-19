@@ -6,6 +6,48 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.21+20260519-metalinks-segue-responsavel] — 2026-05-19
+
+Release **PATCH** — **Bug fix crítico** reportado por user:
+> "quando crio a tarefa, a meta fica vinculada ao meu user, mesmo que eu
+> coloque outras pessoas como responsáveis. Como estou gerenciando a
+> empresa, abro e concluo tarefas, mas a meta tem de estar vinculada ao
+> responsável por ela."
+
+### Diagnóstico
+
+3 causas combinadas no `taskModal.js`:
+
+1. **Auto-assign self em tarefas novas**: `currentAssignees.length === 0`
+   → criador entrava como assignee. Pra analista isso é OK (cria a própria
+   tarefa); pra gestor é errado (cria pra equipe).
+2. **`activeUserId` do picker de metas** = primeiro assignee. Como o criador
+   foi auto-adicionado, o picker abria na aba dele e os links iam pra ele.
+3. **Trocar assignee depois NÃO removia o metaLink órfão** → ficava
+   `metaLinks: [{ userId: <criador>, … }]` mesmo com criador fora dos assignees.
+
+### Fix em 3 camadas
+
+1. **Auto-assign condicional**: só pra role `member` (Analista) e `partner`.
+   Coordinator/Manager/Admin/Master começam o modal com assignees vazio.
+2. **Sync on remove**: quando user remove um chip de responsável no modal,
+   `task.metaLinks` perde TODOS os links daquele userId imediatamente.
+3. **Prune no save**: filtro final no payload garante que cada `metaLinks[i].userId`
+   está em `assignees` (ou é o sentinel `__task__` p/ tarefas sem responsável).
+   Defesa em profundidade — se UI escapar algo, o save corrige.
+
+### Comportamento esperado agora
+
+- Gestor (Renê/Diretoria) abre Nova Tarefa → assignees vazio.
+- Adiciona João como responsável.
+- Picker de meta abre na aba do João → meta vai p/ `userId: João`.
+- Gestor salva → `metaLinks: [{ userId: João, … }]`. ✓
+- No dashboard de João, a meta aparece (não na do Renê).
+
+Default histórico do Analista preservado (auto-assign segue funcionando).
+
+---
+
 ## [4.49.20+20260519-presets-atividade-vs-emjogo] — 2026-05-19
 
 Release **MINOR** — User reportou que mesmo com mesmo predicate "sem tipo",
