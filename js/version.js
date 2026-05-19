@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 13,
-  build: '20260519-portal-tips-fixes',
+  patch: 14,
+  build: '20260519-analista-portal-dashboard',
 };
 
 /** "1.2.0" */

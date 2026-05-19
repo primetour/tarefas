@@ -431,11 +431,13 @@ export const SYSTEM_ROLES = [
       task_complete: false,
       task_override_urgency: false,
       project_create: false,   project_edit: false,  project_delete: false,
-      // 4.49.11+ Analista vê APENAS o painel inicial. Dashboards executivos
-      // (produtividade/portal/roteiros/csat) são restritos a coord+.
+      // 4.49.11+ Analista vê o painel inicial. Demais dashboards executivos
+      // (produtividade/roteiros/csat) ficam restritos a coord+.
+      // 4.49.14+ Liberado dashboard_portal_view pro Analista — operação
+      // diária do consultor (vê top destinos, links ativos, dicas geradas).
       dashboard_home_view: true,
       dashboard_productivity_view: false,
-      dashboard_portal_view: false,
+      dashboard_portal_view: true,
       dashboard_roteiros_view: false,
       dashboard_csat_view: false,
       report_export: false,

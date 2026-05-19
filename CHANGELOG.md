@@ -6,6 +6,16 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.14+20260519-analista-portal-dashboard] — 2026-05-19
+
+Release **PATCH** — Liberado `dashboard_portal_view` pro Analista.
+Faz sentido com a operação real: o consultor que produz dicas precisa
+ver top destinos, links ativos e geração agregada do Portal pra orientar
+o próprio trabalho. Demais dashboards executivos (produtividade, roteiros,
+csat) seguem restritos a coord+. Migração: `functions/align-analista-portal-dashboard.cjs`.
+
+---
+
 ## [4.49.13+20260519-portal-tips-fixes] — 2026-05-19
 
 Release **PATCH** — Pacote de fixes no Portal de Dicas (relatados em uso real):
