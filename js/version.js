@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 19,
-  build: '20260519-dash-prod-coerencia-fim',
+  patch: 20,
+  build: '20260519-presets-atividade-vs-emjogo',
 };
 
 /** "1.2.0" */

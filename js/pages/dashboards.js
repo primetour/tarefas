@@ -761,16 +761,24 @@ function renderAllCharts(Chart, m) {
     }
   })();
 
-  // 4.49.18+ Deep-link p/ #tasks usando o MESMO range do período do dashboard.
-  // Em vez de mapear pra last30Days (que tem semântica diferente de "ativa
-  // no período"), passamos from/to + datePreset=activityInPeriod — o
-  // tasks.js filtra por `createdAt OR completedAt` dentro do range, igual
-  // ao `inPeriod()` daqui. Resultado: a contagem do card BATE com a lista.
-  const { start: _periodStart, end: _periodEnd } = getPeriodDates(activePeriod());
-  const toYMD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  const periodFrom = toYMD(_periodStart);
-  const periodTo   = toYMD(_periodEnd);
-  const periodLinkSuffix = `&datePreset=activityInPeriod&from=${periodFrom}&to=${periodTo}`;
+  // 4.49.20+ Deep-link usa preset NOMEADO quando o período do dash bate
+  // com um dos presets de tasks.js (activityIn7d/30d/90d). Custom range
+  // só pra '12m' ou 'custom'. Resultado: URL mais limpa + contagem batida.
+  //
+  // O critério é IDÊNTICO ao `inPeriod()` do dashboard:
+  // createdAt OR completedAt dentro do range. Garante card ↔ lista.
+  const periodLinkSuffix = (() => {
+    const namedPreset = ({
+      '7d':  'activityIn7d',
+      '30d': 'activityIn30d',
+      '90d': 'activityIn90d',
+    })[activePeriod()];
+    if (namedPreset) return `&datePreset=${namedPreset}`;
+    // 12m / custom → manda custom range explícito
+    const { start: s, end: e } = getPeriodDates(activePeriod());
+    const toYMD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    return `&datePreset=activityInPeriod&from=${toYMD(s)}&to=${toYMD(e)}`;
+  })();
 
   /* 6 — Member leaderboard (4-col) */
   // 4.49.18+ getTasksByMember agora filtra pendingSso/inactive (analytics.js).

@@ -425,17 +425,33 @@ export async function renderTasks(container) {
           });
         })()}
       </div>
+      <!-- 4.49.20+ Preset reagrupado em 3 famílias semânticas:
+            1. PRAZO (dueDate): hoje, amanhã, semana, mês, atrasadas, sem prazo
+            2. EM JOGO (workflow): abertas + concluídas recentes (default histórico)
+            3. ATIVIDADE (KPI / dashboard): criada OU concluída no range — bate com #dashboards
+
+           User antes via 'Últimos 30 dias' e achava que era atividade,
+           mas era 'Em jogo' — labels ficaram explícitos. -->
       <select class="filter-select" id="filter-date-preset" style="${filterVisibility.datePreset?'':'display:none;'}">
         <option value=""            ${filterDatePreset===''?'selected':''}>Qualquer prazo</option>
-        <option value="last30Days"  ${filterDatePreset==='last30Days'?'selected':''}>Últimos 30 dias (padrão)</option>
-        <option value="last90Days"  ${filterDatePreset==='last90Days'?'selected':''}>Últimos 90 dias</option>
-        <option value="overdue"     ${filterDatePreset==='overdue'?'selected':''}>⚠ Atrasadas</option>
-        <option value="today"       ${filterDatePreset==='today'?'selected':''}>Hoje</option>
-        <option value="tomorrow"    ${filterDatePreset==='tomorrow'?'selected':''}>Amanhã</option>
-        <option value="thisWeek"    ${filterDatePreset==='thisWeek'?'selected':''}>Esta semana</option>
-        <option value="nextWeek"    ${filterDatePreset==='nextWeek'?'selected':''}>Próxima semana</option>
-        <option value="thisMonth"   ${filterDatePreset==='thisMonth'?'selected':''}>Este mês</option>
-        <option value="noDue"       ${filterDatePreset==='noDue'?'selected':''}>Sem prazo</option>
+        <optgroup label="— Por prazo (dueDate) —">
+          <option value="overdue"   ${filterDatePreset==='overdue'?'selected':''}>⚠ Atrasadas</option>
+          <option value="today"     ${filterDatePreset==='today'?'selected':''}>Hoje</option>
+          <option value="tomorrow"  ${filterDatePreset==='tomorrow'?'selected':''}>Amanhã</option>
+          <option value="thisWeek"  ${filterDatePreset==='thisWeek'?'selected':''}>Esta semana</option>
+          <option value="nextWeek"  ${filterDatePreset==='nextWeek'?'selected':''}>Próxima semana</option>
+          <option value="thisMonth" ${filterDatePreset==='thisMonth'?'selected':''}>Este mês</option>
+          <option value="noDue"     ${filterDatePreset==='noDue'?'selected':''}>Sem prazo</option>
+        </optgroup>
+        <optgroup label="— Em jogo (abertas + concluídas recentes) —">
+          <option value="last30Days"  ${filterDatePreset==='last30Days'?'selected':''}>Em jogo · 30d (padrão)</option>
+          <option value="last90Days"  ${filterDatePreset==='last90Days'?'selected':''}>Em jogo · 90d</option>
+        </optgroup>
+        <optgroup label="— Atividade no período (criada OU concluída) —">
+          <option value="activityIn7d"  ${filterDatePreset==='activityIn7d'?'selected':''}>📊 Atividade · 7d</option>
+          <option value="activityIn30d" ${filterDatePreset==='activityIn30d'?'selected':''}>📊 Atividade · 30d (bate c/ dash)</option>
+          <option value="activityIn90d" ${filterDatePreset==='activityIn90d'?'selected':''}>📊 Atividade · 90d</option>
+        </optgroup>
         <option value="custom"      ${filterDatePreset==='custom'?'selected':''}>Período customizado…</option>
       </select>
       <div class="toolbar-filter-wrap" style="${filterVisibility.area?'':'display:none;'}min-width:160px;">
@@ -1186,6 +1202,22 @@ function applyFilters() {
         const c = t.createdAt?.toDate   ? t.createdAt.toDate()   : (t.createdAt ? new Date(t.createdAt) : null);
         const d = t.completedAt?.toDate ? t.completedAt.toDate() : (t.completedAt ? new Date(t.completedAt) : null);
         const inRange = (dt) => dt && (!from || dt >= from) && (!to || dt <= to);
+        return inRange(c) || inRange(d);
+      });
+    } else if (/^activityIn(\d+)d$/.test(filterDatePreset)) {
+      // 4.49.20+ Presets nomeados de atividade (mesmo critério do
+      // dashboard: createdAt OR completedAt nos últimos N dias).
+      // Auto-computa o range sem precisar de from/to.
+      const days = parseInt(filterDatePreset.match(/(\d+)/)[1], 10);
+      const start = new Date(today);
+      start.setDate(today.getDate() - (days - 1));
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      result = result.filter(t => {
+        const c = t.createdAt?.toDate   ? t.createdAt.toDate()   : (t.createdAt ? new Date(t.createdAt) : null);
+        const d = t.completedAt?.toDate ? t.completedAt.toDate() : (t.completedAt ? new Date(t.completedAt) : null);
+        const inRange = (dt) => dt && dt >= start && dt <= end;
         return inRange(c) || inRange(d);
       });
     }

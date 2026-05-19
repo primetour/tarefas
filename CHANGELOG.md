@@ -6,6 +6,43 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.20+20260519-presets-atividade-vs-emjogo] — 2026-05-19
+
+Release **MINOR** — User reportou que mesmo com mesmo predicate "sem tipo",
+o filtro `Últimos 30 dias` em #tasks dava 825 enquanto dash dava 129.
+**Causa:** o label "Últimos 30 dias" enganava — o preset NÃO é atividade
+no período. É "abertas + concluídas recentes" (semântica de workflow).
+
+### Reorganização dos presets de prazo em 3 famílias semânticas
+
+O dropdown agora tem `<optgroup>`s claros:
+
+1. **Por prazo (dueDate):** Atrasadas, Hoje, Amanhã, Esta/Próxima semana,
+   Este mês, Sem prazo. → filtra por `t.dueDate`.
+
+2. **Em jogo (workflow):** "Em jogo · 30d (padrão)" e "Em jogo · 90d"
+   (era `last30Days` / `last90Days`). → mantém todas abertas + concluídas
+   no período. Útil pro dia a dia operacional.
+
+3. **Atividade no período (KPI):** `📊 Atividade · 7d`, `· 30d (bate c/ dash)`,
+   `· 90d`. → filtra por `createdAt OR completedAt` dentro do range. **Mesmo
+   critério do `inPeriod()` em #dashboards.** Quem clica num card do dash
+   aterriza com EXATAMENTE a mesma contagem.
+
+### Deep-link do dashboard usa preset nomeado
+
+`dashboards.js`: `periodLinkSuffix` agora envia `&datePreset=activityIn30d`
+(ou 7d/90d) quando o período bate; só usa `from/to` explícito pra `12m`
+ou custom. URL mais curta, conceito mais claro.
+
+### Comportamento histórico preservado
+
+O default segue `last30Days` (renomeado "Em jogo · 30d") — não muda o
+workflow diário de ninguém. Quem quer KPI estilo dashboard agora tem opção
+explícita na própria toolbar.
+
+---
+
 ## [4.49.19+20260519-dash-prod-coerencia-fim] — 2026-05-19
 
 Release **PATCH** — Cola de coerência fim a fim entre Dashboard ↔ #tasks.
