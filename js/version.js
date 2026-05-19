@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 27,
-  build: '20260519-nl-eixos-duplos-comercial-turismo',
+  patch: 28,
+  build: '20260519-nl-content-exports-xls-pdf-ppt',
 };
 
 /** "1.2.0" */

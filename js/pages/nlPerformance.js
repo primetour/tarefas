@@ -282,7 +282,11 @@ export async function renderNlPerformance(container) {
         </div>
         <div class="page-header-actions" style="gap:8px;flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" id="nl-content-refresh">↻ Atualizar</button>
+          <!-- 4.49.28+ Exports honram TODOS os filtros aplicados (BU, período,
+               país/cidade/tema/tipo, comercial/turismo, busca livre). -->
+          <button class="btn btn-secondary btn-sm" id="nl-content-xls">⬇ Excel</button>
           <button class="btn btn-secondary btn-sm" id="nl-content-pdf">⬇ PDF</button>
+          <button class="btn btn-secondary btn-sm" id="nl-content-ppt">⬇ PPT</button>
         </div>
       </div>
 
@@ -1914,9 +1918,10 @@ async function loadContentTab() {
       _contentDataCache = null;
       await loadContentTab();
     });
-    document.getElementById('nl-content-pdf')?.addEventListener('click', () => {
-      alert('Export PDF da aba Conteúdo será entregue na 4.7.0 (Fase 3).');
-    });
+    // 4.49.28+ Exports da aba Conteúdo & Temas — TODOS honram filtros atuais
+    document.getElementById('nl-content-xls')?.addEventListener('click', exportContentXlsx);
+    document.getElementById('nl-content-pdf')?.addEventListener('click', exportContentPdf);
+    document.getElementById('nl-content-ppt')?.addEventListener('click', exportContentPptx);
   }
 
   renderContentTab();
@@ -2174,6 +2179,289 @@ function populateContentDropdowns(allDocs) {
 }
 
 /* ─── Agregações ───────────────────────────────────────────── */
+
+/* 4.49.28+ EXPORTS da aba Conteúdo & Temas — honram TODOS os filtros
+ * aplicados. Snapshot single-source-of-truth: pegamos o resultado de
+ * applyAllContentFilters → aggregateContent (mesma cadeia da UI).
+ *
+ * Filtros honrados: BU, período (180d default), país, cidade, tema,
+ * tipo (legado), comercial (novo), turismo (novo), busca livre.
+ */
+
+function _contentExportSnapshot() {
+  const docs = applyAllContentFilters(_contentDataCache || []);
+  const enriched = docs.filter(d => d.extracted && Object.keys(d.extracted).length > 0);
+  const agg = aggregateContent(enriched);
+  return { docs, enriched, agg, filters: { ..._contentFiltersState } };
+}
+
+function _filterSummary(filters) {
+  const labels = [];
+  if (filters.bu)             labels.push(`BU: ${filters.bu}`);
+  if (filters.period)         labels.push(`Período: últimos ${filters.period}d`);
+  if (filters.country)        labels.push(`País: ${filters.country}`);
+  if (filters.city)           labels.push(`Cidade: ${filters.city}`);
+  if (filters.theme)          labels.push(`Tema: ${filters.theme}`);
+  if (filters.newsletterType) labels.push(`Tipo: ${filters.newsletterType}`);
+  if (filters.commercial)     labels.push(`Comercial: ${filters.commercial}`);
+  if (filters.tourism)        labels.push(`Turismo: ${filters.tourism}`);
+  if (filters.search)         labels.push(`Busca: "${filters.search}"`);
+  return labels.length ? labels.join(' · ') : 'Sem filtros adicionais (todos os dados)';
+}
+
+function _exportFilename(ext, slug = 'newsletter-conteudo') {
+  const date = new Date().toISOString().slice(0,10);
+  return `primetour_${slug}_${date}.${ext}`;
+}
+
+/* ─── XLSX export ─────────────────────────────────────────── */
+async function exportContentXlsx() {
+  try {
+    if (!window.XLSX) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+    const { enriched, agg, filters } = _contentExportSnapshot();
+    if (!enriched.length) { alert('Sem dados pra exportar com os filtros atuais.'); return; }
+
+    const wb = window.XLSX.utils.book_new();
+
+    // Sheet "Resumo"
+    const resumo = [
+      ['Newsletter — Conteúdo & Temas'],
+      ['Gerado em', new Date().toLocaleString('pt-BR')],
+      ['Filtros',   _filterSummary(filters)],
+      [],
+      ['Campanhas no recorte',  enriched.length],
+      ['Países únicos',         agg.countries.size],
+      ['Cidades únicas',        agg.cities.size],
+      ['Hotéis citados',        agg.hotels.size],
+      ['Cruzeiros citados',     agg.cruises.size],
+      ['Marcas',                agg.brands.size],
+      ['Temas',                 agg.themes.size],
+      ['Open rate médio (%)',   agg.avgOpenRate?.toFixed(2) || '—'],
+    ];
+    const wsResumo = window.XLSX.utils.aoa_to_sheet(resumo);
+    wsResumo['!cols'] = [{wch:30}, {wch:50}];
+    window.XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+
+    // Helper: monta sheet a partir de map { name → {count, totalSent, totalOpen, totalClick, totalOptOut} }
+    const sheetFromMap = (map, primaryLabel) => {
+      const headers = [primaryLabel, 'Disparos', 'Enviados', 'Abertura (%)', 'Cliques (%)', 'Opt-out (%)'];
+      const rows = [...map.entries()].map(([name, d]) => [
+        name, d.count, d.totalSent,
+        d.totalSent > 0 ? +(d.totalOpen  / d.totalSent * 100).toFixed(2) : 0,
+        d.totalSent > 0 ? +(d.totalClick / d.totalSent * 100).toFixed(2) : 0,
+        d.totalSent > 0 ? +(d.totalOptOut/ d.totalSent * 100).toFixed(3) : 0,
+      ]).sort((a, b) => b[1] - a[1]);
+      const ws = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws['!cols'] = [{wch:28}, {wch:10}, {wch:12}, {wch:12}, {wch:12}, {wch:12}];
+      return ws;
+    };
+
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.commercial,     'Classif. Comercial'), 'Comercial');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.tourism,        'Classif. Turismo'),   'Turismo');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.countries,      'País'),               'Países');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.cities,         'Cidade / Região'),    'Cidades');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.hotels,         'Hotel'),              'Hotéis');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.cruises,        'Cruzeiro'),           'Cruzeiros');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.themes,         'Tema'),               'Temas');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.brands,         'Marca'),              'Marcas');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.newsletterTypes,'Tipo (legado)'),      'Tipo Legado');
+
+    // Sheet "Disparos" — uma linha por campanha enriquecida
+    const dispHeaders = ['Subject','BU','Data','Enviados','Abertura','Cliques','Opt-out','Comercial','Turismo','País(es)','Cidade(s)','Hotéis','Marcas'];
+    const dispRows = enriched.map(d => {
+      const ex = d.extracted || {};
+      const ts = d.sentDate?.toDate?.() || (d.sentDate ? new Date(d.sentDate) : null);
+      return [
+        d.subject || '',
+        d.buName || d.buId || '',
+        ts ? ts.toLocaleDateString('pt-BR') : '',
+        +(d.totalSent || 0),
+        +(d.openRate  || 0),
+        +(d.clickRate || 0),
+        d.totalSent > 0 ? +((d.optOut/d.totalSent)*100).toFixed(2) : 0,
+        ex.commercial || '',
+        ex.tourism    || '',
+        (ex.countries || []).join(', '),
+        (ex.cities    || []).join(', '),
+        (ex.hotels    || []).map(h => typeof h==='string'?h:(h?.name||'')).filter(Boolean).join(', '),
+        (ex.brands    || []).join(', '),
+      ];
+    });
+    const wsDisp = window.XLSX.utils.aoa_to_sheet([dispHeaders, ...dispRows]);
+    wsDisp['!cols'] = [{wch:50},{wch:14},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10},{wch:14},{wch:14},{wch:30},{wch:30},{wch:40},{wch:30}];
+    window.XLSX.utils.book_append_sheet(wb, wsDisp, 'Disparos');
+
+    window.XLSX.writeFile(wb, _exportFilename('xlsx'));
+  } catch (e) {
+    console.error('[contentXlsx]', e);
+    alert('Erro ao gerar Excel: ' + e.message);
+  }
+}
+
+/* ─── PDF export ──────────────────────────────────────────── */
+async function exportContentPdf() {
+  try {
+    if (!window.jspdf?.jsPDF) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
+    }
+    if (!window.jspdf?.jsPDF?.API?.autoTable) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
+    }
+    const { enriched, agg, filters } = _contentExportSnapshot();
+    if (!enriched.length) { alert('Sem dados pra exportar com os filtros atuais.'); return; }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    // Capa
+    doc.setFontSize(20); doc.setTextColor(40, 40, 40);
+    doc.text('Newsletter — Conteúdo & Temas', 14, 22);
+    doc.setFontSize(10); doc.setTextColor(120, 120, 120);
+    doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, 14, 30);
+    doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+    const fSum = _filterSummary(filters);
+    const fLines = doc.splitTextToSize(`Filtros: ${fSum}`, 180);
+    doc.text(fLines, 14, 38);
+    let y = 38 + fLines.length * 4 + 6;
+
+    // KPIs em linha
+    doc.setFontSize(11); doc.setTextColor(40, 40, 40);
+    doc.text(`${enriched.length} campanhas · ${agg.countries.size} países · ${agg.cities.size} cidades · ${agg.hotels.size} hotéis · Open rate médio ${(agg.avgOpenRate||0).toFixed(1)}%`, 14, y);
+    y += 8;
+
+    // Função pra renderizar uma tabela a partir de map
+    const addMapTable = (title, map, primaryLabel) => {
+      if (!map || map.size === 0) return;
+      doc.setFontSize(12); doc.setTextColor(40,40,40);
+      doc.text(title, 14, y);
+      y += 4;
+      const rows = [...map.entries()].map(([name, d]) => [
+        String(name),
+        d.count,
+        d.totalSent.toLocaleString('pt-BR'),
+        d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100).toFixed(1) + '%' : '—',
+        d.totalSent > 0 ? (d.totalClick/ d.totalSent * 100).toFixed(1) + '%' : '—',
+        d.totalSent > 0 ? (d.totalOptOut/d.totalSent*100).toFixed(2) + '%' : '—',
+      ]).sort((a, b) => b[1] - a[1]).slice(0, 30);
+      doc.autoTable({
+        startY: y,
+        head: [[primaryLabel, 'Disparos', 'Enviados', 'Abertura', 'Cliques', 'Opt-out']],
+        body: rows,
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [212, 168, 67], textColor: [255,255,255] },
+        margin: { left: 14, right: 14 },
+      });
+      y = (doc.lastAutoTable?.finalY || y) + 8;
+      if (y > 260) { doc.addPage(); y = 20; }
+    };
+
+    addMapTable('💼 Classificação Comercial', agg.commercial, 'Categoria');
+    addMapTable('✈️ Classificação Turismo',  agg.tourism,    'Categoria');
+    addMapTable('🌍 Top Países',              agg.countries,  'País');
+    addMapTable('🏙 Top Cidades',             agg.cities,     'Cidade');
+    addMapTable('🏨 Hotéis citados',          agg.hotels,     'Hotel');
+    addMapTable('🚢 Cruzeiros',               agg.cruises,    'Operadora');
+    addMapTable('🎯 Temas',                   agg.themes,     'Tema');
+
+    doc.save(_exportFilename('pdf'));
+  } catch (e) {
+    console.error('[contentPdf]', e);
+    alert('Erro ao gerar PDF: ' + e.message);
+  }
+}
+
+/* ─── PPT export ──────────────────────────────────────────── */
+async function exportContentPptx() {
+  try {
+    if (!window.PptxGenJS) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
+    }
+    const { enriched, agg, filters } = _contentExportSnapshot();
+    if (!enriched.length) { alert('Sem dados pra exportar com os filtros atuais.'); return; }
+
+    const pptx = new window.PptxGenJS();
+    pptx.layout = 'LAYOUT_WIDE'; // 13.333 × 7.5 inches
+    pptx.author = 'PRIMETOUR';
+    pptx.title  = 'Newsletter — Conteúdo & Temas';
+
+    const GOLD = 'D4A843';
+    const NAVY = '0F1B2D';
+
+    // ── Slide 1: Capa ──
+    const s1 = pptx.addSlide();
+    s1.background = { color: 'FFFFFF' };
+    s1.addText('Newsletter', { x:0.5, y:1.0, w:12, h:0.6, fontSize:18, color: GOLD, fontFace:'Poppins' });
+    s1.addText('Conteúdo & Temas', { x:0.5, y:1.7, w:12, h:1.0, fontSize:44, bold:true, color: NAVY, fontFace:'Poppins' });
+    s1.addText(_filterSummary(filters), { x:0.5, y:3.3, w:12, h:0.8, fontSize:14, color:'474650', fontFace:'Poppins', italic:true });
+    s1.addText(`${enriched.length} campanhas · ${agg.countries.size} países · ${agg.cities.size} cidades · open rate médio ${(agg.avgOpenRate||0).toFixed(1)}%`,
+      { x:0.5, y:4.5, w:12, h:0.6, fontSize:14, color:NAVY, fontFace:'Poppins' });
+    s1.addText(`Gerado em ${new Date().toLocaleString('pt-BR')}`,
+      { x:0.5, y:6.8, w:12, h:0.4, fontSize:9, color:'888', fontFace:'Poppins' });
+
+    // ── Helper: slide com tabela a partir de map ──
+    const addMapSlide = (title, icon, map, primaryLabel) => {
+      if (!map || map.size === 0) return;
+      const s = pptx.addSlide();
+      s.background = { color:'FFFFFF' };
+      s.addText(`${icon}  ${title}`, { x:0.5, y:0.35, w:12, h:0.6, fontSize:24, bold:true, color: NAVY, fontFace:'Poppins' });
+      s.addText(`${enriched.length} campanhas · ${_filterSummary(filters)}`,
+        { x:0.5, y:0.95, w:12, h:0.4, fontSize:10, color:'888', fontFace:'Poppins', italic:true });
+
+      const rows = [...map.entries()].map(([name, d]) => [
+        String(name),
+        String(d.count),
+        d.totalSent.toLocaleString('pt-BR'),
+        d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100).toFixed(1) + '%' : '—',
+        d.totalSent > 0 ? (d.totalClick/ d.totalSent * 100).toFixed(1) + '%' : '—',
+        d.totalSent > 0 ? (d.totalOptOut/d.totalSent*100).toFixed(2) + '%' : '—',
+      ]).sort((a, b) => +b[1] - +a[1]).slice(0, 15);
+
+      const header = [primaryLabel, 'Disparos', 'Enviados', 'Abertura', 'Cliques', 'Opt-out']
+        .map(t => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: GOLD } } }));
+      const body = rows.map(r => r.map(c => ({ text: String(c), options: { color: NAVY }})));
+
+      s.addTable([header, ...body], {
+        x: 0.5, y: 1.45, w: 12.3,
+        fontSize: 11, fontFace: 'Poppins',
+        border: { type: 'solid', color: 'E5E5E5', pt: 0.5 },
+        rowH: 0.35,
+      });
+    };
+
+    addMapSlide('Classificação Comercial', '💼', agg.commercial,     'Categoria');
+    addMapSlide('Classificação Turismo',   '✈️', agg.tourism,        'Categoria');
+    addMapSlide('Top Países',              '🌍', agg.countries,      'País');
+    addMapSlide('Top Cidades',             '🏙', agg.cities,         'Cidade');
+    addMapSlide('Hotéis citados',          '🏨', agg.hotels,         'Hotel');
+    addMapSlide('Cruzeiros',               '🚢', agg.cruises,        'Operadora');
+    addMapSlide('Temas / Posicionamento',  '🎯', agg.themes,         'Tema');
+    addMapSlide('Tipo de Newsletter (legado)', '📂', agg.newsletterTypes, 'Tipo');
+
+    await pptx.writeFile({ fileName: _exportFilename('pptx') });
+  } catch (e) {
+    console.error('[contentPptx]', e);
+    alert('Erro ao gerar PPT: ' + e.message);
+  }
+}
 
 function aggregateContent(docs) {
   const countries = new Map();

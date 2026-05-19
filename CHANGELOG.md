@@ -6,6 +6,60 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.28+20260519-nl-content-exports-xls-pdf-ppt] — 2026-05-19
+
+Release **MINOR** — Exports da aba "Conteúdo & Temas" (ponto 5 do roadmap).
+Substitui o alert "será entregue na 4.7.0 · Fase 3" por exports reais nos
+**3 formatos**: Excel, PDF e PowerPoint, todos honrando os filtros aplicados.
+
+### Princípio: filtros respeitados
+
+Single source of truth: `_contentExportSnapshot()` → roda
+`applyAllContentFilters` na cache atual e devolve `{docs, enriched,
+agg, filters}`. Tudo que o user vê no dashboard é o que sai no export.
+
+Filtros honrados:
+- BU
+- Período (`180d` default)
+- País, Cidade, Tema, Tipo (legado)
+- **Comercial** e **Turismo** (eixos v4.49.27)
+- Busca livre
+
+Cabeçalho de cada export mostra o resumo dos filtros (ex: "BU: centurion ·
+Período: últimos 90d · Comercial: sazonal") pra contexto.
+
+### Excel (`.xlsx`) — 10 sheets
+
+- **Resumo**: filtros, contagens KPI, open rate médio
+- **Comercial / Turismo**: distribuição nos eixos novos
+- **Países / Cidades / Hotéis / Cruzeiros / Temas / Marcas**: cada um
+  com colunas Disparos · Enviados · Abertura · Cliques · Opt-out
+- **Tipo Legado**: classificação antiga (preservada)
+- **Disparos**: uma linha por campanha (subject, BU, data, métricas,
+  comercial, turismo, países, cidades, hotéis, marcas)
+
+### PDF (`.pdf`) — A4 portrait
+
+- Capa com título + filtros + KPIs em linha
+- 7 tabelas (top 30 cada): Comercial, Turismo, Países, Cidades, Hotéis,
+  Cruzeiros, Temas — todas com Disparos/Enviados/Abertura/Cliques/Opt-out
+- Quebra de página automática quando passa de 260mm
+
+### PowerPoint (`.pptx`) — layout wide
+
+- **Slide capa** com filtros + KPIs (BU/período/total/open rate)
+- 8 slides de tabela (top 15 cada): Comercial, Turismo, Países, Cidades,
+  Hotéis, Cruzeiros, Temas, Tipo Legado
+- Header dourado, células com cor PRIMETOUR navy, fonte Poppins
+- Pronto pra apresentação executiva
+
+### Buttons no header
+
+`⬇ Excel · ⬇ PDF · ⬇ PPT` substituem o botão antigo "⬇ PDF" (que só
+mostrava alert). Mesmo cluster do "↻ Atualizar".
+
+---
+
 ## [4.49.27+20260519-nl-eixos-duplos-comercial-turismo] — 2026-05-19
 
 Release **MINOR** — Eixos duplos de classificação no Newsletter
