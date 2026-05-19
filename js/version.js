@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 17,
-  build: '20260519-calendar-up-filters-type',
+  patch: 18,
+  build: '20260519-dash-prod-coerencia',
 };
 
 /** "1.2.0" */

@@ -177,6 +177,8 @@ export async function renderTasks(container) {
   let urlAssignee    = '';
   let urlObserver    = '';
   let urlStatus      = '';
+  let urlType        = '';   // 4.49.18+ deep-link de "Sem tipo" ou tipo específico
+  let urlDatePreset  = '';   // 4.49.18+ permite alinhar período c/ dashboard (ex: 30d)
   let urlOpen        = false;       // status != done && status != cancelled
   let urlCompletedToday = false;    // status==='done' && completedAt é hoje
   let urlPartnership = false;
@@ -203,6 +205,8 @@ export async function renderTasks(container) {
       urlAssignee = a === 'me' ? myUid : a;
       urlObserver = o === 'me' ? myUid : o;
       urlStatus   = qs.get('status') || '';
+      urlType     = qs.get('type')   || '';   // 4.49.18+ aceita typeId ou '__NONE__'
+      urlDatePreset = qs.get('datePreset') || '';
       urlOpen     = qs.get('open') === '1';
       urlCompletedToday = qs.get('completedToday') === '1';
       urlPartnership = qs.get('partnership') === '1';
@@ -226,6 +230,10 @@ export async function renderTasks(container) {
   filterSquad    = urlWorkspaceId;
   filterAssignee = urlAssignee || '';
   filterStatus   = urlStatus   || '';
+  // 4.49.18+ URL params type/datePreset (deep-link de dashboards p/ alinhar
+  // contagens — ex: dash "Sem tipo no período" → #tasks?type=__NONE__&datePreset=last30Days)
+  if (urlType)       filterType       = urlType;
+  if (urlDatePreset) filterDatePreset = urlDatePreset;
   filterObserver       = urlObserver;
   filterOpen           = urlOpen;
   filterCompletedToday = urlCompletedToday;

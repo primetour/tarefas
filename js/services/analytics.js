@@ -152,9 +152,19 @@ export function getPriorityDistribution(tasks) {
   })).filter(p => p.count > 0);
 }
 
-/* ─── Tarefas por membro ──────────────────────────────────── */
-export function getTasksByMember(tasks) {
+/* ─── Tarefas por membro ──────────────────────────────────────
+ * 4.49.18+ Bug fix: usuários `pendingSso: true` (pré-cadastrados que ainda
+ * não fizeram primeiro login SSO) ou inativos (`active === false`) NÃO
+ * aparecem no ranking. Antes, todo uid que estivesse em algum t.assignees[]
+ * virava entry — incluía até stub de pré-cadastro, poluindo o ranking.
+ *
+ * Tasks atribuídas a uids "fantasma" (user não existe no store, ou pendente,
+ * ou inativo) caem num bucket "_orphan" que pode ser exposto via toggle
+ * caso o gestor queira limpar. Por padrão essas entries são silenciadas. */
+export function getTasksByMember(tasks, { includeOrphans = false } = {}) {
   const users = store.get('users') || [];
+  // Index por uid pra lookup O(1)
+  const userById = new Map(users.map(u => [u.id, u]));
   const byMember = {};
   tasks.forEach(t => {
     (t.assignees || []).forEach(uid => {
@@ -165,17 +175,24 @@ export function getTasksByMember(tasks) {
   });
   return Object.entries(byMember)
     .map(([uid, data]) => {
-      const user = users.find(u => u.id === uid);
+      const user = userById.get(uid);
+      const isPending  = user?.pendingSso === true;
+      const isInactive = user?.active === false;
+      const isOrphan   = !user || isPending || isInactive;
       return {
         uid,
         id: uid,                                    // 4.34.8+ pra helper userAvatar reconhecer como user
         name: user?.name || uid,
         avatarColor: user?.avatarColor || '#6B7280',
         photoURL: user?.photoURL || null,           // 4.34.8+ pra ranking mostrar foto SSO
+        _isPending:  isPending,
+        _isInactive: isInactive,
+        _isOrphan:   isOrphan,
         ...data,
         rate: data.total ? Math.round(data.done / data.total * 100) : 0,
       };
     })
+    .filter(m => includeOrphans || !m._isOrphan)
     .sort((a, b) => b.done - a.done);
 }
 
@@ -299,11 +316,21 @@ function resolveTypeName(typeId) {
 
 /* ─── Ranking de produtividade por tipo de tarefa ─────────
  * Agrupa por taskTypeId (campo `typeId` na task), calcula concluídas,
- * total, taxa, e VOLUME DE PARCERIAS (isPartnership=true). */
+ * total, taxa, e VOLUME DE PARCERIAS (isPartnership=true).
+ *
+ * 4.49.18+ Bug fix de divergência com o filtro "Sem tipo" em #tasks:
+ * antes usava `t.typeId || '__none__'`, ignorando o campo legacy `t.type`
+ * (string "newsletter"/"relatorio"/…). Tarefas com t.type preenchido mas
+ * sem typeId caíam no bucket "Sem tipo" — inflando essa contagem e
+ * mostrando contagens diferentes nas 2 views.
+ *
+ * Agora usa `t.typeId || t.type || '__none__'` — mesmo critério do
+ * getTimePerTaskByType acima. Só conta como "Sem tipo" quando AMBOS estão
+ * vazios, igual ao filtro __NONE__ de tasks.js (`!t.typeId && !t.type`). */
 export function getProductivityByType(tasks) {
   const byType = {};
   tasks.forEach(t => {
-    const typeId = t.typeId || '__none__';
+    const typeId = t.typeId || t.type || '__none__';
     if (!byType[typeId]) byType[typeId] = { total: 0, done: 0, partnerships: 0 };
     byType[typeId].total++;
     if (t.status === 'done') byType[typeId].done++;

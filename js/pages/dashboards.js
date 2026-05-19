@@ -761,12 +761,29 @@ function renderAllCharts(Chart, m) {
     }
   })();
 
+  // 4.49.18+ Mapping pra deep-link p/ #tasks alinhando período c/ dashboard.
+  // User clica no ranking e abre #tasks com EXATAMENTE a mesma contagem.
+  // Declarado AQUI (antes do member-board) pra ambos rankings reaproveitarem.
+  const periodDatePreset = ({
+    '7d':   'last7Days',
+    '30d':  'last30Days',
+    '90d':  'last90Days',
+    '12m':  '',   // tasks.js não tem preset 1y; deixa vazio (todos)
+    'custom': '',
+  })[activePeriod()] || '';
+
   /* 6 — Member leaderboard (4-col) */
+  // 4.49.18+ getTasksByMember agora filtra pendingSso/inactive (analytics.js).
+  // Items ganham deep-link pra #tasks?assignee=<uid>&datePreset=<preset>
+  // pra dar drill-down idêntico ao do ranking por tipo.
   const byMember = getTasksByMember(tasks);
   renderLeaderboard('bottom-grid', 'member-board', 'col-span-4', {
     title: '🏆 Ranking da Equipe',
     subtitle: 'Por tarefas concluídas no período',
-    items: byMember.slice(0, 8),
+    items: byMember.slice(0, 8).map(m => ({
+      ...m,
+      href: `#tasks?assignee=${encodeURIComponent(m.uid)}${periodDatePreset ? `&datePreset=${periodDatePreset}` : ''}`,
+    })),
   });
 
   /* 6b — Productivity by task type (4-col) — inclui volume de parcerias */
@@ -778,13 +795,15 @@ function renderAllCharts(Chart, m) {
       const parcSuffix = t.partnerships > 0
         ? ` · 🤝 ${t.partnerships} parc. (${t.partnershipRate}%)`
         : '';
+      // typeId real ou sentinel __NONE__ pro filtro de #tasks
+      const typeParam = (t.typeId && t.typeId !== '__none__') ? t.typeId : '__NONE__';
+      const href = `#tasks?type=${encodeURIComponent(typeParam)}${periodDatePreset ? `&datePreset=${periodDatePreset}` : ''}`;
       return {
-        // 4.34.8+ name SEM o ícone (avatar mostra o ícone separado)
-        // Antes virava "📰N" como sigla do "📰 Newsletter" — feio e redundante.
         name: `${t.name}${parcSuffix}`,
-        icon: t.icon,         // ícone do tipo (renderizado dentro da bolinha)
-        iconOnly: true,       // flag pro renderLeaderboard mostrar ícone em vez de iniciais
+        icon: t.icon,
+        iconOnly: true,
         avatarColor: t.color,
+        href,                 // 4.49.18+ click → drill-down em #tasks
         done: t.done,
         total: t.total,
         rate: t.rate,
@@ -1011,8 +1030,12 @@ function renderLeaderboard(gridId, id, colClass, opts) {
       ${opts.items.length === 0
         ? `<div class="empty-state" style="padding:24px;"><div class="empty-state-icon">🏆</div>
             <div class="empty-state-title">Nenhum dado disponível</div></div>`
-        : opts.items.map((u, i) => `
-          <div class="leaderboard-item">
+        : opts.items.map((u, i) => {
+          // 4.49.18+ se u.href existir → wrap em <a> pra drill-down
+          // (ex: ranking por tipo → #tasks?type=<id>&datePreset=last30Days)
+          const open  = u.href ? `<a href="${esc(u.href)}" class="leaderboard-item" style="text-decoration:none;color:inherit;display:flex;cursor:pointer;">` : `<div class="leaderboard-item">`;
+          const close = u.href ? `</a>` : `</div>`;
+          return `${open}
             <div class="leaderboard-rank ${i<3?['gold','silver','bronze'][i]:''}">
               ${i < 3 ? rankLabels[i+1] : i+1}
             </div>
@@ -1026,8 +1049,8 @@ function renderLeaderboard(gridId, id, colClass, opts) {
               <div class="leaderboard-sub">${u.total} tarefa${u.total!==1?'s':''}  · ${u.rate}% concluída${u.rate!==1?'s':''}</div>
             </div>
             <div class="leaderboard-value" style="color:var(--color-success);">${u.done}</div>
-          </div>
-        `).join('')
+          ${close}`;
+        }).join('')
       }
     </div>
   `;

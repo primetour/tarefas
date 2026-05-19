@@ -6,6 +6,50 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.18+20260519-dash-prod-coerencia] — 2026-05-19
+
+Release **PATCH** — Coerência entre Dashboard de Produtividade e a página de
+Tarefas. User reportou divergência ("122 sem tipo no dash vs 828 sem tipo
+em #tasks") + usuários pending aparecendo no ranking da equipe.
+
+### 🐛 Bug fix — Sem tipo desalinhado
+
+`analytics.js getProductivityByType` usava `t.typeId || '__none__'`,
+ignorando o campo legacy `t.type` (string). Resultado: tarefas com
+`t.type='newsletter'` mas sem typeId caíam no bucket "Sem tipo",
+inflando essa contagem.
+
+- Agora usa `t.typeId || t.type || '__none__'` — **mesmo critério** do
+  `getTimePerTaskByType` e do filtro `__NONE__` em `tasks.js`
+  (`!t.typeId && !t.type`).
+- Tarefas com legacy type voltam pro bucket correto (Newsletter, etc.).
+
+### 🐛 Bug fix — Pending users no ranking equipe
+
+`getTasksByMember` listava todo uid presente em `t.assignees[]`, incluindo
+usuários `pendingSso: true` (pré-cadastrados sem primeiro login SSO) e
+`active: false` (desativados). Poluía o ranking com nomes irrelevantes.
+
+- Agora filtra por padrão. Aceita opção `{ includeOrphans: true }` se
+  alguma view futura quiser exibir (ex: auditoria de orphan assignments).
+- Cada entry ganha flags `_isPending` / `_isInactive` / `_isOrphan`.
+
+### 🔗 Drill-down do dashboard → #tasks
+
+Tornado clicáveis os 2 rankings (equipe + tipo). Cada item vira
+deep-link pra `#tasks` com filtros e período pré-aplicados, garantindo
+**a mesma contagem** que aparece no card:
+
+- `tasks.js` agora lê `?type=<id|__NONE__>` e `?datePreset=<preset>` da URL.
+- Dashboard mapeia o período ativo (`7d/30d/90d/12m`) pro preset
+  equivalente em `#tasks` (`last7Days/last30Days/last90Days/<vazio>`).
+- `renderLeaderboard` aceita `href` opcional por item e envelopa em `<a>`.
+
+Agora user clica em "Sem tipo · 122" no dash, abre `#tasks?type=__NONE__&datePreset=last30Days`,
+e vê exatamente 122 tarefas — sem mistério.
+
+---
+
 ## [4.49.17+20260519-calendar-up-filters-type] — 2026-05-19
 
 Release **MINOR** — Duas mudanças baseadas em feedback direto do user:
