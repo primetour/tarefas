@@ -289,18 +289,30 @@ export function subscribeSurveys(callback) {
 
 /* ─── Excluir survey permanentemente ─────────────────────── */
 export async function deleteCsatSurvey(surveyId) {
+  // 4.49.10+ SECURITY: bloqueia delete sem csat_manage.
+  if (!store.isMaster?.() && !store.can('csat_manage')) {
+    throw new Error('Você não tem permissão para excluir pesquisas CSAT.');
+  }
   await deleteDoc(doc(db, 'csat_surveys', surveyId));
   await auditLog('csat.delete', 'survey', surveyId, {});
 }
 
 /* ─── Cancelar survey ────────────────────────────────────── */
 export async function cancelSurvey(surveyId) {
+  // 4.49.10+ SECURITY: cancelar é mudança destrutiva; requer csat_manage.
+  if (!store.isMaster?.() && !store.can('csat_manage')) {
+    throw new Error('Você não tem permissão para cancelar pesquisas CSAT.');
+  }
   await updateDoc(doc(db, 'csat_surveys', surveyId), { status: 'cancelled' });
   await auditLog('csat.cancel', 'survey', surveyId, {});
 }
 
 /* ─── Reenviar survey ────────────────────────────────────── */
 export async function resendSurvey(surveyId) {
+  // 4.49.10+ SECURITY: reenvio requer csat_send (mesma perm de enviar pela 1ª vez).
+  if (!store.isMaster?.() && !store.can('csat_send')) {
+    throw new Error('Você não tem permissão para reenviar pesquisas CSAT.');
+  }
   await updateDoc(doc(db, 'csat_surveys', surveyId), {
     status:    'pending',
     sentAt:    null,

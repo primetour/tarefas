@@ -234,6 +234,12 @@ export const PRIORITY_MAP  = Object.fromEntries(PRIORITIES.map(p => [p.value, p]
 /* ─── Criar tarefa ───────────────────────────────────────── */
 export async function createTask(data) {
   if (!store.can('task_create')) throw new Error('Permissão negada.');
+  // 4.49.10+ SECURITY: bloqueia criar tarefa JÁ "done" sem ter task_complete.
+  // Bypass anterior: chamar createTask({ status:'done', ...}) direto criava
+  // a task como concluída sem passar pelas guards de status-transition.
+  if (data?.status === 'done' && !store.can('task_complete')) {
+    throw new Error('Você não tem permissão para criar tarefas já concluídas. Crie como "Não iniciado" e peça homologação.');
+  }
   // Sandbox: simula sucesso sem persistir no Firestore
   const { sandboxGuard } = await import('./sandbox.js');
   if (sandboxGuard('criar tarefa')) {
@@ -801,6 +807,16 @@ export async function bulkUpdateTasks(items, onProgress) {
   if (!user?.uid) throw new Error('Usuário não autenticado.');
   if (!Array.isArray(items) || !items.length) return { total: 0, updated: 0, failed: 0 };
 
+  // 4.49.10+ SECURITY: bloqueia conclusão em massa sem permissão.
+  // Antes esse método permitia que qualquer user com task_create marcasse
+  // várias tasks como 'done' via bulkActionBar → popover de status,
+  // contornando o guard de updateTask (que SÓ valida em single-update).
+  // Caso documentado: Beatriz Arantes (analista) concluiu task via bulk.
+  const wantsDone = items.some(it => it?.data?.status === 'done');
+  if (wantsDone && !store.can('task_complete')) {
+    throw new Error('Você não tem permissão para concluir tarefas em massa. Peça a um coordenador para homologar.');
+  }
+
   const total = items.length;
   let   updated = 0;
   let   failed  = 0;
@@ -811,7 +827,17 @@ export async function bulkUpdateTasks(items, onProgress) {
     const batch = writeBatch(db);
     slice.forEach(({ id, data }) => {
       if (!id || !data) return;
-      const updates = { ...data, updatedAt: serverTimestamp(), updatedBy: user.uid };
+      // 4.49.10+ Quando trocar pra 'done' em batch, seta completedAt automatico
+      // (mesma semantica de updateTask). Sem isso o card ficava "concluído" mas
+      // sem data — quebrava analytics e os filtros de "concluídas hoje/no prazo".
+      const isCompleting = data.status === 'done';
+      const updates = {
+        ...data,
+        ...(isCompleting && !data.completedAt ? { completedAt: serverTimestamp() } : {}),
+        ...(data.status && data.status !== 'done' ? { completedAt: null } : {}),
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
+      };
       batch.update(doc(db, 'tasks', id), updates);
     });
     try {
@@ -836,6 +862,12 @@ export async function bulkUpdateTasks(items, onProgress) {
 export async function bulkDeleteTasks(ids, onProgress) {
   const user = store.get('currentUser');
   if (!user?.uid) throw new Error('Usuário não autenticado.');
+  // 4.49.10+ SECURITY: bloqueia delete em massa sem task_delete.
+  // Antes: bulk action bar permitia "Excluir" → bulkDeleteTasks SEM guard.
+  // Análogo ao gap de bulkUpdateTasks descoberto no mesmo audit.
+  if (!store.can('task_delete')) {
+    throw new Error('Você não tem permissão para excluir tarefas em massa.');
+  }
   if (!Array.isArray(ids) || !ids.length) return { total: 0, deleted: 0, failed: 0 };
 
   const total = ids.length;

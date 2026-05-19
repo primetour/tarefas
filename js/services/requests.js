@@ -143,6 +143,12 @@ export async function convertToTask(reqId, taskData) {
 
 /* ─── Excluir solicitação (admin only) ──────────────────── */
 export async function deleteRequest(reqId) {
+  // 4.49.10+ SECURITY: requer system_manage_settings (admin/diretoria).
+  // UI da página requests.js já checa isso pra exibir o botão; aqui é a
+  // defesa em profundidade — antes era guard só no UI.
+  if (!store.isMaster?.() && !store.can('system_manage_settings')) {
+    throw new Error('Você não tem permissão para excluir solicitações.');
+  }
   await deleteDoc(doc(db, 'requests', reqId));
   await auditLog('requests.delete', 'request', reqId, {});
 }

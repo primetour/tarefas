@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 9,
-  build: '20260519-destinations-import-intra-file-dedup',
+  patch: 10,
+  build: '20260519-rbac-bypasses-fix',
 };
 
 /** "1.2.0" */

@@ -583,6 +583,9 @@ async function _auditPortalImage(action, imgId, before, after) {
 }
 
 export async function saveImageMeta(data) {
+  // 4.49.10+ SECURITY: requer portal_images_manage. Antes não tinha guard
+  // (só deleteImageMeta tinha) — quem chegasse na função criava doc + upload.
+  if (!canManageImageBank()) throw new Error('Permissão negada.');
   const ref = doc(collection(db, 'portal_images'));
   const meta = {
     // 4.35.31+ assetCategory determina path no R2 e se a foto exige localização
@@ -611,6 +614,8 @@ export async function saveImageMeta(data) {
 }
 
 export async function updateImageMeta(id, data) {
+  // 4.49.10+ SECURITY: requer portal_images_manage. Match com deleteImageMeta.
+  if (!canManageImageBank()) throw new Error('Permissão negada.');
   // 4.35.31+ allowlist inclui assetCategory + copyright
   const allowed = ['name','placeName','tags','type','continent','country','city','assetCategory','copyright'];
   const patch   = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
