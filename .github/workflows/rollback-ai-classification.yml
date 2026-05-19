@@ -1,0 +1,58 @@
+name: Rollback AI Classification
+
+# Reverte o promote-ai-to-prod.js — restaura commercialPrev/tourismPrev
+# para commercial/tourism. Mantém os campos ai* intactos (shadow mode
+# continua rodando).
+#
+# Manual only (workflow_dispatch) — NUNCA roda automaticamente.
+
+concurrency:
+  group: nl-classifier-cutover
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry-run (mostra o que faria sem gravar)'
+        required: false
+        type: boolean
+        default: true
+      since:
+        description: 'Só reverte docs promovidos depois desta data ISO (ex: 2026-05-20T00:00:00Z). Vazio = reverter TODOS.'
+        required: false
+        type: string
+        default: ''
+      confirmar:
+        description: 'Digite "REVERTER" pra confirmar'
+        required: true
+        type: string
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sanity check da confirmação
+        run: |
+          if [ "${{ github.event.inputs.confirmar }}" != "REVERTER" ]; then
+            echo "❌ Confirmação inválida. Digite exatamente 'REVERTER' no input."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install firebase-admin
+        working-directory: scripts
+      - name: Rollback
+        env:
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+        run: |
+          args=""
+          if [ "${{ github.event.inputs.dry }}" = "true" ]; then args="$args --dry"; fi
+          if [ -n "${{ github.event.inputs.since }}" ]; then args="$args --since=${{ github.event.inputs.since }}"; fi
+          node rollback-ai-classification.js $args
+        working-directory: scripts

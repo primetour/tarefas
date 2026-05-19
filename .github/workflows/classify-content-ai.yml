@@ -10,6 +10,13 @@ name: Classify Newsletter Content via AI Agent (shadow mode)
 # Grava em campos PARALELOS (extracted.aiCommercial/aiTourism/...),
 # NUNCA toca em extracted.commercial/tourism de produção.
 
+# Lock: previne 2 corridas simultâneas (cron + workflow_dispatch manual,
+# ou 2 manuais sobrepostas). Sem isto poderia duplicar audit logs e
+# estourar rate limits do Anthropic.
+concurrency:
+  group: classify-content-ai
+  cancel-in-progress: false  # deixa a corrida atual terminar; rejeita a nova
+
 on:
   schedule:
     # 06h45 UTC (3h45 BR) — 15min depois do enrich-content.yml

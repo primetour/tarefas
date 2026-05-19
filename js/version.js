@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 41,
-  build: '20260519-classificador-newsletters-shadow-mode',
+  patch: 42,
+  build: '20260519-nl-classifier-pipeline-100pct',
 };
 
 /** "1.2.0" */

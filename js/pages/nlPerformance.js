@@ -2202,10 +2202,77 @@ function renderContentTab() {
 /* ─── Shadow mode IA ────────────────────────────────────────────
  * Bloco que aparece quando há docs com extracted.aiCommercial gravado
  * pelo script classify-content-ai.js (workflow .github/.../classify-content-ai.yml).
- * Mostra: cobertura, concordância com regex, divergências top, distribuição
- * de confidence. Permite ao Renê decidir empiricamente quando promover IA
- * para produção (substituir extracted.commercial/tourism pelos campos AI).
+ *
+ * Mostra:
+ *   - Coverage (% classificado)
+ *   - Concordância com regex por eixo (com semáforo)
+ *   - Distribuição de confiança
+ *   - Sparkline da evolução temporal (últimas N corridas)
+ *   - Tabelas de divergências top (com botão "marcar IA correta" / "regex correto")
+ *   - Painel admin com link pros workflows promote/rollback
+ *
+ * Decisões humanas são gravadas em nl_classifier_decisions pra alimentar
+ * análise futura (qual prompt change melhoraria mais? quais subjects são
+ * sistematicamente ambíguos?).
  */
+let _shadowRunsCache = null;   // cache de nl_ai_classifier_runs (última hora)
+let _shadowRunsCacheAt = 0;
+async function loadShadowRuns() {
+  // Cache de 5min pra evitar refetch a cada render
+  if (_shadowRunsCache && (Date.now() - _shadowRunsCacheAt) < 5 * 60 * 1000) {
+    return _shadowRunsCache;
+  }
+  try {
+    const { collection, getDocs, query, orderBy, limit } = await import(
+      'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+    );
+    const { db } = await import('../firebase.js');
+    const snap = await getDocs(query(
+      collection(db, 'nl_ai_classifier_runs'),
+      orderBy('runAt', 'desc'),
+      limit(30),
+    ));
+    _shadowRunsCache = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse(); // crescente
+    _shadowRunsCacheAt = Date.now();
+  } catch (e) {
+    console.warn('[shadow-mode] runs load err:', e?.message);
+    _shadowRunsCache = [];
+  }
+  return _shadowRunsCache;
+}
+
+function renderShadowSparkline(runs) {
+  if (!runs.length) return '';
+  const w = 320, h = 50, pad = 4;
+  const innerW = w - pad * 2, innerH = h - pad * 2;
+  const lineFor = (key, color) => {
+    const points = runs.map((r, i) => {
+      const x = pad + (i / Math.max(1, runs.length - 1)) * innerW;
+      const v = r[key];
+      const y = v == null ? pad + innerH : pad + innerH - (v / 100) * innerH;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.6"/>`;
+  };
+  // Linha de referência 90%
+  const ref90Y = pad + innerH - 0.9 * innerH;
+  return `
+    <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="max-width:${w}px;">
+      <line x1="${pad}" x2="${w-pad}" y1="${ref90Y}" y2="${ref90Y}" stroke="#94A3B8" stroke-width="0.5" stroke-dasharray="3,3"/>
+      <text x="${w-pad-2}" y="${ref90Y-2}" text-anchor="end" font-size="8" fill="#64748B">meta 90%</text>
+      ${lineFor('concordanceCommercialPct', '#2563EB')}
+      ${lineFor('concordanceTourismPct',    '#16A34A')}
+      ${lineFor('concordanceBothPct',       '#D4A843')}
+    </svg>
+    <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">
+      <span style="color:#2563EB;">━</span> Comercial &nbsp;
+      <span style="color:#16A34A;">━</span> Turismo &nbsp;
+      <span style="color:#D4A843;">━</span> Ambos &nbsp;
+      · ${runs.length} corridas (mais recente à direita)
+    </div>
+  `;
+}
+
 function renderShadowModeBlock(docs) {
   const aiDocs = docs.filter(d => d.extracted?.aiCommercial);
   if (!aiDocs.length) {
@@ -2280,6 +2347,26 @@ function renderShadowModeBlock(docs) {
       : conf === 'medium'
       ? '<span style="background:#FEF3C7;color:#D97706;padding:1px 6px;border-radius:8px;font-size:0.6875rem;font-weight:600;">média</span>'
       : '<span style="background:#FEE2E2;color:#DC2626;padding:1px 6px;border-radius:8px;font-size:0.6875rem;font-weight:600;">baixa</span>';
+    // Decisão prévia gravada em decisions[d.id]?[eixo]
+    const decision = d.extracted?.[`humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}`];
+    const decisionBadge = decision === 'ai-correct'
+      ? '<span style="color:#16A34A;font-size:0.6875rem;font-weight:600;">✓ IA certa</span>'
+      : decision === 'regex-correct'
+      ? '<span style="color:#2563EB;font-size:0.6875rem;font-weight:600;">✓ regex certo</span>'
+      : `
+        <div style="display:flex;gap:4px;">
+          <button class="nl-shadow-decision" data-doc-id="${esc(d.id)}" data-eixo="${eixo}" data-verdict="ai-correct"
+            style="background:#DCFCE7;color:#16A34A;border:none;padding:2px 8px;border-radius:4px;font-size:0.6875rem;font-weight:600;cursor:pointer;"
+            title="Marcar veredicto: a IA está certa neste caso">
+            IA certa
+          </button>
+          <button class="nl-shadow-decision" data-doc-id="${esc(d.id)}" data-eixo="${eixo}" data-verdict="regex-correct"
+            style="background:#DBEAFE;color:#2563EB;border:none;padding:2px 8px;border-radius:4px;font-size:0.6875rem;font-weight:600;cursor:pointer;"
+            title="Marcar veredicto: o regex está certo neste caso">
+            regex certo
+          </button>
+        </div>
+      `;
     return `
       <tr style="border-top:1px solid var(--border);">
         <td style="padding:6px 8px;font-size:0.75rem;color:var(--text-muted);font-family:monospace;">
@@ -2294,9 +2381,44 @@ function renderShadowModeBlock(docs) {
         <td style="padding:6px 8px;font-size:0.6875rem;color:var(--text-muted);font-style:italic;">
           ${esc((d.extracted.aiReasoning || '').slice(0, 120))}
         </td>
+        <td style="padding:6px 8px;text-align:right;">${decisionBadge}</td>
       </tr>
     `;
   };
+
+  // Painel admin (só master/admin enxergam) — links pros workflows
+  const isAdmin = store.isMaster() || store.can('system_manage_settings');
+  const allBothAgreed = pctB != null && pctB >= 90;
+  const adminPanel = !isAdmin ? '' : `
+    <div style="margin-top:14px;padding:12px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border);">
+      <h4 style="margin:0 0 8px;font-size:0.75rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em;">
+        🔧 Admin · ações de cutover
+      </h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <a href="https://github.com/primetour/tarefas/actions/workflows/classify-content-ai.yml" target="_blank" rel="noopener"
+          class="btn btn-secondary btn-sm" style="font-size:0.75rem;">
+          ▶ Disparar classificação IA agora
+        </a>
+        <a href="https://github.com/primetour/tarefas/actions/workflows/promote-ai-to-prod.yml" target="_blank" rel="noopener"
+          class="btn ${allBothAgreed ? 'btn-primary' : 'btn-secondary'} btn-sm"
+          style="font-size:0.75rem;${allBothAgreed ? '' : 'opacity:0.7;'}"
+          title="${allBothAgreed ? 'Concordância >=90%, pode promover' : 'Concordância < 90% — risco de regressão'}">
+          ⬆ Promover IA → Produção (cutover)
+        </a>
+        <a href="https://github.com/primetour/tarefas/actions/workflows/rollback-ai-classification.yml" target="_blank" rel="noopener"
+          class="btn btn-ghost btn-sm" style="font-size:0.75rem;color:#DC2626;">
+          ⏪ Reverter cutover
+        </a>
+        <span style="font-size:0.6875rem;color:var(--text-muted);margin-left:auto;">
+          ${allBothAgreed
+            ? '✅ Cutover liberado pela métrica (verificar divergências antes)'
+            : pctB == null
+              ? '⏳ Aguardando primeira corrida com dados de comparação'
+              : `⚠ Concordância ${pctB.toFixed(1)}% < meta 90% — recomendado aguardar`}
+        </span>
+      </div>
+    </div>
+  `;
 
   return `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
@@ -2339,6 +2461,18 @@ function renderShadowModeBlock(docs) {
       </div>
     </div>
 
+    <!-- Sparkline da evolução temporal — placeholder, preenchido async em wireShadowModeDrill -->
+    <div id="nl-shadow-sparkline" style="margin-bottom:12px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);">
+      <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">
+        Evolução da concordância (últimas corridas)
+      </div>
+      <div id="nl-shadow-sparkline-svg" style="min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.75rem;">
+        Carregando histórico…
+      </div>
+    </div>
+
+    ${adminPanel}
+
     <!-- Divergências (collapsible) -->
     <details style="margin-top:12px;">
       <summary style="cursor:pointer;font-size:0.8125rem;font-weight:600;color:var(--text-primary);padding:6px 0;">
@@ -2354,6 +2488,7 @@ function renderShadowModeBlock(docs) {
               <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">IA</th>
               <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Conf.</th>
               <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Reasoning IA</th>
+              <th style="padding:6px 8px;text-align:right;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Decisão</th>
             </tr>
           </thead>
           <tbody>${disagreeC.map(d => divRow(d, 'comercial')).join('')}</tbody>
@@ -2375,6 +2510,7 @@ function renderShadowModeBlock(docs) {
               <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">IA</th>
               <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Conf.</th>
               <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Reasoning IA</th>
+              <th style="padding:6px 8px;text-align:right;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Decisão</th>
             </tr>
           </thead>
           <tbody>${disagreeT.map(d => divRow(d, 'turismo')).join('')}</tbody>
@@ -2391,11 +2527,63 @@ function renderShadowModeBlock(docs) {
   `;
 }
 
-// Wireup futuro (drill-down em divergências, abrir modal de revisão, etc.)
-// Por ora deixa explícito como hook pra evitar TypeError caso seja chamado.
-function wireShadowModeDrill() {
-  // Reservado pra futuras interações (ex: clicar numa divergência → modal
-  // com payload completo enviado à IA + opção de aprovar/rejeitar a IA).
+/* ─── Wireup do bloco Shadow Mode ────────────────────────────────
+ * Setup async pós-render: carrega histórico de corridas e desenha sparkline,
+ * + wire dos botões "IA certa / regex certo" que gravam decisões humanas
+ * em campos extracted.humanDecision* (alimenta análise de divergências).
+ */
+async function wireShadowModeDrill() {
+  // 1. Sparkline async
+  const slot = document.getElementById('nl-shadow-sparkline-svg');
+  if (slot) {
+    const runs = await loadShadowRuns();
+    if (!runs.length) {
+      slot.textContent = 'Sem corridas ainda — aguardando primeira execução do cron classify-content-ai.';
+    } else {
+      slot.innerHTML = renderShadowSparkline(runs);
+    }
+  }
+
+  // 2. Decision buttons (event delegation no card pai pra sobreviver re-renders)
+  const card = document.getElementById('nl-content-shadow-block');
+  if (card && !card.dataset.decisionsWired) {
+    card.dataset.decisionsWired = '1';
+    card.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.nl-shadow-decision');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const docId  = btn.dataset.docId;
+      const eixo   = btn.dataset.eixo;     // 'comercial' | 'turismo'
+      const verdict = btn.dataset.verdict;  // 'ai-correct' | 'regex-correct'
+      const fieldKey = `extracted.humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}`;
+      const decAtKey = `extracted.humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}At`;
+      const decByKey = `extracted.humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}By`;
+      try {
+        const { doc, updateDoc } = await import(
+          'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+        );
+        const { db } = await import('../firebase.js');
+        const cu = store.get('currentUser') || {};
+        await updateDoc(doc(db, 'mc_performance', docId), {
+          [fieldKey]:  verdict,
+          [decAtKey]:  new Date().toISOString(),
+          [decByKey]:  cu.uid || cu.email || 'anonymous',
+        });
+        // Atualiza cache local pra refletir sem refetch
+        const cached = (_contentDataCache || []).find(d => d.id === docId);
+        if (cached) {
+          if (!cached.extracted) cached.extracted = {};
+          cached.extracted[`humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}`] = verdict;
+        }
+        toast.success(`Veredicto registrado: ${verdict === 'ai-correct' ? 'IA correta' : 'regex correto'}.`);
+        renderContentTab();
+      } catch (err) {
+        console.error('[shadow-mode] decision err:', err);
+        toast.error(`Falha ao gravar veredicto: ${err.message}`);
+      }
+    });
+  }
 }
 
 /* ─── Filtros ──────────────────────────────────────────────── */

@@ -1,8 +1,21 @@
 # Shadow Mode — Classificador IA de Newsletters
 
-Playbook completo para ativar, monitorar e fazer cutover do agente
-`nl-content-classifier` (Claude Haiku 4.5) que classifica disparos
-de newsletter nos eixos Comercial × Turismo.
+Playbook completo para ativar, monitorar, fazer cutover e reverter
+o agente `nl-content-classifier` (Claude Haiku 4.5) que classifica
+disparos de newsletter nos eixos Comercial × Turismo.
+
+**Status atual**: shadow mode operacional. Cutover gated por concordância
+≥ 90% em ambos eixos + revisão humana das divergências.
+
+**Componentes 100% funcionais** (v4.49.42+):
+- `scripts/classify-content-ai.js` — classifica em shadow (campos `ai*`)
+- `scripts/promote-ai-to-prod.js` — cutover (ai → produção, com backup)
+- `scripts/rollback-ai-classification.js` — reverte cutover
+- `.github/workflows/classify-content-ai.yml` — cron diário 06:45 UTC
+- `.github/workflows/promote-ai-to-prod.yml` — manual com confirmação
+- `.github/workflows/rollback-ai-classification.yml` — manual com confirmação
+- Dashboard NL → Conteúdo & Temas → bloco "Classificador IA — Shadow mode"
+  com sparkline, KPIs, divergências, decisões humanas, painel admin
 
 ## Arquitetura
 
@@ -130,28 +143,113 @@ Acompanha por 1-2 semanas:
 
 ## Cutover (substituir regex pela IA)
 
-Critérios pra promover (todos devem bater):
+### Critérios pra promover (todos devem bater)
 
 - [ ] Concordância em AMBOS eixos ≥ 90% por 2 corridas consecutivas
-- [ ] Divergências analisadas — a IA está acertando nos casos em desacordo
-      (ex: subjects novos que o regex não cobria)
-- [ ] Custo médio aceitável (consultar `nl_ai_classifier_runs.inputTokens`
-      e `cacheReadTokens` — esperado ~5k input por run + 90% cache hit)
+      (visível no sparkline do bloco shadow mode no dashboard)
+- [ ] Divergências analisadas — clicar "IA certa" ou "regex certo" em
+      pelo menos 80% das divergências top, e taxa de "IA certa" ≥ 70%
+- [ ] Custo médio aceitável (consultar `nl_ai_classifier_runs.costUsd` —
+      esperado < US$ 0,02 por corrida com cache hit ~95%)
 - [ ] Renê aprovou explicitamente
 
-Quando OK, criar `scripts/promote-ai-to-prod.js`:
+### Como fazer o cutover (1ª vez)
 
-```js
-// Copia extracted.aiCommercial → extracted.commercial onde aiConfidence != low
-// Mantém auditoria: extracted.commercialSource = 'ai-haiku-v1'
-// Backup: extracted.commercialPrev = (valor antigo do regex)
+**Via UI** (recomendado):
+1. Dashboard NL → Conteúdo & Temas → bloco shadow mode → botão
+   "⬆ Promover IA → Produção"
+2. Abre a página do GitHub Actions
+3. Clicar "Run workflow"
+4. Inputs:
+   - `dry`: **true** (1ª passagem — sempre dry primeiro)
+   - `confidence`: `medium` (não promove docs com confiança `low`)
+   - `eixo`: `both` (promove ambos eixos juntos)
+   - `confirmar`: `PROMOVER` (literal, defesa contra clique acidental)
+5. Inspecionar o log — confere quantos docs mudariam, amostra das mudanças
+6. Repetir com `dry`: **false** se OK
+
+**Via CLI** (alternativa):
+```bash
+cd scripts
+ANTHROPIC_API_KEY=sk-ant-... \
+FIREBASE_PROJECT_ID=... FIREBASE_CLIENT_EMAIL=... FIREBASE_PRIVATE_KEY=... \
+node promote-ai-to-prod.js --dry --confidence=medium --only-eixo=both
+# revisar output, depois rodar sem --dry
 ```
 
-Depois:
-1. Remover step `Classify (commercial/tourism)` de `enrich-content.yml`
-2. Renomear `classify-content.js` → `classify-content-legacy.js` (mantém pra rollback)
-3. Atualizar dashboard: bloco "Shadow mode" vira "Classificador IA (ativo)"
-   sem comparativo com regex (não há mais regex em produção)
+### O que o promote faz
+
+Pra cada doc em `mc_performance` onde:
+- `extracted.aiCommercial` e `aiTourism` existem
+- `extracted.aiConfidence !== 'low'` (configurável via `--confidence=`)
+- `extracted.commercialPromotedAt` NÃO existe (idempotente)
+
+Grava:
+- `extracted.commercialPrev` ← `extracted.commercial` (BACKUP do regex)
+- `extracted.tourismPrev`    ← `extracted.tourism`
+- `extracted.commercial`     ← `extracted.aiCommercial` (promoção)
+- `extracted.tourism`        ← `extracted.aiTourism`
+- `extracted.commercialSource` ← `'ai-' + aiAgentVersion`
+- `extracted.commercialPromotedAt` ← ISO timestamp
+- `extracted.promotedFromConfidence` ← `aiConfidence`
+
+E grava 1 doc em `nl_classifier_promotions` com o resumo.
+
+### Pós-cutover
+
+Depois do primeiro cutover bem-sucedido:
+1. Remover o step `Classify (commercial/tourism)` de `enrich-content.yml`
+   (regex não roda mais — só a IA)
+2. Renomear `classify-content.js` → `classify-content-legacy.js` (mantém pra rollback de emergência)
+3. O bloco shadow mode no dashboard continua útil pra novos docs (o regex
+   gravado em `commercialPrev` permite manter o KPI de concordância)
+
+## Rollback (reverter cutover)
+
+Se identificar regressão (categoria errada generalizada, dashboard
+mostrando números esquisitos):
+
+**Via UI**:
+1. Dashboard NL → bloco shadow mode → botão "⏪ Reverter cutover"
+2. Abre GitHub Actions → "Rollback AI Classification"
+3. Inputs:
+   - `dry`: **true** primeiro
+   - `since`: vazio (reverter TODOS) OU ISO date pra reverter só recentes
+   - `confirmar`: `REVERTER`
+4. Inspecionar log → repetir com `dry: false`
+
+**Via CLI**:
+```bash
+cd scripts
+node rollback-ai-classification.js --dry
+# revisar, depois sem --dry
+```
+
+### O que o rollback faz
+
+Pra cada doc com `extracted.commercialPromotedAt`:
+- `commercial` ← `commercialPrev` (restaura regex)
+- `tourism`    ← `tourismPrev`
+- apaga: `commercialPrev`, `tourismPrev`, `commercialPromotedAt`,
+  `promotedFromConfidence`, `commercialSource`
+- **mantém**: todos os campos `ai*` (shadow mode permanece — só a
+  promoção foi revertida)
+
+⚠️ **Aviso temporal**: se passou >24h desde o cutover, novos docs
+podem ter sido classificados SÓ pela IA (sem regex no `commercialPrev`).
+O rollback pula esses docs e loga `missingBackup`. Recomendado: se for
+reverter depois de 24h, rodar o regex `classify-content.js` antes pra
+ter um baseline.
+
+## Cost cap automático
+
+O script `classify-content-ai.js` checa o budget diário antes de rodar:
+- Lê todos os runs do dia em `nl_ai_classifier_runs`
+- Soma o custo estimado (com tabela de preços por modelo)
+- Compara com `agent.limits.maxCostPerDayUsd` (default US$ 2)
+- Se já estourou → exit 2 (operacional, não falha o workflow)
+
+Pra aumentar o cap: IA Hub → editar agente → campo "Custo máximo diário".
 
 ## Custo estimado
 

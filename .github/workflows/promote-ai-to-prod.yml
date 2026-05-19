@@ -1,0 +1,64 @@
+name: Promote AI Classification to Production
+
+# Cutover do shadow mode: copia extracted.aiCommercial/aiTourism para
+# extracted.commercial/tourism, preservando o valor antigo do regex
+# em commercialPrev/tourismPrev (pra rollback rápido).
+#
+# Manual only (workflow_dispatch) — NUNCA roda automaticamente.
+
+concurrency:
+  group: nl-classifier-cutover
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry-run (mostra o que faria sem gravar)'
+        required: false
+        type: boolean
+        default: true
+      confidence:
+        description: 'Confiança mínima da IA pra promover'
+        required: false
+        type: choice
+        options: [low, medium, high]
+        default: medium
+      eixo:
+        description: 'Quais eixos promover'
+        required: false
+        type: choice
+        options: [both, commercial, tourism]
+        default: both
+      confirmar:
+        description: 'Digite "PROMOVER" pra confirmar (defesa contra clique acidental)'
+        required: true
+        type: string
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sanity check da confirmação
+        run: |
+          if [ "${{ github.event.inputs.confirmar }}" != "PROMOVER" ]; then
+            echo "❌ Confirmação inválida. Digite exatamente 'PROMOVER' no input."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install firebase-admin
+        working-directory: scripts
+      - name: Promote AI → Production
+        env:
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+        run: |
+          args="--confidence=${{ github.event.inputs.confidence }} --only-eixo=${{ github.event.inputs.eixo }}"
+          if [ "${{ github.event.inputs.dry }}" = "true" ]; then args="$args --dry"; fi
+          node promote-ai-to-prod.js $args
+        working-directory: scripts

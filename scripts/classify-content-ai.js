@@ -91,6 +91,33 @@ const ANTHROPIC_URL     = 'https://api.anthropic.com/v1/messages';
 const COMMERCIAL_VALUES = ['sazonal', 'promocao', 'parceiro', 'inspiracional'];
 const TOURISM_VALUES    = ['evento','aereo','roteiro','servico','hotelaria','cruzeiro','produto','destino','outros'];
 
+// Tabela de preços Claude (USD por 1M tokens, atualizada maio/2026).
+// Cache read = ~10% do input normal (90% desconto via prompt caching).
+// Cache write (criação) = 1.25x do input normal.
+// Mantemos uma tabela local em vez de hardcodar 1 modelo só, porque o
+// agente pode ser editado no Hub pra trocar de Haiku → Sonnet → Opus.
+const ANTHROPIC_PRICING = {
+  'claude-haiku-4-5':   { in: 0.25,  out: 1.25, cacheRead: 0.025,  cacheWrite: 0.3125 },
+  'claude-sonnet-4-6':  { in: 3.00,  out: 15.0, cacheRead: 0.30,   cacheWrite: 3.75   },
+  'claude-opus-4-6':    { in: 15.0,  out: 75.0, cacheRead: 1.50,   cacheWrite: 18.75  },
+  // fallback conservador (mais caro)
+  _default:             { in: 3.00,  out: 15.0, cacheRead: 0.30,   cacheWrite: 3.75   },
+};
+function modelPricing(model) {
+  return ANTHROPIC_PRICING[model] || ANTHROPIC_PRICING._default;
+}
+function estimateRunCostUsd(model, { inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens }) {
+  const p = modelPricing(model);
+  // Tokens "input puros" = input total - cached - cache creation (lidos + criados são contados em campos próprios)
+  const pureInput = Math.max(0, (inputTokens || 0) - (cacheReadTokens || 0) - (cacheCreationTokens || 0));
+  return (
+    pureInput              / 1e6 * p.in +
+    (cacheReadTokens     || 0) / 1e6 * p.cacheRead +
+    (cacheCreationTokens || 0) / 1e6 * p.cacheWrite +
+    (outputTokens        || 0) / 1e6 * p.out
+  );
+}
+
 // ── Fetch do agente ────────────────────────────────────────────
 async function loadAgent() {
   const snap = await db.collection('ai_agents')
@@ -249,7 +276,35 @@ async function processInChunks(items, concurrency, worker) {
   return results;
 }
 
+// ── Cost cap por dia ───────────────────────────────────────────
+// Lê todos os runs de hoje em nl_ai_classifier_runs, soma o custo
+// estimado, compara com agent.limits.maxCostPerDayUsd. Se já estourou,
+// aborta SEM classificar. Defesa contra loop runaway.
+async function checkDailyBudget(agent) {
+  const cap = agent.limits?.maxCostPerDayUsd ?? 5;
+  const start = new Date(); start.setUTCHours(0, 0, 0, 0);
+  const snap = await db.collection('nl_ai_classifier_runs')
+    .where('runAt', '>=', admin.firestore.Timestamp.fromDate(start))
+    .get();
+  let spentUsd = 0;
+  snap.docs.forEach(d => {
+    const data = d.data();
+    spentUsd += estimateRunCostUsd(data.model || agent.model, {
+      inputTokens:         data.inputTokens || 0,
+      outputTokens:        data.outputTokens || 0,
+      cacheReadTokens:     data.cacheReadTokens || 0,
+      cacheCreationTokens: data.cacheCreationTokens || 0,
+    });
+  });
+  return { spentUsd, cap, exceeded: spentUsd >= cap };
+}
+
 // ── Main ───────────────────────────────────────────────────────
+// Exit codes semânticos pra GitHub Actions reagir:
+//   0 = OK (classificou OK, ou agente pausado, ou nada a fazer)
+//   1 = Erro fatal de config (faltam env vars, agente não existe, etc.)
+//   2 = Budget diário estourado (não classificou — operacional, não falha)
+//   3 = Erros parciais > 20% dos docs (problema no LLM ou prompt)
 (async () => {
   console.log(`${DRY ? '🔍 DRY-RUN' : '✏  ESCREVENDO'} · Classificador IA (shadow mode) v4.49.41`);
   if (!ANTHROPIC_API_KEY) {
@@ -272,6 +327,14 @@ async function processInChunks(items, concurrency, worker) {
     console.log(`⏸  Agente "${agent.name}" está PAUSADO no IA Hub. Saindo sem rodar.`);
     console.log(`   (Pra ativar: IA Hub → editar agente → active=true OU clicar ▶)`);
     process.exit(0);
+  }
+
+  // 2b. COST CAP: aborta se ja estourou o budget diario.
+  const budget = await checkDailyBudget(agent);
+  console.log(`💰 Gasto IA hoje: US$ ${budget.spentUsd.toFixed(4)} de US$ ${budget.cap.toFixed(2)}`);
+  if (budget.exceeded) {
+    console.log(`🛑 BUDGET ESTOURADO. Saindo sem classificar (exit 2). Aumentar agent.limits.maxCostPerDayUsd no IA Hub se necessário.`);
+    process.exit(2);
   }
 
   const currentVersion = agentVersion(agent);
@@ -353,6 +416,7 @@ async function processInChunks(items, concurrency, worker) {
       }
 
       // 5. Grava (não-destrutivo: SÓ campos ai*)
+      const docCostUsd = estimateRunCostUsd(agent.model, resp);
       if (!DRY) {
         await doc._ref.update({
           'extracted.aiCommercial':     out.commercial,
@@ -364,6 +428,35 @@ async function processInChunks(items, concurrency, worker) {
           'extracted.aiClassifiedAt':   new Date().toISOString(),
           'extracted.aiAgreesCommercial': !!agreesC,
           'extracted.aiAgreesTourism':    !!agreesT,
+          'extracted.aiCostUsd':        +docCostUsd.toFixed(6),
+        });
+
+        // 5b. Audit per-doc em ai_usage_logs (formato compatível com Cloud
+        //     Function callLLM, pra que o dashboard de custos de IA agregue
+        //     junto com chamadas client-side).
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 90);
+        await db.collection('ai_usage_logs').add({
+          userId:               'system-cron',
+          agentId:              agent.id,
+          agentName:            agent.name,
+          module:               'nl',
+          provider:             'anthropic',
+          model:                agent.model,
+          inputTokens:          resp.inputTokens || 0,
+          outputTokens:         resp.outputTokens || 0,
+          cacheCreationTokens:  resp.cacheCreationTokens || 0,
+          cacheReadTokens:      resp.cacheReadTokens || 0,
+          cacheHit:             (resp.cacheReadTokens || 0) > 0,
+          costUsd:              +docCostUsd.toFixed(6),
+          timestamp:            FV.serverTimestamp(),
+          expiresAt:            admin.firestore.Timestamp.fromDate(expiresAt),
+          source:               'classify-content-ai',
+          // contexto pra auditoria/debug
+          docId:                doc._id,
+          docName:              doc.name || null,
+          docSubject:           (doc.subject || '').slice(0, 200),
+          result:               { commercial: out.commercial, tourism: out.tourism, confidence: out.confidence },
         });
       }
       stats.classified++;
@@ -396,6 +489,11 @@ async function processInChunks(items, concurrency, worker) {
   console.log(`  Confiança:`, stats.confDist);
 
   // 7. Grava sumário no Firestore pro dashboard de shadow mode
+  const runCostUsd = estimateRunCostUsd(agent.model, {
+    inputTokens: stats.inputTokens, outputTokens: stats.outputTokens,
+    cacheReadTokens: stats.cacheReadTokens, cacheCreationTokens: 0,
+  });
+  console.log(`💰 Custo estimado desta corrida: US$ ${runCostUsd.toFixed(4)}`);
   if (!DRY) {
     await db.collection('nl_ai_classifier_runs').add({
       runAt:           FV.serverTimestamp(),
@@ -408,6 +506,7 @@ async function processInChunks(items, concurrency, worker) {
       inputTokens:     stats.inputTokens,
       cacheReadTokens: stats.cacheReadTokens,
       outputTokens:    stats.outputTokens,
+      costUsd:         +runCostUsd.toFixed(6),
       agreesCommercial: stats.agreesCommercial,
       agreesTourism:    stats.agreesTourism,
       agreesBoth:       stats.agreesBoth,
@@ -424,6 +523,15 @@ async function processInChunks(items, concurrency, worker) {
   }
 
   console.log(`\n${DRY ? '(dry-run, nada gravado)' : '✓ Resumo gravado em nl_ai_classifier_runs'}`);
+
+  // Exit code 3 se mais de 20% dos docs falharam (problema sistêmico)
+  const errorRate = (stats.classified + stats.errors) > 0
+    ? stats.errors / (stats.classified + stats.errors)
+    : 0;
+  if (errorRate > 0.2) {
+    console.log(`⚠  Taxa de erro alta: ${(errorRate*100).toFixed(1)}% (${stats.errors} erros de ${stats.classified + stats.errors}). Exit 3.`);
+    process.exit(3);
+  }
   process.exit(0);
 })().catch(e => {
   console.error(`💥 Falha fatal: ${e.message}`);
