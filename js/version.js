@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 21,
-  build: '20260519-metalinks-segue-responsavel',
+  patch: 22,
+  build: '20260519-exports-skip-vazios',
 };
 
 /** "1.2.0" */

@@ -6,6 +6,52 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.22+20260519-exports-skip-vazios] — 2026-05-19
+
+Release **PATCH** — Exports modulares: blocos vazios são ocultados em
+**ambos** os geradores (Portal de Dicas e Roteiros). User reportou:
+"vi um roteiro que carregava um bloco vazio. Se está vazio, precisaria
+ocultar". Mesmo princípio aplicado nas dicas.
+
+### Portal de Dicas (`portalGenerator.js`)
+
+`buildContent()` antes só checava `!data`. Resultado: se um segmento
+estava presente no doc mas com `items=[]` e sem texto descritivo, o
+exporter (PDF / Word / PowerPoint) renderizava o **header** do segmento
+("RESTAURANTES", "ATRAÇÕES"…) seguido de espaço em branco.
+
+Adicionado `segHasContent(segDef, data)` (mesmo critério do
+`segHasContent` do editor v4.49.13+):
+- `place_list`/`agenda`: precisa de items com título OU `themeDesc` OU `periodoAgenda`
+- `simple_list`: items com título OU `themeDesc`
+- `special_info`: qualquer campo de `info` preenchido (descrição,
+  população, moeda, língua, voltagem, clima, representação…)
+
+Aplica nos 3 formatos (DOCX, PDF, PPTX) — usam o mesmo `buildContent`.
+
+### Roteiros (`roteiroGenerator.js`)
+
+3 seções vulneráveis: o título era renderizado ANTES do check de
+conteúdo. Se a verificação interna acabasse com lista vazia, ficava
+título solto.
+
+- **VALORES** (`buildPricingSection`): título saía mesmo se `customRows`
+  tivesse só entries com `label` e sem `value`. Fix: filtra entries
+  exigindo label E value, e retorna early se `rows.length === 0`.
+- **SERVIÇOS OPCIONAIS** (`buildOptionalsSection`): mesma armadilha —
+  optionals podia ter `[{},{}]` (entries totalmente vazias). Fix:
+  filtra antes do título, return early se zerar.
+- **INFORMAÇÕES IMPORTANTES** (`buildImportantInfoSection`):
+  `customFields` com `{label:'', value:''}` zerava sections após o filtro
+  mas o título já tinha saído. Fix: monta sections, return early se vazio.
+
+Outras seções (HOSPEDAGEM, INCLUI/NÃO INCLUI, PAGAMENTO, CANCELAMENTO,
+DIA A DIA, DICAS LOCAIS) já tinham defesa adequada — orchestrator e/ou
+função interna verificavam `.length` antes do título. Documentado no
+audit.
+
+---
+
 ## [4.49.21+20260519-metalinks-segue-responsavel] — 2026-05-19
 
 Release **PATCH** — **Bug fix crítico** reportado por user:
