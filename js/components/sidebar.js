@@ -52,7 +52,9 @@ const NAV_GROUPS = [
       { route: 'team',          icon: 'team',          label: 'Equipe',       perm: 'task_view_all' },
       { route: 'feedbacks',     icon: 'feedbacks',     label: 'Feedbacks',    perm: 'feedback_view',    altPerm: 'feedback_create' },
       { route: 'goals',         icon: 'goals',         label: 'Metas',        perm: 'goals_view' },
-      { route: 'csat',          icon: 'csat',          label: 'CSAT',         perm: 'csat_send',        altPerm: 'csat_view_all' },
+      // 4.49.12+ CSAT: perm primária agora é dashboard_csat_view (acesso à página);
+      // csat_send/view_all são pra ações dentro. Quem tem qualquer uma vê o item.
+      { route: 'csat',          icon: 'csat',          label: 'CSAT',         perm: 'dashboard_csat_view', altPerm: 'csat_send' },
     ]
   },
   {
@@ -61,12 +63,15 @@ const NAV_GROUPS = [
       { route: 'content-calendar', icon: 'content-calendar', label: 'Calendário de Conteúdo', perm: 'content_calendar_view' },
       { route: 'roteiros',         icon: 'roteiros',         label: 'Gerador de Roteiros',    perm: 'roteiro_access' },
       { route: 'portal-tips',      icon: 'portal-tips',      label: 'Portal de Dicas',        perm: 'portal_access'  },
-      { route: 'portal-areas',     icon: 'portal-areas',     label: 'Templates de áreas',     perm: 'portal_areas_manage', altPerm: 'portal_manage' },
-      { route: 'portal-images',    icon: 'portal-images',    label: 'Banco de Imagens',       perm: 'portal_manage'  },
+      // 4.49.12+ Templates de áreas: tanto portal_areas_view quanto portal_areas_manage liberam ver
+      { route: 'portal-areas',     icon: 'portal-areas',     label: 'Templates de áreas',     perm: 'portal_areas_view',   altPerm: 'portal_areas_manage' },
+      // 4.49.12+ Banco de Imagens: perm granular nova com fallback legacy
+      { route: 'portal-images',    icon: 'portal-images',    label: 'Banco de Imagens',       perm: 'portal_images_manage', altPerm: 'portal_manage' },
       { route: 'landing-pages',    icon: 'landing-pages',    label: 'Landing Pages',          perm: 'portal_manage'  },
       { route: 'cms',              icon: 'cms',              label: 'CMS / Site',             perm: 'portal_manage'  },
       { route: 'arts-editor',      icon: 'arts-editor',      label: 'Editor de Artes',        perm: 'portal_manage'  },
-      { route: 'luxury-travel',    icon: 'luxury-travel',    label: 'Revista Luxury Travel' },
+      // 4.49.12+ Luxury Travel: gated por luxury_travel_manage (antes sempre visível)
+      { route: 'luxury-travel',    icon: 'luxury-travel',    label: 'Revista Luxury Travel',  perm: 'luxury_travel_manage' },
       // 4.49.11+ Pautas/Clipping = análise → analytics_view (consistente com newsMonitor.js)
       { route: 'news-monitor',     icon: 'news-monitor',     label: 'Pautas e Clipping',      perm: 'analytics_view' },
       // 'ai-automations' DEPRECADO em favor do IA Hub (triggers.schedule do agente).
@@ -75,8 +80,8 @@ const NAV_GROUPS = [
   {
     label: 'Análise de Dados',
     items: [
-      // 4.49.11+ altPerm migrado de dashboard_view (renomeado) pra dashboard_productivity_view
-      { route: 'dashboards',        icon: 'dashboards',        label: 'Produtividade',     perm: 'analytics_view',  altPerm: 'dashboard_productivity_view' },
+      // 4.49.12+ Invertido: perm primária é dashboard_productivity_view; analytics_view é fallback
+      { route: 'dashboards',        icon: 'dashboards',        label: 'Produtividade',     perm: 'dashboard_productivity_view', altPerm: 'analytics_view' },
       { route: 'nl-performance',    icon: 'nl-performance',    label: 'Newsletters',       perm: 'analytics_view' },
       { route: 'meta-performance',  icon: 'meta-performance',  label: 'Instagram',         perm: 'analytics_view' },
       { route: 'ga-performance',    icon: 'ga-performance',    label: 'Google Analytics',  perm: 'analytics_view' },
@@ -93,7 +98,8 @@ const NAV_GROUPS = [
       { route: 'sectors',    icon: 'sectors',    label: 'Setores e Núcleos', perm: 'system_manage_users' },
       { route: 'task-types', icon: 'task-types', label: 'Tipos de Tarefa',   perm: 'task_type_create',    altPerm: 'system_manage_users' },
       { route: 'roles',      icon: 'roles',      label: 'Roles e Acesso',    perm: 'system_manage_roles', altPerm: 'system_manage_users' },
-      { route: 'ai-hub',     icon: 'ai-hub',     label: 'IA Hub',            perm: 'system_manage_settings' },
+      // 4.49.12+ IA Hub: perm primária ai_dashboard_view; system_manage_settings é fallback legacy
+      { route: 'ai-hub',     icon: 'ai-hub',     label: 'IA Hub',            perm: 'ai_dashboard_view',   altPerm: 'system_manage_settings' },
       // 'ai-skills' DEPRECADO em favor do IA Hub. Skills migradas viram agents.
       { route: 'audit',           icon: 'audit',      label: 'Auditoria',           perm: 'system_manage_settings' },
       // 4.36.0+ Escritório Virtual — visualização real-time dos users no sistema

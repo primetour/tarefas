@@ -232,11 +232,53 @@ export async function renderDashboard(container) {
       statCard('Concluídas hoje',    teamDoneToday.length, '✓',  'var(--color-success-bg)','var(--text-secondary)',             '#tasks?completedToday=1'),
     ].join('') : '';
 
+    // 4.49.12+ Cards de "Acesso rápido aos dashboards" — renderiza
+    // chips clicáveis apenas pros dashboards executivos que o user pode ver.
+    // Analista (só home) não vê esta seção; coord+ vê todos os disponíveis.
+    const dashboardShortcuts = [];
+    if (store.canViewProductivityDashboard()) {
+      dashboardShortcuts.push({ icon: '📊', label: 'Produtividade',   route: '#dashboards',        bg: 'rgba(212,168,67,0.10)',  color: 'var(--brand-gold)' });
+    }
+    if (store.canViewPortalDashboard()) {
+      dashboardShortcuts.push({ icon: '🌍', label: 'Portal de Dicas', route: '#portal-dashboard',  bg: 'rgba(56,189,248,0.10)',  color: 'var(--role-manager)' });
+    }
+    if (store.canViewRoteirosDashboard()) {
+      dashboardShortcuts.push({ icon: '✈',  label: 'Roteiros',        route: '#roteiro-dashboard', bg: 'rgba(167,139,250,0.10)', color: '#A78BFA' });
+    }
+    if (store.canViewCsatDashboard()) {
+      dashboardShortcuts.push({ icon: '💬', label: 'CSAT',            route: '#csat',              bg: 'rgba(34,197,94,0.10)',   color: 'var(--color-success)' });
+    }
+    if (store.isMaster() || store.can('ai_dashboard_view')) {
+      dashboardShortcuts.push({ icon: '◈',  label: 'IA Hub',          route: '#ai-hub',            bg: 'rgba(236,72,153,0.10)',  color: '#EC4899' });
+    }
+    if (store.isMaster() || store.can('site_audit_view')) {
+      dashboardShortcuts.push({ icon: '⚡', label: 'Site Audit',      route: '#ga-performance',    bg: 'rgba(245,158,11,0.10)',  color: '#F59E0B' });
+    }
+    const dashboardShortcutsHTML = dashboardShortcuts.length ? `
+      ${sectionLabel('🚀 Acesso rápido aos dashboards')}
+      <div class="dash-stats-row">
+        ${dashboardShortcuts.map(s => `
+          <a href="${s.route}" class="stat-card"
+             style="background:${s.bg};text-decoration:none;display:flex;align-items:center;gap:10px;padding:14px 16px;
+                    border:1px solid ${s.color}22;border-radius:var(--radius-md);cursor:pointer;transition:transform 0.1s;"
+             onmouseover="this.style.transform='translateY(-2px)'"
+             onmouseout="this.style.transform=''">
+            <span style="font-size:1.6rem;">${s.icon}</span>
+            <div style="display:flex;flex-direction:column;gap:1px;">
+              <span style="font-size:0.6875rem;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--text-muted);">DASHBOARD</span>
+              <span style="font-size:0.95rem;font-weight:600;color:${s.color};">${s.label}</span>
+            </div>
+          </a>
+        `).join('')}
+      </div>
+    ` : '';
+
     $stats.innerHTML = `
       ${sectionLabel('🎯 Meu desempenho')}
       ${cardsRow(myCards)}
       ${teamCards ? sectionLabel(sectorSel ? `🏢 Setor ${sectorSel}` : '🏢 Equipe / Setor') : ''}
       ${teamCards ? cardsRow(teamCards) : ''}
+      ${dashboardShortcutsHTML}
     `;
 
     // overdue mantido por compat — myOverdue já calculado acima

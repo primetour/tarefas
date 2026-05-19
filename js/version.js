@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 11,
-  build: '20260519-dashboards-granular-perms',
+  patch: 12,
+  build: '20260519-orphans-cleanup-smart-sidebar-home',
 };
 
 /** "1.2.0" */

@@ -72,7 +72,11 @@ export async function renderAiHub(container) {
     <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border-subtle);overflow-x:auto;">
       ${[
         { id:'agents',     label:'Agentes',      icon:'◈' },
-        { id:'apikeys',    label:'API Keys',     icon:'⚿' },
+        // 4.49.12+ Aba API Keys agora gated pela perm ai_keys_manage.
+        // Era visível pra qualquer um com acesso ao IA Hub; agora só quem
+        // tem perm específica de gerenciar keys (master + roles com a flag).
+        ...((store.isMaster() || store.can('ai_keys_manage'))
+          ? [{ id:'apikeys', label:'API Keys', icon:'⚿' }] : []),
         { id:'connections',label:'Conexões',     icon:'🔌' },
         { id:'knowledge',  label:'Biblioteca',   icon:'📚' },
         { id:'logs',       label:'Logs',         icon:'⌚' },

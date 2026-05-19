@@ -114,7 +114,9 @@ export async function renderDashboards(container) {
         <p class="page-subtitle">Métricas e análises do time</p>
       </div>
       <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <!-- Split-button Export -->
+        <!-- 4.49.12+ Botão Export gated por report_export. Era visível pra
+             qualquer um com acesso ao dashboard. Agora respeita a perm. -->
+        ${(store.isMaster() || store.can('report_export')) ? `
         <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
           <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
             style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
@@ -136,7 +138,7 @@ export async function renderDashboards(container) {
               <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
             </button>
           </div>
-        </div>
+        </div>` : ''}
         <button class="btn btn-primary" id="dash-new-task">+ Nova Tarefa</button>
       </div>
     </div>
