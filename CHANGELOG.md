@@ -6,6 +6,52 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.23+20260519-feedbacks-1x1-vs-sistema] — 2026-05-19
+
+Release **PATCH** — User reportou: "Feedbacks: entrei e atualizei 3x,
+mostrava 1 teste. Acionei via email e veio com todos em Equipes. Tem 2
+feedbacks (sistema vs RH), sistema confunde?". Audit revelou que os 2
+módulos estão arquiteturalmente segregados (coleções diferentes,
+páginas diferentes), mas **UX visual confundia** e havia **race
+condition** no filtro hierárquico que explicava o "só 1 teste".
+
+### 🐛 Race condition — filtro hierárquico de `/feedbacks`
+
+`renderFeedbacks` aplicava filtro restritivo ANTES de `userRole`/
+`userPermissions` estarem carregados. Cascata:
+- `store.isMaster()` retornava false (userRole ainda null)
+- `store.can('system_view_all')` também false (perms vazias)
+- Entrava na branch restritiva com `visibleSet = só self`
+- Resultado: só feedbacks onde o user é collaborator OU manager = 1 entry
+
+Fix em 3 partes:
+1. **Aguarda userRole** carregar (loop polling até 2s · 20 ticks de 100ms)
+2. **Fallback de role**: além de `isMaster()`, checa `userRole.id === 'master'`
+   e `userProfile.roleId === 'master'` (cobre profile carregado mas role obj ainda não)
+3. **Fail-open** se userRole ainda não chegou: NÃO aplica filtro client,
+   confia nas Firestore rules server-side (seguro, é defesa em camada)
+
+### 🎨 Clareza visual — distinção entre os 2 conceitos
+
+Os 2 módulos viviam no sidebar com mesmo ícone (`feedbacks` = balão de chat).
+Diferenciação aplicada:
+
+- **Sidebar**:
+  - `/feedbacks` → label **"Feedbacks 1:1"** (era "Feedbacks") · ícone mantido (balão = conversa entre pessoas)
+  - `/system-feedback` → ícone novo **`system-feedback`** (megafone) · label mantido
+- **Page headers** com cross-link explícito:
+  - `/feedbacks`: "(RH · gestor↔colaborador) · Bugs ou sugestões do app? → Feedbacks do Sistema"
+  - `/system-feedback`: "(Bugs/sugestões do app) · Avaliações 1:1 de pessoas? → Feedbacks 1:1"
+
+### Sem mudança arquitetural
+
+Os 2 módulos seguem com coleções separadas (`feedbacks` vs
+`system_feedback`), perms separadas (`feedback_view/create` vs
+`system_manage_settings`), services e páginas dedicadas. Só UX e
+defesa de carregamento foram tocadas — segurança/dados intactos.
+
+---
+
 ## [4.49.22+20260519-exports-skip-vazios] — 2026-05-19
 
 Release **PATCH** — Exports modulares: blocos vazios são ocultados em

@@ -58,8 +58,14 @@ export async function renderFeedbacks(container) {
   container.innerHTML = `
     <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
       <div class="page-header-left">
-        <h1 class="page-title">Feedbacks</h1>
-        <p class="page-subtitle">Registro e acompanhamento de feedbacks da equipe</p>
+        <h1 class="page-title">Feedbacks 1:1</h1>
+        <p class="page-subtitle">
+          Registro e acompanhamento de feedbacks da equipe (RH · gestor↔colaborador)
+          <span style="display:inline-block;margin-left:6px;font-size:0.6875rem;color:var(--text-muted);">
+            · Bugs ou sugestões do app? Use
+            <a href="#system-feedback" style="color:var(--brand-gold);text-decoration:underline;">Feedbacks do Sistema</a>
+          </span>
+        </p>
       </div>
       <div class="page-header-actions" id="fb-header-actions" style="gap:8px;"></div>
     </div>
@@ -397,14 +403,35 @@ async function renderListTab(container) {
   //  - member                  → vê só onde collaborator === me OR manager-do-feedback === me
   // Nota: f.managerId aqui é "quem deu o feedback" (não hierarquia). Mas se
   // alguém me deu feedback ou eu dei pra alguém da minha equipe, faz sentido eu ver.
+  //
+  // 4.49.23+ Race condition fix:
+  // User reportou ver só 1 feedback nas primeiras 3 atualizações e TODOS
+  // ao clicar via email. Causa: a página renderizava ANTES de userRole/
+  // userPermissions estarem carregados. Resultado: `isMaster()` falso,
+  // `can('system_view_all')` falso → entrava na branch restritiva com
+  // visibleSet = só self → filtrava 1 entry.
+  // Fix em 3 partes:
+  //   1. Espera userRole estar populado (até 2s) antes de decidir filtro.
+  //   2. Se mesmo assim não chegar, NÃO aplica filtro client (rules
+  //      Firestore enforçam server-side — fail-open é seguro aqui).
+  //   3. Marca master via `userProfile.roleId === 'master'` como fallback
+  //      pra cobrir caso onde userRole está null mas profile tem o ID.
   try {
-    const seeAll = store.isMaster() || store.can('system_view_all');
-    if (!seeAll) {
+    // Aguarda userRole carregar (até 2s · 20 ticks)
+    for (let i = 0; i < 20 && !store.get('userRole'); i++) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    const userRole   = store.get('userRole');
+    const myProfile  = store.get('userProfile');
+    const isMaster   = store.isMaster() || userRole?.id === 'master' || myProfile?.roleId === 'master';
+    const seeAll     = isMaster || store.can('system_view_all');
+    // Se userRole ainda não carregou após espera, fail-open (rules
+    // enforçam) em vez de filtrar agressivamente.
+    if (!seeAll && userRole) {
       const { getVisibleUserIds } = await import('../services/users.js');
       const usersList = store.get('users') || [];
-      const myProfile = store.get('userProfile');
       const myUid = store.get('currentUser')?.uid;
-      if (myUid) {
+      if (myUid && usersList.length) {
         const viewer = { uid: myUid, ...myProfile };
         const visibleSet = getVisibleUserIds(viewer, usersList, (p) => store.can(p));
         if (visibleSet) {
@@ -414,6 +441,8 @@ async function renderListTab(container) {
           );
           console.log(`[feedbacks] filtro hierárquico: ${before} → ${allFeedbacks.length} (subtree ${visibleSet.size} users)`);
         }
+      } else {
+        console.warn('[feedbacks] users/uid ainda não carregados — fail-open (rules enforçam server-side)');
       }
     }
   } catch (e) { console.warn('[feedbacks] hierarchy filter failed:', e?.message); }

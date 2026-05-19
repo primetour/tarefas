@@ -50,7 +50,10 @@ const NAV_GROUPS = [
       // dashboard_view (renomeado). Sem perm = sempre visível.
       { route: 'notifications', icon: 'notifications', label: 'Notificações',                           badge: true },
       { route: 'team',          icon: 'team',          label: 'Equipe',       perm: 'task_view_all' },
-      { route: 'feedbacks',     icon: 'feedbacks',     label: 'Feedbacks',    perm: 'feedback_view',    altPerm: 'feedback_create' },
+      // 4.49.23+ Label "Feedbacks 1:1" pra deixar inequívoco que é o
+      // módulo de gestão de pessoas (RH/avaliação), diferenciando do
+      // "Feedbacks do Sistema" (bug/sugestão do app) — ver §Administração.
+      { route: 'feedbacks',     icon: 'feedbacks',     label: 'Feedbacks 1:1', perm: 'feedback_view',    altPerm: 'feedback_create' },
       { route: 'goals',         icon: 'goals',         label: 'Metas',        perm: 'goals_view' },
       // 4.49.12+ CSAT: perm primária agora é dashboard_csat_view (acesso à página);
       // csat_send/view_all são pra ações dentro. Quem tem qualquer uma vê o item.
@@ -105,7 +108,10 @@ const NAV_GROUPS = [
       // 4.36.0+ Escritório Virtual — visualização real-time dos users no sistema
       { route: 'office',          icon: 'office',     label: 'Escritório Virtual',  perm: 'office_view' },
       { route: 'governance',      icon: 'governance', label: 'Governança',          perm: null }, // todos os autenticados
-      { route: 'system-feedback', icon: 'feedbacks',  label: 'Feedbacks do Sistema',perm: 'system_manage_settings' },
+      // 4.49.23+ Ícone trocado pra 'system-feedback' (megafone) — antes
+      // usava o mesmo 'feedbacks' (balão de chat) que o módulo 1:1 de
+      // RH. Visualmente confundia os dois conceitos no menu.
+      { route: 'system-feedback', icon: 'system-feedback', label: 'Feedbacks do Sistema',perm: 'system_manage_settings' },
       { route: 'settings',        icon: 'settings',   label: 'Configurações',       perm: 'system_manage_settings' },
       { route: 'about',      icon: 'about',      label: 'Sobre o sistema',   perm: 'system_manage_users' },
       { route: 'help',       icon: 'help',       label: 'Ajuda',             perm: null }, // todos

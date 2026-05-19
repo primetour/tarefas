@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 22,
-  build: '20260519-exports-skip-vazios',
+  patch: 23,
+  build: '20260519-feedbacks-1x1-vs-sistema',
 };
 
 /** "1.2.0" */
