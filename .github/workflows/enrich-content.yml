@@ -1,0 +1,49 @@
+name: Enrich Newsletter Content (claude-curated)
+
+# Enrichment determinístico via Claude (sem custo de API).
+# Roda 30min após o mc-sync diário pra processar docs novos.
+
+on:
+  schedule:
+    # 06h30 UTC (3h30 BR) — 30min depois do mc-sync
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry-run'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install firebase-admin
+        working-directory: scripts
+      - name: Enrich (cities/countries/brands)
+        env:
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+        run: |
+          args=""
+          if [ "${{ github.event.inputs.dry }}" = "true" ]; then args="--dry"; fi
+          node enrich-content.js $args
+        working-directory: scripts
+      - name: Classify (commercial/tourism)
+        if: success()
+        env:
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+        run: |
+          args=""
+          if [ "${{ github.event.inputs.dry }}" = "true" ]; then args="--dry"; fi
+          node classify-content.js $args
+        working-directory: scripts

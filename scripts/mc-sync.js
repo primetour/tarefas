@@ -964,13 +964,22 @@ async function main() {
               return;
             }
 
-            // Sem cache: extrai via agente. Passa contexto rico:
-            // - html cru (pra Vision extrair imagens)
-            // - text stripped (rodapé/disclaimer pode ter contexto)
-            // - subject + name (representativos da campanha)
+            // 4.49.35+ DESACOPLADO: mc-sync NÃO chama mais IA Vision.
+            // Sync = 1 responsabilidade: buscar métricas + HTML + imageUrls.
+            // Enrichment (cidades/hotéis/marcas) é workflow SEPARADO via
+            // scripts/enrich-content.js (Claude-curado, sem custo de API).
+            //
+            // Por que isso é melhor:
+            //   - Sync nunca trava por quota de IA estourada (era o que
+            //     causou gap 07/05→19/05).
+            //   - Enrichment pode rodar várias vezes (idempotente).
+            //   - Vision IA fica disponível pra casos onde imagem importa
+            //     (não rotineiro).
             let extracted = null;
             let extractedMeta = null;
-            if (enrichEnabled && asset.html) {
+            if (false && enrichEnabled && asset.html) {
+              // Mantido como dead-code branch caso alguém queira reativar
+              // enrichment síncrono via flag. Padrão: desligado.
               const text = stripHtml(asset.html);
               const sample = sends.find(s => (s.EmailName || '').trim() === name);
               const result = await extractEntitiesViaAgent({

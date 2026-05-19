@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 33,
-  build: '20260519-nl-ui-no-art-honest-contexto',
+  patch: 35,
+  build: '20260519-mc-sync-desacopla-ia',
 };
 
 /** "1.2.0" */

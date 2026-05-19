@@ -22,7 +22,20 @@
  * Idempotente: roda quantas vezes quiser — só adiciona, nunca remove.
  */
 const admin = require('firebase-admin');
-admin.initializeApp({ projectId: 'gestor-de-tarefas-primetour' });
+// v4.49.34+ Suporte a duas formas de auth:
+//   1. GitHub Actions: FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY
+//   2. Local dev:      Application Default Credentials (gcloud auth)
+if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId:   process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+  });
+} else {
+  admin.initializeApp({ projectId: 'gestor-de-tarefas-primetour' });
+}
 const db = admin.firestore();
 const FV = admin.firestore.FieldValue;
 
