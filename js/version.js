@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 15,
-  build: '20260519-meu-calendario-dashboard',
+  patch: 16,
+  build: '20260519-meu-calendario-agenda',
 };
 
 /** "1.2.0" */

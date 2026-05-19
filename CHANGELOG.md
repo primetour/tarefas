@@ -6,6 +6,28 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.16+20260519-meu-calendario-agenda] — 2026-05-19
+
+Release **PATCH** — Reformulação do **Meu Calendário** (v4.49.15) com base
+em feedback: "só dots não diz o que eu tenho que fazer". Agora o card mostra
+primeiro uma **agenda acionável** com título de cada tarefa.
+
+- **Em atraso** (se houver): seção no topo com borda vermelha, lista as
+  tarefas vencidas não-concluídas (top 5 + link "+N atrasadas →").
+- **Hoje · Amanhã · próximos 14 dias**: agrupado por dia, com header
+  "Hoje" em dourado, "Amanhã" em destaque, dias da semana por extenso
+  até 7d, depois "Seg, 02/06". Cada tarefa mostra horário (se houver),
+  título, status (pill) e cor da borda esquerda por status.
+- **Click na tarefa** abre o taskModal padrão (mesmo fluxo de Minhas Tarefas).
+- **Resumo no header**: "3 hoje · 1 em atraso · 5 próximos" pra glance.
+- **Mini-mês colapsado** por padrão (era o principal antes). Agora fica
+  como toggle "Visão do mês — Maio 2026 ▸" — abre quando o user quiser
+  ver o panorama mensal. Lazy render: só renderiza se expandir.
+- Empty state honesto: "Sem tarefas com data marcada nos próximos 14 dias.
+  Tarefas com data de vencimento aparecem aqui."
+
+---
+
 ## [4.49.15+20260519-meu-calendario-dashboard] — 2026-05-19
 
 Release **MINOR** — Bloco **📅 Meu Calendário** no Meu Painel: mini-mês 6×7

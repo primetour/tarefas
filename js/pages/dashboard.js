@@ -385,31 +385,51 @@ export async function renderDashboard(container) {
         </div>
       </div>
 
-      <!-- 4.49.15+ Meu Calendário — mini-mês com tarefas do user no dueDate.
-           Adicionado abaixo de Minhas Tarefas pra preencher o espaço em
-           branco da coluna esquerda e dar visão temporal sem precisar
-           navegar pro #calendar inteiro. -->
+      <!-- 4.49.15+ Meu Calendário — agenda dos próximos dias + mini-mês.
+           v4.49.16 reformulado: primeira coisa que aparece é a LISTA de
+           próximos compromissos com TÍTULO da tarefa (não só dots), pra
+           user saber na hora o que tem pra fazer. Mini-mês fica embaixo
+           como visão panorâmica/navegação. -->
       <div class="card" id="dash-mini-cal-card">
         <div class="card-header">
           <div>
             <div class="card-title">📅 Meu Calendário</div>
-            <div class="card-subtitle" id="dash-mini-cal-subtitle"
+            <div class="card-subtitle" id="dash-mini-cal-summary"
               style="font-size:0.75rem;color:var(--text-muted);"></div>
           </div>
           <div style="display:flex;gap:6px;align-items:center;">
-            <button class="btn btn-ghost btn-sm" id="dash-cal-prev" title="Mês anterior"
-              style="padding:4px 10px;">◀</button>
-            <button class="btn btn-ghost btn-sm" id="dash-cal-today"
-              style="padding:4px 10px;font-size:0.75rem;">Hoje</button>
-            <button class="btn btn-ghost btn-sm" id="dash-cal-next" title="Próximo mês"
-              style="padding:4px 10px;">▶</button>
             <button class="btn btn-ghost btn-sm" onclick="location.hash='#calendar'"
-              style="padding:4px 10px;">Agenda completa →</button>
+              style="padding:4px 10px;font-size:0.75rem;">Agenda completa →</button>
           </div>
         </div>
-        <div class="card-body" style="padding:8px 16px 16px;">
-          <div id="dash-mini-cal-grid"></div>
-          <div id="dash-mini-cal-detail" style="margin-top:10px;"></div>
+        <div class="card-body" style="padding:0;">
+
+          <!-- AGENDA: próximos 14 dias agrupados por data, com título da tarefa -->
+          <div id="dash-mini-cal-upcoming" style="padding:8px 16px 4px;"></div>
+
+          <!-- MINI-MÊS: navegação visual (colapsável) -->
+          <div style="border-top:1px solid var(--border-subtle);padding:10px 16px 14px;
+            background:var(--bg-surface);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <button id="dash-cal-toggle"
+                style="background:none;border:none;cursor:pointer;font-size:0.6875rem;
+                font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
+                color:var(--text-muted);display:flex;align-items:center;gap:6px;padding:0;">
+                <span id="dash-cal-toggle-arrow" style="font-size:0.625rem;transition:transform 0.2s;transform:rotate(90deg);">▸</span>
+                Visão do mês — <span id="dash-mini-cal-subtitle" style="text-transform:none;letter-spacing:0;color:var(--text-secondary);">…</span>
+              </button>
+              <div id="dash-cal-nav" style="display:flex;gap:4px;align-items:center;">
+                <button class="btn btn-ghost btn-sm" id="dash-cal-prev" title="Mês anterior"
+                  style="padding:2px 8px;font-size:0.75rem;">◀</button>
+                <button class="btn btn-ghost btn-sm" id="dash-cal-today"
+                  style="padding:2px 8px;font-size:0.6875rem;">Hoje</button>
+                <button class="btn btn-ghost btn-sm" id="dash-cal-next" title="Próximo mês"
+                  style="padding:2px 8px;font-size:0.75rem;">▶</button>
+              </div>
+            </div>
+            <div id="dash-mini-cal-grid"></div>
+            <div id="dash-mini-cal-detail" style="margin-top:8px;"></div>
+          </div>
         </div>
       </div>
       </div>
@@ -697,9 +717,11 @@ export async function renderDashboard(container) {
    render principal). Render do mês é O(n) tarefas × O(42) células.
 */
 function mountMiniCalendar(myTasks, onTaskClick) {
-  const grid     = document.getElementById('dash-mini-cal-grid');
-  const subtitle = document.getElementById('dash-mini-cal-subtitle');
-  const detailEl = document.getElementById('dash-mini-cal-detail');
+  const grid       = document.getElementById('dash-mini-cal-grid');
+  const subtitle   = document.getElementById('dash-mini-cal-subtitle');
+  const summary    = document.getElementById('dash-mini-cal-summary');
+  const upcomingEl = document.getElementById('dash-mini-cal-upcoming');
+  const detailEl   = document.getElementById('dash-mini-cal-detail');
   if (!grid) return;
 
   // Cursor inicial: mês corrente. Mantemos referência ao "primeiro dia do mês"
@@ -707,12 +729,15 @@ function mountMiniCalendar(myTasks, onTaskClick) {
   const today = new Date(); today.setHours(0,0,0,0);
   let cursor  = new Date(today.getFullYear(), today.getMonth(), 1);
   let selectedDayKey = null; // YYYY-MM-DD
+  let monthCollapsed = true; // 4.49.16+ — mini-mês começa fechado; agenda é o foco
 
   const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const DOW    = ['D','S','T','Q','Q','S','S']; // dom-sáb (estilo pt-BR compacto)
+  const WEEKDAYS = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 
   const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const fmtTime = (d) => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 
   // Indexa tarefas por dayKey do dueDate — só ativas (não cancelled).
   // done conta também: user pode querer rever o que entregou no dia.
@@ -724,7 +749,11 @@ function mountMiniCalendar(myTasks, onTaskClick) {
       if (isNaN(d.getTime())) continue;
       const key = dayKey(d);
       if (!m.has(key)) m.set(key, []);
-      m.get(key).push(t);
+      m.get(key).push({ task: t, dueObj: d });
+    }
+    // ordena cada dia por horário
+    for (const arr of m.values()) {
+      arr.sort((a,b) => a.dueObj - b.dueObj);
     }
     return m;
   })();
@@ -790,7 +819,7 @@ function mountMiniCalendar(myTasks, onTaskClick) {
       if (dayTasks.length) {
         const limit = Math.min(3, dayTasks.length);
         for (let j = 0; j < limit; j++) {
-          const t = dayTasks[j];
+          const t = dayTasks[j].task;
           const c = STATUS_COLOR[t.status] || 'var(--text-muted)';
           dotsHTML += `<span style="width:4px;height:4px;border-radius:50%;background:${c};"></span>`;
         }
@@ -862,16 +891,18 @@ function mountMiniCalendar(myTasks, onTaskClick) {
             color:var(--text-muted);font-size:0.6875rem;padding:2px 6px;">Fechar</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;">
-          ${list.map(t => {
+          ${list.map(({task: t, dueObj}) => {
             const c = STATUS_COLOR[t.status] || 'var(--text-muted)';
             const stLabel = STATUS_MAP[t.status]?.label || t.status;
+            const hasTime = dueObj.getHours() || dueObj.getMinutes();
             return `<div class="dash-cal-task-row" data-tid="${esc(t.id)}"
               style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;
-                background:var(--bg-surface);cursor:pointer;font-size:0.8125rem;
+                background:var(--bg-card);cursor:pointer;font-size:0.8125rem;
                 transition:background 0.12s;"
               onmouseover="this.style.background='var(--bg-hover, rgba(212,168,67,0.06))'"
-              onmouseout="this.style.background='var(--bg-surface)'">
+              onmouseout="this.style.background='var(--bg-card)'">
               <span style="width:6px;height:6px;border-radius:50%;background:${c};flex-shrink:0;"></span>
+              ${hasTime ? `<span style="font-size:0.6875rem;color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;">${fmtTime(dueObj)}</span>` : ''}
               <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);">
                 ${esc(t.title)}
               </span>
@@ -896,6 +927,159 @@ function mountMiniCalendar(myTasks, onTaskClick) {
     });
   }
 
+  /* ─── Agenda dos próximos dias ───────────────────────────────
+     v4.49.16+ — Mostra próximos 14 dias com TÍTULO de cada tarefa
+     pra user saber na hora o que tem (não só dot). Agrupa por dia,
+     prioriza HOJE/AMANHÃ com header destacado. */
+  function renderUpcoming() {
+    if (!upcomingEl) return;
+    const HORIZON_DAYS = 14;
+    const horizonEnd = new Date(today);
+    horizonEnd.setDate(today.getDate() + HORIZON_DAYS);
+
+    // Pega tarefas atrasadas (não-done) + próximas 14 dias
+    const overdueList = [];
+    const upcomingByDay = []; // [{date, key, items}]
+    for (let i = 0; i < HORIZON_DAYS; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      const k = dayKey(d);
+      const items = (tasksByDay.get(k) || []).filter(({task}) => task.status !== 'done');
+      if (items.length) upcomingByDay.push({ date: d, key: k, items });
+    }
+    // Atrasadas: anteriores a hoje, status != done
+    for (const [k, arr] of tasksByDay.entries()) {
+      const [y,m,d] = k.split('-').map(Number);
+      const dt = new Date(y, m-1, d);
+      if (dt < today) {
+        for (const entry of arr) {
+          if (entry.task.status !== 'done') overdueList.push(entry);
+        }
+      }
+    }
+    overdueList.sort((a,b) => a.dueObj - b.dueObj);
+
+    // Resumo no header
+    const totalUpcoming = upcomingByDay.reduce((sum, d) => sum + d.items.length, 0);
+    const todayCount    = upcomingByDay.find(d => d.key === dayKey(today))?.items.length || 0;
+    if (summary) {
+      const parts = [];
+      if (todayCount)         parts.push(`<strong style="color:var(--brand-gold);">${todayCount} hoje</strong>`);
+      if (overdueList.length) parts.push(`<strong style="color:var(--color-danger);">${overdueList.length} em atraso</strong>`);
+      if (totalUpcoming - todayCount > 0)
+        parts.push(`${totalUpcoming - todayCount} próximos`);
+      summary.innerHTML = parts.length ? parts.join(' · ') : 'Sem compromissos nos próximos 14 dias';
+    }
+
+    // Render
+    if (!overdueList.length && !upcomingByDay.length) {
+      upcomingEl.innerHTML = `
+        <div style="padding:24px 8px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+          🎉 Sem tarefas com data marcada nos próximos 14 dias.
+          <div style="font-size:0.6875rem;margin-top:6px;">
+            Tarefas com <em>data de vencimento</em> aparecem aqui.
+          </div>
+        </div>`;
+      return;
+    }
+
+    const taskRow = ({task: t, dueObj}, opts={}) => {
+      const c = STATUS_COLOR[t.status] || 'var(--text-muted)';
+      const stLabel = STATUS_MAP[t.status]?.label || t.status;
+      const hasTime = dueObj.getHours() || dueObj.getMinutes();
+      const overdue = opts.overdue;
+      const accent  = overdue ? '#EF4444' : c;
+      return `<div class="dash-up-task" data-tid="${esc(t.id)}"
+        style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;
+          background:var(--bg-surface);cursor:pointer;font-size:0.8125rem;
+          border-left:3px solid ${accent};transition:background 0.12s;"
+        onmouseover="this.style.background='rgba(212,168,67,0.08)'"
+        onmouseout="this.style.background='var(--bg-surface)'">
+        ${hasTime ? `<span style="font-size:0.6875rem;color:var(--text-muted);font-weight:600;
+          font-variant-numeric:tabular-nums;flex-shrink:0;min-width:36px;">${fmtTime(dueObj)}</span>` : ''}
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);">
+          ${esc(t.title)}
+        </span>
+        <span style="font-size:0.625rem;color:var(--text-muted);white-space:nowrap;
+          padding:1px 6px;border-radius:var(--radius-full);background:var(--bg-card);">
+          ${esc(stLabel)}
+        </span>
+      </div>`;
+    };
+
+    const dayHeader = (date, key, count) => {
+      const diff = Math.round((date - today) / 86400000);
+      let label;
+      if (diff === 0)      label = `<strong style="color:var(--brand-gold);">Hoje</strong>`;
+      else if (diff === 1) label = `<strong>Amanhã</strong>`;
+      else if (diff < 7)   label = `<strong>${WEEKDAYS[date.getDay()]}</strong>`;
+      else                 label = `<strong>${WEEKDAYS[date.getDay()].slice(0,3)}, ${date.getDate()}/${String(date.getMonth()+1).padStart(2,'0')}</strong>`;
+
+      const dateSuffix = (diff > 0 && diff < 7)
+        ? ` <span style="color:var(--text-muted);font-weight:400;">${date.getDate()}/${String(date.getMonth()+1).padStart(2,'0')}</span>`
+        : '';
+
+      return `<div style="display:flex;align-items:center;justify-content:space-between;
+        margin:10px 0 4px;font-size:0.75rem;color:var(--text-secondary);">
+        <span>${label}${dateSuffix}</span>
+        <span style="font-size:0.6875rem;color:var(--text-muted);">${count} tarefa${count!==1?'s':''}</span>
+      </div>`;
+    };
+
+    let html = '';
+
+    // Atrasadas — sempre no topo se houver
+    if (overdueList.length) {
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;
+        margin:6px 0 4px;font-size:0.75rem;">
+        <span style="color:var(--color-danger);font-weight:600;">⚠ Em atraso</span>
+        <span style="font-size:0.6875rem;color:var(--text-muted);">${overdueList.length} tarefa${overdueList.length!==1?'s':''}</span>
+      </div>`;
+      html += `<div style="display:flex;flex-direction:column;gap:4px;">`;
+      html += overdueList.slice(0, 5).map(e => taskRow(e, {overdue:true})).join('');
+      if (overdueList.length > 5) {
+        html += `<a href="#tasks?assignee=me&status=overdue" style="font-size:0.6875rem;
+          color:var(--brand-gold);text-decoration:none;padding:4px 0;text-align:center;">
+          + ${overdueList.length-5} atrasadas →
+        </a>`;
+      }
+      html += `</div>`;
+    }
+
+    // Próximos dias com tarefas
+    for (const day of upcomingByDay) {
+      html += dayHeader(day.date, day.key, day.items.length);
+      html += `<div style="display:flex;flex-direction:column;gap:4px;">`;
+      html += day.items.map(e => taskRow(e)).join('');
+      html += `</div>`;
+    }
+
+    upcomingEl.innerHTML = html;
+
+    upcomingEl.querySelectorAll('.dash-up-task[data-tid]').forEach(row => {
+      row.addEventListener('click', () => {
+        const t = myTasks.find(x => x.id === row.dataset.tid);
+        if (t) onTaskClick?.(t);
+      });
+    });
+  }
+
+  /* ─── Toggle do mini-mês (colapsado por padrão em 4.49.16+) ──── */
+  function applyMonthCollapse() {
+    if (grid)     grid.style.display     = monthCollapsed ? 'none' : '';
+    if (detailEl) detailEl.style.display = monthCollapsed ? 'none' : '';
+    const nav    = document.getElementById('dash-cal-nav');
+    if (nav)     nav.style.display       = monthCollapsed ? 'none' : 'flex';
+    const arrow  = document.getElementById('dash-cal-toggle-arrow');
+    if (arrow)   arrow.style.transform   = monthCollapsed ? 'rotate(0deg)' : 'rotate(90deg)';
+  }
+
+  document.getElementById('dash-cal-toggle')?.addEventListener('click', () => {
+    monthCollapsed = !monthCollapsed;
+    applyMonthCollapse();
+    if (!monthCollapsed) renderMonth(); // só renderiza se for abrir
+  });
+
   // Wire nav buttons (uma vez — botões são reescritos pelo card mas só uma
   // instância do mount roda por render do dashboard).
   document.getElementById('dash-cal-prev')?.addEventListener('click', () => {
@@ -914,7 +1098,11 @@ function mountMiniCalendar(myTasks, onTaskClick) {
     renderMonth(); renderDetail();
   });
 
-  renderMonth();
+  // Inicial: agenda visível, mini-mês oculto (lazy render). Mas seta o
+  // subtitle do mês corrente já no botão pra ficar "Visão do mês — Maio 2026"
+  if (subtitle) subtitle.textContent = `${MONTHS[cursor.getMonth()]} ${cursor.getFullYear()}`;
+  renderUpcoming();
+  applyMonthCollapse();
 }
 
 /* ─── Helpers ─────────────────────────────────────────────── */
