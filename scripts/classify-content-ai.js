@@ -60,8 +60,13 @@
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 
+// v4.49.43+ Quando o módulo é `require`-ado por outro arquivo (testes),
+// NÃO inicializa Firebase nem executa o main IIFE — só expõe os helpers
+// puros. Quando é executado como CLI, roda tudo.
+const IS_CLI = require.main === module;
+
 // ── Init Admin SDK ────────────────────────────────────────────
-if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL) {
+if (IS_CLI && process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId:   process.env.FIREBASE_PROJECT_ID,
@@ -69,11 +74,12 @@ if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL) {
       privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
     }),
   });
-} else {
+} else if (IS_CLI) {
   admin.initializeApp({ projectId: 'gestor-de-tarefas-primetour' });
 }
-const db = admin.firestore();
-const FV = admin.firestore.FieldValue;
+// Em modo teste (require), db/FV não são usados pelas funções puras
+const db = IS_CLI ? admin.firestore() : null;
+const FV = IS_CLI ? admin.firestore.FieldValue : null;
 
 // ── Flags ─────────────────────────────────────────────────────
 const DRY     = process.argv.includes('--dry');
@@ -247,10 +253,11 @@ function buildPayload(doc, buId) {
 //   - Tem extracted (foi enriquecido) — não classifica doc cru
 //   - Skip se já tem aiClassifiedAt com a MESMA aiAgentVersion (idempotente)
 //   - --force ignora idempotência (reclassifica TUDO)
-function shouldClassify(doc, currentVersion) {
+function shouldClassify(doc, currentVersion, opts = {}) {
+  const force = opts.force !== undefined ? opts.force : FORCE;
   const ex = doc.extracted || {};
   if (!ex || Object.keys(ex).length === 0) return false; // ainda não enriquecido
-  if (FORCE) return true;
+  if (force) return true;
   if (!ex.aiClassifiedAt) return true;
   // Re-classifica se a versão do agente mudou (prompt foi editado no IA Hub)
   if (ex.aiAgentVersion !== currentVersion) return true;
@@ -299,13 +306,22 @@ async function checkDailyBudget(agent) {
   return { spentUsd, cap, exceeded: spentUsd >= cap };
 }
 
+// ── Exports pra testes ─────────────────────────────────────────
+// Em modo CLI (require.main===module) o IIFE main roda. Em modo require
+// (testes), o IIFE NÃO roda e só os helpers ficam expostos.
+module.exports = {
+  parseClaudeJson, validateOutput, buildPayload, shouldClassify,
+  agentVersion, estimateRunCostUsd, modelPricing,
+  COMMERCIAL_VALUES, TOURISM_VALUES, ANTHROPIC_PRICING,
+};
+
 // ── Main ───────────────────────────────────────────────────────
 // Exit codes semânticos pra GitHub Actions reagir:
 //   0 = OK (classificou OK, ou agente pausado, ou nada a fazer)
 //   1 = Erro fatal de config (faltam env vars, agente não existe, etc.)
 //   2 = Budget diário estourado (não classificou — operacional, não falha)
 //   3 = Erros parciais > 20% dos docs (problema no LLM ou prompt)
-(async () => {
+if (IS_CLI) (async () => {
   console.log(`${DRY ? '🔍 DRY-RUN' : '✏  ESCREVENDO'} · Classificador IA (shadow mode) v4.49.41`);
   if (!ANTHROPIC_API_KEY) {
     console.error('❌ ANTHROPIC_API_KEY não está no env. Configure em GitHub Secrets.');

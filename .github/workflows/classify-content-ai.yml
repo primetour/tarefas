@@ -55,6 +55,12 @@ jobs:
           node-version: '20'
       - run: npm install firebase-admin
         working-directory: scripts
+      # Smoke tests das funções puras ANTES de chamar a API.
+      # Se algo quebrar em parseClaudeJson/validateOutput/buildPayload/cost,
+      # falha rápido sem queimar tokens.
+      - name: Run smoke tests
+        run: node classify-content-ai.test.js
+        working-directory: scripts
       - name: Classify via AI agent (shadow mode)
         env:
           FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}

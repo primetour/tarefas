@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 42,
-  build: '20260519-nl-classifier-pipeline-100pct',
+  patch: 43,
+  build: '20260519-nl-classifier-test-harness',
 };
 
 /** "1.2.0" */
