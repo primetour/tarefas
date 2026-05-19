@@ -207,6 +207,12 @@ export async function renderTasks(container) {
       urlStatus   = qs.get('status') || '';
       urlType     = qs.get('type')   || '';   // 4.49.18+ aceita typeId ou '__NONE__'
       urlDatePreset = qs.get('datePreset') || '';
+      // 4.49.18+ from/to em formato YYYY-MM-DD (usado com datePreset=activityInPeriod
+      // ou =custom). Permite drill-down idêntico ao período do Dashboard.
+      const fromQ = qs.get('from') || '';
+      const toQ   = qs.get('to')   || '';
+      if (fromQ) filterDateFrom = fromQ;
+      if (toQ)   filterDateTo   = toQ;
       urlOpen     = qs.get('open') === '1';
       urlCompletedToday = qs.get('completedToday') === '1';
       urlPartnership = qs.get('partnership') === '1';
@@ -1168,6 +1174,19 @@ function applyFilters() {
         if (from && d < from) return false;
         if (to   && d > to)   return false;
         return true;
+      });
+    } else if (filterDatePreset === 'activityInPeriod' && (filterDateFrom || filterDateTo)) {
+      // 4.49.18+ Preset alinhado ao Dashboard de Produtividade.
+      // Tarefa "no período" = criada OU concluída dentro do range.
+      // Mesmo critério do `inPeriod()` em pages/dashboards.js — garante que
+      // drill-down do ranking abra com EXATAMENTE a mesma contagem do card.
+      const from = filterDateFrom ? new Date(filterDateFrom + 'T00:00:00') : null;
+      const to   = filterDateTo   ? new Date(filterDateTo   + 'T23:59:59') : null;
+      result = result.filter(t => {
+        const c = t.createdAt?.toDate   ? t.createdAt.toDate()   : (t.createdAt ? new Date(t.createdAt) : null);
+        const d = t.completedAt?.toDate ? t.completedAt.toDate() : (t.completedAt ? new Date(t.completedAt) : null);
+        const inRange = (dt) => dt && (!from || dt >= from) && (!to || dt <= to);
+        return inRange(c) || inRange(d);
       });
     }
   }

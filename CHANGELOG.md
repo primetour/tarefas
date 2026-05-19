@@ -6,6 +6,26 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.19+20260519-dash-prod-coerencia-fim] — 2026-05-19
+
+Release **PATCH** — Cola de coerência fim a fim entre Dashboard ↔ #tasks.
+
+Versão 4.49.18 trouxe deep-link mas usava `datePreset=last30Days` em #tasks,
+que tem semântica diferente de "ativa no período" do dashboard. Resultado:
+clicava no card "Sem tipo (122)" e #tasks abria com 825 tarefas (porque
+`last30Days` inclui TODAS abertas + done recentes).
+
+- **Novo preset `activityInPeriod`** em `tasks.js`: filtra por
+  `createdAt OR completedAt` dentro do range — mesmo critério do
+  `inPeriod()` em `dashboards.js`.
+- Deep-link agora envia `?type=…&datePreset=activityInPeriod&from=<ymd>&to=<ymd>`
+  com o range exato do período ativo do dashboard.
+- URL params `from` / `to` agora reconhecidos no boot do `tasks.js`.
+
+Agora a contagem do card e da lista batem precisamente.
+
+---
+
 ## [4.49.18+20260519-dash-prod-coerencia] — 2026-05-19
 
 Release **PATCH** — Coerência entre Dashboard de Produtividade e a página de

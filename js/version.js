@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 18,
-  build: '20260519-dash-prod-coerencia',
+  patch: 19,
+  build: '20260519-dash-prod-coerencia-fim',
 };
 
 /** "1.2.0" */

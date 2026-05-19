@@ -761,16 +761,16 @@ function renderAllCharts(Chart, m) {
     }
   })();
 
-  // 4.49.18+ Mapping pra deep-link p/ #tasks alinhando período c/ dashboard.
-  // User clica no ranking e abre #tasks com EXATAMENTE a mesma contagem.
-  // Declarado AQUI (antes do member-board) pra ambos rankings reaproveitarem.
-  const periodDatePreset = ({
-    '7d':   'last7Days',
-    '30d':  'last30Days',
-    '90d':  'last90Days',
-    '12m':  '',   // tasks.js não tem preset 1y; deixa vazio (todos)
-    'custom': '',
-  })[activePeriod()] || '';
+  // 4.49.18+ Deep-link p/ #tasks usando o MESMO range do período do dashboard.
+  // Em vez de mapear pra last30Days (que tem semântica diferente de "ativa
+  // no período"), passamos from/to + datePreset=activityInPeriod — o
+  // tasks.js filtra por `createdAt OR completedAt` dentro do range, igual
+  // ao `inPeriod()` daqui. Resultado: a contagem do card BATE com a lista.
+  const { start: _periodStart, end: _periodEnd } = getPeriodDates(activePeriod());
+  const toYMD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const periodFrom = toYMD(_periodStart);
+  const periodTo   = toYMD(_periodEnd);
+  const periodLinkSuffix = `&datePreset=activityInPeriod&from=${periodFrom}&to=${periodTo}`;
 
   /* 6 — Member leaderboard (4-col) */
   // 4.49.18+ getTasksByMember agora filtra pendingSso/inactive (analytics.js).
@@ -782,7 +782,7 @@ function renderAllCharts(Chart, m) {
     subtitle: 'Por tarefas concluídas no período',
     items: byMember.slice(0, 8).map(m => ({
       ...m,
-      href: `#tasks?assignee=${encodeURIComponent(m.uid)}${periodDatePreset ? `&datePreset=${periodDatePreset}` : ''}`,
+      href: `#tasks?assignee=${encodeURIComponent(m.uid)}${periodLinkSuffix}`,
     })),
   });
 
@@ -797,7 +797,7 @@ function renderAllCharts(Chart, m) {
         : '';
       // typeId real ou sentinel __NONE__ pro filtro de #tasks
       const typeParam = (t.typeId && t.typeId !== '__none__') ? t.typeId : '__NONE__';
-      const href = `#tasks?type=${encodeURIComponent(typeParam)}${periodDatePreset ? `&datePreset=${periodDatePreset}` : ''}`;
+      const href = `#tasks?type=${encodeURIComponent(typeParam)}${periodLinkSuffix}`;
       return {
         name: `${t.name}${parcSuffix}`,
         icon: t.icon,
