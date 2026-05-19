@@ -6,6 +6,10 @@ name: Rollback AI Classification
 #
 # Manual only (workflow_dispatch) — NUNCA roda automaticamente.
 
+# v4.49.44+ Least-privilege
+permissions:
+  contents: read
+
 concurrency:
   group: nl-classifier-cutover
   cancel-in-progress: false
@@ -34,8 +38,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Sanity check da confirmação
+        env:
+          INPUT_CONFIRMAR: ${{ github.event.inputs.confirmar }}
         run: |
-          if [ "${{ github.event.inputs.confirmar }}" != "REVERTER" ]; then
+          set -euo pipefail
+          if [ "${INPUT_CONFIRMAR:-}" != "REVERTER" ]; then
             echo "❌ Confirmação inválida. Digite exatamente 'REVERTER' no input."
             exit 1
           fi
@@ -50,9 +57,19 @@ jobs:
           FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
           FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          INPUT_DRY:   ${{ github.event.inputs.dry }}
+          INPUT_SINCE: ${{ github.event.inputs.since }}
         run: |
-          args=""
-          if [ "${{ github.event.inputs.dry }}" = "true" ]; then args="$args --dry"; fi
-          if [ -n "${{ github.event.inputs.since }}" ]; then args="$args --since=${{ github.event.inputs.since }}"; fi
-          node rollback-ai-classification.js $args
+          set -euo pipefail
+          args=()
+          if [ "${INPUT_DRY:-}" = "true" ]; then args+=(--dry); fi
+          # Validação: --since aceita apenas ISO 8601 (YYYY-MM-DDTHH:MM:SSZ).
+          # Defesa contra shell injection via string livre.
+          if [ -n "${INPUT_SINCE:-}" ]; then
+            if [[ ! "$INPUT_SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$ ]]; then
+              echo "❌ Input 'since' deve ser ISO 8601 (ex: 2026-05-20T00:00:00Z). Recebido: $INPUT_SINCE"; exit 1
+            fi
+            args+=(--since="$INPUT_SINCE")
+          fi
+          node rollback-ai-classification.js "${args[@]}"
         working-directory: scripts

@@ -499,10 +499,30 @@ service cloud.firestore {
 
     // ── Performance de Newsletters (Marketing Cloud) ──────────
     // Read: qualquer usuário autenticado (analytics interno)
-    // Write: GitHub Actions (sem auth) E master (analise manual / re-extracao)
+    // Write: GitHub Actions (Admin SDK bypassa) E master (analise manual / re-extracao /
+    //        veredito humano em divergências shadow mode)
     match /mc_performance/{docId} {
       allow read:  if isAuth();
       allow write: if isMaster();
+    }
+
+    // ── NL Classifier — Shadow Mode (v4.49.41+) ───────────────
+    // Audit collections do agente nl-content-classifier. Gravadas
+    // EXCLUSIVAMENTE via Admin SDK (scripts/classify-content-ai.js,
+    // promote-ai-to-prod.js, rollback-ai-classification.js).
+    // Cliente: read-only pra renderizar sparkline e auditoria.
+    // Defesa contra adulteração: write false (Admin SDK bypassa).
+    match /nl_ai_classifier_runs/{docId} {
+      allow read:               if isAuth();
+      allow create, update, delete: if false; // append-only via Admin SDK
+    }
+    match /nl_classifier_promotions/{docId} {
+      allow read:               if isAuth() && isAdmin();
+      allow create, update, delete: if false; // append-only via Admin SDK
+    }
+    match /nl_classifier_rollbacks/{docId} {
+      allow read:               if isAuth() && isAdmin();
+      allow create, update, delete: if false; // append-only via Admin SDK
     }
 
     // ── Cache de extração de imagens (Vision API) ─────────────

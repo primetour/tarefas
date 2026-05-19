@@ -10,6 +10,12 @@ name: Classify Newsletter Content via AI Agent (shadow mode)
 # Grava em campos PARALELOS (extracted.aiCommercial/aiTourism/...),
 # NUNCA toca em extracted.commercial/tourism de produção.
 
+# v4.49.44+ Least-privilege: workflow só precisa de checkout (contents:read).
+# Sem permissões de write em contents, actions, packages ou outros escopos.
+# Defesa contra script comprometido tentar push código malicioso.
+permissions:
+  contents: read
+
 # Lock: previne 2 corridas simultâneas (cron + workflow_dispatch manual,
 # ou 2 manuais sobrepostas). Sem isto poderia duplicar audit logs e
 # estourar rate limits do Anthropic.
@@ -67,11 +73,26 @@ jobs:
           FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
           FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
           ANTHROPIC_API_KEY:     ${{ secrets.ANTHROPIC_API_KEY }}
+          # v4.49.44+ security audit: inputs passados como env vars (não
+          # interpolados direto em bash) pra prevenir shell injection.
+          # GitHub Actions sanitiza secrets/inputs em env, mas a referência
+          # ${{ ... }} no script bash é literal e vulnerable.
+          INPUT_DRY:     ${{ github.event.inputs.dry }}
+          INPUT_FORCE:   ${{ github.event.inputs.force }}
+          INPUT_VERBOSE: ${{ github.event.inputs.verbose }}
+          INPUT_LIMIT:   ${{ github.event.inputs.limit }}
         run: |
-          args=""
-          if [ "${{ github.event.inputs.dry }}"     = "true" ]; then args="$args --dry"; fi
-          if [ "${{ github.event.inputs.force }}"   = "true" ]; then args="$args --force"; fi
-          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then args="$args --verbose"; fi
-          if [ -n "${{ github.event.inputs.limit }}" ]; then args="$args --limit=${{ github.event.inputs.limit }}"; fi
-          node classify-content-ai.js $args
+          set -euo pipefail
+          args=()
+          if [ "${INPUT_DRY:-}"     = "true" ]; then args+=(--dry); fi
+          if [ "${INPUT_FORCE:-}"   = "true" ]; then args+=(--force); fi
+          if [ "${INPUT_VERBOSE:-}" = "true" ]; then args+=(--verbose); fi
+          # Validação: --limit aceita apenas dígitos (defesa contra injection)
+          if [ -n "${INPUT_LIMIT:-}" ]; then
+            if [[ ! "$INPUT_LIMIT" =~ ^[0-9]+$ ]]; then
+              echo "❌ Input 'limit' deve ser numérico. Recebido: $INPUT_LIMIT"; exit 1
+            fi
+            args+=(--limit="$INPUT_LIMIT")
+          fi
+          node classify-content-ai.js "${args[@]}"
         working-directory: scripts

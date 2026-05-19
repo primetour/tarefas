@@ -2338,6 +2338,12 @@ function renderShadowModeBlock(docs) {
   const pctColor = p => p == null ? '#94A3B8' : p >= 90 ? '#16A34A' : p >= 75 ? '#D97706' : '#DC2626';
   const fmt1 = p => p == null ? '—' : `${p.toFixed(1)}%`;
 
+  // v4.49.44+ security audit FIX HIGH #2: gate dos botões de decisão por
+  // permissão. Apenas master ou quem tem system_manage_settings pode marcar
+  // veredictos (a Firestore rule isMaster() na mc_performance bloquearia
+  // de qualquer forma, mas o UX fica melhor — não-admin não vê botão que
+  // não conseguiria usar).
+  const canVoteOnDecisions = store.isMaster() || store.can('system_manage_settings');
   const divRow = (d, eixo) => {
     const ai = eixo === 'comercial' ? d.extracted.aiCommercial : d.extracted.aiTourism;
     const rx = eixo === 'comercial' ? d.extracted.commercial   : d.extracted.tourism;
@@ -2353,6 +2359,8 @@ function renderShadowModeBlock(docs) {
       ? '<span style="color:#16A34A;font-size:0.6875rem;font-weight:600;">✓ IA certa</span>'
       : decision === 'regex-correct'
       ? '<span style="color:#2563EB;font-size:0.6875rem;font-weight:600;">✓ regex certo</span>'
+      : !canVoteOnDecisions
+      ? '<span style="color:var(--text-muted);font-size:0.6875rem;">— sem veredicto —</span>'
       : `
         <div style="display:flex;gap:4px;">
           <button class="nl-shadow-decision" data-doc-id="${esc(d.id)}" data-eixo="${eixo}" data-verdict="ai-correct"
@@ -2553,9 +2561,24 @@ async function wireShadowModeDrill() {
       if (!btn) return;
       e.preventDefault();
       e.stopPropagation();
+      // v4.49.44+ security audit: re-checa permissão no handler (defesa em
+      // profundidade — não confia no DOM como única barreira).
+      if (!store.isMaster() && !store.can('system_manage_settings')) {
+        toast.error('Sem permissão para registrar veredictos.');
+        return;
+      }
       const docId  = btn.dataset.docId;
       const eixo   = btn.dataset.eixo;     // 'comercial' | 'turismo'
       const verdict = btn.dataset.verdict;  // 'ai-correct' | 'regex-correct'
+      // Validação de allowlist (defesa contra DOM tampering)
+      if (!['comercial', 'turismo'].includes(eixo) || !['ai-correct', 'regex-correct'].includes(verdict)) {
+        toast.error('Veredicto inválido.');
+        return;
+      }
+      if (!docId || typeof docId !== 'string' || docId.length > 128) {
+        toast.error('Doc ID inválido.');
+        return;
+      }
       const fieldKey = `extracted.humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}`;
       const decAtKey = `extracted.humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}At`;
       const decByKey = `extracted.humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}By`;

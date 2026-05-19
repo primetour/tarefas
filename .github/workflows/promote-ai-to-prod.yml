@@ -6,6 +6,10 @@ name: Promote AI Classification to Production
 #
 # Manual only (workflow_dispatch) — NUNCA roda automaticamente.
 
+# v4.49.44+ Least-privilege
+permissions:
+  contents: read
+
 concurrency:
   group: nl-classifier-cutover
   cancel-in-progress: false
@@ -41,8 +45,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Sanity check da confirmação
+        # v4.49.44+ security audit: input via env var pra evitar shell injection.
+        env:
+          INPUT_CONFIRMAR: ${{ github.event.inputs.confirmar }}
         run: |
-          if [ "${{ github.event.inputs.confirmar }}" != "PROMOVER" ]; then
+          set -euo pipefail
+          if [ "${INPUT_CONFIRMAR:-}" != "PROMOVER" ]; then
             echo "❌ Confirmação inválida. Digite exatamente 'PROMOVER' no input."
             exit 1
           fi
@@ -57,8 +65,22 @@ jobs:
           FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
           FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          INPUT_DRY:        ${{ github.event.inputs.dry }}
+          INPUT_CONFIDENCE: ${{ github.event.inputs.confidence }}
+          INPUT_EIXO:       ${{ github.event.inputs.eixo }}
         run: |
-          args="--confidence=${{ github.event.inputs.confidence }} --only-eixo=${{ github.event.inputs.eixo }}"
-          if [ "${{ github.event.inputs.dry }}" = "true" ]; then args="$args --dry"; fi
-          node promote-ai-to-prod.js $args
+          set -euo pipefail
+          # Validação: confidence e eixo são `type: choice` no input — só vêm
+          # com valores do allowlist. Mesmo assim validamos por defesa-em-profundidade.
+          case "${INPUT_CONFIDENCE:-medium}" in
+            low|medium|high) ;;
+            *) echo "❌ confidence inválido: ${INPUT_CONFIDENCE}"; exit 1 ;;
+          esac
+          case "${INPUT_EIXO:-both}" in
+            both|commercial|tourism) ;;
+            *) echo "❌ eixo inválido: ${INPUT_EIXO}"; exit 1 ;;
+          esac
+          args=(--confidence="$INPUT_CONFIDENCE" --only-eixo="$INPUT_EIXO")
+          if [ "${INPUT_DRY:-}" = "true" ]; then args+=(--dry); fi
+          node promote-ai-to-prod.js "${args[@]}"
         working-directory: scripts

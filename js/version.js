@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 43,
-  build: '20260519-nl-classifier-test-harness',
+  patch: 44,
+  build: '20260519-security-audit-fixes',
 };
 
 /** "1.2.0" */
