@@ -2095,41 +2095,41 @@ function renderContentTab() {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;">
 
       <!-- 4.49.27+ Eixos duplos (spec do user): Comercial + Turismo -->
+      <!-- 4.49.32+ Tooltips agora abrem modal estruturado via key. -->
       <div id="nl-content-commercial-block" class="card" style="padding:18px;">
-        ${blockHeader('💼 Classificação Comercial', INFO_TIPS.commercial, 'nl-content-commercial-block')}
+        ${blockHeader('💼 Classificação Comercial', 'commercial', 'nl-content-commercial-block')}
         ${renderClassificationBars(agg.commercial, 'commercial')}
       </div>
       <div id="nl-content-tourism-block" class="card" style="padding:18px;">
-        ${blockHeader('✈️ Classificação Turismo', INFO_TIPS.tourism, 'nl-content-tourism-block')}
+        ${blockHeader('✈️ Classificação Turismo', 'tourism', 'nl-content-tourism-block')}
         ${renderClassificationBars(agg.tourism, 'tourism')}
       </div>
 
-      <div id="nl-content-types-block" class="card" style="padding:18px;">
-        ${blockHeader('📂 Tipo de newsletter (legado)', INFO_TIPS.newsletterType, 'nl-content-types-block')}
-        ${renderNewsletterTypesBars(agg.newsletterTypes, enrichedDocs)}
-      </div>
+      <!-- 4.49.32+ Bloco "Tipo de newsletter (legado)" REMOVIDO.
+           Após v4.49.27 todos os docs foram reclassificados nos eixos
+           Comercial + Turismo. Manter o legado era redundante e confuso. -->
       <div id="nl-content-countries-block" class="card" style="padding:18px;">
-        ${blockHeader('🌍 Top países · performance', INFO_TIPS.topCountries, 'nl-content-countries-block')}
+        ${blockHeader('🌍 Top países · performance', 'topCountries', 'nl-content-countries-block')}
         ${renderTopDestinosTable(agg.byCountry, enrichedDocs)}
       </div>
       <div id="nl-content-cities-block" class="card" style="padding:18px;">
-        ${blockHeader('🏙 Top cidades / regiões', INFO_TIPS.topCities, 'nl-content-cities-block')}
+        ${blockHeader('🏙 Top cidades / regiões', 'topCities', 'nl-content-cities-block')}
         ${renderTopDestinosTable(agg.cities, enrichedDocs, 'cidade')}
       </div>
       <div id="nl-content-hotels-block" class="card" style="padding:18px;">
-        ${blockHeader('🏨 Hotéis mais mencionados', INFO_TIPS.topHotels, 'nl-content-hotels-block')}
+        ${blockHeader('🏨 Hotéis mais mencionados', 'topHotels', 'nl-content-hotels-block')}
         ${renderTopHoteisBars(agg.hotels, enrichedDocs)}
       </div>
       <div id="nl-content-cruises-block" class="card" style="padding:18px;">
-        ${blockHeader('🚢 Cruzeiros / operadoras marítimas', INFO_TIPS.topCruises, 'nl-content-cruises-block')}
+        ${blockHeader('🚢 Cruzeiros / operadoras marítimas', 'topCruises', 'nl-content-cruises-block')}
         ${renderTopHoteisBars(agg.cruises, enrichedDocs)}
       </div>
       <div id="nl-content-themes-block" class="card" style="padding:18px;">
-        ${blockHeader('🎯 Temas / posicionamento', INFO_TIPS.themes, 'nl-content-themes-block')}
+        ${blockHeader('🎯 Temas / posicionamento', 'themes', 'nl-content-themes-block')}
         ${renderThemesBars(agg.themes, enrichedDocs)}
       </div>
       <div id="nl-content-brands-block" class="card" style="padding:18px;">
-        ${blockHeader('🏷 Marcas hoteleiras citadas', INFO_TIPS.brandsBlock, 'nl-content-brands-block')}
+        ${blockHeader('🏷 Marcas hoteleiras citadas', 'brandsBlock', 'nl-content-brands-block')}
         ${renderBrandsPills(agg.brands, enrichedDocs)}
       </div>
 
@@ -2384,7 +2384,7 @@ async function exportContentXlsx() {
     window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.cruises,        'Cruzeiro'),           'Cruzeiros');
     window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.themes,         'Tema'),               'Temas');
     window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.brands,         'Marca'),              'Marcas');
-    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.newsletterTypes,'Tipo (legado)'),      'Tipo Legado');
+    // 4.49.32+ sheet "Tipo Legado" removida — eixos novos cobrem 100%.
 
     // Sheet "Disparos" — uma linha por campanha enriquecida
     const dispHeaders = ['Subject','BU','Data','Enviados','Abertura','Cliques','Opt-out','Comercial','Turismo','País(es)','Cidade(s)','Hotéis','Marcas'];
@@ -2567,7 +2567,7 @@ async function exportContentPptx() {
     addMapSlide('Hotéis citados',          '🏨', agg.hotels,         'Hotel');
     addMapSlide('Cruzeiros',               '🚢', agg.cruises,        'Operadora');
     addMapSlide('Temas / Posicionamento',  '🎯', agg.themes,         'Tema');
-    addMapSlide('Tipo de Newsletter (legado)', '📂', agg.newsletterTypes, 'Tipo');
+    // 4.49.32+ slide "Tipo (legado)" removido — Comercial + Turismo cobrem.
 
     await pptx.writeFile({ fileName: _exportFilename('pptx') });
   } catch (e) {
@@ -2678,12 +2678,26 @@ const INFO_TIPS = {
   envios:         'Lista das campanhas enriquecidas (deduplicadas por baseCode — P0209_1/_2/_3 = 1 linha). Click no ✎ pra editar manualmente quando IA errar.',
 };
 
-function blockHeader(title, tooltip, widgetId) {
-  const tipBadge = tooltip ? `<span title="${esc(tooltip)}"
-      style="cursor:help;display:inline-flex;align-items:center;justify-content:center;
-      width:18px;height:18px;border-radius:50%;background:var(--bg-elevated);
-      color:var(--text-muted);font-size:0.7rem;font-weight:600;font-style:italic;
-      font-family:Georgia,serif;border:1px solid var(--border-subtle);">i</span>` : '';
+function blockHeader(title, tooltipOrKey, widgetId) {
+  // 4.49.32+ Ícone "i" não usa mais o title= nativo (texto pequeno e
+  // ilegível). Vira botão que abre modal estruturado com definição
+  // formatada (vê INFO_MODAL_DEFINITIONS + openInfoModal).
+  // tooltipOrKey: string (com texto) OU key do INFO_MODAL_DEFINITIONS.
+  const isKey = typeof tooltipOrKey === 'string' && INFO_MODAL_DEFINITIONS[tooltipOrKey];
+  const infoKey = isKey ? tooltipOrKey : '';
+  const fallbackText = isKey ? '' : (tooltipOrKey || '');
+  const tipBtn = tooltipOrKey ? `<button type="button" class="nlc-info-btn"
+      data-info-key="${esc(infoKey)}"
+      data-info-title="${esc(title)}"
+      data-info-fallback="${esc(fallbackText)}"
+      title="Sobre este indicador"
+      style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
+      width:22px;height:22px;border-radius:50%;background:var(--bg-elevated);
+      color:var(--text-muted);font-size:0.8125rem;font-weight:700;font-style:italic;
+      font-family:Georgia,serif;border:1px solid var(--border-subtle);
+      transition:all 0.15s;padding:0;line-height:1;"
+      onmouseover="this.style.background='var(--brand-gold)';this.style.color='white';this.style.borderColor='var(--brand-gold)';"
+      onmouseout="this.style.background='var(--bg-elevated)';this.style.color='var(--text-muted)';this.style.borderColor='var(--border-subtle)';">i</button>` : '';
   const insightSlot = widgetId
     ? `<span class="widget-insights-slot" data-widget-id="${esc(widgetId)}"></span>`
     : '';
@@ -2692,9 +2706,137 @@ function blockHeader(title, tooltip, widgetId) {
       letter-spacing:0.06em;color:var(--text-muted);">${title}</h3>
     <div style="display:flex;align-items:center;gap:6px;">
       ${insightSlot}
-      ${tipBadge}
+      ${tipBtn}
     </div>
   </div>`;
+}
+
+// 4.49.32+ Definições estruturadas legíveis em modal.
+// Cada entry tem { definition, categories[]?, priority?, examples[]?, source? }
+// Substitui texto longo do INFO_TIPS antigo por estrutura HTML formatada.
+const INFO_MODAL_DEFINITIONS = {
+  commercial: {
+    title: '💼 Classificação Comercial',
+    definition: 'Eixo macro da comunicação — qual a INTENÇÃO comercial do disparo. Cada doc recebe exatamente UMA categoria.',
+    categories: [
+      { label: '🗓 Sazonal',       desc: 'Período específico mencionado: estação (verão/inverno), feriado (Natal, Páscoa, Mães), data comemorativa, mês+ano explícito.' },
+      { label: '🏷 Promoção',      desc: 'Valor, desconto, condição comercial: %OFF, "noite FREE", cashback, "crédito US$", "tarifa especial", benefício exclusivo.' },
+      { label: '🤝 Parceiro',      desc: 'Empresa parceira em destaque: Cartão Partners, Centurion Card, Latam Pass, celebridade (Bocelli), marca não-PRIMETOUR (Rolex, Tag Heuer).' },
+      { label: '✨ Inspiracional', desc: 'Editorial sem valor, sazonalidade ou parceiro destacado. Foco em desejo/conteúdo curado.' },
+    ],
+    priority: ['Sazonal', 'Promoção', 'Parceiro', 'Inspiracional'],
+    source: 'Classificação automática via regex sobre subject + name + body do email.',
+  },
+  tourism: {
+    title: '✈️ Classificação Turismo',
+    definition: 'Tipo de conteúdo turístico apresentado. Cada doc recebe exatamente UMA categoria.',
+    categories: [
+      { label: '🎤 Evento',    desc: 'Shows, esportes, festivais com data/local específicos (Bocelli, GP, Wimbledon, Olimpíadas).' },
+      { label: '✈ Aéreo',      desc: 'Voos, passagens, classe executiva, milhas (Latam Pass, jato privado, Emirates).' },
+      { label: '📍 Roteiro',   desc: 'Multi-destino, X noites, day-by-day, pacote fechado com preço por pessoa.' },
+      { label: '🛎 Serviço',   desc: 'Transfer, concierge, Lifestyle Manager, alfaiate, personal shopper.' },
+      { label: '🏨 Hotelaria', desc: 'Bloco/destaque de hotel específico — hospedagem como protagonista.' },
+      { label: '🚢 Cruzeiro',  desc: 'Yacht, navio, river-cruise — Silversea, Aqua Mekong, Ritz-Carlton Yacht.' },
+      { label: '🎁 Produto',   desc: 'Item físico — flores, presentes, entrega de revista.' },
+      { label: '🌍 Destino',   desc: 'Editorial sobre o lugar em si — sem hotel/aéreo/roteiro específico.' },
+      { label: '◇ Outros',     desc: 'Trens de luxo (Orient Express, Andean Explorer) ou casos não-classificáveis.' },
+    ],
+    priority: ['Evento', 'Aéreo', 'Roteiro', 'Serviço', 'Hotelaria', 'Cruzeiro', 'Produto', 'Destino', 'Outros'],
+    source: 'Classificação automática via regex sobre subject + name + body do email.',
+  },
+  topCountries: {
+    title: '🌍 Top Países',
+    definition: 'Contagem de campanhas que mencionam cada país (no subject, name ou body). Cada campanha conta 1× por país independente de waves.',
+    examples: ['Itália (10 disparos · 28% open rate médio)', 'Maldivas (4 disparos · 41% open rate)'],
+    source: 'Extração automática via dicionário curado de 51 países (PT + EN) sobre subject + name + body com regra anti-boilerplate (header/footer cortados).',
+  },
+  topCities: {
+    title: '🏙 Top Cidades / Regiões',
+    definition: 'Granularidade abaixo de país: cidades, regiões turísticas (Toscana), atrações-âncora (Mekong, Acrópole).',
+    examples: ['Atenas (Grécia)', 'Mar Egeu (região)', 'Bora Bora (Polinésia Francesa)'],
+    source: 'Dicionário curado de 148 cidades com país-mãe. Aliases (NY → Nova York, Tokyo → Tóquio).',
+  },
+  topHotels: {
+    title: '🏨 Hotéis citados',
+    definition: 'Hotéis identificados por marca curada (luxury travel). Cada hotel conta 1× por campanha (dedup intra-doc + inter-wave).',
+    examples: ['Aman Tokyo, Belmond, Faena, Patina Maldives, Waldorf Astoria'],
+    source: 'Dicionário de 50+ marcas premium (Aman, Belmond, Faena, Six Senses, Cheval Blanc, Four Seasons, Ritz-Carlton, Capella, Rosewood…).',
+  },
+  topCruises: {
+    title: '🚢 Cruzeiros / Operadoras Marítimas',
+    definition: 'Operadoras de cruzeiro/yacht separadas dos hotéis (são produtos com economia distinta).',
+    examples: ['Silversea, Aqua Expeditions, Ritz-Carlton Yacht, Crystal Cruises'],
+  },
+  themes: {
+    title: '🎯 Temas / Posicionamento',
+    definition: 'Tags livres que indicam o ângulo emocional/de posicionamento da campanha. Múltiplos temas por campanha.',
+    examples: ['luxo, romance, família, aventura, gastronomia, wellness, cultura, praia, cidade, natureza, mar, slow-travel'],
+  },
+  brandsBlock: {
+    title: '🏷 Marcas Hoteleiras Citadas',
+    definition: 'Subset de hotels.brand + cruises.brand. Cada marca aparece 1× por campanha (não infla por waves).',
+  },
+  openRate: {
+    title: '📊 Open Rate Médio',
+    definition: 'Média ponderada da taxa de abertura das newsletters enriquecidas (campanhas com extração válida).',
+    source: 'Fórmula: Σ(openRate × totalSent) / Σ(totalSent) — pondera por volume de envio.',
+  },
+};
+
+async function openInfoModal(key, fallbackTitle) {
+  const { modal } = await import('../components/modal.js');
+  const def = INFO_MODAL_DEFINITIONS[key];
+  let content;
+  if (!def) {
+    content = `<div style="padding:16px;color:var(--text-muted);">${esc(fallbackTitle || 'Sem definição disponível.')}</div>`;
+  } else {
+    const catsHTML = def.categories?.length
+      ? `<div style="margin-top:16px;">
+          <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:8px;">Categorias</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            ${def.categories.map(c => `
+              <div style="padding:10px 12px;background:var(--bg-elevated);border-radius:6px;border-left:3px solid var(--brand-gold);">
+                <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);margin-bottom:3px;">${esc(c.label)}</div>
+                <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.5;">${esc(c.desc)}</div>
+              </div>`).join('')}
+          </div>
+        </div>` : '';
+    const priHTML = def.priority?.length
+      ? `<div style="margin-top:16px;padding:10px 14px;background:rgba(212,168,67,0.08);border-radius:6px;border:1px solid rgba(212,168,67,0.25);">
+          <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--brand-gold);margin-bottom:6px;">⚡ Prioridade em caso de convergência</div>
+          <div style="font-size:0.8125rem;color:var(--text-primary);line-height:1.6;">
+            ${def.priority.map((p, i) => `<span style="display:inline-block;margin-right:6px;">${i+1}. <strong>${esc(p)}</strong></span>`).join(' › ')}
+          </div>
+        </div>` : '';
+    const exHTML = def.examples?.length
+      ? `<div style="margin-top:16px;">
+          <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:6px;">Exemplos</div>
+          <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;">
+            ${def.examples.map(e => `<div>• ${esc(e)}</div>`).join('')}
+          </div>
+        </div>` : '';
+    const srcHTML = def.source
+      ? `<div style="margin-top:16px;padding-top:12px;border-top:1px dashed var(--border-subtle);
+          font-size:0.6875rem;color:var(--text-muted);line-height:1.6;font-style:italic;">
+          ${esc(def.source)}
+        </div>` : '';
+    content = `
+      <div style="font-size:0.9375rem;color:var(--text-primary);line-height:1.6;">
+        ${esc(def.definition)}
+      </div>
+      ${catsHTML}
+      ${priHTML}
+      ${exHTML}
+      ${srcHTML}`;
+  }
+
+  modal.open({
+    title: def?.title || (fallbackTitle || 'Sobre este indicador'),
+    size: 'md',
+    content,
+    dedupeKey: `nlc-info-${key}`,
+    footer: [{ label: 'Fechar', class: 'btn-secondary', closeOnClick: true }],
+  });
 }
 
 function contentKpi(title, value, sub, tooltip) {
@@ -3199,6 +3341,16 @@ function wireDrillDowns() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       openExtractedEditor(btn.dataset.docId);
+    });
+  });
+  // 4.49.32+ Botão "i" em cada blockHeader → abre modal de definição.
+  document.querySelectorAll('.nlc-info-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const key = btn.dataset.infoKey || '';
+      const title = btn.dataset.infoTitle || '';
+      const fallback = btn.dataset.infoFallback || '';
+      openInfoModal(key, title || fallback);
     });
   });
   // Resize de colunas da tabela de envios (idempotente)

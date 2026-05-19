@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 31,
-  build: '20260519-csp-img-src-sfmc',
+  patch: 32,
+  build: '20260519-nl-legado-out-info-modal-100pct',
 };
 
 /** "1.2.0" */

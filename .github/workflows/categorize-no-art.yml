@@ -1,0 +1,35 @@
+name: Categorize No-Art (one-off)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry-run'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  categorize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install node-fetch firebase-admin
+        working-directory: scripts
+      - env:
+          MC_CLIENT_ID:          ${{ secrets.MC_CLIENT_ID }}
+          MC_CLIENT_SECRET:      ${{ secrets.MC_CLIENT_SECRET }}
+          MC_AUTH_URL:           ${{ secrets.MC_AUTH_URL }}
+          MC_REST_URL:           ${{ secrets.MC_REST_URL }}
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+        run: |
+          args=""
+          if [ "${{ github.event.inputs.dry }}" = "true" ]; then args="--dry"; fi
+          node categorize-no-art.js $args
+        working-directory: scripts
